@@ -1,0 +1,22 @@
+.DS_Store
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.Python
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Build outputs (PyInstaller / macOS app bundles)
+dist/
+build/
+.pyinstaller/
+*.app/
+
+# Local reports / generated artifacts
+deps_report.json

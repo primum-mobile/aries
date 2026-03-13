@@ -1,0 +1,6 @@
+-r requirements.txt
+pyinstaller>=6.0
+setuptools>=61
+wheel
+fonttools>=4.0
+
