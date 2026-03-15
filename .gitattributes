@@ -1,0 +1,13 @@
+* text=auto
+
+*.ico binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.bmp binary
+*.ttf binary
+*.otf binary
+*.so binary
+*.pyd binary
+*.dll binary

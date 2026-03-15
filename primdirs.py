@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import copy
 import math
 import datetime
 import astrology
@@ -140,6 +141,14 @@ class PrimDirs:
 	RANGEALL = 4
 	RANGEREV = 5
 
+	# Solar revolution timing in revolution directions
+	REVSOLAR_TROPICAL = 0
+	REVSOLAR_360 = 1
+
+	# Solar revolution annual directions mode
+	REVANNUAL_USE_PRIMARY = 0
+	REVANNUAL_TRADITIONAL = 1
+
 	LIMIT = 150.0
 	REVOLUTIO = 360.0
 
@@ -147,11 +156,51 @@ class PrimDirs:
 	LOW = 0
 	HIGH = 1
 
+	@staticmethod
+	def get_effective_revolution_options(chrt, options):
+		if chrt is None or options is None:
+			return options
+		if getattr(chrt, 'htype', None) != chart.Chart.SOLAR:
+			return options
+		if getattr(options, 'pdrevannualmode', PrimDirs.REVANNUAL_USE_PRIMARY) != PrimDirs.REVANNUAL_TRADITIONAL:
+			return options
+
+		eff = copy.copy(options)
+		try:
+			eff.sigplanets = [False] * len(options.sigplanets)
+		except Exception:
+			pass
+		try:
+			eff.sigangles = [True, False, False, False]
+		except Exception:
+			pass
+		try:
+			eff.sigascmc = [True, False]
+		except Exception:
+			pass
+		try:
+			eff.sighouses = False
+		except Exception:
+			pass
+		try:
+			eff.pdterms = True
+		except Exception:
+			pass
+		try:
+			eff.pdlof = [options.pdlof[0], False]
+		except Exception:
+			pass
+		try:
+			eff.pdsyzygy = False
+		except Exception:
+			pass
+		return eff
+
 
 	def __init__(self, chrt, options, pdrange, direction, abort):
 		self.chart = chrt
 
-		self.options = getattr(self.chart, 'options', options)
+		self.options = options if options is not None else getattr(self.chart, 'options', None)
 		self.pdrange = pdrange
 		self.direction = direction
 		self.abort = abort
@@ -172,7 +221,7 @@ class PrimDirs:
 
 		try:
 			# chart.options를 우선 사용(LoF 공식/섹트 등 전역 옵션 반영)
-			opts = getattr(self.chart, 'options', self.options)
+			opts = self.options
 
 			# 1) Fortune(LoF) 재생성
 			# Sun이 지평선 위인지(주/야) – 차트에서 쓰는 단순 판정과 동일하게 씁니다.
@@ -213,7 +262,7 @@ class PrimDirs:
 			pass
 		# --- 강제 리빌드: 노드/옵션 토글로 바뀔 수 있는 캐시들 ---
 		try:
-			opts = getattr(self.chart, 'options', self.options)
+			opts = self.options
 
 			# chart.create()와 같은 규칙으로 pflag 재구성
 			pflag = astrology.SEFLG_SWIEPH | astrology.SEFLG_SPEED
@@ -293,7 +342,7 @@ class PrimDirs:
 		if self.options.primarydir == PrimDirs.PLACIDIANSEMIARC and self.options.pdlof[1]:
 			# LoF 공식 변경을 문데인 루틴에 '반드시' 반영: Fortune/Antiscia 최신화
 			try:
-				opts = getattr(self.chart, 'options', self.options)
+				opts = self.options
 				# Sun이 지평선 위인지(주/야) – 차트에서 쓰는 단순 판정과 동일하게 씁니다.
 				abovehor = self.chart.planets.planets[astrology.SE_SUN].abovehorizon
 
@@ -1866,7 +1915,11 @@ class PrimDirs:
 		'''Calculates time from arc in Revolutions (Solar, Lunar)'''
 
 		if self.chart.htype == chart.Chart.SOLAR:
-			ti = arc*PrimDirs.staticData[0][PrimDirs.COEFF]/365.2421904
+			if getattr(self.options, 'pdrevsunyearmode', PrimDirs.REVSOLAR_TROPICAL) == PrimDirs.REVSOLAR_360:
+				days = arc
+			else:
+				days = arc * (365.2421904/360.0)
+			ti = days/365.2421904
 		else:
 			ti = arc*0.0758333/360.0#13.18681376/360.0 # 13.1868.. = 1/(27.3/360.0) coeff
 
@@ -2111,7 +2164,3 @@ class PrimDirs:
 		f = open(fname, 'w')
 		f.writelines(lines)
 		f.close()
-
-
-
-

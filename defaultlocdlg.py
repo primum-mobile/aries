@@ -3,8 +3,10 @@
 import wx
 import intvalidator
 import placesdlg
+import geonames
 import mtexts
 import dlgutils
+import chart
 # ###################
 # import options
 # import rangechecker
@@ -156,6 +158,12 @@ class DefaultLocDlg(wx.Dialog):
 		self.daylightckb = wx.CheckBox(self, -1, mtexts.txts['Daylight'])
 		zonesizer.Add(self.daylightckb, 0, wx.ALIGN_LEFT|wx.ALL, 5)
 		self.daylightckb.SetHelpText(mtexts.txts['HelpDaylight'])
+		self.autotzckb = wx.CheckBox(self, -1, 'Auto DST/TZ')
+		self.autotzckb.SetValue(True)
+		zonesizer.Add(self.autotzckb, 0, wx.ALIGN_LEFT|wx.LEFT|wx.RIGHT|wx.BOTTOM, 5)
+		self.autotzlabel = wx.StaticText(self, -1, '')
+		zonesizer.Add(self.autotzlabel, 0, wx.ALIGN_LEFT|wx.LEFT|wx.RIGHT|wx.BOTTOM, 5)
+		self.tzid = ''
 
 		vvsubsizer = wx.BoxSizer(wx.VERTICAL)
 		vvsubsizer.Add(zonesizer, 2, wx.ALIGN_LEFT|wx.ALL, 0)
@@ -208,11 +216,13 @@ class DefaultLocDlg(wx.Dialog):
 
 		self.Bind(wx.EVT_BUTTON, self.onOK, id=wx.ID_OK)
 		self.Bind(wx.EVT_BUTTON, self.onPlaceButton, id=ID_PlaceButton)
+		self.Bind(wx.EVT_CHECKBOX, self.onAutoTimezone, id=self.autotzckb.GetId())
 
 		self.name.SetFocus()
 
 
 	def onOK(self, event):
+		self.syncAutoTimezone()
 		if (self.Validate() and self.splace.Validate() and self.szone.Validate() and self.sphs):
 			self.Close()
 			self.SetReturnCode(wx.ID_OK)
@@ -280,8 +290,69 @@ class DefaultLocDlg(wx.Dialog):
 
 				#alt
 				self.alt.SetValue(alt)
+				self.syncAutoTimezone()
 
 		pdlg.Destroy()#
+
+
+	def onAutoTimezone(self, event):
+		self.syncAutoTimezone()
+
+
+	def _enable_manual_zone_fields(self, enable):
+		self.gmtlabel.Enable(enable)
+		self.pluscb.Enable(enable)
+		self.zhourlabel.Enable(enable)
+		self.zhour.Enable(enable)
+		self.zminute.Enable(enable)
+		self.zminutelabel.Enable(enable)
+		self.daylightckb.Enable(enable)
+
+
+	def _build_place_from_fields(self):
+		try:
+			return chart.Place(
+				self.name.GetValue(),
+				int(self.londeg.GetValue()),
+				int(self.lonmin.GetValue()),
+				0,
+				self.placerbE.GetValue(),
+				int(self.latdeg.GetValue()),
+				int(self.latmin.GetValue()),
+				0,
+				self.placerbN.GetValue(),
+				int(self.alt.GetValue() or 0),
+			)
+		except Exception:
+			return None
+
+
+	def syncAutoTimezone(self):
+		if not self.autotzckb.GetValue():
+			self._enable_manual_zone_fields(True)
+			self.autotzlabel.SetLabel('')
+			self.tzid = ''
+			return
+
+		if self.name.GetValue().strip() == '' and self.londeg.GetValue() in ('', '0') and self.lonmin.GetValue() in ('', '0') and self.latdeg.GetValue() in ('', '0') and self.latmin.GetValue() in ('', '0'):
+			self._enable_manual_zone_fields(False)
+			self.autotzlabel.SetLabel('')
+			self.tzid = ''
+			return
+
+		self._enable_manual_zone_fields(False)
+		info = geonames.Geonames.resolve_zone_fields(2026, 1, 1, 12, 0, 0, self._build_place_from_fields(), self.tzid)
+		if info is None:
+			self.autotzlabel.SetLabel('Auto DST/TZ unavailable')
+			self.tzid = ''
+			return
+
+		self.tzid = info['tzid']
+		self.pluscb.SetStringSelection(DefaultLocDlg.PLUSCHOICES[0 if info['plus'] else 1])
+		self.zhour.SetValue(str(info['zh']))
+		self.zminute.SetValue(str(info['zm']))
+		self.daylightckb.SetValue(info['daylightsaving'])
+		self.autotzlabel.SetLabel(info['tzid'])
 
 
 	def fill(self, opts):
@@ -293,6 +364,8 @@ class DefaultLocDlg(wx.Dialog):
 		self.zhour.SetValue(str(opts.defloczhour))
 		self.zminute.SetValue(str(opts.defloczminute))
 		self.daylightckb.SetValue(opts.deflocdst)
+		self.autotzckb.SetValue(getattr(opts, 'defloctzauto', True))
+		self.tzid = getattr(opts, 'defloctzid', '')
 		self.londeg.SetValue(str(opts.defloclondeg))
 		self.lonmin.SetValue(str(opts.defloclonmin))
 		if opts.defloceast:
@@ -306,6 +379,7 @@ class DefaultLocDlg(wx.Dialog):
 		else:
 			self.placerbS.SetValue(True)
 		self.alt.SetValue(str(opts.deflocalt))
+		self.syncAutoTimezone()
 
 
 	def check(self, opts):
@@ -332,6 +406,12 @@ class DefaultLocDlg(wx.Dialog):
 
 		if opts.deflocdst != self.daylightckb.GetValue():
 			opts.deflocdst = self.daylightckb.GetValue()
+			changed = True
+		if getattr(opts, 'defloctzauto', True) != self.autotzckb.GetValue():
+			opts.defloctzauto = self.autotzckb.GetValue()
+			changed = True
+		if getattr(opts, 'defloctzid', '') != self.tzid:
+			opts.defloctzid = self.tzid
 			changed = True
 
 		#place
@@ -361,8 +441,4 @@ class DefaultLocDlg(wx.Dialog):
 			changed = True
 
 		return changed
-
-
-
-
 

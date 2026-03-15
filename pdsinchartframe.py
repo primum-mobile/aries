@@ -6,6 +6,8 @@ import transitwnd
 import mundanewnd
 import squarechartwnd
 import mtexts
+import wxcompat
+import windowbehavior
 
 
 class PDsInChartFrame(wx.Frame):
@@ -16,6 +18,7 @@ class PDsInChartFrame(wx.Frame):
 
 	def __init__(self, parent, title, chrt, radix, options, sel=0, zod = True):
 		wx.Frame.__init__(self, parent, -1, title, wx.DefaultPosition, wx.Size(640, 400))
+		wxcompat.apply_frame_screen_size(self, 0.80, (640, 400), square=True)
 
 		self.chart = chrt
 		self.radix = radix
@@ -52,9 +55,8 @@ class PDsInChartFrame(wx.Frame):
 		self.pmenu.Append(self.ID_SaveAsBitmap, mtexts.txts['SaveAsBmp'], mtexts.txts['SaveChart'])
 		self.mbw = self.pmenu.Append(self.ID_BlackAndWhite, mtexts.txts['BlackAndWhite'], mtexts.txts['ChartBW'], wx.ITEM_CHECK)
 		
-		self.SetMinSize((200,200))
-
 		self.Bind(wx.EVT_RIGHT_UP, self.onPopupMenu)
+		self.Bind(wx.EVT_CONTEXT_MENU, self.onPopupMenu)
 
 		self.Bind(wx.EVT_MENU, self.onChart, id=self.ID_Chart)
 		self.Bind(wx.EVT_MENU, self.onComparison, id=self.ID_Comparison)
@@ -83,7 +85,7 @@ class PDsInChartFrame(wx.Frame):
 
 
 	def onPopupMenu(self, event):
-		self.PopupMenu(self.pmenu, event.GetPosition())
+		windowbehavior.popup_menu(self, self.pmenu, event)
 
 
 	def onChart(self, event):
@@ -141,10 +143,6 @@ class PDsInChartFrame(wx.Frame):
 
 	def onBlackAndWhite(self, event):
 		self.w.onBlackAndWhite(event)
-
-
-
-
 
 
 

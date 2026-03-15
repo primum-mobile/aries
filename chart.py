@@ -25,6 +25,7 @@ import customerpd
 import syzygy
 import util
 import mtexts
+import geonames
 
 
 # if long is 'E' or/and lat is 'S' -> negate value
@@ -44,7 +45,18 @@ class Time:
 	
 	HOURSPERDAY = 24.0
 
-	def __init__(self, year, month, day, hour, minute, second, bc, cal, zt, plus, zh, zm, daylightsaving, place, full = True): #zt is zonetime, zh is zonehour, zm is zoneminute, full means to calculate everything e.g. FixedStars, MidPoints, ...
+	def __init__(self, year, month, day, hour, minute, second, bc, cal, zt, plus, zh, zm, daylightsaving, place, full = True, tzid='', tzauto=False): #zt is zonetime, zh is zonehour, zm is zoneminute, full means to calculate everything e.g. FixedStars, MidPoints, ...
+		self.tzid = tzid or ''
+		self.tzauto = bool(tzauto)
+		if self.tzauto and self.tzid and (not bc) and cal == Time.GREGORIAN and zt == Time.ZONE:
+			resolved_zone = geonames.Geonames.resolve_zone_fields(year, month, day, hour, minute, second, place, self.tzid)
+			if resolved_zone is not None:
+				plus = resolved_zone['plus']
+				zh = resolved_zone['zh']
+				zm = resolved_zone['zm']
+				daylightsaving = resolved_zone['daylightsaving']
+				self.tzid = resolved_zone['tzid']
+
 		self.year = year
 		self.month = month
 		self.day = day
@@ -361,7 +373,7 @@ class Chart:
 # ###########################################
 			self.munfortune = munfortune.MundaneFortune(self.options.lotoffortune, self.houses.ascmc2, self.planets, self.obl[0], self.place.lat, abovehor)
 			self.syzygy = syzygy.Syzygy(self)
-			self.parts = arabicparts.ArabicParts(self.options.arabicparts, self.houses.ascmc, self.planets, self.houses, self.houses.cusps, self.fortune, self.syzygy, self.options, self.ayanamsha)
+			self.parts = arabicparts.ArabicParts(self.options.arabicparts, self.houses.ascmc, self.planets, self.houses, self.houses.cusps, self.fortune, self.syzygy, self.options, self.ayanamsha, self.male)
 			self.fixstars = fixstars.FixStars(self.time.jd, fsflag, self.options.fixstars, self.obl[0])
 			self.midpoints = midpoints.MidPoints(self.planets)
 			# 차트의 시간 설정을 그대로 따른다 (ZONE / GREENWICH / LMT / LAT)
@@ -465,7 +477,7 @@ class Chart:
 	def calcArabicParts(self):
 		if self.full:
 			del self.parts
-			self.parts = arabicparts.ArabicParts(self.options.arabicparts, self.houses.ascmc, self.planets, self.houses, self.houses.cusps, self.fortune, self.syzygy, self.options, self.ayanamsha)
+			self.parts = arabicparts.ArabicParts(self.options.arabicparts, self.houses.ascmc, self.planets, self.houses, self.houses.cusps, self.fortune, self.syzygy, self.options, self.ayanamsha, self.male)
 
 
 	def calcAntiscia(self):
@@ -1051,6 +1063,3 @@ class Chart:
 					if self.aspmatrixH[j][i].appl:
 						appltxt = 'appl'
 					print ('%s - %s: type=%d %s diff=%f  %s\n' % (planets[i], hname[j], self.aspmatrixH[j][i].typ, appltxt, self.aspmatrixH[j][i].dif, extxt))
-
-
-

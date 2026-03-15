@@ -16,6 +16,7 @@ class ArabicParts:
     DIURNAL = 2
     LONG = 3
     DEGWINNER = 4
+    GENDERED = 5
 
     REFASC = 0
     REFHC2 = REFASC+1
@@ -75,6 +76,28 @@ class ArabicParts:
 
     HNUM = houses.Houses.HOUSE_NUM-1
 
+    @staticmethod
+    def is_gendered_item(ar_item):
+        try:
+            return bool(ar_item[ArabicParts.GENDERED])
+        except Exception:
+            return False
+
+    @staticmethod
+    def should_swap_formula(ar_item, abovehorizon, male):
+        swap = False
+        try:
+            if bool(ar_item[ArabicParts.DIURNAL]) and (not abovehorizon):
+                swap = not swap
+        except Exception:
+            pass
+        try:
+            if ArabicParts.is_gendered_item(ar_item) and (not male):
+                swap = not swap
+        except Exception:
+            pass
+        return swap
+
     def _get_refordeg_triplet(self, ar_item):
         # ar_item가 (name, (A,B,C), diur, (rA,rB,rC)) 형태면 마지막을, 아니면 (0,0,0)
         try:
@@ -96,7 +119,7 @@ class ArabicParts:
             lon = util.normalize(lon + self._ayanamsha_deg)  # sidereal → tropical
         return lon
 
-    def __init__(self, ar, ascmc, pls, hs, cusps, fort, syz, opts, ayanamsha_deg=0.0): #ar is from options
+    def __init__(self, ar, ascmc, pls, hs, cusps, fort, syz, opts, ayanamsha_deg=0.0, male=True): #ar is from options
         # chart.ayanamsha(도 단위) 보정값. (opts.ayanamsha != 0 인 경우에만 의미 있음)
         try:
             self._ayanamsha_deg = float(ayanamsha_deg) % 360.0
@@ -323,8 +346,7 @@ class ArabicParts:
                         refA, refB, refC = self._get_refordeg_triplet(ar[ii])
                         lonC = _re_resolve(C_id, (refA, refB, refC)[2])
 
-                # 밤차트면 B/C 스왑
-                if ar[ii][ArabicParts.DIURNAL] and (not fort.abovehorizon):
+                if ArabicParts.should_swap_formula(ar[ii], fort.abovehorizon, male):
                     lonB, lonC = lonC, lonB
 
                 diff = lonB - lonC
@@ -344,7 +366,7 @@ class ArabicParts:
                         continue
                 except:
                     pass
-                part = [ar[i][ArabicParts.NAME], (ar[i][ArabicParts.FORMULA][0], ar[i][ArabicParts.FORMULA][1], ar[i][ArabicParts.FORMULA][2]), ar[i][ArabicParts.DIURNAL], 0.0, [[-1,0],[-1,0],[-1,0]]]
+                part = [ar[i][ArabicParts.NAME], (ar[i][ArabicParts.FORMULA][0], ar[i][ArabicParts.FORMULA][1], ar[i][ArabicParts.FORMULA][2]), ar[i][ArabicParts.DIURNAL], 0.0, [[-1,0],[-1,0],[-1,0]], ArabicParts.is_gendered_item(ar[i])]
                 #calc longitude
                 #A
                 idA = part[ArabicParts.FORMULA][0]
@@ -637,8 +659,7 @@ class ArabicParts:
                                 else:
                                     lonC = _lof_lon()
  
-                # Diurnal 스위치: 밤차트(태양 지평선 아래)에서는 B와 C를 바꿔 A + C - B로
-                if part[ArabicParts.DIURNAL] and (not fort.abovehorizon):
+                if ArabicParts.should_swap_formula(ar[i], fort.abovehorizon, male):
                     tmp = lonB
                     lonB = lonC
                     lonC = tmp
@@ -815,5 +836,3 @@ class ArabicParts:
             share += 1
 
         return score, scoretxt, share
-
-

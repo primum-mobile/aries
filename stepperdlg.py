@@ -27,6 +27,8 @@ class StepperDlg(wx.Dialog):
 		self.soltime = soltime
 		self.options = options
 		self.caption = caption
+		self.ID_ARROW_PREV = wx.NewId()
+		self.ID_ARROW_NEXT = wx.NewId()
 
 		#main vertical sizer
 		mvsizer = wx.BoxSizer(wx.VERTICAL)
@@ -66,16 +68,82 @@ class StepperDlg(wx.Dialog):
 
 		self.Bind(wx.EVT_BUTTON, self.onIncr, id=ID_Incr)
 		self.Bind(wx.EVT_BUTTON, self.onDecr, id=ID_Decr)
+		self.Bind(wx.EVT_BUTTON, self.onClose, id=wx.ID_OK)
 		self.Bind(wx.EVT_BUTTON, self.onClose, id=wx.ID_CLOSE)
+		self.Bind(wx.EVT_CLOSE, self.onClose)
+		self.Bind(wx.EVT_MENU, self.onArrowPrev, id=self.ID_ARROW_PREV)
+		self.Bind(wx.EVT_MENU, self.onArrowNext, id=self.ID_ARROW_NEXT)
+		self.Bind(wx.EVT_CHAR_HOOK, self.onCharHook)
+		self.Bind(wx.EVT_KEY_DOWN, self.onKeyDown)
+		self.daytxt.Bind(wx.EVT_KEY_DOWN, self.onKeyDown)
+		btnIncr.Bind(wx.EVT_KEY_DOWN, self.onKeyDown)
+		btnDecr.Bind(wx.EVT_KEY_DOWN, self.onKeyDown)
+		btn.Bind(wx.EVT_KEY_DOWN, self.onKeyDown)
 
 		self.zt = chart.Time.LOCALMEAN
 		if self.soltime:
 			self.zt = chart.Time.LOCALAPPARENT
 		self.zh = 0
 		self.zm = 0
+		self._arrow_prev = self.onDecr
+		self._arrow_next = self.onIncr
+		self.SetAcceleratorTable(wx.AcceleratorTable([
+			(0, wx.WXK_LEFT, self.ID_ARROW_PREV),
+			(0, wx.WXK_RIGHT, self.ID_ARROW_NEXT),
+		]))
+
+	def onCharHook(self, event):
+		if event is None:
+			return
+		if event.AltDown() or event.ControlDown() or event.CmdDown():
+			event.Skip()
+			return
+		if event.GetKeyCode() == wx.WXK_TAB:
+			if hasattr(self.parent, "toggleComparisonView"):
+				self.parent.toggleComparisonView()
+			return
+		if event.GetKeyCode() == wx.WXK_LEFT:
+			self._arrow_prev(None)
+			return
+		if event.GetKeyCode() == wx.WXK_RIGHT:
+			self._arrow_next(None)
+			return
+		event.Skip()
+
+	def onKeyDown(self, event):
+		if event is None:
+			return
+		if event.AltDown() or event.ControlDown() or event.CmdDown():
+			event.Skip()
+			return
+		if event.GetKeyCode() == wx.WXK_TAB:
+			if hasattr(self.parent, "toggleComparisonView"):
+				self.parent.toggleComparisonView()
+			return
+		if event.GetKeyCode() == wx.WXK_LEFT:
+			self._arrow_prev(None)
+			return
+		if event.GetKeyCode() == wx.WXK_RIGHT:
+			self._arrow_next(None)
+			return
+		event.Skip()
+
+	def onArrowPrev(self, event):
+		self._arrow_prev(None)
+
+	def onArrowNext(self, event):
+		self._arrow_next(None)
+
+	def step_backward(self):
+		self._arrow_prev(None)
+
+	def step_forward(self):
+		self._arrow_next(None)
 
 
 	def onIncr(self, event):
+		self._arrow_prev = self.onDecr
+		self._arrow_next = self.onIncr
 		prev_age = self.age
 		self.age += 1
 		self.daytxt.SetValue(str(self.age))
@@ -104,6 +172,8 @@ class StepperDlg(wx.Dialog):
 
 
 	def onDecr(self, event):
+		self._arrow_prev = self.onDecr
+		self._arrow_next = self.onIncr
 		prev_age = self.age
 		self.age -= 1
 		self.daytxt.SetValue(str(self.age))
@@ -129,10 +199,19 @@ class StepperDlg(wx.Dialog):
 
 
 	def onClose(self, event):
-		self.Close()
-
-
-
-
-
-
+		try:
+			self.Hide()
+		except Exception:
+			pass
+		try:
+			if event is not None and hasattr(event, "Veto"):
+				event.Veto()
+		except Exception:
+			pass
+		try:
+			wx.CallAfter(self.parent.Raise)
+			wx.CallAfter(self.parent.SetFocus)
+			if hasattr(self.parent, "w"):
+				wx.CallAfter(self.parent.w.SetFocus)
+		except Exception:
+			pass

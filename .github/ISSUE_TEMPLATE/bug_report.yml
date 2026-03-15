@@ -1,0 +1,59 @@
+name: Bug report
+description: Report a reproducible defect in the app or build process.
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What is wrong?
+      placeholder: Short description of the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the exact menu path, chart type, or input files if relevant.
+      placeholder: |
+        1. Open ...
+        2. Click ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+      placeholder: What should have happened?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      placeholder: What actually happened?
+    validations:
+      required: true
+  - type: input
+    id: build
+    attributes:
+      label: Build or tag
+      description: App version, Git tag, or commit if known.
+      placeholder: v0.1.0 / main / commit hash
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS
+        - Windows
+        - Linux
+        - Unknown
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Crash logs, screenshots, horoscope files, or related context.

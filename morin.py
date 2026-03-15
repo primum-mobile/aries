@@ -61,6 +61,11 @@ import symbolsdlg
 import timespacedlg
 import transitmdlg
 import revolutionsdlg
+import revolutionsoptdlg
+import quickchartsoptdlg
+import stepalertsdlg
+import macfiledialog
+import horfileio
 import syzygydlg
 import suntransitsdlg
 import secdirdlg
@@ -124,6 +129,9 @@ import wx.lib.newevent
 import math #solar precession
 import circumambulationframe
 import fixstardirsframe
+import searchframe
+import wxcompat
+from morinus import _morinus_user_hors_dir, _morinus_user_images_dir, _copy_missing_tree, _BASE_DIR
 import os, sys, wx
 import sys  # 위쪽 import들 근처에 이미 있다면 생략
 import json
@@ -159,6 +167,551 @@ pdlock = _thread.allocate_lock()
 
 class MFrame(wx.Frame):
 
+	def _apply_custom_shortcut_labels(self):
+		try:
+			self.ctransits.SetLabel(self.ID_Transits, 'Transits\tT')
+		except Exception:
+			pass
+		try:
+			self.mcharts.SetLabel(self.ID_Revolutions, 'Solar Revolution\tR')
+		except Exception:
+			pass
+		try:
+			self.mcharts.SetLabel(self.ID_OtherRevolutions, 'Other Revolutions...')
+		except Exception:
+			pass
+		try:
+			self.mcharts.SetLabel(self.ID_ProfectionsChart, 'Profections Chart\tP')
+		except Exception:
+			pass
+		try:
+			self.mtable.SetLabel(self.ID_Profections, 'Profections')
+		except Exception:
+			pass
+		try:
+			self.mtable.SetLabel(self.ID_PrimaryDirs, 'Primary Directions Lists\tD')
+		except Exception:
+			pass
+
+	def _handle_quick_shortcut(self, keycode):
+		if keycode in (ord('T'), ord('t')):
+			if not self.splash:
+				self.onTransits(None)
+				return True
+		elif keycode in (ord('R'), ord('r')):
+			if not self.splash:
+				self.onQuickSolarRevolution()
+				return True
+		elif keycode in (ord('P'), ord('p')):
+			if not self.splash:
+				self.onProfectionsChart(None)
+				return True
+		elif keycode in (ord('D'), ord('d')):
+			if not self.splash:
+				self.onPrimaryDirs(None)
+				return True
+		return False
+
+	def _apply_radix_overlay_mode(self, new_value):
+		if self.splash or self.horoscope is None:
+			return False
+		if self.horoscope.htype != chart.Chart.RADIX:
+			return False
+
+		current = getattr(self.options, 'showfixstars', options.Options.NONE)
+		if current == new_value:
+			return False
+
+		self.options.showfixstars = new_value
+		self.enableOptMenus(True)
+
+		if new_value == options.Options.ARABICPARTS:
+			try:
+				self.horoscope.calcArabicParts()
+			except Exception:
+				pass
+		elif new_value in (options.Options.ANTIS, options.Options.CANTIS, options.Options.DODECATEMORIA):
+			try:
+				self.horoscope.calcAntiscia()
+			except Exception:
+				pass
+
+		if getattr(self.options, 'autosave', False):
+			try:
+				if self.options.saveAppearance1():
+					self.moptions.Enable(self.ID_SaveOpts, True)
+			except Exception:
+				pass
+
+		self.drawBkg()
+		self.Refresh()
+		self.refreshOpenWindows()
+		return True
+
+	def _refresh_radix_after_appearance_change(self):
+		self.enableOptMenus(True)
+		if getattr(self.options, 'autosave', False):
+			try:
+				if self.options.saveAppearance1():
+					self.moptions.Enable(self.ID_SaveOpts, True)
+			except Exception:
+				pass
+		self.drawBkg()
+		self.Refresh()
+		self.refreshOpenWindows()
+
+	def _toggle_radix_display_option(self, attr_name):
+		if self.splash or self.horoscope is None or self.horoscope.htype != chart.Chart.RADIX:
+			return False
+		if not hasattr(self.options, attr_name):
+			return False
+		setattr(self.options, attr_name, not bool(getattr(self.options, attr_name)))
+		self._refresh_radix_after_appearance_change()
+		return True
+
+	def _cycle_natal_secondary_ring(self):
+		if self.splash or self.horoscope is None:
+			return False
+		if self.horoscope.htype != chart.Chart.RADIX:
+			return False
+
+		current = getattr(self.options, 'showfixstars', options.Options.NONE)
+		cycle = (
+			options.Options.NONE,
+			options.Options.DODECATEMORIA,
+			options.Options.ARABICPARTS,
+		)
+		try:
+			index = cycle.index(current)
+		except ValueError:
+			index = 0
+		new_value = cycle[(index + 1) % len(cycle)]
+		return self._apply_radix_overlay_mode(new_value)
+
+	def onCycleNatalSecondaryRing(self, event):
+		if self._cycle_natal_secondary_ring():
+			return
+		if event is not None:
+			event.Skip()
+
+	def onRadixOverlayMenu(self, event):
+		mode = self._radix_overlay_mode_by_id.get(event.GetId())
+		if mode is None:
+			event.Skip()
+			return
+		if not self._apply_radix_overlay_mode(mode):
+			event.Skip()
+
+	def onRadixDisplayToggleMenu(self, event):
+		toggle_spec = self._radix_display_toggle_by_id.get(event.GetId())
+		if toggle_spec is None:
+			event.Skip()
+			return
+		if not self._toggle_radix_display_option(toggle_spec[0]):
+			event.Skip()
+
+	def onChartContextMenu(self, event):
+		if self.splash or self.horoscope is None or self.horoscope.htype != chart.Chart.RADIX:
+			if event is not None:
+				event.Skip()
+			return
+
+		menu = wx.Menu()
+		current = getattr(self.options, 'showfixstars', options.Options.NONE)
+		for item_id, label, mode in self._radix_overlay_menu_specs:
+			item = menu.AppendRadioItem(item_id, label)
+			if current == mode:
+				item.Check(True)
+		menu.AppendSeparator()
+		for item_id, (attr_name, label) in self._radix_display_toggle_by_id.items():
+			item = menu.AppendCheckItem(item_id, label)
+			item.Check(bool(getattr(self.options, attr_name, False)))
+
+		pos = wx.DefaultPosition
+		try:
+			screen_pos = event.GetPosition()
+			if screen_pos == wx.DefaultPosition or getattr(screen_pos, 'x', -1) < 0 or getattr(screen_pos, 'y', -1) < 0:
+				screen_pos = wx.GetMousePosition()
+			pos = self.ScreenToClient(screen_pos)
+		except Exception:
+			pass
+
+		self.PopupMenu(menu, pos)
+		menu.Destroy()
+
+	def onCharHook(self, event):
+		if event is None:
+			return
+
+		if event.AltDown() or event.ControlDown() or event.CmdDown():
+			event.Skip()
+			return
+
+		if self._handle_quick_shortcut(event.GetKeyCode()):
+			return
+
+		event.Skip()
+
+	def onKeyDown(self, event):
+		if event is None:
+			return
+
+		if event.AltDown() or event.ControlDown() or event.CmdDown():
+			event.Skip()
+			return
+
+		keycode = event.GetKeyCode()
+		if self._handle_quick_shortcut(keycode):
+			return
+
+		event.Skip()
+
+	def _get_configured_solar_return_year(self):
+		now = datetime.datetime.now()
+		natal_month = self.horoscope.time.month
+		natal_day = self.horoscope.time.day
+
+		active_year = now.year
+		if (now.month, now.day) < (natal_month, natal_day):
+			active_year -= 1
+
+		if getattr(self.options, 'revolutions_solaryearmode', 0) == 1:
+			return active_year + 1
+		return active_year
+
+	def _should_prompt_quickcharts(self):
+		return getattr(self.options, 'quickcharts_prompt', True)
+
+	def _current_natal_place(self):
+		return self.horoscope.place
+
+	def _chart_time_from_dialog(self, dlg, place, full=True):
+		plus = dlg.pluscb.GetCurrentSelection() != 1
+		tzauto = bool(
+			hasattr(dlg, 'autotzckb')
+			and dlg.zonecb.GetCurrentSelection() == chart.Time.ZONE
+			and dlg.autotzckb.GetValue()
+		)
+		tzid = getattr(dlg, 'tzid', '')
+		return chart.Time(
+			int(dlg.year.GetValue()),
+			int(dlg.month.GetValue()),
+			int(dlg.day.GetValue()),
+			int(dlg.hour.GetValue()),
+			int(dlg.minute.GetValue()),
+			int(dlg.sec.GetValue()),
+			dlg.timeckb.GetValue(),
+			dlg.calcb.GetCurrentSelection(),
+			dlg.zonecb.GetCurrentSelection(),
+			plus,
+			int(dlg.zhour.GetValue()),
+			int(dlg.zminute.GetValue()),
+			dlg.daylightckb.GetValue(),
+			place,
+			full,
+			tzid=tzid,
+			tzauto=tzauto,
+		)
+
+	def _current_chart_datetime(self):
+		return datetime.datetime.now()
+
+	def _current_secondary_age(self):
+		now = self._current_chart_datetime()
+		birth_tuple = (
+			self.horoscope.time.origmonth,
+			self.horoscope.time.origday,
+			self.horoscope.time.hour,
+			self.horoscope.time.minute,
+			self.horoscope.time.second,
+		)
+		now_tuple = (now.month, now.day, now.hour, now.minute, now.second)
+		age = now.year - self.horoscope.time.origyear
+		if now_tuple < birth_tuple:
+			age -= 1
+		return max(0, age)
+
+	def _open_current_transits(self):
+		now = self._current_chart_datetime()
+		place = self._current_natal_place()
+		time = chart.Time(
+			now.year, now.month, now.day, now.hour, now.minute, now.second,
+			False, self.horoscope.time.cal, self.horoscope.time.zt,
+			self.horoscope.time.plus, self.horoscope.time.zh, self.horoscope.time.zm,
+			False, place, False,
+			tzid=getattr(self.horoscope.time, 'tzid', ''),
+			tzauto=getattr(self.horoscope.time, 'tzauto', False)
+		)
+		trans = chart.Chart(self.horoscope.name, self.horoscope.male, time, place, chart.Chart.TRANSIT, '', self.options, False)
+		tw = transitframe.TransitFrame(self, self.title.replace(mtexts.typeList[self.horoscope.htype], mtexts.typeList[chart.Chart.TRANSIT]+' ('+str(time.year)+'.'+common.common.months[time.month-1]+'.'+str(time.day)+' '+str(time.hour)+':'+str(time.minute).zfill(2)+':'+str(time.second).zfill(2)+')'), trans, self.horoscope, self.options, transitframe.TransitFrame.COMPOUND)
+		tw.navigation_units = ('day', 'hour', 'minute')
+		tw.navigation_title_label = mtexts.typeList[chart.Chart.TRANSIT]
+		tw.Show(True)
+
+	def _open_current_secondary_dirs(self):
+		age = self._current_secondary_age()
+		direct = True
+		soltime = True
+		zt = chart.Time.LOCALAPPARENT
+		zh = 0
+		zm = 0
+		sdir = secdir.SecDir(self.horoscope, age, direct, soltime)
+		y, m, d, hour, minute, second = sdir.compute()
+		place = self._current_natal_place()
+		time = chart.Time(y, m, d, hour, minute, second, False, self.horoscope.time.cal, zt, True, zh, zm, False, place, False)
+		secdirchart = chart.Chart(self.horoscope.name, self.horoscope.male, time, place, chart.Chart.TRANSIT, '', self.options, False)
+		sf = secdirframe.SecDirFrame(self, self.title.replace(mtexts.typeList[self.horoscope.htype], mtexts.txts['SecondaryDir']+' ('+str(time.year)+'.'+common.common.months[time.month-1]+'.'+str(time.day)+' '+str(time.hour)+':'+str(time.minute).zfill(2)+':'+str(time.second).zfill(2)+')'), secdirchart, self.horoscope, self.options)
+		sf.Show(True)
+		stepdlg = stepperdlg.StepperDlg(sf, self.horoscope, age, direct, soltime, self.options, self.title)
+		sf._stepper = stepdlg
+		stepdlg.CenterOnParent()
+		stepdlg.Show(True)
+
+	def _open_current_profections_chart(self):
+		now = self._current_chart_datetime()
+		y = now.year
+		m = now.month
+		d = now.day
+		h = now.hour
+		mi = now.minute
+		s = now.second
+		proftype = chart.Chart.YEAR
+		t = h+mi/60.0+s/3600.0
+
+		if self.options.zodprof:
+			prof = profections.Profections(self.horoscope, y, m, d, t)
+			pchart = chart.Chart(self.horoscope.name, self.horoscope.male, self.horoscope.time, self.horoscope.place, chart.Chart.PROFECTION, '', self.options, False, proftype)
+			pchart.calcProfPos(prof)
+		else:
+			if not self.options.usezodprojsprof and (y == self.horoscope.time.year or (y-self.horoscope.time.year) % 12 == 0) and m == self.horoscope.time.month and d == self.horoscope.time.day:
+				pchart = self.horoscope
+			else:
+				prof = munprofections.MunProfections(self.horoscope, y, m, d, t)
+				proflondeg, proflonmin, proflonsec = util.decToDeg(prof.lonZ)
+				profplace = chart.Place(mtexts.txts['Profections'], proflondeg, proflonmin, proflonsec, prof.east, self.horoscope.place.deglat, self.horoscope.place.minlat, self.horoscope.place.seclat, self.horoscope.place.north, self.horoscope.place.altitude)
+				pchart = chart.Chart(self.horoscope.name, self.horoscope.male, self.horoscope.time, profplace, chart.Chart.PROFECTION, '', self.options, False, proftype, self.options.usezodprojsprof)
+				pchartpls = chart.Chart(self.horoscope.name, self.horoscope.male, self.horoscope.time, self.horoscope.place, chart.Chart.PROFECTION, '', self.options, False, proftype, self.options.usezodprojsprof)
+				pchart.planets.calcMundaneProfPos(pchart.houses.ascmc2, pchartpls.planets.planets, self.horoscope.place.lat, self.horoscope.obl[0])
+				pchart.fortune.calcMundaneProfPos(pchart.houses.ascmc2, pchartpls.fortune, self.horoscope.place.lat, self.horoscope.obl[0])
+				pchart.calcAspMatrix()
+
+		pf = profectionsframe.ProfectionsFrame(self, self.title.replace(mtexts.typeList[self.horoscope.htype], mtexts.txts['Profections']+' ('+str(y)+'.'+str(m)+'.'+str(d)+' '+str(h).zfill(2)+':'+str(mi).zfill(2)+':'+str(s).zfill(2)+')'), pchart, self.horoscope, self.options, (y, m, d, h, mi, s))
+		pf.Show(True)
+		pstepdlg = profectionstepperdlg.ProfectionStepperDlg(pf, self.horoscope, y, m, d, t, self.options, self.title)
+		pf._stepper = pstepdlg
+		pstepdlg.CenterOnParent()
+		pstepdlg.Show(True)
+		wx.CallAfter(pf.Raise)
+		wx.CallAfter(pf.SetFocus)
+		try:
+			wx.CallAfter(pf.w.SetFocus)
+		except Exception:
+			pass
+
+	def _build_revolution_place(self, dlg):
+		direc = dlg.placerbE.GetValue()
+		hemis = dlg.placerbN.GetValue()
+		return chart.Place(
+			dlg.birthplace.GetValue(),
+			int(dlg.londeg.GetValue()),
+			int(dlg.lonmin.GetValue()),
+			0,
+			direc,
+			int(dlg.latdeg.GetValue()),
+			int(dlg.latmin.GetValue()),
+			0,
+			hemis,
+			0
+		)
+
+	def _create_revolution_frame(self, revtype, time, place):
+		revolution = chart.Chart(self.horoscope.name, self.horoscope.male, time, place, revtype, '', self.options, False)
+		title = self.title.replace(
+			mtexts.typeList[self.horoscope.htype],
+			mtexts.typeList[revtype]+' ('+str(time.year)+'.'+common.common.months[time.month-1]+'.'+str(time.day)+' '+str(time.hour)+':'+str(time.minute).zfill(2)+':'+str(time.second).zfill(2)+'('+mtexts.txts['GMT']+'))'
+		)
+		rw = transitframe.TransitFrame(self, title, revolution, self.horoscope, self.options)
+		rw.Show(True)
+		wx.CallAfter(rw.Raise)
+		wx.CallAfter(rw.SetFocus)
+		return rw
+
+	def _install_solar_revolution_stepper(self, frame, place, plus, base_year):
+		self._rev_frame = frame
+		self._rev_ctx = {'place': place, 'plus': plus, 'revtype': chart.Chart.SOLAR}
+		self._rev_year = int(base_year)
+
+		try:
+			if hasattr(self, "_rev_stepper") and self._rev_stepper:
+				self._rev_stepper.Destroy()
+				self._rev_stepper = None
+		except Exception:
+			pass
+
+		def _on_close(evt):
+			try:
+				if hasattr(self, "_rev_stepper") and self._rev_stepper:
+					self._rev_stepper.Destroy()
+					self._rev_stepper = None
+			except Exception:
+				pass
+			evt.Skip()
+
+		self._rev_frame.Bind(wx.EVT_CLOSE, _on_close)
+
+		def _set_rev_year_and_refresh(new_year):
+			revs2 = revolutions.Revolutions()
+			ok = revs2.compute(revolutions.Revolutions.SOLAR, int(new_year), self.horoscope.time.month, self.horoscope.time.day, self.horoscope)
+			if not ok:
+				return
+
+			y, m, d, hh, mi, ss = revs2.t[0], revs2.t[1], revs2.t[2], revs2.t[3], revs2.t[4], revs2.t[5]
+			try:
+				if self.options.ayanamsha != 0:
+					y, m, d, hh, mi, ss = self.calcPrecNutCorrectedRevolution(revs2, astrology.SE_SUN, topo_place=self._rev_ctx['place'])
+			except Exception:
+				pass
+
+			time2 = chart.Time(y, m, d, hh, mi, ss, False, self.horoscope.time.cal, chart.Time.GREENWICH, self._rev_ctx['plus'], 0, 0, False, self._rev_ctx['place'], False)
+			chart2 = chart.Chart(self.horoscope.name, self.horoscope.male, time2, self._rev_ctx['place'], self._rev_ctx['revtype'], '', self.options, False)
+			newtitle2 = self.title.replace(
+				mtexts.typeList[self.horoscope.htype],
+				mtexts.typeList[self._rev_ctx['revtype']]+' ('+str(time2.year)+'.'+common.common.months[time2.month-1]+'.'+str(time2.day)+' '+str(time2.hour)+':'+str(time2.minute).zfill(2)+':'+str(time2.second).zfill(2)+'('+mtexts.txts['GMT']+'))'
+			)
+
+			try:
+				self._rev_frame.change_chart(chart2)
+				self._rev_frame.SetTitle(newtitle2)
+				wx.CallAfter(self._rev_frame.Raise)
+				wx.CallAfter(self._rev_frame.SetFocus)
+			except Exception:
+				try:
+					self._rev_frame.Destroy()
+				except Exception:
+					pass
+				self._rev_frame = transitframe.TransitFrame(self, newtitle2, chart2, self.horoscope, self.options)
+				self._rev_frame.Show(True)
+				wx.CallAfter(self._rev_frame.Raise)
+				wx.CallAfter(self._rev_frame.SetFocus)
+				self._rev_frame.Bind(wx.EVT_CLOSE, _on_close)
+
+			self._rev_year = int(new_year)
+
+		from revolutionsdlg import RevolutionYearStepper
+		self._rev_stepper = RevolutionYearStepper(parent=self, get_year_cb=lambda: self._rev_year, set_year_cb=_set_rev_year_and_refresh)
+		self._rev_frame._stepper = self._rev_stepper
+		self._rev_stepper.Show(True)
+		try:
+			self._rev_stepper.CentreOnScreen()
+		except Exception:
+			self._rev_stepper.CenterOnScreen()
+		self._rev_stepper.Raise()
+
+	def _open_configured_solar_revolution(self):
+		revs = revolutions.Revolutions()
+		target_year = self._get_configured_solar_return_year()
+		ok = revs.compute(revolutions.Revolutions.SOLAR, target_year, self.horoscope.time.month, self.horoscope.time.day, self.horoscope)
+		if not ok:
+			dlgm = wx.MessageDialog(self, mtexts.txts['CouldnotComputeRevolution'], mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
+			dlgm.ShowModal()
+			dlgm.Destroy()
+			return
+
+		t1, t2, t3, t4, t5, t6 = revs.t[0], revs.t[1], revs.t[2], revs.t[3], revs.t[4], revs.t[5]
+		if self.options.ayanamsha != 0:
+			try:
+				t1, t2, t3, t4, t5, t6 = self.calcPrecNutCorrectedRevolution(revs, astrology.SE_SUN)
+			except Exception:
+				pass
+
+		ti = (t1, t2, t3, t4, t5, t6, chart.Time.GREGORIAN, chart.Time.GREENWICH, 0, 0)
+		place = self.horoscope.place
+		plus = True
+
+		if getattr(self.options, 'revolutions_solarlocationmode', 0) == 1:
+			dlg = timespacedlg.TimeSpaceDlg(self, mtexts.txts['Revolutions'], self.options.langid)
+			dlg.initialize(self.horoscope, ti)
+			dlg.CenterOnParent()
+			if dlg.ShowModal() != wx.ID_OK:
+				dlg.Destroy()
+				return
+			place = self._build_revolution_place(dlg)
+			if self.options.ayanamsha != 0:
+				try:
+					t1, t2, t3, t4, t5, t6 = self.calcPrecNutCorrectedRevolution(revs, astrology.SE_SUN, topo_place=place, seed=(t1, t2, t3, t4, t5, t6))
+				except Exception:
+					pass
+			if dlg.pluscb.GetCurrentSelection() == 1:
+				plus = False
+			dlg.Destroy()
+		else:
+			if self.options.ayanamsha != 0:
+				try:
+					t1, t2, t3, t4, t5, t6 = self.calcPrecNutCorrectedRevolution(revs, astrology.SE_SUN, topo_place=place, seed=(t1, t2, t3, t4, t5, t6))
+				except Exception:
+					pass
+
+		time = chart.Time(t1, t2, t3, t4, t5, t6, False, self.horoscope.time.cal, chart.Time.GREENWICH, plus, 0, 0, False, place, False)
+		frame = self._create_revolution_frame(chart.Chart.SOLAR, time, place)
+		self._install_solar_revolution_stepper(frame, place, plus, t1)
+
+	def _activate_loaded_chart(self, chrt, fpath, dpath):
+		self.horoscope = chrt
+		self.splash = False
+		self.drawBkg()
+		self.Refresh()
+		wx.CallAfter(self.SetFocus)
+		self.fpathhors = dpath
+		self.fpath = fpath
+		self.enableMenus(True)
+		self.handleStatusBar(True)
+		self.handleCaption(True)
+		self.dirty = False
+		self.filehistory.AddFileToHistory(fpath)
+
+	def _load_startup_chart_if_configured(self):
+		startup_path = getattr(self.options, 'startupchart', '')
+		if not startup_path:
+			return
+		if not os.path.exists(startup_path):
+			self.options.startupchart = ''
+			try:
+				self.options.saveStartupChart()
+			except Exception:
+				pass
+			return
+		dpath = os.path.dirname(startup_path)
+		chrt = self.subLoad(startup_path, dpath, True)
+		if chrt is not None:
+			self._activate_loaded_chart(chrt, startup_path, dpath)
+
+	def onQuickSolarRevolution(self, event=None):
+		if wx.Platform == '__WXMSW__' and not self.splash:
+			self.handleStatusBar(True)
+
+		if self.splash or self.horoscope.time.bc:
+			dlgm = wx.MessageDialog(self, mtexts.txts['NotAvailable'], '', wx.OK|wx.ICON_INFORMATION)
+			dlgm.ShowModal()
+			dlgm.Destroy()
+			return
+
+		wx.BeginBusyCursor()
+		try:
+			try:
+				self._open_configured_solar_revolution()
+			except Exception:
+				import traceback
+				traceback.print_exc()
+				dlgm = wx.MessageDialog(self, 'Solar Revolution failed. Details were written to morinus.log.', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
+				dlgm.ShowModal()
+				dlgm.Destroy()
+		finally:
+			if wx.IsBusy():
+				wx.EndBusyCursor()
+
+	def onCloseWindowShortcut(self, event):
+		self.Close()
+
 	def _close_non_main_frames(self):
 		import wx
 		# 메인 프레임(self)을 제외한 모든 TopLevel Frame을 닫는다.
@@ -181,6 +734,11 @@ class MFrame(wx.Frame):
 # Roberto Size changed  V 7.X.X
 		wx.Frame.__init__(self, parent, id, title, wx.DefaultPosition, wx.Size(656, 560))
 # ###########################################
+		wxcompat.apply_frame_screen_size(self, 0.80, (656, 560), square=True)
+		try:
+			self.SetWindowStyle(self.GetWindowStyle() | wx.WANTS_CHARS)
+		except Exception:
+			pass
 		face = {6: 'Noto Sans SC', 7: 'Noto Sans TC', 8: 'Noto Sans KR'}.get(opts.langid, 'FreeSans')
 		self.SetFont(wx.Font(9, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL, False, face))
 
@@ -189,11 +747,36 @@ class MFrame(wx.Frame):
 		self.buffer = wx.Bitmap(1, 1)
 
 		self.fpath = ''
-		self.fpathhors = u'Hors'
-		self.fpathimgs = u'Images'
+		self.fpathhors = _morinus_user_hors_dir()
+		self.fpathimgs = _morinus_user_images_dir()
+		_copy_missing_tree(os.path.join(_BASE_DIR, 'Hors'), self.fpathhors)
 		self.title = title
 		self.origtitle = title
 		self.hortitle = title
+		self.ID_NatalSecondaryCycle = 6100
+		self.ID_RadixOverlayNone = 6101
+		self.ID_RadixOverlayFixStars = 6102
+		self.ID_RadixOverlayDodecatemoria = 6103
+		self.ID_RadixOverlayAntiscia = 6104
+		self.ID_RadixOverlayContraAntiscia = 6105
+		self.ID_RadixOverlayArabicParts = 6106
+		self.ID_RadixTogglePlanetaryHour = 6107
+		self.ID_RadixToggleHousesystem = 6108
+		self.ID_RadixToggleInformation = 6109
+		self._radix_overlay_menu_specs = (
+			(self.ID_RadixOverlayNone, 'Simple Chart', options.Options.NONE),
+			(self.ID_RadixOverlayDodecatemoria, 'Dodecatemoria', options.Options.DODECATEMORIA),
+			(self.ID_RadixOverlayArabicParts, 'Arabic parts', options.Options.ARABICPARTS),
+			(self.ID_RadixOverlayAntiscia, 'Antiscia', options.Options.ANTIS),
+			(self.ID_RadixOverlayContraAntiscia, 'Contra-antiscia', options.Options.CANTIS),
+			(self.ID_RadixOverlayFixStars, 'Fixed stars', options.Options.FIXSTARS),
+		)
+		self._radix_overlay_mode_by_id = {item_id: mode for item_id, _label, mode in self._radix_overlay_menu_specs}
+		self._radix_display_toggle_by_id = {
+			self.ID_RadixTogglePlanetaryHour: ('planetarydayhour', 'Planetary hour'),
+			self.ID_RadixToggleHousesystem: ('housesystem', 'House system label'),
+			self.ID_RadixToggleInformation: ('information', 'Chart information'),
+		}
 		
 		self.options = opts
 		import importlib
@@ -220,7 +803,6 @@ class MFrame(wx.Frame):
 		common.common.update(self.options)
 
 		self.CenterOnScreen()
-		self.SetMinSize((200,200))
 		self.SetBackgroundColour(self.options.clrbackground)
 
 		self.dirty = False
@@ -254,6 +836,7 @@ class MFrame(wx.Frame):
 		self.ID_Decennials = 187
 		self.ID_FixStarAngleDirs = 185  # Angular directions of fixed stars
 		self.ID_FixStarsParallels = 188
+		self.ID_SearchModule = 189
 		#Charts-menu
 		self.ID_Transits, self.ID_Revolutions, self.ID_SunTransits, self.ID_SecondaryDirs, self.ID_Elections, self.ID_SquareChart, self.ID_ProfectionsChart, self.ID_MundaneChart = range(140, 148)
 		self.ID_SecProgMenu = 5000  # Secondary progressions (submenu header)
@@ -280,9 +863,15 @@ class MFrame(wx.Frame):
 		#Options-menu
 # ###########################################
 # Roberto change  V 7.2.0
-		(self.ID_Appearance1, self.ID_Appearance2, self.ID_Symbols, self.ID_Dignities, self.ID_MinorDignities, self.ID_Triplicities, self.ID_Terms, 
-		self.ID_Decans, self.ID_Almutens, self.ID_ChartAlmuten, self.ID_Topical, self.ID_Colors, self.ID_Ayanamsha, self.ID_HouseSystem, 
+		(self.ID_Appearance1, self.ID_Appearance2, self.ID_Symbols, self.ID_Dignities, self.ID_MinorDignities, self.ID_Triplicities, self.ID_Terms,
+		self.ID_Decans, self.ID_Almutens, self.ID_ChartAlmuten, self.ID_Topical, self.ID_Colors, self.ID_Ayanamsha, self.ID_HouseSystem,
 		self.ID_Nodes, self.ID_Orbs, self.ID_PrimaryDirsOpt, self.ID_PrimaryKeys, self.ID_PDsInChartOpt, self.ID_PDsInChartOptZod, self.ID_PDsInChartOptMun, self.ID_LotOfFortune, self.ID_ArabicParts, self.ID_Syzygy, self.ID_FixStarsOpt, self.ID_ProfectionsOpt, self.ID_FirdariaOpt, self.ID_DefLocationOpt, self.ID_Languages, self.ID_AutoSaveOpts, self.ID_SaveOpts, self.ID_Reload) = range(151, 183)
+		self.ID_RevolutionsOpt = 1830
+		self.ID_OtherRevolutions = 1831
+		self.ID_QuickChartsOpt = 1832
+		self.ID_SetStartupChart = 1833
+		self.ID_ClearStartupChart = 1834
+		self.ID_StepAlertsOpt = 1835
 # ###########################################
 
 		self.ID_Housesystem1, self.ID_Housesystem2, self.ID_Housesystem3, self.ID_Housesystem4, self.ID_Housesystem5, self.ID_Housesystem6, self.ID_Housesystem7, self.ID_Housesystem8, self.ID_Housesystem9, self.ID_Housesystem10, self.ID_Housesystem11, self.ID_Housesystem12, self.ID_Housesystem13 = range(1050, 1063)
@@ -312,6 +901,8 @@ class MFrame(wx.Frame):
 		self.hsave.Append(self.ID_Save,          mtexts.menutxts['HMSave'],       mtexts.menutxts['HMSaveDoc'])
 		self.hsave.Append(self.ID_SaveAsBitmap,  mtexts.menutxts['HMSaveAsBmp'],  mtexts.menutxts['HMSaveAsBmpDoc'])
 		self.mhoros.Append(self.ID_SaveMenu, mtexts.txts['Save'], self.hsave)
+		self.mhoros.Append(self.ID_SetStartupChart, 'Use Current As Startup Chart', 'Load the current chart automatically at startup')
+		self.mhoros.Append(self.ID_ClearStartupChart, 'Clear Startup Chart', 'Clear the automatic startup chart')
 
 		self.mhoros.Append(self.ID_Synastry, mtexts.menutxts['HMSynastry'], mtexts.menutxts['HMSynastryDoc'])
 		self.mhoros.Append(self.ID_FindTime, mtexts.menutxts['HMFindTime'], mtexts.menutxts['HMFindTimeDoc'])
@@ -384,6 +975,7 @@ class MFrame(wx.Frame):
 
 		# Un-grouped (요청대로 단독 유지)
 		self.mtable.Append(self.ID_ExactTransits, mtexts.menutxts['TMExactTransits'], mtexts.menutxts['TMExactTransitsDoc'])
+		self.mtable.Append(self.ID_SearchModule, mtexts.txts.get('Search', 'Search')+'...\tS', 'Open the multi-technique search pane')
 
 		#Charts-menu
 		# 앞부분: 기본 항목 먼저
@@ -401,7 +993,8 @@ class MFrame(wx.Frame):
 		self.csecprog.Append(self.ID_SecProgPositions, mtexts.menutxts['PMPositionForDate'],  mtexts.menutxts['PMPositionForDateDoc'])
 		self.mcharts.Append(self.ID_SecProgMenu, mtexts.txts['SecondaryDirs'], self.csecprog)
 
-		self.mcharts.Append(self.ID_Revolutions,     mtexts.menutxts['PMRevolutions'],     mtexts.menutxts['PMRevolutionsDoc'])
+		self.mcharts.Append(self.ID_Revolutions,     'Solar Revolution\tR',     'Open solar revolution with saved settings')
+		self.mcharts.Append(self.ID_OtherRevolutions, 'Other Revolutions...', 'Open the legacy revolutions dialog')
 
 		# Transits 서브메뉴 신설
 		self.ctransits = wx.Menu()
@@ -429,6 +1022,7 @@ class MFrame(wx.Frame):
 		# [Appearance1] submenu: Appearance1/Speculum(=Appearance2)/Colors/Symbols
 		self.o_appearance = wx.Menu()
 		self.o_appearance.Append(self.ID_Appearance1, mtexts.menutxts['OMAppearance1'], mtexts.menutxts['OMAppearance1Doc'])
+		self.o_appearance.Append(self.ID_NatalSecondaryCycle, 'Cycle secondary view\tCtrl+G', 'Cycles the radix secondary view')
 
 		self.o_appearance.Append(self.ID_Colors,      mtexts.menutxts['OMColors'],      mtexts.menutxts['OMColorsDoc'])
 		self.o_appearance.Append(self.ID_Symbols,     mtexts.menutxts['OMSymbols'],     mtexts.menutxts['OMSymbolsDoc'])
@@ -489,7 +1083,10 @@ class MFrame(wx.Frame):
 
 # Roberto change V 7.2.0
 		self.moptions.Append(self.ID_DefLocationOpt, mtexts.menutxts['OMDefLocationOpt'], mtexts.menutxts['OMDefLocationOptDoc'])
-# ###########################################		
+		# ###########################################
+		self.moptions.Append(self.ID_RevolutionsOpt, 'Solar Revolution', 'Shows solar revolution settings')
+		self.moptions.Append(self.ID_QuickChartsOpt, 'Supplementary Charts', 'Shows quick supplemental chart settings')
+		self.moptions.Append(self.ID_StepAlertsOpt, 'Stepping Alerts', 'Shows exact stepping alert settings')
 		self.moptions.Append(self.ID_Languages, mtexts.menutxts['OMLanguages'], mtexts.menutxts['OMLanguagesDoc'])
 		self.moptions.AppendSeparator()
 		self.autosave = self.moptions.Append(self.ID_AutoSaveOpts, mtexts.menutxts['OMAutoSave'], mtexts.menutxts['OMAutoSaveDoc'], wx.ITEM_CHECK)
@@ -551,6 +1148,7 @@ class MFrame(wx.Frame):
 		else:
 			self.Bind(wx.EVT_ERASE_BACKGROUND, self.onEraseBackground)
 
+		self.Bind(wx.EVT_CONTEXT_MENU, self.onChartContextMenu)
 		self.Bind(wx.EVT_SIZE, self.onSize)
 		self.Bind(wx.EVT_MENU_OPEN, self.onMenuOpen)
 		#The events EVT_MENU_OPEN and CLOSE are not called on windows in case of accelarator-keys
@@ -579,6 +1177,7 @@ class MFrame(wx.Frame):
 		self.Bind(wx.EVT_MENU, self.onStrip, id=self.ID_Strip)
 		self.Bind(wx.EVT_MENU, self.onPlanetaryHours, id=self.ID_PlanetaryHours)
 		self.Bind(wx.EVT_MENU, self.onExactTransits, id=self.ID_ExactTransits)
+		self.Bind(wx.EVT_MENU, self.onSearchModule, id=self.ID_SearchModule)
 		self.Bind(wx.EVT_MENU, self.onProfections, id=self.ID_Profections)
 # ###########################################
 # Roberto change V 7.3.0
@@ -598,7 +1197,8 @@ class MFrame(wx.Frame):
 		self.Bind(wx.EVT_MENU, self.onFixStarAngleDirs, id=self.ID_FixStarAngleDirs)
 		self.Bind(wx.EVT_MENU, self.onEclipses, id=self.ID_Eclipses)
 		self.Bind(wx.EVT_MENU, self.onTransits, id=self.ID_Transits)
-		self.Bind(wx.EVT_MENU, self.onRevolutions, id=self.ID_Revolutions)
+		self.Bind(wx.EVT_MENU, self.onQuickSolarRevolution, id=self.ID_Revolutions)
+		self.Bind(wx.EVT_MENU, self.onRevolutions, id=self.ID_OtherRevolutions)
 		self.Bind(wx.EVT_MENU, self.onSunTransits, id=self.ID_SunTransits)
 		self.Bind(wx.EVT_MENU, self.onSecondaryDirs, id=self.ID_SecondaryDirs)
 		self.Bind(wx.EVT_MENU, self.onSecondaryDirs, id=self.ID_SecProgChart)
@@ -630,10 +1230,15 @@ class MFrame(wx.Frame):
 # Roberto change  V 7.3.0
 		self.Bind(wx.EVT_MENU, self.onFirdariaOpt, id=self.ID_FirdariaOpt)
 # ###########################################	
-# ###########################################
-# Roberto change  V 7.2.0
+		# ###########################################
+		# Roberto change  V 7.2.0
 		self.Bind(wx.EVT_MENU, self.onDefLocationOpt, id=self.ID_DefLocationOpt)
-# ###########################################		
+		# ###########################################		
+		self.Bind(wx.EVT_MENU, self.onRevolutionsOpt, id=self.ID_RevolutionsOpt)
+		self.Bind(wx.EVT_MENU, self.onQuickChartsOpt, id=self.ID_QuickChartsOpt)
+		self.Bind(wx.EVT_MENU, self.onStepAlertsOpt, id=self.ID_StepAlertsOpt)
+		self.Bind(wx.EVT_MENU, self.onSetStartupChart, id=self.ID_SetStartupChart)
+		self.Bind(wx.EVT_MENU, self.onClearStartupChart, id=self.ID_ClearStartupChart)
 		
 		
 		self.Bind(wx.EVT_MENU, self.onLanguages, id=self.ID_Languages)
@@ -649,7 +1254,17 @@ class MFrame(wx.Frame):
 		self.Bind(wx.EVT_MENU, self.onHelp, id=self.ID_Help)
 		self.Bind(wx.EVT_MENU, self.onAbout, id=self.ID_About)
 		self.Bind(wx.EVT_MENU, self.onAngleAtBirth, id=self.ID_AngleAtBirth)
+		self.Bind(wx.EVT_MENU, self.onCycleNatalSecondaryRing, id=self.ID_NatalSecondaryCycle)
+		for item_id in self._radix_overlay_mode_by_id:
+			self.Bind(wx.EVT_MENU, self.onRadixOverlayMenu, id=item_id)
+		for item_id in self._radix_display_toggle_by_id:
+			self.Bind(wx.EVT_MENU, self.onRadixDisplayToggleMenu, id=item_id)
+		self.Bind(wx.EVT_MENU, self.onCloseWindowShortcut, id=wx.ID_CLOSE)
+		self.Bind(wx.EVT_CHAR_HOOK, self.onCharHook)
+		self.Bind(wx.EVT_KEY_DOWN, self.onKeyDown)
 		self.SetAcceleratorTable(wx.AcceleratorTable([
+			(wx.ACCEL_CMD, ord('W'), wx.ID_CLOSE),
+			(wx.ACCEL_NORMAL, ord('S'), self.ID_SearchModule),
 			(wx.ACCEL_CTRL, wx.WXK_F11, self.ID_AngleAtBirth),
 			(wx.ACCEL_CTRL, ord('1'),  self.ID_ZodiacalReleasing),  # <-- 추가
 			(wx.ACCEL_CTRL, ord('2'),  self.ID_Phasis),  # <-- 추가
@@ -662,7 +1277,8 @@ class MFrame(wx.Frame):
 	(wx.ACCEL_CTRL | wx.ACCEL_SHIFT, wx.WXK_F4, self.ID_SecProgChart),
 	(wx.ACCEL_CTRL | wx.ACCEL_SHIFT, wx.WXK_F5, self.ID_Elections),
 	(wx.ACCEL_CTRL | wx.ACCEL_SHIFT, wx.WXK_F9, self.ID_SecProgPositions),
-]))
+		]))
+		self._apply_custom_shortcut_labels()
 
 		self.Bind(wx.EVT_CLOSE, self.onExit)
 
@@ -698,6 +1314,7 @@ class MFrame(wx.Frame):
 			pass
 		
 		self.drawSplash()
+		wx.CallAfter(self._load_startup_chart_if_configured)
 
 		self.Bind(EVT_PDREADY, self.OnPDReady)
 
@@ -718,10 +1335,7 @@ class MFrame(wx.Frame):
 
 			place = chart.Place(dlg.birthplace.GetValue(), int(dlg.londeg.GetValue()), int(dlg.lonmin.GetValue()), 0, direc, int(dlg.latdeg.GetValue()), int(dlg.latmin.GetValue()), 0, hemis, int(dlg.alt.GetValue()))
 
-			plus = True
-			if dlg.pluscb.GetCurrentSelection() == 1:
-				plus = False
-			time = chart.Time(int(dlg.year.GetValue()), int(dlg.month.GetValue()), int(dlg.day.GetValue()), int(dlg.hour.GetValue()), int(dlg.minute.GetValue()), int(dlg.sec.GetValue()), dlg.timeckb.GetValue(), dlg.calcb.GetCurrentSelection(), dlg.zonecb.GetCurrentSelection(), plus, int(dlg.zhour.GetValue()), int(dlg.zminute.GetValue()), dlg.daylightckb.GetValue(), place)
+			time = self._chart_time_from_dialog(dlg, place)
 
 			male = dlg.genderrbM.GetValue()
 			self.horoscope = chart.Chart(dlg.name.GetValue(), male, time, place, dlg.typecb.GetCurrentSelection(), dlg.notes.GetValue(), self.options)
@@ -763,10 +1377,7 @@ class MFrame(wx.Frame):
 			hemis = dlg.placerbN.GetValue()
 			place = chart.Place(dlg.birthplace.GetValue(), int(dlg.londeg.GetValue()), int(dlg.lonmin.GetValue()), 0, direc, int(dlg.latdeg.GetValue()), int(dlg.latmin.GetValue()), 0, hemis, int(dlg.alt.GetValue()))
 
-			plus = True
-			if dlg.pluscb.GetCurrentSelection() == 1:
-				plus = False
-			time = chart.Time(int(dlg.year.GetValue()), int(dlg.month.GetValue()), int(dlg.day.GetValue()), int(dlg.hour.GetValue()), int(dlg.minute.GetValue()), int(dlg.sec.GetValue()), dlg.timeckb.GetValue(), dlg.calcb.GetCurrentSelection(), dlg.zonecb.GetCurrentSelection(), plus, int(dlg.zhour.GetValue()), int(dlg.zminute.GetValue()), dlg.daylightckb.GetValue(), place)
+			time = self._chart_time_from_dialog(dlg, place)
 
 			male = dlg.genderrbM.GetValue()
 			self.horoscope = chart.Chart(dlg.name.GetValue(), male, time, place, dlg.typecb.GetCurrentSelection(), dlg.notes.GetValue(), self.options)
@@ -793,7 +1404,7 @@ class MFrame(wx.Frame):
 		place = chart.Place(self.options.deflocname, self.options.defloclondeg, self.options.defloclonmin, 0, self.options.defloceast, self.options.defloclatdeg, self.options.defloclatmin, 0, self.options.deflocnorth, self.options.deflocalt)
 	
 		now = datetime.datetime.now()
-		time = chart.Time(now.year, now.month, now.day, now.hour, now.minute, now.second, False, chart.Time.GREGORIAN, chart.Time.ZONE, self.options.deflocplus, self.options.defloczhour, self.options.defloczminute, self.options.deflocdst, place)
+		time = chart.Time(now.year, now.month, now.day, now.hour, now.minute, now.second, False, chart.Time.GREGORIAN, chart.Time.ZONE, self.options.deflocplus, self.options.defloczhour, self.options.defloczminute, self.options.deflocdst, place, tzid=getattr(self.options, 'defloctzid', ''), tzauto=getattr(self.options, 'defloctzauto', True))
 	
 		self.horoscope = chart.Chart(mtexts.txts['HereAndNow'], True, time, place, chart.Chart.HORARY, '', self.options)
 		self.splash = False	
@@ -936,80 +1547,69 @@ class MFrame(wx.Frame):
 
 			dlgm.Destroy()#
 
-		dlg = wx.FileDialog(self, mtexts.txts['OpenHor'], '', '', mtexts.txts['HORFiles'], wx.FD_OPEN)
-		if os.path.isdir(self.fpathhors):
-			dlg.SetDirectory(self.fpathhors)
+		if sys.platform == 'darwin':
+			fpath = macfiledialog.choose_file(self.fpathhors)
+			if fpath:
+				dpath = os.path.dirname(fpath)
+				if not fpath.lower().endswith(u'.hor'):
+					fpath+=u'.hor'
+				chrt = self.subLoad(fpath, dpath)
+				if chrt != None:
+					self._activate_loaded_chart(chrt, fpath, dpath)
+			return
 		else:
-			dlg.SetDirectory(u'.')
+			dlg = wx.FileDialog(self, mtexts.txts['OpenHor'], '', '', u'All files (*.*)|*.*', wx.FD_OPEN)
+			if os.path.isdir(self.fpathhors):
+				dlg.SetDirectory(self.fpathhors)
+			else:
+				dlg.SetDirectory(u'.')
 
 		if dlg.ShowModal() == wx.ID_OK:
 			dpath = dlg.GetDirectory()
 			fpath = dlg.GetPath()
 
-			if not fpath.endswith(u'.hor'):
+			if not fpath.lower().endswith(u'.hor'):
 				fpath+=u'.hor'
 
 			chrt = self.subLoad(fpath, dpath)
 
 			if chrt != None:
-				self.horoscope = chrt
-				self.splash = False	
-				self.drawBkg()
-				self.Refresh()
-				self.fpathhors = dpath
-				self.fpath = fpath
-				self.enableMenus(True)
-				self.handleStatusBar(True)
-				self.handleCaption(True)
-				self.dirty = False
-#				self.calc()##
-
-				self.filehistory.AddFileToHistory(fpath)
+				self._activate_loaded_chart(chrt, fpath, dpath)
 
 		dlg.Destroy()#
+
+	def onSetStartupChart(self, event):
+		if self.splash:
+			return
+
+		if self.fpath == '':
+			self.save()
+			if self.fpath == '':
+				return
+
+		self.options.startupchart = self.fpath
+		if self.options.saveStartupChart():
+			self.moptions.Enable(self.ID_SaveOpts, True)
+
+	def onClearStartupChart(self, event):
+		self.options.startupchart = ''
+		if self.options.saveStartupChart():
+			self.moptions.Enable(self.ID_SaveOpts, True)
 
 
 	def subLoad(self, fpath, dpath, dontclose = False):
 		chrt = None
 
 		try:
-			f = open(fpath, 'rb')		
-			name = pickle.load(f)
-			male = pickle.load(f)
-			htype = pickle.load(f)
-			bc = pickle.load(f)
-			year = pickle.load(f)
-			month = pickle.load(f)
-			day = pickle.load(f)
-			hour = pickle.load(f)
-			minute = pickle.load(f)
-			second = pickle.load(f)
-			cal = pickle.load(f)
-			zt = pickle.load(f)
-			plus = pickle.load(f)
-			zh = pickle.load(f)
-			zm = pickle.load(f)
-			daylightsaving = pickle.load(f)
-			place = pickle.load(f)
-			deglon = pickle.load(f)
-			minlon = pickle.load(f)
-			seclon = pickle.load(f)
-			east = pickle.load(f)
-			deglat = pickle.load(f)
-			minlat = pickle.load(f)
-			seclat = pickle.load(f)
-			north = pickle.load(f)
-			altitude = pickle.load(f)
-			notes = pickle.load(f)
-			f.close()
-
 			if (not self.splash) and (not dontclose):
 				self.closeChildWnds()
-			
-			place = chart.Place(place, deglon, minlon, 0, east, deglat, minlat, seclat, north, altitude)
-			time = chart.Time(year, month, day, hour, minute, second, bc, cal, zt, plus, zh, zm, daylightsaving, place)
-			chrt = chart.Chart(name, male, time, place, htype, notes, self.options)
+
+			chrt = horfileio.read_hor_chart(fpath, self.options)
 		except IOError:
+			dlgm = wx.MessageDialog(self, mtexts.txts['FileError'], mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
+			dlgm.ShowModal()
+			dlgm.Destroy()#
+		except Exception:
 			dlgm = wx.MessageDialog(self, mtexts.txts['FileError'], mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
 			dlgm.ShowModal()
 			dlgm.Destroy()#
@@ -1077,6 +1677,8 @@ class MFrame(wx.Frame):
 					p.dump(self.horoscope.place.north)
 					p.dump(self.horoscope.place.altitude)
 					p.dump(self.horoscope.notes)
+					p.dump(getattr(self.horoscope.time, 'tzid', ''))
+					p.dump(getattr(self.horoscope.time, 'tzauto', False))
 				self.fpathhors = dpath
 				self.fpath = fpath
 				self.dirty = False
@@ -1125,18 +1727,33 @@ class MFrame(wx.Frame):
 		if wx.Platform == '__WXMSW__' and not self.splash:
 			self.handleStatusBar(True)
 
-		dlg = wx.FileDialog(self, mtexts.txts['OpenHor'], '', '', mtexts.txts['HORFiles'], wx.FD_OPEN)
-		if os.path.isdir(self.fpathhors):
-			dlg.SetDirectory(self.fpathhors)
+		if sys.platform == 'darwin':
+			fpath = macfiledialog.choose_file(self.fpathhors)
+			if fpath:
+				dpath = os.path.dirname(fpath)
+				if not fpath.lower().endswith(u'.hor'):
+					fpath+=u'.hor'
+				chrt = self.subLoad(fpath, dpath, True)
+			else:
+				chrt = None
+			if chrt != None:
+				txt = self.horoscope.name+u' - '+chrt.name+' '+mtexts.txts['Synastry']+' ('+str(chrt.time.origyear)+'.'+common.common.months[chrt.time.origmonth-1]+'.'+str(chrt.time.origday)+' '+str(chrt.time.hour)+':'+str(chrt.time.minute).zfill(2)+':'+str(chrt.time.second).zfill(2)+')'
+				sw = transitframe.TransitFrame(self, txt, chrt, self.horoscope, self.options)
+				sw.Show(True)
+			return
 		else:
-			dlg.SetDirectory(u'.')
+			dlg = wx.FileDialog(self, mtexts.txts['OpenHor'], '', '', u'All files (*.*)|*.*', wx.FD_OPEN)
+			if os.path.isdir(self.fpathhors):
+				dlg.SetDirectory(self.fpathhors)
+			else:
+				dlg.SetDirectory(u'.')
 
 		chrt = None
 		if dlg.ShowModal() == wx.ID_OK:
 			dpath = dlg.GetDirectory()
 			fpath = dlg.GetPath()
 
-			if not fpath.endswith(u'.hor'):
+			if not fpath.lower().endswith(u'.hor'):
 				fpath+=u'.hor'
 
 			chrt = self.subLoad(fpath, dpath, True)
@@ -1255,19 +1872,7 @@ class MFrame(wx.Frame):
 			chrt = self.subLoad(path, dname)
 
 			if chrt != None:
-				self.horoscope = chrt
-				self.splash = False	
-				self.drawBkg()
-				self.Refresh()
-				self.fpathhors = dname
-				self.fpath = path
-				self.enableMenus(True)
-				self.handleStatusBar(True)
-				self.handleCaption(True)
-				self.dirty = False
-#				self.calc()##
-
-				self.filehistory.AddFileToHistory(path)
+				self._activate_loaded_chart(chrt, path, dname)
 
 			# add it back to the history so it will be moved up the list
 #			self.filehistory.AddFileToHistory(path)
@@ -1562,6 +2167,9 @@ class MFrame(wx.Frame):
 
 		if self.trmondlg == None:
 			self.trmondlg = transitmdlg.TransitMonthDlg(None, self.horoscope.time)
+		now = datetime.datetime.now()
+		self.trmondlg.year.SetValue(str(now.year))
+		self.trmondlg.month.SetValue(str(now.month))
 		self.trmondlg.CenterOnParent()
 		val = self.trmondlg.ShowModal()
 
@@ -1575,6 +2183,16 @@ class MFrame(wx.Frame):
 			trans.month(year, month, self.horoscope)
 			tw = transitmframe.TransitMonthFrame(self, self.title.replace(mtexts.typeList[self.horoscope.htype], mtexts.txts['Transit']+' ('+str(year)+'.'+common.common.months[month-1]+')'), trans.transits, year, month, self.horoscope, self.options)
 			tw.Show(True)
+
+	def onSearchModule(self, event):
+		#Because on Windows the EVT_MENU_CLOSE event is not sent in case of accelerator-keys
+		if wx.Platform == '__WXMSW__' and not self.splash:
+			self.handleStatusBar(True)
+
+		if not self.splash:
+			wait = wx.BusyCursor()
+			searchfr = searchframe.SearchFrame(self, self.title, self.horoscope, self.options)
+			searchfr.Show(True)
 
 	def onAngleAtBirth(self, event):
 		# Windows에서 단축키로 열었을 때 상태바 처리(기존 패턴과 동일)
@@ -1971,9 +2589,13 @@ class MFrame(wx.Frame):
 			dlgm.Destroy()
 			return
 
+		if not self._should_prompt_quickcharts():
+			self._open_current_transits()
+			return
+
 		if self.trdatedlg == None:
 			self.trdatedlg = timespacedlg.TimeSpaceDlg(None, mtexts.txts['Transits'], self.options.langid)
-			self.trdatedlg.initialize(self.horoscope)
+		self.trdatedlg.initialize(self.horoscope)
 		self.trdatedlg.CenterOnParent()
 
 		val = self.trdatedlg.ShowModal()
@@ -1984,14 +2606,13 @@ class MFrame(wx.Frame):
 			hemis = self.trdatedlg.placerbN.GetValue()
 			place = chart.Place(self.trdatedlg.birthplace.GetValue(), int(self.trdatedlg.londeg.GetValue()), int(self.trdatedlg.lonmin.GetValue()), 0, direc, int(self.trdatedlg.latdeg.GetValue()), int(self.trdatedlg.latmin.GetValue()), 0, hemis, 0) #Transit doesn't calculate planetary hours => altitude is zero
 
-			plus = True
-			if self.trdatedlg.pluscb.GetCurrentSelection() == 1:
-				plus = False
-			time = chart.Time(int(self.trdatedlg.year.GetValue()), int(self.trdatedlg.month.GetValue()), int(self.trdatedlg.day.GetValue()), int(self.trdatedlg.hour.GetValue()), int(self.trdatedlg.minute.GetValue()), int(self.trdatedlg.sec.GetValue()), self.trdatedlg.timeckb.GetValue(), self.trdatedlg.calcb.GetCurrentSelection(), self.trdatedlg.zonecb.GetCurrentSelection(), plus, int(self.trdatedlg.zhour.GetValue()), int(self.trdatedlg.zminute.GetValue()), self.trdatedlg.daylightckb.GetValue(), place, False)
+			time = self._chart_time_from_dialog(self.trdatedlg, place, False)
 
 			trans = chart.Chart(self.horoscope.name, self.horoscope.male, time, place, chart.Chart.TRANSIT, '', self.options, False)
 
-			tw = transitframe.TransitFrame(self, self.title.replace(mtexts.typeList[self.horoscope.htype], mtexts.typeList[chart.Chart.TRANSIT]+' ('+str(time.year)+'.'+common.common.months[time.month-1]+'.'+str(time.day)+' '+str(time.hour)+':'+str(time.minute).zfill(2)+':'+str(time.second).zfill(2)+')'), trans, self.horoscope, self.options)
+			tw = transitframe.TransitFrame(self, self.title.replace(mtexts.typeList[self.horoscope.htype], mtexts.typeList[chart.Chart.TRANSIT]+' ('+str(time.year)+'.'+common.common.months[time.month-1]+'.'+str(time.day)+' '+str(time.hour)+':'+str(time.minute).zfill(2)+':'+str(time.second).zfill(2)+')'), trans, self.horoscope, self.options, transitframe.TransitFrame.COMPOUND)
+			tw.navigation_units = ('day', 'hour', 'minute')
+			tw.navigation_title_label = mtexts.typeList[chart.Chart.TRANSIT]
 			tw.Show(True)
 
 
@@ -2009,11 +2630,19 @@ class MFrame(wx.Frame):
 		if self.revdlg == None:
 			# 메인 프레임(self)을 parent로
 			self.revdlg = revolutionsdlg.RevolutionsDlg(self)
-			self.revdlg.initialize(self.horoscope)
+		self.revdlg.initialize(self.horoscope)
 		self.revdlg.CenterOnParent()
 		try:
 			val = self.revdlg.ShowModal()
 			if val != wx.ID_OK:
+				return
+			if self.revdlg.typecb.GetCurrentSelection() == revolutions.Revolutions.SOLAR:
+				wx.BeginBusyCursor()
+				try:
+					self._open_configured_solar_revolution()
+				finally:
+					if wx.IsBusy():
+						wx.EndBusyCursor()
 				return
 			if val == wx.ID_OK:
 				wx.BeginBusyCursor()
@@ -2161,6 +2790,7 @@ class MFrame(wx.Frame):
 									except Exception:
 										pass
 									self._rev_frame = transitframe.TransitFrame(self, newtitle2, chart2, self.horoscope, self.options)
+									self._rev_frame._stepper = self._rev_stepper
 									self._rev_frame.Show(True)
 									wx.CallAfter(self._rev_frame.Raise)
 									wx.CallAfter(self._rev_frame.SetFocus)
@@ -2175,6 +2805,7 @@ class MFrame(wx.Frame):
 								get_year_cb=lambda: self._rev_year,
 								set_year_cb=_set_rev_year_and_refresh
 							)
+							self._rev_frame._stepper = self._rev_stepper
 							self._rev_stepper.Show(True)
 							try:
 								self._rev_stepper.CentreOnScreen()
@@ -2253,6 +2884,7 @@ class MFrame(wx.Frame):
 
 									# 새 리턴 프레임 오픈
 									self._rev_frame = transitframe.TransitFrame(self, newtitle2, chart2, self.horoscope, self.options)
+									self._rev_frame._stepper = self._rev_stepper
 									self._rev_frame.Show(True)
 									wx.CallAfter(self._rev_frame.Raise)
 									wx.CallAfter(self._rev_frame.SetFocus)
@@ -2274,6 +2906,7 @@ class MFrame(wx.Frame):
 								get_ym_cb=_get_lr_ym,
 								set_ym_cb=_set_lr_ym,
 							)
+							self._rev_frame._stepper = self._rev_stepper
 							self._rev_stepper.Show(True)
 							try:
 								self._rev_stepper.CentreOnScreen()
@@ -2466,7 +3099,7 @@ class MFrame(wx.Frame):
 
 		if self.suntrdlg == None:
 			self.suntrdlg = suntransitsdlg.SunTransitsDlg(None)
-			self.suntrdlg.initialize(self.horoscope)
+		self.suntrdlg.initialize(self.horoscope)
 
 		self.suntrdlg.CenterOnParent()
 
@@ -2508,7 +3141,9 @@ class MFrame(wx.Frame):
 
 					suntrschart = chart.Chart(self.horoscope.name, self.horoscope.male, time, place, chart.Chart.TRANSIT, '', self.options, False)
 
-					rw = transitframe.TransitFrame(self, self.title.replace(mtexts.typeList[self.horoscope.htype], mtexts.typeList[chart.Chart.TRANSIT]+' ('+str(time.year)+'.'+common.common.months[time.month-1]+'.'+str(time.day)+' '+str(time.hour)+':'+str(time.minute).zfill(2)+':'+str(time.second).zfill(2)+'('+mtexts.txts['GMT']+'))'), suntrschart, self.horoscope, self.options)
+					rw = transitframe.TransitFrame(self, self.title.replace(mtexts.typeList[self.horoscope.htype], mtexts.typeList[chart.Chart.TRANSIT]+' ('+str(time.year)+'.'+common.common.months[time.month-1]+'.'+str(time.day)+' '+str(time.hour)+':'+str(time.minute).zfill(2)+':'+str(time.second).zfill(2)+'('+mtexts.txts['GMT']+'))'), suntrschart, self.horoscope, self.options, transitframe.TransitFrame.COMPOUND)
+					rw.navigation_units = ('day', 'hour', 'minute')
+					rw.navigation_title_label = mtexts.typeList[chart.Chart.TRANSIT]
 					rw.Show(True)
 
 				dlg.Destroy()
@@ -2530,9 +3165,14 @@ class MFrame(wx.Frame):
 			dlgm.Destroy()
 			return
 
+		if not self._should_prompt_quickcharts():
+			self._open_current_secondary_dirs()
+			return
+
 		if self.secdirdlg == None:
 			self.secdirdlg = secdirdlg.SecondaryDirsDlg(None)
-			self.secdirdlg.initialize()
+		self.secdirdlg.initialize()
+		self.secdirdlg.age.SetValue(str(self._current_secondary_age()))
 
 		self.secdirdlg.CenterOnParent()
 
@@ -2576,6 +3216,7 @@ class MFrame(wx.Frame):
 				sf.Show(True)
 
 				stepdlg = stepperdlg.StepperDlg(sf, self.horoscope, age, direct, soltime, self.options, self.title)
+				sf._stepper = stepdlg
 				stepdlg.CenterOnParent()
 				stepdlg.Show(True)
 
@@ -2833,7 +3474,7 @@ class MFrame(wx.Frame):
 			dlgm.Destroy()
 			return
 
-		time = chart.Time(self.horoscope.time.origyear, self.horoscope.time.origmonth, self.horoscope.time.origday, self.horoscope.time.hour, self.horoscope.time.minute, self.horoscope.time.second, self.horoscope.time.bc, self.horoscope.time.cal, self.horoscope.time.zt, self.horoscope.time.plus, self.horoscope.time.zh, self.horoscope.time.zm, self.horoscope.time.daylightsaving, self.horoscope.place, False)
+		time = chart.Time(self.horoscope.time.origyear, self.horoscope.time.origmonth, self.horoscope.time.origday, self.horoscope.time.hour, self.horoscope.time.minute, self.horoscope.time.second, self.horoscope.time.bc, self.horoscope.time.cal, self.horoscope.time.zt, self.horoscope.time.plus, self.horoscope.time.zh, self.horoscope.time.zm, self.horoscope.time.daylightsaving, self.horoscope.place, False, tzid=getattr(self.horoscope.time, 'tzid', ''), tzauto=getattr(self.horoscope.time, 'tzauto', False))
 
 		electionchart = chart.Chart(self.horoscope.name, self.horoscope.male, time, self.horoscope.place, chart.Chart.TRANSIT, '', self.options, False)
 
@@ -2841,6 +3482,7 @@ class MFrame(wx.Frame):
 		ef.Show(True)
 
 		estepdlg = electionstepperdlg.ElectionStepperDlg(ef, self.horoscope, self.options, self.title)
+		ef._stepper = estepdlg
 		estepdlg.CenterOnParent()
 		estepdlg.Show(True)
 
@@ -2865,9 +3507,13 @@ class MFrame(wx.Frame):
 			dlgm.Destroy()
 			return
 
+		if not self._should_prompt_quickcharts():
+			self._open_current_profections_chart()
+			return
+
 		pdlg = profdlg.ProfDlg(self, self.horoscope.time.jd, self.horoscope.place)
-#		h, m, s = util.decToDeg(self.horoscope.time.time)
-		pdlg.initialize(self.horoscope.time.year, self.horoscope.time.month, self.horoscope.time.day, 12, 0, 0)
+		now = datetime.datetime.now()
+		pdlg.initialize(now.year, now.month, now.day, now.hour, now.minute, now.second)
 
 		pdlg.CenterOnParent()
 
@@ -2905,12 +3551,19 @@ class MFrame(wx.Frame):
 					#recalc AspMatrix
 					pchart.calcAspMatrix()
 
-			pf = profectionsframe.ProfectionsFrame(self, self.title.replace(mtexts.typeList[self.horoscope.htype], mtexts.txts['Profections']+' ('+str(y)+'.'+str(m)+'.'+str(d)+' '+str(h).zfill(2)+':'+str(mi).zfill(2)+':'+str(s).zfill(2)+')'), pchart, self.horoscope, self.options)
+			pf = profectionsframe.ProfectionsFrame(self, self.title.replace(mtexts.typeList[self.horoscope.htype], mtexts.txts['Profections']+' ('+str(y)+'.'+str(m)+'.'+str(d)+' '+str(h).zfill(2)+':'+str(mi).zfill(2)+':'+str(s).zfill(2)+')'), pchart, self.horoscope, self.options, (y, m, d, h, mi, s))
 			pf.Show(True)
 
 			pstepdlg = profectionstepperdlg.ProfectionStepperDlg(pf, self.horoscope, y, m, d, t, self.options, self.title)
+			pf._stepper = pstepdlg
 			pstepdlg.CenterOnParent()
 			pstepdlg.Show(True)
+			wx.CallAfter(pf.Raise)
+			wx.CallAfter(pf.SetFocus)
+			try:
+				wx.CallAfter(pf.w.SetFocus)
+			except Exception:
+				pass
 
 		pdlg.Destroy()
 
@@ -2959,9 +3612,6 @@ class MFrame(wx.Frame):
 						self.options.subprimarydir = primdirs.PrimDirs.MUNDANE
 
 				if not self.splash:
-					self.closeChildWnds()
-
-
 					if topocentric != self.options.topocentric:
 						self.horoscope.recalc()
 #					elif traditionalaspects != self.options.traditionalaspects:
@@ -2969,6 +3619,7 @@ class MFrame(wx.Frame):
 
 					self.drawBkg()
 					self.Refresh()
+					self.refreshOpenWindows()
 
 		dlg.Destroy()
 
@@ -2994,9 +3645,9 @@ class MFrame(wx.Frame):
 						self.moptions.Enable(self.ID_SaveOpts, True)
 
 				if not self.splash:
-					self.closeChildWnds()
 					self.drawBkg()
 					self.Refresh()
+					self.refreshOpenWindows()
 
 		dlg.Destroy()
 
@@ -3022,9 +3673,9 @@ class MFrame(wx.Frame):
 						self.moptions.Enable(self.ID_SaveOpts, True)
 
 				if not self.splash:
-					self.closeChildWnds()
 					self.drawBkg()
 					self.Refresh()
+					self.refreshOpenWindows()
 
 		dlg.Destroy()
 
@@ -3104,9 +3755,9 @@ class MFrame(wx.Frame):
 						self.moptions.Enable(self.ID_SaveOpts, True)
 
 				if not self.splash:
-					self.closeChildWnds()
 					self.drawBkg()
 					self.Refresh()
+					self.refreshOpenWindows()
 
 		dlg.Destroy()
 
@@ -3378,6 +4029,54 @@ class MFrame(wx.Frame):
 		dlg.Destroy()
 # ###########################################		
 
+	def onRevolutionsOpt(self, event):
+		dlg = revolutionsoptdlg.RevolutionsOptDlg(self)
+		dlg.fill(self.options)
+		dlg.CenterOnParent()
+
+		val = dlg.ShowModal()
+		if val == wx.ID_OK:
+			if dlg.check(self.options):
+				self.enableOptMenus(True)
+
+				if self.options.autosave:
+					if self.options.saveRevolutions():
+						self.moptions.Enable(self.ID_SaveOpts, True)
+
+		dlg.Destroy()
+
+	def onQuickChartsOpt(self, event):
+		dlg = quickchartsoptdlg.QuickChartsOptDlg(self)
+		dlg.fill(self.options)
+		dlg.CenterOnParent()
+
+		val = dlg.ShowModal()
+		if val == wx.ID_OK:
+			if dlg.check(self.options):
+				self.enableOptMenus(True)
+
+				if self.options.autosave:
+					if self.options.saveQuickCharts():
+						self.moptions.Enable(self.ID_SaveOpts, True)
+
+		dlg.Destroy()
+
+	def onStepAlertsOpt(self, event):
+		dlg = stepalertsdlg.StepAlertsDlg(self, self.options)
+		dlg.fill()
+		dlg.CenterOnParent()
+
+		val = dlg.ShowModal()
+		if val == wx.ID_OK:
+			if dlg.check():
+				self.enableOptMenus(True)
+
+				if self.options.autosave:
+					if self.options.saveStepAlerts():
+						self.moptions.Enable(self.ID_SaveOpts, True)
+
+		dlg.Destroy()
+
 
 	def onLanguages(self, event):
 		#Because on Windows the EVT_MENU_CLOSE event is not sent in case of accelerator-keys
@@ -3487,6 +4186,12 @@ class MFrame(wx.Frame):
 				(self.ID_Appearance1, self.ID_Appearance2, self.ID_Symbols, self.ID_Dignities, self.ID_MinorDignities, self.ID_Triplicities, self.ID_Terms,
 				self.ID_Decans, self.ID_Almutens, self.ID_ChartAlmuten, self.ID_Topical, self.ID_Colors, self.ID_Ayanamsha, self.ID_HouseSystem,
 				self.ID_Nodes, self.ID_Orbs, self.ID_PrimaryDirsOpt, self.ID_PrimaryKeys, self.ID_PDsInChartOpt, self.ID_PDsInChartOptZod, self.ID_PDsInChartOptMun, self.ID_LotOfFortune, self.ID_ArabicParts, self.ID_Syzygy, self.ID_FixStarsOpt, self.ID_ProfectionsOpt, self.ID_FirdariaOpt, self.ID_DefLocationOpt, self.ID_Languages, self.ID_AutoSaveOpts, self.ID_SaveOpts, self.ID_Reload) = range(151, 183)
+				self.ID_RevolutionsOpt = 1830
+				self.ID_OtherRevolutions = 1831
+				self.ID_QuickChartsOpt = 1832
+				self.ID_SetStartupChart = 1833
+				self.ID_ClearStartupChart = 1834
+				self.ID_StepAlertsOpt = 1835
 # ###########################################
 
 				self.ID_Housesystem1, self.ID_Housesystem2, self.ID_Housesystem3, self.ID_Housesystem4, self.ID_Housesystem5, self.ID_Housesystem6, self.ID_Housesystem7, self.ID_Housesystem8, self.ID_Housesystem9, self.ID_Housesystem10, self.ID_Housesystem11, self.ID_Housesystem12, self.ID_Housesystem13 = range(1050, 1063)
@@ -3516,6 +4221,8 @@ class MFrame(wx.Frame):
 				self.hsave.Append(self.ID_Save,          mtexts.menutxts['HMSave'],       mtexts.menutxts['HMSaveDoc'])
 				self.hsave.Append(self.ID_SaveAsBitmap,  mtexts.menutxts['HMSaveAsBmp'],  mtexts.menutxts['HMSaveAsBmpDoc'])
 				self.mhoros.Append(self.ID_SaveMenu, mtexts.txts['Save'], self.hsave)
+				self.mhoros.Append(self.ID_SetStartupChart, 'Use Current As Startup Chart', 'Load the current chart automatically at startup')
+				self.mhoros.Append(self.ID_ClearStartupChart, 'Clear Startup Chart', 'Clear the automatic startup chart')
 
 				self.mhoros.Append(self.ID_Synastry, mtexts.menutxts['HMSynastry'], mtexts.menutxts['HMSynastryDoc'])
 				self.mhoros.Append(self.ID_FindTime, mtexts.menutxts['HMFindTime'], mtexts.menutxts['HMFindTimeDoc'])
@@ -3588,6 +4295,7 @@ class MFrame(wx.Frame):
 
 				# Un-grouped (요청대로 단독 유지)
 				self.mtable.Append(self.ID_ExactTransits, mtexts.menutxts['TMExactTransits'], mtexts.menutxts['TMExactTransitsDoc'])
+				self.mtable.Append(self.ID_SearchModule, mtexts.txts.get('Search', 'Search')+'...\tS', 'Open the multi-technique search pane')
 
 		#Charts-menu
 				# 앞부분: 기본 항목 먼저
@@ -3605,7 +4313,8 @@ class MFrame(wx.Frame):
 				self.csecprog.Append(self.ID_SecProgPositions, mtexts.menutxts['PMPositionForDate'],  mtexts.menutxts['PMPositionForDateDoc'])
 				self.mcharts.Append(self.ID_SecProgMenu, mtexts.txts['SecondaryDirs'], self.csecprog)
 				
-				self.mcharts.Append(self.ID_Revolutions,     mtexts.menutxts['PMRevolutions'],     mtexts.menutxts['PMRevolutionsDoc'])
+				self.mcharts.Append(self.ID_Revolutions,     'Solar Revolution\tR',     'Open solar revolution with saved settings')
+				self.mcharts.Append(self.ID_OtherRevolutions, 'Other Revolutions...', 'Open the legacy revolutions dialog')
 
 				# Transits 서브메뉴 신설
 				self.ctransits = wx.Menu()
@@ -3632,6 +4341,7 @@ class MFrame(wx.Frame):
 				# [Appearance1] submenu: Appearance1/Speculum(=Appearance2)/Colors/Symbols
 				self.o_appearance = wx.Menu()
 				self.o_appearance.Append(self.ID_Appearance1, mtexts.menutxts['OMAppearance1'], mtexts.menutxts['OMAppearance1Doc'])
+				self.o_appearance.Append(self.ID_NatalSecondaryCycle, 'Cycle secondary view\tCtrl+G', 'Cycles the radix secondary view')
 
 				self.o_appearance.Append(self.ID_Colors,      mtexts.menutxts['OMColors'],      mtexts.menutxts['OMColorsDoc'])
 				self.o_appearance.Append(self.ID_Symbols,     mtexts.menutxts['OMSymbols'],     mtexts.menutxts['OMSymbolsDoc'])
@@ -3690,10 +4400,13 @@ class MFrame(wx.Frame):
 				self.o_pd.Append(self.ID_PDsInChartOpt, mtexts.menutxts['OMPDsInChartOpt'], self.mpdsinchartopts)
 				self.moptions.Append(self.ID_PrimaryDirsOptMenu, mtexts.txts['PrimaryDirs'], self.o_pd)
 
-# ###########################################
-# Roberto change V 7.2.0
+				# ###########################################
+				# Roberto change V 7.2.0
 				self.moptions.Append(self.ID_DefLocationOpt, mtexts.menutxts['OMDefLocationOpt'], mtexts.menutxts['OMDefLocationOptDoc'])
-# ###########################################
+				# ###########################################
+				self.moptions.Append(self.ID_RevolutionsOpt, 'Solar Revolution', 'Shows solar revolution settings')
+				self.moptions.Append(self.ID_QuickChartsOpt, 'Supplementary Charts', 'Shows quick supplemental chart settings')
+				self.moptions.Append(self.ID_StepAlertsOpt, 'Stepping Alerts', 'Shows exact stepping alert settings')
 				self.moptions.Append(self.ID_Languages, mtexts.menutxts['OMLanguages'], mtexts.menutxts['OMLanguagesDoc'])
 				self.moptions.AppendSeparator()
 				self.autosave = self.moptions.Append(self.ID_AutoSaveOpts, mtexts.menutxts['OMAutoSave'], mtexts.menutxts['OMAutoSaveDoc'], wx.ITEM_CHECK)
@@ -3713,6 +4426,7 @@ class MFrame(wx.Frame):
 				self.menubar.Append(self.moptions, mtexts.menutxts['MOptions'])
 				self.menubar.Append(self.mhelp, mtexts.menutxts['MHelp'])
 				self.SetMenuBar(self.menubar)
+				self._apply_custom_shortcut_labels()
 
 				self.handleStatusBar(False)
 
@@ -3764,6 +4478,7 @@ class MFrame(wx.Frame):
 				self.Bind(wx.EVT_MENU, self.onStrip, id=self.ID_Strip)
 				self.Bind(wx.EVT_MENU, self.onPlanetaryHours, id=self.ID_PlanetaryHours)
 				self.Bind(wx.EVT_MENU, self.onExactTransits, id=self.ID_ExactTransits)
+				self.Bind(wx.EVT_MENU, self.onSearchModule, id=self.ID_SearchModule)
 				self.Bind(wx.EVT_MENU, self.onProfections, id=self.ID_Profections)
 # ###########################################
 # Roberto change V 7.3.0
@@ -3777,7 +4492,8 @@ class MFrame(wx.Frame):
 				self.Bind(wx.EVT_MENU, self.onPrimaryDirs, id=self.ID_PrimaryDirs)
 
 				self.Bind(wx.EVT_MENU, self.onTransits, id=self.ID_Transits)
-				self.Bind(wx.EVT_MENU, self.onRevolutions, id=self.ID_Revolutions)
+				self.Bind(wx.EVT_MENU, self.onQuickSolarRevolution, id=self.ID_Revolutions)
+				self.Bind(wx.EVT_MENU, self.onRevolutions, id=self.ID_OtherRevolutions)
 				self.Bind(wx.EVT_MENU, self.onSunTransits, id=self.ID_SunTransits)
 				self.Bind(wx.EVT_MENU, self.onSecondaryDirs, id=self.ID_SecondaryDirs)
 				self.Bind(wx.EVT_MENU, self.onElections, id=self.ID_Elections)
@@ -3811,6 +4527,11 @@ class MFrame(wx.Frame):
 # Roberto change  V 7.2.0
 				self.Bind(wx.EVT_MENU, self.onDefLocationOpt, id=self.ID_DefLocationOpt)
 # ###########################################
+				self.Bind(wx.EVT_MENU, self.onRevolutionsOpt, id=self.ID_RevolutionsOpt)
+				self.Bind(wx.EVT_MENU, self.onQuickChartsOpt, id=self.ID_QuickChartsOpt)
+				self.Bind(wx.EVT_MENU, self.onStepAlertsOpt, id=self.ID_StepAlertsOpt)
+				self.Bind(wx.EVT_MENU, self.onSetStartupChart, id=self.ID_SetStartupChart)
+				self.Bind(wx.EVT_MENU, self.onClearStartupChart, id=self.ID_ClearStartupChart)
 
 
 				self.Bind(wx.EVT_MENU, self.onLanguages, id=self.ID_Languages)
@@ -3825,6 +4546,7 @@ class MFrame(wx.Frame):
 
 				self.Bind(wx.EVT_MENU, self.onHelp, id=self.ID_Help)
 				self.Bind(wx.EVT_MENU, self.onAbout, id=self.ID_About)
+				self.Bind(wx.EVT_MENU, self.onCycleNatalSecondaryRing, id=self.ID_NatalSecondaryCycle)
 
 				self.Bind(wx.EVT_CLOSE, self.onExit)
 
@@ -4286,6 +5008,38 @@ class MFrame(wx.Frame):
 			if ch.GetName() != 'status_line' and y > 50:
 				ch.Destroy()
 
+	def refreshOpenWindows(self):
+		for win in wx.GetTopLevelWindows():
+			if win is self:
+				continue
+			try:
+				if hasattr(win, 'w') and win.w:
+					try:
+						if hasattr(win.w, 'drawBkg'):
+							win.w.drawBkg()
+					except Exception:
+						pass
+					try:
+						win.w.Refresh()
+					except Exception:
+						pass
+				elif hasattr(win, 'drawBkg'):
+					try:
+						win.drawBkg()
+					except Exception:
+						pass
+					try:
+						win.Refresh()
+					except Exception:
+						pass
+				else:
+					try:
+						win.Refresh()
+					except Exception:
+						pass
+			except Exception:
+				pass
+
 
 	def onMenuOpen(self, event):
 		if not self.splash:
@@ -4298,7 +5052,10 @@ class MFrame(wx.Frame):
 
 
 	def enableMenus(self, bEnable):
-		self.mhoros.Enable(self.ID_New, not bEnable)
+		self.mhoros.Enable(self.ID_New, True)
+		self.mhoros.Enable(self.ID_Load, True)
+		self.mhoros.Enable(self.ID_SetStartupChart, bEnable)
+		self.mhoros.Enable(self.ID_ClearStartupChart, True)
 		self.mhoros.Enable(self.ID_Data, bEnable)
 # ###########################################
 # Roberto change  V 7.2.0		
@@ -4332,6 +5089,7 @@ class MFrame(wx.Frame):
 		self.mtable.Enable(self.ID_Strip, bEnable)
 		self.mtable.Enable(self.ID_PlanetaryHours, bEnable)
 		self.mtable.Enable(self.ID_ExactTransits, bEnable)
+		self.mtable.Enable(self.ID_SearchModule, bEnable)
 		self.mtable.Enable(self.ID_Profections, bEnable)
 		self.mtable.Enable(self.ID_CustomerSpeculum, bEnable)
 # ###########################################

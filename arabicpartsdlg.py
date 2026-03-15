@@ -76,8 +76,10 @@ class PartsListCtrl(wx.ListCtrl):
 	NAME = 2
 	FORMULA = 3
 	DIURNAL = 4
+	GENDER = 5
 
 	DIURNALTXT = u'*'
+	GENDERTXT = u'M/F'
 
 	MAX_ARABICPARTS_NUM = 40
 
@@ -88,6 +90,7 @@ class PartsListCtrl(wx.ListCtrl):
 		self.parts_codes = {}
 		self.parts_refdeg = {}
 		self.parts_active = {}
+		self.parts_gendered = {}
 		self.load(parts)
 
 		self.Populate()
@@ -102,6 +105,7 @@ class PartsListCtrl(wx.ListCtrl):
 		self.InsertColumn(PartsListCtrl.NAME, mtexts.txts['Name'])
 		self.InsertColumn(PartsListCtrl.FORMULA, mtexts.txts['Formula'])
 		self.InsertColumn(PartsListCtrl.DIURNAL, mtexts.txts['Diurnal'], format=wx.LIST_FORMAT_CENTER)
+		self.InsertColumn(PartsListCtrl.GENDER, u'M/F', format=wx.LIST_FORMAT_CENTER)
 		
 		items = self.partsdata.items()
 		for key, data in items:
@@ -109,6 +113,7 @@ class PartsListCtrl(wx.ListCtrl):
 			self.SetItem(index, PartsListCtrl.NAME, data[0])
 			self.SetItem(index, PartsListCtrl.FORMULA, data[1])
 			self.SetItem(index, PartsListCtrl.DIURNAL, data[2])
+			self.SetItem(index, PartsListCtrl.GENDER, data[3])
 			self.SetItemData(index, key)
 			# Active/Index 표시
 			active = self.parts_active.get(key, True)
@@ -119,6 +124,7 @@ class PartsListCtrl(wx.ListCtrl):
 		self.SetColumnWidth(PartsListCtrl.NAME, 160)#wx.LIST_AUTOSIZE)
 		self.SetColumnWidth(PartsListCtrl.FORMULA, 140)
 		self.SetColumnWidth(PartsListCtrl.DIURNAL, 65)
+		self.SetColumnWidth(PartsListCtrl.GENDER, 55)
 
 		self.currentItem = -1
 		if len(self.partsdata):
@@ -177,7 +183,7 @@ class PartsListCtrl(wx.ListCtrl):
 		active = self.parts_active.get(key, True)
 		self.SetItem(row, PartsListCtrl.ACTIVE, mtexts.txts['On'] if active else mtexts.txts['Off'])
 
-	def AddFullItem(self, name, disp_formula, diurnal, codes, triplet, active=True):
+	def AddFullItem(self, name, disp_formula, diurnal, codes, triplet, active=True, gendered=False):
 		num = self.GetItemCount()
 		if num >= PartsListCtrl.MAX_ARABICPARTS_NUM:
 			return False
@@ -187,10 +193,12 @@ class PartsListCtrl(wx.ListCtrl):
 		self.SetItem(index, PartsListCtrl.DIURNAL, diurnal)
 		key = (max(self.partsdata.keys())+1) if len(self.partsdata) else 1
 		self.SetItemData(index, key)
-		self.partsdata[key] = (name, disp_formula, diurnal)
+		gender_mark = PartsListCtrl.GENDERTXT if gendered else u''
+		self.partsdata[key] = (name, disp_formula, diurnal, gender_mark)
 		self.parts_codes[key] = codes
 		self.parts_refdeg[key] = triplet
 		self.parts_active[key] = bool(active)
+		self.parts_gendered[key] = bool(gendered)
 		self.SetItem(index, PartsListCtrl.ACTIVE, mtexts.txts['On'] if active else mtexts.txts['Off'])
 		self.SetItem(index, PartsListCtrl.INDEXCOL, u'#%d' % (index+2))
 		self.currentItem = index
@@ -311,6 +319,7 @@ class PartsListCtrl(wx.ListCtrl):
 			self.partsdata = {}
 			self.parts_codes = {}
 			self.parts_refdeg = {}
+			self.parts_gendered = {}
 
 			self.changed = True
 			self.removed = True
@@ -345,10 +354,16 @@ class PartsListCtrl(wx.ListCtrl):
 					active = bool(parts[i][4]) if len(parts[i]) > 4 else True
 				except:
 					active = True
+				try:
+					gendered = bool(parts[i][5]) if len(parts[i]) > 5 else False
+				except:
+					gendered = False
 				self.parts_active[idx] = active
+				self.parts_gendered[idx] = gendered
 				# 표시용 포뮬러(실제값 반영: R0/R1.., 18°Ari 등)
 				disp = self._format_formula_text(f1, f2, f3, trip)
-				self.partsdata[idx] = (parts[i][0], disp, diurnal)
+				gender_mark = PartsListCtrl.GENDERTXT if gendered else u''
+				self.partsdata[idx] = (parts[i][0], disp, diurnal, gender_mark)
 
 				idx += 1
 
@@ -372,8 +387,8 @@ class PartsListCtrl(wx.ListCtrl):
 			diurnal = self.getColumnText(row, PartsListCtrl.DIURNAL)
 			diur = (diurnal != '')
 			active = self.parts_active.get(key, True)
-			# 5-튜플로 저장: (name, (A,B,C), diur, (refA,refB,refC), active)
-			parts.append((name, (f1, f2, f3), diur, trip, active))
+			gendered = self.parts_gendered.get(key, False)
+			parts.append((name, (f1, f2, f3), diur, trip, active, gendered))
 
 		opts.arabicparts = copy.deepcopy(parts)
 		return self.changed, self.removed
@@ -771,6 +786,8 @@ class ArabicPartsDlg(wx.Dialog):
 		self.ccb.Bind(wx.EVT_COMBOBOX, self._OnTokenChangedC)
 		self.diurnalckb = wx.CheckBox(self, -1, mtexts.txts['Diurnal'])
 		editorsizer.Add(self.diurnalckb, 0, wx.ALL, 5)
+		self.genderedckb = wx.CheckBox(self, -1, mtexts.txts.get('SwitchForFemale', 'Switch for female'))
+		editorsizer.Add(self.genderedckb, 0, wx.ALL, 5)
 		vsubsizer.Add(editorsizer, 0, wx.ALIGN_LEFT|wx.RIGHT, 5)
 
 		#buttons
@@ -825,6 +842,7 @@ class ArabicPartsDlg(wx.Dialog):
 
 		diur_mark = PartsListCtrl.DIURNALTXT if _typ in (chart.Chart.LFDSUNMOON, chart.Chart.LFDMOONSUN) else u''
 		self.li.SetItem(lof_row, self.li.DIURNAL, diur_mark)
+		self.li.SetItem(lof_row, self.li.GENDER, u'')
 
 		# LoF 행은 저장 대상이 아니므로 ItemData(키)를 지정하지 않음
 		self.li._renumber_rows()
@@ -1276,6 +1294,7 @@ class ArabicPartsDlg(wx.Dialog):
 		diurnal = ''
 		if self.diurnalckb.GetValue():
 			diurnal = PartsListCtrl.DIURNALTXT
+		gendered = bool(self.genderedckb.GetValue())
 
 		# 선택된 행의 저장값을 기본으로 하고, RE/DE인 위치만 인라인 값으로 덮어써서 사용
 		trip = self._compute_triplet_for_add()
@@ -1287,7 +1306,7 @@ class ArabicPartsDlg(wx.Dialog):
 
 		disp = self.li._format_formula_text(f1, f2, f3, trip)
 		self.refdeg_by_name[name] = trip
-		self.li.AddFullItem(name, disp, diurnal, (f1, f2, f3), trip)
+		self.li.AddFullItem(name, disp, diurnal, (f1, f2, f3), trip, gendered=gendered)
 		self._rebuild_re_choices()
 
 		# 추가 후엔 임시버퍼 초기화
@@ -1323,6 +1342,7 @@ class ArabicPartsDlg(wx.Dialog):
 
 		# Diurnal 체크 상태 → 표시 문자
 		diur_text = PartsListCtrl.DIURNALTXT if self.diurnalckb.GetValue() else u''
+		gendered = bool(self.genderedckb.GetValue())
 
 		# A/B/C 토큰 선택
 		a_sel = self.acb.GetCurrentSelection()
@@ -1379,6 +1399,7 @@ class ArabicPartsDlg(wx.Dialog):
 			mtexts.conv[mtexts.partstxts[c_sel]],
 		)
 		self.li.parts_refdeg[key] = vals
+		self.li.parts_gendered[key] = gendered
 
 		# 표시용 수식 갱신(리스트 칼럼 텍스트)
 		disp_formula = self._format_formula_text(a_sel, b_sel, c_sel, vals)
@@ -1387,9 +1408,10 @@ class ArabicPartsDlg(wx.Dialog):
 		self.li.SetItem(i, self.li.NAME, new_name)
 		self.li.SetItem(i, self.li.FORMULA, disp_formula)
 		self.li.SetItem(i, self.li.DIURNAL, diur_text)
+		self.li.SetItem(i, self.li.GENDER, PartsListCtrl.GENDERTXT if gendered else u'')
 
 		# partsdata 튜플도 함께 갱신(저장 시 직렬화에 쓰임)
-		self.li.partsdata[key] = (new_name, disp_formula, diur_text)
+		self.li.partsdata[key] = (new_name, disp_formula, diur_text, PartsListCtrl.GENDERTXT if gendered else u'')
 
 		# 이름 바뀐 경우 RE/DE 참조 저장 테이블 rename
 		if new_name != old_name:
@@ -1436,6 +1458,7 @@ class ArabicPartsDlg(wx.Dialog):
 				self.partsdata.pop(key, None)
 				self.parts_codes.pop(key, None)
 				self.parts_refdeg.pop(key, None)
+				self.parts_gendered.pop(key, None)
 			except:
 				pass
 			if self.GetItemCount() == 0:
@@ -1480,6 +1503,11 @@ class ArabicPartsDlg(wx.Dialog):
 			self.diurnalckb.SetValue(bool(self.li.getColumnText(i, self.li.DIURNAL)))
 		except Exception:
 			pass
+		try:
+			key = self.li.GetItemData(i)
+			self.genderedckb.SetValue(bool(self.li.parts_gendered.get(key, False)))
+		except Exception:
+			self.genderedckb.SetValue(False)
 
 		# Active 체크박스 동기화
 		on_label = mtexts.txts.get('On', u'On')
@@ -1488,8 +1516,11 @@ class ArabicPartsDlg(wx.Dialog):
 			# LoF(#1): Active 비활성, 항상 On
 			self.activeckb.SetValue(True)
 			self.activeckb.Enable(False)
+			self.genderedckb.SetValue(False)
+			self.genderedckb.Enable(False)
 		else:
 			self.activeckb.Enable(True)
+			self.genderedckb.Enable(True)
 			try:
 				key = self.li.GetItemData(i)
 				cur_active = bool(self.li.parts_active.get(key, True))
@@ -1533,6 +1564,8 @@ class ArabicPartsDlg(wx.Dialog):
 			self.diurnalckb.SetValue(_typ in (getattr(chart.Chart, 'LFDSUNMOON', -9999),
 											  getattr(chart.Chart, 'LFDMOONSUN', -9999)))
 			self.diurnalckb.Enable(False)
+			self.genderedckb.SetValue(False)
+			self.genderedckb.Enable(False)
 
 		# 인라인 RE/DE 컨트롤도 선택 행 값으로 동기화
 		try:
@@ -1692,7 +1725,3 @@ class ArabicPartsDlg(wx.Dialog):
 		if v > 29: v = 29
 		if v < 0:  v = 0
 		spin.SetValue(v)
-
-
-
-

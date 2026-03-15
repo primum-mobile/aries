@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 
 import os
+import sys
+import shutil
 import wx
 import pickle
 import copy
@@ -23,6 +25,26 @@ class Options:
 	MOON = 0
 	ABOVEHOR = 1
 	ABOVEHORNATAL = 2
+
+	@staticmethod
+	def _resolve_user_opts_dir():
+		home = os.path.expanduser('~')
+		if sys.platform == 'darwin':
+			return os.path.join(home, 'Library', 'Application Support', 'Morinus', 'Opts')
+
+		appdata = os.environ.get('APPDATA')
+		if appdata:
+			return os.path.join(appdata, 'Morinus', 'Opts')
+
+		xdg_config = os.environ.get('XDG_CONFIG_HOME')
+		if not xdg_config:
+			xdg_config = os.path.join(home, '.config')
+		return os.path.join(xdg_config, 'Morinus', 'Opts')
+
+	@staticmethod
+	def _resolve_factory_opts_dir():
+		base_dir = os.getcwd()
+		return os.path.join(base_dir, 'Opts')
 
 	def __init__(self):
 		#Appearance
@@ -282,6 +304,13 @@ class Options:
 		self.def_sigplanets = self.sigplanets[:]
 		self.promplanets = [True, True, True, True, True, True, True, True, True, True, True, True]
 		self.def_promplanets = self.promplanets[:]
+		self.stepalerts_enabled = self.def_stepalerts_enabled = True
+		self.stepalerts_sigangles = [True, False, False, False]
+		self.def_stepalerts_sigangles = self.stepalerts_sigangles[:]
+		self.stepalerts_sigplanets = [False, False, False, False, False, False, False, False, False, False, False, False]
+		self.def_stepalerts_sigplanets = self.stepalerts_sigplanets[:]
+		self.stepalerts_promplanets = [True, True, True, True, True, True, True, True, True, True, True, True]
+		self.def_stepalerts_promplanets = self.stepalerts_promplanets[:]
 
 		self.pdaspects = [True, False, False, True, False, True, True, False, False, False, True]
 		self.def_pdaspects = self.pdaspects[:]
@@ -294,6 +323,8 @@ class Options:
 
 		self.pdsecmotion = self.def_pdsecmotion = False
 		self.pdsecmotioniter = self.def_pdsecmotioniter = 2 #3rd iter is the default
+		self.pdrevsunyearmode = self.def_pdrevsunyearmode = primdirs.PrimDirs.REVSOLAR_TROPICAL
+		self.pdrevannualmode = self.def_pdrevannualmode = primdirs.PrimDirs.REVANNUAL_USE_PRIMARY
 
 		self.zodpromsigasps = [True, False]
 		self.def_zodpromsigasps = self.zodpromsigasps[:]
@@ -378,6 +409,8 @@ class Options:
 		self.def_defloczhour = self.defloczhour = 0
 		self.def_defloczminute = self.defloczminute = 0
 		self.def_deflocdst = self.deflocdst = False
+		self.def_defloctzauto = self.defloctzauto = True
+		self.def_defloctzid = self.defloctzid = ''
 		self.def_defloclondeg = self.defloclondeg = 0
 		self.def_defloclonmin = self.defloclonmin = 0
 		self.def_defloclatdeg = self.defloclatdeg = 0
@@ -398,12 +431,37 @@ class Options:
 
 		self.autosave = False
 		self.def_autosave = self.autosave
+		self.quickcharts_prompt = True
+		self.def_quickcharts_prompt = self.quickcharts_prompt
+		self.search_techniques = []
+		self.def_search_techniques = self.search_techniques[:]
+		self.search_aspects = []
+		self.def_search_aspects = self.search_aspects[:]
+		self.search_promittor_ids = []
+		self.def_search_promittor_ids = self.search_promittor_ids[:]
+		self.search_significator_ids = []
+		self.def_search_significator_ids = self.search_significator_ids[:]
+		self.search_from = ()
+		self.def_search_from = self.search_from
+		self.search_to = ()
+		self.def_search_to = self.search_to
+		self.search_part_filter = ''
+		self.def_search_part_filter = self.search_part_filter
+		self.startupchart = ''
+		self.def_startupchart = self.startupchart
+		self.revolutions_solaryearmode = 0
+		self.def_revolutions_solaryearmode = self.revolutions_solaryearmode
+		self.revolutions_solarlocationmode = 0
+		self.def_revolutions_solarlocationmode = self.revolutions_solarlocationmode
 
 # ########################################
 # Roberto change - V 7.2.0 / V 7.3.0
-		self.optionsfilestxt = ('appearance1.opt', 'appearance2.opt', 'symbols.opt', 'dignities.opt', 'triplicities.opt', 'terms.opt', 'decans.opt', 'almutenchart.opt', 'almutentopicalandparts.opt', 'ayanamsa.opt', 'colors.opt', 'housesystem.opt', 'nodes.opt', 'orbs.opt', 'primarydirs.opt', 'primarykeys.opt', 'fortune.opt', 'syzygy.opt', 'fixedstars.opt', 'profections.opt', 'firdaria.opt', 'deflocation.opt', 'pdsinchart.opt', 'languages.opt', 'autosave.opt')
+		self.optionsfilestxt = ('appearance1.opt', 'appearance2.opt', 'symbols.opt', 'dignities.opt', 'triplicities.opt', 'terms.opt', 'decans.opt', 'almutenchart.opt', 'almutentopicalandparts.opt', 'ayanamsa.opt', 'colors.opt', 'housesystem.opt', 'nodes.opt', 'orbs.opt', 'primarydirs.opt', 'primarykeys.opt', 'fortune.opt', 'syzygy.opt', 'fixedstars.opt', 'profections.opt', 'firdaria.opt', 'deflocation.opt', 'pdsinchart.opt', 'languages.opt', 'autosave.opt', 'revolutions.opt', 'quickcharts.opt', 'search.opt', 'startupchart.opt', 'stepalerts.opt')
 # ########################################
-		self.optsdirtxt = 'Opts'
+		self.factoryoptsdirtxt = self._resolve_factory_opts_dir()
+		self.optsdirtxt = self._resolve_user_opts_dir()
+		self._ensure_user_opts_dir()
+		self._seed_user_opts_from_factory()
 
 		self.appearance1opt = os.path.join(self.optsdirtxt, self.optionsfilestxt[0])
 		self.appearance2opt = os.path.join(self.optsdirtxt, self.optionsfilestxt[1])
@@ -435,8 +493,49 @@ class Options:
 		self.pdsinchartopt = os.path.join(self.optsdirtxt, self.optionsfilestxt[22])
 		self.languagesopt = os.path.join(self.optsdirtxt, self.optionsfilestxt[23])
 		self.autosaveopt = os.path.join(self.optsdirtxt, self.optionsfilestxt[24])
+		self.revolutionsopt = os.path.join(self.optsdirtxt, self.optionsfilestxt[25])
+		self.quickchartsopt = os.path.join(self.optsdirtxt, self.optionsfilestxt[26])
+		self.searchopt = os.path.join(self.optsdirtxt, self.optionsfilestxt[27])
+		self.startupchartopt = os.path.join(self.optsdirtxt, self.optionsfilestxt[28])
+		self.stepalertsopt = os.path.join(self.optsdirtxt, self.optionsfilestxt[29])
 		self.load()
 # ########################################
+
+	def _ensure_user_opts_dir(self):
+		try:
+			os.makedirs(self.optsdirtxt, exist_ok=True)
+		except Exception:
+			pass
+
+	def _factory_opt_path(self, filename):
+		return os.path.join(self.factoryoptsdirtxt, filename)
+
+	def _open_opt_for_load(self, optfile):
+		filename = os.path.basename(optfile)
+		candidates = [optfile, self._factory_opt_path(filename)]
+		for path in candidates:
+			if path and os.path.exists(path):
+				return open(path, 'rb')
+		raise IOError
+
+	def _seed_user_opts_from_factory(self):
+		if not os.path.isdir(self.factoryoptsdirtxt):
+			return
+
+		for filename in self.optionsfilestxt:
+			dst = os.path.join(self.optsdirtxt, filename)
+			if os.path.exists(dst):
+				continue
+
+			src = self._factory_opt_path(filename)
+			if not os.path.exists(src):
+				continue
+
+			try:
+				shutil.copy2(src, dst)
+			except Exception:
+				pass
+
 	def reload(self):
 		#Appearance
 		self.aspects = self.def_aspects
@@ -573,6 +672,10 @@ class Options:
 
 		self.sigplanets = self.def_sigplanets[:]
 		self.promplanets = self.def_promplanets[:]
+		self.stepalerts_enabled = self.def_stepalerts_enabled
+		self.stepalerts_sigangles = self.def_stepalerts_sigangles[:]
+		self.stepalerts_sigplanets = self.def_stepalerts_sigplanets[:]
+		self.stepalerts_promplanets = self.def_stepalerts_promplanets[:]
 
 		self.pdaspects = self.def_pdaspects[:]
 
@@ -582,6 +685,8 @@ class Options:
 
 		self.pdsecmotion = self.def_pdsecmotion
 		self.pdsecmotioniter = self.def_pdsecmotioniter
+		self.pdrevsunyearmode = self.def_pdrevsunyearmode
+		self.pdrevannualmode = self.def_pdrevannualmode
 
 		self.zodpromsigasps = self.def_zodpromsigasps[:]
 		self.ascmchcsasproms = self.def_ascmchcsasproms
@@ -667,6 +772,17 @@ class Options:
 
 		#Autosave
 		self.autosave = self.def_autosave
+		self.quickcharts_prompt = self.def_quickcharts_prompt
+		self.search_techniques = self.def_search_techniques[:]
+		self.search_aspects = self.def_search_aspects[:]
+		self.search_promittor_ids = self.def_search_promittor_ids[:]
+		self.search_significator_ids = self.def_search_significator_ids[:]
+		self.search_from = self.def_search_from
+		self.search_to = self.def_search_to
+		self.search_part_filter = self.def_search_part_filter
+		self.startupchart = self.def_startupchart
+		self.revolutions_solaryearmode = self.def_revolutions_solaryearmode
+		self.revolutions_solarlocationmode = self.def_revolutions_solarlocationmode
 
 
 	def load(self):
@@ -674,7 +790,7 @@ class Options:
 
 		try:
 			optfile = self.appearance1opt
-			f = open(optfile, 'rb')		
+			f = self._open_opt_for_load(optfile)		
 			self.aspects = pickle.load(f)
 			self.aspect = pickle.load(f)
 			self.symbols = pickle.load(f)
@@ -714,7 +830,7 @@ class Options:
 
 		try:
 			optfile = self.appearance2opt
-			f = open(optfile, 'rb')		
+			f = self._open_opt_for_load(optfile)		
 			self.speculums = pickle.load(f)
 			self.intime = pickle.load(f)
 			# Backward-compatible: speculum dodecat toggle (2 items: Placidian/Regiomontan)
@@ -728,7 +844,7 @@ class Options:
 
 		try:
 			optfile = self.symbolsopt
-			f = open(optfile, 'rb')		
+			f = self._open_opt_for_load(optfile)		
 			self.uranus = pickle.load(f)
 			self.pluto = pickle.load(f)
 			self.signs = pickle.load(f)
@@ -738,7 +854,7 @@ class Options:
 
 		try:
 			optfile = self.dignitiesopt
-			f = open(optfile, 'rb')		
+			f = self._open_opt_for_load(optfile)		
 			self.dignities = pickle.load(f)
 			f.close()
 		except IOError:
@@ -746,7 +862,7 @@ class Options:
 
 		try:
 			optfile = self.triplicitiesopt
-			f = open(optfile, 'rb')		
+			f = self._open_opt_for_load(optfile)		
 			self.seltrip = pickle.load(f)
 			self.trips = pickle.load(f)
 			f.close()
@@ -755,7 +871,7 @@ class Options:
 
 		try:
 			optfile = self.termsopt
-			f = open(optfile, 'rb')		
+			f = self._open_opt_for_load(optfile)		
 			self.selterm = pickle.load(f)
 			self.terms = pickle.load(f)
 			f.close()
@@ -764,7 +880,7 @@ class Options:
 
 		try:
 			optfile = self.decansopt
-			f = open(optfile, 'rb')		
+			f = self._open_opt_for_load(optfile)		
 			self.seldecan = pickle.load(f)
 			self.decans = pickle.load(f)
 			f.close()
@@ -773,7 +889,7 @@ class Options:
 
 		try:
 			optfile = self.chartalmutenopt
-			f = open(optfile, 'rb')		
+			f = self._open_opt_for_load(optfile)		
 			self.oneruler = pickle.load(f)
 			self.usedaynightorb = pickle.load(f)
 			self.dignityscores = pickle.load(f)
@@ -788,7 +904,7 @@ class Options:
 
 		try:
 			optfile = self.topicalandpartsopt
-			f = open(optfile, 'rb')		
+			f = self._open_opt_for_load(optfile)		
 			self.topicals = pickle.load(f)
 			self.arabicparts = pickle.load(f)
 			self.arabicpartsref = pickle.load(f)
@@ -800,7 +916,7 @@ class Options:
 
 		try:
 			optfile = self.ayanamsaopt
-			f = open(optfile, 'rb')		
+			f = self._open_opt_for_load(optfile)		
 			self.ayanamsha = pickle.load(f)
 			f.close()
 		except IOError:
@@ -808,7 +924,7 @@ class Options:
 
 		try:
 			optfile = self.colorsopt
-			f = open(optfile, 'rb')		
+			f = self._open_opt_for_load(optfile)		
 			self.clrframe = pickle.load(f)
 			self.clrsigns = pickle.load(f)
 			self.clrAscMC = pickle.load(f)
@@ -832,7 +948,7 @@ class Options:
 
 		try:
 			optfile = self.housesystemopt
-			f = open(optfile, 'rb')		
+			f = self._open_opt_for_load(optfile)		
 			self.hsys = pickle.load(f)
 			f.close()
 		except IOError:
@@ -840,7 +956,7 @@ class Options:
 
 		try:
 			optfile = self.nodesopt
-			f = open(optfile, 'rb')		
+			f = self._open_opt_for_load(optfile)		
 			self.meannode = pickle.load(f)
 			f.close()
 		except IOError:
@@ -848,7 +964,7 @@ class Options:
 
 		try:
 			optfile = self.orbsopt
-			f = open(optfile, 'rb')		
+			f = self._open_opt_for_load(optfile)		
 			self.orbis = pickle.load(f)
 			self.orbisplanetspar = pickle.load(f)
 			self.orbisH = pickle.load(f)
@@ -864,7 +980,7 @@ class Options:
 
 		try:
 			optfile = self.primarydirsopt
-			f = open(optfile, 'rb')		
+			f = self._open_opt_for_load(optfile)		
 			self.primarydir = pickle.load(f)
 			self.subprimarydir = pickle.load(f)
 			self.subzodiacal = pickle.load(f)
@@ -900,6 +1016,14 @@ class Options:
 				# 구버전(필드 없음): sigascmc를 근거로 유도(Asc 켜면 Asc/Dsc, MC 켜면 MC/IC)
 				asc_group, mc_group = self.sigascmc
 				self.sigangles = [asc_group, asc_group, mc_group, mc_group]
+			try:
+				self.pdrevsunyearmode = pickle.load(f)
+			except Exception:
+				self.pdrevsunyearmode = self.def_pdrevsunyearmode
+			try:
+				self.pdrevannualmode = pickle.load(f)
+			except Exception:
+				self.pdrevannualmode = self.def_pdrevannualmode
 
 			f.close()
 		except IOError:
@@ -907,7 +1031,7 @@ class Options:
 
 		try:
 			optfile = self.primarykeysopt
-			f = open(optfile, 'rb')		
+			f = self._open_opt_for_load(optfile)		
 			self.pdkeydyn = pickle.load(f)
 			self.pdkeyd = pickle.load(f)
 			self.pdkeys = pickle.load(f)
@@ -921,7 +1045,7 @@ class Options:
 
 		try:
 			optfile = self.fortuneopt
-			f = open(optfile, 'rb')		
+			f = self._open_opt_for_load(optfile)		
 			self.lotoffortune = pickle.load(f)
 			f.close()
 		except IOError:
@@ -929,7 +1053,7 @@ class Options:
 
 		try:
 			optfile = self.syzygyopt
-			f = open(optfile, 'rb')		
+			f = self._open_opt_for_load(optfile)		
 			self.syzmoon = pickle.load(f)
 			f.close()
 		except IOError:
@@ -937,7 +1061,7 @@ class Options:
 
 		try:
 			optfile = self.fixstarsopt
-			f = open(optfile, 'rb')		
+			f = self._open_opt_for_load(optfile)		
 			self.fixstars = pickle.load(f)
 			f.close()
 		except IOError:
@@ -945,7 +1069,7 @@ class Options:
 
 		try:
 			optfile = self.profectionsopt
-			f = open(optfile, 'rb')		
+			f = self._open_opt_for_load(optfile)		
 			self.zodprof = pickle.load(f)
 			self.usezodprojsprof = pickle.load(f)
 			f.close()
@@ -956,7 +1080,7 @@ class Options:
 # Roberto change - V 7.3.0
 		try:
 			optfile = self.firdariaopt
-			f = open(optfile, 'rb')		
+			f = self._open_opt_for_load(optfile)		
 			self.isfirbonatti = pickle.load(f)
 			f.close()
 		except IOError:
@@ -967,7 +1091,7 @@ class Options:
 # Roberto change - V 7.2.0
 		try:
 			optfile = self.deflocationopt
-			f = open(optfile, 'rb')		
+			f = self._open_opt_for_load(optfile)		
 			self.deflocname = pickle.load(f)
 			self.deflocplus = pickle.load(f)
 			self.defloczhour = pickle.load(f)
@@ -980,6 +1104,12 @@ class Options:
 			self.defloceast = pickle.load(f)
 			self.deflocnorth = pickle.load(f)
 			self.deflocalt = pickle.load(f)
+			try:
+				self.defloctzauto = pickle.load(f)
+				self.defloctzid = pickle.load(f)
+			except EOFError:
+				self.defloctzauto = self.def_defloctzauto
+				self.defloctzid = self.def_defloctzid
 			f.close()
 		except IOError:
 			res = False
@@ -987,7 +1117,7 @@ class Options:
 
 		try:
 			optfile = self.pdsinchartopt
-			f = open(optfile, 'rb')		
+			f = self._open_opt_for_load(optfile)		
 			self.pdincharttyp = pickle.load(f)
 			self.pdinchartsecmotion = pickle.load(f)
 			self.pdinchartterrsecmotion = pickle.load(f)
@@ -997,7 +1127,7 @@ class Options:
 
 		try:
 			optfile = self.languagesopt
-			f = open(optfile, 'rb')		
+			f = self._open_opt_for_load(optfile)		
 			self.langid = pickle.load(f)
 			f.close()
 		except IOError:
@@ -1005,8 +1135,58 @@ class Options:
 
 		try:
 			optfile = self.autosaveopt
-			f = open(optfile, 'rb')		
+			f = self._open_opt_for_load(optfile)		
 			self.autosave = pickle.load(f)
+			f.close()
+		except IOError:
+			res = False
+
+		try:
+			optfile = self.stepalertsopt
+			f = self._open_opt_for_load(optfile)
+			self.stepalerts_enabled = pickle.load(f)
+			self.stepalerts_sigangles = pickle.load(f)
+			self.stepalerts_sigplanets = pickle.load(f)
+			self.stepalerts_promplanets = pickle.load(f)
+			f.close()
+		except IOError:
+			res = False
+
+		try:
+			optfile = self.revolutionsopt
+			f = self._open_opt_for_load(optfile)
+			self.revolutions_solaryearmode = pickle.load(f)
+			self.revolutions_solarlocationmode = pickle.load(f)
+			f.close()
+		except IOError:
+			res = False
+
+		try:
+			optfile = self.quickchartsopt
+			f = self._open_opt_for_load(optfile)
+			self.quickcharts_prompt = pickle.load(f)
+			f.close()
+		except IOError:
+			res = False
+
+		try:
+			optfile = self.searchopt
+			f = self._open_opt_for_load(optfile)
+			self.search_techniques = pickle.load(f)
+			self.search_aspects = pickle.load(f)
+			self.search_promittor_ids = pickle.load(f)
+			self.search_significator_ids = pickle.load(f)
+			self.search_from = pickle.load(f)
+			self.search_to = pickle.load(f)
+			self.search_part_filter = pickle.load(f)
+			f.close()
+		except IOError:
+			res = False
+
+		try:
+			optfile = self.startupchartopt
+			f = self._open_opt_for_load(optfile)
+			self.startupchart = pickle.load(f)
 			f.close()
 		except IOError:
 			res = False
@@ -1299,6 +1479,8 @@ class Options:
 			pickle.dump(self.pdsecmotion, f)
 			pickle.dump(self.pdsecmotioniter, f)
 			pickle.dump(self.sigangles, f)
+			pickle.dump(self.pdrevsunyearmode, f)
+			pickle.dump(self.pdrevannualmode, f)
 			f.close()
 			return True
 		except IOError:
@@ -1318,6 +1500,21 @@ class Options:
 			pickle.dump(self.pdkeymin, f)
 			pickle.dump(self.pdkeysec, f)
 			pickle.dump(self.useregressive, f)
+			f.close()
+			return True
+		except IOError:
+			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
+			dlg.ShowModal()
+			return False
+
+	def saveStepAlerts(self):
+		try:
+			optfile = self.stepalertsopt
+			f = open(optfile, 'wb')
+			pickle.dump(self.stepalerts_enabled, f)
+			pickle.dump(self.stepalerts_sigangles, f)
+			pickle.dump(self.stepalerts_sigplanets, f)
+			pickle.dump(self.stepalerts_promplanets, f)
 			f.close()
 			return True
 		except IOError:
@@ -1416,6 +1613,8 @@ class Options:
 			pickle.dump(self.defloceast, f)
 			pickle.dump(self.deflocnorth, f)
 			pickle.dump(self.deflocalt, f)
+			pickle.dump(self.defloctzauto, f)
+			pickle.dump(self.defloctzid, f)
 			f.close()
 			return True
 		except IOError:
@@ -1467,6 +1666,61 @@ class Options:
 
 		return res
 
+	def saveRevolutions(self):
+		try:
+			optfile = self.revolutionsopt
+			f = open(optfile, 'wb')
+			pickle.dump(self.revolutions_solaryearmode, f)
+			pickle.dump(self.revolutions_solarlocationmode, f)
+			f.close()
+			return True
+		except IOError:
+			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
+			dlg.ShowModal()
+			return False
+
+	def saveQuickCharts(self):
+		try:
+			optfile = self.quickchartsopt
+			f = open(optfile, 'wb')
+			pickle.dump(self.quickcharts_prompt, f)
+			f.close()
+			return True
+		except IOError:
+			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
+			dlg.ShowModal()
+			return False
+
+	def saveSearch(self):
+		try:
+			optfile = self.searchopt
+			f = open(optfile, 'wb')
+			pickle.dump(self.search_techniques, f)
+			pickle.dump(self.search_aspects, f)
+			pickle.dump(self.search_promittor_ids, f)
+			pickle.dump(self.search_significator_ids, f)
+			pickle.dump(self.search_from, f)
+			pickle.dump(self.search_to, f)
+			pickle.dump(self.search_part_filter, f)
+			f.close()
+			return True
+		except IOError:
+			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
+			dlg.ShowModal()
+			return False
+
+	def saveStartupChart(self):
+		try:
+			optfile = self.startupchartopt
+			f = open(optfile, 'wb')
+			pickle.dump(self.startupchart, f)
+			f.close()
+			return True
+		except IOError:
+			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
+			dlg.ShowModal()
+			return False
+
 
 	def save(self):
 		self.saveAppearance1()
@@ -1496,6 +1750,11 @@ class Options:
 		self.savePDsInChart()
 		self.saveLanguages()
 		self.saveAutoSave()
+		self.saveRevolutions()
+		self.saveQuickCharts()
+		self.saveSearch()
+		self.saveStartupChart()
+		self.saveStepAlerts()
 
 		return True
 
@@ -1509,7 +1768,7 @@ class Options:
 	def checkOptsFiles(self):
 		numfiles = len(self.optionsfilestxt)
 		for i in range(numfiles):
-			if os.path.exists(os.path.join(self.optsdirtxt, self.optionsfilestxt[i])):
+			if os.path.exists(os.path.join(self.optsdirtxt, self.optionsfilestxt[i])) or os.path.exists(self._factory_opt_path(self.optionsfilestxt[i])):
 				return True
 
 		return False

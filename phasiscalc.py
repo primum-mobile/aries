@@ -631,6 +631,16 @@ PLANET_NAMES = {
     astrology.SE_MERCURY:u"Mercury",
 }
 
+# Symbolic fallback thresholds for heliacal transition detection.
+# Used only when the stricter physical-visibility gate finds no event in-window.
+SYMBOLIC_HELIACAL_EPS = {
+    astrology.SE_MERCURY: 10.0,
+    astrology.SE_VENUS:   8.0,
+    astrology.SE_MARS:   12.0,
+    astrology.SE_JUPITER: 11.0,
+    astrology.SE_SATURN: 10.0,
+}
+
 # Approx reference magnitudes for m = Href + 5*log10(r*Δ) + phase
 HREF = {
     astrology.SE_MERCURY: -0.60,
@@ -1248,6 +1258,25 @@ def visibility_flags_around(chart, days_window=7):
         def _near_ok(near_seq, day):
             return any(near_seq.get(k, False) for k in (day-1, day, day+1))
 
+        def _fallback_eps_transition(eps_seq, near_seq, is_first, ipl):
+            threshold = SYMBOLIC_HELIACAL_EPS.get(ipl, 10.0)
+            offs = sorted(eps_seq.keys())
+            prev_ok = None
+            prev_day = None
+            for day in offs:
+                eps = eps_seq.get(day, 999.0)
+                ok = bool(_near_ok(near_seq, day)) and (eps is not None) and (float(eps) < 999.0) and (float(eps) >= threshold)
+                deriv = _deps_per_day(eps_seq, day)
+                if is_first:
+                    if prev_ok is False and ok and deriv >= 0.0:
+                        return day
+                else:
+                    if prev_ok is True and (not ok):
+                        return prev_day
+                prev_ok = ok
+                prev_day = day
+            return None
+
         def find_first_last_dir(qual_seq, near_seq, eps_seq, is_evening, ipl):
             """
             전이 검출 + (내행성 전용) 방향성 체크 + 하루짜리 스파이크 스킵.
@@ -1273,6 +1302,11 @@ def visibility_flags_around(chart, days_window=7):
                     Last = offs[i-1]
 
                 prev = cur
+
+            if First is None:
+                First = _fallback_eps_transition(eps_seq, near_seq, True, ipl)
+            if Last is None:
+                Last = _fallback_eps_transition(eps_seq, near_seq, False, ipl)
 
             return First, Last
 

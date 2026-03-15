@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import datetime
 import  wx
 import intvalidator
 import revolutions
@@ -38,6 +39,8 @@ class RevolutionYearStepper(wx.Dialog):
 
 		self.get_year = get_year_cb
 		self.set_year = set_year_cb
+		self.ID_ARROW_PREV = wx.NewId()
+		self.ID_ARROW_NEXT = wx.NewId()
 
 		self.lbl = wx.StaticText(self, -1, (mtexts.txts["Year"]+": %s") % (self.get_year(),))
 		# 버튼 세로 높이 키우기: 최소 높이 36px
@@ -56,10 +59,9 @@ class RevolutionYearStepper(wx.Dialog):
 
 		# 여유 있는 내부 여백
 		row = wx.BoxSizer(wx.HORIZONTAL)
-		# 순서 변경: +가 왼쪽, -가 오른쪽
-		row.Add(self.btn_next, 0, wx.ALL, 8)
-		row.Add(self.lbl,      0, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 8)
 		row.Add(self.btn_prev, 0, wx.ALL, 8)
+		row.Add(self.lbl,      0, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 8)
+		row.Add(self.btn_next, 0, wx.ALL, 8)
 
 		outer = wx.BoxSizer(wx.VERTICAL)
 		outer.Add(row, 0, wx.ALL, 4)
@@ -67,18 +69,63 @@ class RevolutionYearStepper(wx.Dialog):
 
 		self.Bind(wx.EVT_BUTTON, self.on_prev, self.btn_prev)
 		self.Bind(wx.EVT_BUTTON, self.on_next, self.btn_next)
+		self.Bind(wx.EVT_MENU, self.onArrowPrev, id=self.ID_ARROW_PREV)
+		self.Bind(wx.EVT_MENU, self.onArrowNext, id=self.ID_ARROW_NEXT)
+		self.Bind(wx.EVT_CLOSE, self.onClose)
+		self.Bind(wx.EVT_CHAR_HOOK, self.onCharHook)
+		self.Bind(wx.EVT_KEY_DOWN, self.onKeyDown)
+		self.btn_prev.Bind(wx.EVT_KEY_DOWN, self.onKeyDown)
+		self.btn_next.Bind(wx.EVT_KEY_DOWN, self.onKeyDown)
 
-		# ← / → 단축키
 		accel = wx.AcceleratorTable([
-			(0, wx.WXK_LEFT,  self.btn_prev.GetId()),
-			(0, wx.WXK_RIGHT, self.btn_next.GetId()),
+			(0, wx.WXK_LEFT,  self.ID_ARROW_PREV),
+			(0, wx.WXK_RIGHT, self.ID_ARROW_NEXT),
 		])
 		self.SetAcceleratorTable(accel)
+
+	def _toggle_parent_comparison(self):
+		frame = getattr(self.GetParent(), "_rev_frame", None)
+		if frame is not None and hasattr(frame, "toggleComparisonView"):
+			frame.toggleComparisonView()
+
+	def onCharHook(self, event):
+		if event is None:
+			return
+		if event.AltDown() or event.ControlDown() or event.CmdDown():
+			event.Skip()
+			return
+		if event.GetKeyCode() == wx.WXK_TAB:
+			self._toggle_parent_comparison()
+			return
+		event.Skip()
+
+	def onKeyDown(self, event):
+		if event is None:
+			return
+		if event.AltDown() or event.ControlDown() or event.CmdDown():
+			event.Skip()
+			return
+		if event.GetKeyCode() == wx.WXK_TAB:
+			self._toggle_parent_comparison()
+			return
+		event.Skip()
 
 	def _refresh(self):
 		self.lbl.SetLabel( (mtexts.txts["Year"]+": %s") % (self.get_year(),))
 		self.Layout()
 		self.Fit()
+
+	def onArrowPrev(self, evt):
+		self.on_prev(evt)
+
+	def onArrowNext(self, evt):
+		self.on_next(evt)
+
+	def step_backward(self):
+		self.on_prev(None)
+
+	def step_forward(self):
+		self.on_next(None)
 
 	def on_prev(self, evt):
 		self.set_year(self.get_year() - 1)
@@ -88,10 +135,29 @@ class RevolutionYearStepper(wx.Dialog):
 		self.set_year(self.get_year() + 1)
 		self._refresh()
 
+	def onClose(self, evt):
+		try:
+			self.Hide()
+		except Exception:
+			pass
+		try:
+			if evt is not None and hasattr(evt, "Veto"):
+				evt.Veto()
+		except Exception:
+			pass
+		try:
+			parent = getattr(self.GetParent(), "_rev_frame", None)
+			if parent is not None:
+				wx.CallAfter(parent.Raise)
+				wx.CallAfter(parent.SetFocus)
+				if hasattr(parent, "w"):
+					wx.CallAfter(parent.w.SetFocus)
+		except Exception:
+			pass
+
 class RevolutionMonthStepper(wx.Dialog):
 	"""
 	Lunar Revolution용: 가운데 Year, 그 아래 Month 두 줄 라벨.
-	+1 Month 버튼은 '왼쪽', -1 Month는 '오른쪽'. 버튼은 두툼.
 	get_ym_cb() -> (year:int, month:int)
 	set_ym_cb(year:int, month:int) -> None
 	"""
@@ -107,6 +173,8 @@ class RevolutionMonthStepper(wx.Dialog):
 		# 콜백 저장
 		self.get_ym = get_ym_cb
 		self.set_ym = set_ym_cb
+		self.ID_ARROW_PREV = wx.NewId()
+		self.ID_ARROW_NEXT = wx.NewId()
 
 		# 라벨 2줄 (가운데 정렬)
 		y, m = self.get_ym()
@@ -117,14 +185,14 @@ class RevolutionMonthStepper(wx.Dialog):
 		vlabel.Add(self.lbl_year,  0, wx.ALIGN_CENTER | wx.BOTTOM, 2)
 		vlabel.Add(self.lbl_month, 0, wx.ALIGN_CENTER | wx.TOP,    2)
 
-		# 버튼(+가 왼쪽, 두툼)
+		# 버튼(뒤로/앞으로, 두툼)
 		self.btn_next = wx.Button(self, -1, "+1 "+mtexts.txts["Month"]); self.btn_next.SetMinSize((-1, 45))
 		self.btn_prev = wx.Button(self, -1, "-1 "+mtexts.txts["Month"]); self.btn_prev.SetMinSize((-1, 45))
 
 		row = wx.BoxSizer(wx.HORIZONTAL)
-		row.Add(self.btn_next, 0, wx.ALL, 8)  # +가 왼쪽
-		row.Add(vlabel,        0, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 8)
 		row.Add(self.btn_prev, 0, wx.ALL, 8)
+		row.Add(vlabel,        0, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 8)
+		row.Add(self.btn_next, 0, wx.ALL, 8)
 
 		outer = wx.BoxSizer(wx.VERTICAL)
 		outer.Add(row, 0, wx.ALL, 4)
@@ -133,11 +201,45 @@ class RevolutionMonthStepper(wx.Dialog):
 		# 이벤트/단축키
 		self.Bind(wx.EVT_BUTTON, self._on_prev, self.btn_prev)
 		self.Bind(wx.EVT_BUTTON, self._on_next, self.btn_next)
+		self.Bind(wx.EVT_MENU, self._onArrowPrev, id=self.ID_ARROW_PREV)
+		self.Bind(wx.EVT_MENU, self._onArrowNext, id=self.ID_ARROW_NEXT)
+		self.Bind(wx.EVT_CLOSE, self.onClose)
+		self.Bind(wx.EVT_CHAR_HOOK, self.onCharHook)
+		self.Bind(wx.EVT_KEY_DOWN, self.onKeyDown)
+		self.btn_prev.Bind(wx.EVT_KEY_DOWN, self.onKeyDown)
+		self.btn_next.Bind(wx.EVT_KEY_DOWN, self.onKeyDown)
 		accel = wx.AcceleratorTable([
-			(0, wx.WXK_LEFT,  self.btn_prev.GetId()),
-			(0, wx.WXK_RIGHT, self.btn_next.GetId()),
+			(0, wx.WXK_LEFT,  self.ID_ARROW_PREV),
+			(0, wx.WXK_RIGHT, self.ID_ARROW_NEXT),
 		])
 		self.SetAcceleratorTable(accel)
+
+	def _toggle_parent_comparison(self):
+		frame = getattr(self.GetParent(), "_rev_frame", None)
+		if frame is not None and hasattr(frame, "toggleComparisonView"):
+			frame.toggleComparisonView()
+
+	def onCharHook(self, event):
+		if event is None:
+			return
+		if event.AltDown() or event.ControlDown() or event.CmdDown():
+			event.Skip()
+			return
+		if event.GetKeyCode() == wx.WXK_TAB:
+			self._toggle_parent_comparison()
+			return
+		event.Skip()
+
+	def onKeyDown(self, event):
+		if event is None:
+			return
+		if event.AltDown() or event.ControlDown() or event.CmdDown():
+			event.Skip()
+			return
+		if event.GetKeyCode() == wx.WXK_TAB:
+			self._toggle_parent_comparison()
+			return
+		event.Skip()
 
 	def _refresh_labels(self):
 		y, m = self.get_ym()
@@ -145,6 +247,18 @@ class RevolutionMonthStepper(wx.Dialog):
 		self.lbl_month.SetLabel((mtexts.txts["Month"]+": %02d") % m)
 		self.Layout()
 		self.Fit()
+
+	def _onArrowPrev(self, evt):
+		self._on_prev(evt)
+
+	def _onArrowNext(self, evt):
+		self._on_next(evt)
+
+	def step_backward(self):
+		self._on_prev(None)
+
+	def step_forward(self):
+		self._on_next(None)
 
 	def _on_prev(self, evt):
 		y, m = self.get_ym()
@@ -161,6 +275,26 @@ class RevolutionMonthStepper(wx.Dialog):
 			m = 1; y += 1
 		self.set_ym(y, m)
 		self._refresh_labels()
+
+	def onClose(self, evt):
+		try:
+			self.Hide()
+		except Exception:
+			pass
+		try:
+			if evt is not None and hasattr(evt, "Veto"):
+				evt.Veto()
+		except Exception:
+			pass
+		try:
+			parent = getattr(self.GetParent(), "_rev_frame", None)
+			if parent is not None:
+				wx.CallAfter(parent.Raise)
+				wx.CallAfter(parent.SetFocus)
+				if hasattr(parent, "w"):
+					wx.CallAfter(parent.w.SetFocus)
+		except Exception:
+			pass
 
 class RevolutionsDlg(wx.Dialog):
 	def __init__(self, parent):
@@ -364,14 +498,10 @@ class RevolutionsDlg(wx.Dialog):
 			
 	def initialize(self, chrt):
 		self._chrt = chrt
-		year = chrt.time.year
-		month = chrt.time.month
-		day = chrt.time.day
-
-		#year, month, day = util.incrDay(year, month, day)
-		year = chrt.time.origyear + 1
-		month = 1
-		day = 1
+		now = datetime.datetime.now()
+		year = now.year
+		month = now.month
+		day = now.day
 
 		self.typecb.SetStringSelection(mtexts.revtypeList[revolutions.Revolutions.SOLAR])
 		self.year.SetValue(str(year))

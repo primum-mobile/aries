@@ -3,6 +3,7 @@
 import os
 import wx
 import mtexts
+import windowbehavior
 
 
 class CommonWnd(wx.ScrolledWindow):
@@ -29,6 +30,7 @@ class CommonWnd(wx.ScrolledWindow):
         
         self.Bind(wx.EVT_PAINT, self.OnPaint)
         self.Bind(wx.EVT_RIGHT_UP, self.onPopupMenu)
+        self.Bind(wx.EVT_CONTEXT_MENU, self.onPopupMenu)
         self.Bind(wx.EVT_MENU, self.onSaveAsBitmap, id=self.ID_SaveAsBitmap)
         self.Bind(wx.EVT_MENU, self.onBlackAndWhite, id=self.ID_BlackAndWhite)
 
@@ -37,7 +39,7 @@ class CommonWnd(wx.ScrolledWindow):
 
 
     def onPopupMenu(self, event):
-        self.PopupMenu(self.pmenu, event.GetPosition())
+        windowbehavior.popup_menu(self, self.pmenu, event)
 
 
     def onSaveAsBitmap(self, event):
@@ -77,7 +79,6 @@ class CommonWnd(wx.ScrolledWindow):
 
     def OnPaint(self, event):
         dc = wx.BufferedPaintDC(self, self.buffer, wx.BUFFER_VIRTUAL_AREA)
-
 
 
 

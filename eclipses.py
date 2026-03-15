@@ -199,6 +199,71 @@ def _moon_geo_ecl_equ(jdut):
     return lon, lat, decl
 
 
+def _equatorial_ra_dec(jdut, ipl):
+    ra, dec, _ = _calc3(jdut, ipl, SEFLG | astrology.SEFLG_EQUATORIAL)
+    return float(ra), float(dec)
+
+
+def _angular_sep_deg(ra1_deg, dec1_deg, ra2_deg, dec2_deg):
+    a1 = math.radians(float(ra1_deg))
+    d1 = math.radians(float(dec1_deg))
+    a2 = math.radians(float(ra2_deg))
+    d2 = math.radians(float(dec2_deg))
+    cossep = math.sin(d1) * math.sin(d2) + math.cos(d1) * math.cos(d2) * math.cos(a1 - a2)
+    cossep = max(-1.0, min(1.0, cossep))
+    return math.degrees(math.acos(cossep))
+
+
+def _pheno_attr(jdut, ipl):
+    try:
+        res = astrology.swe_pheno_ut(float(jdut), int(ipl), int(SEFLG))
+    except Exception:
+        return []
+
+    if isinstance(res, tuple):
+        for item in res:
+            if isinstance(item, (list, tuple)) and len(item) >= 5 and isinstance(item[0], (int, float)):
+                return [float(v) for v in item]
+    return []
+
+
+def _safe_apparent_radius_deg(jdut, ipl):
+    attr = _pheno_attr(jdut, ipl)
+    if len(attr) >= 4:
+        try:
+            diameter = abs(float(attr[3]))
+            if diameter > 0.0:
+                return diameter / 2.0
+        except Exception:
+            pass
+    return 0.0
+
+
+def _classify_solar_from_geometry(jdut):
+    ra_sun, dec_sun = _equatorial_ra_dec(jdut, astrology.SE_SUN)
+    ra_moon, dec_moon = _equatorial_ra_dec(jdut, astrology.SE_MOON)
+    sep = _angular_sep_deg(ra_sun, dec_sun, ra_moon, dec_moon)
+    rs = _safe_apparent_radius_deg(jdut, astrology.SE_SUN)
+    rm = _safe_apparent_radius_deg(jdut, astrology.SE_MOON)
+    beta = abs(_moon_lat(jdut))
+
+    if rs <= 0.0 or rm <= 0.0:
+        return 0
+
+    overlap_limit = rs + rm
+    if sep > (overlap_limit + 0.1):
+        if beta <= 1.6 and abs(_dlon_m_minus_s(jdut)) <= 1.5:
+            return astrology.SE_ECL_PARTIAL
+        return 0
+
+    if sep <= abs(rm - rs):
+        if abs(rm - rs) <= 0.01:
+            return astrology.SE_ECL_ANNULAR_TOTAL
+        return astrology.SE_ECL_TOTAL if rm >= rs else astrology.SE_ECL_ANNULAR
+
+    return astrology.SE_ECL_PARTIAL
+
+
 def _unify_when_glob_result(res):
     """
     어떤 빌드든 (retflag, tret)을 뽑아낸다.
@@ -407,47 +472,18 @@ def _refine_solar_time(ta, tb):
     return _refine_min(F, ta, tb, it=100, tol=1e-5)
 
 def _solar_fallback(jd_from, jd_to):
-    # ---- Fallback: 합삭 기반 치밀 스캔 + WHERE 비트 판정 ----
+    # ---- Safe fallback: 합삭 기반 스캔 + 순수 기하 분류 ----
+    # `swe_sol_eclipse_where()` is unstable in this Python 3 build and can abort the
+    # process. Keep solar eclipse logic in Python-space so the module stays usable.
     out = []
     tlist = _find_new_moons(jd_from, jd_to)
     for t0 in tlist:
-        t_start = t0 - 0.9
-        t_end   = t0 + 0.9
-        dt      = 0.02
-
-        hits = []   # (t, rf)
-        t = t_start
-        while t <= t_end + 1e-9:
-            rf = _sol_where_retflag(t)
-            if rf & ANY_SOLAR_FLAGS:
-                hits.append((t, rf))
-            t += dt
-
-        if not hits:
+        best_t = _refine_solar_time(t0 - 0.08, t0 + 0.08)
+        if abs(_dlon_m_minus_s(best_t)) > 1.5:
             continue
 
-        def _rank(rf):
-            if rf & astrology.SE_ECL_TOTAL:         return 3
-            if rf & astrology.SE_ECL_ANNULAR_TOTAL: return 2
-            if rf & astrology.SE_ECL_ANNULAR:       return 1
-            if rf & astrology.SE_ECL_PARTIAL:       return 0
-            return -1
-
-        best_rank = max(_rank(rf) for _, rf in hits)
-        times = [tt for (tt, rf) in hits if _rank(rf) == best_rank]
-        # 구간을 정밀화: 합삭/노드 조건을 동시에 만족시키는 t*
-        ta, tb = (times[0], times[-1]) if len(times) >= 2 else (times[0]-0.08, times[0]+0.08)
-        best_t = _refine_solar_time(ta, tb)
-        # 같은 등급 비트가 실제 켜지는 시각의 retflag를 대표로
-        rf_best = 0
-        for tt, rf in hits:
-            if _rank(rf) == best_rank and abs(tt - best_t) <= 0.05:
-                rf_best = rf; break
-        if rf_best == 0:
-            rf_best = max((rf for (_, rf) in hits if _rank(rf) == best_rank), key=lambda x: x)
-
-        # 신월 검증: 태양-달 경도차가 |≤ 1.5°|일 때만 일식으로 채택
-        if abs(_dlon_m_minus_s(best_t)) > 1.5:
+        rf_best = _classify_solar_from_geometry(best_t)
+        if not (rf_best & ANY_SOLAR_FLAGS):
             continue
 
         elon, elat, decl = _moon_geo_ecl_equ(best_t)

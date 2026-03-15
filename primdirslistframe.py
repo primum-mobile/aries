@@ -311,7 +311,7 @@ class PrimDirsListFrame(wx.Frame):
 
 	def onCalc(self, evt):
 		#create chart with currdatetime
-		time = chart.Time(int(self.year.GetValue()), int(self.month.GetValue()), int(self.day.GetValue()), int(self.hour.GetValue()), int(self.minute.GetValue()), int(self.sec.GetValue()), self.chart.time.bc, self.chart.time.cal, self.chart.time.zt, self.chart.time.plus, self.chart.time.zh, self.chart.time.zm, self.chart.time.daylightsaving, self.chart.place)
+		time = chart.Time(int(self.year.GetValue()), int(self.month.GetValue()), int(self.day.GetValue()), int(self.hour.GetValue()), int(self.minute.GetValue()), int(self.sec.GetValue()), self.chart.time.bc, self.chart.time.cal, self.chart.time.zt, self.chart.time.plus, self.chart.time.zh, self.chart.time.zm, self.chart.time.daylightsaving, self.chart.place, tzid=getattr(self.chart.time, 'tzid', ''), tzauto=getattr(self.chart.time, 'tzauto', False))
 
 		self.horoscope = chart.Chart(self.chart.name, self.chart.male, time, self.chart.place, self.chart.htype, self.chart.notes, self.chart.options)
 
@@ -416,7 +416,6 @@ class PrimDirsListFrame(wx.Frame):
 			self.Destroy()
 		finally:
 			evt.Skip()  # 안전: 기본 처리 통과
-
 
 
 

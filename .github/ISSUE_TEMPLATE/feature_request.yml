@@ -1,0 +1,32 @@
+name: Feature request
+description: Propose a new feature or workflow improvement.
+title: "[Feature] "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What workflow is blocked or inefficient?
+      placeholder: Describe the limitation in current Morinus behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Describe the change.
+      placeholder: Describe the feature or UI/workflow change.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      placeholder: Existing workarounds or other approaches.
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and impact
+      description: Mention modules, menus, windows, or exports likely affected.

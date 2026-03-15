@@ -101,6 +101,23 @@ def _to_unicode(s):
 		return u'%s' % s
 
 
+def _part_category_label(src):
+	if not src:
+		return u''
+	parts = []
+	try:
+		if bool(src[2]):
+			parts.append(mtexts.txts.get('Diurnal', u'Diurnal'))
+	except Exception:
+		pass
+	try:
+		if arabicparts.ArabicParts.is_gendered_item(src):
+			parts.append(u'M/F')
+	except Exception:
+		pass
+	return u', '.join(parts)
+
+
 def _token_segments_for_formula(tok, fntText, fntSymbol, signs):
 	"""토큰(AC/SU/MO/RE/DE 등)을 [ (문자, 폰트), ... ] 세그먼트로 분해"""
 	# Py2 호환
@@ -239,20 +256,16 @@ def _draw_formula_for_part(self, draw, x, y, cellw, part, opts, fntText, fntSymb
 	except:
 		pass
 
-	# 주야 처리 (밤차트+Diurnal이면 B/C 스왑)
+	# 주야/성별 처리
 	try:
 		above = self.chart.planets.planets[astrology.SE_SUN].abovehorizon
 	except:
 		above = True
-	diur = False
 	try:
-		diur = bool(src[2])
+		male = bool(self.chart.male)
 	except:
-		try:
-			diur = bool(part[arabicparts.ArabicParts.DIURNAL])
-		except:
-			diur = False
-	if diur and (not above):
+		male = True
+	if arabicparts.ArabicParts.should_swap_formula(src, above, male):
 		f2, f3 = f3, f2
 		refB, refC = refC, refB
 
@@ -597,9 +610,9 @@ class ArabicPartsWnd(commonwnd.CommonWnd):
 		self.CELL_WIDTH  = 12*self.FONT_SIZE
 		self.TITLE_HEIGHT = self.LINE_HEIGHT
 
-		# 칼럼 폭: [Ref 1/4폭, Name, Formula, Longitude, Dodecatemorion, Declination, Almuten]
+		# 칼럼 폭: [Ref, Name, Formula, Longitude, Dodecatemorion, Declination, Almuten, Category]
 		self.COLWIDTHS   = [self.CELL_WIDTH//3, self.CELL_WIDTH, self.CELL_WIDTH,
-							self.CELL_WIDTH, self.CELL_WIDTH, self.CELL_WIDTH, self.CELL_WIDTH]
+							self.CELL_WIDTH, self.CELL_WIDTH, self.CELL_WIDTH, self.CELL_WIDTH, int(self.CELL_WIDTH*0.75)]
 		self.COLUMN_NUM  = len(self.COLWIDTHS)
 
 		self.SPACE_TITLEY = 0
@@ -622,7 +635,7 @@ class ArabicPartsWnd(commonwnd.CommonWnd):
 
 		self.drawBkg()
 		# 공통 칼럼 인덱스
-		self.COL_REF, self.COL_NAME, self.COL_FORM, self.COL_LONG, self.COL_DODEC, self.COL_DECL, self.COL_ALM = 0,1,2,3,4,5,6
+		self.COL_REF, self.COL_NAME, self.COL_FORM, self.COL_LONG, self.COL_DODEC, self.COL_DECL, self.COL_ALM, self.COL_CAT = 0,1,2,3,4,5,6,7
 
 	def getExt(self):
 		return mtexts.txts['Ara']
@@ -653,7 +666,7 @@ class ArabicPartsWnd(commonwnd.CommonWnd):
 					   outline=tableclr, fill=self.bkgclr)
 
 		headers = (u"#", mtexts.txts['Name'], mtexts.txts['Formula'], mtexts.txts['Longitude'],
-				mtexts.txts['Dodecatemorion'], mtexts.txts['Declination'], mtexts.txts['Almuten'])
+				mtexts.txts['Dodecatemorion'], mtexts.txts['Declination'], mtexts.txts['Almuten'], u'M/F')
 
 		xcol = BOR
 		for i, head in enumerate(headers):
@@ -755,13 +768,14 @@ class ArabicPartsWnd(commonwnd.CommonWnd):
 			w,h = draw.textsize(txt, self.fntText)
 			draw.text((xs[COL_DECL] + (self.COLWIDTHS[COL_DECL]-w)/2.0, y + (self.LINE_HEIGHT-h)/2.0), txt, fill=txtclr, font=self.fntText)
 		# Almuten (원본 규칙과 동일: essentials.degwinner에서 line_index=3 사용)
-		COL_REF, COL_NAME, COL_FORM, COL_LONG, COL_DODEC, COL_DECL, COL_ALM = 0,1,2,3,4,5,6
+		COL_REF, COL_NAME, COL_FORM, COL_LONG, COL_DODEC, COL_DECL, COL_ALM, COL_CAT = 0,1,2,3,4,5,6,7
 		degwinner = getattr(self.chart.almutens.essentials, 'degwinner', None)
 		if degwinner:
 			self.drawDegWinner(draw,
 							xs[COL_ALM], y,
 							3, True, degwinner, txtclr,
 							self.COLWIDTHS[COL_ALM])
+		# Category blank for LoF
 
 	def _deg_to_text(self, absdeg):
 		try:
@@ -800,28 +814,18 @@ class ArabicPartsWnd(commonwnd.CommonWnd):
 				refA,refB,refC = t
 		except: pass
 
-		# === 여기부터 추가 ===
-		# Diurnal 플래그: 옵션 정의(src[2])가 우선, 없으면 part 레코드에서 시도
-		diur = False
-		try:
-			diur = bool(src[2])
-		except:
-			try:
-				diur = bool(part[arabicparts.ArabicParts.DIURNAL])
-			except:
-				diur = False
-
-		# 야간차트 여부 (태양이 지평선 아래)
+		# 계산 로직과 동일한 주야/성별 스왑을 표기에도 적용
 		try:
 			above = self.chart.planets.planets[astrology.SE_SUN].abovehorizon
 		except:
-			above = True  # 안전값
-
-		# 밤차트 + Diurnal이면 계산과 동일하게 B/C를 스왑해 표기
-		if diur and (not above):
+			above = True
+		try:
+			male = bool(self.chart.male)
+		except:
+			male = True
+		if arabicparts.ArabicParts.should_swap_formula(src, above, male):
 			f2, f3 = f3, f2
 			refB, refC = refC, refB
-		# === 추가 끝 ===
 		def tok(code, idx):
 			# code 가 partstxts "인덱스"일 수도, conv "상수값"일 수도 있음
 			label = None
@@ -941,13 +945,27 @@ class ArabicPartsWnd(commonwnd.CommonWnd):
 					  txt, fill=txtclr, font=self.fntText)
 
 		# Almuten
-		COL_REF, COL_NAME, COL_FORM, COL_LONG, COL_DODEC, COL_DECL, COL_ALM = 0,1,2,3,4,5,6
+		COL_REF, COL_NAME, COL_FORM, COL_LONG, COL_DODEC, COL_DECL, COL_ALM, COL_CAT = 0,1,2,3,4,5,6,7
 		try:
 			degw = data[idx][arabicparts.ArabicParts.DEGWINNER]
 		except Exception:
 			degw = None
 		if degw:
 			self.drawDegWinner2(draw, xs[COL_ALM], y, degw, txtclr, self.COLWIDTHS[COL_ALM])
+		src = None
+		try:
+			name = data[idx][arabicparts.ArabicParts.NAME]
+			for it in self.options.arabicparts:
+				if isinstance(it, (list, tuple)) and it[arabicparts.ArabicParts.NAME] == name:
+					src = it
+					break
+		except Exception:
+			src = None
+		category = _part_category_label(src)
+		if category:
+			w, h = draw.textsize(category, self.fntText)
+			draw.text((xs[COL_CAT] + (self.COLWIDTHS[COL_CAT]-w)/2.0, y + (self.LINE_HEIGHT-h)/2.0),
+					  category, fill=txtclr, font=self.fntText)
 
 def _draw_formula_for_part_symbols(self, draw, x, y, cellw, part, opts,
 								   fntText, fntSymbol, signs, txtclr, line_h):
@@ -974,12 +992,11 @@ def _draw_formula_for_part_symbols(self, draw, x, y, cellw, part, opts,
 		above = self.chart.planets.planets[astrology.SE_SUN].abovehorizon
 	except:
 		pass
-	diur = False
 	try:
-		diur = bool(src[2])
+		male = bool(self.chart.male)
 	except:
-		pass
-	if diur and (not above):
+		male = True
+	if arabicparts.ArabicParts.should_swap_formula(src, above, male):
 		f2, f3 = f3, f2
 		refB, refC = refC, refB
 

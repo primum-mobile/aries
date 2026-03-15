@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - "codex/**"
+  pull_request:
+
+jobs:
+  macos-build:
+    runs-on: macos-14
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r requirements-dev.txt
+          python3 -m pip install -r requirements-optional.txt
+
+      - name: Compile Python sources
+        run: python3 -m compileall -q .
+
+      - name: Build Swiss Ephemeris extension
+        run: ./scripts/build_sweastrology.sh
+
+      - name: Build macOS app
+        run: ./scripts/build_macos_app.sh
+
+      - name: Package app artifact
+        run: |
+          cd dist
+          ditto -c -k --sequesterRsrc --keepParent Morinus.app Morinus-macos.zip
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Morinus-macos
+          path: dist/Morinus-macos.zip
+          if-no-files-found: error

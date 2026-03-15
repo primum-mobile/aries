@@ -6,6 +6,8 @@ import mtexts
 class ElectionsFrame(transitframe.TransitFrame):
 	def __init__(self, parent, title, chrt, radix, options):
 		transitframe.TransitFrame.__init__(self, parent, title, chrt, radix, options)
+		self.navigation_units = ('day', 'hour', 'minute')
+		self.navigation_title_label = mtexts.txts['Elections']
 
 
 	def change(self, chrt, title):
@@ -14,12 +16,9 @@ class ElectionsFrame(transitframe.TransitFrame):
 		self.w.drawBkg()
 		self.w.Refresh()
 		self._update_status_time_place()
+		self._handle_chart_alerts()
 		#Update Caption
 		title = title.replace(mtexts.txts['Radix'], mtexts.txts['Elections']+' ('+str(self.chart.time.origyear)+'.'+common.common.months[self.chart.time.origmonth-1]+'.'+str(self.chart.time.origday)+' '+str(self.chart.time.hour)+':'+str(self.chart.time.minute).zfill(2)+':'+str(self.chart.time.second).zfill(2)+')')
 		self.SetTitle(title)
-
-
-
-
 
 

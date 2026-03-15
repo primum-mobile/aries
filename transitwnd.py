@@ -16,6 +16,7 @@ class TransitWnd(wx.Window):
 		self.parent = parent
 		self.chart = chrt
 		self.radix = radix
+		self.display_datetime = getattr(parent, 'display_datetime', None)
 		# === ensure Arabic Parts / antiscia / fixstars for transit/revolution/election ===
 		try:
 			C = self.chart
@@ -37,7 +38,9 @@ class TransitWnd(wx.Window):
 						C.houses.cusps,
 						C.fortune,
 						C.syzygy,
-						C.options
+						C.options,
+						0.0,
+						C.male
 					)
 				except Exception:
 					# 실패해도 크래시는 막고, 그리기 단계에서 자연스럽게 skip
@@ -64,6 +67,7 @@ class TransitWnd(wx.Window):
 		self.compound = compound
 
 		self.bw = self.options.bw
+		self.buffer = wx.Bitmap(1, 1)
 
 		self.SetMinSize((200,200))
 
@@ -71,9 +75,12 @@ class TransitWnd(wx.Window):
 
 		self.SetBackgroundColour(self.options.clrbackground)
 
+		self._pending_draw = False
+		# Defer initial rendering until the window has a non-trivial client size.
 		self.drawBkg()
 
 		self.Bind(wx.EVT_RIGHT_UP, self.onPopupMenu)
+		self.Bind(wx.EVT_CONTEXT_MENU, self.onContextMenu)
 
 		self.Bind(wx.EVT_PAINT, self.OnPaint)
 		self.Bind(wx.EVT_SIZE, self.onSize)
@@ -81,6 +88,26 @@ class TransitWnd(wx.Window):
 
 
 	def drawBkg(self):
+		try:
+			w, h = self.GetClientSize().Get()
+		except Exception:
+			try:
+				sz = self.GetClientSize()
+				w, h = int(getattr(sz, "x", 0)), int(getattr(sz, "y", 0))
+			except Exception:
+				w, h = 0, 0
+
+		if w <= 1 or h <= 1:
+			# Avoid crashes from 0-sized bitmaps/fonts; retry after layout.
+			if not getattr(self, "_pending_draw", False):
+				self._pending_draw = True
+				try:
+					wx.CallAfter(self.drawBkg)
+				except Exception:
+					pass
+			return
+		self._pending_draw = False
+
 		# ensure Arabic Parts / antiscia / fixstars for current chart (handles steppers)
 		try:
 			C = self.chart
@@ -97,7 +124,9 @@ class TransitWnd(wx.Window):
 						C.houses.cusps,
 						C.fortune,
 						C.syzygy,
-						C.options
+						C.options,
+						0.0,
+						C.male
 					)
 				except Exception:
 					C.parts = None
@@ -125,17 +154,57 @@ class TransitWnd(wx.Window):
 				gchart = graphchart.GraphChart(self.chart, self.GetClientSize(), self.options, self.bw, False, None)
 			else:
 				gchart = graphchart2.GraphChart2(self.chart, self.GetClientSize(), self.options, self.bw, False, None)
+		try:
+			gchart.radix = self.radix
+		except Exception:
+			pass
+		try:
+			gchart.display_datetime = getattr(self, 'display_datetime', None)
+		except Exception:
+			pass
 
-		self.buffer = gchart.drawChart()
+		buffer = gchart.drawChart()
+		if buffer is not None:
+			self.buffer = buffer
 		self.Refresh()#
 
 
 	def OnPaint(self, event):
+		if not getattr(self, 'buffer', None):
+			return
 		dc = wx.BufferedPaintDC(self, self.buffer, wx.BUFFER_VIRTUAL_AREA)
 
 
 	def onPopupMenu(self, event):
-		self.parent.onPopupMenu(event)
+		try:
+			self.parent.Raise()
+		except Exception:
+			pass
+		try:
+			self.SetFocus()
+		except Exception:
+			pass
+		try:
+			screen_pos = self.ClientToScreen(event.GetPosition())
+		except Exception:
+			screen_pos = None
+		self.parent._showPopupMenuAtScreenPos(screen_pos)
+
+	def onContextMenu(self, event):
+		try:
+			self.parent.Raise()
+		except Exception:
+			pass
+		try:
+			self.SetFocus()
+		except Exception:
+			pass
+		screen_pos = None
+		try:
+			screen_pos = event.GetPosition()
+		except Exception:
+			pass
+		self.parent._showPopupMenuAtScreenPos(screen_pos)
 
 
 	def onSaveAsBitmap(self, event):
@@ -175,6 +244,3 @@ class TransitWnd(wx.Window):
 
 	def onSize(self, event):
 		self.drawBkg()
-
-
-

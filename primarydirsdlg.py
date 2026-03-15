@@ -357,6 +357,22 @@ class PrimDirsDlg(wx.Dialog):
 		mhsizer.Add(applysizer, 0, wx.GROW|wx.ALIGN_LEFT|wx.ALL, 5)
 		mvsizer.Add(mhsizer, 0, wx.GROW|wx.ALIGN_LEFT|wx.LEFT, 5)
 
+		srevs = wx.StaticBox(self, label=mtexts.txts.get('Revolutions', 'Revolutions'))
+		srevsizer = wx.StaticBoxSizer(srevs, wx.VERTICAL)
+		self.revsolartropicalrb = wx.RadioButton(self, -1, u'Solar SR directions: 365.242 days = 360°', style=wx.RB_GROUP)
+		srevsizer.Add(self.revsolartropicalrb, 0, wx.ALIGN_LEFT|wx.ALL, 5)
+		self.revsolar360rb = wx.RadioButton(self, -1, u'Solar SR directions: 360 days = 360°')
+		srevsizer.Add(self.revsolar360rb, 0, wx.ALIGN_LEFT|wx.LEFT|wx.RIGHT|wx.BOTTOM, 5)
+		self.revannualmode_label = wx.StaticText(self, -1, u'Annual directions in SR:')
+		srevsizer.Add(self.revannualmode_label, 0, wx.ALIGN_LEFT|wx.LEFT|wx.RIGHT|wx.TOP, 5)
+		self.revannualprimaryrb = wx.RadioButton(self, -1, u'Use Primary Settings', style=wx.RB_GROUP)
+		srevsizer.Add(self.revannualprimaryrb, 0, wx.ALIGN_LEFT|wx.LEFT|wx.RIGHT|wx.TOP, 5)
+		self.revannualtraditionalrb = wx.RadioButton(self, -1, u'Traditional Annual Directions')
+		srevsizer.Add(self.revannualtraditionalrb, 0, wx.ALIGN_LEFT|wx.LEFT|wx.RIGHT|wx.BOTTOM, 5)
+		self.revannualhelp = wx.StaticText(self, -1, u'Ascendant through the bounds with SR aspects')
+		srevsizer.Add(self.revannualhelp, 0, wx.ALIGN_LEFT|wx.LEFT|wx.RIGHT|wx.BOTTOM, 10)
+		mvsizer.Add(srevsizer, 0, wx.GROW|wx.ALIGN_LEFT|wx.LEFT|wx.RIGHT, 10)
+
 		btnsizer = wx.StdDialogButtonSizer()
 
 		if wx.Platform != '__WXMSW__':
@@ -675,6 +691,14 @@ class PrimDirsDlg(wx.Dialog):
 		self.promfixstarsckb.SetValue(options.pdfixstars)
 		self.secmotionckb.SetValue(options.pdsecmotion)
 		self.secmotionitercb.SetStringSelection(mtexts.smiterList[options.pdsecmotioniter])
+		if getattr(options, 'pdrevsunyearmode', primdirs.PrimDirs.REVSOLAR_TROPICAL) == primdirs.PrimDirs.REVSOLAR_360:
+			self.revsolar360rb.SetValue(True)
+		else:
+			self.revsolartropicalrb.SetValue(True)
+		if getattr(options, 'pdrevannualmode', primdirs.PrimDirs.REVANNUAL_USE_PRIMARY) == primdirs.PrimDirs.REVANNUAL_TRADITIONAL:
+			self.revannualtraditionalrb.SetValue(True)
+		else:
+			self.revannualprimaryrb.SetValue(True)
 
 		# Significators (Asc, Dsc, MC, IC)
 		ckbs = [self.sigascckb, self.sigdascckb, self.sigmcckb, self.sigicckb]
@@ -924,6 +948,20 @@ class PrimDirsDlg(wx.Dialog):
 			options.pdsecmotioniter = self.secmotionitercb.GetCurrentSelection()
 			changed = True
 
+		new_rev_mode = primdirs.PrimDirs.REVSOLAR_TROPICAL
+		if self.revsolar360rb.GetValue():
+			new_rev_mode = primdirs.PrimDirs.REVSOLAR_360
+		if getattr(options, 'pdrevsunyearmode', primdirs.PrimDirs.REVSOLAR_TROPICAL) != new_rev_mode:
+			options.pdrevsunyearmode = new_rev_mode
+			changed = True
+
+		new_annual_mode = primdirs.PrimDirs.REVANNUAL_USE_PRIMARY
+		if self.revannualtraditionalrb.GetValue():
+			new_annual_mode = primdirs.PrimDirs.REVANNUAL_TRADITIONAL
+		if getattr(options, 'pdrevannualmode', primdirs.PrimDirs.REVANNUAL_USE_PRIMARY) != new_annual_mode:
+			options.pdrevannualmode = new_annual_mode
+			changed = True
+
 		if self.promfixstarsckb.GetValue() != options.pdfixstars:
 			options.pdfixstars = self.promfixstarsckb.GetValue()
 			changed = True
@@ -977,7 +1015,3 @@ class PrimDirsDlg(wx.Dialog):
 			changedU2 = True
 
 		return changed, changedU1, changedU2
-
-
-
-

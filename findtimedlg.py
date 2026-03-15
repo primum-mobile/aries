@@ -13,12 +13,15 @@ import urllib.request as urllib2
 import urllib
 import astrology
 import chart
+import houses
 import os
 import pickle
 import options
 import math
 import options
 import dlgutils
+import macfiledialog
+import horfileio
 
 (FTReadyEvent, EVT_FTREADY) = wx.lib.newevent.NewEvent()
 (FTDataReadyEvent, EVT_FTDATAREADY) = wx.lib.newevent.NewEvent()
@@ -1023,18 +1026,65 @@ class FindTimeDlg(wx.Dialog):
 
 
 	def OnOpen(self, event):
-		dlg = wx.FileDialog(self, mtexts.txts['OpenHor'], '', '', mtexts.txts['HORFiles'], wx.FD_OPEN)
 		self.fpathhors = u'Hors'
-		if os.path.isdir(self.fpathhors):
-			dlg.SetDirectory(self.fpathhors)
+		if sys.platform == 'darwin':
+			fpath = macfiledialog.choose_file(self.fpathhors)
+			if fpath:
+				dpath = os.path.dirname(fpath)
+				if not fpath.lower().endswith(u'.hor'):
+					fpath+=u'.hor'
+				chrt = self.subLoad(fpath, dpath)
+				if chrt != None:
+					dC, mC, sC = util.decToDeg(chrt.planets.planets[0].data[0] + 1e-8)
+					self.sundeg.SetValue(str(dC))
+					self.sunmin.SetValue(str(mC))
+					self.sunsec.SetValue(str(sC))
+					dC, mC, sC = util.decToDeg(chrt.planets.planets[1].data[0] + 1e-8)
+					self.moondeg.SetValue(str(dC))
+					self.moonmin.SetValue(str(mC))
+					self.moonsec.SetValue(str(sC))
+					dC, mC, sC = util.decToDeg(chrt.planets.planets[2].data[0] + 1e-8)
+					self.mercurydeg.SetValue(str(dC))
+					self.mercurymin.SetValue(str(mC))
+					self.mercurysec.SetValue(str(sC))
+					dC, mC, sC = util.decToDeg(chrt.planets.planets[3].data[0] + 1e-8)
+					self.venusdeg.SetValue(str(dC))
+					self.venusmin.SetValue(str(mC))
+					self.venussec.SetValue(str(sC))
+					dC, mC, sC = util.decToDeg(chrt.planets.planets[4].data[0] + 1e-8)
+					self.marsdeg.SetValue(str(dC))
+					self.marsmin.SetValue(str(mC))
+					self.marssec.SetValue(str(sC))
+					dC, mC, sC = util.decToDeg(chrt.planets.planets[5].data[0] + 1e-8)
+					self.jupiterdeg.SetValue(str(dC))
+					self.jupitermin.SetValue(str(mC))
+					self.jupitersec.SetValue(str(sC))
+					dC, mC, sC = util.decToDeg(chrt.planets.planets[6].data[0] + 1e-8)
+					self.saturndeg.SetValue(str(dC))
+					self.saturnmin.SetValue(str(mC))
+					self.saturnsec.SetValue(str(sC))
+					dC, mC, sC = util.decToDeg(chrt.houses.ascmc[houses.Houses.ASC] + 1e-8)
+					self.ascdeg.SetValue(str(dC))
+					self.ascmin.SetValue(str(mC))
+					self.ascsec.SetValue(str(sC))
+					dC, mC, sC = util.decToDeg(chrt.houses.ascmc[houses.Houses.MC] + 1e-8)
+					self.mcdeg.SetValue(str(dC))
+					self.mcmin.SetValue(str(mC))
+					self.mcsec.SetValue(str(sC))
+			return
 		else:
-			dlg.SetDirectory(u'.')
+			dlg = wx.FileDialog(self, mtexts.txts['OpenHor'], '', '', u'All files (*.*)|*.*', wx.FD_OPEN)
+		if sys.platform != 'darwin':
+			if os.path.isdir(self.fpathhors):
+				dlg.SetDirectory(self.fpathhors)
+			else:
+				dlg.SetDirectory(u'.')
 
 		if dlg.ShowModal() == wx.ID_OK:
 			dpath = dlg.GetDirectory()
 			fpath = dlg.GetPath()
 
-			if not fpath.endswith(u'.hor'):
+			if not fpath.lower().endswith(u'.hor'):
 				fpath+=u'.hor'
 
 			chrt = self.subLoad(fpath, dpath)
@@ -1276,43 +1326,13 @@ class FindTimeDlg(wx.Dialog):
 		chrt = None
 
 		try:
-			f = open(fpath, 'rb')
-			name = pickle.load(f)
-			male = pickle.load(f)
-			htype = pickle.load(f)
-			bc = pickle.load(f)
-			year = pickle.load(f)
-			month = pickle.load(f)
-			day = pickle.load(f)
-			hour = pickle.load(f)
-			minute = pickle.load(f)
-			second = pickle.load(f)
-			cal = pickle.load(f)
-			zt = pickle.load(f)
-			plus = pickle.load(f)
-			zh = pickle.load(f)
-			zm = pickle.load(f)
-			daylightsaving = pickle.load(f)
-			place = pickle.load(f)
-			deglon = pickle.load(f)
-			minlon = pickle.load(f)
-			seclon = pickle.load(f)
-			east = pickle.load(f)
-			deglat = pickle.load(f)
-			minlat = pickle.load(f)
-			seclat = pickle.load(f)
-			north = pickle.load(f)
-			altitude = pickle.load(f)
-			notes = pickle.load(f)
-			# f.close()
-
-#			if (not self.splash) and (not dontclose):
-#				self.closeChildWnds()
 			opts = options.Options()
-			place = chart.Place(place, deglon, minlon, 0, east, deglat, minlat, seclat, north, altitude)
-			time = chart.Time(year, month, day, hour, minute, second, bc, cal, zt, plus, zh, zm, daylightsaving, place)
-			chrt = chart.Chart(name, male, time, place, htype, notes, opts)
+			chrt = horfileio.read_hor_chart(fpath, opts)
 		except IOError:
+			dlgm = wx.MessageDialog(self, mtexts.txts['FileError'], mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
+			dlgm.ShowModal()
+			dlgm.Destroy()#
+		except Exception:
 			dlgm = wx.MessageDialog(self, mtexts.txts['FileError'], mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
 			dlgm.ShowModal()
 			dlgm.Destroy()#

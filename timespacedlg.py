@@ -4,6 +4,7 @@ import chart
 import intvalidator
 import rangechecker
 import placesdlg
+import geonames
 import mtexts
 import util
 
@@ -229,6 +230,12 @@ class TimeSpaceDlg(wx.Dialog):
 		self.daylightckb = wx.CheckBox(self, -1, mtexts.txts['Daylight'])
 		zonesizer.Add(self.daylightckb, 0, wx.ALIGN_LEFT|wx.ALL, 5)
 		self.daylightckb.SetHelpText(mtexts.txts['HelpDaylight'])
+		self.autotzckb = wx.CheckBox(self, -1, 'Auto DST/TZ')
+		self.autotzckb.SetValue(True)
+		zonesizer.Add(self.autotzckb, 0, wx.ALIGN_LEFT|wx.LEFT|wx.RIGHT|wx.BOTTOM, 5)
+		self.autotzlabel = wx.StaticText(self, -1, '')
+		zonesizer.Add(self.autotzlabel, 0, wx.ALIGN_LEFT|wx.LEFT|wx.RIGHT|wx.BOTTOM, 5)
+		self.tzid = ''
 
 		mhsizer.Add(zonesizer, 0, wx.GROW|wx.ALIGN_LEFT|wx.ALL, 0)
 		mvsizer.Add(mhsizer, 0, wx.ALIGN_LEFT|wx.ALL, 5)
@@ -257,11 +264,13 @@ class TimeSpaceDlg(wx.Dialog):
 		self.Bind(wx.EVT_BUTTON, self.onOK, id=wx.ID_OK)
 		self.Bind(wx.EVT_BUTTON, self.onPlaceButton, id=ID_PlaceButton)
 		self.Bind(wx.EVT_COMBOBOX, self.onZone, id=self.zonecb.GetId())
+		self.Bind(wx.EVT_CHECKBOX, self.onAutoTimezone, id=self.autotzckb.GetId())
 
 		btnOk.SetFocus()
 
 
 	def onOK(self, event):
+		self.syncAutoTimezone()
 		if (self.Validate() and self.stime.Validate() and self.splace.Validate() and self.szone.Validate()):
 			if util.checkDate(int(self.year.GetValue()), int(self.month.GetValue()), int(self.day.GetValue())):
 				self.Close()
@@ -274,15 +283,95 @@ class TimeSpaceDlg(wx.Dialog):
 
 	def onZone(self, event):
 		self.enableGMT(self.zonecb.GetCurrentSelection() == 0)
+		self.syncAutoTimezone()
 
 
-	def enableGMT(self, enable):
+	def onAutoTimezone(self, event):
+		self.syncAutoTimezone()
+
+
+	def _enable_manual_zone_fields(self, enable):
 		self.gmtlabel.Enable(enable)
 		self.pluscb.Enable(enable)
 		self.zhourlabel.Enable(enable)
 		self.zhour.Enable(enable)
 		self.zminute.Enable(enable)
 		self.zminutelabel.Enable(enable)
+		self.daylightckb.Enable(enable)
+
+
+	def _build_place_from_fields(self):
+		try:
+			return chart.Place(
+				self.birthplace.GetValue(),
+				int(self.londeg.GetValue()),
+				int(self.lonmin.GetValue()),
+				0,
+				self.placerbE.GetValue(),
+				int(self.latdeg.GetValue()),
+				int(self.latmin.GetValue()),
+				0,
+				self.placerbN.GetValue(),
+				0,
+			)
+		except Exception:
+			return None
+
+
+	def syncAutoTimezone(self):
+		is_zone_time = self.zonecb.GetCurrentSelection() == chart.Time.ZONE and self.zonecb.IsEnabled()
+		self.autotzckb.Enable(is_zone_time)
+		if not is_zone_time:
+			self._enable_manual_zone_fields(False)
+			self.autotzlabel.SetLabel('')
+			self.tzid = ''
+			return
+		if not self.autotzckb.GetValue():
+			self._enable_manual_zone_fields(True)
+			self.autotzlabel.SetLabel('')
+			self.tzid = ''
+			return
+
+		if self.birthplace.GetValue().strip() == '' and self.londeg.GetValue() in ('', '0') and self.lonmin.GetValue() in ('', '0') and self.latdeg.GetValue() in ('', '0') and self.latmin.GetValue() in ('', '0'):
+			self._enable_manual_zone_fields(False)
+			self.autotzlabel.SetLabel('')
+			self.tzid = ''
+			return
+
+		self._enable_manual_zone_fields(False)
+		try:
+			info = geonames.Geonames.resolve_zone_fields(
+				int(self.year.GetValue()),
+				int(self.month.GetValue()),
+				int(self.day.GetValue()),
+				int(self.hour.GetValue()),
+				int(self.minute.GetValue()),
+				int(self.sec.GetValue()),
+				self._build_place_from_fields(),
+				self.tzid,
+			)
+		except Exception:
+			info = None
+
+		if info is None:
+			self.autotzlabel.SetLabel('Auto DST/TZ unavailable')
+			self.tzid = ''
+			return
+
+		self.tzid = info['tzid']
+		self.pluscb.SetStringSelection(TimeSpaceDlg.PLUSCHOICES[0 if info['plus'] else 1])
+		self.zhour.SetValue(str(info['zh']))
+		self.zminute.SetValue(str(info['zm']))
+		self.daylightckb.SetValue(info['daylightsaving'])
+		self.autotzlabel.SetLabel(info['label'])
+
+
+	def enableGMT(self, enable):
+		self._enable_manual_zone_fields(enable and not self.autotzckb.GetValue())
+		self.autotzckb.Enable(enable)
+		if not enable:
+			self.autotzlabel.SetLabel('')
+			self.tzid = ''
 
 
 	def onPlaceButton(self, event):
@@ -343,6 +432,7 @@ class TimeSpaceDlg(wx.Dialog):
 				if zone[idx] == '0':
 					idx += 1
 				self.zminute.SetValue(zone[idx:])
+				self.syncAutoTimezone()
 
 #		pdlg.Destroy()#
 
@@ -368,6 +458,8 @@ class TimeSpaceDlg(wx.Dialog):
 			self.zhour.SetValue(str(chrt.time.zh))
 			self.zminute.SetValue(str(chrt.time.zm))
 			self.daylightckb.SetValue(False)
+			self.autotzckb.SetValue(bool(getattr(chrt.time, 'tzauto', chrt.time.zt == chart.Time.ZONE and not chrt.time.bc and chrt.time.cal == chart.Time.GREGORIAN)))
+			self.tzid = getattr(chrt.time, 'tzid', '')
 	
 			self.year.SetFocus()
 		else:
@@ -388,6 +480,7 @@ class TimeSpaceDlg(wx.Dialog):
 			self.zhour.SetValue(str(ti[8]))
 			self.zminute.SetValue(str(ti[9]))
 			self.daylightckb.SetValue(False)
+			self.autotzckb.SetValue(False)
 
 			self.londeg.SetFocus()
 
@@ -412,6 +505,7 @@ class TimeSpaceDlg(wx.Dialog):
 			self.zminutelabel.Enable(False)
 			self.zminute.Enable(False)
 			self.daylightckb.Enable(False)
+			self.autotzckb.Enable(False)
 
 		self.londeg.SetValue(str(chrt.place.deglon))
 		self.lonmin.SetValue(str(chrt.place.minlon))
@@ -427,7 +521,4 @@ class TimeSpaceDlg(wx.Dialog):
 			self.placerbS.SetValue(True)
 
 		self.birthplace.SetValue(chrt.place.place)
-
-
-
-
+		self.syncAutoTimezone()

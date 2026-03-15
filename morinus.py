@@ -19,8 +19,12 @@
 #along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import os, sys
+import shutil
 import datetime
 import faulthandler
+import windowbehavior
+
+windowbehavior.install()
 
 def _setup_frozen_logging():
 	"""
@@ -72,6 +76,51 @@ def _morinus_base_dir():
 			return mei
 
 	return os.path.dirname(os.path.abspath(__file__))
+
+
+def _morinus_documents_root():
+	home = os.path.expanduser("~")
+	documents_dir = os.path.join(home, "Documents")
+	if os.path.isdir(documents_dir):
+		return os.path.join(documents_dir, "Morinus")
+	return os.path.join(home, "Morinus")
+
+
+def _ensure_dir(path):
+	try:
+		os.makedirs(path, exist_ok=True)
+	except Exception:
+		pass
+	return path
+
+
+def _morinus_user_hors_dir():
+	return _ensure_dir(os.path.join(_morinus_documents_root(), "Hors"))
+
+
+def _morinus_user_images_dir():
+	return _ensure_dir(os.path.join(_morinus_documents_root(), "Images"))
+
+
+def _copy_missing_tree(src_root, dst_root):
+	if not os.path.isdir(src_root):
+		return
+
+	for root, dirs, files in os.walk(src_root):
+		rel = os.path.relpath(root, src_root)
+		target_root = dst_root if rel == "." else os.path.join(dst_root, rel)
+		_ensure_dir(target_root)
+		for dirname in dirs:
+			_ensure_dir(os.path.join(target_root, dirname))
+		for filename in files:
+			src = os.path.join(root, filename)
+			dst = os.path.join(target_root, filename)
+			if os.path.exists(dst):
+				continue
+			try:
+				shutil.copy2(src, dst)
+			except Exception:
+				pass
 
 _BASE_DIR = _morinus_base_dir()
 os.chdir(_BASE_DIR)

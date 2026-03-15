@@ -11,6 +11,9 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
+.venv/
+.idea/
+.vscode/
 
 # Build outputs (PyInstaller / macOS app bundles)
 dist/
@@ -20,3 +23,5 @@ build/
 
 # Local reports / generated artifacts
 deps_report.json
+tmp_*/
+tmp_signs_test.png

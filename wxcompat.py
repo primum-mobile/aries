@@ -7,6 +7,8 @@ macOS is strict and expects ints for many wx.DC drawing APIs. This module wraps
 wx.DC-like objects and coerces common drawing arguments to ints.
 """
 
+import wx
+
 
 def _i(v):
 	if v is None:
@@ -27,6 +29,113 @@ def _pt(p):
 			return (_i(p[0]), _i(p[1]))
 		except Exception:
 			return (_i(p), 0)
+
+
+def _rect_dim(rect, name):
+	for attr in (name, name.lower()):
+		if hasattr(rect, attr):
+			return _i(getattr(rect, attr))
+	getter = "Get" + name
+	if hasattr(rect, getter):
+		return _i(getattr(rect, getter)())
+	return 0
+
+
+def display_client_size(window=None):
+	display_index = wx.NOT_FOUND
+	try:
+		if window is not None:
+			display_index = wx.Display.GetFromWindow(window)
+	except Exception:
+		display_index = wx.NOT_FOUND
+
+	if display_index == wx.NOT_FOUND:
+		try:
+			if wx.Display.GetCount() > 0:
+				display_index = 0
+		except Exception:
+			display_index = wx.NOT_FOUND
+
+	if display_index != wx.NOT_FOUND:
+		try:
+			rect = wx.Display(display_index).GetClientArea()
+			width = max(1, _rect_dim(rect, "Width"))
+			height = max(1, _rect_dim(rect, "Height"))
+			return width, height
+		except Exception:
+			pass
+
+	return (1440, 900)
+
+
+def scaled_window_size(window, height_ratio, default_size, min_size=(200, 200), width_cap_ratio=0.95, square=False):
+	default_width, default_height = default_size
+	min_width, min_height = min_size
+	screen_width, screen_height = display_client_size(window)
+
+	target_height = max(min_height, _i(screen_height * height_ratio))
+	if square:
+		target_width = max(min_width, target_height)
+	else:
+		aspect = float(default_width) / float(default_height or 1)
+		target_width = max(min_width, _i(target_height * aspect))
+
+	width_cap = max(min_width, _i(screen_width * width_cap_ratio))
+	if target_width > width_cap:
+		target_width = width_cap
+		if square:
+			target_height = max(min_height, target_width)
+		else:
+			target_height = max(min_height, _i(target_width / aspect))
+
+	return target_width, target_height
+
+
+def apply_frame_screen_size(frame, height_ratio, default_size, min_size=(200, 200), width_cap_ratio=0.95, square=False):
+	width, height = scaled_window_size(frame, height_ratio, default_size, min_size, width_cap_ratio, square)
+	frame.SetMinSize(min_size)
+	frame.SetSize((width, height))
+	try:
+		frame.CentreOnScreen()
+	except Exception:
+		try:
+			frame.CenterOnScreen()
+		except Exception:
+			pass
+
+
+def place_dialog_left_of_parent(dialog, parent, gap=12):
+	if dialog is None or parent is None:
+		return
+
+	try:
+		parent_pos = parent.GetScreenPosition()
+		parent_size = parent.GetSize()
+		dialog_size = dialog.GetSize()
+	except Exception:
+		return
+
+	try:
+		screen_width, screen_height = display_client_size(parent)
+	except Exception:
+		screen_width, screen_height = (1440, 900)
+
+	x = parent_pos.x - dialog_size.width - gap
+	y = parent_pos.y + max(0, (parent_size.height - dialog_size.height) // 2)
+
+	if x < 0:
+		x = gap
+	if y < 0:
+		y = gap
+	if x + dialog_size.width > screen_width:
+		x = max(gap, screen_width - dialog_size.width - gap)
+	if y + dialog_size.height > screen_height:
+		y = max(gap, screen_height - dialog_size.height - gap)
+
+	try:
+		dialog.SetPosition((x, y))
+	except Exception:
+		pass
 
 
 class CompatDC:

@@ -1,4 +1,5 @@
 import  wx
+import datetime
 import intvalidator
 import util
 import rangechecker
@@ -149,17 +150,15 @@ class SunTransitsDlg(wx.Dialog):
 
 
 	def initialize(self, chrt):
-		year = chrt.time.year
-		month = chrt.time.month
-		day = chrt.time.day
-
-		year, month, day = util.incrDay(year, month, day)
+		now = datetime.datetime.now()
+		year = now.year
+		month = now.month
+		day = now.day
 
 		self.ascrb.SetFocus()
 		self.year.SetValue(str(year))
 		self.month.SetValue(str(month))
 		self.day.SetValue(str(day))
-
 
 
 

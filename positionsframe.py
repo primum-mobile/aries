@@ -1,6 +1,7 @@
 import wx
 import positionswnd
 import mtexts
+import windowbehavior
 
 
 class PositionsFrame(wx.Frame):
@@ -17,6 +18,7 @@ class PositionsFrame(wx.Frame):
 		self.SetMinSize((200,200))
 
 		self.Bind(wx.EVT_RIGHT_UP, self.onPopupMenu)
+		self.Bind(wx.EVT_CONTEXT_MENU, self.onPopupMenu)
 
 		self.Bind(wx.EVT_MENU, self.onSaveAsBitmap, id=self.ID_SaveAsBitmap)
 		self.Bind(wx.EVT_MENU, self.onBlackAndWhite, id=self.ID_BlackAndWhite)
@@ -26,7 +28,7 @@ class PositionsFrame(wx.Frame):
 
 
 	def onPopupMenu(self, event):
-		self.PopupMenu(self.pmenu, event.GetPosition())
+		windowbehavior.popup_menu(self, self.pmenu, event)
 
 
 	def onSaveAsBitmap(self, event):

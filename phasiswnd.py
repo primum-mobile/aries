@@ -19,7 +19,7 @@ def get_PHASE_LABELS():
         'EL': mtexts.txts['EveningLast'],
     }
 
-PHASIS_WINDOW_DAYS = 10
+PHASIS_WINDOW_DAYS = 7
 PHASIS_EMPTY       = u"—"
 
 def get_PHASE_EMPTY_TIME():
@@ -276,7 +276,10 @@ class PhasisWnd(commonwnd.CommonWnd):
     # 내부: 데이터 계산 (기존 ListCtrl 버전의 로직을 그대로 재현)
     def _compute_rows(self):
         rows = []
-        vis = visibility_flags_around(self.chart, days_window=PHASIS_WINDOW_DAYS)
+        try:
+            vis = visibility_flags_around(self.chart, days_window=PHASIS_WINDOW_DAYS)
+        except Exception:
+            vis = {}
         self._vis = vis
         try:
             self._alt_m = float(self.chart.place.altitude)
@@ -465,4 +468,3 @@ class PhasisWnd(commonwnd.CommonWnd):
         if hasattr(self, "Update"): self.Update()
         if hasattr(self.parent, "Refresh"): self.parent.Refresh(False)
         if hasattr(self.parent, "Update"):  self.parent.Update()
-

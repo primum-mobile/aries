@@ -13,6 +13,10 @@ import arabicparts
 import fortune
 import mtexts
 import hours
+import datetime
+import profections
+import lordofyear
+import radixsignals
 import wxcompat
 
 # Pillow 10+ removed FreeTypeFont.getsize(); legacy rendering/layout code uses it.
@@ -52,8 +56,17 @@ class GraphChart2:
 		self.chart = chrt
 		self.chart2 = chrt2
 		self.w, self.h = size
+		# Some windows call the renderer before layout settles; prevent zero/negative
+		# sizes from producing 0-sized bitmaps or 0 font sizes.
+		try:
+			self.w = max(1, int(self.w))
+			self.h = max(1, int(self.h))
+		except Exception:
+			self.w = max(1, int(getattr(self.w, "x", 1)))
+			self.h = max(1, int(getattr(self.h, "y", 1)))
 		self.options = opts
-		self.show_houses = bool(getattr(self.options, "houses", False) and getattr(self.options, "hsys", "P") != 'N')
+		self.comparison_whole_sign = bool(self.chart2 is not None and getattr(self.options, "hsys", "P") == 'N')
+		self.show_houses = bool(getattr(self.options, "houses", False) and (getattr(self.options, "hsys", "P") != 'N' or self.comparison_whole_sign))
 		self.bw = bw
 		self.planetaryday = planetaryday
 		self.buffer = wx.Bitmap(self.w, self.h)
@@ -281,23 +294,54 @@ class GraphChart2:
 
 		self.smallsymbolSize = 2*self.symbolSize/3
 
-		self.fntMorinus = ImageFont.truetype(common.common.symbols, int(self.symbolSize))
-		self.fntSmallMorinus = ImageFont.truetype(common.common.symbols, int(self.smallsymbolSize))
-		self.fntMorinusSigns = ImageFont.truetype(common.common.symbols, int(self.signSize))
-		self.fntText = ImageFont.truetype(common.common.abc, int(self.symbolSize/2))
-		self.fntAntisText = ImageFont.truetype(common.common.abc, int(self.symbolSize))
-		self.fntSmallText = ImageFont.truetype(common.common.abc, int(self.symbolSize/2))
-		self.fntRetr = ImageFont.truetype(common.common.symbols, int(self.symbolSize/2))
-		self.fntSmallText2 = ImageFont.truetype(common.common.abc, int(self.symbolSize/3))
-		self.fntSmallTextOuter = ImageFont.truetype(common.common.abc, int(self.symbolSize/4))
-		self.fntBigText = ImageFont.truetype(common.common.abc, int(self.symbolSize/4*3))
-		self.fntMorinus2 = ImageFont.truetype(common.common.symbols, int(self.symbolSize/4*3))
+		def _fs(v):
+			try:
+				return max(1, int(v))
+			except Exception:
+				return 1
+
+		self.fntMorinus = ImageFont.truetype(common.common.symbols, _fs(self.symbolSize))
+		self.fntSmallMorinus = ImageFont.truetype(common.common.symbols, _fs(self.smallsymbolSize))
+		self.fntMorinusSigns = ImageFont.truetype(common.common.symbols, _fs(self.signSize))
+		self.fntText = ImageFont.truetype(common.common.abc, _fs(self.symbolSize/2))
+		self.fntAntisText = ImageFont.truetype(common.common.abc, _fs(self.symbolSize))
+		self.fntSmallText = ImageFont.truetype(common.common.abc, _fs(self.symbolSize/2))
+		self.fntRetr = ImageFont.truetype(common.common.symbols, _fs(self.symbolSize/2))
+		self.fntSmallText2 = ImageFont.truetype(common.common.abc, _fs(self.symbolSize/3))
+		self.fntSmallTextOuter = ImageFont.truetype(common.common.abc, _fs(self.symbolSize/4))
+		self.fntTinyText = ImageFont.truetype(common.common.abc, _fs(self.symbolSize/5))
+		self.fntBigText = ImageFont.truetype(common.common.abc, _fs(self.symbolSize/4*3))
+		self.fntMorinus2 = ImageFont.truetype(common.common.symbols, _fs(self.symbolSize/4*3))
 		self.deg_symbol = u'\u00b0'
 
 		self.arsigndiff = (0, -1, -1, 2, -1, 3, 4, -1, -1, -1, 6)
 		self.hsystem = {'P':mtexts.txts['HSPlacidus'], 'K':mtexts.txts['HSKoch'], 'R':mtexts.txts['HSRegiomontanus'], 'C':mtexts.txts['HSCampanus'], 'E':mtexts.txts['HSEqual'], 'W':mtexts.txts['HSWholeSign'], 'X':mtexts.txts['HSAxial'], 'M':mtexts.txts['HSMorinus'], 'H':mtexts.txts['HSHorizontal'], 'T':mtexts.txts['HSPagePolich'], 'B':mtexts.txts['HSAlcabitus'], 'O':mtexts.txts['HSPorphyrius'], 'N':mtexts.txts.get('HSNoHouses', 'Angles only')}
 
 		self.ayans = {0:mtexts.txts['None'], 1:mtexts.txts['FaganBradley'], 2:mtexts.txts['Lahiri'], 3:mtexts.txts['Deluce'], 4:mtexts.txts['Raman'], 5:mtexts.txts['Ushashashi'], 6:mtexts.txts['Krishnamurti'], 7:mtexts.txts['DjwhalKhul'], 8:mtexts.txts['Yukteshwar'], 9:mtexts.txts['JNBhasin'], 10:mtexts.txts['BabylonianKuglerI2'], 11:mtexts.txts['BabylonianKuglerII2'], 12:mtexts.txts['BabylonianKuglerIII2'], 13:mtexts.txts['BabylonianHuber2'], 14:mtexts.txts['BabylonianMercier2'], 15:mtexts.txts['Aldebaran15Tau2'], 16:mtexts.txts['Hipparchos'], 17:mtexts.txts['Sassanian'], 18:mtexts.txts['GalacticCenter0Sag2'], 19:mtexts.txts['J2000'], 20:mtexts.txts['J1900'], 21:mtexts.txts['B1950']}
+
+	def _effective_hsys(self):
+		if self.comparison_whole_sign:
+			return 'W'
+		return self.options.hsys
+
+	def _display_house_anchor(self):
+		asc = self.chart.houses.ascmc[houses.Houses.ASC]
+		if self.options.ayanamsha != 0 and self._effective_hsys() == 'W':
+			asc = util.normalize(asc-self.chart.ayanamsha)
+		return asc
+
+	def _display_house_cusp(self, chrt, index):
+		if self._effective_hsys() == 'W':
+			asc = chrt.houses.ascmc[houses.Houses.ASC]
+			if self.options.ayanamsha != 0:
+				asc = util.normalize(asc-chrt.ayanamsha)
+			sign = int(asc/chart.Chart.SIGN_DEG)
+			return util.normalize(sign*chart.Chart.SIGN_DEG + (index-1)*chart.Chart.SIGN_DEG)
+
+		lon = chrt.houses.cusps[index]
+		if self.options.ayanamsha != 0:
+			lon = util.normalize(lon-chrt.ayanamsha)
+		return lon
 
 
 	def drawChart(self):
@@ -332,13 +376,13 @@ class GraphChart2:
 			if self.chart2 != None:
 				self.drawHouseNames(self.chart2, self.rOuterHouseName)
 
-			self.drawSigns()
+		self.drawSigns()
 
-			#Convert back from PIL
-			wxImg = wx.Image(self.img.size[0], self.img.size[1])
-			wxImg.SetData(self.img.tobytes())
-			self.buffer = wx.Bitmap(wxImg)
-			self.bdc = wxcompat.CompatDC(wx.BufferedDC(None, self.buffer))
+		#Convert back from PIL
+		wxImg = wx.Image(self.img.size[0], self.img.size[1])
+		wxImg.SetData(self.img.tobytes())
+		self.buffer = wx.Bitmap(wxImg)
+		self.bdc = wxcompat.CompatDC(wx.BufferedDC(None, self.buffer))
 
 		self.drawAscMC(self.chart.houses.ascmc, self.rBase, self.rASCMC, self.rArrow)
 		if self.chart2 != None:
@@ -444,8 +488,9 @@ class GraphChart2:
 				self.drawHousePos()
 
 		#if self.options.planetarydayhour and self.planetaryday:
-		if self.options.planetarydayhour:
+		if self._shouldDrawPlanetaryDayHour():
 			self.drawPlanetaryDayAndHour()
+		self.drawOverlayInfoBlock()
 		#if self.options.housesystem and self.planetaryday:
 		if self.options.housesystem:
 			self.drawHousesystemName()
@@ -488,11 +533,11 @@ class GraphChart2:
 					self.drawOuterFortuneText(self.chart2 if self.chart2 is not None else self.chart)
 
 
-			wxImg = wx.Image(self.img.size[0], self.img.size[1])
-			wxImg.SetData(self.img.tobytes())
-			self.buffer = wx.Bitmap(wxImg)
+		wxImg = wx.Image(self.img.size[0], self.img.size[1])
+		wxImg.SetData(self.img.tobytes())
+		self.buffer = wx.Bitmap(wxImg)
 
-			return self.buffer
+		return self.buffer
 
 
 	def drawCircles(self):
@@ -714,11 +759,11 @@ class GraphChart2:
 			clr = (0,0,0)
 		pen = wx.Pen(clr, 1)
 		self.bdc.SetPen(pen)
-		asc = self.chart.houses.ascmc[houses.Houses.ASC]
-		if self.options.ayanamsha != 0 and self.options.hsys == 'W':
-			asc = util.normalize(self.chart.houses.ascmc[houses.Houses.ASC]-self.chart.ayanamsha)
+		asc = self._display_house_anchor()
+		chrt = self.chart if chouses is self.chart.houses else self.chart2
 		for i in range (1, houses.Houses.HOUSE_NUM+1):
-			dif = math.radians(util.normalize(asc-chouses.cusps[i]))
+			cusp = self._display_house_cusp(chrt, i)
+			dif = math.radians(util.normalize(asc-cusp))
 			x1 = cx+math.cos(math.pi+dif)*r1
 			y1 = cy+math.sin(math.pi+dif)*r1
 			x2 = cx+math.cos(math.pi+dif)*r2
@@ -833,34 +878,29 @@ class GraphChart2:
 		if self.chart.houses.cusps[10] == self.chart.houses.ascmc[houses.Houses.MC]:
 			skipmc = True
 
-		asc = self.chart.houses.ascmc[houses.Houses.ASC]
-		if self.options.ayanamsha != 0 and self.options.hsys == 'W':
-			asc = util.normalize(self.chart.houses.ascmc[houses.Houses.ASC]-self.chart.ayanamsha)
+		asc = self._display_house_anchor()
 		for i in range (1, houses.Houses.HOUSE_NUM+1):
 			if i >= 4 and i < 10:
 				continue
 			if (skipasc and i == 1) or (skipmc and i == 10):
 				continue
 
-			lon = self.chart.houses.cusps[i]
-			if self.options.ayanamsha != 0 and self.options.hsys != 'W':
-				lon -= self.chart.ayanamsha
-				lon = util.normalize(lon)
+			lon = self._display_house_cusp(self.chart, i)
 			(d, m, s) = util.decToDeg(lon)
 			d, m = util.roundDeg(d%chart.Chart.SIGN_DEG, m, s)
 				
 			degtxt = str(d)+self.deg_symbol
 			wdeg, hdeg = self.draw.textsize(degtxt, self.fntText)
-			x = cx+math.cos(math.pi+math.radians(asc-self.chart.houses.cusps[i]))*self.rPosHouses
-			y = cy+math.sin(math.pi+math.radians(asc-self.chart.houses.cusps[i]))*self.rPosHouses
+			x = cx+math.cos(math.pi+math.radians(asc-lon))*self.rPosHouses
+			y = cy+math.sin(math.pi+math.radians(asc-lon))*self.rPosHouses
 			xdeg = x-wdeg/2
 			ydeg = y-hdeg/2
 			self.draw.text((xdeg, ydeg), degtxt, fill=clrpos, font=self.fntText)
 
 			mintxt = str(m)+"'"
 			wdeg, hdeg = self.draw.textsize(mintxt, self.fntSmallText2)
-			x = cx+math.cos(math.pi+math.radians(asc-self.chart.houses.cusps[i]))*self.rPosHousesMin
-			y = cy+math.sin(math.pi+math.radians(asc-self.chart.houses.cusps[i]))*self.rPosHousesMin
+			x = cx+math.cos(math.pi+math.radians(asc-lon))*self.rPosHousesMin
+			y = cy+math.sin(math.pi+math.radians(asc-lon))*self.rPosHousesMin
 			xdeg = x-wdeg/2
 			ydeg = y-hdeg/2
 			self.draw.text((xdeg, ydeg), mintxt, fill=clrpos, font=self.fntSmallText2)
@@ -873,19 +913,13 @@ class GraphChart2:
 			clr = (0,0,0)
 		pen = wx.Pen(clr, 1)
 		self.bdc.SetPen(pen)
-		asc = self.chart.houses.ascmc[houses.Houses.ASC]
-		if self.options.ayanamsha != 0 and self.options.hsys == 'W':
-			asc = util.normalize(self.chart.houses.ascmc[houses.Houses.ASC]-self.chart.ayanamsha)
+		asc = self._display_house_anchor()
 		for i in range (1, houses.Houses.HOUSE_NUM+1):
-			width = 0.0
-			if i != houses.Houses.HOUSE_NUM:
-				width = chrt.houses.cusps[i+1]-chrt.houses.cusps[i]
-			else:
-				width = chrt.houses.cusps[1]-chrt.houses.cusps[houses.Houses.HOUSE_NUM]
-
-			width = util.normalize(width)
+			cusp = self._display_house_cusp(chrt, i)
+			next_cusp = self._display_house_cusp(chrt, i+1 if i != houses.Houses.HOUSE_NUM else 1)
+			width = util.normalize(next_cusp-cusp)
 			halfwidth = math.radians(width/2.0)
-			dif = math.radians(util.normalize(asc-chrt.houses.cusps[i]))
+			dif = math.radians(util.normalize(asc-cusp))
 			
 			x = cx+math.cos(math.pi+dif-halfwidth)*rHouseNames
 			y = cy+math.sin(math.pi+dif-halfwidth)*rHouseNames
@@ -975,6 +1009,10 @@ class GraphChart2:
 						if chrt.planets.planets[i].data[planets.Planet.SPLON] < 0.0:
 							t = common.common.retr
 							rfnt = self.fntRetr
+						sd_marker = self._getRadixStationDirectMarker(chrt, i)
+						if sd_marker is not None:
+							t = sd_marker
+							rfnt = self.fntSmallText2
 #							t = 'R'
 
 						wdeg, hdeg = self.draw.textsize(t, rfnt)
@@ -991,11 +1029,16 @@ class GraphChart2:
 						t = 'S'
 						if chrt.planets.planets[i].data[planets.Planet.SPLON] < 0.0:
 							t = 'R'
+						sd_marker = self._getRadixStationDirectMarker(chrt, i)
+						rfnt = self.fntSmallTextOuter
+						if sd_marker is not None:
+							t = sd_marker
+							rfnt = self.fntSmallText2
 
 						x = cx+math.cos(math.pi+math.radians(self.chart.houses.ascmc[houses.Houses.ASC]-chrt.planets.planets[i].data[planets.Planet.LONG]-pshift[i]))*rRetr	
 						y = cy+math.sin(math.pi+math.radians(self.chart.houses.ascmc[houses.Houses.ASC]-chrt.planets.planets[i].data[planets.Planet.LONG]-pshift[i]))*rRetr
 
-						self.draw.text((x-self.symbolSize/8, y-self.symbolSize/8), t, fill=clr, font=self.fntSmallTextOuter)
+						self.draw.text((x-self.symbolSize/8, y-self.symbolSize/8), t, fill=clr, font=rfnt)
 
 
 	def drawPlanetaryDayAndHour(self):
@@ -1097,11 +1140,13 @@ class GraphChart2:
 		glyph_day  = common.common.Planets[idx_day]
 		glyph_hour = common.common.Planets[idx_hour]
 
-		w_day,  h_icon_day  = self.fntMorinus2.getsize(glyph_day)
-		w_hour, h_icon_hour = self.fntMorinus2.getsize(glyph_hour)
-		w_lbl_day, _  = self.fntBigText.getsize(mtexts.txts['Day'])
-		w_lbl_hour, _ = self.fntBigText.getsize(mtexts.txts['Hour'])
-		_,      h_label     = self.fntBigText.getsize("Ag")
+		icon_font = self.fntSmallMorinus
+		label_font = self.fntSmallText2
+		w_day,  h_icon_day  = icon_font.getsize(glyph_day)
+		w_hour, h_icon_hour = icon_font.getsize(glyph_hour)
+		w_lbl_day, _  = label_font.getsize(mtexts.txts['Day'])
+		w_lbl_hour, _ = label_font.getsize(mtexts.txts['Hour'])
+		_,      h_label     = label_font.getsize("Ag")
 
 		line_h = int(max(h_icon_day, h_icon_hour, h_label) * 1.1)
 		pad_x  = int(self.symbolSize * 0.25)
@@ -1110,13 +1155,233 @@ class GraphChart2:
 		x_day  = xR - (w_day  + pad_x + w_lbl_day)
 		x_hour = xR - (w_hour + pad_x + w_lbl_hour)
 		# 1행 (일주)
-		self.draw.text((x_day, y), glyph_day, fill=clr_day, font=self.fntMorinus2)
-		self.draw.text((x_day + w_day + pad_x, y), mtexts.txts['Day'],  fill=clr_lbl, font=self.fntBigText)
+		self.draw.text((x_day, y), glyph_day, fill=clr_day, font=icon_font)
+		self.draw.text((x_day + w_day + pad_x, y), mtexts.txts['Day'],  fill=clr_lbl, font=label_font)
 
 		# 2행 (시주)
 		y2 = y + line_h
-		self.draw.text((x_hour, y2), glyph_hour, fill=clr_hour, font=self.fntMorinus2)
-		self.draw.text((x_hour + w_hour + pad_x, y2), mtexts.txts['Hour'], fill=clr_lbl, font=self.fntBigText)
+		self.draw.text((x_hour, y2), glyph_hour, fill=clr_hour, font=icon_font)
+		self.draw.text((x_hour + w_hour + pad_x, y2), mtexts.txts['Hour'], fill=clr_lbl, font=label_font)
+
+	def _getOverlayPlanetColor(self, chrt, planet_idx, fallback):
+		if (not self.bw) and getattr(self.options, 'useplanetcolors', False):
+			try:
+				return self.options.clrindividual[planet_idx]
+			except Exception:
+				return fallback
+
+		if self.bw:
+			return (0,0,0)
+
+		pal = (self.options.clrdomicil,
+			   self.options.clrexal,
+			   self.options.clrperegrin,
+			   self.options.clrcasus,
+			   self.options.clrexil)
+		try:
+			return pal[chrt.dignity(planet_idx)]
+		except Exception:
+			return fallback
+
+	def _getCurrentLordOfYear(self):
+		radix = getattr(self, 'radix', None)
+		if radix is None and self.chart is not None and self.chart.htype == chart.Chart.RADIX:
+			radix = self.chart
+		if radix is None:
+			return None
+
+		try:
+			target_chart = self.chart2 if self.chart2 is not None else self.chart
+			if target_chart is None:
+				return None
+
+			data = lordofyear.get_lord_of_year(
+				radix,
+				target_chart,
+				self.options,
+				getattr(self, 'display_datetime', None),
+			)
+			if data is None:
+				return None
+			sign_idx, ruler_idx = data
+
+			signs = common.common.Signs1
+			if not self.options.signs:
+				signs = common.common.Signs2
+
+			return (signs[sign_idx], common.common.Planets[ruler_idx], ruler_idx)
+		except Exception:
+			return None
+
+	def _shouldDrawPlanetaryDayHour(self):
+		return self.options.planetarydayhour and self.chart.htype != chart.Chart.PROFECTION
+
+	def _getRadixOverlayRows(self):
+		if self.chart2 is not None:
+			return []
+		if self.chart is None or self.chart.htype != chart.Chart.RADIX:
+			return []
+		try:
+			return radixsignals.get_radix_overlay_display_rows(self.chart)
+		except Exception:
+			return []
+
+	def _getRadixStationDirectMarker(self, chrt, planet_idx):
+		if self.chart2 is not None:
+			return None
+		if chrt is None or chrt.htype != chart.Chart.RADIX:
+			return None
+		try:
+			return radixsignals.get_station_direct_marker(chrt, planet_idx, within_days=2.0)
+		except Exception:
+			return None
+
+	def drawOverlayInfoBlock(self):
+		info = self._getCurrentLordOfYear()
+		rows = self._getRadixOverlayRows()
+		if info is None and not rows:
+			return
+
+		clr_lbl = self.options.clrtexts
+		if self.bw:
+			clr_lbl = (0,0,0)
+
+		xR = self.w - self.w/25
+		y = self.h/25
+
+		icon_font = self.fntSmallMorinus
+		text_font = self.fntSmallTextOuter
+		offset_font = self.fntSmallTextOuter
+		_, h_text = text_font.getsize("Ag")
+		h_icon = icon_font.getsize(common.common.Planets[astrology.SE_JUPITER])[1]
+		_, h_offset = offset_font.getsize("Ag")
+		line_h = int(max(h_text, h_icon, h_offset) * 1.22)
+		if self._shouldDrawPlanetaryDayHour():
+			y += int(line_h * 2.15)
+		y += int(line_h * 0.85)
+
+		col_label = 0
+		col_glyph1 = 0
+		col_glyph2 = 0
+		col_offset = 0
+		if info is not None:
+			sign_glyph, ruler_glyph, _ = info
+			col_label = max(col_label, text_font.getsize('Lord of the year')[0])
+			col_glyph1 = max(col_glyph1, icon_font.getsize(sign_glyph)[0])
+			col_glyph2 = max(col_glyph2, icon_font.getsize(ruler_glyph)[0])
+		for planet_idx, label, offset_text in rows:
+			col_label = max(col_label, text_font.getsize(label)[0])
+			col_glyph1 = max(col_glyph1, icon_font.getsize(common.common.Planets[planet_idx])[0])
+			col_offset = max(col_offset, offset_font.getsize(offset_text)[0])
+
+		gap_lg = int(self.symbolSize * 0.18)
+		gap_gg = int(self.symbolSize * 0.10)
+		gap_go = int(self.symbolSize * 0.18) if col_offset else 0
+		total_w = col_label + gap_lg + col_glyph1 + (gap_gg + col_glyph2 if col_glyph2 else 0) + (gap_go + col_offset if col_offset else 0)
+		x_label = xR - total_w
+		x_glyph1 = x_label + col_label + gap_lg
+		x_glyph2 = x_glyph1 + col_glyph1 + (gap_gg if col_glyph2 else 0)
+		x_offset = xR - col_offset
+
+		if info is not None:
+			sign_glyph, ruler_glyph, ruler_idx = info
+			clr_ruler = self._getOverlayPlanetColor(getattr(self, 'radix', None) or self.chart, ruler_idx, clr_lbl)
+			w_sign, _ = icon_font.getsize(sign_glyph)
+			w_ruler, _ = icon_font.getsize(ruler_glyph)
+			self.draw.text((x_label, y), 'Lord of the year', fill=clr_lbl, font=text_font)
+			self.draw.text((x_glyph1 + (col_glyph1 - w_sign)/2, y), sign_glyph, fill=clr_lbl, font=icon_font)
+			self.draw.text((x_glyph2 + (col_glyph2 - w_ruler)/2, y), ruler_glyph, fill=clr_ruler, font=icon_font)
+			y += line_h + int(line_h * 0.55)
+
+		for planet_idx, label, offset_text in rows:
+			glyph = common.common.Planets[planet_idx]
+			clr_planet = self._getOverlayPlanetColor(self.chart, planet_idx, clr_lbl)
+			w_glyph, _ = icon_font.getsize(glyph)
+			w_off, _ = offset_font.getsize(offset_text)
+			self.draw.text((x_label, y), label, fill=clr_lbl, font=text_font)
+			self.draw.text((x_glyph1 + (col_glyph1 - w_glyph)/2, y), glyph, fill=clr_planet, font=icon_font)
+			self.draw.text((x_offset + (col_offset - w_off), y + int((h_text - h_offset) / 2.0)), offset_text, fill=clr_lbl, font=offset_font)
+			y += line_h
+
+	def drawLordOfYear(self):
+		info = self._getCurrentLordOfYear()
+		if info is None:
+			return
+
+		sign_glyph, ruler_glyph, ruler_idx = info
+		radix = getattr(self, 'radix', None)
+		if radix is None and self.chart is not None and self.chart.htype == chart.Chart.RADIX:
+			radix = self.chart
+
+		clr_lbl = self.options.clrtexts
+		if self.bw:
+			clr_lbl = (0,0,0)
+		clr_ruler = self._getOverlayPlanetColor(radix if radix is not None else self.chart, ruler_idx, clr_lbl)
+
+		xR = self.w - self.w/25
+		y = self.h/25
+
+		label_font = self.fntSmallText2
+		icon_font = self.fntSmallMorinus
+		_, h_label = label_font.getsize("Ag")
+		h_icon = icon_font.getsize(ruler_glyph)[1]
+		line_h = int(max(h_icon, h_label) * 1.1)
+		if self._shouldDrawPlanetaryDayHour():
+			y += line_h * 2
+
+		label = 'LOY'
+		pad_x = int(self.symbolSize * 0.20)
+		w_sign, _ = icon_font.getsize(sign_glyph)
+		w_ruler, _ = icon_font.getsize(ruler_glyph)
+		w_lbl, _ = label_font.getsize(label)
+		x = xR - (w_sign + pad_x + w_ruler + pad_x + w_lbl)
+
+		self.draw.text((x, y), sign_glyph, fill=clr_lbl, font=icon_font)
+		self.draw.text((x + w_sign + pad_x, y), ruler_glyph, fill=clr_ruler, font=icon_font)
+		self.draw.text((x + w_sign + pad_x + w_ruler + pad_x, y), label, fill=clr_lbl, font=label_font)
+
+	def drawRadixSignals(self):
+		rows = self._getRadixOverlayRows()
+		if not rows:
+			return
+
+		clr_lbl = self.options.clrtexts
+		if self.bw:
+			clr_lbl = (0,0,0)
+
+		xR = self.w - self.w/25
+		y = self.h/25
+		label_font = self.fntSmallTextOuter
+		_, h_label = label_font.getsize("Ag")
+		h_icon = self.fntSmallMorinus.getsize(common.common.Planets[astrology.SE_MERCURY])[1]
+		line_h = int(max(h_icon, h_label) * 1.05)
+		_, h_main = self.fntSmallText2.getsize("Ag")
+		h_loy = max(self.fntSmallMorinus.getsize(common.common.Planets[astrology.SE_JUPITER])[1], h_main)
+		if self._shouldDrawPlanetaryDayHour():
+			y += int(h_main * 2.35)
+		y += int(h_loy * 1.25)
+
+		pad_x = int(self.symbolSize * 0.10)
+		offset_gap = int(self.symbolSize * 0.12)
+		max_label = 0
+		max_offset = 0
+		for _, label, offset_text in rows:
+			max_label = max(max_label, label_font.getsize(label)[0])
+			max_offset = max(max_offset, label_font.getsize(offset_text)[0])
+
+		x_off = xR - max_offset
+		x_lbl = x_off - offset_gap - max_label
+		for planet_idx, label, offset_text in rows:
+			glyph = common.common.Planets[planet_idx]
+			clr_planet = self._getOverlayPlanetColor(self.chart, planet_idx, clr_lbl)
+			w_glyph, _ = self.fntSmallMorinus.getsize(glyph)
+			w_off, _ = label_font.getsize(offset_text)
+			x = x_lbl - pad_x - w_glyph
+			off_x = x_off + (max_offset - w_off)
+			self.draw.text((x, y), glyph, fill=clr_planet, font=self.fntSmallMorinus)
+			self.draw.text((x_lbl, y), label, fill=clr_lbl, font=label_font)
+			self.draw.text((off_x, y), offset_text, fill=clr_lbl, font=label_font)
+			y += line_h
 
 	def drawHousesystemName(self):
 		clr = self.options.clrtexts
@@ -1134,7 +1399,7 @@ class GraphChart2:
 		_, h = self.fntBigText.getsize("Ag")
 		dy = h * 1.1
 
-		hs_txt  = self.hsystem[self.options.hsys]
+		hs_txt  = self.hsystem[self._effective_hsys()]
 		aya_on  = (self.options.ayanamsha != 0)
 
 		# 총 라인 수(아야남샤가 있으면 2줄, 없으면 1줄)
