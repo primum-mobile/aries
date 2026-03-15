@@ -62,7 +62,7 @@ git push origin main --tags
 
 The GitHub release workflow will build a macOS app bundle from release tags matching `v*`.
 
-Use [`RELEASE_CHECKLIST.md`](/Users/Max/Documents/Morinus Code /RELEASE_CHECKLIST.md) before cutting or approving a stable checkpoint.
+Use [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) before cutting or approving a stable checkpoint.
 
 ## Local options
 
