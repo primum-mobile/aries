@@ -38,10 +38,11 @@ class GraphChartPDs:
 		else:
 			self.w, self.h = int(size[0]), int(size[1])
 
-		self.buffer = wx.Bitmap(self.w, self.h)
+		self._dpi_scale = wxcompat.get_dpi_scale()
+		self.buffer = wxcompat.create_scaled_bitmap(self.w, self.h, self._dpi_scale)
 
 		self.memdc = wx.MemoryDC(self.buffer)
-		self.bdc = wxcompat.CompatDC(self.memdc)
+		self.bdc = wxcompat.CompatDC(self.memdc, self._dpi_scale)
 
 		self.chartsize = min(self.w, self.h)
 
@@ -98,20 +99,26 @@ class GraphChartPDs:
 		#Fonts
 		# PIL truetype size는 반드시 int. 또한 fontSize 속성을 사전에 정의해 준다.
 
-		self.symbolSize = max(8, int(round(self.symbolSize)))  # 기반 심볼 크기
-		
-		self.fntMorinus = ImageFont.truetype(common.common.symbols, self.symbolSize)
-		self.fontSize = max(8, int(round(self.symbolSize/2)))  # ← 새로 정의 (기존 None 방지)
-		self.fntTxt = ImageFont.truetype(common.common.abc, self.fontSize)  # font → abc
-		
-		self.fntMorinusSigns = ImageFont.truetype(common.common.symbols, int(round(self.signSize)))
+		_sc = self._dpi_scale
+		def _fs(v):
+			return max(1, int(round(v * _sc)))
+		def _sf(font):
+			return wxcompat.ScaledFont(font, _sc) if _sc != 1.0 else font
 
-		self.fntText       = ImageFont.truetype(common.common.abc, self.fontSize)
-		self.fntSmallText  = ImageFont.truetype(common.common.abc, max(6, int(round(self.symbolSize/4))))
-		self.fntSmallText2 = ImageFont.truetype(common.common.abc, max(6, int(round(self.symbolSize/3))))
-		self.fntBigText    = ImageFont.truetype(common.common.abc, int(round(self.symbolSize*0.75)))
-		self.fntMorinus2   = ImageFont.truetype(common.common.symbols, int(round(self.symbolSize*0.75)))
-		self.fntRetr       = ImageFont.truetype(common.common.symbols, int(round(self.symbolSize/2)))
+		self.symbolSize = max(8, int(round(self.symbolSize)))  # 기반 심볼 크기
+
+		self.fntMorinus = _sf(ImageFont.truetype(common.common.symbols, _fs(self.symbolSize)))
+		self.fontSize = max(8, int(round(self.symbolSize/2)))  # ← 새로 정의 (기존 None 방지)
+		self.fntTxt = _sf(ImageFont.truetype(common.common.abc, _fs(self.fontSize)))  # font → abc
+
+		self.fntMorinusSigns = _sf(ImageFont.truetype(common.common.symbols, _fs(self.signSize)))
+
+		self.fntText       = _sf(ImageFont.truetype(common.common.abc, _fs(self.fontSize)))
+		self.fntSmallText  = _sf(ImageFont.truetype(common.common.abc, _fs(max(6, int(round(self.symbolSize/4))))))
+		self.fntSmallText2 = _sf(ImageFont.truetype(common.common.abc, _fs(max(6, int(round(self.symbolSize/3))))))
+		self.fntBigText    = _sf(ImageFont.truetype(common.common.abc, _fs(self.symbolSize*0.75)))
+		self.fntMorinus2   = _sf(ImageFont.truetype(common.common.symbols, _fs(self.symbolSize*0.75)))
+		self.fntRetr       = _sf(ImageFont.truetype(common.common.symbols, _fs(self.symbolSize/2)))
 		self.deg_symbol = u'\u00b0'
 
 
@@ -136,7 +143,7 @@ class GraphChartPDs:
 		wxImag = self.buffer.ConvertToImage()
 		self.img = Image.new('RGB', (wxImag.GetWidth(), wxImag.GetHeight()))
 		self.img.frombytes(wxImag.GetData())
-		self.draw = ImageDraw.Draw(self.img)
+		self.draw = wxcompat.ScaledPILDraw(ImageDraw.Draw(self.img), self._dpi_scale)
 
 		if self.show_houses:
 			self.drawHouseNames(self.chartRadix, self.rHouseName)
@@ -153,9 +160,9 @@ class GraphChartPDs:
 		#Convert back from PIL
 		wxImg = wx.Image(self.img.size[0], self.img.size[1])          # EmptyImage → Image
 		wxImg.SetData(self.img.tobytes())
-		self.buffer = wx.Bitmap(wxImg)                                # BitmapFromImage → Bitmap(wxImg)
+		self.buffer = wxcompat.set_bitmap_scale(wx.Bitmap(wxImg), self._dpi_scale)
 		self.memdc = wx.MemoryDC(self.buffer)                         # DC 다시 붙이기
-		self.bdc = wxcompat.CompatDC(self.memdc)
+		self.bdc = wxcompat.CompatDC(self.memdc, self._dpi_scale)
 
 		self.drawPlanetLines(self.pshift, self.chartRadix.planets.planets, self.chartRadix.fortune.fortune, self.r0, self.rLine)
 		self.drawPlanetLines(self.pshiftPDs, self.chartPDs.planets.planets, self.chartPDs.fortune.fortune, self.r30, self.rLinePDs)

@@ -36,8 +36,9 @@ class MundaneChart:
 		self.show_houses = bool(getattr(self.options, "houses", False) and getattr(self.options, "hsys", "P") != 'N')
 		self.bw = bw
 		self.planetaryday = planetaryday #i.e. radix
-		self.buffer = wx.Bitmap(self.w, self.h)
-		self.bdc = wxcompat.CompatDC(wx.BufferedDC(None, self.buffer))
+		self._dpi_scale = wxcompat.get_dpi_scale()
+		self.buffer = wxcompat.create_scaled_bitmap(self.w, self.h, self._dpi_scale)
+		self.bdc = wxcompat.CompatDC(wx.BufferedDC(None, self.buffer), self._dpi_scale)
 		self.chartsize = max(1, min(self.w, self.h))
 		self.maxradius = self.chartsize / 2.0
 		self.center = wx.Point(int(self.w // 2), int(self.h // 2))
@@ -139,15 +140,21 @@ class MundaneChart:
 		self.symbolSize = max(8.0, float(self.symbolSize))
 		self.smallsymbolSize = max(6.0, 2 * self.symbolSize / 3.0)
 
+		_sc = self._dpi_scale
+		def _fs(v):
+			return max(1, int(round(v * _sc)))
+		def _sf(font):
+			return wxcompat.ScaledFont(font, _sc) if _sc != 1.0 else font
+
 		sym_px = max(6, int(round(self.symbolSize)))
 		small_sym_px = max(6, int(round(self.smallsymbolSize)))
-		self.fntMorinus = ImageFont.truetype(common.common.symbols, sym_px)
-		self.fntSmallMorinus = ImageFont.truetype(common.common.symbols, small_sym_px)
-		self.fntAspects = ImageFont.truetype(common.common.symbols, max(6, int(round(sym_px / 2))))
-		self.fntText = ImageFont.truetype(common.common.abc, max(6, int(round(sym_px / 2))))
-		self.fntSmallText = ImageFont.truetype(common.common.abc, max(6, int(round(sym_px / 4))))
-		self.fntBigText = ImageFont.truetype(common.common.abc, sym_px)
-		self.fntMorinus2 = ImageFont.truetype(common.common.symbols, max(6, int(round(sym_px * 3 / 4))))
+		self.fntMorinus = _sf(ImageFont.truetype(common.common.symbols, _fs(sym_px)))
+		self.fntSmallMorinus = _sf(ImageFont.truetype(common.common.symbols, _fs(small_sym_px)))
+		self.fntAspects = _sf(ImageFont.truetype(common.common.symbols, _fs(max(6, int(round(sym_px / 2))))))
+		self.fntText = _sf(ImageFont.truetype(common.common.abc, _fs(max(6, int(round(sym_px / 2))))))
+		self.fntSmallText = _sf(ImageFont.truetype(common.common.abc, _fs(max(6, int(round(sym_px / 4))))))
+		self.fntBigText = _sf(ImageFont.truetype(common.common.abc, _fs(sym_px)))
+		self.fntMorinus2 = _sf(ImageFont.truetype(common.common.symbols, _fs(max(6, int(round(sym_px * 3 / 4))))))
 		self.deg_symbol = u'\u00b0'
 
 
@@ -162,7 +169,7 @@ class MundaneChart:
 		wxImag = self.buffer.ConvertToImage()
 		self.img = Image.new('RGB', (wxImag.GetWidth(), wxImag.GetHeight()))
 		self.img.frombytes(wxImag.GetData())
-		self.draw = ImageDraw.Draw(self.img)
+		self.draw = wxcompat.ScaledPILDraw(ImageDraw.Draw(self.img), self._dpi_scale)
 
 		if self.show_houses:
 			self.drawHouseNames(self.rHouse)
@@ -170,8 +177,8 @@ class MundaneChart:
 		#Convert back from PIL
 		wxImg = wx.Image(self.img.size[0], self.img.size[1])
 		wxImg.SetData(self.img.tobytes())
-		self.buffer = wx.Bitmap(wxImg)
-		self.bdc = wxcompat.CompatDC(wx.BufferedDC(None, self.buffer))
+		self.buffer = wxcompat.set_bitmap_scale(wx.Bitmap(wxImg), self._dpi_scale)
+		self.bdc = wxcompat.CompatDC(wx.BufferedDC(None, self.buffer), self._dpi_scale)
 
 		self.drawAscMC(self.rBase, self.rASCMC, self.rArrow)
 
@@ -187,7 +194,7 @@ class MundaneChart:
 		wxImag = self.buffer.ConvertToImage()
 		self.img = Image.new('RGB', (wxImag.GetWidth(), wxImag.GetHeight()))
 		self.img.frombytes(wxImag.GetData())
-		self.draw = ImageDraw.Draw(self.img)
+		self.draw = wxcompat.ScaledPILDraw(ImageDraw.Draw(self.img), self._dpi_scale)
 
 		self.drawPlanets(self.chart, self.pshift, self.rPlanet, self.rRetr)
 		if self.chart2 != None:
@@ -198,7 +205,7 @@ class MundaneChart:
 
 		wxImg = wx.Image(self.img.size[0], self.img.size[1])
 		wxImg.SetData(self.img.tobytes())
-		self.buffer = wx.Bitmap(wxImg)
+		self.buffer = wxcompat.set_bitmap_scale(wx.Bitmap(wxImg), self._dpi_scale)
 
 		return self.buffer
 

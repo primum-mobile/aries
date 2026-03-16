@@ -69,8 +69,9 @@ class GraphChart2:
 		self.show_houses = bool(getattr(self.options, "houses", False) and (getattr(self.options, "hsys", "P") != 'N' or self.comparison_whole_sign))
 		self.bw = bw
 		self.planetaryday = planetaryday
-		self.buffer = wx.Bitmap(self.w, self.h)
-		self.bdc = wxcompat.CompatDC(wx.BufferedDC(None, self.buffer))
+		self._dpi_scale = wxcompat.get_dpi_scale()
+		self.buffer = wxcompat.create_scaled_bitmap(self.w, self.h, self._dpi_scale)
+		self.bdc = wxcompat.CompatDC(wx.BufferedDC(None, self.buffer), self._dpi_scale)
 		self.chartsize = min(self.w, self.h)
 		self.maxradius = self.chartsize/2
 		# wx.Point requires integer coordinates on wxPython (macOS is strict).
@@ -294,24 +295,28 @@ class GraphChart2:
 
 		self.smallsymbolSize = 2*self.symbolSize/3
 
+		_sc = self._dpi_scale
 		def _fs(v):
 			try:
-				return max(1, int(v))
+				return max(1, int(v * _sc))
 			except Exception:
 				return 1
 
-		self.fntMorinus = ImageFont.truetype(common.common.symbols, _fs(self.symbolSize))
-		self.fntSmallMorinus = ImageFont.truetype(common.common.symbols, _fs(self.smallsymbolSize))
-		self.fntMorinusSigns = ImageFont.truetype(common.common.symbols, _fs(self.signSize))
-		self.fntText = ImageFont.truetype(common.common.abc, _fs(self.symbolSize/2))
-		self.fntAntisText = ImageFont.truetype(common.common.abc, _fs(self.symbolSize))
-		self.fntSmallText = ImageFont.truetype(common.common.abc, _fs(self.symbolSize/2))
-		self.fntRetr = ImageFont.truetype(common.common.symbols, _fs(self.symbolSize/2))
-		self.fntSmallText2 = ImageFont.truetype(common.common.abc, _fs(self.symbolSize/3))
-		self.fntSmallTextOuter = ImageFont.truetype(common.common.abc, _fs(self.symbolSize/4))
-		self.fntTinyText = ImageFont.truetype(common.common.abc, _fs(self.symbolSize/5))
-		self.fntBigText = ImageFont.truetype(common.common.abc, _fs(self.symbolSize/4*3))
-		self.fntMorinus2 = ImageFont.truetype(common.common.symbols, _fs(self.symbolSize/4*3))
+		def _sf(font):
+			return wxcompat.ScaledFont(font, _sc) if _sc != 1.0 else font
+
+		self.fntMorinus = _sf(ImageFont.truetype(common.common.symbols, _fs(self.symbolSize)))
+		self.fntSmallMorinus = _sf(ImageFont.truetype(common.common.symbols, _fs(self.smallsymbolSize)))
+		self.fntMorinusSigns = _sf(ImageFont.truetype(common.common.symbols, _fs(self.signSize)))
+		self.fntText = _sf(ImageFont.truetype(common.common.abc, _fs(self.symbolSize/2)))
+		self.fntAntisText = _sf(ImageFont.truetype(common.common.abc, _fs(self.symbolSize)))
+		self.fntSmallText = _sf(ImageFont.truetype(common.common.abc, _fs(self.symbolSize/2)))
+		self.fntRetr = _sf(ImageFont.truetype(common.common.symbols, _fs(self.symbolSize/2)))
+		self.fntSmallText2 = _sf(ImageFont.truetype(common.common.abc, _fs(self.symbolSize/3)))
+		self.fntSmallTextOuter = _sf(ImageFont.truetype(common.common.abc, _fs(self.symbolSize/4)))
+		self.fntTinyText = _sf(ImageFont.truetype(common.common.abc, _fs(self.symbolSize/5)))
+		self.fntBigText = _sf(ImageFont.truetype(common.common.abc, _fs(self.symbolSize/4*3)))
+		self.fntMorinus2 = _sf(ImageFont.truetype(common.common.symbols, _fs(self.symbolSize/4*3)))
 		self.deg_symbol = u'\u00b0'
 
 		self.arsigndiff = (0, -1, -1, 2, -1, 3, 4, -1, -1, -1, 6)
@@ -367,9 +372,10 @@ class GraphChart2:
 
 		#Convert to PIL (truetype-font is not supported in wxPython)
 		wxImag = self.buffer.ConvertToImage()
-		self.img = Image.new('RGB', (wxImag.GetWidth(), wxImag.GetHeight()))
+		pw, ph = wxImag.GetWidth(), wxImag.GetHeight()
+		self.img = Image.new('RGB', (pw, ph))
 		self.img.frombytes(wxImag.GetData())
-		self.draw = ImageDraw.Draw(self.img)
+		self.draw = wxcompat.ScaledPILDraw(ImageDraw.Draw(self.img), self._dpi_scale)
 
 		if self.show_houses:
 			self.drawHouseNames(self.chart, self.rHouseName)
@@ -381,8 +387,8 @@ class GraphChart2:
 		#Convert back from PIL
 		wxImg = wx.Image(self.img.size[0], self.img.size[1])
 		wxImg.SetData(self.img.tobytes())
-		self.buffer = wx.Bitmap(wxImg)
-		self.bdc = wxcompat.CompatDC(wx.BufferedDC(None, self.buffer))
+		self.buffer = wxcompat.set_bitmap_scale(wx.Bitmap(wxImg), self._dpi_scale)
+		self.bdc = wxcompat.CompatDC(wx.BufferedDC(None, self.buffer), self._dpi_scale)
 
 		self.drawAscMC(self.chart.houses.ascmc, self.rBase, self.rASCMC, self.rArrow)
 		if self.chart2 != None:
@@ -470,7 +476,7 @@ class GraphChart2:
 
 		self.img = Image.new('RGB', (wxImag.GetWidth(), wxImag.GetHeight()))
 		self.img.frombytes(wxImag.GetData())
-		self.draw = ImageDraw.Draw(self.img)
+		self.draw = wxcompat.ScaledPILDraw(ImageDraw.Draw(self.img), self._dpi_scale)
 
 		self.drawPlanets(self.chart, self.pshift, self.rPlanet, self.rRetr)
 		if self.chart2 != None:
@@ -535,7 +541,7 @@ class GraphChart2:
 
 		wxImg = wx.Image(self.img.size[0], self.img.size[1])
 		wxImg.SetData(self.img.tobytes())
-		self.buffer = wx.Bitmap(wxImg)
+		self.buffer = wxcompat.set_bitmap_scale(wx.Bitmap(wxImg), self._dpi_scale)
 
 		return self.buffer
 

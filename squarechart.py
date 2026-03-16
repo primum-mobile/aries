@@ -27,8 +27,9 @@ class SquareChart:
 		self.w = max(1, self.w)
 		self.h = max(1, self.h)
 		self.bw = bw
-		self.buffer = wx.Bitmap(self.w, self.h)
-		self.bdc = wxcompat.CompatDC(wx.BufferedDC(None, self.buffer))
+		self._dpi_scale = wxcompat.get_dpi_scale()
+		self.buffer = wxcompat.create_scaled_bitmap(self.w, self.h, self._dpi_scale)
+		self.bdc = wxcompat.CompatDC(wx.BufferedDC(None, self.buffer), self._dpi_scale)
 		self.chartsize = max(1, min(self.w, self.h))
 		self.maxradius = self.chartsize / 2.0
 		self.center = wx.Point(int(self.w // 2), int(self.h // 2))
@@ -36,14 +37,19 @@ class SquareChart:
 		self.symbolSize = max(8.0, self.maxradius / 16.0)
 		self.smallSize = max(6.0, self.maxradius / 18.0)
 		self.fontSize = float(int(round(self.symbolSize)))
-		symbol_px = max(6, int(round(self.symbolSize)))
-		small_px = max(6, int(round(self.smallSize)))
-		font_px = max(6, int(round(self.fontSize)))
-		self.fntMorinus = ImageFont.truetype(common.common.symbols, symbol_px)
-		self.fntMorinusSmall = ImageFont.truetype(common.common.symbols, small_px)
-		self.fntText = ImageFont.truetype(common.common.abc, font_px)
-		self.fntTextSmall = ImageFont.truetype(common.common.abc, max(6, int(round(3 * font_px / 4))))
-		self.fntTextSmaller = ImageFont.truetype(common.common.abc, max(6, int(round(font_px / 2))))
+		_sc = self._dpi_scale
+		symbol_px = max(6, int(round(self.symbolSize * _sc)))
+		small_px = max(6, int(round(self.smallSize * _sc)))
+		font_px = max(6, int(round(self.fontSize * _sc)))
+		def _sf(font):
+			return wxcompat.ScaledFont(font, _sc) if _sc != 1.0 else font
+
+		self.fntMorinus = _sf(ImageFont.truetype(common.common.symbols, symbol_px))
+		self.fntMorinusSmall = _sf(ImageFont.truetype(common.common.symbols, small_px))
+		self.fntText = _sf(ImageFont.truetype(common.common.abc, font_px))
+		self.fntTextSmall = _sf(ImageFont.truetype(common.common.abc, max(6, int(round(3 * font_px / 4)))))
+		self.fntTextSmaller = _sf(ImageFont.truetype(common.common.abc, max(6, int(round(font_px / 2)))))
+
 		self.signs = common.common.Signs1
 		if not self.options.signs:
 			self.signs = common.common.Signs2
@@ -147,9 +153,10 @@ class SquareChart:
 		#self.bdc.EndDrawing()
 
 		wxImag = self.buffer.ConvertToImage()
-		img = Image.new('RGB', (wxImag.GetWidth(), wxImag.GetHeight()))
+		pw, ph = wxImag.GetWidth(), wxImag.GetHeight()
+		img = Image.new('RGB', (pw, ph))
 		img.frombytes(wxImag.GetData())
-		draw = ImageDraw.Draw(img)
+		draw = wxcompat.ScaledPILDraw(ImageDraw.Draw(img), self._dpi_scale)
 
 		datetxt = str(self.chart.time.origyear)+'.'+common.common.months[self.chart.time.origmonth-1]+'.'+str(self.chart.time.origday).zfill(2)
 		if self.chart.time.cal == chart.Time.JULIAN:
@@ -297,7 +304,7 @@ class SquareChart:
 
 		wxImg = wx.Image(img.size[0], img.size[1])
 		wxImg.SetData(img.tobytes())
-		self.buffer = wx.Bitmap(wxImg)
+		self.buffer = wxcompat.set_bitmap_scale(wx.Bitmap(wxImg), self._dpi_scale)
 
 		return self.buffer
 

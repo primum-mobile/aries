@@ -10,6 +10,42 @@ wx.DC-like objects and coerces common drawing arguments to ints.
 import wx
 
 
+def get_dpi_scale(window=None):
+	"""Return the display scale factor (e.g. 2.0 on Retina). Degrades to 1.0."""
+	try:
+		if window is not None:
+			return window.GetContentScaleFactor()
+	except Exception:
+		pass
+	try:
+		return wx.GetApp().GetTopWindow().GetContentScaleFactor()
+	except Exception:
+		pass
+	return 1.0
+
+
+def create_scaled_bitmap(logical_w, logical_h, scale):
+	"""Create a bitmap at physical resolution with correct logical-size metadata.
+
+	On Retina (scale=2.0), a 600x600 logical bitmap becomes 1200x1200 physical
+	pixels. SetScaleFactor tells wxPython the logical size so paint handlers
+	draw it correctly without any changes.
+	"""
+	pw = max(1, int(logical_w * scale))
+	ph = max(1, int(logical_h * scale))
+	bmp = wx.Bitmap(pw, ph)
+	if hasattr(bmp, 'SetScaleFactor'):
+		bmp.SetScaleFactor(scale)
+	return bmp
+
+
+def set_bitmap_scale(bmp, scale):
+	"""Apply scale factor metadata to an existing bitmap."""
+	if scale != 1.0 and hasattr(bmp, 'SetScaleFactor'):
+		bmp.SetScaleFactor(scale)
+	return bmp
+
+
 def _i(v):
 	if v is None:
 		return 0
@@ -138,8 +174,98 @@ def place_dialog_left_of_parent(dialog, parent, gap=12):
 		pass
 
 
+class ScaledFont:
+	"""Wraps a PIL font so getsize/getbbox/getlength return logical units
+	while the underlying font renders at physical (scaled) resolution."""
+
+	def __init__(self, font, scale):
+		self._font = font
+		self._s = scale
+
+	def __getattr__(self, name):
+		return getattr(self._font, name)
+
+	def getsize(self, text, *args, **kw):
+		w, h = self._font.getsize(text, *args, **kw)
+		s = self._s
+		return (w / s, h / s)
+
+	def getbbox(self, text, *args, **kw):
+		bbox = self._font.getbbox(text, *args, **kw)
+		s = self._s
+		return (bbox[0] / s, bbox[1] / s, bbox[2] / s, bbox[3] / s)
+
+	def getlength(self, text, *args, **kw):
+		return self._font.getlength(text, *args, **kw) / self._s
+
+
+class ScaledPILDraw:
+	"""Wraps PIL ImageDraw so callers can use logical coordinates while the
+	underlying image is at physical (scaled) resolution.  text() coords are
+	multiplied by *scale*; textsize() results are divided by *scale* so that
+	layout math stays in logical units."""
+
+	def __init__(self, draw, scale):
+		self._draw = draw
+		self._s = scale
+
+	def __getattr__(self, name):
+		return getattr(self._draw, name)
+
+	def text(self, xy, text, **kw):
+		s = self._s
+		sx, sy = xy[0] * s, xy[1] * s
+		return self._draw.text((sx, sy), text, **kw)
+
+	def textsize(self, text, font=None, *args, **kw):
+		w, h = self._draw.textsize(text, font=font, *args, **kw)
+		s = self._s
+		return (w / s, h / s)
+
+	def textbbox(self, xy, text, font=None, *args, **kw):
+		s = self._s
+		sx, sy = xy[0] * s, xy[1] * s
+		left, top, right, bottom = self._draw.textbbox((sx, sy), text, font=font, *args, **kw)
+		return (left / s, top / s, right / s, bottom / s)
+
+	def line(self, xy, **kw):
+		s = self._s
+		scaled = [(x * s, y * s) for x, y in xy]
+		return self._draw.line(scaled, **kw)
+
+	def rectangle(self, xy, **kw):
+		s = self._s
+		scaled = [(x * s, y * s) for x, y in xy]
+		return self._draw.rectangle(scaled, **kw)
+
+	def ellipse(self, xy, **kw):
+		s = self._s
+		scaled = [(x * s, y * s) for x, y in xy]
+		return self._draw.ellipse(scaled, **kw)
+
+
 class CompatDC:
-	def __init__(self, dc):
+	"""Wraps wx.DC, coercing float coords to ints.
+
+	No coordinate scaling is done here. When the underlying bitmap has
+	SetScaleFactor set, the DC natively maps logical coords to physical
+	pixels — pen widths, coordinates, and everything scale automatically.
+	PIL drawing (ScaledPILDraw/ScaledFont) handles its own scaling since
+	PIL has no concept of bitmap scale factors.
+	"""
+
+	def __init__(self, dc, scale=1.0):
+		# Wrap in GCDC for anti-aliased drawing (smooth lines/circles)
+		try:
+			gcdc = wx.GCDC(dc)
+			# Set highest quality anti-aliasing on the graphics context
+			gc = gcdc.GetGraphicsContext()
+			if gc is not None:
+				gc.SetAntialiasMode(wx.ANTIALIAS_DEFAULT)
+				gc.SetInterpolationQuality(wx.INTERPOLATION_BEST)
+			dc = gcdc
+		except Exception:
+			pass
 		self._dc = dc
 
 	def __getattr__(self, name):
@@ -177,7 +303,6 @@ class CompatDC:
 		return self._dc.DrawRectangle(_i(x), _i(y), _i(w), _i(h))
 
 	def DrawPoint(self, x, y=None):
-		# DrawPoint(x, y) or DrawPoint(pt)
 		if y is None:
 			x, y = _pt(x)
 		return self._dc.DrawPoint(_i(x), _i(y))

@@ -56,7 +56,8 @@ class SquareChartWnd(wx.Window):
 
 
 	def OnPaint(self, event):
-		dc = wx.BufferedPaintDC(self, self.buffer, wx.BUFFER_VIRTUAL_AREA)
+		dc = wx.PaintDC(self)
+		dc.DrawBitmap(self.buffer, 0, 0)
 
 
 	def onPopupMenu(self, event):
