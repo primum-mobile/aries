@@ -662,7 +662,7 @@ class MFrame(wx.Frame):
 			'synastry': self.onSynastry,
 			'transits': self.onTransits,
 			'sun_transits': self.onSunTransits,
-			'solar_return': self._workspace_open_solar_return,
+			'solar_return': self.onRevolutions,
 			'other_revolutions': self.onRevolutions,
 			'secondary_chart': self.onSecondaryDirs,
 			'secondary_positions': self.onSecProgPositionsByDate,
