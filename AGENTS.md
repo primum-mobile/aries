@@ -125,5 +125,16 @@
 - Do not convert wx event patterns to async/await.
 
 ## Running the App
-Smoke test GUI changes with: `pythonw morinus.py`
+Run with: `python3 morinus.py`
+**Always use `python3`** (Python 3.13+). Never use `pythonw` (that resolves to Python 2.7 on this machine).
 Never compile/package to test. Run directly.
+
+## Swiss Ephemeris (SWEP) C Extension
+Morinus depends on `sweastrology`, a C extension built from `SWEP/src/`.
+The compiled `.so` is gitignored, so **git worktrees will not have it**.
+
+**If you get `ModuleNotFoundError: No module named 'sweastrology'`**, rebuild it:
+```bash
+cd SWEP/src && python3 setup.py build_ext --inplace && cd ../..
+```
+This must be done once per worktree or fresh clone.

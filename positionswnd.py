@@ -29,7 +29,8 @@ class PositionsWnd(wx.ScrolledWindow):
 		self.mainfr = mainfr
 		self.bw = self.options.bw
 
-		self.parent.mbw.Check(self.bw)
+		if hasattr(self.parent, 'mbw'):
+			self.parent.mbw.Check(self.bw)
 
 		self.speculum = 0
 		if self.options.primarydir == primdirs.PrimDirs.REGIOMONTAN or self.options.primarydir == primdirs.PrimDirs.CAMPANIAN:

@@ -303,6 +303,10 @@ class WorkspaceNavigatorPane(wx.ScrolledWindow):
 		for document_id, link in self._document_links.items():
 			link.set_selected(document_id == active_document_id)
 
+	def set_active_action(self, action_id):
+		for aid, link in self._links.items():
+			link.set_selected(aid == action_id)
+
 
 class CentralChartHost(wx.Panel):
 	def __init__(self, parent, options, context_menu_handler=None, resize_handler=None):
@@ -424,9 +428,13 @@ class MainWindowShell(wx.Panel):
 			resize_handler=chart_resize_handler,
 		)
 
+		self._table_host = wx.Panel(self, -1)
+		self._table_host.Hide()
+
 		self._body_sizer = wx.BoxSizer(wx.HORIZONTAL)
 		self._body_sizer.Add(self.navigator_pane, 0, wx.EXPAND | wx.RIGHT, 12)
 		self._body_sizer.Add(self.chart_host, 1, wx.EXPAND)
+		self._body_sizer.Add(self._table_host, 1, wx.EXPAND)
 		self.SetSizer(self._body_sizer)
 
 		self.refresh_theme()
@@ -459,3 +467,36 @@ class MainWindowShell(wx.Panel):
 
 	def refresh_chart(self):
 		self.chart_host.refresh_host()
+
+	def get_table_host(self):
+		return self._table_host
+
+	def set_table_content(self, wnd):
+		for child in list(self._table_host.GetChildren()):
+			if child is wnd:
+				continue
+			try:
+				child.Destroy()
+			except Exception:
+				pass
+		sizer = wx.BoxSizer(wx.VERTICAL)
+		sizer.Add(wnd, 1, wx.EXPAND)
+		self._table_host.SetSizer(sizer)
+		self._table_host.Layout()
+		self.chart_host.Hide()
+		self._table_host.Show()
+		self._body_sizer.Layout()
+		self.Layout()
+
+	def clear_table_content(self):
+		if not self._table_host.IsShown():
+			return
+		self._table_host.Hide()
+		self.chart_host.Show()
+		for child in list(self._table_host.GetChildren()):
+			try:
+				child.Destroy()
+			except Exception:
+				pass
+		self._body_sizer.Layout()
+		self.Layout()

@@ -113,6 +113,15 @@ import primdirslistframe
 import primdirs
 import primarykeysdlg
 import primdirsrangedlg
+import positionswnd
+import aspectswnd
+import risesetwnd
+import hourswnd
+import firdariawnd
+import arabicpartswnd
+import transitmwnd
+import profectionswnd
+import primdirslistwnd
 import placidiansapd
 import placidianutppd
 import regiomontanpd
@@ -360,6 +369,12 @@ class MFrame(wx.Frame):
 		if hasattr(self, '_workspace_shell') and self._workspace_shell is not None:
 			self._workspace_shell.refresh_theme()
 
+	def _show_table_in_workspace(self, action_id, wnd):
+		self._active_table_action = action_id
+		if hasattr(self, '_workspace_shell') and self._workspace_shell is not None:
+			self._workspace_shell.set_table_content(wnd)
+			self._workspace_shell.navigator_pane.set_active_action(action_id)
+
 	def _handle_chart_host_resize(self):
 		if not hasattr(self, 'splash'):
 			return
@@ -440,6 +455,11 @@ class MFrame(wx.Frame):
 		self.fpathhors = session.get('dpath', self.fpathhors)
 		self.dirty = False
 		self._workspace_state.activate_document(session['document_id'])
+
+		self._active_table_action = None
+		if hasattr(self, '_workspace_shell') and self._workspace_shell is not None:
+			self._workspace_shell.clear_table_content()
+			self._workspace_shell.navigator_pane.set_active_action(None)
 
 		self.enableMenus(True)
 		self.drawBkg()
@@ -662,20 +682,20 @@ class MFrame(wx.Frame):
 			'synastry': self.onSynastry,
 			'transits': self.onTransits,
 			'sun_transits': self.onSunTransits,
-			'solar_return': self.onRevolutions,
+			'solar_return': self.onQuickSolarRevolution,
 			'other_revolutions': self.onRevolutions,
 			'secondary_chart': self.onSecondaryDirs,
 			'secondary_positions': self.onSecProgPositionsByDate,
 			'profections_chart': self.onProfectionsChart,
-			'positions': self.onPositions,
-			'aspects': self.onAspects,
-			'rise_set': self.onRiseSet,
-			'exact_transits': self.onExactTransits,
-			'profections_table': self.onProfections,
-			'primary_directions': self.onPrimaryDirs,
-			'planetary_hours': self.onPlanetaryHours,
-			'firdaria': self.onFirdaria,
-			'arabic_parts': self.onArabians,
+			'positions': lambda e: self._workspace_table_positions(),
+			'aspects': lambda e: self._workspace_table_aspects(),
+			'rise_set': lambda e: self._workspace_table_rise_set(),
+			'exact_transits': lambda e: self._workspace_table_exact_transits(),
+			'profections_table': lambda e: self._workspace_table_profections(),
+			'primary_directions': lambda e: self._workspace_table_primary_dirs(),
+			'planetary_hours': lambda e: self._workspace_table_planetary_hours(),
+			'firdaria': lambda e: self._workspace_table_firdaria(),
+			'arabic_parts': lambda e: self._workspace_table_arabic_parts(),
 		}
 		handler = action_map.get(action_id)
 		if handler is not None:
@@ -1716,6 +1736,8 @@ class MFrame(wx.Frame):
 		self.revdlg = None
 		self.secdirdlg = None
 		self.pdrangedlg = None
+		self._active_table_action = None
+		self._pd_for_workspace = False
 
 		os.environ['SE_EPHE_PATH'] = ''
 		astrology.swe_set_ephe_path(common.common.ephepath)
@@ -2322,6 +2344,144 @@ class MFrame(wx.Frame):
 			self.pdrangedlg = None
 
 
+	# --- Workspace-embedded table methods ---
+
+	def _workspace_table_positions(self):
+		if self.splash:
+			return
+		speculum = 0
+		if self.options.primarydir == primdirs.PrimDirs.REGIOMONTAN:
+			speculum = 1
+		if not ((True in self.options.speculums[speculum]) or self.options.speculumdodecat[speculum]):
+			dlgm = wx.MessageDialog(self, mtexts.txts['SelectColumn'], '', wx.OK|wx.ICON_INFORMATION)
+			dlgm.ShowModal()
+			dlgm.Destroy()
+			return
+		wait = wx.BusyCursor()
+		host = self._workspace_shell.get_table_host()
+		wnd = positionswnd.PositionsWnd(host, self.horoscope, self.options, self)
+		self._show_table_in_workspace('positions', wnd)
+
+	def _workspace_table_aspects(self):
+		if self.splash:
+			return
+		wait = wx.BusyCursor()
+		host = self._workspace_shell.get_table_host()
+		wnd = aspectswnd.AspectsWnd(host, self.horoscope, self.options, self)
+		self._show_table_in_workspace('aspects', wnd)
+
+	def _workspace_table_rise_set(self):
+		if self.splash:
+			return
+		wait = wx.BusyCursor()
+		host = self._workspace_shell.get_table_host()
+		wnd = risesetwnd.RiseSetWnd(host, self.horoscope, self.options, self)
+		self._show_table_in_workspace('rise_set', wnd)
+
+	def _workspace_table_planetary_hours(self):
+		if self.splash:
+			return
+		wait = wx.BusyCursor()
+		host = self._workspace_shell.get_table_host()
+		wnd = hourswnd.HoursWnd(host, self.horoscope, self.options, self)
+		self._show_table_in_workspace('planetary_hours', wnd)
+
+	def _workspace_table_firdaria(self):
+		if self.horoscope.time.bc:
+			dlgm = wx.MessageDialog(self, mtexts.txts['NotAvailable'], '', wx.OK|wx.ICON_INFORMATION)
+			dlgm.ShowModal()
+			dlgm.Destroy()
+			return
+		if self.splash:
+			return
+		wait = wx.BusyCursor()
+		host = self._workspace_shell.get_table_host()
+		wnd = firdariawnd.FirdariaWnd(host, self.horoscope, self.options, self)
+		self._show_table_in_workspace('firdaria', wnd)
+
+	def _workspace_table_arabic_parts(self):
+		if self.splash:
+			return
+		wait = wx.BusyCursor()
+		host = self._workspace_shell.get_table_host()
+		wnd = arabicpartswnd.ArabicPartsWnd(host, self.horoscope, self.options, self)
+		self._show_table_in_workspace('arabic_parts', wnd)
+
+	def _workspace_table_exact_transits(self):
+		if self.horoscope.time.bc:
+			dlgm = wx.MessageDialog(self, mtexts.txts['NotAvailable'], '', wx.OK|wx.ICON_INFORMATION)
+			dlgm.ShowModal()
+			dlgm.Destroy()
+			return
+		if self.trmondlg is None:
+			self.trmondlg = transitmdlg.TransitMonthDlg(None, self.horoscope.time)
+		now = datetime.datetime.now()
+		self.trmondlg.year.SetValue(str(now.year))
+		self.trmondlg.month.SetValue(str(now.month))
+		self.trmondlg.CenterOnParent()
+		val = self.trmondlg.ShowModal()
+		if val == wx.ID_OK:
+			year = int(self.trmondlg.year.GetValue())
+			month = int(self.trmondlg.month.GetValue())
+			wait = wx.BusyCursor()
+			trans = transits.Transits()
+			trans.month(year, month, self.horoscope)
+			host = self._workspace_shell.get_table_host()
+			wnd = transitmwnd.TransitMonthWnd(host, trans.transits, year, month, self.horoscope, self.options, self)
+			self._show_table_in_workspace('exact_transits', wnd)
+
+	def _workspace_table_profections(self):
+		if self.horoscope.time.bc:
+			dlgm = wx.MessageDialog(self, mtexts.txts['NotAvailable'], '', wx.OK|wx.ICON_INFORMATION)
+			dlgm.ShowModal()
+			dlgm.Destroy()
+			return
+		pdlg = proftabledlg.ProfTableDlg(self)
+		pdlg.initialize()
+		pdlg.CenterOnParent()
+		val = pdlg.ShowModal()
+		if val == wx.ID_OK:
+			proftype = chart.Chart.YEAR
+			mainsigs = pdlg.mainrb.GetValue()
+			pchart = self.horoscope
+			wait = wx.BusyCursor()
+			y = self.horoscope.time.year
+			m = self.horoscope.time.month
+			d = self.horoscope.time.day
+			t = self.horoscope.time.time
+			if self.horoscope.time.month == 2 and self.horoscope.time.day == 29:
+				d -= 1
+			pcharts = []
+			cyc = 0
+			while cyc < 12:
+				if self.options.zodprof:
+					prof = profections.Profections(self.horoscope, y, m, d, t, cyc)
+					pchart = chart.Chart(self.horoscope.name, self.horoscope.male, self.horoscope.time, self.horoscope.place, chart.Chart.PROFECTION, '', self.options, False, proftype)
+					pchart.calcProfPos(prof)
+				else:
+					if not self.options.usezodprojsprof and (y+cyc == self.horoscope.time.year or (y+cyc-self.horoscope.time.year) % 12 == 0) and m == self.horoscope.time.month and d == self.horoscope.time.day:
+						pchart = self.horoscope
+					else:
+						prof = munprofections.MunProfections(self.horoscope, y, m, d, t, cyc)
+						proflondeg, proflonmin, proflonsec = util.decToDeg(prof.lonZ)
+						profplace = chart.Place(mtexts.txts['Profections'], proflondeg, proflonmin, proflonsec, prof.east, self.horoscope.place.deglat, self.horoscope.place.minlat, self.horoscope.place.seclat, self.horoscope.place.north, self.horoscope.place.altitude)
+						pchart = chart.Chart(self.horoscope.name, self.horoscope.male, self.horoscope.time, profplace, chart.Chart.PROFECTION, '', self.options, False, proftype, self.options.usezodprojsprof)
+						pchartpls = chart.Chart(self.horoscope.name, self.horoscope.male, self.horoscope.time, self.horoscope.place, chart.Chart.PROFECTION, '', self.options, False, proftype, self.options.usezodprojsprof)
+						pchart.planets.calcMundaneProfPos(pchart.houses.ascmc2, pchartpls.planets.planets, self.horoscope.place.lat, self.horoscope.obl[0])
+						pchart.fortune.calcMundaneProfPos(pchart.houses.ascmc2, pchartpls.fortune, self.horoscope.place.lat, self.horoscope.obl[0])
+				pcharts.append((pchart, y+cyc, m, d, t))
+				cyc += 1
+			host = self._workspace_shell.get_table_host()
+			wnd = profectionswnd.ProfectionsWnd(host, 0, pcharts, self.options, self, mainsigs)
+			self._show_table_in_workspace('profections_table', wnd)
+		pdlg.Destroy()
+
+	def _workspace_table_primary_dirs(self):
+		self._pd_for_workspace = True
+		self.onPrimaryDirs(None)
+
+	# --- end workspace-embedded table methods ---
+
 	#Table-menu
 	def onPositions(self, event):
 		#Because on Windows the EVT_MENU_CLOSE event is not sent in case of accelerator-keys
@@ -2893,6 +3053,7 @@ class MFrame(wx.Frame):
 			self.handleStatusBar(True)
 
 		if self.horoscope.time.bc:
+			self._pd_for_workspace = False
 			dlgm = wx.MessageDialog(self, mtexts.txts['NotAvailable'], '', wx.OK|wx.ICON_INFORMATION)
 			dlgm.ShowModal()
 			dlgm.Destroy()
@@ -2904,6 +3065,8 @@ class MFrame(wx.Frame):
 		self.pdrangedlg.CenterOnParent()
 
 		val = self.pdrangedlg.ShowModal()
+		if val != wx.ID_OK:
+			self._pd_for_workspace = False
 		if val == wx.ID_OK:
 			pdrange = primdirs.PrimDirs.RANGEALL
 			if self.pdrangedlg.range25rb.GetValue():
@@ -2975,13 +3138,24 @@ class MFrame(wx.Frame):
 		self.progbar.Destroy()
 		del self.progbar
 
+		use_workspace = self._pd_for_workspace
+		self._pd_for_workspace = False
+
 		if self.abort.abort:
 			self.Refresh()
 		else:
 			if self.pds != None and len(self.pds.pds) > 0:
-				pdw = primdirslistframe.PrimDirsListFrame(self, self.horoscope, self.options, self.pds, self.title.replace(mtexts.typeList[self.horoscope.htype], mtexts.txts['PrimaryDirs']))
-
-				pdw.Show(True)
+				if use_workspace and hasattr(self, '_workspace_shell') and self._workspace_shell is not None:
+					LINE_NUM = 40
+					PAGE = LINE_NUM * 2
+					fr = 0
+					to = min(PAGE, len(self.pds.pds))
+					host = self._workspace_shell.get_table_host()
+					wnd = primdirslistwnd.PrimDirsListWnd(host, self.horoscope, self.options, self.pds, self, 1, 1, fr, to)
+					self._show_table_in_workspace('primary_directions', wnd)
+				else:
+					pdw = primdirslistframe.PrimDirsListFrame(self, self.horoscope, self.options, self.pds, self.title.replace(mtexts.typeList[self.horoscope.htype], mtexts.txts['PrimaryDirs']))
+					pdw.Show(True)
 			else:
 				dlgm = wx.MessageDialog(self, mtexts.txts['NoPDsWithSettings'], mtexts.txts['Information'], wx.OK|wx.ICON_INFORMATION)
 				dlgm.ShowModal()
