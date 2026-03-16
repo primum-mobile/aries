@@ -130,7 +130,12 @@ import math #solar precession
 import circumambulationframe
 import fixstardirsframe
 import searchframe
+import keyboard_layers
 import wxcompat
+import workspace_model
+import workspace_shell
+import chart_session
+import horary_session
 from morinus import _morinus_user_hors_dir, _morinus_user_images_dir, _copy_missing_tree, _BASE_DIR
 import os, sys, wx
 import sys  # 위쪽 import들 근처에 이미 있다면 생략
@@ -168,49 +173,10 @@ pdlock = _thread.allocate_lock()
 class MFrame(wx.Frame):
 
 	def _apply_custom_shortcut_labels(self):
-		try:
-			self.ctransits.SetLabel(self.ID_Transits, 'Transits\tT')
-		except Exception:
-			pass
-		try:
-			self.mcharts.SetLabel(self.ID_Revolutions, 'Solar Revolution\tR')
-		except Exception:
-			pass
-		try:
-			self.mcharts.SetLabel(self.ID_OtherRevolutions, 'Other Revolutions...')
-		except Exception:
-			pass
-		try:
-			self.mcharts.SetLabel(self.ID_ProfectionsChart, 'Profections Chart\tP')
-		except Exception:
-			pass
-		try:
-			self.mtable.SetLabel(self.ID_Profections, 'Profections')
-		except Exception:
-			pass
-		try:
-			self.mtable.SetLabel(self.ID_PrimaryDirs, 'Primary Directions Lists\tD')
-		except Exception:
-			pass
+		keyboard_layers.apply_main_shortcut_labels(self)
 
 	def _handle_quick_shortcut(self, keycode):
-		if keycode in (ord('T'), ord('t')):
-			if not self.splash:
-				self.onTransits(None)
-				return True
-		elif keycode in (ord('R'), ord('r')):
-			if not self.splash:
-				self.onQuickSolarRevolution()
-				return True
-		elif keycode in (ord('P'), ord('p')):
-			if not self.splash:
-				self.onProfectionsChart(None)
-				return True
-		elif keycode in (ord('D'), ord('d')):
-			if not self.splash:
-				self.onPrimaryDirs(None)
-				return True
-		return False
+		return keyboard_layers.handle_main_quick_shortcut(self, keycode)
 
 	def _apply_radix_overlay_mode(self, new_value):
 		if self.splash or self.horoscope is None:
@@ -340,31 +306,416 @@ class MFrame(wx.Frame):
 		menu.Destroy()
 
 	def onCharHook(self, event):
-		if event is None:
-			return
-
-		if event.AltDown() or event.ControlDown() or event.CmdDown():
-			event.Skip()
-			return
-
-		if self._handle_quick_shortcut(event.GetKeyCode()):
+		cs = self._active_chart_session()
+		if cs is not None:
+			if keyboard_layers.handle_transit_key_event(cs, event):
+				return
+		if keyboard_layers.handle_main_key_event(self, event):
 			return
 
 		event.Skip()
 
 	def onKeyDown(self, event):
-		if event is None:
-			return
-
-		if event.AltDown() or event.ControlDown() or event.CmdDown():
-			event.Skip()
-			return
-
-		keycode = event.GetKeyCode()
-		if self._handle_quick_shortcut(keycode):
+		cs = self._active_chart_session()
+		if cs is not None:
+			if keyboard_layers.handle_transit_key_event(cs, event):
+				return
+		if keyboard_layers.handle_main_key_event(self, event):
 			return
 
 		event.Skip()
+
+	def _render_target_size(self):
+		if hasattr(self, '_workspace_shell') and self._workspace_shell is not None:
+			size = self._workspace_shell.get_chart_host_size()
+			if getattr(size, 'x', 0) > 0 and getattr(size, 'y', 0) > 0:
+				return size
+		return self.GetClientSize()
+
+	def _shell_background_colour(self):
+		if self.options.bw:
+			return (255, 255, 255)
+		return self.options.clrbackground
+
+	def _push_chart_bitmap(self, bitmap, center=False):
+		self.buffer = bitmap
+		if hasattr(self, '_workspace_shell') and self._workspace_shell is not None:
+			self._workspace_shell.set_chart_bitmap(
+				bitmap,
+				center=center,
+				background_colour=self._shell_background_colour(),
+			)
+
+	def _refresh_chart_host(self):
+		if hasattr(self, '_workspace_shell') and self._workspace_shell is not None:
+			self._workspace_shell.refresh_chart()
+		else:
+			self.Refresh()
+
+	def _refresh_workspace_navigation(self):
+		if hasattr(self, '_workspace_shell') and self._workspace_shell is not None:
+			self._workspace_shell.refresh_navigation()
+
+	def _refresh_workspace_shell_theme(self):
+		if hasattr(self, '_workspace_shell') and self._workspace_shell is not None:
+			self._workspace_shell.refresh_theme()
+
+	def _handle_chart_host_resize(self):
+		if not hasattr(self, 'splash'):
+			return
+		if self.splash:
+			self._refresh_chart_host()
+			return
+		if getattr(self, 'horoscope', None) is None:
+			return
+		self.drawBkg()
+
+	def _workspace_recent_files(self):
+		recent_files = []
+		for path in getattr(self, '_recent_hors_paths', []):
+			recent_files.append({
+				'label': os.path.basename(path),
+				'path': path,
+			})
+		return recent_files
+
+	def _workspace_hors_files(self):
+		hors_files = []
+		if not os.path.isdir(self.fpathhors):
+			return hors_files
+
+		paths = []
+		for name in os.listdir(self.fpathhors):
+			if not name.lower().endswith('.hor'):
+				continue
+			path = os.path.join(self.fpathhors, name)
+			if os.path.isfile(path):
+				paths.append(path)
+
+		paths.sort(
+			key=lambda path: (
+				0 if path == self.fpath else 1,
+				-int(os.path.getmtime(path)) if os.path.exists(path) else 0,
+				os.path.basename(path).lower(),
+			)
+		)
+
+		for path in paths[:24]:
+			hors_files.append({
+				'label': os.path.basename(path),
+				'path': path,
+			})
+		return hors_files
+
+	def _workspace_session_title(self, chrt, fpath=''):
+		name = getattr(chrt, 'name', '') or ''
+		if not name and fpath:
+			name = os.path.splitext(os.path.basename(fpath))[0]
+		if not name:
+			name = mtexts.txts['Untitled']
+		return name
+
+	def _workspace_session_subtitle(self, chrt):
+		try:
+			return mtexts.typeList[chrt.htype]
+		except Exception:
+			return ''
+
+	def _find_workspace_session(self, session_id):
+		return getattr(self, '_workspace_runtime', {}).get(session_id)
+
+	def _activate_workspace_session(self, session):
+		if isinstance(session, str):
+			session = self._find_workspace_session(session)
+		if session is None:
+			return
+
+		cs = session.get('chart_session')
+		if cs is not None:
+			self.horoscope = cs.chart
+		else:
+			self.horoscope = session['chart']
+		self.splash = False
+		self.fpath = session.get('fpath', '')
+		self.fpathhors = session.get('dpath', self.fpathhors)
+		self.dirty = False
+		self._workspace_state.activate_document(session['document_id'])
+
+		self.enableMenus(True)
+		self.drawBkg()
+		self.Refresh()
+		self.handleStatusBar(True)
+		self.handleCaption(True)
+		self._refresh_workspace_navigation()
+		if hasattr(self, '_workspace_shell') and self._workspace_shell is not None:
+			wx.CallAfter(self._workspace_shell.chart_host.SetFocus)
+		else:
+			wx.CallAfter(self.SetFocus)
+
+	def _active_chart_session(self):
+		active_id = self._workspace_state.active_document_id()
+		if active_id is None:
+			return None
+		session = self._find_workspace_session(active_id)
+		if session is None:
+			return None
+		return session.get('chart_session')
+
+	def _on_chart_session_change(self, cs):
+		self.horoscope = cs.chart
+		self.drawBkg()
+		self.Refresh()
+		self.handleStatusBar(True)
+		self.handleCaption(True)
+
+	def _make_stepper_callback(self, cs):
+		def on_step(chrt, caption, *args):
+			cs.change_chart(chrt)
+		return on_step
+
+	def _open_workspace_session(self, chrt, fpath='', dpath='', session_label=None, add_to_history=False,
+							  radix=None, view_mode=0, navigation_units=None, navigation_title_label=None, stepper=None):
+		if chrt is None:
+			return None
+
+		document = self._workspace_state.open_document(
+			kind='chart',
+			title=session_label or self._workspace_session_title(chrt, fpath),
+			subtitle=self._workspace_session_subtitle(chrt),
+			path=fpath,
+		)
+		session = {
+			'document_id': document.document_id,
+			'chart': chrt,
+			'fpath': fpath,
+			'dpath': dpath or self.fpathhors,
+			'chart_session': None,
+		}
+		if radix is not None:
+			cs = chart_session.ChartSession(
+				chrt, radix, self.options,
+				view_mode=view_mode,
+				navigation_units=navigation_units,
+				navigation_title_label=navigation_title_label,
+				stepper=stepper,
+				on_change=self._on_chart_session_change,
+			)
+			session['chart_session'] = cs
+		self._workspace_runtime[document.document_id] = session
+
+		if add_to_history and fpath:
+			self._recent_hors_paths = [path for path in self._recent_hors_paths if path != fpath]
+			self._recent_hors_paths.insert(0, fpath)
+			self._recent_hors_paths = self._recent_hors_paths[:9]
+			self.filehistory.AddFileToHistory(fpath)
+
+		self._activate_workspace_session(document.document_id)
+		return document
+
+	def _switch_workspace_session(self, session_id):
+		self._activate_workspace_session(session_id)
+
+	def _workspace_open_chart(self, event=None):
+		if sys.platform == 'darwin':
+			fpath = macfiledialog.choose_file(self.fpathhors)
+			if not fpath:
+				return
+			dpath = os.path.dirname(fpath)
+			if not fpath.lower().endswith(u'.hor'):
+				fpath += u'.hor'
+			chrt = self.subLoad(fpath, dpath, True)
+			if chrt is not None:
+				self._open_workspace_session(chrt, fpath=fpath, dpath=dpath, add_to_history=True)
+			return
+
+		dlg = wx.FileDialog(self, mtexts.txts['OpenHor'], '', '', u'All files (*.*)|*.*', wx.FD_OPEN)
+		try:
+			if os.path.isdir(self.fpathhors):
+				dlg.SetDirectory(self.fpathhors)
+			else:
+				dlg.SetDirectory(u'.')
+			if dlg.ShowModal() == wx.ID_OK:
+				dpath = dlg.GetDirectory()
+				fpath = dlg.GetPath()
+				if not fpath.lower().endswith(u'.hor'):
+					fpath += u'.hor'
+				chrt = self.subLoad(fpath, dpath, True)
+				if chrt is not None:
+					self._open_workspace_session(chrt, fpath=fpath, dpath=dpath, add_to_history=True)
+		finally:
+			dlg.Destroy()
+
+	def _workspace_open_here_and_now(self, event=None):
+		place = chart.Place(self.options.deflocname, self.options.defloclondeg, self.options.defloclonmin, 0, self.options.defloceast, self.options.defloclatdeg, self.options.defloclatmin, 0, self.options.deflocnorth, self.options.deflocalt)
+		now = datetime.datetime.now()
+		time = chart.Time(now.year, now.month, now.day, now.hour, now.minute, now.second, False, chart.Time.GREGORIAN, chart.Time.ZONE, self.options.deflocplus, self.options.defloczhour, self.options.defloczminute, self.options.deflocdst, place, tzid=getattr(self.options, 'defloctzid', ''), tzauto=getattr(self.options, 'defloctzauto', True))
+		chrt = chart.Chart(mtexts.txts['HereAndNow'], True, time, place, chart.Chart.HORARY, '', self.options)
+
+		document = self._workspace_state.open_document(
+			kind='chart',
+			title=mtexts.txts['HereAndNow'],
+			subtitle=self._workspace_session_subtitle(chrt),
+		)
+		cs = horary_session.HorarySession(
+			chrt, self.options,
+			on_change=self._on_chart_session_change,
+			navigation_title_label=mtexts.txts['HereAndNow'],
+		)
+		session = {
+			'document_id': document.document_id,
+			'chart': chrt,
+			'fpath': '',
+			'dpath': '',
+			'chart_session': cs,
+		}
+		self._workspace_runtime[document.document_id] = session
+		self._activate_workspace_session(document.document_id)
+
+	def _build_configured_solar_revolution_chart(self):
+		revs = revolutions.Revolutions()
+		target_year = self._get_configured_solar_return_year()
+		ok = revs.compute(revolutions.Revolutions.SOLAR, target_year, self.horoscope.time.month, self.horoscope.time.day, self.horoscope)
+		if not ok:
+			dlgm = wx.MessageDialog(self, mtexts.txts['CouldnotComputeRevolution'], mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
+			dlgm.ShowModal()
+			dlgm.Destroy()
+			return (None, None)
+
+		t1, t2, t3, t4, t5, t6 = revs.t[0], revs.t[1], revs.t[2], revs.t[3], revs.t[4], revs.t[5]
+		if self.options.ayanamsha != 0:
+			try:
+				t1, t2, t3, t4, t5, t6 = self.calcPrecNutCorrectedRevolution(revs, astrology.SE_SUN)
+			except Exception:
+				pass
+
+		ti = (t1, t2, t3, t4, t5, t6, chart.Time.GREGORIAN, chart.Time.GREENWICH, 0, 0)
+		place = self.horoscope.place
+		plus = True
+
+		if getattr(self.options, 'revolutions_solarlocationmode', 0) == 1:
+			dlg = timespacedlg.TimeSpaceDlg(self, mtexts.txts['Revolutions'], self.options.langid)
+			dlg.initialize(self.horoscope, ti)
+			dlg.CenterOnParent()
+			if dlg.ShowModal() != wx.ID_OK:
+				dlg.Destroy()
+				return (None, None)
+			place = self._build_revolution_place(dlg)
+			if self.options.ayanamsha != 0:
+				try:
+					t1, t2, t3, t4, t5, t6 = self.calcPrecNutCorrectedRevolution(revs, astrology.SE_SUN, topo_place=place, seed=(t1, t2, t3, t4, t5, t6))
+				except Exception:
+					pass
+			if dlg.pluscb.GetCurrentSelection() == 1:
+				plus = False
+			dlg.Destroy()
+		else:
+			if self.options.ayanamsha != 0:
+				try:
+					t1, t2, t3, t4, t5, t6 = self.calcPrecNutCorrectedRevolution(revs, astrology.SE_SUN, topo_place=place, seed=(t1, t2, t3, t4, t5, t6))
+				except Exception:
+					pass
+
+		time = chart.Time(t1, t2, t3, t4, t5, t6, False, self.horoscope.time.cal, chart.Time.GREENWICH, plus, 0, 0, False, place, False)
+		revolution = chart.Chart(self.horoscope.name, self.horoscope.male, time, place, chart.Chart.SOLAR, '', self.options, False)
+		label = 'Solar Return %s' % str(time.year)
+		return (revolution, label)
+
+	def _workspace_open_solar_return(self, event=None):
+		chrt, label = self._build_configured_solar_revolution_chart()
+		if chrt is None:
+			return
+		self._open_workspace_session(
+			chrt, fpath=self.fpath, dpath=self.fpathhors, session_label=label,
+			radix=self.horoscope, view_mode=chart_session.ChartSession.CHART,
+		)
+
+	def _workspace_navigation_state(self):
+		has_chart = (not self.splash) and getattr(self, 'horoscope', None) is not None
+		solar_available = has_chart and not self.horoscope.time.bc
+		enabled_actions = {
+			'open_chart': True,
+			'here_and_now': True,
+			'synastry': has_chart,
+			'transits': has_chart,
+			'sun_transits': has_chart,
+			'solar_return': solar_available,
+			'other_revolutions': has_chart,
+			'secondary_chart': has_chart,
+			'secondary_positions': has_chart,
+			'profections_chart': has_chart,
+			'exact_transits': has_chart,
+			'profections_table': has_chart,
+			'primary_directions': has_chart,
+			'positions': has_chart,
+			'aspects': has_chart,
+			'rise_set': has_chart,
+			'planetary_hours': has_chart,
+			'firdaria': has_chart,
+			'arabic_parts': has_chart,
+		}
+		return self._workspace_state.build_sidebar_state(enabled_actions)
+
+	def _handle_workspace_action(self, action_id):
+		action_map = {
+			'open_chart': self._workspace_open_chart,
+			'here_and_now': self._workspace_open_here_and_now,
+			'synastry': self.onSynastry,
+			'transits': self.onTransits,
+			'sun_transits': self.onSunTransits,
+			'solar_return': self._workspace_open_solar_return,
+			'other_revolutions': self.onRevolutions,
+			'secondary_chart': self.onSecondaryDirs,
+			'secondary_positions': self.onSecProgPositionsByDate,
+			'profections_chart': self.onProfectionsChart,
+			'positions': self.onPositions,
+			'aspects': self.onAspects,
+			'rise_set': self.onRiseSet,
+			'exact_transits': self.onExactTransits,
+			'profections_table': self.onProfections,
+			'primary_directions': self.onPrimaryDirs,
+			'planetary_hours': self.onPlanetaryHours,
+			'firdaria': self.onFirdaria,
+			'arabic_parts': self.onArabians,
+		}
+		handler = action_map.get(action_id)
+		if handler is not None:
+			handler(None)
+
+	def _handle_workspace_document(self, session_id):
+		self._switch_workspace_session(session_id)
+
+	def _handle_workspace_document_close(self, document_id):
+		self._workspace_runtime.pop(document_id, None)
+		next_id = self._workspace_state.close_document(document_id)
+		if next_id is not None:
+			self._activate_workspace_session(next_id)
+		else:
+			self.fpath = ''
+			self.dirty = False
+			self.splash = True
+			self.enableMenus(False)
+			self.closeChildWnds()
+			self.drawSplash()
+			self.handleStatusBar(False)
+			self.handleCaption(False)
+			self._refresh_workspace_navigation()
+			self.Refresh()
+
+	def _open_workspace_chart_path(self, path):
+		if not path or not os.path.exists(path):
+			return
+
+		if self.dirty:
+			dlgm = wx.MessageDialog(self, mtexts.txts['DiscardCurrHor'], mtexts.txts['Confirm'], wx.YES_NO|wx.ICON_QUESTION)
+			if dlgm.ShowModal() == wx.ID_NO:
+				dlgm.Destroy()
+				return
+			dlgm.Destroy()
+
+		dname = os.path.dirname(path)
+		chrt = self.subLoad(path, dname, True)
+		if chrt != None:
+			self._activate_loaded_chart(chrt, path, dname)
 
 	def _get_configured_solar_return_year(self):
 		now = datetime.datetime.now()
@@ -443,10 +794,13 @@ class MFrame(wx.Frame):
 			tzauto=getattr(self.horoscope.time, 'tzauto', False)
 		)
 		trans = chart.Chart(self.horoscope.name, self.horoscope.male, time, place, chart.Chart.TRANSIT, '', self.options, False)
-		tw = transitframe.TransitFrame(self, self.title.replace(mtexts.typeList[self.horoscope.htype], mtexts.typeList[chart.Chart.TRANSIT]+' ('+str(time.year)+'.'+common.common.months[time.month-1]+'.'+str(time.day)+' '+str(time.hour)+':'+str(time.minute).zfill(2)+':'+str(time.second).zfill(2)+')'), trans, self.horoscope, self.options, transitframe.TransitFrame.COMPOUND)
-		tw.navigation_units = ('day', 'hour', 'minute')
-		tw.navigation_title_label = mtexts.typeList[chart.Chart.TRANSIT]
-		tw.Show(True)
+		label = mtexts.typeList[chart.Chart.TRANSIT]+' ('+str(time.year)+'.'+common.common.months[time.month-1]+'.'+str(time.day)+' '+str(time.hour)+':'+str(time.minute).zfill(2)+':'+str(time.second).zfill(2)+')'
+		self._open_workspace_session(
+			trans, session_label=label,
+			radix=self.horoscope, view_mode=chart_session.ChartSession.COMPOUND,
+			navigation_units=('day', 'hour', 'minute'),
+			navigation_title_label=mtexts.typeList[chart.Chart.TRANSIT],
+		)
 
 	def _open_current_secondary_dirs(self):
 		age = self._current_secondary_age()
@@ -460,12 +814,18 @@ class MFrame(wx.Frame):
 		place = self._current_natal_place()
 		time = chart.Time(y, m, d, hour, minute, second, False, self.horoscope.time.cal, zt, True, zh, zm, False, place, False)
 		secdirchart = chart.Chart(self.horoscope.name, self.horoscope.male, time, place, chart.Chart.TRANSIT, '', self.options, False)
-		sf = secdirframe.SecDirFrame(self, self.title.replace(mtexts.typeList[self.horoscope.htype], mtexts.txts['SecondaryDir']+' ('+str(time.year)+'.'+common.common.months[time.month-1]+'.'+str(time.day)+' '+str(time.hour)+':'+str(time.minute).zfill(2)+':'+str(time.second).zfill(2)+')'), secdirchart, self.horoscope, self.options)
-		sf.Show(True)
-		stepdlg = stepperdlg.StepperDlg(sf, self.horoscope, age, direct, soltime, self.options, self.title)
-		sf._stepper = stepdlg
-		stepdlg.CenterOnParent()
-		stepdlg.Show(True)
+		label = mtexts.txts['SecondaryDir']+' ('+str(time.year)+'.'+common.common.months[time.month-1]+'.'+str(time.day)+' '+str(time.hour)+':'+str(time.minute).zfill(2)+':'+str(time.second).zfill(2)+')'
+		doc = self._open_workspace_session(
+			secdirchart, session_label=label,
+			radix=self.horoscope, view_mode=chart_session.ChartSession.CHART,
+		)
+		if doc is not None:
+			cs = self._active_chart_session()
+			if cs is not None:
+				stepdlg = stepperdlg.StepperDlg(self, self.horoscope, age, direct, soltime, self.options, self.title, on_step=self._make_stepper_callback(cs))
+				cs._stepper = stepdlg
+				stepdlg.CenterOnParent()
+				stepdlg.Show(True)
 
 	def _open_current_profections_chart(self):
 		now = self._current_chart_datetime()
@@ -495,18 +855,18 @@ class MFrame(wx.Frame):
 				pchart.fortune.calcMundaneProfPos(pchart.houses.ascmc2, pchartpls.fortune, self.horoscope.place.lat, self.horoscope.obl[0])
 				pchart.calcAspMatrix()
 
-		pf = profectionsframe.ProfectionsFrame(self, self.title.replace(mtexts.typeList[self.horoscope.htype], mtexts.txts['Profections']+' ('+str(y)+'.'+str(m)+'.'+str(d)+' '+str(h).zfill(2)+':'+str(mi).zfill(2)+':'+str(s).zfill(2)+')'), pchart, self.horoscope, self.options, (y, m, d, h, mi, s))
-		pf.Show(True)
-		pstepdlg = profectionstepperdlg.ProfectionStepperDlg(pf, self.horoscope, y, m, d, t, self.options, self.title)
-		pf._stepper = pstepdlg
-		pstepdlg.CenterOnParent()
-		pstepdlg.Show(True)
-		wx.CallAfter(pf.Raise)
-		wx.CallAfter(pf.SetFocus)
-		try:
-			wx.CallAfter(pf.w.SetFocus)
-		except Exception:
-			pass
+		label = mtexts.txts['Profections']+' ('+str(y)+'.'+str(m)+'.'+str(d)+' '+str(h).zfill(2)+':'+str(mi).zfill(2)+':'+str(s).zfill(2)+')'
+		doc = self._open_workspace_session(
+			pchart, session_label=label,
+			radix=self.horoscope, view_mode=chart_session.ChartSession.CHART,
+		)
+		if doc is not None:
+			cs = self._active_chart_session()
+			if cs is not None:
+				pstepdlg = profectionstepperdlg.ProfectionStepperDlg(self, self.horoscope, y, m, d, t, self.options, self.title, on_step=self._make_stepper_callback(cs))
+				cs._stepper = pstepdlg
+				pstepdlg.CenterOnParent()
+				pstepdlg.Show(True)
 
 	def _build_revolution_place(self, dlg):
 		direc = dlg.placerbE.GetValue()
@@ -607,6 +967,51 @@ class MFrame(wx.Frame):
 			self._rev_stepper.CenterOnScreen()
 		self._rev_stepper.Raise()
 
+	def _install_workspace_solar_revolution_stepper(self, place, plus, base_year):
+		cs = self._active_chart_session()
+		if cs is None:
+			return
+		self._rev_ctx = {'place': place, 'plus': plus, 'revtype': chart.Chart.SOLAR}
+		self._rev_year = int(base_year)
+
+		try:
+			if hasattr(self, "_rev_stepper") and self._rev_stepper:
+				self._rev_stepper.Destroy()
+				self._rev_stepper = None
+		except Exception:
+			pass
+
+		def _set_rev_year_and_refresh(new_year):
+			active_cs = self._active_chart_session()
+			if active_cs is None:
+				return
+			revs2 = revolutions.Revolutions()
+			ok = revs2.compute(revolutions.Revolutions.SOLAR, int(new_year), self.horoscope.time.month, self.horoscope.time.day, self.horoscope)
+			if not ok:
+				return
+
+			y, m, d, hh, mi, ss = revs2.t[0], revs2.t[1], revs2.t[2], revs2.t[3], revs2.t[4], revs2.t[5]
+			try:
+				if self.options.ayanamsha != 0:
+					y, m, d, hh, mi, ss = self.calcPrecNutCorrectedRevolution(revs2, astrology.SE_SUN, topo_place=self._rev_ctx['place'])
+			except Exception:
+				pass
+
+			time2 = chart.Time(y, m, d, hh, mi, ss, False, self.horoscope.time.cal, chart.Time.GREENWICH, self._rev_ctx['plus'], 0, 0, False, self._rev_ctx['place'], False)
+			chart2 = chart.Chart(self.horoscope.name, self.horoscope.male, time2, self._rev_ctx['place'], self._rev_ctx['revtype'], '', self.options, False)
+			active_cs.change_chart(chart2)
+			self._rev_year = int(new_year)
+
+		from revolutionsdlg import RevolutionYearStepper
+		self._rev_stepper = RevolutionYearStepper(parent=self, get_year_cb=lambda: self._rev_year, set_year_cb=_set_rev_year_and_refresh)
+		cs._stepper = self._rev_stepper
+		self._rev_stepper.Show(True)
+		try:
+			self._rev_stepper.CentreOnScreen()
+		except Exception:
+			self._rev_stepper.CenterOnScreen()
+		self._rev_stepper.Raise()
+
 	def _open_configured_solar_revolution(self):
 		revs = revolutions.Revolutions()
 		target_year = self._get_configured_solar_return_year()
@@ -652,22 +1057,17 @@ class MFrame(wx.Frame):
 					pass
 
 		time = chart.Time(t1, t2, t3, t4, t5, t6, False, self.horoscope.time.cal, chart.Time.GREENWICH, plus, 0, 0, False, place, False)
-		frame = self._create_revolution_frame(chart.Chart.SOLAR, time, place)
-		self._install_solar_revolution_stepper(frame, place, plus, t1)
+		revolution = chart.Chart(self.horoscope.name, self.horoscope.male, time, place, chart.Chart.SOLAR, '', self.options, False)
+		label = mtexts.typeList[chart.Chart.SOLAR]+' ('+str(time.year)+'.'+common.common.months[time.month-1]+'.'+str(time.day)+' '+str(time.hour)+':'+str(time.minute).zfill(2)+':'+str(time.second).zfill(2)+'('+mtexts.txts['GMT']+'))'
+		doc = self._open_workspace_session(
+			revolution, session_label=label,
+			radix=self.horoscope, view_mode=chart_session.ChartSession.CHART,
+		)
+		if doc is not None:
+			self._install_workspace_solar_revolution_stepper(place, plus, t1)
 
 	def _activate_loaded_chart(self, chrt, fpath, dpath):
-		self.horoscope = chrt
-		self.splash = False
-		self.drawBkg()
-		self.Refresh()
-		wx.CallAfter(self.SetFocus)
-		self.fpathhors = dpath
-		self.fpath = fpath
-		self.enableMenus(True)
-		self.handleStatusBar(True)
-		self.handleCaption(True)
-		self.dirty = False
-		self.filehistory.AddFileToHistory(fpath)
+		self._open_workspace_session(chrt, fpath=fpath, dpath=dpath, add_to_history=True)
 
 	def _load_startup_chart_if_configured(self):
 		startup_path = getattr(self.options, 'startupchart', '')
@@ -732,9 +1132,16 @@ class MFrame(wx.Frame):
 	def __init__(self, parent, id, title, opts):
 # ###########################################
 # Roberto Size changed  V 7.X.X
-		wx.Frame.__init__(self, parent, id, title, wx.DefaultPosition, wx.Size(656, 560))
+		wx.Frame.__init__(self, parent, id, title, wx.DefaultPosition, wx.Size(1064, 800))
 # ###########################################
-		wxcompat.apply_frame_screen_size(self, 0.80, (656, 560), square=True)
+		wxcompat.apply_frame_screen_size(
+			self,
+			0.80,
+			(1064, 800),
+			min_size=(900, 676),
+			width_cap_ratio=0.98,
+			square=False,
+		)
 		try:
 			self.SetWindowStyle(self.GetWindowStyle() | wx.WANTS_CHARS)
 		except Exception:
@@ -749,6 +1156,9 @@ class MFrame(wx.Frame):
 		self.fpath = ''
 		self.fpathhors = _morinus_user_hors_dir()
 		self.fpathimgs = _morinus_user_images_dir()
+		self._recent_hors_paths = []
+		self._workspace_state = workspace_model.WorkspaceState()
+		self._workspace_runtime = {}
 		_copy_missing_tree(os.path.join(_BASE_DIR, 'Hors'), self.fpathhors)
 		self.title = title
 		self.origtitle = title
@@ -804,6 +1214,7 @@ class MFrame(wx.Frame):
 
 		self.CenterOnScreen()
 		self.SetBackgroundColour(self.options.clrbackground)
+		self.splash = True
 
 		self.dirty = False
 
@@ -1128,6 +1539,22 @@ class MFrame(wx.Frame):
 			pass
 		self.CreateStatusBar()
 
+		self._workspace_shell = workspace_shell.MainWindowShell(
+			self,
+			self.options,
+			chart_context_menu_handler=self.onChartContextMenu,
+			chart_resize_handler=self._handle_chart_host_resize,
+			navigator_state_provider=self._workspace_navigation_state,
+			navigator_action_handler=self._handle_workspace_action,
+			navigator_document_handler=self._handle_workspace_document,
+			navigator_document_close_handler=self._handle_workspace_document_close,
+			navigator_open_path_handler=self._open_workspace_chart_path,
+		)
+		self._frame_sizer = wx.BoxSizer(wx.VERTICAL)
+		self._frame_sizer.Add(self._workspace_shell, 1, wx.EXPAND)
+		self.SetSizer(self._frame_sizer)
+		self.Layout()
+
 		self.Bind(wx.EVT_MENU, self.onNew, id=self.ID_New)
 		self.Bind(wx.EVT_MENU, self.onData, id=self.ID_Data)
 		self.Bind(wx.EVT_MENU, self.onLoad, id=self.ID_Load)
@@ -1143,13 +1570,6 @@ class MFrame(wx.Frame):
 		self.Bind(wx.EVT_MENU, self.onClose, id=self.ID_Close)
 		self.Bind(wx.EVT_MENU, self.onExit, id=self.ID_Exit)
 
-		if os.name == 'mac' or os.name == 'posix':
-			self.Bind(wx.EVT_PAINT, self.onPaint)
-		else:
-			self.Bind(wx.EVT_ERASE_BACKGROUND, self.onEraseBackground)
-
-		self.Bind(wx.EVT_CONTEXT_MENU, self.onChartContextMenu)
-		self.Bind(wx.EVT_SIZE, self.onSize)
 		self.Bind(wx.EVT_MENU_OPEN, self.onMenuOpen)
 		#The events EVT_MENU_OPEN and CLOSE are not called on windows in case of accelarator-keys
 		self.Bind(wx.EVT_MENU_CLOSE, self.onMenuClose)
@@ -1281,8 +1701,6 @@ class MFrame(wx.Frame):
 		self._apply_custom_shortcut_labels()
 
 		self.Bind(wx.EVT_CLOSE, self.onExit)
-
-		self.splash = True
 
 		self.enableMenus(False)
 
@@ -1553,7 +1971,7 @@ class MFrame(wx.Frame):
 				dpath = os.path.dirname(fpath)
 				if not fpath.lower().endswith(u'.hor'):
 					fpath+=u'.hor'
-				chrt = self.subLoad(fpath, dpath)
+				chrt = self.subLoad(fpath, dpath, True)
 				if chrt != None:
 					self._activate_loaded_chart(chrt, fpath, dpath)
 			return
@@ -1571,7 +1989,7 @@ class MFrame(wx.Frame):
 			if not fpath.lower().endswith(u'.hor'):
 				fpath+=u'.hor'
 
-			chrt = self.subLoad(fpath, dpath)
+			chrt = self.subLoad(fpath, dpath, True)
 
 			if chrt != None:
 				self._activate_loaded_chart(chrt, fpath, dpath)
@@ -1738,8 +2156,10 @@ class MFrame(wx.Frame):
 				chrt = None
 			if chrt != None:
 				txt = self.horoscope.name+u' - '+chrt.name+' '+mtexts.txts['Synastry']+' ('+str(chrt.time.origyear)+'.'+common.common.months[chrt.time.origmonth-1]+'.'+str(chrt.time.origday)+' '+str(chrt.time.hour)+':'+str(chrt.time.minute).zfill(2)+':'+str(chrt.time.second).zfill(2)+')'
-				sw = transitframe.TransitFrame(self, txt, chrt, self.horoscope, self.options)
-				sw.Show(True)
+				self._open_workspace_session(
+					chrt, session_label=txt,
+					radix=self.horoscope, view_mode=chart_session.ChartSession.COMPOUND,
+				)
 			return
 		else:
 			dlg = wx.FileDialog(self, mtexts.txts['OpenHor'], '', '', u'All files (*.*)|*.*', wx.FD_OPEN)
@@ -1762,8 +2182,10 @@ class MFrame(wx.Frame):
 
 		if chrt != None:
 			txt = self.horoscope.name+u' - '+chrt.name+' '+mtexts.txts['Synastry']+' ('+str(chrt.time.origyear)+'.'+common.common.months[chrt.time.origmonth-1]+'.'+str(chrt.time.origday)+' '+str(chrt.time.hour)+':'+str(chrt.time.minute).zfill(2)+':'+str(chrt.time.second).zfill(2)+')'
-			tw = transitframe.TransitFrame(self, txt, chrt, self.horoscope, self.options, transitframe.TransitFrame.COMPOUND)
-			tw.Show(True)
+			self._open_workspace_session(
+				chrt, session_label=txt,
+				radix=self.horoscope, view_mode=chart_session.ChartSession.COMPOUND,
+			)
 
 
 	def onFindTime(self, event):
@@ -1801,11 +2223,14 @@ class MFrame(wx.Frame):
 		self.fpath = ''
 		self.dirty = False
 		self.splash = True
+		self._workspace_state.reset()
+		self._workspace_runtime = {}
 		self.enableMenus(False)
 		self.closeChildWnds()
 		self.drawSplash()
 		self.handleStatusBar(False)
 		self.handleCaption(False)
+		self._refresh_workspace_navigation()
 		self.Refresh()	
 
 
@@ -1868,16 +2293,7 @@ class MFrame(wx.Frame):
 
 		#check file
 		if os.path.exists(path):
-			dname = os.path.dirname(path)
-			chrt = self.subLoad(path, dname)
-
-			if chrt != None:
-				self._activate_loaded_chart(chrt, path, dname)
-
-			# add it back to the history so it will be moved up the list
-#			self.filehistory.AddFileToHistory(path)
-
-			self.destroyDlgs()
+			self._open_workspace_chart_path(path)
 		else:
 			dlgm = wx.MessageDialog(self, mtexts.txts['FileError'], mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
 			dlgm.ShowModal()
@@ -2610,10 +3026,13 @@ class MFrame(wx.Frame):
 
 			trans = chart.Chart(self.horoscope.name, self.horoscope.male, time, place, chart.Chart.TRANSIT, '', self.options, False)
 
-			tw = transitframe.TransitFrame(self, self.title.replace(mtexts.typeList[self.horoscope.htype], mtexts.typeList[chart.Chart.TRANSIT]+' ('+str(time.year)+'.'+common.common.months[time.month-1]+'.'+str(time.day)+' '+str(time.hour)+':'+str(time.minute).zfill(2)+':'+str(time.second).zfill(2)+')'), trans, self.horoscope, self.options, transitframe.TransitFrame.COMPOUND)
-			tw.navigation_units = ('day', 'hour', 'minute')
-			tw.navigation_title_label = mtexts.typeList[chart.Chart.TRANSIT]
-			tw.Show(True)
+			label = mtexts.typeList[chart.Chart.TRANSIT]+' ('+str(time.year)+'.'+common.common.months[time.month-1]+'.'+str(time.day)+' '+str(time.hour)+':'+str(time.minute).zfill(2)+':'+str(time.second).zfill(2)+')'
+			self._open_workspace_session(
+				trans, session_label=label,
+				radix=self.horoscope, view_mode=chart_session.ChartSession.COMPOUND,
+				navigation_units=('day', 'hour', 'minute'),
+				navigation_title_label=mtexts.typeList[chart.Chart.TRANSIT],
+			)
 
 
 	def onRevolutions(self, event):
@@ -2714,12 +3133,11 @@ class MFrame(wx.Frame):
 
 						revolution = chart.Chart(self.horoscope.name, self.horoscope.male, time, place, revtype, '', self.options, False)
 						dlg.Destroy()
-						rw = transitframe.TransitFrame(self, self.title.replace(mtexts.typeList[self.horoscope.htype], mtexts.typeList[revtype]+' ('+str(time.year)+'.'+common.common.months[time.month-1]+'.'+str(time.day)+' '+str(time.hour)+':'+str(time.minute).zfill(2)+':'+str(time.second).zfill(2)+'('+mtexts.txts['GMT']+'))'), revolution, self.horoscope, self.options)
-						rw.Show(True)
-						wx.CallAfter(rw.Raise)
-						wx.CallAfter(rw.SetFocus)
-						# 현재 프레임/컨텍스트 저장
-						self._rev_frame = rw
+						rev_label = mtexts.typeList[revtype]+' ('+str(time.year)+'.'+common.common.months[time.month-1]+'.'+str(time.day)+' '+str(time.hour)+':'+str(time.minute).zfill(2)+':'+str(time.second).zfill(2)+'('+mtexts.txts['GMT']+'))'
+						self._open_workspace_session(
+							revolution, session_label=rev_label,
+							radix=self.horoscope, view_mode=chart_session.ChartSession.CHART,
+						)
 						self._rev_ctx   = {'place': place, 'plus': plus, 'revtype': revtype}
 
 						# 이전에 떠 있던 스텝퍼가 있으면 닫기(다른 리턴일 수도 있으니 먼저 정리)
@@ -2732,86 +3150,7 @@ class MFrame(wx.Frame):
 
 						# ★ 솔라 리턴에서만 스텝퍼를 띄운다
 						if self.revdlg.typecb.GetCurrentSelection() == revolutions.Revolutions.SOLAR:
-
-							# 현재 리턴 연도 저장 (dlg에서 받은 t1이 리턴 연도)
-							self._rev_year = t1
-
-							# 리턴 프레임이 닫히면 스텝퍼도 함께 닫기
-							def _on_close(evt):
-								try:
-									if hasattr(self, "_rev_stepper") and self._rev_stepper:
-										self._rev_stepper.Destroy()
-										self._rev_stepper = None
-								except Exception:
-									pass
-								evt.Skip()
-							self._rev_frame.Bind(wx.EVT_CLOSE, _on_close)
-
-							# 연도 갱신 콜백(솔라 리턴만 지원)
-							def _set_rev_year_and_refresh(new_year):
-								revs2 = revolutions.Revolutions()
-								ok = revs2.compute(revolutions.Revolutions.SOLAR,
-												int(new_year),
-												self.horoscope.time.month,
-												self.horoscope.time.day,
-												self.horoscope)
-								if not ok:
-									return
-
-								y, m, d, hh, mi, ss = revs2.t[0], revs2.t[1], revs2.t[2], revs2.t[3], revs2.t[4], revs2.t[5]
-								try:
-									if self.options.ayanamsha != 0:
-										y, m, d, hh, mi, ss = self.calcPrecNutCorrectedRevolution(revs2, astrology.SE_SUN)
-								except Exception:
-									pass
-
-								time2 = chart.Time(y, m, d, hh, mi, ss, False,
-												self.horoscope.time.cal, chart.Time.GREENWICH,
-												self._rev_ctx['plus'], 0, 0, False, self._rev_ctx['place'], False)
-								chart2 = chart.Chart(self.horoscope.name, self.horoscope.male, time2,
-													self._rev_ctx['place'], self._rev_ctx['revtype'], '', self.options, False)
-
-								newtitle2 = self.title.replace(
-									mtexts.typeList[self.horoscope.htype],
-									mtexts.typeList[self._rev_ctx['revtype']]+' ('+str(time2.year)+'.'
-									+common.common.months[time2.month-1]+'.'+str(time2.day)+' '
-									+str(time2.hour)+':'+str(time2.minute).zfill(2)+':'+str(time2.second).zfill(2)+'('
-									+mtexts.txts['GMT']+'))'
-								)
-
-								try:
-									self._rev_frame.change_chart(chart2)
-									self._rev_frame.SetTitle(newtitle2)
-									wx.CallAfter(self._rev_frame.Raise)
-									wx.CallAfter(self._rev_frame.SetFocus)
-								except Exception:
-									try:
-										self._rev_frame.Destroy()
-									except Exception:
-										pass
-									self._rev_frame = transitframe.TransitFrame(self, newtitle2, chart2, self.horoscope, self.options)
-									self._rev_frame._stepper = self._rev_stepper
-									self._rev_frame.Show(True)
-									wx.CallAfter(self._rev_frame.Raise)
-									wx.CallAfter(self._rev_frame.SetFocus)
-									self._rev_frame.Bind(wx.EVT_CLOSE, _on_close)
-
-								self._rev_year = int(new_year)
-
-							# 스텝퍼 생성(부모는 메인 프레임)
-							from revolutionsdlg import RevolutionYearStepper
-							self._rev_stepper = RevolutionYearStepper(
-								parent=self,
-								get_year_cb=lambda: self._rev_year,
-								set_year_cb=_set_rev_year_and_refresh
-							)
-							self._rev_frame._stepper = self._rev_stepper
-							self._rev_stepper.Show(True)
-							try:
-								self._rev_stepper.CentreOnScreen()
-							except Exception:
-								self._rev_stepper.CenterOnScreen()
-							self._rev_stepper.Raise()
+							self._install_workspace_solar_revolution_stepper(place, plus, t1)
 						# ★ 루나 리턴에도 월 스텝퍼를 붙인다
 						# SOLAR 분기 밑에 이어서:
 						elif self.revdlg.typecb.GetCurrentSelection() == revolutions.Revolutions.LUNAR:
@@ -3141,10 +3480,13 @@ class MFrame(wx.Frame):
 
 					suntrschart = chart.Chart(self.horoscope.name, self.horoscope.male, time, place, chart.Chart.TRANSIT, '', self.options, False)
 
-					rw = transitframe.TransitFrame(self, self.title.replace(mtexts.typeList[self.horoscope.htype], mtexts.typeList[chart.Chart.TRANSIT]+' ('+str(time.year)+'.'+common.common.months[time.month-1]+'.'+str(time.day)+' '+str(time.hour)+':'+str(time.minute).zfill(2)+':'+str(time.second).zfill(2)+'('+mtexts.txts['GMT']+'))'), suntrschart, self.horoscope, self.options, transitframe.TransitFrame.COMPOUND)
-					rw.navigation_units = ('day', 'hour', 'minute')
-					rw.navigation_title_label = mtexts.typeList[chart.Chart.TRANSIT]
-					rw.Show(True)
+					label = mtexts.typeList[chart.Chart.TRANSIT]+' ('+str(time.year)+'.'+common.common.months[time.month-1]+'.'+str(time.day)+' '+str(time.hour)+':'+str(time.minute).zfill(2)+':'+str(time.second).zfill(2)+'('+mtexts.txts['GMT']+'))'
+					self._open_workspace_session(
+						suntrschart, session_label=label,
+						radix=self.horoscope, view_mode=chart_session.ChartSession.COMPOUND,
+						navigation_units=('day', 'hour', 'minute'),
+						navigation_title_label=mtexts.typeList[chart.Chart.TRANSIT],
+					)
 
 				dlg.Destroy()
 
@@ -3212,13 +3554,18 @@ class MFrame(wx.Frame):
 
 				secdirchart = chart.Chart(self.horoscope.name, self.horoscope.male, time, place, chart.Chart.TRANSIT, '', self.options, False)
 
-				sf = secdirframe.SecDirFrame(self, self.title.replace(mtexts.typeList[self.horoscope.htype], mtexts.txts['SecondaryDir']+' ('+str(time.year)+'.'+common.common.months[time.month-1]+'.'+str(time.day)+' '+str(time.hour)+':'+str(time.minute).zfill(2)+':'+str(time.second).zfill(2)+')'), secdirchart, self.horoscope, self.options)
-				sf.Show(True)
-
-				stepdlg = stepperdlg.StepperDlg(sf, self.horoscope, age, direct, soltime, self.options, self.title)
-				sf._stepper = stepdlg
-				stepdlg.CenterOnParent()
-				stepdlg.Show(True)
+				label = mtexts.txts['SecondaryDir']+' ('+str(time.year)+'.'+common.common.months[time.month-1]+'.'+str(time.day)+' '+str(time.hour)+':'+str(time.minute).zfill(2)+':'+str(time.second).zfill(2)+')'
+				doc = self._open_workspace_session(
+					secdirchart, session_label=label,
+					radix=self.horoscope, view_mode=chart_session.ChartSession.CHART,
+				)
+				if doc is not None:
+					cs = self._active_chart_session()
+					if cs is not None:
+						sd = stepperdlg.StepperDlg(self, self.horoscope, age, direct, soltime, self.options, self.title, on_step=self._make_stepper_callback(cs))
+						cs._stepper = sd
+						sd.CenterOnParent()
+						sd.Show(True)
 
 			dlg.Destroy()
 
@@ -3478,13 +3825,19 @@ class MFrame(wx.Frame):
 
 		electionchart = chart.Chart(self.horoscope.name, self.horoscope.male, time, self.horoscope.place, chart.Chart.TRANSIT, '', self.options, False)
 
-		ef = electionsframe.ElectionsFrame(self, self.title.replace(mtexts.typeList[self.horoscope.htype], mtexts.txts['Elections']+' ('+str(time.origyear)+'.'+common.common.months[time.origmonth-1]+'.'+str(time.origday)+' '+str(time.hour)+':'+str(time.minute).zfill(2)+':'+str(time.second).zfill(2)+')'), electionchart, self.horoscope, self.options)
-		ef.Show(True)
-
-		estepdlg = electionstepperdlg.ElectionStepperDlg(ef, self.horoscope, self.options, self.title)
-		ef._stepper = estepdlg
-		estepdlg.CenterOnParent()
-		estepdlg.Show(True)
+		label = mtexts.txts['Elections']+' ('+str(time.origyear)+'.'+common.common.months[time.origmonth-1]+'.'+str(time.origday)+' '+str(time.hour)+':'+str(time.minute).zfill(2)+':'+str(time.second).zfill(2)+')'
+		doc = self._open_workspace_session(
+			electionchart, session_label=label,
+			radix=self.horoscope, view_mode=chart_session.ChartSession.CHART,
+			navigation_units=('day', 'hour', 'minute'),
+		)
+		if doc is not None:
+			cs = self._active_chart_session()
+			if cs is not None:
+				estepdlg = electionstepperdlg.ElectionStepperDlg(self, self.horoscope, self.options, self.title, on_step=self._make_stepper_callback(cs))
+				cs._stepper = estepdlg
+				estepdlg.CenterOnParent()
+				estepdlg.Show(True)
 
 
 	def onSquareChart(self, event):
@@ -3551,19 +3904,18 @@ class MFrame(wx.Frame):
 					#recalc AspMatrix
 					pchart.calcAspMatrix()
 
-			pf = profectionsframe.ProfectionsFrame(self, self.title.replace(mtexts.typeList[self.horoscope.htype], mtexts.txts['Profections']+' ('+str(y)+'.'+str(m)+'.'+str(d)+' '+str(h).zfill(2)+':'+str(mi).zfill(2)+':'+str(s).zfill(2)+')'), pchart, self.horoscope, self.options, (y, m, d, h, mi, s))
-			pf.Show(True)
-
-			pstepdlg = profectionstepperdlg.ProfectionStepperDlg(pf, self.horoscope, y, m, d, t, self.options, self.title)
-			pf._stepper = pstepdlg
-			pstepdlg.CenterOnParent()
-			pstepdlg.Show(True)
-			wx.CallAfter(pf.Raise)
-			wx.CallAfter(pf.SetFocus)
-			try:
-				wx.CallAfter(pf.w.SetFocus)
-			except Exception:
-				pass
+			label = mtexts.txts['Profections']+' ('+str(y)+'.'+str(m)+'.'+str(d)+' '+str(h).zfill(2)+':'+str(mi).zfill(2)+':'+str(s).zfill(2)+')'
+			doc = self._open_workspace_session(
+				pchart, session_label=label,
+				radix=self.horoscope, view_mode=chart_session.ChartSession.CHART,
+			)
+			if doc is not None:
+				cs = self._active_chart_session()
+				if cs is not None:
+					pstepdlg = profectionstepperdlg.ProfectionStepperDlg(self, self.horoscope, y, m, d, t, self.options, self.title, on_step=self._make_stepper_callback(cs))
+					cs._stepper = pstepdlg
+					pstepdlg.CenterOnParent()
+					pstepdlg.Show(True)
 
 		pdlg.Destroy()
 
@@ -3754,6 +4106,7 @@ class MFrame(wx.Frame):
 					if self.options.saveColors():
 						self.moptions.Enable(self.ID_SaveOpts, True)
 
+				self._refresh_workspace_shell_theme()
 				if not self.splash:
 					self.drawBkg()
 					self.Refresh()
@@ -4896,6 +5249,7 @@ class MFrame(wx.Frame):
 				self.options.removeOptsFiles()
 			self.options.reload()
 			common.common.update(self.options)
+			self._refresh_workspace_shell_theme()
 			self.enableOptMenus(False)
 			self.setHouse()
 			self.setNode()
@@ -5004,6 +5358,10 @@ class MFrame(wx.Frame):
 	def closeChildWnds(self):
 		li = self.GetChildren()
 		for ch in li:
+			if ch is getattr(self, '_workspace_shell', None):
+				continue
+			if ch is self.GetStatusBar():
+				continue
 			x,y = ch.GetClientSize()
 			if ch.GetName() != 'status_line' and y > 50:
 				ch.Destroy()
@@ -5262,26 +5620,25 @@ class MFrame(wx.Frame):
 			if img.IsOk():
 				bmp = img.ConvertToBitmap()
 				if bmp is not None and getattr(bmp, "IsOk", lambda: True)():
-					self.buffer = bmp
+					self._push_chart_bitmap(bmp, center=True)
 					return
 		except Exception:
 			pass
 
 		# Fallback: create a plain bitmap so early paint events don't crash.
 		try:
-			size = self.GetClientSize()
+			size = self._render_target_size()
 			w = max(1, int(getattr(size, "x", 1)))
 			h = max(1, int(getattr(size, "y", 1)))
-			self.buffer = wx.Bitmap(w, h)
-			dc = wx.MemoryDC(self.buffer)
-			bkgclr = self.options.clrbackground
-			if self.options.bw:
-				bkgclr = (255,255,255)
+			bitmap = wx.Bitmap(w, h)
+			dc = wx.MemoryDC(bitmap)
+			bkgclr = self._shell_background_colour()
 			dc.SetBackground(wx.Brush(bkgclr))
 			dc.Clear()
 			dc.SelectObject(wx.NullBitmap)
+			self._push_chart_bitmap(bitmap, center=True)
 		except Exception:
-			self.buffer = wx.Bitmap(1, 1)
+			self._push_chart_bitmap(wx.Bitmap(1, 1), center=True)
 
 
 	def drawBkg(self):
@@ -5294,10 +5651,19 @@ class MFrame(wx.Frame):
 		else:
 			renderers = [("GraphChart2", graphchart2.GraphChart2), ("GraphChart", graphchart.GraphChart)]
 
+		cs = self._active_chart_session()
+		compound_base = None
+		compound_overlay = None
+		if cs and cs.view_mode == chart_session.ChartSession.COMPOUND:
+			compound_base = cs.radix
+			compound_overlay = self.horoscope
 		for name, cls in renderers:
 			try:
-				gchart = cls(self.horoscope, self.GetClientSize(), self.options, self.options.bw)
-				self.buffer = gchart.drawChart()
+				if compound_base is not None:
+					gchart = cls(compound_base, self._render_target_size(), self.options, self.options.bw, chrt2=compound_overlay)
+				else:
+					gchart = cls(self.horoscope, self._render_target_size(), self.options, self.options.bw)
+				self._push_chart_bitmap(gchart.drawChart())
 				return
 			except Exception:
 				try:
@@ -5365,11 +5731,9 @@ class MFrame(wx.Frame):
 
 
 	def onSize(self, event):
-		if self.splash:
-			self.Refresh()
-		else:
-			self.drawBkg()
-			self.Refresh()
+		self._handle_chart_host_resize()
+		if event is not None:
+			event.Skip()
 
 
 	def calc(self):

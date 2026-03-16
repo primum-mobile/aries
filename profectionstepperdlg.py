@@ -8,10 +8,11 @@ import wxcompat
 
 
 class ProfectionStepperDlg(wx.Dialog):
-	def __init__(self, parent, chrt, y, m, d, t, options, caption):
+	def __init__(self, parent, chrt, y, m, d, t, options, caption, on_step=None):
 		wx.Dialog.__init__(self, parent, -1, mtexts.txts['Profections'], pos=wx.DefaultPosition, size=wx.DefaultSize, style=wx.DEFAULT_DIALOG_STYLE)
 
 		self.parent = parent
+		self._on_step = on_step
 		self.chart = chrt
 		self.y = y
 		self.m = m
@@ -139,6 +140,14 @@ class ProfectionStepperDlg(wx.Dialog):
 			(wx.ACCEL_ALT | wx.ACCEL_SHIFT, wx.WXK_RIGHT, self.ID_DAY_NEXT),
 		]))
 
+	def _toggle_comparison(self):
+		if hasattr(self.parent, "toggleComparisonView"):
+			self.parent.toggleComparisonView()
+		elif hasattr(self.parent, "_active_chart_session"):
+			cs = self.parent._active_chart_session()
+			if cs is not None:
+				cs.toggleComparisonView()
+
 	def onCharHook(self, event):
 		if event is None:
 			return
@@ -151,8 +160,7 @@ class ProfectionStepperDlg(wx.Dialog):
 		):
 			return
 		if event.GetKeyCode() == wx.WXK_TAB:
-			if hasattr(self.parent, "toggleComparisonView"):
-				self.parent.toggleComparisonView()
+			self._toggle_comparison()
 			return
 		event.Skip()
 
@@ -168,8 +176,7 @@ class ProfectionStepperDlg(wx.Dialog):
 		):
 			return
 		if event.GetKeyCode() == wx.WXK_TAB:
-			if hasattr(self.parent, "toggleComparisonView"):
-				self.parent.toggleComparisonView()
+			self._toggle_comparison()
 			return
 		event.Skip()
 
@@ -178,8 +185,7 @@ class ProfectionStepperDlg(wx.Dialog):
 			return False
 
 		if keycode == wx.WXK_TAB:
-			if hasattr(self.parent, "toggleComparisonView"):
-				self.parent.toggleComparisonView()
+			self._toggle_comparison()
 			return True
 
 		if keycode not in (wx.WXK_LEFT, wx.WXK_RIGHT):
@@ -316,7 +322,10 @@ class ProfectionStepperDlg(wx.Dialog):
 				#recalc AspMatrix
 				pchart.calcAspMatrix()
 
-		self.parent.change(pchart, self.caption, y+cnt, m, d, t)
+		if self._on_step is not None:
+			self._on_step(pchart, self.caption, y+cnt, m, d, t)
+		else:
+			self.parent.change(pchart, self.caption, y+cnt, m, d, t)
 		self.yeartxt.SetValue(str(y+cnt))
 		self.monthtxt.SetValue(str(m))
 		if self.zodprofs or self.usezodprojs:

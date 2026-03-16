@@ -84,9 +84,14 @@ class RevolutionYearStepper(wx.Dialog):
 		self.SetAcceleratorTable(accel)
 
 	def _toggle_parent_comparison(self):
-		frame = getattr(self.GetParent(), "_rev_frame", None)
+		parent = self.GetParent()
+		frame = getattr(parent, "_rev_frame", None)
 		if frame is not None and hasattr(frame, "toggleComparisonView"):
 			frame.toggleComparisonView()
+		elif hasattr(parent, "_active_chart_session"):
+			cs = parent._active_chart_session()
+			if cs is not None:
+				cs.toggleComparisonView()
 
 	def onCharHook(self, event):
 		if event is None:
@@ -215,9 +220,14 @@ class RevolutionMonthStepper(wx.Dialog):
 		self.SetAcceleratorTable(accel)
 
 	def _toggle_parent_comparison(self):
-		frame = getattr(self.GetParent(), "_rev_frame", None)
+		parent = self.GetParent()
+		frame = getattr(parent, "_rev_frame", None)
 		if frame is not None and hasattr(frame, "toggleComparisonView"):
 			frame.toggleComparisonView()
+		elif hasattr(parent, "_active_chart_session"):
+			cs = parent._active_chart_session()
+			if cs is not None:
+				cs.toggleComparisonView()
 
 	def onCharHook(self, event):
 		if event is None:

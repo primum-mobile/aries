@@ -5,10 +5,11 @@ import util
 
 
 class ElectionStepperDlg(wx.Dialog):
-	def __init__(self, parent, chrt, options, caption):
+	def __init__(self, parent, chrt, options, caption, on_step=None):
 		wx.Dialog.__init__(self, parent, -1, mtexts.txts['Elections'], pos=wx.DefaultPosition, size=wx.DefaultSize, style=wx.DEFAULT_DIALOG_STYLE|wx.STAY_ON_TOP)
 
 		self.parent = parent
+		self._on_step = on_step
 		self.chart = chrt
 		self.options = options
 		self.caption = caption
@@ -164,13 +165,20 @@ class ElectionStepperDlg(wx.Dialog):
 			return
 		event.Skip()
 
+	def _toggle_comparison(self):
+		if hasattr(self.parent, "toggleComparisonView"):
+			self.parent.toggleComparisonView()
+		elif hasattr(self.parent, "_active_chart_session"):
+			cs = self.parent._active_chart_session()
+			if cs is not None:
+				cs.toggleComparisonView()
+
 	def handle_navigation_key(self, keycode, shift_down=False, alt_down=False, control_down=False, cmd_down=False):
 		if control_down or cmd_down:
 			return False
 
 		if keycode == wx.WXK_TAB:
-			if hasattr(self.parent, "toggleComparisonView"):
-				self.parent.toggleComparisonView()
+			self._toggle_comparison()
 			return True
 
 		if keycode not in (wx.WXK_LEFT, wx.WXK_RIGHT):
@@ -306,7 +314,10 @@ class ElectionStepperDlg(wx.Dialog):
 	def show(self, y, m, d, h, mi, s):
 		time = chart.Time(y, m, d, h, mi, s, self.chart.time.bc, self.chart.time.cal, self.chart.time.zt, self.chart.time.plus, self.chart.time.zh, self.chart.time.zm, self.chart.time.daylightsaving, self.chart.place, False, tzid=getattr(self.chart.time, 'tzid', ''), tzauto=getattr(self.chart.time, 'tzauto', False))
 		chrt = chart.Chart(self.chart.name, self.chart.male, time, self.chart.place, chart.Chart.TRANSIT, '', self.options, False)
-		self.parent.change(chrt, self.caption)
+		if self._on_step is not None:
+			self._on_step(chrt, self.caption)
+		else:
+			self.parent.change(chrt, self.caption)
 		del self.chart
 		self.chart = chrt
 

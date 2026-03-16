@@ -15,10 +15,11 @@ class StepperDlg(wx.Dialog):
 			return True
 		return False
 
-	def __init__(self, parent, chrt, age, direct, soltime, options, caption):
+	def __init__(self, parent, chrt, age, direct, soltime, options, caption, on_step=None):
 		wx.Dialog.__init__(self, parent, -1, mtexts.txts['SecondaryDirs'], pos=wx.DefaultPosition, size=wx.DefaultSize, style=wx.DEFAULT_DIALOG_STYLE|wx.STAY_ON_TOP)
 
 		self.parent = parent
+		self._on_step = on_step
 		self.chart = chrt
 		self.age = age
 		if not direct:
@@ -92,6 +93,14 @@ class StepperDlg(wx.Dialog):
 			(0, wx.WXK_RIGHT, self.ID_ARROW_NEXT),
 		]))
 
+	def _toggle_comparison(self):
+		if hasattr(self.parent, "toggleComparisonView"):
+			self.parent.toggleComparisonView()
+		elif hasattr(self.parent, "_active_chart_session"):
+			cs = self.parent._active_chart_session()
+			if cs is not None:
+				cs.toggleComparisonView()
+
 	def onCharHook(self, event):
 		if event is None:
 			return
@@ -99,8 +108,7 @@ class StepperDlg(wx.Dialog):
 			event.Skip()
 			return
 		if event.GetKeyCode() == wx.WXK_TAB:
-			if hasattr(self.parent, "toggleComparisonView"):
-				self.parent.toggleComparisonView()
+			self._toggle_comparison()
 			return
 		if event.GetKeyCode() == wx.WXK_LEFT:
 			self._arrow_prev(None)
@@ -117,8 +125,7 @@ class StepperDlg(wx.Dialog):
 			event.Skip()
 			return
 		if event.GetKeyCode() == wx.WXK_TAB:
-			if hasattr(self.parent, "toggleComparisonView"):
-				self.parent.toggleComparisonView()
+			self._toggle_comparison()
 			return
 		if event.GetKeyCode() == wx.WXK_LEFT:
 			self._arrow_prev(None)
@@ -168,7 +175,10 @@ class StepperDlg(wx.Dialog):
 		time = chart.Time(y, m, d, hour, minute, second, False, self.chart.time.cal, self.zt, self.chart.time.plus, self.zh, self.zm, False, self.chart.place, False)
 		chrt = chart.Chart(self.chart.name, self.chart.male, time, self.chart.place, chart.Chart.TRANSIT, '', self.options, False)
 
-		self.parent.change(chrt, self.caption)
+		if self._on_step is not None:
+			self._on_step(chrt, self.caption)
+		else:
+			self.parent.change(chrt, self.caption)
 
 
 	def onDecr(self, event):
@@ -195,7 +205,10 @@ class StepperDlg(wx.Dialog):
 		time = chart.Time(y, m, d, hour, minute, second, False, self.chart.time.cal, self.zt, self.chart.time.plus, self.zh, self.zm, False, self.chart.place, False)
 		chrt = chart.Chart(self.chart.name, self.chart.male, time, self.chart.place, chart.Chart.TRANSIT, '', self.options, False)
 
-		self.parent.change(chrt, self.caption)
+		if self._on_step is not None:
+			self._on_step(chrt, self.caption)
+		else:
+			self.parent.change(chrt, self.caption)
 
 
 	def onClose(self, event):

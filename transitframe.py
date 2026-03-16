@@ -21,6 +21,7 @@ import time
 import mtexts
 import common
 import util
+import keyboard_layers
 import wxcompat
 
 (PDReadyEvent, EVT_PDREADY) = wx.lib.newevent.NewEvent()
@@ -462,71 +463,13 @@ class TransitFrame(wx.Frame):
 		self.Close()
 
 	def onCharHook(self, event):
-		if event is None:
-			return
-
-		if event.AltDown() or event.ControlDown() or event.CmdDown():
-			event.Skip()
-			return
-
-		keycode = self._normalized_nav_key(event.GetKeyCode())
-
-		if self._navigate_intrinsically(
-			keycode,
-			shift_down=event.ShiftDown(),
-			alt_down=event.AltDown(),
-		):
-			return
-
-		if self._forward_stepper_arrow(
-			keycode,
-			shift_down=event.ShiftDown(),
-			alt_down=event.AltDown(),
-			control_down=event.ControlDown(),
-			cmd_down=event.CmdDown(),
-		):
-			return
-
-		if event.GetKeyCode() == wx.WXK_TAB:
-			now = time.monotonic()
-			if now - self._last_tab_toggle > 0.20:
-				self._last_tab_toggle = now
-				self.toggleComparisonView()
+		if keyboard_layers.handle_transit_key_event(self, event):
 			return
 
 		event.Skip()
 
 	def onKeyDown(self, event):
-		if event is None:
-			return
-
-		if event.AltDown() or event.ControlDown() or event.CmdDown():
-			event.Skip()
-			return
-
-		keycode = self._normalized_nav_key(event.GetKeyCode())
-
-		if self._navigate_intrinsically(
-			keycode,
-			shift_down=event.ShiftDown(),
-			alt_down=event.AltDown(),
-		):
-			return
-
-		if self._forward_stepper_arrow(
-			keycode,
-			shift_down=event.ShiftDown(),
-			alt_down=event.AltDown(),
-			control_down=event.ControlDown(),
-			cmd_down=event.CmdDown(),
-		):
-			return
-
-		if event.GetKeyCode() == wx.WXK_TAB:
-			now = time.monotonic()
-			if now - self._last_tab_toggle > 0.20:
-				self._last_tab_toggle = now
-				self.toggleComparisonView()
+		if keyboard_layers.handle_transit_key_event(self, event):
 			return
 
 		event.Skip()
