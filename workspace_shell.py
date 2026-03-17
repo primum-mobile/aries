@@ -5,6 +5,14 @@ def _to_colour(rgb):
 	return wx.Colour(*rgb)
 
 
+def _sidebar_colour(options):
+	return getattr(options, 'clrsidebar', options.clrbackground)
+
+
+def _sidebar_text_colour(options):
+	return getattr(options, 'clrsidebartext', options.clrtexts)
+
+
 def _display_client_height(window):
 	try:
 		display_index = wx.Display.GetFromWindow(window)
@@ -50,8 +58,42 @@ class _ScreenPositionContextEvent(object):
 
 
 _ROW_RADIUS = 8
-_ROW_PAD_H = 10
-_ROW_PAD_V = 7
+_ROW_PAD_X = 8
+_ROW_PAD_Y = 5
+_NAV_LINK_SIDE_MARGIN = 4
+_SECTION_TITLE_SIDE_MARGIN = 12
+_SIDEBAR_MIN_WIDTH = 148
+_SIDEBAR_MAX_WIDTH = 240
+_SIDEBAR_STARTUP_WIDTH = 245
+_SIDEBAR_SAFETY_WIDTH = 16
+_SIDEBAR_LINK_FONT_PT = 13
+_SIDEBAR_TITLE_FONT_PT = 10
+
+
+class SoftVerticalDivider(wx.Panel):
+	def __init__(self, parent, options):
+		wx.Panel.__init__(self, parent, -1)
+		self.options = options
+		self.SetMinSize((1, -1))
+		self.SetMaxSize((1, -1))
+		self.SetBackgroundStyle(wx.BG_STYLE_PAINT)
+		self.Bind(wx.EVT_PAINT, self._on_paint)
+		self.refresh_theme()
+
+	def _line_colour(self):
+		base = _sidebar_colour(self.options)
+		luma = ((base[0] * 299) + (base[1] * 587) + (base[2] * 114)) / 1000.0
+		target = 0 if luma >= 140.0 else 255
+		return _mix_colour(base, target, 0.13)
+
+	def refresh_theme(self):
+		self.SetBackgroundColour(self._line_colour())
+		self.Refresh()
+
+	def _on_paint(self, event):
+		dc = wx.AutoBufferedPaintDC(self)
+		dc.SetBackground(wx.Brush(self._line_colour()))
+		dc.Clear()
 
 
 class WorkspaceNavLink(wx.Panel):
@@ -68,23 +110,33 @@ class WorkspaceNavLink(wx.Panel):
 
 		self.SetBackgroundStyle(wx.BG_STYLE_PAINT)
 
-		self._label = wx.StaticText(self, -1, label)
+		self._label = wx.StaticText(self, -1, label, style=wx.ST_ELLIPSIZE_END)
+		label_font = self._label.GetFont()
+		label_font.SetPointSize(_SIDEBAR_LINK_FONT_PT)
+		self._label.SetFont(label_font)
+		self._label.SetMinSize((1, -1))
 		self._label.SetCursor(wx.Cursor(wx.CURSOR_HAND))
 
 		self._close = None
 		if self._on_close is not None:
-			self._close = wx.StaticText(self, -1, u'\u00D7')
+			self._close = wx.StaticText(self, -1, u'\u2715')  # ✕ heavy multiplication x
+			close_font = self._close.GetFont()
+			close_font.SetPointSize(_SIDEBAR_LINK_FONT_PT)
+			self._close.SetFont(close_font)
 			self._close.SetCursor(wx.Cursor(wx.CURSOR_HAND))
 
 		row_sizer = wx.BoxSizer(wx.HORIZONTAL)
 		row_sizer.Add(self._label, 1, wx.ALIGN_CENTER_VERTICAL)
 		if self._close is not None:
-			row_sizer.Add(self._close, 0, wx.LEFT | wx.ALIGN_CENTER_VERTICAL, 6)
+			close_item = row_sizer.Add(self._close, 0, wx.LEFT | wx.ALIGN_CENTER_VERTICAL | wx.RESERVE_SPACE_EVEN_IF_HIDDEN, 6)
+			_ = close_item  # kept to satisfy RESERVE_SPACE_EVEN_IF_HIDDEN
 
 		sizer = wx.BoxSizer(wx.VERTICAL)
-		sizer.Add(row_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP | wx.BOTTOM, _ROW_PAD_H)
+		sizer.AddSpacer(_ROW_PAD_Y)
+		sizer.Add(row_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, _ROW_PAD_X)
+		sizer.AddSpacer(_ROW_PAD_Y)
 		self.SetSizer(sizer)
-		self.SetMinSize((-1, self._label.GetBestHeight(-1) + _ROW_PAD_H * 2 + 2))
+		self.SetMinSize((-1, self._label.GetBestHeight(-1) + _ROW_PAD_Y * 2 + 2))
 
 		for w in self._clickables():
 			w.Bind(wx.EVT_LEFT_UP, self._activate)
@@ -121,18 +173,16 @@ class WorkspaceNavLink(wx.Panel):
 
 	def _apply_state(self):
 		if self._enabled:
-			text_colour = _mix_colour(self.options.clrtexts, 255, 0.0)
+			text_colour = _mix_colour(_sidebar_text_colour(self.options), 255, 0.0)
 		else:
-			text_colour = _mix_colour(self.options.clrtexts, 255, 0.55)
+			text_colour = _mix_colour(_sidebar_text_colour(self.options), 255, 0.55)
 		self._label.SetForegroundColour(text_colour)
 
 		if self._close is not None:
-			show_close = self._hovered or self._selected
-			self._close.Show(show_close)
-			if show_close:
-				close_colour = _mix_colour(self.options.clrtexts, 255, 0.30)
+			if self._hovered:
+				close_colour = _mix_colour(_sidebar_text_colour(self.options), 255, 0.30)
 				self._close.SetForegroundColour(close_colour)
-			self.Layout()
+			self._close.Show(self._hovered)
 
 		self.Refresh()
 
@@ -160,14 +210,12 @@ class WorkspaceNavLink(wx.Panel):
 
 	def _on_paint(self, event):
 		dc = wx.AutoBufferedPaintDC(self)
-		bg = _to_colour(self.options.clrbackground)
+		bg = _to_colour(_sidebar_colour(self.options))
 		dc.SetBackground(wx.Brush(bg))
 		dc.Clear()
 
-		if self._selected:
-			fill = _mix_colour(self.options.clrbackground, 255, 0.10)
-		elif self._hovered and self._enabled:
-			fill = _mix_colour(self.options.clrbackground, 255, 0.06)
+		if self._hovered and self._enabled:
+			fill = _mix_colour(_sidebar_colour(self.options), 0, 0.13)
 		else:
 			fill = None
 
@@ -189,9 +237,10 @@ class WorkspaceNavigatorPane(wx.ScrolledWindow):
 		self._document_links = {}
 		self._links = {}
 		self._section_widgets = []
+		self._preferred_sidebar_width = _SIDEBAR_MIN_WIDTH
 
 		self.SetScrollRate(0, 16)
-		self.SetMinSize((280, -1))
+		self.SetMinSize((_SIDEBAR_MIN_WIDTH, -1))
 
 		self._root = wx.Panel(self, -1, style=wx.TAB_TRAVERSAL)
 		self._root_sizer = wx.BoxSizer(wx.VERTICAL)
@@ -217,7 +266,7 @@ class WorkspaceNavigatorPane(wx.ScrolledWindow):
 	def _build_sections(self, documents, active_document_id, sections):
 		self._clear_sections()
 
-		self._root_sizer.AddSpacer(8)
+		self._root_sizer.AddSpacer(6)
 
 		# --- primary area: open pages ---
 		for item in documents:
@@ -231,29 +280,21 @@ class WorkspaceNavigatorPane(wx.ScrolledWindow):
 				on_action=self._on_document,
 				on_close=self._on_document_close,
 			)
-			self._root_sizer.Add(link, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 6)
+			self._root_sizer.Add(link, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, _NAV_LINK_SIDE_MARGIN)
 			self._root_sizer.AddSpacer(1)
 			self._document_links[doc_id] = link
 			self._section_widgets.append(link)
 
-		# --- divider between documents and launcher, only when both exist ---
-		if documents and sections:
-			self._root_sizer.AddSpacer(6)
-			line = wx.StaticLine(self._root, -1)
-			self._root_sizer.Add(line, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 16)
-			self._root_sizer.AddSpacer(6)
-			self._section_widgets.append(line)
-
 		for section in sections:
 			title = wx.StaticText(self._root, -1, _state_value(section, 'title', ''))
 			title_font = title.GetFont()
-			title_font.SetPointSize(max(9, title_font.GetPointSize() - 1))
+			title_font.SetPointSize(_SIDEBAR_TITLE_FONT_PT)
 			title_font.SetWeight(wx.FONTWEIGHT_BOLD)
 			title.SetFont(title_font)
 			title.SetForegroundColour(
-				_mix_colour(self.options.clrtexts, 255, 0.45)
+				_mix_colour(_sidebar_text_colour(self.options), 255, 0.45)
 			)
-			self._root_sizer.Add(title, 0, wx.LEFT | wx.RIGHT, 16)
+			self._root_sizer.Add(title, 0, wx.LEFT | wx.RIGHT, _SECTION_TITLE_SIDE_MARGIN)
 			self._root_sizer.AddSpacer(3)
 			self._section_widgets.append(title)
 
@@ -266,27 +307,70 @@ class WorkspaceNavigatorPane(wx.ScrolledWindow):
 					_state_value(item, 'label', ''),
 					on_action=self._on_action,
 				)
-				self._root_sizer.Add(link, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 6)
+				self._root_sizer.Add(link, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, _NAV_LINK_SIDE_MARGIN)
 				self._root_sizer.AddSpacer(1)
 				self._links[action_id] = link
 				self._section_widgets.append(link)
 
-			self._root_sizer.AddSpacer(4)
+			self._root_sizer.AddSpacer(3)
 
 		self._root_sizer.AddStretchSpacer()
-		self._root_sizer.AddSpacer(8)
+		self._root_sizer.AddSpacer(6)
 		self._root.Layout()
 		self.Layout()
 		self.FitInside()
+		self._preferred_sidebar_width = self._calc_preferred_sidebar_width(documents, sections)
+		self.SetMinSize((_SIDEBAR_MIN_WIDTH, -1))
 		self.refresh_theme()
 
+	def _text_width(self, text, font):
+		if not text:
+			return 0
+		try:
+			dc = wx.ScreenDC()
+			dc.SetFont(font)
+			width, _ = dc.GetTextExtent(text)
+			return width
+		except Exception:
+			return len(text) * 8
+
+	def _calc_preferred_sidebar_width(self, documents, sections):
+		link_font = self.GetFont()
+		link_font.SetPointSize(_SIDEBAR_LINK_FONT_PT)
+		title_font = self.GetFont()
+		title_font.SetPointSize(_SIDEBAR_TITLE_FONT_PT)
+		title_font.SetWeight(wx.FONTWEIGHT_BOLD)
+
+		max_text_width = 0
+		for document in documents:
+			label = _state_value(document, 'title', _state_value(document, 'label', ''))
+			max_text_width = max(max_text_width, self._text_width(label, link_font) + 24 + 22)
+
+		for section in sections:
+			title = _state_value(section, 'title', '')
+			max_text_width = max(max_text_width, self._text_width(title, title_font))
+			for item in _state_value(section, 'items', ()): 
+				label = _state_value(item, 'label', '')
+				max_text_width = max(max_text_width, self._text_width(label, link_font))
+
+		computed = (
+			max_text_width
+			+ (_ROW_PAD_X * 2)
+			+ (_NAV_LINK_SIDE_MARGIN * 2)
+			+ _SIDEBAR_SAFETY_WIDTH
+		)
+		return max(_SIDEBAR_MIN_WIDTH, min(_SIDEBAR_MAX_WIDTH, computed))
+
+	def get_preferred_sidebar_width(self):
+		return self._preferred_sidebar_width
+
 	def refresh_theme(self):
-		background = _to_colour(self.options.clrbackground)
+		background = _to_colour(_sidebar_colour(self.options))
 		self.SetBackgroundColour(background)
 		self._root.SetBackgroundColour(background)
 		for widget in self._section_widgets:
 			if isinstance(widget, wx.StaticText):
-				widget.SetForegroundColour(_to_colour(self.options.clrtexts))
+				widget.SetForegroundColour(_mix_colour(_sidebar_text_colour(self.options), 255, 0.45))
 			elif isinstance(widget, WorkspaceNavLink):
 				widget.refresh_theme(False)
 		self.Refresh()
@@ -413,29 +497,57 @@ class MainWindowShell(wx.Panel):
 		self.options = options
 		self.SetName('workspace_shell')
 		self._navigator_state_provider = navigator_state_provider
+		self._startup_sash_applied = False
+
+		self._splitter = wx.SplitterWindow(
+			self,
+			-1,
+			style=wx.SP_LIVE_UPDATE | wx.SP_THIN_SASH,
+		)
 
 		self.navigator_pane = WorkspaceNavigatorPane(
-			self,
+			self._splitter,
 			options,
 			on_action=navigator_action_handler,
 			on_document=navigator_document_handler,
 			on_document_close=navigator_document_close_handler,
 		)
+
+		self._content_panel = wx.Panel(self._splitter, -1)
+		self._content_panel.SetBackgroundColour(_to_colour(self.options.clrbackground))
+		self._content_area = wx.Panel(self._content_panel, -1)
+		self._content_area.SetBackgroundColour(_to_colour(self.options.clrbackground))
+
 		self.chart_host = CentralChartHost(
-			self,
+			self._content_area,
 			options,
 			context_menu_handler=chart_context_menu_handler,
 			resize_handler=chart_resize_handler,
 		)
 
-		self._table_host = wx.Panel(self, -1)
+		self._table_host = wx.Panel(self._content_area, -1)
 		self._table_host.Hide()
 
-		self._body_sizer = wx.BoxSizer(wx.HORIZONTAL)
-		self._body_sizer.Add(self.navigator_pane, 0, wx.EXPAND | wx.RIGHT, 12)
-		self._body_sizer.Add(self.chart_host, 1, wx.EXPAND)
-		self._body_sizer.Add(self._table_host, 1, wx.EXPAND)
-		self.SetSizer(self._body_sizer)
+		self._vertical_divider = SoftVerticalDivider(self._content_panel, self.options)
+
+		content_sizer = wx.BoxSizer(wx.VERTICAL)
+		content_sizer.Add(self.chart_host, 1, wx.EXPAND)
+		content_sizer.Add(self._table_host, 1, wx.EXPAND)
+		self._content_area.SetSizer(content_sizer)
+
+		content_panel_sizer = wx.BoxSizer(wx.HORIZONTAL)
+		content_panel_sizer.Add(self._vertical_divider, 0, wx.EXPAND)
+		content_panel_sizer.Add(self._content_area, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP | wx.BOTTOM, 6)
+		self._content_panel.SetSizer(content_panel_sizer)
+
+		self._splitter.SetMinimumPaneSize(_SIDEBAR_MIN_WIDTH)
+		self._splitter.SetSashGravity(0.0)
+		self._splitter.SplitVertically(self.navigator_pane, self._content_panel, max(_SIDEBAR_MIN_WIDTH, _SIDEBAR_STARTUP_WIDTH))
+		self._startup_sash_applied = True
+
+		root_sizer = wx.BoxSizer(wx.VERTICAL)
+		root_sizer.Add(self._splitter, 1, wx.EXPAND)
+		self.SetSizer(root_sizer)
 
 		self.refresh_theme()
 		wx.CallAfter(self.refresh_navigation)
@@ -443,6 +555,12 @@ class MainWindowShell(wx.Panel):
 	def refresh_theme(self):
 		background = _to_colour(self.options.clrbackground)
 		self.SetBackgroundColour(background)
+		self._vertical_divider.refresh_theme()
+		sash_colour = self._vertical_divider._line_colour()
+		self._splitter.SetBackgroundColour(sash_colour)
+		self._content_panel.SetBackgroundColour(background)
+		self._content_area.SetBackgroundColour(background)
+		self._table_host.SetBackgroundColour(background)
 		self.navigator_pane.refresh_theme()
 		self.chart_host.refresh_theme()
 
@@ -461,9 +579,21 @@ class MainWindowShell(wx.Panel):
 		except Exception:
 			return
 		self.navigator_pane.set_navigation_state(state)
+		if not self._startup_sash_applied and self._splitter.IsSplit():
+			self._splitter.SetSashPosition(max(_SIDEBAR_MIN_WIDTH, _SIDEBAR_STARTUP_WIDTH), True)
+			self._startup_sash_applied = True
+
+	def _apply_preferred_sidebar_width(self):
+		if not self._splitter.IsSplit():
+			return
+		preferred_width = self.navigator_pane.get_preferred_sidebar_width()
+		self._splitter.SetSashPosition(preferred_width, True)
 
 	def get_chart_host_size(self):
 		return self.chart_host.get_chart_size()
+
+	def get_preferred_sidebar_width(self):
+		return self.navigator_pane.get_preferred_sidebar_width()
 
 	def refresh_chart(self):
 		self.chart_host.refresh_host()
@@ -485,7 +615,7 @@ class MainWindowShell(wx.Panel):
 		self._table_host.Layout()
 		self.chart_host.Hide()
 		self._table_host.Show()
-		self._body_sizer.Layout()
+		self._content_panel.Layout()
 		self.Layout()
 
 	def clear_table_content(self):
@@ -498,5 +628,5 @@ class MainWindowShell(wx.Panel):
 				child.Destroy()
 			except Exception:
 				pass
-		self._body_sizer.Layout()
+		self._content_panel.Layout()
 		self.Layout()

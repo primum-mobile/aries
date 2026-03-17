@@ -121,6 +121,20 @@ class WorkspaceState(object):
 				return document
 		return None
 
+	def update_document(self, document_id, title=None, subtitle=None, path=None):
+		for i, document in enumerate(self._documents):
+			if document.document_id != document_id:
+				continue
+			self._documents[i] = WorkspaceDocument(
+				document_id=document.document_id,
+				kind=document.kind,
+				title=document.title if title is None else title,
+				subtitle=document.subtitle if subtitle is None else subtitle,
+				path=document.path if path is None else path,
+			)
+			return self._documents[i]
+		return None
+
 	def documents(self):
 		return tuple(self._documents)
 

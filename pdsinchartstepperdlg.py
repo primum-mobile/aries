@@ -29,7 +29,7 @@ wx.HelpProvider.Set(provider)
 
 class PDsInChartStepperDlg(wx.Dialog):
 
-	def __init__(self, parent, chrt, y, m, d, t, direct, arc, opts, terrestrial):
+	def __init__(self, parent, chrt, y, m, d, t, direct, arc, opts, terrestrial, on_change=None):
 
 		self.parent = parent
 		self.chart = chrt
@@ -41,6 +41,7 @@ class PDsInChartStepperDlg(wx.Dialog):
 		self.arc = arc
 		self.options = opts
 		self.terrestrial = terrestrial
+		self._on_change = on_change
 
 		# Instead of calling wx.Dialog.__init__ we precreate the dialog
 		# so we can set an extra style that must be set before
@@ -376,7 +377,10 @@ class PDsInChartStepperDlg(wx.Dialog):
 				if not direct:
 					txtdir = mtexts.txts['C']
 
-				self.parent.change(pdchart, y, m, d, ho, mi, se, mtexts.typeListDirs[self.options.primarydir], keytxt, txtdir, math.fabs(da))
+				if self._on_change is not None:
+					self._on_change(pdchart, y, m, d, ho, mi, se, mtexts.typeListDirs[self.options.primarydir], keytxt, txtdir, math.fabs(da))
+				else:
+					self.parent.change(pdchart, y, m, d, ho, mi, se, mtexts.typeListDirs[self.options.primarydir], keytxt, txtdir, math.fabs(da))
 			else:
 				dlgm = wx.MessageDialog(None, mtexts.txts['InvalidDate']+' ('+self.year.GetValue()+'.'+self.month.GetValue()+'.'+self.day.GetValue()+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
 				dlgm.ShowModal()		

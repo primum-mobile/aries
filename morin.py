@@ -190,8 +190,6 @@ class MFrame(wx.Frame):
 	def _apply_radix_overlay_mode(self, new_value):
 		if self.splash or self.horoscope is None:
 			return False
-		if self.horoscope.htype != chart.Chart.RADIX:
-			return False
 
 		current = getattr(self.options, 'showfixstars', options.Options.NONE)
 		if current == new_value:
@@ -200,7 +198,12 @@ class MFrame(wx.Frame):
 		self.options.showfixstars = new_value
 		self.enableOptMenus(True)
 
-		if new_value == options.Options.ARABICPARTS:
+		if new_value == options.Options.FIXSTARS:
+			try:
+				self.horoscope.rebuildFixStars()
+			except Exception:
+				pass
+		elif new_value == options.Options.ARABICPARTS:
 			try:
 				self.horoscope.calcArabicParts()
 			except Exception:
@@ -236,7 +239,7 @@ class MFrame(wx.Frame):
 		self.refreshOpenWindows()
 
 	def _toggle_radix_display_option(self, attr_name):
-		if self.splash or self.horoscope is None or self.horoscope.htype != chart.Chart.RADIX:
+		if self.splash or self.horoscope is None:
 			return False
 		if not hasattr(self.options, attr_name):
 			return False
@@ -247,14 +250,15 @@ class MFrame(wx.Frame):
 	def _cycle_natal_secondary_ring(self):
 		if self.splash or self.horoscope is None:
 			return False
-		if self.horoscope.htype != chart.Chart.RADIX:
-			return False
 
 		current = getattr(self.options, 'showfixstars', options.Options.NONE)
 		cycle = (
-			options.Options.NONE,
 			options.Options.DODECATEMORIA,
 			options.Options.ARABICPARTS,
+			options.Options.FIXSTARS,
+			options.Options.ANTIS,
+			options.Options.CANTIS,
+			options.Options.NONE,
 		)
 		try:
 			index = cycle.index(current)
@@ -286,7 +290,7 @@ class MFrame(wx.Frame):
 			event.Skip()
 
 	def onChartContextMenu(self, event):
-		if self.splash or self.horoscope is None or self.horoscope.htype != chart.Chart.RADIX:
+		if self.splash or self.horoscope is None:
 			if event is not None:
 				event.Skip()
 			return
@@ -340,6 +344,67 @@ class MFrame(wx.Frame):
 			if getattr(size, 'x', 0) > 0 and getattr(size, 'y', 0) > 0:
 				return size
 		return self.GetClientSize()
+
+	def _display_client_rect(self):
+		try:
+			display_index = wx.Display.GetFromWindow(self)
+			if display_index == wx.NOT_FOUND and wx.Display.GetCount() > 0:
+				display_index = 0
+			if display_index != wx.NOT_FOUND:
+				return wx.Display(display_index).GetClientArea()
+		except Exception:
+			pass
+		return wx.Rect(0, 0, 1440, 900)
+
+	def _fit_workspace_startup_geometry(self):
+		if not hasattr(self, '_workspace_shell') or self._workspace_shell is None:
+			return
+
+		rect = self._display_client_rect()
+		target_side = max(1, int(rect.height * 0.80))
+		sidebar_width = max(140, int(self._workspace_shell.get_preferred_sidebar_width()))
+		extra_content_width = 18
+
+		client_width = sidebar_width + target_side + extra_content_width
+		client_height = target_side + 36
+
+		for _ in range(3):
+			self.SetClientSize((client_width, client_height))
+			self.Layout()
+			host_size = self._workspace_shell.chart_host.GetClientSize()
+			dx = target_side - int(getattr(host_size, 'x', 0))
+			dy = target_side - int(getattr(host_size, 'y', 0))
+			if abs(dx) <= 1 and abs(dy) <= 1:
+				break
+			client_width = max(900, client_width + dx)
+			client_height = max(676, client_height + dy)
+
+		self.Layout()
+		self._workspace_shell.refresh_navigation()
+
+		frame_rect = self.GetScreenRect()
+		host_rect = self._workspace_shell.chart_host.GetScreenRect()
+		host_center_offset_x = (host_rect.x - frame_rect.x) + int(host_rect.width / 2)
+
+		target_center_x = rect.x + int(rect.width / 2)
+		target_center_y = rect.y + int(rect.height / 2)
+
+		new_x = target_center_x - host_center_offset_x
+		new_y = target_center_y - int(frame_rect.height / 2)
+
+		min_x = rect.x
+		max_x = rect.x + rect.width - frame_rect.width
+		min_y = rect.y
+		max_y = rect.y + rect.height - frame_rect.height
+
+		if max_x < min_x:
+			max_x = min_x
+		if max_y < min_y:
+			max_y = min_y
+
+		new_x = min(max(new_x, min_x), max_x)
+		new_y = min(max(new_y, min_y), max_y)
+		self.SetPosition((new_x, new_y))
 
 	def _shell_background_colour(self):
 		if self.options.bw:
@@ -439,6 +504,67 @@ class MFrame(wx.Frame):
 	def _find_workspace_session(self, session_id):
 		return getattr(self, '_workspace_runtime', {}).get(session_id)
 
+	def _find_workspace_session_by_chart_session(self, cs):
+		for session in getattr(self, '_workspace_runtime', {}).values():
+			if session.get('chart_session') is cs:
+				return session
+		return None
+
+	def _pd_arc_years_per_degree(self):
+		opts = self.options
+		if opts.pdkeydyn:
+			coeff = primdirs.PrimDirs.staticData[primdirs.PrimDirs.NAIBOD][primdirs.PrimDirs.COEFF]
+			return coeff if coeff > 0.0 else 1.0
+		if opts.pdkeys == primdirs.PrimDirs.CUSTOMER:
+			deg_per_year = opts.pdkeydeg + opts.pdkeymin / 60.0 + opts.pdkeysec / 3600.0
+			if deg_per_year <= 0.0:
+				return 1.0
+			return 1.0 / deg_per_year
+		coeff = primdirs.PrimDirs.staticData[opts.pdkeys][primdirs.PrimDirs.COEFF]
+		return coeff if coeff > 0.0 else 1.0
+
+	def _format_pd_date_and_age(self, cs):
+		if cs is None or cs.radix is None or cs.chart is None:
+			return None
+		if cs.chart.htype != chart.Chart.PDINCHART:
+			return None
+
+		t = cs.chart.time
+		date_txt = '%04d-%02d-%02d %02d:%02d:%02d' % (
+			t.origyear, t.origmonth, t.origday,
+			t.hour, t.minute, t.second,
+		)
+		arc_abs = None
+		try:
+			arc_abs = float(getattr(cs.chart, '_pd_arc_abs'))
+		except Exception:
+			arc_abs = None
+		if arc_abs is None:
+			arc_abs = math.fabs(float(cs.chart.time.jd - cs.radix.time.jd)) / 365.2425
+		age_years = arc_abs * self._pd_arc_years_per_degree()
+		return date_txt, age_years
+
+	def _update_workspace_pd_runtime_title(self, cs):
+		session = self._find_workspace_session_by_chart_session(cs)
+		if session is None:
+			return
+
+		info = self._format_pd_date_and_age(cs)
+		if info is None:
+			return
+		date_txt, age_years = info
+
+		base_title = session.get('base_title')
+		if not base_title:
+			document = self._workspace_state.find_document(session['document_id'])
+			base_title = document.title if document is not None else self._workspace_session_title(cs.chart, session.get('fpath', ''))
+			session['base_title'] = base_title
+
+		new_title = '%s • %s • Age: %.2fy' % (base_title, date_txt, age_years)
+		self._workspace_state.update_document(session['document_id'], title=new_title)
+		if self._workspace_state.active_document_id() == session['document_id']:
+			self._refresh_workspace_navigation()
+
 	def _activate_workspace_session(self, session):
 		if isinstance(session, str):
 			session = self._find_workspace_session(session)
@@ -483,6 +609,7 @@ class MFrame(wx.Frame):
 
 	def _on_chart_session_change(self, cs):
 		self.horoscope = cs.chart
+		self._update_workspace_pd_runtime_title(cs)
 		self.drawBkg()
 		self.Refresh()
 		self.handleStatusBar(True)
@@ -509,6 +636,7 @@ class MFrame(wx.Frame):
 			'chart': chrt,
 			'fpath': fpath,
 			'dpath': dpath or self.fpathhors,
+			'base_title': session_label or self._workspace_session_title(chrt, fpath),
 			'chart_session': None,
 		}
 		if radix is not None:
@@ -1558,6 +1686,7 @@ class MFrame(wx.Frame):
 		except Exception:
 			pass
 		self.CreateStatusBar()
+		self._apply_statusbar_colours()
 
 		self._workspace_shell = workspace_shell.MainWindowShell(
 			self,
@@ -1574,6 +1703,7 @@ class MFrame(wx.Frame):
 		self._frame_sizer.Add(self._workspace_shell, 1, wx.EXPAND)
 		self.SetSizer(self._frame_sizer)
 		self.Layout()
+		self._fit_workspace_startup_geometry()
 
 		self.Bind(wx.EVT_MENU, self.onNew, id=self.ID_New)
 		self.Bind(wx.EVT_MENU, self.onData, id=self.ID_Data)
@@ -1702,6 +1832,8 @@ class MFrame(wx.Frame):
 		self.Bind(wx.EVT_MENU, self.onCloseWindowShortcut, id=wx.ID_CLOSE)
 		self.Bind(wx.EVT_CHAR_HOOK, self.onCharHook)
 		self.Bind(wx.EVT_KEY_DOWN, self.onKeyDown)
+		self.Bind(wx.EVT_ACTIVATE, self.onFrameActivate)
+		self.Bind(wx.EVT_SIZE, self.onFrameSize)
 		self.SetAcceleratorTable(wx.AcceleratorTable([
 			(wx.ACCEL_CMD, ord('W'), wx.ID_CLOSE),
 			(wx.ACCEL_NORMAL, ord('S'), self.ID_SearchModule),
@@ -3148,10 +3280,14 @@ class MFrame(wx.Frame):
 				if use_workspace and hasattr(self, '_workspace_shell') and self._workspace_shell is not None:
 					LINE_NUM = 40
 					PAGE = LINE_NUM * 2
+					pdsmaxnum = len(self.pds.pds)
+					remainder = pdsmaxnum % PAGE
+					addition = 1 if remainder > 0 else 0
+					maxpage = int(pdsmaxnum / PAGE) + addition
 					fr = 0
 					to = min(PAGE, len(self.pds.pds))
 					host = self._workspace_shell.get_table_host()
-					wnd = primdirslistwnd.PrimDirsListWnd(host, self.horoscope, self.options, self.pds, self, 1, 1, fr, to)
+					wnd = primdirslistwnd.PrimDirsListWnd(host, self.horoscope, self.options, self.pds, self, 1, maxpage, fr, to)
 					self._show_table_in_workspace('primary_directions', wnd)
 				else:
 					pdw = primdirslistframe.PrimDirsListFrame(self, self.horoscope, self.options, self.pds, self.title.replace(mtexts.typeList[self.horoscope.htype], mtexts.txts['PrimaryDirs']))
@@ -5459,55 +5595,28 @@ class MFrame(wx.Frame):
 
 		info = wx.adv.AboutDialogInfo()
 		info.Name = mtexts.txts['Morinus']
-# ###########################################
-# V 8.1.0 kept from V 8.0.5
-# Elias -  V 8.0.5
-# Roberto - V 7.4.4-804
-
-		info.Version = '9.6.1'
-# ###########################################
+		release_version = '10.0.0'
+		release_codename = 'Aries'
+		info.Version = '%s (%s)' % (release_version, release_codename)
 		info.Copyright = mtexts.txts['FreeSoft']
 		info.Description = mtexts.txts['Description']+str(astrology.swe_version())
 		info.WebSite = 'https://sourceforge.net/p/morinus-updated/'
-		info.Developers = ['In alphabetical surname order:\n\nRobert Nagy (Hungary); robert.pluto@gmail.com (programming and astrology)\n\nPhilippe Epaud (France); philipeau@free.fr (French translation)\nMargherita Fiorello (Italy); margherita.fiorello@gmail.com (astrology, Italian translation)\nMartin Gansten (Sweden); http://www.martingansten.com/ (astrology)\nJaime Chica Londoño (Colombia); aulavirtual@astrochart.org (Spanish translation)\nRoberto Luporini (Italy); roberto.luporini@tiscali.it (programming and astrological astronomy)\nElías D. Molins (Spain); elias@biblioteca-astrologia.es (programming and astrology)\nPetr Radek (Czech Rep.); petr_radek@raz-dva.cz (astrology)\nJames Ren (China);541632950@qq.com (programming and astrology, Chinese translation)\nShin Ji-Hyeon (South Korea); shin10567@naver.com (programming and astrology, Korean translation)\nEndre Csaba Simon (Finland); secsaba@gmail.com (programming and astrology)\nVáclav Jan Špirhanzl (Czech Rep.); vjs.morinus@gmail.com (MacOS version)\nDenis Steinhoff (Israel); denis@steindan.com (astrology, Russian translation)']
+		info.Developers = ['In alphabetical surname order:\n\nRobert Nagy (Hungary); robert.pluto@gmail.com (programming and astrology)\n\nPhilippe Epaud (France); philipeau@free.fr (French translation)\nMargherita Fiorello (Italy); margherita.fiorello@gmail.com (astrology, Italian translation)\nMartin Gansten (Sweden); http://www.martingansten.com/ (astrology)\nJaime Chica Londoño (Colombia); aulavirtual@astrochart.org (Spanish translation)\nMax Lange (Germany); contact@maxlange.cc (programming and astrology)\nRoberto Luporini (Italy); roberto.luporini@tiscali.it (programming and astrological astronomy)\nElías D. Molins (Spain); elias@biblioteca-astrologia.es (programming and astrology)\nPetr Radek (Czech Rep.); petr_radek@raz-dva.cz (astrology)\nJames Ren (China);541632950@qq.com (programming and astrology, Chinese translation)\nShin Ji-Hyeon (South Korea); shin10567@naver.com (programming and astrology, Korean translation)\nEndre Csaba Simon (Finland); secsaba@gmail.com (programming and astrology)\nVáclav Jan Špirhanzl (Czech Rep.); vjs.morinus@gmail.com (MacOS version)\nDenis Steinhoff (Israel); denis@steindan.com (astrology, Russian translation)']
 		info.License = mtexts.licensetxt
 
-		# --- Use GenericAboutDialog so we can override tab captions from mtexts ---
 		try:
 			dlg = wx.adv.GenericAboutDialog(info, self)
-		except AttributeError:
-			dlg = None  # very old wxPython fallback
-
-		if dlg:
-			labels = {
-				u"Info":       mtexts.txts.get("AboutTabInfo",       u"Info"),
-				u"License":    mtexts.txts.get("AboutTabLicense",    u"License"),
-				u"Developers": mtexts.txts.get("AboutTabDevelopers", u"Developers"),
-			}
-
-			def _find_notebook(win):
-				for child in win.GetChildren():
-					if isinstance(child, wx.Notebook):
-						return child
-					nb = _find_notebook(child)
-					if nb:
-						return nb
-				return None
-
-			nb = _find_notebook(dlg)
-			if nb:
-				for i in range(nb.GetPageCount()):
-					old = nb.GetPageText(i)
-					if old in labels:
-						nb.SetPageText(i, labels[old])
-
 			dlg.Layout()
 			dlg.Fit()
+			fit_w, fit_h = dlg.GetSize()
+			disp_w, disp_h = wx.GetDisplaySize()
+			max_w = max(560, disp_w - 180)
+			max_h = max(420, disp_h - 180)
+			dlg.SetSize((min(fit_w, max_w), min(fit_h, max_h)))
 			dlg.CenterOnParent()
 			dlg.ShowModal()
 			dlg.Destroy()
-		else:
-			# Last-resort fallback (very old wx): show stock AboutBox (labels will follow wx's built-ins)
+		except Exception:
 			wx.adv.AboutBox(info)
 
 	#Misc
@@ -5679,6 +5788,24 @@ class MFrame(wx.Frame):
 		self.moptions.Enable(self.ID_Reload, bEnable)
 
 
+	def _apply_statusbar_colours(self):
+		sb = self.GetStatusBar()
+		if sb is None:
+			return
+		bg = wx.SystemSettings.GetColour(wx.SYS_COLOUR_MENUBAR)
+		fg = wx.SystemSettings.GetColour(wx.SYS_COLOUR_MENUTEXT)
+		sb.SetBackgroundColour(bg)
+		sb.SetForegroundColour(fg)
+		sb.Refresh()
+
+	def onFrameActivate(self, event):
+		self._apply_statusbar_colours()
+		event.Skip()
+
+	def onFrameSize(self, event):
+		self._apply_statusbar_colours()
+		event.Skip()
+
 	def handleStatusBar(self, bHor):
 		sb = self.GetStatusBar()
 		if sb is None:
@@ -5700,6 +5827,11 @@ class MFrame(wx.Frame):
 			if self.horoscope.time.zt == chart.Time.LOCALMEAN or self.horoscope.time.zt == chart.Time.LOCALAPPARENT:
 				ztxt = mtexts.txts['LC']
 			txt = signtxt+str(self.horoscope.time.origyear)+'.'+common.common.months[self.horoscope.time.origmonth-1]+'.'+(str(self.horoscope.time.origday)).zfill(2)+', '+(str(self.horoscope.time.hour)).zfill(2)+':'+(str(self.horoscope.time.minute)).zfill(2)+':'+(str(self.horoscope.time.second)).zfill(2)+ztxt
+			cs = self._active_chart_session()
+			pd_info = self._format_pd_date_and_age(cs)
+			if pd_info is not None:
+				date_txt, age_years = pd_info
+				txt = '%s, Age: %.2fy' % (date_txt, age_years)
 			self.SetStatusText(txt, 2)
 			deg_symbol = u'°'
 			t1 = mtexts.txts['Long']+': '
@@ -5716,6 +5848,8 @@ class MFrame(wx.Frame):
 		else:
 			sb.SetFieldsCount(1)
 			self.SetStatusText('')
+
+		self._apply_statusbar_colours()
 
 
 	def handleCaption(self, bHor):

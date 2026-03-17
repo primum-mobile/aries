@@ -249,8 +249,10 @@ class Options:
 
 #		self.def_clrbackground = self.clrbackground = (wx.SystemSettings.GetColour(wx.SYS_COLOUR_WINDOWFRAME)).Get(False)
 		self.def_clrbackground = self.clrbackground = (192,192,192)
+		self.def_clrsidebar = self.clrsidebar = self.def_clrbackground
 		self.def_clrtable = self.clrtable = (0,0,0)
 		self.def_clrtexts = self.clrtexts = (0,0,0)
+		self.def_clrsidebartext = self.clrsidebartext = self.def_clrtexts
 		
 		#Housesystem
 		self.def_hsys = self.hsys = 'P'
@@ -631,8 +633,10 @@ class Options:
 		self.useplanetcolors = self.def_useplanetcolors
 
 		self.clrbackground = self.def_clrbackground
+		self.clrsidebar = self.def_clrsidebar
 		self.clrtable = self.def_clrtable
 		self.clrtexts = self.def_clrtexts
+		self.clrsidebartext = self.def_clrsidebartext
 
 		#Housesystem
 		self.hsys = self.def_hsys
@@ -942,6 +946,14 @@ class Options:
 			self.clrbackground = pickle.load(f)
 			self.clrtable = pickle.load(f)
 			self.clrtexts = pickle.load(f)
+			try:
+				self.clrsidebar = pickle.load(f)
+			except Exception:
+				self.clrsidebar = self.clrbackground
+			try:
+				self.clrsidebartext = pickle.load(f)
+			except Exception:
+				self.clrsidebartext = self.clrtexts
 			f.close()
 		except IOError:
 			res = False
@@ -1390,6 +1402,8 @@ class Options:
 			pickle.dump(self.clrbackground, f)
 			pickle.dump(self.clrtable, f)
 			pickle.dump(self.clrtexts, f)
+			pickle.dump(self.clrsidebar, f)
+			pickle.dump(self.clrsidebartext, f)
 			f.close()
 			return True
 		except IOError:

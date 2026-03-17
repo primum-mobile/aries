@@ -17,6 +17,8 @@ import datetime
 import profections
 import lordofyear
 import radixsignals
+import interchartaspects
+import primdirs
 import wxcompat
 
 # Pillow 10+ removed FreeTypeFont.getsize(); legacy rendering/layout code uses it.
@@ -166,17 +168,17 @@ class GraphChart2:
 				self.rHouse = self.rBase+self.rHousesectorlen*self.maxradius
 				self.rHouseName = self.maxradius*0.27-baseoffset
 			else:
-				self.symbolSize = self.maxradius/12
-				self.signSize = self.maxradius/12
-				self.signsectorlen = 0.16
-				self.planetsectorlen = 0.18
+				self.symbolSize = self.maxradius/16
+				self.signSize = self.maxradius/20
+				self.signsectorlen = 0.15
+				self.planetsectorlen = 0.15
 				self.planetoffs = (self.planetsectorlen/2.0)*self.maxradius
 				self.planetlinelen = 0.03
-				self.rHousesectorlen = 0.08
-				self.r30 = self.maxradius*0.96
-				self.signoffs = (self.signsectorlen/2.0-0.01)*self.maxradius
+				self.rHousesectorlen = 0.06
+				self.r30 = self.maxradius*0.83
+				self.signoffs = (self.signsectorlen/2.0)*self.maxradius
 				self.rSign = self.r30-self.signoffs
-				self.rASCMC = self.maxradius*0.88
+				self.rASCMC = self.rSign
 				self.rArrow = self.rASCMC+self.arrowlen*self.maxradius
 				self.r0 = self.r30-self.signsectorlen*self.maxradius
 				self.r1 = self.r0+self.deg01510len*self.maxradius
@@ -203,14 +205,14 @@ class GraphChart2:
 				self.rPosMin = self.rPosDeg-0.05*self.maxradius
 				self.rRetr = self.rPosMin-0.05*self.maxradius
 
-				posascmc = 0.42
-				poshouses = 0.42				
+				posascmc = 0.36
+				poshouses = 0.36				
 				if self.options.showdecans and self.options.showterms:
-					posascmc = 0.30
-					poshouses = 0.30				
+					posascmc = 0.24
+					poshouses = 0.24				
 				elif self.options.showdecans or self.options.showterms:
-					posascmc = 0.38
-					poshouses = 0.38				
+					posascmc = 0.30
+					poshouses = 0.30
 
 				self.rPosAscMC = self.maxradius*posascmc
 				self.rPosAscMCMin = self.rPosAscMC-self.maxradius*0.05
@@ -218,7 +220,7 @@ class GraphChart2:
 				self.rPosHousesMin = self.rPosHouses-self.maxradius*0.05
 				self.rBase = self.maxradius*0.24-baseoffset
 				self.rHouse = self.rBase+self.rHousesectorlen*self.maxradius
-				self.rHouseName = self.rBase+(self.rHousesectorlen*self.maxradius)/2.0
+				self.rHouseName = self.maxradius*0.27-baseoffset
 		else:
 			self.symbolSize = self.maxradius/16
 			self.signSize = self.maxradius/20
@@ -401,29 +403,34 @@ class GraphChart2:
 		if self.chart2 != None:
 			self.pshift2 = self.arrange(self.chart2.planets.planets, self.chart2.fortune.fortune, self.rOuterPlanet)
 			self.drawPlanetLines(self.pshift2, self.chart2.planets.planets, self.chart2.fortune.fortune, self.r30, self.rOuterLine)
+			if self.options.aspects:
+				interchart_aspects = self.getInterChartAspects()
+				self.drawInterChartAspectMarkers(interchart_aspects)
+				self.drawInterChartAspectLines(interchart_aspects)
 
 
 		#if self.chart2 == None and self.planetaryday and self.options.showfixstars != options.Options.NONE:  # radix 차트
 		if self.chart2 == None and self.options.showfixstars != options.Options.NONE:
 			if self.options.showfixstars == options.Options.FIXSTARS:
-				self.showfss = self.mergefsaspmatrices()
+				self.showfss = []
 				fsdata = getattr(getattr(self.chart, 'fixstars', None), 'data', None)
-				if fsdata:
-					_rText = (self.rOuterLine + self.symbolSize * 0.2)
-					self.fsshift = self.arrangefs(fsdata, self.showfss, _rText)
-					# (있다면) 아래 두 줄도 fsdata가 있을 때만 호출
+				if not fsdata:
 					try:
-						self.drawFixstarsLines(self.showfss)
-						self.drawFixstars(self.showfss)
+						self.chart.rebuildFixStars()
 					except Exception:
 						pass
+					fsdata = getattr(getattr(self.chart, 'fixstars', None), 'data', None)
+				if fsdata:
+					self.showfss = self.mergefsaspmatrices()
+					_rText = (self.rOuterLine + self.symbolSize * 0.2)
+					self.fsshift = self.arrangefs(fsdata, self.showfss, _rText)
+
+					_rText = (self.rOuterLine + self.symbolSize * 0.2)
+					self.fsyoffs = self.arrangeyfs(fsdata, self.fsshift, self.showfss, _rText)
+					self.drawFixstarsLines(self.showfss)
 				else:
 					# 데이터가 없으면 고정성 블록 전체를 스킵
 					self.fsshift = []
-
-				_rText = (self.rOuterLine + self.symbolSize * 0.2)
-				self.fsyoffs = self.arrangeyfs(self.chart.fixstars.data, self.fsshift, self.showfss, _rText)
-				self.drawFixstarsLines(self.showfss)
 
 			elif self.options.showfixstars == options.Options.ANTIS:
 				pl, lo, am = self._get_overlay_data('ANTIS')
@@ -1245,7 +1252,8 @@ class GraphChart2:
 	def drawOverlayInfoBlock(self):
 		info = self._getCurrentLordOfYear()
 		rows = self._getRadixOverlayRows()
-		if info is None and not rows:
+		pd_exact = self._getPDExactOverlayRow()
+		if info is None and not rows and pd_exact is None:
 			return
 
 		clr_lbl = self.options.clrtexts
@@ -1257,7 +1265,8 @@ class GraphChart2:
 
 		icon_font = self.fntSmallMorinus
 		text_font = self.fntSmallTextOuter
-		offset_font = self.fntSmallTextOuter
+		offset_font = text_font
+		aspect_font = self.fntSmallMorinus
 		_, h_text = text_font.getsize("Ag")
 		h_icon = icon_font.getsize(common.common.Planets[astrology.SE_JUPITER])[1]
 		_, h_offset = offset_font.getsize("Ag")
@@ -1266,48 +1275,160 @@ class GraphChart2:
 			y += int(line_h * 2.15)
 		y += int(line_h * 0.85)
 
-		col_label = 0
-		col_glyph1 = 0
-		col_glyph2 = 0
-		col_offset = 0
-		if info is not None:
-			sign_glyph, ruler_glyph, _ = info
-			col_label = max(col_label, text_font.getsize('Lord of the year')[0])
-			col_glyph1 = max(col_glyph1, icon_font.getsize(sign_glyph)[0])
-			col_glyph2 = max(col_glyph2, icon_font.getsize(ruler_glyph)[0])
-		for planet_idx, label, offset_text in rows:
-			col_label = max(col_label, text_font.getsize(label)[0])
-			col_glyph1 = max(col_glyph1, icon_font.getsize(common.common.Planets[planet_idx])[0])
-			col_offset = max(col_offset, offset_font.getsize(offset_text)[0])
+		gap_lg = max(2, int(self.symbolSize * 0.12))
+		gap_gg = max(1, int(self.symbolSize * 0.06))
+		gap_go = max(2, int(self.symbolSize * 0.12))
 
-		gap_lg = int(self.symbolSize * 0.18)
-		gap_gg = int(self.symbolSize * 0.10)
-		gap_go = int(self.symbolSize * 0.18) if col_offset else 0
-		total_w = col_label + gap_lg + col_glyph1 + (gap_gg + col_glyph2 if col_glyph2 else 0) + (gap_go + col_offset if col_offset else 0)
-		x_label = xR - total_w
-		x_glyph1 = x_label + col_label + gap_lg
-		x_glyph2 = x_glyph1 + col_glyph1 + (gap_gg if col_glyph2 else 0)
-		x_offset = xR - col_offset
+		def _row_y(base_y, txt, fnt):
+			return base_y + int((line_h - fnt.getsize(txt)[1]) / 2.0)
 
 		if info is not None:
 			sign_glyph, ruler_glyph, ruler_idx = info
 			clr_ruler = self._getOverlayPlanetColor(getattr(self, 'radix', None) or self.chart, ruler_idx, clr_lbl)
+			label_txt = 'Lord of the year'
+			w_label, _ = text_font.getsize(label_txt)
 			w_sign, _ = icon_font.getsize(sign_glyph)
 			w_ruler, _ = icon_font.getsize(ruler_glyph)
-			self.draw.text((x_label, y), 'Lord of the year', fill=clr_lbl, font=text_font)
-			self.draw.text((x_glyph1 + (col_glyph1 - w_sign)/2, y), sign_glyph, fill=clr_lbl, font=icon_font)
-			self.draw.text((x_glyph2 + (col_glyph2 - w_ruler)/2, y), ruler_glyph, fill=clr_ruler, font=icon_font)
+			total_w = w_label + gap_lg + w_sign + gap_gg + w_ruler
+			x = xR - total_w
+			self.draw.text((x, _row_y(y, label_txt, text_font)), label_txt, fill=clr_lbl, font=text_font)
+			x += w_label + gap_lg
+			self.draw.text((x, _row_y(y, sign_glyph, icon_font)), sign_glyph, fill=clr_lbl, font=icon_font)
+			x += w_sign + gap_gg
+			self.draw.text((x, _row_y(y, ruler_glyph, icon_font)), ruler_glyph, fill=clr_ruler, font=icon_font)
 			y += line_h + int(line_h * 0.55)
 
 		for planet_idx, label, offset_text in rows:
 			glyph = common.common.Planets[planet_idx]
 			clr_planet = self._getOverlayPlanetColor(self.chart, planet_idx, clr_lbl)
+			w_label, _ = text_font.getsize(label)
 			w_glyph, _ = icon_font.getsize(glyph)
 			w_off, _ = offset_font.getsize(offset_text)
-			self.draw.text((x_label, y), label, fill=clr_lbl, font=text_font)
-			self.draw.text((x_glyph1 + (col_glyph1 - w_glyph)/2, y), glyph, fill=clr_planet, font=icon_font)
-			self.draw.text((x_offset + (col_offset - w_off), y + int((h_text - h_offset) / 2.0)), offset_text, fill=clr_lbl, font=offset_font)
+			total_w = w_label + gap_lg + w_glyph + gap_go + w_off
+			x = xR - total_w
+			self.draw.text((x, _row_y(y, label, text_font)), label, fill=clr_lbl, font=text_font)
+			x += w_label + gap_lg
+			self.draw.text((x, _row_y(y, glyph, icon_font)), glyph, fill=clr_planet, font=icon_font)
+			x += w_glyph + gap_go
+			self.draw.text((x, _row_y(y, offset_text, offset_font)), offset_text, fill=clr_lbl, font=offset_font)
 			y += line_h
+
+		if pd_exact is not None:
+			prom_glyph, prom_idx, aspect_txt, sig_glyph, sig_idx, dir_marker, prom_font_kind, asp_font_kind, sig_font_kind = pd_exact
+			prom_font = icon_font if prom_font_kind == 'symbol' else text_font
+			sig_font = icon_font if sig_font_kind == 'symbol' else text_font
+			asp_font = aspect_font if asp_font_kind == 'symbol' else offset_font
+			dir_font = text_font
+			w_dir, _ = dir_font.getsize(dir_marker)
+			clr_prom = clr_lbl
+			clr_sig = clr_lbl
+			pd_color_chart = self.chart2 if self.chart2 is not None else self.chart
+			if prom_idx is not None:
+				clr_prom = self._getOverlayPlanetColor(pd_color_chart, prom_idx, clr_lbl)
+			if sig_idx is not None:
+				clr_sig = self._getOverlayPlanetColor(pd_color_chart, sig_idx, clr_lbl)
+
+			tokens = [(prom_glyph, prom_font, clr_prom)]
+			if aspect_txt != '':
+				tokens.append((aspect_txt, asp_font, clr_lbl))
+			tokens.append((sig_glyph, sig_font, clr_sig))
+
+			gap_token = max(1, int(self.symbolSize * 0.06))
+			gap_dir = max(3, int(self.symbolSize * 0.10))
+			token_widths = []
+			for txt, fnt, _clr in tokens:
+				token_widths.append(fnt.getsize(txt)[0])
+			sym_w = sum(token_widths)
+			if len(token_widths) > 1:
+				sym_w += gap_token * (len(token_widths) - 1)
+			total_w = sym_w + gap_dir + w_dir
+			x = xR - total_w
+
+			for i, (txt, fnt, clr) in enumerate(tokens):
+				self.draw.text((x, _row_y(y, txt, fnt)), txt, fill=clr, font=fnt)
+				x += token_widths[i]
+				if i < len(tokens) - 1:
+					x += gap_token
+
+			x += gap_dir
+			self.draw.text((x, _row_y(y, dir_marker, dir_font)), dir_marker, fill=clr_lbl, font=dir_font)
+
+	def _pdObjGlyph(self, obj_id):
+		if obj_id is None:
+			return '', None
+		if 0 <= obj_id < len(common.common.Planets):
+			return common.common.Planets[obj_id], obj_id
+		if obj_id == primdirs.PrimDir.LOF:
+			return common.common.fortune, astrology.SE_MEAN_NODE+1
+		if obj_id == primdirs.PrimDir.ASC:
+			return mtexts.txts['Asc'], None
+		if obj_id == primdirs.PrimDir.MC:
+			return mtexts.txts['MC'], None
+		if obj_id == primdirs.PrimDir.DESC:
+			return mtexts.txts['Dsc'], None
+		if obj_id == primdirs.PrimDir.IC:
+			return mtexts.txts['IC'], None
+		return '?', None
+
+	def _pdAspGlyph(self, asp):
+		if asp is None:
+			return ''
+		if asp == chart.Chart.CONJUNCTIO:
+			return ''
+		if 0 <= asp < len(common.common.Aspects):
+			return common.common.Aspects[asp]
+		return ''
+
+	def _pdDirectionMarker(self, direct):
+		if direct is None:
+			return ''
+		return 'D' if direct else 'C'
+
+	def _getPDExactOverlayRow(self):
+		event = None
+		if getattr(self, 'chart2', None) is not None:
+			event = getattr(self.chart2, '_pd_exact_event', None)
+		if not event:
+			event = getattr(self.chart, '_pd_exact_event', None)
+		if not event:
+			return None
+		prom_glyph = event.get('prom_glyph', '')
+		sig_glyph = event.get('sig_glyph', '')
+		prom_idx = None
+		sig_idx = None
+		if prom_glyph == '' or sig_glyph == '':
+			prom_glyph, prom_idx = self._pdObjGlyph(event.get('prom'))
+			sig_glyph, sig_idx = self._pdObjGlyph(event.get('sig'))
+		else:
+			prom_id = event.get('prom')
+			sig_id = event.get('sig')
+			if prom_id is not None and 0 <= prom_id < len(common.common.Planets) and prom_glyph == common.common.Planets[prom_id]:
+				prom_idx = prom_id
+			if sig_id is not None and 0 <= sig_id < len(common.common.Planets) and sig_glyph == common.common.Planets[sig_id]:
+				sig_idx = sig_id
+		if prom_glyph == '' and sig_glyph == '':
+			return None
+		dir_marker = event.get('dir_glyph', self._pdDirectionMarker(event.get('direct')))
+		aspect_core = event.get('mid_aspect_glyph', '')
+		if aspect_core == '':
+			promasp = event.get('promasp')
+			sigasp = event.get('sigasp')
+			if promasp is not None and 0 <= promasp < len(common.common.Aspects):
+				aspect_core = common.common.Aspects[promasp]
+			elif sigasp is not None and 0 <= sigasp < len(common.common.Aspects):
+				aspect_core = common.common.Aspects[sigasp]
+		prom_font_kind = event.get('prom_font', 'symbol')
+		sig_font_kind = event.get('sig_font', 'symbol')
+		asp_font_kind = event.get('aspect_font', 'symbol')
+		if sig_glyph == '':
+			sig_glyph = '?'
+			sig_font_kind = 'text'
+		if prom_glyph == '':
+			prom_glyph = '?'
+			prom_font_kind = 'text'
+		if dir_marker == '':
+			dir_marker = '-'
+		return (prom_glyph, prom_idx, aspect_core, sig_glyph, sig_idx, dir_marker, prom_font_kind, asp_font_kind, sig_font_kind)
 
 	def drawLordOfYear(self):
 		info = self._getCurrentLordOfYear()
@@ -1631,6 +1752,86 @@ class GraphChart2:
 		x2 = cx+math.cos(math.pi+math.radians(self.chart.houses.ascmc[houses.Houses.ASC]-lon-pshift[planet]))*r2
 		y2 = cy+math.sin(math.pi+math.radians(self.chart.houses.ascmc[houses.Houses.ASC]-lon-pshift[planet]))*r2
 		self.bdc.DrawLine(x1, y1, x2, y2)
+
+
+	def _is_interchart_planet_visible(self, planet_idx):
+		if planet_idx == astrology.SE_URANUS and not self.options.transcendental[chart.Chart.TRANSURANUS]:
+			return False
+		if planet_idx == astrology.SE_NEPTUNE and not self.options.transcendental[chart.Chart.TRANSNEPTUNE]:
+			return False
+		if planet_idx == astrology.SE_PLUTO and not self.options.transcendental[chart.Chart.TRANSPLUTO]:
+			return False
+		if (planet_idx == astrology.SE_MEAN_NODE or planet_idx == astrology.SE_TRUE_NODE) and (not self.options.shownodes or not self.options.aspectstonodes):
+			return False
+		return True
+
+
+	def getInterChartAspects(self):
+		if self.chart2 == None:
+			return []
+		return interchartaspects.calc_planetary_interchart_aspects(self.chart, self.chart2, self.options)
+
+
+	def drawInterChartAspectMarkers(self, aspect_list):
+		if not aspect_list:
+			return
+
+		(cx, cy) = self.center.Get()
+		clr = (0,0,0)
+		if not self.bw:
+			clr = self.options.clrframe
+		w = 2
+		if self.chartsize <= GraphChart2.MEDIUM_SIZE:
+			w = 1
+		self.bdc.SetPen(wx.Pen(clr, w))
+
+		base_asc = self.chart.houses.ascmc[houses.Houses.ASC]
+		outer_lons = []
+		for outer_idx, inner_idx, asp in aspect_list:
+			if not self._is_interchart_planet_visible(outer_idx) or not self._is_interchart_planet_visible(inner_idx):
+				continue
+			outer_lon = self.chart2.planets.planets[outer_idx].data[planets.Planet.LONG]
+			outer_lons.append(round(outer_lon, 6))
+
+		for outer_lon in sorted(set(outer_lons)):
+			x1 = cx+math.cos(math.pi+math.radians(base_asc-outer_lon))*self.rInner
+			y1 = cy+math.sin(math.pi+math.radians(base_asc-outer_lon))*self.rInner
+			x2 = cx+math.cos(math.pi+math.radians(base_asc-outer_lon))*self.rLLine
+			y2 = cy+math.sin(math.pi+math.radians(base_asc-outer_lon))*self.rLLine
+			self.bdc.DrawLine(x1, y1, x2, y2)
+
+
+	def drawInterChartAspectLines(self, aspect_list=None):
+		if self.chart2 == None:
+			return
+		if aspect_list is None:
+			aspect_list = self.getInterChartAspects()
+
+		(cx, cy) = self.center.Get()
+		base_asc = self.chart.houses.ascmc[houses.Houses.ASC]
+		aspect_radius = self.rLLine
+		for outer_idx, inner_idx, asp in aspect_list:
+			if not self._is_interchart_planet_visible(outer_idx) or not self._is_interchart_planet_visible(inner_idx):
+				continue
+
+			inner_lon = self.chart.planets.planets[inner_idx].data[planets.Planet.LONG]
+			outer_lon = self.chart2.planets.planets[outer_idx].data[planets.Planet.LONG]
+			x1 = cx+math.cos(math.pi+math.radians(base_asc-inner_lon))*aspect_radius
+			y1 = cy+math.sin(math.pi+math.radians(base_asc-inner_lon))*aspect_radius
+			x2 = cx+math.cos(math.pi+math.radians(base_asc-outer_lon))*aspect_radius
+			y2 = cy+math.sin(math.pi+math.radians(base_asc-outer_lon))*aspect_radius
+
+			clr = (0,0,0)
+			if not self.bw:
+				clr = self.options.clraspect[asp.typ]
+
+			pen = wx.Pen(clr, 1)
+			if not asp.exact:
+				pen = wx.Pen(clr, 1, wx.USER_DASH)
+				pen.SetDashes([10, 10])
+
+			self.bdc.SetPen(pen)
+			self.bdc.DrawLine(x1, y1, x2, y2)
 
 
 	def drawFixstars(self, showfss):
@@ -2292,11 +2493,7 @@ class GraphChart2:
 		showfss = []
 		# Revolution/Election 등에서 fsaspmatrix가 없을 수 있음 → 안전 가드
 		if not hasattr(self.chart, 'fsaspmatrix') or self.chart.fsaspmatrix is None:
-			# 매트릭스가 없으면 일단 모든 항성을 후보로 (겹침 정렬 로직은 그대로 작동)
-			try:
-				return list(range(len(self.chart.fixstars.data)))
-			except Exception:
-				return []
+			return []
 
 		num = len(self.chart.fsaspmatrix)
 		for i in range(num):
@@ -2351,9 +2548,9 @@ class GraphChart2:
 				if showasp:
 					showfss.append(self.chart.fsaspmatrixlof[i])
 
-			s = set(showfss)
-			showfss = list(s)
-			showfss.sort()
+		s = set(showfss)
+		showfss = list(s)
+		showfss.sort()
 
 		return showfss[:]
 

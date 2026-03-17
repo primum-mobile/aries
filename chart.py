@@ -406,10 +406,12 @@ class Chart:
 			self.calcFixStarAspMatrix()
 
 	def rebuildFixStars(self):
-		if self.full:
+		if self.fixstars is not None:
 			del self.fixstars
-			fsflag = 0
-			self.fixstars = fixstars.FixStars(self.time.jd, fsflag, self.options.fixstars, self.obl[0])
+		fsflag = 0
+		self.fixstars = fixstars.FixStars(self.time.jd, fsflag, self.options.fixstars, self.obl[0])
+		if self.fixstars is not None:
+			self.calcFixStarAspMatrix()
 
 
 	def setHouseSystem(self):

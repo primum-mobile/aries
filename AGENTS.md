@@ -27,6 +27,7 @@
 | `fortune.py` | Part of Fortune calculations |
 | `munfortune.py` | Mundane Part of Fortune |
 | `hours.py` | Planetary hours |
+| `interchartaspects.py` | Cross-chart aspect calculation helpers |
 | `searchbackend.py` | Search engine core logic |
 | `searchquery.py` | Search query model |
 | `searchcatalog.py` | Search catalog / index |
@@ -105,12 +106,14 @@
 - **Options** — all persistent settings go through `options.py`. Do not hardcode defaults elsewhere.
 - **Utilities** — generic helpers go in `util.py`. Dialog-specific helpers go in `dlgutils.py`.
 - **No business logic in GUI files** — calculations belong in the engine layer (non-`*wnd`, non-`*frame`, non-`*dlg` files).
+- **No feature logic in GUI files** — renderers and shells may draw or dispatch, but aspect classification, comparison rules, filtering, and other reusable behavior must live in engine/helper modules so the GUI layer remains replaceable.
 
 ---
 
 ## Scope Rules for Tasks
 
 - **Adding a new GUI feature**: create or edit the appropriate `*frame.py`, `*wnd.py`, or `*dlg.py`. Wire data from the engine layer; do not add calculation logic to GUI files.
+- **Adding comparison/synastry/chart interaction features**: put the reusable logic in an engine/helper module first, then call it from the GUI layer.
 - **Changing a calculation**: edit only the relevant engine file. Do not touch GUI files unless a label or display unit must change.
 - **Refactoring**: keep changes within the file being refactored unless an interface signature changes, in which case update all callers in the same PR.
 - **Bug fix**: identify the owning module from the map above, fix there. Note which module was changed in the commit message.

@@ -21,7 +21,7 @@ class Houses:
 	def __init__(self, tjd_ut, flag, geolat, geolon, hsys, obl, ayanopt, ayan):
 		self.ui_hsys = hsys
 		if hsys == 'N':
-			self.hsys = 'P'
+			self.hsys = 'W'
 		elif hsys in Houses.hsystems:
 			self.hsys = hsys
 		else:
