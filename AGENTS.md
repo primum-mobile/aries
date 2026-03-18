@@ -119,8 +119,9 @@ A `.claude/launch.json` is present — `preview_start "morinus"` runs the above 
 Morinus Aries has a **single, coherent GUI**. Every scrollable surface must behave identically. These rules are mandatory — violations must be fixed, not worked around:
 
 - **`SCROLL_RATE = 10` everywhere** — no hardcoded scroll rates anywhere in the codebase. All scrollable windows (whether they inherit `CommonWnd` or `wx.ScrolledWindow` directly) must use `SCROLL_RATE = 10`. This matches the sidebar grain (rate 4 ≈ 12 px/tick; tables at rate 10 = 30 px/tick — close enough for consistent feel). Never introduce a per-file override.
-- **Native vertical scrollbar always hidden** — `ShowScrollbars(wx.SHOW_SB_DEFAULT, wx.SHOW_SB_NEVER)` in `CommonWnd.__init__` hides the native vertical bar (replaced by the custom `_FadingScrollbar` overlay). Horizontal bar stays visible (`SHOW_SB_DEFAULT`) because some tables are wider than the viewport.
-- **Custom `_FadingScrollbar` for all table views** — the VS Code-style overlay scrollbar (`_FadingScrollbar` in `workspace_shell.py`) is wired for every window opened via `MainWindowShell.set_table_content`. Do not rely on the native vertical scrollbar.
+- **Native scrollbars always hidden** — `ShowScrollbars(wx.SHOW_SB_NEVER, wx.SHOW_SB_NEVER)` in `CommonWnd.__init__` and in `MainWindowShell.set_table_content` hides both axes; both are replaced by custom `_FadingScrollbar` overlays.
+- **Custom `_FadingScrollbar` for all table views** — both vertical and horizontal `_FadingScrollbar` instances (orientation-aware via `orientation=wx.VERTICAL/wx.HORIZONTAL`) are created in `MainWindowShell.set_table_content`. Do not rely on native scrollbars for any axis.
+- **1-second inactivity auto-hide** — all `_FadingScrollbar` instances auto-fade 1 s after the last `show_bar()` call (driven by `_inactivity_timer`, constant `_SCROLLBAR_INACTIVITY_MS = 1000`). `EVT_MOTION` on all scrollable panels must call `show_bar()` to reset the timer while the mouse is moving.
 - **Timer safety** — any `wx.Timer` owned by a widget must be stopped in `EVT_WINDOW_DESTROY` to prevent use-after-free crashes when the widget is destroyed mid-animation.
 
 ---
