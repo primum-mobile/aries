@@ -58,9 +58,9 @@ class FirdariaWnd(commonwnd.CommonWnd):
 # Elias V 8.0.0		
 		self.clrs = [self.options.clrdomicil, self.options.clrexal, self.options.clrperegrin, self.options.clrcasus, self.options.clrexil]
 # ##################################
-		self.fntMorinus = self._load_font(common.common.symbols, int(self.FONT_SIZE))
-		self.fntSymbol = self._load_font(common.common.symbols, int(3*self.FONT_SIZE/2))
-		self.fntText = self._load_font(common.common.abc, int(self.FONT_SIZE))
+		self.fntMorinus = ImageFont.truetype(common.common.symbols, int(self.FONT_SIZE))
+		self.fntSymbol = ImageFont.truetype(common.common.symbols, int(3*self.FONT_SIZE/2))
+		self.fntText = ImageFont.truetype(common.common.abc, int(self.FONT_SIZE))
 
 		self.drawBkg()
 
@@ -84,7 +84,8 @@ class FirdariaWnd(commonwnd.CommonWnd):
 		if self.bw:
 			tableclr = (0,0,0)
 
-		img, draw = self.newScaledImageDraw(self.WIDTH, self.HEIGHT, self.bkgclr)
+		img = Image.new('RGB', (self.WIDTH, self.HEIGHT), self.bkgclr)
+		draw = ImageDraw.Draw(img)
 
 		BOR = commonwnd.CommonWnd.BORDER
 
@@ -159,7 +160,9 @@ class FirdariaWnd(commonwnd.CommonWnd):
 			ln = self.displaySubPeriods(draw, planetaryyears, aindex, starting, ending, plstxts, ln, BOR, txtclr, tableclr)
 			starting = ending
 
-		self.buffer = self.scaledBitmapFromImage(img)
+		wxImg = wx.Image(img.size[0], img.size[1])
+		wxImg.SetData(img.tobytes())
+		self.buffer = wx.Bitmap(wxImg)
 
 
 	def displaySubPeriods(self, draw, planetaryyears, index, starting, ending, plstxts, ln, BOR, txtclr, tableclr):

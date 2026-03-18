@@ -36,8 +36,8 @@ class HoursWnd(commonwnd.CommonWnd):
 
         self.SetVirtualSize((self.WIDTH, self.HEIGHT))
 
-        self.fntMorinus = self._load_font(common.common.symbols, self.FONT_SIZE)
-        self.fntText = self._load_font(common.common.abc, self.FONT_SIZE)
+        self.fntMorinus = ImageFont.truetype(common.common.symbols, self.FONT_SIZE)
+        self.fntText = ImageFont.truetype(common.common.abc, self.FONT_SIZE)
         self.clrs = (self.options.clrdomicil, self.options.clrexal, self.options.clrperegrin, self.options.clrcasus, self.options.clrexil)	
 
         self.drawBkg()
@@ -59,7 +59,8 @@ class HoursWnd(commonwnd.CommonWnd):
         if self.bw:
             tableclr = (0,0,0)
 
-        img, draw = self.newScaledImageDraw(self.WIDTH, self.HEIGHT, self.bkgclr)
+        img = Image.new('RGB', (self.WIDTH, self.HEIGHT), self.bkgclr)
+        draw = ImageDraw.Draw(img)
 
         BOR = commonwnd.CommonWnd.BORDER
 
@@ -121,7 +122,9 @@ class HoursWnd(commonwnd.CommonWnd):
             for i in range(int(HoursWnd.HOURSPERHALFDAY)):
                 self.drawline(draw, x, y+i*self.LINE_HEIGHT, tableclr, i)
 
-        self.buffer = self.scaledBitmapFromImage(img)
+        wxImg = wx.Image(img.size[0], img.size[1])
+        wxImg.SetData(img.tobytes())
+        self.buffer = wx.Bitmap(wxImg)
 
 
     def drawline(self, draw, x, y, clr, idx):

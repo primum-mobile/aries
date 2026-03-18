@@ -1,5 +1,23 @@
 # AGENTS.md — Morinus Astrology (Python 3 / wxPython)
 
+## ⚠️ Running the App (READ THIS FIRST)
+
+Run with: **`python3 morinus.py`**
+
+**ALWAYS use `python3`** (Python 3.13+). **NEVER use `pythonw`** — it resolves to Python 2.7 on this machine and will crash immediately.
+
+Never compile/package to test. Run directly.
+After code changes, always run `python3 morinus.py` so behavior can be verified immediately.
+
+**One-shot build + launch (use this in worktrees or after a fresh clone):**
+```bash
+cd SWEP/src && python3 setup.py build_ext --inplace -q && cd ../.. && python3 morinus.py
+```
+
+A `.claude/launch.json` is present — `preview_start "morinus"` runs the above automatically.
+
+---
+
 ## Entry Point
 `morinus.py` — main application entry point.
 
@@ -351,18 +369,6 @@ Do **not** reintroduce business logic into transport or rendering layers.
 - Do not refactor `astrology.py`, `zodparsbase.py`, or `options.py` speculatively; they are load-bearing and have many callers.
 - Do not introduce new top-level dependencies without noting them in your response.
 - Do not convert wx event patterns to async/await.
-
-## Running the App
-Run with: `python3 morinus.py`
-**Always use `python3`** (Python 3.13+). Never use `pythonw` (that resolves to Python 2.7 on this machine).
-Never compile/package to test. Run directly.
-After code changes, always run `python3 morinus.py` so behavior can be verified immediately.
-
-**One-shot build + launch (use this in worktrees or after a fresh clone):**
-```bash
-cd SWEP/src && python3 setup.py build_ext --inplace -q && cd ../.. && python3 morinus.py
-```
-A `.claude/launch.json` is present in the workspace root — `preview_start "morinus"` runs the above automatically.
 
 ## Swiss Ephemeris (SWEP) C Extension
 Morinus depends on `sweastrology`, a C extension built from `SWEP/src/`.

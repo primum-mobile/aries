@@ -21,9 +21,9 @@ class DecWnd(commonwnd.CommonWnd):
         self.start_selector = 'sect'         # 기본: 섹트 라이트
 
         # 폰트 (Morinus TTF) — ZR과 동일
-        self.fntText     = self._load_font(common.common.abc,       self.FONT_SIZE)
-        self.fntTextBold = self._load_font(common.common.abc_bold,  self.FONT_SIZE)
-        self.fntMor      = self._load_font(common.common.symbols,   self.FONT_SIZE)
+        self.fntText     = ImageFont.truetype(common.common.abc,       self.FONT_SIZE)
+        self.fntTextBold = ImageFont.truetype(common.common.abc_bold,  self.FONT_SIZE)
+        self.fntMor      = ImageFont.truetype(common.common.symbols,   self.FONT_SIZE)
 
         # 컬럼폭 — ZR 값 그대로
         self.W_LEVEL = int(2.8 * self.FONT_SIZE)
@@ -452,9 +452,9 @@ class _DecPopupWnd(commonwnd.CommonWnd):
         self.SPACE       = self.FONT_SIZE / 2
         self.LINE_HEIGHT = self.SPACE + self.FONT_SIZE + self.SPACE
         self.HEAD_H      = self.LINE_HEIGHT
-        self.fntText     = self._load_font(common.common.abc,       self.FONT_SIZE)
-        self.fntTextBold = self._load_font(common.common.abc_bold,  self.FONT_SIZE)
-        self.fntMor      = self._load_font(common.common.symbols,   self.FONT_SIZE)
+        self.fntText     = ImageFont.truetype(common.common.abc,       self.FONT_SIZE)
+        self.fntTextBold = ImageFont.truetype(common.common.abc_bold,  self.FONT_SIZE)
+        self.fntMor      = ImageFont.truetype(common.common.symbols,   self.FONT_SIZE)
         self.W_LEVEL = int(2.8 * self.FONT_SIZE)
         self.W_PLAN  = int(3.0 * self.FONT_SIZE)
         self.W_START = int(7.0 * self.FONT_SIZE)

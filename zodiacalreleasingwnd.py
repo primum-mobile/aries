@@ -26,9 +26,9 @@ class ZRWnd(commonwnd.CommonWnd):
         self.INFO_H      = self.LINE_HEIGHT
 
         # [폰트] 텍스트/심볼 모두 Morinus TTF 사용 (antisciawnd.py와 동일)
-        self.fntText   = self._load_font(common.common.abc,      self.FONT_SIZE)
-        self.fntTextBold = self._load_font(common.common.abc_bold, self.FONT_SIZE)
-        self.fntMor    = self._load_font(common.common.symbols,  self.FONT_SIZE)
+        self.fntText   = ImageFont.truetype(common.common.abc,      self.FONT_SIZE)
+        self.fntTextBold = ImageFont.truetype(common.common.abc_bold, self.FONT_SIZE)
+        self.fntMor    = ImageFont.truetype(common.common.symbols,  self.FONT_SIZE)
 
         # [사인 글리프 테이블] antisciawnd.py와 동일 규칙
         #   기본은 Signs1, 옵션에서 Signs 비활성 시 Signs2 사용
@@ -348,7 +348,7 @@ class ZRDrillWnd(commonwnd.CommonWnd):
         self.signs   = signs
         try:
             # 메인 폰트 크기와 동일 크기의 Bold 로드
-            self.fntTextBold = self._load_font(common.common.abc_bold, self.fntText.size)
+            self.fntTextBold = ImageFont.truetype(common.common.abc_bold, self.fntText.size)
         except:
             self.fntTextBold = self.fntText
 

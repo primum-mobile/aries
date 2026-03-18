@@ -55,11 +55,11 @@ class TransitMonthWnd(commonwnd.CommonWnd):
 
 		self.SetVirtualSize((self.WIDTH, self.HEIGHT))
 
-		self.fntMorinus = self._load_font(common.common.symbols, int(self.FONT_SIZE))
-		self.fntAspects = self._load_font(common.common.symbols, int(3*self.FONT_SIZE/4))
-		self.fntSigns = self._load_font(common.common.symbols, int(3*self.FONT_SIZE/4))
-		self.fntText = self._load_font(common.common.abc, int(self.FONT_SIZE))
-		self.fntRText = self._load_font(common.common.abc, int(self.FONT_SIZE*3/4))
+		self.fntMorinus = ImageFont.truetype(common.common.symbols, int(self.FONT_SIZE))
+		self.fntAspects = ImageFont.truetype(common.common.symbols, int(3*self.FONT_SIZE/4))
+		self.fntSigns = ImageFont.truetype(common.common.symbols, int(3*self.FONT_SIZE/4))
+		self.fntText = ImageFont.truetype(common.common.abc, int(self.FONT_SIZE))
+		self.fntRText = ImageFont.truetype(common.common.abc, int(self.FONT_SIZE*3/4))
 		self.clrs = (self.options.clrdomicil, self.options.clrexal, self.options.clrperegrin, self.options.clrcasus, self.options.clrexil)
 		self.signs = common.common.Signs1
 		if not self.options.signs:
@@ -89,7 +89,8 @@ class TransitMonthWnd(commonwnd.CommonWnd):
 		if self.bw:
 			tableclr = (0,0,0)
 
-		img, draw = self.newScaledImageDraw(self.WIDTH, self.HEIGHT, self.bkgclr)
+		img = Image.new('RGB', (self.WIDTH, self.HEIGHT), self.bkgclr)
+		draw = ImageDraw.Draw(img)
 
 		BOR = commonwnd.CommonWnd.BORDER
 
@@ -127,7 +128,9 @@ class TransitMonthWnd(commonwnd.CommonWnd):
 			self.drawline(draw, x, y+j*self.LINE_HEIGHT, tableclr, i)
 			j += 1
 
-		self.buffer = self.scaledBitmapFromImage(img)
+		wxImg = wx.Image(img.size[0], img.size[1])
+		wxImg.SetData(img.tobytes())
+		self.buffer = wx.Bitmap(wxImg)
 
 
 	def drawline(self, draw, x, y, clr, idx):

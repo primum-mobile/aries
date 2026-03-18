@@ -44,9 +44,9 @@ class StripWnd(commonwnd.CommonWnd):
 
 		self.SetVirtualSize((self.WIDTH, self.HEIGHT))
 
-		self.fntMorinus = self._load_font(common.common.symbols, self.FONT_SIZE)
-#		self.fntSymbol = self._load_font(common.common.symbols, 3*self.FONT_SIZE/2)
-		self.fntText = self._load_font(common.common.abc, self.FONT_SIZE)
+		self.fntMorinus = ImageFont.truetype(common.common.symbols, self.FONT_SIZE)
+#		self.fntSymbol = ImageFont.truetype(common.common.symbols, 3*self.FONT_SIZE/2)
+		self.fntText = ImageFont.truetype(common.common.abc, self.FONT_SIZE)
 		self.deg_symbol = u'\u00b0'
 
 		self.clrs = (self.options.clrdomicil, self.options.clrexal, self.options.clrperegrin, self.options.clrcasus, self.options.clrexil)
@@ -70,7 +70,8 @@ class StripWnd(commonwnd.CommonWnd):
 		if self.bw:
 			tableclr = (0,0,0)
 
-		img, draw = self.newScaledImageDraw(self.WIDTH, self.HEIGHT, self.bkgclr)
+		img = Image.new('RGB', (self.WIDTH, self.HEIGHT), self.bkgclr)
+		draw = ImageDraw.Draw(img)
 
 		BOR = commonwnd.CommonWnd.BORDER
 
@@ -158,7 +159,9 @@ class StripWnd(commonwnd.CommonWnd):
 			draw.text((x+pos-w/2+bshift[i], y), txt, fill=clr, font=fnt)
 			draw.line((x+pos, y+self.YOFFS, x+pos+bshift[i], y+self.FONT_SIZE+self.YPLANETS_OFFS), fill=clr)
 
-		self.buffer = self.scaledBitmapFromImage(img)
+		wxImg = wx.Image(img.size[0], img.size[1])
+		wxImg.SetData(img.tobytes())
+		self.buffer = wx.Bitmap(wxImg)
 
 
 	def arrange(self):
