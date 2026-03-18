@@ -126,6 +126,7 @@ A `.claude/launch.json` is present — `preview_start "morinus"` runs the above 
 - **No business logic in GUI files** — calculations belong in the engine layer (non-`*wnd`, non-`*frame`, non-`*dlg` files).
 - **No feature logic in GUI files** — renderers and shells may draw or dispatch, but aspect classification, comparison rules, filtering, and other reusable behavior must live in engine/helper modules so the GUI layer remains replaceable.
 - **Keep time logic out of rendering** — astrological date/time resolution, solar-year boundary checks, LOY selection, and similar temporal logic must live in engine/helper modules. Rendering and GUI modules may only consume precomputed values or explicit display datetimes passed in from the engine/session layer.
+- **No popup dialogs for table configuration** — tables always embed directly in the workspace. Options (start sign, parameters, display modes) are exposed via right-click context menu on the embedded table. Extend `self.pmenu` using `Insert()`/`InsertSubMenu()` on the inherited `CommonWnd` menu. See `ZRWnd` in `zodiacalreleasingwnd.py` as the reference implementation of this pattern.
 
 ### Internal Reference Logic (Code Annotation)
 

@@ -157,6 +157,7 @@ import ephemcalc
 import wx.lib.newevent
 import math #solar precession
 import circumambulationframe
+import circumambulation
 import fixstardirsframe
 import searchframe
 import keyboard_layers
@@ -3620,8 +3621,18 @@ class MFrame(wx.Frame):
 			return
 		wait = wx.BusyCursor()
 		try:
-			fr = circumambulationframe.CircumFrame(self, self.title, self.horoscope, self.options)
-			fr.Show(True)
+			host = self._workspace_shell.get_table_host()
+			wnd = circumambulationframe.CircumWnd(host, self.horoscope, self.options, mainfr=self)
+			rows = circumambulation.compute_distributions(
+				self.horoscope, self.options,
+				key=circumambulationframe._circum_years_per_deg_from_options(self.options),
+				max_rows=60, include_participating=True, max_age_years=150,
+				use_exact_oa=circumambulation.use_pd_circumoa_from_options(self.options)
+			)
+			wnd.set_data(rows)
+			self._show_table_in_workspace('circumambulation', wnd)
+		except ValueError as e:
+			wx.MessageBox(u"%s" % e, mtexts.txts['Circumambulation'], wx.OK | wx.ICON_INFORMATION)
 		finally:
 			del wait
 
@@ -3634,11 +3645,11 @@ class MFrame(wx.Frame):
 			dlgm.Destroy()
 			return
 		wait = wx.BusyCursor()
-		try:
-			fr = zodiacalreleasingframe.ZRFrame(self, self.title, self.horoscope, self.options)
-			fr.Show(True)
-		finally:
-			del wait
+		host = self._workspace_shell.get_table_host()
+		wnd = zodiacalreleasingwnd.ZRWnd(host, self.horoscope, self.options, mainfr=self)
+		wnd.compute_and_draw()
+		self._show_table_in_workspace('zodiacal_releasing', wnd)
+		del wait
 
 	def _workspace_table_decennials(self):
 		if self.splash:
@@ -4189,6 +4200,9 @@ class MFrame(wx.Frame):
 		fr.Show(True)
 
 	def onZodiacalReleasing(self, event):
+		if hasattr(self, '_workspace_shell') and self._workspace_shell is not None:
+			self._workspace_table_zodiacal_releasing()
+			return
 		if self.horoscope.time.bc:
 			dlgm = wx.MessageDialog(self, mtexts.txts['NotAvailable'], '', wx.OK|wx.ICON_INFORMATION)
 			dlgm.ShowModal(); dlgm.Destroy(); return

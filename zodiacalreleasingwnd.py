@@ -50,7 +50,26 @@ class ZRWnd(commonwnd.CommonWnd):
         # 데이터
         self.rows = []      # [{level:1/2, sign:0..11, start:dt, end:dt, ...}, ...]
         self.row_lv = []    # [1 or 2] 히트테스트용
-        self.start_sign_idx = 0
+        self.start_sign_idx = int(getattr(self.options, 'zr_start_sign', 0))
+        self.drill_rows = []    # L3/L4 rows for inline drill panel
+        self.drill_l2row = None
+
+        # 우클릭 메뉴: Start Sign 서브메뉴 (CommonWnd pmenu 맨 앞에 삽입)
+        sign_submenu = wx.Menu()
+        sign_names = self.get_sign_names_for_popup()
+        self._sign_menu_ids = []
+        for i, name in enumerate(sign_names):
+            mid = wx.NewId()
+            self._sign_menu_ids.append(mid)
+            item = sign_submenu.AppendRadioItem(mid, name)
+            if i == self.start_sign_idx:
+                item.Check(True)
+            self.Bind(wx.EVT_MENU, lambda e, idx=i: self._on_select_sign(idx), id=mid)
+        self.pmenu.AppendSeparator()
+        try:
+            self.pmenu.AppendSubMenu(sign_submenu, mtexts.txts['StartSign'])
+        except AttributeError:
+            self.pmenu.AppendMenu(wx.ID_ANY, mtexts.txts['StartSign'], sign_submenu)
 
         # 마우스
         self.Bind(wx.EVT_LEFT_DOWN, self._onLeftDown)
@@ -67,7 +86,17 @@ class ZRWnd(commonwnd.CommonWnd):
     def set_start_sign(self, idx):
         self.start_sign_idx = int(idx)
 
+    def _on_select_sign(self, idx):
+        self.start_sign_idx = idx
+        try:
+            self.options.zr_start_sign = idx
+        except Exception:
+            pass
+        self.compute_and_draw()
+
     def compute_and_draw(self):
+        self.drill_rows = []
+        self.drill_l2row = None
         self.rows = zr.build_main(self._chart_dt(), self.start_sign_idx, years_horizon=150)
         self.row_lv = [int(r.get('level', 2)) for r in self.rows]
         self._recalc_sizes(len(self.rows))
@@ -91,13 +120,8 @@ class ZRWnd(commonwnd.CommonWnd):
             return s
 
     def get_sign_names_for_popup(self):
-        # Start 팝업에 보일 이름(텍스트). 없어도 동작하게 안전 폴백.
-        try:
-            import mtexts
-            return [mtexts.txts['zodiac'][i] for i in range(12)]
-        except:
-            return [[mtexts.txts["Aries"], mtexts.txts["Taurus"], mtexts.txts["Gemini"], mtexts.txts["Cancer"], mtexts.txts["Leo"], mtexts.txts["Virgo"],
-                          mtexts.txts["Libra"], mtexts.txts["Scorpio"], mtexts.txts["Sagittarius"], mtexts.txts["Capricornus"], mtexts.txts["Aquarius"], mtexts.txts["Pisces"]]]
+        return [mtexts.txts["Aries"], mtexts.txts["Taurus"], mtexts.txts["Gemini"], mtexts.txts["Cancer"], mtexts.txts["Leo"], mtexts.txts["Virgo"],
+                mtexts.txts["Libra"], mtexts.txts["Scorpio"], mtexts.txts["Sagittarius"], mtexts.txts["Capricornus"], mtexts.txts["Aquarius"], mtexts.txts["Pisces"]]
 
     # 내부
     def _chart_dt(self):
@@ -109,8 +133,13 @@ class ZRWnd(commonwnd.CommonWnd):
     def _recalc_sizes(self, nlines):
         BOR = commonwnd.CommonWnd.BORDER
         self.TABLE_H = int(self.INFO_H + self.HEAD_H + max(1, nlines)*self.LINE_HEIGHT)
-        self.WIDTH   = int(BOR + self.TITLE_W + BOR)
-        self.HEIGHT  = int(BOR + self.TABLE_H + BOR)
+        if self.drill_rows:
+            drill_h = int(self.INFO_H + self.HEAD_H + max(1, len(self.drill_rows))*self.LINE_HEIGHT)
+            self.WIDTH  = int(BOR + self.TITLE_W + BOR + self.TITLE_W + BOR)
+            self.HEIGHT = int(BOR + max(self.TABLE_H, drill_h) + BOR)
+        else:
+            self.WIDTH  = int(BOR + self.TITLE_W + BOR)
+            self.HEIGHT = int(BOR + self.TABLE_H + BOR)
         self.SetVirtualSize((self.WIDTH, self.HEIGHT))
 
     # ── 렌더 ──
@@ -214,6 +243,77 @@ class ZRWnd(commonwnd.CommonWnd):
         # [E] 외곽
         draw.rectangle(((BOR, BOR), (BOR+self.TITLE_W, BOR+self.TABLE_H)), outline=tbl)
 
+        # [F] Drill table (L3/L4) inline to the right
+        if self.drill_rows and self.drill_l2row:
+            dx0 = BOR + self.TITLE_W + BOR  # left edge of drill panel
+
+            # F1: info row — show selected L2 sign + start date
+            r = self.drill_l2row
+            d_label = u"L2:"
+            d_glyph = self.signs[int(r['sign'])]
+            d_date  = self._strip_year_zeros_ymd(zr.fmt_date(r['start']))
+            lw, lh = draw.textsize(d_label, self.fntText)
+            gw, gh = draw.textsize(d_glyph, self.fntMor)
+            dw, dh = draw.textsize(d_date,  self.fntText)
+            gap = int(self.FONT_SIZE * 0.4)
+            full_w = lw + gap + gw + gap + dw
+            bx = dx0 + (self.TITLE_W - full_w) / 2
+            draw.text((bx, BOR + (self.INFO_H - lh)/2), d_label, fill=txt, font=self.fntText)
+            bx += lw + gap
+            draw.text((bx, BOR + (self.INFO_H - gh)/2), d_glyph, fill=txt, font=self.fntMor)
+            bx += gw + gap
+            draw.text((bx, BOR + (self.INFO_H - dh)/2), d_date, fill=txt, font=self.fntText)
+
+            # F2: header row
+            dhead_y = BOR + self.INFO_H
+            heads = (u"Lv.", mtexts.txts["TopicalSign"], mtexts.txts["Start"], mtexts.txts["Length"])
+            x = dx0
+            for i, h in enumerate(heads):
+                tw, th = draw.textsize(h, self.fntText)
+                draw.text((x + (self.COL_W[i]-tw)/2, dhead_y + (self.HEAD_H-th)/2), h, fill=txt, font=self.fntText)
+                x += self.COL_W[i]
+            dy0 = dhead_y + self.HEAD_H
+            draw.line((dx0, dy0, dx0+self.TITLE_W, dy0), fill=tbl)
+
+            # F3: vertical lines
+            drill_bot = dy0 + len(self.drill_rows)*self.LINE_HEIGHT
+            xv = dx0
+            draw.line((xv, dy0, xv, drill_bot), fill=tbl)
+            for w in self.COL_W:
+                xv += w
+                draw.line((xv, dy0, xv, drill_bot), fill=tbl)
+
+            # F4: data rows
+            y = dy0
+            for r in self.drill_rows:
+                lvl  = int(r.get('level', 3))
+                sign = int(r['sign'])
+                start_s = self._strip_year_zeros_ymd(zr.fmt_date(r['start']))
+                len_s   = zr.fmt_length(r)
+                cells = (u"L%d" % lvl, self.signs[sign], start_s, len_s)
+                isL3 = (lvl == 3)
+                xx = dx0
+                for ci, w in enumerate(self.COL_W):
+                    val = cells[ci]
+                    if isL3:
+                        fnt = self.fntMor if ci == 1 else self.fntTextBold
+                        tw, th = draw.textsize(val, fnt)
+                        cx = xx + (w-tw)/2; cy = y + (self.LINE_HEIGHT-th)/2
+                        draw.text((cx, cy), val, fill=txt, font=fnt)
+                        if ci == 1:
+                            draw.text((cx-1, cy), val, fill=txt, font=fnt)  # fake bold
+                    else:
+                        fnt = self.fntMor if ci == 1 else self.fntText
+                        tw, th = draw.textsize(val, fnt)
+                        draw.text((xx + (w-tw)/2, y + (self.LINE_HEIGHT-th)/2), val, fill=txt, font=fnt)
+                    xx += w
+                draw.line((dx0, y+self.LINE_HEIGHT, dx0+self.TITLE_W, y+self.LINE_HEIGHT), fill=tbl)
+                y += self.LINE_HEIGHT
+
+            # F5: outer border
+            drill_h = int(self.INFO_H + self.HEAD_H + len(self.drill_rows)*self.LINE_HEIGHT)
+            draw.rectangle(((dx0, BOR), (dx0+self.TITLE_W, BOR+drill_h)), outline=tbl)
+
         # wx 비트맵
         wxImg = wx.Image(img.size[0], img.size[1]); wxImg.SetData(img.tobytes())
         self.buffer = wx.Bitmap(wxImg)
@@ -227,19 +327,7 @@ class ZRWnd(commonwnd.CommonWnd):
             return (pt[0]+vx*px, pt[1]+vy*py)
 
     def _onLeftDown(self, evt):
-        #ux, uy = self._calc_unscrolled(evt.GetPositionTuple())
         ux, uy = self._calc_unscrolled(tuple(evt.GetPosition()))
-        # Start sign 클릭?
-        if hasattr(self, "_bbox_start"):
-            x1,y1,x2,y2 = self._bbox_start
-            if x1 <= ux <= x2 and y1 <= uy <= y2:
-                dlg = ZRStartDlg(self, self.get_sign_names_for_popup())
-                dlg.CentreOnScreen()
-                if dlg.ShowModal()==wx.ID_OK:
-                    self.start_sign_idx = dlg.get_sign_index()
-                    self.compute_and_draw()
-                dlg.Destroy()
-                return
 
         # 본문 클릭 → L2만 팝업
         BOR = commonwnd.CommonWnd.BORDER
@@ -248,38 +336,31 @@ class ZRWnd(commonwnd.CommonWnd):
             return
         row = int((y - (self.INFO_H + self.HEAD_H)) // self.LINE_HEIGHT)
         if row < 0 or row >= len(self.row_lv): return
+        if self.row_lv[row] != 2: return
         l2row = self.rows[row]
-        # 부모는 반드시 프레임(self.mainfr)로 지정 (부모 닫을 때 함께 정리)
-        dlg = ZRDrillDlg(self.mainfr, l2row, self.signs, self.fntText, self.fntMor, mainfr=self.mainfr)
 
-        # 프레임에 등록(부모 닫힐 때 함께 정리)
-        if hasattr(self.mainfr, "_register_drill"):
-            self.mainfr._register_drill(dlg)
-
-        # 모델리스로 띄우고, 닫기(X) 시 파괴되게 연결
-        dlg.Bind(wx.EVT_CLOSE, lambda e: dlg.Destroy())
-        dlg.Show()          # ← 모델리스
-        dlg.Raise()
-        try:
-            dlg.SetFocus()
-        except Exception:
-            pass
+        # Build L3/L4 and render inline to the right
+        L3, L4 = zr.build_drill(l2row)
+        self.drill_rows = []
+        k = 0
+        for r3 in L3:
+            self.drill_rows.append(r3)
+            while k < len(L4) and L4[k]['start'] >= r3['start'] and L4[k]['end'] <= r3['end']:
+                self.drill_rows.append(L4[k])
+                k += 1
+        self.drill_l2row = l2row
+        self._recalc_sizes(len(self.rows))
+        self.drawBkg()
 
     def _onMotion(self, evt):
-        #ux, uy = tuple(self._calc_unscrolled(evt.GetPositionTuple()))
         ux, uy = tuple(self._calc_unscrolled(evt.GetPosition()))
         hand = False
-        if hasattr(self, "_bbox_start"):
-            x1,y1,x2,y2 = self._bbox_start
-            if x1 <= ux <= x2 and y1 <= uy <= y2:
+        BOR = commonwnd.CommonWnd.BORDER
+        x = ux - BOR; y = uy - BOR
+        if 0 <= x <= self.TITLE_W and y >= self.INFO_H + self.HEAD_H:
+            row = int((y - (self.INFO_H + self.HEAD_H)) // self.LINE_HEIGHT)
+            if 0 <= row < len(self.row_lv) and self.row_lv[row]==2:
                 hand = True
-        if not hand:
-            BOR = commonwnd.CommonWnd.BORDER
-            x = ux - BOR; y = uy - BOR
-            if 0 <= x <= self.TITLE_W and y >= self.INFO_H + self.HEAD_H:
-                row = int((y - (self.INFO_H + self.HEAD_H)) // self.LINE_HEIGHT)
-                if 0 <= row < len(self.row_lv) and self.row_lv[row]==2:
-                    hand = True
 
         self.SetCursor(wx.Cursor(wx.CURSOR_HAND) if hand else wx.NullCursor)
         evt.Skip()
