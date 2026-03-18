@@ -18,7 +18,7 @@ import math
 
 class PositionsWnd(wx.ScrolledWindow):
 	BORDER = 20
-	SCROLL_RATE = 20
+	SCROLL_RATE = 10
 
 	def __init__(self, parent, chrt, options, mainfr, id = -1, size = wx.DefaultSize):
 		wx.ScrolledWindow.__init__(self, parent, id, wx.DefaultPosition, size=size, style=wx.SUNKEN_BORDER)

@@ -114,6 +114,17 @@ A `.claude/launch.json` is present — `preview_start "morinus"` runs the above 
 
 ---
 
+## GUI Coherence (Morinus Aries — non-negotiable)
+
+Morinus Aries has a **single, coherent GUI**. Every scrollable surface must behave identically. These rules are mandatory — violations must be fixed, not worked around:
+
+- **`SCROLL_RATE = 10` everywhere** — no hardcoded scroll rates anywhere in the codebase. All scrollable windows (whether they inherit `CommonWnd` or `wx.ScrolledWindow` directly) must use `SCROLL_RATE = 10`. This matches the sidebar grain (rate 4 ≈ 12 px/tick; tables at rate 10 = 30 px/tick — close enough for consistent feel). Never introduce a per-file override.
+- **Native vertical scrollbar always hidden** — `ShowScrollbars(wx.SHOW_SB_DEFAULT, wx.SHOW_SB_NEVER)` in `CommonWnd.__init__` hides the native vertical bar (replaced by the custom `_FadingScrollbar` overlay). Horizontal bar stays visible (`SHOW_SB_DEFAULT`) because some tables are wider than the viewport.
+- **Custom `_FadingScrollbar` for all table views** — the VS Code-style overlay scrollbar (`_FadingScrollbar` in `workspace_shell.py`) is wired for every window opened via `MainWindowShell.set_table_content`. Do not rely on the native vertical scrollbar.
+- **Timer safety** — any `wx.Timer` owned by a widget must be stopped in `EVT_WINDOW_DESTROY` to prevent use-after-free crashes when the widget is destroyed mid-animation.
+
+---
+
 ## Coding Conventions
 
 - **wxPython only** — no tkinter, no Qt. All GUI must use `wx.*`.

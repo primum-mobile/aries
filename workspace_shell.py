@@ -78,6 +78,8 @@ _SIDEBAR_TITLE_FONT_PT = 10
 _DOC_INDENT_PIXELS = 12
 _DRAG_THRESHOLD_PX = 5
 _DROP_INDICATOR_HEIGHT = 2
+_CLOSE_FADE_STEPS = 4
+_CLOSE_FADE_INTERVAL_MS = 30
 
 
 class SoftVerticalDivider(wx.Panel):
@@ -168,6 +170,12 @@ class WorkspaceNavLink(wx.Panel):
 			w.Bind(wx.EVT_ENTER_WINDOW, self._hover_on)
 			w.Bind(wx.EVT_LEAVE_WINDOW, self._hover_off)
 
+		self._close_opacity = 0.0
+		self._close_fading_in = False
+		self._close_fade_timer = wx.Timer(self)
+		self.Bind(wx.EVT_TIMER, self._on_close_fade_tick, self._close_fade_timer)
+		self.Bind(wx.EVT_WINDOW_DESTROY, self._on_nav_destroy)
+
 		self.Bind(wx.EVT_PAINT, self._on_paint)
 		self._apply_state()
 
@@ -206,18 +214,19 @@ class WorkspaceNavLink(wx.Panel):
 			text_colour = _mix_colour(_sidebar_text_colour(self.options), 255, 0.55)
 		self._label.SetForegroundColour(text_colour)
 
-		if self._close is not None:
-			if self._hovered:
-				close_colour = _mix_colour(_sidebar_text_colour(self.options), 255, 0.30)
-				self._close.SetForegroundColour(close_colour)
-			self._close.Show(self._hovered)
-
 		self.Refresh()
 
 	def _hover_on(self, event):
 		if not self._hovered and self._enabled:
 			self._hovered = True
 			self._apply_state()
+			if self._close is not None:
+				self._close_opacity = 0.0
+				self._update_close_colour()
+				self._close.Show()
+				self._close_fading_in = True
+				self._close_fade_timer.Stop()
+				self._close_fade_timer.Start(_CLOSE_FADE_INTERVAL_MS)
 		event.Skip()
 
 	def _hover_off(self, event):
@@ -226,6 +235,37 @@ class WorkspaceNavLink(wx.Panel):
 		if not rect.Contains(mouse):
 			self._hovered = False
 			self._apply_state()
+			if self._close is not None:
+				self._close_fading_in = False
+				self._close_fade_timer.Stop()
+				self._close_fade_timer.Start(_CLOSE_FADE_INTERVAL_MS)
+		event.Skip()
+
+	def _on_close_fade_tick(self, event):
+		step = 1.0 / _CLOSE_FADE_STEPS
+		if self._close_fading_in:
+			self._close_opacity = min(1.0, self._close_opacity + step)
+		else:
+			self._close_opacity = max(0.0, self._close_opacity - step)
+		if self._close_opacity in (0.0, 1.0):
+			self._close_fade_timer.Stop()
+			if self._close_opacity == 0.0 and self._close is not None:
+				self._close.Hide()
+		self._update_close_colour()
+
+	def _update_close_colour(self):
+		if self._close is None:
+			return
+		bg = _sidebar_colour(self.options)
+		text = _sidebar_text_colour(self.options)
+		r = _mix_channel(bg[0], text[0], self._close_opacity * 0.70)
+		g = _mix_channel(bg[1], text[1], self._close_opacity * 0.70)
+		b = _mix_channel(bg[2], text[2], self._close_opacity * 0.70)
+		self._close.SetForegroundColour(wx.Colour(r, g, b))
+		self._close.Refresh()
+
+	def _on_nav_destroy(self, event):
+		self._close_fade_timer.Stop()
 		event.Skip()
 
 	def _on_left_down(self, event):
@@ -723,10 +763,12 @@ class WorkspaceNavigatorPane(wx.Panel):
 
 # --- VS Code-style overlay scrollbar implementation ---
 class _FadingScrollbar(wx.Panel):
-	def __init__(self, parent, options, scroller):
+	def __init__(self, parent, options, scroller, bg_getter=None, thumb_max_h=None):
 		wx.Panel.__init__(self, parent, -1, style=wx.TAB_TRAVERSAL | wx.TRANSPARENT_WINDOW)
 		self.options = options
 		self._scroller = scroller
+		self._bg_getter = bg_getter or (lambda: _sidebar_colour(self.options))
+		self._thumb_max_h = thumb_max_h if thumb_max_h is not None else _SCROLLBAR_THUMB_HEIGHT
 		self._opacity = 0.0
 		self._thumb_y = 0
 		self._thumb_h = 0
@@ -744,9 +786,14 @@ class _FadingScrollbar(wx.Panel):
 		self.Bind(wx.EVT_MOTION, self._on_motion)
 		self.Bind(wx.EVT_LEFT_UP, self._on_left_up)
 		self.Bind(wx.EVT_MOUSE_CAPTURE_LOST, self._on_capture_lost)
+		self.Bind(wx.EVT_WINDOW_DESTROY, self._on_scrollbar_destroy)
+
+	def _on_scrollbar_destroy(self, event):
+		self._fade_timer.Stop()
+		event.Skip()
 
 	def _sidebar_bg(self):
-		return _sidebar_colour(self.options)
+		return self._bg_getter()
 
 	def _luma(self):
 		bg = self._sidebar_bg()
@@ -787,7 +834,7 @@ class _FadingScrollbar(wx.Panel):
 			unit = 1
 		scroll_px = scroll_y * unit
 		bar_h = self.GetClientSize().y
-		thumb_h = min(_SCROLLBAR_THUMB_HEIGHT, bar_h)
+		thumb_h = min(self._thumb_max_h, bar_h)
 		scrollable_px = virtual_h - client_h
 		scrollable_bar = max(1, bar_h - thumb_h)
 		if scrollable_px > 0:
@@ -845,7 +892,7 @@ class _FadingScrollbar(wx.Panel):
 		virtual_h = self._scroller.GetVirtualSize().y
 		client_h = self._scroller.GetClientSize().y
 		bar_h = self.GetClientSize().y
-		thumb_h = self._thumb_h if self._thumb_h > 0 else _SCROLLBAR_THUMB_HEIGHT
+		thumb_h = self._thumb_h if self._thumb_h > 0 else self._thumb_max_h
 		scrollable_bar = max(1, bar_h - thumb_h)
 		scrollable_px = max(1, virtual_h - client_h)
 		new_px = self._drag_start_scroll_px + int(delta_y / float(scrollable_bar) * scrollable_px)
@@ -1029,6 +1076,8 @@ class MainWindowShell(wx.Panel):
 		root_sizer.Add(self._splitter, 1, wx.EXPAND)
 		self.SetSizer(root_sizer)
 
+		self._table_scrollbar = None
+
 		self.refresh_theme()
 		wx.CallAfter(self.refresh_navigation)
 
@@ -1082,6 +1131,12 @@ class MainWindowShell(wx.Panel):
 		return self._table_host
 
 	def set_table_content(self, wnd):
+		if self._table_scrollbar is not None:
+			try:
+				self._table_scrollbar.Destroy()
+			except Exception:
+				pass
+			self._table_scrollbar = None
 		for child in list(self._table_host.GetChildren()):
 			if child is wnd:
 				continue
@@ -1098,9 +1153,70 @@ class MainWindowShell(wx.Panel):
 		self._content_panel.Layout()
 		self.Layout()
 
+		try:
+			wnd.ShowScrollbars(wx.SHOW_SB_DEFAULT, wx.SHOW_SB_NEVER)
+		except Exception:
+			pass
+
+		sb = _FadingScrollbar(
+			self._table_host, self.options, wnd,
+			bg_getter=lambda: self.options.clrbackground,
+			thumb_max_h=60,
+		)
+		self._table_scrollbar = sb
+
+		def _table_reposition_sb():
+			try:
+				w, h = self._table_host.GetClientSize()
+				sb.Move(w - _SCROLLBAR_HOVER_ZONE, 0)
+				sb.SetSize(_SCROLLBAR_HOVER_ZONE, h)
+				sb.Raise()
+				sb.update_from_scroll()
+			except Exception:
+				pass
+
+		_table_reposition_sb()
+
+		def _on_table_scroll(event):
+			sb.update_from_scroll()
+			sb.show_bar()
+			event.Skip()
+
+		def _on_table_wheel(event):
+			sb.show_bar()
+			event.Skip()
+			wx.CallAfter(sb.update_from_scroll)
+
+		def _on_table_enter(event):
+			sb.show_bar()
+			wx.CallAfter(sb.update_from_scroll)
+			event.Skip()
+
+		def _on_table_leave(event):
+			if not self._table_host.GetScreenRect().Contains(wx.GetMousePosition()):
+				sb.schedule_hide()
+			event.Skip()
+
+		def _on_table_host_size(event):
+			event.Skip()
+			wx.CallAfter(_table_reposition_sb)
+
+		wnd.Bind(wx.EVT_SCROLLWIN, _on_table_scroll)
+		wnd.Bind(wx.EVT_MOUSEWHEEL, _on_table_wheel)
+		wnd.Bind(wx.EVT_ENTER_WINDOW, _on_table_enter)
+		wnd.Bind(wx.EVT_LEAVE_WINDOW, _on_table_leave)
+		wnd.Bind(wx.EVT_SIZE, _on_table_host_size)
+		self._table_host.Bind(wx.EVT_SIZE, _on_table_host_size)
+
 	def clear_table_content(self):
 		if not self._table_host.IsShown():
 			return
+		if self._table_scrollbar is not None:
+			try:
+				self._table_scrollbar.Destroy()
+			except Exception:
+				pass
+			self._table_scrollbar = None
 		self._table_host.Hide()
 		self.chart_host.Show()
 		for child in list(self._table_host.GetChildren()):

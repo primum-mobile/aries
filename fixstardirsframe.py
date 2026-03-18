@@ -11,7 +11,7 @@ import rangechecker
 
 # ---------- 테이블(프라이머리 디렉션 스타일, CommonWnd 상속) ----------
 class FixStarDirsWnd(cw.CommonWnd):
-    SCROLL_RATE = 20
+    SCROLL_RATE = 10
     BORDER = 20
 
     SEC1 = 0
