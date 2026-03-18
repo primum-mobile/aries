@@ -21,6 +21,7 @@ class WorkspaceDocument:
 	title: str
 	subtitle: str = ''
 	path: str = ''
+	indent_level: int = 0
 
 
 @dataclass(frozen=True)
@@ -45,22 +46,47 @@ DEFAULT_SECTIONS = (
 		items=(
 			WorkspaceAction('transits', 'Transits'),
 			WorkspaceAction('solar_return', 'Solar Revolution'),
+			WorkspaceAction('lunar_return', 'Lunar Revolution'),
 			WorkspaceAction('secondary_chart', 'Secondary Directions'),
 			WorkspaceAction('profections_chart', 'Profections Chart'),
+			WorkspaceAction('eclipses', 'Eclipses'),
+			WorkspaceAction('angle_at_birth', 'Angle at Birth'),
 		),
 	),
 	WorkspaceSection(
 		title='Tables',
 		items=(
+			WorkspaceAction('misc', 'Miscellaneous'),
 			WorkspaceAction('positions', 'Positions'),
+			WorkspaceAction('midpoints', 'Midpoints'),
 			WorkspaceAction('aspects', 'Aspects'),
 			WorkspaceAction('rise_set', 'Rise / Set'),
+			WorkspaceAction('speeds', 'Planetary Speeds'),
+			WorkspaceAction('mundane_positions', 'Mundane Positions'),
+			WorkspaceAction('antiscia', 'Antiscia'),
+			WorkspaceAction('zodpars', 'Zod. Pars'),
+			WorkspaceAction('strip', 'Strip'),
+			WorkspaceAction('almuten_zodiacal', 'Almuten Zodiacal'),
+			WorkspaceAction('almuten_chart', 'Almuten Chart'),
+			WorkspaceAction('fixed_stars', 'Fixed Stars'),
+			WorkspaceAction('fixed_stars_aspects', 'Fixed Stars Aspects'),
+			WorkspaceAction('fixed_stars_parallels', 'Fixed Stars Parallels'),
 			WorkspaceAction('exact_transits', 'Exact Transits'),
 			WorkspaceAction('profections_table', 'Profections'),
 			WorkspaceAction('primary_directions', 'Primary Directions'),
 			WorkspaceAction('planetary_hours', 'Planetary Hours'),
-			WorkspaceAction('firdaria', 'Firdaria'),
 			WorkspaceAction('arabic_parts', 'Arabic Parts'),
+		),
+	),
+	WorkspaceSection(
+		title='Time Lords',
+		items=(
+			WorkspaceAction('firdaria', 'Firdaria'),
+			WorkspaceAction('circumambulation', 'Circumambulations'),
+			WorkspaceAction('zodiacal_releasing', 'Zodiacal Releasing'),
+			WorkspaceAction('decennials', 'Decennials'),
+			WorkspaceAction('phasis', 'Phasis'),
+			WorkspaceAction('paranatellonta', 'Paranatellonta'),
 		),
 	),
 )
@@ -75,7 +101,7 @@ class WorkspaceState(object):
 		self._active_document_id = None
 		self._sequence = 0
 
-	def open_document(self, kind, title, subtitle='', path=''):
+	def open_document(self, kind, title, subtitle='', path='', indent_level=0, insert_index=None):
 		self._sequence += 1
 		document = WorkspaceDocument(
 			document_id='page-%d' % self._sequence,
@@ -83,8 +109,13 @@ class WorkspaceState(object):
 			title=title,
 			subtitle=subtitle,
 			path=path,
+			indent_level=max(0, int(indent_level)),
 		)
-		self._documents.append(document)
+		if insert_index is None:
+			self._documents.append(document)
+		else:
+			index = max(0, min(int(insert_index), len(self._documents)))
+			self._documents.insert(index, document)
 		self._active_document_id = document.document_id
 		return document
 
@@ -121,7 +152,7 @@ class WorkspaceState(object):
 				return document
 		return None
 
-	def update_document(self, document_id, title=None, subtitle=None, path=None):
+	def update_document(self, document_id, title=None, subtitle=None, path=None, indent_level=None):
 		for i, document in enumerate(self._documents):
 			if document.document_id != document_id:
 				continue
@@ -131,6 +162,7 @@ class WorkspaceState(object):
 				title=document.title if title is None else title,
 				subtitle=document.subtitle if subtitle is None else subtitle,
 				path=document.path if path is None else path,
+				indent_level=document.indent_level if indent_level is None else max(0, int(indent_level)),
 			)
 			return self._documents[i]
 		return None

@@ -317,6 +317,8 @@ class Options:
 		self.pdaspects = [True, False, False, True, False, True, True, False, False, False, True]
 		self.def_pdaspects = self.pdaspects[:]
 
+		self.pdcircumoa = self.def_pdcircumoa = primdirs.PrimDirs.CIRCUM_OA_ASCENSIONAL_TIMES
+
 		self.pdmidpoints = False
 		self.def_pdmidpoints = self.pdmidpoints 
 
@@ -455,6 +457,10 @@ class Options:
 		self.def_revolutions_solaryearmode = self.revolutions_solaryearmode
 		self.revolutions_solarlocationmode = 0
 		self.def_revolutions_solarlocationmode = self.revolutions_solarlocationmode
+		self.revolutions_planetslocationmode = 0
+		self.def_revolutions_planetslocationmode = self.revolutions_planetslocationmode
+		self.revolutions_lunarlocationmode = 0
+		self.def_revolutions_lunarlocationmode = self.revolutions_lunarlocationmode
 
 # ########################################
 # Roberto change - V 7.2.0 / V 7.3.0
@@ -683,6 +689,8 @@ class Options:
 
 		self.pdaspects = self.def_pdaspects[:]
 
+		self.pdcircumoa = self.def_pdcircumoa
+
 		self.pdmidpoints = self.def_pdmidpoints
 
 		self.pdparallels = self.def_pdparallels[:]
@@ -787,6 +795,8 @@ class Options:
 		self.startupchart = self.def_startupchart
 		self.revolutions_solaryearmode = self.def_revolutions_solaryearmode
 		self.revolutions_solarlocationmode = self.def_revolutions_solarlocationmode
+		self.revolutions_planetslocationmode = self.def_revolutions_planetslocationmode
+		self.revolutions_lunarlocationmode = self.def_revolutions_lunarlocationmode
 
 
 	def load(self):
@@ -1036,6 +1046,10 @@ class Options:
 				self.pdrevannualmode = pickle.load(f)
 			except Exception:
 				self.pdrevannualmode = self.def_pdrevannualmode
+			try:
+				self.pdcircumoa = pickle.load(f)
+			except Exception:
+				self.pdcircumoa = self.def_pdcircumoa
 
 			f.close()
 		except IOError:
@@ -1169,6 +1183,14 @@ class Options:
 			f = self._open_opt_for_load(optfile)
 			self.revolutions_solaryearmode = pickle.load(f)
 			self.revolutions_solarlocationmode = pickle.load(f)
+			try:
+				self.revolutions_planetslocationmode = pickle.load(f)
+			except Exception:
+				self.revolutions_planetslocationmode = self.def_revolutions_planetslocationmode
+			try:
+				self.revolutions_lunarlocationmode = pickle.load(f)
+			except Exception:
+				self.revolutions_lunarlocationmode = self.def_revolutions_lunarlocationmode
 			f.close()
 		except IOError:
 			res = False
@@ -1495,6 +1517,7 @@ class Options:
 			pickle.dump(self.sigangles, f)
 			pickle.dump(self.pdrevsunyearmode, f)
 			pickle.dump(self.pdrevannualmode, f)
+			pickle.dump(self.pdcircumoa, f)
 			f.close()
 			return True
 		except IOError:
@@ -1686,6 +1709,8 @@ class Options:
 			f = open(optfile, 'wb')
 			pickle.dump(self.revolutions_solaryearmode, f)
 			pickle.dump(self.revolutions_solarlocationmode, f)
+			pickle.dump(self.revolutions_planetslocationmode, f)
+			pickle.dump(self.revolutions_lunarlocationmode, f)
 			f.close()
 			return True
 		except IOError:

@@ -19,8 +19,11 @@ class ChartSession(object):
 
 	def __init__(self, chrt, radix, options, view_mode=0,
 				 navigation_units=None, navigation_title_label=None,
-				 stepper=None, on_change=None):
+				 stepper=None, on_change=None, display_datetime=None):
 		self.chart = chrt
+		self._initial_chart = chrt
+		self.display_datetime = display_datetime if display_datetime is not None else self._chart_display_datetime(chrt)
+		self._initial_display_datetime = self.display_datetime
 		self.radix = radix
 		self.options = options
 		self.view_mode = view_mode
@@ -149,6 +152,13 @@ class ChartSession(object):
 		self.change_chart(newchart)
 		return True
 
+	def reset_to_initial_chart(self):
+		if self._initial_chart is None:
+			return False
+		if self.chart is not self._initial_chart:
+			self.change_chart(self._initial_chart, display_datetime=self._initial_display_datetime)
+		return True
+
 	def toggleComparisonView(self):
 		if self.view_mode == self.COMPOUND:
 			self.view_mode = self.CHART
@@ -156,8 +166,22 @@ class ChartSession(object):
 			self.view_mode = self.COMPOUND
 		self._fire_change()
 
-	def change_chart(self, chrt):
+	def _chart_display_datetime(self, chrt):
+		if chrt is None or getattr(chrt, 'time', None) is None:
+			return None
+		t = chrt.time
+		return (
+			getattr(t, 'origyear', t.year),
+			getattr(t, 'origmonth', t.month),
+			getattr(t, 'origday', t.day),
+			t.hour,
+			t.minute,
+			t.second,
+		)
+
+	def change_chart(self, chrt, display_datetime=None):
 		self.chart = chrt
+		self.display_datetime = display_datetime if display_datetime is not None else self._chart_display_datetime(chrt)
 		self._handle_chart_alerts()
 		self._fire_change()
 

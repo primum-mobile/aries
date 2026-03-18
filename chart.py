@@ -413,6 +413,24 @@ class Chart:
 		if self.fixstars is not None:
 			self.calcFixStarAspMatrix()
 
+	def rebuildRiseSet(self):
+		if self.planets is None:
+			self.riseset = None
+			return None
+
+		if self.time.zt == Time.ZONE:
+			tz_hours = (1 if self.time.plus else -1) * (self.time.zh + self.time.zm/60.0) + (1.0 if self.time.daylightsaving else 0.0)
+		elif self.time.zt == Time.GREENWICH:
+			tz_hours = 0.0
+		elif self.time.zt == Time.LOCALMEAN:
+			tz_hours = self.place.lon / 15.0
+		else:
+			_, te, _ = astrology.swe_time_equ(self.time.jd)
+			tz_hours = (self.place.lon / 15.0) + te*24.0
+
+		self.riseset = riseset.RiseSet(self.time.jd, self.time.cal, self.place.lon, self.place.lat, self.place.altitude, tz_hours, self.planets)
+		return self.riseset
+
 
 	def setHouseSystem(self):
 		hflag = 0
@@ -485,7 +503,13 @@ class Chart:
 	def calcAntiscia(self):
 		if self.antiscia != None:
 			del self.antiscia
-			self.antiscia = antiscia.Antiscia(self.planets.planets, self.houses.ascmc, self.fortune.fortune, self.obl[0], self.options.ayanamsha, self.ayanamsha)
+		self.antiscia = antiscia.Antiscia(self.planets.planets, self.houses.ascmc, self.fortune.fortune, self.obl[0], self.options.ayanamsha, self.ayanamsha)
+
+
+	def calcMidPoints(self):
+		if self.midpoints != None:
+			del self.midpoints
+		self.midpoints = midpoints.MidPoints(self.planets)
 
 
 	def calcAspMatrix(self):	

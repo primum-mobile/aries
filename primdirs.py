@@ -105,6 +105,10 @@ class PrimDirs:
 	SZSIGNIFICATOR = 2
 	SZBOTH = 3
 
+	#circumambulation OA method
+	CIRCUM_OA_ASCENSIONAL_TIMES = 0
+	CIRCUM_OA_USE_PD = 1
+
 	#zodical options
 	ASPSPROMSTOSIGS = 0
 	PROMSTOSIGASPS = 1

@@ -216,8 +216,8 @@ class PhasisWnd(commonwnd.CommonWnd):
         self.TITLE_WIDTH  = (self.W_SYM + self.W_PHAS + self.W_TIME)
 
         # ③ 폰트 로드 (심볼/텍스트)
-        self.fntMorinus = PILImageFont.truetype(common.common.symbols, self.FONT_SIZE)
-        self.fntText    = PILImageFont.truetype(common.common.abc,     self.FONT_SIZE)
+        self.fntMorinus = PILself._load_font(common.common.symbols, self.FONT_SIZE)
+        self.fntText    = PILself._load_font(common.common.abc,     self.FONT_SIZE)
 
         # ④ 행 수 및 버퍼 크기 계산
         self.rows = self._compute_rows()     # 각 행: (ipl, symbol, phasis_text, time_text, color)

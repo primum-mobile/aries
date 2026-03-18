@@ -126,8 +126,8 @@ class SpeedsWnd(commonwnd.CommonWnd):
 
 		self.SetVirtualSize((self.WIDTH, self.HEIGHT))
 
-		self.fntMorinus = ImageFont.truetype(common.common.symbols, self.FONT_SIZE)
-		self.fntText = ImageFont.truetype(common.common.abc, self.FONT_SIZE)
+		self.fntMorinus = self._load_font(common.common.symbols, self.FONT_SIZE)
+		self.fntText = self._load_font(common.common.abc, self.FONT_SIZE)
 		self.clrs = (self.options.clrdomicil, self.options.clrexal, self.options.clrperegrin, self.options.clrcasus, self.options.clrexil)	
 		self.deg_symbol = u'\u00b0'
 
@@ -150,8 +150,7 @@ class SpeedsWnd(commonwnd.CommonWnd):
 		if self.bw:
 			tableclr = (0,0,0)
 
-		img = Image.new('RGB', (self.WIDTH, self.HEIGHT), self.bkgclr)
-		draw = ImageDraw.Draw(img)
+		img, draw = self.newScaledImageDraw(self.WIDTH, self.HEIGHT, self.bkgclr)
 
 		BOR = commonwnd.CommonWnd.BORDER
 
@@ -178,9 +177,7 @@ class SpeedsWnd(commonwnd.CommonWnd):
 			self.drawline(draw, x, y+ii*self.LINE_HEIGHT, tableclr, i)
 			ii += 1
 
-		wxImg = wx.Image(img.size[0], img.size[1])
-		wxImg.SetData(img.tobytes())
-		self.buffer = wx.Bitmap(wxImg)
+		self.buffer = self.scaledBitmapFromImage(img)
 
 
 	def drawline(self, draw, x, y, clr, idx):

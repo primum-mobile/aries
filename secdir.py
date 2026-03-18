@@ -2,6 +2,7 @@ import astrology
 import chart
 import mtexts
 import util
+import math
 
 
 class SecDir:
@@ -58,11 +59,34 @@ class SecDir:
 		else:
 			hour,minute,second = util.decToDeg(meantime)
 
-		for i in range(self.age):
+		age_abs = math.fabs(float(self.age))
+		age_whole = int(math.floor(age_abs + 1e-12))
+		age_frac = age_abs - float(age_whole)
+
+		for i in range(age_whole):
 			if self.direct:
 				y, m, d = util.incrDay(y, m, d)
 			else:	
 				y, m, d = util.decrDay(y, m, d)
+
+		if age_frac > 1e-12:
+			delta_hours = age_frac * 24.0
+			if not self.direct:
+				delta_hours *= -1.0
+
+			base_hour = float(hour) + float(minute) / 60.0 + float(second) / 3600.0
+			shifted_hour = base_hour + delta_hours
+
+			while shifted_hour >= 24.0:
+				shifted_hour -= 24.0
+				y, m, d = util.incrDay(y, m, d)
+			while shifted_hour < 0.0:
+				shifted_hour += 24.0
+				y, m, d = util.decrDay(y, m, d)
+
+			hour, minute, second = util.decToDeg(shifted_hour)
+			if self.soltime:
+				hr = shifted_hour
 
 		if self.soltime:
 			#Back to meantime on the last day

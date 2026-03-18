@@ -58,7 +58,15 @@ def handle_transit_key_event(frame, event):
 
 	alt_down = event.AltDown()
 	shift_down = event.ShiftDown()
-	keycode = frame._normalized_nav_key(event.GetKeyCode())
+	keycode_raw = event.GetKeyCode()
+
+	if not alt_down and not shift_down and keycode_raw in (wx.WXK_SPACE, ord(' ')):
+		reset_handler = getattr(frame, 'reset_to_initial_chart', None)
+		if callable(reset_handler):
+			return bool(reset_handler())
+		return False
+
+	keycode = frame._normalized_nav_key(keycode_raw)
 
 	# Handle arrow navigation including Alt/Shift modifier combos
 	# (must be processed here, before macOS consumes Option+Arrow)
@@ -83,7 +91,7 @@ def handle_transit_key_event(frame, event):
 	if alt_down:
 		return False
 
-	if event.GetKeyCode() == wx.WXK_TAB:
+	if keycode_raw == wx.WXK_TAB:
 		now = time.monotonic()
 		last_toggle = getattr(frame, '_last_tab_toggle', 0.0)
 		if now - last_toggle > 0.20:

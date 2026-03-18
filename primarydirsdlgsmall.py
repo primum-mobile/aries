@@ -285,6 +285,14 @@ class PrimDirsDlgSmall(wx.Dialog):
 		mhsizer.Add(applysizer, 0, wx.GROW|wx.ALIGN_LEFT|wx.ALL, 5)
 		mvsizer.Add(mhsizer, 0, wx.GROW|wx.ALIGN_LEFT|wx.LEFT, 5)
 
+		scircum = wx.StaticBox(self, label=mtexts.txts.get('Circumambulation', 'Circumambulation'))
+		scircumsizer = wx.StaticBoxSizer(scircum, wx.VERTICAL)
+		self.circumoaasce_rb = wx.RadioButton(self, -1, u'Ascensional Times (rising times table)', style=wx.RB_GROUP)
+		scircumsizer.Add(self.circumoaasce_rb, 0, wx.ALIGN_LEFT|wx.ALL, 5)
+		self.circumoapd_rb = wx.RadioButton(self, -1, u'Use PD Settings (exact arc method)')
+		scircumsizer.Add(self.circumoapd_rb, 0, wx.ALIGN_LEFT|wx.LEFT|wx.RIGHT|wx.BOTTOM, 5)
+		mvsizer.Add(scircumsizer, 0, wx.GROW|wx.ALIGN_LEFT|wx.LEFT|wx.RIGHT, 10)
+
 		srevs = wx.StaticBox(self, label=mtexts.txts.get('Revolutions', 'Revolutions'))
 		srevsizer = wx.StaticBoxSizer(srevs, wx.VERTICAL)
 		self.revsolartropicalrb = wx.RadioButton(self, -1, u'Solar SR directions: 365.242 days = 360°', style=wx.RB_GROUP)
@@ -508,6 +516,12 @@ class PrimDirsDlgSmall(wx.Dialog):
 			self.revannualtraditionalrb.SetValue(True)
 		else:
 			self.revannualprimaryrb.SetValue(True)
+
+		# Circumambulation OA method
+		if getattr(options, 'pdcircumoa', primdirs.PrimDirs.CIRCUM_OA_ASCENSIONAL_TIMES) == primdirs.PrimDirs.CIRCUM_OA_USE_PD:
+			self.circumoapd_rb.SetValue(True)
+		else:
+			self.circumoaasce_rb.SetValue(True)
 
 		#Significators
 		ckbs = [self.sigascckb, self.sigmcckb]
@@ -755,6 +769,14 @@ class PrimDirsDlgSmall(wx.Dialog):
 			new_annual_mode = primdirs.PrimDirs.REVANNUAL_TRADITIONAL
 		if getattr(options, 'pdrevannualmode', primdirs.PrimDirs.REVANNUAL_USE_PRIMARY) != new_annual_mode:
 			options.pdrevannualmode = new_annual_mode
+			changed = True
+
+		# Circumambulation OA method
+		new_circum_oa = primdirs.PrimDirs.CIRCUM_OA_ASCENSIONAL_TIMES
+		if self.circumoapd_rb.GetValue():
+			new_circum_oa = primdirs.PrimDirs.CIRCUM_OA_USE_PD
+		if getattr(options, 'pdcircumoa', primdirs.PrimDirs.CIRCUM_OA_ASCENSIONAL_TIMES) != new_circum_oa:
+			options.pdcircumoa = new_circum_oa
 			changed = True
 
 		if self.customerckb.GetValue() != options.pdcustomer:

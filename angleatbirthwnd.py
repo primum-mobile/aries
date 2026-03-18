@@ -49,8 +49,8 @@ class AngleAtBirthWnd(commonwnd.CommonWnd):
         self.FONT_SIZE = int(21*self.options.tablesize)          # 글자 크기
         self.SPACE     = self.FONT_SIZE/2                        # 위/아래 여백
         self.LINE_HEIGHT = (self.SPACE + self.FONT_SIZE + self.SPACE)
-        self.fntText   = ImageFont.truetype(common.common.abc, self.FONT_SIZE)
-        self.fntBold   = ImageFont.truetype(common.common.abc_bold, self.FONT_SIZE)
+        self.fntText   = self._load_font(common.common.abc, self.FONT_SIZE)
+        self.fntBold   = self._load_font(common.common.abc_bold, self.FONT_SIZE)
 
         # 컬럼: Δt, Star, Angle, Exact Time  (폭은 픽스드스타 방식처럼 글꼴 크기 기반)
         self.W_DT   = 5 * self.FONT_SIZE
@@ -126,8 +126,7 @@ class AngleAtBirthWnd(commonwnd.CommonWnd):
 
         # 버퍼/스크롤
         self.SetVirtualSize((int(width), int(height)))
-        img  = Image.new('RGB', (int(width), int(height)), self.bkgclr)
-        draw = ImageDraw.Draw(img)
+        img, draw = self.newScaledImageDraw(int(width), int(height), self.bkgclr)
 
         # 헤더 배경 (fixstars 톤)
         draw.rectangle(((BOR, BOR), (BOR + self.TITLE_WIDTH, BOR + self.TITLE_HEIGHT)),
@@ -163,9 +162,7 @@ class AngleAtBirthWnd(commonwnd.CommonWnd):
         draw.rectangle(((BOR, BOR), (BOR + self.TITLE_WIDTH, BOR + table_height)), outline=tableclr)
 
         # wx로 전송
-        wxImg = wx.Image(img.size[0], img.size[1])
-        wxImg.SetData(img.tobytes())
-        self.buffer = wx.Bitmap(wxImg)
+        self.buffer = self.scaledBitmapFromImage(img)
         self.Refresh()
 
     def _drawline(self, draw, x, y, clr, txtclr, idx):
