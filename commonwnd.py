@@ -22,7 +22,7 @@ class CommonWnd(wx.ScrolledWindow):
 
         self.SetScrollRate(CommonWnd.SCROLL_RATE, CommonWnd.SCROLL_RATE)
         try:
-            self.ShowScrollbars(wx.SHOW_SB_DEFAULT, wx.SHOW_SB_NEVER)
+            self.ShowScrollbars(wx.SHOW_SB_NEVER, wx.SHOW_SB_NEVER)
         except Exception:
             pass
 

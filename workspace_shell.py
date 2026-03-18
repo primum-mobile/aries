@@ -68,6 +68,7 @@ _SCROLLBAR_MARGIN            = 2
 _SCROLLBAR_RADIUS            = 3
 _SCROLLBAR_FADE_STEPS        = 20
 _SCROLLBAR_FADE_INTERVAL_MS  = 50
+_SCROLLBAR_INACTIVITY_MS     = 1000
 _SECTION_TITLE_SIDE_MARGIN = 12
 _SIDEBAR_MIN_WIDTH = 148
 _SIDEBAR_MAX_WIDTH = 240
@@ -416,6 +417,9 @@ class WorkspaceNavigatorPane(wx.Panel):
 		self.Bind(wx.EVT_LEAVE_WINDOW, self._on_leave_sidebar)
 		self._scroller.Bind(wx.EVT_LEAVE_WINDOW, self._on_leave_sidebar)
 		self._root.Bind(wx.EVT_LEAVE_WINDOW, self._on_leave_sidebar)
+		self.Bind(wx.EVT_MOTION, self._on_motion_sidebar)
+		self._scroller.Bind(wx.EVT_MOTION, self._on_motion_sidebar)
+		self._root.Bind(wx.EVT_MOTION, self._on_motion_sidebar)
 
 		self.refresh_theme()
 		wx.CallAfter(self._reposition_scrollbar)
@@ -464,6 +468,10 @@ class WorkspaceNavigatorPane(wx.Panel):
 	def _on_leave_sidebar(self, event):
 		if not self.GetScreenRect().Contains(wx.GetMousePosition()):
 			self._custom_scrollbar.schedule_hide()
+		event.Skip()
+
+	def _on_motion_sidebar(self, event):
+		self._custom_scrollbar.show_bar()
 		event.Skip()
 
 	def _clear_sections(self):
@@ -763,20 +771,24 @@ class WorkspaceNavigatorPane(wx.Panel):
 
 # --- VS Code-style overlay scrollbar implementation ---
 class _FadingScrollbar(wx.Panel):
-	def __init__(self, parent, options, scroller, bg_getter=None, thumb_max_h=None):
+	def __init__(self, parent, options, scroller, bg_getter=None, thumb_max_h=None,
+	             orientation=wx.VERTICAL):
 		wx.Panel.__init__(self, parent, -1, style=wx.TAB_TRAVERSAL | wx.TRANSPARENT_WINDOW)
 		self.options = options
 		self._scroller = scroller
 		self._bg_getter = bg_getter or (lambda: _sidebar_colour(self.options))
 		self._thumb_max_h = thumb_max_h if thumb_max_h is not None else _SCROLLBAR_THUMB_HEIGHT
+		self._orientation = orientation
 		self._opacity = 0.0
-		self._thumb_y = 0
-		self._thumb_h = 0
+		self._thumb_pos = 0
+		self._thumb_size = 0
 		self._dragging = False
-		self._drag_start_y = 0
+		self._drag_start = 0
 		self._drag_start_scroll_px = 0
 		self._fade_timer = wx.Timer(self)
+		self._inactivity_timer = wx.Timer(self)
 		self.Bind(wx.EVT_TIMER, self._on_fade_tick, self._fade_timer)
+		self.Bind(wx.EVT_TIMER, self._on_inactivity_tick, self._inactivity_timer)
 		self.SetBackgroundStyle(wx.BG_STYLE_TRANSPARENT)
 		self.Bind(wx.EVT_ERASE_BACKGROUND, lambda e: None)
 		self.Bind(wx.EVT_PAINT, self._on_paint)
@@ -790,6 +802,7 @@ class _FadingScrollbar(wx.Panel):
 
 	def _on_scrollbar_destroy(self, event):
 		self._fade_timer.Stop()
+		self._inactivity_timer.Stop()
 		event.Skip()
 
 	def _sidebar_bg(self):
@@ -808,11 +821,17 @@ class _FadingScrollbar(wx.Panel):
 	def show_bar(self):
 		self._opacity = 1.0
 		self._fade_timer.Stop()
+		self._inactivity_timer.Stop()
+		self._inactivity_timer.Start(_SCROLLBAR_INACTIVITY_MS, wx.TIMER_ONE_SHOT)
 		self.Refresh()
 
 	def schedule_hide(self):
+		self._inactivity_timer.Stop()
 		if not self._fade_timer.IsRunning():
 			self._fade_timer.Start(_SCROLLBAR_FADE_INTERVAL_MS)
+
+	def _on_inactivity_tick(self, event):
+		self.schedule_hide()
 
 	def _on_fade_tick(self, event):
 		self._opacity -= 1.0 / _SCROLLBAR_FADE_STEPS
@@ -822,41 +841,55 @@ class _FadingScrollbar(wx.Panel):
 		self.Refresh()
 
 	def update_from_scroll(self):
-		virtual_h = self._scroller.GetVirtualSize().y
-		client_h = self._scroller.GetClientSize().y
-		if virtual_h <= client_h or virtual_h <= 0:
-			self._thumb_h = 0
+		if self._orientation == wx.VERTICAL:
+			virtual_size = self._scroller.GetVirtualSize().y
+			client_size = self._scroller.GetClientSize().y
+		else:
+			virtual_size = self._scroller.GetVirtualSize().x
+			client_size = self._scroller.GetClientSize().x
+		if virtual_size <= client_size or virtual_size <= 0:
+			self._thumb_size = 0
 			self.Refresh()
 			return
-		_, scroll_y = self._scroller.GetViewStart()
-		_, unit = self._scroller.GetScrollPixelsPerUnit()
+		if self._orientation == wx.VERTICAL:
+			_, scroll_pos = self._scroller.GetViewStart()
+			_, unit = self._scroller.GetScrollPixelsPerUnit()
+		else:
+			scroll_pos, _ = self._scroller.GetViewStart()
+			unit, _ = self._scroller.GetScrollPixelsPerUnit()
 		if unit <= 0:
 			unit = 1
-		scroll_px = scroll_y * unit
-		bar_h = self.GetClientSize().y
-		thumb_h = min(self._thumb_max_h, bar_h)
-		scrollable_px = virtual_h - client_h
-		scrollable_bar = max(1, bar_h - thumb_h)
-		if scrollable_px > 0:
-			thumb_y = int(scroll_px / float(scrollable_px) * scrollable_bar)
+		scroll_px = scroll_pos * unit
+		if self._orientation == wx.VERTICAL:
+			bar_size = self.GetClientSize().y
 		else:
-			thumb_y = 0
-		self._thumb_y = max(0, min(thumb_y, bar_h - thumb_h))
-		self._thumb_h = thumb_h
+			bar_size = self.GetClientSize().x
+		thumb_size = min(self._thumb_max_h, bar_size)
+		scrollable_px = virtual_size - client_size
+		scrollable_bar = max(1, bar_size - thumb_size)
+		if scrollable_px > 0:
+			thumb_pos = int(scroll_px / float(scrollable_px) * scrollable_bar)
+		else:
+			thumb_pos = 0
+		self._thumb_pos = max(0, min(thumb_pos, bar_size - thumb_size))
+		self._thumb_size = thumb_size
 		self.Refresh()
 
 	def _thumb_rect_coords(self):
-		tx = _SCROLLBAR_HOVER_ZONE - _SCROLLBAR_THUMB_WIDTH - _SCROLLBAR_MARGIN
-		return tx, self._thumb_y, _SCROLLBAR_THUMB_WIDTH, self._thumb_h
+		edge = _SCROLLBAR_HOVER_ZONE - _SCROLLBAR_THUMB_WIDTH - _SCROLLBAR_MARGIN
+		if self._orientation == wx.VERTICAL:
+			return edge, self._thumb_pos, _SCROLLBAR_THUMB_WIDTH, self._thumb_size
+		else:
+			return self._thumb_pos, edge, self._thumb_size, _SCROLLBAR_THUMB_WIDTH
 
 	def _on_paint(self, event):
 		dc = wx.PaintDC(self)
-		if self._opacity <= 0.01 or self._thumb_h <= 0:
+		if self._opacity <= 0.01 or self._thumb_size <= 0:
 			return
-		tx = _SCROLLBAR_HOVER_ZONE - _SCROLLBAR_THUMB_WIDTH - _SCROLLBAR_MARGIN
+		tx, ty, tw, th = self._thumb_rect_coords()
 		dc.SetBrush(wx.Brush(self._thumb_colour()))
 		dc.SetPen(wx.TRANSPARENT_PEN)
-		dc.DrawRoundedRectangle(tx, self._thumb_y, _SCROLLBAR_THUMB_WIDTH, self._thumb_h, _SCROLLBAR_RADIUS)
+		dc.DrawRoundedRectangle(tx, ty, tw, th, _SCROLLBAR_RADIUS)
 
 	def _on_enter(self, event):
 		self.show_bar()
@@ -875,12 +908,17 @@ class _FadingScrollbar(wx.Panel):
 		x, y = event.GetPosition()
 		if tx <= x < tx + tw and ty <= y < ty + th:
 			self._dragging = True
-			self._drag_start_y = y
-			_, scroll_y = self._scroller.GetViewStart()
-			_, unit = self._scroller.GetScrollPixelsPerUnit()
+			if self._orientation == wx.VERTICAL:
+				self._drag_start = y
+				_, scroll_pos = self._scroller.GetViewStart()
+				_, unit = self._scroller.GetScrollPixelsPerUnit()
+			else:
+				self._drag_start = x
+				scroll_pos, _ = self._scroller.GetViewStart()
+				unit, _ = self._scroller.GetScrollPixelsPerUnit()
 			if unit <= 0:
 				unit = 1
-			self._drag_start_scroll_px = scroll_y * unit
+			self._drag_start_scroll_px = scroll_pos * unit
 			self.CaptureMouse()
 		event.Skip()
 
@@ -888,18 +926,28 @@ class _FadingScrollbar(wx.Panel):
 		if not self._dragging:
 			event.Skip()
 			return
-		delta_y = event.GetPosition().y - self._drag_start_y
-		virtual_h = self._scroller.GetVirtualSize().y
-		client_h = self._scroller.GetClientSize().y
-		bar_h = self.GetClientSize().y
-		thumb_h = self._thumb_h if self._thumb_h > 0 else self._thumb_max_h
-		scrollable_bar = max(1, bar_h - thumb_h)
-		scrollable_px = max(1, virtual_h - client_h)
-		new_px = self._drag_start_scroll_px + int(delta_y / float(scrollable_bar) * scrollable_px)
-		_, unit = self._scroller.GetScrollPixelsPerUnit()
+		if self._orientation == wx.VERTICAL:
+			delta = event.GetPosition().y - self._drag_start
+			virtual_size = self._scroller.GetVirtualSize().y
+			client_size = self._scroller.GetClientSize().y
+			bar_size = self.GetClientSize().y
+			_, unit = self._scroller.GetScrollPixelsPerUnit()
+		else:
+			delta = event.GetPosition().x - self._drag_start
+			virtual_size = self._scroller.GetVirtualSize().x
+			client_size = self._scroller.GetClientSize().x
+			bar_size = self.GetClientSize().x
+			unit, _ = self._scroller.GetScrollPixelsPerUnit()
+		thumb_size = self._thumb_size if self._thumb_size > 0 else self._thumb_max_h
+		scrollable_bar = max(1, bar_size - thumb_size)
+		scrollable_px = max(1, virtual_size - client_size)
+		new_px = self._drag_start_scroll_px + int(delta / float(scrollable_bar) * scrollable_px)
 		if unit <= 0:
 			unit = 1
-		self._scroller.Scroll(-1, max(0, new_px // unit))
+		if self._orientation == wx.VERTICAL:
+			self._scroller.Scroll(-1, max(0, new_px // unit))
+		else:
+			self._scroller.Scroll(max(0, new_px // unit), -1)
 		self.update_from_scroll()
 		event.Skip()
 
@@ -1077,6 +1125,7 @@ class MainWindowShell(wx.Panel):
 		self.SetSizer(root_sizer)
 
 		self._table_scrollbar = None
+		self._table_scrollbar_h = None
 
 		self.refresh_theme()
 		wx.CallAfter(self.refresh_navigation)
@@ -1131,12 +1180,14 @@ class MainWindowShell(wx.Panel):
 		return self._table_host
 
 	def set_table_content(self, wnd):
-		if self._table_scrollbar is not None:
-			try:
-				self._table_scrollbar.Destroy()
-			except Exception:
-				pass
-			self._table_scrollbar = None
+		for attr in ('_table_scrollbar', '_table_scrollbar_h'):
+			bar = getattr(self, attr, None)
+			if bar is not None:
+				try:
+					bar.Destroy()
+				except Exception:
+					pass
+				setattr(self, attr, None)
 		for child in list(self._table_host.GetChildren()):
 			if child is wnd:
 				continue
@@ -1154,16 +1205,21 @@ class MainWindowShell(wx.Panel):
 		self.Layout()
 
 		try:
-			wnd.ShowScrollbars(wx.SHOW_SB_DEFAULT, wx.SHOW_SB_NEVER)
+			wnd.ShowScrollbars(wx.SHOW_SB_NEVER, wx.SHOW_SB_NEVER)
 		except Exception:
 			pass
 
+		_bg = lambda: self.options.clrbackground
 		sb = _FadingScrollbar(
 			self._table_host, self.options, wnd,
-			bg_getter=lambda: self.options.clrbackground,
-			thumb_max_h=60,
+			bg_getter=_bg, thumb_max_h=60, orientation=wx.VERTICAL,
+		)
+		sb_h = _FadingScrollbar(
+			self._table_host, self.options, wnd,
+			bg_getter=_bg, thumb_max_h=60, orientation=wx.HORIZONTAL,
 		)
 		self._table_scrollbar = sb
+		self._table_scrollbar_h = sb_h
 
 		def _table_reposition_sb():
 			try:
@@ -1172,6 +1228,10 @@ class MainWindowShell(wx.Panel):
 				sb.SetSize(_SCROLLBAR_HOVER_ZONE, h)
 				sb.Raise()
 				sb.update_from_scroll()
+				sb_h.Move(0, h - _SCROLLBAR_HOVER_ZONE)
+				sb_h.SetSize(w - _SCROLLBAR_HOVER_ZONE, _SCROLLBAR_HOVER_ZONE)
+				sb_h.Raise()
+				sb_h.update_from_scroll()
 			except Exception:
 				pass
 
@@ -1180,21 +1240,33 @@ class MainWindowShell(wx.Panel):
 		def _on_table_scroll(event):
 			sb.update_from_scroll()
 			sb.show_bar()
+			sb_h.update_from_scroll()
+			sb_h.show_bar()
 			event.Skip()
 
 		def _on_table_wheel(event):
 			sb.show_bar()
+			sb_h.show_bar()
 			event.Skip()
 			wx.CallAfter(sb.update_from_scroll)
+			wx.CallAfter(sb_h.update_from_scroll)
 
 		def _on_table_enter(event):
 			sb.show_bar()
+			sb_h.show_bar()
 			wx.CallAfter(sb.update_from_scroll)
+			wx.CallAfter(sb_h.update_from_scroll)
 			event.Skip()
 
 		def _on_table_leave(event):
 			if not self._table_host.GetScreenRect().Contains(wx.GetMousePosition()):
 				sb.schedule_hide()
+				sb_h.schedule_hide()
+			event.Skip()
+
+		def _on_table_motion(event):
+			sb.show_bar()
+			sb_h.show_bar()
 			event.Skip()
 
 		def _on_table_host_size(event):
@@ -1205,18 +1277,21 @@ class MainWindowShell(wx.Panel):
 		wnd.Bind(wx.EVT_MOUSEWHEEL, _on_table_wheel)
 		wnd.Bind(wx.EVT_ENTER_WINDOW, _on_table_enter)
 		wnd.Bind(wx.EVT_LEAVE_WINDOW, _on_table_leave)
+		wnd.Bind(wx.EVT_MOTION, _on_table_motion)
 		wnd.Bind(wx.EVT_SIZE, _on_table_host_size)
 		self._table_host.Bind(wx.EVT_SIZE, _on_table_host_size)
 
 	def clear_table_content(self):
 		if not self._table_host.IsShown():
 			return
-		if self._table_scrollbar is not None:
-			try:
-				self._table_scrollbar.Destroy()
-			except Exception:
-				pass
-			self._table_scrollbar = None
+		for attr in ('_table_scrollbar', '_table_scrollbar_h'):
+			bar = getattr(self, attr, None)
+			if bar is not None:
+				try:
+					bar.Destroy()
+				except Exception:
+					pass
+				setattr(self, attr, None)
 		self._table_host.Hide()
 		self.chart_host.Show()
 		for child in list(self._table_host.GetChildren()):
