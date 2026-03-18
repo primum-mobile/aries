@@ -143,7 +143,7 @@ class MiscWnd(commonwnd.CommonWnd):
 			w,h = draw.textsize(txts[i], self.fntText)
 			draw.text((BOR+self.CELL_WIDTH*i+(self.CELL_WIDTH-w)/2, y+(self.LINE_HEIGHT-h)/2), txts[i], fill=txtclr, font=self.fntText)
 
-		if not self.chart.time.bc:
+		if not self.chart.time.bc and self.chart.syzygy is not None:
 			txt = mtexts.txts['NewMoon']
 			if not self.chart.syzygy.newmoon:
 				txt = mtexts.txts['FullMoon']

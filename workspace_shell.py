@@ -76,6 +76,8 @@ _SIDEBAR_SAFETY_WIDTH = 16
 _SIDEBAR_LINK_FONT_PT = 13
 _SIDEBAR_TITLE_FONT_PT = 10
 _DOC_INDENT_PIXELS = 12
+_DRAG_THRESHOLD_PX = 5
+_DROP_INDICATOR_HEIGHT = 2
 
 
 class SoftVerticalDivider(wx.Panel):
@@ -105,7 +107,7 @@ class SoftVerticalDivider(wx.Panel):
 
 
 class WorkspaceNavLink(wx.Panel):
-	def __init__(self, parent, options, item_id, label, subtitle='', selected=False, on_action=None, on_close=None, indent_level=0, on_context=None):
+	def __init__(self, parent, options, item_id, label, subtitle='', selected=False, on_action=None, on_close=None, indent_level=0, on_context=None, on_drag_begin=None):
 		wx.Panel.__init__(self, parent, -1, style=wx.TAB_TRAVERSAL)
 
 		self.options = options
@@ -113,10 +115,13 @@ class WorkspaceNavLink(wx.Panel):
 		self._on_action = on_action
 		self._on_close = on_close
 		self._on_context = on_context
+		self._on_drag_begin = on_drag_begin
 		self._enabled = True
 		self._selected = bool(selected)
 		self._hovered = False
 		self._indent_level = max(0, int(indent_level))
+		self._mouse_down_pos = None
+		self._dragging = False
 
 		self.SetBackgroundStyle(wx.BG_STYLE_PAINT)
 
@@ -151,7 +156,9 @@ class WorkspaceNavLink(wx.Panel):
 		self.SetMinSize((-1, self._label.GetBestHeight(-1) + _ROW_PAD_Y * 2 + 2))
 
 		for w in self._clickables():
-			w.Bind(wx.EVT_LEFT_UP, self._activate)
+			w.Bind(wx.EVT_LEFT_DOWN, self._on_left_down)
+			w.Bind(wx.EVT_MOTION, self._on_motion)
+			w.Bind(wx.EVT_LEFT_UP, self._on_left_up)
 		if self._close is not None:
 			self._close.Bind(wx.EVT_LEFT_UP, self._close_item)
 		for w in [self] + self._all_children():
@@ -174,6 +181,10 @@ class WorkspaceNavLink(wx.Panel):
 			result.append(self._close)
 		return result
 
+	def set_dragging(self, dragging):
+		self._dragging = bool(dragging)
+		self._apply_state()
+
 	def set_enabled(self, enabled):
 		self._enabled = bool(enabled)
 		self._apply_state()
@@ -187,7 +198,9 @@ class WorkspaceNavLink(wx.Panel):
 		self._apply_state()
 
 	def _apply_state(self):
-		if self._enabled:
+		if self._dragging:
+			text_colour = _mix_colour(_sidebar_text_colour(self.options), 255, 0.55)
+		elif self._enabled:
 			text_colour = _mix_colour(_sidebar_text_colour(self.options), 255, 0.0)
 		else:
 			text_colour = _mix_colour(_sidebar_text_colour(self.options), 255, 0.55)
@@ -215,9 +228,31 @@ class WorkspaceNavLink(wx.Panel):
 			self._apply_state()
 		event.Skip()
 
-	def _activate(self, event):
-		if self._enabled and self._on_action is not None:
-			wx.CallAfter(self._on_action, self.item_id)
+	def _on_left_down(self, event):
+		if not self._enabled:
+			return
+		widget = event.GetEventObject()
+		self._mouse_down_pos = widget.ClientToScreen(event.GetPosition())
+		event.Skip()
+
+	def _on_motion(self, event):
+		if self._mouse_down_pos is None or not event.LeftIsDown():
+			event.Skip()
+			return
+		widget = event.GetEventObject()
+		pos = widget.ClientToScreen(event.GetPosition())
+		dy = abs(pos.y - self._mouse_down_pos.y)
+		if dy >= _DRAG_THRESHOLD_PX and self._on_drag_begin is not None:
+			self._mouse_down_pos = None
+			self._on_drag_begin(self.item_id, pos)
+		event.Skip()
+
+	def _on_left_up(self, event):
+		if self._mouse_down_pos is not None:
+			self._mouse_down_pos = None
+			if self._enabled and self._on_action is not None:
+				wx.CallAfter(self._on_action, self.item_id)
+		event.Skip()
 
 	def _close_item(self, event):
 		if self._enabled and self._on_close is not None:
@@ -242,7 +277,7 @@ class WorkspaceNavLink(wx.Panel):
 		dc.SetBackground(wx.Brush(bg))
 		dc.Clear()
 
-		if self._hovered and self._enabled:
+		if self._hovered and self._enabled and not self._dragging:
 			fill = _mix_colour(_sidebar_colour(self.options), 0, 0.13)
 		else:
 			fill = None
@@ -254,8 +289,49 @@ class WorkspaceNavLink(wx.Panel):
 			dc.DrawRoundedRectangle(2, 1, w - 4, h - 2, _ROW_RADIUS)
 
 
+_GHOST_OPACITY = 170  # 0–255, lower = more transparent
+
+class _DragGhostFrame(wx.Frame):
+	"""Frameless transparent floating ghost of a dragged sidebar link."""
+
+	def __init__(self, parent, options, label_text, width, height, indent_level=0):
+		wx.Frame.__init__(self, parent, -1, '',
+			style=wx.FRAME_NO_TASKBAR | wx.FRAME_FLOAT_ON_PARENT | wx.NO_BORDER | wx.STAY_ON_TOP,
+		)
+		self.options = options
+		self._label_text = label_text
+		self._indent_level = max(0, int(indent_level))
+		self.SetBackgroundStyle(wx.BG_STYLE_PAINT)
+		self.SetSize(width, height)
+		self._font = self.GetFont()
+		self._font.SetPointSize(_SIDEBAR_LINK_FONT_PT)
+		self.SetTransparent(_GHOST_OPACITY)
+		self.Bind(wx.EVT_PAINT, self._on_paint)
+
+	def _on_paint(self, event):
+		dc = wx.AutoBufferedPaintDC(self)
+		bg = _sidebar_colour(self.options)
+		dc.SetBackground(wx.Brush(_to_colour(bg)))
+		dc.Clear()
+
+		# hover-style rounded rect
+		fill = _mix_colour(bg, 0, 0.13)
+		dc.SetBrush(wx.Brush(fill))
+		dc.SetPen(wx.TRANSPARENT_PEN)
+		w, h = self.GetClientSize()
+		dc.DrawRoundedRectangle(2, 1, w - 4, h - 2, _ROW_RADIUS)
+
+		# text
+		text_colour = _sidebar_text_colour(self.options)
+		dc.SetFont(self._font)
+		dc.SetTextForeground(_to_colour(text_colour))
+		text_x = _ROW_PAD_X + self._indent_level * _DOC_INDENT_PIXELS
+		text_y = _ROW_PAD_Y
+		dc.DrawText(self._label_text, text_x, text_y)
+
+
 class WorkspaceNavigatorPane(wx.Panel):
-	def __init__(self, parent, options, on_action=None, on_document=None, on_document_close=None, on_document_context=None):
+	def __init__(self, parent, options, on_action=None, on_document=None, on_document_close=None, on_document_context=None, on_document_move=None):
 		wx.Panel.__init__(self, parent, -1, style=wx.TAB_TRAVERSAL)
 
 		self.options = options
@@ -263,10 +339,16 @@ class WorkspaceNavigatorPane(wx.Panel):
 		self._on_document = on_document
 		self._on_document_close = on_document_close
 		self._on_document_context = on_document_context
+		self._on_document_move = on_document_move
 		self._document_links = {}
 		self._links = {}
 		self._section_widgets = []
 		self._preferred_sidebar_width = _SIDEBAR_MIN_WIDTH
+		self._drag_doc_id = None
+		self._drag_sibling_ids = []
+		self._drop_indicator = None
+		self._drag_ghost = None
+		self._ordered_doc_ids = []
 
 		self._scroller = wx.ScrolledWindow(self, -1, style=wx.TAB_TRAVERSAL | wx.VSCROLL)
 		self._scroller.SetScrollRate(0, 4)
@@ -357,6 +439,7 @@ class WorkspaceNavigatorPane(wx.Panel):
 
 	def _build_sections(self, documents, active_document_id, sections):
 		self._clear_sections()
+		self._ordered_doc_ids = []
 
 		self._root_sizer.AddSpacer(6)
 
@@ -374,11 +457,13 @@ class WorkspaceNavigatorPane(wx.Panel):
 				on_close=self._on_document_close,
 				indent_level=indent_level,
 				on_context=self._on_document_context,
+				on_drag_begin=self._on_drag_begin if self._on_document_move else None,
 			)
 			self._root_sizer.Add(link, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, _NAV_LINK_SIDE_MARGIN)
 			self._root_sizer.AddSpacer(1)
 			self._document_links[doc_id] = link
 			self._section_widgets.append(link)
+			self._ordered_doc_ids.append(doc_id)
 
 		for section in sections:
 			title = wx.StaticText(self._root, -1, _state_value(section, 'title', ''))
@@ -475,6 +560,150 @@ class WorkspaceNavigatorPane(wx.Panel):
 				widget.refresh_theme(False)
 		self.Refresh()
 		self._root.Refresh()
+
+	# --- drag-and-drop reordering ---
+
+	def _on_drag_begin(self, doc_id, screen_pos):
+		if self._on_document_move is None:
+			return
+		self._drag_doc_id = doc_id
+		try:
+			self._drag_sibling_ids = self._on_document_move('query_siblings', doc_id)
+		except Exception:
+			self._drag_sibling_ids = []
+		if len(self._drag_sibling_ids) < 2:
+			self._drag_doc_id = None
+			return
+		self._create_drop_indicator()
+
+		# dim the source link
+		link = self._document_links.get(doc_id)
+		if link is not None:
+			link.set_dragging(True)
+			# create ghost panel
+			label_text = link._label.GetLabel()
+			lw, lh = link.GetSize()
+			link_screen = link.GetScreenPosition()
+			self._drag_ghost = _DragGhostFrame(
+				self.GetTopLevelParent(), self.options, label_text,
+				lw, lh, indent_level=link._indent_level,
+			)
+			self._drag_ghost.SetPosition((link_screen.x, screen_pos.y - lh // 2))
+			self._drag_ghost.Show()
+
+		self._scroller.SetCursor(wx.Cursor(wx.CURSOR_HAND))
+		self._scroller.CaptureMouse()
+		self._scroller.Bind(wx.EVT_MOTION, self._on_drag_motion)
+		self._scroller.Bind(wx.EVT_LEFT_UP, self._on_drag_end)
+		self._scroller.Bind(wx.EVT_MOUSE_CAPTURE_LOST, self._on_drag_lost)
+
+	def _create_drop_indicator(self):
+		if self._drop_indicator is not None:
+			self._drop_indicator.Destroy()
+		self._drop_indicator = wx.Panel(self._root, -1)
+		luma = sum(_sidebar_colour(self.options)) / 3.0
+		accent = wx.Colour(90, 140, 220) if luma < 140 else wx.Colour(40, 90, 180)
+		self._drop_indicator.SetBackgroundColour(accent)
+		self._drop_indicator.SetSize(self._root.GetClientSize().x, _DROP_INDICATOR_HEIGHT)
+		self._drop_indicator.Hide()
+		self._drop_indicator.Raise()
+
+	def _find_drop_target(self, screen_y):
+		"""Return the doc_id to insert before, or None for end of siblings."""
+		for sib_id in self._drag_sibling_ids:
+			if sib_id == self._drag_doc_id:
+				continue
+			link = self._document_links.get(sib_id)
+			if link is None:
+				continue
+			rect = link.GetScreenRect()
+			mid_y = rect.y + rect.height // 2
+			if screen_y < mid_y:
+				return sib_id
+		return None
+
+	def _position_drop_indicator(self, before_id):
+		if self._drop_indicator is None:
+			return
+		if before_id is not None:
+			link = self._document_links.get(before_id)
+			if link is not None:
+				pos = link.GetPosition()
+				self._drop_indicator.SetPosition((0, pos.y - _DROP_INDICATOR_HEIGHT // 2))
+				w = self._root.GetClientSize().x
+				self._drop_indicator.SetSize(w, _DROP_INDICATOR_HEIGHT)
+				self._drop_indicator.Show()
+				self._drop_indicator.Raise()
+				return
+		# insert at end — place after the last sibling's link
+		last_id = self._drag_sibling_ids[-1]
+		link = self._document_links.get(last_id)
+		if link is not None:
+			pos = link.GetPosition()
+			h = link.GetSize().y
+			self._drop_indicator.SetPosition((0, pos.y + h + _DROP_INDICATOR_HEIGHT // 2))
+			w = self._root.GetClientSize().x
+			self._drop_indicator.SetSize(w, _DROP_INDICATOR_HEIGHT)
+			self._drop_indicator.Show()
+			self._drop_indicator.Raise()
+			return
+		self._drop_indicator.Hide()
+
+	def _on_drag_motion(self, event):
+		if self._drag_doc_id is None:
+			event.Skip()
+			return
+		screen_pos = self._scroller.ClientToScreen(event.GetPosition())
+		before_id = self._find_drop_target(screen_pos.y)
+		self._position_drop_indicator(before_id)
+		self._drag_before_id = before_id
+
+		# move ghost to follow cursor (screen coordinates)
+		if self._drag_ghost is not None:
+			gh = self._drag_ghost.GetSize().y
+			gx = self._drag_ghost.GetPosition().x
+			pane_screen = self.GetScreenRect()
+			gy = max(pane_screen.y, min(screen_pos.y - gh // 2, pane_screen.y + pane_screen.height - gh))
+			self._drag_ghost.SetPosition((gx, gy))
+
+	def _cleanup_drag_visuals(self):
+		if self._drag_ghost is not None:
+			self._drag_ghost.Destroy()
+			self._drag_ghost = None
+		if self._drop_indicator is not None:
+			self._drop_indicator.Destroy()
+			self._drop_indicator = None
+		# restore source link
+		if self._drag_doc_id is not None:
+			link = self._document_links.get(self._drag_doc_id)
+			if link is not None:
+				link.set_dragging(False)
+		self._scroller.SetCursor(wx.NullCursor)
+
+	def _on_drag_end(self, event):
+		if self._scroller.HasCapture():
+			self._scroller.ReleaseMouse()
+		self._scroller.Unbind(wx.EVT_MOTION)
+		self._scroller.Unbind(wx.EVT_LEFT_UP)
+		self._scroller.Unbind(wx.EVT_MOUSE_CAPTURE_LOST)
+		self._cleanup_drag_visuals()
+
+		doc_id = self._drag_doc_id
+		before_id = getattr(self, '_drag_before_id', None)
+		self._drag_doc_id = None
+		self._drag_sibling_ids = []
+		self._drag_before_id = None
+
+		if doc_id and self._on_document_move:
+			wx.CallAfter(self._on_document_move, 'move', doc_id, before_id)
+
+	def _on_drag_lost(self, event):
+		self._scroller.Unbind(wx.EVT_MOTION)
+		self._scroller.Unbind(wx.EVT_LEFT_UP)
+		self._scroller.Unbind(wx.EVT_MOUSE_CAPTURE_LOST)
+		self._cleanup_drag_visuals()
+		self._drag_doc_id = None
+		self._drag_sibling_ids = []
 
 	def set_navigation_state(self, state):
 		documents = _state_value(state, 'documents', [])
@@ -739,6 +968,7 @@ class MainWindowShell(wx.Panel):
 		navigator_document_close_handler=None,
 		navigator_document_context_handler=None,
 		navigator_open_path_handler=None,
+		navigator_document_move_handler=None,
 	):
 		wx.Panel.__init__(self, parent, -1, style=wx.TAB_TRAVERSAL)
 
@@ -760,6 +990,7 @@ class MainWindowShell(wx.Panel):
 			on_document=navigator_document_handler,
 			on_document_close=navigator_document_close_handler,
 			on_document_context=navigator_document_context_handler,
+			on_document_move=navigator_document_move_handler,
 		)
 
 		self._content_panel = wx.Panel(self._splitter, -1)
