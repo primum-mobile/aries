@@ -167,6 +167,87 @@ class WorkspaceState(object):
 			return self._documents[i]
 		return None
 
+	def _family_block(self, index):
+		"""Return (start, end+1) of a document and all its descendants."""
+		indent = self._documents[index].indent_level
+		end = index + 1
+		while end < len(self._documents) and self._documents[end].indent_level > indent:
+			end += 1
+		return index, end
+
+	def sibling_list_indices(self, document_id):
+		"""Return list indices of all siblings (same indent, same parent group) for the given document."""
+		src_index = None
+		for i, doc in enumerate(self._documents):
+			if doc.document_id == document_id:
+				src_index = i
+				break
+		if src_index is None:
+			return []
+		indent = self._documents[src_index].indent_level
+		# find parent boundary (first doc above with lower indent, or start of list)
+		parent_start = src_index
+		while parent_start > 0:
+			if self._documents[parent_start - 1].indent_level < indent:
+				break
+			parent_start -= 1
+		# find parent boundary end (next doc at or below parent indent)
+		parent_end = src_index + 1
+		while parent_end < len(self._documents):
+			if self._documents[parent_end].indent_level < indent:
+				break
+			parent_end += 1
+		# collect siblings at the same indent level within the parent range
+		return [i for i in range(parent_start, parent_end) if self._documents[i].indent_level == indent]
+
+	def move_document(self, document_id, before_document_id):
+		"""Move document (with descendants) so it appears before before_document_id.
+		If before_document_id is None, move to end of sibling group."""
+		src_index = None
+		for i, doc in enumerate(self._documents):
+			if doc.document_id == document_id:
+				src_index = i
+				break
+		if src_index is None:
+			return False
+
+		indent = self._documents[src_index].indent_level
+		siblings = self.sibling_list_indices(document_id)
+		if len(siblings) < 2:
+			return False
+
+		src_block_start, src_block_end = self._family_block(src_index)
+		family = self._documents[src_block_start:src_block_end]
+
+		if before_document_id is None:
+			# move to end of sibling group
+			last_sib = siblings[-1]
+			if last_sib == src_index:
+				return False
+			_, insert_after = self._family_block(last_sib)
+		else:
+			target_index = None
+			for i, doc in enumerate(self._documents):
+				if doc.document_id == before_document_id:
+					target_index = i
+					break
+			if target_index is None or target_index == src_index:
+				return False
+			if target_index not in siblings:
+				return False
+			insert_after = target_index
+
+		# remove the family block
+		del self._documents[src_block_start:src_block_end]
+		# adjust insertion point for the removal
+		block_len = src_block_end - src_block_start
+		if insert_after > src_block_start:
+			insert_after -= block_len
+		# insert family at the target position
+		for offset, doc in enumerate(family):
+			self._documents.insert(insert_after + offset, doc)
+		return True
+
 	def documents(self):
 		return tuple(self._documents)
 

@@ -1172,6 +1172,14 @@ class MFrame(wx.Frame):
 		if handler is not None:
 			handler(None)
 
+	def _handle_workspace_document_move(self, action, doc_id, before_id=None):
+		if action == 'query_siblings':
+			indices = self._workspace_state.sibling_list_indices(doc_id)
+			return [self._workspace_state.documents()[i].document_id for i in indices]
+		if action == 'move':
+			if self._workspace_state.move_document(doc_id, before_id):
+				self._refresh_workspace_navigation()
+
 	def _handle_workspace_document(self, session_id):
 		self._switch_workspace_session(session_id)
 
@@ -2555,6 +2563,7 @@ class MFrame(wx.Frame):
 			navigator_document_close_handler=self._handle_workspace_document_close,
 			navigator_document_context_handler=self._handle_workspace_document_context,
 			navigator_open_path_handler=self._open_workspace_chart_path,
+			navigator_document_move_handler=self._handle_workspace_document_move,
 		)
 		self._frame_sizer = wx.BoxSizer(wx.VERTICAL)
 		self._frame_sizer.Add(self._workspace_shell, 1, wx.EXPAND)
