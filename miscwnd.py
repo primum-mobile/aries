@@ -37,8 +37,8 @@ class MiscWnd(commonwnd.CommonWnd):
 
 		self.SetVirtualSize((self.WIDTH, self.HEIGHT))
 
-		self.fntMorinus = self._load_font(common.common.symbols, self.FONT_SIZE)
-		self.fntText = self._load_font(common.common.abc, self.FONT_SIZE)
+		self.fntMorinus = ImageFont.truetype(common.common.symbols, self.FONT_SIZE)
+		self.fntText = ImageFont.truetype(common.common.abc, self.FONT_SIZE)
 		self.signs = common.common.Signs1
 		if not self.options.signs:
 			self.signs = common.common.Signs2
@@ -67,7 +67,8 @@ class MiscWnd(commonwnd.CommonWnd):
 		if self.bw:
 			txtclr = (0,0,0)
 
-		img, draw = self.newScaledImageDraw(self.WIDTH, self.HEIGHT, self.bkgclr)
+		img = Image.new('RGB', (self.WIDTH, self.HEIGHT), self.bkgclr)
+		draw = ImageDraw.Draw(img)
 
 		BOR = commonwnd.CommonWnd.BORDER
 
@@ -171,4 +172,6 @@ class MiscWnd(commonwnd.CommonWnd):
 			draw.text((x+2*self.CELL_WIDTH+offset+w+wsp, y+self.LINE_HEIGHT+(self.LINE_HEIGHT-hsg)/2), self.signs[sign], fill=txtclr, font=self.fntMorinus)
 
 
-		self.buffer = self.scaledBitmapFromImage(img)
+		wxImg = wx.Image(img.size[0], img.size[1])
+		wxImg.SetData(img.tobytes())
+		self.buffer = wx.Bitmap(wxImg)

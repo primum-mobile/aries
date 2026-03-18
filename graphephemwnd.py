@@ -47,9 +47,8 @@ class GraphEphemWnd(wx.Window):
 
 		size = self.GetClientSize()
 		self.w, self.h = size
-		self._dpi_scale = wxcompat.get_dpi_scale(self)
-		self.buffer = wxcompat.create_scaled_bitmap(self.w, self.h, self._dpi_scale)
-		self.bdc = wxcompat.CompatDC(wx.BufferedDC(None, self.buffer), self._dpi_scale)
+		self.buffer = wx.Bitmap(self.w, self.h)
+		self.bdc = wxcompat.CompatDC(wx.BufferedDC(None, self.buffer))
 
 		self.tableSize = min(self.w, self.h)
 		self.planetSymbolSize = int(self.tableSize/40)
@@ -269,7 +268,7 @@ class GraphEphemWnd(wx.Window):
 		wxImag = self.buffer.ConvertToImage()
 		img = Image.new('RGB', (wxImag.GetWidth(), wxImag.GetHeight()))
 		img.frombytes(wxImag.GetData())
-		draw = wxcompat.ScaledPILDraw(ImageDraw.Draw(img), self._dpi_scale)
+		draw = ImageDraw.Draw(img)
 
 		#signs
 		x = 2*self.BORDER
@@ -347,7 +346,7 @@ class GraphEphemWnd(wx.Window):
 
 		wxImg = wx.Image(img.size[0], img.size[1])
 		wxImg.SetData(img.tobytes())
-		self.buffer = wxcompat.set_bitmap_scale(wx.Bitmap(wxImg), self._dpi_scale)
+		self.buffer = wx.Bitmap(wxImg)
 		self.Refresh()
 
 

@@ -52,9 +52,9 @@ class ZodParsWnd(commonwnd.CommonWnd):
 
 		self.SetVirtualSize((self.WIDTH, self.HEIGHT))
 
-		self.fntMorinus = self._load_font(common.common.symbols, int(self.FONT_SIZE))
-		self.fntSymbol = self._load_font(common.common.symbols, int(3*self.FONT_SIZE/2))
-		self.fntText = self._load_font(common.common.abc, int(self.FONT_SIZE))
+		self.fntMorinus = ImageFont.truetype(common.common.symbols, int(self.FONT_SIZE))
+		self.fntSymbol = ImageFont.truetype(common.common.symbols, int(3*self.FONT_SIZE/2))
+		self.fntText = ImageFont.truetype(common.common.abc, int(self.FONT_SIZE))
 		self.signs = common.common.Signs1
 		if not self.options.signs:
 			self.signs = common.common.Signs2
@@ -85,7 +85,8 @@ class ZodParsWnd(commonwnd.CommonWnd):
 		if self.bw:
 			txtclr = (0,0,0)
 
-		img, draw = self.newScaledImageDraw(self.WIDTH, self.HEIGHT, self.bkgclr)
+		img = Image.new('RGB', (self.WIDTH, self.HEIGHT), self.bkgclr)
+		draw = ImageDraw.Draw(img)
 
 		BOR = commonwnd.CommonWnd.BORDER
 
@@ -117,7 +118,9 @@ class ZodParsWnd(commonwnd.CommonWnd):
 			self.drawline(draw, x, y+ii*self.LINE_HEIGHT, i, txts, self.pars[i].pts, tableclr)
 			ii += 1
 
-		self.buffer = self.scaledBitmapFromImage(img)
+		wxImg = wx.Image(img.size[0], img.size[1])
+		wxImg.SetData(img.tobytes())
+		self.buffer = wx.Bitmap(wxImg)
 
 
 	def drawline(self, draw, x, y, idx, txt, data, clr):

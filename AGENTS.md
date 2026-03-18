@@ -1,5 +1,23 @@
 # AGENTS.md — Morinus Astrology (Python 3 / wxPython)
 
+## ⚠️ Running the App (READ THIS FIRST)
+
+Run with: **`python3 morinus.py`**
+
+**ALWAYS use `python3`** (Python 3.13+). **NEVER use `pythonw`** — it resolves to Python 2.7 on this machine and will crash immediately.
+
+Never compile/package to test. Run directly.
+After code changes, always run `python3 morinus.py` so behavior can be verified immediately.
+
+**One-shot build + launch (use this in worktrees or after a fresh clone):**
+```bash
+cd SWEP/src && python3 setup.py build_ext --inplace -q && cd ../.. && python3 morinus.py
+```
+
+A `.claude/launch.json` is present — `preview_start "morinus"` runs the above automatically.
+
+---
+
 ## Entry Point
 `morinus.py` — main application entry point.
 
@@ -108,6 +126,7 @@
 - **No business logic in GUI files** — calculations belong in the engine layer (non-`*wnd`, non-`*frame`, non-`*dlg` files).
 - **No feature logic in GUI files** — renderers and shells may draw or dispatch, but aspect classification, comparison rules, filtering, and other reusable behavior must live in engine/helper modules so the GUI layer remains replaceable.
 - **Keep time logic out of rendering** — astrological date/time resolution, solar-year boundary checks, LOY selection, and similar temporal logic must live in engine/helper modules. Rendering and GUI modules may only consume precomputed values or explicit display datetimes passed in from the engine/session layer.
+- **No popup dialogs for table configuration** — tables always embed directly in the workspace. Options (start sign, parameters, display modes) are exposed via right-click context menu on the embedded table. Extend `self.pmenu` using `Insert()`/`InsertSubMenu()` on the inherited `CommonWnd` menu. See `ZRWnd` in `zodiacalreleasingwnd.py` as the reference implementation of this pattern.
 
 ### Internal Reference Logic (Code Annotation)
 
@@ -351,18 +370,6 @@ Do **not** reintroduce business logic into transport or rendering layers.
 - Do not refactor `astrology.py`, `zodparsbase.py`, or `options.py` speculatively; they are load-bearing and have many callers.
 - Do not introduce new top-level dependencies without noting them in your response.
 - Do not convert wx event patterns to async/await.
-
-## Running the App
-Run with: `python3 morinus.py`
-**Always use `python3`** (Python 3.13+). Never use `pythonw` (that resolves to Python 2.7 on this machine).
-Never compile/package to test. Run directly.
-After code changes, always run `python3 morinus.py` so behavior can be verified immediately.
-
-**One-shot build + launch (use this in worktrees or after a fresh clone):**
-```bash
-cd SWEP/src && python3 setup.py build_ext --inplace -q && cd ../.. && python3 morinus.py
-```
-A `.claude/launch.json` is present in the workspace root — `preview_start "morinus"` runs the above automatically.
 
 ## Swiss Ephemeris (SWEP) C Extension
 Morinus depends on `sweastrology`, a C extension built from `SWEP/src/`.

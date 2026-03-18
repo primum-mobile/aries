@@ -123,6 +123,24 @@ import arabicpartswnd
 import transitmwnd
 import profectionswnd
 import primdirslistwnd
+import miscwnd
+import midpointswnd
+import speedswnd
+import munposwnd
+import antisciawnd
+import zodparswnd
+import stripwnd
+import almutenzodswnd
+import almutenchartwnd
+import fixstarswnd
+import fixstarsaspectswnd
+import fixstarsparallelswnd
+import decennialswnd
+import zodiacalreleasingwnd
+import phasiswnd
+import paranwnd
+import eclipseswnd
+import angleatbirthwnd
 import placidiansapd
 import placidianutppd
 import regiomontanpd
@@ -139,6 +157,7 @@ import ephemcalc
 import wx.lib.newevent
 import math #solar precession
 import circumambulationframe
+import circumambulation
 import fixstardirsframe
 import searchframe
 import keyboard_layers
@@ -1085,6 +1104,25 @@ class MFrame(wx.Frame):
 			'planetary_hours': has_chart,
 			'firdaria': has_chart,
 			'arabic_parts': has_chart,
+			'eclipses': has_chart,
+			'angle_at_birth': has_chart,
+			'misc': has_chart,
+			'midpoints': has_chart,
+			'speeds': has_chart,
+			'mundane_positions': has_chart,
+			'antiscia': has_chart,
+			'zodpars': has_chart,
+			'strip': has_chart,
+			'almuten_zodiacal': has_chart,
+			'almuten_chart': has_chart,
+			'fixed_stars': has_chart,
+			'fixed_stars_aspects': has_chart,
+			'fixed_stars_parallels': has_chart,
+			'circumambulation': has_chart,
+			'zodiacal_releasing': has_chart,
+			'decennials': has_chart,
+			'phasis': has_chart,
+			'paranatellonta': has_chart,
 		}
 		return self._workspace_state.build_sidebar_state(enabled_actions)
 
@@ -1110,6 +1148,25 @@ class MFrame(wx.Frame):
 			'planetary_hours': lambda e: self._workspace_table_planetary_hours(),
 			'firdaria': lambda e: self._workspace_table_firdaria(),
 			'arabic_parts': lambda e: self._workspace_table_arabic_parts(),
+			'misc': lambda e: self._workspace_table_misc(),
+			'midpoints': lambda e: self._workspace_table_midpoints(),
+			'speeds': lambda e: self._workspace_table_speeds(),
+			'mundane_positions': lambda e: self._workspace_table_mundane_positions(),
+			'antiscia': lambda e: self._workspace_table_antiscia(),
+			'zodpars': lambda e: self._workspace_table_zodpars(),
+			'strip': lambda e: self._workspace_table_strip(),
+			'almuten_zodiacal': lambda e: self._workspace_table_almuten_zodiacal(),
+			'almuten_chart': lambda e: self._workspace_table_almuten_chart(),
+			'fixed_stars': lambda e: self._workspace_table_fixed_stars(),
+			'fixed_stars_aspects': lambda e: self._workspace_table_fixed_stars_aspects(),
+			'fixed_stars_parallels': lambda e: self._workspace_table_fixed_stars_parallels(),
+			'eclipses': lambda e: self._workspace_table_eclipses(),
+			'angle_at_birth': lambda e: self._workspace_table_angle_at_birth(),
+			'circumambulation': lambda e: self._workspace_open_circumambulation(),
+			'zodiacal_releasing': lambda e: self._workspace_table_zodiacal_releasing(),
+			'decennials': lambda e: self._workspace_table_decennials(),
+			'phasis': lambda e: self._workspace_table_phasis(),
+			'paranatellonta': lambda e: self._workspace_table_paranatellonta(),
 		}
 		handler = action_map.get(action_id)
 		if handler is not None:
@@ -3417,6 +3474,212 @@ class MFrame(wx.Frame):
 		self._pd_for_workspace = True
 		self.onPrimaryDirs(None)
 
+	def _workspace_table_misc(self):
+		if self.splash:
+			return
+		wait = wx.BusyCursor()
+		host = self._workspace_shell.get_table_host()
+		wnd = miscwnd.MiscWnd(host, self.horoscope, self.options, self)
+		self._show_table_in_workspace('misc', wnd)
+
+	def _workspace_table_midpoints(self):
+		if self.splash:
+			return
+		wait = wx.BusyCursor()
+		host = self._workspace_shell.get_table_host()
+		wnd = midpointswnd.MidPointsWnd(host, self.horoscope, self.options, self)
+		self._show_table_in_workspace('midpoints', wnd)
+
+	def _workspace_table_speeds(self):
+		if self.splash:
+			return
+		wait = wx.BusyCursor()
+		host = self._workspace_shell.get_table_host()
+		wnd = speedswnd.SpeedsWnd(host, self.horoscope, self.options, self)
+		self._show_table_in_workspace('speeds', wnd)
+
+	def _workspace_table_mundane_positions(self):
+		if self.splash:
+			return
+		wait = wx.BusyCursor()
+		host = self._workspace_shell.get_table_host()
+		wnd = munposwnd.MunPosWnd(host, self.horoscope, self.options, self)
+		self._show_table_in_workspace('mundane_positions', wnd)
+
+	def _workspace_table_antiscia(self):
+		if self.splash:
+			return
+		wait = wx.BusyCursor()
+		host = self._workspace_shell.get_table_host()
+		wnd = antisciawnd.AntisciaWnd(host, self.horoscope, self.options, self)
+		self._show_table_in_workspace('antiscia', wnd)
+
+	def _workspace_table_zodpars(self):
+		if self.splash:
+			return
+		wait = wx.BusyCursor()
+		host = self._workspace_shell.get_table_host()
+		wnd = zodparswnd.ZodParsWnd(host, self.horoscope, self.options, self)
+		self._show_table_in_workspace('zodpars', wnd)
+
+	def _workspace_table_strip(self):
+		if self.splash:
+			return
+		wait = wx.BusyCursor()
+		host = self._workspace_shell.get_table_host()
+		wnd = stripwnd.StripWnd(host, self.horoscope, self.options, self)
+		self._show_table_in_workspace('strip', wnd)
+
+	def _workspace_table_almuten_zodiacal(self):
+		if self.splash:
+			return
+		wait = wx.BusyCursor()
+		host = self._workspace_shell.get_table_host()
+		wnd = almutenzodswnd.AlmutenZodsWnd(host, self.horoscope, self.options, self)
+		self._show_table_in_workspace('almuten_zodiacal', wnd)
+
+	def _workspace_table_almuten_chart(self):
+		if self.splash:
+			return
+		wait = wx.BusyCursor()
+		host = self._workspace_shell.get_table_host()
+		wnd = almutenchartwnd.AlmutenChartWnd(host, self.horoscope, self.options, self)
+		self._show_table_in_workspace('almuten_chart', wnd)
+
+	def _workspace_table_fixed_stars(self):
+		if self.splash:
+			return
+		if not self.checkFixStars():
+			return
+		if len(self.options.fixstars) == 0:
+			dlgm = wx.MessageDialog(self, mtexts.txts['NoSelFixStars'], '', wx.OK|wx.ICON_INFORMATION)
+			dlgm.ShowModal()
+			dlgm.Destroy()
+			return
+		wait = wx.BusyCursor()
+		host = self._workspace_shell.get_table_host()
+		wnd = fixstarswnd.FixStarsWnd(host, self.horoscope, self.options, self)
+		self._show_table_in_workspace('fixed_stars', wnd)
+
+	def _workspace_table_fixed_stars_aspects(self):
+		if self.splash:
+			return
+		if not self.checkFixStars():
+			return
+		if len(self.options.fixstars) == 0:
+			dlgm = wx.MessageDialog(self, mtexts.txts['NoSelFixStars'], '', wx.OK|wx.ICON_INFORMATION)
+			dlgm.ShowModal()
+			dlgm.Destroy()
+			return
+		wait = wx.BusyCursor()
+		host = self._workspace_shell.get_table_host()
+		wnd = fixstarsaspectswnd.FixStarsAspectsWnd(host, self.horoscope, self.options, self)
+		self._show_table_in_workspace('fixed_stars_aspects', wnd)
+
+	def _workspace_table_fixed_stars_parallels(self):
+		if self.splash:
+			return
+		if not self.checkFixStars():
+			return
+		if len(self.options.fixstars) == 0:
+			dlgm = wx.MessageDialog(self, mtexts.txts['NoSelFixStars'], '', wx.OK|wx.ICON_INFORMATION)
+			dlgm.ShowModal()
+			dlgm.Destroy()
+			return
+		wait = wx.BusyCursor()
+		host = self._workspace_shell.get_table_host()
+		wnd = fixstarsparallelswnd.FixStarsParallelsWnd(host, self.horoscope, self.options, self)
+		self._show_table_in_workspace('fixed_stars_parallels', wnd)
+
+	def _workspace_table_eclipses(self):
+		if self.splash:
+			return
+		if self.horoscope is None:
+			return
+		wait = wx.BusyCursor()
+		host = self._workspace_shell.get_table_host()
+		wnd = eclipseswnd.EclipsesWnd(host, self.horoscope, self.options, self)
+		self._show_table_in_workspace('eclipses', wnd)
+
+	def _workspace_table_angle_at_birth(self):
+		if self.splash:
+			return
+		if self.horoscope is None:
+			return
+		wait = wx.BusyCursor()
+		host = self._workspace_shell.get_table_host()
+		wnd = angleatbirthwnd.AngleAtBirthWnd(host, self.horoscope, self.options, self)
+		self._show_table_in_workspace('angle_at_birth', wnd)
+
+	def _workspace_open_circumambulation(self):
+		if self.splash:
+			return
+		if self.horoscope.time.bc:
+			dlgm = wx.MessageDialog(self, mtexts.txts['NotAvailable'], '', wx.OK|wx.ICON_INFORMATION)
+			dlgm.ShowModal()
+			dlgm.Destroy()
+			return
+		wait = wx.BusyCursor()
+		try:
+			host = self._workspace_shell.get_table_host()
+			wnd = circumambulationframe.CircumWnd(host, self.horoscope, self.options, mainfr=self)
+			rows = circumambulation.compute_distributions(
+				self.horoscope, self.options,
+				key=circumambulationframe._circum_years_per_deg_from_options(self.options),
+				max_rows=60, include_participating=True, max_age_years=150,
+				use_exact_oa=circumambulation.use_pd_circumoa_from_options(self.options)
+			)
+			wnd.set_data(rows)
+			self._show_table_in_workspace('circumambulation', wnd)
+		except ValueError as e:
+			wx.MessageBox(u"%s" % e, mtexts.txts['Circumambulation'], wx.OK | wx.ICON_INFORMATION)
+		finally:
+			del wait
+
+	def _workspace_table_zodiacal_releasing(self):
+		if self.splash:
+			return
+		if self.horoscope.time.bc:
+			dlgm = wx.MessageDialog(self, mtexts.txts['NotAvailable'], '', wx.OK|wx.ICON_INFORMATION)
+			dlgm.ShowModal()
+			dlgm.Destroy()
+			return
+		wait = wx.BusyCursor()
+		host = self._workspace_shell.get_table_host()
+		wnd = zodiacalreleasingwnd.ZRWnd(host, self.horoscope, self.options, mainfr=self)
+		wnd.compute_and_draw()
+		self._show_table_in_workspace('zodiacal_releasing', wnd)
+		del wait
+
+	def _workspace_table_decennials(self):
+		if self.splash:
+			return
+		if self.horoscope.time.bc:
+			dlgm = wx.MessageDialog(self, mtexts.txts['NotAvailable'], '', wx.OK|wx.ICON_INFORMATION)
+			dlgm.ShowModal()
+			dlgm.Destroy()
+			return
+		wait = wx.BusyCursor()
+		host = self._workspace_shell.get_table_host()
+		wnd = decennialswnd.DecWnd(host, self.horoscope, self.options, self)
+		self._show_table_in_workspace('decennials', wnd)
+
+	def _workspace_table_phasis(self):
+		if self.splash:
+			return
+		wait = wx.BusyCursor()
+		host = self._workspace_shell.get_table_host()
+		wnd = phasiswnd.PhasisWnd(host, self.horoscope, self.options, self)
+		self._show_table_in_workspace('phasis', wnd)
+
+	def _workspace_table_paranatellonta(self):
+		if self.splash:
+			return
+		wait = wx.BusyCursor()
+		host = self._workspace_shell.get_table_host()
+		wnd = paranwnd.ParanatellontaWnd(host, self.horoscope, self.options, self)
+		self._show_table_in_workspace('paranatellonta', wnd)
+
 	# --- end workspace-embedded table methods ---
 
 	#Table-menu
@@ -3937,6 +4200,9 @@ class MFrame(wx.Frame):
 		fr.Show(True)
 
 	def onZodiacalReleasing(self, event):
+		if hasattr(self, '_workspace_shell') and self._workspace_shell is not None:
+			self._workspace_table_zodiacal_releasing()
+			return
 		if self.horoscope.time.bc:
 			dlgm = wx.MessageDialog(self, mtexts.txts['NotAvailable'], '', wx.OK|wx.ICON_INFORMATION)
 			dlgm.ShowModal(); dlgm.Destroy(); return

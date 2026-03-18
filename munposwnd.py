@@ -63,8 +63,8 @@ class MunPosWnd(commonwnd.CommonWnd):
 
 		self.SetVirtualSize((self.WIDTH, self.HEIGHT))
 
-		self.fntMorinus = self._load_font(common.common.symbols, self.FONT_SIZE)
-		self.fntText = self._load_font(common.common.abc, self.FONT_SIZE)
+		self.fntMorinus = ImageFont.truetype(common.common.symbols, self.FONT_SIZE)
+		self.fntText = ImageFont.truetype(common.common.abc, self.FONT_SIZE)
 		self.signs = common.common.Signs1
 		if not self.options.signs:
 			self.signs = common.common.Signs2
@@ -90,7 +90,8 @@ class MunPosWnd(commonwnd.CommonWnd):
 		if self.bw:
 			tableclr = (0,0,0)
 
-		img, draw = self.newScaledImageDraw(self.WIDTH, self.HEIGHT, self.bkgclr)
+		img = Image.new('RGB', (self.WIDTH, self.HEIGHT), self.bkgclr)
+		draw = ImageDraw.Draw(img)
 
 		BOR = commonwnd.CommonWnd.BORDER
 
@@ -148,7 +149,9 @@ class MunPosWnd(commonwnd.CommonWnd):
 			# 그 아래 실제 Mundane Fortuna 값
 			self.drawlinelof(draw, x, y+self.LINE_HEIGHT, mtexts.txts['MLoF'], self.chart.munfortune.mfortune, tableclr, 0)
 
-		self.buffer = self.scaledBitmapFromImage(img)
+		wxImg = wx.Image(img.size[0], img.size[1])
+		wxImg.SetData(img.tobytes())
+		self.buffer = wx.Bitmap(wxImg)
 
 
 	def drawline(self, draw, x, y, clr, idx):

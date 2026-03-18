@@ -48,13 +48,10 @@ class RiseSetWnd(commonwnd.CommonWnd):
 
 		self.SetVirtualSize((self.WIDTH, self.HEIGHT))
 
-		self.fntMorinus = self._load_font(common.common.symbols, self.FONT_SIZE)
-		self.fntText = self._load_font(common.common.abc, self.FONT_SIZE)
+		self.fntMorinus = ImageFont.truetype(common.common.symbols, self.FONT_SIZE)
+		self.fntText = ImageFont.truetype(common.common.abc, self.FONT_SIZE)
 		self.clrs = (self.options.clrdomicil, self.options.clrexal, self.options.clrperegrin, self.options.clrcasus, self.options.clrexil)	
 #		self.deg_symbol = u'\u00b0'
-
-		if self.chart.riseset is None:
-			self.chart.rebuildRiseSet()
 
 		self.drawBkg()
 
@@ -75,7 +72,8 @@ class RiseSetWnd(commonwnd.CommonWnd):
 		if self.bw:
 			tableclr = (0,0,0)
 
-		img, draw = self.newScaledImageDraw(self.WIDTH, self.HEIGHT, self.bkgclr)
+		img = Image.new('RGB', (self.WIDTH, self.HEIGHT), self.bkgclr)
+		draw = ImageDraw.Draw(img)
 
 		BOR = commonwnd.CommonWnd.BORDER
 
@@ -103,7 +101,9 @@ class RiseSetWnd(commonwnd.CommonWnd):
 			self.drawline(draw, x, y+realnum*self.LINE_HEIGHT, tableclr, i)
 			realnum += 1
 
-		self.buffer = self.scaledBitmapFromImage(img)
+		wxImg = wx.Image(img.size[0], img.size[1])
+		wxImg.SetData(img.tobytes())
+		self.buffer = wx.Bitmap(wxImg)
 
 
 	def drawline(self, draw, x, y, clr, idx):

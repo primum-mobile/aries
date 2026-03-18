@@ -4,9 +4,6 @@ import os
 import wx
 import mtexts
 import windowbehavior
-from PIL import Image as PILImage
-from PIL import ImageDraw as PILImageDraw
-import wxcompat
 
 
 class CommonWnd(wx.ScrolledWindow):
@@ -20,7 +17,6 @@ class CommonWnd(wx.ScrolledWindow):
         self.chart = chrt
         self.options = options
         self.bw = self.options.bw
-        self.buffer = wx.Bitmap(1, 1)
 
         self.SetBackgroundColour(self.options.clrbackground)
 
@@ -47,9 +43,6 @@ class CommonWnd(wx.ScrolledWindow):
 
 
     def onSaveAsBitmap(self, event):
-        if not hasattr(self, 'buffer') or self.buffer is None:
-            return
-
         name = self.chart.name+self.getExt()
         dlg = wx.FileDialog(self, mtexts.txts['SaveAsBmp'], '', name, mtexts.txts['BMPFiles'], wx.FD_SAVE)
         if os.path.isdir(self.mainfr.fpathimgs):
@@ -85,38 +78,7 @@ class CommonWnd(wx.ScrolledWindow):
 
 
     def OnPaint(self, event):
-        buffer = getattr(self, 'buffer', None)
-        if buffer is None:
-            dc = wx.PaintDC(self)
-            dc.Clear()
-            return
-        dc = wx.BufferedPaintDC(self, buffer, wx.BUFFER_VIRTUAL_AREA)
-
-
-    def _load_font(self, path, logical_size):
-        """Load a PIL font at physical resolution, wrapped in ScaledFont for logical measurements."""
-        from PIL import ImageFont as _PF
-        sc = wxcompat.get_dpi_scale()
-        physical = max(1, int(round(logical_size * sc)))
-        font = _PF.truetype(path, physical)
-        return wxcompat.ScaledFont(font, sc) if sc != 1.0 else font
-
-    def newScaledImageDraw(self, width, height, background_color):
-        scale = wxcompat.get_dpi_scale(self)
-        self._buffer_dpi_scale = scale
-        physical_width = max(1, int(round(width * scale)))
-        physical_height = max(1, int(round(height * scale)))
-        image = PILImage.new('RGB', (physical_width, physical_height), background_color)
-        draw = wxcompat.ScaledPILDraw(PILImageDraw.Draw(image), scale)
-        return image, draw
-
-
-    def scaledBitmapFromImage(self, image):
-        wx_image = wx.Image(image.size[0], image.size[1])
-        wx_image.SetData(image.tobytes())
-        bitmap = wx.Bitmap(wx_image)
-        scale = getattr(self, '_buffer_dpi_scale', wxcompat.get_dpi_scale(self))
-        return wxcompat.set_bitmap_scale(bitmap, scale)
+        dc = wx.BufferedPaintDC(self, self.buffer, wx.BUFFER_VIRTUAL_AREA)
 
 
 

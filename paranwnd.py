@@ -255,9 +255,7 @@ def _ra_dec_planet_deg_ut(jd_ut, ipl, lon_deg, lat_deg, alt_m=0.0):
         raise RuntimeError("Swiss Ephemeris가 필요합니다.")
     swe.swe_set_topo(lon_deg, lat_deg, alt_m)
     iflag = astrology.SEFLG_SWIEPH | astrology.SEFLG_EQUATORIAL | astrology.SEFLG_TOPOCTR
-    serr, xx = astrology.swe_calc_ut(jd_ut, ipl, iflag)
-    if xx is None or len(xx) < 2:
-        raise RuntimeError(serr or "Unexpected swe_calc_ut return format")
+    err, xx = astrology.swe_calc_ut(jd_ut, ipl, iflag)
     return xx[0], xx[1]
 
 def _lst(jd_ut, lon_deg):
@@ -651,10 +649,10 @@ class ParanatellontaWnd(cw.CommonWnd):
         self.TITLE_W = sum(self.COL_W)
 
         # 글꼴: FixStarsWnd와 동일(abc / symbols)
-        self.f_text = self._load_font(common.common.abc,      self.FONT_SIZE)
-        self.f_sym  = self._load_font(common.common.symbols,  self.FONT_SIZE)
+        self.f_text = ImageFont.truetype(common.common.abc,      self.FONT_SIZE)
+        self.f_sym  = ImageFont.truetype(common.common.symbols,  self.FONT_SIZE)
         try:
-            self.f_text_bold = self._load_font(common.common.abc_bold, self.FONT_SIZE)
+            self.f_text_bold = ImageFont.truetype(common.common.abc_bold, self.FONT_SIZE)
         except Exception:
             self.f_text_bold = None
 
@@ -691,9 +689,23 @@ class ParanatellontaWnd(cw.CommonWnd):
         except Exception:
             pass
 
-        # 데이터 구성 → 배경 그리기
-        self.rows = self._compute_rows()
+        # 데이터 구성 → 배경 그리기 (deferred to avoid UI freeze)
+        self.rows = []
         self.refreshBkg()
+        wx.CallAfter(self._deferred_compute)
+
+    def _deferred_compute(self):
+        wait = wx.BusyCursor()
+        try:
+            self.rows = self._compute_rows()
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.rows = []
+        finally:
+            del wait
+        self.refreshBkg()
+        self.Refresh()
     def _planet_rgb(self, ipl):
         """사용자 색상(Use individual) 우선, 아니면 존비 팔레트로 폴백."""
         if getattr(self, 'bw', False):
@@ -732,19 +744,8 @@ class ParanatellontaWnd(cw.CommonWnd):
     def getExt(self):
         return u"Paran.bmp"
 
-    def _rgb(self, col, fallback):
-        if col is None:
-            return fallback
-        try:
-            return (col.Red(), col.Green(), col.Blue())
-        except Exception:
-            try:
-                return tuple(col)
-            except Exception:
-                return fallback
-
     def getTitle(self):
-        return (u"ΔT", mtexts.txts['TopicalPlanet'], mtexts.txts["FixedStar"], mtexts.txts["Angles"])
+        return (u"ΔT", mtexts,txts['TopicalPlanet'], mtexts,txts["FixedStar"], mtexts,txts["Angles"])
     def refreshBkg(self):
         """
         표 내용을 PIL로 그려 self.buffer(wx.Bitmap)를 만든다.
@@ -759,9 +760,9 @@ class ParanatellontaWnd(cw.CommonWnd):
             self.clTbl = (  0,   0,   0)
         else:
             # options에서 받아오기(없으면 안전 기본값)
-            self.clBkg = self._rgb(getattr(self.options, 'clrbackground', None), (255,255,255))
-            self.clTxt = self._rgb(getattr(self.options, 'clrtexts', None), (0,0,0))
-            self.clTbl = self._rgb(getattr(self.options, 'clrtable', None), (120,120,120))
+            self.clBkg = tuple(getattr(self.options, 'clrbackground', (255,255,255)))
+            self.clTxt = tuple(getattr(self.options, 'clrtexts',      (  0,  0,  0)))
+            self.clTbl = tuple(getattr(self.options, 'clrtable',      (120,120,120)))
 
         # wx 배경도 일치
         try:

@@ -189,8 +189,8 @@ class CircumWnd(cw.CommonWnd):
         self.SPACE_TITLEY = 0
 
         # 폰트 (모리누스 심볼 + 텍스트)  :contentReference[oaicite:2]{index=2}
-        self.f_sym  = self._load_font(common.common.symbols, self.FONT_SIZE)
-        self.f_txt  = self._load_font(common.common.abc,     self.FONT_SIZE)
+        self.f_sym  = ImageFont.truetype(common.common.symbols, self.FONT_SIZE)
+        self.f_txt  = ImageFont.truetype(common.common.abc,     self.FONT_SIZE)
         # 별자리/행성 글리프 테이블
         self.signs  = common.common.Signs1 if self.options.signs else common.common.Signs2
         self.planets = common.common.Planets

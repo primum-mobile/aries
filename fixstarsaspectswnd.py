@@ -68,12 +68,12 @@ class FixStarsAspectsWnd(commonwnd.CommonWnd):
 
 		self.SetVirtualSize((self.WIDTH, self.HEIGHT))
 
-		self.fntMorinus = self._load_font(common.common.symbols, int(4*self.FONT_SIZE/5))
-		self.fntSymbol = self._load_font(common.common.symbols, int(3*self.FONT_SIZE/2))
-		self.fntAspects = self._load_font(common.common.symbols, int(3*self.FONT_SIZE/5))
-		self.fntText = self._load_font(common.common.abc, int(3*self.FONT_SIZE/5))
-		#self.fntTextOrb = self._load_font(common.common.abc, int(self.FONT_SIZE/2))
-		self.fntTextOrb = self._load_font(common.common.abc_ascii, int(self.FONT_SIZE/2))
+		self.fntMorinus = ImageFont.truetype(common.common.symbols, int(4*self.FONT_SIZE/5))
+		self.fntSymbol = ImageFont.truetype(common.common.symbols, int(3*self.FONT_SIZE/2))
+		self.fntAspects = ImageFont.truetype(common.common.symbols, int(3*self.FONT_SIZE/5))
+		self.fntText = ImageFont.truetype(common.common.abc, int(3*self.FONT_SIZE/5))
+		#self.fntTextOrb = ImageFont.truetype(common.common.abc, int(self.FONT_SIZE/2))
+		self.fntTextOrb = ImageFont.truetype(common.common.abc_ascii, int(self.FONT_SIZE/2))
 		self.clrs = (self.options.clrdomicil, self.options.clrexal, self.options.clrperegrin, self.options.clrcasus, self.options.clrexil)
 		self.arsigndiff = (0, -1, -1, 2, -1, 3, 4, -1, -1, -1, 6)
 		self.hidx = (1, 2, 3, 10, 11, 12)
@@ -147,7 +147,8 @@ class FixStarsAspectsWnd(commonwnd.CommonWnd):
 		if self.bw:
 			tableclr = (0,0,0)
 
-		img, draw = self.newScaledImageDraw(self.WIDTH, self.HEIGHT, self.bkgclr)
+		img = Image.new('RGB', (self.WIDTH, self.HEIGHT), self.bkgclr)
+		draw = ImageDraw.Draw(img)
 
 		BOR = commonwnd.CommonWnd.BORDER
 
@@ -456,7 +457,9 @@ class FixStarsAspectsWnd(commonwnd.CommonWnd):
 							draw.text((xx+(self.SQUARE_SIZE-w)/2, yy), OrbDegree, fill=clr, font=self.fntTextOrb)	
 # ###################################
 
-		self.buffer = self.scaledBitmapFromImage(img)
+		wxImg = wx.Image(img.size[0], img.size[1])
+		wxImg.SetData(img.tobytes())
+		self.buffer = wx.Bitmap(wxImg)
 
 
 	def drawSquare(self, draw, x, y, tableclr):

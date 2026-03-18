@@ -625,8 +625,8 @@ class ArabicPartsWnd(commonwnd.CommonWnd):
 
 		self.SetVirtualSize((self.WIDTH, self.HEIGHT))
 
-		self.fntMorinus = self._load_font(common.common.symbols, self.FONT_SIZE)
-		self.fntText = self._load_font(common.common.abc, self.FONT_SIZE)
+		self.fntMorinus = ImageFont.truetype(common.common.symbols, self.FONT_SIZE)
+		self.fntText = ImageFont.truetype(common.common.abc, self.FONT_SIZE)
 		self.signs = common.common.Signs1
 		if not self.options.signs:
 			self.signs = common.common.Signs2
@@ -652,7 +652,8 @@ class ArabicPartsWnd(commonwnd.CommonWnd):
 		if self.bw:
 			tableclr = (0,0,0)
 
-		img, draw = self.newScaledImageDraw(self.WIDTH, self.HEIGHT, self.bkgclr)
+		img = Image.new('RGB', (self.WIDTH, self.HEIGHT), self.bkgclr)
+		draw = ImageDraw.Draw(img)
 
 		BOR = commonwnd.CommonWnd.BORDER
 
@@ -689,7 +690,9 @@ class ArabicPartsWnd(commonwnd.CommonWnd):
 				y = BOR+self.TITLE_HEIGHT+self.SPACE_TITLEY+(self.LINE_HEIGHT)*(i+1)
 				self.drawline(draw, x, y, self.chart.parts.parts, tableclr, i)
 
-		self.buffer = self.scaledBitmapFromImage(img)
+		wxImg = wx.Image(img.size[0], img.size[1])
+		wxImg.SetData(img.tobytes())
+		self.buffer = wx.Bitmap(wxImg)
 
 	def drawlinelof(self, draw, x, y, name, data, clr):
 		#bottom horizontal line
