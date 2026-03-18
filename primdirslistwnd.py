@@ -445,7 +445,7 @@ class _WorkspacePDStepperAdapter(object):
 
 
 class PrimDirsListWnd(wx.ScrolledWindow):
-	SCROLL_RATE = 20
+	SCROLL_RATE = 10
 	BORDER = 20
 
 	def __init__(self, parent, chrt, options, pds, mainfr, currpage, maxpage, fr, to, id = -1, size = wx.DefaultSize):

@@ -7,7 +7,7 @@ import windowbehavior
 
 
 class CommonWnd(wx.ScrolledWindow):
-    SCROLL_RATE = 20
+    SCROLL_RATE = 10
     BORDER = 20
 
     def __init__(self, parent, chrt, options, id = -1, size = wx.DefaultSize):
@@ -21,6 +21,10 @@ class CommonWnd(wx.ScrolledWindow):
         self.SetBackgroundColour(self.options.clrbackground)
 
         self.SetScrollRate(CommonWnd.SCROLL_RATE, CommonWnd.SCROLL_RATE)
+        try:
+            self.ShowScrollbars(wx.SHOW_SB_DEFAULT, wx.SHOW_SB_NEVER)
+        except Exception:
+            pass
 
         self.pmenu = wx.Menu()
         self.ID_SaveAsBitmap = wx.NewId()
