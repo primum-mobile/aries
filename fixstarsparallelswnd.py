@@ -61,10 +61,10 @@ class FixStarsParallelsWnd(commonwnd.CommonWnd):
 
 
         # fonts: follow positionswnd/fixstarswnd
-        self.fntMorinus = ImageFont.truetype(common.common.symbols, int(self.FONT_SIZE))
-        self.fntSymbol  = ImageFont.truetype(common.common.symbols, int(3 * self.FONT_SIZE / 2))
-        self.fntText    = ImageFont.truetype(common.common.abc, int(self.FONT_SIZE))
-        self.fntTextBold = ImageFont.truetype(common.common.abc_bold, int(self.FONT_SIZE)) if os.path.exists(common.common.abc_bold) else self.fntText
+        self.fntMorinus = self._load_font(common.common.symbols, int(self.FONT_SIZE))
+        self.fntSymbol  = self._load_font(common.common.symbols, int(3 * self.FONT_SIZE / 2))
+        self.fntText    = self._load_font(common.common.abc, int(self.FONT_SIZE))
+        self.fntTextBold = self._load_font(common.common.abc_bold, int(self.FONT_SIZE)) if os.path.exists(common.common.abc_bold) else self.fntText
         self.deg_symbol = u'\u00b0'
 
         # dignity 팔레트 (positionswnd와 동일)
@@ -382,8 +382,7 @@ class FixStarsParallelsWnd(commonwnd.CommonWnd):
         self.HEIGHT = int(2 * BOR + self.TABLE_HEIGHT)
         self.SetVirtualSize((self.WIDTH, self.HEIGHT))
 
-        img = Image.new('RGB', (int(self.WIDTH), int(self.HEIGHT)), (255,255,255) if self.bw else self.options.clrbackground)
-        draw = ImageDraw.Draw(img)
+        img, draw = self.newScaledImageDraw(int(self.WIDTH), int(self.HEIGHT), (255,255,255) if self.bw else self.options.clrbackground)
 
         # header (no left title)
         x = BOR; y = BOR
@@ -394,9 +393,7 @@ class FixStarsParallelsWnd(commonwnd.CommonWnd):
         for key in self._point_order():
             y = self._draw_point_row(draw, x, y, key)
 
-        wxImg = wx.Image(img.size[0], img.size[1])
-        wxImg.SetData(img.tobytes())
-        self.buffer = wx.Bitmap(wxImg)
+        self.buffer = self.scaledBitmapFromImage(img)
         self.Refresh(False)
 
     def _draw_header(self, draw, x, y):

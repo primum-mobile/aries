@@ -12,6 +12,46 @@ ASPECTS = (0, 60, 90, 120, 180)
 DEFAULT_KEY_Y_PER_DEG = 1.0  # years per equatorial degree (OA)
 DAYS_PER_YEAR = 365.2421897
 
+
+def years_per_degree_from_options(options):
+    """Return years-per-degree key for circumambulation from current options."""
+    v = getattr(options, 'circumkey', None)
+    if v is not None:
+        try:
+            return float(v)
+        except Exception:
+            pass
+
+    if getattr(options, 'pdkeydyn', False):
+        try:
+            coeff = float(primdirs.PrimDirs.staticData[primdirs.PrimDirs.NAIBOD][primdirs.PrimDirs.COEFF])
+            return coeff if coeff > 0.0 else DEFAULT_KEY_Y_PER_DEG
+        except Exception:
+            return DEFAULT_KEY_Y_PER_DEG
+
+    try:
+        if getattr(options, 'pdkeys', None) == primdirs.PrimDirs.CUSTOMER:
+            deg = float(getattr(options, 'pdkeydeg', 0.0))
+            minu = float(getattr(options, 'pdkeymin', 0.0))
+            sec = float(getattr(options, 'pdkeysec', 0.0))
+            deg_per_year = deg + minu / 60.0 + sec / 3600.0
+            return (1.0 / deg_per_year) if deg_per_year > 0.0 else DEFAULT_KEY_Y_PER_DEG
+
+        pdkeys = getattr(options, 'pdkeys', None)
+        if pdkeys is not None:
+            coeff = float(primdirs.PrimDirs.staticData[pdkeys][primdirs.PrimDirs.COEFF])
+            return coeff if coeff > 0.0 else DEFAULT_KEY_Y_PER_DEG
+    except Exception:
+        pass
+
+    return DEFAULT_KEY_Y_PER_DEG
+
+
+def use_pd_circumoa_from_options(options):
+    """Return True when circumambulation must use the PD engine method."""
+    mode = getattr(options, 'pdcircumoa', primdirs.PrimDirs.CIRCUM_OA_ASCENSIONAL_TIMES)
+    return mode == primdirs.PrimDirs.CIRCUM_OA_USE_PD
+
 def _gregorian_date_in_radix_zone(jd, chrt):
     """
     표시용 날짜를 라딕스의 민법(현지) 시각대(TZ + DST)에 맞춰 반환.
@@ -297,17 +337,26 @@ def _ayan_ut(jd_ut, options):
         pass
     return 0.0
 
-def _solve_segment_time(rt12, lam1_sid, lam2_sid, jd_start, key, calflag, options, iters=4):
+def _solve_segment_time(rt12, lam1_sid, lam2_sid, jd_start, key, calflag, options, iters=4,
+                        phi_deg=None, use_exact_oa=False):
     # Initial guess: use ayanamsha at segment start
     ay = _ayan_ut(jd_start, options)
-    delta_oa = _delta_oa_by_rt(rt12, lam1_sid, lam2_sid, ay)
+    if use_exact_oa and phi_deg is not None:
+        eps = _mean_obliquity_deg(jd_start)
+        delta_oa = _delta_oa_exact(phi_deg, lam1_sid, lam2_sid, ay, eps)
+    else:
+        delta_oa = _delta_oa_by_rt(rt12, lam1_sid, lam2_sid, ay)
     delta_years = delta_oa * key
     jd_end = _jd_add_years(jd_start, delta_years, calflag)
 
     # Fixed-point iteration: ay depends on jd_end; jd_end depends on ay.
     for _ in range(max(0, int(iters) - 1)):
         ay2 = _ayan_ut(jd_end, options)
-        delta_oa2 = _delta_oa_by_rt(rt12, lam1_sid, lam2_sid, ay2)
+        if use_exact_oa and phi_deg is not None:
+            eps2 = _mean_obliquity_deg(jd_end)
+            delta_oa2 = _delta_oa_exact(phi_deg, lam1_sid, lam2_sid, ay2, eps2)
+        else:
+            delta_oa2 = _delta_oa_by_rt(rt12, lam1_sid, lam2_sid, ay2)
         delta_years2 = delta_oa2 * key
         jd_end2 = _jd_add_years(jd_start, delta_years2, calflag)
 
@@ -394,8 +443,243 @@ def _mean_obliquity_deg(jd):
            - 5.76e-7*T**4
            - 4.34e-8*T**5) / 3600.0
     return eps
+
+
+# ---------------------------------------------------------------------------
+# Public entry point
+# ---------------------------------------------------------------------------
+
 def compute_distributions(chrt, options, start_lambda=None, key=DEFAULT_KEY_Y_PER_DEG,
-                          max_rows=200, include_participating=True, max_age_years=150):
+                          max_rows=200, include_participating=True, max_age_years=150,
+                          use_exact_oa=False):
+    """Route to the correct back-end depending on the OA method setting.
+
+    use_exact_oa=True  (CIRCUM_OA_USE_PD):
+        Delegates entirely to the Morinus PD engine (PlacidianSAPD).
+        Circumambulations are simply: Significator=ASC, Promittors=Terms+Planets,
+        all governed by the same PD settings already configured in the app.
+
+    use_exact_oa=False (CIRCUM_OA_ASCENSIONAL_TIMES):
+        Uses the traditional Hellenistic rising-times table (rt_0p5.txt).
+        Original table-based implementation preserved below as
+        _compute_distributions_ascensional_times().
+    """
+    if use_exact_oa:
+        return _compute_distributions_pd(
+            chrt, options, max_rows=max_rows, max_age_years=max_age_years)
+    else:
+        return _compute_distributions_ascensional_times(
+            chrt, options, start_lambda=start_lambda, key=key,
+            max_rows=max_rows, include_participating=include_participating,
+            max_age_years=max_age_years)
+
+
+def _compute_distributions_pd(chrt, options, max_rows=200, max_age_years=150):
+    """Compute circumambulation table by delegating to the Morinus PD engine.
+
+    Circumambulations = PD with Significator:ASC, Promittors:Terms+Planets (zodiacal).
+    Arc→years conversion uses the same key (Naibod/Cardan/Ptolemy/Custom) and
+    ayanamsha already set in options, so results align exactly with the PD table.
+    """
+    import copy
+    import placidiansapd
+
+    # Build effective options: ASC-only significator, terms enabled.
+    # All other settings (key, ayanamsha, subzodiacal, bianchini, secmotion…)
+    # are inherited from the user's PD settings unchanged.
+    eff = copy.copy(options)
+    eff.sigangles = [True, False, False, False]   # ASC only
+    eff.sighouses = False
+    eff.pdterms   = True
+    eff.pdlof     = [False, False]
+    eff.pdsyzygy  = False
+    eff.subzodiacal = primdirs.PrimDirs.SZNEITHER
+    eff.bianchini = False
+    if hasattr(eff, 'pdparallels'):
+        eff.pdparallels = [False, False]
+
+    classical_asps = {
+        chart.Chart.CONJUNCTIO,
+        chart.Chart.SEXTIL,
+        chart.Chart.QUADRAT,
+        chart.Chart.TRIGON,
+        chart.Chart.OPPOSITIO,
+    }
+    if hasattr(eff, 'pdaspects'):
+        try:
+            pdaspects = [False] * len(eff.pdaspects)
+            for idx in classical_asps:
+                if 0 <= idx < len(pdaspects):
+                    pdaspects[idx] = True
+            eff.pdaspects = pdaspects
+        except Exception:
+            pass
+
+    abort = primdirs.AbortPD()
+    try:
+        pd_engine = placidiansapd.PlacidianSAPD(
+            chrt, eff, primdirs.PrimDirs.RANGEALL, primdirs.PrimDirs.DIRECT, abort)
+        pd_engine.calcZodAscMC()
+    except Exception as e:
+        raise ValueError("PD engine error in circumambulation: %s" % e)
+
+    # Simple PD stream: ASC significator only.
+    asc_pds = [
+        pd for pd in pd_engine.pds
+        if pd.sig == primdirs.PrimDir.ASC and pd.direct
+    ]
+    asc_pds.sort(key=lambda pd: pd.arc)
+
+    TERM_MIN = primdirs.PrimDir.TERM
+    TERM_MAX = primdirs.PrimDir.TERM + 11        # 12 signs → TERM+0 … TERM+11
+
+    def _unique_by(events, keyfunc):
+        out = []
+        seen = set()
+        for ev in events:
+            key = keyfunc(ev)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(ev)
+        return out
+
+    # Root-cause normalization:
+    # - term stream = true term-boundary events only (conjunction)
+    # - collapse equivalent PD emissions to one event identity
+    term_hits_raw = [
+        pd for pd in asc_pds
+        if TERM_MIN <= pd.prom <= TERM_MAX and int(pd.promasp) == chart.Chart.CONJUNCTIO
+    ]
+    term_hits = _unique_by(
+        term_hits_raw,
+        lambda pd: (int(pd.prom), int(pd.prom2), round(float(pd.arc), 10), round(float(pd.time), 8))
+    )
+
+    planet_count = len(chrt.planets.planets)
+    planet_hits_raw = [
+        pd for pd in asc_pds
+        if 0 <= pd.prom < planet_count and int(pd.promasp) in classical_asps
+    ]
+    planet_hits = _unique_by(
+        planet_hits_raw,
+        lambda pd: (int(pd.prom), int(pd.promasp), round(float(pd.arc), 10), round(float(pd.time), 8))
+    )
+
+    if not term_hits:
+        return []
+
+    # Birth JD
+    calflag = astrology.SE_GREG_CAL
+    if chrt.time.cal == chart.Time.JULIAN:
+        calflag = astrology.SE_JUL_CAL
+    jd0 = astrology.swe_julday(chrt.time.year, chrt.time.month, chrt.time.day,
+                                chrt.time.time, calflag)
+    jd_limit = jd0 + max_age_years * DAYS_PER_YEAR
+
+    # Term edges for lam_start/lam_end (kept from original helper)
+    ayan_birth = _sidereal_offset_deg(chrt, options)
+    edges = sorted(_term_edges_deg(options, ayan_birth), key=lambda e: e[0])
+
+    # Find which term the natal ASC falls in
+    asc_sid = (chrt.houses.ascmc[houses.Houses.ASC] - ayan_birth) % 360.0
+    i0 = 0
+    for idx, (a, b, _, _) in enumerate(edges):
+        if a - 1e-9 <= asc_sid < b + 1e-9:
+            i0 = idx
+            break
+
+    rows = []
+    prev_arc = 0.0
+    prev_jd  = jd0
+    prev_age = 0.0
+    ph_ptr   = 0   # pointer into planet_hits list
+
+    for k, th in enumerate(term_hits):
+        if len(rows) >= max_rows:
+            break
+        if th.time > jd_limit + 1e-9:
+            break
+
+        edge = edges[(i0 + k) % len(edges)]
+        a, b, edge_ruler, _ = edge
+
+        # Period k ruler: birth term ruler for k=0, else the ruler entered at hit k-1
+        ruler_pid = edge_ruler if k == 0 else term_hits[k - 1].prom2
+
+        g_start = _gregorian_date_in_radix_zone(prev_jd, chrt)
+        g_end   = _gregorian_date_in_radix_zone(th.time,  chrt)
+
+        # Collect participating planet hits whose arc falls within this period
+        participating = []
+        seg_arc = max(th.arc - prev_arc, 0.0)
+        seg_lon = (b - a) % 360.0
+        while ph_ptr < len(planet_hits):
+            ph = planet_hits[ph_ptr]
+            if ph.arc > th.arc - 1e-9:
+                break
+            if ph.arc > prev_arc + 1e-9 and ph.time <= jd_limit + 1e-9:
+                if seg_arc > 1e-12:
+                    frac = (ph.arc - prev_arc) / seg_arc
+                    if frac < 0.0:
+                        frac = 0.0
+                    elif frac > 1.0:
+                        frac = 1.0
+                else:
+                    frac = 0.0
+                lam_part = (a + seg_lon * frac) % 360.0
+                aspect_deg  = chart.Chart.Aspects[ph.promasp] if 0 <= ph.promasp < len(chart.Chart.Aspects) else 0.0
+                participating.append({
+                    'lam':     lam_part,
+                    'lam_abs': ph.arc,
+                    'planet':  planet_label(ph.prom),
+                    'aspect':  aspect_deg,
+                    'doa':     ph.arc,
+                    'years':   ph.age,
+                    'jd':      ph.time,
+                    'date':    _gregorian_date_in_radix_zone(ph.time, chrt),
+                })
+            ph_ptr += 1
+
+        rows.append({
+            'lam_start':      a % 360.0,
+            'lam_end':        b % 360.0,
+            'sign_idx':       _sign_index(a),
+            'term_ruler_pid': ruler_pid,
+            'delta_oa':       th.arc - prev_arc,
+            'delta_years':    th.age - prev_age,
+            'date_start':     g_start,
+            'date_end':       g_end,
+            'age_start':      prev_age,
+            'age_end':        th.age,
+            'jd_start':       prev_jd,
+            'jd_end':         th.time,
+            'participating':  participating,
+        })
+
+        prev_arc = th.arc
+        prev_jd  = th.time
+        prev_age = th.age
+
+    return rows
+
+
+# ---------------------------------------------------------------------------
+# Legacy: Ascensional Times (rt_0p5.txt table) implementation
+#
+# NOTE: The following function was the original implementation written to
+# compute circumambulation periods using a rising-times table read from an
+# external file (rt_0p5.txt).  It is kept here as a reference and as the
+# back-end for the "Ascensional Times" mode (CIRCUM_OA_ASCENSIONAL_TIMES).
+#
+# For the preferred "Use PD Settings" mode the code above (_compute_distributions_pd)
+# delegates directly to the Morinus PD engine, which uses the exact same spherical
+# trigonometry already trusted for all other primary directions in the application.
+# ---------------------------------------------------------------------------
+
+def _compute_distributions_ascensional_times(
+        chrt, options, start_lambda=None, key=DEFAULT_KEY_Y_PER_DEG,
+        max_rows=200, include_participating=True, max_age_years=150):
     """
     Returns list of rows:
       - 'lam_start','lam_end','sign_idx','term_ruler_pid'
@@ -476,7 +760,8 @@ def compute_distributions(chrt, options, start_lambda=None, key=DEFAULT_KEY_Y_PE
         seg_end   = b
 
         delta_oa, delta_year, jd_next, ayan_used = _solve_segment_time(
-            rt12, seg_start, seg_end, jd_cursor, key, calflag, options
+            rt12, seg_start, seg_end, jd_cursor, key, calflag, options,
+            phi_deg=phi, use_exact_oa=False
         )
         if delta_oa <= 1e-9:
             # ★ 0길이 구간이라도 '텀 진입 시점'이 UI에 보이도록 마커 행을 추가한다.
@@ -515,7 +800,8 @@ def compute_distributions(chrt, options, start_lambda=None, key=DEFAULT_KEY_Y_PE
             hits = _exact_aspect_hits(seg_start, seg_end, planet_lams)
             for L, label, A in hits:
                 doa, yrs, jd, _ay_hit = _solve_segment_time(
-                    rt12, seg_start, L, jd_cursor, key, calflag, options
+                    rt12, seg_start, L, jd_cursor, key, calflag, options,
+                    phi_deg=phi, use_exact_oa=False
                 )
                 if jd > jd_limit + 1e-9:
                     continue
@@ -597,10 +883,10 @@ def planet_label(pid):
     try:
         x = int(pid)
     except Exception:
-        return unicode(pid)
+        return str(pid)
     if 0 <= x < len(base10):  # SwissEph 스타일
         return base10[x]
     if 0 <= x < 5:            # 5행성 전용
         return five[x]
-    return unicode(pid)
+    return str(pid)
 

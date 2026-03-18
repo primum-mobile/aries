@@ -43,6 +43,7 @@ class TransitFrame(wx.Frame):
 		wxcompat.apply_frame_screen_size(self, 0.80, (640, 400), square=True)
 
 		self.chart = chrt
+		self._initial_chart = chrt
 		self.radix = radix
 		self.options = options
 		self.parent = parent
@@ -375,6 +376,14 @@ class TransitFrame(wx.Frame):
 		)
 		self.change_chart(newchart)
 		self._update_navigation_title()
+		return True
+
+	def reset_to_initial_chart(self):
+		if self._initial_chart is None:
+			return False
+		if self.chart is not self._initial_chart:
+			self.change_chart(self._initial_chart)
+			self._update_navigation_title()
 		return True
 
 	def _update_navigation_title(self):

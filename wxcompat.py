@@ -212,9 +212,11 @@ class ScaledPILDraw:
 	def __getattr__(self, name):
 		return getattr(self._draw, name)
 
-	def text(self, xy, text, **kw):
+	def text(self, xy, text, fill=None, **kw):
 		s = self._s
 		sx, sy = xy[0] * s, xy[1] * s
+		if fill is not None:
+			kw['fill'] = fill
 		return self._draw.text((sx, sy), text, **kw)
 
 	def textsize(self, text, font=None, *args, **kw):
@@ -230,17 +232,26 @@ class ScaledPILDraw:
 
 	def line(self, xy, **kw):
 		s = self._s
-		scaled = [(x * s, y * s) for x, y in xy]
+		if xy and isinstance(xy[0], (int, float)):
+			scaled = [v * s for v in xy]
+		else:
+			scaled = [(x * s, y * s) for x, y in xy]
 		return self._draw.line(scaled, **kw)
 
 	def rectangle(self, xy, **kw):
 		s = self._s
-		scaled = [(x * s, y * s) for x, y in xy]
+		if xy and isinstance(xy[0], (int, float)):
+			scaled = [v * s for v in xy]
+		else:
+			scaled = [(x * s, y * s) for x, y in xy]
 		return self._draw.rectangle(scaled, **kw)
 
 	def ellipse(self, xy, **kw):
 		s = self._s
-		scaled = [(x * s, y * s) for x, y in xy]
+		if xy and isinstance(xy[0], (int, float)):
+			scaled = [v * s for v in xy]
+		else:
+			scaled = [(x * s, y * s) for x, y in xy]
 		return self._draw.ellipse(scaled, **kw)
 
 

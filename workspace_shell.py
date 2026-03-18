@@ -60,7 +60,14 @@ class _ScreenPositionContextEvent(object):
 _ROW_RADIUS = 8
 _ROW_PAD_X = 8
 _ROW_PAD_Y = 5
-_NAV_LINK_SIDE_MARGIN = 4
+_NAV_LINK_SIDE_MARGIN = 8
+_SCROLLBAR_HOVER_ZONE        = 14
+_SCROLLBAR_THUMB_WIDTH       = 10
+_SCROLLBAR_THUMB_HEIGHT      = 97
+_SCROLLBAR_MARGIN            = 2
+_SCROLLBAR_RADIUS            = 3
+_SCROLLBAR_FADE_STEPS        = 20
+_SCROLLBAR_FADE_INTERVAL_MS  = 50
 _SECTION_TITLE_SIDE_MARGIN = 12
 _SIDEBAR_MIN_WIDTH = 148
 _SIDEBAR_MAX_WIDTH = 240
@@ -68,6 +75,7 @@ _SIDEBAR_STARTUP_WIDTH = 245
 _SIDEBAR_SAFETY_WIDTH = 16
 _SIDEBAR_LINK_FONT_PT = 13
 _SIDEBAR_TITLE_FONT_PT = 10
+_DOC_INDENT_PIXELS = 12
 
 
 class SoftVerticalDivider(wx.Panel):
@@ -97,16 +105,18 @@ class SoftVerticalDivider(wx.Panel):
 
 
 class WorkspaceNavLink(wx.Panel):
-	def __init__(self, parent, options, item_id, label, subtitle='', selected=False, on_action=None, on_close=None):
+	def __init__(self, parent, options, item_id, label, subtitle='', selected=False, on_action=None, on_close=None, indent_level=0, on_context=None):
 		wx.Panel.__init__(self, parent, -1, style=wx.TAB_TRAVERSAL)
 
 		self.options = options
 		self.item_id = item_id
 		self._on_action = on_action
 		self._on_close = on_close
+		self._on_context = on_context
 		self._enabled = True
 		self._selected = bool(selected)
 		self._hovered = False
+		self._indent_level = max(0, int(indent_level))
 
 		self.SetBackgroundStyle(wx.BG_STYLE_PAINT)
 
@@ -126,6 +136,8 @@ class WorkspaceNavLink(wx.Panel):
 			self._close.SetCursor(wx.Cursor(wx.CURSOR_HAND))
 
 		row_sizer = wx.BoxSizer(wx.HORIZONTAL)
+		if self._indent_level > 0:
+			row_sizer.AddSpacer(self._indent_level * _DOC_INDENT_PIXELS)
 		row_sizer.Add(self._label, 1, wx.ALIGN_CENTER_VERTICAL)
 		if self._close is not None:
 			close_item = row_sizer.Add(self._close, 0, wx.LEFT | wx.ALIGN_CENTER_VERTICAL | wx.RESERVE_SPACE_EVEN_IF_HIDDEN, 6)
@@ -142,6 +154,9 @@ class WorkspaceNavLink(wx.Panel):
 			w.Bind(wx.EVT_LEFT_UP, self._activate)
 		if self._close is not None:
 			self._close.Bind(wx.EVT_LEFT_UP, self._close_item)
+		for w in [self] + self._all_children():
+			w.Bind(wx.EVT_CONTEXT_MENU, self._on_context_menu)
+			w.Bind(wx.EVT_RIGHT_UP, self._on_right_up)
 		for w in [self] + self._all_children():
 			w.Bind(wx.EVT_ENTER_WINDOW, self._hover_on)
 			w.Bind(wx.EVT_LEAVE_WINDOW, self._hover_off)
@@ -208,6 +223,19 @@ class WorkspaceNavLink(wx.Panel):
 		if self._enabled and self._on_close is not None:
 			wx.CallAfter(self._on_close, self.item_id)
 
+	def _on_context_menu(self, event):
+		if self._enabled and self._on_context is not None:
+			self._on_context(self.item_id, event)
+
+	def _on_right_up(self, event):
+		if self._enabled and self._on_context is not None:
+			screen_position = wx.DefaultPosition
+			try:
+				screen_position = self.ClientToScreen(event.GetPosition())
+			except Exception:
+				pass
+			self._on_context(self.item_id, _ScreenPositionContextEvent(screen_position))
+
 	def _on_paint(self, event):
 		dc = wx.AutoBufferedPaintDC(self)
 		bg = _to_colour(_sidebar_colour(self.options))
@@ -226,31 +254,95 @@ class WorkspaceNavLink(wx.Panel):
 			dc.DrawRoundedRectangle(2, 1, w - 4, h - 2, _ROW_RADIUS)
 
 
-class WorkspaceNavigatorPane(wx.ScrolledWindow):
-	def __init__(self, parent, options, on_action=None, on_document=None, on_document_close=None):
-		wx.ScrolledWindow.__init__(self, parent, -1, style=wx.TAB_TRAVERSAL | wx.VSCROLL)
+class WorkspaceNavigatorPane(wx.Panel):
+	def __init__(self, parent, options, on_action=None, on_document=None, on_document_close=None, on_document_context=None):
+		wx.Panel.__init__(self, parent, -1, style=wx.TAB_TRAVERSAL)
 
 		self.options = options
 		self._on_action = on_action
 		self._on_document = on_document
 		self._on_document_close = on_document_close
+		self._on_document_context = on_document_context
 		self._document_links = {}
 		self._links = {}
 		self._section_widgets = []
 		self._preferred_sidebar_width = _SIDEBAR_MIN_WIDTH
 
-		self.SetScrollRate(0, 16)
-		self.SetMinSize((_SIDEBAR_MIN_WIDTH, -1))
+		self._scroller = wx.ScrolledWindow(self, -1, style=wx.TAB_TRAVERSAL | wx.VSCROLL)
+		self._scroller.SetScrollRate(0, 4)
+		try:
+			self._scroller.ShowScrollbars(wx.SHOW_SB_NEVER, wx.SHOW_SB_NEVER)
+		except Exception:
+			pass
 
-		self._root = wx.Panel(self, -1, style=wx.TAB_TRAVERSAL)
+		self._root = wx.Panel(self._scroller, -1, style=wx.TAB_TRAVERSAL)
 		self._root_sizer = wx.BoxSizer(wx.VERTICAL)
 		self._root.SetSizer(self._root_sizer)
 
-		host_sizer = wx.BoxSizer(wx.VERTICAL)
-		host_sizer.Add(self._root, 1, wx.EXPAND)
-		self.SetSizer(host_sizer)
+		sizer = wx.BoxSizer(wx.VERTICAL)
+		sizer.Add(self._scroller, 1, wx.EXPAND)
+		self.SetSizer(sizer)
+
+		self._custom_scrollbar = _FadingScrollbar(self, options, self._scroller)
+
+		self.Bind(wx.EVT_SIZE, self._on_size)
+		self._scroller.Bind(wx.EVT_SCROLLWIN, self._on_scroll)
+		self._scroller.Bind(wx.EVT_MOUSEWHEEL, self._on_mousewheel_proxy)
+		self.Bind(wx.EVT_ENTER_WINDOW, self._on_enter_sidebar)
+		self._scroller.Bind(wx.EVT_ENTER_WINDOW, self._on_enter_sidebar)
+		self._root.Bind(wx.EVT_ENTER_WINDOW, self._on_enter_sidebar)
+		self.Bind(wx.EVT_LEAVE_WINDOW, self._on_leave_sidebar)
+		self._scroller.Bind(wx.EVT_LEAVE_WINDOW, self._on_leave_sidebar)
+		self._root.Bind(wx.EVT_LEAVE_WINDOW, self._on_leave_sidebar)
 
 		self.refresh_theme()
+		wx.CallAfter(self._reposition_scrollbar)
+
+	def _hide_native_scrollbar(self):
+		try:
+			self._scroller.ShowScrollbars(wx.SHOW_SB_NEVER, wx.SHOW_SB_NEVER)
+		except Exception:
+			pass
+
+	def _on_size(self, event):
+		event.Skip()
+		wx.CallAfter(self._reposition_scrollbar)
+
+	def _reposition_scrollbar(self):
+		try:
+			w, h = self.GetClientSize()
+			client_w = max(1, self._scroller.GetClientSize().x)
+			content_h = max(1, self._root.GetSize().y)
+			self._root.SetSize(client_w, content_h)
+			self._root.Layout()
+			self._scroller.SetVirtualSize(client_w, content_h)
+			sb = self._custom_scrollbar
+			sb.Move(w - _SCROLLBAR_HOVER_ZONE, 0)
+			sb.SetSize(_SCROLLBAR_HOVER_ZONE, h)
+			sb.Raise()
+			sb.update_from_scroll()
+		except Exception:
+			pass
+
+	def _on_scroll(self, event):
+		self._custom_scrollbar.update_from_scroll()
+		self._custom_scrollbar.show_bar()
+		event.Skip()
+
+	def _on_mousewheel_proxy(self, event):
+		self._custom_scrollbar.show_bar()
+		event.Skip()
+		wx.CallAfter(self._custom_scrollbar.update_from_scroll)
+
+	def _on_enter_sidebar(self, event):
+		self._custom_scrollbar.show_bar()
+		wx.CallAfter(self._custom_scrollbar.update_from_scroll)
+		event.Skip()
+
+	def _on_leave_sidebar(self, event):
+		if not self.GetScreenRect().Contains(wx.GetMousePosition()):
+			self._custom_scrollbar.schedule_hide()
+		event.Skip()
 
 	def _clear_sections(self):
 		for widget in self._section_widgets:
@@ -271,6 +363,7 @@ class WorkspaceNavigatorPane(wx.ScrolledWindow):
 		# --- primary area: open pages ---
 		for item in documents:
 			doc_id = _state_value(item, 'document_id', _state_value(item, 'id'))
+			indent_level = max(0, int(_state_value(item, 'indent_level', 0) or 0))
 			link = WorkspaceNavLink(
 				self._root,
 				self.options,
@@ -279,6 +372,8 @@ class WorkspaceNavigatorPane(wx.ScrolledWindow):
 				selected=(doc_id == active_document_id),
 				on_action=self._on_document,
 				on_close=self._on_document_close,
+				indent_level=indent_level,
+				on_context=self._on_document_context,
 			)
 			self._root_sizer.Add(link, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, _NAV_LINK_SIDE_MARGIN)
 			self._root_sizer.AddSpacer(1)
@@ -314,14 +409,18 @@ class WorkspaceNavigatorPane(wx.ScrolledWindow):
 
 			self._root_sizer.AddSpacer(3)
 
-		self._root_sizer.AddStretchSpacer()
 		self._root_sizer.AddSpacer(6)
+		self._root.Fit()
+		client_w = max(1, self._scroller.GetClientSize().x)
+		content_h = max(1, self._root.GetSize().y)
+		self._root.SetSize(client_w, content_h)
 		self._root.Layout()
-		self.Layout()
-		self.FitInside()
+		self._scroller.SetVirtualSize(client_w, content_h)
+		self._hide_native_scrollbar()
 		self._preferred_sidebar_width = self._calc_preferred_sidebar_width(documents, sections)
 		self.SetMinSize((_SIDEBAR_MIN_WIDTH, -1))
 		self.refresh_theme()
+		wx.CallAfter(self._reposition_scrollbar)
 
 	def _text_width(self, text, font):
 		if not text:
@@ -344,12 +443,13 @@ class WorkspaceNavigatorPane(wx.ScrolledWindow):
 		max_text_width = 0
 		for document in documents:
 			label = _state_value(document, 'title', _state_value(document, 'label', ''))
-			max_text_width = max(max_text_width, self._text_width(label, link_font) + 24 + 22)
+			indent_level = max(0, int(_state_value(document, 'indent_level', 0) or 0))
+			max_text_width = max(max_text_width, self._text_width(label, link_font) + 24 + 22 + (indent_level * _DOC_INDENT_PIXELS))
 
 		for section in sections:
 			title = _state_value(section, 'title', '')
 			max_text_width = max(max_text_width, self._text_width(title, title_font))
-			for item in _state_value(section, 'items', ()): 
+			for item in _state_value(section, 'items', ()):
 				label = _state_value(item, 'label', '')
 				max_text_width = max(max_text_width, self._text_width(label, link_font))
 
@@ -390,6 +490,153 @@ class WorkspaceNavigatorPane(wx.ScrolledWindow):
 	def set_active_action(self, action_id):
 		for aid, link in self._links.items():
 			link.set_selected(aid == action_id)
+
+
+# --- VS Code-style overlay scrollbar implementation ---
+class _FadingScrollbar(wx.Panel):
+	def __init__(self, parent, options, scroller):
+		wx.Panel.__init__(self, parent, -1, style=wx.TAB_TRAVERSAL | wx.TRANSPARENT_WINDOW)
+		self.options = options
+		self._scroller = scroller
+		self._opacity = 0.0
+		self._thumb_y = 0
+		self._thumb_h = 0
+		self._dragging = False
+		self._drag_start_y = 0
+		self._drag_start_scroll_px = 0
+		self._fade_timer = wx.Timer(self)
+		self.Bind(wx.EVT_TIMER, self._on_fade_tick, self._fade_timer)
+		self.SetBackgroundStyle(wx.BG_STYLE_TRANSPARENT)
+		self.Bind(wx.EVT_ERASE_BACKGROUND, lambda e: None)
+		self.Bind(wx.EVT_PAINT, self._on_paint)
+		self.Bind(wx.EVT_ENTER_WINDOW, self._on_enter)
+		self.Bind(wx.EVT_LEAVE_WINDOW, self._on_leave)
+		self.Bind(wx.EVT_LEFT_DOWN, self._on_left_down)
+		self.Bind(wx.EVT_MOTION, self._on_motion)
+		self.Bind(wx.EVT_LEFT_UP, self._on_left_up)
+		self.Bind(wx.EVT_MOUSE_CAPTURE_LOST, self._on_capture_lost)
+
+	def _sidebar_bg(self):
+		return _sidebar_colour(self.options)
+
+	def _luma(self):
+		bg = self._sidebar_bg()
+		return (bg[0] * 299 + bg[1] * 587 + bg[2] * 114) / 1000.0
+
+	def _thumb_colour(self):
+		bg = self._sidebar_bg()
+		if self._luma() >= 140:
+			return _mix_colour(bg, 0, 0.35 * self._opacity)
+		return _mix_colour(bg, 255, 0.30 * self._opacity)
+
+	def show_bar(self):
+		self._opacity = 1.0
+		self._fade_timer.Stop()
+		self.Refresh()
+
+	def schedule_hide(self):
+		if not self._fade_timer.IsRunning():
+			self._fade_timer.Start(_SCROLLBAR_FADE_INTERVAL_MS)
+
+	def _on_fade_tick(self, event):
+		self._opacity -= 1.0 / _SCROLLBAR_FADE_STEPS
+		if self._opacity <= 0.0:
+			self._opacity = 0.0
+			self._fade_timer.Stop()
+		self.Refresh()
+
+	def update_from_scroll(self):
+		virtual_h = self._scroller.GetVirtualSize().y
+		client_h = self._scroller.GetClientSize().y
+		if virtual_h <= client_h or virtual_h <= 0:
+			self._thumb_h = 0
+			self.Refresh()
+			return
+		_, scroll_y = self._scroller.GetViewStart()
+		_, unit = self._scroller.GetScrollPixelsPerUnit()
+		if unit <= 0:
+			unit = 1
+		scroll_px = scroll_y * unit
+		bar_h = self.GetClientSize().y
+		thumb_h = min(_SCROLLBAR_THUMB_HEIGHT, bar_h)
+		scrollable_px = virtual_h - client_h
+		scrollable_bar = max(1, bar_h - thumb_h)
+		if scrollable_px > 0:
+			thumb_y = int(scroll_px / float(scrollable_px) * scrollable_bar)
+		else:
+			thumb_y = 0
+		self._thumb_y = max(0, min(thumb_y, bar_h - thumb_h))
+		self._thumb_h = thumb_h
+		self.Refresh()
+
+	def _thumb_rect_coords(self):
+		tx = _SCROLLBAR_HOVER_ZONE - _SCROLLBAR_THUMB_WIDTH - _SCROLLBAR_MARGIN
+		return tx, self._thumb_y, _SCROLLBAR_THUMB_WIDTH, self._thumb_h
+
+	def _on_paint(self, event):
+		dc = wx.PaintDC(self)
+		if self._opacity <= 0.01 or self._thumb_h <= 0:
+			return
+		tx = _SCROLLBAR_HOVER_ZONE - _SCROLLBAR_THUMB_WIDTH - _SCROLLBAR_MARGIN
+		dc.SetBrush(wx.Brush(self._thumb_colour()))
+		dc.SetPen(wx.TRANSPARENT_PEN)
+		dc.DrawRoundedRectangle(tx, self._thumb_y, _SCROLLBAR_THUMB_WIDTH, self._thumb_h, _SCROLLBAR_RADIUS)
+
+	def _on_enter(self, event):
+		self.show_bar()
+		event.Skip()
+
+	def _on_leave(self, event):
+		if self._dragging:
+			event.Skip()
+			return
+		if not self.GetScreenRect().Contains(wx.GetMousePosition()):
+			self.schedule_hide()
+		event.Skip()
+
+	def _on_left_down(self, event):
+		tx, ty, tw, th = self._thumb_rect_coords()
+		x, y = event.GetPosition()
+		if tx <= x < tx + tw and ty <= y < ty + th:
+			self._dragging = True
+			self._drag_start_y = y
+			_, scroll_y = self._scroller.GetViewStart()
+			_, unit = self._scroller.GetScrollPixelsPerUnit()
+			if unit <= 0:
+				unit = 1
+			self._drag_start_scroll_px = scroll_y * unit
+			self.CaptureMouse()
+		event.Skip()
+
+	def _on_motion(self, event):
+		if not self._dragging:
+			event.Skip()
+			return
+		delta_y = event.GetPosition().y - self._drag_start_y
+		virtual_h = self._scroller.GetVirtualSize().y
+		client_h = self._scroller.GetClientSize().y
+		bar_h = self.GetClientSize().y
+		thumb_h = self._thumb_h if self._thumb_h > 0 else _SCROLLBAR_THUMB_HEIGHT
+		scrollable_bar = max(1, bar_h - thumb_h)
+		scrollable_px = max(1, virtual_h - client_h)
+		new_px = self._drag_start_scroll_px + int(delta_y / float(scrollable_bar) * scrollable_px)
+		_, unit = self._scroller.GetScrollPixelsPerUnit()
+		if unit <= 0:
+			unit = 1
+		self._scroller.Scroll(-1, max(0, new_px // unit))
+		self.update_from_scroll()
+		event.Skip()
+
+	def _on_left_up(self, event):
+		if self._dragging:
+			self._dragging = False
+			if self.HasCapture():
+				self.ReleaseMouse()
+			self.update_from_scroll()
+		event.Skip()
+
+	def _on_capture_lost(self, event):
+		self._dragging = False
 
 
 class CentralChartHost(wx.Panel):
@@ -490,6 +737,7 @@ class MainWindowShell(wx.Panel):
 		navigator_action_handler=None,
 		navigator_document_handler=None,
 		navigator_document_close_handler=None,
+		navigator_document_context_handler=None,
 		navigator_open_path_handler=None,
 	):
 		wx.Panel.__init__(self, parent, -1, style=wx.TAB_TRAVERSAL)
@@ -511,6 +759,7 @@ class MainWindowShell(wx.Panel):
 			on_action=navigator_action_handler,
 			on_document=navigator_document_handler,
 			on_document_close=navigator_document_close_handler,
+			on_document_context=navigator_document_context_handler,
 		)
 
 		self._content_panel = wx.Panel(self._splitter, -1)

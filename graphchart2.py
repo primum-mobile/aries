@@ -1226,6 +1226,32 @@ class GraphChart2:
 		except Exception:
 			return None
 
+	def _getCurrentTermLord(self):
+		radix = getattr(self, 'radix', None)
+		if radix is None and self.chart is not None and self.chart.htype == chart.Chart.RADIX:
+			radix = self.chart
+		if radix is None:
+			return None
+		try:
+			target_chart = self.chart2 if self.chart2 is not None else self.chart
+			if target_chart is None:
+				return None
+			data = lordofyear.get_term_lord(
+				radix,
+				target_chart,
+				self.options,
+				getattr(self, 'display_datetime', None),
+			)
+			if data is None:
+				return None
+			sign_idx, ruler_idx = data
+			signs = common.common.Signs1
+			if not self.options.signs:
+				signs = common.common.Signs2
+			return (signs[sign_idx], common.common.Planets[ruler_idx], ruler_idx)
+		except Exception:
+			return None
+
 	def _shouldDrawPlanetaryDayHour(self):
 		return self.options.planetarydayhour and self.chart.htype != chart.Chart.PROFECTION
 
@@ -1251,9 +1277,10 @@ class GraphChart2:
 
 	def drawOverlayInfoBlock(self):
 		info = self._getCurrentLordOfYear()
+		term_info = self._getCurrentTermLord()
 		rows = self._getRadixOverlayRows()
 		pd_exact = self._getPDExactOverlayRow()
-		if info is None and not rows and pd_exact is None:
+		if info is None and term_info is None and not rows and pd_exact is None:
 			return
 
 		clr_lbl = self.options.clrtexts
@@ -1286,6 +1313,22 @@ class GraphChart2:
 			sign_glyph, ruler_glyph, ruler_idx = info
 			clr_ruler = self._getOverlayPlanetColor(getattr(self, 'radix', None) or self.chart, ruler_idx, clr_lbl)
 			label_txt = 'Lord of the year'
+			w_label, _ = text_font.getsize(label_txt)
+			w_sign, _ = icon_font.getsize(sign_glyph)
+			w_ruler, _ = icon_font.getsize(ruler_glyph)
+			total_w = w_label + gap_lg + w_sign + gap_gg + w_ruler
+			x = xR - total_w
+			self.draw.text((x, _row_y(y, label_txt, text_font)), label_txt, fill=clr_lbl, font=text_font)
+			x += w_label + gap_lg
+			self.draw.text((x, _row_y(y, sign_glyph, icon_font)), sign_glyph, fill=clr_lbl, font=icon_font)
+			x += w_sign + gap_gg
+			self.draw.text((x, _row_y(y, ruler_glyph, icon_font)), ruler_glyph, fill=clr_ruler, font=icon_font)
+			y += line_h + int(line_h * 0.55)
+
+		if term_info is not None:
+			sign_glyph, ruler_glyph, ruler_idx = term_info
+			clr_ruler = self._getOverlayPlanetColor(getattr(self, 'radix', None) or self.chart, ruler_idx, clr_lbl)
+			label_txt = 'Term lord'
 			w_label, _ = text_font.getsize(label_txt)
 			w_sign, _ = icon_font.getsize(sign_glyph)
 			w_ruler, _ = icon_font.getsize(ruler_glyph)

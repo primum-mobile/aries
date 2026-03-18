@@ -35,12 +35,12 @@ class EclipsesWnd(commonwnd.CommonWnd):
         self.SPACE_TITLEY = 0
 
         # 폰트/기호
-        self.fntMorinus = ImageFont.truetype(common.common.symbols, int(self.FONT_SIZE))
+        self.fntMorinus = self._load_font(common.common.symbols, int(self.FONT_SIZE))
         # UI 기본 텍스트 폰트 (다국어용)
-        self.fntText    = ImageFont.truetype(common.common.abc, int(self.FONT_SIZE))
+        self.fntText    = self._load_font(common.common.abc, int(self.FONT_SIZE))
         try:
             # 조디악 릴리징과 동일하게 abc_bold 사용 (실제 Bold TTF)
-            self.fntTextBold = ImageFont.truetype(common.common.abc_bold, int(self.FONT_SIZE))
+            self.fntTextBold = self._load_font(common.common.abc_bold, int(self.FONT_SIZE))
         except Exception:
             # abc_bold 없으면 일반 폰트로 폴백
             self.fntTextBold = self.fntText
@@ -51,7 +51,7 @@ class EclipsesWnd(commonwnd.CommonWnd):
         #   - Bold: res/freesansbold.ttf 를 최우선 사용
         # ----------------------------------------------------------
         try:
-            self.fntAscii = ImageFont.truetype(common.common.abc_ascii, int(self.FONT_SIZE))
+            self.fntAscii = self._load_font(common.common.abc_ascii, int(self.FONT_SIZE))
         except Exception:
             # 없는 빌드에서는 기본 텍스트 폰트 재사용
             self.fntAscii = self.fntText
@@ -66,7 +66,7 @@ class EclipsesWnd(commonwnd.CommonWnd):
             if resfolder:
                 fsb_path = os.path.join(resfolder, 'freesansbold.ttf')
                 if os.path.exists(fsb_path):
-                    self.fntFreeSansBold = ImageFont.truetype(fsb_path, int(self.FONT_SIZE))
+                    self.fntFreeSansBold = self._load_font(fsb_path, int(self.FONT_SIZE))
         except Exception:
             self.fntFreeSansBold = None
 
@@ -78,7 +78,7 @@ class EclipsesWnd(commonwnd.CommonWnd):
             try:
                 ascii_bold_path = getattr(common.common, 'abc_ascii_bold', None)
                 if ascii_bold_path:
-                    self.fntAsciiBold = ImageFont.truetype(ascii_bold_path, int(self.FONT_SIZE))
+                    self.fntAsciiBold = self._load_font(ascii_bold_path, int(self.FONT_SIZE))
             except Exception:
                 self.fntAsciiBold = None
 
@@ -88,7 +88,7 @@ class EclipsesWnd(commonwnd.CommonWnd):
 
         # >>> Eclipses: 경도/도데카 Bold 숫자는 common.freesans_bold를 강제 사용 <<<
         try:
-            self.fntAsciiBold = ImageFont.truetype(common.common.freesans_bold, int(self.FONT_SIZE))
+            self.fntAsciiBold = self._load_font(common.common.freesans_bold, int(self.FONT_SIZE))
         except Exception:
             # FreeSansBold 로드 실패 시 기존 설정 유지
             pass

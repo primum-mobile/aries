@@ -9,6 +9,120 @@ import mtexts
 import wx
 
 
+class RevolutionYearStepperController(object):
+	def __init__(self, get_year_cb, set_year_cb):
+		self.get_year = get_year_cb
+		self.set_year = set_year_cb
+
+	def handle_navigation_key(self, keycode, shift_down=False, alt_down=False, control_down=False, cmd_down=False):
+		if alt_down or control_down or cmd_down:
+			return False
+		if keycode == wx.WXK_LEFT:
+			self.step_backward()
+			return True
+		if keycode == wx.WXK_RIGHT:
+			self.step_forward()
+			return True
+		return False
+
+	def step_backward(self):
+		self.set_year(int(self.get_year()) - 1)
+
+	def step_forward(self):
+		self.set_year(int(self.get_year()) + 1)
+
+	def Destroy(self):
+		pass
+
+	def Show(self, *_args, **_kwargs):
+		pass
+
+	def CentreOnScreen(self):
+		pass
+
+	def CenterOnScreen(self):
+		pass
+
+	def Raise(self):
+		pass
+
+
+class RevolutionMonthStepperController(object):
+	def __init__(self, get_ym_cb, set_ym_cb):
+		self.get_ym = get_ym_cb
+		self.set_ym = set_ym_cb
+
+	def handle_navigation_key(self, keycode, shift_down=False, alt_down=False, control_down=False, cmd_down=False):
+		if alt_down or control_down or cmd_down:
+			return False
+		if keycode == wx.WXK_LEFT:
+			self.step_backward()
+			return True
+		if keycode == wx.WXK_RIGHT:
+			self.step_forward()
+			return True
+		return False
+
+	def step_backward(self):
+		y, m = self.get_ym()
+		m -= 1
+		if m < 1:
+			m = 12
+			y -= 1
+		self.set_ym(int(y), int(m))
+
+	def step_forward(self):
+		y, m = self.get_ym()
+		m += 1
+		if m > 12:
+			m = 1
+			y += 1
+		self.set_ym(int(y), int(m))
+
+	def Destroy(self):
+		pass
+
+	def Show(self, *_args, **_kwargs):
+		pass
+
+	def CentreOnScreen(self):
+		pass
+
+	def CenterOnScreen(self):
+		pass
+
+	def Raise(self):
+		pass
+
+
+class RevolutionCallbackStepperController(object):
+	def __init__(self, step_backward_cb, step_forward_cb):
+		self._step_backward_cb = step_backward_cb
+		self._step_forward_cb = step_forward_cb
+
+	def handle_navigation_key(self, keycode, shift_down=False, alt_down=False, control_down=False, cmd_down=False):
+		if alt_down or control_down or cmd_down:
+			return False
+		if keycode == wx.WXK_LEFT:
+			self.step_backward()
+			return True
+		if keycode == wx.WXK_RIGHT:
+			self.step_forward()
+			return True
+		return False
+
+	def step_backward(self):
+		if callable(self._step_backward_cb):
+			self._step_backward_cb()
+
+	def step_forward(self):
+		if callable(self._step_forward_cb):
+			self._step_forward_cb()
+
+	def Destroy(self):
+		pass
+
+
 #---------------------------------------------------------------------------
 # Create and set a help provider.  Normally you would do this in
 # the app's OnInit as it must be done before any SetHelpText calls.

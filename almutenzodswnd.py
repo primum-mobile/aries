@@ -42,8 +42,8 @@ class AlmutenZodsWnd(commonwnd.CommonWnd):
 
 		self.SetVirtualSize((self.WIDTH, self.HEIGHT))
 
-		self.fntMorinus = ImageFont.truetype(common.common.symbols, self.FONT_SIZE)
-		self.fntText = ImageFont.truetype(common.common.abc, self.FONT_SIZE)
+		self.fntMorinus = self._load_font(common.common.symbols, self.FONT_SIZE)
+		self.fntText = self._load_font(common.common.abc, self.FONT_SIZE)
 		self.clrs = (self.options.clrdomicil, self.options.clrexal, self.options.clrperegrin, self.options.clrcasus, self.options.clrexil)	
 		self.signs = common.common.Signs1
 		if not self.options.signs:
@@ -69,8 +69,7 @@ class AlmutenZodsWnd(commonwnd.CommonWnd):
 		if self.bw:
 			tableclr = (0,0,0)
 
-		img = Image.new('RGB', (self.WIDTH, self.HEIGHT), self.bkgclr)
-		draw = ImageDraw.Draw(img)
+		img, draw = self.newScaledImageDraw(self.WIDTH, self.HEIGHT, self.bkgclr)
 
 		BOR = commonwnd.CommonWnd.BORDER
 
@@ -259,9 +258,7 @@ class AlmutenZodsWnd(commonwnd.CommonWnd):
 		draw.line((BOR, BOR+self.LINE_HEIGHT, BOR, BOR+self.TABLE_HEIGHT), fill=tableclr)
 		draw.line((BOR+self.SMALL_CELL_WIDTH, BOR+self.LINE_HEIGHT, BOR+self.SMALL_CELL_WIDTH, BOR+self.TABLE_HEIGHT), fill=tableclr)
 
-		wxImg = wx.Image(img.size[0], img.size[1])
-		wxImg.SetData(img.tobytes())
-		self.buffer = wx.Bitmap(wxImg)
+		self.buffer = self.scaledBitmapFromImage(img)
 
 
 	def drawDegWinner(self, draw, x, y, i, onlyone, degwinner, txtclr):
