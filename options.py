@@ -459,6 +459,8 @@ class Options:
 		self.def_revolutions_solarlocationmode = self.revolutions_solarlocationmode
 		self.revolutions_planetslocationmode = 0
 		self.def_revolutions_planetslocationmode = self.revolutions_planetslocationmode
+		self.revolutions_lunarlocationmode = 0
+		self.def_revolutions_lunarlocationmode = self.revolutions_lunarlocationmode
 
 # ########################################
 # Roberto change - V 7.2.0 / V 7.3.0
@@ -794,6 +796,7 @@ class Options:
 		self.revolutions_solaryearmode = self.def_revolutions_solaryearmode
 		self.revolutions_solarlocationmode = self.def_revolutions_solarlocationmode
 		self.revolutions_planetslocationmode = self.def_revolutions_planetslocationmode
+		self.revolutions_lunarlocationmode = self.def_revolutions_lunarlocationmode
 
 
 	def load(self):
@@ -1184,6 +1187,10 @@ class Options:
 				self.revolutions_planetslocationmode = pickle.load(f)
 			except Exception:
 				self.revolutions_planetslocationmode = self.def_revolutions_planetslocationmode
+			try:
+				self.revolutions_lunarlocationmode = pickle.load(f)
+			except Exception:
+				self.revolutions_lunarlocationmode = self.def_revolutions_lunarlocationmode
 			f.close()
 		except IOError:
 			res = False
@@ -1703,6 +1710,7 @@ class Options:
 			pickle.dump(self.revolutions_solaryearmode, f)
 			pickle.dump(self.revolutions_solarlocationmode, f)
 			pickle.dump(self.revolutions_planetslocationmode, f)
+			pickle.dump(self.revolutions_lunarlocationmode, f)
 			f.close()
 			return True
 		except IOError:

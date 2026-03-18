@@ -80,3 +80,47 @@ def secondary_direction_symbolic_info(radix_chart, directed_chart):
 		'age_years_int': int(age_years_int),
 		'delta_symbolic_days': float(delta_ephem_days),
 	}
+
+
+def symbolic_age_for_real_datetime(radix_chart, real_datetime_tuple):
+	"""Inverse of the real_jd mapping in secondary_direction_symbolic_info.
+
+	Returns the fractional symbolic age (days since birth in ephemeris time)
+	such that SecDir(radix, age).compute() produces a chart whose
+	signified_datetime lands on real_datetime_tuple.
+	"""
+	if radix_chart is None:
+		return 0.0
+
+	ry, rm, rd, rh, rmi, rs = real_datetime_tuple
+	calflag = _calflag_from_chart(radix_chart)
+
+	birth_jd = float(radix_chart.time.jd)
+	birth_y, birth_m, birth_d, _ = astrology.swe_revjul(birth_jd, calflag)
+	birth_y, birth_m, birth_d = int(birth_y), int(birth_m), int(birth_d)
+
+	try:
+		ut_anchor = float(radix_chart.time.time)
+	except Exception:
+		t = radix_chart.time
+		ut_anchor = float(t.hour) + float(t.minute) / 60.0 + float(t.second) / 3600.0
+
+	real_ut = float(rh) + float(rmi) / 60.0 + float(rs) / 3600.0
+	real_jd = astrology.swe_julday(int(ry), int(rm), int(rd), real_ut, calflag)
+
+	# Find the anniversary year whose anniv_jd <= real_jd
+	years_int = max(0, int(ry) - birth_y)
+	anniv_m, anniv_d = _sanitize_date_for_year(birth_m, birth_d, birth_y + years_int, calflag)
+	anniv_jd = astrology.swe_julday(birth_y + years_int, anniv_m, anniv_d, ut_anchor, calflag)
+	if real_jd < anniv_jd and years_int > 0:
+		years_int -= 1
+		anniv_m, anniv_d = _sanitize_date_for_year(birth_m, birth_d, birth_y + years_int, calflag)
+		anniv_jd = astrology.swe_julday(birth_y + years_int, anniv_m, anniv_d, ut_anchor, calflag)
+
+	days_in_year = 366.0 if _is_leap_year(birth_y + years_int, calflag) else 365.0
+	frac = (real_jd - anniv_jd) / days_in_year if days_in_year > 0 else 0.0
+	frac = max(0.0, min(1.0, frac))
+
+	# symbolic age = ephemeris days from birth = years_int + frac_ephem
+	# where frac_ephem maps to frac via: real_jd = anniv_jd + frac_ephem * days_in_year
+	return float(years_int) + frac
