@@ -54,13 +54,18 @@ class PlaceDB:
 					lines.append(pickle.load(f))
 			except EOFError:
 				pass
+		seen = set()
 		for ln in lines:
 			ln = ln.rstrip('\n')
 			if not self.isValid(ln):
 				continue
 			line = ln.split(PlaceDB.Record.DELIMITER)
+			name = line[PlaceDB.Record.NAME]
+			if name in seen:
+				continue
+			seen.add(name)
 			self.placedb.append(PlaceDB.Record(
-				line[PlaceDB.Record.NAME], line[PlaceDB.Record.LON],
+				name, line[PlaceDB.Record.LON],
 				line[PlaceDB.Record.LAT], line[PlaceDB.Record.TZ],
 				line[PlaceDB.Record.ALT],
 			))
