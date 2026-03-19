@@ -467,6 +467,15 @@ class MFrame(wx.Frame):
 			self._workspace_shell.set_table_content(wnd)
 			self._workspace_shell.navigator_pane.set_active_action(action_id)
 
+	def _dismiss_active_table(self):
+		if not getattr(self, '_active_table_action', None):
+			return False
+		self._active_table_action = None
+		if hasattr(self, '_workspace_shell') and self._workspace_shell is not None:
+			self._workspace_shell.clear_table_content()
+			self._workspace_shell.navigator_pane.set_active_action(None)
+		return True
+
 	def _handle_chart_host_resize(self):
 		if not hasattr(self, 'splash'):
 			return
@@ -3369,6 +3378,10 @@ class MFrame(wx.Frame):
 
 
 	# --- Workspace-embedded table methods ---
+	# Chart resolution rule: tables always bind to the focused radix.
+	#   radix = _active_radix_chart()  →  cs.radix when a child session is active, else self.horoscope
+	# Future: to open a table against a specific child chart, add a chart= parameter to the
+	#   relevant method and pass it through instead of calling _active_radix_chart().
 
 	def _workspace_table_positions(self):
 		if self.splash:
@@ -3381,37 +3394,42 @@ class MFrame(wx.Frame):
 			dlgm.ShowModal()
 			dlgm.Destroy()
 			return
+		radix = self._active_radix_chart()
 		wait = wx.BusyCursor()
 		host = self._workspace_shell.get_table_host()
-		wnd = positionswnd.PositionsWnd(host, self.horoscope, self.options, self)
+		wnd = positionswnd.PositionsWnd(host, radix, self.options, self)
 		self._show_table_in_workspace('positions', wnd)
 
 	def _workspace_table_aspects(self):
 		if self.splash:
 			return
+		radix = self._active_radix_chart()
 		wait = wx.BusyCursor()
 		host = self._workspace_shell.get_table_host()
-		wnd = aspectswnd.AspectsWnd(host, self.horoscope, self.options, self)
+		wnd = aspectswnd.AspectsWnd(host, radix, self.options, self)
 		self._show_table_in_workspace('aspects', wnd)
 
 	def _workspace_table_rise_set(self):
 		if self.splash:
 			return
+		radix = self._active_radix_chart()
 		wait = wx.BusyCursor()
 		host = self._workspace_shell.get_table_host()
-		wnd = risesetwnd.RiseSetWnd(host, self.horoscope, self.options, self)
+		wnd = risesetwnd.RiseSetWnd(host, radix, self.options, self)
 		self._show_table_in_workspace('rise_set', wnd)
 
 	def _workspace_table_planetary_hours(self):
 		if self.splash:
 			return
+		radix = self._active_radix_chart()
 		wait = wx.BusyCursor()
 		host = self._workspace_shell.get_table_host()
-		wnd = hourswnd.HoursWnd(host, self.horoscope, self.options, self)
+		wnd = hourswnd.HoursWnd(host, radix, self.options, self)
 		self._show_table_in_workspace('planetary_hours', wnd)
 
 	def _workspace_table_firdaria(self):
-		if self.horoscope.time.bc:
+		radix = self._active_radix_chart()
+		if radix.time.bc:
 			dlgm = wx.MessageDialog(self, mtexts.txts['NotAvailable'], '', wx.OK|wx.ICON_INFORMATION)
 			dlgm.ShowModal()
 			dlgm.Destroy()
@@ -3420,25 +3438,27 @@ class MFrame(wx.Frame):
 			return
 		wait = wx.BusyCursor()
 		host = self._workspace_shell.get_table_host()
-		wnd = firdariawnd.FirdariaWnd(host, self.horoscope, self.options, self)
+		wnd = firdariawnd.FirdariaWnd(host, radix, self.options, self)
 		self._show_table_in_workspace('firdaria', wnd)
 
 	def _workspace_table_arabic_parts(self):
 		if self.splash:
 			return
+		radix = self._active_radix_chart()
 		wait = wx.BusyCursor()
 		host = self._workspace_shell.get_table_host()
-		wnd = arabicpartswnd.ArabicPartsWnd(host, self.horoscope, self.options, self)
+		wnd = arabicpartswnd.ArabicPartsWnd(host, radix, self.options, self)
 		self._show_table_in_workspace('arabic_parts', wnd)
 
 	def _workspace_table_exact_transits(self):
-		if self.horoscope.time.bc:
+		radix = self._active_radix_chart()
+		if radix.time.bc:
 			dlgm = wx.MessageDialog(self, mtexts.txts['NotAvailable'], '', wx.OK|wx.ICON_INFORMATION)
 			dlgm.ShowModal()
 			dlgm.Destroy()
 			return
 		if self.trmondlg is None:
-			self.trmondlg = transitmdlg.TransitMonthDlg(None, self.horoscope.time)
+			self.trmondlg = transitmdlg.TransitMonthDlg(None, radix.time)
 		now = datetime.datetime.now()
 		self.trmondlg.year.SetValue(str(now.year))
 		self.trmondlg.month.SetValue(str(now.month))
@@ -3449,13 +3469,14 @@ class MFrame(wx.Frame):
 			month = int(self.trmondlg.month.GetValue())
 			wait = wx.BusyCursor()
 			trans = transits.Transits()
-			trans.month(year, month, self.horoscope)
+			trans.month(year, month, radix)
 			host = self._workspace_shell.get_table_host()
-			wnd = transitmwnd.TransitMonthWnd(host, trans.transits, year, month, self.horoscope, self.options, self)
+			wnd = transitmwnd.TransitMonthWnd(host, trans.transits, year, month, radix, self.options, self)
 			self._show_table_in_workspace('exact_transits', wnd)
 
 	def _workspace_table_profections(self):
-		if self.horoscope.time.bc:
+		radix = self._active_radix_chart()
+		if radix.time.bc:
 			dlgm = wx.MessageDialog(self, mtexts.txts['NotAvailable'], '', wx.OK|wx.ICON_INFORMATION)
 			dlgm.ShowModal()
 			dlgm.Destroy()
@@ -3467,32 +3488,32 @@ class MFrame(wx.Frame):
 		if val == wx.ID_OK:
 			proftype = chart.Chart.YEAR
 			mainsigs = pdlg.mainrb.GetValue()
-			pchart = self.horoscope
+			pchart = radix
 			wait = wx.BusyCursor()
-			y = self.horoscope.time.year
-			m = self.horoscope.time.month
-			d = self.horoscope.time.day
-			t = self.horoscope.time.time
-			if self.horoscope.time.month == 2 and self.horoscope.time.day == 29:
+			y = radix.time.year
+			m = radix.time.month
+			d = radix.time.day
+			t = radix.time.time
+			if radix.time.month == 2 and radix.time.day == 29:
 				d -= 1
 			pcharts = []
 			cyc = 0
 			while cyc < 12:
 				if self.options.zodprof:
-					prof = profections.Profections(self.horoscope, y, m, d, t, cyc)
-					pchart = chart.Chart(self.horoscope.name, self.horoscope.male, self.horoscope.time, self.horoscope.place, chart.Chart.PROFECTION, '', self.options, False, proftype)
+					prof = profections.Profections(radix, y, m, d, t, cyc)
+					pchart = chart.Chart(radix.name, radix.male, radix.time, radix.place, chart.Chart.PROFECTION, '', self.options, False, proftype)
 					pchart.calcProfPos(prof)
 				else:
-					if not self.options.usezodprojsprof and (y+cyc == self.horoscope.time.year or (y+cyc-self.horoscope.time.year) % 12 == 0) and m == self.horoscope.time.month and d == self.horoscope.time.day:
-						pchart = self.horoscope
+					if not self.options.usezodprojsprof and (y+cyc == radix.time.year or (y+cyc-radix.time.year) % 12 == 0) and m == radix.time.month and d == radix.time.day:
+						pchart = radix
 					else:
-						prof = munprofections.MunProfections(self.horoscope, y, m, d, t, cyc)
+						prof = munprofections.MunProfections(radix, y, m, d, t, cyc)
 						proflondeg, proflonmin, proflonsec = util.decToDeg(prof.lonZ)
-						profplace = chart.Place(mtexts.txts['Profections'], proflondeg, proflonmin, proflonsec, prof.east, self.horoscope.place.deglat, self.horoscope.place.minlat, self.horoscope.place.seclat, self.horoscope.place.north, self.horoscope.place.altitude)
-						pchart = chart.Chart(self.horoscope.name, self.horoscope.male, self.horoscope.time, profplace, chart.Chart.PROFECTION, '', self.options, False, proftype, self.options.usezodprojsprof)
-						pchartpls = chart.Chart(self.horoscope.name, self.horoscope.male, self.horoscope.time, self.horoscope.place, chart.Chart.PROFECTION, '', self.options, False, proftype, self.options.usezodprojsprof)
-						pchart.planets.calcMundaneProfPos(pchart.houses.ascmc2, pchartpls.planets.planets, self.horoscope.place.lat, self.horoscope.obl[0])
-						pchart.fortune.calcMundaneProfPos(pchart.houses.ascmc2, pchartpls.fortune, self.horoscope.place.lat, self.horoscope.obl[0])
+						profplace = chart.Place(mtexts.txts['Profections'], proflondeg, proflonmin, proflonsec, prof.east, radix.place.deglat, radix.place.minlat, radix.place.seclat, radix.place.north, radix.place.altitude)
+						pchart = chart.Chart(radix.name, radix.male, radix.time, profplace, chart.Chart.PROFECTION, '', self.options, False, proftype, self.options.usezodprojsprof)
+						pchartpls = chart.Chart(radix.name, radix.male, radix.time, radix.place, chart.Chart.PROFECTION, '', self.options, False, proftype, self.options.usezodprojsprof)
+						pchart.planets.calcMundaneProfPos(pchart.houses.ascmc2, pchartpls.planets.planets, radix.place.lat, radix.obl[0])
+						pchart.fortune.calcMundaneProfPos(pchart.houses.ascmc2, pchartpls.fortune, radix.place.lat, radix.obl[0])
 				pcharts.append((pchart, y+cyc, m, d, t))
 				cyc += 1
 			host = self._workspace_shell.get_table_host()
@@ -3507,73 +3528,82 @@ class MFrame(wx.Frame):
 	def _workspace_table_misc(self):
 		if self.splash:
 			return
+		radix = self._active_radix_chart()
 		wait = wx.BusyCursor()
 		host = self._workspace_shell.get_table_host()
-		wnd = miscwnd.MiscWnd(host, self.horoscope, self.options, self)
+		wnd = miscwnd.MiscWnd(host, radix, self.options, self)
 		self._show_table_in_workspace('misc', wnd)
 
 	def _workspace_table_midpoints(self):
 		if self.splash:
 			return
+		radix = self._active_radix_chart()
 		wait = wx.BusyCursor()
 		host = self._workspace_shell.get_table_host()
-		wnd = midpointswnd.MidPointsWnd(host, self.horoscope, self.options, self)
+		wnd = midpointswnd.MidPointsWnd(host, radix, self.options, self)
 		self._show_table_in_workspace('midpoints', wnd)
 
 	def _workspace_table_speeds(self):
 		if self.splash:
 			return
+		radix = self._active_radix_chart()
 		wait = wx.BusyCursor()
 		host = self._workspace_shell.get_table_host()
-		wnd = speedswnd.SpeedsWnd(host, self.horoscope, self.options, self)
+		wnd = speedswnd.SpeedsWnd(host, radix, self.options, self)
 		self._show_table_in_workspace('speeds', wnd)
 
 	def _workspace_table_mundane_positions(self):
 		if self.splash:
 			return
+		radix = self._active_radix_chart()
 		wait = wx.BusyCursor()
 		host = self._workspace_shell.get_table_host()
-		wnd = munposwnd.MunPosWnd(host, self.horoscope, self.options, self)
+		wnd = munposwnd.MunPosWnd(host, radix, self.options, self)
 		self._show_table_in_workspace('mundane_positions', wnd)
 
 	def _workspace_table_antiscia(self):
 		if self.splash:
 			return
+		radix = self._active_radix_chart()
 		wait = wx.BusyCursor()
 		host = self._workspace_shell.get_table_host()
-		wnd = antisciawnd.AntisciaWnd(host, self.horoscope, self.options, self)
+		wnd = antisciawnd.AntisciaWnd(host, radix, self.options, self)
 		self._show_table_in_workspace('antiscia', wnd)
 
 	def _workspace_table_zodpars(self):
 		if self.splash:
 			return
+		radix = self._active_radix_chart()
 		wait = wx.BusyCursor()
 		host = self._workspace_shell.get_table_host()
-		wnd = zodparswnd.ZodParsWnd(host, self.horoscope, self.options, self)
+		wnd = zodparswnd.ZodParsWnd(host, radix, self.options, self)
 		self._show_table_in_workspace('zodpars', wnd)
 
 	def _workspace_table_strip(self):
 		if self.splash:
 			return
+		radix = self._active_radix_chart()
 		wait = wx.BusyCursor()
 		host = self._workspace_shell.get_table_host()
-		wnd = stripwnd.StripWnd(host, self.horoscope, self.options, self)
+		wnd = stripwnd.StripWnd(host, radix, self.options, self)
 		self._show_table_in_workspace('strip', wnd)
 
 	def _workspace_table_almuten_zodiacal(self):
 		if self.splash:
 			return
+		radix = self._active_radix_chart()
 		wait = wx.BusyCursor()
 		host = self._workspace_shell.get_table_host()
-		wnd = almutenzodswnd.AlmutenZodsWnd(host, self.horoscope, self.options, self)
+		wnd = almutenzodswnd.AlmutenZodsWnd(host, radix, self.options, self)
 		self._show_table_in_workspace('almuten_zodiacal', wnd)
 
 	def _workspace_table_almuten_chart(self):
 		if self.splash:
 			return
+		radix = self._active_radix_chart()
 		wait = wx.BusyCursor()
 		host = self._workspace_shell.get_table_host()
-		wnd = almutenchartwnd.AlmutenChartWnd(host, self.horoscope, self.options, self)
+		wnd = almutenchartwnd.AlmutenChartWnd(host, radix, self.options, self)
 		self._show_table_in_workspace('almuten_chart', wnd)
 
 	def _workspace_table_fixed_stars(self):
@@ -3586,9 +3616,10 @@ class MFrame(wx.Frame):
 			dlgm.ShowModal()
 			dlgm.Destroy()
 			return
+		radix = self._active_radix_chart()
 		wait = wx.BusyCursor()
 		host = self._workspace_shell.get_table_host()
-		wnd = fixstarswnd.FixStarsWnd(host, self.horoscope, self.options, self)
+		wnd = fixstarswnd.FixStarsWnd(host, radix, self.options, self)
 		self._show_table_in_workspace('fixed_stars', wnd)
 
 	def _workspace_table_fixed_stars_aspects(self):
@@ -3601,9 +3632,10 @@ class MFrame(wx.Frame):
 			dlgm.ShowModal()
 			dlgm.Destroy()
 			return
+		radix = self._active_radix_chart()
 		wait = wx.BusyCursor()
 		host = self._workspace_shell.get_table_host()
-		wnd = fixstarsaspectswnd.FixStarsAspectsWnd(host, self.horoscope, self.options, self)
+		wnd = fixstarsaspectswnd.FixStarsAspectsWnd(host, radix, self.options, self)
 		self._show_table_in_workspace('fixed_stars_aspects', wnd)
 
 	def _workspace_table_fixed_stars_parallels(self):
@@ -3616,35 +3648,39 @@ class MFrame(wx.Frame):
 			dlgm.ShowModal()
 			dlgm.Destroy()
 			return
+		radix = self._active_radix_chart()
 		wait = wx.BusyCursor()
 		host = self._workspace_shell.get_table_host()
-		wnd = fixstarsparallelswnd.FixStarsParallelsWnd(host, self.horoscope, self.options, self)
+		wnd = fixstarsparallelswnd.FixStarsParallelsWnd(host, radix, self.options, self)
 		self._show_table_in_workspace('fixed_stars_parallels', wnd)
 
 	def _workspace_table_eclipses(self):
 		if self.splash:
 			return
-		if self.horoscope is None:
+		radix = self._active_radix_chart()
+		if radix is None:
 			return
 		wait = wx.BusyCursor()
 		host = self._workspace_shell.get_table_host()
-		wnd = eclipseswnd.EclipsesWnd(host, self.horoscope, self.options, self)
+		wnd = eclipseswnd.EclipsesWnd(host, radix, self.options, self)
 		self._show_table_in_workspace('eclipses', wnd)
 
 	def _workspace_table_angle_at_birth(self):
 		if self.splash:
 			return
-		if self.horoscope is None:
+		radix = self._active_radix_chart()
+		if radix is None:
 			return
 		wait = wx.BusyCursor()
 		host = self._workspace_shell.get_table_host()
-		wnd = angleatbirthwnd.AngleAtBirthWnd(host, self.horoscope, self.options, self)
+		wnd = angleatbirthwnd.AngleAtBirthWnd(host, radix, self.options, self)
 		self._show_table_in_workspace('angle_at_birth', wnd)
 
 	def _workspace_open_circumambulation(self):
 		if self.splash:
 			return
-		if self.horoscope.time.bc:
+		radix = self._active_radix_chart()
+		if radix.time.bc:
 			dlgm = wx.MessageDialog(self, mtexts.txts['NotAvailable'], '', wx.OK|wx.ICON_INFORMATION)
 			dlgm.ShowModal()
 			dlgm.Destroy()
@@ -3652,9 +3688,9 @@ class MFrame(wx.Frame):
 		wait = wx.BusyCursor()
 		try:
 			host = self._workspace_shell.get_table_host()
-			wnd = circumambulationframe.CircumWnd(host, self.horoscope, self.options, mainfr=self)
+			wnd = circumambulationframe.CircumWnd(host, radix, self.options, mainfr=self)
 			rows = circumambulation.compute_distributions(
-				self.horoscope, self.options,
+				radix, self.options,
 				key=circumambulationframe._circum_years_per_deg_from_options(self.options),
 				max_rows=60, include_participating=True, max_age_years=150,
 				use_exact_oa=circumambulation.use_pd_circumoa_from_options(self.options)
@@ -3669,14 +3705,15 @@ class MFrame(wx.Frame):
 	def _workspace_table_zodiacal_releasing(self):
 		if self.splash:
 			return
-		if self.horoscope.time.bc:
+		radix = self._active_radix_chart()
+		if radix.time.bc:
 			dlgm = wx.MessageDialog(self, mtexts.txts['NotAvailable'], '', wx.OK|wx.ICON_INFORMATION)
 			dlgm.ShowModal()
 			dlgm.Destroy()
 			return
 		wait = wx.BusyCursor()
 		host = self._workspace_shell.get_table_host()
-		wnd = zodiacalreleasingwnd.ZRWnd(host, self.horoscope, self.options, mainfr=self)
+		wnd = zodiacalreleasingwnd.ZRWnd(host, radix, self.options, mainfr=self)
 		wnd.compute_and_draw()
 		self._show_table_in_workspace('zodiacal_releasing', wnd)
 		del wait
@@ -3684,30 +3721,33 @@ class MFrame(wx.Frame):
 	def _workspace_table_decennials(self):
 		if self.splash:
 			return
-		if self.horoscope.time.bc:
+		radix = self._active_radix_chart()
+		if radix.time.bc:
 			dlgm = wx.MessageDialog(self, mtexts.txts['NotAvailable'], '', wx.OK|wx.ICON_INFORMATION)
 			dlgm.ShowModal()
 			dlgm.Destroy()
 			return
 		wait = wx.BusyCursor()
 		host = self._workspace_shell.get_table_host()
-		wnd = decennialswnd.DecWnd(host, self.horoscope, self.options, self)
+		wnd = decennialswnd.DecWnd(host, radix, self.options, self)
 		self._show_table_in_workspace('decennials', wnd)
 
 	def _workspace_table_phasis(self):
 		if self.splash:
 			return
+		radix = self._active_radix_chart()
 		wait = wx.BusyCursor()
 		host = self._workspace_shell.get_table_host()
-		wnd = phasiswnd.PhasisWnd(host, self.horoscope, self.options, self)
+		wnd = phasiswnd.PhasisWnd(host, radix, self.options, self)
 		self._show_table_in_workspace('phasis', wnd)
 
 	def _workspace_table_paranatellonta(self):
 		if self.splash:
 			return
+		radix = self._active_radix_chart()
 		wait = wx.BusyCursor()
 		host = self._workspace_shell.get_table_host()
-		wnd = paranwnd.ParanatellontaWnd(host, self.horoscope, self.options, self)
+		wnd = paranwnd.ParanatellontaWnd(host, radix, self.options, self)
 		self._show_table_in_workspace('paranatellonta', wnd)
 
 	# --- end workspace-embedded table methods ---
