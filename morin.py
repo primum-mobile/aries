@@ -7196,31 +7196,61 @@ class MFrame(wx.Frame):
 
 
 	def drawSplash(self):
+		import ImageDraw as _ID, ImageFont as _IF
 		splashpath = os.path.join('Res', 'Morinus.jpg')
+		try:
+			photo = Image.open(splashpath).convert('RGB')
+			pw, ph = photo.size
+			bkg = tuple(int(c) for c in self._shell_background_colour()[:3])
+			fg = (30, 30, 30) if (.299*bkg[0] + .587*bkg[1] + .114*bkg[2]) > 128 else (225, 225, 225)
+			fnt = _IF.truetype(common.common.abc, max(28, pw // 9))
+			fnt_s = _IF.truetype(common.common.abc, max(14, pw // 18))
+
+			# False-italic "A": render upright, shear 19°
+			ab = fnt.getbbox('A')
+			aw, ah = ab[2] - ab[0], ab[3] - ab[1]
+			sh = math.tan(math.radians(19))
+			se = int(math.ceil(sh * ah))
+			tile = Image.new('RGBA', (aw + 2, ah + 2), (0, 0, 0, 0))
+			_ID.Draw(tile).text((-ab[0], -ab[1]), 'A', font=fnt, fill=fg + (255,))
+			tile = tile.transform((aw + se + 2, ah + 2), Image.AFFINE,
+			                      (1, sh, -sh * ah, 0, 1, 0),
+			                      resample=Image.BILINEAR)
+
+			# Composite: photo + text strip
+			sub = 'Morinus 10.0.0'
+			rw = fnt.getlength('RIES')
+			sw = fnt_s.getlength(sub)
+			gap = max(10, ph // 35)
+			kern = se // 5 + 1
+			strip = gap + ah + 2 + gap // 2 + fnt_s.getmetrics()[0] + 2 + gap
+			canvas = Image.new('RGB', (pw, ph + strip), bkg)
+			canvas.paste(photo, (0, 0))
+			draw = _ID.Draw(canvas)
+			cx = int((pw - aw - kern - rw) / 2)
+			ty = ph + gap
+			canvas.paste(tile, (cx, ty), tile)
+			draw.text((cx + aw + kern, ty - ab[1]), 'RIES', font=fnt, fill=fg)
+			draw.text((int((pw - sw) / 2), ty + ah + 2 + gap // 2 - ab[1]),
+			          sub, font=fnt_s, fill=fg)
+
+			wximg = wx.Image(pw, ph + strip)
+			wximg.SetData(canvas.tobytes())
+			bmp = wx.Bitmap(wximg)
+			if bmp and getattr(bmp, 'IsOk', lambda: True)():
+				self._push_chart_bitmap(bmp, center=True)
+				return
+		except Exception:
+			pass
+		# Fallback: plain photo or blank bitmap.
 		try:
 			img = wx.Image(splashpath)
 			if img.IsOk():
-				bmp = img.ConvertToBitmap()
-				if bmp is not None and getattr(bmp, "IsOk", lambda: True)():
-					self._push_chart_bitmap(bmp, center=True)
-					return
+				self._push_chart_bitmap(img.ConvertToBitmap(), center=True)
+				return
 		except Exception:
 			pass
-
-		# Fallback: create a plain bitmap so early paint events don't crash.
-		try:
-			size = self._render_target_size()
-			w = max(1, int(getattr(size, "x", 1)))
-			h = max(1, int(getattr(size, "y", 1)))
-			bitmap = wx.Bitmap(w, h)
-			dc = wx.MemoryDC(bitmap)
-			bkgclr = self._shell_background_colour()
-			dc.SetBackground(wx.Brush(bkgclr))
-			dc.Clear()
-			dc.SelectObject(wx.NullBitmap)
-			self._push_chart_bitmap(bitmap, center=True)
-		except Exception:
-			self._push_chart_bitmap(wx.Bitmap(1, 1), center=True)
+		self._push_chart_bitmap(wx.Bitmap(1, 1), center=True)
 
 
 	def drawBkg(self):
