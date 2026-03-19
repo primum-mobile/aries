@@ -956,6 +956,7 @@ class CentralChartHost(wx.Panel):
 		self._context_menu_handler = context_menu_handler
 		self._resize_handler = resize_handler
 		self._buffer = wx.Bitmap(1, 1)
+		self._splash = None  # dict with photo, title, subtitle, info lines
 
 		try:
 			self.SetDoubleBuffered(True)
@@ -970,10 +971,17 @@ class CentralChartHost(wx.Panel):
 		self.Bind(wx.EVT_CONTEXT_MENU, self.on_context_menu)
 		self.Bind(wx.EVT_RIGHT_UP, self.on_right_up)
 
+	def set_splash(self, photo, title, subtitle, info_lines):
+		"""Show a splash screen with a photo and native text."""
+		self._splash = dict(photo=photo, title=title, subtitle=subtitle,
+		                    info=info_lines)
+		self.Refresh()
+
 	def set_bitmap(self, bitmap, center=False, background_colour=None):
 		if bitmap is None:
 			bitmap = wx.Bitmap(1, 1)
 
+		self._splash = None
 		self._buffer = bitmap
 		if background_colour is not None:
 			self.SetBackgroundColour(background_colour)
@@ -1001,6 +1009,10 @@ class CentralChartHost(wx.Panel):
 		dc.SetBackground(wx.Brush(self.GetBackgroundColour()))
 		dc.Clear()
 
+		if self._splash is not None:
+			self._paint_splash(dc)
+			return
+
 		if self._buffer is None:
 			return
 
@@ -1008,6 +1020,79 @@ class CentralChartHost(wx.Panel):
 		x = max(0, int((size.x - self._buffer.GetWidth()) // 2))
 		y = max(0, int((size.y - self._buffer.GetHeight()) // 2))
 		dc.DrawBitmap(self._buffer, x, y)
+
+	def _paint_splash(self, dc):
+		import math
+		sp = self._splash
+		photo = sp['photo']
+		pw, ph = photo.GetWidth(), photo.GetHeight()
+		size = self.GetClientSize()
+
+		bg = self.GetBackgroundColour()
+		lum = .299 * bg.Red() + .587 * bg.Green() + .114 * bg.Blue()
+		fg = wx.Colour(30, 30, 30) if lum > 128 else wx.Colour(225, 225, 225)
+
+		gc = wx.GraphicsContext.Create(dc)
+
+		# Fonts scaled to photo width
+		face = 'FreeSans'
+		fnt_title = wx.Font(max(14, pw // 9), wx.FONTFAMILY_DEFAULT,
+		                    wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL, False, face)
+		fnt_sub = wx.Font(max(8, pw // 18), wx.FONTFAMILY_DEFAULT,
+		                  wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL, False, face)
+		fnt_xs = wx.Font(max(6, pw // 24), wx.FONTFAMILY_DEFAULT,
+		                 wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL, False, face)
+
+		# Measure text heights for vertical layout
+		gc.SetFont(fnt_title, fg)
+		aw, ah = gc.GetTextExtent('A')
+		rw, _ = gc.GetTextExtent('RIES')
+		gc.SetFont(fnt_sub, fg)
+		_, sh = gc.GetTextExtent(sp['subtitle'])
+		gc.SetFont(fnt_xs, fg)
+		_, xh = gc.GetTextExtent('X')
+
+		gap = max(10, ph // 35)
+		shear = math.tan(math.radians(19))
+		kern = shear * ah / 3 + 1
+		lh = int(xh * 1.5)
+		n_info = len(sp['info'])
+		total_h = ph + gap + int(ah) + gap // 2 + int(sh) + gap + lh * n_info
+
+		# Vertical start: center the whole block
+		y0 = max(0, (size.y - total_h) // 2)
+		cx = size.x // 2
+
+		# Photo
+		dc.DrawBitmap(photo, max(0, cx - pw // 2), y0)
+		y = y0 + ph + gap
+
+		# "ARIES" with 19° false-italic A via GraphicsContext shear
+		gc.SetFont(fnt_title, fg)
+		title_w = aw + kern + rw
+		tx = cx - title_w / 2
+
+		gc.PushState()
+		gc.Translate(tx, y)
+		gc.ConcatTransform(gc.CreateMatrix(1, 0, -shear, 1, shear * ah, 0))
+		gc.DrawText(sp['title'][0], 0, 0)  # "A"
+		gc.PopState()
+		gc.DrawText(sp['title'][1:], tx + aw + kern, y)  # "RIES"
+		y += int(ah) + gap // 2
+
+		# Subtitle
+		gc.SetFont(fnt_sub, fg)
+		sw, _ = gc.GetTextExtent(sp['subtitle'])
+		gc.DrawText(sp['subtitle'], cx - sw / 2, y)
+		y += int(sh) + gap
+
+		# Info lines
+		gc.SetFont(fnt_xs, fg)
+		for line in sp['info']:
+			line = line.strip()
+			lw, _ = gc.GetTextExtent(line)
+			gc.DrawText(line, cx - lw / 2, y)
+			y += lh
 
 	def on_erase_background(self, event):
 		return
@@ -1126,6 +1211,9 @@ class MainWindowShell(wx.Panel):
 		self._table_host.SetBackgroundColour(background)
 		self.navigator_pane.refresh_theme()
 		self.chart_host.refresh_theme()
+
+	def set_chart_splash(self, photo, title, subtitle, info_lines):
+		self.chart_host.set_splash(photo, title, subtitle, info_lines)
 
 	def set_chart_bitmap(self, bitmap, center=False, background_colour=None):
 		if background_colour is not None:
