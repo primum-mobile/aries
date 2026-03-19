@@ -36,6 +36,7 @@ DEFAULT_SECTIONS = (
 	WorkspaceSection(
 		title='Horoscope',
 		items=(
+			WorkspaceAction('new_chart', 'New Chart'),
 			WorkspaceAction('open_chart', 'Open Horoscope...'),
 			WorkspaceAction('here_and_now', 'Here and Now'),
 			WorkspaceAction('synastry', 'Synastry'),

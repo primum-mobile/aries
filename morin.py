@@ -992,6 +992,21 @@ class MFrame(wx.Frame):
 		finally:
 			dlg.Destroy()
 
+	def _workspace_new_chart(self, event=None):
+		dlg = personaldatadlg.PersonalDataDlg(self, self.options.langid)
+		dlg.CenterOnParent()
+		dlg.initialize()
+		val = dlg.ShowModal()
+		if val == wx.ID_OK:
+			direc = dlg.placerbE.GetValue()
+			hemis = dlg.placerbN.GetValue()
+			place = chart.Place(dlg.birthplace.GetValue(), int(dlg.londeg.GetValue()), int(dlg.lonmin.GetValue()), 0, direc, int(dlg.latdeg.GetValue()), int(dlg.latmin.GetValue()), 0, hemis, int(dlg.alt.GetValue()))
+			time = self._chart_time_from_dialog(dlg, place)
+			male = dlg.genderrbM.GetValue()
+			chrt = chart.Chart(dlg.name.GetValue(), male, time, place, dlg.typecb.GetCurrentSelection(), dlg.notes.GetValue(), self.options)
+			self._open_workspace_session(chrt)
+		dlg.Destroy()
+
 	def _workspace_open_here_and_now(self, event=None):
 		place = chart.Place(self.options.deflocname, self.options.defloclondeg, self.options.defloclonmin, 0, self.options.defloceast, self.options.defloclatdeg, self.options.defloclatmin, 0, self.options.deflocnorth, self.options.deflocalt)
 		now = datetime.datetime.now()
@@ -1084,6 +1099,7 @@ class MFrame(wx.Frame):
 		has_chart = (not self.splash) and getattr(self, 'horoscope', None) is not None
 		solar_available = has_chart and not self.horoscope.time.bc
 		enabled_actions = {
+			'new_chart': True,
 			'open_chart': True,
 			'here_and_now': True,
 			'synastry': has_chart,
@@ -1128,6 +1144,7 @@ class MFrame(wx.Frame):
 
 	def _handle_workspace_action(self, action_id):
 		action_map = {
+			'new_chart': self._workspace_new_chart,
 			'open_chart': self._workspace_open_chart,
 			'here_and_now': self._workspace_open_here_and_now,
 			'synastry': self.onSynastry,
@@ -2764,9 +2781,13 @@ class MFrame(wx.Frame):
 
 	#Horoscope-menu	
 	def onNew(self, event):
+		if hasattr(self, '_workspace_shell') and self._workspace_shell is not None:
+			self._workspace_new_chart(event)
+			return
+
 		dlg = personaldatadlg.PersonalDataDlg(self, self.options.langid)
 		dlg.CenterOnParent()
-		dlg.initialize()	
+		dlg.initialize()
 
 		# this does not return until the dialog is closed.
 		val = dlg.ShowModal()

@@ -519,15 +519,16 @@ class PersonalDataDlg(wx.Dialog):
 
 
 	def initialize(self):
+		now = datetime.datetime.now()
 		self.timeckb.SetValue(False)
 		self.name.SetValue('')
 		self.genderrbM.SetValue(True)
-		self.year.SetValue(str(1950))
-		self.month.SetValue(str(1))
-		self.day.SetValue(str(1))
-		self.hour.SetValue(str(0))
-		self.minute.SetValue(str(0))
-		self.sec.SetValue(str(0))
+		self.year.SetValue(str(now.year))
+		self.month.SetValue(str(now.month))
+		self.day.SetValue(str(now.day))
+		self.hour.SetValue(str(now.hour))
+		self.minute.SetValue(str(now.minute))
+		self.sec.SetValue(str(now.second))
 		self.birthplace.SetValue('')
 		self.londeg.SetValue(str(0))
 		self.lonmin.SetValue(str(0))
