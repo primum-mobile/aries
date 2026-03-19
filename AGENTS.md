@@ -385,10 +385,12 @@ Do **not** reintroduce business logic into transport or rendering layers.
 
 ## Swiss Ephemeris (SWEP) C Extension
 Morinus depends on `sweastrology`, a C extension built from `SWEP/src/`.
-The compiled `.so` is gitignored, so **git worktrees will not have it**.
+The compiled `.so` is gitignored. **Never rebuild it per-worktree** — the Swiss Ephemeris never changes.
 
-**If you get `ModuleNotFoundError: No module named 'sweastrology'`**, rebuild it:
+**How it works:** `.claude/launch.json` is configured so `preview_start "morinus"` automatically symlinks the compiled `.so` from the main workspace (`/Users/Max/Documents/morinus-workspace/SWEP/src/`) into the current worktree's `SWEP/src/` if it isn't already present. No manual build step needed.
+
+**If you get `ModuleNotFoundError: No module named 'sweastrology'`:** the main workspace hasn't been built yet (fresh machine). Build it once there:
 ```bash
-cd SWEP/src && python3 setup.py build_ext --inplace && cd ../..
+cd /Users/Max/Documents/morinus-workspace/SWEP/src && python3 setup.py build_ext --inplace -q && cd ../..
 ```
-This must be done once per worktree or fresh clone.
+After that, all worktrees pick it up via symlink automatically.
