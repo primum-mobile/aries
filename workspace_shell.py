@@ -142,6 +142,7 @@ class WorkspaceNavLink(wx.Panel):
 			close_font.SetPointSize(_SIDEBAR_LINK_FONT_PT)
 			self._close.SetFont(close_font)
 			self._close.SetCursor(wx.Cursor(wx.CURSOR_HAND))
+			self._close.Hide()
 
 		row_sizer = wx.BoxSizer(wx.HORIZONTAL)
 		if self._indent_level > 0:
@@ -204,6 +205,11 @@ class WorkspaceNavLink(wx.Panel):
 
 	def refresh_theme(self, hovered):
 		self._hovered = bool(hovered)
+		if self._close is not None and not self._hovered:
+			self._close_fade_timer.Stop()
+			self._close_opacity = 0.0
+			self._update_close_colour()
+			self._close.Hide()
 		self._apply_state()
 
 	def _apply_state(self):
@@ -320,6 +326,8 @@ class WorkspaceNavLink(wx.Panel):
 
 		if self._hovered and self._enabled and not self._dragging:
 			fill = _mix_colour(_sidebar_colour(self.options), 0, 0.13)
+		elif self._selected and self._enabled and not self._dragging:
+			fill = _mix_colour(_sidebar_colour(self.options), 0, 0.09)
 		else:
 			fill = None
 
@@ -330,45 +338,6 @@ class WorkspaceNavLink(wx.Panel):
 			dc.DrawRoundedRectangle(2, 1, w - 4, h - 2, _ROW_RADIUS)
 
 
-_GHOST_OPACITY = 170  # 0–255, lower = more transparent
-
-class _DragGhostFrame(wx.Frame):
-	"""Frameless transparent floating ghost of a dragged sidebar link."""
-
-	def __init__(self, parent, options, label_text, width, height, indent_level=0):
-		wx.Frame.__init__(self, parent, -1, '',
-			style=wx.FRAME_NO_TASKBAR | wx.FRAME_FLOAT_ON_PARENT | wx.NO_BORDER | wx.STAY_ON_TOP,
-		)
-		self.options = options
-		self._label_text = label_text
-		self._indent_level = max(0, int(indent_level))
-		self.SetBackgroundStyle(wx.BG_STYLE_PAINT)
-		self.SetSize(width, height)
-		self._font = self.GetFont()
-		self._font.SetPointSize(_SIDEBAR_LINK_FONT_PT)
-		self.SetTransparent(_GHOST_OPACITY)
-		self.Bind(wx.EVT_PAINT, self._on_paint)
-
-	def _on_paint(self, event):
-		dc = wx.AutoBufferedPaintDC(self)
-		bg = _sidebar_colour(self.options)
-		dc.SetBackground(wx.Brush(_to_colour(bg)))
-		dc.Clear()
-
-		# hover-style rounded rect
-		fill = _mix_colour(bg, 0, 0.13)
-		dc.SetBrush(wx.Brush(fill))
-		dc.SetPen(wx.TRANSPARENT_PEN)
-		w, h = self.GetClientSize()
-		dc.DrawRoundedRectangle(2, 1, w - 4, h - 2, _ROW_RADIUS)
-
-		# text
-		text_colour = _sidebar_text_colour(self.options)
-		dc.SetFont(self._font)
-		dc.SetTextForeground(_to_colour(text_colour))
-		text_x = _ROW_PAD_X + self._indent_level * _DOC_INDENT_PIXELS
-		text_y = _ROW_PAD_Y
-		dc.DrawText(self._label_text, text_x, text_y)
 
 
 class WorkspaceNavigatorPane(wx.Panel):
@@ -387,8 +356,9 @@ class WorkspaceNavigatorPane(wx.Panel):
 		self._preferred_sidebar_width = _SIDEBAR_MIN_WIDTH
 		self._drag_doc_id = None
 		self._drag_sibling_ids = []
-		self._drop_indicator = None
-		self._drag_ghost = None
+		self._drag_overlay = None
+		self._drag_ghost_rect = None   # (x, y, w, h) in pane-local coords
+		self._drag_indicator_y = None  # pane-local y for drop indicator, or None
 		self._ordered_doc_ids = []
 
 		self._scroller = wx.ScrolledWindow(self, -1, style=wx.TAB_TRAVERSAL | wx.VSCROLL)
@@ -622,22 +592,22 @@ class WorkspaceNavigatorPane(wx.Panel):
 		if len(self._drag_sibling_ids) < 2:
 			self._drag_doc_id = None
 			return
-		self._create_drop_indicator()
 
-		# dim the source link
+		self._drag_overlay = wx.Overlay()
+
 		link = self._document_links.get(doc_id)
 		if link is not None:
 			link.set_dragging(True)
-			# create ghost panel
-			label_text = link._label.GetLabel()
 			lw, lh = link.GetSize()
-			link_screen = link.GetScreenPosition()
-			self._drag_ghost = _DragGhostFrame(
-				self.GetTopLevelParent(), self.options, label_text,
-				lw, lh, indent_level=link._indent_level,
-			)
-			self._drag_ghost.SetPosition((link_screen.x, screen_pos.y - lh // 2))
-			self._drag_ghost.Show()
+			link_local = self.ScreenToClient(link.GetScreenPosition())
+			pane_w = self.GetClientSize().x
+			ghost_x = link_local.x
+			ghost_w = pane_w - _SCROLLBAR_HOVER_ZONE - ghost_x
+			local_pos = self.ScreenToClient(screen_pos)
+			ghost_y = local_pos.y - lh // 2
+			self._drag_ghost_rect = (ghost_x, ghost_y, ghost_w, lh, link._label.GetLabel(), link._indent_level)
+			self._drag_indicator_y = None
+			self._draw_drag_overlay()
 
 		self._scroller.SetCursor(wx.Cursor(wx.CURSOR_HAND))
 		self._scroller.CaptureMouse()
@@ -645,16 +615,38 @@ class WorkspaceNavigatorPane(wx.Panel):
 		self._scroller.Bind(wx.EVT_LEFT_UP, self._on_drag_end)
 		self._scroller.Bind(wx.EVT_MOUSE_CAPTURE_LOST, self._on_drag_lost)
 
-	def _create_drop_indicator(self):
-		if self._drop_indicator is not None:
-			self._drop_indicator.Destroy()
-		self._drop_indicator = wx.Panel(self._root, -1)
-		luma = sum(_sidebar_colour(self.options)) / 3.0
-		accent = wx.Colour(90, 140, 220) if luma < 140 else wx.Colour(40, 90, 180)
-		self._drop_indicator.SetBackgroundColour(accent)
-		self._drop_indicator.SetSize(self._root.GetClientSize().x, _DROP_INDICATOR_HEIGHT)
-		self._drop_indicator.Hide()
-		self._drop_indicator.Raise()
+	def _draw_drag_overlay(self):
+		if self._drag_overlay is None:
+			return
+		dc = wx.ClientDC(self)
+		odc = wx.DCOverlay(self._drag_overlay, dc)
+		odc.Clear()
+
+		font = self.GetFont()
+		font.SetPointSize(_SIDEBAR_LINK_FONT_PT)
+		pane_w = self.GetClientSize().x
+		content_w = pane_w - _SCROLLBAR_HOVER_ZONE
+
+		# draw ghost
+		if self._drag_ghost_rect is not None:
+			gx, gy, gw, gh, label, indent = self._drag_ghost_rect
+			fill = _mix_colour(_sidebar_colour(self.options), 0, 0.13)
+			dc.SetBrush(wx.Brush(fill))
+			dc.SetPen(wx.TRANSPARENT_PEN)
+			dc.DrawRoundedRectangle(gx + 2, gy + 1, gw - 4, gh - 2, _ROW_RADIUS)
+			dc.SetFont(font)
+			dc.SetTextForeground(_to_colour(_sidebar_text_colour(self.options)))
+			dc.DrawText(label, gx + _ROW_PAD_X + indent * _DOC_INDENT_PIXELS, gy + _ROW_PAD_Y)
+
+		# draw drop indicator
+		if self._drag_indicator_y is not None:
+			luma = sum(_sidebar_colour(self.options)) / 3.0
+			accent = wx.Colour(90, 140, 220) if luma < 140 else wx.Colour(40, 90, 180)
+			dc.SetBrush(wx.Brush(accent))
+			dc.SetPen(wx.TRANSPARENT_PEN)
+			dc.DrawRectangle(0, self._drag_indicator_y, content_w, _DROP_INDICATOR_HEIGHT)
+
+		del odc
 
 	def _find_drop_target(self, screen_y):
 		"""Return the doc_id to insert before, or None for end of siblings."""
@@ -671,31 +663,19 @@ class WorkspaceNavigatorPane(wx.Panel):
 		return None
 
 	def _position_drop_indicator(self, before_id):
-		if self._drop_indicator is None:
-			return
 		if before_id is not None:
 			link = self._document_links.get(before_id)
 			if link is not None:
-				pos = link.GetPosition()
-				self._drop_indicator.SetPosition((0, pos.y - _DROP_INDICATOR_HEIGHT // 2))
-				w = self._root.GetClientSize().x
-				self._drop_indicator.SetSize(w, _DROP_INDICATOR_HEIGHT)
-				self._drop_indicator.Show()
-				self._drop_indicator.Raise()
+				link_local = self.ScreenToClient(link.GetScreenPosition())
+				self._drag_indicator_y = link_local.y - _DROP_INDICATOR_HEIGHT // 2
 				return
-		# insert at end — place after the last sibling's link
 		last_id = self._drag_sibling_ids[-1]
 		link = self._document_links.get(last_id)
 		if link is not None:
-			pos = link.GetPosition()
-			h = link.GetSize().y
-			self._drop_indicator.SetPosition((0, pos.y + h + _DROP_INDICATOR_HEIGHT // 2))
-			w = self._root.GetClientSize().x
-			self._drop_indicator.SetSize(w, _DROP_INDICATOR_HEIGHT)
-			self._drop_indicator.Show()
-			self._drop_indicator.Raise()
+			link_local = self.ScreenToClient(link.GetScreenPosition())
+			self._drag_indicator_y = link_local.y + link.GetSize().y + _DROP_INDICATOR_HEIGHT // 2
 			return
-		self._drop_indicator.Hide()
+		self._drag_indicator_y = None
 
 	def _on_drag_motion(self, event):
 		if self._drag_doc_id is None:
@@ -706,21 +686,26 @@ class WorkspaceNavigatorPane(wx.Panel):
 		self._position_drop_indicator(before_id)
 		self._drag_before_id = before_id
 
-		# move ghost to follow cursor (screen coordinates)
-		if self._drag_ghost is not None:
-			gh = self._drag_ghost.GetSize().y
-			gx = self._drag_ghost.GetPosition().x
-			pane_screen = self.GetScreenRect()
-			gy = max(pane_screen.y, min(screen_pos.y - gh // 2, pane_screen.y + pane_screen.height - gh))
-			self._drag_ghost.SetPosition((gx, gy))
+		# update ghost position
+		if self._drag_ghost_rect is not None:
+			gx, gy, gw, gh, label, indent = self._drag_ghost_rect
+			local_pos = self.ScreenToClient(screen_pos)
+			pane_h = self.GetClientSize().y
+			new_gy = max(0, min(local_pos.y - gh // 2, pane_h - gh))
+			self._drag_ghost_rect = (gx, new_gy, gw, gh, label, indent)
+
+		self._draw_drag_overlay()
 
 	def _cleanup_drag_visuals(self):
-		if self._drag_ghost is not None:
-			self._drag_ghost.Destroy()
-			self._drag_ghost = None
-		if self._drop_indicator is not None:
-			self._drop_indicator.Destroy()
-			self._drop_indicator = None
+		if self._drag_overlay is not None:
+			dc = wx.ClientDC(self)
+			odc = wx.DCOverlay(self._drag_overlay, dc)
+			odc.Clear()
+			del odc
+			self._drag_overlay.Reset()
+			self._drag_overlay = None
+		self._drag_ghost_rect = None
+		self._drag_indicator_y = None
 		# restore source link
 		if self._drag_doc_id is not None:
 			link = self._document_links.get(self._drag_doc_id)
