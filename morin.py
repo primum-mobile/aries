@@ -836,7 +836,7 @@ class MFrame(wx.Frame):
 			self.horoscope = session['chart']
 		self.splash = False
 		self.fpath = session.get('fpath', '')
-		self.fpathhors = session.get('dpath', self.fpathhors)
+		self.fpathhors = session.get('dpath') or self.fpathhors
 		self.dirty = False
 		self._workspace_state.activate_document(session['document_id'])
 
