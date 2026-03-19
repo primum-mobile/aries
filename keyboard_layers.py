@@ -46,7 +46,14 @@ def handle_main_key_event(frame, event):
 	if event.AltDown() or event.ControlDown() or event.CmdDown():
 		return False
 
-	return handle_main_quick_shortcut(frame, event.GetKeyCode())
+	keycode = event.GetKeyCode()
+
+	if keycode == wx.WXK_ESCAPE:
+		dismiss = getattr(frame, '_dismiss_active_table', None)
+		if callable(dismiss) and dismiss():
+			return True
+
+	return handle_main_quick_shortcut(frame, keycode)
 
 
 def handle_transit_key_event(frame, event):
