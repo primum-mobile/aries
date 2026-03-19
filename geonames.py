@@ -123,7 +123,7 @@ class Geonames:
 			'zm': zm,
 			'daylightsaving': dst_minutes != 0,
 			'label': '%s (UTC%s%d:%02d%s)' % (
-				tzid,
+				tzid.split('/')[-1].replace('_', ' '),
 				total_sign,
 				total_h,
 				total_m,
