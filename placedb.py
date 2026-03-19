@@ -1,4 +1,5 @@
 import os
+import sys
 import pickle
 
 
@@ -21,53 +22,74 @@ class PlaceDB:
 			self.lat = lat
 			self.tz = tz
 			self.alt = alt
-		
 
-	FILENAME = os.path.join('Res', 'placedb.dat')
+	# Bundled factory copy (read-only fallback / migration source)
+	FACTORY_FILENAME = os.path.join('Res', 'placedb.dat')
+
+	@staticmethod
+	def _resolve_user_path():
+		home = os.path.expanduser('~')
+		if sys.platform == 'darwin':
+			base = os.path.join(home, 'Library', 'Application Support', 'Morinus')
+		else:
+			appdata = os.environ.get('APPDATA')
+			if appdata:
+				base = os.path.join(appdata, 'Morinus')
+			else:
+				xdg = os.environ.get('XDG_CONFIG_HOME') or os.path.join(home, '.config')
+				base = os.path.join(xdg, 'Morinus')
+		return os.path.join(base, 'placedb.dat')
 
 	def __init__(self):
 		self.placedb = []
 
-
 	def add(self, name, lon, lat, tz, alt):
 		self.placedb.append(PlaceDB.Record(name, lon, lat, tz, alt))
 
+	def _load_from(self, path):
+		lines = []
+		with open(path, 'rb') as f:
+			try:
+				while True:
+					lines.append(pickle.load(f))
+			except EOFError:
+				pass
+		for ln in lines:
+			ln = ln.rstrip('\n')
+			if not self.isValid(ln):
+				continue
+			line = ln.split(PlaceDB.Record.DELIMITER)
+			self.placedb.append(PlaceDB.Record(
+				line[PlaceDB.Record.NAME], line[PlaceDB.Record.LON],
+				line[PlaceDB.Record.LAT], line[PlaceDB.Record.TZ],
+				line[PlaceDB.Record.ALT],
+			))
 
 	def read(self):
-		lines = []
-		try:
-			f = open(PlaceDB.FILENAME, 'rb')
+		user_path = PlaceDB._resolve_user_path()
+		if os.path.exists(user_path):
 			try:
-				while(True):
-					lines.append(pickle.load(f))
-				f.close()
-
-			except EOFError:
-				for ln in lines:
-					#remove newline
-					ln = ln.rstrip('\n')
-					if not self.isValid(ln):
-						continue
-
-					line = ln.split(PlaceDB.Record.DELIMITER)
-					self.placedb.append(PlaceDB.Record(line[PlaceDB.Record.NAME], line[PlaceDB.Record.LON], line[PlaceDB.Record.LAT], line[PlaceDB.Record.TZ], line[PlaceDB.Record.ALT]))
-
-		except IOError:
+				self._load_from(user_path)
+				return
+			except Exception:
+				pass
+		# Fall back to bundled copy (first run or missing user file)
+		try:
+			self._load_from(PlaceDB.FACTORY_FILENAME)
+		except Exception:
 			pass
 
-
 	def write(self):
+		user_path = PlaceDB._resolve_user_path()
 		try:
-			f = open(PlaceDB.FILENAME, 'wb')
-			for rec in self.placedb:
-				txt = rec.name+PlaceDB.Record.DELIMITER+rec.lon+PlaceDB.Record.DELIMITER+rec.lat+PlaceDB.Record.DELIMITER+rec.tz+PlaceDB.Record.DELIMITER+rec.alt+'\n'
-				pickle.dump(txt, f)
-
-			f.close()
-
+			os.makedirs(os.path.dirname(user_path), exist_ok=True)
+			with open(user_path, 'wb') as f:
+				for rec in self.placedb:
+					txt = (rec.name + PlaceDB.Record.DELIMITER + rec.lon + PlaceDB.Record.DELIMITER +
+						rec.lat + PlaceDB.Record.DELIMITER + rec.tz + PlaceDB.Record.DELIMITER + rec.alt + '\n')
+					pickle.dump(txt, f)
 		except IOError:
-			dlg = wx.MessageDialog(self, mtexts.txts['DBFileError'], mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			pass
 		
 
 	def sort(self):
