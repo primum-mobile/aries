@@ -610,9 +610,10 @@ class ArabicPartsWnd(commonwnd.CommonWnd):
 		self.CELL_WIDTH  = 12*self.FONT_SIZE
 		self.TITLE_HEIGHT = self.LINE_HEIGHT
 
-		# 칼럼 폭: [Ref, Name, Formula, Longitude, Dodecatemorion, Declination, Almuten, Category]
+		# 칼럼 폭: [Ref, Name, Formula, Longitude, Dodecatemorion, Declination, Almuten, Diurnal, M/F]
 		self.COLWIDTHS   = [self.CELL_WIDTH//3, self.CELL_WIDTH, self.CELL_WIDTH,
-							self.CELL_WIDTH, self.CELL_WIDTH, self.CELL_WIDTH, self.CELL_WIDTH, int(self.CELL_WIDTH*0.75)]
+							self.CELL_WIDTH, self.CELL_WIDTH, self.CELL_WIDTH, self.CELL_WIDTH,
+							int(self.CELL_WIDTH*0.45), int(self.CELL_WIDTH*0.35)]
 		self.COLUMN_NUM  = len(self.COLWIDTHS)
 
 		self.SPACE_TITLEY = 0
@@ -666,7 +667,8 @@ class ArabicPartsWnd(commonwnd.CommonWnd):
 					   outline=tableclr, fill=self.bkgclr)
 
 		headers = (u"#", mtexts.txts['Name'], mtexts.txts['Formula'], mtexts.txts['Longitude'],
-				mtexts.txts['Dodecatemorion'], mtexts.txts['Declination'], mtexts.txts['Almuten'], u'M/F')
+				mtexts.txts['Dodecatemorion'], mtexts.txts['Declination'], mtexts.txts['Almuten'],
+				mtexts.txts.get('Diurnal', u'Diurnal'), u'M/F')
 
 		xcol = BOR
 		for i, head in enumerate(headers):
@@ -945,7 +947,7 @@ class ArabicPartsWnd(commonwnd.CommonWnd):
 					  txt, fill=txtclr, font=self.fntText)
 
 		# Almuten
-		COL_REF, COL_NAME, COL_FORM, COL_LONG, COL_DODEC, COL_DECL, COL_ALM, COL_CAT = 0,1,2,3,4,5,6,7
+		COL_REF, COL_NAME, COL_FORM, COL_LONG, COL_DODEC, COL_DECL, COL_ALM, COL_DIURNAL, COL_MF = 0,1,2,3,4,5,6,7,8
 		try:
 			degw = data[idx][arabicparts.ArabicParts.DEGWINNER]
 		except Exception:
@@ -961,11 +963,22 @@ class ArabicPartsWnd(commonwnd.CommonWnd):
 					break
 		except Exception:
 			src = None
-		category = _part_category_label(src)
-		if category:
-			w, h = draw.textsize(category, self.fntText)
-			draw.text((xs[COL_CAT] + (self.COLWIDTHS[COL_CAT]-w)/2.0, y + (self.LINE_HEIGHT-h)/2.0),
-					  category, fill=txtclr, font=self.fntText)
+		try:
+			if src is not None and bool(src[2]):
+				lbl = mtexts.txts.get('Diurnal', u'Diurnal')
+				w, h = draw.textsize(lbl, self.fntText)
+				draw.text((xs[COL_DIURNAL] + (self.COLWIDTHS[COL_DIURNAL]-w)/2.0, y + (self.LINE_HEIGHT-h)/2.0),
+						  lbl, fill=txtclr, font=self.fntText)
+		except Exception:
+			pass
+		try:
+			if src is not None and arabicparts.ArabicParts.is_gendered_item(src):
+				lbl = u'M/F'
+				w, h = draw.textsize(lbl, self.fntText)
+				draw.text((xs[COL_MF] + (self.COLWIDTHS[COL_MF]-w)/2.0, y + (self.LINE_HEIGHT-h)/2.0),
+						  lbl, fill=txtclr, font=self.fntText)
+		except Exception:
+			pass
 
 def _draw_formula_for_part_symbols(self, draw, x, y, cellw, part, opts,
 								   fntText, fntSymbol, signs, txtclr, line_h):
