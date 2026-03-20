@@ -31,13 +31,11 @@ Morinus has evolved through multiple contributors over time:
 - **Shin Ji-Hyeon / James Ren** — version 9.x.x (2025)
 - **Max Lange** — version 10.x.x, *Aries* (2026–)
 
-This release, **Aries**, is the current continuation of the project under the 10.x series.
+This release, **Aries**, is a current continuation of the project under the 10.x series.
 
 ---
 
 ## Contributors
-
-Based on the historical Morinus credits, contributors include:
 
 - **Robert Nagy** — programming, astrology
 - **Philippe Epaud** — French translation
@@ -62,6 +60,7 @@ If additional historical contributors are identified in older releases or mirror
 
 - High-precision calculations via **Swiss Ephemeris**
 - Strong focus on **traditional astrology methods**
+- Transit search engine
 - Multiple chart types, including:
   - Natal
   - Transits
@@ -76,6 +75,8 @@ If additional historical contributors are identified in older releases or mirror
   - Firdaria
   - Decennials
   - Zodiacal Releasing
+  - Circumambulations
+  - Time lords
 - Extended objects and techniques:
   - Fixed stars
   - Arabic Parts
@@ -122,7 +123,7 @@ System-specific dependency setup may still be required.
 This section lists **new shortcuts introduced in Aries**.  
 It does **not** attempt to document all legacy shortcuts.
 
-### Chart Actions
+### Chart Tab Actions
 
 - `R` — Solar Revolution
 - `L` — Lunar Revolution
@@ -168,9 +169,9 @@ Continuous Profections are designed to work particularly well with the new time 
 
 Transit charts include an additional lunation-phase navigation feature:
 
-- `Shift + ↑ / ↓` — jump through lunation quarters
+- `Shift + ↑ / ↓` — jump through moon phases
 
-This allows fast movement through the principal lunar phase structure.
+This allows fast movement through 90° sun-moon 
 
 ---
 
