@@ -2604,33 +2604,34 @@ class GraphChart:
 		return o
 
 	def _antis_lon(self, lon):
-		# 솔스티스 축(Cancer/Capricorn) 기준 반사 (antiscia.py 구현과 동일한 규칙)
-		L = util.normalize(lon)
-		if 90.0 < L < 270.0:
-			ant = util.normalize(270.0 + (270.0 - L))
-		elif L < 90.0:
-			ant = util.normalize(90.0 + (90.0 - L))
-		elif L > 270.0:
-			ant = util.normalize(270.0 - (L - 270.0))
-		else:  # 정확히 0 Cancer/Capricorn
-			ant = L
-
-		# 아야남샤 적용 시 antiscia.py처럼 반사 후 ayan 만큼 빼서 그려준다
-		if self.options.ayanamsha != 0:
-			C = self.chart2 if (self.chart2 is not None) else self.chart
-			ant = util.normalize(ant - C.ayanamsha)
+		# Always pass tropical longitude to antiscia.py; do not subtract ayanamsha here
+		from antiscia import Antiscia
+		C = self.chart2 if (self.chart2 is not None) else self.chart
+		ayanopt = getattr(self.options, 'ayanamsha', 0)
+		ayan = getattr(C, 'ayanamsha', 0.0)
+		antis = Antiscia([], [], [], 0.0, ayanopt, ayan)
+		ant, _ = antis.calc(lon)
 		return ant
 
 	def _contra_lon(self, lon):
-		return util.normalize(self._antis_lon(lon) + 180.0)
+		# Always use antiscia.py logic for contra-antiscia
+		from antiscia import Antiscia
+		C = self.chart2 if (self.chart2 is not None) else self.chart
+		ayanopt = getattr(self.options, 'ayanamsha', 0)
+		ayan = getattr(C, 'ayanamsha', 0.0)
+		antis = Antiscia([], [], [], 0.0, ayanopt, ayan)
+		_, cant = antis.calc(lon)
+		return cant
 
 	def _dodec_lon(self, lon):
-		# 사인 기준 12분할(12th-parts), 아야남샤 반영: (lon-ayan)을 12배 → 다시 ayan 더함
-		ayan = self.chart.ayanamsha if self.options.ayanamsha != 0 else 0.0
-		sid  = util.normalize(lon - ayan)
-		s    = int(sid / chart.Chart.SIGN_DEG)
-		d    = sid - s * chart.Chart.SIGN_DEG
-		return util.normalize(s * chart.Chart.SIGN_DEG + d * 12.0)
+		# Always pass tropical longitude to antiscia.py; do not subtract ayanamsha here
+		from antiscia import Antiscia
+		C = self.chart2 if (self.chart2 is not None) else self.chart
+		ayanopt = getattr(self.options, 'ayanamsha', 0)
+		ayan = getattr(C, 'ayanamsha', 0.0)
+		antis = Antiscia([], [], [], 0.0, ayanopt, ayan)
+		dodec = antis.calcDodecatemoria(lon)
+		return dodec
 
 	def _get_overlay_data(self, kind):
 		"""

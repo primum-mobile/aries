@@ -1,3 +1,4 @@
+
 import astrology
 import planets
 import fortune
@@ -107,36 +108,40 @@ class Antiscia:
 
 
 	def calc(self, lon):
-		ant = 0.0
-
-		#round because the antiscion was a little bit different
-#		d,m,s = util.decToDeg(lon)
-#		lon = float(d)+float(m)/60.0+float(s)/3600.0
-
-		if lon == Antiscia.CANCER0 or lon == Antiscia.CAPRICORN0:
-			ant = lon
-		elif lon > Antiscia.CANCER0 and lon < Antiscia.CAPRICORN0:
-			ant = util.normalize(Antiscia.CAPRICORN0+(Antiscia.CAPRICORN0-lon))
-		elif lon < Antiscia.CANCER0:
-			ant = util.normalize(Antiscia.CANCER0+(Antiscia.CANCER0-lon))
-		elif lon > Antiscia.CAPRICORN0:
-			ant = util.normalize(Antiscia.CAPRICORN0-(lon-Antiscia.CAPRICORN0))
-
+		"""
+		Calculate antiscia and contra-antiscia for a given longitude.
+		Input longitude must always be TROPICAL (never sidereal).
+		If ayanopt != 0 (sidereal), antiscia is calculated in tropical, then converted to sidereal by subtracting ayan.
+		All ayanamsha logic is centralized here. Frontend/chart code must never subtract ayanamsha before calling this.
+		"""
+		# Always work in tropical: mirror across solstice axis
+		if lon < 180.0:
+			ant_trop = 180.0 - lon
+		else:
+			ant_trop = 540.0 - lon
+		ant_trop = util.normalize(ant_trop)
+		# If sidereal, convert result back to sidereal by subtracting ayan
 		if self.ayanopt != 0:
-			ant -= self.ayan
-			ant = util.normalize(ant)
-
-		cant = util.normalize(ant+180.0)
-
+			ant = util.normalize(ant_trop - self.ayan)
+		else:
+			ant = ant_trop
+		cant = util.normalize(ant + 180.0)
 		return ant, cant
 
 
 	def calcDodecatemoria(self, lon):
+		"""
+		Calculate dodecatemoria (12th-parts) for a given longitude.
+		Input longitude must always be TROPICAL (never sidereal).
+		If ayanopt != 0 (sidereal), convert result to sidereal by subtracting ayan.
+		All ayanamsha logic is centralized here. Frontend/chart code must never subtract ayanamsha before calling this.
+		"""
+		dodec_trop = self.KeepInZodiac(30*self.getSign(lon) + 12*self.getRelativeLon(lon))
 		if self.ayanopt != 0:
-			lon -= self.ayan
-			lon = util.normalize(lon)
-
-		return self.KeepInZodiac(30*self.getSign(lon) + 12*self.getRelativeLon(lon))
+			dodec = util.normalize(dodec_trop - self.ayan)
+		else:
+			dodec = dodec_trop
+		return dodec
 
 	def KeepBetweenLimit(self, lon, lim):
 		""" Keep the longitude between 0..lim """
