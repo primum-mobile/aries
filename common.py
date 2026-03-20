@@ -5,16 +5,21 @@ import sys
 import mtexts
 import options
 class Common:
+
 	def __init__(self):
+		try:
+			from morinus import _BASE_DIR
+		except ImportError:
+			_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-		self.ephepath = os.path.join('SWEP', 'Ephem')
-
-		self.symbols = os.path.join('Res', 'Morinus.ttf')
-		self.abc = os.path.join('Res', 'FreeSans.ttf')
-		self.abc_bold = os.path.join('Res', 'FreeSansBold.ttf')
+		self.ephepath = os.path.join(_BASE_DIR, 'SWEP', 'Ephem')
+		self.symbols = os.path.join(_BASE_DIR, 'Res', 'Morinus.ttf')
+		self.abc = os.path.join(_BASE_DIR, 'Res', 'FreeSans.ttf')
+		self.abc_bold = os.path.join(_BASE_DIR, 'Res', 'FreeSansBold.ttf')
 		# 숫자 전용(라틴) 폰트: 언어 설정(CJK)과 무관하게 항상 FreeSans로 강제
-		self.abc_ascii = os.path.join('Res', 'FreeSans.ttf')
-		self.freesans_bold = os.path.join('Res', 'FreeSansBold.ttf')
+		self.abc_ascii = os.path.join(_BASE_DIR, 'Res', 'FreeSans.ttf')
+		self.freesans_bold = os.path.join(_BASE_DIR, 'Res', 'FreeSansBold.ttf')
+
 		# 프라이빗 폰트 등록: 이 프로세스에서만 파일의 폰트를 쓸 수 있게 함
 		try:
 			import ctypes
@@ -41,22 +46,22 @@ class Common:
 
 		opts = options.Options()
 		if opts.langid < 6:
-			self.abc      = os.path.join('Res', 'FreeSans.ttf')
-			self.abc_bold = os.path.join('Res', 'FreeSansBold.ttf')
+			self.abc      = os.path.join(_BASE_DIR, 'Res', 'FreeSans.ttf')
+			self.abc_bold = os.path.join(_BASE_DIR, 'Res', 'FreeSansBold.ttf')
 		else:
 			if opts.langid == 6:   # Chinese (Simplified)
-				self.abc      = os.path.join('Res', 'NotoSansSC-Regular.ttf')
-				self.abc_bold = os.path.join('Res', 'NotoSansSC-Bold.ttf')
+				self.abc      = os.path.join(_BASE_DIR, 'Res', 'NotoSansSC-Regular.ttf')
+				self.abc_bold = os.path.join(_BASE_DIR, 'Res', 'NotoSansSC-Bold.ttf')
 			elif opts.langid == 7: # Chinese (Traditional)
-				self.abc      = os.path.join('Res', 'NotoSansTC-Regular.ttf')
-				self.abc_bold = os.path.join('Res', 'NotoSansTC-Bold.ttf')
+				self.abc      = os.path.join(_BASE_DIR, 'Res', 'NotoSansTC-Regular.ttf')
+				self.abc_bold = os.path.join(_BASE_DIR, 'Res', 'NotoSansTC-Bold.ttf')
 			elif opts.langid == 8: # Korean
-				self.abc      = os.path.join('Res', 'NotoSansKR-Regular.ttf')
-				self.abc_bold = os.path.join('Res', 'NotoSansKR-Bold.ttf')
+				self.abc      = os.path.join(_BASE_DIR, 'Res', 'NotoSansKR-Regular.ttf')
+				self.abc_bold = os.path.join(_BASE_DIR, 'Res', 'NotoSansKR-Bold.ttf')
 			else:
 				# 안전망: 그 외 언어는 라틴 기반 FreeSans
-				self.abc      = os.path.join('Res', 'FreeSans.ttf')
-				self.abc_bold = os.path.join('Res', 'FreeSansBold.ttf')
+				self.abc      = os.path.join(_BASE_DIR, 'Res', 'FreeSans.ttf')
+				self.abc_bold = os.path.join(_BASE_DIR, 'Res', 'FreeSansBold.ttf')
 
 		# Bold 파일이 없으면 Regular로 폴백(한글/중국어 Bold 미동봉 상황 고려)
 		if not os.path.exists(self.abc_bold):
@@ -70,12 +75,9 @@ class Common:
 		self.Housenames = ('I', '2', '3', 'IV', '5', '6', 'VII', '8', '9', 'X', '11', '12')
 		self.Housenames2 = ('1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12')
 		self.months = (mtexts.txts['January'], mtexts.txts['February'], mtexts.txts['March'], mtexts.txts['April'], mtexts.txts['May'], mtexts.txts['June'], mtexts.txts['July'], mtexts.txts['August'], mtexts.txts['September'], mtexts.txts['October'], mtexts.txts['November'], mtexts.txts['December'])
-
 		self.monthabbr = (mtexts.txts['Jan2'], mtexts.txts['Feb2'], mtexts.txts['Mar2'], mtexts.txts['Apr2'], mtexts.txts['May2'], mtexts.txts['Jun2'], mtexts.txts['Jul2'], mtexts.txts['Aug2'], mtexts.txts['Sep2'], mtexts.txts['Oct2'], mtexts.txts['Nov2'], mtexts.txts['Dec2'])
 		self.days = (mtexts.txts['Monday'], mtexts.txts['Tuesday'], mtexts.txts['Wednesday'], mtexts.txts['Thursday'], mtexts.txts['Friday'], mtexts.txts['Saturday'], mtexts.txts['Sunday'])
-
 		self.fortune = '4'
-
 		self.retr = 'Z'
 
 
