@@ -1054,7 +1054,7 @@ class CentralChartHost(wx.Panel):
 
 		gap = max(10, ph // 35)
 		shear = math.tan(math.radians(19))
-		kern = shear * ah / 3 + 1
+		kern = shear * ah / 3 + 2
 		lh = int(xh * 1.5)
 		n_info = len(sp['info'])
 		total_h = ph + gap + int(ah) + gap // 2 + int(sh) + gap + lh * n_info
