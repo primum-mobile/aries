@@ -84,6 +84,12 @@ python3 -m compileall -q .
 ./scripts/build_macos_app.sh
 ```
 
+Notes:
+
+- `Makefile` targets are aimed at POSIX shells.
+- On Windows, run the underlying `python` commands directly unless you are using a Unix-like shell environment.
+- The Swiss Ephemeris extension in `SWEP/src/` must be built before `python3 morinus.py` will work on a fresh checkout.
+
 ## Large UI changes
 
 For long-running overhaul work:
