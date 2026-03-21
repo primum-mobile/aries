@@ -29,6 +29,9 @@ jobs:
       - name: Compile Python sources
         run: python3 -m compileall -q .
 
+      - name: Run smoke tests
+        run: python3 -m pytest tests -q
+
       - name: Build Swiss Ephemeris extension
         run: ./scripts/build_sweastrology.sh
 
