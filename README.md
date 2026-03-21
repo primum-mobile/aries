@@ -95,7 +95,7 @@ If additional historical contributors are identified in older releases or mirror
 
 - A macOS `.app` build has been tested
 - No official installers are available yet
-- The code is intended to be compilable on macOS, Windows, and Linux, but this has not yet been fully verified on all systems
+- The code is intended to be compilable on macOS, Windows, and Linux, but the documented build flow is currently centered on source builds plus the macOS app bundle
 
 ### Build from Source
 
@@ -105,12 +105,23 @@ cd aries
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+cd SWEP/src && python3 setup.py build_ext --inplace && cd ../..
 python3 morinus.py
 ```
 
+The `sweastrology` extension from `SWEP/src/` must be built before the app can start from a fresh checkout.
+
+### Build Helpers
+
+- `./scripts/build_sweastrology.sh` builds the Swiss Ephemeris extension in place
+- `./scripts/build_macos_app.sh` builds `dist/Morinus.app`
+- `make exe` is a POSIX-oriented helper and is not a native Windows workflow
+
+On Windows, prefer equivalent PowerShell or direct `python` commands rather than relying on `make`.
+
 ### Requirements
 
-- Python 3.8+
+- Python 3.10+
 - wxPython
 - Swiss Ephemeris
 

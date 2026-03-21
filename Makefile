@@ -1,5 +1,8 @@
 .PHONY: exe clean
 
+# POSIX-oriented helper targets.
+# On native Windows shells, prefer direct `python` / PowerShell commands.
+
 PYTHON ?= python3
 PYINSTALLER ?= PyInstaller
 SPEC ?= Morinus.spec
