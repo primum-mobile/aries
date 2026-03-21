@@ -1,3 +1,5 @@
+import sys
+
 import wx
 
 
@@ -774,7 +776,10 @@ class _FadingScrollbar(wx.Panel):
 		self._inactivity_timer = wx.Timer(self)
 		self.Bind(wx.EVT_TIMER, self._on_fade_tick, self._fade_timer)
 		self.Bind(wx.EVT_TIMER, self._on_inactivity_tick, self._inactivity_timer)
-		self.SetBackgroundStyle(wx.BG_STYLE_TRANSPARENT)
+		if sys.platform == 'win32':
+			self.SetBackgroundStyle(wx.BG_STYLE_PAINT)
+		else:
+			self.SetBackgroundStyle(wx.BG_STYLE_TRANSPARENT)
 		self.Bind(wx.EVT_ERASE_BACKGROUND, lambda e: None)
 		self.Bind(wx.EVT_PAINT, self._on_paint)
 		self.Bind(wx.EVT_ENTER_WINDOW, self._on_enter)

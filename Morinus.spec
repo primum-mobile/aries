@@ -4,10 +4,24 @@
 block_cipher = None
 
 
+_swe_binary_candidates = [
+    ('SWEP\\src\\sweastrology.cp314-win_amd64.pyd', 'SWEP\\src'),
+    ('SWEP\\src\\sweastrology.pyd', 'SWEP\\src'),
+    ('sweastrology.pyd', '.'),
+]
+
+_swe_binaries = [candidate for candidate in _swe_binary_candidates if os.path.exists(candidate[0])]
+if not _swe_binaries:
+    raise SystemExit(
+        'Swiss Ephemeris extension not found. Build it first with '
+        '`cd SWEP\\\\src && ..\\\\..\\\\.venv\\\\Scripts\\\\python.exe setup.py build_ext --inplace`.'
+    )
+
+
 a = Analysis(
     ['morinus.py'],
     pathex=[],
-    binaries=[('sweastrology.pyd', '.')],
+    binaries=_swe_binaries,
     datas=[('Res', 'Res'), ('Data', 'Data'), ('Hors', 'Hors'), ('Opts', 'Opts'), ('SWEP\\Ephem', 'SWEP\\Ephem'), ('Res\\Morinus.ico', '.')],
     hiddenimports=['wx.adv'],
     hookspath=[],
