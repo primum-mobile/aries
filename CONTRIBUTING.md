@@ -1,94 +1,144 @@
-# Contributing
+# Contributing to Aries
 
-This fork is moving toward a stable GitHub-centered workflow so releases can be rolled back cleanly while larger UI work continues.
+Thank you for your interest in contributing to **Aries**, the 10.x continuation and modernization of the open-source astrology software **Morinus**.
 
-## GitHub setup
+Aries is a historical codebase under active modernization. Contributions are welcome, but changes should be made carefully: the goal is to improve maintainability, usability, and platform support **without casually breaking established astrological behavior**.
 
-Create the GitHub repository first, then connect this checkout:
+## Project Priorities
 
-```bash
-git remote add origin https://github.com/primum-mobile/aries.git
-git push -u origin main
-```
+At this stage, the project especially benefits from help with:
 
-Recommended repository settings after the first push:
+- bug fixes
+- Python 3 cleanup and modernization
+- cross-platform testing
+- Windows and Linux build support
+- wxPython GUI refinement
+- build and dependency cleanup
+- documentation
+- restoration or extension of traditional techniques
 
-- set the default branch to `main`,
-- enable branch protection for `main`,
-- require pull requests for non-trivial changes,
-- keep GitHub Actions enabled so build artifacts are available on every push and tag.
+## Before You Start
 
-## Branch model
+Please do the following first:
 
-- `main`
-  - Always intended to be releasable.
-  - Do not do experimental work directly on `main`.
-- `codex/<topic>`
-  - Default branch prefix for implementation work.
-  - Merge into `main` only when the branch builds cleanly and is worth keeping.
+1. Read `README.md`
+2. Check existing Issues and Pull Requests
+3. For anything non-trivial, open an Issue before starting work
 
-## Worktree model
+Small, focused fixes and documentation improvements can usually be submitted directly.
 
-Use worktrees for parallel streams instead of mixing unrelated work in one checkout.
+## What Makes a Good Contribution
 
-Example:
+The best contributions are:
 
-```bash
-git switch main
-git pull
-git worktree add ../morinus-search codex/search
-git worktree add ../morinus-workspace codex/workspace-shell
-```
+- narrowly scoped
+- easy to review
+- tested
+- documented where necessary
+- respectful of legacy Morinus behavior
 
-Recommended usage:
+Please avoid combining unrelated fixes into one pull request.
 
-- Keep one worktree on `main` for release verification only.
-- Do feature work in a separate worktree per major stream.
-- Before merging, rebase or merge the feature branch onto the current `main` and rebuild.
+## Areas That Need Extra Care
 
-## Release policy
+This project is not just a generic GUI app. Certain changes have outsized risk and should be explained clearly:
 
-- Tag releases only from `main`.
-- Tag only after:
-  - the repository builds successfully,
-  - the app launches from the built bundle,
-  - there are no unintended source changes in the tree.
-- Use annotated tags:
+- astrological calculations
+- time and date logic
+- ayanamsha / zodiac handling
+- chart rendering
+- export or save/load behavior
+- defaults shipped in `Opts/`
+- platform-specific packaging or runtime behavior
 
-```bash
-git tag -a v0.1.0 -m "Stable checkpoint before workspace shell"
-git push origin main --tags
-```
+If your change affects any of these, describe it in detail in the PR.
 
-The GitHub release workflow will build a macOS app bundle from release tags matching `v*`.
+## Bug Reports
 
-Use [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) before cutting or approving a stable checkpoint.
+When reporting a bug, include:
 
-## Local options
+- operating system and version
+- Python version
+- Aries version, release tag, or commit hash
+- exact steps to reproduce
+- expected result
+- actual result
+- traceback or console output, if any
+- screenshots, if relevant
 
-This fork currently keeps `Opts/` in the repository so preferred defaults can travel between builds.
+Reports that include a reproducible sequence are much easier to act on.
 
-That is acceptable for now, but be deliberate:
+## Feature Requests
 
-- Treat `Opts/` changes as product-default changes, not personal scratch changes.
-- Before cutting a release, review `Opts/` diffs and confirm they are intended to ship.
-- If local experimentation becomes noisy later, we can split factory defaults from user state in a future pass.
+Feature requests should explain:
 
-## Build checks
+- what problem the feature solves
+- why it belongs in Aries
+- whether it restores legacy behavior, improves usability, or adds something new
+- whether it affects calculations, workflow, or output
+- whether it changes compatibility with older Morinus behavior
 
-Local sanity checks before pushing:
+## Development Setup
+
+Read the repository documentation first:
+
+- `README.md`
+- `DEPENDENCIES.md`
+- `BUILDING_MACOS.md`
+
+The project currently includes platform-specific build notes and dependency notes there. Do not duplicate those instructions in a pull request unless you are updating them.
+
+## Branching
+
+Do not work directly on `main`.
+
+Create a topic branch for your change, for example:
+
+- `fix/transit-crash`
+- `feat/linux-build-notes`
+- `docs/readme-installation`
+- `refactor/chart-session-cleanup`
+
+Keep one branch per logical unit of work.
+
+## Pull Requests
+
+When opening a pull request:
+
+- explain what changed
+- explain why it changed
+- mention what you tested
+- include screenshots for UI changes
+- mention platform coverage
+- mention compatibility implications, if any
+
+A good PR description usually answers these questions:
+
+### Summary
+What does this change do?
+
+### Motivation
+Why is this change needed?
+
+### Testing
+What did you run or verify?
+
+### Risk / Compatibility
+Could this alter results, defaults, rendering, or behavior users may rely on?
+
+## Testing Expectations
+
+At minimum, contributors should do a local sanity check before submitting changes.
+
+Examples include:
+
+- app starts successfully
+- affected window or workflow opens correctly
+- no new traceback appears
+- changed feature behaves as intended
+- no obvious regression in related workflows
+
+Where relevant, also run:
 
 ```bash
 python3 -m compileall -q .
-./scripts/build_sweastrology.sh
-./scripts/build_macos_app.sh
-```
-
-## Large UI changes
-
-For long-running overhaul work:
-
-- cut a stable release tag first,
-- branch from that point,
-- keep commits small and reversible,
-- land shell/framework changes before migrating feature windows.
