@@ -2,6 +2,24 @@
 
 These steps build a native `.app` bundle using Python 3 + PyInstaller and compile the bundled Swiss Ephemeris wrapper (`sweastrology`) for your Python.
 
+The macOS build script uses isolated per-architecture virtualenvs in `.build-venvs/` so `arm64`, `x86_64`, and `universal` builds do not overwrite each other's packages or your shared Python install.
+
+Choose an architecture when you build:
+
+```bash
+./scripts/build_macos_app.sh x86_64
+./scripts/build_macos_app.sh arm64
+./scripts/build_macos_app.sh universal
+```
+
+Defaults:
+
+- `x86_64` uses `MACOSX_DEPLOYMENT_TARGET=10.13`
+- `arm64` uses `MACOSX_DEPLOYMENT_TARGET=11.0`
+- `universal` uses both slices and defaults to `MACOSX_DEPLOYMENT_TARGET=11.0`
+
+You can still override `MACOSX_DEPLOYMENT_TARGET` in the environment if you need a different minimum version.
+
 ## Prereqs
 
 - Xcode Command Line Tools (`clang`)
@@ -42,10 +60,20 @@ python3 morinus.py
 python3 -m PyInstaller Morinus.macos.spec --clean -y
 ```
 
-Output ends up in `dist/Morinus.app`.
+Output ends up in an arch-specific bundle:
+
+- `dist/Morinus-x86_64.app`
+- `dist/Morinus-arm64.app`
+- `dist/Morinus-universal.app`
 
 ## One-command build
 
 ```bash
 ./scripts/build_macos_app.sh
 ```
+
+Per-arch build environments are created automatically on first use:
+
+- `.build-venvs/macos-arm64`
+- `.build-venvs/macos-x86_64`
+- `.build-venvs/macos-universal`

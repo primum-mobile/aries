@@ -18,6 +18,7 @@ if not so_candidates:
 sweastrology_so = so_candidates[0]
 
 block_cipher = None
+target_arch = os.environ.get("PYINSTALLER_TARGET_ARCH")
 
 datas = [
 	(str(here / "Res"), "Res"),
@@ -59,6 +60,7 @@ exe = EXE(
 	upx=False,
 	console=False,
 	argv_emulation=True,
+	target_arch=target_arch,
 )
 
 coll = COLLECT(
