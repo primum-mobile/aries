@@ -14,7 +14,7 @@ After code changes, always run `python3 morinus.py` so behavior can be verified 
 cd SWEP/src && python3 setup.py build_ext --inplace -q && cd ../.. && python3 morinus.py
 ```
 
-A `.claude/launch.json` is present — `preview_start "morinus"` runs the above automatically.
+There is currently no checked-in `.claude/launch.json`. On a fresh clone, build the Swiss Ephemeris extension once in this repo before launching.
 
 ---
 
@@ -385,12 +385,10 @@ Do **not** reintroduce business logic into transport or rendering layers.
 
 ## Swiss Ephemeris (SWEP) C Extension
 Morinus depends on `sweastrology`, a C extension built from `SWEP/src/`.
-The compiled `.so` is gitignored. **Never rebuild it per-worktree** — the Swiss Ephemeris never changes.
+The compiled binary is gitignored and platform-specific (`.so` on macOS/Linux, `.pyd` on Windows).
 
-**How it works:** `.claude/launch.json` is configured so `preview_start "morinus"` automatically symlinks the compiled `.so` from the main workspace (`/Users/Max/Documents/morinus-workspace/SWEP/src/`) into the current worktree's `SWEP/src/` if it isn't already present. No manual build step needed.
-
-**If you get `ModuleNotFoundError: No module named 'sweastrology'`:** the main workspace hasn't been built yet (fresh machine). Build it once there:
+**If you get `ModuleNotFoundError: No module named 'sweastrology'`:** build the extension in the current checkout:
 ```bash
-cd /Users/Max/Documents/morinus-workspace/SWEP/src && python3 setup.py build_ext --inplace -q && cd ../..
+cd SWEP/src && python3 setup.py build_ext --inplace -q && cd ../..
 ```
-After that, all worktrees pick it up via symlink automatically.
+After that, launch the app from the repo root with `python3 morinus.py`.

@@ -1,4 +1,4 @@
-.PHONY: exe clean
+.PHONY: build-ext exe clean
 
 # POSIX-oriented helper targets.
 # On native Windows shells, prefer direct `python` / PowerShell commands.
@@ -14,7 +14,7 @@ build-ext:
 	cd $(SWEP_SRC) && $(PYTHON) setup.py build_ext --inplace
 
 exe: build-ext
-	@test -f sweastrology.pyd || { echo "Missing sweastrology.pyd after build-ext."; exit 1; }
+	@find "$(SWEP_SRC)" -maxdepth 1 \( -name 'sweastrology*.pyd' -o -name 'sweastrology*.so' \) | grep -q . || { echo "Missing sweastrology binary after build-ext."; exit 1; }
 	$(PYTHON) -m $(PYINSTALLER) --clean --distpath $(DISTDIR) --workpath $(WORKDIR) $(SPEC)
 
 clean:

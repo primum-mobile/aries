@@ -1,16 +1,22 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from pathlib import Path
 
 block_cipher = None
 
 
-_swe_binary_candidates = [
-    ('SWEP\\src\\sweastrology.cp314-win_amd64.pyd', 'SWEP\\src'),
-    ('SWEP\\src\\sweastrology.pyd', 'SWEP\\src'),
-    ('sweastrology.pyd', '.'),
-]
+_repo_root = Path.cwd()
+_swe_binary_candidates = []
 
-_swe_binaries = [candidate for candidate in _swe_binary_candidates if os.path.exists(candidate[0])]
+for pattern in ("sweastrology*.pyd", "sweastrology*.so"):
+    for candidate in sorted((_repo_root / "SWEP" / "src").glob(pattern)):
+        _swe_binary_candidates.append((str(candidate), "SWEP\\src"))
+
+for pattern in ("sweastrology*.pyd", "sweastrology*.so"):
+    for candidate in sorted(_repo_root.glob(pattern)):
+        _swe_binary_candidates.append((str(candidate), "."))
+
+_swe_binaries = _swe_binary_candidates
 if not _swe_binaries:
     raise SystemExit(
         'Swiss Ephemeris extension not found. Build it first with '

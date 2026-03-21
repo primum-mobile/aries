@@ -21,8 +21,12 @@ opt = [
   "numpy>=2.0",
 ]
 dev = [
+  "pytest>=8.0",
   "pyinstaller>=6.0",
   "setuptools>=61",
   "wheel",
   "fonttools>=4.0",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
