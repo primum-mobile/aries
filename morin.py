@@ -412,12 +412,13 @@ class MFrame(wx.Frame):
 		frame_rect = self.GetScreenRect()
 		host_rect = self._workspace_shell.chart_host.GetScreenRect()
 		host_center_offset_x = (host_rect.x - frame_rect.x) + int(host_rect.width / 2)
+		host_center_offset_y = (host_rect.y - frame_rect.y) + int(host_rect.height / 2)
 
 		target_center_x = rect.x + int(rect.width / 2)
 		target_center_y = rect.y + int(rect.height / 2)
 
-		new_x = target_center_x - host_center_offset_x
-		new_y = target_center_y - int(frame_rect.height / 2)
+		new_x = target_center_x - int(frame_rect.width / 2)
+		new_y = target_center_y - host_center_offset_y
 
 		min_x = rect.x
 		max_x = rect.x + rect.width - frame_rect.width
