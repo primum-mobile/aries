@@ -72,6 +72,18 @@ Output ends up in an arch-specific bundle:
 ./scripts/build_macos_app.sh
 ```
 
+To build both shipping bundles in one pass:
+
+```bash
+./scripts/build_macos_release.sh
+```
+
+or:
+
+```bash
+make macos-release
+```
+
 Per-arch build environments are created automatically on first use:
 
 - `.build-venvs/macos-arm64`
