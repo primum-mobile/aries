@@ -24,6 +24,8 @@ class Revolutions:
     JUPITER = 5
     SATURN = 6
     URANUS = 7
+    NEPTUNE = 8
+    PLUTO = 9
 
     PLANETARY_SPECS = {
         MERCURY: (astrology.SE_MERCURY, 14),
@@ -32,6 +34,8 @@ class Revolutions:
         JUPITER: (astrology.SE_JUPITER, 12*12),
         SATURN: (astrology.SE_SATURN, 30*12),
         URANUS: (astrology.SE_URANUS, 100*12),
+        NEPTUNE: (astrology.SE_NEPTUNE, 200*12),
+        PLUTO: (astrology.SE_PLUTO, 300*12),
     }
     def __init__(self):
         self.t = [0, 0, 0, 0, 0, 0]

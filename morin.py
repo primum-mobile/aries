@@ -2319,6 +2319,8 @@ class MFrame(wx.Frame):
 		self.ID_Rev_Jupiter = 1840
 		self.ID_Rev_Saturn  = 1841
 		self.ID_Rev_Uranus  = 1842
+		self.ID_Rev_Neptune = 1843
+		self.ID_Rev_Pluto   = 1844
 # ###########################################
 
 		self.ID_Housesystem1, self.ID_Housesystem2, self.ID_Housesystem3, self.ID_Housesystem4, self.ID_Housesystem5, self.ID_Housesystem6, self.ID_Housesystem7, self.ID_Housesystem8, self.ID_Housesystem9, self.ID_Housesystem10, self.ID_Housesystem11, self.ID_Housesystem12, self.ID_Housesystem13 = range(1050, 1063)
@@ -2449,6 +2451,8 @@ class MFrame(wx.Frame):
 		self.crevolutions.Append(self.ID_Rev_Jupiter, 'Jupiter Return', '')
 		self.crevolutions.Append(self.ID_Rev_Saturn,  'Saturn Return',  '')
 		self.crevolutions.Append(self.ID_Rev_Uranus,  'Uranus Return',  '')
+		self.crevolutions.Append(self.ID_Rev_Neptune, 'Neptune Return', '')
+		self.crevolutions.Append(self.ID_Rev_Pluto,   'Pluto Return',   '')
 		self.mcharts.Append(self.ID_OtherRevolutions, 'Other Revolutions', self.crevolutions)
 
 		# Transits 서브메뉴 신설
@@ -2673,6 +2677,8 @@ class MFrame(wx.Frame):
 		self.Bind(wx.EVT_MENU, lambda e: self._open_quick_planet_revolution(revolutions.Revolutions.JUPITER), id=self.ID_Rev_Jupiter)
 		self.Bind(wx.EVT_MENU, lambda e: self._open_quick_planet_revolution(revolutions.Revolutions.SATURN),  id=self.ID_Rev_Saturn)
 		self.Bind(wx.EVT_MENU, lambda e: self._open_quick_planet_revolution(revolutions.Revolutions.URANUS),  id=self.ID_Rev_Uranus)
+		self.Bind(wx.EVT_MENU, lambda e: self._open_quick_planet_revolution(revolutions.Revolutions.NEPTUNE), id=self.ID_Rev_Neptune)
+		self.Bind(wx.EVT_MENU, lambda e: self._open_quick_planet_revolution(revolutions.Revolutions.PLUTO),   id=self.ID_Rev_Pluto)
 		self.Bind(wx.EVT_MENU, self.onSunTransits, id=self.ID_SunTransits)
 		self.Bind(wx.EVT_MENU, self.onSecondaryDirs, id=self.ID_SecondaryDirs)
 		self.Bind(wx.EVT_MENU, self.onSecondaryDirs, id=self.ID_SecProgChart)
@@ -6093,6 +6099,8 @@ class MFrame(wx.Frame):
 				self.ID_Rev_Jupiter = 1840
 				self.ID_Rev_Saturn  = 1841
 				self.ID_Rev_Uranus  = 1842
+				self.ID_Rev_Neptune = 1843
+				self.ID_Rev_Pluto   = 1844
 				self.ID_QuickChartsOpt = 1832
 				self.ID_SetStartupChart = 1833
 				self.ID_ClearStartupChart = 1834
@@ -6226,6 +6234,8 @@ class MFrame(wx.Frame):
 				self.crevolutions.Append(self.ID_Rev_Jupiter, 'Jupiter Return', '')
 				self.crevolutions.Append(self.ID_Rev_Saturn,  'Saturn Return',  '')
 				self.crevolutions.Append(self.ID_Rev_Uranus,  'Uranus Return',  '')
+				self.crevolutions.Append(self.ID_Rev_Neptune, 'Neptune Return', '')
+				self.crevolutions.Append(self.ID_Rev_Pluto,   'Pluto Return',   '')
 				self.mcharts.Append(self.ID_OtherRevolutions, 'Other Revolutions', self.crevolutions)
 
 				# Transits 서브메뉴 신설
@@ -6411,6 +6421,8 @@ class MFrame(wx.Frame):
 				self.Bind(wx.EVT_MENU, lambda e: self._open_quick_planet_revolution(revolutions.Revolutions.JUPITER), id=self.ID_Rev_Jupiter)
 				self.Bind(wx.EVT_MENU, lambda e: self._open_quick_planet_revolution(revolutions.Revolutions.SATURN),  id=self.ID_Rev_Saturn)
 				self.Bind(wx.EVT_MENU, lambda e: self._open_quick_planet_revolution(revolutions.Revolutions.URANUS),  id=self.ID_Rev_Uranus)
+				self.Bind(wx.EVT_MENU, lambda e: self._open_quick_planet_revolution(revolutions.Revolutions.NEPTUNE), id=self.ID_Rev_Neptune)
+				self.Bind(wx.EVT_MENU, lambda e: self._open_quick_planet_revolution(revolutions.Revolutions.PLUTO),   id=self.ID_Rev_Pluto)
 				self.Bind(wx.EVT_MENU, self.onSunTransits, id=self.ID_SunTransits)
 				self.Bind(wx.EVT_MENU, self.onSecondaryDirs, id=self.ID_SecondaryDirs)
 				self.Bind(wx.EVT_MENU, self.onElections, id=self.ID_Elections)

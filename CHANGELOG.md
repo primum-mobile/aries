@@ -2,6 +2,10 @@
 
 ## 2026-03-22
 
+Computation: Extended the centralized planetary return metadata in `revolutions.py` to include Neptune and Pluto. They now use the same generic previous/next/current-cycle return selectors as Mercury through Uranus instead of needing any planet-specific wiring.
+
+GUI: Added Neptune Return and Pluto Return to the Other Revolutions menu and to the shared revolutions type list, so both quick-open menu actions and the revolutions dialog can reach the new generic backend path without extra per-planet UI logic.
+
 Computation: Removed the radix-birth floor from backward planetary return selection in `revolutions.py`. Exact previous-hit stepping now searches the full configured cycle horizon in both directions, so planetary revolutions can continue into pre-birth years when an earlier exact hit exists there instead of falsely stopping at the natal year boundary.
 
 GUI: Updated the planetary stepping status text in `morin.py` so a failed backward step reports a generic search-window boundary instead of implying that radix birth is always the hard stop. The existing menu and arrow-key stepping surfaces are unchanged.

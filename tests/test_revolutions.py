@@ -65,3 +65,10 @@ def test_cycle_start_does_not_cross_into_separate_prebirth_cycle(monkeypatch):
 
     assert ok is True
     assert tuple(revs.t) == (2001, 1, 20, 10, 0, 0)
+
+
+def test_planetary_specs_include_neptune_and_pluto():
+    assert revolutions.Revolutions.is_planetary_type(revolutions.Revolutions.NEPTUNE) is True
+    assert revolutions.Revolutions.is_planetary_type(revolutions.Revolutions.PLUTO) is True
+    assert revolutions.Revolutions.planetary_pid(revolutions.Revolutions.NEPTUNE) is not None
+    assert revolutions.Revolutions.planetary_pid(revolutions.Revolutions.PLUTO) is not None
