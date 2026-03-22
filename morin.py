@@ -1780,6 +1780,36 @@ class MFrame(wx.Frame):
 		if doc is not None:
 			self._install_workspace_solar_revolution_stepper(place, plus, t1)
 
+	def _latest_lunar_revolution_before(self, radix, ref_dt):
+		"""Return the most recent lunar revolution at or before ref_dt."""
+		candidates = []
+		for year, month in (
+			(int(ref_dt.year), int(ref_dt.month)),
+			util.decrMonth(int(ref_dt.year), int(ref_dt.month)),
+		):
+			revs = revolutions.Revolutions()
+			if not revs.compute(revolutions.Revolutions.LUNAR, int(year), int(month), 1, radix):
+				continue
+			candidates.append(tuple(revs.t))
+			trans = transits.Transits()
+			trans.month(int(year), int(month), radix, astrology.SE_MOON)
+			if len(trans.transits) > 1:
+				second = revolutions.Revolutions()
+				second.createRevolution(int(year), int(month), trans, 1)
+				candidates.append(tuple(second.t))
+		valid = []
+		for candidate in candidates:
+			try:
+				candidate_dt = datetime.datetime(*[int(v) for v in candidate])
+			except Exception:
+				continue
+			if candidate_dt <= ref_dt:
+				valid.append((candidate_dt, candidate))
+		if not valid:
+			return None
+		valid.sort(key=lambda item: item[0])
+		return valid[-1][1]
+
 	def _open_quick_lunar_revolution(self):
 		"""Compute and open the current lunar revolution (not the next one)."""
 		radix = self._active_radix_chart()
@@ -1802,16 +1832,9 @@ class MFrame(wx.Frame):
 		try:
 			return_dt = datetime.datetime(int(t1), int(t2), int(t3), int(t4), int(t5), int(t6))
 			if return_dt > now:
-				# Go back one month and compute the previous lunar return
-				prev_year, prev_month = int(now.year), int(now.month) - 1
-				if prev_month < 1:
-					prev_month = 12
-					prev_year -= 1
-				revs_prev = revolutions.Revolutions()
-				ok_prev = revs_prev.compute(revolutions.Revolutions.LUNAR, prev_year, prev_month, 1, radix)
-				if ok_prev:
-					revs = revs_prev
-					t1, t2, t3, t4, t5, t6 = revs.t[0], revs.t[1], revs.t[2], revs.t[3], revs.t[4], revs.t[5]
+				latest = self._latest_lunar_revolution_before(radix, now)
+				if latest is not None:
+					t1, t2, t3, t4, t5, t6 = latest
 		except Exception:
 			pass
 		
@@ -1857,17 +1880,10 @@ class MFrame(wx.Frame):
 			self._rev_ctx = {'place': place, 'plus': plus, 'revtype': chart.Chart.LUNAR}
 			self._lr_year = int(time.year)
 			self._lr_month = int(time.month)
-			self._lr_day = int(time.day)
 
 			def _set_lr_ym_and_refresh(yy, mm):
 				revs2 = revolutions.Revolutions()
-				dd = int(self._lr_day)
-				try:
-					while not util.checkDate(int(yy), int(mm), int(dd)) and dd > 1:
-						dd -= 1
-				except Exception:
-					pass
-				result = revs2.compute(revolutions.Revolutions.LUNAR, int(yy), int(mm), int(dd), radix)
+				result = revs2.compute(revolutions.Revolutions.LUNAR, int(yy), int(mm), 1, radix)
 				if result:
 					t1, t2, t3, t4, t5, t6 = revs2.t[0], revs2.t[1], revs2.t[2], revs2.t[3], revs2.t[4], revs2.t[5]
 					if self.options.ayanamsha != 0:
@@ -1917,7 +1933,7 @@ class MFrame(wx.Frame):
 				self._rev_stepper.Show(False)
 
 	def _open_quick_planet_revolution(self, planet_type):
-		"""Open a planetary revolution (Mercury–Saturn) for the next return from today."""
+		"""Open the current planetary revolution cycle (Mercury–Saturn)."""
 		if self.splash or self.horoscope.time.bc:
 			dlgm = wx.MessageDialog(self, mtexts.txts['NotAvailable'], '', wx.OK|wx.ICON_INFORMATION)
 			dlgm.ShowModal()
@@ -1926,28 +1942,13 @@ class MFrame(wx.Frame):
 
 		radix = self._active_radix_chart()
 
-		_pid_map = {
-			revolutions.Revolutions.MERCURY: astrology.SE_MERCURY,
-			revolutions.Revolutions.VENUS:   astrology.SE_VENUS,
-			revolutions.Revolutions.MARS:    astrology.SE_MARS,
-			revolutions.Revolutions.JUPITER: astrology.SE_JUPITER,
-			revolutions.Revolutions.SATURN:  astrology.SE_SATURN,
-		}
-		_lookback_map = {
-			revolutions.Revolutions.MERCURY: 4,
-			revolutions.Revolutions.VENUS:   9,
-			revolutions.Revolutions.MARS:    25,
-			revolutions.Revolutions.JUPITER: 144,
-			revolutions.Revolutions.SATURN:  355,
-		}
-		pid      = _pid_map.get(planet_type)
-		_lookback = _lookback_map.get(planet_type, 4)
+		pid = revolutions.Revolutions.planetary_pid(planet_type)
 
 		now = datetime.datetime.now()
 		wx.BeginBusyCursor()
 		try:
 			revs = revolutions.Revolutions()
-			ok = revs.compute(planet_type, now.year, now.month, now.day, radix)
+			ok = revs.compute_planetary_cycle_start_datetime(planet_type, now, radix)
 		finally:
 			if wx.IsBusy():
 				wx.EndBusyCursor()
@@ -1999,7 +2000,7 @@ class MFrame(wx.Frame):
 			return
 
 		self._rev_ctx = {'place': place, 'plus': plus, 'revtype': chart.Chart.REVOLUTION}
-		self._planet_rev_seed = (int(t1), int(t2), int(t3))
+		self._planet_rev_dt = datetime.datetime(int(revs.t[0]), int(revs.t[1]), int(revs.t[2]), int(revs.t[3]), int(revs.t[4]), int(revs.t[5]))
 		try:
 			if hasattr(self, '_rev_stepper') and self._rev_stepper:
 				self._rev_stepper.Destroy()
@@ -2007,13 +2008,10 @@ class MFrame(wx.Frame):
 		except Exception:
 			pass
 
-		def _set_planet_rev_and_refresh(sy, sm, sd):
-			revs2 = revolutions.Revolutions()
-			ok2 = revs2.compute(planet_type, int(sy), int(sm), int(sd), radix)
-			if not ok2:
-				return
+		def _apply_planet_rev(revs2):
 			ry = revs2.t[0]; rm = revs2.t[1]; rd = revs2.t[2]
 			rhh = revs2.t[3]; rmi = revs2.t[4]; rss = revs2.t[5]
+			raw_dt = datetime.datetime(int(ry), int(rm), int(rd), int(rhh), int(rmi), int(rss))
 			try:
 				if self.options.ayanamsha != 0 and pid is not None:
 					ry, rm, rd, rhh, rmi, rss = self.calcPrecNutCorrectedRevolution(
@@ -2025,36 +2023,24 @@ class MFrame(wx.Frame):
 							   self._rev_ctx['plus'], 0, 0, False, self._rev_ctx['place'], False)
 			chart2 = chart.Chart(radix.name, radix.male, time2,
 								 self._rev_ctx['place'], self._rev_ctx['revtype'], '', self.options, False)
-			self._planet_rev_seed = (int(ry), int(rm), int(rd))
+			self._planet_rev_dt = raw_dt
 			active_cs = self._active_chart_session()
 			if active_cs is not None:
 				active_cs.change_chart(chart2, display_datetime=(time2.year, time2.month, time2.day, time2.hour, time2.minute, time2.second))
 
 		def _step_planet_forward():
-			import datetime as _dt
-			prev_seed = self._planet_rev_seed
-			sy, sm, sd = prev_seed
-			for attempt in range(10):
-				try:
-					nxt = _dt.date(int(sy), int(sm), int(sd)) + _dt.timedelta(days=1 + attempt)
-					_set_planet_rev_and_refresh(nxt.year, nxt.month, nxt.day)
-				except Exception:
-					pass
-				if self._planet_rev_seed != prev_seed:
-					break
+			revs2 = revolutions.Revolutions()
+			if revs2.compute_planetary_after_datetime(planet_type, self._planet_rev_dt, radix):
+				_apply_planet_rev(revs2)
+			else:
+				self._notify_planet_return_step_boundary(planet_type, backward=False)
 
 		def _step_planet_backward():
-			prev_seed = self._planet_rev_seed
-			sy, sm, sd = prev_seed
-			for attempt in range(10):
-				bm = sm - _lookback - attempt
-				by = sy
-				while bm < 1:
-					bm += 12
-					by -= 1
-				_set_planet_rev_and_refresh(by, bm, 1)
-				if self._planet_rev_seed != prev_seed:
-					break
+			revs2 = revolutions.Revolutions()
+			if revs2.compute_planetary_before_datetime(planet_type, self._planet_rev_dt, radix):
+				_apply_planet_rev(revs2)
+			else:
+				self._notify_planet_return_step_boundary(planet_type, backward=True)
 
 		from revolutionsdlg import RevolutionCallbackStepperController
 		self._rev_stepper = RevolutionCallbackStepperController(
@@ -2066,6 +2052,24 @@ class MFrame(wx.Frame):
 			cs._stepper = self._rev_stepper
 		self.handleStatusBar(True)
 		self.handleCaption(True)
+
+	def _notify_planet_return_step_boundary(self, planet_type, backward=True):
+		label = mtexts.revtypeList[planet_type]
+		if backward:
+			msg = '%s: no earlier return found in search window' % label
+		else:
+			msg = '%s: no later return found in search window' % label
+		try:
+			sb = self.GetStatusBar()
+			if sb is not None:
+				field = 2 if sb.GetFieldsCount() > 2 else 0
+				self.SetStatusText(msg, field)
+		except Exception:
+			pass
+		try:
+			wx.Bell()
+		except Exception:
+			pass
 
 	def _activate_loaded_chart(self, chrt, fpath, dpath):
 		self._open_workspace_session(chrt, fpath=fpath, dpath=dpath, add_to_history=True)
@@ -2314,6 +2318,7 @@ class MFrame(wx.Frame):
 		self.ID_Rev_Mars    = 1839
 		self.ID_Rev_Jupiter = 1840
 		self.ID_Rev_Saturn  = 1841
+		self.ID_Rev_Uranus  = 1842
 # ###########################################
 
 		self.ID_Housesystem1, self.ID_Housesystem2, self.ID_Housesystem3, self.ID_Housesystem4, self.ID_Housesystem5, self.ID_Housesystem6, self.ID_Housesystem7, self.ID_Housesystem8, self.ID_Housesystem9, self.ID_Housesystem10, self.ID_Housesystem11, self.ID_Housesystem12, self.ID_Housesystem13 = range(1050, 1063)
@@ -2443,6 +2448,7 @@ class MFrame(wx.Frame):
 		self.crevolutions.Append(self.ID_Rev_Mars,    'Mars Return',    '')
 		self.crevolutions.Append(self.ID_Rev_Jupiter, 'Jupiter Return', '')
 		self.crevolutions.Append(self.ID_Rev_Saturn,  'Saturn Return',  '')
+		self.crevolutions.Append(self.ID_Rev_Uranus,  'Uranus Return',  '')
 		self.mcharts.Append(self.ID_OtherRevolutions, 'Other Revolutions', self.crevolutions)
 
 		# Transits 서브메뉴 신설
@@ -2666,6 +2672,7 @@ class MFrame(wx.Frame):
 		self.Bind(wx.EVT_MENU, lambda e: self._open_quick_planet_revolution(revolutions.Revolutions.MARS),    id=self.ID_Rev_Mars)
 		self.Bind(wx.EVT_MENU, lambda e: self._open_quick_planet_revolution(revolutions.Revolutions.JUPITER), id=self.ID_Rev_Jupiter)
 		self.Bind(wx.EVT_MENU, lambda e: self._open_quick_planet_revolution(revolutions.Revolutions.SATURN),  id=self.ID_Rev_Saturn)
+		self.Bind(wx.EVT_MENU, lambda e: self._open_quick_planet_revolution(revolutions.Revolutions.URANUS),  id=self.ID_Rev_Uranus)
 		self.Bind(wx.EVT_MENU, self.onSunTransits, id=self.ID_SunTransits)
 		self.Bind(wx.EVT_MENU, self.onSecondaryDirs, id=self.ID_SecondaryDirs)
 		self.Bind(wx.EVT_MENU, self.onSecondaryDirs, id=self.ID_SecProgChart)
@@ -4520,11 +4527,23 @@ class MFrame(wx.Frame):
 			if val == wx.ID_OK:
 				wx.BeginBusyCursor()
 				revs = revolutions.Revolutions()
-				result = revs.compute(self.revdlg.typecb.GetCurrentSelection(),
-									int(self.revdlg.year.GetValue()),
-									int(self.revdlg.month.GetValue()),
-									int(self.revdlg.day.GetValue()),
-									radix)
+				sel = self.revdlg.typecb.GetCurrentSelection()
+				if revolutions.Revolutions.is_planetary_type(sel):
+					ref_dt = datetime.datetime(
+						int(self.revdlg.year.GetValue()),
+						int(self.revdlg.month.GetValue()),
+						int(self.revdlg.day.GetValue()),
+						23, 59, 59,
+					)
+					result = revs.compute_planetary_cycle_start_datetime(sel, ref_dt, radix)
+				else:
+					result = revs.compute(
+						sel,
+						int(self.revdlg.year.GetValue()),
+						int(self.revdlg.month.GetValue()),
+						int(self.revdlg.day.GetValue()),
+						radix
+					)
 				wx.EndBusyCursor()
 
 				t1, t2, t3, t4, t5, t6 = revs.t[0], revs.t[1], revs.t[2], revs.t[3], revs.t[4], revs.t[5]
@@ -4536,16 +4555,8 @@ class MFrame(wx.Frame):
 							pid = astrology.SE_SUN
 						elif sel == revolutions.Revolutions.LUNAR:
 							pid = astrology.SE_MOON
-						elif sel == revolutions.Revolutions.MERCURY:
-							pid = astrology.SE_MERCURY
-						elif sel == revolutions.Revolutions.VENUS:
-							pid = astrology.SE_VENUS
-						elif sel == revolutions.Revolutions.MARS:
-							pid = astrology.SE_MARS
-						elif sel == revolutions.Revolutions.JUPITER:
-							pid = astrology.SE_JUPITER
-						elif sel == revolutions.Revolutions.SATURN:
-							pid = astrology.SE_SATURN
+						else:
+							pid = revolutions.Revolutions.planetary_pid(sel)
 
 						if pid is not None:
 							t1, t2, t3, t4, t5, t6 = self.calcPrecNutCorrectedRevolution(revs, pid)
@@ -4612,7 +4623,6 @@ class MFrame(wx.Frame):
 							# 1) 다이얼로그에서 고른 시작 날짜를 기억(월만 바꿔가며 재계산)
 							self._lr_year  = int(self.revdlg.year.GetValue())
 							self._lr_month = int(self.revdlg.month.GetValue())
-							self._lr_day   = int(self.revdlg.day.GetValue())
 
 							# 리턴 프레임이 닫히면 스텝퍼도 함께 닫기
 							def _on_close(evt):
@@ -4629,17 +4639,10 @@ class MFrame(wx.Frame):
 							# 2) (yy, mm)로 루나 리턴 재계산 후 프레임 갱신
 							def _set_lr_ym_and_refresh(yy, mm):
 								revs2 = revolutions.Revolutions()
-
-								# 31→2월 같은 불가능한 날짜 보정
-								dd = int(self._lr_day)
-								try:
-									while not util.checkDate(int(yy), int(mm), int(dd)) and dd > 1:
-										dd -= 1
-								except Exception:
-									pass
-
-								ok = revs2.compute(revolutions.Revolutions.LUNAR,
-												int(yy), int(mm), int(dd), radix)
+								ok = revs2.compute(
+									revolutions.Revolutions.LUNAR,
+									int(yy), int(mm), 1, radix
+								)
 								if not ok:
 									return
 
@@ -4725,36 +4728,18 @@ class MFrame(wx.Frame):
 							else:
 								self._rev_stepper.Show(False)
 
-						elif self.revdlg.typecb.GetCurrentSelection() in (
-								revolutions.Revolutions.MERCURY, revolutions.Revolutions.VENUS,
-								revolutions.Revolutions.MARS, revolutions.Revolutions.JUPITER,
-								revolutions.Revolutions.SATURN):
+						elif revolutions.Revolutions.is_planetary_type(self.revdlg.typecb.GetCurrentSelection()):
 							_planet_sel = self.revdlg.typecb.GetCurrentSelection()
-							_planet_pid_map = {
-								revolutions.Revolutions.MERCURY: astrology.SE_MERCURY,
-								revolutions.Revolutions.VENUS:   astrology.SE_VENUS,
-								revolutions.Revolutions.MARS:    astrology.SE_MARS,
-								revolutions.Revolutions.JUPITER: astrology.SE_JUPITER,
-								revolutions.Revolutions.SATURN:  astrology.SE_SATURN,
-							}
-							_planet_lookback_months = {
-								revolutions.Revolutions.MERCURY: 4,
-								revolutions.Revolutions.VENUS:   9,
-								revolutions.Revolutions.MARS:    25,
-								revolutions.Revolutions.JUPITER: 144,
-								revolutions.Revolutions.SATURN:  355,
-							}
-							_planet_pid  = _planet_pid_map[_planet_sel]
-							_lookback    = _planet_lookback_months[_planet_sel]
-							self._planet_rev_seed = (int(t1), int(t2), int(t3))
+							_planet_pid = revolutions.Revolutions.planetary_pid(_planet_sel)
+							self._planet_rev_dt = datetime.datetime(
+								int(revs.t[0]), int(revs.t[1]), int(revs.t[2]),
+								int(revs.t[3]), int(revs.t[4]), int(revs.t[5]),
+							)
 
-							def _set_planet_rev_and_refresh(sy, sm, sd):
-								revs2 = revolutions.Revolutions()
-								ok2 = revs2.compute(_planet_sel, int(sy), int(sm), int(sd), radix)
-								if not ok2:
-									return
+							def _apply_planet_rev(revs2):
 								ry = revs2.t[0]; rm = revs2.t[1]; rd = revs2.t[2]
 								rhh = revs2.t[3]; rmi = revs2.t[4]; rss = revs2.t[5]
+								raw_dt = datetime.datetime(int(ry), int(rm), int(rd), int(rhh), int(rmi), int(rss))
 								try:
 									if self.options.ayanamsha != 0:
 										ry, rm, rd, rhh, rmi, rss = self.calcPrecNutCorrectedRevolution(
@@ -4766,7 +4751,7 @@ class MFrame(wx.Frame):
 											   self._rev_ctx['plus'], 0, 0, False, self._rev_ctx['place'], False)
 								chart2 = chart.Chart(radix.name, radix.male, time2,
 												 self._rev_ctx['place'], self._rev_ctx['revtype'], '', self.options, False)
-								self._planet_rev_seed = (int(ry), int(rm), int(rd))
+								self._planet_rev_dt = raw_dt
 								active_cs2 = self._active_chart_session()
 								if active_cs2 is not None:
 									active_cs2.change_chart(
@@ -4776,30 +4761,18 @@ class MFrame(wx.Frame):
 									)
 
 							def _step_planet_forward():
-								import datetime as _dt
-								prev_seed = self._planet_rev_seed
-								sy, sm, sd = prev_seed
-								for attempt in range(10):
-									try:
-										nxt = _dt.date(int(sy), int(sm), int(sd)) + _dt.timedelta(days=1 + attempt)
-										_set_planet_rev_and_refresh(nxt.year, nxt.month, nxt.day)
-									except Exception:
-										pass
-									if self._planet_rev_seed != prev_seed:
-										break
+								revs2 = revolutions.Revolutions()
+								if revs2.compute_planetary_after_datetime(_planet_sel, self._planet_rev_dt, radix):
+									_apply_planet_rev(revs2)
+								else:
+									self._notify_planet_return_step_boundary(_planet_sel, backward=False)
 
 							def _step_planet_backward():
-								prev_seed = self._planet_rev_seed
-								sy, sm, sd = prev_seed
-								for attempt in range(10):
-									bm = sm - _lookback - attempt
-									by = sy
-									while bm < 1:
-										bm += 12
-										by -= 1
-									_set_planet_rev_and_refresh(by, bm, 1)
-									if self._planet_rev_seed != prev_seed:
-										break
+								revs2 = revolutions.Revolutions()
+								if revs2.compute_planetary_before_datetime(_planet_sel, self._planet_rev_dt, radix):
+									_apply_planet_rev(revs2)
+								else:
+									self._notify_planet_return_step_boundary(_planet_sel, backward=True)
 
 							from revolutionsdlg import RevolutionCallbackStepperController
 							self._rev_stepper = RevolutionCallbackStepperController(
@@ -6119,6 +6092,7 @@ class MFrame(wx.Frame):
 				self.ID_Rev_Mars    = 1839
 				self.ID_Rev_Jupiter = 1840
 				self.ID_Rev_Saturn  = 1841
+				self.ID_Rev_Uranus  = 1842
 				self.ID_QuickChartsOpt = 1832
 				self.ID_SetStartupChart = 1833
 				self.ID_ClearStartupChart = 1834
@@ -6251,6 +6225,7 @@ class MFrame(wx.Frame):
 				self.crevolutions.Append(self.ID_Rev_Mars,    'Mars Return',    '')
 				self.crevolutions.Append(self.ID_Rev_Jupiter, 'Jupiter Return', '')
 				self.crevolutions.Append(self.ID_Rev_Saturn,  'Saturn Return',  '')
+				self.crevolutions.Append(self.ID_Rev_Uranus,  'Uranus Return',  '')
 				self.mcharts.Append(self.ID_OtherRevolutions, 'Other Revolutions', self.crevolutions)
 
 				# Transits 서브메뉴 신설
@@ -6435,6 +6410,7 @@ class MFrame(wx.Frame):
 				self.Bind(wx.EVT_MENU, lambda e: self._open_quick_planet_revolution(revolutions.Revolutions.MARS),    id=self.ID_Rev_Mars)
 				self.Bind(wx.EVT_MENU, lambda e: self._open_quick_planet_revolution(revolutions.Revolutions.JUPITER), id=self.ID_Rev_Jupiter)
 				self.Bind(wx.EVT_MENU, lambda e: self._open_quick_planet_revolution(revolutions.Revolutions.SATURN),  id=self.ID_Rev_Saturn)
+				self.Bind(wx.EVT_MENU, lambda e: self._open_quick_planet_revolution(revolutions.Revolutions.URANUS),  id=self.ID_Rev_Uranus)
 				self.Bind(wx.EVT_MENU, self.onSunTransits, id=self.ID_SunTransits)
 				self.Bind(wx.EVT_MENU, self.onSecondaryDirs, id=self.ID_SecondaryDirs)
 				self.Bind(wx.EVT_MENU, self.onElections, id=self.ID_Elections)
@@ -7441,9 +7417,3 @@ def fmt_decl_deg(x):
 	if m == 60:
 		m = 0; d += 1
 	return u"%s%02d°%02d′%02d″" % (sign, d, m, s)
-
-
-
-
-
-
