@@ -11,3 +11,4 @@ Then start Morinus from the repo root with `python3 morinus.py`.
 
 ## Before any project-specific work
 Read `AGENTS.md` for the full module map, coding conventions, and architecture rules.
+Maintain `CHANGELOG.md` for code changes, and write changelog entries with separate computation and GUI paragraphs.

@@ -383,6 +383,15 @@ Do **not** reintroduce business logic into transport or rendering layers.
 - Do not introduce new top-level dependencies without noting them in your response.
 - Do not convert wx event patterns to async/await.
 
+## Changelog Discipline
+
+- Maintain a checked-in `CHANGELOG.md`.
+- If a changelog entry does not exist for a shipped code change, add one in the same task.
+- Every changelog entry must use separate paragraphs for:
+  - **Computation** — astrology logic, calculation behavior, time/return semantics, math, or backend selection rules.
+  - **GUI** — windows, dialogs, labels, menus, stepper wiring, workspace integration, or visible interaction changes.
+- If a task changes only one side, still include both paragraphs and explicitly say the other side had no material change.
+
 ## Swiss Ephemeris (SWEP) C Extension
 Morinus depends on `sweastrology`, a C extension built from `SWEP/src/`.
 The compiled binary is gitignored and platform-specific (`.so` on macOS/Linux, `.pyd` on Windows).
