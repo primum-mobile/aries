@@ -1,0 +1,22 @@
+{
+  "name": "aries-notes-editor",
+  "version": "0.1.0",
+  "private": true,
+  "author": "Max Lange",
+  "license": "AGPL-3.0-or-later",
+  "repository": "https://github.com/primum-mobile/aries",
+  "type": "module",
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@milkdown/kit": "7.20.0",
+    "@milkdown/plugin-indent": "7.20.0",
+    "@milkdown/plugin-listener": "7.20.0",
+    "@milkdown/preset-commonmark": "7.20.0",
+    "@milkdown/preset-gfm": "7.20.0"
+  },
+  "devDependencies": {
+    "vite": "^8.1.4"
+  }
+}

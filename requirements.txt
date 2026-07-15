@@ -1,0 +1,9 @@
+wxPython>=4.2.0
+Pillow>=10
+numpy>=2.0
+reportlab>=4.0
+# macOS-only: PyObjC's Cocoa bindings power native title-bar fusion,
+# NSAppearance theme stamping, and NSColor lookups in theme.py. Safe to
+# omit on Linux/Windows — the affected paths fall through their try/except
+# guards.
+pyobjc-framework-Cocoa>=10.0; sys_platform == "darwin"

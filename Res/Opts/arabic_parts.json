@@ -1,0 +1,82 @@
+[
+  {
+    "name": "Union",
+    "formula": [
+      "ASC",
+      "VENUS",
+      "SATURN"
+    ],
+    "diurnal": false,
+    "refdeg": [
+      0,
+      0,
+      0
+    ],
+    "active": true,
+    "gendered": true
+  },
+  {
+    "name": "Daimon",
+    "formula": [
+      "ASC",
+      "SUN",
+      "MOON"
+    ],
+    "diurnal": true,
+    "refdeg": [
+      0,
+      0,
+      0
+    ],
+    "active": true,
+    "gendered": false
+  },
+  {
+    "name": "Journeys",
+    "formula": [
+      "ASC",
+      "HC9",
+      "HC9!"
+    ],
+    "diurnal": false,
+    "refdeg": [
+      0,
+      0,
+      0
+    ],
+    "active": true,
+    "gendered": false
+  },
+  {
+    "name": "Eros",
+    "formula": [
+      "ASC",
+      "VENUS",
+      "RE"
+    ],
+    "diurnal": true,
+    "refdeg": [
+      0,
+      0,
+      2
+    ],
+    "active": true,
+    "gendered": false
+  },
+  {
+    "name": "Children",
+    "formula": [
+      "ASC",
+      "SATURN",
+      "JUPITER"
+    ],
+    "diurnal": true,
+    "refdeg": [
+      0,
+      0,
+      0
+    ],
+    "active": true,
+    "gendered": false
+  }
+]

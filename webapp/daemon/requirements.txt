@@ -1,0 +1,7 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+numpy
+pillow
+wxPython>=4.2.2
+geographiclib>=2.0
+reportlab>=4.0

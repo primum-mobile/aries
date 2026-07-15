@@ -1,0 +1,1310 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Bundled Morinus fonts — copied from Res/ */
+@font-face {
+  font-family: 'FreeSans';
+  src: url('/fonts/FreeSans.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'FreeSans';
+  src: url('/fonts/FreeSansBold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Kosugi';
+  src: url('/fonts/Kosugi-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'DotGothic16';
+  src: url('/fonts/DotGothic16-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Noto Sans SC';
+  src: url('/fonts/NotoSansSC-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Noto Sans SC';
+  src: url('/fonts/NotoSansSC-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Noto Sans TC';
+  src: url('/fonts/NotoSansTC-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Noto Sans TC';
+  src: url('/fonts/NotoSansTC-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Noto Sans KR';
+  src: url('/fonts/NotoSansKR-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Noto Sans KR';
+  src: url('/fonts/NotoSansKR-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'AriesFreeSans';
+  src: url('/fonts/FreeSans.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'AriesFreeSans';
+  src: url('/fonts/FreeSansBold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'AriesMorinus';
+  src: url('/fonts/Morinus.ttf?v=armillary-20260708') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'AriesArabicAcademic';
+  src: url('/fonts/NotoNaskhArabic-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
+html {
+  background: #232428;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--aries-font-ui);
+  --font-heading: var(--aries-font-heading);
+  --font-mono: var(--aries-font-mono);
+  --font-symbols: var(--aries-font-symbols);
+
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+
+  /* Morinus chart palette — Midnight preset (colorsdlg.py:40–65) */
+  --color-morinus-frame: var(--morinus-frame);
+  --color-morinus-signs: var(--morinus-signs);
+  --color-morinus-angles: var(--morinus-angles);
+  --color-morinus-houses: var(--morinus-houses);
+  --color-morinus-housenums: var(--morinus-housenums);
+  --color-morinus-peregrin: var(--morinus-peregrin);
+  --color-morinus-positions: var(--morinus-positions);
+
+  /* Sizing tokens mirroring workspace_shell.py constants */
+  --radius-xs: var(--aries-radius-xs);
+  --radius-sm: var(--aries-radius-sm);
+  --radius-md: var(--aries-radius-md);
+  --radius-lg: var(--aries-radius-lg);
+
+  --morinus-row-radius: 9px;
+  --morinus-row-pad-x: 12px;
+  --morinus-row-pad-y: 4px;
+  --morinus-row-min-height: var(--aries-sidebar-row-height);
+  --morinus-nav-side-margin: var(--aries-nav-side-margin);
+  --morinus-sidebar-min-width: 148px;
+  --morinus-sidebar-max-width: 520px;
+  --morinus-sidebar-default-width: 272px;
+  --morinus-header-height: 34px;
+  --morinus-status-height: 26px;
+  --morinus-header-btn-w: 24px;
+  --morinus-header-btn-h: 22px;
+  --morinus-header-btn-radius: 5px;
+  --morinus-header-icon-size: 15px;
+  --morinus-scrollbar-width: 8px;
+  --morinus-scrollbar-radius: 3px;
+}
+
+/* Static fallback; the boot script applies cached daemon theme tokens before React. */
+:root {
+  background: #232428;
+  /* Aries shell style tokens. These are the editable React GUI defaults. */
+  --font-ui: var(--aries-font-ui);
+  --aries-font-ui: 'FreeSans', ui-sans-serif, system-ui, sans-serif;
+  --aries-font-heading: var(--aries-font-ui);
+  --aries-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  --aries-font-symbols: 'AriesMorinus', ui-sans-serif;
+  --morinus-font-text: var(--aries-font-ui);
+  --aries-font-size-base: 12px;
+  --aries-font-size-reading: 13px;
+  --aries-font-size-small: 11px;
+  --aries-font-size-section: 10px;
+  --aries-font-size-header: 12px;
+  --aries-font-size-titlebar: 13px;
+  --aries-font-size-statusbar: 11px;
+  --aries-navbar-font-size: 14px;
+  --aries-navbar-font-size-min: 11px;
+  --aries-navbar-control-height: 22px;
+  --aries-navbar-control-height-min: 18px;
+  --aries-navbar-icon-size: 14px;
+  --aries-navbar-icon-size-min: 11px;
+  --aries-navbar-arrow-width: 20px;
+  --aries-navbar-arrow-width-min: 16px;
+  --aries-navbar-gap: 10px;
+  --aries-navbar-gap-min: 6px;
+  --aries-navbar-pad-x: 12px;
+  --aries-navbar-pad-x-min: 8px;
+  --aries-navbar-pad-y: 5px;
+  --aries-navbar-pad-y-min: 3px;
+  --aries-navbar-bg: var(--aries-background);
+  --aries-navbar-text: var(--aries-text-primary);
+  --aries-navbar-border: color-mix(in srgb, var(--aries-border-strong) 64%, transparent);
+  --aries-navbar-hover-bg: var(--aries-surface-subtle);
+  --aries-navbar-hover-text: var(--aries-text-primary);
+  --aries-navbar-tooltip-bg: var(--aries-navbar-bg);
+  --aries-navbar-tooltip-text: var(--aries-navbar-text);
+  --aries-navbar-tooltip-border: color-mix(in srgb, var(--aries-border-strong) 62%, transparent);
+  --aries-navbar-kbd-bg: color-mix(in srgb, var(--aries-navbar-text) 9%, transparent);
+  --aries-navbar-kbd-border: color-mix(in srgb, var(--aries-navbar-text) 20%, transparent);
+  --aries-spotlight-width: 500px;
+  --aries-spotlight-font-size: 18px;
+  --aries-spotlight-secondary-font-size: 14px;
+  --aries-spotlight-action-font-size: 14px;
+  --aries-spotlight-icon-size: 21px;
+  --aries-spotlight-input-height: 44px;
+  --aries-spotlight-preview-min-height: 52px;
+  --aries-spotlight-action-height: 32px;
+  --aries-inspector-title-size: 15px;
+  --aries-inspector-glyph-size: 26px;
+  --aries-inspector-alert-glyph-size: 14px;
+  --aries-inspector-pack-tag-size: 9px;
+  /* Sidebar-only font sizes — a 1:1 point→px port of the wx navigator, kept
+   * SEPARATE from the app-wide --aries-font-size-* vars so the chart, inspector,
+   * status bar, and dialogs (which consume the shared vars) stay untouched.
+   *   --aries-font-size-nav     ← _SIDEBAR_LINK_FONT_PT  = 14 (workspace_shell.py:264)
+   *                               nav rows + footer links (WorkspaceNavLink label)
+   *   --aries-font-size-nav-section ← _SIDEBAR_TITLE_FONT_PT = 12 (workspace_shell.py:265)
+   *                               section headers (WorkspaceSectionHeader title)
+   * On macOS wx renders a point as ~1 CSS px at the logical baseline, so these
+   * map directly. */
+  --aries-font-size-nav: 14px;
+  --aries-font-size-nav-section: 12px;
+  --aries-sidebar-row-line-box: 16px;
+  --aries-sidebar-section-line-box: 14px;
+  --aries-statusbar-line-box: 13px;
+  --aries-ui-scale: 1;
+  --aries-sidebar-row-height: 30px;
+  --aries-list-font-size-dense: var(--aries-font-size-small);
+  --aries-list-font-size-standard: var(--aries-font-size-base);
+  --aries-list-font-size-symbolic: 14px;
+  --aries-list-row-height-dense: 28px;
+  --aries-list-row-height-standard: 31px;
+  --aries-list-row-height-symbolic: 37px;
+  --aries-list-header-height-dense: 28px;
+  --aries-list-header-height-standard: 31px;
+  --aries-list-header-height-symbolic: 36px;
+  --aries-list-cell-x-dense: 6px;
+  --aries-list-cell-x-standard: 8px;
+  --aries-list-cell-x-symbolic: 8px;
+  --aries-list-outer-cell-x: 14px;
+  --aries-list-cell-y-dense: 4px;
+  --aries-list-cell-y-standard: 4px;
+  --aries-list-cell-y-symbolic: 8px;
+  --aries-list-rule-color: var(--aries-border-subtle);
+  --aries-list-stripe-bg: var(--aries-surface-subtle);
+  --aries-list-hover-bg: color-mix(in srgb, var(--aries-text-primary) 10%, transparent);
+  --aries-list-selected-bg: color-mix(in srgb, var(--aries-text-primary) 14%, transparent);
+  --aries-list-current-bg: var(--aries-accent);
+  --aries-table-font-size-standard: var(--aries-font-size-base);
+  --aries-table-row-height-standard: 31px;
+  --aries-table-header-height-standard: 31px;
+  --aries-table-cell-x-standard: 8px;
+  --aries-table-cell-y-standard: 4px;
+  --aries-table-section-gap: 22px;
+  --aries-table-bg: var(--aries-background);
+  --aries-table-header-bg: var(--aries-surface);
+  --aries-table-rule-color: var(--aries-border-subtle);
+  --aries-table-hover-bg: color-mix(in srgb, var(--aries-text-primary) 8%, transparent);
+  --aries-table-current-bg: var(--aries-accent);
+  --aries-search-date-weight: 600;
+  --aries-search-time-weight: 300;
+  --aries-search-time-opacity: 85%;
+  --aries-search-panel-heading-weight: 600;
+  --aries-search-glyph-size: 15px;
+  --aries-search-sign-glyph-size: 14px;
+  --aries-search-ingress-arrow-size: 13px;
+  --aries-search-marker-size: 9px;
+  --aries-ephem-header-font-size: 11px;
+  --aries-ephem-header-gap: 8px;
+  --aries-ephem-header-pad-x: 12px;
+  --aries-ephem-header-pad-y: 6px;
+  --aries-ephem-state-font-size: 12px;
+  --aries-ephem-min-canvas-width: 40px;
+  --aries-ephem-min-canvas-height: 40px;
+  --aries-ephem-planet-font-divisor: 40;
+  --aries-ephem-border-planet-scale: 1;
+  --aries-ephem-space-divisor: 3;
+  --aries-ephem-plot-left-border-scale: 2;
+  --aries-ephem-plot-right-border-scale: 2;
+  --aries-ephem-axis-x-border-scale: 2;
+  --aries-ephem-axis-sign-x-border-scale: 2;
+  --aries-ephem-outer-border-scale: 1;
+  --aries-ephem-bottom-axis-border-scale: 4;
+  --aries-ephem-sign-outer-margin-rows: 2;
+  --aries-ephem-axis-reserve-sign-scale: 0.5;
+  --aries-ephem-sign-font-scale: 1;
+  --aries-ephem-month-columns: 13;
+  --aries-ephem-text-font-divisor: 3;
+  --aries-ephem-frame-small-max: 400px;
+  --aries-ephem-frame-medium-max: 600px;
+  --aries-ephem-frame-width-small: 2px;
+  --aries-ephem-frame-width-medium: 3px;
+  --aries-ephem-frame-width-large: 4px;
+  --aries-ephem-curve-small-max: 500px;
+  --aries-ephem-curve-width-small: 1px;
+  --aries-ephem-curve-width-large: 2px;
+  --aries-ephem-grid-line-width: 1px;
+  --aries-ephem-grid-dash-on: 6px;
+  --aries-ephem-grid-dash-off: 3px;
+  --aries-ephem-station-tick-scale: 0.22;
+  --aries-ephem-station-tick-min: 4px;
+  --aries-ephem-station-tick-max: 9px;
+  --aries-ephem-station-tick-line-width: 1px;
+  --aries-ephem-event-glyph-scale: 0.9;
+  --aries-ephem-event-glyph-min: 6px;
+  --aries-ephem-event-glyph-max: 10px;
+  --aries-ephem-event-code-offset-x-min: 2px;
+  --aries-ephem-event-code-offset-y-min: 1px;
+  --aries-ephem-left-planet-label-gap-spaces: 3;
+  --aries-ephem-edge-wrap-label-gap-spaces: 2;
+  --aries-ephem-label-y-gap-spaces: 1;
+  --aries-ephem-relax-iterations: 30;
+  --aries-ephem-station-snap-x: 10px;
+  --aries-ephem-station-snap-y: 16px;
+  --aries-ephem-hover-offset-x: 12px;
+  --aries-ephem-hover-offset-y: 48px;
+  --aries-ephem-hover-edge-inset: 4px;
+  --aries-ephem-hover-pad-x: 8px;
+  --aries-ephem-hover-pad-y: 4px;
+  --aries-ephem-hover-font-size: 11px;
+  --aries-ephem-hover-radius: 4px;
+  --aries-ephem-hover-gap: 4px;
+  --aries-ephem-hover-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --aries-list-hover-flag-width: 2px;
+  --aries-panel-padding-x: 16px;
+  --aries-panel-padding-y: 12px;
+  --aries-nav-side-margin: 12px;
+  --aries-section-gap: 20px;
+  --aries-radius-xs: calc(var(--aries-radius-md) / 3);
+  --aries-radius-sm: calc(var(--aries-radius-md) * 2 / 3);
+  --aries-radius-md: 9px;
+  --aries-radius-lg: calc(var(--aries-radius-md) * 1.2);
+  --aries-motion-shell-duration: 180ms;
+  --aries-motion-shell-ease: cubic-bezier(0.33, 1, 0.68, 1);
+  --aries-text-primary: #ffffff;
+  --aries-text-muted: #b4b5b6;
+  --aries-text-dim: #919294;
+  --aries-sidebar-text: #ffffff;
+  --aries-header-text: var(--aries-text-primary);
+  --aries-inspector-text: var(--aries-text-primary);
+  --aries-status-text: var(--aries-sidebar-text);
+  --aries-titlebar-text: color-mix(in srgb, var(--aries-text-primary) 84%, var(--aries-background));
+  --aries-titlebar-icon: color-mix(in srgb, var(--aries-text-primary) 44%, var(--aries-background));
+  --aries-titlebar-icon-active: color-mix(in srgb, var(--aries-text-primary) 82%, var(--aries-background));
+  --aries-titlebar-icon-hover: color-mix(in srgb, var(--aries-text-primary) 88%, var(--aries-background));
+  --aries-statusbar-text: color-mix(in srgb, var(--aries-text-primary) 42%, var(--aries-surface));
+  --aries-background: #232428;
+  --aries-surface: #1d1e21;
+  --aries-surface-subtle: #2d2e31;
+  --aries-accent: #343538;
+  --aries-border-subtle: #2e2f32;
+  --aries-border-strong: color-mix(in srgb, var(--aries-text-primary) 86%, var(--aries-background));
+  --aries-focus-ring: var(--aries-text-muted);
+  --aries-destructive: rgb(255 85 75);
+  --aries-overlay-scrim: color-mix(in srgb, var(--aries-background) 54%, transparent);
+  --aries-sidebar-accent-foreground: color-mix(
+    in srgb,
+    var(--aries-sidebar-text) 91%,
+    var(--aries-surface)
+  );
+  --aries-status-good: rgb(74 160 92);
+  --aries-status-caution: rgb(196 152 56);
+  --aries-status-avoid: rgb(192 80 72);
+  --aries-status-neutral: rgb(127 127 127);
+  --aries-unsaved-indicator: rgb(245 158 11 / 90%);
+  --aries-validation-error: rgb(239 68 68 / 80%);
+
+  /* Core palette — RGB straight from colorsdlg.py */
+  --background: var(--aries-background);            /* clrbackground */
+  --foreground: var(--aries-text-primary);          /* clrframe */
+  --card: var(--aries-surface);
+  --card-foreground: var(--aries-text-primary);
+  --popover: var(--aries-background);
+  --popover-foreground: var(--aries-text-primary);
+  --primary: var(--aries-text-primary);
+  --primary-foreground: var(--aries-surface);
+  --secondary: var(--aries-accent);              /* sidebar row-fill @ 0.10 */
+  --secondary-foreground: var(--aries-text-primary);
+  --muted: var(--aries-surface-subtle);
+  --muted-foreground: var(--aries-text-dim);    /* _sidebar_section_text_colour */
+  --accent: var(--aries-accent);
+  --accent-foreground: var(--aries-text-primary);
+  --destructive: var(--aries-destructive);
+  --border: var(--aries-border-subtle);                 /* sidebar seam */
+  --input: var(--aries-border-subtle);
+  --ring: var(--aries-text-muted);
+
+  --sidebar: var(--aries-surface);                /* clrsidebar */
+  --sidebar-foreground: var(--aries-sidebar-text);  /* clrsidebartext */
+  --sidebar-primary: var(--aries-text-primary);
+  --sidebar-primary-foreground: var(--aries-surface);
+  --sidebar-accent: var(--aries-accent);         /* active/hover row @ 10% mix white */
+  --sidebar-accent-foreground: var(--aries-sidebar-accent-foreground);
+  --sidebar-border: var(--aries-border-subtle);
+  --sidebar-ring: var(--aries-text-dim);
+
+  /* Morinus chart-specific colors (used inside SVG / canvas) */
+  --morinus-frame: rgb(220 220 221);
+  --morinus-signs: rgb(215 215 217);
+  --morinus-angles: rgb(205 205 209);
+  --morinus-houses: rgb(138 139 141);
+  --morinus-housenums: rgb(59 59 60);
+  --morinus-peregrin: rgb(205 205 209);
+  --morinus-positions: rgb(255 255 255);
+  --morinus-table: rgb(0 0 0);
+  --morinus-dignity-domicil: rgb(2 191 2);
+  --morinus-dignity-exil: rgb(255 0 0);
+  --morinus-dignity-exal: rgb(255 215 0);
+  --morinus-dignity-casus: rgb(205 92 92);
+  --morinus-aspect-harmonic: rgb(34 255 154);
+  --morinus-aspect-square: rgb(246 0 206);
+  --morinus-aspect-quincunx: rgb(255 122 0);
+  --morinus-aspect-conjunction: rgb(40 232 232);
+
+  --radius: var(--aries-radius-md);
+
+  color-scheme: dark;
+}
+
+html[data-theme-ready="pending"],
+html[data-theme-ready="pending"] body {
+  background: #232428;
+}
+
+html[data-theme-ready="pending"] body {
+  visibility: hidden;
+}
+
+/* Day preset — dropped in for future toggle (colorsdlg.py:67–96) */
+.day {
+  --aries-text-primary: rgb(38 38 38);
+  --aries-text-muted: rgb(99 99 99);
+  --aries-text-dim: rgb(129 129 129);
+  --aries-sidebar-text: rgb(38 38 38);
+  --aries-header-text: var(--aries-text-primary);
+  --aries-inspector-text: var(--aries-text-primary);
+  --aries-status-text: var(--aries-sidebar-text);
+  --aries-background: rgb(255 255 255);
+  --aries-surface: rgb(247 247 247);
+  --aries-surface-subtle: rgb(232 232 232);
+  --aries-accent: rgb(220 220 220);
+  --aries-border-subtle: rgb(203 203 203);
+  --aries-overlay-scrim: color-mix(in srgb, rgb(0 0 0) 10%, transparent);
+  --aries-sidebar-accent-foreground: var(--aries-sidebar-text);
+  --background: var(--aries-background);
+  --foreground: var(--aries-text-primary);
+  --card: var(--aries-surface);
+  --card-foreground: var(--aries-text-primary);
+  --popover: var(--aries-background);
+  --popover-foreground: var(--aries-text-primary);
+  --primary: var(--aries-text-primary);
+  --primary-foreground: var(--aries-surface);
+  --secondary: var(--aries-accent);
+  --secondary-foreground: var(--aries-text-primary);
+  --muted: var(--aries-surface-subtle);
+  --muted-foreground: var(--aries-text-dim);
+  --accent: var(--aries-accent);
+  --accent-foreground: var(--aries-text-primary);
+  --border: var(--aries-border-subtle);
+  --input: var(--aries-border-subtle);
+  --ring: var(--aries-text-muted);
+  --sidebar: var(--aries-surface);
+  --sidebar-foreground: var(--aries-sidebar-text);
+  --sidebar-primary: var(--aries-text-primary);
+  --sidebar-primary-foreground: var(--aries-surface);
+  --sidebar-accent: var(--aries-accent);
+  --sidebar-accent-foreground: var(--aries-sidebar-accent-foreground);
+  --sidebar-border: var(--aries-border-subtle);
+  --sidebar-ring: var(--aries-text-muted);
+  --morinus-frame: rgb(88 92 102);
+  --morinus-signs: rgb(96 100 110);
+  --morinus-angles: rgb(74 78 88);
+  --morinus-houses: rgb(120 124 132);
+  --morinus-housenums: rgb(66 68 74);
+  color-scheme: light;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  /* Desktop chrome is clickable, not readable selection content. Keep this
+   * purely presentational: pointer/focus/shortcut behavior remains native,
+   * while inputs and authored reading text stay normally highlightable. */
+  :where(
+    button,
+    label,
+    select,
+    summary,
+    [role="button"],
+    [role="tab"],
+    [role="menuitem"],
+    [role="menuitemcheckbox"],
+    [role="menuitemradio"],
+    [role="option"],
+    [role="switch"],
+    [data-slot="tabs-list"],
+    [data-slot="sidebar-menu-badge"],
+    [data-ui-pill]
+  ) {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  :where(input, textarea, [contenteditable="true"], [data-selectable-text]) {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  html,
+  body {
+    height: 100%;
+    min-height: 100%;
+    background: #232428;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--aries-font-ui);
+    font-size: calc(var(--aries-font-size-base) * var(--aries-ui-scale));
+    font-feature-settings: 'ss01' on;
+  }
+}
+
+/* Morinus-flavored utility classes */
+@layer utilities {
+  .font-symbols {
+    font-family: var(--font-symbols);
+  }
+.font-ui {
+  font-family: var(--aries-font-ui);
+}
+
+.font-morinus-text {
+  font-family: var(--morinus-font-text);
+}
+}
+
+@layer components {
+  .aries-list {
+    --aries-list-font-size: var(--aries-list-font-size-standard);
+    --aries-list-row-height: var(--aries-list-row-height-standard);
+    --aries-list-header-height: var(--aries-list-header-height-standard);
+    --aries-list-cell-x: var(--aries-list-cell-x-standard);
+    --aries-list-outer-x: var(--aries-list-outer-cell-x);
+    --aries-list-cell-y: var(--aries-list-cell-y-standard);
+    --aries-list-rule: var(--aries-list-rule-color);
+    color: var(--aries-text-primary);
+    font-size: var(--aries-list-font-size);
+    /* Aries table contract: native auto table layout, existing column order, pane-width boundary. */
+    table-layout: auto;
+    min-width: 100%;
+    width: 100%;
+  }
+
+  .aries-list--dense {
+    --aries-list-font-size: var(--aries-list-font-size-dense);
+    --aries-list-row-height: var(--aries-list-row-height-dense);
+    --aries-list-header-height: var(--aries-list-header-height-dense);
+    --aries-list-cell-x: var(--aries-list-cell-x-dense);
+    --aries-list-cell-y: var(--aries-list-cell-y-dense);
+  }
+
+  .aries-list--standard {
+    --aries-list-font-size: var(--aries-list-font-size-standard);
+    --aries-list-row-height: var(--aries-list-row-height-standard);
+    --aries-list-header-height: var(--aries-list-header-height-standard);
+    --aries-list-cell-x: var(--aries-list-cell-x-standard);
+    --aries-list-cell-y: var(--aries-list-cell-y-standard);
+  }
+
+  .aries-list--symbolic {
+    --aries-list-font-size: var(--aries-list-font-size-symbolic);
+    --aries-list-row-height: var(--aries-list-row-height-symbolic);
+    --aries-list-header-height: var(--aries-list-header-height-symbolic);
+    --aries-list-cell-x: var(--aries-list-cell-x-symbolic);
+    --aries-list-cell-y: var(--aries-list-cell-y-symbolic);
+  }
+
+  .aries-help-kbd {
+    display: inline-flex;
+    min-width: 1.5rem;
+    min-height: 1.5rem;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--input);
+    border-radius: var(--aries-radius-md);
+    background: color-mix(in srgb, var(--input) 30%, transparent);
+    padding: 0 0.5rem;
+    color: var(--aries-text-primary);
+    font-family: var(--aries-font-ui);
+    font-size: var(--aries-font-size-small);
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .aries-search-date-text {
+    font-weight: var(--aries-search-date-weight);
+  }
+
+  .aries-search-time-text {
+    color: color-mix(
+      in srgb,
+      var(--aries-text-primary) var(--aries-search-time-opacity),
+      transparent
+    );
+    font-weight: var(--aries-search-time-weight);
+  }
+
+  .aries-search-panel-heading {
+    font-weight: var(--aries-search-panel-heading-weight);
+  }
+
+  .aries-search-glyph {
+    font-size: var(--aries-search-glyph-size);
+  }
+
+  .aries-search-sign-glyph {
+    font-size: var(--aries-search-sign-glyph-size);
+  }
+
+  .aries-search-ingress-arrow {
+    font-size: var(--aries-search-ingress-arrow-size);
+  }
+
+  .aries-search-marker {
+    font-size: var(--aries-search-marker-size);
+  }
+
+  .aries-list--frameless .aries-list-head-cell,
+  .aries-list--frameless .aries-list-cell {
+    border-left-width: 0;
+    border-right-width: 0;
+  }
+
+  .aries-list-head,
+  .aries-list-head-cell,
+  .aries-list-cell {
+    border-color: var(--aries-list-rule);
+    white-space: nowrap;
+  }
+
+  .aries-list-head-cell > *,
+  .aries-list-cell > * {
+    white-space: nowrap;
+  }
+
+  .aries-list-head,
+  .aries-list-head-cell {
+    height: var(--aries-list-header-height);
+    padding: var(--aries-list-cell-y) var(--aries-list-cell-x);
+  }
+
+  .aries-list-cell {
+    padding: var(--aries-list-cell-y) var(--aries-list-cell-x);
+  }
+
+  .aries-list-row > .aries-list-cell:last-child,
+  .aries-list-row > .aries-list-head:last-child,
+  .aries-list-row > .aries-list-head-cell:last-child,
+  .aries-list tr > .aries-list-cell:last-child,
+  .aries-list tr > .aries-list-head:last-child,
+  .aries-list tr > .aries-list-head-cell:last-child {
+    padding-right: max(var(--aries-list-cell-x), var(--aries-list-outer-x));
+  }
+
+  .aries-list-row {
+    min-height: var(--aries-list-row-height);
+    transition: none;
+  }
+
+  .aries-list-row--hover:hover {
+    background: var(--aries-list-hover-bg);
+  }
+
+  .aries-list-row--selected[data-state="selected"] {
+    background: var(--aries-list-selected-bg);
+  }
+
+  .aries-list-row--striped:nth-child(odd) {
+    background: var(--aries-list-stripe-bg);
+  }
+
+  .aries-list-row--current {
+    background: var(--aries-list-current-bg);
+  }
+
+  .aries-list-row--flagged {
+    border-left: var(--aries-list-hover-flag-width) solid transparent;
+  }
+
+  .aries-list-row--flagged:hover {
+    border-left-color: var(--primary);
+    background: var(--aries-list-hover-bg);
+  }
+
+  .aries-table {
+    --aries-table-font-size: var(--aries-table-font-size-standard);
+    --aries-table-row-height: var(--aries-table-row-height-standard);
+    --aries-table-header-height: var(--aries-table-header-height-standard);
+    --aries-table-cell-x: var(--aries-table-cell-x-standard);
+    --aries-table-cell-y: var(--aries-table-cell-y-standard);
+    --aries-table-rule: var(--aries-table-rule-color);
+    background: var(--aries-table-bg);
+    color: var(--aries-text-primary);
+    font-size: var(--aries-table-font-size);
+    font-variant-numeric: tabular-nums;
+    table-layout: auto;
+  }
+
+  .aries-table--standard {
+    --aries-table-font-size: var(--aries-table-font-size-standard);
+    --aries-table-row-height: var(--aries-table-row-height-standard);
+    --aries-table-header-height: var(--aries-table-header-height-standard);
+    --aries-table-cell-x: var(--aries-table-cell-x-standard);
+    --aries-table-cell-y: var(--aries-table-cell-y-standard);
+  }
+
+  .aries-table-head-cell,
+  .aries-table-cell {
+    border-color: var(--aries-table-rule);
+    white-space: nowrap;
+  }
+
+  .aries-table-head-cell > *,
+  .aries-table-cell > * {
+    white-space: nowrap;
+  }
+
+  .aries-table--resized .aries-list-head,
+  .aries-table--resized .aries-list-head-cell,
+  .aries-table--resized .aries-list-cell,
+  .aries-table--resized .aries-table-head-cell,
+  .aries-table--resized .aries-table-cell {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .aries-table--resized .aries-list-head > *,
+  .aries-table--resized .aries-list-head-cell > *,
+  .aries-table--resized .aries-list-cell > *,
+  .aries-table--resized .aries-table-head-cell > *,
+  .aries-table--resized .aries-table-cell > * {
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .aries-table-head-cell {
+    height: var(--aries-table-header-height);
+    background: var(--aries-table-header-bg);
+    padding: var(--aries-table-cell-y) var(--aries-table-cell-x);
+    color: var(--aries-text-primary);
+    font-weight: 500;
+  }
+
+  .aries-table-cell {
+    height: var(--aries-table-row-height);
+    background: var(--aries-table-bg);
+    padding: var(--aries-table-cell-y) var(--aries-table-cell-x);
+  }
+
+  .aries-table-row {
+    height: var(--aries-table-row-height);
+    background: var(--aries-table-bg);
+    transition: none;
+  }
+
+  .aries-table-row:hover > .aries-table-cell {
+    background: var(--aries-table-hover-bg);
+  }
+
+  .aries-table-row--current > .aries-table-cell {
+    background: var(--aries-table-current-bg);
+  }
+
+  .aries-table-section-title {
+    margin-bottom: 4px;
+    color: var(--aries-text-muted);
+    font-size: var(--aries-font-size-small);
+    font-weight: 500;
+  }
+}
+
+/*
+ * Resizable-sidebar enabler (S1, handle-less sash).
+ *
+ * The shadcn Sidebar gap + container animate `transition: left, right, width`
+ * (sidebar.tsx). For the *offcanvas* slide that's right, but our sidebar is
+ * `collapsible="icon"` and resizes via a drag-driven `--sidebar-width` var. The
+ * container is `position: fixed; left: 0`, so its width is var-driven while
+ * `right` is a *computed* used-value. Transitioning `right` alongside `width`
+ * creates a layout feedback loop: when the var changes, the browser animates
+ * the old computed `right` (e.g. 1008px) toward the new one, and during that
+ * animation `left:0 + right` over-constrains the box and pins the width to the
+ * OLD value — so the sidebar never reaches the dragged width.
+ *
+ * Fix: never transition the inactive horizontal edge. For the left sidebar,
+ * animate left+width only; for a right sidebar, animate right+width only.
+ * Otherwise startup hydration or right-pane layout changes can hit the same
+ * width-pinning feedback loop before any drag guard is active.
+ */
+[data-slot="sidebar-gap"] {
+  transition-property: width;
+  transition-duration: var(--aries-motion-shell-duration);
+  transition-timing-function: var(--aries-motion-shell-ease);
+}
+[data-slot="sidebar-container"][data-side="left"] {
+  transition-property: left, width;
+  transition-duration: var(--aries-motion-shell-duration);
+  transition-timing-function: var(--aries-motion-shell-ease);
+}
+[data-slot="sidebar-container"][data-side="right"] {
+  transition-property: right, width;
+  transition-duration: var(--aries-motion-shell-duration);
+  transition-timing-function: var(--aries-motion-shell-ease);
+}
+[data-slot="sidebar-container"] {
+  overflow: hidden;
+}
+[data-slot="sidebar-inner"] {
+  transition: opacity 160ms ease-linear;
+}
+[data-slot="sidebar"][data-collapsible="offcanvas"] [data-slot="sidebar-inner"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* While the sash is dragged, <html> carries data-sidebar-resizing (set
+ * synchronously at pointer-down by sidebar-sash.tsx). Kill transitions
+ * so the panel tracks the pointer 1:1 from the first frame — a React state flag
+ * would land a frame late and the drag would feel rubbery. */
+[data-sidebar-resizing] [data-slot="sidebar-gap"],
+[data-sidebar-resizing] [data-slot="sidebar-container"],
+[data-sidebar-resizing] [data-slot="sidebar-inner"] {
+  transition: none !important;
+}
+
+/* First-paint settle: <html> carries data-initial-settle from frame mount until
+ * one painted frame after the persisted layout has rehydrated
+ * (workspace-frame.tsx). The saved sidebar width lands just after first paint;
+ * animating that programmatic jump lets WKWebView stall mid-transition with the
+ * pane, sash and status-bar cell out of sync until the next interaction. User
+ * drags have their own synchronous guard above (data-sidebar-resizing). */
+[data-initial-settle] [data-slot="sidebar-gap"],
+[data-initial-settle] [data-slot="sidebar-container"],
+[data-initial-settle] [data-slot="sidebar-inner"],
+[data-initial-settle] [role="separator"][aria-label="Resize sidebar"] {
+  transition: none !important;
+}
+
+[data-right-pane-resizing] .right-pane-split,
+[data-right-pane-resizing] .right-pane-split > aside {
+  transition: none !important;
+}
+
+.aries-mode-hint {
+  --aries-mode-hint-bg: var(--aries-navbar-bg);
+  --aries-mode-hint-control-height: clamp(
+    var(--aries-navbar-control-height-min),
+    calc(var(--aries-navbar-control-height) * var(--aries-navbar-scale, 1)),
+    var(--aries-navbar-control-height)
+  );
+  --aries-mode-hint-font-size: clamp(
+    var(--aries-navbar-font-size-min),
+    calc(var(--aries-navbar-font-size) * var(--aries-navbar-scale, 1)),
+    var(--aries-navbar-font-size)
+  );
+  --aries-mode-hint-icon-size: clamp(
+    var(--aries-navbar-icon-size-min),
+    calc(var(--aries-navbar-icon-size) * var(--aries-navbar-scale, 1)),
+    var(--aries-navbar-icon-size)
+  );
+  --aries-mode-hint-arrow-width: clamp(
+    var(--aries-navbar-arrow-width-min),
+    calc(var(--aries-navbar-arrow-width) * var(--aries-navbar-scale, 1)),
+    var(--aries-navbar-arrow-width)
+  );
+  --aries-mode-hint-stroke: var(--aries-navbar-border);
+  position: absolute;
+  left: 50%;
+  z-index: 70;
+  display: inline-flex;
+  max-width: min(calc(100% - 24px), 560px);
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(
+    var(--aries-navbar-gap-min),
+    calc(var(--aries-navbar-gap) * var(--aries-navbar-scale, 1)),
+    var(--aries-navbar-gap)
+  );
+  border: 1px solid var(--aries-mode-hint-stroke);
+  border-radius: 6px;
+  padding:
+    clamp(
+      var(--aries-navbar-pad-y-min),
+      calc(var(--aries-navbar-pad-y) * var(--aries-navbar-scale, 1)),
+      var(--aries-navbar-pad-y)
+    )
+    clamp(
+      var(--aries-navbar-pad-x-min),
+      calc(var(--aries-navbar-pad-x) * var(--aries-navbar-scale, 1)),
+      var(--aries-navbar-pad-x)
+    );
+  background: var(--aries-mode-hint-bg);
+  color: var(--aries-navbar-text);
+  font-family: var(--aries-font-ui);
+  box-shadow: none;
+  transform: translateX(-50%);
+  user-select: none;
+}
+
+.aries-mode-hint--top {
+  top: calc(var(--titlebar-h) + 6px);
+  bottom: auto;
+}
+
+.aries-mode-hint--bottom {
+  top: auto;
+  bottom: 10px;
+}
+
+.aries-mode-hint--hidden {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.aries-mode-hint-button {
+  display: inline-flex;
+  height: var(--aries-mode-hint-control-height);
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--aries-navbar-text);
+  padding:
+    0
+    clamp(4px, calc(6px * var(--aries-navbar-scale, 1)), 6px);
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.aries-mode-hint-button:hover,
+.aries-step-arrow-button:hover {
+  border-color: var(--aries-navbar-border);
+  background: var(--aries-navbar-hover-bg);
+  color: var(--aries-navbar-hover-text);
+}
+
+.aries-mode-hint-main {
+  align-self: center;
+}
+
+.aries-mode-hint:hover {
+  border-color: var(--aries-mode-hint-stroke);
+  color: var(--aries-navbar-text);
+}
+
+.aries-mode-hint-label,
+.aries-step-unit {
+  font-family: var(--aries-font-ui);
+  font-size: var(--aries-mode-hint-font-size);
+  font-weight: 400;
+  line-height: 1.1;
+  color: var(--aries-navbar-text);
+  white-space: nowrap;
+}
+
+.aries-step-hints {
+  display: flex;
+  width: max-content;
+  max-width: 100%;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(
+    var(--aries-navbar-gap-min),
+    calc(var(--aries-navbar-gap) * var(--aries-navbar-scale, 1)),
+    var(--aries-navbar-gap)
+  );
+}
+
+.aries-step-hint-group {
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+  height: var(--aries-mode-hint-control-height);
+  gap: clamp(2px, calc(3px * var(--aries-navbar-scale, 1)), 3px);
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding-left: clamp(4px, calc(6px * var(--aries-navbar-scale, 1)), 6px);
+}
+
+.aries-step-arrows {
+  display: inline-flex;
+  overflow: hidden;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  gap: 1px;
+}
+
+.aries-step-arrow-button {
+  display: inline-flex;
+  width: var(--aries-mode-hint-arrow-width);
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--aries-navbar-text);
+  line-height: 1;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.aries-step-arrow-button svg {
+  width: var(--aries-mode-hint-icon-size);
+  height: var(--aries-mode-hint-icon-size);
+  stroke-width: 2;
+}
+
+.aries-step-unit {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: center;
+}
+
+.aries-mode-hint-flag {
+  border: 1px solid var(--aries-navbar-tooltip-border);
+  background: var(--aries-navbar-tooltip-bg);
+  color: var(--aries-navbar-tooltip-text);
+  font-family: var(--aries-font-ui);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1;
+  box-shadow: 0 8px 18px rgb(0 0 0 / 26%);
+}
+
+.aries-mode-hint-flag [data-slot="kbd"] {
+  border: 1px solid var(--aries-navbar-kbd-border);
+  background: var(--aries-navbar-kbd-bg);
+  color: var(--aries-navbar-tooltip-text);
+  font-family: var(--aries-font-ui);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.aries-ambient-spotlight {
+  --aries-ambient-spotlight-bg: var(--aries-background);
+  --aries-ambient-spotlight-stroke: color-mix(
+    in srgb,
+    var(--aries-border-strong) 72%,
+    transparent
+  );
+  --aries-ambient-spotlight-hover: var(--aries-surface-subtle);
+  width: min(var(--aries-spotlight-width), calc(100vw - 2rem));
+  max-width: min(var(--aries-spotlight-width), calc(100vw - 2rem));
+  border: 1px solid var(--aries-ambient-spotlight-stroke);
+  border-radius: 6px !important;
+  background: var(--aries-ambient-spotlight-bg);
+  color: var(--aries-text-primary);
+  font-family: var(--aries-font-ui);
+  box-shadow: none;
+  outline: none;
+}
+
+.aries-ambient-spotlight [data-slot="command"] {
+  border-radius: 6px !important;
+  background: transparent;
+  color: var(--aries-text-primary);
+  font-family: var(--aries-font-ui);
+}
+
+.aries-ambient-spotlight [data-slot="command-input-wrapper"] {
+  padding: 7px 7px 0;
+}
+
+.aries-ambient-spotlight [data-slot="input-group"] {
+  height: var(--aries-spotlight-input-height) !important;
+  border-color: transparent;
+  border-radius: 5px !important;
+  background: transparent;
+  box-shadow: none !important;
+}
+
+.aries-ambient-spotlight [data-slot="input-group"]:focus-within {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none !important;
+}
+
+.aries-ambient-spotlight-input {
+  color: var(--aries-text-primary);
+  font-family: var(--aries-font-ui);
+  font-size: var(--aries-spotlight-font-size);
+  font-weight: 400;
+  line-height: 1.15;
+}
+
+.aries-ambient-spotlight-input::placeholder {
+  color: color-mix(in srgb, var(--aries-text-primary) 58%, transparent);
+}
+
+.aries-ambient-spotlight [data-slot="input-group-addon"] {
+  color: var(--aries-text-primary);
+  opacity: 1;
+}
+
+.aries-ambient-spotlight [data-slot="input-group-addon"] svg {
+  width: 16px;
+  height: 16px;
+}
+
+.aries-ambient-spotlight-armillary {
+  display: inline-flex;
+  width: var(--aries-spotlight-icon-size);
+  height: var(--aries-spotlight-icon-size);
+  align-items: center;
+  justify-content: center;
+  color: var(--aries-text-primary);
+  font-family: var(--aries-font-symbols);
+  font-size: var(--aries-spotlight-icon-size);
+  font-weight: 400;
+  line-height: 1;
+}
+
+.aries-ambient-spotlight [data-slot="command-list"] {
+  padding: 4px 7px 7px;
+}
+
+.aries-ambient-spotlight [data-slot="command-group"] {
+  padding: 0;
+  color: var(--aries-text-primary);
+}
+
+.aries-ambient-spotlight-preview {
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  min-height: var(--aries-spotlight-preview-min-height);
+}
+
+.aries-ambient-spotlight-primary {
+  color: var(--aries-text-primary);
+  font-family: var(--aries-font-ui);
+  font-size: var(--aries-spotlight-font-size);
+  font-weight: 400;
+  line-height: 1.15;
+}
+
+.aries-ambient-spotlight-secondary {
+  margin-top: 3px;
+  color: color-mix(in srgb, var(--aries-text-primary) 72%, transparent);
+  font-family: var(--aries-font-ui);
+  font-size: var(--aries-spotlight-secondary-font-size);
+  font-weight: 400;
+  line-height: 1.15;
+}
+
+.aries-ambient-spotlight-kind {
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: color-mix(in srgb, var(--aries-text-primary) 82%, transparent);
+  padding: 4px 8px;
+  font-family: var(--aries-font-ui);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.aries-ambient-spotlight-actions {
+  gap: 8px;
+}
+
+.aries-ambient-spotlight-action {
+  width: auto;
+  min-width: 92px;
+  min-height: var(--aries-spotlight-action-height);
+  border: 1px solid transparent;
+  border-radius: 5px !important;
+  background: transparent;
+  color: color-mix(in srgb, var(--aries-text-primary) 84%, transparent);
+  font-family: var(--aries-font-ui);
+  font-size: var(--aries-spotlight-action-font-size);
+  font-weight: 400;
+  line-height: 1.15;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.aries-ambient-spotlight-action:hover,
+.aries-ambient-spotlight-action[data-selected="true"] {
+  border-color: color-mix(in srgb, var(--aries-text-primary) 16%, transparent);
+  background: var(--aries-ambient-spotlight-hover);
+  color: var(--aries-text-primary);
+}
+
+.aries-ambient-spotlight-action-default {
+  border-color: transparent;
+  background: transparent;
+  color: var(--aries-text-primary);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .aries-mode-hint {
+    background: var(--aries-navbar-bg);
+  }
+
+  .aries-ambient-spotlight {
+    background: var(--aries-ambient-spotlight-bg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aries-mode-hint {
+    transform: translateX(-50%);
+  }
+}
+
+/* macOS unified (overlay) title bar.
+ *
+ * Contract: doc/ui-specs/webapp-shell-frame.md. Tauri owns the native traffic
+ * lights through `trafficLightPosition`; React owns the floating titlebar
+ * controls, direct `data-tauri-drag-region` hit targets, and the shell column
+ * metrics.
+ */
+:root {
+  --titlebar-h: var(--morinus-header-height);
+  --titlebar-sidebar-pad-top: 40px;
+  --titlebar-pane-pad-top: 40px;
+  --titlebar-content-offset-y: 0px;
+  --titlebar-left-controls-x: 8px;
+  --titlebar-traffic-x: 19px;
+  --titlebar-traffic-y: 22px;
+  --titlebar-side-min-w: 132px;
+  --aries-titlebar-seam-rule: color-mix(in srgb, var(--aries-border-subtle) 36%, transparent);
+  --aries-sidebar-sash-rule: color-mix(in srgb, var(--aries-border-subtle) 62%, transparent);
+  --aries-sidebar-section-rule: color-mix(in srgb, var(--aries-border-subtle) 42%, transparent);
+  --aries-sidebar-row-soft: color-mix(in srgb, var(--aries-surface) 95%, var(--aries-sidebar-text));
+  --aries-sidebar-row-hover: color-mix(in srgb, var(--aries-surface) 90%, var(--aries-sidebar-text));
+  --aries-sidebar-row-active: color-mix(in srgb, var(--aries-surface) 88%, var(--aries-sidebar-text));
+  --aries-sidebar-row-strong: color-mix(in srgb, var(--aries-surface) 86%, var(--aries-sidebar-text));
+  --aries-sidebar-drop-indicator: color-mix(in srgb, var(--aries-sidebar-text) 78%, var(--aries-surface));
+}
+.is-tauri {
+  --titlebar-left-controls-x: 84px;
+}
+.app-shell [data-slot="sidebar-container"] {
+  top: 0;
+  bottom: var(--morinus-status-height);
+  height: calc(100dvh - var(--morinus-status-height));
+  max-height: calc(100dvh - var(--morinus-status-height));
+  overflow: hidden;
+  border-right-width: 0;
+}
+.app-shell [data-slot="sidebar-inner"] {
+  min-height: 0;
+  overflow: hidden;
+  padding-top: var(--titlebar-sidebar-pad-top);
+}
+.app-shell.app-shell-full-bleed [data-slot="sidebar-container"] {
+  bottom: 0;
+}
+/* The real sidebar surface extends behind the titlebar. That makes the
+ * titlebar-left colour move with the same DOM element as the sidebar itself. */
+.unified-titlebar {
+  isolation: isolate;
+  background: transparent;
+}
+/* Tauri only: the native traffic lights overlay the bar's left edge. Keep
+ * --titlebar-traffic-x/y aligned with src-tauri/tauri.conf.json. */

@@ -1,0 +1,54 @@
+ \documentclass[extrafontsizes,ebook,12pt,oneside]{memoir}
+\input{preamble}
+\input{charts/chartPreamble}
+   
+\usepackage{makeidx}  			% index package   
+\makeindex
+
+\begin{document}
+\chapterstyle{bringhurst}
+\frontmatter
+\pagenumbering{gobble}  % suppress page number on title page
+\input{title}
+\pagenumbering{roman}	  % turn page numbering back on
+\input{preface}
+\tableofcontents
+\cleardoublepage
+\listoffigures
+\newpage
+\listoftables
+\mainmatter
+\begingroup
+\let\clearpage\relax
+% -- book files to include ---------------------------------
+\input{book01}
+\input{book02}
+\input{book03}
+\input{book04}
+\input{book05}
+\input{book06}
+\input{book07}
+\input{book08}
+\input{book09}
+\input{book-addition}
+
+% ----------------------------------------------------------
+\endgroup
+
+% ----------------------------------------------------------
+% `see' references for index; use EXACT format, spaces, case, count
+\index{apheta@\textit{apheta}|see{distribution}}
+\index{aphesis@\textit{aphesis}|see{distribution}}
+\index{constellations!Dog|see{constellations, Sirrius}}
+\index{constellations!Satyr|see{constellations, Orion}}
+\index{Decennials|see{distribution, {10-year, 9-month}}}
+\index{Elections|see{initiatives}}
+\index{Inceptions|see{initiatives}}
+\index{lots!Travel|see{lots, Foreign Lands }}
+\index{Phainon@\textit{Phainon}|see{planets, \Saturn}}
+\index{primary directions|see{distribution, primary directions}}
+\index{signs!beholding|see{signs, listening and beholding}}
+\index{transmissions|see{distribution}}
+
+\printindex
+\end{document}

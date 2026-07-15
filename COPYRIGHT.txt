@@ -1,0 +1,4 @@
+Aries
+Copyright © 2026 Max Lange
+
+See LICENSE and THIRD_PARTY_NOTICES.txt.

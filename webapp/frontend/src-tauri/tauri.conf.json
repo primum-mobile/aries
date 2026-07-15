@@ -1,0 +1,71 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Aries",
+  "version": "0.1.0",
+  "identifier": "sh.aries.desktop",
+  "build": {
+    "frontendDist": "../out",
+    "devUrl": "http://localhost:3000",
+    "beforeDevCommand": "cd ../.. && make web-corpus web-notes && python3 scripts/stage_tauri_runtime_resources.py && cd webapp/frontend && npm run dev",
+    "beforeBuildCommand": "cd ../.. && make web-corpus web-notes web-daemon-binary web-legal && python3 scripts/stage_tauri_runtime_resources.py && cd webapp/frontend && npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Aries",
+        "width": 1280,
+        "height": 860,
+        "minWidth": 1024,
+        "minHeight": 720,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "theme": "Dark",
+        "backgroundColor": "#232428ff",
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: http://127.0.0.1:*; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:* ws://127.0.0.1:*; frame-src http://127.0.0.1:*; media-src 'self'; worker-src 'self' blob:",
+      "devCsp": "default-src 'self' http://localhost:3000 http://127.0.0.1:3000; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:3000 http://127.0.0.1:3000; style-src 'self' 'unsafe-inline' http://localhost:3000 http://127.0.0.1:3000; font-src 'self' data: http://localhost:3000 http://127.0.0.1:*; img-src 'self' data: blob: http://localhost:3000 http://127.0.0.1:*; connect-src 'self' ipc: http://ipc.localhost http://localhost:3000 http://127.0.0.1:* ws://localhost:3000 ws://127.0.0.1:*; frame-src http://127.0.0.1:*; media-src 'self' http://localhost:3000 http://127.0.0.1:*; worker-src 'self' blob:",
+      "dangerousDisableAssetCspModification": ["style-src"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app"],
+    "resources": {
+      "binaries/aries-daemon": "binaries/aries-daemon",
+      "target/aries-runtime-resources/Res": "Res",
+      "../../../Hors/Charts.jsonl": "Hors/Charts.jsonl",
+      "../../../SWEP/Ephem": "SWEP/Ephem",
+      "target/aries-corpus-resources": "corpus",
+      "target/aries-pack-seeds": "pack-seeds",
+      "target/aries-legal": "legal",
+      "target/aries-runtime-resources/data/rt_0p5.txt": "data/rt_0p5.txt",
+      "target/aries-runtime-resources/parsers/query_corpus.py": "parsers/query_corpus.py",
+      "../../../scripts/i18n/mtexts_overlay.json": "scripts/i18n/mtexts_overlay.json",
+      "../../../scripts/i18n/mtexts_de_legacy.json": "scripts/i18n/mtexts_de_legacy.json",
+      "../../../scripts/i18n/mtexts_es_legacy.json": "scripts/i18n/mtexts_es_legacy.json",
+      "../../../scripts/i18n/mtexts_fr_legacy.json": "scripts/i18n/mtexts_fr_legacy.json",
+      "../../../scripts/i18n/mtexts_it_legacy.json": "scripts/i18n/mtexts_it_legacy.json",
+      "native-menu-manifest.json": "webapp/frontend/src-tauri/native-menu-manifest.json"
+    },
+    "icon": [
+      "../../../Res/Aries.icns",
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "android": {
+      "debugApplicationIdSuffix": ".debug"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEMyMDlBRjk5MkY1MTY4MzkKUldRNWFGRXZtYThKd2dYdFRqd0FTaFU3V2t4RmsrOXFjcGZtUjhRcGRMY1hXSWZyeUZkUlRNU1cK"
+    }
+  }
+}

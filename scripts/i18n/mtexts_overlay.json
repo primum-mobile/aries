@@ -1,0 +1,5054 @@
+{
+  "_comment": "Engine/chart labels ADDED by the webapp (post-wx): chart-overlay signals (radixsignals.py) + table column headers + legacy engine-vocab completions. Daemon-served via mtexts.txts. This file is the source of truth; mtexts.py _install_signal_overlay_texts() loads it and i18n_tool.py audits it (make i18n-check). English is the fallback; a language missing a key renders English. Add a key to 'en' + a translation, that's it. Keep {placeholders} verbatim.",
+  "AC": {
+    "en": "Asc",
+    "fr": "AC",
+    "es": "AC",
+    "it": "AC",
+    "ru": "AC",
+    "de": "AC"
+  },
+  "AbbrApplying": {
+    "en": "app.",
+    "it": "app.",
+    "de": "appl.",
+    "fr": "appl.",
+    "es": "apl."
+  },
+  "AbbrSeparating": {
+    "en": "sep.",
+    "it": "sep.",
+    "de": "sep.",
+    "fr": "sépar.",
+    "es": "sep."
+  },
+  "AboutTabDevelopers": {
+    "en": "Developers",
+    "fr": "Développeurs",
+    "es": "Desarrolladores",
+    "it": "Sviluppatori",
+    "ru": "Разработчики",
+    "de": "Entwickler"
+  },
+  "AboutTabInfo": {
+    "en": "Info",
+    "fr": "Infos",
+    "es": "Información",
+    "it": "Informazioni",
+    "ru": "Сведения",
+    "de": "Info"
+  },
+  "AboutTabLicense": {
+    "en": "License",
+    "fr": "Licence",
+    "es": "Licencia",
+    "it": "Licenza",
+    "ru": "Лицензия",
+    "de": "Lizenz"
+  },
+  "Accidental": {
+    "en": "Accidental",
+    "fr": "Accidentel",
+    "es": "Accidentales",
+    "it": "Accidentale",
+    "ru": "Акциденция",
+    "de": "Akzidentiell"
+  },
+  "AccidentalScores2": {
+    "en": "Scores",
+    "fr": "Scores",
+    "es": "accidentales",
+    "it": "accidentali",
+    "ru": "Баллы",
+    "de": "Punkte"
+  },
+  "Age": {
+    "en": "Age",
+    "fr": "Âge",
+    "es": "Edad",
+    "it": "Età",
+    "ru": "Возраст",
+    "de": "Alter"
+  },
+  "AgeColonFmt": {
+    "en": "Age: %d",
+    "it": "Età: %d",
+    "de": "Alter: %d",
+    "fr": "Âge : %d",
+    "es": "Edad: %d"
+  },
+  "AgeRangeFmt": {
+    "en": "Age %d - %d",
+    "it": "Età %d - %d",
+    "de": "Alter %d - %d",
+    "fr": "Âge %d - %d",
+    "es": "Edad %d - %d"
+  },
+  "AgeYears": {
+    "en": "Age: %.2fy",
+    "it": "Età: %.2f anni",
+    "de": "Alter: %.2f J.",
+    "fr": "Âge : %.2f ans",
+    "es": "Edad: %.2fy"
+  },
+  "Air": {
+    "en": "Air",
+    "fr": "Air",
+    "es": "Aire",
+    "it": "Aria",
+    "ru": "Воздух",
+    "de": "Luft"
+  },
+  "AlBiruni": {
+    "en": "Al Biruni",
+    "fr": "Al-Biruni",
+    "es": "Al-Biruni",
+    "it": "Al-Biruni",
+    "ru": "Аль-Бируни",
+    "de": "Al Biruni"
+  },
+  "Alm": {
+    "en": "Alm",
+    "fr": "Alm",
+    "es": "Alm.",
+    "it": "Alm",
+    "ru": "Альм",
+    "de": "Alm"
+  },
+  "AlmutenChart": {
+    "en": "Almuten Chart",
+    "it": "Almuten del tema",
+    "de": "Almuten-Horoskop",
+    "fr": "Almuten du thème",
+    "es": "Almutén de la carta"
+  },
+  "AlmutenPoints": {
+    "en": "Almuten Points",
+    "it": "Almuten dei punti",
+    "de": "Almuten-Punkte",
+    "fr": "Almutens par point",
+    "es": "Puntos del Almutén"
+  },
+  "AlmutenTopicNote": {
+    "en": "Topic: %s",
+    "it": "Argomento: %s",
+    "de": "Thema: %s",
+    "fr": "Sujet : %s",
+    "es": "Tema: %s"
+  },
+  "AlmutenTopical": {
+    "en": "Almuten Topical",
+    "it": "Almuten tematico",
+    "de": "Topischer Almuten",
+    "fr": "Almuten par sujet",
+    "es": "Almutén temático"
+  },
+  "Almutens": {
+    "en": "Almutens",
+    "fr": "Almutens",
+    "es": "Almútenes",
+    "it": "Almuten",
+    "ru": "Альмутены",
+    "de": "Almuten"
+  },
+  "AlmutensUnavailable": {
+    "en": "Almutens unavailable for this chart.",
+    "fr": "Almutens indisponibles pour ce thème.",
+    "es": "Almútenes no disponibles para esta carta.",
+    "it": "Almuten non disponibili per questo tema.",
+    "ru": "Альмутены недоступны для этой карты.",
+    "de": "Almuten sind für dieses Horoskop nicht verfügbar."
+  },
+  "Alt": {
+    "en": "Altitude",
+    "fr": "Altitude",
+    "es": "Altitud",
+    "it": "Altezza",
+    "ru": "Высота",
+    "de": "Höhe"
+  },
+  "Alt2": {
+    "en": "Altitude",
+    "fr": "Altitude",
+    "es": "Altitud",
+    "it": "Altezza",
+    "ru": "Высота",
+    "de": "Höhe"
+  },
+  "AltitudeM": {
+    "en": "Altitude (m)",
+    "fr": "Altitude (m)",
+    "es": "Altitud (m)",
+    "it": "Altezza (m)",
+    "ru": "Высота (m)",
+    "de": "Höhe (m)"
+  },
+  "Angle": {
+    "en": "Angle",
+    "fr": "Angle",
+    "es": "Ángulo",
+    "it": "Angolo",
+    "ru": "Угол",
+    "de": "Winkel"
+  },
+  "AngleAtBirth": {
+    "en": "Angle at Birth",
+    "it": "Angolo alla nascita",
+    "de": "Winkel bei der Geburt",
+    "fr": "Angle à la naissance",
+    "es": "Ángulo al nacer"
+  },
+  "AngleWindowNote": {
+    "en": "Window: %d minutes",
+    "it": "Intervallo: %d minuti",
+    "de": "Fenster: %d Minuten",
+    "fr": "Fenêtre : %d minutes",
+    "es": "Ventana: %d minutos"
+  },
+  "Angles": {
+    "en": "Angles",
+    "fr": "Angles",
+    "es": "Ángulos",
+    "it": "Angoli",
+    "ru": "Уголы",
+    "de": "Achsen"
+  },
+  "AngloWheel": {
+    "en": "Anglo Wheel",
+    "fr": "Roue anglo",
+    "es": "Rueda anglosajona",
+    "it": "Ruota Anglo",
+    "ru": "Колесо «Англо»",
+    "de": "Anglo-Rad"
+  },
+  "Angular": {
+    "en": "Angular",
+    "fr": "Angulaire",
+    "es": "Angular",
+    "it": "Angolare",
+    "ru": "Угловой",
+    "de": "Eckhaus"
+  },
+  "AnnualCircumThroughBounds": {
+    "en": "Annual Circumambulations through the Bounds",
+    "fr": "Circumambulations annuelles par les termes",
+    "it": "Circumambulazioni annuali attraverso i confini",
+    "es": "Circumambulaciones anuales a través de los términos",
+    "ru": "Годовые циркумамбуляции через термы",
+    "de": "Jährliche Circumambulationen durch die Grenzen"
+  },
+  "Ant": {
+    "en": "Ant",
+    "fr": "Ant.",
+    "es": "Ant.",
+    "it": "Ant.",
+    "ru": "Ант",
+    "de": "Ant"
+  },
+  "Antiscia": {
+    "en": "Antiscia",
+    "fr": "Antisces",
+    "es": "Antiscios",
+    "it": "Antisce",
+    "ru": "Антисы",
+    "de": "Antiszien"
+  },
+  "AnyArabicPart": {
+    "en": "Any Arabic Part",
+    "it": "Qualsiasi parte araba",
+    "de": "Beliebiger arabischer Punkt",
+    "fr": "Toute part arabe",
+    "es": "Cualquier parte árabe"
+  },
+  "Appearance2": {
+    "en": "Speculum",
+    "fr": "Speculum",
+    "es": "Speculum",
+    "it": "Speculum",
+    "ru": "Внешний вид №2",
+    "de": "Spekulum"
+  },
+  "ApplyingApprox": {
+    "en": "applying ~{time}",
+    "it": "applicativo ~{time}",
+    "de": "applizierend ~{time}",
+    "fr": "appliquant · ~{time}",
+    "es": "aplicativo ~{time}"
+  },
+  "ApproachingWithin90": {
+    "en": "Approaching (within 90')",
+    "fr": "En approche (à moins de 90′)",
+    "es": "Aproximándose (a menos de 90′)",
+    "it": "In avvicinamento (entro 90′)",
+    "ru": "Приближается (в пределах 90′)",
+    "de": "Annäherung (innerhalb von 90′)"
+  },
+  "Arc": {
+    "en": "Arc",
+    "fr": "Arc",
+    "es": "Arco",
+    "it": "Arco",
+    "ru": "Дуга",
+    "de": "Bogen"
+  },
+  "Arcus visionis": {
+    "en": "Arcus visionis",
+    "it": "Arcus visionis",
+    "de": "Arcus visionis",
+    "fr": "Arcus visionis",
+    "es": "Arcus visionis"
+  },
+  "Ari": {
+    "en": "Ari",
+    "fr": "Bél",
+    "es": "ari",
+    "it": "Ari",
+    "ru": "Овн",
+    "de": "Wid"
+  },
+  "Aries": {
+    "en": "Aries",
+    "fr": "Bélier",
+    "es": "Aries",
+    "it": "Ariete",
+    "ru": "Овен",
+    "de": "Widder"
+  },
+  "AriesChartExport": {
+    "en": "Aries Chart Export",
+    "it": "Esportazione del tema Aries",
+    "de": "Aries-Horoskop exportieren",
+    "fr": "Export de thème Aries",
+    "es": "Exportación de carta de Aries"
+  },
+  "AriesTableExport": {
+    "en": "Aries Table Export",
+    "it": "Esportazione della tabella Aries",
+    "de": "Aries-Tabelle exportieren",
+    "fr": "Export de tableau Aries",
+    "es": "Exportación de tabla de Aries"
+  },
+  "Asc": {
+    "en": "Asc",
+    "fr": "AC",
+    "es": "AC",
+    "it": "AC",
+    "ru": "АС",
+    "de": "AC"
+  },
+  "Ascendant": {
+    "en": "Ascendant",
+    "fr": "Ascendant",
+    "es": "Ascendente",
+    "it": "Ascendente",
+    "ru": "Асцендент",
+    "de": "Aszendent"
+  },
+  "AscensionalTransits": {
+    "en": "Ascensional transits",
+    "it": "Transiti ascensionali",
+    "de": "Aufstiegstransite",
+    "fr": "Transits ascensionnels",
+    "es": "Tránsitos ascensionales"
+  },
+  "AspColumn": {
+    "en": "Asp.",
+    "it": "Asp.",
+    "de": "Asp.",
+    "fr": "Asp.",
+    "es": "Asp."
+  },
+  "Aspect": {
+    "en": "Aspect",
+    "fr": "Aspect",
+    "it": "Aspetto",
+    "es": "Aspecto",
+    "ru": "Аспект",
+    "de": "Aspekt"
+  },
+  "AspectApplyingSentence": {
+    "en": "%s applying to %s by %s",
+    "it": "%s si applica a %s per %s",
+    "de": "%s appliziert sich an %s durch %s",
+    "fr": "%s s'applique à %s par %s",
+    "es": "%s se aplica a %s por %s"
+  },
+  "AspectExactSentence": {
+    "en": "%s exact %s with %s",
+    "it": "%s: aspetto %s esatto con %s",
+    "de": "%s steht exakt im %s zu %s",
+    "fr": "Aspect exact : %s — %s — %s",
+    "es": "%s forma un aspecto exacto (%s) con %s"
+  },
+  "AspectSeparatingSentence": {
+    "en": "%s separating from %s by %s",
+    "it": "%s si separa da %s per %s",
+    "de": "%s separiert sich von %s durch %s",
+    "fr": "%s se sépare de %s par %s",
+    "es": "%s se separa de %s por %s"
+  },
+  "Aspects": {
+    "en": "Aspects",
+    "fr": "Aspects",
+    "es": "Aspectos",
+    "it": "Aspetti",
+    "ru": "Аспекты",
+    "de": "Aspekte"
+  },
+  "Asps": {
+    "en": "Asps",
+    "fr": "Asp.",
+    "es": "Asp.",
+    "it": "Asp.",
+    "ru": "Асп.",
+    "de": "Asps"
+  },
+  "Ast": {
+    "en": "Ast",
+    "fr": "Ast",
+    "es": "Ast",
+    "it": "Ast",
+    "ru": "Аст",
+    "de": "Ast"
+  },
+  "Asteroid": {
+    "en": "Asteroid",
+    "it": "Asteroide",
+    "de": "Asteroid",
+    "fr": "Astéroïde",
+    "es": "Asteroide"
+  },
+  "Astrocartography": {
+    "en": "Astrocartography",
+    "it": "Astrocartografia",
+    "de": "Astrokartographie",
+    "fr": "Astrocartographie",
+    "es": "Astrocartografía"
+  },
+  "AstrocartographyTitleFmt": {
+    "en": "Astrocartography — %s",
+    "it": "Astrocartografia — %s",
+    "de": "Astrokartographie – %s",
+    "fr": "Astrocartographie — %s",
+    "es": "Astrocartografía — %s"
+  },
+  "AstrolabeTitleFmt": {
+    "en": "Astrolabe — %s",
+    "it": "Astrolabio — %s",
+    "de": "Astrolabium – %s",
+    "fr": "Astrolabe — %s",
+    "es": "Astrolabio — %s"
+  },
+  "AstrologSphereTitleFmt": {
+    "en": "Astrolog Sphere — %s",
+    "it": "Sfera astrologica — %s",
+    "de": "Astrolog-Sphäre – %s",
+    "fr": "Sphère astrologique — %s",
+    "es": "Esfera astrológica — %s"
+  },
+  "Astronomical": {
+    "en": "Astronomical",
+    "fr": "Astronomique",
+    "es": "Astronómico",
+    "it": "Astronomico",
+    "ru": "Астрономический",
+    "de": "Astronomisch"
+  },
+  "Astronomical / Swiss Ephemeris": {
+    "en": "Astronomical / Swiss Ephemeris",
+    "it": "Astronomico / Swiss Ephemeris",
+    "de": "Astronomisch / Swiss Ephemeris",
+    "fr": "Astronomique / Swiss Ephemeris",
+    "es": "Astronómico / Swiss Ephemeris"
+  },
+  "AtReclickFocusOnly": {
+    "en": "Focus existing tab (keep stepped position)",
+    "fr": "Activer l'onglet existant (conserver la position)",
+    "es": "Enfocar la pestaña existente (mantener la posición)",
+    "it": "Attiva la scheda esistente (mantieni la posizione)",
+    "ru": "Фокус на существующей вкладке (сохранить позицию)",
+    "de": "Vorhandenen Tab fokussieren (Stufenposition beibehalten)"
+  },
+  "AtReclickFocusSnap": {
+    "en": "Focus + snap cursor to now",
+    "fr": "Activer + ramener le curseur à l'instant présent",
+    "es": "Enfocar + situar el cursor en ahora",
+    "it": "Attiva e porta il cursore all’istante attuale",
+    "ru": "Фокус + переместить курсор на сейчас",
+    "de": "Fokus + Cursor auf jetzt setzen"
+  },
+  "AtReclickNewTab": {
+    "en": "Always open a new tab",
+    "fr": "Toujours ouvrir un nouvel onglet",
+    "es": "Abrir siempre una pestaña nueva",
+    "it": "Apri sempre una nuova scheda",
+    "ru": "Всегда открывать новую вкладку",
+    "de": "Immer einen neuen Tab öffnen"
+  },
+  "AtmosphericExtinction": {
+    "en": "Atmospheric Extinction:",
+    "fr": "Extinction atmosphérique :",
+    "es": "Extinción atmosférica:",
+    "it": "Estinzione atmosferica:",
+    "ru": "Атмосферное вымирание:",
+    "de": "Atmosphärische Extinktion:"
+  },
+  "Auto": {
+    "en": "Auto",
+    "fr": "Auto",
+    "es": "Auto",
+    "it": "Auto",
+    "ru": "Авто",
+    "de": "Auto"
+  },
+  "AutoDstTz": {
+    "en": "Auto DST/TZ",
+    "fr": "Fuseau horaire/heure d'été automatiques",
+    "es": "Horario de verano/zona horaria automáticos",
+    "it": "Ora legale/fuso orario automatici",
+    "ru": "Авто DST/TZ",
+    "de": "Sommerzeit/Zeitzone automatisch"
+  },
+  "Average": {
+    "en": "Average",
+    "it": "Media",
+    "de": "Durchschnitt",
+    "fr": "Moyenne",
+    "es": "Promedio"
+  },
+  "AxialRotation": {
+    "en": "Axial Rotation",
+    "fr": "Rotation axiale",
+    "es": "Rotación axial",
+    "it": "Rotazione assiale",
+    "ru": "Осевое вращение",
+    "de": "Achsenrotation"
+  },
+  "Axis pair": {
+    "en": "Axis pair",
+    "fr": "Paire d'axes",
+    "es": "Par de ejes",
+    "it": "Coppia di assi",
+    "ru": "Пара осей",
+    "de": "Achsenpaar"
+  },
+  "AxisSuffix": {
+    "en": " (%s axis)",
+    "it": " (asse %s)",
+    "de": " (%s-Achse)",
+    "fr": " (axe %s)",
+    "es": " (eje %s)"
+  },
+  "Ayanamsha": {
+    "en": "Ayanamsha",
+    "fr": "Ayanamsa",
+    "es": "Ayanamsa",
+    "it": "Ayanamsha",
+    "ru": "Айанамса",
+    "de": "Ayanamsha"
+  },
+  "BabylonianHuber": {
+    "en": "Babylonian, Huber",
+    "fr": "Babylonien, Huber",
+    "es": "Babilónico, Huber",
+    "it": "Babilonese, Huber",
+    "ru": "Хубер, Вавилонская",
+    "de": "Babylonisch, Huber"
+  },
+  "BabylonianHuber2": {
+    "en": "Huber",
+    "fr": "Huber",
+    "es": "Huber",
+    "it": "Huber",
+    "ru": "Хубер",
+    "de": "Huber"
+  },
+  "BabylonianKuglerI": {
+    "en": "Babylonian, Kugler I",
+    "fr": "Babylonien, Kugler I",
+    "es": "Babilónico, Kugler I",
+    "it": "Babilonese, Kugler I",
+    "ru": "Вавилонская по Куглеру I",
+    "de": "Babylonisch, Kugler I"
+  },
+  "BabylonianKuglerI2": {
+    "en": "Kugler I",
+    "fr": "Kugler Ier",
+    "es": "Kugler I",
+    "it": "Kugler I",
+    "ru": "Куглер I",
+    "de": "Kugler I"
+  },
+  "BabylonianKuglerII": {
+    "en": "Babylonian, Kugler II",
+    "fr": "Babylonien, Kugler II",
+    "es": "Babilónico, Kugler II",
+    "it": "Babilonese, Kugler II",
+    "ru": "Вавилонская по Куглеру II",
+    "de": "Babylonisch, Kugler II"
+  },
+  "BabylonianKuglerII2": {
+    "en": "Kugler II",
+    "fr": "Kugler II",
+    "es": "Kugler II",
+    "it": "Kugler II",
+    "ru": "Куглер II",
+    "de": "Kugler II"
+  },
+  "BabylonianKuglerIII": {
+    "en": "Babylonian, Kugler III",
+    "fr": "Babylonien, Kugler III",
+    "es": "Babilónico, Kugler III",
+    "it": "Babilonese, Kugler III",
+    "ru": "Вавилонская по Куглеру III",
+    "de": "Babylonisch, Kugler III"
+  },
+  "BabylonianKuglerIII2": {
+    "en": "Kugler III",
+    "fr": "Kugler III",
+    "es": "Kugler III",
+    "it": "Kugler III",
+    "ru": "Куглер III",
+    "de": "Kugler III"
+  },
+  "BabylonianMercier": {
+    "en": "Babylonian, Mercier",
+    "fr": "Babylonien, Mercier",
+    "es": "Babilónico, Mercier",
+    "it": "Babilonese, Mercier",
+    "ru": "Мерсир, Вавилонская",
+    "de": "Babylonisch, Mercier"
+  },
+  "BabylonianMercier2": {
+    "en": "Mercier",
+    "fr": "Mercier",
+    "es": "Mercier",
+    "it": "Mercier",
+    "ru": "Мерсир",
+    "de": "Mercier"
+  },
+  "Bianchini": {
+    "en": "Bianchini",
+    "fr": "Bianchini",
+    "es": "Bianchini",
+    "it": "Bianchini",
+    "ru": "Метод Бьянкини",
+    "de": "Bianchini"
+  },
+  "BonattiNocturnalOrder": {
+    "en": "Use Bonatti nocturnal order",
+    "it": "Usa l’ordine notturno di Bonatti",
+    "de": "Bonattis nächtliche Reihenfolge verwenden",
+    "fr": "Utiliser l'ordre nocturne de Bonatti",
+    "es": "Usar orden nocturno de Bonatti"
+  },
+  "Bonatus": {
+    "en": "Bonatus",
+    "fr": "Bonatus",
+    "es": "Bonatti",
+    "it": "Bonatti",
+    "ru": "Бонатус",
+    "de": "Bonatus"
+  },
+  "BothDirections": {
+    "en": "Both",
+    "fr": "Les deux",
+    "es": "Ambas",
+    "it": "Entrambe",
+    "ru": "Обе",
+    "hu": "Mindkettő",
+    "zh-Hans": "两者",
+    "zh-Hant": "兩者",
+    "ko": "둘 다",
+    "de": "Beide"
+  },
+  "CMP": {
+    "en": "CMP Vrt. Azmt.",
+    "fr": "CMP az. vert.",
+    "es": "CMP Vert. Acim.",
+    "it": "CMP Azmt. Vrt.",
+    "ru": "CMP Верт. Азим.",
+    "de": "CMP Vrt. Azmt."
+  },
+  "Cadent": {
+    "en": "Cadent",
+    "fr": "Cadente",
+    "es": "Cadente",
+    "it": "Cadente",
+    "ru": "Падающий",
+    "de": "fallendes Haus"
+  },
+  "Can": {
+    "en": "Can",
+    "fr": "Can",
+    "es": "Cán",
+    "it": "Can",
+    "ru": "Рак",
+    "de": "Kre"
+  },
+  "Cancer": {
+    "en": "Cancer",
+    "fr": "Cancer",
+    "es": "Cáncer",
+    "it": "Cancro",
+    "ru": "Рак",
+    "de": "Krebs"
+  },
+  "Canvas": {
+    "en": "Canvas",
+    "fr": "Fond du thème",
+    "es": "Lienzo",
+    "it": "Tela",
+    "ru": "Холст",
+    "de": "Leinwand"
+  },
+  "Cap": {
+    "en": "Cap",
+    "fr": "Cap",
+    "es": "Cap",
+    "it": "Cap",
+    "ru": "Коз",
+    "de": "Ste"
+  },
+  "Cardan": {
+    "en": "Cardan",
+    "fr": "Cardan",
+    "es": "Cardano",
+    "it": "Cardano",
+    "ru": "Кардан",
+    "de": "Cardan"
+  },
+  "Cardinal": {
+    "en": "Cardinal",
+    "fr": "Cardinal",
+    "es": "Cardinal",
+    "it": "Cardinale",
+    "ru": "Кардин.",
+    "de": "kardinal"
+  },
+  "Cazimi": {
+    "en": "Cazimi",
+    "fr": "Cazimi",
+    "it": "Cazimi",
+    "es": "Cazimi",
+    "ru": "Казими",
+    "de": "Cazimi"
+  },
+  "CazimiAbuMashar": {
+    "en": "Abu Maʿshar · 16′",
+    "fr": "Abū Maʿshar · 16′",
+    "es": "Abu Maʿshar · 16′",
+    "it": "Abu Maʿshar · 16′",
+    "ru": "Abu Maʿshar · 16′",
+    "de": "Abu Maʿshar · 16′"
+  },
+  "CazimiAlQabisi": {
+    "en": "al-Qabisi · 16′ + latitude",
+    "fr": "al-Qabisi · 16′ + latitude",
+    "es": "al-Qabisi · 16′ + latitud",
+    "it": "al-Qabisi · 16′ + latitudine",
+    "ru": "al-Qabisi · 16′ + широта",
+    "de": "al-Qabisi · 16′ + Breite"
+  },
+  "CazimiHellenistic": {
+    "en": "Hellenistic · 1°",
+    "fr": "Hellénistique · 1°",
+    "es": "Helenístico · 1°",
+    "it": "Ellenistico · 1°",
+    "ru": "Hellenistic · 1°",
+    "de": "Hellenistisch · 1°"
+  },
+  "CazimiRetrograde": {
+    "en": "Cazimi (R)",
+    "it": "Cazimi (R)",
+    "de": "Cazimi (R)",
+    "fr": "Cazimi (R)",
+    "es": "Cazimi (R)"
+  },
+  "CelestialWeather": {
+    "en": "Celestial Weather",
+    "fr": "Météo céleste",
+    "es": "Clima celeste",
+    "it": "Meteo celeste",
+    "ru": "Небесная погода",
+    "de": "Himmlisches Wetter"
+  },
+  "ChartMoment": {
+    "en": "Chart moment",
+    "fr": "Moment du thème",
+    "it": "Momento del tema",
+    "es": "Momento de la carta",
+    "ru": "Момент карты",
+    "de": "Horoskopzeitpunkt"
+  },
+  "ChartPositions": {
+    "en": "Positions",
+    "fr": "Positions",
+    "es": "Posiciones",
+    "it": "Posizioni",
+    "ru": "Позиции",
+    "de": "Positionen"
+  },
+  "Chiron": {
+    "en": "Chiron",
+    "fr": "Chiron",
+    "es": "Quirón",
+    "it": "Chirone",
+    "ru": "Chiron",
+    "de": "Chiron"
+  },
+  "CircumThroughBounds": {
+    "en": "Circumambulations through the Bounds",
+    "fr": "Circumambulations par les termes",
+    "it": "Circumambulazioni attraverso i confini",
+    "es": "Circumambulaciones a través de los términos",
+    "ru": "Циркумамбуляции через термы",
+    "de": "Circumambulationen durch die Grenzen"
+  },
+  "Circumambulations": {
+    "en": "Circumambulations",
+    "fr": "Circumambulations",
+    "it": "Circumambulazioni",
+    "es": "Circumambulaciones",
+    "ru": "Циркумамбуляции",
+    "de": "Circumambulationen"
+  },
+  "ClassicWheel": {
+    "en": "Classic Wheel",
+    "fr": "Roue classique",
+    "es": "Rueda clásica",
+    "it": "Ruota classica",
+    "ru": "Классическое колесо",
+    "de": "Klassisches Rad"
+  },
+  "CloseWindow": {
+    "en": "Close window",
+    "it": "Chiudi finestra",
+    "de": "Fenster schließen",
+    "fr": "Fermer la fenêtre",
+    "es": "Cerrar ventana"
+  },
+  "Code": {
+    "en": "Code",
+    "fr": "Code",
+    "es": "Código",
+    "it": "Codice",
+    "ru": "Код",
+    "de": "Code"
+  },
+  "Coefficient": {
+    "en": "Coefficient",
+    "fr": "Coefficient",
+    "es": "Coeficiente",
+    "it": "Coefficiente",
+    "ru": "Коэффиц.",
+    "de": "Koeffizient"
+  },
+  "ColoredDetails": {
+    "en": "Colored details",
+    "fr": "Détails colorés",
+    "es": "Detalles en color",
+    "it": "Dettagli colorati",
+    "ru": "Цветные детали",
+    "de": "Farbige Details"
+  },
+  "CompactWheel": {
+    "en": "Compact Wheel",
+    "fr": "Roue compacte",
+    "es": "Rueda compacta",
+    "it": "Ruota compatta",
+    "ru": "Компактное колесо",
+    "de": "Kompaktes Rad"
+  },
+  "Composite": {
+    "en": "Composite",
+    "fr": "Composite",
+    "es": "Compuesta",
+    "it": "Tema composito",
+    "ru": "Композитная",
+    "de": "Komposit"
+  },
+  "CompositeASCDerivedGeo": {
+    "en": "ASC is derived from (A+B)/2 coordinates",
+    "fr": "L'ASC est dérivé des coordonnées (A+B)/2",
+    "es": "El ASC se deriva de las coordenadas (A+B)/2",
+    "it": "L’ASC è derivato dalle coordinate (A+B)/2",
+    "ru": "ASC выводится из координат (A+B)/2",
+    "de": "ASC wird aus (A+B)/2-Koordinaten abgeleitet"
+  },
+  "CompositeASCDerivedRef": {
+    "en": "ASC is derived from Reference place",
+    "fr": "L'ASC est dérivé du lieu de référence",
+    "es": "El ASC se deriva del lugar de referencia",
+    "it": "L’ASC è derivato dal luogo di riferimento",
+    "ru": "ASC выводится из места привязки",
+    "de": "ASC wird vom Referenzort abgeleitet"
+  },
+  "CompositeASCLabel": {
+    "en": "ASC calculation method:",
+    "fr": "Méthode de calcul de l'ASC :",
+    "es": "Método de cálculo del ASC:",
+    "it": "Metodo di calcolo dell’ASC:",
+    "ru": "Метод расчёта ASC:",
+    "de": "Methode der ASC-Berechnung:"
+  },
+  "CompositeASCMidpoint": {
+    "en": "ASC is taken as short-arc midpoint",
+    "fr": "L'ASC est pris comme mi-point de l'arc court",
+    "es": "El ASC se toma como punto medio del arco corto",
+    "it": "L’ASC è assunto come punto medio dell’arco breve",
+    "ru": "ASC берётся как средняя точка короткой дуги",
+    "de": "ASC wird als Kurzbogenmittelpunkt angenommen"
+  },
+  "CompositeChart": {
+    "en": "Composite chart",
+    "it": "Tema composito",
+    "de": "Komposit",
+    "fr": "Thème composite",
+    "es": "Carta compuesta"
+  },
+  "CompositeConstructionMethod": {
+    "en": "Composite Construction Method",
+    "fr": "Méthode de construction du composite",
+    "es": "Método de construcción de la carta compuesta",
+    "it": "Metodo di costruzione del tema composito",
+    "ru": "Метод построения композита",
+    "de": "Komposit-Konstruktionsmethode"
+  },
+  "CompositeMCShortArc": {
+    "en": "MC is taken as short-arc midpoint",
+    "fr": "Le MC est pris comme mi-point de l'arc court",
+    "es": "El MC se toma como punto medio del arco corto",
+    "it": "Il MC è assunto come punto medio dell’arco breve",
+    "ru": "MC берётся как средняя точка короткой дуги",
+    "de": "MC wird als Kurzbogenmittelpunkt genommen"
+  },
+  "Compute": {
+    "en": "Compute",
+    "fr": "Calculer",
+    "es": "Calcular",
+    "it": "Calcola",
+    "ru": "Вычислить",
+    "de": "Berechnen"
+  },
+  "Conjunction": {
+    "en": "Conjunction",
+    "fr": "Conjonction",
+    "es": "Conjunción",
+    "it": "Congiunzione",
+    "ru": "Соединение",
+    "de": "Konjunktion"
+  },
+  "ContraAntiscion": {
+    "en": "Contra-antiscion",
+    "it": "Controantisce",
+    "de": "Gegenantiszie",
+    "fr": "Contre-antiscion",
+    "es": "Contraantiscio"
+  },
+  "Contraantiscia": {
+    "en": "Contraantiscia",
+    "it": "Controantisce",
+    "de": "Gegenantiszien",
+    "fr": "Contre-antisces",
+    "es": "Contraantiscios"
+  },
+  "ConverseTransits": {
+    "en": "Converse Transits",
+    "fr": "Transits converses",
+    "es": "Tránsitos conversos",
+    "it": "Transiti conversi",
+    "ru": "Конверсивные транзиты",
+    "de": "Konverse Transite"
+  },
+  "Convert": {
+    "en": "Convert",
+    "fr": "Convertir",
+    "es": "Convertir",
+    "it": "Converti",
+    "ru": "Конвертировать",
+    "de": "Konvertieren"
+  },
+  "Copresence": {
+    "en": "Copresence",
+    "it": "Copresenza",
+    "de": "Kopräsenz",
+    "fr": "Coprésence",
+    "es": "Copresencia"
+  },
+  "CopresentWith": {
+    "en": "copresent with",
+    "it": "in copresenza con",
+    "de": "kopräsent mit",
+    "fr": "en coprésence avec",
+    "es": "copresente con"
+  },
+  "CorpusPacks": {
+    "en": "Corpus Packs",
+    "fr": "Packs de corpus",
+    "es": "Paquetes de corpus",
+    "it": "Pacchetti di corpus",
+    "ru": "Пакеты корпуса",
+    "de": "Corpus-Pakete"
+  },
+  "Coverage": {
+    "en": "Coverage:",
+    "it": "Copertura:",
+    "de": "Abdeckung:",
+    "fr": "Couverture :",
+    "es": "Cobertura:"
+  },
+  "Cpt": {
+    "en": "Cpt",
+    "fr": "Cpt",
+    "es": "Cpt",
+    "it": "Cpt",
+    "ru": "Комп",
+    "de": "Cpt"
+  },
+  "CurrentChart": {
+    "en": "Current Chart",
+    "fr": "Thème actuel",
+    "es": "Carta actual",
+    "it": "Tema attuale",
+    "ru": "Текущая карта",
+    "de": "Aktuelles Horoskop"
+  },
+  "Cusp": {
+    "en": "cusp",
+    "it": "cuspide",
+    "fr": "Cuspide",
+    "es": "Cúspide",
+    "de": "Häuserspitze"
+  },
+  "CustomPoint": {
+    "en": "Custom point",
+    "it": "Punto personalizzato",
+    "de": "Benutzerdefinierter Punkt",
+    "fr": "Point personnalisé",
+    "es": "Punto personalizado"
+  },
+  "DE": {
+    "en": "Degree",
+    "fr": "Degré",
+    "es": "Grado",
+    "it": "Grado",
+    "ru": "Градус",
+    "de": "Grad"
+  },
+  "Data": {
+    "en": "Data",
+    "fr": "Données",
+    "es": "Datos",
+    "it": "Dati",
+    "ru": "Данные",
+    "de": "Daten"
+  },
+  "Date": {
+    "en": "Date",
+    "fr": "Date",
+    "es": "Fecha",
+    "it": "Data",
+    "ru": "Дата",
+    "de": "Datum"
+  },
+  "Davison": {
+    "en": "Davison",
+    "it": "Davison",
+    "de": "Davison",
+    "fr": "Davison",
+    "es": "Davison"
+  },
+  "DayRulerScores2": {
+    "en": "Scores",
+    "fr": "Scores",
+    "es": "Puntuaciones",
+    "it": "del signore del giorno",
+    "ru": "Баллы",
+    "de": "Punkte"
+  },
+  "DayType": {
+    "en": "Day type",
+    "it": "Tipo di giorno",
+    "de": "Tagestyp",
+    "fr": "Type de jour",
+    "es": "Tipo de día"
+  },
+  "DecennialStartNote": {
+    "en": "Start: %s",
+    "it": "Inizio: %s",
+    "de": "Start: %s",
+    "fr": "Début : %s",
+    "es": "Inicio: %s"
+  },
+  "Decennials": {
+    "en": "Decennials",
+    "it": "Decennali",
+    "fr": "Décennales",
+    "es": "Decenales",
+    "de": "Decennials"
+  },
+  "DegPDList": {
+    "en": "deg",
+    "fr": "deg",
+    "es": "gr",
+    "it": "gr",
+    "ru": "Градус ПД",
+    "de": "Grad"
+  },
+  "Degree": {
+    "en": "Degree",
+    "fr": "Degré",
+    "es": "Grado",
+    "it": "Grado",
+    "ru": "Степень",
+    "de": "Grad"
+  },
+  "Deluce": {
+    "en": "Deluce",
+    "fr": "Déluce",
+    "es": "De Luce",
+    "it": "Deluce",
+    "ru": "Делюс",
+    "de": "Deluce"
+  },
+  "Desc": {
+    "en": "Desc",
+    "it": "DC",
+    "de": "Beschr",
+    "fr": "Desc",
+    "es": "Desc"
+  },
+  "Descendant": {
+    "en": "Descendant",
+    "fr": "Descendant",
+    "es": "Descendente",
+    "it": "Discendente",
+    "ru": "Десцендент",
+    "de": "Deszendent"
+  },
+  "Detail": {
+    "en": "Detail",
+    "it": "Dettaglio",
+    "de": "Detail",
+    "fr": "Détail",
+    "es": "Detalle"
+  },
+  "DevPanel": {
+    "en": "Dev panel",
+    "it": "Pannello sviluppatore",
+    "de": "Entwicklungspanel",
+    "fr": "Panneau de développement",
+    "es": "Panel de desarrollo"
+  },
+  "Dign": {
+    "en": "Dign",
+    "fr": "Dign.",
+    "es": "Dign.",
+    "it": "Dign",
+    "ru": "Дост",
+    "de": "Würde"
+  },
+  "Dignity": {
+    "en": "Dignity",
+    "fr": "Dignité",
+    "es": "Dignidad",
+    "it": "Dignità",
+    "ru": "Достоинство",
+    "de": "Würde"
+  },
+  "Dir": {
+    "en": "Dir",
+    "it": "Dir.",
+    "de": "Dir",
+    "fr": "Dir.",
+    "es": "Dir."
+  },
+  "DirColumn": {
+    "en": "Dir",
+    "it": "Dir.",
+    "de": "Dir",
+    "fr": "Dir.",
+    "es": "Dir."
+  },
+  "DirDirectionNote": {
+    "en": "Direction: %s",
+    "it": "Direzione: %s",
+    "de": "Richtung: %s",
+    "fr": "Direction : %s",
+    "es": "Dirección: %s"
+  },
+  "DirRangeNote": {
+    "en": "Range: %s",
+    "it": "Intervallo: %s",
+    "de": "Bereich: %s",
+    "fr": "Plage : %s",
+    "es": "Intervalo: %s"
+  },
+  "DirectStation": {
+    "en": "Direct station",
+    "fr": "Station directe",
+    "it": "Stazione diretta",
+    "es": "Estación directa",
+    "ru": "Директная стоянка",
+    "de": "Stationär-direktläufig"
+  },
+  "Direction": {
+    "en": "Direction",
+    "fr": "Direction",
+    "es": "Dirección",
+    "it": "Direzione",
+    "ru": "Дирекция",
+    "de": "Richtung"
+  },
+  "DisplayGroup": {
+    "en": "Display",
+    "fr": "Affichage",
+    "es": "Visualización",
+    "it": "Visualizzazione",
+    "ru": "Отображение",
+    "de": "Anzeige"
+  },
+  "DjwhalKhul": {
+    "en": "DjwhalKhul",
+    "fr": "DjwhalKhul",
+    "es": "DjwhalKhul",
+    "it": "DjwhalKhul",
+    "ru": "Джвалкул",
+    "de": "DjwhalKhul"
+  },
+  "Dodeca12thMark": {
+    "en": "(12th)",
+    "it": "(12ª)",
+    "de": "(12.)",
+    "fr": "(12e)",
+    "es": "(12)"
+  },
+  "Dodecatemoria": {
+    "en": "Dodecatemoria",
+    "fr": "Dodécatémories",
+    "es": "Dodecatemoría",
+    "it": "Dodecatemorie",
+    "ru": "Додекатемории",
+    "de": "Dodekatemorien"
+  },
+  "DodecatemoriaCalculator": {
+    "en": "Dodecatemoria Calculator",
+    "fr": "Calculateur de dodécatémories",
+    "es": "Calculadora de dodecatemorías",
+    "it": "Calcolatore delle dodecatemorie",
+    "ru": "Калькулятор Dodecatemoria",
+    "de": "Dodekatemorien-Rechner"
+  },
+  "DodecatemoriaUnavailable": {
+    "en": "Dodecatemoria data unavailable for this chart.",
+    "fr": "Données de dodécatémories indisponibles pour ce thème.",
+    "es": "Datos de dodecatemorías no disponibles para esta carta.",
+    "it": "Dati delle dodecatemorie non disponibili per questo tema.",
+    "ru": "Данные додекатеморий недоступны для этой карты.",
+    "de": "Für dieses Horoskop sind keine Dodekatemorien-Daten verfügbar."
+  },
+  "Dodecatemorion": {
+    "en": "Dodecatemorion",
+    "fr": "Dodécatémorion",
+    "es": "Dodecatemoría",
+    "it": "Dodecatemorio",
+    "ru": "Додекатеморион",
+    "de": "Dodekatemorie"
+  },
+  "DodecatemorionAbsoluteLongitude": {
+    "en": "Dodecatemorion Absolute Longitude (Degree)",
+    "fr": "Longitude absolue du dodécatémorion (degré)",
+    "es": "Longitud absoluta de la dodecatemoría (grado)",
+    "it": "Longitudine assoluta del dodecatemorio (grado)",
+    "ru": "Додекатеморион Абсолютная долгота (градус)",
+    "de": "Absolute Länge der Dodekatemorie (Grad)"
+  },
+  "DodecatemorionSign": {
+    "en": "Dodecatemorion Sign",
+    "fr": "Signe du dodécatémorion",
+    "es": "Signo de la dodecatemoría",
+    "it": "Segno del dodecatemorio",
+    "ru": "Додекатеморион Знак",
+    "de": "Zeichen der Dodekatemorie"
+  },
+  "Domicil": {
+    "en": "Domicile",
+    "fr": "Domicile",
+    "es": "Domicilio",
+    "it": "Domicilio",
+    "ru": "Обитель",
+    "de": "Domizil"
+  },
+  "Domicile": {
+    "en": "Domicile",
+    "fr": "Domicile",
+    "es": "Domicilio",
+    "it": "Domicilio",
+    "ru": "Обитель",
+    "de": "Domizil"
+  },
+  "Dorothean": {
+    "en": "Dorothean",
+    "fr": "Dorothéen",
+    "es": "Doroteano",
+    "it": "Doroteo",
+    "ru": "по Доротею",
+    "de": "Dorothean"
+  },
+  "Dsc": {
+    "en": "Dsc",
+    "fr": "Desc",
+    "es": "DC",
+    "it": "DC",
+    "ru": "ДС",
+    "de": "DC"
+  },
+  "ELV": {
+    "en": "Altitude",
+    "fr": "Altitude",
+    "es": "Altitud",
+    "it": "Altezza",
+    "ru": "Высота",
+    "de": "Höhe"
+  },
+  "EclipseAnnular": {
+    "en": "Annular",
+    "fr": "annulaire",
+    "it": "anulare",
+    "es": "anular",
+    "ru": "кольцеобразное",
+    "de": "ringförmig"
+  },
+  "EclipseHybrid": {
+    "en": "Hybrid",
+    "fr": "hybride",
+    "it": "ibrida",
+    "es": "híbrido",
+    "ru": "гибридное",
+    "de": "hybrid"
+  },
+  "EclipseLabelFormat": {
+    "en": "{kind} {luminary} Eclipse",
+    "fr": "Éclipse {luminary} {kind}",
+    "it": "Eclissi {luminary} {kind}",
+    "es": "Eclipse {luminary} {kind}",
+    "ru": "{kind} {luminary} затмение",
+    "de": "{luminary}finsternis ({kind})"
+  },
+  "EclipseLunar": {
+    "en": "Lunar",
+    "fr": "lunaire",
+    "it": "lunare",
+    "es": "lunar",
+    "ru": "лунное",
+    "de": "Mond"
+  },
+  "EclipseMaximum": {
+    "en": "Eclipse maximum",
+    "fr": "Maximum de l'éclipse",
+    "it": "Massimo dell’eclissi",
+    "es": "Máximo del eclipse",
+    "ru": "Максимум затмения",
+    "de": "Finsternismaximum"
+  },
+  "EclipsePartial": {
+    "en": "Partial",
+    "fr": "partielle",
+    "it": "parziale",
+    "es": "parcial",
+    "ru": "частное",
+    "de": "partiell"
+  },
+  "EclipsePenumbral": {
+    "en": "Penumbral",
+    "fr": "pénombrale",
+    "it": "penombrale",
+    "es": "penumbral",
+    "ru": "полутеневое",
+    "de": "Halbschatten"
+  },
+  "EclipseRangeNote": {
+    "en": "Range: %s - %s.",
+    "it": "Intervallo: %s - %s.",
+    "de": "Bereich: %s - %s.",
+    "fr": "Plage : %s - %s.",
+    "es": "Intervalo: %s - %s."
+  },
+  "EclipseSolar": {
+    "en": "Solar",
+    "fr": "solaire",
+    "it": "solare",
+    "es": "solar",
+    "ru": "солнечное",
+    "de": "Sonnen"
+  },
+  "EclipseTotal": {
+    "en": "Total",
+    "fr": "totale",
+    "it": "totale",
+    "es": "total",
+    "ru": "полное",
+    "de": "total"
+  },
+  "EclipseUnknown": {
+    "en": "Unknown",
+    "fr": "inconnue",
+    "it": "sconosciuta",
+    "es": "desconocido",
+    "ru": "неизвестное",
+    "de": "unbekannt"
+  },
+  "Eclipses": {
+    "en": "Eclipses",
+    "it": "Eclissi",
+    "de": "Finsternisse",
+    "fr": "Éclipses",
+    "es": "Eclipses"
+  },
+  "Ecliptic": {
+    "en": "Ecliptic",
+    "fr": "Écliptique",
+    "es": "Eclíptica",
+    "it": "Eclittica",
+    "ru": "Эклиптика",
+    "de": "Ekliptik"
+  },
+  "EclipticLongitude": {
+    "en": "Ecliptic Longitude (0 - 360)",
+    "fr": "Longitude écliptique (0 - 360)",
+    "es": "Longitud eclíptica (0 - 360)",
+    "it": "Longitudine eclittica (0 - 360)",
+    "ru": "Эклиптическая долгота (0 - 360)",
+    "de": "Ekliptikale Länge (0–360)"
+  },
+  "EditingRealCursor": {
+    "en": "Editing real cursor: %s",
+    "it": "Modifica del cursore reale: %s",
+    "de": "Realen Zeitzeiger bearbeiten: %s",
+    "fr": "Modification du curseur réel : %s",
+    "es": "Editando cursor real: %s"
+  },
+  "EditingRealCursorSymbolic": {
+    "en": "Editing real cursor: %s\nSymbolic chart time: %s",
+    "it": "Modifica del cursore reale: %s\nOra simbolica del tema: %s",
+    "de": "Realen Zeitzeiger bearbeiten: %s\nSymbolische Horoskopzeit: %s",
+    "fr": "Modification du curseur réel : %s\nTemps du thème symbolique : %s",
+    "es": "Edición del cursor real: %s\nTiempo de la carta simbólica: %s"
+  },
+  "Editor": {
+    "en": "Editor",
+    "fr": "Éditeur",
+    "es": "Editor",
+    "it": "Editor",
+    "ru": "Редактор",
+    "de": "Editor"
+  },
+  "ElectionBase": {
+    "en": "Election Base",
+    "it": "Base elettiva",
+    "de": "Elektionsbasis",
+    "fr": "Base d'élection",
+    "es": "Carta base de elección"
+  },
+  "Elections": {
+    "en": "Elections",
+    "fr": "Élections",
+    "es": "Elecciones",
+    "it": "Elezioni",
+    "ru": "Элекции",
+    "de": "Elektionen"
+  },
+  "Element": {
+    "en": "Element",
+    "fr": "Élément",
+    "es": "Elemento",
+    "it": "Elemento",
+    "ru": "Стихия",
+    "de": "Element"
+  },
+  "Enters": {
+    "en": "enters",
+    "it": "entra",
+    "de": "tritt ein",
+    "fr": "entre",
+    "es": "entra"
+  },
+  "EntersSignTemplate": {
+    "en": "%s enters %s",
+    "it": "%s entra in %s",
+    "de": "%s tritt in %s ein",
+    "fr": "%s entre dans %s",
+    "es": "%s entra en %s"
+  },
+  "EquAsc": {
+    "en": "Equat. Ascendant",
+    "fr": "Ascendant équat.",
+    "es": "Ascendente Ecuatorial",
+    "it": "Ascendente equatoriale",
+    "ru": "Экватор. Асц.",
+    "de": "Äquatorialer Aszendent"
+  },
+  "Equal": {
+    "en": "Equal",
+    "fr": "Maisons égales",
+    "es": "Iguales",
+    "it": "Case uguali",
+    "ru": "Равные",
+    "de": "Gleich"
+  },
+  "Equator": {
+    "en": "Equator",
+    "fr": "Équateur",
+    "es": "Ecuador",
+    "it": "Equatore",
+    "ru": "Экватор",
+    "de": "Äquator"
+  },
+  "Error": {
+    "en": "Error",
+    "fr": "Erreur",
+    "es": "Error",
+    "it": "Errore",
+    "ru": "Ошибка",
+    "de": "Fehler"
+  },
+  "EssentialScores2": {
+    "en": "Scores",
+    "fr": "Scores",
+    "es": "esenciales",
+    "it": "essenziali",
+    "ru": "Баллы",
+    "de": "Punkte"
+  },
+  "EveningRise": {
+    "en": "Evening rise",
+    "fr": "Lever vespéral",
+    "it": "Levata serale",
+    "es": "Orto vespertino",
+    "ru": "Вечерний восход",
+    "de": "Abenderst"
+  },
+  "EveningSet": {
+    "en": "Evening set",
+    "fr": "Coucher vespéral",
+    "it": "Tramonto serale",
+    "es": "Ocaso vespertino",
+    "ru": "Вечерний заход",
+    "de": "Abendletzt"
+  },
+  "Event": {
+    "en": "Event",
+    "fr": "Événement",
+    "es": "Evento",
+    "it": "Evento",
+    "ru": "Событие",
+    "de": "Ereignis"
+  },
+  "EventDate": {
+    "en": "Event date",
+    "fr": "Date de l'événement",
+    "es": "Fecha del evento",
+    "it": "Data dell’evento",
+    "ru": "Дата события",
+    "de": "Ereignisdatum"
+  },
+  "EventEntersSign": {
+    "en": "enters sign",
+    "it": "entra nel segno",
+    "de": "tritt in ein Zeichen ein",
+    "fr": "entre dans un signe",
+    "es": "entra en signo"
+  },
+  "EventStations": {
+    "en": "stations",
+    "it": "diventa stazionario",
+    "de": "wird stationär",
+    "fr": "stationne",
+    "es": "estaciona"
+  },
+  "EventStationsDirect": {
+    "en": "stations direct",
+    "it": "stazione diretta",
+    "de": "wird direktläufig",
+    "fr": "devient direct",
+    "es": "estaciona directo"
+  },
+  "EventStationsRetrograde": {
+    "en": "stations retrograde",
+    "it": "stazione retrograda",
+    "de": "wird rückläufig",
+    "fr": "devient rétrograde",
+    "es": "estaciona retrógrado"
+  },
+  "Exact": {
+    "en": "Exact",
+    "fr": "Exact",
+    "es": "Exacto",
+    "it": "Esatto",
+    "ru": "Точный",
+    "de": "Exakt"
+  },
+  "ExactConjunction": {
+    "en": "Exact conjunction",
+    "fr": "Conjonction exacte",
+    "it": "Congiunzione esatta",
+    "es": "Conjunción exacta",
+    "ru": "Точное соединение",
+    "de": "Exakte Konjunktion"
+  },
+  "ExactHeliacalRisingsSettings": {
+    "en": "Exact Heliacal Risings/Settings",
+    "fr": "Levers/couchers héliaques exacts",
+    "es": "Ortos y ocasos helíacos exactos",
+    "it": "Levate e tramonti eliaci esatti",
+    "ru": "Точные гелиакальные восходы/заходы",
+    "de": "Exakte heliakische Aufgänge/Untergänge"
+  },
+  "ExactTime": {
+    "en": "Exact Time",
+    "fr": "Heure exacte",
+    "it": "Ora esatta",
+    "es": "Hora exacta",
+    "ru": "Точное время",
+    "de": "Exakte Uhrzeit"
+  },
+  "Exal": {
+    "en": "Exaltation",
+    "fr": "Exaltation",
+    "es": "Exaltación",
+    "it": "Esaltazione",
+    "ru": "Экзальтация",
+    "de": "Erhöhung"
+  },
+  "Exaltation": {
+    "en": "Exaltation",
+    "fr": "Exaltation",
+    "es": "Exaltación",
+    "it": "Esaltazione",
+    "ru": "Экзальтация",
+    "de": "Erhöhung"
+  },
+  "ExclusiveAspsOnClick": {
+    "en": "Exclusive aspects on click",
+    "fr": "Aspects exclusifs au clic",
+    "es": "Aspectos exclusivos al hacer clic",
+    "it": "Aspetti esclusivi al clic",
+    "ru": "Эксклюзивные аспекты по клику",
+    "de": "Exklusive Aspekte bei Klick"
+  },
+  "Exile": {
+    "en": "Exile",
+    "fr": "Exil",
+    "es": "Exilio",
+    "it": "Esilio",
+    "ru": "Изгнание",
+    "de": "Exil"
+  },
+  "Export": {
+    "en": "Export...",
+    "fr": "Exporter…",
+    "es": "Exportar...",
+    "it": "Esporta…",
+    "ru": "Экспорт...",
+    "de": "Exportieren..."
+  },
+  "ExportAsPNG": {
+    "en": "Export as PNG...",
+    "fr": "Exporter en PNG...",
+    "es": "Exportar como PNG...",
+    "it": "Esporta come PNG…",
+    "ru": "Экспорт в PNG...",
+    "de": "Exportieren als PNG..."
+  },
+  "ExportFailed": {
+    "en": "Export failed.",
+    "fr": "Échec de l'exportation.",
+    "es": "La exportación falló.",
+    "it": "Esportazione non riuscita.",
+    "ru": "Экспорт не удался.",
+    "de": "Export ist fehlgeschlagen."
+  },
+  "ExportFiles": {
+    "en": "PDF Files (*.pdf)|*.pdf|PNG Files (*.png)|*.png",
+    "fr": "Fichiers PDF (*.pdf)|*.pdf|Fichiers PNG (*.png)|*.png",
+    "es": "Archivos PDF (*.pdf)|*.pdf|Archivos PNG (*.png)|*.png",
+    "it": "File PDF (*.pdf)|*.pdf|File PNG (*.png)|*.png",
+    "ru": "Файлы PDF (*.pdf)|*.pdf|Файлы PNG (*.png)|*.png",
+    "de": "PDF-Dateien (*.pdf)|*.pdf|PNG-Dateien (*.png)|*.png"
+  },
+  "ExportImageUnavailable": {
+    "en": "There is no image to export.",
+    "fr": "Aucune image à exporter.",
+    "es": "No hay ninguna imagen para exportar.",
+    "it": "Non c’è alcuna immagine da esportare.",
+    "ru": "Нет изображения для экспорта.",
+    "de": "Es gibt kein Bild zum Exportieren."
+  },
+  "FSAsps": {
+    "en": "FSAsps",
+    "fr": "Asp. ÉF",
+    "es": "Asp. EF",
+    "it": "Asp. SF",
+    "ru": "Асп. НЗ",
+    "de": "FSAsps"
+  },
+  "Face": {
+    "en": "Face",
+    "fr": "Face",
+    "es": "Faz",
+    "it": "Faccia",
+    "ru": "Лик",
+    "de": "Gesicht"
+  },
+  "FaganBradley": {
+    "en": "Fagan-Bradley",
+    "fr": "Fagan-Bradley",
+    "es": "Fagan-Bradley",
+    "it": "Fagan-Bradley",
+    "ru": "Фаган-Бредли",
+    "de": "Fagan-Bradley"
+  },
+  "Fall": {
+    "en": "Fall",
+    "it": "Caduta",
+    "es": "Caída",
+    "fr": "Chute",
+    "de": "Fall"
+  },
+  "Feb2": {
+    "en": "feb",
+    "fr": "fév",
+    "es": "feb",
+    "it": "feb",
+    "ru": "фев",
+    "de": "Feb"
+  },
+  "Field": {
+    "en": "Field",
+    "fr": "Champ",
+    "it": "Campo",
+    "es": "Campo",
+    "ru": "Поле",
+    "de": "Feld"
+  },
+  "FilterAny": {
+    "en": "Any",
+    "it": "Qualsiasi",
+    "de": "Beliebig",
+    "fr": "Tous",
+    "es": "Cualquiera"
+  },
+  "FilteredNotInActiveEcliptic": {
+    "en": "(filtered: {count} not in active ecliptic)",
+    "it": "(filtrati: {count} fuori dall’eclittica attiva)",
+    "de": "(gefiltert: {count} nicht in aktiver Ekliptik)",
+    "fr": "(filtrés : {count} sans aspect écliptique actif)",
+    "es": "(filtrados: {count} fuera de la eclíptica activa)"
+  },
+  "FirstQuarter": {
+    "en": "First Quarter",
+    "it": "Primo quarto",
+    "de": "Erstes Viertel",
+    "fr": "Premier quartier",
+    "es": "Cuarto creciente"
+  },
+  "FixStarAngleDirs": {
+    "en": "Angular Directions of Fixed Stars",
+    "fr": "Directions angulaires des étoiles fixes",
+    "es": "Direcciones angulares de estrellas fijas",
+    "it": "Direzioni delle stelle fisse agli angoli",
+    "ru": "Угольные направления фиксированных звезд",
+    "de": "Angulardirektionen der Fixsterne"
+  },
+  "Fixed star": {
+    "en": "Fixed star",
+    "fr": "Étoile fixe",
+    "es": "Estrella fija",
+    "it": "Stella fissa",
+    "ru": "Неподвижная звезда",
+    "de": "Fixstern"
+  },
+  "FixedStar": {
+    "en": "Fixed Star",
+    "fr": "Étoile fixe",
+    "es": "Estrella fija",
+    "it": "Stella fissa",
+    "ru": "Фиксированная звезда",
+    "de": "Fixstern"
+  },
+  "FixedStarAngleDirections": {
+    "en": "Fixed-star angle directions",
+    "it": "Direzioni delle stelle fisse agli angoli",
+    "de": "Angulardirektionen der Fixsterne",
+    "fr": "Directions d'étoiles fixes vers les angles",
+    "es": "Direcciones de estrellas fijas a los ángulos"
+  },
+  "FixedStarAngleDirsUnavailable": {
+    "en": "Fixed-star angle directions unavailable: %s",
+    "it": "Direzioni delle stelle fisse agli angoli non disponibili: %s",
+    "de": "Angulardirektionen der Fixsterne nicht verfügbar: %s",
+    "fr": "Directions angulaires d’étoiles fixes indisponibles : %s",
+    "es": "Direcciones angulares de estrellas fijas no disponibles: %s"
+  },
+  "FixedStarAspects": {
+    "en": "Fixed Star Aspects",
+    "it": "Aspetti delle stelle fisse",
+    "de": "Fixsternaspekte",
+    "fr": "Aspects d'étoiles fixes",
+    "es": "Aspectos de estrellas fijas"
+  },
+  "FixedStarParallels": {
+    "en": "Fixed Star Parallels",
+    "it": "Paralleli delle stelle fisse",
+    "de": "Fixsternparallelen",
+    "fr": "Parallèles d'étoiles fixes",
+    "es": "Paralelos de estrellas fijas"
+  },
+  "Fortune": {
+    "en": "Fortune",
+    "fr": "Part de Fortune",
+    "es": "Fortuna",
+    "it": "Parte di Fortuna",
+    "ru": "Фортуна",
+    "de": "Glückspunkt"
+  },
+  "From": {
+    "en": "From",
+    "fr": "De",
+    "es": "De",
+    "it": "Da",
+    "ru": "От",
+    "de": "Von"
+  },
+  "Full Moon": {
+    "en": "Full Moon",
+    "it": "Luna piena",
+    "de": "Vollmond",
+    "fr": "Pleine Lune",
+    "es": "Luna llena"
+  },
+  "GalacticGilBrand": {
+    "en": "Galactic Center (Gil Brand)",
+    "fr": "Centre galactique (Gil Brand)",
+    "es": "Centro galáctico (Gil Brand)",
+    "it": "Centro galattico (Gil Brand)",
+    "ru": "Галактический центр (Gil Brand)",
+    "de": "Galaktisches Zentrum (Gil Brand)"
+  },
+  "GalacticGilBrand2": {
+    "en": "Gil Brand",
+    "fr": "Gil Brand",
+    "es": "Gil Brand",
+    "it": "Gil Brand",
+    "ru": "Гил Бранд",
+    "de": "Gil Brand"
+  },
+  "Gem": {
+    "en": "Gem",
+    "fr": "Gém",
+    "es": "Gém",
+    "it": "Gem",
+    "ru": "Бли",
+    "de": "Zwi"
+  },
+  "Gemini": {
+    "en": "Gemini",
+    "it": "Gemelli",
+    "es": "Géminis",
+    "de": "Zwillinge",
+    "fr": "Gémeaux"
+  },
+  "General": {
+    "en": "General",
+    "fr": "Général",
+    "es": "General",
+    "it": "Generale",
+    "ru": "Общее",
+    "de": "Allgemein"
+  },
+  "GeodeticGiza": {
+    "en": "Geodetic - Giza",
+    "it": "Geodetico - Giza",
+    "de": "Geodätisch - Gizeh",
+    "fr": "Géodésique - Gizeh",
+    "es": "Geodésico - Guiza"
+  },
+  "GeodeticGreenwich": {
+    "en": "Geodetic - Greenwich",
+    "it": "Geodetico - Greenwich",
+    "de": "Geodätisch – Greenwich",
+    "fr": "Géodésique - Greenwich",
+    "es": "Geodésico - Greenwich"
+  },
+  "GrandScores1": {
+    "en": "Grand",
+    "fr": "Total",
+    "es": "Total general",
+    "it": "Punti",
+    "ru": "Всего",
+    "de": "Gesamt"
+  },
+  "GrandScores2": {
+    "en": "Scores",
+    "fr": "Scores",
+    "es": "Puntuaciones",
+    "it": "complessivi",
+    "ru": "Баллов",
+    "de": "Punkte"
+  },
+  "HSAlcabitus": {
+    "en": "Alcabitus",
+    "fr": "Alcabitius",
+    "es": "Alcabitius",
+    "it": "Alcabitius",
+    "ru": "Ал-Кабиций",
+    "de": "Alcabitus"
+  },
+  "HSAxial": {
+    "en": "Axial",
+    "fr": "Axial",
+    "es": "Axial",
+    "it": "Assiale",
+    "ru": "Осевая",
+    "de": "Axial"
+  },
+  "HSEqual": {
+    "en": "Equal",
+    "fr": "Maisons égales",
+    "es": "Iguales",
+    "it": "Case uguali",
+    "ru": "Равные",
+    "de": "Gleich"
+  },
+  "HSHorizontal": {
+    "en": "Horizontal",
+    "fr": "Horizontal",
+    "es": "Horizontal",
+    "it": "Orizzontale",
+    "ru": "Горизонтальная",
+    "de": "Horizontal"
+  },
+  "HSPagePolich": {
+    "en": "Page-Polich",
+    "fr": "Page-Polich",
+    "es": "Page-Polich",
+    "it": "Page-Polich",
+    "ru": "Пейдж-Полих",
+    "de": "Page-Polich"
+  },
+  "HSPorphyrius": {
+    "en": "Porphyrius",
+    "fr": "Porphyre",
+    "es": "Porfirio",
+    "it": "Porfirio",
+    "ru": "Порфирий",
+    "de": "Porphyrius"
+  },
+  "HSRegiomontanus": {
+    "en": "Regiomontanus",
+    "fr": "Regiomontanus",
+    "es": "Regiomontanus",
+    "it": "Regiomontano",
+    "ru": "Региомонтан",
+    "de": "Regiomontanus"
+  },
+  "HSTrueAscendant": {
+    "en": "True Ascendant",
+    "fr": "Ascendant vrai",
+    "es": "Ascendente verdadero",
+    "it": "Ascendente vero",
+    "ru": "Истинный асцендент",
+    "de": "Wahrer Aszendent"
+  },
+  "HeaderGroup": {
+    "en": "Header",
+    "fr": "En-tête",
+    "es": "Encabezado",
+    "it": "Intestazione",
+    "ru": "Заголовок",
+    "de": "Kopfzeile"
+  },
+  "HeliacalPhases": {
+    "en": "Heliacal Phases",
+    "fr": "Phases héliaques",
+    "es": "Fases helíacas",
+    "it": "Fasi eliache",
+    "ru": "Гелиакические фазы",
+    "de": "Heliakische Phasen"
+  },
+  "HeliacalRisingsSettings": {
+    "en": "Heliacal Risings/Settings",
+    "fr": "Levers/couchers héliaques",
+    "es": "Ortos y ocasos helíacos",
+    "it": "Levate e tramonti eliaci",
+    "ru": "Гелиакальные восходы/заходы",
+    "de": "Heliakische Aufgänge/Untergänge"
+  },
+  "Hellenistic": {
+    "en": "Hellenistic",
+    "fr": "Hellénistique",
+    "es": "Helenístico",
+    "it": "Ellenistico",
+    "ru": "Hellenistic",
+    "de": "Hellenistisch"
+  },
+  "Hellenistic 15 deg elongation": {
+    "en": "Hellenistic 15 deg elongation",
+    "it": "Ellenistico, elongazione di 15°",
+    "de": "Hellenistisch · 15° Elongation",
+    "fr": "Élongation hellénistique de 15°",
+    "es": "Elongación helenística de 15°"
+  },
+  "HelpPlacidianSemiArc": {
+    "en": "As the significator's SDA to it's MD so is the promissor's SDA to it's secondary distance",
+    "fr": "De même que la SDA du significateur est à sa DM, la SDA du prometteur est à sa distance secondaire",
+    "es": "La SDA del significador es a su DM como la SDA del promisor es a su distancia secundaria",
+    "it": "Come l’arco semidiurno del significatore sta alla distanza meridiana, così l’arco semidiurno del promissore sta alla sua distanza secondaria.",
+    "ru": "Как SDA сигнификатора относится к его MD, так SDA промиссора относится к его вторичной дистанции",
+    "de": "Wie sich die SDA des Signifikators zu seiner MD verhält, so verhält sich die SDA des Promissors zu seiner sekundären Distanz"
+  },
+  "HelpPrimDirTopocentric": {
+    "en": "Directions under the topocentric pole derived from the cone (Polich/Page 1964)",
+    "fr": "Directions sous le pôle topocentrique dérivé du cône (Polich-Page, 1964)",
+    "es": "Direcciones bajo el polo topocéntrico derivado del cono (Polich/Page 1964)",
+    "it": "Direzioni sotto il polo topocentrico derivato dal cono (Polich/Page 1964)",
+    "ru": "Дирекции под топоцентрическим полюсом, полученным из конуса (Polich/Page 1964)",
+    "de": "Direktionen unter dem topozentrischen Pol, abgeleitet vom Kegel (Polich/Page 1964)"
+  },
+  "HelpUse": {
+    "en": "Use data in Personal Data dialog if checked",
+    "fr": "Si cette option est cochée, utiliser les données de la boîte de dialogue Données personnelles",
+    "es": "Usar los datos del diálogo Datos personales si está marcado",
+    "it": "Se selezionato, usa i dati della finestra «Dati personali».",
+    "ru": "Если отмечено - использовать данные в диалоге персональных данных",
+    "de": "Wenn aktiviert, Daten aus dem Dialog „Personendaten“ verwenden."
+  },
+  "Hipparchos": {
+    "en": "Hipparchos",
+    "fr": "Hipparque",
+    "es": "Hiparco",
+    "it": "Ipparco",
+    "ru": "Гиппарх",
+    "de": "Hipparchos"
+  },
+  "Horizon": {
+    "en": "Horizon",
+    "fr": "Horizon",
+    "es": "Horizonte",
+    "it": "Orizzonte",
+    "ru": "Горизонт",
+    "de": "Horizont"
+  },
+  "HourRulerScores2": {
+    "en": "Scores",
+    "fr": "Scores",
+    "es": "Puntuaciones",
+    "it": "del signore dell’ora",
+    "ru": "Баллы",
+    "de": "Punkte"
+  },
+  "HourlyDist": {
+    "en": "Hourlydist",
+    "fr": "Distance horaire",
+    "es": "Distancia horaria",
+    "it": "Distanza oraria",
+    "ru": "Часовое расст.",
+    "de": "Stundendistanz"
+  },
+  "Hours": {
+    "en": "Hours",
+    "it": "Ore",
+    "de": "Std",
+    "fr": "Heures",
+    "es": "Horas"
+  },
+  "House of Joy": {
+    "en": "House of Joy",
+    "it": "Casa di gioia",
+    "de": "Haus der Freude",
+    "fr": "Maison de joie",
+    "es": "Casa de gozo"
+  },
+  "HouseCuspIndexedFmt": {
+    "en": "House %d cusp",
+    "it": "Cuspide della casa %d",
+    "de": "Spitze des %d. Hauses",
+    "fr": "Cuspide de la maison %d",
+    "es": "Cúspide de la casa %d"
+  },
+  "HouseCuspLabel": {
+    "en": "House cusp",
+    "it": "Cuspide della casa",
+    "de": "Häuserspitze",
+    "fr": "Cuspide de maison",
+    "es": "Cúspide de casa"
+  },
+  "HouseNumbers": {
+    "en": "House numbers",
+    "fr": "Numéros de maisons",
+    "es": "Números de casas",
+    "it": "Numeri delle case",
+    "ru": "Номера домов",
+    "de": "Hausnummern"
+  },
+  "HouseScores2": {
+    "en": "Scores",
+    "fr": "Scores",
+    "es": "Puntuaciones",
+    "it": "delle case",
+    "ru": "Баллы",
+    "de": "Punkte"
+  },
+  "HouseSystem": {
+    "en": "House system",
+    "fr": "Système de domification",
+    "es": "Sistema de casas",
+    "it": "Sistema di domificazione",
+    "ru": "Система домов",
+    "de": "Häusersystem"
+  },
+  "Hover a chart symbol": {
+    "en": "Hover a chart symbol",
+    "fr": "Survolez un symbole du thème",
+    "es": "Pase el cursor sobre un símbolo de la carta",
+    "it": "Passa il puntatore su un simbolo del tema",
+    "ru": "Наведите на символ",
+    "de": "Über ein Horoskopsymbol fahren"
+  },
+  "Hrs": {
+    "en": "Hrs",
+    "fr": "h",
+    "es": "Horas",
+    "it": "Ore",
+    "ru": "Час.",
+    "de": "Std"
+  },
+  "HybridHits": {
+    "en": "Hybrid Hits",
+    "it": "Contatti ibridi",
+    "de": "Hybride Treffer",
+    "fr": "Contacts hybrides",
+    "es": "Contactos híbridos"
+  },
+  "Imum Coeli": {
+    "en": "Imum Coeli",
+    "fr": "Fond du Ciel",
+    "es": "Fondo del Cielo",
+    "it": "Fondo Cielo",
+    "ru": "Имум Коэли",
+    "de": "Imum Coeli"
+  },
+  "Individual": {
+    "en": "Individual",
+    "fr": "Astres individuels",
+    "es": "Individual",
+    "it": "Individuale",
+    "ru": "Индивидуальное",
+    "de": "Individuell"
+  },
+  "Information": {
+    "en": "Information",
+    "fr": "Informations",
+    "es": "Información",
+    "it": "Informazioni",
+    "ru": "Инфо",
+    "de": "Informationen"
+  },
+  "Ingress": {
+    "en": "Ingress",
+    "hu": "Jegyváltás",
+    "it": "Ingresso",
+    "fr": "Ingrès",
+    "es": "Ingreso",
+    "ru": "Ингрессия",
+    "zh-Hans": "入宫",
+    "zh-Hant": "入宮",
+    "ko": "입궁",
+    "de": "Ingress"
+  },
+  "InputEclipticLongitude": {
+    "en": "Input: Ecliptic Longitude (0 - 360)",
+    "fr": "Entrée : longitude écliptique (0 - 360)",
+    "es": "Entrada: Longitud eclíptica (0 - 360)",
+    "it": "Inserimento: longitudine eclittica (0–360)",
+    "ru": "Вход: Эклиптическая долгота (0 - 360)",
+    "de": "Eingabe: Ekliptikale Länge (0–360)"
+  },
+  "InputSignandDegree": {
+    "en": "Input: Sign and Degree",
+    "fr": "Entrée : signe et degré",
+    "es": "Entrada: signo y grado",
+    "it": "Inserimento: segno e grado",
+    "ru": "Вход: Знак и степень",
+    "de": "Eingabe: Zeichen und Grad"
+  },
+  "Inspector": {
+    "en": "Inspector",
+    "fr": "Inspecteur",
+    "es": "Inspector",
+    "it": "Ispettore",
+    "ru": "Инспектор",
+    "de": "Inspektor"
+  },
+  "Interm": {
+    "en": "Interm.",
+    "fr": "Interm.",
+    "es": "Interm.",
+    "it": "Interm.",
+    "ru": "Средн.",
+    "de": "Interm."
+  },
+  "IntermHCS": {
+    "en": "Interm. HCs",
+    "fr": "Cuspides interm.",
+    "es": "Cúspides intermedias",
+    "it": "Cuspidi interm.",
+    "ru": "Промежут. КД",
+    "de": "Zwischen-HS"
+  },
+  "JNBhasin": {
+    "en": "JNBhasin",
+    "fr": "JNBhasin",
+    "es": "JNBhasin",
+    "it": "JNBhasin",
+    "ru": "Дженбашин",
+    "de": "JNBhasin"
+  },
+  "Jan2": {
+    "en": "jan",
+    "fr": "janv",
+    "es": "ene",
+    "it": "gen",
+    "ru": "янв",
+    "de": "Jan"
+  },
+  "Joy": {
+    "en": "Joy",
+    "fr": "Joie",
+    "es": "Gozo",
+    "it": "Gioia",
+    "ru": "Радость",
+    "de": "Freude"
+  },
+  "Jul2": {
+    "en": "jul",
+    "fr": "juil",
+    "es": "jul",
+    "it": "lug",
+    "ru": "июл",
+    "de": "Jul"
+  },
+  "Jun2": {
+    "en": "jun",
+    "fr": "juin",
+    "es": "jun",
+    "it": "giu",
+    "ru": "июн",
+    "de": "Jun"
+  },
+  "Last aspect": {
+    "en": "Last aspect",
+    "fr": "Dernier aspect",
+    "es": "Último aspecto",
+    "it": "Ultimo aspetto",
+    "ru": "Последний аспект",
+    "de": "Letzter Aspekt"
+  },
+  "LastQuarter": {
+    "en": "Last Quarter",
+    "it": "Ultimo quarto",
+    "de": "Letztes Viertel",
+    "fr": "Dernier quartier",
+    "es": "Cuarto menguante"
+  },
+  "Lat": {
+    "en": "Latitude",
+    "fr": "Latitude",
+    "es": "Latitud",
+    "it": "Latitudine",
+    "ru": "Широта",
+    "de": "Breite"
+  },
+  "Latitude": {
+    "en": "Latitude",
+    "fr": "Latitude",
+    "es": "Latitud",
+    "it": "Latitudine",
+    "ru": "Широта",
+    "de": "Breite"
+  },
+  "LatitudeDeg": {
+    "en": "Latitude (deg)",
+    "fr": "Latitude (degrés)",
+    "es": "Latitud (grados)",
+    "it": "Latitudine (deg)",
+    "ru": "Широта (deg)",
+    "de": "Breitengrad (Grad)"
+  },
+  "LatitudeMin": {
+    "en": "Latitude (min)",
+    "fr": "Latitude (min)",
+    "es": "Latitud (minutos)",
+    "it": "Latitudine (min)",
+    "ru": "Широта (min)",
+    "de": "Breitengrad (min.)"
+  },
+  "Leaves": {
+    "en": "leaves",
+    "it": "esce da",
+    "de": "verlässt",
+    "fr": "quitte",
+    "es": "sale de"
+  },
+  "Leo": {
+    "en": "Leo",
+    "fr": "Lion",
+    "es": "Leo",
+    "it": "Leone",
+    "ru": "Лев",
+    "de": "Löwe"
+  },
+  "Leo2": {
+    "en": "Leo",
+    "fr": "Lion",
+    "es": "Leo",
+    "it": "Leone",
+    "ru": "Лев",
+    "de": "Löw"
+  },
+  "Lib": {
+    "en": "Lib",
+    "fr": "Bal",
+    "es": "Lib",
+    "it": "Bil",
+    "ru": "Вес",
+    "de": "Waa"
+  },
+  "Libra": {
+    "en": "Libra",
+    "fr": "Balance",
+    "es": "Libra",
+    "it": "Bilancia",
+    "ru": "Весы",
+    "de": "Waage"
+  },
+  "LoFAbbrev": {
+    "en": "LoF",
+    "it": "PdF",
+    "de": "GP",
+    "fr": "PdF",
+    "es": "PdF"
+  },
+  "LoFOuterRing": {
+    "en": "Outer-ring Fortuna label",
+    "fr": "Étiquette Part de Fortune de l'anneau extérieur",
+    "es": "Etiqueta de Fortuna en el anillo exterior",
+    "it": "Etichetta della Parte di Fortuna nell’anello esterno",
+    "ru": "Метка Фортуны внешнего кольца",
+    "de": "Glückspunkt-Beschriftung am Außenring"
+  },
+  "Local": {
+    "en": "Local",
+    "fr": "Locale",
+    "es": "Local",
+    "it": "Locale",
+    "ru": "Местное",
+    "de": "Lokal"
+  },
+  "LocalApparent": {
+    "en": "Local Apparent",
+    "fr": "Temps solaire vrai local",
+    "es": "Hora local aparente",
+    "it": "Locale apparente",
+    "ru": "Истинное солнечное время (LAT)",
+    "de": "Wahre Ortszeit"
+  },
+  "LocalSpace": {
+    "en": "Local Space",
+    "it": "Spazio Locale",
+    "de": "Lokaler Raum",
+    "fr": "Espace local",
+    "es": "Espacio local"
+  },
+  "Location": {
+    "en": "Location",
+    "fr": "Lieu",
+    "es": "Ubicación",
+    "it": "Località",
+    "ru": "Расположение",
+    "de": "Ort"
+  },
+  "Long": {
+    "en": "Longitude",
+    "fr": "Longitude",
+    "es": "Longitud",
+    "it": "Longitudine",
+    "ru": "Долгота",
+    "de": "Länge"
+  },
+  "Longitude": {
+    "en": "Longitude",
+    "fr": "Longitude",
+    "es": "Longitud",
+    "it": "Longitudine",
+    "ru": "Долгота",
+    "de": "Länge"
+  },
+  "LongitudeDeg": {
+    "en": "Longitude (deg)",
+    "fr": "Longitude (degrés)",
+    "es": "Longitud (deg)",
+    "it": "Longitudine (deg)",
+    "ru": "Долгота (deg)",
+    "de": "Längengrad (Grad)"
+  },
+  "LongitudeMin": {
+    "en": "Longitude (min)",
+    "fr": "Longitude (min)",
+    "es": "Longitud (min)",
+    "it": "Longitudine (min)",
+    "ru": "Долгота (min)",
+    "de": "Längengrad (min.)"
+  },
+  "LordOfYear": {
+    "en": "Lord of the year",
+    "fr": "Maître de l'année",
+    "it": "Signore dell’anno",
+    "es": "Señor del año",
+    "ru": "Владыка года",
+    "de": "Jahresherrscher"
+  },
+  "Lot": {
+    "en": "Lot",
+    "fr": "Part",
+    "es": "Lote",
+    "it": "Sorte",
+    "ru": "Жребий",
+    "de": "Glückspunkt"
+  },
+  "Lots": {
+    "en": "Lots",
+    "it": "Sorti",
+    "de": "Lose",
+    "fr": "Parts",
+    "es": "Lotes"
+  },
+  "Lunar": {
+    "en": "Lunar",
+    "fr": "Lunaire",
+    "es": "Lunar",
+    "it": "Lunare",
+    "ru": "Лунар",
+    "de": "Lunar"
+  },
+  "Lunar2": {
+    "en": "Lunar",
+    "fr": "Lunaire",
+    "es": "Lunar",
+    "it": "Lunare",
+    "ru": "Лунное",
+    "de": "Lunar"
+  },
+  "LunarAverage": {
+    "en": "Lunar Average",
+    "it": "Rivoluzione lunare media",
+    "de": "Gemitteltes Lunarhoroskop",
+    "fr": "Moyenne des révolutions lunaires",
+    "es": "Promedio lunar"
+  },
+  "LunarMansions": {
+    "en": "Lunar Mansions...",
+    "fr": "Demeures lunaires...",
+    "es": "Mansiones lunares...",
+    "it": "Mansioni lunari…",
+    "ru": "Лунные стоянки...",
+    "de": "Mondhäuser..."
+  },
+  "LunarPhaseRowFmt": {
+    "en": "{elongation} ({phase}) · {day} · {target} in {remaining}",
+    "hu": "{elongation} ({phase}) · {day} · {target} {remaining} múlva",
+    "it": "{elongation} ({phase}) · {day} · {target} tra {remaining}",
+    "fr": "{elongation} ({phase}) · {day} · {target} dans {remaining}",
+    "ru": "{elongation} ({phase}) · {day} · {target} через {remaining}",
+    "es": "{elongation} ({phase}) · {day} · {target} en {remaining}",
+    "zh-Hans": "{elongation}（{phase}）· {day} · 距{target} {remaining}",
+    "zh-Hant": "{elongation}（{phase}）· {day} · 距{target} {remaining}",
+    "ko": "{elongation} ({phase}) · {day} · {target}까지 {remaining}",
+    "de": "{elongation} ({phase}) · {day} · {target} in {remaining}"
+  },
+  "MF": {
+    "en": "M/F",
+    "fr": "H/F",
+    "es": "M/F",
+    "it": "M/F",
+    "ru": "M/F",
+    "de": "M/W"
+  },
+  "MagAbbr": {
+    "en": "Magnitude",
+    "fr": "Magnitude",
+    "es": "Magnitud",
+    "it": "Magnitudine",
+    "ru": "Звёздная величина",
+    "de": "Magnitude"
+  },
+  "Manzil": {
+    "en": "Manzil",
+    "fr": "Manzil",
+    "es": "Manzil",
+    "it": "Manzil",
+    "ru": "Манзиль",
+    "de": "Manzil"
+  },
+  "ManzilZodiacAuto": {
+    "en": "Follow chart zodiac",
+    "fr": "Suivre le zodiaque du thème",
+    "es": "Seguir el zodiaco de la carta",
+    "it": "Segui lo zodiaco del tema",
+    "ru": "Следовать зодиаку карты",
+    "de": "Tierkreis des Horoskops folgen"
+  },
+  "ManzilZodiacLabel": {
+    "en": "Zodiac for manāzil:",
+    "fr": "Zodiaque pour les manāzil :",
+    "es": "Zodiaco para manāzil:",
+    "it": "Zodiaco per le manāzil:",
+    "ru": "Зодиак для manāzil:",
+    "de": "Tierkreis für Manāzil:"
+  },
+  "ManzilZodiacSidereal": {
+    "en": "Always sidereal",
+    "fr": "Toujours sidéral",
+    "es": "Siempre sidéreo",
+    "it": "Sempre siderale",
+    "ru": "Всегда сидерический",
+    "de": "Immer siderisch"
+  },
+  "ManzilZodiacTropical": {
+    "en": "Always tropical",
+    "fr": "Toujours tropical",
+    "es": "Siempre tropical",
+    "it": "Sempre tropicale",
+    "ru": "Всегда тропический",
+    "de": "Immer tropisch"
+  },
+  "Mar2": {
+    "en": "mar",
+    "fr": "mars",
+    "es": "mar",
+    "it": "mar",
+    "ru": "мар",
+    "de": "Mär"
+  },
+  "May2": {
+    "en": "may",
+    "fr": "mai",
+    "es": "may",
+    "it": "mag",
+    "ru": "май",
+    "de": "Mai"
+  },
+  "Meridian": {
+    "en": "Meridian",
+    "fr": "Méridien",
+    "es": "Meridiano",
+    "it": "Meridiano",
+    "ru": "Меридиан",
+    "de": "Meridian"
+  },
+  "Message": {
+    "en": "Message",
+    "fr": "Message",
+    "es": "Mensaje",
+    "it": "Messaggio",
+    "ru": "Сообщение",
+    "de": "Nachricht"
+  },
+  "Mid": {
+    "en": "Mid",
+    "fr": "Milieu",
+    "es": "Medio",
+    "it": "Mid",
+    "ru": "Мид",
+    "de": "Mitte"
+  },
+  "Midheaven": {
+    "en": "Midheaven",
+    "fr": "Milieu du Ciel",
+    "es": "Medio Cielo",
+    "it": "Medio Cielo",
+    "ru": "Середина неба",
+    "de": "Medium Coeli"
+  },
+  "Midpoint": {
+    "en": "Midpoint",
+    "fr": "Mi-point",
+    "es": "Punto medio",
+    "it": "Punto medio",
+    "ru": "Средняя точка",
+    "de": "Mittelpunkt"
+  },
+  "MidpointConjunction": {
+    "en": "Midpoint of %s and %s conjunction %s",
+    "it": "Punto medio di %s e %s in congiunzione con %s",
+    "de": "Halbsumme von %s und %s in Konjunktion mit %s",
+    "fr": "Mi-point de %s et %s en conjonction avec %s",
+    "es": "Punto medio de %s y %s en conjunción con %s"
+  },
+  "Midpoints": {
+    "en": "Midpoints",
+    "it": "Punti medi",
+    "de": "Halbsummen",
+    "fr": "Mi-points",
+    "es": "Puntos medios"
+  },
+  "Min": {
+    "en": "Minute",
+    "fr": "Minute",
+    "es": "Minuto",
+    "it": "Minuto",
+    "ru": "Минута",
+    "de": "Minute"
+  },
+  "MinPDList": {
+    "en": "min",
+    "fr": "min",
+    "es": "min",
+    "it": "min",
+    "ru": "Мин. ПД",
+    "de": "min"
+  },
+  "MinorAspects": {
+    "en": "Minor aspects",
+    "fr": "Aspects mineurs",
+    "es": "Aspectos menores",
+    "it": "Aspetti minori",
+    "ru": "Минорные аспекты",
+    "de": "Nebenaspekte"
+  },
+  "MinorProgression": {
+    "en": "Minor Progression",
+    "fr": "Progression mineure",
+    "es": "Progresión menor",
+    "it": "Progressione minore",
+    "ru": "Малая прогрессия",
+    "de": "Minordirektion"
+  },
+  "Minute": {
+    "en": "Minute",
+    "fr": "Minute",
+    "es": "Minuto",
+    "it": "Minuto",
+    "ru": "Минута",
+    "de": "Minute"
+  },
+  "Minutes": {
+    "en": "Minutes",
+    "fr": "Minutes",
+    "es": "Minutos",
+    "it": "Minuti",
+    "ru": "Минуты",
+    "de": "Minuten"
+  },
+  "Misc": {
+    "en": "Misc",
+    "fr": "Divers",
+    "es": "Varios",
+    "it": "Varie",
+    "ru": "Доп.",
+    "de": "Sonstiges"
+  },
+  "Miscellaneous": {
+    "en": "Miscellaneous",
+    "it": "Varie",
+    "de": "Verschiedenes",
+    "fr": "Divers",
+    "es": "Varios"
+  },
+  "Mode": {
+    "en": "Mode",
+    "fr": "Mode",
+    "es": "Modo",
+    "it": "Modalità",
+    "ru": "Крест",
+    "de": "Modus"
+  },
+  "Modify": {
+    "en": "Modify",
+    "fr": "Modifier",
+    "es": "Modificar",
+    "it": "Modifica",
+    "ru": "Изменить",
+    "de": "Ändern"
+  },
+  "Monochrome": {
+    "en": "Monochrome",
+    "fr": "Monochrome",
+    "es": "Monocromo",
+    "it": "Monocromatico",
+    "ru": "Монохромный",
+    "de": "Einfarbig"
+  },
+  "MonthlyCircumThroughBounds": {
+    "en": "Monthly Circumambulations through the Bounds",
+    "fr": "Circumambulations mensuelles par les termes",
+    "it": "Circumambulazioni mensili attraverso i confini",
+    "es": "Circumambulaciones mensuales a través de los términos",
+    "ru": "Ежемесячные циркумамбуляции через термы",
+    "de": "Monatliche Circumambulationen durch die Grenzen"
+  },
+  "MoonAbbrev": {
+    "en": "Mon",
+    "hu": "Hol",
+    "it": "Lun",
+    "fr": "Lun",
+    "ru": "Лун",
+    "es": "Lun",
+    "zh-Hans": "月",
+    "zh-Hant": "月",
+    "ko": "달",
+    "de": "Mnd"
+  },
+  "MorningRise": {
+    "en": "Morning rise",
+    "fr": "Lever matinal",
+    "it": "Levata mattutina",
+    "es": "Orto matutino",
+    "ru": "Утренний восход",
+    "de": "Morgenerst"
+  },
+  "MorningSet": {
+    "en": "Morning set",
+    "fr": "Coucher matinal",
+    "it": "Tramonto mattutino",
+    "es": "Ocaso matutino",
+    "ru": "Утренний заход",
+    "de": "Morgenletzt"
+  },
+  "MotionDirect": {
+    "en": "direct",
+    "it": "diretto",
+    "de": "direkt",
+    "fr": "direct",
+    "es": "directo"
+  },
+  "MotionRetrograde": {
+    "en": "retrograde",
+    "it": "retrogrado",
+    "de": "rückläufig",
+    "fr": "rétrograde",
+    "es": "retrógrado"
+  },
+  "MotionStationDirect": {
+    "en": "station direct",
+    "it": "stazione diretta",
+    "de": "stationär-direktläufig",
+    "fr": "station directe",
+    "es": "estación directa"
+  },
+  "MotionStationRetrograde": {
+    "en": "station retrograde",
+    "it": "stazione retrograda",
+    "de": "stationär-rückläufig",
+    "fr": "station rétrograde",
+    "es": "estación retrógrada"
+  },
+  "Mun": {
+    "en": "Mun",
+    "fr": "Dom",
+    "es": "Mun.",
+    "it": "Mon",
+    "ru": "Мун",
+    "de": "Mun"
+  },
+  "MunAbbr": {
+    "en": "Mun",
+    "fr": "Domt",
+    "es": "Mun.",
+    "it": "Mon",
+    "ru": "Мун",
+    "de": "Mun"
+  },
+  "MundaneChartTitleFmt": {
+    "en": "Mundane Chart — %s",
+    "it": "Tema mondano — %s",
+    "de": "Mundanes Horoskop — %s",
+    "fr": "Thème de domitude — %s",
+    "es": "Carta mundana — %s"
+  },
+  "MundaneOnly": {
+    "en": "Mundane Only",
+    "fr": "Domitude uniquement",
+    "es": "Solo mundanas",
+    "it": "Solo mondano",
+    "ru": "Только Mundane",
+    "de": "Nur mundan"
+  },
+  "MundanePositions": {
+    "en": "Mundane Positions",
+    "it": "Posizioni mondane",
+    "de": "Mundane Positionen",
+    "fr": "Positions en domitude",
+    "es": "Posiciones en mundo"
+  },
+  "Mutable": {
+    "en": "Mutable",
+    "fr": "Mutable",
+    "es": "Mutable",
+    "it": "Mutevole",
+    "ru": "Мутаб.",
+    "de": "veränderlich"
+  },
+  "Mutual reception": {
+    "en": "Mutual reception",
+    "fr": "Réception mutuelle",
+    "es": "Recepción mutua",
+    "it": "Ricezione mutua",
+    "ru": "Взаимная рецепция",
+    "de": "Gegenseitige Rezeption"
+  },
+  "MyColors": {
+    "en": "My Colors",
+    "fr": "Mes couleurs",
+    "es": "Mis colores",
+    "it": "I miei colori",
+    "ru": "Мои цвета",
+    "de": "Meine Farben"
+  },
+  "NResults": {
+    "en": "%d results",
+    "fr": "%d résultats",
+    "es": "%d resultados",
+    "it": "%d risultati",
+    "ru": "%d результатов",
+    "de": "%d Ergebnisse"
+  },
+  "NSynodicEvents": {
+    "en": "%d synodic events",
+    "it": "%d eventi sinodici",
+    "de": "%d synodische Ereignisse",
+    "fr": "%d événements synodiques",
+    "es": "%d eventos sinódicos"
+  },
+  "NaibodLon": {
+    "en": "Naibod (Lon)",
+    "it": "Naibod (Long)",
+    "de": "Naibodschlüssel (Lon)",
+    "fr": "Clé de Naibod (Lon)",
+    "es": "Naibod (long.)"
+  },
+  "NaibodRA": {
+    "en": "Naibod (RA)",
+    "it": "Naibod (AR)",
+    "de": "Naibodschlüssel (RA)",
+    "fr": "Clé de Naibod (AD)",
+    "es": "Naibod (AR)"
+  },
+  "Nature": {
+    "en": "Nature",
+    "fr": "Nature",
+    "es": "Naturaleza",
+    "it": "Natura",
+    "ru": "Природа",
+    "de": "Natur"
+  },
+  "Netbook": {
+    "en": "Netbook",
+    "fr": "Netbook",
+    "es": "netbook",
+    "it": "Netbook",
+    "ru": "Нетбук",
+    "de": "Netbook"
+  },
+  "New Moon": {
+    "en": "New Moon",
+    "it": "Luna nuova",
+    "de": "Neumond",
+    "fr": "Nouvelle Lune",
+    "es": "Luna nueva"
+  },
+  "Next aspect": {
+    "en": "Next aspect",
+    "fr": "Prochain aspect",
+    "es": "Próximo aspecto",
+    "it": "Prossimo aspetto",
+    "ru": "Следующий аспект",
+    "de": "Nächster Aspekt"
+  },
+  "No": {
+    "en": "No",
+    "fr": "Non",
+    "es": "No",
+    "it": "No",
+    "ru": "Нет",
+    "de": "Nein"
+  },
+  "NoAngleContacts": {
+    "en": "No angle contacts",
+    "fr": "Aucun contact d'angle",
+    "es": "Sin contactos de ángulos",
+    "it": "Nessun contatto con gli angoli",
+    "ru": "Нет контактов с углами",
+    "de": "Keine Winkelkontakte"
+  },
+  "NoAspects": {
+    "en": "No aspects",
+    "fr": "Aucun aspect",
+    "es": "Sin aspectos",
+    "it": "Nessun aspetto",
+    "ru": "Нет аспектов",
+    "de": "Keine Aspekte"
+  },
+  "NoBodies": {
+    "en": "No bodies",
+    "fr": "Aucun astre",
+    "es": "Sin astros",
+    "it": "Nessun corpo",
+    "ru": "Нет небесных тел",
+    "de": "Keine Gestirne"
+  },
+  "NoContactsInTightOrb": {
+    "en": "(no contacts in tight orb)",
+    "fr": "(aucun contact dans l'orbe serré)",
+    "es": "(sin contactos en orbe estrecho)",
+    "it": "(nessun contatto in orbe stretto)",
+    "ru": "(нет контактов в узком орбисе)",
+    "de": "(keine Kontakte innerhalb eines engen Orbis)"
+  },
+  "NoCorpusPacksInstalled": {
+    "en": "(No corpus packs installed)",
+    "fr": "(Aucun pack de corpus installé)",
+    "es": "(No hay paquetes de corpus instalados)",
+    "it": "(Nessun pacchetto di corpus installato)",
+    "ru": "(Пакеты корпуса не установлены)",
+    "de": "(Keine Korpuspakete installiert)"
+  },
+  "NoFixedStarAspects": {
+    "en": "No fixed star aspects",
+    "fr": "Aucun aspect d'étoile fixe",
+    "es": "Sin aspectos de estrellas fijas",
+    "it": "Nessun aspetto di stelle fisse",
+    "ru": "Нет аспектов неподвижных звёзд",
+    "de": "Keine Fixsternaspekte"
+  },
+  "NoFixedStarParallels": {
+    "en": "No fixed star parallels",
+    "fr": "Aucun parallèle d'étoile fixe",
+    "es": "Sin paralelos de estrellas fijas",
+    "it": "Nessun parallelo di stelle fisse",
+    "ru": "Нет параллелей неподвижных звёзд",
+    "de": "Keine Fixsternparallelen"
+  },
+  "NoPartsConfigured": {
+    "en": "No parts configured",
+    "fr": "Aucune part configurée",
+    "es": "Ninguna parte configurada",
+    "it": "Nessuna parte configurata",
+    "ru": "Части не настроены",
+    "de": "Keine Lose konfiguriert"
+  },
+  "NoRows": {
+    "en": "No rows",
+    "fr": "Aucune ligne",
+    "es": "Sin filas",
+    "it": "Nessuna riga",
+    "ru": "Нет строк",
+    "de": "Keine Zeilen"
+  },
+  "NoValidTransitSearchCombinations": {
+    "en": "No valid transit search combinations.",
+    "fr": "Aucune combinaison de recherche de transit valide.",
+    "es": "No hay combinaciones válidas de búsqueda de tránsitos.",
+    "it": "Nessuna combinazione valida di ricerca dei transiti.",
+    "ru": "Нет допустимых комбинаций поиска транзитов.",
+    "de": "Keine gültigen Kombinationen für die Transitsuche."
+  },
+  "Node": {
+    "en": "Node",
+    "it": "Nodo",
+    "de": "Knoten",
+    "fr": "Nœud",
+    "es": "Nodo"
+  },
+  "NorthNode": {
+    "en": "North Node",
+    "fr": "Nœud Nord",
+    "es": "Nodo Norte",
+    "it": "Nodo nord",
+    "ru": "Северный узел",
+    "de": "Aufsteigender Mondknoten"
+  },
+  "Note": {
+    "en": "Note",
+    "fr": "Note",
+    "es": "Nota",
+    "it": "Nota",
+    "ru": "Заметка",
+    "de": "Notiz"
+  },
+  "Notes": {
+    "en": "Notes",
+    "fr": "Notes",
+    "es": "Notas",
+    "it": "Note",
+    "ru": "Примечания",
+    "de": "Notizen"
+  },
+  "Nov2": {
+    "en": "nov",
+    "fr": "nov",
+    "es": "nov",
+    "it": "nov",
+    "ru": "ноя",
+    "de": "Nov"
+  },
+  "Oct2": {
+    "en": "oct",
+    "fr": "oct",
+    "es": "oct",
+    "it": "ott",
+    "ru": "окт",
+    "de": "Okt"
+  },
+  "OfConnector": {
+    "en": "%s of %s",
+    "it": "%s di %s",
+    "de": "%s von %s",
+    "fr": "%s de %s",
+    "es": "%s de %s"
+  },
+  "OneResult": {
+    "en": "1 result",
+    "fr": "1 résultat",
+    "es": "1 resultado",
+    "it": "1 risultato",
+    "ru": "1 результат",
+    "de": "1 Ergebnis"
+  },
+  "OneRuler": {
+    "en": "One Ruler (Day/Night)",
+    "it": "Un signore (giorno/notte)",
+    "es": "Un regente (día/noche)",
+    "de": "Ein Herrscher (Tag/Nacht)",
+    "fr": "Un seul maître (jour/nuit)"
+  },
+  "OneSynodicEvent": {
+    "en": "1 synodic event",
+    "it": "1 evento sinodico",
+    "de": "1 synodisches Ereignis",
+    "fr": "1 événement synodique",
+    "es": "1 evento sinódico"
+  },
+  "Open": {
+    "en": "Open",
+    "fr": "Ouvrir",
+    "es": "Abrir",
+    "it": "Apri",
+    "ru": "Открыть",
+    "de": "Öffnen"
+  },
+  "OpenCompositeFirst": {
+    "en": "Open Composite first",
+    "fr": "Ouvrir d'abord le composite",
+    "es": "Abrir primero la carta compuesta",
+    "it": "Apri prima il tema composito",
+    "ru": "Сначала открыть композит",
+    "de": "Komposit zuerst öffnen"
+  },
+  "OpenHor": {
+    "en": "Open Horoscope",
+    "it": "Apri oroscopo",
+    "es": "Abrir horóscopo",
+    "de": "Horoskop öffnen",
+    "fr": "Ouvrir le thème"
+  },
+  "OpenSynastryFirst": {
+    "en": "Open Synastry first",
+    "fr": "Ouvrir d'abord la synastrie",
+    "es": "Abrir primero la sinastría",
+    "it": "Apri prima la sinastria",
+    "ru": "Сначала открыть синастрию",
+    "de": "Synastrie zuerst öffnen"
+  },
+  "Opposite": {
+    "en": "Opposite",
+    "fr": "Opposé",
+    "es": "Opuesto",
+    "it": "Opposto",
+    "ru": "Напротив",
+    "de": "Gegenüber"
+  },
+  "Oppositio": {
+    "en": "Opposition",
+    "fr": "Opposition",
+    "es": "Oposición",
+    "it": "Opposizione",
+    "ru": "Оппозиция",
+    "de": "Opposition"
+  },
+  "Opposition": {
+    "en": "Opposition",
+    "fr": "Opposition",
+    "es": "Oposición",
+    "it": "Opposizione",
+    "ru": "Оппозиция",
+    "de": "Opposition"
+  },
+  "Orb": {
+    "en": "Orb",
+    "fr": "Orbe",
+    "it": "Orbe",
+    "es": "Orbe",
+    "ru": "Орбис",
+    "de": "Orbis"
+  },
+  "OrbLabel": {
+    "en": "orb",
+    "it": "orbe",
+    "fr": "orbe",
+    "es": "orbe",
+    "de": "Orbis"
+  },
+  "PDFFiles": {
+    "en": "PDF Files (*.pdf)|*.pdf",
+    "fr": "Fichiers PDF (*.pdf)|*.pdf",
+    "es": "Archivos PDF (*.pdf)|*.pdf",
+    "it": "File PDF (*.pdf)|*.pdf",
+    "ru": "Файлы PDF (*.pdf)|*.pdf",
+    "de": "PDF-Dateien (*.pdf)|*.pdf"
+  },
+  "PNGFiles": {
+    "en": "PNG Files (*.png)|*.png",
+    "fr": "Fichiers PNG (*.png)|*.png",
+    "es": "Archivos PNG (*.png)|*.png",
+    "it": "File PNG (*.png)|*.png",
+    "ru": "Файлы PNG (*.png)|*.png",
+    "de": "PNG-Dateien (*.png)|*.png"
+  },
+  "Page": {
+    "en": "page",
+    "it": "pagina",
+    "de": "Seite",
+    "fr": "page",
+    "es": "página"
+  },
+  "Par": {
+    "en": "Par",
+    "fr": "Par",
+    "es": "Par",
+    "it": "Par",
+    "ru": "Жр.",
+    "de": "Par"
+  },
+  "Parent": {
+    "en": "Parent",
+    "fr": "Thème parent",
+    "es": "Carta madre",
+    "it": "Tema di riferimento",
+    "ru": "Родитель",
+    "de": "Übergeordnet"
+  },
+  "Part of Fortune": {
+    "en": "Part of Fortune",
+    "fr": "Part de Fortune",
+    "es": "Parte de la Fortuna",
+    "it": "Parte di Fortuna",
+    "ru": "Жребий Фортуны",
+    "de": "Glückspunkt"
+  },
+  "Participator": {
+    "en": "Participator",
+    "fr": "Participant",
+    "es": "Participante",
+    "it": "Partecipante",
+    "ru": "Участник",
+    "de": "Teilhaber"
+  },
+  "PassiveMomentTrivial": {
+    "en": "(passive moment - AT alone is trivial)",
+    "fr": "(moment passif - AT seul est trivial)",
+    "es": "(momento pasivo - AT por sí solo es trivial)",
+    "it": "(momento passivo - il TA da solo è irrilevante)",
+    "ru": "(пассивный момент — AT сам по себе тривиален)",
+    "de": "(passiver Zeitpunkt – AT allein ist trivial)"
+  },
+  "Penumbral": {
+    "en": "Penumbral",
+    "fr": "Pénombrale",
+    "es": "penumbral",
+    "it": "Penombrale",
+    "ru": "Полутеневое",
+    "de": "Halbschatten"
+  },
+  "Peregrine": {
+    "en": "Peregrine",
+    "fr": "Pérégrine",
+    "es": "Peregrino",
+    "it": "Peregrino",
+    "ru": "Перегрин",
+    "de": "Peregrin"
+  },
+  "Phase": {
+    "en": "Phase",
+    "fr": "Phase",
+    "it": "Fase",
+    "es": "Fase",
+    "ru": "Фаза",
+    "de": "Phase"
+  },
+  "PhaseScores1": {
+    "en": "Phase",
+    "fr": "Phase",
+    "es": "Fase",
+    "it": "Fase",
+    "ru": "Фаза",
+    "de": "Phase"
+  },
+  "PhaseScores2": {
+    "en": "Scores",
+    "fr": "Scores",
+    "es": "Puntuaciones",
+    "it": "Punteggi",
+    "ru": "Баллы",
+    "de": "Punkte"
+  },
+  "Phasis": {
+    "en": "Phasis (Heliacal)",
+    "fr": "Phasis (héliaque)",
+    "es": "Phasis (helíaco)",
+    "it": "Phasis (fasi eliache)",
+    "ru": "Фазис (гелиакальный)",
+    "de": "Phasis (Heliakal)"
+  },
+  "Pis": {
+    "en": "Pis",
+    "fr": "Poi",
+    "es": "Pis",
+    "it": "Pes",
+    "ru": "Рыб",
+    "de": "Fis"
+  },
+  "Planet": {
+    "en": "Planet",
+    "it": "Pianeta",
+    "de": "Planet",
+    "fr": "Planète",
+    "es": "Planeta"
+  },
+  "PlanetaryHours": {
+    "en": "Planetary Hours",
+    "it": "Ore planetarie",
+    "de": "Planetenstunden",
+    "fr": "Heures planétaires",
+    "es": "Horas planetarias"
+  },
+  "Point": {
+    "en": "Point",
+    "fr": "Point",
+    "es": "Punto",
+    "it": "Punto",
+    "ru": "Точка",
+    "de": "Punkt"
+  },
+  "Pos": {
+    "en": "Pos",
+    "fr": "Pos",
+    "es": "Pos.",
+    "it": "Pos.",
+    "ru": "Поз",
+    "de": "Pos"
+  },
+  "Positive": {
+    "en": "Positive",
+    "fr": "Positif",
+    "es": "Positivo",
+    "it": "Positivo",
+    "ru": "Положит.",
+    "de": "Positiv"
+  },
+  "Prenatal Syzygy": {
+    "en": "Prenatal Syzygy",
+    "fr": "Syzygie prénatale",
+    "es": "Sicigia prenatal",
+    "it": "Sizigia prenatale",
+    "ru": "Пренатальная сизигия",
+    "de": "Pränatale Syzygie"
+  },
+  "PrenatalSyzygy": {
+    "en": "Prenatal Syzygy",
+    "fr": "Syzygie prénatale",
+    "it": "Sizigia prenatale",
+    "es": "Sicigia prenatal",
+    "ru": "Пренатальная сизигия",
+    "de": "Pränatale Syzygie"
+  },
+  "PrimaryDirections": {
+    "en": "Primary Directions",
+    "fr": "Directions primaires",
+    "it": "Direzioni primarie",
+    "es": "Direcciones primarias",
+    "ru": "Первичные дирекции",
+    "de": "Primärdirektionen"
+  },
+  "PrimaryDirectionsTitleFmt": {
+    "en": "Primary Directions — %s",
+    "it": "Direzioni primarie — %s",
+    "de": "Primärdirektionen — %s",
+    "fr": "Directions primaires — %s",
+    "es": "Direcciones primarias — %s"
+  },
+  "PrimaryDirectionsToTitleFmt": {
+    "en": "Primary Directions to %s — %s",
+    "it": "Direzioni primarie a %s — %s",
+    "de": "Primärdirektionen auf %s — %s",
+    "fr": "Directions primaires vers %s — %s",
+    "es": "Direcciones primarias a %s — %s"
+  },
+  "PrimeVertical": {
+    "en": "Prime vertical",
+    "fr": "Premier vertical",
+    "es": "Primer vertical",
+    "it": "Primo verticale",
+    "ru": "Первый вертикал",
+    "de": "Erster Vertikal"
+  },
+  "Pro": {
+    "en": "Pro",
+    "fr": "Pro",
+    "es": "Pro",
+    "it": "Pro",
+    "ru": "Про",
+    "de": "Profi"
+  },
+  "ProfDisplayNote": {
+    "en": "Display: %s; monthly steps: %s; age offset: %d.",
+    "it": "Visualizzazione: %s; passi mensili: %s; scarto d’età: %d.",
+    "de": "Anzeige: %s; monatliche Schritte: %s; Altersversatz: %d.",
+    "fr": "Affichage : %s ; pas mensuels : %s ; décalage d'âge : %d.",
+    "es": "Visualización: %s; pasos mensuales: %s; desfase de edad: %d."
+  },
+  "ProfModeNote": {
+    "en": "Mode: %s%s.",
+    "it": "Modalità: %s%s.",
+    "de": "Modus: %s%s.",
+    "fr": "Mode : %s%s.",
+    "es": "Modo: %s%s."
+  },
+  "ProfUseZodProjsNote": {
+    "en": "; use zodiacal projections=%s",
+    "it": "; usa proiezioni zodiacali=%s",
+    "de": "; zodiakale Projektionen verwenden=%s",
+    "fr": "; utiliser les projections zodiacales=%s",
+    "es": "; usar proyecciones zodiacales=%s"
+  },
+  "Profections": {
+    "en": "Profections",
+    "fr": "Profections",
+    "es": "Profecciones",
+    "it": "Profezioni",
+    "ru": "Профекции",
+    "de": "Profektionen"
+  },
+  "Progressed": {
+    "en": "Progressed",
+    "fr": "Progressé",
+    "es": "Progresada",
+    "it": "Data progredita",
+    "ru": "Прогрессированный",
+    "de": "Progressiert"
+  },
+  "ProgressionMethod": {
+    "en": "Method",
+    "fr": "Méthode",
+    "es": "Método",
+    "it": "Metodo",
+    "ru": "Метод",
+    "de": "Methode"
+  },
+  "Progressions": {
+    "en": "Progressions",
+    "fr": "Progressions",
+    "es": "Progresiones",
+    "it": "Progressioni",
+    "ru": "Прогрессии",
+    "de": "Progressionen"
+  },
+  "Q1Bija": {
+    "en": "Q1 / Bija",
+    "it": "Q1 / Bija",
+    "de": "Q1 / Bija",
+    "fr": "Q1 / Bija",
+    "es": "Q1 / Bija"
+  },
+  "Q2MeanQuotidian": {
+    "en": "Q2 / Mean Quotidian",
+    "it": "Q2 / quotidiano medio",
+    "de": "Q2 / Mittlerer Quotidian",
+    "fr": "Q2 / Quotidien moyen",
+    "es": "Q2 / Progresión cotidiana media"
+  },
+  "Q2Standard": {
+    "en": "Q2 / Standard",
+    "it": "Q2 / standard",
+    "de": "Q2 / Standard",
+    "fr": "Q2 / Standard",
+    "es": "Q2 / Estándar"
+  },
+  "Quad": {
+    "en": "Quad",
+    "fr": "Quad",
+    "es": "Cuad.",
+    "it": "Quad.",
+    "ru": "Квадр.",
+    "de": "Quad"
+  },
+  "Quality": {
+    "en": "Quality",
+    "fr": "Qualité",
+    "es": "Cualidad",
+    "it": "Qualità",
+    "ru": "Качество",
+    "de": "Qualität"
+  },
+  "Quincunx": {
+    "en": "Quincunx",
+    "fr": "Quinconce",
+    "es": "Quincuncio",
+    "it": "Quinconce",
+    "ru": "Квиконс",
+    "de": "Quincunx"
+  },
+  "Quintile": {
+    "en": "Quintile",
+    "fr": "Quintile",
+    "es": "Quintil",
+    "it": "Quintile",
+    "ru": "Квинтиль",
+    "de": "Quintil"
+  },
+  "RE": {
+    "en": "Lot",
+    "fr": "Part",
+    "es": "Parte",
+    "it": "Sorte",
+    "ru": "Жребий",
+    "de": "Glückspunkt"
+  },
+  "Radix": {
+    "en": "Radix",
+    "fr": "Radix",
+    "es": "Radix",
+    "it": "Radix",
+    "ru": "Радикс",
+    "de": "Radix"
+  },
+  "RaptContraParallel": {
+    "en": "Rapt Contra-Parallel",
+    "it": "Controparallelo mondano (rapt contra-parallel)",
+    "de": "Raptische Kontraparallele",
+    "fr": "Contre-parallèle rapt",
+    "es": "Contraparalelo rapto"
+  },
+  "RaptParallel": {
+    "en": "Rapt Parallel",
+    "fr": "Parallèle rapt",
+    "es": "Paralelo rapto",
+    "it": "Parallelo mondano (rapt parallel)",
+    "ru": "Рапт параллель",
+    "de": "Rapt-Parallele"
+  },
+  "RealColonFmt": {
+    "en": "Real: %s",
+    "it": "Reale: %s",
+    "de": "Real: %s",
+    "fr": "Réel : %s",
+    "es": "Real: %s"
+  },
+  "Rectification": {
+    "en": "Rectification",
+    "fr": "Rectification",
+    "es": "Rectificación",
+    "it": "Rettifica",
+    "ru": "Ректификация",
+    "de": "Rektifikation"
+  },
+  "RefColon": {
+    "en": "Ref: ",
+    "fr": "Réf. : ",
+    "es": "Ref.: ",
+    "it": "Rif: ",
+    "ru": "Ссылка: ",
+    "de": "Ref.: "
+  },
+  "Regiomontan": {
+    "en": "Regiomontanus",
+    "fr": "Regiomontanus",
+    "es": "Regiomontanus",
+    "it": "Regiomontano",
+    "ru": "по Региомонтану",
+    "de": "Regiomontanus"
+  },
+  "RelChartsCompositeMethod": {
+    "en": "Composite Construction Method...",
+    "fr": "Méthode de construction du composite...",
+    "es": "Método de construcción de la compuesta...",
+    "it": "Metodo di costruzione del tema composito…",
+    "ru": "Метод построения композита...",
+    "de": "Komposit-Konstruktionsmethode..."
+  },
+  "RelChartsSynastryOpensComposite": {
+    "en": "Open Composite first on Synastry launch",
+    "fr": "Ouvrir d'abord le composite au lancement de la synastrie",
+    "es": "Abrir primero la compuesta al iniciar la sinastría",
+    "it": "Apri prima il tema composito all’avvio della sinastria",
+    "ru": "Открывать композит первым при запуске синастрии",
+    "de": "Komposit beim Start der Synastrie zuerst öffnen"
+  },
+  "Relations": {
+    "en": "Relations",
+    "fr": "Relations",
+    "es": "Relaciones",
+    "it": "Relazioni",
+    "ru": "Отношения",
+    "de": "Beziehungen"
+  },
+  "Relationship": {
+    "en": "Relationship",
+    "fr": "Relation",
+    "es": "Relación",
+    "it": "Relazione",
+    "ru": "Отношения",
+    "de": "Beziehung"
+  },
+  "RelationshipCharts": {
+    "en": "Relationship Charts",
+    "fr": "Thèmes relationnels",
+    "es": "Cartas de relación",
+    "it": "Temi relazionali",
+    "ru": "Карты отношений",
+    "de": "Beziehungshoroskope"
+  },
+  "Research": {
+    "en": "Research",
+    "it": "Ricerca",
+    "de": "Forschung",
+    "fr": "Recherche",
+    "es": "Investigación"
+  },
+  "ResultsLimitedSuffix": {
+    "en": " (limited)",
+    "fr": " (liste tronquée)",
+    "es": " (limitados)",
+    "it": " (risultati limitati)",
+    "ru": " (ограничено)",
+    "de": " (begrenzt)"
+  },
+  "RetroStation": {
+    "en": "Retro station",
+    "fr": "Station rétrograde",
+    "it": "Stazione retrograda",
+    "es": "Estación retrógrada",
+    "ru": "Ретроградная стоянка",
+    "de": "stationär-rückläufig"
+  },
+  "Return": {
+    "en": "Return",
+    "it": "Ritorno",
+    "de": "Wiederkehr",
+    "fr": "Révolution",
+    "es": "Retorno"
+  },
+  "Ring item": {
+    "en": "Ring item",
+    "fr": "Élément d'anneau",
+    "es": "Elemento del anillo",
+    "it": "Elemento dell’anello",
+    "ru": "Элемент кольца",
+    "de": "Ringelement"
+  },
+  "RingThickness": {
+    "en": "Ring Thickness",
+    "fr": "Épaisseur de l'anneau",
+    "es": "Grosor del anillo",
+    "it": "Spessore dell’anello",
+    "ru": "Толщина кольца",
+    "de": "Ringstärke"
+  },
+  "Rise": {
+    "en": "Rise",
+    "fr": "Lever",
+    "es": "Orto",
+    "it": "Levata",
+    "ru": "Восход",
+    "de": "Aufgang"
+  },
+  "Ruler": {
+    "en": "Ruler",
+    "fr": "Maître",
+    "es": "Regente",
+    "it": "Signore",
+    "ru": "Управитель",
+    "de": "Herrscher"
+  },
+  "Sag": {
+    "en": "Sag",
+    "fr": "Sag",
+    "es": "Sag",
+    "it": "Sag",
+    "ru": "Стр",
+    "de": "Sch"
+  },
+  "Sassanian": {
+    "en": "Sassanian",
+    "fr": "Sassanide",
+    "es": "Sasánida",
+    "it": "Sasanide",
+    "ru": "Сассанидская",
+    "de": "Sassanidisch"
+  },
+  "Save": {
+    "en": "Save",
+    "fr": "Enregistrer",
+    "es": "Guardar",
+    "it": "Salva",
+    "ru": "Сохранить",
+    "de": "Speichern"
+  },
+  "SaveAsBmp": {
+    "en": "Export...",
+    "fr": "Exporter…",
+    "es": "Exportar...",
+    "it": "Esporta…",
+    "ru": "Экспорт...",
+    "de": "Exportieren..."
+  },
+  "SaveChart": {
+    "en": "Export the chart",
+    "fr": "Exporter le thème",
+    "es": "Exportar la carta",
+    "it": "Esporta il tema",
+    "ru": "Экспортировать карту",
+    "de": "Horoskop exportieren"
+  },
+  "SaveTable": {
+    "en": "Export the table",
+    "fr": "Exporter le tableau",
+    "es": "Exportar la tabla",
+    "it": "Esporta la tabella",
+    "ru": "Экспортировать таблицу",
+    "de": "Tabelle exportieren"
+  },
+  "Sco": {
+    "en": "Sco",
+    "fr": "Sco",
+    "es": "Esc",
+    "it": "Sco",
+    "ru": "Ско",
+    "de": "Sko"
+  },
+  "Score": {
+    "en": "Score",
+    "fr": "Score",
+    "es": "Puntuación",
+    "it": "Punteggio",
+    "ru": "Баллы",
+    "de": "Bewertung"
+  },
+  "Scores": {
+    "en": "Scores",
+    "fr": "Scores",
+    "es": "Puntuaciones",
+    "it": "Punteggi",
+    "ru": "Баллы",
+    "de": "Punkte"
+  },
+  "SearchCancelled": {
+    "en": "Search cancelled",
+    "fr": "Recherche annulée",
+    "es": "Búsqueda cancelada",
+    "it": "Ricerca annullata",
+    "ru": "Поиск отменён",
+    "de": "Suche abgebrochen"
+  },
+  "SearchFailed": {
+    "en": "Search failed",
+    "fr": "Échec de la recherche",
+    "es": "Error en la búsqueda",
+    "it": "Ricerca non riuscita",
+    "ru": "Поиск не удался",
+    "de": "Suche fehlgeschlagen"
+  },
+  "Searching": {
+    "en": "Searching",
+    "fr": "Recherche en cours",
+    "es": "Buscando",
+    "it": "Ricerca in corso",
+    "ru": "Идёт поиск",
+    "de": "Wird gesucht"
+  },
+  "SecPDList": {
+    "en": "sec",
+    "fr": "s",
+    "es": "seg",
+    "it": "sec",
+    "ru": "сек",
+    "de": "Sek"
+  },
+  "SecProgressions": {
+    "en": "Sec. Progressions",
+    "fr": "Progr. secondaires",
+    "es": "Progr. secundarias",
+    "it": "Progr. secondarie",
+    "ru": "Втор. прогрессии",
+    "de": "Sek. Progressionen"
+  },
+  "Secondary ring": {
+    "en": "Secondary ring",
+    "fr": "Anneau secondaire",
+    "es": "Anillo secundario",
+    "it": "Anello secondario",
+    "ru": "Вторичное кольцо",
+    "de": "Sekundärring"
+  },
+  "SecondaryDirections": {
+    "en": "Secondary Directions",
+    "fr": "Directions secondaires",
+    "it": "Direzioni secondarie",
+    "es": "Direcciones secundarias",
+    "ru": "Вторичные дирекции",
+    "de": "Sekundärdirektionen"
+  },
+  "SecondaryProgressions": {
+    "en": "Secondary Progressions",
+    "fr": "Progressions secondaires",
+    "it": "Progressioni secondarie",
+    "es": "Progresiones secundarias",
+    "ru": "Вторичный прогресс",
+    "hu": "Másodlagos előrelépés",
+    "de": "Sekundärprogressionen"
+  },
+  "SecondarySymbolicReal": {
+    "en": "Symbolic: %s • Real: %s",
+    "it": "Simbolico: %s • Reale: %s",
+    "de": "Symbolisch: %s • Real: %s",
+    "fr": "Symbolique : %s • Réel : %s",
+    "es": "Simbólico: %s • Real: %s"
+  },
+  "Semisextile": {
+    "en": "Semisextile",
+    "fr": "Semi-sextile",
+    "es": "Semisextil",
+    "it": "Semisestile",
+    "ru": "Полусекстиль",
+    "de": "Halbsextil"
+  },
+  "Semisquare": {
+    "en": "Semisquare",
+    "fr": "Semi-carré",
+    "es": "Semicuadratura",
+    "it": "Semiquadrato",
+    "ru": "Полуквадрат",
+    "de": "Halbquadrat"
+  },
+  "Sep2": {
+    "en": "sep",
+    "fr": "sept",
+    "es": "sep",
+    "it": "set",
+    "ru": "сен",
+    "de": "Sep"
+  },
+  "SeparatingApprox": {
+    "en": "separating ~{time}",
+    "it": "separativo ~{time}",
+    "de": "separierend ~{time}",
+    "fr": "séparant ~{time}",
+    "es": "separativo ~{time}"
+  },
+  "Septile": {
+    "en": "Septile",
+    "fr": "Septile",
+    "es": "Septil",
+    "it": "Settile",
+    "ru": "Септиль",
+    "de": "Septil"
+  },
+  "Sesquisquare": {
+    "en": "Sesquisquare",
+    "fr": "Sesqui-carré",
+    "es": "Sesquicuadratura",
+    "it": "Sesquiquadrato",
+    "ru": "Полутораквадрат",
+    "de": "Anderthalbquadrat"
+  },
+  "Set": {
+    "en": "Set",
+    "fr": "Coucher",
+    "es": "Ocaso",
+    "it": "Tramonto",
+    "ru": "Заход",
+    "de": "Untergang"
+  },
+  "Sextil": {
+    "en": "Sextile",
+    "fr": "Sextile",
+    "es": "Sextil",
+    "it": "Sestile",
+    "ru": "Секстиль",
+    "de": "Sextil"
+  },
+  "Sextile": {
+    "en": "Sextile",
+    "fr": "Sextile",
+    "es": "Sextil",
+    "it": "Sestile",
+    "ru": "Секстиль",
+    "de": "Sextil"
+  },
+  "ShortcutClosePanel": {
+    "en": "close panel / overlay",
+    "it": "chiudi pannello / sovrapposizione",
+    "de": "Panel/Overlay schließen",
+    "fr": "fermer le panneau / la superposition",
+    "es": "cerrar panel/superposición"
+  },
+  "ShortcutCompare": {
+    "en": "compare",
+    "it": "confronta",
+    "de": "vergleichen",
+    "fr": "comparer",
+    "es": "comparar"
+  },
+  "ShortcutDerivedChartsOnly": {
+    "en": "derived charts only",
+    "it": "solo temi derivati",
+    "de": "Nur abgeleitete Horoskope",
+    "fr": "thèmes dérivés uniquement",
+    "es": "solo cartas derivadas"
+  },
+  "ShortcutDoubleTapShift": {
+    "en": "double-tap shift",
+    "it": "doppio tocco su Maiusc",
+    "de": "Umschalttaste doppelt antippen",
+    "fr": "double pression sur Maj.",
+    "es": "doble pulsación de Mayús"
+  },
+  "ShortcutGroupTimeStep": {
+    "en": "TIME STEP",
+    "it": "PASSO TEMPORALE",
+    "de": "ZEITSCHRITT",
+    "fr": "PAS DE TEMPS",
+    "es": "PASO TEMPORAL"
+  },
+  "ShortcutGroupView": {
+    "en": "VIEW",
+    "it": "VISTA",
+    "de": "ANSICHT",
+    "fr": "AFFICHAGE",
+    "es": "VISTA"
+  },
+  "ShortcutOpenSpotlight": {
+    "en": "open spotlight",
+    "it": "apri Spotlight",
+    "de": "Spotlight öffnen",
+    "fr": "ouvrir Spotlight",
+    "es": "abrir búsqueda"
+  },
+  "ShortcutStepDay": {
+    "en": "day in transits / here-and-now charts",
+    "it": "giorno nei transiti / temi del qui e ora",
+    "de": "Tag in Transiten / Hier-und-Jetzt-Horoskopen",
+    "fr": "jour dans les transits / thèmes Ici et maintenant",
+    "es": "día en tránsitos / cartas de Aquí y ahora"
+  },
+  "ShortcutStepHour": {
+    "en": "step hour",
+    "it": "avanza di un’ora",
+    "de": "um eine Stunde weiterschalten",
+    "fr": "pas d’une heure",
+    "es": "avanzar una hora"
+  },
+  "ShortcutStepLunarQuarter": {
+    "en": "step to next lunar phase quarter",
+    "it": "avanza al quarto di fase lunare successivo",
+    "de": "Schritt zum nächsten Mondphasenviertel",
+    "fr": "passer au prochain quartier lunaire",
+    "es": "avanzar al siguiente cuarto de fase lunar"
+  },
+  "ShortcutStepMinute": {
+    "en": "step minute",
+    "it": "avanza di un minuto",
+    "de": "um eine Minute weiterschalten",
+    "fr": "pas d’une minute",
+    "es": "avanzar un minuto"
+  },
+  "ShortcutStepWeek": {
+    "en": "step a week",
+    "it": "avanza di una settimana",
+    "de": "Eine Woche weiterschalten",
+    "fr": "pas d'une semaine",
+    "es": "avanzar una semana"
+  },
+  "ShowSeconds": {
+    "en": "Show Seconds In Header",
+    "fr": "Afficher les secondes dans l'en-tête",
+    "es": "Mostrar segundos en el encabezado",
+    "it": "Mostra i secondi nell’intestazione",
+    "ru": "Показывать секунды в заголовке",
+    "de": "Sekunden in der Kopfzeile anzeigen"
+  },
+  "Sidebar": {
+    "en": "Sidebar",
+    "fr": "Barre latérale",
+    "es": "Barra lateral",
+    "it": "Barra laterale",
+    "ru": "Боковая панель",
+    "de": "Seitenleiste"
+  },
+  "SidebarText": {
+    "en": "Sidebar text",
+    "fr": "Texte de la barre latérale",
+    "es": "Texto de la barra lateral",
+    "it": "Testo della barra laterale",
+    "ru": "Текст боковой панели",
+    "de": "Seitenleistentext"
+  },
+  "Sizes": {
+    "en": "Sizes",
+    "fr": "Tailles",
+    "es": "Tamaños",
+    "it": "Dimensioni",
+    "ru": "Размеры",
+    "de": "Größen"
+  },
+  "Solar": {
+    "en": "Solar",
+    "fr": "Solaire",
+    "es": "Solar",
+    "it": "Solare",
+    "ru": "Соляр",
+    "de": "Solar"
+  },
+  "Solar2": {
+    "en": "Solar",
+    "fr": "Solaire",
+    "es": "Solar",
+    "it": "Solare",
+    "ru": "Солнечное",
+    "de": "Solar"
+  },
+  "SolarArc": {
+    "en": "Solar Arc",
+    "fr": "Arc solaire",
+    "es": "Arco solar",
+    "it": "Arco solare",
+    "ru": "Солнечная дуга",
+    "de": "Sonnenbogen"
+  },
+  "SolarArcRealFmt": {
+    "en": "Solar Arc: %.6f deg - Real: %s",
+    "it": "Arco solare: %.6f gradi - Reale: %s",
+    "de": "Sonnenbogen: %.6f Grad – Real: %s",
+    "fr": "Arc solaire : %.6f° - Réel : %s",
+    "es": "Arco solar: %.6f grados - Real: %s"
+  },
+  "SolarAverage": {
+    "en": "Solar Average",
+    "it": "Rivoluzione solare media",
+    "de": "Gemitteltes Solarhoroskop",
+    "fr": "Moyenne des révolutions solaires",
+    "es": "Promedio solar"
+  },
+  "SolarAverageAge": {
+    "en": "Average • Age %d-%d",
+    "it": "Media • Età %d–%d",
+    "de": "Durchschnitt • Alter %d-%d",
+    "fr": "Moyenne • Âge %d-%d",
+    "es": "Promedio • Edad %d-%d"
+  },
+  "Source": {
+    "en": "Source",
+    "fr": "Source",
+    "es": "Fuente",
+    "it": "Fonte",
+    "ru": "Источник",
+    "de": "Quelle"
+  },
+  "SouthNode": {
+    "en": "South Node",
+    "it": "Nodo sud",
+    "de": "Absteigender Mondknoten",
+    "fr": "Nœud Sud",
+    "es": "Nodo Sur"
+  },
+  "Spe": {
+    "en": "Spe",
+    "fr": "Spe",
+    "es": "Vel.",
+    "it": "Spe",
+    "ru": "Спе",
+    "de": "Spe"
+  },
+  "SpeculumNote": {
+    "en": "Speculum: %s",
+    "it": "Speculum: %s",
+    "de": "Spekulum: %s",
+    "fr": "Speculum : %s",
+    "es": "Speculum: %s"
+  },
+  "Speed": {
+    "en": "Speed",
+    "fr": "Vitesse",
+    "es": "Velocidad",
+    "it": "Velocità",
+    "ru": "Скорость",
+    "de": "Geschwindigkeit"
+  },
+  "SquareChartTitleFmt": {
+    "en": "Square Chart — %s",
+    "it": "Tema quadrato — %s",
+    "de": "Quadrathoroskop — %s",
+    "fr": "Thème carré — %s",
+    "es": "Carta cuadrada — %s"
+  },
+  "StartSign": {
+    "en": "Start Sign",
+    "fr": "Signe de départ",
+    "es": "Signo inicial",
+    "it": "Segno di partenza",
+    "ru": "Начальный знак",
+    "de": "Startzeichen"
+  },
+  "StartupChartRequiresSavedFile": {
+    "en": "Startup chart requires the active chart to be opened from a saved chart file.",
+    "fr": "Le thème de démarrage nécessite que le thème actif soit ouvert depuis un fichier de thème enregistré.",
+    "es": "La carta de inicio requiere que la carta activa se haya abierto desde un archivo de carta guardado.",
+    "it": "Il tema di avvio richiede che il tema attivo sia aperto da un file di tema salvato.",
+    "ru": "Стартовая карта требует, чтобы активная карта была открыта из сохранённого файла карты.",
+    "de": "Für das Starthoroskop muss das aktive Horoskop aus einer gespeicherten Horoskopdatei geöffnet worden sein."
+  },
+  "Station": {
+    "en": "Station",
+    "it": "Stazione",
+    "de": "Station",
+    "fr": "Station",
+    "es": "Estación"
+  },
+  "StationCazimi": {
+    "en": "Station+Cazimi",
+    "fr": "Station + cazimi",
+    "es": "Estación+Cazimi",
+    "it": "Stazione + Cazimi",
+    "ru": "Стоянка+Cazimi",
+    "de": "Station+Cazimi"
+  },
+  "StationDirect": {
+    "en": "Station (D)",
+    "it": "Stazione (D)",
+    "de": "Station (D)",
+    "fr": "Station (D)",
+    "es": "Estación (D)"
+  },
+  "StationRetrograde": {
+    "en": "Station (Rx)",
+    "it": "Stazione (R)",
+    "de": "Station (Rx)",
+    "fr": "Station (R)",
+    "es": "Estación (Rx)"
+  },
+  "Stationary": {
+    "en": "Stationary",
+    "fr": "Stationnaire",
+    "es": "Estacionario",
+    "it": "Stazionario",
+    "ru": "Стационарный",
+    "de": "Stationär"
+  },
+  "Stationary direct": {
+    "en": "Stationary direct",
+    "fr": "Stationnaire direct",
+    "es": "Estacionario directo",
+    "it": "Stazionario diretto",
+    "ru": "Стационарный директный",
+    "de": "stationär-direktläufig"
+  },
+  "Strip": {
+    "en": "Strip",
+    "fr": "Réglette",
+    "es": "Franja",
+    "it": "Fascia",
+    "ru": "Стрип",
+    "de": "Streifen"
+  },
+  "Study": {
+    "en": "Study",
+    "fr": "Étude",
+    "es": "Estudio",
+    "it": "Studio",
+    "ru": "Исследование",
+    "de": "Studie"
+  },
+  "Surveil point": {
+    "en": "Surveil point",
+    "fr": "Point surveillé",
+    "es": "Punto vigilado",
+    "it": "Punto sorvegliato",
+    "ru": "Отслеживаемая точка",
+    "de": "Überwachungspunkt"
+  },
+  "SurveilHouseCusp": {
+    "en": "House cusp",
+    "it": "Cuspide della casa",
+    "de": "Häuserspitze",
+    "fr": "Cuspide de maison",
+    "es": "Cúspide de casa"
+  },
+  "SurveilHouseCuspN": {
+    "en": "House %d cusp",
+    "it": "Cuspide della casa %d",
+    "de": "Spitze des %d. Hauses",
+    "fr": "Cuspide de la maison %d",
+    "es": "Cúspide de la casa %d"
+  },
+  "SurveilLotOfFortune": {
+    "en": "Lot of Fortune",
+    "it": "Parte di Fortuna",
+    "de": "Glückspunkt",
+    "fr": "Part de Fortune",
+    "es": "Parte de la Fortuna"
+  },
+  "Swiss Ephemeris": {
+    "en": "Swiss Ephemeris",
+    "it": "Swiss Ephemeris",
+    "de": "Swiss Ephemeris",
+    "fr": "Swiss Ephemeris",
+    "es": "Swiss Ephemeris"
+  },
+  "SwissEphemeris": {
+    "en": "Swiss Ephemeris",
+    "fr": "Swiss Ephemeris",
+    "es": "Swiss Ephemeris",
+    "it": "Swiss Ephemeris",
+    "ru": "Swiss Ephemeris",
+    "de": "Swiss Ephemeris"
+  },
+  "SymbolicRealFmt": {
+    "en": "Symbolic: %s - Real: %s",
+    "it": "Simbolico: %s - Reale: %s",
+    "de": "Symbolisch: %s – Real: %s",
+    "fr": "Symbolique : %s - Réel : %s",
+    "es": "Simbólico: %s - Real: %s"
+  },
+  "Synastry": {
+    "en": "Synastry",
+    "fr": "Synastrie",
+    "es": "Sinastría",
+    "it": "Sinastria",
+    "ru": "Синастрия",
+    "de": "Synastrie"
+  },
+  "SynodicCycles": {
+    "en": "Synodic Cycles",
+    "fr": "Cycles synodiques",
+    "es": "Ciclos sinódicos",
+    "it": "Cicli sinodici",
+    "ru": "Синодические циклы",
+    "de": "Synodische Zyklen"
+  },
+  "SystemAuto": {
+    "en": "System (auto)",
+    "fr": "Système (auto)",
+    "es": "Sistema (auto)",
+    "it": "Sistema (automatico)",
+    "ru": "Система (авто)",
+    "de": "System (automatisch)"
+  },
+  "TLPFocusNow": {
+    "en": "Focus NOW",
+    "it": "Metti a fuoco ORA",
+    "de": "JETZT fokussieren",
+    "fr": "Centrer sur MAINTENANT",
+    "es": "Enfocar AHORA"
+  },
+  "TLPSendToWorkspace": {
+    "en": "Send to workspace",
+    "it": "Invia all’area di lavoro",
+    "de": "An den Arbeitsbereich senden",
+    "fr": "Envoyer à l'espace de travail",
+    "es": "Enviar al espacio de trabajo"
+  },
+  "Tab": {
+    "en": "Tab",
+    "fr": "Onglet",
+    "es": "Pestaña",
+    "it": "Tab.",
+    "ru": "Таб",
+    "de": "Tab"
+  },
+  "Tau": {
+    "en": "Tau",
+    "fr": "Tau",
+    "es": "tau",
+    "it": "Tor",
+    "ru": "Тел",
+    "de": "Sti"
+  },
+  "TemporalHour": {
+    "en": "Temporalhour",
+    "fr": "Heure temporelle",
+    "es": "Hora temporal",
+    "it": "Ora temporale",
+    "ru": "Временной час",
+    "de": "Temporalstunde"
+  },
+  "TermInSign": {
+    "en": "Term in %s",
+    "it": "Termine in %s",
+    "de": "Grenze in %s",
+    "fr": "Terme en %s",
+    "es": "Término en %s"
+  },
+  "TermLord": {
+    "en": "Term Lord",
+    "fr": "Maître du terme",
+    "it": "Signore del termine",
+    "es": "Señor del término",
+    "ru": "Управитель терма",
+    "hu": "Úr kifejezés",
+    "de": "Grenzherrscher"
+  },
+  "TermOfLordInSign": {
+    "en": "Term of %s in %s",
+    "it": "Termine di %s in %s",
+    "de": "Grenze von %s in %s",
+    "fr": "Terme de %s en %s",
+    "es": "Término de %s en %s"
+  },
+  "TertiaryProgression": {
+    "en": "Tertiary Progression",
+    "fr": "Progression tertiaire",
+    "es": "Progresión terciaria",
+    "it": "Progressione terziaria",
+    "ru": "Терциарная прогрессия",
+    "de": "Tertiärprogression"
+  },
+  "Text": {
+    "en": "Text",
+    "fr": "Texte",
+    "es": "Texto",
+    "it": "Testo",
+    "ru": "Текст",
+    "de": "Text"
+  },
+  "TimeDays": {
+    "en": "Time (Days)",
+    "fr": "Temps (jours)",
+    "es": "Tiempo (días)",
+    "it": "Tempo (giorni)",
+    "ru": "Время (Дни)",
+    "de": "Zeit (Tage)"
+  },
+  "TimeofBirth": {
+    "en": "Time of Birth",
+    "fr": "Heure de naissance",
+    "es": "Hora de nacimiento",
+    "it": "Ora di nascita",
+    "ru": "Время рождения",
+    "de": "Geburtszeit"
+  },
+  "TimezoneId": {
+    "en": "Timezone id",
+    "fr": "Identifiant du fuseau horaire",
+    "es": "ID de zona horaria",
+    "it": "ID del fuso orario",
+    "ru": "ID часового пояса",
+    "de": "Zeitzonen-ID"
+  },
+  "TipElecContracts": {
+    "en": "Election for signing contracts",
+    "it": "Elezione per la firma di contratti",
+    "de": "Elektion zur Vertragsunterzeichnung",
+    "fr": "Élection pour la signature de contrats",
+    "es": "Elección para la firma de contratos"
+  },
+  "TipElecMarriage": {
+    "en": "Election for marriage",
+    "it": "Elezione per il matrimonio",
+    "de": "Elektion zur Eheschließung",
+    "fr": "Élection pour un mariage",
+    "es": "Elección para casarse"
+  },
+  "TipElecMedical": {
+    "en": "Election for medical procedures",
+    "it": "Elezione per procedure mediche",
+    "de": "Elektion für medizinische Eingriffe",
+    "fr": "Élection pour un acte médical",
+    "es": "Elección para procedimientos médicos"
+  },
+  "TipElecMeetings": {
+    "en": "Election for meetings and negotiations",
+    "it": "Elezione per riunioni e negoziati",
+    "de": "Elektion für Sitzungen und Verhandlungen",
+    "fr": "Élection pour les réunions et négociations",
+    "es": "Elección para reuniones y negociaciones"
+  },
+  "TipElecStartBusiness": {
+    "en": "Election for starting a business or venture",
+    "it": "Elezione per l’avvio di un’attività o iniziativa",
+    "de": "Elektion zur Gründung eines Unternehmens oder Vorhabens",
+    "fr": "Élection pour créer une entreprise ou lancer un projet",
+    "es": "Elección para iniciar un negocio o proyecto"
+  },
+  "TipElecTraveling": {
+    "en": "Election for travel and journeys",
+    "it": "Elezione per viaggi e spostamenti",
+    "de": "Elektion für Reisen",
+    "fr": "Élection pour un voyage",
+    "es": "Elección de viajes y desplazamientos"
+  },
+  "TipHephCourtCase": {
+    "en": "Hephaistion: outcome of a court case or controversy",
+    "it": "Efestione: esito di una causa o controversia",
+    "de": "Hephaistion: Ergebnis eines Gerichtsverfahrens oder einer Kontroverse",
+    "fr": "Hephaistion : issue d'un procès ou d'une controverse",
+    "es": "Hephaistion: resultado de un proceso judicial o controversia"
+  },
+  "TipHephLetters": {
+    "en": "Hephaistion: whether a letter / message reaches its destination",
+    "it": "Efestione: se una lettera o un messaggio giunge a destinazione",
+    "de": "Hephaistion: ob ein Brief/eine Nachricht sein Ziel erreicht",
+    "fr": "Hephaistion : si une lettre/un message atteint sa destination",
+    "es": "Hephaistion: si una carta o mensaje llega a su destino"
+  },
+  "TipHephLostObject": {
+    "en": "Hephaistion: whether a lost object is found",
+    "it": "Efestione: se un oggetto smarrito viene ritrovato",
+    "de": "Hephaistion: ob ein verlorener Gegenstand gefunden wird",
+    "fr": "Hephaistion : si un objet perdu est retrouvé",
+    "es": "Hephaistion: si se encuentra un objeto perdido"
+  },
+  "TipHephReconciliation": {
+    "en": "Hephaistion: whether the parties reconcile",
+    "it": "Efestione: se le parti si riconciliano",
+    "de": "Hephaistion: ob sich die Parteien versöhnen",
+    "fr": "Hephaistion : si les parties se réconcilient",
+    "es": "Hephaistion: si las partes se reconcilian"
+  },
+  "TipHephRelease": {
+    "en": "Hephaistion: when the prisoner is released",
+    "it": "Efestione: quando il prigioniero viene liberato",
+    "de": "Hephaistion: wenn der Gefangene freigelassen wird",
+    "fr": "Hephaistion : quand le prisonnier est libéré",
+    "es": "Hephaistion: cuándo liberan al prisionero"
+  },
+  "TipHephRunaway": {
+    "en": "Hephaistion: whether a runaway slave / servant is found",
+    "it": "Efestione: se uno schiavo o servitore fuggitivo viene ritrovato",
+    "de": "Hephaistion: ob ein entlaufener Sklave/Diener gefunden wird",
+    "fr": "Hephaistion : si un esclave/serviteur en fuite est trouvé",
+    "es": "Hephaistion: si se encuentra a un esclavo o sirviente fugitivo"
+  },
+  "TipHorAbsentPerson": {
+    "en": "Whether an absent person is alive and when they return",
+    "it": "Se una persona assente è viva e quando ritornerà",
+    "de": "Ob eine abwesende Person noch lebt und wann sie zurückkommt",
+    "fr": "Si une personne absente est en vie et quand elle revient",
+    "es": "Si una persona ausente está viva y cuándo regresa"
+  },
+  "TipHorBattle": {
+    "en": "Who shall overcome — battle, lawsuit, contention",
+    "it": "Chi prevarrà — battaglia, causa o contesa",
+    "de": "Wer siegen wird — in Schlacht, Rechtsstreit oder Auseinandersetzung",
+    "fr": "Qui l’emportera — bataille, procès ou conflit",
+    "es": "Quién vencerá — en batalla, pleito o contienda"
+  },
+  "TipHorBuyingSelling": {
+    "en": "Whether a bargain shall be concluded — house, land, commodity",
+    "it": "Se un affare sarà concluso — casa, terreno o merce",
+    "de": "Ob ein Kaufvertrag zustande kommt — über Haus, Land oder Ware",
+    "fr": "Si un marché sera conclu — maison, terre ou marchandise",
+    "es": "Si se cerrará un trato — sobre una casa, un terreno o una mercancía"
+  },
+  "TipHorConsiderations": {
+    "en": "Before-judgment radicality and chart-state aphorisms",
+    "it": "Considerazioni prima del giudizio: aforismi sulla radicalità e sullo stato del tema",
+    "de": "Aphorismen zur Radikalität vor dem Urteil und zum Horoskopzustand",
+    "fr": "Aphorismes sur la radicalité avant jugement et l’état du thème",
+    "es": "Aforismos sobre la radicalidad previa al juicio y el estado de la carta"
+  },
+  "TipHorCounsel": {
+    "en": "Whether counsel given is honest or deceitful",
+    "it": "Se il consiglio ricevuto è sincero o ingannevole",
+    "de": "Ob der erteilte Rat ehrlich oder trügerisch ist",
+    "fr": "Si le conseil donné est honnête ou trompeur",
+    "es": "Si el consejo dado es honesto o engañoso"
+  },
+  "TipHorHonour": {
+    "en": "Whether one shall obtain an office, command, or honour",
+    "it": "Se si otterrà una carica, un comando o un’onorificenza",
+    "de": "Ob jemand ein Amt, Kommando oder eine Ehre erlangt",
+    "fr": "Si l’on obtiendra une fonction, un commandement ou un honneur",
+    "es": "Si se obtendrá un cargo, mando u honor"
+  },
+  "TipHorLongJourney": {
+    "en": "Whether a long journey or sea voyage prospers, when he returns",
+    "it": "Se un lungo viaggio o una traversata avrà buon esito e quando vi sarà il ritorno",
+    "de": "Ob eine lange Reise oder Seereise erfolgreich ist und wann er zurückkehrt",
+    "fr": "Si un long voyage ou un voyage en mer réussira, et quand il reviendra",
+    "es": "Si un viaje largo o por mar prosperará y cuándo regresará"
+  },
+  "TipHorLostObject": {
+    "en": "Find lost or strayed goods, cattle, or servants",
+    "it": "Ritrovare beni, bestiame o servitori perduti o dispersi",
+    "de": "Verlorene oder entlaufene Güter, Vieh oder Bedienstete finden",
+    "fr": "Retrouver des biens, du bétail ou des serviteurs perdus ou égarés",
+    "es": "Encontrar bienes, ganado o sirvientes perdidos o extraviados"
+  },
+  "TipHorMarriage": {
+    "en": "Whether a marriage shall take effect",
+    "it": "Se un matrimonio avrà luogo",
+    "de": "Ob eine Ehe wirksam werden soll",
+    "fr": "Si un mariage prendra effet",
+    "es": "Si un matrimonio surtirá efecto"
+  },
+  "TipHorPartnership": {
+    "en": "Whether a partnership shall hold, and to whose profit",
+    "it": "Se una società durerà e a vantaggio di chi",
+    "de": "Ob eine Partnerschaft Bestand hat und wem sie nützt",
+    "fr": "Si une association durera et à qui elle profitera",
+    "es": "Si una sociedad se mantendrá y a quién beneficiará"
+  },
+  "TipHorPregnancy": {
+    "en": "Whether with child, when she conceives, sex of the child",
+    "it": "Se vi è gravidanza, quando avverrà il concepimento e quale sarà il sesso del nascituro",
+    "de": "Ob sie schwanger ist, wann sie empfängt und welches Geschlecht das Kind hat",
+    "fr": "Si elle est enceinte, quand elle concevra et le sexe de l’enfant",
+    "es": "Si está embarazada, cuándo concebirá y el sexo del hijo"
+  },
+  "TipHorRemoving": {
+    "en": "Whether to remove from this place to another, or stay",
+    "it": "Se trasferirsi altrove o restare",
+    "de": "Ob von diesem Ort an einen anderen umzuziehen oder zu bleiben",
+    "fr": "S'il faut quitter ce lieu pour un autre ou y rester",
+    "es": "Si debe trasladarse de este lugar a otro o quedarse"
+  },
+  "TipHorRumour": {
+    "en": "Whether the news, letter, or report is true or false",
+    "it": "Se una notizia, lettera o voce è vera o falsa",
+    "de": "Ob die Nachricht, der Brief oder der Bericht wahr oder falsch ist",
+    "fr": "Si la nouvelle, la lettre ou le rapport est vrai ou faux",
+    "es": "Si la noticia, carta o informe es verdadera o falsa"
+  },
+  "TipHorShortJourney": {
+    "en": "Whether a short journey is good to go",
+    "it": "Se è propizio intraprendere un breve viaggio",
+    "de": "Ob eine kurze Reise sinnvoll ist",
+    "fr": "Si un court voyage est bon à faire",
+    "es": "Si es bueno hacer un viaje corto"
+  },
+  "TipHorSickness": {
+    "en": "Whether the disease is long or short, life or death",
+    "it": "Se la malattia sarà lunga o breve, con esito di vita o di morte",
+    "de": "Ob die Krankheit lang oder kurz ist, ob es um Leben oder Tod geht",
+    "fr": "Si la maladie sera longue ou brève, et si elle mène à la vie ou à la mort",
+    "es": "Si la enfermedad será larga o breve, y si llevará a la vida o a la muerte"
+  },
+  "TipHorSiege": {
+    "en": "Whether a besieged city, town, or castle shall be taken",
+    "it": "Se una città, borgo o castello assediato sarà conquistato",
+    "de": "Ob eine belagerte Stadt, Ortschaft oder Burg eingenommen wird",
+    "fr": "Si une cité, une ville ou un château assiégé sera pris",
+    "es": "Si se tomará una ciudad, villa o castillo sitiado"
+  },
+  "TipHorStrayedBeast": {
+    "en": "Lost cattle / livestock — whether recovered, alive or dead",
+    "it": "Bestiame smarrito — se sarà ritrovato, vivo o morto",
+    "de": "Verlorenes Vieh — ob es wiedergefunden wird und ob es lebt oder tot ist",
+    "fr": "Bétail perdu — s’il sera retrouvé, vivant ou mort",
+    "es": "Ganado perdido — si se recuperará y si estará vivo o muerto"
+  },
+  "TipHorTheft": {
+    "en": "Whether stolen, by whom, where the thief is, when known",
+    "it": "Se vi è stato un furto, da parte di chi, dove si trova il ladro e quando sarà scoperto",
+    "de": "Ob gestohlen wurde, von wem, wo der Dieb ist und wann dies bekannt wird",
+    "fr": "S’il y a eu vol, par qui, où se trouve le voleur et quand cela sera su",
+    "es": "Si hubo robo, quién lo cometió, dónde está el ladrón y cuándo se sabrá"
+  },
+  "TipHorTreasure": {
+    "en": "Whether treasure is in the ground, or a thing mislaid shall be found",
+    "it": "Se vi è un tesoro nel terreno o se un oggetto smarrito sarà ritrovato",
+    "de": "Ob ein Schatz in der Erde liegt oder etwas Verlorenes gefunden wird",
+    "fr": "S'il y a un trésor dans le sol, ou si une chose égarée sera retrouvée",
+    "es": "Si hay un tesoro en la tierra o si se encontrará algo extraviado"
+  },
+  "Tithi": {
+    "en": "Tithi",
+    "fr": "Tithi",
+    "es": "tithi",
+    "it": "Tithi",
+    "ru": "Титхи",
+    "de": "Tithi"
+  },
+  "To": {
+    "en": "To",
+    "fr": "À",
+    "es": "A",
+    "it": "A",
+    "ru": "К",
+    "de": "Bis"
+  },
+  "ToRadixSuffix": {
+    "en": " to Radix",
+    "it": " al Radix",
+    "de": " zur Radix",
+    "fr": " vers le radix",
+    "es": " al radix"
+  },
+  "ToggleKeyboardShortcuts": {
+    "en": "Toggle keyboard shortcuts",
+    "fr": "Afficher/masquer les raccourcis clavier",
+    "es": "Mostrar/ocultar atajos de teclado",
+    "it": "Mostra/nascondi scorciatoie da tastiera",
+    "ru": "Показать/скрыть клавиатурные сокращения",
+    "de": "Tastaturkürzel umschalten"
+  },
+  "TopicalExaltation": {
+    "en": "Exaltation",
+    "fr": "Exaltation",
+    "es": "Exaltación",
+    "it": "Esaltazione",
+    "ru": "Упр.Экзаль.",
+    "de": "Erhöhung"
+  },
+  "TopicalOpposition": {
+    "en": "Opposition",
+    "fr": "Opposition",
+    "es": "Oposición",
+    "it": "Opposizione",
+    "ru": "Оппозиция",
+    "de": "Opposition"
+  },
+  "TopicalSelf": {
+    "en": "Self",
+    "fr": "Soi",
+    "es": "Sí mismo",
+    "it": "Se stesso",
+    "ru": "Сам/а",
+    "de": "Selbst"
+  },
+  "Total": {
+    "en": "Total",
+    "fr": "Total",
+    "es": "Total",
+    "it": "Totale",
+    "ru": "Всего",
+    "de": "Gesamt"
+  },
+  "Total2": {
+    "en": "Total",
+    "fr": "Totale",
+    "es": "Total",
+    "it": "Totale",
+    "ru": "Полное",
+    "de": "Gesamt"
+  },
+  "TotalScores1": {
+    "en": "Total",
+    "fr": "Total",
+    "es": "Puntuaciones",
+    "it": "Punteggi",
+    "ru": "Всего",
+    "de": "Gesamt"
+  },
+  "TotalScores2": {
+    "en": "Scores",
+    "fr": "Scores",
+    "es": "totales",
+    "it": "totali",
+    "ru": "Баллов",
+    "de": "Punkte"
+  },
+  "TotalShares1": {
+    "en": "Total",
+    "fr": "Total",
+    "es": "Participaciones",
+    "it": "Partecipazioni",
+    "ru": "Всего",
+    "de": "Gesamt"
+  },
+  "Tra": {
+    "en": "Tra",
+    "fr": "Tra",
+    "es": "Tra",
+    "it": "Tra",
+    "ru": "Тра",
+    "de": "Tra"
+  },
+  "Transit": {
+    "en": "Transit",
+    "fr": "Transit",
+    "es": "Tránsito",
+    "it": "Transito",
+    "ru": "Транзит",
+    "de": "Transit"
+  },
+  "TransitSearchTitleFmt": {
+    "en": "Transit Search — %s",
+    "it": "Ricerca dei transiti — %s",
+    "de": "Transitsuche — %s",
+    "fr": "Recherche de transits — %s",
+    "es": "Tránsito Buscar — %s"
+  },
+  "Transits": {
+    "en": "Transits",
+    "fr": "Transits",
+    "es": "Tránsitos",
+    "it": "Transiti",
+    "ru": "Транзиты",
+    "de": "Transite"
+  },
+  "Trial": {
+    "en": "Trial",
+    "fr": "Épreuve",
+    "es": "Prueba",
+    "it": "Prova",
+    "ru": "Суд",
+    "de": "Versuch"
+  },
+  "Trigon Lord": {
+    "en": "Trigon Lord",
+    "fr": "Maître de triplicité",
+    "es": "Regente de triplicidad",
+    "it": "Signore della triplicità",
+    "ru": "Управитель тригона",
+    "de": "Triplizitätsherrscher"
+  },
+  "Trigon lord": {
+    "en": "Trigon lord",
+    "fr": "Maître de triplicité",
+    "es": "Regente de triplicidad",
+    "it": "Signore della triplicità",
+    "ru": "Управитель тригона",
+    "de": "Triplizitätsherrscher"
+  },
+  "Trigon lord (2nd)": {
+    "en": "Trigon lord (2nd)",
+    "fr": "Maître de triplicité (2e)",
+    "es": "Regente de triplicidad (2.º)",
+    "it": "Signore della triplicità (2º)",
+    "ru": "Управитель тригона (2nd)",
+    "de": "Triplizitätsherrscher (2.)"
+  },
+  "Trigon lord (part.)": {
+    "en": "Trigon lord (part.)",
+    "fr": "Maître de triplicité (part.)",
+    "es": "Regente de triplicidad (participante)",
+    "it": "Signore della triplicità (part.)",
+    "ru": "Управитель тригона (part.)",
+    "de": "Triplizitätsherrscher (Teilhaber)"
+  },
+  "Trine": {
+    "en": "Trine",
+    "fr": "Trigone",
+    "es": "Trígono",
+    "it": "Trigono",
+    "ru": "Трин",
+    "de": "Trigon"
+  },
+  "TripRuleNote": {
+    "en": "Rule: 30-year main spans; each child level is one third of its parent and uses the triplicity lords of the natal element occupied by the parent lord.",
+    "it": "Regola: periodi principali di 30 anni; ogni sottolivello dura un terzo del livello superiore e usa i signori della triplicità dell’elemento natale occupato dal signore del livello superiore.",
+    "de": "Regel: 30-jährige Hauptzeiträume; jede untergeordnete Ebene umfasst ein Drittel ihrer übergeordneten Ebene und verwendet die Triplizitätsherrscher des Geburtselements, in dem sich der Herrscher der übergeordneten Ebene befindet.",
+    "fr": "Règle : périodes principales de 30 ans ; chaque niveau enfant vaut un tiers de son parent et utilise les maîtres de triplicité de l’élément natal occupé par le maître parent.",
+    "es": "Regla: períodos principales de 30 años; cada nivel secundario equivale a un tercio de su nivel superior y utiliza los regentes de triplicidad del elemento natal ocupado por el regente superior."
+  },
+  "TripStartSignNote": {
+    "en": "Start sign: %s; %s triplicity.",
+    "it": "Segno iniziale: %s; triplicità %s.",
+    "de": "Startzeichen: %s; %s-Triplizität.",
+    "fr": "Signe de départ : %s ; triplicité %s.",
+    "es": "Signo inicial: %s; triplicidad %s."
+  },
+  "TriplicityDirections": {
+    "en": "Triplicity Directions",
+    "it": "Direzioni di triplicità",
+    "de": "Triplizitätsdirektionen",
+    "fr": "Directions de triplicité",
+    "es": "Direcciones de triplicidad"
+  },
+  "TrueAscendant": {
+    "en": "True Ascendant",
+    "fr": "Ascendant vrai",
+    "es": "Ascendente verdadero",
+    "it": "Ascendente vero",
+    "ru": "Истинный асцендент",
+    "de": "Wahrer Aszendent"
+  },
+  "TrueChitra": {
+    "en": "True Chitra",
+    "fr": "Chitra vraie",
+    "es": "Chitra verdadera",
+    "it": "Chitra vera",
+    "ru": "Истинная Читра",
+    "de": "Wahres Chitra"
+  },
+  "TrueSolarArcLon": {
+    "en": "True Solar Arc (Lon)",
+    "it": "Arco solare vero (Long.)",
+    "de": "Wahrer Sonnenbogen (Lon)",
+    "fr": "Arc solaire vrai (Lon)",
+    "es": "Arco solar verdadero (Lon)"
+  },
+  "TrueSolarArcRA": {
+    "en": "True Solar Arc (RA)",
+    "it": "Arco solare vero (AR)",
+    "de": "Wahrer Sonnenbogen (RA)",
+    "fr": "Arc solaire vrai (AD)",
+    "es": "Arco solar verdadero (AR)"
+  },
+  "Type": {
+    "en": "Type",
+    "fr": "Type",
+    "es": "Tipo",
+    "it": "Tipo",
+    "ru": "Тип",
+    "de": "Typ"
+  },
+  "Typeface": {
+    "en": "Typeface",
+    "fr": "Police",
+    "es": "Tipografía",
+    "it": "Carattere tipografico",
+    "ru": "Шрифт",
+    "de": "Schriftart"
+  },
+  "UseDayNightOrbAlmutens": {
+    "en": "Use Day/Night Orb",
+    "it": "Usa l’orbe diurno/notturno",
+    "es": "Usar orbe diurno/nocturno",
+    "de": "Tag-/Nachtorbis verwenden",
+    "fr": "Utiliser l'orbe jour/nuit"
+  },
+  "Ushashashi": {
+    "en": "Ushashashi",
+    "fr": "Ushashashi",
+    "es": "Ushashashi",
+    "it": "Ushashashi",
+    "ru": "Ушашаши",
+    "de": "Ushashashi"
+  },
+  "Variant": {
+    "en": "Variant",
+    "fr": "Variante",
+    "es": "Variante",
+    "it": "Variante",
+    "ru": "Вариант",
+    "de": "Variante"
+  },
+  "Vir": {
+    "en": "Vir",
+    "fr": "Vie",
+    "es": "Vir",
+    "it": "Ver",
+    "ru": "Дев",
+    "de": "Jun"
+  },
+  "Virgo": {
+    "en": "Virgo",
+    "fr": "Vierge",
+    "es": "Virgo",
+    "it": "Vergine",
+    "ru": "Дева",
+    "de": "Jungfrau"
+  },
+  "WaningCrescent": {
+    "en": "Waning Crescent",
+    "it": "Falce calante",
+    "de": "Abnehmende Sichel",
+    "fr": "Dernier croissant",
+    "es": "Luna menguante"
+  },
+  "WaningGibbous": {
+    "en": "Waning Gibbous",
+    "it": "Gibbosa calante",
+    "de": "Abnehmender Dreiviertelmond",
+    "fr": "Lune gibbeuse décroissante",
+    "es": "Gibosa menguante"
+  },
+  "WaxingCrescent": {
+    "en": "Waxing Crescent",
+    "it": "Falce crescente",
+    "de": "Zunehmende Sichel",
+    "fr": "Premier croissant",
+    "es": "Luna creciente"
+  },
+  "WaxingGibbous": {
+    "en": "Waxing Gibbous",
+    "it": "Gibbosa crescente",
+    "de": "Zunehmender Dreiviertelmond",
+    "fr": "Lune gibbeuse croissante",
+    "es": "Gibosa creciente"
+  },
+  "WholeSign": {
+    "en": "Whole Sign",
+    "fr": "Signes entiers",
+    "es": "Signos enteros",
+    "it": "Segno intero",
+    "ru": "Целые знаки",
+    "de": "Ganzzeichen"
+  },
+  "WithinPolichPageOrb": {
+    "en": "Within Polich/Page orb (25')",
+    "fr": "Dans l'orbe Polich-Page (25′)",
+    "es": "Dentro del orbe de Polich/Page (25′)",
+    "it": "Entro l’orbe Polich/Page (25′)",
+    "ru": "В пределах орбиса Полича/Пейджа (25′)",
+    "de": "Innerhalb des Polich/Page-Orbis (25′)"
+  },
+  "Yukteshwar": {
+    "en": "Yukteshwar",
+    "fr": "Yukteshwar",
+    "es": "Yukteshwar",
+    "it": "Yukteshwar",
+    "ru": "Юктесвар",
+    "de": "Yukteshwar"
+  },
+  "ZRApplySpiritShift": {
+    "en": "Apply Spirit↔Fortune shift",
+    "fr": "Appliquer le décalage Esprit↔Fortune",
+    "es": "Aplicar desplazamiento Espíritu↔Fortuna",
+    "it": "Applica lo spostamento Sorte dello Spirito↔Parte di Fortuna",
+    "ru": "Применить сдвиг Дух↔Фортуна",
+    "de": "Verschiebung Geist↔Glückspunkt anwenden"
+  },
+  "ZRFlags": {
+    "en": "Flags",
+    "fr": "Indicateurs",
+    "es": "Indicadores",
+    "it": "Contrassegni",
+    "ru": "Флаги",
+    "de": "Markierungen"
+  },
+  "ZRInSign": {
+    "en": "in",
+    "fr": "en",
+    "es": "en",
+    "it": "in",
+    "ru": "в",
+    "de": "in"
+  },
+  "ZRReleaser": {
+    "en": "Releaser",
+    "fr": "Libérateur",
+    "es": "Punto de partida",
+    "it": "Sorte di partenza",
+    "ru": "Освободитель",
+    "de": "Auslöser"
+  },
+  "ZRReleaserFortune": {
+    "en": "Fortune",
+    "fr": "Part de Fortune",
+    "es": "Fortuna",
+    "it": "Parte di Fortuna",
+    "ru": "Фортуна",
+    "de": "Glückspunkt"
+  },
+  "ZRReleaserManual": {
+    "en": "Manual sign…",
+    "fr": "Signe manuel…",
+    "es": "Signo manual…",
+    "it": "Segno manuale…",
+    "ru": "Ручной знак…",
+    "de": "Zeichen manuell…"
+  },
+  "ZRReleaserNote": {
+    "en": "Releaser: %s; resolved sign: %s.",
+    "it": "Sorte di partenza: %s; segno risultante: %s.",
+    "de": "Auslöser: %s; ermitteltes Zeichen: %s.",
+    "fr": "Libérateur : %s ; signe déterminé : %s.",
+    "es": "Punto de partida: %s; signo resultante: %s."
+  },
+  "ZRReleaserSpirit": {
+    "en": "Spirit (Daimon)",
+    "fr": "Esprit (Daimon)",
+    "es": "Espíritu (Daimon)",
+    "it": "Sorte dello Spirito (Daimon)",
+    "ru": "Дух (Даймон)",
+    "de": "Geist (Daimon)"
+  },
+  "ZRReleaserSpiritShifted": {
+    "en": "Spirit (shifted →)",
+    "fr": "Esprit (décalé →)",
+    "es": "Espíritu (desplazado →)",
+    "it": "Sorte dello Spirito (spostata →)",
+    "ru": "Дух (смещён →)",
+    "de": "Geist (verschoben →)"
+  },
+  "ZRRuler": {
+    "en": "Ruler",
+    "fr": "Maître",
+    "es": "Regente",
+    "it": "Signore",
+    "ru": "Управитель",
+    "de": "Herrscher"
+  },
+  "ZeroResults": {
+    "en": "0 results",
+    "fr": "0 résultat",
+    "es": "0 resultados",
+    "it": "0 risultati",
+    "ru": "0 результатов",
+    "de": "0 Ergebnisse"
+  },
+  "Zodiacal": {
+    "en": "Zodiacal",
+    "fr": "Zodiacale",
+    "es": "Zodiacal",
+    "it": "Zodiacale",
+    "ru": "Зодиакальная дирекция",
+    "de": "Zodiakal"
+  },
+  "ZoneHour": {
+    "en": "Zone (hour)",
+    "fr": "Fuseau (heure)",
+    "es": "Zona (horas)",
+    "it": "Fuso (ore)",
+    "ru": "Зона (hour)",
+    "de": "Zone (Stunde)"
+  },
+  "ZoneMin": {
+    "en": "Zone (min)",
+    "fr": "Fuseau (min)",
+    "es": "Zona (minutos)",
+    "it": "Fuso (minuti)",
+    "ru": "Зона (min)",
+    "de": "Zone (Min.)"
+  },
+  "applying": {
+    "en": "applying",
+    "it": "applicativo",
+    "de": "applizierend",
+    "fr": "appliquant",
+    "es": "aplicativo"
+  },
+  "aspect": {
+    "en": "aspect",
+    "it": "aspetto",
+    "de": "Aspekt",
+    "fr": "aspect",
+    "es": "aspecto"
+  },
+  "biquintile": {
+    "en": "biquintile",
+    "it": "biquintile",
+    "fr": "bi-quintile",
+    "es": "biquintil",
+    "de": "Biquintil"
+  },
+  "conj.": {
+    "en": "conj.",
+    "it": "cong.",
+    "de": "Konj.",
+    "fr": "conj.",
+    "es": "conj."
+  },
+  "ends": {
+    "en": "ends",
+    "it": "termina",
+    "de": "endet",
+    "fr": "se termine",
+    "es": "termina"
+  },
+  "exact": {
+    "en": "exact",
+    "it": "esatto",
+    "de": "exakt",
+    "fr": "exact",
+    "es": "exacto"
+  },
+  "mean": {
+    "en": "mean",
+    "it": "medio",
+    "de": "mittel",
+    "fr": "moyen",
+    "es": "medio"
+  },
+  "opposition": {
+    "en": "opposition",
+    "it": "opposizione",
+    "fr": "opposition",
+    "es": "oposición",
+    "de": "Opposition"
+  },
+  "quincunx": {
+    "en": "quincunx",
+    "it": "quinconce",
+    "fr": "quinconce",
+    "es": "quincuncio",
+    "de": "Quincunx"
+  },
+  "quintile": {
+    "en": "quintile",
+    "it": "quintile",
+    "fr": "quintile",
+    "es": "quintil",
+    "de": "Quintil"
+  },
+  "semi-sext.": {
+    "en": "semi-sext.",
+    "it": "semisest.",
+    "de": "Halbsext.",
+    "fr": "semi-sext.",
+    "es": "semisextil"
+  },
+  "semi-square": {
+    "en": "semi-square",
+    "it": "semiquadrato",
+    "de": "Halbquadrat",
+    "fr": "semi-carré",
+    "es": "semicuadratura"
+  },
+  "separating": {
+    "en": "separating",
+    "it": "separativo",
+    "de": "separierend",
+    "fr": "séparant",
+    "es": "separando"
+  },
+  "septile": {
+    "en": "septile",
+    "it": "settile",
+    "fr": "septile",
+    "es": "septil",
+    "de": "Septil"
+  },
+  "sesqui-square": {
+    "en": "sesqui-square",
+    "it": "sesquiquadrato",
+    "de": "Anderthalbquadrat",
+    "fr": "sesqui-carré",
+    "es": "sesquicuadratura"
+  },
+  "sextile": {
+    "en": "sextile",
+    "it": "sestile",
+    "fr": "sextile",
+    "es": "sextil",
+    "de": "Sextil"
+  },
+  "square": {
+    "en": "square",
+    "it": "quadrato",
+    "fr": "carré",
+    "es": "cuadratura",
+    "de": "Quadrat"
+  },
+  "trine": {
+    "en": "trine",
+    "it": "trigono",
+    "fr": "trigone",
+    "es": "trígono",
+    "de": "Trigon"
+  }
+}

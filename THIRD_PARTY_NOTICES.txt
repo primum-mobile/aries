@@ -1,0 +1,296 @@
+ARIES THIRD-PARTY NOTICES
+
+This file records licenses and attribution for third-party material redistributed
+with the Aries source tree or application resources. Aries itself is licensed
+under GNU AGPL version 3 or later; see LICENSE.
+
+
+SWISS EPHEMERIS
+
+Aries uses Swiss Ephemeris. Its separate dual-licensing terms and notices are
+provided in SWEP/Ephem/LICENSE, SWEP/Ephem/agpl-3.0.txt, and SWEP/src/LICENSE.
+The open-source Aries distribution uses the AGPL-compatible option.
+
+
+VETTIUS VALENS — ANTHOLOGIES CORPUS RESOURCE
+
+corpus/parsed/valens.json is a separate GPL-2.0-only corpus resource. It is
+derived from the Mark T. Riley English translation of Vettius Valens'
+Anthologies, re-formatted and annotated by Jane Griscti, from the pinned source
+revision:
+
+https://github.com/janegca/latex-valens/tree/2d4a8b9890cd5cb7714abd52f6bd938272ba8237
+
+Aries applies one local typographic correction in book01/01-stars.tex. The
+corresponding LaTeX source snapshot is included in the public source tree at
+third_party/latex-valens-source/ and in packaged applications at
+legal/latex-valens-source/. Its GPL version 2 text is included in
+COPYING-GPL-2.0.txt. The Valens corpus is not relicensed under AGPL-3.0-or-later.
+
+
+MORINUS SYMBOL FONT
+
+Res/Morinus.ttf and webapp/frontend/public/fonts/Morinus.ttf are the same Aries-
+modified symbol font derived from the Morinus 9.6.2 project font. The upstream
+Morinus work is licensed under GNU GPL version 3 or, at your option, any later
+version. Aries modifications to this font are distributed under the same terms.
+The complete GPL version 3 text is in COPYING-GPL-3.0.txt. Source provenance:
+https://sourceforge.net/projects/morinus-updated/
+
+
+SHADCN/UI COMPONENT TEMPLATES
+
+The source files in webapp/frontend/src/components/ui/, together with
+webapp/frontend/src/hooks/use-mobile.ts and webapp/frontend/src/lib/utils.ts,
+were generated from or derived from shadcn/ui component templates. They remain
+under the MIT License.
+
+MIT License
+
+Copyright (c) 2023 shadcn
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Upstream license: https://github.com/shadcn-ui/ui/blob/main/LICENSE.md
+
+
+GNU FREEFONT
+
+Res/FreeSans.ttf, Res/FreeSansBold.ttf, and their identical frontend copies are
+from GNU FreeFont. They are licensed under GNU GPL version 3 or, at your option,
+any later version, with the following font embedding exception. The complete
+GPL version 3 text is in COPYING-GPL-3.0.txt.
+
+As a special exception, if you create a document which uses this font, and embed
+this font or unaltered portions of this font into the document, this font does
+not by itself cause the resulting document to be covered by the GNU General
+Public License. This exception does not however invalidate any other reasons why
+the document might be covered by the GNU General Public License. If you modify
+this font, you may extend this exception to your version of the font, but you are
+not obligated to do so. If you do not wish to do so, delete this exception
+statement from your version.
+
+Project and license: https://www.gnu.org/software/freefont/license.html
+
+
+KOSUGI FONT
+
+Res/FontTrials/Kosugi-Regular.ttf and its identical frontend copy are licensed
+under Apache License 2.0. The complete terms and source attribution are in
+Res/FontTrials/LICENSE-kosugi.txt and Res/FontTrials/sources.txt.
+
+
+DOTGOTHIC16 FONT
+
+Res/FontTrials/DotGothic16-Regular.ttf and its identical frontend copy are
+licensed under SIL Open Font License 1.1. The complete terms and attribution are
+in Res/FontTrials/OFL-dotgothic16.txt and Res/FontTrials/sources.txt.
+
+
+NOTO FONTS
+
+The bundled Noto Sans SC, TC, and KR fonts are licensed under SIL Open Font
+License 1.1. The copyright notice, reserved font name, and complete terms are in
+Res/OFL.txt. Noto Naskh Arabic is also under SIL Open Font License 1.1; its
+complete notice is in webapp/frontend/public/fonts/NotoNaskhArabic-OFL.txt.
+
+
+MAPLIBRE GL JS 5.7.2
+
+Copyright (c) 2023, MapLibre contributors
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+* Neither the name of MapLibre GL JS nor the names of its contributors may be
+  used to endorse or promote products derived from this software without
+  specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Contains code from mapbox-gl-js v1.13 and earlier.
+
+Copyright (c) 2020, Mapbox
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+* Neither the name of Mapbox GL JS nor the names of its contributors may be used
+  to endorse or promote products derived from this software without specific
+  prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Contains code from glfx.js.
+
+Copyright (C) 2011 by Evan Wallace
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Contains a portion of d3-color (https://github.com/d3/d3-color).
+
+Copyright 2010-2016 Mike Bostock
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+* Neither the name of the author nor the names of contributors may be used to
+  endorse or promote products derived from this software without specific prior
+  written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Upstream license:
+https://github.com/maplibre/maplibre-gl-js/blob/v5.7.2/LICENSE.txt
+
+
+PMTILES 3.2.1
+
+The license below applies to the PMTiles reference implementation. The PMTiles
+specification itself is public domain, or CC0 where applicable.
+
+Copyright 2021 Protomaps LLC
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+3. Neither the name of the copyright holder nor the names of its contributors
+   may be used to endorse or promote products derived from this software without
+   specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Upstream license: https://github.com/protomaps/PMTiles/blob/main/LICENSE
+
+
+FFLATE 0.8.2 (BUNDLED IN PMTILES)
+
+MIT License
+
+Copyright (c) 2023 Arjun Barrett
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+GEONAMES DATA
+
+Contains GeoNames Gazetteer data (c) GeoNames, licensed under Creative Commons
+Attribution 4.0 International: https://creativecommons.org/licenses/by/4.0/
+
+Aries filters and transforms the cities500, countryInfo, and admin1 datasets
+into its SQLite and GeoJSON place indexes. No endorsement is implied. Data is
+supplied without warranty of accuracy, timeliness, or completeness.
+
+Source and attribution: https://www.geonames.org/
+
+
+NOTES EDITOR JAVASCRIPT BUNDLE
+
+The notes editor is built from Milkdown, ProseMirror, unified/micromark/remark,
+and related npm packages. Its build enumerates the packages actually included
+by Rollup and generates Res/notes/THIRD_PARTY_LICENSES.txt from each package's
+license and notice files. That generated manifest is included in packaged apps.

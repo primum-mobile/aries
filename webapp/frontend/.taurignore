@@ -1,0 +1,4 @@
+src-tauri/binaries/**
+src-tauri/binaries/*
+binaries/**
+binaries/*

@@ -1,0 +1,318 @@
+:root {
+  --notes-background: #ffffff;
+  --notes-surface: #f8f8f8;
+  --notes-raised: #ffffff;
+  --notes-text: #151515;
+  --notes-muted: #737373;
+  --notes-border: #dedede;
+  --notes-accent: #5576b4;
+  --notes-selection: rgba(85, 118, 180, 0.24);
+  --notes-font-sans: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+  --notes-font-mono: Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  --notes-font-serif: Georgia, "Times New Roman", serif;
+  --notes-titlebar-safe-top: 0px;
+  font-family: var(--notes-font-sans);
+  color: var(--notes-text);
+  background: var(--notes-background);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#notes-app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  color: var(--notes-text);
+  background: var(--notes-background);
+}
+
+#notes-app {
+  display: grid;
+  grid-template-rows: var(--notes-titlebar-safe-top) 32px minmax(0, 1fr);
+  border-top: 0;
+  background: var(--notes-background);
+}
+
+#notes-app::before {
+  content: "";
+  grid-row: 1;
+  min-height: 0;
+}
+
+#notes-toolbar {
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-width: 0;
+  height: 32px;
+  padding: 4px 8px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--notes-background) 94%, var(--notes-surface) 6%);
+  border-bottom: 1px solid color-mix(in srgb, var(--notes-border) 54%, transparent);
+}
+
+.tool-group {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 1px;
+  min-width: 0;
+  height: 24px;
+  padding: 0 5px;
+  overflow: hidden;
+  border-right: 1px solid color-mix(in srgb, var(--notes-border) 38%, transparent);
+  background: transparent;
+}
+
+.tool-group.trailing {
+  flex: 0 0 auto;
+  margin-left: 0;
+  border-left: 1px solid color-mix(in srgb, var(--notes-border) 38%, transparent);
+  border-right: 0;
+}
+
+.toolbar-spacer {
+  flex: 1 1 0;
+  min-width: 0;
+  margin-left: auto;
+  height: 24px;
+}
+
+#notes-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 24px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--notes-muted);
+  background: transparent;
+  font: 650 11.5px/1 var(--notes-font-sans);
+  white-space: nowrap;
+  cursor: default;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+#notes-toolbar button:hover {
+  color: var(--notes-text);
+  background: color-mix(in srgb, var(--notes-surface) 72%, transparent);
+}
+
+#notes-toolbar button:active {
+  color: var(--notes-text);
+  background: color-mix(in srgb, var(--notes-accent) 20%, transparent);
+}
+
+.notes-close-button {
+  flex: 0 0 22px;
+  min-width: 22px;
+  margin-left: 4px;
+  padding: 0 4px;
+  color: color-mix(in srgb, var(--notes-background) 30%, var(--notes-text) 70%);
+  font-weight: 600;
+}
+
+.notes-close-button:hover {
+  color: var(--notes-text);
+  background: transparent;
+}
+
+.notes-close-button:active {
+  color: var(--notes-text);
+  background: transparent;
+}
+
+.is-readonly #notes-toolbar button {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.is-readonly #notes-toolbar button.notes-close-button {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+#editor {
+  grid-row: 3;
+  min-height: 0;
+  overflow: auto;
+  background: var(--notes-background);
+  cursor: text;
+}
+
+.milkdown {
+  height: 100%;
+  min-height: 100%;
+}
+
+.ProseMirror {
+  min-height: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 14px 20px 32px;
+  color: var(--notes-text);
+  background: var(--notes-background);
+  outline: none;
+  font: 13px/1.48 var(--notes-font-sans);
+  caret-color: var(--notes-text);
+}
+
+.ProseMirror ::selection {
+  background: var(--notes-selection);
+}
+
+.ProseMirror-focused {
+  box-shadow: none;
+  outline: none;
+}
+
+.ProseMirror p {
+  margin: 0.28em 0;
+}
+
+.ProseMirror h1,
+.ProseMirror h2,
+.ProseMirror h3,
+.ProseMirror h4,
+.ProseMirror h5,
+.ProseMirror h6 {
+  margin: 0.58em 0 0.18em;
+  color: var(--notes-text);
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.ProseMirror h1 {
+  font-size: 1.36em;
+}
+
+.ProseMirror h2 {
+  font-size: 1.18em;
+}
+
+.ProseMirror h3 {
+  font-size: 1.04em;
+}
+
+.ProseMirror ul,
+.ProseMirror ol {
+  margin: 0.26em 0;
+  padding-left: 1.55em;
+}
+
+.ProseMirror li {
+  margin: 0.03em 0;
+  padding-left: 0.14em;
+}
+
+.ProseMirror li p {
+  margin: 0.04em 0;
+}
+
+.ProseMirror ul[data-type="taskList"],
+.ProseMirror li[data-item-type="task"] {
+  list-style: none;
+}
+
+.ProseMirror li[data-item-type="task"] {
+  position: relative;
+}
+
+.ProseMirror li[data-item-type="task"]::before {
+  position: absolute;
+  left: -1.38em;
+  top: 0.25em;
+  width: 0.74em;
+  height: 0.74em;
+  border: 1px solid var(--notes-muted);
+  border-radius: 2px;
+  content: "";
+  opacity: 0.9;
+}
+
+.ProseMirror li[data-item-type="task"][data-checked="true"]::before {
+  border-color: var(--notes-accent);
+  background: var(--notes-accent);
+  box-shadow: inset 0 0 0 2px var(--notes-background);
+}
+
+.ProseMirror li[data-item-type="task"][data-checked="true"] {
+  color: var(--notes-muted);
+}
+
+.ProseMirror blockquote {
+  margin: 0.38em 0;
+  padding: 0.06em 0 0.06em 0.8em;
+  color: var(--notes-muted);
+  border-left: 2px solid var(--notes-accent);
+}
+
+.ProseMirror a {
+  color: var(--notes-accent);
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.ProseMirror code {
+  padding: 0.06em 0.24em;
+  border: 1px solid color-mix(in srgb, var(--notes-border) 72%, transparent);
+  border-radius: 3px;
+  color: var(--notes-text);
+  background: var(--notes-surface);
+  font: 0.92em/1.4 var(--notes-font-mono);
+}
+
+.ProseMirror pre {
+  margin: 0.42em 0;
+  padding: 0.55em 0.7em;
+  overflow-x: auto;
+  border: 1px solid color-mix(in srgb, var(--notes-border) 70%, transparent);
+  border-radius: 3px;
+  background: var(--notes-surface);
+}
+
+.ProseMirror pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.ProseMirror hr {
+  height: 1px;
+  margin: 1.1em 0;
+  border: 0;
+  background: var(--notes-border);
+}
+
+.ProseMirror-selectednode {
+  outline: 2px solid var(--notes-accent);
+  outline-offset: 2px;
+}
+
+#boot-status {
+  position: absolute;
+  inset: calc(var(--notes-titlebar-safe-top) + 32px) 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: var(--notes-muted);
+  background: var(--notes-background);
+  font: 11px/1.35 var(--notes-font-sans);
+}
+
+#boot-status[hidden] {
+  display: none;
+}

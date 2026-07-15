@@ -1,0 +1,3678 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Morinus Astrocartography</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#1a1d21">
+<link rel="stylesheet" href="vendor/maplibre-gl.css">
+<link rel="preload" href="../Morinus.ttf" as="font" type="font/ttf" crossorigin>
+<style>
+  /* Bundled Morinus font — loaded from Res/Morinus.ttf via a relative URL. */
+  @font-face {
+    font-family: 'Morinus';
+    src: url('../Morinus.ttf') format('truetype');
+    font-display: block;
+  }
+  html {
+    background:#1a1d21;
+    color-scheme:dark;
+  }
+  /* Dark theme (Midnight / Nocturne Mono) — the boot default so embedded
+     webviews and iframes never expose a light browser canvas while the host
+     theme is still loading. */
+  :root {
+    --page-bg:     #1a1d21;
+    --titlebar-safe-top: 0px;
+    --chrome-bg:   rgba(29,30,33,0.88);
+    --chrome-bg-thin: rgba(29,30,33,0.84);
+    --chrome-border:  rgba(255,255,255,0.10);
+    --chrome-rule:    rgba(255,255,255,0.08);
+    --chrome-text:    #e2e3e6;
+    --chrome-dim:     #b0b3b8;
+    --chrome-soft:    #c4c6ca;
+    --btn-active-bg:  rgba(255,255,255,0.12);
+    --btn-hover-bg:   rgba(255,255,255,0.05);
+    --btn-active-fg:  #ffffff;
+    --key-line:       #d0d2d6;
+    --key-paran:      #e59246;
+    --popup-bg:       #23262c;
+    --menu-bg:        rgba(37,39,44,0.88);
+    --menu-border:    rgba(255,255,255,0.14);
+    --menu-shadow:    rgba(0,0,0,0.45);
+    --menu-hover-bg:  #0a84ff;
+    --menu-hover-fg:  #ffffff;
+  }
+  /* Light theme (Daylight / Paper Mono / Classic Morinus) — explicit opt-in. */
+  body.theme-light {
+    --page-bg:     #d9dde1;
+    --chrome-bg:   rgba(255,255,255,0.88);
+    --chrome-bg-thin: rgba(255,255,255,0.84);
+    --chrome-border:  rgba(0,0,0,0.12);
+    --chrome-rule:    rgba(0,0,0,0.08);
+    --chrome-text:    #2d3136;
+    --chrome-dim:     #43484e;
+    --chrome-soft:    #34383d;
+    --btn-active-bg:  rgba(0,0,0,0.09);
+    --btn-hover-bg:   rgba(0,0,0,0.04);
+    --btn-active-fg:  #1a1d21;
+    --key-line:       #2d3136;
+    --key-paran:      #b35800;
+    --popup-bg:       #ffffff;
+    --menu-bg:        rgba(246,246,246,0.88);
+    --menu-border:    rgba(0,0,0,0.18);
+    --menu-shadow:    rgba(0,0,0,0.24);
+    --menu-hover-bg:  #0a84ff;
+    --menu-hover-fg:  #ffffff;
+    color-scheme:light;
+  }
+  html, body, #map { margin:0; padding:0; width:100%; height:100%; background:var(--page-bg); }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color:var(--chrome-text); }
+  .maplibregl-map,
+  .maplibregl-canvas-container,
+  .maplibregl-canvas {
+    background:var(--page-bg) !important;
+  }
+  #map.map-booting .maplibregl-canvas,
+  #map.map-booting .maplibregl-control-container {
+    opacity:0;
+    visibility:hidden;
+  }
+  #place-labels {
+    position:absolute; inset:0; pointer-events:none; overflow:hidden;
+    z-index:3;
+    font-size:11px; line-height:1; color:var(--chrome-soft);
+  }
+  #acg-dom-labels {
+    position:absolute; inset:0; pointer-events:none; overflow:hidden;
+    z-index:3;
+    font-size:11px; line-height:1; color:var(--chrome-text);
+  }
+  #acg-dom-labels.is-moving {
+    opacity:0;
+    transition:opacity 80ms linear;
+  }
+  .place-label, .acg-dom-label {
+    position:absolute; transform:translate(-50%, -50%);
+    text-shadow:0 0 3px var(--popup-bg), 0 0 6px var(--popup-bg);
+    white-space:nowrap; opacity:0.82;
+  }
+  .place-label.major { font-weight:600; color:var(--chrome-text); opacity:0.92; }
+  .acg-dom-label { font-weight:600; opacity:0.9; }
+  .maplibregl-ctrl-top-left { top:var(--titlebar-safe-top); }
+  .maplibregl-ctrl-group {
+    background:var(--chrome-bg);
+    border:1px solid var(--chrome-border);
+    box-shadow:none;
+    overflow:hidden;
+  }
+  .maplibregl-ctrl-group button {
+    width:28px; height:28px;
+    background:transparent;
+  }
+  .maplibregl-ctrl-group button + button {
+    border-top:1px solid var(--chrome-rule);
+  }
+  .maplibregl-ctrl-group button:hover:not(:disabled) {
+    background:var(--btn-hover-bg);
+  }
+  body:not(.theme-light) .maplibregl-ctrl button .maplibregl-ctrl-icon {
+    filter:invert(1);
+    opacity:0.88;
+  }
+  .maplibregl-ctrl-attrib,
+  .maplibregl-ctrl-attrib.maplibregl-compact {
+    background:var(--chrome-bg-thin);
+    color:var(--chrome-dim);
+    border:1px solid var(--chrome-border);
+    box-shadow:none;
+  }
+  .maplibregl-ctrl-attrib a {
+    color:var(--chrome-text);
+  }
+  .maplibregl-ctrl-attrib-button {
+    background-color:transparent;
+    background-image:none !important;
+  }
+  .maplibregl-ctrl-attrib-button:hover {
+    background-color:var(--btn-hover-bg);
+  }
+  .maplibregl-ctrl-attrib-button::before {
+    content:"i";
+    display:block;
+    width:18px; height:18px;
+    margin:auto;
+    border:2px solid var(--chrome-text);
+    border-radius:50%;
+    color:var(--chrome-text);
+    font:700 14px/18px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    text-align:center;
+  }
+  .place-dot {
+    display:inline-block; width:3px; height:3px; border-radius:50%;
+    background:currentColor; margin-right:4px; vertical-align:middle;
+  }
+  #legend {
+    position:absolute; top:calc(var(--titlebar-safe-top) + 8px); right:8px;
+    z-index:7;
+    background:var(--chrome-bg);
+    border-radius:6px; font-size:11px;
+    max-width:210px; line-height:1.4; pointer-events:auto;
+    border:1px solid var(--chrome-border);
+    color:var(--chrome-text);
+    overflow:hidden;
+  }
+  #legend-toggle {
+    width:100%; display:flex; align-items:center; gap:8px;
+    border:0; background:transparent; color:var(--chrome-soft);
+    padding:6px 9px; cursor:pointer; border-radius:5px;
+    font:inherit; font-size:10px; font-weight:600;
+    text-transform:uppercase; letter-spacing:0.08em;
+  }
+  #legend-toggle:hover { background:var(--btn-hover-bg); }
+  #legend-toggle .legend-state {
+    margin-left:auto; color:var(--chrome-dim); font-size:12px; line-height:1;
+  }
+  #legend-body { padding:0 10px 8px 10px; }
+  #legend.collapsed { max-width:none; }
+  #legend.collapsed #legend-body { display:none; }
+  #legend.collapsed #legend-toggle { padding:5px 9px; }
+  #legend h4 { margin:0 0 6px 0; font-size:10px; font-weight:600; color:var(--chrome-soft); opacity:0.75; text-transform:uppercase; letter-spacing:0.08em; }
+  #legend section + section { margin-top:8px; padding-top:8px; border-top:1px solid var(--chrome-rule); }
+  #legend .row { display:flex; align-items:center; gap:6px; }
+  #legend .sw { width:18px; height:2px; flex-shrink:0; }
+  #legend .glyph { font-family:'Morinus', serif; font-size:14px; width:16px; text-align:center; display:inline-block; }
+  #legend .kind-row { display:flex; align-items:center; gap:6px; color:var(--chrome-dim); font-size:10px; }
+  #legend .kind-row .sw { width:24px; }
+  #legend .kind-row .ks { border-top:1.8px solid var(--key-line); width:24px; height:0; }
+  #legend .kind-row .kd { border-top:1.8px dashed var(--key-line); width:24px; height:0; }
+  #legend .kind-row .kp { border-top:1.2px dashed var(--key-paran); width:24px; height:0; }
+  #status {
+    position:absolute; bottom:8px; left:8px;
+    background:var(--chrome-bg-thin); padding:4px 8px;
+    border-radius:4px; font-size:10px; color:var(--chrome-dim);
+    border:1px solid var(--chrome-border);
+  }
+  .maplibregl-popup-content {
+    background:var(--popup-bg) !important; color:var(--chrome-text) !important;
+    border:1px solid var(--chrome-border);
+    font-size:11px; padding:6px 8px;
+  }
+  .maplibregl-popup-tip { border-top-color:var(--popup-bg) !important; }
+  #proj, #overlays {
+    position:absolute; top:calc(var(--titlebar-safe-top) + 8px);
+    z-index:7;
+    background:var(--chrome-bg);
+    border:1px solid var(--chrome-border);
+    border-radius:5px; padding:2px;
+    font-size:11px; display:flex; gap:1px;
+  }
+  #proj { left:88px; }
+  #overlays { left:196px; }
+  #proj button, #overlays button {
+    background:transparent; color:var(--chrome-dim); border:0;
+    min-height:24px; padding:3px 9px; cursor:pointer; border-radius:3px;
+    font: inherit; line-height:16px; letter-spacing:0;
+  }
+  #proj button.on, #overlays button.on {
+    background:var(--btn-active-bg); color:var(--btn-active-fg); font-weight:600;
+  }
+  #proj button:hover:not(.on), #overlays button:hover:not(.on) { background:var(--btn-hover-bg); }
+  #place-search {
+    position:absolute; top:calc(var(--titlebar-safe-top) + 8px); left:280px;
+    z-index:7; width:208px;
+  }
+  #place-search-input {
+    width:100%; box-sizing:border-box;
+    height:28px; padding:0 9px;
+    background:var(--chrome-bg); color:var(--chrome-text);
+    border:1px solid var(--chrome-border); border-radius:5px;
+    font: inherit; font-size:11px; line-height:26px;
+    outline:none; -webkit-appearance:none;
+  }
+  #place-search-input::placeholder {
+    color:var(--chrome-dim); opacity:0.7;
+  }
+  #place-search-input::-webkit-search-cancel-button {
+    -webkit-appearance:none; appearance:none;
+    width:12px; height:12px; margin-right:-2px; cursor:default;
+    background:var(--chrome-dim); opacity:0.55;
+    mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M3 3l6 6M9 3l-6 6' stroke='black' stroke-width='1.6' stroke-linecap='round'/></svg>");
+    mask-repeat:no-repeat; mask-position:center;
+    -webkit-mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M3 3l6 6M9 3l-6 6' stroke='black' stroke-width='1.6' stroke-linecap='round'/></svg>");
+    -webkit-mask-repeat:no-repeat; -webkit-mask-position:center;
+  }
+  #place-search-input:focus { border-color:var(--chrome-soft); }
+  #place-search-results {
+    display:none; margin-top:4px;
+    background:var(--menu-bg); color:var(--chrome-text);
+    border:1px solid var(--menu-border); border-radius:6px;
+    box-shadow:0 16px 36px var(--menu-shadow);
+    padding:4px; max-height:300px; overflow-y:auto;
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+    backdrop-filter: blur(22px) saturate(180%);
+  }
+  .place-search-result {
+    display:flex; align-items:baseline; gap:8px;
+    width:100%; padding:5px 9px;
+    border:0; background:transparent;
+    color:inherit; text-align:left; border-radius:4px;
+    font:inherit; font-size:12px; line-height:1.25;
+    cursor:default;
+  }
+  .place-search-result:hover,
+  .place-search-result.active {
+    background:var(--menu-hover-bg); color:var(--menu-hover-fg);
+  }
+  .place-search-result .name {
+    flex:1 1 auto; min-width:0;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .place-search-result .name .secondary {
+    display:block; font-size:10px; opacity:0.55;
+    line-height:1.2; margin-top:1px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .place-search-result:hover .name .secondary,
+  .place-search-result.active .name .secondary { opacity:0.85; }
+  .place-search-result .country {
+    flex:0 0 auto; font-size:10px; opacity:0.6; letter-spacing:0.04em;
+  }
+  .place-search-result:hover .country,
+  .place-search-result.active .country { opacity:0.85; }
+  .place-search-section {
+    padding:6px 9px 3px;
+    font-size:9px; font-weight:600; letter-spacing:0.08em;
+    text-transform:uppercase; color:var(--chrome-dim); opacity:0.62;
+  }
+  .place-search-section.divider {
+    border-top:1px solid var(--menu-border);
+    margin-top:4px; padding-top:7px;
+  }
+  .place-search-loading {
+    display:flex; align-items:center; gap:7px;
+    padding:6px 9px; color:var(--chrome-dim); font-size:11px;
+  }
+  .place-search-loading::before {
+    content:''; display:inline-block;
+    width:9px; height:9px; border-radius:50%;
+    border:1.5px solid currentColor; border-top-color:transparent;
+    animation:place-search-spin 0.8s linear infinite;
+  }
+  @keyframes place-search-spin { to { transform: rotate(360deg); } }
+  .place-search-empty {
+    padding:6px 9px; color:var(--chrome-dim); font-size:11px;
+  }
+  #acg-menu {
+    position:absolute; z-index:8; min-width:190px; display:none;
+    background:var(--menu-bg); color:var(--chrome-text);
+    border:1px solid var(--menu-border); border-radius:7px;
+    box-shadow:0 16px 36px var(--menu-shadow);
+    padding:5px; font-size:14px;
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+    backdrop-filter: blur(22px) saturate(180%);
+  }
+  #acg-menu button {
+    width:100%; display:block; border:0; background:transparent;
+    color:inherit; text-align:left; border-radius:4px;
+    padding:6px 23px 6px 12px; font:inherit; line-height:1.25;
+    cursor:default;
+  }
+  #acg-menu button:hover {
+    background:var(--menu-hover-bg); color:var(--menu-hover-fg);
+  }
+  #acg-menu hr {
+    margin:4px 6px; border:0; border-top:1px solid var(--menu-border); opacity:0.55;
+  }
+  /* Context-aware menu visibility — items marked data-context="X" only
+     show when window.ACG.setContext('X') is active. Default mode is
+     'chart'; setting a focused host mode surfaces only the matching
+     location-pick action and hides chart-bound items that don't make sense in
+     that flow. */
+  #acg-menu[data-mode="chart"] [data-context]:not([data-context~="chart"]) { display:none; }
+  #acg-menu[data-mode="chart"] hr[data-context~="default_location"] { display:none; }
+  #acg-menu[data-mode="chart"] hr[data-context~="ascensional_event_place"] { display:none; }
+  #acg-menu[data-mode="default_location"] [data-context]:not([data-context~="default_location"]) { display:none; }
+  #acg-menu[data-mode="default_location"] hr[data-context~="chart"] { display:none; }
+  #acg-menu[data-mode="default_location"] hr[data-context~="ascensional_event_place"] { display:none; }
+  #acg-menu[data-mode="ascensional_event_place"] [data-context]:not([data-context~="ascensional_event_place"]) { display:none; }
+  #acg-menu[data-mode="ascensional_event_place"] hr[data-context~="chart"] { display:none; }
+  #acg-menu[data-mode="ascensional_event_place"] hr[data-context~="default_location"] { display:none; }
+  #acg-hint {
+    position:absolute; left:50%; bottom:34px; transform:translateX(-50%);
+    background:var(--menu-bg); color:var(--chrome-text);
+    border:1px solid var(--menu-border); border-radius:7px;
+    box-shadow:0 12px 28px var(--menu-shadow);
+    padding:8px 14px; font-size:12.5px; letter-spacing:0.01em;
+    pointer-events:none; opacity:0; transition:opacity 220ms ease-in-out;
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+    backdrop-filter: blur(22px) saturate(180%);
+    z-index:12;
+  }
+  #acg-hint.on { opacity:0.94; }
+  .acg-birthplace-marker {
+    width:16px; height:16px;
+    display:flex; align-items:center; justify-content:center;
+    cursor:grab; user-select:none; -webkit-user-select:none; touch-action:none;
+  }
+  .acg-birthplace-marker-glyph {
+    color:var(--chrome-text);
+    font:700 15px/16px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    text-shadow:0 0 2px var(--popup-bg), 0 0 5px var(--popup-bg);
+    transform-origin:50% 60%;
+    transition:transform 90ms ease, color 90ms ease;
+  }
+  .acg-birthplace-marker.dragging {
+    cursor:grabbing;
+  }
+  .acg-birthplace-marker.dragging .acg-birthplace-marker-glyph {
+    color:#0a84ff;
+    transform:translateY(-3px) scale(1.2);
+  }
+</style>
+</head>
+<body>
+<div id="map" class="map-booting"></div>
+<div id="place-labels"></div>
+<div id="acg-dom-labels"></div>
+<div id="acg-menu" data-mode="chart">
+  <button data-action="relocation" data-context="chart">Relocation chart</button>
+  <button data-action="solar_return" data-context="chart">Solar revolution here</button>
+  <button data-action="transit" data-context="chart">Transit here</button>
+  <hr data-context="chart">
+  <button data-action="set_pob" data-context="chart">Set place of birth</button>
+  <button data-action="set_default_loc" data-context="default_location">Set default location</button>
+  <button data-action="set_ascensional_event_place" data-context="ascensional_event_place">Set event place</button>
+</div>
+<div id="acg-hint"></div>
+<div id="legend">
+  <button id="legend-toggle" type="button" aria-expanded="true" aria-label="Collapse legend">
+    <span>Legend</span><span class="legend-state">-</span>
+  </button>
+  <div id="legend-body">
+    <section>
+      <h4>Bodies</h4>
+      <div id="legend-rows"></div>
+    </section>
+    <section>
+      <h4>Line Key</h4>
+      <div id="legend-acg-key">
+        <div class="kind-row"><span class="ks"></span><span>MC — culminating</span></div>
+        <div class="kind-row"><span class="kd"></span><span>IC — lower meridian</span></div>
+        <div class="kind-row"><span class="ks"></span><span>ASC — rising</span></div>
+        <div class="kind-row"><span class="kd"></span><span>DSC — setting</span></div>
+      </div>
+      <div class="kind-row" id="legend-local-space-row" style="display:none"><span class="ks"></span><span>Local Space — bearing from origin</span></div>
+      <div class="kind-row" id="legend-paran-row" style="display:none"><span class="kp"></span><span>Paran — A × B co-angular</span></div>
+    </section>
+  </div>
+</div>
+<div id="proj">
+  <button type="button" data-proj="mercator" aria-pressed="false">Flat</button>
+  <button type="button" data-proj="globe" class="on" aria-pressed="true">Globe</button>
+</div>
+<div id="overlays">
+  <button type="button" data-overlay="parans" aria-pressed="false">Parans</button>
+</div>
+<div id="place-search">
+  <input id="place-search-input" type="search" autocomplete="off" spellcheck="false"
+         placeholder="Search a place…" aria-label="Search place" />
+  <div id="place-search-results" role="listbox"></div>
+</div>
+<div id="status">waiting for chart…</div>
+<script src="vendor/maplibre-gl.js"></script>
+<script src="vendor/pmtiles.js"></script>
+<script>
+(function () {
+  let DEV_SETTINGS = {};
+
+  function applyPageBg(bg) {
+    if (!bg || !/^#[0-9a-f]{6}$/i.test(bg)) return;
+    document.documentElement.style.setProperty('--page-bg', bg);
+    document.body.style.setProperty('--page-bg', bg);
+  }
+
+  function applyTitlebarSafeTop(value) {
+    const n = Number(value);
+    const px = Number.isFinite(n) && n > 0 ? Math.min(96, Math.round(n)) : 0;
+    document.documentElement.style.setProperty('--titlebar-safe-top', `${px}px`);
+  }
+
+  // Theme hint passed by the Python host via ?theme=dark|light in the URL
+  // (see astrocartframe._is_dark_theme). Also live-swappable at runtime via
+  // window.ACG.setTheme(name) when the user changes the app's Options →
+  // Colors preset while an astrocart panel is open.
+  const URL_THEME = new URLSearchParams(location.search);
+  let IS_DARK = (URL_THEME.get('theme') || 'dark').toLowerCase() !== 'light';
+  const LOCAL_VECTOR_TILE_URL = URL_THEME.get('tiles') || '';
+  let USE_LOCAL_BASEMAP = false;
+  let USE_MINIMAL_BASEMAP = false;
+  const PLACES_PARAM_RAW = (URL_THEME.get('places') || '').trim();
+  const PLACES_MODE = PLACES_PARAM_RAW.toLowerCase();
+  const PLACE_LABELS_DISABLED = ['none', 'off', '0', 'false'].includes(PLACES_MODE);
+  const PLACE_LABELS_AUTO = PLACES_MODE === 'auto';
+  const PLACE_LABELS_CITY500 = ['auto', 'city500', 'cities500', 'dynamic'].includes(PLACES_MODE);
+  const PLACES_URL = (
+    !PLACES_PARAM_RAW ||
+    PLACE_LABELS_DISABLED ||
+    PLACE_LABELS_AUTO ||
+    PLACE_LABELS_CITY500
+  ) ? (URL_THEME.get('placesUrl') || URL_THEME.get('capitals') || 'places.geojson') : PLACES_PARAM_RAW;
+  const CITY_LABELS_URL = URL_THEME.get('cityLabels') || '/api/astrocart/city-labels';
+  const DAEMON_TOKEN = URL_THEME.get('token') || '';
+  // City labels have two modes:
+  // - default/wx: try places.geojson; under file:// this still fails quietly.
+  // - places=auto: preserve the provider's complete online label hierarchy,
+  //   and use bundled Aries labels only for local/minimal offline basemaps.
+  // Online label ownership and layout are a visual contract: MapLibre keeps
+  // its native collision/line placement, while DOM labels are the fallback.
+  const ACG_DOM_LABELS = true;
+  const ACG_PERF_MODE = ['1', 'true', 'on'].includes(
+    (URL_THEME.get('perf') || '').trim().toLowerCase()
+  );
+  const perfStartedAt = (window.performance && performance.now) ? performance.now() : Date.now();
+  const perfState = {
+    enabled: ACG_PERF_MODE,
+    hasLocalTiles: !!LOCAL_VECTOR_TILE_URL,
+    forceLocalTiles: URL_THEME.get('offline') === '1',
+    tileSource: 'none',
+    mapLoadMs: null,
+    moveEvents: 0,
+    zoomEvents: 0,
+    resizeEvents: 0,
+    renderFrames: 0,
+    longFrames: 0,
+    lastFrameMs: 0,
+    maxFrameMs: 0,
+    frameSamples: [],
+    domLabelRebuilds: 0,
+    domLabelSettleRebuilds: 0,
+    domLabelSkippedWhileMoving: 0,
+    domLabelLastCount: 0,
+    domLabelLastMs: 0,
+    domLabelTotalMs: 0,
+    domLabelMaxMs: 0,
+    placeLabelFetches: 0,
+    placeLabelAborts: 0,
+    placeLabelLastCount: 0,
+    placeLabelLastFetchMs: 0,
+    placeLabelLastRenderMs: 0,
+    placeLabelMaxRenderMs: 0,
+    placeLabelSource: 'none',
+  };
+  let perfLastRenderAt = 0;
+  document.body.classList.toggle('theme-light', !IS_DARK);
+  applyPageBg(URL_THEME.get('pageBg'));
+  applyTitlebarSafeTop(URL_THEME.get('titlebarSafeTop'));
+
+  // OpenFreeMap Liberty is a public vector basemap with OpenMapTiles-style
+  // layers and no API key. We keep the source remote, but restyle it locally
+  // so Morinus can control ocean/land/border/place-label colors directly.
+  const BASE_VECTOR_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
+  let BASE_VECTOR_STYLE = null;
+  const HIDE_LAYER_IDS = new Set([
+    'natural_earth',
+    'label_other',
+    'label_state',
+    'poi_transit',
+    'airport',
+    'road_one_way_arrow',
+    'road_one_way_arrow_opposite',
+    'highway-name-path',
+    'highway-name-minor',
+    'highway-name-major',
+    'highway-shield-non-us',
+    'highway-shield-us-interstate',
+    'road_shield_us',
+    'road_area_pattern',
+    'building-3d',
+  ]);
+  const HIDE_LAYER_PREFIXES = [
+    'park',
+    'landuse_',
+    'landcover_',
+    'aeroway_',
+    'tunnel_',
+    'road_',
+    'bridge_',
+  ];
+  const WATER_LINE_LAYER_IDS = ['waterway_tunnel', 'waterway_river', 'waterway_other'];
+  const WATER_LABEL_LAYER_IDS = ['waterway_line_label', 'water_name_point_label', 'water_name_line_label'];
+  const HOSPITAL_POI_LAYER_IDS = ['poi_r20', 'poi_r7', 'poi_r1'];
+  const HOSPITAL_FILL_LAYER_IDS = ['landuse_hospital'];
+  const BORDER_LAYER_IDS = ['boundary_2', 'boundary_3', 'boundary_disputed'];
+  const PARK_LAYER_IDS = ['park', 'park_outline'];
+  const RESIDENTIAL_LAYER_IDS = ['landuse_residential'];
+  const COUNTRY_LABEL_LAYER_IDS = ['label_country_1', 'label_country_2', 'label_country_3'];
+  const CITY_LABEL_LAYER_IDS = ['label_city', 'label_city_capital'];
+  const MINOR_PLACE_LABEL_LAYER_IDS = ['label_town', 'label_village'];
+  const PLACE_LABEL_LAYER_IDS = [...CITY_LABEL_LAYER_IDS, ...MINOR_PLACE_LABEL_LAYER_IDS];
+  const SUBTLE_ROAD_LAYER_IDS = [
+    'road_trunk_primary',
+    'road_secondary_tertiary',
+    'road_street',
+    'road_minor',
+    'road_link',
+    'road_service_track',
+    'bridge_trunk_primary',
+    'bridge_secondary_tertiary',
+    'bridge_street',
+    'bridge_link',
+    'bridge_service_track',
+    'tunnel_trunk_primary',
+    'tunnel_secondary_tertiary',
+    'tunnel_street',
+    'tunnel_minor',
+    'tunnel_link',
+  ];
+  const STREET_NAME_LAYER_IDS = ['highway-name-major', 'highway-name-minor'];
+  const SIMPLE_PLACE_NAME = ['coalesce', ['get', 'name_en'], ['get', 'name']];
+
+  function buildLocalPmtilesStyle(tilesUrl, isDark) {
+    const s = defaultDevSettings(isDark);
+    return {
+      version: 8,
+      projection: { type: selectedProjection },
+      sky: skyStyle(isDark),
+      sources: {
+        protomaps: {
+          type: 'vector',
+          url: `pmtiles://${tilesUrl}`,
+          attribution: '© OpenStreetMap contributors',
+        },
+      },
+      layers: [
+        { id: 'background', type: 'background', paint: { 'background-color': s.landColor } },
+        { id: 'earth', type: 'fill', source: 'protomaps', 'source-layer': 'earth',
+          paint: { 'fill-color': s.landColor } },
+        { id: 'water', type: 'fill', source: 'protomaps', 'source-layer': 'water',
+          paint: { 'fill-color': s.oceanColor } },
+        { id: 'boundaries-country', type: 'line', source: 'protomaps', 'source-layer': 'boundaries',
+          filter: ['==', ['get', 'kind'], 'country'],
+          paint: { 'line-color': s.borderColor, 'line-width': 0.8, 'line-opacity': 0.62 } },
+        { id: 'boundaries-region', type: 'line', source: 'protomaps', 'source-layer': 'boundaries',
+          filter: ['==', ['get', 'kind'], 'region'],
+          paint: { 'line-color': s.borderColor, 'line-width': 0.45, 'line-opacity': 0.28 } },
+      ],
+    };
+  }
+
+  function buildMinimalOfflineStyle(isDark) {
+    const s = defaultDevSettings(isDark);
+    return {
+      version: 8,
+      projection: { type: selectedProjection },
+      sky: skyStyle(isDark),
+      sources: {},
+      layers: [
+        { id: 'background', type: 'background', paint: { 'background-color': s.landColor } },
+      ],
+    };
+  }
+
+  function buildStyle(_isDark) {
+    if (USE_MINIMAL_BASEMAP) return buildMinimalOfflineStyle(_isDark);
+    if (USE_LOCAL_BASEMAP && LOCAL_VECTOR_TILE_URL) return buildLocalPmtilesStyle(LOCAL_VECTOR_TILE_URL, _isDark);
+    return BASE_VECTOR_STYLE ? prepareBaseStyleForTheme(BASE_VECTOR_STYLE, _isDark) : BASE_VECTOR_STYLE_URL;
+  }
+
+  function skyStyle(isDark) {
+    const s = defaultDevSettings(isDark);
+    return {
+      'sky-color': s.pageBg,
+      'horizon-color': s.pageBg,
+      'fog-color': s.pageBg,
+      'fog-ground-blend': 0,
+      'horizon-fog-blend': 0,
+      'sky-horizon-blend': 0,
+      'atmosphere-blend': 0,
+    };
+  }
+
+  function prepareBaseStyleForTheme(style, isDark) {
+    const s = defaultDevSettings(isDark);
+    const next = JSON.parse(JSON.stringify(style));
+    next.projection = { type: selectedProjection };
+    next.sky = skyStyle(isDark);
+    next.light = Object.assign({ anchor: 'map', position: [1.5, 90, 80] }, next.light || {});
+    for (const layer of next.layers || []) {
+      if (layer && layer.type === 'background') {
+        layer.paint = Object.assign({}, layer.paint || {}, { 'background-color': s.landColor });
+      }
+      if (layer && layer.id === 'natural_earth') {
+        layer.layout = Object.assign({}, layer.layout || {}, { visibility: 'none' });
+      }
+    }
+    return next;
+  }
+
+  function loadBaseVectorStyle(timeoutMs) {
+    if (BASE_VECTOR_STYLE) return Promise.resolve(BASE_VECTOR_STYLE);
+    if (!window.fetch) return Promise.reject(new Error('fetch unavailable'));
+    const controller = window.AbortController ? new AbortController() : null;
+    let timedOut = false;
+    const timeout = timeoutMs > 0 ? window.setTimeout(() => {
+      timedOut = true;
+      if (controller) controller.abort();
+    }, timeoutMs) : null;
+    return fetch(BASE_VECTOR_STYLE_URL, {
+      cache: 'default',
+      signal: controller ? controller.signal : undefined,
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error(`style fetch failed: ${response.status}`);
+        return response.json();
+      })
+      .then((style) => {
+        BASE_VECTOR_STYLE = style;
+        return style;
+      })
+      .catch((error) => {
+        if (timedOut) throw new Error('style fetch timed out');
+        throw error;
+      })
+      .finally(() => {
+        if (timeout != null) window.clearTimeout(timeout);
+      });
+  }
+
+  function themeTokens(isDark) {
+    return {
+      casing:     isDark ? 'rgba(10,12,16,0.85)' : 'rgba(255,255,255,0.85)',
+      labelColor: isDark ? '#e2e3e6'              : '#30343a',
+      labelHalo:  isDark ? 'rgba(10,12,16,0.85)' : 'rgba(255,255,255,0.85)',
+      paranColor: isDark ? '#e59246'              : '#d35400',
+      paranHalo:  isDark ? 'rgba(10,12,16,0.85)' : 'rgba(255,255,255,0.9)',
+      paranOp:    isDark ? 0.7                    : 0.55,
+    };
+  }
+
+  function defaultDevSettings(isDark) {
+    return {
+      pageBg: isDark ? '#1a1d21' : '#d9dde1',
+      oceanColor: isDark ? '#232a32' : '#dfe7f0',
+      landColor: isDark ? '#31353a' : '#eef1f4',
+      borderColor: isDark ? '#59616a' : '#8a929d',
+      countryLabelColor: isDark ? '#d7dbe0' : '#343941',
+      countryLabelHalo: isDark ? 'rgba(10,12,16,0.88)' : 'rgba(255,255,255,0.92)',
+      countryLabelSize: 12.0,
+      countryLabelsOn: true,
+      cityLabelColor: isDark ? '#9ea5ae' : '#5d6773',
+      cityLabelHalo: isDark ? 'rgba(10,12,16,0.88)' : 'rgba(255,255,255,0.92)',
+      cityLabelSize: 10.5,
+      cityLabelsOn: true,
+      minorPlaceLabelColor: isDark ? '#868d95' : '#727b86',
+      minorPlaceLabelHalo: isDark ? 'rgba(10,12,16,0.50)' : 'rgba(255,255,255,0.56)',
+      minorPlaceLabelSize: 9.4,
+      waterLabelColor: isDark ? '#8db5d9' : '#4c6f96',
+      waterLabelHalo: isDark ? 'rgba(10,12,16,0.62)' : 'rgba(255,255,255,0.74)',
+      waterLabelSize: 11.0,
+      hospitalLabelColor: isDark ? '#c2c7cd' : '#555e68',
+      hospitalLabelHalo: isDark ? 'rgba(10,12,16,0.72)' : 'rgba(255,255,255,0.80)',
+      hospitalFillColor: isDark ? 'rgba(182,188,196,0.10)' : 'rgba(88,96,106,0.08)',
+      roadColor: isDark ? '#454d57' : '#c5cdd6',
+      streetNameColor: isDark ? 'rgba(230,235,240,0.42)' : 'rgba(70,78,88,0.42)',
+      streetNameHalo: isDark ? 'rgba(10,12,16,0.22)' : 'rgba(255,255,255,0.26)',
+      buildingColor: isDark ? 'rgba(10,12,16,0.44)' : 'rgba(116,124,134,0.16)',
+      buildingOutlineColor: isDark ? 'rgba(126,134,144,0.14)' : 'rgba(92,100,110,0.12)',
+      parkColor: isDark ? 'rgba(74,92,78,0.14)' : 'rgba(142,168,146,0.16)',
+      parkOutlineColor: isDark ? 'rgba(118,142,122,0.16)' : 'rgba(122,150,126,0.18)',
+      residentialColor: isDark ? 'rgba(70,76,84,0.08)' : 'rgba(174,182,190,0.08)',
+      casingWidth: 3.0,
+      casingOpacity: 0.9,
+      solidWidth: 1.6,
+      solidOpacity: 0.95,
+      dashedWidth: 1.6,
+      dashedOpacity: 0.95,
+      dashedOn: 3.0,
+      dashedOff: 2.0,
+      paranWidth: 1.0,
+      paranOpacity: isDark ? 0.7 : 0.55,
+      paranDashOn: 1.0,
+      paranDashOff: 2.0,
+      labelSize: 11.0,
+      labelSpacing: 0.04,
+      labelHaloWidth: 1.0,
+      labelHaloOn: true,
+      labelsOn: true,
+      paranLabelSize: 11.0,
+      paranLabelSpacing: 0.02,
+      paranLabelHaloWidth: 1.3,
+      paranLabelHaloOn: true,
+      paranLabelsOn: true,
+    };
+  }
+
+  function currentThemeTokens() {
+    return Object.assign({}, themeTokens(IS_DARK), DEV_SETTINGS || {});
+  }
+
+  function currentDevSettings() {
+    return Object.assign({}, defaultDevSettings(IS_DARK), DEV_SETTINGS || {});
+  }
+
+  function hasHiddenPrefix(id) {
+    return HIDE_LAYER_PREFIXES.some(prefix => id.startsWith(prefix));
+  }
+
+  function setLayerVisibility(id, visible) {
+    if (!map || !map.getLayer(id)) return;
+    map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
+  }
+
+  function hospitalNameExpr() {
+    return ['downcase', ['coalesce', ['get', 'name_en'], ['get', 'name'], ['get', 'name_int'], '']];
+  }
+
+  function hospitalNameContainsAny(terms) {
+    return ['any', ...terms.map((term) => ['in', term, hospitalNameExpr()])];
+  }
+
+  function hospitalPoiFilter(id) {
+    const specialtyName = hospitalNameContainsAny([
+      ' clinic',
+      'clinic ',
+      'centre',
+      'center',
+      'oncology',
+      'cancer',
+      'tumor',
+      'tumour',
+      'paediatric',
+      'pediatric',
+      'children',
+      'department',
+      'ambulatory',
+      'outpatient',
+      'institute',
+      'rehab',
+      'rehabilitation',
+      'dialysis',
+      'radiology',
+      'dental',
+      'ophthalm',
+      'psychiatr',
+      'dermatol',
+      'orthop',
+      'cardio',
+    ]);
+    const base = [
+      'all',
+      ['match', ['geometry-type'], ['MultiPoint', 'Point'], true, false],
+      ['any', ['has', 'name_en'], ['has', 'name'], ['has', 'name_int']],
+      ['any',
+        ['==', ['get', 'class'], 'hospital'],
+        ['==', ['get', 'subclass'], 'hospital'],
+      ],
+      ['!', specialtyName],
+    ];
+    if (id === 'poi_r20') return base.concat([['>=', ['get', 'rank'], 20]]);
+    if (id === 'poi_r7') return base.concat([['>=', ['get', 'rank'], 7], ['<', ['get', 'rank'], 20]]);
+    return base.concat([['>=', ['get', 'rank'], 1], ['<', ['get', 'rank'], 7]]);
+  }
+
+  function raiseAcgLayers() {
+    if (!map) return;
+    for (const id of [
+      'eclipse-path-shadow',
+      'eclipse-path-fill',
+      'eclipse-path-outline',
+      'eclipse-path-limits',
+      'eclipse-path-center',
+      'eclipse-path-max',
+      'eclipse-path-label',
+      'acg-casing',
+      'acg-lines-solid',
+      'acg-lines-dashed',
+      'acg-parans',
+      'acg-labels',
+      'acg-paran-labels',
+    ]) {
+      if (map.getLayer(id)) {
+        map.moveLayer(id);
+      }
+    }
+  }
+
+  function forEachGeojsonCoord(coords, visitor) {
+    if (!Array.isArray(coords)) return;
+    if (coords.length >= 2 && typeof coords[0] === 'number' && typeof coords[1] === 'number') {
+      visitor(coords);
+      return;
+    }
+    for (const child of coords) forEachGeojsonCoord(child, visitor);
+  }
+
+  function fitFeatureCollection(geojson) {
+    if (!map || !geojson || !(geojson.features || []).length) return;
+    let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity;
+    for (const feature of geojson.features || []) {
+      if (!feature.geometry) continue;
+      forEachGeojsonCoord(feature.geometry.coordinates, (coord) => {
+        const lon = Number(coord[0]);
+        const lat = Number(coord[1]);
+        if (!Number.isFinite(lon) || !Number.isFinite(lat)) return;
+        minLon = Math.min(minLon, lon);
+        maxLon = Math.max(maxLon, lon);
+        minLat = Math.min(minLat, lat);
+        maxLat = Math.max(maxLat, lat);
+      });
+    }
+    if (!Number.isFinite(minLon) || !Number.isFinite(minLat)) return;
+    if ((maxLon - minLon) > 300) {
+      map.easeTo({ center: [0, (minLat + maxLat) / 2], zoom: globeZoomForViewport(), duration: 400 });
+      return;
+    }
+    try {
+      map.fitBounds([[minLon, minLat], [maxLon, maxLat]], {
+        padding: 72,
+        duration: 500,
+        maxZoom: 4.5,
+      });
+    } catch (_) {}
+  }
+
+  function applyVectorBasemapStyle() {
+    if (!map || !map.getStyle()) return;
+    const s = currentDevSettings();
+    if (typeof map.setSky === 'function') {
+      try { map.setSky(skyStyle(IS_DARK)); } catch (_) {}
+    }
+    const layers = (map.getStyle().layers || []);
+    for (const layer of layers) {
+      const id = layer.id || '';
+      if (HIDE_LAYER_IDS.has(id) || hasHiddenPrefix(id)) {
+        setLayerVisibility(id, false);
+      }
+    }
+    if (map.getLayer('background')) {
+      map.setPaintProperty('background', 'background-color', s.landColor);
+    }
+    if (map.getLayer('building')) {
+      setLayerVisibility('building', true);
+      map.setPaintProperty('building', 'fill-color', s.buildingColor);
+      map.setPaintProperty('building', 'fill-outline-color', s.buildingOutlineColor);
+      map.setPaintProperty(
+        'building',
+        'fill-opacity',
+        ['interpolate', ['linear'], ['zoom'], 12, 0.0, 13, 0.10, 14.5, 0.20, 16, 0.32]
+      );
+    }
+    for (const id of RESIDENTIAL_LAYER_IDS) {
+      if (!map.getLayer(id)) continue;
+      setLayerVisibility(id, true);
+      map.setPaintProperty(id, 'fill-color', s.residentialColor);
+      map.setPaintProperty(id, 'fill-opacity', ['interpolate', ['linear'], ['zoom'], 11, 0.0, 12.5, 0.05, 15, 0.10]);
+    }
+    for (const id of PARK_LAYER_IDS) {
+      if (!map.getLayer(id)) continue;
+      setLayerVisibility(id, true);
+      if (map.getLayer(id).type === 'fill') {
+        map.setPaintProperty(id, 'fill-color', s.parkColor);
+        map.setPaintProperty(id, 'fill-opacity', ['interpolate', ['linear'], ['zoom'], 10, 0.05, 13, 0.10, 16, 0.16]);
+      } else if (map.getLayer(id).type === 'line') {
+        map.setPaintProperty(id, 'line-color', s.parkOutlineColor);
+        map.setPaintProperty(id, 'line-opacity', ['interpolate', ['linear'], ['zoom'], 10, 0.08, 13, 0.14, 16, 0.22]);
+      }
+    }
+    for (const id of HOSPITAL_FILL_LAYER_IDS) {
+      if (!map.getLayer(id)) continue;
+      setLayerVisibility(id, true);
+      if (map.getLayer(id).type === 'fill') {
+        map.setPaintProperty(id, 'fill-color', s.hospitalFillColor);
+        map.setPaintProperty(id, 'fill-opacity', ['interpolate', ['linear'], ['zoom'], 12, 0.0, 14, 0.08, 16, 0.16]);
+      }
+    }
+    if (map.getLayer('water')) {
+      map.setPaintProperty('water', 'fill-color', s.oceanColor);
+    }
+    if (map.getLayer('earth')) {
+      map.setPaintProperty('earth', 'fill-color', s.landColor);
+    }
+    for (const id of ['boundaries-country', 'boundaries-region']) {
+      if (!map.getLayer(id)) continue;
+      map.setPaintProperty(id, 'line-color', s.borderColor);
+    }
+    for (const id of WATER_LINE_LAYER_IDS) {
+      if (!map.getLayer(id)) continue;
+      map.setPaintProperty(id, 'line-color', s.oceanColor);
+      map.setPaintProperty(id, 'line-opacity', 0.65);
+    }
+    for (const id of WATER_LABEL_LAYER_IDS) {
+      if (!map.getLayer(id)) continue;
+      setLayerVisibility(id, true);
+      map.setLayoutProperty(id, 'text-field', SIMPLE_PLACE_NAME);
+      map.setLayoutProperty(id, 'text-font', ['Noto Sans Italic']);
+      map.setLayoutProperty(id, 'text-letter-spacing', 0.12);
+      map.setLayoutProperty(id, 'text-size', id === 'water_name_point_label'
+        ? ['interpolate', ['linear'], ['zoom'], 3, s.waterLabelSize - 1.0, 8, s.waterLabelSize + 2.0]
+        : s.waterLabelSize
+      );
+      map.setPaintProperty(id, 'text-color', s.waterLabelColor);
+      map.setPaintProperty(id, 'text-halo-color', s.waterLabelHalo);
+      map.setPaintProperty(id, 'text-halo-width', 1.05);
+      map.setPaintProperty(id, 'text-halo-blur', 0.45);
+      map.setPaintProperty(id, 'text-opacity', id === 'waterway_line_label' ? 0.62 : 0.74);
+    }
+    for (const id of BORDER_LAYER_IDS) {
+      if (!map.getLayer(id)) continue;
+      map.setPaintProperty(id, 'line-color', s.borderColor);
+    }
+    for (const id of SUBTLE_ROAD_LAYER_IDS) {
+      if (!map.getLayer(id)) continue;
+      setLayerVisibility(id, true);
+      map.setPaintProperty(id, 'line-color', s.roadColor);
+      map.setPaintProperty(
+        id,
+        'line-opacity',
+        ['interpolate', ['linear'], ['zoom'], 9, 0.16, 11, 0.30, 13, 0.48, 15, 0.64]
+      );
+      if (map.getLayer(id).type === 'line') {
+        map.setPaintProperty(
+          id,
+          'line-width',
+          ['interpolate', ['linear'], ['zoom'], 9, 0.55, 12, 0.95, 14, 1.25, 16, 1.60]
+        );
+        map.setPaintProperty(id, 'line-blur', 0.0);
+      }
+    }
+    for (const id of STREET_NAME_LAYER_IDS) {
+      if (!map.getLayer(id)) continue;
+      setLayerVisibility(id, true);
+      map.setLayoutProperty(id, 'text-field', SIMPLE_PLACE_NAME);
+      map.setLayoutProperty(id, 'text-font', ['Noto Sans Regular']);
+      map.setLayoutProperty(
+        id,
+        'text-size',
+        ['interpolate', ['linear'], ['zoom'], 13, 10.5, 14.5, 11.5]
+      );
+      map.setPaintProperty(id, 'text-color', s.streetNameColor);
+      map.setPaintProperty(id, 'text-halo-color', s.streetNameHalo);
+      map.setPaintProperty(id, 'text-halo-width', 0.65);
+      map.setPaintProperty(id, 'text-halo-blur', 0.25);
+    }
+    for (const id of HOSPITAL_POI_LAYER_IDS) {
+      if (!map.getLayer(id)) continue;
+      setLayerVisibility(id, true);
+      try { map.setFilter(id, hospitalPoiFilter(id)); } catch (_) {}
+      try { map.setLayerZoomRange(id, 12, 24); } catch (_) {}
+      map.setLayoutProperty(id, 'icon-image', 'hospital_11');
+      map.setLayoutProperty(id, 'icon-size', 1.0);
+      map.setLayoutProperty(id, 'text-field', SIMPLE_PLACE_NAME);
+      map.setLayoutProperty(id, 'text-font', ['Noto Sans Regular']);
+      map.setLayoutProperty(id, 'text-size', ['interpolate', ['linear'], ['zoom'], 14, 10.5, 16, 11.2, 18, 11.8]);
+      map.setLayoutProperty(id, 'text-line-height', 1.05);
+      map.setLayoutProperty(id, 'text-max-width', 7.0);
+      map.setLayoutProperty(id, 'text-offset', [0, 0.72]);
+      map.setPaintProperty(id, 'text-color', s.hospitalLabelColor);
+      map.setPaintProperty(id, 'text-halo-color', s.hospitalLabelHalo);
+      map.setPaintProperty(id, 'text-halo-width', 1.0);
+      map.setPaintProperty(id, 'text-halo-blur', 0.35);
+      map.setPaintProperty(id, 'text-opacity', 0.82);
+      map.setPaintProperty(id, 'icon-opacity', 0.5);
+    }
+    for (const id of COUNTRY_LABEL_LAYER_IDS) {
+      if (!map.getLayer(id)) continue;
+      setLayerVisibility(id, s.countryLabelsOn);
+      map.setLayoutProperty(id, 'text-field', SIMPLE_PLACE_NAME);
+      map.setLayoutProperty(id, 'text-font', ['Noto Sans Bold']);
+      map.setLayoutProperty(id, 'text-size', s.countryLabelSize);
+      map.setLayoutProperty(id, 'text-letter-spacing', 0.04);
+      map.setLayoutProperty(id, 'text-max-width', 7.0);
+      map.setPaintProperty(id, 'text-color', s.countryLabelColor);
+      map.setPaintProperty(id, 'text-halo-color', s.countryLabelHalo);
+      map.setPaintProperty(id, 'text-halo-blur', 0.8);
+      map.setPaintProperty(id, 'text-halo-width', 1.35);
+      map.setPaintProperty(id, 'text-opacity', 0.92);
+    }
+    for (const id of CITY_LABEL_LAYER_IDS) {
+      if (!map.getLayer(id)) continue;
+      setLayerVisibility(id, s.cityLabelsOn);
+      map.setLayoutProperty(id, 'text-field', SIMPLE_PLACE_NAME);
+      map.setLayoutProperty(id, 'text-font', ['Noto Sans Regular']);
+      map.setLayoutProperty(id, 'text-size', s.cityLabelSize);
+      map.setLayoutProperty(id, 'text-letter-spacing', 0.02);
+      map.setLayoutProperty(id, 'text-max-width', 6.5);
+      map.setLayoutProperty(id, 'text-anchor', 'center');
+      map.setLayoutProperty(id, 'text-offset', [0, 0]);
+      map.setPaintProperty(id, 'text-color', s.cityLabelColor);
+      map.setPaintProperty(id, 'text-halo-color', s.cityLabelHalo);
+      map.setPaintProperty(id, 'text-halo-blur', 0.7);
+      map.setPaintProperty(id, 'text-halo-width', 1.15);
+      map.setPaintProperty(id, 'text-opacity', 0.82);
+      map.setPaintProperty(id, 'icon-opacity', 0.0);
+    }
+    for (const id of MINOR_PLACE_LABEL_LAYER_IDS) {
+      if (!map.getLayer(id)) continue;
+      setLayerVisibility(id, s.cityLabelsOn);
+      map.setLayoutProperty(id, 'text-field', SIMPLE_PLACE_NAME);
+      map.setLayoutProperty(id, 'text-font', ['Noto Sans Regular']);
+      map.setLayoutProperty(id, 'text-size', s.minorPlaceLabelSize);
+      map.setLayoutProperty(id, 'text-letter-spacing', 0.01);
+      map.setLayoutProperty(id, 'text-max-width', 6.2);
+      map.setLayoutProperty(id, 'text-anchor', 'center');
+      map.setLayoutProperty(id, 'text-offset', [0, 0]);
+      map.setPaintProperty(id, 'text-color', s.minorPlaceLabelColor);
+      map.setPaintProperty(id, 'text-halo-color', s.minorPlaceLabelHalo);
+      map.setPaintProperty(id, 'text-halo-blur', 0.2);
+      map.setPaintProperty(id, 'text-halo-width', 0.35);
+      map.setPaintProperty(id, 'text-opacity', 0.64);
+      map.setPaintProperty(id, 'icon-opacity', 0.0);
+    }
+  }
+
+  const KIND_COLORS_FALLBACK = {
+    MC:  '#e74c3c',
+    IC:  '#8e44ad',
+    ASC: '#2ecc71',
+    DSC: '#f39c12',
+  };
+
+  const KIND_DASH = {
+    MC:  [],
+    IC:  [4, 3],
+    ASC: [],
+    DSC: [4, 3],
+  };
+
+  const ACG_SOURCE_ID = 'acg';
+  const ACG_LABEL_SOURCE_ID = 'acg-labels-src';
+  const ECLIPSE_SOURCE_ID = 'eclipse-path';
+
+  let map = null;
+  let mapReady = false;
+  let currentData = { type: 'FeatureCollection', features: [] };
+  let pendingData = null;
+  let currentEclipseData = { type: 'FeatureCollection', features: [] };
+  let pendingEclipseData = null;
+  let pointColors = {};
+  let contextMenuTarget = null;
+  let controlsWired = false;
+  let placesLoaded = false;
+  let placesLoading = false;
+  let placesData = [];
+  // null means no overlay source has been selected yet; [] is a valid dynamic
+  // response for an ocean/empty viewport and must not silently fall through to
+  // the 3 MB static search catalog.
+  let placeLabelData = null;
+  let placeLabelSource = 'none';
+  let staticOverlayRequested = false;
+  let cityLabelsController = null;
+  let cityLabelsTimer = null;
+  let cityLabelsRequestKey = '';
+  let placeLabelRenderRaf = 0;
+  const placeLabelElements = new Map();
+  const acgLabelElements = new Map();
+  const acgLabelAnchorChoices = new Map();
+  let acgLabelCollisionBoxes = [];
+  let pendingViewState = null;
+  let pendingCenter = null;
+  let viewOptions = { parans: false };
+  let viewOptionsInitialized = false;
+  let selectedProjection = 'globe';
+  let legendCollapsed = false;
+  let hintHideTimer = null;
+  let viewStatePostTimer = null;
+  let viewStatePersistenceEnabled = false;
+  let domAcgLabelsMoving = false;
+  let domAcgLabelsDirty = false;
+  let domAcgLabelRaf = 0;
+  let domLabelRendererMode = '';
+  let birthplaceMarker = null;
+  let birthplaceMarkerElement = null;
+  let birthplaceDrag = null;
+  let uiLabels = { birthplaceMarker: '' };
+  const BIRTHPLACE_LONG_PRESS_MS = 420;
+  const BIRTHPLACE_PRESS_MOVE_TOLERANCE_PX = 6;
+
+  function perfNow() {
+    return (window.performance && performance.now) ? performance.now() : Date.now();
+  }
+
+  function percentile(values, p) {
+    if (!values.length) return 0;
+    const sorted = values.slice().sort((a, b) => a - b);
+    const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1));
+    return sorted[index];
+  }
+
+  function setPerfTileSource(source) {
+    perfState.tileSource = source;
+  }
+
+  function recordRenderFrame() {
+    if (!ACG_PERF_MODE) return;
+    const now = perfNow();
+    if (perfLastRenderAt > 0) {
+      const delta = now - perfLastRenderAt;
+      perfState.lastFrameMs = delta;
+      perfState.maxFrameMs = Math.max(perfState.maxFrameMs, delta);
+      if (delta > 34) perfState.longFrames += 1;
+      perfState.frameSamples.push(delta);
+      if (perfState.frameSamples.length > 240) perfState.frameSamples.shift();
+    }
+    perfLastRenderAt = now;
+    perfState.renderFrames += 1;
+  }
+
+  function recordDomLabelPerf(ms, count, reason) {
+    if (!ACG_PERF_MODE) return;
+    perfState.domLabelRebuilds += 1;
+    if (reason === 'moveend' || reason === 'zoomend') {
+      perfState.domLabelSettleRebuilds += 1;
+    }
+    perfState.domLabelLastCount = count;
+    perfState.domLabelLastMs = ms;
+    perfState.domLabelTotalMs += ms;
+    perfState.domLabelMaxMs = Math.max(perfState.domLabelMaxMs, ms);
+  }
+
+  function getPerfState() {
+    const frames = perfState.frameSamples;
+    const frameTotal = frames.reduce((acc, value) => acc + value, 0);
+    const avgFrameMs = frames.length ? frameTotal / frames.length : 0;
+    return {
+      enabled: perfState.enabled,
+      hasLocalTiles: perfState.hasLocalTiles,
+      forceLocalTiles: perfState.forceLocalTiles,
+      tileSource: perfState.tileSource,
+      mapLoadMs: perfState.mapLoadMs,
+      moveEvents: perfState.moveEvents,
+      zoomEvents: perfState.zoomEvents,
+      resizeEvents: perfState.resizeEvents,
+      renderFrames: perfState.renderFrames,
+      longFrames: perfState.longFrames,
+      lastFrameMs: perfState.lastFrameMs,
+      avgFrameMs,
+      p95FrameMs: percentile(frames, 95),
+      maxFrameMs: perfState.maxFrameMs,
+      domLabelRebuilds: perfState.domLabelRebuilds,
+      domLabelSettleRebuilds: perfState.domLabelSettleRebuilds,
+      domLabelSkippedWhileMoving: perfState.domLabelSkippedWhileMoving,
+      domLabelLastCount: perfState.domLabelLastCount,
+      domLabelLastMs: perfState.domLabelLastMs,
+      domLabelAvgMs: perfState.domLabelRebuilds ? perfState.domLabelTotalMs / perfState.domLabelRebuilds : 0,
+      domLabelMaxMs: perfState.domLabelMaxMs,
+      placeLabelFetches: perfState.placeLabelFetches,
+      placeLabelAborts: perfState.placeLabelAborts,
+      placeLabelLastCount: perfState.placeLabelLastCount,
+      placeLabelLastFetchMs: perfState.placeLabelLastFetchMs,
+      placeLabelLastRenderMs: perfState.placeLabelLastRenderMs,
+      placeLabelMaxRenderMs: perfState.placeLabelMaxRenderMs,
+      placeLabelSource: perfState.placeLabelSource,
+      elapsedMs: perfNow() - perfStartedAt,
+    };
+  }
+
+  function postPerfSnapshot(reason) {
+    if (!ACG_PERF_MODE) return;
+    postToParent({ type: 'perf', reason: reason || 'snapshot', state: getPerfState() });
+  }
+
+  // Calibrated empirically on an M2 MacBook (1920×1080 logical), ~1040 px
+  // map panel: at zoom 2.7 the visual sphere ≈ 1040 px, giving the scaling
+  // relation  diameter_px ≈ 160 · 2^z  (not 256·2^z — MapLibre's globe
+  // visual scale differs from its Mercator tile scale). So to target a
+  // sphere that fills ``shrinkFactor`` of the shorter viewport dim:
+  //     z = log2(shrinkFactor · min(W, H) / 160)
+  // With minZoom: -2 on the Map so MapLibre doesn't clamp us back up.
+  const GLOBE_VISUAL_SCALE = 160;
+  function globeZoomForViewport(shrinkFactor = 0.96) {
+    const W = window.innerWidth  || 800;
+    const H = window.innerHeight || 600;
+    const D = Math.min(W, H) * shrinkFactor;
+    return Math.log2(D / GLOBE_VISUAL_SCALE);
+  }
+
+  function initMap() {
+    if (!window.maplibregl || !window.maplibregl.Map) {
+      showMapUnavailable('Map renderer unavailable offline');
+      return;
+    }
+    ensureViewOptionDefaults();
+    if (window.pmtiles && maplibregl.addProtocol) {
+      const protocol = new pmtiles.Protocol();
+      maplibregl.addProtocol('pmtiles', protocol.tile);
+    }
+    map = new maplibregl.Map({
+      container: 'map',
+      style: buildStyle(IS_DARK),
+      center: [0, 20],
+      zoom: globeZoomForViewport(),
+      minZoom: -2,                        // let the sphere shrink below MapLibre's auto clamp
+      projection: { type: selectedProjection },
+      attributionControl: { compact: true },
+    });
+    let fallbackStylePending = false;
+    let startupFallbackTimer = window.setTimeout(() => {
+      if (mapReady) return;
+      if (USE_LOCAL_BASEMAP && !USE_MINIMAL_BASEMAP) {
+        USE_LOCAL_BASEMAP = false;
+        USE_MINIMAL_BASEMAP = true;
+        fallbackStylePending = true;
+        setPerfTileSource('minimal');
+        armFallbackTimer();
+        try { map.setStyle(buildMinimalOfflineStyle(IS_DARK)); } catch (_) {
+          showMapUnavailable('Map tiles unavailable');
+        }
+        return;
+      }
+      if (!USE_MINIMAL_BASEMAP) {
+        switchToOfflineFallback();
+        return;
+      }
+      showMapUnavailable('Map tiles unavailable');
+    }, 8000);
+    const armFallbackTimer = () => {
+      window.clearTimeout(startupFallbackTimer);
+      startupFallbackTimer = window.setTimeout(() => {
+        if (!fallbackStylePending) return;
+        if (USE_LOCAL_BASEMAP) {
+          USE_LOCAL_BASEMAP = false;
+          USE_MINIMAL_BASEMAP = true;
+          fallbackStylePending = true;
+          setPerfTileSource('minimal');
+          try { map.setStyle(buildMinimalOfflineStyle(IS_DARK)); } catch (_) {
+            showMapUnavailable('Map tiles unavailable');
+          }
+          return;
+        }
+        showMapUnavailable('Map tiles unavailable');
+      }, 5000);
+    };
+    const switchToOfflineFallback = () => {
+      if (!map || fallbackStylePending || USE_LOCAL_BASEMAP || USE_MINIMAL_BASEMAP) return;
+      USE_LOCAL_BASEMAP = !!LOCAL_VECTOR_TILE_URL;
+      USE_MINIMAL_BASEMAP = !USE_LOCAL_BASEMAP;
+      fallbackStylePending = true;
+      setPerfTileSource(USE_LOCAL_BASEMAP ? 'local' : 'minimal');
+      setStatus(USE_LOCAL_BASEMAP ? 'loading offline map…' : 'map ready');
+      armFallbackTimer();
+      try {
+        map.setStyle(buildStyle(IS_DARK));
+      } catch (_) {
+        if (USE_LOCAL_BASEMAP) {
+          USE_LOCAL_BASEMAP = false;
+          USE_MINIMAL_BASEMAP = true;
+          setPerfTileSource('minimal');
+          map.setStyle(buildMinimalOfflineStyle(IS_DARK));
+        }
+      }
+    };
+    // Re-fit globe zoom on container resize so the sphere keeps matching the
+    // viewport. Mercator mode stays put (user may have panned).
+    // Intentionally no auto zoom-reset on resize: once the user (or apply_state)
+    // has set a viewport we must not clobber it. Use window.ACG.fitGlobe()
+    // explicitly if you want to re-centre the sphere in the current viewport.
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
+    map.on('style.load', () => {
+      const firstStyleLoad = !mapReady;
+      window.clearTimeout(startupFallbackTimer);
+      fallbackStylePending = false;
+      applyVectorBasemapStyle();
+      ensureEclipseLayers();
+      ensureAcgLayers();
+      loadPlaceLabels();
+      if (map && typeof map.once === 'function') {
+        map.once('idle', () => {
+          schedulePlaceLabelsRender('idle');
+          scheduleCityLabelsRefresh('idle');
+        });
+      }
+      if (firstStyleLoad) {
+        // Force-apply the currently selected projection at first render.
+        // Some environments initialise MapLibre in an interim projection;
+        // this must not overwrite a user click made while the style loads.
+        try { map.setProjection({ type: selectedProjection }); } catch (_) {}
+        if (selectedProjection === 'globe') {
+          map.jumpTo({ zoom: globeZoomForViewport() });
+        }
+      }
+      applyPendingCamera();
+      if (pendingData) { currentData = pendingData; pendingData = null; }
+      let fitPendingEclipse = false;
+      if (pendingEclipseData) {
+        currentEclipseData = pendingEclipseData;
+        pendingEclipseData = null;
+        fitPendingEclipse = true;
+      }
+      pushData();
+      pushEclipseData({ fit: fitPendingEclipse });
+      mapReady = true;
+      postToParent({ type: 'ready' });
+      if (firstStyleLoad) {
+        perfState.mapLoadMs = perfNow() - perfStartedAt;
+        postPerfSnapshot('map-ready');
+      }
+      revealMapAfterStyledPaint();
+      setStatus(`${(currentData.features || []).length} lines loaded`);
+    });
+    for (const layer of ['acg-lines-solid', 'acg-lines-dashed']) {
+      map.on('click', layer, onLineClick);
+      map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
+    }
+    for (const layer of ['eclipse-path-shadow', 'eclipse-path-fill', 'eclipse-path-limits', 'eclipse-path-center', 'eclipse-path-max']) {
+      map.on('click', layer, onEclipseClick);
+      map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
+    }
+    map.on('error', (event) => {
+      if (fallbackStylePending) {
+        // Ignore late errors from the abandoned online style. A confirmed
+        // failure from our PMTiles source falls through to the bundled-data
+        // minimal style; the timer covers source-less/ambiguous failures.
+        if (USE_LOCAL_BASEMAP && event && event.sourceId === 'protomaps') {
+          USE_LOCAL_BASEMAP = false;
+          USE_MINIMAL_BASEMAP = true;
+          setPerfTileSource('minimal');
+          armFallbackTimer();
+          try { map.setStyle(buildMinimalOfflineStyle(IS_DARK)); } catch (_) {}
+        }
+        return;
+      }
+      if (USE_LOCAL_BASEMAP && event && event.sourceId === 'protomaps') {
+        USE_LOCAL_BASEMAP = false;
+        USE_MINIMAL_BASEMAP = true;
+        fallbackStylePending = true;
+        setPerfTileSource('minimal');
+        armFallbackTimer();
+        try { map.setStyle(buildMinimalOfflineStyle(IS_DARK)); } catch (_) {}
+        return;
+      }
+      if (!USE_LOCAL_BASEMAP && !USE_MINIMAL_BASEMAP) {
+        const sourceId = String(event && event.sourceId || '');
+        if (sourceId === ACG_SOURCE_ID || sourceId === ECLIPSE_SOURCE_ID) return;
+        // Once the online style has loaded, keep it. Individual tile/glyph
+        // errors must never replace the established online design mid-session.
+        if (!mapReady) switchToOfflineFallback();
+      }
+    });
+    map.on('contextmenu', onMapContextMenu);
+    map.on('click', hideContextMenu);
+    if (ACG_PERF_MODE) map.on('render', recordRenderFrame);
+    map.on('movestart', () => beginDomAcgMovement('move'));
+    map.on('zoomstart', () => beginDomAcgMovement('zoom'));
+    map.on('move', () => {
+      if (ACG_PERF_MODE) perfState.moveEvents += 1;
+      scheduleDomAcgLabels('move');
+    });
+    map.on('zoom', () => {
+      if (ACG_PERF_MODE) perfState.zoomEvents += 1;
+      scheduleDomAcgLabels('zoom');
+    });
+    map.on('resize', () => {
+      if (ACG_PERF_MODE) perfState.resizeEvents += 1;
+      scheduleCityLabelsRefresh('resize');
+      scheduleDomAcgLabels('resize');
+    });
+    map.on('moveend', () => {
+      endDomAcgMovement('moveend');
+      scheduleCityLabelsRefresh('moveend');
+      scheduleViewStatePost('moveend');
+    });
+    map.on('zoomend', () => {
+      endDomAcgMovement('zoomend');
+      scheduleCityLabelsRefresh('zoomend');
+    });
+    wireControlsOnce();
+    setStatus('map ready');
+  }
+
+  function revealMapAfterStyledPaint() {
+    const mapEl = document.getElementById('map');
+    if (!mapEl || !mapEl.classList.contains('map-booting')) return;
+    const reveal = () => mapEl.classList.remove('map-booting');
+    if (map && typeof map.once === 'function') {
+      let rendered = 0;
+      const afterRender = () => {
+        rendered += 1;
+        if (rendered < 2) {
+          map.once('render', afterRender);
+          if (typeof map.triggerRepaint === 'function') map.triggerRepaint();
+          return;
+        }
+        window.requestAnimationFrame(reveal);
+      };
+      map.once('render', afterRender);
+      if (typeof map.triggerRepaint === 'function') map.triggerRepaint();
+      return;
+    }
+    window.requestAnimationFrame(reveal);
+  }
+
+  function hideMapUntilStyledPaint() {
+    const mapEl = document.getElementById('map');
+    if (mapEl) mapEl.classList.add('map-booting');
+  }
+
+  function showMapUnavailable(message) {
+    setPerfTileSource('none');
+    postPerfSnapshot('map-unavailable');
+    const container = document.getElementById('map');
+    if (container) {
+      container.classList.remove('map-booting');
+      container.innerHTML = `<div style="padding:14px;color:var(--chrome-dim);font-size:12px">${message}</div>`;
+    }
+    setStatus(message);
+  }
+
+  function bootMap() {
+    if (URL_THEME.get('offline') === '1') {
+      USE_LOCAL_BASEMAP = !!LOCAL_VECTOR_TILE_URL;
+      USE_MINIMAL_BASEMAP = !USE_LOCAL_BASEMAP;
+      setPerfTileSource(USE_LOCAL_BASEMAP ? 'local' : 'minimal');
+      setStatus(USE_LOCAL_BASEMAP ? 'loading offline map…' : 'map ready');
+      initMap();
+      return;
+    }
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      USE_LOCAL_BASEMAP = !!LOCAL_VECTOR_TILE_URL;
+      USE_MINIMAL_BASEMAP = !USE_LOCAL_BASEMAP;
+      setPerfTileSource(USE_LOCAL_BASEMAP ? 'local' : 'minimal');
+      setStatus(USE_LOCAL_BASEMAP ? 'loading offline map…' : 'map ready');
+      initMap();
+      return;
+    }
+    // Fetch the actual style once.  A local archive caps cold/offline waiting
+    // at 650 ms; without one, allow a bounded online attempt instead of an
+    // unbounded probe + duplicate style request.
+    setStatus('loading map…');
+    loadBaseVectorStyle(2500).then(
+      () => {
+        USE_LOCAL_BASEMAP = false;
+        setPerfTileSource('online');
+        initMap();
+      },
+      () => {
+        if (LOCAL_VECTOR_TILE_URL) {
+          USE_LOCAL_BASEMAP = true;
+          setPerfTileSource('local');
+          initMap();
+        } else {
+          USE_MINIMAL_BASEMAP = true;
+          setPerfTileSource('minimal');
+          initMap();
+        }
+      },
+    );
+  }
+
+  function ensureEclipseLayers() {
+    if (!map.getSource(ECLIPSE_SOURCE_ID)) {
+      map.addSource(ECLIPSE_SOURCE_ID, { type: 'geojson', data: currentEclipseData });
+    }
+    const fillColor = IS_DARK ? 'rgba(5, 6, 7, 0.34)' : 'rgba(38, 42, 46, 0.18)';
+    const outlineColor = IS_DARK ? '#c8c2b5' : '#5e6872';
+    const centerColor = IS_DARK ? '#d9b760' : '#8a6418';
+    const haloColor = IS_DARK ? 'rgba(8, 11, 15, 0.92)' : 'rgba(255, 255, 255, 0.92)';
+    if (!map.getLayer('eclipse-path-shadow')) {
+      map.addLayer({
+        id: 'eclipse-path-shadow',
+        type: 'line',
+        source: ECLIPSE_SOURCE_ID,
+        filter: ['==', ['get', 'kind'], 'ECLIPSE_SHADOW'],
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
+        paint: {
+          'line-color': fillColor,
+          'line-opacity': 0.92,
+          'line-blur': 3.0,
+          'line-width': 12,
+        },
+      });
+    }
+    if (!map.getLayer('eclipse-path-fill')) {
+      map.addLayer({
+        id: 'eclipse-path-fill',
+        type: 'fill',
+        source: ECLIPSE_SOURCE_ID,
+        filter: ['==', ['get', 'kind'], 'ECLIPSE_PATH'],
+        paint: {
+          'fill-color': fillColor,
+          'fill-opacity': 0.9,
+        },
+      });
+    }
+    if (!map.getLayer('eclipse-path-outline')) {
+      map.addLayer({
+        id: 'eclipse-path-outline',
+        type: 'line',
+        source: ECLIPSE_SOURCE_ID,
+        filter: ['==', ['get', 'kind'], 'ECLIPSE_PATH'],
+        paint: {
+          'line-color': outlineColor,
+          'line-width': 0.8,
+          'line-opacity': 0.24,
+        },
+      });
+    }
+    if (!map.getLayer('eclipse-path-limits')) {
+      map.addLayer({
+        id: 'eclipse-path-limits',
+        type: 'line',
+        source: ECLIPSE_SOURCE_ID,
+        filter: ['==', ['get', 'kind'], 'ECLIPSE_LIMIT'],
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
+        paint: {
+          'line-color': outlineColor,
+          'line-width': 1.2,
+          'line-opacity': 0.78,
+          'line-dasharray': [3.0, 2.0],
+        },
+      });
+    }
+    if (!map.getLayer('eclipse-path-center')) {
+      map.addLayer({
+        id: 'eclipse-path-center',
+        type: 'line',
+        source: ECLIPSE_SOURCE_ID,
+        filter: ['==', ['get', 'kind'], 'ECLIPSE_CENTER'],
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
+        paint: {
+          'line-color': centerColor,
+          'line-width': 2.0,
+          'line-opacity': 0.96,
+        },
+      });
+    }
+    if (!map.getLayer('eclipse-path-max')) {
+      map.addLayer({
+        id: 'eclipse-path-max',
+        type: 'circle',
+        source: ECLIPSE_SOURCE_ID,
+        filter: ['==', ['get', 'kind'], 'ECLIPSE_MAX'],
+        paint: {
+          'circle-color': centerColor,
+          'circle-radius': 4.5,
+          'circle-stroke-color': haloColor,
+          'circle-stroke-width': 2,
+        },
+      });
+    }
+    if (!USE_LOCAL_BASEMAP && !USE_MINIMAL_BASEMAP && !map.getLayer('eclipse-path-label')) {
+      map.addLayer({
+        id: 'eclipse-path-label',
+        type: 'symbol',
+        source: ECLIPSE_SOURCE_ID,
+        filter: ['==', ['get', 'kind'], 'ECLIPSE_MAX'],
+        layout: {
+          'text-field': ['get', 'label'],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': 11,
+          'text-offset': [0, 1.2],
+          'text-anchor': 'top',
+        },
+        paint: {
+          'text-color': centerColor,
+          'text-halo-color': haloColor,
+          'text-halo-width': 1.3,
+        },
+      });
+    }
+    raiseAcgLayers();
+  }
+
+  function ensureAcgLayers() {
+    if (!map.getSource(ACG_SOURCE_ID)) {
+      map.addSource(ACG_SOURCE_ID, { type: 'geojson', data: currentData });
+    }
+    // Keep online line labels on the parallel source used by HEAD. Attaching a
+    // line-placed symbol layer to the shared source can blank Liberty's lines.
+    if (!USE_LOCAL_BASEMAP && !USE_MINIMAL_BASEMAP && !map.getSource(ACG_LABEL_SOURCE_ID)) {
+      map.addSource(ACG_LABEL_SOURCE_ID, { type: 'geojson', data: currentData });
+    }
+    const colorExpr = [
+      'case',
+      ['has', 'color'], ['get', 'color'],
+      ['match', ['get', 'kind'],
+        'MC',  KIND_COLORS_FALLBACK.MC,
+        'IC',  KIND_COLORS_FALLBACK.IC,
+        'ASC', KIND_COLORS_FALLBACK.ASC,
+        'DSC', KIND_COLORS_FALLBACK.DSC,
+        '#888888',
+      ],
+    ];
+    // Thin neutral outline so colored lines stay readable without looking heavy.
+    // Filter excludes parans — they have their own (off-by-default) style.
+    const t = currentThemeTokens();
+    const s = currentDevSettings();
+    if (!map.getLayer('acg-casing')) {
+      map.addLayer({
+        id: 'acg-casing',
+        type: 'line',
+        source: ACG_SOURCE_ID,
+        filter: ['!=', ['get', 'kind'], 'PARAN'],
+        paint: {
+          'line-color': t.casing,
+          'line-width': s.casingWidth,
+          'line-opacity': s.casingOpacity,
+        },
+      });
+    }
+    if (!map.getLayer('acg-lines-solid')) {
+      map.addLayer({
+        id: 'acg-lines-solid',
+        type: 'line',
+        source: ACG_SOURCE_ID,
+        filter: ['match', ['get', 'kind'], ['MC', 'ASC', 'LOCAL_SPACE'], true, false],
+        paint: { 'line-color': colorExpr, 'line-width': s.solidWidth, 'line-opacity': s.solidOpacity },
+      });
+    }
+    if (!map.getLayer('acg-lines-dashed')) {
+      map.addLayer({
+        id: 'acg-lines-dashed',
+        type: 'line',
+        source: ACG_SOURCE_ID,
+        filter: ['match', ['get', 'kind'], ['IC', 'DSC'], true, false],
+        paint: {
+          'line-color': colorExpr,
+          'line-width': s.dashedWidth,
+          'line-opacity': s.dashedOpacity,
+          'line-dasharray': [s.dashedOn, s.dashedOff],
+        },
+      });
+    }
+    if (!map.getLayer('acg-parans')) {
+      map.addLayer({
+        id: 'acg-parans',
+        type: 'line',
+        source: ACG_SOURCE_ID,
+        filter: ['==', ['get', 'kind'], 'PARAN'],
+        layout: {
+          'visibility': viewOptions.parans ? 'visible' : 'none',
+        },
+        paint: {
+          'line-color': t.paranColor,
+          'line-width': s.paranWidth,
+          'line-opacity': s.paranOpacity,
+          'line-dasharray': [s.paranDashOn, s.paranDashOff],
+        },
+      });
+    }
+    if (!USE_LOCAL_BASEMAP && !USE_MINIMAL_BASEMAP && !map.getLayer('acg-labels')) {
+      map.addLayer({
+        id: 'acg-labels',
+        type: 'symbol',
+        source: ACG_LABEL_SOURCE_ID,
+        filter: ['!=', ['get', 'kind'], 'PARAN'],
+        layout: {
+          'symbol-placement': 'line',
+          'text-font': ['Noto Sans Regular'],
+          'text-field': [
+            'case',
+            ['==', ['get', 'kind'], 'LOCAL_SPACE'],
+            ['concat', ['get', 'label'], ' ', ['coalesce', ['get', 'bearing_label'], '']],
+            ['concat', ['get', 'label'], ' ', ['get', 'kind']],
+          ],
+          'text-size': s.labelSize,
+          'text-letter-spacing': s.labelSpacing,
+          'text-keep-upright': true,
+          'visibility': s.labelsOn ? 'visible' : 'none',
+        },
+        paint: {
+          'text-color': t.labelColor,
+          'text-halo-color': t.labelHalo,
+          'text-halo-width': s.labelHaloOn ? s.labelHaloWidth : 0.0,
+        },
+      });
+    }
+    if (!USE_LOCAL_BASEMAP && !USE_MINIMAL_BASEMAP && !map.getLayer('acg-paran-labels')) {
+      map.addLayer({
+        id: 'acg-paran-labels',
+        type: 'symbol',
+        source: ACG_LABEL_SOURCE_ID,
+        filter: ['==', ['get', 'kind'], 'PARAN'],
+        layout: {
+          'symbol-placement': 'line-center',
+          'text-font': ['Noto Sans Regular'],
+          'text-field': ['get', 'label'],
+          'text-size': s.paranLabelSize,
+          'text-letter-spacing': s.paranLabelSpacing,
+          'text-max-angle': 0,
+          'visibility': (viewOptions.parans && s.paranLabelsOn) ? 'visible' : 'none',
+        },
+        paint: {
+          'text-color': t.paranColor,
+          'text-halo-color': t.paranHalo,
+          'text-halo-width': s.paranLabelHaloOn ? s.paranLabelHaloWidth : 0.0,
+        },
+      });
+    }
+    raiseAcgLayers();
+  }
+
+  function birthplaceCoordinates(data) {
+    const meta = data && data.meta || {};
+    const origin = meta.origin || {};
+    const lon = Number(origin.lon != null ? origin.lon : meta.lon);
+    const lat = Number(origin.lat != null ? origin.lat : meta.lat);
+    if (!Number.isFinite(lon) || !Number.isFinite(lat) || lat < -90 || lat > 90) return null;
+    return [lon, lat];
+  }
+
+  function applyBirthplaceMarkerLabel() {
+    if (!birthplaceMarkerElement) return;
+    const label = String(uiLabels.birthplaceMarker || '');
+    if (label) {
+      birthplaceMarkerElement.setAttribute('aria-label', label);
+      birthplaceMarkerElement.setAttribute('title', label);
+    } else {
+      birthplaceMarkerElement.removeAttribute('aria-label');
+      birthplaceMarkerElement.removeAttribute('title');
+    }
+  }
+
+  function updateBirthplaceDragPosition(event) {
+    if (!map || !birthplaceMarker || !event) return;
+    const rect = map.getContainer().getBoundingClientRect();
+    const point = [event.clientX - rect.left, event.clientY - rect.top];
+    try { birthplaceMarker.setLngLat(map.unproject(point)); } catch (_) {}
+  }
+
+  function finishBirthplaceDrag(event, commit) {
+    const state = birthplaceDrag;
+    if (!state) return;
+    birthplaceDrag = null;
+    if (state.timer) window.clearTimeout(state.timer);
+    if (commit && state.dragging) {
+      state.moved = state.moved || Math.hypot(
+        event.clientX - state.startX,
+        event.clientY - state.startY,
+      ) > 1;
+      updateBirthplaceDragPosition(event);
+    }
+    if (birthplaceMarkerElement) birthplaceMarkerElement.classList.remove('dragging');
+    if (state.dragPanWasEnabled && map && map.dragPan) {
+      try { map.dragPan.enable(); } catch (_) {}
+    }
+    if (birthplaceMarkerElement && state.pointerId != null) {
+      try {
+        if (birthplaceMarkerElement.hasPointerCapture(state.pointerId)) {
+          birthplaceMarkerElement.releasePointerCapture(state.pointerId);
+        }
+      } catch (_) {}
+    }
+    if (commit && state.dragging && state.moved && birthplaceMarker) {
+      const lngLat = birthplaceMarker.getLngLat();
+      sendHereRequest('set_pob', lngLat, '');
+    }
+  }
+
+  function wireBirthplaceMarker(element) {
+    element.addEventListener('pointerdown', (event) => {
+      if (event.button != null && event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      hideContextMenu();
+      if (birthplaceDrag) finishBirthplaceDrag(event, false);
+      const state = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        dragging: false,
+        moved: false,
+        dragPanWasEnabled: false,
+        timer: null,
+      };
+      birthplaceDrag = state;
+      try { element.setPointerCapture(event.pointerId); } catch (_) {}
+      state.timer = window.setTimeout(() => {
+        if (birthplaceDrag !== state) return;
+        state.dragging = true;
+        state.dragPanWasEnabled = !!(map && map.dragPan && map.dragPan.isEnabled());
+        if (state.dragPanWasEnabled) {
+          try { map.dragPan.disable(); } catch (_) {}
+        }
+        element.classList.add('dragging');
+        updateBirthplaceDragPosition(event);
+      }, BIRTHPLACE_LONG_PRESS_MS);
+    });
+    element.addEventListener('pointermove', (event) => {
+      const state = birthplaceDrag;
+      if (!state || state.pointerId !== event.pointerId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (!state.dragging) {
+        const distance = Math.hypot(event.clientX - state.startX, event.clientY - state.startY);
+        if (distance > BIRTHPLACE_PRESS_MOVE_TOLERANCE_PX && state.timer) {
+          window.clearTimeout(state.timer);
+          state.timer = null;
+        }
+        return;
+      }
+      state.moved = true;
+      updateBirthplaceDragPosition(event);
+    });
+    element.addEventListener('pointerup', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      finishBirthplaceDrag(event, true);
+    });
+    element.addEventListener('pointercancel', (event) => finishBirthplaceDrag(event, false));
+    for (const type of ['click', 'dblclick', 'contextmenu']) {
+      element.addEventListener(type, (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+    }
+  }
+
+  function syncBirthplaceMarker() {
+    const coordinates = birthplaceCoordinates(currentData);
+    if (!coordinates || !map || !window.maplibregl || !window.maplibregl.Marker) {
+      if (birthplaceMarker) {
+        try { birthplaceMarker.remove(); } catch (_) {}
+      }
+      birthplaceMarker = null;
+      birthplaceMarkerElement = null;
+      return;
+    }
+    if (!birthplaceMarker) {
+      const element = document.createElement('div');
+      element.className = 'acg-birthplace-marker';
+      const glyph = document.createElement('span');
+      glyph.className = 'acg-birthplace-marker-glyph';
+      glyph.textContent = '*';
+      element.appendChild(glyph);
+      element.setAttribute('role', 'img');
+      wireBirthplaceMarker(element);
+      birthplaceMarkerElement = element;
+      applyBirthplaceMarkerLabel();
+      birthplaceMarker = new maplibregl.Marker({ element, anchor: 'center' })
+        .setLngLat(coordinates)
+        .addTo(map);
+      return;
+    }
+    birthplaceMarker.setLngLat(coordinates);
+  }
+
+  function pushData() {
+    if (map && typeof map.isStyleLoaded === 'function' && map.isStyleLoaded()) {
+      ensureAcgLayers();
+    }
+    const src = map && map.getSource && map.getSource(ACG_SOURCE_ID);
+    if (src) src.setData(currentData);
+    const labelSrc = map && map.getSource && map.getSource(ACG_LABEL_SOURCE_ID);
+    if (labelSrc) labelSrc.setData(currentData);
+    syncBirthplaceMarker();
+    renderDomAcgLabels('data');
+    updateLegend();
+  }
+
+  function applyDisplayStyle(payload) {
+    const pointStyles = payload && payload.points || {};
+    for (const feature of currentData.features || []) {
+      const props = feature && feature.properties || {};
+      if (props.point && pointStyles[props.point]) {
+        const style = pointStyles[props.point];
+        if (style.label) props.label = style.label;
+        if (style.color) props.color = style.color;
+        else delete props.color;
+        if (style.glyphMorinus != null) props.glyph_morinus = style.glyphMorinus;
+      }
+      if (props.kind === 'PARAN') {
+        const a = pointStyles[props.a_point] || {};
+        const b = pointStyles[props.b_point] || {};
+        if (a.glyphMorinus != null) props.a_glyph_morinus = a.glyphMorinus;
+        if (b.glyphMorinus != null) props.b_glyph_morinus = b.glyphMorinus;
+        if (a.label || b.label) {
+          props.label = `${a.label || props.a_point || ''} ${props.a_angle || ''} × ${b.label || props.b_point || ''} ${props.b_angle || ''}`.trim();
+        }
+      }
+    }
+    if (payload && payload.meta) {
+      currentData.meta = Object.assign({}, currentData.meta || {}, payload.meta);
+    }
+    pushData();
+  }
+
+  function pushEclipseData(options = {}) {
+    const src = map && map.getSource && map.getSource(ECLIPSE_SOURCE_ID);
+    if (src) src.setData(currentEclipseData);
+    if (options.fit) fitFeatureCollection(currentEclipseData);
+    renderDomAcgLabels('eclipse-data');
+  }
+
+  function applyDevColors() {
+    const t = currentThemeTokens();
+    const s = currentDevSettings();
+    applyPageBg(DEV_SETTINGS.pageBg || URL_THEME.get('pageBg'));
+    if (!map) return;
+    applyVectorBasemapStyle();
+    if (map.getLayer('acg-casing')) {
+      map.setPaintProperty('acg-casing', 'line-color', t.casing);
+      map.setPaintProperty('acg-casing', 'line-width', s.casingWidth);
+      map.setPaintProperty('acg-casing', 'line-opacity', s.casingOpacity);
+    }
+    if (map.getLayer('acg-lines-solid')) {
+      map.setPaintProperty('acg-lines-solid', 'line-width', s.solidWidth);
+      map.setPaintProperty('acg-lines-solid', 'line-opacity', s.solidOpacity);
+    }
+    if (map.getLayer('acg-lines-dashed')) {
+      map.setPaintProperty('acg-lines-dashed', 'line-width', s.dashedWidth);
+      map.setPaintProperty('acg-lines-dashed', 'line-opacity', s.dashedOpacity);
+      map.setPaintProperty('acg-lines-dashed', 'line-dasharray', [s.dashedOn, s.dashedOff]);
+    }
+    if (map.getLayer('acg-parans')) {
+      map.setPaintProperty('acg-parans', 'line-color', t.paranColor);
+      map.setPaintProperty('acg-parans', 'line-width', s.paranWidth);
+      map.setPaintProperty('acg-parans', 'line-opacity', s.paranOpacity);
+      map.setPaintProperty('acg-parans', 'line-dasharray', [s.paranDashOn, s.paranDashOff]);
+    }
+    if (map.getLayer('acg-labels')) {
+      map.setLayoutProperty('acg-labels', 'visibility', s.labelsOn ? 'visible' : 'none');
+      map.setLayoutProperty('acg-labels', 'text-size', s.labelSize);
+      map.setLayoutProperty('acg-labels', 'text-letter-spacing', s.labelSpacing);
+      map.setPaintProperty('acg-labels', 'text-color', t.labelColor);
+      map.setPaintProperty('acg-labels', 'text-halo-color', t.labelHalo);
+      map.setPaintProperty('acg-labels', 'text-halo-width', s.labelHaloOn ? s.labelHaloWidth : 0.0);
+    }
+    if (map.getLayer('acg-paran-labels')) {
+      map.setLayoutProperty('acg-paran-labels', 'visibility', (viewOptions.parans && s.paranLabelsOn) ? 'visible' : 'none');
+      map.setLayoutProperty('acg-paran-labels', 'text-size', s.paranLabelSize);
+      map.setLayoutProperty('acg-paran-labels', 'text-letter-spacing', s.paranLabelSpacing);
+      map.setPaintProperty('acg-paran-labels', 'text-color', t.paranColor);
+      map.setPaintProperty('acg-paran-labels', 'text-halo-color', t.paranHalo);
+      map.setPaintProperty('acg-paran-labels', 'text-halo-width', s.paranLabelHaloOn ? s.paranLabelHaloWidth : 0.0);
+    }
+    const outlineColor = IS_DARK ? '#c8c2b5' : '#5e6872';
+    const centerColor = IS_DARK ? '#d9b760' : '#8a6418';
+    const haloColor = IS_DARK ? 'rgba(8, 11, 15, 0.92)' : 'rgba(255, 255, 255, 0.92)';
+    if (map.getLayer('eclipse-path-shadow')) {
+      map.setPaintProperty('eclipse-path-shadow', 'line-color', IS_DARK ? 'rgba(5, 6, 7, 0.34)' : 'rgba(38, 42, 46, 0.18)');
+    }
+    if (map.getLayer('eclipse-path-fill')) {
+      map.setPaintProperty('eclipse-path-fill', 'fill-color', IS_DARK ? 'rgba(5, 6, 7, 0.34)' : 'rgba(38, 42, 46, 0.18)');
+    }
+    if (map.getLayer('eclipse-path-outline')) {
+      map.setPaintProperty('eclipse-path-outline', 'line-color', outlineColor);
+    }
+    if (map.getLayer('eclipse-path-limits')) {
+      map.setPaintProperty('eclipse-path-limits', 'line-color', outlineColor);
+    }
+    if (map.getLayer('eclipse-path-center')) {
+      map.setPaintProperty('eclipse-path-center', 'line-color', centerColor);
+    }
+    if (map.getLayer('eclipse-path-max')) {
+      map.setPaintProperty('eclipse-path-max', 'circle-color', centerColor);
+      map.setPaintProperty('eclipse-path-max', 'circle-stroke-color', haloColor);
+    }
+    if (map.getLayer('eclipse-path-label')) {
+      map.setPaintProperty('eclipse-path-label', 'text-color', centerColor);
+      map.setPaintProperty('eclipse-path-label', 'text-halo-color', haloColor);
+    }
+    raiseAcgLayers();
+    renderDomAcgLabels('settings');
+  }
+
+  function updateLegend() {
+    const rows = document.getElementById('legend-rows');
+    if (!rows) return;
+    const seen = new Map();
+    let hasParan = false;
+    let hasLocalSpace = false;
+    let hasAcgAngles = false;
+    for (const f of currentData.features || []) {
+      if (f.properties.kind === 'PARAN') { hasParan = true; continue; }
+      if (f.properties.kind === 'LOCAL_SPACE') hasLocalSpace = true;
+      if (['MC', 'IC', 'ASC', 'DSC'].includes(f.properties.kind)) hasAcgAngles = true;
+      const pt = f.properties.point;
+      if (!seen.has(pt)) {
+        seen.set(pt, {
+          label: f.properties.label || pt,
+          color: f.properties.color || '#a5aab0',
+          glyph: f.properties.glyph_morinus || '',
+        });
+      }
+    }
+    rows.innerHTML = '';
+    for (const [, info] of seen) {
+      const row = document.createElement('div');
+      row.className = 'row';
+      const glyph = info.glyph
+        ? `<span class="glyph" style="color:${info.color}">${info.glyph}</span>`
+        : `<span class="glyph"></span>`;
+      row.innerHTML = `${glyph}<span class="sw" style="background:${info.color}"></span><span>${info.label}</span>`;
+      rows.appendChild(row);
+    }
+    const acgKey = document.getElementById('legend-acg-key');
+    if (acgKey) acgKey.style.display = hasAcgAngles ? '' : 'none';
+    const localRow = document.getElementById('legend-local-space-row');
+    if (localRow) localRow.style.display = hasLocalSpace ? '' : 'none';
+    const paranRow = document.getElementById('legend-paran-row');
+    if (paranRow) paranRow.style.display = hasParan ? '' : 'none';
+  }
+
+  function normalizePlaceFeature(f) {
+    const c = f && f.geometry && f.geometry.coordinates || [];
+    const p = f && f.properties || {};
+    return {
+      lon: Number(c[0]),
+      lat: Number(c[1]),
+      name: p.name || p.ascii || '',
+      ascii: p.ascii || '',
+      country: p.country || '',
+      population: Number(p.population || 0),
+      level: Number(p.level == null ? 4 : p.level),
+      feature: p.feature || '',
+    };
+  }
+
+  function shouldRenderPlaceOverlay() {
+    if (PLACE_LABELS_DISABLED) return false;
+    if (PLACE_LABELS_AUTO) return !!(USE_LOCAL_BASEMAP || USE_MINIMAL_BASEMAP);
+    return true;
+  }
+
+  function shouldUseDynamicCityLabels() {
+    return (
+      PLACE_LABELS_CITY500 &&
+      shouldRenderPlaceOverlay() &&
+      !!CITY_LABELS_URL &&
+      /^https?:$/.test(location.protocol)
+    );
+  }
+
+  function loadPlaceLabels(options) {
+    const opts = options || {};
+    if (PLACE_LABELS_DISABLED) {
+      schedulePlaceLabelsRender('disabled');
+      return;
+    }
+    if (shouldUseDynamicCityLabels() && !opts.forceStatic) {
+      scheduleCityLabelsRefresh(opts.reason || 'load');
+      return;
+    }
+    if (PLACE_LABELS_AUTO && !shouldRenderPlaceOverlay() && !opts.forceStatic) {
+      schedulePlaceLabelsRender('provider-labels');
+      return;
+    }
+    loadStaticPlaceLabels(opts);
+  }
+
+  function setPlaceLabelDataset(rows, source) {
+    placeLabelData = Array.isArray(rows) ? rows : [];
+    placeLabelSource = source || 'unknown';
+    perfState.placeLabelSource = placeLabelSource;
+    perfState.placeLabelLastCount = placeLabelData.length;
+    schedulePlaceLabelsRender('dataset');
+  }
+
+  function loadStaticPlaceLabels(options) {
+    const opts = options || {};
+    if (PLACE_LABELS_DISABLED || !window.fetch) return;
+    if (opts.useForOverlay) staticOverlayRequested = true;
+    if (placesLoaded) {
+      if (staticOverlayRequested || !shouldUseDynamicCityLabels()) {
+        staticOverlayRequested = false;
+        setPlaceLabelDataset(placesData, 'static');
+      }
+      refreshSearchResults();
+      return;
+    }
+    if (placesLoading) return;
+    placesLoading = true;
+    fetch(PLACES_URL, { cache: 'force-cache' })
+      .then((r) => {
+        if (!r || !r.ok) throw new Error(`static places failed: ${r ? r.status : 'no response'}`);
+        return r.json();
+      })
+      .then((data) => {
+        placesData = (data && data.features || [])
+          .map(normalizePlaceFeature)
+          .filter((p) => Number.isFinite(p.lon) && Number.isFinite(p.lat) && p.name);
+        placesLoaded = true;
+        placesLoading = false;
+        if (staticOverlayRequested || !shouldUseDynamicCityLabels()) {
+          staticOverlayRequested = false;
+          setPlaceLabelDataset(placesData, 'static');
+        }
+        refreshSearchResults();
+      })
+      .catch(() => {
+        placesLoading = false;
+        placesLoaded = false;
+        staticOverlayRequested = false;
+      });
+  }
+
+  function cityLabelBudget(zoom) {
+    if (zoom < 1.7) return 60;
+    if (zoom < 2.3) return 110;
+    if (zoom < 3.0) return 180;
+    if (zoom < 4.0) return 260;
+    return 420;
+  }
+
+  function cityLabelsEndpointUrl() {
+    if (!map || !map.getBounds) return null;
+    let b;
+    try {
+      b = map.getBounds();
+    } catch (_) {
+      return null;
+    }
+    if (!b) return null;
+    const zoom = map.getZoom ? map.getZoom() : 0;
+    const params = new URLSearchParams({
+      west: String(b.getWest()),
+      south: String(b.getSouth()),
+      east: String(b.getEast()),
+      north: String(b.getNorth()),
+      zoom: String(zoom),
+      limit: String(cityLabelBudget(zoom)),
+    });
+    const sep = CITY_LABELS_URL.indexOf('?') === -1 ? '?' : '&';
+    return `${CITY_LABELS_URL}${sep}${params.toString()}`;
+  }
+
+  function scheduleCityLabelsRefresh(reason) {
+    if (!shouldUseDynamicCityLabels()) return;
+    if (cityLabelsTimer) window.clearTimeout(cityLabelsTimer);
+    cityLabelsTimer = window.setTimeout(() => {
+      cityLabelsTimer = null;
+      refreshDynamicCityLabels(reason || 'refresh');
+    }, 60);
+  }
+
+  function refreshDynamicCityLabels(reason) {
+    if (!shouldUseDynamicCityLabels() || !window.fetch) return;
+    const url = cityLabelsEndpointUrl();
+    if (!url) return;
+    if (url === cityLabelsRequestKey && (cityLabelsController || placeLabelSource === 'dynamic')) return;
+    if (cityLabelsController) {
+      try { cityLabelsController.abort(); } catch (_) {}
+      perfState.placeLabelAborts += 1;
+    }
+    cityLabelsRequestKey = url;
+    const controller = window.AbortController ? new AbortController() : null;
+    cityLabelsController = controller;
+    const started = perfNow();
+    perfState.placeLabelFetches += 1;
+    const headers = DAEMON_TOKEN ? { 'X-Aries-Token': DAEMON_TOKEN } : undefined;
+    fetch(url, {
+      cache: 'no-store',
+      headers,
+      signal: controller ? controller.signal : undefined,
+    })
+      .then((r) => {
+        if (!r || !r.ok) throw new Error(`city labels failed: ${r ? r.status : 'no response'}`);
+        return r.json();
+      })
+      .then((data) => {
+        if (controller && controller.signal.aborted) return;
+        if (!data || !data.meta || data.meta.available !== true || !Array.isArray(data.features)) {
+          throw new Error('city labels unavailable');
+        }
+        const rows = data.features
+          .map(normalizePlaceFeature)
+          .filter((p) => Number.isFinite(p.lon) && Number.isFinite(p.lat) && p.name);
+        perfState.placeLabelLastFetchMs = perfNow() - started;
+        staticOverlayRequested = false;
+        setPlaceLabelDataset(rows, 'dynamic');
+      })
+      .catch((err) => {
+        if (err && err.name === 'AbortError') return;
+        cityLabelsRequestKey = '';
+        // Keep the last useful labels visible until the bundled static fallback
+        // is ready; never replace them with an error-shaped empty response.
+        loadStaticPlaceLabels({ useForOverlay: true });
+      })
+      .finally(() => {
+        if (cityLabelsController === controller) cityLabelsController = null;
+      });
+  }
+
+  function boxesOverlap(a, b, padding = 0) {
+    return !(
+      a.right + padding <= b.left ||
+      a.left >= b.right + padding ||
+      a.bottom + padding <= b.top ||
+      a.top >= b.bottom + padding
+    );
+  }
+
+  function estimatedLabelBox(x, y, text, fontSize, extraWidth = 0) {
+    const width = Math.max(18, String(text || '').length * fontSize * 0.56 + extraWidth);
+    const height = Math.max(12, fontSize * 1.25);
+    return {
+      left: x - width / 2,
+      right: x + width / 2,
+      top: y - height / 2,
+      bottom: y + height / 2,
+    };
+  }
+
+  function schedulePlaceLabelsRender(reason) {
+    if (placeLabelRenderRaf) return;
+    placeLabelRenderRaf = window.requestAnimationFrame(() => {
+      placeLabelRenderRaf = 0;
+      renderPlaceLabels(reason || 'raf');
+    });
+  }
+
+  function renderPlaceLabels(reason) {
+    const layer = document.getElementById('place-labels');
+    if (!layer) return;
+    const started = perfNow();
+    for (const el of placeLabelElements.values()) el.style.display = 'none';
+    if (!map || !shouldRenderPlaceOverlay() || !Array.isArray(placeLabelData)) {
+      perfState.placeLabelLastRenderMs = perfNow() - started;
+      return;
+    }
+    const source = placeLabelData;
+    if (!source.length) {
+      perfState.placeLabelLastRenderMs = perfNow() - started;
+      return;
+    }
+    const zoom = map.getZoom ? map.getZoom() : 0;
+    const maxLevel = zoom < 1.7 ? 0 : (zoom < 2.3 ? 1 : (zoom < 3.0 ? 2 : (zoom < 4.0 ? 3 : 4)));
+    const minPop = zoom < 1.7 ? 4000000 : (zoom < 2.3 ? 1000000 : (zoom < 3.0 ? 250000 : (zoom < 4.0 ? 100000 : 0)));
+    const maxLabels = zoom < 1.7 ? 60 : (zoom < 2.3 ? 110 : (zoom < 3.0 ? 180 : (zoom < 4.0 ? 260 : 420)));
+    const bounds = map.getBounds ? map.getBounds() : null;
+    const w = window.innerWidth || 1;
+    const h = window.innerHeight || 1;
+    const labels = [];
+    for (const place of source) {
+      if (place.level > maxLevel && place.population < minPop) continue;
+      if (bounds && !bounds.contains([place.lon, place.lat])) continue;
+      if (!isCoordinateVisibleOnCurrentProjection([place.lon, place.lat])) continue;
+      let pt;
+      try {
+        pt = map.project([place.lon, place.lat]);
+      } catch (_) {
+        continue;
+      }
+      if (!pt || pt.x < 8 || pt.x > w - 8 || pt.y < 8 || pt.y > h - 8) continue;
+      labels.push({ place, x: pt.x, y: pt.y });
+    }
+    labels.sort((a, b) => (a.place.level - b.place.level) || (b.place.population - a.place.population));
+    const occupied = acgLabelCollisionBoxes.slice();
+    let rendered = 0;
+    const visibleKeys = new Set();
+    for (const item of labels) {
+      if (rendered >= maxLabels) break;
+      const box = estimatedLabelBox(item.x, item.y, item.place.name, 11, 9);
+      if (occupied.some((other) => boxesOverlap(box, other, 3))) continue;
+      occupied.push(box);
+      const key = `${item.place.lon.toFixed(5)}:${item.place.lat.toFixed(5)}:${item.place.name}`;
+      visibleKeys.add(key);
+      let el = placeLabelElements.get(key);
+      if (!el) {
+        el = document.createElement('div');
+        const dot = document.createElement('span');
+        dot.className = 'place-dot';
+        el.append(dot, document.createTextNode(item.place.name));
+        placeLabelElements.set(key, el);
+        layer.appendChild(el);
+      }
+      el.className = `place-label${item.place.level <= 1 || item.place.population >= 1500000 ? ' major' : ''}`;
+      el.style.left = `${item.x}px`;
+      el.style.top = `${item.y}px`;
+      el.style.display = '';
+      rendered += 1;
+    }
+    // Dynamic viewport payloads are small.  Bound the fallback cache too so a
+    // long pan session cannot retain one DOM node for every static catalog row.
+    if (placeLabelElements.size > 700) {
+      for (const [key, el] of placeLabelElements) {
+        if (visibleKeys.has(key)) continue;
+        el.remove();
+        placeLabelElements.delete(key);
+      }
+    }
+    const elapsed = perfNow() - started;
+    perfState.placeLabelLastCount = rendered;
+    perfState.placeLabelLastRenderMs = elapsed;
+    perfState.placeLabelMaxRenderMs = Math.max(perfState.placeLabelMaxRenderMs, elapsed);
+  }
+
+  function beginDomAcgMovement() {
+    domAcgLabelsMoving = true;
+    if (!USE_LOCAL_BASEMAP && !USE_MINIMAL_BASEMAP) {
+      const layer = document.getElementById('acg-dom-labels');
+      if (layer) layer.classList.add('is-moving');
+    }
+  }
+
+  function endDomAcgMovement(reason) {
+    const wasDirty = domAcgLabelsDirty;
+    domAcgLabelsMoving = false;
+    domAcgLabelsDirty = false;
+    const layer = document.getElementById('acg-dom-labels');
+    if (layer) layer.classList.remove('is-moving');
+    if (wasDirty || USE_LOCAL_BASEMAP || USE_MINIMAL_BASEMAP) {
+      scheduleDomAcgLabels(reason || 'settle');
+    }
+    postPerfSnapshot(reason || 'settle');
+  }
+
+  function scheduleDomAcgLabels(reason) {
+    if (domAcgLabelsMoving && !USE_LOCAL_BASEMAP && !USE_MINIMAL_BASEMAP) {
+      domAcgLabelsDirty = true;
+      if (ACG_PERF_MODE) perfState.domLabelSkippedWhileMoving += 1;
+      return;
+    }
+    if (domAcgLabelsMoving) domAcgLabelsDirty = true;
+    if (domAcgLabelRaf) return;
+    domAcgLabelRaf = window.requestAnimationFrame(() => {
+      domAcgLabelRaf = 0;
+      renderDomAcgLabels(reason || 'raf');
+    });
+  }
+
+  function geometrySegments(geom) {
+    if (!geom) return [];
+    if (geom.type === 'LineString') return [geom.coordinates || []];
+    if (geom.type === 'MultiLineString') return geom.coordinates || [];
+    return [];
+  }
+
+  function geometryLatitudeAnchors(geom) {
+    const segments = geometrySegments(geom);
+    if (!segments.length) return [];
+    let centerLat = 0;
+    try { centerLat = Number(map.getCenter().lat) || 0; } catch (_) {}
+    const targets = [centerLat, 0, -30, 30, -60, 60]
+      .map((lat) => Math.max(-75, Math.min(75, Number(lat) || 0)))
+      .filter((lat, index, all) => all.findIndex((other) => Math.abs(other - lat) < 0.01) === index);
+    const out = [];
+    for (const target of targets) {
+      for (const line of segments) {
+        for (let index = 1; index < line.length; index += 1) {
+          const a = line[index - 1];
+          const b = line[index];
+          if (!a || !b) continue;
+          const latA = Number(a[1]);
+          const latB = Number(b[1]);
+          if (!Number.isFinite(latA) || !Number.isFinite(latB)) continue;
+          if (target < Math.min(latA, latB) || target > Math.max(latA, latB)) continue;
+          const span = latB - latA;
+          const fraction = Math.abs(span) < 1e-9 ? 0 : (target - latA) / span;
+          const lonA = Number(a[0]);
+          let lonB = Number(b[0]);
+          if (!Number.isFinite(lonA) || !Number.isFinite(lonB)) continue;
+          while (lonB - lonA > 180) lonB -= 360;
+          while (lonB - lonA < -180) lonB += 360;
+          const lon = ((lonA + (lonB - lonA) * fraction + 540) % 360) - 180;
+          out.push([lon, target]);
+          break;
+        }
+      }
+    }
+    return out;
+  }
+
+  function fallbackLineAnchors(geom) {
+    const fromLatitudes = geometryLatitudeAnchors(geom);
+    if (fromLatitudes.length) return fromLatitudes;
+    const line = geometrySegments(geom).reduce(
+      (best, current) => current && (!best || current.length > best.length) ? current : best,
+      null,
+    );
+    if (!line || !line.length) return [];
+    return [0.25, 0.5, 0.75]
+      .map((fraction) => line[Math.min(line.length - 1, Math.round((line.length - 1) * fraction))])
+      .filter(Boolean);
+  }
+
+  function featureLabelAnchors(feature) {
+    const p = feature && feature.properties || {};
+    const declared = p.label_anchors || p.labelAnchors;
+    if (Array.isArray(declared) && declared.length) return declared;
+    if (p.kind === 'PARAN') {
+      const line = geometrySegments(feature.geometry)[0] || [];
+      const latitude = line.length ? Number(line[0][1]) : NaN;
+      if (!Number.isFinite(latitude)) return [];
+      let centerLon = 0;
+      try { centerLon = Number(map.getCenter().lng) || 0; } catch (_) {}
+      return [0, -55, 55, -110, 110].map((offset) => [((centerLon + offset + 540) % 360) - 180, latitude]);
+    }
+    if (feature.geometry && feature.geometry.type === 'Point') {
+      return [feature.geometry.coordinates];
+    }
+    return fallbackLineAnchors(feature.geometry);
+  }
+
+  function labelDescriptor(feature, source) {
+    const p = feature && feature.properties || {};
+    const kind = p.kind || '';
+    const modeKey = p.astrocart_mode ? `${p.astrocart_mode}:` : '';
+    if (source === 'eclipse') {
+      if (kind !== 'ECLIPSE_MAX' || !p.label) return null;
+      return {
+        id: p.label_id || `eclipse:${p.utc || ''}:${p.label}`,
+        text: String(p.label),
+        color: IS_DARK ? '#d9b760' : '#8a6418',
+        fontSize: 11,
+        letterSpacing: 0,
+        haloColor: IS_DARK ? 'rgba(8,11,15,0.92)' : 'rgba(255,255,255,0.92)',
+        haloWidth: 1.3,
+        priority: 0,
+        yOffset: 16,
+      };
+    }
+    const settings = currentDevSettings();
+    const theme = currentThemeTokens();
+    if (kind === 'PARAN') {
+      if (!viewOptions.parans || !settings.paranLabelsOn) return null;
+      const line = geometrySegments(feature.geometry)[0] || [];
+      const latitudeKey = line.length && Number.isFinite(Number(line[0][1])) ? Number(line[0][1]).toFixed(6) : '';
+      return {
+        id: p.label_id || `${modeKey}paran:${p.a_point || ''}:${p.a_angle || ''}:${p.b_point || ''}:${p.b_angle || ''}:${latitudeKey}`,
+        text: String(p.label || ''),
+        color: theme.paranColor,
+        fontSize: settings.paranLabelSize,
+        letterSpacing: settings.paranLabelSpacing,
+        haloColor: theme.paranHalo,
+        haloWidth: settings.paranLabelHaloOn ? settings.paranLabelHaloWidth : 0,
+        priority: 3,
+        yOffset: 0,
+      };
+    }
+    if (!settings.labelsOn || !['MC', 'IC', 'ASC', 'DSC', 'LOCAL_SPACE'].includes(kind)) return null;
+    const text = kind === 'LOCAL_SPACE'
+      ? `${p.label || p.point || ''} ${p.bearing_label || ''}`.trim()
+      : `${p.label || p.point || ''} ${kind}`.trim();
+    return {
+      id: p.label_id || `${modeKey}${kind}:${p.point || p.label || ''}`,
+      text,
+      color: p.color || theme.labelColor,
+      fontSize: settings.labelSize,
+      letterSpacing: settings.labelSpacing,
+      haloColor: theme.labelHalo,
+      haloWidth: settings.labelHaloOn ? settings.labelHaloWidth : 0,
+      priority: kind === 'LOCAL_SPACE' ? 2 : 1,
+      yOffset: 0,
+    };
+  }
+
+  function representativeCoordinate(geom) {
+    if (!geom) return null;
+    let line = null;
+    if (geom.type === 'LineString') {
+      line = geom.coordinates;
+    } else if (geom.type === 'MultiLineString') {
+      line = (geom.coordinates || []).reduce((best, current) => {
+        if (!best || (current && current.length > best.length)) return current;
+        return best;
+      }, null);
+    }
+    if (!line || !line.length) return null;
+    return line[Math.floor(line.length / 2)];
+  }
+
+  function renderOnlineDomAcgLabels(layer, reason) {
+    const started = perfNow();
+    let renderedCount = 0;
+    layer.replaceChildren();
+    acgLabelElements.clear();
+    acgLabelAnchorChoices.clear();
+    acgLabelCollisionBoxes = [];
+    if (!ACG_DOM_LABELS || !map || !currentData || !currentData.features) {
+      recordDomLabelPerf(perfNow() - started, renderedCount, reason);
+      return;
+    }
+    const w = window.innerWidth || 1;
+    const h = window.innerHeight || 1;
+    const used = [];
+    const out = [];
+    const featureLimit = 80;
+    for (const f of currentData.features) {
+      const p = f.properties || {};
+      if (p.kind === 'PARAN') continue;
+      if (!['MC', 'IC', 'ASC', 'DSC'].includes(p.kind)) continue;
+      const coord = representativeCoordinate(f.geometry);
+      if (!coord || !isCoordinateVisibleOnCurrentProjection(coord)) continue;
+      let pt;
+      try { pt = map.project(coord); } catch (_) { continue; }
+      if (!pt || pt.x < 12 || pt.x > w - 12 || pt.y < 12 || pt.y > h - 12) continue;
+      if (used.some((item) => Math.abs(item.x - pt.x) < 36 && Math.abs(item.y - pt.y) < 14)) continue;
+      used.push({ x: pt.x, y: pt.y });
+      out.push({
+        x: pt.x,
+        y: pt.y,
+        color: p.color || '#d0d2d6',
+        label: `${p.label || p.point || ''} ${p.kind}`,
+      });
+      if (out.length >= featureLimit) break;
+    }
+    for (const item of out) {
+      const el = document.createElement('div');
+      el.className = 'acg-dom-label';
+      el.style.left = `${item.x}px`;
+      el.style.top = `${item.y}px`;
+      el.style.color = item.color;
+      el.textContent = item.label;
+      layer.appendChild(el);
+      renderedCount += 1;
+    }
+    recordDomLabelPerf(perfNow() - started, renderedCount, reason);
+  }
+
+  function renderDomAcgLabels(reason) {
+    const layer = document.getElementById('acg-dom-labels');
+    if (!layer) return;
+    const offlineRenderer = USE_LOCAL_BASEMAP || USE_MINIMAL_BASEMAP;
+    if (!offlineRenderer) {
+      domLabelRendererMode = 'online';
+      renderOnlineDomAcgLabels(layer, reason);
+      return;
+    }
+    if (domLabelRendererMode !== 'offline') {
+      layer.replaceChildren();
+      acgLabelElements.clear();
+      acgLabelAnchorChoices.clear();
+    }
+    domLabelRendererMode = 'offline';
+    const started = perfNow();
+    let renderedCount = 0;
+    for (const el of acgLabelElements.values()) el.style.display = 'none';
+    acgLabelCollisionBoxes = [];
+    if (!ACG_DOM_LABELS || !map || !currentData || !currentData.features) {
+      recordDomLabelPerf(perfNow() - started, renderedCount, reason);
+      renderPlaceLabels('acg-empty');
+      return;
+    }
+    const w = window.innerWidth || 1;
+    const h = window.innerHeight || 1;
+    const safeTop = Math.max(12, Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--titlebar-safe-top')) + 12 || 12);
+    const screenCenter = { x: w / 2, y: h / 2 };
+    const features = (currentData.features || []).map((feature) => ({ feature, source: 'acg' }));
+    for (const feature of currentEclipseData.features || []) features.push({ feature, source: 'eclipse' });
+    const descriptors = features
+      .map((entry) => ({ ...entry, descriptor: labelDescriptor(entry.feature, entry.source) }))
+      .filter((entry) => entry.descriptor && entry.descriptor.text)
+      .sort((a, b) => (a.descriptor.priority - b.descriptor.priority) || a.descriptor.id.localeCompare(b.descriptor.id));
+    const currentDescriptorIds = new Set(descriptors.map((entry) => entry.descriptor.id));
+    for (const [id, el] of acgLabelElements) {
+      if (currentDescriptorIds.has(id)) continue;
+      el.remove();
+      acgLabelElements.delete(id);
+      acgLabelAnchorChoices.delete(id);
+    }
+    const featureLimit = 120;
+    for (const entry of descriptors) {
+      if (renderedCount >= featureLimit) break;
+      const descriptor = entry.descriptor;
+      const candidates = [];
+      for (const coord of featureLabelAnchors(entry.feature)) {
+        if (!Array.isArray(coord) || coord.length < 2 || !isCoordinateVisibleOnCurrentProjection(coord)) continue;
+        let pt;
+        try { pt = map.project(coord); } catch (_) { continue; }
+        const x = Number(pt && pt.x);
+        const y = Number(pt && pt.y) + descriptor.yOffset;
+        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+        if (x < 12 || x > w - 12 || y < safeTop || y > h - 42) continue;
+        const box = estimatedLabelBox(x, y, descriptor.text, descriptor.fontSize, 8);
+        if (acgLabelCollisionBoxes.some((other) => boxesOverlap(box, other, 3))) continue;
+        const score = Math.hypot(x - screenCenter.x, y - screenCenter.y);
+        const anchorKey = `${Number(coord[0]).toFixed(6)}:${Number(coord[1]).toFixed(6)}`;
+        candidates.push({ x, y, box, score, anchorKey });
+      }
+      candidates.sort((a, b) => a.score - b.score);
+      const previousAnchor = acgLabelAnchorChoices.get(descriptor.id);
+      const item = candidates.find((candidate) => candidate.anchorKey === previousAnchor) || candidates[0];
+      if (!item) continue;
+      acgLabelAnchorChoices.set(descriptor.id, item.anchorKey);
+      acgLabelCollisionBoxes.push(item.box);
+      let el = acgLabelElements.get(descriptor.id);
+      if (!el) {
+        el = document.createElement('div');
+        el.className = 'acg-dom-label';
+        acgLabelElements.set(descriptor.id, el);
+        layer.appendChild(el);
+      }
+      if (el.textContent !== descriptor.text) el.textContent = descriptor.text;
+      el.className = 'acg-dom-label';
+      el.style.left = `${item.x}px`;
+      el.style.top = `${item.y}px`;
+      el.style.color = descriptor.color;
+      el.style.fontSize = `${descriptor.fontSize}px`;
+      el.style.letterSpacing = `${descriptor.letterSpacing || 0}em`;
+      el.style.textShadow = descriptor.haloWidth > 0
+        ? `0 0 ${Math.max(2, descriptor.haloWidth * 2)}px ${descriptor.haloColor}`
+        : 'none';
+      el.style.display = '';
+      renderedCount += 1;
+    }
+    recordDomLabelPerf(perfNow() - started, renderedCount, reason);
+    renderPlaceLabels('acg-layout');
+  }
+
+  function isCoordinateVisibleOnCurrentProjection(coord) {
+    if (!map || !coord) return true;
+    let projType = 'mercator';
+    try {
+      const proj = map.getProjection && map.getProjection();
+      projType = (proj && proj.type) || projType;
+    } catch (_) {}
+    if (projType !== 'globe') return true;
+    let center;
+    try {
+      center = map.getCenter();
+    } catch (_) {
+      return true;
+    }
+    return angularDistanceDeg(center.lng, center.lat, Number(coord[0]), Number(coord[1])) <= 92.0;
+  }
+
+  function angularDistanceDeg(lon1, lat1, lon2, lat2) {
+    const r = Math.PI / 180;
+    const p1 = Number(lat1) * r;
+    const p2 = Number(lat2) * r;
+    const dLon = ((Number(lon2) - Number(lon1) + 540) % 360 - 180) * r;
+    const cosD = Math.sin(p1) * Math.sin(p2) + Math.cos(p1) * Math.cos(p2) * Math.cos(dLon);
+    const clamped = Math.max(-1, Math.min(1, cosD));
+    return Math.acos(clamped) / r;
+  }
+
+  function onLineClick(e) {
+    if (!e.features || !e.features.length) return;
+    const f = e.features[0];
+    const label = f.properties.label || f.properties.point;
+    const kind = f.properties.kind;
+    new maplibregl.Popup()
+      .setLngLat(e.lngLat)
+      .setHTML(`<strong>${label}</strong> ${kind}<br><span style="opacity:0.7">${e.lngLat.lng.toFixed(2)}°, ${e.lngLat.lat.toFixed(2)}°</span>`)
+      .addTo(map);
+    sendToHost({ type: 'click', point: f.properties.point, kind: kind,
+                 lon: e.lngLat.lng, lat: e.lngLat.lat });
+  }
+
+  function onEclipseClick(e) {
+    if (!e.features || !e.features.length) return;
+    if (e.originalEvent && e.originalEvent._eclipsePopupHandled) return;
+    if (e.originalEvent) e.originalEvent._eclipsePopupHandled = true;
+    const f = e.features[0];
+    const p = f.properties || {};
+    const title = p.label || `${(p.event_type || 'Solar').replace(/^\w/, (c) => c.toUpperCase())} solar eclipse`;
+    const date = p.utc || '';
+    const detail = p.kind === 'ECLIPSE_MAX' ? 'maximum eclipse' :
+      (p.kind === 'ECLIPSE_CENTER' ? 'centerline' :
+       (p.kind === 'ECLIPSE_LIMIT' ? 'path limit' : 'shadow path'));
+    new maplibregl.Popup()
+      .setLngLat(e.lngLat)
+      .setHTML(`<strong>${title}</strong><br><span>${date}</span><br><span style="opacity:0.7">${detail} · ${e.lngLat.lng.toFixed(2)}°, ${e.lngLat.lat.toFixed(2)}°</span>`)
+      .addTo(map);
+    sendToHost({
+      type: 'click',
+      point: 'eclipse',
+      kind: p.kind || 'ECLIPSE',
+      lon: e.lngLat.lng,
+      lat: e.lngLat.lat,
+    });
+  }
+
+  function featurePlaceName(f) {
+    const p = (f && f.properties) || {};
+    return p.name_en || p['name:en'] || p.name || p.name_int || '';
+  }
+
+  function placeFeatureAtPoint(point) {
+    const layers = PLACE_LABEL_LAYER_IDS.filter((id) => map && map.getLayer(id));
+    if (!layers.length) return null;
+    const r = 10;
+    const features = map.queryRenderedFeatures(
+      [[point.x - r, point.y - r], [point.x + r, point.y + r]],
+      { layers }
+    );
+    return features.find((f) => featurePlaceName(f)) || null;
+  }
+
+  function domPlaceNameAtPoint(point) {
+    if (!map || !Array.isArray(placeLabelData)) return '';
+    let nearest = null;
+    for (const place of placeLabelData) {
+      if (!isCoordinateVisibleOnCurrentProjection([place.lon, place.lat])) continue;
+      let projected;
+      try { projected = map.project([place.lon, place.lat]); } catch (_) { continue; }
+      const distance = Math.hypot(projected.x - point.x, projected.y - point.y);
+      if (distance > 20 || (nearest && distance >= nearest.distance)) continue;
+      nearest = { distance, name: place.name };
+    }
+    return nearest ? nearest.name : '';
+  }
+
+  function sendHereRequest(action, lngLat, placeName) {
+    sendToHost({
+      type: 'here',
+      action: action,
+      lon: lngLat.lng,
+      lat: lngLat.lat,
+      placeName: placeName || '',
+    });
+  }
+
+  function wireContextMenu() {
+    const menu = document.getElementById('acg-menu');
+    if (!menu) return;
+    menu.addEventListener('click', (event) => {
+      const btn = event.target.closest('button[data-action]');
+      if (!btn || !contextMenuTarget) return;
+      sendHereRequest(btn.dataset.action, contextMenuTarget.lngLat, contextMenuTarget.placeName);
+      hideContextMenu();
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') hideContextMenu();
+    });
+  }
+
+  function routeHostKeyCommand(event) {
+    if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+    const target = event.target;
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+      return;
+    }
+    const key = event.key || '';
+    const isLetter = key.length === 1 && /^[a-z]$/i.test(key);
+    const isEscape = key === 'Escape';
+    if (!isLetter && !isEscape) return;
+
+    const menu = document.getElementById('acg-menu');
+    if (isEscape && menu && menu.style.display !== 'none') {
+      hideContextMenu();
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.repeat) sendToHost({ type: 'shortcut', key: key });
+  }
+
+  function onMapContextMenu(e) {
+    if (e.preventDefault) e.preventDefault();
+    if (e.originalEvent) e.originalEvent.preventDefault();
+    const place = placeFeatureAtPoint(e.point);
+    const placeName = place ? featurePlaceName(place) : domPlaceNameAtPoint(e.point);
+    showContextMenu(e.point, e.lngLat, placeName);
+  }
+
+  function showContextMenu(point, lngLat, placeName) {
+    const menu = document.getElementById('acg-menu');
+    if (!menu) return;
+    contextMenuTarget = { lngLat: lngLat, placeName: placeName || '' };
+    menu.style.display = 'block';
+    const margin = 6;
+    const rect = menu.getBoundingClientRect();
+    const x = Math.min(point.x, window.innerWidth - rect.width - margin);
+    const y = Math.min(point.y, window.innerHeight - rect.height - margin);
+    menu.style.left = Math.max(margin, x) + 'px';
+    menu.style.top = Math.max(margin, y) + 'px';
+  }
+
+  function hideContextMenu() {
+    const menu = document.getElementById('acg-menu');
+    if (menu) menu.style.display = 'none';
+  }
+
+  function sendToHost(payload) {
+    // wx host: navigation to morinus://acg/<json> is intercepted by
+    // EVT_WEBVIEW_NAVIGATING (astrocartframe.py:534). This is a top-level page
+    // under wx, so window.parent === window and the postMessage below is a
+    // harmless self-post that wx never listens for — its bridge path is the
+    // navigation, untouched.
+    const url = 'morinus://acg/' + encodeURIComponent(JSON.stringify(payload));
+    window.location.href = url;
+    // webapp host: the React shell embeds this page in an <iframe> and CANNOT
+    // intercept the morinus:// navigation. When embedded (parent !== self) we
+    // ALSO postMessage the same payload UP to the parent so the React surface
+    // receives the line-click / here / shortcut intents. Tagged with a source
+    // marker so the parent can distinguish it from the inbound aries.* channel.
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ source: 'aries-acg', payload: payload }, '*');
+      }
+    } catch (_) {}
+  }
+
+  function postToParent(payload) {
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ source: 'aries-acg', payload: payload }, '*');
+      }
+    } catch (_) {}
+  }
+
+  function postViewState(reason, options) {
+    const opts = options || {};
+    if (!viewStatePersistenceEnabled && !opts.force) return;
+    const acg = window.ACG;
+    if (!acg || typeof acg.getState !== 'function') return;
+    const state = acg.getState();
+    if (!state) return;
+    postToParent({ type: 'state', reason: reason || 'state', state: state });
+  }
+
+  function scheduleViewStatePost(reason, options) {
+    const opts = options || {};
+    if (!viewStatePersistenceEnabled && !opts.force) return;
+    if (viewStatePostTimer) window.clearTimeout(viewStatePostTimer);
+    viewStatePostTimer = window.setTimeout(() => {
+      viewStatePostTimer = null;
+      postViewState(reason, opts);
+    }, 120);
+  }
+
+  function setViewStatePersistenceEnabled(enabled) {
+    viewStatePersistenceEnabled = !!enabled;
+    if (!viewStatePersistenceEnabled && viewStatePostTimer) {
+      window.clearTimeout(viewStatePostTimer);
+      viewStatePostTimer = null;
+    }
+  }
+
+  function setStatus(s) {
+    const el = document.getElementById('status');
+    if (el) el.textContent = s;
+  }
+
+  function ensureViewOptionDefaults() {
+    if (viewOptionsInitialized) return;
+    setParansVisible(false);
+  }
+
+  function syncParanVisibility() {
+    const visible = !!viewOptions.parans;
+    const s = currentDevSettings();
+    if (map && map.getLayer('acg-parans')) {
+      map.setLayoutProperty('acg-parans', 'visibility', visible ? 'visible' : 'none');
+    }
+    if (map && map.getLayer('acg-paran-labels')) {
+      map.setLayoutProperty('acg-paran-labels', 'visibility', (visible && s.paranLabelsOn) ? 'visible' : 'none');
+    }
+    const btn = document.querySelector('#overlays button[data-overlay="parans"]');
+    if (btn) {
+      btn.classList.toggle('on', visible);
+      btn.setAttribute('aria-pressed', visible ? 'true' : 'false');
+    }
+    scheduleDomAcgLabels('parans');
+  }
+
+  function setParansVisible(visible) {
+    viewOptions.parans = !!visible;
+    viewOptionsInitialized = true;
+    syncParanVisibility();
+  }
+
+  function setLegendCollapsed(collapsed) {
+    legendCollapsed = !!collapsed;
+    const legend = document.getElementById('legend');
+    const btn = document.getElementById('legend-toggle');
+    if (legend) legend.classList.toggle('collapsed', legendCollapsed);
+    if (btn) {
+      btn.setAttribute('aria-expanded', legendCollapsed ? 'false' : 'true');
+      btn.setAttribute('aria-label', legendCollapsed ? 'Expand legend' : 'Collapse legend');
+      const state = btn.querySelector('.legend-state');
+      if (state) state.textContent = legendCollapsed ? '+' : '-';
+    }
+  }
+
+  function applyChromeState(state) {
+    if (!state) return;
+    const overlays = state.overlays || state.viewOptions || {};
+    if (Object.prototype.hasOwnProperty.call(overlays, 'parans')) {
+      setParansVisible(overlays.parans);
+    } else if (Object.prototype.hasOwnProperty.call(state, 'paransVisible')) {
+      setParansVisible(state.paransVisible);
+    }
+    if (state.legend && Object.prototype.hasOwnProperty.call(state.legend, 'collapsed')) {
+      setLegendCollapsed(state.legend.collapsed);
+    } else if (Object.prototype.hasOwnProperty.call(state, 'legendCollapsed')) {
+      setLegendCollapsed(state.legendCollapsed);
+    }
+  }
+
+  function setProjection(name) {
+    if (!map) return;
+    if (name !== 'globe' && name !== 'mercator') return;
+    selectedProjection = name;
+    setProjectionButtonState(name);
+    hideMapUntilStyledPaint();
+    try {
+      map.setProjection({ type: name });
+    } catch (err) {
+      revealMapAfterStyledPaint();
+      setStatus('projection pending: ' + name);
+      return;
+    }
+    // Round-trip-safe zoom targets so each projection shows a useful view.
+    if (name === 'globe') {
+      map.easeTo({ zoom: globeZoomForViewport(), duration: 400 });
+    } else if (name === 'mercator') {
+      map.easeTo({ zoom: 1.3, duration: 400 });
+    }
+    scheduleViewStatePost('projection');
+    revealMapAfterStyledPaint();
+  }
+
+  function setProjectionButtonState(name) {
+    if (name === 'globe' || name === 'mercator') selectedProjection = name;
+    for (const btn of document.querySelectorAll('#proj button')) {
+      btn.classList.toggle('on', btn.dataset.proj === name);
+      btn.setAttribute('aria-pressed', btn.dataset.proj === name ? 'true' : 'false');
+    }
+  }
+
+  function applyViewStateNow(state) {
+    if (!map || !state) return false;
+    applyChromeState(state);
+    try {
+      if (state.projection) {
+        map.setProjection({ type: state.projection });
+        setProjectionButtonState(state.projection);
+      }
+      const c = state.center || {};
+      map.jumpTo({
+        center: (c.lng != null && c.lat != null) ? [c.lng, c.lat] : undefined,
+        zoom: state.zoom,
+        bearing: state.bearing,
+        pitch: state.pitch,
+      });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function applyPendingCamera() {
+    if (!map) return;
+    if (pendingViewState) {
+      const state = pendingViewState;
+      pendingViewState = null;
+      pendingCenter = null;
+      applyViewStateNow(state);
+    } else if (pendingCenter) {
+      const center = pendingCenter;
+      pendingCenter = null;
+      try { map.jumpTo({ center }); } catch (_) {}
+    }
+  }
+
+  function wireProjectionButtons() {
+    for (const btn of document.querySelectorAll('#proj button')) {
+      wireChromeButton(btn, () => setProjection(btn.dataset.proj));
+    }
+  }
+
+  function toggleOverlay(name) {
+    if (name === 'parans') {
+      setParansVisible(!viewOptions.parans);
+      scheduleViewStatePost('overlay');
+    }
+  }
+
+  function wireOverlayButtons() {
+    for (const btn of document.querySelectorAll('#overlays button')) {
+      wireChromeButton(btn, () => toggleOverlay(btn.dataset.overlay));
+    }
+  }
+
+  function wireLegendToggle() {
+    const btn = document.getElementById('legend-toggle');
+    if (!btn) return;
+    wireChromeButton(btn, () => {
+      setLegendCollapsed(!legendCollapsed);
+      scheduleViewStatePost('legend');
+    });
+    setLegendCollapsed(legendCollapsed);
+  }
+
+  function shieldChromeEvent(event) {
+    event.stopPropagation();
+  }
+
+  function wireChromeButton(btn, action) {
+    for (const type of ['pointerdown', 'mousedown', 'touchstart']) {
+      btn.addEventListener(type, shieldChromeEvent, { passive: true });
+    }
+    btn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      action(event);
+    });
+  }
+
+  function wireControlsOnce() {
+    if (controlsWired) return;
+    controlsWired = true;
+    wireContextMenu();
+    wireProjectionButtons();
+    wireOverlayButtons();
+    wireLegendToggle();
+    wireSearchInput();
+  }
+
+  // ---- Place search ---------------------------------------------------
+  //
+  // Two-tier search:
+  //   1. Offline city-list: filters the `placesData` array already loaded
+  //      for the on-globe labels (~16k cities from places.geojson). Instant.
+  //   2. Nominatim (https://nominatim.openstreetmap.org/): debounced fetch
+  //      for everything else \u2014 addresses, landmarks, villages too small to
+  //      ship in the bundled list. Online-only; if the API is unreachable
+  //      the local section keeps working unchanged.
+  //
+  // We respect Nominatim's usage policy by setting a real User-Agent on
+  // the wxWebView (see astrocartframe._aries_user_agent), debouncing input
+  // to one query per ~350ms, aborting stale requests, and caching results.
+
+  let activeSearchIndex = -1;
+  let currentSearchMatches = [];
+  let nominatimController = null;
+  let nominatimQueryToken = 0;
+  let nominatimDebounceTimer = null;
+  const nominatimCache = new Map();
+  const NOMINATIM_DEBOUNCE_MS = 350;
+  const NOMINATIM_MIN_QUERY = 3;
+  const NOMINATIM_TIMEOUT_MS = 5500;
+  const NOMINATIM_CACHE_MAX = 32;
+
+  function normalizeSearchString(s) {
+    return (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  }
+
+  function searchPlaces(query, limit) {
+    const q = normalizeSearchString(query);
+    if (q.length < 2 || !placesData.length) return [];
+    const starts = [];
+    const contains = [];
+    for (const p of placesData) {
+      const n = normalizeSearchString(p.name);
+      const a = normalizeSearchString(p.ascii);
+      if (n.startsWith(q) || (a && a.startsWith(q))) starts.push(p);
+      else if (n.includes(q) || (a && a.includes(q))) contains.push(p);
+      if (starts.length >= 200 && contains.length >= 200) break;
+    }
+    const byPop = (a, b) => (b.population || 0) - (a.population || 0);
+    starts.sort(byPop);
+    contains.sort(byPop);
+    return starts.concat(contains).slice(0, limit || 6).map((p) => ({
+      lon: p.lon, lat: p.lat,
+      name: p.name, country: p.country || '',
+      secondary: '', source: 'local',
+    }));
+  }
+
+  function nominatimRowFromHit(hit) {
+    const lon = Number(hit.lon);
+    const lat = Number(hit.lat);
+    if (!Number.isFinite(lon) || !Number.isFinite(lat)) return null;
+    const display = String(hit.display_name || '');
+    const addr = hit.address || {};
+    const name = (hit.name && String(hit.name)) || display.split(',')[0].trim();
+    const country = String(addr.country_code || '').toUpperCase();
+    const rest = display.split(',').slice(1).map((s) => s.trim()).filter(Boolean);
+    const secondary = rest.join(', ') || addr.country || '';
+    return { lon, lat, name, country, secondary, source: 'osm' };
+  }
+
+  async function searchNominatim(query) {
+    const q = (query || '').trim();
+    if (q.length < NOMINATIM_MIN_QUERY) return [];
+    if (nominatimCache.has(q)) {
+      // refresh LRU order
+      const cached = nominatimCache.get(q);
+      nominatimCache.delete(q);
+      nominatimCache.set(q, cached);
+      return cached;
+    }
+    if (nominatimController) {
+      try { nominatimController.abort(); } catch (_) {}
+    }
+    const controller = new AbortController();
+    nominatimController = controller;
+    const timer = window.setTimeout(() => {
+      try { controller.abort(); } catch (_) {}
+    }, NOMINATIM_TIMEOUT_MS);
+    const params = new URLSearchParams({
+      q: q,
+      format: 'jsonv2',
+      limit: '8',
+      addressdetails: '1',
+    });
+    const url = `https://nominatim.openstreetmap.org/search?${params.toString()}`;
+    try {
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: { 'Accept': 'application/json' },
+        cache: 'default',
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const rows = (Array.isArray(data) ? data : [])
+        .map(nominatimRowFromHit).filter(Boolean);
+      nominatimCache.set(q, rows);
+      if (nominatimCache.size > NOMINATIM_CACHE_MAX) {
+        const oldest = nominatimCache.keys().next().value;
+        nominatimCache.delete(oldest);
+      }
+      return rows;
+    } catch (err) {
+      if (err && err.name === 'AbortError') return null;
+      return [];
+    } finally {
+      window.clearTimeout(timer);
+      if (nominatimController === controller) nominatimController = null;
+    }
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => (
+      { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]
+    ));
+  }
+
+  function setActiveSearchResult(idx) {
+    const list = document.getElementById('place-search-results');
+    if (!list) return;
+    const buttons = list.querySelectorAll('.place-search-result');
+    activeSearchIndex = Math.max(-1, Math.min(buttons.length - 1, idx));
+    buttons.forEach((b, i) => b.classList.toggle('active', i === activeSearchIndex));
+    if (activeSearchIndex >= 0) {
+      const el = buttons[activeSearchIndex];
+      if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  function appendSearchRow(list, item, idx) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'place-search-result';
+    if (item.source === 'osm') btn.classList.add('osm');
+    btn.setAttribute('role', 'option');
+    const secondaryHtml = item.secondary
+      ? `<span class="secondary">${escapeHtml(item.secondary)}</span>`
+      : '';
+    btn.innerHTML =
+      `<span class="name">${escapeHtml(item.name)}${secondaryHtml}</span>` +
+      `<span class="country">${escapeHtml(item.country || '')}</span>`;
+    btn.addEventListener('mousedown', (event) => {
+      event.preventDefault();
+      acceptSearchResult(item);
+    });
+    btn.addEventListener('mouseenter', () => setActiveSearchResult(idx));
+    list.appendChild(btn);
+  }
+
+  function renderSearchResults(state) {
+    const list = document.getElementById('place-search-results');
+    if (!list) return;
+    const local = (state && state.local) || [];
+    const osm = (state && state.osm) || [];
+    const loading = !!(state && state.loading);
+    const input = document.getElementById('place-search-input');
+    const q = (input && input.value || '').trim();
+
+    list.replaceChildren();
+    const flat = [];
+
+    if (local.length) {
+      local.forEach((it) => {
+        flat.push(it);
+        appendSearchRow(list, it, flat.length - 1);
+      });
+    }
+    if (osm.length || loading) {
+      const sec = document.createElement('div');
+      sec.className = 'place-search-section' + (local.length ? ' divider' : '');
+      sec.textContent = 'OpenStreetMap';
+      list.appendChild(sec);
+      if (loading && !osm.length) {
+        const ld = document.createElement('div');
+        ld.className = 'place-search-loading';
+        ld.textContent = 'Searching online\u2026';
+        list.appendChild(ld);
+      } else {
+        osm.forEach((it) => {
+          flat.push(it);
+          appendSearchRow(list, it, flat.length - 1);
+        });
+      }
+    }
+
+    currentSearchMatches = flat;
+
+    if (!flat.length && !loading) {
+      list.replaceChildren();
+      if (q.length >= 2) {
+        const empty = document.createElement('div');
+        empty.className = 'place-search-empty';
+        empty.textContent = 'No matches';
+        list.appendChild(empty);
+        list.style.display = 'block';
+      } else {
+        list.style.display = 'none';
+      }
+      activeSearchIndex = -1;
+      return;
+    }
+
+    list.style.display = 'block';
+    setActiveSearchResult(flat.length ? 0 : -1);
+  }
+
+  function refreshSearchResults() {
+    const input = document.getElementById('place-search-input');
+    if (!input) return;
+    const q = input.value;
+    const trimmed = q.trim();
+    const local = searchPlaces(q, 6);
+    const willHitOsm = trimmed.length >= NOMINATIM_MIN_QUERY;
+    const cached = willHitOsm ? nominatimCache.get(trimmed) : null;
+    renderSearchResults({
+      local,
+      osm: cached || [],
+      loading: willHitOsm && !cached,
+    });
+
+    if (nominatimDebounceTimer) {
+      window.clearTimeout(nominatimDebounceTimer);
+      nominatimDebounceTimer = null;
+    }
+    if (!willHitOsm) {
+      if (nominatimController) {
+        try { nominatimController.abort(); } catch (_) {}
+      }
+      return;
+    }
+    if (cached) return;  // already rendered above
+
+    const token = ++nominatimQueryToken;
+    nominatimDebounceTimer = window.setTimeout(() => {
+      searchNominatim(trimmed).then((osm) => {
+        if (osm === null) return; // aborted by a newer query
+        if (token !== nominatimQueryToken) return;
+        const liveInput = document.getElementById('place-search-input');
+        if (!liveInput || liveInput.value.trim() !== trimmed) return;
+        renderSearchResults({
+          local: searchPlaces(liveInput.value, 6),
+          osm: osm,
+          loading: false,
+        });
+      });
+    }, NOMINATIM_DEBOUNCE_MS);
+  }
+
+  // The persistent pin dropped by the search box. One at a time — a new
+  // accept replaces the previous marker/popup. Implemented with MapLibre's
+  // own ``maplibregl.Marker`` + ``maplibregl.Popup``: the marker is a
+  // teardrop SVG with the chrome accent fill, the popup inherits the
+  // theme-aware CSS already overriding ``.maplibregl-popup-content``.
+  let searchMarker = null;
+  let searchPopup = null;
+
+  function disposeSearchPin() {
+    if (searchPopup) {
+      try { searchPopup.remove(); } catch (_) {}
+      searchPopup = null;
+    }
+    if (searchMarker) {
+      try { searchMarker.remove(); } catch (_) {}
+      searchMarker = null;
+    }
+  }
+
+  function dropSearchPin(place) {
+    if (!map || !window.maplibregl || !place) return;
+    disposeSearchPin();
+    const lngLat = [place.lon, place.lat];
+    const countryHtml = place.country
+      ? `<span style="opacity:0.55;margin-left:6px;font-size:10px;letter-spacing:0.04em">${escapeHtml(place.country)}</span>`
+      : '';
+    const secondaryHtml = place.secondary
+      ? `<div style="margin-top:4px;opacity:0.7;font-size:10px;line-height:1.35;max-width:240px;white-space:normal">${escapeHtml(place.secondary)}</div>`
+      : '';
+    const html = `<strong>${escapeHtml(place.name)}</strong>${countryHtml}${secondaryHtml}`;
+    searchPopup = new maplibregl.Popup({
+      offset: 28,
+      closeButton: true,
+      closeOnClick: false,
+      maxWidth: '280px',
+    }).setLngLat(lngLat).setHTML(html);
+    // setPopup binds toggle-on-marker-click; addTo opens the popup
+    // immediately so the user sees the detail without an extra interaction.
+    searchMarker = new maplibregl.Marker({ color: '#0a84ff' })
+      .setLngLat(lngLat)
+      .setPopup(searchPopup)
+      .addTo(map);
+    searchPopup.addTo(map);
+  }
+
+  function acceptSearchResult(place) {
+    if (!place || !map) return;
+    const input = document.getElementById('place-search-input');
+    if (input) { input.value = ''; input.blur(); }
+    const list = document.getElementById('place-search-results');
+    if (list) { list.replaceChildren(); list.style.display = 'none'; }
+    activeSearchIndex = -1;
+    currentSearchMatches = [];
+    if (nominatimDebounceTimer) {
+      window.clearTimeout(nominatimDebounceTimer);
+      nominatimDebounceTimer = null;
+    }
+    if (nominatimController) {
+      try { nominatimController.abort(); } catch (_) {}
+    }
+    // Zoom levels picked for context: OSM hits are typically street/address
+    // grain so we go to 13 (≈ city neighborhood); local-list hits are city
+    // centroids so 9 (≈ regional context, surrounding suburbs visible).
+    const targetZoom = place.source === 'osm' ? 13 : 9;
+    try {
+      map.flyTo({
+        center: [place.lon, place.lat],
+        zoom: targetZoom,
+        duration: 900,
+        essential: true,
+      });
+    } catch (_) {
+      map.jumpTo({ center: [place.lon, place.lat], zoom: targetZoom });
+    }
+    dropSearchPin(place);
+    postToParent({
+      type: 'place-selection',
+      lon: Number(place.lon),
+      lat: Number(place.lat),
+      placeName: String(place.name || ''),
+    });
+  }
+
+  function wireSearchInput() {
+    const input = document.getElementById('place-search-input');
+    const list = document.getElementById('place-search-results');
+    if (!input || !list) return;
+    for (const type of ['pointerdown', 'mousedown', 'touchstart', 'click', 'wheel', 'dblclick']) {
+      input.addEventListener(type, (e) => e.stopPropagation(), { passive: true });
+      list.addEventListener(type, (e) => e.stopPropagation(), { passive: true });
+    }
+    input.addEventListener('input', () => {
+      if (!placesLoaded) loadStaticPlaceLabels({ forceStatic: true });
+      refreshSearchResults();
+    });
+    input.addEventListener('focus', () => {
+      if (!placesLoaded) loadStaticPlaceLabels({ forceStatic: true });
+      if (input.value) refreshSearchResults();
+    });
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        const pick = activeSearchIndex >= 0
+          ? currentSearchMatches[activeSearchIndex]
+          : currentSearchMatches[0];
+        if (pick) acceptSearchResult(pick);
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        input.value = '';
+        list.replaceChildren();
+        list.style.display = 'none';
+        activeSearchIndex = -1;
+        currentSearchMatches = [];
+        if (nominatimDebounceTimer) {
+          window.clearTimeout(nominatimDebounceTimer);
+          nominatimDebounceTimer = null;
+        }
+        if (nominatimController) {
+          try { nominatimController.abort(); } catch (_) {}
+        }
+        input.blur();
+        return;
+      }
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        if (currentSearchMatches.length) setActiveSearchResult(activeSearchIndex + 1);
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        if (currentSearchMatches.length) setActiveSearchResult(activeSearchIndex - 1);
+      }
+    });
+    input.addEventListener('blur', () => {
+      window.setTimeout(() => {
+        if (document.activeElement !== input) {
+          list.style.display = 'none';
+        }
+      }, 140);
+    });
+  }
+
+  // ---- Public API for the Python host ---------------------------------
+  window.ACG = {
+    setData(geojson) {
+      try {
+        const data = geojson || { type: 'FeatureCollection', features: [] };
+        if (!mapReady) { pendingData = data; return; }
+        currentData = data;
+        pushData();
+        setStatus(`${(currentData.features || []).length} lines loaded`);
+        postPerfSnapshot('set-data');
+      } catch (err) { setStatus('error: ' + err.message); }
+    },
+    setEclipseData(geojson) {
+      try {
+        const data = geojson || { type: 'FeatureCollection', features: [] };
+        if (!mapReady) { pendingEclipseData = data; return; }
+        currentEclipseData = data;
+        pushEclipseData({ fit: true });
+        const count = (currentEclipseData.features || []).length;
+        if (count) setStatus(`${count} eclipse path features loaded`);
+      } catch (err) { setStatus('eclipse error: ' + err.message); }
+    },
+    setStyle(url) {
+      if (!map) return;
+      const state = this.getState();
+      map.setStyle(url);
+      map.once('style.load', () => {
+        applyViewStateNow(state);
+        applyVectorBasemapStyle();
+        ensureEclipseLayers();
+        ensureAcgLayers();
+        applyDevColors();
+        pushData();
+        pushEclipseData({ fit: false });
+      });
+    },
+    flyTo(lon, lat, zoom) {
+      if (map) map.flyTo({ center: [lon, lat], zoom: zoom || 4 });
+    },
+    /** Recenter the map on the chart's birth location without changing zoom.
+        Queues if the map style isn't loaded yet — Python often calls this
+        before MapLibre has finished initialising, and a bare jumpTo during
+        that window is silently dropped. */
+    setCenter(lat, lon) {
+      const target = [Number(lon) || 0, Number(lat) || 0];
+      if (!map || !mapReady) {
+        if (!pendingViewState) pendingCenter = target;
+      } else {
+        map.jumpTo({ center: target });
+      }
+    },
+    clear() {
+      currentData = { type: 'FeatureCollection', features: [] };
+      pushData();
+    },
+    clearEclipse() {
+      currentEclipseData = { type: 'FeatureCollection', features: [] };
+      pendingEclipseData = null;
+      pushEclipseData({ fit: false });
+    },
+    setProjection,
+    setZoom(z) { if (map) map.setZoom(z); },
+    /** Live theme swap. Called by Python when the user changes Options →
+        Colors. Repaints the loaded style in place so sources, layers, camera,
+        labels and the retained canvas stay alive throughout the change. */
+    setTheme(name, pageBg) {
+      const nextDark = (name || '').toLowerCase() === 'dark';
+      if (pageBg) URL_THEME.set('pageBg', pageBg);
+      applyPageBg(DEV_SETTINGS.pageBg || pageBg);
+      if (nextDark === IS_DARK) return;
+      IS_DARK = nextDark;
+      document.body.classList.toggle('theme-light', !IS_DARK);
+      // During boot (or an explicit external style load), the shared
+      // style.load handler reads the updated IS_DARK value. Once settled, all
+      // theme-owned paint/layout properties can be changed without setStyle(),
+      // whose teardown races consecutive daemon theme/style messages.
+      if (
+        !map ||
+        !mapReady ||
+        (typeof map.isStyleLoaded === 'function' && !map.isStyleLoaded())
+      ) return;
+      applyDevColors();
+    },
+    setDevSettings(settings) {
+      DEV_SETTINGS = Object.assign({}, settings || {});
+      applyDevColors();
+    },
+    setDisplayStyle(payload) {
+      const meta = payload && payload.meta || {};
+      if (meta.theme) this.setTheme(meta.theme, meta.pageBg);
+      applyDisplayStyle(payload || {});
+    },
+    setUiLabels(labels) {
+      uiLabels = Object.assign({}, uiLabels, labels || {});
+      applyBirthplaceMarkerLabel();
+    },
+    /** Serialisable view state for Python-side per-radix persistence. */
+    getState() {
+      if (!map) return null;
+      const c = map.getCenter();
+      const proj = map.getProjection();
+      return {
+        zoom: map.getZoom(),
+        center: { lng: c.lng, lat: c.lat },
+        bearing: map.getBearing(),
+        pitch: map.getPitch(),
+        projection: (proj && proj.type) || 'globe',
+        overlays: { parans: !!viewOptions.parans },
+        legend: { collapsed: !!legendCollapsed },
+      };
+    },
+    /** Reapply a prior getState(). Queues until the style has loaded. */
+    applyState(state) {
+      if (!state) return;
+      applyChromeState(state);
+      if (!map || !mapReady) {
+        pendingViewState = Object.assign({}, state);
+        pendingCenter = null;
+        return;
+      }
+      applyViewStateNow(state);
+    },
+    /** Re-centre and re-fit the globe at the default computed zoom. */
+    fitGlobe() {
+      if (!map) return;
+      map.easeTo({ center: [0, 0], zoom: globeZoomForViewport(), duration: 400 });
+    },
+    fitEclipse() {
+      fitFeatureCollection(currentEclipseData);
+    },
+    /** Briefly surface a discoverability hint at the bottom of the map.
+        Called from Python after the chart-editor "Map" button opens the
+        panel — the goal is to teach the right-click → "Set place of birth"
+        affordance. Crossfades in, holds, then crossfades out; calls
+        replace previous hints rather than queueing. */
+    showHint(message, holdMs) {
+      const el = document.getElementById('acg-hint');
+      if (!el) return;
+      el.textContent = String(message || '');
+      el.classList.add('on');
+      if (hintHideTimer) clearTimeout(hintHideTimer);
+      const hold = Math.max(300, Number(holdMs) || 1500);
+      hintHideTimer = setTimeout(() => {
+        el.classList.remove('on');
+        hintHideTimer = null;
+      }, hold);
+    },
+    /** Switch the right-click context menu between chart-bound actions
+        and the default-location settings flow. Python flips this when
+        the map panel is opened from a particular host dialog so the
+        affordances on offer match what the user can actually act on. */
+    setContext(mode) {
+      const menu = document.getElementById('acg-menu');
+      if (!menu) return;
+      const next = (mode === 'default_location' || mode === 'ascensional_event_place')
+        ? mode
+        : 'chart';
+      menu.setAttribute('data-mode', next);
+    },
+    getPerfState,
+  };
+
+  document.addEventListener('keydown', routeHostKeyCommand, true);
+
+  // Daemon / iframe bridge — the React shell embeds this map in an <iframe>
+  // and pushes ACG data + theme + center via postMessage. wx hosts use
+  // WebView.RunScript instead and never postMessage, so this listener is
+  // dormant under wx and adds no behaviour to that path.
+  window.addEventListener('message', (event) => {
+    const data = event && event.data;
+    if (!data || typeof data !== 'object') return;
+    if (typeof data.type !== 'string' || !data.type.startsWith('aries.')) return;
+    const acg = window.ACG;
+    if (!acg) return;
+    try {
+      switch (data.type) {
+        case 'aries.setData':
+          if (typeof acg.setData === 'function') acg.setData(data.payload);
+          break;
+        case 'aries.setEclipseData':
+          if (typeof acg.setEclipseData === 'function') acg.setEclipseData(data.payload);
+          break;
+        case 'aries.setTheme':
+          if (typeof acg.setTheme === 'function') acg.setTheme(data.theme, data.pageBg);
+          break;
+        case 'aries.setDisplayStyle':
+          if (typeof acg.setDisplayStyle === 'function') acg.setDisplayStyle(data.payload);
+          break;
+        case 'aries.setUiLabels':
+          if (typeof acg.setUiLabels === 'function') acg.setUiLabels(data.labels);
+          break;
+        case 'aries.setCenter':
+          if (typeof acg.setCenter === 'function') acg.setCenter(data.lat, data.lon);
+          break;
+        case 'aries.setContext':
+          if (typeof acg.setContext === 'function') acg.setContext(data.mode);
+          break;
+        case 'aries.applyState':
+          if (typeof acg.applyState === 'function') acg.applyState(data.state);
+          break;
+        case 'aries.setStatePersistence':
+          setViewStatePersistenceEnabled(!!data.enabled);
+          break;
+        case 'aries.getState':
+          postViewState(data.reason || 'request', { force: true });
+          break;
+        case 'aries.getPerf':
+          postPerfSnapshot(data.reason || 'request');
+          break;
+        case 'aries.getReady':
+          if (mapReady) postToParent({ type: 'ready' });
+          break;
+      }
+    } catch (err) {
+      console.error('[acg-bridge] failed:', err);
+    }
+  });
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bootMap);
+  } else {
+    bootMap();
+  }
+})();
+</script>
+</body>
+</html>

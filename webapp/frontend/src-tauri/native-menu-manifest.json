@@ -1,0 +1,317 @@
+{
+  "version": 1,
+  "source": "morin.py:14078-14483,14576-14724,18890-18951,19629-19680,21259-21357",
+  "menus": [
+    {
+      "type": "submenu",
+      "id": "menu.file",
+      "label": "File",
+      "children": [
+        { "type": "item", "id": "new", "label": "New", "accelerator": "CmdOrCtrl+N", "enabled": true, "status": "live", "source": "morin.py:14198,14576" },
+        { "type": "item", "id": "menu.data", "label": "Data", "accelerator": "CmdOrCtrl+E", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14199,14577,14808-14872,21264; webapp chart-editor-dialog" },
+        { "type": "item", "id": "now", "label": "Here and Now", "accelerator": "CmdOrCtrl+R", "enabled": true, "status": "live", "source": "morin.py:14202,14586,21267" },
+        { "type": "item", "id": "open", "label": "Open Horoscope...", "accelerator": "CmdOrCtrl+O", "enabled": true, "status": "live", "source": "morin.py:14204,14578,21261" },
+        {
+          "type": "submenu",
+          "id": "menu.save",
+          "label": "Save",
+          "enabled": false,
+          "status": "live",
+          "runtimeEnablement": "active-chart",
+          "source": "morin.py:14206-14209,14588-14589,21269-21272",
+          "children": [
+            { "type": "item", "id": "menu.save.current", "label": "Save Horoscope", "accelerator": "CmdOrCtrl+S", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14207,14588" },
+            { "type": "item", "id": "menu.save.as", "label": "Save As...", "accelerator": "CmdOrCtrl+Shift+S", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14208,14589" }
+          ]
+        },
+        { "type": "item", "id": "menu.export", "label": "Export...", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14210,14590,15534-15576,21271; Packet 10C /api/io/export" },
+        { "type": "item", "id": "menu.startup.set", "label": "Use Current As Startup Chart", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14211,14696,15374-15390,21262; Packet 10B /api/io/startup/set-current" },
+        { "type": "item", "id": "menu.startup.clear", "label": "Clear Startup Chart", "enabled": true, "status": "live", "source": "morin.py:14212,14697,15393-15396,21263; Packet 10B /api/io/startup/clear" },
+        { "type": "check", "id": "menu.restore-open-charts", "label": "Restore Open Charts On Launch", "enabled": true, "checked": false, "status": "live", "source": "morin.py:14213-14214,14698,15398-15406; Packet 10B /api/io/restore-open" },
+        {
+          "type": "submenu",
+          "id": "menu.recent-charts",
+          "label": "Recent Charts",
+          "enabled": true,
+          "status": "live-dynamic",
+          "source": "morin.py:14215-14218,15716-15778,21242-21244; runtime items via set_recent_charts + /api/io/recent-charts",
+          "children": [
+            { "type": "item", "id": "menu.recent-charts.empty", "label": "(No recent charts)", "enabled": false, "status": "live-dynamic", "source": "morin.py:15730-15732" }
+          ]
+        },
+        { "type": "separator" },
+        { "type": "item", "id": "menu.import.charts", "label": "Import Charts...", "enabled": true, "status": "live", "source": "morin.py:14222-14224,14582-14584; drawer in React; /api/io/import" },
+        { "type": "separator" },
+        { "type": "item", "id": "synastry", "label": "Synastry", "accelerator": "CmdOrCtrl+Y", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14227,14591,21273" },
+        { "type": "item", "id": "menu.find-time", "label": "Find Time and Place", "enabled": false, "status": "deferred", "deferredTo": "rectification-find-time", "source": "morin.py:14228,14592" }
+      ]
+    },
+    {
+      "type": "submenu",
+      "id": "menu.tables",
+      "label": "Tables",
+      "children": [
+        {
+          "type": "submenu",
+          "id": "menu.tables.planets-points",
+          "label": "Planets/Points",
+          "enabled": false,
+          "status": "live",
+          "runtimeEnablement": "active-chart",
+          "source": "morin.py:14240-14256,21274-21314",
+          "children": [
+            { "type": "item", "id": "menu.table.positions", "label": "Speculum", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14242,14599" },
+            { "type": "item", "id": "menu.table.antiscia", "label": "Antiscia", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14243,14605" },
+            { "type": "item", "id": "menu.table.dodecatemoria", "label": "Dodecatemoria", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14244,14632" },
+            { "type": "item", "id": "menu.table.strip", "label": "30 deg Strip", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14245,14620" },
+            { "type": "item", "id": "menu.table.aspects", "label": "Aspects", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14246,14610" },
+            { "type": "item", "id": "menu.table.zodiacal-parallels", "label": "Zodiacal Parallels", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14247,14618" },
+            { "type": "item", "id": "menu.table.speeds", "label": "Speeds", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14248,14617" },
+            { "type": "item", "id": "menu.table.rise-set", "label": "Rise/Set Times", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14249,14616" },
+            { "type": "item", "id": "menu.table.planetary-hours", "label": "Planetary Hours", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14250,14621" },
+            { "type": "item", "id": "menu.table.phasis", "label": "Heliacal Risings/Settings", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14251,14637" },
+            { "type": "item", "id": "menu.table.midpoints", "label": "Midpoints", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14252,14614" },
+            { "type": "item", "id": "menu.table.asteroids", "label": "Asteroids", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14253,14615" },
+            { "type": "item", "id": "menu.table.arabic-parts", "label": "Arabic Parts", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14254,14619" },
+            { "type": "item", "id": "menu.table.eclipses", "label": "Eclipses", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14255,14642" },
+            { "type": "item", "id": "menu.table.misc", "label": "Miscellaneous", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14256,14603" }
+          ]
+        },
+        {
+          "type": "submenu",
+          "id": "menu.tables.almutens",
+          "label": "Almutens",
+          "enabled": false,
+          "status": "live",
+          "runtimeEnablement": "active-chart",
+          "source": "morin.py:14259-14264,14600-14602",
+          "children": [
+            { "type": "item", "id": "menu.table.almuten-chart", "label": "Chart", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14260,14601" },
+            { "type": "item", "id": "menu.table.almuten-points", "label": "Points", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14261,14600" },
+            { "type": "item", "id": "menu.table.almuten-topical", "label": "Topical", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14263,14602" }
+          ]
+        },
+        {
+          "type": "submenu",
+          "id": "menu.tables.fixed-stars",
+          "label": "Fixed Stars",
+          "enabled": false,
+          "status": "live",
+          "runtimeEnablement": "active-chart",
+          "source": "morin.py:14267-14273,14611-14613,14638,14711",
+          "children": [
+            { "type": "item", "id": "menu.table.fixed-stars", "label": "Fixed Star Positions", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14268,14611" },
+            { "type": "item", "id": "menu.table.fixed-star-aspects", "label": "Fixed Star Aspects", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14269,14612" },
+            { "type": "item", "id": "menu.table.fixed-star-parallels", "label": "Fixed Star Parallels", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14270,14613" },
+            { "type": "item", "id": "menu.table.paranatellonta", "label": "Paranatellonta", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14271,14638" },
+            { "type": "item", "id": "menu.table.angle-at-birth", "label": "Angles at Birth", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14272,14711" }
+          ]
+        },
+        {
+          "type": "submenu",
+          "id": "menu.tables.time-lords",
+          "label": "Time Lords",
+          "enabled": false,
+          "status": "live",
+          "runtimeEnablement": "active-chart",
+          "source": "morin.py:14276-14282,14625,14628,14636,14639-14640",
+          "children": [
+            { "type": "item", "id": "menu.table.profections", "label": "Profections", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14277,14625" },
+            { "type": "item", "id": "menu.table.firdaria", "label": "Firdaria", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14278,14628" },
+            { "type": "item", "id": "menu.table.decennials", "label": "Decennials", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14279,14640" },
+            { "type": "item", "id": "menu.table.triplicity-directions", "label": "Triplicity Directions", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "triplicitydirections.py; research feature" },
+            { "type": "item", "id": "menu.table.zodiacal-releasing", "label": "Zodiacal Releasing", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14280,14636" },
+            { "type": "item", "id": "menu.table.circumambulation", "label": "Circumambulation", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14281,14639" }
+          ]
+        },
+        { "type": "item", "id": "ephemeris", "label": "Graphic Ephemeris", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:15611,16180-16195; workspace_model.py:91" },
+        {
+          "type": "submenu",
+          "id": "menu.tables.primary-directions",
+          "label": "Primary Directions",
+          "enabled": false,
+          "status": "live",
+          "runtimeEnablement": "active-chart",
+          "source": "morin.py:14285-14290,14604,14634-14635,14641",
+          "children": [
+            { "type": "item", "id": "directions", "label": "Primary Directions Lists", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14286,14635" },
+            { "type": "item", "id": "menu.table.fixed-star-angle-directions", "label": "Angular Directions of Fixed Stars", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14287,14641" },
+            { "type": "item", "id": "menu.table.mundane-positions", "label": "Mundane Positions", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14288,14604" },
+            { "type": "item", "id": "menu.table.user-speculum", "label": "User Speculum", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14289,14634" }
+          ]
+        },
+        { "type": "item", "id": "transit-search", "label": "Search...", "accelerator": "CmdOrCtrl+F", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14294,14623,21297" },
+        { "type": "item", "id": "menu.table.surveil-studies", "label": "Surveil Studies...", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14295,14624" }
+      ]
+    },
+    {
+      "type": "submenu",
+      "id": "menu.charts",
+      "label": "Charts",
+      "children": [
+        { "type": "item", "id": "profections", "label": "Profections", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14303,14660,21328" },
+        {
+          "type": "submenu",
+          "id": "menu.progressions",
+          "label": "Progressions",
+          "enabled": false,
+          "runtimeEnablement": "active-chart",
+          "runtimeActionId": "secondary-progression",
+          "source": "morin.py:14306-14309,14655-14657,21318",
+          "children": [
+            { "type": "item", "id": "secondary-progression", "label": "Secondary Progressions", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14307,14656,21320" },
+            { "type": "item", "id": "menu.secprog.positions", "label": "Positions for Date", "enabled": false, "status": "deferred", "deferredTo": "secondary-directions-list", "source": "morin.py:14308,14657" }
+          ]
+        },
+        {
+          "type": "submenu",
+          "id": "menu.alternative-charts",
+          "label": "Alternative Charts",
+          "enabled": false,
+          "status": "deferred",
+          "deferredTo": "chart-projection-surfaces",
+          "runtimeEnablement": "active-chart",
+          "runtimeActionId": "astrolabe",
+          "source": "morin.py:14298-14301,14659,14661-14662,21319",
+          "children": [
+            { "type": "check", "id": "menu.chart.square", "label": "Square Chart", "enabled": false, "checked": false, "status": "live", "runtimeEnablement": "active-chart", "runtimeActionId": "square-chart", "source": "morin.py:14298,14659" },
+            { "type": "check", "id": "menu.chart.mundane", "label": "Mundane Chart", "enabled": false, "checked": false, "status": "live", "runtimeEnablement": "active-chart", "runtimeActionId": "mundane-chart", "source": "morin.py:14299,14661" },
+            { "type": "check", "id": "astrolabe", "label": "Astrolabe Chart", "enabled": false, "checked": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14300,14662,21319" }
+          ]
+        },
+        { "type": "item", "id": "solar-revolution", "label": "Solar Revolution", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14320,14644,21316" },
+        { "type": "item", "id": "lunar-revolution", "label": "Lunar Revolution", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14321,14645,21259-21359" },
+        {
+          "type": "submenu",
+          "id": "menu.other-revolutions",
+          "label": "Other Revolutions",
+          "enabled": false,
+          "runtimeEnablement": "active-chart",
+          "runtimeActionId": "planetary-return",
+          "source": "morin.py:14322-14331,14646-14653",
+          "children": [
+            { "type": "item", "id": "planetary-return:2", "label": "Mercury Return", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "runtimeActionId": "planetary-return", "source": "morin.py:14323,14646,21259-21359" },
+            { "type": "item", "id": "planetary-return:3", "label": "Venus Return", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "runtimeActionId": "planetary-return", "source": "morin.py:14324,14647,21259-21359" },
+            { "type": "item", "id": "planetary-return:4", "label": "Mars Return", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "runtimeActionId": "planetary-return", "source": "morin.py:14325,14648,21259-21359" },
+            { "type": "item", "id": "planetary-return:5", "label": "Jupiter Return", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "runtimeActionId": "planetary-return", "source": "morin.py:14326,14649,21259-21359" },
+            { "type": "item", "id": "planetary-return:6", "label": "Saturn Return", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "runtimeActionId": "planetary-return", "source": "morin.py:14327,14650,21259-21359" },
+            { "type": "item", "id": "planetary-return:7", "label": "Uranus Return", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "runtimeActionId": "planetary-return", "source": "morin.py:14328,14651,21259-21359" },
+            { "type": "item", "id": "planetary-return:8", "label": "Neptune Return", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "runtimeActionId": "planetary-return", "source": "morin.py:14329,14652,21259-21359" },
+            { "type": "item", "id": "planetary-return:9", "label": "Pluto Return", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "runtimeActionId": "planetary-return", "source": "morin.py:14330,14653,21259-21359" }
+          ]
+        },
+        {
+          "type": "submenu",
+          "id": "menu.transits",
+          "label": "Transits",
+          "enabled": false,
+          "runtimeEnablement": "active-chart",
+          "runtimeActionId": "transits",
+          "source": "morin.py:14334-14337,14643-14654",
+          "children": [
+            { "type": "item", "id": "transits", "label": "Transits", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14335,14643,21315" },
+            { "type": "item", "id": "ascensional-transits", "label": "Ascensional Transits", "accelerator": "CmdOrCtrl+Alt+A", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14175,14724; shortcut_registry.py:172; accelerator-only in wx" },
+            { "type": "item", "id": "menu.sun-transits", "label": "Sun Transits", "enabled": false, "status": "deferred", "deferredTo": "transit-chart-variants", "source": "morin.py:14336,14654" }
+          ]
+        },
+        {
+          "type": "submenu",
+          "id": "menu.elections",
+          "label": "Elections",
+          "enabled": true,
+          "status": "live",
+          "source": "morin.py:14340-14341,18890-18921",
+          "children": [
+            { "type": "check", "id": "elections:Traveling", "label": "Traveling", "enabled": true, "checked": false, "source": "morin.py:18891,18910-18915" },
+            { "type": "check", "id": "elections:Meetings", "label": "Meetings", "enabled": true, "checked": false, "source": "morin.py:18892,18910-18915" },
+            { "type": "check", "id": "elections:Starting a Business", "label": "Starting a Business", "enabled": true, "checked": false, "source": "morin.py:18893,18910-18915" },
+            { "type": "check", "id": "elections:Marriage", "label": "Marriage", "enabled": true, "checked": false, "source": "morin.py:18894,18910-18915" },
+            { "type": "check", "id": "elections:Medical Procedure", "label": "Medical Procedure", "enabled": true, "checked": false, "source": "morin.py:18895,18910-18915" },
+            { "type": "check", "id": "elections:Signing Contracts", "label": "Signing Contracts", "enabled": true, "checked": false, "source": "morin.py:18896,18910-18915" }
+          ]
+        },
+        {
+          "type": "submenu",
+          "id": "menu.horary",
+          "label": "Horary",
+          "enabled": true,
+          "status": "live",
+          "source": "morin.py:14344-14345,18923-18951",
+          "children": [
+            { "type": "check", "id": "horary:Considerations", "label": "Considerations", "enabled": true, "checked": false, "source": "horary_rules.py:28,morin.py:18936-18951" },
+            { "type": "check", "id": "horary:Lost Object", "label": "Lost Object", "enabled": true, "checked": false, "source": "morin.py:18925,18946-18951" },
+            { "type": "check", "id": "horary:Theft", "label": "Theft", "enabled": true, "checked": false, "source": "horary_rules.py:30,morin.py:18936-18951" },
+            { "type": "check", "id": "horary:Strayed Beast", "label": "Strayed Beast", "enabled": true, "checked": false, "source": "horary_rules.py:31,morin.py:18936-18951" },
+            { "type": "check", "id": "horary:Marriage Question", "label": "Marriage Question", "enabled": true, "checked": false, "source": "morin.py:18926,18946-18951" },
+            { "type": "check", "id": "horary:Sickness", "label": "Sickness", "enabled": true, "checked": false, "source": "morin.py:18927,18946-18951" },
+            { "type": "check", "id": "horary:Absent Person", "label": "Absent Person", "enabled": true, "checked": false, "source": "morin.py:18928,18946-18951" },
+            { "type": "check", "id": "horary:Battle / War", "label": "Battle / War", "enabled": true, "checked": false, "source": "morin.py:18929,18946-18951" },
+            { "type": "check", "id": "horary:Short Journey", "label": "Short Journey", "enabled": true, "checked": false, "source": "morin.py:18930,18946-18951" }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "submenu",
+      "id": "menu.options",
+      "label": "Options",
+      "children": [
+        {
+          "type": "submenu",
+          "id": "menu.options.display",
+          "label": "Display Charts",
+          "enabled": true,
+          "source": "morin.py:14365-14375,14664,14669,14712",
+          "children": [
+            { "type": "item", "id": "appearance.toggle", "label": "Appearance", "accelerator": "CmdOrCtrl+Shift+A", "enabled": true, "status": "live", "source": "morin.py:14367,14664" },
+            { "type": "item", "id": "menu.colors", "label": "Colours", "enabled": true, "status": "live", "source": "morin.py:14369,14669" },
+            { "type": "item", "id": "cycle-secondary-view", "label": "Cycle secondary view", "accelerator": "CmdOrCtrl+G", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14368,14712" },
+            { "type": "item", "id": "menu.symbols", "label": "Symbols", "enabled": true, "status": "live", "source": "morin.py:14370,14666" },
+            { "type": "item", "id": "menu.lunar-mansions", "label": "Lunar Mansions", "enabled": true, "status": "live", "source": "morin.py:14373,14668" },
+            { "type": "item", "id": "menu.house-system", "label": "House System", "enabled": true, "status": "live", "source": "morin.py:14351-14363,14671; settings.md 5c /api/options houseSystem group" }
+          ]
+        },
+        { "type": "item", "id": "toggle-houses", "label": "Toggle Houses", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "shortcut_registry.py:64; morin.py:19535" },
+        {
+          "type": "submenu",
+          "id": "menu.options.planets-points",
+          "label": "Planets/Points",
+          "enabled": true,
+          "status": "live",
+          "source": "morin.py:14378-14409,14665-14679",
+          "children": [
+            { "type": "item", "id": "menu.options.speculum", "label": "Speculum", "enabled": true, "status": "live", "source": "morin.py:14379,14665; appearance-menu.md B13 /api/options speculum group" },
+            { "type": "item", "id": "menu.options.orbs", "label": "Orbs", "enabled": true, "status": "live", "source": "morin.py:14380,14673; settings.md 5e /api/options orbs group" },
+            { "type": "item", "id": "menu.options.dignities", "label": "Dignities", "enabled": true, "status": "live", "source": "morin.py:14383,14667; settings.md 5f scalar/term fields; DEF-011 dignity grid deferred" },
+            { "type": "item", "id": "menu.options.nodes", "label": "Nodes", "enabled": true, "status": "live", "source": "morin.py:14389-14393,14672,19846-19868; options-planets-points.md /api/options planetsPoints group" },
+            { "type": "item", "id": "menu.options.arabic-parts", "label": "Arabic Parts", "enabled": true, "status": "live", "source": "morin.py:14395-14398,14678,19931-19974; fortunedlg.py; arabicpartsdlg.py; options-planets-points.md /api/options planetsPoints group" },
+            { "type": "item", "id": "menu.options.syzygy", "label": "Syzygy", "enabled": true, "status": "live", "source": "morin.py:14400,14679,19977-20003; syzygydlg.py; options-planets-points.md /api/options planetsPoints group" }
+          ]
+        },
+        { "type": "item", "id": "menu.options.almutens", "label": "Almutens", "enabled": true, "status": "live", "source": "morin.py:14403-14406,14705-14706; almutenchartdlg.py; settings.md almutens group /api/options almutens" },
+        { "type": "item", "id": "menu.options.fixed-stars", "label": "Fixed Stars", "enabled": true, "status": "live", "source": "morin.py:14408,14680; fixstarsdlg.FixStarsDlg which-stars SE-catalog picker. settings.md fixstars tab /api/options fixedStars group (selectedCodes -> options.fixstars key set + alias map + rebuildFixStars). Per-star orbs in the orbs tab (fixstarsOrbs/fixstarsOrbAll)" },
+        { "type": "item", "id": "menu.options.time-lords", "label": "Time Lords", "enabled": true, "status": "live", "source": "morin.py:14411-14414,14681,14684; profdlgopts.py + firdariadlg.py; settings.md timelords tab /api/options profections+firdaria" },
+        { "type": "item", "id": "menu.options.primary-directions", "label": "Primary Directions", "enabled": true, "status": "live", "source": "morin.py:14417-14423,14674-14676; primarydirsdlg.py via PrimDirSettingsBody reuse; settings.md primarydirections tab /api/options primaryDirections" },
+        { "type": "item", "id": "menu.options.default-location", "label": "Default Location", "enabled": true, "status": "live", "source": "morin.py:14433,14688; settings.md 5g /api/options defaultLocation group" },
+        { "type": "item", "id": "menu.options.revolutions", "label": "Revolutions", "enabled": true, "status": "live", "source": "morin.py:14435,14690; revolutionsoptdlg.py:7-168; 09C-B /api/options revolutions group" },
+        { "type": "item", "id": "menu.options.quick-charts", "label": "Progressions", "enabled": true, "status": "live", "source": "morin.py:14436,14691" },
+        { "type": "item", "id": "menu.options.eclipses", "label": "Eclipses", "enabled": true, "status": "live", "source": "morin.py:14430-14443,14719-14720; settings.md eclipses tab /api/options eclipses group" },
+        { "type": "item", "id": "menu.options.step-alerts", "label": "Stepping Alerts", "enabled": true, "status": "live", "source": "morin.py:14452,14692; settings.md 5h /api/options stepAlerts group" },
+        { "type": "item", "id": "menu.options.relationship-charts", "label": "Relationship Charts", "enabled": true, "status": "live", "source": "morin.py:14447-14454,14693-14695; compositeoptsdlg.py + launcher radio; settings.md relationship tab /api/options relationshipCharts group" },
+        { "type": "item", "id": "menu.ayanamsha", "label": "Ayanamsha", "enabled": true, "status": "live", "source": "morin.py:14460-14462,19629-19680; settings.md 5d /api/options ayanamsha group" },
+        { "type": "item", "id": "menu.options.languages", "label": "Languages", "enabled": true, "status": "live-partial", "source": "morin.py:14464,14701,20231-20761; langsdlg.py; settings.md languages tab /api/options languages group. PERSISTENCE + selector migrated; UI string-localization framework deferred (no i18n layer in webapp) — settings.md DEF-languages-i18n" }
+      ]
+    },
+    {
+      "type": "submenu",
+      "id": "menu.help",
+      "label": "Help",
+      "children": [
+        { "type": "item", "id": "menu.help.help", "label": "Help", "enabled": true, "status": "live", "source": "morin.py:14478,14709" },
+        { "type": "item", "id": "menu.help.features", "label": "Features", "enabled": true, "status": "live", "source": "webapp feature catalog" },
+        { "type": "item", "id": "menu.help.license", "label": "License…", "enabled": true, "status": "live", "source": "Aries licensing" },
+        { "type": "item", "id": "menu.help.about", "label": "About", "enabled": true, "status": "live", "source": "morin.py:14479,14710" }
+      ]
+    }
+  ]
+}

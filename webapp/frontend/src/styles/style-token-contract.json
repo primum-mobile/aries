@@ -1,0 +1,1700 @@
+{
+  "schemaVersion": 2,
+  "inventoryPath": "src/styles/style-token-inventory.generated.json",
+  "publicManifestPath": "src/styles/style-token-public.generated.json",
+  "expected": {
+    "cssTokens": 329,
+    "runtimeOnlyTokens": 7,
+    "externalTokens": 4,
+    "inventoryTokens": 340
+  },
+  "legacyOverlay": {
+    "source": "src/styles/style-tokens.ts",
+    "class": "public",
+    "migrationAuthority": "legacy-preview-v1",
+    "consumerFiles": [
+      "src/components/workshell/appearance-panel.tsx",
+      "src/components/workshell/style-token-bridge.tsx"
+    ],
+    "classExceptions": {
+      "--aries-header-text": "derived",
+      "--aries-inspector-text": "derived",
+      "--aries-panel-padding-x": "runtime",
+      "--aries-panel-padding-y": "runtime",
+      "--aries-section-gap": "runtime",
+      "--aries-status-text": "derived",
+      "--aries-table-rule-color": "derived",
+      "--aries-table-section-gap": "runtime",
+      "--aries-ui-scale": "runtime"
+    },
+    "defaultExceptions": {
+      "--aries-table-rule-color": {
+        "legacyValue": "#000000",
+        "canonicalValue": "#2e2f32",
+        "reason": "The frozen preview payload remains migratable, while live generic table rules now use the app border semantic instead of the Morinus chart-table color."
+      }
+    },
+    "frozen": [
+      { "id": "fontSizeBase", "cssVar": "--aries-font-size-base" },
+      { "id": "fontSizeReading", "cssVar": "--aries-font-size-reading" },
+      { "id": "fontSizeSmall", "cssVar": "--aries-font-size-small" },
+      { "id": "fontSizeSection", "cssVar": "--aries-font-size-section" },
+      { "id": "fontSizeHeader", "cssVar": "--aries-font-size-header" },
+      { "id": "uiScale", "cssVar": "--aries-ui-scale" },
+      { "id": "sidebarRowHeight", "cssVar": "--aries-sidebar-row-height" },
+      { "id": "panelPaddingX", "cssVar": "--aries-panel-padding-x" },
+      { "id": "panelPaddingY", "cssVar": "--aries-panel-padding-y" },
+      { "id": "navSideMargin", "cssVar": "--aries-nav-side-margin" },
+      { "id": "sectionGap", "cssVar": "--aries-section-gap" },
+      { "id": "textPrimary", "cssVar": "--aries-text-primary" },
+      { "id": "textMuted", "cssVar": "--aries-text-muted" },
+      { "id": "textDim", "cssVar": "--aries-text-dim" },
+      { "id": "sidebarText", "cssVar": "--aries-sidebar-text" },
+      { "id": "headerText", "cssVar": "--aries-header-text" },
+      { "id": "inspectorText", "cssVar": "--aries-inspector-text" },
+      { "id": "statusText", "cssVar": "--aries-status-text" },
+      { "id": "background", "cssVar": "--aries-background" },
+      { "id": "surface", "cssVar": "--aries-surface" },
+      { "id": "surfaceSubtle", "cssVar": "--aries-surface-subtle" },
+      { "id": "accent", "cssVar": "--aries-accent" },
+      { "id": "borderSubtle", "cssVar": "--aries-border-subtle" },
+      { "id": "tableFontSize", "cssVar": "--aries-table-font-size-standard" },
+      { "id": "tableRowHeight", "cssVar": "--aries-table-row-height-standard" },
+      { "id": "tableHeaderHeight", "cssVar": "--aries-table-header-height-standard" },
+      { "id": "tableCellX", "cssVar": "--aries-table-cell-x-standard" },
+      { "id": "tableCellY", "cssVar": "--aries-table-cell-y-standard" },
+      { "id": "tableSectionGap", "cssVar": "--aries-table-section-gap" },
+      { "id": "tableRuleColor", "cssVar": "--aries-table-rule-color" },
+      { "id": "ephemHeaderFontSize", "cssVar": "--aries-ephem-header-font-size" },
+      { "id": "ephemHeaderGap", "cssVar": "--aries-ephem-header-gap" },
+      { "id": "ephemHeaderPadX", "cssVar": "--aries-ephem-header-pad-x" },
+      { "id": "ephemHeaderPadY", "cssVar": "--aries-ephem-header-pad-y" },
+      { "id": "ephemStateFontSize", "cssVar": "--aries-ephem-state-font-size" },
+      { "id": "ephemFrameWidthSmall", "cssVar": "--aries-ephem-frame-width-small" },
+      { "id": "ephemFrameWidthMedium", "cssVar": "--aries-ephem-frame-width-medium" },
+      { "id": "ephemFrameWidthLarge", "cssVar": "--aries-ephem-frame-width-large" },
+      { "id": "ephemCurveWidthSmall", "cssVar": "--aries-ephem-curve-width-small" },
+      { "id": "ephemCurveWidthLarge", "cssVar": "--aries-ephem-curve-width-large" },
+      { "id": "ephemGridLineWidth", "cssVar": "--aries-ephem-grid-line-width" },
+      { "id": "ephemGridDashOn", "cssVar": "--aries-ephem-grid-dash-on" },
+      { "id": "ephemGridDashOff", "cssVar": "--aries-ephem-grid-dash-off" },
+      { "id": "ephemStationTickMin", "cssVar": "--aries-ephem-station-tick-min" },
+      { "id": "ephemStationTickMax", "cssVar": "--aries-ephem-station-tick-max" },
+      { "id": "ephemStationTickLineWidth", "cssVar": "--aries-ephem-station-tick-line-width" },
+      { "id": "ephemEventGlyphMin", "cssVar": "--aries-ephem-event-glyph-min" },
+      { "id": "ephemEventGlyphMax", "cssVar": "--aries-ephem-event-glyph-max" },
+      { "id": "ephemHoverFontSize", "cssVar": "--aries-ephem-hover-font-size" },
+      { "id": "ephemHoverPadX", "cssVar": "--aries-ephem-hover-pad-x" },
+      { "id": "ephemHoverPadY", "cssVar": "--aries-ephem-hover-pad-y" },
+      { "id": "ephemHoverOffsetX", "cssVar": "--aries-ephem-hover-offset-x" },
+      { "id": "ephemHoverOffsetY", "cssVar": "--aries-ephem-hover-offset-y" }
+    ]
+  },
+  "runtimeOnly": [
+    {
+      "name": "--aries-navbar-scale",
+      "default": "1",
+      "family": "app.navbar",
+      "class": "runtime",
+      "role": "measured-scale",
+      "owner": "workspace-navbar",
+      "provider": "react-inline",
+      "providerFile": "src/components/workshell/workspace-content.tsx",
+      "scope": "component",
+      "type": "number",
+      "unit": ""
+    },
+    {
+      "name": "--sidebar-width",
+      "default": "272px",
+      "family": "runtime.measured-layout",
+      "class": "runtime",
+      "role": "measured-sidebar-width",
+      "owner": "workspace-sidebar",
+      "provider": "react-inline",
+      "providerFile": "src/components/workshell/workspace-frame.tsx",
+      "scope": "component",
+      "type": "number",
+      "unit": "px"
+    },
+    {
+      "name": "--sidebar-width-icon",
+      "default": "3rem",
+      "family": "runtime.measured-layout",
+      "class": "runtime",
+      "role": "sidebar-collapsed-width",
+      "owner": "workspace-sidebar",
+      "provider": "react-inline",
+      "providerFile": "src/components/workshell/workspace-frame.tsx",
+      "scope": "component",
+      "type": "number",
+      "unit": "rem"
+    },
+    {
+      "name": "--right-pane-width",
+      "default": "320px",
+      "family": "runtime.measured-layout",
+      "class": "runtime",
+      "role": "measured-right-pane-width",
+      "owner": "workspace-right-pane",
+      "provider": "react-inline",
+      "providerFile": "src/components/workshell/workspace-content.tsx",
+      "scope": "component",
+      "type": "number",
+      "unit": "px"
+    },
+    {
+      "name": "--right-pane-min-content-width",
+      "default": "240px",
+      "family": "runtime.measured-layout",
+      "class": "runtime",
+      "role": "right-pane-minimum-width",
+      "owner": "workspace-right-pane",
+      "provider": "react-inline",
+      "providerFile": "src/components/workshell/workspace-content.tsx",
+      "scope": "component",
+      "type": "number",
+      "unit": "px"
+    },
+    {
+      "name": "--right-pane-preferred-width",
+      "default": "320px",
+      "family": "runtime.measured-layout",
+      "class": "runtime",
+      "role": "right-pane-preferred-width",
+      "owner": "workspace-right-pane",
+      "provider": "react-inline",
+      "providerFile": "src/components/workshell/workspace-content.tsx",
+      "scope": "component",
+      "type": "number",
+      "unit": "px"
+    },
+    {
+      "name": "--skeleton-width",
+      "default": "50%",
+      "family": "runtime.measured-layout",
+      "class": "runtime",
+      "role": "generated-skeleton-width",
+      "owner": "sidebar-skeleton",
+      "provider": "react-inline",
+      "providerFile": "src/components/ui/sidebar.tsx",
+      "scope": "component",
+      "type": "number",
+      "unit": "%"
+    }
+  ],
+  "externalTokens": [
+    {
+      "name": "--anchor-width",
+      "default": null,
+      "class": "runtime",
+      "role": "floating-anchor-width",
+      "owner": "base-ui",
+      "provider": "external-base-ui",
+      "scope": "component",
+      "type": "number",
+      "unit": "px"
+    },
+    {
+      "name": "--available-height",
+      "default": null,
+      "class": "runtime",
+      "role": "floating-available-height",
+      "owner": "base-ui",
+      "provider": "external-base-ui",
+      "scope": "component",
+      "type": "number",
+      "unit": "px"
+    },
+    {
+      "name": "--transform-origin",
+      "default": null,
+      "class": "runtime",
+      "role": "floating-transform-origin",
+      "owner": "base-ui",
+      "provider": "external-base-ui",
+      "scope": "component",
+      "type": "string",
+      "unit": ""
+    },
+    {
+      "name": "--spacing",
+      "default": null,
+      "class": "runtime",
+      "role": "tailwind-spacing-function",
+      "owner": "tailwind",
+      "provider": "external-tailwind",
+      "scope": "build",
+      "type": "string",
+      "unit": ""
+    }
+  ],
+  "families": [
+    {
+      "id": "app.typography",
+      "match": ["--aries-font-*"],
+      "defaults": { "class": "runtime", "role": "typography", "owner": "app-theme", "provider": "css-declaration", "scope": "app", "type": "infer", "unit": "infer" }
+    },
+    {
+      "id": "app.palette",
+      "match": ["--aries-background", "--aries-surface", "--aries-surface-subtle", "--aries-accent", "--aries-border-*", "--aries-focus-ring", "--aries-destructive", "--aries-overlay-scrim", "--aries-text-*", "--aries-status-good", "--aries-status-caution", "--aries-status-avoid", "--aries-status-neutral", "--aries-unsaved-indicator", "--aries-validation-error"],
+      "defaults": { "class": "runtime", "role": "semantic-color", "owner": "app-theme", "provider": "css-declaration", "scope": "app", "type": "color", "unit": "" }
+    },
+    {
+      "id": "app.navbar",
+      "match": ["--aries-navbar-*"],
+      "defaults": { "class": "runtime", "role": "navbar", "owner": "workspace-navbar", "provider": "css-declaration", "scope": "component", "type": "infer", "unit": "infer" }
+    },
+    {
+      "id": "app.mode-hint",
+      "match": ["--aries-mode-hint-*", "--aries-ambient-spotlight-*"],
+      "defaults": { "class": "runtime", "role": "mode-hint", "owner": "mode-hint-rail", "provider": "css-declaration", "scope": "component", "type": "infer", "unit": "infer" }
+    },
+    {
+      "id": "app.spotlight",
+      "match": ["--aries-spotlight-*"],
+      "defaults": { "class": "runtime", "role": "spotlight", "owner": "spotlight", "provider": "css-declaration", "scope": "component", "type": "infer", "unit": "infer" }
+    },
+    {
+      "id": "app.inspector",
+      "match": ["--aries-inspector-*"],
+      "defaults": { "class": "runtime", "role": "inspector", "owner": "inspector", "provider": "css-declaration", "scope": "component", "type": "infer", "unit": "infer" }
+    },
+    {
+      "id": "app.list",
+      "match": ["--aries-list-*"],
+      "defaults": { "class": "runtime", "role": "list", "owner": "sidebar-lists", "provider": "css-declaration", "scope": "component", "type": "infer", "unit": "infer" }
+    },
+    {
+      "id": "app.table",
+      "match": ["--aries-table-*"],
+      "defaults": { "class": "runtime", "role": "table", "owner": "workspace-tables", "provider": "css-declaration", "scope": "component", "type": "infer", "unit": "infer" }
+    },
+    {
+      "id": "app.search",
+      "match": ["--aries-search-*"],
+      "defaults": { "class": "runtime", "role": "search", "owner": "search-surfaces", "provider": "css-declaration", "scope": "component", "type": "infer", "unit": "infer" }
+    },
+    {
+      "id": "renderer.ephemeris",
+      "match": ["--aries-ephem-*"],
+      "defaults": { "class": "runtime", "role": "renderer-metric", "owner": "graphic-ephemeris", "provider": "css-declaration", "scope": "renderer", "type": "infer", "unit": "infer" }
+    },
+    {
+      "id": "app.sidebar",
+      "match": ["--aries-sidebar-*"],
+      "defaults": { "class": "runtime", "role": "sidebar", "owner": "workspace-sidebar", "provider": "css-declaration", "scope": "component", "type": "infer", "unit": "infer" }
+    },
+    {
+      "id": "app.shell",
+      "match": ["--aries-header-text", "--aries-status-text", "--aries-statusbar-*", "--aries-titlebar-*", "--aries-ui-scale", "--aries-panel-*", "--aries-nav-side-margin", "--aries-section-gap"],
+      "defaults": { "class": "runtime", "role": "shell", "owner": "workspace-shell", "provider": "css-declaration", "scope": "app", "type": "infer", "unit": "infer" }
+    },
+    {
+      "id": "foundation.radius",
+      "match": ["--aries-radius-*"],
+      "defaults": { "class": "runtime", "role": "radius-scale", "owner": "app-theme", "provider": "css-declaration", "scope": "app", "type": "infer", "unit": "infer" }
+    },
+    {
+      "id": "foundation.motion",
+      "match": ["--aries-motion-*"],
+      "defaults": { "class": "runtime", "role": "motion", "owner": "workspace-shell", "provider": "css-declaration", "scope": "app", "type": "infer", "unit": "infer" }
+    },
+    {
+      "id": "morinus.palette",
+      "match": ["--morinus-frame", "--morinus-signs", "--morinus-angles", "--morinus-houses", "--morinus-housenums", "--morinus-peregrin", "--morinus-positions", "--morinus-table", "--morinus-dignity-*", "--morinus-aspect-*"],
+      "defaults": { "class": "runtime", "role": "renderer-palette", "owner": "chart-theme", "provider": "css-declaration", "scope": "renderer", "type": "color", "unit": "" }
+    },
+    {
+      "id": "morinus.chrome",
+      "match": ["--morinus-font-*", "--morinus-row-*", "--morinus-nav-*", "--morinus-sidebar-*", "--morinus-header-*", "--morinus-status-*", "--morinus-scrollbar-*"],
+      "defaults": { "class": "runtime", "role": "legacy-chrome-alias", "owner": "workspace-shell", "provider": "css-declaration", "scope": "component", "type": "infer", "unit": "infer" }
+    },
+    {
+      "id": "platform.tailwind-color",
+      "match": ["--color-*"],
+      "defaults": { "class": "derived", "role": "tailwind-color-projection", "owner": "tailwind", "provider": "css-expression", "scope": "platform", "type": "infer", "unit": "infer" }
+    },
+    {
+      "id": "platform.tailwind-font",
+      "match": ["--font-*"],
+      "defaults": { "class": "derived", "role": "tailwind-font-projection", "owner": "tailwind", "provider": "css-expression", "scope": "platform", "type": "infer", "unit": "infer" }
+    },
+    {
+      "id": "platform.radius",
+      "match": ["--radius", "--radius-*"],
+      "defaults": { "class": "derived", "role": "radius-projection", "owner": "tailwind", "provider": "css-expression", "scope": "platform", "type": "infer", "unit": "infer" }
+    },
+    {
+      "id": "platform.shadcn",
+      "match": ["--background", "--foreground", "--card", "--card-foreground", "--popover", "--popover-foreground", "--primary", "--primary-foreground", "--secondary", "--secondary-foreground", "--muted", "--muted-foreground", "--accent", "--accent-foreground", "--destructive", "--border", "--input", "--ring", "--sidebar", "--sidebar-foreground", "--sidebar-primary", "--sidebar-primary-foreground", "--sidebar-accent", "--sidebar-accent-foreground", "--sidebar-border", "--sidebar-ring"],
+      "defaults": { "class": "derived", "role": "shadcn-semantic-projection", "owner": "shadcn", "provider": "css-expression", "scope": "platform", "type": "infer", "unit": "infer" }
+    },
+    {
+      "id": "runtime.titlebar",
+      "match": ["--titlebar-*"],
+      "defaults": { "class": "runtime", "role": "native-titlebar-geometry", "owner": "workspace-titlebar", "provider": "css-declaration", "scope": "component", "type": "infer", "unit": "infer" }
+    },
+    {
+      "id": "runtime.measured-layout",
+      "match": ["--sidebar-width", "--sidebar-width-icon", "--right-pane-width", "--right-pane-min-content-width", "--right-pane-preferred-width", "--skeleton-width"],
+      "defaults": { "class": "runtime", "role": "measured-layout", "owner": "react-layout", "provider": "react-inline", "scope": "component", "type": "infer", "unit": "infer" }
+    },
+    {
+      "id": "external.base-ui",
+      "match": ["--anchor-width", "--available-height", "--transform-origin"],
+      "defaults": { "class": "runtime", "role": "floating-geometry", "owner": "base-ui", "provider": "external-base-ui", "scope": "component", "type": "infer", "unit": "infer" }
+    },
+    {
+      "id": "external.tailwind",
+      "match": ["--spacing"],
+      "defaults": { "class": "runtime", "role": "tailwind-function", "owner": "tailwind", "provider": "external-tailwind", "scope": "build", "type": "infer", "unit": "infer" }
+    }
+  ],
+  "overrides": [
+    {
+      "match": ["--aries-font-ui", "--aries-text-*", "--aries-sidebar-text", "--aries-background", "--aries-surface", "--aries-surface-subtle", "--aries-accent", "--aries-border-subtle"],
+      "set": { "class": "public", "provider": "daemon-theme-state" }
+    },
+    {
+      "match": ["--aries-destructive", "--aries-status-good", "--aries-status-caution", "--aries-status-avoid", "--aries-status-neutral", "--aries-unsaved-indicator", "--aries-validation-error", "--aries-radius-md"],
+      "set": { "class": "public", "provider": "css-declaration" }
+    },
+    {
+      "match": ["--morinus-frame", "--morinus-signs", "--morinus-angles", "--morinus-houses", "--morinus-housenums", "--morinus-peregrin", "--morinus-positions", "--morinus-dignity-*"],
+      "set": { "class": "public", "provider": "daemon-theme-state" }
+    },
+    {
+      "match": ["--morinus-table"],
+      "set": { "class": "runtime", "provider": "daemon-theme-state" }
+    }
+  ],
+  "allowedCrossFamilyDependencies": [],
+  "authoringExclusions": [
+    {
+      "id": "fixed-and-derived-fonts",
+      "tokens": ["--aries-font-heading", "--aries-font-mono", "--aries-font-symbols"],
+      "reason": "Heading currently inherits the public UI family, while monospace and AriesMorinus symbol stacks stay fixed until font loading, glyph coverage, and export parity are validated."
+    },
+    {
+      "id": "shell-motion",
+      "tokens": ["--aries-motion-shell-duration", "--aries-motion-shell-ease"],
+      "reason": "Shell motion remains internal until a public profile can validate reduced-motion behavior and retained-surface transition timing together."
+    },
+    {
+      "id": "partial-ui-scale",
+      "tokens": ["--aries-ui-scale"],
+      "reason": "The legacy UI scale currently affects only the body base font rather than the full component metric system."
+    },
+    {
+      "id": "react-measured-layout",
+      "tokens": ["--aries-navbar-scale", "--sidebar-width", "--sidebar-width-icon", "--right-pane-width", "--right-pane-min-content-width", "--right-pane-preferred-width", "--skeleton-width"],
+      "reason": "These values are measured or supplied by their React layout owners and are not design-profile inputs."
+    }
+  ],
+  "publicTokens": {
+    "--aries-accent": {
+      "semanticId": "app.color.interactiveAccent",
+      "label": "Interactive accent",
+      "description": "Fill for selected/current rows and secondary interaction emphasis; this is not a decorative brand color.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "effectiveAuthority": "daemon-theme-state",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload appTokens[\"--aries-accent\"]",
+      "affectedSurfaces": [
+        "application chrome",
+        "workspace",
+        "dialogs"
+      ],
+      "inheritanceMode": "daemon-resolved",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Review dark/light modes, affected surfaces, and recorded contrast pairs before changing this role."
+      ]
+    },
+    "--aries-background": {
+      "semanticId": "app.color.background",
+      "label": "App background",
+      "description": "Base application canvas; the current legacy option also supplies the wheel background.",
+      "tier": "semantic-app",
+      "scope": "both",
+      "effectiveAuthority": "daemon-theme-state",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload appTokens[\"--aries-background\"]",
+      "affectedSurfaces": [
+        "application chrome",
+        "workspace",
+        "dialogs"
+      ],
+      "inheritanceMode": "daemon-resolved",
+      "handoffStatus": "blocked-by-coupling",
+      "safetyNotes": [
+        "Blocked because app and chart backgrounds share options.clrbackground."
+      ]
+    },
+    "--aries-border-subtle": {
+      "semanticId": "app.color.borderSubtle",
+      "label": "Subtle border",
+      "description": "Low-emphasis divider and control-border semantic across application chrome.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "effectiveAuthority": "daemon-theme-state",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload appTokens[\"--aries-border-subtle\"]",
+      "affectedSurfaces": [
+        "application chrome",
+        "workspace",
+        "dialogs"
+      ],
+      "inheritanceMode": "daemon-resolved",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Review dark/light modes, affected surfaces, and recorded contrast pairs before changing this role."
+      ]
+    },
+    "--aries-destructive": {
+      "semanticId": "app.color.destructive",
+      "label": "Destructive action",
+      "description": "Application error and destructive-action color, deliberately independent from astrological dignity colors.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-destructive",
+      "affectedSurfaces": [
+        "application chrome",
+        "workspace",
+        "dialogs"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Do not reconnect this role to --morinus-dignity-exil; review contrast."
+      ]
+    },
+    "--aries-ephem-curve-width-large": {
+      "semanticId": "renderer.ephemeris.curve.strokeLarge",
+      "label": "Ephemeris curve stroke large",
+      "description": "Planet-curve stroke above the graphic-ephemeris curve breakpoint.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-curve-width-large",
+      "affectedSurfaces": [
+        "graphic ephemeris Canvas",
+        "graphic ephemeris export"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Respect recorded metric ordering and verify dense event/station scenes."
+      ]
+    },
+    "--aries-ephem-curve-width-small": {
+      "semanticId": "renderer.ephemeris.curve.strokeSmall",
+      "label": "Ephemeris curve stroke small",
+      "description": "Planet-curve stroke below the graphic-ephemeris curve breakpoint.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-curve-width-small",
+      "affectedSurfaces": [
+        "graphic ephemeris Canvas",
+        "graphic ephemeris export"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Respect recorded metric ordering and verify dense event/station scenes."
+      ]
+    },
+    "--aries-ephem-event-glyph-max": {
+      "semanticId": "renderer.ephemeris.event.glyphMax",
+      "label": "Ephemeris event glyph maximum",
+      "description": "Maximum symbol size for ephemeris event glyphs.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-event-glyph-max",
+      "affectedSurfaces": [
+        "graphic ephemeris Canvas",
+        "graphic ephemeris export"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Respect recorded metric ordering and verify dense event/station scenes."
+      ]
+    },
+    "--aries-ephem-event-glyph-min": {
+      "semanticId": "renderer.ephemeris.event.glyphMin",
+      "label": "Ephemeris event glyph minimum",
+      "description": "Minimum symbol size for ephemeris event glyphs.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-event-glyph-min",
+      "affectedSurfaces": [
+        "graphic ephemeris Canvas",
+        "graphic ephemeris export"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Respect recorded metric ordering and verify dense event/station scenes."
+      ]
+    },
+    "--aries-ephem-frame-width-large": {
+      "semanticId": "renderer.ephemeris.frame.strokeLarge",
+      "label": "Ephemeris frame stroke large",
+      "description": "Frame stroke for large graphic-ephemeris canvases.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-frame-width-large",
+      "affectedSurfaces": [
+        "graphic ephemeris Canvas",
+        "graphic ephemeris export"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Respect recorded metric ordering and verify dense event/station scenes."
+      ]
+    },
+    "--aries-ephem-frame-width-medium": {
+      "semanticId": "renderer.ephemeris.frame.strokeMedium",
+      "label": "Ephemeris frame stroke medium",
+      "description": "Frame stroke for medium graphic-ephemeris canvases.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-frame-width-medium",
+      "affectedSurfaces": [
+        "graphic ephemeris Canvas",
+        "graphic ephemeris export"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Respect recorded metric ordering and verify dense event/station scenes."
+      ]
+    },
+    "--aries-ephem-frame-width-small": {
+      "semanticId": "renderer.ephemeris.frame.strokeSmall",
+      "label": "Ephemeris frame stroke small",
+      "description": "Frame stroke for small graphic-ephemeris canvases.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-frame-width-small",
+      "affectedSurfaces": [
+        "graphic ephemeris Canvas",
+        "graphic ephemeris export"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Respect recorded metric ordering and verify dense event/station scenes."
+      ]
+    },
+    "--aries-ephem-grid-dash-off": {
+      "semanticId": "renderer.ephemeris.grid.dashOff",
+      "label": "Ephemeris grid dash gap",
+      "description": "Empty segment length in the ephemeris grid dash pattern.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-grid-dash-off",
+      "affectedSurfaces": [
+        "graphic ephemeris Canvas",
+        "graphic ephemeris export"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Respect recorded metric ordering and verify dense event/station scenes."
+      ]
+    },
+    "--aries-ephem-grid-dash-on": {
+      "semanticId": "renderer.ephemeris.grid.dashOn",
+      "label": "Ephemeris grid dash",
+      "description": "Painted segment length in the ephemeris grid dash pattern.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-grid-dash-on",
+      "affectedSurfaces": [
+        "graphic ephemeris Canvas",
+        "graphic ephemeris export"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Respect recorded metric ordering and verify dense event/station scenes."
+      ]
+    },
+    "--aries-ephem-grid-line-width": {
+      "semanticId": "renderer.ephemeris.grid.stroke",
+      "label": "Ephemeris grid stroke",
+      "description": "Stroke width for graphic-ephemeris grid lines.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-grid-line-width",
+      "affectedSurfaces": [
+        "graphic ephemeris Canvas",
+        "graphic ephemeris export"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Respect recorded metric ordering and verify dense event/station scenes."
+      ]
+    },
+    "--aries-ephem-header-font-size": {
+      "semanticId": "renderer.ephemeris.header.fontSize",
+      "label": "Ephemeris header text",
+      "description": "Text size for graphic-ephemeris header controls.",
+      "tier": "component",
+      "scope": "chart",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-header-font-size",
+      "affectedSurfaces": [
+        "graphic ephemeris"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the retained header/hover UI usable at compact viewport sizes."
+      ]
+    },
+    "--aries-ephem-header-gap": {
+      "semanticId": "renderer.ephemeris.header.gap",
+      "label": "Ephemeris header gap",
+      "description": "Horizontal gap between graphic-ephemeris header controls.",
+      "tier": "component",
+      "scope": "chart",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-header-gap",
+      "affectedSurfaces": [
+        "graphic ephemeris"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the retained header/hover UI usable at compact viewport sizes."
+      ]
+    },
+    "--aries-ephem-header-pad-x": {
+      "semanticId": "renderer.ephemeris.header.paddingInline",
+      "label": "Ephemeris header horizontal padding",
+      "description": "Inline padding around the graphic-ephemeris header.",
+      "tier": "component",
+      "scope": "chart",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-header-pad-x",
+      "affectedSurfaces": [
+        "graphic ephemeris"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the retained header/hover UI usable at compact viewport sizes."
+      ]
+    },
+    "--aries-ephem-header-pad-y": {
+      "semanticId": "renderer.ephemeris.header.paddingBlock",
+      "label": "Ephemeris header vertical padding",
+      "description": "Block padding around the graphic-ephemeris header.",
+      "tier": "component",
+      "scope": "chart",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-header-pad-y",
+      "affectedSurfaces": [
+        "graphic ephemeris"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the retained header/hover UI usable at compact viewport sizes."
+      ]
+    },
+    "--aries-ephem-hover-font-size": {
+      "semanticId": "renderer.ephemeris.hover.fontSize",
+      "label": "Ephemeris hover text",
+      "description": "Text size inside the graphic-ephemeris hover card.",
+      "tier": "component",
+      "scope": "chart",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-hover-font-size",
+      "affectedSurfaces": [
+        "graphic ephemeris"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the retained header/hover UI usable at compact viewport sizes."
+      ]
+    },
+    "--aries-ephem-hover-offset-x": {
+      "semanticId": "renderer.ephemeris.hover.offsetInline",
+      "label": "Ephemeris hover horizontal offset",
+      "description": "Horizontal offset from the pointer to the ephemeris hover card.",
+      "tier": "component",
+      "scope": "chart",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-hover-offset-x",
+      "affectedSurfaces": [
+        "graphic ephemeris"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the retained header/hover UI usable at compact viewport sizes."
+      ]
+    },
+    "--aries-ephem-hover-offset-y": {
+      "semanticId": "renderer.ephemeris.hover.offsetBlock",
+      "label": "Ephemeris hover vertical offset",
+      "description": "Vertical offset from the pointer to the ephemeris hover card.",
+      "tier": "component",
+      "scope": "chart",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-hover-offset-y",
+      "affectedSurfaces": [
+        "graphic ephemeris"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the retained header/hover UI usable at compact viewport sizes."
+      ]
+    },
+    "--aries-ephem-hover-pad-x": {
+      "semanticId": "renderer.ephemeris.hover.paddingInline",
+      "label": "Ephemeris hover horizontal padding",
+      "description": "Inline padding inside the graphic-ephemeris hover card.",
+      "tier": "component",
+      "scope": "chart",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-hover-pad-x",
+      "affectedSurfaces": [
+        "graphic ephemeris"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the retained header/hover UI usable at compact viewport sizes."
+      ]
+    },
+    "--aries-ephem-hover-pad-y": {
+      "semanticId": "renderer.ephemeris.hover.paddingBlock",
+      "label": "Ephemeris hover vertical padding",
+      "description": "Block padding inside the graphic-ephemeris hover card.",
+      "tier": "component",
+      "scope": "chart",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-hover-pad-y",
+      "affectedSurfaces": [
+        "graphic ephemeris"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the retained header/hover UI usable at compact viewport sizes."
+      ]
+    },
+    "--aries-ephem-state-font-size": {
+      "semanticId": "renderer.ephemeris.state.fontSize",
+      "label": "Ephemeris state text",
+      "description": "Text size for loading, empty, and state labels on the graphic ephemeris.",
+      "tier": "component",
+      "scope": "chart",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-state-font-size",
+      "affectedSurfaces": [
+        "graphic ephemeris"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the retained header/hover UI usable at compact viewport sizes."
+      ]
+    },
+    "--aries-ephem-station-tick-line-width": {
+      "semanticId": "renderer.ephemeris.station.stroke",
+      "label": "Ephemeris station stroke",
+      "description": "Stroke width for station marker ticks.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-station-tick-line-width",
+      "affectedSurfaces": [
+        "graphic ephemeris Canvas",
+        "graphic ephemeris export"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Respect recorded metric ordering and verify dense event/station scenes."
+      ]
+    },
+    "--aries-ephem-station-tick-max": {
+      "semanticId": "renderer.ephemeris.station.tickMax",
+      "label": "Ephemeris station tick maximum",
+      "description": "Maximum half-length for a station marker tick.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-station-tick-max",
+      "affectedSurfaces": [
+        "graphic ephemeris Canvas",
+        "graphic ephemeris export"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Respect recorded metric ordering and verify dense event/station scenes."
+      ]
+    },
+    "--aries-ephem-station-tick-min": {
+      "semanticId": "renderer.ephemeris.station.tickMin",
+      "label": "Ephemeris station tick minimum",
+      "description": "Minimum half-length for a station marker tick.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-station-tick-min",
+      "affectedSurfaces": [
+        "graphic ephemeris Canvas",
+        "graphic ephemeris export"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Respect recorded metric ordering and verify dense event/station scenes."
+      ]
+    },
+    "--aries-font-size-base": {
+      "semanticId": "app.type.sizeBase",
+      "label": "Base text size",
+      "description": "Foundation size for ordinary application text and inherited component roles.",
+      "tier": "primitive",
+      "scope": "app",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-font-size-base",
+      "affectedSurfaces": [
+        "application typography",
+        "lists",
+        "tables",
+        "panels"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Preserve the recorded typography hierarchy and dense desktop layout fit."
+      ]
+    },
+    "--aries-font-size-header": {
+      "semanticId": "app.type.sizeHeader",
+      "label": "Header text size",
+      "description": "Semantic size for retained panel and workspace headers.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-font-size-header",
+      "affectedSurfaces": [
+        "application typography",
+        "lists",
+        "tables",
+        "panels"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Preserve the recorded typography hierarchy and dense desktop layout fit."
+      ]
+    },
+    "--aries-font-size-reading": {
+      "semanticId": "app.type.sizeReading",
+      "label": "Reading text size",
+      "description": "Semantic size for longer-form interpretive content.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-font-size-reading",
+      "affectedSurfaces": [
+        "application typography",
+        "lists",
+        "tables",
+        "panels"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Preserve the recorded typography hierarchy and dense desktop layout fit."
+      ]
+    },
+    "--aries-font-size-section": {
+      "semanticId": "app.type.sizeSection",
+      "label": "Section label size",
+      "description": "Semantic size for low-emphasis section labels.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-font-size-section",
+      "affectedSurfaces": [
+        "application typography",
+        "lists",
+        "tables",
+        "panels"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Preserve the recorded typography hierarchy and dense desktop layout fit."
+      ]
+    },
+    "--aries-font-size-small": {
+      "semanticId": "app.type.sizeSmall",
+      "label": "Small text size",
+      "description": "Semantic size for compact supporting labels and controls.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-font-size-small",
+      "affectedSurfaces": [
+        "application typography",
+        "lists",
+        "tables",
+        "panels"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Preserve the recorded typography hierarchy and dense desktop layout fit."
+      ]
+    },
+    "--aries-font-ui": {
+      "semanticId": "app.type.familyUi",
+      "label": "UI typeface",
+      "description": "Primary application text-family stack, shared intentionally by textual chart labels.",
+      "tier": "primitive",
+      "scope": "both",
+      "effectiveAuthority": "daemon-theme-state",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload appTokens[\"--aries-font-ui\"]",
+      "affectedSurfaces": [
+        "application chrome",
+        "workspace",
+        "dialogs"
+      ],
+      "inheritanceMode": "daemon-resolved",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Review dark/light modes, affected surfaces, and recorded contrast pairs before changing this role."
+      ]
+    },
+    "--aries-nav-side-margin": {
+      "semanticId": "app.sidebar.navigationInset",
+      "label": "Sidebar navigation inset",
+      "description": "Horizontal inset for navigation rows and retained sidebar content.",
+      "tier": "component",
+      "scope": "app",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-nav-side-margin",
+      "affectedSurfaces": [
+        "application chrome",
+        "workspace",
+        "dialogs"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Review dark/light modes, affected surfaces, and recorded contrast pairs before changing this role."
+      ]
+    },
+    "--aries-radius-md": {
+      "semanticId": "app.radius.base",
+      "label": "Base corner radius",
+      "description": "Foundation corner radius from which platform and large-radius projections derive.",
+      "tier": "primitive",
+      "scope": "app",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-radius-md",
+      "affectedSurfaces": [
+        "application chrome",
+        "workspace",
+        "dialogs"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Review dark/light modes, affected surfaces, and recorded contrast pairs before changing this role."
+      ],
+      "bounds": {
+        "min": 4,
+        "max": 18,
+        "step": 1
+      }
+    },
+    "--aries-sidebar-row-height": {
+      "semanticId": "app.sidebar.rowHeight",
+      "label": "Sidebar row height",
+      "description": "Standard retained workspace-sidebar navigation row height.",
+      "tier": "component",
+      "scope": "app",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-sidebar-row-height",
+      "affectedSurfaces": [
+        "application chrome",
+        "workspace",
+        "dialogs"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Review dark/light modes, affected surfaces, and recorded contrast pairs before changing this role."
+      ]
+    },
+    "--aries-sidebar-text": {
+      "semanticId": "app.sidebar.foreground",
+      "label": "Sidebar foreground",
+      "description": "Primary text and glyph foreground over the sidebar surface.",
+      "tier": "component",
+      "scope": "app",
+      "effectiveAuthority": "daemon-theme-state",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload appTokens[\"--aries-sidebar-text\"]",
+      "affectedSurfaces": [
+        "application chrome",
+        "workspace",
+        "dialogs"
+      ],
+      "inheritanceMode": "daemon-resolved",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Review dark/light modes, affected surfaces, and recorded contrast pairs before changing this role."
+      ]
+    },
+    "--aries-status-avoid": {
+      "semanticId": "app.status.avoid",
+      "label": "Avoid status",
+      "description": "Color for unfavorable or avoid status indications.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-status-avoid",
+      "affectedSurfaces": [
+        "inspector alert status dots"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Review dark/light modes, affected surfaces, and recorded contrast pairs before changing this role."
+      ]
+    },
+    "--aries-status-caution": {
+      "semanticId": "app.status.caution",
+      "label": "Caution status",
+      "description": "Color for warning or caution status indications.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-status-caution",
+      "affectedSurfaces": [
+        "inspector alert status dots"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Review dark/light modes, affected surfaces, and recorded contrast pairs before changing this role."
+      ]
+    },
+    "--aries-status-good": {
+      "semanticId": "app.status.good",
+      "label": "Positive status",
+      "description": "Color for successful, favorable, or healthy status indications.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-status-good",
+      "affectedSurfaces": [
+        "inspector alert status dots"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Review dark/light modes, affected surfaces, and recorded contrast pairs before changing this role."
+      ]
+    },
+    "--aries-status-neutral": {
+      "semanticId": "app.status.neutral",
+      "label": "Neutral status",
+      "description": "Color for informational status without positive or negative weight.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-status-neutral",
+      "affectedSurfaces": [
+        "inspector alert status dots"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Review dark/light modes, affected surfaces, and recorded contrast pairs before changing this role."
+      ]
+    },
+    "--aries-surface": {
+      "semanticId": "app.color.surface",
+      "label": "Primary surface",
+      "description": "Primary contained application surface used by the sidebar, panels, cards, and table headers.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "effectiveAuthority": "daemon-theme-state",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload appTokens[\"--aries-surface\"]",
+      "affectedSurfaces": [
+        "application chrome",
+        "workspace",
+        "dialogs"
+      ],
+      "inheritanceMode": "daemon-resolved",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Review dark/light modes, affected surfaces, and recorded contrast pairs before changing this role."
+      ]
+    },
+    "--aries-surface-subtle": {
+      "semanticId": "app.color.surfaceSubtle",
+      "label": "Subtle surface",
+      "description": "Low-emphasis surface used for stripes, hover fills, and secondary contained regions.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "effectiveAuthority": "daemon-theme-state",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload appTokens[\"--aries-surface-subtle\"]",
+      "affectedSurfaces": [
+        "application chrome",
+        "workspace",
+        "dialogs"
+      ],
+      "inheritanceMode": "daemon-resolved",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Review dark/light modes, affected surfaces, and recorded contrast pairs before changing this role."
+      ]
+    },
+    "--aries-table-cell-x-standard": {
+      "semanticId": "app.table.standard.paddingInline",
+      "label": "Standard table horizontal padding",
+      "description": "Inline cell padding for standard-density workspace tables.",
+      "tier": "component",
+      "scope": "app",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-table-cell-x-standard",
+      "affectedSurfaces": [
+        "workspace tables",
+        "sidebar tables"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Coordinate font size, row/header height, and vertical padding to prevent clipping."
+      ]
+    },
+    "--aries-table-cell-y-standard": {
+      "semanticId": "app.table.standard.paddingBlock",
+      "label": "Standard table vertical padding",
+      "description": "Block cell padding for standard-density workspace tables.",
+      "tier": "component",
+      "scope": "app",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-table-cell-y-standard",
+      "affectedSurfaces": [
+        "workspace tables",
+        "sidebar tables"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Coordinate font size, row/header height, and vertical padding to prevent clipping."
+      ]
+    },
+    "--aries-table-font-size-standard": {
+      "semanticId": "app.table.standard.fontSize",
+      "label": "Standard table text",
+      "description": "Default text size for standard-density workspace tables.",
+      "tier": "component",
+      "scope": "app",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-table-font-size-standard",
+      "affectedSurfaces": [
+        "workspace tables",
+        "sidebar tables"
+      ],
+      "inheritanceMode": "alias-default-with-component-override",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Coordinate font size, row/header height, and vertical padding to prevent clipping."
+      ]
+    },
+    "--aries-table-header-height-standard": {
+      "semanticId": "app.table.standard.headerHeight",
+      "label": "Standard table header height",
+      "description": "Default header-row height for standard-density workspace tables.",
+      "tier": "component",
+      "scope": "app",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-table-header-height-standard",
+      "affectedSurfaces": [
+        "workspace tables",
+        "sidebar tables"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Coordinate font size, row/header height, and vertical padding to prevent clipping."
+      ]
+    },
+    "--aries-table-row-height-standard": {
+      "semanticId": "app.table.standard.rowHeight",
+      "label": "Standard table row height",
+      "description": "Default row height for standard-density workspace tables.",
+      "tier": "component",
+      "scope": "app",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-table-row-height-standard",
+      "affectedSurfaces": [
+        "workspace tables",
+        "sidebar tables"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Coordinate font size, row/header height, and vertical padding to prevent clipping."
+      ]
+    },
+    "--aries-text-dim": {
+      "semanticId": "app.color.textDim",
+      "label": "Dim text",
+      "description": "Lowest-emphasis readable text for metadata and tertiary labels.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "effectiveAuthority": "daemon-theme-state",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload appTokens[\"--aries-text-dim\"]",
+      "affectedSurfaces": [
+        "application chrome",
+        "workspace",
+        "dialogs"
+      ],
+      "inheritanceMode": "daemon-resolved",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Review dark/light modes, affected surfaces, and recorded contrast pairs before changing this role."
+      ]
+    },
+    "--aries-text-muted": {
+      "semanticId": "app.color.textMuted",
+      "label": "Muted text",
+      "description": "Secondary text and subdued control-foreground semantic.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "effectiveAuthority": "daemon-theme-state",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload appTokens[\"--aries-text-muted\"]",
+      "affectedSurfaces": [
+        "application chrome",
+        "workspace",
+        "dialogs"
+      ],
+      "inheritanceMode": "daemon-resolved",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Review dark/light modes, affected surfaces, and recorded contrast pairs before changing this role."
+      ]
+    },
+    "--aries-text-primary": {
+      "semanticId": "app.color.textPrimary",
+      "label": "Primary text",
+      "description": "Primary application foreground; its legacy source also supplies bright chart-text fallback.",
+      "tier": "semantic-app",
+      "scope": "both",
+      "effectiveAuthority": "daemon-theme-state",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload appTokens[\"--aries-text-primary\"]",
+      "affectedSurfaces": [
+        "application chrome",
+        "workspace",
+        "dialogs"
+      ],
+      "inheritanceMode": "daemon-resolved",
+      "handoffStatus": "blocked-by-coupling",
+      "safetyNotes": [
+        "Blocked because app and bright chart text share options.clrtexts."
+      ]
+    },
+    "--aries-unsaved-indicator": {
+      "semanticId": "app.status.unsaved",
+      "label": "Unsaved indicator",
+      "description": "Indicator color for dirty or unsaved document state.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-unsaved-indicator",
+      "affectedSurfaces": [
+        "workspace sidebar dirty indicator"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Review dark/light modes, affected surfaces, and recorded contrast pairs before changing this role."
+      ]
+    },
+    "--aries-validation-error": {
+      "semanticId": "app.status.validationError",
+      "label": "Validation error",
+      "description": "Indicator color for invalid fields and validation failures.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-validation-error",
+      "affectedSurfaces": [
+        "Settings Arabic-Part duplicate validation message"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Review dark/light modes, affected surfaces, and recorded contrast pairs before changing this role."
+      ]
+    },
+    "--morinus-angles": {
+      "semanticId": "chart.color.angles",
+      "label": "Angles",
+      "description": "ASC/MC and chart-angle color.",
+      "tier": "renderer-palette",
+      "scope": "chart",
+      "effectiveAuthority": "chart-snapshot-palette",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload chartPalette[\"--morinus-angles\"]; webapp chart snapshot palette.angles is final Canvas authority",
+      "affectedSurfaces": [
+        "main wheel",
+        "comparison wheel",
+        "astrology tables",
+        "chart exports"
+      ],
+      "inheritanceMode": "snapshot-overrides-daemon-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Snapshot values override CSS fallbacks; review contrast against chart background without changing astrological meaning."
+      ]
+    },
+    "--morinus-dignity-casus": {
+      "semanticId": "chart.color.dignity.fall",
+      "label": "Fall dignity",
+      "description": "Chart/body color for fall dignity.",
+      "tier": "renderer-palette",
+      "scope": "chart",
+      "effectiveAuthority": "chart-snapshot-palette",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload chartPalette[\"--morinus-dignity-casus\"]; webapp chart snapshot palette.casus is final Canvas authority",
+      "affectedSurfaces": [
+        "main wheel",
+        "comparison wheel",
+        "astrology tables",
+        "chart exports"
+      ],
+      "inheritanceMode": "snapshot-overrides-daemon-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Snapshot values override CSS fallbacks; review contrast against chart background without changing astrological meaning."
+      ]
+    },
+    "--morinus-dignity-domicil": {
+      "semanticId": "chart.color.dignity.domicile",
+      "label": "Domicile dignity",
+      "description": "Chart/body color for domicile dignity.",
+      "tier": "renderer-palette",
+      "scope": "chart",
+      "effectiveAuthority": "chart-snapshot-palette",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload chartPalette[\"--morinus-dignity-domicil\"]; webapp chart snapshot palette.domicil is final Canvas authority",
+      "affectedSurfaces": [
+        "main wheel",
+        "comparison wheel",
+        "astrology tables",
+        "chart exports"
+      ],
+      "inheritanceMode": "snapshot-overrides-daemon-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Snapshot values override CSS fallbacks; review contrast against chart background without changing astrological meaning."
+      ]
+    },
+    "--morinus-dignity-exal": {
+      "semanticId": "chart.color.dignity.exaltation",
+      "label": "Exaltation dignity",
+      "description": "Chart/body color for exaltation dignity.",
+      "tier": "renderer-palette",
+      "scope": "chart",
+      "effectiveAuthority": "chart-snapshot-palette",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload chartPalette[\"--morinus-dignity-exal\"]; webapp chart snapshot palette.exal is final Canvas authority",
+      "affectedSurfaces": [
+        "main wheel",
+        "comparison wheel",
+        "astrology tables",
+        "chart exports"
+      ],
+      "inheritanceMode": "snapshot-overrides-daemon-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Snapshot values override CSS fallbacks; review contrast against chart background without changing astrological meaning."
+      ]
+    },
+    "--morinus-dignity-exil": {
+      "semanticId": "chart.color.dignity.exile",
+      "label": "Exile dignity",
+      "description": "Chart/body color for exile or detriment dignity, independent from app destructive color.",
+      "tier": "renderer-palette",
+      "scope": "chart",
+      "effectiveAuthority": "chart-snapshot-palette",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload chartPalette[\"--morinus-dignity-exil\"]; webapp chart snapshot palette.exil is final Canvas authority",
+      "affectedSurfaces": [
+        "main wheel",
+        "comparison wheel",
+        "astrology tables",
+        "chart exports"
+      ],
+      "inheritanceMode": "snapshot-overrides-daemon-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Snapshot values override CSS fallbacks; review contrast against chart background without changing astrological meaning."
+      ]
+    },
+    "--morinus-frame": {
+      "semanticId": "chart.color.frame",
+      "label": "Chart frame",
+      "description": "Primary wheel/frame line and neutral chart foreground.",
+      "tier": "renderer-palette",
+      "scope": "chart",
+      "effectiveAuthority": "chart-snapshot-palette",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload chartPalette[\"--morinus-frame\"]; webapp chart snapshot palette.frame is final Canvas authority",
+      "affectedSurfaces": [
+        "main wheel",
+        "comparison wheel",
+        "astrology tables",
+        "chart exports"
+      ],
+      "inheritanceMode": "snapshot-overrides-daemon-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Snapshot values override CSS fallbacks; review contrast against chart background without changing astrological meaning."
+      ]
+    },
+    "--morinus-housenums": {
+      "semanticId": "chart.color.houseNumbers",
+      "label": "House numbers",
+      "description": "House-number label color.",
+      "tier": "renderer-palette",
+      "scope": "chart",
+      "effectiveAuthority": "chart-snapshot-palette",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload chartPalette[\"--morinus-housenums\"]; webapp chart snapshot palette.houseNums is final Canvas authority",
+      "affectedSurfaces": [
+        "main wheel",
+        "comparison wheel",
+        "astrology tables",
+        "chart exports"
+      ],
+      "inheritanceMode": "snapshot-overrides-daemon-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Snapshot values override CSS fallbacks; review contrast against chart background without changing astrological meaning."
+      ]
+    },
+    "--morinus-houses": {
+      "semanticId": "chart.color.houses",
+      "label": "House lines",
+      "description": "House cusp and house-geometry color.",
+      "tier": "renderer-palette",
+      "scope": "chart",
+      "effectiveAuthority": "chart-snapshot-palette",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload chartPalette[\"--morinus-houses\"]; webapp chart snapshot palette.houses is final Canvas authority",
+      "affectedSurfaces": [
+        "main wheel",
+        "comparison wheel",
+        "astrology tables",
+        "chart exports"
+      ],
+      "inheritanceMode": "snapshot-overrides-daemon-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Snapshot values override CSS fallbacks; review contrast against chart background without changing astrological meaning."
+      ]
+    },
+    "--morinus-peregrin": {
+      "semanticId": "chart.color.peregrine",
+      "label": "Peregrine bodies",
+      "description": "Fallback color for peregrine or neutral chart bodies.",
+      "tier": "renderer-palette",
+      "scope": "chart",
+      "effectiveAuthority": "chart-snapshot-palette",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload chartPalette[\"--morinus-peregrin\"]; webapp chart snapshot palette.peregrin is final Canvas authority",
+      "affectedSurfaces": [
+        "main wheel",
+        "comparison wheel",
+        "astrology tables",
+        "chart exports"
+      ],
+      "inheritanceMode": "snapshot-overrides-daemon-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Snapshot values override CSS fallbacks; review contrast against chart background without changing astrological meaning."
+      ]
+    },
+    "--morinus-positions": {
+      "semanticId": "chart.color.positions",
+      "label": "Position text",
+      "description": "Chart position labels and numeric position text color.",
+      "tier": "renderer-palette",
+      "scope": "chart",
+      "effectiveAuthority": "chart-snapshot-palette",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload chartPalette[\"--morinus-positions\"]; webapp chart snapshot palette.positions is final Canvas authority",
+      "affectedSurfaces": [
+        "main wheel",
+        "comparison wheel",
+        "astrology tables",
+        "chart exports"
+      ],
+      "inheritanceMode": "snapshot-overrides-daemon-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Snapshot values override CSS fallbacks; review contrast against chart background without changing astrological meaning."
+      ]
+    },
+    "--morinus-signs": {
+      "semanticId": "chart.color.signs",
+      "label": "Zodiac signs",
+      "description": "Zodiac sign glyph and sign-band color.",
+      "tier": "renderer-palette",
+      "scope": "chart",
+      "effectiveAuthority": "chart-snapshot-palette",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload chartPalette[\"--morinus-signs\"]; webapp chart snapshot palette.signs is final Canvas authority",
+      "affectedSurfaces": [
+        "main wheel",
+        "comparison wheel",
+        "astrology tables",
+        "chart exports"
+      ],
+      "inheritanceMode": "snapshot-overrides-daemon-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Snapshot values override CSS fallbacks; review contrast against chart background without changing astrological meaning."
+      ]
+    }
+  },
+  "relationalConstraints": [
+    {
+      "id": "app.typography.order",
+      "kind": "ascending",
+      "tokens": ["--aries-font-size-section", "--aries-font-size-small", "--aries-font-size-base", "--aries-font-size-header", "--aries-font-size-reading"],
+      "description": "Section and supporting text must not overtake ordinary, header, or reading text."
+    },
+    {
+      "id": "renderer.ephemeris.frame-width.order",
+      "kind": "ascending",
+      "tokens": ["--aries-ephem-frame-width-small", "--aries-ephem-frame-width-medium", "--aries-ephem-frame-width-large"],
+      "description": "Responsive frame strokes grow monotonically with the canvas bucket."
+    },
+    {
+      "id": "renderer.ephemeris.curve-width.order",
+      "kind": "ascending",
+      "tokens": ["--aries-ephem-curve-width-small", "--aries-ephem-curve-width-large"],
+      "description": "Responsive curve strokes do not become thinner on larger canvases."
+    },
+    {
+      "id": "renderer.ephemeris.station-tick.range",
+      "kind": "ascending",
+      "tokens": ["--aries-ephem-station-tick-min", "--aries-ephem-station-tick-max"],
+      "description": "The station tick clamp has a valid minimum and maximum."
+    },
+    {
+      "id": "renderer.ephemeris.event-glyph.range",
+      "kind": "ascending",
+      "tokens": ["--aries-ephem-event-glyph-min", "--aries-ephem-event-glyph-max"],
+      "description": "The event glyph clamp has a valid minimum and maximum."
+    },
+    {
+      "id": "app.table.standard-row.fit",
+      "kind": "minimum-sum",
+      "target": "--aries-table-row-height-standard",
+      "terms": [
+        { "token": "--aries-table-font-size-standard", "multiplier": 1 },
+        { "token": "--aries-table-cell-y-standard", "multiplier": 2 }
+      ],
+      "description": "A standard row fits its font plus top and bottom cell padding."
+    },
+    {
+      "id": "app.table.standard-header.fit",
+      "kind": "minimum-sum",
+      "target": "--aries-table-header-height-standard",
+      "terms": [
+        { "token": "--aries-table-font-size-standard", "multiplier": 1 },
+        { "token": "--aries-table-cell-y-standard", "multiplier": 2 }
+      ],
+      "description": "A standard header fits its font plus top and bottom cell padding."
+    },
+    {
+      "id": "app.radius.order",
+      "kind": "ascending",
+      "tokens": ["--aries-radius-xs", "--aries-radius-sm", "--aries-radius-md", "--aries-radius-lg"],
+      "description": "Corner-radius steps remain ordered around the public base radius."
+    }
+  ],
+  "contrastPairs": [
+    {
+      "id": "app.primary-on-background",
+      "foreground": "--aries-text-primary",
+      "background": "--aries-background",
+      "minimumRatio": 4.5,
+      "usage": "Normal application text",
+      "review": { "status": "required-on-change", "modes": ["dark", "light"] }
+    },
+    {
+      "id": "app.muted-on-background",
+      "foreground": "--aries-text-muted",
+      "background": "--aries-background",
+      "minimumRatio": 4.5,
+      "usage": "Small secondary application text",
+      "review": { "status": "required-on-change", "modes": ["dark", "light"] }
+    },
+    {
+      "id": "app.dim-on-background",
+      "foreground": "--aries-text-dim",
+      "background": "--aries-background",
+      "minimumRatio": 3,
+      "usage": "Nonessential tertiary metadata only",
+      "review": { "status": "required-on-change", "modes": ["dark", "light"] }
+    },
+    {
+      "id": "app.sidebar-on-surface",
+      "foreground": "--aries-sidebar-text",
+      "background": "--aries-surface",
+      "minimumRatio": 4.5,
+      "usage": "Sidebar labels and glyphs",
+      "review": { "status": "required-on-change", "modes": ["dark", "light"] }
+    },
+    {
+      "id": "app.destructive-on-background",
+      "foreground": "--aries-destructive",
+      "background": "--aries-background",
+      "minimumRatio": 3,
+      "usage": "Destructive icons and emphasized error text",
+      "review": { "status": "required-on-change", "modes": ["dark", "light"] }
+    },
+    {
+      "id": "chart.frame-on-background",
+      "foreground": "--morinus-frame",
+      "background": "--aries-background",
+      "minimumRatio": 3,
+      "usage": "Chart frame and primary wheel geometry",
+      "review": { "status": "required-on-change", "modes": ["dark", "light"], "authority": "chart snapshot palette" }
+    },
+    {
+      "id": "chart.positions-on-background",
+      "foreground": "--morinus-positions",
+      "background": "--aries-background",
+      "minimumRatio": 4.5,
+      "usage": "Chart numeric positions and labels",
+      "review": { "status": "required-on-change", "modes": ["dark", "light"], "authority": "chart snapshot palette" }
+    }
+  ]
+}

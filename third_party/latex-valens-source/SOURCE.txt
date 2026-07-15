@@ -1,0 +1,17 @@
+latex-valens source snapshot
+
+Upstream repository: https://github.com/janegca/latex-valens
+Pinned upstream commit: 2d4a8b9890cd5cb7714abd52f6bd938272ba8237
+License: GPL-2.0-only (see LICENSE)
+
+This directory intentionally contains only the upstream LaTeX (*.tex) source
+files and its license. It excludes PDFs, README files, Git metadata, and local
+operating-system files from the working checkout.
+
+Aries applies one dated typographical correction to book01/01-stars.tex:
+  \textbf{Of the limbs of the body:}, it rules
+becomes:
+  \textbf{Of the limbs of the body:} it rules
+
+The corrected source file begins with a LaTeX modification notice dated
+2026-07-15.
