@@ -27,7 +27,6 @@ official supported installers.
 | `Cmd/Ctrl + Alt + A` | Ascensional Transits |
 | `Cmd/Ctrl + Shift + A` | Appearance |
 | `I` | Toggle Inspector |
-| `?` | Show key hints |
 | `Shift`, then `Shift` | Open Spotlight |
 | `0`–`9` | Open Spotlight with that digit |
 | `T` | Transits |
