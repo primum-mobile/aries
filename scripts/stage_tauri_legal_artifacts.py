@@ -226,6 +226,13 @@ def _read_license_text(source: _LicenseSource) -> str | None:
 
 
 def _run_json(command: list[str], *, cwd: Path) -> Any:
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PYTHONIOENCODING": "utf-8",
+            "PYTHONUTF8": "1",
+        }
+    )
     result = subprocess.run(
         command,
         cwd=cwd,
@@ -233,6 +240,8 @@ def _run_json(command: list[str], *, cwd: Path) -> Any:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        encoding="utf-8",
+        env=environment,
     )
     if result.returncode:
         raise RuntimeError(

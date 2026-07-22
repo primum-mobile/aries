@@ -179,7 +179,7 @@ export function ColumnResizeHandle({
       {...getResizeHandleProps(columnId)}
       className="group absolute inset-y-0 right-[-4px] z-20 flex w-2 cursor-col-resize touch-none select-none items-stretch justify-center"
     >
-      <span className="my-1 w-px bg-transparent transition-colors group-hover:bg-[color:var(--aries-border-subtle)] group-active:bg-primary" />
+      <span className="my-1 w-[var(--aries-sash-rule-size)] bg-transparent transition-colors group-hover:bg-[color:var(--aries-border-subtle)] group-active:bg-primary" />
     </span>
   );
 }

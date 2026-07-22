@@ -45,7 +45,16 @@ def test_public_readme_matches_in_app_help_shortcut_keys() -> None:
     help_keys = {
         str(row["keys"])
         for row in _shortcut_entries()
-        if row.get("bound") and row["keys"] != "?"
+        if row.get("bound") and not row.get("hidden") and row["keys"] != "?"
     }
 
     assert _readme_shortcut_keys() == help_keys
+
+
+def test_public_make_check_uses_its_prepared_virtual_environment() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+
+    assert "check: build-ext web-corpus web-runtime-resources web-legal web-check-deps" in makefile
+    assert "web-check-deps: web-build-deps" in makefile
+    assert "$(WEB_PYTHON) -m pip install -r requirements-dev.txt" in makefile
+    assert "PYTHONPATH=$(SWEP_SRC) $(WEB_PYTHON) -m pytest" in makefile

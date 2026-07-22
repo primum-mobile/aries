@@ -76,10 +76,13 @@ function buildAstrocartMapUrl(
   });
   if (options.places) params.set("places", options.places);
   if (options.titlebarSafeTop != null) params.set("titlebarSafeTop", String(options.titlebarSafeTop));
+  const forceLocalTiles = readDebugFlag(FORCE_LOCAL_TILES_KEY);
   if (basemapMeta.hasLocalTiles && basemapMeta.tilesUrl) {
     params.set("tiles", basemapMeta.tilesUrl);
-    if (readDebugFlag(FORCE_LOCAL_TILES_KEY)) params.set("offline", "1");
   }
+  // Deterministic performance runs use the minimal bundled fallback when no
+  // PMTiles archive exists; they must never depend on a network basemap.
+  if (forceLocalTiles) params.set("offline", "1");
   const token = daemonAuthToken();
   if (token) params.set("token", token);
   if (readDebugFlag(PERF_MODE_KEY)) params.set("perf", "1");

@@ -180,6 +180,7 @@ _AYANAMSHA_KEYS = {
     16: ("BabylonianKuglerIII2", None), 17: ("BabylonianHuber2", None),
     18: ("BabylonianMercier2", None), 19: ("Hipparchos", None), 20: ("Sassanian", None),
     21: ("J2000", None), 22: ("J1900", None), 23: ("B1950", None),
+    24: ("DhruvaWilhelm", "Dhruva/Galactic Center (Wilhelm)"),
 }
 
 
@@ -629,6 +630,12 @@ def export_syzygy(chrt):
         return None
     lon = _syzygy_lon(chrt)
     if lon is None:
+        try:
+            chrt.calcSyzygy()
+        except Exception:
+            pass
+        lon = _syzygy_lon(chrt)
+    if lon is None:
         return None
     try:
         house_idx = chrt.houses.getHousePos(
@@ -793,14 +800,9 @@ def _click_traditional_pass(chrt, aspect_type, lon1, lon2):
     """Whole-sign traditional filter for the click force-show path — port of
     graphchart._passes_render_traditional_filter (graphchart.py:926-951).
 
-    The sign indices must be taken in the chart's CHOSEN zodiac. The renderer's
-    longitudes (and the ones this exporter ships, see export_planets) are
-    tropical, so for a sidereal chart the ayanamsha is subtracted before the
-    sign division — exactly as graphchart.py:942-945 does. This is why the
-    filter must live in the engine/export brain: the skin ships tropical
-    longitudes and has no ayanamsha, so it cannot compute the sign distance
-    correctly. (NB: this differs from chart._passes_traditional_aspect_filter,
-    chart.py:1031, whose inputs are ALREADY sidereal and so does not rebase.)"""
+    The sign indices are taken directly in the chart's chosen zodiac. Exported
+    longitudes already carry the selected ayanamsha, so no display-stage shift
+    is permitted here."""
     if aspect_type == chart_mod.Chart.CONJUNCTIO:
         diff = 0
     elif aspect_type == chart_mod.Chart.SEXTIL:
@@ -815,9 +817,6 @@ def _click_traditional_pass(chrt, aspect_type, lon1, lon2):
         return False
     lona1 = float(lon1)
     lona2 = float(lon2)
-    if getattr(chrt.options, "ayanamsha", 0) != 0:
-        lona1 = util.normalize(lona1 - getattr(chrt, "ayanamsha", 0.0))
-        lona2 = util.normalize(lona2 - getattr(chrt, "ayanamsha", 0.0))
     sign1 = int(lona1 / chart_mod.Chart.SIGN_DEG)
     sign2 = int(lona2 / chart_mod.Chart.SIGN_DEG)
     signdiff = math.fabs(sign1 - sign2)
@@ -1227,6 +1226,7 @@ def export_overlay(chrt, overlay_render_mode="full", *, radix=None, display_date
             rows.append(
                 {
                     "group": "dayhour",
+                    "slot": "planetary-day",
                     "label": mtexts.txts["Day"],
                     "glyphs": [overlay_planet_run(chrt, idx_day)],
                 }
@@ -1234,20 +1234,31 @@ def export_overlay(chrt, overlay_render_mode="full", *, radix=None, display_date
             rows.append(
                 {
                     "group": "dayhour",
+                    "slot": "planetary-hour",
                     "label": mtexts.txts["Hour"],
                     "glyphs": [overlay_planet_run(chrt, idx_hour)],
                 }
             )
 
+    # Keep the frame-critical overlay current without pulling the more expensive
+    # term/signal pass into step_fast. The retained document snapshot supplies
+    # the previous stable term row until the generation-guarded full settle.
     term_info = None
     if overlay_render_mode != "step_fast":
-        term_info = lordofyear.get_term_lord(overlay_radix, chrt, chrt.options, display_datetime, cursor_jd=cursor_jd)
+        term_info = lordofyear.get_term_lord(
+            overlay_radix,
+            chrt,
+            chrt.options,
+            display_datetime,
+            cursor_jd=cursor_jd,
+        )
     if term_info is not None:
         sign_idx, ruler_idx = term_info
         sign_table = common.common.Signs1 if getattr(chrt.options, "signs", True) else common.common.Signs2
         rows.append(
             {
                 "group": "header",
+                "slot": "term-lord",
                 "label": str(mtexts.txts.get("TermLord", "Term lord")),
                 "glyphs": [
                     {"char": sign_table[sign_idx], "kind": "sign"},
@@ -1263,6 +1274,7 @@ def export_overlay(chrt, overlay_render_mode="full", *, radix=None, display_date
         rows.append(
             {
                 "group": "header",
+                "slot": "lord-of-year",
                 "label": str(mtexts.txts.get("LordOfYear", "Lord of the year")),
                 "glyphs": [
                     {"char": sign_table[sign_idx], "kind": "sign"},
@@ -1288,11 +1300,28 @@ def export_overlay(chrt, overlay_render_mode="full", *, radix=None, display_date
             cazimi_mode=int(getattr(chrt.options, "cazimimode", 0)),
             options=chrt.options,
         )
+    station_labels = None
+    if overlay_render_mode == "full":
+        station_labels = {
+            str(mtexts.txts.get("RetroStation", "Retro station")),
+            str(mtexts.txts.get("DirectStation", "Direct station")),
+        }
     for planet_idx, label, offset_text in signal_rows:
         glyphs = [] if planet_idx is None else [overlay_planet_run(chrt, planet_idx)]
+        # Deferred exports contain only live station rows. Full exports mix
+        # stations with the expensive phasis/cazimi/eclipse rows retained while
+        # stepping, so tag stations semantically instead of asking the frontend
+        # to recognize an English display label.
+        signal_slot = (
+            "station-signal"
+            if overlay_render_mode == "deferred"
+            or (station_labels is not None and str(label) in station_labels)
+            else "signal"
+        )
         rows.append(
             {
                 "group": "signal",
+                "slot": signal_slot,
                 "label": label,
                 "glyphs": glyphs,
                 "trailing": offset_text,
@@ -1367,7 +1396,7 @@ def _export_house_system_code(chrt):
     )
 
 
-def _build_stamp_label():
+def _resolve_build_stamp_label():
     stamped = (getattr(build_info, "BUILD_STAMP", "") or "").strip()
     if stamped:
         return stamped
@@ -1391,6 +1420,9 @@ def _build_stamp_label():
     return ""
 
 
+BUILD_STAMP_LABEL = _resolve_build_stamp_label()
+
+
 def export_chart(
     chrt,
     overlay_render_mode="full",
@@ -1402,6 +1434,7 @@ def export_chart(
 	overlay_cursor_jd=None,
 	display_options=None,
 	comparison_whole_sign=False,
+	include_body_aspects=True,
 ):
     def phase(name, fn):
         return _timed_export(perf, f"{perf_prefix}.{name}", fn)
@@ -1410,12 +1443,16 @@ def export_chart(
     date_display, time_display = phase("format_datetime", lambda: format_chart_datetime(chrt))
     lon_txt, lat_txt = phase("format_coords", lambda: format_coord_pair(chrt.place))
     runtime_txt, age_txt, view_label = phase("runtime_title", lambda: format_runtime_title_parts(chrt, chrt.options))
-    build_stamp = _build_stamp_label()
+    build_stamp = BUILD_STAMP_LABEL
     house_system_lines = phase("house_system_lines", lambda: _export_house_system_lines(chrt))
     planets_payload = phase("planets", lambda: export_planets(chrt))
     aspects_payload = phase("aspects", lambda: export_aspects(chrt) + export_vertex_aspects(chrt))
     click_aspect_flags = phase("click_aspect_flags", lambda: export_click_aspect_flags(chrt))
-    body_aspects = phase("body_aspects", lambda: export_body_aspects(chrt, click_point_items))
+    body_aspects = (
+        phase("body_aspects", lambda: export_body_aspects(chrt, click_point_items))
+        if include_body_aspects
+        else None
+    )
     show_houses = bool(
         getattr(render_options, "houses", getattr(chrt.options, "houses", False))
         and (
@@ -1423,6 +1460,12 @@ def export_chart(
             or comparison_whole_sign
         )
     )
+    anglo_dense_label_layout = str(
+        getattr(render_options, "anglo_dense_label_layout", "routed-cusps")
+        or "leader-columns"
+    )
+    if anglo_dense_label_layout not in ("leader-columns", "routed-cusps"):
+        anglo_dense_label_layout = "routed-cusps"
     overlay_payload = phase(
         "overlay",
         lambda: export_overlay(
@@ -1434,6 +1477,7 @@ def export_chart(
 		),
 	)
     palette_payload = phase("palette", lambda: {
+        "background": css_rgb(chrt.options.clrbackground),
         "frame": css_rgb(chrt.options.clrframe),
         "signs": css_rgb(chrt.options.clrsigns),
         "angles": css_rgb(chrt.options.clrAscMC),
@@ -1457,7 +1501,11 @@ def export_chart(
         "pluto": int(getattr(chrt.options, "pluto", 0)),
         "signVariant": 1 if getattr(chrt.options, "signs", True) else 2,
         "useDignityColors": bool(getattr(chrt.options, "useplanetcolors", False)),
+        "useZodiacElementColors": bool(
+            getattr(chrt.options, "usezodiacelementcolors", False)
+        ),
         "theme": int(getattr(chrt.options, "theme", 0)),
+        "angloDenseLabelLayout": anglo_dense_label_layout,
         "ascmcSize": int(getattr(chrt.options, "ascmcsize", 5)),
         "chartRingThickness": int(getattr(chrt.options, "chartringthickness", 3)),
         "showLoF": bool(getattr(chrt.options, "showlof", True)),
@@ -1472,6 +1520,15 @@ def export_chart(
         "showHouseSystem": bool(getattr(chrt.options, "housesystem", False)),
         "showSymbols": bool(getattr(chrt.options, "symbols", False)),
         "showAspects": bool(getattr(chrt.options, "aspects", False)),
+        "showMinorAspects": (
+            bool(getattr(chrt.options, "aspects", False))
+            and not bool(getattr(chrt.options, "traditionalaspects", False))
+            and all(
+                index < len(getattr(chrt.options, "aspect", ()))
+                and bool(chrt.options.aspect[index])
+                for index in (1, 2, 4, 7, 8, 9, 11)
+            )
+        ),
         "aspectThicknessMode": bool(getattr(chrt.options, "aspect_thickness_mode", False)),
         "aspectOpacityMode": bool(getattr(chrt.options, "aspect_opacity_mode", False)),
         "showTerms": bool(getattr(chrt.options, "showterms", False)),
@@ -1548,11 +1605,12 @@ def export_chart(
         # full per-body engine aspect set (force-show source). The skin owns the
         # click selection state and which lines to draw.
         "clickAspectFlags": click_aspect_flags,
-        "bodyAspects": body_aspects,
         "overlay": overlay_payload,
         "palette": palette_payload,
         "options": options_payload,
     }
+    if include_body_aspects:
+        payload["bodyAspects"] = body_aspects
     corner_lines = phase("composite_corner_lines", lambda: composite_corner_lines(chrt))
     if corner_lines is not None:
         payload["meta"]["cornerLines"] = corner_lines
@@ -1657,6 +1715,15 @@ def ensure_arabic_parts(chrt):
     return getattr(getattr(chrt, "parts", None), "parts", None) or []
 
 
+def collect_hybrid_ring_items(chrt):
+    # Hybrid Hits combines lots, fixed stars, and the always-present asteroid
+    # set. A Tauri step chart deliberately skips Chart(full=True), so populate
+    # only the two optional families this selected ring actually consumes.
+    ensure_arabic_parts(chrt)
+    ensure_fixstars(chrt)
+    return common.collect_hybrid_ring_items(chrt, chrt.options)
+
+
 def _resolve_live_export_options(primary, explicit_options=None):
     if explicit_options is not None:
         return explicit_options
@@ -1706,9 +1773,6 @@ def _conjunction_is_shown(chrt, lon1, lon2):
     if getattr(options, "traditionalaspects", False):
         lona1 = lon1
         lona2 = lon2
-        if getattr(options, "ayanamsha", 0) != 0:
-            lona1 = util.normalize(lona1 - chrt.ayanamsha)
-            lona2 = util.normalize(lona2 - chrt.ayanamsha)
         sign1 = int(lona1 / chart_mod.Chart.SIGN_DEG)
         sign2 = int(lona2 / chart_mod.Chart.SIGN_DEG)
         signdiff = math.fabs(sign1 - sign2)
@@ -1792,8 +1856,6 @@ def export_fixstar_items(chrt):
             star[fixstars.FixStars.NAME],
         )
         display_lon = float(star[fixstars.FixStars.LON])
-        if getattr(chrt.options, "ayanamsha", 0) != 0:
-            display_lon = util.normalize(display_lon - chrt.ayanamsha)
         d, m, s = util.decToDeg(display_lon)
         d, m = util.roundDeg(d % chart_mod.Chart.SIGN_DEG, m, s)
         label = f"{name} {d}\u00B0{str(m).zfill(2)}'"
@@ -1973,7 +2035,7 @@ def _build_overlay_lon_helpers(chrt):
 
     target_chart = chrt
     ayanopt = getattr(chrt.options, "ayanamsha", 0)
-    ayan = getattr(target_chart, "ayanamsha", 0.0)
+    ayan = getattr(target_chart, "ayanamsha_offset", 0.0)
     antis = Antiscia(
         target_chart.planets.planets,
         target_chart.houses.ascmc,
@@ -1984,11 +2046,11 @@ def _build_overlay_lon_helpers(chrt):
     )
 
     def antis_lon(lon):
-        ant, _ = antis.calc(lon)
+        ant, _ = antis.calc(antis._to_tropical(lon))
         return ant
 
     def contra_lon(lon):
-        _, cant = antis.calc(lon)
+        _, cant = antis.calc(antis._to_tropical(lon))
         return cant
 
     def dodec_lon(lon):
@@ -2425,37 +2487,47 @@ def export_snapshot(
         lambda: export_parallel_transit_items(parallel_transit),
     )
     active_outer_mode = "parallel_transits" if parallel_transit_items else option_outer_mode
-    outer_ring_items = {
-        "fixstars": _timed_export(perf, "outer.fixstars", lambda: export_fixstar_items(primary)),
-        "asteroids": _timed_export(perf, "outer.asteroids", lambda: export_row_ring_items(
+    # A step frame can only draw the currently selected outer-ring family. The
+    # previous snapshot remains retained in the frontend, so calculating and
+    # serializing every inactive family here is pure latency (Arabic Parts alone
+    # can cost ~10 ms). Full/deferred snapshots still populate the complete set.
+    include_all_outer_modes = overlay_render_mode != "step_fast"
+    outer_ring_items = {}
+
+    def include_outer(mode, builder):
+        if include_all_outer_modes or active_outer_mode == mode:
+            outer_ring_items[mode] = _timed_export(perf, f"outer.{mode}", builder)
+
+    include_outer("fixstars", lambda: export_fixstar_items(primary))
+    include_outer("asteroids", lambda: export_row_ring_items(
             common.build_ring_text_rows(common.collect_asteroid_ring_items(primary, primary.options)),
             "asteroid",
-        )),
-        "midpoints": _timed_export(perf, "outer.midpoints", lambda: export_midpoint_ring_items(primary)),
-        "hybrid_hits": _timed_export(perf, "outer.hybrid_hits", lambda: export_row_ring_items(
-            common.build_ring_text_rows(common.collect_hybrid_ring_items(primary, primary.options)),
+        ))
+    include_outer("midpoints", lambda: export_midpoint_ring_items(primary))
+    include_outer("hybrid_hits", lambda: export_row_ring_items(
+            common.build_ring_text_rows(collect_hybrid_ring_items(primary)),
             "hybrid_hit",
-        )),
-        "antiscia": _timed_export(perf, "outer.antiscia", lambda: export_overlay_family_items(
+        ))
+    include_outer("antiscia", lambda: export_overlay_family_items(
             comparison if comparison is not None else primary,
             "antiscia",
             role="outer" if comparison is not None else "primary",
-        )),
-        "dodecatemoria": _timed_export(perf, "outer.dodecatemoria", lambda: export_overlay_family_items(
+        ))
+    include_outer("dodecatemoria", lambda: export_overlay_family_items(
             comparison if comparison is not None else primary,
             "dodecatemoria",
             role="outer" if comparison is not None else "primary",
-        )),
-        "contra_antiscia": _timed_export(perf, "outer.contra_antiscia", lambda: export_overlay_family_items(
+        ))
+    include_outer("contra_antiscia", lambda: export_overlay_family_items(
             comparison if comparison is not None else primary,
             "contra_antiscia",
             role="outer" if comparison is not None else "primary",
-        )),
-        "arabic_parts": _timed_export(perf, "outer.arabic_parts", lambda: (
+        ))
+    include_outer("arabic_parts", lambda: (
             export_arabic_part_items(comparison, role="outer") if comparison is not None else export_arabic_part_items(primary)
-        )),
-        "parallel_transits": parallel_transit_items,
-    }
+        ))
+    if include_all_outer_modes or active_outer_mode == "parallel_transits":
+        outer_ring_items["parallel_transits"] = parallel_transit_items
     if perf is not None:
         perf["outerRingCounts"] = {
             key: len(value) if hasattr(value, "__len__") else 0
@@ -2463,6 +2535,7 @@ def export_snapshot(
         }
     active_click_points = outer_ring_items.get(active_outer_mode, ())
     overlay_radix = radix if radix is not None else primary
+    include_auxiliary_body_aspects = overlay_render_mode != "step_fast"
     comparison_whole_sign = bool(
         comparison is not None and _export_house_system_code(primary) == "N"
     )
@@ -2488,18 +2561,20 @@ def export_snapshot(
                 comparison_whole_sign=comparison_whole_sign,
 			),
         ),
-        # Snapshot-level mirror (sourced from the primary chart) so the skin can
-        # gate on `snapshot.clickAspectFlags` / read `snapshot.bodyAspects`
-        # without reaching into primaryChart. The per-chart copies live on
-        # primaryChart too (additive, for self-contained chart payloads).
-        "clickAspectFlags": _timed_export(perf, "click_aspect_flags", lambda: export_click_aspect_flags(primary)),
-        "bodyAspects": _timed_export(perf, "body_aspects", lambda: export_body_aspects(primary, active_click_points)),
+        # Click flags and adjacency already live on primaryChart, which is the
+        # object the renderer consumes. Do not serialize a second identical
+        # bodyAspects graph at snapshot root on every time step.
+        # A step frame does not consume auxiliary intra-chart adjacency:
+        # comparison clicks use interChartBodyAspects, while radix/anchor are
+        # semantic context only. Keep full/deferred payload compatibility, but
+        # leave this O(bodies x aspects) work off the input-to-paint path.
         "comparisonChart": _timed_export(
             perf,
             "chart.comparison",
             lambda: export_chart(
                 comparison,
                 overlay_render_mode,
+                include_body_aspects=include_auxiliary_body_aspects,
                 perf=perf,
                 perf_prefix="chart.comparison",
 				overlay_radix=overlay_radix,
@@ -2509,23 +2584,29 @@ def export_snapshot(
                 comparison_whole_sign=comparison_whole_sign,
 			),
         ) if comparison is not None else None,
+        # The root/session-primary chart already carries the radix geometry and
+        # is passed separately above as overlay_radix for semantic calculations.
+        # Serializing the same object again added a second complete chart export
+        # to every arrow step without giving the renderer any new information.
         "radixChart": _timed_export(
             perf,
             "chart.radix",
             lambda: export_chart(
                 radix,
                 overlay_render_mode,
+                include_body_aspects=include_auxiliary_body_aspects,
                 perf=perf,
                 perf_prefix="chart.radix",
                 display_options=export_options,
             ),
-        ) if radix is not None else None,
+        ) if radix is not None and radix is not primary else None,
         "displayAnchorChart": _timed_export(
             perf,
             "chart.anchor",
             lambda: export_chart(
                 anchor,
                 overlay_render_mode,
+                include_body_aspects=include_auxiliary_body_aspects,
                 perf=perf,
                 perf_prefix="chart.anchor",
                 display_options=export_options,

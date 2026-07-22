@@ -50,6 +50,10 @@ def _mean(value1, value2):
 	return (float(value1) + float(value2)) / 2.0
 
 
+def _lon_for_cotrans(lon, ayanamsha_offset=0.0):
+	return util.to_tropical_lon(lon, ayanamsha_offset)
+
+
 def _signed_longitude(lon):
 	lon = util.normalize(lon)
 	if lon > 180.0:
@@ -123,7 +127,7 @@ def _build_composite_time(chrt1, chrt2, place):
 	)
 
 
-def _apply_composite_houses(target, first, second, geolat):
+def _apply_composite_houses(target, first, second, geolat, ayanamsha_offset=0.0):
 	cusps = [0.0]
 	for idx in range(1, houses.Houses.HOUSE_NUM + 1):
 		cusps.append(_midpoint_angle(first.cusps[idx], second.cusps[idx]))
@@ -135,8 +139,8 @@ def _apply_composite_houses(target, first, second, geolat):
 		ascmc.append(_midpoint_angle(first.ascmc[idx], second.ascmc[idx]))
 	target.ascmc = tuple(ascmc)
 
-	ascra, ascdecl, dist = astrology.swe_cotrans(target.ascmc[houses.Houses.ASC], 0.0, 1.0, -target.obl)
-	mcra, mcdecl, dist = astrology.swe_cotrans(target.ascmc[houses.Houses.MC], 0.0, 1.0, -target.obl)
+	ascra, ascdecl, dist = astrology.swe_cotrans(_lon_for_cotrans(target.ascmc[houses.Houses.ASC], ayanamsha_offset), 0.0, 1.0, -target.obl)
+	mcra, mcdecl, dist = astrology.swe_cotrans(_lon_for_cotrans(target.ascmc[houses.Houses.MC], ayanamsha_offset), 0.0, 1.0, -target.obl)
 	target.ascmc2 = (
 		(target.ascmc[houses.Houses.ASC], 0.0, ascra, ascdecl),
 		(target.ascmc[houses.Houses.MC], 0.0, mcra, mcdecl),
@@ -151,13 +155,13 @@ def _apply_composite_houses(target, first, second, geolat):
 
 	cuspstmp = []
 	for idx in range(houses.Houses.HOUSE_NUM):
-		ra, decl, dist = astrology.swe_cotrans(target.cusps[idx + 1], 0.0, dist, -target.obl)
+		ra, decl, dist = astrology.swe_cotrans(_lon_for_cotrans(target.cusps[idx + 1], ayanamsha_offset), 0.0, dist, -target.obl)
 		cuspstmp.append([ra, decl])
 	target.cuspstmp = cuspstmp
 	target.cusps2 = tuple((entry[0], entry[1]) for entry in cuspstmp)
 
 
-def _midpoint_body_data(body1, body2, obl, nolat):
+def _midpoint_body_data(body1, body2, obl, nolat, ayanamsha_offset=0.0):
 	lon = _midpoint_angle(
 		body1.data[planets.Planet.LONG],
 		body2.data[planets.Planet.LONG],
@@ -168,7 +172,7 @@ def _midpoint_body_data(body1, body2, obl, nolat):
 	)
 	if nolat:
 		lat = 0.0
-	ra, decl, _ = astrology.swe_cotrans(lon, lat, 1.0, -obl)
+	ra, decl, _ = astrology.swe_cotrans(_lon_for_cotrans(lon, ayanamsha_offset), lat, 1.0, -obl)
 	# Explicit float() conversion to ensure independent Python objects
 	data = (
 		float(lon),
@@ -189,8 +193,8 @@ def _midpoint_body_data(body1, body2, obl, nolat):
 	return data, dataEqu
 
 
-def _apply_composite_body(target, body1, body2, placelat, ascmc2, raequasc, obl, nolat=False):
-	data, dataEqu = _midpoint_body_data(body1, body2, obl, nolat)
+def _apply_composite_body(target, body1, body2, placelat, ascmc2, raequasc, obl, nolat=False, ayanamsha_offset=0.0):
+	data, dataEqu = _midpoint_body_data(body1, body2, obl, nolat, ayanamsha_offset)
 	target.data = data
 	target.dataEqu = dataEqu
 	target.speculums = []
@@ -205,13 +209,13 @@ def _rebuild_custom_pd_points(comp):
 		comp.cpd = customerpd.CustomerPD(
 			comp.options.pdcustomerlon[0], comp.options.pdcustomerlon[1], comp.options.pdcustomerlon[2],
 			comp.options.pdcustomerlat[0], comp.options.pdcustomerlat[1], comp.options.pdcustomerlat[2],
-			comp.options.pdcustomersouthern, comp.place.lat, comp.houses.ascmc2, comp.obl[0], comp.raequasc,
+			comp.options.pdcustomersouthern, comp.place.lat, comp.houses.ascmc2, comp.obl[0], comp.raequasc, comp.ayanamsha_offset,
 		)
 	if comp.options.pdcustomer2:
 		comp.cpd2 = customerpd.CustomerPD(
 			comp.options.pdcustomer2lon[0], comp.options.pdcustomer2lon[1], comp.options.pdcustomer2lon[2],
 			comp.options.pdcustomer2lat[0], comp.options.pdcustomer2lat[1], comp.options.pdcustomer2lat[2],
-			comp.options.pdcustomer2southern, comp.place.lat, comp.houses.ascmc2, comp.obl[0], comp.raequasc,
+			comp.options.pdcustomer2southern, comp.place.lat, comp.houses.ascmc2, comp.obl[0], comp.raequasc, comp.ayanamsha_offset,
 		)
 	try:
 		comp.pd_arabic_part_prom = comp._get_pd_arabic_part_promissor_point()
@@ -240,7 +244,7 @@ def _apply_midpoint_fortune(target, first, second):
 		first.fortune.fortune[munfortune.MundaneFortune.LAT],
 		second.fortune.fortune[munfortune.MundaneFortune.LAT],
 	)
-	ra, decl, _dist = astrology.swe_cotrans(lon, lat, 1.0, -target.obl[0])
+	ra, decl, _dist = astrology.swe_cotrans(_lon_for_cotrans(lon, target.ayanamsha_offset), lat, 1.0, -target.obl[0])
 	target.fortune.recalcForMundaneChart(
 		lon,
 		lat,
@@ -286,7 +290,7 @@ def _materialize_full_chart_state(comp, abovehor=None):
 	_rebuild_custom_pd_points(comp)
 
 
-def _apply_composite_angles(target, first, second, asc_lon, mc_lon, geolat, obl):
+def _apply_composite_angles(target, first, second, asc_lon, mc_lon, geolat, obl, ayanamsha_offset=0.0):
 	"""Apply calculated ASC and MC to composite houses, with proportional cusps."""
 	# Calculate IC and DSC
 	ic_lon = util.normalize(mc_lon + 180.0)
@@ -332,8 +336,8 @@ def _apply_composite_angles(target, first, second, asc_lon, mc_lon, geolat, obl)
 	target.ascmc = tuple(ascmc)
 	
 	# Calculate ascmc2 (equatorial coordinates)
-	ascra, ascdecl, dist = astrology.swe_cotrans(asc_lon, 0.0, 1.0, -obl)
-	mcra, mcdecl, dist = astrology.swe_cotrans(mc_lon, 0.0, 1.0, -obl)
+	ascra, ascdecl, dist = astrology.swe_cotrans(_lon_for_cotrans(asc_lon, ayanamsha_offset), 0.0, 1.0, -obl)
+	mcra, mcdecl, dist = astrology.swe_cotrans(_lon_for_cotrans(mc_lon, ayanamsha_offset), 0.0, 1.0, -obl)
 	target.ascmc2 = (
 		(asc_lon, 0.0, ascra, ascdecl),
 		(mc_lon, 0.0, mcra, mcdecl),
@@ -350,13 +354,13 @@ def _apply_composite_angles(target, first, second, asc_lon, mc_lon, geolat, obl)
 	# Calculate cuspstmp and cusps2
 	cuspstmp = []
 	for idx in range(houses.Houses.HOUSE_NUM):
-		ra, decl, dist = astrology.swe_cotrans(target.cusps[idx + 1], 0.0, dist, -obl)
+		ra, decl, dist = astrology.swe_cotrans(_lon_for_cotrans(target.cusps[idx + 1], ayanamsha_offset), 0.0, dist, -obl)
 		cuspstmp.append([ra, decl])
 	target.cuspstmp = cuspstmp
 	target.cusps2 = tuple((entry[0], entry[1]) for entry in cuspstmp)
 
 
-def _calculate_asc_from_mc(mc_lon, place_lat, obl, hsys='P'):
+def _calculate_asc_from_mc(mc_lon, place_lat, obl, hsys='P', ayanamsha_offset=0.0):
 	"""Calculate ASC from MC using trigonometric relationship.
 	
 	Given MC longitude, place latitude, and obliquity,
@@ -364,7 +368,7 @@ def _calculate_asc_from_mc(mc_lon, place_lat, obl, hsys='P'):
 	tan(ASC) = sin(MC) / (cos(MC)*cos(obl) + sin(obl)*tan(lat))
 	"""
 	# Convert to radians
-	mc_rad = math.radians(util.normalize(mc_lon))
+	mc_rad = math.radians(_lon_for_cotrans(mc_lon, ayanamsha_offset))
 	lat_rad = math.radians(place_lat)
 	obl_rad = math.radians(obl)
 	
@@ -381,12 +385,12 @@ def _calculate_asc_from_mc(mc_lon, place_lat, obl, hsys='P'):
 		asc_lon = math.degrees(asc_rad)
 	
 	# Normalize ASC
-	asc_lon = util.normalize(asc_lon)
+	asc_lon = util.normalize(asc_lon - float(ayanamsha_offset or 0.0))
 	
 	return asc_lon
 
 
-def _apply_derived_houses_from_mc(target, first, second, place, obl, hsys):
+def _apply_derived_houses_from_mc(target, first, second, place, obl, hsys, ayanamsha_offset=0.0):
 	"""Apply composite houses where MC is midpoint but ASC is derived from place."""
 	import copy
 	
@@ -394,7 +398,7 @@ def _apply_derived_houses_from_mc(target, first, second, place, obl, hsys):
 	mc_lon = _midpoint_angle(first.ascmc[houses.Houses.MC], second.ascmc[houses.Houses.MC])
 	
 	# Calculate ASC from MC + place
-	asc_lon = _calculate_asc_from_mc(mc_lon, place.lat, obl, hsys)
+	asc_lon = _calculate_asc_from_mc(mc_lon, place.lat, obl, hsys, ayanamsha_offset)
 	
 	# For house cusps, we use a hybrid approach:
 	# - MC is the midpoint MC
@@ -459,8 +463,8 @@ def _apply_derived_houses_from_mc(target, first, second, place, obl, hsys):
 	target.ascmc = tuple(ascmc)
 	
 	# Calculate ascmc2 (equatorial coordinates)
-	ascra, ascdecl, dist = astrology.swe_cotrans(asc_lon, 0.0, 1.0, -obl)
-	mcra, mcdecl, dist = astrology.swe_cotrans(mc_lon, 0.0, 1.0, -obl)
+	ascra, ascdecl, dist = astrology.swe_cotrans(_lon_for_cotrans(asc_lon, ayanamsha_offset), 0.0, 1.0, -obl)
+	mcra, mcdecl, dist = astrology.swe_cotrans(_lon_for_cotrans(mc_lon, ayanamsha_offset), 0.0, 1.0, -obl)
 	target.ascmc2 = (
 		(asc_lon, 0.0, ascra, ascdecl),
 		(mc_lon, 0.0, mcra, mcdecl),
@@ -477,7 +481,7 @@ def _apply_derived_houses_from_mc(target, first, second, place, obl, hsys):
 	# Calculate cuspstmp and cusps2
 	cuspstmp = []
 	for idx in range(houses.Houses.HOUSE_NUM):
-		ra, decl, dist = astrology.swe_cotrans(target.cusps[idx + 1], 0.0, dist, -obl)
+		ra, decl, dist = astrology.swe_cotrans(_lon_for_cotrans(target.cusps[idx + 1], ayanamsha_offset), 0.0, dist, -obl)
 		cuspstmp.append([ra, decl])
 	target.cuspstmp = cuspstmp
 	target.cusps2 = tuple((entry[0], entry[1]) for entry in cuspstmp)
@@ -498,7 +502,7 @@ def _short_arc_midpoint(lon1, lon2):
 		return util.normalize(max(lon1, lon2) + diff / 2.0)
 
 
-def _apply_short_arc_houses(target, first, second, geolat):
+def _apply_short_arc_houses(target, first, second, geolat, ayanamsha_offset=0.0):
 	"""Apply composite houses using short-arc midpoints for all angles."""
 	cusps = [0.0]
 	for idx in range(1, houses.Houses.HOUSE_NUM + 1):
@@ -511,8 +515,8 @@ def _apply_short_arc_houses(target, first, second, geolat):
 		ascmc.append(_short_arc_midpoint(first.ascmc[idx], second.ascmc[idx]))
 	target.ascmc = tuple(ascmc)
 	
-	ascra, ascdecl, dist = astrology.swe_cotrans(target.ascmc[houses.Houses.ASC], 0.0, 1.0, -target.obl)
-	mcra, mcdecl, dist = astrology.swe_cotrans(target.ascmc[houses.Houses.MC], 0.0, 1.0, -target.obl)
+	ascra, ascdecl, dist = astrology.swe_cotrans(_lon_for_cotrans(target.ascmc[houses.Houses.ASC], ayanamsha_offset), 0.0, 1.0, -target.obl)
+	mcra, mcdecl, dist = astrology.swe_cotrans(_lon_for_cotrans(target.ascmc[houses.Houses.MC], ayanamsha_offset), 0.0, 1.0, -target.obl)
 	target.ascmc2 = (
 		(target.ascmc[houses.Houses.ASC], 0.0, ascra, ascdecl),
 		(target.ascmc[houses.Houses.MC], 0.0, mcra, mcdecl),
@@ -527,7 +531,7 @@ def _apply_short_arc_houses(target, first, second, geolat):
 	
 	cuspstmp = []
 	for idx in range(houses.Houses.HOUSE_NUM):
-		ra, decl, dist = astrology.swe_cotrans(target.cusps[idx + 1], 0.0, dist, -target.obl)
+		ra, decl, dist = astrology.swe_cotrans(_lon_for_cotrans(target.cusps[idx + 1], ayanamsha_offset), 0.0, dist, -target.obl)
 		cuspstmp.append([ra, decl])
 	target.cuspstmp = cuspstmp
 	target.cusps2 = tuple((entry[0], entry[1]) for entry in cuspstmp)
@@ -591,11 +595,11 @@ def build_symbolic_midpoint_composite(chrt1, chrt2, opts, name=None, method=None
 	if method == opts_module.Options.COMPOSITE_ASC_DERIVED_REF:
 		# ASC derived from reference place
 		ref_place = _get_reference_place(opts)
-		asc_lon = _calculate_asc_from_mc(mc_lon, ref_place.lat, comp.obl[0], opts.hsys)
+		asc_lon = _calculate_asc_from_mc(mc_lon, ref_place.lat, comp.obl[0], opts.hsys, comp.ayanamsha_offset)
 	elif method == opts_module.Options.COMPOSITE_ASC_DERIVED_GEO:
 		# ASC derived from geographic midpoint
 		geo_place = _build_composite_place(chrt1, chrt2)
-		asc_lon = _calculate_asc_from_mc(mc_lon, geo_place.lat, comp.obl[0], opts.hsys)
+		asc_lon = _calculate_asc_from_mc(mc_lon, geo_place.lat, comp.obl[0], opts.hsys, comp.ayanamsha_offset)
 	else:
 		# Default: ASC short-arc midpoint
 		asc_lon = _short_arc_midpoint(
@@ -604,10 +608,10 @@ def build_symbolic_midpoint_composite(chrt1, chrt2, opts, name=None, method=None
 		)
 	
 	# Apply the calculated angles to the composite
-	_apply_composite_angles(comp.houses, chrt1.houses, chrt2.houses, asc_lon, mc_lon, comp.place.lat, comp.obl[0])
+	_apply_composite_angles(comp.houses, chrt1.houses, chrt2.houses, asc_lon, mc_lon, comp.place.lat, comp.obl[0], comp.ayanamsha_offset)
 	_apply_midpoint_vertex(comp, chrt1, chrt2)
 	
-	comp.raequasc, declequasc, dist = astrology.swe_cotrans(comp.houses.ascmc[houses.Houses.EQUASC], 0.0, 1.0, -comp.obl[0])
+	comp.raequasc, declequasc, dist = astrology.swe_cotrans(_lon_for_cotrans(comp.houses.ascmc[houses.Houses.EQUASC], comp.ayanamsha_offset), 0.0, 1.0, -comp.obl[0])
 
 	# Create completely independent planet data by copying values, not references
 	for idx in range(planets.Planets.PLANETS_NUM):
@@ -616,7 +620,7 @@ def build_symbolic_midpoint_composite(chrt1, chrt2, opts, name=None, method=None
 		target = comp.planets.planets[idx]
 		
 		# Calculate midpoint data
-		data, dataEqu = _midpoint_body_data(body1, body2, comp.obl[0], comp.nolat)
+		data, dataEqu = _midpoint_body_data(body1, body2, comp.obl[0], comp.nolat, comp.ayanamsha_offset)
 		
 		# Assign as tuples (immutable copies) to prevent shared references
 		target.data = tuple(data)
@@ -631,7 +635,7 @@ def build_symbolic_midpoint_composite(chrt1, chrt2, opts, name=None, method=None
 		body2 = chrt2.chiron
 		target = comp.chiron
 		
-		data, dataEqu = _midpoint_body_data(body1, body2, comp.obl[0], comp.nolat)
+		data, dataEqu = _midpoint_body_data(body1, body2, comp.obl[0], comp.nolat, comp.ayanamsha_offset)
 		
 		target.data = tuple(data)
 		target.dataEqu = tuple(dataEqu)

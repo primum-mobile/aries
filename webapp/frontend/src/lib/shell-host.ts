@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 export type ShellHostKind = "tauri" | "browser";
+export type NativeShellPlatform = "windows" | "macos" | "linux" | "other";
 
 export type ShellMenuEnabledState = {
   id: string;
@@ -110,6 +111,8 @@ export type ShellHost = {
 
 type TauriRuntimeWindow = Window & {
   __ARIES_TAURI_RUNTIME__?: boolean;
+  __ARIES_NATIVE_PLATFORM__?: string;
+  __ARIES_WINDOWS_CAPTION_INSET__?: number;
   __TAURI_INTERNALS__?: unknown;
   isTauri?: boolean;
 };
@@ -127,6 +130,19 @@ function hasTauriInternals(): boolean {
   );
 }
 
+export function resolveNativeShellPlatform(): NativeShellPlatform | null {
+  const platform = runtimeWindow()?.__ARIES_NATIVE_PLATFORM__;
+  if (platform === "windows" || platform === "macos" || platform === "linux") {
+    return platform;
+  }
+  return hasTauriInternals() ? "other" : null;
+}
+
+export function resolveWindowsCaptionInset(): number {
+  const inset = runtimeWindow()?.__ARIES_WINDOWS_CAPTION_INSET__;
+  return Number.isFinite(inset) && (inset ?? 0) > 0 ? Math.round(inset as number) : 0;
+}
+
 const emptyShellMenuState: ShellMenuStateSnapshot = { enabled: {}, checked: {} };
 let browserShellMenuState: ShellMenuStateSnapshot = emptyShellMenuState;
 const browserShellMenuListeners = new Set<() => void>();
@@ -134,6 +150,20 @@ const browserShellMenuListeners = new Set<() => void>();
 function publishBrowserShellMenuState(next: ShellMenuStateSnapshot): void {
   browserShellMenuState = next;
   browserShellMenuListeners.forEach((listener) => listener());
+}
+
+function mirrorShellMenuChecked(states: ShellMenuCheckedState[]): void {
+  if (states.length === 0) return;
+  const checked = { ...browserShellMenuState.checked };
+  for (const state of states) checked[state.id] = state.checked;
+  publishBrowserShellMenuState({ ...browserShellMenuState, checked });
+}
+
+function mirrorShellMenuEnablement(states: ShellMenuEnabledState[]): void {
+  if (states.length === 0) return;
+  const enabled = { ...browserShellMenuState.enabled };
+  for (const state of states) enabled[state.id] = state.enabled;
+  publishBrowserShellMenuState({ ...browserShellMenuState, enabled });
 }
 
 export function subscribeShellMenuState(listener: () => void): () => void {
@@ -281,20 +311,10 @@ export const browserShellHost: ShellHost = {
   },
   setWindowTitle: async () => {},
   syncMenuChecked: async (states: ShellMenuCheckedState[]) => {
-    if (states.length === 0) return;
-    const checked = { ...browserShellMenuState.checked };
-    for (const state of states) {
-      checked[state.id] = state.checked;
-    }
-    publishBrowserShellMenuState({ ...browserShellMenuState, checked });
+    mirrorShellMenuChecked(states);
   },
   syncMenuEnablement: async (states: ShellMenuEnabledState[]) => {
-    if (states.length === 0) return;
-    const enabled = { ...browserShellMenuState.enabled };
-    for (const state of states) {
-      enabled[state.id] = state.enabled;
-    }
-    publishBrowserShellMenuState({ ...browserShellMenuState, enabled });
+    mirrorShellMenuEnablement(states);
   },
   syncMenuLabels: async () => {},
   syncRecentCharts: async () => {},
@@ -441,10 +461,12 @@ export const tauriShellHost: ShellHost = {
     await getCurrentWindow().setTitle(title);
   },
   syncMenuChecked: async (states: ShellMenuCheckedState[]) => {
+    mirrorShellMenuChecked(states);
     const { invoke } = await import("@tauri-apps/api/core");
     await invoke("set_native_menu_checked", { states });
   },
   syncMenuEnablement: async (states: ShellMenuEnabledState[]) => {
+    mirrorShellMenuEnablement(states);
     const { invoke } = await import("@tauri-apps/api/core");
     await invoke("set_native_menu_enabled", { states });
   },

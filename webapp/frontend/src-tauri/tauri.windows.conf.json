@@ -1,0 +1,10 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "version": "1.0.0-beta.1",
+  "build": {
+    "beforeBuildCommand": "powershell -ExecutionPolicy Bypass -File ../../scripts/build_windows_tauri_inputs.ps1"
+  },
+  "bundle": {
+    "targets": ["nsis"]
+  }
+}

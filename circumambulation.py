@@ -107,6 +107,7 @@ def _temporary_custom_significator(chrt, spec):
             chrt.obl[0],
             chrt.raequasc,
             normalized.get("latitude", 0.0),
+            _sidereal_offset_deg(chrt, getattr(chrt, "options", None)),
         )
     except Exception:
         yield None
@@ -514,7 +515,7 @@ def _ayan_ut(jd_ut, options):
     try:
         if getattr(options, 'ayanamsha', 0) != 0:
             astrology.swe_set_sid_mode(astrology.ayanamsha_swe_mode(options.ayanamsha), 0, 0)
-            return float(astrology.swe_get_ayanamsa_ut(float(jd_ut)))
+            return float(astrology.effective_ayanamsha_ut(float(jd_ut), options.ayanamsha))
     except Exception:
         pass
     return 0.0
@@ -526,31 +527,26 @@ def _solve_segment_time(rt12, lam1_sid, lam2_sid, jd_start, key, calflag, option
             return _revolution_years_for_arc(chart_obj, options, delta_oa)
         return delta_oa * key
 
-    # Initial guess: use ayanamsha at segment start
-    ay = _ayan_ut(jd_start, options)
+    # Circumambulation is a symbolic direction on the radix/revolution
+    # sphere. Its zodiac frame and obliquity therefore stay fixed at the
+    # source chart epoch; the eventual event date must not drift the
+    # ayanamsha used to measure the directed arc.
+    ay = (
+        _sidereal_offset_deg(chart_obj, options)
+        if chart_obj is not None
+        else _ayan_ut(jd_start, options)
+    )
     if use_exact_oa and phi_deg is not None:
-        eps = _mean_obliquity_deg(jd_start)
+        eps = (
+            float(chart_obj.obl[0])
+            if chart_obj is not None and getattr(chart_obj, "obl", None)
+            else _mean_obliquity_deg(jd_start)
+        )
         delta_oa = _delta_oa_exact(phi_deg, lam1_sid, lam2_sid, ay, eps)
     else:
         delta_oa = _delta_oa_by_rt(rt12, lam1_sid, lam2_sid, ay)
     delta_years = _years_for_arc(delta_oa)
     jd_end = _jd_add_years(jd_start, delta_years, calflag)
-
-    # Fixed-point iteration: ay depends on jd_end; jd_end depends on ay.
-    for _ in range(max(0, int(iters) - 1)):
-        ay2 = _ayan_ut(jd_end, options)
-        if use_exact_oa and phi_deg is not None:
-            eps2 = _mean_obliquity_deg(jd_end)
-            delta_oa2 = _delta_oa_exact(phi_deg, lam1_sid, lam2_sid, ay2, eps2)
-        else:
-            delta_oa2 = _delta_oa_by_rt(rt12, lam1_sid, lam2_sid, ay2)
-        delta_years2 = _years_for_arc(delta_oa2)
-        jd_end2 = _jd_add_years(jd_start, delta_years2, calflag)
-
-        if abs(jd_end2 - jd_end) < 1e-7 and abs(ay2 - ay) < 1e-7:
-            ay, delta_oa, delta_years, jd_end = ay2, delta_oa2, delta_years2, jd_end2
-            break
-        ay, delta_oa, delta_years, jd_end = ay2, delta_oa2, delta_years2, jd_end2
 
     return delta_oa, delta_years, jd_end, ay
 
@@ -573,13 +569,15 @@ def _participating_planet_map(options):
     return pmap
 
 def _planet_longitudes(chart_obj, options):
+    """Return participating planets in the chart's chosen zodiac.
+
+    ``Chart._zodiac_flags()`` already asks Swiss Ephemeris for sidereal
+    longitudes when an ayanamsha is selected. Subtracting
+    ``ayanamsha_offset`` here would apply the offset a second time.
+    """
     pls = {}
-    ayan = _sidereal_offset_deg(chart_obj, options)
     for pid, label in _participating_planet_map(options):
-        lam = chart_obj.planets.planets[pid].data[0]
-        if ayan:
-            lam = (lam - ayan) % 360.0
-        pls[label] = lam
+        pls[label] = util.normalize(float(chart_obj.planets.planets[pid].data[0]))
     return pls
 
 def _planet_display_longitudes(chart_obj, options):
@@ -816,15 +814,16 @@ def _append_natal_participator_pd_hits(pd_engine, target_chart, options, natal_c
                 target_chart.obl[0],
                 target_chart.raequasc,
                 0.0,
+                _sidereal_offset_deg(target_chart, options),
             )
         except Exception:
             continue
         pd_engine._active_dynamic_prom_key = _natal_participator_key(label)
         pd_engine._active_dynamic_prom_point = point
         try:
-            lon = point.speculums[primdirs.PrimDirs.PLACSPECULUM][customerpd.CustomerPD.LONG]
-            lat = point.speculums[primdirs.PrimDirs.PLACSPECULUM][customerpd.CustomerPD.LAT]
-            pd_engine.toZodAscMC(lon, lat, primdirs.PrimDir.CUSTOMERPD, 0)
+            # toZodAscMC accepts chart-frame longitude and performs its own
+            # tropical recovery before the cotransformation.
+            pd_engine.toZodAscMC(lon, 0.0, primdirs.PrimDir.CUSTOMERPD, 0)
         finally:
             pd_engine._active_dynamic_prom_key = None
             pd_engine._active_dynamic_prom_point = None
@@ -980,11 +979,13 @@ def _compute_distributions_pd(chrt, options, max_rows=200, max_age_years=150,
     jd_limit = jd0 + effective_max_age_years * DAYS_PER_YEAR
 
     # Term edges for lam_start/lam_end (kept from original helper)
-    ayan_birth = _sidereal_offset_deg(chrt, options)
-    edges = sorted(_term_edges_deg(options, ayan_birth), key=lambda e: e[0])
+    edges = sorted(_term_edges_deg(options), key=lambda e: e[0])
 
     # Find which term the selected significator falls in at birth.
-    start_sid = (start_lon - ayan_birth) % 360.0
+    # ASC/custom point is already in the chart's chosen zodiac. The previous
+    # subtraction applied the ayanamsha twice after Chart._zodiac_flags moved
+    # sidereal conversion to the Swiss Ephemeris boundary.
+    start_sid = util.normalize(float(start_lon))
     i0 = 0
     for idx, (a, b, _, _) in enumerate(edges):
         if a - 1e-9 <= start_sid < b + 1e-9:
@@ -1009,7 +1010,10 @@ def _compute_distributions_pd(chrt, options, max_rows=200, max_age_years=150,
             break
 
         edge = edges[(i0 + k) % len(edges)]
-        a, b, edge_ruler, _ = edge
+        edge_a, b, edge_ruler, _ = edge
+        # The first period starts at the actual significator longitude, not
+        # at the lower bound of the term it happens to occupy.
+        a = start_sid if k == 0 else edge_a
 
         # Period k ruler: birth term ruler for k=0, else the ruler entered at hit k-1
         ruler_pid = edge_ruler if k == 0 else term_hits[k - 1].prom2
@@ -1114,14 +1118,13 @@ def _compute_distributions_ascensional_times(
     """
     if start_lambda is None:
         start_lambda = chrt.houses.ascmc[houses.Houses.ASC]
-    # Birth ayanamsha is used only to place the radix ASC into sidereal longitudes.
-    # Per-segment timing may still use time-varying ayanamsha (see _solve_segment_time).
-    ayan_birth = _sidereal_offset_deg(chrt, options)
-    start_lambda = (float(start_lambda) - ayan_birth) % 360.0
+    # ASC/custom point is already in the chart's chosen zodiac. Sidereal
+    # conversion happens in Chart._zodiac_flags at chart construction.
+    start_lambda = util.normalize(float(start_lambda))
 
     phi = chrt.place.lat
     rt12 = _interp_rt12(phi)
-    edges = _term_edges_deg(options, ayan_birth)
+    edges = _term_edges_deg(options)
 
     calflag = astrology.SE_GREG_CAL
     if chrt.time.cal == chart.Time.JULIAN:
@@ -1267,7 +1270,7 @@ def _compute_distributions_ascensional_times(
 
             # 표시용 사인 인덱스(시데리얼)과, RT 선택용 사인 인덱스(트로피컬)를 분리
             sign_from_start_sid = _sign_index(seg_start)           # 시데리얼(표시)
-            ayan_cap = _ayan_ut(jd_limit, options)
+            ayan_cap = _sidereal_offset_deg(chrt, options)
             sign_from_start_tro = _sign_index(seg_start + ayan_cap)    # 트로피컬(RT용)
 
             rt_sign = rt12[sign_from_start_tro]

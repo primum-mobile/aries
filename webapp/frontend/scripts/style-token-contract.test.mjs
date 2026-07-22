@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,14 +14,14 @@ test("the checked-in style contract resolves one provider graph", () => {
   const result = buildStyleTokenInventory(frontendRoot);
   assert.deepEqual(result.errors, []);
   assert.deepEqual(result.inventory.counts, {
-    tokens: 340,
-    cssTokens: 329,
-    cssDeclarations: 394,
+    tokens: 1420,
+    cssTokens: 1409,
+    cssDeclarations: 1477,
     runtimeOnlyTokens: 7,
     externalTokens: 4,
-    public: 64,
-    derived: 141,
-    runtime: 135,
+    public: 1077,
+    derived: 197,
+    runtime: 146,
   });
   assert.deepEqual(
     result.inventory.tokens.filter((token) => token.runtimeProviderFiles).map((token) => token.name),
@@ -35,18 +36,30 @@ test("the checked-in style contract resolves one provider graph", () => {
     ],
   );
   assert.deepEqual(result.publicManifest.counts, {
-    public: 64,
-    editable: 62,
-    blockedByCoupling: 2,
-    supportingDerived: 3,
+    public: 1077,
+    editable: 1077,
+    blockedByCoupling: 0,
+    supportingDerived: 11,
   });
   assert.deepEqual(
     result.publicManifest.tokens.filter(({ handoffStatus }) => handoffStatus === "blocked-by-coupling").map(({ cssVar }) => cssVar),
-    ["--aries-background", "--aries-text-primary"],
+    [],
   );
   assert.deepEqual(
     result.publicManifest.derivedContext.map(({ cssVar }) => cssVar),
-    ["--aries-radius-lg", "--aries-radius-sm", "--aries-radius-xs"],
+    [
+      "--aries-control-height-compact",
+      "--aries-radius-2xs",
+      "--aries-radius-control",
+      "--aries-radius-control-compact",
+      "--aries-radius-lg",
+      "--aries-radius-sm",
+      "--aries-radius-xl",
+      "--aries-radius-xs",
+      "--aries-sidebar-sash-rule",
+      "--aries-titlebar-seam-rule",
+      "--morinus-text-dim",
+    ],
   );
   assert.ok(result.publicManifest.authoringExclusions.some(({ id }) => id === "shell-motion"));
   for (const token of result.publicManifest.tokens) {
@@ -85,8 +98,8 @@ test("the checked-in style contract resolves one provider graph", () => {
     "--aries-section-gap",
   ]) {
     const token = result.inventory.tokens.find((entry) => entry.name === name);
-    assert.equal(token?.class, "runtime", `${name} is migration-only until Wave 2 wiring`);
-    assert.deepEqual(token?.consumerFiles, [], `${name} must not count legacy preview iterators as live consumers`);
+    assert.equal(token?.class, "public", `${name} must remain profile-editable after retained-panel wiring`);
+    assert.ok(token?.consumerFiles.includes("src/app/globals.css"), `${name} must have a non-preview live consumer`);
     assert.deepEqual(token?.legacyConsumerFiles, [
       "src/components/workshell/appearance-panel.tsx",
       "src/components/workshell/style-token-bridge.tsx",
@@ -114,6 +127,36 @@ test("the checked-in style contract resolves one provider graph", () => {
       );
     }
   }
+});
+
+test("generated manifests are stable across CRLF checkouts", () => {
+  withTemporaryFrontend((temporaryRoot) => {
+    const cssPath = join(temporaryRoot, "src", "app", "globals.css");
+    const css = readFileSync(cssPath, "utf8").replace(/\r?\n/g, "\r\n");
+    writeFileSync(cssPath, css, "utf8");
+
+    const result = buildStyleTokenInventory(temporaryRoot);
+    assert.deepEqual(result.errors, []);
+    assert.equal(result.rendered, readFileSync(result.inventoryPath, "utf8"));
+    assert.equal(result.publicRendered, readFileSync(result.publicManifestPath, "utf8"));
+  });
+});
+
+test("integrity accepts CRLF generated artifacts", () => {
+  withTemporaryFrontend((temporaryRoot) => {
+    for (const name of ["style-token-inventory.generated.json", "style-token-public.generated.json"]) {
+      const path = join(temporaryRoot, "src", "styles", name);
+      const source = readFileSync(path, "utf8").replace(/\r?\n/g, "\r\n");
+      writeFileSync(path, source, "utf8");
+    }
+
+    const result = spawnSync(
+      process.execPath,
+      [join(frontendRoot, "scripts", "style-token-integrity.mjs"), "--frontend-root", temporaryRoot],
+      { encoding: "utf8" },
+    );
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  });
 });
 
 test("a derived-token cycle is rejected", () => {
@@ -242,8 +285,21 @@ function withTemporaryFrontend(run) {
   const temporaryRoot = mkdtempSync(join(tmpdir(), "aries-style-contract-"));
   try {
     cpSync(join(frontendRoot, "src"), join(temporaryRoot, "src"), { recursive: true });
+    normalizeTreeNewlines(join(temporaryRoot, "src"));
     run(temporaryRoot);
   } finally {
     rmSync(temporaryRoot, { recursive: true, force: true });
+  }
+}
+
+function normalizeTreeNewlines(directory) {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      normalizeTreeNewlines(path);
+    } else if (/\.(?:css|json|[cm]?[jt]sx?)$/.test(entry.name)) {
+      const source = readFileSync(path, "utf8");
+      writeFileSync(path, source.replace(/\r\n?/g, "\n"), "utf8");
+    }
   }
 }

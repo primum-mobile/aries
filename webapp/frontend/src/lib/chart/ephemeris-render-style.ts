@@ -13,6 +13,18 @@ export type EphemerisRenderPalette = Readonly<{
   signs: string;
 }>;
 
+export type EphemerisChartProfileOverrides = Readonly<Record<string, string>>;
+
+export const EPHEMERIS_RENDER_BASE_PALETTE_ROLES: Readonly<
+  Record<keyof EphemerisRenderPalette, string>
+> = Object.freeze({
+  background: "--morinus-background",
+  frame: "--morinus-frame",
+  texts: "--morinus-text-bright",
+  grid: "--morinus-houses",
+  signs: "--morinus-signs",
+});
+
 export type EphemerisRenderTokens = {
   minCanvasWidth: number;
   minCanvasHeight: number;
@@ -130,6 +142,56 @@ export const DEFAULT_EPHEMERIS_RENDER_PALETTE: EphemerisRenderPalette = Object.f
   signs: "#000000",
 });
 
+/** Overlay only the active chart-profile layer onto the retained daemon
+ * palette. The daemon payload remains exact when no profile is active. */
+export function resolveEphemerisRenderPalette(
+  retained: EphemerisRenderPalette = DEFAULT_EPHEMERIS_RENDER_PALETTE,
+  profileOverrides: EphemerisChartProfileOverrides = {},
+): EphemerisRenderPalette {
+  const palette = {} as Record<keyof EphemerisRenderPalette, string>;
+  for (const key of Object.keys(
+    EPHEMERIS_RENDER_BASE_PALETTE_ROLES,
+  ) as Array<keyof EphemerisRenderPalette>) {
+    const profileValue = profileOverrides[EPHEMERIS_RENDER_BASE_PALETTE_ROLES[key]]?.trim();
+    palette[key] = profileValue || retained[key];
+  }
+  return Object.freeze(palette) as EphemerisRenderPalette;
+}
+
+/** Mirror common.common.get_planet_color_index, which is the daemon authority
+ * used by ephemeris_service._planet_colour_hex. */
+export function ephemerisPlanetColorIndex(planetId: number): number {
+  const id = Number.isFinite(planetId) ? planetId : 0;
+  if (id === 15) return 12; // astrology.SE_CHIRON -> SE_PLUTO + 3
+  if (id === 11) return 10; // astrology.SE_TRUE_NODE -> SE_MEAN_NODE
+  if (id < 0) return 0;
+  if (id >= 12) return 11; // len(common.common.Planets) - 1
+  return Math.trunc(id);
+}
+
+/** Apply the profile's individual-planet array without mutating the retained
+ * payload. Missing/empty slots retain the exact daemon color. */
+export function applyEphemerisPlanetProfileColors<
+  T extends Readonly<{ id: number; color: string }>,
+>(
+  planets: readonly T[],
+  profilePlanetColors?: readonly string[],
+): readonly T[] {
+  if (!profilePlanetColors?.length) return planets;
+  let changed = false;
+  const resolved = planets.map((planet) => {
+    const colorIndex = Math.min(
+      ephemerisPlanetColorIndex(planet.id),
+      profilePlanetColors.length - 1,
+    );
+    const color = profilePlanetColors[colorIndex]?.trim();
+    if (!color || color === planet.color) return planet;
+    changed = true;
+    return { ...planet, color };
+  });
+  return changed ? Object.freeze(resolved) : planets;
+}
+
 const DEFAULT_UI_FONT = "'FreeSans', ui-sans-serif, system-ui, sans-serif";
 const DEFAULT_SYMBOL_FONT = '"AriesMorinus"';
 const DEFAULT_REVISION = "ephemeris-render-style-v1";
@@ -202,11 +264,13 @@ export type EphemerisCssValueReader = (cssVar: string) => string;
  * non-negative fallback behavior. Units remain owned by the CSS contract. */
 export function resolveEphemerisRenderTokens(
   readCssValue: EphemerisCssValueReader = () => "",
+  profileOverrides: EphemerisChartProfileOverrides = {},
 ): Readonly<EphemerisRenderTokens> {
   const tokens = {} as EphemerisRenderTokens;
   for (const key of Object.keys(EPHEMERIS_RENDER_TOKEN_SPECS) as Array<keyof EphemerisRenderTokens>) {
     const [cssVar, fallback] = EPHEMERIS_RENDER_TOKEN_SPECS[key];
-    const value = Number.parseFloat(readCssValue(cssVar).trim());
+    const directProfileValue = profileOverrides[cssVar]?.trim();
+    const value = Number.parseFloat(directProfileValue || readCssValue(cssVar).trim());
     tokens[key] = Number.isFinite(value) && value >= 0 ? value : fallback;
   }
   return Object.freeze(tokens);
@@ -214,9 +278,13 @@ export function resolveEphemerisRenderTokens(
 
 export function readEphemerisRenderTokens(
   host: HTMLElement | null,
+  profileOverrides: EphemerisChartProfileOverrides = {},
 ): Readonly<EphemerisRenderTokens> {
   const computed = host ? window.getComputedStyle(host) : null;
-  return resolveEphemerisRenderTokens((cssVar) => computed?.getPropertyValue(cssVar) ?? "");
+  return resolveEphemerisRenderTokens(
+    (cssVar) => computed?.getPropertyValue(cssVar) ?? "",
+    profileOverrides,
+  );
 }
 
 export function createEphemerisRenderStyle({
@@ -299,10 +367,15 @@ export function createEphemerisRenderStyle({
  * retain and share this exact object across paint and interaction paths. */
 export function resolveEphemerisRenderStyle(
   host: HTMLElement | null,
-  input: Omit<Parameters<typeof createEphemerisRenderStyle>[0], "tokens"> = {},
+  {
+    profileOverrides = {},
+    ...input
+  }: Omit<NonNullable<Parameters<typeof createEphemerisRenderStyle>[0]>, "tokens"> & {
+    profileOverrides?: EphemerisChartProfileOverrides;
+  } = {},
 ): EphemerisRenderStyle {
   return createEphemerisRenderStyle({
     ...input,
-    tokens: readEphemerisRenderTokens(host),
+    tokens: readEphemerisRenderTokens(host, profileOverrides),
   });
 }

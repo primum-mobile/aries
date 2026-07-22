@@ -225,8 +225,13 @@ def _offset_dynamic_chart_bodies(chrt, arc):
         _offset_body_longitudes(getattr(chrt, attr_name, None), arc)
 
 
-def _cotrans_lon_to_equ(lon, obl):
-    ra, decl, _ = astrology.swe_cotrans(float(lon), 0.0, 1.0, -float(obl))
+def _cotrans_lon_to_equ(lon, obl, ayan_offset=0.0):
+    ra, decl, _ = astrology.swe_cotrans(
+        util.to_tropical_lon(float(lon), float(ayan_offset)),
+        0.0,
+        1.0,
+        -float(obl),
+    )
     return float(ra), float(decl)
 
 
@@ -259,7 +264,7 @@ def _obl_ut(jd_ut):
 def _ayan_ut(jd_ut, options):
     if getattr(options, 'ayanamsha', 0) != 0:
         astrology.swe_set_sid_mode(astrology.ayanamsha_swe_mode(options.ayanamsha), 0, 0)
-        return float(astrology.swe_get_ayanamsa_ut(jd_ut))
+        return float(astrology.effective_ayanamsha_ut(jd_ut, options.ayanamsha))
     return 0.0
 
 
@@ -285,19 +290,16 @@ def _build_interpolated_houses(jd_base, jd_next, frac, place, options, obl_final
         d = _signed_shortest_angle_delta(hn.cusps[i], hb.cusps[i])
         cusps[i] = util.normalize(hb.cusps[i] + d * frac)
 
-    # Whole sign sidereal special-case (Morinus 기존 정책 유지)
-    if getattr(options, 'ayanamsha', 0) != 0 and options.hsys == 'W':
-        # Houses.__init__의 로직을 재현: sid asc = tropical asc - ayan
-        asc_sid = util.normalize(hb.ascmc[houses.Houses.ASC] - ayan_final)
-        sign = int(asc_sid / 30.0)
-        for i in range(houses.Houses.HOUSE_NUM):
-            cusps[i + 1] = util.normalize((sign + i) * 30.0 + ayan_final)
-
     # --- interpolate ascmc array (ASC/MC 포함) ---
     ascmc = [0.0] * len(hb.ascmc)
     for j in range(len(ascmc)):
         d = _signed_shortest_angle_delta(hn.ascmc[j], hb.ascmc[j])
         ascmc[j] = util.normalize(hb.ascmc[j] + d * frac)
+
+    if options.hsys == 'W':
+        sign = int(util.normalize(ascmc[houses.Houses.ASC]) / 30.0)
+        for i in range(houses.Houses.HOUSE_NUM):
+            cusps[i + 1] = util.normalize((sign + i) * 30.0)
 
     # Write back
     hout.obl = float(obl_final)
@@ -307,8 +309,8 @@ def _build_interpolated_houses(jd_base, jd_next, frac, place, options, obl_final
     # ascmc2: (ASC lon/lat/RA/decl, MC lon/lat/RA/decl)
     asc_lon = hout.ascmc[houses.Houses.ASC]
     mc_lon = hout.ascmc[houses.Houses.MC]
-    asc_ra, asc_decl = _cotrans_lon_to_equ(asc_lon, obl_final)
-    mc_ra, mc_decl = _cotrans_lon_to_equ(mc_lon, obl_final)
+    asc_ra, asc_decl = _cotrans_lon_to_equ(asc_lon, obl_final, ayan_final)
+    mc_ra, mc_decl = _cotrans_lon_to_equ(mc_lon, obl_final, ayan_final)
     hout.ascmc2 = ((asc_lon, 0.0, asc_ra, asc_decl), (mc_lon, 0.0, mc_ra, mc_decl))
 
     # Regiomontanus MP values
@@ -323,7 +325,7 @@ def _build_interpolated_houses(jd_base, jd_next, frac, place, options, obl_final
     hout.cuspstmp = [[0.0, 0.0] for _ in range(houses.Houses.HOUSE_NUM)]
     cusps2 = []
     for i in range(houses.Houses.HOUSE_NUM):
-        ra, decl = _cotrans_lon_to_equ(hout.cusps[i + 1], obl_final)
+        ra, decl = _cotrans_lon_to_equ(hout.cusps[i + 1], obl_final, ayan_final)
         hout.cuspstmp[i][0] = ra
         hout.cuspstmp[i][1] = decl
         cusps2.append((ra, decl))
@@ -342,12 +344,28 @@ def _build_houses_from_armc(armc, place, options, obl, ayan):
     cusps = list(raw_cusps)
     ascmc = list(raw_ascmc)
 
-    if getattr(options, 'ayanamsha', 0) != 0 and hsys == 'W':
-        asc_sid = util.normalize(ascmc[houses.Houses.ASC] - ayan)
-        sign = int(asc_sid / 30.0)
+    if getattr(options, 'ayanamsha', 0) != 0:
+        for i in range(1, min(len(cusps), houses.Houses.HOUSE_NUM + 1)):
+            cusps[i] = util.normalize(float(cusps[i]) - ayan)
+        # ARMC is equatorial and frame-independent. All other Swiss
+        # ascmc entries here are ecliptic longitudes.
+        for i in (
+            houses.Houses.ASC,
+            houses.Houses.MC,
+            houses.Houses.VERTEX,
+            houses.Houses.EQUASC,
+            houses.Houses.COASC,
+            houses.Houses.COASC2,
+            houses.Houses.POLARASC,
+        ):
+            if i < len(ascmc):
+                ascmc[i] = util.normalize(float(ascmc[i]) - ayan)
+
+    if hsys == 'W':
+        sign = int(util.normalize(ascmc[houses.Houses.ASC]) / 30.0)
         cusp_list = [0.0]
         for i in range(houses.Houses.HOUSE_NUM):
-            cusp_list.append(util.normalize((sign + i) * 30.0 + ayan))
+            cusp_list.append(util.normalize((sign + i) * 30.0))
         cusps = cusp_list
 
     house_obj.obl = float(obl)
@@ -356,8 +374,8 @@ def _build_houses_from_armc(armc, place, options, obl, ayan):
 
     asc_lon = house_obj.ascmc[houses.Houses.ASC]
     mc_lon = house_obj.ascmc[houses.Houses.MC]
-    asc_ra, asc_decl = _cotrans_lon_to_equ(asc_lon, obl)
-    mc_ra, mc_decl = _cotrans_lon_to_equ(mc_lon, obl)
+    asc_ra, asc_decl = _cotrans_lon_to_equ(asc_lon, obl, ayan)
+    mc_ra, mc_decl = _cotrans_lon_to_equ(mc_lon, obl, ayan)
     house_obj.ascmc2 = ((asc_lon, 0.0, asc_ra, asc_decl), (mc_lon, 0.0, mc_ra, mc_decl))
 
     try:
@@ -370,7 +388,7 @@ def _build_houses_from_armc(armc, place, options, obl, ayan):
     house_obj.cuspstmp = [[0.0, 0.0] for _ in range(houses.Houses.HOUSE_NUM)]
     cusps2 = []
     for i in range(houses.Houses.HOUSE_NUM):
-        ra, decl = _cotrans_lon_to_equ(house_obj.cusps[i + 1], obl)
+        ra, decl = _cotrans_lon_to_equ(house_obj.cusps[i + 1], obl, ayan)
         house_obj.cuspstmp[i][0] = ra
         house_obj.cuspstmp[i][1] = decl
         cusps2.append((ra, decl))
@@ -386,11 +404,14 @@ def _build_houses_from_progressed_angle_method(radix_chart, options, angle_metho
 
     if angle_method == TRUE_SOLAR_ARC_LON:
         pflag = astrology.SEFLG_SWIEPH | astrology.SEFLG_SPEED
+        if getattr(options, 'ayanamsha', 0) != 0:
+            astrology.swe_set_sid_mode(astrology.ayanamsha_swe_mode(options.ayanamsha), 0, 0)
+            pflag |= astrology.SEFLG_SIDEREAL
         serr, prog_sun = astrology.swe_calc_ut(jd_prog, astrology.SE_SUN, pflag)
         serr, natal_sun = astrology.swe_calc_ut(float(radix_chart.time.jd), astrology.SE_SUN, pflag)
         mc_arc = _signed_shortest_angle_delta(prog_sun[0], natal_sun[0])
         mc_lon = util.normalize(natal_houses.ascmc[houses.Houses.MC] + mc_arc)
-        armc = _armc_from_mc_longitude(mc_lon, obl_final)
+        armc = _armc_from_mc_longitude(util.to_tropical_lon(mc_lon, ayan_final), obl_final)
         return _build_houses_from_armc(armc, radix_chart.place, options, obl_final, ayan_final)
 
     if angle_method == TRUE_SOLAR_ARC_RA:
@@ -409,7 +430,7 @@ def _build_houses_from_progressed_angle_method(radix_chart, options, angle_metho
     if angle_method == NAIBOD_LON:
         mc_lon = util.normalize(natal_houses.ascmc[houses.Houses.MC] + naibod_arc)
         natal_obl = float(getattr(radix_chart, 'obl', (obl_final,))[0])
-        armc = _armc_from_mc_longitude(mc_lon, natal_obl)
+        armc = _armc_from_mc_longitude(util.to_tropical_lon(mc_lon, ayan_final), natal_obl)
         return _build_houses_from_armc(armc, radix_chart.place, options, obl_final, ayan_final)
 
     if angle_method == NAIBOD_RA:
@@ -436,8 +457,10 @@ def progressed_angle_state_for_symbolic_age(radix_chart, options, symbolic_age, 
         radix_chart, options, angle_method, age_years, jd_prog, symbolic_age
     )
     obl_final = _obl_ut(jd_prog)
+    ayan_final = _ayan_ut(jd_prog, options)
     raequasc, _declequasc, _dist = astrology.swe_cotrans(
-        houses_obj.ascmc[houses.Houses.EQUASC], 0.0, 1.0, -obl_final
+        util.to_tropical_lon(houses_obj.ascmc[houses.Houses.EQUASC], ayan_final),
+        0.0, 1.0, -obl_final
     )
     return {
         'jd_prog': float(jd_prog),
@@ -561,6 +584,7 @@ def _make_solar_arc_chart(radix_chart, options, birth_jd, age_years, calflag, ye
         pflag |= astrology.SEFLG_TOPOCTR
     if getattr(options, 'ayanamsha', 0) != 0:
         astrology.swe_set_sid_mode(astrology.ayanamsha_swe_mode(options.ayanamsha), 0, 0)
+        pflag |= astrology.SEFLG_SIDEREAL
 
     serr, prog_sun = astrology.swe_calc_ut(jd_sec, astrology.SE_SUN, pflag)
     serr, natal_sun = astrology.swe_calc_ut(birth_jd, astrology.SE_SUN, pflag)
@@ -569,6 +593,8 @@ def _make_solar_arc_chart(radix_chart, options, birth_jd, age_years, calflag, ye
     # Clone the natal chart
     prg = copy.deepcopy(radix_chart)
     prg.htype = chart.Chart.TRANSIT
+    prg.ayanamsha = 0.0
+    prg.ayanamsha_offset = _ayan_ut(jd_sec, options)
 
     # Offset all planet longitudes
     for p in prg.planets.planets:

@@ -54,6 +54,7 @@ export function SidebarSash() {
   const dragging = useFrameLayoutStore((s) => s.sidebarDragging);
   const inspectorOpen = useFrameLayoutStore((s) => s.inspectorOpen);
   const notesOpen = useFrameLayoutStore((s) => s.notesPaneOpen);
+  const styleEditorOpen = useFrameLayoutStore((s) => s.styleEditorOpen);
   const rightPaneWidth = useFrameLayoutStore((s) => s.rightPaneWidth);
   const transitSearchPane = useWorkspaceStore((s) => s.transitSearchPane);
   const transitListPane = useWorkspaceStore((s) => s.transitListPane);
@@ -71,6 +72,7 @@ export function SidebarSash() {
   const activeRightPane = activeRightPaneModule({
     inspectorOpen,
     notesOpen,
+    styleEditorOpen,
     transitSearchPane,
     transitListPane,
     directionsPane,
@@ -213,6 +215,7 @@ export function SidebarSash() {
       const currentRightPane = activeRightPaneModule({
         inspectorOpen: state.inspectorOpen,
         notesOpen: state.notesPaneOpen,
+        styleEditorOpen: state.styleEditorOpen,
         transitSearchPane: workspaceState.transitSearchPane,
         transitListPane: workspaceState.transitListPane,
         directionsPane: workspaceState.directionsPane,
@@ -347,10 +350,10 @@ export function SidebarSash() {
       // 12px fixed hit zone straddling the structural sidebar split. No grip.
       className={cn(
         "fixed inset-y-0 left-[var(--sidebar-width)] z-50 w-3 -translate-x-1/2 cursor-col-resize select-none transition-[left] duration-[var(--aries-motion-shell-duration)] ease-[var(--aries-motion-shell-ease)]",
-        "after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-[color:var(--aries-titlebar-seam-rule)] after:content-['']",
-        "hover:after:bg-[color:var(--aries-sidebar-sash-rule)]",
+        "after:absolute after:inset-y-0 after:left-1/2 after:w-[var(--aries-sash-rule-size)] after:-translate-x-1/2 after:bg-[color:var(--aries-sash-idle-color)] after:content-['']",
+        "hover:after:bg-[color:var(--aries-sash-hover-color)]",
         dragging && "transition-none",
-        dragging && "after:bg-sidebar-border/80",
+        dragging && "after:bg-[color:var(--aries-sash-active-color)]",
       )}
     />
   );

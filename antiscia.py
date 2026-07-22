@@ -80,15 +80,13 @@ class Antiscia:
 		plcants = []
 
 		for i in range(planets.Planets.PLANETS_NUM):
-			# Planet lons are stored in the chart's chosen zodiac.
 			# Antiscia geometry is anchored to the tropical solstitial
-			# axis (Cancer/Capricorn 0° tropical), so recover tropical
-			# before any mirror or declination math; calc() and
-			# calcDodecatemoria() then siderealize the result for
-			# display via ``- self.ayan`` as today.
-			lon_p_trop = self._to_tropical(pls[i].data[planets.Planet.LONG])
+			# axis, while dodecatemoria subdivide the selected zodiac's
+			# signs. Keep those two frames explicit.
+			lon_p = pls[i].data[planets.Planet.LONG]
+			lon_p_trop = self._to_tropical(lon_p)
 			lat_p = pls[i].data[planets.Planet.LAT]
-			dodec = self.calcDodecatemoria(lon_p_trop)
+			dodec = self.calcDodecatemoria(lon_p)
 
 			if morin_antiscia:
 				prim, sec, prim_c, sec_c = self._morin_pair(lon_p_trop, lat_p, obl, ayanopt, ayan)
@@ -99,57 +97,59 @@ class Antiscia:
 				# Track the contraantiscion of the primary for plcants[] used downstream;
 				# kept for parity with classical path (only consumed by ra/decl recompute below).
 				plcants.append((prim_c['lon'] if prim_c else 0.0, 0.0))
-				raant, declant, dist = astrology.swe_cotrans(prim['lon'] if prim else 0.0, 0.0, 1.0, -obl)
+				raant, declant, dist = astrology.swe_cotrans(self._to_tropical(dodec), lat_p, 1.0, -obl)
 				self.pldodecatemoria.append(Antiscion(Antiscion.DODECATEMORIA, i, dodec, lat_p, raant, declant))
 				continue
 
 			ant, cant = self.calc(lon_p_trop)
 			plcants.append((cant, lat_p))
-			raant, declant, dist = astrology.swe_cotrans(ant, lat_p, 1.0, -obl)
+			raant, declant, dist = astrology.swe_cotrans(self._to_tropical(ant), lat_p, 1.0, -obl)
 			self.plantiscia.append(Antiscion(Antiscion.ANTISCION, i, ant, lat_p, raant, declant))
-			self.pldodecatemoria.append(Antiscion(Antiscion.DODECATEMORIA, i, dodec, lat_p, raant, declant))
+			radodec, decldodec, dist = astrology.swe_cotrans(self._to_tropical(dodec), lat_p, 1.0, -obl)
+			self.pldodecatemoria.append(Antiscion(Antiscion.DODECATEMORIA, i, dodec, lat_p, radodec, decldodec))
 
 		if not morin_antiscia:
 			for i in range(planets.Planets.PLANETS_NUM):
-				raant, declant, dist = astrology.swe_cotrans(plcants[i][0], plcants[i][1], 1.0, -obl)
+				raant, declant, dist = astrology.swe_cotrans(self._to_tropical(plcants[i][0]), plcants[i][1], 1.0, -obl)
 				self.plcontraant.append(Antiscion(Antiscion.CONTRAANT, i, plcants[i][0], plcants[i][1], raant, declant))
 
 
-		lof_lon_trop = self._to_tropical(lof[fortune.Fortune.LON])
+		lof_lon = lof[fortune.Fortune.LON]
+		lof_lon_trop = self._to_tropical(lof_lon)
 		ant, cant = self.calc(lof_lon_trop)
-		dodec = self.calcDodecatemoria(lof_lon_trop)
+		dodec = self.calcDodecatemoria(lof_lon)
 #		lat = lof[fortune.Fortune.LAT] #=0.0
-		raant, declant, dist = astrology.swe_cotrans(ant, 0.0, 1.0, -self.obl)
+		raant, declant, dist = astrology.swe_cotrans(self._to_tropical(ant), 0.0, 1.0, -self.obl)
 		self.lofant = Antiscion(Antiscion.ANTISCION, Antiscion.LOF, ant, 0.0, raant, declant)
-		raant, declant, dist = astrology.swe_cotrans(cant, 0.0, 1.0, -self.obl)
+		raant, declant, dist = astrology.swe_cotrans(self._to_tropical(cant), 0.0, 1.0, -self.obl)
 		self.lofcontraant = Antiscion(Antiscion.CONTRAANT, Antiscion.LOF, cant, 0.0, raant, declant)
 		#Afegeixo LOF 
-		raant, declant, dist = astrology.swe_cotrans(cant, 0.0, 1.0, -self.obl)
+		raant, declant, dist = astrology.swe_cotrans(self._to_tropical(dodec), 0.0, 1.0, -self.obl)
 		self.lofdodec = Antiscion(Antiscion.DODECATEMORIA, Antiscion.LOF, dodec, 0.0, raant, declant)
 
 		asc_lon_trop = self._to_tropical(ascmc[houses.Houses.ASC])
 		mc_lon_trop = self._to_tropical(ascmc[houses.Houses.MC])
 
 		antasc, cantasc = self.calc(asc_lon_trop)
-		raantasc, declantasc, dist = astrology.swe_cotrans(antasc, 0.0, 1.0, -self.obl)
+		raantasc, declantasc, dist = astrology.swe_cotrans(self._to_tropical(antasc), 0.0, 1.0, -self.obl)
 		self.ascmcant.append(Antiscion(Antiscion.ANTISCION, Antiscion.ASC, antasc, 0.0, raantasc, declantasc))
 
 		antmc, cantmc = self.calc(mc_lon_trop)
-		raantmc, declantmc, dist = astrology.swe_cotrans(antmc, 0.0, 1.0, -self.obl)
+		raantmc, declantmc, dist = astrology.swe_cotrans(self._to_tropical(antmc), 0.0, 1.0, -self.obl)
 		self.ascmcant.append(Antiscion(Antiscion.ANTISCION, Antiscion.MC, antmc, 0.0, raantmc, declantmc))
 
-		raantasc, declantasc, dist = astrology.swe_cotrans(cantasc, 0.0, 1.0, -self.obl)
+		raantasc, declantasc, dist = astrology.swe_cotrans(self._to_tropical(cantasc), 0.0, 1.0, -self.obl)
 		self.ascmccontraant.append(Antiscion(Antiscion.CONTRAANT, Antiscion.ASC, cantasc, 0.0, raantasc, declantasc))
 
-		raantmc, declantmc, dist = astrology.swe_cotrans(cantmc, 0.0, 1.0, -self.obl)
+		raantmc, declantmc, dist = astrology.swe_cotrans(self._to_tropical(cantmc), 0.0, 1.0, -self.obl)
 		self.ascmccontraant.append(Antiscion(Antiscion.CONTRAANT, Antiscion.MC, cantmc, 0.0, raantmc, declantmc))
 
-		dodecasc = self.calcDodecatemoria(asc_lon_trop)
-		raantasc, declantasc, dist = astrology.swe_cotrans(dodecasc, 0.0, 1.0, -self.obl)
+		dodecasc = self.calcDodecatemoria(ascmc[houses.Houses.ASC])
+		raantasc, declantasc, dist = astrology.swe_cotrans(self._to_tropical(dodecasc), 0.0, 1.0, -self.obl)
 		self.ascmcdodec.append(Antiscion(Antiscion.DODECATEMORIA, Antiscion.ASC, dodecasc, 0.0, raantasc, declantasc))
 
-		dodecmc = self.calcDodecatemoria(mc_lon_trop)
-		raantmc, declantmc, dist = astrology.swe_cotrans(antmc, 0.0, 1.0, -self.obl)
+		dodecmc = self.calcDodecatemoria(ascmc[houses.Houses.MC])
+		raantmc, declantmc, dist = astrology.swe_cotrans(self._to_tropical(dodecmc), 0.0, 1.0, -self.obl)
 		self.ascmcdodec.append(Antiscion(Antiscion.DODECATEMORIA, Antiscion.MC, dodecmc, 0.0, raantmc, declantmc))
 
 #		self.printants()
@@ -160,9 +160,8 @@ class Antiscia:
 		``util.to_tropical_lon`` retained for backward compatibility
 		with internal call sites. Antiscia geometry is anchored to the
 		tropical solstitial axis, so every mirror or declination
-		operation needs the tropical input; ``calc()`` and
-		``calcDodecatemoria()`` then siderealize their result via
-		``- self.ayan`` for display.
+		operation needs the tropical input. Dodecatemoria are a
+		zodiacal-sign operation and deliberately do not use this helper.
 		"""
 		return util.to_tropical_lon(lon, self.ayan if self.ayanopt != 0 else 0.0)
 
@@ -280,7 +279,7 @@ class Antiscia:
 		if packed is None:
 			return Antiscion(typ, planet_idx, 0.0, 0.0, 0.0, 0.0, valid=False, direction=Antiscion.UNDIRECTED)
 		lon_v = packed['lon']
-		ra_v, decl_v, _d = astrology.swe_cotrans(lon_v, 0.0, 1.0, -obl)
+		ra_v, decl_v, _d = astrology.swe_cotrans(self._to_tropical(lon_v), 0.0, 1.0, -obl)
 		return Antiscion(typ, planet_idx, lon_v, 0.0, ra_v, decl_v,
 		                 valid=True, direction=packed.get('direction', Antiscion.UNDIRECTED))
 
@@ -310,16 +309,12 @@ class Antiscia:
 	def calcDodecatemoria(self, lon):
 		"""
 		Calculate dodecatemoria (12th-parts) for a given longitude.
-		Input longitude must always be TROPICAL (never sidereal).
-		If ayanopt != 0 (sidereal), convert result to sidereal by subtracting ayan.
-		All ayanamsha logic is centralized here. Frontend/chart code must never subtract ayanamsha before calling this.
+		Input and output use the chart's selected zodiac. A 12th-part is
+		measured inside that zodiac's signs; applying it in tropical
+		space and shifting afterward selects the wrong source sign and
+		degree whenever an ayanamsha is active.
 		"""
-		dodec_trop = self.KeepInZodiac(30*self.getSign(lon) + 12*self.getRelativeLon(lon))
-		if self.ayanopt != 0:
-			dodec = util.normalize(dodec_trop - self.ayan)
-		else:
-			dodec = dodec_trop
-		return dodec
+		return self.KeepInZodiac(30*self.getSign(lon) + 12*self.getRelativeLon(lon))
 
 	def KeepBetweenLimit(self, lon, lim):
 		""" Keep the longitude between 0..lim """
@@ -358,8 +353,5 @@ class Antiscia:
 				print ('%s %s %f %f %f %f' % (anttxt[ant.typ], 'MC', ant.lon, ant.lat, ant.ra, ant.decl))
 
 			i += 1
-
-
-
 
 

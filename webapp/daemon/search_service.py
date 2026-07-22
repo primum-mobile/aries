@@ -36,6 +36,13 @@ import util
 from engine import moment
 from engine.supplementary_headless_driver import SupplementaryHeadlessDriver
 from webapp.daemon.chart_service import chart_snapshot_service
+from webapp.daemon.display_palette import (
+    aspect_color_role,
+    effective_display_options,
+    object_glyph_color,
+    object_glyph_color_role,
+    sign_color_role,
+)
 from webapp.daemon.event_time import DefaultLocationClock, table_event_clock
 
 
@@ -67,7 +74,6 @@ MAJOR_ASPECTS = (
     searchquery.SearchQuery.ASPECT_TRINE,
     searchquery.SearchQuery.ASPECT_OPPOSITION,
 )
-
 
 class _SearchJob:
     def __init__(self, session_id: str, owner_key: str, time_display: dict[str, Any]) -> None:
@@ -329,8 +335,16 @@ class TransitSearchService:
         rows, truncated = searchbackend.search(
             catalog, chrt, query, start_date, end_date, limit
         )
+        display_options = effective_display_options(chart_snapshot_service.options)
         serialized = [
-            self._row_payload(row, catalog, chrt, index, display_clock=display_clock)
+            self._row_payload(
+                row,
+                catalog,
+                chrt,
+                index,
+                display_clock=display_clock,
+                display_options=display_options,
+            )
             for index, row in enumerate(rows)
         ]
         return {
@@ -451,6 +465,7 @@ class TransitSearchService:
         try:
             emitted = False
             display_clock = table_event_clock(chart_snapshot_service.options)
+            display_options = effective_display_options(chart_snapshot_service.options)
             # Swiss Ephemeris mode/topocentric flags are process-global. Keep
             # worker searches serialized while still letting the UI return and
             # poll progressively.
@@ -468,6 +483,7 @@ class TransitSearchService:
                             chrt,
                             index,
                             display_clock=display_clock,
+                            display_options=display_options,
                         )
                         for index, row in enumerate(rows)
                     ]
@@ -757,7 +773,11 @@ class TransitSearchService:
         index: int,
         *,
         display_clock: DefaultLocationClock | None = None,
+        display_options=None,
     ) -> dict[str, Any]:
+        display_options = display_options or effective_display_options(
+            chart_snapshot_service.options
+        )
         event_tuple = self._event_tuple(row)
         display = (display_clock or table_event_clock(chart_snapshot_service.options)).display(event_tuple)
         display_tuple = display.values
@@ -766,15 +786,24 @@ class TransitSearchService:
         prom = catalog.get(row.promittor_id)
         sig = catalog.get(row.significator_id)
         metadata = dict(row.metadata)
-        metadata["aspect_color"] = self._aspect_color(row)
+        metadata["aspect_color"] = self._aspect_color(row, display_options)
+        metadata["aspect_color_role"] = self._aspect_color_role(row, display_options)
         if row.metadata.get("sign_change"):
             from_display, to_display = self._sign_change_displays(row)
             if from_display:
-                metadata["sign_change_from_display"] = self._decorate_display_payload(from_display)
+                metadata["sign_change_from_display"] = self._decorate_display_payload(
+                    from_display, display_options, obj=prom
+                )
             if to_display:
-                metadata["sign_change_to_display"] = self._decorate_display_payload(to_display)
-        prom_display = self._decorate_display_payload(row.metadata.get("prom_display", {}))
-        sig_display = self._decorate_display_payload(row.metadata.get("sig_display", {}))
+                metadata["sign_change_to_display"] = self._decorate_display_payload(
+                    to_display, display_options, obj=prom
+                )
+        prom_display = self._decorate_display_payload(
+            row.metadata.get("prom_display", {}), display_options, obj=prom
+        )
+        sig_display = self._decorate_display_payload(
+            row.metadata.get("sig_display", {}), display_options, obj=sig
+        )
         return {
             "key": "%d:%s:%s:%s:%s" % (
                 index, row.event_date, row.event_time, row.promittor_id, row.significator_id
@@ -818,17 +847,35 @@ class TransitSearchService:
             "primaryDirection": self._primary_direction_text(row),
         }
 
-    def _aspect_color(self, row: searchquery.SearchResult) -> str:
+    def _aspect_color(self, row: searchquery.SearchResult, display_options=None) -> str:
+        display_options = display_options or effective_display_options(
+            chart_snapshot_service.options
+        )
         if row.metadata.get("sign_change"):
-            return self._rgb_css(getattr(chart_snapshot_service.options, "clrtexts", (0, 0, 0)))
+            return self._rgb_css(getattr(display_options, "clrtexts", (0, 0, 0)))
         chart_aspect = searchbackend.ASPECT_INDEX_BY_ID.get(row.aspect)
         if chart_aspect is None:
-            return self._rgb_css(getattr(chart_snapshot_service.options, "clrtexts", (0, 0, 0)))
-        colors = getattr(chart_snapshot_service.options, "clraspect", ())
+            return self._rgb_css(getattr(display_options, "clrtexts", (0, 0, 0)))
+        colors = getattr(display_options, "clraspect", ())
         try:
             return self._rgb_css(colors[int(chart_aspect)])
         except Exception:
-            return self._rgb_css(getattr(chart_snapshot_service.options, "clrtexts", (0, 0, 0)))
+            return self._rgb_css(getattr(display_options, "clrtexts", (0, 0, 0)))
+
+    def _aspect_color_role(
+        self,
+        row: searchquery.SearchResult,
+        display_options=None,
+    ) -> str | None:
+        display_options = display_options or effective_display_options(
+            chart_snapshot_service.options
+        )
+        color = self._aspect_color(row, display_options)
+        return aspect_color_role(
+            display_options,
+            searchbackend.ASPECT_INDEX_BY_ID.get(row.aspect),
+            resolved_color=color,
+        )
 
     @staticmethod
     def _sign_change_displays(row: searchquery.SearchResult) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -866,9 +913,18 @@ class TransitSearchService:
             },
         )
 
-    def _decorate_display_payload(self, value: Any) -> dict[str, Any]:
+    def _decorate_display_payload(
+        self,
+        value: Any,
+        display_options=None,
+        *,
+        obj: Optional[searchcatalog.SearchObject] = None,
+    ) -> dict[str, Any]:
         if not isinstance(value, dict):
             return {}
+        display_options = display_options or effective_display_options(
+            chart_snapshot_service.options
+        )
         payload = dict(value)
         sign_index = payload.get("sign_index")
         display_longitude = payload.get("display_longitude")
@@ -884,12 +940,18 @@ class TransitSearchService:
                 sign_index_int = None
             if sign_index_int is not None:
                 signs = common.common.Signs1
-                if not getattr(chart_snapshot_service.options, "signs", True):
+                if not getattr(display_options, "signs", True):
                     signs = common.common.Signs2
                 payload["sign_index"] = sign_index_int
                 payload["sign_glyph"] = signs[sign_index_int]
                 payload["sign_color"] = self._rgb_css(
-                    common.get_sign_color(chart_snapshot_service.options, sign_index_int, force_element=True)
+                    common.get_sign_color(display_options, sign_index_int, force_element=True)
+                )
+                payload["sign_color_role"] = sign_color_role(
+                    display_options,
+                    sign_index_int,
+                    force_element=True,
+                    resolved_color=payload["sign_color"],
                 )
         if display_longitude is not None:
             try:
@@ -900,7 +962,21 @@ class TransitSearchService:
             except Exception:
                 pass
         if payload.get("glyph_color") is not None:
-            payload["glyph_color_css"] = self._rgb_css(payload.get("glyph_color"))
+            payload["glyph_color_css"] = self._rgb_css(
+                object_glyph_color(
+                    display_options,
+                    obj,
+                    payload.get("dignity_code"),
+                    fallback=payload.get("glyph_color"),
+                    source_options=chart_snapshot_service.options,
+                )
+            )
+            payload["glyph_color_role"] = object_glyph_color_role(
+                display_options,
+                obj,
+                payload.get("dignity_code"),
+                resolved_color=payload["glyph_color_css"],
+            )
         return payload
 
     @staticmethod

@@ -12,6 +12,840 @@
   font-style: normal;
   font-display: block;
 }
+
+/* BEGIN GENERATED RENDERER STYLE TOKENS */
+:root {
+  --aries-astrocart-chrome-bg: rgba(29,30,33,0.88);
+  --aries-astrocart-chrome-bg-thin: rgba(29,30,33,0.84);
+  --aries-astrocart-chrome-border: rgba(255,255,255,0.10);
+  --aries-astrocart-chrome-button-active-bg: rgba(255,255,255,0.12);
+  --aries-astrocart-chrome-button-active-fg: #ffffff;
+  --aries-astrocart-chrome-button-hover-bg: rgba(255,255,255,0.05);
+  --aries-astrocart-chrome-dim: #b0b3b8;
+  --aries-astrocart-chrome-key-line: #d0d2d6;
+  --aries-astrocart-chrome-key-paran: #e59246;
+  --aries-astrocart-chrome-menu-bg: rgba(37,39,44,0.88);
+  --aries-astrocart-chrome-menu-border: rgba(255,255,255,0.14);
+  --aries-astrocart-chrome-menu-hover-bg: #0a84ff;
+  --aries-astrocart-chrome-menu-hover-fg: #ffffff;
+  --aries-astrocart-chrome-menu-shadow: rgba(0,0,0,0.45);
+  --aries-astrocart-chrome-page-bg: #232428;
+  --aries-astrocart-chrome-popup-bg: #23262c;
+  --aries-astrocart-chrome-rule: rgba(255,255,255,0.08);
+  --aries-astrocart-chrome-soft: #c4c6ca;
+  --aries-astrocart-chrome-text: #e2e3e6;
+  --aries-astrocart-map-asterism-highlight-color: #c9a7ff;
+  --aries-astrocart-map-asterism-label-halo-width: 0.55px;
+  --aries-astrocart-map-asterism-label-opacity: 0.72;
+  --aries-astrocart-map-asterism-label-size: 7px;
+  --aries-astrocart-map-asterism-label-spacing: 0.06;
+  --aries-astrocart-map-asterism-line-opacity: 0.52;
+  --aries-astrocart-map-asterism-line-width: 0.7px;
+  --aries-astrocart-map-asterism-shadow-blur: 0.55px;
+  --aries-astrocart-map-asterism-shadow-color: #4f8cff;
+  --aries-astrocart-map-asterism-shadow-opacity: 0.28;
+  --aries-astrocart-map-asterism-shadow-spread: 0.65px;
+  --aries-astrocart-map-asterism-star-opacity: 0.92;
+  --aries-astrocart-map-asterism-star-radius-max: 3.8px;
+  --aries-astrocart-map-asterism-star-radius-min: 0.85px;
+  --aries-astrocart-map-border-color: #59616a;
+  --aries-astrocart-map-building-color: rgba(10,12,16,0.44);
+  --aries-astrocart-map-building-opacity-scale: 1;
+  --aries-astrocart-map-building-outline-color: rgba(126,134,144,0.14);
+  --aries-astrocart-map-casing: rgba(10,12,16,0.85);
+  --aries-astrocart-map-casing-opacity: 0.9;
+  --aries-astrocart-map-casing-width: 3px;
+  --aries-astrocart-map-chiron-line-color: #800080;
+  --aries-astrocart-map-chiron-line-opacity: 1;
+  --aries-astrocart-map-chiron-line-width-scale: 1;
+  --aries-astrocart-map-city-label-color: #9ea5ae;
+  --aries-astrocart-map-city-label-halo: rgba(10,12,16,0.88);
+  --aries-astrocart-map-city-label-halo-blur: 0.7px;
+  --aries-astrocart-map-city-label-halo-width: 1.15px;
+  --aries-astrocart-map-city-label-opacity: 0.82;
+  --aries-astrocart-map-city-label-size: 10.5px;
+  --aries-astrocart-map-city-label-spacing: 0.02;
+  --aries-astrocart-map-country-label-color: #d7dbe0;
+  --aries-astrocart-map-country-label-halo: rgba(10,12,16,0.88);
+  --aries-astrocart-map-country-label-halo-blur: 0.8px;
+  --aries-astrocart-map-country-label-halo-width: 1.35px;
+  --aries-astrocart-map-country-label-opacity: 0.92;
+  --aries-astrocart-map-country-label-size: 12px;
+  --aries-astrocart-map-country-label-spacing: 0.04;
+  --aries-astrocart-map-dashed-off: 2px;
+  --aries-astrocart-map-dashed-on: 3px;
+  --aries-astrocart-map-dashed-opacity: 0.95;
+  --aries-astrocart-map-dashed-width: 1.6px;
+  --aries-astrocart-map-dom-label-opacity-scale: 0.9;
+  --aries-astrocart-map-eclipse-center-color: #d9b760;
+  --aries-astrocart-map-eclipse-center-opacity: 0.96;
+  --aries-astrocart-map-eclipse-center-width: 2px;
+  --aries-astrocart-map-eclipse-fill-opacity: 0.9;
+  --aries-astrocart-map-eclipse-halo-color: rgba(8,11,15,0.92);
+  --aries-astrocart-map-eclipse-label-halo-width: 1.3px;
+  --aries-astrocart-map-eclipse-label-opacity: 1;
+  --aries-astrocart-map-eclipse-label-size: 11px;
+  --aries-astrocart-map-eclipse-label-spacing: 0;
+  --aries-astrocart-map-eclipse-limit-dash-off: 2px;
+  --aries-astrocart-map-eclipse-limit-dash-on: 3px;
+  --aries-astrocart-map-eclipse-limit-opacity: 0.78;
+  --aries-astrocart-map-eclipse-limit-width: 1.2px;
+  --aries-astrocart-map-eclipse-maximum-radius: 4.5px;
+  --aries-astrocart-map-eclipse-maximum-stroke-width: 2px;
+  --aries-astrocart-map-eclipse-outline-color: #c8c2b5;
+  --aries-astrocart-map-eclipse-outline-opacity: 0.24;
+  --aries-astrocart-map-eclipse-outline-width: 0.8px;
+  --aries-astrocart-map-eclipse-shadow-blur: 3px;
+  --aries-astrocart-map-eclipse-shadow-color: rgba(5,6,7,0.34);
+  --aries-astrocart-map-eclipse-shadow-opacity: 0.92;
+  --aries-astrocart-map-eclipse-shadow-width: 12px;
+  --aries-astrocart-map-fallback-asc-color: #2ecc71;
+  --aries-astrocart-map-fallback-dsc-color: #f39c12;
+  --aries-astrocart-map-fallback-ic-color: #8e44ad;
+  --aries-astrocart-map-fallback-mc-color: #e74c3c;
+  --aries-astrocart-map-fallback-unknown-color: #888888;
+  --aries-astrocart-map-hillshade-exaggeration: 0.35px;
+  --aries-astrocart-map-hospital-fill-color: rgba(182,188,196,0.10);
+  --aries-astrocart-map-hospital-fill-opacity-scale: 1;
+  --aries-astrocart-map-hospital-icon-opacity: 0.5;
+  --aries-astrocart-map-hospital-label-color: #c2c7cd;
+  --aries-astrocart-map-hospital-label-halo: rgba(10,12,16,0.72);
+  --aries-astrocart-map-hospital-label-halo-blur: 0.35px;
+  --aries-astrocart-map-hospital-label-halo-width: 1px;
+  --aries-astrocart-map-hospital-label-opacity: 0.82;
+  --aries-astrocart-map-hospital-label-size: 11.2px;
+  --aries-astrocart-map-jupiter-line-color: #0000ff;
+  --aries-astrocart-map-jupiter-line-opacity: 1;
+  --aries-astrocart-map-jupiter-line-width-scale: 1;
+  --aries-astrocart-map-label-color: #e2e3e6;
+  --aries-astrocart-map-label-halo: rgba(10,12,16,0.85);
+  --aries-astrocart-map-label-halo-width: 1px;
+  --aries-astrocart-map-label-opacity: 1;
+  --aries-astrocart-map-label-size: 11px;
+  --aries-astrocart-map-label-spacing: 0.04;
+  --aries-astrocart-map-land-color: #31353a;
+  --aries-astrocart-map-local-country-border-opacity: 0.62;
+  --aries-astrocart-map-local-country-border-width: 0.8px;
+  --aries-astrocart-map-local-region-border-opacity: 0.28;
+  --aries-astrocart-map-local-region-border-width: 0.45px;
+  --aries-astrocart-map-mars-line-color: #b22222;
+  --aries-astrocart-map-mars-line-opacity: 1;
+  --aries-astrocart-map-mars-line-width-scale: 1;
+  --aries-astrocart-map-mercury-line-color: #8a2be2;
+  --aries-astrocart-map-mercury-line-opacity: 1;
+  --aries-astrocart-map-mercury-line-width-scale: 1;
+  --aries-astrocart-map-minor-place-label-color: #868d95;
+  --aries-astrocart-map-minor-place-label-halo: rgba(10,12,16,0.50);
+  --aries-astrocart-map-minor-place-label-halo-blur: 0.2px;
+  --aries-astrocart-map-minor-place-label-halo-width: 0.35px;
+  --aries-astrocart-map-minor-place-label-opacity: 0.64;
+  --aries-astrocart-map-minor-place-label-size: 9.4px;
+  --aries-astrocart-map-minor-place-label-spacing: 0.01;
+  --aries-astrocart-map-moon-line-color: #00bfff;
+  --aries-astrocart-map-moon-line-opacity: 1;
+  --aries-astrocart-map-moon-line-width-scale: 1;
+  --aries-astrocart-map-neptune-line-color: #000080;
+  --aries-astrocart-map-neptune-line-opacity: 1;
+  --aries-astrocart-map-neptune-line-width-scale: 1;
+  --aries-astrocart-map-north-node-line-color: #8b3626;
+  --aries-astrocart-map-north-node-line-opacity: 1;
+  --aries-astrocart-map-north-node-line-width-scale: 1;
+  --aries-astrocart-map-ocean-color: #232a32;
+  --aries-astrocart-map-page-bg: #1a1d21;
+  --aries-astrocart-map-paran-color: #e59246;
+  --aries-astrocart-map-paran-dash-off: 2px;
+  --aries-astrocart-map-paran-dash-on: 1px;
+  --aries-astrocart-map-paran-halo: rgba(10,12,16,0.85);
+  --aries-astrocart-map-paran-label-halo-width: 1.3px;
+  --aries-astrocart-map-paran-label-opacity: 1;
+  --aries-astrocart-map-paran-label-size: 11px;
+  --aries-astrocart-map-paran-label-spacing: 0.02;
+  --aries-astrocart-map-paran-line-opacity: 0.7;
+  --aries-astrocart-map-paran-width: 1px;
+  --aries-astrocart-map-park-color: rgba(74,92,78,0.14);
+  --aries-astrocart-map-park-fill-opacity-scale: 1;
+  --aries-astrocart-map-park-outline-color: rgba(118,142,122,0.16);
+  --aries-astrocart-map-park-outline-opacity-scale: 1;
+  --aries-astrocart-map-pluto-line-color: #000080;
+  --aries-astrocart-map-pluto-line-opacity: 1;
+  --aries-astrocart-map-pluto-line-width-scale: 1;
+  --aries-astrocart-map-reference-asc-color: #cdcdd1;
+  --aries-astrocart-map-reference-ecliptic-color: #d7d7d9;
+  --aries-astrocart-map-reference-equator-color: #dcdccd;
+  --aries-astrocart-map-reference-grid-line-opacity: 0.34;
+  --aries-astrocart-map-reference-grid-line-width: 0.5px;
+  --aries-astrocart-map-reference-house-grid-color: #8a8b8d;
+  --aries-astrocart-map-reference-line-opacity: 0.78;
+  --aries-astrocart-map-reference-line-width: 1.1px;
+  --aries-astrocart-map-reference-mc-color: #cdcdd1;
+  --aries-astrocart-map-reference-pole-house-size: 7px;
+  --aries-astrocart-map-reference-pole-label-halo-width: 0.9px;
+  --aries-astrocart-map-reference-pole-label-opacity: 0.82;
+  --aries-astrocart-map-reference-pole-sign-size: 8px;
+  --aries-astrocart-map-reference-sign-halo-width: 1.25px;
+  --aries-astrocart-map-reference-sign-opacity: 1;
+  --aries-astrocart-map-reference-sign-size: 12px;
+  --aries-astrocart-map-reference-zodiac-grid-color: #d7d7d9;
+  --aries-astrocart-map-residential-color: rgba(70,76,84,0.08);
+  --aries-astrocart-map-residential-opacity-scale: 1;
+  --aries-astrocart-map-road-blur: 0px;
+  --aries-astrocart-map-road-color: #454d57;
+  --aries-astrocart-map-road-opacity-scale: 1;
+  --aries-astrocart-map-road-width-scale: 1;
+  --aries-astrocart-map-saturn-line-color: #606060;
+  --aries-astrocart-map-saturn-line-opacity: 1;
+  --aries-astrocart-map-saturn-line-width-scale: 1;
+  --aries-astrocart-map-solid-opacity: 0.95;
+  --aries-astrocart-map-solid-width: 1.6px;
+  --aries-astrocart-map-south-node-line-color: #8b3626;
+  --aries-astrocart-map-south-node-line-opacity: 1;
+  --aries-astrocart-map-south-node-line-width-scale: 1;
+  --aries-astrocart-map-street-label-halo-blur: 0.25px;
+  --aries-astrocart-map-street-label-halo-width: 0.65px;
+  --aries-astrocart-map-street-label-opacity: 1;
+  --aries-astrocart-map-street-label-size: 11px;
+  --aries-astrocart-map-street-name-color: rgba(230,235,240,0.42);
+  --aries-astrocart-map-street-name-halo: rgba(10,12,16,0.22);
+  --aries-astrocart-map-sun-line-color: #ffd700;
+  --aries-astrocart-map-sun-line-opacity: 1;
+  --aries-astrocart-map-sun-line-width-scale: 1;
+  --aries-astrocart-map-terrain-exaggeration: 1px;
+  --aries-astrocart-map-terrain-highlight-color: #697682;
+  --aries-astrocart-map-terrain-shadow-color: #111820;
+  --aries-astrocart-map-uranus-line-color: #000080;
+  --aries-astrocart-map-uranus-line-opacity: 1;
+  --aries-astrocart-map-uranus-line-width-scale: 1;
+  --aries-astrocart-map-venus-line-color: #008000;
+  --aries-astrocart-map-venus-line-opacity: 1;
+  --aries-astrocart-map-venus-line-width-scale: 1;
+  --aries-astrocart-map-water-label-color: #8db5d9;
+  --aries-astrocart-map-water-label-halo: rgba(10,12,16,0.62);
+  --aries-astrocart-map-water-label-halo-blur: 0.45px;
+  --aries-astrocart-map-water-label-halo-width: 1.05px;
+  --aries-astrocart-map-water-label-size: 11px;
+  --aries-astrocart-map-water-label-spacing: 0.12;
+  --aries-astrocart-map-water-line-label-opacity: 0.62;
+  --aries-astrocart-map-water-line-opacity: 0.65;
+  --aries-astrocart-map-water-point-label-opacity: 0.74;
+  --aries-astrolabe-almucantar: rgba(120, 150, 190, 0.30);
+  --aries-astrolabe-azimuth: rgba(120, 150, 190, 0.24);
+  --aries-astrolabe-background: #23242a;
+  --aries-astrolabe-band-width-scale: 0.15;
+  --aries-astrolabe-body-cull-scale: 1.1;
+  --aries-astrolabe-body-label-pad-scale: 0.02;
+  --aries-astrolabe-capricorn: rgba(150, 150, 152, 0.55);
+  --aries-astrolabe-capricorn-dash-off: 3px;
+  --aries-astrolabe-capricorn-dash-on: 2px;
+  --aries-astrolabe-capricorn-fill: 0.83;
+  --aries-astrolabe-cardinal: rgba(160, 160, 162, 0.9);
+  --aries-astrolabe-cardinal-font-divisor: 22;
+  --aries-astrolabe-cardinal-pad-scale: 0.06;
+  --aries-astrolabe-circle-label-font-divisor: 36;
+  --aries-astrolabe-circle-label-offset-x: 4px;
+  --aries-astrolabe-circle-label-offset-y: 2px;
+  --aries-astrolabe-collision-iterations: 40;
+  --aries-astrolabe-collision-margin-scale: 0.15;
+  --aries-astrolabe-collision-min-delta: 0.5px;
+  --aries-astrolabe-collision-move-scale: 0.5;
+  --aries-astrolabe-collision-push-scale: 0.5;
+  --aries-astrolabe-collision-tie-delta: 1px;
+  --aries-astrolabe-connector-dash-off: 3px;
+  --aries-astrolabe-connector-dash-on: 2px;
+  --aries-astrolabe-connector-opacity: 0.55;
+  --aries-astrolabe-ecliptic: #c68a22;
+  --aries-astrolabe-equator: #78828f;
+  --aries-astrolabe-equator-dash-off: 4px;
+  --aries-astrolabe-equator-dash-on: 5px;
+  --aries-astrolabe-equator-label: #788291;
+  --aries-astrolabe-fine-stroke-divisor: 360;
+  --aries-astrolabe-fine-stroke-min: 1px;
+  --aries-astrolabe-horizon: #3e82c4;
+  --aries-astrolabe-hour: rgba(170, 150, 110, 0.30);
+  --aries-astrolabe-info-atmospheric: #dcdcdc;
+  --aries-astrolabe-info-font-divisor: 16;
+  --aries-astrolabe-info-font-scale: 0.75;
+  --aries-astrolabe-info-inset-divisor: 25;
+  --aries-astrolabe-info-line-height-scale: 1.2;
+  --aries-astrolabe-info-schematic: #c8c8c8;
+  --aries-astrolabe-inner-radius-min: 1px;
+  --aries-astrolabe-main-stroke-divisor: 220;
+  --aries-astrolabe-main-stroke-min: 2px;
+  --aries-astrolabe-medium-stroke-divisor: 280;
+  --aries-astrolabe-medium-stroke-min: 1px;
+  --aries-astrolabe-meridian: rgba(170, 178, 196, 0.55);
+  --aries-astrolabe-meridian-dash-off: 4px;
+  --aries-astrolabe-meridian-dash-on: 2px;
+  --aries-astrolabe-pd-row-font-divisor: 30;
+  --aries-astrolabe-pd-row-height-scale: 1.3;
+  --aries-astrolabe-pd-token-gap-scale: 0.35;
+  --aries-astrolabe-planet-font-divisor: 16;
+  --aries-astrolabe-regio: rgba(150, 165, 185, 0.42);
+  --aries-astrolabe-regio-dash-off: 4px;
+  --aries-astrolabe-regio-dash-on: 4px;
+  --aries-astrolabe-sign-cull-scale: 0.03;
+  --aries-astrolabe-sign-font-divisor: 22;
+  --aries-astrolabe-sphere-outline-width: 1px;
+  --aries-astrolabe-sphere-radius-divisor: 160;
+  --aries-astrolabe-sphere-radius-min: 2px;
+  --aries-astrolabe-star: rgba(220, 222, 230, 0.85);
+  --aries-astrolabe-star-radius-divisor: 320;
+  --aries-astrolabe-star-radius-min: 1.5px;
+  --aries-astrolabe-sun-fill: #ffe066;
+  --aries-astrolabe-sun-sphere-scale: 1.5;
+  --aries-astrolabe-tick-step-scale: 0.01;
+  --aries-astrolabe-tropic: rgba(200, 210, 220, 0.45);
+  --aries-astrolabe-tropic-dash-off: 4px;
+  --aries-astrolabe-tropic-dash-on: 4px;
+  --aries-mundane-arrow-scale: 0.04;
+  --aries-mundane-ascmc-configured-default: 5px;
+  --aries-mundane-ascmc-configured-max: 5px;
+  --aries-mundane-ascmc-medium-configured-min: 4px;
+  --aries-mundane-ascmc-medium-width: 3px;
+  --aries-mundane-ascmc-min-width: 1px;
+  --aries-mundane-ascmc-small-configured-min: 3px;
+  --aries-mundane-ascmc-small-width: 2px;
+  --aries-mundane-aspect-dash-off: 6px;
+  --aries-mundane-aspect-dash-on: 6px;
+  --aries-mundane-aspect-dash-threshold: 0.25;
+  --aries-mundane-aspect-hit-tolerance-min: 5px;
+  --aries-mundane-aspect-hit-tolerance-scale: 0.32;
+  --aries-mundane-aspect-opacity-base: 0.35;
+  --aries-mundane-aspect-opacity-range: 0.65;
+  --aries-mundane-aspect-width-min: 1px;
+  --aries-mundane-aspect-width-scale: 2;
+  --aries-mundane-body-hit-pad-min: 6px;
+  --aries-mundane-body-hit-pad-scale: 0.45;
+  --aries-mundane-collision-max-iterations: 5000;
+  --aries-mundane-collision-step: 0.1px;
+  --aries-mundane-compound-base-scale: 0.11;
+  --aries-mundane-compound-house-band-scale: 0.06;
+  --aries-mundane-compound-outer-inset-scale: 0.12;
+  --aries-mundane-compound-position-scale: 0.45;
+  --aries-mundane-compound-sector-scale: 0.15;
+  --aries-mundane-compound-symbol-divisor: 16;
+  --aries-mundane-degree-tick-scale: 0.01;
+  --aries-mundane-five-degree-tick-scale: 0.02;
+  --aries-mundane-font-min: 6px;
+  --aries-mundane-glyph-center-divisor: 2;
+  --aries-mundane-hairline-width: 1px;
+  --aries-mundane-heavy-large: 3px;
+  --aries-mundane-heavy-medium: 2px;
+  --aries-mundane-heavy-small: 1px;
+  --aries-mundane-house-label-offset-divisor: 4;
+  --aries-mundane-medium-max: 600px;
+  --aries-mundane-minimum-side: 120px;
+  --aries-mundane-motion-center-divisor: 8;
+  --aries-mundane-motion-marker-scale: 0.01;
+  --aries-mundane-outer-max-scale: 0.97;
+  --aries-mundane-overlay-compact-font-min: 11px;
+  --aries-mundane-overlay-compact-font-scale: 0.86;
+  --aries-mundane-overlay-compact-inset-min: 10px;
+  --aries-mundane-overlay-compact-max: 390px;
+  --aries-mundane-overlay-inset-divisor: 25;
+  --aries-mundane-overlay-line-height: 1.1;
+  --aries-mundane-overlay-regular-font-min: 10px;
+  --aries-mundane-overlay-regular-font-scale: 0.75;
+  --aries-mundane-overlay-regular-inset-min: 0px;
+  --aries-mundane-overlay-symbol-divisor: 32;
+  --aries-mundane-overlay-titlebar-safe-top: 14px;
+  --aries-mundane-planet-line-large: 2px;
+  --aries-mundane-planet-line-scale: 0.03;
+  --aries-mundane-planet-line-small: 1px;
+  --aries-mundane-second-house-x-offset-divisor: 8;
+  --aries-mundane-single-ascmc-scale: 0.88;
+  --aries-mundane-single-base-scale: 0.2;
+  --aries-mundane-single-house-offset-adjustment: 0.01;
+  --aries-mundane-single-outer-scale: 0.96;
+  --aries-mundane-single-position-scale: 0.55;
+  --aries-mundane-single-sector-scale: 0.18;
+  --aries-mundane-single-symbol-divisor: 12;
+  --aries-mundane-small-max: 400px;
+  --aries-mundane-small-text-divisor: 4;
+  --aries-mundane-symbol-min: 8px;
+  --aries-mundane-ten-degree-large: 2px;
+  --aries-mundane-ten-degree-small: 1px;
+  --aries-mundane-ten-degree-tick-scale: 0.03;
+  --aries-mundane-text-divisor: 2;
+  --aries-sphere-background: #000000;
+  --aries-sphere-body-back-opacity: 0.16;
+  --aries-sphere-body-font-divisor: 21;
+  --aries-sphere-body-font-max: 16px;
+  --aries-sphere-body-font-min: 10px;
+  --aries-sphere-body-front-opacity: 0.94;
+  --aries-sphere-bound-font-divisor: 78;
+  --aries-sphere-bound-font-max: 6px;
+  --aries-sphere-bound-font-min: 4px;
+  --aries-sphere-bound-label-opacity: 0.32;
+  --aries-sphere-bound-tick-back-opacity: 0.05;
+  --aries-sphere-bound-tick-front-opacity: 0.55;
+  --aries-sphere-decan-boundary-back-opacity: 0.04;
+  --aries-sphere-decan-boundary-front-opacity: 0.25;
+  --aries-sphere-decan-font-divisor: 68;
+  --aries-sphere-decan-font-max: 7px;
+  --aries-sphere-decan-font-min: 5px;
+  --aries-sphere-decan-label-opacity: 0.35;
+  --aries-sphere-dot-radius-divisor: 360;
+  --aries-sphere-dot-radius-min: 0.75px;
+  --aries-sphere-frame-width-divisor: 520;
+  --aries-sphere-frame-width-min: 0.75px;
+  --aries-sphere-house-boundary-back-opacity: 0.1;
+  --aries-sphere-house-boundary-front-opacity: 0.9;
+  --aries-sphere-house-font-divisor: 44;
+  --aries-sphere-house-font-max: 9px;
+  --aries-sphere-house-font-min: 6px;
+  --aries-sphere-house-label-back-opacity: 0.08;
+  --aries-sphere-house-label-front-opacity: 0.66;
+  --aries-sphere-polyline-width-min: 0.35px;
+  --aries-sphere-radius-scale: 0.43;
+  --aries-sphere-reference-back-opacity: 0.12;
+  --aries-sphere-reference-front-opacity: 0.9;
+  --aries-sphere-reference-tick-back-opacity: 0.08;
+  --aries-sphere-reference-tick-front-opacity: 0.72;
+  --aries-sphere-sign-boundary-back-opacity: 0.1;
+  --aries-sphere-sign-boundary-front-opacity: 0.9;
+  --aries-sphere-sign-font-divisor: 31;
+  --aries-sphere-sign-font-max: 12px;
+  --aries-sphere-sign-font-min: 8px;
+  --aries-sphere-sign-label-back-opacity: 0.08;
+  --aries-sphere-sign-label-front-opacity: 0.76;
+  --aries-sphere-width-scale-divisor: 440;
+  --aries-sphere-width-scale-min: 0.55;
+  --aries-sphere-wire: #ffffff;
+  --aries-sphere-wire-faint: rgba(255,255,255,0.22);
+  --aries-square-frame-inner-width-large: 3px;
+  --aries-square-frame-inner-width-medium: 2px;
+  --aries-square-frame-inner-width-small: 1px;
+  --aries-square-frame-medium-max: 600px;
+  --aries-square-frame-outer-width-large: 4px;
+  --aries-square-frame-outer-width-medium: 3px;
+  --aries-square-frame-outer-width-small: 2px;
+  --aries-square-frame-small-max: 400px;
+  --aries-square-info-radius-divisor: 3;
+  --aries-square-inner-frame-pixel-adjustment: 1px;
+  --aries-square-motion-baseline-scale: 0.5;
+  --aries-square-radius-scale: 0.9;
+  --aries-square-small-symbol-font-divisor: 18;
+  --aries-square-small-symbol-font-min: 6px;
+  --aries-square-small-text-scale: 0.75;
+  --aries-square-smaller-text-scale: 0.5;
+  --aries-square-space-font-divisor: 5;
+  --aries-square-symbol-font-divisor: 16;
+  --aries-square-symbol-font-min: 8px;
+  --aries-square-text-font-min: 6px;
+  --aries-strip-axis: #2e2f32;
+  --aries-strip-axis-stroke-width: 1px;
+  --aries-strip-background: #232428;
+  --aries-strip-border: 20px;
+  --aries-strip-collision-gap-scale: 0.2;
+  --aries-strip-connector-length-scale: 0.7;
+  --aries-strip-connector-stroke-width: 1px;
+  --aries-strip-container-padding: 16px;
+  --aries-strip-degree-label-offset-scale: 0.2;
+  --aries-strip-five-tick-scale: 0.7;
+  --aries-strip-font-size: 21px;
+  --aries-strip-long-tick-scale: 0.6666666666666666;
+  --aries-strip-notes-gap: 12px;
+  --aries-strip-one-tick-scale: 0.4;
+  --aries-strip-planet-offset-scale: 0.4;
+  --aries-strip-text-glyph-width-scale: 0.62;
+  --aries-strip-text-muted: #b4b5b6;
+  --aries-strip-text-primary: #ffffff;
+  --aries-strip-tick-step-scale: 1.3333333333333333;
+  --aries-wheel-angle-dash-off: 4px;
+  --aries-wheel-angle-dash-on: 6px;
+  --aries-wheel-angle-label-color: var(--morinus-angles);
+  --aries-wheel-angle-label-scale: 0.75;
+  --aries-wheel-angle-label-weight: 500;
+  --aries-wheel-angle-opacity: 1;
+  --aries-wheel-angle-pattern: 0;
+  --aries-wheel-angle-position-degree-scale: 0.5;
+  --aries-wheel-angle-position-minute-scale: 0.25;
+  --aries-wheel-angle-ray-color: var(--morinus-angles);
+  --aries-wheel-angle-width-scale: 1;
+  --aries-wheel-anglo-angle-position-degree-scale: 0.4;
+  --aries-wheel-anglo-angle-position-gap-scale: 0.08;
+  --aries-wheel-anglo-angle-position-minute-scale: 0.34;
+  --aries-wheel-anglo-angle-position-scale: 0.521;
+  --aries-wheel-anglo-angle-position-sign-scale: 0.52;
+  --aries-wheel-anglo-aspect-boundary-ring-radius: 0px;
+  --aries-wheel-anglo-aspect-leader-inset-scale: 0.03;
+  --aries-wheel-anglo-aspect-scale: 0.352;
+  --aries-wheel-anglo-base-ring-color: var(--morinus-frame);
+  --aries-wheel-anglo-base-ring-radius: 0px;
+  --aries-wheel-anglo-body-degree-scale: 0.46;
+  --aries-wheel-anglo-body-leader-color: var(--morinus-angles);
+  --aries-wheel-anglo-body-minute-scale: 0.36;
+  --aries-wheel-anglo-body-sign-scale: 0.56;
+  --aries-wheel-anglo-cusp-label-scale: 0.817;
+  --aries-wheel-anglo-cusp-outer-ring-radius: 0px;
+  --aries-wheel-anglo-house-boundary-ring-color: var(--morinus-frame);
+  --aries-wheel-anglo-house-boundary-ring-radius: 0px;
+  --aries-wheel-anglo-house-label-color: var(--morinus-text-dim);
+  --aries-wheel-anglo-house-position-degree-scale: 0.4;
+  --aries-wheel-anglo-house-position-gap-scale: 0.08;
+  --aries-wheel-anglo-house-position-minute-scale: 0.34;
+  --aries-wheel-anglo-house-position-sign-scale: 0.52;
+  --aries-wheel-anglo-house-scale: 0.44;
+  --aries-wheel-anglo-inner-boundary-ring-radius: 0px;
+  --aries-wheel-anglo-inner-degree-ring-radius: 0px;
+  --aries-wheel-anglo-inner-scale: 0.763;
+  --aries-wheel-anglo-leader-inset-scale: 0.026;
+  --aries-wheel-anglo-outer-degree-ring-radius: 0px;
+  --aries-wheel-anglo-outer-house-ring-radius: 0px;
+  --aries-wheel-anglo-outer-leader-color: var(--morinus-angles);
+  --aries-wheel-anglo-outer-maximum-ring-radius: 0px;
+  --aries-wheel-anglo-outer-scale: 0.05;
+  --aries-wheel-anglo-planet-scale: 0.695;
+  --aries-wheel-anglo-position-inset-scale: 0.083;
+  --aries-wheel-anglo-ruler-base-scale: 0.058;
+  --aries-wheel-anglo-ruler-subdivision-scale: 0.014;
+  --aries-wheel-anglo-sign-inner-scale: 0.881;
+  --aries-wheel-anglo-sign-scale: 0.04;
+  --aries-wheel-anglo-structural-stroke: 2px;
+  --aries-wheel-anglo-subdivision-scale: 0.03125;
+  --aries-wheel-anglo-subdivision-sector: 0.047px;
+  --aries-wheel-anglo-term-ring-radius: 0px;
+  --aries-wheel-anglo-zodiac-comparison-with-houses: 0.8px;
+  --aries-wheel-anglo-zodiac-inner-ring-radius: 0px;
+  --aries-wheel-anglo-zodiac-outer-ring-radius: 0px;
+  --aries-wheel-anglo-zodiac-single: 0.895px;
+  --aries-wheel-anglo-zodiac-with-outer: 0.895px;
+  --aries-wheel-asc-mc-stroke-base: 5px;
+  --aries-wheel-aspect-anglo-dash-off: 5px;
+  --aries-wheel-aspect-anglo-dash-on: 5px;
+  --aries-wheel-aspect-anglo-thickness-default: 1.25px;
+  --aries-wheel-aspect-anglo-thickness-max: 2px;
+  --aries-wheel-aspect-anglo-thickness-min: 0.75px;
+  --aries-wheel-aspect-anglo-width: 0.85px;
+  --aries-wheel-aspect-boundary-ring-color: var(--morinus-frame);
+  --aries-wheel-aspect-boundary-ring-dash-off: 4px;
+  --aries-wheel-aspect-boundary-ring-dash-on: 6px;
+  --aries-wheel-aspect-boundary-ring-opacity: 1;
+  --aries-wheel-aspect-boundary-ring-pattern: 0;
+  --aries-wheel-aspect-boundary-ring-width-scale: 1;
+  --aries-wheel-aspect-classic-dash-off: 10px;
+  --aries-wheel-aspect-classic-dash-on: 10px;
+  --aries-wheel-aspect-classic-thickness-default: 2px;
+  --aries-wheel-aspect-classic-thickness-max: 4px;
+  --aries-wheel-aspect-classic-thickness-min: 1px;
+  --aries-wheel-aspect-classic-width: 1px;
+  --aries-wheel-aspect-dash-off: 4px;
+  --aries-wheel-aspect-dash-on: 6px;
+  --aries-wheel-aspect-glyph-offset-scale: 0.25;
+  --aries-wheel-aspect-glyph-scale: 0.5;
+  --aries-wheel-aspect-opacity: 1;
+  --aries-wheel-aspect-pattern: 0;
+  --aries-wheel-aspect-width-scale: 1;
+  --aries-wheel-base-ring-color: var(--morinus-angles);
+  --aries-wheel-base-ring-dash-off: 4px;
+  --aries-wheel-base-ring-dash-on: 6px;
+  --aries-wheel-base-ring-opacity: 1;
+  --aries-wheel-base-ring-pattern: 0;
+  --aries-wheel-base-ring-width-scale: 1;
+  --aries-wheel-biwheel-arrow-length: 0.04px;
+  --aries-wheel-biwheel-outer-angle: 0.92px;
+  --aries-wheel-biwheel-outer-house-sector: 0.06px;
+  --aries-wheel-biwheel-outer-line-offset: 0.03px;
+  --aries-wheel-biwheel-outer-max: 0.97px;
+  --aries-wheel-biwheel-outer-minimum: 0.78px;
+  --aries-wheel-biwheel-outer-planet-sector: 0.15px;
+  --aries-wheel-biwheel-projected-label: 0.9px;
+  --aries-wheel-biwheel-retrograde-offset: 0.01px;
+  --aries-wheel-biwheel-zodiac-inset: 0.12px;
+  --aries-wheel-body-leader-color: var(--morinus-frame);
+  --aries-wheel-body-leader-dash-off: 4px;
+  --aries-wheel-body-leader-dash-on: 6px;
+  --aries-wheel-body-leader-opacity: 1;
+  --aries-wheel-body-leader-pattern: 0;
+  --aries-wheel-body-leader-width-scale: 1;
+  --aries-wheel-body-position-degree-scale: 0.5;
+  --aries-wheel-body-position-minute-scale: 0.25;
+  --aries-wheel-body-scale: 0.0625;
+  --aries-wheel-chart-ring-stroke-fallback: 3px;
+  --aries-wheel-chart-ring-stroke-max: 3px;
+  --aries-wheel-chart-ring-stroke-min: 1px;
+  --aries-wheel-classic-arrow-length: 0.04px;
+  --aries-wheel-classic-aspect-boundary-ring-radius: 0px;
+  --aries-wheel-classic-base-ring-radius: 0px;
+  --aries-wheel-classic-cusp-outer-ring-radius: 0px;
+  --aries-wheel-classic-decan-sector-length: 0.08px;
+  --aries-wheel-classic-degree-tick-length: 0.01px;
+  --aries-wheel-classic-house-boundary-ring-radius: 0px;
+  --aries-wheel-classic-house-sector-length: 0.06px;
+  --aries-wheel-classic-inner-aspect-angle: 0.43px;
+  --aries-wheel-classic-inner-base: 0.11px;
+  --aries-wheel-classic-inner-boundary-ring-radius: 0px;
+  --aries-wheel-classic-inner-degree-ring-radius: 0px;
+  --aries-wheel-classic-inner-house-name: 0.14px;
+  --aries-wheel-classic-inner-position: 0.48px;
+  --aries-wheel-classic-inner-position-angle: 0.41px;
+  --aries-wheel-classic-inner-position-houses: 0.32px;
+  --aries-wheel-classic-outer-degree-ring-radius: 0px;
+  --aries-wheel-classic-outer-house-ring-radius: 0px;
+  --aries-wheel-classic-outer-line: 0.86px;
+  --aries-wheel-classic-outer-maximum-ring-radius: 0px;
+  --aries-wheel-classic-outer-projected-label: 0.9px;
+  --aries-wheel-classic-outer-projected-line: 0.86px;
+  --aries-wheel-classic-outer-scale: 0.0625;
+  --aries-wheel-classic-outer-zodiac: 0.83px;
+  --aries-wheel-classic-planet-line-length: 0.03px;
+  --aries-wheel-classic-planet-sector-length: 0.15px;
+  --aries-wheel-classic-retrograde-offset: 0.01px;
+  --aries-wheel-classic-sign-scale: 0.05;
+  --aries-wheel-classic-sign-sector-length: 0.15px;
+  --aries-wheel-classic-subdivision-scale: 0.041666666666666664;
+  --aries-wheel-classic-term-ring-radius: 0px;
+  --aries-wheel-classic-term-sector-length: 0.08px;
+  --aries-wheel-classic-zodiac-inner-ring-radius: 0px;
+  --aries-wheel-classic-zodiac-outer-ring-radius: 0px;
+  --aries-wheel-compact-aspect-boundary-ring-radius: 0px;
+  --aries-wheel-compact-base: 0.24px;
+  --aries-wheel-compact-base-ring-radius: 0px;
+  --aries-wheel-compact-comparison-position-lane-0: 0.34px;
+  --aries-wheel-compact-comparison-position-lane-1: 0.26px;
+  --aries-wheel-compact-comparison-position-lane-2: 0.2px;
+  --aries-wheel-compact-cusp-outer-ring-radius: 0px;
+  --aries-wheel-compact-house-boundary-ring-radius: 0px;
+  --aries-wheel-compact-house-name: 0.27px;
+  --aries-wheel-compact-house-sector: 0.06px;
+  --aries-wheel-compact-inner-boundary-ring-radius: 0px;
+  --aries-wheel-compact-inner-degree-ring-radius: 0px;
+  --aries-wheel-compact-outer-degree-ring-radius: 0px;
+  --aries-wheel-compact-outer-house-ring-radius: 0px;
+  --aries-wheel-compact-outer-maximum-ring-radius: 0px;
+  --aries-wheel-compact-outer-scale: 0.0625;
+  --aries-wheel-compact-position-inset: 0.15px;
+  --aries-wheel-compact-position-minute-inset-comparison: 0.05px;
+  --aries-wheel-compact-position-minute-inset-single: 0.05px;
+  --aries-wheel-compact-position-minute-inset-with-outer: 0.04px;
+  --aries-wheel-compact-retrograde-inset: 0.05px;
+  --aries-wheel-compact-sign-scale: 0.05;
+  --aries-wheel-compact-single-position-lane-0: 0.36px;
+  --aries-wheel-compact-single-position-lane-1: 0.3px;
+  --aries-wheel-compact-single-position-lane-2: 0.24px;
+  --aries-wheel-compact-subdivision-scale: 0.041666666666666664;
+  --aries-wheel-compact-term-ring-radius: 0px;
+  --aries-wheel-compact-zodiac-inner-ring-radius: 0px;
+  --aries-wheel-compact-zodiac-outer-ring-radius: 0px;
+  --aries-wheel-cusp-outer-ring-color: var(--morinus-frame);
+  --aries-wheel-cusp-outer-ring-dash-off: 4px;
+  --aries-wheel-cusp-outer-ring-dash-on: 6px;
+  --aries-wheel-cusp-outer-ring-opacity: 1;
+  --aries-wheel-cusp-outer-ring-pattern: 0;
+  --aries-wheel-cusp-outer-ring-width-scale: 1;
+  --aries-wheel-decan-boundary-color: var(--morinus-frame);
+  --aries-wheel-decan-boundary-dash-off: 4px;
+  --aries-wheel-decan-boundary-dash-on: 6px;
+  --aries-wheel-decan-boundary-opacity: 1;
+  --aries-wheel-decan-boundary-pattern: 0;
+  --aries-wheel-decan-boundary-width-scale: 1;
+  --aries-wheel-decan-glyph-color: var(--morinus-signs);
+  --aries-wheel-decan-glyph-scale: 1;
+  --aries-wheel-degree-tick-dash-off: 4px;
+  --aries-wheel-degree-tick-dash-on: 6px;
+  --aries-wheel-degree-tick-opacity: 1;
+  --aries-wheel-degree-tick-pattern: 0;
+  --aries-wheel-degree-tick-stroke-large: 2px;
+  --aries-wheel-degree-tick-stroke-small: 1px;
+  --aries-wheel-degree-tick-width-scale: 1;
+  --aries-wheel-effect-dynamic-blur: 0px;
+  --aries-wheel-effect-dynamic-brightness-scale: 1;
+  --aries-wheel-effect-dynamic-contrast-scale: 1;
+  --aries-wheel-effect-dynamic-grayscale-opacity: 0;
+  --aries-wheel-effect-dynamic-hue-rotate: 0deg;
+  --aries-wheel-effect-dynamic-invert-opacity: 0;
+  --aries-wheel-effect-dynamic-opacity: 1;
+  --aries-wheel-effect-dynamic-saturate-scale: 1;
+  --aries-wheel-effect-dynamic-sepia-opacity: 0;
+  --aries-wheel-effect-dynamic-shadow-blur: 0px;
+  --aries-wheel-effect-dynamic-shadow-color: rgba(0,0,0,0);
+  --aries-wheel-effect-dynamic-shadow-offset-x: 0px;
+  --aries-wheel-effect-dynamic-shadow-offset-y: 0px;
+  --aries-wheel-effect-geometry-blur: 0px;
+  --aries-wheel-effect-geometry-brightness-scale: 1;
+  --aries-wheel-effect-geometry-contrast-scale: 1;
+  --aries-wheel-effect-geometry-grayscale-opacity: 0;
+  --aries-wheel-effect-geometry-hue-rotate: 0deg;
+  --aries-wheel-effect-geometry-invert-opacity: 0;
+  --aries-wheel-effect-geometry-opacity: 1;
+  --aries-wheel-effect-geometry-saturate-scale: 1;
+  --aries-wheel-effect-geometry-sepia-opacity: 0;
+  --aries-wheel-effect-geometry-shadow-blur: 0px;
+  --aries-wheel-effect-geometry-shadow-color: rgba(0,0,0,0);
+  --aries-wheel-effect-geometry-shadow-offset-x: 0px;
+  --aries-wheel-effect-geometry-shadow-offset-y: 0px;
+  --aries-wheel-effect-outer-label-blur: 0px;
+  --aries-wheel-effect-outer-label-brightness-scale: 1;
+  --aries-wheel-effect-outer-label-contrast-scale: 1;
+  --aries-wheel-effect-outer-label-grayscale-opacity: 0;
+  --aries-wheel-effect-outer-label-hue-rotate: 0deg;
+  --aries-wheel-effect-outer-label-invert-opacity: 0;
+  --aries-wheel-effect-outer-label-opacity: 1;
+  --aries-wheel-effect-outer-label-saturate-scale: 1;
+  --aries-wheel-effect-outer-label-sepia-opacity: 0;
+  --aries-wheel-effect-outer-label-shadow-blur: 0px;
+  --aries-wheel-effect-outer-label-shadow-color: rgba(0,0,0,0);
+  --aries-wheel-effect-outer-label-shadow-offset-x: 0px;
+  --aries-wheel-effect-outer-label-shadow-offset-y: 0px;
+  --aries-wheel-font-aspect-symbols: var(--aries-wheel-font-symbols);
+  --aries-wheel-font-body-symbols: var(--aries-wheel-font-symbols);
+  --aries-wheel-font-decan-symbols: var(--aries-wheel-font-symbols);
+  --aries-wheel-font-sign-symbols: var(--aries-wheel-font-symbols);
+  --aries-wheel-font-symbols: var(--aries-font-symbols);
+  --aries-wheel-font-term-symbols: var(--aries-wheel-font-symbols);
+  --aries-wheel-font-text: var(--aries-font-ui);
+  --aries-wheel-hairline-stroke: 1px;
+  --aries-wheel-house-boundary-ring-color: var(--morinus-houses);
+  --aries-wheel-house-boundary-ring-dash-off: 4px;
+  --aries-wheel-house-boundary-ring-dash-on: 6px;
+  --aries-wheel-house-boundary-ring-opacity: 1;
+  --aries-wheel-house-boundary-ring-pattern: 0;
+  --aries-wheel-house-boundary-ring-width-scale: 1;
+  --aries-wheel-house-classic-offset-scale: 0.25;
+  --aries-wheel-house-cusp-color: var(--morinus-houses);
+  --aries-wheel-house-cusp-dash-off: 4px;
+  --aries-wheel-house-cusp-dash-on: 6px;
+  --aries-wheel-house-cusp-opacity: 1;
+  --aries-wheel-house-cusp-pattern: 0;
+  --aries-wheel-house-cusp-width-scale: 1;
+  --aries-wheel-house-label-color: var(--morinus-housenums);
+  --aries-wheel-house-label-scale: 0.5;
+  --aries-wheel-house-position-degree-scale: 0.5;
+  --aries-wheel-house-position-minute-scale: 0.25;
+  --aries-wheel-house-second-offset-scale: 0.125;
+  --aries-wheel-inner-boundary-ring-color: var(--morinus-frame);
+  --aries-wheel-inner-boundary-ring-dash-off: 4px;
+  --aries-wheel-inner-boundary-ring-dash-on: 6px;
+  --aries-wheel-inner-boundary-ring-opacity: 1;
+  --aries-wheel-inner-boundary-ring-pattern: 0;
+  --aries-wheel-inner-boundary-ring-width-scale: 1;
+  --aries-wheel-inner-degree-ring-color: var(--morinus-frame);
+  --aries-wheel-inner-degree-ring-dash-off: 4px;
+  --aries-wheel-inner-degree-ring-dash-on: 6px;
+  --aries-wheel-inner-degree-ring-opacity: 1;
+  --aries-wheel-inner-degree-ring-pattern: 0;
+  --aries-wheel-inner-degree-ring-width-scale: 1;
+  --aries-wheel-major-ring-dash-off: 4px;
+  --aries-wheel-major-ring-dash-on: 6px;
+  --aries-wheel-major-ring-opacity: 1;
+  --aries-wheel-major-ring-pattern: 0;
+  --aries-wheel-major-ring-width-scale: 1;
+  --aries-wheel-medium-stroke-base: 2px;
+  --aries-wheel-minor-ring-dash-off: 4px;
+  --aries-wheel-minor-ring-dash-on: 6px;
+  --aries-wheel-minor-ring-opacity: 1;
+  --aries-wheel-minor-ring-pattern: 0;
+  --aries-wheel-minor-ring-width-scale: 1;
+  --aries-wheel-motion-gap-min: 1px;
+  --aries-wheel-motion-gap-scale: 0.04;
+  --aries-wheel-motion-radial-nudge-scale: 1;
+  --aries-wheel-motion-scale: 0.25;
+  --aries-wheel-motion-tangent-nudge-scale: 2;
+  --aries-wheel-outer-degree-ring-color: var(--morinus-frame);
+  --aries-wheel-outer-degree-ring-dash-off: 4px;
+  --aries-wheel-outer-degree-ring-dash-on: 6px;
+  --aries-wheel-outer-degree-ring-opacity: 1;
+  --aries-wheel-outer-degree-ring-pattern: 0;
+  --aries-wheel-outer-degree-ring-width-scale: 1;
+  --aries-wheel-outer-house-ring-color: var(--morinus-frame);
+  --aries-wheel-outer-house-ring-dash-off: 4px;
+  --aries-wheel-outer-house-ring-dash-on: 6px;
+  --aries-wheel-outer-house-ring-opacity: 1;
+  --aries-wheel-outer-house-ring-pattern: 0;
+  --aries-wheel-outer-house-ring-width-scale: 1;
+  --aries-wheel-outer-label-edge-pad-factor: 0.15;
+  --aries-wheel-outer-label-scale: 0.5;
+  --aries-wheel-outer-leader-color: var(--morinus-frame);
+  --aries-wheel-outer-leader-dash-off: 4px;
+  --aries-wheel-outer-leader-dash-on: 6px;
+  --aries-wheel-outer-leader-opacity: 1;
+  --aries-wheel-outer-leader-pattern: 0;
+  --aries-wheel-outer-leader-width-scale: 1;
+  --aries-wheel-outer-maximum-ring-color: var(--morinus-frame);
+  --aries-wheel-outer-maximum-ring-dash-off: 4px;
+  --aries-wheel-outer-maximum-ring-dash-on: 6px;
+  --aries-wheel-outer-maximum-ring-opacity: 1;
+  --aries-wheel-outer-maximum-ring-pattern: 0;
+  --aries-wheel-outer-maximum-ring-width-scale: 1;
+  --aries-wheel-outer-motion-offset-scale: 0.125;
+  --aries-wheel-outer-motion-radius-scale: 0.16;
+  --aries-wheel-outer-outside-pad-scale: 0.1;
+  --aries-wheel-outer-projected-glyph-scale: 1;
+  --aries-wheel-outer-radius-offset-scale: 0.2;
+  --aries-wheel-overlay-column-gap-min: 2px;
+  --aries-wheel-overlay-column-gap-scale: 0.19;
+  --aries-wheel-overlay-compact-breakpoint: 390px;
+  --aries-wheel-overlay-compact-edge-inset-min: 10px;
+  --aries-wheel-overlay-compact-icon-min: 12px;
+  --aries-wheel-overlay-compact-icon-scale: 1.02;
+  --aries-wheel-overlay-compact-info-font-min: 11px;
+  --aries-wheel-overlay-compact-info-font-scale: 0.86;
+  --aries-wheel-overlay-compact-label-min: 9.5px;
+  --aries-wheel-overlay-compact-label-scale: 0.52;
+  --aries-wheel-overlay-corner-line-height: 1.1;
+  --aries-wheel-overlay-edge-inset-scale: 0.04;
+  --aries-wheel-overlay-font-box-scale: 1.2;
+  --aries-wheel-overlay-gap-after-day-hour-scale: 0.3;
+  --aries-wheel-overlay-glyph-line-height: 1;
+  --aries-wheel-overlay-group-gap-scale: 0.3;
+  --aries-wheel-overlay-icon-min: 10px;
+  --aries-wheel-overlay-icon-scale: 0.83;
+  --aries-wheel-overlay-info-font-min: 10px;
+  --aries-wheel-overlay-info-font-scale: 0.75;
+  --aries-wheel-overlay-info-gap: 0px;
+  --aries-wheel-overlay-label-min: 8px;
+  --aries-wheel-overlay-label-scale: 0.4104;
+  --aries-wheel-overlay-max-width-viewport-scale: 0.42;
+  --aries-wheel-overlay-row-height-factor: 0.94;
+  --aries-wheel-overlay-titlebar-safe-top: 14px;
+  --aries-wheel-subdivision-dash-off: 4px;
+  --aries-wheel-subdivision-dash-on: 6px;
+  --aries-wheel-subdivision-opacity: 1;
+  --aries-wheel-subdivision-pattern: 0;
+  --aries-wheel-subdivision-width-scale: 1;
+  --aries-wheel-surveil-glyph-gap-min: 2px;
+  --aries-wheel-surveil-glyph-gap-scale: 0.12;
+  --aries-wheel-surveil-glyph-size-min: 5px;
+  --aries-wheel-surveil-glyph-size-scale: 0.34;
+  --aries-wheel-surveil-label-gap-min: 2px;
+  --aries-wheel-surveil-label-gap-scale: 0.08;
+  --aries-wheel-surveil-tick-length-min: 5px;
+  --aries-wheel-surveil-tick-length-scale: 0.42;
+  --aries-wheel-syzygy-scale: 0.58;
+  --aries-wheel-term-boundary-color: var(--morinus-frame);
+  --aries-wheel-term-boundary-dash-off: 4px;
+  --aries-wheel-term-boundary-dash-on: 6px;
+  --aries-wheel-term-boundary-opacity: 1;
+  --aries-wheel-term-boundary-pattern: 0;
+  --aries-wheel-term-boundary-width-scale: 1;
+  --aries-wheel-term-glyph-color: var(--morinus-signs);
+  --aries-wheel-term-glyph-scale: 1;
+  --aries-wheel-term-ring-color: var(--morinus-frame);
+  --aries-wheel-term-ring-dash-off: 4px;
+  --aries-wheel-term-ring-dash-on: 6px;
+  --aries-wheel-term-ring-opacity: 1;
+  --aries-wheel-term-ring-pattern: 0;
+  --aries-wheel-term-ring-width-scale: 1;
+  --aries-wheel-zodiac-inner-ring-color: var(--morinus-frame);
+  --aries-wheel-zodiac-inner-ring-dash-off: 4px;
+  --aries-wheel-zodiac-inner-ring-dash-on: 6px;
+  --aries-wheel-zodiac-inner-ring-opacity: 1;
+  --aries-wheel-zodiac-inner-ring-pattern: 0;
+  --aries-wheel-zodiac-inner-ring-width-scale: 1;
+  --aries-wheel-zodiac-outer-ring-color: var(--morinus-frame);
+  --aries-wheel-zodiac-outer-ring-dash-off: 4px;
+  --aries-wheel-zodiac-outer-ring-dash-on: 6px;
+  --aries-wheel-zodiac-outer-ring-opacity: 1;
+  --aries-wheel-zodiac-outer-ring-pattern: 0;
+  --aries-wheel-zodiac-outer-ring-width-scale: 1;
+  --aries-wheel-zodiac-spoke-color: var(--morinus-frame);
+  --aries-wheel-zodiac-spoke-dash-off: 4px;
+  --aries-wheel-zodiac-spoke-dash-on: 6px;
+  --aries-wheel-zodiac-spoke-opacity: 1;
+  --aries-wheel-zodiac-spoke-pattern: 0;
+  --aries-wheel-zodiac-spoke-width-scale: 1;
+}
+/* END GENERATED RENDERER STYLE TOKENS */
 @font-face {
   font-family: 'FreeSans';
   src: url('/fonts/FreeSansBold.ttf') format('truetype');
@@ -156,23 +990,24 @@ html {
   --radius-sm: var(--aries-radius-sm);
   --radius-md: var(--aries-radius-md);
   --radius-lg: var(--aries-radius-lg);
+  --radius-xl: var(--aries-radius-xl);
 
-  --morinus-row-radius: 9px;
-  --morinus-row-pad-x: 12px;
-  --morinus-row-pad-y: 4px;
+  --morinus-row-radius: var(--aries-radius-sidebar-row);
+  --morinus-row-pad-x: var(--aries-sidebar-row-padding-x);
+  --morinus-row-pad-y: var(--aries-sidebar-row-padding-y);
   --morinus-row-min-height: var(--aries-sidebar-row-height);
   --morinus-nav-side-margin: var(--aries-nav-side-margin);
   --morinus-sidebar-min-width: 148px;
   --morinus-sidebar-max-width: 520px;
   --morinus-sidebar-default-width: 272px;
   --morinus-header-height: 34px;
-  --morinus-status-height: 26px;
-  --morinus-header-btn-w: 24px;
-  --morinus-header-btn-h: 22px;
-  --morinus-header-btn-radius: 5px;
-  --morinus-header-icon-size: 15px;
+  --morinus-status-height: var(--aries-statusbar-height);
+  --morinus-header-btn-w: var(--aries-toolbar-control-width);
+  --morinus-header-btn-h: var(--aries-toolbar-control-height);
+  --morinus-header-btn-radius: var(--aries-toolbar-control-radius);
+  --morinus-header-icon-size: var(--aries-toolbar-icon-size);
   --morinus-scrollbar-width: 8px;
-  --morinus-scrollbar-radius: 3px;
+  --morinus-scrollbar-radius: var(--aries-radius-xs);
 }
 
 /* Static fallback; the boot script applies cached daemon theme tokens before React. */
@@ -185,11 +1020,17 @@ html {
   --aries-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
   --aries-font-symbols: 'AriesMorinus', ui-sans-serif;
   --morinus-font-text: var(--aries-font-ui);
+  --aries-font-size-micro: 9px;
   --aries-font-size-base: 12px;
   --aries-font-size-reading: 13px;
+  --aries-font-line-height-reading: 20px;
   --aries-font-size-small: 11px;
   --aries-font-size-section: 10px;
   --aries-font-size-header: 12px;
+  --aries-font-size-large: 14px;
+  --aries-font-size-control: 14px;
+  --aries-font-size-dialog-title: 16px;
+  --aries-font-size-arabic: 17px;
   --aries-font-size-titlebar: 13px;
   --aries-font-size-statusbar: 11px;
   --aries-navbar-font-size: 14px;
@@ -224,10 +1065,46 @@ html {
   --aries-spotlight-input-height: 44px;
   --aries-spotlight-preview-min-height: 52px;
   --aries-spotlight-action-height: 32px;
+  --aries-spotlight-viewport-inset: 2rem;
+  --aries-spotlight-inner-inset: 7px;
+  --aries-spotlight-secondary-gap: 3px;
+  --aries-spotlight-action-min-width: 92px;
+  --aries-spotlight-loading-opacity: 0.7;
+  --aries-spotlight-motion-duration: 120ms;
   --aries-inspector-title-size: 15px;
   --aries-inspector-glyph-size: 26px;
   --aries-inspector-alert-glyph-size: 14px;
   --aries-inspector-pack-tag-size: 9px;
+  --aries-inspector-padding-x: var(--aries-panel-padding-x);
+  --aries-inspector-padding-top: var(--aries-panel-padding-y);
+  --aries-inspector-padding-bottom: 16px;
+  --aries-inspector-heading-gap: 8px;
+  --aries-inspector-row-gap: 2px;
+  --aries-inspector-column-gap: 16px;
+  --aries-inspector-label-width: 52px;
+  --aries-inspector-section-gap: 8px;
+  --aries-inspector-card-gap: 8px;
+  --aries-inspector-card-padding-x: 12px;
+  --aries-inspector-card-padding-y: 8px;
+  --aries-inspector-close-inset: 12px;
+  --aries-inspector-close-icon-size: 14px;
+  --aries-inspector-close-reserve: calc(var(--aries-inspector-close-inset) + var(--aries-inspector-close-icon-size) + var(--aries-inspector-close-inset) + 2px);
+  --aries-inspector-summary-close-reserve: calc(var(--aries-inspector-close-reserve) + var(--aries-inspector-heading-gap));
+  --aries-inspector-status-dot-size: 8px;
+  --aries-inspector-control-height: 24px;
+  --aries-inspector-control-padding-x: 4px;
+  --aries-inspector-control-section-padding-bottom: 12px;
+  --aries-inspector-hover-flag-viewport-margin: 8px;
+  --aries-inspector-hover-flag-anchor-gap-x: 12px;
+  --aries-inspector-hover-flag-anchor-gap-y: 10px;
+  --aries-inspector-hover-flag-compact-min-width: 120px;
+  --aries-inspector-hover-flag-min-width: 180px;
+  --aries-inspector-hover-flag-compact-min-height: 56px;
+  --aries-inspector-hover-flag-min-height: 96px;
+  --aries-inspector-hover-flag-content-min-width: 96px;
+  --aries-inspector-hover-flag-accent-border-opacity: 0.55;
+  --aries-inspector-hover-flag-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --aries-inspector-hover-flag-backdrop-blur: 8px;
   /* Sidebar-only font sizes — a 1:1 point→px port of the wx navigator, kept
    * SEPARATE from the app-wide --aries-font-size-* vars so the chart, inspector,
    * status bar, and dialogs (which consume the shared vars) stay untouched.
@@ -239,9 +1116,27 @@ html {
    * map directly. */
   --aries-font-size-nav: 14px;
   --aries-font-size-nav-section: 12px;
+  --aries-sidebar-row-padding-x: 12px;
+  --aries-sidebar-row-padding-y: 4px;
   --aries-sidebar-row-line-box: 16px;
   --aries-sidebar-section-line-box: 14px;
+  --aries-sidebar-section-header-height: 20px;
+  --aries-sidebar-group-padding-start: 7px;
+  --aries-sidebar-group-padding-end: 5px;
+  --aries-sidebar-tree-indent: 12px;
+  --aries-sidebar-drop-indicator-size: 2px;
+  --aries-sidebar-drop-indicator-overhang: 1px;
+  --aries-sidebar-trailing-inset: 8px;
+  --aries-sidebar-unsaved-indicator-size: 6px;
+  --aries-sidebar-close-inset: 6px;
+  --aries-sidebar-close-action-size: 20px;
+  --aries-sidebar-action-icon-size: 12px;
+  --aries-sidebar-drag-opacity: 0.5;
+  --aries-statusbar-height: 26px;
   --aries-statusbar-line-box: 13px;
+  --aries-statusbar-gap: 4px;
+  --aries-statusbar-action-size: 22px;
+  --aries-statusbar-field-padding-x: 6px;
   --aries-ui-scale: 1;
   --aries-sidebar-row-height: 30px;
   --aries-list-font-size-dense: var(--aries-font-size-small);
@@ -284,10 +1179,22 @@ html {
   --aries-search-sign-glyph-size: 14px;
   --aries-search-ingress-arrow-size: 13px;
   --aries-search-marker-size: 9px;
-  --aries-ephem-header-font-size: 11px;
-  --aries-ephem-header-gap: 8px;
-  --aries-ephem-header-pad-x: 12px;
-  --aries-ephem-header-pad-y: 6px;
+  --aries-aspect-matrix-cell-size: 46px;
+  --aries-aspect-matrix-fixed-star-rail-width: 132px;
+  --aries-aspect-matrix-outer-padding: 16px;
+  --aries-aspect-matrix-axis-glyph-size: 19px;
+  --aries-aspect-matrix-rule-width: 1px;
+  --aries-aspect-matrix-exact-inset: 3px;
+  --aries-aspect-matrix-applying-marker-size: 5px;
+  --aries-aspect-matrix-glyph-inset-x: 7px;
+  --aries-aspect-matrix-glyph-inset-y: 5px;
+  --aries-aspect-matrix-parallel-inset-x: 4px;
+  --aries-aspect-matrix-parallel-inset-y: 5px;
+  --aries-aspect-matrix-orb-inset-bottom: 4px;
+  --aries-aspect-matrix-rule-color: color-mix(in srgb, var(--aries-border-subtle) 40%, transparent);
+  --aries-aspect-matrix-exact-color: color-mix(in srgb, var(--aries-text-primary) 45%, transparent);
+  --aries-aspect-matrix-applying-color: color-mix(in srgb, var(--aries-text-primary) 55%, transparent);
+  --aries-aspect-matrix-empty-color: color-mix(in srgb, var(--aries-text-primary) 35%, transparent);
   --aries-ephem-state-font-size: 12px;
   --aries-ephem-min-canvas-width: 40px;
   --aries-ephem-min-canvas-height: 40px;
@@ -343,12 +1250,147 @@ html {
   --aries-list-hover-flag-width: 2px;
   --aries-panel-padding-x: 16px;
   --aries-panel-padding-y: 12px;
+  --aries-pane-header-padding-x: 16px;
+  --aries-pane-header-padding-y: 8px;
+  --aries-pane-header-compact-padding-x: 12px;
+  --aries-pane-header-compact-padding-y: 6px;
+  --aries-pane-control-gap-x: 16px;
+  --aries-pane-control-compact-gap-x: 12px;
+  --aries-pane-control-gap-y: 8px;
+  --aries-pane-title-gap: 12px;
+  --aries-pane-content-padding: 16px;
+  --aries-pane-wide-inset: 20px;
+  --aries-pane-drawer-width: 272px;
+  --aries-pane-drawer-content-max-height: 118px;
+  --aries-pane-drawer-list-max-height: 192px;
+  --aries-pane-state-padding: 24px;
+  --aries-pane-rule-size: 1px;
+  --aries-notes-padding: 8px;
+  --aries-notes-gap: 4px;
+  --aries-notes-header-gap: 8px;
+  --aries-sheet-padding: 16px;
+  --aries-sheet-content-gap: calc(var(--aries-section-gap) * 4 / 5);
+  --aries-sheet-close-inset: 12px;
+  --aries-sheet-header-gap: 2px;
+  --aries-sheet-footer-gap: 8px;
+  --aries-sheet-width-sm: 352px;
+  --aries-sheet-width-md: 390px;
+  --aries-sheet-width-lg: 440px;
+  --aries-sheet-width-sidebar: 384px;
+  --aries-sheet-viewport-inset-sm: 32px;
+  --aries-sheet-viewport-inset-md: 16px;
+  --aries-sheet-viewport-width-lg: 92vw;
+  --aries-sheet-viewport-width-sidebar: 75vw;
+  --aries-sheet-motion-distance: 40px;
   --aries-nav-side-margin: 12px;
   --aries-section-gap: 20px;
+  --aries-segmented-control-padding: 2px;
+  --aries-segmented-control-item-min-width: 72px;
+  --aries-segmented-control-item-radius: var(--aries-radius-sm);
+  --aries-radius-2xs: calc(var(--aries-radius-md) * 2 / 9);
   --aries-radius-xs: calc(var(--aries-radius-md) / 3);
+  --aries-radius-control-compact: calc(var(--aries-radius-md) * 4 / 9);
+  --aries-radius-control: calc(var(--aries-radius-md) * 5 / 9);
   --aries-radius-sm: calc(var(--aries-radius-md) * 2 / 3);
   --aries-radius-md: 9px;
   --aries-radius-lg: calc(var(--aries-radius-md) * 1.2);
+  --aries-radius-xl: calc(var(--aries-radius-md) * 4 / 3);
+  --aries-radius-ui-control: var(--aries-radius-lg);
+  --aries-radius-ui-control-compact: var(--aries-radius-md);
+  --aries-radius-popover: var(--aries-radius-lg);
+  --aries-radius-menu-item: var(--aries-radius-md);
+  --aries-radius-dialog: var(--aries-radius-xl);
+  --aries-radius-sidebar-row: var(--aries-radius-md);
+  --aries-control-height: 32px;
+  --aries-control-height-micro: calc(var(--aries-control-height) * 5 / 8);
+  --aries-control-height-compact: calc(var(--aries-control-height) * 3 / 4);
+  --aries-control-height-small: calc(var(--aries-control-height) * 7 / 8);
+  --aries-control-height-large: calc(var(--aries-control-height) * 9 / 8);
+  --aries-control-gap: 6px;
+  --aries-control-gap-compact: calc(var(--aries-control-gap) * 2 / 3);
+  --aries-control-padding-x: 10px;
+  --aries-control-padding-x-compact: calc(var(--aries-control-padding-x) * 4 / 5);
+  --aries-control-padding-y: 4px;
+  --aries-control-icon-size: 14px;
+  --aries-control-icon-size-xs: calc(var(--aries-control-icon-size) * 6 / 7);
+  --aries-control-icon-size-default: calc(var(--aries-control-icon-size) * 8 / 7);
+  --aries-control-icon-padding-x: calc(var(--aries-control-padding-x) * 4 / 5);
+  --aries-control-icon-padding-x-compact: calc(var(--aries-control-padding-x) * 3 / 5);
+  --aries-control-min-width: 86px;
+  --aries-control-min-width-compact: calc(var(--aries-control-min-width) - var(--aries-control-padding-x-compact));
+  --aries-control-min-width-medium: calc(var(--aries-control-min-width) + var(--aries-control-gap));
+  --aries-control-min-width-action: calc(var(--aries-control-min-width) + var(--aries-control-height-compact));
+  --aries-control-min-width-wide: 128px;
+  --aries-control-search-width: 240px;
+  --aries-toolbar-control-width: var(--aries-control-height-compact);
+  --aries-toolbar-control-height: calc(var(--aries-control-height) * 11 / 16);
+  --aries-toolbar-control-radius: var(--aries-radius-control);
+  --aries-toolbar-icon-size: calc(var(--aries-control-icon-size) * 15 / 14);
+  --aries-tabs-gap: 8px;
+  --aries-tabs-height: var(--aries-control-height);
+  --aries-tabs-list-corner-radius: var(--aries-radius-lg);
+  --aries-tabs-list-padding: 3px;
+  --aries-tabs-line-gap: var(--aries-control-gap-compact);
+  --aries-tab-corner-radius: var(--aries-radius-md);
+  --aries-tabs-trigger-gap: var(--aries-control-gap);
+  --aries-tabs-trigger-padding-x: var(--aries-control-gap);
+  --aries-tabs-trigger-padding-y: var(--aries-tabs-indicator-size);
+  --aries-tabs-indicator-size: 2px;
+  --aries-tabs-indicator-offset: 5px;
+  --aries-tabs-rail-gap: 0px;
+  --aries-tabs-rail-width: 148px;
+  --aries-tabs-rail-padding: var(--aries-tabs-gap);
+  --aries-tabs-rail-trigger-padding-x: var(--aries-control-padding-x);
+  --aries-tabs-rail-trigger-padding-y: var(--aries-control-gap);
+  --aries-dialog-padding: 16px;
+  --aries-dialog-gap: 16px;
+  --aries-dialog-header-gap: 8px;
+  --aries-dialog-footer-gap: 8px;
+  --aries-dialog-close-inset: 8px;
+  --aries-dialog-section-padding-y: 14px;
+  --aries-dialog-map-action-min-width: 72px;
+  --aries-dialog-width-compact: 320px;
+  --aries-dialog-width-xs: 360px;
+  --aries-dialog-width-confirm: 380px;
+  --aries-dialog-width-sm: 384px;
+  --aries-dialog-width-md: 448px;
+  --aries-dialog-width-detail: 512px;
+  --aries-dialog-width-prose: 560px;
+  --aries-dialog-width-reading: 576px;
+  --aries-dialog-width-lg: 720px;
+  --aries-dialog-width-workspace: 760px;
+  --aries-dialog-width-wide: 768px;
+  --aries-dialog-width-xl: 860px;
+  --aries-dialog-viewport-width: 94vw;
+  --aries-dialog-viewport-inset: 32px;
+  --aries-dialog-viewport-height: 88vh;
+  --aries-dialog-content-height-workspace: 70vh;
+  --aries-form-section-gap: 20px;
+  --aries-form-group-gap: 10px;
+  --aries-form-row-gap: 12px;
+  --aries-form-field-gap: 8px;
+  --aries-form-label-width: 56px;
+  --aries-form-aside-width: 220px;
+  --aries-menu-padding: 4px;
+  --aries-menu-item-gap: var(--aries-control-gap);
+  --aries-menu-item-padding-x: var(--aries-control-gap);
+  --aries-menu-item-padding-y: var(--aries-control-padding-y);
+  --aries-menu-separator-gap: var(--aries-menu-padding);
+  --aries-menu-indicator-inset: var(--aries-control-padding-x-compact);
+  --aries-menu-icon-size: 16px;
+  --aries-menu-inset: 28px;
+  --aries-menu-selection-reserve: 32px;
+  --aries-menu-label-padding-x: 6px;
+  --aries-menu-label-padding-y: 4px;
+  --aries-menu-context-min-width: 208px;
+  --aries-menu-context-submenu-min-width: 192px;
+  --aries-sash-rule-size: 1px;
+  --aries-sash-idle-color: var(--aries-titlebar-seam-rule);
+  --aries-sash-hover-color: var(--aries-sidebar-sash-rule);
+  --aries-sash-active-color: color-mix(in srgb, var(--aries-border-subtle) 80%, transparent);
+  --aries-sash-panel-idle-color: var(--aries-sidebar-sash-rule);
+  --aries-sash-panel-hover-color: var(--aries-border-subtle);
+  --aries-sash-panel-active-color: var(--aries-border-subtle);
   --aries-motion-shell-duration: 180ms;
   --aries-motion-shell-ease: cubic-bezier(0.33, 1, 0.68, 1);
   --aries-text-primary: #ffffff;
@@ -357,6 +1399,18 @@ html {
   --aries-sidebar-text: #ffffff;
   --aries-header-text: var(--aries-text-primary);
   --aries-inspector-text: var(--aries-text-primary);
+  --aries-inspector-title-color: var(--aries-inspector-text);
+  --aries-inspector-strong-color: color-mix(in srgb, var(--aries-inspector-text) 90%, var(--aries-background));
+  --aries-inspector-value-color: color-mix(in srgb, var(--aries-inspector-text) 85%, var(--aries-background));
+  --aries-inspector-reading-color: color-mix(in srgb, var(--aries-inspector-text) 80%, var(--aries-background));
+  --aries-inspector-label-color: color-mix(in srgb, var(--aries-inspector-text) 45%, var(--aries-background));
+  --aries-inspector-muted-color: color-mix(in srgb, var(--aries-inspector-text) 60%, var(--aries-background));
+  --aries-inspector-interactive-color: color-mix(in srgb, var(--aries-inspector-text) 50%, var(--aries-background));
+  --aries-inspector-tertiary-color: color-mix(in srgb, var(--aries-inspector-text) 35%, var(--aries-background));
+  --aries-inspector-divider-color: color-mix(in srgb, var(--aries-border-subtle) 40%, transparent);
+  --aries-inspector-card-background: color-mix(in srgb, var(--aries-inspector-text) 2%, transparent);
+  --aries-inspector-card-border-color: var(--aries-inspector-divider-color);
+  --aries-inspector-background: color-mix(in srgb, var(--aries-background) 95%, transparent);
   --aries-status-text: var(--aries-sidebar-text);
   --aries-titlebar-text: color-mix(in srgb, var(--aries-text-primary) 84%, var(--aries-background));
   --aries-titlebar-icon: color-mix(in srgb, var(--aries-text-primary) 44%, var(--aries-background));
@@ -414,6 +1468,13 @@ html {
   --sidebar-ring: var(--aries-text-dim);
 
   /* Morinus chart-specific colors (used inside SVG / canvas) */
+  --morinus-background: rgb(35 36 40);
+  --morinus-text-bright: rgb(255 255 255);
+  --morinus-text-dim: color-mix(
+    in srgb,
+    var(--morinus-text-bright) 50%,
+    var(--morinus-background)
+  );
   --morinus-frame: rgb(220 220 221);
   --morinus-signs: rgb(215 215 217);
   --morinus-angles: rgb(205 205 209);
@@ -426,10 +1487,37 @@ html {
   --morinus-dignity-exil: rgb(255 0 0);
   --morinus-dignity-exal: rgb(255 215 0);
   --morinus-dignity-casus: rgb(205 92 92);
-  --morinus-aspect-harmonic: rgb(34 255 154);
+  --morinus-body-sun: rgb(255 215 0);
+  --morinus-body-moon: rgb(0 191 255);
+  --morinus-body-mercury: rgb(138 43 226);
+  --morinus-body-venus: rgb(0 128 0);
+  --morinus-body-mars: rgb(178 34 34);
+  --morinus-body-jupiter: rgb(0 0 255);
+  --morinus-body-saturn: rgb(0 0 0);
+  --morinus-body-uranus: rgb(0 0 128);
+  --morinus-body-neptune: rgb(0 0 128);
+  --morinus-body-pluto: rgb(0 0 128);
+  --morinus-body-nodes: rgb(139 54 38);
+  --morinus-body-fortune: rgb(205 96 144);
+  --morinus-body-chiron: rgb(128 0 128);
+  --morinus-aspect-conjunction: rgb(246 0 206);
+  --morinus-aspect-semisextile: rgb(40 232 232);
+  --morinus-aspect-semisquare: rgb(246 0 206);
+  --morinus-aspect-sextile: rgb(34 255 154);
+  --morinus-aspect-quintile: rgb(255 242 0);
   --morinus-aspect-square: rgb(246 0 206);
-  --morinus-aspect-quincunx: rgb(255 122 0);
-  --morinus-aspect-conjunction: rgb(40 232 232);
+  --morinus-aspect-trine: rgb(34 255 154);
+  --morinus-aspect-sesquisquare: rgb(246 0 206);
+  --morinus-aspect-biquintile: rgb(255 122 0);
+  --morinus-aspect-quincunx: rgb(0 0 251);
+  --morinus-aspect-opposition: rgb(246 0 206);
+  --morinus-aspect-septile: rgb(138 43 226);
+  --morinus-aspect-parallel: var(--morinus-text-bright);
+  --morinus-aspect-contraparallel: var(--morinus-frame);
+  --morinus-element-fire: rgb(214 82 60);
+  --morinus-element-earth: rgb(118 146 74);
+  --morinus-element-air: rgb(88 138 214);
+  --morinus-element-water: rgb(68 164 172);
 
   --radius: var(--aries-radius-md);
 
@@ -486,6 +1574,13 @@ html[data-theme-ready="pending"] body {
   --sidebar-accent-foreground: var(--aries-sidebar-accent-foreground);
   --sidebar-border: var(--aries-border-subtle);
   --sidebar-ring: var(--aries-text-muted);
+  --morinus-background: rgb(255 255 255);
+  --morinus-text-bright: rgb(38 38 38);
+  --morinus-text-dim: color-mix(
+    in srgb,
+    var(--morinus-text-bright) 58%,
+    var(--morinus-background)
+  );
   --morinus-frame: rgb(88 92 102);
   --morinus-signs: rgb(96 100 110);
   --morinus-angles: rgb(74 78 88);
@@ -595,14 +1690,14 @@ html[data-theme-ready="pending"] body {
 
   .aries-help-kbd {
     display: inline-flex;
-    min-width: 1.5rem;
-    min-height: 1.5rem;
+    min-width: var(--aries-control-height-compact);
+    min-height: var(--aries-control-height-compact);
     align-items: center;
     justify-content: center;
     border: 1px solid var(--input);
     border-radius: var(--aries-radius-md);
     background: color-mix(in srgb, var(--input) 30%, transparent);
-    padding: 0 0.5rem;
+    padding: 0 var(--aries-control-padding-x-compact);
     color: var(--aries-text-primary);
     font-family: var(--aries-font-ui);
     font-size: var(--aries-font-size-small);
@@ -910,7 +2005,7 @@ html[data-theme-ready="pending"] body {
     var(--aries-navbar-gap)
   );
   border: 1px solid var(--aries-mode-hint-stroke);
-  border-radius: 6px;
+  border-radius: var(--aries-radius-sm);
   padding:
     clamp(
       var(--aries-navbar-pad-y-min),
@@ -952,7 +2047,7 @@ html[data-theme-ready="pending"] body {
   align-items: center;
   justify-content: center;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--aries-radius-sm);
   background: transparent;
   color: var(--aries-navbar-text);
   padding:
@@ -1011,7 +2106,7 @@ html[data-theme-ready="pending"] body {
   height: var(--aries-mode-hint-control-height);
   gap: clamp(2px, calc(3px * var(--aries-navbar-scale, 1)), 3px);
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--aries-radius-sm);
   background: transparent;
   padding-left: clamp(4px, calc(6px * var(--aries-navbar-scale, 1)), 6px);
 }
@@ -1033,7 +2128,7 @@ html[data-theme-ready="pending"] body {
   align-items: center;
   justify-content: center;
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: var(--aries-radius-control);
   background: transparent;
   color: var(--aries-navbar-text);
   line-height: 1;
@@ -1061,14 +2156,15 @@ html[data-theme-ready="pending"] body {
 }
 
 .aries-mode-hint-flag {
+  --aries-mode-hint-flag-shadow: 0 8px 18px rgb(0 0 0 / 26%);
   border: 1px solid var(--aries-navbar-tooltip-border);
   background: var(--aries-navbar-tooltip-bg);
   color: var(--aries-navbar-tooltip-text);
   font-family: var(--aries-font-ui);
-  font-size: 12px;
+  font-size: var(--aries-font-size-base);
   font-weight: 400;
   line-height: 1;
-  box-shadow: 0 8px 18px rgb(0 0 0 / 26%);
+  box-shadow: var(--aries-mode-hint-flag-shadow);
 }
 
 .aries-mode-hint-flag [data-slot="kbd"] {
@@ -1076,7 +2172,7 @@ html[data-theme-ready="pending"] body {
   background: var(--aries-navbar-kbd-bg);
   color: var(--aries-navbar-tooltip-text);
   font-family: var(--aries-font-ui);
-  font-size: 11px;
+  font-size: var(--aries-font-size-small);
   font-weight: 400;
   line-height: 1;
 }
@@ -1089,10 +2185,10 @@ html[data-theme-ready="pending"] body {
     transparent
   );
   --aries-ambient-spotlight-hover: var(--aries-surface-subtle);
-  width: min(var(--aries-spotlight-width), calc(100vw - 2rem));
-  max-width: min(var(--aries-spotlight-width), calc(100vw - 2rem));
+  width: min(var(--aries-spotlight-width), calc(100vw - var(--aries-spotlight-viewport-inset)));
+  max-width: min(var(--aries-spotlight-width), calc(100vw - var(--aries-spotlight-viewport-inset)));
   border: 1px solid var(--aries-ambient-spotlight-stroke);
-  border-radius: 6px !important;
+  border-radius: var(--aries-radius-sm) !important;
   background: var(--aries-ambient-spotlight-bg);
   color: var(--aries-text-primary);
   font-family: var(--aries-font-ui);
@@ -1101,20 +2197,20 @@ html[data-theme-ready="pending"] body {
 }
 
 .aries-ambient-spotlight [data-slot="command"] {
-  border-radius: 6px !important;
+  border-radius: var(--aries-radius-sm) !important;
   background: transparent;
   color: var(--aries-text-primary);
   font-family: var(--aries-font-ui);
 }
 
 .aries-ambient-spotlight [data-slot="command-input-wrapper"] {
-  padding: 7px 7px 0;
+  padding: var(--aries-spotlight-inner-inset) var(--aries-spotlight-inner-inset) 0;
 }
 
 .aries-ambient-spotlight [data-slot="input-group"] {
   height: var(--aries-spotlight-input-height) !important;
   border-color: transparent;
-  border-radius: 5px !important;
+  border-radius: var(--aries-radius-control) !important;
   background: transparent;
   box-shadow: none !important;
 }
@@ -1143,8 +2239,8 @@ html[data-theme-ready="pending"] body {
 }
 
 .aries-ambient-spotlight [data-slot="input-group-addon"] svg {
-  width: 16px;
-  height: 16px;
+  width: var(--aries-menu-icon-size);
+  height: var(--aries-menu-icon-size);
 }
 
 .aries-ambient-spotlight-armillary {
@@ -1161,7 +2257,7 @@ html[data-theme-ready="pending"] body {
 }
 
 .aries-ambient-spotlight [data-slot="command-list"] {
-  padding: 4px 7px 7px;
+  padding: var(--aries-menu-padding) var(--aries-spotlight-inner-inset) var(--aries-spotlight-inner-inset);
 }
 
 .aries-ambient-spotlight [data-slot="command-group"] {
@@ -1171,7 +2267,7 @@ html[data-theme-ready="pending"] body {
 
 .aries-ambient-spotlight-preview {
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--aries-radius-control);
   background: transparent;
   min-height: var(--aries-spotlight-preview-min-height);
 }
@@ -1185,7 +2281,7 @@ html[data-theme-ready="pending"] body {
 }
 
 .aries-ambient-spotlight-secondary {
-  margin-top: 3px;
+  margin-top: var(--aries-spotlight-secondary-gap);
   color: color-mix(in srgb, var(--aries-text-primary) 72%, transparent);
   font-family: var(--aries-font-ui);
   font-size: var(--aries-spotlight-secondary-font-size);
@@ -1195,26 +2291,26 @@ html[data-theme-ready="pending"] body {
 
 .aries-ambient-spotlight-kind {
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: var(--aries-radius-control);
   background: transparent;
   color: color-mix(in srgb, var(--aries-text-primary) 82%, transparent);
-  padding: 4px 8px;
+  padding: var(--aries-control-padding-y) var(--aries-control-padding-x-compact);
   font-family: var(--aries-font-ui);
-  font-size: 12px;
+  font-size: var(--aries-font-size-base);
   font-weight: 400;
   line-height: 1;
 }
 
 .aries-ambient-spotlight-actions {
-  gap: 8px;
+  gap: var(--aries-control-padding-x-compact);
 }
 
 .aries-ambient-spotlight-action {
   width: auto;
-  min-width: 92px;
+  min-width: var(--aries-spotlight-action-min-width);
   min-height: var(--aries-spotlight-action-height);
   border: 1px solid transparent;
-  border-radius: 5px !important;
+  border-radius: var(--aries-radius-control) !important;
   background: transparent;
   color: color-mix(in srgb, var(--aries-text-primary) 84%, transparent);
   font-family: var(--aries-font-ui);
@@ -1222,9 +2318,9 @@ html[data-theme-ready="pending"] body {
   font-weight: 400;
   line-height: 1.15;
   transition:
-    border-color 120ms ease,
-    background-color 120ms ease,
-    color 120ms ease;
+    border-color var(--aries-spotlight-motion-duration) ease,
+    background-color var(--aries-spotlight-motion-duration) ease,
+    color var(--aries-spotlight-motion-duration) ease;
 }
 
 .aries-ambient-spotlight-action:hover,
@@ -1256,12 +2352,71 @@ html[data-theme-ready="pending"] body {
   }
 }
 
-/* macOS unified (overlay) title bar.
+/* Paint-only wheel compositor effects. Keep these on the three retained
+ * canvases: applying them inside draw-chart would make WebKit support and
+ * geometry invalidation depend on visual effects. */
+.aries-chart-paint-effects > canvas:nth-of-type(1) {
+  opacity: var(--aries-wheel-effect-geometry-opacity);
+  filter:
+    blur(var(--aries-wheel-effect-geometry-blur))
+    brightness(var(--aries-wheel-effect-geometry-brightness-scale))
+    contrast(var(--aries-wheel-effect-geometry-contrast-scale))
+    saturate(var(--aries-wheel-effect-geometry-saturate-scale))
+    hue-rotate(var(--aries-wheel-effect-geometry-hue-rotate))
+    grayscale(var(--aries-wheel-effect-geometry-grayscale-opacity))
+    invert(var(--aries-wheel-effect-geometry-invert-opacity))
+    sepia(var(--aries-wheel-effect-geometry-sepia-opacity))
+    drop-shadow(
+      var(--aries-wheel-effect-geometry-shadow-offset-x)
+      var(--aries-wheel-effect-geometry-shadow-offset-y)
+      var(--aries-wheel-effect-geometry-shadow-blur)
+      var(--aries-wheel-effect-geometry-shadow-color)
+    );
+}
+
+.aries-chart-paint-effects > canvas:nth-of-type(2) {
+  opacity: var(--aries-wheel-effect-dynamic-opacity);
+  filter:
+    blur(var(--aries-wheel-effect-dynamic-blur))
+    brightness(var(--aries-wheel-effect-dynamic-brightness-scale))
+    contrast(var(--aries-wheel-effect-dynamic-contrast-scale))
+    saturate(var(--aries-wheel-effect-dynamic-saturate-scale))
+    hue-rotate(var(--aries-wheel-effect-dynamic-hue-rotate))
+    grayscale(var(--aries-wheel-effect-dynamic-grayscale-opacity))
+    invert(var(--aries-wheel-effect-dynamic-invert-opacity))
+    sepia(var(--aries-wheel-effect-dynamic-sepia-opacity))
+    drop-shadow(
+      var(--aries-wheel-effect-dynamic-shadow-offset-x)
+      var(--aries-wheel-effect-dynamic-shadow-offset-y)
+      var(--aries-wheel-effect-dynamic-shadow-blur)
+      var(--aries-wheel-effect-dynamic-shadow-color)
+    );
+}
+
+.aries-chart-paint-effects > canvas:nth-of-type(3) {
+  opacity: var(--aries-wheel-effect-outer-label-opacity);
+  filter:
+    blur(var(--aries-wheel-effect-outer-label-blur))
+    brightness(var(--aries-wheel-effect-outer-label-brightness-scale))
+    contrast(var(--aries-wheel-effect-outer-label-contrast-scale))
+    saturate(var(--aries-wheel-effect-outer-label-saturate-scale))
+    hue-rotate(var(--aries-wheel-effect-outer-label-hue-rotate))
+    grayscale(var(--aries-wheel-effect-outer-label-grayscale-opacity))
+    invert(var(--aries-wheel-effect-outer-label-invert-opacity))
+    sepia(var(--aries-wheel-effect-outer-label-sepia-opacity))
+    drop-shadow(
+      var(--aries-wheel-effect-outer-label-shadow-offset-x)
+      var(--aries-wheel-effect-outer-label-shadow-offset-y)
+      var(--aries-wheel-effect-outer-label-shadow-blur)
+      var(--aries-wheel-effect-outer-label-shadow-color)
+    );
+}
+
+/* Native unified overlay title bar.
  *
- * Contract: doc/ui-specs/webapp-shell-frame.md. Tauri owns the native traffic
- * lights through `trafficLightPosition`; React owns the floating titlebar
- * controls, direct `data-tauri-drag-region` hit targets, and the shell column
- * metrics.
+ * Contract: doc/ui-specs/webapp-shell-frame.md. AppKit owns the macOS traffic
+ * lights and DWM owns the Windows caption controls; React owns the floating
+ * document title/actions, direct drag-region hit targets, and shell metrics.
  */
 :root {
   --titlebar-h: var(--morinus-header-height);
@@ -1281,7 +2436,7 @@ html[data-theme-ready="pending"] body {
   --aries-sidebar-row-strong: color-mix(in srgb, var(--aries-surface) 86%, var(--aries-sidebar-text));
   --aries-sidebar-drop-indicator: color-mix(in srgb, var(--aries-sidebar-text) 78%, var(--aries-surface));
 }
-.is-tauri {
+.is-tauri.is-macos {
   --titlebar-left-controls-x: 84px;
 }
 .app-shell [data-slot="sidebar-container"] {

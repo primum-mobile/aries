@@ -60,6 +60,7 @@ import {
 import { perfNow, recordChartPerf } from "@/lib/chart/perf";
 import { resolveShellHost } from "@/lib/shell-host";
 import { safeShellUnlisten } from "@/lib/shell/unlisten";
+import { semanticChartColor } from "@/lib/theme/semantic-color";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/i18n";
 import {
@@ -69,6 +70,7 @@ import {
   type WorkspaceCommandRequestPayload,
   type WorkspaceCommandResult,
 } from "@/stores/workspace-command-bus";
+import { useThemeStore } from "@/stores/theme-store";
 
 import { ColumnResizeHandle, useResizableTableColumns } from "./resizable-table-columns";
 
@@ -78,6 +80,8 @@ type Props = {
   mode: Mode;
   parentRadixId?: string | null;
   excludeNames?: string[];
+  onPickRow?: (row: ChartPickerRow) => Promise<void>;
+  onCancel?: () => void;
 };
 
 type SortState = {
@@ -132,7 +136,7 @@ type ChartSearchSortState = {
   ascending: boolean;
 };
 
-const PICKER_ROW_HEIGHT = 24;
+const PICKER_ROW_HEIGHT_FALLBACK = 24;
 const PICKER_ROW_OVERSCAN = 12;
 const PICKER_BACKGROUND_REFRESH_DELAY_MS = 120;
 
@@ -243,6 +247,8 @@ export function SystemChartPicker({
   mode,
   parentRadixId,
   excludeNames = [],
+  onPickRow,
+  onCancel,
 }: Props) {
   const t = useT();
   const [view, setView] = React.useState<"list" | "search">("list");
@@ -376,7 +382,11 @@ export function SystemChartPicker({
     return sortRows(base, sort);
   }, [rows, deferredFilter, sort, excludeNames]);
 
-  const virtualRows = useVirtualPickerRows(listRef, visibleRows.length);
+  const controlHeight = useThemeStore(
+    (state) => state.theme?.appTokens["--aries-control-height"] ?? "",
+  );
+  const pickerRowHeight = resolveCompactControlHeight(controlHeight);
+  const virtualRows = useVirtualPickerRows(listRef, visibleRows.length, pickerRowHeight);
   const renderedRows = React.useMemo(
     () => visibleRows.slice(virtualRows.startIndex, virtualRows.endIndex),
     [visibleRows, virtualRows.startIndex, virtualRows.endIndex],
@@ -443,8 +453,12 @@ export function SystemChartPicker({
 
   const closeAndReset = React.useCallback(() => {
     resetPickerState();
+    if (onCancel) {
+      onCancel();
+      return;
+    }
     void closePickerWindow();
-  }, [resetPickerState]);
+  }, [onCancel, resetPickerState]);
 
   React.useEffect(() => {
     const shellHost = resolveShellHost();
@@ -484,6 +498,16 @@ export function SystemChartPicker({
         asSynastry,
         targets: targets.length,
       });
+      if (onPickRow) {
+        try {
+          await onPickRow(targets[0]);
+        } catch (error) {
+          setError(error instanceof Error ? error.message : String(error));
+        } finally {
+          openingRef.current = false;
+        }
+        return;
+      }
       const hidePromise = hidePickerWindowForCommand();
       let succeeded = false;
       try {
@@ -563,7 +587,7 @@ export function SystemChartPicker({
         }
       }
     },
-    [mode, parentRadixId],
+    [mode, onPickRow, parentRadixId],
   );
 
   const openSelected = React.useCallback(
@@ -681,47 +705,47 @@ export function SystemChartPicker({
   ]);
 
   const canOpen = selectedRows.length > 0;
-  const canSynastry = mode === "open-radix" && selectedRows.length === 2;
+  const canSynastry = !onPickRow && mode === "open-radix" && selectedRows.length === 2;
 
   return (
     <div className="flex h-screen min-h-0 flex-col bg-background text-foreground">
       {view === "list" ? (
         <>
-          <header className="flex shrink-0 items-center gap-4 px-5 pb-2 pt-4">
+          <header className="flex shrink-0 items-center gap-[var(--aries-pane-control-gap-x)] px-[var(--aries-pane-wide-inset)] pb-[var(--aries-pane-header-padding-y)] pt-[var(--aries-pane-content-padding)]">
             <div className="min-w-0 flex-1 truncate text-[18px] leading-none">
               {directory || t("picker.chartCollections")}
             </div>
             <Button
               variant="outline"
-              className="h-8 min-w-[128px] rounded-md text-[14px] font-normal"
+              className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width-wide)] rounded-md text-[length:var(--aries-font-size-large)] font-normal"
               onClick={() => setView("search")}
             >
               {t("picker.search")}
             </Button>
           </header>
-          <div className="flex shrink-0 items-center gap-3 px-5 pb-2">
-            <div className="relative w-[240px]">
-              <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <div className="flex shrink-0 items-center gap-[var(--aries-pane-title-gap)] px-[var(--aries-pane-wide-inset)] pb-[var(--aries-pane-header-padding-y)]">
+            <div className="relative w-[var(--aries-control-search-width)]">
+              <Search className="pointer-events-none absolute left-[var(--aries-control-padding-x-compact)] top-1/2 size-[var(--aries-control-icon-size)] -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={filter}
                 onChange={(event) => setFilter(event.target.value)}
                 placeholder={t("picker.quickFilter")}
-                className="h-7 pl-7 text-[13px]"
+                className="h-[var(--aries-control-height-small)] pl-[calc(var(--aries-control-icon-size)+var(--aries-control-padding-x)+var(--aries-control-gap-compact))] text-[length:var(--aries-font-size-reading)]"
               />
             </div>
-            <div className="text-[12px] text-muted-foreground">
+            <div className="text-[length:var(--aries-font-size-base)] text-muted-foreground">
               {t("picker.rowCount", { visible: visibleRows.length, total: rows.length })}
               {selectedRows.length ? t("picker.selectedSuffix", { count: selectedRows.length }) : ""}
             </div>
           </div>
 
-          <main ref={listRef} className="mx-5 min-h-0 flex-1 overflow-auto border border-border bg-background">
+          <main ref={listRef} className="mx-[var(--aries-pane-wide-inset)] min-h-0 flex-1 overflow-auto border border-border bg-background">
             {loading ? (
-              <div className="px-4 py-6 text-[length:var(--aries-font-size-small)] text-muted-foreground">
+              <div className="px-[var(--aries-pane-content-padding)] py-[var(--aries-pane-state-padding)] text-[length:var(--aries-font-size-small)] text-muted-foreground">
                 {t("picker.loadingCharts")}
               </div>
             ) : error ? (
-              <div className="px-4 py-6 text-[length:var(--aries-font-size-small)] text-destructive">
+              <div className="px-[var(--aries-pane-content-padding)] py-[var(--aries-pane-state-padding)] text-[length:var(--aries-font-size-small)] text-destructive">
                 {error}
               </div>
             ) : (
@@ -737,7 +761,7 @@ export function SystemChartPicker({
                       }}
                     >
                       <Table
-                        className={cn("border-collapse text-[13px] leading-tight", listResize.tableClassName)}
+                        className={cn("border-collapse text-[length:var(--aries-font-size-reading)] leading-tight", listResize.tableClassName)}
                         style={listResize.tableStyle}
                       >
                         {listResize.colGroup}
@@ -746,11 +770,11 @@ export function SystemChartPicker({
                             {COLUMN_DEFS.map((column) => (
                               <TableHead
                                 key={column.key}
-                                className="relative h-6 select-none whitespace-nowrap border-r border-border px-2 text-left text-[13px] font-normal"
+                                className="relative h-[var(--aries-control-height-compact)] select-none whitespace-nowrap border-r border-border px-[var(--aries-control-padding-x-compact)] text-left text-[length:var(--aries-font-size-reading)] font-normal"
                               >
                                 <button
                                   type="button"
-                                  className="inline-flex items-center gap-1 text-left"
+                                  className="inline-flex items-center gap-[var(--aries-control-gap-compact)] text-left"
                                   onClick={() =>
                                     setSort((current) => ({
                                       column: column.key,
@@ -842,11 +866,11 @@ export function SystemChartPicker({
             )}
           </main>
 
-          <footer className="flex shrink-0 items-center justify-end gap-3 px-5 py-3">
+          <footer className="flex shrink-0 items-center justify-end gap-[var(--aries-pane-title-gap)] px-[var(--aries-pane-wide-inset)] py-[var(--aries-pane-title-gap)]">
             {canSynastry ? (
               <Button
                 variant="outline"
-                className="h-8 min-w-[110px] rounded-md text-[14px] font-normal"
+                className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width-action)] rounded-md text-[length:var(--aries-font-size-large)] font-normal"
                 onClick={() => void openSelected(true)}
               >
                 {t("picker.synastry")}
@@ -854,7 +878,7 @@ export function SystemChartPicker({
             ) : null}
             <Button
               variant="outline"
-              className="h-8 min-w-[128px] rounded-md text-[14px] font-normal"
+              className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width-wide)] rounded-md text-[length:var(--aries-font-size-large)] font-normal"
               onClick={() => void openSelected(false)}
               disabled={!canOpen}
             >
@@ -862,7 +886,7 @@ export function SystemChartPicker({
             </Button>
             <Button
               variant="outline"
-              className="h-8 min-w-[128px] rounded-md text-[14px] font-normal"
+              className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width-wide)] rounded-md text-[length:var(--aries-font-size-large)] font-normal"
               onClick={closeAndReset}
             >
               {t("picker.cancel")}
@@ -913,26 +937,26 @@ function RenameChartDialog({
 }) {
   const t = useT();
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[color:var(--aries-overlay-scrim)] px-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[color:var(--aries-overlay-scrim)] px-[var(--aries-pane-wide-inset)]">
       <form
-        className="w-full max-w-[360px] rounded-md border border-border bg-background p-4 shadow-xl"
+        className="w-full max-w-[var(--aries-dialog-width-xs)] rounded-md border border-border bg-background p-[var(--aries-dialog-padding)] shadow-xl"
         onSubmit={(event) => {
           event.preventDefault();
           onConfirm();
         }}
       >
-        <div className="mb-3 text-[14px] font-medium">{t("picker.renameChartTitle")}</div>
+        <div className="mb-[var(--aries-pane-title-gap)] text-[length:var(--aries-font-size-large)] font-medium">{t("picker.renameChartTitle")}</div>
         <Input
           autoFocus
           value={value}
           onChange={(event) => onValueChange(event.target.value)}
-          className="h-8 text-[13px]"
+          className="h-[var(--aries-control-height)] text-[length:var(--aries-font-size-reading)]"
         />
-        <div className="mt-4 flex justify-end gap-2">
-          <Button type="button" variant="outline" className="h-8 min-w-[86px]" onClick={onCancel} disabled={busy}>
+        <div className="mt-[var(--aries-dialog-gap)] flex justify-end gap-[var(--aries-dialog-footer-gap)]">
+          <Button type="button" variant="outline" className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width)]" onClick={onCancel} disabled={busy}>
             {t("picker.cancel")}
           </Button>
-          <Button type="submit" className="h-8 min-w-[86px]" disabled={busy || !value.trim()}>
+          <Button type="submit" className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width)]" disabled={busy || !value.trim()}>
             {t("picker.rename")}
           </Button>
         </div>
@@ -959,15 +983,15 @@ function DeleteChartsDialog({
       ? t("picker.deleteBodyMany")
       : t("picker.deleteBodyOne", { name: rows[0]?.name ?? t("picker.chartFallback") });
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[color:var(--aries-overlay-scrim)] px-5">
-      <div className="w-full max-w-[380px] rounded-md border border-border bg-background p-4 shadow-xl">
-        <div className="mb-2 text-[14px] font-medium">{title}</div>
-        <p className="text-[13px] leading-5 text-muted-foreground">{body}</p>
-        <div className="mt-4 flex justify-end gap-2">
-          <Button type="button" variant="outline" className="h-8 min-w-[86px]" onClick={onCancel} disabled={busy}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[color:var(--aries-overlay-scrim)] px-[var(--aries-pane-wide-inset)]">
+      <div className="w-full max-w-[var(--aries-dialog-width-confirm)] rounded-md border border-border bg-background p-[var(--aries-dialog-padding)] shadow-xl">
+        <div className="mb-[var(--aries-dialog-header-gap)] text-[length:var(--aries-font-size-large)] font-medium">{title}</div>
+        <p className="text-[length:var(--aries-font-size-reading)] leading-[var(--aries-font-line-height-reading)] text-muted-foreground">{body}</p>
+        <div className="mt-[var(--aries-dialog-gap)] flex justify-end gap-[var(--aries-dialog-footer-gap)]">
+          <Button type="button" variant="outline" className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width)]" onClick={onCancel} disabled={busy}>
             {t("picker.cancel")}
           </Button>
-          <Button type="button" variant="destructive" className="h-8 min-w-[86px]" onClick={onConfirm} disabled={busy}>
+          <Button type="button" variant="destructive" className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width)]" onClick={onConfirm} disabled={busy}>
             {t("picker.delete")}
           </Button>
         </div>
@@ -979,6 +1003,7 @@ function DeleteChartsDialog({
 function useVirtualPickerRows(
   containerRef: React.RefObject<HTMLElement | null>,
   rowCount: number,
+  rowHeight: number,
 ): {
   startIndex: number;
   endIndex: number;
@@ -986,6 +1011,18 @@ function useVirtualPickerRows(
   bottomPad: number;
 } {
   const [viewport, setViewport] = React.useState({ scrollTop: 0, height: 0 });
+  const previousRowHeightRef = React.useRef(rowHeight);
+
+  React.useLayoutEffect(() => {
+    const previousRowHeight = previousRowHeightRef.current;
+    previousRowHeightRef.current = rowHeight;
+    if (previousRowHeight === rowHeight) return;
+    const node = containerRef.current;
+    if (!node) return;
+    const anchoredScrollTop = (node.scrollTop / previousRowHeight) * rowHeight;
+    node.scrollTop = anchoredScrollTop;
+    setViewport({ scrollTop: node.scrollTop, height: node.clientHeight });
+  }, [containerRef, rowHeight]);
 
   React.useEffect(() => {
     const node = containerRef.current;
@@ -1006,17 +1043,24 @@ function useVirtualPickerRows(
 
   const startIndex = Math.max(
     0,
-    Math.floor(viewport.scrollTop / PICKER_ROW_HEIGHT) - PICKER_ROW_OVERSCAN,
+    Math.floor(viewport.scrollTop / rowHeight) - PICKER_ROW_OVERSCAN,
   );
   const visibleCount =
-    Math.ceil(Math.max(0, viewport.height) / PICKER_ROW_HEIGHT) + PICKER_ROW_OVERSCAN * 2;
+    Math.ceil(Math.max(0, viewport.height) / rowHeight) + PICKER_ROW_OVERSCAN * 2;
   const endIndex = Math.min(rowCount, startIndex + Math.max(visibleCount, PICKER_ROW_OVERSCAN));
   return {
     startIndex,
     endIndex,
-    topPad: startIndex * PICKER_ROW_HEIGHT,
-    bottomPad: Math.max(0, (rowCount - endIndex) * PICKER_ROW_HEIGHT),
+    topPad: startIndex * rowHeight,
+    bottomPad: Math.max(0, (rowCount - endIndex) * rowHeight),
   };
+}
+
+function resolveCompactControlHeight(rawControlHeight: string): number {
+  const controlHeight = Number.parseFloat(rawControlHeight.trim());
+  return Number.isFinite(controlHeight) && controlHeight > 0
+    ? controlHeight * 3 / 4
+    : PICKER_ROW_HEIGHT_FALLBACK;
 }
 
 function PickerRow({
@@ -1037,22 +1081,22 @@ function PickerRow({
       aria-selected={selected}
       data-chart-picker-row-key={row.key}
       className={cn(
-        "h-[24px] cursor-default select-none",
+        "h-[var(--aries-control-height-compact)] cursor-default select-none",
         selected && "bg-accent text-accent-foreground",
       )}
       onClick={(event) => onSelect(row, event)}
       onContextMenu={onContext}
       onDoubleClick={onOpen}
     >
-      <TableCell className="px-2">{row.name}</TableCell>
-      <TableCell className="whitespace-nowrap px-2 tabular-nums">{row.date}</TableCell>
-      <TableCell className="whitespace-nowrap px-2 tabular-nums">{row.time}</TableCell>
-      <TableCell className="whitespace-nowrap px-2">{row.type}</TableCell>
-      <TableCell className="px-2">{row.place}</TableCell>
-      <TableCell className="whitespace-nowrap px-2">{row.gender}</TableCell>
-      <TableCell className="px-2">{row.collection}</TableCell>
-      <TableCell className="whitespace-nowrap px-2 tabular-nums">{row.modified}</TableCell>
-      <TableCell className="whitespace-nowrap px-2 tabular-nums">{row.lastOpened}</TableCell>
+      <TableCell className="px-[var(--aries-control-padding-x-compact)]">{row.name}</TableCell>
+      <TableCell className="whitespace-nowrap px-[var(--aries-control-padding-x-compact)] tabular-nums">{row.date}</TableCell>
+      <TableCell className="whitespace-nowrap px-[var(--aries-control-padding-x-compact)] tabular-nums">{row.time}</TableCell>
+      <TableCell className="whitespace-nowrap px-[var(--aries-control-padding-x-compact)]">{row.type}</TableCell>
+      <TableCell className="px-[var(--aries-control-padding-x-compact)]">{row.place}</TableCell>
+      <TableCell className="whitespace-nowrap px-[var(--aries-control-padding-x-compact)]">{row.gender}</TableCell>
+      <TableCell className="px-[var(--aries-control-padding-x-compact)]">{row.collection}</TableCell>
+      <TableCell className="whitespace-nowrap px-[var(--aries-control-padding-x-compact)] tabular-nums">{row.modified}</TableCell>
+      <TableCell className="whitespace-nowrap px-[var(--aries-control-padding-x-compact)] tabular-nums">{row.lastOpened}</TableCell>
     </TableRow>
   );
 }
@@ -1195,36 +1239,36 @@ function ChartSearchPanel({
 
   return (
     <>
-      <header className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-2.5">
-        <Button variant="outline" size="sm" className="h-8 min-w-[92px]" onClick={onBack}>
-          <ArrowLeft className="mr-1 size-3.5" />
+      <header className="flex shrink-0 items-center gap-[var(--aries-pane-title-gap)] border-b border-border px-[var(--aries-pane-content-padding)] py-[var(--aries-form-group-gap)]">
+        <Button variant="outline" size="sm" className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width-medium)]" onClick={onBack}>
+          <ArrowLeft className="mr-[var(--aries-control-gap-compact)] size-[var(--aries-control-icon-size)]" />
           {t("picker.back")}
         </Button>
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-[14px] font-semibold leading-5">
+          <h1 className="truncate text-[length:var(--aries-font-size-large)] font-semibold leading-5">
             {t("picker.chartCollectionSearch")}
           </h1>
-          <p className="truncate text-[11px] leading-4 text-[color:var(--aries-text-muted)]">
+          <p className="truncate text-[length:var(--aries-font-size-small)] leading-4 text-[color:var(--aries-text-muted)]">
             {summary}
             {activePlacementCount || activeAspectCount
               ? t("picker.filterSummary", { placement: activePlacementCount, aspect: activeAspectCount })
               : ""}
           </p>
         </div>
-        <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
+        <label className="flex items-center gap-[var(--aries-form-field-gap)] text-[length:var(--aries-font-size-small)] text-muted-foreground">
           {t("picker.stationDays")}
           <Input
             value={stationWindowDays}
             onChange={(event) => setStationWindowDays(event.target.value)}
-            className="h-7 w-14 text-center text-[12px] tabular-nums"
+            className="h-[var(--aries-control-height-small)] w-[var(--aries-form-label-width)] text-center text-[length:var(--aries-font-size-base)] tabular-nums"
           />
         </label>
-        <Button size="sm" className="h-8 min-w-[86px]" onClick={() => void runSearch()} disabled={searching || !catalog}>
+        <Button size="sm" className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width)]" onClick={() => void runSearch()} disabled={searching || !catalog}>
           {t("picker.search")}
         </Button>
         <Button
           size="sm"
-          className="h-8 min-w-[78px]"
+          className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width-compact)]"
           onClick={() => void openResult()}
           disabled={!selectedRow}
         >
@@ -1232,7 +1276,7 @@ function ChartSearchPanel({
         </Button>
       </header>
 
-      <section className="grid shrink-0 gap-2 border-b border-border bg-muted/10 px-4 py-2">
+      <section className="grid shrink-0 gap-[var(--aries-form-field-gap)] border-b border-border bg-muted/10 px-[var(--aries-pane-content-padding)] py-[var(--aries-pane-header-padding-y)]">
         <ClauseDrawer
           title={t("picker.placements")}
           subtitle={t("picker.placementsSubtitle")}
@@ -1284,7 +1328,7 @@ function ChartSearchPanel({
       </section>
 
       {error ? (
-        <div className="border-b border-border px-4 py-2 text-[length:var(--aries-font-size-small)] text-destructive">
+        <div className="border-b border-border px-[var(--aries-pane-content-padding)] py-[var(--aries-pane-header-padding-y)] text-[length:var(--aries-font-size-small)] text-destructive">
           {error}
         </div>
       ) : null}
@@ -1300,11 +1344,11 @@ function ChartSearchPanel({
               {SEARCH_COLUMNS.map((column) => (
                 <TableHead
                   key={column.key}
-                  className="relative h-8 whitespace-nowrap px-2 text-left font-medium"
+                  className="relative h-[var(--aries-control-height)] whitespace-nowrap px-[var(--aries-control-padding-x-compact)] text-left font-medium"
                 >
                   <button
                     type="button"
-                    className="inline-flex items-center gap-1 text-left"
+                    className="inline-flex items-center gap-[var(--aries-control-gap-compact)] text-left"
                     onClick={() =>
                       setSort((current) => ({
                         column: column.key,
@@ -1335,19 +1379,19 @@ function ChartSearchPanel({
                 key={row.key}
                 aria-selected={row.key === selectedKey}
                 className={cn(
-                  "h-8 cursor-default select-none",
+                  "h-[var(--aries-control-height)] cursor-default select-none",
                   row.key === selectedKey && "bg-accent text-accent-foreground",
                 )}
                 onClick={() => setSelectedKey(row.key)}
                 onDoubleClick={() => void openResult()}
               >
-                <TableCell className="px-2">{row.name}</TableCell>
-                <TableCell className="whitespace-nowrap px-2 tabular-nums">{row.date}</TableCell>
-                <TableCell className="whitespace-nowrap px-2 tabular-nums">{row.time}</TableCell>
-                <TableCell className="whitespace-nowrap px-2">{row.type}</TableCell>
-                <TableCell className="px-2">{row.collection}</TableCell>
-                <TableCell className="px-2">{row.place}</TableCell>
-                <TableCell className="px-2">
+                <TableCell className="px-[var(--aries-control-padding-x-compact)]">{row.name}</TableCell>
+                <TableCell className="whitespace-nowrap px-[var(--aries-control-padding-x-compact)] tabular-nums">{row.date}</TableCell>
+                <TableCell className="whitespace-nowrap px-[var(--aries-control-padding-x-compact)] tabular-nums">{row.time}</TableCell>
+                <TableCell className="whitespace-nowrap px-[var(--aries-control-padding-x-compact)]">{row.type}</TableCell>
+                <TableCell className="px-[var(--aries-control-padding-x-compact)]">{row.collection}</TableCell>
+                <TableCell className="px-[var(--aries-control-padding-x-compact)]">{row.place}</TableCell>
+                <TableCell className="px-[var(--aries-control-padding-x-compact)]">
                   <ChartMatchRuns matches={row.matchRuns} fallback={row.matches} />
                 </TableCell>
               </TableRow>
@@ -1393,37 +1437,37 @@ function ClauseDrawer({
   const t = useT();
   return (
     <section className="min-w-0 overflow-hidden rounded-md border border-border bg-background">
-      <div className="flex min-h-9 items-center gap-2 px-2">
+      <div className="flex min-h-[var(--aries-control-height-large)] items-center gap-[var(--aries-form-field-gap)] px-[var(--aries-control-padding-x-compact)]">
         <button
           type="button"
-          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          className="flex min-w-0 flex-1 items-center gap-[var(--aries-form-field-gap)] text-left"
           aria-expanded={open}
           onClick={onToggle}
         >
-          {open ? <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" /> : <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />}
+          {open ? <ChevronDown className="size-[var(--aries-control-icon-size)] shrink-0 text-muted-foreground" /> : <ChevronRight className="size-[var(--aries-control-icon-size)] shrink-0 text-muted-foreground" />}
           <span className="min-w-0">
-            <span className="mr-2 text-[12px] font-semibold">{title}</span>
-            <span className="text-[11px] text-muted-foreground">{subtitle}</span>
+            <span className="mr-2 text-[length:var(--aries-font-size-base)] font-semibold">{title}</span>
+            <span className="text-[length:var(--aries-font-size-small)] text-muted-foreground">{subtitle}</span>
           </span>
-          <span className="ml-auto rounded-sm border border-border px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
+          <span className="ml-auto rounded-sm border border-border px-1.5 py-0.5 text-[length:var(--aries-font-size-section)] tabular-nums text-muted-foreground">
             {count}
           </span>
         </button>
-        <Button variant="ghost" size="xs" className="h-6 px-1.5" onClick={onAdd}>
+        <Button variant="ghost" size="xs" className="h-[var(--aries-control-height-compact)] px-[var(--aries-control-gap)]" onClick={onAdd}>
           <Plus className="size-3" />
           {t("picker.add")}
         </Button>
       </div>
       {open ? (
-        <div className="border-t border-border/70 px-2 pb-2 pt-1.5">
-          <div className={cn("mb-1 grid gap-1 px-1 text-[10px] uppercase tracking-wide text-muted-foreground", gridClass)}>
+        <div className="border-t border-border/70 px-[var(--aries-control-padding-x-compact)] pb-[var(--aries-form-field-gap)] pt-[var(--aries-control-gap)]">
+          <div className={cn("mb-[var(--aries-control-gap-compact)] grid gap-[var(--aries-control-gap-compact)] px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-section)] uppercase tracking-wide text-muted-foreground", gridClass)}>
             {columns.map((column, index) => (
               <span key={`${column}-${index}`} className="truncate">
                 {column}
               </span>
             ))}
           </div>
-          <div className="grid max-h-[118px] gap-1.5 overflow-auto pr-1">{children}</div>
+          <div className="grid max-h-[var(--aries-pane-drawer-content-max-height)] gap-[var(--aries-control-gap)] overflow-auto pr-[var(--aries-control-gap-compact)]">{children}</div>
         </div>
       ) : null}
     </section>
@@ -1445,11 +1489,11 @@ function PlacementRow({
 }) {
   const t = useT();
   return (
-    <div className="grid grid-cols-[minmax(112px,1.25fr)_minmax(92px,1fr)_52px_52px_70px_minmax(118px,1.1fr)_28px] gap-1">
+    <div className="grid grid-cols-[minmax(112px,1.25fr)_minmax(92px,1fr)_52px_52px_70px_minmax(118px,1.1fr)_28px] gap-[var(--aries-control-gap-compact)]">
       <Choice value={value.objectIds[0] ?? ""} choices={catalog?.objects} ariaLabel={t("picker.ariaPlacementObject")} onChange={(next) => onChange({ ...value, objectIds: next ? [next] : [] })} />
       <Choice value={value.signIndices[0] ?? ""} choices={catalog?.signs} ariaLabel={t("picker.ariaPlacementSign")} onChange={(next) => onChange({ ...value, signIndices: next ? [next] : [] })} />
-      <Input value={value.degree} aria-label={t("picker.ariaPlacementDegree")} placeholder={t("picker.deg")} onChange={(event) => onChange({ ...value, degree: event.target.value })} className="h-7 text-center text-[12px] tabular-nums" />
-      <Input value={value.degreeOrb} aria-label={t("picker.ariaPlacementOrb")} placeholder={t("picker.orb")} onChange={(event) => onChange({ ...value, degreeOrb: event.target.value })} className="h-7 text-center text-[12px] tabular-nums" />
+      <Input value={value.degree} aria-label={t("picker.ariaPlacementDegree")} placeholder={t("picker.deg")} onChange={(event) => onChange({ ...value, degree: event.target.value })} className="h-[var(--aries-control-height-small)] text-center text-[length:var(--aries-font-size-base)] tabular-nums" />
+      <Input value={value.degreeOrb} aria-label={t("picker.ariaPlacementOrb")} placeholder={t("picker.orb")} onChange={(event) => onChange({ ...value, degreeOrb: event.target.value })} className="h-[var(--aries-control-height-small)] text-center text-[length:var(--aries-font-size-base)] tabular-nums" />
       <Choice value={value.houseNumbers[0] ?? ""} choices={catalog?.houses} ariaLabel={t("picker.ariaPlacementHouse")} onChange={(next) => onChange({ ...value, houseNumbers: next ? [next] : [] })} />
       <Choice value={value.motion} choices={catalog?.motions} ariaLabel={t("picker.ariaPlacementMotion")} onChange={(next) => onChange({ ...value, motion: next })} />
       <Button variant="ghost" size="icon-xs" onClick={onRemove} disabled={!canRemove} aria-label={t("picker.ariaRemovePlacement")}>
@@ -1474,7 +1518,7 @@ function AspectRow({
 }) {
   const t = useT();
   return (
-    <div className="grid grid-cols-[minmax(126px,1.25fr)_minmax(100px,0.9fr)_minmax(126px,1.25fr)_52px_28px] gap-1">
+    <div className="grid grid-cols-[minmax(126px,1.25fr)_minmax(100px,0.9fr)_minmax(126px,1.25fr)_52px_28px] gap-[var(--aries-control-gap-compact)]">
       <Choice value={value.objectAIds[0] ?? ""} choices={catalog?.objects} ariaLabel={t("picker.ariaAspectFirstBody")} onChange={(next) => onChange({ ...value, objectAIds: next ? [next] : [] })} />
       <Choice value={value.aspectType} choices={catalog?.aspects} ariaLabel={t("picker.ariaAspectType")} onChange={(next) => onChange({ ...value, aspectType: next })} />
       <Choice value={value.objectBIds[0] ?? ""} choices={catalog?.objects} ariaLabel={t("picker.ariaAspectSecondBody")} onChange={(next) => onChange({ ...value, objectBIds: next ? [next] : [] })} />
@@ -1484,7 +1528,7 @@ function AspectRow({
         placeholder={t("picker.orb")}
         onChange={(event) => onChange({ ...value, orb: event.target.value })}
         disabled={value.aspectType === "-2"}
-        className="h-7 text-center text-[12px] tabular-nums"
+        className="h-[var(--aries-control-height-small)] text-center text-[length:var(--aries-font-size-base)] tabular-nums"
       />
       <Button variant="ghost" size="icon-xs" onClick={onRemove} disabled={!canRemove} aria-label={t("picker.ariaRemoveAspect")}>
         <Trash2 className="size-3" />
@@ -1510,7 +1554,7 @@ function Choice({
       value={value}
       aria-label={ariaLabel}
       onChange={(event) => onChange(event.target.value)}
-      className="h-7 min-w-0 rounded-md border border-input bg-background px-2 text-[12px]"
+      className="h-[var(--aries-control-height-small)] min-w-0 rounded-md border border-input bg-background px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-base)]"
     >
       {(choices.length ? choices : [{ value: "", label: t("picker.any") }]).map((choice) => (
         <option key={choice.value} value={choice.value}>
@@ -1532,11 +1576,11 @@ function ChartMatchRuns({
     return <span title={fallback}>{fallback}</span>;
   }
   return (
-    <span className="inline-flex items-center gap-1 whitespace-nowrap" title={fallback}>
+    <span className="inline-flex items-center gap-[var(--aries-control-gap-compact)] whitespace-nowrap" title={fallback}>
       {matches.map((match, index) => (
         <React.Fragment key={index}>
           {index > 0 ? <span className="text-muted-foreground">;</span> : null}
-          <span className="inline-flex items-center gap-1">
+          <span className="inline-flex items-center gap-[var(--aries-control-gap-compact)]">
             {match.map((run, runIndex) =>
               run.kind === "glyph" ? (
                 <ChartMatchGlyph
@@ -1544,6 +1588,7 @@ function ChartMatchRuns({
                   ch={run.text}
                   title={run.title}
                   color={run.color}
+                  colorRole={run.colorRole}
                 />
               ) : (
                 <span key={`${runIndex}:${run.text}`} className="shrink-0">
@@ -1562,15 +1607,17 @@ function ChartMatchGlyph({
   ch,
   title,
   color,
+  colorRole,
 }: {
   ch: string;
   title?: string;
   color?: string;
+  colorRole?: string | null;
 }) {
   return (
     <span
-      className="shrink-0 text-[15px]"
-      style={{ fontFamily: "'AriesMorinus'", color: color || undefined }}
+      className="font-symbols shrink-0 text-[15px]"
+      style={{ color: semanticChartColor(colorRole, color) }}
       title={title}
       aria-hidden={!title}
     >

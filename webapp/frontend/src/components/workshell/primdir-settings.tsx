@@ -493,8 +493,6 @@ function presetResolvedOptionsPatch(preset: PrimaryDirectionPreset): OptionsPatc
   return preset.optionsPatch;
 }
 
-const GLYPH_FONT: React.CSSProperties = { fontFamily: "AriesMorinus" };
-
 function GlyphCheck({
   glyph,
   textGlyph,
@@ -528,18 +526,18 @@ function GlyphCheck({
       <span
         aria-hidden
         className={cn(
-          "inline-flex h-4 w-4 items-center justify-center rounded-[3px] border text-[10px]",
+          "inline-flex h-4 w-4 items-center justify-center rounded-xs border text-[length:var(--aries-font-size-section)]",
           checked ? "border-primary bg-primary text-primary-foreground" : "border-border",
         )}
       >
         {checked ? "✓" : ""}
       </span>
       {glyph ? (
-        <span style={GLYPH_FONT} className="w-4 text-center text-[14px] leading-none">
+        <span className="font-symbols w-4 text-center text-[length:var(--aries-font-size-large)] leading-none">
           {glyph}
         </span>
       ) : textGlyph ? (
-        <span className="w-4 text-center text-[12px] leading-none">{textGlyph}</span>
+        <span className="w-4 text-center text-[length:var(--aries-font-size-base)] leading-none">{textGlyph}</span>
       ) : null}
       <span className="truncate">{label}</span>
     </button>
@@ -611,7 +609,7 @@ function RadioRow<T extends number>({
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mt-1 text-[11px] font-semibold text-muted-foreground">
+    <div className="mt-1 text-[length:var(--aries-font-size-small)] font-semibold text-muted-foreground">
       {children}
     </div>
   );
@@ -638,7 +636,7 @@ function SmallNumberInput({
       max={max}
       defaultValue={value}
       disabled={disabled}
-      className="h-6 w-14 px-1 text-right text-[11px]"
+      className="h-6 w-14 px-1 text-right text-[length:var(--aries-font-size-small)]"
       onBlur={(event) => {
         let next = Number(event.target.value);
         if (!Number.isFinite(next)) {
@@ -691,13 +689,13 @@ function CustomerPointBlock({
         onToggle={() => onPatch({ [enabledKey]: !enabled } as Patch)}
       />
       <div className="mt-1 grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1">
-        <span className="text-[10px] text-muted-foreground">{t("primdir.lon")}</span>
+        <span className="text-[length:var(--aries-font-size-section)] text-muted-foreground">{t("primdir.lon")}</span>
         <span className="flex items-center gap-1">
           <SmallNumberInput value={lon[0] ?? 0} min={0} max={359} disabled={!enabled} onCommit={(v) => setTriple(lonKey, lon, 0, v)} />
           <SmallNumberInput value={lon[1] ?? 0} min={0} max={59} disabled={!enabled} onCommit={(v) => setTriple(lonKey, lon, 1, v)} />
           <SmallNumberInput value={lon[2] ?? 0} min={0} max={59} disabled={!enabled} onCommit={(v) => setTriple(lonKey, lon, 2, v)} />
         </span>
-        <span className="text-[10px] text-muted-foreground">{t("primdir.lat")}</span>
+        <span className="text-[length:var(--aries-font-size-section)] text-muted-foreground">{t("primdir.lat")}</span>
         <span className="flex items-center gap-1">
           <SmallNumberInput value={lat[0] ?? 0} min={0} max={90} disabled={!enabled} onCommit={(v) => setTriple(latKey, lat, 0, v)} />
           <SmallNumberInput value={lat[1] ?? 0} min={0} max={59} disabled={!enabled} onCommit={(v) => setTriple(latKey, lat, 1, v)} />
@@ -744,7 +742,7 @@ export function PrimDirSettingsSheet({
           </Button>
         }
       />
-      <SheetContent side="right" className="w-[440px] max-w-[92vw] p-0 sm:max-w-[440px]">
+      <SheetContent side="right" size="lg" className="p-0">
         <SheetHeader className="border-b px-4 py-3">
           <SheetTitle className="text-sm">{t("primdir.settingsTitle")}</SheetTitle>
         </SheetHeader>
@@ -843,7 +841,7 @@ function FixStarPdPicker({
         type="button"
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
-        className="text-[11px] text-primary hover:underline disabled:opacity-40 disabled:pointer-events-none"
+        className="text-[length:var(--aries-font-size-small)] text-primary hover:underline disabled:opacity-40 disabled:pointer-events-none"
       >
         {open ? t("primdir.hide") : t("primdir.selectStars")} {t("primdir.selectedCount", { count: selectedCount })}
       </button>
@@ -854,21 +852,21 @@ function FixStarPdPicker({
               value={nameQuery}
               onChange={(e) => setNameQuery(e.target.value)}
               placeholder={t("primdir.placeholderName")}
-              className="h-6 text-[11px]"
+              className="h-6 text-[length:var(--aries-font-size-small)]"
             />
             <Input
               value={codeQuery}
               onChange={(e) => setCodeQuery(e.target.value)}
               placeholder={t("primdir.placeholderCode")}
-              className="h-6 text-[11px]"
+              className="h-6 text-[length:var(--aries-font-size-small)]"
             />
           </div>
-          <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
+          <div className="mb-1 flex items-center justify-between text-[length:var(--aries-font-size-section)] text-muted-foreground">
             <div className="flex items-center gap-1">
-              <Button size="xs" variant="ghost" className="h-5 px-1.5 text-[10px]" onClick={deselectAll}>
+              <Button size="xs" variant="ghost" className="h-5 px-1.5 text-[length:var(--aries-font-size-section)]" onClick={deselectAll}>
                 {t("primdir.deselectAll")}
               </Button>
-              <Button size="xs" variant="ghost" className="h-5 px-1.5 text-[10px]" onClick={selectAll}>
+              <Button size="xs" variant="ghost" className="h-5 px-1.5 text-[length:var(--aries-font-size-section)]" onClick={selectAll}>
                 {t("primdir.selectAll")}
               </Button>
             </div>
@@ -885,7 +883,7 @@ function FixStarPdPicker({
                 />
               ))}
               {visible.length === 0 ? (
-                <span className="px-1.5 py-1 text-[11px] text-muted-foreground">{t("primdir.noStars")}</span>
+                <span className="px-1.5 py-1 text-[length:var(--aries-font-size-small)] text-muted-foreground">{t("primdir.noStars")}</span>
               ) : null}
             </div>
           </ScrollArea>
@@ -912,7 +910,7 @@ function EnginePresetPicker({
       <div className="mb-1 flex items-center justify-between gap-2">
         <SectionLabel>{t("primdir.enginePreset")}</SectionLabel>
         {activePreset == null ? (
-          <span className="text-[10px] text-muted-foreground">{t("primdir.custom")}</span>
+          <span className="text-[length:var(--aries-font-size-section)] text-muted-foreground">{t("primdir.custom")}</span>
         ) : null}
       </div>
       <div className="grid grid-cols-3 gap-1 rounded border border-border/70 bg-muted/20 p-1">
@@ -926,7 +924,7 @@ function EnginePresetPicker({
               aria-pressed={selected}
               onClick={() => onPatch(presetResolvedPatch(preset, settings), presetResolvedOptionsPatch(preset))}
               className={cn(
-                "flex h-7 min-w-0 items-center justify-center gap-1 rounded px-2 text-[11px] leading-none hover:bg-muted",
+                "flex h-7 min-w-0 items-center justify-center gap-1 rounded px-2 text-[length:var(--aries-font-size-small)] leading-none hover:bg-muted",
                 selected && "bg-muted text-foreground",
               )}
             >
@@ -1109,10 +1107,10 @@ export function PrimDirSettingsBody({
         <div className="flex items-center justify-between">
           <SectionLabel>{t("primdir.promissors")}</SectionLabel>
           <div className="flex gap-1">
-            <Button size="xs" variant="ghost" className="h-5 px-1.5 text-[10px]" onClick={() => promSelectAll(false)}>
+            <Button size="xs" variant="ghost" className="h-5 px-1.5 text-[length:var(--aries-font-size-section)]" onClick={() => promSelectAll(false)}>
               {t("primdir.deselectAll")}
             </Button>
-            <Button size="xs" variant="ghost" className="h-5 px-1.5 text-[10px]" onClick={() => promSelectAll(true)}>
+            <Button size="xs" variant="ghost" className="h-5 px-1.5 text-[length:var(--aries-font-size-section)]" onClick={() => promSelectAll(true)}>
               {t("primdir.selectAll")}
             </Button>
           </div>
@@ -1132,7 +1130,7 @@ export function PrimDirSettingsBody({
             <GlyphCheck
               label={t("primdir.conjOnlyNoCa")}
               checked={s.pdmorinpromittorset}
-              className="ml-6 text-[11px]"
+              className="ml-6 text-[length:var(--aries-font-size-small)]"
               onToggle={() => onPatch(s.pdantiscia
                 ? { pdmorinpromittorset: !s.pdmorinpromittorset }
                 : { pdantiscia: true, pdmorinpromittorset: true })}
@@ -1149,7 +1147,7 @@ export function PrimDirSettingsBody({
           <select
             value={s.pdpromarabicpartname}
             onChange={(e) => onPatch({ pdpromarabicpartname: e.target.value })}
-            className="ml-1 mt-1 h-6 rounded border bg-background px-1 text-[11px]"
+            className="ml-1 mt-1 h-6 rounded border bg-background px-1 text-[length:var(--aries-font-size-small)]"
           >
             {s.arabicPartNames.map((n) => (
               <option key={n} value={n}>
@@ -1198,7 +1196,7 @@ export function PrimDirSettingsBody({
             disabled={!s.promplanets[1] || !s.pdsecmotion}
             value={s.pdsecmotioniter}
             onChange={(e) => onPatch({ pdsecmotioniter: Number(e.target.value) })}
-            className="h-6 rounded border bg-background px-1 text-[11px] disabled:opacity-40"
+            className="h-6 rounded border bg-background px-1 text-[length:var(--aries-font-size-small)] disabled:opacity-40"
           >
             {SMITER_LABEL_KEYS.map((k, i) => (
               <option key={k} value={i}>
@@ -1216,10 +1214,10 @@ export function PrimDirSettingsBody({
         <div className="flex items-center justify-between">
           <SectionLabel>{t("primdir.aspects")}</SectionLabel>
           <div className="flex gap-1">
-            <Button size="xs" variant="ghost" className="h-5 px-1.5 text-[10px]" onClick={() => aspSelectAll(false)}>
+            <Button size="xs" variant="ghost" className="h-5 px-1.5 text-[length:var(--aries-font-size-section)]" onClick={() => aspSelectAll(false)}>
               {t("primdir.deselectAll")}
             </Button>
-            <Button size="xs" variant="ghost" className="h-5 px-1.5 text-[10px]" onClick={() => aspSelectAll(true)}>
+            <Button size="xs" variant="ghost" className="h-5 px-1.5 text-[length:var(--aries-font-size-section)]" onClick={() => aspSelectAll(true)}>
               {t("primdir.selectAll")}
             </Button>
           </div>
@@ -1247,10 +1245,10 @@ export function PrimDirSettingsBody({
         <div className="flex items-center justify-between">
           <SectionLabel>{t("primdir.significators")}</SectionLabel>
           <div className="flex gap-1">
-            <Button size="xs" variant="ghost" className="h-5 px-1.5 text-[10px]" onClick={() => sigSelectAll(false)}>
+            <Button size="xs" variant="ghost" className="h-5 px-1.5 text-[length:var(--aries-font-size-section)]" onClick={() => sigSelectAll(false)}>
               {t("primdir.deselectAll")}
             </Button>
-            <Button size="xs" variant="ghost" className="h-5 px-1.5 text-[10px]" onClick={() => sigSelectAll(true)}>
+            <Button size="xs" variant="ghost" className="h-5 px-1.5 text-[length:var(--aries-font-size-section)]" onClick={() => sigSelectAll(true)}>
               {t("primdir.selectAll")}
             </Button>
           </div>
@@ -1292,7 +1290,7 @@ export function PrimDirSettingsBody({
           <select
             value={s.pdsigarabicpartname}
             onChange={(e) => onPatch({ pdsigarabicpartname: e.target.value })}
-            className="ml-1 mt-1 h-6 rounded border bg-background px-1 text-[11px]"
+            className="ml-1 mt-1 h-6 rounded border bg-background px-1 text-[length:var(--aries-font-size-small)]"
           >
             {s.arabicPartNames.map((n) => (
               <option key={n} value={n}>
@@ -1323,8 +1321,8 @@ export function PrimDirSettingsBody({
       {/* PDs in Chart — pdsinchartdlgopts + pdsinchartterrdlgopts. */}
       <div>
         <SectionLabel>{t("primdir.pdsInChart")}</SectionLabel>
-        <div className="mt-1 text-[10px] font-medium text-muted-foreground">
-          {t("primdir.modeZodiacal")}
+        <div className="mt-1 text-[length:var(--aries-font-size-section)] font-medium text-muted-foreground">
+          {t("primdir.celestialChartProjection")}
         </div>
         <RadioRow
           options={[
@@ -1345,14 +1343,33 @@ export function PrimDirSettingsBody({
             })}
           />
         </div>
-        <div className="mt-2 text-[10px] font-medium text-muted-foreground">
-          {t("primdir.modeMundane")}
+        <p className="mt-1 text-[length:var(--aries-font-size-small)] leading-snug text-muted-foreground">
+          {t("primdir.celestialProjectionExplanation")}
+        </p>
+        <label className="mt-2 block">
+          <span className="text-[length:var(--aries-font-size-section)] font-medium text-muted-foreground">
+            {t("primdir.celestialRingRoles")}
+          </span>
+          <select
+            value={s.pdinchartreverse ? "outer-promissor" : "outer-significator"}
+            onChange={(e) => onPatch({ pdinchartreverse: e.target.value === "outer-promissor" })}
+            className="mt-1 h-6 w-full rounded border bg-background px-1 text-[length:var(--aries-font-size-small)]"
+          >
+            <option value="outer-promissor">{t("primdir.outerPromissorRadixSignificator")}</option>
+            <option value="outer-significator">{t("primdir.outerSignificatorRadixPromissorMorinus")}</option>
+          </select>
+        </label>
+        <div className="mt-2 text-[length:var(--aries-font-size-section)] font-medium text-muted-foreground">
+          {t("primdir.terrestrialChartProjection")}
         </div>
         <PlainCheck
           label={t("primdir.secMotion")}
           checked={s.pdinchartterrsecmotion}
           onToggle={() => onPatch({ pdinchartterrsecmotion: !s.pdinchartterrsecmotion })}
         />
+        <p className="mt-1 text-[length:var(--aries-font-size-small)] leading-snug text-muted-foreground">
+          {t("primdir.terrestrialSecondaryMotionExplanation")}
+        </p>
       </div>
 
       <Separator />
@@ -1368,7 +1385,7 @@ export function PrimDirSettingsBody({
           value={s.pdrevsunyearmode}
           onChange={(v) => onPatch({ pdrevsunyearmode: v })}
         />
-        <div className="mt-1 text-[10px] font-medium text-muted-foreground">{t("primdir.annualDirectionsSr")}</div>
+        <div className="mt-1 text-[length:var(--aries-font-size-section)] font-medium text-muted-foreground">{t("primdir.annualDirectionsSr")}</div>
         <RadioRow
           options={[
             { value: 0, label: t("primdir.usePrimarySettings") },
@@ -1387,11 +1404,11 @@ export function PrimDirSettingsBody({
       {/* List View */}
       <div className="space-y-1">
         <div className="flex items-center gap-2">
-          <span className="text-[11px] font-medium text-muted-foreground">{t("primdir.listView")}</span>
+          <span className="text-[length:var(--aries-font-size-small)] font-medium text-muted-foreground">{t("primdir.listView")}</span>
           <select
             value={s.pdlistmode}
             onChange={(e) => onPatch({ pdlistmode: Number(e.target.value) })}
-            className="h-6 rounded border bg-background px-1 text-[11px]"
+            className="h-6 rounded border bg-background px-1 text-[length:var(--aries-font-size-small)]"
           >
             <option value={0}>{t("primdir.paged")}</option>
             <option value={1}>{t("primdir.continuous")}</option>
@@ -1436,7 +1453,7 @@ function KeysBlock({
         onChange={(e) =>
           onPatch(dynamic ? { pdkeyd: Number(e.target.value) } : { pdkeys: Number(e.target.value) })
         }
-        className="mt-1 h-6 w-full rounded border bg-background px-1 text-[11px]"
+        className="mt-1 h-6 w-full rounded border bg-background px-1 text-[length:var(--aries-font-size-small)]"
       >
         {presetKeys.map((k, i) => (
           <option key={k} value={i}>
@@ -1449,8 +1466,8 @@ function KeysBlock({
         <KeyField key={`min-${s.pdkeymin}`} label={t("primdir.min")} value={s.pdkeymin} disabled={!isCustomer} max={59} onCommit={(v) => onPatch({ pdkeymin: v })} />
         <KeyField key={`sec-${s.pdkeysec}`} label={t("primdir.sec")} value={s.pdkeysec} disabled={!isCustomer} max={59} onCommit={(v) => onPatch({ pdkeysec: v })} />
         <div className="flex flex-col">
-          <span className="text-[10px] text-muted-foreground">{t("primdir.coefficient")}</span>
-          <Input readOnly value={s.pdkeycoeff.toFixed(8)} className="h-6 text-[11px]" />
+          <span className="text-[length:var(--aries-font-size-section)] text-muted-foreground">{t("primdir.coefficient")}</span>
+          <Input readOnly value={s.pdkeycoeff.toFixed(8)} className="h-6 text-[length:var(--aries-font-size-small)]" />
         </div>
       </div>
       <div className="mt-2">
@@ -1478,7 +1495,7 @@ function KeyField({
   const [draft, setDraft] = React.useState(String(value));
   return (
     <div className="flex flex-col">
-      <span className="text-[10px] text-muted-foreground">{label}</span>
+      <span className="text-[length:var(--aries-font-size-section)] text-muted-foreground">{label}</span>
       <Input
         inputMode="numeric"
         disabled={disabled}
@@ -1491,7 +1508,7 @@ function KeyField({
           if (n !== value) onCommit(n);
           setDraft(String(n));
         }}
-        className="h-6 text-[11px]"
+        className="h-6 text-[length:var(--aries-font-size-small)]"
       />
     </div>
   );

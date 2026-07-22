@@ -186,11 +186,11 @@ export function LicenseManagementPanel({
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <KeyRound className="size-4 text-foreground/65" aria-hidden />
-          <h3 id="aries-license-heading" className="text-[13px] font-medium">
+          <h3 id="aries-license-heading" className="text-[length:var(--aries-font-size-reading)] font-medium">
             {t("license.title")}
           </h3>
           {status ? (
-            <span data-ui-pill className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-foreground/65">
+            <span data-ui-pill className="rounded-full bg-muted px-2 py-0.5 text-[length:var(--aries-font-size-section)] text-foreground/65">
               {t(statusKey(status.state))}
             </span>
           ) : null}
@@ -208,6 +208,12 @@ export function LicenseManagementPanel({
           </Button>
         ) : null}
       </div>
+
+      {status?.provider === "trial" && status.leaseExpiresAt ? (
+        <p className="mt-2 text-[length:var(--aries-font-size-section)] text-muted-foreground">
+          {t("license.trialExpires", { date: dateFormatter.format(new Date(status.leaseExpiresAt)) })}
+        </p>
+      ) : null}
 
       {busy === "load" && status === null ? (
         <div className="flex items-center gap-2 py-4 text-xs text-muted-foreground">
@@ -269,12 +275,12 @@ export function LicenseManagementPanel({
                   <div className="flex items-center gap-2 text-xs">
                     <span className="truncate font-medium">{device.deviceName}</span>
                     {device.current ? (
-                      <span data-ui-pill className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[9px] text-foreground/60">
+                      <span data-ui-pill className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[length:var(--aries-font-size-micro)] text-foreground/60">
                         {t("license.currentDevice")}
                       </span>
                     ) : null}
                   </div>
-                  <div className="mt-0.5 text-[10px] text-muted-foreground">
+                  <div className="mt-0.5 text-[length:var(--aries-font-size-section)] text-muted-foreground">
                     {t(platformKey(device.platform))} · {t("license.lastSeen", {
                       date: dateFormatter.format(new Date(device.lastSeenAt)),
                     })}
@@ -297,9 +303,6 @@ export function LicenseManagementPanel({
               </div>
             ))}
           </div>
-          <p className="text-[10px] leading-relaxed text-muted-foreground">
-            {t("license.offlineNotice")}
-          </p>
         </div>
       ) : null}
 

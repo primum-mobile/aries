@@ -1,6 +1,14 @@
 "use client";
 
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import dynamic from "next/dynamic";
 
 import { Button } from "@/components/ui/button";
@@ -38,10 +46,11 @@ import { WorkspaceFrame } from "@/components/workshell/workspace-frame";
 import { BrowserMenuBar } from "@/components/workshell/browser-menu-bar";
 import { findChartLaunchParent } from "@/components/workshell/chart-launch-parent";
 import type { EditTarget } from "@/components/workshell/chart-editor-dialog";
-import type { SettingsTabId } from "@/components/workshell/settings-dialog";
+import { isSettingsTabId, type SettingsTabId } from "@/components/workshell/settings-dialog";
 import { useSurveilStore } from "@/stores/surveil-store";
 import { useHelpAboutStore } from "@/stores/help-about-store";
 import { useLicenseDialogStore } from "@/stores/license-dialog-store";
+import { useThemeStore } from "@/stores/theme-store";
 import {
   AmbientSpotlight,
   useAmbientSpotlightTriggers,
@@ -64,6 +73,7 @@ import {
   clearStartupChart,
   toggleHouses,
   toggleMinorAspects,
+  applyThemePreset,
   patchOptions,
   workspaceToggleComparison,
   fetchOptions,
@@ -83,6 +93,8 @@ import {
   decodeBase64Bytes,
   exportActiveChart,
   exportActiveChartBytes,
+  exportRenderedChart,
+  exportRenderedChartBytes,
   importCharts,
   listCollections,
   setCurrentAsStartupChart,
@@ -121,6 +133,10 @@ import {
 } from "@/lib/chart/document-snapshot-cache";
 import { perfNow, recordChartPerf, recordStartupPerfOnce } from "@/lib/chart/perf";
 import {
+  canReusePaintedDocumentCanvas,
+  wasDocumentSnapshotPainted,
+} from "@/lib/chart/painted-snapshot-registry";
+import {
   localizedWorkspaceDocumentTitle,
   useWorkspaceStore,
   type SupplementaryKind,
@@ -152,6 +168,7 @@ import {
   type WorkspaceCommandRequestPayload,
 } from "@/stores/workspace-command-bus";
 import { warmChartFonts } from "@/lib/chart/draw-chart";
+import { renderRegisteredChartExport } from "@/lib/chart/chart-export-registry";
 import { useShortcut } from "@/shortcuts/use-shortcut";
 import { useManifestShortcutDispatch } from "@/shortcuts/manifest-shortcuts";
 import { noteSpotlightDismissed } from "@/shortcuts/spotlight-cooldown";
@@ -291,32 +308,6 @@ const SAVE_CHART_COMMANDS = new Set([
   "menu.save.as",
 ]);
 
-const SETTINGS_TAB_BY_MENU_COMMAND: Record<string, SettingsTabId> = {
-  "appearance.toggle": "appearance",
-  "menu.ayanamsha": "ayanamsha",
-  "menu.colors": "colors",
-  "menu.house-system": "houses",
-  "menu.lunar-mansions": "mansions",
-  "menu.options.almutens": "almutens",
-  "menu.options.arabic-parts": "planets",
-  "menu.options.default-location": "location",
-  "menu.options.dignities": "dignities",
-  "menu.options.eclipses": "eclipses",
-  "menu.options.fixed-stars": "fixstars",
-  "menu.options.languages": "languages",
-  "menu.options.nodes": "planets",
-  "menu.options.orbs": "orbs",
-  "menu.options.primary-directions": "primarydirections",
-  "menu.options.quick-charts": "supplementary",
-  "menu.options.relationship-charts": "relationship",
-  "menu.options.revolutions": "revolutions",
-  "menu.options.speculum": "speculum",
-  "menu.options.step-alerts": "stepalerts",
-  "menu.options.syzygy": "planets",
-  "menu.options.time-lords": "timelords",
-  "menu.symbols": "symbols",
-};
-
 // Tables menu command id → daemon tables_service.TABLES id. Only rows whose
 // daemon builder exists are mapped (the native-menu manifest marks exactly
 // these rows status:"live"); unmapped rows stay deferred with their citations.
@@ -402,7 +393,6 @@ const NATIVE_QUICK_DISPLAY_TOGGLES = [
   "information",
   "showseconds",
   "show_help_chip",
-  "astrocart_localspace_additive",
   "usetradfixstarnamespdlist",
 ] as const;
 
@@ -423,6 +413,10 @@ function nativeQuickOptionPatch(command: string, opts: OptionsPayload): OptionsP
     }
     return { display: patch as Partial<OptionsPayload["display"]> };
   };
+
+  if (command === "toggle-presentation-cursor") {
+    return boolDisplay("presentation_cursor");
+  }
 
   let value = quickCommandValue(command, "quick.options.display:");
   if (value) return boolDisplay(value);
@@ -532,6 +526,10 @@ function nativeQuickOptionPatch(command: string, opts: OptionsPayload): OptionsP
   if (value !== null) return { display: { synodicmode: Number(value) } };
   value = quickCommandValue(command, "quick.options.layout:");
   if (value !== null) return { display: { theme: Number(value) } };
+  value = quickCommandValue(command, "quick.options.anglo-dense-label-layout:");
+  if (value === "leader-columns" || value === "routed-cusps") {
+    return { display: { anglo_dense_label_layout: value } };
+  }
 
   value = quickCommandValue(command, "quick.options.fortuna:");
   if (value !== null) return { planetsPoints: { lotoffortune: Number(value) } };
@@ -600,6 +598,11 @@ function nativeQuickOptionPatch(command: string, opts: OptionsPayload): OptionsP
     return { relationshipCharts: { synastry_opens_composite_first: value === "1" } };
   }
 
+  value = quickCommandValue(command, "quick.options.colors:");
+  if (value === "follow_os_theme") {
+    return { colors: { follow_os_theme: !opts.colors.follow_os_theme } };
+  }
+
   return null;
 }
 
@@ -616,6 +619,15 @@ function nativeQuickOptionCheckedStates(opts: OptionsPayload): ShellMenuCheckedS
 
   for (const attr of NATIVE_QUICK_DISPLAY_TOGGLES) {
     check(`quick.options.display:${attr}`, Boolean(opts.display[attr]));
+  }
+  for (const section of opts.settingsRegistry.mirroredSections) {
+    for (const setting of section.settings) {
+      if (setting.group !== "display" || setting.kind !== "boolean") continue;
+      check(
+        `quick.options.${setting.group}:${setting.field}`,
+        Boolean(opts.display[setting.field]),
+      );
+    }
   }
   check("quick.options.terms", Boolean(opts.display.showterms));
   check("quick.options.traditional-aspects", Boolean(opts.display.traditionalaspects));
@@ -635,6 +647,11 @@ function nativeQuickOptionCheckedStates(opts: OptionsPayload): ShellMenuCheckedS
   radio("quick.options.cazimi", opts.catalog.cazimiModes.map((entry) => entry.value), opts.display.cazimimode);
   radio("quick.options.synodic", opts.catalog.synodicModes.map((entry) => entry.value), opts.display.synodicmode);
   radio("quick.options.layout", opts.catalog.themeLayouts.map((entry) => entry.value), opts.display.theme);
+  radio(
+    "quick.options.anglo-dense-label-layout",
+    opts.catalog.angloDenseLabelLayouts.map((entry) => entry.value),
+    opts.display.anglo_dense_label_layout,
+  );
   radio("quick.options.fortuna", opts.catalog.fortunaModes.map((entry) => entry.value), opts.planetsPoints.lotoffortune);
   radio("quick.options.syzygy", opts.catalog.syzygyModes.map((entry) => entry.value), opts.planetsPoints.syzmoon);
 
@@ -671,6 +688,10 @@ function nativeQuickOptionCheckedStates(opts: OptionsPayload): ShellMenuCheckedS
   radio("quick.options.mansions", opts.catalog.mansionZodiacModes.map((entry) => entry.value), opts.lunarMansions.manazil_zodiac);
   radio("quick.options.eclipse", opts.catalog.eclipseModes.map((entry) => entry.value), opts.eclipses.eclipse_chart_moment);
   radio("quick.options.relationship", [0, 1], opts.relationshipCharts.synastry_opens_composite_first ? 1 : 0);
+  for (const preset of opts.themePresets) {
+    check(`quick.options.theme-preset:${preset.name}`, Boolean(preset.selected));
+  }
+  check("quick.options.colors:follow_os_theme", Boolean(opts.colors.follow_os_theme));
   return states;
 }
 
@@ -1028,6 +1049,7 @@ function isViewDocument(doc: WorkspaceDocument | null): boolean {
 
 const EMPTY_ENABLED_ACTIONS: Record<string, boolean> = Object.freeze({});
 const CHART_PICKER_STARTUP_PREWARM_DELAY_MS = 2_000;
+const FIRST_STARTUP_HELP_STORAGE_KEY = "aries.help.opened-on-first-startup.v1";
 
 function enabledActionsSignature(actions: Record<string, boolean>): string {
   return Object.entries(actions)
@@ -1233,7 +1255,11 @@ export function HomeClient() {
   // intentionally do not rewrite the document tree just to carry datetime.
   const { chart: activeChart } = useActiveDocumentChart(activeDoc);
   const activeDocRef = useRef<WorkspaceDocument | null>(activeDoc);
+  const activeChartRef = useRef(activeChart);
   const recoveredSynodicTableDocumentRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    activeChartRef.current = activeChart;
+  }, [activeChart]);
   useEffect(() => {
     activeDocRef.current = activeDoc;
   }, [activeDoc]);
@@ -1286,6 +1312,16 @@ export function HomeClient() {
   const closeAllRightPanes = useWorkspaceStore((s) => s.closeAllRightPanes);
   const setTimedChartShowRadix = useWorkspaceStore((s) => s.setTimedChartShowRadix);
   const toggleInspector = useFrameLayoutStore((s) => s.toggleInspector);
+
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem(FIRST_STARTUP_HELP_STORAGE_KEY) === "1") return;
+      window.localStorage.setItem(FIRST_STARTUP_HELP_STORAGE_KEY, "1");
+      openHelpPane();
+    } catch (error) {
+      console.warn("[first-startup-help]", error);
+    }
+  }, [openHelpPane]);
 
   // Early Synodic wiring briefly created generic table children. They are not
   // a valid center surface: recover an already-open legacy tab into the
@@ -1425,33 +1461,46 @@ export function HomeClient() {
     busy: boolean;
   } | null>(null);
   const steppingRef = useRef(false);
-  // Coalescing buffer for rapid arrow salvos: while a navigate POST is in
-  // flight, the LATEST keypress is stored here (not dropped) and fired in the
-  // in-flight request's .finally(). A 5-key salvo collapses to in-flight + one
-  // trailing — desktop coalesces keystrokes too (morin._begin_session_step_burst)
-  // and never drops them.
-  const pendingStepRef = useRef<{
+  // Accumulated intents for rapid arrow salvos. Adjacent equal arrows share one
+  // compact queue entry, but each intent is still applied and painted on its
+  // own presentation frame so the wheel never jumps multiple positions.
+  const pendingStepsRef = useRef<Array<{
+    documentId: string;
+    paintsSnapshot: boolean;
     key: string;
     shift: boolean;
     alt: boolean;
-  } | null>(null);
-  // Settle debounce: after the last step in a burst, refetch + repaint the
-  // active doc with a full overlay. The step_fast paint stays immediate; the
-  // settled repaint refreshes phasis/cazimi/eclipse offsets once the key burst
-  // is over.
+    intentAt: number;
+    intentTimes: number[];
+    repeat: number;
+  }>>([]);
+  // A queued request may overlap the preceding snapshot's presentation, but
+  // its result cannot publish until that snapshot has had a frame boundary.
+  // This removes request + frame serialization without merging two steps into
+  // one paint.
+  const stepQueueFrameRef = useRef<number | null>(null);
+  const settleFrameRef = useRef<number | null>(null);
+  // Settle debounce: after the last step in a burst, refetch full semantic
+  // overlay truth. The step_fast frame already owns current, collision-validated
+  // wheel geometry; settle updates state without repainting Canvas layers.
   const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const settleRequestRef = useRef<AbortController | null>(null);
+  const stepGenerationRef = useRef(0);
   const pushSteppedSnapshot = useDaemonWorkspaceStore((s) => s.pushSteppedSnapshot);
   const pushCommandSnapshot = useDaemonWorkspaceStore((s) => s.pushCommandSnapshot);
-  const refreshActiveChartSnapshot = useCallback((reason: string) => {
-    const docId = activeDoc?.id ?? null;
-    if (!docId || !isChartBearingDocumentKind(activeDoc?.kind)) return;
-    void fetchDocumentSnapshot(docId)
-      .then((snapshot) => pushCommandSnapshot(docId, snapshot))
-      .catch((err) => {
-        if (recoverUnknownDocumentSnapshot(err)) return;
-        console.error(`[${reason}-refresh]`, err);
-      });
-  }, [activeDoc?.id, activeDoc?.kind, pushCommandSnapshot]);
+  const supersedePendingStepSettle = useCallback(() => {
+    stepGenerationRef.current += 1;
+    if (settleFrameRef.current != null) {
+      window.cancelAnimationFrame(settleFrameRef.current);
+      settleFrameRef.current = null;
+    }
+    if (settleTimerRef.current != null) {
+      clearTimeout(settleTimerRef.current);
+      settleTimerRef.current = null;
+    }
+    settleRequestRef.current?.abort();
+    settleRequestRef.current = null;
+  }, []);
   useEffect(() => {
     const controller = new AbortController();
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1537,14 +1586,6 @@ export function HomeClient() {
     void syncShellMenuChecked(nativeQuickOptionCheckedStates(nativeQuickOptions));
   }, [nativeQuickOptions]);
 
-  useEffect(() => {
-    if (!keyHintsVisible) return undefined;
-    const timer = window.setTimeout(() => {
-      setKeyHintsVisible(false);
-    }, KEY_HINT_VISIBLE_MS);
-    return () => window.clearTimeout(timer);
-  }, [keyHintsRevealToken, keyHintsVisible]);
-
   const revealKeyHints = useCallback(
     (options: { manual?: boolean; placement?: "top" | "bottom" } = {}) => {
       if (!CHART_UPPER_NAVIGATION_BAR_ENABLED && options.placement === "top") return;
@@ -1601,20 +1642,22 @@ export function HomeClient() {
   ]);
 
   const handleOptionsPatched = useCallback((next?: OptionsPayload) => {
+    supersedePendingStepSettle();
     if (next) setNativeQuickOptions(next);
     applyKeyPromptOptions(next);
     if (next?.quickCharts) {
       setTimedChartShowRadix(Boolean(next.quickCharts.timed_chart_show_radix_default));
     }
-    refreshActiveChartSnapshot("options-patched");
-  }, [applyKeyPromptOptions, refreshActiveChartSnapshot, setTimedChartShowRadix]);
+    // options.changed is the single canonical snapshot invalidation channel.
+    // Starting another GET here raced that event and produced duplicate paints.
+  }, [applyKeyPromptOptions, setTimedChartShowRadix, supersedePendingStepSettle]);
 
   // Live language switch → relabel the native menu bar in place. The daemon
   // localizes menu labels by the active language (manifest_service), and the
   // Rust shell builds the bar localized at startup; on a runtime change we
   // re-fetch the (now switched) manifest and push the fresh labels, preserving
   // the enablement / checked / recent state a full rebuild would reset. Chrome
-  // rendered in React (menus, dialogs) is a separate, unbuilt i18n layer.
+  // rendered in React (menus, dialogs) follows the same live locale provider.
   const tfMenu = useTFallback();
   const locale = useLocale();
   const relabelNativeMenuForLanguage = useCallback(async () => {
@@ -1658,19 +1701,34 @@ export function HomeClient() {
   }, [daemonConnection, locale, relabelNativeMenuForLanguage]);
 
   const runNativeQuickOptionCommand = useCallback((command: string) => {
+    supersedePendingStepSettle();
     const current = nativeQuickOptions;
     const load = current ? Promise.resolve(current) : fetchOptions();
     void load
       .then((opts) => {
+        const presetName = quickCommandValue(command, "quick.options.theme-preset:");
+        if (presetName !== null) return applyThemePreset(presetName);
         const patch = nativeQuickOptionPatch(command, opts);
         if (!patch) return null;
         return patchOptions(patch);
       })
       .then((next) => {
-        if (next) handleOptionsPatched(next);
+        if (!next) return;
+        if (command === "toggle-presentation-cursor") {
+          setNativeQuickOptions(next);
+          useThemeStore.getState().applyThemeState(next.themeState);
+          return;
+        }
+        if (
+          command.startsWith("quick.options.theme-preset:")
+          || command === "quick.options.colors:follow_os_theme"
+        ) {
+          useThemeStore.getState().applyThemeState(next.themeState);
+        }
+        handleOptionsPatched(next);
       })
       .catch((err) => console.error("[native-quick-options]", err));
-  }, [handleOptionsPatched, nativeQuickOptions]);
+  }, [handleOptionsPatched, nativeQuickOptions, setNativeQuickOptions, supersedePendingStepSettle]);
 
   // Sidebar DnD reorder → the daemon move command (POST /api/workspace/move).
   // The tree order is DAEMON-owned: we forward the drop as (docId, beforeId) and
@@ -1795,6 +1853,10 @@ export function HomeClient() {
     activeDoc?.displayDatetime ??
     activeLaunchParent?.displayDatetime ??
     activeRadix?.displayDatetime;
+  const activeLaunchDatetimeRef = useRef(activeLaunchDatetime);
+  useLayoutEffect(() => {
+    activeLaunchDatetimeRef.current = activeLaunchDatetime;
+  }, [activeLaunchDatetime]);
   const ensureChartSurfaceForPaneLauncher = useCallback(
     (launchParent: WorkspaceDocument) => {
       const doc = activeDoc;
@@ -2010,6 +2072,10 @@ export function HomeClient() {
 
   const handleSelect = useCallback(
     (id: string) => {
+      // Snapshot the live cursor once per launcher action. Keeping the changing
+      // chart datetime in a ref leaves this callback stable during arrow-key
+      // stepping, so retained sidebar chrome does not reconcile every frame.
+      const launchDatetime = activeLaunchDatetimeRef.current;
       // Document click → activate.
       const isDoc = documents.some((d) => d.id === id);
       if (isDoc) {
@@ -2094,7 +2160,7 @@ export function HomeClient() {
           openSynodicCyclesPane({
             documentId: launchParent.id,
             sourceName: launchParent.sourceName,
-            focusDatetime: activeLaunchDatetime ?? launchParent.displayDatetime ?? null,
+            focusDatetime: launchDatetime ?? launchParent.displayDatetime ?? null,
           });
           closeInspectorAndNotes();
           return;
@@ -2123,7 +2189,7 @@ export function HomeClient() {
           sourceName: target.doc.sourceName,
           source: target.doc.fpath ?? launchParent.fpath,
           focusDatetime:
-            activeLaunchDatetime ?? target.doc.displayDatetime ?? launchParent.displayDatetime,
+            launchDatetime ?? target.doc.displayDatetime ?? launchParent.displayDatetime,
           initialTab: "primary",
           initialPrimaryMode: target.mode,
         });
@@ -2139,7 +2205,7 @@ export function HomeClient() {
           sourceName: target.doc.sourceName,
           source: target.doc.fpath ?? launchParent.fpath,
           focusDatetime:
-            activeLaunchDatetime ?? target.doc.displayDatetime ?? launchParent.displayDatetime,
+            launchDatetime ?? target.doc.displayDatetime ?? launchParent.displayDatetime,
           initialTab: "circumambulation",
           initialPrimaryMode: target.mode,
         });
@@ -2188,7 +2254,7 @@ export function HomeClient() {
         const openList = () => {
           const focusDatetime =
             existingChild?.displayDatetime ??
-            activeLaunchDatetime ??
+            launchDatetime ??
             launchParent.displayDatetime ??
             null;
           closeInspectorAndNotes();
@@ -2276,7 +2342,7 @@ export function HomeClient() {
                   cursorDocumentId: activeDoc?.id ?? launchParent.id,
                   sourceName: launchParent.sourceName,
                   source: launchParent.fpath,
-                  focusDatetime: activeLaunchDatetime ?? launchParent.displayDatetime,
+                  focusDatetime: launchDatetime ?? launchParent.displayDatetime,
                   initialTab: "secondary",
                   secondaryMethod,
                 });
@@ -2290,7 +2356,7 @@ export function HomeClient() {
                   focusDatetime:
                     existingChild.symbolicTime?.signifiedDatetime ??
                     existingChild.displayDatetime ??
-                    activeLaunchDatetime ??
+                    launchDatetime ??
                     launchParent.displayDatetime,
                   initialTab: "secondary",
                   secondaryMethod,
@@ -2337,7 +2403,6 @@ export function HomeClient() {
       openLunarMansionsPane,
       openReturnWithSavedLocationMode,
       ensureChartSurfaceForPaneLauncher,
-      activeLaunchDatetime,
       enabledIds,
       supplementaryIds,
       manifest,
@@ -2488,64 +2553,226 @@ export function HomeClient() {
       const docId = target.documentId;
       const shift = Boolean(modifiers.shift);
       const alt = Boolean(modifiers.alt);
+      const intentAt = perfNow();
 
-      // COALESCE, don't drop: if a navigate is already in flight, remember the
-      // LATEST keypress and let the in-flight request's .finally() fire it. This
-      // is what lets a rapid salvo collapse to in-flight + one trailing step
-      // (the desktop coalesces keystrokes; it never drops them).
+      // Coalesce equal repeatable intents, but retain their full delta. Classical
+      // phase jumps (Shift+Up/Down) stay individually ordered because they are
+      // event searches rather than a linear calendar displacement.
       if (steppingRef.current) {
-        pendingStepRef.current = { key, shift, alt };
+        const pending = pendingStepsRef.current;
+        const latest = pending.at(-1);
+        const repeatable = !(shift && !alt && (key === "up" || key === "down"));
+        if (
+          repeatable &&
+          latest?.documentId === docId &&
+          latest.paintsSnapshot === target.paintsSnapshot &&
+          latest?.key === key &&
+          latest.shift === shift &&
+          latest.alt === alt
+        ) {
+          latest.repeat += 1;
+          latest.intentTimes.push(intentAt);
+        } else {
+          pending.push({
+            documentId: docId,
+            paintsSnapshot: target.paintsSnapshot,
+            key,
+            shift,
+            alt,
+            intentAt,
+            intentTimes: [intentAt],
+            repeat: 1,
+          });
+        }
         return;
       }
 
-      const fire = (k: string, shift: boolean, alt: boolean) => {
+      const fire = (
+        targetDocId: string,
+        paintsSnapshot: boolean,
+        k: string,
+        shift: boolean,
+        alt: boolean,
+        stepIntentAt: number,
+        repeat: number,
+        priorPresentation?: Promise<void>,
+      ) => {
         steppingRef.current = true;
+        const stepGeneration = ++stepGenerationRef.current;
+        let publishedStepSnapshot: ChartRenderSnapshot | null = null;
+        // Activation may have queued a first-full-overlay completion for this
+        // same document. The step now owns its partial -> full lifecycle, so
+        // prevent that older scheduler from starting a competing snapshot GET.
+        cancelDeferredFullRefresh(targetDocId);
         // Cancel any queued settle refetch — we are mid-burst again.
         if (settleTimerRef.current != null) {
           clearTimeout(settleTimerRef.current);
           settleTimerRef.current = null;
         }
-        void workspaceNavigateKey(docId, k, shift, alt)
-          .then((res) => {
+        if (settleFrameRef.current != null) {
+          window.cancelAnimationFrame(settleFrameRef.current);
+          settleFrameRef.current = null;
+        }
+        // A settle GET may already have started when the next key repeat lands.
+        // It is now obsolete and must neither contend with nor overwrite the
+        // newer step response.
+        settleRequestRef.current?.abort();
+        settleRequestRef.current = null;
+        void workspaceNavigateKey(targetDocId, k, shift, alt, repeat)
+          .then(async (res) => {
+            // Start transport as soon as the preceding response is published,
+            // then hold only this publication until the preceding snapshot has
+            // had a presentation boundary. Requests and frames overlap while
+            // daemon mutations and visible snapshots remain strictly ordered.
+            await priorPresentation;
+            if (stepGeneration !== stepGenerationRef.current) return;
             // PAINT from the POST result — the daemon attached the freshly
             // rendered chart (step_fast overlay mode), so we skip the second
             // snapshot GET entirely. The step_fast frame still repaints live
             // wheel geometry plus moving bodies from this stepped snapshot.
-            if (target.paintsSnapshot && res.stepped && res.snapshot) {
-              pushSteppedSnapshot(docId, res.snapshot);
+            if (paintsSnapshot && res.stepped && res.snapshot) {
+              recordChartPerf("chart-step-intent", {
+                docId: targetDocId,
+                key: k,
+                shift,
+                alt,
+                repeat: res.appliedSteps ?? repeat,
+                intentAt: stepIntentAt,
+              });
+              pushSteppedSnapshot(targetDocId, res.snapshot);
+              publishedStepSnapshot = res.snapshot;
             }
           })
           .catch((err) => console.error("[ws-navigate-key]", err))
           .finally(() => {
-            const pending = pendingStepRef.current;
-            if (pending) {
-              pendingStepRef.current = null;
-              fire(pending.key, pending.shift, pending.alt);
+            if (pendingStepsRef.current.length > 0) {
+              // Consume one semantic input now so its daemon request overlaps
+              // the current snapshot's presentation. The promise gates only
+              // publication of that response, preserving one input per paint.
+              const priorPresentation = new Promise<void>((resolve) => {
+                stepQueueFrameRef.current = window.requestAnimationFrame(() => {
+                  stepQueueFrameRef.current = null;
+                  resolve();
+                });
+              });
+              const pending = pendingStepsRef.current[0];
+              if (!pending) {
+                stepQueueFrameRef.current = null;
+                steppingRef.current = false;
+                return;
+              }
+              const pendingIntentAt = pending.intentTimes.shift() ?? pending.intentAt;
+              pending.repeat -= 1;
+              if (pending.repeat <= 0) {
+                pendingStepsRef.current.shift();
+              } else {
+                pending.intentAt = pending.intentTimes[0] ?? pendingIntentAt;
+              }
+              fire(
+                pending.documentId,
+                pending.paintsSnapshot,
+                pending.key,
+                pending.shift,
+                pending.alt,
+                pendingIntentAt,
+                1,
+                priorPresentation,
+              );
               return;
             }
             steppingRef.current = false;
-            // Burst settled: debounce a full repaint of the active doc. During
-            // the burst, step_fast snapshots retain prior overlay signal rows;
-            // this settled full pass replaces them with current daemon truth.
-            if (!target.paintsSnapshot) {
+            // Burst settled: preserve the just-painted step for two presentation
+            // boundaries, then require a short input-quiet window before asking
+            // for full semantic truth. Current frame-critical rows already
+            // arrived in step_fast; retained term/signal slots remain visible
+            // until the authoritative settle swaps them atomically. This keeps
+            // a 30 ms held-key stream from launching an obsolete full GET after
+            // every individual response.
+            if (!paintsSnapshot) {
               return;
+            }
+            if (settleFrameRef.current != null) {
+              window.cancelAnimationFrame(settleFrameRef.current);
             }
             if (settleTimerRef.current != null) {
               clearTimeout(settleTimerRef.current);
             }
-            settleTimerRef.current = setTimeout(() => {
-              settleTimerRef.current = null;
-              void fetchDocumentSnapshot(docId)
-                .then((snapshot) => pushSteppedSnapshot(docId, snapshot))
-                .catch((err) => {
-                  if (recoverUnknownDocumentSnapshot(err)) return;
-                  console.error("[ws-navigate-settle]", err);
-                });
-            }, STEP_SETTLE_DEFERRED_REFRESH_MS);
+            settleFrameRef.current = window.requestAnimationFrame(() => {
+              settleFrameRef.current = window.requestAnimationFrame(() => {
+                settleFrameRef.current = null;
+                if (stepGeneration !== stepGenerationRef.current) return;
+                settleTimerRef.current = setTimeout(() => {
+                  settleTimerRef.current = null;
+                  if (
+                    stepGeneration !== stepGenerationRef.current ||
+                    steppingRef.current ||
+                    pendingStepsRef.current.length > 0
+                  ) return;
+                  const controller = new AbortController();
+                  settleRequestRef.current = controller;
+                  recordChartPerf("chart-step-settle-start", {
+                    docId: targetDocId,
+                    generation: stepGeneration,
+                    quietWindowMs: STEP_SETTLE_QUIET_WINDOW_MS,
+                  });
+                  void fetchDocumentSnapshot(targetDocId, controller.signal)
+                    .then((snapshot) => {
+                      if (
+                        controller.signal.aborted ||
+                        stepGeneration !== stepGenerationRef.current ||
+                        steppingRef.current ||
+                        pendingStepsRef.current.length > 0
+                      ) return;
+                      const paintedPublishedStep = wasDocumentSnapshotPainted(
+                        targetDocId,
+                        publishedStepSnapshot,
+                      );
+                      const overlayOnly = canReusePaintedDocumentCanvas(
+                        targetDocId,
+                        publishedStepSnapshot,
+                        snapshot,
+                      );
+                      if (!overlayOnly) {
+                        recordChartPerf("chart-step-settle-recovery", {
+                          docId: targetDocId,
+                          generation: stepGeneration,
+                          hadPublishedStep: publishedStepSnapshot !== null,
+                          hadPaintedStep: paintedPublishedStep,
+                        });
+                      }
+                      pushSteppedSnapshot(
+                        targetDocId,
+                        overlayOnly
+                          ? {
+                              ...snapshot,
+                              settleOverlayOnly: true,
+                              renderInvalidation: {
+                                geometry: false,
+                                dynamic: false,
+                                outerLabel: false,
+                                deferredOuterLabel: false,
+                              },
+                            }
+                          : snapshot,
+                      );
+                    })
+                    .catch((err) => {
+                      if (isAbortError(err, controller.signal)) return;
+                      if (recoverUnknownDocumentSnapshot(err)) return;
+                      console.error("[ws-navigate-settle]", err);
+                    })
+                    .finally(() => {
+                      if (settleRequestRef.current === controller) {
+                        settleRequestRef.current = null;
+                      }
+                    });
+                }, STEP_SETTLE_QUIET_WINDOW_MS);
+              });
+            });
           });
       };
 
-      fire(key, shift, alt);
+      fire(docId, target.paintsSnapshot, key, shift, alt, intentAt, 1);
     },
     [pushSteppedSnapshot],
   );
@@ -2563,6 +2790,13 @@ export function HomeClient() {
   useEffect(
     () => () => {
       if (settleTimerRef.current != null) clearTimeout(settleTimerRef.current);
+      if (stepQueueFrameRef.current != null) {
+        window.cancelAnimationFrame(stepQueueFrameRef.current);
+      }
+      if (settleFrameRef.current != null) {
+        window.cancelAnimationFrame(settleFrameRef.current);
+      }
+      settleRequestRef.current?.abort();
     },
     [],
   );
@@ -2654,6 +2888,10 @@ export function HomeClient() {
         return;
       }
       if (command.startsWith(QUICK_OPTIONS_PREFIX)) {
+        runNativeQuickOptionCommand(command);
+        return;
+      }
+      if (command === "toggle-presentation-cursor") {
         runNativeQuickOptionCommand(command);
         return;
       }
@@ -2768,12 +3006,26 @@ export function HomeClient() {
             .catch((err) => console.error("[export-table]", err));
           return;
         }
+        const currentActiveChart = activeChartRef.current;
+        const documentId = currentActiveChart?.document?.documentId ?? activeDoc?.id;
+        if (!documentId) return;
+        const renderExport = async (kind: "pdf" | "png") => {
+          const opts = await fetchOptions();
+          return renderRegisteredChartExport(documentId, {
+            kind,
+            colorMode: opts.export.pdfChartColorMode,
+            includeOverlays: kind === "png" || opts.export.pdfIncludeOverlays,
+          });
+        };
         if (!host.capabilities.nativeFileDialogs) {
-          void exportActiveChartBytes({
-            kind: "pdf",
-            filename: `${exportBaseName(activeDoc)}.pdf`,
-            documentId: activeDoc?.id,
-          })
+          void renderExport("pdf")
+            .then((rendered) => exportRenderedChartBytes({
+              kind: "pdf",
+              filename: `${exportBaseName(activeDoc)}.pdf`,
+              documentId,
+              title: exportBaseName(activeDoc),
+              ...rendered,
+            }))
             .then((result) =>
               host.downloadBytes(
                 result.filename,
@@ -2781,17 +3033,37 @@ export function HomeClient() {
                 result.mimeType,
               ),
             )
+            .catch((err) => {
+              if (!String(err).includes("visible chart renderer unavailable")) throw err;
+              return exportActiveChartBytes({
+                kind: "pdf",
+                filename: `${exportBaseName(activeDoc)}.pdf`,
+                documentId,
+              }).then((result) => host.downloadBytes(
+                result.filename,
+                decodeBase64Bytes(result.dataBase64),
+                result.mimeType,
+              ));
+            })
             .catch((err) => console.error("[export-chart]", err));
           return;
         }
         void selectNativeExportPath(activeDoc, tf)
           .then((path) => {
             if (!path) return null;
-            return exportActiveChart({
-              kind: exportKindFromPath(path),
-              path,
-              documentId: activeDoc?.id,
-            });
+            const kind = exportKindFromPath(path) === "png" ? "png" : "pdf";
+            return renderExport(kind)
+              .then((rendered) => exportRenderedChart({
+                kind,
+                path,
+                documentId,
+                title: exportBaseName(activeDoc),
+                ...rendered,
+              }))
+              .catch((err) => {
+                if (!String(err).includes("visible chart renderer unavailable")) throw err;
+                return exportActiveChart({ kind, path, documentId });
+              });
           })
           .catch((err) => console.error("[export-chart]", err));
         return;
@@ -2812,7 +3084,12 @@ export function HomeClient() {
           .catch((err) => console.error("[restore-open-toggle]", err));
         return;
       }
-      const settingsTab = SETTINGS_TAB_BY_MENU_COMMAND[command];
+      const registeredTab = manifest?.settingsRegistry?.tabs.find((tab) =>
+        tab.menuCommands.includes(command),
+      )?.id;
+      const settingsTab = registeredTab && isSettingsTabId(registeredTab)
+        ? registeredTab
+        : null;
       if (settingsTab) {
         openSettings(settingsTab);
         return;
@@ -2823,14 +3100,14 @@ export function HomeClient() {
       }
       if (command === "cycle-secondary-view") {
         if (activeDoc) {
+          supersedePendingStepSettle();
           cycleSecondaryView().catch((err) => console.error("[cycle-secondary]", err));
         }
         return;
       }
       if (command === "toggle-houses") {
-        void toggleHouses()
-          .then(() => refreshActiveChartSnapshot("toggle-houses"))
-          .catch((err) => console.error("[toggle-houses]", err));
+        supersedePendingStepSettle();
+        void toggleHouses().catch((err) => console.error("[toggle-houses]", err));
         return;
       }
       if (command === "toggle-aspects") {
@@ -2839,10 +3116,10 @@ export function HomeClient() {
         // the persisted Appearance > Aspects preference or rebuilding a chart.
         // Restore snapshots left hidden by the former persisted A shortcut so
         // the first press after this fix is reversible too.
-        if (activeChart?.primaryChart.options.showAspects === false) {
+        if (activeChartRef.current?.primaryChart.options.showAspects === false) {
           clearAspectSelection();
+          supersedePendingStepSettle();
           void patchOptions({ display: { aspects: true } })
-            .then(() => refreshActiveChartSnapshot("toggle-aspects-restore"))
             .catch((err) => console.error("[toggle-aspects-restore]", err));
           return;
         }
@@ -2850,9 +3127,8 @@ export function HomeClient() {
         return;
       }
       if (command === "toggle-minor-aspects") {
-        void toggleMinorAspects()
-          .then(() => refreshActiveChartSnapshot("toggle-minor-aspects"))
-          .catch((err) => console.error("[toggle-minor-aspects]", err));
+        supersedePendingStepSettle();
+        void toggleMinorAspects().catch((err) => console.error("[toggle-minor-aspects]", err));
         return;
       }
       const tableId = TABLE_ID_BY_MENU_COMMAND[command];
@@ -2960,7 +3236,6 @@ export function HomeClient() {
     },
     [
       activeDoc,
-      activeChart,
       activeRadix,
       clearAspectSelection,
       closeAllRightPanes,
@@ -2982,13 +3257,13 @@ export function HomeClient() {
       openSurveilStudiesDialog,
       openTableChild,
       refreshRecentChartsMenu,
-      refreshActiveChartSnapshot,
       requestEditChart,
       runImportKind,
       runNativeQuickOptionCommand,
       tf,
       toggleHideAllAspects,
       toggleInspector,
+      supersedePendingStepSettle,
     ],
   );
 
@@ -3008,6 +3283,7 @@ export function HomeClient() {
   // guard, morin.py:979).
   useShortcut("g", "any", (event) => {
     if ((event.ctrlKey || event.metaKey) && activeDoc) {
+      supersedePendingStepSettle();
       cycleSecondaryView().catch((err) => console.error("[cycle-secondary]", err));
     }
   }, { allowMeta: true, allowCtrl: true });
@@ -3153,6 +3429,8 @@ export function HomeClient() {
       keyHintsVisible &&
       (CHART_UPPER_NAVIGATION_BAR_ENABLED || keyHintsPlacement !== "top"),
     placement: keyHintsPlacement,
+    revealToken: keyHintsRevealToken,
+    autoHideMs: KEY_HINT_VISIBLE_MS,
     overlay: false,
     hasChart: activeChartPresent,
     hasComparisonChart: activeChartHasComparison,
@@ -3190,7 +3468,8 @@ export function HomeClient() {
           onReorder={reorderSibling}
           onSolarAverageWindowSelect={handleSolarAverageWindowSelect}
           onOpenSettings={openSettings}
-          onOptionsPatched={handleOptionsPatched}
+          onMenuCommand={dispatchManifestCommand}
+          isMenuCommandEnabled={commandIsRuntimeEnabled}
           onRevealKeyHints={
             keyHintsAllowed && keyHintsAutoAllowed ? revealKeyHintsAtEdge : undefined
           }
@@ -3352,7 +3631,7 @@ function PlanetaryReturnBodyDialog({
   const t = useT();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xs">
+      <DialogContent size="compact">
         <DialogHeader>
           <DialogTitle>{t("home.planetaryReturnTitle")}</DialogTitle>
           <DialogDescription>{t("home.planetaryReturnDescription")}</DialogDescription>
@@ -3432,7 +3711,7 @@ function RevolutionLocationDialog({
 
   return (
     <Dialog open={request !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm">
+      <DialogContent size="sm">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
@@ -3489,7 +3768,7 @@ function RevolutionLocationDialog({
                   {busy ? "..." : t("home.search")}
                 </button>
               </div>
-              {error ? <div className="text-[11px] text-foreground/55">{error}</div> : null}
+              {error ? <div className="text-[length:var(--aries-font-size-small)] text-foreground/55">{error}</div> : null}
               {candidates && candidates.length > 0 ? (
                 <div className="max-h-40 overflow-y-auto rounded border border-border/50">
                   {candidates.map((candidate, index) => {
@@ -3510,7 +3789,7 @@ function RevolutionLocationDialog({
                         <span className="min-w-0 truncate text-foreground/90">
                           {candidate.label}
                         </span>
-                        <span className="shrink-0 truncate text-[11px] text-foreground/50">
+                        <span className="shrink-0 truncate text-[length:var(--aries-font-size-small)] text-foreground/50">
                           {candidate.countryName}
                         </span>
                       </button>
@@ -3519,7 +3798,7 @@ function RevolutionLocationDialog({
                 </div>
               ) : null}
               {selected ? (
-                <div className="truncate text-[11px] text-foreground/60">
+                <div className="truncate text-[length:var(--aries-font-size-small)] text-foreground/60">
                   {selected.name} - GMT {selected.plus ? "+" : "-"}
                   {selected.zoneHour}:{String(selected.zoneMin).padStart(2, "0")}
                 </div>
@@ -3565,7 +3844,7 @@ function ImportResultDialog({
   const errorPreview = summary?.errors.slice(0, 4) ?? [];
   return (
     <Dialog open={result !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-w-md">
+      <DialogContent size="md">
         <DialogHeader>
           <DialogTitle>{error ? t("home.importFailedTitle") : t("home.importCompleteTitle")}</DialogTitle>
           {summary ? (
@@ -3630,7 +3909,7 @@ function ImportChartsDrawer({
   };
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-[min(22rem,calc(100vw-2rem))] sm:max-w-[22rem]">
+      <SheetContent side="right" size="sm">
         <SheetHeader className="border-b border-border/60 pr-12">
           <SheetTitle>{t("home.importChartsTitle")}</SheetTitle>
           <SheetDescription className="sr-only">
@@ -3764,7 +4043,7 @@ function AafPasteImportDialog({
 
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
-      <DialogContent className="h-[min(44rem,calc(100vh-3rem))] max-w-xl overflow-hidden">
+      <DialogContent size="reading" className="h-[min(44rem,calc(100vh-3rem))] overflow-hidden">
         <form onSubmit={submit} className="grid h-full min-h-0 grid-rows-[auto_minmax(12rem,1fr)_auto_auto_auto] gap-4">
           <DialogHeader>
             <DialogTitle>{t("home.pasteAafTitle")}</DialogTitle>
@@ -3839,7 +4118,7 @@ function DiscardCloseDialog({
   const label = names.length === 1 ? names[0] : names.join(", ");
   return (
     <Dialog open={pending !== null} onOpenChange={(open) => { if (!open) onCancel(); }}>
-      <DialogContent className="max-w-sm">
+      <DialogContent size="sm">
         <DialogHeader>
           <DialogTitle>{t("home.discardTitle")}</DialogTitle>
           <DialogDescription>
@@ -3888,7 +4167,7 @@ function QuitConfirmDialog({
         if (!open && !busy) onCancel();
       }}
     >
-      <DialogContent className="max-w-sm">
+      <DialogContent size="sm">
         <DialogHeader>
           <DialogTitle>{t("home.quitTitle")}</DialogTitle>
           <DialogDescription>
@@ -3936,9 +4215,11 @@ type ActiveDocumentChart = {
   chart: ChartRenderSnapshot | null;
 };
 
-const STEP_SETTLE_DEFERRED_REFRESH_MS = 90;
-// wx schedules the expensive first-activation overlay completion on the next
-// event-loop turn; the 90 ms settle belongs to arrow-key step bursts only.
+const STEP_SETTLE_QUIET_WINDOW_MS = 32;
+// The step-fast overlay keeps every visible slot populated. Two presentation
+// boundaries plus this sub-repeat quiet window prevent obsolete full exports
+// from contending with a held-key stream while preserving a prompt single-step
+// authoritative refresh.
 const DEFERRED_FULL_REFRESH_SETTLE_MS = 0;
 const deferredFullRefreshInFlight = new Set<string>();
 type DeferredFullRefreshSchedule = {
@@ -4023,16 +4304,32 @@ function useActiveDocumentChart(
 ): ActiveDocumentChart {
   const [chart, setChart] = useState<ChartRenderSnapshot | null>(null);
   const retainedDocIdRef = useRef<string | null>(null);
-  const lastSessionChange = useDaemonWorkspaceStore((s) => s.lastSessionChange);
+  const selectedDocId = doc?.id ?? null;
+  const lastSessionChange = useDaemonWorkspaceStore((state) => {
+    const change = state.lastSessionChange;
+    if (
+      selectedDocId &&
+      change?.changeReason === "step" &&
+      change.docId === selectedDocId &&
+      change.rebuiltChildIds.length === 0
+    ) {
+      // The navigate POST's steppedSnapshot is the sole paint source for a
+      // pure self-step. Returning one stable value here prevents the websocket
+      // notification from re-rendering HomeClient while that POST is in flight.
+      return null;
+    }
+    return change;
+  });
   const steppedSnapshot = useDaemonWorkspaceStore((s) => s.steppedSnapshot);
   const commandSnapshot = useDaemonWorkspaceStore((s) => s.commandSnapshot);
+  const pushCommandSnapshot = useDaemonWorkspaceStore((s) => s.pushCommandSnapshot);
 
   // Tracking individual fields so unrelated doc mutations (e.g. closing a
   // sibling tab) don't trigger a refetch on the active tab. displayDatetime is
   // daemon-owned, but a pure self-step already paints from the navigate POST
   // snapshot below; including displayDatetime here would turn every step's
   // session.changed event into a second full snapshot GET.
-  const docId = doc?.id ?? null;
+  const docId = selectedDocId;
   const docKind = doc?.kind;
   const chartBearingDoc = docId && isChartBearingDocumentKind(docKind);
 
@@ -4111,7 +4408,7 @@ function useActiveDocumentChart(
         ms: Math.round(perfNow() - activatedAt),
       });
       setChart(snapshot);
-      if (snapshot.overlayRenderMode === "deferred" && sessionRefreshTick === 0) {
+      if (snapshot.overlayRenderMode !== "full" && sessionRefreshTick === 0) {
         scheduleDeferredFullRefresh(docId, () => {
           if (controller.signal.aborted) return;
           if (getDocumentSnapshot(docId)?.overlayRenderMode === "full") return;
@@ -4121,14 +4418,53 @@ function useActiveDocumentChart(
           void fetchDocumentSnapshot(docId)
             .then((fullSnapshot) => {
               if (controller.signal.aborted) return;
-              rememberDocumentSnapshot(docId, fullSnapshot);
+              // A newer command/step snapshot owns the document now. Do not let
+              // this activation-tail request overwrite it; that newer path will
+              // schedule its own authoritative completion.
+              if (getDocumentSnapshot(docId) !== snapshot) return;
               recordChartPerf("chart-deferred-full-ready", {
                 docId,
                 source,
                 ms: perfNow() - activatedAt,
                 fetchMs: perfNow() - refreshStartedAt,
               });
-              startTransition(() => setChart(fullSnapshot));
+              // Publish through the same canonical channel as the initial
+              // command snapshot. Merely setting local chart state cannot win
+              // while commandSnapshot has render priority, which left phasis,
+              // cazimi and eclipse rows permanently stuck in deferred mode.
+              // Deferred activation still owes one outer-label paint; an
+              // activated step_fast cache already painted every canvas layer.
+              const paintedActivationSnapshot = wasDocumentSnapshotPainted(
+                docId,
+                snapshot,
+              );
+              const overlayOnly = canReusePaintedDocumentCanvas(
+                docId,
+                snapshot,
+                fullSnapshot,
+              );
+              if (!overlayOnly) {
+                recordChartPerf("chart-activation-settle-recovery", {
+                  docId,
+                  source,
+                  hadPaintedSnapshot: paintedActivationSnapshot,
+                });
+              }
+              pushCommandSnapshot(
+                docId,
+                overlayOnly
+                  ? {
+                      ...fullSnapshot,
+                      settleOverlayOnly: snapshot.overlayRenderMode === "step_fast",
+                      renderInvalidation: {
+                        geometry: false,
+                        dynamic: false,
+                        outerLabel: snapshot.overlayRenderMode === "deferred",
+                        deferredOuterLabel: false,
+                      },
+                    }
+                  : fullSnapshot,
+              );
             })
             .catch((err) => {
               if (isAbortError(err, controller.signal)) return;
@@ -4142,7 +4478,15 @@ function useActiveDocumentChart(
       }
     };
     const fetchAndApply = () => {
-      fetchCachedDocumentSnapshot(docId)
+      const sourceStore = useDaemonWorkspaceStore.getState();
+      const sourceStepped =
+        sourceStore.steppedSnapshot?.docId === docId ? sourceStore.steppedSnapshot : null;
+      const sourceCommand =
+        sourceStore.commandSnapshot?.docId === docId ? sourceStore.commandSnapshot : null;
+      const request = sessionRefreshTick === 0
+        ? fetchCachedDocumentSnapshot(docId)
+        : fetchDocumentSnapshot(docId, controller.signal);
+      request
         .then((snapshot) => {
           if (controller.signal.aborted) return;
           retainedDocIdRef.current = docId;
@@ -4159,6 +4503,28 @@ function useActiveDocumentChart(
             cacheHit: false,
             ms: Math.round(perfNow() - activatedAt),
           });
+          if (sessionRefreshTick !== 0) {
+            const currentStore = useDaemonWorkspaceStore.getState();
+            const currentStepped =
+              currentStore.steppedSnapshot?.docId === docId
+                ? currentStore.steppedSnapshot
+                : null;
+            const currentCommand =
+              currentStore.commandSnapshot?.docId === docId
+                ? currentStore.commandSnapshot
+                : null;
+            // A step or newer command that arrived while this refresh was in
+            // flight already owns the visible frame. Its own snapshot carries
+            // the current options, so an older options completion must not win.
+            if (currentStepped !== sourceStepped || currentCommand !== sourceCommand) {
+              return;
+            }
+            // Swap the retained frame and refreshed frame in one store update.
+            // pushCommandSnapshot also clears the same-doc stepped frame, so
+            // React can never fall through to the pre-step local chart.
+            pushCommandSnapshot(docId, snapshot);
+            return;
+          }
           setChart(snapshot);
         })
         .catch((err) => {
@@ -4227,18 +4593,16 @@ function useActiveDocumentChart(
     }
     fetchAndApply();
     return cleanup;
-  }, [docId, docKind, sessionRefreshTick]);
+  }, [docId, docKind, pushCommandSnapshot, sessionRefreshTick]);
 
   const commandSeq = commandSnapshot?.seq ?? 0;
   useEffect(() => {
     if (!docId || !commandSnapshot || commandSnapshot.docId !== docId) {
       return;
     }
-    rememberDocumentSnapshot(docId, commandSnapshot.snapshot);
     retainedDocIdRef.current = docId;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setChart(commandSnapshot.snapshot);
-    // commandSeq is the trigger; commandSnapshot is read freshly each fire.
+    // pushCommandSnapshot remembers/normalizes before publishing; this effect
+    // only tracks which retained document is currently presented.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId, commandSeq]);
 
@@ -4254,16 +4618,20 @@ function useActiveDocumentChart(
     if (!docId || !steppedSnapshot || steppedSnapshot.docId !== docId) {
       return;
     }
-    rememberDocumentSnapshot(docId, steppedSnapshot.snapshot);
     retainedDocIdRef.current = docId;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setChart(steppedSnapshot.snapshot);
-    // steppedSeq is the trigger; steppedSnapshot is read freshly each fire.
+    // pushSteppedSnapshot remembers/normalizes before publishing, so React can
+    // never observe the raw partial overlay for an intermediate frame.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId, steppedSeq]);
 
   if (!docId || !isChartBearingDocumentKind(docKind)) {
     return { chart: null };
+  }
+  if (steppedSnapshot?.docId === docId) {
+    return { chart: steppedSnapshot.snapshot };
+  }
+  if (commandSnapshot?.docId === docId) {
+    return { chart: commandSnapshot.snapshot };
   }
   const cachedSnapshot = getDocumentSnapshot(docId);
   if (cachedSnapshot) {

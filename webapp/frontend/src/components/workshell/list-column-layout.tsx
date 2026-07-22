@@ -85,7 +85,7 @@ export function ListLayoutPresetControl({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        "inline-flex h-7 shrink-0 items-center overflow-hidden rounded-md border border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface)] text-[11px]",
+        "inline-flex h-7 shrink-0 items-center overflow-hidden rounded-md border border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface)] text-[length:var(--aries-font-size-small)]",
         className,
       )}
       aria-label={t("table.listLayoutPreset")}

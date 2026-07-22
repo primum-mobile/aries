@@ -44,6 +44,7 @@ import {
 } from "./step-refresh";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 import { useLocale, useT } from "@/lib/i18n/i18n";
+import { semanticChartColor } from "@/lib/theme/semantic-color";
 const INSPECTOR_PAYLOAD_KINDS = new Set([
   "planet",
   "vertex",
@@ -61,10 +62,22 @@ const TEXT_READING = "text-[length:var(--aries-font-size-reading)]";
 const TEXT_SMALL = "text-[length:var(--aries-font-size-small)]";
 const TEXT_SECTION = "text-[length:var(--aries-font-size-section)]";
 const TEXT_HEADER = "text-[length:var(--aries-font-size-header)]";
+const TEXT_ARABIC = "text-[length:var(--aries-font-size-arabic)]";
 const INSPECTOR_TITLE_TEXT = "text-[length:var(--aries-inspector-title-size)]";
 const INSPECTOR_GLYPH_TEXT = "text-[length:var(--aries-inspector-glyph-size)]";
 const INSPECTOR_ALERT_GLYPH_TEXT = "text-[length:var(--aries-inspector-alert-glyph-size)]";
 const INSPECTOR_PACK_TAG_TEXT = "text-[length:var(--aries-inspector-pack-tag-size)]";
+const INSPECTOR_TITLE_COLOR = "text-[color:var(--aries-inspector-title-color)]";
+const INSPECTOR_STRONG_COLOR = "text-[color:var(--aries-inspector-strong-color)]";
+const INSPECTOR_VALUE_COLOR = "text-[color:var(--aries-inspector-value-color)]";
+const INSPECTOR_READING_COLOR = "text-[color:var(--aries-inspector-reading-color)]";
+const INSPECTOR_LABEL_COLOR = "text-[color:var(--aries-inspector-label-color)]";
+const INSPECTOR_MUTED_COLOR = "text-[color:var(--aries-inspector-muted-color)]";
+const INSPECTOR_INTERACTIVE_COLOR = "text-[color:var(--aries-inspector-interactive-color)]";
+const INSPECTOR_TERTIARY_COLOR = "text-[color:var(--aries-inspector-tertiary-color)]";
+const INSPECTOR_DIVIDER_BORDER = "border-[color:var(--aries-inspector-divider-color)]";
+const INSPECTOR_SECTION_BOX =
+  "border-t border-[color:var(--aries-inspector-divider-color)] px-[var(--aries-inspector-padding-x)] pb-[var(--aries-inspector-padding-bottom)] pt-[var(--aries-inspector-padding-top)]";
 const INSPECTOR_WRAP_STYLE: React.CSSProperties = {
   overflowWrap: "anywhere",
   wordBreak: "normal",
@@ -109,7 +122,10 @@ export function InspectorPanel({ chart }: { chart: ChartRenderSnapshot | null })
   const setInspectorOpen = useFrameLayoutStore((s) => s.setInspectorOpen);
   const { documents, activeDocument: activeDoc, lastSessionChange } = useDaemonWorkspaceView();
   const lastOptionsChange = useDaemonWorkspaceStore((s) => s.lastOptionsChange);
-  const region = hovered ?? pinned;
+  // A clicked inspector target is a real focus, not a hover fallback. Keep it
+  // authoritative while the pointer and the stepped glyph move underneath it;
+  // clicking another target or empty chart space still replaces/clears it.
+  const region = pinned ?? hovered;
   const radixBranchId = findDaemonRadixAncestor(documents, activeDoc?.id ?? null)?.id ?? null;
 
   const payload = useInspectorPayload(
@@ -120,7 +136,7 @@ export function InspectorPanel({ chart }: { chart: ChartRenderSnapshot | null })
     lastSessionChange,
     lastOptionsChange,
   );
-  const passages = usePassages(region, activeDoc, chart, radixBranchId, lastSessionChange);
+  const passages = usePassages(region, activeDoc, chart, radixBranchId);
   const alerts = useAlerts(activeDoc, chart, lastSessionChange);
   useHoraryLensPersistence(activeDoc);
 
@@ -130,16 +146,16 @@ export function InspectorPanel({ chart }: { chart: ChartRenderSnapshot | null })
   }, [setInspectorOpen]);
 
   return (
-    <aside className={cn("relative flex h-full w-full min-w-0 flex-col gap-0 overflow-y-auto bg-background/95 text-foreground/85", TEXT_BASE)}>
+    <aside className={cn("relative flex h-full w-full min-w-0 flex-col gap-0 overflow-y-auto bg-[var(--aries-inspector-background)]", INSPECTOR_VALUE_COLOR, TEXT_BASE)}>
       <Button
         type="button"
         size="icon-sm"
         variant="ghost"
         onClick={closeInspector}
         aria-label={t("inspector.closeInspector")}
-        className="absolute right-3 top-3 z-10 text-foreground/50 hover:text-foreground"
+        className={cn("absolute right-[var(--aries-inspector-close-inset)] top-[var(--aries-inspector-close-inset)] z-10 hover:text-[color:var(--aries-inspector-title-color)]", INSPECTOR_INTERACTIVE_COLOR)}
       >
-        <X className="size-3.5" />
+        <X className="size-[var(--aries-inspector-close-icon-size)]" />
       </Button>
       {region ? (
         <RegionPayload payload={payload} />
@@ -182,12 +198,14 @@ function useInspectorPayload(
   const supplementaryKind = activeDoc?.supplementaryFeatureKind;
   const comparisonName = activeDoc?.comparisonSourceName;
   const viewMode = chart?.document?.viewMode;
-  const when = useStepSettledValue(
-    snapshotDisplayDatetime(chart, activeDoc),
-    activeDoc?.id ?? null,
-    lastSessionChange,
-  );
-  const binding = activeDoc?.supplementaryBinding;
+  // Match ChartHoverFlag's live path: the POST-pushed step_fast snapshot is the
+  // immediate cursor/binding source. The stable payload identity below keeps
+  // the old focused card mounted until this request swaps in its new values.
+  const when = snapshotDisplayDatetime(chart, activeDoc);
+  const liveBinding = chart?.document?.binding ?? activeDoc?.supplementaryBinding;
+  const bindingJson = liveBinding
+    ? JSON.stringify(liveBinding)
+    : null;
   const docId = activeDoc?.id ?? undefined;
   const chartRole = region && "chartRole" in region ? region.chartRole : undefined;
   const refreshSeq = useSettledWorkspaceRefreshSeq({
@@ -199,13 +217,13 @@ function useInspectorPayload(
   const canFetch = Boolean(
     region && kind && INSPECTOR_PAYLOAD_KINDS.has(kind) && objectId != null && sourceName,
   );
-  const primaryChartIdentity = renderChartIdentity(chart?.primaryChart);
+  const primaryChartIdentity = stableRenderChartIdentity(chart?.primaryChart);
   const partnerSensitive =
     chartRole === "outer" || (region?.kind === "aspect" && region.scope === "interchart");
   // Sibling biwheels share their inner chart, so only outer/interchart regions
   // need the changing child document in their retained-content identity.
   const inspectedChartIdentity = partnerSensitive
-    ? [radixBranchId, docId ?? null, primaryChartIdentity, renderChartIdentity(chart?.comparisonChart)]
+    ? [radixBranchId, docId ?? null, primaryChartIdentity, stableRenderChartIdentity(chart?.comparisonChart)]
     : [radixBranchId, primaryChartIdentity];
   const payloadIdentity = canFetch
     ? JSON.stringify([
@@ -220,6 +238,7 @@ function useInspectorPayload(
   React.useEffect(() => {
     if (!canFetch || !payloadIdentity || !kind || objectId == null || !sourceName) return;
     const controller = new AbortController();
+    const binding = bindingJson ? JSON.parse(bindingJson) : undefined;
     fetchInspectorPayload(
       {
         kind,
@@ -240,7 +259,10 @@ function useInspectorPayload(
       },
       controller.signal,
     )
-      .then((payload) => setPayloadState({ identity: payloadIdentity, payload }))
+      .then((payload) => {
+        if (controller.signal.aborted) return;
+        setPayloadState({ identity: payloadIdentity, payload });
+      })
       .catch((err) => {
         if ((err as { name?: string }).name === "AbortError") return;
         if (isDaemonStatusError(err, "inspector request failed", 404)) {
@@ -251,21 +273,27 @@ function useInspectorPayload(
         }
         console.error("[inspector]", err);
       });
-    // Keep the current payload visible while the same object quietly refreshes.
-    // The identity guard below still prevents one object's details appearing
-    // under another object or chart while its request is in flight.
+    // Stale-while-refresh: keep the complete previous object visible while a
+    // newly clicked object loads, then swap the daemon payload in one commit.
+    // This is retained inspector chrome, so an identity change must not expose
+    // the empty hint or collapse the pane between the click and response.
     return () => controller.abort();
-  }, [canFetch, payloadIdentity, kind, objectId, docId, chartRole, sourceName, hereNow, supplementaryKind, comparisonName, viewMode, when, binding, refreshSeq]);
+  }, [canFetch, payloadIdentity, kind, objectId, docId, chartRole, sourceName, hereNow, supplementaryKind, comparisonName, viewMode, when, bindingJson, refreshSeq]);
 
-  return canFetch && payloadState?.identity === payloadIdentity ? payloadState.payload : null;
+  return canFetch ? payloadState?.payload ?? null : null;
 }
 
-function renderChartIdentity(
+/**
+ * Identity of the chart being inspected, deliberately excluding its datetime.
+ * Time is refresh data, not object identity: including it made every step hide
+ * the focused payload until the replacement request completed.
+ */
+function stableRenderChartIdentity(
   chart: ChartRenderSnapshot["primaryChart"] | null | undefined,
 ): readonly unknown[] | null {
   if (!chart) return null;
   const { meta } = chart;
-  return [meta.name, meta.kind, meta.datetime, meta.place, meta.latitude, meta.longitude];
+  return [meta.name, meta.kind, meta.place, meta.latitude, meta.longitude];
 }
 
 /** Region → the object_id the daemon route expects (planet SE id / angle key). */
@@ -302,8 +330,8 @@ function usePassages(
   activeDoc: WorkspaceDocument | null,
   chart: ChartRenderSnapshot | null,
   radixBranchId: string | null,
-  lastSessionChange: WorkspaceSessionChange | null,
 ): InspectorPassagesPayload | null {
+  const locale = useLocale();
   const [passagesState, setPassagesState] = React.useState<{
     identity: string;
     passages: InspectorPassagesPayload;
@@ -316,22 +344,25 @@ function usePassages(
   const supplementaryKind = activeDoc?.supplementaryFeatureKind;
   const comparisonName = activeDoc?.comparisonSourceName;
   const viewMode = chart?.document?.viewMode;
-  const when = useStepSettledValue(
-    snapshotDisplayDatetime(chart, activeDoc),
-    activeDoc?.id ?? null,
-    lastSessionChange,
-  );
-  const binding = activeDoc?.supplementaryBinding;
+  const bindingJson = activeDoc?.supplementaryBinding
+    ? JSON.stringify(activeDoc.supplementaryBinding)
+    : null;
   const docId = activeDoc?.id ?? undefined;
+  // Planet/sign source text is standing content. A live document id already
+  // resolves the current session chart, so its changing cursor must not refetch
+  // and rerender the passage on every step. The fallback loader still needs a
+  // datetime when no live document exists.
+  const when = docId ? undefined : snapshotDisplayDatetime(chart, activeDoc);
 
   const canFetch = Boolean(region && kind && objectId != null && sourceName);
   const passagesIdentity = canFetch
-    ? JSON.stringify([radixBranchId, kind, objectId])
+    ? JSON.stringify([radixBranchId, kind, objectId, locale])
     : null;
 
   React.useEffect(() => {
     if (!canFetch || !passagesIdentity || !kind || objectId == null || !sourceName) return;
     const controller = new AbortController();
+    const binding = bindingJson ? JSON.parse(bindingJson) : undefined;
     fetchPassages(
       {
         kind,
@@ -348,7 +379,10 @@ function usePassages(
       },
       controller.signal,
     )
-      .then((passages) => setPassagesState({ identity: passagesIdentity, passages }))
+      .then((passages) => {
+        if (controller.signal.aborted) return;
+        setPassagesState({ identity: passagesIdentity, passages });
+      })
       .catch((err) => {
         if ((err as { name?: string }).name === "AbortError") return;
         if (isDaemonStatusError(err, "passages request failed", 404)) {
@@ -360,11 +394,12 @@ function usePassages(
         console.error("[inspector:passages]", err);
       });
     return () => controller.abort();
-  }, [canFetch, passagesIdentity, kind, objectId, docId, sourceName, hereNow, supplementaryKind, comparisonName, viewMode, when, binding]);
+  }, [canFetch, passagesIdentity, kind, objectId, docId, sourceName, hereNow, supplementaryKind, comparisonName, viewMode, when, bindingJson]);
 
-  return canFetch && passagesState?.identity === passagesIdentity
-    ? passagesState.passages
-    : null;
+  // Keep the standing source section mounted across a planet-to-planet swap;
+  // the matching replacement arrives with the Zone A payload instead of the
+  // lower inspector disappearing and reappearing around the request.
+  return canFetch ? passagesState?.passages ?? null : null;
 }
 
 /**
@@ -383,7 +418,10 @@ function useAlerts(
   // wx re-fires the interpretation callback in _on_pack_toggled
   // (workspace_shell.py:2566-2569) for the same reason.
   const packsVersion = useWorkspaceStore((s) => s.packsVersion);
-  const [alerts, setAlerts] = React.useState<InspectorAlertsPayload | null>(null);
+  const [alertsState, setAlertsState] = React.useState<{
+    identity: string;
+    alerts: InspectorAlertsPayload;
+  } | null>(null);
 
   const discipline = lens?.discipline ?? null;
   const theme = lens?.theme ?? null;
@@ -397,7 +435,9 @@ function useAlerts(
     activeDoc?.id ?? null,
     lastSessionChange,
   );
-  const binding = activeDoc?.supplementaryBinding;
+  const bindingJson = activeDoc?.supplementaryBinding
+    ? JSON.stringify(activeDoc.supplementaryBinding)
+    : null;
   // Session-truth chart resolution — same as usePassages. Without it, alerts
   // 404 for any document whose name-based file lookup fails (edited/unsaved,
   // derived, or renamed charts; inspector_service.resolve_chart docstring).
@@ -415,10 +455,14 @@ function useAlerts(
   });
 
   const canFetch = Boolean(discipline && theme && (sourceName || docId));
+  const alertsIdentity = canFetch
+    ? JSON.stringify([docId ?? sourceName, discipline, theme, context ?? null])
+    : null;
 
   React.useEffect(() => {
-    if (!canFetch || !discipline || !theme || (!sourceName && !docId)) return;
+    if (!canFetch || !alertsIdentity || !discipline || !theme || (!sourceName && !docId)) return;
     const controller = new AbortController();
+    const binding = bindingJson ? JSON.parse(bindingJson) : undefined;
     fetchAlerts(
       {
         discipline,
@@ -435,23 +479,25 @@ function useAlerts(
       },
       controller.signal,
     )
-      .then(setAlerts)
+      .then((alerts) => setAlertsState({ identity: alertsIdentity, alerts }))
       .catch((err) => {
         if ((err as { name?: string }).name === "AbortError") return;
         if (isDaemonStatusError(err, "alerts request failed", 404)) {
-          setAlerts(null);
+          setAlertsState((current) =>
+            current?.identity === alertsIdentity ? null : current,
+          );
           return;
         }
         console.error("[inspector:alerts]", err);
-        setAlerts(null);
       });
-    return () => {
-      controller.abort();
-      setAlerts(null);
-    };
-  }, [canFetch, discipline, theme, context, docId, sourceName, hereNow, supplementaryKind, viewMode, when, binding, packsVersion, refreshSeq]);
+    // Preserve the current cards during same-chart refreshes. Removing them in
+    // cleanup collapsed the lower inspector and made the whole pane jump.
+    return () => controller.abort();
+  }, [canFetch, alertsIdentity, discipline, theme, context, docId, sourceName, hereNow, supplementaryKind, viewMode, when, bindingJson, packsVersion, refreshSeq]);
 
-  return canFetch ? alerts : null;
+  return canFetch && alertsState?.identity === alertsIdentity
+    ? alertsState.alerts
+    : null;
 }
 
 /**
@@ -533,7 +579,7 @@ function useHoraryLensPersistence(activeDoc: WorkspaceDocument | null) {
   }, [lens]);
 }
 
-function LensPickerSection() {
+const LensPickerSection = React.memo(function LensPickerSection() {
   const t = useT();
   const lens = useWorkspaceStore((s) => s.inspectorLens);
   const [catalog, setCatalog] = React.useState<CorpusDiscipline[] | null>(null);
@@ -613,14 +659,15 @@ function LensPickerSection() {
   const houseLabels = Array.from({ length: 12 }, (_, i) => String(i + 1));
 
   const selectClass = cn(
-    "h-6 min-w-0 flex-1 rounded border border-border/40 bg-background px-1 text-foreground/85",
+    "h-[var(--aries-inspector-control-height)] min-w-0 flex-1 rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] bg-[var(--aries-inspector-background)] px-[var(--aries-inspector-control-padding-x)]",
+    INSPECTOR_VALUE_COLOR,
     TEXT_SMALL,
   );
 
   return (
-    <div className="border-t border-border/40 px-4 pb-3 pt-3">
+    <div className={cn(INSPECTOR_SECTION_BOX, "pb-[var(--aries-inspector-control-section-padding-bottom)]")}>
       <SectionLabel>{t("inspector.interpretation")}</SectionLabel>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-[var(--aries-inspector-heading-gap)]">
         <select
           aria-label={t("inspector.discipline")}
           className={selectClass}
@@ -650,8 +697,8 @@ function LensPickerSection() {
         </select>
       </div>
       {lens?.discipline === "horary" ? (
-        <div className="mt-2 flex items-center gap-2">
-          <label className={cn("flex min-w-0 flex-1 items-center gap-1 text-foreground/60", TEXT_SMALL)}>
+        <div className="mt-[var(--aries-inspector-section-gap)] flex items-center gap-[var(--aries-inspector-heading-gap)]">
+          <label className={cn("flex min-w-0 flex-1 items-center gap-[var(--aries-control-gap-compact)]", INSPECTOR_MUTED_COLOR, TEXT_SMALL)}>
             {t("inspector.quesited")}:
             <select
               aria-label={t("inspector.quesitedHouse")}
@@ -667,7 +714,7 @@ function LensPickerSection() {
               ))}
             </select>
           </label>
-          <label className={cn("flex min-w-0 flex-1 items-center gap-1 text-foreground/60", TEXT_SMALL)}>
+          <label className={cn("flex min-w-0 flex-1 items-center gap-[var(--aries-control-gap-compact)]", INSPECTOR_MUTED_COLOR, TEXT_SMALL)}>
             {t("inspector.querent")}:
             <select
               aria-label={t("inspector.querentHouse")}
@@ -687,15 +734,15 @@ function LensPickerSection() {
       ) : null}
     </div>
   );
-}
+});
 
 function RegionPayload({ payload }: { payload: InspectorPayload | null }) {
   const t = useT();
   if (!payload) {
-    return <div className={cn("px-4 pb-4 text-foreground/45", TEXT_SMALL)}>{t("inspector.hover")}</div>;
+    return <div className={cn("px-[var(--aries-inspector-padding-x)] pb-[var(--aries-inspector-padding-bottom)]", INSPECTOR_LABEL_COLOR, TEXT_SMALL)}>{t("inspector.hover")}</div>;
   }
 
-  const accent = rgb(payload.accent);
+  const accent = semanticChartColor(payload.accentRole, rgb(payload.accent)) ?? null;
   const dignityItems = payload.dignity_items ?? [];
   const detailRows = payload.detail_rows ?? [];
   const aspectItems = payload.aspect_items ?? [];
@@ -703,29 +750,22 @@ function RegionPayload({ payload }: { payload: InspectorPayload | null }) {
   const showMeta = meta.length > 0 && meta.toLowerCase() !== "secondary ring";
 
   return (
-    <div className="flex flex-col gap-0 px-4 pb-4 pt-3">
-      {/* Header: glyph (Morinus, accent-tinted) + title + role meta. */}
-      <div className="flex min-w-0 items-baseline gap-2 pr-10">
-        {payload.glyph ? (
-          <span
-            className={cn("shrink-0 leading-none", INSPECTOR_GLYPH_TEXT)}
-            style={{ fontFamily: "'AriesMorinus'", color: accent ?? undefined }}
-            aria-hidden
-          >
-            {payload.glyph}
-          </span>
-        ) : null}
-        <span className={cn("min-w-0 font-semibold tracking-tight text-foreground", INSPECTOR_TITLE_TEXT)} style={INSPECTOR_WRAP_STYLE}>{payload.title}</span>
-        {showMeta ? (
-          <span className={cn("shrink-0 text-foreground/45", TEXT_SECTION)}>{meta}</span>
-        ) : null}
-      </div>
+    <div className="flex flex-col gap-0 px-[var(--aries-inspector-padding-x)] pb-[var(--aries-inspector-padding-bottom)] pt-[var(--aries-inspector-padding-top)]">
+      <InspectorIdentityHeader
+        glyph={payload.glyph}
+        title={payload.title}
+        motionGlyph={payload.motionGlyph ?? ""}
+        motionUsesSymbolFont={Boolean(payload.motionUsesSymbolFont)}
+        motionLabel={payload.motionLabel ?? ""}
+        meta={showMeta ? meta : null}
+        accent={accent}
+      />
 
       {/* Summary block — smart_rows, in order. */}
       {payload.smart_rows.length ? (
-        <div className="mt-2 flex flex-col gap-0.5">
+        <div className="mt-[var(--aries-inspector-section-gap)] flex flex-col gap-[var(--aries-inspector-row-gap)]">
           {payload.smart_rows.map((row, i) => (
-            <div key={`smart-${i}`} className={cn("tabular-nums leading-snug text-foreground/85", TEXT_BASE)} style={INSPECTOR_WRAP_STYLE}>
+            <div key={`smart-${i}`} className={cn("tabular-nums leading-snug", INSPECTOR_VALUE_COLOR, TEXT_BASE)} style={INSPECTOR_WRAP_STYLE}>
               {row}
             </div>
           ))}
@@ -738,7 +778,7 @@ function RegionPayload({ payload }: { payload: InspectorPayload | null }) {
       {dignityItems.length ? (
         <>
           <Divider />
-          <div className="flex flex-col gap-0.5">
+          <div className="flex flex-col gap-[var(--aries-inspector-row-gap)]">
             {dignityItems.map((item, i) => (
               <DignityRow key={`dig-${i}`} item={item} />
             ))}
@@ -750,16 +790,16 @@ function RegionPayload({ payload }: { payload: InspectorPayload | null }) {
       {detailRows.length || aspectItems.length ? (
         <>
           <Divider />
-          <div className="flex min-w-0 gap-4">
+          <div className="flex min-w-0 gap-[var(--aries-inspector-column-gap)]">
             {detailRows.length ? (
-              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <div className="flex min-w-0 flex-1 flex-col gap-[var(--aries-inspector-row-gap)]">
                 {detailRows.map((row, i) => (
                   <DetailRow key={`det-${i}`} text={row} />
                 ))}
               </div>
             ) : null}
             {aspectItems.length ? (
-              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <div className="flex min-w-0 flex-1 flex-col gap-[var(--aries-inspector-row-gap)]">
                 {aspectItems.map((item, i) => (
                   <AspectRow key={`asp-${i}`} item={item} />
                 ))}
@@ -772,31 +812,87 @@ function RegionPayload({ payload }: { payload: InspectorPayload | null }) {
   );
 }
 
+/** Stable focused-object chrome; React skips it while only live rows change. */
+const InspectorIdentityHeader = React.memo(function InspectorIdentityHeader({
+  glyph,
+  title,
+  motionGlyph,
+  motionUsesSymbolFont,
+  motionLabel,
+  meta,
+  accent,
+}: {
+  glyph: string;
+  title: string;
+  motionGlyph: string;
+  motionUsesSymbolFont: boolean;
+  motionLabel: string;
+  meta: string | null;
+  accent: string | null;
+}) {
+  return (
+    <div className="flex min-w-0 items-baseline gap-[var(--aries-inspector-heading-gap)] pr-[var(--aries-inspector-close-reserve)]">
+      {glyph ? (
+        <span
+          className={cn("shrink-0 leading-none", INSPECTOR_GLYPH_TEXT)}
+          style={{ fontFamily: "'AriesMorinus'", color: accent ?? undefined }}
+          aria-hidden
+        >
+          {glyph}
+        </span>
+      ) : null}
+      <span
+        className={cn("min-w-0 font-semibold tracking-tight", INSPECTOR_TITLE_COLOR, INSPECTOR_TITLE_TEXT)}
+        style={INSPECTOR_WRAP_STYLE}
+      >
+        {title}
+      </span>
+      {motionGlyph ? (
+        <span
+          className={cn("shrink-0 leading-none", INSPECTOR_LABEL_COLOR, TEXT_BASE)}
+          style={{
+            fontFamily:
+              motionUsesSymbolFont ? "var(--aries-font-symbols)" : undefined,
+            color: accent ?? undefined,
+          }}
+          aria-label={motionLabel || undefined}
+          title={motionLabel || undefined}
+        >
+          {motionGlyph}
+        </span>
+      ) : null}
+      {meta ? (
+        <span className={cn("shrink-0", INSPECTOR_LABEL_COLOR, TEXT_SECTION)}>{meta}</span>
+      ) : null}
+    </div>
+  );
+});
+
 function ManzilSummary({ manzil }: { manzil: InspectorManzil }) {
   const t = useT();
   const gloss = t(manzil.gloss_key);
   return (
-    <div className="mt-2 border-t border-border/55 pt-2">
-      <div className="flex min-w-0 items-start gap-4">
-        <div className="grid min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 gap-y-0.5">
-          <span className={cn("tabular-nums text-foreground/55", TEXT_SECTION)}>
+    <div className={cn("mt-[var(--aries-inspector-section-gap)] border-t pt-[var(--aries-inspector-section-gap)]", INSPECTOR_DIVIDER_BORDER)}>
+      <div className="flex min-w-0 items-start gap-[var(--aries-inspector-column-gap)]">
+        <div className="grid min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-[var(--aries-inspector-padding-top)] gap-y-[var(--aries-inspector-row-gap)]">
+          <span className={cn("tabular-nums", INSPECTOR_MUTED_COLOR, TEXT_BASE)}>
             {manzil.label} {manzil.index} · {manzil.degree_within}
           </span>
           <span
             lang="ar"
             dir="rtl"
-            className="justify-self-start text-[17px] leading-none text-foreground/90"
+            className={cn("justify-self-start leading-none", INSPECTOR_STRONG_COLOR, TEXT_ARABIC)}
             style={{ fontFamily: "'AriesArabicAcademic'" }}
           >
             {manzil.name_ar}
           </span>
           <span />
-          <span className={cn("min-w-0 text-foreground/80", TEXT_BASE)} style={INSPECTOR_WRAP_STYLE}>
+          <span className={cn("min-w-0", INSPECTOR_READING_COLOR, TEXT_SECTION)} style={INSPECTOR_WRAP_STYLE}>
             {manzil.name_translit}
           </span>
         </div>
         <span
-          className={cn("min-w-0 flex-1 truncate text-left text-foreground/55", TEXT_BASE)}
+          className={cn("min-w-0 flex-1 truncate text-left", INSPECTOR_MUTED_COLOR, TEXT_SECTION)}
           title={gloss}
         >
           {gloss}
@@ -810,22 +906,34 @@ function ManzilSummary({ manzil }: { manzil: InspectorManzil }) {
 function DignityRow({ item }: { item: InspectorDignityItem }) {
   if (item.kind === "mutual_reception") {
     return (
-      <div className={cn("flex items-center gap-1", TEXT_BASE)}>
-        <span className="w-[52px] shrink-0 text-foreground/45">{item.label ?? ""}</span>
-        <span style={{ fontFamily: "'AriesMorinus'", color: rgb(item.left_colour) ?? undefined }} aria-hidden>
+      <div className={cn("flex items-center gap-[var(--aries-control-gap-compact)]", TEXT_BASE)}>
+        <span className={cn("w-[var(--aries-inspector-label-width)] shrink-0", INSPECTOR_LABEL_COLOR)}>{item.label ?? ""}</span>
+        <span
+          style={{
+            fontFamily: "'AriesMorinus'",
+            color: semanticChartColor(item.left_colour_role, rgb(item.left_colour)),
+          }}
+          aria-hidden
+        >
           {item.left}
         </span>
-        <span className="px-1 text-foreground/60">{item.arrow}</span>
-        <span style={{ fontFamily: "'AriesMorinus'", color: rgb(item.right_colour) ?? undefined }} aria-hidden>
+        <span className={cn("px-[var(--aries-control-gap-compact)]", INSPECTOR_MUTED_COLOR)}>{item.arrow}</span>
+        <span
+          style={{
+            fontFamily: "'AriesMorinus'",
+            color: semanticChartColor(item.right_colour_role, rgb(item.right_colour)),
+          }}
+          aria-hidden
+        >
           {item.right}
         </span>
       </div>
     );
   }
-  const colour = rgb(item.colour);
+  const colour = semanticChartColor(item.colour_role, rgb(item.colour));
   return (
-    <div className={cn("flex min-w-0 items-baseline gap-2", TEXT_BASE)}>
-      <span className="w-[52px] shrink-0 text-foreground/45">{item.label}</span>
+    <div className={cn("flex min-w-0 items-baseline gap-[var(--aries-inspector-heading-gap)]", TEXT_BASE)}>
+      <span className={cn("w-[var(--aries-inspector-label-width)] shrink-0", INSPECTOR_LABEL_COLOR)}>{item.label}</span>
       <span className={cn("min-w-0", item.bold && "font-semibold")} style={{ color: colour ?? undefined, ...INSPECTOR_WRAP_STYLE }}>
         {item.value}
       </span>
@@ -838,14 +946,14 @@ function DignityRow({ item }: { item: InspectorDignityItem }) {
 function DetailRow({ text }: { text: string }) {
   const idx = text.indexOf(":");
   if (idx === -1) {
-    return <div className={cn("tabular-nums text-foreground/85", TEXT_SMALL)} style={INSPECTOR_WRAP_STYLE}>{text}</div>;
+    return <div className={cn("tabular-nums", INSPECTOR_VALUE_COLOR, TEXT_SMALL)} style={INSPECTOR_WRAP_STYLE}>{text}</div>;
   }
   const label = text.slice(0, idx + 1);
   const value = text.slice(idx + 1).trim();
   return (
-    <div className={cn("flex min-w-0 items-baseline gap-1.5", TEXT_SMALL)}>
-      <span className="text-foreground/45">{label}</span>
-      <span className="min-w-0 tabular-nums text-foreground/85" style={INSPECTOR_WRAP_STYLE}>{value}</span>
+    <div className={cn("flex min-w-0 items-baseline gap-[var(--aries-control-gap)]", TEXT_SMALL)}>
+      <span className={INSPECTOR_LABEL_COLOR}>{label}</span>
+      <span className={cn("min-w-0 tabular-nums", INSPECTOR_VALUE_COLOR)} style={INSPECTOR_WRAP_STYLE}>{value}</span>
     </div>
   );
 }
@@ -862,10 +970,10 @@ function splitLeadingToken(text: string): [string, string] {
  * column at narrow widths, but keeps the aspect glyph joined to the first text
  * token so it never lands alone on a line. */
 function AspectRow({ item }: { item: InspectorAspectItem }) {
-  const colour = rgb(item.aspect_colour);
+  const colour = semanticChartColor(item.aspect_colour_role, rgb(item.aspect_colour));
   const [suffixLead, suffixTail] = splitLeadingToken(item.suffix_text ?? "");
   return (
-    <div className={cn("min-w-0 tabular-nums leading-snug text-foreground/85", TEXT_SMALL)} style={INSPECTOR_WRAP_STYLE}>
+    <div className={cn("min-w-0 tabular-nums leading-snug", INSPECTOR_VALUE_COLOR, TEXT_SMALL)} style={INSPECTOR_WRAP_STYLE}>
       {item.prefix_text ? <span>{item.prefix_text}</span> : null}
       {item.aspect_glyph || suffixLead ? (
         <span className="whitespace-nowrap">
@@ -888,7 +996,7 @@ function AspectRow({ item }: { item: InspectorAspectItem }) {
  * inspector hover path: one standing planet/sign section, no legacy corpus
  * browser cards and no pin controls.
  */
-function PassagesZone({ passages }: { passages: InspectorPassagesPayload | null }) {
+const PassagesZone = React.memo(function PassagesZone({ passages }: { passages: InspectorPassagesPayload | null }) {
   const t = useT();
   if (!passages) return null;
   const section = passages.section;
@@ -897,32 +1005,32 @@ function PassagesZone({ passages }: { passages: InspectorPassagesPayload | null 
     // Matches the wx empty hint (workspace_shell.py:1506) for bodies Valens
     // doesn't cover (Uranus/Neptune/Pluto/Chiron) and non-passage region kinds.
     return (
-      <div className={cn("border-t border-border/40 px-4 pb-4 pt-3 text-foreground/45", TEXT_SMALL)}>
+      <div className={cn(INSPECTOR_SECTION_BOX, INSPECTOR_LABEL_COLOR, TEXT_SMALL)}>
         {t("inspector.valensHint")}
       </div>
     );
   }
 
   return (
-    <div className="border-t border-border/40 px-4 pb-4 pt-3">
+    <div className={INSPECTOR_SECTION_BOX}>
       <SignificationText section={section} />
     </div>
   );
-}
+});
 
 /** Plain Valens definition text shaped like wx QuoteTextPane. */
 function SignificationText({ section }: { section: InspectorPassageSection }) {
   const paragraphs = section.paragraphs ?? [];
 
   return (
-    <div className={cn("leading-relaxed text-foreground/85", TEXT_READING)}>
+    <div className={cn("leading-relaxed", INSPECTOR_VALUE_COLOR, TEXT_READING)}>
       {section.citation_label ? (
-        <div className="mb-3 italic text-foreground/45">
+        <div className={cn("mb-3 italic", INSPECTOR_LABEL_COLOR)}>
           <PassageRuns runs={section.citation_runs} fallback={section.citation_label} />
         </div>
       ) : null}
       {paragraphs.length ? (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-[var(--aries-inspector-padding-top)]">
           {paragraphs.map((paragraph, index) => (
             <PassageParagraphView key={`paragraph-${index}`} paragraph={paragraph} />
           ))}
@@ -933,7 +1041,7 @@ function SignificationText({ section }: { section: InspectorPassageSection }) {
         </p>
       )}
       {section.footnotes.length ? (
-        <div className={cn("mt-3 flex flex-col gap-1 italic text-foreground/45", TEXT_SECTION)}>
+        <div className={cn("mt-[var(--aries-inspector-padding-top)] flex flex-col gap-[var(--aries-control-gap-compact)] italic", INSPECTOR_LABEL_COLOR, TEXT_SECTION)}>
           {section.footnotes.map((note, index) => (
             <div key={`footnote-${index}`}>{note}</div>
           ))}
@@ -952,7 +1060,7 @@ function PassageParagraphView({ paragraph }: { paragraph: InspectorPassageParagr
   return (
     <div>
       {paragraph.label ? (
-        <div className="font-semibold text-foreground/85">{paragraph.label}</div>
+        <div className={cn("font-semibold", INSPECTOR_VALUE_COLOR)}>{paragraph.label}</div>
       ) : null}
       <div>
         {paragraph.bullet ? <span aria-hidden>• </span> : null}
@@ -1008,7 +1116,7 @@ function PassageRunSpan({ run }: { run: InspectorPassageRun }) {
     case "bold":
       return <strong className="font-semibold">{run.text}</strong>;
     case "editorial":
-      return <span className="text-foreground/60">{run.text}</span>;
+      return <span className={INSPECTOR_MUTED_COLOR}>{run.text}</span>;
     default:
       return <>{run.text}</>;
   }
@@ -1020,7 +1128,7 @@ function PassageRunSpan({ run }: { run: InspectorPassageRun }) {
  * citation, all verbatim from the daemon. Empty / no-lens → nothing rendered
  * (matches the wx oracle hiding the whole section, workspace_shell.py:2618).
  */
-function AlertsZone({ alerts }: { alerts: InspectorAlertsPayload | null }) {
+const AlertsZone = React.memo(function AlertsZone({ alerts }: { alerts: InspectorAlertsPayload | null }) {
   const t = useT();
   if (!alerts || alerts.alerts.length === 0) return null;
   const heading = [alerts.discipline, alerts.theme]
@@ -1029,9 +1137,9 @@ function AlertsZone({ alerts }: { alerts: InspectorAlertsPayload | null }) {
     .join(" · ");
 
   return (
-    <div className="border-t border-border/40 px-4 pb-4 pt-3">
+    <div className={INSPECTOR_SECTION_BOX}>
       <SectionLabel>{heading || t("inspector.packAlerts")}</SectionLabel>
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-[var(--aries-inspector-card-gap)]">
         {/* wx caps the visible cards at 12 (workspace_shell.py:2635). */}
         {/* Pack tag only when >1 pack ships rules for the discipline — the
             cite alone attributes single-pack rules (workspace_shell.py:2660-2669). */}
@@ -1041,7 +1149,7 @@ function AlertsZone({ alerts }: { alerts: InspectorAlertsPayload | null }) {
       </div>
     </div>
   );
-}
+});
 
 /** Status → dot colour. Presentation mapping mirroring the wx oracle's
  * _election_status_colour (workspace_shell.py:2391); no content is derived. */
@@ -1056,32 +1164,32 @@ const ALERT_STATUS_COLOUR: Record<string, string> = {
 function AlertCard({ alert, showPackTag }: { alert: InspectorAlert; showPackTag?: boolean }) {
   const dot = (alert.status && ALERT_STATUS_COLOUR[alert.status]) || "var(--aries-status-neutral)";
   return (
-    <div className="rounded-md border border-border/40 bg-foreground/[0.02] px-3 py-2">
-      <div className="flex items-center gap-2">
+    <div className="rounded-md border border-[color:var(--aries-inspector-card-border-color)] bg-[var(--aries-inspector-card-background)] px-[var(--aries-inspector-card-padding-x)] py-[var(--aries-inspector-card-padding-y)]">
+      <div className="flex items-center gap-[var(--aries-inspector-heading-gap)]">
         <span
-          className="h-2 w-2 shrink-0 rounded-full"
+          className="size-[var(--aries-inspector-status-dot-size)] shrink-0 rounded-full"
           style={{ backgroundColor: dot }}
           aria-hidden
         />
         {alert.glyph ? (
-          <span className={cn("leading-none text-foreground/80", INSPECTOR_ALERT_GLYPH_TEXT)} style={{ fontFamily: "'AriesMorinus'" }} aria-hidden>
+          <span className={cn("leading-none", INSPECTOR_READING_COLOR, INSPECTOR_ALERT_GLYPH_TEXT)} style={{ fontFamily: "'AriesMorinus'" }} aria-hidden>
             {alert.glyph}
           </span>
         ) : null}
-        <span className={cn("min-w-0 flex-1 font-semibold tracking-tight text-foreground/90", TEXT_SMALL)}>
+        <span className={cn("min-w-0 flex-1 font-semibold tracking-tight", INSPECTOR_STRONG_COLOR, TEXT_SMALL)}>
           {alert.title}
         </span>
         {alert.pack && showPackTag ? (
-          <span className={cn("shrink-0 text-foreground/35", INSPECTOR_PACK_TAG_TEXT)}>
+          <span className={cn("shrink-0", INSPECTOR_TERTIARY_COLOR, INSPECTOR_PACK_TAG_TEXT)}>
             {alert.pack}
           </span>
         ) : null}
       </div>
       {alert.body ? (
-        <p className={cn("mt-1 leading-relaxed text-foreground/80 whitespace-pre-line", TEXT_SMALL)}>{alert.body}</p>
+        <p className={cn("mt-[var(--aries-control-gap-compact)] leading-relaxed whitespace-pre-line", INSPECTOR_READING_COLOR, TEXT_SMALL)}>{alert.body}</p>
       ) : null}
       {alert.cite ? (
-        <div className={cn("mt-1 italic text-foreground/45", TEXT_SECTION)}>{alert.cite}</div>
+        <div className={cn("mt-[var(--aries-control-gap-compact)] italic", INSPECTOR_LABEL_COLOR, TEXT_SECTION)}>{alert.cite}</div>
       ) : null}
     </div>
   );
@@ -1090,18 +1198,18 @@ function AlertCard({ alert, showPackTag }: { alert: InspectorAlert; showPackTag?
 function ChartSummary({ chart }: { chart: ChartRenderSnapshot | null }) {
   const t = useT();
   if (!chart) {
-    return <div className="px-4 pb-4 text-foreground/55">{t("inspector.noChart")}</div>;
+    return <div className={cn("px-[var(--aries-inspector-padding-x)] pb-[var(--aries-inspector-padding-bottom)]", INSPECTOR_MUTED_COLOR)}>{t("inspector.noChart")}</div>;
   }
   const meta = chart.primaryChart.meta;
   return (
-    <div className="flex flex-col gap-2 px-4 pb-4 pr-12 pt-3">
-      <div className={cn("font-medium tracking-tight text-foreground", TEXT_HEADER)}>{meta.name}</div>
+    <div className="flex flex-col gap-[var(--aries-inspector-section-gap)] px-[var(--aries-inspector-padding-x)] pb-[var(--aries-inspector-padding-bottom)] pr-[var(--aries-inspector-summary-close-reserve)] pt-[var(--aries-inspector-padding-top)]">
+      <div className={cn("font-medium tracking-tight", INSPECTOR_TITLE_COLOR, TEXT_HEADER)}>{meta.name}</div>
       <SummaryRow label={t("inspector.date")} value={meta.dateDisplay} />
       <SummaryRow label={t("inspector.time")} value={meta.timeDisplay} />
       <SummaryRow label={t("inspector.place")} value={meta.place} />
       <SummaryRow label={t("inspector.coords")} value={meta.placeCoords} />
       <SummaryRow label={t("inspector.age")} value={meta.age} />
-      <div className={cn("pt-3 text-foreground/45", TEXT_SMALL)}>{t("inspector.hover")}</div>
+      <div className={cn("pt-[var(--aries-inspector-padding-top)]", INSPECTOR_LABEL_COLOR, TEXT_SMALL)}>{t("inspector.hover")}</div>
     </div>
   );
 }
@@ -1109,19 +1217,19 @@ function ChartSummary({ chart }: { chart: ChartRenderSnapshot | null }) {
 function SummaryRow({ label, value }: { label: string; value: string | null | undefined }) {
   if (value == null || value === "") return null;
   return (
-    <div className="flex items-baseline justify-between gap-3">
-      <span className={cn("text-foreground/45", TEXT_SECTION)}>{label}</span>
+    <div className="flex items-baseline justify-between gap-[var(--aries-inspector-padding-top)]">
+      <span className={cn(INSPECTOR_LABEL_COLOR, TEXT_SECTION)}>{label}</span>
       <span className="text-right tabular-nums">{value}</span>
     </div>
   );
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <div className={cn("pb-0.5 text-foreground/45", TEXT_SECTION)}>{children}</div>;
+  return <div className={cn("pb-[var(--aries-inspector-row-gap)]", INSPECTOR_LABEL_COLOR, TEXT_SECTION)}>{children}</div>;
 }
 
 function Divider() {
-  return <div className="my-2 border-t border-border/40" />;
+  return <div className={cn("my-[var(--aries-inspector-section-gap)] border-t", INSPECTOR_DIVIDER_BORDER)} />;
 }
 
 function rgb(c: RGB | null | undefined): string | null {

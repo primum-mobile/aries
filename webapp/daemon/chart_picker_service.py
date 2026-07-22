@@ -16,6 +16,7 @@ import common
 import note_storage
 import searchcatalog
 from webapp.daemon.chart_service import chart_snapshot_service
+from webapp.daemon.display_palette import effective_display_options, sign_color_role
 from webapp.frontend.scripts import export_chart_json
 
 
@@ -91,12 +92,14 @@ class ChartPickerService:
         query = self._build_search_query(payload)
         if not query.is_active():
             raise ValueError("set at least one placement or aspect")
+        canonical_options = chart_snapshot_service.options
         results, summary = chartcollectionsearchbackend.search_chart_infos(
             chart_infos,
-            chart_snapshot_service.options,
+            canonical_options,
             query,
             limit=1000,
         )
+        display_options = effective_display_options(canonical_options)
         return {
             "summary": {
                 "scanned": summary.scanned,
@@ -117,7 +120,7 @@ class ChartPickerService:
                     "collection": result.collection,
                     "place": result.place,
                     "matches": result.matches_text(),
-                    "matchRuns": _match_runs(result.matches, chart_snapshot_service.options),
+                    "matchRuns": _match_runs(result.matches, display_options),
                     "matchSortValue": _first_match_longitude_sort(result.matches),
                 }
                 for result in results
@@ -432,13 +435,13 @@ def _first_match_longitude_sort(matches: list[str]) -> float | None:
     return None
 
 
-def _match_runs(matches: list[Any], options: Any) -> list[list[dict[str, str]]]:
+def _match_runs(matches: list[Any], options: Any) -> list[list[dict[str, Any]]]:
     return [_match_run(str(match), options) for match in matches]
 
 
-def _match_run(text: str, options: Any) -> list[dict[str, str]]:
+def _match_run(text: str, options: Any) -> list[dict[str, Any]]:
     token_specs = _match_token_specs(options)
-    runs: list[dict[str, str]] = []
+    runs: list[dict[str, Any]] = []
     pos = 0
     while pos < len(text):
         best: tuple[int, int, Any, Any] | None = None
@@ -526,19 +529,26 @@ def _match_token_specs(options: Any) -> list[tuple[re.Pattern[str], Any]]:
     return specs
 
 
-def _sign_run(label: str, signs: tuple[str, ...], options: Any) -> dict[str, str]:
+def _sign_run(label: str, signs: tuple[str, ...], options: Any) -> dict[str, Any]:
     sign_index = {str(name): idx for idx, name in enumerate(searchcatalog.SIGNS)}.get(str(label))
     if sign_index is None:
         return {"kind": "text", "text": label}
+    color = common.get_sign_color(options, sign_index, force_element=True)
     return {
         "kind": "glyph",
         "text": signs[sign_index],
         "title": label,
-        "color": _rgb_css(common.get_sign_color(options, sign_index, force_element=True)),
+        "color": _rgb_css(color),
+        "colorRole": sign_color_role(
+            options,
+            sign_index,
+            force_element=True,
+            resolved_color=color,
+        ),
     }
 
 
-def _append_text_run(runs: list[dict[str, str]], text: str) -> None:
+def _append_text_run(runs: list[dict[str, Any]], text: str) -> None:
     if not text:
         return
     if runs and runs[-1].get("kind") == "text":

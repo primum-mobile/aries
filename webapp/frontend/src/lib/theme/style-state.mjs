@@ -17,6 +17,7 @@ export function normalizeThemeState(value) {
   return {
     activePreset: candidate.activePreset,
     mode: candidate.mode,
+    presentationCursor: candidate.presentationCursor === true,
     schemaVersion:
       typeof candidate.schemaVersion === "number" ? candidate.schemaVersion : 1,
     version: candidate.version,
@@ -31,6 +32,27 @@ export function normalizeThemeState(value) {
         : candidate.paletteHash,
     appTokens: candidate.appTokens,
     chartPalette: candidate.chartPalette,
+    activeProfile:
+      candidate.activeProfile && typeof candidate.activeProfile === "object"
+        ? candidate.activeProfile
+        : null,
+    profileOverrides: {
+      appTokens:
+        candidate.profileOverrides?.appTokens &&
+        typeof candidate.profileOverrides.appTokens === "object"
+          ? candidate.profileOverrides.appTokens
+          : {},
+      chartPalette:
+        candidate.profileOverrides?.chartPalette &&
+        typeof candidate.profileOverrides.chartPalette === "object"
+          ? candidate.profileOverrides.chartPalette
+          : {},
+      chartData:
+        candidate.profileOverrides?.chartData &&
+        typeof candidate.profileOverrides.chartData === "object"
+          ? candidate.profileOverrides.chartData
+          : {},
+    },
   };
 }
 

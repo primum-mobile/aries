@@ -1,12 +1,20 @@
 "use client";
 
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 
 import { ChartContextMenu } from "@/components/workshell/chart-context-menu";
 import { ChartHoverFlag, type FlagAnchor } from "@/components/workshell/chart-hover-flag";
 import { CanvasDraw } from "@/lib/chart/canvas-draw";
 import { morinusTextFontFromTokens } from "@/lib/chart/chart-fonts";
-import { createWheelRenderStyle } from "@/lib/chart/wheel-render-style";
+import { resolveWheelRenderStyleFromTokens } from "@/lib/chart/wheel-render-style";
 import {
   awaitFonts,
   chartFontsAreReady,
@@ -16,11 +24,32 @@ import {
   type ChartHitRegion,
 } from "@/lib/chart/draw-chart";
 import { fetchDocumentSnapshot, patchOptions } from "@/lib/daemon/client";
-import { readPaletteFromTheme } from "@/lib/chart/palette";
-import { perfNow, recordChartPerf } from "@/lib/chart/perf";
+import type { ThemeState } from "@/lib/daemon/client";
+import {
+  applyProfileColorsToSnapshot,
+  neutralChartPalette,
+  readPaletteFromTheme,
+  readPaletteProfileOverrides,
+} from "@/lib/chart/palette";
+import { chartPerfEnabled, perfNow, recordChartPerf } from "@/lib/chart/perf";
+import { acknowledgePaintedDocumentSnapshot } from "@/lib/chart/painted-snapshot-registry";
 import { useStyleRevision } from "@/hooks/use-style-revision";
+import { STYLE_FONT_ASSETS_READY_EVENT } from "@/lib/style-lab/fonts";
+import { compileFlatWheelAuthoringOverrides } from "@/lib/style-lab/wheel-authoring-adapter";
+import {
+  buildWheelStyleScene,
+  hitTestWheelStyleScene,
+  resolveWheelStyleHandleDrag,
+  type WheelStyleScene,
+} from "@/lib/style-lab/wheel-style-scene";
+import type {
+  StyleSceneHandle,
+  StyleSceneHitGeometry,
+  StyleScenePoint,
+} from "@/lib/style-lab/style-scene";
 import { cn } from "@/lib/utils";
-import type { ChartRenderSnapshot } from "@/lib/chart/types";
+import type { Chart, ChartRenderSnapshot } from "@/lib/chart/types";
+import { useChartStyleEditorStore } from "@/stores/chart-style-editor-store";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 import { useFrameLayoutStore } from "@/stores/frame-layout-store";
 import { useThemeStore } from "@/stores/theme-store";
@@ -53,6 +82,103 @@ type RenderedCanvasState = {
 type MidbandHitRegion = Extract<ChartHitRegion, { kind: "midband_empty" }>;
 
 const DEFERRED_OUTER_LABEL_DELAY_MS = 1;
+
+function scenePoint(
+  center: StyleScenePoint,
+  radius: number,
+  longitude: number,
+  ascendantDegrees: number,
+): StyleScenePoint {
+  const radians = (180 + longitude - ascendantDegrees) * (Math.PI / 180);
+  return [
+    center[0] + Math.cos(radians) * radius,
+    center[1] - Math.sin(radians) * radius,
+  ];
+}
+
+function polarSectorPath(
+  geometry: Extract<StyleSceneHitGeometry, { kind: "polar-sector" }>,
+): string {
+  const startOuter = scenePoint(
+    geometry.center,
+    geometry.outerRadius,
+    geometry.startLongitude,
+    geometry.ascendantDegrees,
+  );
+  const endOuter = scenePoint(
+    geometry.center,
+    geometry.outerRadius,
+    geometry.endLongitude,
+    geometry.ascendantDegrees,
+  );
+  const endInner = scenePoint(
+    geometry.center,
+    geometry.innerRadius,
+    geometry.endLongitude,
+    geometry.ascendantDegrees,
+  );
+  const startInner = scenePoint(
+    geometry.center,
+    geometry.innerRadius,
+    geometry.startLongitude,
+    geometry.ascendantDegrees,
+  );
+  const span = ((geometry.endLongitude - geometry.startLongitude) % 360 + 360) % 360 || 360;
+  const largeArc = span > 180 ? 1 : 0;
+  return [
+    `M ${startOuter[0]} ${startOuter[1]}`,
+    `A ${geometry.outerRadius} ${geometry.outerRadius} 0 ${largeArc} 0 ${endOuter[0]} ${endOuter[1]}`,
+    `L ${endInner[0]} ${endInner[1]}`,
+    `A ${geometry.innerRadius} ${geometry.innerRadius} 0 ${largeArc} 1 ${startInner[0]} ${startInner[1]}`,
+    "Z",
+  ].join(" ");
+}
+
+function SceneGeometryOutline({
+  geometry,
+  tone,
+  keyPrefix,
+}: {
+  geometry: StyleSceneHitGeometry;
+  tone: "hover" | "selected";
+  keyPrefix: string;
+}) {
+  const className = tone === "selected"
+    ? "fill-[rgba(125,165,255,0.07)] stroke-[rgba(160,191,255,0.9)]"
+    : "fill-[rgba(125,165,255,0.035)] stroke-[rgba(160,191,255,0.55)]";
+  const common = { className: cn(className, "pointer-events-none [vector-effect:non-scaling-stroke]"), strokeWidth: tone === "selected" ? 1.25 : 1 };
+  if (geometry.kind === "compound") {
+    return geometry.geometries.map((child, index) => (
+      <SceneGeometryOutline
+        key={`${keyPrefix}:${index}`}
+        geometry={child}
+        tone={tone}
+        keyPrefix={`${keyPrefix}:${index}`}
+      />
+    ));
+  }
+  if (geometry.kind === "line") {
+    return <line {...common} x1={geometry.start[0]} y1={geometry.start[1]} x2={geometry.end[0]} y2={geometry.end[1]} />;
+  }
+  if (geometry.kind === "rectangle") {
+    return <rect {...common} x={geometry.x} y={geometry.y} width={geometry.width} height={geometry.height} rx={2} />;
+  }
+  if (geometry.kind === "circle") {
+    return <circle {...common} fill="none" cx={geometry.center[0]} cy={geometry.center[1]} r={geometry.radius} />;
+  }
+  if (geometry.kind === "disc") {
+    return <circle {...common} cx={geometry.center[0]} cy={geometry.center[1]} r={geometry.radius} />;
+  }
+  if (geometry.kind === "annulus") {
+    return (
+      <>
+        <circle {...common} fill="none" cx={geometry.center[0]} cy={geometry.center[1]} r={geometry.innerRadius} />
+        <circle {...common} fill="none" cx={geometry.center[0]} cy={geometry.center[1]} r={geometry.outerRadius} />
+      </>
+    );
+  }
+  return <path {...common} d={polarSectorPath(geometry)} />;
+}
 
 function chartTargetRect(width: number, height: number): ChartTargetRect {
   const side = Math.max(1, Math.min(width, height));
@@ -94,6 +220,78 @@ function dirtyStateFromSnapshot(chart: ChartRenderSnapshot): DirtyState {
     geometry: true,
     dynamic: true,
     outerLabel: chart.overlayRenderMode === "full",
+  };
+}
+
+function bodyLayoutSignature(regions: readonly ChartHitRegion[]): string {
+  return regions
+    .filter((region): region is Extract<
+      ChartHitRegion,
+      { kind: "planet" | "fortune" | "vertex" | "syzygy" | "angle" }
+    > =>
+      region.kind === "planet" ||
+        region.kind === "fortune" ||
+        region.kind === "vertex" ||
+        region.kind === "syzygy" ||
+        region.kind === "angle",
+    )
+    .map((region) => {
+      const role = region.chartRole ?? "primary";
+      const id = region.kind === "planet"
+        ? region.planetId
+        : region.kind === "angle"
+          ? region.angleId
+          : region.kind;
+      return `${role}:${region.kind}:${id}:${Math.round(region.x * 10) / 10}:${Math.round(region.y * 10) / 10}`;
+    })
+    .sort()
+    .join("|");
+}
+
+function semanticChartFrameSignature(chart: Chart | null | undefined): string {
+  if (!chart) return "none";
+  const degrees = (value: number) => Number(value).toFixed(8);
+  return [
+    chart.meta.datetime,
+    `asc:${degrees(chart.angles.asc)}`,
+    `mc:${degrees(chart.angles.mc)}`,
+    ...chart.planets.map((planet) => `${planet.id}:${degrees(planet.longitude)}`),
+  ].join("|");
+}
+
+function semanticFrameSignature(snapshot: ChartRenderSnapshot): string {
+  return [
+    snapshot.displayDatetime,
+    `primary:${semanticChartFrameSignature(snapshot.primaryChart)}`,
+    `comparison:${semanticChartFrameSignature(snapshot.comparisonChart)}`,
+  ].join("||");
+}
+
+function overlayPerfState(snapshot: ChartRenderSnapshot) {
+  const displayChart =
+    snapshot.document?.compoundKind === "synastry" && snapshot.comparisonChart
+      ? snapshot.primaryChart
+      : snapshot.comparisonChart ?? snapshot.primaryChart;
+  const rows = displayChart.overlay?.rows ?? [];
+  const groupCounts = { dayhour: 0, header: 0, signal: 0 };
+  const signatures = rows.map((row) => {
+    const group = row.group ?? "row";
+    if (group === "dayhour" || group === "header" || group === "signal") {
+      groupCounts[group] += 1;
+    }
+    const glyphs = row.glyphs
+      .map((glyph) => `${glyph.kind ?? ""}:${glyph.seId ?? ""}:${glyph.char}`)
+      .join("|");
+    return {
+      group,
+      slot: row.slot ?? null,
+      signature: `${row.slot ?? row.label}:${glyphs}:${row.trailing ?? ""}`,
+    };
+  });
+  return {
+    deferredSignals: displayChart.overlay?.deferredSignals === true,
+    groupCounts,
+    rows: signatures,
   };
 }
 
@@ -220,9 +418,15 @@ function findMidbandClickHit(
 export function ChartCanvas({
   chart,
   className,
+  paintEffectsActive,
+  appControlsEnabled = true,
+  inheritAppTheme = true,
 }: {
   chart: ChartRenderSnapshot;
   className?: string;
+  paintEffectsActive?: boolean;
+  appControlsEnabled?: boolean;
+  inheritAppTheme?: boolean;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const geometryRef = useRef<HTMLCanvasElement>(null);
@@ -233,7 +437,14 @@ export function ChartCanvas({
   const resizeSettleTimerRef = useRef<number | null>(null);
   const renderedSizeRef = useRef<RenderedCanvasState | null>(null);
   const retainedPaintTransformRef = useRef<RetainedPaintTransform | null>(null);
+  const renderedDocumentRef = useRef<string | null>(null);
+  const paintedAspectInteractionKeyRef = useRef<string | null>(null);
   const hitRegionsRef = useRef<ChartHitRegion[]>([]);
+  const styleSceneRef = useRef<WheelStyleScene | null>(null);
+  const styleHandleDragRef = useRef<{
+    handle: StyleSceneHandle;
+    start: StyleScenePoint;
+  } | null>(null);
   const hoveredKeyRef = useRef<string | null>(null);
   const lastPointerClientRef = useRef<{ x: number; y: number } | null>(null);
   // The hovered symbol + its canvas-local pixel centre, driving the on-chart
@@ -241,6 +452,8 @@ export function ChartCanvas({
   // (x, y) IS the region centre — the anchor wx computes in
   // _hover_flag_anchor_for_region (workspace_shell.py:5262).
   const [flagAnchor, setFlagAnchor] = useState<FlagAnchor | null>(null);
+  const [fontAssetRevision, setFontAssetRevision] = useState(0);
+  const [styleScene, setStyleScene] = useState<WheelStyleScene | null>(null);
   const flagAnchorRef = useRef<FlagAnchor | null>(null);
   const flagAnchorTokenRef = useRef(0);
   const setHoveredRegion = useWorkspaceStore((s) => s.setHoveredRegion);
@@ -252,28 +465,194 @@ export function ChartCanvas({
   const toggleHideAllAspects = useWorkspaceStore((s) => s.toggleHideAllAspects);
   const clearAspectSelection = useWorkspaceStore((s) => s.clearAspectSelection);
   const pushCommandSnapshot = useDaemonWorkspaceStore((s) => s.pushCommandSnapshot);
-  const theme = useThemeStore((s) => s.theme);
+  const appTheme = useThemeStore((s) => s.theme);
+  const theme = inheritAppTheme ? appTheme : null;
+  const styleEditorActive = useChartStyleEditorStore((s) => s.active);
+  const styleEditorRevision = useChartStyleEditorStore((s) => s.revision);
+  const styleCssOverrides = useChartStyleEditorStore((s) => s.cssOverrides);
+  const styleSemanticOverrides = useChartStyleEditorStore((s) => s.semanticOverrides);
+  const styleAuthoringEditScope = useChartStyleEditorStore((s) => s.authoringEditScope);
+  const selectedStyleElement = useChartStyleEditorStore((s) => s.selectedElement);
+  const hoveredStyleElement = useChartStyleEditorStore((s) => s.hoveredElement);
+  const setHoveredStyleElement = useChartStyleEditorStore((s) => s.setHoveredElement);
+  const selectStyleElement = useChartStyleEditorStore((s) => s.selectElement);
+  const clearStyleSelection = useChartStyleEditorStore((s) => s.clearSelection);
+  const beginStyleGesture = useChartStyleEditorStore((s) => s.beginGesture);
+  const setStyleOverride = useChartStyleEditorStore((s) => s.setOverride);
+  const endStyleGesture = useChartStyleEditorStore((s) => s.endGesture);
+  const cancelStyleGesture = useChartStyleEditorStore((s) => s.cancelGesture);
   const styleRevision = useStyleRevision();
+  const hasProfilePaintEffects = Object.keys(theme?.profileOverrides?.chartPalette ?? {}).some(
+    (name) => name.includes("wheel-effect-"),
+  );
+  const hasDraftPaintEffects = styleEditorActive && Object.keys(styleCssOverrides).some(
+    (name) => name.includes("wheel-effect-"),
+  );
+  const styleEditorCanvasStyle = useMemo(() => {
+    if (!styleEditorActive) return undefined;
+    const effectVariables = Object.fromEntries(
+      Object.entries(styleCssOverrides).filter(([name]) => name.includes("wheel-effect-")),
+    );
+    return {
+      touchAction: "none",
+      ...effectVariables,
+    } as CSSProperties;
+  }, [styleCssOverrides, styleEditorActive]);
+
+  const isolatedStyleLabTheme = useMemo<ThemeState | null>(() => {
+    if (inheritAppTheme) return null;
+    return {
+      activePreset: "style-lab",
+      mode: "dark",
+      schemaVersion: 1,
+      version: 1,
+      styleRevision: styleEditorRevision,
+      paletteHash: "style-lab",
+      styleHash: `style-lab-${styleEditorRevision}`,
+      appTokens: { ...styleCssOverrides },
+      chartPalette: { ...styleCssOverrides },
+      activeProfile: null,
+      profileOverrides: {
+        appTokens: { ...styleCssOverrides },
+        chartPalette: { ...styleCssOverrides },
+        chartData: {},
+      },
+    };
+  }, [inheritAppTheme, styleCssOverrides, styleEditorRevision]);
 
   // Click-to-toggle is gated on the daemon's exclusiveOnClick flag (meaning is
   // daemon-owned). When OFF, clicks behave as today (hover/pin only).
   const exclusiveOnClick = Boolean(
     chart.clickAspectFlags?.exclusiveOnClick ?? chart.primaryChart.clickAspectFlags?.exclusiveOnClick,
   );
+  const aspectInteractionPaintKey = JSON.stringify([
+    chart.document?.documentId ?? null,
+    exclusiveOnClick,
+    selectedAspectBody,
+    hideAllAspects,
+  ]);
+
+  const effectiveTheme = useMemo(() => {
+    if (!inheritAppTheme) return isolatedStyleLabTheme;
+    if (!styleEditorActive || !theme || !Object.keys(styleCssOverrides).length) return theme;
+    return {
+      ...theme,
+      appTokens: { ...theme.appTokens, ...styleCssOverrides },
+      chartPalette: { ...theme.chartPalette, ...styleCssOverrides },
+      profileOverrides: {
+        ...theme.profileOverrides,
+        appTokens: { ...theme.profileOverrides.appTokens, ...styleCssOverrides },
+        chartPalette: {
+          ...theme.profileOverrides.chartPalette,
+          ...styleCssOverrides,
+        },
+      },
+    };
+  }, [inheritAppTheme, isolatedStyleLabTheme, styleCssOverrides, styleEditorActive, theme]);
 
   const palette = useMemo(
-    () => ({ ...readPaletteFromTheme(theme), ...(chart.primaryChart.palette ?? {}) }),
-    [chart, theme],
-  );
-  const chartTextFont = morinusTextFontFromTokens(theme?.appTokens);
-  const renderStyle = useMemo(
-    () => createWheelRenderStyle({
-      palette,
-      revision: styleRevision,
-      fontSymbols: '"AriesMorinus"',
-      fontUi: chartTextFont,
+    () => ({
+      ...(inheritAppTheme ? readPaletteFromTheme(effectiveTheme) : neutralChartPalette()),
+      ...(chart.primaryChart.palette ?? {}),
+      ...readPaletteProfileOverrides(effectiveTheme),
     }),
-    [palette, styleRevision, chartTextFont],
+    [chart, effectiveTheme, inheritAppTheme],
+  );
+  const renderSnapshot = useMemo(
+    () => applyProfileColorsToSnapshot(chart, effectiveTheme),
+    [chart, effectiveTheme],
+  );
+  const inheritedChartTextFont = morinusTextFontFromTokens(effectiveTheme?.appTokens);
+  const wheelTextFont = effectiveTheme?.chartPalette?.["--aries-wheel-font-text"]?.trim();
+  const chartTextFont = wheelTextFont && !wheelTextFont.startsWith("var(")
+    ? wheelTextFont
+    : inheritedChartTextFont;
+  const inheritedChartSymbolFont =
+    effectiveTheme?.appTokens?.["--aries-font-symbols"]?.trim() || '"AriesMorinus"';
+  const wheelSymbolFont = effectiveTheme?.chartPalette?.["--aries-wheel-font-symbols"]?.trim();
+  const chartSymbolFont = wheelSymbolFont && !wheelSymbolFont.startsWith("var(")
+    ? wheelSymbolFont
+    : inheritedChartSymbolFont;
+  const resolveRoleFont = (cssVar: string, fallback: string) => {
+    const value = effectiveTheme?.chartPalette?.[cssVar]?.trim();
+    return value && !value.startsWith("var(") ? value : fallback;
+  };
+  const chartBodySymbolFont = resolveRoleFont(
+    "--aries-wheel-font-body-symbols",
+    chartSymbolFont,
+  );
+  const chartSignSymbolFont = resolveRoleFont(
+    "--aries-wheel-font-sign-symbols",
+    chartSymbolFont,
+  );
+  const chartTermSymbolFont = resolveRoleFont(
+    "--aries-wheel-font-term-symbols",
+    chartSymbolFont,
+  );
+  const chartDecanSymbolFont = resolveRoleFont(
+    "--aries-wheel-font-decan-symbols",
+    chartSymbolFont,
+  );
+  const chartAspectSymbolFont = resolveRoleFont(
+    "--aries-wheel-font-aspect-symbols",
+    chartSymbolFont,
+  );
+
+  useEffect(() => {
+    const handleReady = () => setFontAssetRevision((value) => value + 1);
+    document.addEventListener(STYLE_FONT_ASSETS_READY_EVENT, handleReady);
+    return () => document.removeEventListener(STYLE_FONT_ASSETS_READY_EVENT, handleReady);
+  }, []);
+
+  useEffect(() => {
+    if (!styleEditorActive) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (!useChartStyleEditorStore.getState().gestureStart) return;
+      styleHandleDragRef.current = null;
+      cancelStyleGesture();
+      event.preventDefault();
+    };
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [cancelStyleGesture, styleEditorActive]);
+
+  const renderStyle = useMemo(
+    () =>
+      resolveWheelRenderStyleFromTokens(
+        (cssVar) => styleEditorActive
+          ? styleCssOverrides[cssVar] ?? effectiveTheme?.chartPalette?.[cssVar]
+          : effectiveTheme?.chartPalette?.[cssVar],
+        {
+          palette,
+          revision: `${styleRevision}:editor-${styleEditorRevision}:fonts-${fontAssetRevision}`,
+          fontSymbols: chartSymbolFont,
+          fontBodySymbols: chartBodySymbolFont,
+          fontSignSymbols: chartSignSymbolFont,
+          fontTermSymbols: chartTermSymbolFont,
+          fontDecanSymbols: chartDecanSymbolFont,
+          fontAspectSymbols: chartAspectSymbolFont,
+          fontUi: chartTextFont,
+          authoringOverrides: compileFlatWheelAuthoringOverrides(styleSemanticOverrides),
+        },
+      ),
+    [
+      palette,
+      styleRevision,
+      styleEditorRevision,
+      styleEditorActive,
+      styleCssOverrides,
+      styleSemanticOverrides,
+      chartTextFont,
+      chartSymbolFont,
+      chartBodySymbolFont,
+      chartSignSymbolFont,
+      chartTermSymbolFont,
+      chartDecanSymbolFont,
+      chartAspectSymbolFont,
+      fontAssetRevision,
+      effectiveTheme?.chartPalette,
+    ],
   );
 
   const setTrackedFlagAnchor = useCallback((next: FlagAnchor | null) => {
@@ -282,6 +661,7 @@ export function ChartCanvas({
   }, []);
 
   const ensureGlobalAspectsVisible = useCallback((reason: string) => {
+    if (!appControlsEnabled) return;
     if (chart.primaryChart.options.showAspects !== false) return;
     const docId = chart.document?.documentId;
     if (!docId) return;
@@ -289,7 +669,7 @@ export function ChartCanvas({
       .then(() => fetchDocumentSnapshot(docId))
       .then((snapshot) => pushCommandSnapshot(docId, snapshot))
       .catch((err) => console.error(`[${reason}-show-aspects]`, err));
-  }, [chart.document?.documentId, chart.primaryChart.options.showAspects, pushCommandSnapshot]);
+  }, [appControlsEnabled, chart.document?.documentId, chart.primaryChart.options.showAspects, pushCommandSnapshot]);
 
   const mapRenderedPointToViewport = useCallback((rect: DOMRect, x: number, y: number): [number, number] => {
     const transform = retainedPaintTransformRef.current;
@@ -361,6 +741,13 @@ export function ChartCanvas({
       return;
     }
 
+    const layoutDocumentId = chart.document?.documentId ?? null;
+    if (renderedDocumentRef.current !== layoutDocumentId) {
+      renderedSizeRef.current = null;
+      hitRegionsRef.current = [];
+      renderedDocumentRef.current = layoutDocumentId;
+    }
+
     let cancelled = false;
     const geometryDraw = new CanvasDraw(geometryCanvas);
     const dynamicDraw = new CanvasDraw(dynamicCanvas);
@@ -422,13 +809,31 @@ export function ChartCanvas({
         return false;
       }
       const paintStartedAt = perfNow();
+      const perfEnabled = chartPerfEnabled();
       const rect = wrap.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0) {
         return false;
       }
+      const diagnosticWindow = window as Window & {
+        __ARIES_CHART_PERF_SUPPRESS_NEXT_STEP_PAINT__?: boolean;
+      };
+      if (
+        perfEnabled &&
+        chart.overlayRenderMode === "step_fast" &&
+        diagnosticWindow.__ARIES_CHART_PERF_SUPPRESS_NEXT_STEP_PAINT__ === true
+      ) {
+        diagnosticWindow.__ARIES_CHART_PERF_SUPPRESS_NEXT_STEP_PAINT__ = false;
+        recordChartPerf("chart-canvas-paint-suppressed", {
+          docId: chart.document?.documentId ?? null,
+          mode: chart.overlayRenderMode,
+          displayDatetime: chart.document?.displayDatetime ?? chart.displayDatetime,
+          semanticFrameSignature: semanticFrameSignature(chart),
+        });
+        return false;
+      }
       const previous = renderedSizeRef.current;
       const effectiveDirty =
-        previous && !sameHostSize(previous, rect.width, rect.height)
+        !previous || !sameHostSize(previous, rect.width, rect.height)
           ? { geometry: true, dynamic: true, outerLabel: true }
           : dirty;
       const target = chartTargetRect(rect.width, rect.height);
@@ -437,10 +842,11 @@ export function ChartCanvas({
       let geometryMs = 0;
       let dynamicMs = 0;
       let outerLabelMs = 0;
+      let dynamicProfile: ReturnType<CanvasDraw["endProfile"]> = null;
       if (effectiveDirty.geometry) {
         const layerStartedAt = perfNow();
         geometryDraw.resize(rect.width, rect.height);
-        drawSnapshotLayer(geometryDraw, chart, "geometry", {
+        drawSnapshotLayer(geometryDraw, renderSnapshot, "geometry", {
           width: rect.width,
           height: rect.height,
           chartSize: target.side,
@@ -451,7 +857,8 @@ export function ChartCanvas({
       if (effectiveDirty.dynamic) {
         const layerStartedAt = perfNow();
         dynamicDraw.resize(rect.width, rect.height);
-        drawSnapshotLayer(dynamicDraw, chart, "dynamic", {
+        if (perfEnabled) dynamicDraw.beginProfile();
+        drawSnapshotLayer(dynamicDraw, renderSnapshot, "dynamic", {
           width: rect.width,
           height: rect.height,
           chartSize: target.side,
@@ -460,12 +867,13 @@ export function ChartCanvas({
           // chart's clickAspectFlags.exclusiveOnClick — ignored when OFF.
           clickAspectState: { selectedBody: selectedAspectBody, hideAll: hideAllAspects },
         });
+        dynamicProfile = dynamicDraw.endProfile();
         dynamicMs = perfNow() - layerStartedAt;
       }
       if (effectiveDirty.outerLabel) {
         const layerStartedAt = perfNow();
         outerLabelDraw.resize(rect.width, rect.height);
-        drawSnapshotLayer(outerLabelDraw, chart, "outer-label", {
+        drawSnapshotLayer(outerLabelDraw, renderSnapshot, "outer-label", {
           width: rect.width,
           height: rect.height,
           chartSize: target.side,
@@ -474,67 +882,133 @@ export function ChartCanvas({
         outerLabelMs = perfNow() - layerStartedAt;
       }
       const hitStartedAt = perfNow();
-      hitRegionsRef.current = computeHitRegions(chart, {
-        width: rect.width,
-        height: rect.height,
-        chartSize: target.side,
-        renderStyle,
-        textsize: (text, textOpts) => outerLabelDraw.textsize(text, textOpts),
-        clickAspectState: { selectedBody: selectedAspectBody, hideAll: hideAllAspects },
-      });
-      const trackedFlag = flagAnchorRef.current;
-      const trackedKey = hoverRegionKey(trackedFlag?.region ?? null);
-      let flagReanchored = false;
-      if (trackedFlag && trackedKey) {
-        const refreshedHit = hitRegionsRef.current.find((candidate) => {
-          if (candidate.kind === "midband_empty") return false;
-          return hoverRegionKey(hitToHover(candidate)) === trackedKey;
+      const refreshHitRegions =
+        effectiveDirty.geometry || effectiveDirty.dynamic || effectiveDirty.outerLabel;
+      if (refreshHitRegions) {
+        hitRegionsRef.current = computeHitRegions(renderSnapshot, {
+          width: rect.width,
+          height: rect.height,
+          chartSize: target.side,
+          renderStyle,
+          textsize: (text, textOpts) => outerLabelDraw.textsize(text, textOpts),
+          clickAspectState: { selectedBody: selectedAspectBody, hideAll: hideAllAspects },
         });
-        if (refreshedHit) {
-          const refreshedRegion = hitToHover(refreshedHit);
-          const [anchorX, anchorY] = mapRenderedPointToViewport(rect, refreshedHit.x, refreshedHit.y);
-          const refreshedAnchor = {
-            region: refreshedRegion,
-            x: anchorX,
-            y: anchorY,
-            token: trackedFlag.token,
-          };
-          hoveredKeyRef.current = hoverRegionKey(refreshedRegion);
-          setHoveredRegion(refreshedRegion);
-          setTrackedFlagAnchor(refreshedAnchor);
-          flagReanchored = true;
-      } else {
-          hoveredKeyRef.current = null;
-          setHoveredRegion(null);
-          setTrackedFlagAnchor(null);
+        paintedAspectInteractionKeyRef.current = aspectInteractionPaintKey;
+        if (styleEditorActive) {
+          const primary = renderSnapshot.primaryChart;
+          const profile = primary.options.theme === 2
+            ? "anglo"
+            : primary.options.theme === 1
+              ? "compact"
+              : "classic";
+          const comparison = Boolean(renderSnapshot.comparisonChart);
+          const comparisonWithOuterHouses = Boolean(
+            comparison &&
+            primary.options.showHouses &&
+            (profile !== "anglo" || renderSnapshot.comparisonLayout === "with-houses"),
+          );
+          const nextStyleScene = buildWheelStyleScene({
+            style: renderStyle,
+            authoringScope: styleAuthoringEditScope === "base" ? "base" : profile,
+            geometry: {
+              profile,
+              mode: comparison ? "comparison" : "single",
+              maxRadius: target.side / 2,
+              hasOuterRing: comparison || renderSnapshot.outerRingMode !== "none",
+              showTerms: Boolean(primary.options.showTerms),
+              showDecans: Boolean(primary.options.showDecans),
+              showHouses: Boolean(primary.options.showHouses),
+              showPositions: Boolean(primary.options.showPositions),
+              comparisonWithOuterHouses,
+            },
+            center: [rect.width / 2, rect.height / 2],
+            viewport: { width: rect.width, height: rect.height },
+            ascendantDegrees: primary.angles.asc,
+            useIndividualBodyColors: Boolean(primary.options.useDignityColors),
+            useZodiacElementColors: Boolean(primary.options.useZodiacElementColors),
+            signColors: primary.options.signColors,
+            hitRegions: hitRegionsRef.current,
+          });
+          const editorState = useChartStyleEditorStore.getState();
+          editorState.setSceneElements(nextStyleScene.elements);
+          styleSceneRef.current = nextStyleScene;
+          setStyleScene(nextStyleScene);
+        } else {
+          const editorState = useChartStyleEditorStore.getState();
+          if (editorState.sceneElements.length > 0) {
+            editorState.setSceneElements([]);
+          }
+          styleSceneRef.current = null;
+          setStyleScene(null);
         }
-      }
-      // Re-resolve hover from the last pointer position only when no tracked
-      // flag was re-anchored above. During keyboard time-stepping the pointer
-      // is stationary and usually no longer over the moved glyph, so this pass
-      // would immediately clear or retarget the flag the persistence block just
-      // carried across the repaint. Real pointer movement still wins — every
-      // pointermove re-resolves — and repaints with no tracked flag (zoom or
-      // resize under a static cursor) keep the refresh.
-      const lastPointer = lastPointerClientRef.current;
-      if (lastPointer && !flagReanchored) {
-        updateHoverFromClientPoint(lastPointer.x, lastPointer.y);
+        const trackedFlag = flagAnchorRef.current;
+        const trackedKey = hoverRegionKey(trackedFlag?.region ?? null);
+        let flagReanchored = false;
+        if (trackedFlag && trackedKey) {
+          const refreshedHit = hitRegionsRef.current.find((candidate) => {
+            if (candidate.kind === "midband_empty") return false;
+            return hoverRegionKey(hitToHover(candidate)) === trackedKey;
+          });
+          if (refreshedHit) {
+            const refreshedRegion = hitToHover(refreshedHit);
+            const [anchorX, anchorY] = mapRenderedPointToViewport(rect, refreshedHit.x, refreshedHit.y);
+            const refreshedAnchor = {
+              region: refreshedRegion,
+              x: anchorX,
+              y: anchorY,
+              token: trackedFlag.token,
+            };
+            hoveredKeyRef.current = hoverRegionKey(refreshedRegion);
+            setHoveredRegion(refreshedRegion);
+            setTrackedFlagAnchor(refreshedAnchor);
+            flagReanchored = true;
+          } else {
+            hoveredKeyRef.current = null;
+            setHoveredRegion(null);
+            setTrackedFlagAnchor(null);
+          }
+        }
+        // Re-resolve hover from the last pointer position only when no tracked
+        // flag was re-anchored above. During keyboard time-stepping the pointer
+        // is stationary and usually no longer over the moved glyph, so this pass
+        // would immediately clear or retarget the flag the persistence block just
+        // carried across the repaint. Real pointer movement still wins — every
+        // pointermove re-resolves — and repaints with no tracked flag (zoom or
+        // resize under a static cursor) keep the refresh.
+        const lastPointer = lastPointerClientRef.current;
+        if (lastPointer && !flagReanchored) {
+          updateHoverFromClientPoint(lastPointer.x, lastPointer.y);
+        }
       }
       const hitMs = perfNow() - hitStartedAt;
       const totalMs = perfNow() - paintStartedAt;
+      if (refreshHitRegions) {
+        acknowledgePaintedDocumentSnapshot(chart.document?.documentId, chart);
+      }
       recordChartPerf("chart-canvas-paint", {
         docId: chart.document?.documentId ?? null,
         mode: chart.overlayRenderMode,
+        displayDatetime: chart.document?.displayDatetime ?? chart.displayDatetime,
+        showHouses: Boolean(chart.primaryChart.options.showHouses),
+        settleOverlayOnly: chart.settleOverlayOnly === true,
         dirty: effectiveDirty,
         width: Math.round(rect.width),
         height: Math.round(rect.height),
         chartSize: Math.round(target.side),
         geometryMs,
         dynamicMs,
+        dynamicProfile,
         outerLabelMs,
         hitMs,
         totalMs,
         hitRegions: hitRegionsRef.current.length,
+        bodyLayoutSignature: perfEnabled
+          ? bodyLayoutSignature(hitRegionsRef.current)
+          : undefined,
+        semanticFrameSignature: perfEnabled
+          ? semanticFrameSignature(chart)
+          : undefined,
+        overlay: perfEnabled ? overlayPerfState(renderSnapshot) : undefined,
       });
       return true;
     };
@@ -556,6 +1030,13 @@ export function ChartCanvas({
     };
 
     const dirty = dirtyStateFromSnapshot(chart);
+    // Snapshot invalidation describes daemon-frame changes only. A local
+    // aspect selection is its own Canvas input, so it must not inherit an
+    // overlay-only settle's zero-dirty plan and wait for an unrelated redraw.
+    // Repaint just the dynamic layer; geometry and outer labels stay retained.
+    if (paintedAspectInteractionKeyRef.current !== aspectInteractionPaintKey) {
+      dirty.dynamic = true;
+    }
 
     const drawInitial = (immediate = false) => {
       if (deferTimerRef.current != null) {
@@ -582,7 +1063,7 @@ export function ChartCanvas({
     };
 
     const fontWaitStartedAt = perfNow();
-    const fontsAlreadyReady = chartFontsAreReady(chartTextFont);
+    const fontsAlreadyReady = chartFontsAreReady(chartTextFont, chartSymbolFont);
     if (fontsAlreadyReady) {
       recordChartPerf("chart-font-wait", {
         docId: chart.document?.documentId ?? null,
@@ -591,7 +1072,7 @@ export function ChartCanvas({
       });
       drawInitial(true);
     } else {
-      awaitFonts(chartTextFont)
+      awaitFonts(chartTextFont, chartSymbolFont)
         .then(() => {
           recordChartPerf("chart-font-wait", {
             docId: chart.document?.documentId ?? null,
@@ -643,10 +1124,41 @@ export function ChartCanvas({
         window.clearTimeout(resizeSettleTimerRef.current);
       }
     };
-  }, [chart, chartTextFont, renderStyle, selectedAspectBody, hideAllAspects, setHoveredRegion, setTrackedFlagAnchor, mapRenderedPointToViewport, updateHoverFromClientPoint]);
+  }, [chart, renderSnapshot, chartTextFont, chartSymbolFont, renderStyle, selectedAspectBody, hideAllAspects, aspectInteractionPaintKey, styleEditorActive, styleAuthoringEditScope, setHoveredRegion, setTrackedFlagAnchor, mapRenderedPointToViewport, updateHoverFromClientPoint]);
+
+  const stylePointFromClient = useCallback((clientX: number, clientY: number): StyleScenePoint | null => {
+    const wrap = wrapRef.current;
+    if (!wrap) return null;
+    const rect = wrap.getBoundingClientRect();
+    return mapPointerToRenderedPoint(clientX - rect.left, clientY - rect.top);
+  }, [mapPointerToRenderedPoint]);
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     lastPointerClientRef.current = { x: event.clientX, y: event.clientY };
+    if (styleEditorActive) {
+      const point = stylePointFromClient(event.clientX, event.clientY);
+      const drag = styleHandleDragRef.current;
+      if (point && drag) {
+        const patch = resolveWheelStyleHandleDrag(
+          drag.handle,
+          { start: drag.start, current: point },
+          (semanticId) => useChartStyleEditorStore.getState().tokenBounds[semanticId],
+        );
+        if (patch) setStyleOverride(patch.semanticId, patch.value);
+        return;
+      }
+      const hit = point && styleSceneRef.current
+        ? hitTestWheelStyleScene(styleSceneRef.current, point[0], point[1])
+        : null;
+      const current = useChartStyleEditorStore.getState().hoveredElement;
+      if ((current?.id ?? null) !== (hit?.element.id ?? null)) {
+        setHoveredStyleElement(hit?.element ?? null);
+      }
+      hoveredKeyRef.current = null;
+      setHoveredRegion(null);
+      setTrackedFlagAnchor(null);
+      return;
+    }
     updateHoverFromClientPoint(event.clientX, event.clientY);
   };
 
@@ -655,6 +1167,7 @@ export function ChartCanvas({
     hoveredKeyRef.current = null;
     setHoveredRegion(null);
     setTrackedFlagAnchor(null);
+    setHoveredStyleElement(null);
   };
 
   const clearFloatingFlagAfterAspectClick = () => {
@@ -672,6 +1185,14 @@ export function ChartCanvas({
     if (!wrap) return;
     const rect = wrap.getBoundingClientRect();
     const [x, y] = mapPointerToRenderedPoint(event.clientX - rect.left, event.clientY - rect.top);
+    if (styleEditorActive) {
+      const sceneHit = styleSceneRef.current
+        ? hitTestWheelStyleScene(styleSceneRef.current, x, y)
+        : null;
+      if (sceneHit) selectStyleElement(sceneHit.element);
+      else clearStyleSelection();
+      return;
+    }
     const resolvedHit = findHitRegion(hitRegionsRef.current, x, y);
     const midbandHit = exclusiveOnClick ? findMidbandClickHit(hitRegionsRef.current, x, y) : null;
     const hit = midbandHit && (!resolvedHit || resolvedHit.kind === "sign") ? midbandHit : resolvedHit;
@@ -720,6 +1241,37 @@ export function ChartCanvas({
     }
   };
 
+  const startStyleHandleDrag = (
+    event: React.PointerEvent<SVGCircleElement>,
+    handle: StyleSceneHandle,
+  ) => {
+    if (!handle.binding || handle.editability.state !== "editable") return;
+    const point = stylePointFromClient(event.clientX, event.clientY);
+    if (!point) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    styleHandleDragRef.current = { handle, start: point };
+    const element = styleSceneRef.current?.elements.find((candidate) => candidate.id === handle.elementId);
+    if (element) selectStyleElement(element);
+    beginStyleGesture();
+  };
+
+  const endStyleHandleDrag = () => {
+    if (!styleHandleDragRef.current) return;
+    styleHandleDragRef.current = null;
+    endStyleGesture();
+  };
+
+  const currentStyleScene = styleScene;
+  const currentSelectedStyleElement = selectedStyleElement && currentStyleScene
+    ? currentStyleScene.elements.find((element) => element.id === selectedStyleElement.id) ?? null
+    : null;
+  const currentHoveredStyleElement = hoveredStyleElement && currentStyleScene
+    ? currentStyleScene.elements.find((element) => element.id === hoveredStyleElement.id) ?? null
+    : null;
+  const visibleStyleHandles = currentSelectedStyleElement?.handles ?? [];
+
   // Right-click over the wheel opens the chart context menu (outer-ring mode,
   // display toggles, house system, chart launchers — all daemon-sourced).
   //
@@ -731,30 +1283,85 @@ export function ChartCanvas({
   // reliably over the <canvas> children (Next 16 / React 19 / base-ui 1.4.1).
   // base-ui merges (does not replace) handlers, so our onPointerMove /
   // onPointerLeave / onClick below continue to run for hover + pin as before.
-  return (
-    <ChartContextMenu chart={chart}>
-      <div
+  const canvas = (
+    <div
         ref={wrapRef}
         className={cn(
           className ?? "relative flex h-full w-full flex-1 items-center justify-center",
+          (paintEffectsActive ?? (hasProfilePaintEffects || hasDraftPaintEffects)) &&
+            "aries-chart-paint-effects",
+          styleEditorActive && "cursor-crosshair",
           "select-none",
         )}
+        style={styleEditorCanvasStyle}
         onPointerMove={handlePointerMove}
         onPointerLeave={handlePointerLeave}
+        onPointerUp={endStyleHandleDrag}
+        onPointerCancel={endStyleHandleDrag}
         onClick={handleClick}
       >
         <canvas ref={geometryRef} className="absolute inset-0 block" />
         <canvas ref={dynamicRef} className="absolute inset-0 block" />
         <canvas ref={outerLabelRef} className="absolute inset-0 block" />
+        {styleEditorActive && currentStyleScene ? (
+          <svg
+            className="pointer-events-none absolute inset-0 size-full overflow-visible"
+            aria-hidden="true"
+          >
+            {currentHoveredStyleElement?.hitGeometry &&
+            currentHoveredStyleElement.id !== currentSelectedStyleElement?.id ? (
+              <SceneGeometryOutline
+                geometry={currentHoveredStyleElement.hitGeometry}
+                tone="hover"
+                keyPrefix={`hover:${currentHoveredStyleElement.id}`}
+              />
+            ) : null}
+            {currentSelectedStyleElement?.hitGeometry ? (
+              <SceneGeometryOutline
+                geometry={currentSelectedStyleElement.hitGeometry}
+                tone="selected"
+                keyPrefix={`selected:${currentSelectedStyleElement.id}`}
+              />
+            ) : null}
+            {visibleStyleHandles.map((handle) => (
+              <g key={handle.id}>
+                {handle.kind === "radial" ? (
+                  <line
+                    x1={handle.center[0]}
+                    y1={handle.center[1]}
+                    x2={handle.position[0]}
+                    y2={handle.position[1]}
+                    className="stroke-[rgba(160,191,255,0.55)] [stroke-dasharray:3_3] [vector-effect:non-scaling-stroke]"
+                  />
+                ) : null}
+                <circle
+                  cx={handle.position[0]}
+                  cy={handle.position[1]}
+                  r={5}
+                  className={cn(
+                    "[vector-effect:non-scaling-stroke]",
+                    handle.editability.state === "editable"
+                      ? "pointer-events-auto cursor-grab fill-[#dce7ff] stroke-[#4d76cf] stroke-[1.5] active:cursor-grabbing"
+                      : "fill-[#7b7f89] stroke-[#343740] stroke-[1.5]",
+                  )}
+                  onPointerDown={(event) => startStyleHandleDrag(event, handle)}
+                  onClick={(event) => event.stopPropagation()}
+                />
+              </g>
+            ))}
+          </svg>
+        ) : null}
         {/* Hover-flag — the compact glyph card pinned to the hovered
             symbol (chartinspector.build_flag_payload, the second inspector entry
             point). Portaled to document.body so pane overflow cannot clip it;
             renders daemon JSON verbatim. */}
-        <ChartHoverFlag anchor={flagAnchor} chart={chart} />
+        {styleEditorActive ? null : <ChartHoverFlag anchor={flagAnchor} chart={chart} />}
         {/* Corner labels (date/time, place/coords, house-system, overlay)
             are rendered by `workspace-content.tsx` as siblings to ChartCanvas —
             see CornerLines + OverlayCorner. Already chart-size-aware. */}
-      </div>
-    </ChartContextMenu>
+    </div>
   );
+  return appControlsEnabled ? (
+    <ChartContextMenu chart={chart}>{canvas}</ChartContextMenu>
+  ) : canvas;
 }

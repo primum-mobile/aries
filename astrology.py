@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from functools import lru_cache
+
 from sweastrology import *  # legacy: provides lots of names/constants used elsewhere
 import sweastrology as _swe
 
@@ -253,6 +255,7 @@ SE_SIDM_J1900           = 19
 SE_SIDM_B1950           = 20
 SE_SIDM_TRUE_CITRA      = 27   # Chitrapaksha — Spica (Citra) fixed at 0° Libra
 SE_SIDM_GALCENT_RGILBRAND = 30
+SE_SIDM_GALCENT_MULA_WILHELM = 36  # Dhruva / Galactic Center / Mula (Ernst Wilhelm)
 SE_SIDM_USER            = 255
 
 SE_NSIDM_PREDEF	  	    = 21
@@ -301,6 +304,7 @@ _AYANAMSHA_SWE_MODE_BY_UI_INDEX = {
 	21: SE_SIDM_J2000,
 	22: SE_SIDM_J1900,
 	23: SE_SIDM_B1950,
+	24: SE_SIDM_GALCENT_MULA_WILHELM,
 }
 
 
@@ -318,6 +322,36 @@ def ayanamsha_swe_mode(opt_index):
 	if idx <= 0:
 		return None
 	return _AYANAMSHA_SWE_MODE_BY_UI_INDEX.get(idx, idx - 1)
+
+
+@lru_cache(maxsize=8192)
+def _effective_ayanamsha_ut_cached(tjd_ut, mode):
+	swe_set_sid_mode(mode, 0, 0)
+	base_flags = SEFLG_SWIEPH | SEFLG_SPEED
+	_serr, tropical = swe_calc_ut(tjd_ut, SE_SUN, base_flags)
+	_serr, sidereal = swe_calc_ut(tjd_ut, SE_SUN, base_flags | SEFLG_SIDEREAL)
+	return (float(tropical[0]) - float(sidereal[0])) % 360.0
+
+
+def effective_ayanamsha_ut(tjd_ut, opt_index):
+	"""Return the exact longitude shift applied by ``SEFLG_SIDEREAL``.
+
+	``swe_get_ayanamsa_ut()`` returns the conventional ayanamsha value, while
+	Swiss Ephemeris' apparent ecliptic longitudes also include the current
+	nutation convention.  The two differ by several arcseconds.  Aries needs
+	the effective shift when recovering a chart-frame longitude for
+	``swe_cotrans``; derive it from paired tropical/sidereal calculations so
+	the conversion is the exact inverse of the boundary that produced the
+	stored longitude.
+	"""
+	mode = ayanamsha_swe_mode(opt_index)
+	if mode is None:
+		return 0.0
+	tjd_ut = float(tjd_ut)
+	# Sidereal mode is process-global. Always restore the requested mode even
+	# when the numerical offset itself is served from the cache.
+	swe_set_sid_mode(mode, 0, 0)
+	return _effective_ayanamsha_ut_cached(tjd_ut, mode)
 
 # used for swe_nod_aps():
 SE_NODBIT_MEAN		= 1   # mean nodes/apsides
@@ -480,5 +514,3 @@ SIMULATE_VICTORVB = 1
 SE_PHOTOPIC_FLAG = 0
 SE_SCOTOPIC_FLAG = 1
 SE_MIXEDOPIC_FLAG =	2
-
-

@@ -245,7 +245,10 @@ export function ChartContextMenu({ chart, children }: ChartContextMenuProps) {
       }}
     >
       <ContextMenuTrigger render={children} />
-      <ContextMenuContent align="start" className="min-w-52">
+      <ContextMenuContent
+        align="start"
+        className="min-w-[var(--aries-menu-context-min-width)]"
+      >
         {showRadixMenuItem ? (
           <>
             <ContextMenuCheckboxItem
@@ -365,7 +368,7 @@ function MenuNode({
     return (
       <ContextMenuSub>
         <ContextMenuSubTrigger disabled={item.disabled}>{label(item)}</ContextMenuSubTrigger>
-        <ContextMenuSubContent className="min-w-48">
+        <ContextMenuSubContent className="min-w-[var(--aries-menu-context-submenu-min-width)]">
           <MenuNodes items={item.children} onAction={onAction} />
         </ContextMenuSubContent>
       </ContextMenuSub>

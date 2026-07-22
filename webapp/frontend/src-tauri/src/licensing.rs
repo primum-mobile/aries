@@ -3,6 +3,7 @@
 
 use std::fs;
 use std::path::PathBuf;
+#[cfg(target_os = "macos")]
 use std::process::Command;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -24,6 +25,8 @@ const PRODUCTION_LOCAL_STATE_FILE: &str = "license-state.json";
 const DEVELOPMENT_LOCAL_STATE_FILE: &str = "license-state.dev.json";
 const DEFAULT_LICENSE_SERVER_URL: &str = "";
 const DEFAULT_LICENSE_PUBLIC_KEY: &str = "";
+const UPDATE_CONNECT_TIMEOUT: Duration = Duration::from_secs(12);
+const UPDATE_TRANSFER_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -289,10 +292,18 @@ fn license_required() -> bool {
     license_required_from_config(
         option_env!("ARIES_LICENSE_REQUIRED"),
         cfg!(debug_assertions),
+        cfg!(target_os = "windows"),
     )
 }
 
-fn license_required_from_config(value: Option<&str>, debug_build: bool) -> bool {
+fn license_required_from_config(
+    value: Option<&str>,
+    debug_build: bool,
+    windows_build: bool,
+) -> bool {
+    if windows_build && !debug_build {
+        return true;
+    }
     match value.unwrap_or("").trim().to_ascii_lowercase().as_str() {
         "1" | "true" | "yes" => true,
         "0" | "false" | "no" => false,
@@ -300,6 +311,15 @@ fn license_required_from_config(value: Option<&str>, debug_build: bool) -> bool 
         // commercial flag. Tauri/source development remains intentionally free.
         _ => !debug_build,
     }
+}
+
+pub(crate) fn validate_compiled_license_contract() -> Result<(), String> {
+    if option_env!("ARIES_LICENSE_REQUIRED") != Some("1") {
+        return Err("license_gate_not_compiled".to_string());
+    }
+    server_url()?;
+    public_key()?;
+    Ok(())
 }
 
 fn public_key() -> Result<VerifyingKey, String> {
@@ -860,7 +880,10 @@ pub async fn license_check_update(
         .map_err(|error| error.to_string())?
         .header("X-Aries-Device-ID", state.device_id)
         .map_err(|error| error.to_string())?
-        .timeout(Duration::from_secs(12))
+        // The updater retains this client for the artifact transfer. Keep
+        // connection failures prompt without timing out a large signed archive.
+        .timeout(UPDATE_TRANSFER_TIMEOUT)
+        .configure_client(|builder| builder.connect_timeout(UPDATE_CONNECT_TIMEOUT))
         .build()
         .map_err(|error| error.to_string())?
         .check()
@@ -918,7 +941,10 @@ pub async fn license_install_update(
             },
         )
         .await
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| {
+            log::error!("licensed update download/install failed: {error}");
+            error.to_string()
+        })?;
     let _ = installed_channel.send(UpdateInstallEvent::Installed);
     Ok(())
 }
@@ -983,11 +1009,25 @@ mod tests {
     }
 
     #[test]
+    fn updater_allows_large_signed_archives_to_finish() {
+        assert_eq!(UPDATE_CONNECT_TIMEOUT, Duration::from_secs(12));
+        assert!(UPDATE_TRANSFER_TIMEOUT >= Duration::from_secs(30 * 60));
+    }
+
+    #[test]
     fn release_builds_fail_closed_without_an_explicit_license_flag() {
-        assert!(license_required_from_config(None, false));
-        assert!(!license_required_from_config(None, true));
-        assert!(license_required_from_config(Some("1"), true));
-        assert!(!license_required_from_config(Some("0"), false));
+        assert!(license_required_from_config(None, false, false));
+        assert!(!license_required_from_config(None, true, false));
+        assert!(license_required_from_config(Some("1"), true, false));
+        assert!(!license_required_from_config(Some("0"), false, false));
+    }
+
+    #[test]
+    fn windows_release_builds_cannot_disable_the_license_gate() {
+        assert!(license_required_from_config(None, false, true));
+        assert!(license_required_from_config(Some("0"), false, true));
+        assert!(license_required_from_config(Some("1"), false, true));
+        assert!(!license_required_from_config(Some("0"), true, true));
     }
 
     #[test]

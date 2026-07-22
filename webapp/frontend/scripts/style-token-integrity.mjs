@@ -64,7 +64,7 @@ function checkGeneratedArtifact(path, rendered, label) {
     return;
   }
   let checkedIn = null;
-  try { checkedIn = readFileSync(path, "utf8"); }
+  try { checkedIn = readFileSync(path, "utf8").replace(/\r\n?/g, "\n"); }
   catch { addError(path, 1, `${label} is missing; run npm run style-token-inventory`); }
   if (checkedIn !== null && checkedIn !== rendered) {
     addError(path, 1, `${label} drifted; run npm run style-token-inventory and review the diff`);

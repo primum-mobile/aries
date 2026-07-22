@@ -46,7 +46,7 @@ def _natal_tropical_lon(chrt, planet_id):
 	"""Body's natal tropical longitude regardless of the chart's chosen zodiac."""
 	natal_lon = chrt.planets.planets[planet_id].data[planets.Planet.LONG]
 	if getattr(chrt.options, 'ayanamsha', 0) != 0:
-		ay = astrology.swe_get_ayanamsa_ut(chrt.time.jd)
+		ay = float(getattr(chrt, 'ayanamsha_offset', 0.0) or 0.0)
 		natal_lon = util.normalize(natal_lon + ay)
 	return natal_lon
 

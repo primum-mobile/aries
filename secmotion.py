@@ -10,7 +10,7 @@ class SecMotion:
 
 	ST2UTCONV = 0.997269566
 
-	def __init__(self, rtime, rplace, pId, arc, lat, ascmc2, topo):
+	def __init__(self, rtime, rplace, pId, arc, lat, ascmc2, topo, ayanamsha=0, ayanamsha_offset=0.0):
 		direct = True
 		if arc < 0.0:
 			arc *= -1
@@ -25,6 +25,9 @@ class SecMotion:
 		flag = astrology.SEFLG_SWIEPH+astrology.SEFLG_SPEED
 		if topo:
 			flag += astrology.SEFLG_TOPOCTR
+		if ayanamsha:
+			astrology.swe_set_sid_mode(astrology.ayanamsha_swe_mode(ayanamsha), 0, 0)
+			flag += astrology.SEFLG_SIDEREAL
 
 		#calc new time
 		rate = arc/15.0
@@ -47,9 +50,22 @@ class SecMotion:
 
 		#self.planet contains the new position of the planet(it proceeded on its way during the PD(arc))
 		self.planet = planets.Planet(tjd_ut, pId, flag, lat, ascmc2)
+		if ayanamsha:
+			# Swiss Ephemeris returned the moving point in the event-date
+			# sidereal frame. PD zodiac coordinates belong to the radix frame,
+			# so rebase the stored longitude while keeping intrinsic RA/decl.
+			event_offset = astrology.effective_ayanamsha_ut(tjd_ut, ayanamsha)
+			target_offset = float(ayanamsha_offset or event_offset)
+			data = list(self.planet.data)
+			data[planets.Planet.LONG] = util.normalize(
+				data[planets.Planet.LONG] + event_offset - target_offset
+			)
+			self.planet.data = tuple(data)
+			if self.planet.speculums:
+				for idx, speculum in enumerate(self.planet.speculums):
+					values = list(speculum)
+					values[planets.Planet.LONG] = data[planets.Planet.LONG]
+					self.planet.speculums[idx] = tuple(values)
 
 		
-
-
-
 

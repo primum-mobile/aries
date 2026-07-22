@@ -3,11 +3,10 @@
 
 "use client";
 
-import { X } from "lucide-react";
-
-import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/i18n/i18n";
-import { LIST_BUTTON_PROPS, LIST_PANE_CLASSES } from "@/lib/list-tokens";
+import { LIST_PANE_CLASSES } from "@/lib/list-tokens";
+
+import { RetainedPaneShell } from "./retained-pane-shell";
 
 type FeatureGroup = {
   titleKey: string;
@@ -67,27 +66,26 @@ export function FeatureCatalogView({ onClose }: { onClose: () => void }) {
   const t = useT();
 
   return (
-    <section className={LIST_PANE_CLASSES.root} aria-label={t("featureCatalog.title")}>
-      <header className={LIST_PANE_CLASSES.compactHeader}>
-        <h1 className={LIST_PANE_CLASSES.title}>{t("featureCatalog.title")}</h1>
-        <Button
-          type="button"
-          {...LIST_BUTTON_PROPS.icon}
-          onClick={onClose}
-          aria-label={t("featureCatalog.close")}
-        >
-          <X className="h-3.5 w-3.5" aria-hidden="true" />
-        </Button>
-      </header>
-
-      <div className={`${LIST_PANE_CLASSES.scroller} px-4 py-3`}>
-        <div className="space-y-5 pb-4">
+    <RetainedPaneShell
+      title={t("featureCatalog.title")}
+      closeLabel={t("featureCatalog.close")}
+      onClose={onClose}
+      closeAppearance="list"
+      wrapHeader
+      titleSize="large"
+      titleWeight="semibold"
+      headerDensity="compact"
+    >
+      <div
+        className={`${LIST_PANE_CLASSES.scroller} px-[var(--aries-panel-padding-x)] py-[var(--aries-panel-padding-y)]`}
+      >
+        <div className="space-y-[var(--aries-form-section-gap)] pb-[var(--aries-pane-content-padding)]">
           {FEATURE_GROUPS.map((group) => (
-            <section key={group.titleKey} className="space-y-1.5">
-              <h2 className="text-[12px] font-semibold text-foreground">
+            <section key={group.titleKey} className="space-y-[var(--aries-control-gap)]">
+              <h2 className="text-[length:var(--aries-font-size-base)] font-semibold text-foreground">
                 {t(group.titleKey)}
               </h2>
-              <ul className="space-y-0.5 pl-4 text-[12px] leading-5 text-muted-foreground">
+              <ul className="space-y-[calc(var(--aries-control-gap)/3)] pl-[var(--aries-pane-content-padding)] text-[length:var(--aries-font-size-base)] leading-[var(--aries-font-line-height-reading)] text-muted-foreground">
                 {t(group.itemsKey).split("\n").filter(Boolean).map((item) => (
                   <li key={item} className="list-disc">
                     {item}
@@ -98,6 +96,6 @@ export function FeatureCatalogView({ onClose }: { onClose: () => void }) {
           ))}
         </div>
       </div>
-    </section>
+    </RetainedPaneShell>
   );
 }

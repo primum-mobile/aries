@@ -55,7 +55,8 @@ export const useThemeStore = create<ThemeStore>()((set, get) => ({
     if (
       current?.schemaVersion === normalized.schemaVersion &&
       current.styleRevision === normalized.styleRevision &&
-      current.styleHash === normalized.styleHash
+      current.styleHash === normalized.styleHash &&
+      current.presentationCursor === normalized.presentationCursor
     ) {
       return;
     }

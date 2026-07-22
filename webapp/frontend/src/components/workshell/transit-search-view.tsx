@@ -63,6 +63,7 @@ import {
   getCachedListPayload,
   rememberListPayload,
 } from "@/lib/table/payload-cache";
+import { semanticChartColor } from "@/lib/theme/semantic-color";
 import { cn } from "@/lib/utils";
 import { type ListFollowPolicy } from "@/lib/list-follow-policy";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
@@ -159,7 +160,6 @@ export function TransitSearchView(props: TransitSearchViewProps) {
   } = props;
   const contextMode = props.mode === "context";
   const sourceName = props.sourceName ?? "";
-  const optionsSeq = useDaemonWorkspaceStore((s) => s.lastOptionsChange?.seq ?? 0);
   const significatorId = contextMode ? props.significatorId ?? null : null;
   const chartRole = contextMode ? props.chartRole ?? null : null;
   const rawCustomPoints = contextMode ? props.customPoints : undefined;
@@ -176,12 +176,14 @@ export function TransitSearchView(props: TransitSearchViewProps) {
     () => JSON.stringify({ contextMode, documentId, significatorId, chartRole, customPointsKey }),
     [chartRole, contextMode, customPointsKey, documentId, significatorId],
   );
+  const cachedForContext = React.useMemo(
+    () => getCachedListPayload<TransitSearchCacheEntry>(TRANSIT_SEARCH_CACHE, catalogContextKey),
+    [catalogContextKey],
+  );
+  const optionsSeq = useTransitSearchOptionsSeq(cachedForContext?.optionsSeq ?? 0);
   const initialCache = React.useMemo(
-    () => {
-      const cached = getCachedListPayload<TransitSearchCacheEntry>(TRANSIT_SEARCH_CACHE, catalogContextKey);
-      return cached?.optionsSeq === optionsSeq ? cached : null;
-    },
-    [catalogContextKey, optionsSeq],
+    () => cachedForContext?.optionsSeq === optionsSeq ? cachedForContext : null,
+    [cachedForContext, optionsSeq],
   );
   const [catalog, setCatalog] = React.useState<TransitSearchCatalog | null>(() => initialCache?.catalog ?? null);
   const [form, setForm] = React.useState<SearchForm | null>(() => initialCache?.form ?? null);
@@ -736,8 +738,8 @@ export function TransitSearchView(props: TransitSearchViewProps) {
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-background">
-      <div className="grid gap-1.5 border-b border-border px-3 py-2">
-        <div className="flex min-w-0 items-end gap-1.5">
+      <div className="grid gap-[var(--aries-control-gap)] border-b border-border px-[var(--aries-pane-header-compact-padding-x)] py-[var(--aries-pane-header-padding-y)]">
+        <div className="flex min-w-0 items-end gap-[var(--aries-control-gap)]">
           {onClose ? (
             <Button
               type="button"
@@ -747,10 +749,10 @@ export function TransitSearchView(props: TransitSearchViewProps) {
               aria-label={t("search.closeSearch")}
               className="mb-0.5"
             >
-              <X className="size-3.5" />
+              <X className="size-[var(--aries-control-icon-size)]" />
             </Button>
           ) : null}
-          <div className="grid min-w-0 flex-1 grid-cols-2 gap-1.5">
+          <div className="grid min-w-0 flex-1 grid-cols-2 gap-[var(--aries-control-gap)]">
             <DateField
               label={t("search.from")}
               value={form.fromDate}
@@ -771,15 +773,15 @@ export function TransitSearchView(props: TransitSearchViewProps) {
             disabled={!canSearch || searchLoading}
             onClick={() => executeSearch(form)}
           >
-            <Search className="size-3.5" />
+            <Search className="size-[var(--aries-control-icon-size)]" />
             {t("search.search")}
           </Button>
         </div>
-        <div className="flex min-w-0 items-center justify-between gap-2">
-          <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden text-[11px] text-muted-foreground">
+        <div className="flex min-w-0 items-center justify-between gap-[var(--aries-form-field-gap)]">
+          <div className="flex min-w-0 flex-1 items-center gap-[var(--aries-form-field-gap)] overflow-hidden text-[length:var(--aries-font-size-small)] text-muted-foreground">
             <span className="min-w-0 max-w-28 truncate">{catalog.sourceName || sourceName}</span>
             {contextMode && seedGlyph ? (
-              <span className="inline-flex min-w-0 shrink-0 items-center gap-1">
+              <span className="inline-flex min-w-0 shrink-0 items-center gap-[var(--aries-control-gap-compact)]">
                 <Glyph ch={seedGlyph} className="text-sm" title={seedLabel} />
                 {seedLabel ? <span className="max-w-20 truncate">{seedLabel}</span> : null}
               </span>
@@ -788,13 +790,13 @@ export function TransitSearchView(props: TransitSearchViewProps) {
               {searchLoading ? <LoadingLabel label={rows.length > 0 ? summary : t("search.computing")} /> : summary}
             </span>
           </div>
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="flex shrink-0 items-center gap-[var(--aries-control-gap-compact)]">
             <ListLayoutPresetControl />
             <Button
               type="button"
               size="xs"
               variant="ghost"
-              className="px-1.5 text-[11px] tabular-nums whitespace-nowrap"
+              className="px-[var(--aries-control-gap)] text-[length:var(--aries-font-size-small)] tabular-nums whitespace-nowrap"
               onClick={runThisMonthSearch}
             >
               {t("search.thisMonth")}
@@ -803,7 +805,7 @@ export function TransitSearchView(props: TransitSearchViewProps) {
               type="button"
               size="xs"
               variant="ghost"
-              className="px-1.5 text-[11px] tabular-nums whitespace-nowrap"
+              className="px-[var(--aries-control-gap)] text-[length:var(--aries-font-size-small)] tabular-nums whitespace-nowrap"
               onClick={runThisYearSearch}
             >
               {t("search.thisYear")}
@@ -814,7 +816,7 @@ export function TransitSearchView(props: TransitSearchViewProps) {
                 type="button"
                 size="xs"
                 variant="ghost"
-                className="px-1.5 text-[11px] tabular-nums"
+                className="px-[var(--aries-control-gap)] text-[length:var(--aries-font-size-small)] tabular-nums"
                 onClick={() => runYearSearch(year)}
               >
                 {year}
@@ -827,10 +829,10 @@ export function TransitSearchView(props: TransitSearchViewProps) {
               aria-pressed={filtersOpen}
               aria-label={t("search.filters")}
               title={t("search.filters")}
-              className="px-1.5"
+              className="px-[var(--aries-control-gap)]"
               onClick={() => setFiltersOpen((open) => !open)}
             >
-              <ListFilter className="size-3.5" />
+              <ListFilter className="size-[var(--aries-control-icon-size)]" />
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger
@@ -841,11 +843,11 @@ export function TransitSearchView(props: TransitSearchViewProps) {
                     variant="outline"
                     aria-label={t("search.searchSettingsAria")}
                     title={t("search.searchSettingsAria")}
-                    className="px-1.5"
+                    className="px-[var(--aries-control-gap)]"
                   />
                 }
               >
-                <Settings2 className="size-3.5" />
+                <Settings2 className="size-[var(--aries-control-icon-size)]" />
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-56">
                 <DropdownMenuItem onClick={applyDefaultRange}>
@@ -866,7 +868,7 @@ export function TransitSearchView(props: TransitSearchViewProps) {
       <div className="relative flex min-h-0 flex-1">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {error ? (
-            <div className="border-b border-border px-4 py-2 text-xs text-destructive">
+            <div className="border-b border-border px-[var(--aries-pane-content-padding)] py-[var(--aries-pane-header-padding-y)] text-xs text-destructive">
               {error}
             </div>
           ) : null}
@@ -889,7 +891,7 @@ export function TransitSearchView(props: TransitSearchViewProps) {
                     >
                       <button
                         type="button"
-                        className="inline-flex items-center gap-1"
+                        className="inline-flex items-center gap-[var(--aries-control-gap-compact)]"
                         onClick={() =>
                           setSort((current) => ({
                             column,
@@ -917,13 +919,13 @@ export function TransitSearchView(props: TransitSearchViewProps) {
               <tbody>
                 {rows.length === 0 && !searchLoading ? (
                   <tr>
-                    <td className="px-2 py-3 text-center text-muted-foreground" colSpan={visibleColumns.length}>
+                    <td className="px-[var(--aries-control-padding-x-compact)] py-[var(--aries-pane-title-gap)] text-center text-muted-foreground" colSpan={visibleColumns.length}>
                       {t("search.noResultsSetRange")}
                     </td>
                   </tr>
                 ) : rows.length === 0 && searchLoading ? (
                   <tr>
-                    <td className="px-2 py-3 text-center text-muted-foreground" colSpan={visibleColumns.length}>
+                    <td className="px-[var(--aries-control-padding-x-compact)] py-[var(--aries-pane-title-gap)] text-center text-muted-foreground" colSpan={visibleColumns.length}>
                       <LoadingLabel label={t("search.searching")} />
                     </td>
                   </tr>
@@ -949,10 +951,10 @@ export function TransitSearchView(props: TransitSearchViewProps) {
           </div>
         </div>
         {filtersOpen ? (
-          <aside className="absolute inset-y-0 right-0 z-20 flex w-[17rem] flex-col gap-3 overflow-auto border-l border-border bg-background/95 px-3 py-3 shadow-xl backdrop-blur-sm">
+          <aside className="absolute inset-y-0 right-0 z-20 flex w-[var(--aries-pane-drawer-width)] flex-col gap-[var(--aries-pane-title-gap)] overflow-auto border-l border-border bg-background/95 px-[var(--aries-pane-header-compact-padding-x)] py-[var(--aries-pane-title-gap)] shadow-xl backdrop-blur-sm">
             <div className="mb-1 flex items-center justify-end">
               <Button type="button" size="icon-xs" variant="ghost" onClick={() => setFiltersOpen(false)} aria-label={t("search.closeFilters")}>
-                <X className="size-3.5" />
+                <X className="size-[var(--aries-control-icon-size)]" />
               </Button>
             </div>
             <TechniqueGroup
@@ -1045,8 +1047,8 @@ export function TransitSearchView(props: TransitSearchViewProps) {
           <DialogHeader>
             <DialogTitle>{t("search.searchSettingsTitle")}</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-3">
-            <label className="grid gap-1">
+          <div className="grid gap-[var(--aries-form-row-gap)]">
+            <label className="grid gap-[var(--aries-control-gap-compact)]">
               <span className="text-xs text-muted-foreground">{t("search.offsetMonths")}</span>
               <Input
                 type="number"
@@ -1062,7 +1064,7 @@ export function TransitSearchView(props: TransitSearchViewProps) {
                 }}
               />
             </label>
-            <label className="grid gap-1">
+            <label className="grid gap-[var(--aries-control-gap-compact)]">
               <span className="text-xs text-muted-foreground">{t("search.rangeMonths")}</span>
               <Input
                 type="number"
@@ -1078,7 +1080,7 @@ export function TransitSearchView(props: TransitSearchViewProps) {
                 }}
               />
             </label>
-            <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
+            <div className="flex items-center justify-between gap-[var(--aries-form-row-gap)] border-t border-border pt-[var(--aries-form-row-gap)]">
               <span className="text-xs text-muted-foreground">{t("search.planetSelection")}</span>
               <Button type="button" size="sm" variant="outline" onClick={resetPlanetSelection}>
                 {t("search.resetToStandard")}
@@ -1237,8 +1239,8 @@ function DateField({
   );
 
   return (
-    <label className="grid min-w-0 gap-0.5">
-      <span className="truncate text-[11px] text-muted-foreground">
+    <label className="grid min-w-0 gap-[calc(var(--aries-control-gap-compact)/2)]">
+      <span className="truncate text-[length:var(--aries-font-size-small)] text-muted-foreground">
         {label}
       </span>
       <Input
@@ -1259,7 +1261,7 @@ function DateField({
           if (event.key !== "Enter") return;
           event.currentTarget.blur();
         }}
-        className="h-7 min-w-0 px-2 text-xs"
+        className="h-[var(--aries-control-height-small)] min-w-0 px-[var(--aries-control-padding-x-compact)] text-xs"
       />
     </label>
   );
@@ -1287,7 +1289,7 @@ function SelectionGroup({
   const t = useT();
   const selectedSet = React.useMemo(() => new Set(selected), [selected]);
   return (
-    <section className="grid gap-2">
+    <section className="grid gap-[var(--aries-form-field-gap)]">
       <GroupHeader
         title={title}
         selected={items.filter((obj) => selectedSet.has(obj.id)).length}
@@ -1299,10 +1301,10 @@ function SelectionGroup({
           value={filterValue ?? ""}
           onChange={(event) => onFilterChange(event.currentTarget.value)}
           placeholder={t("search.filter")}
-          className="h-7 text-xs"
+          className="h-[var(--aries-control-height-small)] text-xs"
         />
       ) : null}
-      <div className={cn("grid gap-1", compact && "max-h-36 overflow-auto pr-1")}>
+      <div className={cn("grid gap-[var(--aries-control-gap-compact)]", compact && "max-h-36 overflow-auto pr-[var(--aries-control-gap-compact)]")}>
         {items.map((obj) => (
           <CheckRow
             key={obj.id}
@@ -1351,9 +1353,9 @@ function TechniqueGroup({
     byId.get("primary_directions"),
   ].filter(Boolean) as Array<TransitSearchTechnique | { id: "sign_changes"; label: string }>;
   return (
-    <section className="grid gap-2">
+    <section className="grid gap-[var(--aries-form-field-gap)]">
       <h2 className="aries-search-panel-heading text-xs">{t("search.techniques")}</h2>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+      <div className="grid grid-cols-2 gap-x-[var(--aries-pane-content-padding)] gap-y-[var(--aries-control-gap-compact)]">
         {orderedRows.map((item) => (
           <CheckRow
             key={item.id}
@@ -1387,7 +1389,7 @@ function AspectGroup({
   const t = useT();
   const selectedSet = React.useMemo(() => new Set(selected), [selected]);
   return (
-    <section className="grid gap-2">
+    <section className="grid gap-[var(--aries-form-field-gap)]">
       <GroupHeader
         title={t("search.aspects")}
         selected={selected.length}
@@ -1407,7 +1409,7 @@ function AspectGroup({
             aria-pressed={selectedSet.has(aspect.id)}
             onClick={() => onToggle(aspect.id, !selectedSet.has(aspect.id))}
             className={cn(
-              "flex h-8 items-center justify-center border-r border-border text-[16px] last:border-r-0 hover:bg-muted/70",
+              "flex h-[var(--aries-control-height)] items-center justify-center border-r border-border text-[16px] last:border-r-0 hover:bg-muted/70",
               selectedSet.has(aspect.id) && "bg-primary/20 text-primary",
             )}
           >
@@ -1431,16 +1433,16 @@ function GroupHeader({
   actions: Array<[string, () => void]>;
 }) {
   return (
-    <div className="flex flex-wrap items-start justify-between gap-1.5">
+    <div className="flex flex-wrap items-start justify-between gap-[var(--aries-control-gap)]">
       <div className="min-w-0">
         <h2 className="aries-search-panel-heading truncate text-xs">{title}</h2>
-        <span className="text-[11px] text-muted-foreground">
+        <span className="text-[length:var(--aries-font-size-small)] text-muted-foreground">
           {selected}/{total}
         </span>
       </div>
-      <div className="flex flex-wrap items-center justify-end gap-1">
+      <div className="flex flex-wrap items-center justify-end gap-[var(--aries-control-gap-compact)]">
         {actions.map(([label, onClick]) => (
-          <Button key={label} type="button" size="xs" variant="ghost" className="px-1.5" onClick={onClick}>
+          <Button key={label} type="button" size="xs" variant="ghost" className="px-[var(--aries-control-gap)]" onClick={onClick}>
             {label}
           </Button>
         ))}
@@ -1468,12 +1470,12 @@ function CheckRow({
 }) {
   const hasSegments = Boolean(segments?.length);
   return (
-    <label className="flex min-w-0 cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-xs hover:bg-muted/60">
+    <label className="flex min-w-0 cursor-pointer items-center gap-[var(--aries-form-field-gap)] rounded-md px-[var(--aries-control-gap)] py-[var(--aries-control-gap-compact)] text-xs hover:bg-muted/60">
       <input
         type="checkbox"
         checked={checked}
         onChange={(event) => onChange(event.currentTarget.checked)}
-        className="size-3.5 shrink-0 accent-primary"
+        className="size-[var(--aries-control-icon-size)] shrink-0 accent-primary"
       />
       {hasSegments ? (
         <SegmentToken segments={segments ?? []} className="min-w-0 flex-1" />
@@ -1648,16 +1650,22 @@ function SearchDateTransitLink({
 
 function AspectCell({ row }: { row: TransitSearchRow }) {
   const t = useT();
-  const aspectColor = stringValue(row.metadata.aspect_color);
+  const aspectColor = semanticChartColor(
+    stringValue(row.metadata.aspect_color_role),
+    stringValue(row.metadata.aspect_color),
+  );
   const isStation = Boolean(row.metadata.station);
   const singleObject = isSingleObjectSearchRow(row);
   const singleObjectTitle = singleObject ? heliacalRowTitle(row, t) : row.aspectLabel;
   if (row.isSignChange) {
     const toDisplay = signChangeDisplay(row, "to");
     const targetGlyph = stringValue(toDisplay.sign_glyph);
-    const targetColor = stringValue(toDisplay.sign_color);
+    const targetColor = semanticChartColor(
+      stringValue(toDisplay.sign_color_role),
+      stringValue(toDisplay.sign_color),
+    );
     return (
-      <span className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap align-middle">
+      <span className="inline-flex items-center justify-center gap-[var(--aries-control-gap)] whitespace-nowrap align-middle">
         <ObjectToken
           glyph={row.promittorGlyph}
           label={row.promittorLabel}
@@ -1675,7 +1683,7 @@ function AspectCell({ row }: { row: TransitSearchRow }) {
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 whitespace-nowrap">
+    <span className="inline-flex items-center gap-[var(--aries-control-gap-compact)] whitespace-nowrap">
       <ObjectToken
         glyph={row.promittorGlyph}
         label={row.promittorLabel}
@@ -1739,13 +1747,16 @@ function ObjectToken({
   const suffix = label.match(/\s\(([^)]+)\)$/)?.[1] ?? "";
   const hasSegments = Boolean(segments?.length);
   const objectGlyph = glyph;
-  const color = stringValue(display.glyph_color_css);
+  const color = semanticChartColor(
+    stringValue(display.glyph_color_role),
+    stringValue(display.glyph_color_css),
+  );
   const motionMarker = stringValue(display.motion_marker);
   const stateMarker = suppressStateMarker ? "" : suffix || motionMarker;
   const baseLabel = suffix ? label.replace(/\s\([^)]+\)$/, "") : label;
   const labelText = hasSegments ? "" : !objectGlyph ? baseLabel : "";
   return (
-    <span className="inline-flex items-center gap-1" title={label}>
+    <span className="inline-flex items-center gap-[var(--aries-control-gap-compact)]" title={label}>
       {hasSegments ? (
         <SegmentToken segments={segments ?? []} color={color} />
       ) : objectGlyph ? (
@@ -1768,7 +1779,7 @@ function SegmentToken({
   className?: string;
 }) {
   return (
-    <span className={cn("inline-flex items-center gap-0.5", className)}>
+    <span className={cn("inline-flex items-center gap-[calc(var(--aries-control-gap-compact)/2)]", className)}>
       {segments.map((segment, index) =>
         segment.kind === "planet" || segment.kind === "glyph" ? (
           <Glyph key={`${index}:${segment.text}`} ch={segment.text} className="aries-search-glyph" color={color} />
@@ -1785,10 +1796,13 @@ function SegmentToken({
 function LongitudeValue({ display }: { display: SearchDisplay }) {
   const degreeText = stringValue(display.degree_text);
   const signGlyph = stringValue(display.sign_glyph);
-  const signColor = stringValue(display.sign_color);
+  const signColor = semanticChartColor(
+    stringValue(display.sign_color_role),
+    stringValue(display.sign_color),
+  );
   if (degreeText && signGlyph) {
     return (
-      <span className="inline-flex items-center gap-1">
+      <span className="inline-flex items-center gap-[var(--aries-control-gap-compact)]">
         <span>{degreeText}</span>
         <Glyph ch={signGlyph} className="aries-search-sign-glyph shrink-0" color={signColor} />
       </span>
@@ -1877,7 +1891,7 @@ function SearchRowContextMenu({
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem disabled={copyDisabled} onClick={copyTime}>
-            <Clipboard className="size-3.5" />
+            <Clipboard className="size-[var(--aries-control-icon-size)]" />
             {t("search.copyTimeDate")}
           </ContextMenuItem>
           <ContextMenuItem disabled={icsDisabled} onClick={exportIcs}>
@@ -1923,6 +1937,34 @@ function downloadTextFile(filename: string, type: string, content: string) {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+}
+
+function useTransitSearchOptionsSeq(cachedSeq: number): number {
+  const lastOptionsChange = useDaemonWorkspaceStore((state) => state.lastOptionsChange);
+  const [seq, setSeq] = React.useState(() =>
+    lastOptionsChange &&
+    lastOptionsChange.styleOnly !== true &&
+    lastOptionsChange.listDataChanged !== false
+      ? lastOptionsChange.seq
+      : cachedSeq,
+  );
+
+  React.useEffect(() => {
+    if (
+      !lastOptionsChange ||
+      lastOptionsChange.styleOnly === true ||
+      lastOptionsChange.listDataChanged === false
+    ) return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) setSeq(lastOptionsChange.seq);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [lastOptionsChange]);
+
+  return seq;
 }
 
 function Glyph({

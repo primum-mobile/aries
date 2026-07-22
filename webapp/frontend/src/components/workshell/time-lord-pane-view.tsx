@@ -4,7 +4,7 @@
 "use client";
 
 import * as React from "react";
-import { Copy, Download, FileText, X } from "lucide-react";
+import { Copy, Download, FileText } from "lucide-react";
 
 import {
   fetchGenericTablePayload,
@@ -27,6 +27,8 @@ import { downloadText, tableToAlignedText, tableToTsv } from "./generic-table-vi
 import { exportTablePayloadPdf } from "./table-pdf-export";
 import { exportTextContent } from "./text-export";
 import { useSettledWorkspaceRefreshSeq } from "./step-refresh";
+import { RetainedPaneShell } from "./retained-pane-shell";
+import { PaneToolbarButton } from "./list-controls";
 
 type Props = {
   documentId: string;
@@ -125,44 +127,59 @@ export function TimeLordPaneView({ documentId, parentDocumentId, tableId, source
 
   if (error && !payload) {
     return (
-      <PaneShell title={label} sourceName={sourceName} onClose={onClose}>
+      <RetainedPaneShell
+        title={label}
+        sourceName={sourceName}
+        closeLabel={t("timelord.closeNamed", { name: label })}
+        onClose={onClose}
+      >
         <div className="flex flex-1 items-center justify-center p-6 text-[length:var(--aries-font-size-base)] text-[color:var(--aries-text-muted)]">
           {error}
         </div>
-      </PaneShell>
+      </RetainedPaneShell>
     );
   }
 
   if (!payload) {
     return (
-      <PaneShell title={label} sourceName={sourceName} onClose={onClose}>
+      <RetainedPaneShell
+        title={label}
+        sourceName={sourceName}
+        closeLabel={t("timelord.closeNamed", { name: label })}
+        onClose={onClose}
+      >
         <div className="flex flex-1 items-center justify-center p-6 text-[length:var(--aries-font-size-base)] text-[color:var(--aries-text-muted)]">
           {t("timelord.loadingNamed", { name: label })}
         </div>
-      </PaneShell>
+      </RetainedPaneShell>
     );
   }
 
   if (payload.unavailable) {
     return (
-      <PaneShell title={title} sourceName={sourceName} onClose={onClose}>
+      <RetainedPaneShell
+        title={title}
+        sourceName={sourceName}
+        closeLabel={t("timelord.closeNamed", { name: title })}
+        onClose={onClose}
+      >
         <div className="flex flex-1 items-center justify-center p-6 text-center text-[length:var(--aries-font-size-base)] text-[color:var(--aries-text-muted)]">
           {payload.notes?.[0] ?? t("timelord.unavailableNamed", { name: title })}
         </div>
-      </PaneShell>
+      </RetainedPaneShell>
     );
   }
 
   return (
-    <PaneShell
+    <RetainedPaneShell
       title={title}
       sourceName={sourceName}
+      closeLabel={t("timelord.closeNamed", { name: title })}
       onClose={onClose}
       toolbar={
         <>
-          <button
+          <PaneToolbarButton
             type="button"
-            className="inline-flex h-6 items-center gap-1 rounded border border-[color:var(--aries-border-subtle)] px-1.5 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)] hover:bg-[color:var(--aries-surface-subtle)]"
             onClick={() => {
               const text = tableToTsv(payload, payload.rows);
               void navigator.clipboard?.writeText(text).catch(() => {
@@ -171,11 +188,10 @@ export function TimeLordPaneView({ documentId, parentDocumentId, tableId, source
             }}
             title={t("timelord.copyRows")}
           >
-            <Copy className="size-3.5" />
-          </button>
-          <button
+            <Copy />
+          </PaneToolbarButton>
+          <PaneToolbarButton
             type="button"
-            className="inline-flex h-6 items-center gap-1 rounded border border-[color:var(--aries-border-subtle)] px-1.5 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)] hover:bg-[color:var(--aries-surface-subtle)]"
             onClick={() =>
               void exportTextContent({
                 filename: fileStem,
@@ -188,11 +204,10 @@ export function TimeLordPaneView({ documentId, parentDocumentId, tableId, source
             }
             title={t("timelord.exportTsv")}
           >
-            <Download className="size-3.5" />
-          </button>
-          <button
+            <Download />
+          </PaneToolbarButton>
+          <PaneToolbarButton
             type="button"
-            className="inline-flex h-6 items-center gap-1 rounded border border-[color:var(--aries-border-subtle)] px-1.5 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)] hover:bg-[color:var(--aries-surface-subtle)]"
             onClick={() =>
               void exportTextContent({
                 filename: fileStem,
@@ -204,11 +219,10 @@ export function TimeLordPaneView({ documentId, parentDocumentId, tableId, source
             }
             title={t("timelord.exportText")}
           >
-            <FileText className="size-3.5" />
-          </button>
-          <button
+            <FileText />
+          </PaneToolbarButton>
+          <PaneToolbarButton
             type="button"
-            className="inline-flex h-6 items-center gap-1 rounded border border-[color:var(--aries-border-subtle)] px-1.5 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)] hover:bg-[color:var(--aries-surface-subtle)]"
             onClick={() =>
               void exportTablePayloadPdf(payload, payload.rows, {
                 fileStem,
@@ -217,9 +231,9 @@ export function TimeLordPaneView({ documentId, parentDocumentId, tableId, source
             }
             title={t("timelord.exportPdf")}
           >
-            <Download className="size-3.5" />
+            <Download />
             PDF
-          </button>
+          </PaneToolbarButton>
         </>
       }
     >
@@ -229,48 +243,6 @@ export function TimeLordPaneView({ documentId, parentDocumentId, tableId, source
         onBindingChange={updateBinding}
         onOptionsChange={updateOptions}
       />
-    </PaneShell>
-  );
-}
-
-function PaneShell({
-  title,
-  sourceName,
-  onClose,
-  toolbar,
-  children,
-}: {
-  title: string;
-  sourceName?: string;
-  onClose?: () => void;
-  toolbar?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  const t = useT();
-  return (
-    <div className="font-morinus-text flex h-full min-h-0 flex-col bg-background">
-      <div className="flex shrink-0 items-center gap-2 border-b border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface)] px-3 py-2">
-        <div className="min-w-0 truncate text-[length:var(--aries-font-size-small)] font-medium text-[color:var(--aries-text-primary)]">
-          {title}
-          {sourceName ? (
-            <span className="ml-1 font-normal text-[color:var(--aries-text-muted)]">{sourceName}</span>
-          ) : null}
-        </div>
-        <div className="ml-auto flex items-center gap-1">
-          {toolbar}
-          {onClose ? (
-            <button
-              type="button"
-              className="inline-flex size-6 items-center justify-center rounded hover:bg-accent/40"
-              onClick={onClose}
-              aria-label={t("timelord.closeNamed", { name: title })}
-            >
-              <X className="size-4" />
-            </button>
-          ) : null}
-        </div>
-      </div>
-      {children}
-    </div>
+    </RetainedPaneShell>
   );
 }

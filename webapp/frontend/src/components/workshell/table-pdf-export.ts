@@ -10,7 +10,25 @@ import {
   type GenericTableRow,
 } from "@/lib/daemon/client";
 import { resolveShellHost } from "@/lib/shell-host";
+import { resolvedSemanticChartColor } from "@/lib/theme/semantic-color";
 import { exportFileBaseName } from "./text-export";
+
+function resolveCellForExport(cell: GenericTableCell): GenericTableCell {
+  const runs = cell.runs?.map((run) => ({
+    ...run,
+    color: resolvedSemanticChartColor(run.colorRole, run.color),
+  }));
+  return {
+    ...cell,
+    color: resolvedSemanticChartColor(cell.colorRole, cell.color),
+    ...(runs ? { runs } : {}),
+  };
+}
+
+/** Snapshot live CSS palette roles to portable literal colours at export time. */
+export function resolveTableRowsForExport(rows: GenericTableCell[][]): GenericTableCell[][] {
+  return rows.map((row) => row.map(resolveCellForExport));
+}
 
 /** Sanitize a title into a default filename stem (matches home-client's
  * exportBaseName chrome-strip + path-char scrub). */
@@ -45,7 +63,7 @@ export async function exportTablePayloadPdf(
     width: column.widthFactor,
     glyph: column.headerGlyph,
   }));
-  const exportRows = rows.map((row) => row.cells);
+  const exportRows = resolveTableRowsForExport(rows.map((row) => row.cells));
   const host = resolveShellHost();
   if (!host.capabilities.nativeFileDialogs) {
     const result = await exportTablePdfBytes({
@@ -81,7 +99,7 @@ export async function writeTablePayloadPdf(
     width: column.widthFactor,
     glyph: column.headerGlyph,
   }));
-  const exportRows = rows.map((row) => row.cells);
+  const exportRows = resolveTableRowsForExport(rows.map((row) => row.cells));
   await exportTablePdf({
     path,
     title,
@@ -106,7 +124,7 @@ export async function exportAdHocTablePdf(params: {
       filename: `${params.fileStem}.pdf`,
       title: params.title,
       columns: params.columns,
-      rows: params.rows,
+      rows: resolveTableRowsForExport(params.rows),
       headerLines: params.headerLines,
     });
     await host.downloadBytes(
@@ -122,7 +140,7 @@ export async function exportAdHocTablePdf(params: {
     path,
     title: params.title,
     columns: params.columns,
-    rows: params.rows,
+    rows: resolveTableRowsForExport(params.rows),
     headerLines: params.headerLines,
   });
   return true;

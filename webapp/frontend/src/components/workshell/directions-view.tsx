@@ -44,7 +44,8 @@ import {
   LIST_PANE_CLASSES,
   LIST_ROLE_CLASSES,
   LIST_ROW_CLASSES,
-  LIST_ROW_HEIGHT,
+  useFixedRowHeightAnchor,
+  useListRowHeight,
 } from "@/lib/list-tokens";
 import {
   getCachedListPayload,
@@ -83,6 +84,10 @@ import {
 import { cn } from "@/lib/utils";
 import { useT, useTFallback } from "@/lib/i18n/i18n";
 import { type ListFollowPolicy } from "@/lib/list-follow-policy";
+import {
+  resolvedSemanticChartColor,
+  semanticChartColor,
+} from "@/lib/theme/semantic-color";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { beginWorkspaceSnapshotCommand } from "@/stores/workspace-command-snapshot-gate";
@@ -114,13 +119,16 @@ function directionPartsPdfCell(
   parts: DirectionCellPart[] | null | undefined,
   fallbackGlyph: string | null | undefined,
   fallbackText: string,
+  colorize: boolean,
 ): GenericTableCell {
   if (parts?.length && parts.some((part) => part.glyph)) {
     return {
       runs: parts.map((part) => ({
         text: part.text,
         glyph: part.glyph,
-        color: part.color ?? undefined,
+        color: colorize
+          ? resolvedSemanticChartColor(part.colorRole, part.color)
+          : undefined,
       })),
     };
   }
@@ -128,6 +136,23 @@ function directionPartsPdfCell(
     return { runs: [{ text: fallbackGlyph, glyph: true }] };
   }
   return { text: fallbackText };
+}
+
+function directionGlyphPdfCell(
+  text: string,
+  glyph: string | null | undefined,
+  color: string | null | undefined,
+  colorRole: string | null | undefined,
+  colorize: boolean,
+): GenericTableCell {
+  if (!glyph) return { text };
+  return {
+    runs: [{
+      text: glyph,
+      glyph: true,
+      color: colorize ? resolvedSemanticChartColor(colorRole, color) : undefined,
+    }],
+  };
 }
 
 const PRIMARY_DIRECTION_COLUMN_KEYS = ["mz", "prom", "dc", "sig", "arc", "date"] as const;
@@ -271,7 +296,6 @@ const AGE_ANCHOR_RANGES = [
 
 const AGE_RANGE_PAGE_YEARS = 125;
 
-const DIRECTION_ROW_HEIGHT = LIST_ROW_HEIGHT.symbolic;
 const VIRTUAL_OVERSCAN_ROWS = 12;
 const VIRTUAL_SCROLL_SYNC_EVENT = "aries:virtual-scroll-sync";
 
@@ -281,7 +305,6 @@ function dispatchVirtualScrollSync(scroller: HTMLDivElement, beforePaint = false
   );
 }
 const DIRECTION_ROW_CLASS = LIST_ROW_CLASSES.flagged;
-const DIRECTION_ROW_STYLE: React.CSSProperties = { height: DIRECTION_ROW_HEIGHT };
 const PRIMARY_SETTINGS_PATCH_DEBOUNCE_MS = 350;
 const DIRECTION_LIST_REFRESH_DEBOUNCE_MS = 220;
 const RECTIFICATION_SESSION_ECHO_SUPPRESS_MS = 800;
@@ -319,9 +342,13 @@ function primaryFallbackGlyph(pointId: number, glyph?: string | null): string | 
   return null;
 }
 
-function glyphRun(text: string | null | undefined, color?: string | null): DirectionCellPart | null {
+function glyphRun(
+  text: string | null | undefined,
+  color?: string | null,
+  colorRole?: string | null,
+): DirectionCellPart | null {
   if (!text) return null;
-  return { text, glyph: true, color: color ?? null };
+  return { text, glyph: true, color: color ?? null, colorRole: colorRole ?? null };
 }
 
 function compactParts(parts: Array<DirectionCellPart | null>): DirectionCellPart[] {
@@ -607,7 +634,7 @@ function AgeRangePager({
   const t = useT();
   return (
     <ControlTooltip label={t("dirview.age")}>
-      <div className="inline-flex items-center rounded-md border border-border bg-background p-[2px]">
+      <div className="inline-flex items-center rounded-md border border-border bg-background p-[var(--aries-segmented-control-padding)]">
         <Button
           type="button"
           size="icon-xs"
@@ -625,7 +652,7 @@ function AgeRangePager({
             type="button"
             size="xs"
             variant={index === value ? "secondary" : "ghost"}
-            className="h-6 rounded-[6px] px-2 text-xs tabular-nums"
+            className="h-6 rounded-sm px-2 text-xs tabular-nums"
             onClick={() => onRange(range)}
           >
             {range.label}
@@ -686,13 +713,13 @@ function RectificationStepper({
 
   return (
     <ControlTooltip label={t("dirview.rectification")}>
-      <div className="inline-flex h-8 items-center rounded-md border border-border bg-background p-[2px]">
-        <span className="px-1 text-[10px] font-medium text-muted-foreground">
+      <div className="inline-flex h-8 items-center rounded-md border border-border bg-background p-[var(--aries-segmented-control-padding)]">
+        <span className="px-1 text-[length:var(--aries-font-size-section)] font-medium text-muted-foreground">
           {t("dirview.step")}
         </span>
         <select
           aria-label={t("dirview.rectificationStep")}
-          className="h-6 w-[46px] rounded-[6px] border-0 bg-transparent px-1 text-xs tabular-nums text-foreground outline-none disabled:opacity-50"
+          className="h-6 w-[46px] rounded-sm border-0 bg-transparent px-1 text-xs tabular-nums text-foreground outline-none disabled:opacity-50"
           disabled={pending}
           value={stepSeconds}
           onChange={(event) => setStepSeconds(Number(event.target.value) || 60)}
@@ -774,11 +801,12 @@ function useDirectionsOptionsSeq(): number {
 
   React.useEffect(() => {
     if (!lastOptionsChange) return;
-    // Chart-layer visibility toggles and PD-in-Chart projection controls repaint
-    // chart tabs only; neither changes a direction-list calculation world.
+    // Profile/token edits and explicitly list-neutral chart display commands
+    // are paint-only here. Other options events can change row semantics, so
+    // they keep the normal options refresh path.
     if (
-      lastOptionsChange.refreshMode === "display-overlay" ||
-      lastOptionsChange.refreshMode === "pd-in-chart"
+      lastOptionsChange.styleOnly === true ||
+      lastOptionsChange.listDataChanged === false
     ) return;
     let cancelled = false;
     queueMicrotask(() => {
@@ -874,7 +902,6 @@ const SECONDARY_STITCH_CHUNK_YEARS: Record<SecondaryMethod, number> = {
   minor: 5,
 };
 const SECONDARY_STITCH_MAX_AGE = 150;
-const SECONDARY_STITCH_EDGE_PX = DIRECTION_ROW_HEIGHT * 30;
 const SECONDARY_STITCHED_CACHE = "directions:secondary-stitched";
 const SECONDARY_STITCH_CACHE_MAX_ROWS = 25000;
 
@@ -1107,11 +1134,12 @@ function scrollAnchorRowIndex(
   scroller: HTMLDivElement | null,
   rowCount: number,
   anchorRatio: number,
+  rowHeight: number,
 ): number {
   if (!scroller || rowCount <= 0 || scroller.clientHeight <= 0) return -1;
   const raw =
-    (scroller.scrollTop + scroller.clientHeight * anchorRatio - DIRECTION_ROW_HEIGHT / 2) /
-    DIRECTION_ROW_HEIGHT;
+    (scroller.scrollTop + scroller.clientHeight * anchorRatio - rowHeight / 2) /
+    rowHeight;
   return Math.max(0, Math.min(rowCount - 1, Math.round(raw)));
 }
 
@@ -1120,6 +1148,7 @@ function useScrollAgeAnchor<T>(
   rows: readonly T[],
   focusIndex: number,
   anchorRatio: number,
+  rowHeight: number,
   ranges: readonly AgeRange[],
   ageOf: (row: T) => number | null | undefined,
 ): number {
@@ -1132,7 +1161,7 @@ function useScrollAgeAnchor<T>(
     let frame = 0;
     const measure = () => {
       frame = 0;
-      const nextIndex = scrollAnchorRowIndex(scroller, rows.length, anchorRatio);
+      const nextIndex = scrollAnchorRowIndex(scroller, rows.length, anchorRatio, rowHeight);
       setScrollAnchorIndex((prev) => (prev === nextIndex ? prev : nextIndex));
     };
     const scheduleMeasure = () => {
@@ -1153,7 +1182,7 @@ function useScrollAgeAnchor<T>(
       resizeObserver?.disconnect();
       if (frame) cancelAnimationFrame(frame);
     };
-  }, [anchorRatio, rows.length, scrollerRef]);
+  }, [anchorRatio, rowHeight, rows.length, scrollerRef]);
 
   const anchorRow =
     scrollAnchorIndex >= 0 && scrollAnchorIndex < rows.length ? rows[scrollAnchorIndex] : undefined;
@@ -1161,8 +1190,6 @@ function useScrollAgeAnchor<T>(
   const focusRow = focusIndex >= 0 && focusIndex < rows.length ? rows[focusIndex] : undefined;
   return ageRangeIndexForAge(ranges, focusRow ? ageOf(focusRow) : null);
 }
-
-const AGE_SCROLL_LOAD_EDGE_PX = DIRECTION_ROW_HEIGHT * 3;
 
 function useAgeRangeEdgeLoader({
   active,
@@ -1173,6 +1200,7 @@ function useAgeRangeEdgeLoader({
   currentRange,
   hasPrevious = true,
   hasNext = true,
+  rowHeight,
   onLoadRange,
 }: {
   active: boolean;
@@ -1183,6 +1211,7 @@ function useAgeRangeEdgeLoader({
   currentRange: AgeRange | null;
   hasPrevious?: boolean;
   hasNext?: boolean;
+  rowHeight: number;
   onLoadRange: (range: AgeRange, direction: AgeRangeLoadDirection) => void;
 }) {
   const lastRequestRef = React.useRef<string | null>(null);
@@ -1204,30 +1233,32 @@ function useAgeRangeEdgeLoader({
       return event.deltaY < 0 ? "previous" : "next";
     };
     const isAwayFromEdges = () => {
+      const edgePx = rowHeight * 3;
       const maxTop = scroller.scrollHeight - scroller.clientHeight;
       return (
-        maxTop > AGE_SCROLL_LOAD_EDGE_PX &&
-        scroller.scrollTop > AGE_SCROLL_LOAD_EDGE_PX &&
-        maxTop - scroller.scrollTop > AGE_SCROLL_LOAD_EDGE_PX
+        maxTop > edgePx &&
+        scroller.scrollTop > edgePx &&
+        maxTop - scroller.scrollTop > edgePx
       );
     };
     const maybeLoad = (intent: AgeRangeLoadDirection) => {
       wheelFrame = 0;
       if (loading) return;
+      const edgePx = rowHeight * 3;
       const maxTop = scroller.scrollHeight - scroller.clientHeight;
-      if (maxTop <= AGE_SCROLL_LOAD_EDGE_PX) return;
+      if (maxTop <= edgePx) return;
 
       let direction: AgeRangeLoadDirection | null = null;
       if (
         intent === "previous" &&
-        scroller.scrollTop <= AGE_SCROLL_LOAD_EDGE_PX &&
+        scroller.scrollTop <= edgePx &&
         hasPrevious &&
         currentRange.start > 0
       ) {
         direction = "previous";
       } else if (
         intent === "next" &&
-        maxTop - scroller.scrollTop <= AGE_SCROLL_LOAD_EDGE_PX &&
+        maxTop - scroller.scrollTop <= edgePx &&
         hasNext
       ) {
         direction = "next";
@@ -1270,6 +1301,7 @@ function useAgeRangeEdgeLoader({
     hasPrevious,
     loading,
     onLoadRange,
+    rowHeight,
     rowCount,
     scrollerRef,
   ]);
@@ -1305,15 +1337,23 @@ function scrollFocusedDirectionRow(
   scroller: HTMLDivElement | null,
   rowCount: number,
   anchorRatio: number,
-  rowIndex?: number,
+  rowIndex: number | undefined,
+  rowHeight: number,
 ): boolean {
-  if (!scroller || rowCount <= 0 || rowIndex == null || rowIndex < 0 || scroller.clientHeight <= 0) {
+  if (
+    !scroller ||
+    rowCount <= 0 ||
+    rowIndex == null ||
+    rowIndex < 0 ||
+    rowHeight <= 0 ||
+    scroller.clientHeight <= 0
+  ) {
     return false;
   }
   const targetIndex = Math.max(0, Math.min(rowCount - 1, rowIndex));
-  const rowTop = targetIndex * DIRECTION_ROW_HEIGHT;
-  const targetTop = rowTop - scroller.clientHeight * anchorRatio + DIRECTION_ROW_HEIGHT / 2;
-  const maxTop = Math.max(0, rowCount * DIRECTION_ROW_HEIGHT - scroller.clientHeight);
+  const rowTop = targetIndex * rowHeight;
+  const targetTop = rowTop - scroller.clientHeight * anchorRatio + rowHeight / 2;
+  const maxTop = Math.max(0, rowCount * rowHeight - scroller.clientHeight);
   const desiredTop = Math.max(0, Math.min(maxTop, targetTop));
   scroller.scrollTop = desiredTop;
   const applied = Math.abs(scroller.scrollTop - desiredTop) <= 2;
@@ -1325,23 +1365,28 @@ function scrollFocusedDirectionRow(
 
 type DirectionViewportAnchor = {
   scrollTop: number;
+  rowHeight: number;
 };
 
 function captureDirectionViewport(
   scroller: HTMLDivElement | null,
+  rowHeight: number,
 ): DirectionViewportAnchor | null {
   if (!scroller) return null;
-  return { scrollTop: scroller.scrollTop };
+  return { scrollTop: scroller.scrollTop, rowHeight };
 }
 
 function restoreDirectionViewport(
   scroller: HTMLDivElement | null,
   anchor: DirectionViewportAnchor,
   rowCount: number,
+  rowHeight: number,
 ): boolean {
   if (!scroller || scroller.clientHeight <= 0) return false;
-  const maxTop = Math.max(0, rowCount * DIRECTION_ROW_HEIGHT - scroller.clientHeight);
-  scroller.scrollTop = Math.max(0, Math.min(maxTop, anchor.scrollTop));
+  const sourceRowHeight = anchor.rowHeight > 0 ? anchor.rowHeight : rowHeight;
+  const translatedTop = (anchor.scrollTop / sourceRowHeight) * rowHeight;
+  const maxTop = Math.max(0, rowCount * rowHeight - scroller.clientHeight);
+  scroller.scrollTop = Math.max(0, Math.min(maxTop, translatedTop));
   dispatchVirtualScrollSync(scroller, true);
   return true;
 }
@@ -1350,13 +1395,14 @@ function scheduleDirectionViewportRestore(
   scrollerRef: React.RefObject<HTMLDivElement | null>,
   anchor: DirectionViewportAnchor,
   rowCount: number,
+  rowHeight: number,
 ): () => void {
   let frame = 0;
   let attempts = 0;
   let cancelled = false;
   const tick = () => {
     if (cancelled) return;
-    if (restoreDirectionViewport(scrollerRef.current, anchor, rowCount)) return;
+    if (restoreDirectionViewport(scrollerRef.current, anchor, rowCount, rowHeight)) return;
     attempts += 1;
     if (attempts < 30) {
       frame = requestAnimationFrame(tick);
@@ -1374,6 +1420,7 @@ function scheduleFocusedDirectionScroll(
   rowIndex: number,
   rowCount: number,
   anchorRatio: number,
+  rowHeight: number,
 ): () => void {
   if (rowIndex < 0 || rowCount <= 0) return () => {};
   let frame = 0;
@@ -1382,7 +1429,7 @@ function scheduleFocusedDirectionScroll(
   const tick = () => {
     if (cancelled) return;
     const scroller = scrollerRef.current;
-    if (scrollFocusedDirectionRow(scroller, rowCount, anchorRatio, rowIndex)) return;
+    if (scrollFocusedDirectionRow(scroller, rowCount, anchorRatio, rowIndex, rowHeight)) return;
     attempts += 1;
     if (attempts < 30) {
       frame = requestAnimationFrame(tick);
@@ -1399,6 +1446,7 @@ function useVirtualRows(
   scrollerRef: React.RefObject<HTMLDivElement | null>,
   rowCount: number,
   seedIndex: number,
+  rowHeight: number,
 ) {
   const [viewport, setViewport] = React.useState({ scrollTop: 0, height: 0 });
 
@@ -1472,11 +1520,11 @@ function useVirtualRows(
       seedIndex >= 0 ? Math.max(0, Math.min(rowCount - 1, seedIndex)) : 0;
     const visibleStart =
       viewport.height > 0
-        ? Math.floor(viewport.scrollTop / DIRECTION_ROW_HEIGHT)
+        ? Math.floor(viewport.scrollTop / rowHeight)
         : seededStart;
     const visibleCount = Math.max(
       1,
-      Math.ceil(viewport.height / DIRECTION_ROW_HEIGHT),
+      Math.ceil(viewport.height / rowHeight),
     );
     const startIndex = Math.max(0, visibleStart - VIRTUAL_OVERSCAN_ROWS);
     const endIndex = Math.min(
@@ -1486,10 +1534,10 @@ function useVirtualRows(
     return {
       startIndex,
       endIndex,
-      paddingTop: startIndex * DIRECTION_ROW_HEIGHT,
-      paddingBottom: (rowCount - endIndex) * DIRECTION_ROW_HEIGHT,
+      paddingTop: startIndex * rowHeight,
+      paddingBottom: (rowCount - endIndex) * rowHeight,
     };
-  }, [rowCount, seedIndex, viewport.height, viewport.scrollTop]);
+  }, [rowCount, rowHeight, seedIndex, viewport.height, viewport.scrollTop]);
 }
 
 function VirtualizedTableRows<T>({
@@ -1499,6 +1547,7 @@ function VirtualizedTableRows<T>({
   colSpan,
   scrollerRef,
   initialIndex,
+  rowHeight,
   renderRow,
 }: {
   rows: readonly T[];
@@ -1507,9 +1556,10 @@ function VirtualizedTableRows<T>({
   colSpan: number;
   scrollerRef: React.RefObject<HTMLDivElement | null>;
   initialIndex: number;
+  rowHeight: number;
   renderRow: (row: T, index: number) => React.ReactNode;
 }) {
-  const virtual = useVirtualRows(scrollerRef, rows.length, initialIndex);
+  const virtual = useVirtualRows(scrollerRef, rows.length, initialIndex, rowHeight);
   const visibleRows = rows.slice(virtual.startIndex, virtual.endIndex);
 
   if (rows.length === 0 && !loading) {
@@ -1572,16 +1622,16 @@ function primaryPromDisplayParts(fields: DirectionRowFields): DirectionCellPart[
   const prom2Glyph = primaryFallbackGlyph(fields.prom2, fields.prom2Glyph);
   if (isTwinPromissor(fields.promasp, fields.sigasp)) {
     const parts = compactParts([
-      glyphRun(promGlyph, fields.promColor),
-      glyphRun(prom2Glyph, fields.prom2Color),
+      glyphRun(promGlyph, fields.promColor, fields.promColorRole),
+      glyphRun(prom2Glyph, fields.prom2Color, fields.prom2ColorRole),
     ]);
     if (parts.length) return parts;
     return fields.promParts ?? null;
   }
   if (promGlyph) {
     return compactParts([
-      glyphRun(aspectGlyph(fields.promasp), fields.promAspectColor),
-      glyphRun(promGlyph, fields.promColor),
+      glyphRun(aspectGlyph(fields.promasp), fields.promAspectColor, fields.promAspectColorRole),
+      glyphRun(promGlyph, fields.promColor, fields.promColorRole),
     ]);
   }
   return fields.promParts ?? null;
@@ -1592,14 +1642,14 @@ function primarySigDisplayParts(fields: DirectionRowFields): DirectionCellPart[]
   const sigGlyph = primaryFallbackGlyph(fields.sigPoint, fields.sigGlyph);
   if (sigGlyph) {
     return compactParts([
-      glyphRun(aspectGlyph(fields.sigasp), fields.sigAspectColor),
-      glyphRun(sigGlyph, fields.sigColor),
+      glyphRun(aspectGlyph(fields.sigasp), fields.sigAspectColor, fields.sigAspectColorRole),
+      glyphRun(sigGlyph, fields.sigColor, fields.sigColorRole),
     ]);
   }
   if (fields.sigPoint === PRIMDIR_LOF && fields.sigGlyph) {
     return compactParts([
-      glyphRun(aspectGlyph(fields.sigasp), fields.sigAspectColor),
-      glyphRun(fields.sigGlyph, fields.sigColor),
+      glyphRun(aspectGlyph(fields.sigasp), fields.sigAspectColor, fields.sigAspectColorRole),
+      glyphRun(fields.sigGlyph, fields.sigColor, fields.sigColorRole),
     ]);
   }
   return fields.sigParts ?? null;
@@ -1608,16 +1658,18 @@ function primarySigDisplayParts(fields: DirectionRowFields): DirectionCellPart[]
 function Glyph({
   ch,
   color,
+  colorRole,
   className,
 }: {
   ch: string;
   color?: string | null;
+  colorRole?: string | null;
   className?: string;
 }) {
   return (
     <span
       className={className}
-      style={{ fontFamily: "'AriesMorinus'", color: color || undefined }}
+      style={{ fontFamily: "'AriesMorinus'", color: semanticChartColor(colorRole, color) }}
       aria-hidden
     >
       {ch}
@@ -1625,11 +1677,17 @@ function Glyph({
   );
 }
 
-function NatalMarker({ color }: { color?: string | null }) {
+function NatalMarker({
+  color,
+  colorRole,
+}: {
+  color?: string | null;
+  colorRole?: string | null;
+}) {
   return (
     <span
-      className="inline-flex shrink-0 items-center text-[10px] font-semibold italic leading-none text-muted-foreground"
-      style={{ color: color || undefined }}
+      className="inline-flex shrink-0 items-center text-[length:var(--aries-font-size-section)] font-semibold italic leading-none text-muted-foreground"
+      style={{ color: semanticChartColor(colorRole, color) }}
       aria-hidden
     >
       n
@@ -1674,7 +1732,7 @@ function LiveHoverSummary({ value }: { value: string }) {
   return (
     <span
       title={value}
-      className="block h-5 w-48 max-w-[32vw] overflow-hidden text-right text-[11px] leading-5 text-muted-foreground"
+      className="block h-5 w-48 max-w-[32vw] overflow-hidden text-right text-[length:var(--aries-font-size-small)] leading-5 text-muted-foreground"
       style={{
         display: "-webkit-box",
         WebkitBoxOrient: "vertical",
@@ -1703,18 +1761,23 @@ function DirectionParts({
     >
       {parts.map((part, index) =>
         part.marker === "natal" ? (
-          <NatalMarker key={`${part.text}:${index}`} color={colorize ? part.color : null} />
+          <NatalMarker
+            key={`${part.text}:${index}`}
+            color={colorize ? part.color : null}
+            colorRole={colorize ? part.colorRole : null}
+          />
         ) : part.glyph ? (
           <Glyph
             key={`${part.text}:${index}`}
             ch={part.text}
             color={colorize ? part.color : null}
+            colorRole={colorize ? part.colorRole : null}
             className="shrink-0"
           />
         ) : (
           <span
             key={`${part.text}:${index}`}
-            style={{ color: colorize ? part.color || undefined : undefined }}
+            style={{ color: colorize ? semanticChartColor(part.colorRole, part.color) : undefined }}
           >
             {part.text}
           </span>
@@ -1792,6 +1855,9 @@ function PromCell({
   color,
   prom2Color,
   aspectColor,
+  colorRole,
+  prom2ColorRole,
+  aspectColorRole,
 }: {
   promGlyph?: string | null;
   prom2Glyph?: string | null;
@@ -1803,6 +1869,9 @@ function PromCell({
   color?: string | null;
   prom2Color?: string | null;
   aspectColor?: string | null;
+  colorRole?: string | null;
+  prom2ColorRole?: string | null;
+  aspectColorRole?: string | null;
 }) {
   if (parts?.length && parts.some((part) => part.glyph)) {
     return <DirectionParts parts={parts} title={text} colorize={colorize} />;
@@ -1811,15 +1880,25 @@ function PromCell({
     if (promGlyph && prom2Glyph) {
       return (
         <span className="inline-flex items-center gap-1" title={text}>
-          <Glyph ch={promGlyph} color={color} />
-          <Glyph ch={prom2Glyph} color={prom2Color} />
+          <Glyph ch={promGlyph} color={color} colorRole={colorRole} />
+          <Glyph ch={prom2Glyph} color={prom2Color} colorRole={prom2ColorRole} />
         </span>
       );
     }
     if (parts?.length) return <DirectionParts parts={parts} title={text} colorize={colorize} />;
     return <span>{text}</span>;
   }
-  return <PointCell glyph={promGlyph} aspId={promasp} text={text} color={color} aspectColor={aspectColor} />;
+  return (
+    <PointCell
+      glyph={promGlyph}
+      aspId={promasp}
+      text={text}
+      color={color}
+      aspectColor={aspectColor}
+      colorRole={colorRole}
+      aspectColorRole={aspectColorRole}
+    />
+  );
 }
 
 function PointCell({
@@ -1830,6 +1909,8 @@ function PointCell({
   colorize,
   color,
   aspectColor,
+  colorRole,
+  aspectColorRole,
 }: {
   glyph?: string | null;
   aspId: number;
@@ -1838,6 +1919,8 @@ function PointCell({
   colorize?: boolean;
   color?: string | null;
   aspectColor?: string | null;
+  colorRole?: string | null;
+  aspectColorRole?: string | null;
 }) {
   if (parts?.length && parts.some((part) => part.glyph)) {
     return <DirectionParts parts={parts} title={text} colorize={colorize} />;
@@ -1846,8 +1929,8 @@ function PointCell({
   const asp = aspectGlyph(aspId);
   return (
     <span className="inline-flex items-center gap-1">
-      {asp != null ? <Glyph ch={asp} color={aspectColor} /> : null}
-      <Glyph ch={glyph} color={color} />
+      {asp != null ? <Glyph ch={asp} color={aspectColor} colorRole={aspectColorRole} /> : null}
+      <Glyph ch={glyph} color={color} colorRole={colorRole} />
     </span>
   );
 }
@@ -1932,13 +2015,10 @@ export function TimedChartContextMenu({
   );
 }
 
-// --- "Open as Biwheel (PDs in Chart)" row action. The wx PD list shows a
-// "PDs in Chart" submenu (Zod/Mun/Ingress, primdirslistwnd.py:641-646) that opens
-// the radix advanced by the row's directed arc as a COMPOUND biwheel tab
-// (_open_workspace_pd_tab, primdirslistwnd.py:1137-1185). Only present for a
-// radix PD list (chrt.htype == RADIX), never the return lists. Celestial and
-// Terrestrial are explicit row commands; the row's M/Z calculation flag does
-// not choose the opened chart type (primdirslistwnd.py:1533-1607).
+// --- "PDs in Chart" row action. Aries maps a calculated Z row to the
+// celestial projection and an M row to the terrestrial projection, preserving
+// the row's own coordinate system instead of exposing incompatible choices.
+// It is present only for a radix PD list, never the return lists.
 function PdInChartMenuItem({
   documentId,
   arc,
@@ -2066,6 +2146,7 @@ export function DirectionsView({
   onClose?: () => void;
 }) {
   const t = useT();
+  const rowHeight = useListRowHeight("symbolic");
   const [tab, setTab] = React.useState<DirectionsTopTab>(() => topTabFromInitial(initialTab));
   const [primarySurface, setPrimarySurface] = React.useState<PrimaryDirectionsSurface>(() =>
     primarySurfaceFromInitial(initialTab),
@@ -2148,6 +2229,7 @@ export function DirectionsView({
             onRectificationCommitted={handleRectificationCommitted}
             onRectificationSettled={handleRectificationSettled}
             onShowPrimaryDirections={() => setPrimarySurface("directions")}
+            rowHeight={rowHeight}
           />
         ) : (
           <PrimaryDirectionsPanel
@@ -2166,6 +2248,7 @@ export function DirectionsView({
             onRectificationCommitted={handleRectificationCommitted}
             onRectificationSettled={handleRectificationSettled}
             onShowCircumambulations={() => setPrimarySurface("circumambulation")}
+            rowHeight={rowHeight}
           />
         )}
       </TabsContent>
@@ -2182,6 +2265,7 @@ export function DirectionsView({
           onRectificationStepStart={handleRectificationStepStart}
           onRectificationCommitted={handleRectificationCommitted}
           onRectificationSettled={handleRectificationSettled}
+          rowHeight={rowHeight}
         />
       </TabsContent>
     </Tabs>
@@ -2204,6 +2288,7 @@ function PrimaryDirectionsPanel({
   onRectificationCommitted,
   onRectificationSettled,
   onShowCircumambulations,
+  rowHeight,
 }: {
   sourceName: string;
   source?: string;
@@ -2220,9 +2305,14 @@ function PrimaryDirectionsPanel({
   onRectificationCommitted: () => void;
   onRectificationSettled: () => void;
   onShowCircumambulations: () => void;
+  rowHeight: number;
 }) {
   const t = useT();
   const tf = useTFallback();
+  const rowHeightRef = React.useRef(rowHeight);
+  React.useLayoutEffect(() => {
+    rowHeightRef.current = rowHeight;
+  }, [rowHeight]);
   const directionOptions = React.useMemo(
     () => [
       { value: PRIMARY_DIRECTION_DIRECT, label: t("dirview.direct") },
@@ -2331,8 +2421,8 @@ function PrimaryDirectionsPanel({
 
   const captureRectificationViewport = React.useCallback(() => {
     onRectificationStepStart();
-    rectificationViewportRef.current = captureDirectionViewport(scrollerRef.current);
-  }, [onRectificationStepStart]);
+    rectificationViewportRef.current = captureDirectionViewport(scrollerRef.current, rowHeight);
+  }, [onRectificationStepStart, rowHeight]);
 
   React.useEffect(() => {
     queueMicrotask(() => {
@@ -2513,11 +2603,16 @@ function PrimaryDirectionsPanel({
   const focusIndex = targetAgeRange
     ? ageRangeTargetIndex(rows, targetAgeRange, (row) => row.age, targetAgeSeek)
     : nearestDateIndex(rows, focusTargetMs, (row) => row.date);
+  useFixedRowHeightAnchor(scrollerRef, rows.length, rowHeight, {
+    enabled: active,
+    syncEvent: VIRTUAL_SCROLL_SYNC_EVENT,
+  });
   const visibleAgeAnchorIdx = useScrollAgeAnchor(
     scrollerRef,
     rows,
     focusIndex,
     PRIMARY_FOCUS_ANCHOR,
+    rowHeight,
     ageRanges,
     (row) => row.age,
   );
@@ -2549,6 +2644,7 @@ function PrimaryDirectionsPanel({
           rowIndex,
           rows.length,
           PRIMARY_FOCUS_ANCHOR,
+          rowHeight,
         );
         return;
       }
@@ -2557,7 +2653,7 @@ function PrimaryDirectionsPanel({
       setAgeWindow({ start: range.start, end: range.end });
       setAgeSeek(seek);
     },
-    [ageWindow, rows],
+    [ageWindow, rowHeight, rows],
   );
   const jumpToAgeAnchor = React.useCallback(
     (index: number) => {
@@ -2593,6 +2689,7 @@ function PrimaryDirectionsPanel({
     loading,
     currentRange: mode === "radix" ? currentPrimaryAgeRange : null,
     hasPrevious: currentPrimaryAgeRange.start > 0,
+    rowHeight,
     onLoadRange: scrollOrLoadAgeRange,
   });
   const scrollToFraction = React.useCallback((fraction: number) => {
@@ -2603,8 +2700,9 @@ function PrimaryDirectionsPanel({
       targetIndex,
       rows.length,
       PRIMARY_FOCUS_ANCHOR,
+      rowHeight,
     );
-  }, [rows.length]);
+  }, [rowHeight, rows.length]);
 
   const primaryMenuExtras = React.useCallback(
     () => (
@@ -2688,12 +2786,14 @@ function PrimaryDirectionsPanel({
                       primaryPromDisplayParts(row.fields),
                       row.fields.promGlyph,
                       row.prom,
+                      glyphColorRows,
                     ),
                     { text: row.dc },
                     directionPartsPdfCell(
                       primarySigDisplayParts(row.fields),
                       row.fields.sigGlyph,
                       row.sig,
+                      glyphColorRows,
                     ),
                     { text: `${row.arc.toFixed(4)}°` },
                     { text: primaryRowDateLabel(row) },
@@ -2745,7 +2845,7 @@ function PrimaryDirectionsPanel({
         </ContextMenuSub>
       </>
     ),
-    [rows, columns, payload, mode, direction, source, documentId, ageWindow, payloadReferenceDatetime, year, sourceName, customSignificator, t, tf],
+    [rows, columns, payload, mode, direction, source, documentId, ageWindow, payloadReferenceDatetime, year, sourceName, customSignificator, glyphColorRows, t, tf],
   );
 
   React.useLayoutEffect(() => {
@@ -2755,6 +2855,7 @@ function PrimaryDirectionsPanel({
       focusIndex,
       rows.length,
       PRIMARY_FOCUS_ANCHOR,
+      rowHeightRef.current,
     );
   }, [active, direction, focusIndex, mode, rows.length]);
 
@@ -2763,7 +2864,12 @@ function PrimaryDirectionsPanel({
     const anchor = rectificationViewportRef.current;
     if (!anchor) return undefined;
     rectificationViewportRef.current = null;
-    return scheduleDirectionViewportRestore(scrollerRef, anchor, rows.length);
+    return scheduleDirectionViewportRestore(
+      scrollerRef,
+      anchor,
+      rows.length,
+      rowHeightRef.current,
+    );
   }, [active, payload, rows.length]);
 
   const directionKeyLabel = compactDirectionKeyLabel(payload?.meta.key);
@@ -2790,7 +2896,7 @@ function PrimaryDirectionsPanel({
               {payload?.meta.title ?? t("dirview.primaryDirections")}
             </h2>
             {payload ? (
-              <span className="text-[11px] text-muted-foreground">
+              <span className="text-[length:var(--aries-font-size-small)] text-muted-foreground">
                 {payload.meta.system}
                 {directionKeyLabel ? ` · ${directionKeyLabel}` : ""}
                 {customSignificatorLabel ? ` · ${t("dirview.sigWithLabel", { label: customSignificatorLabel })}` : ""}
@@ -2864,7 +2970,7 @@ function PrimaryDirectionsPanel({
           <ListLayoutPresetControl />
         </div>
         {isReturnMode && returnLabel ? (
-          <span className="text-[11px] text-muted-foreground">
+          <span className="text-[length:var(--aries-font-size-small)] text-muted-foreground">
             {returnLabel}
           </span>
         ) : null}
@@ -2872,7 +2978,7 @@ function PrimaryDirectionsPanel({
 
       <div ref={scrollerRef} className="flex-1 min-h-0 overflow-auto">
         {error ? (
-          <div className="px-4 py-6 text-[12px] text-destructive">{error}</div>
+          <div className="px-4 py-6 text-[length:var(--aries-font-size-base)] text-destructive">{error}</div>
         ) : (
           <Table
             className={cn(
@@ -2905,6 +3011,7 @@ function PrimaryDirectionsPanel({
               colSpan={primaryColumnOrder.length}
               scrollerRef={scrollerRef}
               initialIndex={focusIndex}
+              rowHeight={rowHeight}
               renderRow={(row, i) => (
                   <PrimaryRowCells
                     key={primaryDirectionRowKey(row, i)}
@@ -2918,6 +3025,7 @@ function PrimaryDirectionsPanel({
                     glyphColorRows={glyphColorRows}
                     columnOrder={primaryColumnOrder}
                     onHover={setHoverSummary}
+                    rowHeight={rowHeight}
                   />
               )}
             />
@@ -2977,6 +3085,7 @@ function PrimaryRowCells({
   glyphColorRows,
   columnOrder,
   onHover,
+  rowHeight,
 }: {
   row: DirectionRow;
   documentId: string;
@@ -2988,6 +3097,7 @@ function PrimaryRowCells({
   glyphColorRows: boolean;
   columnOrder: readonly PrimaryDirectionColumnKey[];
   onHover: (summary: string | null) => void;
+  rowHeight: number;
 }) {
   const t = useT();
   const f = row.fields;
@@ -3014,6 +3124,9 @@ function PrimaryRowCells({
                 color={glyphColorRows ? f.promColor : null}
                 prom2Color={glyphColorRows ? f.prom2Color : null}
                 aspectColor={glyphColorRows ? f.promAspectColor : null}
+                colorRole={glyphColorRows ? f.promColorRole : null}
+                prom2ColorRole={glyphColorRows ? f.prom2ColorRole : null}
+                aspectColorRole={glyphColorRows ? f.promAspectColorRole : null}
               />
             </div>
           </TableCell>
@@ -3032,6 +3145,8 @@ function PrimaryRowCells({
                 colorize={glyphColorRows}
                 color={glyphColorRows ? f.sigColor : null}
                 aspectColor={glyphColorRows ? f.sigAspectColor : null}
+                colorRole={glyphColorRows ? f.sigColorRole : null}
+                aspectColorRole={glyphColorRows ? f.sigAspectColorRole : null}
               />
             </div>
           </TableCell>
@@ -3065,7 +3180,7 @@ function PrimaryRowCells({
             <>
               <PdInChartMenuItem
                 documentId={documentId}
-                arc={row.arc}
+                arc={f.arc}
                 mode={f.mundane ? "terrestrial" : "celestial"}
                 direct={f.direct}
                 eventJd={f.jd}
@@ -3089,7 +3204,7 @@ function PrimaryRowCells({
         className={DIRECTION_ROW_CLASS}
         data-initial-focus={initialFocus || undefined}
         data-row-index={rowIndex}
-        style={DIRECTION_ROW_STYLE}
+        style={{ height: rowHeight }}
         onMouseEnter={() => onHover(primaryHoverSummary(row))}
         onMouseLeave={() => onHover(null)}
       >
@@ -3114,15 +3229,23 @@ function SecondaryGlyphCell({
   text,
   glyph,
   color,
+  colorRole,
   glyphColorRows,
 }: {
   text: string;
   glyph?: string | null;
   color?: string | null;
+  colorRole?: string | null;
   glyphColorRows: boolean;
 }) {
   if (!glyph) return <span>{text}</span>;
-  return <Glyph ch={glyph} color={glyphColorRows ? color : null} />;
+  return (
+    <Glyph
+      ch={glyph}
+      color={glyphColorRows ? color : null}
+      colorRole={glyphColorRows ? colorRole : null}
+    />
+  );
 }
 
 function secondaryHoverSummary(row: SecondaryDirectionsPayload["directions"][number]): string {
@@ -3181,6 +3304,7 @@ function SecondaryDirectionsPanel({
   onRectificationStepStart,
   onRectificationCommitted,
   onRectificationSettled,
+  rowHeight,
 }: {
   sourceName: string;
   source?: string;
@@ -3193,9 +3317,14 @@ function SecondaryDirectionsPanel({
   onRectificationStepStart: () => void;
   onRectificationCommitted: () => void;
   onRectificationSettled: () => void;
+  rowHeight: number;
 }) {
   const t = useT();
   const tf = useTFallback();
+  const rowHeightRef = React.useRef(rowHeight);
+  React.useLayoutEffect(() => {
+    rowHeightRef.current = rowHeight;
+  }, [rowHeight]);
   const secondaryMethodOptions = React.useMemo(
     () => [
       { value: "secondary" as SecondaryMethod, label: t("dirview.secondary") },
@@ -3346,6 +3475,7 @@ function SecondaryDirectionsPanel({
   }, [initialMethod]);
 
   React.useEffect(() => {
+    const scroller = scrollerRef.current;
     return () => {
       secondaryDirectionsViewStateCache.set(viewStateKey, {
         method: methodRef.current,
@@ -3354,7 +3484,7 @@ function SecondaryDirectionsPanel({
         targetAgeRange: targetAgeRangeRef.current,
         targetAgeSeek: targetAgeSeekRef.current,
         ageRangePageStart: ageRangePageStartRef.current,
-        viewport: captureDirectionViewport(scrollerRef.current),
+        viewport: captureDirectionViewport(scroller, rowHeightRef.current),
       });
     };
   }, [viewStateKey]);
@@ -3649,11 +3779,16 @@ function SecondaryDirectionsPanel({
         : nearestDateIndex(rows, focusTargetMs, (row) => row.eventDatetime ?? row.date),
     [focusTargetMs, rows, targetAgeRange, targetAgeSeek],
   );
+  useFixedRowHeightAnchor(scrollerRef, rows.length, rowHeight, {
+    enabled: active,
+    syncEvent: VIRTUAL_SCROLL_SYNC_EVENT,
+  });
   const scrollAgeAnchorIdx = useScrollAgeAnchor(
     scrollerRef,
     rows,
     focusIndex,
     SECONDARY_FOCUS_ANCHOR,
+    rowHeight,
     ageRanges,
     (row) => row.age,
   );
@@ -3701,7 +3836,7 @@ function SecondaryDirectionsPanel({
   useEdgeExtend({
     scrollerRef,
     rowCount: rows.length,
-    thresholdPx: SECONDARY_STITCH_EDGE_PX,
+    thresholdPx: rowHeight * 30,
     canExtendBackward: (store?.coverage.start ?? 0) > 0,
     canExtendForward: (store?.coverage.end ?? Number.POSITIVE_INFINITY) < SECONDARY_STITCH_MAX_AGE,
     onExtend: extendCoverage,
@@ -3725,9 +3860,9 @@ function SecondaryDirectionsPanel({
     const scroller = scrollerRef.current;
     if (!scroller || scroller.clientHeight <= 0) return;
     scrollPlanRef.current = null;
-    scroller.scrollTop += plan.count * DIRECTION_ROW_HEIGHT;
+    scroller.scrollTop += plan.count * rowHeight;
     dispatchVirtualScrollSync(scroller);
-  }, [store]);
+  }, [rowHeight, store]);
 
   // Focus anchoring fires only when the focus TARGET changes (live follow,
   // pager jump, island swap, tab activation) — never because coverage grew.
@@ -3744,6 +3879,7 @@ function SecondaryDirectionsPanel({
       focusIndexRef.current,
       rowCountRef.current,
       SECONDARY_FOCUS_ANCHOR,
+      rowHeightRef.current,
     );
   }, [active, focusSignature, islandSignature]);
 
@@ -3752,7 +3888,12 @@ function SecondaryDirectionsPanel({
     const anchor = restoredViewportRef.current;
     if (!anchor || rowCountRef.current === 0) return undefined;
     restoredViewportRef.current = null;
-    return scheduleDirectionViewportRestore(scrollerRef, anchor, rowCountRef.current);
+    return scheduleDirectionViewportRestore(
+      scrollerRef,
+      anchor,
+      rowCountRef.current,
+      rowHeightRef.current,
+    );
   }, [active, islandSignature, rows.length]);
 
   const secondaryMenuBefore = React.useCallback(
@@ -3833,11 +3974,29 @@ function SecondaryDirectionsPanel({
                       case "direction":
                         return { text: row.motionCode ?? "" };
                       case "prom":
-                        return { text: row.prom };
+                        return directionGlyphPdfCell(
+                          row.prom,
+                          row.fields.promGlyph,
+                          row.fields.promColor,
+                          row.fields.promColorRole,
+                          glyphColorRows,
+                        );
                       case "aspect":
-                        return { text: row.aspect };
+                        return directionGlyphPdfCell(
+                          row.aspect,
+                          row.fields.aspectGlyph,
+                          row.fields.aspectColor,
+                          row.fields.aspectColorRole,
+                          glyphColorRows,
+                        );
                       case "sig":
-                        return { text: row.sig };
+                        return directionGlyphPdfCell(
+                          row.sig,
+                          row.fields.sigGlyph,
+                          row.fields.sigColor,
+                          row.fields.sigColorRole,
+                          glyphColorRows,
+                        );
                       case "date":
                         return { text: secondaryRowDateLabel(row) };
                     }
@@ -3881,7 +4040,7 @@ function SecondaryDirectionsPanel({
         </>
       );
     },
-    [directionMode, documentId, method, requestFocusDatetime, rows, secondaryColumnLabels, secondaryColumnOrder, source, sourceName, store, t, tf],
+    [directionMode, documentId, glyphColorRows, method, requestFocusDatetime, rows, secondaryColumnLabels, secondaryColumnOrder, source, sourceName, store, t, tf],
   );
 
   const renderSecondaryCell = React.useCallback(
@@ -3906,6 +4065,7 @@ function SecondaryDirectionsPanel({
                 text={row.prom}
                 glyph={row.fields.promGlyph}
                 color={row.fields.promColor}
+                colorRole={row.fields.promColorRole}
                 glyphColorRows={glyphColorRows}
               />
             </TableCell>
@@ -3917,6 +4077,7 @@ function SecondaryDirectionsPanel({
                 text={row.aspect}
                 glyph={row.fields.aspectGlyph}
                 color={row.fields.aspectColor}
+                colorRole={row.fields.aspectColorRole}
                 glyphColorRows={glyphColorRows}
               />
             </TableCell>
@@ -3928,6 +4089,7 @@ function SecondaryDirectionsPanel({
                 text={row.sig}
                 glyph={row.fields.sigGlyph}
                 color={row.fields.sigColor}
+                colorRole={row.fields.sigColorRole}
                 glyphColorRows={glyphColorRows}
               />
             </TableCell>
@@ -3959,7 +4121,7 @@ function SecondaryDirectionsPanel({
           <div className={LIST_PANE_CLASSES.titleGroup}>
             <h2 className={LIST_PANE_CLASSES.title}>{store?.meta.title ?? t("dirview.secondaryProgressions")}</h2>
             {store?.meta.conversionKey ? (
-              <span className="text-[11px] text-muted-foreground">
+              <span className="text-[length:var(--aries-font-size-small)] text-muted-foreground">
                 {store.meta.conversionKey}
               </span>
             ) : null}
@@ -4017,7 +4179,7 @@ function SecondaryDirectionsPanel({
       </div>
       <div ref={scrollerRef} className="flex-1 min-h-0 overflow-auto">
         {error ? (
-          <div className="px-4 py-6 text-[12px] text-destructive">{error}</div>
+          <div className="px-4 py-6 text-[length:var(--aries-font-size-base)] text-destructive">{error}</div>
         ) : (
           <table
             className={cn(
@@ -4050,6 +4212,7 @@ function SecondaryDirectionsPanel({
               colSpan={secondaryColumnOrder.length}
               scrollerRef={scrollerRef}
               initialIndex={focusIndex}
+              rowHeight={rowHeight}
               renderRow={(row, i) => (
                   <TimedChartContextMenu
                     key={rowKeys[i] ?? secondaryDirectionRowKey(row, i)}
@@ -4063,7 +4226,7 @@ function SecondaryDirectionsPanel({
                       className={DIRECTION_ROW_CLASS}
                       data-initial-focus={i === focusIndex || undefined}
                       data-row-index={i}
-                      style={DIRECTION_ROW_STYLE}
+                      style={{ height: rowHeight }}
                       onMouseEnter={() => setHoverSummary(secondaryHoverSummary(row))}
                       onMouseLeave={() => setHoverSummary(null)}
                     >
@@ -4126,6 +4289,7 @@ function CircumambulationPanel({
   onRectificationCommitted,
   onRectificationSettled,
   onShowPrimaryDirections,
+  rowHeight,
 }: {
   sourceName: string;
   source?: string;
@@ -4141,8 +4305,13 @@ function CircumambulationPanel({
   onRectificationCommitted: () => void;
   onRectificationSettled: () => void;
   onShowPrimaryDirections: () => void;
+  rowHeight: number;
 }) {
   const t = useT();
+  const rowHeightRef = React.useRef(rowHeight);
+  React.useLayoutEffect(() => {
+    rowHeightRef.current = rowHeight;
+  }, [rowHeight]);
   const primaryModeOptions = React.useMemo(
     () => [
       { value: "radix" as Mode, label: t("dirview.radixList") },
@@ -4286,8 +4455,8 @@ function CircumambulationPanel({
 
   const captureRectificationViewport = React.useCallback(() => {
     onRectificationStepStart();
-    rectificationViewportRef.current = captureDirectionViewport(scrollerRef.current);
-  }, [onRectificationStepStart]);
+    rectificationViewportRef.current = captureDirectionViewport(scrollerRef.current, rowHeight);
+  }, [onRectificationStepStart, rowHeight]);
 
   React.useEffect(() => {
     const controller = new AbortController();
@@ -4415,20 +4584,44 @@ function CircumambulationPanel({
     // SaveAsBitmap parity; circumambulationframe subclasses CommonWnd). The
     // flattened term/participator rows share the visible column layout, so we
     // export it column-for-column with the daemon-resolved glyph chars.
+    const pdfRun = (
+      text: string,
+      glyph: boolean,
+      color: string | null | undefined,
+      colorRole: string | null | undefined,
+    ) => ({
+      text,
+      glyph,
+      color: glyphColorRows ? resolvedSemanticChartColor(colorRole, color) : undefined,
+    });
     const pdfCell = (dr: CircumDisplayRow, columnKey: CircumColumnKey): GenericTableCell => {
       switch (columnKey) {
         case "degree":
           if (dr.kind === "term") {
             return {
               runs: [
-                ...(dr.term.signGlyph ? [{ text: dr.term.signGlyph, glyph: true }] : []),
+                ...(dr.term.signGlyph
+                  ? [pdfRun(
+                      dr.term.signGlyph,
+                      true,
+                      listSignColor(dr.term.signColor, dr.term.signIndex, circumSignColors),
+                      dr.term.signColorRole,
+                    )]
+                  : []),
                 ...(dr.term.degreeText ? [{ text: dr.term.signGlyph ? ` ${dr.term.degreeText}` : dr.term.degreeText }] : []),
               ],
             };
           }
           return {
             runs: [
-              ...(dr.part.degreeSignGlyph ? [{ text: dr.part.degreeSignGlyph, glyph: true }] : []),
+              ...(dr.part.degreeSignGlyph
+                ? [pdfRun(
+                    dr.part.degreeSignGlyph,
+                    true,
+                    listSignColor(dr.part.degreeSignColor, dr.part.degreeSignIndex, circumSignColors),
+                    dr.part.degreeSignColorRole,
+                  )]
+                : []),
               ...(dr.part.degreeText ? [{ text: dr.part.degreeSignGlyph ? ` ${dr.part.degreeText}` : dr.part.degreeText }] : []),
             ],
           };
@@ -4436,8 +4629,25 @@ function CircumambulationPanel({
           return dr.kind === "term"
             ? {
                 runs: [
-                  ...(dr.term.signGlyph ? [{ text: dr.term.signGlyph, glyph: true }] : []),
-                  ...(dr.term.termRulerGlyph ? [{ text: " " }, { text: dr.term.termRulerGlyph, glyph: true }] : []),
+                  ...(dr.term.signGlyph
+                    ? [pdfRun(
+                        dr.term.signGlyph,
+                        true,
+                        listSignColor(dr.term.signColor, dr.term.signIndex, circumSignColors),
+                        dr.term.signColorRole,
+                      )]
+                    : []),
+                  ...(dr.term.termRulerGlyph
+                    ? [
+                        { text: " " },
+                        pdfRun(
+                          dr.term.termRulerGlyph,
+                          true,
+                          dr.term.termRulerColor,
+                          dr.term.termRulerColorRole,
+                        ),
+                      ]
+                    : []),
                   ...(!dr.term.signGlyph && !dr.term.termRulerGlyph
                     ? [{ text: SIGN_NAMES[dr.term.signIndex ?? -1] ?? "" }]
                     : []),
@@ -4448,11 +4658,33 @@ function CircumambulationPanel({
           return dr.kind === "participator"
             ? {
                 runs: [
-                  ...(dr.part.sourceMarker ? [{ text: dr.part.sourceMarker }] : []),
+                  ...(dr.part.sourceMarker
+                    ? [pdfRun(
+                        dr.part.sourceMarker,
+                        false,
+                        dr.part.planetColor,
+                        dr.part.planetColorRole,
+                      )]
+                    : []),
                   ...(dr.part.sourceMarker && (dr.part.aspectGlyph || dr.part.planetGlyph) ? [{ text: " " }] : []),
-                  ...(dr.part.aspectGlyph ? [{ text: dr.part.aspectGlyph, glyph: true }] : []),
+                  ...(dr.part.aspectGlyph
+                    ? [pdfRun(
+                        dr.part.aspectGlyph,
+                        true,
+                        dr.part.aspectColor,
+                        dr.part.aspectColorRole,
+                      )]
+                    : []),
                   ...(dr.part.planetGlyph
-                    ? [{ text: dr.part.aspectGlyph ? " " : "" }, { text: dr.part.planetGlyph, glyph: true }]
+                    ? [
+                        { text: dr.part.aspectGlyph ? " " : "" },
+                        pdfRun(
+                          dr.part.planetGlyph,
+                          true,
+                          dr.part.planetColor,
+                          dr.part.planetColorRole,
+                        ),
+                      ]
                     : [{ text: dr.part.planet != null ? String(dr.part.planet) : "" }]),
                 ],
               }
@@ -4485,7 +4717,7 @@ function CircumambulationPanel({
         circumColumnOrder.map((columnKey) => pdfCell(dr, columnKey)),
       ),
     }).catch(() => {});
-  }, [circumColumnLabels, circumColumnOrder, displayRows, payload, t]);
+  }, [circumColumnLabels, circumColumnOrder, circumSignColors, displayRows, glyphColorRows, payload, t]);
   const ageRanges = React.useMemo(() => ageRangesForPage(ageRangePageStart), [ageRangePageStart]);
   const focusTargetMs = React.useMemo(
     () => directionFocusTargetMs(rows, focusDatetime, (row) => row.dateStart),
@@ -4497,11 +4729,16 @@ function CircumambulationPanel({
   const focusIndex =
     termFocusIndex >= 0 ? termFocusToDisplay[termFocusIndex] ?? termFocusIndex : termFocusIndex;
   const focusAge = termFocusIndex >= 0 ? rows[termFocusIndex]?.ageStart : null;
+  useFixedRowHeightAnchor(scrollerRef, displayRows.length, rowHeight, {
+    enabled: active,
+    syncEvent: VIRTUAL_SCROLL_SYNC_EVENT,
+  });
   const scrollAgeAnchorIdx = useScrollAgeAnchor(
     scrollerRef,
     displayRows,
     focusIndex,
     CIRCUMAMBULATION_FOCUS_ANCHOR,
+    rowHeight,
     ageRanges,
     (dr) => (dr.kind === "term" ? dr.term.ageStart : dr.part.age),
   );
@@ -4535,6 +4772,7 @@ function CircumambulationPanel({
     loading,
     currentRange: currentCircumAgeRange,
     hasPrevious: currentCircumAgeRange.start > 0,
+    rowHeight,
     onLoadRange: goToCircumAgeRange,
   });
 
@@ -4545,6 +4783,7 @@ function CircumambulationPanel({
       focusIndex,
       displayRows.length,
       CIRCUMAMBULATION_FOCUS_ANCHOR,
+      rowHeightRef.current,
     );
   }, [active, displayRows.length, focusIndex, useExactOa]);
 
@@ -4553,7 +4792,12 @@ function CircumambulationPanel({
     const anchor = rectificationViewportRef.current;
     if (!anchor) return undefined;
     rectificationViewportRef.current = null;
-    return scheduleDirectionViewportRestore(scrollerRef, anchor, displayRows.length);
+    return scheduleDirectionViewportRestore(
+      scrollerRef,
+      anchor,
+      displayRows.length,
+      rowHeightRef.current,
+    );
   }, [active, displayRows.length, payload]);
 
   const circumMenuExtras = React.useCallback(
@@ -4589,6 +4833,7 @@ function CircumambulationPanel({
                     <Glyph
                       ch={dr.term.signGlyph}
                       color={glyphColorRows ? listSignColor(dr.term.signColor, dr.term.signIndex, circumSignColors) : null}
+                      colorRole={glyphColorRows ? dr.term.signColorRole : null}
                     />
                   ) : null}
                   <span>{dr.term.degreeText ?? ""}</span>
@@ -4601,6 +4846,7 @@ function CircumambulationPanel({
                       color={glyphColorRows
                         ? listSignColor(dr.part.degreeSignColor, dr.part.degreeSignIndex, circumSignColors)
                         : null}
+                      colorRole={glyphColorRows ? dr.part.degreeSignColorRole : null}
                     />
                   ) : null}
                   <span>{dr.part.degreeText ?? ""}</span>
@@ -4618,6 +4864,7 @@ function CircumambulationPanel({
                       <Glyph
                         ch={dr.term.signGlyph}
                         color={glyphColorRows ? listSignColor(dr.term.signColor, dr.term.signIndex, circumSignColors) : null}
+                        colorRole={glyphColorRows ? dr.term.signColorRole : null}
                       />
                     ) : (
                       SIGN_NAMES[dr.term.signIndex ?? -1] ?? ""
@@ -4628,6 +4875,7 @@ function CircumambulationPanel({
                       <Glyph
                         ch={dr.term.termRulerGlyph}
                         color={glyphColorRows ? dr.term.termRulerColor : null}
+                        colorRole={glyphColorRows ? dr.term.termRulerColorRole : null}
                       />
                     ) : null}
                   </span>
@@ -4643,18 +4891,23 @@ function CircumambulationPanel({
               {dr.kind === "participator" ? (
                 <span className="inline-flex items-center gap-1">
                   {dr.part.sourceMarker ? (
-                    <NatalMarker color={glyphColorRows ? dr.part.planetColor : null} />
+                    <NatalMarker
+                      color={glyphColorRows ? dr.part.planetColor : null}
+                      colorRole={glyphColorRows ? dr.part.planetColorRole : null}
+                    />
                   ) : null}
                   {dr.part.aspectGlyph ? (
                     <Glyph
                       ch={dr.part.aspectGlyph}
                       color={glyphColorRows ? dr.part.aspectColor : null}
+                      colorRole={glyphColorRows ? dr.part.aspectColorRole : null}
                     />
                   ) : null}
                   {dr.part.planetGlyph ? (
                     <Glyph
                       ch={dr.part.planetGlyph}
                       color={glyphColorRows ? dr.part.planetColor : null}
+                      colorRole={glyphColorRows ? dr.part.planetColorRole : null}
                     />
                   ) : null}
                   {!dr.part.aspectGlyph && !dr.part.planetGlyph ? dr.part.planet ?? "" : null}
@@ -4795,14 +5048,14 @@ function CircumambulationPanel({
           />
         ) : null}
         {isReturnMode && returnLabel ? (
-          <span className="text-[11px] text-muted-foreground">
+          <span className="text-[length:var(--aries-font-size-small)] text-muted-foreground">
             {returnLabel}
           </span>
         ) : null}
       </div>
       <div ref={scrollerRef} className="flex-1 min-h-0 overflow-auto">
         {error ? (
-          <div className="px-4 py-6 text-[12px] text-destructive">{error}</div>
+          <div className="px-4 py-6 text-[length:var(--aries-font-size-base)] text-destructive">{error}</div>
         ) : (
           <Table
             className={cn(
@@ -4835,6 +5088,7 @@ function CircumambulationPanel({
               colSpan={circumColumnOrder.length}
               scrollerRef={scrollerRef}
               initialIndex={focusIndex}
+              rowHeight={rowHeight}
               renderRow={(dr, i) => {
                 // Term rows carry the term-start event (its Timed-chart target);
                 // a Participator sub-row carries its own planet-hit event date,
@@ -4867,7 +5121,7 @@ function CircumambulationPanel({
                       className={DIRECTION_ROW_CLASS}
                       data-initial-focus={i === focusIndex || undefined}
                       data-row-index={i}
-                      style={DIRECTION_ROW_STYLE}
+                      style={{ height: rowHeight }}
                       onMouseEnter={() => setHoverSummary(circumHoverSummary(dr))}
                       onMouseLeave={() => setHoverSummary(null)}
                     >
@@ -4927,7 +5181,7 @@ function CircumSignificatorDrawer({
       <div className="flex flex-col gap-2">
         {groups.map((group) => (
           <div key={group.group} className="flex min-w-0 flex-wrap items-center gap-1.5">
-            <span className="mr-1 min-w-14 text-[10px] text-muted-foreground">
+            <span className="mr-1 min-w-14 text-[length:var(--aries-font-size-section)] text-muted-foreground">
               {group.group}
             </span>
             {group.items.map((item) => {
@@ -4939,11 +5193,11 @@ function CircumSignificatorDrawer({
                   size="xs"
                   variant={selected ? "default" : "outline"}
                   onClick={() => onSelect(item.customSignificator ?? null)}
-                  className="h-6 max-w-44 justify-start gap-1 px-2 text-[11px]"
+                  className="h-6 max-w-44 justify-start gap-1 px-2 text-[length:var(--aries-font-size-small)]"
                 >
                   {item.glyph ? <Glyph ch={item.glyph} /> : null}
                   <span className="truncate">{item.label}</span>
-                  {item.marker ? <span className="text-[10px] text-muted-foreground">{item.marker}</span> : null}
+                  {item.marker ? <span className="text-[length:var(--aries-font-size-section)] text-muted-foreground">{item.marker}</span> : null}
                 </Button>
               );
             })}

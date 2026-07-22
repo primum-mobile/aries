@@ -56,13 +56,13 @@ function ResizableHandle({
       className={cn(
         // 1px hairline divider (the element itself). Horizontal group: a
         // vertical 1px column; vertical group: a horizontal 1px row.
-        "relative bg-[color:var(--aries-sidebar-sash-rule)] transition-colors",
-        "w-px data-[panel-group-direction=vertical]:h-px data-[panel-group-direction=vertical]:w-full",
+        "relative bg-[color:var(--aries-sash-panel-idle-color)] transition-colors",
+        "w-[var(--aries-sash-rule-size)] data-[panel-group-direction=vertical]:h-[var(--aries-sash-rule-size)] data-[panel-group-direction=vertical]:w-full",
         // 6px hit zone straddling the hairline, cursor only (no visible mark).
         "after:absolute after:inset-y-0 after:left-1/2 after:w-1.5 after:-translate-x-1/2 after:cursor-col-resize after:content-['']",
         "data-[panel-group-direction=vertical]:after:inset-x-0 data-[panel-group-direction=vertical]:after:left-0 data-[panel-group-direction=vertical]:after:top-1/2 data-[panel-group-direction=vertical]:after:h-1.5 data-[panel-group-direction=vertical]:after:w-full data-[panel-group-direction=vertical]:after:-translate-y-1/2 data-[panel-group-direction=vertical]:after:translate-x-0 data-[panel-group-direction=vertical]:after:cursor-row-resize",
         // Brighten on hover and while dragging.
-        "hover:bg-sidebar-border data-[resize-handle-state=drag]:bg-sidebar-border",
+        "hover:bg-[color:var(--aries-sash-panel-hover-color)] data-[resize-handle-state=drag]:bg-[color:var(--aries-sash-panel-active-color)]",
         "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
         className,
       )}

@@ -3,9 +3,8 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import ts from "typescript";
 
-const styleSource = await readFile(
+const styleSource = await readSource(
   new URL("../src/lib/chart/ephemeris-render-style.ts", import.meta.url),
-  "utf8",
 );
 const styleJavascript = ts.transpileModule(styleSource, {
   compilerOptions: {
@@ -14,10 +13,14 @@ const styleJavascript = ts.transpileModule(styleSource, {
   },
 }).outputText;
 const {
+  applyEphemerisPlanetProfileColors,
   DEFAULT_EPHEMERIS_RENDER_PALETTE,
   DEFAULT_EPHEMERIS_RENDER_TOKENS,
+  EPHEMERIS_RENDER_BASE_PALETTE_ROLES,
   EPHEMERIS_RENDER_TOKEN_SPECS,
   createEphemerisRenderStyle,
+  ephemerisPlanetColorIndex,
+  resolveEphemerisRenderPalette,
   resolveEphemerisRenderStyle,
   resolveEphemerisRenderTokens,
 } = await import(
@@ -133,6 +136,89 @@ test("the default contract preserves all 42 established Canvas values", () => {
   assert.equal("tokens" in style, false);
 });
 
+test("active profile palette roles overlay retained colors and deactivate exactly", () => {
+  const retained = Object.freeze({
+    background: "retained-background",
+    frame: "retained-frame",
+    texts: "retained-texts",
+    grid: "retained-grid",
+    signs: "retained-signs",
+  });
+  assert.deepEqual(EPHEMERIS_RENDER_BASE_PALETTE_ROLES, {
+    background: "--morinus-background",
+    frame: "--morinus-frame",
+    texts: "--morinus-text-bright",
+    grid: "--morinus-houses",
+    signs: "--morinus-signs",
+  });
+
+  const active = resolveEphemerisRenderPalette(retained, {
+    "--morinus-background": " profile-background ",
+    "--morinus-frame": "profile-frame",
+    "--morinus-text-bright": "profile-texts",
+    "--morinus-houses": "profile-grid",
+    "--morinus-signs": "profile-signs",
+    "--aries-background": "must-not-leak-from-app-chrome",
+  });
+  assert.deepEqual(active, {
+    background: "profile-background",
+    frame: "profile-frame",
+    texts: "profile-texts",
+    grid: "profile-grid",
+    signs: "profile-signs",
+  });
+  assert.ok(Object.isFrozen(active));
+
+  const deactivated = resolveEphemerisRenderPalette(retained, {});
+  assert.deepEqual(deactivated, retained);
+  assert.ok(Object.isFrozen(deactivated));
+  assert.deepEqual(resolveEphemerisRenderPalette(), DEFAULT_EPHEMERIS_RENDER_PALETTE);
+});
+
+test("profile planet arrays follow daemon color indexes without mutating retained series", () => {
+  assert.deepEqual(
+    [-2, 0, 9, 10, 11, 11.9, 12, 14, 15, 99].map(ephemerisPlanetColorIndex),
+    [0, 0, 9, 10, 10, 11, 11, 11, 12, 11],
+  );
+
+  const retained = Object.freeze([
+    Object.freeze({ id: 0, color: "retained-sun", label: "Sun" }),
+    Object.freeze({ id: 9, color: "retained-pluto", label: "Pluto" }),
+    Object.freeze({ id: 11, color: "retained-true-node", label: "True node" }),
+    Object.freeze({ id: 15, color: "retained-chiron", label: "Chiron" }),
+    Object.freeze({ id: 99, color: "retained-unknown", label: "Unknown" }),
+  ]);
+  const profileColors = Array.from({ length: 13 }, (_, index) => `profile-${index}`);
+  const active = applyEphemerisPlanetProfileColors(retained, profileColors);
+  assert.deepEqual(active.map(({ color }) => color), [
+    "profile-0",
+    "profile-9",
+    "profile-10",
+    "profile-12",
+    "profile-11",
+  ]);
+  assert.deepEqual(retained.map(({ color }) => color), [
+    "retained-sun",
+    "retained-pluto",
+    "retained-true-node",
+    "retained-chiron",
+    "retained-unknown",
+  ]);
+  assert.ok(Object.isFrozen(active));
+  assert.notEqual(active, retained);
+
+  const shortProfile = applyEphemerisPlanetProfileColors(retained, ["sun-only"]);
+  assert.deepEqual(shortProfile.map(({ color }) => color), [
+    "sun-only",
+    "sun-only",
+    "sun-only",
+    "sun-only",
+    "sun-only",
+  ]);
+  assert.equal(applyEphemerisPlanetProfileColors(retained, undefined), retained);
+  assert.equal(applyEphemerisPlanetProfileColors(retained, []), retained);
+});
+
 test("the pure CSS resolver preserves parseFloat, zero, and fallback behavior", () => {
   const values = new Map([
     ["--aries-ephem-min-canvas-width", "72px"],
@@ -149,6 +235,24 @@ test("the pure CSS resolver preserves parseFloat, zero, and fallback behavior", 
   assert.equal(resolved.stationSnapX, EXPECTED_DEFAULTS.stationSnapX);
   assert.equal(resolved.eventGlyphMax, EXPECTED_DEFAULTS.eventGlyphMax);
   assert.ok(Object.isFrozen(resolved));
+});
+
+test("active profile metrics win stale CSS directly and deactivation returns to CSS", () => {
+  const cssValues = new Map([
+    ["--aries-ephem-planet-font-divisor", "40"],
+    ["--aries-ephem-grid-line-width", "1px"],
+  ]);
+  const readCss = (name) => cssValues.get(name) ?? "";
+  const active = resolveEphemerisRenderTokens(readCss, {
+    "--aries-ephem-planet-font-divisor": "52",
+    "--aries-ephem-grid-line-width": "2.5px",
+  });
+  assert.equal(active.planetFontDivisor, 52);
+  assert.equal(active.gridLineWidth, 2.5);
+
+  const deactivated = resolveEphemerisRenderTokens(readCss, {});
+  assert.equal(deactivated.planetFontDivisor, 40);
+  assert.equal(deactivated.gridLineWidth, 1);
 });
 
 test("pure tokens and the grouped style are exactly equivalent", () => {
@@ -207,20 +311,64 @@ test("host resolution is equivalent to creating a style from the same pure token
 });
 
 test("one resolved style object feeds paint, geometry, hit testing, and canvas export", async () => {
-  const source = await readFile(
+  const source = await readSource(
     new URL("../src/components/workshell/graph-ephemeris-view.tsx", import.meta.url),
-    "utf8",
   );
   assert.equal((source.match(/resolveEphemerisRenderStyle\(/g) ?? []).length, 1);
   assert.match(source, /const renderStyle = resolveEphemerisRenderStyle\(wrap,/);
+  assert.match(source, /theme\?\.profileOverrides\.chartPalette/);
+  assert.match(source, /theme\?\.profileOverrides\.chartData\.planets/);
+  assert.match(source, /resolveEphemerisRenderPalette\(/);
+  assert.match(source, /applyEphemerisPlanetProfileColors\(payload\.planets, profilePlanetColors\)/);
+  assert.match(source, /palette: effectivePalette/);
+  assert.match(source, /profileOverrides: chartProfileOverrides/);
+  assert.match(source, /render\([\s\S]*?effectivePayload,[\s\S]*?showEventGlyphs,[\s\S]*?renderStyle,/);
   assert.match(source, /render\([\s\S]*?showEventGlyphs,[\s\S]*?renderStyle,/);
   assert.match(source, /computeGeometry\(cssW, cssH, mode, measure, style\)/);
   assert.match(source, /renderStyleRef\.current = renderStyle/);
   assert.match(source, /const renderStyle = renderStyleRef\.current;[\s\S]*?renderStyle\.interaction\.stationSnapX/);
+  assert.match(
+    source,
+    /style=\{payload\?\.colors\?\.background \? \{ backgroundColor: effectivePalette\.background \} : undefined\}/,
+  );
+  assert.match(source, /colors=\{effectivePalette\}/);
+  assert.match(source, /\(effectivePayload\?\.planets \?\? \[\]\)\.map/);
   assert.doesNotMatch(source, /readEphemerisRenderTokens|renderTokensRef|style\.tokens/);
+
+  assert.match(source, /const optionsSeq = useEphemerisSemanticOptionsSeq\(\)/);
+  const semanticOptionsHook = source.slice(
+    source.indexOf("function useEphemerisSemanticOptionsSeq"),
+    source.indexOf("function positive"),
+  );
+  assert.match(semanticOptionsHook, /lastOptionsChange\?\.styleOnly/);
+  assert.match(semanticOptionsHook, /if \(!lastOptionsChange \|\| lastOptionsChange\.styleOnly\) return/);
+  assert.match(semanticOptionsHook, /setSeq\(lastOptionsChange\.seq\)/);
+  assert.doesNotMatch(source, /lastOptionsChange\?\.seq \?\? 0\);\n  const chartTextFont/);
+  assert.doesNotMatch(
+    source,
+    /useEphemerisDataOptionsSeq|activeProfileFingerprint|themeStyleHash|pendingProfileStyleHashesRef/,
+  );
+
+  const fetchBlock = source.slice(
+    source.indexOf("// --- Series fetch."),
+    source.indexOf("// --- Paint"),
+  );
+  assert.doesNotMatch(
+    fetchBlock,
+    /chartProfileOverrides|profilePlanetColors|effectivePalette|effectivePayload/,
+  );
+  assert.match(
+    fetchBlock,
+    /\}, \[anchorYear, anchorMonth, applyMarkers, applyPayload, optionsSeq\]\);/,
+  );
+  assert.doesNotMatch(source, /refresh_all_sessions|recalc/);
 
   const saveBlock = source.match(/const savePng = React\.useCallback\(\(\) => \{([\s\S]*?)\n  \}, \[payload\]\);/);
   assert.ok(saveBlock);
   assert.match(saveBlock[1], /canvas\.toBlob\(/);
   assert.doesNotMatch(saveBlock[1], /render\(|resolveEphemerisRenderStyle\(/);
 });
+
+async function readSource(url) {
+  return (await readFile(url, "utf8")).replace(/\r\n?/g, "\n");
+}

@@ -392,7 +392,14 @@ def _ensure_connection():
     conn = getattr(_THREAD_LOCAL, 'conn', None)
     conn_path = getattr(_THREAD_LOCAL, 'conn_path', '')
     if conn is None or conn_path != database_file:
-        conn = sqlite3.connect('file:%s?mode=ro' % database_file, uri=True, check_same_thread=False)
+        # The packaged database lives inside the signed application bundle.
+        # SQLite's ordinary read-only mode can still create WAL/SHM siblings,
+        # which invalidates the bundle signature after the first lookup.
+        conn = sqlite3.connect(
+            'file:%s?mode=ro&immutable=1' % database_file,
+            uri=True,
+            check_same_thread=False,
+        )
         conn.row_factory = sqlite3.Row
         conn.execute('PRAGMA query_only=ON')
         _THREAD_LOCAL.conn = conn

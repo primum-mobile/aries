@@ -16,6 +16,7 @@ import { LIST_ROLE_CLASSES } from "@/lib/list-tokens";
 import { useT } from "@/lib/i18n/i18n";
 import { cn } from "@/lib/utils";
 import type { WorkspaceDocument } from "@/stores/workspace-store";
+import { PANE_CONTROL_CLASSES, PaneToolbarButton } from "./list-controls";
 import { MundaneChartView } from "./mundane-chart-view";
 
 type Props = {
@@ -128,27 +129,29 @@ export function AscensionalTransitsPane({
 
   return (
     <div className="font-morinus-text flex h-full min-h-0 flex-col bg-[color:var(--aries-surface)]">
-      <div className="shrink-0 space-y-2 border-b border-[color:var(--aries-border-subtle)] p-3 text-[length:var(--aries-font-size-small)]">
-        <div className="flex min-w-0 items-center justify-between gap-2">
+      <div className={PANE_CONTROL_CLASSES.stackedHeader}>
+        <div className="flex min-w-0 items-center justify-between gap-[var(--aries-pane-control-gap-y)]">
           <div className="min-w-0 truncate font-medium text-[color:var(--aries-text-primary)]">
             {t("asctransit.ascensionalTransits")}
           </div>
           {onClose ? (
-            <button
+            <PaneToolbarButton
               type="button"
+              appearance="ghost"
+              square
               onClick={onClose}
               aria-label={t("asctransit.closeAscensionalTransits")}
-              className="inline-flex size-6 shrink-0 items-center justify-center rounded border border-transparent text-[color:var(--aries-text-muted)] hover:border-[color:var(--aries-border-subtle)] hover:bg-[color:var(--aries-surface-subtle)] hover:text-[color:var(--aries-text-primary)]"
+              className="shrink-0"
             >
-              <X className="size-4" />
-            </button>
+              <X />
+            </PaneToolbarButton>
           ) : null}
         </div>
         <div className="text-[color:var(--aries-text-muted)]">
           {payload?.event.datetime.isoUtc ?? t("asctransit.loadingEvent")}
           {payload ? ` UT · RAMC ${payload.event.ramc.toFixed(4)}°` : ""}
         </div>
-        <label className="flex items-start gap-2 text-[color:var(--aries-text-primary)]">
+        <label className="flex items-start gap-[var(--aries-pane-control-gap-y)] text-[color:var(--aries-text-primary)]">
           <input
             type="checkbox"
             checked={filterToActive}
@@ -191,7 +194,7 @@ function AscensionalRows({ rows }: { rows: AscensionalListRow[] }) {
             <tr key={`section:${index}:${row.title}`}>
               <td
                 colSpan={5}
-                className="pt-2 text-[10px] font-medium text-[color:var(--aries-text-muted)]"
+                className="pt-2 text-[length:var(--aries-font-size-section)] font-medium text-[color:var(--aries-text-muted)]"
               >
                 {row.title}
               </td>

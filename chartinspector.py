@@ -171,6 +171,47 @@ _ASPECT_FULL_LABELS = {
 	chart.Chart.SEPTILE: 'Septile',
 }
 
+_BODY_COLOUR_ROLES = {
+	astrology.SE_SUN: '--morinus-body-sun',
+	astrology.SE_MOON: '--morinus-body-moon',
+	astrology.SE_MERCURY: '--morinus-body-mercury',
+	astrology.SE_VENUS: '--morinus-body-venus',
+	astrology.SE_MARS: '--morinus-body-mars',
+	astrology.SE_JUPITER: '--morinus-body-jupiter',
+	astrology.SE_SATURN: '--morinus-body-saturn',
+	astrology.SE_URANUS: '--morinus-body-uranus',
+	astrology.SE_NEPTUNE: '--morinus-body-neptune',
+	astrology.SE_PLUTO: '--morinus-body-pluto',
+	astrology.SE_MEAN_NODE: '--morinus-body-nodes',
+	astrology.SE_TRUE_NODE: '--morinus-body-nodes',
+	astrology.SE_CHIRON: '--morinus-body-chiron',
+}
+
+_ASPECT_COLOUR_ROLES = (
+	'--morinus-aspect-conjunction',
+	'--morinus-aspect-semisextile',
+	'--morinus-aspect-semisquare',
+	'--morinus-aspect-sextile',
+	'--morinus-aspect-quintile',
+	'--morinus-aspect-square',
+	'--morinus-aspect-trine',
+	'--morinus-aspect-sesquisquare',
+	'--morinus-aspect-biquintile',
+	'--morinus-aspect-quincunx',
+	'--morinus-aspect-opposition',
+	'--morinus-aspect-septile',
+	'--morinus-aspect-parallel',
+	'--morinus-aspect-contraparallel',
+)
+
+_DIGNITY_COLOUR_ROLES = {
+	chart.Chart.DOMICIL: '--morinus-dignity-domicil',
+	chart.Chart.EXAL: '--morinus-dignity-exal',
+	chart.Chart.PEREGRIN: '--morinus-peregrin',
+	chart.Chart.CASUS: '--morinus-dignity-casus',
+	chart.Chart.EXIL: '--morinus-dignity-exil',
+}
+
 _ASPECT_EVENT_CACHE = {}
 _ASPECT_SEARCH_DAYS = 45.0
 _TRADITIONAL_ASPECT_SIGN_DIFF = (0, -1, -1, 2, -1, 3, 4, -1, -1, -1, 6)
@@ -258,6 +299,35 @@ def _motion_text(data):
 	if marker == 'SD':
 		return _safe_text('Stationary direct', 'Stationary direct')
 	return _safe_text('Direct', 'Direct')
+
+
+def _motion_heading(data):
+	"""Return the compact glyph shown beside a moving body's title.
+
+	The engine owns the exact ``R`` / ``S`` / ``SD`` / ``SR`` marker.  Only
+	plain retrograde needs a font-slot translation: ``Z`` is the bundled Morinus
+	retrograde glyph.  Direct motion is intentionally unmarked.
+	"""
+	marker = (data.get('motion_marker') or '').strip().upper()
+	if not marker:
+		return None
+	if marker == 'R':
+		return {
+			'glyph': getattr(getattr(common, 'common', None), 'retr', 'Z'),
+			'uses_symbol_font': True,
+			'label': _safe_text('Retrograde', 'Retrograde'),
+		}
+	if marker in ('S', 'SD', 'SR'):
+		return {
+			'glyph': marker,
+			'uses_symbol_font': False,
+			'label': marker,
+		}
+	return {
+		'glyph': marker,
+		'uses_symbol_font': False,
+		'label': marker,
+	}
 
 
 def _format_signed_angle(value):
@@ -618,6 +688,104 @@ def _chart_ref(data):
 	return chrt
 
 
+def _aspect_colour_role(aspect_type):
+	try:
+		return _ASPECT_COLOUR_ROLES[int(aspect_type)]
+	except (IndexError, TypeError, ValueError):
+		return None
+
+
+def _body_colour_role(chrt, options, planet_index):
+	"""Semantic role for the same colour selected by the chart renderer.
+
+	The role is presentation metadata only.  It lets retained web payloads follow
+	the active CSS palette without asking the daemon to rebuild chart semantics.
+	"""
+	try:
+		planet_index = int(planet_index)
+	except (TypeError, ValueError):
+		return '--morinus-peregrin'
+	if planet_index == common.CHART_OBJECT_VERTEX:
+		return '--morinus-peregrin'
+	if getattr(options, 'useplanetcolors', False):
+		return _BODY_COLOUR_ROLES.get(planet_index, '--morinus-peregrin')
+	if planet_index == astrology.SE_CHIRON:
+		return '--morinus-peregrin'
+	return _dignity_colour_role(chrt, planet_index)
+
+
+def _dignity_colour_role(chrt, planet_index):
+	if chrt is None:
+		return '--morinus-peregrin'
+	try:
+		return _DIGNITY_COLOUR_ROLES.get(
+			chrt.dignity(int(planet_index)),
+			'--morinus-peregrin',
+		)
+	except Exception:
+		return '--morinus-peregrin'
+
+
+def _literal_colour_role(options, colour):
+	"""Resolve non-body literals with an unambiguous public chart role.
+
+	This is a fallback for flag producers that already serialize a literal but
+	do not carry object identity (for example a secondary-ring producer).  The
+	semantic builders above remain authoritative for bodies, dignities, and
+	aspects, where equal RGB values must not collapse distinct roles.
+	"""
+	if options is None or colour is None:
+		return None
+	try:
+		colour = tuple(colour)
+	except TypeError:
+		return None
+	role_attrs = (
+		('--morinus-signs', 'clrsigns'),
+		('--morinus-element-fire', 'clrsignelementfire'),
+		('--morinus-element-earth', 'clrsignelementearth'),
+		('--morinus-element-air', 'clrsignelementair'),
+		('--morinus-element-water', 'clrsignelementwater'),
+		('--morinus-text-bright', 'clrtexts'),
+		('--morinus-peregrin', 'clrperegrin'),
+		('--morinus-dignity-domicil', 'clrdomicil'),
+		('--morinus-dignity-exal', 'clrexal'),
+		('--morinus-dignity-casus', 'clrcasus'),
+		('--morinus-dignity-exil', 'clrexil'),
+	)
+	matches = []
+	for role, attr in role_attrs:
+		try:
+			if colour == tuple(getattr(options, attr)):
+				matches.append(role)
+		except (AttributeError, TypeError):
+			continue
+	return matches[0] if len(matches) == 1 else None
+
+
+def _flag_accent_colour_role(region, options, accent):
+	if accent is None:
+		return None
+	data = region.get('data') or {}
+	explicit_role = data.get('colour_role')
+	if isinstance(explicit_role, str) and explicit_role.startswith('--morinus-'):
+		return explicit_role
+	kind = region.get('kind')
+	if kind == 'planet':
+		return _body_colour_role(
+			_chart_ref(data),
+			options,
+			region.get('object_id', data.get('planet_index')),
+		)
+	if kind == 'fortune':
+		return '--morinus-body-fortune' if getattr(options, 'useplanetcolors', False) else '--morinus-peregrin'
+	if kind == 'syzygy':
+		return '--morinus-signs'
+	if kind == 'aspect':
+		return _aspect_colour_role(data.get('aspect_type', region.get('object_id')))
+	return _literal_colour_role(options, accent)
+
+
 def _dignity_text(chrt, planet_index):
 	if int(planet_index) == astrology.SE_CHIRON:
 		return None
@@ -760,16 +928,32 @@ def _dignity_display_items(chrt, options, planet_index, lon=None):
 	if headline is None:
 		return []
 	sign_colour = _dignity_colour(chrt, options, planet_index)
+	sign_colour_role = _dignity_colour_role(chrt, planet_index)
 	minor_colour = _minor_dignity_colour(options)
 	items = [
-		{'label': _safe_text('Dignity', 'Dignity'), 'value': _safe_text(headline, headline), 'colour': sign_colour},
+		{
+			'label': _safe_text('Dignity', 'Dignity'),
+			'value': _safe_text(headline, headline),
+			'colour': sign_colour,
+			'colour_role': sign_colour_role,
+		},
 	]
 	for label in _other_essential_dignity_labels(chrt, planet_index, lon=lon):
-		items.append({'label': '', 'value': label, 'colour': minor_colour})
+		items.append({
+			'label': '',
+			'value': label,
+			'colour': minor_colour,
+			'colour_role': '--morinus-dignity-domicil',
+		})
 	joy_info = _planetary_joy_info(chrt, planet_index, lon=lon)
 	if joy_info is not None and joy_info.get('active'):
 		joy_label = joy_info.get('short_label') or 'Joy'
-		items.append({'label': '', 'value': _safe_text(joy_label, joy_label), 'colour': minor_colour})
+		items.append({
+			'label': '',
+			'value': _safe_text(joy_label, joy_label),
+			'colour': minor_colour,
+			'colour_role': '--morinus-dignity-domicil',
+		})
 	return items
 
 
@@ -799,8 +983,6 @@ def _mutual_reception_item(chrt, options, planet_index, lon=None):
 			lon = float(body.data[planets.Planet.LONG])
 		else:
 			lon = float(lon)
-		if getattr(options, 'ayanamsha', 0) != 0:
-			lon = util.normalize(lon - chrt.ayanamsha)
 		sign = int(lon / chart.Chart.SIGN_DEG) % chart.Chart.SIGN_NUM
 	except Exception:
 		return None
@@ -812,8 +994,6 @@ def _mutual_reception_item(chrt, options, planet_index, lon=None):
 		return None
 	try:
 		partner_lon = float(partner_body.data[planets.Planet.LONG])
-		if getattr(options, 'ayanamsha', 0) != 0:
-			partner_lon = util.normalize(partner_lon - chrt.ayanamsha)
 		partner_sign = int(partner_lon / chart.Chart.SIGN_DEG) % chart.Chart.SIGN_NUM
 	except Exception:
 		return None
@@ -826,7 +1006,9 @@ def _mutual_reception_item(chrt, options, planet_index, lon=None):
 		'arrow': '⇆',
 		'right': _planet_glyph(ruler),
 		'left_colour': _dignity_colour(chrt, options, planet_index),
+		'left_colour_role': _dignity_colour_role(chrt, planet_index),
 		'right_colour': _dignity_colour(chrt, options, ruler),
+		'right_colour_role': _dignity_colour_role(chrt, ruler),
 		'bold': True,
 	}
 
@@ -891,9 +1073,6 @@ def _is_aspect_enabled(chrt, options, aspect_type, lon1, lon2):
 	try:
 		lona1 = float(lon1)
 		lona2 = float(lon2)
-		if getattr(options, 'ayanamsha', 0) != 0:
-			lona1 = util.normalize(lona1 - float(chrt.ayanamsha))
-			lona2 = util.normalize(lona2 - float(chrt.ayanamsha))
 		sign1 = int(lona1 / chart.Chart.SIGN_DEG)
 		sign2 = int(lona2 / chart.Chart.SIGN_DEG)
 		signdiff = math.fabs(sign1 - sign2)
@@ -973,6 +1152,7 @@ def _current_aspect_rows(chrt, planet_index, options, partner_chart=None, curren
 			'aspect_glyph': _aspect_glyph(asp.typ),
 			'suffix_text': suffix,
 			'aspect_colour': tuple(options.clraspect[asp.typ]) if asp.typ < len(getattr(options, 'clraspect', ())) else None,
+			'aspect_colour_role': _aspect_colour_role(asp.typ),
 			'full_text': label_state['full_text'],
 		}))
 	rows.sort(key=lambda item: (item[0], item[1]))
@@ -1001,7 +1181,12 @@ def _flag_aspect_rows(chrt, planet_index, options, limit=2, partner_chart=None, 
 		if prefix:
 			spans.append({'text': prefix})
 		if glyph:
-			spans.append({'text': glyph, 'colour': item.get('aspect_colour'), 'glyph': True})
+			spans.append({
+				'text': glyph,
+				'colour': item.get('aspect_colour'),
+				'colourRole': item.get('aspect_colour_role'),
+				'glyph': True,
+			})
 		if suffix:
 			spans.append({'text': (' ' if glyph else '') + suffix})
 		rows.append((_safe_text('Aspect', 'Aspect') if index == 0 else '', item.get('full_text') or suffix or '—', None, spans))
@@ -1079,6 +1264,7 @@ def _moon_traditional_witness_rows(chrt, options, limit_each=2, partner_chart=No
 				{
 					'text': _aspect_glyph(aspect_type),
 					'colour': tuple(options.clraspect[aspect_type]) if aspect_type < len(getattr(options, 'clraspect', ())) else None,
+					'colourRole': _aspect_colour_role(aspect_type),
 					'glyph': True,
 				},
 				{'text': suffix},
@@ -1207,6 +1393,7 @@ def build_payload(region, options):
 	accent = tuple(data.get('colour') or ())
 	if len(accent) != 3:
 		accent = None
+	accent_role = _flag_accent_colour_role(region, options, accent)
 
 	if kind == 'planet':
 		_, pos_text = _format_position(data.get('display_lon', data.get('longitude', 0.0)))
@@ -1287,11 +1474,16 @@ def build_payload(region, options):
 			partner_chart=partner_chart,
 			current_role=current_role,
 		) if chrt is not None else ([], [])
+		motion_heading = _motion_heading(data)
 		return {
 			'glyph': _planet_glyph(planet_index),
 			'title': _planet_name(planet_index, options),
+			'motionGlyph': motion_heading.get('glyph', '') if motion_heading else '',
+			'motionUsesSymbolFont': bool(motion_heading and motion_heading.get('uses_symbol_font')),
+			'motionLabel': motion_heading.get('label', '') if motion_heading else '',
 			'meta': role,
 			'accent': accent,
+			'accentRole': accent_role,
 			'smart_rows': smart_rows,
 			'dignity_rows': dignity_rows,
 			'dignity_items': dignity_items,
@@ -1315,6 +1507,7 @@ def build_payload(region, options):
 			'title': _safe_text('Part of Fortune', 'Part of Fortune'),
 			'meta': role,
 			'accent': accent,
+			'accentRole': accent_role,
 			'smart_rows': smart_rows,
 			'detail_rows': [],
 			'aspect_rows': [],
@@ -1334,6 +1527,7 @@ def build_payload(region, options):
 			'title': data.get('title') or _safe_text('Prenatal Syzygy', 'Prenatal Syzygy'),
 			'meta': role,
 			'accent': accent,
+			'accentRole': accent_role,
 			'smart_rows': smart_rows,
 			'detail_rows': [],
 			'aspect_rows': [],
@@ -1354,6 +1548,7 @@ def build_payload(region, options):
 			'title': angle_name,
 			'meta': role,
 			'accent': accent,
+			'accentRole': accent_role,
 			'smart_rows': [
 				pos_text,
 				axis_row,
@@ -1379,6 +1574,7 @@ def build_payload(region, options):
 			'title': title,
 			'meta': role,
 			'accent': accent,
+			'accentRole': accent_role,
 			'smart_rows': [
 				pos_text,
 				quality_row,
@@ -1407,6 +1603,7 @@ def build_payload(region, options):
 			'title': _sign_name(sign_index),
 			'meta': role,
 			'accent': accent,
+			'accentRole': accent_role,
 			'smart_rows': list(sign_rows),
 			'detail_rows': [],
 			'aspect_rows': [],
@@ -1441,6 +1638,7 @@ def build_payload(region, options):
 			'title': _aspect_title(aspect_type),
 			'meta': role,
 			'accent': accent,
+			'accentRole': accent_role,
 			'smart_rows': smart_rows,
 			'detail_rows': [],
 			'aspect_rows': [],
@@ -1457,6 +1655,7 @@ def build_payload(region, options):
 		'title': _safe_text('Inspector', 'Inspector'),
 		'meta': role,
 		'accent': accent,
+		'accentRole': accent_role,
 		'smart_rows': [hover_hint],
 		'detail_rows': [],
 		'aspect_rows': [],
@@ -1477,7 +1676,11 @@ def build_flag_payload(region, options):
 	payload = {
 		'glyph': '',
 		'title': '',
+		'motionGlyph': '',
+		'motionUsesSymbolFont': False,
+		'motionLabel': '',
 		'accent': accent,
+		'accentRole': _flag_accent_colour_role(region, options, accent),
 		'rows': [],
 	}
 	if kind == 'planet':
@@ -1493,6 +1696,11 @@ def build_flag_payload(region, options):
 			dignity_items.append(mutual_item)
 		payload['glyph'] = _planet_glyph(planet_index)
 		payload['title'] = _planet_name(planet_index, options)
+		motion_heading = _motion_heading(data)
+		if motion_heading:
+			payload['motionGlyph'] = motion_heading['glyph']
+			payload['motionUsesSymbolFont'] = motion_heading['uses_symbol_font']
+			payload['motionLabel'] = motion_heading['label']
 		payload['rows'] = [
 			(_safe_text('Long', 'Long'), pos_text),
 		]
@@ -1525,13 +1733,29 @@ def build_flag_payload(region, options):
 			label = _safe_text('Dign', 'Dign') if index == 0 else ''
 			if item.get('kind') == 'mutual_reception':
 				spans = [
-					{'text': item.get('left', ''), 'colour': item.get('left_colour'), 'glyph': True},
+					{
+						'text': item.get('left', ''),
+						'colour': item.get('left_colour'),
+						'colourRole': item.get('left_colour_role'),
+						'glyph': True,
+					},
 					{'text': ' %s ' % item.get('arrow', '⇆')},
-					{'text': item.get('right', ''), 'colour': item.get('right_colour'), 'glyph': True},
+					{
+						'text': item.get('right', ''),
+						'colour': item.get('right_colour'),
+						'colourRole': item.get('right_colour_role'),
+						'glyph': True,
+					},
 				]
 				payload['rows'].append((label, '', None, spans))
 			else:
-				payload['rows'].append((label, item.get('value') or '—', item.get('colour')))
+				payload['rows'].append((
+					label,
+					item.get('value') or '—',
+					item.get('colour'),
+					None,
+					item.get('colour_role'),
+				))
 		if planet_index == astrology.SE_MOON and chrt is not None:
 			try:
 				info = lunar.phase(chrt)
@@ -1709,6 +1933,7 @@ def _build_secondary_ring_payload(region, options, role, accent):
 		'title': title,
 		'meta': meta,
 		'accent': accent,
+		'accentRole': _flag_accent_colour_role(region, options, accent),
 		'smart_rows': rows,
 		'detail_rows': detail_rows,
 		'aspect_rows': [],

@@ -5,6 +5,8 @@
 
 import * as React from "react";
 
+import { perfNow, recordChartPerf } from "@/lib/chart/perf";
+
 // Shared mechanics for retained, time-windowed sidebar lists. The daemon owns
 // row semantics and computes bounded windows; the client stitches adjacent
 // windows into one stable scroll surface and filters that retained source.
@@ -121,30 +123,53 @@ export function useEdgeExtend({
   canExtendForward: boolean;
   onExtend: (direction: "previous" | "next") => void;
 }) {
+  const thresholdPxRef = React.useRef(thresholdPx);
+  React.useLayoutEffect(() => {
+    thresholdPxRef.current = thresholdPx;
+  }, [thresholdPx]);
+
   React.useEffect(() => {
     const scroller = scrollerRef.current;
-    if (!scroller || rowCount <= 0 || (!canExtendBackward && !canExtendForward)) {
+    if (!scroller || rowCount <= 0) {
       return undefined;
     }
     let frame = 0;
+    let scrollEventAt: number | null = null;
     const check = () => {
       frame = 0;
+      // A live profile change translates scrollTop to retain the same visible
+      // row. That synthetic scroll must not be mistaken for edge intent.
+      const rowHeightAnchorUntil = Number(scroller.dataset.ariesRowHeightAnchorUntil ?? 0);
+      if (rowHeightAnchorUntil > Date.now()) return;
+      if (scrollEventAt != null) {
+        recordChartPerf("list-scroll-frame", {
+          rowCount,
+          eventToFrameMs: Math.max(0, perfNow() - scrollEventAt),
+          scrollTop: Math.round(scroller.scrollTop),
+          viewportPx: Math.round(scroller.clientHeight),
+        });
+        scrollEventAt = null;
+      }
       const maxTop = scroller.scrollHeight - scroller.clientHeight;
       if (scroller.clientHeight <= 0 || maxTop <= 0) return;
-      if (canExtendBackward && scroller.scrollTop <= thresholdPx) {
+      if (canExtendBackward && scroller.scrollTop <= thresholdPxRef.current) {
         onExtend("previous");
-      } else if (canExtendForward && maxTop - scroller.scrollTop <= thresholdPx) {
+      } else if (canExtendForward && maxTop - scroller.scrollTop <= thresholdPxRef.current) {
         onExtend("next");
       }
     };
-    const schedule = () => {
-      if (!frame) frame = requestAnimationFrame(check);
+    const schedule = (fromScroll: boolean) => {
+      if (!frame) {
+        if (fromScroll) scrollEventAt = perfNow();
+        frame = requestAnimationFrame(check);
+      }
     };
-    schedule();
-    scroller.addEventListener("scroll", schedule, { passive: true });
+    const onScroll = () => schedule(true);
+    schedule(false);
+    scroller.addEventListener("scroll", onScroll, { passive: true });
     return () => {
-      scroller.removeEventListener("scroll", schedule);
+      scroller.removeEventListener("scroll", onScroll);
       if (frame) cancelAnimationFrame(frame);
     };
-  }, [canExtendBackward, canExtendForward, onExtend, rowCount, scrollerRef, thresholdPx]);
+  }, [canExtendBackward, canExtendForward, onExtend, rowCount, scrollerRef]);
 }

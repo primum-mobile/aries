@@ -20,8 +20,9 @@ from __future__ import annotations
 
 import bisect
 from dataclasses import dataclass
+import hashlib
 import json
-from math import acos, degrees, isfinite, radians, tan
+from math import acos, asin, atan2, cos, degrees, isfinite, radians, sin, tan
 import os
 import sys
 import threading
@@ -34,10 +35,13 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import astrocart  # wx-free
+import asterism_projection
 import astrocart_tiles
+import common
 import localspace  # wx-free
 import mtexts
 from webapp.daemon.chart_service import chart_snapshot_service
+from webapp.daemon.display_palette import effective_display_options
 from webapp.frontend.scripts import export_chart_json
 
 ASTROCART_MODE_STANDARD = "standard"
@@ -73,8 +77,9 @@ _HORIZON_LABEL_LATITUDES = (0.0, 25.0, -25.0, 50.0, -50.0)
 _HORIZON_LABEL_FRACTIONS = (0.2, 0.35, 0.5, 0.65, 0.8)
 _LOCAL_SPACE_LABEL_DISTANCE_METERS = 16_000_000.0
 _LOCAL_SPACE_LABEL_STEP_METERS = 2_000_000.0
-
 _CITY_LABEL_RESOURCE = Path("Res") / "astrocart" / "places.geojson"
+_ASTERISM_RESOURCE = Path("Res") / "astrocart" / "constellations.lines.min.geojson"
+_ASTERISM_STAR_RESOURCE = Path("Res") / "astrocart" / "constellations.stars.min.geojson"
 
 def _mode_label(mode: str) -> str:
     """Served astrocart mode label, resolved to the active language at serve
@@ -93,8 +98,18 @@ _GEODETIC_MERIDIANS = {
 }
 
 
-# Mirror of astrocartframe._POINT_CLR_INDEX
+# Canonical ``options.clrindividual`` row identity. Both lunar nodes share the
+# Nodes row; Fortune owns row 11 and is not one of the default ACG bodies.
 _POINT_CLR_INDEX: dict[str, int] = {
+    "sun": 0, "moon": 1, "mercury": 2, "venus": 3, "mars": 4,
+    "jupiter": 5, "saturn": 6, "uranus": 7, "neptune": 8, "pluto": 9,
+    "chiron": 12, "node_asc": 10, "node_desc": 10,
+}
+
+# Historical ACG row assignment used by the established no-profile renderer.
+# Keep it as the default presentation contract; canonical body rows take over
+# only when a style profile actually supplies a replacement body palette.
+_LEGACY_POINT_CLR_INDEX: dict[str, int] = {
     "sun": 0, "moon": 1, "mercury": 2, "venus": 3, "mars": 4,
     "jupiter": 5, "saturn": 6, "uranus": 7, "neptune": 8, "pluto": 9,
     "chiron": 10, "node_asc": 11, "node_desc": 12,
@@ -103,6 +118,530 @@ _POINT_CLR_INDEX: dict[str, int] = {
 _MORINUS_PLANETS_DEFAULT = ("A", "B", "C", "D", "E", "F", "G", "H", "I", "J")
 _MORINUS_URANUS_VARIANTS = ("H", "6")
 _MORINUS_PLUTO_VARIANTS = ("J", "7", "8", "9")
+
+ASTROCART_STYLE_SCHEMA_VERSION = 8
+ASTROCART_TITLEBAR_SAFE_TOP = 34
+
+_ASTROCART_PROFILE_CHROME_COLORS = {
+    "renderer.astrocart.color.chromePageBg": "pageBg",
+    "renderer.astrocart.color.chromeBg": "chromeBg",
+    "renderer.astrocart.color.chromeBgThin": "chromeBgThin",
+    "renderer.astrocart.color.chromeBorder": "chromeBorder",
+    "renderer.astrocart.color.chromeRule": "chromeRule",
+    "renderer.astrocart.color.chromeText": "chromeText",
+    "renderer.astrocart.color.chromeDim": "chromeDim",
+    "renderer.astrocart.color.chromeSoft": "chromeSoft",
+    "renderer.astrocart.color.chromeButtonActiveBg": "buttonActiveBg",
+    "renderer.astrocart.color.chromeButtonHoverBg": "buttonHoverBg",
+    "renderer.astrocart.color.chromeButtonActiveFg": "buttonActiveFg",
+    "renderer.astrocart.color.chromeKeyLine": "keyLine",
+    "renderer.astrocart.color.chromeKeyParan": "keyParan",
+    "renderer.astrocart.color.chromePopupBg": "popupBg",
+    "renderer.astrocart.color.chromeMenuBg": "menuBg",
+    "renderer.astrocart.color.chromeMenuBorder": "menuBorder",
+    "renderer.astrocart.color.chromeMenuShadow": "menuShadow",
+    "renderer.astrocart.color.chromeMenuHoverBg": "menuHoverBg",
+    "renderer.astrocart.color.chromeMenuHoverFg": "menuHoverFg",
+}
+
+_ASTROCART_PROFILE_RENDERER_COLORS = {
+    "renderer.astrocart.color.mapCasing": "casing",
+    "renderer.astrocart.color.mapLabelColor": "labelColor",
+    "renderer.astrocart.color.mapLabelHalo": "labelHalo",
+    "renderer.astrocart.color.mapParanColor": "paranColor",
+    "renderer.astrocart.color.mapParanHalo": "paranHalo",
+    "renderer.astrocart.color.mapPageBg": "pageBg",
+    "renderer.astrocart.color.mapOceanColor": "oceanColor",
+    "renderer.astrocart.color.mapLandColor": "landColor",
+    "renderer.astrocart.color.mapBorderColor": "borderColor",
+    "renderer.astrocart.color.mapCountryLabelColor": "countryLabelColor",
+    "renderer.astrocart.color.mapCountryLabelHalo": "countryLabelHalo",
+    "renderer.astrocart.color.mapCityLabelColor": "cityLabelColor",
+    "renderer.astrocart.color.mapCityLabelHalo": "cityLabelHalo",
+    "renderer.astrocart.color.mapMinorPlaceLabelColor": "minorPlaceLabelColor",
+    "renderer.astrocart.color.mapMinorPlaceLabelHalo": "minorPlaceLabelHalo",
+    "renderer.astrocart.color.mapWaterLabelColor": "waterLabelColor",
+    "renderer.astrocart.color.mapWaterLabelHalo": "waterLabelHalo",
+    "renderer.astrocart.color.mapHospitalLabelColor": "hospitalLabelColor",
+    "renderer.astrocart.color.mapHospitalLabelHalo": "hospitalLabelHalo",
+    "renderer.astrocart.color.mapHospitalFillColor": "hospitalFillColor",
+    "renderer.astrocart.color.mapRoadColor": "roadColor",
+    "renderer.astrocart.color.mapStreetNameColor": "streetNameColor",
+    "renderer.astrocart.color.mapStreetNameHalo": "streetNameHalo",
+    "renderer.astrocart.color.mapBuildingColor": "buildingColor",
+    "renderer.astrocart.color.mapBuildingOutlineColor": "buildingOutlineColor",
+    "renderer.astrocart.color.mapTerrainShadowColor": "terrainShadowColor",
+    "renderer.astrocart.color.mapTerrainHighlightColor": "terrainHighlightColor",
+    "renderer.astrocart.color.mapParkColor": "parkColor",
+    "renderer.astrocart.color.mapParkOutlineColor": "parkOutlineColor",
+    "renderer.astrocart.color.mapResidentialColor": "residentialColor",
+    "renderer.astrocart.color.mapFallbackMcColor": "fallbackMcColor",
+    "renderer.astrocart.color.mapFallbackIcColor": "fallbackIcColor",
+    "renderer.astrocart.color.mapFallbackAscColor": "fallbackAscColor",
+    "renderer.astrocart.color.mapFallbackDscColor": "fallbackDscColor",
+    "renderer.astrocart.color.mapFallbackUnknownColor": "fallbackUnknownColor",
+    "renderer.astrocart.color.mapEclipseShadowColor": "eclipseShadowColor",
+    "renderer.astrocart.color.mapEclipseOutlineColor": "eclipseOutlineColor",
+    "renderer.astrocart.color.mapEclipseCenterColor": "eclipseCenterColor",
+    "renderer.astrocart.color.mapEclipseHaloColor": "eclipseHaloColor",
+    "renderer.astrocart.color.mapAsterismHighlightColor": "asterismHighlightColor",
+    "renderer.astrocart.color.mapAsterismShadowColor": "asterismShadowColor",
+    "renderer.astrocart.color.mapReferenceEclipticColor": "referenceEclipticColor",
+    "renderer.astrocart.color.mapReferenceEquatorColor": "referenceEquatorColor",
+    "renderer.astrocart.color.mapReferenceAscColor": "referenceAscColor",
+    "renderer.astrocart.color.mapReferenceMcColor": "referenceMcColor",
+    "renderer.astrocart.color.mapReferenceHouseGridColor": "referenceHouseGridColor",
+    "renderer.astrocart.color.mapReferenceZodiacGridColor": "referenceZodiacGridColor",
+}
+
+_ASTROCART_PROFILE_RENDERER_NUMBERS = {
+    "renderer.astrocart.metric.mapCountryLabelSize": "countryLabelSize",
+    "renderer.astrocart.metric.mapCityLabelSize": "cityLabelSize",
+    "renderer.astrocart.metric.mapMinorPlaceLabelSize": "minorPlaceLabelSize",
+    "renderer.astrocart.metric.mapWaterLabelSize": "waterLabelSize",
+    "renderer.astrocart.metric.mapCasingWidth": "casingWidth",
+    "renderer.astrocart.metric.mapCasingOpacity": "casingOpacity",
+    "renderer.astrocart.metric.mapSolidWidth": "solidWidth",
+    "renderer.astrocart.metric.mapSolidOpacity": "solidOpacity",
+    "renderer.astrocart.metric.mapDashedWidth": "dashedWidth",
+    "renderer.astrocart.metric.mapDashedOpacity": "dashedOpacity",
+    "renderer.astrocart.metric.mapDashedOn": "dashedOn",
+    "renderer.astrocart.metric.mapDashedOff": "dashedOff",
+    "renderer.astrocart.metric.mapParanWidth": "paranWidth",
+    "renderer.astrocart.metric.mapParanLineOpacity": "paranOpacity",
+    "renderer.astrocart.metric.mapParanDashOn": "paranDashOn",
+    "renderer.astrocart.metric.mapParanDashOff": "paranDashOff",
+    "renderer.astrocart.metric.mapLabelSize": "labelSize",
+    "renderer.astrocart.metric.mapLabelSpacing": "labelSpacing",
+    "renderer.astrocart.metric.mapLabelHaloWidth": "labelHaloWidth",
+    "renderer.astrocart.metric.mapLabelOpacity": "labelOpacity",
+    "renderer.astrocart.metric.mapDomLabelOpacityScale": "domLabelOpacityScale",
+    "renderer.astrocart.metric.mapParanLabelSize": "paranLabelSize",
+    "renderer.astrocart.metric.mapParanLabelSpacing": "paranLabelSpacing",
+    "renderer.astrocart.metric.mapParanLabelHaloWidth": "paranLabelHaloWidth",
+    "renderer.astrocart.metric.mapParanLabelOpacity": "paranLabelOpacity",
+    "renderer.astrocart.metric.mapLocalCountryBorderWidth": "localCountryBorderWidth",
+    "renderer.astrocart.metric.mapLocalCountryBorderOpacity": "localCountryBorderOpacity",
+    "renderer.astrocart.metric.mapLocalRegionBorderWidth": "localRegionBorderWidth",
+    "renderer.astrocart.metric.mapLocalRegionBorderOpacity": "localRegionBorderOpacity",
+    "renderer.astrocart.metric.mapBuildingOpacityScale": "buildingOpacityScale",
+    "renderer.astrocart.metric.mapTerrainExaggeration": "terrainExaggeration",
+    "renderer.astrocart.metric.mapHillshadeExaggeration": "hillshadeExaggeration",
+    "renderer.astrocart.metric.mapResidentialOpacityScale": "residentialOpacityScale",
+    "renderer.astrocart.metric.mapParkFillOpacityScale": "parkFillOpacityScale",
+    "renderer.astrocart.metric.mapParkOutlineOpacityScale": "parkOutlineOpacityScale",
+    "renderer.astrocart.metric.mapHospitalFillOpacityScale": "hospitalFillOpacityScale",
+    "renderer.astrocart.metric.mapRoadWidthScale": "roadWidthScale",
+    "renderer.astrocart.metric.mapRoadOpacityScale": "roadOpacityScale",
+    "renderer.astrocart.metric.mapRoadBlur": "roadBlur",
+    "renderer.astrocart.metric.mapWaterLineOpacity": "waterLineOpacity",
+    "renderer.astrocart.metric.mapWaterLabelSpacing": "waterLabelSpacing",
+    "renderer.astrocart.metric.mapWaterLabelHaloWidth": "waterLabelHaloWidth",
+    "renderer.astrocart.metric.mapWaterLabelHaloBlur": "waterLabelHaloBlur",
+    "renderer.astrocart.metric.mapWaterLineLabelOpacity": "waterLineLabelOpacity",
+    "renderer.astrocart.metric.mapWaterPointLabelOpacity": "waterPointLabelOpacity",
+    "renderer.astrocart.metric.mapStreetLabelSize": "streetLabelSize",
+    "renderer.astrocart.metric.mapStreetLabelHaloWidth": "streetLabelHaloWidth",
+    "renderer.astrocart.metric.mapStreetLabelHaloBlur": "streetLabelHaloBlur",
+    "renderer.astrocart.metric.mapStreetLabelOpacity": "streetLabelOpacity",
+    "renderer.astrocart.metric.mapHospitalLabelSize": "hospitalLabelSize",
+    "renderer.astrocart.metric.mapHospitalLabelHaloWidth": "hospitalLabelHaloWidth",
+    "renderer.astrocart.metric.mapHospitalLabelHaloBlur": "hospitalLabelHaloBlur",
+    "renderer.astrocart.metric.mapHospitalLabelOpacity": "hospitalLabelOpacity",
+    "renderer.astrocart.metric.mapHospitalIconOpacity": "hospitalIconOpacity",
+    "renderer.astrocart.metric.mapCountryLabelSpacing": "countryLabelSpacing",
+    "renderer.astrocart.metric.mapCountryLabelHaloWidth": "countryLabelHaloWidth",
+    "renderer.astrocart.metric.mapCountryLabelHaloBlur": "countryLabelHaloBlur",
+    "renderer.astrocart.metric.mapCountryLabelOpacity": "countryLabelOpacity",
+    "renderer.astrocart.metric.mapCityLabelSpacing": "cityLabelSpacing",
+    "renderer.astrocart.metric.mapCityLabelHaloWidth": "cityLabelHaloWidth",
+    "renderer.astrocart.metric.mapCityLabelHaloBlur": "cityLabelHaloBlur",
+    "renderer.astrocart.metric.mapCityLabelOpacity": "cityLabelOpacity",
+    "renderer.astrocart.metric.mapMinorPlaceLabelSpacing": "minorPlaceLabelSpacing",
+    "renderer.astrocart.metric.mapMinorPlaceLabelHaloWidth": "minorPlaceLabelHaloWidth",
+    "renderer.astrocart.metric.mapMinorPlaceLabelHaloBlur": "minorPlaceLabelHaloBlur",
+    "renderer.astrocart.metric.mapMinorPlaceLabelOpacity": "minorPlaceLabelOpacity",
+    "renderer.astrocart.metric.mapEclipseShadowWidth": "eclipseShadowWidth",
+    "renderer.astrocart.metric.mapEclipseShadowOpacity": "eclipseShadowOpacity",
+    "renderer.astrocart.metric.mapEclipseShadowBlur": "eclipseShadowBlur",
+    "renderer.astrocart.metric.mapEclipseFillOpacity": "eclipseFillOpacity",
+    "renderer.astrocart.metric.mapEclipseOutlineWidth": "eclipseOutlineWidth",
+    "renderer.astrocart.metric.mapEclipseOutlineOpacity": "eclipseOutlineOpacity",
+    "renderer.astrocart.metric.mapEclipseLimitWidth": "eclipseLimitWidth",
+    "renderer.astrocart.metric.mapEclipseLimitOpacity": "eclipseLimitOpacity",
+    "renderer.astrocart.metric.mapEclipseLimitDashOn": "eclipseLimitDashOn",
+    "renderer.astrocart.metric.mapEclipseLimitDashOff": "eclipseLimitDashOff",
+    "renderer.astrocart.metric.mapEclipseCenterWidth": "eclipseCenterWidth",
+    "renderer.astrocart.metric.mapEclipseCenterOpacity": "eclipseCenterOpacity",
+    "renderer.astrocart.metric.mapEclipseMaximumRadius": "eclipseMaximumRadius",
+    "renderer.astrocart.metric.mapEclipseMaximumStrokeWidth": "eclipseMaximumStrokeWidth",
+    "renderer.astrocart.metric.mapEclipseLabelSize": "eclipseLabelSize",
+    "renderer.astrocart.metric.mapEclipseLabelSpacing": "eclipseLabelSpacing",
+    "renderer.astrocart.metric.mapEclipseLabelHaloWidth": "eclipseLabelHaloWidth",
+    "renderer.astrocart.metric.mapEclipseLabelOpacity": "eclipseLabelOpacity",
+    "renderer.astrocart.metric.mapAsterismLineWidth": "asterismLineWidth",
+    "renderer.astrocart.metric.mapAsterismLineOpacity": "asterismLineOpacity",
+    "renderer.astrocart.metric.mapAsterismStarRadiusMin": "asterismStarRadiusMin",
+    "renderer.astrocart.metric.mapAsterismStarRadiusMax": "asterismStarRadiusMax",
+    "renderer.astrocart.metric.mapAsterismStarOpacity": "asterismStarOpacity",
+    "renderer.astrocart.metric.mapAsterismShadowSpread": "asterismShadowSpread",
+    "renderer.astrocart.metric.mapAsterismShadowOpacity": "asterismShadowOpacity",
+    "renderer.astrocart.metric.mapAsterismShadowBlur": "asterismShadowBlur",
+    "renderer.astrocart.metric.mapAsterismLabelSize": "asterismLabelSize",
+    "renderer.astrocart.metric.mapAsterismLabelSpacing": "asterismLabelSpacing",
+    "renderer.astrocart.metric.mapAsterismLabelHaloWidth": "asterismLabelHaloWidth",
+    "renderer.astrocart.metric.mapAsterismLabelOpacity": "asterismLabelOpacity",
+    "renderer.astrocart.metric.mapReferenceLineWidth": "referenceLineWidth",
+    "renderer.astrocart.metric.mapReferenceLineOpacity": "referenceLineOpacity",
+    "renderer.astrocart.metric.mapReferenceSignSize": "referenceSignSize",
+    "renderer.astrocart.metric.mapReferenceSignOpacity": "referenceSignOpacity",
+    "renderer.astrocart.metric.mapReferenceSignHaloWidth": "referenceSignHaloWidth",
+    "renderer.astrocart.metric.mapReferenceGridLineWidth": "referenceGridLineWidth",
+    "renderer.astrocart.metric.mapReferenceGridLineOpacity": "referenceGridLineOpacity",
+    "renderer.astrocart.metric.mapReferencePoleSignSize": "referencePoleSignSize",
+    "renderer.astrocart.metric.mapReferencePoleHouseSize": "referencePoleHouseSize",
+    "renderer.astrocart.metric.mapReferencePoleLabelOpacity": "referencePoleLabelOpacity",
+    "renderer.astrocart.metric.mapReferencePoleLabelHaloWidth": "referencePoleLabelHaloWidth",
+}
+
+_ASTROCART_PROFILE_POINT_ROLES = {
+    "sun": (
+        "renderer.astrocart.color.mapSunLineColor",
+        "renderer.astrocart.metric.mapSunLineWidthScale",
+        "renderer.astrocart.metric.mapSunLineOpacity",
+    ),
+    "moon": (
+        "renderer.astrocart.color.mapMoonLineColor",
+        "renderer.astrocart.metric.mapMoonLineWidthScale",
+        "renderer.astrocart.metric.mapMoonLineOpacity",
+    ),
+    "mercury": (
+        "renderer.astrocart.color.mapMercuryLineColor",
+        "renderer.astrocart.metric.mapMercuryLineWidthScale",
+        "renderer.astrocart.metric.mapMercuryLineOpacity",
+    ),
+    "venus": (
+        "renderer.astrocart.color.mapVenusLineColor",
+        "renderer.astrocart.metric.mapVenusLineWidthScale",
+        "renderer.astrocart.metric.mapVenusLineOpacity",
+    ),
+    "mars": (
+        "renderer.astrocart.color.mapMarsLineColor",
+        "renderer.astrocart.metric.mapMarsLineWidthScale",
+        "renderer.astrocart.metric.mapMarsLineOpacity",
+    ),
+    "jupiter": (
+        "renderer.astrocart.color.mapJupiterLineColor",
+        "renderer.astrocart.metric.mapJupiterLineWidthScale",
+        "renderer.astrocart.metric.mapJupiterLineOpacity",
+    ),
+    "saturn": (
+        "renderer.astrocart.color.mapSaturnLineColor",
+        "renderer.astrocart.metric.mapSaturnLineWidthScale",
+        "renderer.astrocart.metric.mapSaturnLineOpacity",
+    ),
+    "uranus": (
+        "renderer.astrocart.color.mapUranusLineColor",
+        "renderer.astrocart.metric.mapUranusLineWidthScale",
+        "renderer.astrocart.metric.mapUranusLineOpacity",
+    ),
+    "neptune": (
+        "renderer.astrocart.color.mapNeptuneLineColor",
+        "renderer.astrocart.metric.mapNeptuneLineWidthScale",
+        "renderer.astrocart.metric.mapNeptuneLineOpacity",
+    ),
+    "pluto": (
+        "renderer.astrocart.color.mapPlutoLineColor",
+        "renderer.astrocart.metric.mapPlutoLineWidthScale",
+        "renderer.astrocart.metric.mapPlutoLineOpacity",
+    ),
+    "chiron": (
+        "renderer.astrocart.color.mapChironLineColor",
+        "renderer.astrocart.metric.mapChironLineWidthScale",
+        "renderer.astrocart.metric.mapChironLineOpacity",
+    ),
+    "node_asc": (
+        "renderer.astrocart.color.mapNorthNodeLineColor",
+        "renderer.astrocart.metric.mapNorthNodeLineWidthScale",
+        "renderer.astrocart.metric.mapNorthNodeLineOpacity",
+    ),
+    "node_desc": (
+        "renderer.astrocart.color.mapSouthNodeLineColor",
+        "renderer.astrocart.metric.mapSouthNodeLineWidthScale",
+        "renderer.astrocart.metric.mapSouthNodeLineOpacity",
+    ),
+}
+
+
+def _profile_color(value) -> str | None:
+    if not isinstance(value, (list, tuple)) or len(value) not in (3, 4):
+        return None
+    try:
+        rgb = [max(0, min(255, int(channel))) for channel in value[:3]]
+        if len(value) == 3:
+            return f"rgb({rgb[0]} {rgb[1]} {rgb[2]})"
+        alpha = max(0.0, min(1.0, float(value[3])))
+        return f"rgb({rgb[0]} {rgb[1]} {rgb[2]} / {alpha * 100:g}%)"
+    except (TypeError, ValueError):
+        return None
+
+
+def _apply_astrocart_profile(payload: dict, profile: dict | None) -> None:
+    overrides = (profile or {}).get("overrides")
+    if not isinstance(overrides, dict):
+        return
+    for semantic_id, field in _ASTROCART_PROFILE_CHROME_COLORS.items():
+        color = _profile_color(overrides.get(semantic_id))
+        if color is not None:
+            payload["chrome"][field] = color
+    for semantic_id, field in _ASTROCART_PROFILE_RENDERER_COLORS.items():
+        color = _profile_color(overrides.get(semantic_id))
+        if color is not None:
+            payload["renderer"][field] = color
+    for semantic_id, field in _ASTROCART_PROFILE_RENDERER_NUMBERS.items():
+        value = overrides.get(semantic_id)
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and isfinite(value):
+            payload["renderer"][field] = float(value)
+    for point_id, (color_id, width_id, opacity_id) in _ASTROCART_PROFILE_POINT_ROLES.items():
+        point = payload.get("points", {}).get(point_id)
+        if not isinstance(point, dict):
+            continue
+        color = _profile_color(overrides.get(color_id))
+        if color is not None:
+            point["color"] = color
+        width_scale = overrides.get(width_id)
+        if (
+            isinstance(width_scale, (int, float))
+            and not isinstance(width_scale, bool)
+            and isfinite(width_scale)
+            and 0.25 <= float(width_scale) <= 3.0
+        ):
+            point["lineWidthScale"] = float(width_scale)
+        opacity = overrides.get(opacity_id)
+        if (
+            isinstance(opacity, (int, float))
+            and not isinstance(opacity, bool)
+            and isfinite(opacity)
+            and 0.0 <= float(opacity) <= 1.0
+        ):
+            point["lineOpacity"] = float(opacity)
+
+
+def _astrocart_chrome_style(is_dark: bool, page_bg: str) -> dict:
+    """The exact 20-property iframe chrome contract from map.html."""
+    if is_dark:
+        values = {
+            "chromeBg": "rgba(29,30,33,0.88)",
+            "chromeBgThin": "rgba(29,30,33,0.84)",
+            "chromeBorder": "rgba(255,255,255,0.10)",
+            "chromeRule": "rgba(255,255,255,0.08)",
+            "chromeText": "#e2e3e6",
+            "chromeDim": "#b0b3b8",
+            "chromeSoft": "#c4c6ca",
+            "buttonActiveBg": "rgba(255,255,255,0.12)",
+            "buttonHoverBg": "rgba(255,255,255,0.05)",
+            "buttonActiveFg": "#ffffff",
+            "keyLine": "#d0d2d6",
+            "keyParan": "#e59246",
+            "popupBg": "#23262c",
+            "menuBg": "rgba(37,39,44,0.88)",
+            "menuBorder": "rgba(255,255,255,0.14)",
+            "menuShadow": "rgba(0,0,0,0.45)",
+            "menuHoverBg": "#0a84ff",
+            "menuHoverFg": "#ffffff",
+        }
+    else:
+        values = {
+            "chromeBg": "rgba(255,255,255,0.88)",
+            "chromeBgThin": "rgba(255,255,255,0.84)",
+            "chromeBorder": "rgba(0,0,0,0.12)",
+            "chromeRule": "rgba(0,0,0,0.08)",
+            "chromeText": "#2d3136",
+            "chromeDim": "#43484e",
+            "chromeSoft": "#34383d",
+            "buttonActiveBg": "rgba(0,0,0,0.09)",
+            "buttonHoverBg": "rgba(0,0,0,0.04)",
+            "buttonActiveFg": "#1a1d21",
+            "keyLine": "#2d3136",
+            "keyParan": "#b35800",
+            "popupBg": "#ffffff",
+            "menuBg": "rgba(246,246,246,0.88)",
+            "menuBorder": "rgba(0,0,0,0.18)",
+            "menuShadow": "rgba(0,0,0,0.24)",
+            "menuHoverBg": "#0a84ff",
+            "menuHoverFg": "#ffffff",
+        }
+    return {
+        "pageBg": page_bg,
+        "titlebarSafeTop": ASTROCART_TITLEBAR_SAFE_TOP,
+        **values,
+    }
+
+
+def _astrocart_renderer_style(is_dark: bool) -> dict:
+    """Complete bounded MapLibre presentation contract for schema v4."""
+    return {
+        "casing": "rgba(10,12,16,0.85)" if is_dark else "rgba(255,255,255,0.85)",
+        "labelColor": "#e2e3e6" if is_dark else "#30343a",
+        "labelHalo": "rgba(10,12,16,0.85)" if is_dark else "rgba(255,255,255,0.85)",
+        "paranColor": "#e59246" if is_dark else "#d35400",
+        "paranHalo": "rgba(10,12,16,0.85)" if is_dark else "rgba(255,255,255,0.9)",
+        "fallbackMcColor": "#e74c3c",
+        "fallbackIcColor": "#8e44ad",
+        "fallbackAscColor": "#2ecc71",
+        "fallbackDscColor": "#f39c12",
+        "fallbackUnknownColor": "#888888",
+        "eclipseShadowColor": "rgba(5, 6, 7, 0.34)" if is_dark else "rgba(38, 42, 46, 0.18)",
+        "eclipseOutlineColor": "#c8c2b5" if is_dark else "#5e6872",
+        "eclipseCenterColor": "#d9b760" if is_dark else "#8a6418",
+        "eclipseHaloColor": "rgba(8, 11, 15, 0.92)" if is_dark else "rgba(255, 255, 255, 0.92)",
+        "asterismHighlightColor": "#c9a7ff" if is_dark else "#6d3fb2",
+        "asterismShadowColor": "#4f8cff" if is_dark else "#376ec7",
+        "referenceEclipticColor": "#d7d7d9" if is_dark else "#111111",
+        "referenceEquatorColor": "#dcdccd" if is_dark else "#111111",
+        "referenceAscColor": "#cdcdd1" if is_dark else "#111111",
+        "referenceMcColor": "#cdcdd1" if is_dark else "#111111",
+        "referenceHouseGridColor": "#8a8b8d" if is_dark else "#585858",
+        "referenceZodiacGridColor": "#d7d7d9" if is_dark else "#111111",
+        "pageBg": "#1a1d21" if is_dark else "#d9dde1",
+        "oceanColor": "#232a32" if is_dark else "#dfe7f0",
+        "landColor": "#31353a" if is_dark else "#eef1f4",
+        "borderColor": "#59616a" if is_dark else "#8a929d",
+        "countryLabelColor": "#d7dbe0" if is_dark else "#343941",
+        "countryLabelHalo": "rgba(10,12,16,0.88)" if is_dark else "rgba(255,255,255,0.92)",
+        "countryLabelSize": 12.0,
+        "countryLabelsOn": True,
+        "cityLabelColor": "#9ea5ae" if is_dark else "#5d6773",
+        "cityLabelHalo": "rgba(10,12,16,0.88)" if is_dark else "rgba(255,255,255,0.92)",
+        "cityLabelSize": 10.5,
+        "cityLabelsOn": True,
+        "minorPlaceLabelColor": "#868d95" if is_dark else "#727b86",
+        "minorPlaceLabelHalo": "rgba(10,12,16,0.50)" if is_dark else "rgba(255,255,255,0.56)",
+        "minorPlaceLabelSize": 9.4,
+        "waterLabelColor": "#8db5d9" if is_dark else "#4c6f96",
+        "waterLabelHalo": "rgba(10,12,16,0.62)" if is_dark else "rgba(255,255,255,0.74)",
+        "waterLabelSize": 11.0,
+        "hospitalLabelColor": "#c2c7cd" if is_dark else "#555e68",
+        "hospitalLabelHalo": "rgba(10,12,16,0.72)" if is_dark else "rgba(255,255,255,0.80)",
+        "hospitalFillColor": "rgba(182,188,196,0.10)" if is_dark else "rgba(88,96,106,0.08)",
+        "roadColor": "#454d57" if is_dark else "#c5cdd6",
+        "streetNameColor": "rgba(230,235,240,0.42)" if is_dark else "rgba(70,78,88,0.42)",
+        "streetNameHalo": "rgba(10,12,16,0.22)" if is_dark else "rgba(255,255,255,0.26)",
+        "buildingColor": "rgba(10,12,16,0.44)" if is_dark else "rgba(116,124,134,0.16)",
+        "buildingOutlineColor": "rgba(126,134,144,0.14)" if is_dark else "rgba(92,100,110,0.12)",
+        "terrainShadowColor": "#111820" if is_dark else "#74808b",
+        "terrainHighlightColor": "#697682" if is_dark else "#ffffff",
+        "parkColor": "rgba(74,92,78,0.14)" if is_dark else "rgba(142,168,146,0.16)",
+        "parkOutlineColor": "rgba(118,142,122,0.16)" if is_dark else "rgba(122,150,126,0.18)",
+        "residentialColor": "rgba(70,76,84,0.08)" if is_dark else "rgba(174,182,190,0.08)",
+        "casingWidth": 3.0,
+        "casingOpacity": 0.9,
+        "solidWidth": 1.6,
+        "solidOpacity": 0.95,
+        "dashedWidth": 1.6,
+        "dashedOpacity": 0.95,
+        "dashedOn": 3.0,
+        "dashedOff": 2.0,
+        "paranWidth": 1.0,
+        "paranOpacity": 0.7 if is_dark else 0.55,
+        "paranDashOn": 1.0,
+        "paranDashOff": 2.0,
+        "labelSize": 11.0,
+        "labelSpacing": 0.04,
+        "labelHaloWidth": 1.0,
+        "labelOpacity": 1.0,
+        "domLabelOpacityScale": 0.9,
+        "labelHaloOn": True,
+        "labelsOn": True,
+        "paranLabelSize": 11.0,
+        "paranLabelSpacing": 0.02,
+        "paranLabelHaloWidth": 1.3,
+        "paranLabelOpacity": 1.0,
+        "paranLabelHaloOn": True,
+        "paranLabelsOn": True,
+        "localCountryBorderWidth": 0.8,
+        "localCountryBorderOpacity": 0.62,
+        "localRegionBorderWidth": 0.45,
+        "localRegionBorderOpacity": 0.28,
+        "buildingOpacityScale": 1.0,
+        "terrainExaggeration": 1.0,
+        "hillshadeExaggeration": 0.35,
+        "residentialOpacityScale": 1.0,
+        "parkFillOpacityScale": 1.0,
+        "parkOutlineOpacityScale": 1.0,
+        "hospitalFillOpacityScale": 1.0,
+        "roadWidthScale": 1.0,
+        "roadOpacityScale": 1.0,
+        "roadBlur": 0.0,
+        "waterLineOpacity": 0.65,
+        "waterLabelSpacing": 0.12,
+        "waterLabelHaloWidth": 1.05,
+        "waterLabelHaloBlur": 0.45,
+        "waterLineLabelOpacity": 0.62,
+        "waterPointLabelOpacity": 0.74,
+        "streetLabelSize": 11.0,
+        "streetLabelHaloWidth": 0.65,
+        "streetLabelHaloBlur": 0.25,
+        "streetLabelOpacity": 1.0,
+        "hospitalLabelSize": 11.2,
+        "hospitalLabelHaloWidth": 1.0,
+        "hospitalLabelHaloBlur": 0.35,
+        "hospitalLabelOpacity": 0.82,
+        "hospitalIconOpacity": 0.5,
+        "countryLabelSpacing": 0.04,
+        "countryLabelHaloWidth": 1.35,
+        "countryLabelHaloBlur": 0.8,
+        "countryLabelOpacity": 0.92,
+        "cityLabelSpacing": 0.02,
+        "cityLabelHaloWidth": 1.15,
+        "cityLabelHaloBlur": 0.7,
+        "cityLabelOpacity": 0.82,
+        "minorPlaceLabelSpacing": 0.01,
+        "minorPlaceLabelHaloWidth": 0.35,
+        "minorPlaceLabelHaloBlur": 0.2,
+        "minorPlaceLabelOpacity": 0.64,
+        "eclipseShadowWidth": 12.0,
+        "eclipseShadowOpacity": 0.92,
+        "eclipseShadowBlur": 3.0,
+        "eclipseFillOpacity": 0.9,
+        "eclipseOutlineWidth": 0.8,
+        "eclipseOutlineOpacity": 0.24,
+        "eclipseLimitWidth": 1.2,
+        "eclipseLimitOpacity": 0.78,
+        "eclipseLimitDashOn": 3.0,
+        "eclipseLimitDashOff": 2.0,
+        "eclipseCenterWidth": 2.0,
+        "eclipseCenterOpacity": 0.96,
+        "eclipseMaximumRadius": 4.5,
+        "eclipseMaximumStrokeWidth": 2.0,
+        "eclipseLabelSize": 11.0,
+        "eclipseLabelSpacing": 0.0,
+        "eclipseLabelHaloWidth": 1.3,
+        "eclipseLabelOpacity": 1.0,
+        "asterismLineWidth": 0.7,
+        "asterismLineOpacity": 0.52,
+        "asterismStarRadiusMin": 0.85,
+        "asterismStarRadiusMax": 3.8,
+        "asterismStarOpacity": 0.92,
+        "asterismShadowSpread": 0.65,
+        "asterismShadowOpacity": 0.28,
+        "asterismShadowBlur": 0.55,
+        "asterismLabelSize": 7.0,
+        "asterismLabelSpacing": 0.06,
+        "asterismLabelHaloWidth": 0.55,
+        "asterismLabelOpacity": 0.72,
+        "referenceLineWidth": 1.1,
+        "referenceLineOpacity": 0.78,
+        "referenceSignSize": 12.0,
+        "referenceSignOpacity": 1.0,
+        "referenceSignHaloWidth": 1.25,
+        "referenceGridLineWidth": 0.5,
+        "referenceGridLineOpacity": 0.34,
+        "referencePoleSignSize": 8.0,
+        "referencePoleHouseSize": 7.0,
+        "referencePoleLabelOpacity": 0.82,
+        "referencePoleLabelHaloWidth": 0.9,
+    }
 
 _CITY_LABEL_THRESHOLDS = (
     (1.7, 0, 4_000_000, 60),
@@ -188,7 +727,16 @@ def _is_dark_theme(options) -> bool:
     return (r + g + b) / 3 < 128
 
 
-def _palette_from_options(options, points) -> dict[str, str]:
+def _point_palette_indices(source_options, effective_options) -> dict[str, int]:
+    """Select canonical rows only for a profile-supplied body palette."""
+    source_table = getattr(source_options, "clrindividual", None)
+    effective_table = getattr(effective_options, "clrindividual", None)
+    if effective_table is not source_table:
+        return _POINT_CLR_INDEX
+    return _LEGACY_POINT_CLR_INDEX
+
+
+def _palette_from_options(options, points, *, index_by_point) -> dict[str, str]:
     colors: dict[str, str] = {}
     table = getattr(options, "clrindividual", None) if options is not None else None
     if table is None:
@@ -207,7 +755,7 @@ def _palette_from_options(options, points) -> dict[str, str]:
         return f"#{r:02x}{g:02x}{b:02x}"
 
     for pt in points:
-        idx = _POINT_CLR_INDEX.get(pt.id)
+        idx = index_by_point.get(pt.id)
         if idx is None or idx >= n:
             continue
         hx = _hex(table[idx])
@@ -260,6 +808,33 @@ def _inject_glyphs(geojson: dict, options) -> None:
             pid = props.get("point", "")
             props["glyph_morinus"] = _morinus_glyph_for(pid, options)
             props["glyph_unicode"] = _UNICODE_GLYPHS.get(pid, "")
+
+
+def _append_natal_ascendant_lines(
+    geojson: dict,
+    radix,
+    options,
+    compute_kwargs: dict,
+) -> None:
+    """Add the chart ASC degree's rising/setting pair to standard ACG data."""
+    renderer_style = _astrocart_renderer_style(_is_dark_theme(options))
+    color = _hex_bg(
+        getattr(options, "clrAscMC", None),
+        renderer_style["referenceAscColor"],
+    )
+    natal_kwargs = {
+        key: value for key, value in compute_kwargs.items()
+        if key in {"step_deg", "horizon_error_meters"}
+    }
+    result = astrocart.compute_natal_ascendant_acg_for_chart(
+        radix,
+        color_hex=color,
+        **natal_kwargs,
+    )
+    payload = result.to_geojson()
+    for feature in payload.get("features", []):
+        feature.setdefault("properties", {})["natal_angle"] = True
+    geojson.setdefault("features", []).extend(payload.get("features", []))
 
 
 def _normalize_mode(mode: Optional[str]) -> str:
@@ -319,6 +894,30 @@ def _bundled_city_labels_path() -> Path:
         if mei:
             return Path(mei) / _CITY_LABEL_RESOURCE
     return REPO_ROOT / _CITY_LABEL_RESOURCE
+
+
+def _bundled_asterism_path() -> Path:
+    """Resolve the all-sky figure catalogue in source and Tauri builds."""
+    daemon_base = os.environ.get("ARIES_DAEMON_BASE_DIR", "").strip()
+    if daemon_base:
+        return Path(daemon_base).expanduser() / _ASTERISM_RESOURCE
+    if getattr(sys, "frozen", False):
+        mei = getattr(sys, "_MEIPASS", None)
+        if mei:
+            return Path(mei) / _ASTERISM_RESOURCE
+    return REPO_ROOT / _ASTERISM_RESOURCE
+
+
+def _bundled_asterism_star_path() -> Path:
+    """Resolve the figure-star catalogue in source and Tauri builds."""
+    daemon_base = os.environ.get("ARIES_DAEMON_BASE_DIR", "").strip()
+    if daemon_base:
+        return Path(daemon_base).expanduser() / _ASTERISM_STAR_RESOURCE
+    if getattr(sys, "frozen", False):
+        mei = getattr(sys, "_MEIPASS", None)
+        if mei:
+            return Path(mei) / _ASTERISM_STAR_RESOURCE
+    return REPO_ROOT / _ASTERISM_STAR_RESOURCE
 
 
 def _load_city_label_index(path: Path) -> tuple[Optional[_CityLabelIndex], Optional[str], float]:
@@ -719,32 +1318,164 @@ class AstrocartService:
         self._get_city_label_index()
 
     def display_style_for_chart(self, radix) -> dict:
-        """Cheap live map styling derived from daemon options, with no ACG math."""
-        opts = chart_snapshot_service.options
+        """One immutable-versioned map style, derived without any ACG math."""
         points = astrocart.points_from_chart(radix)
-        colors = _palette_from_options(opts, points)
+        points = (*points, astrocart.natal_ascendant_point_from_chart(radix))
+        return self._display_style_for_points(points)
+
+    def asterisms_geojson_for_chart(self, radix) -> dict:
+        """Date-correct all-sky figures plus system-aware celestial references."""
+        started = time.perf_counter()
+        catalog = asterism_projection.load_catalog(_bundled_asterism_path())
+        stars = asterism_projection.load_catalog(_bundled_asterism_star_path())
+        opts = effective_display_options(chart_snapshot_service.options)
+        signs = common.common.Signs1 if getattr(opts, "signs", True) else common.common.Signs2
+        house_system_code = str(
+            getattr(radix.houses, "ui_hsys", getattr(radix.houses, "hsys", "")) or ""
+        )
+        house_cusps = () if house_system_code == "N" else tuple(radix.houses.cusps[1:13])
+        payload = asterism_projection.build_geojson(
+            catalog,
+            float(radix.time.jd),
+            star_catalog=stars,
+            observer_lon=float(radix.place.lon),
+            observer_lat=float(radix.place.lat),
+            obliquity_deg=float(radix.obl[0]),
+            zodiac_offset_deg=float(getattr(radix, "ayanamsha_offset", 0.0) or 0.0),
+            sign_glyphs=signs,
+            house_cusps=house_cusps,
+            house_system_code=house_system_code,
+        )
+        payload.setdefault("meta", {})["projectMs"] = round(
+            (time.perf_counter() - started) * 1000.0,
+            3,
+        )
+        return payload
+
+    def display_style_for_default_location(self) -> dict:
+        """Global map style for the chartless Default Location picker.
+
+        The picker shares map.html and its complete renderer/chrome contract,
+        but has no radix and must never trigger ACG or point calculation.
+        """
+        return self._display_style_for_points(())
+
+    def _display_style_for_points(self, points: Sequence[astrocart.ACGPoint]) -> dict:
+        opts = chart_snapshot_service.options
+        try:
+            # Runtime import avoids the options-service/chart-service module
+            # cycle. The non-mutating adapter applies a chart-scoped profile
+            # base plus scalar chart colors without touching live options.
+            from webapp.daemon.options_service import options_service
+
+            active_profile, effective_opts = options_service.get_style_chart_render_context(opts)
+        except Exception:
+            active_profile = None
+            effective_opts = opts
+        colors = _palette_from_options(
+            effective_opts,
+            points,
+            index_by_point=_point_palette_indices(opts, effective_opts),
+        )
+        is_dark = _is_dark_theme(effective_opts)
+        renderer_style = _astrocart_renderer_style(is_dark)
+        renderer_style["countryLabelsOn"] = bool(
+            getattr(opts, "astrocart_show_country_labels", True)
+        )
+        # Celestial guides use the same authored chart palette as their wheel
+        # counterparts. Map-specific profile roles can still override these
+        # resolved defaults in _apply_astrocart_profile below.
+        renderer_style["referenceEclipticColor"] = _hex_bg(
+            getattr(effective_opts, "clrsigns", None),
+            renderer_style["referenceEclipticColor"],
+        )
+        renderer_style["referenceEquatorColor"] = _hex_bg(
+            getattr(effective_opts, "clrframe", None),
+            renderer_style["referenceEquatorColor"],
+        )
+        angle_color = _hex_bg(
+            getattr(effective_opts, "clrAscMC", None),
+            renderer_style["referenceAscColor"],
+        )
+        renderer_style["referenceAscColor"] = angle_color
+        renderer_style["referenceMcColor"] = angle_color
+        renderer_style["referenceHouseGridColor"] = _hex_bg(
+            getattr(effective_opts, "clrhouses", None),
+            renderer_style["referenceHouseGridColor"],
+        )
+        renderer_style["referenceZodiacGridColor"] = _hex_bg(
+            getattr(effective_opts, "clrsigns", None),
+            renderer_style["referenceZodiacGridColor"],
+        )
         point_styles = {}
         for point in points:
             color = colors.get(point.id, point.color_hex)
+            if point.id == astrocart.NATAL_ASC_POINT_ID:
+                color = angle_color
             point_styles[point.id] = {
                 "label": mtexts.txts.get(point.label, point.label),
-                "color": color,
-                "glyphMorinus": _morinus_glyph_for(point.id, opts),
+                "color": color or "",
+                "glyphMorinus": _morinus_glyph_for(point.id, effective_opts),
+                "lineWidthScale": 1.0,
+                "lineOpacity": 1.0,
             }
-        is_dark = _is_dark_theme(opts)
+        # Zodiac glyph choice is a live display option. Carry it in the cheap
+        # style payload as point-like renderer metadata so an open map updates
+        # immediately without rebuilding the celestial reference geometry.
+        signs = common.common.Signs1 if getattr(effective_opts, "signs", True) else common.common.Signs2
+        sign_color = renderer_style["referenceEclipticColor"]
+        element_colors = (
+            "clrsignelementfire",
+            "clrsignelementearth",
+            "clrsignelementair",
+            "clrsignelementwater",
+        )
+        use_element_colors = bool(getattr(effective_opts, "usezodiacelementcolors", False))
+        for sign_index, glyph in enumerate(signs):
+            glyph_color = sign_color
+            if use_element_colors:
+                glyph_color = _hex_bg(
+                    getattr(effective_opts, element_colors[sign_index % 4], None),
+                    sign_color,
+                )
+            point_styles[f"zodiac_sign_{sign_index}"] = {
+                "label": "",
+                "color": glyph_color,
+                "glyphMorinus": glyph,
+                "lineWidthScale": 1.0,
+                "lineOpacity": 1.0,
+            }
         page_bg = _hex_bg(
-            getattr(opts, "clrbackground", None) if opts is not None else None,
+            getattr(effective_opts, "clrbackground", None) if effective_opts is not None else None,
             "#1a1d21" if is_dark else "#d9dde1",
         )
-        return {
+        payload = {
+            "schemaVersion": ASTROCART_STYLE_SCHEMA_VERSION,
+            "mode": "dark" if is_dark else "light",
+            "chrome": _astrocart_chrome_style(is_dark, page_bg),
+            "renderer": renderer_style,
             "points": point_styles,
-            "meta": {
-                "theme": "dark" if is_dark else "light",
-                "pageBg": page_bg,
+            "behavior": {
                 "localSpaceAdditive": bool(
                     getattr(opts, "astrocart_localspace_additive", True)
                 ),
+                "showEcliptic": bool(getattr(opts, "astrocart_show_ecliptic", False)),
+                "showEquator": bool(getattr(opts, "astrocart_show_equator", False)),
+                "showAscCircle": bool(getattr(opts, "astrocart_show_asc_circle", False)),
+                "showMcCircle": bool(getattr(opts, "astrocart_show_mc_circle", False)),
+                "showHouseLines": bool(getattr(opts, "astrocart_show_house_lines", False)),
+                "showZodiacLines": bool(getattr(opts, "astrocart_show_zodiac_lines", False)),
+                "terrainRelief": bool(getattr(opts, "astrocart_terrain_relief", False)),
             },
+        }
+        _apply_astrocart_profile(payload, active_profile)
+        style_hash = hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()[:16]
+        return {
+            **payload,
+            "styleRevision": style_hash,
+            "styleHash": style_hash,
         }
 
     def basemap_meta(self) -> dict:
@@ -877,8 +1608,13 @@ class AstrocartService:
         mode = _normalize_mode(mode)
         precision = _normalize_precision(precision)
         opts = chart_snapshot_service.options
+        display_opts = effective_display_options(opts)
         points = astrocart.points_from_chart(radix)
-        colors = _palette_from_options(opts, points)
+        colors = _palette_from_options(
+            display_opts,
+            points,
+            index_by_point=_point_palette_indices(opts, display_opts),
+        )
         if colors:
             points = tuple(
                 astrocart.ACGPoint(
@@ -898,6 +1634,7 @@ class AstrocartService:
             })
         geodetic_meridian = _GEODETIC_MERIDIANS.get(mode)
         local_space_additive = bool(getattr(opts, "astrocart_localspace_additive", True))
+        include_natal_ascendant = False
         if mode == ASTROCART_MODE_LOCAL_SPACE:
             local_kwargs = {}
             if precision == ASTROCART_PRECISION_PREVIEW:
@@ -920,11 +1657,14 @@ class AstrocartService:
                         feature for feature in acg_geojson.get("features", [])
                         if feature.get("properties", {}).get("kind") == "PARAN"
                     ]
+                else:
+                    include_natal_ascendant = True
                 acg_geojson.setdefault("features", []).extend(geojson.get("features", []))
                 geojson = acg_geojson
         elif geodetic_meridian is None:
             result = astrocart.compute_acg_for_chart(radix, points=points, **compute_kwargs)
             geojson = result.to_geojson()
+            include_natal_ascendant = True
         else:
             result = astrocart.compute_geodetic_acg_for_chart(
                 radix,
@@ -933,11 +1673,18 @@ class AstrocartService:
                 **compute_kwargs,
             )
             geojson = result.to_geojson()
-        _inject_glyphs(geojson, opts)
+        if include_natal_ascendant:
+            _append_natal_ascendant_lines(
+                geojson,
+                radix,
+                display_opts,
+                compute_kwargs,
+            )
+        _inject_glyphs(geojson, display_opts)
         geojson["meta"] = _chart_geojson_meta(
             radix,
             source_name=source_name,
-            options=opts,
+            options=display_opts,
             precision=precision,
             mode=mode,
             local_space_standalone=local_space_standalone,
@@ -975,7 +1722,7 @@ class AstrocartService:
                     feature_copy["id"] = f"{mode}:{feature_copy['id']}"
                 features.append(feature_copy)
 
-        opts = chart_snapshot_service.options
+        opts = effective_display_options(chart_snapshot_service.options)
         meta = _chart_geojson_meta(
             radix,
             source_name=source_name,

@@ -278,15 +278,11 @@ class ArabicParts:
     def _get_refordeg_triplet(self, ar_item, male=True):
         return ArabicParts.get_formula_triplet(ar_item, male)[1]
     def _deg_abs_to_internal(self, absdeg, opts):
-        """0..359 절대도수(현재 황도 기준)를 내부 경도(트로피컬)로 변환."""
+        """Return an absolute degree in the chart's selected zodiac."""
         try:
             lon = float(absdeg) % 360.0
         except Exception:
             lon = 0.0
-        if getattr(opts, 'ayanamsha', 0) != 0:
-            # opts.ayanamsha 는 "선택된 아야남샤 종류"(정수)이고,
-            # 실제 보정값(도 단위)은 chart.ayanamsha 로부터 전달받은 self._ayanamsha_deg 를 사용해야 한다.
-            lon = util.normalize(lon + self._ayanamsha_deg)  # sidereal → tropical
         return lon
 
     def __init__(self, ar, ascmc, pls, hs, cusps, fort, syz, opts, ayanamsha_deg=0.0, male=True): #ar is from options
@@ -510,11 +506,7 @@ class ArabicParts:
                 for p in range(astrology.SE_SATURN+1):
                     score = 0
                     scoretxt = ''
-                    testlon = tmplon
-                    if getattr(opts, 'ayanamsha', 0) != 0:
-                        testlon = util.normalize(testlon - self._ayanamsha_deg)
-
-                    s, st, sh = self.getData(opts, p, testlon, fort.abovehorizon)
+                    s, st, sh = self.getData(opts, p, tmplon, fort.abovehorizon)
 
                     score += s
                     scoretxt += st

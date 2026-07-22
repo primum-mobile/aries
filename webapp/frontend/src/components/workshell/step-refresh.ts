@@ -40,7 +40,7 @@ function optionsTouchIds(
   change: WorkspaceOptionsChange | null,
   ids: readonly string[],
 ): boolean {
-  if (!change) return false;
+  if (!change || change.styleOnly === true) return false;
   if (change.refreshedDocumentIds.length === 0) return true;
   return change.refreshedDocumentIds.some((id) => ids.includes(id));
 }

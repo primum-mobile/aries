@@ -35,6 +35,9 @@
   "bundle": {
     "active": true,
     "targets": ["app"],
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    },
     "resources": {
       "binaries/aries-daemon": "binaries/aries-daemon",
       "target/aries-runtime-resources/Res": "Res",

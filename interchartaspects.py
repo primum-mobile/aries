@@ -19,8 +19,6 @@ TRADITIONAL_SIGN_DIFFS = {
 
 
 def _normalized_lon_for_traditional(lon, chrt, opts):
-	if getattr(opts, 'ayanamsha', 0) != 0:
-		lon -= getattr(chrt, 'ayanamsha', 0.0)
 	return util.normalize(lon)
 
 

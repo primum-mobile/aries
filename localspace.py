@@ -217,7 +217,7 @@ def _resolve_local_equatorial(
         return astrocart.resolve_equatorial(point, jd_ut, iflag)
 
     astrology.swe_set_topo(origin_lon, origin_lat, origin_alt_m)
-    flag = iflag | astrology.SEFLG_EQUATORIAL | astrology.SEFLG_TOPOCTR
+    flag = (iflag & ~astrology.SEFLG_SIDEREAL) | astrology.SEFLG_EQUATORIAL | astrology.SEFLG_TOPOCTR
     _ret, eq, _err = astrology.swe_calc_ut_ex(jd_ut, int(point.body_id), flag)
     ra, dec = float(eq[0]), float(eq[1])
     if point.antipode:

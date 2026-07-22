@@ -89,8 +89,7 @@ def resolve_lon(lon_tropical, zodiac_mode, chart_ayanamsha, jd):
 	if chart_ayanamsha:
 		return lon_tropical - chart_ayanamsha
 	try:
-		astrology.swe_set_sid_mode(astrology.SE_SIDM_FAGAN_BRADLEY, 0, 0)
-		ayan = astrology.swe_get_ayanamsa_ut(jd)
+		ayan = astrology.effective_ayanamsha_ut(jd, 1)
 		return lon_tropical - ayan
 	except Exception:
 		return lon_tropical

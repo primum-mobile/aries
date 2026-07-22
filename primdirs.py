@@ -377,7 +377,7 @@ class PrimDirs:
 			chrt.ayanamsha_offset = 0.0
 			if opts.ayanamsha != 0:
 				astrology.swe_set_sid_mode(astrology.ayanamsha_swe_mode(opts.ayanamsha), 0, 0)
-				chrt.ayanamsha_offset = astrology.swe_get_ayanamsa_ut(chrt.time.jd)
+				chrt.ayanamsha_offset = astrology.effective_ayanamsha_ut(chrt.time.jd, opts.ayanamsha)
 				pflag |= astrology.SEFLG_SIDEREAL
 			# Do NOT add SEFLG_TOPOCTR here. Per Polich/Page, topocentric
 			# primary directions use the cone/pole house formula, not
@@ -1294,7 +1294,7 @@ class PrimDirs:
 
 
 	def calcSM(self, idp, arc):
-		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idp, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric)
+		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idp, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric, getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
 		ra = sm.planet.speculums[PrimDirs.PLACSPECULUM][planets.Planet.RA]
 		adlat = sm.planet.speculums[PrimDirs.PLACSPECULUM][planets.Planet.ADLAT]
 
@@ -1585,7 +1585,7 @@ class PrimDirs:
 
 
 	def calcZodSM(self, idp, j, aspect, arc):
-		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idp, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric)
+		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idp, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric, getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
 		pllon = sm.planet.speculums[PrimDirs.PLACSPECULUM][planets.Planet.LONG]
 		pllat = sm.planet.speculums[PrimDirs.PLACSPECULUM][planets.Planet.LAT]
 

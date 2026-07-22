@@ -4,6 +4,7 @@
 
 import astrology
 import chart
+from engine import moment
 import util
 
 
@@ -176,10 +177,31 @@ def jump_to_classical_phase(template_time, place, direction):
 		return None
 
 	jd_target = _bisect_phase_root(bracket[0], bracket[1], target)
-	y, m, d, h, mi, s = _utc_jd_to_original_components(jd_target, template_time, place)
+	zone_fields = None
+	if template_time.zt == chart.Time.ZONE and getattr(template_time, 'tzid', ''):
+		calflag = astrology.SE_GREG_CAL
+		if template_time.cal == chart.Time.JULIAN:
+			calflag = astrology.SE_JUL_CAL
+		utc_components = _jd_to_ymdhms(jd_target, calflag)
+		zone_fields = moment.utc_to_zone_fields(
+			utc_components, getattr(template_time, 'tzid', ''),
+		)
+	if zone_fields is not None:
+		y, m, d, h, mi, s = zone_fields['datetime']
+		plus = zone_fields['plus']
+		zh = zone_fields['zh']
+		zm = zone_fields['zm']
+		daylightsaving = zone_fields['daylightsaving']
+	else:
+		y, m, d, h, mi, s = _utc_jd_to_original_components(jd_target, template_time, place)
+		plus = template_time.plus
+		zh = template_time.zh
+		zm = template_time.zm
+		daylightsaving = template_time.daylightsaving
 	return chart.Time(
 		y, m, d, h, mi, s,
 		template_time.bc, template_time.cal, template_time.zt,
-		template_time.plus, template_time.zh, template_time.zm,
-		template_time.daylightsaving, place, False
+		plus, zh, zm, daylightsaving, place, False,
+		tzid=getattr(template_time, 'tzid', ''),
+		tzauto=getattr(template_time, 'tzauto', False),
 	)

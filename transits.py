@@ -53,9 +53,9 @@ class Transits:
 		self.flags = astrology.SEFLG_SPEED+astrology.SEFLG_SWIEPH
 		if chrt.options.topocentric:
 			self.flags += astrology.SEFLG_TOPOCTR
-		# 리턴/특정경도(planet 지정) 탐색은, 아야남샤가 켜져 있으면 시데럴 프레임에서 수행
-		# (레볼루션/선 트랜짓이 '아야남샤 적용 도수' 기준으로 정확히 맞도록)
-		if planet != Transits.NONE and chrt.options.ayanamsha != 0:
+		# Every transit search must use the same zodiac frame as its radix
+		# targets, including ordinary planet/aspect/sign/antiscia lists.
+		if chrt.options.ayanamsha != 0:
 			astrology.swe_set_sid_mode(astrology.ayanamsha_swe_mode(chrt.options.ayanamsha), 0, 0)
 			self.flags |= astrology.SEFLG_SIDEREAL
 
@@ -98,7 +98,7 @@ class Transits:
 			if chrt.options.topocentric:
 				self.flags += astrology.SEFLG_TOPOCTR
 			# month() 없이 day()가 직접 호출될 때도 동일 규칙 적용
-			if planet != Transits.NONE and chrt.options.ayanamsha != 0:
+			if chrt.options.ayanamsha != 0:
 				astrology.swe_set_sid_mode(astrology.ayanamsha_swe_mode(chrt.options.ayanamsha), 0, 0)
 				self.flags |= astrology.SEFLG_SIDEREAL
 
@@ -189,11 +189,10 @@ class Transits:
 		#Antiscia
 		for p in range(planets.Planets.PLANETS_NUM-2):
 			lona = chrt.antiscia.plantiscia[p].lon
-			if chrt.options.ayanamsha != 0:
+			if chrt.options.ayanamsha != 0 and not (self.flags & astrology.SEFLG_SIDEREAL):
 				# Antiscia are stored in the chart's chosen zodiac (sidereal
-				# when an ayanamsha is selected); the surrounding cycle()
-				# search runs in tropical, so recover tropical via the
-				# actual offset on ayanamsha_offset.
+				# when an ayanamsha is selected). Only a legacy tropical
+				# search needs recovery to the tropical frame.
 				lona = util.normalize(lona + getattr(chrt, 'ayanamsha_offset', 0.0))
 			tr = self.get(planet1, planet2, time1, chrt, lona, j, p, chart.Chart.CONJUNCTIO, Transits.HOUR, Transit.ANTISCION)
 			if tr != None:
@@ -202,11 +201,10 @@ class Transits:
 		#ContraAntiscia
 		for p in range(planets.Planets.PLANETS_NUM-2):
 			lona = chrt.antiscia.plcontraant[p].lon
-			if chrt.options.ayanamsha != 0:
+			if chrt.options.ayanamsha != 0 and not (self.flags & astrology.SEFLG_SIDEREAL):
 				# Antiscia are stored in the chart's chosen zodiac (sidereal
-				# when an ayanamsha is selected); the surrounding cycle()
-				# search runs in tropical, so recover tropical via the
-				# actual offset on ayanamsha_offset.
+				# when an ayanamsha is selected). Only a legacy tropical
+				# search needs recovery to the tropical frame.
 				lona = util.normalize(lona + getattr(chrt, 'ayanamsha_offset', 0.0))
 			tr = self.get(planet1, planet2, time1, chrt, lona, j, p, chart.Chart.CONJUNCTIO, Transits.HOUR, Transit.ANTISCION)
 			if tr != None:
@@ -247,14 +245,12 @@ class Transits:
 		if chrt.options.ayanamsha != 0 and (self.flags & astrology.SEFLG_SIDEREAL):
 			# chart.Chart now stores planet longitudes in the chosen
 			# zodiac (Chart._zodiac_flags applies SEFLG_SIDEREAL at the
-			# SwissEph boundary), so the chart-derived target is already
-			# sidereal. ``pos`` retains its legacy tropical convention —
-			# convert it via the natal-JD ayanamsha.
+			# SwissEph boundary). Explicit targets used by search, returns,
+			# and Sun-transit tools follow that same chosen-zodiac contract.
 			if pos is None:
 				lon = chrt.planets.planets[planet].data[planets.Planet.LONG]
 			else:
-				ay0 = astrology.swe_get_ayanamsa_ut(chrt.time.jd)
-				lon = util.normalize(pos - ay0)
+				lon = util.normalize(pos)
 		else:
 			# Tropical search.
 			lon = chrt.planets.planets[planet].data[planets.Planet.LONG] if pos is None else pos

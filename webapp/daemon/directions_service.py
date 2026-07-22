@@ -50,6 +50,13 @@ from engine import moment
 from engine import symbolic_projection
 from engine.supplementary_headless_driver import SupplementaryHeadlessDriver
 from webapp.daemon.chart_service import chart_snapshot_service
+from webapp.daemon.display_palette import (
+    aspect_color_role,
+    effective_display_options,
+    object_glyph_color,
+    object_glyph_color_role,
+    sign_color_role,
+)
 from webapp.daemon.primdir_points import (
     primdir_angle_label,
     primdir_house_cusp_label,
@@ -63,6 +70,9 @@ from webapp.frontend.scripts import export_chart_json
 _CONTEXT_SIG_KEY = "context_sig"
 _NATAL_PROMISSOR_KEY_PREFIX = "natal_radix:"
 _NATAL_PROMISSOR_MARKER = "n"
+
+_TEXT_COLOR_ROLE = "--morinus-text-bright"
+_PEREGRIN_COLOR_ROLE = "--morinus-peregrin"
 
 
 def _is_natal_radix_promissor_key(key: Any) -> bool:
@@ -194,6 +204,7 @@ def _natal_marker_part(color: Any = None) -> dict[str, Any]:
         "glyph": False,
         "marker": "natal",
         "color": _rgb_css(color) if color is not None else None,
+        "colorRole": _TEXT_COLOR_ROLE,
     }
 
 
@@ -631,7 +642,14 @@ def _sig_label(pds, pd) -> str:
     return ' '.join(p for p in parts if p)
 
 
-def _row(pds, pd, radix_jd: Optional[float], reference_chart=None) -> dict:
+def _row(
+    pds,
+    pd,
+    radix_jd: Optional[float],
+    reference_chart=None,
+    *,
+    display_options=None,
+) -> dict:
     # pd.time is a UT Julian day; the displayed Date column must be LOCAL civil
     # (policy-chart-lifecycle display rule). wx shows the raw UT digits here
     # (primdirslistwnd.py:166) — deliberate documented divergence, matching the
@@ -645,6 +663,7 @@ def _row(pds, pd, radix_jd: Optional[float], reference_chart=None) -> dict:
     )
     if local is not None:
         y, m, d = local[0], local[1], local[2]
+    presentation = display_options if display_options is not None else pds.options
     age = None
     if radix_jd is not None:
         age = max(0.0, (float(pd.time) - float(radix_jd)) / 365.2425)
@@ -683,19 +702,27 @@ def _row(pds, pd, radix_jd: Optional[float], reference_chart=None) -> dict:
             "sigPoint": int(pd.sig),
             "sigasp": int(pd.sigasp),
             "parallelaxis": int(pd.parallelaxis),
+            # Keep calculation precision for row-open actions.  The top-level
+            # value is rounded only for stable table display/serialization.
+            "arc": float(pd.arc),
             "jd": float(pd.time),
             "promGlyph": _primdir_point_glyph(pd.prom),
             "prom2Glyph": _primdir_point_glyph(pd.prom2),
             "sigGlyph": _primdir_point_glyph(pd.sig),
-            "promParts": _primdir_prom_parts(pds, pd),
-            "sigParts": _primdir_sig_parts(pds, pd),
+            "promParts": _primdir_prom_parts(pds, pd, display_options=presentation),
+            "sigParts": _primdir_sig_parts(pds, pd, display_options=presentation),
             "promAspectGlyph": _aspect_glyph(pd.promasp),
             "sigAspectGlyph": _aspect_glyph(pd.sigasp),
-            "promColor": _rgb_css(_primdir_point_color(pds.chart, pds.options, pd.prom)),
-            "prom2Color": _rgb_css(_primdir_point_color(pds.chart, pds.options, pd.prom2)),
-            "sigColor": _rgb_css(_primdir_point_color(pds.chart, pds.options, pd.sig)),
-            "promAspectColor": _rgb_css(_aspect_color(pds.options, pd.promasp)),
-            "sigAspectColor": _rgb_css(_aspect_color(pds.options, pd.sigasp)),
+            "promColor": _rgb_css(_primdir_point_color(pds.chart, presentation, pd.prom)),
+            "prom2Color": _rgb_css(_primdir_point_color(pds.chart, presentation, pd.prom2)),
+            "sigColor": _rgb_css(_primdir_point_color(pds.chart, presentation, pd.sig)),
+            "promAspectColor": _rgb_css(_aspect_color(presentation, pd.promasp)),
+            "sigAspectColor": _rgb_css(_aspect_color(presentation, pd.sigasp)),
+            "promColorRole": _primdir_point_color_role(pds.chart, presentation, pd.prom),
+            "prom2ColorRole": _primdir_point_color_role(pds.chart, presentation, pd.prom2),
+            "sigColorRole": _primdir_point_color_role(pds.chart, presentation, pd.sig),
+            "promAspectColorRole": _aspect_color_role(presentation, pd.promasp),
+            "sigAspectColorRole": _aspect_color_role(presentation, pd.sigasp),
             "promSource": prom_source,
             "promSourceMarker": prom_source_marker,
             "promSourceBodyId": prom_source_body_id,
@@ -766,6 +793,25 @@ def _dignity_palette(options) -> tuple:
     )
 
 
+def _planet_color_role(chrt, options, planet_id: Any) -> Optional[str]:
+    try:
+        planet_id = int(planet_id)
+    except Exception:
+        return _TEXT_COLOR_ROLE
+    if planet_id == PrimDir.LOF:
+        return _lof_color_role(options)
+    try:
+        dignity_code = int(chrt.dignity(planet_id))
+    except Exception:
+        dignity_code = chart.Chart.PEREGRIN
+    return object_glyph_color_role(
+        options,
+        types.SimpleNamespace(id=f"planet:{planet_id}", planet_index=planet_id),
+        dignity_code,
+        resolved_color=_planet_color(chrt, options, planet_id),
+    )
+
+
 def _planet_color(chrt, options, planet_id: Any) -> Any:
     try:
         planet_id = int(planet_id)
@@ -803,6 +849,19 @@ def _primdir_point_color(chrt, options, point_id: Any) -> Any:
     return _text_color(options)
 
 
+def _primdir_point_color_role(chrt, options, point_id: Any) -> Optional[str]:
+    try:
+        point_id = int(point_id)
+    except Exception:
+        return _TEXT_COLOR_ROLE
+    if point_id == PrimDir.LOF:
+        return _lof_color_role(options)
+    planet_id = primdir_planet_id(point_id)
+    if planet_id is not None:
+        return _planet_color_role(chrt, options, planet_id)
+    return _TEXT_COLOR_ROLE
+
+
 def _antiscion_planet_color(chrt, options, planet_id: Any) -> Any:
     try:
         planet_id = int(planet_id)
@@ -825,6 +884,20 @@ def _antiscion_planet_color(chrt, options, planet_id: Any) -> Any:
         return getattr(options, "clrperegrin", _text_color(options))
 
 
+def _antiscion_planet_color_role(chrt, options, planet_id: Any) -> Optional[str]:
+    try:
+        planet_id = int(planet_id)
+        dignity_code = int(chrt.dignity(planet_id))
+    except Exception:
+        return None
+    return object_glyph_color_role(
+        options,
+        types.SimpleNamespace(id=f"planet:{planet_id}", planet_index=planet_id),
+        dignity_code,
+        resolved_color=_antiscion_planet_color(chrt, options, planet_id),
+    )
+
+
 def _aspect_color(options, aspect_id: Any) -> Any:
     try:
         aspect_id = int(aspect_id)
@@ -838,6 +911,20 @@ def _aspect_color(options, aspect_id: Any) -> Any:
         return _text_color(options)
 
 
+def _aspect_color_role(options, aspect_id: Any) -> Optional[str]:
+    resolved = _aspect_color(options, aspect_id)
+    role = aspect_color_role(
+        options,
+        aspect_id,
+        resolved_color=resolved,
+    )
+    if role is not None:
+        return role
+    if _rgb_css(resolved) == _rgb_css(getattr(options, "clrperegrin", None)):
+        return _PEREGRIN_COLOR_ROLE
+    return None
+
+
 def _lof_color(options) -> Any:
     if getattr(options, "useplanetcolors", False):
         try:
@@ -845,6 +932,15 @@ def _lof_color(options) -> Any:
         except Exception:
             pass
     return getattr(options, "clrperegrin", _text_color(options))
+
+
+def _lof_color_role(options) -> Optional[str]:
+    return object_glyph_color_role(
+        options,
+        types.SimpleNamespace(id="point:lof", planet_index=None),
+        chart.Chart.PEREGRIN,
+        resolved_color=_lof_color(options),
+    )
 
 
 def _chiron_color(options) -> Any:
@@ -857,8 +953,21 @@ def _chiron_color(options) -> Any:
     return getattr(options, "clrperegrin", _text_color(options))
 
 
+def _chiron_color_role(options) -> Optional[str]:
+    return object_glyph_color_role(
+        options,
+        types.SimpleNamespace(id="planet:chiron", planet_index=astrology.SE_CHIRON),
+        chart.Chart.PEREGRIN,
+        resolved_color=_chiron_color(options),
+    )
+
+
 def _vertex_color(options) -> Any:
     return getattr(options, "clrperegrin", _text_color(options))
+
+
+def _vertex_color_role(_options) -> str:
+    return _PEREGRIN_COLOR_ROLE
 
 
 def _sign_color(options, sign_index: Any) -> Any:
@@ -873,6 +982,24 @@ def _sign_color(options, sign_index: Any) -> Any:
     if element == "water":
         return getattr(options, "clrsignelementwater", getattr(options, "clrsigns", _text_color(options)))
     return getattr(options, "clrsignelementfire", getattr(options, "clrsigns", _text_color(options)))
+
+
+def _sign_color_role(options, sign_index: Any) -> Optional[str]:
+    resolved = _sign_color(options, sign_index)
+    try:
+        int(sign_index)
+    except Exception:
+        return sign_color_role(
+            options,
+            0,
+            resolved_color=resolved,
+        )
+    return sign_color_role(
+        options,
+        sign_index,
+        force_element=True,
+        resolved_color=resolved,
+    )
 
 
 def _sign_glyph(options, sign_index: Any) -> Optional[str]:
@@ -902,11 +1029,18 @@ def _aspect_glyph(aspect_id: Any) -> Optional[str]:
     return glyph or None
 
 
-def _display_part(text: Any, *, glyph: bool = False, color: Any = None) -> dict[str, Any]:
+def _display_part(
+    text: Any,
+    *,
+    glyph: bool = False,
+    color: Any = None,
+    color_role: Optional[str] = None,
+) -> dict[str, Any]:
     return {
         "text": "" if text is None else str(text),
         "glyph": bool(glyph),
         "color": _rgb_css(color) if color is not None else None,
+        "colorRole": color_role,
     }
 
 
@@ -969,6 +1103,23 @@ def _aspect_color_for_degree(options, aspect_deg: Any) -> Any:
         except Exception:
             continue
     return _text_color(options)
+
+
+def _aspect_color_role_for_degree(options, aspect_deg: Any) -> Optional[str]:
+    try:
+        av = round(float(aspect_deg), 6)
+    except Exception:
+        return None
+    aspects = getattr(chart.Chart, "Aspects", None)
+    if not aspects:
+        return None
+    for idx, deg in enumerate(aspects):
+        try:
+            if abs(float(deg) - av) < 1e-3:
+                return _aspect_color_role(options, idx)
+        except Exception:
+            continue
+    return None
 
 
 # Inverse of circumambulation.planet_label (circumambulation.py:992): the brain
@@ -1055,31 +1206,52 @@ def _primdir_point_glyph(point_id: Any) -> Optional[str]:
     return primdir_point_glyph(point_id)
 
 
-def _primdir_prom_parts(pds, pd) -> list[dict[str, Any]]:
+def _primdir_prom_parts(pds, pd, *, display_options=None) -> list[dict[str, Any]]:
     chrt = pds.chart
-    options = pds.options
+    options = display_options if display_options is not None else pds.options
     txt = _text_color(options)
 
     if pd.promasp == chart.Chart.MIDPOINT or pd.sigasp in (chart.Chart.RAPTPAR, chart.Chart.RAPTCONTRAPAR):
         return [
-            _display_part(_planet_glyph(pd.prom), glyph=True, color=_planet_color(chrt, options, pd.prom)),
-            _display_part(_planet_glyph(pd.prom2), glyph=True, color=_planet_color(chrt, options, pd.prom2)),
+            _display_part(
+                _planet_glyph(pd.prom),
+                glyph=True,
+                color=_planet_color(chrt, options, pd.prom),
+                color_role=_planet_color_role(chrt, options, pd.prom),
+            ),
+            _display_part(
+                _planet_glyph(pd.prom2),
+                glyph=True,
+                color=_planet_color(chrt, options, pd.prom2),
+                color_role=_planet_color_role(chrt, options, pd.prom2),
+            ),
         ]
 
     if PrimDir.ANTISCION <= pd.prom < PrimDir.TERM:
         parts: list[dict[str, Any]] = []
         if pd.promasp != chart.Chart.CONJUNCTIO:
-            parts.append(_display_part(_aspect_glyph(pd.promasp), glyph=True, color=_aspect_color(options, pd.promasp)))
+            parts.append(_display_part(
+                _aspect_glyph(pd.promasp),
+                glyph=True,
+                color=_aspect_color(options, pd.promasp),
+                color_role=_aspect_color_role(options, pd.promasp),
+            ))
         parts.append(_display_part(
             mtexts.txts['ContraAntis'] if pd.prom >= PrimDir.CONTRAANT else mtexts.txts['Antis'],
             color=txt,
+            color_role=_TEXT_COLOR_ROLE,
         ))
         if pd.prom in (PrimDir.ANTISCIONLOF, PrimDir.CONTRAANTLOF):
-            parts.append(_display_part(common.common.fortune, glyph=True, color=_lof_color(options)))
+            parts.append(_display_part(
+                common.common.fortune,
+                glyph=True,
+                color=_lof_color(options),
+                color_role=_lof_color_role(options),
+            ))
         elif pd.prom in (PrimDir.ANTISCIONASC, PrimDir.CONTRAANTASC):
-            parts.append(_display_part(mtexts.txts['Asc'], color=txt))
+            parts.append(_display_part(mtexts.txts['Asc'], color=txt, color_role=_TEXT_COLOR_ROLE))
         elif pd.prom in (PrimDir.ANTISCIONMC, PrimDir.CONTRAANTMC):
-            parts.append(_display_part(mtexts.txts['MC'], color=txt))
+            parts.append(_display_part(mtexts.txts['MC'], color=txt, color_role=_TEXT_COLOR_ROLE))
         else:
             antoffs = PrimDir.CONTRAANT if pd.prom >= PrimDir.CONTRAANT else PrimDir.ANTISCION
             planet_id = pd.prom - antoffs
@@ -1087,21 +1259,37 @@ def _primdir_prom_parts(pds, pd) -> list[dict[str, Any]]:
                 _planet_glyph(planet_id),
                 glyph=True,
                 color=_antiscion_planet_color(chrt, options, planet_id),
+                color_role=_antiscion_planet_color_role(chrt, options, planet_id),
             ))
         return [p for p in parts if p.get("text")]
 
     if PrimDir.TERM <= pd.prom < PrimDir.FIXSTAR:
         sign_idx = pd.prom - PrimDir.TERM
         return [
-            _display_part(_sign_glyph(options, sign_idx), glyph=True, color=_sign_color(options, sign_idx)),
-            _display_part(_planet_glyph(pd.prom2), glyph=True, color=_planet_color(chrt, options, pd.prom2)),
+            _display_part(
+                _sign_glyph(options, sign_idx),
+                glyph=True,
+                color=_sign_color(options, sign_idx),
+                color_role=_sign_color_role(options, sign_idx),
+            ),
+            _display_part(
+                _planet_glyph(pd.prom2),
+                glyph=True,
+                color=_planet_color(chrt, options, pd.prom2),
+                color_role=_planet_color_role(chrt, options, pd.prom2),
+            ),
         ]
 
     if pd.prom >= PrimDir.FIXSTAR:
-        return [_display_part(_prom_label(pds, pd), color=txt)]
+        return [_display_part(_prom_label(pds, pd), color=txt, color_role=_TEXT_COLOR_ROLE)]
 
     if pd.prom == PrimDir.LOF:
-        return [_display_part(common.common.fortune, glyph=True, color=_lof_color(options))]
+        return [_display_part(
+            common.common.fortune,
+            glyph=True,
+            color=_lof_color(options),
+            color_role=_lof_color_role(options),
+        )]
 
     if pd.prom == PrimDir.CUSTOMERPD:
         natal = _natal_promissor_spec(chrt, getattr(pd, "promdyn", None))
@@ -1109,30 +1297,59 @@ def _primdir_prom_parts(pds, pd) -> list[dict[str, Any]]:
             body_id = int(natal.get("bodyId", -1))
             return [
                 _natal_marker_part(_text_color(options)),
-                _display_part(_planet_glyph(body_id), glyph=True, color=_planet_color(chrt, options, body_id)),
+                _display_part(
+                    _planet_glyph(body_id),
+                    glyph=True,
+                    color=_planet_color(chrt, options, body_id),
+                    color_role=_planet_color_role(chrt, options, body_id),
+                ),
             ]
         if getattr(pd, 'promdyn', None) == 'chiron':
-            return [_display_part(_planet_glyph(astrology.SE_CHIRON), glyph=True, color=_chiron_color(options))]
-        return [_display_part(pds._get_dynamic_point_label(pd.promdyn, True), color=txt)]
+            return [_display_part(
+                _planet_glyph(astrology.SE_CHIRON),
+                glyph=True,
+                color=_chiron_color(options),
+                color_role=_chiron_color_role(options),
+            )]
+        return [_display_part(
+            pds._get_dynamic_point_label(pd.promdyn, True),
+            color=txt,
+            color_role=_TEXT_COLOR_ROLE,
+        )]
 
     if (angle_label := primdir_angle_label(pd.prom)) is not None:
         parts = []
         if pd.promasp != chart.Chart.CONJUNCTIO:
-            parts.append(_display_part(_aspect_glyph(pd.promasp), glyph=True, color=_aspect_color(options, pd.promasp)))
-        parts.append(_display_part(angle_label, color=txt))
+            parts.append(_display_part(
+                _aspect_glyph(pd.promasp),
+                glyph=True,
+                color=_aspect_color(options, pd.promasp),
+                color_role=_aspect_color_role(options, pd.promasp),
+            ))
+        parts.append(_display_part(angle_label, color=txt, color_role=_TEXT_COLOR_ROLE))
         return [p for p in parts if p.get("text")]
 
     if (house_cusp_label := primdir_house_cusp_label(pd.prom)) is not None:
-        return [_display_part(house_cusp_label, color=txt)]
+        return [_display_part(house_cusp_label, color=txt, color_role=_TEXT_COLOR_ROLE)]
 
     parts = []
     if pd.promasp != chart.Chart.CONJUNCTIO:
-        parts.append(_display_part(_aspect_glyph(pd.promasp), glyph=True, color=_aspect_color(options, pd.promasp)))
+        parts.append(_display_part(
+            _aspect_glyph(pd.promasp),
+            glyph=True,
+            color=_aspect_color(options, pd.promasp),
+            color_role=_aspect_color_role(options, pd.promasp),
+        ))
     planet_id = primdir_planet_id(pd.prom)
     if planet_id is not None:
-        parts.append(_display_part(_planet_glyph(planet_id), glyph=True, color=_planet_color(chrt, options, planet_id)))
+        parts.append(_display_part(
+            _planet_glyph(planet_id),
+            glyph=True,
+            color=_planet_color(chrt, options, planet_id),
+            color_role=_planet_color_role(chrt, options, planet_id),
+        ))
     else:
-        parts.append(_display_part(_prom_label(pds, pd), color=txt))
+        parts.append(_display_part(_prom_label(pds, pd), color=txt, color_role=_TEXT_COLOR_ROLE))
     return [p for p in parts if p.get("text")]
 
 
@@ -1154,13 +1371,18 @@ def _custom_significator_display_parts(chrt, options, spec: Optional[dict[str, A
                 try:
                     se_id = int(segment.get("seId"))
                     glyph = common.common.get_planet_glyph(se_id)
-                    parts.append(_display_part(glyph, glyph=True, color=_planet_color(chrt, options, se_id)))
+                    parts.append(_display_part(
+                        glyph,
+                        glyph=True,
+                        color=_planet_color(chrt, options, se_id),
+                        color_role=_planet_color_role(chrt, options, se_id),
+                    ))
                 except Exception:
-                    parts.append(_display_part(text, glyph=True, color=txt))
+                    parts.append(_display_part(text, glyph=True, color=txt, color_role=_TEXT_COLOR_ROLE))
             elif kind == "glyph":
-                parts.append(_display_part(text, glyph=True, color=txt))
+                parts.append(_display_part(text, glyph=True, color=txt, color_role=_TEXT_COLOR_ROLE))
             else:
-                parts.append(_display_part(text, color=txt))
+                parts.append(_display_part(text, color=txt, color_role=_TEXT_COLOR_ROLE))
         if parts:
             return parts
 
@@ -1168,68 +1390,103 @@ def _custom_significator_display_parts(chrt, options, spec: Optional[dict[str, A
     marker = str(spec.get("display_marker") or "")
     if glyph:
         color = txt
+        color_role = _TEXT_COLOR_ROLE
         try:
-            color = _planet_color(chrt, options, int(spec.get("display_planet_id")))
+            planet_id = int(spec.get("display_planet_id"))
+            color = _planet_color(chrt, options, planet_id)
+            color_role = _planet_color_role(chrt, options, planet_id)
         except Exception:
             if glyph == getattr(common.common, "fortune", None):
                 color = _lof_color(options)
-        parts = [_display_part(glyph, glyph=True, color=color)]
+                color_role = _lof_color_role(options)
+        parts = [_display_part(glyph, glyph=True, color=color, color_role=color_role)]
         if marker:
-            parts.append(_display_part(marker, color=txt))
+            parts.append(_display_part(marker, color=txt, color_role=_TEXT_COLOR_ROLE))
         return parts
     label = str(spec.get("label") or "")
     if label:
-        return [_display_part(label, color=txt)]
+        return [_display_part(label, color=txt, color_role=_TEXT_COLOR_ROLE)]
     return None
 
 
-def _primdir_sig_parts(pds, pd) -> list[dict[str, Any]]:
+def _primdir_sig_parts(pds, pd, *, display_options=None) -> list[dict[str, Any]]:
     chrt = pds.chart
-    options = pds.options
+    options = display_options if display_options is not None else pds.options
     txt = _text_color(options)
 
     if pd.sigasp in (chart.Chart.PARALLEL, chart.Chart.CONTRAPARALLEL):
         partxt = 'Y' if pd.parallelaxis == 0 and pd.sigasp == chart.Chart.CONTRAPARALLEL else 'X'
         parts = [
-            _display_part(partxt, glyph=True, color=getattr(options, "clrperegrin", txt)),
+            _display_part(
+                partxt,
+                glyph=True,
+                color=getattr(options, "clrperegrin", txt),
+                color_role=_PEREGRIN_COLOR_ROLE,
+            ),
         ]
         sig_label = primdir_angle_label(pd.sig) or primdir_house_cusp_label(pd.sig)
         if sig_label is not None:
-            parts.append(_display_part(sig_label, color=txt))
+            parts.append(_display_part(sig_label, color=txt, color_role=_TEXT_COLOR_ROLE))
         else:
-            parts.append(_display_part(_planet_glyph(pd.sig), glyph=True, color=_planet_color(chrt, options, pd.sig)))
+            parts.append(_display_part(
+                _planet_glyph(pd.sig),
+                glyph=True,
+                color=_planet_color(chrt, options, pd.sig),
+                color_role=_planet_color_role(chrt, options, pd.sig),
+            ))
         if pd.parallelaxis != 0:
             angle_label = primdir_angle_label(pd.parallelaxis, parens=True)
             if angle_label is not None:
-                parts.append(_display_part(angle_label, color=txt))
+                parts.append(_display_part(angle_label, color=txt, color_role=_TEXT_COLOR_ROLE))
         return [p for p in parts if p.get("text")]
 
     if pd.sigasp in (chart.Chart.RAPTPAR, chart.Chart.RAPTCONTRAPAR):
         angle_label = primdir_angle_label(pd.parallelaxis, parens=True)
         return [
-            _display_part('R', color=txt),
-            _display_part('X', glyph=True, color=getattr(options, "clrperegrin", txt)),
-            _display_part(angle_label or "", color=txt),
+            _display_part('R', color=txt, color_role=_TEXT_COLOR_ROLE),
+            _display_part(
+                'X',
+                glyph=True,
+                color=getattr(options, "clrperegrin", txt),
+                color_role=_PEREGRIN_COLOR_ROLE,
+            ),
+            _display_part(angle_label or "", color=txt, color_role=_TEXT_COLOR_ROLE),
         ]
 
     if pd.sig == PrimDir.LOF:
         parts = []
         if pd.mundane:
-            parts.append(_display_part(_aspect_glyph(pd.sigasp), glyph=True, color=_aspect_color(options, pd.sigasp)))
-        parts.append(_display_part(common.common.fortune, glyph=True, color=_lof_color(options)))
+            parts.append(_display_part(
+                _aspect_glyph(pd.sigasp),
+                glyph=True,
+                color=_aspect_color(options, pd.sigasp),
+                color_role=_aspect_color_role(options, pd.sigasp),
+            ))
+        parts.append(_display_part(
+            common.common.fortune,
+            glyph=True,
+            color=_lof_color(options),
+            color_role=_lof_color_role(options),
+        ))
         return [p for p in parts if p.get("text")]
 
     if pd.sig == PrimDir.SYZ:
-        return [_display_part(mtexts.txts['Syzygy'], color=txt)]
+        return [_display_part(mtexts.txts['Syzygy'], color=txt, color_role=_TEXT_COLOR_ROLE)]
 
     if pd.sig == PrimDir.CUSTOMERPD:
         if getattr(pd, 'sigdyn', None) == 'chiron':
-            return [_display_part(_planet_glyph(astrology.SE_CHIRON), glyph=True, color=_chiron_color(options))]
+            return [_display_part(
+                _planet_glyph(astrology.SE_CHIRON),
+                glyph=True,
+                color=_chiron_color(options),
+                color_role=_chiron_color_role(options),
+            )]
         if getattr(pd, 'sigdyn', None) == 'vertex':
             return [_display_part(
                 common.common.get_planet_glyph(common.CHART_OBJECT_VERTEX),
                 glyph=True,
                 color=_vertex_color(options),
+                color_role=_vertex_color_role(options),
             )]
         if getattr(pd, 'sigdyn', None) in (_CONTEXT_SIG_KEY, "user_sig"):
             parts = _custom_significator_display_parts(
@@ -1239,22 +1496,36 @@ def _primdir_sig_parts(pds, pd) -> list[dict[str, Any]]:
             )
             if parts:
                 return parts
-        return [_display_part(pds._get_dynamic_point_label(pd.sigdyn, False), color=txt)]
+        return [_display_part(
+            pds._get_dynamic_point_label(pd.sigdyn, False),
+            color=txt,
+            color_role=_TEXT_COLOR_ROLE,
+        )]
 
     if (angle_label := primdir_angle_label(pd.sig)) is not None:
-        return [_display_part(angle_label, color=txt)]
+        return [_display_part(angle_label, color=txt, color_role=_TEXT_COLOR_ROLE)]
 
     if (house_cusp_label := primdir_house_cusp_label(pd.sig)) is not None:
-        return [_display_part(house_cusp_label, color=txt)]
+        return [_display_part(house_cusp_label, color=txt, color_role=_TEXT_COLOR_ROLE)]
 
     parts = []
     if pd.sigasp != chart.Chart.CONJUNCTIO:
-        parts.append(_display_part(_aspect_glyph(pd.sigasp), glyph=True, color=_aspect_color(options, pd.sigasp)))
+        parts.append(_display_part(
+            _aspect_glyph(pd.sigasp),
+            glyph=True,
+            color=_aspect_color(options, pd.sigasp),
+            color_role=_aspect_color_role(options, pd.sigasp),
+        ))
     planet_id = primdir_planet_id(pd.sig)
     if planet_id is not None:
-        parts.append(_display_part(_planet_glyph(planet_id), glyph=True, color=_planet_color(chrt, options, planet_id)))
+        parts.append(_display_part(
+            _planet_glyph(planet_id),
+            glyph=True,
+            color=_planet_color(chrt, options, planet_id),
+            color_role=_planet_color_role(chrt, options, planet_id),
+        ))
     else:
-        parts.append(_display_part(_sig_label(pds, pd), color=txt))
+        parts.append(_display_part(_sig_label(pds, pd), color=txt, color_role=_TEXT_COLOR_ROLE))
     return [p for p in parts if p.get("text")]
 
 
@@ -1543,7 +1814,17 @@ class DirectionsService:
                 with _temporary_custom_significator(radix, normalized_sig):
                     while True:
                         pds = _project(radix, pd_opts, range_mode, direction)
-                        rows = [_row(pds, pd, radix_jd, reference_chart=radix) for pd in pds.pds]
+                        display_options = effective_display_options(pds.options)
+                        rows = [
+                            _row(
+                                pds,
+                                pd,
+                                radix_jd,
+                                reference_chart=radix,
+                                display_options=display_options,
+                            )
+                            for pd in pds.pds
+                        ]
                         if rows or not windowed or normalized_seek == "exact" or searched_windows >= 40:
                             break
                         lo, hi = getattr(pd_opts, "_pd_range_bounds_override")
@@ -1729,12 +2010,31 @@ class DirectionsService:
             radix_jd = float(radix.time.jd) if getattr(radix, "time", None) is not None else None
             with _temporary_custom_significator(sr_chart, normalized_sig):
                 pds = _project(sr_chart, opts, range_mode, direction)
+                display_options = effective_display_options(pds.options)
                 if getattr(opts, "pdrevshownatalpromissors", False):
                     with _temporary_natal_radix_promissors(sr_chart, radix, pds.options):
                         _append_natal_radix_promissor_directions(pds, radix)
-                        rows = [_row(pds, pd, radix_jd, reference_chart=sr_chart) for pd in pds.pds]
+                        rows = [
+                            _row(
+                                pds,
+                                pd,
+                                radix_jd,
+                                reference_chart=sr_chart,
+                                display_options=display_options,
+                            )
+                            for pd in pds.pds
+                        ]
                 else:
-                    rows = [_row(pds, pd, radix_jd, reference_chart=sr_chart) for pd in pds.pds]
+                    rows = [
+                        _row(
+                            pds,
+                            pd,
+                            radix_jd,
+                            reference_chart=sr_chart,
+                            display_options=display_options,
+                        )
+                        for pd in pds.pds
+                    ]
             title = (mtexts.txts.get("MonthlyDirections", "Monthly Directions")
                      if sr_chart.htype == chart.Chart.LUNAR
                      else mtexts.txts.get("AnnualDirections", "Annual Directions"))
@@ -1828,6 +2128,114 @@ def _reference_age_years(radix, value: Optional[str]) -> Optional[float]:
         return max(0.0, (float(reference_jd) - float(radix.time.jd)) / 365.2425)
     except Exception:
         return None
+
+
+def _secondary_row_display_color(
+    row,
+    metadata_key: str,
+    catalog,
+    object_id: str,
+    display_options,
+    source_options=None,
+) -> Optional[str]:
+    metadata = getattr(row, "metadata", None)
+    if not isinstance(metadata, dict):
+        return None
+    payload = metadata.get(metadata_key)
+    if not isinstance(payload, dict):
+        return None
+    fallback = payload.get("glyph_color")
+    obj = catalog.get(object_id) if catalog is not None else None
+    color = object_glyph_color(
+        display_options,
+        obj,
+        payload.get("dignity_code"),
+        fallback=fallback,
+        source_options=source_options,
+    )
+    return _rgb_css(color) if color is not None else None
+
+
+def _secondary_row_display_color_role(
+    row,
+    metadata_key: str,
+    catalog,
+    object_id: str,
+    display_options,
+    resolved_color: Optional[str],
+) -> Optional[str]:
+    metadata = getattr(row, "metadata", None)
+    if not isinstance(metadata, dict):
+        return None
+    payload = metadata.get(metadata_key)
+    if not isinstance(payload, dict):
+        return None
+    obj = catalog.get(object_id) if catalog is not None else None
+    return object_glyph_color_role(
+        display_options,
+        obj,
+        payload.get("dignity_code"),
+        resolved_color=resolved_color,
+    )
+
+
+def _apply_secondary_display_palette(
+    serialized: list[dict[str, Any]],
+    rows,
+    catalog,
+    display_options,
+    source_options=None,
+) -> None:
+    """Recolor final secondary-direction JSON from existing semantic metadata."""
+    for payload, source in zip(serialized, rows):
+        fields = payload.get("fields")
+        if not isinstance(fields, dict):
+            continue
+        prom_color = _secondary_row_display_color(
+            source,
+            "prom_display",
+            catalog,
+            source.promittor_id,
+            display_options,
+            source_options,
+        )
+        sig_color = _secondary_row_display_color(
+            source,
+            "sig_display",
+            catalog,
+            source.significator_id,
+            display_options,
+            source_options,
+        )
+        fields["promColor"] = prom_color
+        fields["sigColor"] = sig_color
+        fields["promColorRole"] = _secondary_row_display_color_role(
+            source,
+            "prom_display",
+            catalog,
+            source.promittor_id,
+            display_options,
+            prom_color,
+        )
+        fields["sigColorRole"] = _secondary_row_display_color_role(
+            source,
+            "sig_display",
+            catalog,
+            source.significator_id,
+            display_options,
+            sig_color,
+        )
+        try:
+            aspect_index = int(fields.get("aspectIndex"))
+            aspect_color = _rgb_css(display_options.clraspect[aspect_index])
+            fields["aspectColor"] = aspect_color
+            fields["aspectColorRole"] = aspect_color_role(
+                display_options,
+                aspect_index,
+                resolved_color=aspect_color,
+            )
+        except Exception:
+            pass
 
 
 def _focused_secondary_age_window(radix, reference_datetime: Optional[str], method: int) -> tuple[float, float, Optional[float]]:
@@ -1961,8 +2369,18 @@ class SecondaryDirectionsService:
                 direction=direction,
                 reference_datetime=reference_datetime,
             )
+            source_display_options = (
+                getattr(radix, "options", None) or chart_snapshot_service.options
+            )
+            display_options = effective_display_options(source_display_options)
             serialized = _secdir.serialize_secondary_rows(radix, rows, catalog)
-            display_options = getattr(radix, "options", None) or chart_snapshot_service.options
+            _apply_secondary_display_palette(
+                serialized,
+                rows,
+                catalog,
+                display_options,
+                source_display_options,
+            )
             for row in serialized:
                 row["displayDate"] = _display_date_from_iso(row.get("date"), display_options)
                 row["sessionLabel"] = _direction_event_session_label(
@@ -2271,11 +2689,12 @@ class CircumambulationService:
                     natal_participator_chart=radix if include_natal_promissors else None,
                 )
             rows = projection.get("content") or []
+            display_options = effective_display_options(opts)
             serialized = [
                 self._serialize_row(
                     r,
                     source_chart=source_chart,
-                    opts=opts,
+                    opts=display_options,
                     age_offset=age_offset,
                     significator_label=(
                         str(normalized_sig.get("label") or "").strip()
@@ -2364,12 +2783,15 @@ class CircumambulationService:
                 "sourceMarker": p.get("source_marker"),
                 "planetGlyph": _participating_planet_glyph(p.get("planet")),
                 "planetColor": _rgb_css(_planet_color(source_chart, opts, pid)) if pid is not None else None,
+                "planetColorRole": _planet_color_role(source_chart, opts, pid) if pid is not None else None,
                 "degreeText": _circum_degree_text(p.get("lam")),
                 "degreeSignIndex": part_sign_index,
                 "degreeSignGlyph": _sign_glyph(opts, part_sign_index),
                 "degreeSignColor": _rgb_css(_sign_color(opts, part_sign_index)),
+                "degreeSignColorRole": _sign_color_role(opts, part_sign_index),
                 "aspectGlyph": _aspect_glyph_for_degree(p.get("aspect")),
                 "aspectColor": _rgb_css(_aspect_color_for_degree(opts, p.get("aspect"))),
+                "aspectColorRole": _aspect_color_role_for_degree(opts, p.get("aspect")),
                 "aspectDegree": (
                     round(float(p["aspect"]), 3) if p.get("aspect") is not None else None
                 ),
@@ -2394,10 +2816,12 @@ class CircumambulationService:
             "signIndex": sign_index,
             "signGlyph": _sign_glyph(opts, sign_index),
             "signColor": _rgb_css(_sign_color(opts, sign_index)),
+            "signColorRole": _sign_color_role(opts, sign_index),
             "degreeText": _circum_degree_text(row.get("lam_start")),
             "termRulerPid": row.get("term_ruler_pid"),
             "termRulerGlyph": _planet_glyph(row.get("term_ruler_pid")),
             "termRulerColor": _rgb_css(_planet_color(source_chart, opts, row.get("term_ruler_pid"))),
+            "termRulerColorRole": _planet_color_role(source_chart, opts, row.get("term_ruler_pid")),
             "dateStart": _date(row.get("date_start")),
             "dateEnd": _date(row.get("date_end")),
             "displayDateStart": _display_date(row.get("date_start")),

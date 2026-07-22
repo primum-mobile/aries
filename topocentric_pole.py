@@ -23,6 +23,7 @@ import math
 import collections
 
 import astrology
+import util
 
 
 PoleInfo = collections.namedtuple(
@@ -31,7 +32,7 @@ PoleInfo = collections.namedtuple(
 )
 
 
-def compute(lon, lat, ramc, obl, placelat):
+def compute(lon, lat, ramc, obl, placelat, ayanamsha_offset=0.0):
 	"""Return PoleInfo for a point at ecliptic (lon, lat).
 
 	Arguments:
@@ -44,7 +45,12 @@ def compute(lon, lat, ramc, obl, placelat):
 	if raic > 360.0:
 		raic -= 360.0
 
-	ra, decl, _dist = astrology.swe_cotrans(lon, lat, 1.0, -obl)
+	ra, decl, _dist = astrology.swe_cotrans(
+		util.to_tropical_lon(lon, ayanamsha_offset),
+		lat,
+		1.0,
+		-obl,
+	)
 
 	eastern = True
 	if ramc > raic:

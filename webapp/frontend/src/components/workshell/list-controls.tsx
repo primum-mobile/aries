@@ -21,17 +21,138 @@ import {
 import { LIST_BUTTON_PROPS, LIST_PANE_CLASSES } from "@/lib/list-tokens";
 import { cn } from "@/lib/utils";
 
+type PaneControlDensity = "compact" | "grouped" | "standard" | "wide";
+
+export function PaneControlBar({
+  density = "standard",
+  surface = false,
+  wrap = true,
+  className,
+  ...props
+}: React.ComponentProps<"div"> & {
+  density?: PaneControlDensity;
+  surface?: boolean;
+  wrap?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex shrink-0 items-center border-b border-[color:var(--aries-border-subtle)]",
+        wrap && "flex-wrap",
+        surface && "bg-[color:var(--aries-surface-subtle)]",
+        density === "compact" &&
+          "gap-[var(--aries-control-gap)] px-[var(--aries-pane-header-compact-padding-x)] py-[var(--aries-pane-header-compact-padding-y)]",
+        density === "grouped" &&
+          "gap-x-[var(--aries-pane-control-compact-gap-x)] gap-y-[var(--aries-pane-control-gap-y)] px-[var(--aries-pane-header-compact-padding-x)] py-[var(--aries-pane-header-padding-y)]",
+        density === "standard" &&
+          "gap-[var(--aries-pane-control-gap-y)] px-[var(--aries-pane-header-compact-padding-x)] py-[var(--aries-pane-header-padding-y)]",
+        density === "wide" &&
+          "gap-x-[var(--aries-pane-control-gap-x)] gap-y-[var(--aries-pane-control-gap-y)] px-[var(--aries-pane-header-padding-x)] py-[var(--aries-pane-header-padding-y)]",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+export function PaneInfoBar({
+  surface = false,
+  className,
+  ...props
+}: React.ComponentProps<"div"> & { surface?: boolean }) {
+  return (
+    <div
+      className={cn(
+        "flex shrink-0 items-center gap-[var(--aries-control-gap)] border-b border-[color:var(--aries-border-subtle)] px-[var(--aries-pane-header-compact-padding-x)] py-[var(--aries-pane-header-compact-padding-y)] text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)]",
+        surface && "bg-[color:var(--aries-surface-subtle)]",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+export function PaneSelect({
+  className,
+  surface = false,
+  ...props
+}: React.ComponentProps<"select"> & { surface?: boolean }) {
+  return (
+    <select
+      className={cn(
+        "h-[var(--aries-control-height-small)] rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-border-subtle)] px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-small)]",
+        surface ? "bg-[color:var(--aries-surface)]" : "bg-background",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+export function PaneToolbarButton({
+  density = "compact",
+  appearance = "outline",
+  square = false,
+  className,
+  variant,
+  ...props
+}: Omit<React.ComponentProps<typeof Button>, "size"> & {
+  density?: "compact" | "small";
+  appearance?: "ghost" | "outline";
+  square?: boolean;
+}) {
+  return (
+    <Button
+      size={density === "small" ? "sm" : "xs"}
+      variant={variant ?? "ghost"}
+      className={cn(
+        "gap-[var(--aries-control-gap-compact)] rounded-[var(--aries-radius-control-compact)] bg-transparent font-normal text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)] hover:bg-[color:var(--aries-surface-subtle)] [&_svg:not([class*='size-'])]:size-[var(--aries-control-icon-size)]",
+        appearance === "outline"
+          ? "border-[color:var(--aries-border-subtle)]"
+          : "border-transparent text-[color:var(--aries-text-muted)] hover:border-[color:var(--aries-border-subtle)] hover:text-[color:var(--aries-text-primary)]",
+        density === "compact" &&
+          "h-[var(--aries-control-height-compact)] px-[var(--aries-control-icon-padding-x-compact)]",
+        density === "small" &&
+          "h-[var(--aries-control-height-small)] px-[var(--aries-control-padding-x-compact)]",
+        square &&
+          (density === "small"
+            ? "w-[var(--aries-control-height-small)] px-0 [&_svg:not([class*='size-'])]:size-[var(--aries-control-icon-size-default)]"
+            : "w-[var(--aries-control-height-compact)] px-0 [&_svg:not([class*='size-'])]:size-[var(--aries-control-icon-size-default)]"),
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+export const PANE_CONTROL_CLASSES = {
+  checkboxLabel:
+    "inline-flex h-[var(--aries-control-height-small)] items-center gap-[var(--aries-control-gap)] text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)]",
+  rangeStepper:
+    "inline-flex h-[var(--aries-control-height-small)] items-center overflow-hidden rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-border-subtle)]",
+  rangeStepperButton:
+    "h-full px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-small)] hover:bg-accent/40 disabled:opacity-50",
+  rangeStepperValue:
+    "h-full border-x border-[color:var(--aries-border-subtle)] px-[var(--aries-control-padding-x-compact)] py-[var(--aries-control-padding-y)] text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)]",
+  microIconButton:
+    "inline-flex size-[var(--aries-control-height-micro)] shrink-0 items-center justify-center rounded-[var(--aries-radius-control-compact)] hover:bg-accent/40 [&_svg]:size-[var(--aries-control-icon-size)]",
+  stackedHeader:
+    "shrink-0 space-y-[var(--aries-pane-control-gap-y)] border-b border-[color:var(--aries-border-subtle)] px-[var(--aries-pane-header-compact-padding-x)] py-[var(--aries-pane-header-padding-y)] text-[length:var(--aries-font-size-small)]",
+} as const;
+
 export function ListSegmentedControl<T extends number | string>({
   label,
   options,
   value,
   onChange,
+  disabled = false,
   labelPlacement = "tooltip",
 }: {
   label: string;
   options: readonly { value: T; label: string }[];
   value: T;
   onChange: (value: T) => void;
+  disabled?: boolean;
   labelPlacement?: "tooltip" | "inline";
 }) {
   const control = (
@@ -45,9 +166,11 @@ export function ListSegmentedControl<T extends number | string>({
             size="xs"
             variant={active ? "secondary" : "ghost"}
             className={cn(
-              "h-6 rounded-[6px] px-2 text-xs",
+              LIST_PANE_CLASSES.segmentedButton,
+              "text-xs",
               active ? "" : "text-muted-foreground",
             )}
+            disabled={disabled}
             onClick={() => onChange(option.value)}
           >
             {option.label}
@@ -98,38 +221,42 @@ export function ListCalendarStepper({
       <Button
         type="button"
         {...LIST_BUTTON_PROPS.icon}
+        className="[&_svg]:size-[var(--aries-control-icon-size)]"
         onClick={() => onJump(-12)}
         aria-label={previousYearLabel}
       >
-        <ChevronsLeft className="size-3.5" />
+        <ChevronsLeft />
       </Button>
       <Button
         type="button"
         {...LIST_BUTTON_PROPS.icon}
+        className="[&_svg]:size-[var(--aries-control-icon-size)]"
         onClick={() => onJump(-1)}
         aria-label={previousMonthLabel}
       >
-        <ChevronLeft className="size-3.5" />
+        <ChevronLeft />
       </Button>
       <span className={LIST_PANE_CLASSES.calendarLabel}>
-        <CalendarDays className="size-3.5 text-muted-foreground" />
+        <CalendarDays className="size-[var(--aries-control-icon-size)] text-muted-foreground" />
         {label}
       </span>
       <Button
         type="button"
         {...LIST_BUTTON_PROPS.icon}
+        className="[&_svg]:size-[var(--aries-control-icon-size)]"
         onClick={() => onJump(1)}
         aria-label={nextMonthLabel}
       >
-        <ChevronRight className="size-3.5" />
+        <ChevronRight />
       </Button>
       <Button
         type="button"
         {...LIST_BUTTON_PROPS.icon}
+        className="[&_svg]:size-[var(--aries-control-icon-size)]"
         onClick={() => onJump(12)}
         aria-label={nextYearLabel}
       >
-        <ChevronsRight className="size-3.5" />
+        <ChevronsRight />
       </Button>
     </div>
   );
@@ -154,9 +281,9 @@ export function ListToggleDrawer<T extends ListToggleDrawerItem>({
   onToggle: (item: T, active: boolean) => void;
 }) {
   return (
-    <div className="w-full max-h-48 overflow-auto border-t border-border/70 pt-2">
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-        <span className="mr-1 min-w-14 text-[10px] text-muted-foreground">{label}</span>
+    <div className="max-h-[var(--aries-pane-drawer-list-max-height)] w-full overflow-auto border-t border-border/70 pt-[var(--aries-pane-header-padding-y)]">
+      <div className="flex min-w-0 flex-wrap items-center gap-[var(--aries-control-gap)]">
+        <span className="mr-1 min-w-14 text-[length:var(--aries-font-size-section)] text-muted-foreground">{label}</span>
         {items.map((item) => {
           const active = isActive(item);
           return (
@@ -167,7 +294,7 @@ export function ListToggleDrawer<T extends ListToggleDrawerItem>({
               variant={active ? "default" : "outline"}
               aria-pressed={active}
               onClick={() => onToggle(item, !active)}
-              className="h-6 max-w-44 justify-start gap-1 px-2 text-[11px]"
+              className="h-[var(--aries-control-height-compact)] max-w-44 justify-start gap-[var(--aries-control-gap-compact)] rounded-[var(--aries-radius-control-compact)] px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-small)]"
             >
               {item.glyph ? (
                 <span className="aries-search-glyph shrink-0" style={{ fontFamily: "'AriesMorinus'" }}>
@@ -176,7 +303,7 @@ export function ListToggleDrawer<T extends ListToggleDrawerItem>({
               ) : null}
               <span className="truncate">{item.label}</span>
               {item.marker ? (
-                <span className="text-[10px] text-muted-foreground">{item.marker}</span>
+                <span className="text-[length:var(--aries-font-size-section)] text-muted-foreground">{item.marker}</span>
               ) : null}
             </Button>
           );

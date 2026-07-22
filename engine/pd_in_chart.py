@@ -119,6 +119,9 @@ def apply_exact_planet_to_angle_projection(pdchart, radix, event, signed_arc, op
     A row may calculate the promissor on its ecliptic foot while a ``From the
     planets`` chart otherwise carries the physical body's latitude.  The wheel
     must use the same point as the row or an exact contact cannot look exact.
+    Other selected rows remain honest whole-sky projections; making their event
+    exact requires a dedicated aspect/event marker rather than relocating the
+    physical promissor glyph.
     """
     if not isinstance(event, dict) or bool(event.get("mundane", False)):
         return False
@@ -271,8 +274,11 @@ def compute_terrestrial_pd_chart(radix, da, options):
         pdchart = chart.Chart(radix.name, radix.male, tim, radix.place, chart.Chart.PDINCHART, '', pd_options, False)
     else:
         pdchart = chart.Chart(radix.name, radix.male, radix.time, radix.place, chart.Chart.PDINCHART, '', pd_options, False)
-        raequasc, declequasc, dist = astrology.swe_cotrans(pdchart.houses.ascmc[houses.Houses.EQUASC], 0.0, 1.0, -radix.obl[0])
-        pdchart.planets.calcMundaneWithoutSM(da, radix.obl[0], pdchart.place.lat, pdchart.houses.ascmc2, raequasc)
+        raequasc, declequasc, dist = astrology.swe_cotrans(
+            util.to_tropical_lon(pdchart.houses.ascmc[houses.Houses.EQUASC], pdchart.ayanamsha_offset),
+            0.0, 1.0, -radix.obl[0],
+        )
+        pdchart.planets.calcMundaneWithoutSM(da, radix.obl[0], pdchart.place.lat, pdchart.houses.ascmc2, raequasc, pdchart.ayanamsha_offset)
     pdchart.fortune.recalcForMundaneChart(radix.fortune.fortune[fortune.Fortune.LON], radix.fortune.fortune[fortune.Fortune.LAT], radix.fortune.fortune[fortune.Fortune.RA], radix.fortune.fortune[fortune.Fortune.DECL], pdchart.houses.ascmc2, pdchart.raequasc, pdchart.obl[0], pdchart.place.lat)
     pdchart._pd_arc_signed = float(da)
     pdchart._pd_arc_abs = math.fabs(float(da))
@@ -307,25 +313,28 @@ def compute_celestial_pd_chart(radix, da, options):
             # the half-migration that displaced exact contacts on the wheel.
             pdchart.apply_mundane_profection(pdchartpls, radix.place.lat, radix.obl[0])
         else:
-            pdchart.planets.calcRegioPDsInChartsPos(pdchart.houses.ascmc2, pdchartpls.planets.planets, radix.place.lat, radix.obl[0])
-            pdchart.fortune.calcRegioPDsInChartsPos(pdchart.houses.ascmc2, pdchartpls.fortune, radix.place.lat, radix.obl[0])
+            pdchart.planets.calcRegioPDsInChartsPos(pdchart.houses.ascmc2, pdchartpls.planets.planets, radix.place.lat, radix.obl[0], pdchart.ayanamsha_offset)
+            pdchart.fortune.calcRegioPDsInChartsPos(pdchart.houses.ascmc2, pdchartpls.fortune, radix.place.lat, radix.obl[0], pdchart.ayanamsha_offset)
     elif pd_options.pdincharttyp == FROMZODIACALPOS:
         pdchart = chart.Chart(radix.name, radix.male, tim, radix.place, chart.Chart.PDINCHART, '', pd_options, False, chart.Chart.YEAR, True)
         pdchartpls = chart.Chart(radix.name, radix.male, radix.time, radix.place, chart.Chart.PDINCHART, '', pd_options, False, chart.Chart.YEAR, True)
         if pl in _PLACIDIAN_POSITION_SYSTEMS:
             pdchart.apply_mundane_profection(pdchartpls, radix.place.lat, radix.obl[0])
         else:
-            pdchart.planets.calcRegioPDsInChartsPos(pdchart.houses.ascmc2, pdchartpls.planets.planets, radix.place.lat, radix.obl[0])
-            pdchart.fortune.calcRegioPDsInChartsPos(pdchart.houses.ascmc2, pdchartpls.fortune, radix.place.lat, radix.obl[0])
+            pdchart.planets.calcRegioPDsInChartsPos(pdchart.houses.ascmc2, pdchartpls.planets.planets, radix.place.lat, radix.obl[0], pdchart.ayanamsha_offset)
+            pdchart.fortune.calcRegioPDsInChartsPos(pdchart.houses.ascmc2, pdchartpls.fortune, radix.place.lat, radix.obl[0], pdchart.ayanamsha_offset)
     else:  # Full Astronomical Procedure
         pdchart = chart.Chart(radix.name, radix.male, tim, radix.place, chart.Chart.PDINCHART, '', pd_options, False)
         pdchartpls = chart.Chart(radix.name, radix.male, radix.time, radix.place, chart.Chart.PDINCHART, '', pd_options, False)
         pdpls = pdchartpls.planets.planets
         if pd_options.pdinchartsecmotion:
             pdpls = pdchart.planets.planets
-        raequasc, declequasc, dist = astrology.swe_cotrans(pdchart.houses.ascmc[houses.Houses.EQUASC], 0.0, 1.0, -radix.obl[0])
-        pdchart.planets.calcFullAstronomicalProc(da, radix.obl[0], pdpls, pdchart.place.lat, pdchart.houses.ascmc2, raequasc)
-        pdchart.fortune.calcFullAstronomicalProc(pdchartpls.fortune, da, radix.obl[0])
+        raequasc, declequasc, dist = astrology.swe_cotrans(
+            util.to_tropical_lon(pdchart.houses.ascmc[houses.Houses.EQUASC], pdchart.ayanamsha_offset),
+            0.0, 1.0, -radix.obl[0],
+        )
+        pdchart.planets.calcFullAstronomicalProc(da, radix.obl[0], pdpls, pdchart.place.lat, pdchart.houses.ascmc2, raequasc, pdchart.ayanamsha_offset)
+        pdchart.fortune.calcFullAstronomicalProc(pdchartpls.fortune, da, radix.obl[0], pdchart.ayanamsha_offset)
     pdchart._pd_arc_signed = float(da)
     pdchart._pd_arc_abs = math.fabs(float(da))
     pdchart._pd_direct = (da >= 0.0)

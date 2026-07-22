@@ -96,7 +96,7 @@ export function SaveToCollectionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm">
+      <DialogContent size="sm">
         <DialogHeader>
           <DialogTitle>{t("saveDialog.title")}</DialogTitle>
           <DialogDescription>

@@ -33,6 +33,7 @@ if str(REPO_ROOT) not in sys.path:
 
 import chart  # engine layer, wx-free — canonical enum constants
 import chartfile
+import default_location as default_location_model
 import note_storage
 from engine import calendar_policy
 from engine import chart_factory  # engine layer, wx-free
@@ -40,6 +41,7 @@ import geonames  # wx-free
 import mtexts  # canonical enum label lists (wx-free, see options_service)
 from webapp.daemon.chart_service import chart_snapshot_service
 from webapp.daemon import notes_service
+from webapp.daemon.event_time import DefaultLocationClock
 from webapp.frontend.scripts import export_chart_json
 
 
@@ -293,11 +295,88 @@ class EditorService:
             path = path.with_suffix(".jsonl")
         return path
 
+    def _default_location_fields(self, when: datetime.datetime) -> dict[str, Any]:
+        """Saved Default Location in the chart-editor field contract."""
+        opts = self._opts
+        if not default_location_model.has_default_location(opts):
+            return {}
+        try:
+            place = default_location_model.place_from_options(
+                opts, require_present=True,
+            )
+        except Exception:
+            return {}
+        if place is None:
+            return {}
+        lon = float(place.lon)
+        lat = float(place.lat)
+        lon_d, lon_m, lon_s = _dms_display(lon)
+        lat_d, lat_m, lat_s = _dms_display(lat)
+        zone = DefaultLocationClock(opts).local_zone_fields((
+            when.year, when.month, when.day,
+            when.hour, when.minute, when.second,
+        ))
+        return {
+            "lonDeg": lon_d,
+            "lonMin": lon_m,
+            "lonSec": lon_s,
+            "east": lon >= 0.0,
+            "latDeg": lat_d,
+            "latMin": lat_m,
+            "latSec": lat_s,
+            "north": lat >= 0.0,
+            "lon": round(lon, 6),
+            "lat": round(lat, 6),
+            "place": str(getattr(place, "place", "") or "")[:20],
+            "plus": bool(zone["plus"]),
+            "zoneHour": int(zone["zh"]),
+            "zoneMin": int(zone["zm"]),
+            "daylightSaving": bool(zone["daylightsaving"]),
+            "tzauto": bool(zone["tzauto"]),
+            "tzid": str(zone["tzid"] or ""),
+            "altitude": int(getattr(place, "altitude", 0) or 0),
+        }
+
+    @staticmethod
+    def _location_is_unspecified(fields: dict[str, Any]) -> bool:
+        if str(fields.get("place", "") or "").strip():
+            return False
+        if str(fields.get("tzid", "") or "").strip():
+            return False
+        for key in (
+            "lon", "lat", "lonDeg", "lonMin", "lonSec",
+            "latDeg", "latMin", "latSec",
+        ):
+            try:
+                if float(fields.get(key, 0) or 0) != 0.0:
+                    return False
+            except (TypeError, ValueError):
+                return False
+        return True
+
+    def _new_chart_fields_with_default_location(
+        self, fields: dict[str, Any], *, when: Optional[datetime.datetime] = None,
+    ) -> dict[str, Any]:
+        """Fill only a new chart's wholly unspecified location.
+
+        Existing records carry an id and must preserve even unusual blank or
+        zero-coordinate data exactly. An explicit new location likewise wins.
+        """
+        prepared = dict(fields)
+        if prepared.get("id") or not self._location_is_unspecified(prepared):
+            return prepared
+        defaults = self._default_location_fields(when or datetime.datetime.now())
+        if defaults:
+            prepared.update(defaults)
+        return prepared
+
     # -- build / preview --------------------------------------------------
     def build_chart(self, fields: dict[str, Any]) -> dict:
         """Normalise fields -> schema-v1 dict -> Chart via chartfile, then return
         the export snapshot (the same payload /api/chart returns)."""
-        record = editor_fields_to_record(fields)
+        record = editor_fields_to_record(
+            self._new_chart_fields_with_default_location(fields),
+        )
         with self._lock:
             chrt = chart_factory.chart_from_record(record, self._opts)
             snapshot = export_chart_json.export_snapshot(chrt, overlay_render_mode="full")
@@ -451,10 +530,9 @@ class EditorService:
 
         Enums come from mtexts.{typeList,calList,zoneList} (wx-free, same lists
         the dialog combo boxes show), keyed by the canonical schema-v1 strings the
-        daemon's _norm_* maps accept. Defaults reproduce personaldatadlg.initialize()
-        (personaldatadlg.py:716) — engine `now`, Male, Radix, Gregorian/Zone, GMT
-        +1h, Auto DST/TZ on, altitude 100 — using the engine enum constants and the
-        Python clock, never a JS Date.
+        daemon's _norm_* maps accept. Identity and time reproduce
+        personaldatadlg.initialize(); place and zone come from Aries' saved
+        Default Location. The daemon owns both, never the browser clock.
         """
         chart_types = [
             {"value": _TYPE_BY_INDEX[i], "label": label}
@@ -504,6 +582,7 @@ class EditorService:
             "altitude": 100,
             "notes": "",
         }
+        defaults.update(self._default_location_fields(now))
         return {
             "chartTypes": chart_types,
             "calendars": calendars,
@@ -530,7 +609,9 @@ class EditorService:
             if not record.get("id"):
                 record["id"] = str(uuid.uuid4())
         else:
-            record = editor_fields_to_record(record_or_fields)
+            record = editor_fields_to_record(
+                self._new_chart_fields_with_default_location(record_or_fields),
+            )
         notes_service.lift_legacy_record_notes(record)
         path = self._resolve_collection_path(collection)
         path.parent.mkdir(parents=True, exist_ok=True)

@@ -21,6 +21,7 @@ import {
 } from "@/stores/workspace-command-snapshot-gate";
 import {
   invalidateDocumentSnapshots,
+  rememberDocumentSnapshot,
   retainDocumentSnapshots,
 } from "@/lib/chart/document-snapshot-cache";
 
@@ -58,6 +59,9 @@ export type DaemonWorkspaceState = {
   lastOptionsChange: {
     refreshedDocumentIds: string[];
     refreshMode: string;
+    styleOnly: boolean;
+    listDataChanged: boolean;
+    langid?: number;
     schemaVersion: number;
     themeVersion: number;
     styleRevision: number;
@@ -109,6 +113,9 @@ export type DaemonWorkspaceState = {
   _applyOptionsChange: (change: {
     refreshedDocumentIds: string[];
     refreshMode?: string | null;
+    styleOnly?: boolean;
+    listDataChanged?: boolean;
+    langid?: number;
     schemaVersion: number;
     themeVersion: number;
     styleRevision: number;
@@ -282,32 +289,60 @@ export const useDaemonWorkspaceStore = create<DaemonWorkspaceState>()((set) => (
     set((state) => {
       const touched = new Set(change.refreshedDocumentIds);
       const touches = (docId: string | undefined) => docId !== undefined && touched.has(docId);
+      const styleOnly = change.styleOnly === true;
+      const listDataChanged = change.listDataChanged !== false;
+      const shouldDiscardDirectSnapshot = (docId: string | undefined) =>
+        !styleOnly &&
+        touches(docId) &&
+        docId !== state.activeDocumentId;
       return {
         lastOptionsChange: {
           ...change,
           refreshMode: change.refreshMode || "recalc",
+          styleOnly,
+          listDataChanged,
           seq: (state.lastOptionsChange?.seq ?? 0) + 1,
         },
-        steppedSnapshot: touches(state.steppedSnapshot?.docId) ? null : state.steppedSnapshot,
-        commandSnapshot: touches(state.commandSnapshot?.docId) ? null : state.commandSnapshot,
+        // Cache invalidation and presented-frame lifetime are separate. Keep
+        // the active chart's exact stepped/command frame visible until the
+        // canonical options refresh publishes its replacement atomically.
+        // Clearing it here exposed the hook's pre-step local snapshot for one
+        // paint, so H made the whole wheel jump back to its initial cursor.
+        steppedSnapshot: shouldDiscardDirectSnapshot(state.steppedSnapshot?.docId)
+          ? null
+          : state.steppedSnapshot,
+        commandSnapshot: shouldDiscardDirectSnapshot(state.commandSnapshot?.docId)
+          ? null
+          : state.commandSnapshot,
       };
     }),
-  pushSteppedSnapshot: (docId, snapshot) =>
+  pushSteppedSnapshot: (docId, snapshot) => {
+    // Normalize the partial overlay before publishing. React renders this exact
+    // object directly, so remembering it in a later effect would expose the raw
+    // step_fast payload for one frame and make the corner overlay strobe.
+    const normalizedSnapshot = rememberDocumentSnapshot(docId, snapshot);
     set((state) => ({
       steppedSnapshot: {
         docId,
-        snapshot,
+        snapshot: normalizedSnapshot,
         seq: (state.steppedSnapshot?.seq ?? 0) + 1,
       },
-    })),
-  pushCommandSnapshot: (docId, snapshot) =>
+    }));
+  },
+  pushCommandSnapshot: (docId, snapshot) => {
+    const normalizedSnapshot = rememberDocumentSnapshot(docId, snapshot);
     set((state) => ({
+      // A later explicit command snapshot supersedes any retained step frame
+      // for the same chart. This keeps the direct-paint channels ordered.
+      steppedSnapshot:
+        state.steppedSnapshot?.docId === docId ? null : state.steppedSnapshot,
       commandSnapshot: {
         docId,
-        snapshot,
+        snapshot: normalizedSnapshot,
         seq: (state.commandSnapshot?.seq ?? 0) + 1,
       },
-    })),
+    }));
+  },
   _setConnection: (connection) => set({ connection }),
 }));
 
@@ -393,6 +428,8 @@ function handleEvent(event: DaemonEvent): void {
       {
         const refreshedIds = event.refreshedDocumentIds ?? [];
         const refreshMode = event.refreshMode || "recalc";
+        const styleOnly = event.styleOnly === true;
+        const listDataChanged = event.listDataChanged !== false;
         const styleIdentity = normalizeOptionsStyleIdentity(event);
         // Empty historically meant "broadcast-only, assume every chart". A
         // targeted PD projection refresh is different: with no open PD chart,
@@ -403,18 +440,21 @@ function handleEvent(event: DaemonEvent): void {
           refreshedIds.length > 0 || targetedEmptyRefresh
             ? refreshedIds
             : store.documents.map((doc) => doc.documentId);
-        invalidateDocumentSnapshots(touchedIds);
+        if (!styleOnly) invalidateDocumentSnapshots(touchedIds);
         store._applyOptionsChange({
           refreshedDocumentIds: touchedIds,
           refreshMode,
+          styleOnly,
+          listDataChanged,
+          langid: event.langid,
           ...styleIdentity,
         });
-        // A settings change re-rendered every open chart. The daemon also fired
-        // per-doc session.changed events (refresh_all_sessions), but those target
-        // each doc individually. Bump the active-doc tick only when that document
-        // is actually in the touched set; targeted child refreshes must stay
-        // decoupled from an active retained list.
-        if (touchedIds.length > 0) {
+        // A semantic settings change re-rendered every open chart. Profile-only
+        // events update root CSS and resident renderer styles; synthesizing a
+        // session tick for them would defeat the paint-only contract and force
+        // snapshots/data geometry to refetch. For real option changes, bump the
+        // active-doc tick only when that document is actually in the touched set.
+        if (!styleOnly && touchedIds.length > 0) {
           const activeTouched =
             store.activeDocumentId != null && touchedIds.includes(store.activeDocumentId);
           store._applySessionChange({

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import wx
+import astrology
 import chart
 import chartalerts
 import moonphasejump
@@ -58,7 +59,8 @@ class ChartSession(object):
 
 	def __init__(self, chrt, radix, options, view_mode=0,
 				 navigation_units=None, navigation_title_label=None,
-				 stepper=None, on_change=None, display_datetime=None, display_anchor_chart=None):
+				 stepper=None, on_change=None, display_datetime=None, display_anchor_chart=None,
+				 lazy_optional_step_features=False):
 		self.chart = chrt
 		self._initial_chart = chrt
 		self.display_datetime = self._normalize_display_datetime(
@@ -79,6 +81,10 @@ class ChartSession(object):
 		self._last_tab_toggle = 0.0
 		self._comparison_toggle_handler = None
 		self._last_change_reason = 'normal'
+		# The Tauri exporter materializes only the selected outer-ring family on
+		# demand. Legacy wx drawing still expects Chart(full=True), so this is an
+		# explicit session capability instead of a global behavior change.
+		self.lazy_optional_step_features = bool(lazy_optional_step_features)
 
 	def _normalized_nav_key(self, keycode):
 		if keycode in self.UP_KEYS:
@@ -122,16 +128,24 @@ class ChartSession(object):
 		delta = -1 if keycode == wx.WXK_LEFT else 1
 		return self.navigate_relative(unit, delta)
 
-	def _forward_stepper_arrow(self, keycode, shift_down=False, alt_down=False, control_down=False, cmd_down=False):
+	def _forward_stepper_arrow(self, keycode, shift_down=False, alt_down=False, control_down=False, cmd_down=False, repeat=1):
 		stepper = self._stepper
 		if stepper is None:
 			return False
 		try:
-			if hasattr(stepper, 'handle_navigation_key') and stepper.handle_navigation_key(
-				keycode, shift_down=shift_down, alt_down=alt_down,
-				control_down=control_down, cmd_down=cmd_down,
-			):
-				return True
+			if hasattr(stepper, 'handle_navigation_key'):
+				if repeat != 1:
+					handled = stepper.handle_navigation_key(
+						keycode, shift_down=shift_down, alt_down=alt_down,
+						control_down=control_down, cmd_down=cmd_down, repeat=repeat,
+					)
+				else:
+					handled = stepper.handle_navigation_key(
+						keycode, shift_down=shift_down, alt_down=alt_down,
+						control_down=control_down, cmd_down=cmd_down,
+					)
+				if handled:
+					return True
 			if keycode == wx.WXK_LEFT and hasattr(stepper, 'step_backward'):
 				stepper.step_backward()
 				return True
@@ -168,6 +182,7 @@ class ChartSession(object):
 			self.chart.name, self.chart.male, newtime, self.chart.place,
 			self.chart.htype, '', self.options, needs_full_chart
 		)
+		self._reuse_step_syzygy_if_valid(newchart)
 		self.change_chart(newchart, display_datetime=step_info['tuple'], change_reason='step')
 		return True
 
@@ -183,10 +198,57 @@ class ChartSession(object):
 			self.chart.name, self.chart.male, newtime, self.chart.place,
 			self.chart.htype, '', self.options, needs_full_chart
 		)
+		self._reuse_step_syzygy_if_valid(newchart)
 		self.change_chart(newchart, change_reason='step')
 		return True
 
+	def _reuse_step_syzygy_if_valid(self, newchart):
+		"""Retain the exact prenatal lunation inside its proven phase interval.
+
+		Syzygy's expensive backward search changes only when the Sun/Moon phase
+		classification crosses conjunction or opposition. The stepped chart has
+		already calculated both bodies, so this check is constant-time and fails
+		closed: any incomplete state leaves the new chart to calculate normally.
+		At a bounded forward phase flip, the previous canonical lunation is passed
+		as the new result's exact opposite seed, avoiding one redundant search.
+		"""
+		if not self.lazy_optional_step_features:
+			return False
+		previous = getattr(getattr(self, 'chart', None), 'syzygy', None)
+		if previous is None or not hasattr(previous, 'newmoon'):
+			return False
+		try:
+			previous_jd = float(previous.time.jd)
+			stepped_jd = float(newchart.time.jd)
+			# Classification repeats after two phase boundaries. A 20-day cap is
+			# deliberately shorter than a synodic month, so a large batched jump
+			# can never mistake the next same-kind lunation for the cached one.
+			if stepped_jd <= previous_jd or stepped_jd - previous_jd >= 20.0:
+				return False
+			sun = newchart.planets.planets[astrology.SE_SUN].data[0]
+			moon = newchart.planets.planets[astrology.SE_MOON].data[0]
+			# Match Syzygy.__init__'s DMS normalization before classification.
+			sd, sm, ss = util.decToDeg(sun)
+			md, mm, ms = util.decToDeg(moon)
+			diff = (md + mm / 60.0 + ms / 3600.0) - (sd + sm / 60.0 + ss / 3600.0)
+			newmoon, ready = previous.isNewMoon(diff)
+			if bool(newmoon) != bool(previous.newmoon):
+				# The new canonical lunation still has to be calculated. Its
+				# secondary/opposite search, however, would rediscover the exact
+				# previous canonical result. Pass that result forward as a
+				# one-shot, fail-closed seed instead of repeating the search.
+				newchart._step_syzygy_previous_opposite = previous
+				return False
+			if ready:
+				return False
+			newchart.syzygy = previous
+			return True
+		except Exception:
+			return False
+
 	def _navigation_requires_full_chart(self):
+		if self.lazy_optional_step_features:
+			return False
 		mode = getattr(self.options, 'showfixstars', options.Options.NONE)
 		return mode in (
 			options.Options.FIXSTARS,

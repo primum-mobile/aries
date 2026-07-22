@@ -41,6 +41,12 @@ from angleatbirth import compute_contacts
 from engine import chart_factory
 from engine import paranatellonta
 from webapp.daemon.chart_service import chart_snapshot_service
+from webapp.daemon.display_palette import (
+    aspect_color_role,
+    chart_body_color_role,
+    effective_display_options,
+    sign_color_role,
+)
 from webapp.daemon.event_time import DefaultLocationClock, table_event_clock
 from webapp.daemon.table_catalog import TABLE_CATALOG
 
@@ -127,6 +133,41 @@ def _rgb_hex(color: Any) -> str | None:
         return None
 
 
+def _set_semantic_color(
+    target: dict[str, Any],
+    color: str | None,
+    role: str | None,
+    *,
+    color_key: str = "color",
+    role_key: str = "colorRole",
+) -> None:
+    """Keep the historical literal while adding a live CSS paint role."""
+    if color:
+        target[color_key] = color
+    if role:
+        target[role_key] = role
+
+
+def _planet_color_role(planet_id: Any, chrt, options, color: str | None) -> str | None:
+    return chart_body_color_role(
+        options,
+        chrt,
+        planet_id,
+        is_vertex=planet_id == common.CHART_OBJECT_VERTEX,
+        resolved_color=color,
+    )
+
+
+def _fortune_color_role(chrt, options, color: str | None) -> str | None:
+    return chart_body_color_role(
+        options,
+        chrt,
+        planets.Planets.PLANETS_NUM - 1,
+        is_fortune=True,
+        resolved_color=color,
+    )
+
+
 def _planet_color(planet_id: int, chrt, options) -> str | None:
     # Faithful port of AspectsWnd._planet_color (aspectswnd.py:94-108): Vertex
     # is always peregrine-colored; useplanetcolors selects the per-planet
@@ -162,8 +203,7 @@ def _planet_cell(planet_id: int, chrt, options, *, align: str | None = "center",
     cell = _glyph(_planet_glyph(planet_id), align=align, emphasis=emphasis)
     cell["planet"] = int(planet_id)
     color = _planet_color(planet_id, chrt, options)
-    if color:
-        cell["color"] = color
+    _set_semantic_color(cell, color, _planet_color_role(planet_id, chrt, options, color))
     return cell
 
 
@@ -173,8 +213,7 @@ def _planet_run(planet_id: int, chrt, options) -> dict[str, Any]:
     # 202-228). Same color resolution as _planet_cell.
     run: dict[str, Any] = {"text": _planet_glyph(planet_id), "glyph": True, "planet": int(planet_id)}
     color = _planet_color(planet_id, chrt, options)
-    if color:
-        run["color"] = color
+    _set_semantic_color(run, color, _planet_color_role(planet_id, chrt, options, color))
     return run
 
 
@@ -214,8 +253,11 @@ def _sign_run(options, sign_index: int, sign: str | None = None) -> dict[str, An
         sign = signs[sign_index] if 0 <= sign_index < len(signs) else ""
     run: dict[str, Any] = {"text": sign, "glyph": True}
     color = _sign_color_hex(options, sign_index)
-    if color:
-        run["color"] = color
+    _set_semantic_color(
+        run,
+        color,
+        sign_color_role(options, sign_index, force_element=True, resolved_color=color),
+    )
     return run
 
 
@@ -224,8 +266,11 @@ def _sign_cell(options, sign_index: int, *, align: str = "center") -> Cell:
     sign = signs[sign_index] if 0 <= sign_index < len(signs) else ""
     cell = _glyph(sign, align=align)
     color = _sign_color_hex(options, sign_index)
-    if color:
-        cell["color"] = color
+    _set_semantic_color(
+        cell,
+        color,
+        sign_color_role(options, sign_index, force_element=True, resolved_color=color),
+    )
     return cell
 
 
@@ -291,8 +336,6 @@ def _new_chart(*args: Any, **kwargs: Any) -> Any:
 def _lon_cell(value: float, chrt, options) -> Cell:
     try:
         lon = util.normalize(float(value))
-        if getattr(options, "ayanamsha", 0) != 0:
-            lon = util.normalize(lon - float(getattr(chrt, "ayanamsha", 0.0)))
         d, m, _s = util.decToDeg(lon)
         sign_idx = int(lon / chart.Chart.SIGN_DEG)
         pos = int(d % chart.Chart.SIGN_DEG)
@@ -309,8 +352,6 @@ def _profection_lon_cell(value: float | None, reference_chart, options) -> Cell:
         return _text("-")
     try:
         lon = util.normalize(float(value))
-        if getattr(options, "ayanamsha", 0) != 0:
-            lon = util.normalize(lon - float(getattr(reference_chart, "ayanamsha", 0.0)))
         d, m, _s = util.decToDeg(lon)
         sign_idx = int(d / chart.Chart.SIGN_DEG)
         pos = int(d % chart.Chart.SIGN_DEG)
@@ -1033,10 +1074,15 @@ def _decennials(chrt, options, binding: dict[str, Any] | None = None, *, current
             if parent_id:
                 expanded_ids.add(parent_id)
         planet_id = int(source_row.get("planet", astrology.SE_SUN))
+        planet_color = _dec_planet_color(chrt, options, planet_id)
+        planet_role = _planet_color_role(planet_id, chrt, options, planet_color)
+        planet_cell = _glyph(_planet_glyph(planet_id))
+        planet_cell["planet"] = planet_id
+        _set_semantic_color(planet_cell, planet_color, planet_role)
         rows.append(_row(
             row_id,
             [
-                _glyph(_planet_glyph(planet_id)),
+                planet_cell,
                 # Start text = fmt_date + year-zero strip (decennialswnd.py:449,666).
                 _text(_dec_strip_year_zeros(decennials.fmt_date(source_row.get("start"))), align="center"),
                 _text(_period_age_text(chrt, source_row.get("start")) if level == 1 else "", align="right"),
@@ -1050,7 +1096,8 @@ def _decennials(chrt, options, binding: dict[str, Any] | None = None, *, current
                 has_children=has_children,
                 extra={
                     "planet": planet_id,
-                    "colorHex": _dec_planet_color(chrt, options, planet_id),
+                    "colorHex": planet_color,
+                    "colorRole": planet_role,
                 },
             ),
         ))
@@ -1066,10 +1113,15 @@ def _decennials(chrt, options, binding: dict[str, Any] | None = None, *, current
                     expanded_ids.add(row_id)
                     expanded_ids.add(l3_id)
                 l3_planet = int(l3.get("planet", astrology.SE_SUN))
+                l3_color = _dec_planet_color(chrt, options, l3_planet)
+                l3_role = _planet_color_role(l3_planet, chrt, options, l3_color)
+                l3_cell = _glyph(_planet_glyph(l3_planet))
+                l3_cell["planet"] = l3_planet
+                _set_semantic_color(l3_cell, l3_color, l3_role)
                 rows.append(_row(
                     l3_id,
                     [
-                        _glyph(_planet_glyph(l3_planet)),
+                        l3_cell,
                         _text(_dec_strip_year_zeros(decennials.fmt_date(l3.get("start"))), align="center"),
                         _text("", align="right"),
                         _text(decennials.fmt_length(l3), align="right"),
@@ -1082,7 +1134,8 @@ def _decennials(chrt, options, binding: dict[str, Any] | None = None, *, current
                         has_children=True,
                         extra={
                             "planet": l3_planet,
-                            "colorHex": _dec_planet_color(chrt, options, l3_planet),
+                            "colorHex": l3_color,
+                            "colorRole": l3_role,
                         },
                     ),
                 ))
@@ -1095,10 +1148,15 @@ def _decennials(chrt, options, binding: dict[str, Any] | None = None, *, current
                     if is_l4_current:
                         current_ids.append(l4_id)
                     l4_planet = int(l4.get("planet", astrology.SE_SUN))
+                    l4_color = _dec_planet_color(chrt, options, l4_planet)
+                    l4_role = _planet_color_role(l4_planet, chrt, options, l4_color)
+                    l4_cell = _glyph(_planet_glyph(l4_planet))
+                    l4_cell["planet"] = l4_planet
+                    _set_semantic_color(l4_cell, l4_color, l4_role)
                     rows.append(_row(
                         l4_id,
                         [
-                            _glyph(_planet_glyph(l4_planet)),
+                            l4_cell,
                             _text(_dec_strip_year_zeros(decennials.fmt_date(l4.get("start"))), align="center"),
                             _text("", align="right"),
                             _text(decennials.fmt_length(l4), align="right"),
@@ -1111,7 +1169,8 @@ def _decennials(chrt, options, binding: dict[str, Any] | None = None, *, current
                             has_children=False,
                             extra={
                                 "planet": l4_planet,
-                                "colorHex": _dec_planet_color(chrt, options, l4_planet),
+                                "colorHex": l4_color,
+                                "colorRole": l4_role,
                             },
                         ),
                     ))
@@ -1133,13 +1192,15 @@ def _decennials(chrt, options, binding: dict[str, Any] | None = None, *, current
     # wx colour rule; sect/asc/fortune render the mtexts label.
     start_is_planet = start_token in _DECENNIAL_PLANET_TOKENS
     start_planet = _DECENNIAL_PLANET_TOKENS.get(start_token)
+    start_color = _dec_planet_color(chrt, options, start_planet) if start_is_planet else None
     header = {
         "startLabel": _txt("Start", "Start"),
         "startToken": start_token,
         "startIsPlanet": start_is_planet,
         "startGlyph": _planet_glyph(start_planet) if start_is_planet else "",
         "startText": "" if start_is_planet else dict(_DECENNIAL_START_OPTIONS).get(start_token, start_token),
-        "startColorHex": _dec_planet_color(chrt, options, start_planet) if start_is_planet else None,
+        "startColorHex": start_color,
+        "startColorRole": _planet_color_role(start_planet, chrt, options, start_color) if start_is_planet else None,
     }
     payload["capabilities"] = {
         **payload.get("capabilities", {}),
@@ -1251,6 +1312,7 @@ def _triplicity_directions(chrt, options, binding: dict[str, Any] | None = None,
         if is_current:
             current_ids.append(row_id)
         planet_id = int(source_row.get("planet", astrology.SE_SUN))
+        planet_color = _planet_color(planet_id, chrt, options) or "#888888"
         meta = _period_meta(
             source_row,
             row_id=row_id,
@@ -1259,7 +1321,8 @@ def _triplicity_directions(chrt, options, binding: dict[str, Any] | None = None,
             has_children=int(source_row.get("level", 1)) < max_level,
             extra={
                 "planet": planet_id,
-                "colorHex": _planet_color(planet_id, chrt, options) or "#888888",
+                "colorHex": planet_color,
+                "colorRole": _planet_color_role(planet_id, chrt, options, planet_color),
                 "triplicityGroup": int(source_row.get("group", 0)),
                 "triplicityGroupLabel": str(source_row.get("group_label") or ""),
                 "parentPlanet": source_row.get("parent_planet"),
@@ -1676,8 +1739,26 @@ def _zodiacal_releasing(chrt, options, binding: dict[str, Any] | None = None, *,
             "signColors": [
                 _zr_hex(common.get_sign_color(options, i, force_element=True)) for i in range(12)
             ],
+            "signColorRoles": [
+                sign_color_role(
+                    options,
+                    i,
+                    force_element=True,
+                    resolved_color=_zr_hex(common.get_sign_color(options, i, force_element=True)),
+                )
+                for i in range(12)
+            ],
             "planetColors": [
                 _planet_color(pid, chrt, options) or "#888888"
+                for pid in range(7)
+            ],
+            "planetColorRoles": [
+                _planet_color_role(
+                    pid,
+                    chrt,
+                    options,
+                    _planet_color(pid, chrt, options) or "#888888",
+                )
                 for pid in range(7)
             ],
         },
@@ -1829,8 +1910,8 @@ def _profection_hour_lord_cell(reference_chart, options, row_age: int) -> Cell:
                 color = _rgb_hex(dignity_palette[reference_chart.dignity(pid)])
             except Exception:
                 color = _rgb_hex(getattr(options, "clrperegrin", None))
-        if color:
-            cell["color"] = color
+        cell["planet"] = pid
+        _set_semantic_color(cell, color, _planet_color_role(pid, reference_chart, options, color))
         return cell
     except Exception:
         return _text("-")
@@ -1868,6 +1949,9 @@ def _profection_column(column: dict[str, Any], index: int, reference_chart, opti
         )
         if hex_color:
             col["colorHex"] = hex_color
+        role = _planet_color_role(column.get("body_id", index), reference_chart, options, hex_color)
+        if role:
+            col["colorRole"] = role
     return col
 
 
@@ -2333,8 +2417,6 @@ def _aspects(chrt, options) -> dict[str, Any]:
                 orb = options.orbisAscMC[a]
             orb_by_aspect.append(orb)
         vertex_lon = chrt.houses.ascmc[houses.Houses.VERTEX]
-        if getattr(options, "ayanamsha", 0) != 0 and chrt.houses.hsys == 'W':
-            vertex_lon = util.normalize(vertex_lon - chrt.ayanamsha)
         return chrt._build_dynamic_aspect(vertex_lon, chrt.houses.cusps[hidx[house_idx]], 0.0, 0.0, orb_by_aspect)
 
     def show_asp(typ: int, lon1: float | None, lon2: float | None, p: int = -1, p2: int = -1) -> bool:
@@ -2350,9 +2432,6 @@ def _aspects(chrt, options) -> dict[str, Any]:
                     val = False
                 else:
                     lona1, lona2 = lon1, lon2
-                    if getattr(options, "ayanamsha", 0) != 0:
-                        lona1 = util.normalize(lona1 - chrt.ayanamsha)
-                        lona2 = util.normalize(lona2 - chrt.ayanamsha)
                     signdiff = math.fabs(int(lona1 / chart.Chart.SIGN_DEG) - int(lona2 / chart.Chart.SIGN_DEG))
                     if signdiff > chart.Chart.SIGN_NUM / 2:
                         signdiff = chart.Chart.SIGN_NUM - signdiff
@@ -2370,9 +2449,6 @@ def _aspects(chrt, options) -> dict[str, Any]:
             if lon1 is None or lon2 is None:
                 return False
             lona1, lona2 = lon1, lon2
-            if getattr(options, "ayanamsha", 0) != 0:
-                lona1 = util.normalize(lona1 - chrt.ayanamsha)
-                lona2 = util.normalize(lona2 - chrt.ayanamsha)
             return int(lona1 % chart.Chart.SIGN_DEG) == int(lona2 % chart.Chart.SIGN_DEG)
         return bool(exact)
 
@@ -2393,8 +2469,11 @@ def _aspects(chrt, options) -> dict[str, Any]:
             cell["glyph"] = glyph
             cell["glyphFont"] = glyph_role
             color = _rgb_hex(options.clraspect[asp.typ])
-            if color:
-                cell["color"] = color
+            _set_semantic_color(
+                cell,
+                color,
+                aspect_color_role(options, asp.typ, resolved_color=color),
+            )
             if asp.appl:
                 cell["applying"] = True  # corner triangle, aspectswnd.py:280-281
             if is_exact(asp.exact, lon1, lon2):
@@ -2416,8 +2495,7 @@ def _aspects(chrt, options) -> dict[str, Any]:
             "label": common.common.get_planet_name(pid),
         }
         color = _planet_color(pid, chrt, options)
-        if color:
-            entry["color"] = color
+        _set_semantic_color(entry, color, _planet_color_role(pid, chrt, options, color))
         planet_axis.append(entry)
 
     cells: dict[str, dict[str, Any]] = {}
@@ -2454,8 +2532,11 @@ def _aspects(chrt, options) -> dict[str, Any]:
                 glyph, _glyph_role = common.common.aspect_glyph(asp.typ)
                 aspect_cell = _glyph(glyph)
                 color = _rgb_hex(options.clraspect[asp.typ])
-                if color:
-                    aspect_cell["color"] = color
+                _set_semantic_color(
+                    aspect_cell,
+                    color,
+                    aspect_color_role(options, asp.typ, resolved_color=color),
+                )
                 flat_rows.append(_row(f"{a}:{b}", [
                     _planet_cell(a, chrt, options),
                     _planet_cell(b, chrt, options),
@@ -2657,7 +2738,10 @@ def _arabic_decl_cell(lon: float, chrt) -> Cell:
     # obliquity (chart.obl[0]).
     try:
         obl = chrt.obl[0] if isinstance(chrt.obl, (list, tuple)) else chrt.obl
-        lam = math.radians(util.normalize(float(lon)))
+        tropical_lon = util.to_tropical_lon(
+            float(lon), float(getattr(chrt, "ayanamsha_offset", 0.0) or 0.0)
+        )
+        lam = math.radians(util.normalize(tropical_lon))
         eps = math.radians(float(obl))
         dec = math.degrees(math.asin(math.sin(eps) * math.sin(lam)))
         return _text(_dms(dec, signed=True), align="center")
@@ -3051,7 +3135,13 @@ def _almuten_planet_header_column(column_id: str, planet_id: int, chrt, options)
     # almutenzodswnd.py:390-401, almutentopicalswnd.py:148-158).
     col = _column(column_id, _planet_glyph(planet_id), align="center", kind="glyph")
     col["headerGlyph"] = True
-    col["colorHex"] = _planet_color(planet_id, chrt, options)
+    color = _planet_color(planet_id, chrt, options)
+    _set_semantic_color(
+        col,
+        color,
+        _planet_color_role(planet_id, chrt, options, color),
+        color_key="colorHex",
+    )
     return col
 
 
@@ -3136,14 +3226,22 @@ def _almuten_essentials_section(chrt, options) -> dict[str, Any]:
          chrt.planets.planets[astrology.SE_MOON].data[planets.Planet.LONG]),
         (2, _glyph("", text=_txt("Asc", "Asc"), align="left"),
          chrt.houses.ascmc[houses.Houses.ASC]),
-        (3, {"glyph": fortune_glyph, "align": "left",
-             "color": _rgb_hex(getattr(options, "clrindividual", [None] * 12)[11])
-             if getattr(options, "useplanetcolors", False)
-             else _rgb_hex(getattr(options, "clrperegrin", None))},
+        (3, {"glyph": fortune_glyph, "align": "left"},
          chrt.fortune.fortune[fortune.Fortune.LON]),
         (4, _glyph("", text=_txt("Syzygy", "Syzygy"), align="left"),
          chrt.syzygy.lon),
     ]
+    fortune_cell = sig_specs[3][1]
+    fortune_color = (
+        _rgb_hex(getattr(options, "clrindividual", [None] * 12)[11])
+        if getattr(options, "useplanetcolors", False)
+        else _rgb_hex(getattr(options, "clrperegrin", None))
+    )
+    _set_semantic_color(
+        fortune_cell,
+        fortune_color,
+        _fortune_color_role(chrt, options, fortune_color),
+    )
     degwinners = list(getattr(ess, "degwinner", []) or [])
     rows: list[Row] = []
     for coll_idx, sig_cell, lon in sig_specs:
@@ -3294,6 +3392,8 @@ def _almuten_zodiacal(chrt, options) -> dict[str, Any]:
     lof_color = (_rgb_hex(getattr(options, "clrindividual", [None] * 12)[11])
                  if getattr(options, "useplanetcolors", False)
                  else _rgb_hex(getattr(options, "clrperegrin", None)))
+    lof_cell: Cell = {"glyph": fortune_glyph, "align": "left"}
+    _set_semantic_color(lof_cell, lof_color, _fortune_color_role(chrt, options, lof_color))
     houses_cusps = getattr(chrt.houses, "cusps", [])
     hc_labels = [_txt("HC%d" % n, "HC%d" % n) for n in range(1, houses.Houses.HOUSE_NUM + 1)]
 
@@ -3356,7 +3456,7 @@ def _almuten_zodiacal(chrt, options) -> dict[str, Any]:
     # degwinner for LoF/Syzygy/Asc are degwinner index 3/4/2; MC -> degwinnermc.
     rows.append(_special_row(
         "almz:lof",
-        {"glyph": fortune_glyph, "align": "left", "color": lof_color},
+        lof_cell,
         chrt.fortune.fortune[fortune.Fortune.LON], 3, False,
         degwinner[3] if len(degwinner) > 3 else None))
     rows.append(_special_row(
@@ -3526,15 +3626,9 @@ def _fixed_star_aspects(chrt, options) -> dict[str, Any]:
     else:
         run_aspects = list(range(chart.Chart.CONJUNCTIO, chart.Chart.OPPOSITIO + 1))
 
-    ayan = float(getattr(chrt, "ayanamsha", 0.0))
-    use_ayan = getattr(options, "ayanamsha", 0) != 0
-
     def get_asp(typ_deg: float, lon1: float, lon2: float, orb: float) -> bool:
         # FixStarsAspectsWnd.getAsp (fixstarsaspectswnd.py:436-452)
         a1, a2 = lon1, lon2
-        if use_ayan:
-            a1 = util.normalize(a1 - ayan)
-            a2 = util.normalize(a2 - ayan)
         if not a1 > a2:
             a1, a2 = a2, a1
         diff = a1 - typ_deg
@@ -3543,9 +3637,6 @@ def _fixed_star_aspects(chrt, options) -> dict[str, Any]:
     def get_orb(typ_deg: float, lon1: float, lon2: float, orb: float):
         # FixStarsAspectsWnd.getOrb (fixstarsaspectswnd.py:454-473)
         a1, a2 = lon1, lon2
-        if use_ayan:
-            a1 = util.normalize(a1 - ayan)
-            a2 = util.normalize(a2 - ayan)
         if not a1 > a2:
             a1, a2 = a2, a1
         diff = a1 - typ_deg
@@ -3579,8 +3670,11 @@ def _fixed_star_aspects(chrt, options) -> dict[str, Any]:
                 "orb": "%0.1f" % o,
             }
             color = _rgb_hex(options.clraspect[numasp])
-            if color:
-                cell["color"] = color
+            _set_semantic_color(
+                cell,
+                color,
+                aspect_color_role(options, numasp, resolved_color=color),
+            )
             return cell
         return None
 
@@ -3634,8 +3728,7 @@ def _fixed_star_aspects(chrt, options) -> dict[str, Any]:
             "label": common.common.get_planet_name(p),
         }
         color = _planet_color(p, chrt, options)
-        if color:
-            entry["color"] = color
+        _set_semantic_color(entry, color, _planet_color_role(p, chrt, options, color))
         col_axis.append(entry)
         col_lons.append(body.data[planets.Planet.LONG])
 
@@ -3653,8 +3746,7 @@ def _fixed_star_aspects(chrt, options) -> dict[str, Any]:
         except Exception:
             lof_color = _rgb_hex(getattr(options, "clrperegrin", None))
         entry = {"id": f"col:{len(col_axis)}", "glyph": common.common.fortune, "glyphFont": "morinus", "label": _txt("FortunaeF", "Fortune")}
-        if lof_color:
-            entry["color"] = lof_color
+        _set_semantic_color(entry, lof_color, _fortune_color_role(chrt, options, lof_color))
         col_axis.append(entry)
         col_lons.append(chrt.fortune.fortune[fortune.Fortune.LON])
 
@@ -3688,8 +3780,11 @@ def _fixed_star_aspects(chrt, options) -> dict[str, Any]:
             axis_entry = col_axis[c]
             head = _glyph(axis_entry.get("glyph", ""), text=axis_entry.get("label", "")) if axis_entry.get("glyphFont") != "text" else _text(axis_entry.get("label", ""), align="center")
             asp_cell = _glyph(cell["glyph"])
-            if cell.get("color"):
-                asp_cell["color"] = cell["color"]
+            _set_semantic_color(
+                asp_cell,
+                cell.get("color"),
+                cell.get("colorRole"),
+            )
             flat_rows.append(_row(f"fsasp:{r}:{c}", [_text(name), head, asp_cell, _text(cell["orb"] + "°", align="right")]))
 
     payload = _base_payload("fixed_stars_aspects", chrt, options, flat_cols, flat_rows or _empty(_txt("NoFixedStarAspects", "No fixed star aspects")), title=_txt("FixedStarAspects", "Fixed Star Aspects"), source=source)
@@ -3766,6 +3861,18 @@ def _fixstar_parallel_label_color(key, chrt, options) -> str | None:
     return _rgb_hex(getattr(options, "clrtexts", None))
 
 
+def _fixstar_parallel_label_color_role(key, chrt, options, color: str | None) -> str | None:
+    if key == astrology.SE_CHIRON or (
+        isinstance(key, int) and astrology.SE_SUN <= key <= astrology.SE_PLUTO
+    ):
+        return _planet_color_role(int(key), chrt, options, color)
+    if key in ("NN", "SN") and getattr(options, "useplanetcolors", False):
+        return _planet_color_role(astrology.SE_MEAN_NODE, chrt, options, color)
+    if key == "LOF" and getattr(options, "useplanetcolors", False):
+        return _fortune_color_role(chrt, options, color)
+    return "--morinus-text-bright" if color == _rgb_hex(getattr(options, "clrtexts", None)) else None
+
+
 def _fixed_star_parallels(chrt, options) -> dict[str, Any]:
     if len(getattr(options, "fixstars", []) or []) == 0:
         return _unavailable("fixed_stars_parallels", chrt, title=_txt("FixedStarParallels", "Fixed Star Parallels"), source="morin.py:15883-15896; fixstarsparallelswnd.py:30-402", reason=_txt("NoSelFixStars", "No selected fixed stars"))
@@ -3794,8 +3901,19 @@ def _fixed_star_parallels(chrt, options) -> dict[str, Any]:
     try:
         asc = chrt.houses.ascmc2[houses.Houses.ASC]
         mc = chrt.houses.ascmc2[houses.Houses.MC]
-        _dsc_ra, dsc_decl, _z = astrology.swe_cotrans(util.normalize(asc[houses.Houses.LON] + 180.0), 0.0, 1.0, -obl)
-        _ic_ra, ic_decl, _z2 = astrology.swe_cotrans(util.normalize(mc[houses.Houses.LON] + 180.0), 0.0, 1.0, -obl)
+        ayanamsha_offset = float(getattr(chrt, "ayanamsha_offset", 0.0) or 0.0)
+        _dsc_ra, dsc_decl, _z = astrology.swe_cotrans(
+            util.to_tropical_lon(util.normalize(asc[houses.Houses.LON] + 180.0), ayanamsha_offset),
+            0.0,
+            1.0,
+            -obl,
+        )
+        _ic_ra, ic_decl, _z2 = astrology.swe_cotrans(
+            util.to_tropical_lon(util.normalize(mc[houses.Houses.LON] + 180.0), ayanamsha_offset),
+            0.0,
+            1.0,
+            -obl,
+        )
         points.append(("ASC", _txt("Asc", "Asc"), False, asc[houses.Houses.DECL]))
         points.append(("DSC", _txt("Dsc", "Dsc"), False, dsc_decl))
         points.append(("MC", _txt("MC", "MC"), False, mc[houses.Houses.DECL]))
@@ -3830,8 +3948,11 @@ def _fixed_star_parallels(chrt, options) -> dict[str, Any]:
     for key, label, is_glyph, pdecl in points:
         color = _fixstar_parallel_label_color(key, chrt, options)
         point_cell = _glyph(label, align="center") if is_glyph else _text(label, align="center")
-        if color:
-            point_cell["color"] = color
+        _set_semantic_color(
+            point_cell,
+            color,
+            _fixstar_parallel_label_color_role(key, chrt, options, color),
+        )
         # Matches: sign-equal decl within 15' (fixstarsparallelswnd._compute
         # _matches:659-676), sorted by orb.
         matches: list[tuple[str, float, float | None]] = []
@@ -4110,6 +4231,8 @@ def _firdaria(chrt, options, binding: dict[str, Any] | None = None, *, current_d
         pid = firdaria_body_ids[int(internal_pid)]
         cell = _glyph(_planet_glyph(pid))
         cell["planet"] = int(pid)
+        color = planet_color(internal_pid)
+        _set_semantic_color(cell, color, _planet_color_role(pid, chrt, options, color))
         return cell
 
     now = _parse_datetime(current_datetime)
@@ -4130,6 +4253,10 @@ def _firdaria(chrt, options, binding: dict[str, Any] | None = None, *, current_d
         period_text = dateformat.date_text(starting.year, starting.month, starting.day, options)
         row_id = f"main:{index}"
         is_current = now is not None and starting <= now < ending
+        main_color = planet_color(planet)
+        main_role = _planet_color_role(
+            int(firdaria_body_ids[int(planet)]), chrt, options, main_color,
+        )
         if is_current:
             current_ids.append(row_id)
         rows.append(_row(
@@ -4143,7 +4270,8 @@ def _firdaria(chrt, options, binding: dict[str, Any] | None = None, *, current_d
                 "level": 1,
                 "planet": int(firdaria_body_ids[int(planet)]),
                 "firdariaPlanet": int(planet),
-                "colorHex": planet_color(planet),
+                "colorHex": main_color,
+                "colorRole": main_role,
                 "hasChildren": not fird.isNode(aindex),
                 "periodStart": _date_iso(starting),
                 "periodEndExclusive": _date_iso(ending),
@@ -4168,6 +4296,10 @@ def _firdaria(chrt, options, binding: dict[str, Any] | None = None, *, current_d
                 subperiodend = ending if subrow == 6 else subperiodstart + datetime.timedelta(seconds=secs / 7.0)
                 sub_id = f"sub:{index}:{subrow}"
                 sub_current = now is not None and subperiodstart <= now < subperiodend
+                sub_color = planet_color(subplanet)
+                sub_role = _planet_color_role(
+                    int(firdaria_body_ids[int(subplanet)]), chrt, options, sub_color,
+                )
                 if sub_current:
                     current_ids.append(sub_id)
                 rows.append(_row(
@@ -4182,7 +4314,8 @@ def _firdaria(chrt, options, binding: dict[str, Any] | None = None, *, current_d
                         "level": 2,
                         "planet": int(firdaria_body_ids[int(subplanet)]),
                         "firdariaPlanet": int(subplanet),
-                        "colorHex": planet_color(subplanet),
+                        "colorHex": sub_color,
+                        "colorRole": sub_role,
                         "periodStart": _date_iso(subperiodstart),
                         "periodEndExclusive": _date_iso(subperiodend),
                         "eventDate": _date_iso(subperiodstart),
@@ -4259,14 +4392,8 @@ def _strip(chrt, options) -> dict[str, Any]:
     # web view can render one strip per sign (more legible than the wx overlay);
     # the wx single-overlay form is recoverable by merging all groups.
     source = "morin.py:14245,14620; stripwnd.py:78-646"
-    ayan = float(getattr(chrt, "ayanamsha", 0.0)) if getattr(options, "ayanamsha", 0) != 0 else 0.0
-
     def _within_sign(lon: float) -> tuple[int, float]:
-        norm = float(lon)
-        if ayan:
-            norm = util.normalize(norm - ayan)
-        else:
-            norm = util.normalize(norm)
+        norm = util.normalize(float(lon))
         sign_idx = int(norm / chart.Chart.SIGN_DEG) % chart.Chart.SIGN_NUM
         return sign_idx, norm % float(chart.Chart.SIGN_DEG)
 
@@ -4281,17 +4408,23 @@ def _strip(chrt, options) -> dict[str, Any]:
     # Chiron when visible (stripwnd.py:428), Lot of Fortune unless hidden
     # (stripwnd.py:437), optional Vertex (stripwnd.py:445), then Asc + MC
     # (stripwnd.py:454, houses.Houses.MC+1 => indices 0..1).
-    entries: list[tuple[int, float, str, str, str, str | None]] = []
-    # tuple: (sign_idx, deg_in_sign, glyph, font, label, colorHex)
+    entries: list[tuple[int, float, str, str, str, str | None, str | None]] = []
+    # tuple: (sign_idx, deg_in_sign, glyph, font, label, colorHex, colorRole)
 
     def _push(planet_id_for_color: int, lon: float, glyph: str, font: str, label: str,
-              *, color_id: int | None = None) -> None:
+              *, color_id: int | None = None, is_fortune: bool = False) -> None:
         sign_idx, deg = _within_sign(lon)
         color = None
+        color_role = None
         cid = planet_id_for_color if color_id is None else color_id
         if cid is not None and cid >= 0:
             color = _planet_color(cid, chrt, options)
-        entries.append((sign_idx, deg, glyph, font, label, color))
+            color_role = (
+                _fortune_color_role(chrt, options, color)
+                if is_fortune
+                else _planet_color_role(cid, chrt, options, color)
+            )
+        entries.append((sign_idx, deg, glyph, font, label, color, color_role))
 
     for i in range(planets.Planets.PLANETS_NUM - 1):
         if getattr(options, "intables", False) and (
@@ -4312,7 +4445,8 @@ def _strip(chrt, options) -> dict[str, Any]:
 
     if not getattr(options, "intables", False) or getattr(options, "showlof", True):
         _push(planets.Planets.PLANETS_NUM - 1, chrt.fortune.fortune[fortune.Fortune.LON],
-              common.common.fortune, "morinus", _txt("StripLoF", "Lot of Fortune"))
+              common.common.fortune, "morinus", _txt("StripLoF", "Lot of Fortune"),
+              is_fortune=True)
 
     if getattr(options, "showvertex", False):
         _push(common.CHART_OBJECT_VERTEX, chrt.houses.ascmc[houses.Houses.VERTEX],
@@ -4328,7 +4462,7 @@ def _strip(chrt, options) -> dict[str, Any]:
           _txt("MC", "MC"), color_id=-1)
 
     # Group by occupied sign, in zodiac order, sorted within each sign by degree.
-    by_sign: dict[int, list[tuple[int, float, str, str, str, str | None]]] = {}
+    by_sign: dict[int, list[tuple[int, float, str, str, str, str | None, str | None]]] = {}
     for entry in entries:
         by_sign.setdefault(entry[0], []).append(entry)
 
@@ -4336,7 +4470,7 @@ def _strip(chrt, options) -> dict[str, Any]:
     for sign_idx in sorted(by_sign):
         bucket = sorted(by_sign[sign_idx], key=lambda e: e[1])
         bodies = []
-        for _s, deg, glyph, font, label, color in bucket:
+        for _s, deg, glyph, font, label, color, color_role in bucket:
             body_entry: dict[str, Any] = {
                 "glyph": glyph,
                 "glyphFont": font,
@@ -4344,8 +4478,12 @@ def _strip(chrt, options) -> dict[str, Any]:
                 "degree": round(deg, 6),
                 "minuteLabel": _minute_label(deg),
             }
-            if color:
-                body_entry["colorHex"] = color
+            _set_semantic_color(
+                body_entry,
+                color,
+                color_role,
+                color_key="colorHex",
+            )
             bodies.append(body_entry)
         strip_signs.append({
             "signId": sign_idx,
@@ -4365,8 +4503,11 @@ def _strip(chrt, options) -> dict[str, Any]:
         sign_glyph = sign["signGlyph"]
         for body in sign["bodies"]:
             glyph_cell = _glyph(body["glyph"]) if body["glyphFont"] == "morinus" else _text(body["glyph"], align="center")
-            if body.get("colorHex"):
-                glyph_cell["color"] = body["colorHex"]
+            _set_semantic_color(
+                glyph_cell,
+                body.get("colorHex"),
+                body.get("colorRole"),
+            )
             flat.append(_row(f"{sign['signId']}:{body['label']}", [
                 glyph_cell,
                 _sign_cell(options, int(sign["signId"])),
@@ -4469,8 +4610,12 @@ def _dodecatemoria(chrt, options) -> dict[str, Any]:
         lat = getattr(point, "lat", 0.0) if j in (10, 11) else 0.0
         body_cell = _glyph(common.common.Planets[j])
         color = _planet_dodec_color(j)
-        if color:
-            body_cell["color"] = color
+        role_body_id = j - 1 if j >= len(common.common.Planets) - 1 else j
+        _set_semantic_color(
+            body_cell,
+            color,
+            _planet_color_role(role_body_id, chrt, options, color),
+        )
         body_cell["planet"] = j
         rows.append(_row(f"planet:{j}", [
             body_cell,
@@ -4710,8 +4855,7 @@ def _transit_cell(tr, chrt, options) -> Cell:
     aspect_color = None
     plt_run = {"text": common.common.get_planet_glyph(plt), "glyph": True, "planet": plt}
     c = _transit_planet_color(plt, chrt, options, target=False)
-    if c:
-        plt_run["color"] = c
+    _set_semantic_color(plt_run, c, _planet_color_role(plt, chrt, options, c))
     runs.append(plt_run)
 
     def _aspect_run(aspect_idx: int) -> dict[str, Any]:
@@ -4720,15 +4864,21 @@ def _transit_cell(tr, chrt, options) -> Cell:
             col = _rgb_hex(options.clraspect[aspect_idx])
         except Exception:
             col = None
-        if col:
-            run["color"] = col
+        _set_semantic_color(
+            run,
+            col,
+            aspect_color_role(options, aspect_idx, resolved_color=col),
+        )
         return run
 
     def _target_planet_run(target_id: int) -> dict[str, Any]:
         run = {"text": common.common.get_planet_glyph(int(target_id)), "glyph": True, "planet": int(target_id)}
         col = _transit_planet_color(int(target_id), chrt, options, target=True)
-        if col:
-            run["color"] = col
+        _set_semantic_color(
+            run,
+            col,
+            _planet_color_role(int(target_id), chrt, options, col),
+        )
         return run
 
     objtype = tr.objtype
@@ -4768,13 +4918,19 @@ def _transit_cell(tr, chrt, options) -> Cell:
     elif objtype == transits.Transit.LOF:
         runs.append(_aspect_run(tr.aspect))
         lof_run = {"text": common.common.fortune, "glyph": True}
+        lof_color = None
         try:
             if getattr(options, "useplanetcolors", False):
-                lof_run["color"] = _rgb_hex(options.clrindividual[planets.Planets.PLANETS_NUM - 1])
+                lof_color = _rgb_hex(options.clrindividual[planets.Planets.PLANETS_NUM - 1])
             else:
-                lof_run["color"] = _rgb_hex(getattr(options, "clrperegrin", None))
+                lof_color = _rgb_hex(getattr(options, "clrperegrin", None))
         except Exception:
             pass
+        _set_semantic_color(
+            lof_run,
+            lof_color,
+            _fortune_color_role(chrt, options, lof_color),
+        )
         runs.append(lof_run)
     return {"runs": runs, "align": "left"}
 
@@ -5191,7 +5347,9 @@ class TablesService:
         spec = TABLES.get(str(table_id or ""))
         if spec is None:
             raise ValueError(f"unsupported table id {table_id!r}")
-        options = chart_snapshot_service.options
+        # Table builders receive a presentation-only palette adapter. The
+        # chart and canonical options retain their original calculation state.
+        options = effective_display_options(chart_snapshot_service.options)
         try:
             if spec.table_id == "angle_at_birth":
                 payload = _angle_at_birth(chrt, options, binding=binding)

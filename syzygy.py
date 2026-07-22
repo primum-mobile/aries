@@ -1,9 +1,17 @@
 import astrology
 import chart
 import houses
+import math
 import planets
 import options
 import util
+
+
+def _ayanamsha_at(chrt, jd_ut):
+	if getattr(chrt.options, 'ayanamsha', 0) == 0:
+		return 0.0
+	astrology.swe_set_sid_mode(astrology.ayanamsha_swe_mode(chrt.options.ayanamsha), 0, 0)
+	return float(astrology.effective_ayanamsha_ut(float(jd_ut), chrt.options.ayanamsha))
 
 
 class Syzygy:
@@ -19,11 +27,14 @@ class Syzygy:
 	TOPICALOPPOSITIORADIX = 3
 	TOPICALMOON = 4
 
-	def __init__(self, chrt):
+	def __init__(self, chrt, previous_opposite=None):
 		self.time = chrt.time
 		self.lon = chrt.planets.planets[astrology.SE_MOON].data[planets.Planet.LONG]
 
 		self.flags = astrology.SEFLG_SPEED+astrology.SEFLG_SWIEPH
+		if chrt.options.ayanamsha != 0:
+			astrology.swe_set_sid_mode(astrology.ayanamsha_swe_mode(chrt.options.ayanamsha), 0, 0)
+			self.flags |= astrology.SEFLG_SIDEREAL
 
 		#for topical almutens
 		self.lons = []
@@ -47,7 +58,7 @@ class Syzygy:
 					if not self.ready:
 						ok, self.time, self.ready = self.getDateSecond(self.time, chrt.place, self.newmoon)
 
-			hses = houses.Houses(self.time.jd, 0, chrt.place.lat, chrt.place.lon, chrt.options.hsys, chrt.obl[0], chrt.options.ayanamsha, chrt.ayanamsha)
+			hses = houses.Houses(self.time.jd, 0, chrt.place.lat, chrt.place.lon, chrt.options.hsys, chrt.obl[0], chrt.options.ayanamsha, _ayanamsha_at(chrt, self.time.jd))
 			moon = planets.Planet(self.time.jd, astrology.SE_MOON, self.flags, chrt.place.lat, hses.ascmc2)
 			if self.newmoon:
 				self.lon = moon.data[planets.Planet.LONG]
@@ -68,20 +79,32 @@ class Syzygy:
 						sun = planets.Planet(self.time.jd, astrology.SE_SUN, self.flags)
 						self.lon = sun.data[planets.Planet.LONG]
 
-		ra, decl, dist = astrology.swe_cotrans(self.lon, 0.0, 1.0, -chrt.obl[0])
+		ra, decl, dist = astrology.swe_cotrans(
+			util.to_tropical_lon(self.lon, _ayanamsha_at(chrt, self.time.jd)),
+			0.0, 1.0, -chrt.obl[0]
+		)
 		self.speculum = [self.lon, 0.0, ra, decl]
 
 		#the other syzygy (i.e. if the syzygy was conjunction then calculate the opposition and vice versa)
 		self.lon2 = chrt.planets.planets[astrology.SE_MOON].data[planets.Planet.LONG]
 		if not chrt.time.bc:
-			self.time2 = self.time
-			ok, self.time2, self.ready2 = self.getDateHour(self.time2, chrt.place, not self.newmoon)
-			if not self.ready2:
-				ok, self.time2, self.ready2 = self.getDateMinute(self.time2, chrt.place, not self.newmoon)
+			seed = self._validated_previous_opposite(previous_opposite)
+			if seed is not None:
+				# At a forward phase flip, the previous chart's canonical
+				# lunation is exactly this chart's secondary/opposite lunation.
+				# Reuse its exact Time result; all longitude, house, speculum,
+				# and topical fields below are still rebuilt from current inputs.
+				self.time2 = seed.time
+				self.ready2 = bool(getattr(seed, 'ready', False))
+			else:
+				self.time2 = self.time
+				ok, self.time2, self.ready2 = self.getDateHour(self.time2, chrt.place, not self.newmoon)
 				if not self.ready2:
-					ok, self.time2, self.ready2 = self.getDateSecond(self.time2, chrt.place, not self.newmoon)
+					ok, self.time2, self.ready2 = self.getDateMinute(self.time2, chrt.place, not self.newmoon)
+					if not self.ready2:
+						ok, self.time2, self.ready2 = self.getDateSecond(self.time2, chrt.place, not self.newmoon)
 
-			hses2 = houses.Houses(self.time2.jd, 0, chrt.place.lat, chrt.place.lon, chrt.options.hsys, chrt.obl[0], chrt.options.ayanamsha, chrt.ayanamsha)
+			hses2 = houses.Houses(self.time2.jd, 0, chrt.place.lat, chrt.place.lon, chrt.options.hsys, chrt.obl[0], chrt.options.ayanamsha, _ayanamsha_at(chrt, self.time2.jd))
 			moon2 = planets.Planet(self.time2.jd, astrology.SE_MOON, self.flags, chrt.place.lat, hses2.ascmc2)
 			if not self.newmoon:
 				self.lon2 = moon2.data[planets.Planet.LONG]
@@ -102,7 +125,10 @@ class Syzygy:
 						sun2 = planets.Planet(self.time2.jd, astrology.SE_SUN, self.flags)
 						self.lon2 = sun2.data[planets.Planet.LONG]
 
-			ra2, decl2, dist2 = astrology.swe_cotrans(self.lon2, 0.0, 1.0, -chrt.obl[0])
+			ra2, decl2, dist2 = astrology.swe_cotrans(
+				util.to_tropical_lon(self.lon2, _ayanamsha_at(chrt, self.time2.jd)),
+				0.0, 1.0, -chrt.obl[0]
+			)
 			self.speculum2 = [self.lon2, 0.0, ra2, decl2]
 
 			#for topical almutens
@@ -112,9 +138,9 @@ class Syzygy:
 			else:
 				self.lons.append(self.lon2)
 			#Moon in chart of Syzygy
-			hses = houses.Houses(self.time.jd, 0, chrt.place.lat, chrt.place.lon, chrt.options.hsys, chrt.obl[0], chrt.options.ayanamsha, chrt.ayanamsha)
+			hses = houses.Houses(self.time.jd, 0, chrt.place.lat, chrt.place.lon, chrt.options.hsys, chrt.obl[0], chrt.options.ayanamsha, _ayanamsha_at(chrt, self.time.jd))
 			moonSyz = planets.Planet(self.time.jd, astrology.SE_MOON, self.flags, chrt.place.lat, hses.ascmc2)
-			hses2 = houses.Houses(self.time2.jd, 0, chrt.place.lat, chrt.place.lon, chrt.options.hsys, chrt.obl[0], chrt.options.ayanamsha, chrt.ayanamsha)
+			hses2 = houses.Houses(self.time2.jd, 0, chrt.place.lat, chrt.place.lon, chrt.options.hsys, chrt.obl[0], chrt.options.ayanamsha, _ayanamsha_at(chrt, self.time2.jd))
 			moonSyz2 = planets.Planet(self.time2.jd, astrology.SE_MOON, self.flags, chrt.place.lat, hses2.ascmc2)
 			if not self.newmoon: #Opposition
 				if moonSyz.abovehorizon:
@@ -146,6 +172,25 @@ class Syzygy:
 				self.lons.append(moonSyz.data[planets.Planet.LONG])
 			else:
 				self.lons.append(moonSyz2.data[planets.Planet.LONG])
+
+
+	def _validated_previous_opposite(self, seed):
+		"""Return an exact prior opposite lunation or fail closed."""
+		try:
+			seed_jd = float(seed.time.jd)
+			current_jd = float(self.time.jd)
+			if not math.isfinite(seed_jd) or not math.isfinite(current_jd):
+				return None
+			if bool(seed.newmoon) == bool(self.newmoon):
+				return None
+			# Consecutive conjunction/opposition events are roughly a
+			# fortnight apart. The strict bound rejects stale, reversed, or
+			# skipped-cycle state before it can affect the exact calculation.
+			if current_jd <= seed_jd or current_jd-seed_jd >= 20.0:
+				return None
+			return seed
+		except Exception:
+			return None
 
 
 	def calcProfPos(self, prof):
@@ -291,6 +336,3 @@ class Syzygy:
 				return True, tim, ready
 
 		return False, tim
-
-
-

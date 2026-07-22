@@ -1,8 +1,8 @@
 """Graphic Ephemeris daemon service.
 
 Brain: ``ephemcalc.EphemCalc`` (ephemcalc.py:8-87) runs AS-IS — one sample per
-day for 12 anchored months of planet longitudes + declinations, ayanamsha
-rebased. Station detection is the wx-fused semantic EXTRACTED verbatim from
+day for 12 anchored months of planet longitudes + declinations in the selected
+zodiac. Station detection is the wx-fused semantic EXTRACTED verbatim from
 ``graphephemwnd.GraphEphemWnd`` (graphephemwnd.py:365-537): longitude SR/SD via
 aries.astrology.transit_fast batch search with the series-inflection fallback,
 declination DN/DS extrema + EQ zero crossings via the same bisection refiners.
@@ -136,14 +136,6 @@ def _default_planet_visibility(mode: str, planet_id: int) -> bool:
     return planet_id != astrology.SE_MOON
 
 
-def _year_ayanamsha(options, year: int) -> float:
-    if getattr(options, 'ayanamsha', 0) == 0:
-        return 0.0
-    astrology.swe_set_sid_mode(astrology.ayanamsha_swe_mode(options.ayanamsha), 0, 0)
-    ayanamsha_jd = astrology.swe_julday(int(year), 1, 1, 0.0, astrology.SE_GREG_CAL)
-    return float(astrology.swe_get_ayanamsa_ut(ayanamsha_jd))
-
-
 def _start_jd(year: int, start_month: int) -> Optional[float]:
     """graphephemwnd._chart_start_jd (graphephemwnd.py:343-348)."""
     try:
@@ -182,13 +174,14 @@ def _format_date_jd(jd_ut: float) -> Optional[str]:
 def _fast_ephemeris_series(year: int, options, start_month: int) -> dict:
     """EphemCalc-compatible daily series without chart.Time/Planet wrappers.
 
-    EphemCalc samples 00:00 Greenwich once per calendar day, computes ecliptic
-    and equatorial Swiss Ephemeris arrays, then subtracts one constant Jan 1
-    ayanamsha value in sidereal mode. Keep that exact behavior here; this is only
-    a daemon-side fast path for the web renderer.
+    EphemCalc samples 00:00 Greenwich once per calendar day and asks Swiss
+    Ephemeris for ecliptic positions directly in the selected zodiac. Keep that
+    exact behavior here; this is only a daemon-side fast path for the renderer.
     """
     flags = astrology.SEFLG_SPEED + astrology.SEFLG_SWIEPH
-    ayanamsha = _year_ayanamsha(options, year)
+    if getattr(options, 'ayanamsha', 0) != 0:
+        astrology.swe_set_sid_mode(astrology.ayanamsha_swe_mode(options.ayanamsha), 0, 0)
+        flags |= astrology.SEFLG_SIDEREAL
 
     days = _month_offsets(year, start_month)[-1]
     start_jd = astrology.swe_julday(int(year), int(start_month), 1, 0.0, astrology.SE_GREG_CAL)
@@ -199,11 +192,9 @@ def _fast_ephemeris_series(year: int, options, start_month: int) -> dict:
         for day in range(days):
             jd_ut = start_jd + day
             _serr, ecl = astrology.swe_calc_ut(jd_ut, planet_id, flags)
-            _serr_equ, equ = astrology.swe_calc_ut(
-                jd_ut, planet_id, flags + astrology.SEFLG_EQUATORIAL)
+            equatorial_flags = (flags & ~astrology.SEFLG_SIDEREAL) | astrology.SEFLG_EQUATORIAL
+            _serr_equ, equ = astrology.swe_calc_ut(jd_ut, planet_id, equatorial_flags)
             lon = float(ecl[planets.Planet.LONG])
-            if ayanamsha:
-                lon = util.normalize(lon - ayanamsha)
             longitudes.append(lon)
             declinations.append(float(equ[planets.Planet.DECLEQU]))
         series[planet_id] = {
@@ -215,9 +206,17 @@ def _fast_ephemeris_series(year: int, options, start_month: int) -> dict:
 
 # --- station math, transcribed from graphephemwnd.py:365-537 ----------------
 
-def _speed_lon(planet_id: int, jd_ut: float) -> Optional[float]:
+def _longitude_flags(options) -> int:
+    flags = int(_FLAGS)
+    if int(getattr(options, 'ayanamsha', 0) or 0) != 0:
+        astrology.swe_set_sid_mode(astrology.ayanamsha_swe_mode(options.ayanamsha), 0, 0)
+        flags |= astrology.SEFLG_SIDEREAL
+    return flags
+
+
+def _speed_lon(options, planet_id: int, jd_ut: float) -> Optional[float]:
     try:
-        pl = planets.Planet(float(jd_ut), int(planet_id), _FLAGS)
+        pl = planets.Planet(float(jd_ut), int(planet_id), _longitude_flags(options))
         return float(pl.data[planets.Planet.SPLON])
     except Exception:
         return None
@@ -233,11 +232,8 @@ def _speed_decl(planet_id: int, jd_ut: float) -> Optional[float]:
 
 def _lon_at_jd(options, planet_id: int, jd_ut: float) -> Optional[float]:
     try:
-        pl = planets.Planet(float(jd_ut), int(planet_id), _FLAGS)
-        lon = float(pl.data[planets.Planet.LONG])
-        if getattr(options, 'ayanamsha', 0) != 0:
-            lon = util.normalize(lon - astrology.swe_get_ayanamsa_ut(float(jd_ut)))
-        return lon
+        pl = planets.Planet(float(jd_ut), int(planet_id), _longitude_flags(options))
+        return float(pl.data[planets.Planet.LONG])
     except Exception:
         return None
 
@@ -250,14 +246,14 @@ def _decl_at_jd(planet_id: int, jd_ut: float) -> Optional[float]:
         return None
 
 
-def _refine_station_root(planet_id: int, jd_a: float, jd_b: float) -> Optional[float]:
-    sa = _speed_lon(planet_id, jd_a)
-    sb = _speed_lon(planet_id, jd_b)
+def _refine_station_root(options, planet_id: int, jd_a: float, jd_b: float) -> Optional[float]:
+    sa = _speed_lon(options, planet_id, jd_a)
+    sb = _speed_lon(options, planet_id, jd_b)
     if sa is None or sb is None:
         return None
     for _ in range(24):
         mid = 0.5 * (jd_a + jd_b)
-        sm = _speed_lon(planet_id, mid)
+        sm = _speed_lon(options, planet_id, mid)
         if sm is None:
             return None
         if abs(sm) < 1e-6 or abs(jd_b - jd_a) < 1e-4:
@@ -269,9 +265,9 @@ def _refine_station_root(planet_id: int, jd_a: float, jd_b: float) -> Optional[f
     return 0.5 * (jd_a + jd_b)
 
 
-def _longitude_station_code(planet_id: int, jd_ut: float) -> Optional[str]:
-    before = _speed_lon(planet_id, float(jd_ut) - 0.05)
-    after = _speed_lon(planet_id, float(jd_ut) + 0.05)
+def _longitude_station_code(options, planet_id: int, jd_ut: float) -> Optional[str]:
+    before = _speed_lon(options, planet_id, float(jd_ut) - 0.05)
+    after = _speed_lon(options, planet_id, float(jd_ut) + 0.05)
     if before is None or after is None:
         return None
     if before > 0.0 and after < 0.0:
@@ -297,7 +293,7 @@ def _unwrap(series) -> list[float]:
     return out
 
 
-def _fallback_longitude_hits(series, planet_id: int, start_jd: float, end_jd: float) -> list[float]:
+def _fallback_longitude_hits(options, series, planet_id: int, start_jd: float, end_jd: float) -> list[float]:
     if len(series) < 3:
         return []
     hits = []
@@ -307,19 +303,19 @@ def _fallback_longitude_hits(series, planet_id: int, start_jd: float, end_jd: fl
         right = unwrapped[i + 1] - unwrapped[i]
         if not ((left > 0.0 and right < 0.0) or (left < 0.0 and right > 0.0)):
             continue
-        root = _refine_station_root(planet_id, start_jd + i - 1, start_jd + i + 1)
+        root = _refine_station_root(options, planet_id, start_jd + i - 1, start_jd + i + 1)
         if root is not None and float(start_jd) <= root <= float(end_jd):
             hits.append(root)
     return hits
 
 
-def _longitude_station_hit_map(series_by_planet, planet_ids, start_jd: float, end_jd: float):
+def _longitude_station_hit_map(options, series_by_planet, planet_ids, start_jd: float, end_jd: float):
     result = dict((int(pid), []) for pid in planet_ids)
     if not result:
         return result
     try:
         hits = search_station_times_batch(
-            list(result.keys()), float(start_jd), float(end_jd), flags=int(_FLAGS))
+            list(result.keys()), float(start_jd), float(end_jd), flags=_longitude_flags(options))
         for hit in hits:
             if getattr(hit, 'hit_type', None) != 'station':
                 continue
@@ -330,7 +326,7 @@ def _longitude_station_hit_map(series_by_planet, planet_ids, start_jd: float, en
     except Exception:
         for pid in result:
             result[pid] = _fallback_longitude_hits(
-                series_by_planet.get(pid, {}).get('longitude', ()), pid, start_jd, end_jd)
+                options, series_by_planet.get(pid, {}).get('longitude', ()), pid, start_jd, end_jd)
         return result
 
 
@@ -406,12 +402,12 @@ def _longitude_stations(options, series_by_planet, planet_ids, start_jd, days) -
     """graphephemwnd._build_station_snap_targets longitude branch
     (graphephemwnd.py:692-716)."""
     out: list[dict] = []
-    hit_map = _longitude_station_hit_map(series_by_planet, planet_ids, start_jd, start_jd + days)
+    hit_map = _longitude_station_hit_map(options, series_by_planet, planet_ids, start_jd, start_jd + days)
     for pid in planet_ids:
         if len(series_by_planet.get(pid, {}).get('longitude', ())) < 3:
             continue
         for root_jd in hit_map.get(int(pid), ()):
-            code = _longitude_station_code(pid, root_jd)
+            code = _longitude_station_code(options, pid, root_jd)
             if code is None:
                 continue
             lon = _lon_at_jd(options, pid, root_jd)
@@ -508,17 +504,19 @@ def _target_sign_for_hit(search_targets: list[tuple[float, int]], target_deg: fl
 def _longitude_sign_events(options, year: int, planet_ids, start_jd, days) -> list[dict]:
     """Exact sign-boundary crossings for the plotted longitude ephemeris.
 
-    EphemCalc sidereal mode subtracts a single Jan-1 ayanamsha from the whole
-    year, so search tropical longitude against display target + that constant.
+    Search in the same zodiac frame used by the plotted series.
     """
     out: list[dict] = []
     if start_jd is None or days <= 0 or not planet_ids:
         return out
-    ayanamsha = _year_ayanamsha(options, year)
+    search_flags = int(_FLAGS)
+    if getattr(options, 'ayanamsha', 0) != 0:
+        astrology.swe_set_sid_mode(astrology.ayanamsha_swe_mode(options.ayanamsha), 0, 0)
+        search_flags |= astrology.SEFLG_SIDEREAL
     search_targets: list[tuple[float, int]] = []
     for sign_index in range(chart.Chart.SIGN_NUM):
         display_target = float(sign_index * chart.Chart.SIGN_DEG)
-        search_targets.append((util.normalize(display_target + ayanamsha), sign_index))
+        search_targets.append((display_target, sign_index))
     try:
         hits = search_longitude_transits_batch(
             [int(pid) for pid in planet_ids],
@@ -526,7 +524,7 @@ def _longitude_sign_events(options, year: int, planet_ids, start_jd, days) -> li
             float(start_jd) + float(days),
             [target for target, _sign in search_targets],
             ephe_path=common.get_ephe_path(),
-            flags=int(_FLAGS),
+            flags=search_flags,
         )
     except Exception:
         return out

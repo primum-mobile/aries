@@ -326,12 +326,12 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
   return (
     <aside
       className={cn(
-        "flex h-full w-full min-w-0 flex-col gap-1 bg-background/95 px-2 py-2 text-[12px]",
+        "flex h-full w-full min-w-0 flex-col gap-[var(--aries-notes-gap)] bg-background/95 p-[var(--aries-notes-padding)] text-[length:var(--aries-font-size-base)]",
         className,
       )}
     >
-      <div className="flex min-w-0 items-center justify-between gap-2 px-1">
-        <span className="min-w-0 truncate text-[11px] font-medium text-foreground/70">
+      <div className="flex min-w-0 items-center justify-between gap-[var(--aries-notes-header-gap)] px-[var(--aries-notes-gap)]">
+        <span className="min-w-0 truncate text-[length:var(--aries-font-size-small)] font-medium text-foreground/70">
           {t("notes.title")} <span className="text-foreground/35">/</span> {sourceName}
         </span>
         <Button
@@ -341,12 +341,12 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
           disabled={!chart || !editorReady}
           onClick={insertChartInfo}
           title={chart ? t("notes.appendChartInfo") : t("notes.noChartLoaded")}
-          className="h-5 shrink-0 rounded-[4px] px-1.5 text-[10px] text-foreground/55 hover:text-foreground"
+          className="h-5 shrink-0 rounded-[var(--aries-radius-control-compact)] px-1.5 text-[length:var(--aries-font-size-section)] text-foreground/55 hover:text-foreground"
         >
           <ListPlus className="size-3" />
           {t("notes.chartInfo")}
         </Button>
-        <span className="shrink-0 text-[10px] text-foreground/40">
+        <span className="shrink-0 text-[length:var(--aries-font-size-section)] text-foreground/40">
           {error ? t("notes.statusError") : dirty ? t("notes.statusUnsaved") : savedAt ? t("notes.statusSaved", { time: timeSince(savedAt, t) }) : ""}
         </span>
       </div>
@@ -362,7 +362,7 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
           )}
         />
         {(notesLoading || !editorReady) && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/80 text-[11px] text-foreground/55">
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/80 text-[length:var(--aries-font-size-small)] text-foreground/55">
             {notesLoading ? t("notes.loadingNotes") : t("notes.loadingEditor")}
           </div>
         )}

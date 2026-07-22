@@ -22,6 +22,7 @@ const RIGHT_PANE_TIME_LORD_LIST_MIN_WIDTH = RIGHT_PANE_COMPACT_LIST_MIN_WIDTH;
 
 export type RightPaneModuleKind =
   | "hover-inspector"
+  | "chart-style"
   | "notes"
   | "inspector-notes"
   | "transit-search"
@@ -55,6 +56,14 @@ export type RightPaneWidthPolicy = {
 const RIGHT_PANE_WIDTH_POLICIES: Record<RightPaneModuleKind, RightPaneWidthPolicy> = {
   "hover-inspector": {
     kind: "hover-inspector",
+    role: "hover-inspector",
+    minContentWidth: 360,
+    preferredWidth: 390,
+    maxWidth: 560,
+    reclaimSidebar: true,
+  },
+  "chart-style": {
+    kind: "chart-style",
     role: "hover-inspector",
     minContentWidth: 360,
     preferredWidth: 390,
@@ -214,6 +223,7 @@ type FrameLayoutState = {
   rightPaneDragging: boolean;
   inspectorOpen: boolean;
   notesPaneOpen: boolean;
+  styleEditorOpen: boolean;
 
   setSidebarOpen: (open: boolean) => void;
   toggleSidebar: () => void;
@@ -227,6 +237,8 @@ type FrameLayoutState = {
   toggleInspector: () => void;
   setNotesPaneOpen: (open: boolean) => void;
   toggleNotesPane: () => void;
+  setStyleEditorOpen: (open: boolean) => void;
+  toggleStyleEditor: () => void;
 };
 
 function persistedBool(value: unknown, fallback: boolean): boolean {
@@ -247,6 +259,7 @@ export const useFrameLayoutStore = create<FrameLayoutState>()(
       rightPaneDragging: false,
       inspectorOpen: false,
       notesPaneOpen: false,
+      styleEditorOpen: false,
 
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
@@ -264,6 +277,9 @@ export const useFrameLayoutStore = create<FrameLayoutState>()(
         }),
       setNotesPaneOpen: (open) => set({ notesPaneOpen: open }),
       toggleNotesPane: () => set((state) => ({ notesPaneOpen: !state.notesPaneOpen })),
+      setStyleEditorOpen: (open) => set({ styleEditorOpen: open }),
+      toggleStyleEditor: () =>
+        set((state) => ({ styleEditorOpen: !state.styleEditorOpen })),
     }),
     {
       name: "aries.frame-layout",

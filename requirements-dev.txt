@@ -3,5 +3,6 @@ pyinstaller>=6.0
 setuptools>=61
 wheel
 fonttools>=4.0
+brotli>=1.1
 
 pytest>=7.0

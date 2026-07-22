@@ -133,7 +133,7 @@ def _zone_adjusted_datetime(radix, y, m, d, h, mi, s):
 		return (int(y), int(m), int(d), int(h), int(mi), int(s))
 
 
-def _apply_average_houses(target_houses, return_charts, obl):
+def _apply_average_houses(target_houses, return_charts, obl, ayanamsha_offset=0.0):
 	cusps = [0.0]
 	for idx in range(1, houses.Houses.HOUSE_NUM + 1):
 		cusps.append(_circular_mean(chrt.houses.cusps[idx] for chrt in return_charts))
@@ -145,8 +145,8 @@ def _apply_average_houses(target_houses, return_charts, obl):
 		ascmc[idx] = _circular_mean(chrt.houses.ascmc[idx] for chrt in return_charts)
 	target_houses.ascmc = tuple(ascmc)
 
-	ascra, ascdecl, dist = astrology.swe_cotrans(target_houses.ascmc[houses.Houses.ASC], 0.0, 1.0, -obl)
-	mcra, mcdecl, dist = astrology.swe_cotrans(target_houses.ascmc[houses.Houses.MC], 0.0, 1.0, -obl)
+	ascra, ascdecl, dist = astrology.swe_cotrans(util.to_tropical_lon(target_houses.ascmc[houses.Houses.ASC], ayanamsha_offset), 0.0, 1.0, -obl)
+	mcra, mcdecl, dist = astrology.swe_cotrans(util.to_tropical_lon(target_houses.ascmc[houses.Houses.MC], ayanamsha_offset), 0.0, 1.0, -obl)
 	target_houses.ascmc2 = (
 		(target_houses.ascmc[houses.Houses.ASC], 0.0, ascra, ascdecl),
 		(target_houses.ascmc[houses.Houses.MC], 0.0, mcra, mcdecl),
@@ -161,7 +161,7 @@ def _apply_average_houses(target_houses, return_charts, obl):
 
 	cuspstmp = []
 	for idx in range(houses.Houses.HOUSE_NUM):
-		ra, decl, dist = astrology.swe_cotrans(target_houses.cusps[idx + 1], 0.0, dist, -obl)
+		ra, decl, dist = astrology.swe_cotrans(util.to_tropical_lon(target_houses.cusps[idx + 1], ayanamsha_offset), 0.0, dist, -obl)
 		cuspstmp.append([ra, decl])
 	target_houses.cuspstmp = cuspstmp
 	target_houses.cusps2 = tuple((entry[0], entry[1]) for entry in cuspstmp)
@@ -181,11 +181,11 @@ def _average_body_data(return_charts, body_getter):
 	return (lon, lat, dist, splon, splat, spdist, spraequ, spdeclequ, spdistequ)
 
 
-def _apply_average_body(target_body, return_charts, body_getter, placelat, ascmc2, raequasc, obl, nolat=False):
+def _apply_average_body(target_body, return_charts, body_getter, placelat, ascmc2, raequasc, obl, nolat=False, ayanamsha_offset=0.0):
 	data = _average_body_data(return_charts, body_getter)
 	lon = data[planets.Planet.LONG]
 	lat = 0.0 if nolat else data[planets.Planet.LAT]
-	ra, decl, dist = astrology.swe_cotrans(lon, lat, 1.0, -obl)
+	ra, decl, dist = astrology.swe_cotrans(util.to_tropical_lon(lon, ayanamsha_offset), lat, 1.0, -obl)
 	target_body.data = (
 		float(lon),
 		float(lat),
@@ -373,8 +373,8 @@ def build_average_return_chart(
 	avg_chart.solar_average_footer_label = mtexts.txts.get('Average', 'Average')
 	avg_chart.solar_average_hide_overlay_info = True
 
-	_apply_average_houses(avg_chart.houses, return_charts, avg_chart.obl[0])
-	avg_chart.raequasc, declequasc, dist = astrology.swe_cotrans(avg_chart.houses.ascmc[houses.Houses.EQUASC], 0.0, 1.0, -avg_chart.obl[0])
+	_apply_average_houses(avg_chart.houses, return_charts, avg_chart.obl[0], avg_chart.ayanamsha_offset)
+	avg_chart.raequasc, declequasc, dist = astrology.swe_cotrans(util.to_tropical_lon(avg_chart.houses.ascmc[houses.Houses.EQUASC], avg_chart.ayanamsha_offset), 0.0, 1.0, -avg_chart.obl[0])
 
 	for idx in range(planets.Planets.PLANETS_NUM):
 		_apply_average_body(
@@ -386,6 +386,7 @@ def build_average_return_chart(
 			avg_chart.raequasc,
 			avg_chart.obl[0],
 			nolat=avg_chart.nolat,
+			ayanamsha_offset=avg_chart.ayanamsha_offset,
 		)
 
 	if getattr(avg_chart, 'chiron', None) is not None and all(getattr(chrt, 'chiron', None) is not None for chrt in return_charts):
@@ -398,6 +399,7 @@ def build_average_return_chart(
 			avg_chart.raequasc,
 			avg_chart.obl[0],
 			nolat=avg_chart.nolat,
+			ayanamsha_offset=avg_chart.ayanamsha_offset,
 		)
 
 	avg_chart.abovehorizonwithorb = avg_chart.isAboveHorizonWithOrb()

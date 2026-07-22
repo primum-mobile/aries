@@ -60,5 +60,6 @@ test("Help lists Spotlight and time navigation first without the deleted questio
   expect(rows.some((row) => row.keys === "?")).toBe(false);
   expect(rows.find((row) => row.keys === "A")?.action).toBe("Aspects");
   expect(rows.find((row) => row.keys === "M")?.action).toBe("Minor aspects");
+  expect(rows.find((row) => row.keys === "Q")?.action).toBe("Synodic Cycles");
   expect(rows.find((row) => row.keys === "H")?.action).toBe("Toggle Houses");
 });

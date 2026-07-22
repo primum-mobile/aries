@@ -31,6 +31,10 @@ export interface LineOpts {
   lineJoin?: CanvasLineJoin;
 }
 
+export interface CircleOpts extends LineOpts {
+  outline?: string;
+}
+
 export interface RectOpts {
   fill?: string;
   outline?: string;
@@ -40,11 +44,39 @@ export interface RectOpts {
 const TEXT_SIZE_CACHE_LIMIT = 4096;
 const textSizeCache = new Map<string, Pt>();
 
+export type CanvasDrawProfile = Record<string, { calls: number; ms: number }>;
+
 export class CanvasDraw {
   readonly ctx: CanvasRenderingContext2D;
   readonly canvas: HTMLCanvasElement;
   private dpr = 1;
   private defaultFont = DEFAULT_MORINUS_TEXT_FONT;
+  private profile: CanvasDrawProfile | null = null;
+
+  beginProfile() {
+    this.profile = {};
+  }
+
+  endProfile(): CanvasDrawProfile | null {
+    const profile = this.profile;
+    this.profile = null;
+    return profile;
+  }
+
+  measure<T>(name: string, operation: () => T): T {
+    return this.profiled(name, operation);
+  }
+
+  private profiled<T>(name: string, operation: () => T): T {
+    if (!this.profile) return operation();
+    const startedAt = performance.now();
+    const result = operation();
+    const sample = this.profile[name] ?? { calls: 0, ms: 0 };
+    sample.calls += 1;
+    sample.ms += performance.now() - startedAt;
+    this.profile[name] = sample;
+    return result;
+  }
 
   private snap(value: number): number {
     return Math.round(value);
@@ -62,8 +94,8 @@ export class CanvasDraw {
     this.defaultFont = next && next.length > 0 ? next : DEFAULT_MORINUS_TEXT_FONT;
   }
 
-  resize(cssWidth: number, cssHeight: number) {
-    this.dpr = Math.max(1, window.devicePixelRatio || 1);
+  resize(cssWidth: number, cssHeight: number, dprOverride?: number) {
+    this.dpr = Math.max(1, dprOverride ?? (window.devicePixelRatio || 1));
     const backingWidth = Math.round(cssWidth * this.dpr);
     const backingHeight = Math.round(cssHeight * this.dpr);
     if (this.canvas.width !== backingWidth) {
@@ -147,18 +179,20 @@ export class CanvasDraw {
     return size;
   }
 
-  line(xy: [Pt, Pt], opts?: LineOpts) {
+  line(xy: [Pt, Pt, ...Pt[]], opts?: LineOpts) {
     const { ctx } = this;
     ctx.save();
     ctx.strokeStyle = opts?.fill ?? "#fff";
-    ctx.lineWidth = Math.max(1, Math.round(opts?.width ?? 1));
+    ctx.lineWidth = Math.max(0.25, opts?.width ?? 1);
     ctx.lineCap = opts?.lineCap ?? "butt";
     ctx.lineJoin = opts?.lineJoin ?? "miter";
     if (opts?.opacity != null) ctx.globalAlpha = opts.opacity;
     if (opts?.dash) ctx.setLineDash(opts.dash);
     ctx.beginPath();
     ctx.moveTo(this.snap(xy[0][0]), this.snap(xy[0][1]));
-    ctx.lineTo(this.snap(xy[1][0]), this.snap(xy[1][1]));
+    for (let index = 1; index < xy.length; index += 1) {
+      ctx.lineTo(this.snap(xy[index][0]), this.snap(xy[index][1]));
+    }
     ctx.stroke();
     ctx.restore();
   }
@@ -185,7 +219,7 @@ export class CanvasDraw {
   circle(
     center: Pt,
     radius: number,
-    opts?: { fill?: string; outline?: string; width?: number; opacity?: number },
+    opts?: CircleOpts,
   ) {
     const { ctx } = this;
     ctx.save();
@@ -198,7 +232,10 @@ export class CanvasDraw {
     }
     if (opts?.outline) {
       ctx.strokeStyle = opts.outline;
-      ctx.lineWidth = Math.max(1, Math.round(opts?.width ?? 1));
+      ctx.lineWidth = Math.max(0.25, opts?.width ?? 1);
+      ctx.lineCap = opts.lineCap ?? "butt";
+      ctx.lineJoin = opts.lineJoin ?? "miter";
+      if (opts.dash) ctx.setLineDash(opts.dash);
       ctx.stroke();
     }
     ctx.restore();

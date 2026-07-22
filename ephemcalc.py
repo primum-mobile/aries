@@ -57,11 +57,9 @@ class EphemCalc:
 
 
 	def calc(self, opts):
-		ayanamsha = 0.0
 		if opts.ayanamsha != 0:
 			astrology.swe_set_sid_mode(astrology.ayanamsha_swe_mode(opts.ayanamsha), 0, 0)
-			tim = chart.Time(self.year, 1, 1, 0, 0, 0, False, chart.Time.GREGORIAN, chart.Time.GREENWICH, True, 0, 0, False, None, False)
-			ayanamsha = astrology.swe_get_ayanamsa_ut(tim.jd)
+			self.flags |= astrology.SEFLG_SIDEREAL
 
 		#calculating one per day (per hour would be too slow)
 		for planet_id in self.get_planet_ids(opts):
@@ -74,8 +72,6 @@ class EphemCalc:
 				time = chart.Time(y, m, d, 0, 0, 0, False, chart.Time.GREGORIAN, chart.Time.GREENWICH, True, 0, 0, False, None, False)
 				pl = planets.Planet(time.jd, planet_id, self.flags)
 				lon = pl.data[planets.Planet.LONG]
-				if opts.ayanamsha != 0:
-					lon = util.normalize(lon-ayanamsha)
 				longitudes.append(lon)
 				declinations.append(pl.dataEqu[planets.Planet.DECLEQU])
 				y, m, d = util.incrDay(y, m, d)

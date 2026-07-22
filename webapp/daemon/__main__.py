@@ -81,6 +81,8 @@ def _parent_pid() -> int | None:
 
 
 def _pid_exists(pid: int) -> bool:
+    if os.name == "nt":
+        return _windows_pid_exists(pid)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -88,6 +90,39 @@ def _pid_exists(pid: int) -> bool:
     except PermissionError:
         return True
     return True
+
+
+def _windows_pid_exists(pid: int) -> bool:
+    """Probe a Windows PID without sending it a signal.
+
+    CPython implements most ``os.kill`` signals on Windows with
+    ``TerminateProcess``; even the POSIX-style signal 0 probe can therefore
+    terminate the Tauri parent. Query the process handle and exit code instead.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    process_query_limited_information = 0x1000
+    still_active = 259
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+    kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+
+    handle = kernel32.OpenProcess(process_query_limited_information, False, pid)
+    if not handle:
+        # Access denied still proves that the process exists.
+        return ctypes.get_last_error() == 5
+    try:
+        exit_code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+            return True
+        return exit_code.value == still_active
+    finally:
+        kernel32.CloseHandle(handle)
 
 
 def _start_parent_watchdog() -> None:

@@ -61,6 +61,11 @@ import primdirs
 from primdirs import PrimDirs
 from engine import symbolic_projection
 from webapp.daemon.chart_service import chart_snapshot_service
+from webapp.daemon.display_palette import (
+    chart_body_color_role,
+    effective_display_options,
+    sign_color_role,
+)
 from webapp.daemon.directions_service import _prom_label, _sig_label
 from webapp.daemon.primdir_points import primdir_point_glyph
 from webapp.frontend.scripts import export_chart_json
@@ -367,19 +372,22 @@ class AstrolabeService:
         delta_deg: float = 0.0,
     ) -> dict:
         with self._lock:
-            opts = chart_snapshot_service.options
+            canonical_opts = chart_snapshot_service.options
+            display_opts = effective_display_options(canonical_opts)
             radix = workspace_chart_for_document(document_id, launcher_kinds=("astrolabe",))
             if radix is not None:
-                return self._build(radix, opts, max(0.0, float(delta_deg)))
+                return self._build(radix, display_opts, max(0.0, float(delta_deg)))
             source_path = (
                 str(Path(source).expanduser()) if source
                 else str(export_chart_json.DEFAULT_SOURCE)
             )
-            radix, _ = export_chart_json.load_chart(source_path, opts, name=source_name)
+            radix, _ = export_chart_json.load_chart(
+                source_path, canonical_opts, name=source_name
+            )
             # Forward-only rete: directions are forward in time. wx clamps the
             # arc to max(0.0, ...) (morin.py:19367,19377,19427); the daemon holds
             # the same clamp regardless of what the skin sends.
-            return self._build(radix, opts, max(0.0, float(delta_deg)))
+            return self._build(radix, display_opts, max(0.0, float(delta_deg)))
 
     def _build(self, chrt, opts, delta_deg: float) -> dict:
         R_eq = _R_EQ
@@ -445,11 +453,25 @@ class AstrolabeService:
             # Real per-sign element tint from the engine — common.get_sign_color
             # (astrolabechart.py:679,900). Replaces the invented flat grey.
             sign_clr = _rgb_to_hex(common.get_sign_color(opts, i, bw=bw))
+            sign_role = sign_color_role(opts, i, resolved_color=sign_clr)
             bx, by = proj.ecliptic_degree_xy(float(i * 30), obliquity, R_eq, eramc)
-            sign_boundaries.append({"sign": i, "x": bx, "y": by, "color": sign_clr})
+            sign_boundaries.append({
+                "sign": i,
+                "x": bx,
+                "y": by,
+                "color": sign_clr,
+                "colorRole": sign_role,
+            })
             # Glyph anchor at the sign midpoint, on the ecliptic circle.
             mx, my = proj.ecliptic_degree_xy(i * 30.0 + 15.0, obliquity, R_eq, eramc)
-            sign_glyphs.append({"sign": i, "glyph": signs[i], "x": mx, "y": my, "color": sign_clr})
+            sign_glyphs.append({
+                "sign": i,
+                "glyph": signs[i],
+                "x": mx,
+                "y": my,
+                "color": sign_clr,
+                "colorRole": sign_role,
+            })
 
         stars = []
         fs = getattr(chrt, "fixstars", None)
@@ -493,6 +515,13 @@ class AstrolabeService:
                 "id": int(bid),
                 "glyph": glyph,
                 "color": color,
+                "colorRole": chart_body_color_role(
+                    opts,
+                    chrt,
+                    bid,
+                    is_fortune=bid == planets.Planets.PLANETS_NUM,
+                    resolved_color=color,
+                ),
                 "ra": ra,
                 "decl": decl,
                 "lon": lon,

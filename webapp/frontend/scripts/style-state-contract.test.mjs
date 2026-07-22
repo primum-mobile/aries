@@ -28,6 +28,8 @@ test("legacy cached ThemeState receives compatible style identity", () => {
   assert.equal(normalized.styleRevision, 7);
   assert.equal(normalized.styleHash, "legacy-hash");
   assert.equal(styleRevisionKey(normalized), "1:7:legacy-hash");
+  assert.equal(normalized.activeProfile, null);
+  assert.deepEqual(normalized.profileOverrides, { appTokens: {}, chartPalette: {}, chartData: {} });
 });
 
 test("current ThemeState preserves explicit style identity", () => {
@@ -36,9 +38,36 @@ test("current ThemeState preserves explicit style identity", () => {
     schemaVersion: 2,
     styleRevision: 11,
     styleHash: "style-hash",
+    chartPalette: {
+      "--morinus-background": "rgb(8 9 10)",
+      "--morinus-text-bright": "rgb(240 241 242)",
+    },
+    activeProfile: {
+      id: "studio",
+      name: "Studio",
+      scope: "combined",
+      basePresetId: "Midnight",
+      contentHash: "profile-hash",
+    },
+    profileOverrides: {
+      appTokens: { "--aries-surface": "rgb(12 13 14)" },
+      chartPalette: { "--morinus-frame": "rgb(210 211 212)" },
+      chartData: { aspects: ["rgb(1 2 3)"] },
+    },
   });
   assert.ok(normalized);
   assert.equal(styleRevisionKey(normalized), "2:11:style-hash");
+  assert.deepEqual(normalized.chartPalette, {
+    "--morinus-background": "rgb(8 9 10)",
+    "--morinus-text-bright": "rgb(240 241 242)",
+  });
+  assert.equal(normalized.activeProfile.id, "studio");
+  assert.deepEqual(normalized.profileOverrides.chartPalette, {
+    "--morinus-frame": "rgb(210 211 212)",
+  });
+  assert.deepEqual(normalized.profileOverrides.chartData, {
+    aspects: ["rgb(1 2 3)"],
+  });
 });
 
 test("legacy options.changed event receives compatible style identity", () => {

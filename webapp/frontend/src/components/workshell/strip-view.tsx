@@ -2,11 +2,19 @@
 
 import * as React from "react";
 
+import { useStyleRevision } from "@/hooks/use-style-revision";
+import {
+  createStripRenderStyle,
+  resolveStripRenderStyle,
+  type StripRenderStyle,
+} from "@/lib/chart/strip-render-style";
 import type {
   GenericTablePayload,
   StripBody,
 } from "@/lib/daemon/client";
 import { useT } from "@/lib/i18n/i18n";
+import { semanticChartColor } from "@/lib/theme/semantic-color";
+import { useThemeStore } from "@/stores/theme-store";
 
 /**
  * 30° Strip surface — structural translation of the wx StripWnd
@@ -23,35 +31,56 @@ import { useT } from "@/lib/i18n/i18n";
  * graphical surface merges all bodies onto the original single wx strip.
  */
 
-const FONT_SIZE = 21; // wx StripWnd default: int(21 * options.tablesize)
-const BORDER = 20; // commonwnd.CommonWnd.BORDER
-const BSPACE = FONT_SIZE / 5;
-const Y_PLANETS_OFFS = FONT_SIZE / 2 - FONT_SIZE / 10;
-const LINE_LENGTH = FONT_SIZE / 2 + FONT_SIZE / 5;
-const LONG_TICK = (2 * FONT_SIZE) / 3;
-const TICK_FIVE = FONT_SIZE / 2 + FONT_SIZE / 5;
-const TICK_ONE = FONT_SIZE / 2 - FONT_SIZE / 10;
-const TICK_STEP = (4 * FONT_SIZE) / 3;
-const DEG_OFFS = FONT_SIZE / 5;
-const AXIS_WIDTH = 30 * TICK_STEP;
-const DEG_PX = AXIS_WIDTH / 30;
-const AXIS_Y = BORDER + FONT_SIZE + Y_PLANETS_OFFS + LINE_LENGTH;
-const GLYPH_TOP = BORDER;
-const GLYPH_CONNECT_Y = GLYPH_TOP + FONT_SIZE + Y_PLANETS_OFFS;
-const LABEL_Y = AXIS_Y + LONG_TICK + DEG_OFFS;
-const STRIP_WIDTH = BORDER + AXIS_WIDTH + BORDER;
-const STRIP_HEIGHT = Math.ceil(BORDER + LONG_TICK + DEG_OFFS + FONT_SIZE + AXIS_Y);
-
 type Props = {
   payload: GenericTablePayload;
 };
 
+const BOOTSTRAP_STRIP_STYLE = createStripRenderStyle({
+  palette: {
+    background: "var(--aries-background, #232428)",
+    axis: "var(--aries-border-subtle, #2e2f32)",
+    textPrimary: "var(--aries-text-primary, #ffffff)",
+    textMuted: "var(--aries-text-muted, #b4b5b6)",
+  },
+  fontUi: "var(--aries-font-ui)",
+  fontSymbols: "var(--aries-font-symbols)",
+});
+
+const EMPTY_STRIP_PROFILE_OVERRIDES: Readonly<Record<string, string>> = Object.freeze({});
+
 export function StripView({ payload }: Props) {
   const t = useT();
+  const styleRevision = useStyleRevision();
+  const chartProfileOverrides = useThemeStore(
+    (state) => state.theme?.profileOverrides.chartPalette ?? EMPTY_STRIP_PROFILE_OVERRIDES,
+  );
+  const hostRef = React.useRef<HTMLDivElement>(null);
+  const [renderStyle, setRenderStyle] = React.useState<StripRenderStyle>(BOOTSTRAP_STRIP_STYLE);
   const strip = payload.strip;
+  const hasBodies = Boolean(strip?.signs.length);
+
+  // ThemeProvider applies daemon tokens in a parent layout effect. Resolve in
+  // the passive phase so this snapshot cannot observe the previous revision;
+  // the bootstrap style uses semantic var() references for a flash-free first paint.
+  React.useEffect(() => {
+    setRenderStyle(resolveStripRenderStyle(hostRef.current, {
+      revision: styleRevision,
+      profileOverrides: chartProfileOverrides,
+    }));
+  }, [chartProfileOverrides, hasBodies, styleRevision]);
+
   if (!strip || !strip.signs.length) {
     return (
-      <div className="font-morinus-text flex h-full min-h-0 items-center justify-center bg-background p-6 text-[length:var(--aries-font-size-base)] text-[color:var(--aries-text-muted)]">
+      <div
+        ref={hostRef}
+        className="font-morinus-text flex h-full min-h-0 items-center justify-center p-6"
+        style={{
+          backgroundColor: renderStyle.palette.background,
+          color: renderStyle.palette.textMuted,
+          fontFamily: renderStyle.typography.fontUi,
+          fontSize: renderStyle.typography.emptyFontSize,
+        }}
+      >
         {t("strip.noBodies")}
       </div>
     );
@@ -65,58 +94,68 @@ export function StripView({ payload }: Props) {
       sourceIndex: index,
     })),
   );
-  const placed = arrangeBodies(bodies);
+  const placed = arrangeBodies(bodies, renderStyle);
+  const layout = renderStyle.layout;
+  const palette = renderStyle.palette;
+  const typography = renderStyle.typography;
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto bg-background p-4">
+    <div
+      ref={hostRef}
+      className="min-h-0 flex-1 overflow-auto"
+      style={{
+        backgroundColor: palette.background,
+        padding: layout.containerPadding,
+      }}
+    >
       <svg
-        width={STRIP_WIDTH}
-        height={STRIP_HEIGHT}
-        viewBox={`0 0 ${STRIP_WIDTH} ${STRIP_HEIGHT}`}
+        width={layout.stripWidth}
+        height={layout.stripHeight}
+        viewBox={`0 0 ${layout.stripWidth} ${layout.stripHeight}`}
         className="block max-w-none shrink-0"
         role="img"
         aria-label={t("strip.ariaLabel")}
       >
         {/* axis line (stripwnd.py:127) */}
         <line
-          x1={BORDER}
-          y1={AXIS_Y}
-          x2={BORDER + AXIS_WIDTH}
-          y2={AXIS_Y}
-          stroke="var(--aries-border-subtle)"
-          strokeWidth={1}
+          x1={layout.border}
+          y1={layout.axisY}
+          x2={layout.border + layout.axisWidth}
+          y2={layout.axisY}
+          stroke={palette.axis}
+          strokeWidth={renderStyle.strokes.axis}
         />
         {/* end caps = long ticks (stripwnd.py:129-131) */}
         <line
-          x1={BORDER}
-          y1={AXIS_Y - LONG_TICK}
-          x2={BORDER}
-          y2={AXIS_Y + LONG_TICK}
-          stroke="var(--aries-border-subtle)"
-          strokeWidth={1}
+          x1={layout.border}
+          y1={layout.axisY - layout.longTick}
+          x2={layout.border}
+          y2={layout.axisY + layout.longTick}
+          stroke={palette.axis}
+          strokeWidth={renderStyle.strokes.axis}
         />
         <line
-          x1={BORDER + AXIS_WIDTH}
-          y1={AXIS_Y - LONG_TICK}
-          x2={BORDER + AXIS_WIDTH}
-          y2={AXIS_Y + LONG_TICK}
-          stroke="var(--aries-border-subtle)"
-          strokeWidth={1}
+          x1={layout.border + layout.axisWidth}
+          y1={layout.axisY - layout.longTick}
+          x2={layout.border + layout.axisWidth}
+          y2={layout.axisY + layout.longTick}
+          stroke={palette.axis}
+          strokeWidth={renderStyle.strokes.axis}
         />
         {/* degree ticks: long every 5°, short otherwise (stripwnd.py:135-142) */}
         {Array.from({ length: 30 }, (_, i) => i).map((i) => {
           if (i === 0) return null;
-          const x = BORDER + i * DEG_PX;
-          const len = i % 5 === 0 ? TICK_FIVE : TICK_ONE;
+          const x = layout.border + i * layout.degreePx;
+          const len = i % 5 === 0 ? layout.fiveTick : layout.oneTick;
           return (
             <line
               key={`tick:${i}`}
               x1={x}
-              y1={AXIS_Y}
+              y1={layout.axisY}
               x2={x}
-              y2={AXIS_Y + len}
-              stroke="var(--aries-border-subtle)"
-              strokeWidth={1}
+              y2={layout.axisY + len}
+              stroke={palette.axis}
+              strokeWidth={renderStyle.strokes.axis}
             />
           );
         })}
@@ -124,41 +163,46 @@ export function StripView({ payload }: Props) {
         {Array.from({ length: 7 }, (_, k) => k * 5).map((deg) => (
           <text
             key={`lbl:${deg}`}
-            x={BORDER + deg * DEG_PX}
-            y={LABEL_Y}
+            x={layout.border + deg * layout.degreePx}
+            y={layout.labelY}
             textAnchor="middle"
             dominantBaseline="hanging"
-            className="fill-[color:var(--aries-text-primary)]"
-            style={{ fontSize: FONT_SIZE, fontFamily: "var(--aries-font-ui)" }}
+            fill={palette.textPrimary}
+            style={{ fontSize: typography.fontSize, fontFamily: typography.fontUi }}
           >
             {deg}
           </text>
         ))}
         {/* bodies: nudged glyph + connector to true axis x (stripwnd.py:217-218) */}
         {placed.map((b) => {
-          const trueX = BORDER + b.body.degree * DEG_PX;
-          const dispX = BORDER + b.displayDeg * DEG_PX;
-          const color = b.body.colorHex ?? "var(--aries-text-primary)";
+          const trueX = layout.border + b.body.degree * layout.degreePx;
+          const dispX = layout.border + b.displayDeg * layout.degreePx;
+          const color = semanticChartColor(
+            b.body.colorRole,
+            b.body.colorHex ?? palette.textPrimary,
+          ) ?? palette.textPrimary;
           return (
             <g key={b.key}>
               <line
                 x1={trueX}
-                y1={AXIS_Y}
+                y1={layout.axisY}
                 x2={dispX}
-                y2={GLYPH_CONNECT_Y}
+                y2={layout.glyphConnectY}
                 stroke={color}
-                strokeWidth={1}
+                strokeWidth={renderStyle.strokes.connector}
               />
               <text
                 x={dispX}
-                y={GLYPH_TOP}
+                y={layout.glyphTop}
                 textAnchor="middle"
                 dominantBaseline="hanging"
                 fill={color}
                 style={{
                   fontFamily:
-                    b.body.glyphFont === "morinus" ? "'AriesMorinus'" : "var(--aries-font-ui)",
-                  fontSize: FONT_SIZE,
+                    b.body.glyphFont === "morinus"
+                      ? typography.fontSymbols
+                      : typography.fontUi,
+                  fontSize: typography.fontSize,
                 }}
               >
                 <title>{`${b.body.label} ${b.body.signGlyph} ${b.body.minuteLabel}`}</title>
@@ -169,7 +213,15 @@ export function StripView({ payload }: Props) {
         })}
       </svg>
       {payload.notes?.length ? (
-        <div className="mt-3 space-y-1 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]">
+        <div
+          className="space-y-1"
+          style={{
+            marginTop: layout.notesGap,
+            color: palette.textMuted,
+            fontFamily: typography.fontUi,
+            fontSize: typography.notesFontSize,
+          }}
+        >
           {payload.notes.map((note, index) => (
             <div key={`${index}:${note}`}>{note}</div>
           ))}
@@ -198,16 +250,19 @@ type PlacedBody = {
  * glyph boxes don't overlap, finally clamp to the 0-30 bounds. The connector
  * line (drawn by the caller) ties each nudged glyph back to its true degree.
  *
- * wx works in pixels; we work in degree units (1° = DEG_PX). The approximate
+ * wx works in pixels; we work in degree units using the style's degree scale. The approximate
  * glyph widths keep AS/MC text from being treated like one-character symbols.
  */
-function arrangeBodies(bodies: StripBodyWithSign[]): PlacedBody[] {
+function arrangeBodies(
+  bodies: StripBodyWithSign[],
+  style: StripRenderStyle,
+): PlacedBody[] {
   const placed: PlacedBody[] = bodies
     .map((body) => ({
       key: `${body.signId}:${body.label}:${body.sourceIndex}`,
       body,
       displayDeg: body.degree,
-      halfWidthPx: approximateBodyWidth(body) / 2,
+      halfWidthPx: approximateBodyWidth(body, style) / 2,
     }))
     .sort((a, b) => a.displayDeg - b.displayDeg);
 
@@ -217,7 +272,7 @@ function arrangeBodies(bodies: StripBodyWithSign[]): PlacedBody[] {
     let shifted = false;
     for (let i = 0; i < placed.length - 1; i += 1) {
       const gap = placed[i + 1].displayDeg - placed[i].displayDeg;
-      const minSpacingDeg = requiredSpacingDeg(placed[i], placed[i + 1]);
+      const minSpacingDeg = requiredSpacingDeg(placed[i], placed[i + 1], style);
       if (gap < minSpacingDeg) {
         const push = (minSpacingDeg - gap) / 2;
         placed[i].displayDeg -= push;
@@ -236,7 +291,7 @@ function arrangeBodies(bodies: StripBodyWithSign[]): PlacedBody[] {
   for (let i = 0; i < placed.length; i += 1) {
     if (placed[i].displayDeg < lo) placed[i].displayDeg = lo;
     if (i > 0) {
-      const minSpacingDeg = requiredSpacingDeg(placed[i - 1], placed[i]);
+      const minSpacingDeg = requiredSpacingDeg(placed[i - 1], placed[i], style);
       if (placed[i].displayDeg - placed[i - 1].displayDeg < minSpacingDeg) {
         placed[i].displayDeg = placed[i - 1].displayDeg + minSpacingDeg;
       }
@@ -246,7 +301,7 @@ function arrangeBodies(bodies: StripBodyWithSign[]): PlacedBody[] {
   for (let i = placed.length - 1; i >= 0; i -= 1) {
     if (placed[i].displayDeg > hi) placed[i].displayDeg = hi;
     if (i < placed.length - 1) {
-      const minSpacingDeg = requiredSpacingDeg(placed[i], placed[i + 1]);
+      const minSpacingDeg = requiredSpacingDeg(placed[i], placed[i + 1], style);
       if (placed[i + 1].displayDeg - placed[i].displayDeg < minSpacingDeg) {
         placed[i].displayDeg = placed[i + 1].displayDeg - minSpacingDeg;
       }
@@ -256,13 +311,23 @@ function arrangeBodies(bodies: StripBodyWithSign[]): PlacedBody[] {
   return placed;
 }
 
-function approximateBodyWidth(body: StripBody): number {
+function approximateBodyWidth(body: StripBody, style: StripRenderStyle): number {
+  const typography = style.typography;
   if (body.glyphFont === "text") {
-    return Math.max(FONT_SIZE, body.glyph.length * FONT_SIZE * 0.62);
+    return Math.max(
+      typography.fontSize,
+      body.glyph.length * typography.fontSize * typography.textGlyphWidthScale,
+    );
   }
-  return FONT_SIZE;
+  return typography.fontSize;
 }
 
-function requiredSpacingDeg(left: PlacedBody, right: PlacedBody): number {
-  return (left.halfWidthPx + right.halfWidthPx + BSPACE) / DEG_PX;
+function requiredSpacingDeg(
+  left: PlacedBody,
+  right: PlacedBody,
+  style: StripRenderStyle,
+): number {
+  return (
+    left.halfWidthPx + right.halfWidthPx + style.layout.collisionGap
+  ) / style.layout.degreePx;
 }

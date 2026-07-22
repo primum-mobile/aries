@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/lib/i18n/i18n";
 import { THEME_STATE_STORAGE_KEY } from "@/lib/theme/constants";
 import "./globals.css";
+import "./presentation-cursor.css";
 
 export const metadata: Metadata = {
   title: "Morinus",
@@ -67,6 +68,7 @@ const themeBootScript = `
     root.dataset.styleSchemaVersion = String(theme.schemaVersion || 1);
     root.dataset.styleRevision = String(theme.styleRevision || theme.version || "");
     root.dataset.styleHash = String(theme.styleHash || theme.paletteHash || "");
+    root.dataset.presentationCursor = theme.presentationCursor === true ? "glow" : "system";
     root.dataset.themeReady = "cached";
   } catch (error) {
     markPending();

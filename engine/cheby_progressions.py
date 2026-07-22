@@ -326,10 +326,11 @@ class _QuotidianAngleTable(object):
 		'angle_grid_unwrapped',
 		'unwrapped_min',
 		'unwrapped_max',
+		'ayanamsha_offset',
 	)
 
 	def __init__(self, kind, natal_armc, deg_per_age, span_start_age, span_end_age,
-				 armc_grid, angle_grid, angle_grid_unwrapped):
+				 armc_grid, angle_grid, angle_grid_unwrapped, ayanamsha_offset=0.0):
 		self.kind = kind
 		self.natal_armc = float(natal_armc)
 		self.deg_per_age = float(deg_per_age)
@@ -340,6 +341,7 @@ class _QuotidianAngleTable(object):
 		self.angle_grid_unwrapped = angle_grid_unwrapped
 		self.unwrapped_min = float(np.min(angle_grid_unwrapped))
 		self.unwrapped_max = float(np.max(angle_grid_unwrapped))
+		self.ayanamsha_offset = float(ayanamsha_offset)
 
 
 def _quotidian_obliquity(radix, span_start_age, span_end_age):
@@ -362,6 +364,8 @@ def _build_quotidian_angle_table(radix, kind, span_start_age, span_end_age, scal
 		raise ValueError('quotidian table requested for non-quotidian kind: %r' % (kind,))
 	place = radix.place
 	obl = _quotidian_obliquity(radix, span_start_age, span_end_age)
+	mid_age = 0.5 * (float(span_start_age) + float(span_end_age))
+	ayan = posfordate._ayan_ut(float(radix.time.jd) + mid_age, radix.options)
 	hsys = radix.options.hsys if getattr(radix.options, 'hsys', None) in houses.Houses.hsystems else houses.Houses.hsystems[0]
 	hsys_ord = ord(hsys)
 	# 0.25° resolution in ARMC is enough for mid-latitudes — Asc varies by at most
@@ -375,16 +379,9 @@ def _build_quotidian_angle_table(radix, kind, span_start_age, span_end_age, scal
 			float(armc), float(place.lat), float(obl), hsys_ord
 		)
 		if kind == KIND_ANGLE_ASC_QUOTIDIAN:
-			angle_grid[i] = util.normalize(float(ascmc[houses.Houses.ASC]))
+			angle_grid[i] = util.normalize(float(ascmc[houses.Houses.ASC]) - ayan)
 		else:
-			angle_grid[i] = util.normalize(float(ascmc[houses.Houses.MC]))
-
-	# Apply ayanamsha if sidereal — _build_houses_from_armc applies the sidereal
-	# adjustment via the houses_armc result; for non-sidereal this is a no-op.
-	# Asc/MC values returned by swe_houses_armc are tropical; the sidereal subtract
-	# happens later when comparing against natal sigs (which are in the same frame).
-	# For aspect search, both natal target and progressed angle live in the same
-	# frame, so no extra ayan adjustment needed here.
+			angle_grid[i] = util.normalize(float(ascmc[houses.Houses.MC]) - ayan)
 
 	# Unwrap to a continuous (cumulative) angle, plus pad one period so the
 	# wraparound from grid index n-1 → 0 has a smooth representation. We extend
@@ -412,6 +409,7 @@ def _build_quotidian_angle_table(radix, kind, span_start_age, span_end_age, scal
 		armc_grid=armc_extended,
 		angle_grid=angle_grid,  # mod-360 grid kept for evaluation
 		angle_grid_unwrapped=angle_extended,
+		ayanamsha_offset=ayan,
 	)
 
 
@@ -673,7 +671,10 @@ def _quotidian_lof_at_age_with_flag(fit, table, symbolic_age):
 	sun_lon = util.normalize(float(_eval_segments_at_age(sun_segments, age)))
 	moon_lon = util.normalize(float(_eval_segments_at_age(moon_segments, age)))
 
-	sun_ra, sun_decl = _sun_ra_decl_from_lon(sun_lon, table.obl_rad)
+	sun_ra, sun_decl = _sun_ra_decl_from_lon(
+		util.to_tropical_lon(sun_lon, table.asc_table.ayanamsha_offset),
+		table.obl_rad,
+	)
 	abovehor = _sun_above_horizon(armc, sun_ra, sun_decl, table.place_lat, table.usedaynightorb, table.daynightorb_deg)
 
 	# Mirror searchbackend._secondary_symbolic_lof_longitude

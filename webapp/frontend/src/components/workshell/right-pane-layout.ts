@@ -6,6 +6,7 @@ import type { RightPaneModuleKind } from "@/stores/frame-layout-store";
 type ActiveRightPaneInput = {
   inspectorOpen: boolean;
   notesOpen: boolean;
+  styleEditorOpen: boolean;
   transitSearchPane: unknown | null;
   transitListPane: unknown | null;
   directionsPane: unknown | null;
@@ -35,6 +36,7 @@ export function activeRightPaneModule(input: ActiveRightPaneInput): RightPaneMod
   if (input.lunarMansionsPane) return "lunar-mansions";
   if (input.synodicCyclesPane) return "directions";
   if (input.ascensionalTransitsPane) return "ascensional-transits";
+  if (input.styleEditorOpen) return "chart-style";
   if (input.inspectorOpen && input.notesOpen) return "inspector-notes";
   if (input.inspectorOpen) return "hover-inspector";
   if (input.notesOpen) return "notes";

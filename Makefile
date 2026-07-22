@@ -2,7 +2,8 @@
 
 .PHONY: help run check package build-ext clean web web-tauri web-tauri-status
 .PHONY: web-tauri-stop web-tauri-reset web-live-smoke web-daemon web-dev
-.PHONY: web-frontend web-hosted-build web-notes web-corpus web-runtime-resources web-legal web-venv web-build-deps
+.PHONY: perf-check perf-report speedlog
+.PHONY: web-frontend web-hosted-build web-notes web-corpus web-runtime-resources web-legal web-venv web-build-deps web-check-deps
 .PHONY: web-daemon-binary web-verify-parity style-check style-token-check
 
 # POSIX-oriented helper targets.
@@ -13,7 +14,7 @@ SWEP_SRC ?= SWEP/src
 WEB_DAEMON_PORT ?= 8765
 WEB_PYTHON ?= webapp/.venv/bin/python
 ARCH ?= arm64
-ARIES_VERSION ?= 1.0.0b1
+ARIES_VERSION ?=
 ARIES_PACK_SEED_SOURCES ?=
 export ARIES_VERSION
 
@@ -35,19 +36,38 @@ run: web-venv web-notes web-corpus
 	fi
 	$(MAKE) web-tauri
 
-check: build-ext web-corpus web-runtime-resources web-legal
+check: build-ext web-corpus web-runtime-resources web-legal web-check-deps
 	cd webapp/frontend && npm run lint
 	cd webapp/frontend && npm run typecheck
 	cd webapp/frontend && npm test
 	cd webapp/frontend/src-tauri && cargo test
 	@if find tests aries -type f -name 'test_*.py' -print -quit 2>/dev/null | grep -q .; then \
-		PYTHONPATH=$(SWEP_SRC) $(PYTHON) -m pytest -q; \
+		PYTHONPATH=$(SWEP_SRC) $(WEB_PYTHON) -m pytest -q \
+			aries/astrology/transit_fast/tests tests/test_public_readme_shortcuts.py; \
 	else \
 		printf '%s\n' 'No Python tests in this source export; running static checks only.'; \
 	fi
-	$(PYTHON) -m compileall -q *.py aries engine parsers webapp/daemon \
+	$(WEB_PYTHON) -m compileall -q *.py aries engine parsers webapp/daemon \
 		scripts/stage_corpus_resources.py scripts/stage_tauri_runtime_resources.py \
 		scripts/stage_tauri_legal_artifacts.py
+
+perf-check:
+	@curl -fsS http://127.0.0.1:3000/ >/dev/null 2>&1 || { \
+		printf '%s\n' 'Aries is not running. Run make run, then make perf-check.' >&2; \
+		exit 1; \
+	}
+	@cd webapp/frontend; \
+	STATUS=0; \
+	npm run perf:chart-step || STATUS=$$?; \
+	npm run perf:report || { [ $$STATUS -ne 0 ] || STATUS=$$?; }; \
+	exit $$STATUS
+
+perf-report:
+	cd webapp/frontend && npm run perf:report
+
+speedlog:
+	@LOG_PATH="$$($(PYTHON) -c 'import tempfile; print(tempfile.gettempdir() + "/aries-speedlog.jsonl")')"; \
+	if [ -f "$$LOG_PATH" ]; then tail -n 20 "$$LOG_PATH"; else printf '%s\n' "No automatic speedlog yet: $$LOG_PATH"; fi
 
 build-ext:
 	cd $(SWEP_SRC) && $(PYTHON) setup.py build_ext --inplace
@@ -124,6 +144,9 @@ web-live-smoke:
 
 web-build-deps: web-venv
 	$(WEB_PYTHON) -m pip install -r webapp/daemon/requirements-build.txt
+
+web-check-deps: web-build-deps
+	$(WEB_PYTHON) -m pip install -r requirements-dev.txt
 
 web-daemon-binary: web-build-deps
 	@ARCH=$$($(WEB_PYTHON) -c 'import platform; print(platform.machine())'); \

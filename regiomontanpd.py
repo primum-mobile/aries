@@ -231,12 +231,12 @@ class RegiomontanPD(regiocampbasepd.RegioCampBasePD):
 
 #####################################Moon's SecMotion
 	def calcArcWithSM(self, mundane, idprom, latprom, sig, sigasp, aspect, arc):
-		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric)
+		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric, getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
 		lonprom = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.LONG]
 		raprom = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.RA]
 		declprom = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.DECL]
 		if not mundane and self.options.subzodiacal != primdirs.PrimDirs.SZPROMISSOR and self.options.subzodiacal != primdirs.PrimDirs.SZBOTH:
-			raprom, declprom, distprom = astrology.swe_cotrans(lonprom, 0.0, 1.0, -self.chart.obl[0])
+			raprom, declprom, distprom = astrology.swe_cotrans(self._lon_for_cotrans(lonprom), 0.0, 1.0, -self.chart.obl[0])
 
 		plsig = self.chart.planets.planets[sig]
 
@@ -320,7 +320,7 @@ class RegiomontanPD(regiocampbasepd.RegioCampBasePD):
 
 
 	def calcHArcWithSM(self, mundane, idprom, h, hcps, arc, aspect, asp=0.0):
-		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric)
+		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric, getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
 
 		lonprom = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.LONG]
 		pllat = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.LAT]
@@ -338,9 +338,9 @@ class RegiomontanPD(regiocampbasepd.RegioCampBasePD):
 
 				#calc real(wahre)ra
 #				raprom, declprom = util.getRaDecl(lonprom, latprom, self.chart.obl[0])
-				raprom, declprom, dist = astrology.swe_cotrans(lonprom, latprom, 1.0, -self.chart.obl[0])
+				raprom, declprom, dist = astrology.swe_cotrans(self._lon_for_cotrans(lonprom), latprom, 1.0, -self.chart.obl[0])
 			else:
-				raprom, declprom, distprom = astrology.swe_cotrans(lonprom, 0.0, 1.0, -self.chart.obl[0])
+				raprom, declprom, distprom = astrology.swe_cotrans(self._lon_for_cotrans(lonprom), 0.0, 1.0, -self.chart.obl[0])
 
 		ID = 0
 		W = 1

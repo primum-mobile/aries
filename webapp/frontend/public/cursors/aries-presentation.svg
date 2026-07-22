@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="28" height="32" viewBox="0 0 28 32" fill="none">
+  <defs>
+    <filter id="glow" x="-55%" y="-45%" width="210%" height="210%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feFlood flood-color="#B8ACF2" flood-opacity="0.34"/>
+      <feComposite in2="blur" operator="in"/>
+    </filter>
+  </defs>
+  <path
+    d="M3.2 2L3.3 26.2L8.9 20.3L13.1 29.4L18 27L13.5 18.1L21.7 16.8L3.2 2Z"
+    fill="#B8ACF2"
+    stroke="#B8ACF2"
+    stroke-width="2.5"
+    stroke-linejoin="round"
+    filter="url(#glow)"
+  />
+  <path
+    d="M3.2 2L3.3 26.2L8.9 20.3L13.1 29.4L18 27L13.5 18.1L21.7 16.8L3.2 2Z"
+    fill="#17171A"
+    stroke="#FFFFFF"
+    stroke-width="1.55"
+    stroke-linejoin="round"
+  />
+</svg>

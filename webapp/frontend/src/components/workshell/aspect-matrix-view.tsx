@@ -10,6 +10,7 @@ import type {
   AspectMatrixCell,
   GenericTablePayload,
 } from "@/lib/daemon/client";
+import { semanticChartColor } from "@/lib/theme/semantic-color";
 import { cn } from "@/lib/utils";
 
 /**
@@ -22,7 +23,11 @@ import { cn } from "@/lib/utils";
  * component language, not a pixel clone.
  */
 
-const CELL = 46; // square size in px; wx uses SQUARE_SIZE (aspectswnd.py:27)
+const MATRIX_RULE_STYLE: React.CSSProperties = {
+  borderStyle: "solid",
+  borderWidth: "var(--aries-aspect-matrix-rule-width)",
+  borderColor: "var(--aries-aspect-matrix-rule-color)",
+};
 
 type Props = {
   payload: GenericTablePayload;
@@ -51,12 +56,15 @@ export function AspectMatrixView({ payload }: Props) {
   const housesOffset = 1 + ascmc.length + n;
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto p-4">
+    <div
+      className="min-h-0 flex-1 overflow-auto"
+      style={{ padding: "var(--aries-aspect-matrix-outer-padding)" }}
+    >
       <div
         className="inline-grid"
         style={{
-          gridTemplateColumns: `repeat(${totalCols}, ${CELL}px)`,
-          gridTemplateRows: `repeat(${n + 1}, ${CELL}px)`,
+          gridTemplateColumns: `repeat(${totalCols}, var(--aries-aspect-matrix-cell-size))`,
+          gridTemplateRows: `repeat(${n + 1}, var(--aries-aspect-matrix-cell-size))`,
         }}
       >
         {/* Header row: blank corner, Asc/MC glyphs (aspectswnd.py:256-263),
@@ -112,7 +120,10 @@ export function AspectMatrixView({ payload }: Props) {
         ))}
       </div>
       {payload.notes?.length ? (
-        <div className="mt-3 space-y-1 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]">
+        <div
+          className="text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)] [&>*+*]:mt-[var(--aries-control-gap-compact)]"
+          style={{ marginTop: "var(--aries-pane-title-gap)" }}
+        >
           {payload.notes.map((note, index) => (
             <div key={`${index}:${note}`}>{note}</div>
           ))}
@@ -121,8 +132,6 @@ export function AspectMatrixView({ payload }: Props) {
     </div>
   );
 }
-
-const STAR_RAIL = 132; // left name column width; wx CELL_WIDTH = 6*FONT_SIZE
 
 /**
  * Fixed-star aspect matrix — structural translation of the wx
@@ -140,17 +149,20 @@ function FixedStarMatrix({ payload }: Props) {
   const cols = matrix.cols;
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto p-4">
+    <div
+      className="min-h-0 flex-1 overflow-auto"
+      style={{ padding: "var(--aries-aspect-matrix-outer-padding)" }}
+    >
       <div
         className="inline-grid"
         style={{
-          gridTemplateColumns: `${STAR_RAIL}px repeat(${cols.length}, ${CELL}px)`,
-          gridTemplateRows: `repeat(${rows.length + 1}, ${CELL}px)`,
+          gridTemplateColumns: `var(--aries-aspect-matrix-fixed-star-rail-width) repeat(${cols.length}, var(--aries-aspect-matrix-cell-size))`,
+          gridTemplateRows: `repeat(${rows.length + 1}, var(--aries-aspect-matrix-cell-size))`,
         }}
       >
         {/* Header row: blank corner over the name rail, then column glyphs
             (fixstarsaspectswnd.py:225-427). */}
-        <div className="border border-border/40" style={{ gridColumn: 1, gridRow: 1 }} />
+        <div style={{ ...MATRIX_RULE_STYLE, gridColumn: 1, gridRow: 1 }} />
         {cols.map((entry, colIndex) => (
           <AxisHeader key={entry.id} entry={entry} col={2 + colIndex} row={1} />
         ))}
@@ -159,11 +171,16 @@ function FixedStarMatrix({ payload }: Props) {
           <React.Fragment key={rowEntry.id}>
             {/* Star name in the left rail (fixstarsaspectswnd.py:210-223). */}
             <div
-              className="flex items-center justify-start border border-border/40 px-2"
-              style={{ gridColumn: 1, gridRow: 2 + rowIndex }}
+              className="flex items-center justify-start px-[var(--aries-control-padding-x-compact)]"
+              style={{ ...MATRIX_RULE_STYLE, gridColumn: 1, gridRow: 2 + rowIndex }}
               title={rowEntry.label}
             >
-              <span className="truncate text-[11px] text-foreground/80">{rowEntry.label}</span>
+              <span
+                className="truncate text-[length:var(--aries-font-size-small)]"
+                style={{ color: "color-mix(in srgb, var(--aries-text-primary) 80%, transparent)" }}
+              >
+                {rowEntry.label}
+              </span>
             </div>
             {cols.map((_colEntry, colIndex) => (
               <MatrixCellView
@@ -177,7 +194,10 @@ function FixedStarMatrix({ payload }: Props) {
         ))}
       </div>
       {payload.notes?.length ? (
-        <div className="mt-3 space-y-1 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]">
+        <div
+          className="text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)] [&>*+*]:mt-[var(--aries-control-gap-compact)]"
+          style={{ marginTop: "var(--aries-pane-title-gap)" }}
+        >
           {payload.notes.map((note, index) => (
             <div key={`${index}:${note}`}>{note}</div>
           ))}
@@ -190,22 +210,28 @@ function FixedStarMatrix({ payload }: Props) {
 function AxisHeader({ entry, col, row }: { entry: AspectMatrixAxisEntry; col: number; row: number }) {
   return (
     <div
-      className="flex items-center justify-center border border-border/40"
-      style={{ gridColumn: col, gridRow: row }}
+      className="flex items-center justify-center"
+      style={{ ...MATRIX_RULE_STYLE, gridColumn: col, gridRow: row }}
       title={entry.label}
     >
       {entry.glyph ? (
         <span
-          className="text-[19px] leading-none"
+          className="leading-none"
           style={{
-            fontFamily: entry.glyphFont === "text" ? undefined : "'AriesMorinus'",
-            color: entry.color,
+            fontFamily: entry.glyphFont === "text" ? undefined : "var(--aries-font-symbols)",
+            fontSize: "var(--aries-aspect-matrix-axis-glyph-size)",
+            color: semanticChartColor(entry.colorRole, entry.color),
           }}
         >
           {entry.glyph}
         </span>
       ) : (
-        <span className="text-[11px] text-foreground/60 tabular-nums">{entry.label}</span>
+        <span
+          className="text-[length:var(--aries-font-size-small)] tabular-nums"
+          style={{ color: "color-mix(in srgb, var(--aries-text-primary) 60%, transparent)" }}
+        >
+          {entry.label}
+        </span>
       )}
     </div>
   );
@@ -213,29 +239,46 @@ function AxisHeader({ entry, col, row }: { entry: AspectMatrixAxisEntry; col: nu
 
 function MatrixCellView({ cell, col, row }: { cell?: AspectMatrixCell; col: number; row: number }) {
   if (!cell) {
-    return <div className="border border-border/40" style={{ gridColumn: col, gridRow: row }} />;
+    return <div style={{ ...MATRIX_RULE_STYLE, gridColumn: col, gridRow: row }} />;
   }
   const hasAspect = Boolean(cell.glyph);
   return (
     <div
-      className="relative border border-border/40"
-      style={{ gridColumn: col, gridRow: row }}
+      className="relative"
+      style={{ ...MATRIX_RULE_STYLE, gridColumn: col, gridRow: row }}
     >
       {/* Exact aspect: inset border rectangle (aspectswnd.py:277-278). */}
-      {cell.exact ? <div className="pointer-events-none absolute inset-[3px] border border-foreground/45" /> : null}
+      {cell.exact ? (
+        <div
+          className="pointer-events-none absolute border-solid"
+          style={{
+            inset: "var(--aries-aspect-matrix-exact-inset)",
+            borderWidth: "var(--aries-aspect-matrix-rule-width)",
+            borderColor: "var(--aries-aspect-matrix-exact-color)",
+          }}
+        />
+      ) : null}
       {/* Applying aspect: filled corner triangle (aspectswnd.py:280-281). */}
       {cell.applying ? (
         <div
-          className="pointer-events-none absolute left-0 top-0 size-0 border-[5px] border-transparent border-l-foreground/55 border-t-foreground/55"
+          className="pointer-events-none absolute left-0 top-0 size-0 border-solid"
+          style={{
+            borderWidth: "var(--aries-aspect-matrix-applying-marker-size)",
+            borderColor: "transparent",
+            borderLeftColor: "var(--aries-aspect-matrix-applying-color)",
+            borderTopColor: "var(--aries-aspect-matrix-applying-color)",
+          }}
         />
       ) : null}
       {/* Aspect glyph, top-left, aspect-colored (aspectswnd.py:283-287). */}
       {hasAspect ? (
         <span
-          className="absolute left-[7px] top-[5px] text-[14px] leading-none"
+          className="absolute text-[length:var(--aries-font-size-large)] leading-none"
           style={{
-            fontFamily: cell.glyphFont === "text" ? undefined : "'AriesMorinus'",
-            color: cell.color,
+            fontFamily: cell.glyphFont === "text" ? undefined : "var(--aries-font-symbols)",
+            left: "var(--aries-aspect-matrix-glyph-inset-x)",
+            top: "var(--aries-aspect-matrix-glyph-inset-y)",
+            color: semanticChartColor(cell.colorRole, cell.color),
           }}
         >
           {cell.glyph}
@@ -244,8 +287,15 @@ function MatrixCellView({ cell, col, row }: { cell?: AspectMatrixCell; col: numb
       {/* Parallel / contraparallel mark, top-right (aspectswnd.py:289-297). */}
       {cell.parallel ? (
         <span
-          className="absolute right-[4px] top-[5px] text-[12px] leading-none text-foreground/45"
-          style={{ fontFamily: "'AriesMorinus'" }}
+          className="absolute text-[length:var(--aries-font-size-base)] leading-none"
+          style={{
+            fontFamily: "var(--aries-font-symbols)",
+            right: "var(--aries-aspect-matrix-parallel-inset-x)",
+            top: "var(--aries-aspect-matrix-parallel-inset-y)",
+            color: cell.parallel === "contraparallel"
+              ? "color-mix(in srgb, var(--morinus-aspect-contraparallel) 45%, transparent)"
+              : "color-mix(in srgb, var(--morinus-aspect-parallel) 45%, transparent)",
+          }}
           title={cell.parallel}
         >
           {cell.parallel === "contraparallel" ? "Y" : "X"}
@@ -255,10 +305,15 @@ function MatrixCellView({ cell, col, row }: { cell?: AspectMatrixCell; col: numb
           separation otherwise (aspectswnd.py:299-319). */}
       <span
         className={cn(
-          "absolute inset-x-0 bottom-[4px] text-center leading-none tabular-nums",
-          hasAspect ? "text-[11px]" : "text-[10px] text-foreground/35",
+          "absolute inset-x-0 text-center leading-none tabular-nums",
+          hasAspect ? "text-[length:var(--aries-font-size-small)]" : "text-[length:var(--aries-font-size-section)]",
         )}
-        style={hasAspect ? { color: cell.color } : undefined}
+        style={{
+          bottom: "var(--aries-aspect-matrix-orb-inset-bottom)",
+          color: hasAspect
+            ? semanticChartColor(cell.colorRole, cell.color)
+            : "var(--aries-aspect-matrix-empty-color)",
+        }}
       >
         {cell.orb}
       </span>

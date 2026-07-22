@@ -8,6 +8,15 @@ import * as React from "react";
 import { CanvasDraw } from "@/lib/chart/canvas-draw";
 import { morinusTextFontFromTokens } from "@/lib/chart/chart-fonts";
 import { awaitFonts } from "@/lib/chart/draw-chart";
+import {
+  resolveSphereDotRadius,
+  resolveSphereFontSize,
+  resolveSphereFrameWidth,
+  resolveSpherePolylineWidth,
+  resolveSphereRadius,
+  resolveSphereRenderStyle,
+  type SphereRenderStyle,
+} from "@/lib/chart/sphere-render-style";
 import { useStyleRevision } from "@/hooks/use-style-revision";
 import {
   fetchAstrologSphere,
@@ -16,6 +25,7 @@ import {
   type AstrologSpherePoint,
   type AstrologSpherePolyline,
 } from "@/lib/daemon/client";
+import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 import { useThemeStore } from "@/stores/theme-store";
 import { useT } from "@/lib/i18n/i18n";
 
@@ -58,12 +68,6 @@ type Layout = {
   cx: number;
   cy: number;
   r: number;
-};
-
-const WIRE = {
-  background: "#000000",
-  white: "#ffffff",
-  faint: "rgba(255,255,255,0.22)",
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -147,10 +151,10 @@ function mapPoint(layout: Layout, p: AstrologSpherePoint, view: SphereView): [nu
   return [layout.cx + projected.x * layout.r, layout.cy + projected.y * layout.r, projected];
 }
 
-function drawSphereFrame(draw: CanvasDraw, layout: Layout) {
+function drawSphereFrame(draw: CanvasDraw, layout: Layout, style: SphereRenderStyle) {
   draw.circle([layout.cx, layout.cy], layout.r, {
-    outline: WIRE.white,
-    width: Math.max(0.75, layout.r / 520),
+    outline: style.palette.wire,
+    width: resolveSphereFrameWidth(style, layout.r),
   });
 }
 
@@ -160,9 +164,9 @@ function clipToSphere(draw: CanvasDraw, layout: Layout) {
   draw.ctx.clip();
 }
 
-function wireColor(line: AstrologSpherePolyline): string {
-  if (line.kind === "bound" || line.kind === "decan") return WIRE.faint;
-  return WIRE.white;
+function wireColor(style: SphereRenderStyle, line: AstrologSpherePolyline): string {
+  if (line.kind === "bound" || line.kind === "decan") return style.palette.faintWire;
+  return style.palette.wire;
 }
 
 function strokePolyline(
@@ -170,12 +174,13 @@ function strokePolyline(
   layout: Layout,
   line: AstrologSpherePolyline,
   view: SphereView,
-  opts: { backVisible: boolean; frontOpacity?: number; backOpacity?: number; widthScale?: number } = { backVisible: true },
+  style: SphereRenderStyle,
+  opts: { backVisible: boolean; opacity: Readonly<{ front: number; back: number }> },
 ) {
   const pts = line.points;
   if (pts.length < 2) return;
   const ctx = draw.ctx;
-  const width = Math.max(0.35, line.width * (opts.widthScale ?? 1));
+  const width = resolveSpherePolylineWidth(style, layout.r, line.width);
   for (let i = 1; i < pts.length; i += 1) {
     const a = pts[i - 1];
     const b = pts[i];
@@ -183,13 +188,13 @@ function strokePolyline(
     const [x2, y2, pb] = mapPoint(layout, b, view);
     const front = pa.front || pb.front;
     if (!front && !opts.backVisible) continue;
-    const opacity = front ? opts.frontOpacity ?? 1 : opts.backOpacity ?? 0.16;
+    const opacity = front ? opts.opacity.front : opts.opacity.back;
     ctx.save();
     ctx.globalAlpha = opacity;
-    ctx.strokeStyle = wireColor(line);
+    ctx.strokeStyle = wireColor(style, line);
     ctx.lineWidth = width;
-    ctx.lineCap = "butt";
-    ctx.lineJoin = "miter";
+    ctx.lineCap = style.strokes.lineCap;
+    ctx.lineJoin = style.strokes.lineJoin;
     if (line.dash.length) ctx.setLineDash(line.dash);
     ctx.beginPath();
     ctx.moveTo(x1, y1);
@@ -204,18 +209,19 @@ function drawCenteredGlyph(
   layout: Layout,
   anchor: AstrologSphereGlyphAnchor,
   view: SphereView,
+  style: SphereRenderStyle,
   size: number,
   fill: string,
   opacity = 1,
 ) {
   if (!anchor.glyph) return;
   const [x, y] = mapPoint(layout, anchor.point, view);
-  const [w, h] = draw.textsize(anchor.glyph, { font: '"AriesMorinus"', size });
+  const [w, h] = draw.textsize(anchor.glyph, { font: style.typography.fontSymbols, size });
   draw.ctx.save();
   draw.ctx.globalAlpha = opacity;
   draw.text([x - w / 2, y - h / 2], anchor.glyph, {
     fill,
-    font: '"AriesMorinus"',
+    font: style.typography.fontSymbols,
     size,
   });
   draw.ctx.restore();
@@ -226,33 +232,42 @@ function drawCenteredText(
   layout: Layout,
   anchor: AstrologSphereGlyphAnchor,
   view: SphereView,
+  style: SphereRenderStyle,
   size: number,
   fill: string,
-  font: string,
   opacity = 1,
 ) {
   if (!anchor.glyph) return;
   const [x, y] = mapPoint(layout, anchor.point, view);
-  const [w, h] = draw.textsize(anchor.glyph, { font, size });
+  const [w, h] = draw.textsize(anchor.glyph, { font: style.typography.fontUi, size });
   draw.ctx.save();
   draw.ctx.globalAlpha = opacity;
   draw.text([x - w / 2, y - h / 2], anchor.glyph, {
     fill,
-    font,
+    font: style.typography.fontUi,
     size,
   });
   draw.ctx.restore();
 }
 
-function drawBodies(draw: CanvasDraw, layout: Layout, geo: AstrologSphereGeometry, view: SphereView, backVisible: boolean) {
-  const bodySize = Math.max(10, Math.min(16, layout.r / 21));
-  const dotR = Math.max(0.75, layout.r / 360);
+function drawBodies(
+  draw: CanvasDraw,
+  layout: Layout,
+  geo: AstrologSphereGeometry,
+  view: SphereView,
+  backVisible: boolean,
+  style: SphereRenderStyle,
+) {
+  const bodySize = resolveSphereFontSize(style.typography.body, layout.r);
+  const dotR = resolveSphereDotRadius(style, layout.r);
   for (const body of geo.bodies) {
     const [x, y, projected] = mapPoint(layout, body.point, view);
     if (!projected.front && !backVisible) continue;
-    const opacity = projected.front ? 0.94 : 0.16;
-    draw.circle([x, y], dotR, { fill: WIRE.white, opacity });
-    if (projected.front) drawCenteredGlyph(draw, layout, body, view, bodySize, WIRE.white, opacity);
+    const opacity = projected.front ? style.opacities.body.front : style.opacities.body.back;
+    draw.circle([x, y], dotR, { fill: style.palette.wire, opacity });
+    if (projected.front) {
+      drawCenteredGlyph(draw, layout, body, view, style, bodySize, style.palette.wire, opacity);
+    }
   }
 }
 
@@ -262,31 +277,55 @@ function drawLabels(
   geo: AstrologSphereGeometry,
   layers: Layers,
   view: SphereView,
-  fontText: string,
+  style: SphereRenderStyle,
 ) {
-  const signSize = Math.max(8, Math.min(12, layout.r / 31));
-  const houseSize = Math.max(6, Math.min(9, layout.r / 44));
-  const decanSize = Math.max(5, Math.min(7, layout.r / 68));
-  const boundSize = Math.max(4, Math.min(6, layout.r / 78));
+  const signSize = resolveSphereFontSize(style.typography.sign, layout.r);
+  const houseSize = resolveSphereFontSize(style.typography.house, layout.r);
+  const decanSize = resolveSphereFontSize(style.typography.decan, layout.r);
+  const boundSize = resolveSphereFontSize(style.typography.bound, layout.r);
 
   for (const label of geo.signLabels) {
     const projected = transformPoint(label.point, view);
-    drawCenteredGlyph(draw, layout, label, view, signSize, WIRE.white, projected.front ? 0.76 : 0.08);
+    const opacity = projected.front ? style.opacities.signLabel.front : style.opacities.signLabel.back;
+    drawCenteredGlyph(draw, layout, label, view, style, signSize, style.palette.wire, opacity);
   }
   if (layers.houses) {
     for (const label of geo.houseLabels) {
       const projected = transformPoint(label.point, view);
-      drawCenteredText(draw, layout, label, view, houseSize, WIRE.white, fontText, projected.front ? 0.66 : 0.08);
+      const opacity = projected.front ? style.opacities.houseLabel.front : style.opacities.houseLabel.back;
+      drawCenteredText(draw, layout, label, view, style, houseSize, style.palette.wire, opacity);
     }
   }
   if (layers.decans) {
     for (const label of geo.decanLabels) {
-      if (transformPoint(label.point, view).front) drawCenteredGlyph(draw, layout, label, view, decanSize, WIRE.white, 0.35);
+      if (transformPoint(label.point, view).front) {
+        drawCenteredGlyph(
+          draw,
+          layout,
+          label,
+          view,
+          style,
+          decanSize,
+          style.palette.wire,
+          style.opacities.decanLabel,
+        );
+      }
     }
   }
   if (layers.bounds) {
     for (const label of geo.boundLabels) {
-      if (transformPoint(label.point, view).front) drawCenteredGlyph(draw, layout, label, view, boundSize, WIRE.white, 0.32);
+      if (transformPoint(label.point, view).front) {
+        drawCenteredGlyph(
+          draw,
+          layout,
+          label,
+          view,
+          style,
+          boundSize,
+          style.palette.wire,
+          style.opacities.boundLabel,
+        );
+      }
     }
   }
 }
@@ -297,57 +336,68 @@ function render(
   layers: Layers,
   cssW: number,
   cssH: number,
-  fontText: string,
+  style: SphereRenderStyle,
   view: SphereView,
 ) {
   const draw = new CanvasDraw(canvas);
-  draw.setDefaultFont(fontText);
+  draw.setDefaultFont(style.typography.fontUi);
   draw.resize(cssW, cssH);
-  draw.fillBackground(WIRE.background);
+  draw.fillBackground(style.palette.background);
   const size = Math.min(cssW, cssH);
   if (size <= 0) return;
   const layout: Layout = {
     cx: cssW / 2,
     cy: cssH / 2,
-    r: size * 0.43 * view.zoom,
+    r: resolveSphereRadius(style, cssW, cssH, view.zoom),
   };
-  const widthScale = Math.max(0.55, layout.r / 440);
-  drawSphereFrame(draw, layout);
+  drawSphereFrame(draw, layout, style);
 
   draw.ctx.save();
   clipToSphere(draw, layout);
   for (const line of geo.reference) {
     const isTick = line.kind === "horizonTick" || line.kind === "primeTick" || line.kind === "eclipticTick";
-    strokePolyline(draw, layout, line, view, {
+    strokePolyline(draw, layout, line, view, style, {
       backVisible: layers.back,
-      frontOpacity: isTick ? 0.72 : 0.9,
-      backOpacity: isTick ? 0.08 : 0.12,
-      widthScale,
+      opacity: isTick ? style.opacities.referenceTick : style.opacities.reference,
     });
   }
   for (const line of geo.signBoundaries) {
-    strokePolyline(draw, layout, line, view, { backVisible: layers.back, frontOpacity: 0.9, backOpacity: 0.1, widthScale });
+    strokePolyline(draw, layout, line, view, style, {
+      backVisible: layers.back,
+      opacity: style.opacities.signBoundary,
+    });
   }
   if (layers.decans) {
     for (const line of geo.decanBoundaries) {
-      strokePolyline(draw, layout, line, view, { backVisible: layers.back, frontOpacity: 0.25, backOpacity: 0.04, widthScale });
+      strokePolyline(draw, layout, line, view, style, {
+        backVisible: layers.back,
+        opacity: style.opacities.decanBoundary,
+      });
     }
   }
   if (layers.houses) {
     for (const line of geo.houses) {
-      strokePolyline(draw, layout, line, view, { backVisible: layers.back, frontOpacity: 0.9, backOpacity: 0.1, widthScale });
+      strokePolyline(draw, layout, line, view, style, {
+        backVisible: layers.back,
+        opacity: style.opacities.houseBoundary,
+      });
     }
   }
   if (layers.bounds) {
     for (const line of geo.boundTicks) {
-      strokePolyline(draw, layout, line, view, { backVisible: layers.back, frontOpacity: 0.55, backOpacity: 0.05, widthScale });
+      strokePolyline(draw, layout, line, view, style, {
+        backVisible: layers.back,
+        opacity: style.opacities.boundTick,
+      });
     }
   }
   draw.ctx.restore();
 
-  drawLabels(draw, layout, geo, layers, view, fontText);
-  if (layers.bodies) drawBodies(draw, layout, geo, view, layers.back);
-  draw.circle([layout.cx, layout.cy], Math.max(0.75, layout.r / 360), { fill: WIRE.white });
+  drawLabels(draw, layout, geo, layers, view, style);
+  if (layers.bodies) drawBodies(draw, layout, geo, view, layers.back, style);
+  draw.circle([layout.cx, layout.cy], resolveSphereDotRadius(style, layout.r), {
+    fill: style.palette.wire,
+  });
 }
 
 export function AstrologSphereView({
@@ -375,6 +425,13 @@ export function AstrologSphereView({
   const [fontsReadyFor, setFontsReadyFor] = React.useState<string | null>(null);
   const theme = useThemeStore((s) => s.theme);
   const styleRevision = useStyleRevision();
+  const sessionRefreshSeq = useDaemonWorkspaceStore((state) => {
+    const change = state.lastSessionChange;
+    if (!documentId || !change) return 0;
+    return change.docId === documentId || change.rebuiltChildIds.includes(documentId)
+      ? change.seq
+      : 0;
+  });
   const chartTextFont = morinusTextFontFromTokens(theme?.appTokens);
   const fontsReady = fontsReadyFor === chartTextFont;
 
@@ -407,7 +464,7 @@ export function AstrologSphereView({
     return () => {
       controller.abort();
     };
-  }, [sourceName, source, documentId]);
+  }, [sourceName, source, documentId, sessionRefreshSeq]);
 
   React.useEffect(() => {
     const wrap = wrapRef.current;
@@ -416,7 +473,11 @@ export function AstrologSphereView({
     const paint = () => {
       const rect = wrap.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0) return;
-      render(canvas, geo, layers, rect.width, rect.height, chartTextFont, view);
+      const renderStyle = resolveSphereRenderStyle(wrap, {
+        revision: styleRevision,
+        fontUi: chartTextFont,
+      });
+      render(canvas, geo, layers, rect.width, rect.height, renderStyle, view);
     };
     paint();
     const ro = new ResizeObserver(paint);
@@ -503,11 +564,11 @@ export function AstrologSphereView({
       >
         <canvas ref={canvasRef} className="block h-full w-full" />
         {error ? (
-          <div className="absolute inset-0 flex items-center justify-center text-[12px] text-destructive">
+          <div className="absolute inset-0 flex items-center justify-center text-[length:var(--aries-font-size-base)] text-destructive">
             {t("sphere.failed", { error })}
           </div>
         ) : !geo ? (
-          <div className="absolute inset-0 flex items-center justify-center text-[12px] text-muted-foreground">
+          <div className="absolute inset-0 flex items-center justify-center text-[length:var(--aries-font-size-base)] text-muted-foreground">
             {t("sphere.loading")}
           </div>
         ) : null}
@@ -552,7 +613,7 @@ function SphereContextMenu({
   return (
     <div
       role="menu"
-      className="fixed z-50 min-w-[132px] border border-white bg-black px-0 py-1 text-[11px] leading-none text-white"
+      className="fixed z-50 min-w-[132px] border border-white bg-black px-0 py-1 text-[length:var(--aries-font-size-small)] leading-none text-white"
       style={{ left: x, top: y }}
       onClick={(event) => event.stopPropagation()}
       onContextMenu={(event) => event.preventDefault()}

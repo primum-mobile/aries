@@ -18,6 +18,12 @@ import searchbackend
 import searchcatalog
 import searchquery
 import util
+from webapp.daemon.display_palette import (
+    effective_display_options,
+    object_glyph_color,
+    object_glyph_color_role,
+    sign_color_role,
+)
 from webapp.daemon.event_time import DefaultLocationClock, table_event_clock
 
 
@@ -64,6 +70,8 @@ class SynodicService:
     ) -> dict[str, Any]:
         chrt = context["chart"]
         focus_dt = _coerce_datetime(context.get("current_datetime"))
+        birth_dt = _context_birth_datetime(context, chrt)
+        current_dt = datetime.datetime.now()
         start, end = _resolve_date_range(focus_dt, from_date, to_date)
         active_planets = _parse_planet_ids(planet_ids)
         catalog = searchcatalog.SearchCatalog(chrt)
@@ -100,6 +108,7 @@ class SynodicService:
         rows = _dedupe_rows(rows)
         rows.sort(key=_row_sort_key)
         display_clock = table_event_clock(getattr(chrt, "options", None))
+        display_options = effective_display_options(getattr(chrt, "options", None))
         payload_rows = [
             _serialize_row(
                 row,
@@ -107,6 +116,7 @@ class SynodicService:
                 catalog=catalog,
                 chrt=chrt,
                 display_clock=display_clock,
+                display_options=display_options,
             )
             for index, row in enumerate(rows)
         ]
@@ -125,6 +135,8 @@ class SynodicService:
                 "fromDate": start.isoformat(),
                 "toDate": end.isoformat(),
                 "focusDatetime": _datetime_iso(focus_dt),
+                "currentDatetime": _datetime_iso(current_dt),
+                "birthDatetime": _datetime_iso(birth_dt),
                 "columns": [
                     mtexts.txts.get("Planet", "Planet"),
                     mtexts.txts.get("Event", "Event"),
@@ -133,7 +145,9 @@ class SynodicService:
                     time_display["columnLabel"],
                 ],
                 "timeDisplay": time_display,
-                "planetItems": _planet_items(catalog, chrt, active_planets),
+                "planetItems": _planet_items(
+                    catalog, chrt, active_planets, display_options=display_options
+                ),
                 "activePlanetIds": list(active_planets),
                 "eventTypes": {
                     "station": bool(include_stations),
@@ -198,6 +212,26 @@ def _coerce_datetime(value: Any) -> datetime.datetime:
     return datetime.datetime.now()
 
 
+def _context_birth_datetime(context: dict[str, Any], chrt) -> datetime.datetime:
+    anchor = context.get("chart_anchor_datetime")
+    if isinstance(anchor, datetime.datetime):
+        return anchor
+    if isinstance(anchor, datetime.date):
+        return datetime.datetime(anchor.year, anchor.month, anchor.day, 12, 0, 0)
+    try:
+        return chrt.time.getDatetime()
+    except Exception:
+        t = getattr(chrt, "time", None)
+        return datetime.datetime(
+            int(getattr(t, "origyear", getattr(t, "year", 1))),
+            int(getattr(t, "origmonth", getattr(t, "month", 1))),
+            int(getattr(t, "origday", getattr(t, "day", 1))),
+            int(getattr(t, "hour", 0)),
+            int(getattr(t, "minute", 0)),
+            int(getattr(t, "second", 0)),
+        )
+
+
 def _parse_planet_ids(value: str | None) -> tuple[int, ...]:
     if value is None or str(value).strip() == "":
         return PLANET_IDS
@@ -212,20 +246,58 @@ def _parse_planet_ids(value: str | None) -> tuple[int, ...]:
     return tuple(active)
 
 
-def _planet_items(catalog: searchcatalog.SearchCatalog, chrt, active_planets: Iterable[int]) -> list[dict[str, Any]]:
+def _planet_items(
+    catalog: searchcatalog.SearchCatalog,
+    chrt,
+    active_planets: Iterable[int],
+    *,
+    display_options=None,
+) -> list[dict[str, Any]]:
     active = set(active_planets)
     glyphs = _common(chrt)
     return [
-        {
-            "id": pid,
-            "objectId": oid,
-            "label": (catalog.get(oid).label if catalog.get(oid) is not None else glyphs.get_planet_name(pid)),
-            "glyph": glyphs.get_planet_glyph(pid),
-            "color": _planet_color(chrt, pid),
-            "enabled": pid in active,
-        }
+        _planet_item_payload(
+            catalog,
+            chrt,
+            glyphs,
+            pid,
+            oid,
+            pid in active,
+            display_options,
+        )
         for pid, oid in PLANET_OBJECT_IDS.items()
     ]
+
+
+def _planet_item_payload(
+    catalog: searchcatalog.SearchCatalog,
+    chrt,
+    glyphs,
+    planet_id: int,
+    object_id: str,
+    enabled: bool,
+    display_options,
+) -> dict[str, Any]:
+    obj = catalog.get(object_id)
+    color = _planet_color(chrt, planet_id, display_options=display_options)
+    try:
+        dignity_code = chrt.dignity(planet_id)
+    except Exception:
+        dignity_code = None
+    return {
+        "id": planet_id,
+        "objectId": object_id,
+        "label": obj.label if obj is not None else glyphs.get_planet_name(planet_id),
+        "glyph": glyphs.get_planet_glyph(planet_id),
+        "color": color,
+        "colorRole": object_glyph_color_role(
+            display_options,
+            obj,
+            dignity_code,
+            resolved_color=color,
+        ),
+        "enabled": enabled,
+    }
 
 
 def _search_lunation_and_eclipse_rows(
@@ -359,7 +431,11 @@ def _serialize_row(
     catalog: searchcatalog.SearchCatalog,
     chrt,
     display_clock: DefaultLocationClock,
+    display_options=None,
 ) -> dict[str, Any]:
+    display_options = display_options or effective_display_options(
+        getattr(chrt, "options", None)
+    )
     prom = catalog.get(row.promittor_id)
     glyphs = _common(chrt)
     pid = getattr(prom, "planet_index", None)
@@ -368,9 +444,27 @@ def _serialize_row(
     display_tuple = display.values
     open_tuple = _display_datetime_for_chart_instant(chrt, event_tuple)
     event_type = _event_type(row)
-    prom_display = _decorate_display_payload(row.metadata.get("prom_display", {}), chrt)
-    sign_payload = _sign_payload(row, chrt, prom_display)
+    prom_display = _decorate_display_payload(
+        row.metadata.get("prom_display", {}),
+        chrt,
+        display_options=display_options,
+        obj=prom,
+    )
+    sign_payload = _sign_payload(
+        row, chrt, prom_display, display_options=display_options
+    )
     live_planet_color = prom_display.get("glyph_color_css")
+    planet_color = live_planet_color or (
+        _planet_color(chrt, int(pid), display_options=display_options)
+        if pid is not None
+        else None
+    )
+    try:
+        dignity_code = prom_display.get("dignity_code")
+        if dignity_code is None and pid is not None:
+            dignity_code = chrt.dignity(int(pid))
+    except Exception:
+        dignity_code = None
     detail = _detail_label(row, event_type)
     event_label = _event_label(row, event_type, prom_display)
     planet_label = row.promittor_label or (prom.label if prom is not None else str(row.promittor_id))
@@ -393,7 +487,13 @@ def _serialize_row(
         "planetObjectId": row.promittor_id,
         "planetLabel": planet_label,
         "planetGlyph": glyphs.get_planet_glyph(int(pid)) if pid is not None else "",
-        "planetColor": live_planet_color or (_planet_color(chrt, int(pid)) if pid is not None else None),
+        "planetColor": planet_color,
+        "planetColorRole": prom_display.get("glyph_color_role") or object_glyph_color_role(
+            display_options,
+            prom,
+            dignity_code,
+            resolved_color=planet_color,
+        ),
         "eventDate": row.event_date,
         "eventTime": row.event_time,
         "displayDatetime": display.iso,
@@ -475,7 +575,12 @@ def _sign_payload(
     row: searchquery.SearchResult,
     chrt,
     prom_display: dict[str, Any],
+    *,
+    display_options=None,
 ) -> dict[str, Any] | None:
+    display_options = display_options or effective_display_options(
+        getattr(chrt, "options", None)
+    )
     sign_index = prom_display.get("sign_index")
     if sign_index is None and row.metadata.get("sign_change"):
         sign_index = row.metadata.get("sign_change_event_sign")
@@ -486,18 +591,35 @@ def _sign_payload(
     except Exception:
         return None
     glyphs = _common(chrt)
-    signs = glyphs.Signs1 if getattr(getattr(chrt, "options", None), "signs", True) else glyphs.Signs2
+    signs = glyphs.Signs1 if getattr(display_options, "signs", True) else glyphs.Signs2
+    color = _rgb_css(
+        common.get_sign_color(display_options, idx, force_element=True)
+    )
     return {
         "index": idx,
         "glyph": signs[idx],
         "label": mtexts.signs[idx],
-        "color": _rgb_css(common.get_sign_color(getattr(chrt, "options", None), idx, force_element=True)),
+        "color": color,
+        "colorRole": sign_color_role(
+            display_options,
+            idx,
+            force_element=True,
+            resolved_color=color,
+        ),
     }
 
 
-def _decorate_display_payload(value: Any, chrt) -> dict[str, Any]:
+def _decorate_display_payload(
+    value: Any,
+    chrt,
+    *,
+    display_options=None,
+    obj: searchcatalog.SearchObject | None = None,
+) -> dict[str, Any]:
     if not isinstance(value, dict):
         return {}
+    source_options = getattr(chrt, "options", None)
+    display_options = display_options or effective_display_options(source_options)
     payload = dict(value)
     sign_index = payload.get("sign_index")
     display_longitude = payload.get("display_longitude")
@@ -513,11 +635,17 @@ def _decorate_display_payload(value: Any, chrt) -> dict[str, Any]:
             sign_index_int = None
         if sign_index_int is not None:
             glyphs = _common(chrt)
-            signs = glyphs.Signs1 if getattr(getattr(chrt, "options", None), "signs", True) else glyphs.Signs2
+            signs = glyphs.Signs1 if getattr(display_options, "signs", True) else glyphs.Signs2
             payload["sign_index"] = sign_index_int
             payload["sign_glyph"] = signs[sign_index_int]
             payload["sign_color"] = _rgb_css(
-                common.get_sign_color(getattr(chrt, "options", None), sign_index_int, force_element=True)
+                common.get_sign_color(display_options, sign_index_int, force_element=True)
+            )
+            payload["sign_color_role"] = sign_color_role(
+                display_options,
+                sign_index_int,
+                force_element=True,
+                resolved_color=payload["sign_color"],
             )
     if display_longitude is not None:
         try:
@@ -528,7 +656,21 @@ def _decorate_display_payload(value: Any, chrt) -> dict[str, Any]:
         except Exception:
             pass
     if payload.get("glyph_color") is not None:
-        payload["glyph_color_css"] = _rgb_css(payload.get("glyph_color"))
+        payload["glyph_color_css"] = _rgb_css(
+            object_glyph_color(
+                display_options,
+                obj,
+                payload.get("dignity_code"),
+                fallback=payload.get("glyph_color"),
+                source_options=source_options,
+            )
+        )
+        payload["glyph_color_role"] = object_glyph_color_role(
+            display_options,
+            obj,
+            payload.get("dignity_code"),
+            resolved_color=payload["glyph_color_css"],
+        )
     return payload
 
 
@@ -562,8 +704,8 @@ def _display_datetime_for_chart_instant(chrt, utc_tuple: tuple[int, int, int, in
     return converted if converted is not None else utc_tuple
 
 
-def _planet_color(chrt, planet_id: int) -> str | None:
-    opts = getattr(chrt, "options", None)
+def _planet_color(chrt, planet_id: int, *, display_options=None) -> str | None:
+    opts = display_options or effective_display_options(getattr(chrt, "options", None))
     if opts is None:
         return None
     if getattr(opts, "useplanetcolors", False):

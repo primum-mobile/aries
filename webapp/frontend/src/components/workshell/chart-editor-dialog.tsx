@@ -118,8 +118,8 @@ function stateFromDefaults(d: EditorDefaults | EditorRecord): FormState {
     latMin: String(d.latMin),
     latSec: String(d.latSec ?? 0),
     north: d.north,
-    // A loaded record carries its stored decimal; fresh defaults (blank place)
-    // do not, so the form starts in DMS mode until a place is picked.
+    // Fresh defaults carry the saved Default Location; loaded records carry
+    // their stored decimal. Both stay authoritative until a DMS field is edited.
     lonDec: d.lon != null ? String(d.lon) : "",
     latDec: d.lat != null ? String(d.lat) : "",
     placeSearch: d.place,
@@ -228,7 +228,7 @@ type Props = {
 export function ChartEditorDialog({ open, onOpenChange, onSaved, editTarget }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent motion="none" className="grid w-[min(94vw,720px)] max-w-none gap-0 overflow-hidden p-0 sm:max-w-none">
+      <DialogContent size="lg" motion="none" className="grid gap-0 overflow-hidden p-0">
         {open ? (
           <EditorLoader
             onOpenChange={onOpenChange}
@@ -301,14 +301,14 @@ function EditorLoader({
 
   if (metaErr) {
     return (
-      <div className="px-5 py-6 text-[12px] text-destructive">
+      <div className="px-[var(--aries-pane-wide-inset)] py-[var(--aries-pane-state-padding)] text-[length:var(--aries-font-size-base)] text-destructive">
         {t("editor.loadError", { error: metaErr })}
       </div>
     );
   }
   if (!meta || !recordLoaded) {
     return (
-      <div className="px-5 py-6 text-[12px] text-foreground/55">{t("editor.loading")}</div>
+      <div className="px-[var(--aries-pane-wide-inset)] py-[var(--aries-pane-state-padding)] text-[length:var(--aries-font-size-base)] text-foreground/55">{t("editor.loading")}</div>
     );
   }
   return (
@@ -569,26 +569,26 @@ function EditorBody({
   const manualZoneDisabled = !zoneIsZone || s.tzauto;
 
   return (
-    <form onSubmit={onSubmit} className="flex max-h-[88vh] flex-col">
-      <header className="flex items-baseline justify-between border-b border-border/40 px-5 py-3.5">
-        <h2 className="text-[14px] font-medium tracking-tight">
+    <form onSubmit={onSubmit} className="flex max-h-[var(--aries-dialog-viewport-height)] flex-col">
+      <header className="flex items-baseline justify-between border-b border-border/40 px-[var(--aries-pane-wide-inset)] py-[var(--aries-dialog-section-padding-y)]">
+        <h2 className="text-[length:var(--aries-font-size-large)] font-medium tracking-tight">
           {cursorDocId ? t("editor.titleCursor") : isEdit ? t("editor.titleEdit") : t("editor.titleNew")}
         </h2>
-        <p className="text-[11px] text-foreground/55">{t("editor.personalData")}</p>
+        <p className="text-[length:var(--aries-font-size-small)] text-foreground/55">{t("editor.personalData")}</p>
       </header>
 
       {/* Stepping-anchor hint — cursor-edit only (set_time_context_hint,
           personaldatadlg.py:748). Plain text; newlines from the daemon hint are
           preserved so the symbolic-time line shows under the real-cursor line. */}
       {cursorDocId && timeContextHint ? (
-        <p className="whitespace-pre-line border-b border-border/40 bg-foreground/[0.03] px-5 py-2 text-[11px] leading-snug text-foreground/65">
+        <p className="whitespace-pre-line border-b border-border/40 bg-foreground/[0.03] px-[var(--aries-pane-wide-inset)] py-[var(--aries-pane-header-padding-y)] text-[length:var(--aries-font-size-small)] leading-snug text-foreground/65">
           {timeContextHint}
         </p>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 grid-cols-[1fr_220px] gap-0 overflow-y-auto">
+      <div className="grid min-h-0 flex-1 grid-cols-[1fr_var(--aries-form-aside-width)] gap-0 overflow-y-auto">
         {/* Left column — Name/Gender, Time, Place, Zone, Altitude */}
-        <div className="flex flex-col gap-5 border-r border-border/40 px-5 py-4">
+        <div className="flex flex-col gap-[var(--aries-form-section-gap)] border-r border-border/40 px-[var(--aries-pane-wide-inset)] py-[var(--aries-dialog-padding)]">
           {/* Group 1 — Name & Gender (personaldatadlg.py:60) */}
           <Group title={t("editor.groupIdentity")}>
             <Row label={t("editor.name")}>
@@ -623,7 +623,7 @@ function EditorBody({
           {/* Group 2 — Time (personaldatadlg.py:101) */}
           <Group title={t("editor.groupTime")}>
             <Checkbox checked={s.bc} onChange={(v) => set("bc", v)} label={t("editor.bc")} />
-            <div className="grid grid-cols-3 gap-x-3 gap-y-2">
+            <div className="grid grid-cols-3 gap-x-[var(--aries-form-row-gap)] gap-y-[var(--aries-form-field-gap)]">
               <NumField label={t("editor.year")} value={s.year} maxLength={4} onChange={(v) => set("year", v)} />
               <NumField label={t("editor.month")} value={s.month} maxLength={2} onChange={(v) => set("month", v)} />
               <NumField label={t("editor.day")} value={s.day} maxLength={2} onChange={(v) => set("day", v)} />
@@ -635,8 +635,8 @@ function EditorBody({
 
           {/* Group 3 — Place (personaldatadlg.py:177) */}
           <Group title={t("editor.groupPlace")}>
-            <div className="grid grid-cols-[auto_auto_auto_auto_auto] items-end gap-x-3 gap-y-2">
-              <span className="self-center text-[11px] text-foreground/55">{t("editor.long")}</span>
+            <div className="grid grid-cols-[auto_auto_auto_auto_auto] items-end gap-x-[var(--aries-form-row-gap)] gap-y-[var(--aries-form-field-gap)]">
+              <span className="self-center text-[length:var(--aries-font-size-small)] text-foreground/55">{t("editor.long")}</span>
               <NumField label={t("editor.deg")} value={s.lonDeg} maxLength={3} onChange={(v) => set("lonDeg", v)} />
               <NumField label={t("editor.min")} value={s.lonMin} maxLength={2} onChange={(v) => set("lonMin", v)} />
               <NumField label={t("editor.sec")} value={s.lonSec} maxLength={2} onChange={(v) => set("lonSec", v)} />
@@ -649,7 +649,7 @@ function EditorBody({
                 onChange={(v) => set("east", v === "e")}
                 inline
               />
-              <span className="self-center text-[11px] text-foreground/55">{t("editor.lat")}</span>
+              <span className="self-center text-[length:var(--aries-font-size-small)] text-foreground/55">{t("editor.lat")}</span>
               <NumField label={t("editor.deg")} value={s.latDeg} maxLength={2} onChange={(v) => set("latDeg", v)} />
               <NumField label={t("editor.min")} value={s.latMin} maxLength={2} onChange={(v) => set("latMin", v)} />
               <NumField label={t("editor.sec")} value={s.latSec} maxLength={2} onChange={(v) => set("latSec", v)} />
@@ -663,7 +663,7 @@ function EditorBody({
                 inline
               />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-[var(--aries-form-field-gap)]">
               <input
                 value={s.placeSearch}
                 onChange={(e) => set("placeSearch", e.target.value)}
@@ -687,7 +687,7 @@ function EditorBody({
               </Button>
             </div>
             {searchError ? (
-              <p className="text-[11px] text-destructive">{searchError}</p>
+              <p className="text-[length:var(--aries-font-size-small)] text-destructive">{searchError}</p>
             ) : null}
             {candidates ? (
               <ul className="max-h-40 overflow-y-auto rounded-md border border-border/40">
@@ -696,13 +696,13 @@ function EditorBody({
                     <button
                       type="button"
                       onClick={() => applyCandidate(c)}
-                      className="flex w-full flex-col items-start gap-0.5 px-2.5 py-1.5 text-left hover:bg-accent/60"
+                      className="flex w-full flex-col items-start gap-[calc(var(--aries-control-gap-compact)/2)] px-[var(--aries-control-padding-x)] py-[var(--aries-control-gap)] text-left hover:bg-accent/60"
                     >
-                      <span className="text-[12px] text-foreground">
+                      <span className="text-[length:var(--aries-font-size-base)] text-foreground">
                         {c.label}
                         {c.countryName ? `, ${c.countryName}` : ""}
                       </span>
-                      <span className="text-[10px] tabular-nums text-foreground/55">
+                      <span className="text-[length:var(--aries-font-size-section)] tabular-nums text-foreground/55">
                         {c.latDeg}°{c.latMin}′{c.latSec ?? 0}″{c.north ? "N" : "S"},{" "}
                         {c.lonDeg}°{c.lonMin}′{c.lonSec ?? 0}″{c.east ? "E" : "W"}
                         {c.tzid ? ` · ${c.tzid}` : ""}
@@ -717,7 +717,7 @@ function EditorBody({
 
           {/* Group 4 — Zone (personaldatadlg.py:263) */}
           <Group title={t("editor.groupZone")}>
-            <div className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-wrap items-end gap-[var(--aries-form-row-gap)]">
               <LabeledSelect
                 label={t("editor.calendar")}
                 value={s.cal}
@@ -734,8 +734,8 @@ function EditorBody({
                 onChange={(v) => set("zt", v)}
               />
             </div>
-            <div className="flex flex-wrap items-end gap-3">
-              <div className="flex flex-col gap-1">
+            <div className="flex flex-wrap items-end gap-[var(--aries-form-row-gap)]">
+              <div className="flex flex-col gap-[var(--aries-control-gap-compact)]">
                 <FieldLabel>{t("editor.gmt")}</FieldLabel>
                 <Select
                   value={s.plus ? "+" : "-"}
@@ -776,7 +776,7 @@ function EditorBody({
               disabled={!zoneIsZone}
             />
             {s.tzauto && s.tzid ? (
-              <p className="text-[10px] tabular-nums text-foreground/55">{s.tzid}</p>
+              <p className="text-[length:var(--aries-font-size-section)] tabular-nums text-foreground/55">{s.tzid}</p>
             ) : null}
           </Group>
 
@@ -790,13 +790,13 @@ function EditorBody({
                 onChange={(e) => set("altitude", e.target.value.replace(/[^\d]/g, ""))}
                 className={fieldCls("w-20 tabular-nums")}
               />
-              <span className="text-[11px] text-foreground/55">{t("editor.meters")}</span>
+              <span className="text-[length:var(--aries-font-size-small)] text-foreground/55">{t("editor.meters")}</span>
             </Row>
           </Group>
         </div>
 
         {/* Right column — Notes + live preview */}
-        <div className="flex flex-col gap-4 px-4 py-4">
+        <div className="flex flex-col gap-[var(--aries-dialog-gap)] px-[var(--aries-dialog-padding)] py-[var(--aries-dialog-padding)]">
           <Group title={t("editor.groupNotes")} className="flex-1">
             <textarea
               value={s.notes}
@@ -806,11 +806,11 @@ function EditorBody({
               placeholder={t("editor.notesPlaceholder")}
             />
           </Group>
-          <div className="rounded-md border border-border/40 px-3 py-2.5">
-            <p className="text-[10px] font-medium text-foreground/45">
+          <div className="rounded-md border border-border/40 px-[var(--aries-pane-header-compact-padding-x)] py-[var(--aries-form-group-gap)]">
+            <p className="text-[length:var(--aries-font-size-section)] font-medium text-foreground/45">
               {t("editor.preview")}
             </p>
-            <dl className="mt-1.5 space-y-1 text-[11px]">
+            <dl className="mt-1.5 space-y-1 text-[length:var(--aries-font-size-small)]">
               <div className="flex justify-between">
                 <dt className="text-foreground/55">{t("editor.asc")}</dt>
                 <dd className="tabular-nums">
@@ -825,22 +825,22 @@ function EditorBody({
               </div>
             </dl>
             {previewErr ? (
-              <p className="mt-2 text-[10px] leading-snug text-destructive">{previewErr}</p>
+              <p className="mt-2 text-[length:var(--aries-font-size-section)] leading-snug text-destructive">{previewErr}</p>
             ) : null}
           </div>
         </div>
       </div>
 
-      <footer className="flex items-center justify-between gap-3 border-t border-border/40 px-5 py-3">
+      <footer className="flex items-center justify-between gap-[var(--aries-form-row-gap)] border-t border-border/40 px-[var(--aries-pane-wide-inset)] py-[var(--aries-form-row-gap)]">
         {/* Cursor/radix edits target the open daemon document directly; only
             create-from-editor needs a collection target picker. */}
         {cursorDocId || radixDocId ? (
-          <span className="text-[10px] font-medium text-foreground/45">
+          <span className="text-[length:var(--aries-font-size-section)] font-medium text-foreground/45">
             {cursorDocId ? t("editor.sessionCursor") : t("editor.openChart")}
           </span>
         ) : (
-          <div className="flex items-center gap-2">
-            <label className="text-[10px] font-medium text-foreground/45">
+          <div className="flex items-center gap-[var(--aries-form-field-gap)]">
+            <label className="text-[length:var(--aries-font-size-section)] font-medium text-foreground/45">
               {t("editor.saveTo")}
             </label>
             <Select
@@ -854,9 +854,9 @@ function EditorBody({
             />
           </div>
         )}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-[var(--aries-form-field-gap)]">
           {saveError ? (
-            <span className="max-w-56 truncate text-[11px] text-destructive">{saveError}</span>
+            <span className="max-w-56 truncate text-[length:var(--aries-font-size-small)] text-destructive">{saveError}</span>
           ) : null}
           <Button type="button" variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
             {t("editor.cancel")}
@@ -911,7 +911,7 @@ function humanizeDaemonError(err: unknown): string {
 
 function fieldCls(extra = ""): string {
   return (
-    "h-7 rounded-md border border-border/60 bg-transparent px-2 text-[12px] " +
+    "h-[var(--aries-control-height-small)] rounded-md border border-border/60 bg-transparent px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-base)] " +
     "outline-none transition-colors placeholder:text-foreground/35 " +
     "focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/40 " +
     "disabled:opacity-40 " +
@@ -929,8 +929,8 @@ function Group({
   className?: string;
 }) {
   return (
-    <section className={"flex flex-col gap-2.5 " + className}>
-      <h3 className="text-[10px] font-medium text-foreground/45">
+    <section className={"flex flex-col gap-[var(--aries-form-group-gap)] " + className}>
+      <h3 className="text-[length:var(--aries-font-size-section)] font-medium text-foreground/45">
         {title}
       </h3>
       {children}
@@ -940,9 +940,9 @@ function Group({
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-3">
-      <FieldLabel className="w-14 shrink-0">{label}</FieldLabel>
-      <div className="flex flex-1 items-center gap-2">{children}</div>
+    <div className="flex items-center gap-[var(--aries-form-row-gap)]">
+      <FieldLabel className="w-[var(--aries-form-label-width)] shrink-0">{label}</FieldLabel>
+      <div className="flex flex-1 items-center gap-[var(--aries-form-field-gap)]">{children}</div>
     </div>
   );
 }
@@ -955,7 +955,7 @@ function FieldLabel({
   className?: string;
 }) {
   return (
-    <span className={"text-[11px] text-foreground/55 " + className}>{children}</span>
+    <span className={"text-[length:var(--aries-font-size-small)] text-foreground/55 " + className}>{children}</span>
   );
 }
 
@@ -973,8 +973,8 @@ function NumField({
   disabled?: boolean;
 }) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-[10px] text-foreground/45">{label}</span>
+    <label className="flex flex-col gap-[var(--aries-control-gap-compact)]">
+      <span className="text-[length:var(--aries-font-size-section)] text-foreground/45">{label}</span>
       <input
         inputMode="numeric"
         value={value}
@@ -1001,7 +1001,7 @@ function Checkbox({
   return (
     <label
       className={
-        "flex w-fit items-center gap-2 text-[12px] " +
+        "flex w-fit items-center gap-[var(--aries-form-field-gap)] text-[length:var(--aries-font-size-base)] " +
         (disabled ? "opacity-40" : "cursor-pointer")
       }
     >
@@ -1010,7 +1010,7 @@ function Checkbox({
         checked={checked}
         disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
-        className="size-3.5 accent-primary"
+        className="size-[var(--aries-control-icon-size)] accent-primary"
       />
       {label}
     </label>
@@ -1029,14 +1029,14 @@ function RadioPair({
   inline?: boolean;
 }) {
   return (
-    <div className={inline ? "flex items-center gap-3" : "flex flex-col gap-1"}>
+    <div className={inline ? "flex items-center gap-[var(--aries-form-row-gap)]" : "flex flex-col gap-[var(--aries-control-gap-compact)]"}>
       {options.map((opt) => (
-        <label key={opt.value} className="flex cursor-pointer items-center gap-1.5 text-[12px]">
+        <label key={opt.value} className="flex cursor-pointer items-center gap-[var(--aries-control-gap)] text-[length:var(--aries-font-size-base)]">
           <input
             type="radio"
             checked={value === opt.value}
             onChange={() => onChange(opt.value)}
-            className="size-3.5 accent-primary"
+            className="size-[var(--aries-control-icon-size)] accent-primary"
           />
           {opt.label}
         </label>
@@ -1084,8 +1084,8 @@ function LabeledSelect({
   onChange: (v: string) => void;
 }) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-[10px] text-foreground/45">{label}</span>
+    <label className="flex flex-col gap-[var(--aries-control-gap-compact)]">
+      <span className="text-[length:var(--aries-font-size-section)] text-foreground/45">{label}</span>
       <Select {...rest} className="w-32" />
     </label>
   );

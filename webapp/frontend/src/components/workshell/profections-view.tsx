@@ -4,7 +4,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, ChevronRight, Copy, Download, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy, Download } from "lucide-react";
 
 import {
   fetchGenericTablePayload,
@@ -20,6 +20,7 @@ import {
 } from "@/lib/table/payload-cache";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 import { useT } from "@/lib/i18n/i18n";
+import { semanticChartColor } from "@/lib/theme/semantic-color";
 import { cn } from "@/lib/utils";
 
 import { TimedChartContextMenu } from "./directions-view";
@@ -28,6 +29,13 @@ import { exportTablePayloadPdf } from "./table-pdf-export";
 import { exportTextContent } from "./text-export";
 import { useSettledWorkspaceRefreshSeq } from "./step-refresh";
 import { ColumnResizeHandle, useResizableTableColumns } from "./resizable-table-columns";
+import { RetainedPaneShell } from "./retained-pane-shell";
+import {
+  PANE_CONTROL_CLASSES,
+  PaneControlBar,
+  PaneSelect,
+  PaneToolbarButton,
+} from "./list-controls";
 
 // ---------------------------------------------------------------------------
 // Profections TABLE — the webapp surface for the wx IN-FRAME variant
@@ -240,30 +248,48 @@ export function ProfectionsView({ documentId, parentDocumentId, sourceName, onCl
 
   if (error && !payload) {
     return (
-      <PaneShell sourceName={sourceName} onClose={onClose}>
+      <RetainedPaneShell
+        title={t("profview.profections")}
+        sourceName={sourceName}
+        closeLabel={t("profview.closeProfections")}
+        onClose={onClose}
+        headerSurface="surface"
+      >
         <div className="flex flex-1 items-center justify-center p-6 text-[length:var(--aries-font-size-base)] text-[color:var(--aries-text-muted)]">
           {error}
         </div>
-      </PaneShell>
+      </RetainedPaneShell>
     );
   }
   if (!payload) {
     return (
-      <PaneShell sourceName={sourceName} onClose={onClose}>
+      <RetainedPaneShell
+        title={t("profview.profections")}
+        sourceName={sourceName}
+        closeLabel={t("profview.closeProfections")}
+        onClose={onClose}
+        headerSurface="surface"
+      >
         <div className="flex flex-1 items-center justify-center p-6 text-[length:var(--aries-font-size-base)] text-[color:var(--aries-text-muted)]">
           {t("profview.loadingProfections")}
         </div>
-      </PaneShell>
+      </RetainedPaneShell>
     );
   }
   // BC charts: the daemon returns the unavailable payload (morin.py:16993-16997).
   if (payload.unavailable) {
     return (
-      <PaneShell sourceName={sourceName} onClose={onClose}>
+      <RetainedPaneShell
+        title={t("profview.profections")}
+        sourceName={sourceName}
+        closeLabel={t("profview.closeProfections")}
+        onClose={onClose}
+        headerSurface="surface"
+      >
         <div className="flex flex-1 items-center justify-center p-6 text-center text-[length:var(--aries-font-size-base)] text-[color:var(--aries-text-muted)]">
           {payload.notes?.[0] ?? t("profview.unavailable")}
         </div>
-      </PaneShell>
+      </RetainedPaneShell>
     );
   }
 
@@ -272,14 +298,16 @@ export function ProfectionsView({ documentId, parentDocumentId, sourceName, onCl
   const zodprof = Boolean(header.zodprof ?? true);
 
   return (
-    <PaneShell
+    <RetainedPaneShell
+      title={t("profview.profections")}
       sourceName={sourceName}
+      closeLabel={t("profview.closeProfections")}
       onClose={onClose}
+      headerSurface="surface"
       toolbar={
         <>
-          <button
+          <PaneToolbarButton
             type="button"
-            className="inline-flex h-6 items-center gap-1 rounded border border-[color:var(--aries-border-subtle)] px-1.5 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)] hover:bg-[color:var(--aries-surface-subtle)]"
             onClick={() => {
               const text = tableToTsv(payload, payload.rows);
               void navigator.clipboard?.writeText(text).catch(() => {
@@ -288,11 +316,10 @@ export function ProfectionsView({ documentId, parentDocumentId, sourceName, onCl
             }}
             title={t("profview.copyRows")}
           >
-            <Copy className="size-3.5" />
-          </button>
-          <button
+            <Copy />
+          </PaneToolbarButton>
+          <PaneToolbarButton
             type="button"
-            className="inline-flex h-6 items-center gap-1 rounded border border-[color:var(--aries-border-subtle)] px-1.5 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)] hover:bg-[color:var(--aries-surface-subtle)]"
             onClick={() =>
               void exportTextContent({
                 filename: "profections",
@@ -305,11 +332,10 @@ export function ProfectionsView({ documentId, parentDocumentId, sourceName, onCl
             }
             title={t("profview.exportTsv")}
           >
-            <Download className="size-3.5" />
-          </button>
-          <button
+            <Download />
+          </PaneToolbarButton>
+          <PaneToolbarButton
             type="button"
-            className="inline-flex h-6 items-center gap-1 rounded border border-[color:var(--aries-border-subtle)] px-1.5 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)] hover:bg-[color:var(--aries-surface-subtle)]"
             onClick={() =>
               void exportTablePayloadPdf(payload, payload.rows, {
                 fileStem: "profections",
@@ -318,21 +344,21 @@ export function ProfectionsView({ documentId, parentDocumentId, sourceName, onCl
             }
             title={t("profview.exportPdf")}
           >
-            <Download className="size-3.5" />
+            <Download />
             PDF
-          </button>
+          </PaneToolbarButton>
         </>
       }
     >
       {/* Controls — the wx Profections context submenu, flattened to native
           selects (profectionswnd.py:48-60). */}
-      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface-subtle)] px-3 py-2">
+      <PaneControlBar density="grouped" surface>
         <label className="text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]" htmlFor="prof-pane-mode">
           {t("profview.mode")}
         </label>
-        <select
+        <PaneSelect
           id="prof-pane-mode"
-          className="h-7 rounded border border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface)] px-2 text-[length:var(--aries-font-size-small)]"
+          surface
           value={zodprof ? "zodiacal" : "mundane"}
           disabled={pending}
           onChange={(event) =>
@@ -345,12 +371,12 @@ export function ProfectionsView({ documentId, parentDocumentId, sourceName, onCl
         >
           <option value="zodiacal">{header.zodLabel ?? t("profview.zodiacal")}</option>
           <option value="mundane">{header.munLabel ?? t("profview.placidianMundane")}</option>
-        </select>
+        </PaneSelect>
         {/* UseZodProjs — enabled only in mundane mode (item_proj.Enable(not
             zodprof), profectionswnd.py:159-161,278-281). */}
         <label
           className={cn(
-            "inline-flex items-center gap-1.5 text-[length:var(--aries-font-size-small)]",
+            PANE_CONTROL_CLASSES.checkboxLabel,
             zodprof ? "text-[color:var(--aries-text-muted)] opacity-60" : "text-[color:var(--aries-text-primary)]",
           )}
         >
@@ -365,9 +391,9 @@ export function ProfectionsView({ documentId, parentDocumentId, sourceName, onCl
         <label className="text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]" htmlFor="prof-pane-display">
           {header.displayLabel ?? t("profview.display")}
         </label>
-        <select
+        <PaneSelect
           id="prof-pane-display"
-          className="h-7 rounded border border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface)] px-2 text-[length:var(--aries-font-size-small)]"
+          surface
           value={String(mainsigs)}
           disabled={pending}
           onChange={(event) => void updateBinding({ mainsigs: event.target.value === "true" })}
@@ -377,13 +403,13 @@ export function ProfectionsView({ documentId, parentDocumentId, sourceName, onCl
               {option.label ?? String(option.value)}
             </option>
           ))}
-        </select>
+        </PaneSelect>
         <label className="text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]" htmlFor="prof-pane-monthly">
           {header.monthlyLabel ?? t("profview.monthly")}
         </label>
-        <select
+        <PaneSelect
           id="prof-pane-monthly"
-          className="h-7 rounded border border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface)] px-2 text-[length:var(--aries-font-size-small)]"
+          surface
           value={String(monthlySteps12)}
           disabled={pending}
           onChange={(event) => void updateBinding({ monthly_steps12: event.target.value === "true" })}
@@ -393,31 +419,31 @@ export function ProfectionsView({ documentId, parentDocumentId, sourceName, onCl
               {option.label ?? String(option.value)}
             </option>
           ))}
-        </select>
+        </PaneSelect>
         {/* Age paging (the popup stepper's 12-year window, retained from the
             daemon age_offset binding). */}
-        <div className="inline-flex h-7 items-center overflow-hidden rounded border border-[color:var(--aries-border-subtle)]">
+        <div className={PANE_CONTROL_CLASSES.rangeStepper}>
           <button
             type="button"
-            className="h-full px-2 text-[length:var(--aries-font-size-small)] hover:bg-accent/40 disabled:opacity-50"
+            className={PANE_CONTROL_CLASSES.rangeStepperButton}
             disabled={pending || ageOffset <= 0}
             onClick={() => void updateBinding({ age_offset: Math.max(0, ageOffset - 12) })}
           >
             -12
           </button>
-          <span className="h-full border-x border-[color:var(--aries-border-subtle)] px-2 py-1 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)]">
+          <span className={PANE_CONTROL_CLASSES.rangeStepperValue}>
             {t("profview.age", { age: ageOffset })}
           </span>
           <button
             type="button"
-            className="h-full px-2 text-[length:var(--aries-font-size-small)] hover:bg-accent/40 disabled:opacity-50"
+            className={PANE_CONTROL_CLASSES.rangeStepperButton}
             disabled={pending || ageOffset >= 144}
             onClick={() => void updateBinding({ age_offset: Math.min(144, ageOffset + 12) })}
           >
             +12
           </button>
         </div>
-      </div>
+      </PaneControlBar>
 
       {/* The table — columns from profectiontable.build_columns with body-header
           colours; annual rows expand to the monthly drill rows (the wx
@@ -440,7 +466,7 @@ export function ProfectionsView({ documentId, parentDocumentId, sourceName, onCl
                   style={{
                     fontFamily: column.headerGlyph ? "'AriesMorinus'" : undefined,
                     fontWeight: column.headerGlyph ? 400 : undefined,
-                    color: column.colorHex ?? undefined,
+                    color: semanticChartColor(column.colorRole, column.colorHex),
                   }}
                 >
                   {column.label}
@@ -465,7 +491,7 @@ export function ProfectionsView({ documentId, parentDocumentId, sourceName, onCl
           </tbody>
         </table>
       </div>
-    </PaneShell>
+    </RetainedPaneShell>
   );
 }
 
@@ -516,46 +542,6 @@ function ProfRow({
         ))}
       </tr>
     </TimedChartContextMenu>
-  );
-}
-
-function PaneShell({
-  sourceName,
-  onClose,
-  toolbar,
-  children,
-}: {
-  sourceName?: string;
-  onClose?: () => void;
-  toolbar?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  const t = useT();
-  return (
-    <div className="font-morinus-text flex h-full min-h-0 flex-col bg-background">
-      <div className="flex shrink-0 items-center gap-2 border-b border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface)] px-3 py-2">
-        <div className="min-w-0 truncate text-[length:var(--aries-font-size-small)] font-medium text-[color:var(--aries-text-primary)]">
-          {t("profview.profections")}
-          {sourceName ? (
-            <span className="ml-1 font-normal text-[color:var(--aries-text-muted)]">{sourceName}</span>
-          ) : null}
-        </div>
-        <div className="ml-auto flex items-center gap-1">
-          {toolbar}
-          {onClose ? (
-            <button
-              type="button"
-              className="inline-flex size-6 items-center justify-center rounded hover:bg-accent/40"
-              onClick={onClose}
-              aria-label={t("profview.closeProfections")}
-            >
-              <X className="size-4" />
-            </button>
-          ) : null}
-        </div>
-      </div>
-      {children}
-    </div>
   );
 }
 

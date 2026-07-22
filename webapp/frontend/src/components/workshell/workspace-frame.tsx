@@ -16,7 +16,7 @@ import {
 import { activeRightPaneModule } from "@/components/workshell/right-pane-layout";
 import { cn } from "@/lib/utils";
 import type { ChartRenderSnapshot } from "@/lib/chart/types";
-import type { OptionsPayload, WorkspaceManifest } from "@/lib/daemon/client";
+import type { WorkspaceManifest } from "@/lib/daemon/client";
 import { rightPanePriorityLayout, useFrameLayoutStore } from "@/stores/frame-layout-store";
 import { useWorkspaceStore, type WorkspaceDocument } from "@/stores/workspace-store";
 import type { SettingsTabId } from "./settings-dialog";
@@ -31,7 +31,8 @@ type WorkspaceFrameProps = {
   onReorder: (docId: string, beforeId: string | null) => void;
   onSolarAverageWindowSelect: (maxBirthday: number, returnKind: "solar" | "lunar") => void;
   onOpenSettings: (tab?: SettingsTabId) => void;
-  onOptionsPatched?: (next?: OptionsPayload) => void;
+  onMenuCommand: (command: string) => void;
+  isMenuCommandEnabled: (command: string) => boolean;
   onRevealKeyHints?: (placement: KeyHintPlacement) => void;
   children: React.ReactNode;
 };
@@ -46,7 +47,8 @@ export function WorkspaceFrame({
   onReorder,
   onSolarAverageWindowSelect,
   onOpenSettings,
-  onOptionsPatched,
+  onMenuCommand,
+  isMenuCommandEnabled,
   onRevealKeyHints,
   children,
 }: WorkspaceFrameProps) {
@@ -93,6 +95,7 @@ export function WorkspaceFrame({
   const rightPaneWidth = useFrameLayoutStore((s) => s.rightPaneWidth);
   const inspectorOpen = useFrameLayoutStore((s) => s.inspectorOpen);
   const notesOpen = useFrameLayoutStore((s) => s.notesPaneOpen);
+  const styleEditorOpen = useFrameLayoutStore((s) => s.styleEditorOpen);
   const transitSearchPane = useWorkspaceStore((s) => s.transitSearchPane);
   const transitListPane = useWorkspaceStore((s) => s.transitListPane);
   const directionsPane = useWorkspaceStore((s) => s.directionsPane);
@@ -110,6 +113,7 @@ export function WorkspaceFrame({
   const activeRightPane = activeRightPaneModule({
     inspectorOpen,
     notesOpen,
+    styleEditorOpen,
     transitSearchPane,
     transitListPane,
     directionsPane,
@@ -158,7 +162,6 @@ export function WorkspaceFrame({
 
   const sidebarVars = {
     "--sidebar-width": `${effectiveSidebarWidth}px`,
-    "--sidebar-width-icon": "3rem",
   } as React.CSSProperties;
 
   // The wx shell has fused titlebar controls: they float over the workspace and
@@ -179,9 +182,11 @@ export function WorkspaceFrame({
       <UnifiedTitleBar
         chart={chart}
         activeDoc={activeDocument}
+        manifest={manifest}
         overlay={fullBleed}
-        onOptionsPatched={onOptionsPatched}
         onOpenSettings={onOpenSettings}
+        onMenuCommand={onMenuCommand}
+        isMenuCommandEnabled={isMenuCommandEnabled}
       />
       <SidebarProvider
         open={sidebarOpen}

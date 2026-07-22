@@ -239,7 +239,7 @@ export function SortableDocumentsGroup({
   };
 
   return (
-    <SidebarGroup className="px-0 pb-0 pt-1">
+    <SidebarGroup className="px-0 pb-0 pt-[var(--aries-control-padding-y)]">
       <SidebarGroupContent>
         <DndContext
           id="aries-sidebar-documents"
@@ -566,7 +566,8 @@ function SortableDocItem({
   const style: React.CSSProperties = {
     transform: freezeDragSource ? undefined : CSS.Transform.toString(transform),
     transition: freezeDragSource ? undefined : transition,
-    opacity: isDragging && !freezeDragSource ? 0.5 : 1,
+    opacity:
+      isDragging && !freezeDragSource ? "var(--aries-sidebar-drag-opacity)" : 1,
     zIndex: isDragging ? 10 : undefined,
   };
 
@@ -610,11 +611,12 @@ function SortableActionItem({
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1,
+    opacity: isDragging ? "var(--aries-sidebar-drag-opacity)" : 1,
     zIndex: isDragging ? 10 : undefined,
   };
   const row = (
     <NavRow
+      actionId={action.id}
       label={tLabel(`sidebar.action.${action.id}`, action.label)}
       shortcut={action.shortcut}
       isActive={isActive}

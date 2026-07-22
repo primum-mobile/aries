@@ -117,6 +117,12 @@ function retainStableOverlayRows(
   );
   changed ||= displayAnchorChart !== next.displayAnchorChart;
 
+  const outerRingItems = {
+    ...(previous.outerRingItems ?? {}),
+    ...(next.outerRingItems ?? {}),
+  };
+  changed ||= Object.keys(outerRingItems).length !== Object.keys(next.outerRingItems ?? {}).length;
+
   if (!changed) {
     return next;
   }
@@ -127,6 +133,7 @@ function retainStableOverlayRows(
     comparisonChart,
     radixChart,
     displayAnchorChart,
+    outerRingItems,
   };
 }
 
@@ -230,6 +237,12 @@ function shouldRetainPreviousOverlayRow(
   row: OverlayInfoRow,
   mode: OverlayRenderMode,
 ): boolean {
+  if (mode === "step_fast" && row.group === "header") {
+    // Lord-of-year is computed for every step and must be allowed to disappear
+    // when it is no longer applicable. Only Term lord is deliberately absent
+    // from step_fast and therefore eligible for stale-while-refresh retention.
+    return row.slot === "term-lord" || (row.slot == null && row.label === "Term lord");
+  }
   if (mode === "deferred" && row.group === "signal") {
     return !isStationSignalRow(row);
   }
@@ -238,6 +251,8 @@ function shouldRetainPreviousOverlayRow(
 
 function isStationSignalRow(row: OverlayInfoRow): boolean {
   return row.group === "signal" && (
+    row.slot === "station-signal" ||
+    // Backward compatibility for a retained pre-slot English snapshot.
     row.label === "Retro station" || row.label === "Direct station"
   );
 }
@@ -270,9 +285,17 @@ function appendOverlayRow(
 
 function retainedOverlayGroups(mode: OverlayRenderMode): Set<OverlayInfoRow["group"]> {
   if (mode === "step_fast") {
+    // Day/hour and Lord of the year arrive current in the step frame. Retain
+    // only the deferred Term-lord and signal slots until the generation-guarded
+    // full snapshot can replace them atomically. This is stale-while-refresh,
+    // never a second source of truth: it prevents blank/strobe frames without
+    // pulling phasis/cazimi/eclipse scans into the interaction path.
     return new Set(["header", "signal"]);
   }
   if (mode === "deferred") {
+    // Deferred snapshots already carry current station rows. Keep only the
+    // prior expensive signal slots until the following full snapshot swaps the
+    // complete group, avoiding both a blank corner and duplicate stations.
     return new Set(["signal"]);
   }
   return new Set();
@@ -293,16 +316,17 @@ function overlayRowQueues(rows: OverlayInfoRow[]): Map<string, OverlayInfoRow[]>
 }
 
 // Merge/dedup key for the retention pass. Header rows ("Term lord", "Lord of
-// the year") are singleton slots per LABEL: their lord glyphs legitimately
+// the year") are singleton semantic slots: their lord glyphs legitimately
 // change while the time cursor steps across a profection-year boundary, and
 // keying the merge on full glyph identity would retain the outgoing lord's row
 // next to the incoming one — a duplicated "Lord of the year" during step
 // bursts. An incoming header row therefore always replaces the retained row
-// with the same label. All other groups keep full identity: signal rows repeat
+// with the same stable slot (or localized-label fallback). All other groups
+// keep full identity: signal rows repeat
 // a label across planets (e.g. several Phasis rows) and must not collapse.
 function overlayRowRetentionKey(row: OverlayInfoRow): string {
   if (row.group === "header") {
-    return `header:${row.label}`;
+    return `header:${row.slot ?? row.label}`;
   }
   return overlayRowIdentity(row);
 }
@@ -311,5 +335,9 @@ function overlayRowIdentity(row: OverlayInfoRow): string {
   const glyphs = row.glyphs
     .map((glyph) => `${glyph.kind ?? ""}:${glyph.seId ?? ""}:${glyph.char}`)
     .join("|");
-  return `${row.group ?? "row"}:${row.label}:${glyphs}`;
+  // A window can contain more than one same-kind eclipse (no planet glyph),
+  // and one planet can have repeated same-label events. The signed offset is
+  // part of row identity; omitting it collapsed valid retained rows during a
+  // partial step frame and made them reappear at full settle.
+  return `${row.group ?? "row"}:${row.slot ?? ""}:${row.label}:${glyphs}:${row.trailing ?? ""}`;
 }

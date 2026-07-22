@@ -132,7 +132,7 @@ export function collectShortcutRows(
 
   const rows: ShortcutRow[] = [];
   for (const shortcut of manifest.shortcuts) {
-    if (!shortcut.bound || shortcut.keys === "?") continue;
+    if (!shortcut.bound || shortcut.hidden || shortcut.keys === "?") continue;
     rows.push({
       keys: shortcut.keys,
       action: shortcutAction(shortcut, tf),

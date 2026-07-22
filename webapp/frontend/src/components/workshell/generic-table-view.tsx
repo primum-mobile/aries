@@ -23,6 +23,7 @@ import {
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/i18n";
+import { semanticChartColor } from "@/lib/theme/semantic-color";
 import { TimeLordTableView } from "./time-lord-table-view";
 import { AspectMatrixView } from "./aspect-matrix-view";
 import { SectionedTableView } from "./sectioned-table-view";
@@ -46,6 +47,11 @@ type Props = {
 };
 
 const DMS_SECONDS_RE = /(\d{1,3}\s*°\s*\d{1,2}\s*(?:['′]|’))\s*\d{1,2}\s*(?:"|″)/g;
+const TABLE_EXPORT_BUTTON_CLASS =
+  "inline-flex h-[var(--aries-control-height-small)] items-center gap-[var(--aries-control-gap-compact)] " +
+  "rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-border-subtle)] " +
+  "px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-small)] " +
+  "text-[color:var(--aries-text-primary)] hover:bg-[color:var(--aries-surface-subtle)]";
 
 function compactListAngleText(text: string): string {
   return text.replace(DMS_SECONDS_RE, "$1");
@@ -114,7 +120,7 @@ export function GenericTableView({ documentId, parentDocumentId, tableId }: Prop
 
   if (error && !payload) {
     return (
-      <div className="font-morinus-text flex h-full min-h-0 items-center justify-center bg-background p-6 text-[length:var(--aries-font-size-base)] text-[color:var(--aries-text-muted)]">
+      <div className="font-morinus-text flex h-full min-h-0 items-center justify-center bg-background p-[var(--aries-pane-state-padding)] text-[length:var(--aries-font-size-base)] text-[color:var(--aries-text-muted)]">
         {error}
       </div>
     );
@@ -122,7 +128,7 @@ export function GenericTableView({ documentId, parentDocumentId, tableId }: Prop
 
   if (!payload) {
     return (
-      <div className="font-morinus-text flex h-full min-h-0 items-center justify-center bg-background p-6 text-[length:var(--aries-font-size-base)] text-[color:var(--aries-text-muted)]">
+      <div className="font-morinus-text flex h-full min-h-0 items-center justify-center bg-background p-[var(--aries-pane-state-padding)] text-[length:var(--aries-font-size-base)] text-[color:var(--aries-text-muted)]">
         {t("table.loadingTable")}
       </div>
     );
@@ -138,8 +144,8 @@ export function GenericTableView({ documentId, parentDocumentId, tableId }: Prop
   const showLayoutControl = flatLayout && hasListDateTimeColumns(payload.columns);
   return (
     <div className="font-morinus-text flex h-full min-h-0 flex-col bg-background">
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface)] px-3 py-2">
-        <div className="flex min-w-0 items-center gap-2">
+      <div className="flex shrink-0 items-center justify-between gap-[var(--aries-pane-control-gap-y)] border-b border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface)] px-[var(--aries-pane-header-compact-padding-x)] py-[var(--aries-pane-header-padding-y)]">
+        <div className="flex min-w-0 items-center gap-[var(--aries-pane-control-gap-y)]">
           {showLayoutControl ? <ListLayoutPresetControl /> : null}
           {error ? (
             <span
@@ -150,18 +156,18 @@ export function GenericTableView({ documentId, parentDocumentId, tableId }: Prop
             </span>
           ) : null}
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-[var(--aries-control-gap-compact)]">
           <button
             type="button"
-            className="inline-flex h-7 items-center gap-1 rounded border border-[color:var(--aries-border-subtle)] px-2 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)] hover:bg-[color:var(--aries-surface-subtle)]"
+            className={TABLE_EXPORT_BUTTON_CLASS}
             onClick={() => copyRows(payload, sortedRows)}
           >
-            <Copy className="size-3.5" />
+            <Copy className="size-[var(--aries-control-icon-size)]" />
             {t("table.copy")}
           </button>
           <button
             type="button"
-            className="inline-flex h-7 items-center gap-1 rounded border border-[color:var(--aries-border-subtle)] px-2 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)] hover:bg-[color:var(--aries-surface-subtle)]"
+            className={TABLE_EXPORT_BUTTON_CLASS}
             onClick={() =>
               void exportTextContent({
                 filename: payload.tableId,
@@ -173,12 +179,12 @@ export function GenericTableView({ documentId, parentDocumentId, tableId }: Prop
               }).catch(() => {})
             }
           >
-            <Download className="size-3.5" />
+            <Download className="size-[var(--aries-control-icon-size)]" />
             TSV
           </button>
           <button
             type="button"
-            className="inline-flex h-7 items-center gap-1 rounded border border-[color:var(--aries-border-subtle)] px-2 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)] hover:bg-[color:var(--aries-surface-subtle)]"
+            className={TABLE_EXPORT_BUTTON_CLASS}
             onClick={() =>
               void exportTextContent({
                 filename: payload.tableId,
@@ -189,12 +195,12 @@ export function GenericTableView({ documentId, parentDocumentId, tableId }: Prop
               }).catch(() => {})
             }
           >
-            <FileText className="size-3.5" />
+            <FileText className="size-[var(--aries-control-icon-size)]" />
             TXT
           </button>
           <button
             type="button"
-            className="inline-flex h-7 items-center gap-1 rounded border border-[color:var(--aries-border-subtle)] px-2 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)] hover:bg-[color:var(--aries-surface-subtle)]"
+            className={TABLE_EXPORT_BUTTON_CLASS}
             onClick={() =>
               void exportTextContent({
                 filename: payload.tableId,
@@ -206,15 +212,15 @@ export function GenericTableView({ documentId, parentDocumentId, tableId }: Prop
               }).catch(() => {})
             }
           >
-            <Download className="size-3.5" />
+            <Download className="size-[var(--aries-control-icon-size)]" />
             JSON
           </button>
           <button
             type="button"
-            className="inline-flex h-7 items-center gap-1 rounded border border-[color:var(--aries-border-subtle)] px-2 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)] hover:bg-[color:var(--aries-surface-subtle)]"
+            className={TABLE_EXPORT_BUTTON_CLASS}
             onClick={() => void exportTablePayloadPdf(payload, sortedRows).catch(() => {})}
           >
-            <Download className="size-3.5" />
+            <Download className="size-[var(--aries-control-icon-size)]" />
             PDF
           </button>
         </div>
@@ -228,7 +234,7 @@ export function GenericTableView({ documentId, parentDocumentId, tableId }: Prop
       ) : payload.capabilities?.sections === true && payload.sections?.length ? (
         <SectionedTableView payload={payload} onBindingChange={updateTableBinding} />
       ) : (
-        <div className="min-h-0 flex-1 overflow-auto p-4">
+        <div className="min-h-0 flex-1 overflow-auto p-[var(--aries-pane-content-padding)]">
           <table
             className={cn(LIST_ROLE_CLASSES.standard, "border-collapse", flatResize.tableClassName)}
             style={flatResize.tableStyle}
@@ -245,12 +251,16 @@ export function GenericTableView({ documentId, parentDocumentId, tableId }: Prop
                         "aries-list-head-cell relative border p-0 font-medium",
                         alignClass(column.align),
                       )}
+                      style={{
+                        color: semanticChartColor(column.colorRole, column.colorHex),
+                        fontFamily: column.headerGlyph ? "'AriesMorinus'" : undefined,
+                      }}
                     >
                       {sortingEnabled ? (
                         <button
                           type="button"
                           className={cn(
-                            "inline-flex items-center gap-1 px-[var(--aries-list-cell-x)] py-[var(--aries-list-cell-y)]",
+                            "inline-flex items-center gap-[var(--aries-control-gap-compact)] px-[var(--aries-list-cell-x)] py-[var(--aries-list-cell-y)]",
                             alignFlexClass(column.align),
                           )}
                           onClick={() => setSortState(nextSortState(sortState, column.id))}
@@ -265,7 +275,7 @@ export function GenericTableView({ documentId, parentDocumentId, tableId }: Prop
                       ) : (
                         <span
                           className={cn(
-                          "inline-flex items-center gap-1 px-[var(--aries-list-cell-x)] py-[var(--aries-list-cell-y)]",
+                          "inline-flex items-center gap-[var(--aries-control-gap-compact)] px-[var(--aries-list-cell-x)] py-[var(--aries-list-cell-y)]",
                           alignFlexClass(column.align),
                         )}
                         >
@@ -329,10 +339,11 @@ export function CellView({ cell }: { cell?: GenericTableCell }) {
   if (!cell) return null;
   // Cross-cutting channels every daemon builder can use: per-planet color
   // identity (wx useplanetcolors/dignity palette) and bold emphasis.
+  const color = semanticChartColor(cell.colorRole, cell.color);
   const channelStyle: React.CSSProperties | undefined =
-    cell.color || cell.emphasis === "strong" || cell.fontRole === "arabic"
+    color || cell.emphasis === "strong" || cell.fontRole === "arabic"
       ? {
-          color: cell.color,
+          color,
           fontWeight: cell.emphasis === "strong" ? 600 : undefined,
           fontFamily: cell.fontRole === "arabic" ? "'AriesArabicAcademic'" : undefined,
         }
@@ -344,12 +355,12 @@ export function CellView({ cell }: { cell?: GenericTableCell }) {
           <span
             key={`${index}:${run.text}`}
             style={
-              run.glyph || run.color
+              run.glyph || run.color || run.colorRole
                 ? {
                     // Run-level color: wx multi-planet cells color each glyph
                     // independently (midpointswnd.py:202-228).
                     fontFamily: run.glyph ? "'AriesMorinus'" : undefined,
-                    color: run.color,
+                    color: semanticChartColor(run.colorRole, run.color),
                   }
                 : undefined
             }

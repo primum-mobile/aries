@@ -67,7 +67,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 
 			if not mundane and self.options.subzodiacal != primdirs.PrimDirs.SZPROMISSOR and self.options.subzodiacal != primdirs.PrimDirs.SZBOTH:
 				latprom = 0.0
-				raprom, declprom, distprom = astrology.swe_cotrans(plprom.data[planets.Planet.LONG], 0.0, 1.0, -self.chart.obl[0])
+				raprom, declprom, distprom = astrology.swe_cotrans(self._lon_for_cotrans(plprom.data[planets.Planet.LONG]), 0.0, 1.0, -self.chart.obl[0])
 
 			self.toPlanets(mundane, p, lonprom, latprom, raprom, declprom, chart.Chart.CONJUNCTIO)
 
@@ -86,7 +86,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 
 		if not mundane and self.options.subzodiacal != primdirs.PrimDirs.SZPROMISSOR and self.options.subzodiacal != primdirs.PrimDirs.SZBOTH:
 			latprom = 0.0
-			raprom, declprom, distprom = astrology.swe_cotrans(lonprom, 0.0, 1.0, -self.chart.obl[0])
+			raprom, declprom, distprom = astrology.swe_cotrans(self._lon_for_cotrans(lonprom), 0.0, 1.0, -self.chart.obl[0])
 
 		self.toPlanets(mundane, primdirs.PrimDir.CUSTOMERPD, lonprom, latprom, raprom, declprom, chart.Chart.CONJUNCTIO)
 
@@ -106,7 +106,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 
 			if not mundane and self.options.subzodiacal != primdirs.PrimDirs.SZPROMISSOR and self.options.subzodiacal != primdirs.PrimDirs.SZBOTH:
 				latprom = 0.0
-				raprom, declprom, distprom = astrology.swe_cotrans(plprom.data[planets.Planet.LONG], 0.0, 1.0, -self.chart.obl[0])
+				raprom, declprom, distprom = astrology.swe_cotrans(self._lon_for_cotrans(plprom.data[planets.Planet.LONG]), 0.0, 1.0, -self.chart.obl[0])
 
 			self.toCustomer2(mundane, p, primdirs.PrimDir.NONE, lonprom, latprom, raprom, declprom, chart.Chart.CONJUNCTIO, 0.0, True)
 
@@ -196,7 +196,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 
 			if not mundane and self.options.subzodiacal != primdirs.PrimDirs.SZPROMISSOR and self.options.subzodiacal != primdirs.PrimDirs.SZBOTH:
 				latprom = 0.0
-				raprom, declprom, distprom = astrology.swe_cotrans(lonprom, 0.0, 1.0, -self.chart.obl[0])
+				raprom, declprom, distprom = astrology.swe_cotrans(self._lon_for_cotrans(lonprom), 0.0, 1.0, -self.chart.obl[0])
 
 			self.toPlanets(mundane, p+offs, lonprom, latprom, raprom, declprom, chart.Chart.CONJUNCTIO)
 
@@ -269,7 +269,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 
 			if not mundane and self.options.subzodiacal != primdirs.PrimDirs.SZPROMISSOR and self.options.subzodiacal != primdirs.PrimDirs.SZBOTH:
 				latprom = 0.0
-				raprom, declprom, distprom = astrology.swe_cotrans(lonprom, 0.0, 1.0, -self.chart.obl[0])
+				raprom, declprom, distprom = astrology.swe_cotrans(self._lon_for_cotrans(lonprom), 0.0, 1.0, -self.chart.obl[0])
 
 			self.toCustomer2(mundane, p+offs, primdirs.PrimDir.NONE, lonprom, latprom, raprom, declprom, chart.Chart.CONJUNCTIO)
 
@@ -311,9 +311,9 @@ class RegioCampBasePD(primdirs.PrimDirs):
 
 						#calc real(wahre)ra
 #						raprom, declprom = util.getRaDecl(lonprom, latprom, self.chart.obl[0])
-						raprom, declprom, dist = astrology.swe_cotrans(lonprom, latprom, 1.0, -self.chart.obl[0])
+						raprom, declprom, dist = astrology.swe_cotrans(self._lon_for_cotrans(lonprom), latprom, 1.0, -self.chart.obl[0])
 					else:
-						raprom, declprom, distprom = astrology.swe_cotrans(lonprom, 0.0, 1.0, -self.chart.obl[0])
+						raprom, declprom, distprom = astrology.swe_cotrans(self._lon_for_cotrans(lonprom), 0.0, 1.0, -self.chart.obl[0])
 
 					for s in range(len(self.chart.planets.planets)):
 						if not self.options.sigplanets[s]:
@@ -362,9 +362,9 @@ class RegioCampBasePD(primdirs.PrimDirs):
 
 						#calc real(wahre)ra
 #						raprom, declprom = util.getRaDecl(lonprom, latprom, self.chart.obl[0])
-						raprom, declprom, dist = astrology.swe_cotrans(lonprom, latprom, 1.0, -self.chart.obl[0])
+						raprom, declprom, dist = astrology.swe_cotrans(self._lon_for_cotrans(lonprom), latprom, 1.0, -self.chart.obl[0])
 					else:
-						raprom, declprom, distprom = astrology.swe_cotrans(lonprom, 0.0, 1.0, -self.chart.obl[0])
+						raprom, declprom, distprom = astrology.swe_cotrans(self._lon_for_cotrans(lonprom), 0.0, 1.0, -self.chart.obl[0])
 
 					self.toHCs(False, p, raprom, declprom, psidx, aspect)
 
@@ -409,9 +409,9 @@ class RegioCampBasePD(primdirs.PrimDirs):
 
 						#calc real(wahre)ra
 #						raprom, declprom = util.getRaDecl(lonprom, latprom, self.chart.obl[0])
-						raprom, declprom, dist = astrology.swe_cotrans(lonprom, latprom, 1.0, -self.chart.obl[0])
+						raprom, declprom, dist = astrology.swe_cotrans(self._lon_for_cotrans(lonprom), latprom, 1.0, -self.chart.obl[0])
 					else:
-						raprom, declprom, distprom = astrology.swe_cotrans(lonprom, 0.0, 1.0, -self.chart.obl[0])
+						raprom, declprom, distprom = astrology.swe_cotrans(self._lon_for_cotrans(lonprom), 0.0, 1.0, -self.chart.obl[0])
 
 					self.toCustomer2(False, p, primdirs.PrimDir.NONE, lonprom, latprom, raprom, declprom, psidx, aspect, True)
 
@@ -462,9 +462,9 @@ class RegioCampBasePD(primdirs.PrimDirs):
 
 						#calc real(wahre)ra
 #						raprom, declprom = util.getRaDecl(lonprom, latprom, self.chart.obl[0])
-						raprom, declprom, dist = astrology.swe_cotrans(lonprom, latprom, 1.0, -self.chart.obl[0])
+						raprom, declprom, dist = astrology.swe_cotrans(self._lon_for_cotrans(lonprom), latprom, 1.0, -self.chart.obl[0])
 					else:
-						raprom, declprom, distprom = astrology.swe_cotrans(lonprom, 0.0, 1.0, -self.chart.obl[0])
+						raprom, declprom, distprom = astrology.swe_cotrans(self._lon_for_cotrans(lonprom), 0.0, 1.0, -self.chart.obl[0])
 
 					for s in range(len(self.chart.planets.planets)):
 						if not self.options.sigplanets[s]:
@@ -526,9 +526,9 @@ class RegioCampBasePD(primdirs.PrimDirs):
 
 						#calc real(wahre)ra
 #						raprom, declprom = util.getRaDecl(lonprom, latprom, self.chart.obl[0])
-						raprom, declprom, dist = astrology.swe_cotrans(lonprom, latprom, 1.0, -self.chart.obl[0])
+						raprom, declprom, dist = astrology.swe_cotrans(self._lon_for_cotrans(lonprom), latprom, 1.0, -self.chart.obl[0])
 					else:
-						raprom, declprom, distprom = astrology.swe_cotrans(lonprom, 0.0, 1.0, -self.chart.obl[0])
+						raprom, declprom, distprom = astrology.swe_cotrans(self._lon_for_cotrans(lonprom), 0.0, 1.0, -self.chart.obl[0])
 
 					self.toCustomer2(False, p+offs, primdirs.PrimDir.NONE, lonprom, latprom, raprom, declprom, psidx, aspect)
 
@@ -548,7 +548,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 			declprom = plprom.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.DECL]
 
 			if not mundane and self.options.subzodiacal != primdirs.PrimDirs.SZPROMISSOR and self.options.subzodiacal != primdirs.PrimDirs.SZBOTH:
-				raprom, declprom, distprom = astrology.swe_cotrans(plprom.data[planets.Planet.LONG], 0.0, 1.0, -self.chart.obl[0])
+				raprom, declprom, distprom = astrology.swe_cotrans(self._lon_for_cotrans(plprom.data[planets.Planet.LONG]), 0.0, 1.0, -self.chart.obl[0])
 
 			self.toHCs(mundane, i, raprom, declprom, chart.Chart.CONJUNCTIO)
 
@@ -565,7 +565,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 		declprom = point.speculums[primdirs.PrimDirs.REGIOSPECULUM][customerpd.CustomerPD.DECL]
 
 		if not mundane and self.options.subzodiacal != primdirs.PrimDirs.SZPROMISSOR and self.options.subzodiacal != primdirs.PrimDirs.SZBOTH:
-			raprom, declprom, distprom = astrology.swe_cotrans(lonprom, 0.0, 1.0, -self.chart.obl[0])
+			raprom, declprom, distprom = astrology.swe_cotrans(self._lon_for_cotrans(lonprom), 0.0, 1.0, -self.chart.obl[0])
 
 		self.toHCs(mundane, primdirs.PrimDir.CUSTOMERPD, raprom, declprom, chart.Chart.CONJUNCTIO)
 
@@ -583,7 +583,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 
 		if not mundane and self.options.subzodiacal != primdirs.PrimDirs.SZPROMISSOR and self.options.subzodiacal != primdirs.PrimDirs.SZBOTH:
 			latprom = 0.0
-			raprom, declprom, distprom = astrology.swe_cotrans(lonprom, 0.0, 1.0, -self.chart.obl[0])
+			raprom, declprom, distprom = astrology.swe_cotrans(self._lon_for_cotrans(lonprom), 0.0, 1.0, -self.chart.obl[0])
 
 		self._for_each_global_house_cusp_significator([
 			lambda: self.toCustomer2(mundane, primdirs.PrimDir.CUSTOMERPD, primdirs.PrimDir.NONE, lonprom, latprom, raprom, declprom, chart.Chart.CONJUNCTIO, 0.0, True)
@@ -614,7 +614,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 			declprom = plprom.decl
 
 			if not mundane and self.options.subzodiacal != primdirs.PrimDirs.SZPROMISSOR and self.options.subzodiacal != primdirs.PrimDirs.SZBOTH:
-				raprom, declprom, distprom = astrology.swe_cotrans(plprom.lon, 0.0, 1.0, -self.chart.obl[0])
+				raprom, declprom, distprom = astrology.swe_cotrans(self._lon_for_cotrans(plprom.lon), 0.0, 1.0, -self.chart.obl[0])
 
 			self.toHCs(mundane, i+offs, raprom, declprom, chart.Chart.CONJUNCTIO)
 
@@ -637,7 +637,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 			declstar = star[fixstars.FixStars.DECL]
 
 			if self.options.subzodiacal != primdirs.PrimDirs.SZPROMISSOR and self.options.subzodiacal != primdirs.PrimDirs.SZBOTH:
-				rastar, declstar, dist = astrology.swe_cotrans(lonstar, 0.0, 1.0, -self.chart.obl[0])
+				rastar, declstar, dist = astrology.swe_cotrans(self._lon_for_cotrans(lonstar), 0.0, 1.0, -self.chart.obl[0])
 
 			self.toHCs(False, i+OFFS, rastar, declstar, chart.Chart.CONJUNCTIO)
 
@@ -995,10 +995,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 					return
 
 				lonprom = i*chart.Chart.SIGN_DEG+summa
-				if self.options.ayanamsha != 0:
-					lonprom = util.to_tropical_lon(lonprom, getattr(self.chart, 'ayanamsha_offset', 0.0))
-
-				raprom, declprom, dist = astrology.swe_cotrans(lonprom, 0.0, 1.0, -self.chart.obl[0])
+				raprom, declprom, dist = astrology.swe_cotrans(self._lon_for_cotrans(lonprom), 0.0, 1.0, -self.chart.obl[0])
 
 				#Planets
 				for s in range(len(self.chart.planets.planets)):
@@ -1058,7 +1055,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 
 			if self.options.subzodiacal != primdirs.PrimDirs.SZPROMISSOR and self.options.subzodiacal != primdirs.PrimDirs.SZBOTH:
 				latstar = 0.0
-				rastar, declstar, dist = astrology.swe_cotrans(lonstar, 0.0, 1.0, -self.chart.obl[0])
+				rastar, declstar, dist = astrology.swe_cotrans(self._lon_for_cotrans(lonstar), 0.0, 1.0, -self.chart.obl[0])
 
 			for s in range(len(self.chart.planets.planets)):
 				if not self.options.sigplanets[s]:
@@ -1109,7 +1106,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 					aspect *= -1
 
 				lon = util.normalize(lonprom+aspect)
-				raprom, declprom, distprom = astrology.swe_cotrans(lon, 0.0, 1.0, -self.chart.obl[0])
+				raprom, declprom, distprom = astrology.swe_cotrans(self._lon_for_cotrans(lon), 0.0, 1.0, -self.chart.obl[0])
 
 				for s in range(len(self.chart.planets.planets)):
 					if not self.options.sigplanets[s]:
@@ -1125,7 +1122,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 		'''Calculates zodiacal Asc to Planets and their aspects'''
 
 		lonprom = self.chart.houses.ascmc2[houses.Houses.ASC][houses.Houses.LON]
-		raprom, declprom, dist = astrology.swe_cotrans(lonprom, 0.0, 1.0, -self.chart.obl[0])
+		raprom, declprom, dist = astrology.swe_cotrans(self._lon_for_cotrans(lonprom), 0.0, 1.0, -self.chart.obl[0])
 		self.toPlanets(False, primdirs.PrimDir.ASC, lonprom, 0.0, raprom, declprom, chart.Chart.CONJUNCTIO)
 
 
@@ -1138,7 +1135,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 		'''Calculates zodiacal MC to Planets and their aspects'''
 
 		lonprom = self.chart.houses.ascmc2[houses.Houses.MC][houses.Houses.LON]
-		raprom, declprom, dist = astrology.swe_cotrans(lonprom, 0.0, 1.0, -self.chart.obl[0])
+		raprom, declprom, dist = astrology.swe_cotrans(self._lon_for_cotrans(lonprom), 0.0, 1.0, -self.chart.obl[0])
 		self.toPlanets(False, primdirs.PrimDir.MC, lonprom, 0.0, raprom, declprom, chart.Chart.CONJUNCTIO)
 
 
@@ -1200,7 +1197,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 					aspect *= -1
 
 				lon = util.normalize(lonprom+aspect)
-				raprom, declprom, distprom = astrology.swe_cotrans(lon, 0.0, 1.0, -self.chart.obl[0])
+				raprom, declprom, distprom = astrology.swe_cotrans(self._lon_for_cotrans(lon), 0.0, 1.0, -self.chart.obl[0])
 
 				self.toLoF(p, primdirs.PrimDir.NONE, lon, 0.0, psidx)
 
@@ -1240,7 +1237,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 					aspect *= -1
 
 				lon = util.normalize(lonprom+aspect)
-				raprom, declprom, distprom = astrology.swe_cotrans(lon, 0.0, 1.0, -self.chart.obl[0])
+				raprom, declprom, distprom = astrology.swe_cotrans(self._lon_for_cotrans(lon), 0.0, 1.0, -self.chart.obl[0])
 
 				self.toSyzygy(p, primdirs.PrimDir.NONE, lon, 0.0, psidx)
 
@@ -1280,7 +1277,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 					aspect *= -1
 
 				lon = util.normalize(lonprom+aspect)
-				raprom, declprom, distprom = astrology.swe_cotrans(lon, 0.0, 1.0, -self.chart.obl[0])
+				raprom, declprom, distprom = astrology.swe_cotrans(self._lon_for_cotrans(lon), 0.0, 1.0, -self.chart.obl[0])
 
 				self.toCustomer2(False, p, primdirs.PrimDir.NONE, lon, 0.0, raprom, declprom, chart.Chart.CONJUNCTIO)
 
@@ -1616,7 +1613,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 					if points[k][0] == -1.0:
 						continue
 
-					raprom, declprom, dist = astrology.swe_cotrans(points[k][0], 0.0, 1.0, -self.chart.obl[0])
+					raprom, declprom, dist = astrology.swe_cotrans(self._lon_for_cotrans(points[k][0]), 0.0, 1.0, -self.chart.obl[0])
 
 					for s in range(len(self.chart.planets.planets)):
 						if not self.options.sigplanets[s]:
@@ -1715,7 +1712,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 					if points[k][0] == -1.0:
 						continue
 
-					raprom, declprom, dist = astrology.swe_cotrans(points[k][0], 0.0, 1.0, -self.chart.obl[0])
+					raprom, declprom, dist = astrology.swe_cotrans(self._lon_for_cotrans(points[k][0]), 0.0, 1.0, -self.chart.obl[0])
 
 					for s in range(len(self.chart.planets.planets)):
 						if not self.options.sigplanets[s]:
@@ -1759,7 +1756,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 					if lonmid >= 360.0:
 						lonmid -= 360.0
 
-				raprom, declprom, distprom = astrology.swe_cotrans(lonmid, mid.lat, 1.0, -self.chart.obl[0])
+				raprom, declprom, distprom = astrology.swe_cotrans(self._lon_for_cotrans(lonmid), mid.lat, 1.0, -self.chart.obl[0])
 
 				self.toPlanet(False, mid.p1, mid.p2, lonmid, mid.lat, raprom, declprom, chart.Chart.MIDPOINT, s, chart.Chart.CONJUNCTIO)
 
@@ -1850,7 +1847,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 				if lonmid >= 360.0:
 					lonmid -= 360.0
 
-			raprom, declprom, dist = astrology.swe_cotrans(lonmid, mid.lat, 1.0, -self.chart.obl[0])
+			raprom, declprom, dist = astrology.swe_cotrans(self._lon_for_cotrans(lonmid), mid.lat, 1.0, -self.chart.obl[0])
 
 			self.toCustomer2(False, mid.p1, mid.p2, lonmid, mid.lat, raprom, declprom, chart.Chart.MIDPOINT)
 
@@ -1875,7 +1872,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 
 		lonprom = self.chart.fortune.fortune[fortune.Fortune.LON]
 		latprom = 0.0
-		raprom, declprom, dist = astrology.swe_cotrans(lonprom, latprom, 1.0, -self.chart.obl[0])
+		raprom, declprom, dist = astrology.swe_cotrans(self._lon_for_cotrans(lonprom), latprom, 1.0, -self.chart.obl[0])
 		self.toCustomer2(False, primdirs.PrimDir.LOF, primdirs.PrimDir.NONE, lonprom, latprom, raprom, declprom, chart.Chart.CONJUNCTIO)
 
 
@@ -1973,7 +1970,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 
 			if self.options.subzodiacal != primdirs.PrimDirs.SZPROMISSOR and self.options.subzodiacal != primdirs.PrimDirs.SZBOTH:
 				latstar = 0.0
-				rastar, declstar, dist = astrology.swe_cotrans(lonstar, 0.0, 1.0, -self.chart.obl[0])
+				rastar, declstar, dist = astrology.swe_cotrans(self._lon_for_cotrans(lonstar), 0.0, 1.0, -self.chart.obl[0])
 
 			self.toLoF(i+OFFS, primdirs.PrimDir.NONE, lonstar, latstar, chart.Chart.CONJUNCTIO)
 
@@ -1998,7 +1995,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 
 			if self.options.subzodiacal != primdirs.PrimDirs.SZPROMISSOR and self.options.subzodiacal != primdirs.PrimDirs.SZBOTH:
 				latstar = 0.0
-				rastar, declstar, dist = astrology.swe_cotrans(lonstar, 0.0, 1.0, -self.chart.obl[0])
+				rastar, declstar, dist = astrology.swe_cotrans(self._lon_for_cotrans(lonstar), 0.0, 1.0, -self.chart.obl[0])
 
 			self.toSyzygy(i+OFFS, primdirs.PrimDir.NONE, lonstar, latstar, chart.Chart.CONJUNCTIO)
 
@@ -2023,7 +2020,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 
 			if self.options.subzodiacal != primdirs.PrimDirs.SZPROMISSOR and self.options.subzodiacal != primdirs.PrimDirs.SZBOTH:
 				latstar = 0.0
-				rastar, declstar, dist = astrology.swe_cotrans(lonstar, 0.0, 1.0, -self.chart.obl[0])
+				rastar, declstar, dist = astrology.swe_cotrans(self._lon_for_cotrans(lonstar), 0.0, 1.0, -self.chart.obl[0])
 
 			self.toCustomer2(False, i+OFFS, primdirs.PrimDir.NONE, lonstar, latstar, rastar, declstar, chart.Chart.CONJUNCTIO)
 
@@ -2194,7 +2191,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 	def getZodW(self, pl, lon, lat, spole=None, seastern=None):
 		'''Calculates W, pole of the zodiacal(Regiomontan) point'''
 
-		ra, decl, dist = astrology.swe_cotrans(lon, lat, 1.0, -self.chart.obl[0])
+		ra, decl, dist = astrology.swe_cotrans(self._lon_for_cotrans(lon), lat, 1.0, -self.chart.obl[0])
 
 		eastern = True
 		if seastern == None:
@@ -2262,7 +2259,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 		PARALLEL = 0
 		CONTRAPARALLEL = 1
 
-		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric)
+		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric, getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
 		raprom = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.RA]
 		declprom = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.DECL]
 
@@ -2333,7 +2330,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 
 
 	def calcArcWithSMLoF(self, idprom, psidx, aspect, arc):
-		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric)
+		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric, getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
 		pllon = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.LONG]
 		pllat = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.LAT]
 
@@ -2361,7 +2358,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 
 
 	def calcArcWithSMSyzygy(self, idprom, psidx, aspect, arc):
-		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric)
+		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric, getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
 		pllon = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.LONG]
 		pllat = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.LAT]
 
@@ -2389,7 +2386,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 
 
 	def calcArcWithSM2(self, idprom, psidx, sig, paspect, arc):
-		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric)
+		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric, getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
 		lonprom_base = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.LONG]
 		pllat = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.LAT]
 		lonprom = util.normalize(lonprom_base+paspect)
@@ -2403,9 +2400,9 @@ class RegioCampBasePD(primdirs.PrimDirs):
 			if not ok:
 				return False, 0.0
 
-			raprom, declprom, dist = astrology.swe_cotrans(lonprom, latprom, 1.0, -self.chart.obl[0])
+			raprom, declprom, dist = astrology.swe_cotrans(self._lon_for_cotrans(lonprom), latprom, 1.0, -self.chart.obl[0])
 		else:
-			raprom, declprom, distprom = astrology.swe_cotrans(lonprom, 0.0, 1.0, -self.chart.obl[0])
+			raprom, declprom, distprom = astrology.swe_cotrans(self._lon_for_cotrans(lonprom), 0.0, 1.0, -self.chart.obl[0])
 
 #from toPlanet
 		wprom, wsig = 0.0, 0.0
@@ -2436,7 +2433,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 
 
 	def calcArcWithSMCustomer2(self, mundane, idprom, psidx, paspect, arc):
-		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric)
+		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric, getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
 		lonprom_base = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.LONG]
 		pllat = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.LAT]
 		lonprom = util.normalize(lonprom_base+paspect)
@@ -2451,9 +2448,9 @@ class RegioCampBasePD(primdirs.PrimDirs):
 			else:
 				latprom = pllat
 
-			raprom, declprom, dist = astrology.swe_cotrans(lonprom, latprom, 1.0, -self.chart.obl[0])
+			raprom, declprom, dist = astrology.swe_cotrans(self._lon_for_cotrans(lonprom), latprom, 1.0, -self.chart.obl[0])
 		else:
-			raprom, declprom, distprom = astrology.swe_cotrans(lonprom, 0.0, 1.0, -self.chart.obl[0])
+			raprom, declprom, distprom = astrology.swe_cotrans(self._lon_for_cotrans(lonprom), 0.0, 1.0, -self.chart.obl[0])
 
 #from toPlanet
 		wprom, wsig = 0.0, 0.0

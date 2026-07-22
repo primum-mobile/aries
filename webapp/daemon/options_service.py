@@ -49,15 +49,23 @@ import revolutions  # Revolution option cache invalidation
 from engine import solilunar
 
 from webapp.daemon.chart_service import chart_snapshot_service
+from webapp.daemon import settings_registry
 from webapp.daemon.event_time import (
     EVENT_TABLE_TIME_BASIS_VALUES,
     EVENT_TABLE_TIME_DEFAULT_LOCATION,
     EVENT_TABLE_TIME_UT,
     event_table_time_basis,
 )
+from webapp.daemon.style_profile_service import (
+    StyleProfileError,
+    StyleProfileStore,
+    split_style_profile_css_overrides,
+)
 
 
 logger = logging.getLogger(__name__)
+
+THEME_STATE_SCHEMA_VERSION = 2
 
 
 def _jsonable_refdeg(trip) -> list:
@@ -170,6 +178,12 @@ THEME_PRESETS: dict[str, dict[str, tuple]] = {
         'chart_grid': (88, 88, 88), 'danger': (17, 17, 17), 'success': (17, 17, 17),
         'mode': 'light',
     },
+    'Diurnal': {
+        'surface': (255, 255, 255), 'surface_subtle': (242, 242, 242),
+        'text_primary': (17, 17, 17), 'chart_bg': (251, 250, 247),
+        'chart_grid': (139, 134, 118), 'danger': (161, 69, 58), 'success': (61, 122, 79),
+        'mode': 'light',
+    },
     'Classic Morinus': {
         'surface': (192, 192, 192), 'surface_subtle': (192, 192, 192),
         'text_primary': (0, 0, 0), 'chart_bg': (0, 0, 0),
@@ -213,19 +227,11 @@ _MY_COLORS_NAME = 'My Colors'
 # NOT translated. The two worded presets get a separate localized display `label`
 # via mtexts; the remaining presets are proper product names (label == name).
 _PALETTE_LABEL_KEYS = {
-    _SYSTEM_AUTO_NAME: 'SystemAuto',
-    _MY_COLORS_NAME: 'MyColors',
+    definition['name']: definition['mtextKey']
+    for definition in settings_registry.THEME_PRESET_DEFINITIONS
+    if definition.get('mtextKey')
 }
-PALETTE_PRESET_NAMES = (
-    _SYSTEM_AUTO_NAME,
-    _MY_COLORS_NAME,
-    'Midnight',
-    'Daylight',
-    'Classic Morinus',
-    'Taurus',
-    'Nocturne',
-    'Sirius',
-)
+PALETTE_PRESET_NAMES = settings_registry.THEME_PRESET_NAMES
 
 _PALETTE_ATTR_NAMES = (
     'clrframe', 'clrsigns',
@@ -233,7 +239,7 @@ _PALETTE_ATTR_NAMES = (
     'clrAscMC', 'clrhouses', 'clrhousenumbers', 'clrpositions', 'clrperegrin',
     'clrdomicil', 'clrexil', 'clrexal', 'clrcasus',
     'clrbackground', 'clrsidebar', 'clrsidebartext',
-    'clrtable', 'clrtexts',
+    'clrtable', 'clrtexts', 'clrappbackground', 'clrapptexts',
 )
 
 _PD_IN_CHART_FIELDS = {
@@ -356,6 +362,47 @@ _CURRENT_COLOR_DAY_PRESET = {
     'useplanetcolors': False,
 }
 
+# Warm-white daylight palette with a strict luminance hierarchy. Aspect colors
+# are the 76% warm-background composites of the intended equal-lightness OKLCH
+# families because the persisted palette contract stores opaque RGB values.
+_DIURNAL_PRESET = {
+    'clrframe': (95, 92, 83),
+    'clrsigns': (95, 92, 83),
+    'clrsignelementfire': (128, 87, 83),
+    'clrsignelementearth': (86, 107, 75),
+    'clrsignelementair': (114, 97, 62),
+    'clrsignelementwater': (65, 105, 125),
+    'clrAscMC': (95, 92, 83),
+    'clrhouses': (139, 134, 118),
+    'clrhousenumbers': (95, 92, 83),
+    'clrpositions': (38, 36, 31),
+    'clrperegrin': (38, 36, 31),
+    'clrdomicil': (61, 122, 79),
+    'clrexil': (161, 69, 58),
+    'clrexal': (140, 108, 31),
+    'clrcasus': (139, 80, 80),
+    'clrbackground': (251, 250, 247),
+    'clrsidebar': (242, 242, 242),
+    'clrsidebartext': (17, 17, 17),
+    'clrtable': (255, 255, 252),
+    'clrtexts': (38, 36, 31),
+    'clrappbackground': (255, 255, 255),
+    'clrapptexts': (17, 17, 17),
+    'clrindividual': [
+        (143, 107, 9), (64, 98, 122), (94, 71, 132), (43, 99, 57),
+        (136, 57, 46), (43, 86, 139), (94, 84, 63), (28, 97, 115),
+        (58, 83, 141), (107, 68, 116), (116, 73, 49), (122, 63, 92),
+        (97, 71, 125),
+    ],
+    'clraspect': [
+        (186, 118, 165), (132, 144, 182), (186, 118, 165), (97, 160, 130),
+        (132, 144, 182), (186, 118, 165), (97, 160, 130), (186, 118, 165),
+        (132, 144, 182), (132, 144, 182), (186, 118, 165), (132, 144, 182),
+    ],
+    'useplanetcolors': False,
+    'usezodiacelementcolors': True,
+}
+
 _CLASSIC_MORINUS_PRESET = {
     'clrframe': (0, 0, 255),
     'clrsigns': (0, 0, 255),
@@ -475,17 +522,105 @@ _SIRIUS_PRESET = {
     'useplanetcolors': False,
 }
 
+# Profile-only compatibility for style profiles authored while the token branch
+# exposed Aries and Solar as selectable bases. Those presets were intentionally
+# retired from the current product in favour of the current Sirius/Daylight
+# palette work, but a stored portable profile must not silently lose its base
+# layer after this merge. Keep the historical values exact and reachable only
+# through ``basePresetId`` resolution; neither id belongs in
+# ``PALETTE_PRESET_NAMES`` or any user-visible preset catalog.
+_LEGACY_STYLE_PROFILE_BASE_PRESETS = {
+    'Aries': {
+        'clrframe': (238, 168, 92),
+        'clrsigns': (248, 239, 220),
+        **_ZODIAC_ELEMENT_DEFAULTS,
+        'clrAscMC': (255, 116, 92),
+        'clrhouses': (120, 94, 82),
+        'clrhousenumbers': (238, 168, 92),
+        'clrpositions': (255, 255, 255),
+        'clrperegrin': (248, 239, 220),
+        'clrdomicil': (80, 210, 125),
+        'clrexil': (255, 92, 84),
+        'clrexal': (255, 214, 102),
+        'clrcasus': (218, 110, 96),
+        'clrbackground': (34, 32, 32),
+        'clrsidebar': (28, 26, 26),
+        'clrsidebartext': (255, 255, 255),
+        'clrtable': (22, 20, 20),
+        'clrtexts': (255, 255, 255),
+        'clrappbackground': (34, 32, 32),
+        'clrapptexts': (255, 255, 255),
+        'clrindividual': [
+            (255, 214, 102), (226, 232, 240), (169, 121, 255), (80, 210, 125),
+            (255, 92, 84), (96, 165, 250), (170, 160, 145), (112, 126, 194),
+            (112, 126, 194), (112, 126, 194), (186, 124, 76), (236, 126, 170),
+            (186, 110, 210),
+        ],
+        'clraspect': [
+            (248, 239, 220), (80, 210, 125), (255, 92, 84), (80, 210, 125),
+            (255, 214, 102), (255, 92, 84), (80, 210, 125), (255, 92, 84),
+            (255, 214, 102), (238, 168, 92), (255, 92, 84), (80, 210, 125),
+        ],
+        'useplanetcolors': False,
+        'usezodiacelementcolors': True,
+    },
+    'Solar': {
+        'clrframe': (52, 75, 94),
+        'clrsigns': (35, 40, 45),
+        **_ZODIAC_ELEMENT_DEFAULTS,
+        'clrAscMC': (198, 122, 42),
+        'clrhouses': (122, 140, 154),
+        'clrhousenumbers': (86, 100, 112),
+        'clrpositions': (26, 30, 34),
+        'clrperegrin': (35, 40, 45),
+        'clrdomicil': (35, 135, 95),
+        'clrexil': (202, 70, 70),
+        'clrexal': (194, 134, 36),
+        'clrcasus': (178, 96, 90),
+        'clrbackground': (252, 252, 250),
+        'clrsidebar': (244, 246, 248),
+        'clrsidebartext': (26, 30, 34),
+        'clrtable': (255, 255, 252),
+        'clrtexts': (26, 30, 34),
+        'clrappbackground': (252, 252, 250),
+        'clrapptexts': (26, 30, 34),
+        'clrindividual': [
+            (194, 134, 36), (70, 110, 140), (116, 76, 166), (35, 135, 95),
+            (202, 70, 70), (52, 92, 170), (62, 70, 78), (68, 82, 142),
+            (68, 82, 142), (68, 82, 142), (122, 82, 56), (176, 78, 124),
+            (116, 64, 138),
+        ],
+        'clraspect': [
+            (52, 75, 94), (35, 135, 95), (202, 70, 70), (35, 135, 95),
+            (194, 134, 36), (202, 70, 70), (35, 135, 95), (202, 70, 70),
+            (194, 134, 36), (198, 122, 42), (202, 70, 70), (35, 135, 95),
+        ],
+        'useplanetcolors': False,
+        'usezodiacelementcolors': True,
+    },
+}
+
 for _preset, _enabled in (
-    (_CURRENT_COLOR_NIGHT_PRESET, True),
+    (_CURRENT_COLOR_NIGHT_PRESET, False),
     (_CURRENT_COLOR_DAY_PRESET, True),
+    (_DIURNAL_PRESET, True),
     (_CLASSIC_MORINUS_PRESET, False),
-    (_TAURUS_PRESET, True),
-    (_NOCTURNE_PRESET, True),
+    (_TAURUS_PRESET, False),
+    (_NOCTURNE_PRESET, False),
     (_SIRIUS_PRESET, False),
 ):
     for _attr, _rgb_value in _ZODIAC_ELEMENT_DEFAULTS.items():
         _preset.setdefault(_attr, _rgb_value)
     _preset['usezodiacelementcolors'] = _enabled
+    # Existing presets continue to produce the exact same app and chart colors;
+    # the two authorities diverge only after an explicit app-only edit.
+    _preset['clrappbackground'] = _preset['clrbackground']
+    _preset['clrapptexts'] = _preset['clrtexts']
+
+# Diurnal is deliberately a chart reskin over the established light chrome,
+# rather than a second app-chrome palette.
+_DIURNAL_PRESET['clrappbackground'] = _CURRENT_COLOR_DAY_PRESET['clrappbackground']
+_DIURNAL_PRESET['clrapptexts'] = _CURRENT_COLOR_DAY_PRESET['clrapptexts']
 
 
 # ---------------------------------------------------------------------------
@@ -495,6 +630,7 @@ for _preset, _enabled in (
 # Chrome + chart-glyph colour slots (RGB tuples). onColors (morin.py:19720).
 _COLOR_RGB_FIELDS = (
     'clrbackground', 'clrsidebar', 'clrsidebartext', 'clrtable', 'clrtexts',
+    'clrappbackground', 'clrapptexts',
     'clrframe', 'clrsigns', 'clrAscMC', 'clrhouses', 'clrhousenumbers',
     'clrpositions', 'clrperegrin', 'clrdomicil', 'clrexil', 'clrexal',
     'clrcasus',
@@ -524,6 +660,9 @@ _DISPLAY_BOOL_FIELDS = (
     'planetarydayhour', 'information', 'showseconds',
     # Aesthetic / chrome (appearance1dlg.py:849-850, options.py:118).
     'show_help_chip',
+    # Hidden Tauri-only presentation cursor. It is intentionally absent from
+    # the settings catalog/UI and reaches React only through ThemeState.
+    'presentation_cursor',
     # Master key-prompt toggle (options.py:129). Distinct from keyprompts_style
     # (which presentation) and show_help_chip (the transient hint affordance):
     # this is the on/off switch for the key-prompt UI as a whole.
@@ -540,6 +679,12 @@ _DISPLAY_BOOL_FIELDS = (
     'showcazimi', 'showeclipseoverlay',
     # Astrocart Local Space composition: Local-only or overlaid on normal ACG.
     'astrocart_localspace_additive',
+    # Display-only celestial reference circles on Astrocartography maps.
+    'astrocart_show_ecliptic', 'astrocart_show_equator',
+    'astrocart_show_asc_circle', 'astrocart_show_mc_circle',
+    'astrocart_show_house_lines', 'astrocart_show_zodiac_lines',
+    'astrocart_show_country_labels',
+    'astrocart_terrain_relief',
     # Show the two parties in the aspect hover flag. build_flag_payload reads it
     # at chartinspector.py:1262; inspector_service already calls that builder
     # (inspector_service.py:599), so exposing the option makes the flag honour it.
@@ -583,6 +728,7 @@ _DISPLAY_BOOL_VECTOR_FIELDS = ('transcendental', 'aspect')  # list[bool]
 _MINOR_ASPECT_INDICES = (1, 2, 4, 7, 8, 9, 11)
 _DISPLAY_OVERLAY_ONLY_FIELDS = {
     'theme',
+    'anglo_dense_label_layout',
     'showfixstars',
     'aspects',
     'traditionalaspects',
@@ -599,16 +745,33 @@ _DISPLAY_OVERLAY_ONLY_FIELDS = {
     'showanglearrowheads',
     'showcusplessascmclabels',
     'astrocart_localspace_additive',
+    'astrocart_show_ecliptic',
+    'astrocart_show_equator',
+    'astrocart_show_asc_circle',
+    'astrocart_show_mc_circle',
+    'astrocart_show_house_lines',
+    'astrocart_show_zodiac_lines',
+    'astrocart_show_country_labels',
+    'astrocart_terrain_relief',
     'synodicmode',
 }
 _DISPLAY_TEXT_ONLY_FIELDS = {'dateconvention'}
+_DISPLAY_UI_STYLE_ONLY_FIELDS = {'presentation_cursor'}
+# These options repaint chart chrome/overlays but do not alter any retained
+# list query or row semantics.  Keep this separate from refreshMode: a few
+# display-overlay fields (notably phasis/cazimi modes) genuinely do affect
+# daemon list payloads.
+_LIST_NEUTRAL_DISPLAY_FIELDS = (
+    _DISPLAY_OVERLAY_ONLY_FIELDS
+    - {'phasismode', 'cazimimode', 'synodicmode'}
+) | _DISPLAY_UI_STYLE_ONLY_FIELDS
 # Numeric sliders (appearance1dlg.py:287-304). The legacy wx tablesize slider is
 # intentionally not exported in the webapp: current web table surfaces do not
 # consume it, and table density will get a separate retained-table sizing model.
 _DISPLAY_INT_SLIDER_FIELDS = ('ascmcsize', 'chartringthickness')
 _DISPLAY_FLOAT_SLIDER_FIELDS = ()
-# Enum string field: key-prompt presentation style (options.py:136).
-_DISPLAY_ENUM_STR_FIELDS = ('keyprompts_style', 'dateconvention')
+# Enum string fields persisted by their canonical option names.
+_DISPLAY_ENUM_STR_FIELDS = ('keyprompts_style', 'dateconvention', 'anglo_dense_label_layout')
 _DATE_CONVENTION_CATALOG = (
     {'value': dateformat.DATE_CONVENTION_CURRENT, 'label': 'YYYY-MM-DD'},
     {'value': dateformat.DATE_CONVENTION_DMY, 'label': 'DD.MM.YYYY'},
@@ -835,6 +998,14 @@ _THEME_LAYOUT_CATALOG = (
     # imply a house system, zodiac, object set, aspect set, or colour preset.
     {'value': 2, 'label': 'Anglo Wheel', 'labelKey': 'AngloWheel'},
 )
+
+_ANGLO_DENSE_LABEL_LAYOUT_CATALOG = (
+    {'value': 'leader-columns', 'label': 'Straight house lines'},
+    {'value': 'routed-cusps', 'label': 'Routed house lines'},
+)
+_ANGLO_DENSE_LABEL_LAYOUT_VALUES = {
+    item['value'] for item in _ANGLO_DENSE_LABEL_LAYOUT_CATALOG
+}
 
 # Lunar Mansions zodiac mode (manazil_zodiac, options.py:318). Values are the
 # manazil.ZODIAC_MODES strings verbatim (manazil.py:50-54); labels are verbatim
@@ -1129,6 +1300,240 @@ def _mix_rgb(a: tuple[int, int, int], b: tuple[int, int, int], t: float) -> tupl
     )
 
 
+_PROFILE_BODY_COLOR_ROLES = (
+    ('chart.color.body.sun', '--morinus-body-sun', 0),
+    ('chart.color.body.moon', '--morinus-body-moon', 1),
+    ('chart.color.body.mercury', '--morinus-body-mercury', 2),
+    ('chart.color.body.venus', '--morinus-body-venus', 3),
+    ('chart.color.body.mars', '--morinus-body-mars', 4),
+    ('chart.color.body.jupiter', '--morinus-body-jupiter', 5),
+    ('chart.color.body.saturn', '--morinus-body-saturn', 6),
+    ('chart.color.body.uranus', '--morinus-body-uranus', 7),
+    ('chart.color.body.neptune', '--morinus-body-neptune', 8),
+    ('chart.color.body.pluto', '--morinus-body-pluto', 9),
+    ('chart.color.body.nodes', '--morinus-body-nodes', 10),
+    ('chart.color.body.fortune', '--morinus-body-fortune', 11),
+    ('chart.color.body.chiron', '--morinus-body-chiron', 12),
+)
+
+_PROFILE_ASPECT_COLOR_ROLES = (
+    ('chart.color.aspect.conjunction', '--morinus-aspect-conjunction', 0),
+    ('chart.color.aspect.semisextile', '--morinus-aspect-semisextile', 1),
+    ('chart.color.aspect.semisquare', '--morinus-aspect-semisquare', 2),
+    ('chart.color.aspect.sextile', '--morinus-aspect-sextile', 3),
+    ('chart.color.aspect.quintile', '--morinus-aspect-quintile', 4),
+    ('chart.color.aspect.square', '--morinus-aspect-square', 5),
+    ('chart.color.aspect.trine', '--morinus-aspect-trine', 6),
+    ('chart.color.aspect.sesquisquare', '--morinus-aspect-sesquisquare', 7),
+    ('chart.color.aspect.biquintile', '--morinus-aspect-biquintile', 8),
+    ('chart.color.aspect.quincunx', '--morinus-aspect-quincunx', 9),
+    ('chart.color.aspect.opposition', '--morinus-aspect-opposition', 10),
+    ('chart.color.aspect.septile', '--morinus-aspect-septile', 11),
+    ('chart.color.aspect.parallel', '--morinus-aspect-parallel', 12),
+    ('chart.color.aspect.contraparallel', '--morinus-aspect-contraparallel', 13),
+)
+
+_PROFILE_ELEMENT_COLOR_ROLES = (
+    ('chart.color.element.fire', '--morinus-element-fire', 'clrsignelementfire'),
+    ('chart.color.element.earth', '--morinus-element-earth', 'clrsignelementearth'),
+    ('chart.color.element.air', '--morinus-element-air', 'clrsignelementair'),
+    ('chart.color.element.water', '--morinus-element-water', 'clrsignelementwater'),
+)
+
+
+_PROFILE_CHART_BASE_ATTRS = {
+    'chart.color.background': 'clrbackground',
+    'chart.color.textBright': 'clrtexts',
+    'chart.color.frame': 'clrframe',
+    'chart.color.signs': 'clrsigns',
+    'chart.color.angles': 'clrAscMC',
+    'chart.color.houses': 'clrhouses',
+    'chart.color.houseNumbers': 'clrhousenumbers',
+    'chart.color.positions': 'clrpositions',
+    'chart.color.peregrine': 'clrperegrin',
+    'chart.color.dignity.domicile': 'clrdomicil',
+    'chart.color.dignity.exile': 'clrexil',
+    'chart.color.dignity.exaltation': 'clrexal',
+    'chart.color.dignity.fall': 'clrcasus',
+    'chart.color.element.fire': 'clrsignelementfire',
+    'chart.color.element.earth': 'clrsignelementearth',
+    'chart.color.element.air': 'clrsignelementair',
+    'chart.color.element.water': 'clrsignelementwater',
+}
+
+_PROFILE_CHART_BASE_EXTRA_ATTRS = (
+    'clrtable',
+    'clrindividual',
+    'clraspect',
+)
+
+
+def _effective_body_color_list(options) -> list[tuple[int, int, int]]:
+    fallback = _rgb_or(
+        getattr(options, 'clrperegrin', None),
+        _rgb_or(getattr(options, 'clrtexts', None), (205, 205, 209)),
+    )
+    result = []
+    for value in list(getattr(options, 'clrindividual', ()) or ())[:13]:
+        result.append(_rgb_or(value, fallback))
+    while len(result) < 13:
+        result.append(fallback)
+    return result
+
+
+def _effective_aspect_color_list(options) -> list[tuple[int, int, int]]:
+    text_fallback = _rgb_or(getattr(options, 'clrtexts', None), (205, 205, 209))
+    frame_fallback = _rgb_or(getattr(options, 'clrframe', None), text_fallback)
+    result = []
+    for value in list(getattr(options, 'clraspect', ()) or ())[:14]:
+        fallback = frame_fallback if len(result) == 13 else text_fallback
+        result.append(_rgb_or(value, fallback))
+    while len(result) < 12:
+        result.append(text_fallback)
+    if len(result) < 13:
+        result.append(text_fallback)
+    if len(result) < 14:
+        result.append(frame_fallback)
+    return result
+
+
+def _profile_indexed_color_overrides(
+    explicit: dict,
+    roles,
+) -> dict[int, tuple[int, int, int]]:
+    result = {}
+    for semantic_id, _css_var, index in roles:
+        if semantic_id not in explicit:
+            continue
+        rgb = _coerce_rgb(explicit[semantic_id])
+        if rgb is not None:
+            result[index] = rgb
+    return result
+
+
+def _style_profile_base_values(opts, profile: Optional[dict]) -> tuple[dict, bool, bool]:
+    """Resolve a profile base as a non-mutating effective palette layer.
+
+    A named style profile must never rewrite the user's underlying options.
+    Scope controls which half of a legacy preset participates: an app profile
+    cannot recolor charts, and a chart profile cannot recolor app chrome.
+    """
+    base_preset_id = (profile or {}).get('basePresetId')
+    scope = (profile or {}).get('scope')
+    legacy_values = _LEGACY_STYLE_PROFILE_BASE_PRESETS.get(base_preset_id)
+    if legacy_values is not None:
+        values = copy.deepcopy(legacy_values)
+    elif base_preset_id in PALETTE_PRESET_NAMES:
+        values = _resolve_palette_preset_values(opts, base_preset_id)
+    else:
+        return {}, False, False
+    return values, scope in ('app', 'combined'), scope in ('chart', 'combined')
+
+
+def _profile_base_chart_semantic_overrides(opts, profile: Optional[dict]) -> dict[str, list[int]]:
+    values, _, use_chart_base = _style_profile_base_values(opts, profile)
+    if not use_chart_base:
+        return {}
+    result: dict[str, list[int]] = {}
+    for semantic_id, attr in _PROFILE_CHART_BASE_ATTRS.items():
+        rgb = _rgb(values.get(attr))
+        if rgb is not None:
+            result[semantic_id] = rgb
+    base_only_profile = {
+        'scope': (profile or {}).get('scope'),
+        'basePresetId': (profile or {}).get('basePresetId'),
+        'overrides': {},
+    }
+    effective_base = _effective_style_chart_options(opts, base_only_profile)
+    bodies = _effective_body_color_list(effective_base)
+    aspects = _effective_aspect_color_list(effective_base)
+    for semantic_id, _css_var, index in _PROFILE_BODY_COLOR_ROLES:
+        result[semantic_id] = list(bodies[index])
+    for semantic_id, _css_var, index in _PROFILE_ASPECT_COLOR_ROLES:
+        result[semantic_id] = list(aspects[index])
+    return result
+
+
+def _effective_style_chart_options(opts, profile: Optional[dict]):
+    """Copy chart color state through the active profile without persistence.
+
+    Retained Python renderers (Astrocart and PNG/PDF GraphChart) cannot consume
+    CSS. They receive this shallow options adapter, including a chart-scoped
+    base preset's individual/aspect/element arrays and final explicit semantic
+    chart-color overrides. Calculation and display-option fields are untouched.
+    """
+    base_values, _, use_chart_base = _style_profile_base_values(opts, profile)
+    typed_overrides = (profile or {}).get('overrides')
+    explicit = typed_overrides if isinstance(typed_overrides, dict) else {}
+    semantic_overrides = {
+        attr: explicit[semantic_id]
+        for semantic_id, attr in _PROFILE_CHART_BASE_ATTRS.items()
+        if semantic_id in explicit
+    }
+    body_overrides = _profile_indexed_color_overrides(explicit, _PROFILE_BODY_COLOR_ROLES)
+    aspect_overrides = _profile_indexed_color_overrides(explicit, _PROFILE_ASPECT_COLOR_ROLES)
+    if not use_chart_base and not semantic_overrides and not body_overrides and not aspect_overrides:
+        return opts
+    resolved = copy.copy(opts)
+    if use_chart_base:
+        for attr in (*_PROFILE_CHART_BASE_ATTRS.values(), *_PROFILE_CHART_BASE_EXTRA_ATTRS):
+            if attr in base_values:
+                setattr(resolved, attr, copy.deepcopy(base_values[attr]))
+    for attr, value in semantic_overrides.items():
+        rgb = _coerce_rgb(value)
+        if rgb is not None:
+            setattr(resolved, attr, rgb)
+    if use_chart_base or body_overrides:
+        body_colors = _effective_body_color_list(resolved)
+        for index, rgb in body_overrides.items():
+            body_colors[index] = rgb
+        resolved.clrindividual = body_colors
+    if use_chart_base or aspect_overrides:
+        aspect_colors = _effective_aspect_color_list(resolved)
+        for index, rgb in aspect_overrides.items():
+            aspect_colors[index] = rgb
+        resolved.clraspect = aspect_colors
+    return resolved
+
+
+def _profile_chart_data_overrides(opts, profile: Optional[dict]) -> dict[str, list[str]]:
+    """Non-scalar palette data needed to beat retained frontend snapshots."""
+    _, _, use_chart_base = _style_profile_base_values(opts, profile)
+    typed_overrides = (profile or {}).get('overrides')
+    explicit = typed_overrides if isinstance(typed_overrides, dict) else {}
+    body_requested = use_chart_base or any(
+        semantic_id in explicit for semantic_id, _css_var, _index in _PROFILE_BODY_COLOR_ROLES
+    )
+    aspect_requested = use_chart_base or any(
+        semantic_id in explicit for semantic_id, _css_var, _index in _PROFILE_ASPECT_COLOR_ROLES
+    )
+    sign_requested = (
+        use_chart_base
+        or 'chart.color.signs' in explicit
+        or any(semantic_id in explicit for semantic_id, _css_var, _attr in _PROFILE_ELEMENT_COLOR_ROLES)
+    )
+    if not body_requested and not aspect_requested and not sign_requested:
+        return {}
+    effective = _effective_style_chart_options(opts, profile)
+
+    result: dict[str, list[str]] = {}
+    if body_requested:
+        result['planets'] = [_css_rgb(value) for value in _effective_body_color_list(effective)]
+    if aspect_requested:
+        result['aspects'] = [_css_rgb(value) for value in _effective_aspect_color_list(effective)]
+
+    if sign_requested and bool(getattr(effective, 'usezodiacelementcolors', False)):
+        element_colors = [
+            _css_rgb(_rgb_or(getattr(effective, attr, None), (255, 255, 255)))
+            for _semantic_id, _css_var, attr in _PROFILE_ELEMENT_COLOR_ROLES
+        ]
+        result['signColors'] = [element_colors[index % 4] for index in range(12)]
+    elif sign_requested:
+        sign_color = _css_rgb(_rgb_or(getattr(effective, 'clrsigns', None), (255, 255, 255)))
+        result['signColors'] = [sign_color] * 12
+    return result
+
+
 def _relative_luminance(rgb: tuple[int, int, int]) -> float:
     def channel(v: int) -> float:
         c = v / 255.0
@@ -1138,37 +1543,58 @@ def _relative_luminance(rgb: tuple[int, int, int]) -> float:
     return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
 
 
-def _theme_state_payload(opts) -> dict:
+def _theme_state_payload(opts, active_profile: Optional[dict] = None) -> dict:
     """Ready-to-apply web theme state derived once from options.py clr* fields.
 
     React consumes the semantic CSS-variable contract below; it does not know
     about wx option field names.
     """
-    bg = _rgb_or(getattr(opts, 'clrbackground', None), (35, 36, 40))
-    sidebar = _rgb_or(getattr(opts, 'clrsidebar', None), bg)
-    sidebar_text = _rgb_or(getattr(opts, 'clrsidebartext', None), (255, 255, 255))
-    text = _rgb_or(getattr(opts, 'clrtexts', None), (255, 255, 255))
-    frame = _rgb_or(getattr(opts, 'clrframe', None), text)
-    houses = _rgb_or(getattr(opts, 'clrhouses', None), (138, 139, 141))
-    table = _rgb_or(getattr(opts, 'clrtable', None), bg)
-    is_dark = _relative_luminance(bg) < 0.5
-    toward_text = text if is_dark else (0, 0, 0)
-    surface_subtle = _mix_rgb(sidebar, toward_text, 0.10 if is_dark else 0.06)
-    accent = _mix_rgb(sidebar, toward_text, 0.18 if is_dark else 0.11)
-    border = _mix_rgb(sidebar, toward_text, 0.20 if is_dark else 0.18)
-    muted_text = _mix_rgb(text, bg, 0.34 if is_dark else 0.28)
-    dim_text = _mix_rgb(text, bg, 0.50 if is_dark else 0.42)
+    base_values, use_app_base, use_chart_base = _style_profile_base_values(opts, active_profile)
+
+    def option_rgb(attr: str, fallback: tuple[int, int, int], *, use_base: bool) -> tuple[int, int, int]:
+        source = base_values.get(attr) if use_base and attr in base_values else getattr(opts, attr, None)
+        return _rgb_or(source, fallback)
+
+    chart_bg = option_rgb('clrbackground', (35, 36, 40), use_base=use_chart_base)
+    chart_text = option_rgb('clrtexts', (255, 255, 255), use_base=use_chart_base)
+    app_bg = option_rgb('clrappbackground', chart_bg, use_base=use_app_base)
+    app_text = option_rgb('clrapptexts', chart_text, use_base=use_app_base)
+    sidebar = option_rgb('clrsidebar', app_bg, use_base=use_app_base)
+    sidebar_text = option_rgb('clrsidebartext', app_text, use_base=use_app_base)
+    frame = option_rgb('clrframe', chart_text, use_base=use_chart_base)
+    houses = option_rgb('clrhouses', (138, 139, 141), use_base=use_chart_base)
+    table = option_rgb('clrtable', chart_bg, use_base=use_chart_base)
+    explicit_app_tokens, explicit_chart_tokens = split_style_profile_css_overrides(active_profile)
+    typed_overrides = (active_profile or {}).get('overrides', {})
+
+    def typed_rgb(semantic_id: str, fallback: tuple[int, int, int]) -> tuple[int, int, int]:
+        value = typed_overrides.get(semantic_id) if isinstance(typed_overrides, dict) else None
+        return _rgb_or(value, fallback)
+
+    # Root app colors affect all derived semantics, so resolve their typed
+    # overrides before calculating mode, muted text, borders, and accents.
+    effective_app_bg = typed_rgb('app.color.background', app_bg)
+    effective_app_text = typed_rgb('app.color.textPrimary', app_text)
+    effective_sidebar = typed_rgb('app.color.surface', sidebar)
+    is_dark = _relative_luminance(effective_app_bg) < 0.5
+    toward_text = effective_app_text if is_dark else (0, 0, 0)
+    surface_subtle = _mix_rgb(effective_sidebar, toward_text, 0.10 if is_dark else 0.06)
+    accent = _mix_rgb(effective_sidebar, toward_text, 0.18 if is_dark else 0.11)
+    border = _mix_rgb(effective_sidebar, toward_text, 0.20 if is_dark else 0.18)
+    muted_text = _mix_rgb(effective_app_text, effective_app_bg, 0.34 if is_dark else 0.28)
+    dim_text = _mix_rgb(effective_app_text, effective_app_bg, 0.50 if is_dark else 0.42)
 
     text_font_stack = _web_text_font_stack(opts)
     app_tokens = {
         '--aries-font-ui': text_font_stack,
+        '--aries-font-symbols': '"AriesMorinus", ui-sans-serif',
         '--font-ui': 'var(--aries-font-ui)',
-        '--aries-text-primary': _css_rgb(text),
+        '--aries-text-primary': _css_rgb(effective_app_text),
         '--aries-text-muted': _css_rgb(muted_text),
         '--aries-text-dim': _css_rgb(dim_text),
         '--aries-sidebar-text': _css_rgb(sidebar_text),
-        '--aries-background': _css_rgb(bg),
-        '--aries-surface': _css_rgb(sidebar),
+        '--aries-background': _css_rgb(effective_app_bg),
+        '--aries-surface': _css_rgb(effective_sidebar),
         '--aries-surface-subtle': _css_rgb(surface_subtle),
         '--aries-accent': _css_rgb(accent),
         '--aries-border-subtle': _css_rgb(border),
@@ -1205,26 +1631,68 @@ def _theme_state_payload(opts) -> dict:
         '--sidebar-ring': 'var(--aries-text-muted)',
     }
     chart_palette = {
+        '--morinus-background': _css_rgb(chart_bg),
+        '--morinus-text-bright': _css_rgb(chart_text),
         '--morinus-frame': _css_rgb(frame),
-        '--morinus-signs': _css_rgb(_rgb_or(getattr(opts, 'clrsigns', None), frame)),
-        '--morinus-angles': _css_rgb(_rgb_or(getattr(opts, 'clrAscMC', None), frame)),
+        '--morinus-signs': _css_rgb(option_rgb('clrsigns', frame, use_base=use_chart_base)),
+        '--morinus-angles': _css_rgb(option_rgb('clrAscMC', frame, use_base=use_chart_base)),
         '--morinus-houses': _css_rgb(houses),
-        '--morinus-housenums': _css_rgb(_rgb_or(getattr(opts, 'clrhousenumbers', None), houses)),
-        '--morinus-peregrin': _css_rgb(_rgb_or(getattr(opts, 'clrperegrin', None), frame)),
-        '--morinus-positions': _css_rgb(_rgb_or(getattr(opts, 'clrpositions', None), text)),
+        '--morinus-housenums': _css_rgb(option_rgb('clrhousenumbers', houses, use_base=use_chart_base)),
+        '--morinus-peregrin': _css_rgb(option_rgb('clrperegrin', frame, use_base=use_chart_base)),
+        '--morinus-positions': _css_rgb(option_rgb('clrpositions', chart_text, use_base=use_chart_base)),
         '--morinus-table': _css_rgb(table),
-        '--morinus-dignity-domicil': _css_rgb(_rgb_or(getattr(opts, 'clrdomicil', None), (2, 191, 2))),
+        '--morinus-dignity-domicil': _css_rgb(option_rgb('clrdomicil', (2, 191, 2), use_base=use_chart_base)),
         '--morinus-dignity-exil': _css_rgb(
-            _rgb_or(getattr(opts, 'clrexil', None), (255, 85, 75))
+            option_rgb('clrexil', (255, 85, 75), use_base=use_chart_base)
         ),
-        '--morinus-dignity-exal': _css_rgb(_rgb_or(getattr(opts, 'clrexal', None), (255, 215, 0))),
-        '--morinus-dignity-casus': _css_rgb(_rgb_or(getattr(opts, 'clrcasus', None), (205, 92, 92))),
+        '--morinus-dignity-exal': _css_rgb(option_rgb('clrexal', (255, 215, 0), use_base=use_chart_base)),
+        '--morinus-dignity-casus': _css_rgb(option_rgb('clrcasus', (205, 92, 92), use_base=use_chart_base)),
     }
+    if use_chart_base:
+        base_chart_options = _effective_style_chart_options(opts, {
+            'scope': (active_profile or {}).get('scope'),
+            'basePresetId': (active_profile or {}).get('basePresetId'),
+            'overrides': {},
+        })
+    else:
+        base_chart_options = opts
+    body_colors = _effective_body_color_list(base_chart_options)
+    aspect_colors = _effective_aspect_color_list(base_chart_options)
+    for _semantic_id, css_var, index in _PROFILE_BODY_COLOR_ROLES:
+        chart_palette[css_var] = _css_rgb(body_colors[index])
+    for _semantic_id, css_var, index in _PROFILE_ASPECT_COLOR_ROLES:
+        chart_palette[css_var] = _css_rgb(aspect_colors[index])
+    for _semantic_id, css_var, attr in _PROFILE_ELEMENT_COLOR_ROLES:
+        chart_palette[css_var] = _css_rgb(
+            option_rgb(attr, frame, use_base=use_chart_base)
+        )
+    # A base preset participates in the active profile layer so it wins over a
+    # retained chart snapshot, but it never mutates the saved options beneath
+    # the profile. Explicit semantic overrides remain the final authority.
+    profile_app_tokens = dict(app_tokens) if use_app_base else {}
+    profile_chart_tokens = dict(chart_palette) if use_chart_base else {}
+    profile_app_tokens.update(explicit_app_tokens)
+    profile_chart_tokens.update(explicit_chart_tokens)
+    app_tokens.update(explicit_app_tokens)
+    chart_palette.update(explicit_chart_tokens)
+    active_profile_summary = None
+    if active_profile:
+        active_profile_summary = {
+            key: active_profile.get(key)
+            for key in ('id', 'name', 'scope', 'basePresetId', 'contentHash')
+        }
     return {
         'activePreset': _current_palette_preset_name(opts),
         'mode': 'dark' if is_dark else 'light',
+        'presentationCursor': bool(getattr(opts, 'presentation_cursor', False)),
         'appTokens': app_tokens,
         'chartPalette': chart_palette,
+        'activeProfile': active_profile_summary,
+        'profileOverrides': {
+            'appTokens': profile_app_tokens,
+            'chartPalette': profile_chart_tokens,
+            'chartData': _profile_chart_data_overrides(opts, active_profile),
+        },
     }
 
 
@@ -1284,6 +1752,8 @@ def _resolve_palette_preset_values(opts, name: str) -> dict:
         return dict(_CURRENT_COLOR_NIGHT_PRESET)
     if name == 'Daylight':
         return dict(_CURRENT_COLOR_DAY_PRESET)
+    if name == 'Diurnal':
+        return dict(_DIURNAL_PRESET)
     if name == 'Classic Morinus':
         return dict(_CLASSIC_MORINUS_PRESET)
     if name == 'Taurus':
@@ -1353,7 +1823,7 @@ def _current_palette_preset_name(opts) -> str:
     if bool(getattr(opts, 'follow_os_theme', True)):
         return _SYSTEM_AUTO_NAME
     current = _preset_identity_snapshot(_capture_palette_state(opts))
-    for name in ('Midnight', 'Daylight', 'Classic Morinus', 'Taurus', 'Nocturne', 'Sirius'):
+    for name in ('Midnight', 'Daylight', 'Diurnal', 'Classic Morinus', 'Taurus', 'Nocturne', 'Sirius'):
         if current == _preset_identity_snapshot(_resolve_palette_preset_values(opts, name)):
             return name
     if hasattr(opts, 'get_custom_color_preset'):
@@ -1401,10 +1871,9 @@ def _apply_palette_values(opts, name: str, values: dict) -> bool:
         if bool(getattr(opts, 'useplanetcolors', False)) != new:
             opts.useplanetcolors = new
             changed = True
-    # Preserve the legacy independent-toggle behavior for older built-ins.
-    # Daylight and Sirius own complete categorical palettes, so the toggle is
-    # part of those presets just as it is for My Colors.
-    if name in (_MY_COLORS_NAME, 'Daylight', 'Sirius') and 'usezodiacelementcolors' in values:
+    # The toggle is part of every complete palette. Otherwise applying Daylight
+    # leaks its enabled element colours into the next fixed or system preset.
+    if 'usezodiacelementcolors' in values:
         new = bool(values['usezodiacelementcolors'])
         if bool(getattr(opts, 'usezodiacelementcolors', False)) != new:
             opts.usezodiacelementcolors = new
@@ -1419,7 +1888,7 @@ def _maybe_update_custom_palette(opts) -> bool:
     state['follow_os_theme'] = False
     if _preset_identity_snapshot(state) == _preset_identity_snapshot(_factory_default_palette_state(opts)):
         return False
-    for name in ('Midnight', 'Daylight', 'Classic Morinus', 'Taurus', 'Nocturne', 'Sirius'):
+    for name in ('Midnight', 'Daylight', 'Diurnal', 'Classic Morinus', 'Taurus', 'Nocturne', 'Sirius'):
         if _preset_identity_snapshot(state) == _preset_identity_snapshot(_resolve_palette_preset_values(opts, name)):
             return False
     if state == opts.get_custom_color_preset():
@@ -1595,6 +2064,7 @@ class OptionsService:
         self._controller = None
         self._theme_hash: Optional[str] = None
         self._theme_version = 0
+        self._style_profile_store: Optional[StyleProfileStore] = None
 
     def set_controller(self, controller) -> None:
         self._controller = controller
@@ -1645,6 +2115,7 @@ class OptionsService:
                 'themePresets': self._read_theme_presets(opts),
                 'themeState': self._read_theme_state(opts),
                 'catalog': self._read_catalog(opts),
+                'settingsRegistry': settings_registry.registry_payload(),
             }
 
     def preview_options(self, patch: dict):
@@ -1674,6 +2145,141 @@ class OptionsService:
     def get_theme_state(self) -> dict:
         with self._lock:
             return self._read_theme_state(self.options)
+
+    def get_style_profiles(self) -> dict:
+        with self._lock:
+            return self._style_profiles().payload()
+
+    def get_style_profile_export(self, profile_id: str) -> dict:
+        with self._lock:
+            return self._style_profiles().profile(profile_id)
+
+    def get_active_style_profile(self) -> Optional[dict]:
+        with self._lock:
+            return self._style_profiles().active_profile()
+
+    def validate_style_profile_base(self, profile: Optional[dict]) -> dict:
+        """Validate daemon-owned preset references without persisting a profile."""
+        self._validate_style_profile_base(profile)
+        return {'valid': True}
+
+    def get_effective_style_chart_options(self, source_options=None):
+        """Chart-color adapter for retained non-CSS renderer processes."""
+        _, effective = self.get_style_chart_render_context(source_options)
+        return effective
+
+    def get_style_chart_render_context(self, source_options=None) -> tuple[Optional[dict], Any]:
+        """Atomically pair the active profile with effective chart options."""
+        with self._lock:
+            profile = self._style_profiles().active_profile()
+            effective = _effective_style_chart_options(source_options or self.options, profile)
+            return profile, effective
+
+    def get_active_style_profile_for_chart_render(self) -> Optional[dict]:
+        """Return an isolated profile with its chart base resolved for export.
+
+        The portable stored profile remains unchanged. The retained wx export
+        renderer receives a semantic override map because it cannot consume
+        ThemeState/CSS, and must match the effective on-screen chart palette.
+        """
+        with self._lock:
+            profile = self._style_profiles().active_profile()
+            if not profile:
+                return None
+            resolved = copy.deepcopy(profile)
+            overrides = _profile_base_chart_semantic_overrides(self.options, profile)
+            overrides.update(resolved.get('overrides') or {})
+            resolved['overrides'] = overrides
+            # This is an internal resolved render payload, not the portable
+            # stored profile. Its stored content hash must not describe a body
+            # after effective base values have been injected.
+            resolved.pop('contentHash', None)
+            return resolved
+
+    def save_style_profile(self, profile: dict, *, activate: bool = False) -> dict:
+        with self._lock:
+            store = self._style_profiles()
+            self._validate_style_profile_base(profile)
+            before = store.active_profile()
+            saved = store.upsert(profile, activate=activate)
+            after = store.active_profile()
+            result = self._style_profile_mutation_result(
+                changed=self._active_style_profile_changed(before, after),
+                profile=after,
+            )
+            result['profile'] = saved
+            return result
+
+    def activate_style_profile(self, profile_id: Optional[str]) -> dict:
+        with self._lock:
+            store = self._style_profiles()
+            before = store.active_profile()
+            candidate = store.profile(profile_id) if profile_id is not None else None
+            self._validate_style_profile_base(candidate)
+            active = store.activate(profile_id)
+            return self._style_profile_mutation_result(
+                changed=self._active_style_profile_changed(before, active),
+                profile=active,
+            )
+
+    def delete_style_profile(self, profile_id: str) -> dict:
+        with self._lock:
+            store = self._style_profiles()
+            before = store.active_profile()
+            store.delete(profile_id)
+            after = store.active_profile()
+            return self._style_profile_mutation_result(
+                changed=self._active_style_profile_changed(before, after),
+                profile=after,
+            )
+
+    def migrate_legacy_style_tokens(self, values: dict, *, activate: bool = True) -> dict:
+        with self._lock:
+            store = self._style_profiles()
+            before = store.active_profile()
+            migration = store.migrate_legacy(values, activate=activate)
+            after = store.active_profile()
+            result = self._style_profile_mutation_result(
+                changed=self._active_style_profile_changed(before, after),
+                profile=after,
+            )
+            result['migration'] = migration
+            return result
+
+    def _style_profiles(self) -> StyleProfileStore:
+        opts_dir = str(getattr(self.options, 'optsdirtxt', '') or '')
+        if not opts_dir:
+            raise StyleProfileError('options directory is unavailable')
+        if self._style_profile_store is None or str(self._style_profile_store.path.parent) != opts_dir:
+            self._style_profile_store = StyleProfileStore(opts_dir)
+        return self._style_profile_store
+
+    @staticmethod
+    def _active_style_profile_changed(before: Optional[dict], after: Optional[dict]) -> bool:
+        before_identity = None if not before else (before.get('id'), before.get('contentHash'))
+        after_identity = None if not after else (after.get('id'), after.get('contentHash'))
+        return before_identity != after_identity
+
+    @staticmethod
+    def _validate_style_profile_base(profile: Optional[dict]) -> None:
+        base_preset_id = (profile or {}).get('basePresetId')
+        if (
+            base_preset_id is not None
+            and base_preset_id not in PALETTE_PRESET_NAMES
+            and base_preset_id not in _LEGACY_STYLE_PROFILE_BASE_PRESETS
+        ):
+            raise StyleProfileError(f'unknown style profile base preset: {base_preset_id}')
+
+    def _style_profile_mutation_result(self, *, changed: bool, profile: Optional[dict]) -> dict:
+        refresh_mode = 'display-overlay'
+        refreshed = self._refresh_all(refresh_mode) if changed else []
+        return {
+            'styleProfiles': self._style_profiles().payload(),
+            'activeProfile': profile,
+            'themeState': self._read_theme_state(self.options),
+            'refreshedDocumentIds': refreshed,
+            'refreshMode': refresh_mode if changed else None,
+        }
 
     def get_quickcharts_prompt_predicate(self) -> dict:
         """Saved quick-chart prompt predicate.
@@ -1745,14 +2351,14 @@ class OptionsService:
         }
 
     def _read_theme_state(self, opts) -> dict:
-        payload = _theme_state_payload(opts)
+        payload = _theme_state_payload(opts, self._style_profiles().active_profile())
         palette_hash = _theme_payload_hash(payload)
         if palette_hash != self._theme_hash:
             self._theme_hash = palette_hash
             self._theme_version += 1
         return {
             **payload,
-            'schemaVersion': 1,
+            'schemaVersion': THEME_STATE_SCHEMA_VERSION,
             'version': self._theme_version,
             'styleRevision': self._theme_version,
             'paletteHash': palette_hash,
@@ -1901,8 +2507,8 @@ class OptionsService:
             # in React but retain their separate legacy persistence file.
             'pdincharttyp': int(getattr(opts, 'pdincharttyp', 0)),
             'pdinchartsecmotion': bool(getattr(opts, 'pdinchartsecmotion', False)),
-            'pdinchartterrsecmotion': bool(getattr(opts, 'pdinchartterrsecmotion', True)),
-            'pdinchartreverse': bool(getattr(opts, 'pdinchartreverse', False)),
+            'pdinchartterrsecmotion': bool(getattr(opts, 'pdinchartterrsecmotion', False)),
+            'pdinchartreverse': bool(getattr(opts, 'pdinchartreverse', True)),
             # Keys block
             'pdkeydyn': bool(getattr(opts, 'pdkeydyn', False)),
             'pdkeyd': int(getattr(opts, 'pdkeyd', 0)),
@@ -2365,9 +2971,8 @@ class OptionsService:
         .activate_language() binds mtexts to opts.langid at boot and
         _apply_languages re-binds on change, so mtexts-sourced strings
         (planet/house/aspect/part names, table headers, chart-type names, ...)
-        follow the selection. The React interface chrome (menus, buttons,
-        settings copy) is still hardcoded English — that layer has no i18n
-        framework yet."""
+        follow the selection. React mirrors this same langid through its catalog
+        provider, so daemon labels and interface chrome switch together."""
         return {
             'langid': int(getattr(opts, 'langid', 0) or 0),
             'available': self._language_catalog(),
@@ -2741,6 +3346,7 @@ class OptionsService:
             'synodicModes': _localized(_SYNODIC_MODE_CATALOG),
             'eventTableTimeModes': _localized(_EVENT_TABLE_TIME_BASIS_CATALOG),
             'themeLayouts': _localized(_THEME_LAYOUT_CATALOG),
+            'angloDenseLabelLayouts': [dict(item) for item in _ANGLO_DENSE_LABEL_LAYOUT_CATALOG],
             'mansionZodiacModes': _localized(_MANSION_ZODIAC_CATALOG),
             'speculumPlacidianCols': _localized(_SPECULUM_PLACIDIAN_COLS),
             'speculumRegiomontanCols': _localized(_SPECULUM_REGIOMONTAN_COLS),
@@ -2919,6 +3525,9 @@ class OptionsService:
         for attr in _DISPLAY_ENUM_STR_FIELDS:
             if attr == 'dateconvention':
                 out[attr] = dateformat.date_convention_from_options(opts)
+            elif attr == 'anglo_dense_label_layout':
+                value = str(getattr(opts, attr, 'leader-columns') or 'leader-columns')
+                out[attr] = value if value in _ANGLO_DENSE_LABEL_LAYOUT_VALUES else 'routed-cusps'
             else:
                 out[attr] = str(getattr(opts, attr, '') or '')
         # fontfamily — coerce through fontprofiles so an unknown stored value
@@ -2958,13 +3567,13 @@ class OptionsService:
 
     def _read_ayanamsha(self, opts) -> dict:
         try:
-            labels = list(mtexts.ayanamshalist)
+            entries = list(mtexts.ayanamsha_display_entries())
         except Exception:
-            labels = []
+            entries = []
         idx = int(getattr(opts, 'ayanamsha', 0) or 0)
         return {
             'ayanamsha': idx,
-            'available': [{'index': i, 'label': str(lbl)} for i, lbl in enumerate(labels)],
+            'available': [{'index': i, 'label': str(label)} for i, label in entries],
         }
 
     def _read_orbs(self, opts) -> dict:
@@ -3535,6 +4144,7 @@ class OptionsService:
             _MY_COLORS_NAME: 'custom',
             'Midnight': 'dark',
             'Daylight': 'light',
+            'Diurnal': 'light',
             'Classic Morinus': 'light',
             'Taurus': 'dark',
             'Nocturne': 'dark',
@@ -3544,6 +4154,7 @@ class OptionsService:
             values = _resolve_palette_preset_values(opts, name) if opts is not None else (
                 _CURRENT_COLOR_NIGHT_PRESET if name == 'Midnight' else
                 _CURRENT_COLOR_DAY_PRESET if name in (_SYSTEM_AUTO_NAME, 'Daylight') else
+                _DIURNAL_PRESET if name == 'Diurnal' else
                 _CLASSIC_MORINUS_PRESET if name == 'Classic Morinus' else
                 _TAURUS_PRESET if name == 'Taurus' else
                 _NOCTURNE_PRESET if name == 'Nocturne' else
@@ -3572,11 +4183,26 @@ class OptionsService:
         rebuilding symbolic relationship charts.
         """
         keys = set(fields.keys())
+        if keys.issubset(_DISPLAY_UI_STYLE_ONLY_FIELDS):
+            return 'ui-style'
         if keys.issubset(_DISPLAY_TEXT_ONLY_FIELDS):
             return 'display-text'
         if keys.issubset(_DISPLAY_OVERLAY_ONLY_FIELDS):
             return 'display-overlay'
         return 'recalc'
+
+    @staticmethod
+    def _patch_affects_list_data(patch: dict) -> bool:
+        """Whether an options patch can change retained list rows/queries."""
+        for group, fields in patch.items():
+            if not isinstance(fields, dict):
+                continue
+            if group == 'colors':
+                continue
+            if group == 'display' and set(fields).issubset(_LIST_NEUTRAL_DISPLAY_FIELDS):
+                continue
+            return True
+        return False
 
     def set_options(self, patch: dict) -> dict:
         """Apply a partial, grouped update to the live options object, coercing
@@ -3597,7 +4223,7 @@ class OptionsService:
             def request_refresh(mode: str) -> None:
                 nonlocal refresh_mode
                 # A full chart recompute subsumes a house-only geometry refresh.
-                if mode == 'recalc' or refresh_mode is None:
+                if mode == 'recalc' or refresh_mode is None or refresh_mode == 'ui-style':
                     refresh_mode = mode
 
             for group, fields in patch.items():
@@ -3778,10 +4404,15 @@ class OptionsService:
                         request_refresh('recalc')
                     self._autosave_group(opts, group, fields, pp_changed)
             resolved_refresh_mode = refresh_mode or 'recalc'
-            refreshed = self._refresh_all(resolved_refresh_mode) if refresh_mode else []
+            refreshed = (
+                []
+                if resolved_refresh_mode == 'ui-style'
+                else self._refresh_all(resolved_refresh_mode) if refresh_mode else []
+            )
         result = self.get_options()
         result['refreshedDocumentIds'] = refreshed
         result['refreshMode'] = resolved_refresh_mode if refresh_mode else None
+        result['listDataChanged'] = self._patch_affects_list_data(patch)
         return result
 
     def set_revolutions_scoped(self, fields: dict) -> dict:
@@ -3803,9 +4434,14 @@ class OptionsService:
         return result
 
     def _autosave_group(self, opts, group: str, fields: dict, changed: bool) -> None:
-        """Persist the same option file(s) the wx handler persists, but only
-        when the desktop autosave preference is enabled."""
-        if not changed or not getattr(opts, 'autosave', False):
+        """Persist the same option file(s) the wx handler persists."""
+        if not changed:
+            return
+        # The presentation cursor has no visible Apply/Save control. A direct
+        # hidden-option patch is therefore an explicit persistence request even
+        # when the legacy global autosave preference is disabled.
+        force_presentation_save = group == 'display' and 'presentation_cursor' in fields
+        if not force_presentation_save and not getattr(opts, 'autosave', False):
             return
 
         savers: list[str] = []
@@ -4001,6 +4637,8 @@ class OptionsService:
                     continue
                 if attr == 'dateconvention':
                     val = dateformat.coerce_date_convention(val)
+                if attr == 'anglo_dense_label_layout' and val not in _ANGLO_DENSE_LABEL_LAYOUT_VALUES:
+                    continue
                 setattr(opts, attr, val)
                 changed = True
         if 'fontfamily' in fields:
@@ -4403,6 +5041,12 @@ class OptionsService:
         options + refreshedDocumentIds."""
         with self._lock:
             opts = self.options
+            try:
+                self._style_profiles().activate(None)
+            except StyleProfileError:
+                # A preserved corrupt optional profile file must not block the
+                # canonical options reset or chart recovery path.
+                pass
             try:
                 if opts.checkOptsFiles():
                     opts.removeOptsFiles()

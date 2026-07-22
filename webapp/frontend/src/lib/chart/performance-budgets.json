@@ -1,0 +1,56 @@
+{
+  "version": 4,
+  "metrics": {
+    "chart.canvas.full": {
+      "p95Ms": 12,
+      "description": "Full chart canvas paint"
+    },
+    "chart.canvas.step_fast": {
+      "p95Ms": 4,
+      "description": "Time-step chart canvas paint",
+      "reference": {
+        "average": 1.57,
+        "p95": 2.7,
+        "samples": 34,
+        "recordedAt": "2026-06-15",
+        "label": "Mounted Tauri 40-key burst after step-path fixes"
+      }
+    },
+    "chart.canvas.body-layout": {
+      "p95Ms": 1.5,
+      "description": "Time-step body collision layout"
+    },
+    "time-step.first-useful-paint": {
+      "p95Ms": 75,
+      "description": "Arrow-key intent to coherent stepped chart paint"
+    },
+    "time-step.paint-gap-over-input": {
+      "p95Ms": 34,
+      "description": "Held-arrow paint-gap delay beyond the measured input interval"
+    },
+    "time-step.command-total": {
+      "p95Ms": 60,
+      "description": "Navigate command round-trip",
+      "reference": {
+        "average": 34.18,
+        "p95": 53.8,
+        "samples": 33,
+        "recordedAt": "2026-06-15",
+        "label": "Mounted Tauri 40-key burst after step-path fixes"
+      }
+    },
+    "time-step.command-parse": {
+      "p95Ms": 1,
+      "description": "Navigate response JSON parse"
+    },
+    "time-step.payload-bytes": {
+      "p95Value": 100000,
+      "unit": "bytes",
+      "description": "Navigate response payload"
+    },
+    "list.scroll-to-frame": {
+      "p95Ms": 20,
+      "description": "Stitched-list scroll event to scheduled frame"
+    }
+  }
+}

@@ -45,8 +45,15 @@ class SafeColorList(list):
 
 
 class Options:
+	APP_COLOR_TRAILER_SCHEMA_VERSION = 1
 	DATE_CONVENTION_CURRENT = 'current'
 	DATE_CONVENTION_DMY = 'dmy'
+	ANGLO_DENSE_LABEL_LAYOUT_LEADER_COLUMNS = 'leader-columns'
+	ANGLO_DENSE_LABEL_LAYOUT_ROUTED_CUSPS = 'routed-cusps'
+	ANGLO_DENSE_LABEL_LAYOUTS = (
+		ANGLO_DENSE_LABEL_LAYOUT_LEADER_COLUMNS,
+		ANGLO_DENSE_LABEL_LAYOUT_ROUTED_CUSPS,
+	)
 	NONE = 0
 	FIXSTARS = 1
 	ANTIS = 2
@@ -129,6 +136,7 @@ class Options:
 		self.def_intables = self.intables = False
 		self.def_bw = self.bw = False
 		self.def_theme = self.theme = 0
+		self.def_anglo_dense_label_layout = self.anglo_dense_label_layout = self.ANGLO_DENSE_LABEL_LAYOUT_ROUTED_CUSPS
 		self.def_ascmcsize = self.ascmcsize = 5
 		self.def_tablesize = self.tablesize = 0.75
 		self.def_chartringthickness = self.chartringthickness = _tokens.CHART_RING_THICKNESS
@@ -142,6 +150,10 @@ class Options:
 		# Short-lived keyboard learning hint for users who do not yet know the
 		# chart navigation keys. Power users disable this in Appearance.
 		self.def_show_help_chip = self.show_help_chip = True
+		# Hidden Tauri presentation aid. The webapp may replace the ordinary
+		# arrow with a larger graphical cursor; no public Settings control exposes
+		# this option and specialized text/resize/grab cursors remain native.
+		self.def_presentation_cursor = self.presentation_cursor = False
 		# Key-prompts style: 'overlay' (wx overlay on chart, original),
 		# 'native' (PyObjC HUD below chart), 'strip' (always-visible legend
 		# strip between chart and table host), 'off' (no prompts UI).
@@ -181,6 +193,14 @@ class Options:
 		self.def_synodicmode = self.synodicmode = self.SYNODIC_MODE_ALL
 		self.def_showeclipseoverlay = self.showeclipseoverlay = True
 		self.def_astrocart_localspace_additive = self.astrocart_localspace_additive = True
+		self.def_astrocart_show_ecliptic = self.astrocart_show_ecliptic = False
+		self.def_astrocart_show_equator = self.astrocart_show_equator = False
+		self.def_astrocart_show_asc_circle = self.astrocart_show_asc_circle = False
+		self.def_astrocart_show_mc_circle = self.astrocart_show_mc_circle = False
+		self.def_astrocart_show_house_lines = self.astrocart_show_house_lines = False
+		self.def_astrocart_show_zodiac_lines = self.astrocart_show_zodiac_lines = False
+		self.def_astrocart_show_country_labels = self.astrocart_show_country_labels = True
+		self.def_astrocart_terrain_relief = self.astrocart_terrain_relief = False
 		self.def_showfixstarsnodes = self.showfixstarsnodes = False
 		self.def_showfixstarshcs = self.showfixstarshcs = False
 		self.def_showfixstarslof = self.showfixstarslof = False
@@ -380,6 +400,12 @@ class Options:
 		self.def_clrtable = self.clrtable = (0,0,0)
 		self.def_clrtexts = self.clrtexts = (255, 255, 255)
 		self.def_clrsidebartext = self.clrsidebartext = self.def_clrtexts
+		# Tauri app chrome is independently persisted from chart ink/canvas.
+		# Existing colors.opt files do not carry these fields; load() migrates
+		# them from clrbackground/clrtexts so every pre-split profile is visually
+		# identical on first use.
+		self.def_clrappbackground = self.clrappbackground = self.def_clrbackground
+		self.def_clrapptexts = self.clrapptexts = self.def_clrtexts
 		self.custom_color_preset = self._current_color_preset()
 
 		# False by default: vanilla Aries opens in pinned Midnight.
@@ -602,8 +628,15 @@ class Options:
 		self.def_pdincharttyp = self.pdincharttyp = 0
 		self.def_pdinchartsecmotion = self.pdinchartsecmotion = False
 
-		self.def_pdinchartterrsecmotion = self.pdinchartterrsecmotion = True
-		self.def_pdinchartreverse = self.pdinchartreverse = False
+		# The no-secondary-motion terrestrial chart is the exact graphical
+		# partner of a tabled mundane direction.  Actual symbolic-time planetary
+		# motion remains available as an explicitly illustrative option.
+		self.def_pdinchartterrsecmotion = self.pdinchartterrsecmotion = False
+		# Aries draws the selected promissor on the outer ring against the
+		# fixed radix significator.  Legacy Morinus used the opposite celestial
+		# ring assignment; that remains available as an explicit compatibility
+		# option, but is no longer the default presentation.
+		self.def_pdinchartreverse = self.pdinchartreverse = True
 
 		#Languages
 		self.def_langid = self.langid = 0
@@ -871,6 +904,22 @@ class Options:
 				self.def_clrsignelementwater = pickle.load(f)
 			except Exception:
 				pass
+			try:
+				# follow_os_theme is the final pre-tokenization colors.opt slot.
+				pickle.load(f)
+			except Exception:
+				pass
+			try:
+				app_color_trailer = pickle.load(f)
+			except Exception:
+				app_color_trailer = None
+			(self.def_clrappbackground, self.def_clrapptexts) = self._normalize_app_color_trailer(
+				app_color_trailer,
+				self.def_clrbackground,
+				self.def_clrtexts,
+			)
+			self.clrappbackground = self.def_clrappbackground
+			self.clrapptexts = self.def_clrapptexts
 			f.close()
 			try:
 				import chart
@@ -906,6 +955,37 @@ class Options:
 			normalized.append(source[len(normalized)])
 		return SafeColorList(normalized[:len(source)])
 
+	@staticmethod
+	def _normalize_app_rgb(value, fallback):
+		try:
+			rgb = tuple(int(channel) for channel in value[:3])
+			if len(rgb) == 3 and all(0 <= channel <= 255 for channel in rgb):
+				return rgb
+		except Exception:
+			pass
+		return tuple(fallback)
+
+	def _normalize_app_color_trailer(self, trailer, fallback_background, fallback_text):
+		if not isinstance(trailer, dict):
+			trailer = {}
+		try:
+			schema_version = int(trailer.get('schemaVersion', 0))
+		except Exception:
+			schema_version = 0
+		if schema_version < 1:
+			trailer = {}
+		return (
+			self._normalize_app_rgb(trailer.get('clrappbackground'), fallback_background),
+			self._normalize_app_rgb(trailer.get('clrapptexts'), fallback_text),
+		)
+
+	def _app_color_trailer(self):
+		return {
+			'schemaVersion': self.APP_COLOR_TRAILER_SCHEMA_VERSION,
+			'clrappbackground': tuple(self.clrappbackground),
+			'clrapptexts': tuple(self.clrapptexts),
+		}
+
 	def _current_color_preset(self):
 		return self._normalize_color_preset({
 			'clrframe': self.clrframe,
@@ -929,6 +1009,8 @@ class Options:
 			'clrsidebartext': self.clrsidebartext,
 			'clrtable': self.clrtable,
 			'clrtexts': self.clrtexts,
+			'clrappbackground': self.clrappbackground,
+			'clrapptexts': self.clrapptexts,
 			'clrindividual': self.clrindividual[:],
 			'clraspect': self.clraspect[:],
 			'useplanetcolors': bool(self.useplanetcolors),
@@ -957,12 +1039,20 @@ class Options:
 			'clrsidebartext': self.clrsidebartext,
 			'clrtable': self.clrtable,
 			'clrtexts': self.clrtexts,
+			'clrappbackground': self.clrappbackground,
+			'clrapptexts': self.clrapptexts,
 			'clrindividual': self.clrindividual[:],
 			'clraspect': self.clraspect[:],
 			'useplanetcolors': bool(self.useplanetcolors),
 		}
 		if isinstance(preset, dict):
 			state.update(preset)
+			# A pre-split saved "My Colors" dict has no app-only keys. Migrate
+			# from that preset's own legacy chart/app values, not factory defaults.
+			if 'clrappbackground' not in preset:
+				state['clrappbackground'] = state['clrbackground']
+			if 'clrapptexts' not in preset:
+				state['clrapptexts'] = state['clrtexts']
 		state['clrindividual'] = list(state.get('clrindividual', self.clrindividual[:]))
 		state['clrindividual'] = self._normalize_clrindividual(state['clrindividual'])
 		state['clraspect'] = list(state.get('clraspect', self.clraspect[:]))
@@ -1062,12 +1152,14 @@ class Options:
 		self.intables = self.def_intables
 		self.bw = self.def_bw
 		self.theme = self.def_theme
+		self.anglo_dense_label_layout = self.def_anglo_dense_label_layout
 		self.ascmcsize = self.def_ascmcsize
 		self.tablesize = self.def_tablesize
 		self.chartringthickness = self.def_chartringthickness
 		self.legacypixelated = self.def_legacypixelated
 		self.showkeyprompts = self.def_showkeyprompts
 		self.show_help_chip = self.def_show_help_chip
+		self.presentation_cursor = self.def_presentation_cursor
 		self.keyprompts_style = self.def_keyprompts_style
 		self.planetarydayhour = self.def_planetarydayhour
 		self.housesystem = self.def_housesystem
@@ -1103,6 +1195,14 @@ class Options:
 		self.synodicmode = self.def_synodicmode
 		self.showeclipseoverlay = self.def_showeclipseoverlay
 		self.astrocart_localspace_additive = self.def_astrocart_localspace_additive
+		self.astrocart_show_ecliptic = self.def_astrocart_show_ecliptic
+		self.astrocart_show_equator = self.def_astrocart_show_equator
+		self.astrocart_show_asc_circle = self.def_astrocart_show_asc_circle
+		self.astrocart_show_mc_circle = self.def_astrocart_show_mc_circle
+		self.astrocart_show_house_lines = self.def_astrocart_show_house_lines
+		self.astrocart_show_zodiac_lines = self.def_astrocart_show_zodiac_lines
+		self.astrocart_show_country_labels = self.def_astrocart_show_country_labels
+		self.astrocart_terrain_relief = self.def_astrocart_terrain_relief
 		self.showfixstarsnodes = self.def_showfixstarsnodes
 		self.showfixstarshcs = self.def_showfixstarshcs
 		self.showfixstarslof = self.def_showfixstarslof
@@ -1193,6 +1293,8 @@ class Options:
 		self.clrtable = self.def_clrtable
 		self.clrtexts = self.def_clrtexts
 		self.clrsidebartext = self.def_clrsidebartext
+		self.clrappbackground = self.def_clrappbackground
+		self.clrapptexts = self.def_clrapptexts
 		self.follow_os_theme = self.def_follow_os_theme
 
 		#Housesystem
@@ -1580,6 +1682,50 @@ class Options:
 				self.aspect_opacity_mode = bool(pickle.load(f))
 			except Exception:
 				self.aspect_opacity_mode = self.def_aspect_opacity_mode
+			try:
+				self.presentation_cursor = bool(pickle.load(f))
+			except Exception:
+				self.presentation_cursor = self.def_presentation_cursor
+			try:
+				self.astrocart_show_ecliptic = bool(pickle.load(f))
+			except Exception:
+				self.astrocart_show_ecliptic = self.def_astrocart_show_ecliptic
+			try:
+				self.astrocart_show_equator = bool(pickle.load(f))
+			except Exception:
+				self.astrocart_show_equator = self.def_astrocart_show_equator
+			try:
+				self.astrocart_show_asc_circle = bool(pickle.load(f))
+			except Exception:
+				self.astrocart_show_asc_circle = self.def_astrocart_show_asc_circle
+			try:
+				self.astrocart_show_mc_circle = bool(pickle.load(f))
+			except Exception:
+				self.astrocart_show_mc_circle = self.def_astrocart_show_mc_circle
+			try:
+				self.astrocart_show_house_lines = bool(pickle.load(f))
+			except Exception:
+				self.astrocart_show_house_lines = self.def_astrocart_show_house_lines
+			try:
+				self.astrocart_show_zodiac_lines = bool(pickle.load(f))
+			except Exception:
+				self.astrocart_show_zodiac_lines = self.def_astrocart_show_zodiac_lines
+			try:
+				self.astrocart_terrain_relief = bool(pickle.load(f))
+			except Exception:
+				self.astrocart_terrain_relief = self.def_astrocart_terrain_relief
+			try:
+				self.astrocart_show_country_labels = bool(pickle.load(f))
+			except Exception:
+				self.astrocart_show_country_labels = self.def_astrocart_show_country_labels
+			try:
+				value = str(pickle.load(f))
+				self.anglo_dense_label_layout = (
+					value if value in self.ANGLO_DENSE_LABEL_LAYOUTS
+					else self.def_anglo_dense_label_layout
+				)
+			except Exception:
+				self.anglo_dense_label_layout = self.def_anglo_dense_label_layout
 			if (
 				isinstance(self.ringorb_asteroids, bool) and
 				isinstance(self.ringorb_hybrid, bool) and
@@ -1785,6 +1931,15 @@ class Options:
 				self.follow_os_theme = bool(pickle.load(f))
 			except Exception:
 				self.follow_os_theme = self.def_follow_os_theme
+			try:
+				app_color_trailer = pickle.load(f)
+			except Exception:
+				app_color_trailer = None
+			(self.clrappbackground, self.clrapptexts) = self._normalize_app_color_trailer(
+				app_color_trailer,
+				self.clrbackground,
+				self.clrtexts,
+			)
 			self.def_clrindividual = self._normalize_clrindividual(self.def_clrindividual, fallback=self.clrindividual)
 			self.clrindividual = self._normalize_clrindividual(self.clrindividual, fallback=self.def_clrindividual)
 			self.custom_color_preset = self._normalize_color_preset(self.custom_color_preset)
@@ -2482,6 +2637,16 @@ class Options:
 			pickle.dump(bool(self.showanglearrowheads), f)
 			pickle.dump(bool(self.showcusplessascmclabels), f)
 			pickle.dump(bool(self.aspect_opacity_mode), f)
+			pickle.dump(bool(self.presentation_cursor), f)
+			pickle.dump(bool(self.astrocart_show_ecliptic), f)
+			pickle.dump(bool(self.astrocart_show_equator), f)
+			pickle.dump(bool(self.astrocart_show_asc_circle), f)
+			pickle.dump(bool(self.astrocart_show_mc_circle), f)
+			pickle.dump(bool(self.astrocart_show_house_lines), f)
+			pickle.dump(bool(self.astrocart_show_zodiac_lines), f)
+			pickle.dump(bool(self.astrocart_terrain_relief), f)
+			pickle.dump(bool(self.astrocart_show_country_labels), f)
+			pickle.dump(str(self.anglo_dense_label_layout), f)
 			f.close()
 			return True
 		except IOError:
@@ -2658,6 +2823,9 @@ class Options:
 			pickle.dump(self.clrsignelementair, f)
 			pickle.dump(self.clrsignelementwater, f)
 			pickle.dump(bool(self.follow_os_theme), f)
+			# Additive versioned trailer: pre-split Aries builds stop after the
+			# follow_os_theme value and safely ignore these independent app colors.
+			pickle.dump(self._app_color_trailer(), f)
 			f.close()
 			return True
 		except IOError:

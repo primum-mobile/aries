@@ -7,6 +7,7 @@ import * as React from "react";
 
 import type { GenericTableColumn, GenericTablePayload, GenericTableSection } from "@/lib/daemon/client";
 import { LIST_ROLE_CLASSES } from "@/lib/list-tokens";
+import { semanticChartColor } from "@/lib/theme/semantic-color";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/i18n";
 import { CellView, alignClass } from "./generic-table-view";
@@ -32,8 +33,8 @@ export function SectionedTableView({
       {topical && onBindingChange ? (
         <TopicSelector topical={topical} onBindingChange={onBindingChange} />
       ) : null}
-      <div className="min-h-0 flex-1 overflow-auto p-4">
-        <div className="flex flex-wrap items-start gap-4">
+      <div className="min-h-0 flex-1 overflow-auto p-[var(--aries-pane-content-padding)]">
+        <div className="flex flex-wrap items-start gap-[var(--aries-pane-content-padding)]">
           {sections.map((section) => (
             <SectionPanel key={section.id} section={section} unavailable={payload.unavailable} />
           ))}
@@ -64,7 +65,7 @@ function TopicSelector({
   const t = useT();
   const [pending, setPending] = React.useState(false);
   return (
-    <div className="flex shrink-0 items-center gap-2 border-b border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface-subtle)] px-3 py-2">
+    <div className="flex shrink-0 items-center gap-[var(--aries-pane-control-gap-y)] border-b border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface-subtle)] px-[var(--aries-pane-header-compact-padding-x)] py-[var(--aries-pane-header-padding-y)]">
       <label
         className="text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]"
         htmlFor="almuten-topic"
@@ -73,7 +74,7 @@ function TopicSelector({
       </label>
       <select
         id="almuten-topic"
-        className="h-7 rounded border border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface)] px-2 text-[length:var(--aries-font-size-small)]"
+        className="h-[var(--aries-control-height-small)] rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface)] px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-small)]"
         value={String(topical.topic)}
         disabled={pending}
         onChange={(event) => {
@@ -179,7 +180,10 @@ function ColumnHeader({ column }: { column: GenericTableColumn }) {
   if (column.headerGlyph) {
     return (
       <span
-        style={{ fontFamily: "'AriesMorinus'", color: column.colorHex ?? undefined }}
+        style={{
+          fontFamily: "'AriesMorinus'",
+          color: semanticChartColor(column.colorRole, column.colorHex),
+        }}
       >
         {column.label}
       </span>

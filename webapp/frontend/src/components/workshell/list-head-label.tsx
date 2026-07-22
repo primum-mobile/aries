@@ -19,7 +19,7 @@ export function ListHeadLabel({
   return (
     <span
       className={cn(
-        "pointer-events-none absolute inset-y-0 left-[var(--aries-list-cell-x)] right-[calc(var(--aries-list-cell-x)+0.25rem)] flex min-w-0 items-center",
+        "pointer-events-none absolute inset-y-0 left-[var(--aries-list-cell-x)] right-[calc(var(--aries-list-cell-x)+var(--aries-control-gap-compact))] flex min-w-0 items-center",
         align === "right" ? "justify-end text-right" : align === "left" ? "justify-start text-left" : "justify-center text-center",
       )}
       title={children}

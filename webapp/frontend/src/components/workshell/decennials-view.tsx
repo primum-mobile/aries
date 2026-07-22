@@ -21,12 +21,21 @@ import {
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/i18n";
+import { semanticChartColor } from "@/lib/theme/semantic-color";
 
 import { TimedChartContextMenu } from "./directions-view";
 import { downloadText, tableToTsv } from "./generic-table-view";
 import { exportTablePayloadPdf } from "./table-pdf-export";
 import { exportTextContent } from "./text-export";
 import { ColumnResizeHandle, useResizableTableColumns } from "./resizable-table-columns";
+import { RetainedPaneShell } from "./retained-pane-shell";
+import {
+  PANE_CONTROL_CLASSES,
+  PaneControlBar,
+  PaneInfoBar,
+  PaneSelect,
+  PaneToolbarButton,
+} from "./list-controls";
 import { useSettledWorkspaceRefreshSeq } from "./step-refresh";
 
 // ---------------------------------------------------------------------------
@@ -60,6 +69,7 @@ type DecennialsHeader = {
   startGlyph?: string;
   startText?: string;
   startColorHex?: string | null;
+  startColorRole?: string | null;
 };
 
 type BindingOption = { value: string | number | boolean; label?: string; glyph?: string };
@@ -195,45 +205,61 @@ export function DecennialsView({ documentId, parentDocumentId, sourceName, onClo
 
   if (error && !payload) {
     return (
-      <PaneShell sourceName={sourceName} onClose={onClose}>
+      <RetainedPaneShell
+        title={t("decview.decennials")}
+        sourceName={sourceName}
+        closeLabel={t("decview.closeDecennials")}
+        onClose={onClose}
+      >
         <div className="flex flex-1 items-center justify-center p-6 text-[length:var(--aries-font-size-base)] text-[color:var(--aries-text-muted)]">
           {error}
         </div>
-      </PaneShell>
+      </RetainedPaneShell>
     );
   }
   if (!payload) {
     return (
-      <PaneShell sourceName={sourceName} onClose={onClose}>
+      <RetainedPaneShell
+        title={t("decview.decennials")}
+        sourceName={sourceName}
+        closeLabel={t("decview.closeDecennials")}
+        onClose={onClose}
+      >
         <div className="flex flex-1 items-center justify-center p-6 text-[length:var(--aries-font-size-base)] text-[color:var(--aries-text-muted)]">
           {t("decview.loading")}
         </div>
-      </PaneShell>
+      </RetainedPaneShell>
     );
   }
   // BC charts: the daemon returns the unavailable payload
   // (morin.py:17165-17169 gate).
   if (payload.unavailable) {
     return (
-      <PaneShell sourceName={sourceName} onClose={onClose}>
+      <RetainedPaneShell
+        title={t("decview.decennials")}
+        sourceName={sourceName}
+        closeLabel={t("decview.closeDecennials")}
+        onClose={onClose}
+      >
         <div className="flex flex-1 items-center justify-center p-6 text-center text-[length:var(--aries-font-size-base)] text-[color:var(--aries-text-muted)]">
           {payload.notes?.[0] ?? t("decview.unavailable")}
         </div>
-      </PaneShell>
+      </RetainedPaneShell>
     );
   }
 
   const startOptions = asOptions(bindingOptions.startToken);
 
   return (
-    <PaneShell
+    <RetainedPaneShell
+      title={t("decview.decennials")}
       sourceName={sourceName}
+      closeLabel={t("decview.closeDecennials")}
       onClose={onClose}
       toolbar={
         <>
-          <button
+          <PaneToolbarButton
             type="button"
-            className="inline-flex h-6 items-center gap-1 rounded border border-[color:var(--aries-border-subtle)] px-1.5 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)] hover:bg-[color:var(--aries-surface-subtle)]"
             onClick={() => {
               const text = tableToTsv(payload, payload.rows);
               void navigator.clipboard?.writeText(text).catch(() => {
@@ -242,11 +268,10 @@ export function DecennialsView({ documentId, parentDocumentId, sourceName, onClo
             }}
             title={t("decview.copyRows")}
           >
-            <Copy className="size-3.5" />
-          </button>
-          <button
+            <Copy />
+          </PaneToolbarButton>
+          <PaneToolbarButton
             type="button"
-            className="inline-flex h-6 items-center gap-1 rounded border border-[color:var(--aries-border-subtle)] px-1.5 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)] hover:bg-[color:var(--aries-surface-subtle)]"
             onClick={() =>
               void exportTextContent({
                 filename: "decennials",
@@ -259,11 +284,10 @@ export function DecennialsView({ documentId, parentDocumentId, sourceName, onClo
             }
             title={t("decview.exportTsv")}
           >
-            <Download className="size-3.5" />
-          </button>
-          <button
+            <Download />
+          </PaneToolbarButton>
+          <PaneToolbarButton
             type="button"
-            className="inline-flex h-6 items-center gap-1 rounded border border-[color:var(--aries-border-subtle)] px-1.5 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)] hover:bg-[color:var(--aries-surface-subtle)]"
             onClick={() =>
               void exportTablePayloadPdf(payload, payload.rows, {
                 fileStem: "decennials",
@@ -272,21 +296,20 @@ export function DecennialsView({ documentId, parentDocumentId, sourceName, onClo
             }
             title={t("decview.exportPdf")}
           >
-            <Download className="size-3.5" />
+            <Download />
             PDF
-          </button>
+          </PaneToolbarButton>
         </>
       }
     >
       {/* Start selector — the wx context-menu radio submenu
           (DecWnd._start_selector_labels, decennialswnd.py:22-31,82-94). */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[color:var(--aries-border-subtle)] bg-background px-3 py-2">
+      <PaneControlBar>
         <label className="text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]" htmlFor="dec-pane-start">
           {header.startLabel ?? t("decview.start")}
         </label>
-        <select
+        <PaneSelect
           id="dec-pane-start"
-          className="h-7 rounded border border-[color:var(--aries-border-subtle)] bg-background px-2 text-[length:var(--aries-font-size-small)]"
           value={startToken}
           disabled={pending}
           onChange={(event) => void updateBinding({ start_token: event.target.value })}
@@ -296,11 +319,16 @@ export function DecennialsView({ documentId, parentDocumentId, sourceName, onClo
               {option.label ?? String(option.value)}
             </option>
           ))}
-        </select>
+        </PaneSelect>
         {/* Info value — "Start: <glyph|text>", glyph in Morinus font with the
             wx colour rule (DecWnd._drawDC [A], decennialswnd.py:348-413). */}
         {header.startIsPlanet ? (
-          <span style={{ fontFamily: "'AriesMorinus'", color: header.startColorHex ?? undefined }}>
+          <span
+            style={{
+              fontFamily: "'AriesMorinus'",
+              color: semanticChartColor(header.startColorRole, header.startColorHex),
+            }}
+          >
             {header.startGlyph ?? ""}
           </span>
         ) : (
@@ -308,7 +336,7 @@ export function DecennialsView({ documentId, parentDocumentId, sourceName, onClo
             {header.startText ?? ""}
           </span>
         )}
-      </div>
+      </PaneControlBar>
 
       {/* Main table: interleaved L1 + L2 (decennials.build_main, 2 cycles;
           DecWnd.compute_and_draw, decennialswnd.py:177-181). Click a row to
@@ -343,12 +371,15 @@ export function DecennialsView({ documentId, parentDocumentId, sourceName, onClo
           decennialswnd.py:813-961 "Decennials L3+L4"). */}
       {drilledL2 ? (
         <div className="flex max-h-[45%] min-h-0 shrink-0 flex-col border-t border-[color:var(--aries-border-subtle)]">
-          <div className="flex shrink-0 items-center gap-1.5 bg-background px-3 py-1.5 text-[length:var(--aries-font-size-small)]">
+          <PaneInfoBar className="border-b-0">
             <span className="text-[color:var(--aries-text-muted)]">L2:</span>
             <span
               style={{
                 fontFamily: "'AriesMorinus'",
-                color: typeof drilledL2.meta?.colorHex === "string" ? drilledL2.meta.colorHex : undefined,
+                color: semanticChartColor(
+                  typeof drilledL2.meta?.colorRole === "string" ? drilledL2.meta.colorRole : undefined,
+                  typeof drilledL2.meta?.colorHex === "string" ? drilledL2.meta.colorHex : undefined,
+                ),
               }}
             >
               {drilledL2.cells[0]?.glyph ?? ""}
@@ -357,13 +388,13 @@ export function DecennialsView({ documentId, parentDocumentId, sourceName, onClo
             <span className="text-[color:var(--aries-text-muted)]">{drilledL2.cells[3]?.text ?? ""}</span>
             <button
               type="button"
-              className="ml-auto inline-flex size-5 items-center justify-center rounded hover:bg-accent/40"
+              className={cn(PANE_CONTROL_CLASSES.microIconButton, "ml-auto")}
               onClick={() => setDrilledRowId(null)}
               aria-label={t("decview.closeDrill")}
             >
-              <X className="size-3.5" />
+              <X />
             </button>
-          </div>
+          </PaneInfoBar>
           <div className="min-h-0 flex-1 overflow-auto">
             <table
               className={cn(LIST_ROLE_CLASSES.symbolic, "border-collapse", tableResize.tableClassName)}
@@ -379,47 +410,7 @@ export function DecennialsView({ documentId, parentDocumentId, sourceName, onClo
           </div>
         </div>
       ) : null}
-    </PaneShell>
-  );
-}
-
-function PaneShell({
-  sourceName,
-  onClose,
-  toolbar,
-  children,
-}: {
-  sourceName?: string;
-  onClose?: () => void;
-  toolbar?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  const t = useT();
-  return (
-    <div className="font-morinus-text flex h-full min-h-0 flex-col bg-background">
-      <div className="flex shrink-0 items-center gap-2 border-b border-[color:var(--aries-border-subtle)] bg-background px-3 py-2">
-        <div className="min-w-0 truncate text-[length:var(--aries-font-size-small)] font-medium text-[color:var(--aries-text-primary)]">
-          {t("decview.decennials")}
-          {sourceName ? (
-            <span className="ml-1 font-normal text-[color:var(--aries-text-muted)]">{sourceName}</span>
-          ) : null}
-        </div>
-        <div className="ml-auto flex items-center gap-1">
-          {toolbar}
-          {onClose ? (
-            <button
-              type="button"
-              className="inline-flex size-6 items-center justify-center rounded hover:bg-accent/40"
-              onClick={onClose}
-              aria-label={t("decview.closeDecennials")}
-            >
-              <X className="size-4" />
-            </button>
-          ) : null}
-        </div>
-      </div>
-      {children}
-    </div>
+    </RetainedPaneShell>
   );
 }
 
@@ -475,6 +466,7 @@ function DecRow({
   // decennialswnd.py:465-466; _DecPopupWnd isBold, decennialswnd.py:1016-1017).
   const isBold = level === 1 || level === 3;
   const colorHex = typeof meta.colorHex === "string" ? meta.colorHex : undefined;
+  const colorRole = typeof meta.colorRole === "string" ? meta.colorRole : undefined;
   const eventDate = typeof meta.eventDate === "string" ? meta.eventDate : null;
 
   return (
@@ -496,7 +488,7 @@ function DecRow({
           className="aries-list-cell whitespace-nowrap text-center"
           style={{
             fontFamily: "'AriesMorinus'",
-            color: colorHex,
+            color: semanticChartColor(colorRole, colorHex),
             paddingLeft: `${Math.max(0, level - (level >= 3 ? 3 : 1)) * 6}px`,
           }}
         >

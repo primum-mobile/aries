@@ -190,13 +190,15 @@ export function AmbientSpotlight({
             }
           }}
         />
-        <CommandList className="max-h-none overflow-visible px-1 pb-1">
+        <CommandList className="max-h-none overflow-visible">
           {(preview.primary || loading) && (
             <CommandGroup>
               <div
                 className={cn(
-                  "aries-ambient-spotlight-preview flex min-h-14 items-center justify-between gap-3 px-3 py-2",
-                  loading && !preview.primary ? "opacity-70" : undefined,
+                  "aries-ambient-spotlight-preview flex items-center justify-between gap-[var(--aries-form-row-gap)] px-[var(--aries-sidebar-row-padding-x)] py-[var(--aries-pane-header-padding-y)]",
+                  loading && !preview.primary
+                    ? "opacity-[var(--aries-spotlight-loading-opacity)]"
+                    : undefined,
                 )}
               >
                 <div className="min-w-0">
@@ -219,7 +221,7 @@ export function AmbientSpotlight({
           )}
           {preview.actions.length > 0 && (
             <CommandGroup>
-              <div className="aries-ambient-spotlight-actions flex flex-wrap items-center px-1 pb-1">
+              <div className="aries-ambient-spotlight-actions flex flex-wrap items-center px-[var(--aries-menu-padding)] pb-[var(--aries-menu-padding)]">
                 {preview.actions.map((action) => (
                   <CommandItem
                     key={action.id}
@@ -236,7 +238,7 @@ export function AmbientSpotlight({
                     }
                     onSelect={() => void commit(action.id)}
                     className={cn(
-                      "aries-ambient-spotlight-action justify-center px-2.5 py-1.5",
+                      "aries-ambient-spotlight-action justify-center px-[var(--aries-control-padding-x)] py-[var(--aries-control-gap)]",
                       action.id === effectiveDefaultAction
                         ? "aries-ambient-spotlight-action-default"
                         : undefined,

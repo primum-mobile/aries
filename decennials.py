@@ -53,8 +53,6 @@ def _planet_order(chart, options):
     pairs = []
     for p in _seven_classicals():
         lon = chart.planets.planets[p].data[planets.Planet.LONG]
-        if options.ayanamsha != 0:
-            lon = util.normalize(lon - chart.ayanamsha)
         pairs.append((p, lon))
     pairs.sort(key=lambda x: x[1])
     start = astrology.SE_SUN if _is_diurnal(chart) else astrology.SE_MOON
@@ -70,8 +68,6 @@ def _planet_order_raw(chart, options):
     pairs = []
     for p in _seven_classicals():
         lon = chart.planets.planets[p].data[planets.Planet.LONG]
-        if options.ayanamsha != 0:
-            lon = util.normalize(lon - chart.ayanamsha)
         pairs.append((p, lon))
     pairs.sort(key=lambda x: x[1])
     return [pp for (pp, _) in pairs]
@@ -81,8 +77,6 @@ def _planet_after_degree(chart, options, deg):
     pairs = []
     for p in _seven_classicals():
         lon = chart.planets.planets[p].data[planets.Planet.LONG]
-        if options.ayanamsha != 0:
-            lon = util.normalize(lon - chart.ayanamsha)
         pairs.append((p, lon))
     pairs.sort(key=lambda x: x[1])
     for (pp, lon) in pairs:

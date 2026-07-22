@@ -107,7 +107,7 @@ function useHydrated(): boolean {
   return hydrated;
 }
 
-export function AppSidebar({
+function AppSidebarComponent({
   manifest,
   documents,
   activeDocumentId,
@@ -182,6 +182,11 @@ export function AppSidebar({
   );
 }
 
+// Time stepping changes the active chart snapshot, not the workspace tree or
+// launcher manifest. Keep this retained chrome out of the chart-frame render
+// path unless one of its own inputs actually changes.
+export const AppSidebar = React.memo(AppSidebarComponent);
+
 function TopActionsGroup({
   actions,
   activeDocumentId,
@@ -194,12 +199,13 @@ function TopActionsGroup({
   const tLabel = useTFallback();
   if (actions.length === 0) return null;
   return (
-    <SidebarGroup className="px-0 pb-1 pt-0">
+    <SidebarGroup className="px-0 pb-[var(--aries-control-gap-compact)] pt-0">
       <SidebarGroupContent>
         <SidebarMenu className="gap-0">
           {actions.map((action) => (
             <SidebarMenuItem key={action.id}>
               <NavRow
+                actionId={action.id}
                 label={tLabel(`sidebar.action.${action.id}`, action.label)}
                 shortcut={action.shortcut}
                 isActive={action.id === activeDocumentId}
@@ -278,7 +284,7 @@ function StaticDocumentsGroup({
 }) {
   const t = useT();
   return (
-    <SidebarGroup className="px-0 pb-0 pt-1">
+    <SidebarGroup className="px-0 pb-0 pt-[var(--aries-control-padding-y)]">
       <SidebarGroupContent>
         <SidebarMenu className="gap-0">
           {flat.map(({ node, depth }) => {
@@ -557,18 +563,19 @@ function ActionsGroup({
 
   if (actions.length === 0) return null;
   return (
-    <SidebarGroup className="px-0 pb-[5px] pt-[7px]">
-      <SidebarGroupLabel className="h-5 px-0">
+    <SidebarGroup className="px-0 pb-[var(--aries-sidebar-group-padding-end)] pt-[var(--aries-sidebar-group-padding-start)]">
+      <SidebarGroupLabel className="h-[var(--aries-sidebar-section-header-height)] px-0">
         <button
           type="button"
-          className="flex h-5 w-full items-center gap-1 rounded-[var(--morinus-row-radius)] px-[var(--morinus-row-pad-x)] text-left text-[length:var(--aries-font-size-nav-section)] font-normal leading-none text-[color:var(--aries-text-dim)] transition-colors duration-75 hover:bg-[color:var(--aries-sidebar-row-soft)] hover:text-sidebar-foreground"
+          data-aries-sidebar-group-id={groupId}
+          className="flex h-[var(--aries-sidebar-section-header-height)] w-full items-center gap-[var(--aries-control-gap-compact)] rounded-[var(--morinus-row-radius)] px-[var(--morinus-row-pad-x)] text-left text-[length:var(--aries-font-size-nav-section)] font-normal leading-none text-[color:var(--aries-text-dim)] transition-colors duration-75 hover:bg-[color:var(--aries-sidebar-row-soft)] hover:text-sidebar-foreground"
           aria-expanded={!isCollapsed}
           onClick={toggleCollapsed}
         >
           {isCollapsed ? (
-            <ChevronRight className="size-3 shrink-0" />
+            <ChevronRight className="size-[var(--aries-sidebar-action-icon-size)] shrink-0" />
           ) : (
-            <ChevronDown className="size-3 shrink-0" />
+            <ChevronDown className="size-[var(--aries-sidebar-action-icon-size)] shrink-0" />
           )}
           <span className="block h-[var(--aries-sidebar-section-line-box)] min-w-0 truncate leading-[var(--aries-sidebar-section-line-box)]">
             {tLabel(`sidebar.group.${groupId}`, label)}
@@ -630,6 +637,7 @@ function StaticActionsContent({
       {orderedActions.map((action) => {
         const row = (
           <NavRow
+            actionId={action.id}
             label={tLabel(`sidebar.action.${action.id}`, action.label)}
             shortcut={action.shortcut}
             isActive={action.id === activeDocumentId}
@@ -713,6 +721,7 @@ export function SolarAverageLauncherContextMenu({
 
 type NavRowProps = {
   label: string;
+  actionId?: string;
   shortcut?: string | null;
   isActive?: boolean;
   depth?: number;
@@ -732,6 +741,7 @@ type NavRowProps = {
 
 export function NavRow({
   label,
+  actionId,
   shortcut,
   isActive,
   depth = 0,
@@ -757,7 +767,7 @@ export function NavRow({
   const trailingSlotWidth = showShortcutHint
     ? shortcutSlotWidth
     : onClose
-      ? "1.25rem"
+      ? "var(--aries-sidebar-close-action-size)"
       : null;
   const pointerActivatedRef = React.useRef(false);
   const clearPointerActivated = React.useCallback(() => {
@@ -788,6 +798,7 @@ export function NavRow({
   return (
     <div className="group/navrow relative">
       <SidebarMenuButton
+        data-aries-sidebar-action-id={actionId}
         isActive={isActive}
         onClick={handleClick}
         onMouseDown={handleMouseDown}
@@ -807,7 +818,7 @@ export function NavRow({
             "cursor-default text-sidebar-foreground/35 hover:bg-transparent hover:text-sidebar-foreground/35",
         )}
         style={{
-          paddingLeft: `calc(var(--morinus-row-pad-x) + ${depth * 12}px)`,
+          paddingLeft: sidebarRowPaddingLeft(depth),
           paddingRight: trailingSlotWidth
             ? `calc(var(--morinus-row-pad-x) + ${trailingSlotWidth})`
             : "var(--morinus-row-pad-x)",
@@ -821,15 +832,20 @@ export function NavRow({
         <span
           aria-hidden="true"
           className={cn(
-            "pointer-events-none absolute left-0 right-0 z-30 h-0.5 rounded-full bg-[color:var(--aries-sidebar-drop-indicator)]",
-            dropIndicator === "before" ? "-top-px" : "-bottom-px",
+            "pointer-events-none absolute left-0 right-0 z-30 rounded-full bg-[color:var(--aries-sidebar-drop-indicator)]",
           )}
+          style={{
+            height: "var(--aries-sidebar-drop-indicator-size)",
+            ...(dropIndicator === "before"
+              ? { top: "calc(0px - var(--aries-sidebar-drop-indicator-overhang))" }
+              : { bottom: "calc(0px - var(--aries-sidebar-drop-indicator-overhang))" }),
+          }}
         />
       ) : null}
       {showShortcutHint ? (
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute right-2 top-1/2 h-[var(--aries-sidebar-row-line-box)] -translate-y-1/2 whitespace-nowrap text-right text-[length:var(--aries-font-size-nav)] leading-[var(--aries-sidebar-row-line-box)] text-sidebar-foreground/38 opacity-0 transition-opacity group-focus-within/navrow:opacity-100 group-hover/navrow:opacity-100"
+          className="pointer-events-none absolute right-[var(--aries-sidebar-trailing-inset)] top-1/2 h-[var(--aries-sidebar-row-line-box)] -translate-y-1/2 whitespace-nowrap text-right text-[length:var(--aries-font-size-nav)] leading-[var(--aries-sidebar-row-line-box)] text-sidebar-foreground/38 opacity-0 transition-opacity group-focus-within/navrow:opacity-100 group-hover/navrow:opacity-100"
           style={{ width: trailingSlotWidth ?? undefined }}
         >
           {shortcutDisplay}
@@ -841,7 +857,7 @@ export function NavRow({
       {dirty ? (
         <span
           aria-label={tf("sidebar.unsavedChanges", "Unsaved changes")}
-          className="pointer-events-none absolute right-2 top-1/2 size-1.5 -translate-y-1/2 rounded-full bg-[color:var(--aries-unsaved-indicator)] transition-opacity group-hover/navrow:opacity-0"
+          className="pointer-events-none absolute right-[var(--aries-sidebar-trailing-inset)] top-1/2 size-[var(--aries-sidebar-unsaved-indicator-size)] -translate-y-1/2 rounded-full bg-[color:var(--aries-unsaved-indicator)] transition-opacity group-hover/navrow:opacity-0"
         />
       ) : null}
       {onClose ? (
@@ -853,9 +869,9 @@ export function NavRow({
             e.stopPropagation();
             onClose();
           }}
-          className="absolute right-1.5 top-1/2 -translate-y-1/2 flex h-5 w-5 items-center justify-center rounded text-sidebar-foreground/40 opacity-0 transition hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground group-hover/navrow:opacity-100"
+          className="absolute right-[var(--aries-sidebar-close-inset)] top-1/2 flex size-[var(--aries-sidebar-close-action-size)] -translate-y-1/2 items-center justify-center rounded-[var(--aries-radius-control-compact)] text-sidebar-foreground/40 opacity-0 transition hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground group-hover/navrow:opacity-100"
         >
-          <X className="size-3" />
+          <X className="size-[var(--aries-sidebar-action-icon-size)]" />
         </button>
       ) : null}
       {preview ? (
@@ -888,6 +904,12 @@ export function NavRow({
       ) : null}
     </div>
   );
+}
+
+function sidebarRowPaddingLeft(depth: number): string {
+  const safeDepth = Math.max(0, Math.floor(depth));
+  if (safeDepth === 0) return "var(--morinus-row-pad-x)";
+  return `calc(var(--morinus-row-pad-x)${" + var(--aries-sidebar-tree-indent)".repeat(safeDepth)})`;
 }
 
 function shortcutDisplayChords(shortcut: string): string[][] {

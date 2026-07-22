@@ -33,6 +33,7 @@ from webapp.daemon.astrolabe_service import (
     workspace_chart_for_document,
 )
 from webapp.daemon.chart_service import chart_snapshot_service
+from webapp.daemon.display_palette import effective_display_options
 from webapp.frontend.scripts import export_chart_json
 
 _DEG = math.pi / 180.0
@@ -135,9 +136,9 @@ def _ayan_offset(chrt, opts) -> float:
     if int(getattr(opts, "ayanamsha", 0) or 0) == 0:
         return 0.0
     try:
-        return float(astrology.swe_get_ayanamsa_ut(chrt.time.jd))
+        return float(astrology.effective_ayanamsha_ut(chrt.time.jd, opts.ayanamsha))
     except Exception:
-        return float(getattr(chrt, "ayanamsha", 0.0) or 0.0)
+        return float(getattr(chrt, "ayanamsha_offset", 0.0) or 0.0)
 
 
 def _ecliptic_to_equatorial(
@@ -355,16 +356,19 @@ class AstrologSphereService:
         tilt: float = _DEFAULT_TILT,
     ) -> dict:
         with self._lock:
-            opts = chart_snapshot_service.options
+            canonical_opts = chart_snapshot_service.options
+            display_opts = effective_display_options(canonical_opts)
             radix = workspace_chart_for_document(document_id, launcher_kinds=("astrolog_sphere",))
             if radix is not None:
-                return self._build(radix, opts, float(rotation), float(tilt))
+                return self._build(radix, display_opts, float(rotation), float(tilt))
             source_path = (
                 str(Path(source).expanduser()) if source
                 else str(export_chart_json.DEFAULT_SOURCE)
             )
-            radix, _ = export_chart_json.load_chart(source_path, opts, name=source_name)
-            return self._build(radix, opts, float(rotation), float(tilt))
+            radix, _ = export_chart_json.load_chart(
+                source_path, canonical_opts, name=source_name
+            )
+            return self._build(radix, display_opts, float(rotation), float(tilt))
 
     def _build(self, chrt, opts, rotation: float, tilt: float) -> dict:
         latitude = float(chrt.place.lat)

@@ -27,6 +27,8 @@ import {
   type UpdateInstallEvent,
 } from "@/lib/licensing/client";
 import { useLicenseStateStore } from "@/stores/license-state-store";
+import { useUpdateNotificationStore } from "@/stores/update-notification-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
 
 const ACTIVE_STATES = new Set(["active", "grace"]);
 
@@ -41,6 +43,14 @@ export function LicenseStartupController() {
   const t = useT();
   const status = useLicenseStateStore((state) => state.status);
   const setStatus = useLicenseStateStore((state) => state.setStatus);
+  const deferUpdate = useUpdateNotificationStore((state) => state.defer);
+  const clearDeferredUpdate = useUpdateNotificationStore((state) => state.clear);
+  const deferredUpdate = useUpdateNotificationStore((state) => state.deferred);
+  const offerRequested = useUpdateNotificationStore((state) => state.offerRequested);
+  const dismissDeferredOffer = useUpdateNotificationStore((state) => state.dismissOffer);
+  const wasNotified = useUpdateNotificationStore((state) => state.wasNotified);
+  const markNotified = useUpdateNotificationStore((state) => state.markNotified);
+  const openWhatsNewPane = useWorkspaceStore((state) => state.openWhatsNewPane);
   const [updateOffer, setUpdateOffer] = React.useState<{
     info: LicensedUpdate;
     statusIdentity: string;
@@ -55,10 +65,11 @@ export function LicenseStartupController() {
   const statusIdentity = status
     ? [status.state, status.activationId ?? "", status.leaseExpiresAt ?? ""].join(":")
     : "unknown";
-  const update =
+  const startupUpdate =
     licenseActive && updateOffer?.statusIdentity === statusIdentity
       ? updateOffer.info
       : null;
+  const update = startupUpdate ?? (licenseActive && offerRequested ? deferredUpdate : null);
 
   React.useEffect(() => {
     if (!isNativeAries()) return;
@@ -101,8 +112,13 @@ export function LicenseStartupController() {
       checkLicensedUpdate()
         .then((next) => {
           if (!active || !next) return;
-          setUpdateOffer({ info: next, statusIdentity });
-          setUpdatePhase("available");
+          if (wasNotified(next.version)) {
+            deferUpdate(next);
+          } else {
+            markNotified(next.version);
+            setUpdateOffer({ info: next, statusIdentity });
+            setUpdatePhase("available");
+          }
         })
         .catch((error) => {
           // Startup update discovery is intentionally quiet when offline.
@@ -113,7 +129,7 @@ export function LicenseStartupController() {
       active = false;
       window.clearTimeout(timer);
     };
-  }, [licenseActive, statusIdentity]);
+  }, [deferUpdate, licenseActive, markNotified, statusIdentity, wasNotified]);
 
   const handleLicenseStatus = React.useCallback((next: LicenseStatus) => {
     setStatus(next);
@@ -140,7 +156,10 @@ export function LicenseStartupController() {
     setContentLength(null);
     try {
       await installLicensedUpdate(handleInstallEvent);
-      setUpdatePhase("installed");
+      const installedUpdate = update;
+      clearDeferredUpdate();
+      setUpdateOffer(null);
+      if (installedUpdate) openWhatsNewPane(installedUpdate.version, installedUpdate.notes);
     } catch (error) {
       console.error("[license-update-install]", error);
       setUpdatePhase("failed");
@@ -151,7 +170,7 @@ export function LicenseStartupController() {
         // The next retry will surface the existing localized failure state.
       }
     }
-  }, [handleInstallEvent, statusIdentity]);
+  }, [clearDeferredUpdate, handleInstallEvent, openWhatsNewPane, statusIdentity, update]);
 
   const licenseGateOpen = Boolean(status?.required && !licenseActive);
   const progress =
@@ -162,7 +181,7 @@ export function LicenseStartupController() {
   return (
     <>
       <Dialog open={licenseGateOpen}>
-        <DialogContent showCloseButton={false} className="max-w-md">
+        <DialogContent size="md" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>{t("license.startupTitle")}</DialogTitle>
             <DialogDescription>{t("license.startupDescription")}</DialogDescription>
@@ -175,9 +194,10 @@ export function LicenseStartupController() {
         open={update !== null}
         onOpenChange={(open) => {
           if (!open && updatePhase !== "installing") setUpdateOffer(null);
+          if (!open && updatePhase !== "installing") dismissDeferredOffer();
         }}
       >
-        <DialogContent showCloseButton={false} className="max-w-md">
+        <DialogContent size="md" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>
               {updatePhase === "installed"
@@ -243,7 +263,11 @@ export function LicenseStartupController() {
                   type="button"
                   variant="outline"
                   disabled={updatePhase === "installing"}
-                  onClick={() => setUpdateOffer(null)}
+                  onClick={() => {
+                    if (update) deferUpdate(update);
+                    dismissDeferredOffer();
+                    setUpdateOffer(null);
+                  }}
                 >
                   {t("license.updateLater")}
                 </Button>

@@ -4,15 +4,15 @@
 "use client";
 
 import * as React from "react";
-import { X } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/i18n/i18n";
 import {
   readBundledLegalDocument,
   type LegalDocumentKind,
 } from "@/lib/legal-documents";
-import { LIST_BUTTON_PROPS, LIST_PANE_CLASSES } from "@/lib/list-tokens";
+import { LIST_PANE_CLASSES } from "@/lib/list-tokens";
+
+import { RetainedPaneShell } from "./retained-pane-shell";
 
 export function LegalDocumentView({
   document,
@@ -44,26 +44,25 @@ export function LegalDocumentView({
   }, [document]);
 
   return (
-    <section className={LIST_PANE_CLASSES.root} aria-label={t(titleKey)}>
-      <header className={LIST_PANE_CLASSES.compactHeader}>
-        <h1 className={LIST_PANE_CLASSES.title}>{t(titleKey)}</h1>
-        <Button
-          type="button"
-          {...LIST_BUTTON_PROPS.icon}
-          onClick={onClose}
-          aria-label={t("about.closeLegalDocument")}
-        >
-          <X className="h-3.5 w-3.5" aria-hidden="true" />
-        </Button>
-      </header>
-
-      <div className={`${LIST_PANE_CLASSES.scroller} px-4 py-3`}>
+    <RetainedPaneShell
+      title={t(titleKey)}
+      closeLabel={t("about.closeLegalDocument")}
+      onClose={onClose}
+      closeAppearance="list"
+      wrapHeader
+      titleSize="large"
+      titleWeight="semibold"
+      headerDensity="compact"
+    >
+      <div
+        className={`${LIST_PANE_CLASSES.scroller} px-[var(--aries-panel-padding-x)] py-[var(--aries-panel-padding-y)]`}
+      >
         {readFailed ? (
           <div className={LIST_PANE_CLASSES.error}>
             {t("about.legalReadError")}
           </div>
         ) : text ? (
-          <pre className="whitespace-pre-wrap break-words pb-4 font-mono text-[11px] leading-5 text-muted-foreground">
+          <pre className="whitespace-pre-wrap break-words pb-[var(--aries-pane-content-padding)] font-mono text-[length:var(--aries-font-size-small)] leading-[var(--aries-font-line-height-reading)] text-muted-foreground">
             {text}
           </pre>
         ) : (
@@ -72,6 +71,6 @@ export function LegalDocumentView({
           </div>
         )}
       </div>
-    </section>
+    </RetainedPaneShell>
   );
 }

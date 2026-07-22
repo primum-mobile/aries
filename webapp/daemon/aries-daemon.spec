@@ -10,12 +10,27 @@ from PyInstaller.utils.hooks import collect_submodules
 
 REPO_ROOT = Path(SPECPATH).resolve().parent.parent
 ENTRY = str(REPO_ROOT / "webapp" / "daemon" / "__main__.py")
-SWEASTROLOGY = REPO_ROOT / f"sweastrology{sysconfig.get_config_var('EXT_SUFFIX')}"
-if not SWEASTROLOGY.exists():
-    raise SystemExit(f"Missing sweastrology extension for this Python: {SWEASTROLOGY}")
+SWEASTROLOGY_NAME = f"sweastrology{sysconfig.get_config_var('EXT_SUFFIX')}"
+SWEASTROLOGY = next(
+    (
+        candidate
+        for candidate in (
+            REPO_ROOT / SWEASTROLOGY_NAME,
+            REPO_ROOT / "SWEP" / "src" / SWEASTROLOGY_NAME,
+        )
+        if candidate.is_file()
+    ),
+    None,
+)
+if SWEASTROLOGY is None:
+    raise SystemExit(
+        f"Missing {SWEASTROLOGY_NAME}. Build the Swiss Ephemeris extension first."
+    )
 
 block_cipher = None
 REPORTLAB_HIDDENIMPORTS = collect_submodules("reportlab")
+FONTTOOLS_HIDDENIMPORTS = collect_submodules("fontTools")
+BROTLI_HIDDENIMPORTS = collect_submodules("brotli")
 
 a = Analysis(
     [ENTRY],
@@ -40,6 +55,8 @@ a = Analysis(
         "uvicorn.lifespan.off",
         "uvicorn.protocols.websockets.auto",
         "uvicorn.protocols.http.auto",
+        "uvicorn.protocols.http.h11_impl",
+        "uvicorn.loops.auto",
         "uvicorn.logging",
         "astrology",
         "chart",
@@ -60,7 +77,7 @@ a = Analysis(
         "arabicparts",
         "chart_context_view",
         "sweastrology",
-    ] + REPORTLAB_HIDDENIMPORTS,
+    ] + REPORTLAB_HIDDENIMPORTS + FONTTOOLS_HIDDENIMPORTS + BROTLI_HIDDENIMPORTS,
     hookspath=[],
     runtime_hooks=[],
     excludes=["tkinter", "matplotlib"],

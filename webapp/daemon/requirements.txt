@@ -1,7 +1,9 @@
 fastapi>=0.115
 uvicorn[standard]>=0.30
-numpy
+numpy==2.4.6
 pillow
 wxPython>=4.2.2
 geographiclib>=2.0
 reportlab>=4.0
+fonttools>=4.0
+brotli>=1.1

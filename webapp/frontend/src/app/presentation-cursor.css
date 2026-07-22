@@ -1,0 +1,21 @@
+/* Hidden, opt-in presentation cursor. Cursor is inherited from the shell so
+ * explicit interaction roles (text, resize, grab, disabled) stay native. */
+html[data-presentation-cursor="glow"] {
+  --aries-presentation-cursor: url("/cursors/aries-presentation.png") 3 2,
+    url("/cursors/aries-presentation.svg") 3 2,
+    default;
+}
+
+html[data-presentation-cursor="glow"] body,
+html[data-presentation-cursor="glow"] .app-shell,
+html[data-presentation-cursor="glow"] [data-slot="sidebar"] button:not([data-sidebar="rail"]) {
+  cursor: var(--aries-presentation-cursor);
+}
+
+@media (forced-colors: active) {
+  html[data-presentation-cursor="glow"] body,
+  html[data-presentation-cursor="glow"] .app-shell,
+  html[data-presentation-cursor="glow"] [data-slot="sidebar"] button:not([data-sidebar="rail"]) {
+    cursor: default;
+  }
+}

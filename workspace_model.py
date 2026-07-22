@@ -93,7 +93,7 @@ DEFAULT_SECTIONS = (
 			WorkspaceAction('almuten_zodiacal', 'Almuten Zodiacal', shortcut=_action_shortcut('almuten_zodiacal', 'TMAlmutenZodiacal')),
 			WorkspaceAction('almuten_chart', 'Almuten Chart', shortcut=_action_shortcut('almuten_chart', 'TMAlmutenChart')),
 			WorkspaceAction('ephemeris', 'Graphic Ephemeris', shortcut=_action_shortcut('ephemeris', 'HMEphemeris')),
-			WorkspaceAction('synodic_cycles', 'Synodic Cycles'),
+			WorkspaceAction('synodic_cycles', 'Synodic Cycles', shortcut=_action_shortcut('synodic_cycles')),
 			WorkspaceAction('speeds', 'Planetary Speeds', shortcut=_action_shortcut('speeds', 'TMSpeeds')),
 			WorkspaceAction('strip', 'Strip', shortcut=_action_shortcut('strip', 'TMStrip')),
 			WorkspaceAction('exact_transits', 'Monthly Transits', shortcut=_action_shortcut('exact_transits', 'TMExactTransits')),

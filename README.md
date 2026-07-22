@@ -38,6 +38,7 @@ official supported installers.
 | `C` | Circumambulations |
 | `E` | Eclipses |
 | `Z` | Zodiacal Releasing |
+| `Q` | Synodic Cycles |
 | `A` | Toggle aspects |
 | `M` | Toggle minor aspects |
 | `H` | Toggle houses |
@@ -87,7 +88,7 @@ No developer or customer charts are bundled.
 ### Requirements
 
 - Python 3.10 or newer.
-- Node.js 20.9 or newer with npm.
+- Node.js 20.19 or newer with npm.
 - Current stable Rust toolchain with Cargo.
 - Platform prerequisites required by Tauri.
 - On macOS, Xcode Command Line Tools.

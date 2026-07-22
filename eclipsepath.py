@@ -402,39 +402,132 @@ def _cap_coords(point: _WherePoint, bearing: float, start_offset: float, end_off
     return coords
 
 
-def _ring_for_span(left, right, start: int, end: int, points: list[_WherePoint] | None = None):
+def _ring_for_span(
+    left,
+    right,
+    start: int,
+    end: int,
+    points: list[_WherePoint] | None = None,
+    *,
+    cap_start: bool = True,
+    cap_end: bool = True,
+):
     if end - start < 1:
         return None
     span_left = [list(coord) for coord in left[start:end + 1]]
     span_right = [list(coord) for coord in right[start:end + 1]]
     if points is not None and len(points) == len(left):
-        start_bearing = _bearing_for_path_point(points, start)
-        end_bearing = _bearing_for_path_point(points, end)
-        end_cap = _cap_coords(points[end], end_bearing, -90.0, 90.0)
-        start_cap = _cap_coords(points[start], start_bearing, 90.0, 270.0)
-        ring = span_left + end_cap[1:] + list(reversed(span_right[:-1])) + start_cap[1:]
+        ring = list(span_left)
+        if cap_end:
+            end_bearing = _bearing_for_path_point(points, end)
+            end_cap = _cap_coords(points[end], end_bearing, -90.0, 90.0)
+            ring.extend(end_cap[1:])
+            ring.extend(reversed(span_right[:-1]))
+        else:
+            ring.extend(reversed(span_right))
+        if cap_start:
+            start_bearing = _bearing_for_path_point(points, start)
+            start_cap = _cap_coords(points[start], start_bearing, 90.0, 270.0)
+            ring.extend(start_cap[1:])
     else:
         ring = span_left + list(reversed(span_right))
     if any(not _path_coord_is_renderable(coord) for coord in ring):
         return None
     if ring[0] != ring[-1]:
         ring.append(list(ring[0]))
-    if _has_antimeridian_jump(ring):
-        return None
     return ring
+
+
+def _clip_polygon_longitude(coords, boundary: float, keep_greater: bool):
+    if len(coords) < 3:
+        return []
+    output = []
+    previous = coords[-1]
+    previous_inside = previous[0] >= boundary if keep_greater else previous[0] <= boundary
+    for current in coords:
+        current_inside = current[0] >= boundary if keep_greater else current[0] <= boundary
+        if current_inside != previous_inside:
+            span = current[0] - previous[0]
+            if abs(span) > 1e-12:
+                fraction = (boundary - previous[0]) / span
+                output.append([
+                    boundary,
+                    previous[1] + (current[1] - previous[1]) * fraction,
+                ])
+        if current_inside:
+            output.append(list(current))
+        previous = current
+        previous_inside = current_inside
+    return output
+
+
+def _ring_area(coords) -> float:
+    if len(coords) < 3:
+        return 0.0
+    return 0.5 * sum(
+        a[0] * b[1] - b[0] * a[1]
+        for a, b in zip(coords, coords[1:] + coords[:1])
+    )
+
+
+def _split_ring_antimeridian(ring):
+    """Split one narrow unwrapped path ring into dateline-safe polygons."""
+    if len(ring) < 4:
+        return []
+    source = [list(coord) for coord in ring]
+    if source[0] == source[-1]:
+        source.pop()
+    if len(source) < 3:
+        return []
+
+    unwrapped = [[_normalize_lon(float(source[0][0])), float(source[0][1])]]
+    for coord in source[1:]:
+        lon = _normalize_lon(float(coord[0]))
+        previous_lon = unwrapped[-1][0]
+        while lon - previous_lon > 180.0:
+            lon -= 360.0
+        while lon - previous_lon < -180.0:
+            lon += 360.0
+        unwrapped.append([lon, float(coord[1])])
+
+    min_lon = min(coord[0] for coord in unwrapped)
+    max_lon = max(coord[0] for coord in unwrapped)
+    first_band = math.floor((min_lon + 180.0) / 360.0)
+    last_band = math.floor((max_lon + 180.0) / 360.0)
+    if first_band == last_band:
+        shifted = [[coord[0] - 360.0 * first_band, coord[1]] for coord in unwrapped]
+        shifted.append(list(shifted[0]))
+        return [shifted]
+    pieces = []
+    for band in range(first_band, last_band + 1):
+        west = -180.0 + 360.0 * band
+        east = 180.0 + 360.0 * band
+        clipped = _clip_polygon_longitude(unwrapped, west, True)
+        clipped = _clip_polygon_longitude(clipped, east, False)
+        if len(clipped) < 3 or abs(_ring_area(clipped)) < 1e-9:
+            continue
+        shifted = [[coord[0] - 360.0 * band, coord[1]] for coord in clipped]
+        if shifted[0] != shifted[-1]:
+            shifted.append(list(shifted[0]))
+        pieces.append(shifted)
+    return pieces
 
 
 def _segment_rings_for_span(left, right, start: int, end: int, points: list[_WherePoint] | None = None):
     rings = []
     for index in range(start, end):
-        ring = _ring_for_span(left, right, index, index + 1, points=points)
+        ring = _ring_for_span(
+            left,
+            right,
+            index,
+            index + 1,
+            points=points,
+            cap_start=index == start,
+            cap_end=index + 1 == end,
+        )
         if ring is None:
             continue
-        if any(not _path_coord_is_renderable(coord) for coord in ring):
-            continue
-        if _has_antimeridian_jump(ring):
-            continue
-        rings.append(ring)
+        rings.extend(_split_ring_antimeridian(ring))
     return rings
 
 
@@ -450,8 +543,13 @@ def _path_polygons(left, right, points: list[_WherePoint] | None = None):
         if span_start is None:
             return
         ring = _ring_for_span(left, right, span_start, end_index, points=points)
+        if ring is None and points is not None:
+            # A rounded cap can itself cross the polar fill cutoff. Keep the
+            # continuous strip with a straight renderer-only edge rather than
+            # degrading the whole span into separately outlined capsules.
+            ring = _ring_for_span(left, right, span_start, end_index)
         if ring is not None:
-            polygons.append([ring])
+            polygons.extend([[piece] for piece in _split_ring_antimeridian(ring)])
         else:
             polygons.extend([[r] for r in _segment_rings_for_span(left, right, span_start, end_index, points=points)])
         span_start = None
@@ -464,6 +562,27 @@ def _path_polygons(left, right, points: list[_WherePoint] | None = None):
         else:
             close_span(index - 1)
     close_span(count - 1)
+    return polygons
+
+
+def _polar_path_polygons(left, right):
+    """Return small true-coordinate strip pieces omitted from Mercator fill.
+
+    The normal path polygons deliberately stop before the Web Mercator ceiling
+    so MapLibre cannot turn a polar/antimeridian crossing into a world-sized
+    fill.  These segment quads are retained in the payload for the globe's
+    polar canvas only; they are never handed to MapLibre's GeoJSON renderer.
+    """
+    if len(left) < 2 or len(right) < 2 or len(left) != len(right):
+        return []
+    polygons = []
+    for index in range(len(left) - 1):
+        segment = (left[index], left[index + 1], right[index + 1], right[index])
+        if not any(abs(float(coord[1])) > POLAR_FILL_LAT_LIMIT for coord in segment):
+            continue
+        ring = [list(coord) for coord in segment]
+        ring.append(list(ring[0]))
+        polygons.append([ring])
     return polygons
 
 
@@ -516,6 +635,7 @@ def build_solar_eclipse_path_geojson(event_or_jdut, retflag=None, sample_seconds
     center_coords = _line_coords(points)
     left, right = _limit_coords(points)
     polygons = _path_polygons(left, right, points=points)
+    polar_polygons = _polar_path_polygons(left, right)
     kind = _solar_kind(retflag)
     base_props = {
         "event_type": kind,
@@ -542,6 +662,18 @@ def build_solar_eclipse_path_geojson(event_or_jdut, retflag=None, sample_seconds
             "MultiLineString",
             _split_antimeridian(center_coords),
             dict(base_props, display="soft-ribbon"),
+        ))
+    if polar_polygons:
+        features.append(_feature(
+            "ECLIPSE_POLAR_PATH",
+            "MultiPolygon",
+            polar_polygons,
+            dict(
+                base_props,
+                display="polar-core-shadow",
+                polar_fill_lat_limit=POLAR_FILL_LAT_LIMIT,
+                segment_count=len(polar_polygons),
+            ),
         ))
     features.append(_feature(
         "ECLIPSE_CENTER",

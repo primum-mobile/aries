@@ -1134,6 +1134,18 @@
     "fr": "Détail",
     "es": "Detalle"
   },
+  "DhruvaWilhelm": {
+    "en": "Dhruva/Galactic Center (Wilhelm)",
+    "hu": "Dhruva/Galaktikus központ (Wilhelm)",
+    "it": "Dhruva/Centro galattico (Wilhelm)",
+    "fr": "Dhruva/Centre galactique (Wilhelm)",
+    "ru": "Дхрува/Галактический центр (Вильгельм)",
+    "es": "Dhruva/Centro galáctico (Wilhelm)",
+    "zh-Hans": "Dhruva/银河中心（Wilhelm）",
+    "zh-Hant": "Dhruva/銀河中心（Wilhelm）",
+    "ko": "드루바/은하 중심 (빌헬름)",
+    "de": "Dhruva/Galaktisches Zentrum (Wilhelm)"
+  },
   "DevPanel": {
     "en": "Dev panel",
     "it": "Pannello sviluppatore",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 import sys
 import threading
@@ -29,7 +30,7 @@ import build_info
 import eclipsepath
 import mtexts
 
-from fastapi import Body, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import Body, FastAPI, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 
@@ -39,6 +40,9 @@ FIND_TRANSITS_TECHNIQUES = ("transits",)
 
 _transit_search_service = None
 _tables_service = None
+_style_font_store = None
+_style_font_store_directory = None
+_style_font_store_lock = threading.Lock()
 
 
 class _LazyDaemonService:
@@ -234,6 +238,12 @@ def _load_synodic_service():
     return service
 
 
+def _load_style_draft_service():
+    from .style_draft_service import style_draft_service as service
+
+    return service
+
+
 def _supplementary_kinds() -> set[str]:
     from .supplementary_service import SUPPLEMENTARY_KINDS
 
@@ -281,6 +291,7 @@ secondary_directions_service = _LazyDaemonService(_load_secondary_directions_ser
 square_chart_service = _LazyDaemonService(_load_square_chart_service)
 supplementary_service = _LazyDaemonService(_load_supplementary_service)
 synodic_service = _LazyDaemonService(_load_synodic_service)
+style_draft_service = _LazyDaemonService(_load_style_draft_service)
 table_export_service = _LazyDaemonService(_load_table_export_service)
 workspace_service = _LazyDaemonService(_load_workspace_service)
 spotlight_service = _LazyDaemonService(_load_spotlight_service)
@@ -309,6 +320,23 @@ def tables_service():
     return _tables_service
 
 
+def style_font_store():
+    """Return the font store for the current daemon options directory."""
+    global _style_font_store, _style_font_store_directory
+    from .style_font_service import StyleFontError, StyleFontStore
+
+    options_directory = str(getattr(options_service.options, "optsdirtxt", "") or "").strip()
+    if not options_directory:
+        raise StyleFontError("options directory is unavailable")
+    if _style_font_store is not None and _style_font_store_directory == options_directory:
+        return _style_font_store
+    with _style_font_store_lock:
+        if _style_font_store is None or _style_font_store_directory != options_directory:
+            _style_font_store = StyleFontStore(options_directory, REPO_ROOT)
+            _style_font_store_directory = options_directory
+        return _style_font_store
+
+
 app = FastAPI(title="Aries Web Daemon")
 
 
@@ -321,6 +349,8 @@ _TAURI_CORS_ORIGINS = [
 _DEV_CORS_ORIGINS = [
     "http://127.0.0.1:3000",
     "http://localhost:3000",
+    "http://127.0.0.1:3010",
+    "http://localhost:3010",
     *_TAURI_CORS_ORIGINS,
 ]
 
@@ -341,8 +371,12 @@ def _cors_origins() -> list[str]:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins(),
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "X-Aries-Token"],
+    # Style profiles are daemon-owned CRUD data. Their DELETE endpoint is used
+    # from the Tauri/WebView origin, so it must survive the browser preflight
+    # just like the existing GET/POST options routes.
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "If-Match", "X-Aries-Token"],
+    expose_headers=["ETag"],
 )
 
 
@@ -357,6 +391,8 @@ def _websocket_token(websocket: WebSocket) -> str:
 @app.middleware("http")
 async def require_daemon_token(request: Request, call_next):
     token = _daemon_token()
+    if request.url.path.startswith("/api/style-lab/") and not token:
+        return PlainTextResponse("not found", status_code=404)
     if not token or request.method == "OPTIONS" or not request.url.path.startswith("/api/"):
         return await call_next(request)
     if _request_token(request) != token:
@@ -589,6 +625,26 @@ class IoExportBytesPayload(BaseModel):
     documentId: str | None = None
 
 
+class IoRenderedExportPayload(BaseModel):
+    kind: str
+    pngBase64: str
+    width: int
+    height: int
+    title: str | None = None
+    documentId: str | None = None
+    path: str
+
+
+class IoRenderedExportBytesPayload(BaseModel):
+    kind: str
+    pngBase64: str
+    width: int
+    height: int
+    title: str | None = None
+    documentId: str | None = None
+    filename: str | None = None
+
+
 class IoTextExportPayload(BaseModel):
     path: str
     text: str = ""
@@ -760,6 +816,46 @@ def io_export_bytes(payload: IoExportBytesPayload) -> dict:
             filename=payload.filename,
             document_id=payload.documentId,
             workspace=workspace_service,
+        )
+        data = result.pop("data")
+        result["dataBase64"] = base64.b64encode(data).decode("ascii")
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/io/export-rendered")
+def io_export_rendered(payload: IoRenderedExportPayload) -> dict:
+    """Write the PNG/PDF painted by the visible production chart renderer."""
+    try:
+        return io_service.export_rendered_chart(
+            kind=payload.kind,
+            path=payload.path,
+            png_base64=payload.pngBase64,
+            width=payload.width,
+            height=payload.height,
+            title=payload.title,
+            document_id=payload.documentId,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/io/export-rendered-bytes")
+def io_export_rendered_bytes(payload: IoRenderedExportBytesPayload) -> dict:
+    try:
+        result = io_service.export_rendered_chart_bytes(
+            kind=payload.kind,
+            png_base64=payload.pngBase64,
+            width=payload.width,
+            height=payload.height,
+            title=payload.title,
+            document_id=payload.documentId,
+            filename=payload.filename,
         )
         data = result.pop("data")
         result["dataBase64"] = base64.b64encode(data).decode("ascii")
@@ -970,8 +1066,31 @@ def chart_snapshot(
     anchor_name: Optional[str] = Query(default=None, alias="anchorName"),
     anchor_record_index: Optional[int] = Query(default=None, alias="anchorRecordIndex"),
     overlay_render_mode: str = Query(default="full", alias="overlayRenderMode"),
+    preview_variant: Optional[str] = Query(default=None, alias="previewVariant"),
+    preview_houses: Optional[bool] = Query(default=None, alias="previewHouses"),
+    preview_positions: Optional[bool] = Query(default=None, alias="previewPositions"),
+    preview_terms: Optional[bool] = Query(default=None, alias="previewTerms"),
+    preview_decans: Optional[bool] = Query(default=None, alias="previewDecans"),
+    preview_aspects: Optional[bool] = Query(default=None, alias="previewAspects"),
+    preview_minor_aspects: Optional[bool] = Query(default=None, alias="previewMinorAspects"),
+    preview_outer_ring: Optional[str] = Query(default=None, alias="previewOuterRing"),
+    preview_fixed_stars: Optional[bool] = Query(default=None, alias="previewFixedStars"),
 ) -> dict:
     try:
+        preview_values = {
+            "variant": preview_variant,
+            "houses": preview_houses,
+            "positions": preview_positions,
+            "terms": preview_terms,
+            "decans": preview_decans,
+            "aspects": preview_aspects,
+            "minorAspects": preview_minor_aspects,
+            "outerRing": preview_outer_ring,
+            "fixedStars": preview_fixed_stars,
+        }
+        preview_options = {
+            key: value for key, value in preview_values.items() if value is not None
+        }
         return chart_snapshot_service.snapshot(
             source=source,
             name=name,
@@ -983,9 +1102,12 @@ def chart_snapshot(
             anchor_name=anchor_name,
             anchor_record_index=anchor_record_index,
             overlay_render_mode=overlay_render_mode,
+            preview_options=preview_options or None,
         )
     except SystemExit as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -1854,6 +1976,15 @@ def astrocart_basemap() -> dict:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@app.get("/api/astrocart/style")
+def astrocart_display_style() -> dict:
+    """Profile-aware map style for chartless/global Astrocart consumers."""
+    try:
+        return astrocart_service.display_style_for_default_location()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @app.get("/api/astrocart/city-labels")
 def astrocart_city_labels(
     west: float,
@@ -1925,6 +2056,17 @@ def workspace_document_astrocart_style(doc_id: str) -> dict:
     """Display-only ACG palette/glyph payload; never recalculates lines."""
     try:
         return workspace_service.astrocart_display_style_for_document(doc_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/workspace/document/{doc_id}/astrocart/asterisms")
+def workspace_document_astrocart_asterisms(doc_id: str) -> dict:
+    """Date-correct asterism figures for the retained ACG overlay."""
+    try:
+        return workspace_service.astrocart_asterisms_geojson_for_document(doc_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
@@ -2252,6 +2394,63 @@ class ThemePresetPayload(BaseModel):
     name: str
 
 
+class StyleProfileUpsertPayload(BaseModel):
+    profile: dict[str, Any]
+    activate: bool = False
+
+
+class StyleProfileActivatePayload(BaseModel):
+    profileId: str | None = None
+
+
+class LegacyStyleMigrationPayload(BaseModel):
+    values: dict[str, Any]
+    activate: bool = True
+
+
+class StyleDraftCreatePayload(BaseModel):
+    draftId: str | None = None
+    sourceProfileId: str | None = None
+    profile: dict[str, Any] | None = None
+    profileId: str | None = None
+    name: str | None = None
+    scope: str | None = None
+    basePresetId: str | None = None
+
+
+class StyleDraftPatchPayload(BaseModel):
+    # Flat semantic-id delta. ``null`` removes an override and values are
+    # normalized through the portable profile validator before publication.
+    overrides: dict[str, Any] = Field(default_factory=dict)
+    # Direct class-level profile-v2 values stay out of the legacy public token
+    # catalog and use their own validated authoring channel.
+    authoringOverrides: dict[str, Any] = Field(default_factory=dict)
+    baseRevision: int | None = None
+
+
+class StyleDraftValidatePayload(BaseModel):
+    overrides: dict[str, Any] = Field(default_factory=dict)
+    authoringOverrides: dict[str, Any] = Field(default_factory=dict)
+    baseRevision: int | None = None
+
+
+class StyleDraftCommitPayload(BaseModel):
+    baseRevision: int | None = None
+    activate: bool = False
+    discard: bool = False
+
+
+class StyleLabChartSourcesPayload(BaseModel):
+    primaryId: str
+    comparisonId: str | None = None
+
+
+class StyleLabPreviewSnapshotPayload(BaseModel):
+    chartSources: StyleLabChartSourcesPayload
+    previewOptions: dict[str, Any] = Field(default_factory=dict)
+    fixtureState: dict[str, Any] = Field(default_factory=dict)
+
+
 @app.get("/api/about")
 def about_get() -> dict:
     """Aries-first About payload with release, license, and lineage metadata.
@@ -2283,6 +2482,501 @@ def options_theme_state() -> dict:
         return options_service.get_theme_state()
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/options/style-profiles")
+def options_style_profiles() -> dict:
+    """Named daemon-owned style profiles; localStorage is never authoritative."""
+    try:
+        return options_service.get_style_profiles()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/options/style-profiles/{profile_id}/export")
+def options_style_profile_export(profile_id: str) -> dict:
+    """Portable semantic-id profile payload suitable for a file export."""
+    try:
+        return options_service.get_style_profile_export(profile_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/options/style-profiles")
+def options_style_profile_save(payload: StyleProfileUpsertPayload) -> dict:
+    """Validate and atomically create/update a named portable style profile."""
+    try:
+        result = options_service.save_style_profile(payload.profile, activate=payload.activate)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    if result.get("refreshMode"):
+        workspace_service.broadcast_options_changed(
+            result.get("refreshedDocumentIds"), result.get("refreshMode"), style_only=True
+        )
+    return result
+
+
+@app.post("/api/options/style-profiles/import")
+def options_style_profile_import(payload: StyleProfileUpsertPayload) -> dict:
+    """Import uses the same strict validation and atomic write as profile save."""
+    return options_style_profile_save(payload)
+
+
+@app.post("/api/options/style-profiles/activate")
+def options_style_profile_activate(payload: StyleProfileActivatePayload) -> dict:
+    """Activate a profile, or pass null to reset to the daemon base theme."""
+    try:
+        result = options_service.activate_style_profile(payload.profileId)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    if result.get("refreshMode"):
+        workspace_service.broadcast_options_changed(
+            result.get("refreshedDocumentIds"), result.get("refreshMode"), style_only=True
+        )
+    return result
+
+
+@app.delete("/api/options/style-profiles/{profile_id}")
+def options_style_profile_delete(profile_id: str) -> dict:
+    try:
+        result = options_service.delete_style_profile(profile_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    if result.get("refreshMode"):
+        workspace_service.broadcast_options_changed(
+            result.get("refreshedDocumentIds"), result.get("refreshMode"), style_only=True
+        )
+    return result
+
+
+@app.post("/api/options/style-profiles/migrate-legacy")
+def options_style_profile_migrate_legacy(payload: LegacyStyleMigrationPayload) -> dict:
+    """Idempotently convert the quarantined 53-token browser payload."""
+    try:
+        result = options_service.migrate_legacy_style_tokens(
+            payload.values, activate=payload.activate
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    if result.get("refreshMode"):
+        workspace_service.broadcast_options_changed(
+            result.get("refreshedDocumentIds"), result.get("refreshMode"), style_only=True
+        )
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Chart Style Lab — ephemeral, revisioned profile authoring.
+# Draft pointer moves never write options and never rebuild a ChartSession.
+# The browser applies the published semantic delta to its retained canvas; an
+# explicit commit is the only path into the persistent StyleProfileStore.
+# ---------------------------------------------------------------------------
+
+
+def _style_draft_expected(request: Request, base_revision: int | None) -> str | int:
+    if_match = request.headers.get("If-Match", "").strip()
+    if if_match:
+        return if_match
+    if base_revision is not None:
+        return base_revision
+    raise HTTPException(
+        status_code=428,
+        detail="style draft mutation requires If-Match or baseRevision",
+    )
+
+
+def _set_style_draft_etag(response: Response, payload: dict) -> None:
+    etag = payload.get("etag")
+    if isinstance(etag, str) and etag:
+        response.headers["ETag"] = f'"{etag}"'
+    response.headers["Cache-Control"] = "no-store"
+
+
+def _raise_style_draft_error(exc: Exception) -> None:
+    from .style_draft_service import StyleDraftConflictError, StyleDraftNotFoundError
+
+    if isinstance(exc, StyleDraftConflictError):
+        raise HTTPException(
+            status_code=412,
+            detail={
+                "message": str(exc),
+                "current": exc.current,
+            },
+        ) from exc
+    if isinstance(exc, StyleDraftNotFoundError):
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _publish_style_draft(action: str, result: dict) -> None:
+    draft = result.get("draft") if isinstance(result.get("draft"), dict) else None
+    if draft is None and isinstance(result.get("overrides"), dict):
+        draft = result
+    try:
+        workspace_service.manager.broadcast_threadsafe({
+            "type": "style.draft.changed",
+            "action": action,
+            "draftId": result.get("draftId") or result.get("discardedDraftId"),
+            "revision": result.get("revision"),
+            "etag": result.get("etag"),
+            "draft": draft,
+            "changedTokenIds": list(result.get("changedTokenIds") or []),
+            "removedTokenIds": list(result.get("removedTokenIds") or []),
+            "changedAuthoringIds": list(result.get("changedAuthoringIds") or []),
+            "removedAuthoringIds": list(result.get("removedAuthoringIds") or []),
+            "refreshMode": "display-overlay",
+            "styleOnly": True,
+        })
+    except Exception:
+        # Publication is advisory. The checked mutation already succeeded and
+        # must not be reported as failed merely because a browser disconnected.
+        logging.getLogger(__name__).exception("style draft event publication failed")
+
+
+async def _read_limited_request_body(request: Request, maximum: int) -> bytes:
+    content_length = request.headers.get("content-length", "").strip()
+    if content_length:
+        try:
+            if int(content_length) > maximum:
+                raise HTTPException(status_code=413, detail="font upload is too large")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="invalid Content-Length") from exc
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > maximum:
+            raise HTTPException(status_code=413, detail="font upload is too large")
+    return bytes(body)
+
+
+def _style_lab_chart_source(source_id: str) -> dict[str, Any]:
+    """Resolve one opaque picker row ID without consulting workspace state."""
+    source_id = str(source_id or "").strip()
+    if not source_id:
+        raise HTTPException(status_code=400, detail="Style Lab chart source is required")
+    payload = chart_picker_service.rows()
+    rows = payload.get("rows", []) if isinstance(payload, dict) else []
+    exact = [row for row in rows if isinstance(row, dict) and row.get("key") == source_id]
+    if not exact:
+        # chartId is accepted as a compatibility source ID only when it is
+        # unambiguous across collections. New clients always send row.key.
+        exact = [
+            row for row in rows
+            if isinstance(row, dict) and row.get("chartId") and row.get("chartId") == source_id
+        ]
+    if len(exact) != 1:
+        raise HTTPException(status_code=404, detail="Style Lab chart source was not found")
+    row = exact[0]
+    return {
+        "id": source_id,
+        "source": str(row.get("source", "")),
+        "recordIndex": int(row.get("recordIndex", -1)),
+        "name": str(row.get("name", "")),
+    }
+
+
+@app.get("/api/style-lab/preview-schema")
+def style_lab_preview_schema(response: Response) -> dict:
+    try:
+        result = chart_snapshot_service.style_lab_preview_manifest()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    response.headers["Cache-Control"] = "no-store"
+    return result
+
+
+@app.post("/api/style-lab/preview-snapshot")
+def style_lab_preview_snapshot(
+    payload: StyleLabPreviewSnapshotPayload,
+    response: Response,
+) -> dict:
+    try:
+        primary = _style_lab_chart_source(payload.chartSources.primaryId)
+        comparison = (
+            _style_lab_chart_source(payload.chartSources.comparisonId)
+            if payload.chartSources.comparisonId
+            else None
+        )
+        result = chart_snapshot_service.style_lab_snapshot(
+            primary_source=primary,
+            comparison_source=comparison,
+            preview_options=payload.previewOptions,
+            fixture_state=payload.fixtureState,
+        )
+    except HTTPException:
+        raise
+    except SystemExit as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    response.headers["Cache-Control"] = "no-store"
+    return result
+
+
+@app.get("/api/style-lab/catalog")
+def style_lab_catalog(
+    response: Response,
+    q: str | None = None,
+    scope: str | None = None,
+    token_type: str | None = Query(default=None, alias="type"),
+) -> dict:
+    try:
+        result = style_draft_service.catalog(query=q, scope=scope, token_type=token_type)
+    except ValueError as exc:
+        _raise_style_draft_error(exc)
+    response.headers["Cache-Control"] = "no-store"
+    return result
+
+
+@app.get("/api/style-lab/authoring-schema")
+def style_lab_authoring_schema(response: Response) -> dict:
+    from .style_authoring_service import authoring_schema
+
+    response.headers["Cache-Control"] = "no-store"
+    return authoring_schema()
+
+
+@app.get("/api/style-lab/catalog/{semantic_id}")
+def style_lab_catalog_token(semantic_id: str, response: Response) -> dict:
+    try:
+        result = style_draft_service.catalog_token(semantic_id)
+    except ValueError as exc:
+        _raise_style_draft_error(exc)
+    response.headers["Cache-Control"] = "no-store"
+    return result
+
+
+@app.get("/api/style-lab/fonts")
+def style_lab_font_list(response: Response) -> dict:
+    try:
+        result = style_font_store().list_assets()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    response.headers["Cache-Control"] = "no-store"
+    return result
+
+
+@app.post("/api/style-lab/fonts", status_code=201)
+async def style_lab_font_add(
+    request: Request,
+    response: Response,
+    file_name: str = Query(alias="fileName", min_length=1, max_length=240),
+    role: str = Query(default="text"),
+    license_note: str = Query(default="", alias="licenseNote", max_length=1000),
+) -> dict:
+    from .style_font_service import MAX_FONT_BYTES
+
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if content_type != "application/octet-stream":
+        raise HTTPException(
+            status_code=415,
+            detail="font upload requires application/octet-stream",
+        )
+    try:
+        result = style_font_store().add(
+            await _read_limited_request_body(request, MAX_FONT_BYTES),
+            original_name=file_name,
+            role=role,
+            license_note=license_note,
+        )
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    response.headers["Cache-Control"] = "no-store"
+    return result
+
+
+@app.get("/api/style-lab/fonts/{asset_id}/file")
+def style_lab_font_file(asset_id: str):
+    try:
+        store = style_font_store()
+        asset = store.asset(asset_id)
+        path = store.asset_path(asset_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return FileResponse(
+        path,
+        media_type=str(asset.get("mediaType") or "application/octet-stream"),
+        headers={"Cache-Control": "private, max-age=31536000, immutable"},
+    )
+
+
+@app.get("/api/style-lab/drafts")
+def style_lab_draft_list(response: Response) -> dict:
+    result = style_draft_service.list_drafts()
+    response.headers["Cache-Control"] = "no-store"
+    return result
+
+
+@app.post("/api/style-lab/drafts", status_code=201)
+def style_lab_draft_create(payload: StyleDraftCreatePayload, response: Response) -> dict:
+    try:
+        if payload.profile is not None and payload.sourceProfileId is not None:
+            raise ValueError("pass profile or sourceProfileId, not both")
+        source_profile = payload.profile
+        if payload.sourceProfileId is not None:
+            if payload.sourceProfileId == "active":
+                source_profile = options_service.get_active_style_profile()
+                if source_profile is None:
+                    raise HTTPException(status_code=404, detail="there is no active style profile")
+            else:
+                source_profile = options_service.get_style_profile_export(payload.sourceProfileId)
+        resolved_base_preset_id = (
+            payload.basePresetId
+            if payload.basePresetId is not None
+            else (source_profile or {}).get("basePresetId")
+        )
+        options_service.validate_style_profile_base({"basePresetId": resolved_base_preset_id})
+        result = style_draft_service.create_draft(
+            draft_id=payload.draftId,
+            profile=source_profile,
+            profile_id=payload.profileId,
+            name=payload.name,
+            scope=payload.scope,
+            base_preset_id=payload.basePresetId,
+        )
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        _raise_style_draft_error(exc)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    _set_style_draft_etag(response, result)
+    _publish_style_draft("created", result)
+    return result
+
+
+@app.get("/api/style-lab/drafts/{draft_id}")
+def style_lab_draft_get(draft_id: str, response: Response) -> dict:
+    try:
+        result = style_draft_service.get_draft(draft_id)
+    except ValueError as exc:
+        _raise_style_draft_error(exc)
+    _set_style_draft_etag(response, result)
+    return result
+
+
+@app.patch("/api/style-lab/drafts/{draft_id}")
+def style_lab_draft_patch(
+    draft_id: str,
+    payload: StyleDraftPatchPayload,
+    request: Request,
+    response: Response,
+) -> dict:
+    expected = _style_draft_expected(request, payload.baseRevision)
+    try:
+        result = style_draft_service.patch_draft(
+            draft_id,
+            payload.overrides,
+            authoring_overrides=payload.authoringOverrides,
+            expected=expected,
+        )
+    except ValueError as exc:
+        _raise_style_draft_error(exc)
+    _set_style_draft_etag(response, result)
+    if result.get("changed"):
+        _publish_style_draft("patched", result)
+    return result
+
+
+@app.post("/api/style-lab/drafts/{draft_id}/validate")
+def style_lab_draft_validate(
+    draft_id: str,
+    payload: StyleDraftValidatePayload,
+    request: Request,
+    response: Response,
+) -> dict:
+    expected = request.headers.get("If-Match", "").strip() or payload.baseRevision
+    try:
+        result = style_draft_service.validate_draft(
+            draft_id,
+            payload.overrides,
+            authoring_overrides=payload.authoringOverrides,
+            expected=expected,
+        )
+        options_service.validate_style_profile_base(result.get("profile"))
+    except ValueError as exc:
+        _raise_style_draft_error(exc)
+    _set_style_draft_etag(response, result)
+    return result
+
+
+@app.post("/api/style-lab/drafts/{draft_id}/commit")
+def style_lab_draft_commit(
+    draft_id: str,
+    payload: StyleDraftCommitPayload,
+    request: Request,
+    response: Response,
+) -> dict:
+    expected = _style_draft_expected(request, payload.baseRevision)
+    try:
+        if payload.activate:
+            raise ValueError(
+                "Style Lab commits never activate application styles; activate a saved profile separately"
+            )
+        result = style_draft_service.commit_draft(
+            draft_id,
+            expected=expected,
+            persist=lambda profile: options_service.save_style_profile(
+                profile,
+                activate=False,
+            ),
+            discard=payload.discard,
+        )
+    except ValueError as exc:
+        _raise_style_draft_error(exc)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    persistence = result.get("persistence") or {}
+    if persistence.get("refreshMode"):
+        workspace_service.broadcast_options_changed(
+            persistence.get("refreshedDocumentIds"),
+            persistence.get("refreshMode"),
+            style_only=True,
+        )
+    _set_style_draft_etag(response, result)
+    _publish_style_draft("committed", result)
+    return result
+
+
+@app.delete("/api/style-lab/drafts/{draft_id}")
+def style_lab_draft_discard(
+    draft_id: str,
+    request: Request,
+    response: Response,
+    base_revision: int | None = Query(default=None, alias="baseRevision"),
+) -> dict:
+    expected = _style_draft_expected(request, base_revision)
+    try:
+        result = style_draft_service.discard_draft(draft_id, expected=expected)
+    except ValueError as exc:
+        _raise_style_draft_error(exc)
+    response.headers["Cache-Control"] = "no-store"
+    _publish_style_draft("discarded", result)
+    return result
 
 
 @app.get("/api/options/quickcharts-prompt-predicate")
@@ -2339,6 +3033,8 @@ def options_set(payload: OptionsPatchPayload) -> dict:
         workspace_service.broadcast_options_changed(
             result.get("refreshedDocumentIds"),
             result.get("refreshMode"),
+            style_only=result.get("refreshMode") == "ui-style",
+            list_data_changed=result.get("listDataChanged", True),
         )
     return result
 
@@ -2400,6 +3096,7 @@ def options_theme(payload: ThemePresetPayload) -> dict:
     workspace_service.broadcast_options_changed(
         result.get("refreshedDocumentIds"),
         result.get("refreshMode"),
+        list_data_changed=False,
     )
     return result
 
@@ -2414,6 +3111,7 @@ def options_colors_defaults() -> dict:
     workspace_service.broadcast_options_changed(
         result.get("refreshedDocumentIds"),
         result.get("refreshMode"),
+        list_data_changed=False,
     )
     return result
 
@@ -2446,6 +3144,7 @@ def options_cycle_secondary() -> dict:
     workspace_service.broadcast_options_changed(
         result.get("refreshedDocumentIds"),
         result.get("refreshMode"),
+        list_data_changed=False,
     )
     return result
 
@@ -2462,6 +3161,7 @@ def options_toggle_houses() -> dict:
     workspace_service.broadcast_options_changed(
         result.get("refreshedDocumentIds"),
         result.get("refreshMode"),
+        list_data_changed=False,
     )
     return result
 
@@ -2477,6 +3177,7 @@ def options_toggle_aspects() -> dict:
     workspace_service.broadcast_options_changed(
         result.get("refreshedDocumentIds"),
         result.get("refreshMode"),
+        list_data_changed=False,
     )
     return result
 
@@ -2492,6 +3193,7 @@ def options_toggle_minor_aspects() -> dict:
     workspace_service.broadcast_options_changed(
         result.get("refreshedDocumentIds"),
         result.get("refreshMode"),
+        list_data_changed=False,
     )
     return result
 
@@ -2627,6 +3329,7 @@ class WorkspaceNavigateKeyPayload(BaseModel):
     key: str  # 'left' | 'right' | 'up' | 'down' | 'space'
     shift: bool = False
     alt: bool = False
+    repeat: int = Field(default=1, ge=1, le=64)
 
 
 class WorkspaceToggleComparisonPayload(BaseModel):
@@ -3697,7 +4400,10 @@ def workspace_navigate(payload: WorkspaceNavigatePayload) -> dict:
 
 
 @app.post("/api/workspace/navigate-key")
-def workspace_navigate_key(payload: WorkspaceNavigateKeyPayload) -> dict:
+def workspace_navigate_key(
+    payload: WorkspaceNavigateKeyPayload,
+    perf: bool = Query(default=False),
+) -> dict:
     """Canonical arrow-key navigation (wx-free twin of
     keyboard_layers.handle_transit_key_event). ``space`` resets; arrows route to
     ChartSession._navigate_intrinsically (transit/root: day/hour/minute/week/
@@ -3706,7 +4412,12 @@ def workspace_navigate_key(payload: WorkspaceNavigateKeyPayload) -> dict:
     Spec: doc/migration/surfaces/arrow-stepping.md."""
     try:
         return workspace_service.navigate_key(
-            payload.docId, payload.key, shift=payload.shift, alt=payload.alt,
+            payload.docId,
+            payload.key,
+            shift=payload.shift,
+            alt=payload.alt,
+            repeat=payload.repeat,
+            include_perf=perf,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

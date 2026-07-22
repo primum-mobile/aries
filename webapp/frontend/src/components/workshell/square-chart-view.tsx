@@ -6,9 +6,18 @@
 import * as React from "react";
 
 import { useStyleRevision } from "@/hooks/use-style-revision";
+import { readPalette } from "@/lib/chart/palette";
+import {
+  resolveSquareFrameWidths,
+  resolveSquareRenderStyle,
+  resolveSquareTypographyMetrics,
+  type SquareRenderPalette,
+  type SquareRenderStyle,
+} from "@/lib/chart/square-render-style";
 import { fetchSquareChart, type SquareChartData, type SquareChartPlanet } from "@/lib/daemon/client";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 import { useT } from "@/lib/i18n/i18n";
+import { createResolvedSemanticChartColorResolver } from "@/lib/theme/semantic-color";
 
 // Square Chart renderer. The wx source is squarechart.py: drawChart() owns the
 // proportions, line topology, font scale, central text block, cusp coordinate
@@ -25,33 +34,12 @@ type FontSet = {
 type Point = [number, number];
 type CuspAnchor = [Point, Point, Point];
 
-const SMALL_SIZE = 400;
-const MEDIUM_SIZE = 600;
-const DEFAULT_COLORS = {
-  background: "#232428",
-  frame: "#dcdcdd",
-  texts: "#98999c",
-  positions: "#ffffff",
-  signs: "#d7d7d9",
-};
-
 function z2(n: number): string {
   return String(n).padStart(2, "0");
 }
 
 function rjust2(n: number): string {
   return String(n).padStart(2, " ");
-}
-
-function lineWidth(chartSize: number, outer: boolean): number {
-  if (outer) {
-    if (chartSize <= SMALL_SIZE) return 2;
-    if (chartSize <= MEDIUM_SIZE) return 3;
-    return 4;
-  }
-  if (chartSize <= SMALL_SIZE) return 1;
-  if (chartSize <= MEDIUM_SIZE) return 2;
-  return 3;
 }
 
 function drawText(
@@ -72,6 +60,17 @@ function drawText(
 function textWidth(ctx: CanvasRenderingContext2D, text: string, font: string): number {
   ctx.font = font;
   return ctx.measureText(text).width;
+}
+
+function readSquarePalette(host: HTMLElement): SquareRenderPalette {
+  const palette = readPalette(host);
+  return Object.freeze({
+    background: palette.background,
+    frame: palette.frame,
+    texts: palette.textBright,
+    positions: palette.positions,
+    signs: palette.signs,
+  });
 }
 
 function cuspAnchors(cx: number, cy: number, r: number, f: number): CuspAnchor[] {
@@ -108,11 +107,17 @@ function planetAnchors(cx: number, cy: number, r: number, f: number): Point[] {
   ];
 }
 
-function drawFrame(ctx: CanvasRenderingContext2D, side: number, cx: number, cy: number, r: number, color: string) {
-  const outerW = lineWidth(side, true);
-  const innerW = lineWidth(side, false);
+function drawFrame(
+  ctx: CanvasRenderingContext2D,
+  side: number,
+  cx: number,
+  cy: number,
+  r: number,
+  style: SquareRenderStyle,
+) {
+  const { outer: outerW, inner: innerW } = resolveSquareFrameWidths(style, side);
 
-  ctx.strokeStyle = color;
+  ctx.strokeStyle = style.palette.frame;
   ctx.lineCap = "butt";
   ctx.lineJoin = "miter";
   ctx.lineWidth = outerW;
@@ -134,7 +139,12 @@ function drawFrame(ctx: CanvasRenderingContext2D, side: number, cx: number, cy: 
   ctx.moveTo(cx + r, cy - r);
   ctx.lineTo(cx + r / 2, cy - r / 2);
   ctx.stroke();
-  ctx.strokeRect(cx - r / 2, cy - r / 2, r + 1, r + 1);
+  ctx.strokeRect(
+    cx - r / 2,
+    cy - r / 2,
+    r + style.layout.innerFramePixelAdjustment,
+    r + style.layout.innerFramePixelAdjustment,
+  );
 }
 
 function drawPlanetRow(
@@ -144,6 +154,8 @@ function drawPlanetRow(
   y: number,
   fonts: FontSet,
   fontSize: number,
+  style: SquareRenderStyle,
+  resolveColor: ReturnType<typeof createResolvedSemanticChartColorResolver>,
 ) {
   const wpl = textWidth(ctx, "F", fonts.morinusSmall);
   const wpl2 = textWidth(ctx, p.glyph, fonts.morinusSmall);
@@ -153,17 +165,30 @@ function drawPlanetRow(
   const txtmin = `${z2(p.min)}'`;
   const wdeg = textWidth(ctx, txtdeg, fonts.textSmall);
   const wsg = textWidth(ctx, p.signGlyph, fonts.morinusSmall);
+  const color = resolveColor(p.colorRole, p.color) ?? p.color;
 
-  drawText(ctx, p.glyph, x, y, fonts.morinusSmall, p.color);
+  drawText(ctx, p.glyph, x, y, fonts.morinusSmall, color);
   if (p.motion) {
-    drawText(ctx, p.motion, x + wpl2, y + fontSize / 2, fonts.textSmaller, p.color);
+    drawText(
+      ctx,
+      p.motion,
+      x + wpl2,
+      y + fontSize * style.layout.motionBaselineScale,
+      fonts.textSmaller,
+      color,
+    );
   }
-  drawText(ctx, txtdeg, x + wpl + wr + wsp, y, fonts.textSmall, p.color);
-  drawText(ctx, p.signGlyph, x + wpl + wr + wsp + wdeg, y, fonts.morinusSmall, p.color);
-  drawText(ctx, txtmin, x + wpl + wr + wsp + wdeg + wsp + wsg, y, fonts.textSmaller, p.color);
+  drawText(ctx, txtdeg, x + wpl + wr + wsp, y, fonts.textSmall, color);
+  drawText(ctx, p.signGlyph, x + wpl + wr + wsp + wdeg, y, fonts.morinusSmall, color);
+  drawText(ctx, txtmin, x + wpl + wr + wsp + wdeg + wsp + wsg, y, fonts.textSmaller, color);
 }
 
-function drawSquareChart(canvas: HTMLCanvasElement, data: SquareChartData, side: number, textFontFamily: string) {
+function drawSquareChart(
+  canvas: HTMLCanvasElement,
+  data: SquareChartData,
+  side: number,
+  style: SquareRenderStyle,
+) {
   const dpr = window.devicePixelRatio || 1;
   canvas.width = Math.max(1, Math.round(side * dpr));
   canvas.height = Math.max(1, Math.round(side * dpr));
@@ -174,34 +199,31 @@ function drawSquareChart(canvas: HTMLCanvasElement, data: SquareChartData, side:
   if (!ctx) return;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  const colors = data.colors ?? DEFAULT_COLORS;
+  const colors = style.palette;
+  const resolveColor = createResolvedSemanticChartColorResolver();
+  const layout = style.layout;
   const maxradius = side / 2;
-  const radius = maxradius * 0.9;
+  const radius = maxradius * layout.radiusScale;
   const cx = side / 2;
   const cy = side / 2;
-  const symbolSize = Math.max(8, maxradius / 16);
-  const smallSize = Math.max(6, maxradius / 18);
-  const fontSize = Math.max(6, Math.round(symbolSize));
-  const smallPx = Math.max(6, Math.round(smallSize));
-  const textSmallPx = Math.max(6, Math.round(3 * fontSize / 4));
-  const textSmallerPx = Math.max(6, Math.round(fontSize / 2));
+  const typography = style.typography;
+  const metrics = resolveSquareTypographyMetrics(style, maxradius);
+  const { fontSize, lineHeight } = metrics;
   const fonts: FontSet = {
-    text: `${fontSize}px ${textFontFamily}`,
-    textSmall: `${textSmallPx}px ${textFontFamily}`,
-    textSmaller: `${textSmallerPx}px ${textFontFamily}`,
-    morinus: `${fontSize}px "AriesMorinus"`,
-    morinusSmall: `${smallPx}px "AriesMorinus"`,
+    text: `${fontSize}px ${typography.fontUi}`,
+    textSmall: `${metrics.smallTextSize}px ${typography.fontUi}`,
+    textSmaller: `${metrics.smallerTextSize}px ${typography.fontUi}`,
+    morinus: `${fontSize}px ${typography.fontSymbols}`,
+    morinusSmall: `${metrics.smallSymbolSize}px ${typography.fontSymbols}`,
   };
-  const space = fontSize / 5;
-  const lineHeight = space + fontSize + space;
 
   ctx.clearRect(0, 0, side, side);
   ctx.fillStyle = colors.background;
   ctx.fillRect(0, 0, side, side);
-  drawFrame(ctx, side, cx, cy, radius, colors.frame);
+  drawFrame(ctx, side, cx, cy, radius, style);
 
-  const infoX = cx - radius / 3;
-  let infoY = cy - radius / 3;
+  const infoX = cx - radius / layout.infoRadiusDivisor;
+  let infoY = cy - radius / layout.infoRadiusDivisor;
   const dayHour = data.dayHour ?? [];
   if (dayHour.length) infoY -= lineHeight;
   data.info.forEach((line, i) => {
@@ -235,7 +257,16 @@ function drawSquareChart(canvas: HTMLCanvasElement, data: SquareChartData, side:
       lhoff -= Math.trunc(shift / 2) * lh;
     }
     for (const p of planets) {
-      drawPlanetRow(ctx, p, plist[i][0], plist[i][1] + lhoff, fonts, fontSize);
+      drawPlanetRow(
+        ctx,
+        p,
+        plist[i][0],
+        plist[i][1] + lhoff,
+        fonts,
+        fontSize,
+        style,
+        resolveColor,
+      );
       lhoff += lh;
     }
   }
@@ -307,9 +338,16 @@ export function SquareChartView({
     const draw = async () => {
       if (document.fonts?.ready) await document.fonts.ready;
       if (cancelled || !canvasRef.current) return;
-      const css = getComputedStyle(canvasRef.current);
+      const canvas = canvasRef.current;
+      const css = getComputedStyle(canvas);
       const textFontFamily = css.getPropertyValue("--morinus-font-text").trim() || "'FreeSans', ui-sans-serif, system-ui, sans-serif";
-      drawSquareChart(canvasRef.current, data, side, textFontFamily);
+      const renderStyle = resolveSquareRenderStyle(canvas, {
+        revision: styleRevision,
+        palette: readSquarePalette(canvas),
+        fontUi: textFontFamily,
+        fontSymbols: '"AriesMorinus"',
+      });
+      drawSquareChart(canvas, data, side, renderStyle);
     };
     void draw();
     return () => {
@@ -321,14 +359,14 @@ export function SquareChartView({
     <div
       ref={wrapRef}
       className="font-morinus-text relative flex flex-1 min-h-0 items-center justify-center overflow-hidden bg-background"
-      style={data?.colors?.background ? { backgroundColor: data.colors.background } : undefined}
+      style={data ? { backgroundColor: "var(--morinus-background)" } : undefined}
     >
       {data ? (
         <canvas ref={canvasRef} className="block" aria-label={t("square.chartAria")} />
       ) : error ? (
-        <div className="text-[12px] text-destructive">{t("square.failed", { error })}</div>
+        <div className="text-[length:var(--aries-font-size-base)] text-destructive">{t("square.failed", { error })}</div>
       ) : (
-        <div className="text-[12px] text-muted-foreground">{t("square.loading")}</div>
+        <div className="text-[length:var(--aries-font-size-base)] text-muted-foreground">{t("square.loading")}</div>
       )}
     </div>
   );

@@ -12,10 +12,17 @@ import type {
   GenericTableRow,
   OptionsPatch,
 } from "@/lib/daemon/client";
-import { LIST_ROLE_CLASSES, LIST_ROW_HEIGHT } from "@/lib/list-tokens";
+import { LIST_ROLE_CLASSES, useListRowHeight } from "@/lib/list-tokens";
 import { useT, type TFunc } from "@/lib/i18n/i18n";
+import { semanticChartColor } from "@/lib/theme/semantic-color";
 import { cn } from "@/lib/utils";
 import { DateTransitLink, TimedChartContextMenu } from "./directions-view";
+import {
+  PANE_CONTROL_CLASSES,
+  PaneControlBar,
+  PaneInfoBar,
+  PaneSelect,
+} from "./list-controls";
 import { ColumnResizeHandle, useResizableTableColumns } from "./resizable-table-columns";
 
 type Props = {
@@ -34,12 +41,13 @@ type BindingOption = {
 type ViewportAnchor = {
   periodStart: string | null;
   rowId: string | null;
-  offset: number;
+  rowFraction: number;
   scrollTop: number;
+  rowHeight: number;
 };
 
-const ROW_HEIGHT = LIST_ROW_HEIGHT.symbolic;
 const OVERSCAN_ROWS = 10;
+const TIME_LORD_VIRTUAL_SCROLL_SYNC_EVENT = "aries:time-lord-virtual-scroll-sync";
 
 export function TimeLordTableView({
   documentId,
@@ -47,6 +55,7 @@ export function TimeLordTableView({
   onBindingChange,
   onOptionsChange,
 }: Props) {
+  const rowHeight = useListRowHeight("symbolic");
   const payloadKey = React.useMemo(() => expansionKey(payload), [payload]);
   const focusKey = React.useMemo(() => currentFocusKey(documentId, payload), [documentId, payload]);
   const initialIds = React.useMemo(() => initialExpanded(payload), [payload]);
@@ -110,21 +119,43 @@ export function TimeLordTableView({
   const captureViewportAnchor = React.useCallback(() => {
     const scroller = scrollerRef.current;
     if (!scroller || visibleRows.length === 0) return;
-    const anchorY = scroller.scrollTop + scroller.clientHeight * 0.35;
-    const index = Math.max(0, Math.min(visibleRows.length - 1, Math.floor(anchorY / ROW_HEIGHT)));
+    const viewportAnchor = scroller.clientHeight * 0.35;
+    const anchorY = scroller.scrollTop + viewportAnchor;
+    const anchorUnits = anchorY / rowHeight;
+    const index = Math.max(
+      0,
+      Math.min(visibleRows.length - 1, Math.floor(anchorUnits)),
+    );
     const row = visibleRows[index];
     viewportAnchorRef.current = {
       periodStart: stringOrUndefined(row?.meta?.periodStart) ?? null,
       rowId: row?.id ?? null,
-      offset: scroller.scrollTop - index * ROW_HEIGHT,
+      rowFraction: Math.max(0, Math.min(1, anchorUnits - index)),
       scrollTop: scroller.scrollTop,
+      rowHeight,
     };
-  }, [visibleRows]);
+  }, [rowHeight, visibleRows]);
 
   const setProgrammaticScrollTop = React.useCallback((scroller: HTMLDivElement, value: number) => {
     programmaticScrollUntilRef.current = Date.now() + 120;
     scroller.scrollTop = value;
+    scroller.dispatchEvent(new Event(TIME_LORD_VIRTUAL_SCROLL_SYNC_EVENT));
   }, []);
+
+  const previousRowHeightRef = React.useRef(rowHeight);
+  React.useLayoutEffect(() => {
+    const previousRowHeight = previousRowHeightRef.current;
+    previousRowHeightRef.current = rowHeight;
+    if (previousRowHeight === rowHeight) return;
+    const scroller = scrollerRef.current;
+    if (!scroller || visibleRows.length === 0) return;
+    const viewportAnchor = scroller.clientHeight * 0.35;
+    const anchorUnits = (scroller.scrollTop + viewportAnchor) / previousRowHeight;
+    setProgrammaticScrollTop(
+      scroller,
+      Math.max(0, anchorUnits * rowHeight - viewportAnchor),
+    );
+  }, [rowHeight, setProgrammaticScrollTop, visibleRows.length]);
 
   React.useLayoutEffect(() => {
     if (focusIndex < 0) return undefined;
@@ -136,7 +167,10 @@ export function TimeLordTableView({
       if (cancelled) return;
       const scroller = scrollerRef.current;
       if (!scroller) return;
-      const target = Math.max(0, focusIndex * ROW_HEIGHT - scroller.clientHeight * 0.35);
+      const target = Math.max(
+        0,
+        focusIndex * previousRowHeightRef.current - scroller.clientHeight * 0.35,
+      );
       setProgrammaticScrollTop(scroller, target);
       focusedForKeyRef.current = focusKey;
     };
@@ -159,8 +193,13 @@ export function TimeLordTableView({
       if (cancelled) return;
       const scroller = scrollerRef.current;
       if (!scroller) return;
-      const index = nearestPeriodRowIndex(visibleRows, anchor);
-      const target = Math.max(0, index * ROW_HEIGHT + anchor.offset);
+      const currentRowHeight = previousRowHeightRef.current;
+      const index = nearestPeriodRowIndex(visibleRows, anchor, currentRowHeight);
+      const rowFraction = Number.isFinite(anchor.rowFraction) ? anchor.rowFraction : 0;
+      const target = Math.max(
+        0,
+        (index + rowFraction) * currentRowHeight - scroller.clientHeight * 0.35,
+      );
       setProgrammaticScrollTop(scroller, target);
       pendingViewportRestoreFromKeyRef.current = null;
     };
@@ -183,7 +222,7 @@ export function TimeLordTableView({
     manualViewportRef.current = true;
   }, [isZodiacalReleasing]);
 
-  const virtual = useVirtualRows(scrollerRef, visibleRows.length);
+  const virtual = useVirtualRows(scrollerRef, visibleRows.length, rowHeight);
   const renderedRows = visibleRows.slice(virtual.startIndex, virtual.endIndex);
   const rowById = React.useMemo(() => {
     const rows = new Map<string, GenericTableRow>();
@@ -327,7 +366,7 @@ export function TimeLordTableView({
           style={tableResize.tableStyle}
         >
           {tableResize.colGroup}
-          <thead className="sticky top-0 z-10 bg-[color:var(--aries-surface)]">
+          <thead className="sticky top-0 z-10 bg-background">
             <tr>
               {payload.columns.map((column) => (
                 <th
@@ -339,7 +378,7 @@ export function TimeLordTableView({
                   style={{
                     fontFamily: column.headerGlyph ? "'AriesMorinus'" : undefined,
                     fontWeight: column.headerGlyph ? 400 : undefined,
-                    color: column.colorHex ?? undefined,
+                    color: semanticChartColor(column.colorRole, column.colorHex),
                   }}
                 >
                   {column.label}
@@ -362,6 +401,7 @@ export function TimeLordTableView({
                 rowById={rowById}
                 expanded={expanded.has(row.id)}
                 onToggle={toggleExpanded}
+                rowHeight={rowHeight}
               />
             ))}
             {virtual.paddingBottom > 0 ? <VirtualSpacerRow colSpan={payload.columns.length} height={virtual.paddingBottom} /> : null}
@@ -386,9 +426,9 @@ function TimeLordHeader({ payload }: { payload: GenericTablePayload }) {
   const title = headerTitle(payload, system, t);
   if (!title) return null;
   return (
-    <div className="flex shrink-0 items-center gap-2 border-b border-[color:var(--aries-border-subtle)] px-3 py-1.5 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)]">
+    <PaneInfoBar className="gap-[var(--aries-pane-control-gap-y)]">
       {title}
-    </div>
+    </PaneInfoBar>
   );
 }
 
@@ -405,7 +445,15 @@ function headerTitle(payload: GenericTablePayload, system: string, t: TFunc): Re
       <>
         <span className="text-[color:var(--aries-text-muted)]">{String(header.startLabel ?? t("timelord.start"))}:</span>
         {startIsPlanet ? (
-          <span style={{ fontFamily: "'AriesMorinus'", color: stringOrUndefined(header.startColorHex) }}>
+          <span
+            style={{
+              fontFamily: "'AriesMorinus'",
+              color: semanticChartColor(
+                stringOrUndefined(header.startColorRole),
+                stringOrUndefined(header.startColorHex),
+              ),
+            }}
+          >
             {String(header.startGlyph ?? "")}
           </span>
         ) : (
@@ -422,10 +470,25 @@ function headerTitle(payload: GenericTablePayload, system: string, t: TFunc): Re
           {String(header.releaserHeading ?? t("timelord.releaser"))}: {String(header.releaserLabel ?? "")}
         </span>
         <span className="text-[color:var(--aries-text-muted)]">{String(header.inLabel ?? t("timelord.in"))}</span>
-        <span style={{ fontFamily: "'AriesMorinus'", color: colorAt(header.signColors, asNumber(header.signIndex, 0)) }}>
+        <span
+          style={{
+            fontFamily: "'AriesMorinus'",
+            color: semanticChartColor(
+              colorAt(header.signColorRoles, asNumber(header.signIndex, 0)),
+              colorAt(header.signColors, asNumber(header.signIndex, 0)),
+            ),
+          }}
+        >
           {String(header.signGlyph ?? "")}
         </span>
-        <span style={{ color: colorAt(header.signColors, asNumber(header.signIndex, 0)) }}>
+        <span
+          style={{
+            color: semanticChartColor(
+              colorAt(header.signColorRoles, asNumber(header.signIndex, 0)),
+              colorAt(header.signColors, asNumber(header.signIndex, 0)),
+            ),
+          }}
+        >
           {String(header.signName ?? "")}
         </span>
         {header.degreeText ? <span>{String(header.degreeText)}</span> : null}
@@ -471,8 +534,8 @@ function BindingControls({
     const header = asRecord(capabilities.firdaria);
     const isFirBonatti = Boolean(bindings.isfirbonatti);
     return (
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface-subtle)] px-3 py-2">
-        <label className="inline-flex h-7 items-center gap-1.5 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)]">
+      <PaneControlBar>
+        <label className={PANE_CONTROL_CLASSES.checkboxLabel}>
           <input
             type="checkbox"
             checked={isFirBonatti}
@@ -481,19 +544,18 @@ function BindingControls({
           />
           {String(header.bonattiToggleLabel ?? t("timelord.useBonattiNocturnalOrder"))}
         </label>
-      </div>
+      </PaneControlBar>
     );
   }
   if (capabilities.timeLordSystem === "decennials") {
     const startOptions = asOptions(options.startToken);
     return (
-      <div className="flex shrink-0 items-center gap-2 border-b border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface-subtle)] px-3 py-2">
+      <PaneControlBar wrap={false}>
         <label className="text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]" htmlFor="decennial-start">
           {t("timelord.start")}
         </label>
-        <select
+        <PaneSelect
           id="decennial-start"
-          className="h-7 rounded border border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface)] px-2 text-[length:var(--aries-font-size-small)]"
           value={String(bindings.start_token ?? "sect")}
           disabled={pending}
           onChange={(event) => void onBindingChange({ start_token: event.target.value })}
@@ -503,8 +565,8 @@ function BindingControls({
               {option.label ?? String(option.value)}
             </option>
           ))}
-        </select>
-      </div>
+        </PaneSelect>
+      </PaneControlBar>
     );
   }
   if (capabilities.timeLordSystem === "triplicity_directions") {
@@ -513,13 +575,15 @@ function BindingControls({
     const startSign = asNumber(bindings.start_sign, asNumber(header.baseSign, 0));
     const extendedDepth = Boolean(bindings.extended_depth);
     return (
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface-subtle)] px-3 py-1.5">
+      <PaneControlBar
+        density="compact"
+        className="gap-[var(--aries-pane-control-gap-y)]"
+      >
         <label className="text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]" htmlFor="triplicity-start-sign">
           {t("timelord.start")}
         </label>
-        <select
+        <PaneSelect
           id="triplicity-start-sign"
-          className="h-7 rounded border border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface)] px-2 text-[length:var(--aries-font-size-small)]"
           value={String(startSign)}
           disabled={pending}
           onChange={(event) =>
@@ -535,8 +599,8 @@ function BindingControls({
               {option.label ?? String(option.value)}
             </option>
           ))}
-        </select>
-        <label className="inline-flex h-7 items-center gap-1.5 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)]">
+        </PaneSelect>
+        <label className={PANE_CONTROL_CLASSES.checkboxLabel}>
           <input
             type="checkbox"
             checked={extendedDepth}
@@ -552,7 +616,7 @@ function BindingControls({
         <span className="text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]">
           {t("timelord.levelsPer90Years", { levels: String(header.maxLevel ?? (extendedDepth ? 15 : 9)) })}
         </span>
-      </div>
+      </PaneControlBar>
     );
   }
   if (capabilities.timeLordSystem === "zodiacal_releasing") {
@@ -561,13 +625,12 @@ function BindingControls({
     const header = asRecord(capabilities.zr);
     const releaser = String(bindings.releaser ?? "spirit");
     return (
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface-subtle)] px-3 py-2">
+      <PaneControlBar>
         <label className="text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]" htmlFor="zr-releaser">
           {t("timelord.releaser")}
         </label>
-        <select
+        <PaneSelect
           id="zr-releaser"
-          className="h-7 rounded border border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface)] px-2 text-[length:var(--aries-font-size-small)]"
           value={releaser}
           disabled={pending}
           onChange={(event) =>
@@ -583,9 +646,14 @@ function BindingControls({
               {option.label ?? String(option.value)}
             </option>
           ))}
-        </select>
+        </PaneSelect>
         {releaser === "spirit" ? (
-          <label className="inline-flex h-7 items-center gap-1 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)]">
+          <label
+            className={cn(
+              PANE_CONTROL_CLASSES.checkboxLabel,
+              "gap-[var(--aries-control-gap-compact)]",
+            )}
+          >
             <input
               type="checkbox"
               checked={Boolean(bindings.apply_spirit_shift)}
@@ -606,9 +674,8 @@ function BindingControls({
             <label className="text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]" htmlFor="zr-sign">
               {t("timelord.sign")}
             </label>
-            <select
+            <PaneSelect
               id="zr-sign"
-              className="h-7 rounded border border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface)] px-2 text-[length:var(--aries-font-size-small)]"
               value={String(asNumber(bindings.start_sign, 0))}
               disabled={pending}
               onChange={(event) =>
@@ -624,10 +691,10 @@ function BindingControls({
                   {option.label ?? String(option.value)}
                 </option>
               ))}
-            </select>
+            </PaneSelect>
           </>
         ) : null}
-      </div>
+      </PaneControlBar>
     );
   }
   if (capabilities.timeLordSystem === "profections_table") {
@@ -645,13 +712,13 @@ function BindingControls({
       ...patch,
     });
     return (
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface-subtle)] px-3 py-2">
+      <PaneControlBar surface>
         <label className="text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]" htmlFor="prof-mode">
           {t("timelord.mode")}
         </label>
-        <select
+        <PaneSelect
           id="prof-mode"
-          className="h-7 rounded border border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface)] px-2 text-[length:var(--aries-font-size-small)]"
+          surface
           value={zodprof ? "zodiacal" : "mundane"}
           disabled={pending}
           onChange={(event) =>
@@ -664,10 +731,11 @@ function BindingControls({
         >
           <option value="zodiacal">{String(header.zodLabel ?? t("timelord.zodiacal"))}</option>
           <option value="mundane">{String(header.munLabel ?? t("timelord.placidian"))}</option>
-        </select>
+        </PaneSelect>
         <label
           className={cn(
-            "inline-flex h-7 items-center gap-1 text-[length:var(--aries-font-size-small)]",
+            PANE_CONTROL_CLASSES.checkboxLabel,
+            "gap-[var(--aries-control-gap-compact)]",
             zodprof ? "text-[color:var(--aries-text-muted)] opacity-60" : "text-[color:var(--aries-text-primary)]",
           )}
         >
@@ -682,9 +750,9 @@ function BindingControls({
         <label className="text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]" htmlFor="prof-display">
           {t("timelord.display")}
         </label>
-        <select
+        <PaneSelect
           id="prof-display"
-          className="h-7 rounded border border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface)] px-2 text-[length:var(--aries-font-size-small)]"
+          surface
           value={String(mainsigs)}
           disabled={pending}
           onChange={(event) => void onBindingChange(nextBinding({ mainsigs: event.target.value === "true" }))}
@@ -694,13 +762,13 @@ function BindingControls({
               {option.label ?? String(option.value)}
             </option>
           ))}
-        </select>
+        </PaneSelect>
         <label className="text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]" htmlFor="prof-monthly">
           {t("timelord.monthly")}
         </label>
-        <select
+        <PaneSelect
           id="prof-monthly"
-          className="h-7 rounded border border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface)] px-2 text-[length:var(--aries-font-size-small)]"
+          surface
           value={String(monthlySteps12)}
           disabled={pending}
           onChange={(event) => void onBindingChange(nextBinding({ monthly_steps12: event.target.value === "true" }))}
@@ -710,29 +778,29 @@ function BindingControls({
               {option.label ?? String(option.value)}
             </option>
           ))}
-        </select>
-        <div className="inline-flex h-7 items-center overflow-hidden rounded border border-[color:var(--aries-border-subtle)]">
+        </PaneSelect>
+        <div className={PANE_CONTROL_CLASSES.rangeStepper}>
           <button
             type="button"
-            className="h-full px-2 text-[length:var(--aries-font-size-small)] hover:bg-accent/40 disabled:opacity-50"
+            className={PANE_CONTROL_CLASSES.rangeStepperButton}
             disabled={pending || ageOffset <= 0}
             onClick={() => void onBindingChange(nextBinding({ age_offset: Math.max(0, ageOffset - 12) }))}
           >
             -12
           </button>
-          <span className="h-full border-x border-[color:var(--aries-border-subtle)] px-2 py-1 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)]">
+          <span className={PANE_CONTROL_CLASSES.rangeStepperValue}>
             {t("timelord.age", { age: ageOffset })}
           </span>
           <button
             type="button"
-            className="h-full px-2 text-[length:var(--aries-font-size-small)] hover:bg-accent/40 disabled:opacity-50"
+            className={PANE_CONTROL_CLASSES.rangeStepperButton}
             disabled={pending || ageOffset >= 144}
             onClick={() => void onBindingChange(nextBinding({ age_offset: Math.min(144, ageOffset + 12) }))}
           >
             +12
           </button>
         </div>
-      </div>
+      </PaneControlBar>
     );
   }
   return null;
@@ -745,6 +813,7 @@ function TimeLordRow({
   rowById,
   expanded,
   onToggle,
+  rowHeight,
 }: {
   documentId: string;
   payload: GenericTablePayload;
@@ -752,6 +821,7 @@ function TimeLordRow({
   rowById: Map<string, GenericTableRow>;
   expanded: boolean;
   onToggle: (row: GenericTableRow) => void;
+  rowHeight: number;
 }) {
   const t = useT();
   const meta = row.meta ?? {};
@@ -762,6 +832,7 @@ function TimeLordRow({
   const isCurrent = Boolean(row.current || meta.current);
   const isStrong = row.emphasis === "strong" || level === 1 || level === 3;
   const colorHex = stringOrUndefined(meta.colorHex);
+  const colorRole = stringOrUndefined(meta.colorRole);
   const eventDatetime = timedChartEventDatetime(meta);
   const rowTitle = rowHoverTitle(row);
   const system = String((payload.capabilities ?? {}).timeLordSystem ?? payload.tableId);
@@ -773,9 +844,9 @@ function TimeLordRow({
         "aries-list-row aries-list-row--flagged cursor-context-menu",
         hasChildren && "cursor-pointer",
         isStrong && "font-semibold",
-        isCurrent && "aries-list-row--current text-accent-foreground",
+        isCurrent && "text-accent-foreground",
       )}
-      style={{ height: ROW_HEIGHT }}
+      style={{ height: rowHeight }}
       onClick={() => {
         if (hasChildren) onToggle(row);
       }}
@@ -802,24 +873,28 @@ function TimeLordRow({
               alignClass(cell?.align ?? column.align),
               index === 0 && "whitespace-nowrap",
             )}
-            style={cell?.glyph && colorHex ? { color: colorHex } : undefined}
+            style={
+              cell?.glyph && (colorRole || colorHex)
+                ? { color: semanticChartColor(colorRole, colorHex) }
+                : undefined
+            }
           >
             {index === 0 ? (
               <div className="flex items-center gap-1" style={{ paddingLeft: `${Math.max(0, level - 1) * 14}px` }}>
                 {hasChildren ? (
                   <button
                     type="button"
-                    className="inline-flex size-5 shrink-0 items-center justify-center rounded hover:bg-accent/40"
+                    className={PANE_CONTROL_CLASSES.microIconButton}
                     onClick={(event) => {
                       event.stopPropagation();
                       onToggle(row);
                     }}
                     aria-label={expanded ? t("timelord.collapse") : t("timelord.expand")}
                   >
-                    {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+                    {expanded ? <ChevronDown /> : <ChevronRight />}
                   </button>
                 ) : (
-                  <span className="size-5 shrink-0" />
+                  <span className="size-[var(--aries-control-height-micro)] shrink-0" />
                 )}
                 {dateLinked ? (
                   <DateTransitLink
@@ -960,7 +1035,11 @@ function visibleTreeRows(rows: GenericTableRow[], expanded: Set<string>) {
   return visible;
 }
 
-function nearestPeriodRowIndex(rows: GenericTableRow[], anchor: ViewportAnchor): number {
+function nearestPeriodRowIndex(
+  rows: GenericTableRow[],
+  anchor: ViewportAnchor,
+  rowHeight: number,
+): number {
   if (rows.length === 0) return 0;
   const anchorTime = anchor.periodStart ? Date.parse(anchor.periodStart) : Number.NaN;
   if (Number.isFinite(anchorTime)) {
@@ -982,7 +1061,11 @@ function nearestPeriodRowIndex(rows: GenericTableRow[], anchor: ViewportAnchor):
     const rowIndex = rows.findIndex((row) => row.id === anchor.rowId);
     if (rowIndex >= 0) return rowIndex;
   }
-  return Math.max(0, Math.min(rows.length - 1, Math.floor(anchor.scrollTop / ROW_HEIGHT)));
+  const sourceRowHeight = anchor.rowHeight > 0 ? anchor.rowHeight : rowHeight;
+  return Math.max(
+    0,
+    Math.min(rows.length - 1, Math.floor(anchor.scrollTop / sourceRowHeight)),
+  );
 }
 
 function isTimeLordDateColumn(columnId: string): boolean {
@@ -1040,6 +1123,7 @@ function cellText(cell?: GenericTableCell): string {
 function useVirtualRows(
   scrollerRef: React.RefObject<HTMLDivElement | null>,
   rowCount: number,
+  rowHeight: number,
 ) {
   const [viewport, setViewport] = React.useState({ scrollTop: 0, height: 0, headerHeight: 0 });
 
@@ -1062,6 +1146,13 @@ function useVirtualRows(
     const scroller = scrollerRef.current;
     if (!scroller) return undefined;
     let frame = 0;
+    const measureSync = () => {
+      if (frame) {
+        cancelAnimationFrame(frame);
+        frame = 0;
+      }
+      measureNow();
+    };
     const scheduleMeasure = () => {
       if (frame) return;
       frame = requestAnimationFrame(() => {
@@ -1071,10 +1162,12 @@ function useVirtualRows(
     };
     scheduleMeasure();
     scroller.addEventListener("scroll", scheduleMeasure, { passive: true });
+    scroller.addEventListener(TIME_LORD_VIRTUAL_SCROLL_SYNC_EVENT, measureSync);
     const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(scheduleMeasure) : null;
     resizeObserver?.observe(scroller);
     return () => {
       scroller.removeEventListener("scroll", scheduleMeasure);
+      scroller.removeEventListener(TIME_LORD_VIRTUAL_SCROLL_SYNC_EVENT, measureSync);
       resizeObserver?.disconnect();
       if (frame) cancelAnimationFrame(frame);
     };
@@ -1085,17 +1178,17 @@ function useVirtualRows(
       return { startIndex: 0, endIndex: 0, paddingTop: 0, paddingBottom: 0 };
     }
     const bodyScrollTop = Math.max(0, viewport.scrollTop - viewport.headerHeight);
-    const visibleStart = viewport.height > 0 ? Math.floor(bodyScrollTop / ROW_HEIGHT) : 0;
-    const visibleCount = Math.max(1, Math.ceil(viewport.height / ROW_HEIGHT));
+    const visibleStart = viewport.height > 0 ? Math.floor(bodyScrollTop / rowHeight) : 0;
+    const visibleCount = Math.max(1, Math.ceil(viewport.height / rowHeight));
     const startIndex = Math.max(0, visibleStart - OVERSCAN_ROWS);
     const endIndex = Math.min(rowCount, visibleStart + visibleCount + OVERSCAN_ROWS);
     return {
       startIndex,
       endIndex,
-      paddingTop: startIndex * ROW_HEIGHT,
-      paddingBottom: (rowCount - endIndex) * ROW_HEIGHT,
+      paddingTop: startIndex * rowHeight,
+      paddingBottom: (rowCount - endIndex) * rowHeight,
     };
-  }, [rowCount, viewport.headerHeight, viewport.height, viewport.scrollTop]);
+  }, [rowCount, rowHeight, viewport.headerHeight, viewport.height, viewport.scrollTop]);
 }
 
 function VirtualSpacerRow({ colSpan, height }: { colSpan: number; height: number }) {
@@ -1108,10 +1201,11 @@ function VirtualSpacerRow({ colSpan, height }: { colSpan: number; height: number
 
 function CellView({ cell }: { cell?: GenericTableCell }) {
   if (!cell) return null;
+  const color = semanticChartColor(cell.colorRole, cell.color);
   const channelStyle: React.CSSProperties | undefined =
-    cell.color || cell.emphasis === "strong"
+    color || cell.emphasis === "strong"
       ? {
-          color: cell.color,
+          color,
           fontWeight: cell.emphasis === "strong" ? 600 : undefined,
         }
       : undefined;
@@ -1123,7 +1217,7 @@ function CellView({ cell }: { cell?: GenericTableCell }) {
             key={`${index}:${run.text}`}
             style={{
               fontFamily: run.glyph ? "'AriesMorinus'" : undefined,
-              color: run.color,
+              color: semanticChartColor(run.colorRole, run.color),
             }}
           >
             {run.text}

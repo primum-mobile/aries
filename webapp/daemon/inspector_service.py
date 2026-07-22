@@ -170,7 +170,7 @@ def _planet_region(chrt, partner_chart, options, body_id, chart_role="primary"):
     if lon is None:
         raise SystemExit(f"body {body_id} not present in chart")
     speed_lon = _body_speed_lon(chrt, body_id)
-    display_lon = util.normalize(lon - chrt.ayanamsha) if options.ayanamsha != 0 else lon
+    display_lon = lon
     data = {
         "chart": chrt,
         "partner_chart": partner_chart,
@@ -199,7 +199,7 @@ def _vertex_region(chrt, partner_chart, options, chart_role):
     lon = _body_lon(chrt, body_id)
     if lon is None:
         raise SystemExit("vertex not present in chart")
-    display_lon = util.normalize(lon - chrt.ayanamsha) if options.ayanamsha != 0 else lon
+    display_lon = lon
     data = {
         "chart": chrt,
         "partner_chart": partner_chart,
@@ -218,7 +218,7 @@ def _vertex_region(chrt, partner_chart, options, chart_role):
 
 def _fortune_region(chrt, options, chart_role="primary"):
     lon = _body_lon(chrt, planets.Planets.PLANETS_NUM)
-    display_lon = util.normalize(lon - chrt.ayanamsha) if options.ayanamsha != 0 else lon
+    display_lon = lon
     data = {
         "chart": chrt,
         "longitude": lon,
@@ -235,7 +235,7 @@ def _syzygy_region(chrt, options, chart_role="primary"):
         lon = float(syz.lon)
     except Exception:
         raise SystemExit("syzygy not present in chart")
-    display_lon = util.normalize(lon - chrt.ayanamsha) if options.ayanamsha != 0 else lon
+    display_lon = lon
     data = {
         "chart": chrt,
         "longitude": lon,
@@ -260,7 +260,7 @@ def _angle_region(chrt, options, angle_key, chart_role="primary"):
         lon = util.normalize(ascmc[houses.Houses.MC] + 180.0)
     else:
         raise SystemExit(f"unknown angle {angle_key}")
-    display_lon = util.normalize(lon - chrt.ayanamsha) if options.ayanamsha != 0 else lon
+    display_lon = lon
     data = {"chart": chrt, "longitude": lon, "display_lon": display_lon}
     return {"kind": "angle", "object_id": object_id, "chart_role": chart_role, "data": data}
 
@@ -268,7 +268,7 @@ def _angle_region(chrt, options, angle_key, chart_role="primary"):
 def _house_region(chrt, options, house_index):
     house_index = max(1, int(house_index))
     lon = chrt.houses.cusps[house_index]
-    display_lon = util.normalize(lon - chrt.ayanamsha) if options.ayanamsha != 0 else lon
+    display_lon = lon
     data = {"chart": chrt, "longitude": lon, "display_lon": display_lon}
     return {"kind": "house", "object_id": house_index, "chart_role": "primary", "data": data}
 
@@ -343,7 +343,7 @@ def _overlay_source_se_id(label):
 
 
 def _display_lon(chrt, options, lon):
-    return util.normalize(lon - chrt.ayanamsha) if options.ayanamsha != 0 else lon
+    return util.normalize(lon)
 
 
 def _find_fixstar(chrt, lon):
@@ -860,6 +860,20 @@ class InspectorService:
     def __init__(self) -> None:
         self._lock = threading.RLock()
 
+    @staticmethod
+    def _presentation_options(options):
+        """Apply the active profile's color-only layer to inspector rendering.
+
+        The resolved chart objects remain the live session objects.  Style
+        profiles are deliberately non-mutating, so the inspector needs the
+        same shallow presentation adapter as retained chart exporters to keep
+        glyph, dignity, and aspect colors aligned with the visible wheel.
+        Import lazily to keep the daemon service graph acyclic at startup.
+        """
+        from webapp.daemon.options_service import options_service
+
+        return options_service.get_effective_style_chart_options(options)
+
     def resolve_chart(
         self,
         *,
@@ -958,6 +972,7 @@ class InspectorService:
             binding_payload=binding_payload,
             view_mode=view_mode,
         )
+        opts = self._presentation_options(opts)
         region = self._build_region(chrt, partner_chart, opts, kind, object_id, chart_role)
         return chartinspector.build_payload(region, opts)
 
@@ -995,6 +1010,7 @@ class InspectorService:
             binding_payload=binding_payload,
             view_mode=view_mode,
         )
+        opts = self._presentation_options(opts)
         region = self._build_region(chrt, partner_chart, opts, kind, object_id, chart_role)
         return chartinspector.build_flag_payload(region, opts)
 

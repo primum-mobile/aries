@@ -12,7 +12,7 @@ import React, {
   useState,
 } from "react";
 
-import { fetchOptions } from "@/lib/daemon/client";
+import { fetchOptions, waitForDaemonHealth } from "@/lib/daemon/client";
 import { isAbortError } from "@/lib/abort-error";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 
@@ -22,11 +22,16 @@ import { BUNDLES } from "./messages";
 export type TParams = Record<string, string | number>;
 export type TFunc = (key: string, params?: TParams) => string;
 
-type I18nValue = { lang: LocaleCode; t: TFunc };
+type I18nValue = {
+  lang: LocaleCode;
+  t: TFunc;
+  syncLangId: (langid: number | null | undefined) => void;
+};
 
 const I18nContext = createContext<I18nValue>({
   lang: DEFAULT_LOCALE,
   t: (key) => key,
+  syncLangId: () => undefined,
 });
 
 function interpolate(message: string, params?: TParams): string {
@@ -67,25 +72,43 @@ function pseudoActive(): boolean {
  * the options-change signal bumps, so a language switch re-renders every
  * useT() consumer. Lookup order: active-language bundle → English → raw key. */
 export function I18nProvider({ children }: { children: React.ReactNode }) {
-  const [lang, setLang] = useState<LocaleCode>(DEFAULT_LOCALE);
+  const [fallbackLang, setFallbackLang] = useState<LocaleCode>(DEFAULT_LOCALE);
   // Dev-session-static: read the ?pseudo=1 flag once on mount (lazy init, not an
   // effect, so it never triggers a cascading re-render).
   const [pseudo] = useState(pseudoActive);
-  const optionsSeq = useDaemonWorkspaceStore(
-    (state) => state.lastOptionsChange?.seq ?? 0,
+  const optionsChange = useDaemonWorkspaceStore((state) => state.lastOptionsChange);
+  const daemonConnection = useDaemonWorkspaceStore((state) => state.connection);
+  const syncLangId = useCallback(
+    (langid: number | null | undefined) => setFallbackLang(codeForLangId(langid)),
+    [],
   );
+  const lang =
+    typeof optionsChange?.langid === "number"
+      ? codeForLangId(optionsChange.langid)
+      : fallbackLang;
 
   useEffect(() => {
+    // The options event is derived directly above for an immediate render. Keep
+    // this authoritative read as startup/reconnect recovery for a webview that
+    // mounted before the sidecar or missed an event while its socket was down.
+    if (daemonConnection === "closed") return;
+
     const controller = new AbortController();
-    fetchOptions(controller.signal)
-      .then((opts) => setLang(codeForLangId(opts?.languages?.langid)))
+    waitForDaemonHealth(controller.signal)
+      .then(() => fetchOptions(controller.signal))
+      .then((opts) => syncLangId(opts?.languages?.langid))
       .catch((err) => {
         if (!isAbortError(err, controller.signal)) {
-          // A missing/failed options read just leaves the last known language.
+          // Keep the last known language. A socket reopen or later options
+          // event retries the canonical read without requiring a workspace reset.
         }
       });
     return () => controller.abort();
-  }, [optionsSeq]);
+  }, [daemonConnection, optionsChange?.seq, syncLangId]);
+
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
 
   const t = useCallback<TFunc>(
     (key, params) => {
@@ -103,7 +126,7 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
     [lang, pseudo],
   );
 
-  const value = useMemo<I18nValue>(() => ({ lang, t }), [lang, t]);
+  const value = useMemo<I18nValue>(() => ({ lang, t, syncLangId }), [lang, syncLangId, t]);
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 
@@ -130,4 +153,9 @@ export function useTFallback(): (key: string, fallback: string) => string {
 /** The active locale code (e.g. "fr"), for locale-aware formatting. */
 export function useLocale(): LocaleCode {
   return useContext(I18nContext).lang;
+}
+
+/** Apply a langid from an authoritative options response immediately. */
+export function useSyncLocale(): (langid: number | null | undefined) => void {
+  return useContext(I18nContext).syncLangId;
 }

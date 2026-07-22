@@ -50,6 +50,7 @@ import planets
 import util
 import mtexts
 from webapp.daemon.chart_service import chart_snapshot_service
+from webapp.daemon.display_palette import chart_body_color_role, effective_display_options
 from webapp.frontend.scripts import export_chart_json
 
 # House-system label table — verbatim from SquareChart.__init__
@@ -135,26 +136,14 @@ def _get_planets_in_house(chrt, opts, hnum):
         else:
             lon = chrt.fortune.fortune[fortune.Fortune.LON]
 
-        if opts.ayanamsha != 0 and opts.hsys == 'W':
-            lon -= chrt.ayanamsha
-            lon = util.normalize(lon)
         num = chrt.houses.getHousePos(lon, opts)
-        if opts.ayanamsha != 0 and opts.hsys == 'W':
-            lon += chrt.ayanamsha
-            lon = util.normalize(lon)
         if num == hnum:
             inhouse.append(lon)
             mixed.append(i)
 
     if getattr(opts, "showvertex", False):
         lon = chrt.houses.ascmc[houses.Houses.VERTEX]
-        if opts.ayanamsha != 0 and opts.hsys == 'W':
-            lon -= chrt.ayanamsha
-            lon = util.normalize(lon)
         num = chrt.houses.getHousePos(lon, opts)
-        if opts.ayanamsha != 0 and opts.hsys == 'W':
-            lon += chrt.ayanamsha
-            lon = util.normalize(lon)
         if num == hnum:
             inhouse.append(lon)
             mixed.append(common.CHART_OBJECT_VERTEX)
@@ -193,16 +182,19 @@ class SquareChartService:
         document_id: Optional[str] = None,
     ) -> dict:
         with self._lock:
-            opts = chart_snapshot_service.options
+            canonical_opts = chart_snapshot_service.options
+            display_opts = effective_display_options(canonical_opts)
             chrt = self._chart_for_document(document_id)
             if chrt is not None:
-                return self._build(chrt, opts)
+                return self._build(chrt, display_opts)
             source_path = (
                 str(Path(source).expanduser()) if source
                 else str(export_chart_json.DEFAULT_SOURCE)
             )
-            chrt, _ = export_chart_json.load_chart(source_path, opts, name=source_name)
-            return self._build(chrt, opts)
+            chrt, _ = export_chart_json.load_chart(
+                source_path, canonical_opts, name=source_name
+            )
+            return self._build(chrt, display_opts)
 
     def _chart_for_document(self, document_id: Optional[str]):
         if not document_id:
@@ -230,9 +222,6 @@ class SquareChartService:
         cusps = []
         for i in range(houses.Houses.HOUSE_NUM):
             lon = chrt.houses.cusps[i + 1]
-            if opts.ayanamsha != 0 and opts.hsys != 'W':
-                lon -= chrt.ayanamsha
-                lon = util.normalize(lon)
             sign, pos, m = _sign_split(lon)
             cusps.append({
                 "house": i + 1,
@@ -250,9 +239,6 @@ class SquareChartService:
             for j in range(len(order)):
                 idxpl = mixed[j]
                 lon = order[j]
-                if opts.ayanamsha != 0:
-                    lon -= chrt.ayanamsha
-                    lon = util.normalize(lon)
                 sign, pos, m = _sign_split(lon)
 
                 if idxpl < planets.Planets.PLANETS_NUM:
@@ -268,17 +254,29 @@ class SquareChartService:
                     if speed <= 0.0:
                         motion = "S" if speed == 0.0 else "R"
 
+                color = _planet_color_hex(chrt, opts, idxpl, bw)
+                is_lof = idxpl == planets.Planets.PLANETS_NUM
+                is_vertex = idxpl == common.CHART_OBJECT_VERTEX
+
                 plist.append({
                     "id": int(idxpl),
                     "glyph": glyph,
-                    "color": _planet_color_hex(chrt, opts, idxpl, bw),
+                    "color": color,
+                    "colorRole": chart_body_color_role(
+                        opts,
+                        chrt,
+                        idxpl,
+                        is_fortune=is_lof,
+                        is_vertex=is_vertex,
+                        resolved_color=color,
+                    ),
                     "sign": sign,
                     "signGlyph": signs[sign],
                     "deg": int(pos),
                     "min": int(m),
                     "motion": motion,
-                    "isLof": bool(idxpl == planets.Planets.PLANETS_NUM),
-                    "isVertex": bool(idxpl == common.CHART_OBJECT_VERTEX),
+                    "isLof": bool(is_lof),
+                    "isVertex": bool(is_vertex),
                 })
             houses_out.append({"house": hidx + 1, "planets": plist})
 

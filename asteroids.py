@@ -11,7 +11,8 @@ class Asteroid:
 		self.aId = aId
 
 		rflag, dat, serr = astrology.swe_calc_ut_ex(tjd_ut, aId, flag)
-		rflag, datEqu, serr = astrology.swe_calc_ut_ex(tjd_ut, aId, flag+astrology.SEFLG_EQUATORIAL)
+		equatorial_flag = (int(flag) & ~astrology.SEFLG_SIDEREAL) | astrology.SEFLG_EQUATORIAL
+		rflag, datEqu, serr = astrology.swe_calc_ut_ex(tjd_ut, aId, equatorial_flag)
 		self.data = (dat[0], dat[1], datEqu[0], datEqu[1])
 		if placelat is not None and ascmc2 is not None:
 			elv, azm = self._calc_horizontal(placelat, ascmc2, datEqu[0], datEqu[1])

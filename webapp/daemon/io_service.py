@@ -101,14 +101,23 @@ class IoService:
         opts, primary, comparison = workspace.inspector_charts(active_id)
         if primary is None:
             raise ValueError("no active chart to export")
+        # Export is a separate helper process, so carry the already-validated
+        # semantic profile explicitly instead of asking it to rediscover CSS or
+        # daemon state. The helper adapts chart roles before the final PDF print
+        # transform; app-only roles remain irrelevant to chart output.
+        from webapp.daemon.options_service import options_service
+        active_style_profile, effective_export_options = (
+            options_service.get_style_chart_render_context(opts)
+        )
 
         payload = {
             "kind": resolved_kind,
             "path": str(destination),
             "title": self._export_title(primary),
-            "options": opts,
+            "options": effective_export_options,
             "primary": primary,
             "comparison": comparison,
+            "styleProfile": active_style_profile,
         }
         with tempfile.NamedTemporaryFile(prefix="aries-export-", suffix=".pickle", delete=False) as fh:
             pickle.dump(payload, fh, protocol=pickle.HIGHEST_PROTOCOL)
@@ -195,6 +204,175 @@ class IoService:
             "data": data,
             "documentId": summary.get("documentId"),
         }
+
+    def export_rendered_chart(
+        self,
+        *,
+        kind: str,
+        path: str,
+        png_base64: str,
+        width: int,
+        height: int,
+        title: str | None = None,
+        document_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Write a chart painted by the production web renderer.
+
+        The daemon still owns filesystem access and PDF construction; the PNG
+        pixels come from the same snapshot/Canvas renderer as the visible
+        Tauri surface, so wheel grammar and display-only state cannot diverge.
+        """
+        raw_path = str(path or "").strip()
+        if not raw_path:
+            raise ValueError("no export path selected")
+        destination = Path(raw_path).expanduser()
+        resolved_kind = self._export_kind(kind, destination)
+        if destination.suffix.lower() != f".{resolved_kind}":
+            destination = destination.with_suffix(f".{resolved_kind}")
+        if not destination.parent.exists():
+            raise ValueError(f"export directory does not exist: {destination.parent}")
+
+        png = self._decode_rendered_png(png_base64)
+        actual_width, actual_height = self._png_dimensions(png)
+        if int(width) != actual_width or int(height) != actual_height:
+            raise ValueError("rendered chart dimensions do not match PNG data")
+        if resolved_kind == "png":
+            destination.write_bytes(png)
+        else:
+            self._write_rendered_chart_pdf(
+                destination,
+                png,
+                actual_width,
+                actual_height,
+                title=title,
+            )
+        size = destination.stat().st_size
+        if size <= 0:
+            raise RuntimeError("chart export created an empty output file")
+        return {
+            "ok": True,
+            "kind": resolved_kind,
+            "path": str(destination),
+            "bytes": size,
+            "documentId": document_id,
+        }
+
+    def export_rendered_chart_bytes(
+        self,
+        *,
+        kind: str,
+        png_base64: str,
+        width: int,
+        height: int,
+        title: str | None = None,
+        document_id: str | None = None,
+        filename: str | None = None,
+    ) -> dict[str, Any]:
+        requested_kind = str(kind or "pdf").lower().strip()
+        if requested_kind not in ("pdf", "png"):
+            raise ValueError(f"unsupported export kind: {kind}")
+        with tempfile.TemporaryDirectory(prefix="aries-rendered-chart-export-") as dirname:
+            target = Path(dirname) / f"chart.{requested_kind}"
+            summary = self.export_rendered_chart(
+                kind=requested_kind,
+                path=str(target),
+                png_base64=png_base64,
+                width=width,
+                height=height,
+                title=title,
+                document_id=document_id,
+            )
+            data = Path(str(summary["path"])).read_bytes()
+        return {
+            "ok": True,
+            "kind": requested_kind,
+            "filename": self._download_filename(filename, requested_kind),
+            "mimeType": self._mime_type(requested_kind),
+            "bytes": len(data),
+            "data": data,
+            "documentId": document_id,
+        }
+
+    @staticmethod
+    def _decode_rendered_png(value: str) -> bytes:
+        try:
+            data = base64.b64decode(str(value or ""), validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("rendered chart PNG is not valid base64") from exc
+        if len(data) > 32 * 1024 * 1024:
+            raise ValueError("rendered chart PNG exceeds 32 MiB")
+        if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise ValueError("rendered chart payload is not a PNG")
+        return data
+
+    @staticmethod
+    def _png_dimensions(data: bytes) -> tuple[int, int]:
+        if len(data) < 24 or data[12:16] != b"IHDR":
+            raise ValueError("rendered chart PNG has no valid IHDR")
+        width = int.from_bytes(data[16:20], byteorder="big", signed=False)
+        height = int.from_bytes(data[20:24], byteorder="big", signed=False)
+        if width <= 0 or height <= 0 or width > 8192 or height > 8192:
+            raise ValueError("rendered chart PNG dimensions are invalid")
+        return int(width), int(height)
+
+    @staticmethod
+    def _write_rendered_chart_pdf(
+        destination: Path,
+        png: bytes,
+        width: int,
+        height: int,
+        *,
+        title: str | None = None,
+    ) -> None:
+        try:
+            from io import BytesIO
+            from reportlab.lib import pagesizes
+            from reportlab.lib.utils import ImageReader
+            from reportlab.pdfgen import canvas
+        except Exception as exc:
+            raise RuntimeError("PDF export requires ReportLab") from exc
+
+        margin = 36.0
+        portrait = pagesizes.letter
+        landscape = pagesizes.landscape(portrait)
+
+        def fit(page):
+            area_width = page[0] - 2 * margin
+            area_height = page[1] - 2 * margin
+            scale = min(area_width / width, area_height / height)
+            image_width = width * scale
+            image_height = height * scale
+            left = margin + (area_width - image_width) / 2
+            bottom = margin + (area_height - image_height) / 2
+            return page, scale, image_width, image_height, left, bottom
+
+        portrait_fit = fit(portrait)
+        landscape_fit = fit(landscape)
+        aspect = width / max(1.0, float(height))
+        selected = (
+            landscape_fit
+            if aspect > 1.15 and landscape_fit[1] > portrait_fit[1] + 0.01
+            else portrait_fit
+        )
+        page, _scale, image_width, image_height, left, bottom = selected
+        doc = canvas.Canvas(str(destination), pagesize=page)
+        chart_title = str(title or "Aries Chart Export")
+        doc.setTitle(chart_title)
+        doc.setAuthor("Aries")
+        doc.setSubject(chart_title)
+        doc.setFillColorRGB(1, 1, 1)
+        doc.rect(0, 0, page[0], page[1], stroke=0, fill=1)
+        doc.drawImage(
+            ImageReader(BytesIO(png)),
+            left,
+            bottom,
+            width=image_width,
+            height=image_height,
+            preserveAspectRatio=True,
+            mask="auto",
+        )
+        doc.showPage()
+        doc.save()
 
     def export_text_file(
         self,

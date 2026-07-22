@@ -533,7 +533,7 @@ class Chart:
 		astrology.swe_set_topo(self.place.lon, self.place.lat, self.place.altitude)
 		pflag, hflag, fsflag, astflag = self._zodiac_flags()
 
-		self.houses = houses.Houses(self.time.jd, hflag, self.place.lat, self.place.lon, self.options.hsys, self.obl[0], self.options.ayanamsha, self.ayanamsha)
+		self.houses = houses.Houses(self.time.jd, hflag, self.place.lat, self.place.lon, self.options.hsys, self.obl[0], self.options.ayanamsha, self.ayanamsha_offset)
 
 		# EquAsc is intrinsic to the chart's geometry; like ASC/MC, its
 		# RA is frame-independent, so cotrans needs a tropical lon.
@@ -578,7 +578,7 @@ class Chart:
 # ###########################################
 			self.munfortune = munfortune.MundaneFortune(self.options.lotoffortune, self.houses.ascmc2, self.planets, self.obl[0], self.place.lat, abovehor)
 			self.syzygy = syzygy.Syzygy(self)
-			self.parts = arabicparts.ArabicParts(self.options.arabicparts, self.houses.ascmc, self.planets, self.houses, self.houses.cusps, self.fortune, self.syzygy, self.options, self.ayanamsha, self.male)
+			self.parts = arabicparts.ArabicParts(self.options.arabicparts, self.houses.ascmc, self.planets, self.houses, self.houses.cusps, self.fortune, self.syzygy, self.options, self.ayanamsha_offset, self.male)
 			self.fixstars = fixstars.FixStars(
 				self.time.jd,
 				fsflag,
@@ -607,9 +607,9 @@ class Chart:
 				self.time.calcPHs(self.place)
 			self.almutens = almutens.Almutens(self)
 			if self.options.pdcustomer:
-				self.cpd = customerpd.CustomerPD(self.options.pdcustomerlon[0], self.options.pdcustomerlon[1], self.options.pdcustomerlon[2], self.options.pdcustomerlat[0], self.options.pdcustomerlat[1], self.options.pdcustomerlat[2], self.options.pdcustomersouthern, self.place.lat, self.houses.ascmc2, self.obl[0], self.raequasc)
+				self.cpd = customerpd.CustomerPD(self.options.pdcustomerlon[0], self.options.pdcustomerlon[1], self.options.pdcustomerlon[2], self.options.pdcustomerlat[0], self.options.pdcustomerlat[1], self.options.pdcustomerlat[2], self.options.pdcustomersouthern, self.place.lat, self.houses.ascmc2, self.obl[0], self.raequasc, self.ayanamsha_offset)
 			if self.options.pdcustomer2:
-				self.cpd2 = customerpd.CustomerPD(self.options.pdcustomer2lon[0], self.options.pdcustomer2lon[1], self.options.pdcustomer2lon[2], self.options.pdcustomer2lat[0], self.options.pdcustomer2lat[1], self.options.pdcustomer2lat[2], self.options.pdcustomer2southern, self.place.lat, self.houses.ascmc2, self.obl[0], self.raequasc)
+				self.cpd2 = customerpd.CustomerPD(self.options.pdcustomer2lon[0], self.options.pdcustomer2lon[1], self.options.pdcustomer2lon[2], self.options.pdcustomer2lat[0], self.options.pdcustomer2lat[1], self.options.pdcustomer2lat[2], self.options.pdcustomer2southern, self.place.lat, self.houses.ascmc2, self.obl[0], self.raequasc, self.ayanamsha_offset)
 			self.pd_arabic_part_prom = self._get_pd_arabic_part_promissor_point()
 			self.pd_arabic_part_sig = self._get_pd_arabic_part_significator_point()
 
@@ -701,7 +701,7 @@ class Chart:
 		self.ayanamsha_offset = 0.0
 		if self.options.ayanamsha != 0:
 			astrology.swe_set_sid_mode(astrology.ayanamsha_swe_mode(self.options.ayanamsha), 0, 0)
-			self.ayanamsha_offset = astrology.swe_get_ayanamsa_ut(self.time.jd)
+			self.ayanamsha_offset = astrology.effective_ayanamsha_ut(self.time.jd, self.options.ayanamsha)
 			pflag |= astrology.SEFLG_SIDEREAL
 			hflag |= astrology.SEFLG_SIDEREAL
 			fsflag |= astrology.SEFLG_SIDEREAL
@@ -754,6 +754,7 @@ class Chart:
 				self.houses.ascmc2,
 				self.obl[0],
 				self.raequasc,
+				self.ayanamsha_offset,
 			)
 		except Exception:
 			return point
@@ -849,7 +850,7 @@ class Chart:
 				self.options.hsys,
 				self.obl[0],
 				self.options.ayanamsha,
-				self.ayanamsha,
+				self.ayanamsha_offset,
 			),
 			materialize_optional=self.full,
 		)
@@ -900,7 +901,12 @@ class Chart:
 	def calcSyzygy(self):
 		if self.syzygy != None:
 			del self.syzygy
-		self.syzygy = syzygy.Syzygy(self)
+		try:
+			previous_opposite = self._step_syzygy_previous_opposite
+			del self._step_syzygy_previous_opposite
+		except AttributeError:
+			previous_opposite = None
+		self.syzygy = syzygy.Syzygy(self, previous_opposite=previous_opposite)
 
 
 	def calcArabicParts(self):
@@ -914,7 +920,7 @@ class Chart:
 		if self.syzygy == None:
 			self.parts = None
 			return
-		self.parts = arabicparts.ArabicParts(self.options.arabicparts, self.houses.ascmc, self.planets, self.houses, self.houses.cusps, self.fortune, self.syzygy, self.options, self.ayanamsha, self.male)
+		self.parts = arabicparts.ArabicParts(self.options.arabicparts, self.houses.ascmc, self.planets, self.houses, self.houses.cusps, self.fortune, self.syzygy, self.options, self.ayanamsha_offset, self.male)
 
 
 	def calcAntiscia(self):
@@ -1449,8 +1455,6 @@ class Chart:
 						orbH = self.options.orbisAscMC[a]
 
 					pllon = self.planets.planets[i].data[0]
-					if self.options.ayanamsha != 0 and self.houses.hsys == 'W':
-						pllon = util.normalize(pllon-self.ayanamsha)
 					if (self.inorbsinister(val1, val2, pllon, a)):
 						tmp = util.normalize(pllon+Chart.Aspects[a])
 						dif = math.fabs(tmp-self.houses.cusps[hidx[j]])
@@ -1982,6 +1986,7 @@ class Chart:
 				self.obl[0],
 				self.raequasc,
 				0.0,
+				self.ayanamsha_offset,
 			)
 		except Exception:
 			return None
@@ -2022,6 +2027,7 @@ class Chart:
 					self.houses.ascmc2,
 					self.obl[0],
 					self.raequasc,
+					ayanamsha_offset=self.ayanamsha_offset,
 				)
 			except Exception:
 				return None
@@ -2053,10 +2059,10 @@ class Chart:
 	def _ensure_pd_customer_point(self, significator):
 		if significator:
 			if self.cpd2 is None and self.options.pdcustomer2:
-				self.cpd2 = customerpd.CustomerPD(self.options.pdcustomer2lon[0], self.options.pdcustomer2lon[1], self.options.pdcustomer2lon[2], self.options.pdcustomer2lat[0], self.options.pdcustomer2lat[1], self.options.pdcustomer2lat[2], self.options.pdcustomer2southern, self.place.lat, self.houses.ascmc2, self.obl[0], self.raequasc)
+				self.cpd2 = customerpd.CustomerPD(self.options.pdcustomer2lon[0], self.options.pdcustomer2lon[1], self.options.pdcustomer2lon[2], self.options.pdcustomer2lat[0], self.options.pdcustomer2lat[1], self.options.pdcustomer2lat[2], self.options.pdcustomer2southern, self.place.lat, self.houses.ascmc2, self.obl[0], self.raequasc, self.ayanamsha_offset)
 			return self.cpd2
 		if self.cpd is None and self.options.pdcustomer:
-			self.cpd = customerpd.CustomerPD(self.options.pdcustomerlon[0], self.options.pdcustomerlon[1], self.options.pdcustomerlon[2], self.options.pdcustomerlat[0], self.options.pdcustomerlat[1], self.options.pdcustomerlat[2], self.options.pdcustomersouthern, self.place.lat, self.houses.ascmc2, self.obl[0], self.raequasc)
+			self.cpd = customerpd.CustomerPD(self.options.pdcustomerlon[0], self.options.pdcustomerlon[1], self.options.pdcustomerlon[2], self.options.pdcustomerlat[0], self.options.pdcustomerlat[1], self.options.pdcustomerlat[2], self.options.pdcustomersouthern, self.place.lat, self.houses.ascmc2, self.obl[0], self.raequasc, self.ayanamsha_offset)
 		return self.cpd
 
 	def iter_pd_promissor_points(self):
@@ -2151,10 +2157,10 @@ class Chart:
 	def apply_mundane_profection(self, source_chart, placelat, obl):
 		if source_chart is None:
 			return
-		self.planets.calcMundaneProfPos(self.houses.ascmc2, source_chart.planets.planets, placelat, obl)
+		self.planets.calcMundaneProfPos(self.houses.ascmc2, source_chart.planets.planets, placelat, obl, self.ayanamsha_offset)
 		if getattr(self, 'chiron', None) is not None and getattr(source_chart, 'chiron', None) is not None:
-			self.chiron.calcMundaneProfPos(self.houses.ascmc2, source_chart.chiron, placelat, obl)
-		self.fortune.calcMundaneProfPos(self.houses.ascmc2, source_chart.fortune, placelat, obl)
+			self.chiron.calcMundaneProfPos(self.houses.ascmc2, source_chart.chiron, placelat, obl, self.ayanamsha_offset)
+		self.fortune.calcMundaneProfPos(self.houses.ascmc2, source_chart.fortune, placelat, obl, self.ayanamsha_offset)
 		self.calcAspMatrix()
 		self.calcLoFAspMatrix()
 

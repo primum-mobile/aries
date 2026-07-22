@@ -1,6 +1,8 @@
 import type {
   ChartRenderSnapshot,
+  OuterRingMode,
   OverlayRenderMode,
+  RenderVariant,
   SymbolicTimeReadout,
 } from "@/lib/chart/types";
 import {
@@ -29,8 +31,11 @@ function runtimeDaemonUrl(): string | null {
 }
 
 function runtimeDaemonToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return window.__ARIES_DAEMON_TOKEN__?.trim() || null;
+  if (typeof window !== "undefined") {
+    const runtime = window.__ARIES_DAEMON_TOKEN__?.trim();
+    if (runtime) return runtime;
+  }
+  return process.env.NEXT_PUBLIC_ARIES_DAEMON_TOKEN?.trim() || null;
 }
 
 export function daemonAuthToken(): string | null {
@@ -120,6 +125,7 @@ function waitForAbortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise
 
 let daemonHealthReadyAt = 0;
 let daemonHealthInFlight: Promise<void> | null = null;
+let daemonHasBeenReady = false;
 
 async function pollDaemonHealth(
   signal?: AbortSignal,
@@ -136,6 +142,7 @@ async function pollDaemonHealth(
         signal,
       });
       if (response.ok) {
+        daemonHasBeenReady = true;
         recordStartupPerfOnce("daemon-health-poll-ready", {
           attempts: attempt + 1,
           ms: Date.now() - startedAt,
@@ -180,6 +187,14 @@ export function waitForDaemonHealth(
   return waitForAbortable(daemonHealthInFlight, signal);
 }
 
+/** Hold startup actions until the packaged daemon is actually listening.
+ * Intel PyInstaller startup can be noticeably slower on old hardware; once
+ * this process has reached health, routine commands keep their zero-probe path. */
+export function waitForDaemonStartup(signal?: AbortSignal): Promise<void> {
+  if (daemonHasBeenReady) return Promise.resolve();
+  return waitForDaemonHealth(signal);
+}
+
 function daemonWebSocketUrl(): string {
   const base = daemonBaseUrl();
   let url: URL;
@@ -220,6 +235,46 @@ export async function fetchChartSnapshot(
     totalMs: parsedAt - startedAt,
   });
   return snapshot;
+}
+
+export type ChartPreviewRequestOptions = Readonly<{
+  variant: RenderVariant;
+  houses: boolean;
+  positions: boolean;
+  terms: boolean;
+  decans: boolean;
+  aspects: boolean;
+  minorAspects: boolean;
+  outerRing: Exclude<OuterRingMode, "parallel_transits">;
+  /** Compatibility with the rejected boolean preview contract. */
+  fixedStars?: boolean;
+}>;
+
+export function chartPreviewRequestKey(
+  chartRequestKey: string,
+  preview: ChartPreviewRequestOptions,
+): string {
+  const search = new URLSearchParams(chartRequestKey);
+  search.set("previewVariant", preview.variant);
+  search.set("previewHouses", String(preview.houses));
+  search.set("previewPositions", String(preview.positions));
+  search.set("previewTerms", String(preview.terms));
+  search.set("previewDecans", String(preview.decans));
+  search.set("previewAspects", String(preview.aspects));
+  search.set("previewMinorAspects", String(preview.minorAspects));
+  search.set("previewOuterRing", preview.outerRing);
+  if (preview.fixedStars != null) {
+    search.set("previewFixedStars", String(preview.fixedStars));
+  }
+  return search.toString();
+}
+
+export function fetchChartPreviewSnapshot(
+  chartRequestKey: string,
+  preview: ChartPreviewRequestOptions,
+  signal?: AbortSignal,
+): Promise<ChartRenderSnapshot> {
+  return fetchChartSnapshot(chartPreviewRequestKey(chartRequestKey, preview), signal);
 }
 
 /**
@@ -337,6 +392,7 @@ export type InspectorDignityItem =
       label: string;
       value: string;
       colour?: RGB | null;
+      colour_role?: string | null;
       bold?: boolean;
     }
   | {
@@ -346,7 +402,9 @@ export type InspectorDignityItem =
       arrow: string;
       right: string; // Morinus glyph char
       left_colour?: RGB | null;
+      left_colour_role?: string | null;
       right_colour?: RGB | null;
+      right_colour_role?: string | null;
       bold?: boolean;
     };
 
@@ -356,6 +414,7 @@ export type InspectorAspectItem = {
   aspect_glyph: string; // Morinus glyph char
   suffix_text: string;
   aspect_colour?: RGB | null;
+  aspect_colour_role?: string | null;
   full_text: string;
 };
 
@@ -371,8 +430,12 @@ export type InspectorManzil = {
 export type InspectorPayload = {
   glyph: string; // Morinus glyph char (or "")
   title: string;
+  motionGlyph?: string;
+  motionUsesSymbolFont?: boolean;
+  motionLabel?: string;
   meta: string; // role label ("", "Center chart", "Outer ring")
   accent: RGB | null;
+  accentRole?: string | null;
   smart_rows: string[];
   dignity_rows?: string[];
   dignity_items?: InspectorDignityItem[];
@@ -445,21 +508,28 @@ export async function fetchInspectorPayload(
 export type InspectorFlagSpan = {
   text: string;
   colour?: RGB | null;
+  colourRole?: string | null;
   glyph?: boolean; // render in the Morinus face
 };
 
 /** One flag row, as serialized from the Python tuple. Index 0 = label, 1 =
- * value, 2 = optional [r,g,b] value colour, 3 = optional span list. */
+ * value, 2 = optional [r,g,b] value colour, 3 = optional span list, 4 = the
+ * stable semantic CSS role for the value colour. */
 export type InspectorFlagRow =
   | [string, string]
   | [string, string, RGB | null]
-  | [string, string, RGB | null, InspectorFlagSpan[]];
+  | [string, string, RGB | null, InspectorFlagSpan[]]
+  | [string, string, RGB | null, InspectorFlagSpan[] | null, string | null];
 
 /** Exact shape of chartinspector.build_flag_payload (chartinspector.py:1157). */
 export type InspectorFlagPayload = {
   glyph: string; // Morinus glyph char (or "")
   title: string;
+  motionGlyph?: string;
+  motionUsesSymbolFont?: boolean;
+  motionLabel?: string;
   accent: RGB | null;
+  accentRole?: string | null;
   rows: InspectorFlagRow[];
   compact?: boolean; // aspect flags set this (smaller card, accent border)
 };
@@ -846,9 +916,9 @@ export type EditorFields = {
 // ---------------------------------------------------------------------------
 // Editor meta — enum catalogs + canonical defaults. The daemon owns the option
 // lists (mtexts.{typeList,calList,zoneList}) and the seed values
-// (personaldatadlg.initialize(): engine `now` + Male/Radix/Gregorian/Zone/GMT+1/
-// alt 100). The skin renders the form from this and never hardcodes enums or
-// seeds from the browser clock. Spec: doc/migration/surfaces/chart-editor.md.
+// (engine `now` + Male/Radix plus the saved Aries Default Location). The skin
+// renders the form from this and never hardcodes enums or seeds from the browser
+// clock. Spec: doc/migration/surfaces/chart-editor.md.
 // ---------------------------------------------------------------------------
 
 export type EditorEnumOption = { value: string; label: string };
@@ -873,8 +943,8 @@ export type EditorDefaults = {
   latMin: number;
   latSec: number;
   north: boolean;
-  // Authoritative signed decimals for a loaded record (absent in fresh
-  // defaults, where the place is blank); preserved verbatim on edit + save.
+  // Authoritative signed decimals from the saved Default Location or a loaded
+  // record; preserved verbatim on edit + save.
   lat?: number;
   lon?: number;
   place: string;
@@ -1229,6 +1299,7 @@ export type StartupRestoreState = {
 export async function fetchChartPickerRows(
   signal?: AbortSignal,
 ): Promise<ChartPickerRowsPayload> {
+  await waitForDaemonStartup(signal);
   const startedAt = perfNow();
   const response = await daemonFetch(`${daemonBaseUrl()}/api/chart-picker/rows`, {
     cache: "no-store",
@@ -1310,6 +1381,7 @@ export type ChartPickerMatchRun = {
   text: string;
   title?: string;
   color?: string;
+  colorRole?: string | null;
 };
 
 export type ChartPickerSearchResult = {
@@ -1417,6 +1489,29 @@ export async function exportActiveChartBytes(
   signal?: AbortSignal,
 ): Promise<ExportBytesSummary> {
   return workspacePost<ExportBytesSummary>("/api/io/export-bytes", params, signal);
+}
+
+export type RenderedChartExportParams = {
+  kind: "pdf" | "png";
+  pngBase64: string;
+  width: number;
+  height: number;
+  title?: string;
+  documentId?: string;
+};
+
+export async function exportRenderedChart(
+  params: RenderedChartExportParams & { path: string },
+  signal?: AbortSignal,
+): Promise<ExportSummary> {
+  return workspacePost<ExportSummary>("/api/io/export-rendered", params, signal);
+}
+
+export async function exportRenderedChartBytes(
+  params: RenderedChartExportParams & { filename?: string },
+  signal?: AbortSignal,
+): Promise<ExportBytesSummary> {
+  return workspacePost<ExportBytesSummary>("/api/io/export-rendered-bytes", params, signal);
 }
 
 export type TextExportSummary = {
@@ -1691,6 +1786,7 @@ export type DirectionRowFields = {
   sigPoint: number;
   sigasp: number;
   parallelaxis: number;
+  arc: number;
   jd: number;
   promGlyph?: string | null;
   prom2Glyph?: string | null;
@@ -1704,6 +1800,11 @@ export type DirectionRowFields = {
   sigColor?: string | null;
   promAspectColor?: string | null;
   sigAspectColor?: string | null;
+  promColorRole?: string | null;
+  prom2ColorRole?: string | null;
+  sigColorRole?: string | null;
+  promAspectColorRole?: string | null;
+  sigAspectColorRole?: string | null;
   promSource?: "natal_radix" | string | null;
   promSourceMarker?: string | null;
   promSourceBodyId?: number | null;
@@ -1713,6 +1814,7 @@ export type DirectionCellPart = {
   text: string;
   glyph?: boolean;
   color?: string | null;
+  colorRole?: string | null;
   marker?: "natal" | string;
 };
 
@@ -1946,6 +2048,9 @@ export type SecondaryDirectionRow = {
     promColor?: string | null;
     sigColor?: string | null;
     aspectColor?: string | null;
+    promColorRole?: string | null;
+    sigColorRole?: string | null;
+    aspectColorRole?: string | null;
   };
   eventDatetime: string | null;
   jd: number | null;
@@ -2051,10 +2156,12 @@ export type CircumambulationRow = {
   signIndex: number | null;
   signGlyph?: string | null;
   signColor?: string | null;
+  signColorRole?: string | null;
   degreeText?: string | null;
   termRulerPid: number | null;
   termRulerGlyph?: string | null;
   termRulerColor?: string | null;
+  termRulerColorRole?: string | null;
   dateStart: string | null;
   dateEnd: string | null;
   displayDateStart?: string | null;
@@ -2076,12 +2183,15 @@ export type CircumambulationParticipator = {
   sourceMarker?: string | null;
   planetGlyph?: string | null;
   planetColor?: string | null;
+  planetColorRole?: string | null;
   degreeText?: string | null;
   degreeSignIndex?: number | null;
   degreeSignGlyph?: string | null;
   degreeSignColor?: string | null;
+  degreeSignColorRole?: string | null;
   aspectGlyph?: string | null;
   aspectColor?: string | null;
+  aspectColorRole?: string | null;
   aspectDegree?: number | null;
   date: string | null;
   displayDate?: string | null;
@@ -2366,6 +2476,10 @@ export type TransitSearchDisplay = {
   motion_marker?: string;
   dignity_code?: string;
   state_suffix?: string;
+  glyph_color_css?: string | null;
+  glyph_color_role?: string | null;
+  sign_color?: string | null;
+  sign_color_role?: string | null;
   [key: string]: unknown;
 };
 
@@ -2714,14 +2828,15 @@ export type AstrolabeGeometry = {
   };
   rete: {
     ecliptic: AstrolabeCircle;
-    signBoundaries: Array<{ sign: number; x: number; y: number; color: string }>;
-    signGlyphLabels: Array<{ sign: number; glyph: string; x: number; y: number; color: string }>;
+    signBoundaries: Array<{ sign: number; x: number; y: number; color: string; colorRole?: string | null }>;
+    signGlyphLabels: Array<{ sign: number; glyph: string; x: number; y: number; color: string; colorRole?: string | null }>;
     stars: Array<{ name: string; nom: string; ra: number; decl: number; x: number; y: number }>;
   };
   bodies: Array<{
     id: number;
     glyph: string;
     color: string;
+    colorRole?: string | null;
     ra: number;
     decl: number;
     lon: number;
@@ -2742,7 +2857,7 @@ export type AstrolabeGeometry = {
   zodiacBand: {
     ecliptic: AstrolabeCircle;
     ticks: Array<AstrolabePoint & { deg: number; level: number }>;
-    glyphs: Array<{ sign: number; glyph: string; x: number; y: number; color: string }>;
+    glyphs: Array<{ sign: number; glyph: string; x: number; y: number; color: string; colorRole?: string | null }>;
   };
   // Info label strings (Arc d°m's" + Age N yrs) computed in the engine.
   infoLabel: { arc: string; age: string; deltaDeg: number; ageYears: number };
@@ -2783,6 +2898,7 @@ export type SquareChartPlanet = {
   id: number;
   glyph: string;
   color: string;
+  colorRole?: string | null;
   sign: number;
   signGlyph: string;
   deg: number;
@@ -2847,6 +2963,7 @@ export type MundaneChartBody = {
   id: number;
   glyph: string;
   color: string;
+  colorRole?: string | null;
   /** Mundane longitude in degrees, 0 at the ASC. */
   mundane: number;
   motion: string;
@@ -2885,6 +3002,7 @@ export type MundaneChartAspect = {
   orbArcmin: number;
   maxOrbArcmin: number;
   color: string;
+  colorRole?: string | null;
   hoverFlag?: InspectorFlagPayload | null;
 };
 
@@ -3101,6 +3219,8 @@ export type OptionsColors = {
   clrsidebartext: RGB | null;
   clrtable: RGB | null;
   clrtexts: RGB | null;
+  clrappbackground: RGB | null;
+  clrapptexts: RGB | null;
   clrframe: RGB | null;
   clrsigns: RGB | null;
   clrAscMC: RGB | null;
@@ -3149,6 +3269,8 @@ export type OptionsDisplay = {
   dateconvention: string;
   // Aesthetic / chrome.
   show_help_chip: boolean;
+  /** Hidden presentation aid; deliberately has no Settings control. */
+  presentation_cursor: boolean;
   showkeyprompts: boolean; // master key-prompt toggle (options.py:129)
   // Dignity ring display.
   showterms: boolean;
@@ -3171,12 +3293,21 @@ export type OptionsDisplay = {
   intables: boolean; // show in tables (options.py:117)
   usetradfixstarnamespdlist: boolean; // trad fixstar names in PD list (options.py:168)
   theme: number; // wheel LAYOUT 0/1/2 (catalog.themeLayouts — DISTINCT from colour theme)
+  anglo_dense_label_layout: "leader-columns" | "routed-cusps";
   phasismode: number; // Phasis enum 0/1/2 (catalog.phasisModes)
   showcazimi: boolean; // show Cazimi rows in radix overlay
   cazimimode: number; // Cazimi enum 0/1/2 (catalog.cazimiModes)
   synodicmode: number; // planetary-return Shift+Arrow event filter (catalog.synodicModes)
   showeclipseoverlay: boolean; // show nearby eclipse rows in radix overlay
   astrocart_localspace_additive: boolean; // Local Space mode overlays normal ACG lines
+  astrocart_show_ecliptic: boolean;
+  astrocart_show_equator: boolean;
+  astrocart_show_asc_circle: boolean;
+  astrocart_show_mc_circle: boolean;
+  astrocart_show_house_lines: boolean;
+  astrocart_show_zodiac_lines: boolean;
+  astrocart_show_country_labels: boolean;
+  astrocart_terrain_relief: boolean;
   // Fixed-length bool vectors — per-index labels/glyphs come from the catalog.
   transcendental: boolean[]; // 3: U/N/P (catalog.transcendentalLabels)
   aspect: boolean[]; // 12: per-aspect draw toggle (catalog.aspectLabels)
@@ -3260,6 +3391,7 @@ export type ThemePreset = {
 export type ThemeState = {
   activePreset: string;
   mode: "light" | "dark";
+  presentationCursor?: boolean;
   schemaVersion: number;
   version: number;
   styleRevision: number;
@@ -3267,6 +3399,54 @@ export type ThemeState = {
   styleHash: string;
   appTokens: Record<string, string>;
   chartPalette: Record<string, string>;
+  activeProfile: StyleProfileSummary | null;
+  profileOverrides: {
+    appTokens: Record<string, string>;
+    chartPalette: Record<string, string>;
+    chartData: {
+      planets?: string[];
+      aspects?: string[];
+      signColors?: string[];
+    };
+  };
+};
+
+export type StyleProfileScope = "app" | "chart" | "combined";
+export type StyleProfileValue = number | string | [number, number, number] | [number, number, number, number];
+
+export type StyleProfileSummary = {
+  id: string;
+  name: string;
+  scope: StyleProfileScope;
+  basePresetId: string | null;
+  contentHash: string;
+};
+
+export type StyleProfile = StyleProfileSummary & {
+  kind: "aries.style-profile";
+  profileSchemaVersion: 1;
+  tokenSchemaVersion: number;
+  overrides: Record<string, StyleProfileValue>;
+};
+
+export type StyleProfileInput = Omit<StyleProfile, "contentHash">;
+
+export type StyleProfilesPayload = {
+  profileSchemaVersion: number;
+  tokenSchemaVersion: number;
+  activeProfileId: string | null;
+  profiles: StyleProfile[];
+  loadError: string | null;
+  profileErrors: Record<string, string>;
+};
+
+export type StyleProfileMutationResult = {
+  styleProfiles: StyleProfilesPayload;
+  activeProfile: StyleProfile | null;
+  profile?: StyleProfile;
+  themeState: ThemeState;
+  refreshedDocumentIds: string[];
+  refreshMode: "display-overlay" | null;
 };
 
 // Lunar Mansions (manazil) zodiac mode — mansionsdlg.MansionsDlg. `manazil_zodiac`
@@ -3387,10 +3567,9 @@ export type OptionsRelationshipCharts = {
   synastry_opens_composite_first: boolean;
 };
 
-// Language selection (langsdlg.LanguagesDlg). PERSISTENCE only — the webapp has
-// no string-localization framework; langid is written + persisted and charts
-// re-render, but UI strings are not re-translated (deferred). `available` is the
-// bundled language list (mtexts.langtexts), value == langid.
+// Language selection (langsdlg.LanguagesDlg). The daemon owns langid; chart and
+// React localization both mirror it live. `available` is the bundled language
+// list (mtexts.langtexts), value == langid.
 export type OptionsLanguages = {
   langid: number;
   available: EnumChoice[];
@@ -3554,6 +3733,7 @@ export type OptionsCatalog = {
   cazimiModes: EnumChoice[]; // Cazimi enum (options.Options.CAZIMI_MODE_*)
   synodicModes: EnumChoice[]; // Synodic cycle event filter
   themeLayouts: EnumChoice[]; // wheel layout choice (theme 0/1/2)
+  angloDenseLabelLayouts: StringEnumChoice[];
   mansionZodiacModes: StringEnumChoice[]; // manazil_zodiac choices (str values)
   speculumPlacidianCols: SpeculumColMeta[]; // Placidian speculum column oracle
   speculumRegiomontanCols: SpeculumColMeta[]; // Regiomontan speculum column oracle
@@ -3663,7 +3843,7 @@ export type OptionsPrimaryDirections = {
   pdincharttyp: number; // 0=from mundane positions, 1=ecliptic feet, 2=full pseudo-astronomic
   pdinchartsecmotion: boolean; // celestial full pseudo-astronomic secondary motion
   pdinchartterrsecmotion: boolean; // terrestrial chart secondary motion
-  pdinchartreverse: boolean; // reverse the signed PD wheel rotation for comparison
+  pdinchartreverse: boolean; // true: outer promissor -> radix significator; false: legacy Morinus reversed rings
   // Keys block
   pdkeydyn: boolean; // true=Dynamic, false=Static
   pdkeyd: number; // dynamic preset index (typeListDyn)
@@ -3685,6 +3865,37 @@ export type OptionsPrimaryDirections = {
   pdcustomer2southern: boolean;
   // Active Arabic-part names (promissor/significator picker source)
   arabicPartNames: string[];
+};
+
+export type SettingsRegistryTab = {
+  id: string;
+  labelKey: string;
+  menuCommands: string[];
+};
+
+export type MirroredSettingDefinition = {
+  id: string;
+  group: "display";
+  field: keyof OptionsDisplay;
+  kind: "boolean";
+  label: string;
+  labelKey: string;
+};
+
+export type MirroredSettingsSection = {
+  id: string;
+  tabId: string;
+  menuId: string;
+  label: string;
+  labelKey: string;
+  settings: MirroredSettingDefinition[];
+};
+
+export type SettingsRegistry = {
+  version: number;
+  tabs: SettingsRegistryTab[];
+  mirroredSections: MirroredSettingsSection[];
+  themePresets: Array<{ name: string; mtextKey?: string }>;
 };
 
 export type OptionsPayload = {
@@ -3714,6 +3925,7 @@ export type OptionsPayload = {
   themePresets: ThemePreset[];
   themeState: ThemeState;
   catalog: OptionsCatalog;
+  settingsRegistry: SettingsRegistry;
 };
 
 export type RevolutionLocationPredicate = {
@@ -3763,8 +3975,7 @@ export type OptionsPatch = {
   /** Relationship-chart settings (options_service._apply_relationship_charts —
    * compositeoptsdlg + onRelChartsLauncherToggle, morin.py:20167-20228). */
   relationshipCharts?: Partial<OptionsRelationshipCharts>;
-  /** Language selection (options_service._apply_languages — langsdlg; PERSISTENCE
-   * only, no UI re-localization). */
+  /** Language selection (options_service._apply_languages — langsdlg). */
   languages?: Partial<Pick<OptionsLanguages, "langid">>;
   /** Annual-profections mode flags (options_service._apply_profections —
    * options.zodprof / usezodprojsprof via saveProfections, the persistent
@@ -3876,6 +4087,137 @@ export async function fetchThemeState(signal?: AbortSignal): Promise<ThemeState>
     throw new Error(`theme state fetch failed: ${response.status}`);
   }
   return (await response.json()) as ThemeState;
+}
+
+export async function fetchStyleProfiles(signal?: AbortSignal): Promise<StyleProfilesPayload> {
+  const response = await daemonFetch(`${daemonBaseUrl()}/api/options/style-profiles`, {
+    cache: "no-store",
+    signal,
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`style profiles fetch failed: ${response.status} ${detail}`);
+  }
+  return (await response.json()) as StyleProfilesPayload;
+}
+
+export async function saveStyleProfile(
+  profile: StyleProfileInput,
+  activate = false,
+  signal?: AbortSignal,
+): Promise<StyleProfileMutationResult> {
+  const response = await daemonFetch(`${daemonBaseUrl()}/api/options/style-profiles`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+    body: JSON.stringify({ profile, activate }),
+    signal,
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`style profile save failed: ${response.status} ${detail}`);
+  }
+  return (await response.json()) as StyleProfileMutationResult;
+}
+
+export async function importStyleProfile(
+  profile: StyleProfileInput,
+  activate = false,
+  signal?: AbortSignal,
+): Promise<StyleProfileMutationResult> {
+  const response = await daemonFetch(`${daemonBaseUrl()}/api/options/style-profiles/import`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+    body: JSON.stringify({ profile, activate }),
+    signal,
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`style profile import failed: ${response.status} ${detail}`);
+  }
+  return (await response.json()) as StyleProfileMutationResult;
+}
+
+export async function activateStyleProfile(
+  profileId: string | null,
+  signal?: AbortSignal,
+): Promise<StyleProfileMutationResult> {
+  const response = await daemonFetch(`${daemonBaseUrl()}/api/options/style-profiles/activate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+    body: JSON.stringify({ profileId }),
+    signal,
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`style profile activation failed: ${response.status} ${detail}`);
+  }
+  return (await response.json()) as StyleProfileMutationResult;
+}
+
+export async function deleteStyleProfile(
+  profileId: string,
+  signal?: AbortSignal,
+): Promise<StyleProfileMutationResult> {
+  const response = await daemonFetch(
+    `${daemonBaseUrl()}/api/options/style-profiles/${encodeURIComponent(profileId)}`,
+    { method: "DELETE", cache: "no-store", signal },
+  );
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`style profile delete failed: ${response.status} ${detail}`);
+  }
+  return (await response.json()) as StyleProfileMutationResult;
+}
+
+export async function fetchStyleProfileExport(
+  profileId: string,
+  signal?: AbortSignal,
+): Promise<StyleProfile> {
+  const response = await daemonFetch(
+    `${daemonBaseUrl()}/api/options/style-profiles/${encodeURIComponent(profileId)}/export`,
+    { cache: "no-store", signal },
+  );
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`style profile export failed: ${response.status} ${detail}`);
+  }
+  return (await response.json()) as StyleProfile;
+}
+
+export async function migrateLegacyStyleTokens(
+  values: Record<string, unknown>,
+  activate = true,
+  signal?: AbortSignal,
+): Promise<StyleProfileMutationResult & {
+  migration: {
+    sourceHash: string;
+    profile: StyleProfile | null;
+    rejected: string[];
+    alreadyMigrated: boolean;
+  };
+}> {
+  const response = await daemonFetch(`${daemonBaseUrl()}/api/options/style-profiles/migrate-legacy`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+    body: JSON.stringify({ values, activate }),
+    signal,
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`legacy style migration failed: ${response.status} ${detail}`);
+  }
+  return (await response.json()) as StyleProfileMutationResult & {
+    migration: {
+      sourceHash: string;
+      profile: StyleProfile | null;
+      rejected: string[];
+      alreadyMigrated: boolean;
+    };
+  };
 }
 
 export type QuickchartsPromptPredicate = {
@@ -4236,6 +4578,8 @@ export type ShortcutEntry = {
    * reference-only (desktop accelerators / not-yet-wired quick keys) so the
    * overlay can grey them instead of advertising dead keys. */
   bound: boolean;
+  /** Bound but deliberately absent from Help and public shortcut lists. */
+  hidden?: boolean;
 };
 
 export type NativeMenuNode =
@@ -4281,6 +4625,7 @@ export type WorkspaceManifest = {
   topActions: SidebarAction[];
   shortcuts: ShortcutEntry[];
   nativeMenu?: NativeMenuManifest;
+  settingsRegistry?: SettingsRegistry;
 };
 
 export type WorkspaceContextMenuNode =
@@ -4590,6 +4935,8 @@ export type GenericTableCellRun = {
   planet?: number;
   /** Daemon-resolved CSS color for this run (wx useplanetcolors/dignity palette). */
   color?: string;
+  /** Stable chart-palette CSS role; `color` remains the literal fallback. */
+  colorRole?: string | null;
 };
 
 export type GenericTableCell = {
@@ -4604,6 +4951,8 @@ export type GenericTableCell = {
   planet?: number;
   /** Daemon-resolved CSS color (wx useplanetcolors/dignity palette). */
   color?: string;
+  /** Stable chart-palette CSS role; `color` remains the literal fallback. */
+  colorRole?: string | null;
   /** "strong" renders bold; mirrors wx bold-row/bold-cell semantics. */
   emphasis?: string;
   /** Named text face for script-specific scholarly data. */
@@ -4623,6 +4972,8 @@ export type GenericTableColumn = {
   widthFactor?: number;
   /** Daemon-resolved header colour (profectiontable.get_body_header_color). */
   colorHex?: string | null;
+  /** Stable chart-palette CSS role; `colorHex` remains the literal fallback. */
+  colorRole?: string | null;
 };
 
 export type GenericTableRow = {
@@ -4642,6 +4993,7 @@ export type AspectMatrixAxisEntry = {
   glyphFont?: "morinus" | "text" | string;
   label?: string;
   color?: string;
+  colorRole?: string | null;
 };
 
 /** One matrix square: aspect glyph + orb + applying/exact/parallel marks
@@ -4652,6 +5004,7 @@ export type AspectMatrixCell = {
   glyph?: string;
   glyphFont?: "morinus" | "text" | string;
   color?: string;
+  colorRole?: string | null;
   applying?: boolean;
   exact?: boolean;
   parallel?: "parallel" | "contraparallel";
@@ -4731,6 +5084,7 @@ export type SynodicPlanetItem = {
   label: string;
   glyph: string;
   color?: string | null;
+  colorRole?: string | null;
   enabled: boolean;
 };
 
@@ -4739,6 +5093,7 @@ export type SynodicSignPayload = {
   glyph: string;
   label: string;
   color?: string | null;
+  colorRole?: string | null;
 };
 
 export type SynodicCycleRow = {
@@ -4752,6 +5107,7 @@ export type SynodicCycleRow = {
   planetLabel: string;
   planetGlyph: string;
   planetColor?: string | null;
+  planetColorRole?: string | null;
   eventDate: string;
   eventTime: string;
   displayDate: string;
@@ -4775,6 +5131,8 @@ export type SynodicCyclePayload = {
     fromDate: string;
     toDate: string;
     focusDatetime: string;
+    currentDatetime: string;
+    birthDatetime: string;
     columns: string[];
     planetItems: SynodicPlanetItem[];
     activePlanetIds: number[];
@@ -4793,6 +5151,7 @@ export type StripBody = {
   degree: number;
   minuteLabel: string;
   colorHex?: string;
+  colorRole?: string | null;
 };
 
 /** capabilities.almutenTopical: the topic selector for the topical almuten
@@ -4808,6 +5167,7 @@ async function workspacePost<T>(
   body: unknown,
   signal?: AbortSignal,
 ): Promise<T> {
+  await waitForDaemonStartup(signal);
   const startedAt = perfNow();
   const perfEnabled = chartPerfEnabled();
   const query = perfEnabled && path.startsWith("/api/workspace/") ? "?perf=1" : "";
@@ -4819,6 +5179,7 @@ async function workspacePost<T>(
     signal,
   });
   const headersAt = perfNow();
+  const contentLength = Number.parseInt(response.headers.get("content-length") ?? "", 10);
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
     throw new Error(`${path} failed: ${response.status} ${detail}`);
@@ -4834,7 +5195,10 @@ async function workspacePost<T>(
         : null;
     recordChartPerf("workspace-command", {
       path,
-      bytes: approxUtf8Bytes(text),
+      // Uvicorn supplies the exact encoded response size. Using it avoids a
+      // second response-sized TextEncoder allocation on every measured step;
+      // retain the fallback for proxy/chunked transports without the header.
+      bytes: Number.isFinite(contentLength) ? contentLength : approxUtf8Bytes(text),
       fetchMs: headersAt - startedAt,
       bodyMs: bodyAt - headersAt,
       parseMs: parsedAt - bodyAt,
@@ -5004,7 +5368,7 @@ export type AstrocartViewState = {
   pitch?: number;
   projection?: string;
   lineModes?: AstrocartLineMode[];
-  overlays?: { parans?: boolean };
+  overlays?: { parans?: boolean; asterisms?: boolean };
   legend?: { collapsed?: boolean };
 };
 
@@ -5909,6 +6273,7 @@ export async function workspaceNavigate(
 export type WorkspaceNavigateKeyResult = {
   documentId: string;
   stepped: boolean;
+  appliedSteps?: number;
   displayDatetime: string | null;
   documents?: DaemonDocumentSummary[];
   /** The freshly-rendered chart for the stepped doc (``step_fast`` overlay mode),
@@ -5931,11 +6296,12 @@ export async function workspaceNavigateKey(
   key: string,
   shift: boolean,
   alt: boolean,
+  repeat = 1,
   signal?: AbortSignal,
 ): Promise<WorkspaceNavigateKeyResult> {
   return workspacePost<WorkspaceNavigateKeyResult>(
     "/api/workspace/navigate-key",
-    { docId, key, shift, alt },
+    { docId, key, shift, alt, repeat },
     signal,
   );
 }
@@ -6025,6 +6391,9 @@ export type DaemonEvent =
       type: "options.changed";
       refreshedDocumentIds: string[];
       refreshMode?: string | null;
+      styleOnly?: boolean;
+      listDataChanged?: boolean;
+      langid?: number;
       schemaVersion?: number;
       themeVersion: number;
       styleRevision?: number;

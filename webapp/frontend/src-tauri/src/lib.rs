@@ -3,8 +3,8 @@
 
 use std::collections::HashSet;
 use std::fmt::Write as _;
-use std::fs;
-use std::io::Read;
+use std::fs::{self, OpenOptions};
+use std::io::Write as IoWrite;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -27,6 +27,8 @@ use tauri::{
 };
 
 mod licensing;
+#[cfg(target_os = "windows")]
+mod windows_titlebar;
 
 struct DaemonProcess {
     child: Mutex<Option<Child>>,
@@ -93,13 +95,13 @@ const NATIVE_MENU_MANIFEST_JSON: &str = include_str!("../native-menu-manifest.js
 const MAIN_WINDOW_STATE_FILE: &str = "main-window-size.json";
 const MAIN_WINDOW_MIN_WIDTH: f64 = 1024.0;
 const MAIN_WINDOW_MIN_HEIGHT: f64 = 720.0;
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", not(target_arch = "x86_64")))]
 const MAIN_TRAFFIC_LIGHT_X: f64 = 19.0;
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", not(target_arch = "x86_64")))]
 const MAIN_TRAFFIC_LIGHT_DIAMETER: f64 = 12.0;
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", not(target_arch = "x86_64")))]
 const MAIN_TRAFFIC_LIGHT_CENTER_GAP: f64 = 20.0;
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", not(target_arch = "x86_64")))]
 const COMPACT_TRAFFIC_LIGHT_TAG_BASE: isize = 741_200;
 
 #[derive(Debug, Deserialize)]
@@ -186,6 +188,41 @@ const RECENT_CHARTS_SUBMENU_ID: &str = "menu.recent-charts";
 
 fn frontend_perf_enabled() -> bool {
     matches!(std::env::var("ARIES_TAURI_PERF").ok().as_deref(), Some("1"))
+}
+
+fn speedlog_enabled() -> bool {
+    cfg!(debug_assertions) || matches!(std::env::var("ARIES_SPEEDLOG").ok().as_deref(), Some("1"))
+}
+
+fn speedlog_path() -> PathBuf {
+    std::env::temp_dir().join("aries-speedlog.jsonl")
+}
+
+fn append_speedlog(event: &FrontendPerfEvent) -> Result<(), String> {
+    let recorded_at_unix_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_millis();
+    let line = serde_json::to_string(&serde_json::json!({
+        "recordedAtUnixMs": recorded_at_unix_ms,
+        "event": event,
+    }))
+    .map_err(|error| error.to_string())?;
+    let path = speedlog_path();
+    if fs::metadata(&path)
+        .map(|metadata| metadata.len() >= 5 * 1024 * 1024)
+        .unwrap_or(false)
+    {
+        let rotated = path.with_extension("jsonl.1");
+        let _ = fs::remove_file(&rotated);
+        fs::rename(&path, rotated).map_err(|error| error.to_string())?;
+    }
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|error| error.to_string())?;
+    writeln!(file, "{line}").map_err(|error| error.to_string())
 }
 
 #[cfg(target_os = "macos")]
@@ -357,10 +394,8 @@ fn hex_token(bytes: &[u8]) -> String {
 
 fn generate_daemon_token() -> String {
     let mut bytes = [0_u8; 32];
-    if let Ok(mut file) = fs::File::open("/dev/urandom") {
-        if file.read_exact(&mut bytes).is_ok() {
-            return hex_token(&bytes);
-        }
+    if getrandom::getrandom(&mut bytes).is_ok() {
+        return hex_token(&bytes);
     }
     let fallback = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -376,6 +411,7 @@ fn daemon_parent_pid() -> String {
 const TAURI_DAEMON_CORS_ORIGINS: &str =
     "http://tauri.localhost,https://tauri.localhost,tauri://localhost";
 const DEV_DAEMON_CORS_ORIGINS: &str = "http://127.0.0.1:3000,http://localhost:3000,http://tauri.localhost,https://tauri.localhost,tauri://localhost";
+const STYLE_LAB_DEV_ORIGINS: &str = "http://127.0.0.1:3010,http://localhost:3010";
 
 fn daemon_cors_origins() -> &'static str {
     if cfg!(debug_assertions) {
@@ -385,13 +421,52 @@ fn daemon_cors_origins() -> &'static str {
     }
 }
 
+fn write_dev_daemon_connection(
+    base_dir: &Path,
+    port: u16,
+    daemon_token: &str,
+) -> std::io::Result<()> {
+    if !cfg!(debug_assertions) {
+        return Ok(());
+    }
+    let directory = base_dir.join("webapp").join("frontend").join(".tmp");
+    fs::create_dir_all(&directory)?;
+    let path = directory.join("tauri-daemon.json");
+    let temporary = directory.join(".tauri-daemon.json.tmp");
+    let payload = serde_json::to_vec(&serde_json::json!({
+        "url": format!("http://127.0.0.1:{port}"),
+        "token": daemon_token,
+        "parentPid": std::process::id(),
+    }))
+    .map_err(std::io::Error::other)?;
+    let mut options = OpenOptions::new();
+    options.create(true).truncate(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(&temporary)?;
+    file.write_all(&payload)?;
+    file.sync_all()?;
+    fs::rename(temporary, path)
+}
+
 fn apply_daemon_environment(command: &mut Command, port: u16, daemon_token: &str, base_dir: &Path) {
+    if let Err(error) = write_dev_daemon_connection(base_dir, port, daemon_token) {
+        log::warn!("failed to publish development daemon connection: {error}");
+    }
+    let cors_origins = if cfg!(debug_assertions) {
+        format!("{},{}", daemon_cors_origins(), STYLE_LAB_DEV_ORIGINS)
+    } else {
+        daemon_cors_origins().to_string()
+    };
     command
         .env("ARIES_DAEMON_PORT", port.to_string())
         .env("ARIES_DAEMON_TOKEN", daemon_token)
         .env("ARIES_DAEMON_PARENT_PID", daemon_parent_pid())
         .env("ARIES_DAEMON_BASE_DIR", base_dir)
-        .env("ARIES_DAEMON_CORS_ORIGINS", daemon_cors_origins());
+        .env("ARIES_DAEMON_CORS_ORIGINS", cors_origins);
 }
 
 fn attach_daemon_logs(command: &mut Command, handle: &tauri::AppHandle) {
@@ -442,6 +517,20 @@ fn attach_daemon_logs(command: &mut Command, handle: &tauri::AppHandle) {
         }
     }
 }
+
+#[cfg(target_os = "windows")]
+fn configure_daemon_process(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+
+    // PyInstaller produces a console executable so redirected startup errors
+    // remain available in the app log. Suppress only the separate console
+    // window when Tauri launches that sidecar.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(target_os = "windows"))]
+fn configure_daemon_process(_command: &mut Command) {}
 
 fn fallback_resource_dir_from_current_exe() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
@@ -511,40 +600,59 @@ fn spawn_daemon(
             .join("..")
             .join("..")
             .canonicalize()?;
-        let python = repo_root.join("webapp/.venv/bin/python");
+        let python = if cfg!(target_os = "windows") {
+            repo_root.join("webapp/.venv/Scripts/python.exe")
+        } else {
+            repo_root.join("webapp/.venv/bin/python")
+        };
         let mut command = Command::new(&python);
         command
             .args(["-m", "webapp.daemon"])
             .current_dir(&repo_root);
+        let mut python_paths = vec![repo_root.join("SWEP").join("src")];
+        if let Some(existing) = std::env::var_os("PYTHONPATH") {
+            python_paths.extend(std::env::split_paths(&existing));
+        }
+        if let Ok(python_path) = std::env::join_paths(python_paths) {
+            command.env("PYTHONPATH", python_path);
+        }
         apply_daemon_environment(&mut command, port, daemon_token, &repo_root);
         command
     } else {
         let resource_dir = bundled_resource_dir(handle)?;
+        let daemon_binary = if cfg!(target_os = "windows") {
+            "aries-daemon.exe"
+        } else {
+            "aries-daemon"
+        };
         let resource_sidecar = resource_dir
             .join("binaries")
             .join("aries-daemon")
-            .join("aries-daemon");
+            .join(daemon_binary);
         if resource_sidecar.exists() {
             let mut command = Command::new(resource_sidecar);
             apply_daemon_environment(&mut command, port, daemon_token, &resource_dir);
             attach_daemon_logs(&mut command, handle);
+            configure_daemon_process(&mut command);
             return command.spawn();
         }
-        let macos_sidecar = std::env::current_exe()
+        let adjacent_sidecar = std::env::current_exe()
             .ok()
-            .and_then(|path| path.parent().map(|parent| parent.join("aries-daemon")));
-        if let Some(bin_path) = macos_sidecar.filter(|path| path.exists()) {
+            .and_then(|path| path.parent().map(|parent| parent.join(daemon_binary)));
+        if let Some(bin_path) = adjacent_sidecar.filter(|path| path.exists()) {
             let mut command = Command::new(bin_path);
             apply_daemon_environment(&mut command, port, daemon_token, &resource_dir);
             attach_daemon_logs(&mut command, handle);
+            configure_daemon_process(&mut command);
             return command.spawn();
         }
-        let bin_path = resource_dir.join("binaries").join("aries-daemon");
+        let bin_path = resource_dir.join("binaries").join(daemon_binary);
         let mut command = Command::new(bin_path);
         apply_daemon_environment(&mut command, port, daemon_token, &resource_dir);
         command
     };
     attach_daemon_logs(&mut command, handle);
+    configure_daemon_process(&mut command);
     command.spawn()
 }
 
@@ -1084,7 +1192,36 @@ fn install_daemon_native_menu_when_ready(
     });
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+fn install_compact_macos_traffic_lights(window: &WebviewWindow<Wry>) -> Result<(), String> {
+    use objc2::ClassType;
+    use objc2_app_kit::{NSWindow, NSWindowButton};
+
+    let ns_window_ptr = window.ns_window().map_err(|e| e.to_string())?;
+    if ns_window_ptr.is_null() {
+        return Err("main NSWindow pointer is null".to_string());
+    }
+
+    // Intel Aries must remain dependable across the older AppKit versions it
+    // supports. Keep Apple's own controls attached to their native titlebar
+    // host instead of moving cloned utility buttons through private view
+    // hierarchies whose coordinates differ between macOS releases.
+    unsafe {
+        let ns_window: &NSWindow = &*ns_window_ptr.cast();
+        for kind in [
+            NSWindowButton::CloseButton,
+            NSWindowButton::MiniaturizeButton,
+            NSWindowButton::ZoomButton,
+        ] {
+            if let Some(button) = ns_window.standardWindowButton(kind) {
+                button.as_super().as_super().setHidden(false);
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(all(target_os = "macos", not(target_arch = "x86_64")))]
 fn install_compact_macos_traffic_lights(window: &WebviewWindow<Wry>) -> Result<(), String> {
     use objc2::ClassType;
     use objc2::MainThreadMarker;
@@ -1144,17 +1281,11 @@ fn install_compact_macos_traffic_lights(window: &WebviewWindow<Wry>) -> Result<(
             NSWindowButton::ZoomButton,
         ];
 
+        // Build every replacement before touching the live titlebar. If AppKit
+        // cannot provide compact controls, the original controls stay visible.
+        let mut compact_buttons = Vec::with_capacity(buttons.len());
         for (index, button) in buttons.iter().enumerate() {
             let tag = COMPACT_TRAFFIC_LIGHT_TAG_BASE + index as isize;
-            while let Some(existing_compact_button) = traffic_light_host.viewWithTag(tag) {
-                existing_compact_button.removeFromSuperview();
-            }
-            if let Some(parent) = cleanup_parent.as_ref() {
-                while let Some(existing_compact_button) = parent.viewWithTag(tag) {
-                    existing_compact_button.removeFromSuperview();
-                }
-            }
-
             let compact_button = NSWindow::standardWindowButton_forStyleMask(
                 button_kinds[index],
                 compact_style_mask,
@@ -1179,8 +1310,36 @@ fn install_compact_macos_traffic_lights(window: &WebviewWindow<Wry>) -> Result<(
             origin.x = MAIN_TRAFFIC_LIGHT_X + (index as f64 * center_gap);
             origin.y = center_y - (compact_rect.size.height / 2.0);
             compact_button.as_super().as_super().setFrameOrigin(origin);
-            button.as_super().as_super().setHidden(true);
+            compact_buttons.push(compact_button);
+        }
+
+        for (index, compact_button) in compact_buttons.iter().enumerate() {
+            let tag = COMPACT_TRAFFIC_LIGHT_TAG_BASE + index as isize;
+            while let Some(existing_compact_button) = traffic_light_host.viewWithTag(tag) {
+                existing_compact_button.removeFromSuperview();
+            }
+            if let Some(parent) = cleanup_parent.as_ref() {
+                while let Some(existing_compact_button) = parent.viewWithTag(tag) {
+                    existing_compact_button.removeFromSuperview();
+                }
+            }
             traffic_light_host.addSubview(compact_button.as_super().as_super());
+        }
+
+        let replacements_attached = compact_buttons
+            .iter()
+            .all(|button| button.as_super().as_super().superview().is_some());
+        if !replacements_attached {
+            for compact_button in &compact_buttons {
+                compact_button.as_super().as_super().removeFromSuperview();
+            }
+            for button in &buttons {
+                button.as_super().as_super().setHidden(false);
+            }
+            return Err("compact standard window buttons did not attach".to_string());
+        }
+        for button in &buttons {
+            button.as_super().as_super().setHidden(true);
         }
     }
 
@@ -1541,11 +1700,19 @@ async fn set_native_menu_labels(
 
 #[tauri::command]
 async fn record_frontend_perf(event: FrontendPerfEvent) -> Result<(), String> {
-    if frontend_perf_enabled() {
+    let automatic_speedlog = speedlog_enabled() && event.name == "speedlog-summary";
+    if frontend_perf_enabled() || automatic_speedlog {
         let raw = serde_json::to_string(&event).map_err(|e| e.to_string())?;
         log::info!("frontend-perf {raw}");
     }
+    if automatic_speedlog {
+        append_speedlog(&event)?;
+    }
     Ok(())
+}
+
+pub fn verify_licensed_build_contract() -> Result<(), String> {
+    licensing::validate_compiled_license_contract()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1567,8 +1734,14 @@ pub fn run() {
     } else {
         "false"
     };
+    let speedlog = if speedlog_enabled() { "true" } else { "false" };
+    let native_platform = std::env::consts::OS;
+    #[cfg(target_os = "windows")]
+    let windows_caption_inset = windows_titlebar::caption_controls_inset_css_px();
+    #[cfg(not(target_os = "windows"))]
+    let windows_caption_inset = 0;
     let init_script = format!(
-    "Object.defineProperty(window,\"__ARIES_TAURI_RUNTIME__\",{{value:true,configurable:false,writable:false}});Object.defineProperty(window,\"__ARIES_DAEMON_URL__\",{{value:\"{daemon_base_url}\",configurable:false,writable:false}});Object.defineProperty(window,\"__ARIES_DAEMON_TOKEN__\",{{value:\"{daemon_token}\",configurable:false,writable:false}});Object.defineProperty(window,\"__ARIES_NATIVE_PERF__\",{{value:{native_perf},configurable:false,writable:false}});"
+    "Object.defineProperty(window,\"__ARIES_TAURI_RUNTIME__\",{{value:true,configurable:false,writable:false}});Object.defineProperty(window,\"__ARIES_NATIVE_PLATFORM__\",{{value:\"{native_platform}\",configurable:false,writable:false}});Object.defineProperty(window,\"__ARIES_WINDOWS_CAPTION_INSET__\",{{value:{windows_caption_inset},configurable:false,writable:false}});Object.defineProperty(window,\"__ARIES_DAEMON_URL__\",{{value:\"{daemon_base_url}\",configurable:false,writable:false}});Object.defineProperty(window,\"__ARIES_DAEMON_TOKEN__\",{{value:\"{daemon_token}\",configurable:false,writable:false}});Object.defineProperty(window,\"__ARIES_NATIVE_PERF__\",{{value:{native_perf},configurable:false,writable:false}});Object.defineProperty(window,\"__ARIES_SPEEDLOG__\",{{value:{speedlog},configurable:false,writable:false}});"
   );
 
     tauri::Builder::default()
@@ -1613,13 +1786,16 @@ pub fn run() {
                 &baked_native_menu_manifest(),
             ));
 
-            if cfg!(debug_assertions) || frontend_perf_enabled() {
-                handle.plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
+            let native_log_level = if cfg!(debug_assertions) || frontend_perf_enabled() {
+                log::LevelFilter::Info
+            } else {
+                log::LevelFilter::Warn
+            };
+            handle.plugin(
+                tauri_plugin_log::Builder::default()
+                    .level(native_log_level)
+                    .build(),
+            )?;
             record_native_startup_perf(
                 "native-setup-start",
                 native_started_at,
@@ -1631,6 +1807,19 @@ pub fn run() {
                 }
                 if let Err(error) = restore_main_window_frame(&window) {
                     log::warn!("failed to restore main window frame: {error}");
+                }
+            }
+            #[cfg(target_os = "windows")]
+            if let Some(window) = app.get_webview_window("main") {
+                match window.hwnd() {
+                    Ok(hwnd) => {
+                        if let Err(error) = windows_titlebar::install(hwnd) {
+                            log::warn!(
+                                "failed to install native Windows titlebar overlay: {error}"
+                            );
+                        }
+                    }
+                    Err(error) => log::warn!("failed to acquire main Windows HWND: {error}"),
                 }
             }
             #[cfg(target_os = "macos")]

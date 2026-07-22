@@ -38,6 +38,8 @@ from math import acos, atan2, cos, degrees, radians, sin, tan
 from typing import Iterable
 
 import astrology
+import houses
+import util
 
 GEOGRAPHIC_LAT_LIMIT = 89.999
 """Practical GeoJSON latitude cap.
@@ -124,6 +126,9 @@ LINE_IC = "IC"
 LINE_ASC = "ASC"
 LINE_DSC = "DSC"
 ALL_KINDS = (LINE_MC, LINE_IC, LINE_ASC, LINE_DSC)
+
+NATAL_ASC_POINT_ID = "natal_asc"
+# Synthetic celestial point for the chart's own rising ecliptic degree.
 
 LINE_SYSTEM_IN_MUNDO = "in_mundo"
 LINE_SYSTEM_GEODETIC_GREENWICH = "geodetic_greenwich"
@@ -383,7 +388,7 @@ def _gst_deg(jd_ut: float) -> float:
 
 def resolve_equatorial(point: ACGPoint, jd_ut: float, iflag: int = astrology.SEFLG_SWIEPH) -> tuple[float, float]:
     """Return (ra_deg, dec_deg) for a point at the given instant."""
-    flag = iflag | astrology.SEFLG_EQUATORIAL
+    flag = (iflag & ~astrology.SEFLG_SIDEREAL) | astrology.SEFLG_EQUATORIAL
     if point.body_id is not None:
         _ret, eq, _err = astrology.swe_calc_ut_ex(jd_ut, int(point.body_id), flag)
         ra, dec = float(eq[0]), float(eq[1])
@@ -442,6 +447,7 @@ def _horizon_points(
     step: float,
     sign: int,
     max_error_meters: float = HORIZON_CHORD_ERROR_METERS,
+    anchor_latitudes: Iterable[float] = (),
 ) -> list[tuple[float, float]]:
     """(lon, lat) samples for ASC (sign=-1) or DSC (sign=+1).
 
@@ -453,9 +459,15 @@ def _horizon_points(
     """
     if abs(dec) < 1e-9:
         # δ = 0 — body is on celestial equator; ASC/DSC are vertical
-        # lines at ±90° from MC. Return a simple two-point polyline.
+        # lines at ±90° from MC. Preserve any requested exact latitude
+        # anchors between the endpoints as well.
         lon = _norm_lon(ra + sign * 90.0 - theta0)
-        return [(lon, lat_min), (lon, lat_max)]
+        latitudes = [lat_min]
+        latitudes.extend(
+            sorted({float(value) for value in anchor_latitudes if lat_min < float(value) < lat_max})
+        )
+        latitudes.append(lat_max)
+        return [(lon, latitude) for latitude in latitudes]
 
     phi_edge = 90.0 - abs(dec)  # strict circumpolar limit for this δ
     eff_min = max(lat_min, -phi_edge)
@@ -480,7 +492,7 @@ def _horizon_points(
         H = degrees(acos(cos_h))
         return ra + sign * H - theta0
 
-    return _adaptive_latitude_curve(
+    points = _adaptive_latitude_curve(
         eff_min,
         start_lon,
         eff_max,
@@ -489,6 +501,18 @@ def _horizon_points(
         max_lat_step=step,
         max_error_meters=max_error_meters,
     )
+    for latitude in sorted({
+        float(value) for value in anchor_latitudes
+        if eff_min < float(value) < eff_max
+    }):
+        if any(abs(point[1] - latitude) < 1e-12 for point in points):
+            continue
+        index = next(
+            (i for i, point in enumerate(points) if point[1] > latitude),
+            len(points),
+        )
+        points.insert(index, (_norm_lon(_lon_at(latitude)), latitude))
+    return points
 
 
 def _geodetic_horizon_points(
@@ -941,6 +965,98 @@ def compute_geodetic_acg_for_chart(chart, points: Iterable | None = None, **kwar
     if points is None:
         points = points_from_chart(chart)
     return compute_geodetic_acg(chart.time.jd, points=points, **kwargs)
+
+
+def natal_ascendant_point_from_chart(
+    chart,
+    *,
+    color_hex: str | None = None,
+) -> ACGPoint:
+    """Return the chart's natal Ascendant degree as a celestial point.
+
+    Chart angles are stored in the selected zodiac, while an ecliptic-to-
+    equatorial rotation needs tropical longitude. Recovering the tropical
+    value here keeps this physical rising point identical in tropical and
+    sidereal charts.
+    """
+    selected_lon = float(chart.houses.ascmc[houses.Houses.ASC])
+    tropical_lon = util.to_tropical_lon(
+        selected_lon,
+        float(getattr(chart, "ayanamsha_offset", 0.0) or 0.0),
+    )
+    return ACGPoint(
+        id=NATAL_ASC_POINT_ID,
+        label="Ascendant",
+        kind=KIND_CUSTOM,
+        ecliptic=(tropical_lon, 0.0),
+        color_hex=color_hex,
+    )
+
+
+def compute_natal_ascendant_acg_for_chart(
+    chart,
+    *,
+    lat_range: tuple[float, float] = (-GEOGRAPHIC_LAT_LIMIT, GEOGRAPHIC_LAT_LIMIT),
+    step_deg: float = 1.0,
+    iflag: int = astrology.SEFLG_SWIEPH,
+    horizon_error_meters: float = HORIZON_CHORD_ERROR_METERS,
+    color_hex: str | None = None,
+) -> ACGResult:
+    """Compute the natal Ascendant degree's standard ASC/DSC ACG pair.
+
+    This is distinct from the ordinary planetary ASC lines. The natal
+    Ascendant is the ecliptic degree rising at the chart place and time, so its
+    ASC locus necessarily crosses the birthplace. The birthplace latitude is
+    inserted as an exact analytic sample in both branches so preview geometry
+    shows the birthplace crossing and the opposite DSC branch without
+    interpolation drift.
+    """
+    if step_deg <= 0:
+        raise ValueError("step_deg must be positive")
+    lat_min, lat_max = map(float, lat_range)
+    if lat_min >= lat_max:
+        raise ValueError("lat_range must be (min, max) with min < max")
+
+    point = natal_ascendant_point_from_chart(chart, color_hex=color_hex)
+    jd_ut = float(chart.time.jd)
+    theta0 = _gst_deg(jd_ut)
+    ra, dec = resolve_equatorial(point, jd_ut, iflag)
+    observer_lat = float(chart.place.lat)
+    asc_points = _horizon_points(
+        ra,
+        dec,
+        theta0,
+        lat_min,
+        lat_max,
+        step_deg,
+        sign=-1,
+        max_error_meters=horizon_error_meters,
+        anchor_latitudes=(observer_lat,),
+    )
+    dsc_points = _horizon_points(
+        ra,
+        dec,
+        theta0,
+        lat_min,
+        lat_max,
+        step_deg,
+        sign=+1,
+        max_error_meters=horizon_error_meters,
+        anchor_latitudes=(observer_lat,),
+    )
+    lines = (
+        ACGLine(point.id, LINE_ASC, _split_antimeridian(asc_points)),
+        ACGLine(point.id, LINE_DSC, _split_antimeridian(dsc_points)),
+    )
+    return ACGResult(
+        jd_ut=jd_ut,
+        theta0_deg=theta0,
+        equatorial={point.id: (ra, dec)},
+        lines=lines,
+        lat_range=(lat_min, lat_max),
+        points=(point,),
+        parans=(),
+    )
 
 
 # ---------------------------------------------------------------------------

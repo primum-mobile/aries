@@ -43,7 +43,7 @@ class CustomerPD:
 	ELV = 13
 # ###########################################
 
-	def __init__(self, londeg, lonmin, lonsec, latdeg, latmin, latsec, southern, placelat, ascmc2, obl, raequasc):
+	def __init__(self, londeg, lonmin, lonsec, latdeg, latmin, latsec, southern, placelat, ascmc2, obl, raequasc, ayanamsha_offset=0.0):
 		self.londeg = londeg
 		self.lonmin = lonmin
 		self.lonsec = lonsec
@@ -58,7 +58,12 @@ class CustomerPD:
 		if self.southern:
 			self.lat *= -1
 
-		self.ra, self.decl, dist = astrology.swe_cotrans(self.lon, self.lat, 1.0, -obl)
+		self.ra, self.decl, dist = astrology.swe_cotrans(
+			util.to_tropical_lon(self.lon, ayanamsha_offset),
+			self.lat,
+			1.0,
+			-obl,
+		)
 
 		self.speculums = []
 		self.computePlacidianSpeculum(placelat, ascmc2)
@@ -84,7 +89,7 @@ class CustomerPD:
 		return obj
 
 	@classmethod
-	def from_ecliptic_longitude(cls, longitude, placelat, ascmc2, obl, raequasc, latitude=0.0):
+	def from_ecliptic_longitude(cls, longitude, placelat, ascmc2, obl, raequasc, latitude=0.0, ayanamsha_offset=0.0):
 		obj = cls.__new__(cls)
 		obj.londeg = None
 		obj.lonmin = None
@@ -95,7 +100,12 @@ class CustomerPD:
 		obj.lon = util.normalize(float(longitude))
 		obj.lat = float(latitude)
 		obj.southern = obj.lat < 0.0
-		obj.ra, obj.decl, dist = astrology.swe_cotrans(obj.lon, obj.lat, 1.0, -obl)
+		obj.ra, obj.decl, dist = astrology.swe_cotrans(
+			util.to_tropical_lon(obj.lon, ayanamsha_offset),
+			obj.lat,
+			1.0,
+			-obl,
+		)
 		obj.speculums = []
 		obj.computePlacidianSpeculum(placelat, ascmc2)
 		obj.computeRegiomontanSpeculum(placelat, ascmc2, raequasc)

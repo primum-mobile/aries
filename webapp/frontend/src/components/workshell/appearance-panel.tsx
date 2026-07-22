@@ -45,7 +45,8 @@ export function AppearancePanel({ open, onOpenChange }: Props) {
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="w-[390px] max-w-[calc(100vw-1rem)] gap-0 border-border bg-popover"
+        size="md"
+        className="gap-0 border-border bg-popover"
       >
         <SheetHeader className="px-[var(--aries-panel-padding-x)] py-[var(--aries-panel-padding-y)]">
           <div className="flex items-start justify-between gap-3 pr-8">

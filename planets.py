@@ -78,7 +78,8 @@ class Planet:
 
 		if (ecl == None):
 			serr,self.data = astrology.swe_calc_ut(tjd_ut, pId, flag)
-			serr,self.dataEqu = astrology.swe_calc_ut(tjd_ut, pId, flag+astrology.SEFLG_EQUATORIAL)
+			equatorial_flag = (int(flag) & ~astrology.SEFLG_SIDEREAL) | astrology.SEFLG_EQUATORIAL
+			serr,self.dataEqu = astrology.swe_calc_ut(tjd_ut, pId, equatorial_flag)
 
 			# data[0] : longitude
 			# data[1] : latitude
@@ -96,9 +97,16 @@ class Planet:
 			self.dataEqu = tuple(equ)
 			self.name = 'DescNode'
 
-		if nolat:
+		if nolat and ecl == None:
 			self.data = (self.data[Planet.LONG], 0.0, self.data[Planet.DIST], self.data[Planet.SPLON], self.data[Planet.SPLAT], self.data[Planet.SPDIST])
-			ra, decl, dist = astrology.swe_cotrans(self.data[Planet.LONG], 0.0, 1.0, -obl)
+			ayanamsha_offset = 0.0
+			if flag & astrology.SEFLG_SIDEREAL:
+				# The caller already selected the global sidereal mode. Recover
+				# the exact effective shift from the paired Swiss positions.
+				tropical_flags = int(flag) & ~astrology.SEFLG_SIDEREAL & ~astrology.SEFLG_EQUATORIAL
+				_serr, tropical = astrology.swe_calc_ut(tjd_ut, pId, tropical_flags)
+				ayanamsha_offset = util.normalize(tropical[Planet.LONG] - self.data[Planet.LONG])
+			ra, decl, dist = astrology.swe_cotrans(util.to_tropical_lon(self.data[Planet.LONG], ayanamsha_offset), 0.0, 1.0, -obl)
 			self.dataEqu = (ra, decl, self.dataEqu[Planet.DISTEQU], self.dataEqu[Planet.SPRAEQU], self.dataEqu[Planet.SPDECLEQU], self.dataEqu[Planet.SPDISTEQU])
 
 		if lat != None:
@@ -536,7 +544,7 @@ class Planet:
 # ########################################
 
 
-	def calcMundaneProfPos(self, ascmc2, pl, placelat, obl):
+	def calcMundaneProfPos(self, ascmc2, pl, placelat, obl, ayanamsha_offset=0.0):
 #		print '****** %s ******' % pl.name
 
 		ramc = ascmc2[houses.Houses.MC][houses.Houses.RA]
@@ -607,6 +615,7 @@ class Planet:
 
 #		print 'lon=%f' % lon
 
+		lon = util.normalize(lon - float(ayanamsha_offset or 0.0))
 		self.data = (lon, self.data[Planet.LAT], self.data[Planet.DIST], self.data[Planet.SPLON], self.data[Planet.SPLAT], self.data[Planet.SPDIST])
 		self.dataEqu = (ra, self.dataEqu[Planet.DECLEQU], self.dataEqu[Planet.DISTEQU], self.dataEqu[Planet.SPRAEQU], self.dataEqu[Planet.SPDECLEQU], self.dataEqu[Planet.SPDISTEQU])
 
@@ -655,7 +664,7 @@ class Planet:
 		return okGa, okGd, lon
 
 
-	def calcFullAstronomicalProc(self, da, oblN, raN, declN, placelat, ascmc2, raequasc):
+	def calcFullAstronomicalProc(self, da, oblN, raN, declN, placelat, ascmc2, raequasc, ayanamsha_offset=0.0):
 #		print '**** %s ****' % pl.name
 		ksi = raN+da
 		ksi = util.normalize(ksi)
@@ -702,6 +711,7 @@ class Planet:
 		latSZ = math.degrees(math.asin(math.sin(rdeclN)*math.cos(roblN)-math.cos(rdeclN)*math.sin(rksi)*math.sin(roblN)))
 		raSZ, declSZ, distSZ = astrology.swe_cotrans(longSZ, latSZ, 1.0, -oblN)
 
+		longSZ = util.normalize(longSZ - float(ayanamsha_offset or 0.0))
 		self.data = (longSZ, latSZ, self.data[Planet.DIST], self.data[Planet.SPLON], self.data[Planet.SPLAT], self.data[Planet.SPDIST])
 		self.dataEqu = (raSZ, declSZ, self.dataEqu[Planet.DISTEQU], self.dataEqu[Planet.SPRAEQU], self.dataEqu[Planet.SPDECLEQU], self.dataEqu[Planet.SPDISTEQU])
 
@@ -710,7 +720,7 @@ class Planet:
 		self.computeRegiomontanSpeculum(placelat, ascmc2, raequasc)
 
 
-	def calcRegioPDsInChartsPos(self, ascmc2, pl, placelat, obl):
+	def calcRegioPDsInChartsPos(self, ascmc2, pl, placelat, obl, ayanamsha_offset=0.0):
 #		print '****** %s ******' % pl.name
 
 		ramc = ascmc2[houses.Houses.MC][houses.Houses.RA]
@@ -782,6 +792,7 @@ class Planet:
 
 #		print 'lon=%f' % lon
 
+		lon = util.normalize(lon - float(ayanamsha_offset or 0.0))
 		self.data = (lon, self.data[Planet.LAT], self.data[Planet.DIST], self.data[Planet.SPLON], self.data[Planet.SPLAT], self.data[Planet.SPDIST])
 		self.dataEqu = (ra, self.dataEqu[Planet.DECLEQU], self.dataEqu[Planet.DISTEQU], self.dataEqu[Planet.SPRAEQU], self.dataEqu[Planet.SPDECLEQU], self.dataEqu[Planet.SPDISTEQU])
 
@@ -831,7 +842,7 @@ class Planet:
 		return okGa, okGd, lon
 
 
-	def calcMundaneWithoutSM(self, da, obl, placelat, ascmc2, raequasc):
+	def calcMundaneWithoutSM(self, da, obl, placelat, ascmc2, raequasc, ayanamsha_offset=0.0):
 		ra = self.dataEqu[Planet.RAEQU]
 		decl = self.dataEqu[Planet.DECLEQU]
 
@@ -842,6 +853,7 @@ class Planet:
 
 		lon, lat, dist = astrology.swe_cotrans(ra, decl, 1.0, obl)
 
+		lon = util.normalize(lon - float(ayanamsha_offset or 0.0))
 		self.data = (lon, lat, self.data[Planet.DIST], self.data[Planet.SPLON], self.data[Planet.SPLAT], self.data[Planet.SPDIST])
 		self.dataEqu = (ra, decl, self.dataEqu[Planet.DISTEQU], self.dataEqu[Planet.SPRAEQU], self.dataEqu[Planet.SPDECLEQU], self.dataEqu[Planet.SPDISTEQU])
 
@@ -911,24 +923,24 @@ class Planets:
 			self.planets[pl].calcProfPos(prof)
 
 
-	def calcMundaneProfPos(self, ascmc2, pls, placelat, obl):
+	def calcMundaneProfPos(self, ascmc2, pls, placelat, obl, ayanamsha_offset=0.0):
 		for pl in range(Planets.PLANETS_NUM):
-			self.planets[pl].calcMundaneProfPos(ascmc2, pls[pl], placelat, obl)
+			self.planets[pl].calcMundaneProfPos(ascmc2, pls[pl], placelat, obl, ayanamsha_offset)
 
 
-	def calcFullAstronomicalProc(self, da, oblN, pls, placelat, ascmc2, raequasc):
+	def calcFullAstronomicalProc(self, da, oblN, pls, placelat, ascmc2, raequasc, ayanamsha_offset=0.0):
 		for pl in range(Planets.PLANETS_NUM):
-			self.planets[pl].calcFullAstronomicalProc(da, oblN, pls[pl].dataEqu[Planet.RAEQU], pls[pl].dataEqu[Planet.DECLEQU], placelat, ascmc2, raequasc)
+			self.planets[pl].calcFullAstronomicalProc(da, oblN, pls[pl].dataEqu[Planet.RAEQU], pls[pl].dataEqu[Planet.DECLEQU], placelat, ascmc2, raequasc, ayanamsha_offset)
 
 
-	def calcRegioPDsInChartsPos(self, ascmc2, pls, placelat, obl):
+	def calcRegioPDsInChartsPos(self, ascmc2, pls, placelat, obl, ayanamsha_offset=0.0):
 		for pl in range(Planets.PLANETS_NUM):
-			self.planets[pl].calcRegioPDsInChartsPos(ascmc2, pls[pl], placelat, obl)
+			self.planets[pl].calcRegioPDsInChartsPos(ascmc2, pls[pl], placelat, obl, ayanamsha_offset)
 
 
-	def calcMundaneWithoutSM(self, da, obl, placelat, ascmc2, raequasc):
+	def calcMundaneWithoutSM(self, da, obl, placelat, ascmc2, raequasc, ayanamsha_offset=0.0):
 		for pl in range(Planets.PLANETS_NUM):
-			self.planets[pl].calcMundaneWithoutSM(da, obl, placelat, ascmc2, raequasc)
+			self.planets[pl].calcMundaneWithoutSM(da, obl, placelat, ascmc2, raequasc, ayanamsha_offset)
 
 
 

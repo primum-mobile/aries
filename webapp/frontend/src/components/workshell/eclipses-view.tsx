@@ -5,7 +5,7 @@
 "use client";
 
 import * as React from "react";
-import { Calendar, ChevronLeft, ChevronRight, Copy, Download, FileText, X } from "lucide-react";
+import { Calendar, ChevronLeft, ChevronRight, Copy, Download, FileText } from "lucide-react";
 
 import {
   ContextMenuItem,
@@ -30,7 +30,7 @@ import {
 } from "@/lib/daemon/client";
 import { isAbortError } from "@/lib/abort-error";
 import { coerceDateConvention, formatDateTriple, formatIsoDateTimeDisplay, type DateConvention } from "@/lib/date-display";
-import { LIST_ROLE_CLASSES, LIST_ROW_CLASSES, LIST_ROW_HEIGHT } from "@/lib/list-tokens";
+import { LIST_ROLE_CLASSES, LIST_ROW_CLASSES, useListRowHeight } from "@/lib/list-tokens";
 import {
   getCachedGenericTablePayload,
   rememberGenericTablePayload,
@@ -53,6 +53,8 @@ import { exportTablePayloadPdf } from "./table-pdf-export";
 import { exportTextContent } from "./text-export";
 import { useSettledWorkspaceRefreshSeq } from "./step-refresh";
 import { ColumnResizeHandle, useResizableTableColumns } from "./resizable-table-columns";
+import { RetainedPaneShell } from "./retained-pane-shell";
+import { PaneInfoBar, PaneToolbarButton } from "./list-controls";
 
 type Props = {
   documentId: string;
@@ -80,7 +82,6 @@ type EclipseCapabilities = {
 
 const TABLE_ID = "eclipses";
 
-const ROW_HEIGHT = LIST_ROW_HEIGHT.standard;
 const FOCUS_CONTEXT_ROWS = 5;
 const VIRTUAL_OVERSCAN_ROWS = 18;
 const ECLIPSE_VIRTUAL_SCROLL_SYNC_EVENT = "aries:eclipse-virtual-scroll-sync";
@@ -88,7 +89,12 @@ const ECLIPSE_VIRTUAL_SCROLL_SYNC_EVENT = "aries:eclipse-virtual-scroll-sync";
 type ScrollPlan =
   | { kind: "focus" }
   | { kind: "preserve"; anchor: ScrollAnchor | null }
-  | { kind: "preservePrepend"; scrollTop: number; firstRowId: string | null };
+  | {
+      kind: "preservePrepend";
+      scrollTop: number;
+      firstRowId: string | null;
+      rowHeight: number;
+    };
 
 type ScrollAnchor = {
   rowId: string;
@@ -98,6 +104,11 @@ type ScrollAnchor = {
 
 export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose }: Props) {
   const t = useT();
+  const rowHeight = useListRowHeight("standard");
+  const rowHeightRef = React.useRef(rowHeight);
+  React.useLayoutEffect(() => {
+    rowHeightRef.current = rowHeight;
+  }, [rowHeight]);
   const [payload, setPayload] = React.useState<GenericTablePayload | null>(() =>
     getCachedGenericTablePayload(TABLE_ID, documentId),
   );
@@ -201,28 +212,56 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
     }
     return 0;
   }, [focusRowId, focusRowIndex, rows]);
-  const virtualRows = useVirtualRows(listRef, rows.length, focusIndex);
+  const virtualRows = useVirtualRows(listRef, rows.length, focusIndex, rowHeight);
   const visibleRows = rows.slice(virtualRows.startIndex, virtualRows.endIndex);
+  const previousRowHeightRef = React.useRef(rowHeight);
+  React.useLayoutEffect(() => {
+    const previousRowHeight = previousRowHeightRef.current;
+    previousRowHeightRef.current = rowHeight;
+    if (previousRowHeight === rowHeight) return;
+    const container = listRef.current;
+    if (!container || rows.length === 0) return;
+    const headerHeight = getTableHeaderHeight(container);
+    const bodyScrollTop = Math.max(0, container.scrollTop - headerHeight);
+    const anchorUnits = Math.max(
+      0,
+      Math.min(rows.length, bodyScrollTop / previousRowHeight),
+    );
+    scrollExtendArmedRef.current = false;
+    container.dataset.ariesRowHeightAnchorUntil = String(Date.now() + 250);
+    clampScrollTop(
+      container,
+      container.scrollTop <= headerHeight
+        ? container.scrollTop
+        : headerHeight + anchorUnits * rowHeight,
+      rows.length,
+      rowHeight,
+    );
+    armScrollExtension();
+  }, [armScrollExtension, rowHeight, rows.length]);
   React.useLayoutEffect(() => {
     if (!listRef.current || !from || !to || !rows.length) return;
     const plan = scrollPlanRef.current;
     scrollPlanRef.current = null;
     if (plan?.kind === "preserve") {
-      restoreScrollAnchor(listRef.current, plan.anchor, rows);
+      restoreScrollAnchor(listRef.current, plan.anchor, rows, rowHeight);
       armScrollExtension();
       return;
     }
     if (plan?.kind === "preservePrepend") {
-      restorePrependedScroll(listRef.current, plan, rows);
+      restorePrependedScroll(listRef.current, plan, rows, rowHeight);
       armScrollExtension();
       return;
     }
     if (plan?.kind !== "focus" && hasFocusedInitialRef.current) return;
-    if (focusIndex >= 0 && scrollEclipseRowToAnchor(listRef.current, rows.length, focusIndex)) {
+    if (
+      focusIndex >= 0 &&
+      scrollEclipseRowToAnchor(listRef.current, rows.length, focusIndex, rowHeight)
+    ) {
       hasFocusedInitialRef.current = true;
       armScrollExtension();
     }
-  }, [armScrollExtension, chartMoment, documentId, focusIndex, from, rows, to]);
+  }, [armScrollExtension, chartMoment, documentId, focusIndex, from, rowHeight, rows, to]);
 
   const updateBinding = React.useCallback(
     async (binding: Record<string, unknown>, scrollPlan: ScrollPlan) => {
@@ -330,6 +369,7 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
               kind: "preservePrepend",
               scrollTop: listRef.current.scrollTop,
               firstRowId: rows[0]?.id ?? null,
+              rowHeight: rowHeightRef.current,
             }
           : {
               kind: "preserve",
@@ -360,16 +400,17 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
       !scrollExtendArmedRef.current ||
       scrollExtendInFlightRef.current ||
       pendingRef.current ||
+      Number(el.dataset.ariesRowHeightAnchorUntil ?? 0) > Date.now() ||
       !rows.length
     ) {
       return;
     }
     const rowTop = getTableHeaderHeight(el);
     const bodyScrollTop = Math.max(0, el.scrollTop - rowTop);
-    const firstVis = Math.max(0, Math.floor(bodyScrollTop / ROW_HEIGHT));
+    const firstVis = Math.max(0, Math.floor(bodyScrollTop / rowHeightRef.current));
     const lastVis = Math.min(
       rows.length - 1,
-      firstVis + Math.max(1, Math.floor(el.clientHeight / ROW_HEIGHT)),
+      firstVis + Math.max(1, Math.floor(el.clientHeight / rowHeightRef.current)),
     );
     if (firstVis <= edgeRows) {
       extendRange("before");
@@ -430,21 +471,35 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
 
   if (error && !payload) {
     return (
-      <PaneShell sourceName={sourceName} onClose={onClose}>
+      <RetainedPaneShell
+        title={t("eclipsesView.eclipses")}
+        sourceName={sourceName}
+        closeLabel={t("eclipsesView.closeEclipses")}
+        onClose={onClose}
+        wrapHeader
+        closeSize="small"
+      >
         <div className="flex flex-1 items-center justify-center p-6 text-[length:var(--aries-font-size-base)] text-[color:var(--aries-text-muted)]">
           {error}
         </div>
-      </PaneShell>
+      </RetainedPaneShell>
     );
   }
 
   if (!payload || !from || !to) {
     return (
-      <PaneShell sourceName={sourceName} onClose={onClose}>
+      <RetainedPaneShell
+        title={t("eclipsesView.eclipses")}
+        sourceName={sourceName}
+        closeLabel={t("eclipsesView.closeEclipses")}
+        onClose={onClose}
+        wrapHeader
+        closeSize="small"
+      >
         <div className="flex flex-1 items-center justify-center p-6 text-[length:var(--aries-font-size-base)] text-[color:var(--aries-text-muted)]">
           {t("eclipsesView.loadingEclipses")}
         </div>
-      </PaneShell>
+      </RetainedPaneShell>
     );
   }
 
@@ -452,24 +507,29 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
   const exportPayload = orderedTablePayload(payload, displayColumnOrder);
 
   return (
-    <PaneShell
+    <RetainedPaneShell
+      title={t("eclipsesView.eclipses")}
       sourceName={sourceName}
+      closeLabel={t("eclipsesView.closeEclipses")}
       onClose={onClose}
+      wrapHeader
+      closeSize="small"
       toolbar={
         <>
-          <button
+          <PaneToolbarButton
             type="button"
-            className="inline-flex size-7 items-center justify-center rounded border border-[color:var(--aries-border-subtle)] hover:bg-accent/40 disabled:opacity-50"
+            density="small"
+            square
             onClick={() => shiftRange(-rangeYears)}
             disabled={pending}
             aria-label={t("eclipsesView.previousEclipseRange")}
           >
-            <ChevronLeft className="size-4" />
-          </button>
+            <ChevronLeft />
+          </PaneToolbarButton>
           <input
             key={centerYear}
             aria-label={t("eclipsesView.eclipseCenterYear")}
-            className="h-7 w-20 rounded border border-[color:var(--aries-border-subtle)] bg-background px-2 text-center text-[length:var(--aries-font-size-small)]"
+            className="h-[var(--aries-control-height-small)] w-20 rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-border-subtle)] bg-background px-[var(--aries-control-padding-x-compact)] text-center text-[length:var(--aries-font-size-small)]"
             defaultValue={String(centerYear)}
             disabled={pending}
             onBlur={(event) => jumpToYear(event.currentTarget.value)}
@@ -480,18 +540,19 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
               }
             }}
           />
-          <button
+          <PaneToolbarButton
             type="button"
-            className="inline-flex size-7 items-center justify-center rounded border border-[color:var(--aries-border-subtle)] hover:bg-accent/40 disabled:opacity-50"
+            density="small"
+            square
             onClick={() => shiftRange(rangeYears)}
             disabled={pending}
             aria-label={t("eclipsesView.nextEclipseRange")}
           >
-            <ChevronRight className="size-4" />
-          </button>
-          <button
+            <ChevronRight />
+          </PaneToolbarButton>
+          <PaneToolbarButton
             type="button"
-            className="inline-flex h-7 items-center gap-1 rounded border border-[color:var(--aries-border-subtle)] px-2 text-[length:var(--aries-font-size-small)] hover:bg-accent/40 disabled:opacity-50"
+            density="small"
             onClick={() => {
               if (viewportToggleTarget) {
                 recenterOnDate(viewportToggleTarget);
@@ -500,12 +561,12 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
             disabled={pending || !viewportToggleTarget}
             title={t("eclipsesView.switchViewportTitle")}
           >
-            <Calendar className="size-3.5" />
+            <Calendar />
             {viewportToggleLabel}
-          </button>
-          <button
+          </PaneToolbarButton>
+          <PaneToolbarButton
             type="button"
-            className="inline-flex h-7 items-center gap-1 rounded border border-[color:var(--aries-border-subtle)] px-2 text-[length:var(--aries-font-size-small)] hover:bg-accent/40"
+            density="small"
             onClick={() => {
               const text = tableToTsv(exportPayload, exportPayload.rows);
               void navigator.clipboard?.writeText(text).catch(() => {
@@ -513,12 +574,12 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
               });
             }}
           >
-            <Copy className="size-3.5" />
+            <Copy />
             {t("eclipsesView.copy")}
-          </button>
-          <button
+          </PaneToolbarButton>
+          <PaneToolbarButton
             type="button"
-            className="inline-flex h-7 items-center gap-1 rounded border border-[color:var(--aries-border-subtle)] px-2 text-[length:var(--aries-font-size-small)] hover:bg-accent/40"
+            density="small"
             onClick={() =>
               void exportTextContent({
                 filename: "eclipses",
@@ -530,12 +591,12 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
               }).catch(() => {})
             }
           >
-            <Download className="size-3.5" />
+            <Download />
             TSV
-          </button>
-          <button
+          </PaneToolbarButton>
+          <PaneToolbarButton
             type="button"
-            className="inline-flex h-7 items-center gap-1 rounded border border-[color:var(--aries-border-subtle)] px-2 text-[length:var(--aries-font-size-small)] hover:bg-accent/40"
+            density="small"
             onClick={() =>
               void exportTextContent({
                 filename: "eclipses",
@@ -549,12 +610,12 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
               }).catch(() => {})
             }
           >
-            <FileText className="size-3.5" />
+            <FileText />
             TXT
-          </button>
-          <button
+          </PaneToolbarButton>
+          <PaneToolbarButton
             type="button"
-            className="inline-flex h-7 items-center gap-1 rounded border border-[color:var(--aries-border-subtle)] px-2 text-[length:var(--aries-font-size-small)] hover:bg-accent/40"
+            density="small"
             onClick={() =>
               void exportTablePayloadPdf(exportPayload, exportPayload.rows, {
                 fileStem: "eclipses",
@@ -563,16 +624,16 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
               }).catch(() => {})
             }
           >
-            <Download className="size-3.5" />
+            <Download />
             PDF
-          </button>
+          </PaneToolbarButton>
         </>
       }
     >
-      <div className="flex shrink-0 items-center justify-between border-b border-[color:var(--aries-border-subtle)] px-3 py-1.5 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]">
+      <PaneInfoBar className="justify-between text-[color:var(--aries-text-muted)]">
         <span>{formatRange(from, to, dateConvention)}</span>
         <span>{chartMoment === "eclipse_maximum" ? t("eclipsesView.eclipseMaximum") : t("eclipsesView.exactConjunction")}</span>
-      </div>
+      </PaneInfoBar>
       {actionError ? (
         <div className="shrink-0 border-b border-[color:var(--aries-border-subtle)] px-3 py-1.5 text-[length:var(--aries-font-size-small)] text-destructive">
           {actionError}
@@ -637,6 +698,7 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
                     onFocusDate={recenterOnDate}
                     onActionError={setActionError}
                     dateConvention={dateConvention}
+                    rowHeight={rowHeight}
                   />
                 ))}
                 {virtualRows.paddingBottom > 0 ? (
@@ -647,7 +709,14 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
           </tbody>
         </table>
       </div>
-    </PaneShell>
+      {payload.deferrals?.length ? (
+        <div className="shrink-0 space-y-1 border-t border-[color:var(--aries-border-subtle)] px-3 py-2 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]">
+          {payload.deferrals.map((note, index) => (
+            <div key={`${index}:${note}`}>{note}</div>
+          ))}
+        </div>
+      ) : null}
+    </RetainedPaneShell>
   );
 }
 
@@ -664,6 +733,7 @@ function EclipseRow({
   onFocusDate,
   onActionError,
   dateConvention,
+  rowHeight,
 }: {
   row: GenericTableRow;
   rowIndex: number;
@@ -677,6 +747,7 @@ function EclipseRow({
   onFocusDate: (date: [number, number, number]) => void;
   onActionError: (message: string | null) => void;
   dateConvention: DateConvention;
+  rowHeight: number;
 }) {
   const t = useT();
   const meta = asRecord(row.meta);
@@ -813,7 +884,7 @@ function EclipseRow({
           row.current && LIST_ROW_CLASSES.current,
           row.emphasis === "strong" && "font-semibold",
         )}
-        style={{ height: ROW_HEIGHT }}
+        style={{ height: rowHeight }}
       >
         {columnOrder.map((sourceIndex, visualIndex) => {
           const cell = row.cells[sourceIndex];
@@ -849,46 +920,6 @@ function EclipseRow({
         })}
       </tr>
     </TimedChartContextMenu>
-  );
-}
-
-function PaneShell({
-  sourceName,
-  onClose,
-  toolbar,
-  children,
-}: {
-  sourceName?: string;
-  onClose?: () => void;
-  toolbar?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  const t = useT();
-  return (
-    <div className="font-morinus-text flex h-full min-h-0 flex-col bg-background">
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[color:var(--aries-border-subtle)] bg-background px-3 py-2">
-        <div className="min-w-0 truncate text-[length:var(--aries-font-size-small)] font-medium text-[color:var(--aries-text-primary)]">
-          {t("eclipsesView.eclipses")}
-          {sourceName ? (
-            <span className="ml-1 font-normal text-[color:var(--aries-text-muted)]">{sourceName}</span>
-          ) : null}
-        </div>
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
-          {toolbar}
-          {onClose ? (
-            <button
-              type="button"
-              className="inline-flex size-7 items-center justify-center rounded hover:bg-accent/40"
-              onClick={onClose}
-              aria-label={t("eclipsesView.closeEclipses")}
-            >
-              <X className="size-4" />
-            </button>
-          ) : null}
-        </div>
-      </div>
-      {children}
-    </div>
   );
 }
 
@@ -971,6 +1002,7 @@ function useVirtualRows(
   scrollerRef: React.RefObject<HTMLDivElement | null>,
   rowCount: number,
   seedIndex: number,
+  rowHeight: number,
 ) {
   const [viewport, setViewport] = React.useState({ scrollTop: 0, height: 0, headerHeight: 0 });
 
@@ -1034,18 +1066,18 @@ function useVirtualRows(
     const bodyScrollTop = Math.max(0, viewport.scrollTop - viewport.headerHeight);
     const visibleStart =
       viewport.height > 0
-        ? Math.floor(bodyScrollTop / ROW_HEIGHT)
+        ? Math.floor(bodyScrollTop / rowHeight)
         : seededStart;
-    const visibleCount = Math.max(1, Math.ceil(viewport.height / ROW_HEIGHT));
+    const visibleCount = Math.max(1, Math.ceil(viewport.height / rowHeight));
     const startIndex = Math.max(0, visibleStart - VIRTUAL_OVERSCAN_ROWS);
     const endIndex = Math.min(rowCount, visibleStart + visibleCount + VIRTUAL_OVERSCAN_ROWS);
     return {
       startIndex,
       endIndex,
-      paddingTop: startIndex * ROW_HEIGHT,
-      paddingBottom: (rowCount - endIndex) * ROW_HEIGHT,
+      paddingTop: startIndex * rowHeight,
+      paddingBottom: (rowCount - endIndex) * rowHeight,
     };
-  }, [rowCount, seedIndex, viewport.headerHeight, viewport.height, viewport.scrollTop]);
+  }, [rowCount, rowHeight, seedIndex, viewport.headerHeight, viewport.height, viewport.scrollTop]);
 }
 
 function VirtualSpacerRow({ colSpan, height }: { colSpan: number; height: number }) {
@@ -1066,8 +1098,16 @@ function getTableHeaderHeight(container: HTMLElement): number {
   return header?.offsetHeight ?? 0;
 }
 
-function clampScrollTop(container: HTMLElement, scrollTop: number, rowCount: number) {
-  const maxTop = Math.max(0, getTableHeaderHeight(container) + rowCount * ROW_HEIGHT - container.clientHeight);
+function clampScrollTop(
+  container: HTMLElement,
+  scrollTop: number,
+  rowCount: number,
+  rowHeight: number,
+) {
+  const maxTop = Math.max(
+    0,
+    getTableHeaderHeight(container) + rowCount * rowHeight - container.clientHeight,
+  );
   container.scrollTop = Math.max(0, Math.min(maxTop, scrollTop));
   container.dispatchEvent(new Event(ECLIPSE_VIRTUAL_SCROLL_SYNC_EVENT));
 }
@@ -1076,13 +1116,14 @@ function scrollEclipseRowToAnchor(
   container: HTMLElement,
   rowCount: number,
   rowIndex: number,
+  rowHeight: number,
 ): boolean {
   if (rowCount <= 0 || rowIndex < 0 || container.clientHeight <= 0) return false;
   const targetIndex = Math.max(0, Math.min(rowCount - 1, rowIndex));
   const targetTop =
     getTableHeaderHeight(container) +
-    Math.max(0, targetIndex - FOCUS_CONTEXT_ROWS) * ROW_HEIGHT;
-  clampScrollTop(container, targetTop, rowCount);
+    Math.max(0, targetIndex - FOCUS_CONTEXT_ROWS) * rowHeight;
+  clampScrollTop(container, targetTop, rowCount, rowHeight);
   return Math.abs(container.scrollTop - Math.max(0, targetTop)) <= 2 || container.scrollTop >= 0;
 }
 
@@ -1108,6 +1149,7 @@ function restoreScrollAnchor(
   container: HTMLElement,
   anchor: ScrollAnchor | null,
   rows: readonly GenericTableRow[],
+  rowHeight: number,
 ) {
   if (!anchor) return;
   const row = container.querySelector<HTMLElement>(`tbody tr[data-eclipse-row="${CSS.escape(anchor.rowId)}"]`);
@@ -1115,15 +1157,16 @@ function restoreScrollAnchor(
     const containerRect = container.getBoundingClientRect();
     const rowRect = row.getBoundingClientRect();
     const delta = rowRect.top - containerRect.top - anchor.offsetTop;
-    clampScrollTop(container, container.scrollTop + delta, rows.length);
+    clampScrollTop(container, container.scrollTop + delta, rows.length, rowHeight);
     return;
   }
   const rowIndex = rows.findIndex((candidate) => candidate.id === anchor.rowId);
   const nextIndex = rowIndex >= 0 ? rowIndex : anchor.rowIndex;
   clampScrollTop(
     container,
-    getTableHeaderHeight(container) + Math.max(0, nextIndex) * ROW_HEIGHT - anchor.offsetTop,
+    getTableHeaderHeight(container) + Math.max(0, nextIndex) * rowHeight - anchor.offsetTop,
     rows.length,
+    rowHeight,
   );
 }
 
@@ -1131,13 +1174,22 @@ function restorePrependedScroll(
   container: HTMLElement,
   plan: Extract<ScrollPlan, { kind: "preservePrepend" }>,
   rows: readonly GenericTableRow[],
+  rowHeight: number,
 ) {
   const prependRows = plan.firstRowId
     ? rows.findIndex((candidate) => candidate.id === plan.firstRowId)
     : 0;
+  const sourceRowHeight = plan.rowHeight > 0 ? plan.rowHeight : rowHeight;
+  const headerHeight = getTableHeaderHeight(container);
+  const bodyScrollTop = Math.max(0, plan.scrollTop - headerHeight);
+  const anchorUnits = bodyScrollTop / sourceRowHeight;
+  const translatedTop = plan.scrollTop <= headerHeight
+    ? plan.scrollTop
+    : headerHeight + anchorUnits * rowHeight;
   clampScrollTop(
     container,
-    plan.scrollTop + Math.max(0, prependRows) * ROW_HEIGHT,
+    translatedTop + Math.max(0, prependRows) * rowHeight,
     rows.length,
+    rowHeight,
   );
 }

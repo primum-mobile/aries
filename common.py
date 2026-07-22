@@ -287,7 +287,7 @@ def collect_hybrid_ring_items(chrt, options):
 			chrt.fortune.fortune,
 			getattr(chrt, 'obl', (0.0,))[0],
 			getattr(options, 'ayanamsha', 0),
-			getattr(chrt, 'ayanamsha', 0.0),
+			getattr(chrt, 'ayanamsha_offset', 0.0),
 			morin_antiscia=getattr(options, 'morin_antiscia', False),
 		)
 		for dodec in getattr(antis, 'pldodecatemoria', ()) or ():

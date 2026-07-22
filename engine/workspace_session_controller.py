@@ -784,6 +784,7 @@ class WorkspaceSessionController:
                     on_change=self.on_session_change,
                     display_datetime=display_datetime,
                     display_anchor_chart=display_anchor_chart,
+                    lazy_optional_step_features=True,
                 )
             else:
                 # Horary/DirtyRadix factories track step-dirty internally
@@ -800,6 +801,7 @@ class WorkspaceSessionController:
                         lambda dirty, _id=_doc_id: self.set_dirty(_id, step_dirty=bool(dirty))
                     ),
                     display_datetime=display_datetime,
+                    lazy_optional_step_features=True,
                 )
             session['chart_session'] = cs
 

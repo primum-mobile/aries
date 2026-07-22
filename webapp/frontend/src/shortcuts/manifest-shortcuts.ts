@@ -15,6 +15,7 @@ type ParsedShortcut = {
   key: string;
   requireCommand: boolean;
   requireAlt?: boolean;
+  requireShift?: boolean;
 };
 
 function parseShortcut(row: ShortcutEntry): ParsedShortcut | null {
@@ -32,6 +33,14 @@ function parseShortcut(row: ShortcutEntry): ParsedShortcut | null {
       key: commandAltMatch[1].toLowerCase(),
       requireCommand: true,
       requireAlt: true,
+    };
+  }
+  const commandShiftMatch = keys.match(/^⌘\s+⇧\s+([A-Za-z0-9])$/u);
+  if (commandShiftMatch) {
+    return {
+      key: commandShiftMatch[1].toLowerCase(),
+      requireCommand: true,
+      requireShift: true,
     };
   }
   return null;
@@ -84,6 +93,7 @@ export function useManifestShortcutDispatch(
         const commandHeld = event.metaKey || event.ctrlKey;
         if (parsed.requireCommand !== commandHeld) continue;
         if (Boolean(parsed.requireAlt) !== event.altKey) continue;
+        if (parsed.requireShift && !event.shiftKey) continue;
         if (!parsed.requireCommand && (event.metaKey || event.ctrlKey || event.altKey)) {
           continue;
         }

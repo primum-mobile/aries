@@ -149,7 +149,7 @@ export function SurveilStudiesDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="max-w-md">
+      <DialogContent size="md">
         <DialogHeader>
           <DialogTitle>{t("studies.title")}</DialogTitle>
           <DialogDescription>

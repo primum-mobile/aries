@@ -47,7 +47,7 @@ export function AboutDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="max-w-lg">
+      <DialogContent size="detail">
         <DialogHeader>
           <DialogTitle className="text-2xl font-semibold tracking-tight">
             {about?.brand ?? "Aries"}

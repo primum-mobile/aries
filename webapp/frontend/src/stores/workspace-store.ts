@@ -209,8 +209,10 @@ export type AscensionalTransitsPaneState = {
 };
 
 export type FeatureCatalogPaneState = {
-  content: "features" | "help" | "license" | "notices";
+  content: "features" | "help" | "license" | "notices" | "whats-new";
   openSeq: number;
+  version?: string;
+  notes?: string;
 };
 
 export type RightInspectorPaneState =
@@ -498,6 +500,7 @@ type WorkspaceState = {
   openFeatureCatalogPane: () => void;
   openHelpPane: () => void;
   openLegalDocumentPane: (document: "license" | "notices") => void;
+  openWhatsNewPane: (version: string, notes: string) => void;
   closeFeatureCatalogPane: () => void;
   closeAllRightPanes: () => void;
   reconcileWorkspaceChrome: (documents: WorkspaceDocument[]) => void;
@@ -782,6 +785,15 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     set((current) =>
       openExclusiveRightPane("featureCatalogPane", {
         content: document,
+        openSeq: (current.featureCatalogPane?.openSeq ?? 0) + 1,
+      }),
+    ),
+  openWhatsNewPane: (version, notes) =>
+    set((current) =>
+      openExclusiveRightPane("featureCatalogPane", {
+        content: "whats-new",
+        version,
+        notes,
         openSeq: (current.featureCatalogPane?.openSeq ?? 0) + 1,
       }),
     ),

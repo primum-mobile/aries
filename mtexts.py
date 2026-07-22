@@ -3867,7 +3867,21 @@ ayanamshalist = (
 	txts['J2000'],
 	txts['J1900'],
 	txts['B1950'],
+	txts['DhruvaWilhelm'],
 )
+
+# Presentation order is independent of the persisted index. New modes append
+# to ayanamshalist so saved options remain stable, then sit with their semantic
+# peers in settings and quick-option menus through this index order.
+AYANAMSHA_DISPLAY_ORDER = tuple(range(13)) + (24,) + tuple(range(13, 24))
+
+
+def ayanamsha_display_entries():
+	return tuple(
+		(index, ayanamshalist[index])
+		for index in AYANAMSHA_DISPLAY_ORDER
+		if 0 <= index < len(ayanamshalist)
+	)
 
 smiterList = (txts['smiter1'], txts['smiter2'], txts['smiter3'])
 
@@ -3989,6 +4003,7 @@ def setLang(langid):
 	txts['J2000'],
 	txts['J1900'],
 	txts['B1950'],
+	txts['DhruvaWilhelm'],
 )
 
 	smiterList = (txts['smiter1'], txts['smiter2'], txts['smiter3'])

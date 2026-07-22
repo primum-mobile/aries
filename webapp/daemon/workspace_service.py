@@ -382,6 +382,7 @@ class WorkspaceConnectionManager:
         self._connections: set[Any] = set()
         self._lock = threading.Lock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._latest_broadcasts: dict[str, tuple[asyncio.TimerHandle, dict]] = {}
 
     def bind_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
@@ -421,6 +422,59 @@ class WorkspaceConnectionManager:
             return
         try:
             asyncio.run_coroutine_threadsafe(self.broadcast(event), loop)
+        except RuntimeError:
+            pass
+
+    def broadcast_latest_threadsafe(
+        self,
+        key: str,
+        event: dict,
+        *,
+        delay_seconds: float,
+    ) -> None:
+        """Broadcast only the newest event for *key* after a short quiet period.
+
+        Cursor-step events carry current state rather than an ordered delta, so
+        sending every intermediate event only wakes every retained subscriber.
+        The navigate response remains the immediate chart-paint authority; this
+        trailing event synchronizes list/table consumers with the final cursor.
+        """
+        loop = self._loop
+        if loop is None:
+            return
+
+        def schedule() -> None:
+            previous = self._latest_broadcasts.pop(key, None)
+            if previous is not None:
+                previous[0].cancel()
+
+            def send_latest() -> None:
+                current = self._latest_broadcasts.pop(key, None)
+                if current is None:
+                    return
+                asyncio.create_task(self.broadcast(current[1]))
+
+            handle = loop.call_later(delay_seconds, send_latest)
+            self._latest_broadcasts[key] = (handle, event)
+
+        try:
+            loop.call_soon_threadsafe(schedule)
+        except RuntimeError:
+            pass
+
+    def cancel_latest_threadsafe(self, key: str) -> None:
+        """Cancel a queued latest-state event before a newer immediate event."""
+        loop = self._loop
+        if loop is None:
+            return
+
+        def cancel() -> None:
+            previous = self._latest_broadcasts.pop(key, None)
+            if previous is not None:
+                previous[0].cancel()
+
+        try:
+            loop.call_soon_threadsafe(cancel)
         except RuntimeError:
             pass
 
@@ -466,14 +520,20 @@ class SupplementaryStepper:
     # -- ChartSession._forward_stepper_arrow protocol (chart_session.py:122) --
 
     def handle_navigation_key(self, keycode, *, shift_down=False, alt_down=False,
-                              control_down=False, cmd_down=False):
+                              control_down=False, cmd_down=False, repeat=1):
         # Forward every arrow (including up/down) WITH the keycode so the
         # extracted wx-free stepper decides the unit. Progressions step the
         # signified datetime by year on up/down; profections snap on up/down;
         # returns ignore up/down (their stepper emits no plan -> no mutation).
         if keycode in self._ARROWS:
             direction = -1 if keycode in (self._LEFT, self._DOWN) else 1
-            return self._step(direction, keycode=keycode, shift=shift_down, alt=alt_down)
+            return self._step(
+                direction,
+                keycode=keycode,
+                shift=shift_down,
+                alt=alt_down,
+                repeat=repeat,
+            )
         return False
 
     def step_backward(self):
@@ -502,7 +562,7 @@ class SupplementaryStepper:
 
     # -- internal: one step via the canonical adapter path -----------------
 
-    def _step(self, direction, *, keycode=None, shift=False, alt=False):
+    def _step(self, direction, *, keycode=None, shift=False, alt=False, repeat=1):
         public_kind = FEATURE_TO_PUBLIC_KIND.get(self._feature_kind)
         if public_kind is None:
             return False
@@ -535,16 +595,26 @@ class SupplementaryStepper:
         # (engine.cursor_steppers) and folds its StepPlan onto the binding/source
         # datetime — the SAME path /api/chart/supplementary/step uses. We never
         # reimplement the unit map or the deriver.
-        next_when, next_binding_payload = supplementary_service._step_binding(
-            radix=self._radix,
-            feature_kind=self._feature_kind,
-            when=when,
-            direction=direction,
-            shift=shift,
-            alt=alt,
-            binding=binding,
-            keycode=keycode,
-        )
+        next_when = when
+        next_binding_payload = prior_binding_payload
+        for _ in range(max(1, int(repeat))):
+            current_binding = (
+                supplementary_adapter.SupplementaryBinding.from_payload(
+                    next_binding_payload or {},
+                    feature_kind=self._feature_kind,
+                )
+                or supplementary_adapter.SupplementaryBinding(self._feature_kind)
+            )
+            next_when, next_binding_payload = supplementary_service._step_binding(
+                radix=self._radix,
+                feature_kind=self._feature_kind,
+                when=next_when,
+                direction=direction,
+                shift=shift,
+                alt=alt,
+                binding=current_binding,
+                keycode=keycode,
+            )
         # The extracted stepper emitted no mutation for this key+modifier (e.g.
         # up/down on a return, shift/alt on a lunar/planetary cycle — unmodelled
         # in wx too: the wx stepper returns False here). Report not-stepped so the
@@ -625,7 +695,14 @@ class WorkspaceService:
     def _is_at_visual_session(self, session: Optional[dict]) -> bool:
         return self._chart_visual_mode(session) == _CHART_VISUAL_AT
 
-    def broadcast_options_changed(self, refreshed_document_ids=None, refresh_mode=None) -> None:
+    def broadcast_options_changed(
+        self,
+        refreshed_document_ids=None,
+        refresh_mode=None,
+        *,
+        style_only: bool = False,
+        list_data_changed: bool = True,
+    ) -> None:
         """Fan an ``options.changed`` event out to all connected clients.
 
         The per-document ``session.changed`` events are already broadcast by the
@@ -637,6 +714,9 @@ class WorkspaceService:
             "type": "options.changed",
             "refreshedDocumentIds": list(refreshed_document_ids or []),
             "refreshMode": refresh_mode or "recalc",
+            "styleOnly": bool(style_only),
+            "listDataChanged": bool(list_data_changed),
+            "langid": int(getattr(options_service.options, "langid", 0) or 0),
             "schemaVersion": theme_state["schemaVersion"],
             "themeVersion": theme_state["version"],
             "styleRevision": theme_state["styleRevision"],
@@ -696,7 +776,7 @@ class WorkspaceService:
                     tab_suffix = None
             else:
                 tab_suffix = None
-            self._manager.broadcast_threadsafe({
+            session_event = {
                 "type": "session.changed",
                 "docId": event.document_id,
                 "changeReason": event.change_reason,
@@ -704,7 +784,24 @@ class WorkspaceService:
                 "rebuiltChildIds": list(event.rebuilt_child_ids),
                 "displayDatetime": display_dt,
                 "tabSuffix": tab_suffix,
-            })
+            }
+            step_broadcast_key = str(event.document_id)
+            if event.change_reason == 'step' and not event.rebuilt_child_ids:
+                # One direct navigate response paints each chart step. Retained
+                # lists need the latest cursor, not a global store wake-up for
+                # every intermediate auto-repeat event. Forty milliseconds is
+                # below the interaction budget while coalescing a 30 ms key
+                # repeat into one canonical trailing notification.
+                self._manager.broadcast_latest_threadsafe(
+                    step_broadcast_key,
+                    session_event,
+                    delay_seconds=0.040,
+                )
+            else:
+                # Preserve event order: an edit/rebuild supersedes any older
+                # cursor-only tail still waiting in the debounce window.
+                self._manager.cancel_latest_threadsafe(step_broadcast_key)
+                self._manager.broadcast_threadsafe(session_event)
         # The tree (titles / dirty markers / membership) may have shifted — but a
         # pure cursor STEP never changes tree membership/titles, only the moving
         # display cursor (already carried by session.changed.displayDatetime). The
@@ -5247,22 +5344,27 @@ class WorkspaceService:
         view-only astrocart document through its parent and compute from the
         in-memory chart instead.
         """
+        # Resolve the immutable radix reference under the workspace lock, then
+        # release it before the potentially long geometry calculation. The
+        # Astrocart service has its own serialization lock; holding the global
+        # workspace lock here made an invisible/refining map block chart steps.
         with self._lock:
             parent_id = self._timed_chart_parent_document_id(document_id)
             radix = self._parent_radix(parent_id)
-            if modes is not None:
-                return astrocart_service.lines_geojson_for_chart_modes(
-                    radix,
-                    source_name=self._chart_label(radix, "Radix"),
-                    modes=modes,
-                    precision=precision,
-                )
-            return astrocart_service.lines_geojson_for_chart(
+            source_name = self._chart_label(radix, "Radix")
+        if modes is not None:
+            return astrocart_service.lines_geojson_for_chart_modes(
                 radix,
-                source_name=self._chart_label(radix, "Radix"),
-                mode=mode,
+                source_name=source_name,
+                modes=modes,
                 precision=precision,
             )
+        return astrocart_service.lines_geojson_for_chart(
+            radix,
+            source_name=source_name,
+            mode=mode,
+            precision=precision,
+        )
 
     def astrocart_display_style_for_document(self, document_id: str) -> dict:
         """Live ACG colors/glyphs without recalculating line geometry."""
@@ -5270,6 +5372,13 @@ class WorkspaceService:
             parent_id = self._timed_chart_parent_document_id(document_id)
             radix = self._parent_radix(parent_id)
             return astrocart_service.display_style_for_chart(radix)
+
+    def astrocart_asterisms_geojson_for_document(self, document_id: str) -> dict:
+        """Substellar asterism figures for the live chart backing this map."""
+        with self._lock:
+            parent_id = self._timed_chart_parent_document_id(document_id)
+            radix = self._parent_radix(parent_id)
+        return astrocart_service.asterisms_geojson_for_chart(radix)
 
     def astrocart_view_state_for_document(self, document_id: str) -> dict:
         with self._lock:
@@ -5307,6 +5416,27 @@ class WorkspaceService:
         if session.get('chart') is not None:
             return document_id
         raise ValueError("timed-chart document has no parent chart")
+
+    def _owning_radix_document_id(self, document_id: str) -> str:
+        """Resolve the workspace document that owns the natal radix.
+
+        Timed-row actions deliberately stop at the immediate chart (for example
+        ``radix -> solar return -> directions`` stays attached to the return).
+        Rectification is different: it always edits the natal chart, so resolve
+        the live ``ChartSession.radix`` object back to its owning document.
+        """
+        chart_document_id = self._timed_chart_parent_document_id(document_id)
+        session = self._controller.session(chart_document_id)
+        if session is None:
+            raise ValueError(f"unknown radix source document {chart_document_id!r}")
+        cs = session.get('chart_session')
+        radix = getattr(cs, 'radix', None) if cs is not None else None
+        if radix is None:
+            radix = session.get('chart') or (getattr(cs, 'chart', None) if cs is not None else None)
+        owner_id = self._controller._document_id_for_chart(radix)
+        if owner_id is None:
+            raise ValueError("radix source has no owning workspace document")
+        return str(owner_id)
 
     def _timed_chart_parent_chart(self, parent_document_id: str):
         """Live chart for the timed-row parent document.
@@ -6541,7 +6671,7 @@ class WorkspaceService:
 
         chart_mod = export_chart_json.chart_mod
         with self._lock:
-            radix_document_id = self._timed_chart_parent_document_id(document_id)
+            radix_document_id = self._owning_radix_document_id(document_id)
             session = self._controller.session(radix_document_id)
             if session is None:
                 raise ValueError(f"unknown radix document {radix_document_id!r}")
@@ -8413,10 +8543,10 @@ class WorkspaceService:
         chart navigation on the resulting tab.
 
         ``arc`` is the row's magnitude in degrees; ``direct`` restores the
-        signed-arc contract from PrimDirsListWnd.calc for the celestial wheel.
-        Terrestrial uses one forward mundane-sphere motion for both traditional
-        direct and converse semantics. ``mode`` is the explicit legacy
-        Celestial/Terrestrial row command, never inferred from the row's M/Z column.
+        signed-arc contract from PrimDirsListWnd.calc.  Celestial charts may
+        then invert that projection when the configured outer ring represents
+        promissors rather than Morinus's legacy outer-significator ring.
+        ``mode`` is the row's celestial/terrestrial calculation class.
         ``when_iso`` is the directed-moment civil datetime for the tab's
         display_datetime; when absent we fall back to the PD-projected chart's
         own time so the biwheel still labels coherently.
@@ -8443,7 +8573,9 @@ class WorkspaceService:
                 direction_event, direct=direct, arc=arc, event_jd=event_jd,
             )
             pd_chart._pd_exact_event = exact_event
-            if mode == "celestial":
+            if mode == "celestial" and bool(
+                getattr(chart_snapshot_service.options, "pdinchartreverse", True)
+            ):
                 pd_in_chart.apply_exact_planet_to_angle_projection(
                     pd_chart, radix, exact_event, signed_arc,
                     chart_snapshot_service.options,
@@ -8496,6 +8628,12 @@ class WorkspaceService:
                         "direct": bool(direct),
                         "initialArc": abs(float(arc)),
                         "currentArc": abs(float(arc)),
+                        # Preserve the selected table row's full-precision
+                        # arc/JD across option refreshes and reset.  Only a
+                        # genuinely stepped cursor uses the inverse key
+                        # calculation from its displayed civil time.
+                        "exactArc": abs(float(arc)),
+                        "exactEventJd": float(event_jd) if event_jd is not None else None,
                         "initialDisplayDatetime": tuple(display_dt),
                         "hasEventDatetime": bool(event_when),
                         "directionEvent": exact_event,
@@ -8541,14 +8679,15 @@ class WorkspaceService:
 
     @staticmethod
     def _pd_in_chart_projection_arc(arc: float, direct: bool, *, mode="celestial") -> float:
-        if mode == "terrestrial":
-            # Direct and traditional converse use the same east-to-west
-            # primary motion; they differ in which point is conceptually held
-            # fixed.  A mundane sky chart must therefore never reverse time or
-            # the sphere for a presentation preference.
-            return abs(float(arc))
         signed_arc = abs(float(arc)) if direct else -abs(float(arc))
-        if bool(getattr(chart_snapshot_service.options, "pdinchartreverse", False)):
+        # The original Morinus calculator sends +arc for direct and -arc for
+        # converse through both celestial and terrestrial branches.  Aries's
+        # celestial outer-promissor convention reverses only that celestial
+        # wheel projection; terrestrial charts already draw the moving
+        # promissors against the fixed radix frame and must retain D=+ / C=-.
+        if mode == "celestial" and bool(
+            getattr(chart_snapshot_service.options, "pdinchartreverse", True)
+        ):
             signed_arc = -signed_arc
         return signed_arc
 
@@ -8561,8 +8700,8 @@ class WorkspaceService:
         if radix is None:
             return None
         direct = bool(binding.get("direct", True))
-        if initial and not bool(binding.get("hasEventDatetime", False)):
-            arc = abs(float(binding.get("initialArc", 0.0)))
+        if initial:
+            arc = abs(float(binding.get("exactArc", binding.get("initialArc", 0.0))))
         else:
             event_jd = pd_in_chart.event_jd_for_display_datetime(radix, when)
             arc = pd_in_chart.arc_for_event_jd(
@@ -8581,9 +8720,15 @@ class WorkspaceService:
         exact_event = binding.get("directionEvent")
         if isinstance(exact_event, dict):
             exact_event = dict(exact_event)
-            exact_event["time"] = pd_in_chart.event_jd_for_display_datetime(radix, when)
+            exact_event["time"] = (
+                float(binding["exactEventJd"])
+                if initial and binding.get("exactEventJd") is not None
+                else pd_in_chart.event_jd_for_display_datetime(radix, when)
+            )
         pd_chart._pd_exact_event = exact_event
-        if mode == "celestial":
+        if mode == "celestial" and bool(
+            getattr(chart_snapshot_service.options, "pdinchartreverse", True)
+        ):
             pd_in_chart.apply_exact_planet_to_angle_projection(
                 pd_chart, radix, exact_event, projection_arc,
                 chart_snapshot_service.options,
@@ -10302,6 +10447,8 @@ class WorkspaceService:
         *,
         shift: bool = False,
         alt: bool = False,
+        repeat: int = 1,
+        include_perf: bool = False,
     ) -> dict:
         """Canonical arrow-key navigation — the wx-free twin of
         keyboard_layers.handle_transit_key_event (keyboard_layers.py:81).
@@ -10315,7 +10462,9 @@ class WorkspaceService:
         uses (the daemon opens those children with calendar units, so we must
         route on ``supplementary_feature_kind`` rather than trust the units —
         see the spec's Resolved note)."""
+        command_started_at = time.perf_counter()
         normalized = str(key or '').strip().lower()
+        repeat = max(1, min(64, int(repeat)))
         with self._lock:
             session = self._controller.session(document_id)
             if session is None:
@@ -10327,10 +10476,20 @@ class WorkspaceService:
             was_dirty = bool(session.get('dirty', False))
             is_pd_in_chart = session.get('launcher_kind') == 'pd_in_chart'
 
+            def finish(stepped: bool, **kwargs) -> dict:
+                return self._navigate_key_result(
+                    document_id,
+                    cs,
+                    stepped,
+                    include_perf=include_perf,
+                    command_started_at=command_started_at,
+                    **kwargs,
+                )
+
             # Space (no modifiers) -> canonical reset.
             if normalized == 'space':
                 if shift or alt:
-                    return self._navigate_key_result(document_id, cs, False, was_dirty=was_dirty)
+                    return finish(False, was_dirty=was_dirty)
                 stepped = (
                     self._reset_pd_in_chart(session, cs)
                     if is_pd_in_chart
@@ -10344,7 +10503,7 @@ class WorkspaceService:
                         "type": "documents.changed",
                         "tree": self._tree_payload(),
                     })
-                return self._navigate_key_result(document_id, cs, stepped, was_dirty=was_dirty)
+                return finish(stepped, was_dirty=was_dirty)
 
             keycode = self._ARROW_KEYCODES.get(normalized)
             if keycode is None:
@@ -10352,15 +10511,11 @@ class WorkspaceService:
 
             if is_pd_in_chart:
                 if normalized not in ('left', 'right'):
-                    return self._navigate_key_result(
-                        document_id, cs, False, was_dirty=was_dirty,
-                    )
+                    return finish(False, was_dirty=was_dirty)
                 unit = 'week' if alt else 'month' if shift else 'year'
-                delta = -1 if normalized == 'left' else 1
+                delta = (-1 if normalized == 'left' else 1) * repeat
                 stepped = self._navigate_pd_in_chart(session, cs, unit, delta)
-                return self._navigate_key_result(
-                    document_id, cs, stepped, was_dirty=was_dirty,
-                )
+                return finish(stepped, was_dirty=was_dirty, applied_steps=repeat)
 
             feature_kind = session.get('supplementary_feature_kind')
             if (
@@ -10368,15 +10523,35 @@ class WorkspaceService:
                 and feature_kind not in _PROGRESSION_FEATURE_KINDS
             ):
                 return self._navigate_ascensional_key(
-                    document_id, session, cs, normalized, shift=shift, alt=alt,
+                    document_id,
+                    session,
+                    cs,
+                    normalized,
+                    shift=shift,
+                    alt=alt,
+                    repeat=repeat,
+                    include_perf=include_perf,
+                    command_started_at=command_started_at,
                 )
 
             if feature_kind in self._INTRINSIC_FEATURE_KINDS:
-                stepped = bool(cs._navigate_intrinsically(
-                    keycode, shift_down=shift, alt_down=alt,
-                ))
+                if repeat > 1 and normalized in ('left', 'right'):
+                    unit = cs._get_navigation_unit(shift_down=shift, alt_down=alt)
+                    delta = (-1 if normalized == 'left' else 1) * repeat
+                    stepped = bool(unit and cs.navigate_relative(unit, delta))
+                elif repeat > 1 and normalized in ('up', 'down') and not (shift and not alt):
+                    delta = (-1 if normalized == 'down' else 1) * repeat
+                    stepped = bool(cs.navigate_relative('week', delta))
+                else:
+                    stepped = bool(cs._navigate_intrinsically(
+                        keycode, shift_down=shift, alt_down=alt,
+                    ))
                 if stepped:
-                    return self._navigate_key_result(document_id, cs, True, was_dirty=was_dirty)
+                    return finish(
+                        True,
+                        was_dirty=was_dirty,
+                        applied_steps=repeat if repeat == 1 or not (shift and normalized in ('up', 'down')) else 1,
+                    )
                 # Fall through to the stepper only if the session somehow carries
                 # a stepper feature (defensive; transit/root normally don't).
 
@@ -10386,9 +10561,9 @@ class WorkspaceService:
             # Routing through cs (not a daemon-private step path) is exactly what
             # lets space -> cs.reset_to_initial_chart rewind the offset for free.
             stepped = bool(cs._forward_stepper_arrow(
-                keycode, shift_down=shift, alt_down=alt,
+                keycode, shift_down=shift, alt_down=alt, repeat=repeat,
             ))
-            return self._navigate_key_result(document_id, cs, stepped, was_dirty=was_dirty)
+            return finish(stepped, was_dirty=was_dirty, applied_steps=repeat)
 
     def _navigate_ascensional_key(
         self,
@@ -10399,6 +10574,9 @@ class WorkspaceService:
         *,
         shift: bool,
         alt: bool,
+        repeat: int = 1,
+        include_perf: bool = False,
+        command_started_at: Optional[float] = None,
     ) -> dict:
         """AT MDO/diurnal key cadence.
 
@@ -10407,7 +10585,7 @@ class WorkspaceService:
         """
         stepped = False
         if key in ("left", "right", "up", "down"):
-            direction = -1 if key in ("left", "down") else 1
+            direction = (-1 if key in ("left", "down") else 1) * repeat
             if alt:
                 stepped = bool(cs.navigate_relative("second", direction))
             elif shift:
@@ -10421,7 +10599,14 @@ class WorkspaceService:
                 "type": "documents.changed",
                 "tree": self._tree_payload(),
             })
-        return self._navigate_key_result(document_id, cs, stepped)
+        return self._navigate_key_result(
+            document_id,
+            cs,
+            stepped,
+            applied_steps=repeat,
+            include_perf=include_perf,
+            command_started_at=command_started_at,
+        )
 
     def toggle_comparison(self, document_id: str) -> dict:
         """Toggle a document between comparison (biwheel) and singleton view —
@@ -10486,7 +10671,10 @@ class WorkspaceService:
 
     def _navigate_key_result(self, document_id: str, cs, stepped: bool,
                              *, was_dirty: Optional[bool] = None,
-                             include_documents: bool = False) -> dict:
+                             applied_steps: int = 1,
+                             include_documents: bool = False,
+                             include_perf: bool = False,
+                             command_started_at: Optional[float] = None) -> dict:
         # Step-dirty transition (HorarySession hook -> controller.set_dirty)
         # must reach the sidebar star, but never via a full documents.changed
         # tree broadcast. Alternating around the initial moment can flip dirty
@@ -10499,6 +10687,7 @@ class WorkspaceService:
         result = {
             "documentId": document_id,
             "stepped": bool(stepped),
+            "appliedSteps": int(applied_steps) if stepped else 0,
             "displayDatetime": _display_tuple_to_iso(
                 getattr(cs, 'display_datetime', None)
             ),
@@ -10513,13 +10702,33 @@ class WorkspaceService:
         # See _step_render_mode.
         if stepped:
             try:
+                snapshot_started_at = time.perf_counter()
                 result["snapshot"] = self.document_snapshot(
-                    document_id, overlay_render_mode=self._step_render_mode(document_id)
+                    document_id,
+                    overlay_render_mode=self._step_render_mode(document_id),
+                    include_perf=include_perf,
                 )
+                if include_perf:
+                    snapshot = result["snapshot"]
+                    result["debugTiming"] = {
+                        "preSnapshotMs": (
+                            (snapshot_started_at - command_started_at) * 1000.0
+                            if command_started_at is not None
+                            else None
+                        ),
+                        "snapshot": snapshot.get("debugTiming"),
+                    }
             except (ValueError, RuntimeError):
                 # View-only docs (no ChartSession) can't step anyway; leave the
                 # skin to its GET fallback rather than fail the navigate.
                 pass
+        if include_perf:
+            timing = result.setdefault("debugTiming", {})
+            timing["totalMs"] = (
+                (time.perf_counter() - command_started_at) * 1000.0
+                if command_started_at is not None
+                else None
+            )
         return result
 
 

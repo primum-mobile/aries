@@ -4,9 +4,7 @@
 "use client";
 
 import * as React from "react";
-import { X } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { isAbortError } from "@/lib/abort-error";
 import {
   fetchGenericTablePayload,
@@ -15,11 +13,11 @@ import {
 } from "@/lib/daemon/client";
 import { useT } from "@/lib/i18n/i18n";
 import {
-  LIST_BUTTON_PROPS,
   LIST_PANE_CLASSES,
   LIST_ROLE_CLASSES,
   LIST_ROW_CLASSES,
-  LIST_ROW_HEIGHT,
+  useFixedRowHeightAnchor,
+  useListRowHeight,
 } from "@/lib/list-tokens";
 import {
   getCachedGenericTablePayload,
@@ -29,6 +27,7 @@ import { cn } from "@/lib/utils";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 
 import { CellView } from "./generic-table-view";
+import { RetainedPaneShell } from "./retained-pane-shell";
 import { useSettledWorkspaceRefreshSeq } from "./step-refresh";
 
 type Props = {
@@ -57,6 +56,7 @@ export function LunarMansionsView({ documentId, parentDocumentId, sourceName, on
   const requestSeqRef = React.useRef(0);
   const scrollerRef = React.useRef<HTMLDivElement | null>(null);
   const lastCurrentRowRef = React.useRef<string | null>(null);
+  const rowHeight = useListRowHeight("standard");
   const lastSessionChange = useDaemonWorkspaceStore((state) => state.lastSessionChange);
   const lastOptionsChange = useDaemonWorkspaceStore((state) => state.lastOptionsChange);
   const refreshSeq = useSettledWorkspaceRefreshSeq({
@@ -65,6 +65,7 @@ export function LunarMansionsView({ documentId, parentDocumentId, sourceName, on
     lastSessionChange,
     lastOptionsChange,
   });
+  useFixedRowHeightAnchor(scrollerRef, payload?.rows.length ?? 0, rowHeight);
 
   React.useEffect(() => {
     const controller = new AbortController();
@@ -101,25 +102,23 @@ export function LunarMansionsView({ documentId, parentDocumentId, sourceName, on
         : t("optmenu.followChartZodiac");
 
   return (
-    <div className={cn(LIST_PANE_CLASSES.root, "font-morinus-text")}>
-      <div className={LIST_PANE_CLASSES.compactHeader}>
-        <div className="min-w-0">
-          <div className="flex min-w-0 items-baseline gap-2">
-            <h2 className={cn(LIST_PANE_CLASSES.title, "truncate")}>{t("table.lunar_mansions")}</h2>
-            {sourceName ? <span className={cn(LIST_PANE_CLASSES.metadata, "truncate")}>{sourceName}</span> : null}
-          </div>
-          <div className={LIST_PANE_CLASSES.metadata}>{modeLabel}</div>
-        </div>
-        {onClose ? (
-          <Button type="button" {...LIST_BUTTON_PROPS.icon} onClick={onClose} aria-label={t("manzilTable.close")}>
-            <X className="size-3.5" />
-          </Button>
-        ) : null}
-      </div>
-
+    <RetainedPaneShell
+      title={t("table.lunar_mansions")}
+      sourceName={sourceName}
+      subtitle={modeLabel}
+      closeLabel={t("manzilTable.close")}
+      onClose={onClose}
+      closeAppearance="list"
+      wrapHeader
+      titleSize="large"
+      titleWeight="semibold"
+      subtitleSize="small"
+      headerDensity="compact"
+      sourceGap="standard"
+    >
       <div ref={scrollerRef} className={LIST_PANE_CLASSES.scroller}>
         {!payload ? (
-          <div className={error ? LIST_PANE_CLASSES.error : "px-4 py-6 text-[12px] text-muted-foreground"}>
+          <div className={error ? LIST_PANE_CLASSES.error : LIST_PANE_CLASSES.loading}>
             {error ? t("manzilTable.loadFailed") : t("manzilTable.loading")}
           </div>
         ) : (
@@ -143,17 +142,17 @@ export function LunarMansionsView({ documentId, parentDocumentId, sourceName, on
             </thead>
             <tbody>
               {payload.rows.map((row) => (
-                <MansionRow key={row.id} row={row} />
+                <MansionRow key={row.id} row={row} rowHeight={rowHeight} />
               ))}
             </tbody>
           </table>
         )}
       </div>
-    </div>
+    </RetainedPaneShell>
   );
 }
 
-function MansionRow({ row }: { row: GenericTableRow }) {
+function MansionRow({ row, rowHeight }: { row: GenericTableRow; rowHeight: number }) {
   const aliasesAr = Array.isArray(row.meta?.aliasesAr) ? row.meta.aliasesAr.join(" · ") : "";
   const aliasesTranslit = Array.isArray(row.meta?.aliasesTranslit)
     ? row.meta.aliasesTranslit.join(" · ")
@@ -166,7 +165,7 @@ function MansionRow({ row }: { row: GenericTableRow }) {
         LIST_ROW_CLASSES.hover,
         row.current && LIST_ROW_CLASSES.current,
       )}
-      style={{ height: LIST_ROW_HEIGHT.standard }}
+      style={{ height: rowHeight }}
     >
       {row.cells.map((cell, index) => (
         <td
@@ -174,7 +173,7 @@ function MansionRow({ row }: { row: GenericTableRow }) {
           className={cn(
             "aries-list-cell border-b border-border/55",
             index === 0 && "text-right tabular-nums",
-            index === 1 && "text-right text-[17px] leading-none",
+            index === 1 && "text-right text-[length:var(--aries-font-size-arabic)] leading-none",
             index === 3 && "text-center tabular-nums",
           )}
           title={index === 1 ? aliasesAr : index === 2 ? aliasesTranslit : undefined}

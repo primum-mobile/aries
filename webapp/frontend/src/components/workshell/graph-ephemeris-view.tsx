@@ -22,7 +22,9 @@ import { CanvasDraw } from "@/lib/chart/canvas-draw";
 import { morinusTextFontFromTokens } from "@/lib/chart/chart-fonts";
 import { awaitFonts } from "@/lib/chart/draw-chart";
 import {
+  applyEphemerisPlanetProfileColors,
   DEFAULT_EPHEMERIS_RENDER_PALETTE,
+  resolveEphemerisRenderPalette,
   resolveEphemerisRenderStyle,
   type EphemerisRenderStyle,
 } from "@/lib/chart/ephemeris-render-style";
@@ -66,6 +68,27 @@ const BASE_CACHE_LIMIT = 36;
 const STATION_CACHE_LIMIT = 36;
 const ephemerisBaseCache = new Map<string, EphemerisPayload>();
 const ephemerisStationCache = new Map<string, EphemerisStationsPayload>();
+const EMPTY_EPHEMERIS_PROFILE_OVERRIDES: Readonly<Record<string, string>> = Object.freeze({});
+
+function useEphemerisSemanticOptionsSeq(): number {
+  const lastOptionsChange = useDaemonWorkspaceStore((state) => state.lastOptionsChange);
+  const [seq, setSeq] = React.useState(() =>
+    lastOptionsChange?.styleOnly ? 0 : (lastOptionsChange?.seq ?? 0),
+  );
+
+  React.useEffect(() => {
+    if (!lastOptionsChange || lastOptionsChange.styleOnly) return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) setSeq(lastOptionsChange.seq);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [lastOptionsChange]);
+
+  return seq;
+}
 
 function positive(value: number, fallback: number): number {
   return value > 0 ? value : fallback;
@@ -567,10 +590,8 @@ function render(
 
 export function GraphEphemerisView({
   documentId,
-  sourceName,
 }: {
   documentId: string;
-  sourceName: string;
 }) {
   const t = useT();
   const wrapRef = React.useRef<HTMLDivElement>(null);
@@ -586,8 +607,6 @@ export function GraphEphemerisView({
   const [anchor, setAnchor] = React.useState<EphemerisAnchor | null>(null);
   const anchorRef = React.useRef<EphemerisAnchor | null>(null);
   const requestSeqRef = React.useRef(0);
-  const [loadingAnchor, setLoadingAnchor] = React.useState<EphemerisAnchor | null>(null);
-  const loadingAnchorRef = React.useRef<EphemerisAnchor | null>(null);
   const [mode, setMode] = React.useState<DisplayMode>("longitude");
   const modeRef = React.useRef<DisplayMode>("longitude");
   const [showGrid, setShowGrid] = React.useState(true);
@@ -597,9 +616,24 @@ export function GraphEphemerisView({
   const [payload, setPayload] = React.useState<EphemerisPayload | null>(null);
   const theme = useThemeStore((s) => s.theme);
   const styleRevision = useStyleRevision();
-  const optionsSeq = useDaemonWorkspaceStore((s) => s.lastOptionsChange?.seq ?? 0);
+  const optionsSeq = useEphemerisSemanticOptionsSeq();
   const chartTextFont = morinusTextFontFromTokens(theme?.appTokens);
   const fontsReady = fontsReadyFor === chartTextFont;
+  const chartProfileOverrides =
+    theme?.profileOverrides.chartPalette ?? EMPTY_EPHEMERIS_PROFILE_OVERRIDES;
+  const profilePlanetColors = theme?.profileOverrides.chartData.planets;
+  const effectivePalette = React.useMemo(
+    () => resolveEphemerisRenderPalette(
+      payload?.colors ?? DEFAULT_EPHEMERIS_RENDER_PALETTE,
+      chartProfileOverrides,
+    ),
+    [chartProfileOverrides, payload?.colors],
+  );
+  const effectivePayload = React.useMemo<EphemerisPayload | null>(() => {
+    if (!payload) return null;
+    const planets = applyEphemerisPlanetProfileColors(payload.planets, profilePlanetColors);
+    return planets === payload.planets ? payload : { ...payload, planets: [...planets] };
+  }, [payload, profilePlanetColors]);
 
   // Hover state — DOM overlay tooltip (the wx hover flag), station-snapped.
   const [hover, setHover] = React.useState<HoverState>(null);
@@ -682,11 +716,6 @@ export function GraphEphemerisView({
     });
   }, []);
 
-  const setLoadingAnchorState = React.useCallback((next: EphemerisAnchor | null) => {
-    loadingAnchorRef.current = next;
-    setLoadingAnchor(next);
-  }, []);
-
   const storeViewState = React.useCallback(
     (next: Partial<EphemerisViewState>) => {
       const currentAnchor = anchorRef.current;
@@ -718,15 +747,12 @@ export function GraphEphemerisView({
       const cached = ephemerisBaseCache.get(ephemerisCacheKey(optionsSeq, next.year, next.month));
       if (cached) {
         applyPayload(cached);
-        setLoadingAnchorState(null);
-      } else {
-        setLoadingAnchorState(next);
       }
       if (options?.persist !== false) {
         storeViewState({ year: next.year, start_month: next.month });
       }
     },
-    [applyPayload, clearInteraction, optionsSeq, setLoadingAnchorState, storeViewState],
+    [applyPayload, clearInteraction, optionsSeq, storeViewState],
   );
 
   React.useEffect(() => {
@@ -764,7 +790,6 @@ export function GraphEphemerisView({
         };
         anchorRef.current = seededAnchor;
         requestSeqRef.current += 1;
-        setLoadingAnchorState(seededAnchor);
         setAnchor(seededAnchor);
       })
       .catch((err) => {
@@ -773,14 +798,13 @@ export function GraphEphemerisView({
           const fallbackAnchor = { year: new Date().getFullYear(), month: 1 };
           anchorRef.current = fallbackAnchor;
           requestSeqRef.current += 1;
-          setLoadingAnchorState(fallbackAnchor);
           setAnchor(fallbackAnchor);
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [documentId, setLoadingAnchorState]);
+  }, [documentId]);
 
   const anchorYear = anchor?.year ?? null;
   const anchorMonth = anchor?.month ?? null;
@@ -857,7 +881,6 @@ export function GraphEphemerisView({
       queueMicrotask(() => {
         if (cancelled || requestSeqRef.current !== seq) return;
         applyPayload(cached);
-        setLoadingAnchorState(null);
         setError(null);
         fetchStations();
         warmBasePayloads();
@@ -870,10 +893,6 @@ export function GraphEphemerisView({
       };
     }
 
-    queueMicrotask(() => {
-      if (cancelled || requestSeqRef.current !== seq) return;
-      setLoadingAnchorState(target);
-    });
     void fetchGraphicEphemeris(target.year, target.month, {
       signal: controller.signal,
       includeStations: false,
@@ -882,7 +901,6 @@ export function GraphEphemerisView({
         if (cancelled || requestSeqRef.current !== seq) return;
         rememberBasePayload(cacheKey, p);
         applyPayload(p);
-        setLoadingAnchorState(null);
         setError(null);
         fetchStations();
         warmBasePayloads();
@@ -896,7 +914,6 @@ export function GraphEphemerisView({
           return;
         }
         console.error("[ephemeris]", err);
-        setLoadingAnchorState(null);
         setError(String((err as Error).message ?? err));
       });
     return () => {
@@ -905,26 +922,27 @@ export function GraphEphemerisView({
       if (warmTimer != null) window.clearTimeout(warmTimer);
       if (stationTimer != null) window.clearTimeout(stationTimer);
     };
-  }, [anchorYear, anchorMonth, applyMarkers, applyPayload, optionsSeq, setLoadingAnchorState]);
+  }, [anchorYear, anchorMonth, applyMarkers, applyPayload, optionsSeq]);
 
   // --- Paint (rAF-coalesced) on payload / size / option changes.
   const paintRef = React.useRef<number | null>(null);
   React.useEffect(() => {
     const wrap = wrapRef.current;
     const canvas = canvasRef.current;
-    if (!wrap || !canvas || !payload || !fontsReady) return;
+    if (!wrap || !canvas || !effectivePayload || !fontsReady) return;
     const paint = () => {
       paintRef.current = null;
       const rect = wrap.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0) return;
       const renderStyle = resolveEphemerisRenderStyle(wrap, {
         revision: styleRevision,
-        palette: payload.colors ?? DEFAULT_EPHEMERIS_RENDER_PALETTE,
+        palette: effectivePalette,
         fontUi: chartTextFont,
+        profileOverrides: chartProfileOverrides,
       });
       const { geo, snapTargets } = render(
         canvas,
-        payload,
+        effectivePayload,
         mode,
         visible,
         showGrid,
@@ -948,7 +966,18 @@ export function GraphEphemerisView({
       ro.disconnect();
       if (paintRef.current != null) cancelAnimationFrame(paintRef.current);
     };
-  }, [chartTextFont, payload, fontsReady, mode, visible, showEventGlyphs, showGrid, styleRevision]);
+  }, [
+    chartProfileOverrides,
+    chartTextFont,
+    effectivePalette,
+    effectivePayload,
+    fontsReady,
+    mode,
+    visible,
+    showEventGlyphs,
+    showGrid,
+    styleRevision,
+  ]);
 
   // --- Stepping (graphephemframe.step_year/step_month via util.incrMonth).
   const stepYear = React.useCallback(
@@ -1234,37 +1263,12 @@ export function GraphEphemerisView({
   }, [anchor?.year, payload?.year]);
 
   const timedDisabled = menuEventJd == null;
-  const renderedYear = payload?.year ?? loadingAnchor?.year ?? anchor?.year ?? "";
-  const renderedMonth = payload?.startMonth ?? loadingAnchor?.month ?? anchor?.month ?? 1;
-  const pendingAnchor =
-    Boolean(loadingAnchor && payload) &&
-    (payload?.year !== loadingAnchor?.year || payload?.startMonth !== loadingAnchor?.month);
 
   return (
     <div
       className="aries-graphic-ephemeris font-morinus-text relative flex flex-1 min-h-0 flex-col bg-background"
-      style={payload?.colors?.background ? { backgroundColor: payload.colors.background } : undefined}
+      style={payload?.colors?.background ? { backgroundColor: effectivePalette.background } : undefined}
     >
-      <div
-        className="flex shrink-0 items-center border-b border-border/60 bg-sidebar/90 text-muted-foreground"
-        style={{
-          gap: "var(--aries-ephem-header-gap)",
-          padding: "var(--aries-ephem-header-pad-y) var(--aries-ephem-header-pad-x)",
-          fontSize: "var(--aries-ephem-header-font-size)",
-        }}
-      >
-        <span className="font-medium text-foreground">{sourceName}</span>
-        <span>{t("ephem.graphicEphemeris")}</span>
-        <span>{renderedYear}</span>
-        {renderedMonth !== 1 ? <span>{payload?.monthLabels?.[0] ?? t("ephem.month", { n: renderedMonth })}</span> : null}
-        {pendingAnchor ? (
-          <span className="text-[color:var(--aries-text-dim)]">
-            {t("ephem.loading")} {loadingAnchor?.year}
-            {loadingAnchor?.month !== 1 ? `/${loadingAnchor?.month}` : ""}
-          </span>
-        ) : null}
-        <span className="ml-auto">{t("ephem.hint")}</span>
-      </div>
       <ContextMenu>
         <ContextMenuTrigger
           render={
@@ -1285,7 +1289,7 @@ export function GraphEphemerisView({
               {hover ? (
                 <HoverFlag
                   hover={hover}
-                  colors={payload?.colors ?? DEFAULT_EPHEMERIS_RENDER_PALETTE}
+                  colors={effectivePalette}
                 />
               ) : null}
               {error ? (
@@ -1345,14 +1349,14 @@ export function GraphEphemerisView({
           <ContextMenuSub>
             <ContextMenuSubTrigger>{t("ephem.planets")}</ContextMenuSubTrigger>
             <ContextMenuSubContent className="min-w-44">
-              {(payload?.planets ?? []).map((p) => (
+              {(effectivePayload?.planets ?? []).map((p) => (
                 <ContextMenuCheckboxItem
                   key={p.id}
                   checked={Boolean(visible[p.id])}
                   onCheckedChange={(checked) => togglePlanet(p.id, Boolean(checked))}
                 >
                   <span className="inline-flex items-center gap-2">
-                    <span style={{ fontFamily: "AriesMorinus", color: p.color }}>{p.glyph}</span>
+                    <span className="font-symbols" style={{ color: p.color }}>{p.glyph}</span>
                     {p.label}
                   </span>
                 </ContextMenuCheckboxItem>
@@ -1414,11 +1418,11 @@ function HoverFlag({ hover, colors }: { hover: { x: number; y: number; info: Hov
       <div>{info.date}</div>
       <div className="flex items-center" style={{ gap: "var(--aries-ephem-hover-gap)" }}>
         {info.planetGlyph ? (
-          <span style={{ fontFamily: "AriesMorinus" }}>{info.planetGlyph}</span>
+          <span className="font-symbols">{info.planetGlyph}</span>
         ) : null}
         {info.stationCode ? <span>({info.stationCode})</span> : null}
         {!info.declination && info.sign ? (
-          <span style={{ fontFamily: "AriesMorinus" }}>{info.sign}</span>
+          <span className="font-symbols">{info.sign}</span>
         ) : null}
         <span>{valueTxt}</span>
       </div>

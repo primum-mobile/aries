@@ -7,7 +7,7 @@ import * as React from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 
-import { ChevronLeft, ChevronRight, Coffee, PanelLeft, NotebookPen, Pencil, ScrollText, Search, Settings } from "lucide-react";
+import { Bell, ChevronLeft, ChevronRight, Coffee, PanelLeft, NotebookPen, Pencil, ScrollText, Search, Settings } from "lucide-react";
 
 import {
   ResizableHandle,
@@ -20,6 +20,18 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import type { ChartPalette, ChartRenderSnapshot, OverlayInfoRow } from "@/lib/chart/types";
+import { morinusTextFontFromTokens } from "@/lib/chart/chart-fonts";
+import {
+  readPaletteFromTheme,
+  readPaletteProfileOverrides,
+} from "@/lib/chart/palette";
+import { resolveWheelRenderStyleFromTokens } from "@/lib/chart/wheel-render-style";
+import { registerChartExportRenderer } from "@/lib/chart/chart-export-registry";
+import { renderChartSurfaceExport } from "@/lib/chart/chart-export-renderer";
+import {
+  ASTROCART_TITLEBAR_SAFE_TOP,
+  createAstrocartStyleMessage,
+} from "@/lib/chart/astrocart-style";
 import { useT, type TFunc } from "@/lib/i18n/i18n";
 import { resolveListFocusDatetime } from "@/lib/list-follow-policy";
 import { cn } from "@/lib/utils";
@@ -38,7 +50,9 @@ import {
 } from "@/stores/workspace-store";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 import { useThemeStore } from "@/stores/theme-store";
+import { useUpdateNotificationStore } from "@/stores/update-notification-store";
 import { useAstrocartMapUrl } from "@/hooks/use-astrocart-map-url";
+import { useStyleRevision } from "@/hooks/use-style-revision";
 import { TitlebarOptionsMenu } from "./titlebar-options-menu";
 import {
   RIGHT_PANE_COLLAPSE_THRESHOLD,
@@ -61,10 +75,14 @@ import {
   type AstrocartHereAction,
   type AstrocartLineMode,
   type AstrocartViewState,
-  type OptionsPayload,
+  type WorkspaceManifest,
 } from "@/lib/daemon/client";
 import { isAbortError, isTransientDaemonFetchError } from "@/lib/abort-error";
-import { resolveShellHost } from "@/lib/shell-host";
+import {
+  resolveNativeShellPlatform,
+  resolveShellHost,
+  resolveWindowsCaptionInset,
+} from "@/lib/shell-host";
 import type { SettingsTabId } from "./settings-dialog";
 
 const AstrolabeView = dynamic(
@@ -145,6 +163,10 @@ const HelpView = dynamic(
 );
 const LegalDocumentView = dynamic(
   () => import("./legal-document-view").then((mod) => mod.LegalDocumentView),
+  { loading: () => null },
+);
+const WhatsNewView = dynamic(
+  () => import("./whats-new-view").then((mod) => mod.WhatsNewView),
   { loading: () => null },
 );
 
@@ -356,8 +378,8 @@ function SurfaceArea({
           <div
             key={document.documentId}
             className={cn(
-              "absolute inset-0 flex min-h-0",
-              active ? "z-10 visible" : "pointer-events-none invisible",
+              "absolute inset-0 min-h-0",
+              active ? "z-10 flex" : "pointer-events-none hidden",
             )}
             aria-hidden={!active}
           >
@@ -483,7 +505,6 @@ function ActiveSurfaceArea({
       <GraphEphemerisView
         key={activeDoc.id}
         documentId={activeDoc.id}
-        sourceName={activeDoc.sourceName}
       />
     );
   }
@@ -585,6 +606,9 @@ function ActiveSurfaceArea({
  * the daemon at /Res/Morinus.jpg (same mount that serves the astrocart assets).
  */
 function EmptyWorkspace() {
+  const t = useT();
+  const deferredUpdate = useUpdateNotificationStore((state) => state.deferred);
+  const requestUpdateOffer = useUpdateNotificationStore((state) => state.requestOffer);
   // Served same-origin from the frontend's public/ (copied from Res/Morinus.jpg)
   // — loading it cross-origin from the daemon (:8765) failed to render in the
   // Tauri webview even though the daemon returns 200.
@@ -654,9 +678,9 @@ function EmptyWorkspace() {
             {splash.title.slice(1)}
           </span>
         </div>
-        <div className="mt-[5px] text-[13px] leading-tight">{splash.subtitle}</div>
+        <div className="mt-[5px] text-[length:var(--aries-font-size-reading)] leading-tight">{splash.subtitle}</div>
         {/* Info lines — faithful to wx's mtexts 'FreeSoft' + 'Description'. */}
-        <div className="mt-[10px] flex flex-col text-[9px] leading-[1.5] text-[color:var(--aries-text-muted)]">
+        <div className="mt-[10px] flex flex-col text-[length:var(--aries-font-size-micro)] leading-[1.5] text-[color:var(--aries-text-muted)]">
           {splash.infoLines.map((line, index) => (
             <span key={`${index}:${line}`}>{line}</span>
           ))}
@@ -664,17 +688,27 @@ function EmptyWorkspace() {
         <a
           href={splash.supportUrl}
           onClick={handleSupportClick}
-          className="mt-[10px] inline-flex items-center gap-1 text-[9px] leading-[1.5] text-[color:var(--aries-text-muted)] opacity-80 hover:underline"
+          className="mt-[10px] inline-flex items-center gap-1 text-[length:var(--aries-font-size-micro)] leading-[1.5] text-[color:var(--aries-text-muted)] opacity-80 hover:underline"
         >
           <Coffee aria-hidden className="size-3" strokeWidth={1.6} />
           {splash.supportText}
         </a>
+        {deferredUpdate ? (
+          <button
+            type="button"
+            className="mt-[var(--aries-pane-title-gap)] inline-flex h-[var(--aries-control-height-small)] items-center gap-[var(--aries-control-gap)] rounded-[var(--aries-radius-control)] border border-border/70 bg-muted/40 px-[var(--aries-control-padding-x)] text-[length:var(--aries-font-size-section)] text-foreground hover:bg-muted/70"
+            onClick={requestUpdateOffer}
+          >
+            <Bell aria-hidden className="size-[var(--aries-control-icon-size)]" />
+            {t("license.splashUpdateAvailable", { version: deferredUpdate.version })}
+          </button>
+        ) : null}
       </div>
     </div>
   );
 }
 
-function AstrocartSurface({
+const AstrocartSurface = React.memo(function AstrocartSurface({
   documentId,
   parentDocumentId,
   active,
@@ -695,16 +729,29 @@ function AstrocartSurface({
   // push it + recenter the map on the birthplace via the postMessage bridge
   // baked into map.html (window.addEventListener('message', …)).
   const t = useT();
-  const lastSessionChange = useDaemonWorkspaceStore((state) => state.lastSessionChange);
+  // A retained hidden map must not re-render for every active chart time step.
+  // On reactivation the selector immediately exposes the latest event and the
+  // existing sequence/relevance logic performs one coherent refresh.
+  const lastSessionChange = useDaemonWorkspaceStore((state) =>
+    active ? state.lastSessionChange : null,
+  );
   const lastOptionsChange = useDaemonWorkspaceStore((state) => state.lastOptionsChange);
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
   const latestViewStateRef = React.useRef<AstrocartViewState | null>(null);
   const saveViewStateTimerRef = React.useRef<number | null>(null);
   const completedEclipseKeyRef = React.useRef<string | null>(null);
+  const completedAsterismKeyRef = React.useRef<string | null>(null);
+  const asterismDataCacheRef = React.useRef<{
+    documentId: string;
+    sessionRevision: number;
+    referenceGeometryRevision: number;
+    payload: unknown;
+  } | null>(null);
   const completedDisplayStyleKeyRef = React.useRef<string | null>(null);
   const latestDisplayStyleRef = React.useRef<unknown>(null);
   const displayStyleRequestRef = React.useRef<AbortController | null>(null);
   const handledSessionChangeSeqRef = React.useRef(lastSessionChange?.seq ?? 0);
+  const pendingSessionRefreshRef = React.useRef(false);
   const handledOptionsChangeSeqRef = React.useRef(lastOptionsChange?.seq ?? 0);
   const activeLineModesRef = React.useRef<AstrocartLineMode[]>(ASTROCART_DEFAULT_LINE_MODES);
   const activeDataContextRef = React.useRef<{
@@ -723,6 +770,7 @@ function AstrocartSurface({
   const lastRenderedSessionRevisionRef = React.useRef<number | null>(null);
   const initialCenterAppliedRef = React.useRef(false);
   const [readyUrl, setReadyUrl] = React.useState<string | null>(null);
+  const [iframeLoadRevision, setIframeLoadRevision] = React.useState(0);
   const [linesPushedFor, setLinesPushedFor] = React.useState<string | null>(null);
   const [sessionRevision, setSessionRevision] = React.useState(0);
   const [displayStyleRevision, setDisplayStyleRevision] = React.useState(1);
@@ -731,6 +779,7 @@ function AstrocartSurface({
   const theme = useThemeStore((s) => s.theme);
   const bootTheme = theme?.mode === "light" ? "light" : "dark";
   const bootPageBg = bootTheme === "light" ? "#d9dde1" : "#1a1d21";
+  const themeStyleKey = `${theme?.styleRevision ?? "pending"}:${theme?.styleHash ?? "pending"}`;
   // Pass the cached app theme immediately in the URL so map.html's first paint
   // is not the browser/provider default. The daemon still sends the authoritative
   // theme from the cheap display-style endpoint, mirroring
@@ -749,24 +798,55 @@ function AstrocartSurface({
     theme: bootTheme,
     pageBg: bootPageBg,
     places: "auto",
-    titlebarSafeTop: 34,
+    titlebarSafeTop: ASTROCART_TITLEBAR_SAFE_TOP,
   } as const));
   const url = useAstrocartMapUrl(mapBootOptions, { allowTileAdoption: !active });
   const lineModesKey = lineModes.join(",");
-  const mapInstanceKey = `${documentId}:${url ?? "pending"}`;
+  // WKWebView can discard and reload a retained map after several WebGL-backed
+  // chart surfaces have been visited. The URL and React component stay the
+  // same, so include the actual iframe load generation in every replay key.
+  // Otherwise the new page is empty while the parent still thinks data/style
+  // were completed for the previous iframe document.
+  const mapInstanceKey = `${documentId}:${url ?? "pending"}:${iframeLoadRevision}`;
   const dataGenerationKey = `${mapInstanceKey}:${lineModesKey}:${sessionRevision}`;
-  const viewStateKey = `${documentId}:${url ?? "pending"}`;
+  const viewStateKey = mapInstanceKey;
   const iframeReady = !!url && readyUrl === url;
   const viewStateReady = iframeReady && viewStateReadyFor === viewStateKey;
   const linesPushed = linesPushedFor === dataGenerationKey;
+  // View-only Astrocartography documents are not themselves rebuilt by a
+  // global house-system change, even though their reference geometry depends
+  // on the parent radix's new houses. Include that option event explicitly so
+  // the retained map replaces its house planes without requiring a retoggle.
+  const referenceGeometryRevision =
+    lastOptionsChange?.refreshMode === "house-system" ? lastOptionsChange.seq : 0;
+
+  React.useEffect(() => {
+    if (!iframeReady) return;
+    const targetWindow = iframeRef.current?.contentWindow;
+    targetWindow?.postMessage({ type: "aries.setActive", active }, "*");
+    if (!active) {
+      // A delayed camera-state notification must not wake the daemon after the
+      // retained map has become invisible. Cancel both sides of the debounce:
+      // map.html's pending postMessage and this surface's pending persistence.
+      targetWindow?.postMessage(
+        { type: "aries.setStatePersistence", enabled: false },
+        "*",
+      );
+      if (saveViewStateTimerRef.current != null) {
+        window.clearTimeout(saveViewStateTimerRef.current);
+        saveViewStateTimerRef.current = null;
+      }
+    }
+  }, [active, iframeReady]);
 
   React.useEffect(() => {
     const documentChanged = modeDataDocumentRef.current !== documentId;
+    const modeDataRequests = modeDataRequestsRef.current;
     modeDataDocumentRef.current = documentId;
-    for (const request of modeDataRequestsRef.current.values()) {
+    for (const request of modeDataRequests.values()) {
       request.controller.abort();
     }
-    modeDataRequestsRef.current.clear();
+    modeDataRequests.clear();
     emptyMetaRequestRef.current?.controller.abort();
     emptyMetaRequestRef.current = null;
     modeDataCacheRef.current.clear();
@@ -776,7 +856,7 @@ function AstrocartSurface({
       initialCenterAppliedRef.current = false;
     }
     return () => {
-      for (const request of modeDataRequestsRef.current.values()) {
+      for (const request of modeDataRequests.values()) {
         request.controller.abort();
       }
       emptyMetaRequestRef.current?.controller.abort();
@@ -793,26 +873,42 @@ function AstrocartSurface({
   }, [dataGenerationKey, lineModes, sessionRevision]);
 
   React.useEffect(() => {
+    if (active) return;
+    // Deactivation is a scheduling boundary: retained map state and completed
+    // caches remain, but unfinished map work must not compete with the active
+    // chart's key-repeat path.
+    displayStyleRequestRef.current?.abort();
+    displayStyleRequestRef.current = null;
+    for (const request of modeDataRequestsRef.current.values()) {
+      request.controller.abort();
+    }
+    modeDataRequestsRef.current.clear();
+    emptyMetaRequestRef.current?.controller.abort();
+    emptyMetaRequestRef.current = null;
+  }, [active]);
+
+  React.useEffect(() => {
     const change = lastSessionChange;
-    if (!change) return;
-    if (handledSessionChangeSeqRef.current === change.seq) return;
-    handledSessionChangeSeqRef.current = change.seq;
-    if (change.changeReason === "display-overlay") return;
-    const relevantIds = [documentId, parentDocumentId].filter(
-      (value): value is string => typeof value === "string" && value.length > 0,
-    );
-    const relevant =
-      relevantIds.includes(change.docId ?? "") ||
-      change.rebuiltChildIds.some((id) => relevantIds.includes(id));
-    if (!relevant) return;
-    let cancelled = false;
-    queueMicrotask(() => {
-      if (!cancelled) setSessionRevision((revision) => revision + 1);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [documentId, lastSessionChange, parentDocumentId]);
+    if (change && handledSessionChangeSeqRef.current !== change.seq) {
+      handledSessionChangeSeqRef.current = change.seq;
+      if (change.changeReason !== "display-overlay") {
+        const relevantIds = [documentId, parentDocumentId].filter(
+          (value): value is string => typeof value === "string" && value.length > 0,
+        );
+        const relevant =
+          relevantIds.includes(change.docId ?? "") ||
+          change.rebuiltChildIds.some((id) => relevantIds.includes(id));
+        if (relevant) pendingSessionRefreshRef.current = true;
+      }
+    }
+    // Retained maps stay mounted for an immediate tab return, but an invisible
+    // WebGL iframe must not churn React state or discard large GeoJSON caches on
+    // every parent-chart key repeat. Collapse all hidden session changes into a
+    // single refresh when the map becomes active again.
+    if (!active || !pendingSessionRefreshRef.current) return;
+    pendingSessionRefreshRef.current = false;
+    queueMicrotask(() => setSessionRevision((revision) => revision + 1));
+  }, [active, documentId, lastSessionChange, parentDocumentId]);
 
   React.useEffect(() => {
     const change = lastOptionsChange;
@@ -849,18 +945,31 @@ function AstrocartSurface({
 
   React.useEffect(() => {
     if (!active || !iframeReady) return;
+    // The direct mode message restores the old immediate theme behavior while
+    // the authoritative versioned map style is fetched. Never replay a full
+    // renderer from the previous theme over that new mode in the meantime.
+    displayStyleRequestRef.current?.abort();
+    displayStyleRequestRef.current = null;
+    latestDisplayStyleRef.current = null;
     iframeRef.current?.contentWindow?.postMessage(
-      { type: "aries.setTheme", theme: bootTheme, pageBg: bootPageBg },
+      { type: "aries.setTheme", theme: bootTheme, pageBg: bootPageBg, resetStyle: true },
       "*",
     );
+  }, [active, bootPageBg, bootTheme, iframeReady, themeStyleKey]);
+
+  React.useEffect(() => {
+    if (!active || !iframeReady) return;
     iframeRef.current?.contentWindow?.postMessage(
       {
         type: "aries.setUiLabels",
-        labels: { birthplaceMarker: t("astrocart.birthplaceMarker.title") },
+        labels: {
+          birthplaceMarker: t("astrocart.birthplaceMarker.title"),
+          asterisms: t("astrocart.overlay.asterisms"),
+        },
       },
       "*",
     );
-  }, [active, bootPageBg, bootTheme, iframeReady, t]);
+  }, [active, iframeReady, t]);
 
   React.useEffect(() => {
     if (!active || !iframeReady || !url || viewStateReadyFor === viewStateKey) return;
@@ -896,7 +1005,7 @@ function AstrocartSurface({
 
   React.useEffect(() => {
     if (!active || !iframeReady || !url) return;
-    const styleKey = `${documentId}:${url}:${displayStyleRevision}`;
+    const styleKey = `${mapInstanceKey}:${displayStyleRevision}:${themeStyleKey}`;
     if (completedDisplayStyleKeyRef.current === styleKey) return;
     const targetWindow = iframeRef.current?.contentWindow;
     if (!targetWindow) return;
@@ -908,12 +1017,16 @@ function AstrocartSurface({
     )
       .then((response) => {
         if (!response.ok) throw new Error(`astrocart style fetch failed: ${response.status}`);
-        return response.json();
+        return response.json() as Promise<unknown>;
       })
       .then((payload) => {
         if (controller.signal.aborted || iframeRef.current?.contentWindow !== targetWindow) return;
-        latestDisplayStyleRef.current = payload;
-        targetWindow.postMessage({ type: "aries.setDisplayStyle", payload }, "*");
+        const styleMessage = createAstrocartStyleMessage(payload);
+        // A request that crossed a preset transition must not install the
+        // previous full renderer after the new direct light/dark paint.
+        if (styleMessage.payload.mode !== bootTheme) return;
+        latestDisplayStyleRef.current = styleMessage.payload;
+        targetWindow.postMessage(styleMessage, "*");
         completedDisplayStyleKeyRef.current = styleKey;
       })
       .catch((err) => {
@@ -926,7 +1039,70 @@ function AstrocartSurface({
         displayStyleRequestRef.current = null;
       }
     };
-  }, [active, displayStyleRevision, documentId, iframeReady, url]);
+  }, [active, bootTheme, displayStyleRevision, documentId, iframeReady, mapInstanceKey, themeStyleKey, url]);
+
+  React.useEffect(() => {
+    if (!active || !viewStateReady) return;
+    const asterismKey = `${mapInstanceKey}:${sessionRevision}:${referenceGeometryRevision}`;
+    if (completedAsterismKeyRef.current === asterismKey) return;
+    const targetWindow = iframeRef.current?.contentWindow;
+    if (!targetWindow) return;
+    const cached = asterismDataCacheRef.current;
+    if (
+      cached?.documentId === documentId &&
+      cached.sessionRevision === sessionRevision &&
+      cached.referenceGeometryRevision === referenceGeometryRevision
+    ) {
+      targetWindow.postMessage({ type: "aries.setAsterismData", payload: cached.payload }, "*");
+      completedAsterismKeyRef.current = asterismKey;
+      return;
+    }
+
+    const controller = new AbortController();
+    void (async () => {
+      let lastError: unknown = null;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          const response = await daemonFetch(
+            `${daemonBaseUrl()}/api/workspace/document/${encodeURIComponent(documentId)}/astrocart/asterisms`,
+            { cache: "no-store", signal: controller.signal },
+          );
+          if (!response.ok) {
+            throw new Error(`astrocart asterisms fetch failed: ${response.status}`);
+          }
+          const payload = await response.json() as unknown;
+          if (controller.signal.aborted || iframeRef.current?.contentWindow !== targetWindow) return;
+          asterismDataCacheRef.current = {
+            documentId,
+            sessionRevision,
+            referenceGeometryRevision,
+            payload,
+          };
+          targetWindow.postMessage({ type: "aries.setAsterismData", payload }, "*");
+          completedAsterismKeyRef.current = asterismKey;
+          return;
+        } catch (err) {
+          if (isAbortError(err, controller.signal)) return;
+          lastError = err;
+          if (attempt < 2) {
+            await new Promise<void>((resolve) => {
+              window.setTimeout(resolve, 120 * (attempt + 1));
+            });
+            if (controller.signal.aborted) return;
+          }
+        }
+      }
+      console.error("[acg-asterisms]", lastError);
+    })();
+    return () => controller.abort();
+  }, [
+    active,
+    documentId,
+    mapInstanceKey,
+    referenceGeometryRevision,
+    sessionRevision,
+    viewStateReady,
+  ]);
 
   const persistViewState = React.useCallback((state: AstrocartViewState, immediate = false) => {
     latestViewStateRef.current = state;
@@ -1162,11 +1338,11 @@ function AstrocartSurface({
   // (eclipsepath.build_solar_eclipse_path_geojson via /api/astrocart/
   // eclipse-path) and push it through the postMessage twin of wx's
   // RunScript setEclipseData (astrocartframe.py:442-456). map.html owns the
-  // shadow/fill/limits/center/max layers and fits the view to the path
-  // (pushEclipseData({fit:true})), exactly as under wx.
+  // shadow/fill/limits/center/max layers and fits a newly opened eclipse once.
+  // ACG line-mode changes reuse that eclipse payload and preserve the camera.
   React.useEffect(() => {
     if (!active || !iframeReady || !linesPushed || !eclipseEvent) return;
-    const eclipseKey = `${dataGenerationKey}:${eclipseEvent.jdUt}:${eclipseEvent.retflag ?? 0}`;
+    const eclipseKey = `${mapInstanceKey}:${eclipseEvent.jdUt}:${eclipseEvent.retflag ?? 0}`;
     if (completedEclipseKeyRef.current === eclipseKey) return;
     const controller = new AbortController();
     const targetWindow = iframeRef.current?.contentWindow;
@@ -1193,7 +1369,7 @@ function AstrocartSurface({
         console.error("[acg-eclipse]", err);
       });
     return () => controller.abort();
-  }, [active, dataGenerationKey, eclipseEvent, iframeReady, linesPushed]);
+  }, [active, eclipseEvent, iframeReady, linesPushed, mapInstanceKey]);
 
   // Right-click "here" actions. map.html's #acg-menu posts outbound intents up
   // to this parent ({source:'aries-acg', payload:{type:'here', action, lon,
@@ -1237,6 +1413,7 @@ function AstrocartSurface({
         return;
       }
       if (payload.type === "state" && payload.state) {
+        if (!active) return;
         persistViewState({
           ...payload.state,
           lineModes: activeLineModesRef.current,
@@ -1271,7 +1448,7 @@ function AstrocartSurface({
     }
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [documentId, persistViewState, url]);
+  }, [active, documentId, persistViewState, url]);
 
   return (
     <div className="relative flex flex-1 min-h-0 bg-background">
@@ -1284,6 +1461,7 @@ function AstrocartSurface({
           className="h-full w-full border-0 bg-background"
           style={{ backgroundColor: "var(--background, #232428)" }}
           onLoad={() => {
+            setIframeLoadRevision((revision) => revision + 1);
             setReadyUrl(url);
             iframeRef.current?.contentWindow?.postMessage(
               { type: "aries.getReady" },
@@ -1293,7 +1471,7 @@ function AstrocartSurface({
         />
       ) : null}
       <div
-        className="absolute bottom-3 left-1/2 z-20 inline-flex h-7 -translate-x-1/2 items-center rounded-[5px] border border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface)] p-0.5 text-[11px] shadow-sm"
+        className="absolute bottom-[var(--aries-pane-title-gap)] left-1/2 z-20 inline-flex h-[var(--aries-control-height-small)] -translate-x-1/2 items-center rounded-[var(--aries-radius-control)] border border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface)] p-[var(--aries-segmented-control-padding)] text-[length:var(--aries-font-size-small)] shadow-sm"
         role="group"
         aria-label={t("toolbar.astrocartLineMode")}
       >
@@ -1308,17 +1486,17 @@ function AstrocartSurface({
               aria-pressed={active}
               onClick={(event) => handleLineModeClick(mode.id, event)}
               className={cn(
-                "flex h-6 min-w-[72px] flex-col items-center justify-center rounded-[3px] px-2 text-[color:var(--aries-text-muted)] transition-colors",
+                "flex h-[var(--aries-control-height-compact)] min-w-[var(--aries-segmented-control-item-min-width)] flex-col items-center justify-center rounded-[var(--aries-radius-control-compact)] px-[var(--aries-control-padding-x-compact)] text-[color:var(--aries-text-muted)] transition-colors",
                 active
                   ? "bg-[color:var(--aries-accent)] text-[color:var(--aries-text-primary)]"
                   : "hover:bg-[color:var(--aries-list-hover-bg)]",
               )}
             >
-              <span className="text-[11px] leading-[11px]">
+              <span className="text-[length:var(--aries-font-size-small)] leading-none">
                 {t(`astrocart.mode.${mode.id}.label`)}
               </span>
               {geodetic ? (
-                <span className="text-[7px] font-medium uppercase leading-[8px] tracking-[0.08em] opacity-70">
+                <span className="text-[length:var(--aries-font-size-micro)] font-medium uppercase leading-none tracking-[0.08em] opacity-70">
                   {t("astrocart.mode.geodetic.badge")}
                 </span>
               ) : null}
@@ -1328,7 +1506,7 @@ function AstrocartSurface({
       </div>
     </div>
   );
-}
+});
 
 /**
  * The single unified macOS-style title bar — one full-width overlay holding the
@@ -1344,12 +1522,15 @@ function AstrocartSurface({
 export function UnifiedTitleBar({
   chart,
   activeDoc,
+  manifest,
   overlay = false,
-  onOptionsPatched,
   onOpenSettings,
+  onMenuCommand,
+  isMenuCommandEnabled,
 }: {
   chart: ChartRenderSnapshot | null;
   activeDoc: WorkspaceDocument | null;
+  manifest: WorkspaceManifest | null;
   // Full-bleed surfaces (astrocart map) want the title controls floating over
   // the content with no opaque bar — the wx WebView panel fills under the title
   // region (astrocartframe._titlebar_safe_top) and shows no separate bar. When
@@ -1357,8 +1538,9 @@ export function UnifiedTitleBar({
   // and the centred title text is hidden (only the traffic-light drag
   // region + control buttons remain over the map).
   overlay?: boolean;
-  onOptionsPatched?: (next?: OptionsPayload) => void;
   onOpenSettings?: (tab?: SettingsTabId) => void;
+  onMenuCommand: (command: string) => void;
+  isMenuCommandEnabled: (command: string) => boolean;
 }) {
   const toggleSidebar = useFrameLayoutStore((s) => s.toggleSidebar);
   const sidebarOpen = useFrameLayoutStore((s) => s.sidebarOpen);
@@ -1371,14 +1553,29 @@ export function UnifiedTitleBar({
   const openTransitSearchPane = useWorkspaceStore((s) => s.openTransitSearchPane);
   const closeTransitSearchPane = useWorkspaceStore((s) => s.closeTransitSearchPane);
   const closeAllRightPanes = useWorkspaceStore((s) => s.closeAllRightPanes);
+  const captionActionsRef = useRef<HTMLDivElement>(null);
   const t = useT();
   const parts = buildTitleParts(chart, activeDoc, t);
-  // Mark <html> as running under Tauri so globals.css insets the traffic-light
-  // padding on this bar (no lights in a plain browser, so no inset there).
+  // Mark the native platform explicitly: macOS reserves the leading traffic
+  // lights, while Windows reserves the measured trailing caption controls.
   useLayoutEffect(() => {
     if (!resolveShellHost().capabilities.nativeWindowChrome) return;
-    document.documentElement.classList.add("is-tauri");
-    return () => document.documentElement.classList.remove("is-tauri");
+    const root = document.documentElement;
+    const platform = resolveNativeShellPlatform();
+    const captionActions = captionActionsRef.current;
+    root.classList.add("is-tauri");
+    if (platform) root.classList.add(`is-${platform}`);
+    if (platform === "windows") {
+      captionActions?.style.setProperty(
+        "margin-right",
+        `${resolveWindowsCaptionInset()}px`,
+      );
+    }
+    return () => {
+      root.classList.remove("is-tauri");
+      if (platform) root.classList.remove(`is-${platform}`);
+      captionActions?.style.removeProperty("margin-right");
+    };
   }, []);
   // The pencil edits the active chart's data (the wx-free twin of the radix
   // context menu's "Edit chart data", morin.py:14813). View-only docs
@@ -1426,8 +1623,8 @@ export function UnifiedTitleBar({
           : "unified-titlebar",
       )}
     >
-      {/* Left cluster starts after the native macOS traffic-light area. Native
-          lights are outside the DOM, so this is pinned instead of spacer-driven. */}
+      {/* On macOS this starts after the native traffic lights; Windows uses the
+          default leading inset and reserves its native controls on the right. */}
       <div data-tauri-drag-region className="absolute left-[var(--titlebar-left-controls-x)] top-0 z-10 flex h-[var(--titlebar-h)] min-w-0 translate-y-[var(--titlebar-content-offset-y)] items-center justify-start gap-0.5 sm:gap-1">
         <HeaderButton label={t("toolbar.toggleSidebar")} onClick={toggleSidebar} pressed={sidebarOpen}>
           <PanelLeft className="size-[var(--morinus-header-icon-size)]" />
@@ -1440,13 +1637,16 @@ export function UnifiedTitleBar({
         {overlay ? null : <TitleText parts={parts} />}
       </div>
       {/* Right cluster — search + edit + right-pane toggles. */}
-      <div data-tauri-drag-region className="relative z-10 col-start-3 flex min-w-0 translate-y-[var(--titlebar-content-offset-y)] items-center justify-end gap-0.5 sm:gap-1">
+      <div
+        ref={captionActionsRef}
+        data-tauri-drag-region
+        className="relative z-10 col-start-3 flex min-w-0 translate-y-[var(--titlebar-content-offset-y)] items-center justify-end gap-0.5 sm:gap-1"
+      >
         <TitlebarOptionsMenu
-          onOptionsPatched={onOptionsPatched}
+          manifest={manifest}
+          onCommand={onMenuCommand}
+          isCommandEnabled={isMenuCommandEnabled}
           onOpenSettings={onOpenSettings}
-          pdChartOrientationDisabled={
-            activeDoc?.launcherKind === "pd_in_chart" && activeDoc.chartVisualMode === "mundane"
-          }
         />
         {canOpenSearch ? (
           <HeaderButton label={t("toolbar.search")} onClick={handleToggleSearchPane} pressed={searchActive}>
@@ -1607,6 +1807,8 @@ export type KeyHintPlacement = "top" | "bottom";
 export type ModeHintRailProps = {
   visible: boolean;
   placement?: KeyHintPlacement;
+  revealToken?: number;
+  autoHideMs?: number;
   overlay: boolean;
   hasChart: boolean;
   hasComparisonChart?: boolean;
@@ -1633,6 +1835,8 @@ const STEP_HINT_HOLD_REPEAT_MS = 95;
 export const ModeHintRail = React.memo(function ModeHintRail({
   visible,
   placement = "top",
+  revealToken = 0,
+  autoHideMs = 0,
   overlay,
   hasChart,
   hasComparisonChart,
@@ -1649,6 +1853,16 @@ export const ModeHintRail = React.memo(function ModeHintRail({
   onHintInteraction,
 }: ModeHintRailProps) {
   const t = useT();
+  const [hiddenRevealToken, setHiddenRevealToken] = React.useState<number | null>(null);
+  React.useEffect(() => {
+    if (!visible || autoHideMs <= 0) return;
+    const token = revealToken;
+    const timer = window.setTimeout(() => setHiddenRevealToken(token), autoHideMs);
+    return () => window.clearTimeout(timer);
+  }, [autoHideMs, revealToken, visible]);
+  const autoVisible = Boolean(
+    visible && (autoHideMs <= 0 || hiddenRevealToken !== revealToken),
+  );
   const showModeHint = Boolean(
     hasChart &&
     onToggleComparison &&
@@ -1671,11 +1885,11 @@ export const ModeHintRail = React.memo(function ModeHintRail({
       compoundKind,
       kind,
       supplementaryFeatureKind,
-    }),
-    [chartVisualMode, launcherKind, compoundKind, kind, supplementaryFeatureKind],
+    }, t),
+    [chartVisualMode, launcherKind, compoundKind, kind, supplementaryFeatureKind, t],
   );
   const showNavigationHints = Boolean(hasChart && onNavigateHint && stepHintGroups.length > 0);
-  const active = Boolean(visible && !overlay && (showModeHint || showNavigationHints));
+  const active = Boolean(autoVisible && !overlay && (showModeHint || showNavigationHints));
   const tooltipSide = placement === "bottom" ? "top" : "bottom";
   const handleModeHintClick = React.useCallback(() => {
     onHintInteraction?.();
@@ -1898,18 +2112,32 @@ function ShortcutFlag({ label, shortcut }: { label: string; shortcut: string }) 
   );
 }
 
-function shortcutTextForStep(
+export function shortcutTextForStep(
   direction: "left" | "right",
   modifiers?: { shift?: boolean; alt?: boolean },
 ): string {
   const parts: string[] = [];
-  if (modifiers?.alt) parts.push("Option");
-  if (modifiers?.shift) parts.push("Shift");
-  parts.push(direction === "left" ? "Left" : "Right");
+  if (modifiers?.alt) parts.push("⌥");
+  if (modifiers?.shift) parts.push("⇧");
+  parts.push(direction === "left" ? "←" : "→");
   return parts.join(" + ");
 }
 
-function navigationHintGroups({
+type NavigationHintUnit =
+  | "second"
+  | "minute"
+  | "hour"
+  | "day"
+  | "week"
+  | "month"
+  | "year"
+  | "degree"
+  | "oneDegree"
+  | "thirtyDegrees"
+  | "cycle"
+  | "event";
+
+export function navigationHintGroups({
   chartVisualMode,
   launcherKind,
   compoundKind,
@@ -1921,14 +2149,14 @@ function navigationHintGroups({
   compoundKind: WorkspaceDocument["compoundKind"] | null | undefined;
   kind: WorkspaceDocument["kind"] | null | undefined;
   supplementaryFeatureKind: WorkspaceDocument["supplementaryFeatureKind"] | null | undefined;
-}): NavigationHintGroup[] {
+}, t: TFunc): NavigationHintGroup[] {
   if (!isChartBearingSurfaceKind(kind)) return [];
   if (launcherKind === "pd_in_chart") {
     return buildLeftRightHintGroups([
       ["week", { alt: true }],
       ["month", { shift: true }],
       ["year", undefined],
-    ]);
+    ], t);
   }
   if (
     kind === "ascensional-transits" ||
@@ -1940,7 +2168,7 @@ function navigationHintGroups({
       ["second", { alt: true }],
       ["minute", { shift: true }],
       ["degree", undefined],
-    ]);
+    ], t);
   }
 
   const featureKind = supplementaryFeatureKind;
@@ -1949,7 +2177,7 @@ function navigationHintGroups({
       ["minute", { alt: true }],
       ["hour", { shift: true }],
       ["day", undefined],
-    ]);
+    ], t);
   }
   if (
     featureKind === "secondary-progression" ||
@@ -1961,44 +2189,68 @@ function navigationHintGroups({
       ["day", { alt: true }],
       ["week", { shift: true }],
       ["month", undefined],
-    ]);
+    ], t);
   }
   if (featureKind === "profections") {
     return buildLeftRightHintGroups([
       ["day", { alt: true }],
       ["month", { shift: true }],
       ["year", undefined],
-    ]);
+    ], t);
   }
   if (featureKind === "solar-revolution") {
     return buildLeftRightHintGroups([
-      ["1 deg", { alt: true }],
-      ["30 deg", { shift: true }],
+      ["oneDegree", { alt: true }],
+      ["thirtyDegrees", { shift: true }],
       ["year", undefined],
-    ]);
+    ], t);
   }
   if (featureKind === "lunar-revolution") {
-    return buildLeftRightHintGroups([["cycle", undefined]]);
+    return buildLeftRightHintGroups([["cycle", undefined]], t);
   }
   if (featureKind === "planetary-return") {
     return buildLeftRightHintGroups([
       ["event", { shift: true }],
       ["cycle", undefined],
-    ]);
+    ], t);
   }
   return [];
 }
 
 function buildLeftRightHintGroups(
-  entries: Array<[label: string, modifiers: { shift?: boolean; alt?: boolean } | undefined]>,
+  entries: Array<[
+    unit: NavigationHintUnit,
+    modifiers: { shift?: boolean; alt?: boolean } | undefined,
+  ]>,
+  t: TFunc,
 ): NavigationHintGroup[] {
-  return entries.map(([label, modifiers]) => ({
-    id: `${label}:${modifiers?.shift ? "shift" : ""}:${modifiers?.alt ? "alt" : ""}`,
-    label,
-    modifiers,
-    backwardLabel: `Previous ${label}`,
-    forwardLabel: `Next ${label}`,
-  }));
+  return entries.map(([unit, modifiers]) => {
+    const label = navigationHintUnitLabel(unit, t);
+    return {
+      id: `${unit}:${modifiers?.shift ? "shift" : ""}:${modifiers?.alt ? "alt" : ""}`,
+      label,
+      modifiers,
+      backwardLabel: t("toolbar.navbar.stepBackward", { unit: label }),
+      forwardLabel: t("toolbar.navbar.stepForward", { unit: label }),
+    };
+  });
+}
+
+function navigationHintUnitLabel(unit: NavigationHintUnit, t: TFunc): string {
+  switch (unit) {
+    case "second": return t("toolbar.navbar.unit.second");
+    case "minute": return t("toolbar.navbar.unit.minute");
+    case "hour": return t("toolbar.navbar.unit.hour");
+    case "day": return t("toolbar.navbar.unit.day");
+    case "week": return t("toolbar.navbar.unit.week");
+    case "month": return t("toolbar.navbar.unit.month");
+    case "year": return t("toolbar.navbar.unit.year");
+    case "degree": return t("toolbar.navbar.unit.degree");
+    case "oneDegree": return t("toolbar.navbar.unit.oneDegree");
+    case "thirtyDegrees": return t("toolbar.navbar.unit.thirtyDegrees");
+    case "cycle": return t("toolbar.navbar.unit.cycle");
+    case "event": return t("toolbar.navbar.unit.event");
+  }
 }
 
 function TitleText({ parts }: { parts: TitlePart[] }) {
@@ -2138,6 +2390,7 @@ function ChartArea({
   const activeRightPane = activeRightPaneModule({
     inspectorOpen,
     notesOpen,
+    styleEditorOpen: false,
     transitSearchPane,
     transitListPane,
     directionsPane,
@@ -2424,8 +2677,8 @@ function RightPaneSash({
       onDoubleClick={resetRightPaneWidth}
       className={cn(
         "absolute inset-y-0 z-50 w-3 -translate-x-1/2 cursor-col-resize select-none outline-none",
-        "after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-[color:var(--aries-titlebar-seam-rule)] after:content-['']",
-        dragging && "after:bg-sidebar-border/80",
+        "after:absolute after:inset-y-0 after:left-1/2 after:w-[var(--aries-sash-rule-size)] after:-translate-x-1/2 after:bg-[color:var(--aries-sash-idle-color)] after:content-['']",
+        dragging && "after:bg-[color:var(--aries-sash-active-color)]",
       )}
       style={{ left: "calc(100% - var(--right-pane-width))" }}
     />
@@ -2437,20 +2690,34 @@ function RightPaneSash({
  * element so the canvas re-measures when the panel is dragged (the
  * ResizeObserver in useElementSize fires on width change automatically).
  */
-const WX_OVERLAY_ROW_HEIGHT_FACTOR = 0.94;
-const WX_OVERLAY_GAP_AFTER_DAYHOUR = 0.3;
-const WX_OVERLAY_GAP_BETWEEN_GROUPS = 0.3;
-const WX_OVERLAY_ICON_SCALE = 0.83;
-const WX_OVERLAY_LABEL_SCALE = 1.08;
-const WX_OVERLAY_GAP_LABEL_GLYPH = 0.19;
-const WX_TITLEBAR_OVERLAY_SAFE_TOP = 14;
-// wx derives row height from measured rendered glyph/text boxes. CSS font-size
-// underestimates the Morinus glyph box, so compensate before applying wx's row factor.
-const DOM_OVERLAY_FONT_BOX_SCALE = 1.2;
-
-function ChartSurface({ chart }: { chart: ChartRenderSnapshot }) {
+export function ChartSurface({
+  chart,
+  appControlsEnabled = true,
+  inheritAppTheme = true,
+}: {
+  chart: ChartRenderSnapshot;
+  appControlsEnabled?: boolean;
+  inheritAppTheme?: boolean;
+}) {
   const [hostElement, setHostElement] = useState<HTMLDivElement | null>(null);
   const viewport = useElementSize(hostElement);
+  const viewportWidth = viewport.width;
+  const viewportHeight = viewport.height;
+  const theme = useThemeStore((state) => state.theme);
+  const styleRevision = useStyleRevision();
+
+  useEffect(() => {
+    const documentId = chart.document?.documentId;
+    if (!documentId || viewportWidth <= 0 || viewportHeight <= 0) return;
+    return registerChartExportRenderer(documentId, (request) =>
+      renderChartSurfaceExport(
+        chart,
+        theme,
+        { width: viewportWidth, height: viewportHeight },
+        request,
+      ),
+    );
+  }, [chart, theme, viewportHeight, viewportWidth]);
 
   const primaryChart = chart.primaryChart;
   const displayChart = isPlainSynastryBiwheel(chart)
@@ -2461,42 +2728,94 @@ function ChartSurface({ chart }: { chart: ChartRenderSnapshot }) {
     primaryCornerLines?.topLeft?.length || primaryCornerLines?.bottomLeft?.length
       ? primaryChart
       : displayChart;
-  const palette = resolvePalette(primaryChart);
+  const palette = React.useMemo(
+    () => ({
+      ...readPaletteFromTheme(theme),
+      ...resolvePalette(primaryChart),
+      ...readPaletteProfileOverrides(theme),
+    }),
+    [primaryChart, theme],
+  );
+  const chartTextFont = morinusTextFontFromTokens(theme?.appTokens);
+  const wheelStyle = React.useMemo(
+    () =>
+      resolveWheelRenderStyleFromTokens(
+        (cssVar) => theme?.chartPalette?.[cssVar],
+        {
+          palette,
+          revision: styleRevision,
+          fontSymbols: '"AriesMorinus"',
+          fontUi: chartTextFont,
+        },
+      ),
+    [chartTextFont, palette, styleRevision, theme?.chartPalette],
+  );
+  const overlayStyle = wheelStyle.overlays;
   // Partial overlay modes keep the live wheel cheap while the snapshot cache
   // retains previous stable rows until the next full overlay replaces them.
   const overlayRows = displayChart.overlay?.rows ?? [];
   const overlaySections = splitOverlayRows(overlayRows);
   const hasOverlayRows = overlayRows.length > 0;
   const chartSize = Math.min(viewport.width, viewport.height);
-  const compactPhone = viewport.width > 0 && viewport.width <= 390;
+  const compactPhone =
+    viewport.width > 0 && viewport.width <= overlayStyle.compactBreakpoint;
   const symbolSize = chartSize > 0 ? chartSize / 32 : 0;
-  const infoFontSize = Math.max(compactPhone ? 11 : 10, symbolSize * (compactPhone ? 0.86 : 0.75));
-  const infoGap = 0;
+  const infoFontSize = Math.max(
+    compactPhone ? overlayStyle.compactInfoFontMin : overlayStyle.infoFontMin,
+    symbolSize * (
+      compactPhone ? overlayStyle.compactInfoFontScale : overlayStyle.infoFontScale
+    ),
+  );
   const overlayIconSize = Math.max(
-    compactPhone ? 12 : 10,
-    ((2 * symbolSize) / 3) * (compactPhone ? 1.02 : WX_OVERLAY_ICON_SCALE),
+    compactPhone ? overlayStyle.compactIconMin : overlayStyle.iconMin,
+    ((2 * symbolSize) / 3) * (
+      compactPhone ? overlayStyle.compactIconScale : overlayStyle.iconScale
+    ),
   );
   const overlayLabelSize = Math.max(
-    compactPhone ? 9.5 : 8,
-    symbolSize * (compactPhone ? 0.52 : 0.38 * WX_OVERLAY_LABEL_SCALE),
+    compactPhone ? overlayStyle.compactLabelMin : overlayStyle.labelMin,
+    symbolSize * (
+      compactPhone ? overlayStyle.compactLabelScale : overlayStyle.labelScale
+    ),
   );
   const overlayLineHeight = Math.max(
     1,
     Math.round(
       Math.max(overlayIconSize, overlayLabelSize) *
-      DOM_OVERLAY_FONT_BOX_SCALE *
-      WX_OVERLAY_ROW_HEIGHT_FACTOR,
+      overlayStyle.fontBoxScale *
+      overlayStyle.rowHeightFactor,
     ),
   );
-  const overlayGapAfterDayHour = Math.round(overlayLineHeight * WX_OVERLAY_GAP_AFTER_DAYHOUR);
-  const overlayGapBetweenGroups = Math.round(overlayLineHeight * WX_OVERLAY_GAP_BETWEEN_GROUPS);
-  const overlayColumnGap = Math.max(2, Math.floor(symbolSize * WX_OVERLAY_GAP_LABEL_GLYPH));
-  const edgeInset = chartSize > 0 ? Math.max(compactPhone ? 10 : 0, chartSize / 25) : 0;
-  const topEdgeInset = compactPhone ? edgeInset : edgeInset + WX_TITLEBAR_OVERLAY_SAFE_TOP;
+  const overlayGapAfterDayHour = Math.round(
+    overlayLineHeight * overlayStyle.gapAfterDayHourScale,
+  );
+  const overlayGapBetweenGroups = Math.round(
+    overlayLineHeight * overlayStyle.groupGapScale,
+  );
+  const overlayColumnGap = Math.max(
+    overlayStyle.columnGapMin,
+    Math.floor(symbolSize * overlayStyle.columnGapScale),
+  );
+  const edgeInset = chartSize > 0
+    ? Math.max(
+        compactPhone ? overlayStyle.compactEdgeInsetMin : 0,
+        chartSize * overlayStyle.edgeInsetScale,
+      )
+    : 0;
+  const topEdgeInset = compactPhone
+    ? edgeInset
+    : edgeInset + overlayStyle.titlebarSafeTop;
+  const overlayMaxWidth = viewport.width > 0 && viewport.width < 640
+    ? `${overlayStyle.maxWidthViewportScale * 100}vw`
+    : undefined;
 
   return (
     <div ref={setHostElement} className="font-morinus-text relative flex h-full w-full min-w-0 overflow-hidden">
-      <ChartCanvas chart={chart} />
+      <ChartCanvas
+        chart={chart}
+        appControlsEnabled={appControlsEnabled}
+        inheritAppTheme={inheritAppTheme}
+      />
       {cornerChart.options.showInformation ? (
         <CornerLines
           lines={
@@ -2505,7 +2824,8 @@ function ChartSurface({ chart }: { chart: ChartRenderSnapshot }) {
           }
           color={palette.textDim}
           fontSize={infoFontSize}
-          gap={infoGap}
+          gap={overlayStyle.infoGap}
+          lineHeight={overlayStyle.cornerLineHeight}
           style={{ top: topEdgeInset, left: edgeInset, textAlign: "left" }}
         />
       ) : null}
@@ -2519,6 +2839,8 @@ function ChartSurface({ chart }: { chart: ChartRenderSnapshot }) {
           gapAfterDayHour={overlayGapAfterDayHour}
           gapBetweenGroups={overlayGapBetweenGroups}
           columnGap={overlayColumnGap}
+          glyphLineHeight={overlayStyle.glyphLineHeight}
+          maxWidth={overlayMaxWidth}
           style={{ top: topEdgeInset, right: edgeInset }}
         />
       ) : null}
@@ -2530,7 +2852,8 @@ function ChartSurface({ chart }: { chart: ChartRenderSnapshot }) {
           }
           color={palette.textDim}
           fontSize={infoFontSize}
-          gap={infoGap}
+          gap={overlayStyle.infoGap}
+          lineHeight={overlayStyle.cornerLineHeight}
           style={{ bottom: edgeInset, left: edgeInset, textAlign: "left" }}
         />
       ) : null}
@@ -2539,7 +2862,8 @@ function ChartSurface({ chart }: { chart: ChartRenderSnapshot }) {
           lines={displayChart.meta.houseSystemLines ?? []}
           color={palette.textDim}
           fontSize={infoFontSize}
-          gap={infoGap}
+          gap={overlayStyle.infoGap}
+          lineHeight={overlayStyle.cornerLineHeight}
           style={{ right: edgeInset, bottom: edgeInset, textAlign: "right" }}
         />
       ) : null}
@@ -2707,6 +3031,13 @@ function RightPaneStack({
         {featureCatalogPane.content === "help" ? (
           <HelpView
             key={featureCatalogPane.openSeq}
+            onClose={closeFeatureCatalogPane}
+          />
+        ) : featureCatalogPane.content === "whats-new" ? (
+          <WhatsNewView
+            key={featureCatalogPane.openSeq}
+            version={featureCatalogPane.version ?? ""}
+            notes={featureCatalogPane.notes ?? ""}
             onClose={closeFeatureCatalogPane}
           />
         ) : featureCatalogPane.content === "license" ||
@@ -3042,12 +3373,14 @@ function CornerLines({
   color,
   fontSize,
   gap,
+  lineHeight,
   style,
 }: {
   lines: string[];
   color: string;
   fontSize: number;
   gap: number;
+  lineHeight: number;
   style: React.CSSProperties;
 }) {
   if (!lines.length || fontSize <= 0) {
@@ -3061,7 +3394,7 @@ function CornerLines({
         ...style,
         color,
         fontSize,
-        lineHeight: 1.1,
+        lineHeight,
       }}
     >
       <div className="flex flex-col" style={{ gap }}>
@@ -3082,6 +3415,8 @@ function OverlayCorner({
   gapAfterDayHour,
   gapBetweenGroups,
   columnGap,
+  glyphLineHeight,
+  maxWidth,
   style,
 }: {
   sections: ReturnType<typeof splitOverlayRows>;
@@ -3092,6 +3427,8 @@ function OverlayCorner({
   gapAfterDayHour: number;
   gapBetweenGroups: number;
   columnGap: number;
+  glyphLineHeight: number;
+  maxWidth?: string;
   style: React.CSSProperties;
 }) {
   const hasRows = sections.dayhour.length || sections.header.length || sections.signal.length;
@@ -3111,9 +3448,12 @@ function OverlayCorner({
   rows.push(...sections.signal);
 
   return (
-    <div className="pointer-events-none absolute z-10 select-none font-ui" style={style}>
+    <div
+      className="pointer-events-none absolute z-10 select-none font-ui"
+      style={{ ...style, maxWidth }}
+    >
       <div
-        className="grid max-w-[42vw] items-center justify-end sm:max-w-none"
+        className="grid items-center justify-end"
         style={{
           gridTemplateColumns: "max-content max-content max-content",
           columnGap,
@@ -3136,6 +3476,7 @@ function OverlayCorner({
               labelSize={labelSize}
               iconSize={iconSize}
               lineHeight={lineHeight}
+              glyphLineHeight={glyphLineHeight}
             />
           );
         })}
@@ -3157,12 +3498,14 @@ function OverlayRow({
   labelSize,
   iconSize,
   lineHeight,
+  glyphLineHeight,
 }: {
   row: OverlayInfoRow;
   palette: ChartPalette;
   labelSize: number;
   iconSize: number;
   lineHeight: number;
+  glyphLineHeight: number;
 }) {
   const firstGlyph = row.glyphs[0] ?? null;
   const secondGlyph = row.group === "header" ? (row.glyphs[1] ?? null) : null;
@@ -3190,7 +3533,7 @@ function OverlayRow({
             style={{
               color: overlayGlyphColor(firstGlyph, palette),
               fontSize: iconSize,
-              lineHeight: 1,
+              lineHeight: glyphLineHeight,
             }}
           >
             {firstGlyph.char}
@@ -3207,7 +3550,7 @@ function OverlayRow({
             style={{
               color: overlayGlyphColor(secondGlyph, palette),
               fontSize: iconSize,
-              lineHeight: 1,
+              lineHeight: glyphLineHeight,
             }}
           >
             {secondGlyph.char}
@@ -3282,7 +3625,7 @@ export function StatusBar({
       className="relative z-20 flex h-[var(--morinus-status-height)] w-full shrink-0 select-none overflow-hidden bg-[color:var(--aries-background)] text-[length:var(--aries-font-size-statusbar)] font-normal leading-none text-[color:var(--aries-statusbar-text)]"
     >
       <div
-        className="flex h-full shrink-0 items-center gap-[4px] overflow-hidden bg-[color:var(--aries-background)] px-[var(--morinus-nav-side-margin)]"
+        className="flex h-full shrink-0 items-center gap-[var(--aries-statusbar-gap)] overflow-hidden bg-[color:var(--aries-background)] px-[var(--morinus-nav-side-margin)]"
         style={{ width: leftCellWidth }}
       >
         {sidebarOpen ? (
@@ -3291,9 +3634,9 @@ export function StatusBar({
             onClick={onOpenSettings}
             aria-label={t("toolbar.settings")}
             title={t("toolbar.settings")}
-            className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-[length:var(--aries-font-size-nav)] text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            className="flex size-[var(--aries-statusbar-action-size)] shrink-0 items-center justify-center rounded-md text-[length:var(--aries-font-size-nav)] text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           >
-            <Settings className="size-3.5 shrink-0" />
+            <Settings className="size-[var(--aries-control-icon-size)] shrink-0" />
           </button>
         ) : null}
         {sidebarOpen && buildField ? <StatusText>{buildField}</StatusText> : null}
@@ -3323,7 +3666,7 @@ function StatusField({
   // growable fields shrink below content width so their text truncates.
   return (
     <span
-      className="flex h-full items-center overflow-hidden px-[6px] leading-none"
+      className="flex h-full items-center overflow-hidden px-[var(--aries-statusbar-field-padding-x)] leading-none"
       style={{ minWidth: 0, ...style }}
     >
       <StatusText>{children}</StatusText>

@@ -201,7 +201,8 @@ class _FastChartContext(object):
 		self.ayanamsha = 0.0
 		if getattr(self.options, 'ayanamsha', 0) != 0:
 			astrology.swe_set_sid_mode(astrology.ayanamsha_swe_mode(self.options.ayanamsha), 0, 0)
-			self.ayanamsha = astrology.swe_get_ayanamsa_ut(self.jd)
+			self.ayanamsha = astrology.effective_ayanamsha_ut(self.jd, self.options.ayanamsha)
+			self.pflag |= astrology.SEFLG_SIDEREAL
 		if getattr(self.options, 'topocentric', False):
 			self.pflag |= astrology.SEFLG_TOPOCTR
 		self._planet_states = {}
@@ -292,7 +293,7 @@ class _FastChartContext(object):
 			return bool(self._sun_planet.abovehorizon)
 		try:
 			raequasc, _declequasc, _dist = astrology.swe_cotrans(
-				self.houses.ascmc[houses.Houses.EQUASC],
+				util.to_tropical_lon(self.houses.ascmc[houses.Houses.EQUASC], self.ayanamsha),
 				0.0,
 				1.0,
 				-self.obl,
@@ -316,10 +317,7 @@ class _FastChartContext(object):
 	def display_longitude(self, longitude):
 		if longitude is None:
 			return None
-		lon = util.normalize(float(longitude))
-		if getattr(self.options, 'ayanamsha', 0) != 0:
-			lon = util.normalize(lon - self.ayanamsha)
-		return lon
+		return util.normalize(float(longitude))
 
 
 # (mtexts_key, english_fallback, swe_planet_id). The label is resolved through
@@ -657,10 +655,7 @@ def _object_longitude(obj):
 def _display_longitude(chrt, longitude):
 	if longitude is None:
 		return None
-	lon = util.normalize(float(longitude))
-	if getattr(chrt.options, 'ayanamsha', 0) != 0:
-		lon = util.normalize(lon - float(getattr(chrt, 'ayanamsha', 0.0)))
-	return lon
+	return util.normalize(float(longitude))
 
 
 def _display_sign(display_longitude):

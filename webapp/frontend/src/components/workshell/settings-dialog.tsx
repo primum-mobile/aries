@@ -4,10 +4,14 @@ import * as React from "react";
 
 import { ArrowDown, ArrowUp } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { createAstrocartStyleMessage } from "@/lib/chart/astrocart-style";
 import {
   applyThemePreset,
+  daemonBaseUrl,
+  daemonFetch,
   exportArabicParts,
   fetchOptions,
   importArabicParts,
@@ -23,6 +27,7 @@ import {
   type FixedStarCatalogRow,
   type OptionsAlmutens,
   type OptionsDefaultLocation,
+  type OptionsDisplay,
   type OptionsPayload,
   type OptionsPatch,
   type OptionsPlanetsPoints,
@@ -36,7 +41,8 @@ import { PrimDirSettingsBody, PD_PLANET_GLYPHS } from "./primdir-settings";
 import { useAstrocartMapUrl } from "@/hooks/use-astrocart-map-url";
 import { downloadText } from "./generic-table-view";
 import { useThemeStore } from "@/stores/theme-store";
-import { useT } from "@/lib/i18n/i18n";
+import { useSyncLocale, useT } from "@/lib/i18n/i18n";
+import { useFixedRowHeightAnchor, useListRowHeight } from "@/lib/list-tokens";
 
 // ---------------------------------------------------------------------------
 // Settings / Appearance surface — a thin skin over the daemon options catalog.
@@ -60,7 +66,7 @@ export function SettingsDialog({
 }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent motion="none" className="grid w-[min(94vw,760px)] max-w-none gap-0 overflow-hidden p-0 sm:max-w-none">
+      <DialogContent size="workspace" motion="none" className="grid gap-0 overflow-hidden p-0">
         {open ? (
           <SettingsBody
             key={initialTab}
@@ -73,59 +79,20 @@ export function SettingsDialog({
   );
 }
 
-const TABS = [
-  { id: "appearance", label: "Appearance" },
-  { id: "colors", label: "Colors" },
-  { id: "export", label: "Export" },
-  { id: "houses", label: "House System" },
-  { id: "ayanamsha", label: "Ayanamsha" },
-  { id: "location", label: "Default Location" },
-  { id: "planets", label: "Planets/Points" },
-  { id: "symbols", label: "Symbols" },
-  { id: "orbs", label: "Orbs" },
-  { id: "dignities", label: "Dignities" },
-  { id: "speculum", label: "Speculum" },
-  { id: "fixstars", label: "Fixed Stars" },
-  { id: "mansions", label: "Lunar Mansions" },
-  { id: "almutens", label: "Almutens" },
-  { id: "primarydirections", label: "Primary Directions" },
-  { id: "revolutions", label: "Revolutions" },
-  { id: "supplementary", label: "Progressions" },
-  { id: "timelords", label: "Time Lords" },
-  { id: "eclipses", label: "Eclipses" },
-  { id: "relationship", label: "Relationship Charts" },
-  { id: "stepalerts", label: "Step Alerts" },
-  { id: "languages", label: "Languages" },
+const SUPPORTED_SETTINGS_TAB_IDS = [
+  "appearance", "astrocartography", "colors", "export", "houses", "ayanamsha",
+  "location", "planets", "symbols", "orbs", "dignities", "speculum", "fixstars",
+  "mansions", "almutens", "primarydirections", "revolutions", "supplementary",
+  "timelords", "eclipses", "relationship", "stepalerts", "languages",
 ] as const;
 
-export type SettingsTabId = (typeof TABS)[number]["id"];
+export type SettingsTabId = (typeof SUPPORTED_SETTINGS_TAB_IDS)[number];
 
-// i18n key per tab id — the English `label` above stays as a fallback/machine
-// value; the visible tab name is translated at render time.
-const TAB_LABEL_KEYS: Record<SettingsTabId, string> = {
-  appearance: "settings.tabAppearance",
-  colors: "settings.tabColors",
-  export: "settings.tabExport",
-  houses: "settings.tabHouseSystem",
-  ayanamsha: "settings.tabAyanamsha",
-  location: "settings.tabDefaultLocation",
-  planets: "settings.tabPlanetsPoints",
-  symbols: "settings.tabSymbols",
-  orbs: "settings.tabOrbs",
-  dignities: "settings.tabDignities",
-  speculum: "settings.tabSpeculum",
-  fixstars: "settings.tabFixedStars",
-  mansions: "settings.tabLunarMansions",
-  almutens: "settings.tabAlmutens",
-  primarydirections: "settings.tabPrimaryDirections",
-  revolutions: "settings.tabRevolutions",
-  supplementary: "settings.tabProgressions",
-  timelords: "settings.tabTimeLords",
-  eclipses: "settings.tabEclipses",
-  relationship: "settings.tabRelationshipCharts",
-  stepalerts: "settings.tabStepAlerts",
-  languages: "settings.tabLanguages",
-};
+const SUPPORTED_SETTINGS_TABS = new Set<string>(SUPPORTED_SETTINGS_TAB_IDS);
+
+export function isSettingsTabId(value: string): value is SettingsTabId {
+  return SUPPORTED_SETTINGS_TABS.has(value);
+}
 
 function SettingsBody({
   initialTab,
@@ -138,10 +105,13 @@ function SettingsBody({
   const [opts, setOpts] = React.useState<OptionsPayload | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const applyThemeState = useThemeStore((state) => state.applyThemeState);
+  const syncLocale = useSyncLocale();
+  const tabs = opts?.settingsRegistry.tabs.filter((tab) => isSettingsTabId(tab.id)) ?? [];
   const applyOptionsPayload = React.useCallback((next: OptionsPayload) => {
     setOpts(next);
     applyThemeState(next.themeState);
-  }, [applyThemeState]);
+    syncLocale(next.languages.langid);
+  }, [applyThemeState, syncLocale]);
 
   // Fetched once on mount — the dialog remounts this body on every open via the
   // `{open ? <SettingsBody/> : null}` gate, so fetch state starts fresh.
@@ -183,7 +153,7 @@ function SettingsBody({
 
   if (error) {
     return (
-      <div className="px-4 py-8 text-center text-[12px] text-foreground/70">
+      <div className="px-4 py-8 text-center text-[length:var(--aries-font-size-base)] text-foreground/70">
         {t("settings.loadFailed")}: {error}
       </div>
     );
@@ -192,65 +162,68 @@ function SettingsBody({
   return (
     <>
       <DialogHeader className="border-b border-border/40 px-4 pb-3 pt-4">
-        <DialogTitle className="text-[14px] font-medium tracking-tight">{t("settings.title")}</DialogTitle>
+        <DialogTitle className="text-[length:var(--aries-font-size-large)] font-medium tracking-tight">{t("settings.title")}</DialogTitle>
       </DialogHeader>
       {opts === null ? (
-        <div className="px-4 py-10 text-center text-[12px] text-foreground/55">{t("settings.loading")}</div>
+        <div className="px-4 py-10 text-center text-[length:var(--aries-font-size-base)] text-foreground/55">{t("settings.loading")}</div>
       ) : (
-        <Tabs defaultValue={initialTab} orientation="vertical" className="gap-0">
+        <Tabs defaultValue={initialTab} orientation="vertical" className="gap-[var(--aries-tabs-rail-gap)]">
           <TabsList
             variant="line"
-            className="w-[148px] shrink-0 items-stretch gap-0 border-r border-border/40 bg-transparent p-2"
+            className="w-[var(--aries-tabs-rail-width)] shrink-0 items-stretch gap-[var(--aries-tabs-rail-gap)] border-r border-border/40 bg-transparent p-[var(--aries-tabs-rail-padding)]"
           >
-            {TABS.map((tab) => (
+            {tabs.map((tab) => (
               <TabsTrigger
                 key={tab.id}
                 value={tab.id}
-                className="justify-start rounded-md px-2.5 py-1.5 text-[12px] text-foreground/60 data-[selected]:bg-muted data-[selected]:text-foreground"
+                className="justify-start rounded-md px-[var(--aries-tabs-rail-trigger-padding-x)] py-[var(--aries-tabs-rail-trigger-padding-y)] text-[length:var(--aries-font-size-base)] text-foreground/60 data-[selected]:bg-muted data-[selected]:text-foreground"
               >
-                {t(TAB_LABEL_KEYS[tab.id])}
+                {t(tab.labelKey)}
               </TabsTrigger>
             ))}
           </TabsList>
-          <div className="min-w-0 flex-1 overflow-y-auto" style={{ maxHeight: "70vh" }}>
-            <TabsContent value="colors" className="m-0 p-4">
+          <div className="min-w-0 flex-1 overflow-y-auto" style={{ maxHeight: "var(--aries-dialog-content-height-workspace)" }}>
+            <TabsContent value="colors" className="m-0 p-[var(--aries-dialog-padding)]">
               <ColorsTab
                 opts={opts}
                 sendPatch={sendPatch}
                 applyPreset={applyPreset}
               />
             </TabsContent>
-            <TabsContent value="appearance" className="m-0 p-4">
+            <TabsContent value="appearance" className="m-0 p-[var(--aries-dialog-padding)]">
               <AppearanceTab opts={opts} sendPatch={sendPatch} />
             </TabsContent>
-            <TabsContent value="export" className="m-0 p-4">
+            <TabsContent value="astrocartography" className="m-0 p-[var(--aries-dialog-padding)]">
+              <MirroredSettingsTab tabId="astrocartography" opts={opts} sendPatch={sendPatch} />
+            </TabsContent>
+            <TabsContent value="export" className="m-0 p-[var(--aries-dialog-padding)]">
               <ExportTab opts={opts} sendPatch={sendPatch} />
             </TabsContent>
-            <TabsContent value="mansions" className="m-0 p-4">
+            <TabsContent value="mansions" className="m-0 p-[var(--aries-dialog-padding)]">
               <LunarMansionsTab opts={opts} sendPatch={sendPatch} />
             </TabsContent>
-            <TabsContent value="speculum" className="m-0 p-4">
+            <TabsContent value="speculum" className="m-0 p-[var(--aries-dialog-padding)]">
               <SpeculumTab opts={opts} sendPatch={sendPatch} />
             </TabsContent>
-            <TabsContent value="houses" className="m-0 p-4">
+            <TabsContent value="houses" className="m-0 p-[var(--aries-dialog-padding)]">
               <HouseSystemTab opts={opts} sendPatch={sendPatch} />
             </TabsContent>
-            <TabsContent value="ayanamsha" className="m-0 p-4">
+            <TabsContent value="ayanamsha" className="m-0 p-[var(--aries-dialog-padding)]">
               <AyanamshaTab opts={opts} sendPatch={sendPatch} />
             </TabsContent>
-            <TabsContent value="orbs" className="m-0 p-4">
+            <TabsContent value="orbs" className="m-0 p-[var(--aries-dialog-padding)]">
               <OrbsTab opts={opts} sendPatch={sendPatch} />
             </TabsContent>
-            <TabsContent value="dignities" className="m-0 p-4">
+            <TabsContent value="dignities" className="m-0 p-[var(--aries-dialog-padding)]">
               <DignitiesTab opts={opts} sendPatch={sendPatch} />
             </TabsContent>
-            <TabsContent value="symbols" className="m-0 p-4">
+            <TabsContent value="symbols" className="m-0 p-[var(--aries-dialog-padding)]">
               <SymbolsTab opts={opts} sendPatch={sendPatch} />
             </TabsContent>
-            <TabsContent value="planets" className="m-0 p-4">
+            <TabsContent value="planets" className="m-0 p-[var(--aries-dialog-padding)]">
               <PlanetsPointsTab opts={opts} sendPatch={sendPatch} />
             </TabsContent>
-            <TabsContent value="location" className="m-0 p-4">
+            <TabsContent value="location" className="m-0 p-[var(--aries-dialog-padding)]">
               <DefaultLocationTab
                 opts={opts}
                 sendPatch={sendPatch}
@@ -263,34 +236,34 @@ function SettingsBody({
                 }}
               />
             </TabsContent>
-            <TabsContent value="revolutions" className="m-0 p-4">
+            <TabsContent value="revolutions" className="m-0 p-[var(--aries-dialog-padding)]">
               <RevolutionsTab opts={opts} sendPatch={sendPatch} />
             </TabsContent>
-            <TabsContent value="supplementary" className="m-0 p-4">
+            <TabsContent value="supplementary" className="m-0 p-[var(--aries-dialog-padding)]">
               <ProgressionsTab opts={opts} sendPatch={sendPatch} />
             </TabsContent>
-            <TabsContent value="stepalerts" className="m-0 p-4">
+            <TabsContent value="stepalerts" className="m-0 p-[var(--aries-dialog-padding)]">
               <StepAlertsTab opts={opts} sendPatch={sendPatch} />
             </TabsContent>
-            <TabsContent value="almutens" className="m-0 p-4">
+            <TabsContent value="almutens" className="m-0 p-[var(--aries-dialog-padding)]">
               <AlmutensTab opts={opts} sendPatch={sendPatch} />
             </TabsContent>
-            <TabsContent value="timelords" className="m-0 p-4">
+            <TabsContent value="timelords" className="m-0 p-[var(--aries-dialog-padding)]">
               <TimeLordsTab opts={opts} sendPatch={sendPatch} />
             </TabsContent>
-            <TabsContent value="primarydirections" className="m-0 p-4">
+            <TabsContent value="primarydirections" className="m-0 p-[var(--aries-dialog-padding)]">
               <PrimaryDirectionsTab opts={opts} sendPatch={sendPatch} />
             </TabsContent>
-            <TabsContent value="eclipses" className="m-0 p-4">
+            <TabsContent value="eclipses" className="m-0 p-[var(--aries-dialog-padding)]">
               <EclipsesTab opts={opts} sendPatch={sendPatch} />
             </TabsContent>
-            <TabsContent value="fixstars" className="m-0 p-4">
+            <TabsContent value="fixstars" className="m-0 p-[var(--aries-dialog-padding)]">
               <FixedStarsTab opts={opts} sendPatch={sendPatch} />
             </TabsContent>
-            <TabsContent value="relationship" className="m-0 p-4">
+            <TabsContent value="relationship" className="m-0 p-[var(--aries-dialog-padding)]">
               <RelationshipChartsTab opts={opts} sendPatch={sendPatch} />
             </TabsContent>
-            <TabsContent value="languages" className="m-0 p-4">
+            <TabsContent value="languages" className="m-0 p-[var(--aries-dialog-padding)]">
               <LanguagesTab opts={opts} sendPatch={sendPatch} />
             </TabsContent>
           </div>
@@ -306,7 +279,7 @@ function SettingsBody({
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mb-1.5 mt-3 text-[10px] font-medium text-foreground/45 first:mt-0">
+    <div className="mb-[var(--aries-control-gap)] mt-[var(--aries-form-row-gap)] text-[length:var(--aries-font-size-section)] font-medium text-foreground/45 first:mt-0">
       {children}
     </div>
   );
@@ -314,8 +287,8 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 function Row({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="flex h-7 items-center justify-between gap-3 border-b border-border/40 last:border-b-0">
-      <span className="truncate text-[12px] text-foreground/80">{label}</span>
+    <div className="flex h-[var(--aries-control-height-small)] items-center justify-between gap-[var(--aries-form-row-gap)] border-b border-border/40 last:border-b-0">
+      <span className="truncate text-[length:var(--aries-font-size-base)] text-foreground/80">{label}</span>
       <span className="flex shrink-0 items-center">{children}</span>
     </div>
   );
@@ -351,7 +324,7 @@ function Swatch({
   onCommit: (rgb: RGB) => void;
 }) {
   return (
-    <label className="relative block h-4 w-7 cursor-pointer overflow-hidden rounded-[3px] border border-border/60">
+    <label className="relative block h-4 w-7 cursor-pointer overflow-hidden rounded-xs border border-border/60">
       <span
         aria-hidden
         className="absolute inset-0"
@@ -386,15 +359,15 @@ function Toggle({
         if (!disabled) onChange(!checked);
       }}
       className={
-        "relative h-[16px] w-[28px] rounded-full transition-colors " +
+        "relative h-[var(--aries-control-icon-size-default)] w-[var(--aries-control-height-small)] rounded-[var(--aries-radius-ui-control)] transition-colors " +
         (disabled ? "opacity-40 " : "") +
         (checked ? "bg-foreground/80" : "bg-border")
       }
     >
       <span
         className={
-          "absolute top-[2px] h-[12px] w-[12px] rounded-full bg-background transition-all " +
-          (checked ? "left-[14px]" : "left-[2px]")
+          "absolute left-[calc(var(--aries-control-gap-compact)/2)] top-[calc(var(--aries-control-gap-compact)/2)] h-[var(--aries-control-icon-size-xs)] w-[var(--aries-control-icon-size-xs)] rounded-[var(--aries-radius-ui-control)] bg-background transition-all " +
+          (checked ? "translate-x-[var(--aries-control-icon-size-xs)]" : "translate-x-0")
         }
       />
     </button>
@@ -434,7 +407,7 @@ function NumberField({
         if (Number.isFinite(n) && n !== value) onCommit(n);
         else e.target.value = String(value);
       }}
-      className="h-5 w-[52px] rounded-[3px] border border-border/60 bg-transparent px-1 text-right text-[12px] tabular-nums outline-none focus:border-border"
+      className="h-[var(--aries-control-height-micro)] w-[52px] rounded-[var(--aries-radius-xs)] border border-border/60 bg-transparent px-[var(--aries-control-gap-compact)] text-right text-[length:var(--aries-font-size-base)] tabular-nums outline-none focus:border-border"
     />
   );
 }
@@ -455,7 +428,7 @@ function Select({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       style={{ width }}
-      className="h-6 rounded-[4px] border border-border/60 bg-transparent px-1.5 text-[12px] outline-none focus:border-border"
+      className="h-[var(--aries-control-height-compact)] rounded-[var(--aries-radius-control-compact)] border border-border/60 bg-transparent px-[var(--aries-control-gap)] text-[length:var(--aries-font-size-base)] outline-none focus:border-border"
     >
       {children}
     </select>
@@ -464,7 +437,7 @@ function Select({
 
 function Glyph({ ch }: { ch: string }) {
   return (
-    <span style={{ fontFamily: "AriesMorinus" }} className="inline-block w-4 text-center text-[13px] text-foreground/70">
+    <span className="font-symbols inline-block w-4 text-center text-[length:var(--aries-font-size-reading)] text-foreground/70">
       {ch}
     </span>
   );
@@ -503,7 +476,7 @@ function Slider({
         }}
         className="h-1 w-[120px] cursor-pointer accent-foreground/70"
       />
-      <span className="w-9 text-right text-[11px] tabular-nums text-foreground/55">
+      <span className="w-9 text-right text-[length:var(--aries-font-size-small)] tabular-nums text-foreground/55">
         {step < 1 ? local.toFixed(2) : local}
       </span>
     </span>
@@ -518,6 +491,36 @@ type TabProps = {
   opts: OptionsPayload;
   sendPatch: (patch: OptionsPatch, optimistic: OptionsPayload) => void;
 };
+
+function MirroredSettingsTab({
+  tabId,
+  opts,
+  sendPatch,
+}: TabProps & { tabId: SettingsTabId }) {
+  const t = useT();
+  const section = opts.settingsRegistry.mirroredSections.find((item) => item.tabId === tabId);
+  if (!section) return null;
+
+  return (
+    <>
+      <SectionLabel>{t(section.labelKey)}</SectionLabel>
+      {section.settings.map((setting) => (
+        <Row key={setting.id} label={t(setting.labelKey)}>
+          <Toggle
+            checked={Boolean(opts.display[setting.field])}
+            onChange={(value) => {
+              const displayPatch = { [setting.field]: value } as Partial<OptionsDisplay>;
+              sendPatch(
+                { display: displayPatch },
+                { ...opts, display: { ...opts.display, ...displayPatch } },
+              );
+            }}
+          />
+        </Row>
+      ))}
+    </>
+  );
+}
 
 function ExportTab({ opts, sendPatch }: TabProps) {
   const t = useT();
@@ -570,9 +573,17 @@ function ColorsTab({
   const cat = opts.catalog;
 
   const setColor = (attr: keyof OptionsPayload["colors"], rgb: RGB) => {
+    // These two existing rows historically styled both the Tauri shell and
+    // charts. Keep that UI behavior while the independently persisted app
+    // slots allow future profiles to edit either authority on its own.
+    const paired = attr === "clrbackground"
+      ? { clrbackground: rgb, clrappbackground: rgb }
+      : attr === "clrtexts"
+        ? { clrtexts: rgb, clrapptexts: rgb }
+        : { [attr]: rgb };
     sendPatch(
-      { colors: { [attr]: rgb } },
-      { ...opts, colors: { ...c, [attr]: rgb } },
+      { colors: paired },
+      { ...opts, colors: { ...c, ...paired } },
     );
   };
   const setListColor = (key: "clrindividual" | "clraspect", index: number, rgb: RGB) => {
@@ -634,7 +645,7 @@ function ColorsTab({
             type="button"
             onClick={() => applyPreset(preset.name)}
             aria-pressed={Boolean(preset.selected)}
-            className={`rounded-md border px-2.5 py-1 text-[11px] hover:border-border hover:text-foreground ${
+            className={`rounded-md border px-2.5 py-1 text-[length:var(--aries-font-size-small)] hover:border-border hover:text-foreground ${
               preset.selected
                 ? "border-foreground/35 bg-foreground/10 text-foreground"
                 : "border-border/60 text-foreground/80"
@@ -648,7 +659,7 @@ function ColorsTab({
         <button
           type="button"
           onClick={copyTable}
-          className="rounded-md border border-border/60 px-2.5 py-1 text-[11px] text-foreground/80 hover:border-border hover:text-foreground"
+          className="rounded-md border border-border/60 px-2.5 py-1 text-[length:var(--aries-font-size-small)] text-foreground/80 hover:border-border hover:text-foreground"
         >
           {t("settings.copyTable")}
         </button>
@@ -729,7 +740,6 @@ function AppearanceTab({ opts, sendPatch }: TabProps) {
   const t = useT();
   const d = opts.display;
   const q = opts.quickCharts;
-  const pd = opts.primaryDirections;
   const cat = opts.catalog;
   type DisplayPatch = Partial<OptionsPayload["display"]>;
   type QuickChartsPatch = Partial<OptionsQuickCharts>;
@@ -738,12 +748,6 @@ function AppearanceTab({ opts, sendPatch }: TabProps) {
   };
   const setQuickChartsPatch = (patch: QuickChartsPatch) => {
     sendPatch({ quickCharts: patch }, { ...opts, quickCharts: { ...q, ...patch } });
-  };
-  const setPdInChartReverse = (reverse: boolean) => {
-    sendPatch(
-      { primaryDirections: { pdinchartreverse: reverse } },
-      { ...opts, primaryDirections: { ...pd, pdinchartreverse: reverse } },
-    );
   };
   const setBool = (attr: keyof OptionsPayload["display"], v: boolean) => {
     setDisplayPatch({ [attr]: v } as DisplayPatch);
@@ -1008,18 +1012,6 @@ function AppearanceTab({ opts, sendPatch }: TabProps) {
         <Toggle checked={d.topocentric} onChange={(v) => setBool("topocentric", v)} />
       </Row>
 
-      <SectionLabel>{t("primdir.pdsInChart")}</SectionLabel>
-      <Row label={t("settings.pdChartOrientation")}>
-        <Select
-          value={pd.pdinchartreverse ? "promissor" : "reverse"}
-          width={210}
-          onChange={(value) => setPdInChartReverse(value === "promissor")}
-        >
-          <option value="promissor">{t("settings.promissorToSignificator")}</option>
-          <option value="reverse">{t("settings.reverseWheelRotation")}</option>
-        </Select>
-      </Row>
-
       <SectionLabel>{t("settings.outerRing")}</SectionLabel>
       <Row label={t("settings.mode")}>
         <Select
@@ -1089,6 +1081,23 @@ function AppearanceTab({ opts, sendPatch }: TabProps) {
           ))}
         </Select>
       </Row>
+      {d.theme === 2 ? (
+        <Row label={t("settings.angloDenseLabelLayout")}>
+          <Select
+            value={d.anglo_dense_label_layout}
+            width={180}
+            onChange={(v) => setStr("anglo_dense_label_layout", v)}
+          >
+            {cat.angloDenseLabelLayouts.map((layout) => (
+              <option key={layout.value} value={layout.value}>
+                {layout.value === "routed-cusps"
+                  ? t("settings.routedCuspLines")
+                  : t("settings.leaderColumns")}
+              </option>
+            ))}
+          </Select>
+        </Row>
+      ) : null}
       <Row label={t("settings.angleArrowheads")}>
         <Toggle
           checked={d.showanglearrowheads}
@@ -1216,12 +1225,6 @@ function AppearanceTab({ opts, sendPatch }: TabProps) {
           </Select>
         </Row>
       ) : null}
-      <Row label={t("settings.localSpaceOverAcg")}>
-        <Toggle
-          checked={d.astrocart_localspace_additive}
-          onChange={(v) => setBool("astrocart_localspace_additive", v)}
-        />
-      </Row>
       <Row label={t("settings.showTradFixStarNamesPdLists")}>
         <Toggle
           checked={d.usetradfixstarnamespdlist}
@@ -1360,7 +1363,7 @@ function HouseSystemTab({ opts, sendPatch }: TabProps) {
           onClick={() => pick(entry.code)}
           className="flex h-7 items-center justify-between border-b border-border/40 text-left last:border-b-0"
         >
-          <span className="text-[12px] text-foreground/85">{entry.label}</span>
+          <span className="text-[length:var(--aries-font-size-base)] text-foreground/85">{entry.label}</span>
           <span
             className={
               "flex h-3.5 w-3.5 items-center justify-center rounded-full border " +
@@ -1653,7 +1656,7 @@ function DignityGridEditor({ opts, sendPatch }: TabProps) {
     <>
       <SectionLabel>{t("settings.essentialDignities")}</SectionLabel>
       <div className="overflow-x-auto pb-1">
-        <table className="border-separate border-spacing-0 text-[11px]">
+        <table className="border-separate border-spacing-0 text-[length:var(--aries-font-size-small)]">
           <thead>
             <tr>
               <th className="sticky left-0 z-10 bg-popover px-1 py-0.5 text-left font-normal text-foreground/55" />
@@ -1749,7 +1752,7 @@ function TermsGridEditor({ opts, sendPatch }: TabProps) {
   return (
     <>
       <SectionLabel>{t("settings.termsBoundsActiveSet")}</SectionLabel>
-      <div className="overflow-x-auto pb-1 text-[11px]">
+      <div className="overflow-x-auto pb-1 text-[length:var(--aries-font-size-small)]">
         <table className="border-separate border-spacing-x-1 border-spacing-y-0.5">
           <tbody>
             {signs.map((row, si) => {
@@ -1781,7 +1784,7 @@ function TermsGridEditor({ opts, sendPatch }: TabProps) {
           </tbody>
         </table>
       </div>
-      <p className="px-1 pb-2 text-[10px] text-foreground/40">
+      <p className="px-1 pb-2 text-[length:var(--aries-font-size-section)] text-foreground/40">
         {t("settings.termsBoundsHelp")}
       </p>
     </>
@@ -1801,7 +1804,7 @@ function TermPlanetSelect({
     <select
       value={value}
       onChange={(e) => onChange(Number(e.target.value))}
-      className="h-5 rounded-[3px] border border-border/60 bg-transparent px-0.5 text-[11px] outline-none focus:border-border"
+      className="h-5 rounded-xs border border-border/60 bg-transparent px-0.5 text-[length:var(--aries-font-size-small)] outline-none focus:border-border"
     >
       {choices.map((c) => (
         <option key={c.value} value={c.value}>
@@ -1831,7 +1834,7 @@ function TermDegInput({ value, onCommit }: { value: number; onCommit: (n: number
         if (n !== value) onCommit(n);
         else e.target.value = String(value);
       }}
-      className="h-5 w-[34px] rounded-[3px] border border-border/60 bg-transparent px-1 text-right text-[11px] tabular-nums outline-none focus:border-border"
+      className="h-5 w-[34px] rounded-xs border border-border/60 bg-transparent px-1 text-right text-[length:var(--aries-font-size-small)] tabular-nums outline-none focus:border-border"
     />
   );
 }
@@ -1863,12 +1866,11 @@ function GlyphChoiceRow<V extends boolean | number>({
           type="button"
           onClick={() => onPick(c.value)}
           className={
-            "flex h-7 w-7 items-center justify-center rounded-[4px] border text-[15px] " +
+            "font-symbols flex h-7 w-7 items-center justify-center rounded-[var(--aries-radius-control-compact)] border text-[15px] " +
             (current === c.value
               ? "border-foreground/80 bg-muted text-foreground"
               : "border-border/60 text-foreground/70 hover:border-border")
           }
-          style={{ fontFamily: "AriesMorinus" }}
         >
           {c.glyph}
         </button>
@@ -1938,7 +1940,7 @@ function SignToggle({
   onChange: (next: boolean) => void;
 }) {
   return (
-    <span className="flex overflow-hidden rounded-[4px] border border-border/60 text-[12px]">
+    <span className="flex overflow-hidden rounded-[var(--aries-radius-control-compact)] border border-border/60 text-[length:var(--aries-font-size-base)]">
       {[
         { v: true, label: positive },
         { v: false, label: negative },
@@ -1979,7 +1981,7 @@ function TextField({
         if (e.target.value !== value) onCommit(e.target.value);
       }}
       style={{ width }}
-      className="h-5 rounded-[3px] border border-border/60 bg-transparent px-1 text-[12px] outline-none focus:border-border"
+      className="h-[var(--aries-control-height-micro)] rounded-[var(--aries-radius-xs)] border border-border/60 bg-transparent px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-base)] outline-none focus:border-border"
     />
   );
 }
@@ -2032,20 +2034,20 @@ function PlaceSearch({ onPick }: { onPick: (c: PlaceCandidate) => void }) {
               run();
             }
           }}
-          className="h-6 flex-1 rounded-[4px] border border-border/60 bg-transparent px-1.5 text-[12px] outline-none focus:border-border"
+          className="h-6 flex-1 rounded-[var(--aries-radius-control-compact)] border border-border/60 bg-transparent px-1.5 text-[length:var(--aries-font-size-base)] outline-none focus:border-border"
         />
         <button
           type="button"
           onClick={run}
           disabled={busy}
-          className="h-6 rounded-[4px] border border-border/60 px-2.5 text-[12px] text-foreground/80 hover:border-border hover:text-foreground disabled:opacity-50"
+          className="h-6 rounded-[var(--aries-radius-control-compact)] border border-border/60 px-2.5 text-[length:var(--aries-font-size-base)] text-foreground/80 hover:border-border hover:text-foreground disabled:opacity-50"
         >
           {busy ? "…" : t("settings.search")}
         </button>
       </div>
-      {err ? <div className="text-[11px] text-foreground/55">{err}</div> : null}
+      {err ? <div className="text-[length:var(--aries-font-size-small)] text-foreground/55">{err}</div> : null}
       {candidates && candidates.length > 0 ? (
-        <div className="max-h-40 overflow-y-auto rounded-[4px] border border-border/50">
+        <div className="max-h-40 overflow-y-auto rounded-[var(--aries-radius-control-compact)] border border-border/50">
           {candidates.map((c, i) => (
             <button
               key={`${c.label}-${i}`}
@@ -2053,8 +2055,8 @@ function PlaceSearch({ onPick }: { onPick: (c: PlaceCandidate) => void }) {
               onClick={() => pick(c)}
               className="flex w-full items-center justify-between gap-3 border-b border-border/40 px-2 py-1 text-left last:border-b-0 hover:bg-muted"
             >
-              <span className="truncate text-[12px] text-foreground/85">{c.label}</span>
-              <span className="shrink-0 text-[11px] text-foreground/50">{c.countryName}</span>
+              <span className="truncate text-[length:var(--aries-font-size-base)] text-foreground/85">{c.label}</span>
+              <span className="shrink-0 text-[length:var(--aries-font-size-small)] text-foreground/50">{c.countryName}</span>
             </button>
           ))}
         </div>
@@ -2103,7 +2105,8 @@ function DefaultLocationMapSheet({
   const [applying, setApplying] = React.useState(false);
   const theme = useThemeStore((s) => s.theme);
   const bootTheme = theme?.mode === "light" ? "light" : "dark";
-  const bootPageBg = bootTheme === "light" ? "#d9dde1" : "#1a1d21";
+  const bootPageBg = theme?.chartPalette["--aries-astrocart-map-page-bg"]
+    ?? (bootTheme === "light" ? "#d9dde1" : "#1a1d21");
   // Same stable map.html contract as AstrocartSurface: bundled viewport city
   // labels online/offline, with theme changes pushed live instead of reloading.
   const [mapBootOptions] = React.useState(() => ({
@@ -2153,6 +2156,29 @@ function DefaultLocationMapSheet({
     }
   }, [open, ready, bootTheme, bootPageBg]);
 
+  React.useEffect(() => {
+    if (!open || !ready) return;
+    const win = iframeRef.current?.contentWindow;
+    if (!win) return;
+    const controller = new AbortController();
+    void daemonFetch(`${daemonBaseUrl()}/api/astrocart/style`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error(`astrocart style fetch failed: ${response.status}`);
+        return response.json() as Promise<unknown>;
+      })
+      .then((payload) => {
+        if (controller.signal.aborted || iframeRef.current?.contentWindow !== win) return;
+        win.postMessage(createAstrocartStyleMessage(payload), "*");
+      })
+      .catch((err) => {
+        if (!controller.signal.aborted) console.error("[defloc-map-style]", err);
+      });
+    return () => controller.abort();
+  }, [open, ready, theme?.styleHash, theme?.styleRevision]);
+
   // Listen for search-pin selection and the existing right-click intent from
   // THIS iframe only. Both commit through the same daemon-owned pipeline.
   React.useEffect(() => {
@@ -2191,12 +2217,12 @@ function DefaultLocationMapSheet({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent motion="none" className="w-[min(94vw,860px)] max-w-none gap-0 overflow-hidden p-0 sm:max-w-none">
-        <DialogHeader className="border-b border-border/40 px-4 pb-2.5 pt-3">
-          <DialogTitle className="text-[13px] font-medium tracking-tight">
+      <DialogContent size="xl" motion="none" className="gap-0 overflow-hidden p-0">
+        <DialogHeader className="border-b border-border/40 px-[var(--aries-dialog-padding)] pb-2.5 pt-3">
+          <DialogTitle className="text-[length:var(--aries-font-size-reading)] font-medium tracking-tight">
             {t("settings.pickDefaultLocation")}
           </DialogTitle>
-          <p className="text-[11px] text-foreground/50">
+          <p className="text-[length:var(--aries-font-size-small)] text-foreground/50">
             {t("settings.rightClickSetDefaultLocation")}
           </p>
         </DialogHeader>
@@ -2212,27 +2238,30 @@ function DefaultLocationMapSheet({
             />
           ) : null}
         </div>
-        <div className="flex h-11 items-center gap-2 border-t border-border/40 bg-muted/20 px-4">
-          <span className="min-w-0 flex-1 truncate text-[11px] text-foreground/55">
+        <div className="flex h-11 items-center gap-[var(--aries-dialog-footer-gap)] border-t border-border/40 bg-muted/20 px-[var(--aries-dialog-padding)]">
+          <span className="min-w-0 flex-1 truncate text-[length:var(--aries-font-size-small)] text-foreground/55">
             {selection?.placeName ?? ""}
           </span>
-          <button
+          <Button
             type="button"
+            size="sm"
+            variant="outline"
             onClick={() => handleOpenChange(false)}
-            className="h-7 min-w-[72px] rounded-[4px] border border-border/60 px-3 text-[12px] text-foreground/75 hover:text-foreground"
+            className="min-w-[var(--aries-dialog-map-action-min-width)] rounded-[var(--aries-radius-control-compact)] border-border/60 bg-transparent px-[calc(var(--aries-control-padding-x)+var(--aries-control-gap-compact)/2)] text-[length:var(--aries-font-size-base)] font-normal text-foreground/75 hover:bg-transparent hover:text-foreground dark:border-border/60 dark:bg-transparent dark:hover:bg-transparent"
           >
             {t("settings.cancel")}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            size="sm"
             disabled={!selection || applying}
             onClick={() => {
               if (selection) applySelection(selection);
             }}
-            className="h-7 min-w-[72px] rounded-[4px] bg-primary px-3 text-[12px] text-primary-foreground hover:bg-primary/90 disabled:cursor-default disabled:opacity-40"
+            className="min-w-[var(--aries-dialog-map-action-min-width)] rounded-[var(--aries-radius-control-compact)] border-0 px-[calc(var(--aries-control-padding-x)+var(--aries-control-gap-compact)/2)] text-[length:var(--aries-font-size-base)] font-normal hover:bg-primary/90 disabled:cursor-default disabled:opacity-40"
           >
             {t("picker.ok")}
-          </button>
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
@@ -2337,13 +2366,13 @@ function DefaultLocationTab({
         <PlaceSearch onPick={applyPlace} />
       </div>
       <div className="flex items-center justify-between pb-2">
-        <p className="text-[11px] text-foreground/50">
+        <p className="text-[length:var(--aries-font-size-small)] text-foreground/50">
           {t("settings.usedByHereAndNow")}
         </p>
         <button
           type="button"
           onClick={() => setMapOpen(true)}
-          className="h-6 shrink-0 rounded-[4px] border border-border/60 px-2.5 text-[12px] text-foreground/80 hover:border-border hover:text-foreground"
+          className="h-6 shrink-0 rounded-[var(--aries-radius-control-compact)] border border-border/60 px-2.5 text-[length:var(--aries-font-size-base)] text-foreground/80 hover:border-border hover:text-foreground"
         >
           {t("settings.pickOnMap")}
         </button>
@@ -2361,12 +2390,12 @@ function DefaultLocationTab({
 
       <SectionLabel>{t("settings.place")}</SectionLabel>
       <Row label={t("common.longitude")}>
-        <span className="font-mono text-[12px] tabular-nums text-foreground/80">
+        <span className="font-mono text-[length:var(--aries-font-size-base)] tabular-nums text-foreground/80">
           {exactLongitude.toFixed(6)}°
         </span>
       </Row>
       <Row label={t("common.latitude")}>
-        <span className="font-mono text-[12px] tabular-nums text-foreground/80">
+        <span className="font-mono text-[length:var(--aries-font-size-base)] tabular-nums text-foreground/80">
           {exactLatitude.toFixed(6)}°
         </span>
       </Row>
@@ -2816,7 +2845,7 @@ function PlanetsPointsTab({ opts, sendPatch }: TabProps) {
         </Select>
       </Row>
       {fortunaMode?.sublabel ? (
-        <div className="pb-1 pt-0.5 text-right text-[11px] text-foreground/50">
+        <div className="pb-1 pt-0.5 text-right text-[length:var(--aries-font-size-small)] text-foreground/50">
           {fortunaMode.sublabel}
         </div>
       ) : null}
@@ -2866,18 +2895,18 @@ function PlanetsPointsTab({ opts, sendPatch }: TabProps) {
       <SectionLabel>{t("settings.parts")}</SectionLabel>
       {/* Synthetic locked Fortuna row — the wx list pins LoF as #1 and blocks
           edit/remove/deactivate (arabicpartsdlg.py:791-803). */}
-      <div className="flex h-7 items-center justify-between gap-3 border-b border-border/40 text-[12px]">
+      <div className="flex h-7 items-center justify-between gap-3 border-b border-border/40 text-[length:var(--aries-font-size-base)]">
         <span className="truncate text-foreground/80">
           #1 {t("settings.fortuna")}
           <span className="ml-2 text-foreground/45">{fortunaMode?.label ?? ""}</span>
         </span>
-        <span className="shrink-0 text-[11px] text-foreground/40">{t("settings.locked")}</span>
+        <span className="shrink-0 text-[length:var(--aries-font-size-small)] text-foreground/40">{t("settings.locked")}</span>
       </div>
       {p.parts.map((part) => {
         const isEditing = editor?.mode === "edit" && editor.index === part.index;
         return (
           <React.Fragment key={part.index}>
-            <div className="flex h-7 items-center justify-between gap-3 border-b border-border/40 text-[12px]">
+            <div className="flex h-7 items-center justify-between gap-3 border-b border-border/40 text-[length:var(--aries-font-size-base)]">
               <span className="min-w-0 flex-1 truncate text-foreground/80">
                 #{part.index + 2} {part.name}
                 <span className="ml-2 text-foreground/45">{part.formula}</span>
@@ -2904,14 +2933,14 @@ function PlanetsPointsTab({ opts, sendPatch }: TabProps) {
                         : { mode: "edit", index: part.index },
                     )
                   }
-                  className="rounded-[3px] border border-border/60 px-1.5 py-0.5 text-[11px] text-foreground/60 hover:text-foreground"
+                  className="rounded-xs border border-border/60 px-1.5 py-0.5 text-[length:var(--aries-font-size-small)] text-foreground/60 hover:text-foreground"
                 >
                   {isEditing ? t("settings.close") : t("settings.edit")}
                 </button>
                 <button
                   type="button"
                   onClick={() => removePart(part.index)}
-                  className="rounded-[3px] border border-border/60 px-1.5 py-0.5 text-[11px] text-foreground/60 hover:text-foreground"
+                  className="rounded-xs border border-border/60 px-1.5 py-0.5 text-[length:var(--aries-font-size-small)] text-foreground/60 hover:text-foreground"
                 >
                   {t("settings.remove")}
                 </button>
@@ -2935,7 +2964,7 @@ function PlanetsPointsTab({ opts, sendPatch }: TabProps) {
         );
       })}
       {p.parts.length === 0 ? (
-        <div className="py-2 text-[11px] text-foreground/45">{t("settings.noCustomParts")}</div>
+        <div className="py-2 text-[length:var(--aries-font-size-small)] text-foreground/45">{t("settings.noCustomParts")}</div>
       ) : null}
 
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -2960,7 +2989,7 @@ function PlanetsPointsTab({ opts, sendPatch }: TabProps) {
         />
       </div>
       {importStatus ? (
-        <div className="pt-1 text-[11px] text-foreground/55">{importStatus}</div>
+        <div className="pt-1 text-[length:var(--aries-font-size-small)] text-foreground/55">{importStatus}</div>
       ) : null}
 
       {editor?.mode === "add" ? (
@@ -3005,7 +3034,7 @@ function ActionButton({
       onClick={() => {
         if (!disabled) onClick();
       }}
-      className="rounded-[3px] border border-border/60 px-2 py-0.5 text-[11px] text-foreground/70 hover:text-foreground disabled:opacity-40 disabled:hover:text-foreground/70"
+      className="h-[var(--aries-control-height-micro)] rounded-[var(--aries-radius-xs)] border border-border/60 px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-small)] text-foreground/70 hover:text-foreground disabled:opacity-40 disabled:hover:text-foreground/70"
     >
       {children}
     </button>
@@ -3027,22 +3056,22 @@ function SettingsConfirmDialog({
 }) {
   const t = useT();
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[color:var(--aries-overlay-scrim)] px-5">
-      <div className="w-full max-w-[380px] rounded-md border border-border bg-background p-4 shadow-xl">
-        <div className="mb-2 text-[14px] font-medium">{title}</div>
-        <p className="text-[13px] leading-5 text-muted-foreground">{body}</p>
-        <div className="mt-4 flex justify-end gap-2">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[color:var(--aries-overlay-scrim)] px-[var(--aries-form-section-gap)]">
+      <div className="w-full max-w-[var(--aries-dialog-width-confirm)] rounded-[var(--aries-radius-md)] border border-border bg-background p-[var(--aries-dialog-padding)] shadow-xl">
+        <div className="mb-[var(--aries-dialog-header-gap)] text-[length:var(--aries-font-size-large)] font-medium">{title}</div>
+        <p className="text-[length:var(--aries-font-size-reading)] leading-[var(--aries-font-line-height-reading)] text-muted-foreground">{body}</p>
+        <div className="mt-[var(--aries-dialog-gap)] flex justify-end gap-[var(--aries-dialog-footer-gap)]">
           <button
             type="button"
             onClick={onCancel}
-            className="h-8 min-w-[86px] rounded-md border border-border px-3 text-[13px] text-foreground/75 hover:text-foreground"
+            className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width)] rounded-[var(--aries-radius-md)] border border-border px-[calc(var(--aries-control-padding-x)+var(--aries-control-gap-compact)/2)] text-[length:var(--aries-font-size-reading)] text-foreground/75 hover:text-foreground"
           >
             {t("settings.cancel")}
           </button>
           <button
             type="button"
             onClick={onConfirm}
-            className="h-8 min-w-[86px] rounded-md bg-destructive/10 px-3 text-[13px] text-destructive hover:bg-destructive/20"
+            className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width)] rounded-[var(--aries-radius-md)] bg-destructive/10 px-[calc(var(--aries-control-padding-x)+var(--aries-control-gap-compact)/2)] text-[length:var(--aries-font-size-reading)] text-destructive hover:bg-destructive/20"
           >
             {action}
           </button>
@@ -3265,25 +3294,25 @@ function ArabicPartEditor({
       className={
         mode === "edit"
           ? "flex flex-col gap-2 border-b border-border/40 bg-muted/20 px-2 py-2"
-          : "mt-2 flex flex-col gap-2 rounded-[4px] border border-border/60 p-2"
+          : "mt-2 flex flex-col gap-2 rounded-[var(--aries-radius-control-compact)] border border-border/60 p-2"
       }
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] font-medium text-foreground/55">
+        <span className="text-[length:var(--aries-font-size-small)] font-medium text-foreground/55">
           {mode === "edit" ? t("settings.editPart", { name: part?.name ?? "" }) : t("settings.newPart")}
         </span>
       </div>
       <div className="flex items-center gap-2">
-        <span className="w-12 text-[11px] text-foreground/60">{t("settings.name")}</span>
+        <span className="w-12 text-[length:var(--aries-font-size-small)] text-foreground/60">{t("settings.name")}</span>
         <input
           type="text"
           maxLength={20}
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="h-6 w-[200px] rounded-[3px] border border-border/60 bg-transparent px-1.5 text-[12px] outline-none focus:border-border"
+          className="h-6 w-[200px] rounded-xs border border-border/60 bg-transparent px-1.5 text-[length:var(--aries-font-size-base)] outline-none focus:border-border"
         />
         {duplicate ? (
-          <span className="text-[11px] text-[color:var(--aries-validation-error)]">{t("settings.alreadyExists")}</span>
+          <span className="text-[length:var(--aries-font-size-small)] text-[color:var(--aries-validation-error)]">{t("settings.alreadyExists")}</span>
         ) : null}
       </div>
       <FormulaSlots
@@ -3299,11 +3328,11 @@ function ArabicPartEditor({
           setRefdeg(nextRefdeg);
         }}
       />
-      <label className="flex items-center gap-2 text-[12px] text-foreground/80">
+      <label className="flex items-center gap-2 text-[length:var(--aries-font-size-base)] text-foreground/80">
         <Toggle checked={!nocturnalOn && diurnal} onChange={setDiurnal} disabled={nocturnalOn} />
         {t("settings.diurnalSwapBc")}
       </label>
-      <label className="flex items-center gap-2 text-[12px] text-foreground/80">
+      <label className="flex items-center gap-2 text-[length:var(--aries-font-size-base)] text-foreground/80">
         <Toggle
           checked={nocturnalOn}
           onChange={setNocturnalOn}
@@ -3325,11 +3354,11 @@ function ArabicPartEditor({
           }}
         />
       ) : null}
-      <label className="flex items-center gap-2 text-[12px] text-foreground/80">
+      <label className="flex items-center gap-2 text-[length:var(--aries-font-size-base)] text-foreground/80">
         <Toggle checked={gendered} onChange={setGendered} />
         {t("settings.switchForFemale")}
       </label>
-      <label className="flex items-center gap-2 text-[12px] text-foreground/80">
+      <label className="flex items-center gap-2 text-[length:var(--aries-font-size-base)] text-foreground/80">
         <Toggle checked={femaleOn} onChange={setFemaleOn} />
         {t("settings.separateFemaleFormula")}
       </label>
@@ -3348,7 +3377,7 @@ function ArabicPartEditor({
           }}
         />
       ) : null}
-      <div className="text-[11px] text-foreground/55">
+      <div className="text-[length:var(--aries-font-size-small)] text-foreground/55">
         {previewError
           ? `${t("settings.previewFailed")}: ${previewError}`
           : preview
@@ -3375,7 +3404,7 @@ function ArabicPartEditor({
         ) : null}
         <ActionButton onClick={onCancel}>{mode === "edit" ? t("settings.close") : t("settings.cancel")}</ActionButton>
         {!canSave && trimmed.length === 0 ? (
-          <span className="text-[11px] text-foreground/45">{t("settings.nameRequired")}</span>
+          <span className="text-[length:var(--aries-font-size-small)] text-foreground/45">{t("settings.nameRequired")}</span>
         ) : null}
       </div>
     </div>
@@ -3423,7 +3452,7 @@ function FormulaSlots({
         return (
           <React.Fragment key={i}>
             {ops[i] ? (
-              <span className="pt-1 text-[12px] text-foreground/60">{ops[i]}</span>
+              <span className="pt-1 text-[length:var(--aries-font-size-base)] text-foreground/60">{ops[i]}</span>
             ) : null}
             <span className="flex flex-col gap-1">
               <Select
@@ -3484,7 +3513,7 @@ function FormulaSlots({
           </React.Fragment>
         );
       })}
-      <span className="pt-1 text-[12px] text-foreground/60">)</span>
+      <span className="pt-1 text-[length:var(--aries-font-size-base)] text-foreground/60">)</span>
     </div>
   );
 }
@@ -3720,9 +3749,9 @@ function EclipsesTab({ opts, sendPatch }: TabProps) {
 // selectedCodes set and forwards it.
 // ---------------------------------------------------------------------------
 
-const FIXSTAR_ROW_H = 28; // px per catalog row (matches the dense h-7 rows)
 const FIXSTAR_OVERSCAN = 8;
 const FIXSTAR_VIEWPORT_H = 320; // px scroll viewport
+const FIXSTAR_VIRTUAL_SCROLL_SYNC_EVENT = "aries:virtual-scroll-sync";
 type FixedStarSortKey = "selected" | "name" | "code" | "lon";
 type FixedStarSortState = {
   key: FixedStarSortKey;
@@ -3737,6 +3766,7 @@ function FixedStarsTab({ opts, sendPatch }: TabProps) {
   const [sort, setSort] = React.useState<FixedStarSortState>(null);
   const [scrollTop, setScrollTop] = React.useState(0);
   const viewportRef = React.useRef<HTMLDivElement | null>(null);
+  const rowHeight = useListRowHeight("dense");
 
   // Local optimistic selection set (the daemon is still the truth owner).
   const selected = React.useMemo(
@@ -3784,15 +3814,26 @@ function FixedStarsTab({ opts, sendPatch }: TabProps) {
 
   // Windowed slice — render only the visible rows plus overscan.
   const total = visible.length;
-  const first = Math.max(0, Math.floor(scrollTop / FIXSTAR_ROW_H) - FIXSTAR_OVERSCAN);
-  const count = Math.ceil(FIXSTAR_VIEWPORT_H / FIXSTAR_ROW_H) + FIXSTAR_OVERSCAN * 2;
+  const first = Math.max(0, Math.floor(scrollTop / rowHeight) - FIXSTAR_OVERSCAN);
+  const count = Math.ceil(FIXSTAR_VIEWPORT_H / rowHeight) + FIXSTAR_OVERSCAN * 2;
   const slice = visible.slice(first, first + count);
+
+  React.useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return undefined;
+    const syncScrollTop = () => setScrollTop(viewport.scrollTop);
+    viewport.addEventListener(FIXSTAR_VIRTUAL_SCROLL_SYNC_EVENT, syncScrollTop);
+    return () => viewport.removeEventListener(FIXSTAR_VIRTUAL_SCROLL_SYNC_EVENT, syncScrollTop);
+  }, []);
+  useFixedRowHeightAnchor(viewportRef, total, rowHeight, {
+    syncEvent: FIXSTAR_VIRTUAL_SCROLL_SYNC_EVENT,
+  });
 
   return (
     <div className="flex flex-col gap-0">
       <SectionLabel>{t("settings.whichFixedStarsActive")}</SectionLabel>
       {fs.catalog.length === 0 ? (
-        <div className="py-2 text-[11px] text-foreground/45">
+        <div className="py-2 text-[length:var(--aries-font-size-small)] text-foreground/45">
           {t("settings.fixStarCatalogNotFound")}
         </div>
       ) : (
@@ -3803,19 +3844,19 @@ function FixedStarsTab({ opts, sendPatch }: TabProps) {
               value={nameQuery}
               onChange={(e) => setNameQuery(e.target.value)}
               placeholder={t("settings.searchName")}
-              className="h-7 flex-1 rounded-[4px] border border-border/60 bg-transparent px-2 text-[12px] outline-none focus:border-foreground/40"
+              className="h-7 flex-1 rounded-[var(--aries-radius-control-compact)] border border-border/60 bg-transparent px-2 text-[length:var(--aries-font-size-base)] outline-none focus:border-foreground/40"
             />
             <input
               type="text"
               value={codeQuery}
               onChange={(e) => setCodeQuery(e.target.value)}
               placeholder={t("settings.searchNomenclature")}
-              className="h-7 flex-1 rounded-[4px] border border-border/60 bg-transparent px-2 text-[12px] outline-none focus:border-foreground/40"
+              className="h-7 flex-1 rounded-[var(--aries-radius-control-compact)] border border-border/60 bg-transparent px-2 text-[length:var(--aries-font-size-base)] outline-none focus:border-foreground/40"
             />
           </div>
 
           {/* Header row */}
-          <div className="flex h-6 items-center gap-2 border-b border-border/60 px-1 text-[10px] font-medium text-foreground/45">
+          <div className="flex h-6 items-center gap-2 border-b border-border/60 px-1 text-[length:var(--aries-font-size-section)] font-medium text-foreground/45">
             <FixedStarSortHeader sortKey="selected" sort={sort} onSort={setSort} className="w-5 shrink-0" ariaLabel={t("settings.sortSelected")} />
             <FixedStarSortHeader sortKey="name" sort={sort} onSort={setSort} className="min-w-0 flex-1" label={t("settings.name")} />
             <FixedStarSortHeader sortKey="code" sort={sort} onSort={setSort} className="w-24 shrink-0" label={t("settings.nomenclAbbr")} />
@@ -3828,7 +3869,7 @@ function FixedStarsTab({ opts, sendPatch }: TabProps) {
             style={{ height: FIXSTAR_VIEWPORT_H }}
             onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
           >
-            <div style={{ height: total * FIXSTAR_ROW_H, position: "relative" }}>
+            <div style={{ height: total * rowHeight, position: "relative" }}>
               {slice.map((row, i) => {
                 const rowIndex = first + i;
                 const checked = selected.has(row.code);
@@ -3836,8 +3877,8 @@ function FixedStarsTab({ opts, sendPatch }: TabProps) {
                 return (
                   <div
                     key={`${row.index}-${row.code}`}
-                    className="absolute left-0 right-0 flex items-center gap-2 border-b border-border/30 px-1 text-[12px]"
-                    style={{ top: rowIndex * FIXSTAR_ROW_H, height: FIXSTAR_ROW_H }}
+                    className="absolute left-0 right-0 flex items-center gap-2 border-b border-border/30 px-1 text-[length:var(--aries-font-size-base)]"
+                    style={{ top: rowIndex * rowHeight, height: rowHeight }}
                   >
                     <input
                       type="checkbox"
@@ -3859,7 +3900,7 @@ function FixedStarsTab({ opts, sendPatch }: TabProps) {
 
           <div className="mt-2 flex items-center justify-between">
             <ActionButton onClick={deselectAll}>{t("settings.deselectAll")}</ActionButton>
-            <span className="text-[11px] text-foreground/45">
+            <span className="text-[length:var(--aries-font-size-small)] text-foreground/45">
               {t("settings.fixStarSelectedCount", { selected: selected.size, remaining })}
             </span>
           </div>
@@ -3967,7 +4008,7 @@ function RelationshipChartsTab({ opts, sendPatch }: TabProps) {
     <div className="flex flex-col gap-0">
       <SectionLabel>{t("settings.compositeConstruction")}</SectionLabel>
       <Row label={cat.compositeMCNote}>
-        <span className="text-[11px] text-foreground/45">{t("settings.fixed")}</span>
+        <span className="text-[length:var(--aries-font-size-small)] text-foreground/45">{t("settings.fixed")}</span>
       </Row>
       <Row label={cat.compositeASCLabel}>
         <Select
@@ -4026,7 +4067,7 @@ function LanguagesTab({ opts, sendPatch }: TabProps) {
           ))}
         </Select>
       </Row>
-      <p className="mt-2 text-[11px] leading-relaxed text-foreground/45">
+      <p className="mt-2 text-[length:var(--aries-font-size-small)] leading-relaxed text-foreground/45">
         {t("settings.languageHelp")}
       </p>
     </div>

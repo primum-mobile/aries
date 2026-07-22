@@ -16,7 +16,33 @@ fn require_release_version(value: &str) {
     }
 }
 
+fn require_windows_release_license_contract() {
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let profile = std::env::var("PROFILE").unwrap_or_default();
+    if target_os != "windows" || profile != "release" {
+        return;
+    }
+
+    let license_required = std::env::var("ARIES_LICENSE_REQUIRED").unwrap_or_default();
+    if license_required != "1" {
+        panic!("Windows release builds require ARIES_LICENSE_REQUIRED=1");
+    }
+    let server_url = std::env::var("ARIES_LICENSE_SERVER_URL").unwrap_or_default();
+    if !server_url.starts_with("https://") {
+        panic!("Windows release builds require an HTTPS ARIES_LICENSE_SERVER_URL");
+    }
+    let public_key = std::env::var("ARIES_LICENSE_PUBLIC_KEY").unwrap_or_default();
+    if public_key.len() != 43
+        || public_key
+            .bytes()
+            .any(|byte| !byte.is_ascii_alphanumeric() && !matches!(byte, b'_' | b'-'))
+    {
+        panic!("Windows release builds require a valid Ed25519 ARIES_LICENSE_PUBLIC_KEY");
+    }
+}
+
 fn main() {
+    require_windows_release_license_contract();
     for key in [
         "ARIES_RELEASE_VERSION",
         "ARIES_LICENSE_REQUIRED",

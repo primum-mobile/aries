@@ -79,6 +79,14 @@
     opacity:0;
     visibility:hidden;
   }
+  #polar-line-overlay {
+    position:absolute; inset:0; pointer-events:none;
+    width:100%; height:100%;
+  }
+  #map.map-booting #polar-line-overlay {
+    opacity:0;
+    visibility:hidden;
+  }
   #place-labels {
     position:absolute; inset:0; pointer-events:none; overflow:hidden;
     z-index:3;
@@ -99,7 +107,7 @@
     white-space:nowrap; opacity:0.82;
   }
   .place-label.major { font-weight:600; color:var(--chrome-text); opacity:0.92; }
-  .acg-dom-label { font-weight:600; opacity:0.9; }
+  .acg-dom-label { font-weight:600; }
   .maplibregl-ctrl-top-left { top:var(--titlebar-safe-top); }
   .maplibregl-ctrl-group {
     background:var(--chrome-bg);
@@ -117,6 +125,7 @@
   .maplibregl-ctrl-group button:hover:not(:disabled) {
     background:var(--btn-hover-bg);
   }
+  body:not(.terrain-relief) .maplibregl-ctrl-compass { display:none; }
   body:not(.theme-light) .maplibregl-ctrl button .maplibregl-ctrl-icon {
     filter:invert(1);
     opacity:0.88;
@@ -200,16 +209,16 @@
     font-size:11px; padding:6px 8px;
   }
   .maplibregl-popup-tip { border-top-color:var(--popup-bg) !important; }
+  #top-controls {
+    position:absolute; top:calc(var(--titlebar-safe-top) + 8px); left:88px;
+    z-index:7; display:flex; align-items:flex-start; gap:4px;
+  }
   #proj, #overlays {
-    position:absolute; top:calc(var(--titlebar-safe-top) + 8px);
-    z-index:7;
     background:var(--chrome-bg);
     border:1px solid var(--chrome-border);
     border-radius:5px; padding:2px;
     font-size:11px; display:flex; gap:1px;
   }
-  #proj { left:88px; }
-  #overlays { left:196px; }
   #proj button, #overlays button {
     background:transparent; color:var(--chrome-dim); border:0;
     min-height:24px; padding:3px 9px; cursor:pointer; border-radius:3px;
@@ -220,8 +229,7 @@
   }
   #proj button:hover:not(.on), #overlays button:hover:not(.on) { background:var(--btn-hover-bg); }
   #place-search {
-    position:absolute; top:calc(var(--titlebar-safe-top) + 8px); left:280px;
-    z-index:7; width:208px;
+    position:relative; width:208px;
   }
   #place-search-input {
     width:100%; box-sizing:border-box;
@@ -370,6 +378,47 @@
     color:#0a84ff;
     transform:translateY(-3px) scale(1.2);
   }
+  .acg-reference-sign {
+    width:1.45em;
+    height:1.45em;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    font-family:'Morinus', serif;
+    font-style:normal;
+    font-weight:400;
+    line-height:1;
+    z-index:4;
+    pointer-events:none;
+    user-select:none;
+    -webkit-user-select:none;
+  }
+  .acg-reference-pole-sign,
+  .acg-reference-house-number {
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    line-height:1;
+    z-index:4;
+    pointer-events:none;
+    user-select:none;
+    -webkit-user-select:none;
+  }
+  .acg-reference-pole-sign {
+    width:1.35em;
+    height:1.35em;
+    font-family:'Morinus', serif;
+    font-style:normal;
+    font-weight:400;
+  }
+  .acg-reference-house-number {
+    width:1.55em;
+    height:1.25em;
+    font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-weight:600;
+  }
 </style>
 </head>
 <body>
@@ -408,17 +457,20 @@
     </section>
   </div>
 </div>
-<div id="proj">
-  <button type="button" data-proj="mercator" aria-pressed="false">Flat</button>
-  <button type="button" data-proj="globe" class="on" aria-pressed="true">Globe</button>
-</div>
-<div id="overlays">
-  <button type="button" data-overlay="parans" aria-pressed="false">Parans</button>
-</div>
-<div id="place-search">
-  <input id="place-search-input" type="search" autocomplete="off" spellcheck="false"
-         placeholder="Search a place…" aria-label="Search place" />
-  <div id="place-search-results" role="listbox"></div>
+<div id="top-controls">
+  <div id="proj">
+    <button type="button" data-proj="mercator" aria-pressed="false">Flat</button>
+    <button type="button" data-proj="globe" class="on" aria-pressed="true">Globe</button>
+  </div>
+  <div id="overlays">
+    <button type="button" data-overlay="parans" aria-pressed="false">Parans</button>
+    <button type="button" data-overlay="asterisms" aria-pressed="false" hidden></button>
+  </div>
+  <div id="place-search">
+    <input id="place-search-input" type="search" autocomplete="off" spellcheck="false"
+           placeholder="Search a place…" aria-label="Search place" />
+    <div id="place-search-results" role="listbox"></div>
+  </div>
 </div>
 <div id="status">waiting for chart…</div>
 <script src="vendor/maplibre-gl.js"></script>
@@ -426,6 +478,301 @@
 <script>
 (function () {
   let DEV_SETTINGS = {};
+  let ACTIVE_ASTROCART_STYLE = null;
+  const ASTROCART_STYLE_SCHEMA_VERSION = 8;
+  const ASTROCART_CHROME_CSS_FIELDS = Object.freeze({
+    pageBg: '--page-bg',
+    chromeBg: '--chrome-bg',
+    chromeBgThin: '--chrome-bg-thin',
+    chromeBorder: '--chrome-border',
+    chromeRule: '--chrome-rule',
+    chromeText: '--chrome-text',
+    chromeDim: '--chrome-dim',
+    chromeSoft: '--chrome-soft',
+    buttonActiveBg: '--btn-active-bg',
+    buttonHoverBg: '--btn-hover-bg',
+    buttonActiveFg: '--btn-active-fg',
+    keyLine: '--key-line',
+    keyParan: '--key-paran',
+    popupBg: '--popup-bg',
+    menuBg: '--menu-bg',
+    menuBorder: '--menu-border',
+    menuShadow: '--menu-shadow',
+    menuHoverBg: '--menu-hover-bg',
+    menuHoverFg: '--menu-hover-fg',
+  });
+  const ASTROCART_RENDERER_STRING_FIELDS = Object.freeze([
+    'casing', 'labelColor', 'labelHalo', 'paranColor', 'paranHalo',
+    'pageBg', 'oceanColor', 'landColor', 'borderColor',
+    'countryLabelColor', 'countryLabelHalo', 'cityLabelColor', 'cityLabelHalo',
+    'minorPlaceLabelColor', 'minorPlaceLabelHalo', 'waterLabelColor', 'waterLabelHalo',
+    'hospitalLabelColor', 'hospitalLabelHalo', 'hospitalFillColor', 'roadColor',
+    'streetNameColor', 'streetNameHalo', 'buildingColor', 'buildingOutlineColor',
+    'terrainShadowColor', 'terrainHighlightColor',
+    'parkColor', 'parkOutlineColor', 'residentialColor',
+    'fallbackMcColor', 'fallbackIcColor', 'fallbackAscColor', 'fallbackDscColor',
+    'fallbackUnknownColor', 'eclipseShadowColor', 'eclipseOutlineColor',
+    'eclipseCenterColor', 'eclipseHaloColor', 'asterismHighlightColor',
+    'asterismShadowColor', 'referenceEclipticColor', 'referenceEquatorColor',
+    'referenceAscColor', 'referenceMcColor', 'referenceHouseGridColor',
+    'referenceZodiacGridColor',
+  ]);
+  const ASTROCART_RENDERER_NUMBER_FIELDS = Object.freeze([
+    'countryLabelSize', 'cityLabelSize', 'minorPlaceLabelSize',
+    'waterLabelSize', 'casingWidth', 'casingOpacity', 'solidWidth', 'solidOpacity',
+    'dashedWidth', 'dashedOpacity', 'dashedOn', 'dashedOff', 'paranWidth',
+    'paranOpacity', 'paranDashOn', 'paranDashOff', 'labelSize', 'labelSpacing',
+    'labelHaloWidth', 'labelOpacity', 'domLabelOpacityScale',
+    'paranLabelSize', 'paranLabelSpacing',
+    'paranLabelHaloWidth', 'paranLabelOpacity',
+    'localCountryBorderWidth', 'localCountryBorderOpacity',
+    'localRegionBorderWidth', 'localRegionBorderOpacity',
+    'buildingOpacityScale', 'residentialOpacityScale', 'parkFillOpacityScale',
+    'terrainExaggeration', 'hillshadeExaggeration',
+    'parkOutlineOpacityScale', 'hospitalFillOpacityScale',
+    'roadWidthScale', 'roadOpacityScale', 'roadBlur',
+    'waterLineOpacity', 'waterLabelSpacing', 'waterLabelHaloWidth',
+    'waterLabelHaloBlur', 'waterLineLabelOpacity', 'waterPointLabelOpacity',
+    'streetLabelSize', 'streetLabelHaloWidth', 'streetLabelHaloBlur',
+    'streetLabelOpacity', 'hospitalLabelSize', 'hospitalLabelHaloWidth',
+    'hospitalLabelHaloBlur', 'hospitalLabelOpacity', 'hospitalIconOpacity',
+    'countryLabelSpacing', 'countryLabelHaloWidth', 'countryLabelHaloBlur',
+    'countryLabelOpacity', 'cityLabelSpacing', 'cityLabelHaloWidth',
+    'cityLabelHaloBlur', 'cityLabelOpacity', 'minorPlaceLabelSpacing',
+    'minorPlaceLabelHaloWidth', 'minorPlaceLabelHaloBlur', 'minorPlaceLabelOpacity',
+    'eclipseShadowWidth', 'eclipseShadowOpacity', 'eclipseShadowBlur',
+    'eclipseFillOpacity', 'eclipseOutlineWidth', 'eclipseOutlineOpacity',
+    'eclipseLimitWidth', 'eclipseLimitOpacity', 'eclipseLimitDashOn',
+    'eclipseLimitDashOff', 'eclipseCenterWidth', 'eclipseCenterOpacity',
+    'eclipseMaximumRadius', 'eclipseMaximumStrokeWidth', 'eclipseLabelSize',
+    'eclipseLabelSpacing', 'eclipseLabelHaloWidth', 'eclipseLabelOpacity',
+    'asterismLineWidth', 'asterismLineOpacity', 'asterismStarRadiusMin',
+    'asterismStarRadiusMax', 'asterismStarOpacity', 'asterismShadowSpread',
+    'asterismShadowOpacity', 'asterismShadowBlur',
+    'asterismLabelSize', 'asterismLabelSpacing', 'asterismLabelHaloWidth',
+    'asterismLabelOpacity', 'referenceLineWidth', 'referenceLineOpacity',
+    'referenceSignSize', 'referenceSignOpacity', 'referenceSignHaloWidth',
+    'referenceGridLineWidth', 'referenceGridLineOpacity',
+    'referencePoleSignSize', 'referencePoleHouseSize',
+    'referencePoleLabelOpacity', 'referencePoleLabelHaloWidth',
+  ]);
+  const ASTROCART_RENDERER_NUMBER_BOUNDS = Object.freeze({
+    countryLabelSize: Object.freeze([4.8, 24]),
+    cityLabelSize: Object.freeze([4.2, 21]),
+    minorPlaceLabelSize: Object.freeze([3.7, 19]),
+    waterLabelSize: Object.freeze([4.4, 22]),
+    casingWidth: Object.freeze([0.25, 12]),
+    casingOpacity: Object.freeze([0, 1]),
+    solidWidth: Object.freeze([0.25, 8]),
+    solidOpacity: Object.freeze([0, 1]),
+    dashedWidth: Object.freeze([0.25, 8]),
+    dashedOpacity: Object.freeze([0, 1]),
+    dashedOn: Object.freeze([0.25, 12]),
+    dashedOff: Object.freeze([0.25, 8]),
+    paranWidth: Object.freeze([0.25, 8]),
+    paranOpacity: Object.freeze([0, 1]),
+    paranDashOn: Object.freeze([0.25, 8]),
+    paranDashOff: Object.freeze([0.25, 8]),
+    labelSize: Object.freeze([4.4, 22]),
+    labelSpacing: Object.freeze([0, 16]),
+    labelHaloWidth: Object.freeze([0.25, 8]),
+    labelOpacity: Object.freeze([0, 1]),
+    domLabelOpacityScale: Object.freeze([0, 1]),
+    paranLabelSize: Object.freeze([4.4, 22]),
+    paranLabelSpacing: Object.freeze([0, 16]),
+    paranLabelHaloWidth: Object.freeze([0.25, 8]),
+    paranLabelOpacity: Object.freeze([0, 1]),
+    localCountryBorderWidth: Object.freeze([0.1, 4]),
+    localCountryBorderOpacity: Object.freeze([0, 1]),
+    localRegionBorderWidth: Object.freeze([0.1, 3]),
+    localRegionBorderOpacity: Object.freeze([0, 1]),
+    buildingOpacityScale: Object.freeze([0, 2]),
+    terrainExaggeration: Object.freeze([0, 3]),
+    hillshadeExaggeration: Object.freeze([0, 1]),
+    residentialOpacityScale: Object.freeze([0, 2]),
+    parkFillOpacityScale: Object.freeze([0, 2]),
+    parkOutlineOpacityScale: Object.freeze([0, 2]),
+    hospitalFillOpacityScale: Object.freeze([0, 2]),
+    roadWidthScale: Object.freeze([0.25, 3]),
+    roadOpacityScale: Object.freeze([0, 1.5]),
+    roadBlur: Object.freeze([0, 4]),
+    waterLineOpacity: Object.freeze([0, 1]),
+    waterLabelSpacing: Object.freeze([0, 0.5]),
+    waterLabelHaloWidth: Object.freeze([0, 6]),
+    waterLabelHaloBlur: Object.freeze([0, 4]),
+    waterLineLabelOpacity: Object.freeze([0, 1]),
+    waterPointLabelOpacity: Object.freeze([0, 1]),
+    streetLabelSize: Object.freeze([6, 24]),
+    streetLabelHaloWidth: Object.freeze([0, 6]),
+    streetLabelHaloBlur: Object.freeze([0, 4]),
+    streetLabelOpacity: Object.freeze([0, 1]),
+    hospitalLabelSize: Object.freeze([6, 24]),
+    hospitalLabelHaloWidth: Object.freeze([0, 6]),
+    hospitalLabelHaloBlur: Object.freeze([0, 4]),
+    hospitalLabelOpacity: Object.freeze([0, 1]),
+    hospitalIconOpacity: Object.freeze([0, 1]),
+    countryLabelSpacing: Object.freeze([0, 0.5]),
+    countryLabelHaloWidth: Object.freeze([0, 6]),
+    countryLabelHaloBlur: Object.freeze([0, 4]),
+    countryLabelOpacity: Object.freeze([0, 1]),
+    cityLabelSpacing: Object.freeze([0, 0.5]),
+    cityLabelHaloWidth: Object.freeze([0, 6]),
+    cityLabelHaloBlur: Object.freeze([0, 4]),
+    cityLabelOpacity: Object.freeze([0, 1]),
+    minorPlaceLabelSpacing: Object.freeze([0, 0.5]),
+    minorPlaceLabelHaloWidth: Object.freeze([0, 6]),
+    minorPlaceLabelHaloBlur: Object.freeze([0, 4]),
+    minorPlaceLabelOpacity: Object.freeze([0, 1]),
+    eclipseShadowWidth: Object.freeze([1, 40]),
+    eclipseShadowOpacity: Object.freeze([0, 1]),
+    eclipseShadowBlur: Object.freeze([0, 12]),
+    eclipseFillOpacity: Object.freeze([0, 1]),
+    eclipseOutlineWidth: Object.freeze([0.25, 8]),
+    eclipseOutlineOpacity: Object.freeze([0, 1]),
+    eclipseLimitWidth: Object.freeze([0.25, 8]),
+    eclipseLimitOpacity: Object.freeze([0, 1]),
+    eclipseLimitDashOn: Object.freeze([0.25, 16]),
+    eclipseLimitDashOff: Object.freeze([0.25, 16]),
+    eclipseCenterWidth: Object.freeze([0.25, 10]),
+    eclipseCenterOpacity: Object.freeze([0, 1]),
+    eclipseMaximumRadius: Object.freeze([1, 16]),
+    eclipseMaximumStrokeWidth: Object.freeze([0, 8]),
+    eclipseLabelSize: Object.freeze([6, 28]),
+    eclipseLabelSpacing: Object.freeze([0, 0.5]),
+    eclipseLabelHaloWidth: Object.freeze([0, 8]),
+    eclipseLabelOpacity: Object.freeze([0, 1]),
+    asterismLineWidth: Object.freeze([0.25, 6]),
+    asterismLineOpacity: Object.freeze([0, 1]),
+    asterismStarRadiusMin: Object.freeze([0.5, 4]),
+    asterismStarRadiusMax: Object.freeze([2, 10]),
+    asterismStarOpacity: Object.freeze([0, 1]),
+    asterismShadowSpread: Object.freeze([0, 4]),
+    asterismShadowOpacity: Object.freeze([0, 1]),
+    asterismShadowBlur: Object.freeze([0, 2]),
+    asterismLabelSize: Object.freeze([5, 12]),
+    asterismLabelSpacing: Object.freeze([0, 0.3]),
+    asterismLabelHaloWidth: Object.freeze([0, 3]),
+    asterismLabelOpacity: Object.freeze([0, 1]),
+    referenceLineWidth: Object.freeze([0.25, 6]),
+    referenceLineOpacity: Object.freeze([0, 1]),
+    referenceSignSize: Object.freeze([5, 16]),
+    referenceSignOpacity: Object.freeze([0, 1]),
+    referenceSignHaloWidth: Object.freeze([0, 4]),
+    referenceGridLineWidth: Object.freeze([0.25, 1.5]),
+    referenceGridLineOpacity: Object.freeze([0, 1]),
+    referencePoleSignSize: Object.freeze([5, 14]),
+    referencePoleHouseSize: Object.freeze([5, 12]),
+    referencePoleLabelOpacity: Object.freeze([0, 1]),
+    referencePoleLabelHaloWidth: Object.freeze([0, 4]),
+  });
+  const ASTROCART_POINT_LINE_WIDTH_SCALE_BOUNDS = Object.freeze([0.25, 3]);
+  const ASTROCART_POINT_LINE_OPACITY_BOUNDS = Object.freeze([0, 1]);
+  const ASTROCART_TITLEBAR_SAFE_TOP_BOUNDS = Object.freeze([0, 256]);
+  const ASTROCART_RENDERER_BOOLEAN_FIELDS = Object.freeze([
+    'countryLabelsOn', 'cityLabelsOn', 'labelHaloOn', 'labelsOn',
+    'paranLabelHaloOn', 'paranLabelsOn',
+  ]);
+  const ASTROCART_STYLE_FIELDS = Object.freeze([
+    'schemaVersion', 'styleRevision', 'styleHash', 'mode',
+    'chrome', 'renderer', 'points', 'behavior',
+  ]);
+
+  function hasExactFields(value, fields) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const expected = new Set(fields);
+    return Object.keys(value).length === expected.size && Object.keys(value).every((key) => expected.has(key));
+  }
+
+  function normalizeAstrocartStyle(payload) {
+    if (!hasExactFields(payload, ASTROCART_STYLE_FIELDS) || payload.schemaVersion !== ASTROCART_STYLE_SCHEMA_VERSION) return null;
+    if (!['dark', 'light'].includes(payload.mode)) return null;
+    if (typeof payload.styleRevision !== 'string' || typeof payload.styleHash !== 'string') return null;
+    const chrome = payload.chrome;
+    if (!hasExactFields(chrome, [...Object.keys(ASTROCART_CHROME_CSS_FIELDS), 'titlebarSafeTop'])) return null;
+    for (const key of Object.keys(ASTROCART_CHROME_CSS_FIELDS)) {
+      if (typeof chrome[key] !== 'string') return null;
+    }
+    if (
+      !Number.isFinite(chrome.titlebarSafeTop) ||
+      chrome.titlebarSafeTop < ASTROCART_TITLEBAR_SAFE_TOP_BOUNDS[0] ||
+      chrome.titlebarSafeTop > ASTROCART_TITLEBAR_SAFE_TOP_BOUNDS[1]
+    ) return null;
+    const renderer = payload.renderer;
+    if (!hasExactFields(renderer, [
+      ...ASTROCART_RENDERER_STRING_FIELDS,
+      ...ASTROCART_RENDERER_NUMBER_FIELDS,
+      ...ASTROCART_RENDERER_BOOLEAN_FIELDS,
+    ])) return null;
+    for (const key of ASTROCART_RENDERER_STRING_FIELDS) {
+      if (typeof renderer[key] !== 'string') return null;
+    }
+    for (const key of ASTROCART_RENDERER_NUMBER_FIELDS) {
+      if (!Number.isFinite(renderer[key])) return null;
+      const bounds = ASTROCART_RENDERER_NUMBER_BOUNDS[key];
+      if (!bounds || renderer[key] < bounds[0] || renderer[key] > bounds[1]) return null;
+    }
+    for (const key of ASTROCART_RENDERER_BOOLEAN_FIELDS) {
+      if (typeof renderer[key] !== 'boolean') return null;
+    }
+    if (!payload.points || typeof payload.points !== 'object' || Array.isArray(payload.points)) return null;
+    const points = {};
+    for (const [id, point] of Object.entries(payload.points)) {
+      if (!hasExactFields(point, ['label', 'color', 'glyphMorinus', 'lineWidthScale', 'lineOpacity'])) return null;
+      if (typeof point.label !== 'string' || typeof point.color !== 'string' || typeof point.glyphMorinus !== 'string') return null;
+      if (
+        !Number.isFinite(point.lineWidthScale) ||
+        point.lineWidthScale < ASTROCART_POINT_LINE_WIDTH_SCALE_BOUNDS[0] ||
+        point.lineWidthScale > ASTROCART_POINT_LINE_WIDTH_SCALE_BOUNDS[1] ||
+        !Number.isFinite(point.lineOpacity) ||
+        point.lineOpacity < ASTROCART_POINT_LINE_OPACITY_BOUNDS[0] ||
+        point.lineOpacity > ASTROCART_POINT_LINE_OPACITY_BOUNDS[1]
+      ) return null;
+      points[id] = Object.freeze({
+        label: point.label,
+        color: point.color,
+        glyphMorinus: point.glyphMorinus,
+        lineWidthScale: point.lineWidthScale,
+        lineOpacity: point.lineOpacity,
+      });
+    }
+    const behaviorFields = [
+      'localSpaceAdditive', 'showEcliptic', 'showEquator',
+      'showAscCircle', 'showMcCircle', 'showHouseLines', 'showZodiacLines',
+      'terrainRelief',
+    ];
+    if (!hasExactFields(payload.behavior, behaviorFields)) return null;
+    if (behaviorFields.some((field) => typeof payload.behavior[field] !== 'boolean')) return null;
+    return Object.freeze({
+      schemaVersion: ASTROCART_STYLE_SCHEMA_VERSION,
+      styleRevision: payload.styleRevision,
+      styleHash: payload.styleHash,
+      mode: payload.mode,
+      chrome: Object.freeze(Object.assign({}, chrome)),
+      renderer: Object.freeze(Object.assign({}, renderer)),
+      points: Object.freeze(points),
+      behavior: Object.freeze({
+        localSpaceAdditive: payload.behavior.localSpaceAdditive,
+        showEcliptic: payload.behavior.showEcliptic,
+        showEquator: payload.behavior.showEquator,
+        showAscCircle: payload.behavior.showAscCircle,
+        showMcCircle: payload.behavior.showMcCircle,
+        showHouseLines: payload.behavior.showHouseLines,
+        showZodiacLines: payload.behavior.showZodiacLines,
+        terrainRelief: payload.behavior.terrainRelief,
+      }),
+    });
+  }
+
+  function applyAstrocartChrome(style) {
+    if (!style || !style.chrome) return;
+    const chrome = style.chrome;
+    for (const [field, cssVar] of Object.entries(ASTROCART_CHROME_CSS_FIELDS)) {
+      document.documentElement.style.setProperty(cssVar, chrome[field]);
+      document.body.style.setProperty(cssVar, chrome[field]);
+    }
+    applyPageBg(chrome.pageBg);
+    applyTitlebarSafeTop(chrome.titlebarSafeTop);
+  }
 
   function applyPageBg(bg) {
     if (!bg || !/^#[0-9a-f]{6}$/i.test(bg)) return;
@@ -500,6 +847,10 @@
     placeLabelLastRenderMs: 0,
     placeLabelMaxRenderMs: 0,
     placeLabelSource: 'none',
+    polarOverlayPathCount: 0,
+    polarOverlayDraws: 0,
+    polarOverlayLastMs: 0,
+    polarOverlayMaxMs: 0,
   };
   let perfLastRenderAt = 0;
   document.body.classList.toggle('theme-light', !IS_DARK);
@@ -510,6 +861,7 @@
   // layers and no API key. We keep the source remote, but restyle it locally
   // so Morinus can control ocean/land/border/place-label colors directly.
   const BASE_VECTOR_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
+  const TERRAIN_DEM_URL = 'https://tiles.mapterhorn.com/tilejson.json';
   let BASE_VECTOR_STYLE = null;
   const HIDE_LAYER_IDS = new Set([
     'natural_earth',
@@ -526,6 +878,7 @@
     'highway-shield-us-interstate',
     'road_shield_us',
     'road_area_pattern',
+    'building',
     'building-3d',
   ]);
   const HIDE_LAYER_PREFIXES = [
@@ -570,7 +923,7 @@
   const SIMPLE_PLACE_NAME = ['coalesce', ['get', 'name_en'], ['get', 'name']];
 
   function buildLocalPmtilesStyle(tilesUrl, isDark) {
-    const s = defaultDevSettings(isDark);
+    const s = resolvedDevSettings(isDark);
     return {
       version: 8,
       projection: { type: selectedProjection },
@@ -590,16 +943,24 @@
           paint: { 'fill-color': s.oceanColor } },
         { id: 'boundaries-country', type: 'line', source: 'protomaps', 'source-layer': 'boundaries',
           filter: ['==', ['get', 'kind'], 'country'],
-          paint: { 'line-color': s.borderColor, 'line-width': 0.8, 'line-opacity': 0.62 } },
+          paint: {
+            'line-color': s.borderColor,
+            'line-width': s.localCountryBorderWidth,
+            'line-opacity': s.localCountryBorderOpacity,
+          } },
         { id: 'boundaries-region', type: 'line', source: 'protomaps', 'source-layer': 'boundaries',
           filter: ['==', ['get', 'kind'], 'region'],
-          paint: { 'line-color': s.borderColor, 'line-width': 0.45, 'line-opacity': 0.28 } },
+          paint: {
+            'line-color': s.borderColor,
+            'line-width': s.localRegionBorderWidth,
+            'line-opacity': s.localRegionBorderOpacity,
+          } },
       ],
     };
   }
 
   function buildMinimalOfflineStyle(isDark) {
-    const s = defaultDevSettings(isDark);
+    const s = resolvedDevSettings(isDark);
     return {
       version: 8,
       projection: { type: selectedProjection },
@@ -618,7 +979,7 @@
   }
 
   function skyStyle(isDark) {
-    const s = defaultDevSettings(isDark);
+    const s = resolvedDevSettings(isDark);
     return {
       'sky-color': s.pageBg,
       'horizon-color': s.pageBg,
@@ -631,12 +992,16 @@
   }
 
   function prepareBaseStyleForTheme(style, isDark) {
-    const s = defaultDevSettings(isDark);
+    const s = resolvedDevSettings(isDark);
     const next = JSON.parse(JSON.stringify(style));
     next.projection = { type: selectedProjection };
     next.sky = skyStyle(isDark);
     next.light = Object.assign({ anchor: 'map', position: [1.5, 90, 80] }, next.light || {});
     for (const layer of next.layers || []) {
+      const layerId = String(layer && layer.id || '');
+      if (HIDE_LAYER_IDS.has(layerId) || hasHiddenPrefix(layerId)) {
+        layer.layout = Object.assign({}, layer.layout || {}, { visibility: 'none' });
+      }
       if (layer && layer.type === 'background') {
         layer.paint = Object.assign({}, layer.paint || {}, { 'background-color': s.landColor });
       }
@@ -684,7 +1049,14 @@
       labelHalo:  isDark ? 'rgba(10,12,16,0.85)' : 'rgba(255,255,255,0.85)',
       paranColor: isDark ? '#e59246'              : '#d35400',
       paranHalo:  isDark ? 'rgba(10,12,16,0.85)' : 'rgba(255,255,255,0.9)',
-      paranOp:    isDark ? 0.7                    : 0.55,
+      asterismHighlightColor: isDark ? '#c9a7ff' : '#6d3fb2',
+      asterismShadowColor: isDark ? '#4f8cff' : '#376ec7',
+      referenceEclipticColor: isDark ? '#d7d7d9' : '#111111',
+      referenceEquatorColor: isDark ? '#dcdccd' : '#111111',
+      referenceAscColor: isDark ? '#cdcdd1' : '#111111',
+      referenceMcColor: isDark ? '#cdcdd1' : '#111111',
+      referenceHouseGridColor: isDark ? '#8a8b8d' : '#585858',
+      referenceZodiacGridColor: isDark ? '#d7d7d9' : '#111111',
     };
   }
 
@@ -716,9 +1088,20 @@
       streetNameHalo: isDark ? 'rgba(10,12,16,0.22)' : 'rgba(255,255,255,0.26)',
       buildingColor: isDark ? 'rgba(10,12,16,0.44)' : 'rgba(116,124,134,0.16)',
       buildingOutlineColor: isDark ? 'rgba(126,134,144,0.14)' : 'rgba(92,100,110,0.12)',
+      terrainShadowColor: isDark ? '#111820' : '#74808b',
+      terrainHighlightColor: isDark ? '#697682' : '#ffffff',
       parkColor: isDark ? 'rgba(74,92,78,0.14)' : 'rgba(142,168,146,0.16)',
       parkOutlineColor: isDark ? 'rgba(118,142,122,0.16)' : 'rgba(122,150,126,0.18)',
       residentialColor: isDark ? 'rgba(70,76,84,0.08)' : 'rgba(174,182,190,0.08)',
+      fallbackMcColor: '#e74c3c',
+      fallbackIcColor: '#8e44ad',
+      fallbackAscColor: '#2ecc71',
+      fallbackDscColor: '#f39c12',
+      fallbackUnknownColor: '#888888',
+      eclipseShadowColor: isDark ? 'rgba(5, 6, 7, 0.34)' : 'rgba(38, 42, 46, 0.18)',
+      eclipseOutlineColor: isDark ? '#c8c2b5' : '#5e6872',
+      eclipseCenterColor: isDark ? '#d9b760' : '#8a6418',
+      eclipseHaloColor: isDark ? 'rgba(8, 11, 15, 0.92)' : 'rgba(255, 255, 255, 0.92)',
       casingWidth: 3.0,
       casingOpacity: 0.9,
       solidWidth: 1.6,
@@ -734,22 +1117,128 @@
       labelSize: 11.0,
       labelSpacing: 0.04,
       labelHaloWidth: 1.0,
+      labelOpacity: 1.0,
+      domLabelOpacityScale: 0.9,
       labelHaloOn: true,
       labelsOn: true,
       paranLabelSize: 11.0,
       paranLabelSpacing: 0.02,
       paranLabelHaloWidth: 1.3,
+      paranLabelOpacity: 1.0,
       paranLabelHaloOn: true,
       paranLabelsOn: true,
+      localCountryBorderWidth: 0.8,
+      localCountryBorderOpacity: 0.62,
+      localRegionBorderWidth: 0.45,
+      localRegionBorderOpacity: 0.28,
+      buildingOpacityScale: 1.0,
+      terrainExaggeration: 1.0,
+      hillshadeExaggeration: 0.35,
+      residentialOpacityScale: 1.0,
+      parkFillOpacityScale: 1.0,
+      parkOutlineOpacityScale: 1.0,
+      hospitalFillOpacityScale: 1.0,
+      roadWidthScale: 1.0,
+      roadOpacityScale: 1.0,
+      roadBlur: 0.0,
+      waterLineOpacity: 0.65,
+      waterLabelSpacing: 0.12,
+      waterLabelHaloWidth: 1.05,
+      waterLabelHaloBlur: 0.45,
+      waterLineLabelOpacity: 0.62,
+      waterPointLabelOpacity: 0.74,
+      streetLabelSize: 11.0,
+      streetLabelHaloWidth: 0.65,
+      streetLabelHaloBlur: 0.25,
+      streetLabelOpacity: 1.0,
+      hospitalLabelSize: 11.2,
+      hospitalLabelHaloWidth: 1.0,
+      hospitalLabelHaloBlur: 0.35,
+      hospitalLabelOpacity: 0.82,
+      hospitalIconOpacity: 0.5,
+      countryLabelSpacing: 0.04,
+      countryLabelHaloWidth: 1.35,
+      countryLabelHaloBlur: 0.8,
+      countryLabelOpacity: 0.92,
+      cityLabelSpacing: 0.02,
+      cityLabelHaloWidth: 1.15,
+      cityLabelHaloBlur: 0.7,
+      cityLabelOpacity: 0.82,
+      minorPlaceLabelSpacing: 0.01,
+      minorPlaceLabelHaloWidth: 0.35,
+      minorPlaceLabelHaloBlur: 0.2,
+      minorPlaceLabelOpacity: 0.64,
+      eclipseShadowWidth: 12.0,
+      eclipseShadowOpacity: 0.92,
+      eclipseShadowBlur: 3.0,
+      eclipseFillOpacity: 0.9,
+      eclipseOutlineWidth: 0.8,
+      eclipseOutlineOpacity: 0.24,
+      eclipseLimitWidth: 1.2,
+      eclipseLimitOpacity: 0.78,
+      eclipseLimitDashOn: 3.0,
+      eclipseLimitDashOff: 2.0,
+      eclipseCenterWidth: 2.0,
+      eclipseCenterOpacity: 0.96,
+      eclipseMaximumRadius: 4.5,
+      eclipseMaximumStrokeWidth: 2.0,
+      eclipseLabelSize: 11.0,
+      eclipseLabelSpacing: 0.0,
+      eclipseLabelHaloWidth: 1.3,
+      eclipseLabelOpacity: 1.0,
+      asterismLineWidth: 0.7,
+      asterismLineOpacity: 0.52,
+      asterismStarRadiusMin: 0.85,
+      asterismStarRadiusMax: 3.8,
+      asterismStarOpacity: 0.92,
+      asterismShadowSpread: 0.65,
+      asterismShadowOpacity: 0.28,
+      asterismShadowBlur: 0.55,
+      asterismLabelSize: 7.0,
+      asterismLabelSpacing: 0.06,
+      asterismLabelHaloWidth: 0.55,
+      asterismLabelOpacity: 0.72,
+      referenceLineWidth: 1.1,
+      referenceLineOpacity: 0.78,
+      referenceSignSize: 12.0,
+      referenceSignOpacity: 1.0,
+      referenceSignHaloWidth: 1.25,
+      referenceGridLineWidth: 0.5,
+      referenceGridLineOpacity: 0.34,
+      referencePoleSignSize: 8.0,
+      referencePoleHouseSize: 7.0,
+      referencePoleLabelOpacity: 0.82,
+      referencePoleLabelHaloWidth: 0.9,
     };
   }
 
+  function activeAstrocartRendererForTheme(isDark) {
+    const expectedMode = isDark ? 'dark' : 'light';
+    return ACTIVE_ASTROCART_STYLE && ACTIVE_ASTROCART_STYLE.mode === expectedMode
+      ? ACTIVE_ASTROCART_STYLE.renderer
+      : {};
+  }
+
   function currentThemeTokens() {
-    return Object.assign({}, themeTokens(IS_DARK), DEV_SETTINGS || {});
+    return Object.assign(
+      {},
+      themeTokens(IS_DARK),
+      activeAstrocartRendererForTheme(IS_DARK),
+      DEV_SETTINGS || {},
+    );
+  }
+
+  function resolvedDevSettings(isDark) {
+    return Object.assign(
+      {},
+      defaultDevSettings(isDark),
+      activeAstrocartRendererForTheme(isDark),
+      DEV_SETTINGS || {},
+    );
   }
 
   function currentDevSettings() {
-    return Object.assign({}, defaultDevSettings(IS_DARK), DEV_SETTINGS || {});
+    return resolvedDevSettings(IS_DARK);
   }
 
   function hasHiddenPrefix(id) {
@@ -815,6 +1304,19 @@
   function raiseAcgLayers() {
     if (!map) return;
     for (const id of [
+      'acg-reference-house-lines',
+      'acg-reference-zodiac-lines',
+      'acg-reference-ecliptic',
+      'acg-reference-zodiac-ticks',
+      'acg-reference-equator',
+      'acg-reference-asc',
+      'acg-reference-mc',
+      'acg-asterism-shadow',
+      'acg-asterisms',
+      'acg-asterism-star-shadow',
+      'acg-asterism-stars',
+      'acg-asterism-star-hit',
+      'acg-asterism-labels',
       'eclipse-path-shadow',
       'eclipse-path-fill',
       'eclipse-path-outline',
@@ -844,32 +1346,88 @@
     for (const child of coords) forEachGeojsonCoord(child, visitor);
   }
 
+  function minimalWrappedLongitudeBounds(longitudes) {
+    const values = (Array.isArray(longitudes) ? longitudes : [])
+      .map((value) => ((Number(value) % 360) + 360) % 360)
+      .filter(Number.isFinite)
+      .sort((a, b) => a - b);
+    if (!values.length) return null;
+    if (values.length === 1) {
+      const lon = values[0] > 180 ? values[0] - 360 : values[0];
+      return [lon, lon];
+    }
+    let largestGap = -1;
+    let gapIndex = 0;
+    for (let index = 0; index < values.length; index += 1) {
+      const next = index + 1 < values.length ? values[index + 1] : values[0] + 360;
+      const gap = next - values[index];
+      if (gap > largestGap) {
+        largestGap = gap;
+        gapIndex = index;
+      }
+    }
+    const startIndex = (gapIndex + 1) % values.length;
+    let west = values[startIndex];
+    let east = values[gapIndex];
+    if (east < west) east += 360;
+    if (west > 180) {
+      west -= 360;
+      east -= 360;
+    }
+    return [west, east];
+  }
+
   function fitFeatureCollection(geojson) {
     if (!map || !geojson || !(geojson.features || []).length) return;
-    let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity;
+    const longitudes = [];
+    let minLat = Infinity, maxLat = -Infinity;
+    let focus = null;
     for (const feature of geojson.features || []) {
       if (!feature.geometry) continue;
+      const properties = feature.properties || {};
+      if (
+        properties.kind === 'ECLIPSE_MAX' &&
+        feature.geometry.type === 'Point' &&
+        Array.isArray(feature.geometry.coordinates)
+      ) {
+        const lon = Number(feature.geometry.coordinates[0]);
+        const lat = Number(feature.geometry.coordinates[1]);
+        if (Number.isFinite(lon) && Number.isFinite(lat)) focus = [lon, lat];
+      }
       forEachGeojsonCoord(feature.geometry.coordinates, (coord) => {
         const lon = Number(coord[0]);
         const lat = Number(coord[1]);
         if (!Number.isFinite(lon) || !Number.isFinite(lat)) return;
-        minLon = Math.min(minLon, lon);
-        maxLon = Math.max(maxLon, lon);
+        longitudes.push(lon);
         minLat = Math.min(minLat, lat);
         maxLat = Math.max(maxLat, lat);
       });
     }
-    if (!Number.isFinite(minLon) || !Number.isFinite(minLat)) return;
+    const longitudeBounds = minimalWrappedLongitudeBounds(longitudes);
+    if (!longitudeBounds || !Number.isFinite(minLat)) return;
+    const [minLon, maxLon] = longitudeBounds;
     if ((maxLon - minLon) > 300) {
-      map.easeTo({ center: [0, (minLat + maxLat) / 2], zoom: globeZoomForViewport(), duration: 400 });
+      map.easeTo({
+        center: focus || [((minLon + maxLon + 540) % 360) - 180, (minLat + maxLat) / 2],
+        zoom: globeZoomForViewport(),
+        duration: 400,
+      });
       return;
     }
     try {
-      map.fitBounds([[minLon, minLat], [maxLon, maxLat]], {
+      const bounds = [[minLon, minLat], [maxLon, maxLat]];
+      const fitOptions = {
         padding: 72,
-        duration: 500,
         maxZoom: 4.5,
-      });
+      };
+      const camera = typeof map.cameraForBounds === 'function'
+        ? map.cameraForBounds(bounds, fitOptions)
+        : null;
+      if (focus && camera && Number.isFinite(camera.zoom)) {
+        map.easeTo({ center: focus, zoom: camera.zoom, duration: 500 });
+      } else {
+        map.fitBounds(bounds, { ...fitOptions, duration: 500 });
+      }
     } catch (_) {}
   }
 
@@ -889,39 +1447,24 @@
     if (map.getLayer('background')) {
       map.setPaintProperty('background', 'background-color', s.landColor);
     }
-    if (map.getLayer('building')) {
-      setLayerVisibility('building', true);
-      map.setPaintProperty('building', 'fill-color', s.buildingColor);
-      map.setPaintProperty('building', 'fill-outline-color', s.buildingOutlineColor);
-      map.setPaintProperty(
-        'building',
-        'fill-opacity',
-        ['interpolate', ['linear'], ['zoom'], 12, 0.0, 13, 0.10, 14.5, 0.20, 16, 0.32]
-      );
-    }
     for (const id of RESIDENTIAL_LAYER_IDS) {
       if (!map.getLayer(id)) continue;
       setLayerVisibility(id, true);
       map.setPaintProperty(id, 'fill-color', s.residentialColor);
-      map.setPaintProperty(id, 'fill-opacity', ['interpolate', ['linear'], ['zoom'], 11, 0.0, 12.5, 0.05, 15, 0.10]);
+      map.setPaintProperty(id, 'fill-opacity', ['*', s.residentialOpacityScale,
+        ['interpolate', ['linear'], ['zoom'], 11, 0.0, 12.5, 0.05, 15, 0.10]]);
     }
     for (const id of PARK_LAYER_IDS) {
       if (!map.getLayer(id)) continue;
-      setLayerVisibility(id, true);
-      if (map.getLayer(id).type === 'fill') {
-        map.setPaintProperty(id, 'fill-color', s.parkColor);
-        map.setPaintProperty(id, 'fill-opacity', ['interpolate', ['linear'], ['zoom'], 10, 0.05, 13, 0.10, 16, 0.16]);
-      } else if (map.getLayer(id).type === 'line') {
-        map.setPaintProperty(id, 'line-color', s.parkOutlineColor);
-        map.setPaintProperty(id, 'line-opacity', ['interpolate', ['linear'], ['zoom'], 10, 0.08, 13, 0.14, 16, 0.22]);
-      }
+      setLayerVisibility(id, false);
     }
     for (const id of HOSPITAL_FILL_LAYER_IDS) {
       if (!map.getLayer(id)) continue;
       setLayerVisibility(id, true);
       if (map.getLayer(id).type === 'fill') {
         map.setPaintProperty(id, 'fill-color', s.hospitalFillColor);
-        map.setPaintProperty(id, 'fill-opacity', ['interpolate', ['linear'], ['zoom'], 12, 0.0, 14, 0.08, 16, 0.16]);
+        map.setPaintProperty(id, 'fill-opacity', ['*', s.hospitalFillOpacityScale,
+          ['interpolate', ['linear'], ['zoom'], 12, 0.0, 14, 0.08, 16, 0.16]]);
       }
     }
     if (map.getLayer('water')) {
@@ -933,27 +1476,38 @@
     for (const id of ['boundaries-country', 'boundaries-region']) {
       if (!map.getLayer(id)) continue;
       map.setPaintProperty(id, 'line-color', s.borderColor);
+      if (id === 'boundaries-country') {
+        map.setPaintProperty(id, 'line-width', s.localCountryBorderWidth);
+        map.setPaintProperty(id, 'line-opacity', s.localCountryBorderOpacity);
+      } else {
+        map.setPaintProperty(id, 'line-width', s.localRegionBorderWidth);
+        map.setPaintProperty(id, 'line-opacity', s.localRegionBorderOpacity);
+      }
     }
     for (const id of WATER_LINE_LAYER_IDS) {
       if (!map.getLayer(id)) continue;
       map.setPaintProperty(id, 'line-color', s.oceanColor);
-      map.setPaintProperty(id, 'line-opacity', 0.65);
+      map.setPaintProperty(id, 'line-opacity', s.waterLineOpacity);
     }
     for (const id of WATER_LABEL_LAYER_IDS) {
       if (!map.getLayer(id)) continue;
       setLayerVisibility(id, true);
       map.setLayoutProperty(id, 'text-field', SIMPLE_PLACE_NAME);
       map.setLayoutProperty(id, 'text-font', ['Noto Sans Italic']);
-      map.setLayoutProperty(id, 'text-letter-spacing', 0.12);
+      map.setLayoutProperty(id, 'text-letter-spacing', s.waterLabelSpacing);
       map.setLayoutProperty(id, 'text-size', id === 'water_name_point_label'
         ? ['interpolate', ['linear'], ['zoom'], 3, s.waterLabelSize - 1.0, 8, s.waterLabelSize + 2.0]
         : s.waterLabelSize
       );
       map.setPaintProperty(id, 'text-color', s.waterLabelColor);
       map.setPaintProperty(id, 'text-halo-color', s.waterLabelHalo);
-      map.setPaintProperty(id, 'text-halo-width', 1.05);
-      map.setPaintProperty(id, 'text-halo-blur', 0.45);
-      map.setPaintProperty(id, 'text-opacity', id === 'waterway_line_label' ? 0.62 : 0.74);
+      map.setPaintProperty(id, 'text-halo-width', s.waterLabelHaloWidth);
+      map.setPaintProperty(id, 'text-halo-blur', s.waterLabelHaloBlur);
+      map.setPaintProperty(
+        id,
+        'text-opacity',
+        id === 'waterway_line_label' ? s.waterLineLabelOpacity : s.waterPointLabelOpacity,
+      );
     }
     for (const id of BORDER_LAYER_IDS) {
       if (!map.getLayer(id)) continue;
@@ -966,15 +1520,17 @@
       map.setPaintProperty(
         id,
         'line-opacity',
-        ['interpolate', ['linear'], ['zoom'], 9, 0.16, 11, 0.30, 13, 0.48, 15, 0.64]
+        ['*', s.roadOpacityScale,
+          ['interpolate', ['linear'], ['zoom'], 9, 0.16, 11, 0.30, 13, 0.48, 15, 0.64]]
       );
       if (map.getLayer(id).type === 'line') {
         map.setPaintProperty(
           id,
           'line-width',
-          ['interpolate', ['linear'], ['zoom'], 9, 0.55, 12, 0.95, 14, 1.25, 16, 1.60]
+          ['*', s.roadWidthScale,
+            ['interpolate', ['linear'], ['zoom'], 9, 0.55, 12, 0.95, 14, 1.25, 16, 1.60]]
         );
-        map.setPaintProperty(id, 'line-blur', 0.0);
+        map.setPaintProperty(id, 'line-blur', s.roadBlur);
       }
     }
     for (const id of STREET_NAME_LAYER_IDS) {
@@ -985,12 +1541,13 @@
       map.setLayoutProperty(
         id,
         'text-size',
-        ['interpolate', ['linear'], ['zoom'], 13, 10.5, 14.5, 11.5]
+        ['interpolate', ['linear'], ['zoom'], 13, s.streetLabelSize - 0.5, 14.5, s.streetLabelSize + 0.5]
       );
       map.setPaintProperty(id, 'text-color', s.streetNameColor);
       map.setPaintProperty(id, 'text-halo-color', s.streetNameHalo);
-      map.setPaintProperty(id, 'text-halo-width', 0.65);
-      map.setPaintProperty(id, 'text-halo-blur', 0.25);
+      map.setPaintProperty(id, 'text-halo-width', s.streetLabelHaloWidth);
+      map.setPaintProperty(id, 'text-halo-blur', s.streetLabelHaloBlur);
+      map.setPaintProperty(id, 'text-opacity', s.streetLabelOpacity);
     }
     for (const id of HOSPITAL_POI_LAYER_IDS) {
       if (!map.getLayer(id)) continue;
@@ -1001,16 +1558,20 @@
       map.setLayoutProperty(id, 'icon-size', 1.0);
       map.setLayoutProperty(id, 'text-field', SIMPLE_PLACE_NAME);
       map.setLayoutProperty(id, 'text-font', ['Noto Sans Regular']);
-      map.setLayoutProperty(id, 'text-size', ['interpolate', ['linear'], ['zoom'], 14, 10.5, 16, 11.2, 18, 11.8]);
+      map.setLayoutProperty(id, 'text-size', ['interpolate', ['linear'], ['zoom'],
+        14, s.hospitalLabelSize - 0.7,
+        16, s.hospitalLabelSize,
+        18, s.hospitalLabelSize + 0.6,
+      ]);
       map.setLayoutProperty(id, 'text-line-height', 1.05);
       map.setLayoutProperty(id, 'text-max-width', 7.0);
       map.setLayoutProperty(id, 'text-offset', [0, 0.72]);
       map.setPaintProperty(id, 'text-color', s.hospitalLabelColor);
       map.setPaintProperty(id, 'text-halo-color', s.hospitalLabelHalo);
-      map.setPaintProperty(id, 'text-halo-width', 1.0);
-      map.setPaintProperty(id, 'text-halo-blur', 0.35);
-      map.setPaintProperty(id, 'text-opacity', 0.82);
-      map.setPaintProperty(id, 'icon-opacity', 0.5);
+      map.setPaintProperty(id, 'text-halo-width', s.hospitalLabelHaloWidth);
+      map.setPaintProperty(id, 'text-halo-blur', s.hospitalLabelHaloBlur);
+      map.setPaintProperty(id, 'text-opacity', s.hospitalLabelOpacity);
+      map.setPaintProperty(id, 'icon-opacity', s.hospitalIconOpacity);
     }
     for (const id of COUNTRY_LABEL_LAYER_IDS) {
       if (!map.getLayer(id)) continue;
@@ -1018,13 +1579,13 @@
       map.setLayoutProperty(id, 'text-field', SIMPLE_PLACE_NAME);
       map.setLayoutProperty(id, 'text-font', ['Noto Sans Bold']);
       map.setLayoutProperty(id, 'text-size', s.countryLabelSize);
-      map.setLayoutProperty(id, 'text-letter-spacing', 0.04);
+      map.setLayoutProperty(id, 'text-letter-spacing', s.countryLabelSpacing);
       map.setLayoutProperty(id, 'text-max-width', 7.0);
       map.setPaintProperty(id, 'text-color', s.countryLabelColor);
       map.setPaintProperty(id, 'text-halo-color', s.countryLabelHalo);
-      map.setPaintProperty(id, 'text-halo-blur', 0.8);
-      map.setPaintProperty(id, 'text-halo-width', 1.35);
-      map.setPaintProperty(id, 'text-opacity', 0.92);
+      map.setPaintProperty(id, 'text-halo-blur', s.countryLabelHaloBlur);
+      map.setPaintProperty(id, 'text-halo-width', s.countryLabelHaloWidth);
+      map.setPaintProperty(id, 'text-opacity', s.countryLabelOpacity);
     }
     for (const id of CITY_LABEL_LAYER_IDS) {
       if (!map.getLayer(id)) continue;
@@ -1032,15 +1593,15 @@
       map.setLayoutProperty(id, 'text-field', SIMPLE_PLACE_NAME);
       map.setLayoutProperty(id, 'text-font', ['Noto Sans Regular']);
       map.setLayoutProperty(id, 'text-size', s.cityLabelSize);
-      map.setLayoutProperty(id, 'text-letter-spacing', 0.02);
+      map.setLayoutProperty(id, 'text-letter-spacing', s.cityLabelSpacing);
       map.setLayoutProperty(id, 'text-max-width', 6.5);
       map.setLayoutProperty(id, 'text-anchor', 'center');
       map.setLayoutProperty(id, 'text-offset', [0, 0]);
       map.setPaintProperty(id, 'text-color', s.cityLabelColor);
       map.setPaintProperty(id, 'text-halo-color', s.cityLabelHalo);
-      map.setPaintProperty(id, 'text-halo-blur', 0.7);
-      map.setPaintProperty(id, 'text-halo-width', 1.15);
-      map.setPaintProperty(id, 'text-opacity', 0.82);
+      map.setPaintProperty(id, 'text-halo-blur', s.cityLabelHaloBlur);
+      map.setPaintProperty(id, 'text-halo-width', s.cityLabelHaloWidth);
+      map.setPaintProperty(id, 'text-opacity', s.cityLabelOpacity);
       map.setPaintProperty(id, 'icon-opacity', 0.0);
     }
     for (const id of MINOR_PLACE_LABEL_LAYER_IDS) {
@@ -1049,44 +1610,67 @@
       map.setLayoutProperty(id, 'text-field', SIMPLE_PLACE_NAME);
       map.setLayoutProperty(id, 'text-font', ['Noto Sans Regular']);
       map.setLayoutProperty(id, 'text-size', s.minorPlaceLabelSize);
-      map.setLayoutProperty(id, 'text-letter-spacing', 0.01);
+      map.setLayoutProperty(id, 'text-letter-spacing', s.minorPlaceLabelSpacing);
       map.setLayoutProperty(id, 'text-max-width', 6.2);
       map.setLayoutProperty(id, 'text-anchor', 'center');
       map.setLayoutProperty(id, 'text-offset', [0, 0]);
       map.setPaintProperty(id, 'text-color', s.minorPlaceLabelColor);
       map.setPaintProperty(id, 'text-halo-color', s.minorPlaceLabelHalo);
-      map.setPaintProperty(id, 'text-halo-blur', 0.2);
-      map.setPaintProperty(id, 'text-halo-width', 0.35);
-      map.setPaintProperty(id, 'text-opacity', 0.64);
+      map.setPaintProperty(id, 'text-halo-blur', s.minorPlaceLabelHaloBlur);
+      map.setPaintProperty(id, 'text-halo-width', s.minorPlaceLabelHaloWidth);
+      map.setPaintProperty(id, 'text-opacity', s.minorPlaceLabelOpacity);
       map.setPaintProperty(id, 'icon-opacity', 0.0);
     }
   }
 
-  const KIND_COLORS_FALLBACK = {
-    MC:  '#e74c3c',
-    IC:  '#8e44ad',
-    ASC: '#2ecc71',
-    DSC: '#f39c12',
-  };
-
-  const KIND_DASH = {
-    MC:  [],
-    IC:  [4, 3],
-    ASC: [],
-    DSC: [4, 3],
-  };
-
   const ACG_SOURCE_ID = 'acg';
   const ACG_LABEL_SOURCE_ID = 'acg-labels-src';
   const ECLIPSE_SOURCE_ID = 'eclipse-path';
+  const ASTERISM_SOURCE_ID = 'asterisms';
+  const NATAL_ASC_POINT_ID = 'natal_asc';
+  const TERRAIN_SOURCE_ID = 'aries-terrain';
+  const HILLSHADE_LAYER_ID = 'aries-hillshade';
+  // MapLibre's GeoJSON pipeline still tiles through Web Mercator while the
+  // globe is active, so lines and points stop at this latitude. A retained
+  // canvas fills only that small missing cap through map.project(); the same
+  // MapLibre layers receive a seam-clipped render copy so their clamped
+  // geometry cannot form false arcs or displaced star dots around the pole.
+  const POLAR_OVERLAY_LATITUDE = 85.0;
+  const POLAR_OVERLAY_MAX_LATITUDE = 90.0;
+  const RUNTIME_OVERLAY_SOURCE_IDS = new Set([
+    ACG_SOURCE_ID,
+    ACG_LABEL_SOURCE_ID,
+    ECLIPSE_SOURCE_ID,
+    ASTERISM_SOURCE_ID,
+    TERRAIN_SOURCE_ID,
+  ]);
+  const ONLINE_BASEMAP_SOURCE_IDS = new Set(['openmaptiles', 'ne2_shaded']);
 
   let map = null;
   let mapReady = false;
+  let pendingOnlineBasemapStyle = null;
+  let onlineBasemapAdopted = false;
+  let onlineBasemapAdoptionScheduled = false;
+  let runtimeOverlayReplayTimer = null;
+  let mapHostActive = true;
   let currentData = { type: 'FeatureCollection', features: [] };
+  let currentMapData = currentData;
   let pendingData = null;
   let currentEclipseData = { type: 'FeatureCollection', features: [] };
+  let currentMapEclipseData = currentEclipseData;
   let pendingEclipseData = null;
-  let pointColors = {};
+  let currentAsterismData = { type: 'FeatureCollection', features: [] };
+  let currentMapAsterismData = currentAsterismData;
+  let pendingAsterismData = null;
+  let polarOverlayPaths = [];
+  let polarOverlayPolygons = [];
+  let polarOverlayPoints = [];
+  let polarAsterismStarHitTargets = [];
+  let asterismStarPopup = null;
+  let asterismStarPopupMode = '';
+  let referenceSignMarkers = [];
+  let referenceSignFontReady = !(document.fonts && document.fonts.load);
+  let referenceSignFontPromise = null;
   let contextMenuTarget = null;
   let controlsWired = false;
   let placesLoaded = false;
@@ -1108,7 +1692,7 @@
   let acgLabelCollisionBoxes = [];
   let pendingViewState = null;
   let pendingCenter = null;
-  let viewOptions = { parans: false };
+  let viewOptions = { parans: false, asterisms: false };
   let viewOptionsInitialized = false;
   let selectedProjection = 'globe';
   let legendCollapsed = false;
@@ -1122,7 +1706,7 @@
   let birthplaceMarker = null;
   let birthplaceMarkerElement = null;
   let birthplaceDrag = null;
-  let uiLabels = { birthplaceMarker: '' };
+  let uiLabels = { birthplaceMarker: '', asterisms: '' };
   const BIRTHPLACE_LONG_PRESS_MS = 420;
   const BIRTHPLACE_PRESS_MOVE_TOLERANCE_PX = 6;
 
@@ -1201,6 +1785,11 @@
       placeLabelLastRenderMs: perfState.placeLabelLastRenderMs,
       placeLabelMaxRenderMs: perfState.placeLabelMaxRenderMs,
       placeLabelSource: perfState.placeLabelSource,
+      polarOverlayPathCount: perfState.polarOverlayPathCount,
+      polarOverlayDraws: perfState.polarOverlayDraws,
+      polarOverlayLastMs: perfState.polarOverlayLastMs,
+      polarOverlayMaxMs: perfState.polarOverlayMaxMs,
+      lineFeatureCount: (currentData.features || []).length,
       elapsedMs: perfNow() - perfStartedAt,
     };
   }
@@ -1225,6 +1814,109 @@
     return Math.log2(D / GLOBE_VISUAL_SCALE);
   }
 
+  function retainRuntimeOverlayStyle(previousStyle, nextStyle) {
+    const retained = JSON.parse(JSON.stringify(nextStyle));
+    retained.sources = Object.assign({}, retained.sources || {});
+    retained.layers = Array.isArray(retained.layers) ? retained.layers.slice() : [];
+    const nextLayerIds = new Set(retained.layers.map((layer) => layer && layer.id));
+    for (const sourceId of RUNTIME_OVERLAY_SOURCE_IDS) {
+      const source = previousStyle && previousStyle.sources && previousStyle.sources[sourceId];
+      if (source && !retained.sources[sourceId]) retained.sources[sourceId] = source;
+    }
+    for (const layer of (previousStyle && previousStyle.layers) || []) {
+      if (!layer || !RUNTIME_OVERLAY_SOURCE_IDS.has(layer.source) || nextLayerIds.has(layer.id)) continue;
+      retained.layers.push(layer);
+      nextLayerIds.add(layer.id);
+    }
+    return retained;
+  }
+
+  function replayRuntimeOverlays() {
+    if (!map) return false;
+    try {
+      applyVectorBasemapStyle();
+      ensureEclipseLayers();
+      ensureAsterismLayer();
+      ensureAcgLayers();
+      const acgSource = map.getSource(ACG_SOURCE_ID);
+      const acgLabelSource = map.getSource(ACG_LABEL_SOURCE_ID);
+      const asterismSource = map.getSource(ASTERISM_SOURCE_ID);
+      const eclipseSource = map.getSource(ECLIPSE_SOURCE_ID);
+      if (acgSource) acgSource.setData(currentMapData);
+      if (acgLabelSource) acgLabelSource.setData(currentMapData);
+      if (asterismSource) asterismSource.setData(currentMapAsterismData);
+      if (eclipseSource) eclipseSource.setData(currentMapEclipseData);
+      syncBirthplaceMarker();
+      syncParanVisibility();
+      syncAsterismVisibility();
+      syncReferenceVisibility();
+      syncTerrainRelief();
+      raiseAcgLayers();
+      renderDomAcgLabels('style-replay');
+      updateLegend();
+      return !!(
+        map.getLayer('acg-lines-solid') &&
+        map.getLayer('acg-reference-asc') &&
+        map.getLayer('acg-asterisms') &&
+        map.getLayer('eclipse-path-center')
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function scheduleRuntimeOverlayReplay(attempt = 0) {
+    if (!mapHostActive) return;
+    if (runtimeOverlayReplayTimer) window.clearTimeout(runtimeOverlayReplayTimer);
+    runtimeOverlayReplayTimer = window.setTimeout(() => {
+      runtimeOverlayReplayTimer = null;
+      if (replayRuntimeOverlays()) return;
+      if (attempt < 24) scheduleRuntimeOverlayReplay(attempt + 1);
+    }, attempt === 0 ? 0 : Math.min(250, 20 * attempt));
+  }
+
+  function adoptOnlineBasemap(style) {
+    if (!style || onlineBasemapAdopted) return;
+    if (!map || !mapReady) {
+      pendingOnlineBasemapStyle = style;
+      return;
+    }
+    const wasLocal = USE_LOCAL_BASEMAP;
+    const wasMinimal = USE_MINIMAL_BASEMAP;
+    USE_LOCAL_BASEMAP = false;
+    USE_MINIMAL_BASEMAP = false;
+    pendingOnlineBasemapStyle = null;
+    onlineBasemapAdopted = true;
+    setPerfTileSource('online');
+    try {
+      map.setStyle(prepareBaseStyleForTheme(style, IS_DARK), {
+        diff: true,
+        transformStyle: retainRuntimeOverlayStyle,
+      });
+      scheduleRuntimeOverlayReplay();
+    } catch (_) {
+      onlineBasemapAdopted = false;
+      USE_LOCAL_BASEMAP = wasLocal;
+      USE_MINIMAL_BASEMAP = wasMinimal;
+      setPerfTileSource(wasLocal ? 'local' : 'minimal');
+    }
+  }
+
+  function scheduleOnlineBasemapAdoption() {
+    if (
+      !mapHostActive ||
+      !mapReady ||
+      !pendingOnlineBasemapStyle ||
+      onlineBasemapAdopted ||
+      onlineBasemapAdoptionScheduled
+    ) return;
+    onlineBasemapAdoptionScheduled = true;
+    window.setTimeout(() => {
+      onlineBasemapAdoptionScheduled = false;
+      adoptOnlineBasemap(pendingOnlineBasemapStyle);
+    }, 0);
+  }
+
   function initMap() {
     if (!window.maplibregl || !window.maplibregl.Map) {
       showMapUnavailable('Map renderer unavailable offline');
@@ -1241,9 +1933,11 @@
       center: [0, 20],
       zoom: globeZoomForViewport(),
       minZoom: -2,                        // let the sphere shrink below MapLibre's auto clamp
+      maxPitch: 85,
       projection: { type: selectedProjection },
       attributionControl: { compact: true },
     });
+    ensurePolarOverlayCanvas();
     let fallbackStylePending = false;
     let startupFallbackTimer = window.setTimeout(() => {
       if (mapReady) return;
@@ -1305,13 +1999,17 @@
     // Intentionally no auto zoom-reset on resize: once the user (or apply_state)
     // has set a viewport we must not clobber it. Use window.ACG.fitGlobe()
     // explicitly if you want to re-centre the sphere in the current viewport.
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
+    map.addControl(new maplibregl.NavigationControl({
+      showCompass: true,
+      visualizePitch: true,
+    }), 'top-left');
     map.on('style.load', () => {
       const firstStyleLoad = !mapReady;
       window.clearTimeout(startupFallbackTimer);
       fallbackStylePending = false;
       applyVectorBasemapStyle();
       ensureEclipseLayers();
+      ensureAsterismLayer();
       ensureAcgLayers();
       loadPlaceLabels();
       if (map && typeof map.once === 'function') {
@@ -1331,14 +2029,23 @@
       }
       applyPendingCamera();
       if (pendingData) { currentData = pendingData; pendingData = null; }
+      if (ACTIVE_ASTROCART_STYLE) {
+        applyDisplayStyle(ACTIVE_ASTROCART_STYLE, false);
+      }
       let fitPendingEclipse = false;
       if (pendingEclipseData) {
         currentEclipseData = pendingEclipseData;
         pendingEclipseData = null;
         fitPendingEclipse = true;
       }
+      if (pendingAsterismData) {
+        currentAsterismData = pendingAsterismData;
+        pendingAsterismData = null;
+      }
       pushData();
+      pushAsterismData();
       pushEclipseData({ fit: fitPendingEclipse });
+      syncTerrainRelief();
       mapReady = true;
       postToParent({ type: 'ready' });
       if (firstStyleLoad) {
@@ -1347,6 +2054,7 @@
       }
       revealMapAfterStyledPaint();
       setStatus(`${(currentData.features || []).length} lines loaded`);
+      if (firstStyleLoad) scheduleOnlineBasemapAdoption();
     });
     for (const layer of ['acg-lines-solid', 'acg-lines-dashed']) {
       map.on('click', layer, onLineClick);
@@ -1358,6 +2066,11 @@
       map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
     }
+    map.on('mousemove', 'acg-asterism-star-hit', onAsterismStarMove);
+    map.on('mouseenter', 'acg-asterism-star-hit', () => { map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', 'acg-asterism-star-hit', () => hideAsterismStarPopup('native'));
+    map.on('mousemove', onPolarAsterismStarMove);
+    map.on('mouseleave', () => hideAsterismStarPopup());
     map.on('error', (event) => {
       if (fallbackStylePending) {
         // Ignore late errors from the abandoned online style. A confirmed
@@ -1383,15 +2096,19 @@
       }
       if (!USE_LOCAL_BASEMAP && !USE_MINIMAL_BASEMAP) {
         const sourceId = String(event && event.sourceId || '');
-        if (sourceId === ACG_SOURCE_ID || sourceId === ECLIPSE_SOURCE_ID) return;
         // Once the online style has loaded, keep it. Individual tile/glyph
-        // errors must never replace the established online design mid-session.
-        if (!mapReady) switchToOfflineFallback();
+        // errors and style-validation warnings must never replace the online
+        // design with the deliberately sparse emergency map. Only a confirmed
+        // failure from one of the online basemap sources may trigger fallback.
+        if (!mapReady && ONLINE_BASEMAP_SOURCE_IDS.has(sourceId)) switchToOfflineFallback();
       }
     });
     map.on('contextmenu', onMapContextMenu);
     map.on('click', hideContextMenu);
-    if (ACG_PERF_MODE) map.on('render', recordRenderFrame);
+    map.on('render', () => {
+      if (ACG_PERF_MODE) recordRenderFrame();
+      renderPolarOverlay();
+    });
     map.on('movestart', () => beginDomAcgMovement('move'));
     map.on('zoomstart', () => beginDomAcgMovement('zoom'));
     map.on('move', () => {
@@ -1475,38 +2192,29 @@
       initMap();
       return;
     }
-    // Fetch the actual style once.  A local archive caps cold/offline waiting
-    // at 650 ms; without one, allow a bounded online attempt instead of an
-    // unbounded probe + duplicate style request.
-    setStatus('loading map…');
-    loadBaseVectorStyle(2500).then(
-      () => {
-        USE_LOCAL_BASEMAP = false;
-        setPerfTileSource('online');
-        initMap();
+    // Paint from local resources immediately. The online Liberty style is a
+    // progressive enhancement, never a gate for ACG/eclipses/asterisms. When
+    // it arrives, transformStyle retains the live overlay sources and layers
+    // while MapLibre swaps only the basemap beneath them.
+    USE_LOCAL_BASEMAP = !!LOCAL_VECTOR_TILE_URL;
+    USE_MINIMAL_BASEMAP = !USE_LOCAL_BASEMAP;
+    setPerfTileSource(USE_LOCAL_BASEMAP ? 'local' : 'minimal');
+    setStatus(USE_LOCAL_BASEMAP ? 'loading map…' : 'map ready');
+    initMap();
+    loadBaseVectorStyle(8000).then(
+      (style) => {
+        pendingOnlineBasemapStyle = style;
+        scheduleOnlineBasemapAdoption();
       },
-      () => {
-        if (LOCAL_VECTOR_TILE_URL) {
-          USE_LOCAL_BASEMAP = true;
-          setPerfTileSource('local');
-          initMap();
-        } else {
-          USE_MINIMAL_BASEMAP = true;
-          setPerfTileSource('minimal');
-          initMap();
-        }
-      },
+      () => {},
     );
   }
 
   function ensureEclipseLayers() {
     if (!map.getSource(ECLIPSE_SOURCE_ID)) {
-      map.addSource(ECLIPSE_SOURCE_ID, { type: 'geojson', data: currentEclipseData });
+      map.addSource(ECLIPSE_SOURCE_ID, { type: 'geojson', data: currentMapEclipseData });
     }
-    const fillColor = IS_DARK ? 'rgba(5, 6, 7, 0.34)' : 'rgba(38, 42, 46, 0.18)';
-    const outlineColor = IS_DARK ? '#c8c2b5' : '#5e6872';
-    const centerColor = IS_DARK ? '#d9b760' : '#8a6418';
-    const haloColor = IS_DARK ? 'rgba(8, 11, 15, 0.92)' : 'rgba(255, 255, 255, 0.92)';
+    const s = currentDevSettings();
     if (!map.getLayer('eclipse-path-shadow')) {
       map.addLayer({
         id: 'eclipse-path-shadow',
@@ -1518,10 +2226,10 @@
           'line-join': 'round',
         },
         paint: {
-          'line-color': fillColor,
-          'line-opacity': 0.92,
-          'line-blur': 3.0,
-          'line-width': 12,
+          'line-color': s.eclipseShadowColor,
+          'line-opacity': s.eclipseShadowOpacity,
+          'line-blur': s.eclipseShadowBlur,
+          'line-width': s.eclipseShadowWidth,
         },
       });
     }
@@ -1532,8 +2240,8 @@
         source: ECLIPSE_SOURCE_ID,
         filter: ['==', ['get', 'kind'], 'ECLIPSE_PATH'],
         paint: {
-          'fill-color': fillColor,
-          'fill-opacity': 0.9,
+          'fill-color': s.eclipseShadowColor,
+          'fill-opacity': s.eclipseFillOpacity,
         },
       });
     }
@@ -1544,9 +2252,9 @@
         source: ECLIPSE_SOURCE_ID,
         filter: ['==', ['get', 'kind'], 'ECLIPSE_PATH'],
         paint: {
-          'line-color': outlineColor,
-          'line-width': 0.8,
-          'line-opacity': 0.24,
+          'line-color': s.eclipseOutlineColor,
+          'line-width': s.eclipseOutlineWidth,
+          'line-opacity': s.eclipseOutlineOpacity,
         },
       });
     }
@@ -1561,10 +2269,10 @@
           'line-join': 'round',
         },
         paint: {
-          'line-color': outlineColor,
-          'line-width': 1.2,
-          'line-opacity': 0.78,
-          'line-dasharray': [3.0, 2.0],
+          'line-color': s.eclipseOutlineColor,
+          'line-width': s.eclipseLimitWidth,
+          'line-opacity': s.eclipseLimitOpacity,
+          'line-dasharray': [s.eclipseLimitDashOn, s.eclipseLimitDashOff],
         },
       });
     }
@@ -1579,9 +2287,9 @@
           'line-join': 'round',
         },
         paint: {
-          'line-color': centerColor,
-          'line-width': 2.0,
-          'line-opacity': 0.96,
+          'line-color': s.eclipseCenterColor,
+          'line-width': s.eclipseCenterWidth,
+          'line-opacity': s.eclipseCenterOpacity,
         },
       });
     }
@@ -1592,10 +2300,10 @@
         source: ECLIPSE_SOURCE_ID,
         filter: ['==', ['get', 'kind'], 'ECLIPSE_MAX'],
         paint: {
-          'circle-color': centerColor,
-          'circle-radius': 4.5,
-          'circle-stroke-color': haloColor,
-          'circle-stroke-width': 2,
+          'circle-color': s.eclipseCenterColor,
+          'circle-radius': s.eclipseMaximumRadius,
+          'circle-stroke-color': s.eclipseHaloColor,
+          'circle-stroke-width': s.eclipseMaximumStrokeWidth,
         },
       });
     }
@@ -1608,54 +2316,515 @@
         layout: {
           'text-field': ['get', 'label'],
           'text-font': ['Noto Sans Regular'],
-          'text-size': 11,
+          'text-size': s.eclipseLabelSize,
+          'text-letter-spacing': s.eclipseLabelSpacing,
           'text-offset': [0, 1.2],
           'text-anchor': 'top',
         },
         paint: {
-          'text-color': centerColor,
-          'text-halo-color': haloColor,
-          'text-halo-width': 1.3,
+          'text-color': s.eclipseCenterColor,
+          'text-halo-color': s.eclipseHaloColor,
+          'text-halo-width': s.eclipseLabelHaloWidth,
+          'text-opacity': s.eclipseLabelOpacity,
         },
       });
     }
     raiseAcgLayers();
   }
 
+  function acgLineColorExpression(s) {
+    return [
+      'case',
+      ['has', 'color'], ['get', 'color'],
+      ['match', ['get', 'kind'],
+        'MC', s.fallbackMcColor,
+        'IC', s.fallbackIcColor,
+        'ASC', s.fallbackAscColor,
+        'DSC', s.fallbackDscColor,
+        s.fallbackUnknownColor,
+      ],
+    ];
+  }
+
+  function scaledPointLineMetric(baseValue, property) {
+    return ['*', baseValue, ['number', ['get', property], 1]];
+  }
+
+  function asterismStarRadiusExpression(settings) {
+    return [
+      'interpolate', ['exponential', 1.35],
+      ['number', ['get', 'magnitude'], 6.7],
+      -1.5, settings.asterismStarRadiusMax,
+      6.7, settings.asterismStarRadiusMin,
+    ];
+  }
+
+  function asterismStarRadius(magnitude, settings) {
+    const value = typeof magnitude === 'number' && Number.isFinite(magnitude)
+      ? magnitude
+      : 6.7;
+    const maximum = Number(settings.asterismStarRadiusMax);
+    const minimum = Number(settings.asterismStarRadiusMin);
+    if (value <= -1.5) return maximum;
+    if (value >= 6.7) return minimum;
+    const factor = (Math.pow(1.35, value + 1.5) - 1) / (Math.pow(1.35, 8.2) - 1);
+    return maximum + (minimum - maximum) * factor;
+  }
+
+  function hideAsterismStarPopup(mode = '') {
+    if (mode && asterismStarPopupMode !== mode) return;
+    if (asterismStarPopup) asterismStarPopup.remove();
+    asterismStarPopupMode = '';
+    if (map) map.getCanvas().style.cursor = '';
+  }
+
+  function showAsterismStarPopup(name, coordinate, mode) {
+    if (!map || !name) {
+      hideAsterismStarPopup();
+      return;
+    }
+    if (!asterismStarPopup) {
+      asterismStarPopup = new maplibregl.Popup({
+        closeButton: false,
+        closeOnClick: false,
+        offset: 9,
+      });
+    }
+    asterismStarPopupMode = mode;
+    asterismStarPopup
+      .setLngLat(coordinate)
+      .setText(name)
+      .addTo(map);
+    map.getCanvas().style.cursor = 'pointer';
+  }
+
+  function onAsterismStarMove(event) {
+    const feature = event.features && event.features[0];
+    const name = String(feature && feature.properties && feature.properties.name || '').trim();
+    showAsterismStarPopup(name, event.lngLat, 'native');
+  }
+
+  function onPolarAsterismStarMove(event) {
+    if (
+      !map || !mapHostActive || selectedProjection !== 'globe' ||
+      !viewOptions.asterisms || !event || !event.point
+    ) {
+      hideAsterismStarPopup('polar');
+      return;
+    }
+    let nearest = null;
+    let nearestDistanceSquared = 64;
+    for (const target of polarAsterismStarHitTargets) {
+      const dx = Number(event.point.x) - target.point.x;
+      const dy = Number(event.point.y) - target.point.y;
+      const distanceSquared = dx * dx + dy * dy;
+      if (distanceSquared <= nearestDistanceSquared) {
+        nearest = target;
+        nearestDistanceSquared = distanceSquared;
+      }
+    }
+    if (!nearest) {
+      hideAsterismStarPopup('polar');
+      return;
+    }
+    const name = String(nearest.properties.name || '').trim();
+    if (!name) {
+      hideAsterismStarPopup('polar');
+      return;
+    }
+    showAsterismStarPopup(name, nearest.coordinate, 'polar');
+  }
+
+  function referenceBehavior() {
+    return ACTIVE_ASTROCART_STYLE && ACTIVE_ASTROCART_STYLE.behavior || {};
+  }
+
+  function ascendantOverlayFilter(baseFilter) {
+    if (referenceBehavior().showAscCircle) return baseFilter;
+    return [
+      'all',
+      baseFilter,
+      ['!=', ['get', 'point'], NATAL_ASC_POINT_ID],
+    ];
+  }
+
+  function acgCasingFilter() {
+    return ascendantOverlayFilter(['!=', ['get', 'kind'], 'PARAN']);
+  }
+
+  function acgSolidFilter() {
+    return ascendantOverlayFilter(
+      ['match', ['get', 'kind'], ['MC', 'ASC', 'LOCAL_SPACE'], true, false],
+    );
+  }
+
+  function acgDashedFilter() {
+    return ascendantOverlayFilter(
+      ['match', ['get', 'kind'], ['IC', 'DSC'], true, false],
+    );
+  }
+
+  function acgLabelFilter() {
+    return ascendantOverlayFilter(['!=', ['get', 'kind'], 'PARAN']);
+  }
+
+  function isAcgFeatureVisible(feature) {
+    const props = feature && feature.properties || {};
+    return props.point !== NATAL_ASC_POINT_ID || !!referenceBehavior().showAscCircle;
+  }
+
+  function syncAcgLineVisibility() {
+    if (!map) return;
+    for (const [id, filter] of [
+      ['acg-casing', acgCasingFilter()],
+      ['acg-lines-solid', acgSolidFilter()],
+      ['acg-lines-dashed', acgDashedFilter()],
+      ['acg-labels', acgLabelFilter()],
+    ]) {
+      if (map.getLayer(id)) map.setFilter(id, filter);
+    }
+  }
+
+  function zodiacReferenceColor(sign, settings) {
+    const style = ACTIVE_ASTROCART_STYLE && ACTIVE_ASTROCART_STYLE.points &&
+      ACTIVE_ASTROCART_STYLE.points[`zodiac_sign_${sign}`];
+    return style && style.color || settings.referenceZodiacGridColor;
+  }
+
+  function houseReferenceColor(house, settings) {
+    if (house === 1 || house === 7) return settings.referenceAscColor;
+    if (house === 4 || house === 10) return settings.referenceMcColor;
+    return settings.referenceHouseGridColor;
+  }
+
+  function zodiacGridColorExpression(settings) {
+    const expression = ['match', ['number', ['get', 'sign'], -1]];
+    for (let sign = 0; sign < 12; sign += 1) {
+      expression.push(sign, zodiacReferenceColor(sign, settings));
+    }
+    expression.push(settings.referenceZodiacGridColor);
+    return expression;
+  }
+
+  function houseGridColorExpression(settings) {
+    return [
+      'match', ['number', ['get', 'house'], -1],
+      1, settings.referenceAscColor,
+      7, settings.referenceAscColor,
+      4, settings.referenceMcColor,
+      10, settings.referenceMcColor,
+      settings.referenceHouseGridColor,
+    ];
+  }
+
+  function houseGridOpacityExpression(settings) {
+    return [
+      'case',
+      ['boolean', ['get', 'angle'], false],
+      Math.min(1, settings.referenceGridLineOpacity * 1.45),
+      settings.referenceGridLineOpacity,
+    ];
+  }
+
+  function clearReferenceSignMarkers() {
+    for (const marker of referenceSignMarkers) marker.remove();
+    referenceSignMarkers = [];
+  }
+
+  function ensureReferenceSignFont(size) {
+    if (referenceSignFontReady) return true;
+    if (!referenceSignFontPromise) {
+      referenceSignFontPromise = document.fonts.load(`${Math.max(12, size)}px 'Morinus'`, 'a')
+        .then(() => {
+          referenceSignFontReady = true;
+          syncReferenceLabelMarkers();
+        })
+        .catch((error) => console.error('[acg-reference-font]', error));
+    }
+    return false;
+  }
+
+  function syncReferenceLabelMarkers() {
+    clearReferenceSignMarkers();
+    if (!map) return;
+    const behavior = referenceBehavior();
+    const s = currentDevSettings();
+    if (!ensureReferenceSignFont(Math.max(s.referenceSignSize, s.referencePoleSignSize))) return;
+    for (const feature of currentAsterismData.features || []) {
+      const props = feature && feature.properties || {};
+      const geometry = feature && feature.geometry || {};
+      const coordinates = geometry.coordinates;
+      const isEclipticSign = props.kind === 'REFERENCE_ZODIAC_SIGN' && !!behavior.showEcliptic;
+      const isPoleSign = props.kind === 'REFERENCE_ZODIAC_POLE_SIGN' && !!behavior.showZodiacLines;
+      const isHouseNumber = props.kind === 'REFERENCE_HOUSE_POLE_LABEL' && !!behavior.showHouseLines;
+      if (
+        !(isEclipticSign || isPoleSign || isHouseNumber) ||
+        geometry.type !== 'Point' ||
+        !Array.isArray(coordinates) ||
+        coordinates.length < 2 ||
+        !Number.isFinite(coordinates[0]) ||
+        !Number.isFinite(coordinates[1])
+      ) continue;
+      const element = document.createElement('span');
+      let halo = s.referenceSignHaloWidth;
+      if (isHouseNumber) {
+        element.className = 'acg-reference-house-number';
+        element.textContent = String(props.label || props.house || '');
+        element.style.fontSize = `${s.referencePoleHouseSize}px`;
+        element.style.color = houseReferenceColor(Number(props.house), s);
+        element.style.opacity = String(s.referencePoleLabelOpacity);
+        halo = s.referencePoleLabelHaloWidth;
+      } else {
+        const signStyle = ACTIVE_ASTROCART_STYLE && ACTIVE_ASTROCART_STYLE.points &&
+          ACTIVE_ASTROCART_STYLE.points[`zodiac_sign_${props.sign}`];
+        const glyph = signStyle && signStyle.glyphMorinus || props.glyph;
+        if (!glyph) continue;
+        element.className = isPoleSign ? 'acg-reference-pole-sign' : 'acg-reference-sign';
+        element.textContent = String(glyph);
+        element.style.fontSize = `${isPoleSign ? s.referencePoleSignSize : s.referenceSignSize}px`;
+        element.style.color = zodiacReferenceColor(Number(props.sign), s);
+        element.style.opacity = String(isPoleSign ? s.referencePoleLabelOpacity : s.referenceSignOpacity);
+        halo = isPoleSign ? s.referencePoleLabelHaloWidth : s.referenceSignHaloWidth;
+      }
+      halo = Math.max(0.5, Number(halo) || 0.5);
+      element.style.textShadow = `0 0 ${halo}px ${s.labelHalo}, 0 0 ${halo * 3}px ${s.labelHalo}`;
+      const visibleOpacity = element.style.opacity || '1';
+      // A newly attached DOM marker is painted before MapLibre's first globe
+      // occlusion pass. Start transparent so far-side replacements cannot flash
+      // through the sphere while a house-system refresh rebuilds this payload.
+      element.style.opacity = '0';
+      const marker = new maplibregl.Marker({
+        element,
+        anchor: 'center',
+        opacity: visibleOpacity,
+        opacityWhenCovered: '0',
+      })
+        .setLngLat(coordinates)
+        .addTo(map);
+      // Force the first occlusion decision synchronously after attachment;
+      // otherwise MapLibre defers it until its next marker update.
+      marker.setOpacity(visibleOpacity, '0');
+      referenceSignMarkers.push(marker);
+    }
+  }
+
+  function syncReferenceVisibility() {
+    const behavior = referenceBehavior();
+    const visibility = {
+      'acg-reference-house-lines': !!behavior.showHouseLines,
+      'acg-reference-zodiac-lines': !!behavior.showZodiacLines,
+      'acg-reference-ecliptic': !!behavior.showEcliptic,
+      'acg-reference-zodiac-ticks': !!behavior.showEcliptic,
+      'acg-reference-equator': !!behavior.showEquator,
+      'acg-reference-asc': !!behavior.showAscCircle,
+      'acg-reference-mc': !!behavior.showMcCircle,
+    };
+    for (const [id, visible] of Object.entries(visibility)) {
+      if (map && map.getLayer(id)) {
+        map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
+      }
+    }
+    syncAcgLineVisibility();
+    syncReferenceLabelMarkers();
+  }
+
+  function ensureAsterismLayer() {
+    if (!map.getSource(ASTERISM_SOURCE_ID)) {
+      map.addSource(ASTERISM_SOURCE_ID, { type: 'geojson', data: currentMapAsterismData });
+    }
+    const s = currentDevSettings();
+    const visibility = viewOptions.asterisms ? 'visible' : 'none';
+    const behavior = referenceBehavior();
+    const addReferenceLine = (
+      id, kind, color, visible, dash, widthScale = 1.0,
+      baseWidth = s.referenceLineWidth, opacity = s.referenceLineOpacity,
+    ) => {
+      if (map.getLayer(id)) return;
+      const paint = {
+        'line-color': color,
+        'line-width': baseWidth * widthScale,
+        'line-opacity': opacity,
+      };
+      if (dash) paint['line-dasharray'] = dash;
+      map.addLayer({
+        id,
+        type: 'line',
+        source: ASTERISM_SOURCE_ID,
+        filter: ['==', ['get', 'kind'], kind],
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+          visibility: visible ? 'visible' : 'none',
+        },
+        paint,
+      });
+    };
+    // Establish the simple angle circles first. A malformed optional grid
+    // expression must never prevent the independently enabled ASC/DSC horizon
+    // or MC/IC meridian from being created during a style replay.
+    addReferenceLine(
+      'acg-reference-ecliptic', 'REFERENCE_ECLIPTIC',
+      s.referenceEclipticColor, !!behavior.showEcliptic, null, 1.25,
+    );
+    addReferenceLine(
+      'acg-reference-zodiac-ticks', 'REFERENCE_ZODIAC_TICK',
+      s.referenceEclipticColor, !!behavior.showEcliptic, null, 0.8,
+    );
+    addReferenceLine(
+      'acg-reference-equator', 'REFERENCE_EQUATOR',
+      s.referenceEquatorColor, !!behavior.showEquator, [2, 2],
+    );
+    addReferenceLine(
+      'acg-reference-asc', 'REFERENCE_ASC',
+      s.referenceAscColor, !!behavior.showAscCircle,
+    );
+    addReferenceLine(
+      'acg-reference-mc', 'REFERENCE_MC',
+      s.referenceMcColor, !!behavior.showMcCircle,
+    );
+    addReferenceLine(
+      'acg-reference-house-lines', 'REFERENCE_HOUSE_LINE',
+      houseGridColorExpression(s), !!behavior.showHouseLines,
+      null, 1.0, s.referenceGridLineWidth, houseGridOpacityExpression(s),
+    );
+    addReferenceLine(
+      'acg-reference-zodiac-lines', 'REFERENCE_ZODIAC_LINE',
+      zodiacGridColorExpression(s), !!behavior.showZodiacLines,
+      null, 1.0, s.referenceGridLineWidth, s.referenceGridLineOpacity,
+    );
+    if (!map.getLayer('acg-asterism-shadow')) {
+      map.addLayer({
+        id: 'acg-asterism-shadow',
+        type: 'line',
+        source: ASTERISM_SOURCE_ID,
+        filter: ['==', ['get', 'kind'], 'ASTERISM'],
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+          visibility,
+        },
+        paint: {
+          'line-color': s.asterismShadowColor,
+          'line-width': s.asterismLineWidth + (s.asterismShadowSpread * 2),
+          'line-opacity': s.asterismShadowOpacity,
+          'line-blur': s.asterismShadowBlur,
+        },
+      });
+    }
+    if (!map.getLayer('acg-asterisms')) {
+      map.addLayer({
+        id: 'acg-asterisms',
+        type: 'line',
+        source: ASTERISM_SOURCE_ID,
+        filter: ['==', ['get', 'kind'], 'ASTERISM'],
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+          visibility,
+        },
+        paint: {
+          'line-color': s.asterismHighlightColor,
+          'line-width': s.asterismLineWidth,
+          'line-opacity': s.asterismLineOpacity,
+        },
+      });
+    }
+    if (!map.getLayer('acg-asterism-star-shadow')) {
+      map.addLayer({
+        id: 'acg-asterism-star-shadow',
+        type: 'circle',
+        source: ASTERISM_SOURCE_ID,
+        filter: ['==', ['get', 'kind'], 'ASTERISM_STAR'],
+        layout: { visibility },
+        paint: {
+          'circle-color': s.asterismShadowColor,
+          'circle-radius': ['+', asterismStarRadiusExpression(s), s.asterismShadowSpread],
+          'circle-opacity': s.asterismShadowOpacity,
+          'circle-blur': s.asterismShadowBlur,
+        },
+      });
+    }
+    if (!map.getLayer('acg-asterism-stars')) {
+      map.addLayer({
+        id: 'acg-asterism-stars',
+        type: 'circle',
+        source: ASTERISM_SOURCE_ID,
+        filter: ['==', ['get', 'kind'], 'ASTERISM_STAR'],
+        layout: { visibility },
+        paint: {
+          'circle-color': s.asterismHighlightColor,
+          'circle-radius': asterismStarRadiusExpression(s),
+          'circle-opacity': s.asterismStarOpacity,
+          'circle-stroke-color': s.asterismShadowColor,
+          'circle-stroke-width': s.asterismShadowSpread,
+          'circle-stroke-opacity': s.asterismStarOpacity,
+        },
+      });
+    }
+    if (!map.getLayer('acg-asterism-star-hit')) {
+      map.addLayer({
+        id: 'acg-asterism-star-hit',
+        type: 'circle',
+        source: ASTERISM_SOURCE_ID,
+        filter: ['==', ['get', 'kind'], 'ASTERISM_STAR'],
+        layout: { visibility },
+        paint: {
+          'circle-color': 'rgba(0,0,0,0)',
+          'circle-radius': 8,
+        },
+      });
+    }
+    if (!map.getLayer('acg-asterism-labels')) {
+      map.addLayer({
+        id: 'acg-asterism-labels',
+        type: 'symbol',
+        source: ASTERISM_SOURCE_ID,
+        filter: ['==', ['get', 'kind'], 'ASTERISM_LABEL'],
+        layout: {
+          'text-field': ['get', 'name'],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': s.asterismLabelSize,
+          'text-letter-spacing': s.asterismLabelSpacing,
+          'text-anchor': 'center',
+          'text-padding': 2,
+          'symbol-sort-key': ['get', 'rank'],
+          visibility,
+        },
+        paint: {
+          'text-color': s.asterismHighlightColor,
+          'text-halo-color': s.asterismShadowColor,
+          'text-halo-width': s.asterismLabelHaloWidth,
+          'text-halo-blur': s.asterismShadowBlur,
+          'text-opacity': s.asterismLabelOpacity,
+        },
+      });
+    }
+  }
+
   function ensureAcgLayers() {
     if (!map.getSource(ACG_SOURCE_ID)) {
-      map.addSource(ACG_SOURCE_ID, { type: 'geojson', data: currentData });
+      map.addSource(ACG_SOURCE_ID, { type: 'geojson', data: currentMapData });
     }
     // Keep online line labels on the parallel source used by HEAD. Attaching a
     // line-placed symbol layer to the shared source can blank Liberty's lines.
     if (!USE_LOCAL_BASEMAP && !USE_MINIMAL_BASEMAP && !map.getSource(ACG_LABEL_SOURCE_ID)) {
-      map.addSource(ACG_LABEL_SOURCE_ID, { type: 'geojson', data: currentData });
+      map.addSource(ACG_LABEL_SOURCE_ID, { type: 'geojson', data: currentMapData });
     }
-    const colorExpr = [
-      'case',
-      ['has', 'color'], ['get', 'color'],
-      ['match', ['get', 'kind'],
-        'MC',  KIND_COLORS_FALLBACK.MC,
-        'IC',  KIND_COLORS_FALLBACK.IC,
-        'ASC', KIND_COLORS_FALLBACK.ASC,
-        'DSC', KIND_COLORS_FALLBACK.DSC,
-        '#888888',
-      ],
-    ];
     // Thin neutral outline so colored lines stay readable without looking heavy.
     // Filter excludes parans — they have their own (off-by-default) style.
     const t = currentThemeTokens();
     const s = currentDevSettings();
+    const colorExpr = acgLineColorExpression(s);
     if (!map.getLayer('acg-casing')) {
       map.addLayer({
         id: 'acg-casing',
         type: 'line',
         source: ACG_SOURCE_ID,
-        filter: ['!=', ['get', 'kind'], 'PARAN'],
+        filter: acgCasingFilter(),
         paint: {
           'line-color': t.casing,
-          'line-width': s.casingWidth,
-          'line-opacity': s.casingOpacity,
+          'line-width': scaledPointLineMetric(s.casingWidth, 'line_width_scale'),
+          'line-opacity': scaledPointLineMetric(s.casingOpacity, 'line_opacity'),
         },
       });
     }
@@ -1664,8 +2833,12 @@
         id: 'acg-lines-solid',
         type: 'line',
         source: ACG_SOURCE_ID,
-        filter: ['match', ['get', 'kind'], ['MC', 'ASC', 'LOCAL_SPACE'], true, false],
-        paint: { 'line-color': colorExpr, 'line-width': s.solidWidth, 'line-opacity': s.solidOpacity },
+        filter: acgSolidFilter(),
+        paint: {
+          'line-color': colorExpr,
+          'line-width': scaledPointLineMetric(s.solidWidth, 'line_width_scale'),
+          'line-opacity': scaledPointLineMetric(s.solidOpacity, 'line_opacity'),
+        },
       });
     }
     if (!map.getLayer('acg-lines-dashed')) {
@@ -1673,11 +2846,11 @@
         id: 'acg-lines-dashed',
         type: 'line',
         source: ACG_SOURCE_ID,
-        filter: ['match', ['get', 'kind'], ['IC', 'DSC'], true, false],
+        filter: acgDashedFilter(),
         paint: {
           'line-color': colorExpr,
-          'line-width': s.dashedWidth,
-          'line-opacity': s.dashedOpacity,
+          'line-width': scaledPointLineMetric(s.dashedWidth, 'line_width_scale'),
+          'line-opacity': scaledPointLineMetric(s.dashedOpacity, 'line_opacity'),
           'line-dasharray': [s.dashedOn, s.dashedOff],
         },
       });
@@ -1704,7 +2877,7 @@
         id: 'acg-labels',
         type: 'symbol',
         source: ACG_LABEL_SOURCE_ID,
-        filter: ['!=', ['get', 'kind'], 'PARAN'],
+        filter: acgLabelFilter(),
         layout: {
           'symbol-placement': 'line',
           'text-font': ['Noto Sans Regular'],
@@ -1723,6 +2896,7 @@
           'text-color': t.labelColor,
           'text-halo-color': t.labelHalo,
           'text-halo-width': s.labelHaloOn ? s.labelHaloWidth : 0.0,
+          'text-opacity': s.labelOpacity,
         },
       });
     }
@@ -1745,6 +2919,7 @@
           'text-color': t.paranColor,
           'text-halo-color': t.paranHalo,
           'text-halo-width': s.paranLabelHaloOn ? s.paranLabelHaloWidth : 0.0,
+          'text-opacity': s.paranLabelOpacity,
         },
       });
     }
@@ -1897,19 +3072,47 @@
   }
 
   function pushData() {
+    rebuildPolarOverlayPaths();
     if (map && typeof map.isStyleLoaded === 'function' && map.isStyleLoaded()) {
       ensureAcgLayers();
     }
     const src = map && map.getSource && map.getSource(ACG_SOURCE_ID);
-    if (src) src.setData(currentData);
+    if (src) src.setData(currentMapData);
     const labelSrc = map && map.getSource && map.getSource(ACG_LABEL_SOURCE_ID);
-    if (labelSrc) labelSrc.setData(currentData);
+    if (labelSrc) labelSrc.setData(currentMapData);
+    syncTerrainRelief();
     syncBirthplaceMarker();
     renderDomAcgLabels('data');
     updateLegend();
   }
 
-  function applyDisplayStyle(payload) {
+  function pushAsterismData() {
+    rebuildPolarOverlayPaths();
+    polarAsterismStarHitTargets = [];
+    hideAsterismStarPopup('polar');
+    if (map && typeof map.isStyleLoaded === 'function' && map.isStyleLoaded()) {
+      ensureAsterismLayer();
+    }
+    const source = map && map.getSource && map.getSource(ASTERISM_SOURCE_ID);
+    if (source) source.setData(currentMapAsterismData);
+    syncReferenceVisibility();
+    if (map && (
+      !map.getLayer('acg-reference-asc') ||
+      !map.getLayer('acg-asterisms')
+    )) scheduleRuntimeOverlayReplay();
+  }
+
+  function refreshPolarProjectionData() {
+    rebuildPolarOverlayPaths();
+    const asterismSource = map && map.getSource && map.getSource(ASTERISM_SOURCE_ID);
+    const eclipseSource = map && map.getSource && map.getSource(ECLIPSE_SOURCE_ID);
+    if (asterismSource) asterismSource.setData(currentMapAsterismData);
+    if (eclipseSource) eclipseSource.setData(currentMapEclipseData);
+    hideAsterismStarPopup();
+    if (map && typeof map.triggerRepaint === 'function') map.triggerRepaint();
+  }
+
+  function applyDisplayStyle(payload, shouldPush = true) {
     const pointStyles = payload && payload.points || {};
     for (const feature of currentData.features || []) {
       const props = feature && feature.properties || {};
@@ -1919,6 +3122,8 @@
         if (style.color) props.color = style.color;
         else delete props.color;
         if (style.glyphMorinus != null) props.glyph_morinus = style.glyphMorinus;
+        props.line_width_scale = style.lineWidthScale;
+        props.line_opacity = style.lineOpacity;
       }
       if (props.kind === 'PARAN') {
         const a = pointStyles[props.a_point] || {};
@@ -1930,15 +3135,19 @@
         }
       }
     }
-    if (payload && payload.meta) {
-      currentData.meta = Object.assign({}, currentData.meta || {}, payload.meta);
+    if (payload && payload.behavior) {
+      currentData.meta = Object.assign({}, currentData.meta || {}, {
+        localSpaceAdditive: payload.behavior.localSpaceAdditive,
+      });
     }
-    pushData();
+    syncReferenceVisibility();
+    if (shouldPush) pushData();
   }
 
   function pushEclipseData(options = {}) {
+    rebuildPolarOverlayPaths();
     const src = map && map.getSource && map.getSource(ECLIPSE_SOURCE_ID);
-    if (src) src.setData(currentEclipseData);
+    if (src) src.setData(currentMapEclipseData);
     if (options.fit) fitFeatureCollection(currentEclipseData);
     renderDomAcgLabels('eclipse-data');
   }
@@ -1946,21 +3155,42 @@
   function applyDevColors() {
     const t = currentThemeTokens();
     const s = currentDevSettings();
-    applyPageBg(DEV_SETTINGS.pageBg || URL_THEME.get('pageBg'));
+    applyPageBg(
+      ACTIVE_ASTROCART_STYLE && ACTIVE_ASTROCART_STYLE.chrome.pageBg ||
+      DEV_SETTINGS.pageBg ||
+      URL_THEME.get('pageBg')
+    );
     if (!map) return;
     applyVectorBasemapStyle();
+    for (const [id, color, width, opacity] of [
+      ['acg-reference-house-lines', houseGridColorExpression(s), s.referenceGridLineWidth, houseGridOpacityExpression(s)],
+      ['acg-reference-zodiac-lines', zodiacGridColorExpression(s), s.referenceGridLineWidth, s.referenceGridLineOpacity],
+      ['acg-reference-ecliptic', s.referenceEclipticColor, s.referenceLineWidth * 1.25, s.referenceLineOpacity],
+      ['acg-reference-zodiac-ticks', s.referenceEclipticColor, s.referenceLineWidth * 0.8, s.referenceLineOpacity],
+      ['acg-reference-equator', s.referenceEquatorColor, s.referenceLineWidth, s.referenceLineOpacity],
+      ['acg-reference-asc', s.referenceAscColor, s.referenceLineWidth, s.referenceLineOpacity],
+      ['acg-reference-mc', s.referenceMcColor, s.referenceLineWidth, s.referenceLineOpacity],
+    ]) {
+      if (!map.getLayer(id)) continue;
+      map.setPaintProperty(id, 'line-color', color);
+      map.setPaintProperty(id, 'line-width', width);
+      map.setPaintProperty(id, 'line-opacity', opacity);
+    }
+    syncReferenceVisibility();
     if (map.getLayer('acg-casing')) {
       map.setPaintProperty('acg-casing', 'line-color', t.casing);
-      map.setPaintProperty('acg-casing', 'line-width', s.casingWidth);
-      map.setPaintProperty('acg-casing', 'line-opacity', s.casingOpacity);
+      map.setPaintProperty('acg-casing', 'line-width', scaledPointLineMetric(s.casingWidth, 'line_width_scale'));
+      map.setPaintProperty('acg-casing', 'line-opacity', scaledPointLineMetric(s.casingOpacity, 'line_opacity'));
     }
     if (map.getLayer('acg-lines-solid')) {
-      map.setPaintProperty('acg-lines-solid', 'line-width', s.solidWidth);
-      map.setPaintProperty('acg-lines-solid', 'line-opacity', s.solidOpacity);
+      map.setPaintProperty('acg-lines-solid', 'line-color', acgLineColorExpression(s));
+      map.setPaintProperty('acg-lines-solid', 'line-width', scaledPointLineMetric(s.solidWidth, 'line_width_scale'));
+      map.setPaintProperty('acg-lines-solid', 'line-opacity', scaledPointLineMetric(s.solidOpacity, 'line_opacity'));
     }
     if (map.getLayer('acg-lines-dashed')) {
-      map.setPaintProperty('acg-lines-dashed', 'line-width', s.dashedWidth);
-      map.setPaintProperty('acg-lines-dashed', 'line-opacity', s.dashedOpacity);
+      map.setPaintProperty('acg-lines-dashed', 'line-color', acgLineColorExpression(s));
+      map.setPaintProperty('acg-lines-dashed', 'line-width', scaledPointLineMetric(s.dashedWidth, 'line_width_scale'));
+      map.setPaintProperty('acg-lines-dashed', 'line-opacity', scaledPointLineMetric(s.dashedOpacity, 'line_opacity'));
       map.setPaintProperty('acg-lines-dashed', 'line-dasharray', [s.dashedOn, s.dashedOff]);
     }
     if (map.getLayer('acg-parans')) {
@@ -1969,6 +3199,40 @@
       map.setPaintProperty('acg-parans', 'line-opacity', s.paranOpacity);
       map.setPaintProperty('acg-parans', 'line-dasharray', [s.paranDashOn, s.paranDashOff]);
     }
+    if (map.getLayer('acg-asterism-shadow')) {
+      map.setPaintProperty('acg-asterism-shadow', 'line-color', s.asterismShadowColor);
+      map.setPaintProperty('acg-asterism-shadow', 'line-width', s.asterismLineWidth + (s.asterismShadowSpread * 2));
+      map.setPaintProperty('acg-asterism-shadow', 'line-opacity', s.asterismShadowOpacity);
+      map.setPaintProperty('acg-asterism-shadow', 'line-blur', s.asterismShadowBlur);
+    }
+    if (map.getLayer('acg-asterisms')) {
+      map.setPaintProperty('acg-asterisms', 'line-color', s.asterismHighlightColor);
+      map.setPaintProperty('acg-asterisms', 'line-width', s.asterismLineWidth);
+      map.setPaintProperty('acg-asterisms', 'line-opacity', s.asterismLineOpacity);
+    }
+    if (map.getLayer('acg-asterism-star-shadow')) {
+      map.setPaintProperty('acg-asterism-star-shadow', 'circle-color', s.asterismShadowColor);
+      map.setPaintProperty('acg-asterism-star-shadow', 'circle-radius', ['+', asterismStarRadiusExpression(s), s.asterismShadowSpread]);
+      map.setPaintProperty('acg-asterism-star-shadow', 'circle-opacity', s.asterismShadowOpacity);
+      map.setPaintProperty('acg-asterism-star-shadow', 'circle-blur', s.asterismShadowBlur);
+    }
+    if (map.getLayer('acg-asterism-stars')) {
+      map.setPaintProperty('acg-asterism-stars', 'circle-color', s.asterismHighlightColor);
+      map.setPaintProperty('acg-asterism-stars', 'circle-radius', asterismStarRadiusExpression(s));
+      map.setPaintProperty('acg-asterism-stars', 'circle-opacity', s.asterismStarOpacity);
+      map.setPaintProperty('acg-asterism-stars', 'circle-stroke-color', s.asterismShadowColor);
+      map.setPaintProperty('acg-asterism-stars', 'circle-stroke-width', s.asterismShadowSpread);
+      map.setPaintProperty('acg-asterism-stars', 'circle-stroke-opacity', s.asterismStarOpacity);
+    }
+    if (map.getLayer('acg-asterism-labels')) {
+      map.setLayoutProperty('acg-asterism-labels', 'text-size', s.asterismLabelSize);
+      map.setLayoutProperty('acg-asterism-labels', 'text-letter-spacing', s.asterismLabelSpacing);
+      map.setPaintProperty('acg-asterism-labels', 'text-color', s.asterismHighlightColor);
+      map.setPaintProperty('acg-asterism-labels', 'text-halo-color', s.asterismShadowColor);
+      map.setPaintProperty('acg-asterism-labels', 'text-halo-width', s.asterismLabelHaloWidth);
+      map.setPaintProperty('acg-asterism-labels', 'text-halo-blur', s.asterismShadowBlur);
+      map.setPaintProperty('acg-asterism-labels', 'text-opacity', s.asterismLabelOpacity);
+    }
     if (map.getLayer('acg-labels')) {
       map.setLayoutProperty('acg-labels', 'visibility', s.labelsOn ? 'visible' : 'none');
       map.setLayoutProperty('acg-labels', 'text-size', s.labelSize);
@@ -1976,6 +3240,7 @@
       map.setPaintProperty('acg-labels', 'text-color', t.labelColor);
       map.setPaintProperty('acg-labels', 'text-halo-color', t.labelHalo);
       map.setPaintProperty('acg-labels', 'text-halo-width', s.labelHaloOn ? s.labelHaloWidth : 0.0);
+      map.setPaintProperty('acg-labels', 'text-opacity', s.labelOpacity);
     }
     if (map.getLayer('acg-paran-labels')) {
       map.setLayoutProperty('acg-paran-labels', 'visibility', (viewOptions.parans && s.paranLabelsOn) ? 'visible' : 'none');
@@ -1984,45 +3249,64 @@
       map.setPaintProperty('acg-paran-labels', 'text-color', t.paranColor);
       map.setPaintProperty('acg-paran-labels', 'text-halo-color', t.paranHalo);
       map.setPaintProperty('acg-paran-labels', 'text-halo-width', s.paranLabelHaloOn ? s.paranLabelHaloWidth : 0.0);
+      map.setPaintProperty('acg-paran-labels', 'text-opacity', s.paranLabelOpacity);
     }
-    const outlineColor = IS_DARK ? '#c8c2b5' : '#5e6872';
-    const centerColor = IS_DARK ? '#d9b760' : '#8a6418';
-    const haloColor = IS_DARK ? 'rgba(8, 11, 15, 0.92)' : 'rgba(255, 255, 255, 0.92)';
     if (map.getLayer('eclipse-path-shadow')) {
-      map.setPaintProperty('eclipse-path-shadow', 'line-color', IS_DARK ? 'rgba(5, 6, 7, 0.34)' : 'rgba(38, 42, 46, 0.18)');
+      map.setPaintProperty('eclipse-path-shadow', 'line-color', s.eclipseShadowColor);
+      map.setPaintProperty('eclipse-path-shadow', 'line-width', s.eclipseShadowWidth);
+      map.setPaintProperty('eclipse-path-shadow', 'line-opacity', s.eclipseShadowOpacity);
+      map.setPaintProperty('eclipse-path-shadow', 'line-blur', s.eclipseShadowBlur);
     }
     if (map.getLayer('eclipse-path-fill')) {
-      map.setPaintProperty('eclipse-path-fill', 'fill-color', IS_DARK ? 'rgba(5, 6, 7, 0.34)' : 'rgba(38, 42, 46, 0.18)');
+      map.setPaintProperty('eclipse-path-fill', 'fill-color', s.eclipseShadowColor);
+      map.setPaintProperty('eclipse-path-fill', 'fill-opacity', s.eclipseFillOpacity);
     }
     if (map.getLayer('eclipse-path-outline')) {
-      map.setPaintProperty('eclipse-path-outline', 'line-color', outlineColor);
+      map.setPaintProperty('eclipse-path-outline', 'line-color', s.eclipseOutlineColor);
+      map.setPaintProperty('eclipse-path-outline', 'line-width', s.eclipseOutlineWidth);
+      map.setPaintProperty('eclipse-path-outline', 'line-opacity', s.eclipseOutlineOpacity);
     }
     if (map.getLayer('eclipse-path-limits')) {
-      map.setPaintProperty('eclipse-path-limits', 'line-color', outlineColor);
+      map.setPaintProperty('eclipse-path-limits', 'line-color', s.eclipseOutlineColor);
+      map.setPaintProperty('eclipse-path-limits', 'line-width', s.eclipseLimitWidth);
+      map.setPaintProperty('eclipse-path-limits', 'line-opacity', s.eclipseLimitOpacity);
+      map.setPaintProperty('eclipse-path-limits', 'line-dasharray', [s.eclipseLimitDashOn, s.eclipseLimitDashOff]);
     }
     if (map.getLayer('eclipse-path-center')) {
-      map.setPaintProperty('eclipse-path-center', 'line-color', centerColor);
+      map.setPaintProperty('eclipse-path-center', 'line-color', s.eclipseCenterColor);
+      map.setPaintProperty('eclipse-path-center', 'line-width', s.eclipseCenterWidth);
+      map.setPaintProperty('eclipse-path-center', 'line-opacity', s.eclipseCenterOpacity);
     }
     if (map.getLayer('eclipse-path-max')) {
-      map.setPaintProperty('eclipse-path-max', 'circle-color', centerColor);
-      map.setPaintProperty('eclipse-path-max', 'circle-stroke-color', haloColor);
+      map.setPaintProperty('eclipse-path-max', 'circle-color', s.eclipseCenterColor);
+      map.setPaintProperty('eclipse-path-max', 'circle-radius', s.eclipseMaximumRadius);
+      map.setPaintProperty('eclipse-path-max', 'circle-stroke-color', s.eclipseHaloColor);
+      map.setPaintProperty('eclipse-path-max', 'circle-stroke-width', s.eclipseMaximumStrokeWidth);
     }
     if (map.getLayer('eclipse-path-label')) {
-      map.setPaintProperty('eclipse-path-label', 'text-color', centerColor);
-      map.setPaintProperty('eclipse-path-label', 'text-halo-color', haloColor);
+      map.setLayoutProperty('eclipse-path-label', 'text-size', s.eclipseLabelSize);
+      map.setLayoutProperty('eclipse-path-label', 'text-letter-spacing', s.eclipseLabelSpacing);
+      map.setPaintProperty('eclipse-path-label', 'text-color', s.eclipseCenterColor);
+      map.setPaintProperty('eclipse-path-label', 'text-halo-color', s.eclipseHaloColor);
+      map.setPaintProperty('eclipse-path-label', 'text-halo-width', s.eclipseLabelHaloWidth);
+      map.setPaintProperty('eclipse-path-label', 'text-opacity', s.eclipseLabelOpacity);
     }
+    syncTerrainRelief();
     raiseAcgLayers();
     renderDomAcgLabels('settings');
   }
 
   function updateLegend() {
+    if (!mapHostActive) return;
     const rows = document.getElementById('legend-rows');
     if (!rows) return;
+    const t = currentThemeTokens();
     const seen = new Map();
     let hasParan = false;
     let hasLocalSpace = false;
     let hasAcgAngles = false;
     for (const f of currentData.features || []) {
+      if (!isAcgFeatureVisible(f)) continue;
       if (f.properties.kind === 'PARAN') { hasParan = true; continue; }
       if (f.properties.kind === 'LOCAL_SPACE') hasLocalSpace = true;
       if (['MC', 'IC', 'ASC', 'DSC'].includes(f.properties.kind)) hasAcgAngles = true;
@@ -2030,7 +3314,7 @@
       if (!seen.has(pt)) {
         seen.set(pt, {
           label: f.properties.label || pt,
-          color: f.properties.color || '#a5aab0',
+          color: f.properties.color || t.labelColor,
           glyph: f.properties.glyph_morinus || '',
         });
       }
@@ -2177,7 +3461,7 @@
   }
 
   function scheduleCityLabelsRefresh(reason) {
-    if (!shouldUseDynamicCityLabels()) return;
+    if (!mapHostActive || !shouldUseDynamicCityLabels()) return;
     if (cityLabelsTimer) window.clearTimeout(cityLabelsTimer);
     cityLabelsTimer = window.setTimeout(() => {
       cityLabelsTimer = null;
@@ -2445,25 +3729,27 @@
   }
 
   function labelDescriptor(feature, source) {
+    if (source === 'acg' && !isAcgFeatureVisible(feature)) return null;
     const p = feature && feature.properties || {};
     const kind = p.kind || '';
     const modeKey = p.astrocart_mode ? `${p.astrocart_mode}:` : '';
+    const settings = currentDevSettings();
+    const theme = currentThemeTokens();
     if (source === 'eclipse') {
       if (kind !== 'ECLIPSE_MAX' || !p.label) return null;
       return {
         id: p.label_id || `eclipse:${p.utc || ''}:${p.label}`,
         text: String(p.label),
-        color: IS_DARK ? '#d9b760' : '#8a6418',
-        fontSize: 11,
-        letterSpacing: 0,
-        haloColor: IS_DARK ? 'rgba(8,11,15,0.92)' : 'rgba(255,255,255,0.92)',
-        haloWidth: 1.3,
+        color: settings.eclipseCenterColor,
+        fontSize: settings.eclipseLabelSize,
+        letterSpacing: settings.eclipseLabelSpacing,
+        haloColor: settings.eclipseHaloColor,
+        haloWidth: settings.eclipseLabelHaloWidth,
+        opacity: settings.eclipseLabelOpacity * settings.domLabelOpacityScale,
         priority: 0,
         yOffset: 16,
       };
     }
-    const settings = currentDevSettings();
-    const theme = currentThemeTokens();
     if (kind === 'PARAN') {
       if (!viewOptions.parans || !settings.paranLabelsOn) return null;
       const line = geometrySegments(feature.geometry)[0] || [];
@@ -2476,6 +3762,7 @@
         letterSpacing: settings.paranLabelSpacing,
         haloColor: theme.paranHalo,
         haloWidth: settings.paranLabelHaloOn ? settings.paranLabelHaloWidth : 0,
+        opacity: settings.paranLabelOpacity * settings.domLabelOpacityScale,
         priority: 3,
         yOffset: 0,
       };
@@ -2492,6 +3779,7 @@
       letterSpacing: settings.labelSpacing,
       haloColor: theme.labelHalo,
       haloWidth: settings.labelHaloOn ? settings.labelHaloWidth : 0,
+      opacity: settings.labelOpacity * settings.domLabelOpacityScale,
       priority: kind === 'LOCAL_SPACE' ? 2 : 1,
       yOffset: 0,
     };
@@ -2513,6 +3801,7 @@
   }
 
   function renderOnlineDomAcgLabels(layer, reason) {
+    if (!mapHostActive) return;
     const started = perfNow();
     let renderedCount = 0;
     layer.replaceChildren();
@@ -2525,10 +3814,13 @@
     }
     const w = window.innerWidth || 1;
     const h = window.innerHeight || 1;
+    const settings = currentDevSettings();
+    const theme = currentThemeTokens();
     const used = [];
     const out = [];
     const featureLimit = 80;
     for (const f of currentData.features) {
+      if (!isAcgFeatureVisible(f)) continue;
       const p = f.properties || {};
       if (p.kind === 'PARAN') continue;
       if (!['MC', 'IC', 'ASC', 'DSC'].includes(p.kind)) continue;
@@ -2542,7 +3834,8 @@
       out.push({
         x: pt.x,
         y: pt.y,
-        color: p.color || '#d0d2d6',
+        color: p.color || theme.labelColor,
+        opacity: settings.labelOpacity * settings.domLabelOpacityScale,
         label: `${p.label || p.point || ''} ${p.kind}`,
       });
       if (out.length >= featureLimit) break;
@@ -2553,6 +3846,7 @@
       el.style.left = `${item.x}px`;
       el.style.top = `${item.y}px`;
       el.style.color = item.color;
+      el.style.opacity = String(item.opacity);
       el.textContent = item.label;
       layer.appendChild(el);
       renderedCount += 1;
@@ -2561,6 +3855,7 @@
   }
 
   function renderDomAcgLabels(reason) {
+    if (!mapHostActive) return;
     const layer = document.getElementById('acg-dom-labels');
     if (!layer) return;
     const offlineRenderer = USE_LOCAL_BASEMAP || USE_MINIMAL_BASEMAP;
@@ -2638,6 +3933,7 @@
       el.style.left = `${item.x}px`;
       el.style.top = `${item.y}px`;
       el.style.color = descriptor.color;
+      el.style.opacity = String(descriptor.opacity);
       el.style.fontSize = `${descriptor.fontSize}px`;
       el.style.letterSpacing = `${descriptor.letterSpacing || 0}em`;
       el.style.textShadow = descriptor.haloWidth > 0
@@ -2675,6 +3971,760 @@
     const cosD = Math.sin(p1) * Math.sin(p2) + Math.cos(p1) * Math.cos(p2) * Math.cos(dLon);
     const clamped = Math.max(-1, Math.min(1, cosD));
     return Math.acos(clamped) / r;
+  }
+
+  function interpolateWrappedCoordinate(a, b, t) {
+    const startLon = Number(a[0]);
+    const endLon = Number(b[0]);
+    const lonDelta = ((endLon - startLon + 540) % 360) - 180;
+    const lon = ((startLon + lonDelta * t + 540) % 360) - 180;
+    return [lon, Number(a[1]) + (Number(b[1]) - Number(a[1])) * t];
+  }
+
+  function clipLineToPolarCap(coordinates, cutoff = POLAR_OVERLAY_LATITUDE) {
+    const runs = [];
+    for (const poleSign of [1, -1]) {
+      let run = [];
+      let previous = null;
+      let previousInside = false;
+      const flush = () => {
+        if (run.length >= 2) runs.push(run);
+        run = [];
+      };
+      for (const rawCoordinate of Array.isArray(coordinates) ? coordinates : []) {
+        const lon = Number(rawCoordinate && rawCoordinate[0]);
+        const lat = Number(rawCoordinate && rawCoordinate[1]);
+        if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
+          flush();
+          previous = null;
+          previousInside = false;
+          continue;
+        }
+        const current = [lon, lat];
+        const currentInside = poleSign * lat >= cutoff;
+        if (previous) {
+          if (previousInside && currentInside) {
+            if (!run.length) run.push(previous);
+            run.push(current);
+          } else if (previousInside) {
+            if (!run.length) run.push(previous);
+            const boundaryLat = poleSign * cutoff;
+            const t = (boundaryLat - previous[1]) / (current[1] - previous[1]);
+            run.push(interpolateWrappedCoordinate(previous, current, t));
+            flush();
+          } else if (currentInside) {
+            const boundaryLat = poleSign * cutoff;
+            const t = (boundaryLat - previous[1]) / (current[1] - previous[1]);
+            run = [interpolateWrappedCoordinate(previous, current, t), current];
+          }
+        } else if (currentInside) {
+          run = [current];
+        }
+        previous = current;
+        previousInside = currentInside;
+      }
+      flush();
+    }
+    return runs;
+  }
+
+  function clipLineToMapBand(coordinates, cutoff = POLAR_OVERLAY_LATITUDE) {
+    const runs = [];
+    let run = [];
+    const flush = () => {
+      if (run.length >= 2) runs.push(run);
+      run = [];
+    };
+    const sameCoordinate = (a, b) => (
+      Math.abs(Number(a[0]) - Number(b[0])) < 1e-9 &&
+      Math.abs(Number(a[1]) - Number(b[1])) < 1e-9
+    );
+    let previous = null;
+    for (const rawCoordinate of Array.isArray(coordinates) ? coordinates : []) {
+      const lon = Number(rawCoordinate && rawCoordinate[0]);
+      const lat = Number(rawCoordinate && rawCoordinate[1]);
+      if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
+        flush();
+        previous = null;
+        continue;
+      }
+      const current = [lon, lat];
+      if (previous) {
+        const deltaLat = current[1] - previous[1];
+        let start = 0;
+        let end = 1;
+        if (Math.abs(deltaLat) < 1e-12) {
+          if (Math.abs(previous[1]) > cutoff) {
+            flush();
+            previous = current;
+            continue;
+          }
+        } else {
+          const south = (-cutoff - previous[1]) / deltaLat;
+          const north = (cutoff - previous[1]) / deltaLat;
+          start = Math.max(0, Math.min(south, north));
+          end = Math.min(1, Math.max(south, north));
+        }
+        if (start <= end) {
+          const coordinateAt = (t) => {
+            if (t <= 0) return previous.slice();
+            if (t >= 1) return current.slice();
+            return interpolateWrappedCoordinate(previous, current, t);
+          };
+          const segmentStart = coordinateAt(start);
+          const segmentEnd = coordinateAt(end);
+          if (!sameCoordinate(segmentStart, segmentEnd)) {
+            if (!run.length || !sameCoordinate(run[run.length - 1], segmentStart)) {
+              flush();
+              run = [segmentStart];
+            }
+            run.push(segmentEnd);
+          }
+        } else {
+          flush();
+        }
+      }
+      previous = current;
+    }
+    flush();
+    return runs;
+  }
+
+  function geometryLineStrings(geometry) {
+    if (!geometry || !Array.isArray(geometry.coordinates)) return [];
+    if (geometry.type === 'LineString') return [geometry.coordinates];
+    if (geometry.type === 'MultiLineString') return geometry.coordinates;
+    return [];
+  }
+
+  function geometryPolygonOuterRings(geometry) {
+    if (!geometry || !Array.isArray(geometry.coordinates)) return [];
+    if (geometry.type === 'Polygon') {
+      return Array.isArray(geometry.coordinates[0]) ? [geometry.coordinates[0]] : [];
+    }
+    if (geometry.type === 'MultiPolygon') {
+      return geometry.coordinates
+        .map((polygon) => Array.isArray(polygon && polygon[0]) ? polygon[0] : null)
+        .filter(Boolean);
+    }
+    return [];
+  }
+
+  function clipRingToPolarCap(coordinates, cutoff) {
+    const input = (Array.isArray(coordinates) ? coordinates : [])
+      .map((coordinate) => [Number(coordinate && coordinate[0]), Number(coordinate && coordinate[1])])
+      .filter((coordinate) => Number.isFinite(coordinate[0]) && Number.isFinite(coordinate[1]));
+    if (input.length > 1) {
+      const first = input[0];
+      const last = input[input.length - 1];
+      if (Math.abs(first[0] - last[0]) < 1e-9 && Math.abs(first[1] - last[1]) < 1e-9) input.pop();
+    }
+    if (input.length < 3) return [];
+    const rings = [];
+    for (const poleSign of [1, -1]) {
+      const boundaryLat = poleSign * cutoff;
+      const output = [];
+      let previous = input[input.length - 1];
+      let previousInside = poleSign * previous[1] >= cutoff;
+      for (const current of input) {
+        const currentInside = poleSign * current[1] >= cutoff;
+        if (currentInside !== previousInside) {
+          const denominator = current[1] - previous[1];
+          if (Math.abs(denominator) > 1e-12) {
+            const t = (boundaryLat - previous[1]) / denominator;
+            output.push(interpolateWrappedCoordinate(previous, current, t));
+          }
+        }
+        if (currentInside) output.push(current);
+        previous = current;
+        previousInside = currentInside;
+      }
+      if (output.length >= 3) {
+        output.push(output[0].slice());
+        rings.push(output);
+      }
+    }
+    return rings;
+  }
+
+  function isPolarOverlayPoint(feature, cutoff = POLAR_OVERLAY_LATITUDE) {
+    const geometry = feature && feature.geometry;
+    const properties = feature && feature.properties || {};
+    if (
+      !geometry || geometry.type !== 'Point' ||
+      properties.kind !== 'ASTERISM_STAR' ||
+      !Array.isArray(geometry.coordinates)
+    ) return false;
+    const lon = Number(geometry.coordinates[0]);
+    const lat = Number(geometry.coordinates[1]);
+    return Number.isFinite(lon) && Number.isFinite(lat) && Math.abs(lat) >= cutoff;
+  }
+
+  function clipFeatureCollectionToMapBand(data, options = {}) {
+    const features = [];
+    for (const feature of data && data.features || []) {
+      const properties = feature && feature.properties || {};
+      if (Array.isArray(options.omitKinds) && options.omitKinds.includes(properties.kind)) continue;
+      const lines = geometryLineStrings(feature && feature.geometry);
+      if (!lines.length) {
+        if (options.omitPolarPoints && isPolarOverlayPoint(feature)) continue;
+        features.push(feature);
+        continue;
+      }
+      const coordinates = lines.flatMap((line) => clipLineToMapBand(line));
+      if (!coordinates.length) continue;
+      features.push(Object.assign({}, feature, {
+        geometry: { type: 'MultiLineString', coordinates },
+      }));
+    }
+    return Object.assign({}, data || {}, { type: 'FeatureCollection', features });
+  }
+
+  function appendPolarOverlayPaths(data, source, target) {
+    for (const feature of data && data.features || []) {
+      const properties = feature && feature.properties || {};
+      for (const line of geometryLineStrings(feature && feature.geometry)) {
+        for (const coordinates of clipLineToPolarCap(line)) {
+          target.push({ source, properties, coordinates });
+        }
+      }
+    }
+  }
+
+  function appendPolarOverlayPoints(data, target) {
+    for (const feature of data && data.features || []) {
+      if (!isPolarOverlayPoint(feature)) continue;
+      target.push({
+        properties: feature.properties || {},
+        coordinate: feature.geometry.coordinates.slice(0, 2),
+      });
+    }
+  }
+
+  function appendPolarOverlayPolygons(data, source, target) {
+    for (const feature of data && data.features || []) {
+      const properties = feature && feature.properties || {};
+      if (properties.kind !== 'ECLIPSE_POLAR_PATH') continue;
+      const cutoff = Number(properties.polar_fill_lat_limit);
+      if (!Number.isFinite(cutoff)) continue;
+      for (const ring of geometryPolygonOuterRings(feature && feature.geometry)) {
+        for (const coordinates of clipRingToPolarCap(ring, cutoff)) {
+          target.push({ source, properties, coordinates });
+        }
+      }
+    }
+  }
+
+  function rebuildPolarOverlayPaths() {
+    const paths = [];
+    const polygons = [];
+    const points = [];
+    appendPolarOverlayPaths(currentAsterismData, 'asterism', paths);
+    appendPolarOverlayPaths(currentEclipseData, 'eclipse', paths);
+    appendPolarOverlayPaths(currentData, 'acg', paths);
+    appendPolarOverlayPolygons(currentEclipseData, 'eclipse', polygons);
+    appendPolarOverlayPoints(currentAsterismData, points);
+    polarOverlayPaths = paths;
+    polarOverlayPolygons = polygons;
+    polarOverlayPoints = points;
+    currentMapAsterismData = clipFeatureCollectionToMapBand(currentAsterismData, {
+      omitPolarPoints: selectedProjection === 'globe',
+    });
+    currentMapEclipseData = clipFeatureCollectionToMapBand(currentEclipseData, {
+      omitKinds: ['ECLIPSE_POLAR_PATH'],
+    });
+    currentMapData = clipFeatureCollectionToMapBand(currentData);
+    if (ACG_PERF_MODE) perfState.polarOverlayPathCount = paths.length;
+  }
+
+  function ensurePolarOverlayCanvas() {
+    let canvas = document.getElementById('polar-line-overlay');
+    if (canvas || !map || typeof map.getCanvasContainer !== 'function') return canvas;
+    const container = map.getCanvasContainer();
+    if (!container) return null;
+    canvas = document.createElement('canvas');
+    canvas.id = 'polar-line-overlay';
+    canvas.setAttribute('aria-hidden', 'true');
+    container.appendChild(canvas);
+    return canvas;
+  }
+
+  function clearPolarOverlay() {
+    polarAsterismStarHitTargets = [];
+    hideAsterismStarPopup('polar');
+    const canvas = document.getElementById('polar-line-overlay');
+    const context = canvas && canvas.getContext('2d');
+    if (!context) return;
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.clearRect(0, 0, canvas.width, canvas.height);
+  }
+
+  function preparePolarOverlayCanvas() {
+    const canvas = ensurePolarOverlayCanvas();
+    const mapCanvas = map && map.getCanvas && map.getCanvas();
+    if (!canvas || !mapCanvas) return null;
+    // Transform dimensions are already MapLibre's logical CSS-pixel size and
+    // avoid a forced layout read in this per-render path.
+    const width = Math.max(
+      0,
+      Number(map.transform && map.transform.width) || parseFloat(mapCanvas.style.width) || 0,
+    );
+    const height = Math.max(
+      0,
+      Number(map.transform && map.transform.height) || parseFloat(mapCanvas.style.height) || 0,
+    );
+    if (!width || !height) return null;
+    const pixelWidth = Math.max(1, Number(mapCanvas.width) || Math.round(width));
+    const pixelHeight = Math.max(1, Number(mapCanvas.height) || Math.round(height));
+    if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
+    if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
+    const context = canvas.getContext('2d');
+    if (!context) return null;
+    context.setTransform(pixelWidth / width, 0, 0, pixelHeight / height, 0, 0);
+    context.clearRect(0, 0, width, height);
+    return { context, width, height };
+  }
+
+  function isPolarCoordinateVisible(coordinate, center) {
+    if (!map) return false;
+    try {
+      if (
+        map.transform &&
+        typeof map.transform.isLocationOccluded === 'function' &&
+        window.maplibregl && maplibregl.LngLat
+      ) {
+        const lngLat = maplibregl.LngLat.convert(coordinate);
+        return !map.transform.isLocationOccluded(lngLat);
+      }
+    } catch (_) {}
+    return angularDistanceDeg(
+      center.lng, center.lat, Number(coordinate[0]), Number(coordinate[1]),
+    ) <= 90.0;
+  }
+
+  function polarHorizonCoordinate(a, b, center, aVisible) {
+    let low = 0;
+    let high = 1;
+    for (let index = 0; index < 18; index += 1) {
+      const middle = (low + high) / 2;
+      const middleCoordinate = interpolateWrappedCoordinate(a, b, middle);
+      if (isPolarCoordinateVisible(middleCoordinate, center) === aVisible) low = middle;
+      else high = middle;
+    }
+    return interpolateWrappedCoordinate(a, b, (low + high) / 2);
+  }
+
+  function projectPolarCoordinate(coordinate) {
+    const lat = Math.max(
+      -POLAR_OVERLAY_MAX_LATITUDE,
+      Math.min(POLAR_OVERLAY_MAX_LATITUDE, Number(coordinate[1])),
+    );
+    try {
+      const point = map.project([Number(coordinate[0]), lat]);
+      return Number.isFinite(point && point.x) && Number.isFinite(point && point.y)
+        ? point
+        : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function tracePolarOverlayPath(context, coordinates, center) {
+    if (!Array.isArray(coordinates) || coordinates.length < 2) return false;
+    let traced = false;
+    let pathOpen = false;
+    let previous = coordinates[0];
+    let previousVisible = isPolarCoordinateVisible(previous, center);
+    for (let index = 1; index < coordinates.length; index += 1) {
+      const current = coordinates[index];
+      const currentVisible = isPolarCoordinateVisible(current, center);
+      if (previousVisible && currentVisible) {
+        const previousPoint = projectPolarCoordinate(previous);
+        const currentPoint = projectPolarCoordinate(current);
+        if (previousPoint && currentPoint) {
+          if (!pathOpen) context.moveTo(previousPoint.x, previousPoint.y);
+          context.lineTo(currentPoint.x, currentPoint.y);
+          pathOpen = true;
+          traced = true;
+        } else {
+          pathOpen = false;
+        }
+      } else if (previousVisible !== currentVisible) {
+        const horizon = polarHorizonCoordinate(previous, current, center, previousVisible);
+        const horizonPoint = projectPolarCoordinate(horizon);
+        if (previousVisible) {
+          const previousPoint = projectPolarCoordinate(previous);
+          if (previousPoint && horizonPoint) {
+            if (!pathOpen) context.moveTo(previousPoint.x, previousPoint.y);
+            context.lineTo(horizonPoint.x, horizonPoint.y);
+            traced = true;
+          }
+          pathOpen = false;
+        } else {
+          const currentPoint = projectPolarCoordinate(current);
+          if (horizonPoint && currentPoint) {
+            context.moveTo(horizonPoint.x, horizonPoint.y);
+            context.lineTo(currentPoint.x, currentPoint.y);
+            pathOpen = true;
+            traced = true;
+          } else {
+            pathOpen = false;
+          }
+        }
+      } else {
+        pathOpen = false;
+      }
+      previous = current;
+      previousVisible = currentVisible;
+    }
+    return traced;
+  }
+
+  function visiblePolarRing(coordinates, center) {
+    const input = Array.isArray(coordinates) ? coordinates.slice() : [];
+    if (input.length > 1) {
+      const first = input[0];
+      const last = input[input.length - 1];
+      if (
+        Math.abs(Number(first[0]) - Number(last[0])) < 1e-9 &&
+        Math.abs(Number(first[1]) - Number(last[1])) < 1e-9
+      ) input.pop();
+    }
+    if (input.length < 3) return [];
+    const output = [];
+    let previous = input[input.length - 1];
+    let previousVisible = isPolarCoordinateVisible(previous, center);
+    for (const current of input) {
+      const currentVisible = isPolarCoordinateVisible(current, center);
+      if (currentVisible !== previousVisible) {
+        output.push(polarHorizonCoordinate(previous, current, center, previousVisible));
+      }
+      if (currentVisible) output.push(current);
+      previous = current;
+      previousVisible = currentVisible;
+    }
+    return output.length >= 3 ? output : [];
+  }
+
+  function polarMetric(value, fallback) {
+    if (value == null) return fallback;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : fallback;
+  }
+
+  function resolvedAcgLineColor(properties, settings) {
+    if (properties.color) return properties.color;
+    if (properties.kind === 'MC') return settings.fallbackMcColor;
+    if (properties.kind === 'IC') return settings.fallbackIcColor;
+    if (properties.kind === 'ASC') return settings.fallbackAscColor;
+    if (properties.kind === 'DSC') return settings.fallbackDscColor;
+    return settings.fallbackUnknownColor;
+  }
+
+  function polarReferenceStroke(path, settings, behavior) {
+    if (path.source !== 'asterism') return null;
+    const properties = path.properties;
+    switch (properties.kind) {
+      case 'REFERENCE_HOUSE_LINE':
+        if (!behavior.showHouseLines) return null;
+        return {
+          color: houseReferenceColor(Number(properties.house), settings),
+          width: settings.referenceGridLineWidth,
+          opacity: Math.min(1, settings.referenceGridLineOpacity * (properties.angle ? 1.45 : 1)),
+          lineCap: 'round',
+        };
+      case 'REFERENCE_ZODIAC_LINE':
+        if (!behavior.showZodiacLines) return null;
+        return {
+          color: zodiacReferenceColor(Number(properties.sign), settings),
+          width: settings.referenceGridLineWidth,
+          opacity: settings.referenceGridLineOpacity,
+          lineCap: 'round',
+        };
+      case 'REFERENCE_ECLIPTIC':
+        if (!behavior.showEcliptic) return null;
+        return {
+          color: settings.referenceEclipticColor,
+          width: settings.referenceLineWidth * 1.25,
+          opacity: settings.referenceLineOpacity,
+          lineCap: 'round',
+        };
+      case 'REFERENCE_ZODIAC_TICK':
+        if (!behavior.showEcliptic) return null;
+        return {
+          color: settings.referenceEclipticColor,
+          width: settings.referenceLineWidth * 0.8,
+          opacity: settings.referenceLineOpacity,
+          lineCap: 'round',
+        };
+      case 'REFERENCE_EQUATOR':
+        if (!behavior.showEquator) return null;
+        return {
+          color: settings.referenceEquatorColor,
+          width: settings.referenceLineWidth,
+          opacity: settings.referenceLineOpacity,
+          dash: [settings.referenceLineWidth * 2, settings.referenceLineWidth * 2],
+          lineCap: 'round',
+        };
+      case 'REFERENCE_ASC':
+        if (!behavior.showAscCircle) return null;
+        return {
+          color: settings.referenceAscColor,
+          width: settings.referenceLineWidth,
+          opacity: settings.referenceLineOpacity,
+          lineCap: 'round',
+        };
+      case 'REFERENCE_MC':
+        if (!behavior.showMcCircle) return null;
+        return {
+          color: settings.referenceMcColor,
+          width: settings.referenceLineWidth,
+          opacity: settings.referenceLineOpacity,
+          lineCap: 'round',
+        };
+      default:
+        return null;
+    }
+  }
+
+  function polarAsterismStroke(path, settings, shadow) {
+    if (
+      path.source !== 'asterism' ||
+      path.properties.kind !== 'ASTERISM' ||
+      !viewOptions.asterisms
+    ) return null;
+    if (shadow) {
+      return {
+        color: settings.asterismShadowColor,
+        width: settings.asterismLineWidth + settings.asterismShadowSpread * 2,
+        opacity: settings.asterismShadowOpacity,
+        blur: settings.asterismShadowBlur,
+        lineCap: 'round',
+      };
+    }
+    return {
+      color: settings.asterismHighlightColor,
+      width: settings.asterismLineWidth,
+      opacity: settings.asterismLineOpacity,
+      lineCap: 'round',
+    };
+  }
+
+  function polarEclipseStroke(path, settings, shadow) {
+    if (path.source !== 'eclipse') return null;
+    const kind = path.properties.kind;
+    if (shadow) {
+      if (kind !== 'ECLIPSE_SHADOW') return null;
+      return {
+        color: settings.eclipseShadowColor,
+        width: settings.eclipseShadowWidth,
+        opacity: settings.eclipseShadowOpacity,
+        blur: settings.eclipseShadowBlur,
+        lineCap: 'round',
+      };
+    }
+    if (kind === 'ECLIPSE_LIMIT') {
+      return {
+        color: settings.eclipseOutlineColor,
+        width: settings.eclipseLimitWidth,
+        opacity: settings.eclipseLimitOpacity,
+        dash: [
+          settings.eclipseLimitDashOn * settings.eclipseLimitWidth,
+          settings.eclipseLimitDashOff * settings.eclipseLimitWidth,
+        ],
+        lineCap: 'round',
+      };
+    }
+    if (kind === 'ECLIPSE_CENTER') {
+      return {
+        color: settings.eclipseCenterColor,
+        width: settings.eclipseCenterWidth,
+        opacity: settings.eclipseCenterOpacity,
+        lineCap: 'round',
+      };
+    }
+    return null;
+  }
+
+  function isPolarAcgPathVisible(path) {
+    return path.source === 'acg' && (
+      path.properties.point !== NATAL_ASC_POINT_ID || !!referenceBehavior().showAscCircle
+    );
+  }
+
+  function polarAcgCasingStroke(path, settings, tokens) {
+    if (!isPolarAcgPathVisible(path) || path.properties.kind === 'PARAN') return null;
+    return {
+      color: tokens.casing,
+      width: settings.casingWidth * polarMetric(path.properties.line_width_scale, 1),
+      opacity: settings.casingOpacity * polarMetric(path.properties.line_opacity, 1),
+    };
+  }
+
+  function polarAcgLineStroke(path, settings, tokens) {
+    if (!isPolarAcgPathVisible(path)) return null;
+    const properties = path.properties;
+    if (properties.kind === 'PARAN') {
+      if (!viewOptions.parans) return null;
+      return {
+        color: tokens.paranColor,
+        width: settings.paranWidth,
+        opacity: settings.paranOpacity,
+        dash: [settings.paranDashOn * settings.paranWidth, settings.paranDashOff * settings.paranWidth],
+      };
+    }
+    const solid = ['MC', 'ASC', 'LOCAL_SPACE'].includes(properties.kind);
+    const dashed = ['IC', 'DSC'].includes(properties.kind);
+    if (!solid && !dashed) return null;
+    const baseWidth = dashed ? settings.dashedWidth : settings.solidWidth;
+    const width = baseWidth * polarMetric(properties.line_width_scale, 1);
+    return {
+      color: resolvedAcgLineColor(properties, settings),
+      width,
+      opacity: (dashed ? settings.dashedOpacity : settings.solidOpacity) *
+        polarMetric(properties.line_opacity, 1),
+      dash: dashed ? [settings.dashedOn * width, settings.dashedOff * width] : null,
+    };
+  }
+
+  function strokePolarOverlayPaths(context, center, styleForPath) {
+    for (const path of polarOverlayPaths) {
+      const style = styleForPath(path);
+      if (!style) continue;
+      const width = Math.max(0, polarMetric(style.width, 0));
+      const opacity = Math.max(0, Math.min(1, polarMetric(style.opacity, 1)));
+      if (!width || !opacity || !style.color) continue;
+      context.save();
+      context.globalAlpha = opacity;
+      context.strokeStyle = style.color;
+      context.lineWidth = width;
+      context.lineCap = style.lineCap || 'butt';
+      context.lineJoin = style.lineCap || 'miter';
+      context.setLineDash(Array.isArray(style.dash) ? style.dash : []);
+      context.filter = style.blur ? `blur(${Math.max(0, style.blur)}px)` : 'none';
+      context.beginPath();
+      if (tracePolarOverlayPath(context, path.coordinates, center)) context.stroke();
+      context.restore();
+    }
+  }
+
+  function drawPolarAsterismStars(context, center, settings) {
+    const hitTargets = [];
+    if (!viewOptions.asterisms) {
+      polarAsterismStarHitTargets = hitTargets;
+      return;
+    }
+    for (const polarPoint of polarOverlayPoints) {
+      if (!isPolarCoordinateVisible(polarPoint.coordinate, center)) continue;
+      const point = projectPolarCoordinate(polarPoint.coordinate);
+      if (!point) continue;
+      const properties = polarPoint.properties || {};
+      const radius = Math.max(0, asterismStarRadius(properties.magnitude, settings));
+      const spread = Math.max(0, polarMetric(settings.asterismShadowSpread, 0));
+      if (!radius) continue;
+
+      context.save();
+      context.globalAlpha = Math.max(0, Math.min(1, polarMetric(settings.asterismShadowOpacity, 1)));
+      context.fillStyle = settings.asterismShadowColor;
+      context.filter = `blur(${Math.max(0, polarMetric(settings.asterismShadowBlur, 0))}px)`;
+      context.beginPath();
+      context.arc(point.x, point.y, radius + spread, 0, Math.PI * 2);
+      context.fill();
+      context.restore();
+
+      context.save();
+      context.globalAlpha = Math.max(0, Math.min(1, polarMetric(settings.asterismStarOpacity, 1)));
+      context.fillStyle = settings.asterismHighlightColor;
+      context.strokeStyle = settings.asterismShadowColor;
+      context.lineWidth = spread;
+      context.beginPath();
+      context.arc(point.x, point.y, radius, 0, Math.PI * 2);
+      context.fill();
+      if (spread) {
+        // MapLibre's circle stroke sits outside circle-radius rather than
+        // straddling the fill boundary.
+        context.beginPath();
+        context.arc(point.x, point.y, radius + spread / 2, 0, Math.PI * 2);
+        context.stroke();
+      }
+      context.restore();
+
+      hitTargets.push({
+        coordinate: polarPoint.coordinate,
+        properties,
+        point,
+      });
+    }
+    polarAsterismStarHitTargets = hitTargets;
+  }
+
+  function drawPolarEclipseShadows(context, center, settings) {
+    context.save();
+    context.globalAlpha = Math.max(0, Math.min(1, polarMetric(settings.eclipseFillOpacity, 1)));
+    context.fillStyle = settings.eclipseShadowColor;
+    context.beginPath();
+    let traced = false;
+    for (const polygon of polarOverlayPolygons) {
+      if (polygon.source !== 'eclipse') continue;
+      const visibleRing = visiblePolarRing(polygon.coordinates, center);
+      if (!visibleRing.length) continue;
+      const projected = visibleRing.map(projectPolarCoordinate);
+      if (projected.length < 3 || projected.some((point) => !point)) continue;
+      context.moveTo(projected[0].x, projected[0].y);
+      for (const point of projected.slice(1)) context.lineTo(point.x, point.y);
+      context.closePath();
+      traced = true;
+    }
+    if (traced) context.fill();
+    context.restore();
+  }
+
+  function renderPolarOverlay() {
+    const started = ACG_PERF_MODE ? perfNow() : 0;
+    let projectionType = selectedProjection;
+    try {
+      const projection = map && map.getProjection && map.getProjection();
+      projectionType = projection && projection.type || projectionType;
+    } catch (_) {}
+    if (!map || !mapHostActive || projectionType !== 'globe') {
+      clearPolarOverlay();
+      return;
+    }
+    const prepared = preparePolarOverlayCanvas();
+    if (!prepared) return;
+    const settings = currentDevSettings();
+    const tokens = currentThemeTokens();
+    const behavior = referenceBehavior();
+    const center = map.getCenter();
+    strokePolarOverlayPaths(
+      prepared.context, center, (path) => polarReferenceStroke(path, settings, behavior),
+    );
+    strokePolarOverlayPaths(
+      prepared.context, center, (path) => polarAsterismStroke(path, settings, true),
+    );
+    strokePolarOverlayPaths(
+      prepared.context, center, (path) => polarAsterismStroke(path, settings, false),
+    );
+    drawPolarAsterismStars(prepared.context, center, settings);
+    strokePolarOverlayPaths(
+      prepared.context, center, (path) => polarEclipseStroke(path, settings, true),
+    );
+    drawPolarEclipseShadows(prepared.context, center, settings);
+    strokePolarOverlayPaths(
+      prepared.context, center, (path) => polarEclipseStroke(path, settings, false),
+    );
+    strokePolarOverlayPaths(
+      prepared.context, center, (path) => polarAcgCasingStroke(path, settings, tokens),
+    );
+    strokePolarOverlayPaths(
+      prepared.context, center, (path) => polarAcgLineStroke(path, settings, tokens),
+    );
+    if (ACG_PERF_MODE) {
+      const elapsed = perfNow() - started;
+      perfState.polarOverlayDraws += 1;
+      perfState.polarOverlayLastMs = elapsed;
+      perfState.polarOverlayMaxMs = Math.max(perfState.polarOverlayMaxMs, elapsed);
+    }
   }
 
   function onLineClick(e) {
@@ -2882,6 +4932,7 @@
   function ensureViewOptionDefaults() {
     if (viewOptionsInitialized) return;
     setParansVisible(false);
+    setAsterismsVisible(false);
   }
 
   function syncParanVisibility() {
@@ -2907,6 +4958,99 @@
     syncParanVisibility();
   }
 
+  function syncAsterismVisibility() {
+    const visible = !!viewOptions.asterisms;
+    for (const id of ['acg-asterism-shadow', 'acg-asterisms', 'acg-asterism-star-shadow', 'acg-asterism-stars', 'acg-asterism-star-hit', 'acg-asterism-labels']) {
+      if (map && map.getLayer(id)) {
+        map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
+      }
+    }
+    if (!visible) hideAsterismStarPopup();
+    const btn = document.querySelector('#overlays button[data-overlay="asterisms"]');
+    if (btn) {
+      btn.classList.toggle('on', visible);
+      btn.setAttribute('aria-pressed', visible ? 'true' : 'false');
+    }
+  }
+
+  function setAsterismsVisible(visible) {
+    viewOptions.asterisms = !!visible;
+    viewOptionsInitialized = true;
+    syncAsterismVisibility();
+  }
+
+  function firstSymbolLayerId() {
+    const style = map && map.getStyle && map.getStyle();
+    const layer = style && Array.isArray(style.layers)
+      ? style.layers.find((candidate) => candidate && candidate.type === 'symbol')
+      : null;
+    return layer && layer.id || undefined;
+  }
+
+  function ensureTerrainResources() {
+    if (!map || !map.getStyle || !map.getStyle()) return false;
+    try {
+      const beforeId = firstSymbolLayerId();
+      if (!map.getLayer(HILLSHADE_LAYER_ID)) {
+        if (!map.getSource(TERRAIN_SOURCE_ID)) {
+          map.addSource(TERRAIN_SOURCE_ID, {
+            type: 'raster-dem',
+            url: TERRAIN_DEM_URL,
+            encoding: 'terrarium',
+          });
+        }
+        map.addLayer({
+          id: HILLSHADE_LAYER_ID,
+          type: 'hillshade',
+          source: TERRAIN_SOURCE_ID,
+          layout: { visibility: 'none' },
+          paint: {
+            'hillshade-illumination-anchor': 'map',
+          },
+        }, beforeId);
+      }
+      return true;
+    } catch (err) {
+      console.warn('[acg-terrain] optional resources unavailable', err);
+      return false;
+    }
+  }
+
+  function syncTerrainRelief() {
+    const behavior = referenceBehavior();
+    // MapLibre supports this DEM terrain in both Mercator and globe
+    // projections. Keep the persistent option authoritative across view
+    // switches instead of silently disabling it on the globe.
+    const enabled = !!behavior.terrainRelief;
+    const s = currentDevSettings();
+    document.body.classList.toggle('terrain-relief', enabled);
+    if (!map || !map.getStyle || !map.getStyle()) return;
+    if (enabled) ensureTerrainResources();
+    setLayerVisibility(HILLSHADE_LAYER_ID, enabled);
+    if (map.getLayer(HILLSHADE_LAYER_ID)) {
+      map.setPaintProperty(HILLSHADE_LAYER_ID, 'hillshade-shadow-color', s.terrainShadowColor);
+      map.setPaintProperty(HILLSHADE_LAYER_ID, 'hillshade-highlight-color', s.terrainHighlightColor);
+      map.setPaintProperty(HILLSHADE_LAYER_ID, 'hillshade-exaggeration', s.hillshadeExaggeration);
+    }
+    if (typeof map.setTerrain === 'function') {
+      try {
+        map.setTerrain(enabled && map.getSource(TERRAIN_SOURCE_ID)
+          ? { source: TERRAIN_SOURCE_ID, exaggeration: s.terrainExaggeration }
+          : null);
+      } catch (_) {}
+    }
+  }
+
+  function applyAsterismButtonLabel() {
+    const btn = document.querySelector('#overlays button[data-overlay="asterisms"]');
+    if (!btn) return;
+    const label = String(uiLabels.asterisms || '').trim();
+    btn.textContent = label;
+    btn.hidden = !label;
+    if (label) btn.setAttribute('aria-label', label);
+    else btn.removeAttribute('aria-label');
+  }
+
   function setLegendCollapsed(collapsed) {
     legendCollapsed = !!collapsed;
     const legend = document.getElementById('legend');
@@ -2928,6 +5072,9 @@
     } else if (Object.prototype.hasOwnProperty.call(state, 'paransVisible')) {
       setParansVisible(state.paransVisible);
     }
+    if (Object.prototype.hasOwnProperty.call(overlays, 'asterisms')) {
+      setAsterismsVisible(overlays.asterisms);
+    }
     if (state.legend && Object.prototype.hasOwnProperty.call(state.legend, 'collapsed')) {
       setLegendCollapsed(state.legend.collapsed);
     } else if (Object.prototype.hasOwnProperty.call(state, 'legendCollapsed')) {
@@ -2943,6 +5090,8 @@
     hideMapUntilStyledPaint();
     try {
       map.setProjection({ type: name });
+      syncTerrainRelief();
+      refreshPolarProjectionData();
     } catch (err) {
       revealMapAfterStyledPaint();
       setStatus('projection pending: ' + name);
@@ -2973,6 +5122,8 @@
       if (state.projection) {
         map.setProjection({ type: state.projection });
         setProjectionButtonState(state.projection);
+        syncTerrainRelief();
+        refreshPolarProjectionData();
       }
       const c = state.center || {};
       map.jumpTo({
@@ -3010,6 +5161,9 @@
   function toggleOverlay(name) {
     if (name === 'parans') {
       setParansVisible(!viewOptions.parans);
+      scheduleViewStatePost('overlay');
+    } else if (name === 'asterisms') {
+      setAsterismsVisible(!viewOptions.asterisms);
       scheduleViewStatePost('overlay');
     }
   }
@@ -3456,10 +5610,21 @@
         const data = geojson || { type: 'FeatureCollection', features: [] };
         if (!mapReady) { pendingData = data; return; }
         currentData = data;
+        if (ACTIVE_ASTROCART_STYLE) {
+          applyDisplayStyle(ACTIVE_ASTROCART_STYLE, false);
+        }
         pushData();
         setStatus(`${(currentData.features || []).length} lines loaded`);
         postPerfSnapshot('set-data');
       } catch (err) { setStatus('error: ' + err.message); }
+    },
+    setAsterismData(geojson) {
+      try {
+        const data = geojson || { type: 'FeatureCollection', features: [] };
+        if (!mapReady) { pendingAsterismData = data; return; }
+        currentAsterismData = data;
+        pushAsterismData();
+      } catch (err) { console.error('[acg-asterisms]', err); }
     },
     setEclipseData(geojson) {
       try {
@@ -3479,9 +5644,12 @@
         applyViewStateNow(state);
         applyVectorBasemapStyle();
         ensureEclipseLayers();
+        ensureAsterismLayer();
         ensureAcgLayers();
+        syncTerrainRelief();
         applyDevColors();
         pushData();
+        pushAsterismData();
         pushEclipseData({ fit: false });
       });
     },
@@ -3514,10 +5682,20 @@
     /** Live theme swap. Called by Python when the user changes Options →
         Colors. Repaints the loaded style in place so sources, layers, camera,
         labels and the retained canvas stay alive throughout the change. */
-    setTheme(name, pageBg) {
+    setTheme(name, pageBg, resetStyle) {
       const nextDark = (name || '').toLowerCase() === 'dark';
+      if (resetStyle) ACTIVE_ASTROCART_STYLE = null;
+      const matchingStyle = ACTIVE_ASTROCART_STYLE &&
+        ACTIVE_ASTROCART_STYLE.mode === (nextDark ? 'dark' : 'light')
+        ? ACTIVE_ASTROCART_STYLE
+        : null;
       if (pageBg) URL_THEME.set('pageBg', pageBg);
-      applyPageBg(DEV_SETTINGS.pageBg || pageBg);
+      applyPageBg(
+        matchingStyle && matchingStyle.chrome.pageBg ||
+        DEV_SETTINGS.pageBg ||
+        pageBg ||
+        defaultDevSettings(nextDark).pageBg
+      );
       if (nextDark === IS_DARK) return;
       IS_DARK = nextDark;
       document.body.classList.toggle('theme-light', !IS_DARK);
@@ -3537,13 +5715,26 @@
       applyDevColors();
     },
     setDisplayStyle(payload) {
-      const meta = payload && payload.meta || {};
-      if (meta.theme) this.setTheme(meta.theme, meta.pageBg);
-      applyDisplayStyle(payload || {});
+      const style = normalizeAstrocartStyle(payload);
+      if (!style) return false;
+      if (ACTIVE_ASTROCART_STYLE && ACTIVE_ASTROCART_STYLE.styleHash === style.styleHash) return true;
+      ACTIVE_ASTROCART_STYLE = style;
+      applyAstrocartChrome(style);
+      this.setTheme(style.mode, style.chrome.pageBg);
+      if (
+        !map ||
+        !mapReady ||
+        typeof map.isStyleLoaded !== 'function' ||
+        !map.isStyleLoaded()
+      ) return true;
+      applyDisplayStyle(style);
+      applyDevColors();
+      return true;
     },
     setUiLabels(labels) {
       uiLabels = Object.assign({}, uiLabels, labels || {});
       applyBirthplaceMarkerLabel();
+      applyAsterismButtonLabel();
     },
     /** Serialisable view state for Python-side per-radix persistence. */
     getState() {
@@ -3556,7 +5747,10 @@
         bearing: map.getBearing(),
         pitch: map.getPitch(),
         projection: (proj && proj.type) || 'globe',
-        overlays: { parans: !!viewOptions.parans },
+        overlays: {
+          parans: !!viewOptions.parans,
+          asterisms: !!viewOptions.asterisms,
+        },
         legend: { collapsed: !!legendCollapsed },
       };
     },
@@ -3628,11 +5822,14 @@
         case 'aries.setData':
           if (typeof acg.setData === 'function') acg.setData(data.payload);
           break;
+        case 'aries.setAsterismData':
+          if (typeof acg.setAsterismData === 'function') acg.setAsterismData(data.payload);
+          break;
         case 'aries.setEclipseData':
           if (typeof acg.setEclipseData === 'function') acg.setEclipseData(data.payload);
           break;
         case 'aries.setTheme':
-          if (typeof acg.setTheme === 'function') acg.setTheme(data.theme, data.pageBg);
+          if (typeof acg.setTheme === 'function') acg.setTheme(data.theme, data.pageBg, data.resetStyle);
           break;
         case 'aries.setDisplayStyle':
           if (typeof acg.setDisplayStyle === 'function') acg.setDisplayStyle(data.payload);
@@ -3651,6 +5848,49 @@
           break;
         case 'aries.setStatePersistence':
           setViewStatePersistenceEnabled(!!data.enabled);
+          break;
+        case 'aries.setActive':
+          mapHostActive = !!data.active;
+          if (map) {
+            if (!data.active) {
+              // Retained workspace maps keep their WebGL state, but hidden
+              // camera animation, replay timers, labels, and pending viewport
+              // work must not contend with the active chart.
+              map.stop();
+              if (runtimeOverlayReplayTimer) {
+                window.clearTimeout(runtimeOverlayReplayTimer);
+                runtimeOverlayReplayTimer = null;
+              }
+              if (cityLabelsTimer) {
+                window.clearTimeout(cityLabelsTimer);
+                cityLabelsTimer = null;
+              }
+              if (cityLabelsController) {
+                try { cityLabelsController.abort(); } catch (_) {}
+                cityLabelsController = null;
+              }
+              if (domAcgLabelRaf) {
+                window.cancelAnimationFrame(domAcgLabelRaf);
+                domAcgLabelRaf = 0;
+              }
+              if (placeLabelRenderRaf) {
+                window.cancelAnimationFrame(placeLabelRenderRaf);
+                placeLabelRenderRaf = 0;
+              }
+              hideAsterismStarPopup();
+              clearPolarOverlay();
+            } else {
+              // MapLibre requires resize() when a CSS-hidden container is shown.
+              window.requestAnimationFrame(() => {
+                map.resize();
+                scheduleOnlineBasemapAdoption();
+                scheduleRuntimeOverlayReplay();
+                scheduleCityLabelsRefresh('reactivate');
+                renderPolarOverlay();
+                map.triggerRepaint();
+              });
+            }
+          }
           break;
         case 'aries.getState':
           postViewState(data.reason || 'request', { force: true });

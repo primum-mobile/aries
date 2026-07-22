@@ -39,6 +39,7 @@ WORKSPACE_SHORTCUT_OVERRIDES = {
 	'circumambulation': 'C',
 	'eclipses': 'E',
 	'zodiacal_releasing': 'Z',
+	'synodic_cycles': 'Q',
 }
 
 
@@ -69,12 +70,17 @@ MAIN_QUICK_SHORTCUTS = (
 	('C', 'circumambulation', 'onCircumambulation'),
 	('E', 'eclipses', 'onEclipses'),
 	('Z', 'zodiacal_releasing', 'onZodiacalReleasing'),
+	# The Synodic Cycles retained list is a Tauri-only surface. Keeping its key
+	# in the shared registry publishes the live web command without inventing a
+	# legacy wx table handler.
+	('Q', 'synodic_cycles', None),
 	('H', 'toggle_houses', 'onToggleHouses'),
 )
 
 
 # The bare-letter quick keys actually bound on the web skin today. The desktop
-# binds all MAIN_QUICK_SHORTCUTS via CHAR_HOOK; the web skin binds the rows here
+# binds MAIN_QUICK_SHORTCUTS rows with a handler via CHAR_HOOK; Tauri-only rows
+# may deliberately use ``None``. The web skin binds the action ids listed here
 # through the manifest dispatcher. H/toggle_houses is a special options command
 # and is marked live in the manifest directly.
 WEB_BOUND_QUICK_ACTIONS = frozenset({
@@ -89,6 +95,7 @@ WEB_BOUND_QUICK_ACTIONS = frozenset({
 	'circumambulation',
 	'eclipses',
 	'zodiacal_releasing',
+	'synodic_cycles',
 })
 
 
@@ -206,6 +213,17 @@ TAURI_LIVE_SHORTCUT_ROWS = (
 		'labelKey': 'help.shortcut.openSpotlightSeeded',
 		'group': 'VIEW',
 		'example': 'enter first digit',
+	},
+)
+
+
+# Hidden Tauri/web bindings. These remain in the canonical manifest so the
+# shortcut dispatcher has one source of truth, but are deliberately omitted
+# from Help and other public shortcut lists.
+TAURI_HIDDEN_SHORTCUT_ROWS = (
+	{
+		'keys': '⌘ ⇧ 0',
+		'commandId': 'toggle-presentation-cursor',
 	},
 )
 
@@ -399,7 +417,7 @@ def handle_main_quick_shortcut(frame, keycode):
 			'profections_chart',
 		):
 			return bool(radix_only(action_id))
-		handler = getattr(frame, handler_name, None)
+		handler = getattr(frame, handler_name, None) if handler_name else None
 		if handler is None:
 			return False
 		handler(None)

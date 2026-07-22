@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Copy, Download, X } from "lucide-react";
+import { Copy, Download } from "lucide-react";
 
 import {
   fetchGenericTablePayload,
@@ -9,7 +9,6 @@ import {
   type GenericTablePayload,
   type GenericTableRow,
 } from "@/lib/daemon/client";
-import { Button } from "@/components/ui/button";
 import { isAbortError } from "@/lib/abort-error";
 import { LIST_ROLE_CLASSES } from "@/lib/list-tokens";
 import {
@@ -19,12 +18,19 @@ import {
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/i18n";
+import { semanticChartColor } from "@/lib/theme/semantic-color";
 
 import { TimedChartContextMenu } from "./directions-view";
 import { downloadText, tableToTsv } from "./generic-table-view";
 import { exportTablePayloadPdf } from "./table-pdf-export";
 import { exportTextContent } from "./text-export";
 import { ColumnResizeHandle, useResizableTableColumns } from "./resizable-table-columns";
+import { RetainedPaneShell } from "./retained-pane-shell";
+import {
+  ListSegmentedControl,
+  PaneControlBar,
+  PaneToolbarButton,
+} from "./list-controls";
 import { useSettledWorkspaceRefreshSeq } from "./step-refresh";
 
 // ---------------------------------------------------------------------------
@@ -149,43 +155,59 @@ export function FirdariaView({ documentId, parentDocumentId, sourceName, onClose
 
   if (error && !payload) {
     return (
-      <PaneShell sourceName={sourceName} onClose={onClose}>
+      <RetainedPaneShell
+        title={t("firdview.firdaria")}
+        sourceName={sourceName}
+        closeLabel={t("firdview.closeFirdaria")}
+        onClose={onClose}
+      >
         <div className="flex flex-1 items-center justify-center p-6 text-[length:var(--aries-font-size-base)] text-[color:var(--aries-text-muted)]">
           {error}
         </div>
-      </PaneShell>
+      </RetainedPaneShell>
     );
   }
   if (!payload) {
     return (
-      <PaneShell sourceName={sourceName} onClose={onClose}>
+      <RetainedPaneShell
+        title={t("firdview.firdaria")}
+        sourceName={sourceName}
+        closeLabel={t("firdview.closeFirdaria")}
+        onClose={onClose}
+      >
         <div className="flex flex-1 items-center justify-center p-6 text-[length:var(--aries-font-size-base)] text-[color:var(--aries-text-muted)]">
           {t("firdview.loading")}
         </div>
-      </PaneShell>
+      </RetainedPaneShell>
     );
   }
   // BC charts: the daemon returns the unavailable payload
   // (morin.py:15883-15888 gate).
   if (payload.unavailable) {
     return (
-      <PaneShell sourceName={sourceName} onClose={onClose}>
+      <RetainedPaneShell
+        title={t("firdview.firdaria")}
+        sourceName={sourceName}
+        closeLabel={t("firdview.closeFirdaria")}
+        onClose={onClose}
+      >
         <div className="flex flex-1 items-center justify-center p-6 text-center text-[length:var(--aries-font-size-base)] text-[color:var(--aries-text-muted)]">
           {payload.notes?.[0] ?? t("firdview.unavailable")}
         </div>
-      </PaneShell>
+      </RetainedPaneShell>
     );
   }
 
   return (
-    <PaneShell
+    <RetainedPaneShell
+      title={t("firdview.firdaria")}
       sourceName={sourceName}
+      closeLabel={t("firdview.closeFirdaria")}
       onClose={onClose}
       toolbar={
         <>
-          <button
+          <PaneToolbarButton
             type="button"
-            className="inline-flex h-6 items-center gap-1 rounded border border-[color:var(--aries-border-subtle)] px-1.5 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)] hover:bg-[color:var(--aries-surface-subtle)]"
             onClick={() => {
               const text = tableToTsv(payload, payload.rows);
               void navigator.clipboard?.writeText(text).catch(() => {
@@ -194,11 +216,10 @@ export function FirdariaView({ documentId, parentDocumentId, sourceName, onClose
             }}
             title={t("firdview.copyRows")}
           >
-            <Copy className="size-3.5" />
-          </button>
-          <button
+            <Copy />
+          </PaneToolbarButton>
+          <PaneToolbarButton
             type="button"
-            className="inline-flex h-6 items-center gap-1 rounded border border-[color:var(--aries-border-subtle)] px-1.5 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)] hover:bg-[color:var(--aries-surface-subtle)]"
             onClick={() =>
               void exportTextContent({
                 filename: "firdaria",
@@ -211,11 +232,10 @@ export function FirdariaView({ documentId, parentDocumentId, sourceName, onClose
             }
             title={t("firdview.exportTsv")}
           >
-            <Download className="size-3.5" />
-          </button>
-          <button
+            <Download />
+          </PaneToolbarButton>
+          <PaneToolbarButton
             type="button"
-            className="inline-flex h-6 items-center gap-1 rounded border border-[color:var(--aries-border-subtle)] px-1.5 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)] hover:bg-[color:var(--aries-surface-subtle)]"
             onClick={() =>
               void exportTablePayloadPdf(payload, payload.rows, {
                 fileStem: "firdaria",
@@ -224,24 +244,24 @@ export function FirdariaView({ documentId, parentDocumentId, sourceName, onClose
             }
             title={t("firdview.exportPdf")}
           >
-            <Download className="size-3.5" />
+            <Download />
             PDF
-          </button>
+          </PaneToolbarButton>
         </>
       }
     >
       {/* Compact control band — same visual language as the directions list
           controls. Sect is AUTO from the chart; only nocturnal order is a user
           toggle (firdariawnd.py:69-76,126-135). */}
-      <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-[color:var(--aries-border-subtle)] px-4 py-2">
+      <PaneControlBar density="wide" surface={false}>
         <div className="min-w-0 text-sm font-semibold text-[color:var(--aries-text-primary)]">
           {t("firdview.firdaria")}
-          <span className="ml-2 text-[11px] font-normal text-[color:var(--aries-text-muted)]">
+          <span className="ml-2 text-[length:var(--aries-font-size-small)] font-normal text-[color:var(--aries-text-muted)]">
             {header.sectLabel ?? ""}
           </span>
         </div>
         {header.isDaily === false ? (
-          <TimeLordSegmentedControl
+          <ListSegmentedControl
             label={t("firdview.order")}
             value={isFirBonatti ? "bonatti" : "albiruni"}
             options={[
@@ -249,10 +269,11 @@ export function FirdariaView({ documentId, parentDocumentId, sourceName, onClose
               { value: "albiruni", label: "Al Biruni" },
             ]}
             disabled={pending}
+            labelPlacement="inline"
             onChange={(value) => void updateBinding({ isfirbonatti: value === "bonatti" })}
           />
         ) : null}
-      </div>
+      </PaneControlBar>
 
       {/* Flat interleaved list: each main period followed by its 7 sub-periods
           (node mains have none) — the FirdariaWnd table model
@@ -275,82 +296,7 @@ export function FirdariaView({ documentId, parentDocumentId, sourceName, onClose
           </tbody>
         </table>
       </div>
-    </PaneShell>
-  );
-}
-
-function PaneShell({
-  sourceName,
-  onClose,
-  toolbar,
-  children,
-}: {
-  sourceName?: string;
-  onClose?: () => void;
-  toolbar?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  const t = useT();
-  return (
-    <div className="font-morinus-text flex h-full min-h-0 flex-col bg-background">
-      <div className="flex shrink-0 items-center gap-2 border-b border-[color:var(--aries-border-subtle)] bg-background px-3 py-2">
-        <div className="min-w-0 truncate text-[length:var(--aries-font-size-small)] font-medium text-[color:var(--aries-text-primary)]">
-          {t("firdview.firdaria")}
-          {sourceName ? (
-            <span className="ml-1 font-normal text-[color:var(--aries-text-muted)]">{sourceName}</span>
-          ) : null}
-        </div>
-        <div className="ml-auto flex items-center gap-1">
-          {toolbar}
-          {onClose ? (
-            <button
-              type="button"
-              className="inline-flex size-6 items-center justify-center rounded hover:bg-accent/40"
-              onClick={onClose}
-              aria-label={t("firdview.closeFirdaria")}
-            >
-              <X className="size-4" />
-            </button>
-          ) : null}
-        </div>
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function TimeLordSegmentedControl<T extends string>({
-  label,
-  options,
-  value,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  options: readonly { value: T; label: string }[];
-  value: T;
-  disabled?: boolean;
-  onChange: (value: T) => void;
-}) {
-  return (
-    <div className="inline-flex items-center gap-2">
-      <span className="text-[11px] tracking-[0] text-[color:var(--aries-text-muted)]">{label}</span>
-      <div className="inline-flex rounded-md border border-border bg-background p-[2px]">
-        {options.map((opt) => (
-          <Button
-            key={opt.value}
-            type="button"
-            size="xs"
-            variant={value === opt.value ? "secondary" : "ghost"}
-            className={cn("h-6 rounded-[6px] px-2 text-xs", value === opt.value ? "" : "text-muted-foreground")}
-            disabled={disabled}
-            onClick={() => onChange(opt.value)}
-          >
-            {opt.label}
-          </Button>
-        ))}
-      </div>
-    </div>
+    </RetainedPaneShell>
   );
 }
 
@@ -395,6 +341,7 @@ function FirdariaRow({ row, documentId }: { row: GenericTableRow; documentId: st
   const isMain = level === 1;
   const isCurrent = Boolean(row.current || meta.current);
   const colorHex = typeof meta.colorHex === "string" ? meta.colorHex : undefined;
+  const colorRole = typeof meta.colorRole === "string" ? meta.colorRole : undefined;
   const eventDate = typeof meta.eventDate === "string" ? meta.eventDate : null;
 
   return (
@@ -410,7 +357,11 @@ function FirdariaRow({ row, documentId }: { row: GenericTableRow; documentId: st
             (clrindividual / dignity, firdariawnd.py:403-411). */}
         <td
           className={cn("aries-list-cell", FIRDARIA_CELL_NOWRAP, "text-center")}
-          style={{ fontFamily: "'AriesMorinus'", color: colorHex, paddingLeft: isMain ? 0 : "0.9rem" }}
+          style={{
+            fontFamily: "'AriesMorinus'",
+            color: semanticChartColor(colorRole, colorHex),
+            paddingLeft: isMain ? 0 : "0.9rem",
+          }}
         >
           {row.cells[0]?.glyph ?? ""}
         </td>

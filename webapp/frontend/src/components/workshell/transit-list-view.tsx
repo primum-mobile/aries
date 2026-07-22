@@ -18,8 +18,6 @@ import {
 import {
   TableBody,
   TableCell,
-  TableHead,
-  TableHeader,
   TableRow,
 } from "@/components/ui/table";
 import {
@@ -29,7 +27,6 @@ import {
   fetchTransitSearchProgress,
   openDirectionsTimedChart,
   startTransitSearchContext,
-  type EventTimeDisplayMeta,
   type TimedChartAction,
   type TransitSearchCatalog,
   type TransitSearchObject,
@@ -37,22 +34,21 @@ import {
   type TransitSearchProgressResult,
   type TransitSearchRow,
 } from "@/lib/daemon/client";
-import {
-  eventListBodyViewportHeight,
-  mergeEventTimeDisplayMeta,
-} from "@/lib/event-list-time";
+import { eventListBodyViewportHeight } from "@/lib/event-list-time";
 import {
   LIST_BUTTON_PROPS,
   LIST_PANE_CLASSES,
   LIST_ROLE_CLASSES,
   LIST_ROW_CLASSES,
-  LIST_ROW_HEIGHT,
+  useFixedRowHeightAnchor,
+  useListRowHeight,
 } from "@/lib/list-tokens";
 import {
   getCachedListPayload,
   rememberListPayload,
 } from "@/lib/table/payload-cache";
 import { useT, type TFunc } from "@/lib/i18n/i18n";
+import { semanticChartColor } from "@/lib/theme/semantic-color";
 import { cn } from "@/lib/utils";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
@@ -85,7 +81,6 @@ type TransitMonthStore = {
   islandNonce: number;
   summary: string;
   truncated: boolean;
-  timeDisplay: EventTimeDisplayMeta | null;
 };
 
 type TransitListViewState = {
@@ -96,12 +91,9 @@ type TransitListViewState = {
 };
 
 const TRANSIT_COLUMNS: readonly TransitColumnKey[] = ["prom", "aspect", "sig", "date", "time", "dc"];
-const TRANSIT_ROW_HEIGHT = LIST_ROW_HEIGHT.symbolic;
-const TRANSIT_ROW_STYLE: React.CSSProperties = { height: TRANSIT_ROW_HEIGHT };
 const TRANSIT_ROW_CLASS = LIST_ROW_CLASSES.flagged;
 const TRANSIT_STITCHED_CACHE = "transits:stitched-list";
 const TRANSIT_STITCH_CACHE_MAX_ROWS = 12000;
-const TRANSIT_STITCH_EDGE_PX = TRANSIT_ROW_HEIGHT * 6;
 const TRANSIT_STITCH_PREFETCH_MONTHS = 2;
 const TRANSIT_POINT_MIN_BACKGROUND_ROWS = 16;
 const TRANSIT_MIN_MONTH_INDEX = 0;
@@ -128,6 +120,11 @@ export function TransitListView({
   onClose?: () => void;
 }) {
   const t = useT();
+  const rowHeight = useListRowHeight("symbolic");
+  const rowHeightRef = React.useRef(rowHeight);
+  React.useLayoutEffect(() => {
+    rowHeightRef.current = rowHeight;
+  }, [rowHeight]);
   const [fallbackFocusDatetime] = React.useState(localWallclockIso);
   const effectiveFocusDatetime = focusDatetime ?? fallbackFocusDatetime;
   const directionOptions = React.useMemo(
@@ -320,7 +317,6 @@ export function TransitListView({
           islandNonce: island.nonce,
           summary: payload.summary || "No transits.",
           truncated: payload.truncated,
-          timeDisplay: payload.timeDisplay ?? catalog.timeDisplay ?? null,
         };
         React.startTransition(() => setStore(next));
       },
@@ -333,7 +329,6 @@ export function TransitListView({
           islandNonce: island.nonce,
           summary: data.summary,
           truncated: data.truncated,
-          timeDisplay: data.timeDisplay ?? catalog.timeDisplay ?? null,
         };
         React.startTransition(() => setStore(next));
         rememberTransitStitchStore(stitchKey, next);
@@ -408,7 +403,6 @@ export function TransitListView({
             ...next,
             summary: data.summary,
             truncated: base.truncated || data.truncated,
-            timeDisplay: mergeEventTimeDisplayMeta(base.timeDisplay, data.timeDisplay),
           };
           const activePromittorId = selectedPromittorIdRef.current;
           const visiblePrependedCount = visiblePrependedRowCount(
@@ -469,6 +463,7 @@ export function TransitListView({
           rowsRef.current,
           scroller,
           visibleMonthIndexRef.current,
+          rowHeightRef.current,
         ) || requestFocusDatetimeRef.current;
       transitListViewStateCache.set(documentId, {
         direction: directionRef.current,
@@ -484,13 +479,13 @@ export function TransitListView({
     if (extendInFlightRef.current || initialInFlightRef.current) return;
     const targetRows = Math.max(
       TRANSIT_POINT_MIN_BACKGROUND_ROWS,
-      viewportTransitRowCount(scrollerRef.current) * 2,
+      viewportTransitRowCount(scrollerRef.current, rowHeightRef.current) * 2,
     );
     if (rows.length >= targetRows) return;
     const canPrevious = store.coverage.start > TRANSIT_MIN_MONTH_INDEX;
     const canNext = store.coverage.end <= TRANSIT_MAX_MONTH_INDEX;
     if (!canPrevious && !canNext) return;
-    const edge = transitScrollEdgeDirection(scrollerRef.current, TRANSIT_STITCH_EDGE_PX);
+    const edge = transitScrollEdgeDirection(scrollerRef.current, rowHeightRef.current * 6);
     if (edge === "previous" && canPrevious) {
       extendCoverage("previous");
       return;
@@ -520,11 +515,14 @@ export function TransitListView({
     () => nearestTransitDateIndex(rows, focusTargetMs),
     [focusTargetMs, rows],
   );
+  useFixedRowHeightAnchor(scrollerRef, rows.length, rowHeight, {
+    syncEvent: VIRTUAL_SCROLL_SYNC_EVENT,
+  });
 
   useEdgeExtend({
     scrollerRef,
     rowCount: rows.length,
-    thresholdPx: TRANSIT_STITCH_EDGE_PX,
+    thresholdPx: rowHeight * 6,
     canExtendBackward: (store?.coverage.start ?? TRANSIT_MIN_MONTH_INDEX) > TRANSIT_MIN_MONTH_INDEX,
     canExtendForward: (store?.coverage.end ?? TRANSIT_MAX_MONTH_INDEX + 1) <= TRANSIT_MAX_MONTH_INDEX,
     onExtend: extendCoverage,
@@ -533,7 +531,7 @@ export function TransitListView({
   React.useEffect(() => {
     if (!store) return;
     if (extendInFlightRef.current || initialInFlightRef.current) return;
-    const edge = transitScrollEdgeDirection(scrollerRef.current, TRANSIT_STITCH_EDGE_PX);
+    const edge = transitScrollEdgeDirection(scrollerRef.current, rowHeightRef.current * 6);
     if (edge === "previous" && store.coverage.start > TRANSIT_MIN_MONTH_INDEX) {
       extendCoverage("previous");
     } else if (edge === "next" && store.coverage.end <= TRANSIT_MAX_MONTH_INDEX) {
@@ -554,9 +552,9 @@ export function TransitListView({
     const scroller = scrollerRef.current;
     if (!scroller || scroller.clientHeight <= 0) return;
     scrollPlanRef.current = null;
-    scroller.scrollTop += plan.count * TRANSIT_ROW_HEIGHT;
+    scroller.scrollTop += plan.count * rowHeight;
     scroller.dispatchEvent(new Event(VIRTUAL_SCROLL_SYNC_EVENT));
-  }, [store]);
+  }, [rowHeight, store]);
 
   const focusSignature = `ms:${focusTargetMs}`;
   const islandSignature = store ? `${store.islandNonce}` : "empty";
@@ -568,6 +566,7 @@ export function TransitListView({
       focusIndexRef.current,
       rowCountRef.current,
       TRANSIT_FOCUS_ANCHOR,
+      rowHeightRef.current,
     );
   }, [focusSignature, islandSignature, selectedPromittorId]);
 
@@ -577,7 +576,7 @@ export function TransitListView({
     let frame = 0;
     const sync = () => {
       frame = 0;
-      const row = rows[visibleTransitMonthAnchorIndex(scroller, rows.length)];
+      const row = rows[visibleTransitMonthAnchorIndex(scroller, rows.length, rowHeight)];
       const month = monthIndexForTransitRow(row);
       if (month != null) {
         const pendingMonth = pendingMonthJumpRef.current;
@@ -603,7 +602,7 @@ export function TransitListView({
       scroller.removeEventListener(VIRTUAL_SCROLL_SYNC_EVENT, schedule);
       if (frame) cancelAnimationFrame(frame);
     };
-  }, [rows]);
+  }, [rowHeight, rows]);
 
   const monthLabel = React.useMemo(
     () => formatMonthIndexLabel(visibleMonthIndex),
@@ -613,17 +612,6 @@ export function TransitListView({
   const selectedPromittorLabel = React.useMemo(
     () => transitPromittorLabel(promittorItems, selectedPromittorId, t),
     [promittorItems, selectedPromittorId, t],
-  );
-  const transitColumnLabels = React.useMemo<Record<TransitColumnKey, string>>(
-    () => ({
-      prom: t("search.from"),
-      aspect: t("search.event"),
-      sig: t("search.to"),
-      date: t("search.date"),
-      time: store?.timeDisplay?.columnLabel ?? catalog?.timeDisplay?.columnLabel ?? t("search.time"),
-      dc: t("search.dc"),
-    }),
-    [catalog?.timeDisplay?.columnLabel, store?.timeDisplay?.columnLabel, t],
   );
   const ensureSourceWindowForFocus = React.useCallback(
     (nextFocus: string, force = false) => {
@@ -651,6 +639,7 @@ export function TransitListView({
         rows,
         scrollerRef.current,
         visibleMonthIndex,
+        rowHeight,
       );
       const nextMonth = monthIndexForDate(nextFocus);
       pendingMonthJumpRef.current = null;
@@ -663,7 +652,7 @@ export function TransitListView({
       ensureSourceWindowForFocus(nextFocus, true);
       setPromittorDrawerOpen(false);
     },
-    [ensureSourceWindowForFocus, rows, selectedPromittorId, visibleMonthIndex],
+    [ensureSourceWindowForFocus, rowHeight, rows, selectedPromittorId, visibleMonthIndex],
   );
   const jumpByMonths = React.useCallback((delta: number) => {
     const nextMonth = clampMonthIndex((pendingMonthJumpRef.current ?? visibleMonthIndexRef.current) + delta);
@@ -692,6 +681,7 @@ export function TransitListView({
         rows,
         scrollerRef.current,
         visibleMonthIndex,
+        rowHeight,
       );
       const nextMonth = monthIndexForDate(nextFocus);
       pendingMonthJumpRef.current = null;
@@ -702,7 +692,7 @@ export function TransitListView({
       ensureSourceWindowForFocus(nextFocus, true);
       setDirection(nextDirection);
     },
-    [direction, ensureSourceWindowForFocus, rows, visibleMonthIndex],
+    [direction, ensureSourceWindowForFocus, rowHeight, rows, visibleMonthIndex],
   );
 
   return (
@@ -753,18 +743,6 @@ export function TransitListView({
           <div className={LIST_PANE_CLASSES.error}>{error}</div>
         ) : (
           <table className={cn("aries-list caption-bottom border-collapse", LIST_ROLE_CLASSES.symbolic)}>
-            <TableHeader className={LIST_PANE_CLASSES.stickyHeader}>
-              <TableRow>
-                {TRANSIT_COLUMNS.map((column) => (
-                  <TableHead
-                    key={column}
-                    className={column === "time" ? "text-right" : "text-center"}
-                  >
-                    {transitColumnLabels[column]}
-                  </TableHead>
-                ))}
-              </TableRow>
-            </TableHeader>
             <VirtualizedTableRows
               rows={rows}
               loading={loading}
@@ -772,12 +750,14 @@ export function TransitListView({
               colSpan={TRANSIT_COLUMNS.length}
               scrollerRef={scrollerRef}
               initialIndex={focusIndex}
+              rowHeight={rowHeight}
               renderRow={(row, index) => (
                 <TransitRow
                   key={rowKeys[index] ?? `${row.key}:${index}`}
                   row={row}
                   documentId={documentId}
                   focused={index === focusIndex}
+                  rowHeight={rowHeight}
                 />
               )}
             />
@@ -792,10 +772,12 @@ function TransitRow({
   row,
   documentId,
   focused,
+  rowHeight,
 }: {
   row: TransitSearchRow;
   documentId: string;
   focused?: boolean;
+  rowHeight: number;
 }) {
   const dc = row.technique === "converse_transits" ? "C" : "D";
   return (
@@ -803,7 +785,7 @@ function TransitRow({
       <TableRow
         className={TRANSIT_ROW_CLASS}
         data-initial-focus={focused || undefined}
-        style={TRANSIT_ROW_STYLE}
+        style={{ height: rowHeight }}
       >
         <TableCell className="text-center">
           <TransitObjectCell
@@ -839,7 +821,10 @@ function TransitRow({
 }
 
 function TransitAspectCell({ row }: { row: TransitSearchRow }) {
-  const aspectColor = stringValue(row.metadata.aspect_color);
+  const aspectColor = semanticChartColor(
+    stringValue(row.metadata.aspect_color_role),
+    stringValue(row.metadata.aspect_color),
+  );
   if (row.isSignChange) {
     return <span className="aries-search-ingress-arrow" aria-hidden="true">→</span>;
   }
@@ -863,7 +848,10 @@ function TransitObjectCell({
   display: SearchDisplay;
 }) {
   const hasSegments = Boolean(segments?.length);
-  const color = stringValue(display.glyph_color_css);
+  const color = semanticChartColor(
+    stringValue(display.glyph_color_role),
+    stringValue(display.glyph_color_css),
+  );
   const motionMarker = stringValue(display.motion_marker);
   const suffix = label.match(/\s\(([^)]+)\)$/)?.[1] ?? "";
   const stateMarker = suffix || motionMarker;
@@ -1030,7 +1018,7 @@ function TransitPromittorDrawer({
       <div className="flex flex-col gap-2">
         {groups.map((group) => (
           <div key={group.group} className="flex min-w-0 flex-wrap items-center gap-1.5">
-            <span className="mr-1 min-w-14 text-[10px] text-muted-foreground">
+            <span className="mr-1 min-w-14 text-[length:var(--aries-font-size-section)] text-muted-foreground">
               {group.group}
             </span>
             {group.items.map((item) => {
@@ -1043,11 +1031,11 @@ function TransitPromittorDrawer({
                   size="xs"
                   variant={selected ? "default" : "outline"}
                   onClick={() => onSelect(item.id)}
-                  className="h-6 max-w-44 justify-start gap-1 px-2 text-[11px]"
+                  className="h-6 max-w-44 justify-start gap-1 px-2 text-[length:var(--aries-font-size-small)]"
                 >
                   {item.glyph ? <Glyph ch={item.glyph} /> : null}
                   <span className="truncate">{item.label}</span>
-                  {item.marker ? <span className="text-[10px] text-muted-foreground">{item.marker}</span> : null}
+                  {item.marker ? <span className="text-[length:var(--aries-font-size-section)] text-muted-foreground">{item.marker}</span> : null}
                 </Button>
               );
             })}
@@ -1065,6 +1053,7 @@ function VirtualizedTableRows<T>({
   colSpan,
   scrollerRef,
   initialIndex,
+  rowHeight,
   renderRow,
 }: {
   rows: readonly T[];
@@ -1073,10 +1062,11 @@ function VirtualizedTableRows<T>({
   colSpan: number;
   scrollerRef: React.RefObject<HTMLDivElement | null>;
   initialIndex: number;
+  rowHeight: number;
   renderRow: (row: T, index: number) => React.ReactNode;
 }) {
   const t = useT();
-  const virtual = useVirtualRows(scrollerRef, rows.length, initialIndex);
+  const virtual = useVirtualRows(scrollerRef, rows.length, initialIndex, rowHeight);
   const visibleRows = rows.slice(virtual.startIndex, virtual.endIndex);
 
   if (rows.length === 0 && !loading) {
@@ -1131,6 +1121,7 @@ function useVirtualRows(
   scrollerRef: React.RefObject<HTMLDivElement | null>,
   rowCount: number,
   seedIndex: number,
+  rowHeight: number,
 ) {
   const [viewport, setViewport] = React.useState({ scrollTop: 0, height: 0 });
 
@@ -1187,13 +1178,13 @@ function useVirtualRows(
     if (!scroller) return;
     const maxTop = Math.max(
       0,
-      rowCount * TRANSIT_ROW_HEIGHT - eventListBodyViewportHeight(scroller),
+      rowCount * rowHeight - eventListBodyViewportHeight(scroller),
     );
     if (scroller.scrollTop <= maxTop) return;
     scroller.scrollTop = maxTop;
     scroller.dispatchEvent(new Event(VIRTUAL_SCROLL_SYNC_EVENT));
     measureNow();
-  }, [measureNow, rowCount, scrollerRef]);
+  }, [measureNow, rowCount, rowHeight, scrollerRef]);
 
   return React.useMemo(() => {
     if (rowCount <= 0) {
@@ -1208,11 +1199,11 @@ function useVirtualRows(
       seedIndex >= 0 ? Math.max(0, Math.min(rowCount - 1, seedIndex)) : 0;
     const visibleCount = Math.max(
       1,
-      Math.ceil(viewport.height / TRANSIT_ROW_HEIGHT),
+      Math.ceil(viewport.height / rowHeight),
     );
     const rawVisibleStart =
       viewport.height > 0
-        ? Math.floor(viewport.scrollTop / TRANSIT_ROW_HEIGHT)
+        ? Math.floor(viewport.scrollTop / rowHeight)
         : seededStart;
     const maxVisibleStart = Math.max(0, rowCount - visibleCount);
     const visibleStart = Math.max(
@@ -1233,10 +1224,10 @@ function useVirtualRows(
     return {
       startIndex,
       endIndex,
-      paddingTop: startIndex * TRANSIT_ROW_HEIGHT,
-      paddingBottom: (rowCount - endIndex) * TRANSIT_ROW_HEIGHT,
+      paddingTop: startIndex * rowHeight,
+      paddingBottom: (rowCount - endIndex) * rowHeight,
     };
-  }, [rowCount, seedIndex, viewport.height, viewport.scrollTop]);
+  }, [rowCount, rowHeight, seedIndex, viewport.height, viewport.scrollTop]);
 }
 
 function Glyph({
@@ -1284,7 +1275,6 @@ async function fetchTransitChunk({
   rows: TransitSearchRow[];
   summary: string;
   truncated: boolean;
-  timeDisplay: EventTimeDisplayMeta;
 }> {
   const previousSessionId = sessionRef.current;
   if (previousSessionId) {
@@ -1322,7 +1312,6 @@ async function fetchTransitChunk({
     rows: current.rows,
     summary: current.summary || "No transits.",
     truncated: current.truncated,
-    timeDisplay: current.timeDisplay,
   };
 }
 
@@ -1332,7 +1321,10 @@ function useTransitOptionsSeq(): number {
 
   React.useEffect(() => {
     if (!lastOptionsChange) return;
-    if (lastOptionsChange.refreshMode === "display-overlay") return;
+    if (
+      lastOptionsChange.styleOnly === true ||
+      lastOptionsChange.listDataChanged === false
+    ) return;
     let cancelled = false;
     queueMicrotask(() => {
       if (!cancelled) setSeq(lastOptionsChange.seq);
@@ -1553,9 +1545,9 @@ function monthIndexForTransitRow(row: TransitSearchRow | undefined): number | nu
   return monthIndexForDate(date.toISOString());
 }
 
-function viewportTransitRowCount(scroller: HTMLDivElement | null): number {
-  const height = eventListBodyViewportHeight(scroller, TRANSIT_ROW_HEIGHT * 12);
-  return Math.max(1, Math.ceil(height / TRANSIT_ROW_HEIGHT));
+function viewportTransitRowCount(scroller: HTMLDivElement | null, rowHeight: number): number {
+  const height = eventListBodyViewportHeight(scroller, rowHeight * 12);
+  return Math.max(1, Math.ceil(height / rowHeight));
 }
 
 function transitScrollEdgeDirection(
@@ -1573,20 +1565,22 @@ function transitScrollEdgeDirection(
 function visibleTransitMonthAnchorIndex(
   scroller: HTMLDivElement,
   rowCount: number,
+  rowHeight: number,
 ): number {
   if (rowCount <= 0) return 0;
   const anchorTop =
     scroller.scrollTop + eventListBodyViewportHeight(scroller) * TRANSIT_FOCUS_ANCHOR;
-  return Math.max(0, Math.min(rowCount - 1, Math.floor(anchorTop / TRANSIT_ROW_HEIGHT)));
+  return Math.max(0, Math.min(rowCount - 1, Math.floor(anchorTop / rowHeight)));
 }
 
 function viewportTransitFocusIso(
   rows: readonly TransitSearchRow[],
   scroller: HTMLDivElement | null,
   fallbackMonthIndex: number,
+  rowHeight: number,
 ): string {
   if (scroller && rows.length > 0) {
-    const index = visibleTransitMonthAnchorIndex(scroller, rows.length);
+    const index = visibleTransitMonthAnchorIndex(scroller, rows.length, rowHeight);
     const iso = transitRowEventIso(rows[index]);
     if (iso) return iso;
   }
@@ -1614,14 +1608,15 @@ function scrollFocusedTransitRow(
   rowCount: number,
   anchorRatio: number,
   targetIndex: number,
+  rowHeight: number,
 ): boolean {
   const viewportHeight = eventListBodyViewportHeight(scroller);
   if (!scroller || rowCount <= 0 || targetIndex < 0 || viewportHeight <= 0) {
     return false;
   }
-  const rowTop = targetIndex * TRANSIT_ROW_HEIGHT;
-  const targetTop = rowTop - viewportHeight * anchorRatio + TRANSIT_ROW_HEIGHT / 2;
-  const maxTop = Math.max(0, rowCount * TRANSIT_ROW_HEIGHT - viewportHeight);
+  const rowTop = targetIndex * rowHeight;
+  const targetTop = rowTop - viewportHeight * anchorRatio + rowHeight / 2;
+  const maxTop = Math.max(0, rowCount * rowHeight - viewportHeight);
   const nextTop = Math.max(0, Math.min(maxTop, targetTop));
   if (Math.abs(scroller.scrollTop - nextTop) <= 1) return true;
   scroller.scrollTop = nextTop;
@@ -1634,6 +1629,7 @@ function scheduleFocusedTransitScroll(
   rowIndex: number,
   rowCount: number,
   anchorRatio: number,
+  rowHeight: number,
 ): () => void {
   if (rowIndex < 0 || rowCount <= 0) return () => {};
   let frame = 0;
@@ -1642,7 +1638,7 @@ function scheduleFocusedTransitScroll(
   const tick = () => {
     if (cancelled) return;
     const scroller = scrollerRef.current;
-    if (scrollFocusedTransitRow(scroller, rowCount, anchorRatio, rowIndex)) return;
+    if (scrollFocusedTransitRow(scroller, rowCount, anchorRatio, rowIndex, rowHeight)) return;
     attempts += 1;
     if (attempts < 30) {
       frame = requestAnimationFrame(tick);

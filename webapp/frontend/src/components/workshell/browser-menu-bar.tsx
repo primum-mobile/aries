@@ -37,7 +37,7 @@ type Props = {
 
 type RenderableNode = NativeMenuNode;
 
-export function BrowserMenuBar({
+function BrowserMenuBarComponent({
   manifest,
   recentCharts,
   onCommand,
@@ -56,7 +56,7 @@ export function BrowserMenuBar({
 
   return (
     <nav
-      className="no-scrollbar fixed left-[calc(var(--titlebar-left-controls-x)+2rem)] right-[9rem] top-0 z-[60] flex h-[var(--titlebar-h)] items-center gap-0.5 overflow-x-auto overflow-y-visible px-1 text-[12px] text-[color:var(--aries-titlebar-text)]"
+      className="no-scrollbar fixed left-[calc(var(--titlebar-left-controls-x)+2rem)] right-[9rem] top-0 z-[60] flex h-[var(--titlebar-h)] items-center gap-0.5 overflow-x-auto overflow-y-visible px-1 text-[length:var(--aries-font-size-base)] text-[color:var(--aries-titlebar-text)]"
       aria-label={t("a11y.applicationMenu")}
     >
       {menus.map((node) =>
@@ -74,6 +74,8 @@ export function BrowserMenuBar({
     </nav>
   );
 }
+
+export const BrowserMenuBar = React.memo(BrowserMenuBarComponent);
 
 function browserShellSnapshot(): boolean {
   return !resolveShellHost().capabilities.nativeMenu;
@@ -119,14 +121,14 @@ function TopMenu({
       <DropdownMenuTrigger
         disabled={disabled}
         className={cn(
-          "h-6 whitespace-nowrap rounded-[3px] px-2 leading-6 outline-none transition-colors",
+          "h-6 whitespace-nowrap rounded-xs px-2 leading-6 outline-none transition-colors",
           "hover:bg-[color:var(--aries-list-hover-bg)] focus-visible:bg-[color:var(--aries-list-hover-bg)] data-disabled:opacity-50",
         )}
       >
         {label}
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="min-w-56 rounded-[5px]">
-        <MenuChildren
+      <DropdownMenuContent className="min-w-56 rounded-[var(--aries-radius-control)]">
+        <ManifestMenuItems
           items={menuChildren(node, recentCharts)}
           onCommand={onCommand}
           isCommandEnabled={isCommandEnabled}
@@ -137,7 +139,7 @@ function TopMenu({
   );
 }
 
-function MenuChildren({
+export function ManifestMenuItems({
   items,
   onCommand,
   isCommandEnabled,
@@ -178,8 +180,8 @@ function MenuNode({
     return (
       <DropdownMenuSub>
         <DropdownMenuSubTrigger disabled={disabled}>{label}</DropdownMenuSubTrigger>
-        <DropdownMenuSubContent className="min-w-56 rounded-[5px]">
-          <MenuChildren
+        <DropdownMenuSubContent className="min-w-56 rounded-[var(--aries-radius-control)]">
+          <ManifestMenuItems
             items={item.children}
             onCommand={onCommand}
             isCommandEnabled={isCommandEnabled}

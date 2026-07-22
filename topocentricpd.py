@@ -101,5 +101,6 @@ class TopocentricPD(placidianutppd.PlacidianUTPPD):
 			self.chart.houses.ascmc2[houses.Houses.MC][houses.Houses.RA],
 			self.chart.obl[0],
 			self.chart.place.lat,
+			getattr(self.chart, 'ayanamsha_offset', 0.0),
 		)
 		return info.ok, info.eastern, info.above_horizon, info.phi, info.oa

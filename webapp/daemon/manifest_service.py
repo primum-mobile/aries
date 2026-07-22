@@ -45,7 +45,7 @@ import posfordate
 from webapp.daemon.chart_service import chart_snapshot_service
 from webapp.daemon.corpus_packs_service import corpus_packs_service
 from webapp.daemon.table_catalog import TABLE_CATALOG
-from webapp.daemon import label_i18n
+from webapp.daemon import label_i18n, settings_registry
 
 
 NATIVE_MENU_MANIFEST_PATH = (
@@ -332,11 +332,11 @@ def _live_native_accelerator_rows(native_menu: dict) -> list[dict]:
     return rows
 
 
-# Action ids whose quick letter the wx CHAR_HOOK table binds (MAIN_QUICK_SHORTCUTS)
-# but that map to the CHART MODES help group rather than a chart-launcher
-# dispatch (D/C/E/H are table/special surfaces, dispatched via getattr(frame,
-# handler) on the desktop — shortcut_registry.py:61-64). H/toggle_houses is live
-# on web via options_service even though it is not a workspace_model launcher.
+# Action ids whose quick letter lives in MAIN_QUICK_SHORTCUTS and maps to the
+# CHART MODES help group. Rows with a handler also bind through the wx CHAR_HOOK;
+# handler-less rows such as the Tauri-only Synodic Cycles list bind only through
+# this manifest. H/toggle_houses is live on web via options_service even though
+# it is not a workspace_model launcher.
 def _shortcut_entries(native_menu: dict | None = None) -> list[dict]:
     """Return the complete live Tauri shortcut table.
 
@@ -344,7 +344,7 @@ def _shortcut_entries(native_menu: dict | None = None) -> list[dict]:
     keys, retained Tauri/frontend handlers, and live chart gestures. Legacy wx
     reference rows that have no Tauri binding are deliberately omitted.
 
-    Each row is ``{keys, label, group, bound, commandId?, labelKey?}``.
+    Each row is ``{keys, label, group, bound, commandId?, labelKey?, hidden?}``.
     ``commandId`` appears only when the manifest dispatcher owns the binding;
     retained native/frontend handlers stay documentation-only here so they are
     not registered twice. ``labelKey`` is optional localization metadata.
@@ -405,6 +405,14 @@ def _shortcut_entries(native_menu: dict | None = None) -> list[dict]:
         "group": "WORKSPACE",
         "commandId": "menu.data",
     })
+    for source in shortcut_registry.TAURI_HIDDEN_SHORTCUT_ROWS:
+        append_live({
+            "keys": source["keys"],
+            "label": "",
+            "group": "",
+            "commandId": source["commandId"],
+            "hidden": True,
+        })
     live_accelerator_commands = {
         "⌘ W": "workspace.close-active",
         "⌘ F": _DISPATCH_ID["search_module"],
@@ -602,8 +610,8 @@ def _corpus_packs_submenu() -> dict | None:
     }
 
 
-def _quick_check(id_: str, label: str) -> dict:
-    return {
+def _quick_check(id_: str, label: str, *, label_key: str | None = None) -> dict:
+    node = {
         "type": "check",
         "id": id_,
         "label": label,
@@ -612,14 +620,23 @@ def _quick_check(id_: str, label: str) -> dict:
         "status": "live-dynamic",
         "source": "manifest_service._options_menu_children -> React options dispatcher -> /api/options",
     }
+    if label_key:
+        node["labelKey"] = label_key
+    return node
 
 
 def _quick_radio(prefix: str, choices: list[tuple[str, str]]) -> list[dict]:
     return [_quick_check(f"{prefix}:{value}", label) for value, label in choices]
 
 
-def _quick_submenu(id_: str, label: str, children: list[dict]) -> dict:
-    return {
+def _quick_submenu(
+    id_: str,
+    label: str,
+    children: list[dict],
+    *,
+    label_key: str | None = None,
+) -> dict:
+    node = {
         "type": "submenu",
         "id": id_,
         "label": label,
@@ -628,6 +645,57 @@ def _quick_submenu(id_: str, label: str, children: list[dict]) -> dict:
         "source": "manifest_service._options_menu_children - generated from daemon option catalogs",
         "children": children,
     }
+    if label_key:
+        node["labelKey"] = label_key
+    return node
+
+
+def _mirrored_options_submenus() -> list[dict]:
+    """Build the settings sections that must exist on every settings surface.
+
+    The registry supplies order, hierarchy, fields, and localization keys.  The
+    command grammar is the same generic grammar used by the native dispatcher,
+    so a registered boolean requires no per-surface React handler.
+    """
+    sections: list[dict] = []
+    for section in settings_registry.MIRRORED_SECTIONS:
+        children = [
+            _quick_check(
+                f"quick.options.{setting['group']}:{setting['field']}",
+                setting["label"],
+                label_key=setting["labelKey"],
+            )
+            for setting in section["settings"]
+        ]
+        sections.append(_quick_submenu(
+            section["menuId"],
+            section["label"],
+            children,
+            label_key=section["labelKey"],
+        ))
+    return sections
+
+
+def _theme_presets_submenu() -> dict:
+    children = []
+    for definition in settings_registry.THEME_PRESET_DEFINITIONS:
+        name = definition["name"]
+        label = str(mtexts.txts.get(definition.get("mtextKey"), name))
+        children.append(_quick_check(f"quick.options.theme-preset:{name}", label))
+    children.extend([
+        {"type": "separator"},
+        _quick_check(
+            "quick.options.colors:follow_os_theme",
+            "Follow OS theme",
+            label_key="quickopt.followOsTheme",
+        ),
+    ])
+    return _quick_submenu(
+        "menu.options.quick.theme-presets",
+        "Theme presets",
+        children,
+        label_key="quickopt.themePresets",
+    )
 
 
 def _options_menu_children() -> list[dict]:
@@ -655,9 +723,35 @@ def _options_menu_children() -> list[dict]:
         )
     ]
     ayanamsha_choices = [
-        (str(i), str(label)) for i, label in enumerate(getattr(mtexts, "ayanamshalist", []))
+        (str(i), str(label)) for i, label in mtexts.ayanamsha_display_entries()
     ]
     return [
+        _quick_submenu("menu.options.quick.wheel-layout", "Wheel layout", [
+            *_quick_radio("quick.options.layout", [
+                ("0", "Classic Wheel"),
+                ("1", "Compact Wheel"),
+                ("2", "Anglo Wheel"),
+            ]),
+            {"type": "separator"},
+            _quick_submenu(
+                "menu.options.quick.anglo-dense-label-layout",
+                "House line routing",
+                [
+                    _quick_check(
+                        "quick.options.anglo-dense-label-layout:leader-columns",
+                        "Straight house lines",
+                        label_key="optmenu.leaderColumns",
+                    ),
+                    _quick_check(
+                        "quick.options.anglo-dense-label-layout:routed-cusps",
+                        "Routed house lines",
+                        label_key="optmenu.routedCuspLines",
+                    ),
+                ],
+                label_key="optmenu.angloDenseLabelLayout",
+            ),
+        ]),
+        {"type": "separator"},
         _quick_submenu("menu.options.quick.node", "Node calculation", _quick_radio(
             "quick.options.node",
             [
@@ -674,12 +768,6 @@ def _options_menu_children() -> list[dict]:
         )),
         {"type": "separator"},
         _quick_submenu("menu.options.quick.layers", "Chart layers", [
-            _quick_submenu("menu.options.quick.wheel-layout", "Wheel layout", _quick_radio("quick.options.layout", [
-                ("0", "Classic Wheel"),
-                ("1", "Compact Wheel"),
-                ("2", "Anglo Wheel"),
-            ])),
-            {"type": "separator"},
             _quick_check("quick.options.display:houses", "Houses"),
             _quick_check("quick.options.display:housesystem", "House system label"),
             _quick_check("quick.options.display:showchiron", "Chiron"),
@@ -819,6 +907,7 @@ def _options_menu_children() -> list[dict]:
             ])),
             _quick_check("quick.options.stepalerts:stepalerts_enabled", "Step conjunction alerts"),
         ]),
+        *_mirrored_options_submenus(),
         _quick_submenu("menu.options.quick.other", "Other options", [
             _quick_submenu("menu.options.quick.mansions-zodiac", "Lunar Mansions zodiac", _quick_radio("quick.options.mansions", [
                 ("auto", "Follow chart zodiac"),
@@ -833,9 +922,9 @@ def _options_menu_children() -> list[dict]:
                 ("0", "Open Synastry first"),
                 ("1", "Open Composite first"),
             ])),
-            _quick_check("quick.options.display:astrocart_localspace_additive", "Local Space over ACG"),
             _quick_check("quick.options.display:usetradfixstarnamespdlist", "Traditional fixed-star names in PD lists"),
         ]),
+        _theme_presets_submenu(),
     ]
 
 
@@ -1020,28 +1109,10 @@ def _native_menu_manifest() -> dict:
         None,
     )
     if options_menu is not None:
-        # The generated quick-options tree replaces the broad legacy settings
-        # catalog, but it must not discard the two live native accelerators in
-        # the base Display Charts submenu. Retain those exact source nodes (and
-        # their runtime enablement/status metadata) ahead of the generated tree.
-        retained_groups: list[dict] = []
-        retained_ids = {"appearance.toggle", "cycle-secondary-view"}
-        for child in options_menu.get("children") or []:
-            retained_children = [
-                item
-                for item in child.get("children") or []
-                if item.get("id") in retained_ids
-            ]
-            if retained_children:
-                retained_group = dict(child)
-                retained_group["children"] = retained_children
-                retained_groups.append(retained_group)
-        generated_children = _options_menu_children()
-        options_menu["children"] = (
-            [*retained_groups, {"type": "separator"}, *generated_children]
-            if retained_groups
-            else generated_children
-        )
+        # The generated quick-options tree fully replaces the broad legacy
+        # settings catalog. The titlebar drawer supplies its separate Full
+        # settings entry; Cycle secondary view remains available by shortcut.
+        options_menu["children"] = _options_menu_children()
     packs_submenu = _corpus_packs_submenu()
     if packs_submenu is not None:
         menus = manifest.setdefault("menus", [])
@@ -1098,6 +1169,7 @@ def build_manifest() -> dict:
         "topActions": [_action_payload(a) for a in workspace_model.DEFAULT_TOP_ACTIONS],
         "shortcuts": _shortcut_entries(native_menu),
         "nativeMenu": native_menu,
+        "settingsRegistry": settings_registry.registry_payload(),
     }
 
 

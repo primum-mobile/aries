@@ -45,8 +45,6 @@ class Essentials:
 			scoretxt = ['', '', '', '', '']
 			for j in range(numcoll):
 				lon = collections[j]
-				if chrt.options.ayanamsha != 0:
-					lon = util.normalize(lon-chrt.ayanamsha)
 
 				s, st, sh = self.getData(i, lon, daytime)
 				score[j] += s
@@ -87,8 +85,6 @@ class Essentials:
 			scoretxt = ['', '', '', '', '']
 			for j in range(astrology.SE_MERCURY, astrology.SE_SATURN+1):#collections
 				lon = self.chart.planets.planets[j].data[planets.Planet.LONG]
-				if chrt.options.ayanamsha != 0:
-					lon = util.normalize(lon-chrt.ayanamsha)
 
 				s, st, sh = self.getData(i, lon, daytime)
 				score[j-astrology.SE_MERCURY] += s
@@ -112,8 +108,6 @@ class Essentials:
 			score = 0
 			scoretxt = ''
 			lon = self.chart.houses.ascmc[houses.Houses.MC]
-			if chrt.options.ayanamsha != 0:
-				lon = util.normalize(lon-chrt.ayanamsha)
 
 			s, st, sh = self.getData(i, lon, daytime)
 			score += s
@@ -138,8 +132,6 @@ class Essentials:
 			scoretxt = ['', '', '', '', '', '', '', '', '', '', '', '']
 			for j in range(houses.Houses.HOUSE_NUM):
 				lon = self.chart.houses.cusps[j+1]
-				if chrt.options.ayanamsha != 0 and chrt.options.hsys != 'W':
-					lon = util.normalize(lon-chrt.ayanamsha)
 
 				s, st, sh = self.getData(i, lon, daytime)
 				score[j] += s
@@ -261,8 +253,6 @@ class Accidentals:
 
 		for i in range(astrology.SE_SATURN+1):
 			pllon = chrt.planets.planets[i].data[planets.Planet.LONG]
-			if chrt.options.ayanamsha != 0:
-				pllon = util.normalize(pllon-chrt.ayanamsha)
 			housenum = chrt.houses.getHousePos(pllon, chrt.options, True)
 			self.inhouses[i] += chrt.options.housescores[housenum]
 
@@ -546,9 +536,6 @@ class Topicals:
 			decan = chrt.options.decans[chrt.options.seldecan][sign][dec]
 			lon = chrt.planets.planets[decan].data[planets.Planet.LONG]
 
-		if chrt.options.ayanamsha != 0:
-			lon = util.normalize(lon-chrt.ayanamsha)
-
 		return ok, lon
 
 
@@ -672,7 +659,6 @@ class Almutens:
 		self.topicals = None
 		if chrt.options.topicals != None:
 			self.topicals = Topicals(chrt)
-
 
 
 

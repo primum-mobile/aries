@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import datetime
+from collections import OrderedDict
 
 import astrology
 import chart
@@ -12,8 +13,25 @@ import util
 
 MEAN_TROPICAL_YEAR_DAYS = 365.2421904
 _SOLAR_RETURN_JD_CACHE = {}
-_LOY_CACHE = {}
+_LOY_CACHE_MAX_ENTRIES = 256
+_LOY_CACHE = OrderedDict()
 _TERM_ROWS_CACHE = {}
+
+
+def _loy_cache_get(key):
+	try:
+		value = _LOY_CACHE.pop(key)
+	except KeyError:
+		return None
+	_LOY_CACHE[key] = value
+	return value
+
+
+def _loy_cache_put(key, value):
+	_LOY_CACHE[key] = value
+	_LOY_CACHE.move_to_end(key)
+	while len(_LOY_CACHE) > _LOY_CACHE_MAX_ENTRIES:
+		_LOY_CACHE.popitem(last=False)
 
 
 def _freeze_signature_value(value):
@@ -171,7 +189,11 @@ def _completed_solar_years(radix, cursor_jd):
 	"""Count how many solar returns have occurred between radix birth and cursor_jd."""
 	birth_year = int(getattr(radix.time, 'origyear', radix.time.year))
 	elapsed = cursor_jd - radix.time.jd
-	if elapsed < 0:
+	# A self-anchored radix/horary step passes the live chart as both radix and
+	# cursor, so elapsed is exactly zero. Zero completed years is already the
+	# authoritative answer; asking the revolutions engine for a same-year solar
+	# return here only repeats expensive work on every visible step.
+	if elapsed <= 0:
 		return 0
 
 	# Rough estimate, then verify and adjust by at most 1
@@ -268,8 +290,15 @@ def get_lord_of_year(radix, target_chart, options, display_datetime=None, cursor
 
 	try:
 		cache_key = (_chart_signature(radix), _cursor_signature(target_chart, display_datetime, cursor_jd), _loy_options_signature(options))
-		if cache_key in _LOY_CACHE:
-			return _LOY_CACHE[cache_key]
+		self_anchored_cursor = (
+			target_chart is radix
+			and cursor_jd is not None
+			and float(cursor_jd) == float(radix.time.jd)
+		)
+		if not self_anchored_cursor:
+			cached = _loy_cache_get(cache_key)
+			if cached is not None:
+				return cached
 		if cursor_jd is None:
 			cursor = _get_cursor_tuple(target_chart, display_datetime)
 			if cursor is None:
@@ -278,14 +307,13 @@ def get_lord_of_year(radix, target_chart, options, display_datetime=None, cursor
 		n = _completed_solar_years(radix, cursor_jd)
 
 		prof_asc = util.normalize(radix.houses.ascmc[houses.Houses.ASC] + n * 30.0)
-		if options.ayanamsha != 0:
-			prof_asc = util.normalize(prof_asc - radix.ayanamsha)
 
 		sign_idx = int(prof_asc / chart.Chart.SIGN_DEG)
 		for pid in range(min(7, len(options.dignities))):
 			if options.dignities[pid][0][sign_idx]:
 				result = (sign_idx, pid)
-				_LOY_CACHE[cache_key] = result
+				if not self_anchored_cursor:
+					_loy_cache_put(cache_key, result)
 				return result
 	except Exception:
 		return None

@@ -7,6 +7,20 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 
 import { useStyleRevision } from "@/hooks/use-style-revision";
+import { readPalette } from "@/lib/chart/palette";
+import {
+  DEFAULT_MUNDANE_RENDER_STYLE,
+  resolveMundaneAspectPaint,
+  resolveMundaneHitMetrics,
+  resolveMundaneLayout,
+  resolveMundaneOverlayMetrics,
+  resolveMundaneRenderStyle,
+  resolveMundaneStrokeMetrics,
+  resolveMundaneTypographyMetrics,
+  type MundaneLayout,
+  type MundaneRenderPalette,
+  type MundaneRenderStyle,
+} from "@/lib/chart/mundane-render-style";
 import {
   fetchMundaneChart,
   type InspectorFlagPayload,
@@ -19,6 +33,10 @@ import {
 } from "@/lib/daemon/client";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 import { useT } from "@/lib/i18n/i18n";
+import {
+  createResolvedSemanticChartColorResolver,
+  semanticChartColor,
+} from "@/lib/theme/semantic-color";
 
 // Mundane Chart renderer. The wx source is mundanechart.py: drawChart() owns
 // the radius table, tick rings, ASC/MC axes, planet-line rings, position labels,
@@ -30,38 +48,6 @@ type FontSet = {
   textBig: string;
   morinus: string;
   morinusAspect: string;
-};
-
-type Layout = {
-  compound: boolean;
-  side: number;
-  cx: number;
-  cy: number;
-  maxradius: number;
-  symbolSize: number;
-  r30: number;
-  rHouse: number;
-  rASCMC: number;
-  rArrow: number;
-  r0: number;
-  r1: number;
-  r5: number;
-  r10: number;
-  rInner: number;
-  rLLine: number;
-  rPlanet: number;
-  rAsp: number;
-  rLLine2: number;
-  rRetr: number;
-  rPos: number;
-  rBase: number;
-  rOuterPlanet: number;
-  rOuterLine: number;
-  rOuterRetr: number;
-  rOuter0: number;
-  rOuter1: number;
-  rOuter5: number;
-  rOuter10: number;
 };
 
 type MundaneHoverTarget = {
@@ -89,19 +75,7 @@ type MundaneFlagAnchor = {
   y: number;
 };
 
-const SMALL_SIZE = 400;
-const MEDIUM_SIZE = 600;
 const HOVER_FLAG_SHOW_DELAY_MS = 500;
-const DEFAULT_COLORS = {
-  background: "#232428",
-  frame: "#dcdcdd",
-  ascmc: "#cdcdd1",
-  houses: "#8a8b8d",
-  houseNumbers: "#8a8b8d",
-  positions: "#ffffff",
-};
-
-const WX_TITLEBAR_OVERLAY_SAFE_TOP = 14;
 
 function z2(n: number): string {
   return String(n).padStart(2, "0");
@@ -121,112 +95,93 @@ function rgbaCss(rgb: RGB | null | undefined, alpha: number): string | undefined
   return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha})`;
 }
 
-function mundaneXY(layout: Layout, radius: number, mundane: number): [number, number] {
+function semanticAlphaColor(
+  role: string | null | undefined,
+  fallback: RGB | null | undefined,
+  alpha: number,
+): string | undefined {
+  const semantic = semanticChartColor(role, rgbCss(fallback));
+  if (!semantic?.startsWith("var(")) return rgbaCss(fallback, alpha);
+  return `color-mix(in srgb, ${semantic} ${alpha * 100}%, transparent)`;
+}
+
+function readMundanePalette(host: HTMLElement): MundaneRenderPalette {
+  const palette = readPalette(host);
+  return Object.freeze({
+    background: palette.background,
+    frame: palette.frame,
+    ascmc: palette.angles,
+    houses: palette.houses,
+    houseNumbers: palette.houseNums,
+    positions: palette.positions,
+  });
+}
+
+function resolveMundanePaintColors(data: MundaneChartData): MundaneChartData {
+  const resolveColor = createResolvedSemanticChartColorResolver();
+  const resolveBodies = (bodies: MundaneChartBody[]) => bodies.map((body) => ({
+    ...body,
+    color: resolveColor(body.colorRole, body.color) ?? body.color,
+  }));
+  return {
+    ...data,
+    bodies: resolveBodies(data.bodies),
+    secondaryBodies: data.secondaryBodies
+      ? resolveBodies(data.secondaryBodies)
+      : data.secondaryBodies,
+    aspects: data.aspects?.map((aspect) => ({
+      ...aspect,
+      color: resolveColor(aspect.colorRole, aspect.color) ?? aspect.color,
+    })),
+  };
+}
+
+function mundaneXY(layout: MundaneLayout, radius: number, mundane: number): [number, number] {
   return [
     layout.cx + Math.cos(Math.PI + degToRad(-mundane)) * radius,
     layout.cy + Math.sin(Math.PI + degToRad(-mundane)) * radius,
   ];
 }
 
-function rawAngleXY(layout: Layout, radius: number, angleDeg: number): [number, number] {
+function rawAngleXY(layout: MundaneLayout, radius: number, angleDeg: number): [number, number] {
   return [
     layout.cx + Math.cos(Math.PI + degToRad(angleDeg)) * radius,
     layout.cy + Math.sin(Math.PI + degToRad(angleDeg)) * radius,
   ];
 }
 
-function heavyFrameWidth(chartSize: number): number {
-  if (chartSize <= SMALL_SIZE) return 1;
-  if (chartSize <= MEDIUM_SIZE) return 2;
-  return 3;
-}
-
-function tenDegWidth(chartSize: number): number {
-  return chartSize <= MEDIUM_SIZE ? 1 : 2;
-}
-
-function planetLineWidth(chartSize: number): number {
-  return chartSize <= MEDIUM_SIZE ? 1 : 2;
-}
-
-function ascMcWidth(chartSize: number, configured: number): number {
-  if (chartSize <= SMALL_SIZE && configured >= 3 && configured <= 5) return 2;
-  if (chartSize <= MEDIUM_SIZE && configured >= 4 && configured <= 5) return 3;
-  return Math.max(1, configured);
-}
-
-function buildLayout(side: number, compound: boolean, showHouses: boolean): Layout {
-  const maxradius = side / 2;
-  const planetsectorlen = compound ? 0.15 : 0.18;
-  const housesectorlen = planetsectorlen;
-  const planetoffs = (planetsectorlen / 2) * maxradius;
-  const planetlinelen = 0.03;
-  const houseoffs = (housesectorlen / 2 - (compound ? 0 : 0.01)) * maxradius;
-  const rOuterMax = maxradius * 0.97;
-  const r30 = compound
-    ? (showHouses ? rOuterMax - 0.06 * maxradius : rOuterMax) - 0.12 * maxradius
-    : maxradius * 0.96;
-  const r0 = r30 - housesectorlen * maxradius;
-  const rHouse = r30 - houseoffs;
-  const rASCMC = compound ? rHouse : maxradius * 0.88;
-  const rAsp = r0 - planetsectorlen * maxradius;
-  const rLLine2 = rAsp + planetlinelen * maxradius;
-  const rOuterLine = r30 + planetlinelen * maxradius;
+function buildFonts(layout: MundaneLayout, style: MundaneRenderStyle): FontSet {
+  const metrics = resolveMundaneTypographyMetrics(style, layout);
   return {
-    compound,
-    side,
-    cx: side / 2,
-    cy: side / 2,
-    maxradius,
-    symbolSize: Math.max(8, maxradius / (compound ? 16 : 12)),
-    r30,
-    rHouse,
-    rASCMC,
-    rArrow: rASCMC + 0.04 * maxradius,
-    r0,
-    r1: r0 + 0.01 * maxradius,
-    r5: r0 + 0.02 * maxradius,
-    r10: r0 + 0.03 * maxradius,
-    rInner: r0,
-    rLLine: r0 - planetlinelen * maxradius,
-    rPlanet: r0 - planetoffs,
-    rAsp,
-    rLLine2,
-    rRetr: rLLine2 + maxradius * 0.01,
-    rPos: maxradius * (compound ? 0.45 : 0.55),
-    rBase: maxradius * (compound ? 0.11 : 0.2),
-    rOuterPlanet: r30 + planetoffs,
-    rOuterLine,
-    rOuterRetr: rOuterLine + maxradius * 0.01,
-    rOuter0: r30,
-    rOuter1: r30 - 0.01 * maxradius,
-    rOuter5: r30 - 0.02 * maxradius,
-    rOuter10: r30 - 0.03 * maxradius,
+    text: `${metrics.text}px ${style.typography.fontUi}`,
+    textSmall: `${metrics.smallText}px ${style.typography.fontUi}`,
+    textBig: `${metrics.symbol}px ${style.typography.fontUi}`,
+    morinus: `${metrics.symbol}px ${style.typography.fontSymbols}`,
+    morinusAspect: `${metrics.text}px ${style.typography.fontSymbols}`,
   };
 }
 
-function buildFonts(layout: Layout, textFontFamily: string): FontSet {
-  const symPx = Math.max(6, Math.round(layout.symbolSize));
-  const textPx = Math.max(6, Math.round(symPx / 2));
-  const smallTextPx = Math.max(6, Math.round(symPx / 4));
-  return {
-    text: `${textPx}px ${textFontFamily}`,
-    textSmall: `${smallTextPx}px ${textFontFamily}`,
-    textBig: `${symPx}px ${textFontFamily}`,
-    morinus: `${symPx}px "AriesMorinus"`,
-    morinusAspect: `${textPx}px "AriesMorinus"`,
-  };
-}
-
-function setStroke(ctx: CanvasRenderingContext2D, color: string, width: number) {
+function setStroke(
+  ctx: CanvasRenderingContext2D,
+  color: string,
+  width: number,
+  style: MundaneRenderStyle,
+) {
   ctx.strokeStyle = color;
   ctx.lineWidth = width;
-  ctx.lineCap = "butt";
-  ctx.lineJoin = "miter";
+  ctx.lineCap = style.strokes.lineCap;
+  ctx.lineJoin = style.strokes.lineJoin;
 }
 
-function drawCircle(ctx: CanvasRenderingContext2D, layout: Layout, radius: number, color: string, width: number) {
-  setStroke(ctx, color, width);
+function drawCircle(
+  ctx: CanvasRenderingContext2D,
+  layout: MundaneLayout,
+  radius: number,
+  color: string,
+  width: number,
+  style: MundaneRenderStyle,
+) {
+  setStroke(ctx, color, width, style);
   ctx.beginPath();
   ctx.arc(layout.cx, layout.cy, radius, 0, Math.PI * 2);
   ctx.stroke();
@@ -234,7 +189,7 @@ function drawCircle(ctx: CanvasRenderingContext2D, layout: Layout, radius: numbe
 
 function drawRadialLine(
   ctx: CanvasRenderingContext2D,
-  layout: Layout,
+  layout: MundaneLayout,
   mundane: number,
   r1: number,
   r2: number,
@@ -247,7 +202,13 @@ function drawRadialLine(
   ctx.stroke();
 }
 
-function drawLines(ctx: CanvasRenderingContext2D, layout: Layout, stepDeg: number, r1: number, r2: number) {
+function drawLines(
+  ctx: CanvasRenderingContext2D,
+  layout: MundaneLayout,
+  stepDeg: number,
+  r1: number,
+  r2: number,
+) {
   for (let mundane = 0; mundane < 360; mundane += stepDeg) {
     drawRadialLine(ctx, layout, mundane, r1, r2);
   }
@@ -298,10 +259,11 @@ function overlaps(
 function arrangeBodies(
   ctx: CanvasRenderingContext2D,
   data: MundaneChartData,
-  layout: Layout,
+  layout: MundaneLayout,
   fonts: FontSet,
   bodies: MundaneChartBody[],
   radius: number,
+  style: MundaneRenderStyle,
 ): Map<number, number> {
   const ordered = [...bodies].sort((a, b) => a.mundane - b.mundane);
   const shifts = new Map<number, number>(bodies.map((body) => [body.id, 0]));
@@ -317,12 +279,12 @@ function arrangeBodies(
     const [w2, h2] = bodyTextSize(ctx, b2, fonts);
     let shifted = false;
     let guard = 0;
-    while (guard < 5000) {
+    while (guard < style.interaction.collisionMaxIterations) {
       const [x1, y1] = rawAngleXY(layout, radius, data.ascLongitude - b1.mundane - getShift(b1.id));
       const [x2, y2] = rawAngleXY(layout, radius, data.ascLongitude - b2.mundane - getShift(b2.id));
       if (!overlaps(x1, y1, w1, h1, x2, y2, w2, h2)) break;
-      if (!forward) addShift(b1.id, -0.1);
-      addShift(b2.id, 0.1);
+      if (!forward) addShift(b1.id, -style.interaction.collisionStep);
+      addShift(b2.id, style.interaction.collisionStep);
       shifted = true;
       guard += 1;
     }
@@ -376,10 +338,11 @@ function arrangeBodies(
 
 function drawArrow(
   ctx: CanvasRenderingContext2D,
-  layout: Layout,
+  layout: MundaneLayout,
   mundane: number,
   color: string,
   width: number,
+  style: MundaneRenderStyle,
 ) {
   const ang = Math.PI + degToRad(-mundane);
   const offs = Math.PI / 360;
@@ -389,7 +352,7 @@ function drawArrow(
   const yr = layout.cy + Math.sin(ang - offs) * layout.rASCMC;
   const xm = layout.cx + Math.cos(ang) * layout.rArrow;
   const ym = layout.cy + Math.sin(ang) * layout.rArrow;
-  setStroke(ctx, color, width);
+  setStroke(ctx, color, width, style);
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   ctx.beginPath();
@@ -406,78 +369,104 @@ function drawArrow(
   ctx.stroke();
 }
 
-function drawFrame(ctx: CanvasRenderingContext2D, data: MundaneChartData, layout: Layout) {
-  const colors = data.colors ?? DEFAULT_COLORS;
+function drawFrame(
+  ctx: CanvasRenderingContext2D,
+  data: MundaneChartData,
+  layout: MundaneLayout,
+  style: MundaneRenderStyle,
+) {
+  const colors = style.palette;
+  const strokes = resolveMundaneStrokeMetrics(
+    style,
+    layout.side,
+    data.ascmcSize ?? style.strokes.ascMcConfiguredDefault,
+  );
   ctx.fillStyle = colors.background;
   ctx.fillRect(0, 0, layout.side, layout.side);
 
   if (layout.compound) {
-    drawCircle(ctx, layout, layout.r30, colors.frame, heavyFrameWidth(layout.side));
-    drawCircle(ctx, layout, layout.rOuter10, colors.frame, 1);
+    drawCircle(ctx, layout, layout.r30, colors.frame, strokes.heavy, style);
+    drawCircle(ctx, layout, layout.rOuter10, colors.frame, style.strokes.hairline, style);
   }
 
-  drawCircle(ctx, layout, layout.r10, colors.frame, 1);
-  drawCircle(ctx, layout, layout.rInner, colors.frame, heavyFrameWidth(layout.side));
-  drawCircle(ctx, layout, layout.rAsp, colors.frame, 1);
-  drawCircle(ctx, layout, layout.rBase, colors.ascmc, ascMcWidth(layout.side, data.ascmcSize ?? 5));
+  drawCircle(ctx, layout, layout.r10, colors.frame, style.strokes.hairline, style);
+  drawCircle(ctx, layout, layout.rInner, colors.frame, strokes.heavy, style);
+  drawCircle(ctx, layout, layout.rAsp, colors.frame, style.strokes.hairline, style);
+  drawCircle(ctx, layout, layout.rBase, colors.ascmc, strokes.ascMc, style);
 
-  setStroke(ctx, colors.frame, tenDegWidth(layout.side));
+  setStroke(ctx, colors.frame, strokes.tenDegree, style);
   drawLines(ctx, layout, 10, layout.r0, layout.r10);
   drawLines(ctx, layout, 5, layout.r0, layout.r5);
-  setStroke(ctx, colors.frame, 1);
+  setStroke(ctx, colors.frame, style.strokes.hairline, style);
   drawLines(ctx, layout, 1, layout.r0, layout.r1);
 
   if (layout.compound) {
-    setStroke(ctx, colors.frame, tenDegWidth(layout.side));
+    setStroke(ctx, colors.frame, strokes.tenDegree, style);
     drawLines(ctx, layout, 10, layout.rOuter0, layout.rOuter10);
     drawLines(ctx, layout, 5, layout.rOuter0, layout.rOuter5);
-    setStroke(ctx, colors.frame, 1);
+    setStroke(ctx, colors.frame, style.strokes.hairline, style);
     drawLines(ctx, layout, 1, layout.rOuter0, layout.rOuter1);
   }
 
   if (data.showHouses) {
-    setStroke(ctx, colors.houses, 1);
+    setStroke(ctx, colors.houses, style.strokes.hairline, style);
     data.houses.forEach((house) => drawRadialLine(ctx, layout, house.mundane, layout.rBase, layout.rInner));
-    setStroke(ctx, colors.frame, heavyFrameWidth(layout.side));
+    setStroke(ctx, colors.frame, strokes.heavy, style);
     drawLines(ctx, layout, 30, layout.rInner, layout.r30);
   }
 }
 
-function drawHouseNames(ctx: CanvasRenderingContext2D, data: MundaneChartData, layout: Layout, fonts: FontSet) {
+function drawHouseNames(
+  ctx: CanvasRenderingContext2D,
+  data: MundaneChartData,
+  layout: MundaneLayout,
+  fonts: FontSet,
+  style: MundaneRenderStyle,
+) {
   if (!data.showHouses) return;
-  const color = (data.colors ?? DEFAULT_COLORS).houseNumbers;
+  const color = style.palette.houseNumbers;
   data.houses.forEach((house) => {
     const [x, y] = mundaneXY(layout, layout.rHouse, house.nameMundane);
-    let xOffset = layout.symbolSize / 4;
-    let yOffset = layout.symbolSize / 4;
+    let xOffset = layout.symbolSize / style.layout.houseLabelOffsetDivisor;
+    let yOffset = layout.symbolSize / style.layout.houseLabelOffsetDivisor;
     if (house.house === 1 || house.house === 2) {
       xOffset = 0;
-      yOffset = layout.symbolSize / 4;
+      yOffset = layout.symbolSize / style.layout.houseLabelOffsetDivisor;
       if (house.house === 2) {
-        xOffset = layout.symbolSize / 8;
+        xOffset = layout.symbolSize / style.layout.secondHouseXOffsetDivisor;
       }
     }
     drawText(ctx, house.name, x - xOffset, y - yOffset, fonts.text, color);
   });
 }
 
-function drawAscMC(ctx: CanvasRenderingContext2D, data: MundaneChartData, layout: Layout) {
-  const colors = data.colors ?? DEFAULT_COLORS;
-  const width = ascMcWidth(layout.side, data.ascmcSize ?? 5);
-  setStroke(ctx, colors.ascmc, width);
+function drawAscMC(
+  ctx: CanvasRenderingContext2D,
+  data: MundaneChartData,
+  layout: MundaneLayout,
+  style: MundaneRenderStyle,
+) {
+  const colors = style.palette;
+  const width = resolveMundaneStrokeMetrics(
+    style,
+    layout.side,
+    data.ascmcSize ?? style.strokes.ascMcConfiguredDefault,
+  ).ascMc;
+  setStroke(ctx, colors.ascmc, width, style);
   data.angles.forEach((angle) => {
     drawRadialLine(ctx, layout, angle.mundane, layout.rBase, layout.rASCMC);
   });
   data.angles.forEach((angle) => {
-    if (angle.arrow) drawArrow(ctx, layout, angle.mundane, colors.ascmc, width);
+    if (angle.arrow) drawArrow(ctx, layout, angle.mundane, colors.ascmc, width, style);
   });
 }
 
 function drawMundaneAspects(
   ctx: CanvasRenderingContext2D,
   data: MundaneChartData,
-  layout: Layout,
+  layout: MundaneLayout,
   fonts: FontSet,
+  style: MundaneRenderStyle,
 ) {
   const aspects = data.aspects ?? [];
   if (aspects.length === 0) return;
@@ -490,15 +479,14 @@ function drawMundaneAspects(
     const orbRatio = aspect.maxOrbArcmin > 0
       ? Math.min(Math.max(aspect.orbArcmin / aspect.maxOrbArcmin, 0), 1)
       : 0;
+    const aspectPaint = resolveMundaneAspectPaint(style, orbRatio, aspect.orbArcmin);
     ctx.save();
     ctx.strokeStyle = aspect.color;
-    ctx.lineWidth = Math.max(1, Math.round(2 * (1 - orbRatio)));
-    ctx.globalAlpha = 0.35 + 0.65 * (1 - orbRatio);
+    ctx.lineWidth = aspectPaint.width;
+    ctx.globalAlpha = aspectPaint.opacity;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    if (aspect.orbArcmin > 0.25) {
-      ctx.setLineDash([6, 6]);
-    }
+    if (aspectPaint.dash) ctx.setLineDash([...aspectPaint.dash]);
     ctx.beginPath();
     ctx.moveTo(x1, y1);
     ctx.lineTo(x2, y2);
@@ -513,7 +501,7 @@ function drawMundaneAspects(
 
 function drawAspectGlyph(
   ctx: CanvasRenderingContext2D,
-  layout: Layout,
+  layout: MundaneLayout,
   fonts: FontSet,
   aspect: MundaneChartAspect,
 ) {
@@ -531,7 +519,7 @@ function drawAspectGlyph(
 
 function drawPlanetLine(
   ctx: CanvasRenderingContext2D,
-  layout: Layout,
+  layout: MundaneLayout,
   body: MundaneChartBody,
   shift: number,
   r1: number,
@@ -547,16 +535,21 @@ function drawPlanetLine(
 
 function drawPlanetLines(
   ctx: CanvasRenderingContext2D,
-  data: MundaneChartData,
-  layout: Layout,
+  layout: MundaneLayout,
   shifts: Map<number, number>,
   bodies: MundaneChartBody[],
   r1: number,
   r2: number,
+  style: MundaneRenderStyle,
   r3?: number,
   r4?: number,
 ) {
-  setStroke(ctx, (data.colors ?? DEFAULT_COLORS).frame, planetLineWidth(layout.side));
+  const width = resolveMundaneStrokeMetrics(
+    style,
+    layout.side,
+    style.strokes.ascMcConfiguredDefault,
+  ).planetLine;
+  setStroke(ctx, style.palette.frame, width, style);
   bodies.forEach((body) => {
     const shift = shifts.get(body.id) ?? 0;
     drawPlanetLine(ctx, layout, body, shift, r1, r2);
@@ -586,23 +579,38 @@ function drawPositionLabel(
 function drawPlanets(
   ctx: CanvasRenderingContext2D,
   data: MundaneChartData,
-  layout: Layout,
+  layout: MundaneLayout,
   fonts: FontSet,
   shifts: Map<number, number>,
   bodies: MundaneChartBody[],
   radius: number,
   retroRadius: number,
+  style: MundaneRenderStyle,
   outer = false,
 ) {
-  const colors = data.colors ?? DEFAULT_COLORS;
+  const colors = style.palette;
   bodies.forEach((body) => {
     const shift = shifts.get(body.id) ?? 0;
     const [x, y] = mundaneXY(layout, radius, body.mundane + shift);
-    drawText(ctx, body.glyph, x - layout.symbolSize / 2, y - layout.symbolSize / 2, fonts.morinus, body.color);
+    drawText(
+      ctx,
+      body.glyph,
+      x - layout.symbolSize / style.layout.glyphCenterDivisor,
+      y - layout.symbolSize / style.layout.glyphCenterDivisor,
+      fonts.morinus,
+      body.color,
+    );
 
     if (body.motion) {
       const [rx, ry] = mundaneXY(layout, retroRadius, body.mundane + shift);
-      drawText(ctx, body.motion, rx - layout.symbolSize / 8, ry - layout.symbolSize / 8, fonts.textSmall, body.color);
+      drawText(
+        ctx,
+        body.motion,
+        rx - layout.symbolSize / style.layout.motionCenterDivisor,
+        ry - layout.symbolSize / style.layout.motionCenterDivisor,
+        fonts.textSmall,
+        body.color,
+      );
     }
 
     if (!outer && data.positions) {
@@ -614,22 +622,23 @@ function drawPlanets(
 
 function collectBodyHoverTargets(
   ctx: CanvasRenderingContext2D,
-  layout: Layout,
+  layout: MundaneLayout,
   fonts: FontSet,
   shifts: Map<number, number>,
   bodies: MundaneChartBody[],
   radius: number,
   chartRole: "primary" | "outer",
+  style: MundaneRenderStyle,
 ): MundaneHoverTarget[] {
-  const pad = Math.max(6, Math.round(layout.symbolSize * 0.45));
+  const pad = resolveMundaneHitMetrics(style, layout.symbolSize).bodyPad;
   const out: MundaneHoverTarget[] = [];
   bodies.forEach((body) => {
     if (!body.hoverFlag) return;
     const shift = shifts.get(body.id) ?? 0;
     const [x, y] = mundaneXY(layout, radius, body.mundane + shift);
     const [w, h] = bodyTextSize(ctx, body, fonts);
-    const left = x - layout.symbolSize / 2;
-    const top = y - layout.symbolSize / 2;
+    const left = x - layout.symbolSize / style.layout.glyphCenterDivisor;
+    const top = y - layout.symbolSize / style.layout.glyphCenterDivisor;
     out.push({
       key: `${chartRole}:${body.id}:${body.mundane}:${shift}`,
       payload: body.hoverFlag,
@@ -644,10 +653,14 @@ function collectBodyHoverTargets(
   return out;
 }
 
-function collectAspectHoverTargets(data: MundaneChartData, layout: Layout): MundaneHoverTarget[] {
+function collectAspectHoverTargets(
+  data: MundaneChartData,
+  layout: MundaneLayout,
+  style: MundaneRenderStyle,
+): MundaneHoverTarget[] {
   const aspects = data.aspects ?? [];
   if (aspects.length === 0) return [];
-  const tolerance = Math.max(5, Math.round(layout.symbolSize * 0.32));
+  const tolerance = resolveMundaneHitMetrics(style, layout.symbolSize).aspectTolerance;
   const out: MundaneHoverTarget[] = [];
   aspects.forEach((aspect, index) => {
     if (!aspect.hoverFlag) return;
@@ -724,7 +737,7 @@ function drawMundaneChart(
   canvas: HTMLCanvasElement,
   data: MundaneChartData,
   side: number,
-  textFontFamily: string,
+  style: MundaneRenderStyle,
 ): MundaneHoverTarget[] {
   const dpr = window.devicePixelRatio || 1;
   canvas.width = Math.max(1, Math.round(side * dpr));
@@ -738,24 +751,61 @@ function drawMundaneChart(
 
   const secondaryBodies = data.secondaryBodies ?? [];
   const compound = Boolean(data.compound || secondaryBodies.length > 0);
-  const layout = buildLayout(side, compound, data.showHouses);
-  const fonts = buildFonts(layout, textFontFamily);
+  const layout = resolveMundaneLayout(style, side, compound, data.showHouses);
+  const fonts = buildFonts(layout, style);
 
   ctx.clearRect(0, 0, side, side);
-  drawFrame(ctx, data, layout);
-  drawHouseNames(ctx, data, layout, fonts);
-  drawAscMC(ctx, data, layout);
-  drawMundaneAspects(ctx, data, layout, fonts);
-  const shifts = arrangeBodies(ctx, data, layout, fonts, data.bodies, layout.rPlanet);
-  drawPlanetLines(ctx, data, layout, shifts, data.bodies, layout.rInner, layout.rLLine, layout.rAsp, layout.rLLine2);
-  const hoverTargets = collectAspectHoverTargets(data, layout);
+  drawFrame(ctx, data, layout, style);
+  drawHouseNames(ctx, data, layout, fonts, style);
+  drawAscMC(ctx, data, layout, style);
+  drawMundaneAspects(ctx, data, layout, fonts, style);
+  const shifts = arrangeBodies(ctx, data, layout, fonts, data.bodies, layout.rPlanet, style);
+  drawPlanetLines(
+    ctx,
+    layout,
+    shifts,
+    data.bodies,
+    layout.rInner,
+    layout.rLLine,
+    style,
+    layout.rAsp,
+    layout.rLLine2,
+  );
+  const hoverTargets = collectAspectHoverTargets(data, layout, style);
   let secondaryShifts: Map<number, number> | null = null;
   if (compound && secondaryBodies.length > 0) {
-    secondaryShifts = arrangeBodies(ctx, data, layout, fonts, secondaryBodies, layout.rOuterPlanet);
-    drawPlanetLines(ctx, data, layout, secondaryShifts, secondaryBodies, layout.r30, layout.rOuterLine);
+    secondaryShifts = arrangeBodies(
+      ctx,
+      data,
+      layout,
+      fonts,
+      secondaryBodies,
+      layout.rOuterPlanet,
+      style,
+    );
+    drawPlanetLines(
+      ctx,
+      layout,
+      secondaryShifts,
+      secondaryBodies,
+      layout.r30,
+      layout.rOuterLine,
+      style,
+    );
   }
-  drawPlanets(ctx, data, layout, fonts, shifts, data.bodies, layout.rPlanet, layout.rRetr);
-  hoverTargets.push(...collectBodyHoverTargets(ctx, layout, fonts, shifts, data.bodies, layout.rPlanet, "primary"));
+  drawPlanets(ctx, data, layout, fonts, shifts, data.bodies, layout.rPlanet, layout.rRetr, style);
+  hoverTargets.push(
+    ...collectBodyHoverTargets(
+      ctx,
+      layout,
+      fonts,
+      shifts,
+      data.bodies,
+      layout.rPlanet,
+      "primary",
+      style,
+    ),
+  );
   if (compound && secondaryBodies.length > 0 && secondaryShifts) {
     drawPlanets(
       ctx,
@@ -766,6 +816,7 @@ function drawMundaneChart(
       secondaryBodies,
       layout.rOuterPlanet,
       layout.rOuterRetr,
+      style,
       true,
     );
     hoverTargets.push(
@@ -777,6 +828,7 @@ function drawMundaneChart(
         secondaryBodies,
         layout.rOuterPlanet,
         "outer",
+        style,
       ),
     );
   }
@@ -806,12 +858,14 @@ export function MundaneChartView({
   const [error, setError] = React.useState<string | null>(null);
   const [side, setSide] = React.useState(600);
   const [flagAnchor, setFlagAnchor] = React.useState<MundaneFlagAnchor | null>(null);
-  const compactPhone = side > 0 && side <= 390;
-  const symbolSize = side > 0 ? side / 32 : 0;
-  const infoFontSize = Math.max(compactPhone ? 11 : 10, symbolSize * (compactPhone ? 0.86 : 0.75));
-  const edgeInset = side > 0 ? Math.max(compactPhone ? 10 : 0, side / 25) : 0;
-  const topEdgeInset = compactPhone ? edgeInset : edgeInset + WX_TITLEBAR_OVERLAY_SAFE_TOP;
-  const overlayTextColor = data?.colors?.houses ?? DEFAULT_COLORS.houses;
+  const [renderStyle, setRenderStyle] = React.useState<MundaneRenderStyle>(
+    DEFAULT_MUNDANE_RENDER_STYLE,
+  );
+  const overlayMetrics = resolveMundaneOverlayMetrics(renderStyle, side);
+  const infoFontSize = overlayMetrics.fontSize;
+  const edgeInset = overlayMetrics.edgeInset;
+  const topEdgeInset = overlayMetrics.topEdgeInset;
+  const overlayTextColor = renderStyle.palette.houses;
   const sessionRefreshSeq = useDaemonWorkspaceStore((s) => {
     const change = s.lastSessionChange;
     if (!change) return 0;
@@ -848,13 +902,29 @@ export function MundaneChartView({
     };
   }, [documentId, sourceName, source, sessionRefreshSeq, pushedSnapshotSeq, refreshKey]);
 
+  React.useLayoutEffect(() => {
+    const host = wrapRef.current;
+    if (!host) return;
+    const css = getComputedStyle(host);
+    const textFontFamily = css.getPropertyValue("--morinus-font-text").trim() || "'FreeSans', ui-sans-serif, system-ui, sans-serif";
+    setRenderStyle(resolveMundaneRenderStyle(host, {
+      revision: styleRevision,
+      palette: readMundanePalette(host),
+      fontUi: textFontFamily,
+      fontSymbols: '"AriesMorinus"',
+    }));
+  }, [styleRevision]);
+
   React.useEffect(() => {
     const wrap = wrapRef.current;
     if (!wrap) return;
     let raf = 0;
     const measure = () => {
       const rect = wrap.getBoundingClientRect();
-      const s = Math.max(120, Math.floor(Math.min(rect.width, rect.height)));
+      const s = Math.max(
+        renderStyle.layout.minimumSide,
+        Math.floor(Math.min(rect.width, rect.height)),
+      );
       setSide(s);
     };
     raf = requestAnimationFrame(measure);
@@ -864,7 +934,7 @@ export function MundaneChartView({
       cancelAnimationFrame(raf);
       ro.disconnect();
     };
-  }, []);
+  }, [renderStyle.layout.minimumSide]);
 
   React.useEffect(() => {
     if (!data || !canvasRef.current) return;
@@ -872,15 +942,18 @@ export function MundaneChartView({
     const draw = async () => {
       if (document.fonts?.ready) await document.fonts.ready;
       if (cancelled || !canvasRef.current) return;
-      const css = getComputedStyle(canvasRef.current);
-      const textFontFamily = css.getPropertyValue("--morinus-font-text").trim() || "'FreeSans', ui-sans-serif, system-ui, sans-serif";
-      hoverTargetsRef.current = drawMundaneChart(canvasRef.current, data, side, textFontFamily);
+      hoverTargetsRef.current = drawMundaneChart(
+        canvasRef.current,
+        resolveMundanePaintColors(data),
+        side,
+        renderStyle,
+      );
     };
     void draw();
     return () => {
       cancelled = true;
     };
-  }, [data, side, styleRevision]);
+  }, [data, side, renderStyle]);
 
   const clearHoverFlag = React.useCallback(() => {
     hoveredKeyRef.current = null;
@@ -921,7 +994,7 @@ export function MundaneChartView({
     <div
       ref={wrapRef}
       className="font-morinus-text relative flex h-full w-full flex-1 min-h-0 items-center justify-center overflow-hidden bg-background"
-      style={data?.colors?.background ? { backgroundColor: data.colors.background } : undefined}
+      style={{ backgroundColor: renderStyle.palette.background }}
       onPointerMove={handlePointerMove}
       onPointerLeave={clearHoverFlag}
     >
@@ -935,12 +1008,14 @@ export function MundaneChartView({
                 lines={data.overlay.topLeft}
                 color={overlayTextColor}
                 fontSize={infoFontSize}
+                lineHeight={overlayMetrics.lineHeight}
                 style={{ top: topEdgeInset, left: edgeInset, textAlign: "left" }}
               />
               <MundaneCornerLines
                 lines={data.overlay.bottomLeft}
                 color={overlayTextColor}
                 fontSize={infoFontSize}
+                lineHeight={overlayMetrics.lineHeight}
                 style={{ bottom: edgeInset, left: edgeInset, textAlign: "left" }}
               />
             </>
@@ -950,14 +1025,15 @@ export function MundaneChartView({
               lines={data.overlay.houseSystemLines}
               color={overlayTextColor}
               fontSize={infoFontSize}
+              lineHeight={overlayMetrics.lineHeight}
               style={{ right: edgeInset, bottom: edgeInset, textAlign: "right" }}
             />
           ) : null}
         </>
       ) : error ? (
-        <div className="text-[12px] text-destructive">{t("mundane.failed", { error })}</div>
+        <div className="text-[length:var(--aries-font-size-base)] text-destructive">{t("mundane.failed", { error })}</div>
       ) : (
-        <div className="text-[12px] text-muted-foreground">{t("mundane.loading")}</div>
+        <div className="text-[length:var(--aries-font-size-base)] text-muted-foreground">{t("mundane.loading")}</div>
       )}
     </div>
   );
@@ -967,11 +1043,13 @@ function MundaneCornerLines({
   lines,
   color,
   fontSize,
+  lineHeight,
   style,
 }: {
   lines: string[];
   color: string;
   fontSize: number;
+  lineHeight: number;
   style: React.CSSProperties;
 }) {
   if (!lines.length || fontSize <= 0) return null;
@@ -982,7 +1060,7 @@ function MundaneCornerLines({
         ...style,
         color,
         fontSize,
-        lineHeight: 1.1,
+        lineHeight,
       }}
     >
       <div className="flex flex-col">
@@ -1064,7 +1142,8 @@ function MundaneHoverFlag({ anchor }: { anchor: MundaneFlagAnchor | null }) {
         ref={cardRef}
         className="rounded-md border bg-background/95 shadow-md backdrop-blur-sm"
         style={{
-          borderColor: rgbaCss(payload.accent, 0.55) ?? "var(--border)",
+          borderColor:
+            semanticAlphaColor(payload.accentRole, payload.accent, 0.55) ?? "var(--border)",
           paddingInline: compact ? 7 : 9,
           paddingBlock: compact ? 4 : 6,
           minWidth: compact ? undefined : 96,
@@ -1076,7 +1155,9 @@ function MundaneHoverFlag({ anchor }: { anchor: MundaneFlagAnchor | null }) {
             <span
               className="leading-none text-foreground/90"
               style={{
-                color: compact ? rgbCss(payload.accent) : undefined,
+                color: compact
+                  ? semanticChartColor(payload.accentRole, rgbCss(payload.accent))
+                  : undefined,
                 fontFamily: '"AriesMorinus"',
                 fontSize: compact ? 14 : 16,
               }}
@@ -1113,6 +1194,7 @@ function MundaneFlagRow({ row }: { row: InspectorFlagRow }) {
   const value = String(row[1] ?? "");
   const colour = row.length >= 3 ? (row[2] as RGB | null) : null;
   const spans = row.length >= 4 ? (row[3] as InspectorFlagSpan[]) : null;
+  const colourRole = row.length >= 5 ? (row[4] as string | null) : null;
 
   return (
     <>
@@ -1123,7 +1205,7 @@ function MundaneFlagRow({ row }: { row: InspectorFlagRow }) {
             <span
               key={i}
               style={{
-                color: rgbCss(span.colour),
+                color: semanticChartColor(span.colourRole, rgbCss(span.colour)),
                 fontFamily: span.glyph ? '"AriesMorinus"' : undefined,
               }}
             >
@@ -1132,7 +1214,10 @@ function MundaneFlagRow({ row }: { row: InspectorFlagRow }) {
           ))}
         </span>
       ) : (
-        <span className="whitespace-nowrap leading-tight text-foreground/85" style={{ color: rgbCss(colour) }}>
+        <span
+          className="whitespace-nowrap leading-tight text-foreground/85"
+          style={{ color: semanticChartColor(colourRole, rgbCss(colour)) }}
+        >
           {value}
         </span>
       )}

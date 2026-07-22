@@ -60,6 +60,11 @@ import symbolic_time
 import util
 from webapp.daemon.chart_service import chart_snapshot_service
 from webapp.daemon import ascensional_service as ascensional_payload
+from webapp.daemon.display_palette import (
+    aspect_color_role,
+    chart_body_color_role,
+    effective_display_options,
+)
 from webapp.daemon.inspector_service import _fortune_region, _planet_region
 from webapp.frontend.scripts import export_chart_json
 
@@ -257,6 +262,25 @@ def _planet_color_hex(chrt, opts, i) -> str:
     return _rgb_to_hex(_planet_color_rgb(chrt, opts, i))
 
 
+def _planet_color_role(chrt, opts, i, resolved_color) -> Optional[str]:
+    return chart_body_color_role(
+        opts,
+        chrt,
+        i,
+        is_fortune=i == _LOF_BODY_ID,
+        resolved_color=resolved_color,
+    )
+
+
+def _at_aspect_color_role(opts, aspect_name: str, resolved_color) -> Optional[str]:
+    idx = _at_aspect_chart_index(aspect_name)
+    if idx is not None:
+        return aspect_color_role(opts, idx, resolved_color=resolved_color)
+    if _rgb_to_hex(getattr(opts, "clrframe", (0, 0, 0))).lower() == str(resolved_color).lower():
+        return "--morinus-frame"
+    return None
+
+
 def _format_mdo(mdo: float, quadrant: int) -> str:
     d, m, s = util.decToDeg(float(mdo))
     return f"Q{int(quadrant)} {int(d):02d}°{int(m):02d}'{int(s):02d}\""
@@ -452,16 +476,19 @@ class MundaneChartService:
         document_id: Optional[str] = None,
     ) -> dict:
         with self._lock:
-            opts = chart_snapshot_service.options
-            document_payload = self._data_for_document(document_id, opts)
+            canonical_opts = chart_snapshot_service.options
+            display_opts = effective_display_options(canonical_opts)
+            document_payload = self._data_for_document(document_id, display_opts)
             if document_payload is not None:
                 return document_payload
             source_path = (
                 str(Path(source).expanduser()) if source
                 else str(export_chart_json.DEFAULT_SOURCE)
             )
-            chrt, _ = export_chart_json.load_chart(source_path, opts, name=source_name)
-            return self._build(chrt, opts)
+            chrt, _ = export_chart_json.load_chart(
+                source_path, canonical_opts, name=source_name
+            )
+            return self._build(chrt, display_opts)
 
     def _data_for_document(self, document_id: Optional[str], opts) -> Optional[dict]:
         if not document_id:
@@ -860,10 +887,12 @@ class MundaneChartService:
                         motion = "S" if speed == 0.0 else "R"
             # Position label = the mundane degree split (mundanechart.py:766).
             d, m, s = util.decToDeg(xmp)
+            color = _planet_color_hex(chrt, opts, i)
             bodies.append({
                 "id": int(i),
                 "glyph": glyph,
-                "color": _planet_color_hex(chrt, opts, i),
+                "color": color,
+                "colorRole": _planet_color_role(chrt, opts, i, color),
                 "mundane": float(xmp),
                 "motion": motion,
                 "posDeg": int(d),
@@ -937,10 +966,12 @@ class MundaneChartService:
             # charts print the same 0..360 PMP/RMP/CMP used for placement.
             printed_position = float(pmp) if position_mode == "mundane" else float(point.mdo)
             d, m, _s = util.decToDeg(printed_position)
+            color = _planet_color_hex(chrt, opts, body_id)
             bodies.append({
                 "id": body_id,
                 "glyph": self._at_glyph(point, body_id),
-                "color": _planet_color_hex(chrt, opts, body_id),
+                "color": color,
+                "colorRole": _planet_color_role(chrt, opts, body_id, color),
                 "mundane": float(pmp),
                 "motion": self._motion_for_body(chrt, body_id),
                 "posDeg": int(d),
@@ -1111,6 +1142,7 @@ class MundaneChartService:
             except Exception:
                 continue
             aspect_glyph, aspect_font = ascensional_payload._aspect_glyph_and_font(pair.aspect)
+            color = _at_aspect_color(opts, pair.aspect)
             aspects.append({
                 "fromMundane": float(from_pmp),
                 "toMundane": float(to_pmp),
@@ -1123,7 +1155,8 @@ class MundaneChartService:
                 "aspectFont": aspect_font,
                 "orbArcmin": float(pair.orb_arcmin),
                 "maxOrbArcmin": _at_aspect_max_orb_arcmin(pair.aspect),
-                "color": _at_aspect_color(opts, pair.aspect),
+                "color": color,
+                "colorRole": _at_aspect_color_role(opts, pair.aspect, color),
                 "hoverFlag": _at_aspect_hover_flag(pair, opts, aspect_glyph, aspect_font),
             })
         aspects.sort(key=lambda item: (float(item["orbArcmin"]), str(item["aspect"])))

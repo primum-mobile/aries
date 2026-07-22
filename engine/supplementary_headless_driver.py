@@ -151,11 +151,12 @@ class SupplementaryHeadlessDriver:
 		return active_year
 
 	def _find_solar_longitude_revolution_seed(self, radix, start_dt, end_dt, target_lon):
+		search_target = float(target_lon)
 		year = int(start_dt.year)
 		month = int(start_dt.month)
 		for _ in range(14):
 			trs = transits.Transits()
-			trs.month(year, month, radix, astrology.SE_SUN, pos=float(target_lon))
+			trs.month(year, month, radix, astrology.SE_SUN, pos=search_target)
 			for tr in trs.transits:
 				hour, minute, second = util.decToDeg(tr.time)
 				candidate_dt = datetime.datetime(
@@ -176,12 +177,6 @@ class SupplementaryHeadlessDriver:
 			return (None, None, None, None)
 
 		t1, t2, t3, t4, t5, t6 = revs.t[0], revs.t[1], revs.t[2], revs.t[3], revs.t[4], revs.t[5]
-		if self.options.ayanamsha != 0:
-			try:
-				t1, t2, t3, t4, t5, t6 = self.calcPrecNutCorrectedRevolution(revs, astrology.SE_SUN)
-			except Exception:
-				pass
-
 		place = radix.place
 		plus = True
 		zh = getattr(radix.time, 'zh', 0)
@@ -467,10 +462,10 @@ class SupplementaryHeadlessDriver:
 			lon_trop = util.normalize(dat[0])
 			vel_trop = dat[3]
 
-			ay = astrology.swe_get_ayanamsa_ut(jd_ut)
+			ay = astrology.effective_ayanamsha_ut(jd_ut, self.options.ayanamsha)
 			eps = 0.5
-			ay_p = astrology.swe_get_ayanamsa_ut(jd_ut + eps)
-			ay_m = astrology.swe_get_ayanamsa_ut(jd_ut - eps)
+			ay_p = astrology.effective_ayanamsha_ut(jd_ut + eps, self.options.ayanamsha)
+			ay_m = astrology.effective_ayanamsha_ut(jd_ut - eps, self.options.ayanamsha)
 			ay_rate = _wrap180(ay_p - ay_m) / (2.0 * eps)
 
 			lon_sid = util.normalize(lon_trop - ay)
@@ -480,7 +475,10 @@ class SupplementaryHeadlessDriver:
 		if target_lon_trop is None:
 			nat_lon_sid, _ = _sid_lon_vel(ref_chart.time.jd, place_nat)
 		else:
-			nat_lon_sid = util.normalize(float(target_lon_trop) - astrology.swe_get_ayanamsa_ut(ref_chart.time.jd))
+			# Current Tauri callers supply chart-frame longitudes. Keep the
+			# parameter name for compatibility, but do not subtract ayanamsha a
+			# second time from a value already produced by Chart._zodiac_flags.
+			nat_lon_sid = util.normalize(float(target_lon_trop))
 
 		def _f(jd_ut):
 			lon_sid, _ = _sid_lon_vel(jd_ut, place_trn)

@@ -183,6 +183,13 @@ export interface ChartMeta {
 
 export interface OverlayInfoRow {
   group?: "dayhour" | "header" | "signal";
+  slot?:
+    | "planetary-day"
+    | "planetary-hour"
+    | "term-lord"
+    | "lord-of-year"
+    | "signal"
+    | "station-signal";
   label: string;
   glyphs: Array<{
     char: string;
@@ -195,9 +202,9 @@ export interface OverlayInfoRow {
 
 export interface OverlayInfo {
   rows: OverlayInfoRow[];
-  // True when signal rows were intentionally skipped for a step burst. The
-  // snapshot cache may retain previous stable rows while a partial overlay is
-  // in flight; the next full snapshot replaces them with daemon truth.
+  // True when current signal rows were intentionally skipped for a step burst.
+  // The document cache keeps the prior populated signal slots visible until a
+  // generation-guarded full snapshot replaces them atomically.
   deferredSignals?: boolean;
 }
 
@@ -309,7 +316,9 @@ export interface Chart {
     pluto: number;
     signVariant: 1 | 2;
     useDignityColors?: boolean;
+    useZodiacElementColors?: boolean;
     theme?: 0 | 1 | 2;
+    angloDenseLabelLayout?: "leader-columns" | "routed-cusps";
     ascmcSize?: number;
     chartRingThickness?: number;
     showLoF?: boolean;
@@ -324,6 +333,7 @@ export interface Chart {
     showHouseSystem?: boolean;
     showSymbols?: boolean;
     showAspects?: boolean;
+    showMinorAspects?: boolean;
     aspectThicknessMode?: boolean;
     aspectOpacityMode?: boolean;
     showTerms?: boolean;
@@ -386,6 +396,10 @@ export interface ChartRenderSnapshot {
   displayDatetime: string;
   renderVariant: RenderVariant;
   overlayRenderMode: OverlayRenderMode;
+  // The post-burst snapshot updates semantic/store truth only. The immediately
+  // preceding step frame already painted current wheel geometry and a validated
+  // collision layout, so repainting canvas layers here would create a late snap.
+  settleOverlayOnly?: boolean;
   renderInvalidation?: RenderInvalidation;
   outerRingMode: OuterRingMode;
   // Daemon-owned comparison grammar. `standard` keeps the primary house wheel
@@ -396,8 +410,9 @@ export interface ChartRenderSnapshot {
   interChartAspects?: InterChartAspect[];
   interChartBodyAspects?: InterChartBodyAspectsMap;
   outerRingItems?: Partial<Record<OuterRingMode, OuterRingItem[]>>;
-  // Snapshot-level mirror of the primary chart's click-toggle data, so the skin
-  // gates on snapshot.clickAspectFlags / reads snapshot.bodyAspects directly.
+  // Compatibility mirrors used by older snapshots. Current payloads keep the
+  // canonical click-toggle data on primaryChart to avoid serializing the same
+  // aspect adjacency graph twice.
   clickAspectFlags?: ClickAspectFlags;
   bodyAspects?: BodyAspectsMap;
   // Live session metadata (only on workspace document snapshots).

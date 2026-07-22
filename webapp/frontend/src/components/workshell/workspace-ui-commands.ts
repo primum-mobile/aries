@@ -19,16 +19,18 @@ function rightWorkspacePaneIsOpen(state: WorkspaceSnapshot): boolean {
     state.eclipsesPane !== null ||
     state.lunarMansionsPane !== null ||
     state.synodicCyclesPane !== null ||
-    state.ascensionalTransitsPane !== null
+    state.ascensionalTransitsPane !== null ||
+    state.featureCatalogPane !== null
   );
 }
 
 export function closeInspectorAndNotes(): boolean {
   const frame = useFrameLayoutStore.getState();
-  const hadOpenPane = frame.inspectorOpen || frame.notesPaneOpen;
+  const hadOpenPane = frame.inspectorOpen || frame.notesPaneOpen || frame.styleEditorOpen;
   if (!hadOpenPane) return false;
   frame.setInspectorOpen(false);
   frame.setNotesPaneOpen(false);
+  frame.setStyleEditorOpen(false);
   return true;
 }
 
@@ -38,6 +40,7 @@ export function closeWorkspaceTransientPanes(): boolean {
   const hadOpenPane =
     frame.inspectorOpen ||
     frame.notesPaneOpen ||
+    frame.styleEditorOpen ||
     rightWorkspacePaneIsOpen(workspace);
 
   if (!hadOpenPane) return false;
@@ -45,5 +48,6 @@ export function closeWorkspaceTransientPanes(): boolean {
   workspace.closeAllRightPanes();
   frame.setInspectorOpen(false);
   frame.setNotesPaneOpen(false);
+  frame.setStyleEditorOpen(false);
   return true;
 }

@@ -31,6 +31,51 @@ ZT_LOCALMEAN = 2      # LMT — wx passthrough (no display conversion), kept
 ZT_LOCALAPPARENT = 3  # LAT — wx passthrough, kept
 
 
+def utc_to_zone_fields(utc_dt, tzid):
+    """Resolve one exact UTC instant into an IANA zone and Time fields.
+
+    Deriving the offset from the UTC instant avoids both stale DST flags and
+    the ambiguous repeated local hour at the autumn clock change.
+    """
+    try:
+        y, m, d, h, mi, s = [int(v) for v in tuple(utc_dt)[:6]]
+    except Exception:
+        return None
+    if not tzid or zoneinfo is None:
+        return None
+    try:
+        aware_utc = datetime.datetime(
+            y, m, d, h, mi, s, tzinfo=datetime.timezone.utc,
+        )
+        aware_local = aware_utc.astimezone(zoneinfo.ZoneInfo(str(tzid)))
+        total_offset = aware_local.utcoffset()
+        dst_offset = aware_local.dst() or datetime.timedelta(0)
+        if total_offset is None:
+            return None
+        standard_minutes = int(
+            (total_offset - dst_offset).total_seconds() // 60
+        )
+        plus = standard_minutes >= 0
+        absolute_minutes = abs(standard_minutes)
+        return {
+            "datetime": (
+                aware_local.year,
+                aware_local.month,
+                aware_local.day,
+                aware_local.hour,
+                aware_local.minute,
+                aware_local.second,
+            ),
+            "tzid": str(tzid),
+            "plus": plus,
+            "zh": absolute_minutes // 60,
+            "zm": absolute_minutes % 60,
+            "daylightsaving": dst_offset != datetime.timedelta(0),
+        }
+    except Exception:
+        return None
+
+
 def _resolve_tzid(time_obj, place):
     tzid = getattr(time_obj, "tzid", "") or ""
     if tzid:
@@ -76,21 +121,9 @@ def utc_to_chart_local(time_obj, utc_dt, *, place=None,
     if zt in (ZT_LOCALMEAN, ZT_LOCALAPPARENT):
         return y, m, d, h, mi, s
     tzid = _resolve_tzid(time_obj, place)
-    if tzid and zoneinfo is not None:
-        try:
-            local_dt = datetime.datetime(
-                y, m, d, h, mi, s, tzinfo=datetime.timezone.utc,
-            ).astimezone(zoneinfo.ZoneInfo(tzid))
-            return (
-                local_dt.year,
-                local_dt.month,
-                local_dt.day,
-                local_dt.hour,
-                local_dt.minute,
-                local_dt.second,
-            )
-        except Exception:
-            pass
+    resolved_zone = utc_to_zone_fields((y, m, d, h, mi, s), tzid)
+    if resolved_zone is not None:
+        return resolved_zone["datetime"]
     try:
         base = datetime.datetime(y, m, d, h, mi, s)
         use_plus = bool(getattr(time_obj, "plus", True) if plus is None else plus)
@@ -143,37 +176,9 @@ def utc_to_place_local_zone(utc_dt, place):
     place_time.daylightsaving = False
     place_time.tzid = ""
     tzid = _resolve_tzid(place_time, place)
-    if tzid and zoneinfo is not None:
-        try:
-            aware_utc = datetime.datetime(
-                y, m, d, h, mi, s, tzinfo=datetime.timezone.utc,
-            )
-            aware_local = aware_utc.astimezone(zoneinfo.ZoneInfo(tzid))
-            total_offset = aware_local.utcoffset()
-            dst_offset = aware_local.dst() or datetime.timedelta(0)
-            if total_offset is not None:
-                standard_minutes = int(
-                    (total_offset - dst_offset).total_seconds() // 60
-                )
-                plus = standard_minutes >= 0
-                absolute_minutes = abs(standard_minutes)
-                return {
-                    "datetime": (
-                        aware_local.year,
-                        aware_local.month,
-                        aware_local.day,
-                        aware_local.hour,
-                        aware_local.minute,
-                        aware_local.second,
-                    ),
-                    "tzid": tzid,
-                    "plus": plus,
-                    "zh": absolute_minutes // 60,
-                    "zm": absolute_minutes % 60,
-                    "daylightsaving": dst_offset != datetime.timedelta(0),
-                }
-        except Exception:
-            pass
+    resolved_zone = utc_to_zone_fields((y, m, d, h, mi, s), tzid)
+    if resolved_zone is not None:
+        return resolved_zone
 
     local_dt = utc_to_chart_local(place_time, (y, m, d, h, mi, s), place=place)
     return {

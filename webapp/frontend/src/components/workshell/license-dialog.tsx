@@ -21,7 +21,7 @@ export function LicenseDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="max-h-[88vh] w-[min(94vw,560px)] max-w-none overflow-y-auto">
+      <DialogContent size="prose" className="max-h-[var(--aries-dialog-viewport-height)] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{t("license.title")}</DialogTitle>
           <DialogDescription>{t("license.dialogDescription")}</DialogDescription>

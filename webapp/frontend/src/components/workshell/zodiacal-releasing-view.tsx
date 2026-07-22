@@ -21,12 +21,21 @@ import { LIST_ROLE_CLASSES } from "@/lib/list-tokens";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/i18n";
+import { semanticChartColor } from "@/lib/theme/semantic-color";
 
 import { TimedChartContextMenu } from "./directions-view";
 import { downloadText, tableToTsv } from "./generic-table-view";
 import { exportTablePayloadPdf } from "./table-pdf-export";
 import { exportTextContent } from "./text-export";
 import { ColumnResizeHandle, useResizableTableColumns } from "./resizable-table-columns";
+import { RetainedPaneShell } from "./retained-pane-shell";
+import {
+  PANE_CONTROL_CLASSES,
+  PaneControlBar,
+  PaneInfoBar,
+  PaneSelect,
+  PaneToolbarButton,
+} from "./list-controls";
 import { useSettledWorkspaceRefreshSeq } from "./step-refresh";
 
 // ---------------------------------------------------------------------------
@@ -62,7 +71,9 @@ type ZrHeader = {
   degreeText?: string;
   shiftLabel?: string;
   signColors?: string[];
+  signColorRoles?: Array<string | null>;
   planetColors?: string[];
+  planetColorRoles?: Array<string | null>;
 };
 
 type BindingOption = { value: string | number | boolean; label?: string; glyph?: string };
@@ -209,49 +220,71 @@ export function ZodiacalReleasingView({ documentId, parentDocumentId, sourceName
 
   if (error && !payload) {
     return (
-      <PaneShell sourceName={sourceName} onClose={onClose}>
+      <RetainedPaneShell
+        title={t("zrview.zodiacalReleasing")}
+        sourceName={sourceName}
+        closeLabel={t("zrview.closeZodiacalReleasing")}
+        onClose={onClose}
+        titleSize="large"
+      >
         <div className="flex flex-1 items-center justify-center p-6 text-[length:var(--aries-font-size-base)] text-[color:var(--aries-text-muted)]">
           {error}
         </div>
-      </PaneShell>
+      </RetainedPaneShell>
     );
   }
   if (!payload) {
     return (
-      <PaneShell sourceName={sourceName} onClose={onClose}>
+      <RetainedPaneShell
+        title={t("zrview.zodiacalReleasing")}
+        sourceName={sourceName}
+        closeLabel={t("zrview.closeZodiacalReleasing")}
+        onClose={onClose}
+        titleSize="large"
+      >
         <div className="flex flex-1 items-center justify-center p-6 text-[length:var(--aries-font-size-base)] text-[color:var(--aries-text-muted)]">
           {t("zrview.loading")}
         </div>
-      </PaneShell>
+      </RetainedPaneShell>
     );
   }
   // BC charts: the daemon returns the unavailable payload
   // (morin.py:17133-17137 gate).
   if (payload.unavailable) {
     return (
-      <PaneShell sourceName={sourceName} onClose={onClose}>
+      <RetainedPaneShell
+        title={t("zrview.zodiacalReleasing")}
+        sourceName={sourceName}
+        closeLabel={t("zrview.closeZodiacalReleasing")}
+        onClose={onClose}
+        titleSize="large"
+      >
         <div className="flex flex-1 items-center justify-center p-6 text-center text-[length:var(--aries-font-size-base)] text-[color:var(--aries-text-muted)]">
           {payload.notes?.[0] ?? t("zrview.unavailable")}
         </div>
-      </PaneShell>
+      </RetainedPaneShell>
     );
   }
 
   const releaserOptions = asOptions(bindingOptions.releaser);
   const signOptions = asOptions(bindingOptions.sign);
   const signColors = zr.signColors ?? [];
+  const signColorRoles = zr.signColorRoles ?? [];
   const planetColors = zr.planetColors ?? [];
+  const planetColorRoles = zr.planetColorRoles ?? [];
   const signNames = zr.signNames ?? [];
 
   return (
-    <PaneShell
+    <RetainedPaneShell
+      title={t("zrview.zodiacalReleasing")}
       sourceName={sourceName}
+      closeLabel={t("zrview.closeZodiacalReleasing")}
       onClose={onClose}
+      titleSize="large"
       toolbar={
         <>
-          <button
+          <PaneToolbarButton
             type="button"
-            className="inline-flex h-6 items-center gap-1 rounded border border-[color:var(--aries-border-subtle)] px-1.5 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)] hover:bg-[color:var(--aries-surface-subtle)]"
             onClick={() => {
               const text = tableToTsv(payload, payload.rows);
               void navigator.clipboard?.writeText(text).catch(() => {
@@ -260,11 +293,10 @@ export function ZodiacalReleasingView({ documentId, parentDocumentId, sourceName
             }}
             title={t("zrview.copyRows")}
           >
-            <Copy className="size-3.5" />
-          </button>
-          <button
+            <Copy />
+          </PaneToolbarButton>
+          <PaneToolbarButton
             type="button"
-            className="inline-flex h-6 items-center gap-1 rounded border border-[color:var(--aries-border-subtle)] px-1.5 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)] hover:bg-[color:var(--aries-surface-subtle)]"
             onClick={() =>
               void exportTextContent({
                 filename: "zodiacal_releasing",
@@ -277,11 +309,10 @@ export function ZodiacalReleasingView({ documentId, parentDocumentId, sourceName
             }
             title={t("zrview.exportTsv")}
           >
-            <Download className="size-3.5" />
-          </button>
-          <button
+            <Download />
+          </PaneToolbarButton>
+          <PaneToolbarButton
             type="button"
-            className="inline-flex h-6 items-center gap-1 rounded border border-[color:var(--aries-border-subtle)] px-1.5 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)] hover:bg-[color:var(--aries-surface-subtle)]"
             onClick={() =>
               void exportTablePayloadPdf(payload, payload.rows, {
                 fileStem: "zodiacal_releasing",
@@ -290,22 +321,21 @@ export function ZodiacalReleasingView({ documentId, parentDocumentId, sourceName
             }
             title={t("zrview.exportPdf")}
           >
-            <Download className="size-3.5" />
+            <Download />
             PDF
-          </button>
+          </PaneToolbarButton>
         </>
       }
     >
       {/* Binding controls — releaser / manual sign / Spirit-shift toggle
           (the ZRWnd context-menu + header-click model,
           zodiacalreleasingwnd.py:159-200,894-924). */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[color:var(--aries-border-subtle)] bg-background px-3 py-2">
+      <PaneControlBar>
         <label className="text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]" htmlFor="zr-pane-releaser">
           {zr.releaserHeading ?? t("zrview.releaser")}
         </label>
-        <select
+        <PaneSelect
           id="zr-pane-releaser"
-          className="h-7 rounded border border-[color:var(--aries-border-subtle)] bg-background px-2 text-[length:var(--aries-font-size-small)]"
           value={releaser}
           disabled={pending}
           onChange={(event) => void updateBinding({ releaser: event.target.value })}
@@ -315,11 +345,10 @@ export function ZodiacalReleasingView({ documentId, parentDocumentId, sourceName
               {option.label ?? String(option.value)}
             </option>
           ))}
-        </select>
+        </PaneSelect>
         {releaser === "sign" ? (
-          <select
+          <PaneSelect
             aria-label={t("zrview.manualSign")}
-            className="h-7 rounded border border-[color:var(--aries-border-subtle)] bg-background px-2 text-[length:var(--aries-font-size-small)]"
             value={String(startSign)}
             disabled={pending}
             onChange={(event) => void updateBinding({ start_sign: Number(event.target.value) })}
@@ -329,10 +358,15 @@ export function ZodiacalReleasingView({ documentId, parentDocumentId, sourceName
                 {option.label ?? String(option.value)}
               </option>
             ))}
-          </select>
+          </PaneSelect>
         ) : null}
         {releaser === "spirit" ? (
-          <label className="inline-flex h-7 items-center gap-1 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)]">
+          <label
+            className={cn(
+              PANE_CONTROL_CLASSES.checkboxLabel,
+              "gap-[var(--aries-control-gap-compact)]",
+            )}
+          >
             <input
               type="checkbox"
               checked={applyShift}
@@ -342,19 +376,38 @@ export function ZodiacalReleasingView({ documentId, parentDocumentId, sourceName
             {zr.shiftLabel ?? t("zrview.applyShift")}
           </label>
         ) : null}
-      </div>
+      </PaneControlBar>
 
       {/* Releaser info line — "Releaser: <label> in <glyph> <name> <deg>"
           (ZRWnd._draw_releaser_header, zodiacalreleasingwnd.py:518-566). */}
-      <div className="flex shrink-0 items-center gap-1.5 border-b border-[color:var(--aries-border-subtle)] px-3 py-1.5 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)]">
+      <PaneInfoBar>
         <span>
           {zr.releaserHeading ?? t("zrview.releaser")}: {zr.releaserLabel ?? ""}
         </span>
         <span className="text-[color:var(--aries-text-muted)]">{zr.inLabel ?? t("zrview.in")}</span>
-        <span style={{ fontFamily: "'AriesMorinus'", color: signColors[zr.signIndex ?? 0] }}>{zr.signGlyph ?? ""}</span>
-        <span style={{ color: signColors[zr.signIndex ?? 0] }}>{zr.signName ?? ""}</span>
+        <span
+          style={{
+            fontFamily: "'AriesMorinus'",
+            color: semanticChartColor(
+              signColorRoles[zr.signIndex ?? 0],
+              signColors[zr.signIndex ?? 0],
+            ),
+          }}
+        >
+          {zr.signGlyph ?? ""}
+        </span>
+        <span
+          style={{
+            color: semanticChartColor(
+              signColorRoles[zr.signIndex ?? 0],
+              signColors[zr.signIndex ?? 0],
+            ),
+          }}
+        >
+          {zr.signName ?? ""}
+        </span>
         {zr.degreeText ? <span>{zr.degreeText}</span> : null}
-      </div>
+      </PaneInfoBar>
 
       {/* Main table: interleaved L1 + L2 (build_main; click L2 to drill). */}
       <div ref={listRef} className="min-h-0 flex-1 overflow-auto">
@@ -371,7 +424,9 @@ export function ZodiacalReleasingView({ documentId, parentDocumentId, sourceName
                 row={row}
                 documentId={documentId}
                 signColors={signColors}
+                signColorRoles={signColorRoles}
                 planetColors={planetColors}
+                planetColorRoles={planetColorRoles}
                 selected={row.id === drilledRowId}
                 onClick={asNumber(row.meta?.level, 0) === 2 ? () => toggleDrill(row) : undefined}
               />
@@ -384,30 +439,40 @@ export function ZodiacalReleasingView({ documentId, parentDocumentId, sourceName
           (ZRWnd._draw_drill_panel, zodiacalreleasingwnd.py:704-776). */}
       {drilledL2 ? (
         <div className="flex max-h-[45%] min-h-0 shrink-0 flex-col border-t border-[color:var(--aries-border-subtle)]">
-          <div className="flex shrink-0 items-center gap-1.5 bg-background px-3 py-1.5 text-[length:var(--aries-font-size-small)]">
+          <PaneInfoBar className="border-b-0">
             <span className="text-[color:var(--aries-text-muted)]">L2:</span>
             <span
               style={{
                 fontFamily: "'AriesMorinus'",
-                color: signColors[asNumber(drilledL2.meta?.sign, 0)],
+                color: semanticChartColor(
+                  signColorRoles[asNumber(drilledL2.meta?.sign, 0)],
+                  signColors[asNumber(drilledL2.meta?.sign, 0)],
+                ),
               }}
             >
               {drilledL2.cells[0]?.glyph ?? ""}
             </span>
-            <span style={{ color: signColors[asNumber(drilledL2.meta?.sign, 0)] }}>
+            <span
+              style={{
+                color: semanticChartColor(
+                  signColorRoles[asNumber(drilledL2.meta?.sign, 0)],
+                  signColors[asNumber(drilledL2.meta?.sign, 0)],
+                ),
+              }}
+            >
               {signNames[asNumber(drilledL2.meta?.sign, 0)] ?? ""}
             </span>
             <span>{formatDrillDate(drilledL2.meta?.periodStart)}</span>
             {flagText(drilledL2) ? <span className="font-semibold">{flagText(drilledL2)}</span> : null}
             <button
               type="button"
-              className="ml-auto inline-flex size-5 items-center justify-center rounded hover:bg-accent/40"
+              className={cn(PANE_CONTROL_CLASSES.microIconButton, "ml-auto")}
               onClick={() => void updateBinding({ drill_l2_start: null })}
               aria-label={t("zrview.closeDrill")}
             >
-              <X className="size-3.5" />
+              <X />
             </button>
-          </div>
+          </PaneInfoBar>
           <div className="min-h-0 flex-1 overflow-auto">
             <table
               className={cn(LIST_ROLE_CLASSES.symbolic, "border-collapse", tableResize.tableClassName)}
@@ -421,7 +486,9 @@ export function ZodiacalReleasingView({ documentId, parentDocumentId, sourceName
                     row={row}
                     documentId={documentId}
                     signColors={signColors}
+                    signColorRoles={signColorRoles}
                     planetColors={planetColors}
+                    planetColorRoles={planetColorRoles}
                   />
                 ))}
               </tbody>
@@ -429,47 +496,7 @@ export function ZodiacalReleasingView({ documentId, parentDocumentId, sourceName
           </div>
         </div>
       ) : null}
-    </PaneShell>
-  );
-}
-
-function PaneShell({
-  sourceName,
-  onClose,
-  toolbar,
-  children,
-}: {
-  sourceName?: string;
-  onClose?: () => void;
-  toolbar?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  const t = useT();
-  return (
-    <div className="font-morinus-text flex h-full min-h-0 flex-col bg-background">
-      <div className="flex shrink-0 items-center gap-2 border-b border-[color:var(--aries-border-subtle)] bg-background px-3 py-2">
-        <div className="min-w-0 truncate text-sm font-medium text-[color:var(--aries-text-primary)]">
-          {t("zrview.zodiacalReleasing")}
-          {sourceName ? (
-            <span className="ml-1 font-normal text-[color:var(--aries-text-muted)]">{sourceName}</span>
-          ) : null}
-        </div>
-        <div className="ml-auto flex items-center gap-1">
-          {toolbar}
-          {onClose ? (
-            <button
-              type="button"
-              className="inline-flex size-6 items-center justify-center rounded hover:bg-accent/40"
-              onClick={onClose}
-              aria-label={t("zrview.closeZodiacalReleasing")}
-            >
-              <X className="size-4" />
-            </button>
-          ) : null}
-        </div>
-      </div>
-      {children}
-    </div>
+    </RetainedPaneShell>
   );
 }
 
@@ -511,14 +538,18 @@ function ZrRow({
   row,
   documentId,
   signColors,
+  signColorRoles,
   planetColors,
+  planetColorRoles,
   selected,
   onClick,
 }: {
   row: GenericTableRow;
   documentId: string;
   signColors: string[];
+  signColorRoles: Array<string | null>;
   planetColors: string[];
+  planetColorRoles: Array<string | null>;
   selected?: boolean;
   onClick?: () => void;
 }) {
@@ -552,7 +583,15 @@ function ZrRow({
       >
         {/* Ribbon stripe (full row height). */}
         <td className="aries-list-cell !p-0">
-          <span className="block min-h-[var(--aries-list-row-height)] w-[6px]" style={{ backgroundColor: signColors[ribbonSign] }} />
+          <span
+            className="block min-h-[var(--aries-list-row-height)] w-[6px]"
+            style={{
+              backgroundColor: semanticChartColor(
+                signColorRoles[ribbonSign],
+                signColors[ribbonSign],
+              ),
+            }}
+          />
         </td>
         {/* Bullet + indent (level indicator). */}
         <td className={cn("aries-list-cell", ZR_CELL_NOWRAP, "text-center")} style={{ paddingLeft: `${(level - 1) * 5}px` }}>
@@ -560,7 +599,13 @@ function ZrRow({
         </td>
         {/* Sign glyph — hidden when the row repeats its parent chain
             (zodiacalreleasingwnd.py:658-664). */}
-        <td className={cn("aries-list-cell", ZR_CELL_NOWRAP, "text-center")} style={{ fontFamily: "'AriesMorinus'", color: signColors[sign] }}>
+        <td
+          className={cn("aries-list-cell", ZR_CELL_NOWRAP, "text-center")}
+          style={{
+            fontFamily: "'AriesMorinus'",
+            color: semanticChartColor(signColorRoles[sign], signColors[sign]),
+          }}
+        >
           {repeatsParent ? "" : row.cells[0]?.glyph ?? ""}
         </td>
         {/* Period (compact per-level format, daemon-built). */}
@@ -572,7 +617,13 @@ function ZrRow({
         {/* Length. */}
         <td className={cn("aries-list-cell", ZR_CELL_NOWRAP, "text-right")}>{row.cells[3]?.text ?? ""}</td>
         {/* Ruler glyph — hidden when repeats parent (zodiacalreleasingwnd.py:680-686). */}
-        <td className={cn("aries-list-cell", ZR_CELL_NOWRAP, "text-center")} style={{ fontFamily: "'AriesMorinus'", color: planetColors[ruler] }}>
+        <td
+          className={cn("aries-list-cell", ZR_CELL_NOWRAP, "text-center")}
+          style={{
+            fontFamily: "'AriesMorinus'",
+            color: semanticChartColor(planetColorRoles[ruler], planetColors[ruler]),
+          }}
+        >
           {repeatsParent ? "" : row.cells[4]?.glyph ?? ""}
         </td>
         {/* Flags: current rows are highlighted; LB and peak markers remain compact. */}

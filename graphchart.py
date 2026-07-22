@@ -23,6 +23,7 @@ import primdirs
 import wxcompat
 import types
 import weakref
+from collections.abc import Mapping
 from aries.ui import tokens as _tokens
 
 _MIDPOINT_RING_LAYOUT_CACHE = weakref.WeakKeyDictionary()
@@ -61,7 +62,7 @@ class GraphChart:
 	THEME_CLASSIC = 0
 	THEME_COMPACT = 1
 
-	def __init__(self, chrt, size, opts, bw, planetaryday=True, chrt2 = None, theme=None):
+	def __init__(self, chrt, size, opts, bw, planetaryday=True, chrt2 = None, theme=None, visual_style=None):
 		self.chart = chrt
 		self.chart2 = chrt2
 		self.w, self.h = size
@@ -75,6 +76,13 @@ class GraphChart:
 			self.h = max(1, int(getattr(self.h, "y", 1)))
 		self.options = opts
 		self.theme = theme if theme is not None else getattr(opts, 'theme', self.THEME_CLASSIC)
+		# Export-only visual profile seam. Values are multipliers against the
+		# established GraphChart defaults, produced from explicit, daemon-
+		# validated style-profile overrides. Ordinary wx callers pass nothing;
+		# Anglo is deliberately excluded because this renderer has no Anglo
+		# grammar and must not masquerade as the web wheel's implementation.
+		self._visual_style = visual_style if isinstance(visual_style, Mapping) else {}
+		self._visual_style_enabled = self.theme in (self.THEME_CLASSIC, self.THEME_COMPACT)
 		self.comparison_whole_sign = bool(self.chart2 is not None and getattr(self.options, "hsys", "P") == 'N')
 		self.click_planet = None  # (chart_role, planet_index) or None, for exclusive-aspects-on-click mode
 		self.show_houses = bool(getattr(self.options, "houses", False) and (getattr(self.options, "hsys", "P") != 'N' or self.comparison_whole_sign))
@@ -408,7 +416,16 @@ class GraphChart:
 				self.rHouse = self.rBase+self.rHousesectorlen*self.maxradius
 				self.rHouseName = self.maxradius*0.27-self._baseoffset
 
-		self.smallsymbolSize = 2*self.symbolSize/3
+		profile = 'classic' if self.theme == self.THEME_CLASSIC else 'compact'
+		self.symbolSize *= self._visual_factor('bodyScale')
+		self.signSize *= self._visual_factor(profile + 'SignScale')
+		# The web contract makes subdivision and outer sizes independent from
+		# body size. Their native defaults are still maxradius/24 and /16, so a
+		# multiplier of one preserves every historical GraphChart pixel.
+		self.smallsymbolSize = (self.maxradius/24.0) * self._visual_factor(profile + 'SubdivisionScale')
+		self.outerSymbolSize = (self.maxradius/16.0) * self._visual_factor(profile + 'OuterScale')
+		if hasattr(self, 'rOuterRetr'):
+			self.rOuterRetr = self.rOuterLine + self.outerSymbolSize * 0.16 * self._visual_factor('outerMotionRadiusScale')
 		try:
 			self.planetGlyphScale = max(0.5, float(getattr(self, 'PLANET_GLYPH_SCALE', 1.0)))
 		except Exception:
@@ -422,6 +439,7 @@ class GraphChart:
 		except Exception:
 			self.infoLabelScale = 1.0
 		self.planetGlyphSize = max(1.0, self.symbolSize * self.planetGlyphScale)
+		self.outerPlanetGlyphSize = max(1.0, self.outerSymbolSize * self.planetGlyphScale)
 
 		# Font sizes always use the REAL Retina DPI, even when the bitmap is
 		# rendered at logical 1× (legacy aesthetic). Otherwise glyph point
@@ -435,19 +453,24 @@ class GraphChart:
 				return 1
 
 		self.fntMorinus = wxcompat.VectorFont(wxcompat.MORINUS_BUNDLED_FACE, _fs(self.planetGlyphSize))
+		self.fntOuterMorinus = wxcompat.VectorFont(wxcompat.MORINUS_BUNDLED_FACE, _fs(self.outerPlanetGlyphSize))
 		self.fntSmallMorinus = wxcompat.VectorFont(wxcompat.MORINUS_BUNDLED_FACE, _fs(self.smallsymbolSize))
 		self.fntMorinusSigns = wxcompat.VectorFont(wxcompat.MORINUS_BUNDLED_FACE, _fs(self.signSize))
-		self.fntAspects = wxcompat.VectorFont(wxcompat.MORINUS_BUNDLED_FACE, _fs(self.symbolSize/2))
+		self.aspectGlyphSize = self.symbolSize/2 * self._visual_factor('aspectGlyphScale')
+		self.aspectGlyphOffset = self.symbolSize/4 * self._visual_factor('aspectGlyphOffsetScale')
+		self.fntAspects = wxcompat.VectorFont(wxcompat.MORINUS_BUNDLED_FACE, _fs(self.aspectGlyphSize))
 		self.fntRetr = wxcompat.VectorFont(wxcompat.MORINUS_BUNDLED_FACE, _fs(self.symbolSize/2))
 		text_face = getattr(common.common, 'abc_face', 'FreeSans')
 		# Septile glyph is a literal sans-serif 'S' — Morinus.ttf's 'S' slot is
 		# occupied by the trine triangle. Bold weight gives the single letter
 		# enough visual presence at the same size as the Morinus glyph strokes.
 		text_bold_face = getattr(common.common, 'abc_bold_face', text_face)
-		self.fntAspectsText = wxcompat.VectorFont(text_bold_face, _fs(self.symbolSize/2))
-		self.fntText = wxcompat.VectorFont(text_face, _fs(self.symbolSize/2))
+		self.fntAspectsText = wxcompat.VectorFont(text_bold_face, _fs(self.aspectGlyphSize))
+		self.fntText = wxcompat.VectorFont(text_face, _fs(self.outerSymbolSize/2 * self._visual_factor('outerLabelScale')))
+		self.fntHouseText = wxcompat.VectorFont(text_face, _fs(self.symbolSize/2 * self._visual_factor('houseLabelScale')))
+		self.fntOuterHouseText = wxcompat.VectorFont(text_face, _fs(self.outerSymbolSize/2 * self._visual_factor('houseLabelScale')))
 		self.fntAntisText = wxcompat.VectorFont(text_face, _fs(self.symbolSize))
-		self.fntDegreeText = wxcompat.VectorFont(text_face, _fs(self.symbolSize/2 * self.degreeTextScale))
+		self.fntDegreeText = wxcompat.VectorFont(text_face, _fs(self.symbolSize/2 * self.degreeTextScale * self._visual_factor('degreeScale')))
 		self.fntInfoLabel = wxcompat.VectorFont(text_face, _fs(self.symbolSize * 0.38 * self.infoLabelScale))
 		_overlay_icon_sc = max(0.5, float(getattr(self, 'OVERLAY_ICON_SCALE', 1.0)))
 		_overlay_lbl_sc = max(0.5, float(getattr(self, 'OVERLAY_LABEL_SCALE', 1.0)))
@@ -459,6 +482,15 @@ class GraphChart:
 		else:
 			self.fntSmallText = wxcompat.VectorFont(text_face, _fs(self.symbolSize/2))
 		self.fntSmallTextOuter = wxcompat.VectorFont(text_face, _fs(self.symbolSize/4))
+		minute_base = self.symbolSize/4 if self.theme == self.THEME_CLASSIC else self.symbolSize/3
+		self.fntMinuteText = wxcompat.VectorFont(text_face, _fs(minute_base * self._visual_factor('minuteScale')))
+		self.fntMotionClassic = wxcompat.VectorFont(text_face, _fs(self.symbolSize/4 * self._visual_factor('motionScale')))
+		self.fntMotionCompact = wxcompat.VectorFont(text_face, _fs(self.symbolSize/2 * self._visual_factor('motionScale')))
+		self.fntMotionStation = wxcompat.VectorFont(text_face, _fs(self.symbolSize/3 * self._visual_factor('motionScale')))
+		self.fntMotionCompactRetr = wxcompat.VectorFont(wxcompat.MORINUS_BUNDLED_FACE, _fs(self.symbolSize/2 * self._visual_factor('motionScale')))
+		outer_motion_base = self.outerSymbolSize/3 if self.theme == self.THEME_CLASSIC else self.outerSymbolSize/4
+		self.fntOuterMotion = wxcompat.VectorFont(text_face, _fs(outer_motion_base * self._visual_factor('motionScale')))
+		self.fntOuterMotionStation = wxcompat.VectorFont(text_face, _fs(self.outerSymbolSize/3 * self._visual_factor('motionScale')))
 		self.fntTinyText = wxcompat.VectorFont(text_face, _fs(self.symbolSize/5))
 		self.fntBigText = wxcompat.VectorFont(text_face, _fs(self.symbolSize/4*3 * self.infoLabelScale))
 		self.fntMorinus2 = wxcompat.VectorFont(wxcompat.MORINUS_BUNDLED_FACE, _fs(self.symbolSize/4*3))
@@ -496,6 +528,51 @@ class GraphChart:
 			22: mtexts.txts['J1900'],
 			23: mtexts.txts['B1950'],
 		}
+
+	def _visual_factor(self, key):
+		if not self._visual_style_enabled:
+			return 1.0
+		try:
+			value = float(self._visual_style.get(key, 1.0))
+		except (TypeError, ValueError):
+			return 1.0
+		return value if math.isfinite(value) and value > 0.0 else 1.0
+
+	def _visual_has(self, key):
+		return self._visual_style_enabled and key in self._visual_style
+
+	def _visual_pen_width(self, key, native_width):
+		return max(1, int(round(float(native_width) * self._visual_factor(key))))
+
+	def _hairline_width(self):
+		return self._visual_pen_width('hairlineStroke', 1)
+
+	def _medium_width(self):
+		# Preserve GraphChart's native 1/2 px bucket at multiplier one. The web
+		# token is translated relatively because Canvas uses continuous 720 px
+		# reference scaling while the retained bitmap renderer does not.
+		native = 1 if self.chartsize <= GraphChart.MEDIUM_SIZE else 2
+		return self._visual_pen_width('mediumStrokeBase', native)
+
+	def _degree_tick_width(self):
+		key = 'degreeTickStrokeSmall' if self.chartsize <= GraphChart.MEDIUM_SIZE else 'degreeTickStrokeLarge'
+		native = 1 if self.chartsize <= GraphChart.MEDIUM_SIZE else 2
+		return self._visual_pen_width(key, native)
+
+	def _ascmc_base_width(self):
+		fallback = 5.0 * self._visual_factor('ascMcStrokeBase')
+		if self._visual_has('ascMcStrokeBase'):
+			return fallback
+		try:
+			return float(getattr(self.options, 'ascmcsize', fallback))
+		except (TypeError, ValueError):
+			return fallback
+
+	def _outer_radius_offset(self):
+		return self.outerSymbolSize * 0.2 * self._visual_factor('outerRadiusOffsetScale')
+
+	def _outer_outside_pad(self):
+		return int(self.outerSymbolSize * 0.10 * self._visual_factor('outerOutsidePadScale'))
 
 	def _effective_hsys(self):
 		if self.comparison_whole_sign:
@@ -565,11 +642,18 @@ class GraphChart:
 			if self.chartsize <= GraphChart.SMALL_SIZE:
 				return 1
 			return 2
+		minimum = _tokens.CHART_RING_THICKNESS_MIN * self._visual_factor('chartRingStrokeMin')
+		maximum = _tokens.CHART_RING_THICKNESS_MAX * self._visual_factor('chartRingStrokeMax')
+		fallback = _tokens.CHART_RING_THICKNESS * self._visual_factor('chartRingStrokeFallback')
 		try:
-			value = int(getattr(self.options, 'chartringthickness', _tokens.CHART_RING_THICKNESS))
+			value = (
+				fallback
+				if self._visual_has('chartRingStrokeFallback')
+				else float(getattr(self.options, 'chartringthickness', fallback))
+			)
 		except (TypeError, ValueError):
-			return _tokens.CHART_RING_THICKNESS
-		return max(_tokens.CHART_RING_THICKNESS_MIN, min(_tokens.CHART_RING_THICKNESS_MAX, value))
+			value = fallback
+		return max(minimum, min(maximum, value))
 
 	def _scaled_line_w(self, requested, ref_size=720):
 		"""Scale a desired pen width by current chart size so strokes stay
@@ -839,8 +923,8 @@ class GraphChart:
 			clr = self.options.clraspect[asp.typ]
 		txt, font_role = common.common.aspect_glyph(asp.typ)
 		fnt = self.fntAspectsText if font_role == 'text' else self.fntAspects
-		left = x - self.symbolSize / 4
-		top = y - self.symbolSize / 4
+		left = x - self.aspectGlyphOffset
+		top = y - self.aspectGlyphOffset
 		self.draw.text((left, top), txt, fill=clr, font=fnt)
 		self._register_text_hover_region(
 			'aspect',
@@ -1114,14 +1198,22 @@ class GraphChart:
 		if self.options.aspect_thickness_mode:
 			if asp.max_orb > 0:
 				orb_ratio = min(asp.aspdif / asp.max_orb, 1.0)
-				width = max(1, int(round(4 * (1 - orb_ratio))))
+				minimum = self._visual_pen_width('aspectClassicThicknessMin', 1)
+				maximum = self._visual_pen_width('aspectClassicThicknessMax', 4)
+				width = max(minimum, int(round(maximum * (1 - orb_ratio))))
 				return wx.Pen(self._color_with_alpha(clr, orb_ratio), width)
-			return wx.Pen(wx.Colour(clr[0], clr[1], clr[2], 255), 2)
+			return wx.Pen(
+				wx.Colour(clr[0], clr[1], clr[2], 255),
+				self._visual_pen_width('aspectClassicThicknessDefault', 2),
+			)
 
-		pen = wx.Pen(clr, 1)
+		pen = wx.Pen(clr, self._visual_pen_width('aspectClassicWidth', 1))
 		if not exact:
-			pen = wx.Pen(clr, 1, wx.USER_DASH)
-			pen.SetDashes([10, 10])
+			pen = wx.Pen(clr, self._visual_pen_width('aspectClassicWidth', 1), wx.USER_DASH)
+			pen.SetDashes([
+				max(1, int(round(10 * self._visual_factor('aspectClassicDashOn')))),
+				max(1, int(round(10 * self._visual_factor('aspectClassicDashOff')))),
+			])
 		return pen
 
 	def _draw_aspect_line(self, x1, y1, x2, y2, asp, exact, body_a=None, body_b=None):
@@ -1332,10 +1424,10 @@ class GraphChart:
 					fsdata = getattr(getattr(self.chart, 'fixstars', None), 'data', None)
 				if fsdata:
 					self.showfss = self.mergefsaspmatrices()
-					_rText = (self.rOuterLine + self.symbolSize * 0.2)
+					_rText = self.rOuterLine + self._outer_radius_offset()
 					self.fsshift = self.arrangefs(fsdata, self.showfss, _rText)
 
-					_rText = (self.rOuterLine + self.symbolSize * 0.2)
+					_rText = self.rOuterLine + self._outer_radius_offset()
 					self.fsyoffs = self.arrangeyfs(fsdata, self.fsshift, self.showfss, _rText)
 					self.drawFixstarsLines(self.showfss)
 				else:
@@ -1348,7 +1440,7 @@ class GraphChart:
 				self._asteroid_ring_rows = common.build_ring_text_rows(self._asteroid_ring_items)
 				if self._asteroid_ring_rows:
 					self.showasteroids = list(range(len(self._asteroid_ring_rows)))
-					_rText = (self.rOuterLine + self.symbolSize * 0.2)
+					_rText = self.rOuterLine + self._outer_radius_offset()
 					self.asteroidshift = self.arrangefs(self._asteroid_ring_rows, self.showasteroids, _rText)
 					self.asteroidyoffs = self.arrangeyfs(self._asteroid_ring_rows, self.asteroidshift, self.showasteroids, _rText)
 					self.drawAsteroidsLines(self._asteroid_ring_rows, self.showasteroids, self.asteroidshift)
@@ -1361,7 +1453,7 @@ class GraphChart:
 				self._midpoint_ring_items = common.collect_midpoint_ring_items(self.chart, self.options)
 				if self._midpoint_ring_items:
 					self.showmidpoints = list(range(len(self._midpoint_ring_items)))
-					_rText = (self.rOuterLine + self.symbolSize * 0.2)
+					_rText = self.rOuterLine + self._outer_radius_offset()
 					self.midpointshift, self.midpointyoffs = self._midpoint_ring_layout(
 						self._midpoint_ring_items,
 						self.showmidpoints,
@@ -1385,7 +1477,7 @@ class GraphChart:
 				self._hybrid_ring_rows = common.build_ring_text_rows(self._hybrid_ring_items)
 				if self._hybrid_ring_rows:
 					self.showhybridhits = list(range(len(self._hybrid_ring_rows)))
-					_rText = (self.rOuterLine + self.symbolSize * 0.2)
+					_rText = self.rOuterLine + self._outer_radius_offset()
 					self.hybridhitshift = self.arrangefs(self._hybrid_ring_rows, self.showhybridhits, _rText)
 					self.hybridhityoffs = self.arrangeyfs(self._hybrid_ring_rows, self.hybridhitshift, self.showhybridhits, _rText)
 					self.drawAsteroidsLines(self._hybrid_ring_rows, self.showhybridhits, self.hybridhitshift)
@@ -1429,14 +1521,14 @@ class GraphChart:
 					if is_outer:
 						self._parts_ap2 = parts_ap
 						self.apshow2 = list(range(len(parts_ap)))
-						_rText = (self.rOuterLine + self.symbolSize * 0.2)
+						_rText = self.rOuterLine + self._outer_radius_offset()
 						self.apshift2 = self.arrangeParts(parts_ap, self.apshow2, _rText)
 						self.apyoffs2 = self.arrangeyParts(parts_ap, self.apshow2, self.apshift2, _rText)
 						self.drawArabicPartsLines(parts_ap, self.apshow2, self.apshift2, C)
 					else:
 						self._parts_ap = parts_ap
 						self.apshow = list(range(len(parts_ap)))
-						_rText = (self.rOuterLine + self.symbolSize * 0.2)
+						_rText = self.rOuterLine + self._outer_radius_offset()
 						self.apshift = self.arrangeParts(parts_ap, self.apshow, _rText)
 						self.apyoffs = self.arrangeyParts(parts_ap, self.apshow, self.apshift, _rText)
 						self.drawArabicPartsLines(parts_ap, self.apshow, self.apshift, C)
@@ -1578,7 +1670,7 @@ class GraphChart:
 			clr = self.options.clrframe
 			if self.bw:
 				clr = (0, 0, 0)
-			pen = wx.Pen(clr, 1)
+			pen = wx.Pen(clr, self._hairline_width())
 			self.bdc.SetPen(pen)
 			self.bdc.DrawCircle(cx, cy, _i(self.rOuterMax))
 			self.bdc.DrawCircle(cx, cy, _i(self.rOuterHouse))
@@ -1606,7 +1698,7 @@ class GraphChart:
 			self.bdc.DrawCircle(cx, cy, _i(self.r30))
 
 			# Outer 10, 5, 1-circle
-			pen = wx.Pen(clr, 1)
+			pen = wx.Pen(clr, self._hairline_width())
 			self.bdc.SetPen(pen)
 			self.bdc.DrawCircle(cx, cy, _i(self.rOuter10))
 
@@ -1614,7 +1706,7 @@ class GraphChart:
 		clr = self.options.clrframe
 		if self.bw:
 			clr = (0, 0, 0)
-		pen = wx.Pen(clr, 1)
+		pen = wx.Pen(clr, self._hairline_width())
 		self.bdc.SetPen(pen)
 		self.bdc.DrawCircle(cx, cy, _i(self.r10))
 
@@ -1624,7 +1716,7 @@ class GraphChart:
 			clr = (0, 0, 0)
 
 		if self.options.showterms or self.options.showdecans:
-			pen = wx.Pen(clr, 1)
+			pen = wx.Pen(clr, self._hairline_width())
 			self.bdc.SetPen(pen)
 			self.bdc.DrawCircle(cx, cy, _i(self.r0))
 
@@ -1633,7 +1725,7 @@ class GraphChart:
 				clr = self.options.clrframe
 				if self.bw:
 					clr = (0, 0, 0)
-				pen = wx.Pen(clr, 1)
+				pen = wx.Pen(clr, self._hairline_width())
 				self.bdc.SetPen(pen)
 				self.bdc.DrawCircle(cx, cy, _i(self.rDecans))
 
@@ -1652,7 +1744,7 @@ class GraphChart:
 			clr = self.options.clrframe
 			if self.bw:
 				clr = (0, 0, 0)
-			pen = wx.Pen(clr, 1)
+			pen = wx.Pen(clr, self._hairline_width())
 			self.bdc.SetPen(pen)
 			self.bdc.DrawCircle(cx, cy, _i(self.rAsp))
 
@@ -1661,7 +1753,7 @@ class GraphChart:
 			clr = self.options.clrhouses
 			if self.bw:
 				clr = (0, 0, 0)
-			pen = wx.Pen(clr, 1)
+			pen = wx.Pen(clr, self._hairline_width())
 			self.bdc.SetPen(pen)
 			self.bdc.DrawCircle(cx, cy, _i(self.rHouse))
 
@@ -1670,7 +1762,7 @@ class GraphChart:
 		if self.bw:
 			clr = (0, 0, 0)
 
-		w = self._scaled_line_w(self.options.ascmcsize)
+		w = self._scaled_line_w(self._ascmc_base_width())
 
 		pen = wx.Pen(clr, w)
 		self.bdc.SetPen(pen)
@@ -1692,9 +1784,7 @@ class GraphChart:
 		clr = self.options.clrframe
 		if self.bw:
 			clr = (0, 0, 0)
-		w = 2
-		if self.chartsize <= GraphChart.MEDIUM_SIZE:
-			w = 1
+		w = self._degree_tick_width()
 
 		pen = wx.Pen(clr, w)
 		self.bdc.SetPen(pen)
@@ -1706,7 +1796,7 @@ class GraphChart:
 		clr = self.options.clrframe
 		if self.bw:
 			clr = (0, 0, 0)
-		pen = wx.Pen(clr, 1)
+		pen = wx.Pen(clr, self._hairline_width())
 		self.bdc.SetPen(pen)
 		self.drawLines(GraphChart.DEG1, asclon, self.r0, self.r1)
 
@@ -1716,9 +1806,7 @@ class GraphChart:
 			clr = self.options.clrframe
 			if self.bw:
 				clr = (0, 0, 0)
-			w = 2
-			if self.chartsize <= GraphChart.MEDIUM_SIZE:
-				w = 1
+			w = self._degree_tick_width()
 
 			pen = wx.Pen(clr, w)
 			self.bdc.SetPen(pen)
@@ -1730,7 +1818,7 @@ class GraphChart:
 			clr = self.options.clrframe
 			if self.bw:
 				clr = (0, 0, 0)
-			pen = wx.Pen(clr, 1)
+			pen = wx.Pen(clr, self._hairline_width())
 			self.bdc.SetPen(pen)
 			self.drawLines(GraphChart.DEG1, asclon, self.rOuter0, self.rOuter1)
 
@@ -1754,7 +1842,7 @@ class GraphChart:
 		clr = self.options.clrAscMC
 		if self.bw:
 			clr = (0, 0, 0)
-		w = self._scaled_line_w(self.options.ascmcsize)
+		w = self._scaled_line_w(self._ascmc_base_width())
 		pen = wx.Pen(clr, w)
 		self.bdc.SetPen(pen)
 		self.bdc.DrawCircle(cx, cy, _i(self.rBase))
@@ -1806,7 +1894,7 @@ class GraphChart:
 		clr = self.options.clrhouses
 		if self.bw:
 			clr = (0,0,0)
-		pen = wx.Pen(clr, 1)
+		pen = wx.Pen(clr, self._hairline_width())
 		self.bdc.SetPen(pen)
 		asc = self._display_house_anchor()
 		chrt = self.chart if chouses is self.chart.houses else self.chart2
@@ -1830,7 +1918,7 @@ class GraphChart:
 		clr = self.options.clrAscMC
 		if self.bw:
 			clr = (0,0,0)
-		w = self._scaled_line_w(self.options.ascmcsize)
+		w = self._scaled_line_w(self._ascmc_base_width())
 
 		pen = wx.Pen(clr, w)
 		self.bdc.SetPen(pen)
@@ -1927,13 +2015,13 @@ class GraphChart:
 				d = d%chart.Chart.SIGN_DEG
 
 				wdeg, hdeg = self.draw.textsize(str(d), self.fntDegreeText)
-				wmin, hmin = self.draw.textsize((str(m).zfill(2)), self.fntSmallText)
+				wmin, hmin = self.draw.textsize((str(m).zfill(2)), self.fntMinuteText)
 				x = cx+math.cos(math.pi+math.radians(self._rotation_asc()-angle_lon))*self.rPosAscMC
 				y = cy+math.sin(math.pi+math.radians(self._rotation_asc()-angle_lon))*self.rPosAscMC
 				xdeg = x-wdeg/2
 				ydeg = y-hdeg/2
 				self._draw_text_haloed((xdeg, ydeg), str(d), fill=clrpos, font=self.fntDegreeText)
-				self._draw_text_haloed((xdeg+wdeg, ydeg), (str(m)).zfill(2), fill=clrpos, font=self.fntSmallText)
+				self._draw_text_haloed((xdeg+wdeg, ydeg), (str(m)).zfill(2), fill=clrpos, font=self.fntMinuteText)
 				self._register_hover_region(
 					'angle',
 					object_id,
@@ -1966,17 +2054,17 @@ class GraphChart:
 				)
 
 				mintxt = str(m)+"'"
-				wdeg, hdeg = self.draw.textsize(mintxt, self.fntSmallText2)
+				wdeg, hdeg = self.draw.textsize(mintxt, self.fntMinuteText)
 				x = cx+math.cos(math.pi+math.radians(self._rotation_asc()-angle_lon))*self.rPosHousesMin
 				y = cy+math.sin(math.pi+math.radians(self._rotation_asc()-angle_lon))*self.rPosHousesMin
 				xdeg = x-wdeg/2
 				ydeg = y-hdeg/2
-				self.draw.text((xdeg, ydeg), mintxt, fill=clrpos, font=self.fntSmallText2)
+				self.draw.text((xdeg, ydeg), mintxt, fill=clrpos, font=self.fntMinuteText)
 				self._register_text_hover_region(
 					'angle',
 					object_id,
 					mintxt,
-					self.fntSmallText2,
+					self.fntMinuteText,
 					xdeg,
 					ydeg,
 					priority=34,
@@ -2009,13 +2097,13 @@ class GraphChart:
 				d = d%chart.Chart.SIGN_DEG
 
 				wdeg, hdeg = self.draw.textsize(str(d), self.fntDegreeText)
-				wmin, hmin = self.draw.textsize((str(m).zfill(2)), self.fntSmallText)
+				wmin, hmin = self.draw.textsize((str(m).zfill(2)), self.fntMinuteText)
 				x = cx+math.cos(math.pi+math.radians(asc-lon))*self.rPosHouses
 				y = cy+math.sin(math.pi+math.radians(asc-lon))*self.rPosHouses
 				xdeg = x-wdeg/2
 				ydeg = y-hdeg/2
 				self._draw_text_haloed((xdeg, ydeg), str(d), fill=clrpos, font=self.fntDegreeText)
-				self._draw_text_haloed((xdeg+wdeg, ydeg), (str(m)).zfill(2), fill=clrpos, font=self.fntSmallText)
+				self._draw_text_haloed((xdeg+wdeg, ydeg), (str(m)).zfill(2), fill=clrpos, font=self.fntMinuteText)
 				self._register_hover_region(
 					'house',
 					i,
@@ -2048,17 +2136,17 @@ class GraphChart:
 				)
 
 				mintxt = str(m)+"'"
-				wdeg, hdeg = self.draw.textsize(mintxt, self.fntSmallText2)
+				wdeg, hdeg = self.draw.textsize(mintxt, self.fntMinuteText)
 				x = cx+math.cos(math.pi+math.radians(asc-lon))*self.rPosHousesMin
 				y = cy+math.sin(math.pi+math.radians(asc-lon))*self.rPosHousesMin
 				xdeg = x-wdeg/2
 				ydeg = y-hdeg/2
-				self.draw.text((xdeg, ydeg), mintxt, fill=clrpos, font=self.fntSmallText2)
+				self.draw.text((xdeg, ydeg), mintxt, fill=clrpos, font=self.fntMinuteText)
 				self._register_text_hover_region(
 					'house',
 					i,
 					mintxt,
-					self.fntSmallText2,
+					self.fntMinuteText,
 					xdeg,
 					ydeg,
 					priority=22,
@@ -2071,9 +2159,11 @@ class GraphChart:
 		clr = self.options.clrhousenumbers
 		if self.bw:
 			clr = (0,0,0)
-		pen = wx.Pen(clr, 1)
+		pen = wx.Pen(clr, self._hairline_width())
 		self.bdc.SetPen(pen)
 		asc = self._display_house_anchor()
+		house_font = self.fntOuterHouseText if chrt is self.chart2 else self.fntHouseText
+		house_symbol_size = self.outerSymbolSize if chrt is self.chart2 else self.symbolSize
 		for i in range (1, houses.Houses.HOUSE_NUM+1):
 			cusp = self._display_house_cusp(chrt, i)
 			next_cusp = self._display_house_cusp(chrt, i+1 if i != houses.Houses.HOUSE_NUM else 1)
@@ -2085,19 +2175,19 @@ class GraphChart:
 			y = cy+math.sin(math.pi+dif-halfwidth)*rHouseNames
 			if i == 1 or i == 2:
 				xoffs = 0
-				yoffs = self.symbolSize/4
+				yoffs = house_symbol_size/4 * self._visual_factor('houseClassicOffsetScale')
 				if i == 2:
-					xoffs = self.symbolSize/8
+					xoffs = house_symbol_size/8 * self._visual_factor('houseSecondOffsetScale')
 			else:
-				xoffs = self.symbolSize/4
-				yoffs = self.symbolSize/4
+				xoffs = house_symbol_size/4 * self._visual_factor('houseClassicOffsetScale')
+				yoffs = house_symbol_size/4 * self._visual_factor('houseClassicOffsetScale')
 
-			self.draw.text((x-xoffs,y-yoffs), common.common.Housenames[i-1], fill=clr, font=self.fntText)
+			self.draw.text((x-xoffs,y-yoffs), common.common.Housenames[i-1], fill=clr, font=house_font)
 			self._register_text_hover_region(
 				'house',
 				i,
 				common.common.Housenames[i-1],
-				self.fntText,
+				house_font,
 				x - xoffs,
 				y - yoffs,
 				priority=24,
@@ -2131,6 +2221,8 @@ class GraphChart:
 		if label_yoffs is None:
 			label_yoffs = [0.0] * len(pshift)
 		skip_planet_detail = bool(getattr(self, 'disable_planet_detail', False))
+		body_font = self.fntOuterMorinus if outer else self.fntMorinus
+		body_size = self.outerPlanetGlyphSize if outer else self.planetGlyphSize
 		for body_id in self._iter_draw_body_ids(chrt):
 			lon = self._get_body_lon(chrt, body_id)
 			if lon is None:
@@ -2143,7 +2235,7 @@ class GraphChart:
 
 			txtpl = self._get_body_glyph(body_id)
 
-			self.draw.text((x-self.planetGlyphSize/2, y-self.planetGlyphSize/2), txtpl, fill=clr, font=self.fntMorinus)
+			self.draw.text((x-body_size/2, y-body_size/2), txtpl, fill=clr, font=body_font)
 			if skip_planet_detail:
 				continue
 
@@ -2176,7 +2268,7 @@ class GraphChart:
 				region_kind,
 				region_id,
 				txtpl,
-				self.fntMorinus,
+				body_font,
 				x,
 				y,
 				chart_role=chart_role,
@@ -2210,13 +2302,13 @@ class GraphChart:
 
 					if self.options.positions:
 						wdeg, hdeg = self.draw.textsize(str(d), self.fntDegreeText)
-						wmin, hmin = self.draw.textsize((str(m).zfill(2)), self.fntSmallText)
+						wmin, hmin = self.draw.textsize((str(m).zfill(2)), self.fntMinuteText)
 						x = cx+math.cos(math.pi+math.radians(self._rotation_asc()-lon-label_pshift[body_id]))*(self.rPos - label_yoffs[body_id])
 						y = cy+math.sin(math.pi+math.radians(self._rotation_asc()-lon-label_pshift[body_id]))*(self.rPos - label_yoffs[body_id])
 						xdeg = x-wdeg/2
 						ydeg = y-hdeg/2
 						self._draw_text_haloed((xdeg, ydeg), str(d), fill=clrpos, font=self.fntDegreeText)
-						self._draw_text_haloed((xdeg+wdeg, ydeg), (str(m)).zfill(2), fill=clrpos, font=self.fntSmallText)
+						self._draw_text_haloed((xdeg+wdeg, ydeg), (str(m)).zfill(2), fill=clrpos, font=self.fntMinuteText)
 
 					#Retrograde
 					if speed_lon is not None:
@@ -2230,7 +2322,9 @@ class GraphChart:
 							x = cx+math.cos(math.pi+math.radians(self._rotation_asc()-lon-label_pshift[body_id]))*(rRetr - label_yoffs[body_id])
 							y = cy+math.sin(math.pi+math.radians(self._rotation_asc()-lon-label_pshift[body_id]))*(rRetr - label_yoffs[body_id])
 
-							self._draw_text_haloed((x-self.symbolSize/8, y-self.symbolSize/8), t, fill=clr, font=self.fntSmallText2 if t in ('SR', 'SD') else self.fntSmallText)
+							rfnt = self.fntMotionStation if t in ('SR', 'SD') else self.fntMotionClassic
+							motion_offset = self.symbolSize/8
+							self._draw_text_haloed((x-motion_offset, y-motion_offset), t, fill=clr, font=rfnt)
 				else:
 					d, m = util.roundDeg(d%chart.Chart.SIGN_DEG, m, s)
 
@@ -2243,25 +2337,25 @@ class GraphChart:
 					self._draw_text_haloed((xdeg, ydeg), degtxt, fill=clrpos, font=self.fntDegreeText)
 
 					mintxt = str(m)+"'"
-					wdeg, hdeg = self.draw.textsize(mintxt, self.fntSmallText2)
+					wdeg, hdeg = self.draw.textsize(mintxt, self.fntMinuteText)
 					x = cx+math.cos(math.pi+math.radians(self._rotation_asc()-lon-label_pshift[body_id]))*(self.rPosMin - label_yoffs[body_id])
 					y = cy+math.sin(math.pi+math.radians(self._rotation_asc()-lon-label_pshift[body_id]))*(self.rPosMin - label_yoffs[body_id])
 					xdeg = x-wdeg/2
 					ydeg = y-hdeg/2
-					self._draw_text_haloed((xdeg, ydeg), (mintxt).zfill(2), fill=clrpos, font=self.fntSmallText2)
+					self._draw_text_haloed((xdeg, ydeg), (mintxt).zfill(2), fill=clrpos, font=self.fntMinuteText)
 
 					#Retrograde
 					if speed_lon is not None:
-						rfnt = self.fntSmallText
+						rfnt = self.fntMotionCompact
 						if station_marker is not None or speed_lon <= 0.0:
 							t = station_marker
 							if t is None:
 								t = 'S'
 								if speed_lon < 0.0:
 									t = common.common.retr
-									rfnt = self.fntRetr
+								rfnt = self.fntMotionCompactRetr
 							else:
-								rfnt = self.fntSmallText2
+								rfnt = self.fntMotionStation
 
 							wdeg, hdeg = self.draw.textsize(t, rfnt)
 							x = cx+math.cos(math.pi+math.radians(self._rotation_asc()-lon-label_pshift[body_id]))*(rRetr - label_yoffs[body_id])
@@ -2279,17 +2373,14 @@ class GraphChart:
 							t = 'S'
 							if speed_lon < 0.0:
 								t = 'R'
-						if self.theme == self.THEME_COMPACT:
-							rfnt = self.fntSmallTextOuter
-						else:
-							rfnt = self.fntSmallText2
+						rfnt = self.fntOuterMotion
 						if station_marker is not None:
-							rfnt = self.fntSmallText2
-
+							rfnt = self.fntOuterMotionStation
 						x = cx+math.cos(math.pi+math.radians(self._rotation_asc()-lon-label_pshift[body_id]))*(rRetr - label_yoffs[body_id])
 						y = cy+math.sin(math.pi+math.radians(self._rotation_asc()-lon-label_pshift[body_id]))*(rRetr - label_yoffs[body_id])
 
-						self._draw_text_haloed((x-self.symbolSize/8, y-self.symbolSize/8), t, fill=clr, font=rfnt)
+						motion_offset = self.outerSymbolSize/8 * self._visual_factor('outerMotionOffsetScale')
+						self._draw_text_haloed((x-motion_offset, y-motion_offset), t, fill=clr, font=rfnt)
 
 
 	def drawAspectSymbols(self, click_planet=None):
@@ -2626,9 +2717,7 @@ class GraphChart:
 		clr = (0,0,0)
 		if not self.bw:
 			clr = self.options.clrframe
-		w = 2
-		if self.chartsize <= GraphChart.MEDIUM_SIZE:
-			w = 1
+		w = self._medium_width()
 		self.bdc.SetPen(wx.Pen(clr, w))
 
 		base_asc = self._rotation_asc()
@@ -3809,9 +3898,7 @@ class GraphChart:
 		clr = (0,0,0)
 		if not self.bw:
 			clr = self.options.clrframe
-		w = 2
-		if self.chartsize <= GraphChart.MEDIUM_SIZE:
-			w = 1
+		w = self._medium_width()
 
 		pen = wx.Pen(clr, w)
 		self.bdc.SetPen(pen)
@@ -3852,7 +3939,7 @@ class GraphChart:
 								- self.chart.fixstars.data[showfss[i]][fixstars.FixStars.LON]
 								- self.fsshift[i])
 			rad = math.pi + math.radians(ang)
-			r_text = self.rOuterLine + self.symbolSize * 0.2
+			r_text = self.rOuterLine + self._outer_radius_offset()
 
 			# 좌표(세로 스택 오프셋 포함)
 			x = cx + math.cos(rad) * r_text
@@ -3877,7 +3964,7 @@ class GraphChart:
 			pos = util.normalize(math.degrees(rad))
 			if 90.0 < pos < 270.0:
 				x -= w
-			x, y, _ = self._ensure_text_outside_outer_wheel(rad, x, y, w, h, r_text, pad_px=int(self.symbolSize * 0.10))
+			x, y, _ = self._ensure_text_outside_outer_wheel(rad, x, y, w, h, r_text, pad_px=self._outer_outside_pad())
 			# Painted in the overlay layer instead of on the bitmap so the
 			# full label can extend into the panel gutter — no truncation.
 			# Hover region is still registered in bitmap space at the same
@@ -3917,9 +4004,7 @@ class GraphChart:
 		clr = self.options.clrframe
 		if self.bw:
 			clr = (0,0,0)
-		w = 2
-		if self.chartsize <= GraphChart.MEDIUM_SIZE:
-			w = 1
+		w = self._medium_width()
 
 		pen = wx.Pen(clr, w)
 		self.bdc.SetPen(pen)
@@ -3947,7 +4032,7 @@ class GraphChart:
 			raw_lon = asteroid_rows[showasteroids[i]][fixstars.FixStars.LON]
 			ang = util.normalize(self._rotation_asc() - raw_lon - asteroidshift[i])
 			rad = math.pi + math.radians(ang)
-			r_text = self.rOuterLine + self.symbolSize * 0.2
+			r_text = self.rOuterLine + self._outer_radius_offset()
 
 			x = cx + math.cos(rad) * r_text
 			y = cy + math.sin(rad) * r_text + asteroidyoffs[i]
@@ -3965,7 +4050,7 @@ class GraphChart:
 			pos = util.normalize(math.degrees(rad))
 			if 90.0 < pos < 270.0:
 				x -= w
-			x, y, _ = self._ensure_text_outside_outer_wheel(rad, x, y, w, h, r_text, pad_px=int(self.symbolSize * 0.10))
+			x, y, _ = self._ensure_text_outside_outer_wheel(rad, x, y, w, h, r_text, pad_px=self._outer_outside_pad())
 			# Overlay-painted so the full asteroid name + degrees can
 			# extend into the panel gutter without bitmap-edge truncation.
 			self._emit_overlay_ring_label(x, y - h / 2, txt, self.fntText, clr)
@@ -3992,9 +4077,7 @@ class GraphChart:
 		clr = self.options.clrframe
 		if self.bw:
 			clr = (0,0,0)
-		w = 2
-		if self.chartsize <= GraphChart.MEDIUM_SIZE:
-			w = 1
+		w = self._medium_width()
 
 		pen = wx.Pen(clr, w)
 		self.bdc.SetPen(pen)
@@ -4230,7 +4313,7 @@ class GraphChart:
 		)
 		for i, idx in enumerate(showmidpoints):
 			item = midpoint_items[idx]
-			x, y, w, h, _rad = self._get_midpoint_ring_label_pos(item, midpointshift[i], midpointyoffs[i], self.rOuterLine + self.symbolSize * 0.2)
+			x, y, w, h, _rad = self._get_midpoint_ring_label_pos(item, midpointshift[i], midpointyoffs[i], self.rOuterLine + self._outer_radius_offset())
 			label_x = x
 			metrics = self._get_midpoint_ring_label_metrics(item)
 			p1, sep, p2 = metrics['p1'], metrics['sep'], metrics['p2']
@@ -4403,7 +4486,7 @@ class GraphChart:
 			rad = math.pi + math.radians(ang)
 
 			# 라벨 레인: 선 끝보다 살짝 바깥
-			r_text = self.rOuterLine + self.symbolSize * 0.2
+			r_text = self.rOuterLine + self._outer_radius_offset()
 
 			# 초기 배치
 			x = cx + math.cos(rad) * r_text
@@ -4415,7 +4498,7 @@ class GraphChart:
 			if 90.0 < pos < 270.0:
 				x -= w
 			# ★ outer wheel 침범 방지: 필요 시 바깥으로 살짝 더 밀어내기
-			x, y, r_text = self._ensure_text_outside_outer_wheel(rad, x, y, w, h, r_text, pad_px=int(self.symbolSize*0.10))
+			x, y, r_text = self._ensure_text_outside_outer_wheel(rad, x, y, w, h, r_text, pad_px=self._outer_outside_pad())
 			# Overlay-painted: full lot name extends into the panel gutter,
 			# unconstrained by the bitmap square.
 			self._emit_overlay_ring_label(x, y - h/2, name, self.fntText, clr)
@@ -4484,7 +4567,7 @@ class GraphChart:
 		rad  = math.pi + math.radians(ang)
 
 		# 라벨 레인: 선 끝보다 살짝 바깥
-		r_text = self.rOuterLine + self.symbolSize * 0.2
+		r_text = self.rOuterLine + self._outer_radius_offset()
 
 		x = cx + math.cos(rad) * r_text
 		y = cy + math.sin(rad) * r_text
@@ -4543,7 +4626,7 @@ class GraphChart:
 
 		(cx, cy) = self.center.Get()
 		clr = self.options.clrframe if not self.bw else (0, 0, 0)
-		w = self._scaled_line_w(2)
+		w = self._scaled_line_w(2 * self._visual_factor('mediumStrokeBase'))
 		pen = wx.Pen(clr, w)
 		self.bdc.SetPen(pen)
 
@@ -4574,9 +4657,7 @@ class GraphChart:
 		clr = (0,0,0)
 		if not self.bw:
 			clr = self.options.clrframe
-		w = 2
-		if self.chartsize <= GraphChart.MEDIUM_SIZE:
-			w = 1
+		w = self._medium_width()
 
 		pen = wx.Pen(clr, w)
 		self.bdc.SetPen(pen)
@@ -4729,6 +4810,7 @@ class GraphChart:
 		mixed = [0 for i in range(len(body_ids))]
 
 		pnum = len(body_ids)
+		body_font = self.fntOuterMorinus if outer else self.fntMorinus
 		for i in range(pnum):
 			mixed[i] = body_ids[i]
 			order[i] = self._get_body_lon(chrt, body_ids[i])
@@ -4746,15 +4828,15 @@ class GraphChart:
 		
 		#doArrange arranges consecutive two planets only(0 and 1, 1 and 2, ...), this is why we need to do it pnum+1 times
 		for i in range(pnum+1):
-			self.doArrange(pnum, pshift, order, mixed, rPlanet)
+			self.doArrange(pnum, pshift, order, mixed, rPlanet, font=body_font)
 
 		#Arrange 360-0 transition also
 		#We only shift forward at 360-0
-		shifted = self.doShift(pnum-1, 0, pshift, order, mixed, rPlanet, True)
+		shifted = self.doShift(pnum-1, 0, pshift, order, mixed, rPlanet, True, font=body_font)
 
 		if shifted:
 			for i in range(pnum):
-				self.doArrange(pnum, pshift, order, mixed, rPlanet, True)
+				self.doArrange(pnum, pshift, order, mixed, rPlanet, True, font=body_font)
 
 		#check if beyond (not overlapping but beyond)
 		else:
@@ -4765,7 +4847,7 @@ class GraphChart:
 				if lon1 > lon2:
 					dist = lon1-lon2
 					pshift[mixed[0]] += dist
-					self.doShift(pnum-1, 0, pshift, order, mixed, rPlanet, True)
+					self.doShift(pnum-1, 0, pshift, order, mixed, rPlanet, True, font=body_font)
 
 					for i in range(pnum-1):
 						lon1 = order[i]+pshift[mixed[i]]
@@ -4774,14 +4856,14 @@ class GraphChart:
 							if lon1 > lon2:
 								dist = lon1-lon2
 								pshift[mixed[i+1]] += dist
-								self.doShift(i, i+1, pshift, order, mixed, rPlanet, True)
+								self.doShift(i, i+1, pshift, order, mixed, rPlanet, True, font=body_font)
 							else:
 								break
 						else:
 							break
 
 					for i in range(pnum):
-						self.doArrange(pnum, pshift, order, mixed, rPlanet, True)
+						self.doArrange(pnum, pshift, order, mixed, rPlanet, True, font=body_font)
 
 		# Glyph pshift is finalized above (legacy-parity, glyph-rectangle
 		# collision at rPlanet). label_pshift stays equal to pshift so inner
@@ -4801,19 +4883,19 @@ class GraphChart:
 		return pshift[:], label_pshift[:], label_yoffs[:]
 
 
-	def doArrange(self, pnum, pshift, order, mixed, rPlanet, forward = False):
+	def doArrange(self, pnum, pshift, order, mixed, rPlanet, forward = False, font=None):
 		shifted = False
 
 		for i in range(pnum-1):
-			shifted = self.doShift(i, i+1, pshift, order, mixed, rPlanet, forward)
+			shifted = self.doShift(i, i+1, pshift, order, mixed, rPlanet, forward, font=font)
 
 		if shifted:
-			self.doArrange(pnum, pshift, order, mixed, rPlanet, forward)
+			self.doArrange(pnum, pshift, order, mixed, rPlanet, forward, font=font)
 
 		return shifted
 
 
-	def doShift(self, p1, p2, pshift, order, mixed, rPlanet, forward = False):
+	def doShift(self, p1, p2, pshift, order, mixed, rPlanet, forward = False, font=None):
 		(cx, cy) = self.center.Get()
 		shifted = False
 
@@ -4822,8 +4904,9 @@ class GraphChart:
 		x2 = cx+math.cos(math.pi+math.radians(self._rotation_asc()-order[p2]-pshift[mixed[p2]]))*rPlanet
 		y2 = cy+math.sin(math.pi+math.radians(self._rotation_asc()-order[p2]-pshift[mixed[p2]]))*rPlanet
 
-		w1, h1 = self.fntMorinus.getsize(self._get_body_glyph(mixed[p1]))
-		w2, h2 = self.fntMorinus.getsize(self._get_body_glyph(mixed[p2]))
+		body_font = font or self.fntMorinus
+		w1, h1 = body_font.getsize(self._get_body_glyph(mixed[p1]))
+		w2, h2 = body_font.getsize(self._get_body_glyph(mixed[p2]))
 
 		while (self.overlap(x1, y1, w1, h1, x2, y2, w2, h2)):
 			if not forward:
@@ -4864,14 +4947,14 @@ class GraphChart:
 			degtxt = str(d)
 			mintxt = str(m).zfill(2)
 			wdeg, hdeg = self.fntDegreeText.getsize(degtxt)
-			wmin, hmin = self.fntSmallText.getsize(mintxt)
+			wmin, hmin = self.fntMinuteText.getsize(mintxt)
 			return self._pixels_to_degrees((wdeg + wmin) / 2.0, self.rPos, margin=label_pad)
 
 		d, m = util.roundDeg(d % chart.Chart.SIGN_DEG, m, s)
 		degtxt = str(d) + self.deg_symbol
 		mintxt = str(m) + "'"
 		wdeg, hdeg = self.fntDegreeText.getsize(degtxt)
-		wmin, hmin = self.fntSmallText2.getsize(mintxt)
+		wmin, hmin = self.fntMinuteText.getsize(mintxt)
 		return max(
 			self._pixels_to_degrees(wdeg / 2.0, self.rPosDeg, margin=label_pad),
 			self._pixels_to_degrees(wmin / 2.0, self.rPosMin, margin=label_pad),
@@ -4890,21 +4973,21 @@ class GraphChart:
 			if speed_lon < 0.0:
 				t = 'R'
 		if outer:
-			rfnt = self.fntSmallTextOuter if self.theme == self.THEME_COMPACT else self.fntSmallText2
+			rfnt = self.fntOuterMotion
 			if station_marker is not None:
-				rfnt = self.fntSmallText2
+				rfnt = self.fntOuterMotionStation
 			w, h = rfnt.getsize(t)
 			return self._pixels_to_degrees(w / 2.0, rRetr)
 		if self.theme == self.THEME_CLASSIC:
-			rfnt = self.fntSmallText2 if t in ('SR', 'SD') else self.fntSmallText
+			rfnt = self.fntMotionStation if t in ('SR', 'SD') else self.fntMotionClassic
 			w, h = rfnt.getsize(t)
 			return self._pixels_to_degrees(w / 2.0, rRetr)
-		rfnt = self.fntSmallText
+		rfnt = self.fntMotionCompact
 		if station_marker is not None:
-			rfnt = self.fntSmallText2
+			rfnt = self.fntMotionStation
 		elif speed_lon < 0.0:
 			t = common.common.retr
-			rfnt = self.fntRetr
+			rfnt = self.fntMotionCompactRetr
 		w, h = rfnt.getsize(t)
 		return self._pixels_to_degrees(w / 2.0, rRetr)
 
@@ -4916,7 +4999,8 @@ class GraphChart:
 		return ((half_width_px + float(margin)) / float(radius)) * (180.0 / math.pi)
 
 	def _body_detail_half_deg(self, chrt, body_id, lon, rPlanet, rRetr=None, outer=False):
-		half = self._label_half_deg(self._get_body_glyph(body_id), self.fntMorinus, rPlanet, margin_px=getattr(self, 'PLANET_COLLISION_PAD', 2.0))
+		body_font = self.fntOuterMorinus if outer else self.fntMorinus
+		half = self._label_half_deg(self._get_body_glyph(body_id), body_font, rPlanet, margin_px=getattr(self, 'PLANET_COLLISION_PAD', 2.0))
 		if bool(getattr(self, 'disable_planet_detail', False)):
 			return half
 		half = max(half, self._motion_label_half_deg(chrt, body_id, rRetr, outer=outer))
@@ -5089,7 +5173,7 @@ class GraphChart:
 
 	def _fit_outer_word_label_to_bitmap(self, text, font, x, suffix=''):
 		w, h = font.getsize(text)
-		pad_factor = float(getattr(self, 'OUTER_LABEL_EDGE_PAD_FACTOR', 0.15))
+		pad_factor = float(getattr(self, 'OUTER_LABEL_EDGE_PAD_FACTOR', 0.15)) * self._visual_factor('outerLabelEdgePadFactor')
 		pad = max(0, int(round(self.symbolSize * pad_factor)))
 		left = float(pad)
 		right = max(left, float(self.w - pad))
@@ -5813,7 +5897,7 @@ class GraphChart:
 
 		(cx, cy) = self.center.Get()
 		clr = self.options.clrframe if not self.bw else (0, 0, 0)
-		w = self._scaled_line_w(2)
+		w = self._scaled_line_w(2 * self._visual_factor('mediumStrokeBase'))
 		pen = wx.Pen(clr, w)
 		self.bdc.SetPen(pen)
 
@@ -5836,7 +5920,9 @@ class GraphChart:
 			return
 		(cx, cy) = self.center.Get()
 		r_wheel = getattr(self, 'r30', self.maxradius * 0.85)
-		r_outer = getattr(self, 'rOuterLine', r_wheel + max(5, self.symbolSize * 0.42))
+		tick_min = 5 * self._visual_factor('surveilTickLengthMin')
+		tick_scale = 0.42 * self._visual_factor('surveilTickLengthScale')
+		r_outer = getattr(self, 'rOuterLine', r_wheel + max(tick_min, self.symbolSize * tick_scale))
 		if self.bw:
 			accent = (0, 0, 0)
 		else:
@@ -5846,18 +5932,30 @@ class GraphChart:
 			except Exception:
 				is_dark = False
 			accent = _tokens.SURVEIL_ACCENT_DARK_RGB if is_dark else _tokens.SURVEIL_ACCENT_LIGHT_RGB
-		line_w = 1
-		tick_len = max(5, int(round(self.symbolSize * 0.42)))
+		line_w = self._hairline_width()
+		tick_len = max(int(round(tick_min)), int(round(self.symbolSize * tick_scale)))
 		r_tick_end = max(r_outer, r_wheel + tick_len)
-		glyph_gap = max(2, int(round(self.symbolSize * 0.12)))
+		glyph_gap = max(
+			int(round(2 * self._visual_factor('surveilGlyphGapMin'))),
+			int(round(self.symbolSize * 0.12 * self._visual_factor('surveilGlyphGapScale'))),
+		)
 		try:
-			glyph_size = max(5, int(round(self.symbolSize * 0.34 * self._dpi_scale)))
+			glyph_size = max(
+				int(round(5 * self._visual_factor('surveilGlyphSizeMin'))),
+				int(round(self.symbolSize * 0.34 * self._dpi_scale * self._visual_factor('surveilGlyphSizeScale'))),
+			)
 		except Exception:
-			glyph_size = max(5, int(round(self.symbolSize * 0.34)))
+			glyph_size = max(
+				int(round(5 * self._visual_factor('surveilGlyphSizeMin'))),
+				int(round(self.symbolSize * 0.34 * self._visual_factor('surveilGlyphSizeScale'))),
+			)
 		surveil_morinus = wxcompat.VectorFont(wxcompat.MORINUS_BUNDLED_FACE, glyph_size)
 		text_face = getattr(common.common, 'abc_face', 'FreeSans')
 		surveil_text = wxcompat.VectorFont(text_face, glyph_size)
-		label_gap = max(2, int(round(self.symbolSize * 0.08)))
+		label_gap = max(
+			int(round(2 * self._visual_factor('surveilLabelGapMin'))),
+			int(round(self.symbolSize * 0.08 * self._visual_factor('surveilLabelGapScale'))),
+		)
 		for mark in marks:
 			if not isinstance(mark, dict):
 				continue

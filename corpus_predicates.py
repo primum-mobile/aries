@@ -3275,9 +3275,6 @@ def _essential_score_at_own_position(chrt, pid):
         lon = _lon(p)
         if lon is None:
             return 0
-        ayanamsha = getattr(chrt, 'ayanamsha', 0)
-        if getattr(chrt.options, 'ayanamsha', 0) != 0 and ayanamsha:
-            lon = (lon - ayanamsha) % 360.0
         daytime = bool(chrt.planets.planets[astrology.SE_SUN].abovehorizon)
         if getattr(chrt.options, 'usedaynightorb', False):
             try:

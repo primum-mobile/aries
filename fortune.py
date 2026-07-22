@@ -72,7 +72,7 @@ class Fortune:
 		self.fortune = (util.normalize(self.fortune[Fortune.LON]+prof.offs), self.fortune[Fortune.LAT], self.fortune[Fortune.RA], self.fortune[Fortune.DECL])
 
 
-	def calcMundaneProfPos(self, ascmc2, fort, placelat, obl):
+	def calcMundaneProfPos(self, ascmc2, fort, placelat, obl, ayanamsha_offset=0.0):
 		ramc = ascmc2[houses.Houses.MC][houses.Houses.RA]
 		raic = ramc+180.0
 		if raic > 360.0:
@@ -132,6 +132,7 @@ class Fortune:
 
 		lat = fort.fortune[Fortune.LAT]
 		decl = fort.fortune[Fortune.DECL]
+		lon = util.normalize(lon - float(ayanamsha_offset or 0.0))
 		self.fortune = [lon, lat, ra, decl]
 
 
@@ -170,7 +171,7 @@ class Fortune:
 		return okGa, okGd, lon
 
 
-	def calcFullAstronomicalProc(self, fort, da, oblN):#, raN, declN):
+	def calcFullAstronomicalProc(self, fort, da, oblN, ayanamsha_offset=0.0):#, raN, declN):
 		raN = fort.fortune[Fortune.RA]
 		declN = fort.fortune[Fortune.DECL]
 
@@ -203,6 +204,7 @@ class Fortune:
 		latSZ = math.degrees(math.asin(math.sin(rdeclN)*math.cos(roblN)-math.cos(rdeclN)*math.sin(rksi)*math.sin(roblN)))
 		raSZ, declSZ, distSZ = astrology.swe_cotrans(longSZ, latSZ, 1.0, -oblN)
 
+		longSZ = util.normalize(longSZ - float(ayanamsha_offset or 0.0))
 		self.fortune = [longSZ, latSZ, raSZ, declSZ]
 
 
@@ -213,7 +215,7 @@ class Fortune:
 		self.speculum2 = regiospec.RegiomontanianSpeculum(placelat, ascmc2, raequasc, self.fortune[Fortune.LON], self.fortune[Fortune.LAT], self.fortune[Fortune.RA], self.fortune[Fortune.DECL])
 
 
-	def calcRegioPDsInChartsPos(self, ascmc2, fort, placelat, obl):
+	def calcRegioPDsInChartsPos(self, ascmc2, fort, placelat, obl, ayanamsha_offset=0.0):
 		ramc = ascmc2[houses.Houses.MC][houses.Houses.RA]
 		raic = ramc+180.0
 		if raic > 360.0:
@@ -274,6 +276,7 @@ class Fortune:
 
 		lat = fort.fortune[Fortune.LAT]
 		decl = fort.fortune[Fortune.DECL]
+		lon = util.normalize(lon - float(ayanamsha_offset or 0.0))
 		self.fortune = [lon, lat, ra, decl]
 
 
@@ -310,7 +313,6 @@ class Fortune:
 				okGd = False
 
 		return okGa, okGd, lon
-
 
 
 

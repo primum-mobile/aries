@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 
 const TOKEN_NAME_SOURCE = "--[a-zA-Z_][a-zA-Z0-9_-]*";
 const CSS_VAR_REFERENCE = new RegExp(`var\\(\\s*(${TOKEN_NAME_SOURCE})`, "g");
@@ -32,14 +32,16 @@ export function buildStyleTokenInventory(frontendRoot) {
   const root = resolve(frontendRoot);
   const paths = {
     contract: join(root, "src", "styles", "style-token-contract.json"),
+    rendererContract: join(root, "src", "styles", "renderer-style-contract.generated.json"),
     css: join(root, "src", "app", "globals.css"),
     legacy: join(root, "src", "styles", "style-tokens.ts"),
   };
   const errors = [];
   const contract = readJson(paths.contract, errors);
+  const rendererContract = readJson(paths.rendererContract, errors);
   const cssSource = readText(paths.css, errors);
   const legacySource = readText(paths.legacy, errors);
-  if (!contract || cssSource === null || legacySource === null) {
+  if (!contract || !rendererContract || cssSource === null || legacySource === null) {
     return {
       contract,
       errors,
@@ -52,6 +54,7 @@ export function buildStyleTokenInventory(frontendRoot) {
       stats: {},
     };
   }
+  mergeStyleContractExtension(contract, rendererContract, paths.rendererContract, errors);
 
   const declarations = collectCssDeclarations(cssSource, paths.css, root);
   const declarationsByName = groupBy(declarations, (entry) => entry.name);
@@ -189,7 +192,7 @@ export function buildStyleTokenInventory(frontendRoot) {
   }
 
   resolveDerivedTypes(records);
-  validateRecords(records, contract, paths, inlineProvidersByName, errors);
+  validateRecords(records, contract, paths, root, inlineProvidersByName, errors);
   validateDependencyGraph(records, paths.contract, errors);
   validateDependencyPolicy(records, contract, paths.contract, errors);
   validatePublicMetadata(records, contract, paths.contract, errors);
@@ -320,7 +323,7 @@ function renderPublicToken(record, metadata = {}) {
   return output;
 }
 
-function validateRecords(records, contract, paths, inlineProvidersByName, errors) {
+function validateRecords(records, contract, paths, root, inlineProvidersByName, errors) {
   const byName = new Map(records.map((record) => [record.name, record]));
   const legacyNames = new Set((contract.legacyOverlay.frozen ?? []).map(({ cssVar }) => cssVar));
   for (const record of records) {
@@ -363,7 +366,11 @@ function validateRecords(records, contract, paths, inlineProvidersByName, errors
     ) {
       const providers = inlineProvidersByName.get(record.name) ?? [];
       const expectedFile = (contract.runtimeOnly ?? []).find(({ name }) => name === record.name)?.providerFile;
-      if (providers.length === 0 || (expectedFile && !providers.some(({ path }) => path.endsWith(expectedFile)))) {
+      const expectedPath = expectedFile ? resolve(root, expectedFile) : null;
+      if (
+        providers.length === 0
+        || (expectedPath && !providers.some(({ path }) => resolve(path) === expectedPath))
+      ) {
         pushError(errors, paths.contract, 1, `${record.name} runtime token lacks its concrete React provider`);
       }
     }
@@ -895,8 +902,34 @@ function readJson(path, errors) {
   catch (error) { pushError(errors, path, 1, `invalid JSON: ${error.message}`); return null; }
 }
 
+function mergeStyleContractExtension(contract, extension, path, errors) {
+  if (extension.schemaVersion !== 1) {
+    pushError(errors, path, 1, `unsupported renderer style contract version ${extension.schemaVersion}`);
+  }
+  for (const field of ["families", "overrides", "relationalConstraints", "contrastPairs", "authoringExclusions"]) {
+    const values = extension[field] ?? [];
+    if (!Array.isArray(values)) {
+      pushError(errors, path, 1, `${field} must be an array`);
+      continue;
+    }
+    contract[field] = [...(contract[field] ?? []), ...values];
+  }
+  if (!extension.publicTokens || typeof extension.publicTokens !== "object") {
+    pushError(errors, path, 1, "publicTokens must be an object");
+    return;
+  }
+  contract.publicTokens ??= {};
+  for (const [name, metadata] of Object.entries(extension.publicTokens)) {
+    if (contract.publicTokens[name]) {
+      pushError(errors, path, 1, `renderer public token duplicates ${name}`);
+      continue;
+    }
+    contract.publicTokens[name] = metadata;
+  }
+}
+
 function readText(path, errors) {
-  try { return readFileSync(path, "utf8"); }
+  try { return readFileSync(path, "utf8").replace(/\r\n?/g, "\n"); }
   catch (error) { pushError(errors, path, 1, `unable to read: ${error.message}`); return null; }
 }
 
@@ -1028,7 +1061,7 @@ function lineAt(source, index) {
 
 function displayPath(root, path) {
   const rendered = relative(root, path);
-  return rendered && !rendered.startsWith("..") ? rendered : path;
+  return rendered && !rendered.startsWith("..") ? rendered.split(sep).join("/") : path;
 }
 
 function pushError(errors, path, line, message) {

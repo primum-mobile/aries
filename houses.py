@@ -52,6 +52,7 @@ class Houses:
 		# Callers that already set the flag are unaffected — the OR is
 		# idempotent.
 		if ayanopt != 0:
+			astrology.swe_set_sid_mode(astrology.ayanamsha_swe_mode(ayanopt), 0, 0)
 			flag |= astrology.SEFLG_SIDEREAL
 
 		engine_hsys = 'X' if self.hsys == Houses.TRUE_ASCENDANT else self.hsys
@@ -64,7 +65,9 @@ class Houses:
 		if ayanopt != 0 and self.hsys == 'W':
 			del self.cusps
 			cusps = [0.0]
-			sign = int(util.normalize(self.ascmc[Houses.ASC] - ayan)) // 30
+			# swe_houses_ex already returned ASC in the selected sidereal
+			# zodiac. Whole-sign cusps start at that chosen-frame sign.
+			sign = int(util.normalize(self.ascmc[Houses.ASC])) // 30
 			cusps.append(sign*30.0)
 			for i in range(2, Houses.HOUSE_NUM+1):
 				hc = util.normalize(cusps[i-1]+30.0)
@@ -86,7 +89,8 @@ class Houses:
 		# reconstructed via cotrans, and cotrans needs a tropical input.
 		ayan_offset = 0.0
 		if ayanopt != 0:
-			ayan_offset = astrology.swe_get_ayanamsa_ut(tjd_ut)
+			ayan_offset = astrology.effective_ayanamsha_ut(tjd_ut, ayanopt)
+		self.ayanamsha_offset = float(ayan_offset)
 
 		ascra, ascdecl, dist = astrology.swe_cotrans(util.to_tropical_lon(self.ascmc[Houses.ASC], ayan_offset), 0.0, 1.0, -obl)
 		mcra, mcdecl, dist = astrology.swe_cotrans(util.to_tropical_lon(self.ascmc[Houses.MC], ayan_offset), 0.0, 1.0, -obl)
@@ -263,7 +267,8 @@ class Houses:
 			ascmc[idx] = util.normalize(ascmc[idx]+prof.offs)
 		self.ascmc = tuple(ascmc)
 
-		ascra, ascdecl, dist = astrology.swe_cotrans(self.ascmc[Houses.ASC], 0.0, 1.0, -self.obl)
-		mcra, mcdecl, dist = astrology.swe_cotrans(self.ascmc[Houses.MC], 0.0, 1.0, -self.obl)
+		ayan_offset = float(getattr(self, 'ayanamsha_offset', 0.0))
+		ascra, ascdecl, dist = astrology.swe_cotrans(util.to_tropical_lon(self.ascmc[Houses.ASC], ayan_offset), 0.0, 1.0, -self.obl)
+		mcra, mcdecl, dist = astrology.swe_cotrans(util.to_tropical_lon(self.ascmc[Houses.MC], ayan_offset), 0.0, 1.0, -self.obl)
 
 		self.ascmc2 = ((self.ascmc[Houses.ASC], 0.0, ascra, ascdecl), (self.ascmc[Houses.MC], 0.0, mcra, mcdecl))

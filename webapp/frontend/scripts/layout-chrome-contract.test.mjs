@@ -1,0 +1,790 @@
+// Copyright (C) 2026 Max Lange
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import test from "node:test";
+
+import { buildStyleTokenInventory } from "./style-token-contract.mjs";
+
+const frontendRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const sourceRoot = join(frontendRoot, "src");
+
+function readSource(path) {
+  return readFileSync(join(frontendRoot, path), "utf8");
+}
+
+function sourceFiles(root) {
+  return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(root, entry.name);
+    if (entry.isDirectory()) return sourceFiles(path);
+    return /\.(?:ts|tsx)$/.test(entry.name) ? [path] : [];
+  });
+}
+
+function assertConsumes(path, tokenNames) {
+  const source = readSource(path);
+  for (const name of tokenNames) {
+    assert.ok(source.includes(`var(${name})`), `${path} must consume ${name}`);
+  }
+}
+
+test("the live inventory exposes the bounded chrome-layout authoring surface", () => {
+  // Build from current CSS and source declarations. Generated inventory counts
+  // are intentionally not read here: this contract must catch wiring drift even
+  // before the generated handoff artifacts are refreshed.
+  const result = buildStyleTokenInventory(frontendRoot);
+  assert.deepEqual(result.errors, []);
+  assert.ok(result.inventory, "the live style inventory must build");
+  assert.ok(result.publicManifest, "the live public manifest must build");
+
+  const publicBySemanticId = new Map(
+    result.publicManifest.tokens.map((token) => [token.semanticId, token]),
+  );
+  const expected = new Map([
+    ["app.radius.base", "--aries-radius-md"],
+    ["app.control.height", "--aries-control-height"],
+    ["app.control.gap", "--aries-control-gap"],
+    ["app.control.paddingInline", "--aries-control-padding-x"],
+    ["app.control.paddingBlock", "--aries-control-padding-y"],
+    ["app.tabs.gap", "--aries-tabs-gap"],
+    ["app.tabs.listPadding", "--aries-tabs-list-padding"],
+    ["app.tabs.indicatorSize", "--aries-tabs-indicator-size"],
+    ["app.tabs.indicatorOffset", "--aries-tabs-indicator-offset"],
+    ["app.tabs.railWidth", "--aries-tabs-rail-width"],
+    ["app.tabs.railGap", "--aries-tabs-rail-gap"],
+    ["app.dialog.padding", "--aries-dialog-padding"],
+    ["app.dialog.contentGap", "--aries-dialog-gap"],
+    ["app.dialog.headerGap", "--aries-dialog-header-gap"],
+    ["app.dialog.footerGap", "--aries-dialog-footer-gap"],
+    ["app.dialog.closeInset", "--aries-dialog-close-inset"],
+    ["app.dialog.mapActionMinWidth", "--aries-dialog-map-action-min-width"],
+    ["app.menu.padding", "--aries-menu-padding"],
+    ["app.sash.ruleSize", "--aries-sash-rule-size"],
+    ["app.sash.idleColor", "--aries-sash-idle-color"],
+    ["app.sash.hoverColor", "--aries-sash-hover-color"],
+    ["app.sash.activeColor", "--aries-sash-active-color"],
+    ["app.sash.panelIdleColor", "--aries-sash-panel-idle-color"],
+    ["app.sash.panelHoverColor", "--aries-sash-panel-hover-color"],
+    ["app.sash.panelActiveColor", "--aries-sash-panel-active-color"],
+    ["app.panel.paddingInline", "--aries-panel-padding-x"],
+    ["app.panel.paddingBlock", "--aries-panel-padding-y"],
+    ["app.panel.sectionGap", "--aries-section-gap"],
+    ["app.control.segmented.itemMinWidth", "--aries-segmented-control-item-min-width"],
+    ["app.control.segmented.itemRadius", "--aries-segmented-control-item-radius"],
+    ["app.list.dense.rowHeight", "--aries-list-row-height-dense"],
+    ["app.list.standard.rowHeight", "--aries-list-row-height-standard"],
+    ["app.list.symbolic.rowHeight", "--aries-list-row-height-symbolic"],
+    ["app.pane.header.paddingInline", "--aries-pane-header-padding-x"],
+    ["app.pane.ruleSize", "--aries-pane-rule-size"],
+    ["app.notes.padding", "--aries-notes-padding"],
+    ["app.sheet.padding", "--aries-sheet-padding"],
+    ["app.inspector.layout.paddingInline", "--aries-inspector-padding-x"],
+    ["app.inspector.type.titleSize", "--aries-inspector-title-size"],
+    ["app.inspector.color.title", "--aries-inspector-title-color"],
+    ["app.inspector.color.value", "--aries-inspector-value-color"],
+    ["app.inspector.color.label", "--aries-inspector-label-color"],
+    ["app.sidebar.sectionHeaderHeight", "--aries-sidebar-section-header-height"],
+  ]);
+
+  for (const [semanticId, cssVar] of expected) {
+    const token = publicBySemanticId.get(semanticId);
+    assert.equal(token?.cssVar, cssVar, `${semanticId} must remain a public layout role`);
+    assert.equal(token?.scope, "app", `${semanticId} must remain app-scoped`);
+    assert.equal(token?.handoffStatus, "editable", `${semanticId} must remain editable`);
+  }
+});
+
+test("the expanded radius scale is derived from one base and projected to Tailwind", () => {
+  const { inventory } = buildStyleTokenInventory(frontendRoot);
+  const byName = new Map(inventory.tokens.map((token) => [token.name, token]));
+  const radiusXl = byName.get("--aries-radius-xl");
+  assert.equal(radiusXl?.class, "derived");
+  assert.deepEqual(radiusXl?.dependencies, ["--aries-radius-md"]);
+  assert.match(radiusXl?.default ?? "", /^calc\(var\(--aries-radius-md\).+\)$/);
+
+  const tailwindRadiusXl = byName.get("--radius-xl");
+  assert.equal(tailwindRadiusXl?.class, "derived");
+  assert.equal(tailwindRadiusXl?.default, "var(--aries-radius-xl)");
+  assert.deepEqual(tailwindRadiusXl?.selectors, ["@theme inline"]);
+});
+
+test("TypeScript chrome cannot reintroduce subtractive or capped radius formulas", () => {
+  const forbidden = [
+    /(?:min|max)\(\s*var\(\s*--(?:aries-)?radius-[^)]+\)[^)]*\)/g,
+    /calc\(\s*var\(\s*--(?:aries-)?radius-[^)]+\)\s*-\s*/g,
+    /max\(\s*0(?:px)?\s*,\s*(?:calc\()?\s*var\(\s*--(?:aries-)?radius-[^)]+\)\s*-\s*/g,
+  ];
+  const failures = [];
+  for (const path of sourceFiles(sourceRoot)) {
+    const source = readFileSync(path, "utf8");
+    for (const pattern of forbidden) {
+      for (const match of source.matchAll(pattern)) {
+        failures.push(`${relative(frontendRoot, path)}: ${match[0]}`);
+      }
+    }
+  }
+  assert.deepEqual(failures, [], `radius formulas must derive in CSS:\n${failures.join("\n")}`);
+});
+
+test("shared chrome primitives consume semantic layout variables", () => {
+  assertConsumes("src/components/ui/tabs.tsx", [
+    "--aries-tabs-gap",
+    "--aries-tabs-list-padding",
+    "--aries-tabs-indicator-size",
+    "--aries-tabs-indicator-offset",
+  ]);
+  assertConsumes("src/components/workshell/settings-dialog.tsx", [
+    "--aries-tabs-rail-width",
+    "--aries-tabs-rail-gap",
+  ]);
+  assertConsumes("src/components/ui/dialog.tsx", [
+    "--aries-radius-dialog",
+    "--aries-dialog-padding",
+    "--aries-dialog-gap",
+    "--aries-dialog-header-gap",
+    "--aries-dialog-footer-gap",
+    "--aries-dialog-close-inset",
+  ]);
+  assertConsumes("src/components/ui/button.tsx", [
+    "--aries-radius-ui-control",
+    "--aries-control-height",
+    "--aries-control-gap",
+    "--aries-control-padding-x",
+  ]);
+  assertConsumes("src/components/ui/input.tsx", [
+    "--aries-radius-ui-control",
+    "--aries-control-height",
+    "--aries-control-padding-x",
+    "--aries-control-padding-y",
+  ]);
+  for (const path of [
+    "src/components/ui/context-menu.tsx",
+    "src/components/ui/dropdown-menu.tsx",
+  ]) {
+    assertConsumes(path, [
+      "--aries-radius-popover",
+      "--aries-radius-menu-item",
+      "--aries-menu-padding",
+      "--aries-menu-item-gap",
+      "--aries-menu-item-padding-x",
+      "--aries-menu-item-padding-y",
+      "--aries-menu-separator-gap",
+      "--aries-menu-indicator-inset",
+    ]);
+  }
+  assertConsumes("src/components/ui/resizable.tsx", [
+    "--aries-sash-rule-size",
+    "--aries-sash-panel-idle-color",
+    "--aries-sash-panel-hover-color",
+    "--aries-sash-panel-active-color",
+  ]);
+  for (const path of [
+    "src/components/workshell/sidebar-sash.tsx",
+    "src/components/workshell/workspace-content.tsx",
+  ]) {
+    assertConsumes(path, [
+      "--aries-sash-rule-size",
+      "--aries-sash-idle-color",
+      "--aries-sash-active-color",
+    ]);
+  }
+  assertConsumes("src/lib/list-tokens.ts", [
+    "--aries-pane-header-padding-x",
+    "--aries-pane-header-compact-padding-x",
+    "--aries-pane-control-gap-x",
+    "--aries-pane-control-compact-gap-x",
+    "--aries-pane-title-gap",
+    "--aries-pane-state-padding",
+  ]);
+  assertConsumes("src/components/ui/separator.tsx", ["--aries-pane-rule-size"]);
+  assertConsumes("src/components/ui/sheet.tsx", [
+    "--aries-sheet-padding",
+    "--aries-sheet-content-gap",
+    "--aries-sheet-close-inset",
+    "--aries-sheet-header-gap",
+    "--aries-sheet-footer-gap",
+  ]);
+  assertConsumes("src/components/workshell/notes-panel.tsx", [
+    "--aries-notes-padding",
+    "--aries-notes-gap",
+    "--aries-notes-header-gap",
+  ]);
+  assertConsumes("src/components/workshell/inspector-panel.tsx", [
+    "--aries-inspector-title-size",
+    "--aries-inspector-glyph-size",
+    "--aries-inspector-padding-x",
+    "--aries-inspector-section-gap",
+    "--aries-inspector-label-width",
+    "--aries-inspector-title-color",
+    "--aries-inspector-value-color",
+    "--aries-inspector-label-color",
+    "--aries-inspector-divider-color",
+    "--aries-inspector-background",
+  ]);
+  assertConsumes("src/components/workshell/astrolabe-view.tsx", [
+    "--aries-pane-header-compact-padding-x",
+    "--aries-pane-header-compact-padding-y",
+    "--aries-control-gap",
+    "--aries-control-padding-x-compact",
+    "--aries-segmented-control-padding",
+    "--aries-radius-control-compact",
+    "--aries-text-primary",
+    "--aries-text-muted",
+    "--aries-surface",
+  ]);
+  assertConsumes("src/components/workshell/app-sidebar.tsx", [
+    "--aries-sidebar-section-header-height",
+    "--aries-sidebar-group-padding-start",
+    "--aries-sidebar-group-padding-end",
+    "--aries-sidebar-tree-indent",
+    "--aries-sidebar-drop-indicator-size",
+    "--aries-sidebar-drop-indicator-overhang",
+    "--aries-sidebar-trailing-inset",
+    "--aries-sidebar-unsaved-indicator-size",
+    "--aries-sidebar-close-inset",
+    "--aries-sidebar-close-action-size",
+    "--aries-sidebar-action-icon-size",
+  ]);
+});
+
+test("generic panel dividers preserve their brighter pre-tokenization states", () => {
+  const css = readSource("src/app/globals.css");
+  assert.match(
+    css,
+    /--aries-sash-panel-idle-color:\s*var\(--aries-sidebar-sash-rule\);/,
+  );
+  assert.match(
+    css,
+    /--aries-sash-panel-hover-color:\s*var\(--aries-border-subtle\);/,
+  );
+  assert.match(
+    css,
+    /--aries-sash-panel-active-color:\s*var\(--aries-border-subtle\);/,
+  );
+
+  const resizable = readSource("src/components/ui/resizable.tsx");
+  assert.match(resizable, /var\(--aries-sash-panel-idle-color\)/);
+  assert.match(resizable, /var\(--aries-sash-panel-hover-color\)/);
+  assert.match(resizable, /var\(--aries-sash-panel-active-color\)/);
+  assert.doesNotMatch(resizable, /var\(--aries-sash-(?:idle|hover|active)-color\)/);
+
+  const sidebar = readSource("src/components/workshell/sidebar-sash.tsx");
+  assert.match(sidebar, /var\(--aries-sash-idle-color\)/);
+  assert.match(sidebar, /var\(--aries-sash-hover-color\)/);
+  assert.match(sidebar, /var\(--aries-sash-active-color\)/);
+});
+
+test("native titlebar alignment remains on the proven pre-tokenization geometry", () => {
+  const css = readSource("src/app/globals.css");
+  for (const declaration of [
+    "--morinus-header-height: 34px;",
+    "--titlebar-h: var(--morinus-header-height);",
+    "--titlebar-sidebar-pad-top: 40px;",
+    "--titlebar-pane-pad-top: 40px;",
+    "--titlebar-content-offset-y: 0px;",
+    "--titlebar-left-controls-x: 8px;",
+    "--titlebar-traffic-x: 19px;",
+    "--titlebar-traffic-y: 22px;",
+    "--titlebar-side-min-w: 132px;",
+    "--titlebar-left-controls-x: 84px;",
+    "--aries-control-height: 32px;",
+    "--aries-control-icon-size: 14px;",
+    "--aries-toolbar-control-width: var(--aries-control-height-compact);",
+    "--aries-toolbar-control-height: calc(var(--aries-control-height) * 11 / 16);",
+    "--aries-toolbar-icon-size: calc(var(--aries-control-icon-size) * 15 / 14);",
+  ]) {
+    assert.ok(css.includes(declaration), `${declaration} must remain at the proven titlebar default`);
+  }
+
+  const content = readSource("src/components/workshell/workspace-content.tsx");
+  assert.match(
+    content,
+    /absolute left-\[var\(--titlebar-left-controls-x\)\] top-0[^"\n]*h-\[var\(--titlebar-h\)\][^"\n]*translate-y-\[var\(--titlebar-content-offset-y\)\]/,
+  );
+  assert.match(
+    content,
+    /col-start-2[^"\n]*translate-y-\[var\(--titlebar-content-offset-y\)\][^"\n]*justify-center/,
+  );
+  assert.match(
+    content,
+    /col-start-3[^"\n]*translate-y-\[var\(--titlebar-content-offset-y\)\][^"\n]*justify-end/,
+  );
+  assert.match(
+    content,
+    /captionActions\?\.style\.setProperty\(\s*"margin-right",\s*`\$\{resolveWindowsCaptionInset\(\)\}px`/,
+  );
+  assert.match(
+    content,
+    /h-\[var\(--morinus-header-btn-h\)\] w-\[var\(--morinus-header-btn-w\)\]/,
+  );
+
+  const optionsMenu = readSource("src/components/workshell/titlebar-options-menu.tsx");
+  assert.match(
+    optionsMenu,
+    /h-\[var\(--morinus-header-btn-h\)\] w-\[var\(--morinus-header-btn-w\)\]/,
+  );
+});
+
+test("Windows extends the native DWM frame without replacing caption controls in HTML", () => {
+  const nativeFrame = readSource("src-tauri/src/windows_titlebar.rs");
+  const rustShell = readSource("src-tauri/src/lib.rs");
+  const shellHost = readSource("src/lib/shell-host.ts");
+  const css = readSource("src/app/globals.css");
+
+  assert.match(nativeFrame, /DwmExtendFrameIntoClientArea/);
+  assert.match(nativeFrame, /DwmDefWindowProc/);
+  assert.match(nativeFrame, /SetWindowSubclass/);
+  assert.match(nativeFrame, /SM_CXSIZE/);
+  assert.match(nativeFrame, /HTCLIENT/);
+  assert.doesNotMatch(nativeFrame, /createElement|<button|innerHTML/);
+  assert.match(rustShell, /#\[cfg\(target_os = "windows"\)\]\s*mod windows_titlebar;/);
+  assert.match(rustShell, /windows_titlebar::install\(hwnd\)/);
+  assert.match(shellHost, /__ARIES_WINDOWS_CAPTION_INSET__\?: number/);
+  assert.match(css, /\.is-tauri\.is-macos\s*\{/);
+  assert.doesNotMatch(css, /\.is-tauri\s*\{\s*--titlebar-left-controls-x:\s*84px/);
+});
+
+test("titlebar quick options dismisses across embedded workspace boundaries", () => {
+  const optionsMenu = readSource("src/components/workshell/titlebar-options-menu.tsx");
+  assert.match(optionsMenu, /window\.addEventListener\("blur", dismissOnWindowBlur\)/);
+  assert.match(optionsMenu, /const dismissOnWindowBlur = \(\) => setOpen\(false\)/);
+  assert.match(optionsMenu, /window\.removeEventListener\("blur", dismissOnWindowBlur\)/);
+});
+
+test("sidebar chrome retains the proven pre-tokenization spacing and action geometry", () => {
+  const css = readSource("src/app/globals.css");
+  for (const declaration of [
+    "--aries-sidebar-row-padding-x: 12px;",
+    "--aries-sidebar-row-padding-y: 4px;",
+    "--aries-sidebar-section-header-height: 20px;",
+    "--aries-sidebar-group-padding-start: 7px;",
+    "--aries-sidebar-group-padding-end: 5px;",
+    "--aries-sidebar-tree-indent: 12px;",
+    "--aries-sidebar-drop-indicator-size: 2px;",
+    "--aries-sidebar-drop-indicator-overhang: 1px;",
+    "--aries-sidebar-trailing-inset: 8px;",
+    "--aries-sidebar-unsaved-indicator-size: 6px;",
+    "--aries-sidebar-close-inset: 6px;",
+    "--aries-sidebar-close-action-size: 20px;",
+    "--aries-sidebar-action-icon-size: 12px;",
+  ]) {
+    assert.ok(css.includes(declaration), `${declaration} must remain at the proven sidebar default`);
+  }
+
+  assertConsumes("src/components/workshell/app-sidebar.tsx", [
+    "--aries-sidebar-section-header-height",
+    "--aries-sidebar-group-padding-start",
+    "--aries-sidebar-group-padding-end",
+    "--aries-sidebar-tree-indent",
+    "--aries-sidebar-drop-indicator-size",
+    "--aries-sidebar-drop-indicator-overhang",
+    "--aries-sidebar-trailing-inset",
+    "--aries-sidebar-unsaved-indicator-size",
+    "--aries-sidebar-close-inset",
+    "--aries-sidebar-close-action-size",
+    "--aries-sidebar-action-icon-size",
+  ]);
+});
+
+test("migrated dialog actions and retained-list close controls keep their established defaults", () => {
+  const css = readSource("src/app/globals.css");
+  assert.match(css, /--aries-dialog-map-action-min-width:\s*72px;/);
+  assert.match(css, /--aries-dialog-width-confirm:\s*380px;/);
+
+  const settings = readSource("src/components/workshell/settings-dialog.tsx");
+  assert.equal(
+    (settings.match(/min-w-\[var\(--aries-dialog-map-action-min-width\)\]/g) ?? []).length,
+    2,
+  );
+  for (const fragment of [
+    "rounded-[var(--aries-radius-control-compact)]",
+    "px-[calc(var(--aries-control-padding-x)+var(--aries-control-gap-compact)/2)]",
+    "text-[length:var(--aries-font-size-base)]",
+    "font-normal",
+  ]) {
+    assert.ok(settings.includes(fragment), `map actions must retain ${fragment}`);
+  }
+  assert.match(settings, /border-border\/60/);
+  assert.match(settings, /disabled:opacity-40/);
+
+  const picker = readSource("src/components/workshell/system-chart-picker.tsx");
+  assert.match(
+    picker,
+    /max-w-\[var\(--aries-dialog-width-confirm\)\][^\n]*rounded-md border border-border/,
+  );
+
+  const shell = readSource("src/components/workshell/retained-pane-shell.tsx");
+  assert.match(shell, /closeAppearance = "pane"/);
+  assert.match(shell, /inline-flex shrink-0 items-center justify-center/);
+  assert.match(shell, /var\(--aries-radius-ui-control-compact\)/);
+  assert.match(shell, /var\(--aries-control-icon-size\)/);
+  for (const file of [
+    "feature-catalog-view.tsx",
+    "legal-document-view.tsx",
+    "whats-new-view.tsx",
+    "lunar-mansions-view.tsx",
+  ]) {
+    assert.match(
+      readSource(`src/components/workshell/${file}`),
+      /closeAppearance="list"/,
+      `${file} must keep its former 24px button and 14px close-icon treatment`,
+    );
+  }
+});
+
+test("shared list segmented controls retain their proven six-pixel item corners", () => {
+  const css = readSource("src/app/globals.css");
+  assert.match(
+    css,
+    /--aries-segmented-control-item-radius:\s*var\(--aries-radius-sm\);/,
+  );
+  assert.match(css, /--aries-radius-sm:\s*calc\(var\(--aries-radius-md\) \* 2 \/ 3\);/);
+  assert.match(css, /--aries-radius-md:\s*9px;/);
+
+  const listTokens = readSource("src/lib/list-tokens.ts");
+  assert.match(listTokens, /segmentedButton:[\s\S]*?var\(--aries-segmented-control-item-radius\)/);
+  const controls = readSource("src/components/workshell/list-controls.tsx");
+  const segmentedControl = controls.slice(
+    controls.indexOf("export function ListSegmentedControl"),
+    controls.indexOf("export function ListCalendarStepper"),
+  );
+  assert.doesNotMatch(segmentedControl, /var\(--aries-radius-control-compact\)/);
+});
+
+test("retained time-lord controls preserve their caller-specific pre-tokenization gaps", () => {
+  const table = readSource("src/components/workshell/time-lord-table-view.tsx");
+  assert.match(
+    table,
+    /<PaneInfoBar className="gap-\[var\(--aries-pane-control-gap-y\)\]">/,
+    "time-lord header fragments must retain their former 8px separation",
+  );
+  assert.match(
+    table,
+    /<PaneControlBar\s+density="compact"\s+className="gap-\[var\(--aries-pane-control-gap-y\)\]"/,
+    "Triplicity controls must retain their former 8px compact-band gap",
+  );
+  assert.equal(
+    (table.match(/"gap-\[var\(--aries-control-gap-compact\)\]"/g) ?? []).length,
+    2,
+    "time-lord ZR and Profections checkboxes must retain their former 4px gap",
+  );
+
+  const zodiacalReleasing = readSource(
+    "src/components/workshell/zodiacal-releasing-view.tsx",
+  );
+  assert.equal(
+    (zodiacalReleasing.match(/"gap-\[var\(--aries-control-gap-compact\)\]"/g) ?? []).length,
+    1,
+    "the dedicated ZR checkbox must retain its former 4px gap",
+  );
+});
+
+test("loading error and empty-state chrome retains the established inset and type defaults", () => {
+  const css = readSource("src/app/globals.css");
+  assert.match(css, /--aries-pane-header-padding-x:\s*16px;/);
+  assert.match(css, /--aries-pane-state-padding:\s*24px;/);
+  assert.match(css, /--aries-font-size-base:\s*12px;/);
+
+  const listTokens = readSource("src/lib/list-tokens.ts");
+  for (const state of ["loading", "error"]) {
+    const start = listTokens.indexOf(`${state}:`);
+    assert.notEqual(start, -1);
+    const block = listTokens.slice(start, listTokens.indexOf("\n", start + 20) + 1);
+    assert.match(block, /--aries-pane-header-padding-x/);
+    assert.match(block, /--aries-pane-state-padding/);
+    assert.match(block, /--aries-font-size-base/);
+  }
+
+  const retained = readSource("src/components/workshell/retained-pane-shell.tsx");
+  assert.match(retained, /flex h-full min-h-0 flex-col bg-background/);
+  for (const file of [
+    "decennials-view.tsx",
+    "firdaria-view.tsx",
+    "time-lord-pane-view.tsx",
+    "zodiacal-releasing-view.tsx",
+    "eclipses-view.tsx",
+    "profections-view.tsx",
+  ]) {
+    const source = readSource(`src/components/workshell/${file}`);
+    assert.match(source, /items-center justify-center p-6/);
+    assert.match(source, /text-\[length:var\(--aries-font-size-base\)\]/);
+  }
+});
+
+test("aspect-matrix geometry is a bounded chart-scoped authoring family", () => {
+  const geometryTokens = [
+    "--aries-aspect-matrix-cell-size",
+    "--aries-aspect-matrix-fixed-star-rail-width",
+    "--aries-aspect-matrix-outer-padding",
+    "--aries-aspect-matrix-axis-glyph-size",
+    "--aries-aspect-matrix-rule-width",
+    "--aries-aspect-matrix-exact-inset",
+    "--aries-aspect-matrix-applying-marker-size",
+    "--aries-aspect-matrix-glyph-inset-x",
+    "--aries-aspect-matrix-glyph-inset-y",
+    "--aries-aspect-matrix-parallel-inset-x",
+    "--aries-aspect-matrix-parallel-inset-y",
+    "--aries-aspect-matrix-orb-inset-bottom",
+  ];
+  assertConsumes("src/components/workshell/aspect-matrix-view.tsx", geometryTokens);
+
+  const matrix = readSource("src/components/workshell/aspect-matrix-view.tsx");
+  assert.doesNotMatch(matrix, /const\s+(?:CELL|STAR_RAIL)\s*=/);
+  assert.doesNotMatch(matrix, /(?:p-4|text-\[19px\]|inset-\[3px\]|border-\[5px\]|left-\[7px\]|top-\[5px\]|right-\[4px\]|bottom-\[4px\])/);
+  assert.ok(matrix.includes("var(--morinus-aspect-parallel)"));
+  assert.ok(matrix.includes("var(--morinus-aspect-contraparallel)"));
+
+  const { publicManifest } = buildStyleTokenInventory(frontendRoot);
+  const publicByName = new Map(publicManifest.tokens.map((token) => [token.cssVar, token]));
+  for (const name of geometryTokens) {
+    const token = publicByName.get(name);
+    assert.equal(token?.scope, "chart", `${name} must remain chart-scoped`);
+    assert.equal(token?.tier, "renderer-metric", `${name} must remain renderer geometry`);
+    assert.equal(token?.handoffStatus, "editable", `${name} must remain editable`);
+    assert.ok(token?.bounds, `${name} must keep explicit numeric bounds`);
+  }
+});
+
+test("Astrolabe and sidebar wrappers cannot restore their former fixed layout literals", () => {
+  const astrolabe = readSource("src/components/workshell/astrolabe-view.tsx");
+  assert.doesNotMatch(astrolabe, /(?:gap-1\.5|px-3|py-1\.5|px-2|py-0\.5|var\(--primary,)/);
+
+  const sidebar = readSource("src/components/workshell/app-sidebar.tsx");
+  assert.doesNotMatch(sidebar, /depth\s*\*\s*12|(?:h-0\.5|-top-px|-bottom-px|size-1\.5|right-1\.5|\bh-5\b|\bw-5\b|\bsize-3\b)/);
+  assertConsumes("src/app/globals.css", [
+    "--aries-sidebar-row-padding-x",
+    "--aries-sidebar-row-padding-y",
+  ]);
+});
+
+test("public list row-height roles are the sole authority for fixed-row virtualization", () => {
+  const tokens = readSource("src/lib/list-tokens.ts");
+  for (const cssVar of [
+    "--aries-list-row-height-dense",
+    "--aries-list-row-height-standard",
+    "--aries-list-row-height-symbolic",
+  ]) {
+    assert.ok(tokens.includes(`\"${cssVar}\"`), `list-tokens.ts must resolve ${cssVar}`);
+  }
+  assert.match(tokens, /export function resolveListRowHeight/);
+  assert.match(tokens, /Number\.isFinite\(value\) && value > 0/);
+  assert.match(tokens, /export function useListRowHeight/);
+  assert.match(tokens, /export function useFixedRowHeightAnchor/);
+  assert.match(tokens, /anchorUnits \* rowHeight/);
+  assert.match(tokens, /querySelector<HTMLElement>\("thead"\)\?\.offsetHeight/);
+  assert.match(tokens, /scroller\.clientHeight - headerHeight/);
+  assert.match(tokens, /rowCount \* rowHeight - bodyViewportHeight/);
+  assert.match(tokens, /ariesRowHeightAnchorUntil/);
+
+  const stitchedHarness = readSource("src/components/workshell/stitched-list-harness.ts");
+  assert.match(stitchedHarness, /thresholdPxRef/);
+  assert.match(stitchedHarness, /ariesRowHeightAnchorUntil/);
+
+  const consumers = new Map([
+    ["src/components/workshell/directions-view.tsx", "symbolic"],
+    ["src/components/workshell/transit-list-view.tsx", "symbolic"],
+    ["src/components/workshell/synodic-cycle-list-view.tsx", "symbolic"],
+    ["src/components/workshell/time-lord-table-view.tsx", "symbolic"],
+    ["src/components/workshell/eclipses-view.tsx", "standard"],
+  ]);
+  for (const [path, density] of consumers) {
+    const source = readSource(path);
+    assert.ok(
+      source.includes(`useListRowHeight(\"${density}\")`),
+      `${path} must resolve its ${density} CSS row-height role`,
+    );
+    assert.doesNotMatch(
+      source,
+      /LIST_ROW_HEIGHT|(?:^|\W)(?:DIRECTION_|TRANSIT_|SYNODIC_)?ROW_HEIGHT(?:\W|$)/,
+      `${path} cannot retain a disconnected numeric row-height authority`,
+    );
+    assert.match(source, /paddingTop:\s*startIndex \* rowHeight/);
+    assert.match(source, /paddingBottom:[^\n]*rowCount - endIndex[^\n]*\* rowHeight/);
+    assert.match(source, /style=\{\{ height: rowHeight \}\}/);
+  }
+
+  for (const path of [
+    "src/components/workshell/directions-view.tsx",
+    "src/components/workshell/transit-list-view.tsx",
+    "src/components/workshell/synodic-cycle-list-view.tsx",
+  ]) {
+    assert.match(readSource(path), /useFixedRowHeightAnchor\(/);
+  }
+  for (const path of [
+    "src/components/workshell/time-lord-table-view.tsx",
+    "src/components/workshell/eclipses-view.tsx",
+  ]) {
+    const source = readSource(path);
+    assert.match(source, /previousRowHeightRef/);
+    assert.match(source, /anchorUnits \* rowHeight/);
+  }
+  assert.match(
+    readSource("src/components/workshell/time-lord-table-view.tsx"),
+    /\(scroller\.scrollTop \+ viewportAnchor\) \/ previousRowHeight/,
+  );
+  const eclipses = readSource("src/components/workshell/eclipses-view.tsx");
+  assert.match(eclipses, /bodyScrollTop \/ previousRowHeight/);
+  assert.match(eclipses, /bodyScrollTop \/ sourceRowHeight/);
+});
+
+test("measured geometry, native titlebar geometry, hit zones, and table algorithms stay internal", () => {
+  const { inventory, publicManifest } = buildStyleTokenInventory(frontendRoot);
+  const byName = new Map(inventory.tokens.map((token) => [token.name, token]));
+  const publicTokens = publicManifest.tokens;
+
+  for (const name of [
+    "--sidebar-width",
+    "--sidebar-width-icon",
+    "--right-pane-width",
+    "--right-pane-min-content-width",
+    "--right-pane-preferred-width",
+  ]) {
+    assert.equal(byName.get(name)?.class, "runtime", `${name} must remain measured runtime geometry`);
+    assert.ok(!publicTokens.some((token) => token.cssVar === name), `${name} cannot be profile-editable`);
+  }
+
+  for (const token of inventory.tokens.filter(({ name }) => name.startsWith("--titlebar-"))) {
+    assert.notEqual(token.class, "public", `${token.name} is native titlebar geometry`);
+  }
+
+  assert.ok(
+    !publicTokens.some(({ cssVar, semanticId }) => /sash.*(?:hit|target)|(?:hit|target).*sash/i.test(`${cssVar} ${semanticId}`)),
+    "sash pointer hit zones must remain fixed interaction geometry",
+  );
+  assert.ok(
+    !publicTokens.some(({ cssVar, semanticId }) => /table.*(?:algorithm|column-width|layout-mode|measure)|(?:algorithm|measure).*table/i.test(`${cssVar} ${semanticId}`)),
+    "table measurement and column-layout algorithms must remain code-owned",
+  );
+
+  const tableAlgorithm = readSource("src/components/workshell/resizable-table-columns.tsx");
+  assert.match(tableAlgorithm, /getBoundingClientRect\(\)\.width/);
+  assert.match(tableAlgorithm, /tableLayout:\s*["']fixed["']/);
+});
+
+test("retained pane chrome defaults to the app background and Profections opts into surfaces", () => {
+  const shell = readSource("src/components/workshell/retained-pane-shell.tsx");
+  assert.match(shell, /headerSurface = "background"/);
+  assert.match(
+    shell,
+    /headerSurface === "surface"[\s\S]*?"bg-\[color:var\(--aries-surface\)\]"[\s\S]*?: "bg-background"/,
+  );
+
+  const controls = readSource("src/components/workshell/list-controls.tsx");
+  const controlBar = controls.slice(
+    controls.indexOf("export function PaneControlBar"),
+    controls.indexOf("export function PaneInfoBar"),
+  );
+  const infoBar = controls.slice(
+    controls.indexOf("export function PaneInfoBar"),
+    controls.indexOf("export function PaneSelect"),
+  );
+  const select = controls.slice(
+    controls.indexOf("export function PaneSelect"),
+    controls.indexOf("export function PaneToolbarButton"),
+  );
+  for (const block of [controlBar, infoBar, select]) {
+    assert.match(block, /surface = false/);
+  }
+  assert.match(controlBar, /surface && "bg-\[color:var\(--aries-surface-subtle\)\]"/);
+  assert.match(infoBar, /surface && "bg-\[color:var\(--aries-surface-subtle\)\]"/);
+  assert.match(
+    select,
+    /surface \? "bg-\[color:var\(--aries-surface\)\]" : "bg-background"/,
+  );
+
+  const profections = readSource("src/components/workshell/profections-view.tsx");
+  assert.equal((profections.match(/headerSurface="surface"/g) ?? []).length, 4);
+  assert.match(profections, /<PaneControlBar density="grouped" surface>/);
+  for (const id of ["prof-pane-mode", "prof-pane-display", "prof-pane-monthly"]) {
+    assert.match(profections, new RegExp(`<PaneSelect\\s+id="${id}"\\s+surface`));
+  }
+
+  for (const file of [
+    "feature-catalog-view.tsx",
+    "legal-document-view.tsx",
+    "whats-new-view.tsx",
+    "lunar-mansions-view.tsx",
+  ]) {
+    const source = readSource(`src/components/workshell/${file}`);
+    assert.match(source, /titleSize="large"/);
+    assert.match(source, /titleWeight="semibold"/);
+    assert.match(source, /headerDensity="compact"/);
+  }
+});
+
+test("dialog roles preserve the established desktop cap and Manzil keeps its Arabic size", () => {
+  const globals = readSource("src/app/globals.css");
+  assert.match(globals, /--aries-dialog-width-sm:\s*384px;/);
+  assert.match(globals, /--aries-font-size-arabic:\s*17px;/);
+
+  const dialog = readSource("src/components/ui/dialog.tsx");
+  assert.match(dialog, /size = "sm"/);
+  assert.match(dialog, /sm: "[^"]*var\(--aries-dialog-width-sm\)/);
+  for (const role of ["compact", "md", "detail", "prose", "reading"]) {
+    assert.match(
+      dialog,
+      new RegExp(`${role}: "[^"]*sm:w-\\[[^"]*var\\(--aries-dialog-width-sm\\)`),
+    );
+  }
+
+  const manzil = readSource("src/components/workshell/inspector-panel.tsx");
+  assert.match(manzil, /text-\[length:var\(--aries-font-size-arabic\)\]/);
+  assert.match(
+    manzil,
+    /className=\{cn\("justify-self-start leading-none", INSPECTOR_STRONG_COLOR, TEXT_ARABIC\)\}/,
+  );
+  assert.doesNotMatch(manzil, /text-\[17px\]/);
+});
+
+test("inspector colours repaint from semantic roles without refetching the hover flag", () => {
+  const hover = readSource("src/components/workshell/chart-hover-flag.tsx");
+  const fetchIndex = hover.indexOf("fetchInspectorFlagPayload(query, controller.signal)");
+  assert.notEqual(fetchIndex, -1, "hover flag fetch is missing");
+  const fetchEffectStart = hover.lastIndexOf("React.useEffect(() => {", fetchIndex);
+  const fetchEffectEnd = hover.indexOf("React.useEffect(() => {", fetchIndex + 1);
+  const fetchEffect = hover.slice(fetchEffectStart, fetchEffectEnd);
+  assert.doesNotMatch(
+    fetchEffect,
+    /styleRevision/,
+    "a palette/radius/font revision must not invoke the inspector flag endpoint",
+  );
+  assert.match(fetchEffect, /identityKey/);
+  assert.match(fetchEffect, /bindingKey/);
+  assert.match(fetchEffect, /retryTick/);
+  assert.match(fetchEffect, /semanticOptionsSeq/);
+  assert.match(hover, /if \(!lastOptionsChange \|\| lastOptionsChange\.styleOnly\) return/);
+
+  assert.match(hover, /semanticChartColor\(payload\.accentRole, rgbCss\(payload\.accent\)\)/);
+  assert.match(hover, /semanticChartColor\(span\.colourRole, rgbCss\(span\.colour\)\)/);
+  assert.match(hover, /semanticChartColor\(colourRole, rgbCss\(colour\)\)/);
+  assert.match(
+    hover,
+    /useLayoutEffect\([\s\S]*?\[payload, anchor\?\.x, anchor\?\.y, styleRevision\]\)/,
+    "style revisions may still remeasure the resident card",
+  );
+
+  const inspector = readSource("src/components/workshell/inspector-panel.tsx");
+  assert.match(inspector, /semanticChartColor\(payload\.accentRole, rgb\(payload\.accent\)\)/);
+  assert.match(inspector, /semanticChartColor\(item\.colour_role, rgb\(item\.colour\)\)/);
+  assert.match(inspector, /semanticChartColor\(item\.aspect_colour_role, rgb\(item\.aspect_colour\)\)/);
+
+  const client = readSource("src/lib/daemon/client.ts");
+  assert.match(client, /accentRole\?: string \| null/);
+  assert.match(client, /colourRole\?: string \| null/);
+  assert.match(client, /aspect_colour_role\?: string \| null/);
+});
+
+test("directions PDF export resolves the active semantic palette at export time", () => {
+  const directions = readSource("src/components/workshell/directions-view.tsx");
+  const semanticColor = readSource("src/lib/theme/semantic-color.ts");
+
+  assert.match(semanticColor, /export function resolvedSemanticChartColor/);
+  assert.match(semanticColor, /getComputedStyle\(root\)\.getPropertyValue\(role\)/);
+  assert.match(directions, /resolvedSemanticChartColor\(part\.colorRole, part\.color\)/);
+  assert.match(directions, /directionGlyphPdfCell\(/);
+  assert.match(directions, /resolvedSemanticChartColor\(colorRole, color\)/);
+  assert.match(directions, /circumSignColors/);
+});

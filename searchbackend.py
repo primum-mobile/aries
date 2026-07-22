@@ -2171,6 +2171,12 @@ def _apply_heliacal_fixstar_display_payload(row, chrt, prom, star_code, event_jd
 	if prom is None:
 		return
 	longitude = _fixstar_longitude_at_jd(star_code, event_jd)
+	if longitude is not None and getattr(chrt.options, 'ayanamsha', 0) != 0:
+		longitude = util.normalize(
+			longitude - astrology.effective_ayanamsha_ut(
+				float(event_jd), chrt.options.ayanamsha,
+			)
+		)
 	if longitude is None:
 		longitude = getattr(prom, 'longitude', None)
 	display_longitude = _display_longitude_for_chart(chrt, longitude)
@@ -2737,10 +2743,8 @@ def _matches_motion_filter(motion_filter, speed_lon):
 def _display_longitude_for_chart(chrt, longitude):
 	if longitude is None:
 		return None
-	lon = util.normalize(float(longitude))
-	if getattr(chrt.options, 'ayanamsha', 0) != 0:
-		lon = util.normalize(lon - float(getattr(chrt, 'ayanamsha', 0.0)))
-	return lon
+	# Live/catalog longitudes are already in the chart's selected zodiac.
+	return util.normalize(float(longitude))
 
 
 def _format_compact_longitude(display_longitude):
@@ -2777,8 +2781,6 @@ def _dignity_code_for_longitude(display_chart, obj, longitude):
 		return None
 	try:
 		lona = float(longitude)
-		if getattr(display_chart.options, 'ayanamsha', 0) != 0:
-			lona = util.normalize(lona - float(getattr(display_chart, 'ayanamsha', 0.0)))
 		sign = int(lona/chart.Chart.SIGN_DEG) % chart.Chart.SIGN_NUM
 		isdom = display_chart.options.dignities[obj.planet_index][0][sign]
 		isexal = display_chart.options.dignities[obj.planet_index][1][sign]
@@ -2971,7 +2973,8 @@ def _secondary_symbolic_lof_longitude(radix, symbolic_age, angle_state=None, met
 	flags = _planet_flags(radix)
 	serr, sun_ecl = astrology.swe_calc_ut(jd_prog, astrology.SE_SUN, flags)
 	serr, moon_ecl = astrology.swe_calc_ut(jd_prog, astrology.SE_MOON, flags)
-	serr, sun_equ = astrology.swe_calc_ut(jd_prog, astrology.SE_SUN, flags | astrology.SEFLG_EQUATORIAL)
+	equatorial_flags = (flags & ~astrology.SEFLG_SIDEREAL) | astrology.SEFLG_EQUATORIAL
+	serr, sun_equ = astrology.swe_calc_ut(jd_prog, astrology.SE_SUN, equatorial_flags)
 	sun_lon = util.normalize(float(sun_ecl[planets.Planet.LONG]))
 	moon_lon = util.normalize(float(moon_ecl[planets.Planet.LONG]))
 	abovehor = _secondary_symbolic_sun_above_horizon(

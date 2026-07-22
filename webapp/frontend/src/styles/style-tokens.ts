@@ -69,10 +69,6 @@ export type StyleTokenId =
   | "tableCellY"
   | "tableSectionGap"
   | "tableRuleColor"
-  | "ephemHeaderFontSize"
-  | "ephemHeaderGap"
-  | "ephemHeaderPadX"
-  | "ephemHeaderPadY"
   | "ephemStateFontSize"
   | "ephemFrameWidthSmall"
   | "ephemFrameWidthMedium"
@@ -410,54 +406,6 @@ export const STYLE_TOKENS: StyleToken[] = [
     cssVar: "--aries-table-rule-color",
     kind: "color",
     defaultValue: "#000000",
-  },
-  {
-    id: "ephemHeaderFontSize",
-    group: "Graphic Ephemeris",
-    label: "Header text",
-    cssVar: "--aries-ephem-header-font-size",
-    kind: "number",
-    defaultValue: 11,
-    min: 8,
-    max: 16,
-    step: 1,
-    unit: "px",
-  },
-  {
-    id: "ephemHeaderGap",
-    group: "Graphic Ephemeris",
-    label: "Header gap",
-    cssVar: "--aries-ephem-header-gap",
-    kind: "number",
-    defaultValue: 8,
-    min: 2,
-    max: 18,
-    step: 1,
-    unit: "px",
-  },
-  {
-    id: "ephemHeaderPadX",
-    group: "Graphic Ephemeris",
-    label: "Header padding X",
-    cssVar: "--aries-ephem-header-pad-x",
-    kind: "number",
-    defaultValue: 12,
-    min: 4,
-    max: 28,
-    step: 1,
-    unit: "px",
-  },
-  {
-    id: "ephemHeaderPadY",
-    group: "Graphic Ephemeris",
-    label: "Header padding Y",
-    cssVar: "--aries-ephem-header-pad-y",
-    kind: "number",
-    defaultValue: 6,
-    min: 2,
-    max: 16,
-    step: 1,
-    unit: "px",
   },
   {
     id: "ephemStateFontSize",
