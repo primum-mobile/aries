@@ -32,7 +32,7 @@ from engine.cheby_progressions import (
 	_unwrap_longitude,
 	_sample_planet_longitudes,
 	_sample_node_longitudes,
-	_planet_flags,
+	_planet_context,
 	_CADENCE,
 	_SEGMENT_DAYS,
 	_SEGMENT_DEGREE,
@@ -122,7 +122,8 @@ class TransitFit(object):
 		self.options = options
 		self.jd_start = float(jd_start)
 		self.jd_end = float(jd_end)
-		self.flags = _planet_flags(chrt)
+		self.ephemeris_context = _planet_context(chrt)
+		self.flags = self.ephemeris_context.flags
 		self._segments = {}     # body_id -> list[_Segment] in JD domain
 		self._kinds = {}
 		# Cached per-segment evaluator state for fast scalar/vector lookup.
@@ -143,11 +144,27 @@ class TransitFit(object):
 
 		if body_id == 'planet:asc_node' or body_id == 'planet:desc_node':
 			descending = (body_id == 'planet:desc_node')
-			lons = _sample_node_longitudes(jds, self.chrt, self.flags, descending=descending)
+			lons = _sample_node_longitudes(
+				jds,
+				self.chrt,
+				self.flags,
+				descending=descending,
+				context=self.ephemeris_context,
+			)
 		elif body_id == 'planet:chiron' or planet_index == astrology.SE_CHIRON:
-			lons = _sample_planet_longitudes(jds, astrology.SE_CHIRON, self.flags)
+			lons = _sample_planet_longitudes(
+				jds,
+				astrology.SE_CHIRON,
+				self.flags,
+				context=self.ephemeris_context,
+			)
 		elif planet_index is not None:
-			lons = _sample_planet_longitudes(jds, int(planet_index), self.flags)
+			lons = _sample_planet_longitudes(
+				jds,
+				int(planet_index),
+				self.flags,
+				context=self.ephemeris_context,
+			)
 		else:
 			raise ValueError('cannot fit body without planet_index: %r' % (body_id,))
 

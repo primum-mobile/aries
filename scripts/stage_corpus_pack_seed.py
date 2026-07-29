@@ -8,6 +8,11 @@ import shutil
 import tomllib
 from pathlib import Path
 
+try:
+    from scripts.staging_tree import create_staging_directory, publish_staged_tree
+except ModuleNotFoundError:
+    from staging_tree import create_staging_directory, publish_staged_tree
+
 
 def stage_pack(source: Path, destination_root: Path) -> str:
     source = source.resolve()
@@ -33,15 +38,23 @@ def stage_pack(source: Path, destination_root: Path) -> str:
     return pack_id
 
 
+def stage_packs(sources: list[Path], destination: Path) -> list[str]:
+    temporary = create_staging_directory(destination)
+    try:
+        staged = [stage_pack(source, temporary) for source in sources]
+        publish_staged_tree(temporary, destination)
+    except BaseException:
+        shutil.rmtree(temporary, ignore_errors=True)
+        raise
+    return staged
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("destination", type=Path)
     parser.add_argument("sources", nargs="*", type=Path)
     args = parser.parse_args()
-    if args.destination.exists():
-        shutil.rmtree(args.destination)
-    args.destination.mkdir(parents=True)
-    staged = [stage_pack(source, args.destination) for source in args.sources]
+    staged = stage_packs(args.sources, args.destination)
     print(f"Staged pack seeds: {', '.join(staged) if staged else '(none)'}")
     return 0
 

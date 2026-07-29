@@ -89,8 +89,9 @@ function DialogContent({
       <DialogOverlay motion={motion} />
       <DialogPrimitive.Popup
         data-slot="dialog-content"
+        data-aries-surface="overlay"
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid max-w-none -translate-x-1/2 -translate-y-1/2 gap-[var(--aries-dialog-gap)] rounded-[var(--aries-radius-dialog)] bg-popover p-[var(--aries-dialog-padding)] text-[length:var(--aries-font-size-control)] text-popover-foreground ring-1 ring-foreground/10 outline-none",
+          "fixed top-1/2 left-1/2 z-50 grid max-w-none -translate-x-1/2 -translate-y-1/2 gap-[var(--aries-dialog-gap)] rounded-[var(--aries-radius-dialog)] bg-[var(--aries-overlay-background)] p-[var(--aries-dialog-padding)] text-[length:var(--aries-font-size-control)] text-[color:var(--aries-overlay-text)] ring-1 ring-foreground/10 outline-none",
           DIALOG_SIZE_CLASS[size],
           motion === "default" &&
             "duration-100 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",

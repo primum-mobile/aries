@@ -49,22 +49,22 @@ export function AboutDialog() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent size="detail">
         <DialogHeader>
-          <DialogTitle className="text-2xl font-semibold tracking-tight">
+          <DialogTitle className="font-semibold tracking-tight">
             {about?.brand ?? "Aries"}
           </DialogTitle>
           {about ? (
-            <div className="text-sm text-muted-foreground">
+            <div className="text-[length:var(--aries-font-size-reading)] text-muted-foreground">
               {t(about.taglineKey)}
             </div>
           ) : null}
         </DialogHeader>
 
         {about ? (
-          <div className="space-y-4 text-sm">
-            <div className="space-y-1 text-muted-foreground">
+          <div className="space-y-[var(--aries-dialog-gap)] text-[length:var(--aries-font-size-reading)]">
+            <div className="space-y-[var(--aries-control-gap-compact)] text-muted-foreground">
               <div>{t("about.version", { version: about.version })}</div>
               {about.buildStamp ? <div>{about.buildStamp}</div> : null}
-              <div className="pt-2 text-foreground">
+              <div className="pt-[var(--aries-form-field-gap)] text-foreground">
                 {t(about.copyrightKey, {
                   year: about.copyrightYear,
                   name: about.primaryAuthor,
@@ -79,7 +79,7 @@ export function AboutDialog() {
               </a>
             </div>
 
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+            <div className="flex flex-wrap gap-x-[var(--aries-dialog-gap)] gap-y-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-reading)]">
               <a
                 href={about.websiteUrl}
                 target="_blank"
@@ -112,21 +112,21 @@ export function AboutDialog() {
               </button>
             </div>
 
-            <section className="border-t pt-4">
-              <div className="mb-3 font-medium">
+            <section className="border-t pt-[var(--aries-dialog-section-padding-y)]">
+              <div className="mb-[var(--aries-form-row-gap)] font-medium">
                 {t(about.creditsHeadingKey)}
               </div>
               {about.swissEphemerisVersion ? (
-                <div className="mb-3 text-muted-foreground">
+                <div className="mb-[var(--aries-form-row-gap)] text-muted-foreground">
                   {t(about.swissEphemerisKey, {
                     version: about.swissEphemerisVersion,
                   })}
                 </div>
               ) : null}
-              <div className="mb-2 font-medium">
+              <div className="mb-[var(--aries-form-field-gap)] font-medium">
                 {t(about.contributorsHeadingKey)}
               </div>
-              <ul className="max-h-56 space-y-1.5 overflow-y-auto pr-1 text-muted-foreground">
+              <ul className="max-h-[var(--aries-dialog-list-max-height)] space-y-[var(--aries-control-gap)] overflow-y-auto pr-[var(--aries-control-gap-compact)] text-muted-foreground">
                 {about.legacyContributors.map((contributor) => (
                   <li key={contributor.name} className="leading-snug">
                     <span className="font-medium text-foreground">
@@ -139,7 +139,7 @@ export function AboutDialog() {
             </section>
           </div>
         ) : (
-          <div className="py-8 text-center text-sm text-muted-foreground">
+          <div className="py-[var(--aries-pane-state-padding)] text-center text-[length:var(--aries-font-size-reading)] text-muted-foreground">
             {t("about.loading")}
           </div>
         )}

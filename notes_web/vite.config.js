@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { defineConfig } from 'vite';
 
-const assetVersion = '20260625-notes-click-shift';
+const assetVersion = '20260722-desktop-webview-guard';
 const nodeModulesMarker = '/node_modules/';
 
 function packageRootForModule(moduleId) {

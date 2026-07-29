@@ -20,6 +20,8 @@ import time
 import numpy as np
 
 import astrology
+from aries.astrology.ephemeris_context import EphemerisContext
+import common
 import houses
 import planets
 import posfordate
@@ -151,47 +153,90 @@ def _body_kind(body_id, planet_index, options=None):
 # ---------------------------------------------------------------------------
 
 
+def _planet_context(radix):
+	return EphemerisContext.for_chart(radix, ephe_path=common.get_ephe_path())
+
+
 def _planet_flags(radix):
-	# Mirror searchbackend._planet_flags but kept local so this module has no
-	# import cycle with searchbackend.
-	flags = astrology.SEFLG_SPEED + astrology.SEFLG_SWIEPH
-	if getattr(radix.options, 'topocentric', False):
-		astrology.swe_set_topo(radix.place.lon, radix.place.lat, radix.place.altitude)
-		flags += astrology.SEFLG_TOPOCTR
-	if getattr(radix.options, 'ayanamsha', 0) != 0:
-		astrology.swe_set_sid_mode(astrology.ayanamsha_swe_mode(radix.options.ayanamsha), 0, 0)
-		flags |= astrology.SEFLG_SIDEREAL
-	return flags
+	context = _planet_context(radix)
+	context.apply()
+	return context.flags
 
 
-def _sample_planet_longitudes(jd_array, planet_index, flags):
-	out = np.empty(len(jd_array), dtype=np.float64)
-	for i, jd in enumerate(jd_array):
-		_serr, data = astrology.swe_calc_ut(float(jd), int(planet_index), int(flags))
-		out[i] = util.normalize(float(data[planets.Planet.LONG]))
+def _sample_planet_states(jd_array, planet_index, flags, context=None):
+	out = np.empty((len(jd_array), 6), dtype=np.float64)
+	if context is None:
+		for i, jd in enumerate(jd_array):
+			_serr, data = astrology.swe_calc_ut(float(jd), int(planet_index), int(flags))
+			out[i, :] = tuple(float(value) for value in data[:6])
+		return out
+	for chunk_start in range(0, len(jd_array), 64):
+		with context.activate():
+			for i in range(chunk_start, min(chunk_start + 64, len(jd_array))):
+				jd = jd_array[i]
+				_serr, data = astrology.swe_calc_ut(float(jd), int(planet_index), int(flags))
+				out[i, :] = tuple(float(value) for value in data[:6])
 	return out
 
 
-def _sample_node_longitudes(jd_array, radix, flags, *, descending):
+def _sample_planet_longitudes(jd_array, planet_index, flags, context=None):
+	states = _sample_planet_states(
+		jd_array,
+		planet_index,
+		flags,
+		context=context,
+	)
+	return np.mod(states[:, planets.Planet.LONG], 360.0)
+
+
+def _sample_node_longitudes(jd_array, radix, flags, *, descending, context=None):
 	node_id = astrology.SE_MEAN_NODE if getattr(radix.options, 'meannode', True) else astrology.SE_TRUE_NODE
 	out = np.empty(len(jd_array), dtype=np.float64)
 	offset = 180.0 if descending else 0.0
-	for i, jd in enumerate(jd_array):
-		_serr, data = astrology.swe_calc_ut(float(jd), int(node_id), int(flags))
-		out[i] = util.normalize(float(data[planets.Planet.LONG]) + offset)
+	if context is None:
+		for i, jd in enumerate(jd_array):
+			_serr, data = astrology.swe_calc_ut(float(jd), int(node_id), int(flags))
+			out[i] = util.normalize(float(data[planets.Planet.LONG]) + offset)
+		return out
+	for chunk_start in range(0, len(jd_array), 64):
+		with context.activate():
+			for i in range(chunk_start, min(chunk_start + 64, len(jd_array))):
+				jd = jd_array[i]
+				_serr, data = astrology.swe_calc_ut(float(jd), int(node_id), int(flags))
+				out[i] = util.normalize(float(data[planets.Planet.LONG]) + offset)
 	return out
 
 
-def _sample_angle_longitudes(jd_array, symbolic_age_array, radix, options, kind, method=posfordate.SECONDARY):
+def _sample_angle_longitudes(
+	jd_array,
+	symbolic_age_array,
+	radix,
+	options,
+	kind,
+	method=posfordate.SECONDARY,
+	context=None,
+	state_for_age=None,
+):
 	out = np.empty(len(jd_array), dtype=np.float64)
-	for i, age in enumerate(symbolic_age_array):
-		state = posfordate.progressed_angle_state_for_symbolic_age(
-			radix, options, float(age), method=method,
+	if context is None:
+		context = _planet_context(radix)
+	if state_for_age is None:
+		sampler = posfordate.ProgressedAngleSampler(
+			radix,
+			options,
+			method=method,
 		)
-		if kind == KIND_ANGLE_ASC:
-			out[i] = util.normalize(float(state['asc_lon']))
-		else:
-			out[i] = util.normalize(float(state['mc_lon']))
+		state_for_age = sampler.sample
+	for chunk_start in range(0, len(jd_array), 64):
+		chunk_end = min(chunk_start + 64, len(jd_array))
+		with context.activate():
+			for i in range(chunk_start, chunk_end):
+				age = symbolic_age_array[i]
+				state = state_for_age(float(age))
+				if kind == KIND_ANGLE_ASC:
+					out[i] = util.normalize(float(state['asc_lon']))
+				else:
+					out[i] = util.normalize(float(state['mc_lon']))
 	return out
 
 
@@ -219,10 +264,22 @@ def _unwrap_longitude(values):
 class _Segment(object):
 	__slots__ = (
 		'age_lo', 'age_hi', 'cheb', 'cheb_deriv', 'lon_lo', 'lon_hi',
-		'dense_ages', 'dense_lons',
+		'dense_ages', 'dense_lons', 'extrema_ages', 'extrema_lons',
 	)
 
-	def __init__(self, age_lo, age_hi, cheb, lon_lo, lon_hi, dense_ages, dense_lons, cheb_deriv):
+	def __init__(
+		self,
+		age_lo,
+		age_hi,
+		cheb,
+		lon_lo,
+		lon_hi,
+		dense_ages,
+		dense_lons,
+		cheb_deriv,
+		extrema_ages=None,
+		extrema_lons=None,
+	):
 		self.age_lo = float(age_lo)
 		self.age_hi = float(age_hi)
 		self.cheb = cheb
@@ -233,6 +290,16 @@ class _Segment(object):
 		# Built once at fit time; reused across every (target_lon, k) combination.
 		self.dense_ages = dense_ages
 		self.dense_lons = dense_lons
+		self.extrema_ages = (
+			np.asarray(extrema_ages, dtype=np.float64)
+			if extrema_ages is not None
+			else np.asarray([], dtype=np.float64)
+		)
+		self.extrema_lons = (
+			np.asarray(extrema_lons, dtype=np.float64)
+			if extrema_lons is not None
+			else np.asarray([], dtype=np.float64)
+		)
 
 
 # Dense grid density per polynomial degree. A degree-d polynomial has at most
@@ -240,6 +307,7 @@ class _Segment(object):
 # sign change against any target is captured by adjacent samples.
 _DENSE_POINTS_PER_DEGREE = 4
 _DENSE_POINTS_FLOOR = 32
+_TANGENT_CANDIDATE_TOLERANCE_DEG = 0.1
 
 
 def _segment_breakpoints(span_start_age, span_end_age, kind):
@@ -282,10 +350,20 @@ def _fit_segments(age_samples, lon_samples_unwrapped, kind, span_start_age, span
 		dense_n = max(_DENSE_POINTS_FLOOR, deg * _DENSE_POINTS_PER_DEGREE)
 		dense_ages = np.linspace(seg_lo, seg_hi, dense_n)
 		dense_lons = cheb(dense_ages)
+		extrema_ages = []
+		for derivative_root in cheb_deriv.roots():
+			if math.fabs(float(getattr(derivative_root, 'imag', 0.0))) > 1e-9:
+				continue
+			extremum_age = float(getattr(derivative_root, 'real', derivative_root))
+			if seg_lo - 1e-9 <= extremum_age <= seg_hi + 1e-9:
+				extrema_ages.append(extremum_age)
+		extrema_ages = np.asarray(extrema_ages, dtype=np.float64)
+		extrema_lons = cheb(extrema_ages)
 		segments.append(_Segment(
 			seg_lo, seg_hi, cheb,
 			float(np.min(dense_lons)), float(np.max(dense_lons)),
 			dense_ages, dense_lons, cheb_deriv,
+			extrema_ages, extrema_lons,
 		))
 	return segments
 
@@ -902,15 +980,48 @@ class ProgressionFit(object):
 		self.scale = posfordate.progression_symbolic_scale(self.method)
 		self.span_start_age = float(span_start_age)
 		self.span_end_age = float(span_end_age)
-		self.flags = _planet_flags(radix)
+		self.ephemeris_context = _planet_context(radix)
+		self.flags = self.ephemeris_context.flags
 		self.birth_jd = float(radix.time.jd)
 		self._segments = {}      # body_id -> list[_Segment] (cheby fit)
 		self._kinds = {}         # body_id -> kind
 		self._quotidian = {}     # body_id -> _QuotidianAngleTable (mean-quotidian inverse-fn)
 		self._quotidian_lof = {} # body_id -> _QuotidianLofTable
+		self._angle_sampler = posfordate.ProgressedAngleSampler(
+			radix,
+			options,
+			method=self.method,
+		)
+		self._angle_sample_cache = {}
+		self._planet_sample_cache = {}
 		# Per-body fit timing accumulators (populated only when PROG_LOG enabled).
 		self.fit_timings_ms = {}   # body_id -> total fit cost
 		self.sample_counts = {}    # body_id -> number of swisseph samples taken
+
+	def fit_many(self, body_specs):
+		specs = list(body_specs)
+		for body_id, kind, planet_index in specs:
+			self.fit(body_id, kind, planet_index=planet_index)
+
+	def _sample_key(self, planet_index, flags, jds):
+		return (
+			int(planet_index),
+			int(flags),
+			len(jds),
+			round(float(jds[0]), 12),
+			round(float(jds[-1]), 12),
+		)
+
+	def _planet_states(self, jds, planet_index, flags):
+		key = self._sample_key(planet_index, flags, jds)
+		if key not in self._planet_sample_cache:
+			self._planet_sample_cache[key] = _sample_planet_states(
+				jds,
+				planet_index,
+				flags,
+				context=self.ephemeris_context,
+			)
+		return self._planet_sample_cache[key]
 
 	def fit(self, body_id, kind, planet_index=None):
 		if body_id in self._segments or body_id in self._quotidian or body_id in self._quotidian_lof:
@@ -953,20 +1064,59 @@ class ProgressionFit(object):
 		jds = self.birth_jd + ages
 
 		if kind in (KIND_PLANET_FAST, KIND_PLANET_SLOW):
-			lons = _sample_planet_longitudes(jds, planet_index, self.flags)
+			states = self._planet_states(
+				jds,
+				planet_index,
+				self.flags,
+			)
+			lons = np.mod(states[:, planets.Planet.LONG], 360.0)
 		elif kind == KIND_NODE:
 			descending = (body_id == 'planet:desc_node')
-			lons = _sample_node_longitudes(jds, self.radix, self.flags, descending=descending)
+			lons = _sample_node_longitudes(
+				jds,
+				self.radix,
+				self.flags,
+				descending=descending,
+				context=self.ephemeris_context,
+			)
 		elif kind == KIND_CHIRON:
-			lons = _sample_planet_longitudes(jds, astrology.SE_CHIRON, self.flags)
+			states = self._planet_states(
+				jds,
+				astrology.SE_CHIRON,
+				self.flags,
+			)
+			lons = np.mod(states[:, planets.Planet.LONG], 360.0)
 		elif kind in (KIND_ANGLE_ASC, KIND_ANGLE_MC):
-			lons = _sample_angle_longitudes(jds, ages, self.radix, self.options, kind, method=self.method)
+			lons = _sample_angle_longitudes(
+				jds,
+				ages,
+				self.radix,
+				self.options,
+				kind,
+				method=self.method,
+				context=self.ephemeris_context,
+				state_for_age=self._angle_state_for_age,
+			)
 		elif kind == KIND_LOF:
 			# LoF derives from Sun, Moon, and Asc; ensure those fits exist first.
 			self.fit('planet:sun', KIND_PLANET_SLOW, planet_index=astrology.SE_SUN)
 			self.fit('planet:moon', KIND_PLANET_FAST, planet_index=astrology.SE_MOON)
 			self.fit('angle:asc', KIND_ANGLE_ASC)
-			lons = _sample_lof_longitudes(jds, ages, self.radix, self.options, self.flags, method=self.method)
+			lons = _sample_lof_longitudes(
+				jds,
+				ages,
+				self.radix,
+				self.options,
+				self.flags,
+				method=self.method,
+				context=self.ephemeris_context,
+				state_for_age=self._angle_state_for_age,
+				moon_ecliptic_states=self._planet_states(
+					jds,
+					astrology.SE_MOON,
+					self.flags,
+				),
+			)
 		else:
 			raise ValueError('unknown body kind: %r' % (kind,))
 
@@ -976,6 +1126,14 @@ class ProgressionFit(object):
 		if prog_log.enabled():
 			self.fit_timings_ms[body_id] = (time.perf_counter() - t0) * 1000.0
 			self.sample_counts[body_id] = int(min_total)
+
+	def _angle_state_for_age(self, symbolic_age):
+		key = round(float(symbolic_age), 12)
+		if key not in self._angle_sample_cache:
+			self._angle_sample_cache[key] = self._angle_sampler.sample(
+				float(symbolic_age)
+			)
+		return self._angle_sample_cache[key]
 
 	def has(self, body_id):
 		return body_id in self._segments or body_id in self._quotidian or body_id in self._quotidian_lof
@@ -1027,20 +1185,26 @@ class ProgressionFit(object):
 		seg = segments[0] if age < segments[0].age_lo else segments[-1]
 		return float(seg.cheb.deriv()(age))
 
-	def find_aspect_hits(self, body_id, target_lon):
+	def find_aspect_hits(self, body_id, target_lon, with_candidate_kinds=False):
 		"""Return a sorted list of symbolic ages where body crosses target_lon (mod 360).
 
 		Roots are constrained to the fitted span. Uses cached per-segment dense
 		evaluation grids and safe Newton-with-bisection refinement; the per-target
 		Chebyshev.roots() eigenvalue solve is only invoked as a fallback for
 		segments where the dense grid suggests anomalous behavior.
+
+		When ``with_candidate_kinds`` is true, return ``(age, is_tangent)`` pairs.
+		Near-horizontal extrema are candidates rather than accepted hits; the
+		search backend certifies them against the canonical progression engine.
 		"""
 		lof_table = self._quotidian_lof.get(body_id)
 		if lof_table is not None:
-			return _quotidian_lof_find_aspect_hits(self, lof_table, target_lon)
+			hits = _quotidian_lof_find_aspect_hits(self, lof_table, target_lon)
+			return [(age, False) for age in hits] if with_candidate_kinds else hits
 		quot = self._quotidian.get(body_id)
 		if quot is not None:
-			return _quotidian_find_aspect_hits(quot, target_lon)
+			hits = _quotidian_find_aspect_hits(quot, target_lon)
+			return [(age, False) for age in hits] if with_candidate_kinds else hits
 		segments = self._segments.get(body_id)
 		if not segments:
 			return []
@@ -1082,19 +1246,31 @@ class ProgressionFit(object):
 						continue
 					if root_age < seg.age_lo - 1e-9 or root_age > seg.age_hi + 1e-9:
 						continue
-					hits.append(root_age)
-				# Tangent touches (residual hits exactly 0 at a sample without sign change)
-				# would be missed by the strict <0 mask. They're vanishingly rare for the
-				# astrology cases we care about (aspects to discrete target longitudes); if
-				# they ever show up we can extend with a near-zero detector.
+					hits.append((root_age, False))
+				# A tangent contact has no sign change. Derivative roots provide a
+				# bounded candidate set; canonical finalization below this layer
+				# decides whether the true curve touches the target or merely comes
+				# close to it.
+				if with_candidate_kinds:
+					for extremum_age, extremum_lon in zip(
+						seg.extrema_ages,
+						seg.extrema_lons,
+					):
+						extremum_error = float(extremum_lon) - shifted_target
+						if math.fabs(extremum_error) <= _TANGENT_CANDIDATE_TOLERANCE_DEG:
+							hits.append((float(extremum_age), True))
 		# Sort + dedupe near-coincident roots (segment boundaries can produce both sides).
-		hits.sort()
+		hits.sort(key=lambda item: item[0])
 		deduped = []
-		for h in hits:
-			if deduped and abs(h - deduped[-1]) < 1e-6:
+		for age, is_tangent in hits:
+			if deduped and abs(age - deduped[-1][0]) < 1e-6:
+				if deduped[-1][1] and not is_tangent:
+					deduped[-1] = (age, False)
 				continue
-			deduped.append(h)
-		return deduped
+			deduped.append((age, is_tangent))
+		if with_candidate_kinds:
+			return deduped
+		return [age for age, _is_tangent in deduped]
 
 
 # ---------------------------------------------------------------------------
@@ -1102,7 +1278,19 @@ class ProgressionFit(object):
 # ---------------------------------------------------------------------------
 
 
-def _sample_lof_longitudes(jd_array, symbolic_age_array, radix, options, flags, method=posfordate.SECONDARY):
+def _sample_lof_longitudes(
+	jd_array,
+	symbolic_age_array,
+	radix,
+	options,
+	flags,
+	method=posfordate.SECONDARY,
+	context=None,
+	state_for_age=None,
+	sun_ecliptic_states=None,
+	moon_ecliptic_states=None,
+	sun_equatorial_states=None,
+):
 	"""Sample LoF longitude by reusing the existing posfordate angle state machinery.
 
 	This still calls swe_calc_ut three times per sample (Sun ecliptic, Moon
@@ -1111,9 +1299,43 @@ def _sample_lof_longitudes(jd_array, symbolic_age_array, radix, options, flags, 
 	"""
 	import searchbackend  # local import to avoid cycle on module load
 	out = np.empty(len(jd_array), dtype=np.float64)
-	for i, age in enumerate(symbolic_age_array):
-		angle_state = posfordate.progressed_angle_state_for_symbolic_age(
-			radix, options, float(age), method=method,
+	if context is None:
+		context = _planet_context(radix)
+	if state_for_age is None:
+		sampler = posfordate.ProgressedAngleSampler(
+			radix,
+			options,
+			method=method,
 		)
-		out[i] = util.normalize(float(searchbackend._secondary_symbolic_lof_longitude(radix, float(age), angle_state, method=method)))
+		state_for_age = sampler.sample
+	for chunk_start in range(0, len(jd_array), 64):
+		chunk_end = min(chunk_start + 64, len(jd_array))
+		with context.activate():
+			for i in range(chunk_start, chunk_end):
+				age = symbolic_age_array[i]
+				angle_state = state_for_age(float(age))
+				out[i] = util.normalize(
+					float(
+						searchbackend._secondary_symbolic_lof_longitude_in_active_context(
+							radix,
+							angle_state,
+							flags,
+							sun_ecl=(
+								sun_ecliptic_states[i]
+								if sun_ecliptic_states is not None
+								else None
+							),
+							moon_ecl=(
+								moon_ecliptic_states[i]
+								if moon_ecliptic_states is not None
+								else None
+							),
+							sun_equ=(
+								sun_equatorial_states[i]
+								if sun_equatorial_states is not None
+								else None
+							),
+						)
+					)
+				)
 	return out

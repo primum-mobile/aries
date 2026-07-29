@@ -27,7 +27,7 @@ type Props = {
   className?: string;
 };
 
-const NOTES_EDITOR_ASSET_VERSION = "20260625-notes-click-shift";
+const NOTES_EDITOR_ASSET_VERSION = "20260722-desktop-webview-guard";
 
 /**
  * Per-radix notes — file-backed via the daemon. Saved charts write the
@@ -325,6 +325,7 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
 
   return (
     <aside
+      data-aries-surface="panel"
       className={cn(
         "flex h-full w-full min-w-0 flex-col gap-[var(--aries-notes-gap)] bg-background/95 p-[var(--aries-notes-padding)] text-[length:var(--aries-font-size-base)]",
         className,

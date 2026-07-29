@@ -265,8 +265,13 @@ test("one resolved style feeds Sphere paint while projection and interaction sta
   );
   assert.equal((source.match(/resolveSphereRenderStyle\(/g) ?? []).length, 1);
   assert.match(source, /const renderStyle = resolveSphereRenderStyle\(wrap,/);
-  assert.match(source, /render\(canvas, geo, layers, rect\.width, rect\.height, renderStyle, view\)/);
+  assert.match(
+    source,
+    /render\(\s*canvas,\s*geo,\s*layers,\s*rect\.width,\s*rect\.height,\s*renderStyle,\s*view,\s*chartProfileOverrides,\s*\)/,
+  );
   assert.match(source, /resolveSpherePolylineWidth\(style, layout\.r, line\.width\)/);
+  assert.match(source, /semanticSphereColor\(profileOverrides, line\.colorRole, fallback\)/);
+  assert.match(source, /semanticSphereColor\([\s\S]*?body\.colorRole,[\s\S]*?body\.color \|\| style\.palette\.wire/);
   assert.match(source, /if \(line\.dash\.length\) ctx\.setLineDash\(line\.dash\)/);
   assert.doesNotMatch(source, /const WIRE\s*=/);
 
@@ -295,6 +300,6 @@ test("one resolved style feeds Sphere paint while projection and interaction sta
   assert.match(paintBlock, /revision: styleRevision/);
   assert.match(
     paintBlock,
-    /\}, \[chartTextFont, fontsReady, geo, layers, view, styleRevision\]\);/,
+    /\}, \[\s*chartProfileOverrides,\s*chartSymbolFont,\s*chartTextFont,\s*fontsReady,\s*geo,\s*layers,\s*view,\s*styleRevision,\s*\]\);/,
   );
 });

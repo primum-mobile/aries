@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import astrology
+import common
 
 from aries.astrology.transit_fast import api, python_reference
 from aries.astrology.transit_fast.constants import default_relative_step_days_for_bodies
@@ -19,7 +20,13 @@ def test_reference_vs_kernel():
 		python_reference.search_longitude_transits_raw(astrology.SE_MERCURY, 2461041.5, 2461406.5, [0.0, 90.0, 180.0, 270.0])
 	)
 	cython_hits = api._materialize_hits(
-		kernel.search_longitude_transits_raw(astrology.SE_MERCURY, 2461041.5, 2461406.5, [0.0, 90.0, 180.0, 270.0])
+		kernel.search_longitude_transits_raw(
+			astrology.SE_MERCURY,
+			2461041.5,
+			2461406.5,
+			[0.0, 90.0, 180.0, 270.0],
+			ephe_path=common.get_ephe_path(),
+		)
 	)
 	assert len(reference) == len(cython_hits)
 	for left, right in zip(reference, cython_hits):
@@ -34,7 +41,13 @@ def test_reference_vs_kernel_moon():
 		python_reference.search_longitude_transits_raw(astrology.SE_MOON, 2461041.5, 2461071.5, [0.0, 90.0, 180.0, 270.0])
 	)
 	cython_hits = api._materialize_hits(
-		kernel.search_longitude_transits_raw(astrology.SE_MOON, 2461041.5, 2461071.5, [0.0, 90.0, 180.0, 270.0])
+		kernel.search_longitude_transits_raw(
+			astrology.SE_MOON,
+			2461041.5,
+			2461071.5,
+			[0.0, 90.0, 180.0, 270.0],
+			ephe_path=common.get_ephe_path(),
+		)
 	)
 	assert len(reference) == len(cython_hits)
 	for left, right in zip(reference, cython_hits):
@@ -80,6 +93,7 @@ def test_relative_aspects_reference_vs_kernel_slow_pair():
 		astrology.swe_julday(2000, 1, 1, 0.0, astrology.SE_GREG_CAL),
 		astrology.swe_julday(2026, 4, 23, 0.0, astrology.SE_GREG_CAL),
 		[(0, 1, 0.0)],
+		ephe_path=common.get_ephe_path(),
 		flags=astrology.SEFLG_SWIEPH | astrology.SEFLG_SPEED,
 		step_days=step,
 	)
@@ -88,6 +102,7 @@ def test_relative_aspects_reference_vs_kernel_slow_pair():
 		astrology.swe_julday(2000, 1, 1, 0.0, astrology.SE_GREG_CAL),
 		astrology.swe_julday(2026, 4, 23, 0.0, astrology.SE_GREG_CAL),
 		[(0, 1, 0.0)],
+		ephe_path=common.get_ephe_path(),
 		flags=astrology.SEFLG_SWIEPH | astrology.SEFLG_SPEED,
 		step_days=step,
 	)

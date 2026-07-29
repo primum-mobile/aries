@@ -4,7 +4,25 @@ import * as React from "react"
 import { Menu as MenuPrimitive } from "@base-ui/react/menu"
 
 import { cn } from "@/lib/utils"
+import { rootCssPixelOffset } from "@/lib/css-token-value"
 import { ChevronRightIcon, CheckIcon } from "lucide-react"
+
+const dropdownSideOffset = rootCssPixelOffset(
+  "--aries-menu-popup-side-offset",
+  4,
+)
+const dropdownAlignOffset = rootCssPixelOffset(
+  "--aries-menu-popup-align-offset",
+  0,
+)
+const dropdownSubmenuSideOffset = rootCssPixelOffset(
+  "--aries-menu-submenu-side-offset",
+  0,
+)
+const dropdownSubmenuAlignOffset = rootCssPixelOffset(
+  "--aries-menu-submenu-align-offset",
+  -3,
+)
 
 function DropdownMenu({ ...props }: MenuPrimitive.Root.Props) {
   return <MenuPrimitive.Root data-slot="dropdown-menu" {...props} />
@@ -20,9 +38,9 @@ function DropdownMenuTrigger({ ...props }: MenuPrimitive.Trigger.Props) {
 
 function DropdownMenuContent({
   align = "start",
-  alignOffset = 0,
+  alignOffset = dropdownAlignOffset,
   side = "bottom",
-  sideOffset = 4,
+  sideOffset = dropdownSideOffset,
   className,
   ...props
 }: MenuPrimitive.Popup.Props &
@@ -41,7 +59,8 @@ function DropdownMenuContent({
       >
         <MenuPrimitive.Popup
           data-slot="dropdown-menu-content"
-          className={cn("z-50 max-h-(--available-height) w-(--anchor-width) min-w-32 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-[var(--aries-radius-popover)] bg-popover p-[var(--aries-menu-padding)] text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 outline-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:overflow-hidden data-closed:fade-out-0 data-closed:zoom-out-95", className )}
+          data-aries-surface="popover"
+          className={cn("z-50 max-h-(--available-height) w-(--anchor-width) min-w-[var(--aries-menu-dropdown-min-width)] origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-[var(--aries-radius-popover)] bg-[var(--aries-popover-background)] p-[var(--aries-menu-padding)] text-[color:var(--aries-popover-text)] shadow-md ring-1 ring-foreground/10 duration-100 outline-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:overflow-hidden data-closed:fade-out-0 data-closed:zoom-out-95", className )}
           {...props}
         />
       </MenuPrimitive.Positioner>
@@ -126,16 +145,16 @@ function DropdownMenuSubTrigger({
 
 function DropdownMenuSubContent({
   align = "start",
-  alignOffset = -3,
+  alignOffset = dropdownSubmenuAlignOffset,
   side = "right",
-  sideOffset = 0,
+  sideOffset = dropdownSubmenuSideOffset,
   className,
   ...props
 }: React.ComponentProps<typeof DropdownMenuContent>) {
   return (
     <DropdownMenuContent
       data-slot="dropdown-menu-sub-content"
-      className={cn("w-auto min-w-[96px] rounded-[var(--aries-radius-popover)] bg-popover p-[var(--aries-menu-padding)] text-popover-foreground shadow-lg ring-1 ring-foreground/10 duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95", className )}
+      className={cn("w-auto min-w-[var(--aries-menu-dropdown-submenu-min-width)] rounded-[var(--aries-radius-popover)] bg-[var(--aries-popover-background)] p-[var(--aries-menu-padding)] text-[color:var(--aries-popover-text)] shadow-lg ring-1 ring-foreground/10 duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95", className )}
       align={align}
       alignOffset={alignOffset}
       side={side}
@@ -241,7 +260,7 @@ function DropdownMenuShortcut({
     <span
       data-slot="dropdown-menu-shortcut"
       className={cn(
-        "ml-auto text-xs text-muted-foreground group-focus/dropdown-menu-item:text-accent-foreground",
+        "ml-auto text-[length:var(--aries-font-size-small)] text-muted-foreground group-focus/dropdown-menu-item:text-accent-foreground",
         className
       )}
       {...props}

@@ -26,6 +26,7 @@ TABLE_CATALOG: dict[str, TableCatalogEntry] = {
     "strip": TableCatalogEntry("strip", "30° Strip", "morin.py:14245,14620; stripwnd.py:78-646"),
     "positions": TableCatalogEntry("positions", "Positions", "morin.py:15823-15896; positionswnd.py"),
     "aspects": TableCatalogEntry("aspects", "Aspects", "morin.py:16752-16766; aspectswnd.py"),
+    "aspect_list": TableCatalogEntry("aspect_list", "Aspect List", "webapp/daemon/aspect_list_service.py", surface="right_pane"),
     "rise_set": TableCatalogEntry("rise_set", "Rise/Set", "morin.py:16768-16769; risesetwnd.py"),
     "planetary_hours": TableCatalogEntry("planetary_hours", "Planetary Hours", "morin.py:16770-16771; hourswnd.py"),
     "firdaria": TableCatalogEntry("firdaria", "Firdaria", "morin.py:16017-16020,16764-16769,17566-17570; firdaria.py; firdariawnd.py"),

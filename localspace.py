@@ -26,6 +26,7 @@ except Exception:  # pragma: no cover - exercised when the dependency is absent
 
 
 KIND_LOCAL_SPACE = "LOCAL_SPACE"
+KIND_LOCAL_SPACE_OPPOSITION = "LOCAL_SPACE_OPPOSITION"
 
 EARTH_MEAN_RADIUS_METERS = 6_371_008.8
 """IUGG mean Earth radius, used only by the spherical fallback."""
@@ -45,6 +46,8 @@ class LocalSpaceLine:
     altitude_true_deg: float
     altitude_apparent_deg: float
     segments: tuple[tuple[tuple[float, float], ...], ...]
+    opposition: bool = False
+    source_bearing_deg: float | None = None
 
 
 @dataclass(frozen=True)
@@ -67,16 +70,35 @@ class LocalSpaceResult:
         color_by_id = {p.id: p.color_hex for p in self.points}
         features = []
         for line in self.lines:
+            kind = (
+                KIND_LOCAL_SPACE_OPPOSITION
+                if line.opposition
+                else KIND_LOCAL_SPACE
+            )
             props = {
                 "point": line.point_id,
                 "label": label_by_id.get(line.point_id, line.point_id),
-                "kind": KIND_LOCAL_SPACE,
+                "kind": kind,
                 "bearing": line.bearing_deg,
                 "bearing_label": _format_bearing(line.bearing_deg),
                 "azimuth_swe": line.azimuth_swe_deg,
                 "altitude": line.altitude_true_deg,
                 "altitude_apparent": line.altitude_apparent_deg,
             }
+            if line.opposition:
+                source_bearing = (
+                    float(line.source_bearing_deg)
+                    if line.source_bearing_deg is not None
+                    else (float(line.bearing_deg) + 180.0) % 360.0
+                )
+                props.update({
+                    "opposition": True,
+                    "bearing_role": "opposition",
+                    "source_kind": KIND_LOCAL_SPACE,
+                    "source_point": line.point_id,
+                    "source_bearing": source_bearing,
+                    "source_bearing_label": _format_bearing(source_bearing),
+                })
             color = color_by_id.get(line.point_id)
             if color:
                 props["color"] = color
@@ -107,6 +129,7 @@ def compute_local_space(
     step_m: float = LOCAL_SPACE_STEP_METERS,
     atpress: float = 0.0,
     attemp: float = 10.0,
+    include_oppositions: bool = False,
 ) -> LocalSpaceResult:
     if step_m <= 0:
         raise ValueError("step_m must be positive")
@@ -142,25 +165,46 @@ def compute_local_space(
         except Exception:
             continue
 
-        bearing = swiss_azimuth_to_bearing(azimuth_swe)
-        samples = _sample_geodesic_ray(
+        true_bearing = swiss_azimuth_to_bearing(azimuth_swe)
+        true_samples = _sample_geodesic_ray(
             origin_lon,
             origin_lat,
-            bearing,
+            true_bearing,
             max_distance_m=max_distance_m,
             step_m=step_m,
         )
-        segments = astrocart._split_antimeridian(samples)
-        if not segments:
+        true_segments = astrocart._split_antimeridian(true_samples)
+        if not true_segments:
             continue
         lines.append(LocalSpaceLine(
             point_id=pt.id,
             azimuth_swe_deg=float(azimuth_swe),
-            bearing_deg=float(bearing),
+            bearing_deg=float(true_bearing),
             altitude_true_deg=float(alt_true),
             altitude_apparent_deg=float(alt_app),
-            segments=segments,
+            segments=true_segments,
         ))
+        if include_oppositions:
+            opposition_bearing = (true_bearing + 180.0) % 360.0
+            opposition_samples = _sample_geodesic_ray(
+                origin_lon,
+                origin_lat,
+                opposition_bearing,
+                max_distance_m=max_distance_m,
+                step_m=step_m,
+            )
+            opposition_segments = astrocart._split_antimeridian(opposition_samples)
+            if opposition_segments:
+                lines.append(LocalSpaceLine(
+                    point_id=pt.id,
+                    azimuth_swe_deg=float(azimuth_swe),
+                    bearing_deg=float(opposition_bearing),
+                    altitude_true_deg=float(alt_true),
+                    altitude_apparent_deg=float(alt_app),
+                    segments=opposition_segments,
+                    opposition=True,
+                    source_bearing_deg=float(true_bearing),
+                ))
 
     return LocalSpaceResult(
         jd_ut=float(jd_ut),

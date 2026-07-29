@@ -94,10 +94,19 @@ def _text(
     return cell
 
 
-def _glyph(value: Any = "", *, text: str = "", align: str | None = "center", emphasis: str | None = None) -> Cell:
+def _glyph(
+    value: Any = "",
+    *,
+    text: str = "",
+    export_text: str | None = None,
+    align: str | None = "center",
+    emphasis: str | None = None,
+) -> Cell:
     cell: Cell = {"glyph": "" if value is None else str(value)}
     if text:
         cell["text"] = text
+    if export_text:
+        cell["exportText"] = str(export_text)
     if align:
         cell["align"] = align
     if emphasis:
@@ -109,8 +118,17 @@ def _runs(*runs: tuple[str, str | bool]) -> Cell:
     out = []
     for text, glyph in runs:
         if text:
-            out.append({"text": str(text), "glyph": bool(glyph)})
-    return {"runs": out}
+            run = {"text": str(text), "glyph": bool(glyph)}
+            if glyph:
+                run["exportText"] = _glyph_export_text(text)
+                export_symbol = _glyph_export_symbol_text(text)
+                if export_symbol:
+                    run["exportSymbolText"] = export_symbol
+            out.append(run)
+    cell = {"runs": out, "exportText": _plain_text_from_runs(out)}
+    if any(run.get("exportSymbolText") for run in out):
+        cell["exportSymbolText"] = _plain_text_from_runs(out, use_symbols=True)
+    return cell
 
 
 def _row(row_id: str, cells: list[Cell], *, meta: dict[str, Any] | None = None,
@@ -200,7 +218,12 @@ def _planet_cell(planet_id: int, chrt, options, *, align: str | None = "center",
                  emphasis: str | None = None) -> Cell:
     # Cross-cutting planet-identity cell: glyph + stable planet id + the wx
     # resolved color channel so every table renders planets consistently.
-    cell = _glyph(_planet_glyph(planet_id), align=align, emphasis=emphasis)
+    cell = _glyph(
+        _planet_glyph(planet_id),
+        export_text=_planet_export_name(planet_id),
+        align=align,
+        emphasis=emphasis,
+    )
     cell["planet"] = int(planet_id)
     color = _planet_color(planet_id, chrt, options)
     _set_semantic_color(cell, color, _planet_color_role(planet_id, chrt, options, color))
@@ -211,7 +234,12 @@ def _planet_run(planet_id: int, chrt, options) -> dict[str, Any]:
     # Run-level planet identity for multi-planet cells: wx draws each glyph of
     # a pair with its own resolved color inside one cell (midpointswnd.py:
     # 202-228). Same color resolution as _planet_cell.
-    run: dict[str, Any] = {"text": _planet_glyph(planet_id), "glyph": True, "planet": int(planet_id)}
+    run: dict[str, Any] = {
+        "text": _planet_glyph(planet_id),
+        "glyph": True,
+        "planet": int(planet_id),
+        "exportText": _planet_export_name(planet_id),
+    }
     color = _planet_color(planet_id, chrt, options)
     _set_semantic_color(run, color, _planet_color_role(planet_id, chrt, options, color))
     return run
@@ -251,7 +279,11 @@ def _sign_run(options, sign_index: int, sign: str | None = None) -> dict[str, An
     if sign is None:
         signs = _signs(options)
         sign = signs[sign_index] if 0 <= sign_index < len(signs) else ""
-    run: dict[str, Any] = {"text": sign, "glyph": True}
+    run: dict[str, Any] = {
+        "text": sign,
+        "glyph": True,
+        "exportText": _sign_export_name(sign_index),
+    }
     color = _sign_color_hex(options, sign_index)
     _set_semantic_color(
         run,
@@ -264,7 +296,7 @@ def _sign_run(options, sign_index: int, sign: str | None = None) -> dict[str, An
 def _sign_cell(options, sign_index: int, *, align: str = "center") -> Cell:
     signs = _signs(options)
     sign = signs[sign_index] if 0 <= sign_index < len(signs) else ""
-    cell = _glyph(sign, align=align)
+    cell = _glyph(sign, export_text=_sign_export_name(sign_index), align=align)
     color = _sign_color_hex(options, sign_index)
     _set_semantic_color(
         cell,
@@ -282,6 +314,166 @@ def _planet_glyph(planet_id: int) -> str:
             return common.common.Planets[int(planet_id)]
         except Exception:
             return str(planet_id)
+
+
+def _planet_export_name(planet_id: Any) -> str:
+    try:
+        pid = int(planet_id)
+    except (TypeError, ValueError):
+        return str(planet_id or "")
+    try:
+        return str(common.common.get_planet_name(pid))
+    except Exception:
+        try:
+            return str(astrology.swe_get_planet_name(pid))
+        except Exception:
+            return str(planet_id or "")
+
+
+def _sign_export_name(sign_index: Any) -> str:
+    try:
+        index = int(sign_index)
+    except (TypeError, ValueError):
+        return str(sign_index or "")
+    if 0 <= index < len(mtexts.signs):
+        return str(mtexts.signs[index])
+    return str(sign_index or "")
+
+
+def _aspect_export_name(aspect_index: Any) -> str:
+    try:
+        index = int(aspect_index)
+    except (TypeError, ValueError):
+        return str(aspect_index or "")
+    if 0 <= index < len(_TRANSIT_ASPECT_KEYS):
+        key = _TRANSIT_ASPECT_KEYS[index]
+        return _txt(key, key)
+    if index == chart.Chart.SEPTILE:
+        return _txt("Septile", "Septile")
+    if index == chart.Chart.PARALLEL:
+        return _txt("Parallel", "Parallel")
+    if index == chart.Chart.CONTRAPARALLEL:
+        return _txt("Contraparallel", "Contraparallel")
+    return str(aspect_index or "")
+
+
+def _aspect_export_mark(aspect_index: Any) -> str:
+    return str(common.aspect_text_export_mark(aspect_index))
+
+
+def _glyph_export_text(value: Any) -> str:
+    glyph = "" if value is None else str(value)
+    if not glyph:
+        return ""
+    candidate_ids = list(range(astrology.SE_SUN, astrology.SE_TRUE_NODE + 1))
+    candidate_ids.extend((astrology.SE_CHIRON, common.CHART_OBJECT_VERTEX))
+    for planet_id in candidate_ids:
+        if glyph == _planet_glyph(planet_id):
+            return _planet_export_name(planet_id)
+    if glyph == str(getattr(common.common, "fortune", "")):
+        return _txt("LoF", "Lot of Fortune")
+    try:
+        sign_glyphs = tuple(common.common.Signs1) + tuple(common.common.Signs2)
+    except (AttributeError, TypeError):
+        sign_glyphs = ()
+    for index, sign_glyph in enumerate(sign_glyphs):
+        if glyph == str(sign_glyph):
+            return _sign_export_name(index % 12)
+    for index, aspect_glyph in enumerate(tuple(getattr(common.common, "Aspects", ()))):
+        if glyph == str(aspect_glyph):
+            return _aspect_export_name(index)
+    angle_glyphs = getattr(common.common, "Angles", {})
+    if isinstance(angle_glyphs, dict):
+        for key, angle_glyph in angle_glyphs.items():
+            if glyph == str(angle_glyph):
+                return _txt(str(key).capitalize(), str(key).upper())
+    return glyph
+
+
+def _glyph_export_symbol_text(value: Any) -> str:
+    glyph = "" if value is None else str(value)
+    if not glyph:
+        return ""
+    for index, aspect_glyph in enumerate(tuple(getattr(common.common, "Aspects", ()))):
+        if glyph == str(aspect_glyph):
+            return _aspect_export_mark(index)
+    return ""
+
+
+def _plain_text_from_runs(
+    runs: list[dict[str, Any]],
+    *,
+    use_symbols: bool = False,
+) -> str:
+    values: list[str] = []
+    for index, run in enumerate(runs):
+        if run.get("glyph"):
+            raw = (
+                run.get("exportSymbolText")
+                if use_symbols and run.get("exportSymbolText")
+                else run.get("exportText")
+            )
+        else:
+            raw = run.get("text")
+        value = str(raw or "").strip()
+        if not value:
+            continue
+        if run.get("glyph") and index + 1 < len(runs):
+            next_run = runs[index + 1]
+            if not next_run.get("glyph"):
+                next_text = str(next_run.get("text") or "").strip()
+                if next_text and value.casefold() in next_text.casefold():
+                    continue
+        values.append(value)
+    return " ".join(values)
+
+
+def _ensure_plain_text_export_contract(columns: list[dict], rows: list[Row]) -> None:
+    for column in columns:
+        if column.get("headerGlyph"):
+            if not column.get("exportLabel"):
+                column["exportLabel"] = _glyph_export_text(column.get("label"))
+            export_symbol = _glyph_export_symbol_text(column.get("label"))
+            if export_symbol:
+                column["exportSymbolLabel"] = export_symbol
+    for row in rows:
+        for cell in row.get("cells", []):
+            text = str(cell.get("text") or "")
+            runs = cell.get("runs")
+            if text and not runs:
+                continue
+            if isinstance(runs, list) and runs:
+                for run in runs:
+                    if run.get("glyph") and run.get("exportText") is None:
+                        planet_id = run.get("planet")
+                        run["exportText"] = (
+                            _planet_export_name(planet_id)
+                            if planet_id is not None
+                            else _glyph_export_text(run.get("text"))
+                        )
+                    if run.get("glyph") and run.get("exportSymbolText") is None:
+                        export_symbol = _glyph_export_symbol_text(run.get("text"))
+                        if export_symbol:
+                            run["exportSymbolText"] = export_symbol
+                if cell.get("exportText") is None:
+                    cell["exportText"] = _plain_text_from_runs(runs)
+                if any(run.get("exportSymbolText") for run in runs):
+                    cell["exportSymbolText"] = _plain_text_from_runs(
+                        runs,
+                        use_symbols=True,
+                    )
+                continue
+            if cell.get("glyph"):
+                planet_id = cell.get("planet")
+                if cell.get("exportText") is None:
+                    cell["exportText"] = (
+                        _planet_export_name(planet_id)
+                        if planet_id is not None
+                        else _glyph_export_text(cell.get("glyph"))
+                    )
+                export_symbol = _glyph_export_symbol_text(cell.get("glyph"))
+                if export_symbol:
+                    cell["exportSymbolText"] = export_symbol
 
 
 def _body_ids(chrt, options, *, aspects: bool = False) -> list[int]:
@@ -387,6 +579,17 @@ def _time_from_day_fraction(value: float) -> str:
     return "%02d:%02d:%02d" % (h, m, s)
 
 
+def _time_from_local_julian_day(value: float) -> str:
+    try:
+        _year, _month, _day, local_hour = astrology.swe_revjul(
+            float(value),
+            astrology.SE_GREG_CAL,
+        )
+    except Exception:
+        return "-"
+    return _time_from_day_fraction(float(local_hour) / 24.0)
+
+
 def _date_ymd(dt: datetime.datetime | datetime.date | None) -> str:
     if dt is None:
         return "-"
@@ -422,6 +625,7 @@ def _period_age_text(chrt, dt: datetime.datetime | datetime.date | None) -> str:
 
 def _base_payload(table_id: str, chrt, options, columns: list[dict], rows: list[Row],
                   *, title: str, source: str, notes: list[str] | None = None) -> dict[str, Any]:
+    _ensure_plain_text_export_contract(columns, rows)
     return {
         "tableId": table_id,
         "title": title,
@@ -508,6 +712,8 @@ _ECLIPSE_EDGE_TRIGGER_ROWS = 4
 _ECLIPSE_MAX_VISIBLE_ROWS = 22
 _ECLIPSE_CHUNK_CACHE_MAX = 256
 _ECLIPSE_CHUNK_CACHE: OrderedDict[tuple[float, float], list] = OrderedDict()
+_ECLIPSE_SAROS_FIRST_CACHE_MAX = 512
+_ECLIPSE_SAROS_FIRST_CACHE: OrderedDict[tuple[bool, int], float | None] = OrderedDict()
 
 
 def _eclipse_date_values_from_datetime(chrt, current_datetime: Any = None) -> tuple[int, int, int, int, int, int]:
@@ -653,6 +859,26 @@ def _cached_eclipse_chunk_events(chrt, jd_from: float, jd_to: float) -> list:
     return list(events)
 
 
+def _cached_eclipse_saros_first_jd(event) -> float | None:
+    parsed = eclipses.saros_series_member(getattr(event, "saros", None))
+    if parsed is None:
+        return None
+    series, _member = parsed
+    key = (bool(getattr(event, "is_solar", False)), int(series))
+    if key in _ECLIPSE_SAROS_FIRST_CACHE:
+        _ECLIPSE_SAROS_FIRST_CACHE.move_to_end(key)
+        return _ECLIPSE_SAROS_FIRST_CACHE[key]
+    first_event = eclipses.first_saros_event(event)
+    try:
+        first_jd = float(getattr(first_event, "jdut"))
+    except (AttributeError, TypeError, ValueError):
+        return None
+    _ECLIPSE_SAROS_FIRST_CACHE[key] = first_jd
+    if len(_ECLIPSE_SAROS_FIRST_CACHE) > _ECLIPSE_SAROS_FIRST_CACHE_MAX:
+        _ECLIPSE_SAROS_FIRST_CACHE.popitem(last=False)
+    return first_jd
+
+
 def _eclipse_type_label(event) -> str:
     try:
         if bool(getattr(event, "is_solar", False)):
@@ -745,7 +971,6 @@ def _eclipses(chrt, options, *, binding: dict[str, Any] | None = None,
         focus_row_index = int(focus_index)
     rows: list[Row] = []
     display_offsets: list[int] = []
-    saros_first_cache: dict[tuple[bool, int], Any] = {}
     for index, event in enumerate(events):
         event_jd = float(getattr(event, "jdut", 0.0))
         row_id = "eclipse:%s:%s" % ("solar" if getattr(event, "is_solar", False) else "lunar", "%.6f" % event_jd)
@@ -768,17 +993,12 @@ def _eclipses(chrt, options, *, binding: dict[str, Any] | None = None,
         saros_parsed = eclipses.saros_series_member(saros_raw)
         saros_series = saros_parsed[0] if saros_parsed else None
         saros_member = saros_parsed[1] if saros_parsed else None
-        saros_first_event = None
         saros_first_date = None
         saros_first_label = None
         saros_first_jd = None
         if saros_series is not None:
-            cache_key = (is_solar, int(saros_series))
-            if cache_key not in saros_first_cache:
-                saros_first_cache[cache_key] = eclipses.first_saros_event(event)
-            saros_first_event = saros_first_cache.get(cache_key)
-        if saros_first_event is not None:
-            saros_first_jd = float(getattr(saros_first_event, "jdut", 0.0))
+            saros_first_jd = _cached_eclipse_saros_first_jd(event)
+        if saros_first_jd is not None:
             first_values = display_clock.display(eclipses._utc_tuple_from_jdut(saros_first_jd)).values
             saros_first_date = "%04d-%02d-%02d" % (first_values[0], first_values[1], first_values[2])
             saros_first_label = dateformat.date_text(first_values[0], first_values[1], first_values[2], options)
@@ -1076,7 +1296,10 @@ def _decennials(chrt, options, binding: dict[str, Any] | None = None, *, current
         planet_id = int(source_row.get("planet", astrology.SE_SUN))
         planet_color = _dec_planet_color(chrt, options, planet_id)
         planet_role = _planet_color_role(planet_id, chrt, options, planet_color)
-        planet_cell = _glyph(_planet_glyph(planet_id))
+        planet_cell = _glyph(
+            _planet_glyph(planet_id),
+            export_text=_planet_export_name(planet_id),
+        )
         planet_cell["planet"] = planet_id
         _set_semantic_color(planet_cell, planet_color, planet_role)
         rows.append(_row(
@@ -1115,7 +1338,10 @@ def _decennials(chrt, options, binding: dict[str, Any] | None = None, *, current
                 l3_planet = int(l3.get("planet", astrology.SE_SUN))
                 l3_color = _dec_planet_color(chrt, options, l3_planet)
                 l3_role = _planet_color_role(l3_planet, chrt, options, l3_color)
-                l3_cell = _glyph(_planet_glyph(l3_planet))
+                l3_cell = _glyph(
+                    _planet_glyph(l3_planet),
+                    export_text=_planet_export_name(l3_planet),
+                )
                 l3_cell["planet"] = l3_planet
                 _set_semantic_color(l3_cell, l3_color, l3_role)
                 rows.append(_row(
@@ -1150,7 +1376,10 @@ def _decennials(chrt, options, binding: dict[str, Any] | None = None, *, current
                     l4_planet = int(l4.get("planet", astrology.SE_SUN))
                     l4_color = _dec_planet_color(chrt, options, l4_planet)
                     l4_role = _planet_color_role(l4_planet, chrt, options, l4_color)
-                    l4_cell = _glyph(_planet_glyph(l4_planet))
+                    l4_cell = _glyph(
+                        _planet_glyph(l4_planet),
+                        export_text=_planet_export_name(l4_planet),
+                    )
                     l4_cell["planet"] = l4_planet
                     _set_semantic_color(l4_cell, l4_color, l4_role)
                     rows.append(_row(
@@ -1934,6 +2163,10 @@ def _profection_column(column: dict[str, Any], index: int, reference_chart, opti
     # profectionswnd.py:519-520; on-screen wx drew the raw char with the text
     # font — a defect we do not reproduce). Hour Lord's header is plain text.
     col["headerGlyph"] = kind in (profectiontable.KIND_BODY, profectiontable.KIND_FORTUNE)
+    if kind == profectiontable.KIND_BODY:
+        col["exportLabel"] = _planet_export_name(column.get("body_id", index))
+    elif kind == profectiontable.KIND_FORTUNE:
+        col["exportLabel"] = _txt("LoF", "Lot of Fortune")
     # wx column widths: Age = CELL_WIDTH (3*FONT_SIZE), everything else
     # BIG_CELL_WIDTH (7*FONT_SIZE) — profectiontable.get_column_width
     # (profectiontable.py:84-87, profectionswnd.py:131-137).
@@ -2595,7 +2828,15 @@ def _planetary_hours(chrt, options) -> dict[str, Any]:
         for idx, ruler in enumerate(list(seq)[:24]):
             s = start + (idx * hrlen)
             e = s + hrlen
-            rows.append(_row(f"hour:{idx+1}", [_text(idx + 1, align="right"), _glyph(_planet_glyph(int(ruler))), _text(_time_from_day_fraction(s % 1.0), align="center"), _text(_time_from_day_fraction(e % 1.0), align="center")]))
+            rows.append(_row(
+                f"hour:{idx+1}",
+                [
+                    _text(idx + 1, align="right"),
+                    _glyph(_planet_glyph(int(ruler))),
+                    _text(_time_from_local_julian_day(s), align="center"),
+                    _text(_time_from_local_julian_day(e), align="center"),
+                ],
+            ))
     notes = []
     try:
         notes.append("%s: %02d:%02d:%02d" % (_txt("TimeofBirth", "Time of Birth"), chrt.time.hour, chrt.time.minute, chrt.time.second))
@@ -2654,7 +2895,7 @@ def _arabic_token_runs(code: int, ref_index: int, ref_triplet, chrt, options) ->
         si = absdeg // 30
         dg = absdeg % 30
         runs.append({"text": "%d°" % dg, "glyph": False})
-        runs.append({"text": _signs(options)[si], "glyph": True})
+        runs.append(_sign_run(options, si))
     elif lbl == mtexts.txts.get("RE", "RE"):
         runs.append({"text": "#%d" % (int(ref_val) + 1), "glyph": False})
     else:
@@ -3135,6 +3376,7 @@ def _almuten_planet_header_column(column_id: str, planet_id: int, chrt, options)
     # almutenzodswnd.py:390-401, almutentopicalswnd.py:148-158).
     col = _column(column_id, _planet_glyph(planet_id), align="center", kind="glyph")
     col["headerGlyph"] = True
+    col["exportLabel"] = _planet_export_name(planet_id)
     color = _planet_color(planet_id, chrt, options)
     _set_semantic_color(
         col,
@@ -4853,13 +5095,23 @@ def _transit_cell(tr, chrt, options) -> Cell:
     runs: list[dict[str, Any]] = []
     plt = int(tr.plt)
     aspect_color = None
-    plt_run = {"text": common.common.get_planet_glyph(plt), "glyph": True, "planet": plt}
+    plt_run = {
+        "text": common.common.get_planet_glyph(plt),
+        "glyph": True,
+        "planet": plt,
+        "exportText": _planet_export_name(plt),
+    }
     c = _transit_planet_color(plt, chrt, options, target=False)
     _set_semantic_color(plt_run, c, _planet_color_role(plt, chrt, options, c))
     runs.append(plt_run)
 
     def _aspect_run(aspect_idx: int) -> dict[str, Any]:
-        run = {"text": common.common.Aspects[aspect_idx], "glyph": True}
+        run = {
+            "text": common.common.Aspects[aspect_idx],
+            "glyph": True,
+            "exportText": _aspect_export_name(aspect_idx),
+            "exportSymbolText": _aspect_export_mark(aspect_idx),
+        }
         try:
             col = _rgb_hex(options.clraspect[aspect_idx])
         except Exception:
@@ -4872,7 +5124,12 @@ def _transit_cell(tr, chrt, options) -> Cell:
         return run
 
     def _target_planet_run(target_id: int) -> dict[str, Any]:
-        run = {"text": common.common.get_planet_glyph(int(target_id)), "glyph": True, "planet": int(target_id)}
+        run = {
+            "text": common.common.get_planet_glyph(int(target_id)),
+            "glyph": True,
+            "planet": int(target_id),
+            "exportText": _planet_export_name(target_id),
+        }
         col = _transit_planet_color(int(target_id), chrt, options, target=True)
         _set_semantic_color(
             run,
@@ -4917,7 +5174,11 @@ def _transit_cell(tr, chrt, options) -> Cell:
             runs.append({"text": rs[tr.objretr], "glyph": False})
     elif objtype == transits.Transit.LOF:
         runs.append(_aspect_run(tr.aspect))
-        lof_run = {"text": common.common.fortune, "glyph": True}
+        lof_run = {
+            "text": common.common.fortune,
+            "glyph": True,
+            "exportText": _txt("LoF", "Lot of Fortune"),
+        }
         lof_color = None
         try:
             if getattr(options, "useplanetcolors", False):
@@ -4932,7 +5193,12 @@ def _transit_cell(tr, chrt, options) -> Cell:
             _fortune_color_role(chrt, options, lof_color),
         )
         runs.append(lof_run)
-    return {"runs": runs, "align": "left"}
+    return {
+        "runs": runs,
+        "exportText": _plain_text_from_runs(runs),
+        "exportSymbolText": _plain_text_from_runs(runs, use_symbols=True),
+        "align": "left",
+    }
 
 
 def _monthly_transits(chrt, options, binding: dict[str, Any] | None = None, *, current_datetime: Any = None) -> dict[str, Any]:

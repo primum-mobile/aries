@@ -5,11 +5,15 @@ import copy
 import datetime
 
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import Any, Dict, Optional, Tuple
 
 import astrology
 import chart
+import geonames
 from engine import chart_factory
+from engine import converse_transits
+from engine import moment
 import planets
 import posfordate
 import revolutions
@@ -195,6 +199,170 @@ def _chart_time_context_payload(time_obj):
 		'tzid': str(getattr(time_obj, 'tzid', '') or ''),
 		'tzauto': bool(getattr(time_obj, 'tzauto', False)),
 	}
+
+
+_RETAINED_CLOCK_KEYS = {
+	'symbolic': {
+		'place_payload': 'symbolic_place_payload',
+		'cal': 'symbolic_cal',
+		'zt': 'symbolic_zt',
+		'plus': 'symbolic_plus',
+		'zh': 'symbolic_zh',
+		'zm': 'symbolic_zm',
+		'daylight': 'symbolic_daylight',
+		'tzid': 'symbolic_tzid',
+		'tzauto': 'symbolic_tzauto',
+	},
+	'physical': {
+		'place_payload': 'physical_place_payload',
+		'cal': 'physical_cal',
+		'zt': 'physical_zt',
+		'plus': 'physical_plus',
+		'zh': 'physical_zh',
+		'zm': 'physical_zm',
+		'daylight': 'physical_daylight',
+		'tzid': 'physical_tzid',
+		'tzauto': 'physical_tzauto',
+	},
+}
+
+
+def _retained_clock_keys(prefix):
+	try:
+		return _RETAINED_CLOCK_KEYS[prefix]
+	except KeyError as exc:
+		raise ValueError("unsupported retained clock") from exc
+
+
+def retained_clock_time(retained, prefix, values, *, fallback_place=None, fallback_time=None):
+	"""Build a ``chart.Time`` from one retained converse-transit clock.
+
+	Converse sessions retain two independent civil clocks: ``symbolic_*`` for
+	the list/header cursor and ``physical_*`` for the actual transit epoch shown
+	in the footer.  This helper is shared by the adapter and its phase stepper so
+	both resolve IANA/static offsets through ``chart.Time`` identically.
+	"""
+	parts = tuple(int(value) for value in tuple(values)[:6])
+	if len(parts) < 6:
+		return None
+	keys = _retained_clock_keys(prefix)
+	place = payload_to_place(
+		(retained or {}).get(keys['place_payload']),
+		fallback=fallback_place,
+	)
+	if place is None:
+		return None
+	source_time = fallback_time
+	cal = int((retained or {}).get(
+		keys['cal'],
+		getattr(source_time, 'cal', chart.Time.GREGORIAN),
+	))
+	zt = int((retained or {}).get(
+		keys['zt'],
+		getattr(source_time, 'zt', chart.Time.ZONE),
+	))
+	plus = bool((retained or {}).get(
+		keys['plus'],
+		getattr(source_time, 'plus', True),
+	))
+	zh = int((retained or {}).get(
+		keys['zh'],
+		getattr(source_time, 'zh', 0) or 0,
+	) or 0)
+	zm = int((retained or {}).get(
+		keys['zm'],
+		getattr(source_time, 'zm', 0) or 0,
+	) or 0)
+	daylight = bool((retained or {}).get(
+		keys['daylight'],
+		getattr(source_time, 'daylightsaving', False),
+	))
+	tzid = str((retained or {}).get(
+		keys['tzid'],
+		getattr(source_time, 'tzid', '') or '',
+	) or '')
+	tzauto = bool((retained or {}).get(
+		keys['tzauto'],
+		getattr(source_time, 'tzauto', False),
+	))
+	# ``moment.utc_to_chart_local`` prefers a retained IANA zone whenever one is
+	# available, including older records whose ``tzauto`` flag predates tzid
+	# persistence. Resolve the matching local offset before constructing Time so
+	# the physical chart JD remains the exact mirrored instant instead of
+	# drifting by a historical-zone offset.
+	if tzid and cal == chart.Time.GREGORIAN and zt == chart.Time.ZONE:
+		try:
+			resolved = geonames.Geonames.resolve_zone_fields(
+				parts[0], parts[1], parts[2], parts[3], parts[4], parts[5],
+				place, tzid,
+			)
+		except Exception:
+			resolved = None
+		if resolved is not None:
+			plus = bool(resolved['plus'])
+			zh = int(resolved['zh'])
+			zm = int(resolved['zm'])
+			daylight = bool(resolved['daylightsaving'])
+	return chart.Time(
+		parts[0], parts[1], parts[2], parts[3], parts[4], parts[5],
+		False, cal, zt, plus, zh, zm, daylight, place, False,
+		tzid=tzid,
+		tzauto=tzauto,
+	)
+
+
+def retained_clock_local_tuple_for_jd(
+	retained,
+	prefix,
+	jd_value,
+	*,
+	fallback_place=None,
+	fallback_time=None,
+):
+	"""Express one exact UT JD in a retained converse-transit civil clock."""
+	source_time = fallback_time
+	keys = _retained_clock_keys(prefix)
+	cal = int((retained or {}).get(
+		keys['cal'],
+		getattr(source_time, 'cal', chart.Time.GREGORIAN),
+	))
+	utc_tuple = converse_transits.jd_to_utc_tuple(jd_value, cal)
+	place = payload_to_place(
+		(retained or {}).get(keys['place_payload']),
+		fallback=fallback_place,
+	)
+	time_shape = SimpleNamespace(
+		zt=int((retained or {}).get(
+			keys['zt'],
+			getattr(source_time, 'zt', chart.Time.ZONE),
+		)),
+		plus=bool((retained or {}).get(
+			keys['plus'],
+			getattr(source_time, 'plus', True),
+		)),
+		zh=int((retained or {}).get(
+			keys['zh'],
+			getattr(source_time, 'zh', 0) or 0,
+		) or 0),
+		zm=int((retained or {}).get(
+			keys['zm'],
+			getattr(source_time, 'zm', 0) or 0,
+		) or 0),
+		daylightsaving=bool((retained or {}).get(
+			keys['daylight'],
+			getattr(source_time, 'daylightsaving', False),
+		)),
+		tzid=str((retained or {}).get(
+			keys['tzid'],
+			getattr(source_time, 'tzid', '') or '',
+		) or ''),
+		tzauto=bool((retained or {}).get(
+			keys['tzauto'],
+			getattr(source_time, 'tzauto', False),
+		)),
+	)
+	local_tuple = moment.utc_to_chart_local(time_shape, utc_tuple, place=place)
+	return tuple(int(value) for value in (local_tuple or utc_tuple)[:6])
 
 
 def _return_identity_anchor(retained, current_chart, fallback_dt):
@@ -941,7 +1109,30 @@ class PlanetaryReturnSupplementaryAdapter(BaseSupplementaryAdapter):
 		else:
 			revs = revolutions.Revolutions()
 			preserve_cycle = bool(getattr(driver_state, 'preserve_return_cycle', False))
-			if preserve_cycle:
+			step_anchor = _display_datetime_to_datetime(retained.get('planetary_step_anchor_datetime'))
+			step_delta = int(retained.get('planetary_step_delta', 0) or 0)
+			used_step_anchor = step_anchor is not None and step_delta != 0 and not preserve_cycle
+			if used_step_anchor:
+				anchor_dt = step_anchor
+				revs._set_hit_values((
+					anchor_dt.year, anchor_dt.month, anchor_dt.day,
+					anchor_dt.hour, anchor_dt.minute, anchor_dt.second,
+				))
+				for _ in range(abs(step_delta)):
+					revs2 = revolutions.Revolutions()
+					if step_delta > 0:
+						found = revs2.compute_planetary_after_datetime(
+							planet_type, anchor_dt, calc_base, inclusive=False,
+						)
+					else:
+						found = revs2.compute_planetary_before_datetime(
+							planet_type, anchor_dt, calc_base, inclusive=False,
+						)
+					if not found:
+						return SupplementaryBuildResult(None, None, binding)
+					revs = revs2
+					anchor_dt = datetime.datetime(*tuple(int(v) for v in revs.t[:6]))
+			elif preserve_cycle:
 				identity_anchor = _return_identity_anchor(retained, current_chart, target_source_dt)
 				pair = revolutions.Revolutions.closest_planetary_return(
 					planet_type, calc_base, identity_anchor, window_days=30,
@@ -955,14 +1146,14 @@ class PlanetaryReturnSupplementaryAdapter(BaseSupplementaryAdapter):
 
 			anchor_dt = datetime.datetime(*tuple(int(v) for v in revs.t[:6]))
 			cycle_offset = int(retained.get('cycle_offset', 0) or 0)
-			if not preserve_cycle and cycle_offset > 0:
+			if not used_step_anchor and not preserve_cycle and cycle_offset > 0:
 				for _ in range(cycle_offset):
 					revs2 = revolutions.Revolutions()
 					if not revs2.compute_planetary_after_datetime(planet_type, anchor_dt, calc_base):
 						return SupplementaryBuildResult(None, None, binding)
 					revs = revs2
 					anchor_dt = datetime.datetime(*tuple(int(v) for v in revs.t[:6]))
-			elif not preserve_cycle and cycle_offset < 0:
+			elif not used_step_anchor and not preserve_cycle and cycle_offset < 0:
 				for _ in range(abs(cycle_offset)):
 					revs2 = revolutions.Revolutions()
 					if not revs2.compute_planetary_before_datetime(planet_type, anchor_dt, calc_base):
@@ -996,6 +1187,8 @@ class PlanetaryReturnSupplementaryAdapter(BaseSupplementaryAdapter):
 			'marr_sidereal': bool(marr),
 			'raw_return_datetime': raw_dt,
 		})
+		retained.pop('planetary_step_anchor_datetime', None)
+		retained.pop('planetary_step_delta', None)
 		if synodic_dt is not None:
 			retained['synodic_event_datetime'] = raw_dt
 			retained['raw_synodic_datetime'] = raw_dt
@@ -1179,6 +1372,165 @@ class TransitSupplementaryAdapter(BaseSupplementaryAdapter):
 		)
 
 
+class ConverseTransitSupplementaryAdapter(BaseSupplementaryAdapter):
+	"""Derive a direct or prenatal transit from one symbolic cursor.
+
+	The source datetime is always the symbolic/list clock shown in the chart
+	header.  Converse mode builds at ``2 * radix_jd - symbolic_jd``; direct mode
+	builds at the symbolic JD itself.  In both modes the real physical epoch
+	remains in ``chart.time`` for the footer.
+	"""
+	feature_kinds = ('converse_transits',)
+
+	def normalize_retained_state(self, current_chart=None, retained=None):
+		state = dict(retained or {})
+		state.setdefault('converse_enabled', True)
+		time_obj = getattr(current_chart, 'time', None) if current_chart is not None else None
+		if state.get('physical_place_payload') is None and current_chart is not None:
+			state['physical_place_payload'] = place_to_payload(
+				getattr(current_chart, 'place', None)
+			)
+		if time_obj is not None:
+			context = _chart_time_context_payload(time_obj)
+			for key, value in context.items():
+				target = 'physical_daylight' if key == 'daylight' else f'physical_{key}'
+				state.setdefault(target, value)
+		return state
+
+	def capture_binding(self, frame, session=None, current_chart=None, feature_kind=None):
+		binding = BaseSupplementaryAdapter.capture_binding(
+			self,
+			frame,
+			session=session,
+			current_chart=current_chart,
+			feature_kind=feature_kind,
+		)
+		binding.retained_state = self.normalize_retained_state(
+			current_chart=current_chart,
+			retained=binding.retained_state,
+		)
+		return binding
+
+	def refresh_source_datetime(self, frame, session, source_dt, binding):
+		retained = self.normalize_retained_state(
+			current_chart=getattr(
+				session.get('chart_session') if isinstance(session, dict) else None,
+				'chart',
+				None,
+			),
+			retained=binding.retained_state,
+		)
+		binding.retained_state = retained
+		target = _display_datetime_to_datetime(retained.get('display_datetime'))
+		if target is not None:
+			return target
+		cs = session.get('chart_session') if isinstance(session, dict) else None
+		target = _display_datetime_to_datetime(
+			getattr(cs, 'display_datetime', None) if cs is not None else None
+		)
+		return target if target is not None else source_dt
+
+	def parent_source_datetime_for_options_rebuild(
+		self,
+		frame,
+		session,
+		source_dt,
+		target_source_dt,
+		binding,
+		result,
+	):
+		return target_source_dt if isinstance(target_source_dt, datetime.datetime) else source_dt
+
+	def build(self, frame, driver_state, binding, current_chart=None, session=None):
+		base_chart = driver_state.base_chart
+		source_dt = driver_state.source_datetime
+		retained = self.normalize_retained_state(
+			current_chart=current_chart,
+			retained=binding.retained_state,
+		)
+		display_dt = (
+			int(source_dt.year),
+			int(source_dt.month),
+			int(source_dt.day),
+			int(source_dt.hour),
+			int(source_dt.minute),
+			int(source_dt.second),
+		)
+		stamped_dt = tuple(retained.get('symbolic_cursor_datetime') or ())
+		stamped_jd = retained.get('symbolic_cursor_jd')
+		if len(stamped_dt) >= 6 and tuple(int(v) for v in stamped_dt[:6]) == display_dt:
+			try:
+				symbolic_jd = float(stamped_jd)
+			except (TypeError, ValueError):
+				symbolic_jd = None
+		else:
+			symbolic_jd = None
+		if symbolic_jd is None:
+			symbolic_time_obj = retained_clock_time(
+				retained,
+				'symbolic',
+				display_dt,
+				fallback_place=getattr(base_chart, 'place', None),
+				fallback_time=getattr(base_chart, 'time', None),
+			)
+			if symbolic_time_obj is None:
+				return SupplementaryBuildResult(None, display_dt, binding)
+			symbolic_jd = float(symbolic_time_obj.jd)
+
+		converse_enabled = bool(retained.get('converse_enabled', True))
+		physical_jd = (
+			converse_transits.mirrored_jd(
+				getattr(getattr(base_chart, 'time', None), 'jd'),
+				symbolic_jd,
+			)
+			if converse_enabled
+			else symbolic_jd
+		)
+		physical_display_dt = retained_clock_local_tuple_for_jd(
+			retained,
+			'physical',
+			physical_jd,
+			fallback_place=getattr(base_chart, 'place', None),
+			fallback_time=getattr(base_chart, 'time', None),
+		)
+		physical_time = retained_clock_time(
+			retained,
+			'physical',
+			physical_display_dt,
+			fallback_place=getattr(base_chart, 'place', None),
+			fallback_time=getattr(base_chart, 'time', None),
+		)
+		if physical_time is None:
+			return SupplementaryBuildResult(None, display_dt, binding)
+		physical_place = payload_to_place(
+			retained.get('physical_place_payload'),
+			fallback=getattr(base_chart, 'place', None),
+		)
+		retained.update({
+			'display_datetime': display_dt,
+			'symbolic_cursor_datetime': display_dt,
+			'symbolic_cursor_jd': float(symbolic_jd),
+			'physical_cursor_datetime': tuple(int(value) for value in physical_display_dt),
+			'physical_cursor_jd': float(physical_time.jd),
+			'physical_place_payload': place_to_payload(physical_place),
+		})
+		binding.retained_state = retained
+		return SupplementaryBuildResult(
+			chart_factory.build_chart(
+				base_chart.name,
+				base_chart.male,
+				physical_time,
+				physical_place,
+				chart.Chart.TRANSIT,
+				'',
+				frame.options,
+				False,
+			),
+			display_dt,
+			binding,
+		)
+
+
 class SupplementaryAdapterRegistry(object):
 	def __init__(self):
 		secondary = SecondarySupplementaryAdapter()
@@ -1187,6 +1539,7 @@ class SupplementaryAdapterRegistry(object):
 		lunar_return = LunarReturnSupplementaryAdapter()
 		profections = ProfectionsSupplementaryAdapter()
 		transits = TransitSupplementaryAdapter()
+		converse_transits = ConverseTransitSupplementaryAdapter()
 		planetary_return = PlanetaryReturnSupplementaryAdapter()
 		self._adapters = {
 			'secondary': secondary,
@@ -1202,6 +1555,7 @@ class SupplementaryAdapterRegistry(object):
 			'planetary_return': planetary_return,
 			'profections': profections,
 			'transits': transits,
+			'converse_transits': converse_transits,
 		}
 
 	def adapter_for_feature_kind(self, feature_kind):

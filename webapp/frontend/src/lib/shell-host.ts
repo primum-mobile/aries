@@ -30,6 +30,13 @@ export type FrontendPerfEvent = {
   detail: Record<string, unknown>;
 };
 
+export type NativeDaemonResponse = {
+  status: number;
+  body: string;
+  contentLength: number;
+  transport: "unix-ipc" | "rust-http-fallback";
+};
+
 export type ShellMenuStateSnapshot = {
   enabled: Record<string, boolean>;
   checked: Record<string, boolean>;
@@ -84,6 +91,7 @@ export type ShellHost = {
   capabilities: ShellHostCapabilities;
   closeChartPickerWindow: () => Promise<void>;
   confirmQuit: () => Promise<void>;
+  copyImage: (bytes: Uint8Array, mimeType: string) => Promise<void>;
   downloadBytes: (filename: string, bytes: Uint8Array, mimeType: string) => Promise<void>;
   installBeforeUnloadGuard: (shouldBlock: () => boolean) => () => void;
   listenChartPickerWindowEvents: (
@@ -94,6 +102,11 @@ export type ShellHost = {
   openChartPickerWindow: (options: NativeChartPickerWindowOptions) => Promise<void>;
   openChartPickerWindowFallback: (options: NativeChartPickerWindowOptions) => Promise<void>;
   openExternal: (url: string) => Promise<void>;
+  requestDaemon: (
+    method: "GET" | "POST",
+    path: string,
+    body?: string,
+  ) => Promise<NativeDaemonResponse | null>;
   prewarmNativeApi: () => Promise<void>;
   prewarmChartPickerWindow: (options: NativeChartPickerWindowOptions) => Promise<void>;
   recordFrontendPerf: (event: FrontendPerfEvent) => Promise<void>;
@@ -117,6 +130,12 @@ type TauriRuntimeWindow = Window & {
   isTauri?: boolean;
 };
 
+type EyeDropperWindow = Window & {
+  EyeDropper?: new () => {
+    open: () => Promise<{ sRGBHex: string }>;
+  };
+};
+
 function runtimeWindow(): TauriRuntimeWindow | null {
   return typeof window === "undefined" ? null : (window as TauriRuntimeWindow);
 }
@@ -136,6 +155,29 @@ export function resolveNativeShellPlatform(): NativeShellPlatform | null {
     return platform;
   }
   return hasTauriInternals() ? "other" : null;
+}
+
+function browserEyeDropper(): EyeDropperWindow["EyeDropper"] {
+  return typeof window === "undefined"
+    ? undefined
+    : (window as EyeDropperWindow).EyeDropper;
+}
+
+export function supportsScreenColorSampling(): boolean {
+  return resolveNativeShellPlatform() === "macos" || browserEyeDropper() != null;
+}
+
+export async function sampleScreenColor(): Promise<string | null> {
+  if (resolveNativeShellPlatform() === "macos") {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return invoke<string | null>("sample_screen_color");
+  }
+  const EyeDropper = browserEyeDropper();
+  if (!EyeDropper) {
+    throw new Error("screen color sampling is unavailable");
+  }
+  const result = await new EyeDropper().open();
+  return result.sRGBHex;
 }
 
 export function resolveWindowsCaptionInset(): number {
@@ -192,6 +234,18 @@ function downloadBytesInBrowser(filename: string, bytes: Uint8Array, mimeType: s
   anchor.click();
   anchor.remove();
   setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+async function copyImageInBrowser(bytes: Uint8Array, mimeType: string): Promise<void> {
+  if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
+    throw new Error("image clipboard is unavailable in this browser");
+  }
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  const type = mimeType || "image/png";
+  await navigator.clipboard.write([
+    new ClipboardItem({ [type]: new Blob([buffer], { type }) }),
+  ]);
 }
 
 function openDialogAccept(filters?: NativeDialogFilter[]): string {
@@ -271,6 +325,7 @@ export const browserShellHost: ShellHost = {
     throw new Error("native chart picker window is unavailable in browser runtime");
   },
   confirmQuit: async () => {},
+  copyImage: copyImageInBrowser,
   downloadBytes: async (filename: string, bytes: Uint8Array, mimeType: string) => {
     downloadBytesInBrowser(filename, bytes, mimeType);
   },
@@ -295,6 +350,7 @@ export const browserShellHost: ShellHost = {
   openExternal: async (url: string) => {
     window.open(url, "_blank", "noopener,noreferrer");
   },
+  requestDaemon: async () => null,
   prewarmNativeApi: async () => {},
   prewarmChartPickerWindow: async () => {},
   recordFrontendPerf: async () => {},
@@ -336,6 +392,16 @@ export const tauriShellHost: ShellHost = {
   confirmQuit: async () => {
     const { invoke } = await import("@tauri-apps/api/core");
     await invoke("confirm_quit");
+  },
+  copyImage: async (bytes: Uint8Array) => {
+    const { Image } = await import("@tauri-apps/api/image");
+    const { writeImage } = await import("@tauri-apps/plugin-clipboard-manager");
+    const image = await Image.fromBytes(bytes);
+    try {
+      await writeImage(image);
+    } finally {
+      await image.close();
+    }
   },
   downloadBytes: async (filename: string, bytes: Uint8Array, mimeType: string) => {
     downloadBytesInBrowser(filename, bytes, mimeType);
@@ -409,6 +475,12 @@ export const tauriShellHost: ShellHost = {
   openExternal: async (url: string) => {
     const { open } = await import("@tauri-apps/plugin-shell");
     await open(url);
+  },
+  requestDaemon: async (method: "GET" | "POST", path: string, body?: string) => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return invoke<NativeDaemonResponse>("native_daemon_request", {
+      request: { method, path, body },
+    });
   },
   prewarmNativeApi: async () => {
     await import("@tauri-apps/api/core");

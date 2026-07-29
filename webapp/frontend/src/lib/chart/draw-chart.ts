@@ -7,19 +7,32 @@
 import { CanvasDraw, polar, type LineOpts, type TextOpts } from "./canvas-draw";
 import { DEFAULT_MORINUS_TEXT_FONT } from "./chart-fonts";
 import {
+  createDitherRasterPatternTile,
+  sampleDitherNoise,
+} from "../render/dither-pattern";
+import {
   resolveScaledWheelStroke,
   projectWheelAuthoringStyle,
   resolveWheelLinePaint,
+  resolveWheelFillPaint,
+  resolveWheelOverlayMetrics,
   resolveWheelRingSet,
   resolveWheelRenderStyle,
+  resolveWheelSecondaryRingClassIds,
   resolveWheelStrokeMetrics,
   resolveWheelTypographyMetrics,
+  resolveWheelTypographyPaint,
   type WheelRenderStyle,
+  type WheelAuthoringFillClass,
+  type WheelAuthoringFillPattern,
   type WheelAuthoringLineClass,
+  type WheelAuthoringTypographyClass,
+  type WheelChartOverlayClass,
   type WheelLinePaintRole,
   type WheelRenderStyleSource,
   type WheelRingSet,
   type WheelTypographyProfile,
+  type ResolvedWheelTypographyPaint,
   type ResolvedWheelTypographyMetrics,
 } from "./wheel-render-style";
 import {
@@ -40,13 +53,32 @@ import type {
   InterChartAspect,
   InterChartBodyAspectsMap,
   OuterRingItem,
+  OverlayInfoRow,
   PlanetId,
   RingLabelSegment,
   SurveilMark,
 } from "./types";
 
 type Pt = [number, number];
-type Bounds = { x: number; y: number; w: number; h: number };
+export type OuterLabelCollisionBounds = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
+type Bounds = OuterLabelCollisionBounds;
+type PositionedText = Bounds & {
+  text: string;
+  font: string;
+  size: number;
+  fill: string;
+  weight?: number;
+  style?: string;
+  tracking?: number;
+  opacity?: number;
+  classId: WheelAuthoringTypographyClass;
+  signIndex?: number;
+};
 type BodyKey = PlanetId | "__fortune" | "__vertex" | "__syzygy";
 type AngleLayoutKey = "__asc" | "__mc";
 type LayoutKey = BodyKey | AngleLayoutKey;
@@ -56,16 +88,20 @@ type BodyLayout = {
   labelYoffs: Map<LayoutKey, number>;
   componentBounds: Map<LayoutKey, Bounds[]>;
 };
-export type DrawLayer = "geometry" | "dynamic" | "outer-label";
+export type DrawLayer = "fill" | "geometry" | "dynamic" | "outer-label";
 
 interface DrawOptionsBase {
   width: number;
   height: number;
   chartSize?: number;
+  /** Screen-only chrome rectangles that outer labels must bend around. */
+  outerLabelCollisionBounds?: readonly OuterLabelCollisionBounds[];
   // Click-to-toggle aspect selection (owned by the workspace store). When the
   // chart's clickAspectFlags.exclusiveOnClick is false this is ignored and
   // aspects render as today. See resolveAspectsForDraw.
   clickAspectState?: ClickAspectState;
+  /** Retained multi-canvas callers paint the opaque surface on the fill layer. */
+  geometryOwnsBackground?: boolean;
 }
 
 /**
@@ -124,16 +160,45 @@ function fallbackTextsize(text: string, opts: TextOpts | undefined, widthScale: 
     if (ctx) {
       const family = opts?.font ?? "FreeSans, sans-serif";
       const weight = opts?.weight ?? 400;
-      ctx.font = `${weight} ${size}px ${family}`;
+      const requestedStyle = opts?.style?.trim().toLowerCase();
+      const fontStyle =
+        requestedStyle === "italic" || requestedStyle?.startsWith("oblique")
+          ? requestedStyle
+          : "normal";
+      ctx.font = `${fontStyle} ${weight} ${size}px ${family}`;
       const metrics = ctx.measureText(text);
+      const tracking = Number.isFinite(opts?.tracking)
+        ? Number(opts?.tracking)
+        : 0;
+      const glyphs = Array.from(text);
+      const width =
+        tracking === 0 || glyphs.length < 2
+          ? metrics.width
+          : Math.max(
+              0,
+              glyphs.reduce(
+                (sum, glyph) => sum + ctx.measureText(glyph).width,
+                0,
+              ) + (glyphs.length - 1) * tracking,
+            );
       const h =
         (metrics.actualBoundingBoxAscent || 0) +
         (metrics.actualBoundingBoxDescent || 0) ||
         size;
-      return [Math.round(metrics.width), Math.round(h)];
+      return [Math.round(width), Math.round(h)];
     }
   }
-  return [Math.round(String(text).length * size * widthScale), size];
+  const tracking = Number.isFinite(opts?.tracking)
+    ? Number(opts?.tracking)
+    : 0;
+  const glyphCount = Array.from(String(text)).length;
+  return [
+    Math.round(
+      glyphCount * size * widthScale
+      + Math.max(0, glyphCount - 1) * tracking,
+    ),
+    size,
+  ];
 }
 
 function normalize(lon: number): number {
@@ -294,11 +359,22 @@ function layoutGlyphSize(
   key: LayoutKey,
   bodySize: number,
   angleLabelSize: number,
+  syzygyScale: number,
 ): number {
   if (key === "__asc" || key === "__mc") {
     return angleLabelSize;
   }
-  return bodyGlyphSize(bodySize);
+  return bodyGlyphSize(key, bodySize, syzygyScale);
+}
+
+function layoutGlyphClassId(
+  key: LayoutKey,
+  outer: boolean,
+): WheelAuthoringTypographyClass {
+  if (key === "__asc" || key === "__mc") {
+    return outer ? "angles.outer.label" : "angles.inner.label";
+  }
+  return bodyGlyphClassId(key, outer);
 }
 
 function bodyDegMin(
@@ -350,18 +426,30 @@ function bodyGlyphFont(chart: Chart, key: BodyKey, fontSymbols: string, fontUi: 
   return fontSymbols;
 }
 
-function bodyGlyphSize(symbolSize: number): number {
-  // Fortuna, Vertex, and the prenatal syzygy are body occurrences, not
-  // independent typography classes. Their palette roles remain distinct, but
-  // their rendered size follows the same resolved inner/outer body size.
-  return symbolSize;
+function bodyGlyphSize(key: BodyKey, symbolSize: number, syzygyScale: number): number {
+  return key === "__syzygy" ? symbolSize * syzygyScale : symbolSize;
+}
+
+function bodyGlyphClassId(
+  key: BodyKey,
+  outer: boolean,
+): WheelAuthoringTypographyClass {
+  if (key === "__fortune") return "bodies.fortune";
+  if (key === "__vertex") return "bodies.vertex";
+  if (key === "__syzygy") return "bodies.prenatalSyzygy";
+  return outer ? "bodies.outer.glyph" : "bodies.inner.glyph";
 }
 
 function bodyColor(
   chart: Chart,
   planets: Map<PlanetId, ChartPlanet>,
   key: BodyKey,
-  palette: ChartPalette,
+  palette: Readonly<{
+    fortune: string;
+    peregrin: string;
+    positions: string;
+    planets: readonly string[];
+  }>,
 ): string {
   // Daemon ships a resolved per-body color (inspector_service._body_colour).
   if (key === "__fortune") {
@@ -391,6 +479,60 @@ function overlap(
   const xOverlap = (x1 <= x2 && x2 <= x1 + w1) || (x2 <= x1 && x1 <= x2 + w2);
   const yOverlap = (y1 <= y2 && y2 <= y1 + h1) || (y2 <= y1 && y1 <= y2 + h2);
   return xOverlap && yOverlap;
+}
+
+function nudgeOuterLabelsAroundCollisionBounds(
+  shifts: number[],
+  yOffsets: number[],
+  labelBounds: (index: number, shift: number, yOffset: number) => Bounds,
+  collisionBounds: readonly OuterLabelCollisionBounds[],
+  style: WheelRenderStyle,
+): void {
+  for (let index = 0; index < yOffsets.length; index += 1) {
+    for (const obstacle of collisionBounds) {
+      const intersects = (bounds: Bounds) => overlap(
+        bounds.x,
+        bounds.y,
+        bounds.w,
+        bounds.h,
+        obstacle.x,
+        obstacle.y,
+        obstacle.w,
+        obstacle.h,
+      );
+      let bounds = labelBounds(index, shifts[index], yOffsets[index]);
+      if (!intersects(bounds)) continue;
+      const minimumDiagonalShift =
+        style.collision.shiftStepDegrees * 15;
+      if (Math.abs(shifts[index]) < minimumDiagonalShift) {
+        if (shifts[index] !== 0) {
+          shifts[index] =
+            Math.sign(shifts[index]) * minimumDiagonalShift;
+        } else {
+          const centerX = bounds.x + bounds.w / 2;
+          const backward = labelBounds(
+            index,
+            -minimumDiagonalShift,
+            yOffsets[index],
+          );
+          const forward = labelBounds(
+            index,
+            minimumDiagonalShift,
+            yOffsets[index],
+          );
+          shifts[index] =
+            Math.abs(backward.x + backward.w / 2 - centerX)
+              <= Math.abs(forward.x + forward.w / 2 - centerX)
+              ? -minimumDiagonalShift
+              : minimumDiagonalShift;
+        }
+        bounds = labelBounds(index, shifts[index], yOffsets[index]);
+      }
+      if (intersects(bounds)) {
+        yOffsets[index] += obstacle.y + obstacle.h - bounds.y + 1;
+      }
+    }
+  }
 }
 
 function drawRotatedLines(
@@ -456,22 +598,47 @@ function ensureTextOutsideOuterWheel(
     [x, y + h / 2],
     [x + w, y + h / 2],
   ];
-  const minDistance = Math.min(
-    ...corners.map(([px, py]) => Math.hypot(px - center[0], py - center[1])),
-  );
   const target = outerLineRadius + padPx;
-  if (minDistance >= target) {
+  if (
+    corners.every(
+      ([px, py]) => Math.hypot(px - center[0], py - center[1]) >= target,
+    )
+  ) {
     return [x, y, rText];
   }
-  const delta = target - minDistance;
-  const nextRadius = rText + delta;
-  let nextX = center[0] + Math.cos(rad) * nextRadius;
-  const nextY = center[1] + Math.sin(rad) * nextRadius;
-  const pos = normalize((rad * 180) / Math.PI);
-  if (pos > 90 && pos < 270) {
-    nextX -= w;
+
+  // Translate the complete label rectangle along its radial leader. Solving
+  // the circle intersection for every corner makes the outer-wheel clearance
+  // exact even for long word labels and large projected glyphs. A simple
+  // target-minus-nearest-corner offset is insufficient because a wide label's
+  // nearest corner does not move parallel to its own radius.
+  const unitX = Math.cos(rad);
+  const unitY = Math.sin(rad);
+  let delta = 0;
+  for (const [px, py] of corners) {
+    const relativeX = px - center[0];
+    const relativeY = py - center[1];
+    const distanceSquared =
+      relativeX * relativeX + relativeY * relativeY;
+    if (distanceSquared >= target * target) {
+      continue;
+    }
+    const radialProjection = relativeX * unitX + relativeY * unitY;
+    const discriminant =
+      radialProjection * radialProjection
+      - (distanceSquared - target * target);
+    delta = Math.max(
+      delta,
+      -radialProjection + Math.sqrt(Math.max(0, discriminant)),
+    );
   }
-  return [nextX, nextY, nextRadius];
+  const clearanceEpsilon = 0.01;
+  const radialDelta = delta + clearanceEpsilon;
+  return [
+    x + unitX * radialDelta,
+    y + unitY * radialDelta,
+    rText + radialDelta,
+  ];
 }
 
 type RingSet = WheelRingSet;
@@ -496,10 +663,27 @@ function wheelTypographyProfile(chart: Chart): WheelTypographyProfile {
   return isAngloWheel(chart) ? "anglo" : isCompactWheel(chart) ? "compact" : "classic";
 }
 
-function comparisonUsesOuterHouses(snapshot: ChartRenderSnapshot, chart: Chart): boolean {
-  if (!snapshot.comparisonChart || !chart.options.showHouses) return false;
-  if (!isAngloWheel(chart)) return true;
-  return snapshot.comparisonLayout === "with-houses";
+function comparisonShowsHouseCusps(snapshot: ChartRenderSnapshot, chart: Chart): boolean {
+  return Boolean(
+    snapshot.comparisonChart &&
+    chart.options.showHouses &&
+    chart.options.showOuterHouseLines !== false,
+  );
+}
+
+function comparisonUsesOuterHouseBand(snapshot: ChartRenderSnapshot, chart: Chart): boolean {
+  return comparisonShowsHouseCusps(snapshot, chart) && !isAngloWheel(chart);
+}
+
+function usesRestrainedAngloComparison(
+  snapshot: ChartRenderSnapshot,
+  chart: Chart,
+): boolean {
+  return Boolean(
+    snapshot.comparisonChart &&
+    isAngloWheel(chart) &&
+    snapshot.document?.compoundKind === "synastry",
+  );
 }
 
 function effectiveRings(
@@ -526,6 +710,7 @@ function comparisonRings(
   chart: Chart,
   maxRadius: number,
   withOuterHouses = false,
+  restrainedAngloComparison = false,
 ): RingSet {
   return resolveWheelRingSet(style, {
     profile: wheelTypographyProfile(chart),
@@ -537,6 +722,7 @@ function comparisonRings(
     showHouses: Boolean(chart.options.showHouses),
     showPositions: Boolean(chart.options.showPositions),
     comparisonWithOuterHouses: withOuterHouses,
+    restrainedAngloComparison,
   });
 }
 
@@ -742,20 +928,73 @@ function drawCircles(
 
 type RoutedLinePaint = NonNullable<Parameters<CanvasDraw["line"]>[1]>;
 
-function radialBoxInterval(
-  center: Pt,
-  asc: number,
+type RoutedBodyColumn = {
+  key: BodyKey;
+  // The foot is immutable semantic truth: true longitude and therefore house.
+  footLongitude: number;
+  // The painted column may move for legibility, but it never changes the foot.
+  displayedLongitude: number;
+  components: readonly Bounds[];
+};
+
+type RoutedCuspContext = {
+  columns: readonly RoutedBodyColumn[];
+  previousCusp: number;
+  nextCusp: number;
+  structuralLongitudes: readonly number[];
+  structuralLineWidth?: number;
+};
+
+function boundsTouchWithin(left: Bounds, right: Bounds, clearance: number): boolean {
+  return (
+    left.x <= right.x + right.w + clearance &&
+    left.x + left.w + clearance >= right.x &&
+    left.y <= right.y + right.h + clearance &&
+    left.y + left.h + clearance >= right.y
+  );
+}
+
+function longitudeOnForwardArc(
   longitude: number,
+  start: number,
+  end: number,
+  epsilon = 1e-9,
+): boolean {
+  const span = normalize(end - start);
+  const progress = normalize(longitude - start);
+  return progress > epsilon && progress <= span + epsilon;
+}
+
+function footSideOfCusp(
+  footLongitude: number,
+  cusp: number,
+  previousCusp: number,
+  nextCusp: number,
+): -1 | 1 | null {
+  // A foot is the immutable semantic anchor. Resolve its side from the two
+  // houses adjacent to this cusp, not from the displaced glyph column. The
+  // existing exact-on-ray convention assigns a nanoscale equality to the
+  // preceding house.
+  if (sameLongitude(footLongitude, cusp, 1e-9)) return -1;
+  if (longitudeOnForwardArc(footLongitude, cusp, nextCusp)) return 1;
+  if (longitudeOnForwardArc(footLongitude, previousCusp, cusp)) return -1;
+  // A body from a non-adjacent house cannot give this cusp a truthful side.
+  // Keep the exact cusp and omit only its occupied span instead of guessing.
+  return null;
+}
+
+function segmentBoundsInterval(
+  from: Pt,
+  to: Pt,
   box: Bounds,
 ): [number, number] | null {
-  const unitPt = polar(center, 1, longitude, asc);
-  const unit: Pt = [unitPt[0] - center[0], unitPt[1] - center[1]];
-  let entry = Number.NEGATIVE_INFINITY;
-  let exit = Number.POSITIVE_INFINITY;
-  for (const [origin, direction, minimum, maximum] of [
-    [center[0], unit[0], box.x, box.x + box.w],
-    [center[1], unit[1], box.y, box.y + box.h],
-  ] as Array<[number, number, number, number]>) {
+  let entry = 0;
+  let exit = 1;
+  for (const axis of [0, 1] as const) {
+    const origin = from[axis];
+    const direction = to[axis] - origin;
+    const minimum = axis === 0 ? box.x : box.y;
+    const maximum = minimum + (axis === 0 ? box.w : box.h);
     if (Math.abs(direction) < 1e-9) {
       if (origin < minimum || origin > maximum) return null;
       continue;
@@ -766,7 +1005,102 @@ function radialBoxInterval(
     exit = Math.min(exit, Math.max(first, second));
     if (entry > exit) return null;
   }
-  return exit > 0 ? [Math.max(0, entry), exit] : null;
+  return [entry, exit];
+}
+
+function segmentIntersectsBounds(from: Pt, to: Pt, box: Bounds): boolean {
+  return segmentBoundsInterval(from, to, box) != null;
+}
+
+function segmentsIntersect(
+  firstFrom: Pt,
+  firstTo: Pt,
+  secondFrom: Pt,
+  secondTo: Pt,
+): boolean {
+  const cross = (left: Pt, right: Pt) => left[0] * right[1] - left[1] * right[0];
+  const firstVector: Pt = [
+    firstTo[0] - firstFrom[0],
+    firstTo[1] - firstFrom[1],
+  ];
+  const secondVector: Pt = [
+    secondTo[0] - secondFrom[0],
+    secondTo[1] - secondFrom[1],
+  ];
+  const betweenStarts: Pt = [
+    secondFrom[0] - firstFrom[0],
+    secondFrom[1] - firstFrom[1],
+  ];
+  const denominator = cross(firstVector, secondVector);
+  const epsilon = 1e-9;
+  if (Math.abs(denominator) <= epsilon) {
+    if (Math.abs(cross(betweenStarts, firstVector)) > epsilon) return false;
+    const firstLengthSquared =
+      firstVector[0] * firstVector[0] + firstVector[1] * firstVector[1];
+    if (firstLengthSquared <= epsilon) return false;
+    const startProjection =
+      (betweenStarts[0] * firstVector[0] + betweenStarts[1] * firstVector[1]) /
+      firstLengthSquared;
+    const endProjection = startProjection +
+      (secondVector[0] * firstVector[0] + secondVector[1] * firstVector[1]) /
+      firstLengthSquared;
+    return Math.max(Math.min(startProjection, endProjection), 0) <=
+      Math.min(Math.max(startProjection, endProjection), 1) + epsilon;
+  }
+  const firstProgress = cross(betweenStarts, secondVector) / denominator;
+  const secondProgress = cross(betweenStarts, firstVector) / denominator;
+  return (
+    firstProgress >= -epsilon &&
+    firstProgress <= 1 + epsilon &&
+    secondProgress >= -epsilon &&
+    secondProgress <= 1 + epsilon
+  );
+}
+
+function pointSegmentDistance(point: Pt, from: Pt, to: Pt): number {
+  const dx = to[0] - from[0];
+  const dy = to[1] - from[1];
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared <= 1e-12) return Math.hypot(point[0] - from[0], point[1] - from[1]);
+  const progress = Math.max(
+    0,
+    Math.min(1, ((point[0] - from[0]) * dx + (point[1] - from[1]) * dy) / lengthSquared),
+  );
+  return Math.hypot(
+    point[0] - (from[0] + dx * progress),
+    point[1] - (from[1] + dy * progress),
+  );
+}
+
+function segmentDistance(firstFrom: Pt, firstTo: Pt, secondFrom: Pt, secondTo: Pt): number {
+  if (segmentsIntersect(firstFrom, firstTo, secondFrom, secondTo)) return 0;
+  return Math.min(
+    pointSegmentDistance(firstFrom, secondFrom, secondTo),
+    pointSegmentDistance(firstTo, secondFrom, secondTo),
+    pointSegmentDistance(secondFrom, firstFrom, firstTo),
+    pointSegmentDistance(secondTo, firstFrom, firstTo),
+  );
+}
+
+function segmentWithinDistanceOfBounds(
+  from: Pt,
+  to: Pt,
+  box: Bounds,
+  distance: number,
+): boolean {
+  if (segmentIntersectsBounds(from, to, box)) return true;
+  const topLeft: Pt = [box.x, box.y];
+  const topRight: Pt = [box.x + box.w, box.y];
+  const bottomRight: Pt = [box.x + box.w, box.y + box.h];
+  const bottomLeft: Pt = [box.x, box.y + box.h];
+  return [
+    [topLeft, topRight],
+    [topRight, bottomRight],
+    [bottomRight, bottomLeft],
+    [bottomLeft, topLeft],
+  ].some(([edgeFrom, edgeTo]) =>
+    segmentDistance(from, to, edgeFrom, edgeTo) <= distance + 1e-9
+  );
 }
 
 function drawRoutedRadialLine(
@@ -777,90 +1111,103 @@ function drawRoutedRadialLine(
   radiusA: number,
   radiusB: number,
   paint: RoutedLinePaint,
-  componentBounds?: Map<LayoutKey, Bounds[]>,
+  context?: RoutedCuspContext,
+  onPolyline?: (points: readonly Pt[]) => void,
 ) {
   const innerRadius = Math.min(radiusA, radiusB);
   const outerRadius = Math.max(radiusA, radiusB);
-  const straight = () => draw.line(
-    [
-      polar(center, innerRadius, longitude, asc),
-      polar(center, outerRadius, longitude, asc),
-    ],
-    paint,
-  );
-  if (!componentBounds?.size) {
+  const snapPoint = ([x, y]: Pt): Pt => [Math.round(x), Math.round(y)];
+  const straightStart = snapPoint(polar(center, innerRadius, longitude, asc));
+  const straightEnd = snapPoint(polar(center, outerRadius, longitude, asc));
+  const paintLine = (points: [Pt, Pt, ...Pt[]]) => {
+    draw.line(points, paint);
+    onPolyline?.(points);
+  };
+  const straight = () => paintLine([straightStart, straightEnd]);
+  if (!context?.columns.length) {
     straight();
     return;
   }
 
+  const radialVector: Pt = [
+    straightEnd[0] - straightStart[0],
+    straightEnd[1] - straightStart[1],
+  ];
+  const rayLength = Math.hypot(radialVector[0], radialVector[1]);
+  if (rayLength < 1e-9) {
+    straight();
+    return;
+  }
+  // Use the exact snapped chord Canvas paints as the one geometry frame for
+  // hit tests, projections, and route construction. In screen coordinates this
+  // perpendicular points toward increasing zodiac longitude.
+  const radialUnit: Pt = [radialVector[0] / rayLength, radialVector[1] / rayLength];
+  const tangentUnit: Pt = [radialUnit[1], -radialUnit[0]];
   const corners = (box: Bounds): Pt[] => [
     [box.x, box.y],
     [box.x + box.w, box.y],
     [box.x, box.y + box.h],
     [box.x + box.w, box.y + box.h],
   ];
-  const radialUnitPoint = polar(center, 1, longitude, asc);
-  const tangentUnitPoint = polar(center, 1, longitude + 90, asc);
-  const radialUnit: Pt = [
-    radialUnitPoint[0] - center[0],
-    radialUnitPoint[1] - center[1],
-  ];
-  const tangentUnit: Pt = [
-    tangentUnitPoint[0] - center[0],
-    tangentUnitPoint[1] - center[1],
-  ];
+  const lineHalfWidth = Math.max(0.25, paint.width ?? 1) / 2;
+  const expandBounds = (box: Bounds, amount: number): Bounds => ({
+    x: box.x - amount,
+    y: box.y - amount,
+    w: box.w + amount * 2,
+    h: box.h + amount * 2,
+  });
   type ProjectedBox = Bounds & {
     sMin: number;
     sMax: number;
     tMin: number;
     tMax: number;
-    tCenter: number;
   };
   const projectBox = (box: Bounds): ProjectedBox => {
     const projected = corners(box).map(([x, y]) => {
-      const dx = x - center[0];
-      const dy = y - center[1];
+      const dx = x - straightStart[0];
+      const dy = y - straightStart[1];
       return {
         s: dx * radialUnit[0] + dy * radialUnit[1],
         t: dx * tangentUnit[0] + dy * tangentUnit[1],
       };
     });
-    const centerDx = box.x + box.w / 2 - center[0];
-    const centerDy = box.y + box.h / 2 - center[1];
     return {
       ...box,
       sMin: Math.min(...projected.map(({ s }) => s)),
       sMax: Math.max(...projected.map(({ s }) => s)),
       tMin: Math.min(...projected.map(({ t }) => t)),
       tMax: Math.max(...projected.map(({ t }) => t)),
-      tCenter: centerDx * tangentUnit[0] + centerDy * tangentUnit[1],
     };
   };
-  // AC/MC labels sit on their own rays by design; the structural line should
-  // route body columns, not manufacture a detour around its own label.
-  const boxes = [...componentBounds.entries()]
-    .filter(([key]) => key !== "__asc" && key !== "__mc")
-    .flatMap(([, bounds]) => bounds.map(projectBox));
-  const blocking = boxes.filter(
-    (box) =>
-      box.sMax > innerRadius &&
-      box.sMin < outerRadius &&
-      box.tMin <= 0 &&
-      box.tMax >= 0,
-  );
-  if (!blocking.length) {
+  const columns = context.columns.filter(({ components }) => components.length);
+  const boxes = columns.flatMap(({ components }) => components);
+  const strokedBoxes = boxes.map((box) => expandBounds(box, lineHalfWidth));
+  const seedIndices = columns
+    .map((column, index) => ({ column, index }))
+    .filter(({ column }) =>
+      column.components.some((box) =>
+        segmentWithinDistanceOfBounds(
+          straightStart,
+          straightEnd,
+          box,
+          lineHalfWidth,
+        )
+      )
+    )
+    .map(({ index }) => index);
+  if (!seedIndices.length) {
     straight();
     return;
   }
 
   const drawSegmentedFallback = () => {
-    const gaps = boxes
-      .map((box) => radialBoxInterval(center, asc, longitude, box))
+    const pointAt = (progress: number): Pt => [
+      straightStart[0] + (straightEnd[0] - straightStart[0]) * progress,
+      straightStart[1] + (straightEnd[1] - straightStart[1]) * progress,
+    ];
+    const gaps = strokedBoxes
+      .map((box) => segmentBoundsInterval(straightStart, straightEnd, box))
       .filter((interval): interval is [number, number] => Boolean(interval))
-      .map(([start, end]) => [
-        Math.max(innerRadius, start),
-        Math.min(outerRadius, end),
-      ] as [number, number])
       .filter(([start, end]) => end > start)
       .sort((left, right) => left[0] - right[0]);
     const merged: Array<[number, number]> = [];
@@ -869,88 +1216,155 @@ function drawRoutedRadialLine(
       if (previous && gap[0] <= previous[1]) previous[1] = Math.max(previous[1], gap[1]);
       else merged.push([...gap]);
     }
-    let cursor = innerRadius;
+    let cursor = 0;
     for (const [gapStart, gapEnd] of merged) {
-      if (gapStart > cursor + 0.5) {
-        draw.line(
-          [polar(center, cursor, longitude, asc), polar(center, gapStart, longitude, asc)],
-          paint,
-        );
+      if (gapStart > cursor + 1e-6) {
+        paintLine([pointAt(cursor), pointAt(gapStart)]);
       }
       cursor = Math.max(cursor, gapEnd);
     }
-    if (cursor < outerRadius - 0.5) {
-      draw.line(
-        [polar(center, cursor, longitude, asc), polar(center, outerRadius, longitude, asc)],
-        paint,
-      );
+    if (cursor < 1 - 1e-6) {
+      paintLine([pointAt(cursor), straightEnd]);
     }
   };
 
-  const sideEpsilon = 1e-6;
-  const sides = new Set(
-    blocking.map((box) =>
-      box.tCenter > sideEpsilon ? 1 : box.tCenter < -sideEpsilon ? -1 : 0
-    ),
-  );
-  if (sides.size !== 1 || sides.has(0)) {
-    drawSegmentedFallback();
-    return;
-  }
-
-  const routePadPx = 2;
-  const occupiedSide = [...sides][0];
-  const routeInner = Math.max(
-    innerRadius,
-    Math.min(...blocking.map((box) => box.sMin)) - routePadPx,
-  );
-  const routeOuter = Math.min(
-    outerRadius,
-    Math.max(...blocking.map((box) => box.sMax)) + routePadPx,
-  );
-  const routeT = occupiedSide > 0
-    ? Math.min(...blocking.map((box) => box.tMin)) - routePadPx
-    : Math.max(...blocking.map((box) => box.tMax)) + routePadPx;
-  const routeTMin = Math.min(0, routeT);
-  const routeTMax = Math.max(0, routeT);
-  const routeBlocked = boxes.some((box) => {
-    const crossesDetour =
-      box.sMax > routeInner &&
-      box.sMin < routeOuter &&
-      box.tMin <= routeT &&
-      box.tMax >= routeT;
-    const crossesInnerTurn =
-      box.sMin <= routeInner &&
-      box.sMax >= routeInner &&
-      box.tMax >= routeTMin &&
-      box.tMin <= routeTMax;
-    const crossesOuterTurn =
-      box.sMin <= routeOuter &&
-      box.sMax >= routeOuter &&
-      box.tMax >= routeTMin &&
-      box.tMin <= routeTMax;
-    return crossesDetour || crossesInnerTurn || crossesOuterTurn;
-  });
-  if (routeBlocked) {
-    drawSegmentedFallback();
-    return;
-  }
-
+  const visualClearancePx = 2;
+  const routeClearancePx = visualClearancePx + lineHalfWidth;
+  // Columns whose clearance halos touch are one current painted obstruction;
+  // this is geometric and frame-local, never a historical collision group.
+  const clusterGapPx = routeClearancePx * 2;
   const localPoint = (s: number, t: number): Pt => [
-    center[0] + radialUnit[0] * s + tangentUnit[0] * t,
-    center[1] + radialUnit[1] * s + tangentUnit[1] * t,
+    straightStart[0] + radialUnit[0] * s + tangentUnit[0] * t,
+    straightStart[1] + radialUnit[1] * s + tangentUnit[1] * t,
   ];
-  draw.line(
-    [
-      localPoint(innerRadius, 0),
-      localPoint(routeInner, 0),
-      localPoint(routeInner, routeT),
-      localPoint(routeOuter, routeT),
-      localPoint(routeOuter, 0),
-      localPoint(outerRadius, 0),
-    ],
-    paint,
+  const sides = columns.map(({ footLongitude }) =>
+    footSideOfCusp(
+      footLongitude,
+      longitude,
+      context.previousCusp,
+      context.nextCusp,
+    )
   );
+  const connected = (leftIndex: number, rightIndex: number): boolean =>
+    columns[leftIndex].components.some((left) =>
+      columns[rightIndex].components.some((right) =>
+        boundsTouchWithin(left, right, clusterGapPx)
+      )
+    );
+  const expandLocalClosure = (indices: Set<number>) => {
+    const queue = [...indices];
+    while (queue.length) {
+      const current = queue.shift()!;
+      for (let candidate = 0; candidate < columns.length; candidate += 1) {
+        if (indices.has(candidate) || !connected(current, candidate)) continue;
+        indices.add(candidate);
+        queue.push(candidate);
+      }
+    }
+  };
+  const routeIndices = new Set(seedIndices);
+  expandLocalClosure(routeIndices);
+
+  const structuralSegments = context.structuralLongitudes
+    .filter((candidate, index, values) =>
+      !sameLongitude(candidate, longitude) &&
+      values.findIndex((value) => sameLongitude(value, candidate)) === index
+    )
+    .map((candidate) => [
+      snapPoint(polar(center, innerRadius, candidate, asc)),
+      snapPoint(polar(center, outerRadius, candidate, asc)),
+    ] as [Pt, Pt]);
+
+  // Each pass can add only a column hit by the candidate shaft. This makes the
+  // search bounded by the app's finite body set and prevents collision-history
+  // chains from changing an unrelated cusp.
+  for (let pass = 0; pass <= columns.length; pass += 1) {
+    const routeSides = new Set([...routeIndices].map((index) => sides[index]));
+    if (routeSides.size !== 1 || routeSides.has(null)) {
+      drawSegmentedFallback();
+      return;
+    }
+    const footSide = [...routeSides][0]!;
+    const routeSide = -footSide;
+    const routeBoxes = [...routeIndices]
+      .flatMap((index) => columns[index].components)
+      .map(projectBox);
+    const turnS = Math.max(
+      0,
+      Math.min(...routeBoxes.map((box) => box.sMin)) - routeClearancePx,
+    );
+    const routeT = routeSide < 0
+      ? Math.min(...routeBoxes.map((box) => box.tMin)) - routeClearancePx
+      : Math.max(...routeBoxes.map((box) => box.tMax)) + routeClearancePx;
+    const rootFromCenter: Pt = [
+      straightStart[0] - center[0],
+      straightStart[1] - center[1],
+    ];
+    const rootS = rootFromCenter[0] * radialUnit[0] + rootFromCenter[1] * radialUnit[1];
+    const rootT = rootFromCenter[0] * tangentUnit[0] + rootFromCenter[1] * tangentUnit[1];
+    const outerS2 = outerRadius * outerRadius - (rootT + routeT) ** 2;
+    if (outerS2 <= 0) {
+      drawSegmentedFallback();
+      return;
+    }
+    const outerS = -rootS + Math.sqrt(outerS2);
+    if (outerS <= turnS + 0.5) {
+      drawSegmentedFallback();
+      return;
+    }
+    const candidate = [
+      straightStart,
+      snapPoint(localPoint(turnS, 0)),
+      snapPoint(localPoint(turnS, routeT)),
+      snapPoint(localPoint(outerS, routeT)),
+    ].filter((point, index, points) =>
+      index === 0 || point[0] !== points[index - 1][0] || point[1] !== points[index - 1][1]
+    );
+    if (candidate.length < 3) {
+      drawSegmentedFallback();
+      return;
+    }
+    const segments = candidate.slice(1).map((point, index) => [
+      candidate[index],
+      point,
+    ] as [Pt, Pt]);
+    const structuralHalfWidth = Math.max(
+      0.25,
+      context.structuralLineWidth ?? paint.width ?? 1,
+    ) / 2;
+    if (structuralSegments.some(([from, to]) =>
+      segments.some(([candidateFrom, candidateTo]) =>
+        segmentDistance(candidateFrom, candidateTo, from, to) <=
+          lineHalfWidth + structuralHalfWidth + 1e-9
+      )
+    )) {
+      drawSegmentedFallback();
+      return;
+    }
+    const hitIndices = columns
+      .map((column, index) => ({ column, index }))
+      .filter(({ column }) =>
+        column.components.some((box) =>
+          segments.some(([from, to]) =>
+            segmentWithinDistanceOfBounds(from, to, box, lineHalfWidth)
+          )
+        )
+      )
+      .map(({ index }) => index);
+    if (!hitIndices.length) {
+      paintLine(candidate as [Pt, Pt, ...Pt[]]);
+      return;
+    }
+    if (hitIndices.some((index) => sides[index] !== footSide)) {
+      drawSegmentedFallback();
+      return;
+    }
+    const previousSize = routeIndices.size;
+    hitIndices.forEach((index) => routeIndices.add(index));
+    expandLocalClosure(routeIndices);
+    if (routeIndices.size === previousSize) break;
+  }
+  drawSegmentedFallback();
 }
 
 function drawHouses(
@@ -961,7 +1375,8 @@ function drawHouses(
   chart: Chart,
   palette: ChartPalette,
   style: WheelRenderStyle,
-  componentBounds?: Map<LayoutKey, Bounds[]>,
+  bodyLayout?: BodyLayout,
+  onCuspPolyline?: (houseIndex: number, points: readonly Pt[]) => void,
 ) {
   const angleLongitudes = [chart.angles.asc, chart.angles.dsc, chart.angles.mc, chart.angles.ic];
   const linePaint = {
@@ -971,13 +1386,36 @@ function drawHouses(
       "houseCusp" as const,
       style.strokes.hairline,
       {},
-      "houses.outer.cusp",
+      "houses.inner.cusp",
     ),
   };
-  const routedBounds =
+  const structuralLineWidth = Math.max(
+    linePaint.width ?? 1,
+    semanticLinePaint(
+      style,
+      "angle" as const,
+      style.strokes.angloStructural,
+    ).width ?? 1,
+  );
+  const routedLayout =
     isAngloWheel(chart) &&
     angloDenseLabelLayout(chart) === "routed-cusps" &&
-    componentBounds;
+    bodyLayout;
+  const planets = planetById(chart);
+  const routedColumns: RoutedBodyColumn[] = routedLayout
+    ? bodyKeys(chart).flatMap((key) => {
+        const footLongitude = bodyLongitude(chart, planets, key);
+        const components = routedLayout.componentBounds.get(key);
+        if (footLongitude == null || !components?.length) return [];
+        return [{
+          key,
+          footLongitude,
+          displayedLongitude: footLongitude + (routedLayout.bodyShifts.get(key) ?? 0),
+          components,
+        }];
+      })
+    : [];
+  const structuralLongitudes = [...chart.houses.cusps, ...angleLongitudes];
   for (let i = 0; i < 12; i++) {
     const cusp = chart.houses.cusps[i];
     if (isAngloWheel(chart) && angleLongitudes.some((angle) => sameLongitude(cusp, angle))) {
@@ -985,11 +1423,13 @@ function drawHouses(
     }
     const startRadius = Math.min(ringset.rBase, ringset.rInner);
     const endRadius = Math.max(ringset.rBase, ringset.rInner);
-    if (!routedBounds) {
-      draw.line(
-        [polar(center, startRadius, cusp, asc), polar(center, endRadius, cusp, asc)],
-        linePaint,
-      );
+    if (!routedLayout) {
+      const points: [Pt, Pt] = [
+        polar(center, startRadius, cusp, asc),
+        polar(center, endRadius, cusp, asc),
+      ];
+      draw.line(points, linePaint);
+      onCuspPolyline?.(i + 1, points);
       continue;
     }
 
@@ -1001,7 +1441,14 @@ function drawHouses(
       startRadius,
       endRadius,
       linePaint,
-      routedBounds,
+      {
+        columns: routedColumns,
+        previousCusp: chart.houses.cusps[(i + 11) % 12],
+        nextCusp: chart.houses.cusps[(i + 1) % 12],
+        structuralLongitudes,
+        structuralLineWidth,
+      },
+      (points) => onCuspPolyline?.(i + 1, points),
     );
   }
 }
@@ -1132,16 +1579,21 @@ function drawTerms(
   if (!chart.options.showTerms || !chart.options.terms?.length) {
     return;
   }
+  const paint = semanticTypographyPaint(style, "subdivisions.term.glyph", {
+    font: fontSymbols,
+    size: smallSymbolSize,
+    color: style.elementColors.termGlyph,
+  });
   for (let signIndex = 0; signIndex < chart.options.terms.length; signIndex += 1) {
     for (const segment of chart.options.terms[signIndex]) {
       // Ruler longitude + glyph resolved daemon-side.
       const midDeg = segment.rulerLon ?? signIndex * 30 + segment.size / 2;
       const pt = polar(center, ringset.rTermsPlanet, midDeg, asc);
-      draw.text([pt[0] - smallSymbolSize / 2, pt[1] - smallSymbolSize / 2], segment.rulerGlyph ?? "", {
-        fill: style.elementColors.termGlyph,
-        font: fontSymbols,
-        size: smallSymbolSize,
-      });
+      draw.text(
+        [pt[0] - paint.size / 2, pt[1] - paint.size / 2],
+        segment.rulerGlyph ?? "",
+        typographyTextOpts(paint),
+      );
     }
   }
 }
@@ -1227,17 +1679,81 @@ function drawDecans(
   if (!chart.options.showDecans || !chart.options.decans?.length) {
     return;
   }
+  const paint = semanticTypographyPaint(style, "subdivisions.decan.glyph", {
+    font: fontSymbols,
+    size: smallSymbolSize,
+    color: style.elementColors.decanGlyph,
+  });
   // Ruler longitude + glyph resolved daemon-side (ChartDecanRuler).
   for (const signDecan of chart.options.decans) {
     for (const ruler of signDecan.rulers ?? []) {
       const pt = polar(center, ringset.rDecansPlanet, ruler.rulerLon, asc);
-      draw.text([pt[0] - smallSymbolSize / 2, pt[1] - smallSymbolSize / 2], ruler.rulerGlyph, {
-        fill: style.elementColors.decanGlyph,
-        font: fontSymbols,
-        size: smallSymbolSize,
-      });
+      draw.text(
+        [pt[0] - paint.size / 2, pt[1] - paint.size / 2],
+        ruler.rulerGlyph,
+        typographyTextOpts(paint),
+      );
     }
   }
+}
+
+function layoutHouseName(
+  draw: TextMeasurer,
+  center: Pt,
+  radius: number,
+  asc: number,
+  chart: Chart,
+  houseIndex: number,
+  fontUi: string,
+  fontSize: number,
+  layoutUnit: number,
+  style: WheelRenderStyle,
+  classId: "houses.inner.label" | "houses.outer.label",
+): PositionedText {
+  const cusp = chart.houses.cusps[houseIndex];
+  const nextCusp = chart.houses.cusps[(houseIndex + 1) % 12];
+  const width = ((nextCusp - cusp + 360) % 360) || 30;
+  const pt = polar(center, radius, cusp + width / 2, asc);
+  const paint = semanticTypographyPaint(style, classId, {
+    font: fontUi,
+    size: fontSize,
+    color: isAngloWheel(chart)
+      ? style.elementColors.angloHouseLabel
+      : style.elementColors.houseLabel,
+  });
+  if (isAngloWheel(chart)) {
+    const text = String(houseIndex + 1);
+    const [w, h] = draw.textsize(text, typographyTextOpts(paint));
+    return {
+      x: pt[0] - w / 2,
+      y: pt[1] - h / 2,
+      w,
+      h,
+      text,
+      ...positionedTextPaint(paint),
+      classId,
+    };
+  }
+  let xOffset = layoutUnit * style.labels.houseClassicOffsetScale;
+  let yOffset = layoutUnit * style.labels.houseClassicOffsetScale;
+  if (houseIndex === 0 || houseIndex === 1) {
+    xOffset = 0;
+    yOffset = layoutUnit * style.labels.houseClassicOffsetScale;
+    if (houseIndex === 1) {
+      xOffset = layoutUnit * style.labels.houseSecondOffsetScale;
+    }
+  }
+  const text = HOUSE_GLYPHS_ROMAN[houseIndex];
+  const [w, h] = draw.textsize(text, typographyTextOpts(paint));
+  return {
+    x: pt[0] - xOffset,
+    y: pt[1] - yOffset,
+    w,
+    h,
+    text,
+    ...positionedTextPaint(paint),
+    classId,
+  };
 }
 
 function drawHouseNames(
@@ -1251,36 +1767,25 @@ function drawHouseNames(
   fontSize: number,
   layoutUnit: number,
   style: WheelRenderStyle,
+  classId: "houses.inner.label" | "houses.outer.label",
 ) {
+  void palette;
   for (let i = 0; i < 12; i++) {
-    const cusp = chart.houses.cusps[i];
-    const nextCusp = chart.houses.cusps[(i + 1) % 12];
-    const width = ((nextCusp - cusp + 360) % 360) || 30;
-    const pt = polar(center, ringset.rHouseName, cusp + width / 2, asc);
-    if (isAngloWheel(chart)) {
-      const label = String(i + 1);
-      const [labelWidth, labelHeight] = draw.textsize(label, { font: fontUi, size: fontSize });
-      draw.text([pt[0] - labelWidth / 2, pt[1] - labelHeight / 2], label, {
-        fill: style.elementColors.angloHouseLabel,
-        font: fontUi,
-        size: fontSize,
-      });
-      continue;
-    }
-    let xOffset = layoutUnit * style.labels.houseClassicOffsetScale;
-    let yOffset = layoutUnit * style.labels.houseClassicOffsetScale;
-    if (i === 0 || i === 1) {
-      xOffset = 0;
-      yOffset = layoutUnit * style.labels.houseClassicOffsetScale;
-      if (i === 1) {
-        xOffset = layoutUnit * style.labels.houseSecondOffsetScale;
-      }
-    }
-    draw.text([pt[0] - xOffset, pt[1] - yOffset], HOUSE_GLYPHS_ROMAN[i], {
-      fill: style.elementColors.houseLabel,
-      font: fontUi,
-      size: fontSize,
-    });
+    paintPositionedText(draw, [
+      layoutHouseName(
+        draw,
+        center,
+        ringset.rHouseName,
+        asc,
+        chart,
+        i,
+        fontUi,
+        fontSize,
+        layoutUnit,
+        style,
+        classId,
+      ),
+    ]);
   }
 }
 
@@ -1293,14 +1798,20 @@ function drawSigns(
   palette: ChartPalette,
   fontSymbols: string,
   signSize: number,
+  style: WheelRenderStyle,
 ) {
   for (let i = 0; i < 12; i++) {
     const pt = polar(center, ringset.rSign, i * 30 + 15, asc);
-    draw.text([pt[0] - signSize / 2, pt[1] - signSize / 2], signGlyph(i, chart.options.signVariant), {
-      fill: chart.options.signColors?.[i] ?? palette.signs,
+    const paint = semanticTypographyPaint(style, "zodiac.signGlyph", {
       font: fontSymbols,
       size: signSize,
+      color: chart.options.signColors?.[i] ?? palette.signs,
     });
+    draw.text(
+      [pt[0] - paint.size / 2, pt[1] - paint.size / 2],
+      signGlyph(i, chart.options.signVariant),
+      typographyTextOpts(paint),
+    );
   }
 }
 
@@ -1351,16 +1862,17 @@ function drawAngloCuspArrow(
   const baseRadius = ringset.rInner - ringset.r30 * arrows.angloBaseInsetScale;
   const left = polar(center, baseRadius, lon - arrows.angloHalfAngleDegrees, asc);
   const right = polar(center, baseRadius, lon + arrows.angloHalfAngleDegrees, asc);
-  const ctx = draw.ctx;
-  ctx.save();
-  ctx.fillStyle = color;
-  ctx.globalAlpha = semanticLinePaint(
+  const paint = semanticLinePaint(
     style,
     "angle",
     1,
     {},
     "angles.inner.arrowhead",
-  ).opacity ?? 1;
+  );
+  const ctx = draw.ctx;
+  ctx.save();
+  ctx.fillStyle = paint.fill ?? color;
+  ctx.globalAlpha = paint.opacity ?? 1;
   ctx.beginPath();
   ctx.moveTo(Math.round(apex[0]), Math.round(apex[1]));
   ctx.lineTo(Math.round(left[0]), Math.round(left[1]));
@@ -1379,7 +1891,6 @@ function drawAscMC(
   chartSize: number,
   palette: ChartPalette,
   style: WheelRenderStyle,
-  componentBounds?: Map<LayoutKey, Bounds[]>,
 ) {
   const width = isAngloWheel(chart)
     ? style.strokes.hairline
@@ -1391,21 +1902,12 @@ function drawAscMC(
       const isAscMc = index === 0 || index === 2;
       const sharedCusp =
         isAscMc && angleSharesHouseCusp(chart, index === 0 ? "__asc" : "__mc");
-      const anglePaint = {
-        fill: style.elementColors.angleRay,
-        ...semanticLinePaint(style, "angle" as const, style.strokes.angloStructural),
-      };
-      drawRoutedRadialLine(
-        draw,
-        center,
-        asc,
-        lon,
-        ringset.rBase,
-        ringset.rInner,
-        anglePaint,
-        angloDenseLabelLayout(chart) === "routed-cusps"
-          ? componentBounds
-          : undefined,
+      draw.line(
+        [polar(center, ringset.rBase, lon, asc), polar(center, ringset.rInner, lon, asc)],
+        {
+          fill: style.elementColors.angleRay,
+          ...semanticLinePaint(style, "angle" as const, style.strokes.angloStructural),
+        },
       );
       if (sharedCusp && angleArrowheadsVisible(chart)) {
         drawAngloCuspArrow(
@@ -1448,8 +1950,13 @@ function arrangeBodies(
   includeSharedAngles = true,
   includeHouseCuspRays = Boolean(chart.options.showHouses),
   outerTypography = false,
+  usePrimaryGlyphSize = false,
+  motionMarkerRadius?: number,
 ): Map<LayoutKey, number> {
-  const bodySize = outerTypography ? typography.outerSize : typography.bodySize;
+  const bodySize =
+    outerTypography && !usePrimaryGlyphSize
+      ? typography.outerSize
+      : typography.bodySize;
   const layoutUnit = outerTypography
     ? typography.outerLayoutUnit
     : typography.layoutUnit;
@@ -1492,53 +1999,121 @@ function arrangeBodies(
     const shiftedLon = entry.longitude + shift;
     const pt = polar(center, rPlanet, shiftedLon, asc);
     const glyph = layoutGlyph(chart, planets, entry.key);
-    const glyphSize = layoutGlyphSize(entry.key, bodySize, angleLabelSize);
-    const [w, h] = draw.textsize(glyph, {
-      font: layoutGlyphFont(chart, entry.key, fontSymbols, fontUi),
-      size: glyphSize,
-      weight:
-        entry.key === "__asc" || entry.key === "__mc"
-          ? style.typography.ratios.angleLabelWeight
-          : undefined,
-    });
+    const glyphSize = layoutGlyphSize(
+      entry.key,
+      bodySize,
+      angleLabelSize,
+      typography.syzygyScale,
+    );
     const angleLabel = entry.key === "__asc" || entry.key === "__mc";
+    const glyphPaint = semanticTypographyPaint(
+      style,
+      layoutGlyphClassId(entry.key, outerTypography),
+      {
+        font: layoutGlyphFont(chart, entry.key, fontSymbols, fontUi),
+        size: glyphSize,
+        weight:
+          angleLabel
+            ? style.typography.ratios.angleLabelWeight
+            : undefined,
+        color:
+          angleLabel
+            ? style.elementColors.angleLabel
+            : bodyColor(chart, planets, entry.key as BodyKey, style.palette),
+      },
+    );
+    const [w, h] = draw.textsize(
+      glyph,
+      typographyTextOpts(glyphPaint),
+    );
     const glyphRect = angleLabel
       ? { x: pt[0] - w / 2, y: pt[1] - h / 2, w, h }
-      : { x: pt[0] - glyphSize / 2, y: pt[1] - glyphSize / 2, w, h };
+      : {
+          x: pt[0] - glyphPaint.size / 2,
+          y: pt[1] - glyphPaint.size / 2,
+          w,
+          h,
+        };
     const position = style.typography.ratios.angloBodyPosition;
     const boxes = [glyphRect];
 
-    if (!anglo || !includePositionStacks) return remember(boxes);
+    if (!anglo) return remember(boxes);
     if (entry.key === "__asc" || entry.key === "__mc") {
       return remember(boxes);
     }
-    const bodyPosition = bodyDegMin(chart, planets, entry.key);
-    if (!bodyPosition) return remember(boxes);
-    const [degText, minText] = bodyPosition;
-    const positionRows = [
-      {
-        text: `${degText}°`,
-        radius: rPlanet - layoutUnit * position.degreeRadiusOffset,
-        font: fontUi,
-        size: typography.angloBodyPosition.degreeSize,
-      },
-      {
-        text: signGlyph(Math.floor(normalize(entry.longitude) / 30), chart.options.signVariant),
-        radius: rPlanet - layoutUnit * position.signRadiusOffset,
-        font: fontSymbols,
-        size: typography.angloBodyPosition.signSize,
-      },
-      {
-        text: minText,
-        radius: rPlanet - layoutUnit * position.minuteRadiusOffset,
-        font: fontUi,
-        size: typography.angloBodyPosition.minuteSize,
-      },
-    ];
-    for (const row of positionRows) {
-      const rowPt = polar(center, row.radius, shiftedLon, asc);
-      const [rowW, rowH] = draw.textsize(row.text, { font: row.font, size: row.size });
-      boxes.push({ x: rowPt[0] - rowW / 2, y: rowPt[1] - rowH / 2, w: rowW, h: rowH });
+    if (includePositionStacks) {
+      const bodyPosition = bodyDegMin(chart, planets, entry.key);
+      if (bodyPosition) {
+        const [degText, minText] = bodyPosition;
+        const positionRows = [
+          {
+            text: `${degText}°`,
+            radius: rPlanet - layoutUnit * position.degreeRadiusOffset,
+            font: fontUi,
+            size: typography.angloBodyPosition.degreeSize,
+            classId: "bodies.inner.position.degree" as const,
+          },
+          {
+            text: signGlyph(
+              Math.floor(normalize(entry.longitude) / 30),
+              chart.options.signVariant,
+            ),
+            radius: rPlanet - layoutUnit * position.signRadiusOffset,
+            font: fontSymbols,
+            size: typography.angloBodyPosition.signSize,
+            classId: "bodies.inner.position.sign" as const,
+          },
+          {
+            text: minText,
+            radius: rPlanet - layoutUnit * position.minuteRadiusOffset,
+            font: fontUi,
+            size: typography.angloBodyPosition.minuteSize,
+            classId: "bodies.inner.position.minute" as const,
+          },
+        ];
+        for (const row of positionRows) {
+          const rowPt = polar(center, row.radius, shiftedLon, asc);
+          const rowPaint = semanticTypographyPaint(style, row.classId, {
+            font: row.font,
+            size: row.size,
+            color: style.palette.positions,
+          });
+          const [rowW, rowH] = draw.textsize(
+            row.text,
+            typographyTextOpts(rowPaint),
+          );
+          boxes.push({
+            x: rowPt[0] - rowW / 2,
+            y: rowPt[1] - rowH / 2,
+            w: rowW,
+            h: rowH,
+          });
+        }
+      }
+    }
+    const marker =
+      entry.key === "__fortune" || entry.key === "__vertex" || entry.key === "__syzygy"
+        ? ""
+        : planets.get(entry.key)?.motion ?? "";
+    if (marker && motionMarkerRadius != null) {
+      boxes.push(
+        resolveMotionMarkerBounds(
+          draw,
+          center,
+          asc,
+          shiftedLon,
+          rPlanet,
+          motionMarkerRadius,
+          glyphSize,
+          marker,
+          fontUi,
+          outerTypography ? typography.outerMotionSize : typography.motionSize,
+          layoutUnit,
+          style,
+          outerTypography ? "bodies.outer.motion" : "bodies.inner.motion",
+          boxes.slice(1),
+        ),
+      );
     }
     return remember(boxes);
   };
@@ -1958,7 +2533,8 @@ function arrangeBodies(
     // Spacing may be necessary inside a dense group, but a shared translation
     // of that whole group is never semantic. Derive groups from collisions at
     // their true longitudes so independent bodies and clusters cannot pull one
-    // another away from their own ticks.
+    // another away from their own ticks. This graph is private to body
+    // recentering; structural paint reads only current painted geometry.
     const savedShifts = ordered.map((entry) => shifts.get(entry.key) ?? 0);
     ordered.forEach((entry) => shifts.set(entry.key, 0));
     const trueBoxes = ordered.map((_, idx) => boxesAt(idx));
@@ -2441,11 +3017,38 @@ function computeLabelYoffs(
     return yoffs;
   }
 
-  const [, degTextH] = draw.textsize("00", { font: fontUi, size: degreeSize });
+  const degreePaint = semanticTypographyPaint(
+    style,
+    "bodies.inner.position.degree",
+    {
+      font: fontUi,
+      size: degreeSize,
+      color: style.palette.positions,
+    },
+  );
+  const minutePaint = semanticTypographyPaint(
+    style,
+    "bodies.inner.position.minute",
+    {
+      font: fontUi,
+      size: minuteSize,
+      color: style.palette.positions,
+    },
+  );
+  const [, degTextH] = draw.textsize(
+    "00",
+    typographyTextOpts(degreePaint),
+  );
   const layerOffset = degTextH + style.collision.labelLayerGap;
 
-  const [degW, degH] = draw.textsize("29", { font: fontUi, size: degreeSize });
-  const [minW, minH] = draw.textsize("59", { font: fontUi, size: minuteSize });
+  const [degW, degH] = draw.textsize(
+    "29",
+    typographyTextOpts(degreePaint),
+  );
+  const [minW, minH] = draw.textsize(
+    "59",
+    typographyTextOpts(minutePaint),
+  );
   const labelW = Math.max(degW, minW) + style.collision.labelWidthPad;
   const labelH = Math.max(degH, minH) + style.collision.labelHeightPad;
 
@@ -2501,8 +3104,13 @@ function getBodyShifts(
   includeSharedAngles = true,
   includeHouseCuspRays = Boolean(chart.options.showHouses),
   outerTypography = false,
+  usePrimaryGlyphSize = false,
+  motionMarkerRadius?: number,
 ): Map<LayoutKey, number> {
-  const bodySize = outerTypography ? typography.outerSize : typography.bodySize;
+  const bodySize =
+    outerTypography && !usePrimaryGlyphSize
+      ? typography.outerSize
+      : typography.bodySize;
   const layoutUnit = outerTypography
     ? typography.outerLayoutUnit
     : typography.layoutUnit;
@@ -2514,10 +3122,19 @@ function getBodyShifts(
     fontUi,
     cacheNumber(bodySize),
     cacheNumber(layoutUnit),
+    cacheNumber(
+      outerTypography ? typography.outerMotionSize : typography.motionSize,
+    ),
+    cacheNumber(motionMarkerRadius ?? -1),
+    cacheNumber(style.labels.motionGapMin),
+    cacheNumber(style.labels.motionGapScale),
+    cacheNumber(style.labels.motionRadialNudgeScale),
+    cacheNumber(style.labels.motionTangentNudgeScale),
     includeAngles ? "angles:on" : "angles:off",
     includePositionStacks ? "stacks:on" : "stacks:off",
     includeSharedAngles ? "shared-angles:on" : "shared-angles:off",
     includeHouseCuspRays ? "cusp-rays:on" : "cusp-rays:off",
+    usePrimaryGlyphSize ? "primary-glyph-size:on" : "primary-glyph-size:off",
   ].join("|");
   let chartCache = bodyShiftCache.get(chart);
   if (!chartCache) {
@@ -2541,6 +3158,8 @@ function getBodyShifts(
     includeSharedAngles,
     includeHouseCuspRays,
     outerTypography,
+    usePrimaryGlyphSize,
+    motionMarkerRadius,
   );
   boundedMapSet(chartCache, key, shifts);
   return shifts;
@@ -2559,9 +3178,18 @@ function resolveMotionMarkerBounds(
   markerSize: number,
   layoutUnit: number,
   style: WheelRenderStyle,
+  classId: "bodies.inner.motion" | "bodies.outer.motion",
   positionBounds: Bounds[],
 ): Bounds {
-  const [markerW, markerH] = draw.textsize(marker, { font: fontUi, size: markerSize });
+  const paint = semanticTypographyPaint(style, classId, {
+    font: fontUi,
+    size: markerSize,
+    color: style.palette.positions,
+  });
+  const [markerW, markerH] = draw.textsize(
+    marker,
+    typographyTextOpts(paint),
+  );
   const gap = Math.max(style.labels.motionGapMin, layoutUnit * style.labels.motionGapScale);
   const glyphPt = polar(center, rPlanet, displayedLongitude, asc);
   let markerRadius = rRetr;
@@ -2633,7 +3261,11 @@ function measureAngloComponentBounds(
   const includeSharedAngles =
     !chart.options.showHouses && cusplessAscMcLabelsVisible(chart);
   const position = style.typography.ratios.angloBodyPosition;
-  const pad = Math.max(1, typography.layoutUnit * 0.02);
+  const snappedTextBounds = (box: Bounds): Bounds => ({
+    ...box,
+    x: Math.round(box.x),
+    y: Math.round(box.y),
+  });
 
   for (const key of layoutKeys(chart, includeAngles, includeSharedAngles)) {
     const lon = layoutLongitude(chart, planets, key);
@@ -2644,18 +3276,30 @@ function measureAngloComponentBounds(
       key,
       typography.bodySize,
       typography.angleLabelSize,
+      typography.syzygyScale,
     );
-    const weight =
-      key === "__asc" || key === "__mc"
-        ? style.typography.ratios.angleLabelWeight
-        : undefined;
-    const [glyphW, glyphH] = draw.textsize(glyph, {
-      font: layoutGlyphFont(chart, key, fontSymbols, fontUi),
-      size: glyphSize,
-      weight,
-    });
-    const glyphPt = polar(center, rPlanet, displayedLon, asc);
     const angleLabel = key === "__asc" || key === "__mc";
+    const glyphPaint = semanticTypographyPaint(
+      style,
+      layoutGlyphClassId(key, false),
+      {
+        font: layoutGlyphFont(chart, key, fontSymbols, fontUi),
+        size: glyphSize,
+        weight:
+          angleLabel
+            ? style.typography.ratios.angleLabelWeight
+            : undefined,
+        color:
+          angleLabel
+            ? style.elementColors.angleLabel
+            : bodyColor(chart, planets, key as BodyKey, style.palette),
+      },
+    );
+    const [glyphW, glyphH] = draw.textsize(
+      glyph,
+      typographyTextOpts(glyphPaint),
+    );
+    const glyphPt = polar(center, rPlanet, displayedLon, asc);
     const rawGlyphBounds = angleLabel
       ? {
           x: glyphPt[0] - glyphW / 2,
@@ -2664,17 +3308,13 @@ function measureAngloComponentBounds(
           h: glyphH,
         }
       : {
-          x: glyphPt[0] - glyphSize / 2,
-          y: glyphPt[1] - glyphSize / 2,
+          x: glyphPt[0] - glyphPaint.size / 2,
+          y: glyphPt[1] - glyphPaint.size / 2,
           w: glyphW,
           h: glyphH,
         };
-    const components: Bounds[] = [{
-      x: rawGlyphBounds.x - pad,
-      y: rawGlyphBounds.y - pad,
-      w: rawGlyphBounds.w + pad * 2,
-      h: rawGlyphBounds.h + pad * 2,
-    }];
+    const paintedGlyphBounds = snappedTextBounds(rawGlyphBounds);
+    const components: Bounds[] = [paintedGlyphBounds];
     const rawPositionBounds: Bounds[] = [];
 
     if (!angleLabel) {
@@ -2687,6 +3327,7 @@ function measureAngloComponentBounds(
             radius: rPlanet - typography.layoutUnit * position.degreeRadiusOffset,
             font: fontUi,
             size: typography.angloBodyPosition.degreeSize,
+            classId: "bodies.inner.position.degree" as const,
           },
           {
             text: signGlyph(
@@ -2696,20 +3337,27 @@ function measureAngloComponentBounds(
             radius: rPlanet - typography.layoutUnit * position.signRadiusOffset,
             font: fontSymbols,
             size: typography.angloBodyPosition.signSize,
+            classId: "bodies.inner.position.sign" as const,
           },
           {
             text: minText,
             radius: rPlanet - typography.layoutUnit * position.minuteRadiusOffset,
             font: fontUi,
             size: typography.angloBodyPosition.minuteSize,
+            classId: "bodies.inner.position.minute" as const,
           },
         ];
         for (const row of rows) {
           const rowPt = polar(center, row.radius, displayedLon, asc);
-          const [rowW, rowH] = draw.textsize(row.text, {
+          const rowPaint = semanticTypographyPaint(style, row.classId, {
             font: row.font,
             size: row.size,
+            color: style.palette.positions,
           });
+          const [rowW, rowH] = draw.textsize(
+            row.text,
+            typographyTextOpts(rowPaint),
+          );
           const rowBounds = {
             x: rowPt[0] - rowW / 2,
             y: rowPt[1] - rowH / 2,
@@ -2717,12 +3365,8 @@ function measureAngloComponentBounds(
             h: rowH,
           };
           rawPositionBounds.push(rowBounds);
-          components.push({
-            x: rowBounds.x - pad,
-            y: rowBounds.y - pad,
-            w: rowBounds.w + pad * 2,
-            h: rowBounds.h + pad * 2,
-          });
+          const paintedRowBounds = snappedTextBounds(rowBounds);
+          components.push(paintedRowBounds);
         }
       }
       const marker =
@@ -2743,14 +3387,11 @@ function measureAngloComponentBounds(
           typography.motionSize,
           typography.layoutUnit,
           style,
+          "bodies.inner.motion",
           rawPositionBounds,
         );
-        components.push({
-          x: markerBounds.x - pad,
-          y: markerBounds.y - pad,
-          w: markerBounds.w + pad * 2,
-          h: markerBounds.h + pad * 2,
-        });
+        const paintedMarkerBounds = snappedTextBounds(markerBounds);
+        components.push(paintedMarkerBounds);
       }
     }
     bounds.set(key, components);
@@ -2781,9 +3422,15 @@ function getBodyLayout(
     fontUi,
     cacheNumber(typography.bodySize),
     cacheNumber(typography.layoutUnit),
+    cacheNumber(typography.motionSize),
+    cacheNumber(typography.syzygyScale),
     cacheNumber(typography.angloBodyPosition.degreeSize),
     cacheNumber(typography.angloBodyPosition.signSize),
     cacheNumber(typography.angloBodyPosition.minuteSize),
+    cacheNumber(style.labels.motionGapMin),
+    cacheNumber(style.labels.motionGapScale),
+    cacheNumber(style.labels.motionRadialNudgeScale),
+    cacheNumber(style.labels.motionTangentNudgeScale),
     isCompactWheel(chart) ? "theme:compact" : isAngloWheel(chart) ? "theme:anglo" : "theme:classic",
     chart.options.showTerms ? "terms:on" : "terms:off",
     chart.options.showDecans ? "decans:on" : "decans:off",
@@ -2816,6 +3463,8 @@ function getBodyLayout(
         !chart.options.showHouses && cusplessAscMcLabelsVisible(chart),
         Boolean(chart.options.showHouses),
         false,
+        false,
+        rRetr,
       )
     : getBodyShifts(
         draw,
@@ -3036,7 +3685,13 @@ function drawAngloOuterAngleLines(
       [polar(center, ringset.r30, lon, asc), polar(center, ringset.rOuterLine, lon, asc)],
       {
         fill: style.elementColors.angleRay,
-        ...semanticLinePaint(style, "angle", style.strokes.angloStructural),
+        ...semanticLinePaint(
+          style,
+          "angle",
+          style.strokes.angloStructural,
+          {},
+          "angles.outer.ray",
+        ),
       },
     );
   }
@@ -3063,15 +3718,25 @@ function drawAngloOuterAngleLabels(
     const shift = shifts.get(key);
     if (shift == null) continue;
     const pt = polar(center, ringset.rOuterPlanet, lon + shift, asc);
-    const size = layoutGlyphSize(key, angleLabelSize, angleLabelSize);
+    const size = layoutGlyphSize(
+      key,
+      angleLabelSize,
+      angleLabelSize,
+      style.typography.ratios.syzygyScale,
+    );
     const weight = style.typography.ratios.angleLabelWeight;
-    const [w, h] = draw.textsize(label, { font: fontUi, size, weight });
-    draw.text([pt[0] - w / 2, pt[1] - h / 2], label, {
-      fill: style.elementColors.angleLabel,
+    const paint = semanticTypographyPaint(style, "angles.outer.label", {
       font: fontUi,
       size,
       weight,
+      color: style.elementColors.angleLabel,
     });
+    const [w, h] = draw.textsize(label, typographyTextOpts(paint));
+    draw.text(
+      [pt[0] - w / 2, pt[1] - h / 2],
+      label,
+      typographyTextOpts(paint),
+    );
   }
 }
 
@@ -3092,7 +3757,12 @@ export interface ClickAspectState {
   // shared transient wheel gate used by both the empty-band click and A.
   selectedBody: string | null;
   hideAll: boolean;
+  // M may reopen only inner-wheel minor aspects while hideAll continues to
+  // suppress every comparison/transit aspect.
+  minorOnly?: boolean;
 }
+
+const MINOR_ASPECT_TYPES = new Set([1, 2, 4, 7, 8, 9, 11]);
 
 // Build the exclusive aspect list when a body is selected — the force-show
 // path. Reads bodyAspects[selected] and keeps the entries the engine already
@@ -3129,7 +3799,11 @@ function resolveAspectsForDraw(
   clickState: ClickAspectState | undefined,
 ): ChartAspect[] | null {
   const flags = chart.clickAspectFlags;
-  if (clickState?.hideAll) return null; // shared A/click gate: hide ALL aspects
+  if (clickState?.hideAll) {
+    return clickState.minorOnly
+      ? chart.aspects.filter((aspect) => MINOR_ASPECT_TYPES.has(aspect.type))
+      : null;
+  }
   // Gate the whole behavior on exclusiveOnClick. When OFF, normal behavior.
   if (!clickState || !flags?.exclusiveOnClick) {
     return chart.aspects;
@@ -3286,12 +3960,14 @@ function aspectLineStyle(
 ): { fill: string; width: number; dash?: number[]; opacity?: number } {
   const fill = palette.aspects[aspect.type] ?? palette.frame;
   const aspects = style.strokes.aspects;
+  const anglo = isAngloWheel(chart);
+  const standardWidth = anglo ? aspects.angloWidth : aspects.classicWidth;
   let base: { width: number; dash?: number[]; opacity?: number };
   if (chart.options.aspectThicknessMode || chart.options.aspectOpacityMode) {
     const maxOrb = Number(aspect.maxOrb ?? 0);
     if (maxOrb > 0) {
       const orbRatio = Math.min(Math.max(Number(aspect.orb ?? 0) / maxOrb, 0), 1);
-      if (isAngloWheel(chart)) {
+      if (anglo) {
         base = {
           width: chart.options.aspectThicknessMode
             ? aspects.angloThicknessMin + aspects.angloThicknessSpan * (1 - orbRatio)
@@ -3316,29 +3992,32 @@ function aspectLineStyle(
     } else {
       base = {
         width: chart.options.aspectThicknessMode
-          ? isAngloWheel(chart)
+          ? anglo
             ? aspects.angloThicknessNoOrb
             : aspects.classicThicknessNoOrb
-          : isAngloWheel(chart)
-            ? aspects.angloWidth
-            : aspects.classicWidth,
+          : standardWidth,
         opacity: 1,
       };
     }
   } else {
     base = {
-      width: isAngloWheel(chart) ? aspects.angloWidth : aspects.classicWidth,
+      width: standardWidth,
       dash: aspect.exact
         ? undefined
-        : [...(isAngloWheel(chart) ? aspects.angloDash : aspects.classicDash)],
+        : [...(anglo ? aspects.angloDash : aspects.classicDash)],
     };
   }
+  const themed = semanticLinePaint(style, "aspect", standardWidth, {
+    dash: base.dash,
+    opacity: base.opacity,
+  }, authoringClass);
+  const thicknessScale = chart.options.aspectThicknessMode && standardWidth > 0
+    ? base.width / standardWidth
+    : 1;
   return {
     fill,
-    ...semanticLinePaint(style, "aspect", base.width, {
-      dash: base.dash,
-      opacity: base.opacity,
-    }, authoringClass),
+    ...themed,
+    width: themed.width * thicknessScale,
   };
 }
 
@@ -3376,6 +4055,7 @@ function drawAspectSymbols(
   fontSize: number,
   offset: number,
   aspects: ChartAspect[],
+  style: WheelRenderStyle,
 ) {
   const planets = planetById(chart);
   for (const aspect of aspects) {
@@ -3388,19 +4068,150 @@ function drawAspectSymbols(
     if (!p1 || !p2) {
       continue;
     }
+    const paint = semanticTypographyPaint(style, "aspects.primary.glyph", {
+      font: fontSymbols,
+      size: fontSize,
+      color: palette.aspects[aspect.type] ?? palette.frame,
+    });
     draw.text(
       [
         (p1[0] + p2[0]) / 2 - offset,
         (p1[1] + p2[1]) / 2 - offset,
       ],
       glyph,
-      {
-        fill: palette.aspects[aspect.type] ?? palette.frame,
-        font: fontSymbols,
-        size: fontSize,
-      },
+      typographyTextOpts(paint),
     );
   }
+}
+
+type PositionClassIds = Readonly<{
+  degree: WheelAuthoringTypographyClass;
+  sign: WheelAuthoringTypographyClass;
+  minute: WheelAuthoringTypographyClass;
+}>;
+
+function semanticTypographyPaint(
+  style: WheelRenderStyle,
+  classId: WheelAuthoringTypographyClass,
+  defaults: Readonly<{
+    font: string;
+    size: number;
+    color: string;
+    weight?: number;
+    style?: string;
+    tracking?: number;
+    opacity?: number;
+  }>,
+): ResolvedWheelTypographyPaint {
+  return resolveWheelTypographyPaint(
+    style,
+    style.authoringTargetProfile,
+    classId,
+    style.authoringTargetRadius,
+    defaults,
+  );
+}
+
+function typographyTextOpts(
+  paint: ResolvedWheelTypographyPaint,
+): TextOpts {
+  return {
+    fill: paint.color,
+    font: paint.font,
+    size: paint.size,
+    weight: paint.weight,
+    style: paint.style,
+    tracking: paint.tracking,
+    opacity: paint.opacity,
+  };
+}
+
+function positionedTextPaint(
+  paint: ResolvedWheelTypographyPaint,
+): Pick<
+  PositionedText,
+  "fill" | "font" | "size" | "weight" | "style" | "tracking" | "opacity"
+> {
+  return {
+    fill: paint.color,
+    font: paint.font,
+    size: paint.size,
+    weight: paint.weight,
+    style: paint.style,
+    tracking: paint.tracking,
+    opacity: paint.opacity,
+  };
+}
+
+function paintPositionedText(draw: CanvasDraw, components: readonly PositionedText[]): void {
+  for (const component of components) {
+    draw.text([component.x, component.y], component.text, {
+      fill: component.fill,
+      font: component.font,
+      size: component.size,
+      weight: component.weight,
+      style: component.style,
+      tracking: component.tracking,
+      opacity: component.opacity,
+    });
+  }
+}
+
+function layoutDegMinPair(
+  draw: TextMeasurer,
+  x: number,
+  y: number,
+  degText: string,
+  minText: string,
+  fill: string,
+  fontUi: string,
+  degSize: number,
+  minSize: number,
+  classIds: Pick<PositionClassIds, "degree" | "minute">,
+  style: WheelRenderStyle,
+): PositionedText[] {
+  const degreePaint = semanticTypographyPaint(style, classIds.degree, {
+    font: fontUi,
+    size: degSize,
+    color: fill,
+  });
+  const minutePaint = semanticTypographyPaint(style, classIds.minute, {
+    font: fontUi,
+    size: minSize,
+    color: fill,
+  });
+  const [degWidth, degHeight] = draw.textsize(
+    degText,
+    typographyTextOpts(degreePaint),
+  );
+  const [minWidth, minHeight] = draw.textsize(
+    minText,
+    typographyTextOpts(minutePaint),
+  );
+  // wx (graphchart.py:2215-2218, restored in commit 4b7bbaa) centers the
+  // degree text around x and butts the minute text directly after — no gap.
+  const xDeg = x - degWidth / 2;
+  const yDeg = y - degHeight / 2;
+  return [
+    {
+      x: xDeg,
+      y: yDeg,
+      w: degWidth,
+      h: degHeight,
+      text: degText,
+      ...positionedTextPaint(degreePaint),
+      classId: classIds.degree,
+    },
+    {
+      x: xDeg + degWidth,
+      y: yDeg,
+      w: minWidth,
+      h: minHeight,
+      text: minText,
+      ...positionedTextPaint(minutePaint),
+      classId: classIds.minute,
+    },
+  ];
 }
 
 function drawDegMinPair(
@@ -3413,24 +4224,91 @@ function drawDegMinPair(
   fontUi: string,
   degSize: number,
   minSize: number,
+  classIds: Pick<PositionClassIds, "degree" | "minute">,
+  style: WheelRenderStyle,
 ): Bounds {
-  const [degWidth, degHeight] = draw.textsize(degText, { font: fontUi, size: degSize });
-  const [minWidth, minHeight] = draw.textsize(minText, { font: fontUi, size: minSize });
-  // wx (graphchart.py:2215-2218, restored in commit 4b7bbaa) centers the
-  // degree text around x and butts the minute text directly after — no gap.
-  const xDeg = x - degWidth / 2;
-  const yDeg = y - degHeight / 2;
-  draw.text([xDeg, yDeg], degText, {
-    fill: palette.positions,
+  const components = layoutDegMinPair(
+    draw,
+    x,
+    y,
+    degText,
+    minText,
+    palette.positions,
+    fontUi,
+    degSize,
+    minSize,
+    classIds,
+    style,
+  );
+  paintPositionedText(draw, components);
+  const [degree, minute] = components;
+  return {
+    x: degree.x,
+    y: degree.y,
+    w: degree.w + minute.w,
+    h: Math.max(degree.h, minute.h),
+  };
+}
+
+function layoutDegMinStack(
+  draw: TextMeasurer,
+  center: Pt,
+  degRadius: number,
+  minRadius: number,
+  lon: number,
+  asc: number,
+  yoff: number,
+  degText: string,
+  minText: string,
+  fill: string,
+  fontUi: string,
+  degSize: number,
+  minSize: number,
+  classIds: Pick<PositionClassIds, "degree" | "minute">,
+  style: WheelRenderStyle,
+): PositionedText[] {
+  const degLabel = `${degText}°`;
+  const minLabel = `${minText}'`;
+  const degPt = polar(center, degRadius - yoff, lon, asc);
+  const degreePaint = semanticTypographyPaint(style, classIds.degree, {
     font: fontUi,
     size: degSize,
+    color: fill,
   });
-  draw.text([xDeg + degWidth, yDeg], minText, {
-    fill: palette.positions,
+  const minutePaint = semanticTypographyPaint(style, classIds.minute, {
     font: fontUi,
     size: minSize,
+    color: fill,
   });
-  return { x: xDeg, y: yDeg, w: degWidth + minWidth, h: Math.max(degHeight, minHeight) };
+  const [degWidth, degHeight] = draw.textsize(
+    degLabel,
+    typographyTextOpts(degreePaint),
+  );
+  const minPt = polar(center, minRadius - yoff, lon, asc);
+  const [minWidth, minHeight] = draw.textsize(
+    minLabel,
+    typographyTextOpts(minutePaint),
+  );
+  return [
+    {
+      x: degPt[0] - degWidth / 2,
+      y: degPt[1] - degHeight / 2,
+      w: degWidth,
+      h: degHeight,
+      text: degLabel,
+      ...positionedTextPaint(degreePaint),
+      classId: classIds.degree,
+    },
+    {
+      x: minPt[0] - minWidth / 2,
+      y: minPt[1] - minHeight / 2,
+      w: minWidth,
+      h: minHeight,
+      text: minLabel,
+      ...positionedTextPaint(minutePaint),
+      classId: classIds.minute,
+    },
+  ];
 }
 
 function drawDegMinStack(
@@ -3447,28 +4325,104 @@ function drawDegMinStack(
   fontUi: string,
   degSize: number,
   minSize: number,
+  classIds: Pick<PositionClassIds, "degree" | "minute">,
+  style: WheelRenderStyle,
 ): Bounds[] {
-  const degLabel = `${degText}°`;
-  const minLabel = `${minText}'`;
-  const degPt = polar(center, degRadius - yoff, lon, asc);
-  const [degWidth, degHeight] = draw.textsize(degLabel, { font: fontUi, size: degSize });
-  draw.text([degPt[0] - degWidth / 2, degPt[1] - degHeight / 2], degLabel, {
-    fill: palette.positions,
-    font: fontUi,
-    size: degSize,
-  });
+  const components = layoutDegMinStack(
+    draw,
+    center,
+    degRadius,
+    minRadius,
+    lon,
+    asc,
+    yoff,
+    degText,
+    minText,
+    palette.positions,
+    fontUi,
+    degSize,
+    minSize,
+    classIds,
+    style,
+  );
+  paintPositionedText(draw, components);
+  return components;
+}
 
-  const minPt = polar(center, minRadius - yoff, lon, asc);
-  const [minWidth, minHeight] = draw.textsize(minLabel, { font: fontUi, size: minSize });
-  draw.text([minPt[0] - minWidth / 2, minPt[1] - minHeight / 2], minLabel, {
-    fill: palette.positions,
-    font: fontUi,
-    size: minSize,
-  });
-  return [
-    { x: degPt[0] - degWidth / 2, y: degPt[1] - degHeight / 2, w: degWidth, h: degHeight },
-    { x: minPt[0] - minWidth / 2, y: minPt[1] - minHeight / 2, w: minWidth, h: minHeight },
+function layoutAngloBodyPosition(
+  draw: TextMeasurer,
+  center: Pt,
+  ringset: RingSet,
+  trueLon: number,
+  shiftedLon: number,
+  asc: number,
+  yoff: number,
+  degText: string,
+  minText: string,
+  chart: Chart,
+  palette: ChartPalette,
+  fontUi: string,
+  fontSymbols: string,
+  typography: ResolvedWheelTypographyMetrics,
+  style: WheelRenderStyle,
+): PositionedText[] {
+  const position = style.typography.ratios.angloBodyPosition;
+  const sizes = typography.angloBodyPosition;
+  const signIndex = Math.floor(normalize(trueLon) / 30);
+  const rows: Array<{
+    text: string;
+    radius: number;
+    font: string;
+    size: number;
+    fill: string;
+    classId: WheelAuthoringTypographyClass;
+    signIndex?: number;
+  }> = [
+    {
+      text: `${degText}°`,
+      radius: ringset.rPlanet - typography.layoutUnit * position.degreeRadiusOffset - yoff,
+      font: fontUi,
+      size: sizes.degreeSize,
+      fill: palette.positions,
+      classId: "bodies.inner.position.degree" as const,
+    },
+    {
+      text: signGlyph(signIndex, chart.options.signVariant),
+      radius: ringset.rPlanet - typography.layoutUnit * position.signRadiusOffset - yoff,
+      font: fontSymbols,
+      size: sizes.signSize,
+      fill: chart.options.signColors?.[signIndex] ?? palette.signs,
+      classId: "bodies.inner.position.sign" as const,
+      signIndex,
+    },
+    {
+      text: minText,
+      radius: ringset.rPlanet - typography.layoutUnit * position.minuteRadiusOffset - yoff,
+      font: fontUi,
+      size: sizes.minuteSize,
+      fill: palette.positions,
+      classId: "bodies.inner.position.minute" as const,
+    },
   ];
+  return rows.map((row) => {
+    const paint = semanticTypographyPaint(style, row.classId, {
+      font: row.font,
+      size: row.size,
+      color: row.fill,
+    });
+    const pt = polar(center, row.radius, shiftedLon, asc);
+    const [w, h] = draw.textsize(row.text, typographyTextOpts(paint));
+    return {
+      x: pt[0] - w / 2,
+      y: pt[1] - h / 2,
+      w,
+      h,
+      text: row.text,
+      ...positionedTextPaint(paint),
+      classId: row.classId,
+      ...(row.signIndex != null ? { signIndex: row.signIndex } : {}),
+    };
+  });
 }
 
 function drawAngloBodyPosition(
@@ -3488,43 +4442,121 @@ function drawAngloBodyPosition(
   typography: ResolvedWheelTypographyMetrics,
   style: WheelRenderStyle,
 ): Bounds[] {
-  const position = style.typography.ratios.angloBodyPosition;
-  const sizes = typography.angloBodyPosition;
-  const rows = [
+  const components = layoutAngloBodyPosition(
+    draw,
+    center,
+    ringset,
+    trueLon,
+    shiftedLon,
+    asc,
+    yoff,
+    degText,
+    minText,
+    chart,
+    palette,
+    fontUi,
+    fontSymbols,
+    typography,
+    style,
+  );
+  paintPositionedText(draw, components);
+  return components;
+}
+
+function layoutAngloLongitudeRun(
+  draw: TextMeasurer,
+  center: Pt,
+  radius: number,
+  lon: number,
+  asc: number,
+  degText: string,
+  minText: string,
+  chart: Chart,
+  palette: ChartPalette,
+  fontUi: string,
+  fontSymbols: string,
+  typographySizes: Readonly<{
+    degreeSize: number;
+    signSize: number;
+    minuteSize: number;
+    gap: number;
+  }>,
+  classIds: PositionClassIds,
+  style: WheelRenderStyle,
+): PositionedText[] {
+  const signIndex = Math.floor(normalize(lon) / 30);
+  const parts: Array<{
+    text: string;
+    font: string;
+    size: number;
+    fill: string;
+    classId: WheelAuthoringTypographyClass;
+    signIndex?: number;
+  }> = [
     {
       text: `${degText}°`,
-      radius: ringset.rPlanet - typography.layoutUnit * position.degreeRadiusOffset - yoff,
       font: fontUi,
-      size: sizes.degreeSize,
+      size: typographySizes.degreeSize,
       fill: palette.positions,
+      classId: classIds.degree,
     },
     {
-      text: signGlyph(Math.floor(normalize(trueLon) / 30), chart.options.signVariant),
-      radius: ringset.rPlanet - typography.layoutUnit * position.signRadiusOffset - yoff,
+      text: signGlyph(signIndex, chart.options.signVariant),
       font: fontSymbols,
-      size: sizes.signSize,
-      fill: chart.options.signColors?.[Math.floor(normalize(trueLon) / 30)] ?? palette.signs,
+      size: typographySizes.signSize,
+      fill: chart.options.signColors?.[signIndex] ?? palette.signs,
+      classId: classIds.sign,
+      signIndex,
     },
     {
       text: minText,
-      radius: ringset.rPlanet - typography.layoutUnit * position.minuteRadiusOffset - yoff,
       font: fontUi,
-      size: sizes.minuteSize,
+      size: typographySizes.minuteSize,
       fill: palette.positions,
+      classId: classIds.minute,
     },
   ];
-  const bounds: Bounds[] = [];
-  for (const row of rows) {
-    const pt = polar(center, row.radius, shiftedLon, asc);
-    const [w, h] = draw.textsize(row.text, { font: row.font, size: row.size });
-    draw.text([pt[0] - w / 2, pt[1] - h / 2], row.text, {
-      fill: row.fill,
-      font: row.font,
-      size: row.size,
+  const gap = typographySizes.gap;
+  const paints = parts.map((part) =>
+    semanticTypographyPaint(style, part.classId, {
+      font: part.font,
+      size: part.size,
+      color: part.fill,
+    })
+  );
+  const measurements = parts.map((part, index) =>
+    draw.textsize(part.text, typographyTextOpts(paints[index]))
+  );
+  const pt = polar(center, radius, lon, asc);
+  const radialX = (pt[0] - center[0]) / Math.max(1, radius);
+  const radialY = (pt[1] - center[1]) / Math.max(1, radius);
+  const tangentX = -radialY;
+  const tangentY = radialX;
+  const extents = measurements.map(
+    ([w, h]) => (Math.abs(tangentX) * w + Math.abs(tangentY) * h) / 2,
+  );
+  const totalSpan = extents.reduce((sum, extent) => sum + extent * 2, 0) + gap * (parts.length - 1);
+  let cursor = -totalSpan / 2;
+  const components: PositionedText[] = [];
+  for (let i = 0; i < parts.length; i += 1) {
+    const part = parts[i];
+    const [w, h] = measurements[i];
+    const centerOffset = cursor + extents[i];
+    const x = pt[0] + tangentX * centerOffset;
+    const y = pt[1] + tangentY * centerOffset;
+    components.push({
+      x: x - w / 2,
+      y: y - h / 2,
+      w,
+      h,
+      text: part.text,
+      ...positionedTextPaint(paints[i]),
+      classId: part.classId,
+      ...(part.signIndex != null ? { signIndex: part.signIndex } : {}),
     });
-    bounds.push({ x: pt[0] - w / 2, y: pt[1] - h / 2, w, h });
+    cursor += extents[i] * 2 + gap;
   }
-  return bounds;
+  return components;
 }
 
 function drawAngloLongitudeRun(
@@ -3545,45 +4577,27 @@ function drawAngloLongitudeRun(
     minuteSize: number;
     gap: number;
   }>,
-) {
-  const signIndex = Math.floor(normalize(lon) / 30);
-  const parts = [
-    { text: `${degText}°`, font: fontUi, size: typographySizes.degreeSize, fill: palette.positions },
-    {
-      text: signGlyph(signIndex, chart.options.signVariant),
-      font: fontSymbols,
-      size: typographySizes.signSize,
-      fill: chart.options.signColors?.[signIndex] ?? palette.signs,
-    },
-    { text: minText, font: fontUi, size: typographySizes.minuteSize, fill: palette.positions },
-  ];
-  const gap = typographySizes.gap;
-  const measurements = parts.map((part) =>
-    draw.textsize(part.text, { font: part.font, size: part.size })
+  classIds: PositionClassIds,
+  style: WheelRenderStyle,
+): Bounds[] {
+  const components = layoutAngloLongitudeRun(
+    draw,
+    center,
+    radius,
+    lon,
+    asc,
+    degText,
+    minText,
+    chart,
+    palette,
+    fontUi,
+    fontSymbols,
+    typographySizes,
+    classIds,
+    style,
   );
-  const pt = polar(center, radius, lon, asc);
-  const radialX = (pt[0] - center[0]) / Math.max(1, radius);
-  const radialY = (pt[1] - center[1]) / Math.max(1, radius);
-  const tangentX = -radialY;
-  const tangentY = radialX;
-  const extents = measurements.map(
-    ([w, h]) => (Math.abs(tangentX) * w + Math.abs(tangentY) * h) / 2,
-  );
-  const totalSpan = extents.reduce((sum, extent) => sum + extent * 2, 0) + gap * (parts.length - 1);
-  let cursor = -totalSpan / 2;
-  for (let i = 0; i < parts.length; i += 1) {
-    const part = parts[i];
-    const [w, h] = measurements[i];
-    const centerOffset = cursor + extents[i];
-    const x = pt[0] + tangentX * centerOffset;
-    const y = pt[1] + tangentY * centerOffset;
-    draw.text([x - w / 2, y - h / 2], part.text, {
-      fill: part.fill,
-      font: part.font,
-      size: part.size,
-    });
-    cursor += extents[i] * 2 + gap;
-  }
+  paintPositionedText(draw, components);
+  return components;
 }
 
 function drawPlanets(
@@ -3600,8 +4614,12 @@ function drawPlanets(
   typography: ResolvedWheelTypographyMetrics,
   style: WheelRenderStyle,
   outer = false,
+  usePrimaryGlyphSize = false,
 ) {
-  const symbolSize = outer ? typography.outerSize : typography.bodySize;
+  const symbolSize =
+    outer && !usePrimaryGlyphSize
+      ? typography.outerSize
+      : typography.bodySize;
   const layoutUnit = outer
     ? typography.outerLayoutUnit
     : typography.layoutUnit;
@@ -3616,12 +4634,21 @@ function drawPlanets(
     }
     const shift = shifts.get(key) ?? 0;
     const pt = polar(center, ringset.rPlanet, lon + shift, asc);
-    const glyphSize = bodyGlyphSize(symbolSize);
-    draw.text([pt[0] - glyphSize / 2, pt[1] - glyphSize / 2], bodyGlyph(chart, planets, key), {
-      fill: bodyColor(chart, planets, key, palette),
-      font: bodyGlyphFont(chart, key, fontSymbols, fontUi),
-      size: glyphSize,
-    });
+    const glyphSize = bodyGlyphSize(key, symbolSize, typography.syzygyScale);
+    const glyphPaint = semanticTypographyPaint(
+      style,
+      bodyGlyphClassId(key, outer),
+      {
+        font: bodyGlyphFont(chart, key, fontSymbols, fontUi),
+        size: glyphSize,
+        color: bodyColor(chart, planets, key, palette),
+      },
+    );
+    draw.text(
+      [pt[0] - glyphPaint.size / 2, pt[1] - glyphPaint.size / 2],
+      bodyGlyph(chart, planets, key),
+      typographyTextOpts(glyphPaint),
+    );
 
     const positionBounds: Bounds[] = [];
     if (!outer) {
@@ -3664,6 +4691,11 @@ function drawPlanets(
             fontUi,
             typography.bodyPosition.degreeSize,
             typography.bodyPosition.minuteSize,
+            {
+              degree: "bodies.inner.position.degree",
+              minute: "bodies.inner.position.minute",
+            },
+            style,
           ));
         } else if (chart.options.showPositions) {
           const posPt = polar(center, ringset.rPos - yoff, lon + shift, asc);
@@ -3678,6 +4710,11 @@ function drawPlanets(
               fontUi,
               typography.bodyPosition.degreeSize,
               typography.bodyPosition.minuteSize,
+              {
+                degree: "bodies.inner.position.degree",
+                minute: "bodies.inner.position.minute",
+              },
+              style,
             ),
           );
         }
@@ -3697,19 +4734,29 @@ function drawPlanets(
         lon + shift,
         ringset.rPlanet,
         ringset.rRetr,
-        glyphSize,
+        glyphPaint.size,
         marker,
         fontUi,
         motionSize,
         layoutUnit,
         style,
+        outer ? "bodies.outer.motion" : "bodies.inner.motion",
         positionBounds,
       );
-      draw.text([markerBounds.x, markerBounds.y], marker, {
-        fill: bodyColor(chart, planets, key, palette),
-        font: fontUi,
-        size: motionSize,
-      });
+      const motionPaint = semanticTypographyPaint(
+        style,
+        outer ? "bodies.outer.motion" : "bodies.inner.motion",
+        {
+          font: fontUi,
+          size: motionSize,
+          color: bodyColor(chart, planets, key, palette),
+        },
+      );
+      draw.text(
+        [markerBounds.x, markerBounds.y],
+        marker,
+        typographyTextOpts(motionPaint),
+      );
     }
   }
 }
@@ -3748,19 +4795,24 @@ function drawAscMCPos(
           layoutKey,
           typography.bodySize,
           typography.angleLabelSize,
+          typography.syzygyScale,
         );
         const labelWeight = style.typography.ratios.angleLabelWeight;
-        const [labelWidth, labelHeight] = draw.textsize(angleLabel, {
+        const paint = semanticTypographyPaint(style, "angles.inner.label", {
           font: fontUi,
           size: labelSize,
           weight: labelWeight,
+          color: style.elementColors.angleLabel,
         });
-        draw.text([labelPt[0] - labelWidth / 2, labelPt[1] - labelHeight / 2], angleLabel, {
-          fill: style.elementColors.angleLabel,
-          font: fontUi,
-          size: labelSize,
-          weight: labelWeight,
-        });
+        const [labelWidth, labelHeight] = draw.textsize(
+          angleLabel,
+          typographyTextOpts(paint),
+        );
+        draw.text(
+          [labelPt[0] - labelWidth / 2, labelPt[1] - labelHeight / 2],
+          angleLabel,
+          typographyTextOpts(paint),
+        );
       }
       drawAngloLongitudeRun(
         draw,
@@ -3775,6 +4827,12 @@ function drawAscMCPos(
         fontUi,
         fontSymbols,
         typography.angloAnglePosition,
+        {
+          degree: "angles.inner.position.degree",
+          sign: "angles.inner.position.sign",
+          minute: "angles.inner.position.minute",
+        },
+        style,
       );
     } else if (isCompactWheel(chart) && ringset.rPosHousesMin) {
       drawDegMinStack(
@@ -3791,6 +4849,11 @@ function drawAscMCPos(
         fontUi,
         typography.anglePosition.degreeSize,
         typography.anglePosition.minuteSize,
+        {
+          degree: "angles.inner.position.degree",
+          minute: "angles.inner.position.minute",
+        },
+        style,
       );
     } else {
       const pt = polar(center, ringset.rPosAscMC, lon, asc);
@@ -3804,6 +4867,11 @@ function drawAscMCPos(
         fontUi,
         typography.anglePosition.degreeSize,
         typography.anglePosition.minuteSize,
+        {
+          degree: "angles.inner.position.degree",
+          minute: "angles.inner.position.minute",
+        },
+        style,
       );
     }
   }
@@ -3819,6 +4887,7 @@ function drawHousePos(
   fontUi: string,
   fontSymbols: string,
   typography: ResolvedWheelTypographyMetrics,
+  style: WheelRenderStyle,
 ) {
   const skipAsc = sameLongitude(chart.houses.cusps[0], chart.angles.asc);
   const skipMc = sameLongitude(chart.houses.cusps[9], chart.angles.mc);
@@ -3854,6 +4923,12 @@ function drawHousePos(
         fontUi,
         fontSymbols,
         typography.angloHousePosition,
+        {
+          degree: "houses.inner.position.degree",
+          sign: "houses.inner.position.sign",
+          minute: "houses.inner.position.minute",
+        },
+        style,
       );
     } else if (isCompactWheel(chart) && ringset.rPosHousesMin) {
       drawDegMinStack(
@@ -3870,6 +4945,11 @@ function drawHousePos(
         fontUi,
         typography.housePosition.degreeSize,
         typography.housePosition.minuteSize,
+        {
+          degree: "houses.inner.position.degree",
+          minute: "houses.inner.position.minute",
+        },
+        style,
       );
     } else {
       const pt = polar(center, ringset.rPosHouses, lon, asc);
@@ -3883,6 +4963,11 @@ function drawHousePos(
         fontUi,
         typography.housePosition.degreeSize,
         typography.housePosition.minuteSize,
+        {
+          degree: "houses.inner.position.degree",
+          minute: "houses.inner.position.minute",
+        },
+        style,
       );
     }
   }
@@ -3896,22 +4981,27 @@ function drawOuterHouses(
   chart: Chart,
   palette: ChartPalette,
   style: WheelRenderStyle,
+  restrainedAngloComparison = false,
 ) {
-  if (!ringset.rOuterMax) {
+  const outerRadius = restrainedAngloComparison
+    ? ringset.rOuterHouse
+    : ringset.rOuterHouseName ?? ringset.rOuterASCMC ?? ringset.rOuterArrow;
+  if (!outerRadius) {
     return;
   }
   for (let i = 0; i < 12; i++) {
     const cusp = chart.houses.cusps[i];
-    const p1 = polar(
-      center,
-      isAngloWheel(chart) ? ringset.rOuterHouse ?? ringset.r30 : ringset.r30,
-      cusp,
-      asc,
-    );
-    const p2 = polar(center, ringset.rOuterMax, cusp, asc);
+    const p1 = polar(center, ringset.r30, cusp, asc);
+    const p2 = polar(center, outerRadius, cusp, asc);
     draw.line([p1, p2], {
       fill: style.elementColors.houseCusp,
-      ...semanticLinePaint(style, "houseCusp", style.strokes.hairline),
+      ...semanticLinePaint(
+        style,
+        "houseCusp",
+        style.strokes.hairline,
+        {},
+        "houses.outer.cusp",
+      ),
     });
   }
 }
@@ -4068,6 +5158,7 @@ function drawInterChartAspectSymbols(
   fontSymbols: string,
   fontSize: number,
   offset: number,
+  style: WheelRenderStyle,
 ) {
   const primaryPlanets = planetById(primaryChart);
   const comparisonPlanets = planetById(comparisonChart);
@@ -4081,61 +5172,161 @@ function drawInterChartAspectSymbols(
     if (!p1 || !p2) {
       continue;
     }
+    const paint = semanticTypographyPaint(style, "aspects.interchart.glyph", {
+      font: fontSymbols,
+      size: fontSize,
+      color: palette.aspects[aspect.type] ?? palette.frame,
+    });
     draw.text(
       [
         (p1[0] + p2[0]) / 2 - offset,
         (p1[1] + p2[1]) / 2 - offset,
       ],
       glyph,
-      {
-        fill: palette.aspects[aspect.type] ?? palette.frame,
-        font: fontSymbols,
-        size: fontSize,
-      },
+      typographyTextOpts(paint),
     );
   }
+}
+
+type OuterLabelRun = {
+  text: string;
+  font: "ui" | "symbols";
+  fontFamily: string;
+  color: string;
+  size: number;
+  weight: number;
+  style: string;
+  tracking: number;
+  opacity: number;
+  classId?: WheelAuthoringTypographyClass;
+};
+
+function legacyOuterRingItemFontSize(
+  item: OuterRingItem,
+  typography: ResolvedWheelTypographyMetrics,
+): number {
+  // graphchart.drawAntis draws antiscia / contra-antiscia / dodecatemoria
+  // projected glyphs with fntMorinus/fntAntisText at full symbolSize
+  // (graphchart.py:437-449, 4619-4691), unlike fixed-star/AP text labels
+  // which use fntText at symbolSize / 2.
+  return PROJECTED_GLYPH_FAMILIES.has(item.family) || OUTER_BODY_GLYPH_FAMILIES.has(item.family)
+    ? typography.outerProjectedGlyphSize
+    : typography.outerLabelSize;
+}
+
+function outerRingRunClassId(
+  item: OuterRingItem,
+  segment?: RingLabelSegment,
+): WheelAuthoringTypographyClass | undefined {
+  const classes = resolveWheelSecondaryRingClassIds(item.family);
+  if (!classes) return undefined;
+  if (classes.label) return classes.label;
+  if (segment?.kind === "text") return classes.text ?? classes.glyph;
+  return classes.glyph ?? classes.text;
 }
 
 function buildOuterItemLabel(
   item: OuterRingItem,
   chart: Chart,
   palette: ChartPalette,
-): Array<{ text: string; font: "ui" | "symbols"; color: string }> {
+  typography: ResolvedWheelTypographyMetrics,
+  fontUi: string,
+  fontSymbols: string,
+  style: WheelRenderStyle,
+): OuterLabelRun[] {
+  const fallbackSize = legacyOuterRingItemFontSize(item, typography);
+  const createRun = (
+    text: string,
+    font: "ui" | "symbols",
+    color: string,
+    segment?: RingLabelSegment,
+  ): OuterLabelRun => {
+    const classId = outerRingRunClassId(item, segment);
+    const defaults = {
+      font: font === "symbols" ? fontSymbols : fontUi,
+      size:
+        (classId ? typography.secondaryRing[classId] : undefined)
+        ?? fallbackSize,
+      color,
+    };
+    const paint = classId
+      ? semanticTypographyPaint(style, classId, defaults)
+      : Object.freeze({
+          ...defaults,
+          weight: 400,
+          style: "normal",
+          tracking: 0,
+          opacity: 1,
+        });
+    return {
+      text,
+      font,
+      fontFamily: paint.font,
+      color: paint.color,
+      size: paint.size,
+      weight: paint.weight,
+      style: paint.style,
+      tracking: paint.tracking,
+      opacity: paint.opacity,
+      ...(classId ? { classId } : {}),
+    };
+  };
   if (!item.segments?.length) {
-    return [{ text: item.label, font: "ui", color: palette.textDim }];
+    const classes = resolveWheelSecondaryRingClassIds(item.family);
+    const font = classes?.glyph && !classes.label ? "symbols" : "ui";
+    return [createRun(item.label, font, palette.textDim)];
   }
   return item.segments.map((segment) => {
     if (segment.kind === "glyph") {
-      return { text: segment.text, font: "symbols" as const, color: segment.color ?? palette.textDim };
+      return createRun(
+        segment.text,
+        "symbols",
+        segment.color ?? palette.textDim,
+        segment,
+      );
     }
     if (segment.kind !== "planet" || segment.seId == null) {
-      return { text: segment.text, font: "ui" as const, color: segment.color ?? palette.textDim };
+      return createRun(
+        segment.text,
+        "ui",
+        segment.color ?? palette.textDim,
+        segment,
+      );
     }
     // Daemon-resolved per-body color when the body is present in the chart;
     // otherwise the indexed palette color for that SE id.
     const resolved = chart.planets.find((planet) => planet.seId === segment.seId)?.color;
-    return {
-      text: segment.text,
-      font: "symbols" as const,
-      color: segment.color ?? resolved ?? palette.planets[segment.seId] ?? palette.textDim,
-    };
+    return createRun(
+      segment.text,
+      "symbols",
+      segment.color ?? resolved ?? palette.planets[segment.seId] ?? palette.textDim,
+      segment,
+    );
   });
 }
 
 function labelRunsBounds(
   draw: TextMeasurer,
-  runs: Array<{ text: string; font: "ui" | "symbols"; color: string }>,
+  runs: readonly OuterLabelRun[],
   fontUi: string,
-  fontSymbols: string,
-  fontSize: number,
 ): Pt {
-  const fallbackHeight = draw.textsize("Ag", { font: fontUi, size: fontSize })[1];
+  const fallbackSize = runs[0]?.size ?? 1;
+  const fallbackHeight = draw.textsize("Ag", {
+    font: runs[0]?.fontFamily ?? fontUi,
+    size: fallbackSize,
+    weight: runs[0]?.weight,
+    style: runs[0]?.style,
+    tracking: runs[0]?.tracking,
+  })[1];
   let width = 0;
   let height = fallbackHeight;
   for (const run of runs) {
     const [runWidth, runHeight] = draw.textsize(run.text, {
-      font: run.font === "symbols" ? fontSymbols : fontUi,
-      size: fontSize,
+      font: run.fontFamily,
+      size: run.size,
+      weight: run.weight,
+      style: run.style,
+      tracking: run.tracking,
     });
     width += runWidth;
     height = Math.max(height, runHeight);
@@ -4145,16 +5336,11 @@ function labelRunsBounds(
 
 function outerRingItemFontSize(
   item: OuterRingItem,
-  projectedGlyphSize: number,
-  labelFontSize: number,
+  typography: ResolvedWheelTypographyMetrics,
 ): number {
-  // graphchart.drawAntis draws antiscia / contra-antiscia / dodecatemoria
-  // projected glyphs with fntMorinus/fntAntisText at full symbolSize
-  // (graphchart.py:437-449, 4619-4691), unlike fixed-star/AP text labels
-  // which use fntText at symbolSize / 2.
-  return PROJECTED_GLYPH_FAMILIES.has(item.family) || OUTER_BODY_GLYPH_FAMILIES.has(item.family)
-    ? projectedGlyphSize
-    : labelFontSize;
+  const classId = outerRingRunClassId(item, item.segments?.[0]);
+  return (classId ? typography.secondaryRing[classId] : undefined)
+    ?? legacyOuterRingItemFontSize(item, typography);
 }
 
 function outerRingItemLabelRadius(
@@ -4182,18 +5368,17 @@ function outerRingItemLabelRadius(
 function ellipsizeTextToWidth(
   draw: TextMeasurer,
   text: string,
-  font: string,
-  size: number,
+  textOpts: TextOpts,
   maxWidth: number,
 ): string {
   const t = text ?? "";
   if (maxWidth <= 0) return "";
-  if (draw.textsize(t, { font, size })[0] <= maxWidth) return t;
+  if (draw.textsize(t, textOpts)[0] <= maxWidth) return t;
   const marker = "...";
-  if (draw.textsize(marker, { font, size })[0] > maxWidth) {
+  if (draw.textsize(marker, textOpts)[0] > maxWidth) {
     for (const count of [2, 1]) {
       const dots = ".".repeat(count);
-      if (draw.textsize(dots, { font, size })[0] <= maxWidth) return dots;
+      if (draw.textsize(dots, textOpts)[0] <= maxWidth) return dots;
     }
     return "";
   }
@@ -4203,7 +5388,7 @@ function ellipsizeTextToWidth(
   while (lo <= hi) {
     const mid = (lo + hi) >> 1;
     const candidate = t.slice(0, mid).trimEnd() + marker;
-    if (draw.textsize(candidate, { font, size })[0] <= maxWidth) {
+    if (draw.textsize(candidate, textOpts)[0] <= maxWidth) {
       best = candidate;
       lo = mid + 1;
     } else {
@@ -4221,7 +5406,7 @@ function ellipsizeTextToWidth(
 // label must be ellipsized; matches wx's whole-label fallback.
 function fitOuterLabelToBitmap(
   draw: TextMeasurer,
-  runs: Array<{ text: string; font: "ui" | "symbols"; color: string }>,
+  runs: OuterLabelRun[],
   x: number,
   totalWidth: number,
   textHeight: number,
@@ -4232,7 +5417,7 @@ function fitOuterLabelToBitmap(
   palette: ChartPalette,
   style: WheelRenderStyle,
 ): {
-  runs: Array<{ text: string; font: "ui" | "symbols"; color: string }>;
+  runs: OuterLabelRun[];
   x: number;
   w: number;
   h: number;
@@ -4257,10 +5442,31 @@ function fitOuterLabelToBitmap(
     maxWidth = right - x;
     mode = "rightOnly";
   }
-  const fitted = ellipsizeTextToWidth(draw, combined, fontUi, fontSize, maxWidth);
-  const fw = fitted ? draw.textsize(fitted, { font: fontUi, size: fontSize })[0] : 0;
+  const sourceRun = runs.find((run) => run.font === "ui") ?? runs[0];
+  const textOpts: TextOpts = {
+    font: sourceRun?.fontFamily ?? fontUi,
+    size: sourceRun?.size ?? fontSize,
+    weight: sourceRun?.weight,
+    style: sourceRun?.style,
+    tracking: sourceRun?.tracking,
+  };
+  const fitted = ellipsizeTextToWidth(draw, combined, textOpts, maxWidth);
+  const fw = fitted ? draw.textsize(fitted, textOpts)[0] : 0;
   const newRuns = fitted
-    ? [{ text: fitted, font: "ui" as const, color: palette.textDim }]
+    ? [{
+        text: fitted,
+        font: "ui" as const,
+        fontFamily: sourceRun?.fontFamily ?? fontUi,
+        color: sourceRun?.color ?? palette.textDim,
+        size: sourceRun?.size ?? fontSize,
+        weight: sourceRun?.weight ?? 400,
+        style: sourceRun?.style ?? "normal",
+        tracking: sourceRun?.tracking ?? 0,
+        opacity: sourceRun?.opacity ?? 1,
+        ...(sourceRun?.classId
+          ? { classId: sourceRun.classId }
+          : {}),
+      }]
     : [];
   let newX = x;
   if (mode === "both") newX = left;
@@ -4278,32 +5484,42 @@ function prepareOuterRingItems(
   projectedLabelRadius: number,
   fontUi: string,
   fontSymbols: string,
-  labelFontSize: number,
-  outerLayoutUnit: number,
-  projectedGlyphSize: number,
+  typography: ResolvedWheelTypographyMetrics,
   chart: Chart,
   palette: ChartPalette,
   style: WheelRenderStyle,
+  collisionBounds: readonly OuterLabelCollisionBounds[] = [],
 ) {
   const ordered = items.slice().sort((a, b) => a.longitude - b.longitude);
   const shifts = ordered.map(() => 0);
   const yOffsets = ordered.map(() => 0);
   const count = ordered.length;
-  if (count < 2) {
+  if (count < 2 && collisionBounds.length === 0) {
     return { items: ordered, shifts, yOffsets };
   }
 
-  const labelBox = (idx: number, yOffset = 0) => {
+  const labelBox = (
+    idx: number,
+    yOffset = 0,
+    shift = shifts[idx],
+  ) => {
     const item = ordered[idx];
-    const lon = item.longitude + shifts[idx];
-    const itemFontSize = outerRingItemFontSize(item, projectedGlyphSize, labelFontSize);
+    const lon = item.longitude + shift;
     const itemLabelRadius = PROJECTED_GLYPH_FAMILIES.has(item.family) || OUTER_BODY_GLYPH_FAMILIES.has(item.family)
       ? projectedLabelRadius
       : labelRadius;
     const pt = polar(center, itemLabelRadius, lon, asc);
     const rad = Math.PI + ((asc - lon) * Math.PI) / 180;
-    const runs = buildOuterItemLabel(item, chart, palette);
-    const [w, h] = labelRunsBounds(draw, runs, fontUi, fontSymbols, itemFontSize);
+    const runs = buildOuterItemLabel(
+      item,
+      chart,
+      palette,
+      typography,
+      fontUi,
+      fontSymbols,
+      style,
+    );
+    const [w, h] = labelRunsBounds(draw, runs, fontUi);
     let x = pt[0];
     let y = pt[1] + yOffset;
     const pos = normalize(180 + asc - lon);
@@ -4319,7 +5535,7 @@ function prepareOuterRingItems(
       w,
       h,
       itemLabelRadius,
-      Math.round(outerLayoutUnit * style.labels.outerOutsidePadScale),
+      Math.round(typography.outerLayoutUnit * style.labels.outerOutsidePadScale),
     );
     return { x, y, w, h };
   };
@@ -4373,6 +5589,22 @@ function prepareOuterRingItems(
     }
   }
 
+  nudgeOuterLabelsAroundCollisionBounds(
+    shifts,
+    yOffsets,
+    (index, shift, yOffset) => {
+      const bounds = labelBox(index, yOffset, shift);
+      return {
+        x: bounds.x,
+        y: bounds.y - bounds.h / 2,
+        w: bounds.w,
+        h: bounds.h,
+      };
+    },
+    collisionBounds,
+    style,
+  );
+
   return { items: ordered, shifts, yOffsets };
 }
 
@@ -4389,6 +5621,7 @@ function drawOuterRingItemLines(
 ) {
   for (let i = 0; i < layout.items.length; i += 1) {
     const item = layout.items[i];
+    const classIds = resolveWheelSecondaryRingClassIds(item.family);
     const outerLine = PROJECTED_GLYPH_FAMILIES.has(item.family)
       ? ringset.rAntisLines ?? ringset.rOuterLine
       : ringset.rOuterLine;
@@ -4405,6 +5638,8 @@ function drawOuterRingItemLines(
           isAngloWheel(chart)
             ? style.strokes.hairline
             : mediumPenWidth(style, chartSize),
+          {},
+          classIds?.leader,
         ),
       },
     );
@@ -4421,19 +5656,29 @@ function drawOuterRingItems(
   palette: ChartPalette,
   fontUi: string,
   fontSymbols: string,
-  fontSize: number,
-  outerLayoutUnit: number,
-  projectedGlyphSize: number,
-  motionSize: number,
+  typography: ResolvedWheelTypographyMetrics,
   canvasWidth: number,
   style: WheelRenderStyle,
 ) {
   for (let i = 0; i < layout.items.length; i += 1) {
     const item = layout.items[i];
-    const labelRadius = outerRingItemLabelRadius(item, ringset, outerLayoutUnit, style);
-    const itemFontSize = outerRingItemFontSize(item, projectedGlyphSize, fontSize);
-    let runs = buildOuterItemLabel(item, chart, palette);
-    let [w, h] = labelRunsBounds(draw, runs, fontUi, fontSymbols, itemFontSize);
+    const labelRadius = outerRingItemLabelRadius(
+      item,
+      ringset,
+      typography.outerLayoutUnit,
+      style,
+    );
+    const itemFontSize = outerRingItemFontSize(item, typography);
+    let runs = buildOuterItemLabel(
+      item,
+      chart,
+      palette,
+      typography,
+      fontUi,
+      fontSymbols,
+      style,
+    );
+    let [w, h] = labelRunsBounds(draw, runs, fontUi);
     const shiftedLon = item.longitude + layout.shifts[i];
     const pt = polar(center, labelRadius, shiftedLon, asc);
     const rad = Math.PI + ((asc - shiftedLon) * Math.PI) / 180;
@@ -4445,7 +5690,17 @@ function drawOuterRingItems(
     }
     if (item.fitPolicy !== "none") {
       const fit = fitOuterLabelToBitmap(
-        draw, runs, x, w, h, canvasWidth, outerLayoutUnit, fontUi, itemFontSize, palette, style,
+        draw,
+        runs,
+        x,
+        w,
+        h,
+        canvasWidth,
+        typography.outerLayoutUnit,
+        fontUi,
+        itemFontSize,
+        palette,
+        style,
       );
       runs = fit.runs;
       x = fit.x;
@@ -4464,34 +5719,56 @@ function drawOuterRingItems(
       w,
       h,
       labelRadius,
-      Math.round(outerLayoutUnit * style.labels.outerOutsidePadScale),
+      Math.round(
+        typography.outerLayoutUnit * style.labels.outerOutsidePadScale,
+      ),
     );
     let cursor = x;
     const yBase = y - h / 2;
     const firstRunColor = runs[0]?.color ?? palette.textDim;
     for (const run of runs) {
       const [runWidth, runHeight] = draw.textsize(run.text, {
-        font: run.font === "symbols" ? fontSymbols : fontUi,
-        size: itemFontSize,
+        font: run.fontFamily,
+        size: run.size,
+        weight: run.weight,
+        style: run.style,
+        tracking: run.tracking,
       });
       draw.text([cursor, yBase + (h - runHeight) / 2], run.text, {
         fill: run.color,
-        font: run.font === "symbols" ? fontSymbols : fontUi,
-        size: itemFontSize,
+        font: run.fontFamily,
+        size: run.size,
+        weight: run.weight,
+        style: run.style,
+        tracking: run.tracking,
+        opacity: run.opacity,
       });
       cursor += runWidth;
     }
     if (OUTER_BODY_GLYPH_FAMILIES.has(item.family) && item.motion) {
       const markerRadius =
         ringset.rOuterRetr ??
-        ringset.rOuterLine + outerLayoutUnit * style.labels.outerMotionRadiusScale;
+        ringset.rOuterLine
+          + typography.outerLayoutUnit * style.labels.outerMotionRadiusScale;
       const markerPt = polar(center, markerRadius, shiftedLon, asc);
-      const markerOffset = outerLayoutUnit * style.labels.outerMotionOffsetScale;
-      draw.text([markerPt[0] - markerOffset, markerPt[1] - markerOffset], item.motion, {
-        fill: firstRunColor,
-        font: fontUi,
-        size: motionSize,
-      });
+      const markerOffset =
+        typography.outerLayoutUnit * style.labels.outerMotionOffsetScale;
+      const motionPaint = semanticTypographyPaint(
+        style,
+        "secondaryRing.parallelTransit.motion",
+        {
+          font: fontUi,
+          size:
+          typography.secondaryRing["secondaryRing.parallelTransit.motion"]
+          ?? typography.outerMotionSize,
+          color: firstRunColor,
+        },
+      );
+      draw.text(
+        [markerPt[0] - markerOffset, markerPt[1] - markerOffset],
+        item.motion,
+        typographyTextOpts(motionPaint),
+      );
     }
   }
 }
@@ -4503,6 +5780,123 @@ function drawOuterRingItems(
 // drawn on top of everything in the outer-label layer. The surveil SET itself is
 // owned by the desktop study store and not yet exposed by the daemon, so this is
 // inert until chart.surveilMarks is populated.
+type SurveilMarkLayout = {
+  tickStart: Pt;
+  tickEnd: Pt;
+  marker: PositionedText;
+  source?: PositionedText;
+};
+
+function layoutSurveilMark(
+  draw: TextMeasurer,
+  center: Pt,
+  ringset: RingSet,
+  asc: number,
+  mark: SurveilMark,
+  palette: ChartPalette,
+  fontUi: string,
+  fontSymbols: string,
+  symbolSize: number,
+  style: WheelRenderStyle,
+): SurveilMarkLayout | null {
+  const lon = mark.longitude;
+  if (!Number.isFinite(lon)) return null;
+  void palette;
+  const accent = style.elementColors.surveilAccent;
+  const surveil = style.labels.surveil;
+  const rWheel = ringset.r30;
+  const tickLen = Math.max(
+    surveil.tickLengthMin,
+    Math.round(symbolSize * surveil.tickLengthScale),
+  );
+  const rTickEnd = Math.max(ringset.rOuterLine, rWheel + tickLen);
+  const glyphGap = Math.max(
+    surveil.glyphGapMin,
+    Math.round(symbolSize * surveil.glyphGapScale),
+  );
+  const fallbackSize = Math.max(
+    surveil.glyphSizeMin,
+    Math.round(symbolSize * surveil.glyphSizeScale),
+  );
+  const labelGap = Math.max(
+    surveil.labelGapMin,
+    Math.round(symbolSize * surveil.labelGapScale),
+  );
+
+  let markerText = (mark.glyph ?? "").trim();
+  const isMorinusGlyph = markerText.length > 0 && mark.glyphFont === "morinus";
+  let markerFont = isMorinusGlyph ? fontSymbols : fontUi;
+  const markerClass: "surveil.marker.glyph" | "surveil.marker.label" =
+    isMorinusGlyph ? "surveil.marker.glyph" : "surveil.marker.label";
+  if (!markerText) {
+    markerText = ((mark.label ?? "").split(" (", 1)[0] || "").trim() || "Marker";
+    markerFont = fontUi;
+  }
+  if (markerText.length > surveil.maxTextLength) {
+    markerText = `${markerText.slice(0, surveil.truncatedPrefixLength)}...`;
+  }
+  let sourceName = (mark.sourceName ?? "").trim();
+  if (sourceName.length > surveil.maxTextLength) {
+    sourceName = `${sourceName.slice(0, surveil.truncatedPrefixLength)}...`;
+  }
+  const sourceText = sourceName ? ` (${sourceName})` : "";
+  const markerPaint = semanticTypographyPaint(style, markerClass, {
+    font: markerFont,
+    size: fallbackSize,
+    color: accent,
+  });
+  const sourcePaint = semanticTypographyPaint(style, "surveil.sourceLabel", {
+    font: fontUi,
+    size: fallbackSize,
+    color: accent,
+  });
+  const [gw, gh] = draw.textsize(
+    markerText,
+    typographyTextOpts(markerPaint),
+  );
+  const [tw, th] = sourceText
+    ? draw.textsize(sourceText, typographyTextOpts(sourcePaint))
+    : [0, 0];
+  const totalW = gw + (sourceText ? labelGap : 0) + tw;
+  const totalH = Math.max(gh, th);
+  const anchor = polar(center, rTickEnd + glyphGap, lon, asc);
+  // Web polar() puts ASC at left with Y flipped vs wx; the cos/sin below use
+  // the same wx-space angle (pi + (asc - lon)) so left/right placement matches.
+  const cosA = Math.cos(Math.PI + ((asc - lon) * Math.PI) / 180);
+  const left = cosA > surveil.horizontalThreshold
+    ? anchor[0]
+    : cosA < -surveil.horizontalThreshold
+      ? anchor[0] - totalW
+      : anchor[0] - totalW / 2;
+  const top = anchor[1] - totalH / 2;
+  const marker: PositionedText = {
+    x: left,
+    y: top + (totalH - gh) / 2,
+    w: gw,
+    h: gh,
+    text: markerText,
+    ...positionedTextPaint(markerPaint),
+    classId: markerClass,
+  };
+  const source = sourceText
+    ? {
+        x: left + gw + labelGap,
+        y: top + (totalH - th) / 2,
+        w: tw,
+        h: th,
+        text: sourceText,
+        ...positionedTextPaint(sourcePaint),
+        classId: "surveil.sourceLabel" as const,
+      }
+    : undefined;
+  return {
+    tickStart: polar(center, rWheel, lon, asc),
+    tickEnd: polar(center, rTickEnd, lon, asc),
+    marker,
+    source,
+  };
+}
+
 function drawSurveilMarks(
   draw: CanvasDraw,
   center: Pt,
@@ -4518,92 +5912,31 @@ function drawSurveilMarks(
   if (!marks.length) {
     return;
   }
-  const accent = palette.surveilAccent ?? "rgb(229,146,70)";
-  const rWheel = ringset.r30;
-  const rOuter = ringset.rOuterLine;
-  const surveil = style.labels.surveil;
-  const tickLen = Math.max(
-    surveil.tickLengthMin,
-    Math.round(symbolSize * surveil.tickLengthScale),
-  );
-  const rTickEnd = Math.max(rOuter, rWheel + tickLen);
-  const glyphGap = Math.max(
-    surveil.glyphGapMin,
-    Math.round(symbolSize * surveil.glyphGapScale),
-  );
-  // wx uses symbolSize*0.34*_dpi_scale; the web symbolSize (maxRadius/16) is the
-  // same base wx uses, so no extra DPI factor is applied here.
-  const glyphSize = Math.max(
-    surveil.glyphSizeMin,
-    Math.round(symbolSize * surveil.glyphSizeScale),
-  );
-  const labelGap = Math.max(
-    surveil.labelGapMin,
-    Math.round(symbolSize * surveil.labelGapScale),
-  );
-
   for (const mark of marks) {
-    const lon = mark.longitude;
-    if (!Number.isFinite(lon)) {
-      continue;
-    }
-    // Web polar() puts ASC at left with Y flipped vs wx; the cos/sin below use
-    // the same wx-space angle (pi + (asc - lon)) so left/right placement of the
-    // label matches graphchart.drawSurveilMarks exactly.
-    const ang = Math.PI + ((asc - lon) * Math.PI) / 180;
-    const cosA = Math.cos(ang);
-
-    draw.line(
-      [polar(center, rWheel, lon, asc), polar(center, rTickEnd, lon, asc)],
-      {
-        fill: accent,
-        ...semanticLinePaint(style, "outerLeader", style.strokes.hairline),
-      },
+    const layout = layoutSurveilMark(
+      draw,
+      center,
+      ringset,
+      asc,
+      mark,
+      palette,
+      fontUi,
+      fontSymbols,
+      symbolSize,
+      style,
     );
-
-    let markerText = (mark.glyph ?? "").trim();
-    let markerFont = mark.glyphFont === "morinus" ? fontSymbols : fontUi;
-    if (!markerText) {
-      markerText = ((mark.label ?? "").split(" (", 1)[0] || "").trim() || "Marker";
-      markerFont = fontUi;
-    }
-    if (markerText.length > surveil.maxTextLength) {
-      markerText = `${markerText.slice(0, surveil.truncatedPrefixLength)}...`;
-    }
-    let sourceName = (mark.sourceName ?? "").trim();
-    if (sourceName.length > surveil.maxTextLength) {
-      sourceName = `${sourceName.slice(0, surveil.truncatedPrefixLength)}...`;
-    }
-    const sourceText = sourceName ? ` (${sourceName})` : "";
-
-    const [gw, gh] = draw.textsize(markerText, { font: markerFont, size: glyphSize });
-    const [tw, th] = sourceText
-      ? draw.textsize(sourceText, { font: fontUi, size: glyphSize })
-      : [0, 0];
-    const totalW = gw + (sourceText ? labelGap : 0) + tw;
-    const totalH = Math.max(gh, th);
-
-    const rLabel = rTickEnd + glyphGap;
-    const anchor = polar(center, rLabel, lon, asc);
-    let left: number;
-    if (cosA > surveil.horizontalThreshold) {
-      left = anchor[0];
-    } else if (cosA < -surveil.horizontalThreshold) {
-      left = anchor[0] - totalW;
-    } else {
-      left = anchor[0] - totalW / 2;
-    }
-    const top = anchor[1] - totalH / 2;
-    const markerTop = top + (totalH - gh) / 2;
-    draw.text([left, markerTop], markerText, { fill: accent, font: markerFont, size: glyphSize });
-    if (sourceText) {
-      const textTop = top + (totalH - th) / 2;
-      draw.text([left + gw + labelGap, textTop], sourceText, {
-        fill: accent,
-        font: fontUi,
-        size: glyphSize,
-      });
-    }
+    if (!layout) continue;
+    draw.line([layout.tickStart, layout.tickEnd], {
+      fill: layout.marker.fill,
+      ...semanticLinePaint(
+        style,
+        "outerLeader",
+        style.strokes.hairline,
+        {},
+        "surveil.tick",
+      ),
+    });
+    paintPositionedText(draw, layout.source ? [layout.marker, layout.source] : [layout.marker]);
   }
 }
 
@@ -4621,6 +5954,15 @@ function prepareFixedStars(
   const ordered = stars.slice().sort((a, b) => a.longitude - b.longitude);
   const shifts = ordered.map(() => 0);
   const yOffsets = ordered.map(() => 0);
+  const labelPaint = semanticTypographyPaint(
+    style,
+    "secondaryRing.fixedStar.label",
+    {
+      font: fontUi,
+      size: fontSize,
+      color: style.palette.textDim,
+    },
+  );
   const count = ordered.length;
   if (count < 2) {
     return { stars: ordered, shifts, yOffsets };
@@ -4631,7 +5973,7 @@ function prepareFixedStars(
     const lon = star.longitude + shifts[idx];
     const pt = polar(center, labelRadius, lon, asc);
     const label = buildFixedStarLabel(star);
-    const [w, h] = draw.textsize(label, { font: fontUi, size: fontSize });
+    const [w, h] = draw.textsize(label, typographyTextOpts(labelPaint));
     let x = pt[0];
     const y = pt[1] + yOffset;
     const pos = normalize(180 + asc - lon);
@@ -4759,6 +6101,16 @@ function outerItemsKey(items: OuterRingItem[]): string {
   ].join(":");
 }
 
+function outerLabelCollisionBoundsKey(
+  bounds: readonly OuterLabelCollisionBounds[],
+): string {
+  return bounds
+    .map((box) =>
+      [box.x, box.y, box.w, box.h].map(cacheNumber).join(",")
+    )
+    .join(";");
+}
+
 function getOuterRingItemLayout(
   draw: TextMeasurer,
   snapshot: ChartRenderSnapshot,
@@ -4772,6 +6124,7 @@ function getOuterRingItemLayout(
   outerItemsChart: Chart,
   palette: ChartPalette,
   style: WheelRenderStyle,
+  collisionBounds: readonly OuterLabelCollisionBounds[] = [],
 ): ReturnType<typeof prepareOuterRingItems> {
   const key = [
     snapshot.outerRingMode,
@@ -4785,6 +6138,8 @@ function getOuterRingItemLayout(
     cacheNumber(typography.outerLayoutUnit),
     cacheNumber(typography.outerLabelSize),
     cacheNumber(typography.outerProjectedGlyphSize),
+    Object.values(typography.secondaryRing).map(cacheNumber).join(","),
+    outerLabelCollisionBoundsKey(collisionBounds),
   ].join("|");
   let snapshotCache = outerItemLayoutCache.get(snapshot);
   if (!snapshotCache) {
@@ -4804,12 +6159,11 @@ function getOuterRingItemLayout(
       ringset.rOuterLine + typography.outerLayoutUnit * style.labels.outerRadiusOffsetScale,
     fontUi,
     fontSymbols,
-    typography.outerLabelSize,
-    typography.outerLayoutUnit,
-    typography.outerProjectedGlyphSize,
+    typography,
     outerItemsChart,
     palette,
     style,
+    collisionBounds,
   );
   boundedMapSet(snapshotCache, key, layout);
   return layout;
@@ -4826,6 +6180,9 @@ function getFixedStarLayout(
   style: WheelRenderStyle,
 ): ReturnType<typeof prepareFixedStars> {
   const stars = chart.fixedStars ?? [];
+  const fixedStarLabelSize =
+    typography.secondaryRing["secondaryRing.fixedStar.label"]
+    ?? typography.outerLabelSize;
   const key = [
     stars.length,
     cachePoint(center),
@@ -4833,7 +6190,7 @@ function getFixedStarLayout(
     cacheNumber(ringset.rOuterLine),
     fontUi,
     cacheNumber(typography.outerLayoutUnit),
-    cacheNumber(typography.outerLabelSize),
+    cacheNumber(fixedStarLabelSize),
   ].join("|");
   let chartCache = fixedStarLayoutCache.get(chart);
   if (!chartCache) {
@@ -4850,7 +6207,7 @@ function getFixedStarLayout(
     stars,
     ringset.rOuterLine + typography.outerLayoutUnit * style.labels.outerRadiusOffsetScale,
     fontUi,
-    typography.outerLabelSize,
+    fixedStarLabelSize,
     style,
   );
   boundedMapSet(chartCache, key, layout);
@@ -4877,7 +6234,13 @@ function drawFixstarLines(
     const p2 = polar(center, ringset.rOuterLine, star.longitude + fixedStarLayout.shifts[i], asc);
     draw.line([p1, p2], {
       fill: style.elementColors.outerLeader,
-      ...semanticLinePaint(style, "outerLeader", width),
+      ...semanticLinePaint(
+        style,
+        "outerLeader",
+        width,
+        {},
+        "secondaryRing.fixedStar.leader",
+      ),
     });
   }
 }
@@ -4894,12 +6257,21 @@ function drawFixstars(
   outerLayoutUnit: number,
   style: WheelRenderStyle,
 ) {
+  const labelPaint = semanticTypographyPaint(
+    style,
+    "secondaryRing.fixedStar.label",
+    {
+      font: fontUi,
+      size: fontSize,
+      color: palette.textDim,
+    },
+  );
   let labelRadius = ringset.rOuterLine + outerLayoutUnit * style.labels.outerRadiusOffsetScale;
   for (let i = 0; i < fixedStarLayout.stars.length; i++) {
     const star = fixedStarLayout.stars[i];
     const shift = fixedStarLayout.shifts[i];
     const label = buildFixedStarLabel(star);
-    const [w, h] = draw.textsize(label, { font: fontUi, size: fontSize });
+    const [w, h] = draw.textsize(label, typographyTextOpts(labelPaint));
     const shiftedLon = star.longitude + shift;
     const pt = polar(center, labelRadius, shiftedLon, asc);
     const rad = Math.PI + ((asc - shiftedLon) * Math.PI) / 180;
@@ -4920,11 +6292,11 @@ function drawFixstars(
       labelRadius,
       Math.round(outerLayoutUnit * style.labels.outerOutsidePadScale),
     );
-    draw.text([x, y - h / 2], label, {
-      fill: palette.textDim,
-      font: fontUi,
-      size: fontSize,
-    });
+    draw.text(
+      [x, y - h / 2],
+      label,
+      typographyTextOpts(labelPaint),
+    );
   }
 }
 
@@ -4941,6 +6313,559 @@ function visibleOuterItems(snapshot: ChartRenderSnapshot): OuterRingItem[] {
     return items;
   }
   return items.filter((item) => item.role !== "primary");
+}
+
+const fillTextureTileCache = new Map<string, HTMLCanvasElement>();
+
+function fillRasterPatternSide(
+  algorithm: Exclude<
+    WheelAuthoringFillPattern,
+    "none" | "solid" | "paper" | "hatch" | "crosshatch" | "scanline"
+  >,
+): number {
+  if (algorithm === "bayer2") return 2;
+  if (algorithm === "stipple" || algorithm === "bayer4") return 4;
+  if (algorithm === "bayer8" || algorithm === "newsprint") return 8;
+  if (algorithm === "noise") return 16;
+  return 32;
+}
+
+function fillTexturePattern(
+  draw: CanvasDraw,
+  algorithm: Exclude<WheelAuthoringFillPattern, "none" | "solid">,
+  color: string,
+  cellSizePx: number,
+  dotSizePx: number,
+  density: number,
+  angle: number,
+  seed: number,
+): CanvasPattern | null {
+  if (typeof document === "undefined" || density <= 0) return null;
+  const dpr = Math.max(1, draw.ctx.getTransform().a || 1);
+  const cell = Math.max(0.5, cellSizePx);
+  const dot = Math.max(0.25, Math.min(cell, dotSizePx));
+  const directionalAngle =
+    algorithm === "hatch"
+    || algorithm === "crosshatch"
+    || algorithm === "scanline"
+      ? angle
+      : 0;
+  const key = [
+    algorithm,
+    color,
+    cell,
+    dot,
+    density,
+    directionalAngle,
+    seed,
+    dpr,
+  ].join("\u0000");
+  let tile = fillTextureTileCache.get(key);
+  let patternScale = 1 / dpr;
+  let patternRotation = 0;
+  if (!tile) {
+    let tileSide = 1;
+    let rasterSide = 0;
+    let rasterCell = 1;
+    let rasterShape: "circle" | "square" = "square";
+    let rasterMask: Uint8Array | null = null;
+    const rasterPattern =
+      algorithm === "stipple"
+      || algorithm === "bayer2"
+      || algorithm === "bayer4"
+      || algorithm === "bayer8"
+      || algorithm === "noise"
+      || algorithm === "blueNoise"
+      || algorithm === "newsprint"
+      || algorithm === "atkinson"
+      || algorithm === "floydSteinberg";
+    if (rasterPattern) {
+      const raster = createDitherRasterPatternTile(
+        algorithm,
+        density,
+        seed,
+      );
+      rasterSide = raster.side;
+      rasterShape = raster.shape;
+      rasterMask = raster.mask;
+      rasterCell = Math.max(
+        1,
+        Math.min(Math.round(cell * dpr), Math.floor(768 / rasterSide)),
+      );
+      tileSide = rasterSide * rasterCell;
+      patternScale = cell / rasterCell;
+    } else if (algorithm === "paper") {
+      rasterSide = 24;
+      rasterCell = Math.max(
+        1,
+        Math.min(Math.round(cell * dpr), Math.floor(768 / rasterSide)),
+      );
+      tileSide = rasterSide * rasterCell;
+      patternScale = cell / rasterCell;
+    } else {
+      const period = Math.max(dot, cell * (100 / density));
+      tileSide = Math.max(1, Math.min(1024, Math.round(period * dpr)));
+      patternScale = period / tileSide;
+      patternRotation = algorithm === "scanline" ? angle + 90 : angle;
+    }
+    tile = document.createElement("canvas");
+    tile.width = tileSide;
+    tile.height = tileSide;
+    const tileContext = tile.getContext("2d");
+    if (!tileContext) return null;
+    tileContext.imageSmoothingEnabled = false;
+    tileContext.fillStyle = color;
+    if (rasterMask) {
+      const dotDevicePx = Math.max(
+        1,
+        Math.min(rasterCell, Math.round((dot / cell) * rasterCell)),
+      );
+      const inset = (rasterCell - dotDevicePx) / 2;
+      for (let index = 0; index < rasterMask.length; index += 1) {
+        if (!rasterMask[index]) continue;
+        const column = index % rasterSide;
+        const row = Math.floor(index / rasterSide);
+        const x = column * rasterCell + inset;
+        const y = row * rasterCell + inset;
+        if (rasterShape === "circle") {
+          tileContext.beginPath();
+          tileContext.arc(
+            x + dotDevicePx / 2,
+            y + dotDevicePx / 2,
+            dotDevicePx / 2,
+            0,
+            Math.PI * 2,
+          );
+          tileContext.fill();
+        } else {
+          tileContext.fillRect(x, y, dotDevicePx, dotDevicePx);
+        }
+      }
+    } else if (algorithm === "paper") {
+      const dotDevicePx = Math.max(
+        1,
+        Math.min(rasterCell, (dot / cell) * rasterCell),
+      );
+      for (let row = 0; row < rasterSide; row += 1) {
+        for (let column = 0; column < rasterSide; column += 1) {
+          const presence = sampleDitherNoise(column, row, seed);
+          if (presence * 100 >= density) continue;
+          const fine = sampleDitherNoise(
+            column * 3 + 7,
+            row * 5 + 11,
+            seed ^ 0x4f31,
+          );
+          const coarse = sampleDitherNoise(
+            Math.floor(column / 4),
+            Math.floor(row / 4),
+            seed ^ 0x7123,
+          );
+          tileContext.globalAlpha = 0.15 + fine * 0.55 + coarse * 0.3;
+          tileContext.beginPath();
+          tileContext.arc(
+            (column + 0.5) * rasterCell,
+            (row + 0.5) * rasterCell,
+            dotDevicePx * (0.2 + fine * 0.3),
+            0,
+            Math.PI * 2,
+          );
+          tileContext.fill();
+        }
+      }
+      tileContext.globalAlpha = 1;
+    } else {
+      const lineWidth = Math.max(
+        1,
+        Math.min(tileSide, (dot / Math.max(dot, cell * (100 / density))) * tileSide),
+      );
+      tileContext.fillRect(0, 0, lineWidth, tileSide);
+      if (algorithm === "crosshatch") {
+        tileContext.fillRect(0, 0, tileSide, lineWidth);
+      }
+    }
+    if (fillTextureTileCache.size >= 64) {
+      fillTextureTileCache.clear();
+    }
+    fillTextureTileCache.set(key, tile);
+  }
+  const pattern = draw.ctx.createPattern(tile, "repeat");
+  if (pattern && typeof pattern.setTransform === "function" && typeof DOMMatrix !== "undefined") {
+    if (tile.width > 0) {
+      if (
+        algorithm === "hatch"
+        || algorithm === "crosshatch"
+        || algorithm === "scanline"
+      ) {
+        const period = Math.max(dot, cell * (100 / density));
+        patternScale = period / tile.width;
+        patternRotation = algorithm === "scanline" ? angle + 90 : angle;
+      } else {
+        const side =
+          algorithm === "paper"
+            ? 24
+            : fillRasterPatternSide(algorithm);
+        patternScale = (side * cell) / tile.width;
+      }
+    }
+    pattern.setTransform(
+      new DOMMatrix()
+        .rotate(patternRotation)
+        .scale(patternScale),
+    );
+  }
+  return pattern;
+}
+
+function paintFillRegion(
+  draw: CanvasDraw,
+  style: WheelRenderStyle,
+  profile: WheelTypographyProfile,
+  classId: WheelAuthoringFillClass,
+  center: Pt,
+  outerRadius: number,
+  innerRadius = 0,
+  sunAngleDegrees: number | null = null,
+): void {
+  const paint = resolveWheelFillPaint(
+    style,
+    profile,
+    classId,
+    style.authoringTargetRadius,
+  );
+  const hasMaterial = (
+    paint.fillPattern !== "none"
+    || paint.backgroundEnabled
+    || paint.gradientType !== "none"
+  );
+  const hasShadow = (
+    paint.shadowPattern !== "none"
+    && (
+      paint.shadowXpx !== 0
+      || paint.shadowYpx !== 0
+      || paint.shadowBlurPx !== 0
+    )
+  );
+  if (
+    (!hasMaterial && !hasShadow)
+    || paint.opacity <= 0
+    || outerRadius <= innerRadius
+  ) {
+    return;
+  }
+  const { ctx } = draw;
+  ctx.save();
+  ctx.globalAlpha = paint.opacity;
+  const appendRegionPath = () => {
+    ctx.moveTo(center[0] + outerRadius, center[1]);
+    ctx.arc(center[0], center[1], outerRadius, 0, Math.PI * 2);
+    if (innerRadius > 0) {
+      ctx.moveTo(center[0] + innerRadius, center[1]);
+      ctx.arc(center[0], center[1], innerRadius, 0, Math.PI * 2, true);
+    }
+  };
+  const fillCurrentPath = () => {
+    if (innerRadius > 0) ctx.fill("evenodd");
+    else ctx.fill();
+  };
+  if (hasShadow) {
+    /*
+     * Cast the region's alpha mask into a clip that excludes the source
+     * region. The retained fill layer therefore receives only the shadow,
+     * never a dark duplicate beneath transparent materials. Patterned alpha
+     * creates a genuine stippled/noisy print shadow; `solid` plus blur creates
+     * the ordinary soft Canvas shadow defined by the HTML standard.
+     */
+    ctx.save();
+    const clipExtent =
+      outerRadius * 4
+      + Math.abs(paint.shadowXpx)
+      + Math.abs(paint.shadowYpx)
+      + paint.shadowBlurPx * 4
+      + 32;
+    ctx.beginPath();
+    ctx.rect(
+      center[0] - clipExtent,
+      center[1] - clipExtent,
+      clipExtent * 2,
+      clipExtent * 2,
+    );
+    appendRegionPath();
+    ctx.clip("evenodd");
+    ctx.beginPath();
+    appendRegionPath();
+    ctx.shadowColor = paint.shadowColor;
+    ctx.shadowOffsetX = paint.shadowXpx;
+    ctx.shadowOffsetY = paint.shadowYpx;
+    ctx.shadowBlur = paint.shadowBlurPx;
+    if (paint.shadowPattern === "solid") {
+      ctx.fillStyle = paint.shadowColor;
+      fillCurrentPath();
+    } else {
+      const shadowTexture = fillTexturePattern(
+        draw,
+        paint.shadowPattern,
+        paint.shadowColor,
+        paint.cellSizePx,
+        paint.dotSizePx,
+        paint.density,
+        paint.angle,
+        paint.seed,
+      );
+      if (shadowTexture) {
+        ctx.fillStyle = shadowTexture;
+        fillCurrentPath();
+      }
+    }
+    ctx.restore();
+  }
+  ctx.beginPath();
+  appendRegionPath();
+  if (paint.backgroundEnabled) {
+    ctx.fillStyle = paint.backgroundColor;
+    fillCurrentPath();
+  }
+  if (paint.gradientType !== "none") {
+    const directionDegrees =
+      (paint.gradientDirection === "sun" ? sunAngleDegrees ?? 0 : 0)
+      + paint.gradientAngle;
+    const radians = directionDegrees * Math.PI / 180;
+    const x = Math.cos(radians);
+    const y = Math.sin(radians);
+    const gradient = paint.gradientType === "linear"
+      ? ctx.createLinearGradient(
+          center[0] + x * outerRadius,
+          center[1] + y * outerRadius,
+          center[0] - x * outerRadius,
+          center[1] - y * outerRadius,
+        )
+      : ctx.createRadialGradient(
+          center[0] + x * outerRadius * 0.34,
+          center[1] + y * outerRadius * 0.34,
+          0,
+          center[0],
+          center[1],
+          outerRadius * 1.15,
+        );
+    gradient.addColorStop(0, paint.gradientStartColor);
+    gradient.addColorStop(1, paint.gradientEndColor);
+    ctx.fillStyle = gradient;
+    fillCurrentPath();
+  }
+  const paintTexture = () => {
+    if (paint.fillPattern === "solid") {
+      ctx.fillStyle = paint.patternColor;
+      fillCurrentPath();
+    } else if (paint.fillPattern !== "none") {
+      const fillStyle = fillTexturePattern(
+        draw,
+        paint.fillPattern,
+        paint.patternColor,
+        paint.cellSizePx,
+        paint.dotSizePx,
+        paint.density,
+        paint.angle,
+        paint.seed,
+      );
+      if (fillStyle) {
+        ctx.fillStyle = fillStyle;
+        fillCurrentPath();
+      }
+    }
+  };
+  if (
+    paint.textureMask === "crescent"
+    && paint.fillPattern !== "none"
+  ) {
+    const directionDegrees =
+      (paint.maskDirection === "sun" ? sunAngleDegrees ?? 0 : 0)
+      + paint.maskAngle;
+    const radians = directionDegrees * Math.PI / 180;
+    const shift = outerRadius * 2 * paint.maskAmount / 100;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(center[0], center[1], outerRadius, 0, Math.PI * 2);
+    if (innerRadius > 0) {
+      ctx.moveTo(center[0] + innerRadius, center[1]);
+      ctx.arc(center[0], center[1], innerRadius, 0, Math.PI * 2, true);
+    }
+    ctx.moveTo(
+      center[0] + Math.cos(radians) * shift + outerRadius,
+      center[1] + Math.sin(radians) * shift,
+    );
+    ctx.arc(
+      center[0] + Math.cos(radians) * shift,
+      center[1] + Math.sin(radians) * shift,
+      outerRadius,
+      0,
+      Math.PI * 2,
+    );
+    ctx.clip("evenodd");
+    ctx.beginPath();
+    appendRegionPath();
+    paintTexture();
+    ctx.restore();
+  } else {
+    paintTexture();
+  }
+  ctx.restore();
+}
+
+function paintCanvasBackgroundMaterial(
+  draw: CanvasDraw,
+  style: WheelRenderStyle,
+  profile: WheelTypographyProfile,
+  width: number,
+  height: number,
+  sunAngleDegrees: number | null,
+): void {
+  const paint = resolveWheelFillPaint(
+    style,
+    profile,
+    "canvas.background",
+    style.authoringTargetRadius,
+  );
+  if (
+    (
+      paint.fillPattern === "none"
+      && !paint.backgroundEnabled
+      && paint.gradientType === "none"
+    )
+    || paint.opacity <= 0
+  ) {
+    return;
+  }
+  const { ctx } = draw;
+  ctx.save();
+  ctx.globalAlpha = paint.opacity;
+  if (paint.backgroundEnabled) {
+    ctx.fillStyle = paint.backgroundColor;
+    ctx.fillRect(0, 0, width, height);
+  }
+  if (paint.gradientType !== "none") {
+    const directionDegrees =
+      (paint.gradientDirection === "sun" ? sunAngleDegrees ?? 0 : 0)
+      + paint.gradientAngle;
+    const radians = directionDegrees * Math.PI / 180;
+    const x = Math.cos(radians);
+    const y = Math.sin(radians);
+    const center: Pt = [width / 2, height / 2];
+    const extent = Math.hypot(width, height) / 2;
+    const gradient = paint.gradientType === "linear"
+      ? ctx.createLinearGradient(
+          center[0] + x * extent,
+          center[1] + y * extent,
+          center[0] - x * extent,
+          center[1] - y * extent,
+        )
+      : ctx.createRadialGradient(
+          center[0] + x * extent * 0.22,
+          center[1] + y * extent * 0.22,
+          0,
+          center[0],
+          center[1],
+          extent * 1.15,
+        );
+    gradient.addColorStop(0, paint.gradientStartColor);
+    gradient.addColorStop(1, paint.gradientEndColor);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
+  }
+  if (paint.fillPattern === "solid") {
+    ctx.fillStyle = paint.patternColor;
+    ctx.fillRect(0, 0, width, height);
+  } else if (paint.fillPattern !== "none") {
+    const fillStyle = fillTexturePattern(
+      draw,
+      paint.fillPattern,
+      paint.patternColor,
+      paint.cellSizePx,
+      paint.dotSizePx,
+      paint.density,
+      paint.angle,
+      paint.seed,
+    );
+    if (fillStyle) {
+      ctx.fillStyle = fillStyle;
+      ctx.fillRect(0, 0, width, height);
+    }
+  }
+  ctx.restore();
+}
+
+function drawRetainedFillLayer(
+  draw: CanvasDraw,
+  chart: Chart,
+  style: WheelRenderStyle,
+  center: Pt,
+  ringset: RingSet,
+  width: number,
+  height: number,
+): void {
+  draw.fillBackground(style.palette.background);
+  const profile = wheelTypographyProfile(chart);
+  const sun = chart.planets.find((planet) => planet.id === "sun");
+  const sunPoint = sun == null ? null : polar([0, 0], 1, sun.longitude, chart.angles.asc);
+  const sunAngleDegrees = sunPoint == null
+    ? null
+    : Math.atan2(sunPoint[1], sunPoint[0]) * 180 / Math.PI;
+  paintCanvasBackgroundMaterial(
+    draw,
+    style,
+    profile,
+    width,
+    height,
+    sunAngleDegrees,
+  );
+  paintFillRegion(
+    draw,
+    style,
+    profile,
+    "fills.chartField",
+    center,
+    ringset.rOuterMax ?? ringset.r30,
+    0,
+    sunAngleDegrees,
+  );
+  paintFillRegion(
+    draw,
+    style,
+    profile,
+    "fills.houseField",
+    center,
+    ringset.rInner,
+    ringset.rAsp,
+    sunAngleDegrees,
+  );
+  paintFillRegion(
+    draw,
+    style,
+    profile,
+    "fills.centerField",
+    center,
+    ringset.rAsp,
+    0,
+    sunAngleDegrees,
+  );
+  paintFillRegion(
+    draw,
+    style,
+    profile,
+    "fills.subdivisionBand",
+    center,
+    chart.options.showTerms || chart.options.showDecans ? ringset.r0 : 0,
+    ringset.rInner,
+    sunAngleDegrees,
+  );
+  paintFillRegion(
+    draw,
+    style,
+    profile,
+    "fills.zodiacBand",
+    center,
+    ringset.r30,
+    ringset.r0,
+    sunAngleDegrees,
+  );
 }
 
 export function drawSnapshotLayer(
@@ -4971,13 +6896,24 @@ export function drawSnapshotLayer(
   // mode currently has no visible objects (graphchart.py:1601-1611, 1721-1735).
   const outerRingModeEnabled = snapshot.outerRingMode !== "none";
   const hasOuterRing = hasComparison || outerRingModeEnabled;
-  const showOuterHouseGeometry = comparisonUsesOuterHouses(snapshot, chart);
-  const showInterChartAspectFigure = Boolean(
-    comparisonChart && (!isAngloWheel(chart) || !showOuterHouseGeometry),
-  );
+  const showOuterHouseCusps = comparisonShowsHouseCusps(snapshot, chart);
+  const showOuterHouseBand = comparisonUsesOuterHouseBand(snapshot, chart);
+  const restrainedAngloComparison = usesRestrainedAngloComparison(snapshot, chart);
+  const showInterChartAspectFigure = Boolean(comparisonChart);
   const ringset: RingSet = hasComparison
-    ? comparisonRings(style, chart, maxRadius, showOuterHouseGeometry)
+    ? comparisonRings(
+        style,
+        chart,
+        maxRadius,
+        showOuterHouseBand,
+        restrainedAngloComparison,
+      )
     : effectiveRings(style, chart, maxRadius, hasOuterRing);
+  draw.clear();
+  if (layer === "fill") {
+    drawRetainedFillLayer(draw, chart, style, center, ringset, width, height);
+    return;
+  }
   const typography = resolveWheelTypographyMetrics(
     style,
     wheelTypographyProfile(chart),
@@ -4992,9 +6928,8 @@ export function drawSnapshotLayer(
   const fontAspectSymbols = style.typography.families.aspectSymbols;
   const fontUi = style.typography.families.ui;
 
-  draw.clear();
   if (layer === "geometry") {
-    const routedComponentBounds =
+    const routedBodyLayout =
       isAngloWheel(chart) &&
       angloDenseLabelLayout(chart) === "routed-cusps"
         ? draw.measure("body-layout", () =>
@@ -5010,10 +6945,12 @@ export function drawSnapshotLayer(
               fontUi,
               typography,
               style,
-            ).componentBounds,
+            ),
           )
         : undefined;
-    draw.fillBackground(palette.background);
+    if (opts.geometryOwnsBackground !== false) {
+      draw.fillBackground(palette.background);
+    }
     drawCircles(
       draw,
       center,
@@ -5023,7 +6960,7 @@ export function drawSnapshotLayer(
       asc,
       chart,
       hasOuterRing,
-      showOuterHouseGeometry,
+      showOuterHouseBand,
       style,
     );
     drawTermsLines(draw, center, ringset, asc, chart, palette, style);
@@ -5038,10 +6975,19 @@ export function drawSnapshotLayer(
         chart,
         palette,
         style,
-        routedComponentBounds,
+        routedBodyLayout,
       );
-      if (comparisonChart && showOuterHouseGeometry) {
-        drawOuterHouses(draw, center, ringset, asc, comparisonChart, palette, style);
+      if (comparisonChart && showOuterHouseCusps) {
+        drawOuterHouses(
+          draw,
+          center,
+          ringset,
+          asc,
+          comparisonChart,
+          palette,
+          style,
+          restrainedAngloComparison,
+        );
       }
       redrawMainCircles(draw, center, ringset, chartSize, palette, chart, style);
       drawAngloHouseCuspTicks(draw, center, ringset, asc, chart, palette, style);
@@ -5056,12 +7002,20 @@ export function drawSnapshotLayer(
         typography.houseLabelSize,
         typography.layoutUnit,
         style,
+        "houses.inner.label",
       );
-      if (comparisonChart && showOuterHouseGeometry && ringset.rOuterHouseName) {
+      const outerHouseNameRadius =
+        ringset.rOuterHouseName ?? ringset.rOuterArrow ?? ringset.rOuterASCMC;
+      if (
+        comparisonChart &&
+        showOuterHouseCusps &&
+        (showOuterHouseBand || restrainedAngloComparison) &&
+        outerHouseNameRadius
+      ) {
         drawHouseNames(
           draw,
           center,
-          { ...ringset, rHouseName: ringset.rOuterHouseName } as RingSet,
+          { ...ringset, rHouseName: outerHouseNameRadius } as RingSet,
           asc,
           comparisonChart,
           palette,
@@ -5069,10 +7023,21 @@ export function drawSnapshotLayer(
           typography.outerHouseLabelSize,
           typography.outerLayoutUnit,
           style,
+          "houses.outer.label",
         );
       }
     }
-    drawSigns(draw, center, ringset, asc, chart, palette, fontSignSymbols, signSize);
+    drawSigns(
+      draw,
+      center,
+      ringset,
+      asc,
+      chart,
+      palette,
+      fontSignSymbols,
+      signSize,
+      style,
+    );
     drawAscMC(
       draw,
       center,
@@ -5082,7 +7047,6 @@ export function drawSnapshotLayer(
       chartSize,
       palette,
       style,
-      routedComponentBounds,
     );
     if (comparisonChart) {
       drawOuterAscMC(draw, center, ringset, asc, comparisonChart, chartSize, palette, style);
@@ -5123,8 +7087,10 @@ export function drawSnapshotLayer(
           isAngloWheel(comparisonChart),
           false,
           true,
-          showOuterHouseGeometry,
+          showOuterHouseCusps,
           true,
+          restrainedAngloComparison,
+          ringset.rOuterRetr ?? ringset.rRetr,
         )
       : null;
     drawPlanetLines(
@@ -5209,6 +7175,7 @@ export function drawSnapshotLayer(
           outerItemsChart,
           palette,
           style,
+          opts.outerLabelCollisionBounds,
         );
         drawOuterRingItemLines(draw, center, ringset, asc, outerItemLayout, chart, chartSize, palette, style);
       } else {
@@ -5261,6 +7228,7 @@ export function drawSnapshotLayer(
         typography,
         style,
         true,
+        restrainedAngloComparison,
       );
       drawAngloOuterAngleLabels(
         draw,
@@ -5289,6 +7257,7 @@ export function drawSnapshotLayer(
         typography.aspectGlyphSize,
         typography.aspectGlyphOffset,
         drawAspects,
+        style,
       );
     }
     if (
@@ -5307,8 +7276,9 @@ export function drawSnapshotLayer(
         drawInterChartAspects,
         palette,
         fontAspectSymbols,
-        typography.aspectGlyphSize,
+        typography.interchartAspectGlyphSize,
         typography.aspectGlyphOffset,
+        style,
       );
     }
     if (chart.options.showPositions || isAngloWheel(chart)) {
@@ -5336,6 +7306,7 @@ export function drawSnapshotLayer(
           fontUi,
           fontSignSymbols,
           typography,
+          style,
         );
       }
     }
@@ -5358,6 +7329,7 @@ export function drawSnapshotLayer(
       outerItemsChart,
       palette,
       style,
+      opts.outerLabelCollisionBounds,
     );
     drawOuterRingItems(
       draw,
@@ -5369,10 +7341,7 @@ export function drawSnapshotLayer(
       palette,
       fontUi,
       fontSymbols,
-      typography.outerLabelSize,
-      typography.outerLayoutUnit,
-      typography.outerProjectedGlyphSize,
-      typography.outerMotionSize,
+      typography,
       opts.width,
       style,
     );
@@ -5395,7 +7364,8 @@ export function drawSnapshotLayer(
       fixedStarLayout,
       palette,
       fontUi,
-      typography.outerLabelSize,
+      typography.secondaryRing["secondaryRing.fixedStar.label"]
+        ?? typography.outerLabelSize,
       typography.outerLayoutUnit,
       style,
     );
@@ -5481,6 +7451,15 @@ export type ChartHitRegion = {
       r: number;
       longitude: number;
       chartRole?: "primary" | "outer";
+      // Non-label angles keep their existing generous endpoint disc and also
+      // expose the exact painted ray, so a bare DC/IC line is as practical to
+      // select as the arrowheaded AC/MC lines.
+      shape?: "line";
+      x1?: number;
+      y1?: number;
+      x2?: number;
+      y2?: number;
+      tolerance?: number;
     }
   | { kind: "house"; houseIndex: number; x: number; y: number; r: number; longitude: number }
   | {
@@ -5575,7 +7554,113 @@ export type ChartHitRegion = {
       rInner: number;
       rOuter: number;
     }
+  | {
+      /** Exact, occurrence-level geometry consumed only by the Style Lab. */
+      kind: "style_target";
+      classId:
+        | WheelAuthoringTypographyClass
+        | WheelAuthoringLineClass
+        | WheelChartOverlayClass;
+      itemId: string;
+      ownerId?: string;
+      bodyId?: string;
+      colorValue?: string;
+      compactOverlay?: boolean;
+      shape: "rect" | "line";
+      x: number;
+      y: number;
+      r: number;
+      x1?: number;
+      y1?: number;
+      x2?: number;
+      y2?: number;
+      tolerance?: number;
+      signIndex?: number;
+  }
 );
+
+type WheelStyleTargetClass =
+  | WheelAuthoringTypographyClass
+  | WheelAuthoringLineClass
+  | WheelChartOverlayClass;
+
+function pushStyleRectTarget(
+  regions: ChartHitRegion[],
+  classId: WheelStyleTargetClass,
+  itemId: string,
+  bounds: Bounds & { signIndex?: number },
+  metadata: Readonly<{
+    ownerId?: string;
+    bodyId?: string;
+    colorValue?: string;
+    compactOverlay?: boolean;
+  }> = {},
+): void {
+  const left = Math.round(bounds.x);
+  const top = Math.round(bounds.y);
+  const width = Math.max(1, bounds.w);
+  const height = Math.max(1, bounds.h);
+  regions.push({
+    kind: "style_target",
+    classId,
+    itemId,
+    shape: "rect",
+    left,
+    top,
+    width,
+    height,
+    x: left + width / 2,
+    y: top + height / 2,
+    r: Math.hypot(width, height) / 2,
+    styleOnly: true,
+    ...metadata,
+    ...(bounds.signIndex != null
+      ? { signIndex: bounds.signIndex }
+      : {}),
+  });
+}
+
+function pushStyleTextTarget(
+  regions: ChartHitRegion[],
+  classId: WheelAuthoringTypographyClass | WheelChartOverlayClass,
+  itemId: string,
+  bounds: Bounds & { signIndex?: number },
+  metadata: Readonly<{
+    ownerId?: string;
+    bodyId?: string;
+    colorValue?: string;
+    compactOverlay?: boolean;
+  }> = {},
+): void {
+  pushStyleRectTarget(regions, classId, itemId, bounds, metadata);
+}
+
+function pushStyleLineTarget(
+  regions: ChartHitRegion[],
+  classId: WheelAuthoringLineClass,
+  itemId: string,
+  start: Pt,
+  end: Pt,
+  tolerance: number,
+  ownerId?: string,
+): void {
+  regions.push({
+    kind: "style_target",
+    classId,
+    itemId,
+    shape: "line",
+    x: (start[0] + end[0]) / 2,
+    y: (start[1] + end[1]) / 2,
+    r: tolerance,
+    x1: start[0],
+    y1: start[1],
+    x2: end[0],
+    y2: end[1],
+    tolerance,
+    styleOnly: true,
+    ...(ownerId ? { ownerId } : {}),
+  });
+}
 
 function pushAspectHitRegions(
   regions: ChartHitRegion[],
@@ -5640,8 +7725,11 @@ interface ComputeHitRegionsOptionsBase {
   width: number;
   height: number;
   chartSize?: number;
+  outerLabelCollisionBounds?: readonly OuterLabelCollisionBounds[];
   textsize?: (text: string, opts?: TextOpts) => Pt;
   clickAspectState?: ClickAspectState;
+  /** Emit exact semantic occurrences for Style Lab selection. Defaults off. */
+  includeStyleTargets?: boolean;
 }
 
 export type ComputeHitRegionsOptions = ComputeHitRegionsOptionsBase & WheelRenderStyleSource;
@@ -5668,6 +7756,7 @@ export function computeHitRegions(
   const fontUi = style.typography.families.ui;
   const fontSymbols = style.typography.families.symbols;
   const fontBodySymbols = style.typography.families.bodySymbols;
+  const fontSignSymbols = style.typography.families.signSymbols;
   const fontTermSymbols = style.typography.families.termSymbols;
   const fontDecanSymbols = style.typography.families.decanSymbols;
   const measurer: TextMeasurer = {
@@ -5683,12 +7772,18 @@ export function computeHitRegions(
   const comparisonChart = snapshot.comparisonChart ?? undefined;
   const hasComparison = Boolean(comparisonChart);
   const hasOuterRing = hasComparison || snapshot.outerRingMode !== "none";
-  const showOuterHouseGeometry = comparisonUsesOuterHouses(snapshot, chart);
-  const showInterChartAspectFigure = Boolean(
-    comparisonChart && (!isAngloWheel(chart) || !showOuterHouseGeometry),
-  );
+  const showOuterHouseCusps = comparisonShowsHouseCusps(snapshot, chart);
+  const showOuterHouseBand = comparisonUsesOuterHouseBand(snapshot, chart);
+  const restrainedAngloComparison = usesRestrainedAngloComparison(snapshot, chart);
+  const showInterChartAspectFigure = Boolean(comparisonChart);
   const ringset: RingSet = hasComparison
-    ? comparisonRings(style, chart, maxRadius, showOuterHouseGeometry)
+    ? comparisonRings(
+        style,
+        chart,
+        maxRadius,
+        showOuterHouseBand,
+        restrainedAngloComparison,
+      )
     : effectiveRings(style, chart, maxRadius, hasOuterRing);
   const typography = resolveWheelTypographyMetrics(
     style,
@@ -5696,13 +7791,19 @@ export function computeHitRegions(
     maxRadius,
   );
   const symbolSize = typography.bodySize;
-  const outerSymbolSize = typography.outerSize;
+  const outerSymbolSize = restrainedAngloComparison
+    ? typography.bodySize
+    : typography.outerSize;
   const signSize = typography.signSize;
   const hit = style.hit;
   const priorities = hit.priorities;
   const hitRadius = Math.max(hit.bodyRadiusMin, maxRadius / hit.bodyRadiusDivisor);
+  const angleLineTolerance = Math.max(
+    hit.aspectLineToleranceMin,
+    hitRadius * 0.5,
+  );
   const planets = planetById(chart);
-  const { bodyShifts } = getBodyLayout(
+  const bodyLayout = getBodyLayout(
     measurer,
     chart,
     center,
@@ -5715,8 +7816,12 @@ export function computeHitRegions(
     typography,
     style,
   );
+  const { bodyShifts, labelYoffs } = bodyLayout;
 
   const regions: ChartHitRegion[] = [];
+  const comparisonPlanetMapForPaint = comparisonChart
+    ? planetById(comparisonChart)
+    : null;
 
   const bodyGlyphBox = (
     x: number,
@@ -5725,16 +7830,35 @@ export function computeHitRegions(
     key: BodyKey,
     glyph: string,
     baseSize = symbolSize,
+    outer = false,
   ) => {
-    const bodyHitPad = Math.max(hit.bodyPadMin, Math.round(baseSize * hit.bodyPadScale));
-    const glyphSize = bodyGlyphSize(baseSize);
+    const glyphSize = bodyGlyphSize(key, baseSize, typography.syzygyScale);
+    const glyphPaint = semanticTypographyPaint(
+      style,
+      bodyGlyphClassId(key, outer),
+      {
+        font: bodyGlyphFont(bodyChart, key, fontBodySymbols, fontUi),
+        size: glyphSize,
+        color: bodyColor(
+          bodyChart,
+          bodyChart === chart
+            ? planets
+            : comparisonPlanetMapForPaint ?? planets,
+          key,
+          palette,
+        ),
+      },
+    );
+    const bodyHitPad = Math.max(
+      hit.bodyPadMin,
+      Math.round(glyphPaint.size * hit.bodyPadScale),
+    );
     const [glyphWidth, glyphHeight] = measurer.textsize(glyph, {
-      font: bodyGlyphFont(bodyChart, key, fontBodySymbols, fontUi),
-      size: glyphSize,
+      ...typographyTextOpts(glyphPaint),
     });
     return {
-      left: x - glyphSize / 2 - bodyHitPad,
-      top: y - glyphSize / 2 - bodyHitPad,
+      left: x - glyphPaint.size / 2 - bodyHitPad,
+      top: y - glyphPaint.size / 2 - bodyHitPad,
       width: Math.max(1, glyphWidth) + bodyHitPad * 2,
       height: Math.max(1, glyphHeight) + bodyHitPad * 2,
     };
@@ -5843,8 +7967,10 @@ export function computeHitRegions(
       isAngloWheel(comparisonChart),
       false,
       true,
-      showOuterHouseGeometry,
+      showOuterHouseCusps,
       true,
+      restrainedAngloComparison,
+      ringset.rOuterRetr ?? ringset.rRetr,
     );
     outerBodyShiftsForHits = outerBodyShifts;
     const outerLeaderSegments = (longitude: number, shift: number) => [{
@@ -5868,7 +7994,15 @@ export function computeHitRegions(
         x,
         y,
         r: bodyDiscRadius(outerSymbolSize),
-        ...bodyGlyphBox(x, y, comparisonChart, planet.id, glyph, outerSymbolSize),
+        ...bodyGlyphBox(
+          x,
+          y,
+          comparisonChart,
+          planet.id,
+          glyph,
+          outerSymbolSize,
+          true,
+        ),
         longitude: planet.longitude,
         latitude: planet.latitude,
         speed: planet.speed,
@@ -5888,7 +8022,15 @@ export function computeHitRegions(
         x,
         y,
         r: bodyDiscRadius(outerSymbolSize),
-        ...bodyGlyphBox(x, y, comparisonChart, "__fortune", glyph, outerSymbolSize),
+        ...bodyGlyphBox(
+          x,
+          y,
+          comparisonChart,
+          "__fortune",
+          glyph,
+          outerSymbolSize,
+          true,
+        ),
         longitude: comparisonChart.fortune.longitude,
         chartRole: "outer",
         leaderSegments: outerLeaderSegments(comparisonChart.fortune.longitude, shift),
@@ -5904,7 +8046,15 @@ export function computeHitRegions(
         x,
         y,
         r: bodyDiscRadius(outerSymbolSize),
-        ...bodyGlyphBox(x, y, comparisonChart, "__vertex", glyph, outerSymbolSize),
+        ...bodyGlyphBox(
+          x,
+          y,
+          comparisonChart,
+          "__vertex",
+          glyph,
+          outerSymbolSize,
+          true,
+        ),
         longitude: comparisonChart.vertex.longitude,
         house: comparisonChart.vertex.house,
         chartRole: "outer",
@@ -5921,7 +8071,15 @@ export function computeHitRegions(
         x,
         y,
         r: bodyDiscRadius(outerSymbolSize),
-        ...bodyGlyphBox(x, y, comparisonChart, "__syzygy", glyph, outerSymbolSize),
+        ...bodyGlyphBox(
+          x,
+          y,
+          comparisonChart,
+          "__syzygy",
+          glyph,
+          outerSymbolSize,
+          true,
+        ),
         longitude: comparisonChart.syzygy.longitude,
         house: comparisonChart.syzygy.house,
         label: comparisonChart.syzygy.label,
@@ -5950,12 +8108,18 @@ export function computeHitRegions(
           layoutKey,
           typography.bodySize,
           typography.angleLabelSize,
+          typography.syzygyScale,
         );
-        const [labelWidth, labelHeight] = measurer.textsize(label, {
+        const labelPaint = semanticTypographyPaint(style, "angles.inner.label", {
           font: fontUi,
           size: labelSize,
           weight: style.typography.ratios.angleLabelWeight,
+          color: style.elementColors.angleLabel,
         });
+        const [labelWidth, labelHeight] = measurer.textsize(
+          label,
+          typographyTextOpts(labelPaint),
+        );
         const pad = Math.max(
           hit.angleLabelPadMin,
           typography.layoutUnit * hit.angleLabelPadScale,
@@ -5965,7 +8129,7 @@ export function computeHitRegions(
           angleId,
           x,
           y,
-          r: Math.max(hitRadius, labelSize / 2),
+          r: Math.max(hitRadius, labelPaint.size / 2),
           left: x - labelWidth / 2 - pad,
           top: y - labelHeight / 2 - pad,
           width: labelWidth + pad * 2,
@@ -5974,6 +8138,7 @@ export function computeHitRegions(
           priority: priorities.angloAngle,
         });
       } else {
+        const [x1, y1] = polar(center, ringset.rBase, lon, asc);
         const [x, y] = polar(center, ringset.rInner, lon, asc);
         regions.push({
           kind: "angle",
@@ -5981,14 +8146,19 @@ export function computeHitRegions(
           x,
           y,
           r: hitRadius,
+          shape: "line",
+          x1,
+          y1,
+          x2: x,
+          y2: y,
+          tolerance: angleLineTolerance,
           longitude: lon,
           priority: priorities.angloAngle,
         });
       }
       continue;
     }
-    // wx graphchart.drawAscMC registers the hover at the visible angle-line tip
-    // (x2/y2, graphchart.py:1866-1877), not at the inner/base radius.
+    const [x1, y1] = polar(center, ringset.rBase, lon, asc);
     const [x, y] = polar(center, ringset.rASCMC, lon, asc);
     regions.push({
       kind: "angle",
@@ -5996,6 +8166,12 @@ export function computeHitRegions(
       x,
       y,
       r: hitRadius,
+      shape: "line",
+      x1,
+      y1,
+      x2: x,
+      y2: y,
+      tolerance: angleLineTolerance,
       longitude: lon,
       priority: priorities.angle,
     });
@@ -6024,12 +8200,18 @@ export function computeHitRegions(
           layoutKey,
           typography.outerSize,
           typography.outerAngleLabelSize,
+          typography.syzygyScale,
         );
-        const [labelWidth, labelHeight] = measurer.textsize(label, {
+        const labelPaint = semanticTypographyPaint(style, "angles.outer.label", {
           font: fontUi,
           size: labelSize,
           weight: style.typography.ratios.angleLabelWeight,
+          color: style.elementColors.angleLabel,
         });
+        const [labelWidth, labelHeight] = measurer.textsize(
+          label,
+          typographyTextOpts(labelPaint),
+        );
         const pad = Math.max(
           hit.angleLabelPadMin,
           typography.outerLayoutUnit * hit.angleLabelPadScale,
@@ -6039,7 +8221,7 @@ export function computeHitRegions(
           angleId,
           x,
           y,
-          r: Math.max(hitRadius, labelSize / 2),
+          r: Math.max(hitRadius, labelPaint.size / 2),
           left: x - labelWidth / 2 - pad,
           top: y - labelHeight / 2 - pad,
           width: labelWidth + pad * 2,
@@ -6054,6 +8236,7 @@ export function computeHitRegions(
         angleId === "dsc" || angleId === "ic"
           ? (ringset.rOuterArrow ?? ringset.rOuterASCMC ?? ringset.rBase)
           : (ringset.rOuterASCMC ?? ringset.rBase);
+      const [x1, y1] = polar(center, ringset.rOuterMin ?? ringset.rBase, lon, asc);
       const [x, y] = polar(center, radius, lon, asc);
       regions.push({
         kind: "angle",
@@ -6061,6 +8244,12 @@ export function computeHitRegions(
         x,
         y,
         r: hitRadius,
+        shape: "line",
+        x1,
+        y1,
+        x2: x,
+        y2: y,
+        tolerance: angleLineTolerance,
         longitude: lon,
         chartRole: "outer",
         priority: priorities.angle,
@@ -6131,11 +8320,12 @@ export function computeHitRegions(
     }
   }
 
-  // Exact style-editor primitives for subdivision lines and ruler glyphs.
-  // They share production longitudes, radii, fonts, and measured bounds, but
-  // remain excluded from astrology hover/click routing via `styleOnly`.
-  const subdivisionTolerance = Math.max(4, maxRadius * 0.008);
-  const pushSubdivisionBoundary = (
+  if (opts.includeStyleTargets) {
+    // Exact style-editor primitives for subdivision lines and ruler glyphs.
+    // They share production longitudes, radii, fonts, and measured bounds, but
+    // remain excluded from astrology hover/click routing via `styleOnly`.
+    const subdivisionTolerance = Math.max(4, maxRadius * 0.008);
+    const pushSubdivisionBoundary = (
     family: "term" | "decan",
     itemId: string,
     longitude: number,
@@ -6160,22 +8350,30 @@ export function computeHitRegions(
       priority: priorities.sign + 4,
       styleOnly: true,
     });
-  };
-  const pushSubdivisionGlyph = (
+    };
+    const pushSubdivisionGlyph = (
     family: "term" | "decan",
     itemId: string,
     longitude: number,
     radius: number,
     glyph: string,
   ) => {
-    const subdivisionSize = family === "term" ? typography.termSize : typography.decanSize;
-    const subdivisionFont = family === "term" ? fontTermSymbols : fontDecanSymbols;
+    const classId = family === "term"
+      ? "subdivisions.term.glyph"
+      : "subdivisions.decan.glyph";
+    const paint = semanticTypographyPaint(style, classId, {
+      font: family === "term" ? fontTermSymbols : fontDecanSymbols,
+      size: family === "term" ? typography.termSize : typography.decanSize,
+      color:
+        family === "term"
+          ? style.elementColors.termGlyph
+          : style.elementColors.decanGlyph,
+    });
     const point = polar(center, radius, longitude, asc);
     const [width, height] = measurer.textsize(glyph, {
-      font: subdivisionFont,
-      size: subdivisionSize,
+      ...typographyTextOpts(paint),
     });
-    const pad = Math.max(2, subdivisionSize * 0.12);
+    const pad = Math.max(2, paint.size * 0.12);
     regions.push({
       kind: "subdivision",
       family,
@@ -6184,51 +8382,52 @@ export function computeHitRegions(
       glyph,
       x: point[0],
       y: point[1],
-      r: Math.max(width, height, subdivisionSize) / 2 + pad,
-      left: point[0] - subdivisionSize / 2 - pad,
-      top: point[1] - subdivisionSize / 2 - pad,
+      r: Math.max(width, height, paint.size) / 2 + pad,
+      left: point[0] - paint.size / 2 - pad,
+      top: point[1] - paint.size / 2 - pad,
       width: Math.max(1, width) + pad * 2,
       height: Math.max(1, height) + pad * 2,
       priority: priorities.sign + 5,
       styleOnly: true,
     });
-  };
-  if (chart.options.showTerms && chart.options.terms?.length) {
-    chart.options.terms.forEach((segments, signIndex) => {
-      segments.forEach((segment, segmentIndex) => {
-        const itemId = `${signIndex}.${segmentIndex}`;
-        const boundary = segment.boundaryLon ?? signIndex * 30 + segment.size;
-        const ruler = segment.rulerLon ?? signIndex * 30 + segment.size / 2;
-        pushSubdivisionBoundary("term", itemId, boundary, ringset.rTerms, ringset.rDecans);
-        pushSubdivisionGlyph(
-          "term",
-          itemId,
-          ruler,
-          ringset.rTermsPlanet,
-          segment.rulerGlyph ?? "",
-        );
+    };
+    if (chart.options.showTerms && chart.options.terms?.length) {
+      chart.options.terms.forEach((segments, signIndex) => {
+        segments.forEach((segment, segmentIndex) => {
+          const itemId = `${signIndex}.${segmentIndex}`;
+          const boundary = segment.boundaryLon ?? signIndex * 30 + segment.size;
+          const ruler = segment.rulerLon ?? signIndex * 30 + segment.size / 2;
+          pushSubdivisionBoundary("term", itemId, boundary, ringset.rTerms, ringset.rDecans);
+          pushSubdivisionGlyph(
+            "term",
+            itemId,
+            ruler,
+            ringset.rTermsPlanet,
+            segment.rulerGlyph ?? "",
+          );
+        });
       });
-    });
-  }
-  if (chart.options.showDecans) {
-    for (let longitude = 0; longitude < 360; longitude += 10) {
-      pushSubdivisionBoundary(
-        "decan",
-        String(longitude),
-        longitude,
-        ringset.rCuspOuter ?? ringset.rInner,
-        ringset.rDecans,
-      );
     }
-    for (const [signIndex, signDecan] of (chart.options.decans ?? []).entries()) {
-      for (const [rulerIndex, ruler] of (signDecan.rulers ?? []).entries()) {
-        pushSubdivisionGlyph(
+    if (chart.options.showDecans) {
+      for (let longitude = 0; longitude < 360; longitude += 10) {
+        pushSubdivisionBoundary(
           "decan",
-          `${signIndex}.${rulerIndex}`,
-          ruler.rulerLon,
-          ringset.rDecansPlanet,
-          ruler.rulerGlyph,
+          String(longitude),
+          longitude,
+          ringset.rCuspOuter ?? ringset.rInner,
+          ringset.rDecans,
         );
+      }
+      for (const [signIndex, signDecan] of (chart.options.decans ?? []).entries()) {
+        for (const [rulerIndex, ruler] of (signDecan.rulers ?? []).entries()) {
+          pushSubdivisionGlyph(
+            "decan",
+            `${signIndex}.${rulerIndex}`,
+            ruler.rulerLon,
+            ringset.rDecansPlanet,
+            ruler.rulerGlyph,
+          );
+        }
       }
     }
   }
@@ -6352,6 +8551,938 @@ export function computeHitRegions(
     }
   }
 
+  if (opts.includeStyleTargets) {
+    const styleLineTolerance = Math.max(4, maxRadius * 0.008);
+    if (chart.options.showHouses) {
+      const lineRecorder = { line: () => undefined } as unknown as CanvasDraw;
+      const cuspSegmentCounters = new Map<number, number>();
+      drawHouses(
+        lineRecorder,
+        center,
+        ringset,
+        asc,
+        chart,
+        palette,
+        style,
+        bodyLayout,
+        (houseIndex, points) => {
+          let segmentOrdinal = cuspSegmentCounters.get(houseIndex) ?? 0;
+          for (let segmentIndex = 1; segmentIndex < points.length; segmentIndex += 1) {
+            pushStyleLineTarget(
+              regions,
+              "houses.inner.cusp",
+              `house:${houseIndex}:cusp:${segmentOrdinal}`,
+              points[segmentIndex - 1],
+              points[segmentIndex],
+              styleLineTolerance,
+              `house:${houseIndex}:cusp`,
+            );
+            segmentOrdinal += 1;
+          }
+          cuspSegmentCounters.set(houseIndex, segmentOrdinal);
+        },
+      );
+    }
+
+    const pushAngleRayTarget = (
+      classId: "angles.inner.ray" | "angles.outer.ray",
+      itemId: string,
+      start: Pt,
+      end: Pt,
+    ) => pushStyleLineTarget(
+      regions,
+      classId,
+      itemId,
+      start,
+      end,
+      styleLineTolerance,
+    );
+    const innerAngleEntries = [
+      ["asc", chart.angles.asc],
+      ["dsc", chart.angles.dsc],
+      ["mc", chart.angles.mc],
+      ["ic", chart.angles.ic],
+    ] as const;
+    for (const [angleId, longitude] of innerAngleEntries) {
+      pushAngleRayTarget(
+        "angles.inner.ray",
+        `angle:${angleId}:ray`,
+        polar(center, ringset.rBase, longitude, asc),
+        polar(
+          center,
+          isAngloWheel(chart) ? ringset.rInner : ringset.rASCMC,
+          longitude,
+          asc,
+        ),
+      );
+    }
+    if (comparisonChart) {
+      if (isAngloWheel(comparisonChart)) {
+        const outerAngloEntries = [
+          ["asc", "__asc", comparisonChart.angles.asc],
+          ["mc", "__mc", comparisonChart.angles.mc],
+        ] as const;
+        for (const [angleId, layoutKey, longitude] of outerAngloEntries) {
+          if (!outerBodyShiftsForHits?.has(layoutKey)) continue;
+          pushAngleRayTarget(
+            "angles.outer.ray",
+            `outer-angle:${angleId}:ray`,
+            polar(center, ringset.r30, longitude, asc),
+            polar(center, ringset.rOuterLine, longitude, asc),
+          );
+        }
+      } else if (
+        ringset.rOuterASCMC
+        && ringset.rOuterMin
+        && ringset.rOuterArrow
+      ) {
+        const outerEntries = [
+          ["asc", comparisonChart.angles.asc, ringset.rOuterASCMC],
+          ["dsc", comparisonChart.angles.dsc, ringset.rOuterArrow],
+          ["mc", comparisonChart.angles.mc, ringset.rOuterASCMC],
+          ["ic", comparisonChart.angles.ic, ringset.rOuterArrow],
+        ] as const;
+        for (const [angleId, longitude, outerRadius] of outerEntries) {
+          pushAngleRayTarget(
+            "angles.outer.ray",
+            `outer-angle:${angleId}:ray`,
+            polar(center, ringset.rOuterMin, longitude, asc),
+            polar(center, outerRadius, longitude, asc),
+          );
+        }
+      }
+    }
+
+    const pushOpenArrowTargets = (
+      classId: "angles.inner.arrowhead" | "angles.outer.arrowhead",
+      itemPrefix: string,
+      longitude: number,
+      baseRadius: number,
+      apexRadius: number,
+    ) => {
+      const left = polar(
+        center,
+        baseRadius,
+        longitude - style.strokes.arrows.halfAngleDegrees,
+        asc,
+      );
+      const right = polar(
+        center,
+        baseRadius,
+        longitude + style.strokes.arrows.halfAngleDegrees,
+        asc,
+      );
+      const apex = polar(center, apexRadius, longitude, asc);
+      [[left, right], [right, apex], [apex, left]].forEach(
+        ([start, end], segmentIndex) => pushStyleLineTarget(
+          regions,
+          classId,
+          `${itemPrefix}:${segmentIndex}`,
+          start,
+          end,
+          styleLineTolerance,
+        ),
+      );
+    };
+    if (angleArrowheadsVisible(chart)) {
+      if (isAngloWheel(chart)) {
+        const baseRadius =
+          ringset.rInner
+          - ringset.r30 * style.strokes.arrows.angloBaseInsetScale;
+        const pushFilledArrow = (
+          angleId: "asc" | "mc",
+          key: AngleLayoutKey,
+          longitude: number,
+        ) => {
+          if (!angleSharesHouseCusp(chart, key)) return;
+          const vertices = [
+            polar(center, ringset.rInner, longitude, asc),
+            polar(
+              center,
+              baseRadius,
+              longitude - style.strokes.arrows.angloHalfAngleDegrees,
+              asc,
+            ),
+            polar(
+              center,
+              baseRadius,
+              longitude + style.strokes.arrows.angloHalfAngleDegrees,
+              asc,
+            ),
+          ];
+          const xs = vertices.map(([x]) => x);
+          const ys = vertices.map(([, y]) => y);
+          pushStyleRectTarget(
+            regions,
+            "angles.inner.arrowhead",
+            `angle:${angleId}:arrowhead`,
+            {
+              x: Math.min(...xs),
+              y: Math.min(...ys),
+              w: Math.max(...xs) - Math.min(...xs),
+              h: Math.max(...ys) - Math.min(...ys),
+            },
+          );
+        };
+        pushFilledArrow("asc", "__asc", chart.angles.asc);
+        pushFilledArrow("mc", "__mc", chart.angles.mc);
+      } else {
+        pushOpenArrowTargets(
+          "angles.inner.arrowhead",
+          "angle:asc:arrowhead",
+          chart.angles.asc,
+          ringset.rASCMC,
+          ringset.rArrow,
+        );
+        pushOpenArrowTargets(
+          "angles.inner.arrowhead",
+          "angle:mc:arrowhead",
+          chart.angles.mc,
+          ringset.rASCMC,
+          ringset.rArrow,
+        );
+      }
+      if (
+        comparisonChart
+        && !isAngloWheel(comparisonChart)
+        && ringset.rOuterASCMC
+        && ringset.rOuterArrow
+      ) {
+        pushOpenArrowTargets(
+          "angles.outer.arrowhead",
+          "outer-angle:asc:arrowhead",
+          comparisonChart.angles.asc,
+          ringset.rOuterASCMC,
+          ringset.rOuterArrow,
+        );
+        pushOpenArrowTargets(
+          "angles.outer.arrowhead",
+          "outer-angle:mc:arrowhead",
+          comparisonChart.angles.mc,
+          ringset.rOuterASCMC,
+          ringset.rOuterArrow,
+        );
+      }
+    }
+
+    const overlayMetrics = resolveWheelOverlayMetrics(
+      style.overlays,
+      { width, height },
+    );
+    const overlayPaint = (
+      classId: WheelChartOverlayClass,
+      defaults: Readonly<{
+        font: string;
+        size: number;
+        color: string;
+      }>,
+    ) => semanticTypographyPaint(style, classId, defaults);
+    const overlayTargetMetadata = (
+      paint: ResolvedWheelTypographyPaint,
+      bodyId?: string,
+    ) => ({
+      ...(bodyId ? { bodyId } : {}),
+      colorValue: paint.color,
+      compactOverlay: overlayMetrics.compact,
+    });
+    const displayChart =
+      snapshot.document?.compoundKind === "synastry" && comparisonChart
+        ? chart
+        : comparisonChart ?? chart;
+    const primaryCornerLines = chart.meta.cornerLines;
+    const cornerChart =
+      primaryCornerLines?.topLeft?.length
+      || primaryCornerLines?.bottomLeft?.length
+        ? chart
+        : displayChart;
+    const addCornerTargets = (
+      classId:
+        | "chartOverlay.information.topLeft"
+        | "chartOverlay.information.bottomLeft"
+        | "chartOverlay.houseSystem.bottomRight",
+      lines: readonly string[],
+      horizontal: "left" | "right",
+      vertical: "top" | "bottom",
+    ) => {
+      if (!lines.length || overlayMetrics.infoFontSize <= 0) return;
+      const paint = overlayPaint(classId, {
+        font: fontUi,
+        size: overlayMetrics.infoFontSize,
+        color: palette.textDim,
+      });
+      const lineHeight = paint.size * style.overlays.cornerLineHeight;
+      const groupHeight =
+        lines.length * lineHeight
+        + Math.max(0, lines.length - 1) * style.overlays.infoGap;
+      const top = vertical === "top"
+        ? overlayMetrics.topEdgeInset
+        : height - overlayMetrics.edgeInset - groupHeight;
+      lines.forEach((line, index) => {
+        const [lineWidth] = measurer.textsize(
+          line,
+          typographyTextOpts(paint),
+        );
+        const left = horizontal === "left"
+          ? overlayMetrics.edgeInset
+          : width - overlayMetrics.edgeInset - lineWidth;
+        pushStyleTextTarget(
+          regions,
+          classId,
+          `chart-overlay:${classId}:${index}`,
+          {
+            x: left,
+            y:
+              top
+              + index * (lineHeight + style.overlays.infoGap),
+            w: lineWidth,
+            h: lineHeight,
+          },
+          overlayTargetMetadata(paint),
+        );
+      });
+    };
+    if (cornerChart.options.showInformation) {
+      addCornerTargets(
+        "chartOverlay.information.topLeft",
+        cornerChart.meta.cornerLines?.topLeft
+          ?? [cornerChart.meta.dateDisplay, cornerChart.meta.timeDisplay],
+        "left",
+        "top",
+      );
+      addCornerTargets(
+        "chartOverlay.information.bottomLeft",
+        cornerChart.meta.cornerLines?.bottomLeft
+          ?? [cornerChart.meta.place, cornerChart.meta.placeCoords],
+        "left",
+        "bottom",
+      );
+    }
+    if (displayChart.options.showHouseSystem) {
+      addCornerTargets(
+        "chartOverlay.houseSystem.bottomRight",
+        displayChart.meta.houseSystemLines ?? [],
+        "right",
+        "bottom",
+      );
+    }
+
+    const eventRows = displayChart.overlay?.rows ?? [];
+    const groupedEventRows = {
+      dayhour: eventRows.filter((row) => row.group === "dayhour"),
+      header: eventRows.filter((row) => row.group === "header"),
+      signal: eventRows.filter((row) => row.group === "signal"),
+    };
+    type OverlayLayoutRow =
+      | { readonly row: OverlayInfoRow; readonly rowIndex: number }
+      | { readonly spacer: number };
+    const overlayLayoutRows: OverlayLayoutRow[] = [];
+    let sourceRowIndex = 0;
+    const appendOverlayRows = (rows: readonly OverlayInfoRow[]) => {
+      for (const row of rows) {
+        overlayLayoutRows.push({ row, rowIndex: sourceRowIndex });
+        sourceRowIndex += 1;
+      }
+    };
+    appendOverlayRows(groupedEventRows.dayhour);
+    if (
+      groupedEventRows.dayhour.length
+      && groupedEventRows.header.length
+    ) {
+      overlayLayoutRows.push({ spacer: overlayMetrics.gapAfterDayHour });
+    }
+    appendOverlayRows(groupedEventRows.header);
+    if (
+      (groupedEventRows.dayhour.length || groupedEventRows.header.length)
+      && groupedEventRows.signal.length
+    ) {
+      overlayLayoutRows.push({ spacer: overlayMetrics.gapBetweenGroups });
+    }
+    appendOverlayRows(groupedEventRows.signal);
+    const overlayGroupName = (
+      group: OverlayInfoRow["group"],
+    ): "dayHour" | "header" | "signal" =>
+      group === "dayhour" ? "dayHour" : group === "header" ? "header" : "signal";
+    const overlayClassId = (
+      row: OverlayInfoRow,
+      component: "label" | "glyph" | "trailing",
+    ): WheelChartOverlayClass =>
+      `chartOverlay.events.${overlayGroupName(row.group)}.${component}`;
+    const overlayBodies = new Map<number, string>();
+    for (const body of [
+      ...chart.planets,
+      ...(comparisonChart?.planets ?? []),
+    ]) {
+      if (!overlayBodies.has(body.seId)) {
+        overlayBodies.set(body.seId, String(body.id));
+      }
+    }
+    const eventLayouts = overlayLayoutRows.map((layoutRow) => {
+      if ("spacer" in layoutRow) return layoutRow;
+      const { row } = layoutRow;
+      const firstGlyph = row.glyphs[0] ?? null;
+      const secondGlyph =
+        row.group === "header" ? row.glyphs[1] ?? null : null;
+      const trailingText =
+        row.group === "header" ? "" : row.trailing ?? "";
+      const labelClass = overlayClassId(row, "label");
+      const glyphClass = overlayClassId(row, "glyph");
+      const trailingClass = overlayClassId(row, "trailing");
+      const labelPaint = overlayPaint(labelClass, {
+        font: fontUi,
+        size: overlayMetrics.labelSize,
+        color: palette.textDim,
+      });
+      const glyphDefaultColor = firstGlyph
+        ? firstGlyph.color
+          ?? (
+            firstGlyph.kind === "planet" && firstGlyph.seId != null
+              ? palette.planets[firstGlyph.seId] ?? palette.textDim
+              : palette.textDim
+          )
+        : palette.textDim;
+      const glyphPaint = overlayPaint(glyphClass, {
+        font: fontSymbols,
+        size: overlayMetrics.iconSize,
+        color: glyphDefaultColor,
+      });
+      const trailingDefaultColor = secondGlyph
+        ? secondGlyph.color
+          ?? (
+            secondGlyph.kind === "planet" && secondGlyph.seId != null
+              ? palette.planets[secondGlyph.seId] ?? palette.textDim
+              : palette.textDim
+          )
+        : palette.textDim;
+      const trailingPaint = overlayPaint(trailingClass, {
+        font: secondGlyph ? fontSymbols : fontUi,
+        size: secondGlyph
+          ? overlayMetrics.iconSize
+          : overlayMetrics.labelSize,
+        color: trailingDefaultColor,
+      });
+      const [labelWidth] = measurer.textsize(
+        row.label,
+        typographyTextOpts(labelPaint),
+      );
+      const [glyphWidth] = firstGlyph
+        ? measurer.textsize(
+            firstGlyph.char,
+            typographyTextOpts(glyphPaint),
+          )
+        : [0, 0];
+      const trailingContent = secondGlyph?.char ?? trailingText;
+      const [trailingWidth] = trailingContent
+        ? measurer.textsize(
+            trailingContent,
+            typographyTextOpts(trailingPaint),
+          )
+        : [0, 0];
+      return {
+        ...layoutRow,
+        firstGlyph,
+        secondGlyph,
+        trailingText,
+        labelClass,
+        glyphClass,
+        trailingClass,
+        labelPaint,
+        glyphPaint,
+        trailingPaint,
+        labelWidth,
+        glyphWidth,
+        trailingWidth,
+      };
+    });
+    const paintedEventLayouts = eventLayouts.filter(
+      (layout): layout is Exclude<typeof layout, { readonly spacer: number }> =>
+        !("spacer" in layout),
+    );
+    if (paintedEventLayouts.length) {
+      const labelColumn = Math.max(
+        ...paintedEventLayouts.map((layout) => layout.labelWidth),
+      );
+      const glyphColumn = Math.max(
+        ...paintedEventLayouts.map((layout) => layout.glyphWidth),
+      );
+      const trailingColumn = Math.max(
+        ...paintedEventLayouts.map((layout) => layout.trailingWidth),
+      );
+      const gridWidth =
+        labelColumn
+        + glyphColumn
+        + trailingColumn
+        + overlayMetrics.columnGap * 2;
+      const gridLeft =
+        width - overlayMetrics.edgeInset - gridWidth;
+      let rowTop = overlayMetrics.topEdgeInset;
+      for (const layout of eventLayouts) {
+        if ("spacer" in layout) {
+          rowTop += layout.spacer;
+          continue;
+        }
+        const ownerId = `chart-overlay:event:${layout.row.group ?? "signal"}:${layout.rowIndex}`;
+        if (layout.row.label) {
+          pushStyleTextTarget(
+            regions,
+            layout.labelClass,
+            `${ownerId}:label`,
+            {
+              x: gridLeft,
+              y: rowTop,
+              w: layout.labelWidth,
+              h: overlayMetrics.lineHeight,
+            },
+            {
+              ownerId,
+              ...overlayTargetMetadata(layout.labelPaint),
+            },
+          );
+        }
+        if (layout.firstGlyph) {
+          const bodyId =
+            layout.firstGlyph.kind === "planet"
+            && layout.firstGlyph.seId != null
+              ? overlayBodies.get(layout.firstGlyph.seId)
+              : undefined;
+          pushStyleTextTarget(
+            regions,
+            layout.glyphClass,
+            `${ownerId}:glyph`,
+            {
+              x:
+                gridLeft
+                + labelColumn
+                + overlayMetrics.columnGap,
+              y: rowTop,
+              w: layout.glyphWidth,
+              h: overlayMetrics.lineHeight,
+            },
+            {
+              ownerId,
+              ...overlayTargetMetadata(layout.glyphPaint, bodyId),
+            },
+          );
+        }
+        const trailingContent =
+          layout.secondGlyph?.char ?? layout.trailingText;
+        if (trailingContent) {
+          const bodyId =
+            layout.secondGlyph?.kind === "planet"
+            && layout.secondGlyph.seId != null
+              ? overlayBodies.get(layout.secondGlyph.seId)
+              : undefined;
+          pushStyleTextTarget(
+            regions,
+            layout.trailingClass,
+            `${ownerId}:trailing`,
+            {
+              x:
+                gridLeft
+                + labelColumn
+                + overlayMetrics.columnGap
+                + glyphColumn
+                + overlayMetrics.columnGap,
+              y: rowTop,
+              w: layout.trailingWidth,
+              h: overlayMetrics.lineHeight,
+            },
+            {
+              ownerId,
+              ...overlayTargetMetadata(layout.trailingPaint, bodyId),
+            },
+          );
+        }
+        rowTop += overlayMetrics.lineHeight;
+      }
+    }
+
+    const addPositionComponents = (
+      itemPrefix: string,
+      components: readonly PositionedText[],
+    ) => {
+      for (const component of components) {
+        const componentName = component.classId.split(".").at(-1) ?? "text";
+        pushStyleTextTarget(
+          regions,
+          component.classId,
+          `${itemPrefix}:${componentName}`,
+          component,
+        );
+      }
+    };
+    const bodyPositionClasses = {
+      degree: "bodies.inner.position.degree",
+      sign: "bodies.inner.position.sign",
+      minute: "bodies.inner.position.minute",
+    } as const;
+    for (const key of bodyKeys(chart)) {
+      const lon = bodyLongitude(chart, planets, key);
+      if (lon == null) continue;
+      const shiftedLon = lon + (bodyShifts.get(key) ?? 0);
+      const yoff = labelYoffs.get(key) ?? 0;
+      const degMin = bodyDegMin(chart, planets, key);
+      let positionBounds: PositionedText[] = [];
+      let motionCollisionBounds: Bounds[] = positionBounds;
+      if (degMin) {
+        if (isAngloWheel(chart)) {
+          positionBounds = layoutAngloBodyPosition(
+            measurer,
+            center,
+            ringset,
+            lon,
+            shiftedLon,
+            asc,
+            yoff,
+            degMin[0],
+            degMin[1],
+            chart,
+            palette,
+            fontUi,
+            fontBodySymbols,
+            typography,
+            style,
+          );
+          motionCollisionBounds = positionBounds;
+        } else if (isCompactWheel(chart) && ringset.rPosDeg && ringset.rPosMin) {
+          positionBounds = layoutDegMinStack(
+            measurer,
+            center,
+            ringset.rPosDeg,
+            ringset.rPosMin,
+            shiftedLon,
+            asc,
+            yoff,
+            degMin[0],
+            degMin[1],
+            palette.positions,
+            fontUi,
+            typography.bodyPosition.degreeSize,
+            typography.bodyPosition.minuteSize,
+            bodyPositionClasses,
+            style,
+          );
+          motionCollisionBounds = positionBounds;
+        } else if (chart.options.showPositions) {
+          const point = polar(center, ringset.rPos - yoff, shiftedLon, asc);
+          positionBounds = layoutDegMinPair(
+            measurer,
+            point[0],
+            point[1],
+            degMin[0],
+            degMin[1],
+            palette.positions,
+            fontUi,
+            typography.bodyPosition.degreeSize,
+            typography.bodyPosition.minuteSize,
+            bodyPositionClasses,
+            style,
+          );
+          const [degree, minute] = positionBounds;
+          motionCollisionBounds = [{
+            x: degree.x,
+            y: degree.y,
+            w: degree.w + minute.w,
+            h: Math.max(degree.h, minute.h),
+          }];
+        }
+        addPositionComponents(`body:${String(key)}:position`, positionBounds);
+      }
+      const marker =
+        key === "__fortune" || key === "__vertex" || key === "__syzygy"
+          ? ""
+          : planets.get(key)?.motion ?? "";
+      if (marker) {
+        const glyphSize = bodyGlyphSize(key, symbolSize, typography.syzygyScale);
+        pushStyleTextTarget(
+          regions,
+          "bodies.inner.motion",
+          `body:${String(key)}:motion`,
+          resolveMotionMarkerBounds(
+            measurer,
+            center,
+            asc,
+            shiftedLon,
+            ringset.rPlanet,
+            ringset.rRetr,
+            glyphSize,
+            marker,
+            fontUi,
+            typography.motionSize,
+            typography.layoutUnit,
+            style,
+            "bodies.inner.motion",
+            motionCollisionBounds,
+          ),
+        );
+      }
+    }
+
+    if (comparisonChart && outerBodyShiftsForHits) {
+      const comparisonPlanets = planetById(comparisonChart);
+      const outerPlanetRadius = ringset.rOuterPlanet ?? ringset.rPlanet;
+      const outerRetrRadius = ringset.rOuterRetr ?? ringset.rRetr;
+      for (const key of bodyKeys(comparisonChart)) {
+        if (key === "__fortune" || key === "__vertex" || key === "__syzygy") continue;
+        const lon = bodyLongitude(comparisonChart, comparisonPlanets, key);
+        const marker = comparisonPlanets.get(key)?.motion ?? "";
+        if (lon == null || !marker) continue;
+        const shiftedLon = lon + (outerBodyShiftsForHits.get(key) ?? 0);
+        pushStyleTextTarget(
+          regions,
+          "bodies.outer.motion",
+          `outer-body:${String(key)}:motion`,
+          resolveMotionMarkerBounds(
+            measurer,
+            center,
+            asc,
+            shiftedLon,
+            outerPlanetRadius,
+            outerRetrRadius,
+            bodyGlyphSize(key, outerSymbolSize, typography.syzygyScale),
+            marker,
+            fontUi,
+            typography.outerMotionSize,
+            typography.outerLayoutUnit,
+            style,
+            "bodies.outer.motion",
+            [],
+          ),
+        );
+      }
+    }
+
+    if (chart.options.showPositions || isAngloWheel(chart)) {
+      const anglePositionClasses = {
+        degree: "angles.inner.position.degree",
+        sign: "angles.inner.position.sign",
+        minute: "angles.inner.position.minute",
+      } as const;
+      const anglePositions = [
+        ["asc", "__asc", chart.angles.asc, chart.angles.ascDegMin],
+        ["mc", "__mc", chart.angles.mc, chart.angles.mcDegMin],
+      ] as const;
+      for (const [angleId, layoutKey, lon, degMin] of anglePositions) {
+        if (!degMin) continue;
+        let components: PositionedText[];
+        if (isAngloWheel(chart)) {
+          const hasFloatingLabel = bodyShifts.has(layoutKey);
+          if (!hasFloatingLabel && chart.options.showHouses) continue;
+          components = layoutAngloLongitudeRun(
+            measurer,
+            center,
+            ringset.rPosHouses,
+            lon,
+            asc,
+            degMin.degText,
+            degMin.minText,
+            chart,
+            palette,
+            fontUi,
+            fontSignSymbols,
+            typography.angloAnglePosition,
+            anglePositionClasses,
+            style,
+          );
+        } else if (isCompactWheel(chart) && ringset.rPosHousesMin) {
+          components = layoutDegMinStack(
+            measurer,
+            center,
+            ringset.rPosHouses,
+            ringset.rPosHousesMin,
+            lon,
+            asc,
+            0,
+            degMin.degText,
+            degMin.minText,
+            palette.positions,
+            fontUi,
+            typography.anglePosition.degreeSize,
+            typography.anglePosition.minuteSize,
+            anglePositionClasses,
+            style,
+          );
+        } else {
+          const point = polar(center, ringset.rPosAscMC, lon, asc);
+          components = layoutDegMinPair(
+            measurer,
+            point[0],
+            point[1],
+            degMin.degText,
+            degMin.minText,
+            palette.positions,
+            fontUi,
+            typography.anglePosition.degreeSize,
+            typography.anglePosition.minuteSize,
+            anglePositionClasses,
+            style,
+          );
+        }
+        addPositionComponents(`angle:${angleId}:position`, components);
+      }
+
+      if (chart.options.showHouses) {
+        const housePositionClasses = {
+          degree: "houses.inner.position.degree",
+          sign: "houses.inner.position.sign",
+          minute: "houses.inner.position.minute",
+        } as const;
+        const skipAsc = sameLongitude(chart.houses.cusps[0], chart.angles.asc);
+        const skipMc = sameLongitude(chart.houses.cusps[9], chart.angles.mc);
+        const houseIndices = isAngloWheel(chart)
+          ? Array.from({ length: 12 }, (_, index) => index)
+          : [0, 1, 2, 9, 10, 11];
+        for (const houseIndex of houseIndices) {
+          if (
+            !isAngloWheel(chart)
+            && ((skipAsc && houseIndex === 0) || (skipMc && houseIndex === 9))
+          ) {
+            continue;
+          }
+          const lon = chart.houses.cusps[houseIndex];
+          const degMin = chart.houses.cuspDegMin?.[houseIndex];
+          if (!degMin) continue;
+          let components: PositionedText[];
+          if (isAngloWheel(chart)) {
+            components = layoutAngloLongitudeRun(
+              measurer,
+              center,
+              ringset.rPosHouses,
+              lon,
+              asc,
+              degMin.degText,
+              degMin.minText,
+              chart,
+              palette,
+              fontUi,
+              fontSignSymbols,
+              typography.angloHousePosition,
+              housePositionClasses,
+              style,
+            );
+          } else if (isCompactWheel(chart) && ringset.rPosHousesMin) {
+            components = layoutDegMinStack(
+              measurer,
+              center,
+              ringset.rPosHouses,
+              ringset.rPosHousesMin,
+              lon,
+              asc,
+              0,
+              degMin.degText,
+              degMin.minText,
+              palette.positions,
+              fontUi,
+              typography.housePosition.degreeSize,
+              typography.housePosition.minuteSize,
+              housePositionClasses,
+              style,
+            );
+          } else {
+            const point = polar(center, ringset.rPosHouses, lon, asc);
+            components = layoutDegMinPair(
+              measurer,
+              point[0],
+              point[1],
+              degMin.degText,
+              degMin.minText,
+              palette.positions,
+              fontUi,
+              typography.housePosition.degreeSize,
+              typography.housePosition.minuteSize,
+              housePositionClasses,
+              style,
+            );
+          }
+          addPositionComponents(`house:${houseIndex + 1}:position`, components);
+        }
+      }
+    }
+
+    if (chart.options.showHouses && comparisonChart && showOuterHouseCusps) {
+      const lineTolerance = Math.max(4, maxRadius * 0.008);
+      const outerCuspRadius = restrainedAngloComparison
+        ? ringset.rOuterHouse
+        : ringset.rOuterHouseName ?? ringset.rOuterASCMC ?? ringset.rOuterArrow;
+      if (outerCuspRadius) {
+        comparisonChart.houses.cusps.forEach((cusp, index) => {
+          pushStyleLineTarget(
+            regions,
+            "houses.outer.cusp",
+            `outer-house:${index + 1}:cusp`,
+            polar(center, ringset.r30, cusp, asc),
+            polar(center, outerCuspRadius, cusp, asc),
+            lineTolerance,
+          );
+        });
+      }
+      const outerHouseNameRadius =
+        ringset.rOuterHouseName ?? ringset.rOuterArrow ?? ringset.rOuterASCMC;
+      if (
+        outerHouseNameRadius
+        && (showOuterHouseBand || restrainedAngloComparison)
+      ) {
+        for (let index = 0; index < 12; index += 1) {
+          pushStyleTextTarget(
+            regions,
+            "houses.outer.label",
+            `outer-house:${index + 1}:label`,
+            layoutHouseName(
+              measurer,
+              center,
+              outerHouseNameRadius,
+              asc,
+              comparisonChart,
+              index,
+              fontUi,
+              typography.outerHouseLabelSize,
+              typography.outerLayoutUnit,
+              style,
+              "houses.outer.label",
+            ),
+          );
+        }
+      }
+    }
+
+    for (const mark of chart.surveilMarks ?? []) {
+      const layout = layoutSurveilMark(
+        measurer,
+        center,
+        ringset,
+        asc,
+        mark,
+        palette,
+        fontUi,
+        fontSymbols,
+        typography.outerLayoutUnit,
+        style,
+      );
+      if (!layout) continue;
+      pushStyleLineTarget(
+        regions,
+        "surveil.tick",
+        `surveil:${mark.id}:tick`,
+        layout.tickStart,
+        layout.tickEnd,
+        Math.max(4, maxRadius * 0.008),
+      );
+      pushStyleTextTarget(
+        regions,
+        layout.marker.classId,
+        `surveil:${mark.id}:marker`,
+        layout.marker,
+      );
+      if (layout.source) {
+        pushStyleTextTarget(
+          regions,
+          "surveil.sourceLabel",
+          `surveil:${mark.id}:source`,
+          layout.source,
+        );
+      }
+    }
+  }
+
   // Outer-ring items (secondary_ring): every active item the chart draws,
   // projected to the outer-label radius band (graphchart.py:3879-4710,
   // priority 46). family + id + longitude + label drive the daemon objectId.
@@ -6375,12 +9506,11 @@ export function computeHitRegions(
       ringset.rAntis ?? labelRadius,
       fontUi,
       fontSymbols,
-      typography.outerLabelSize,
-      typography.outerLayoutUnit,
-      typography.outerProjectedGlyphSize,
+      typography,
       outerItemsChart,
       palette,
       style,
+      opts.outerLabelCollisionBounds,
     );
     for (let i = 0; i < outerItemLayout.items.length; i += 1) {
       const item = outerItemLayout.items[i];
@@ -6391,13 +9521,21 @@ export function computeHitRegions(
         typography.outerLayoutUnit,
         style,
       );
-      const itemFontSize = outerRingItemFontSize(
+      const itemFontSize = outerRingItemFontSize(item, typography);
+      let runs = buildOuterItemLabel(
         item,
-        typography.outerProjectedGlyphSize,
-        typography.outerLabelSize,
+        outerItemsChart,
+        palette,
+        typography,
+        fontUi,
+        fontSymbols,
+        style,
       );
-      let runs = buildOuterItemLabel(item, outerItemsChart, palette);
-      let [textWidth, textHeight] = labelRunsBounds(measurer, runs, fontUi, fontSymbols, itemFontSize);
+      let [textWidth, textHeight] = labelRunsBounds(
+        measurer,
+        runs,
+        fontUi,
+      );
       const shiftedLon = item.longitude + outerItemLayout.shifts[i];
       const pt = polar(center, itemLabelRadius, shiftedLon, asc);
       const rad = Math.PI + ((asc - shiftedLon) * Math.PI) / 180;
@@ -6450,6 +9588,103 @@ export function computeHitRegions(
       const top = y - textHeight / 2 - pad;
       const boxWidth = textWidth + pad * 2;
       const boxHeight = textHeight + pad * 2;
+      const ownerId = `secondary:${item.family}:${item.id}`;
+      const leaderStart = polar(
+        center,
+        ringset.r30,
+        item.longitude,
+        asc,
+      );
+      const leaderEnd = polar(
+        center,
+        PROJECTED_GLYPH_FAMILIES.has(item.family)
+          ? ringset.rAntisLines ?? ringset.rOuterLine
+          : ringset.rOuterLine,
+        shiftedLon,
+        asc,
+      );
+      if (opts.includeStyleTargets) {
+        let runCursor = x;
+        const runY = y - textHeight / 2;
+        runs.forEach((run, runIndex) => {
+          const [runWidth, runHeight] = measurer.textsize(run.text, {
+            font: run.fontFamily,
+            size: run.size,
+            weight: run.weight,
+            style: run.style,
+            tracking: run.tracking,
+          });
+          if (run.classId) {
+            pushStyleTextTarget(
+              regions,
+              run.classId,
+              `${ownerId}:run:${runIndex}`,
+              {
+                x: runCursor,
+                y: runY + (textHeight - runHeight) / 2,
+                w: runWidth,
+                h: runHeight,
+              },
+              { ownerId },
+            );
+          }
+          runCursor += runWidth;
+        });
+        const secondaryClasses = resolveWheelSecondaryRingClassIds(item.family);
+        if (secondaryClasses) {
+          pushStyleLineTarget(
+            regions,
+            secondaryClasses.leader,
+            `${ownerId}:leader`,
+            leaderStart,
+            leaderEnd,
+            Math.max(4, maxRadius * 0.008),
+            ownerId,
+          );
+        }
+        if (
+          item.motion
+          && secondaryClasses?.motion
+          && OUTER_BODY_GLYPH_FAMILIES.has(item.family)
+        ) {
+          const motionSize =
+            typography.secondaryRing[secondaryClasses.motion]
+            ?? typography.outerMotionSize;
+          const markerRadius =
+            ringset.rOuterRetr
+            ?? ringset.rOuterLine
+              + typography.outerLayoutUnit
+              * style.labels.outerMotionRadiusScale;
+          const markerPoint = polar(center, markerRadius, shiftedLon, asc);
+          const markerOffset =
+            typography.outerLayoutUnit * style.labels.outerMotionOffsetScale;
+          const motionPaint = semanticTypographyPaint(
+            style,
+            secondaryClasses.motion,
+            {
+            font: fontUi,
+            size: motionSize,
+              color: runs[0]?.color ?? palette.textDim,
+            },
+          );
+          const [motionWidth, motionHeight] = measurer.textsize(
+            item.motion,
+            typographyTextOpts(motionPaint),
+          );
+          pushStyleTextTarget(
+            regions,
+            secondaryClasses.motion,
+            `${ownerId}:motion`,
+            {
+              x: markerPoint[0] - markerOffset,
+              y: markerPoint[1] - markerOffset,
+              w: motionWidth,
+              h: motionHeight,
+            },
+            { ownerId },
+          );
+        }
+      }
       regions.push({
         kind: "secondary_ring",
         family: item.family,
@@ -6467,20 +9702,91 @@ export function computeHitRegions(
         width: boxWidth,
         height: boxHeight,
         segments: item.segments,
-        leader: {
-          start: polar(center, ringset.r30, item.longitude, asc),
-          end: polar(
-            center,
-            PROJECTED_GLYPH_FAMILIES.has(item.family)
-              ? ringset.rAntisLines ?? ringset.rOuterLine
-              : ringset.rOuterLine,
-            item.longitude + outerItemLayout.shifts[i],
-            asc,
-          ),
-        },
+        leader: { start: leaderStart, end: leaderEnd },
         priority: priorities.secondaryRing,
       });
     }
+  } else if (
+    hasOuterRing
+    && opts.includeStyleTargets
+    && (chart.fixedStars?.length ?? 0) > 0
+  ) {
+    const fixedStarLayout = getFixedStarLayout(
+      measurer,
+      chart,
+      center,
+      ringset,
+      asc,
+      fontUi,
+      typography,
+      style,
+    );
+    const fontSize =
+      typography.secondaryRing["secondaryRing.fixedStar.label"]
+      ?? typography.outerLabelSize;
+    const labelPaint = semanticTypographyPaint(
+      style,
+      "secondaryRing.fixedStar.label",
+      {
+        font: fontUi,
+        size: fontSize,
+        color: palette.textDim,
+      },
+    );
+    let labelRadius =
+      ringset.rOuterLine
+      + typography.outerLayoutUnit * style.labels.outerRadiusOffsetScale;
+    fixedStarLayout.stars.forEach((star, index) => {
+      const shiftedLon = star.longitude + fixedStarLayout.shifts[index];
+      const ownerId = `secondary:fixed_stars:${star.name}`;
+      const start = polar(center, ringset.r30, star.longitude, asc);
+      const end = polar(center, ringset.rOuterLine, shiftedLon, asc);
+      pushStyleLineTarget(
+        regions,
+        "secondaryRing.fixedStar.leader",
+        `${ownerId}:leader`,
+        start,
+        end,
+        Math.max(4, maxRadius * 0.008),
+        ownerId,
+      );
+      const label = buildFixedStarLabel(star);
+      const [labelWidth, labelHeight] = measurer.textsize(
+        label,
+        typographyTextOpts(labelPaint),
+      );
+      const point = polar(center, labelRadius, shiftedLon, asc);
+      const rad = Math.PI + ((asc - shiftedLon) * Math.PI) / 180;
+      let labelX = point[0];
+      let labelY = point[1] + fixedStarLayout.yOffsets[index];
+      const pos = normalize((rad * 180) / Math.PI);
+      if (pos > 90 && pos < 270) labelX -= labelWidth;
+      [labelX, labelY, labelRadius] = ensureTextOutsideOuterWheel(
+        center,
+        ringset.rOuterLine,
+        rad,
+        labelX,
+        labelY,
+        labelWidth,
+        labelHeight,
+        labelRadius,
+        Math.round(
+          typography.outerLayoutUnit * style.labels.outerOutsidePadScale,
+        ),
+      );
+      pushStyleTextTarget(
+        regions,
+        "secondaryRing.fixedStar.label",
+        `${ownerId}:label`,
+        {
+          x: labelX,
+          y: labelY - labelHeight / 2,
+          w: labelWidth,
+          h: labelHeight,
+        },
+        { ownerId },
+      );
+    });
   }
 
   return regions;
@@ -6537,9 +9843,13 @@ export function findHitRegion(
       const dx = mouseX - cx;
       const dy = mouseY - cy;
       distSq = dx * dx + dy * dy;
-    } else if (region.kind === "aspect" && region.shape === "line") {
+    } else if (
+      (region.kind === "aspect" || region.kind === "angle") &&
+      region.shape === "line"
+    ) {
       // True point-to-segment proximity over the whole stroke
-      // (graphchart._register_line_hover_region).
+      // (graphchart._register_line_hover_region). Angle rays additionally keep
+      // their endpoint disc so the former AC/MC arrow-tip target is unchanged.
       const x1 = region.x1 ?? region.x;
       const y1 = region.y1 ?? region.y;
       const x2 = region.x2 ?? region.x;
@@ -6554,8 +9864,17 @@ export function findHitRegion(
       const py = y1 + vy * t;
       const ddx = mouseX - px;
       const ddy = mouseY - py;
-      distSq = ddx * ddx + ddy * ddy;
-      inside = distSq <= tol * tol;
+      const segmentDistSq = ddx * ddx + ddy * ddy;
+      if (region.kind === "angle") {
+        const tipDx = mouseX - region.x;
+        const tipDy = mouseY - region.y;
+        const tipDistSq = tipDx * tipDx + tipDy * tipDy;
+        distSq = Math.min(segmentDistSq, tipDistSq);
+        inside = segmentDistSq <= tol * tol || tipDistSq <= region.r * region.r;
+      } else {
+        distSq = segmentDistSq;
+        inside = segmentDistSq <= tol * tol;
+      }
     } else {
       const dx = mouseX - region.x;
       const dy = mouseY - region.y;
@@ -6608,22 +9927,39 @@ export function drawChart(draw: CanvasDraw, chart: Chart, opts: DrawOptions) {
 const loadedChartFontKeys = new Set<string>();
 const pendingChartFontLoads = new Map<string, Promise<void>>();
 
-function chartFontKey(fontText?: string, fontSymbols?: string): string {
+function chartFontKey(
+  fontText?: string,
+  fontSymbols?: string,
+  additionalFonts: readonly string[] = [],
+): string {
   const text = (fontText || DEFAULT_MORINUS_TEXT_FONT).replace(/\s+/g, " ").trim();
   const symbols = (fontSymbols || '"AriesMorinus"').replace(/\s+/g, " ").trim();
-  return `${text}\u0000${symbols}`;
+  const extras = [...new Set(
+    additionalFonts
+      .map((font) => font.replace(/\s+/g, " ").trim())
+      .filter(Boolean),
+  )].sort();
+  return [text, symbols, ...extras].join("\u0000");
 }
 
-export function chartFontsAreReady(fontText?: string, fontSymbols?: string): boolean {
-  return loadedChartFontKeys.has(chartFontKey(fontText, fontSymbols));
+export function chartFontsAreReady(
+  fontText?: string,
+  fontSymbols?: string,
+  additionalFonts: readonly string[] = [],
+): boolean {
+  return loadedChartFontKeys.has(chartFontKey(fontText, fontSymbols, additionalFonts));
 }
 
 export function warmChartFonts(fontText?: string, fontSymbols?: string): void {
   void awaitFonts(fontText, fontSymbols);
 }
 
-export async function awaitFonts(fontText?: string, fontSymbols?: string): Promise<void> {
-  const key = chartFontKey(fontText, fontSymbols);
+export async function awaitFonts(
+  fontText?: string,
+  fontSymbols?: string,
+  additionalFonts: readonly string[] = [],
+): Promise<void> {
+  const key = chartFontKey(fontText, fontSymbols, additionalFonts);
   if (typeof document === "undefined") {
     loadedChartFontKeys.add(key);
     return;
@@ -6635,7 +9971,7 @@ export async function awaitFonts(fontText?: string, fontSymbols?: string): Promi
   if (loadedChartFontKeys.has(key)) {
     return;
   }
-  const [textFont, symbolFont] = key.split("\u0000");
+  const [textFont, symbolFont, ...roleFonts] = key.split("\u0000");
   const pending = pendingChartFontLoads.get(key);
   if (pending) {
     await pending;
@@ -6643,6 +9979,7 @@ export async function awaitFonts(fontText?: string, fontSymbols?: string): Promi
   }
   const loadPromise = Promise.allSettled([
     document.fonts.load(`32px ${symbolFont || '"AriesMorinus"'}`),
+    ...roleFonts.map((font) => document.fonts.load(`32px ${font}`)),
     document.fonts.load('14px "FreeSans"'),
     document.fonts.load('700 14px "FreeSans"'),
     document.fonts.load(`14px ${textFont}`),

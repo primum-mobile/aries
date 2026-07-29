@@ -33,8 +33,8 @@ import { Input } from "@/components/ui/input";
 import {
   cancelTransitSearch,
   fetchTransitSearchCatalog,
-  fetchTransitSearchProgress,
   fetchTransitSearchContextCatalog,
+  followTransitSearchProgress,
   openDirectionsTimedChart,
   saveTransitSearchContextSettings,
   saveTransitSearchSettings,
@@ -57,7 +57,12 @@ import {
   parseDateDisplayInput,
   type DateConvention,
 } from "@/lib/date-display";
-import { LIST_ROLE_CLASSES } from "@/lib/list-tokens";
+import { eventListBodyViewportHeight } from "@/lib/event-list-time";
+import {
+  LIST_ROLE_CLASSES,
+  useFixedRowHeightAnchor,
+  useListRowHeight,
+} from "@/lib/list-tokens";
 import { useT, useTFallback, type TFunc } from "@/lib/i18n/i18n";
 import {
   getCachedListPayload,
@@ -106,8 +111,9 @@ type TransitSearchCacheEntry = {
 type SearchOpenTimedChart = (row: TransitSearchRow, action: TimedChartAction) => void;
 
 const TRANSIT_SEARCH_CACHE = "transit-search";
-const SEARCH_PROGRESS_POLL_MS = 180;
 const EMPTY_SEARCH_ROWS: TransitSearchRow[] = [];
+const SEARCH_VIRTUAL_OVERSCAN_ROWS = 12;
+const SEARCH_VIRTUAL_SCROLL_SYNC_EVENT = "aries:search-virtual-scroll-sync";
 
 const SEARCH_COLUMNS: Record<SearchColumnKey, { labelKey: string; headClass: string }> = {
   date: { labelKey: "search.date", headClass: "text-center" },
@@ -128,6 +134,7 @@ const TECHNIQUE_DISPLAY_LABEL_KEYS: Record<string, string> = {
   primary_directions: "search.techPrimaryDirections",
   mundane_weather: "search.techCelestialWeather",
   heliacal_phases: "search.techHeliacalPhases",
+  sign_changes: "search.techIngressSynodic",
 };
 
 type TransitSearchViewProps =
@@ -208,6 +215,7 @@ export function TransitSearchView(props: TransitSearchViewProps) {
   const settingsControllerRef = React.useRef<AbortController | null>(null);
   const lastAutoRequestKeyRef = React.useRef("");
   const lastCatalogContextKeyRef = React.useRef("");
+  const searchScrollerRef = React.useRef<HTMLDivElement | null>(null);
   const applyTimedChartOpenResult = useWorkspaceStore((s) => s.applyTimedChartOpenResult);
   const showRadix = useWorkspaceStore((s) => s.timedChartShowRadix);
 
@@ -312,13 +320,7 @@ export function TransitSearchView(props: TransitSearchViewProps) {
           }
           startedSessionId = initial.sessionId;
           currentSearchSessionRef.current = initial.sessionId;
-          applyProgress(initial);
-          let current = initial;
-          while (!controller.signal.aborted && !current.complete) {
-            await delay(SEARCH_PROGRESS_POLL_MS, controller.signal);
-            current = await fetchTransitSearchProgress(current.sessionId, controller.signal);
-            applyProgress(current);
-          }
+          await followTransitSearchProgress(initial, controller.signal, applyProgress);
         })
         .catch((err) => {
           if ((err as { name?: string }).name === "AbortError") return;
@@ -659,6 +661,10 @@ export function TransitSearchView(props: TransitSearchViewProps) {
   }, [form?.fromDate]);
   const layoutPreset = useListLayoutPreset();
   const sortedRows = React.useMemo(() => sortTransitSearchRows(rows, sort), [rows, sort]);
+  const searchRowHeight = useListRowHeight("dense");
+  useFixedRowHeightAnchor(searchScrollerRef, sortedRows.length, searchRowHeight, {
+    syncEvent: SEARCH_VIRTUAL_SCROLL_SYNC_EVENT,
+  });
   const visibleColumns = React.useMemo(
     () =>
       listKeyDisplayOrder(getVisibleColumns(rows, form, t), layoutPreset, {
@@ -702,7 +708,22 @@ export function TransitSearchView(props: TransitSearchViewProps) {
       if (!row.canOpenChart || !row.openDatetime) return;
       setError(null);
       const finishSnapshotCommand = beginWorkspaceSnapshotCommand();
-      void openDirectionsTimedChart(documentId, action, row.openDatetime, null, null, null, showRadix)
+      void openDirectionsTimedChart(
+        documentId,
+        action,
+        row.openDatetime,
+        null,
+        null,
+        null,
+        showRadix,
+        row.technique === "converse_transits"
+          ? {
+              sourceTechnique: row.technique,
+              symbolicWhenIso: row.displayDatetime,
+              symbolicEventJd: row.eventJd,
+            }
+          : null,
+      )
         .then((result) => {
           applyTimedChartOpenResult(result);
           if (!result.documentId) {
@@ -872,7 +893,7 @@ export function TransitSearchView(props: TransitSearchViewProps) {
               {error}
             </div>
           ) : null}
-          <div className="flex-1 min-h-0 overflow-auto">
+          <div ref={searchScrollerRef} className="flex-1 min-h-0 overflow-auto">
             <table
               className={cn(LIST_ROLE_CLASSES.dense, "border-collapse leading-tight", tableResize.tableClassName)}
               style={tableResize.tableStyle}
@@ -916,24 +937,19 @@ export function TransitSearchView(props: TransitSearchViewProps) {
                   ))}
                 </tr>
               </thead>
-              <tbody>
-                {rows.length === 0 && !searchLoading ? (
-                  <tr>
-                    <td className="px-[var(--aries-control-padding-x-compact)] py-[var(--aries-pane-title-gap)] text-center text-muted-foreground" colSpan={visibleColumns.length}>
-                      {t("search.noResultsSetRange")}
-                    </td>
-                  </tr>
-                ) : rows.length === 0 && searchLoading ? (
-                  <tr>
-                    <td className="px-[var(--aries-control-padding-x-compact)] py-[var(--aries-pane-title-gap)] text-center text-muted-foreground" colSpan={visibleColumns.length}>
-                      <LoadingLabel label={t("search.searching")} />
-                    </td>
-                  </tr>
-                ) : (
-                  sortedRows.map((row) => (
+              <VirtualizedSearchRows
+                rows={sortedRows}
+                loading={searchLoading}
+                emptyLabel={t("search.noResultsSetRange")}
+                loadingLabel={t("search.searching")}
+                colSpan={visibleColumns.length}
+                scrollerRef={searchScrollerRef}
+                rowHeight={searchRowHeight}
+                renderRow={(row) => (
                     <SearchRow
                       key={row.key}
                       row={row}
+                      rowHeight={searchRowHeight}
                       selected={selectedRowKeys.has(row.key)}
                       contextMenuActive={contextRowKey === row.key}
                       contextMenuRows={contextRowKey === row.key ? selectedRows : EMPTY_SEARCH_ROWS}
@@ -944,14 +960,16 @@ export function TransitSearchView(props: TransitSearchViewProps) {
                       onOpenTimedChart={openTimedChart}
                       onActionError={setError}
                     />
-                  ))
                 )}
-              </tbody>
+              />
             </table>
           </div>
         </div>
         {filtersOpen ? (
-          <aside className="absolute inset-y-0 right-0 z-20 flex w-[var(--aries-pane-drawer-width)] flex-col gap-[var(--aries-pane-title-gap)] overflow-auto border-l border-border bg-background/95 px-[var(--aries-pane-header-compact-padding-x)] py-[var(--aries-pane-title-gap)] shadow-xl backdrop-blur-sm">
+          <aside
+            data-aries-surface="overlay"
+            className="absolute inset-y-0 right-0 z-20 flex w-[var(--aries-pane-drawer-width)] flex-col gap-[var(--aries-pane-title-gap)] overflow-auto border-l border-border bg-background/95 px-[var(--aries-pane-header-compact-padding-x)] py-[var(--aries-pane-title-gap)] shadow-xl backdrop-blur-sm"
+          >
             <div className="mb-1 flex items-center justify-end">
               <Button type="button" size="icon-xs" variant="ghost" onClick={() => setFiltersOpen(false)} aria-label={t("search.closeFilters")}>
                 <X className="size-[var(--aries-control-icon-size)]" />
@@ -1117,6 +1135,176 @@ function sortTransitSearchRows(
       return a.originalIndex - b.originalIndex;
     })
     .map(({ row }) => row);
+}
+
+function VirtualizedSearchRows({
+  rows,
+  loading,
+  emptyLabel,
+  loadingLabel,
+  colSpan,
+  scrollerRef,
+  rowHeight,
+  renderRow,
+}: {
+  rows: readonly TransitSearchRow[];
+  loading: boolean;
+  emptyLabel: string;
+  loadingLabel: string;
+  colSpan: number;
+  scrollerRef: React.RefObject<HTMLDivElement | null>;
+  rowHeight: number;
+  renderRow: (row: TransitSearchRow, index: number) => React.ReactNode;
+}) {
+  const virtual = useSearchVirtualRows(scrollerRef, rows.length, rowHeight);
+  const visibleRows = rows.slice(virtual.startIndex, virtual.endIndex);
+
+  if (rows.length === 0) {
+    return (
+      <tbody data-rendered-row-count={0} data-total-row-count={0}>
+        <tr>
+          <td
+            className="px-[var(--aries-control-padding-x-compact)] py-[var(--aries-pane-title-gap)] text-center text-muted-foreground"
+            colSpan={colSpan}
+          >
+            {loading ? <LoadingLabel label={loadingLabel} /> : emptyLabel}
+          </td>
+        </tr>
+      </tbody>
+    );
+  }
+
+  return (
+    <tbody
+      data-rendered-row-count={visibleRows.length}
+      data-total-row-count={rows.length}
+    >
+      {virtual.paddingTop > 0 ? (
+        <SearchVirtualSpacerRow colSpan={colSpan} height={virtual.paddingTop} />
+      ) : null}
+      {visibleRows.map((row, offset) => renderRow(row, virtual.startIndex + offset))}
+      {virtual.paddingBottom > 0 ? (
+        <SearchVirtualSpacerRow colSpan={colSpan} height={virtual.paddingBottom} />
+      ) : null}
+    </tbody>
+  );
+}
+
+function SearchVirtualSpacerRow({ colSpan, height }: { colSpan: number; height: number }) {
+  return (
+    <tr
+      aria-hidden="true"
+      data-virtual-spacer
+      className="border-0 hover:bg-transparent"
+      style={{ height }}
+    >
+      <td colSpan={colSpan} className="border-0 p-0" style={{ height }} />
+    </tr>
+  );
+}
+
+function useSearchVirtualRows(
+  scrollerRef: React.RefObject<HTMLDivElement | null>,
+  rowCount: number,
+  rowHeight: number,
+) {
+  const [viewport, setViewport] = React.useState({ scrollTop: 0, height: 0 });
+
+  const measureNow = React.useCallback(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const next = {
+      scrollTop: scroller.scrollTop,
+      height: eventListBodyViewportHeight(scroller),
+    };
+    setViewport((previous) =>
+      previous.scrollTop === next.scrollTop && previous.height === next.height
+        ? previous
+        : next,
+    );
+  }, [scrollerRef]);
+
+  React.useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return undefined;
+
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      measureNow();
+    };
+    const measureSync = () => {
+      if (frame) {
+        cancelAnimationFrame(frame);
+        frame = 0;
+      }
+      measureNow();
+    };
+    const scheduleMeasure = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(measure);
+    };
+
+    scheduleMeasure();
+    scroller.addEventListener("scroll", scheduleMeasure, { passive: true });
+    scroller.addEventListener(SEARCH_VIRTUAL_SCROLL_SYNC_EVENT, measureSync);
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined" ? new ResizeObserver(scheduleMeasure) : null;
+    resizeObserver?.observe(scroller);
+
+    return () => {
+      scroller.removeEventListener("scroll", scheduleMeasure);
+      scroller.removeEventListener(SEARCH_VIRTUAL_SCROLL_SYNC_EVENT, measureSync);
+      resizeObserver?.disconnect();
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [measureNow, rowCount, scrollerRef]);
+
+  React.useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const maxTop = Math.max(
+      0,
+      rowCount * rowHeight - eventListBodyViewportHeight(scroller),
+    );
+    if (scroller.scrollTop <= maxTop) return;
+    scroller.scrollTop = maxTop;
+    scroller.dispatchEvent(new Event(SEARCH_VIRTUAL_SCROLL_SYNC_EVENT));
+    measureNow();
+  }, [measureNow, rowCount, rowHeight, scrollerRef]);
+
+  return React.useMemo(() => {
+    if (rowCount <= 0) {
+      return {
+        startIndex: 0,
+        endIndex: 0,
+        paddingTop: 0,
+        paddingBottom: 0,
+      };
+    }
+    const visibleCount = Math.max(1, Math.ceil(viewport.height / rowHeight));
+    const rawVisibleStart =
+      viewport.height > 0 ? Math.floor(viewport.scrollTop / rowHeight) : 0;
+    const maxVisibleStart = Math.max(0, rowCount - visibleCount);
+    const visibleStart = Math.max(0, Math.min(rawVisibleStart, maxVisibleStart));
+    const startIndex = Math.min(
+      rowCount,
+      Math.max(0, visibleStart - SEARCH_VIRTUAL_OVERSCAN_ROWS),
+    );
+    const endIndex = Math.max(
+      startIndex,
+      Math.min(
+        rowCount,
+        visibleStart + visibleCount + SEARCH_VIRTUAL_OVERSCAN_ROWS,
+      ),
+    );
+    return {
+      startIndex,
+      endIndex,
+      paddingTop: startIndex * rowHeight,
+      paddingBottom: (rowCount - endIndex) * rowHeight,
+    };
+  }, [rowCount, rowHeight, viewport.height, viewport.scrollTop]);
 }
 
 function LoadingLabel({ label }: { label: string }) {
@@ -1493,6 +1681,7 @@ function CheckRow({
 
 const SearchRow = React.memo(function SearchRow({
   row,
+  rowHeight,
   selected,
   contextMenuActive,
   contextMenuRows,
@@ -1504,6 +1693,7 @@ const SearchRow = React.memo(function SearchRow({
   onActionError,
 }: {
   row: TransitSearchRow;
+  rowHeight: number;
   selected: boolean;
   contextMenuActive: boolean;
   contextMenuRows: TransitSearchRow[];
@@ -1526,6 +1716,7 @@ const SearchRow = React.memo(function SearchRow({
       <tr
         data-state={selected ? "selected" : undefined}
         className="aries-list-row aries-list-row--hover aries-list-row--selected cursor-context-menu border-b"
+        style={{ height: rowHeight }}
         onClick={(event) => onSelect(row, event)}
         onContextMenu={() => onContextSelect(row)}
       >
@@ -1940,7 +2131,9 @@ function downloadTextFile(filename: string, type: string, content: string) {
 }
 
 function useTransitSearchOptionsSeq(cachedSeq: number): number {
-  const lastOptionsChange = useDaemonWorkspaceStore((state) => state.lastOptionsChange);
+  const lastOptionsChange = useDaemonWorkspaceStore(
+    (state) => state.lastRetainedDataOptionsChange,
+  );
   const [seq, setSeq] = React.useState(() =>
     lastOptionsChange &&
     lastOptionsChange.styleOnly !== true &&
@@ -2021,13 +2214,10 @@ function searchColumnLabel(
 
 function searchCanProduceTargetColumn(form?: SearchForm | null): boolean {
   if (!form) return true;
+  if (form.includeSignChanges) return true;
   const nonHeliacalTechniques = form.techniques.filter((technique) => technique !== "heliacal_phases");
   if (nonHeliacalTechniques.length === 0) return false;
-  const hasAspectTargets = form.aspects.length > 0 && form.significatorIds.length > 0;
-  const hasSignChangeTargets =
-    form.includeSignChanges &&
-    (form.techniques.includes("transits") || form.techniques.includes("mundane_weather"));
-  return hasAspectTargets || hasSignChangeTargets;
+  return form.aspects.length > 0 && form.significatorIds.length > 0;
 }
 
 function rowHasTargetBody(row: TransitSearchRow): boolean {
@@ -2116,24 +2306,6 @@ function isoDate(year: number, month: number, day: number): string {
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
-function delay(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal.aborted) {
-      reject(new DOMException("Aborted", "AbortError"));
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      window.clearTimeout(timer);
-      reject(new DOMException("Aborted", "AbortError"));
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
-}
-
 function preserveCatalogSelections(
   defaults: SearchForm,
   previous: SearchForm,
@@ -2165,12 +2337,12 @@ function buildAutoRequestKey(params: {
 }
 
 function canRunSearch(form: SearchForm): boolean {
-  if (form.techniques.length === 0 || form.promittorIds.length === 0) return false;
-  const hasAspectCombinations = form.aspects.length > 0 && form.significatorIds.length > 0;
-  const supportsSignChanges =
-    form.techniques.includes("transits") || form.techniques.includes("mundane_weather");
+  if (form.promittorIds.length === 0) return false;
+  const hasAspectTechnique = form.techniques.some((technique) => technique !== "heliacal_phases");
+  const hasAspectCombinations =
+    hasAspectTechnique && form.aspects.length > 0 && form.significatorIds.length > 0;
   const supportsHeliacal = form.techniques.includes("heliacal_phases");
-  return hasAspectCombinations || (form.includeSignChanges && supportsSignChanges) || supportsHeliacal;
+  return hasAspectCombinations || form.includeSignChanges || supportsHeliacal;
 }
 
 function clampInteger(value: string, min: number, max: number, fallback: number): number {

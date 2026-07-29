@@ -7,7 +7,7 @@ import * as React from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 
-import { Bell, ChevronLeft, ChevronRight, Coffee, PanelLeft, NotebookPen, Pencil, ScrollText, Search, Settings } from "lucide-react";
+import { Bell, ChevronLeft, ChevronRight, Coffee, PanelLeft, NotebookPen, Pencil, ScrollText, Search, Settings, SlidersHorizontal } from "lucide-react";
 
 import {
   ResizableHandle,
@@ -25,18 +25,33 @@ import {
   readPaletteFromTheme,
   readPaletteProfileOverrides,
 } from "@/lib/chart/palette";
-import { resolveWheelRenderStyleFromTokens } from "@/lib/chart/wheel-render-style";
+import {
+  projectWheelAuthoringStyle,
+  resolveWheelOverlayMetrics,
+  resolveWheelRenderStyleFromTokens,
+  resolveWheelTypographyPaint,
+  type WheelChartOverlayClass,
+  type WheelRenderStyle,
+  type WheelTypographyProfile,
+} from "@/lib/chart/wheel-render-style";
 import { registerChartExportRenderer } from "@/lib/chart/chart-export-registry";
+import { ChartCopyControl } from "@/components/workshell/chart-copy-control";
 import { renderChartSurfaceExport } from "@/lib/chart/chart-export-renderer";
 import {
   ASTROCART_TITLEBAR_SAFE_TOP,
   createAstrocartStyleMessage,
 } from "@/lib/chart/astrocart-style";
-import { useT, type TFunc } from "@/lib/i18n/i18n";
+import { useT, useTFallback, type TFunc } from "@/lib/i18n/i18n";
 import { resolveListFocusDatetime } from "@/lib/list-follow-policy";
+import { LIST_PANE_CLASSES } from "@/lib/list-tokens";
 import { cn } from "@/lib/utils";
 
 import { ChartCanvas } from "./chart-canvas";
+import {
+  AstrocartControls,
+  type AstrocartConfigurationChange,
+  type AstrocartParanIntent,
+} from "./astrocart-controls";
 import { activeRightPaneModule } from "./right-pane-layout";
 import {
   closeInspectorAndNotes,
@@ -52,7 +67,12 @@ import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 import { useThemeStore } from "@/stores/theme-store";
 import { useUpdateNotificationStore } from "@/stores/update-notification-store";
 import { useAstrocartMapUrl } from "@/hooks/use-astrocart-map-url";
+import {
+  useDraggableOverlay,
+  type OverlayOffset,
+} from "@/hooks/use-draggable-overlay";
 import { useStyleRevision } from "@/hooks/use-style-revision";
+import { EMBEDDED_MANIFEST_SHORTCUT_EVENT } from "@/shortcuts/manifest-shortcuts";
 import { TitlebarOptionsMenu } from "./titlebar-options-menu";
 import {
   RIGHT_PANE_COLLAPSE_THRESHOLD,
@@ -72,9 +92,16 @@ import {
   workspaceActivate,
   workspaceAstrocartHere,
   type AppSplashPayload,
+  type AstrocartConfigurationPayload,
+  type AstrocartMapSpec,
   type AstrocartHereAction,
   type AstrocartLineMode,
+  type AstrocartPdfPageFormat,
+  type AstrocartPdfSelection,
+  type AstrocartPrintAtlas,
   type AstrocartViewState,
+  type AstrocartViewStateScope,
+  type ThemeState,
   type WorkspaceManifest,
 } from "@/lib/daemon/client";
 import { isAbortError, isTransientDaemonFetchError } from "@/lib/abort-error";
@@ -84,6 +111,10 @@ import {
   resolveWindowsCaptionInset,
 } from "@/lib/shell-host";
 import type { SettingsTabId } from "./settings-dialog";
+import {
+  chartNavbarHoverZoneFromRect,
+  setChartNavbarHoverZone,
+} from "./chart-navbar-hover-zone";
 
 const AstrolabeView = dynamic(
   () => import("./astrolabe-view").then((mod) => mod.AstrolabeView),
@@ -125,6 +156,10 @@ const InspectorPanel = dynamic(
   () => import("./inspector-panel").then((mod) => mod.InspectorPanel),
   { loading: () => null },
 );
+const ChartStylePanel = dynamic(
+  () => import("./chart-style-panel").then((mod) => mod.ChartStylePanel),
+  { loading: () => null },
+);
 const NotesPanel = dynamic(
   () => import("./notes-panel").then((mod) => mod.NotesPanel),
   { loading: () => null },
@@ -139,6 +174,10 @@ const TransitListView = dynamic(
 );
 const SynodicCycleListView = dynamic(
   () => import("./synodic-cycle-list-view").then((mod) => mod.SynodicCycleListView),
+  { loading: () => null },
+);
+const AspectListPanel = dynamic(
+  () => import("./aspect-list-panel").then((mod) => mod.AspectListPanel),
   { loading: () => null },
 );
 const EclipsesView = dynamic(
@@ -193,6 +232,31 @@ function isChartBearingSurfaceDocument(doc: WorkspaceDocument | null | undefined
   return isChartBearingSurfaceKind(doc?.kind);
 }
 
+function isAspectListQueryHostDocument(
+  doc: WorkspaceDocument | null | undefined,
+): doc is WorkspaceDocument {
+  // Aspect List follows every live chart-session document. The AT child is a
+  // chart-backed special surface even though it owns additional right-pane
+  // chrome; the remaining exclusions are view-only documents with no chart
+  // session to query.
+  return isChartBearingSurfaceDocument(doc) || doc?.kind === "ascensional-transits";
+}
+
+function aspectListContextRevision(
+  chart: ChartRenderSnapshot | null,
+  documentId: string,
+): string | null {
+  if (!chart || chart.document?.documentId !== documentId) return null;
+  return JSON.stringify({
+    viewMode: chart.document.viewMode,
+    comparisonName: chart.document.comparisonName ?? null,
+    compoundKind: chart.document.compoundKind ?? null,
+    compositeVariant: chart.document.compositeVariant ?? null,
+    showRadixComparison: chart.document.showRadixComparison ?? null,
+    hasComparisonChart: chart.comparisonChart != null,
+  });
+}
+
 function isChartBearingSurfaceKind(kind: WorkspaceDocument["kind"] | null | undefined): boolean {
   if (!kind) return false;
   return ![
@@ -225,6 +289,26 @@ const ASTROCART_PRIMARY_MODES = new Set<AstrocartLineMode>([
 ]);
 const ASTROCART_DEFAULT_LINE_MODES: AstrocartLineMode[] = ["standard"];
 const ASTROCART_REFINEMENT_DELAY_MS = 220;
+const ASTROCART_ASPECT_IDS = [
+  "semisextile",
+  "semisquare",
+  "septile",
+  "sextile",
+  "quintile",
+  "square",
+  "trine",
+  "sesquisquare",
+  "biquintile",
+  "quincunx",
+  "opposition",
+] as const;
+const ASTROCART_DYNAMIC_TECHNIQUE_IDS = [
+  "transit",
+  "secondary_progression",
+  "minor_progression",
+  "tertiary_progression",
+  "solar_arc",
+] as const;
 
 type AstrocartGeoJsonMeta = {
   lat?: number;
@@ -240,41 +324,323 @@ type AstrocartGeoJsonPayload = {
   meta?: AstrocartGeoJsonMeta;
 };
 
+type AstrocartGeoJsonFeature = {
+  id?: unknown;
+  geometry?: unknown;
+  properties?: Record<string, unknown>;
+  [key: string]: unknown;
+};
+
+type AstrocartModeSpecKeys = Partial<Record<AstrocartLineMode, string>>;
+
+type AstrocartGeometryPrecision = "preview" | "interactive" | "precise";
+type AstrocartRetainedPrecision = Exclude<AstrocartGeometryPrecision, "precise">;
+const ASTROCART_RETAINED_TERMINAL_PRECISION: AstrocartRetainedPrecision =
+  "interactive";
+
 type AstrocartModeCacheEntry = {
   sessionRevision: number;
-  precision: "preview" | "precise";
+  modeSpecKey: string | null;
+  precision: AstrocartGeometryPrecision;
   payload: AstrocartGeoJsonPayload;
+};
+
+type AstrocartRetainedModeCacheEntry = Omit<
+  AstrocartModeCacheEntry,
+  "precision"
+> & {
+  precision: AstrocartRetainedPrecision;
 };
 
 type AstrocartModeRequest = {
   sessionRevision: number;
+  modeSpecKey: string | null;
   controller: AbortController;
 };
+
+type AstrocartMetaRequest = {
+  sessionRevision: number;
+  configurationRevision: number;
+  controller: AbortController;
+};
+
+type AstrocartEmptyModeCacheEntry = {
+  sessionRevision: number;
+  configurationRevision: number;
+  precision: AstrocartRetainedPrecision;
+  payload: AstrocartGeoJsonPayload;
+};
+
+type AstrocartPrintAtlasRequest = {
+  resolve: (atlas: AstrocartPrintAtlas | null) => void;
+  dataGenerationKey: string;
+  timeoutId: number;
+  signal: AbortSignal;
+  controller: AbortController;
+  abortListener: () => void;
+  cancelChild: () => void;
+};
+
+type AstrocartPhysicalOverlayAccumulator = {
+  featureIndex: number;
+  modes: Set<AstrocartLineMode>;
+  displayLineSystemByMode: Partial<Record<AstrocartLineMode, string>>;
+};
+
+async function fetchAstrocartModePayload(
+  documentId: string,
+  mode: AstrocartLineMode | null,
+  precision: AstrocartGeometryPrecision,
+  signal: AbortSignal,
+): Promise<AstrocartGeoJsonPayload> {
+  const params = new URLSearchParams({ modes: mode ?? "", precision });
+  const response = await daemonFetch(
+    `${daemonBaseUrl()}/api/workspace/document/${encodeURIComponent(documentId)}/astrocart?${params.toString()}`,
+    { cache: "no-store", signal },
+  );
+  if (!response.ok) {
+    throw new Error(`astrocart fetch failed: ${response.status}`);
+  }
+  const raw = await response.json() as Partial<AstrocartGeoJsonPayload>;
+  return {
+    type: "FeatureCollection",
+    features: Array.isArray(raw.features) ? raw.features : [],
+    meta: raw.meta,
+  };
+}
+
+function astrocartFeatureProperties(
+  feature: unknown,
+): Record<string, unknown> | null {
+  if (typeof feature !== "object" || feature == null || Array.isArray(feature)) {
+    return null;
+  }
+  const properties = (feature as AstrocartGeoJsonFeature).properties;
+  if (
+    typeof properties !== "object" ||
+    properties == null ||
+    Array.isArray(properties)
+  ) {
+    return null;
+  }
+  return properties;
+}
+
+function astrocartPropertyText(
+  properties: Record<string, unknown>,
+  key: string,
+): string {
+  const value = properties[key];
+  return typeof value === "string" ? value : "";
+}
+
+function appendUniqueAstrocartStrings(target: string[], value: unknown): void {
+  const values = Array.isArray(value) ? value : [value];
+  for (const candidate of values) {
+    if (
+      typeof candidate === "string" &&
+      candidate.length > 0 &&
+      !target.includes(candidate)
+    ) {
+      target.push(candidate);
+    }
+  }
+}
+
+function astrocartDisplayLineSystemForMode(
+  properties: Record<string, unknown>,
+  mode: AstrocartLineMode,
+  meta?: AstrocartGeoJsonMeta,
+): string {
+  const explicitByMode = properties.display_line_system_by_mode;
+  if (
+    typeof explicitByMode === "object" &&
+    explicitByMode != null &&
+    !Array.isArray(explicitByMode)
+  ) {
+    const explicit = (explicitByMode as Record<string, unknown>)[mode];
+    if (typeof explicit === "string" && explicit.length > 0) return explicit;
+  }
+  return (
+    astrocartPropertyText(properties, "display_line_system") ||
+    (typeof meta?.lineSystem === "string" ? meta.lineSystem : "")
+  );
+}
+
+function astrocartPhysicalOverlayIdentity(
+  feature: unknown,
+  mode: AstrocartLineMode,
+): string | null {
+  if (!ASTROCART_PRIMARY_MODES.has(mode)) return null;
+  const properties = astrocartFeatureProperties(feature);
+  if (!properties) return null;
+  const kind = astrocartPropertyText(properties, "kind").toUpperCase();
+  if (kind !== "PARAN" && kind !== "ZENITH") return null;
+
+  const layer = astrocartPropertyText(properties, "astrocart_layer") || "natal";
+  const layerId =
+    astrocartPropertyText(properties, "astrocart_layer_id") || layer;
+  const technique = astrocartPropertyText(properties, "astrocart_technique");
+  const cursor = astrocartPropertyText(properties, "astrocart_cursor_iso");
+  let semantic: string | string[][];
+  if (kind === "ZENITH") {
+    const point = astrocartPropertyText(properties, "point");
+    if (!point) return null;
+    semantic = point;
+  } else {
+    const endpoints = [
+      [
+        astrocartPropertyText(properties, "a_point"),
+        astrocartPropertyText(properties, "a_angle"),
+      ],
+      [
+        astrocartPropertyText(properties, "b_point"),
+        astrocartPropertyText(properties, "b_angle"),
+      ],
+    ];
+    if (endpoints.some(([point, angle]) => !point || !angle)) return null;
+    semantic = endpoints.sort((left, right) => (
+      left[0].localeCompare(right[0]) || left[1].localeCompare(right[1])
+    ));
+  }
+
+  const geometry = (feature as AstrocartGeoJsonFeature).geometry;
+  if (geometry == null) return null;
+  try {
+    return JSON.stringify([
+      layerId,
+      layer,
+      technique,
+      cursor,
+      kind,
+      semantic,
+      geometry,
+    ]);
+  } catch {
+    return null;
+  }
+}
+
+function astrocartModeSpecKey(
+  modeSpecKeys: AstrocartModeSpecKeys,
+  mode: AstrocartLineMode,
+): string | null {
+  const value = modeSpecKeys[mode];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
 
 function composeAstrocartModePayload(
   modes: AstrocartLineMode[],
   sessionRevision: number,
-  cache: Map<AstrocartLineMode, AstrocartModeCacheEntry>,
+  modeSpecKeys: AstrocartModeSpecKeys,
+  cache: ReadonlyMap<AstrocartLineMode, AstrocartModeCacheEntry>,
   fallbackMeta?: AstrocartGeoJsonMeta,
+  canonicalSpec?: Pick<
+    AstrocartConfigurationPayload,
+    "spec" | "specKey" | "specRevision" | "cacheKey"
+  > | null,
+  emptyModePayload?: AstrocartGeoJsonPayload,
 ): { payload: AstrocartGeoJsonPayload; complete: boolean } {
+  const orderedModes = normalizeAstrocartLineModes(modes);
   const features: unknown[] = [];
+  const physicalOverlays = new Map<string, AstrocartPhysicalOverlayAccumulator>();
   let meta = { ...(fallbackMeta ?? {}) };
   let complete = true;
-  for (const mode of modes) {
+  if (orderedModes.length === 0 && emptyModePayload) {
+    features.push(...emptyModePayload.features);
+    meta = { ...meta, ...(emptyModePayload.meta ?? {}) };
+  }
+  for (const mode of orderedModes) {
     const entry = cache.get(mode);
-    if (!entry || entry.sessionRevision !== sessionRevision) {
+    const expectedModeSpecKey = astrocartModeSpecKey(modeSpecKeys, mode);
+    if (
+      !entry ||
+      entry.sessionRevision !== sessionRevision ||
+      (
+        expectedModeSpecKey != null &&
+        entry.modeSpecKey !== expectedModeSpecKey
+      )
+    ) {
       complete = false;
       continue;
     }
-    features.push(...entry.payload.features);
+    for (const feature of entry.payload.features) {
+      const identity = astrocartPhysicalOverlayIdentity(feature, mode);
+      if (identity == null) {
+        features.push(feature);
+        continue;
+      }
+      const existing = physicalOverlays.get(identity);
+      if (existing) {
+        existing.modes.add(mode);
+        const properties = astrocartFeatureProperties(
+          features[existing.featureIndex],
+        );
+        const incomingProperties = astrocartFeatureProperties(feature);
+        if (properties && incomingProperties) {
+          const incomingDisplaySystem = astrocartDisplayLineSystemForMode(
+            incomingProperties,
+            mode,
+            entry.payload.meta,
+          );
+          if (incomingDisplaySystem) {
+            existing.displayLineSystemByMode[mode] = incomingDisplaySystem;
+          }
+          properties.astrocart_modes = orderedModes.filter(
+            (candidate) => existing.modes.has(candidate),
+          );
+          const displayLineSystems: string[] = [];
+          const displayLineSystemByMode: Record<string, string> = {};
+          for (const candidate of orderedModes) {
+            const system = existing.displayLineSystemByMode[candidate];
+            if (!existing.modes.has(candidate) || !system) continue;
+            displayLineSystemByMode[candidate] = system;
+            appendUniqueAstrocartStrings(displayLineSystems, system);
+          }
+          if (displayLineSystems.length > 0) {
+            properties.display_line_systems = displayLineSystems;
+            properties.display_line_system_by_mode = displayLineSystemByMode;
+          }
+        }
+        continue;
+      }
+
+      const properties = astrocartFeatureProperties(feature);
+      const featureCopy: AstrocartGeoJsonFeature = {
+        ...(feature as AstrocartGeoJsonFeature),
+        properties: { ...(properties ?? {}) },
+      };
+      features.push(featureCopy);
+      const displayLineSystem = astrocartDisplayLineSystemForMode(
+        featureCopy.properties ?? {},
+        mode,
+        entry.payload.meta,
+      );
+      physicalOverlays.set(identity, {
+        featureIndex: features.length - 1,
+        modes: new Set([mode]),
+        displayLineSystemByMode: displayLineSystem
+          ? { [mode]: displayLineSystem }
+          : {},
+      });
+    }
     meta = { ...meta, ...(entry.payload.meta ?? {}) };
   }
   meta = {
     ...meta,
     composite: true,
-    modes: [...modes],
-    localSpaceAdditive: modes.includes("local_space"),
+    modes: [...orderedModes],
+    localSpaceAdditive: orderedModes.includes("local_space"),
   };
+  if (canonicalSpec) {
+    meta = {
+      ...meta,
+      specKey: canonicalSpec.specKey,
+      specRevision: canonicalSpec.specRevision,
+      cacheKey: canonicalSpec.cacheKey,
+      coordinateSystem: canonicalSpec.spec.coordinateSystem,
+    };
+  }
   return {
     payload: { type: "FeatureCollection", features, meta },
     complete,
@@ -446,16 +812,18 @@ function ActiveSurfaceArea({
 
   if (activeDoc?.kind === "directions") {
     return (
-      <DirectionsView
-        key={activeDoc.id}
-        sourceName={activeDoc.sourceName}
-        source={activeDoc.fpath}
-        documentId={activeDoc.id}
-        cursorDocumentId={activeDoc.parentDocumentId ?? activeDoc.id}
-        focusDatetime={activeDoc.displayDatetime}
-        customSignificator={activeDoc.directionsCustomSignificator ?? null}
-        initialPrimaryDirection={activeDoc.directionsDefaultDirection ?? undefined}
-      />
+      <WorkspaceDocumentSurface>
+        <DirectionsView
+          key={activeDoc.id}
+          sourceName={activeDoc.sourceName}
+          source={activeDoc.fpath}
+          documentId={activeDoc.id}
+          cursorDocumentId={activeDoc.parentDocumentId ?? activeDoc.id}
+          focusDatetime={activeDoc.displayDatetime}
+          customSignificator={activeDoc.directionsCustomSignificator ?? null}
+          initialPrimaryDirection={activeDoc.directionsDefaultDirection ?? undefined}
+        />
+      </WorkspaceDocumentSurface>
     );
   }
   if (activeDoc?.kind === "astrolabe") {
@@ -510,52 +878,62 @@ function ActiveSurfaceArea({
   }
   if (activeDoc?.kind === "transit-search") {
     return (
-      <TransitSearchView
-        key={activeDoc.id}
-        documentId={activeDoc.id}
-        sourceName={activeDoc.sourceName}
-      />
+      <WorkspaceDocumentSurface>
+        <TransitSearchView
+          key={activeDoc.id}
+          documentId={activeDoc.id}
+          sourceName={activeDoc.sourceName}
+        />
+      </WorkspaceDocumentSurface>
     );
   }
   if (activeDoc?.kind === "table" && isTimeLordTableId(activeDoc.tableId)) {
     return (
-      <TimeLordPaneView
-        key={activeDoc.id}
-        documentId={activeDoc.id}
-        parentDocumentId={activeDoc.parentDocumentId}
-        tableId={activeDoc.tableId}
-        sourceName={activeDoc.sourceName}
-      />
+      <WorkspaceDocumentSurface>
+        <TimeLordPaneView
+          key={activeDoc.id}
+          documentId={activeDoc.id}
+          parentDocumentId={activeDoc.parentDocumentId}
+          tableId={activeDoc.tableId}
+          sourceName={activeDoc.sourceName}
+        />
+      </WorkspaceDocumentSurface>
     );
   }
   if (activeDoc?.kind === "table" && activeDoc.tableId === "eclipses") {
     return (
-      <EclipsesView
-        key={activeDoc.id}
-        documentId={activeDoc.id}
-        parentDocumentId={activeDoc.parentDocumentId}
-        sourceName={activeDoc.sourceName}
-      />
+      <WorkspaceDocumentSurface>
+        <EclipsesView
+          key={activeDoc.id}
+          documentId={activeDoc.id}
+          parentDocumentId={activeDoc.parentDocumentId}
+          sourceName={activeDoc.sourceName}
+        />
+      </WorkspaceDocumentSurface>
     );
   }
   if (activeDoc?.kind === "table" && activeDoc.tableId === "synodic_cycles") {
     return (
-      <SynodicCycleListView
-        key={activeDoc.id}
-        documentId={activeDoc.id}
-        parentDocumentId={activeDoc.parentDocumentId}
-        sourceName={activeDoc.sourceName}
-      />
+      <WorkspaceDocumentSurface>
+        <SynodicCycleListView
+          key={activeDoc.id}
+          documentId={activeDoc.id}
+          parentDocumentId={activeDoc.parentDocumentId}
+          sourceName={activeDoc.sourceName}
+        />
+      </WorkspaceDocumentSurface>
     );
   }
   if (activeDoc?.kind === "table" && activeDoc.tableId) {
     return (
-      <GenericTableView
-        key={activeDoc.id}
-        documentId={activeDoc.id}
-        parentDocumentId={activeDoc.parentDocumentId}
-        tableId={activeDoc.tableId}
-      />
+      <WorkspaceDocumentSurface>
+        <GenericTableView
+          key={activeDoc.id}
+          documentId={activeDoc.id}
+          parentDocumentId={activeDoc.parentDocumentId}
+          tableId={activeDoc.tableId}
+        />
+      </WorkspaceDocumentSurface>
     );
   }
   if (
@@ -593,6 +971,17 @@ function ActiveSurfaceArea({
   }
   return (
     <ChartArea chart={chart} activeDoc={activeDoc} navbar={navbar} />
+  );
+}
+
+function WorkspaceDocumentSurface({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      data-aries-surface="canvas"
+      className="relative flex h-full w-full min-h-0 flex-1 [&>*]:bg-transparent"
+    >
+      {children}
+    </div>
   );
 }
 
@@ -655,7 +1044,7 @@ function EmptyWorkspace() {
   );
 
   return (
-    <div className="relative flex h-full w-full flex-1 min-h-0 items-center justify-center bg-background">
+    <div className="relative flex h-full w-full flex-1 min-h-0 items-center justify-center bg-transparent">
       <div className="flex flex-col items-center px-8 text-center text-[color:var(--aries-text-primary)]">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -729,16 +1118,32 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
   // push it + recenter the map on the birthplace via the postMessage bridge
   // baked into map.html (window.addEventListener('message', …)).
   const t = useT();
+  const tf = useTFallback();
   // A retained hidden map must not re-render for every active chart time step.
   // On reactivation the selector immediately exposes the latest event and the
   // existing sequence/relevance logic performs one coherent refresh.
   const lastSessionChange = useDaemonWorkspaceStore((state) =>
     active ? state.lastSessionChange : null,
   );
-  const lastOptionsChange = useDaemonWorkspaceStore((state) => state.lastOptionsChange);
+  const lastOptionsChange = useDaemonWorkspaceStore((state) =>
+    active ? state.lastOptionsChange : null,
+  );
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
+  const printAtlasRequestSequenceRef = React.useRef(0);
+  const printAtlasRequestsRef =
+    React.useRef(new Map<string, AstrocartPrintAtlasRequest>());
   const latestViewStateRef = React.useRef<AstrocartViewState | null>(null);
-  const saveViewStateTimerRef = React.useRef<number | null>(null);
+  const viewStateIntentRevisionRef = React.useRef(0);
+  const mapHostActiveRef = React.useRef(active);
+  const saveViewStateTimerRefs = React.useRef<
+    Record<AstrocartViewStateScope, number | null>
+  >({
+    camera: null,
+    global: null,
+    all: null,
+  });
+  const paranIntentSequenceRef = React.useRef(0);
+  const configurationActivationGenerationRef = React.useRef(0);
   const completedEclipseKeyRef = React.useRef<string | null>(null);
   const completedAsterismKeyRef = React.useRef<string | null>(null);
   const asterismDataCacheRef = React.useRef<{
@@ -748,34 +1153,67 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
     payload: unknown;
   } | null>(null);
   const completedDisplayStyleKeyRef = React.useRef<string | null>(null);
+  const completedDirectThemeKeyRef = React.useRef<string | null>(null);
   const latestDisplayStyleRef = React.useRef<unknown>(null);
   const displayStyleRequestRef = React.useRef<AbortController | null>(null);
   const handledSessionChangeSeqRef = React.useRef(lastSessionChange?.seq ?? 0);
   const pendingSessionRefreshRef = React.useRef(false);
   const handledOptionsChangeSeqRef = React.useRef(lastOptionsChange?.seq ?? 0);
   const activeLineModesRef = React.useRef<AstrocartLineMode[]>(ASTROCART_DEFAULT_LINE_MODES);
+  const modeSpecKeysRef = React.useRef<AstrocartModeSpecKeys>({});
   const activeDataContextRef = React.useRef<{
     dataGenerationKey: string;
     lineModes: AstrocartLineMode[];
+    modeSpecKeys: AstrocartModeSpecKeys;
     sessionRevision: number;
+    configurationRevision: number;
   } | null>(null);
-  const modeDataCacheRef = React.useRef(new Map<AstrocartLineMode, AstrocartModeCacheEntry>());
+  const modeDataCacheRef = React.useRef(
+    new Map<AstrocartLineMode, AstrocartRetainedModeCacheEntry>(),
+  );
   const modeDataRequestsRef = React.useRef(new Map<AstrocartLineMode, AstrocartModeRequest>());
   const astrocartMetaCacheRef = React.useRef<{
     sessionRevision: number;
+    configurationRevision: number;
     meta: AstrocartGeoJsonMeta;
   } | null>(null);
-  const emptyMetaRequestRef = React.useRef<AstrocartModeRequest | null>(null);
+  const emptyModeDataCacheRef =
+    React.useRef<AstrocartEmptyModeCacheEntry | null>(null);
+  const emptyMetaRequestRef = React.useRef<AstrocartMetaRequest | null>(null);
   const modeDataDocumentRef = React.useRef(documentId);
-  const lastRenderedSessionRevisionRef = React.useRef<number | null>(null);
+  const lastRenderedDataGenerationRef = React.useRef<string | null>(null);
+  const lastRenderedDataSignatureRef = React.useRef<string | null>(null);
+  const canonicalAstrocartSpecRef = React.useRef<AstrocartMapSpec | null>(null);
+  const lastCanonicalAstrocartSpecKeyRef = React.useRef<string | null>(null);
+  const astrocartConfigurationRef =
+    React.useRef<AstrocartConfigurationPayload | null>(null);
+  const lastVisibilitySignatureRef = React.useRef<string | null>(null);
+  const lastUiLabelsSignatureRef = React.useRef<string | null>(null);
   const initialCenterAppliedRef = React.useRef(false);
   const [readyUrl, setReadyUrl] = React.useState<string | null>(null);
+  const [presentedMapUrl, setPresentedMapUrl] = React.useState<string | null>(null);
   const [iframeLoadRevision, setIframeLoadRevision] = React.useState(0);
   const [linesPushedFor, setLinesPushedFor] = React.useState<string | null>(null);
   const [sessionRevision, setSessionRevision] = React.useState(0);
+  const [configurationRevision, setConfigurationRevision] = React.useState(0);
   const [displayStyleRevision, setDisplayStyleRevision] = React.useState(1);
+  const [astrocartLabelRevision, setAstrocartLabelRevision] = React.useState(0);
+  const [paranIntent, setParanIntent] =
+    React.useState<AstrocartParanIntent | null>(null);
   const [lineModes, setLineModes] = React.useState<AstrocartLineMode[]>(ASTROCART_DEFAULT_LINE_MODES);
+  const [natalLayerVisible, setNatalLayerVisible] = React.useState(true);
   const [viewStateReadyFor, setViewStateReadyFor] = React.useState<string | null>(null);
+  const astrocartControlsPane = useWorkspaceStore((state) => state.astrocartControlsPane);
+  const openAstrocartControlsPane = useWorkspaceStore(
+    (state) => state.openAstrocartControlsPane,
+  );
+  const closeAstrocartControlsPane = useWorkspaceStore(
+    (state) => state.closeAstrocartControlsPane,
+  );
+  const sidebarOpen = useFrameLayoutStore((state) => state.sidebarOpen);
+  const sidebarWidth = useFrameLayoutStore((state) => state.sidebarWidth);
+  const rightPaneWidth = useFrameLayoutStore((state) => state.rightPaneWidth);
+  const rightPaneDragging = useFrameLayoutStore((state) => state.rightPaneDragging);
   const theme = useThemeStore((s) => s.theme);
   const bootTheme = theme?.mode === "light" ? "light" : "dark";
   const bootPageBg = bootTheme === "light" ? "#d9dde1" : "#1a1d21";
@@ -808,17 +1246,381 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
   // Otherwise the new page is empty while the parent still thinks data/style
   // were completed for the previous iframe document.
   const mapInstanceKey = `${documentId}:${url ?? "pending"}:${iframeLoadRevision}`;
-  const dataGenerationKey = `${mapInstanceKey}:${lineModesKey}:${sessionRevision}`;
+  const dataGenerationKey =
+    `${mapInstanceKey}:${lineModesKey}:${sessionRevision}:${configurationRevision}`;
   const viewStateKey = mapInstanceKey;
   const iframeReady = !!url && readyUrl === url;
   const viewStateReady = iframeReady && viewStateReadyFor === viewStateKey;
   const linesPushed = linesPushedFor === dataGenerationKey;
+  const controlsOpen =
+    active && astrocartControlsPane?.documentId === documentId;
+  const controlsPanePolicy = rightPaneWidthPolicy("astrocart-controls");
+  const effectiveControlsPaneWidth = controlsOpen
+    ? rightPanePriorityLayout(
+        sidebarOpen,
+        sidebarWidth,
+        rightPaneWidth,
+        "astrocart-controls",
+      ).rightPaneWidth
+    : 0;
   // View-only Astrocartography documents are not themselves rebuilt by a
   // global house-system change, even though their reference geometry depends
   // on the parent radix's new houses. Include that option event explicitly so
   // the retained map replaces its house planes without requiring a retoggle.
   const referenceGeometryRevision =
     lastOptionsChange?.refreshMode === "house-system" ? lastOptionsChange.seq : 0;
+  const catalogRevision =
+    lastOptionsChange &&
+    lastOptionsChange.styleOnly !== true &&
+    lastOptionsChange.listDataChanged !== false &&
+    lastOptionsChange.refreshedDocumentIds.some(
+      (id) => id === documentId || id === parentDocumentId,
+    )
+      ? lastOptionsChange.seq
+      : 0;
+  const settlePrintAtlasRequest = React.useCallback((
+    requestId: string,
+    atlas: AstrocartPrintAtlas | null,
+  ) => {
+    const request = printAtlasRequestsRef.current.get(requestId);
+    if (!request) return;
+    printAtlasRequestsRef.current.delete(requestId);
+    window.clearTimeout(request.timeoutId);
+    request.signal.removeEventListener("abort", request.abortListener);
+    request.controller.abort();
+    request.resolve(
+      atlas &&
+      mapHostActiveRef.current &&
+      activeDataContextRef.current?.dataGenerationKey ===
+        request.dataGenerationKey
+        ? atlas
+        : null,
+    );
+  }, []);
+
+  const requestPrintAtlas = React.useCallback(async (
+    pageFormat: AstrocartPdfPageFormat,
+    selection: AstrocartPdfSelection,
+    signal: AbortSignal,
+  ): Promise<AstrocartPrintAtlas | null> => {
+    const targetWindow = iframeRef.current?.contentWindow;
+    if (!active || !iframeReady || !targetWindow || signal.aborted) {
+      return null;
+    }
+    const activeContext = activeDataContextRef.current;
+    const captureConfiguration = astrocartConfigurationRef.current;
+    if (!activeContext || !captureConfiguration) return null;
+    const captureContext = {
+      ...activeContext,
+      lineModes: [...activeContext.lineModes],
+      modeSpecKeys: { ...captureConfiguration.modeSpecKeys },
+    };
+    const captureSpecKey = captureConfiguration.specKey;
+
+    printAtlasRequestSequenceRef.current += 1;
+    const requestId =
+      `${mapInstanceKey}:atlas:${printAtlasRequestSequenceRef.current}`;
+    return new Promise((resolve) => {
+      const controller = new AbortController();
+      let capturePosted = false;
+      const cancelChild = () => {
+        if (!capturePosted) return;
+        targetWindow.postMessage({
+          type: "aries.cancelPrintAtlas",
+          requestId,
+        }, "*");
+      };
+      const abortListener = () => {
+        controller.abort();
+        cancelChild();
+        settlePrintAtlasRequest(requestId, null);
+      };
+      const timeoutId = window.setTimeout(
+        () => {
+          cancelChild();
+          settlePrintAtlasRequest(requestId, null);
+        },
+        240_000,
+      );
+      printAtlasRequestsRef.current.set(requestId, {
+        resolve,
+        dataGenerationKey: captureContext.dataGenerationKey,
+        timeoutId,
+        signal,
+        controller,
+        abortListener,
+        cancelChild,
+      });
+      signal.addEventListener("abort", abortListener, { once: true });
+      if (signal.aborted) {
+        abortListener();
+        return;
+      }
+
+      const requestIsCurrent = () => (
+        !controller.signal.aborted &&
+        mapHostActiveRef.current &&
+        iframeRef.current?.contentWindow === targetWindow &&
+        printAtlasRequestsRef.current.get(requestId)?.controller === controller &&
+        activeDataContextRef.current?.dataGenerationKey ===
+          captureContext.dataGenerationKey &&
+        astrocartConfigurationRef.current?.specKey === captureSpecKey
+      );
+      const payloadMatchesCapture = (
+        payload: AstrocartGeoJsonPayload,
+        mode: AstrocartLineMode | null,
+      ) => {
+        if (
+          payload.meta?.precision !== "precise" ||
+          payload.meta.specKey !== captureSpecKey
+        ) {
+          return false;
+        }
+        if (mode == null) return true;
+        const expectedModeSpecKey = astrocartModeSpecKey(
+          captureContext.modeSpecKeys,
+          mode,
+        );
+        return (
+          expectedModeSpecKey != null &&
+          payload.meta.modeSpecKey === expectedModeSpecKey
+        );
+      };
+
+      void (async () => {
+        try {
+          const preciseModeCache = new Map<
+            AstrocartLineMode,
+            AstrocartModeCacheEntry
+          >();
+          let preciseEmptyModePayload: AstrocartGeoJsonPayload | undefined;
+          if (captureContext.lineModes.length === 0) {
+            const payload = await fetchAstrocartModePayload(
+              documentId,
+              null,
+              "precise",
+              controller.signal,
+            );
+            if (
+              !requestIsCurrent() ||
+              !payloadMatchesCapture(payload, null)
+            ) {
+              settlePrintAtlasRequest(requestId, null);
+              return;
+            }
+            preciseEmptyModePayload = payload;
+          } else {
+            for (const mode of captureContext.lineModes) {
+              if (!requestIsCurrent()) {
+                settlePrintAtlasRequest(requestId, null);
+                return;
+              }
+              const payload = await fetchAstrocartModePayload(
+                documentId,
+                mode,
+                "precise",
+                controller.signal,
+              );
+              if (
+                !requestIsCurrent() ||
+                !payloadMatchesCapture(payload, mode)
+              ) {
+                settlePrintAtlasRequest(requestId, null);
+                return;
+              }
+              preciseModeCache.set(mode, {
+                sessionRevision: captureContext.sessionRevision,
+                modeSpecKey: astrocartModeSpecKey(
+                  captureContext.modeSpecKeys,
+                  mode,
+                ),
+                precision: "precise",
+                payload,
+              });
+            }
+          }
+          if (!requestIsCurrent()) {
+            settlePrintAtlasRequest(requestId, null);
+            return;
+          }
+          const fallbackMeta =
+            preciseEmptyModePayload?.meta ??
+            captureContext.lineModes
+              .map((mode) => preciseModeCache.get(mode)?.payload.meta)
+              .find((meta): meta is AstrocartGeoJsonMeta => meta != null);
+          const composed = composeAstrocartModePayload(
+            captureContext.lineModes,
+            captureContext.sessionRevision,
+            captureContext.modeSpecKeys,
+            preciseModeCache,
+            fallbackMeta,
+            captureConfiguration,
+            preciseEmptyModePayload,
+          );
+          if (
+            !composed.complete ||
+            composed.payload.meta?.precision !== "precise" ||
+            composed.payload.meta.specKey !== captureSpecKey ||
+            !requestIsCurrent()
+          ) {
+            settlePrintAtlasRequest(requestId, null);
+            return;
+          }
+          capturePosted = true;
+          targetWindow.postMessage({
+            type: "aries.capturePrintAtlas",
+            requestId,
+            pageFormat,
+            selection,
+            geojson: composed.payload,
+          }, "*");
+        } catch (err) {
+          if (!isAbortError(err, controller.signal)) {
+            console.error("[acg-print]", err);
+          }
+          settlePrintAtlasRequest(requestId, null);
+        }
+      })();
+    });
+  }, [
+    active,
+    documentId,
+    iframeReady,
+    mapInstanceKey,
+    settlePrintAtlasRequest,
+  ]);
+
+  const cancelPrintAtlasRequests = React.useCallback(() => {
+    for (const [requestId, request] of printAtlasRequestsRef.current) {
+      request.controller.abort();
+      request.cancelChild();
+      settlePrintAtlasRequest(requestId, null);
+    }
+  }, [settlePrintAtlasRequest]);
+
+  React.useEffect(() => {
+    if (!active) cancelPrintAtlasRequests();
+    return cancelPrintAtlasRequests;
+  }, [
+    active,
+    cancelPrintAtlasRequests,
+    dataGenerationKey,
+  ]);
+
+  React.useLayoutEffect(() => {
+    const wasActive = mapHostActiveRef.current;
+    mapHostActiveRef.current = active;
+    if (wasActive === active) return;
+    configurationActivationGenerationRef.current += 1;
+    // Geometry stays painted, but its preference snapshot is no longer safe
+    // as a write base: another retained map may change the global static spec
+    // before this one is used again.
+    canonicalAstrocartSpecRef.current = null;
+    astrocartConfigurationRef.current = null;
+    modeSpecKeysRef.current = {};
+  }, [active]);
+
+  const applyAstrocartSpecVisibility = React.useCallback((
+    spec: AstrocartMapSpec,
+    force = false,
+  ) => {
+    const targetWindow = iframeRef.current?.contentWindow;
+    if (!targetWindow) return;
+    const enabledDynamicLayers = spec.dynamicLayers.filter((layer) => layer.enabled);
+    const enabledAspects = spec.aspects.definitions
+      .filter((definition) => definition.enabled)
+      .map((definition) => definition.id);
+    const previousOverlays = latestViewStateRef.current?.overlays;
+    const natalVisible = previousOverlays?.layers?.natal ?? true;
+    const layers = {
+      natal: natalVisible,
+      transit: enabledDynamicLayers.some((layer) => layer.technique === "transit"),
+      progression: enabledDynamicLayers.some((layer) => layer.technique !== "transit"),
+    };
+    const overlays = {
+      ...(previousOverlays ?? {}),
+      parans: spec.paran.enabled,
+      aspects: enabledAspects.length > 0,
+      zeniths: spec.zenithEnabled,
+      localSpaceOppositions: spec.localSpace.oppositionEnabled,
+      layers,
+      filters: {
+        ...(previousOverlays?.filters ?? {}),
+        aspects: enabledAspects,
+        techniques: null,
+      },
+    };
+    const nextViewState: AstrocartViewState = {
+      ...(latestViewStateRef.current ?? {}),
+      overlays,
+    };
+    latestViewStateRef.current = nextViewState;
+    const filters = {
+      parans: spec.paran.enabled,
+      aspects: enabledAspects.length > 0,
+      aspectNames: enabledAspects,
+      techniques: null,
+      zeniths: spec.zenithEnabled,
+      localSpaceOppositions: spec.localSpace.oppositionEnabled,
+      layers,
+    };
+    const visibilitySignature = `${mapInstanceKey}:${JSON.stringify(filters)}`;
+    if (!force && lastVisibilitySignatureRef.current === visibilitySignature) return;
+    lastVisibilitySignatureRef.current = visibilitySignature;
+    // Keep view-only filtering instant while a new daemon geometry snapshot is
+    // prepared. This bridge updates chrome only: a first-open map has no saved
+    // camera yet, so it must never be routed through the camera restore path.
+    targetWindow.postMessage(
+      {
+        type: "aries.setVisibilityFilters",
+        filters,
+      },
+      "*",
+    );
+  }, [mapInstanceKey]);
+
+  const handleAstrocartConfigurationPreview = React.useCallback((
+    spec: AstrocartMapSpec,
+  ) => {
+    canonicalAstrocartSpecRef.current = spec;
+    applyAstrocartSpecVisibility(spec);
+  }, [applyAstrocartSpecVisibility]);
+
+  const handleAstrocartConfigurationChange = React.useCallback((
+    change: AstrocartConfigurationChange,
+  ) => {
+    const previousSpecKey = lastCanonicalAstrocartSpecKeyRef.current;
+    astrocartConfigurationRef.current = change.payload;
+    lastCanonicalAstrocartSpecKeyRef.current = change.payload.specKey;
+    modeSpecKeysRef.current = change.payload.modeSpecKeys;
+    setAstrocartLabelRevision((revision) => revision + 1);
+    canonicalAstrocartSpecRef.current = change.payload.spec;
+    applyAstrocartSpecVisibility(change.payload.spec);
+    if (previousSpecKey != null && previousSpecKey !== change.payload.specKey) {
+      setConfigurationRevision((revision) => revision + 1);
+    }
+  }, [applyAstrocartSpecVisibility]);
+
+  const queueAstrocartParanIntent = React.useCallback((enabled: boolean) => {
+    const optimisticBase =
+      canonicalAstrocartSpecRef.current ?? astrocartConfigurationRef.current?.spec;
+    if (optimisticBase) {
+      const optimisticSpec: AstrocartMapSpec = {
+        ...optimisticBase,
+        paran: {
+          ...optimisticBase.paran,
+          enabled,
+        },
+      };
+      canonicalAstrocartSpecRef.current = optimisticSpec;
+      applyAstrocartSpecVisibility(optimisticSpec);
+    }
+    paranIntentSequenceRef.current += 1;
+    setParanIntent({
+      revision: paranIntentSequenceRef.current,
+      enabled,
+    });
+  }, [applyAstrocartSpecVisibility]);
 
   React.useEffect(() => {
     if (!iframeReady) return;
@@ -832,10 +1634,18 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
         { type: "aries.setStatePersistence", enabled: false },
         "*",
       );
-      if (saveViewStateTimerRef.current != null) {
-        window.clearTimeout(saveViewStateTimerRef.current);
-        saveViewStateTimerRef.current = null;
+      for (const scope of ["camera", "global", "all"] as const) {
+        const timer = saveViewStateTimerRefs.current[scope];
+        if (timer == null) continue;
+        window.clearTimeout(timer);
+        saveViewStateTimerRefs.current[scope] = null;
       }
+      // Static map preferences are global. Mark this retained copy stale while
+      // hidden so reactivation quietly merges the latest global view with this
+      // document's own camera and dynamic timing state.
+      queueMicrotask(() => {
+        if (!mapHostActiveRef.current) setViewStateReadyFor(null);
+      });
     }
   }, [active, iframeReady]);
 
@@ -851,8 +1661,13 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
     emptyMetaRequestRef.current = null;
     modeDataCacheRef.current.clear();
     astrocartMetaCacheRef.current = null;
+    emptyModeDataCacheRef.current = null;
     if (documentChanged) {
-      lastRenderedSessionRevisionRef.current = null;
+      lastRenderedDataGenerationRef.current = null;
+      canonicalAstrocartSpecRef.current = null;
+      lastCanonicalAstrocartSpecKeyRef.current = null;
+      astrocartConfigurationRef.current = null;
+      modeSpecKeysRef.current = {};
       initialCenterAppliedRef.current = false;
     }
     return () => {
@@ -868,9 +1683,11 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
     activeDataContextRef.current = {
       dataGenerationKey,
       lineModes,
+      modeSpecKeys: modeSpecKeysRef.current,
       sessionRevision,
+      configurationRevision,
     };
-  }, [dataGenerationKey, lineModes, sessionRevision]);
+  }, [configurationRevision, dataGenerationKey, lineModes, sessionRevision]);
 
   React.useEffect(() => {
     if (active) return;
@@ -945,6 +1762,8 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
 
   React.useEffect(() => {
     if (!active || !iframeReady) return;
+    const directThemeKey = `${mapInstanceKey}:${themeStyleKey}:${bootTheme}:${bootPageBg}`;
+    if (completedDirectThemeKeyRef.current === directThemeKey) return;
     // The direct mode message restores the old immediate theme behavior while
     // the authoritative versioned map style is fetched. Never replay a full
     // renderer from the previous theme over that new mode in the meantime.
@@ -955,27 +1774,60 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
       { type: "aries.setTheme", theme: bootTheme, pageBg: bootPageBg, resetStyle: true },
       "*",
     );
-  }, [active, bootPageBg, bootTheme, iframeReady, themeStyleKey]);
+    completedDirectThemeKeyRef.current = directThemeKey;
+  }, [active, bootPageBg, bootTheme, iframeReady, mapInstanceKey, themeStyleKey]);
 
   React.useEffect(() => {
     if (!active || !iframeReady) return;
+    const pointLabels: Record<string, string> = {};
+    for (const point of astrocartConfigurationRef.current?.catalog.points ?? []) {
+      const label = point.labelKey ? tf(point.labelKey, point.label) : point.label;
+      pointLabels[point.semanticId] = label;
+      if (point.point?.id) pointLabels[point.point.id] = label;
+    }
+    const labels = {
+      birthplaceMarker: t("astrocart.birthplaceMarker.title"),
+      asterisms: t("astrocart.overlay.asterisms"),
+      aspect: t("astrocart.overlay.aspect"),
+      zenith: t("astrocart.overlay.zenith"),
+      localSpaceOpposition: t("astrocart.overlay.localSpaceOpposition"),
+      natalLayer: t("astrocart.overlay.natalLayer"),
+      transitLayer: t("astrocart.overlay.transitLayer"),
+      progressionLayer: t("astrocart.overlay.progressionLayer"),
+      techniqueLabels: Object.fromEntries(
+        ASTROCART_DYNAMIC_TECHNIQUE_IDS.map((technique) => [
+          technique,
+          t(`astrocart.dynamic.${technique}`),
+        ]),
+      ),
+      pointLabels,
+      aspectLabels: Object.fromEntries(ASTROCART_ASPECT_IDS.flatMap((aspectId) => {
+        const labelKey = `optmenu.${aspectId}`;
+        const label = t(labelKey);
+        return [
+          [aspectId, label],
+          [labelKey, label],
+        ];
+      })),
+    };
+    const labelsSignature = `${mapInstanceKey}:${JSON.stringify(labels)}`;
+    if (lastUiLabelsSignatureRef.current === labelsSignature) return;
+    lastUiLabelsSignatureRef.current = labelsSignature;
     iframeRef.current?.contentWindow?.postMessage(
       {
         type: "aries.setUiLabels",
-        labels: {
-          birthplaceMarker: t("astrocart.birthplaceMarker.title"),
-          asterisms: t("astrocart.overlay.asterisms"),
-        },
+        labels,
       },
       "*",
     );
-  }, [active, iframeReady, t]);
+  }, [active, astrocartLabelRevision, iframeReady, mapInstanceKey, t, tf]);
 
   React.useEffect(() => {
     if (!active || !iframeReady || !url || viewStateReadyFor === viewStateKey) return;
     const controller = new AbortController();
     const targetWindow = iframeRef.current?.contentWindow;
     if (!targetWindow) return;
+    const intentRevision = viewStateIntentRevisionRef.current;
     targetWindow.postMessage(
       { type: "aries.setStatePersistence", enabled: false },
       "*",
@@ -983,25 +1835,56 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
     fetchAstrocartViewState(documentId, controller.signal)
       .then((viewState) => {
         if (controller.signal.aborted || iframeRef.current?.contentWindow !== targetWindow) return;
-        latestViewStateRef.current = viewState;
-        const restoredModes = normalizeAstrocartLineModes(viewState?.lineModes);
+        // An explicit map-chrome click made while this quiet restore was in
+        // flight wins over its older snapshot.
+        if (viewStateIntentRevisionRef.current !== intentRevision) {
+          setViewStateReadyFor(viewStateKey);
+          return;
+        }
+        const restoredViewState = viewState ? {
+          ...viewState,
+          overlays: {
+            ...(viewState.overlays ?? {}),
+            filters: {
+              ...(viewState.overlays?.filters ?? {}),
+              techniques: null,
+            },
+          },
+        } : null;
+        latestViewStateRef.current = restoredViewState;
+        setNatalLayerVisible(
+          restoredViewState?.overlays?.layers?.natal ?? true,
+        );
+        const restoredModes = normalizeAstrocartLineModes(restoredViewState?.lineModes);
         activeLineModesRef.current = restoredModes;
         setLineModes(restoredModes);
-        if (viewState) {
-          targetWindow.postMessage({ type: "aries.applyState", state: viewState }, "*");
+        if (restoredViewState) {
+          targetWindow.postMessage(
+            { type: "aries.applyState", state: restoredViewState },
+            "*",
+          );
         }
         setViewStateReadyFor(viewStateKey);
       })
       .catch((err) => {
         if (isAbortError(err, controller.signal)) return;
         console.error("[acg-view-state]", err);
-        const fallbackModes = [...ASTROCART_DEFAULT_LINE_MODES];
+        const retainedState = latestViewStateRef.current;
+        const fallbackModes = retainedState
+          ? [...activeLineModesRef.current]
+          : [...ASTROCART_DEFAULT_LINE_MODES];
         activeLineModesRef.current = fallbackModes;
         setLineModes(fallbackModes);
+        setNatalLayerVisible((current) => retainedState ? current : true);
         setViewStateReadyFor(viewStateKey);
       });
     return () => controller.abort();
   }, [active, documentId, iframeReady, url, viewStateKey, viewStateReadyFor]);
+
+  React.useEffect(() => {
+    if (!active || !viewStateReady || !canonicalAstrocartSpecRef.current) return;
+    applyAstrocartSpecVisibility(canonicalAstrocartSpecRef.current, true);
+  }, [active, applyAstrocartSpecVisibility, viewStateReady]);
 
   React.useEffect(() => {
     if (!active || !iframeReady || !url) return;
@@ -1104,17 +1987,22 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
     viewStateReady,
   ]);
 
-  const persistViewState = React.useCallback((state: AstrocartViewState, immediate = false) => {
+  const persistViewState = React.useCallback((
+    state: AstrocartViewState,
+    immediate = false,
+    scope: AstrocartViewStateScope = "all",
+  ) => {
     latestViewStateRef.current = state;
-    if (saveViewStateTimerRef.current != null) {
-      window.clearTimeout(saveViewStateTimerRef.current);
-      saveViewStateTimerRef.current = null;
+    const pendingTimer = saveViewStateTimerRefs.current[scope];
+    if (pendingTimer != null) {
+      window.clearTimeout(pendingTimer);
+      saveViewStateTimerRefs.current[scope] = null;
     }
     const save = () => {
-      saveViewStateTimerRef.current = null;
+      saveViewStateTimerRefs.current[scope] = null;
       const current = latestViewStateRef.current;
       if (!current) return;
-      void storeAstrocartViewState(documentId, current).catch((err) => {
+      void storeAstrocartViewState(documentId, current, scope).catch((err) => {
         console.error("[acg-view-state]", err);
       });
     };
@@ -1122,31 +2010,149 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
       save();
       return;
     }
-    saveViewStateTimerRef.current = window.setTimeout(save, 240);
+    saveViewStateTimerRefs.current[scope] = window.setTimeout(save, 240);
   }, [documentId]);
+
+  const applyAstrocartLineModes = React.useCallback((
+    nextModes: AstrocartLineMode[],
+  ) => {
+    const currentModes = activeLineModesRef.current;
+    if (
+      currentModes.length === nextModes.length &&
+      nextModes.every((mode, index) => currentModes[index] === mode)
+    ) {
+      return;
+    }
+    for (const [requestedMode, request] of modeDataRequestsRef.current) {
+      if (nextModes.includes(requestedMode)) continue;
+      request.controller.abort();
+      modeDataRequestsRef.current.delete(requestedMode);
+    }
+    if (nextModes.length > 0) {
+      emptyMetaRequestRef.current?.controller.abort();
+      emptyMetaRequestRef.current = null;
+    }
+    activeLineModesRef.current = nextModes;
+    setLineModes(nextModes);
+    viewStateIntentRevisionRef.current += 1;
+    setViewStateReadyFor(viewStateKey);
+    persistViewState(
+      { ...(latestViewStateRef.current ?? {}), lineModes: nextModes },
+      true,
+      "global",
+    );
+  }, [persistViewState, viewStateKey]);
 
   const handleLineModeClick = React.useCallback((
     mode: AstrocartLineMode,
     event: React.MouseEvent<HTMLButtonElement>,
   ) => {
-    const nextModes = toggleAstrocartLineMode(lineModes, mode, event.metaKey);
-    activeLineModesRef.current = nextModes;
-    setLineModes(nextModes);
-    persistViewState(
-      { ...(latestViewStateRef.current ?? {}), lineModes: nextModes },
-      true,
+    applyAstrocartLineModes(
+      toggleAstrocartLineMode(lineModes, mode, event.metaKey),
     );
-  }, [lineModes, persistViewState]);
+  }, [applyAstrocartLineModes, lineModes]);
+
+  const handleAstrocartNatalLayerVisibility = React.useCallback((
+    natal: boolean,
+  ) => {
+    const current = latestViewStateRef.current ?? {};
+    const overlays = current.overlays ?? {};
+    const nextViewState: AstrocartViewState = {
+      ...current,
+      overlays: {
+        ...overlays,
+        layers: {
+          ...(overlays.layers ?? {}),
+          natal,
+        },
+      },
+    };
+    latestViewStateRef.current = nextViewState;
+    setNatalLayerVisible(natal);
+    viewStateIntentRevisionRef.current += 1;
+    setViewStateReadyFor(viewStateKey);
+    lastVisibilitySignatureRef.current = null;
+    iframeRef.current?.contentWindow?.postMessage(
+      {
+        type: "aries.setVisibilityFilters",
+        filters: { layers: { natal } },
+      },
+      "*",
+    );
+    persistViewState(nextViewState, true, "global");
+  }, [persistViewState, viewStateKey]);
+
+  const handleAstrocartStandardViewReset = React.useCallback(() => {
+    const standardModes = [...ASTROCART_DEFAULT_LINE_MODES];
+    for (const [requestedMode, request] of modeDataRequestsRef.current) {
+      if (standardModes.includes(requestedMode)) continue;
+      request.controller.abort();
+      modeDataRequestsRef.current.delete(requestedMode);
+    }
+    const current = latestViewStateRef.current ?? {};
+    const nextViewState: AstrocartViewState = {
+      ...current,
+      projection: "globe",
+      lineModes: standardModes,
+      overlays: {
+        ...(current.overlays ?? {}),
+        parans: false,
+        asterisms: false,
+        aspects: false,
+        zeniths: false,
+        localSpaceOppositions: false,
+        layers: {
+          natal: true,
+          transit: false,
+          progression: false,
+        },
+        filters: {
+          points: null,
+          kinds: null,
+          aspects: null,
+          techniques: null,
+        },
+      },
+      legend: {
+        collapsed: true,
+        userSet: false,
+      },
+    };
+    activeLineModesRef.current = standardModes;
+    latestViewStateRef.current = nextViewState;
+    setLineModes(standardModes);
+    setNatalLayerVisible(true);
+    viewStateIntentRevisionRef.current += 1;
+    setViewStateReadyFor(viewStateKey);
+    lastVisibilitySignatureRef.current = null;
+    iframeRef.current?.contentWindow?.postMessage(
+      { type: "aries.applyState", state: nextViewState },
+      "*",
+    );
+    persistViewState(nextViewState, true, "all");
+  }, [persistViewState, viewStateKey]);
+
+  const handleAstrocartMapViewReset = React.useCallback(() => {
+    if (!active || !viewStateReady) return;
+    iframeRef.current?.contentWindow?.postMessage(
+      { type: "aries.resetView" },
+      "*",
+    );
+  }, [active, viewStateReady]);
 
   React.useEffect(() => {
+    const timerRefs = saveViewStateTimerRefs.current;
     return () => {
-      if (saveViewStateTimerRef.current != null) {
-        window.clearTimeout(saveViewStateTimerRef.current);
-        saveViewStateTimerRef.current = null;
+      for (const scope of ["camera", "global", "all"] as const) {
+        const timer = timerRefs[scope];
+        if (timer == null) continue;
+        window.clearTimeout(timer);
+        timerRefs[scope] = null;
       }
       const current = latestViewStateRef.current;
       if (current) {
-        void storeAstrocartViewState(documentId, current).catch(() => undefined);
+        void storeAstrocartViewState(documentId, current, "camera")
+          .catch(() => undefined);
       }
     };
   }, [documentId]);
@@ -1154,14 +2160,38 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
   const pushCachedModeData = React.useCallback(() => {
     const context = activeDataContextRef.current;
     const targetWindow = iframeRef.current?.contentWindow;
-    if (!context || !targetWindow) return;
+    if (!mapHostActiveRef.current || !context || !targetWindow) return;
 
-    let fallbackMeta = astrocartMetaCacheRef.current?.sessionRevision === context.sessionRevision
-      ? astrocartMetaCacheRef.current.meta
-      : undefined;
+    const emptyModeEntry =
+      context.lineModes.length === 0 &&
+      emptyModeDataCacheRef.current?.sessionRevision === context.sessionRevision &&
+      emptyModeDataCacheRef.current.configurationRevision ===
+        context.configurationRevision
+        ? emptyModeDataCacheRef.current
+        : null;
+    let fallbackMeta =
+      emptyModeEntry?.payload.meta ??
+      (
+        astrocartMetaCacheRef.current?.sessionRevision === context.sessionRevision &&
+        astrocartMetaCacheRef.current.configurationRevision ===
+          context.configurationRevision
+          ? astrocartMetaCacheRef.current.meta
+          : undefined
+      );
     if (!fallbackMeta) {
-      for (const entry of modeDataCacheRef.current.values()) {
-        if (entry.sessionRevision === context.sessionRevision && entry.payload.meta) {
+      for (const [mode, entry] of modeDataCacheRef.current) {
+        const expectedModeSpecKey = astrocartModeSpecKey(
+          context.modeSpecKeys,
+          mode,
+        );
+        if (
+          entry.sessionRevision === context.sessionRevision &&
+          (
+            expectedModeSpecKey == null ||
+            entry.modeSpecKey === expectedModeSpecKey
+          ) &&
+          entry.payload.meta
+        ) {
           fallbackMeta = entry.payload.meta;
           break;
         }
@@ -1170,22 +2200,40 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
     const composed = composeAstrocartModePayload(
       context.lineModes,
       context.sessionRevision,
+      context.modeSpecKeys,
       modeDataCacheRef.current,
       fallbackMeta,
+      astrocartConfigurationRef.current,
+      emptyModeEntry?.payload,
     );
     const readyForRevision = composed.complete && (
-      context.lineModes.length > 0 || fallbackMeta != null
+      context.lineModes.length > 0 || emptyModeEntry != null
     );
-    const previousRevision = lastRenderedSessionRevisionRef.current;
+    const previousGeneration = lastRenderedDataGenerationRef.current;
     if (
       !readyForRevision &&
-      previousRevision != null &&
-      previousRevision !== context.sessionRevision
+      previousGeneration != null &&
+      previousGeneration !== context.dataGenerationKey
     ) {
-      // A session rebuild keeps its previous coherent map until all selected
-      // preview layers are ready. Mode toggles inside one session still repaint
-      // immediately from whatever independent layers are already cached.
+      // A session/spec rebuild keeps its previous coherent map until all
+      // selected previews are ready. Removing a mode can reuse the remaining
+      // independent caches immediately; adding one waits for that preview.
       setLinesPushedFor(null);
+      return;
+    }
+
+    const dataSignature = [
+      context.dataGenerationKey,
+      ...context.lineModes.map((mode) => {
+        const entry = modeDataCacheRef.current.get(mode);
+        return `${mode}:${entry?.precision ?? "missing"}`;
+      }),
+      context.lineModes.length === 0
+        ? `dynamic-only:${emptyModeEntry?.precision ?? "missing"}`
+        : "",
+    ].join("|");
+    if (lastRenderedDataSignatureRef.current === dataSignature) {
+      setLinesPushedFor(readyForRevision ? context.dataGenerationKey : null);
       return;
     }
 
@@ -1212,7 +2260,8 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
       initialCenterAppliedRef.current = true;
     }
     targetWindow.postMessage({ type: "aries.setStatePersistence", enabled: true }, "*");
-    lastRenderedSessionRevisionRef.current = context.sessionRevision;
+    lastRenderedDataGenerationRef.current = context.dataGenerationKey;
+    lastRenderedDataSignatureRef.current = dataSignature;
     setLinesPushedFor(readyForRevision ? context.dataGenerationKey : null);
   }, []);
 
@@ -1220,53 +2269,120 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
     if (!active || !viewStateReady) return;
     pushCachedModeData();
 
-    const fetchModePayload = async (
-      mode: AstrocartLineMode | null,
-      precision: "preview" | "precise",
-      signal: AbortSignal,
-    ): Promise<AstrocartGeoJsonPayload> => {
-      const params = new URLSearchParams({ modes: mode ?? "", precision });
-      const response = await daemonFetch(
-        `${daemonBaseUrl()}/api/workspace/document/${encodeURIComponent(documentId)}/astrocart?${params.toString()}`,
-        { cache: "no-store", signal },
+    const payloadMatchesCurrentSpec = (
+      payload: AstrocartGeoJsonPayload,
+      mode: AstrocartLineMode | null = null,
+    ): boolean => {
+      if (mode) {
+        const expectedModeSpecKey = astrocartModeSpecKey(
+          modeSpecKeysRef.current,
+          mode,
+        );
+        const receivedModeSpecKey = payload.meta?.modeSpecKey;
+        if (
+          expectedModeSpecKey != null &&
+          typeof receivedModeSpecKey === "string"
+        ) {
+          return expectedModeSpecKey === receivedModeSpecKey;
+        }
+      }
+      const expected = astrocartConfigurationRef.current?.specKey;
+      const received = payload.meta?.specKey;
+      return (
+        typeof expected !== "string" ||
+        typeof received !== "string" ||
+        expected === received
       );
-      if (!response.ok) throw new Error(`astrocart fetch failed: ${response.status}`);
-      const raw = await response.json() as Partial<AstrocartGeoJsonPayload>;
-      return {
-        type: "FeatureCollection",
-        features: Array.isArray(raw.features) ? raw.features : [],
-        meta: raw.meta,
-      };
     };
 
     const ensureModeData = (mode: AstrocartLineMode) => {
+      const expectedModeSpecKey = astrocartModeSpecKey(
+        modeSpecKeysRef.current,
+        mode,
+      );
       const cached = modeDataCacheRef.current.get(mode);
-      if (cached?.sessionRevision === sessionRevision && cached.precision === "precise") return;
+      if (
+        cached?.sessionRevision === sessionRevision &&
+        (
+          expectedModeSpecKey == null ||
+          cached.modeSpecKey === expectedModeSpecKey
+        ) &&
+        cached.precision === ASTROCART_RETAINED_TERMINAL_PRECISION
+      ) return;
       const existing = modeDataRequestsRef.current.get(mode);
-      if (existing?.sessionRevision === sessionRevision) return;
+      if (
+        existing?.sessionRevision === sessionRevision &&
+        (
+          expectedModeSpecKey == null ||
+          existing.modeSpecKey == null ||
+          existing.modeSpecKey === expectedModeSpecKey
+        )
+      ) return;
       existing?.controller.abort();
 
       const request: AstrocartModeRequest = {
         sessionRevision,
+        modeSpecKey: expectedModeSpecKey,
         controller: new AbortController(),
       };
       modeDataRequestsRef.current.set(mode, request);
-      const requestIsCurrent = () => (
-        !request.controller.signal.aborted &&
-        modeDataRequestsRef.current.get(mode) === request &&
-        activeDataContextRef.current?.sessionRevision === sessionRevision
-      );
+      const requestIsCurrent = () => {
+        const currentModeSpecKey = astrocartModeSpecKey(
+          modeSpecKeysRef.current,
+          mode,
+        );
+        return (
+          !request.controller.signal.aborted &&
+          modeDataRequestsRef.current.get(mode) === request &&
+          mapHostActiveRef.current &&
+          activeDataContextRef.current?.sessionRevision === sessionRevision &&
+          (
+            request.modeSpecKey == null ||
+            currentModeSpecKey == null ||
+            request.modeSpecKey === currentModeSpecKey
+          )
+        );
+      };
+      const responseModeSpecKey = (
+        payload: AstrocartGeoJsonPayload,
+      ): string | null => {
+        const value = payload.meta?.modeSpecKey;
+        return typeof value === "string" && value.length > 0
+          ? value
+          : request.modeSpecKey;
+      };
 
       void (async () => {
         try {
           let entry = modeDataCacheRef.current.get(mode);
-          if (!entry || entry.sessionRevision !== sessionRevision) {
-            const preview = await fetchModePayload(mode, "preview", request.controller.signal);
-            if (!requestIsCurrent()) return;
-            entry = { sessionRevision, precision: "preview", payload: preview };
+          if (
+            !entry ||
+            entry.sessionRevision !== sessionRevision ||
+            (
+              expectedModeSpecKey != null &&
+              entry.modeSpecKey !== expectedModeSpecKey
+            )
+          ) {
+            const preview = await fetchAstrocartModePayload(
+              documentId,
+              mode,
+              "preview",
+              request.controller.signal,
+            );
+            if (!requestIsCurrent() || !payloadMatchesCurrentSpec(preview, mode)) return;
+            entry = {
+              sessionRevision,
+              modeSpecKey: responseModeSpecKey(preview),
+              precision: "preview",
+              payload: preview,
+            };
             modeDataCacheRef.current.set(mode, entry);
             if (preview.meta) {
-              astrocartMetaCacheRef.current = { sessionRevision, meta: preview.meta };
+              astrocartMetaCacheRef.current = {
+                sessionRevision,
+                configurationRevision,
+                meta: preview.meta,
+              };
             }
             pushCachedModeData();
           }
@@ -1276,15 +2392,28 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
           });
           if (!requestIsCurrent()) return;
           if (!activeDataContextRef.current?.lineModes.includes(mode)) return;
-          const precise = await fetchModePayload(mode, "precise", request.controller.signal);
-          if (!requestIsCurrent()) return;
+          const interactive = await fetchAstrocartModePayload(
+            documentId,
+            mode,
+            ASTROCART_RETAINED_TERMINAL_PRECISION,
+            request.controller.signal,
+          );
+          if (
+            !requestIsCurrent() ||
+            !payloadMatchesCurrentSpec(interactive, mode)
+          ) return;
           modeDataCacheRef.current.set(mode, {
             sessionRevision,
-            precision: "precise",
-            payload: precise,
+            modeSpecKey: responseModeSpecKey(interactive),
+            precision: ASTROCART_RETAINED_TERMINAL_PRECISION,
+            payload: interactive,
           });
-          if (precise.meta) {
-            astrocartMetaCacheRef.current = { sessionRevision, meta: precise.meta };
+          if (interactive.meta) {
+            astrocartMetaCacheRef.current = {
+              sessionRevision,
+              configurationRevision,
+              meta: interactive.meta,
+            };
           }
           pushCachedModeData();
         } catch (err) {
@@ -1299,40 +2428,114 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
     };
 
     const ensureEmptyMeta = () => {
-      if (astrocartMetaCacheRef.current?.sessionRevision === sessionRevision) return;
+      const cached = emptyModeDataCacheRef.current;
+      if (
+        cached?.sessionRevision === sessionRevision &&
+        cached.configurationRevision === configurationRevision &&
+        cached.precision === ASTROCART_RETAINED_TERMINAL_PRECISION
+      ) return;
       const existing = emptyMetaRequestRef.current;
-      if (existing?.sessionRevision === sessionRevision) return;
+      if (
+        existing?.sessionRevision === sessionRevision &&
+        existing.configurationRevision === configurationRevision
+      ) return;
       existing?.controller.abort();
-      const request: AstrocartModeRequest = {
+      const request: AstrocartMetaRequest = {
         sessionRevision,
+        configurationRevision,
         controller: new AbortController(),
       };
       emptyMetaRequestRef.current = request;
-      void fetchModePayload(null, "preview", request.controller.signal)
-        .then((payload) => {
+      const requestIsCurrent = () => (
+        !request.controller.signal.aborted &&
+        mapHostActiveRef.current &&
+        emptyMetaRequestRef.current === request &&
+        activeDataContextRef.current?.sessionRevision === sessionRevision &&
+        activeDataContextRef.current.configurationRevision ===
+          configurationRevision &&
+        activeDataContextRef.current.lineModes.length === 0
+      );
+      void (async () => {
+        try {
+          let entry = emptyModeDataCacheRef.current;
           if (
-            request.controller.signal.aborted ||
-            emptyMetaRequestRef.current !== request ||
-            activeDataContextRef.current?.sessionRevision !== sessionRevision
+            !entry ||
+            entry.sessionRevision !== sessionRevision ||
+            entry.configurationRevision !== configurationRevision
+          ) {
+            const preview = await fetchAstrocartModePayload(
+              documentId,
+              null,
+              "preview",
+              request.controller.signal,
+            );
+            if (!requestIsCurrent() || !payloadMatchesCurrentSpec(preview)) return;
+            entry = {
+              sessionRevision,
+              configurationRevision,
+              precision: "preview",
+              payload: preview,
+            };
+            emptyModeDataCacheRef.current = entry;
+            if (preview.meta) {
+              astrocartMetaCacheRef.current = {
+                sessionRevision,
+                configurationRevision,
+                meta: preview.meta,
+              };
+            }
+            pushCachedModeData();
+          }
+
+          await new Promise<void>((resolve) => {
+            window.setTimeout(resolve, ASTROCART_REFINEMENT_DELAY_MS);
+          });
+          if (!requestIsCurrent()) return;
+          const interactive = await fetchAstrocartModePayload(
+            documentId,
+            null,
+            ASTROCART_RETAINED_TERMINAL_PRECISION,
+            request.controller.signal,
+          );
+          if (
+            !requestIsCurrent() ||
+            !payloadMatchesCurrentSpec(interactive)
           ) return;
-          astrocartMetaCacheRef.current = {
+          emptyModeDataCacheRef.current = {
             sessionRevision,
-            meta: payload.meta ?? {},
+            configurationRevision,
+            precision: ASTROCART_RETAINED_TERMINAL_PRECISION,
+            payload: interactive,
           };
+          if (interactive.meta) {
+            astrocartMetaCacheRef.current = {
+              sessionRevision,
+              configurationRevision,
+              meta: interactive.meta,
+            };
+          }
           pushCachedModeData();
-        })
-        .catch((err) => {
+        } catch (err) {
           if (isAbortError(err, request.controller.signal)) return;
-          console.error("[acg:meta]", err);
-        })
-        .finally(() => {
+          console.error("[acg:dynamic-only]", err);
+        } finally {
           if (emptyMetaRequestRef.current === request) emptyMetaRequestRef.current = null;
-        });
+        }
+      })();
     };
 
     if (lineModes.length === 0) ensureEmptyMeta();
     for (const mode of lineModes) ensureModeData(mode);
-  }, [active, dataGenerationKey, documentId, lineModes, pushCachedModeData, sessionRevision, viewStateReady]);
+  }, [
+    active,
+    configurationRevision,
+    dataGenerationKey,
+    documentId,
+    lineModes,
+    pushCachedModeData,
+    sessionRevision,
+    viewStateReady,
+  ]);
 
   // Eclipse shadow-path overlay — fetch the daemon-computed GeoJSON
   // (eclipsepath.build_solar_eclipse_path_geojson via /api/astrocart/
@@ -1379,9 +2582,9 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
   // activate the new child document so it opens focused like every other
   // launcher (relocation/solar_return/transit open a child; set_pob mutates the
   // radix in place while this retained map stays active and refreshes from the
-  // daemon's session.changed event). 'click'/'shortcut' payloads
-  // from the same channel are not consumed here (line-click + in-map keyboard
-  // forwarding remain deferred, astrocart.md §7).
+  // daemon's session.changed event). Shortcut payloads re-enter the canonical
+  // manifest dispatcher so iframe focus does not create a second key model;
+  // line-click payloads remain deferred.
   React.useEffect(() => {
     function onMessage(event: MessageEvent) {
       const win = iframeRef.current?.contentWindow;
@@ -1398,26 +2601,105 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
               placeName?: string;
               state?: AstrocartViewState;
               reason?: string;
+              eventType?: "keydown" | "keyup";
+              key?: string;
+              metaKey?: boolean;
+              ctrlKey?: boolean;
+              altKey?: boolean;
+              repeat?: boolean;
+              requestId?: string;
+              ok?: boolean;
+              atlas?: AstrocartPrintAtlas;
             };
           }
         | undefined;
       if (!data || data.source !== "aries-acg") return;
       const payload = data.payload;
       if (!payload) return;
+      if (payload.type === "print-atlas" && payload.requestId) {
+        const atlas = payload.ok === true &&
+          Array.isArray(payload.atlas?.pages) &&
+          payload.atlas.pages.length >= 2 &&
+          payload.atlas.pages.every((page) =>
+            typeof page.dataUrl === "string" &&
+            page.dataUrl.startsWith("data:image/png;base64,") &&
+            page.containsAstrology === true
+          )
+          ? payload.atlas
+          : null;
+        settlePrintAtlasRequest(payload.requestId, atlas);
+        return;
+      }
+      if (payload.type === "ambient-key") {
+        window.dispatchEvent(
+          new CustomEvent("aries://embedded-ambient-key", { detail: payload }),
+        );
+        return;
+      }
+      if (payload.type === "shortcut") {
+        window.dispatchEvent(
+          new CustomEvent(EMBEDDED_MANIFEST_SHORTCUT_EVENT, {
+            detail: payload,
+          }),
+        );
+        return;
+      }
       if (payload.type === "perf") {
         console.info("[acg-perf]", payload.reason ?? "snapshot", payload.state);
         return;
       }
       if (payload.type === "ready") {
         if (url) setReadyUrl(url);
+        const canonicalSpec = canonicalAstrocartSpecRef.current;
+        if (mapHostActiveRef.current && canonicalSpec) {
+          // The child emits ready only after MapLibre replays any queued
+          // applyState payload. Reassert canonical spec visibility here so a
+          // stale retained overlay snapshot can never win that final race.
+          applyAstrocartSpecVisibility(canonicalSpec, true);
+        }
+        return;
+      }
+      if (payload.type === "presented") {
+        if (url) setPresentedMapUrl(url);
         return;
       }
       if (payload.type === "state" && payload.state) {
-        if (!active) return;
-        persistViewState({
+        const reason = payload.reason ?? "state";
+        const scope: AstrocartViewStateScope =
+          reason === "moveend" || reason === "reset-view"
+            ? "camera"
+            : (
+              reason === "projection" ||
+              reason === "legend" ||
+              reason === "overlay-parans" ||
+              reason === "overlay-asterisms"
+            )
+              ? "global"
+              : "all";
+        if (!active && scope !== "global") return;
+        const nextViewState: AstrocartViewState = {
           ...payload.state,
           lineModes: activeLineModesRef.current,
-        });
+        };
+        if (scope === "global") {
+          viewStateIntentRevisionRef.current += 1;
+          // Explicit chrome intent can arrive during first restore. It already
+          // painted in the child, so let it become the current retained state
+          // instead of waiting for an older GET to finish.
+          if (active) setViewStateReadyFor(viewStateKey);
+        }
+        persistViewState(nextViewState, scope === "global", scope);
+        if (
+          reason === "overlay-parans" &&
+          typeof payload.state.overlays?.parans === "boolean"
+        ) {
+          queueAstrocartParanIntent(payload.state.overlays.parans);
+        }
+        if (active) {
+          setNatalLayerVisible((current) =>
+            payload.state?.overlays?.layers?.natal ?? current
+          );
+        }
         return;
       }
       if (payload.type !== "here") return;
@@ -1448,62 +2730,151 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
     }
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [active, documentId, persistViewState, url]);
+  }, [
+    active,
+    applyAstrocartSpecVisibility,
+    documentId,
+    persistViewState,
+    queueAstrocartParanIntent,
+    settlePrintAtlasRequest,
+    url,
+    viewStateKey,
+  ]);
 
   return (
-    <div className="relative flex flex-1 min-h-0 bg-background">
-      {url ? (
-        <iframe
-          key={url}
-          ref={iframeRef}
-          src={url}
-          title={t("toolbar.astrocartography")}
-          className="h-full w-full border-0 bg-background"
-          style={{ backgroundColor: "var(--background, #232428)" }}
-          onLoad={() => {
-            setIframeLoadRevision((revision) => revision + 1);
-            setReadyUrl(url);
-            iframeRef.current?.contentWindow?.postMessage(
-              { type: "aries.getReady" },
-              "*",
+    <div
+      className={cn(
+        "right-pane-split relative grid flex-1 min-h-0 bg-transparent transition-[grid-template-columns] duration-[var(--aries-motion-shell-duration)] ease-[var(--aries-motion-shell-ease)]",
+        rightPaneDragging && "transition-none",
+      )}
+      style={{
+        "--right-pane-width": `${effectiveControlsPaneWidth}px`,
+        gridTemplateColumns: controlsOpen
+          ? "minmax(0, 1fr) var(--right-pane-width)"
+          : "minmax(0, 1fr) 0px",
+      } as React.CSSProperties}
+    >
+      <div className="relative min-w-0 overflow-hidden bg-background">
+        {url ? (
+          <iframe
+            key={url}
+            ref={iframeRef}
+            src={url}
+            title={t("toolbar.astrocartography")}
+            className="h-full w-full border-0 bg-background"
+            style={{ backgroundColor: "var(--background, #232428)" }}
+            onLoad={() => {
+              setPresentedMapUrl(null);
+              setIframeLoadRevision((revision) => revision + 1);
+              iframeRef.current?.contentWindow?.postMessage(
+                { type: "aries.getReady" },
+                "*",
+              );
+            }}
+          />
+        ) : null}
+        {url && presentedMapUrl !== url ? (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 z-10 bg-background"
+          />
+        ) : null}
+        <div
+          className={cn(
+            LIST_PANE_CLASSES.segmented,
+            "absolute bottom-[var(--aries-pane-title-gap)] left-1/2 z-20 -translate-x-1/2 bg-background text-[length:var(--aries-font-size-small)]",
+          )}
+          role="group"
+          aria-label={t("toolbar.astrocartLineMode")}
+        >
+          {ASTROCART_LINE_MODES.map((mode) => {
+            const selected = lineModes.includes(mode.id);
+            return (
+              <button
+                key={mode.id}
+                type="button"
+                title={t(`astrocart.mode.${mode.id}.title`)}
+                aria-pressed={selected}
+                onClick={(event) => handleLineModeClick(mode.id, event)}
+                className={cn(
+                  LIST_PANE_CLASSES.segmentedButton,
+                  "min-w-[var(--aries-segmented-control-item-min-width)] text-xs",
+                  selected
+                    ? "bg-secondary text-secondary-foreground"
+                    : "text-muted-foreground hover:bg-muted",
+                )}
+              >
+                {t(`astrocart.mode.${mode.id}.label`)}
+              </button>
             );
-          }}
+          })}
+          <span aria-hidden className="mx-0.5 h-4 w-px self-center bg-border" />
+          <button
+            type="button"
+            aria-label={t("astrocart.config.open")}
+            title={t("astrocart.config.open")}
+            aria-pressed={controlsOpen}
+            onClick={() => {
+              if (controlsOpen) {
+                closeAstrocartControlsPane();
+              } else {
+                openAstrocartControlsPane({ documentId });
+              }
+            }}
+            className={cn(
+              LIST_PANE_CLASSES.segmentedButton,
+              "flex w-[var(--aries-control-height-compact)] items-center justify-center px-0",
+              controlsOpen
+                ? "bg-secondary text-secondary-foreground"
+                : "text-muted-foreground hover:bg-muted",
+            )}
+          >
+            <SlidersHorizontal aria-hidden className="size-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {controlsOpen ? (
+        <RightPaneSash
+          width={effectiveControlsPaneWidth}
+          minWidth={controlsPanePolicy.minContentWidth}
+          maxWidth={controlsPanePolicy.maxWidth}
+          onCollapse={closeAstrocartControlsPane}
         />
       ) : null}
-      <div
-        className="absolute bottom-[var(--aries-pane-title-gap)] left-1/2 z-20 inline-flex h-[var(--aries-control-height-small)] -translate-x-1/2 items-center rounded-[var(--aries-radius-control)] border border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface)] p-[var(--aries-segmented-control-padding)] text-[length:var(--aries-font-size-small)] shadow-sm"
-        role="group"
-        aria-label={t("toolbar.astrocartLineMode")}
+      <aside
+        hidden={!controlsOpen}
+        aria-hidden={!controlsOpen}
+        data-aries-surface="panel"
+        data-right-pane-module="astrocart-controls"
+        data-right-pane-role={controlsPanePolicy.role}
+        className="box-border min-w-0 overflow-hidden border-l border-[color:var(--aries-titlebar-seam-rule)] bg-[var(--aries-panel-background)] pt-[var(--titlebar-pane-pad-top)] text-[color:var(--aries-panel-text)] [&>*]:bg-transparent"
+        style={
+          {
+            "--right-pane-min-content-width": `${controlsPanePolicy.minContentWidth}px`,
+            "--right-pane-preferred-width": `${controlsPanePolicy.preferredWidth}px`,
+          } as React.CSSProperties
+        }
       >
-        {ASTROCART_LINE_MODES.map((mode) => {
-          const active = lineModes.includes(mode.id);
-          const geodetic = ASTROCART_GEODETIC_MODES.has(mode.id);
-          return (
-            <button
-              key={mode.id}
-              type="button"
-              title={t(`astrocart.mode.${mode.id}.title`)}
-              aria-pressed={active}
-              onClick={(event) => handleLineModeClick(mode.id, event)}
-              className={cn(
-                "flex h-[var(--aries-control-height-compact)] min-w-[var(--aries-segmented-control-item-min-width)] flex-col items-center justify-center rounded-[var(--aries-radius-control-compact)] px-[var(--aries-control-padding-x-compact)] text-[color:var(--aries-text-muted)] transition-colors",
-                active
-                  ? "bg-[color:var(--aries-accent)] text-[color:var(--aries-text-primary)]"
-                  : "hover:bg-[color:var(--aries-list-hover-bg)]",
-              )}
-            >
-              <span className="text-[length:var(--aries-font-size-small)] leading-none">
-                {t(`astrocart.mode.${mode.id}.label`)}
-              </span>
-              {geodetic ? (
-                <span className="text-[length:var(--aries-font-size-micro)] font-medium uppercase leading-none tracking-[0.08em] opacity-70">
-                  {t("astrocart.mode.geodetic.badge")}
-                </span>
-              ) : null}
-            </button>
-          );
-        })}
-      </div>
+        <AstrocartControls
+          documentId={documentId}
+          active={active}
+          visible={controlsOpen}
+          catalogRevision={catalogRevision}
+          optionsRevision={lastOptionsChange?.seq ?? 0}
+          paranIntent={paranIntent}
+          lineModes={lineModes}
+          natalLayerVisible={natalLayerVisible}
+          mapViewReady={viewStateReady}
+          onClose={closeAstrocartControlsPane}
+          onMapViewReset={handleAstrocartMapViewReset}
+          onPreviewChange={handleAstrocartConfigurationPreview}
+          onCanonicalChange={handleAstrocartConfigurationChange}
+          onNatalLayerVisibilityChange={handleAstrocartNatalLayerVisibility}
+          onStandardViewReset={handleAstrocartStandardViewReset}
+          onRequestPrintAtlas={requestPrintAtlas}
+        />
+      </aside>
     </div>
   );
 });
@@ -1525,8 +2896,11 @@ export function UnifiedTitleBar({
   manifest,
   overlay = false,
   onOpenSettings,
+  onOpenStyleLab,
   onMenuCommand,
   isMenuCommandEnabled,
+  canCopyChart = false,
+  onCopyChart,
 }: {
   chart: ChartRenderSnapshot | null;
   activeDoc: WorkspaceDocument | null;
@@ -1539,8 +2913,11 @@ export function UnifiedTitleBar({
   // region + control buttons remain over the map).
   overlay?: boolean;
   onOpenSettings?: (tab?: SettingsTabId) => void;
+  onOpenStyleLab?: () => void;
   onMenuCommand: (command: string) => void;
   isMenuCommandEnabled: (command: string) => boolean;
+  canCopyChart?: boolean;
+  onCopyChart?: () => void | Promise<boolean>;
 }) {
   const toggleSidebar = useFrameLayoutStore((s) => s.toggleSidebar);
   const sidebarOpen = useFrameLayoutStore((s) => s.sidebarOpen);
@@ -1616,36 +2993,51 @@ export function UnifiedTitleBar({
   return (
     <header
       data-tauri-drag-region
-      className={cn(
-        "absolute inset-x-0 top-0 z-50 grid h-[var(--titlebar-h)] select-none grid-cols-[minmax(var(--titlebar-side-min-w),1fr)_minmax(0,2fr)_minmax(var(--titlebar-side-min-w),1fr)] items-center px-1.5 text-[color:var(--aries-header-text)] sm:px-2",
-        overlay
-          ? "bg-transparent"
-          : "unified-titlebar",
-      )}
+      className="absolute inset-x-0 top-0 grid h-[var(--titlebar-h)] select-none grid-cols-[minmax(var(--titlebar-side-min-w),1fr)_minmax(0,2fr)_minmax(var(--titlebar-side-min-w),1fr)] items-center px-[var(--aries-titlebar-padding-x)] text-[color:var(--aries-header-text)]"
     >
+      <div
+        data-tauri-drag-region
+        data-aries-titlebar-backplate=""
+        data-aries-surface={overlay ? undefined : "titlebar"}
+        aria-hidden="true"
+        className={cn(
+          "absolute inset-0 z-[40]",
+          overlay
+            ? "bg-transparent"
+            : "isolate bg-[var(--aries-titlebar-background)]",
+        )}
+      />
       {/* On macOS this starts after the native traffic lights; Windows uses the
           default leading inset and reserves its native controls on the right. */}
-      <div data-tauri-drag-region className="absolute left-[var(--titlebar-left-controls-x)] top-0 z-10 flex h-[var(--titlebar-h)] min-w-0 translate-y-[var(--titlebar-content-offset-y)] items-center justify-start gap-0.5 sm:gap-1">
+      <div data-tauri-drag-region className="absolute left-[var(--titlebar-left-controls-x)] top-0 z-[42] flex h-[var(--titlebar-h)] min-w-0 translate-y-[var(--titlebar-content-offset-y)] items-center justify-start gap-[var(--aries-titlebar-cluster-gap)]">
         <HeaderButton label={t("toolbar.toggleSidebar")} onClick={toggleSidebar} pressed={sidebarOpen}>
           <PanelLeft className="size-[var(--morinus-header-icon-size)]" />
         </HeaderButton>
       </div>
       <div
         data-tauri-drag-region
-        className="relative z-10 col-start-2 flex min-w-0 translate-y-[var(--titlebar-content-offset-y)] items-center justify-center px-2 text-[length:var(--aries-font-size-titlebar)] font-normal leading-none tracking-normal text-[color:var(--aries-titlebar-text)]"
+        className="relative z-[42] col-start-2 flex min-w-0 translate-y-[var(--titlebar-content-offset-y)] items-center justify-center px-[var(--aries-titlebar-title-padding-x)] text-[length:var(--aries-font-size-titlebar)] font-normal leading-none tracking-normal text-[color:var(--aries-titlebar-text)]"
       >
-        {overlay ? null : <TitleText parts={parts} />}
+        {overlay ? null : (
+          <ChartCopyControl
+            enabled={canCopyChart && onCopyChart != null}
+            onCopy={onCopyChart}
+          >
+            <TitleText parts={parts} />
+          </ChartCopyControl>
+        )}
       </div>
       {/* Right cluster — search + edit + right-pane toggles. */}
       <div
         ref={captionActionsRef}
         data-tauri-drag-region
-        className="relative z-10 col-start-3 flex min-w-0 translate-y-[var(--titlebar-content-offset-y)] items-center justify-end gap-0.5 sm:gap-1"
+        className="relative z-[42] col-start-3 flex min-w-0 translate-y-[var(--titlebar-content-offset-y)] items-center justify-end gap-[var(--aries-titlebar-cluster-gap)]"
       >
         <TitlebarOptionsMenu
           manifest={manifest}
           onCommand={onMenuCommand}
           isCommandEnabled={isMenuCommandEnabled}
+          onOpenStyleLab={onOpenStyleLab}
           onOpenSettings={onOpenSettings}
         />
         {canOpenSearch ? (
@@ -1854,14 +3246,15 @@ export const ModeHintRail = React.memo(function ModeHintRail({
 }: ModeHintRailProps) {
   const t = useT();
   const [hiddenRevealToken, setHiddenRevealToken] = React.useState<number | null>(null);
+  const [pointerInside, setPointerInside] = React.useState(false);
   React.useEffect(() => {
-    if (!visible || autoHideMs <= 0) return;
+    if (!visible || autoHideMs <= 0 || pointerInside) return;
     const token = revealToken;
     const timer = window.setTimeout(() => setHiddenRevealToken(token), autoHideMs);
     return () => window.clearTimeout(timer);
-  }, [autoHideMs, revealToken, visible]);
+  }, [autoHideMs, pointerInside, revealToken, visible]);
   const autoVisible = Boolean(
-    visible && (autoHideMs <= 0 || hiddenRevealToken !== revealToken),
+    visible && (pointerInside || autoHideMs <= 0 || hiddenRevealToken !== revealToken),
   );
   const showModeHint = Boolean(
     hasChart &&
@@ -1891,10 +3284,42 @@ export const ModeHintRail = React.memo(function ModeHintRail({
   const showNavigationHints = Boolean(hasChart && onNavigateHint && stepHintGroups.length > 0);
   const active = Boolean(autoVisible && !overlay && (showModeHint || showNavigationHints));
   const tooltipSide = placement === "bottom" ? "top" : "bottom";
+  const handlePositionSettled = React.useCallback((
+    element: HTMLDivElement,
+    offset: OverlayOffset,
+  ) => {
+    setChartNavbarHoverZone(chartNavbarHoverZoneFromRect(
+      element.getBoundingClientRect(),
+      offset,
+      placement,
+    ));
+  }, [placement]);
+  const {
+    overlayRef,
+    handlePointerDown: handleOverlayPointerDown,
+    handlePointerMove: handleOverlayPointerMove,
+    handlePointerUp: handleOverlayPointerUp,
+    handlePointerCancel: handleOverlayPointerCancel,
+    handleLostPointerCapture: handleOverlayLostPointerCapture,
+    handleDoubleClick: handleOverlayDoubleClick,
+  } = useDraggableOverlay({
+    disabled: !active,
+    resetKey: placement,
+    isBlockedTarget: isInteractivePointerTarget,
+    onInteraction: onHintInteraction,
+    onPositionSettled: handlePositionSettled,
+  });
   const handleModeHintClick = React.useCallback(() => {
     onHintInteraction?.();
     onToggleComparison?.();
   }, [onHintInteraction, onToggleComparison]);
+  const handlePointerEnter = React.useCallback(() => {
+    setPointerInside(true);
+    onHintInteraction?.();
+  }, [onHintInteraction]);
+  const handlePointerLeave = React.useCallback(() => {
+    setPointerInside(false);
+  }, []);
   const handleNavigateHintClick = React.useCallback(
     (
       key: "left" | "right",
@@ -1907,6 +3332,7 @@ export const ModeHintRail = React.memo(function ModeHintRail({
   );
   return (
     <div
+      ref={overlayRef}
       className={cn(
         "aries-mode-hint",
         placement === "bottom" ? "aries-mode-hint--bottom" : "aries-mode-hint--top",
@@ -1915,6 +3341,14 @@ export const ModeHintRail = React.memo(function ModeHintRail({
       role="group"
       aria-label={t("toolbar.chartNavbar")}
       aria-hidden={!active}
+      onPointerDown={handleOverlayPointerDown}
+      onPointerMove={handleOverlayPointerMove}
+      onPointerUp={handleOverlayPointerUp}
+      onPointerCancel={handleOverlayPointerCancel}
+      onLostPointerCapture={handleOverlayLostPointerCapture}
+      onDoubleClick={handleOverlayDoubleClick}
+      onPointerEnter={handlePointerEnter}
+      onPointerLeave={handlePointerLeave}
     >
       {showModeHint ? (
         <Tooltip>
@@ -2172,7 +3606,13 @@ export function navigationHintGroups({
   }
 
   const featureKind = supplementaryFeatureKind;
-  if (!featureKind || featureKind === "transits" || featureKind === "synastry" || compoundKind) {
+  if (
+    !featureKind ||
+    featureKind === "transits" ||
+    featureKind === "converse-transits" ||
+    featureKind === "synastry" ||
+    compoundKind
+  ) {
     return buildLeftRightHintGroups([
       ["minute", { alt: true }],
       ["hour", { shift: true }],
@@ -2348,7 +3788,10 @@ function isEditableFocusTarget(element: HTMLElement): boolean {
 }
 
 function isInteractivePointerTarget(target: EventTarget | null): boolean {
-  const element = target instanceof HTMLElement ? target : null;
+  // Pointer targets inside icon buttons are often SVGElement/path nodes rather
+  // than HTMLElement. Treat every DOM Element as eligible for closest() so a
+  // button's pointer sequence can never leak into parent drag/focus handling.
+  const element = target instanceof Element ? target : null;
   if (!element) return false;
   return Boolean(
     element.closest(
@@ -2370,6 +3813,7 @@ function ChartArea({
 }) {
   const inspectorOpen = useFrameLayoutStore((s) => s.inspectorOpen);
   const notesOpen = useFrameLayoutStore((s) => s.notesPaneOpen);
+  const styleEditorOpen = useFrameLayoutStore((s) => s.styleEditorOpen);
   const sidebarOpen = useFrameLayoutStore((s) => s.sidebarOpen);
   const sidebarWidth = useFrameLayoutStore((s) => s.sidebarWidth);
   const rightPaneWidth = useFrameLayoutStore((s) => s.rightPaneWidth);
@@ -2385,12 +3829,13 @@ function ChartArea({
   const eclipsesPane = useWorkspaceStore((s) => s.eclipsesPane);
   const lunarMansionsPane = useWorkspaceStore((s) => s.lunarMansionsPane);
   const synodicCyclesPane = useWorkspaceStore((s) => s.synodicCyclesPane);
+  const aspectListPane = useWorkspaceStore((s) => s.aspectListPane);
   const ascensionalTransitsPane = useWorkspaceStore((s) => s.ascensionalTransitsPane);
   const featureCatalogPane = useWorkspaceStore((s) => s.featureCatalogPane);
   const activeRightPane = activeRightPaneModule({
     inspectorOpen,
     notesOpen,
-    styleEditorOpen: false,
+    styleEditorOpen,
     transitSearchPane,
     transitListPane,
     directionsPane,
@@ -2402,6 +3847,7 @@ function ChartArea({
     eclipsesPane,
     lunarMansionsPane,
     synodicCyclesPane,
+    aspectListPane,
     ascensionalTransitsPane,
     featureCatalogPane,
   });
@@ -2447,7 +3893,7 @@ function ChartArea({
   return (
     <div
       className={cn(
-        "right-pane-split relative grid flex-1 min-h-0 bg-background transition-[grid-template-columns] duration-[var(--aries-motion-shell-duration)] ease-[var(--aries-motion-shell-ease)]",
+        "right-pane-split relative grid flex-1 min-h-0 bg-transparent transition-[grid-template-columns] duration-[var(--aries-motion-shell-duration)] ease-[var(--aries-motion-shell-ease)]",
         rightPaneDragging && "transition-none",
       )}
       style={{
@@ -2468,7 +3914,9 @@ function ChartArea({
         {surface ?? (chart ? (
           <ChartSurface chart={chart} />
         ) : (
-          <EmptyWorkspace />
+          <WorkspaceDocumentSurface>
+            <EmptyWorkspace />
+          </WorkspaceDocumentSurface>
         ))}
         {navbar ? <ModeHintRail {...navbar} /> : null}
       </div>
@@ -2485,7 +3933,11 @@ function ChartArea({
         data-right-pane-module={activeRightPane ?? undefined}
         data-right-pane-role={rightPaneOpen ? rightPanePolicy.role : undefined}
         className={cn(
-          "box-border min-w-0 overflow-hidden border-l border-[color:var(--aries-titlebar-seam-rule)] bg-background pt-[var(--titlebar-pane-pad-top)]",
+          // The mounted pane owns the one material boundary: Inspector/Notes
+          // paint themselves, while other retained panes use
+          // RightInspectorPaneFrame. An opaque shell here would block their
+          // authored alpha and backdrop filter.
+          "box-border min-w-0 overflow-hidden border-l border-[color:var(--aries-titlebar-seam-rule)] bg-transparent pt-[var(--titlebar-pane-pad-top)] text-[color:var(--aries-panel-text)]",
           !rightPaneOpen && "pointer-events-none",
         )}
         style={
@@ -2694,19 +4146,31 @@ export function ChartSurface({
   chart,
   appControlsEnabled = true,
   inheritAppTheme = true,
+  resolvedTheme,
+  exportRegistrationEnabled = true,
 }: {
   chart: ChartRenderSnapshot;
   appControlsEnabled?: boolean;
   inheritAppTheme?: boolean;
+  resolvedTheme?: ThemeState | null;
+  exportRegistrationEnabled?: boolean;
 }) {
   const [hostElement, setHostElement] = useState<HTMLDivElement | null>(null);
   const viewport = useElementSize(hostElement);
   const viewportWidth = viewport.width;
   const viewportHeight = viewport.height;
-  const theme = useThemeStore((state) => state.theme);
-  const styleRevision = useStyleRevision();
+  const appTheme = useThemeStore((state) => state.theme);
+  const appStyleRevision = useStyleRevision();
+  const selectedAspectBody = useWorkspaceStore((state) => state.selectedAspectBody);
+  const hideAllAspects = useWorkspaceStore((state) => state.hideAllAspects);
+  const minorOnlyAspects = useWorkspaceStore((state) => state.minorOnlyAspects);
+  const theme = resolvedTheme === undefined ? appTheme : resolvedTheme;
+  const styleRevision = resolvedTheme === undefined
+    ? appStyleRevision
+    : `${theme?.schemaVersion ?? 0}:${theme?.styleRevision ?? 0}:${theme?.styleHash ?? "none"}`;
 
   useEffect(() => {
+    if (!exportRegistrationEnabled) return;
     const documentId = chart.document?.documentId;
     if (!documentId || viewportWidth <= 0 || viewportHeight <= 0) return;
     return registerChartExportRenderer(documentId, (request) =>
@@ -2715,9 +4179,23 @@ export function ChartSurface({
         theme,
         { width: viewportWidth, height: viewportHeight },
         request,
+        {
+          selectedBody: selectedAspectBody,
+          hideAll: hideAllAspects,
+          minorOnly: minorOnlyAspects,
+        },
       ),
     );
-  }, [chart, theme, viewportHeight, viewportWidth]);
+  }, [
+    chart,
+    exportRegistrationEnabled,
+    hideAllAspects,
+    minorOnlyAspects,
+    selectedAspectBody,
+    theme,
+    viewportHeight,
+    viewportWidth,
+  ]);
 
   const primaryChart = chart.primaryChart;
   const displayChart = isPlainSynastryBiwheel(chart)
@@ -2756,58 +4234,30 @@ export function ChartSurface({
   const overlayRows = displayChart.overlay?.rows ?? [];
   const overlaySections = splitOverlayRows(overlayRows);
   const hasOverlayRows = overlayRows.length > 0;
-  const chartSize = Math.min(viewport.width, viewport.height);
-  const compactPhone =
-    viewport.width > 0 && viewport.width <= overlayStyle.compactBreakpoint;
-  const symbolSize = chartSize > 0 ? chartSize / 32 : 0;
-  const infoFontSize = Math.max(
-    compactPhone ? overlayStyle.compactInfoFontMin : overlayStyle.infoFontMin,
-    symbolSize * (
-      compactPhone ? overlayStyle.compactInfoFontScale : overlayStyle.infoFontScale
-    ),
+  const overlayMetrics = resolveWheelOverlayMetrics(overlayStyle, viewport);
+  const {
+    infoFontSize,
+    iconSize: overlayIconSize,
+    labelSize: overlayLabelSize,
+    lineHeight: overlayLineHeight,
+    gapAfterDayHour: overlayGapAfterDayHour,
+    gapBetweenGroups: overlayGapBetweenGroups,
+    columnGap: overlayColumnGap,
+    edgeInset,
+    topEdgeInset,
+    maxWidth: overlayMaxWidth,
+  } = overlayMetrics;
+  const wheelProfile: WheelTypographyProfile =
+    primaryChart.options.theme === 2
+      ? "anglo"
+      : primaryChart.options.theme === 1
+        ? "compact"
+        : "classic";
+  const projectedOverlayStyle = projectWheelAuthoringStyle(
+    wheelStyle,
+    overlayMetrics.chartSize / 2,
+    wheelProfile,
   );
-  const overlayIconSize = Math.max(
-    compactPhone ? overlayStyle.compactIconMin : overlayStyle.iconMin,
-    ((2 * symbolSize) / 3) * (
-      compactPhone ? overlayStyle.compactIconScale : overlayStyle.iconScale
-    ),
-  );
-  const overlayLabelSize = Math.max(
-    compactPhone ? overlayStyle.compactLabelMin : overlayStyle.labelMin,
-    symbolSize * (
-      compactPhone ? overlayStyle.compactLabelScale : overlayStyle.labelScale
-    ),
-  );
-  const overlayLineHeight = Math.max(
-    1,
-    Math.round(
-      Math.max(overlayIconSize, overlayLabelSize) *
-      overlayStyle.fontBoxScale *
-      overlayStyle.rowHeightFactor,
-    ),
-  );
-  const overlayGapAfterDayHour = Math.round(
-    overlayLineHeight * overlayStyle.gapAfterDayHourScale,
-  );
-  const overlayGapBetweenGroups = Math.round(
-    overlayLineHeight * overlayStyle.groupGapScale,
-  );
-  const overlayColumnGap = Math.max(
-    overlayStyle.columnGapMin,
-    Math.floor(symbolSize * overlayStyle.columnGapScale),
-  );
-  const edgeInset = chartSize > 0
-    ? Math.max(
-        compactPhone ? overlayStyle.compactEdgeInsetMin : 0,
-        chartSize * overlayStyle.edgeInsetScale,
-      )
-    : 0;
-  const topEdgeInset = compactPhone
-    ? edgeInset
-    : edgeInset + overlayStyle.titlebarSafeTop;
-  const overlayMaxWidth = viewport.width > 0 && viewport.width < 640
-    ? `${overlayStyle.maxWidthViewportScale * 100}vw`
-    : undefined;
 
   return (
     <div ref={setHostElement} className="font-morinus-text relative flex h-full w-full min-w-0 overflow-hidden">
@@ -2818,6 +4268,8 @@ export function ChartSurface({
       />
       {cornerChart.options.showInformation ? (
         <CornerLines
+          semanticClassId="chartOverlay.information.topLeft"
+          wheelStyle={projectedOverlayStyle}
           lines={
             cornerChart.meta.cornerLines?.topLeft ??
             [cornerChart.meta.dateDisplay, cornerChart.meta.timeDisplay]
@@ -2831,6 +4283,7 @@ export function ChartSurface({
       ) : null}
       {hasOverlayRows ? (
         <OverlayCorner
+          wheelStyle={projectedOverlayStyle}
           sections={overlaySections}
           palette={palette}
           labelSize={overlayLabelSize}
@@ -2846,6 +4299,8 @@ export function ChartSurface({
       ) : null}
       {cornerChart.options.showInformation ? (
         <CornerLines
+          semanticClassId="chartOverlay.information.bottomLeft"
+          wheelStyle={projectedOverlayStyle}
           lines={
             cornerChart.meta.cornerLines?.bottomLeft ??
             [cornerChart.meta.place, cornerChart.meta.placeCoords]
@@ -2859,6 +4314,8 @@ export function ChartSurface({
       ) : null}
       {displayChart.options.showHouseSystem ? (
         <CornerLines
+          semanticClassId="chartOverlay.houseSystem.bottomRight"
+          wheelStyle={projectedOverlayStyle}
           lines={displayChart.meta.houseSystemLines ?? []}
           color={palette.textDim}
           fontSize={infoFontSize}
@@ -2885,6 +4342,8 @@ function RightPaneStack({
 }) {
   const inspectorOpen = useFrameLayoutStore((s) => s.inspectorOpen);
   const notesOpen = useFrameLayoutStore((s) => s.notesPaneOpen);
+  const styleEditorOpen = useFrameLayoutStore((s) => s.styleEditorOpen);
+  const setStyleEditorOpen = useFrameLayoutStore((s) => s.setStyleEditorOpen);
   const transitSearchPane = useWorkspaceStore((s) => s.transitSearchPane);
   const closeTransitSearchPane = useWorkspaceStore((s) => s.closeTransitSearchPane);
   const transitListPane = useWorkspaceStore((s) => s.transitListPane);
@@ -2895,6 +4354,8 @@ function RightPaneStack({
   const closeTimeLordPane = useWorkspaceStore((s) => s.closeTimeLordPane);
   const synodicCyclesPane = useWorkspaceStore((s) => s.synodicCyclesPane);
   const closeSynodicCyclesPane = useWorkspaceStore((s) => s.closeSynodicCyclesPane);
+  const aspectListPane = useWorkspaceStore((s) => s.aspectListPane);
+  const closeAspectListPane = useWorkspaceStore((s) => s.closeAspectListPane);
   const timedChartListRowLinkDocumentIds = useWorkspaceStore(
     (s) => s.timedChartListRowLinkDocumentIds,
   );
@@ -2948,7 +4409,10 @@ function RightPaneStack({
     transitListPane != null &&
     !transitListActiveDocFromListRow &&
     activeDoc?.parentDocumentId === transitListPane.documentId &&
-    activeDoc?.supplementaryFeatureKind === "transits";
+    (
+      activeDoc?.supplementaryFeatureKind === "transits" ||
+      activeDoc?.supplementaryFeatureKind === "converse-transits"
+    );
   const transitListLiveFocusDatetime = transitListActiveDocBelongs
     ? (chart?.document?.documentId === activeDoc?.id
         ? chart?.document?.symbolicTime?.signifiedDatetime ?? chart?.document?.displayDatetime
@@ -2975,6 +4439,24 @@ function RightPaneStack({
       activeDoc?.displayDatetime ??
       null
     : null;
+  const aspectListActiveDocFromListRow =
+    aspectListPane != null &&
+    activeDoc?.id != null &&
+    Boolean(timedChartListRowLinkDocumentIds[activeDoc.id]);
+  const aspectListLiveContextDocument =
+    aspectListPane != null &&
+    !aspectListActiveDocFromListRow &&
+    isAspectListQueryHostDocument(activeDoc)
+      ? activeDoc
+      : null;
+  const aspectListLiveFocusDatetime = aspectListLiveContextDocument
+    ? (chart?.document?.documentId === aspectListLiveContextDocument.id
+        ? chart?.document?.symbolicTime?.signifiedDatetime ?? chart?.document?.displayDatetime
+        : null) ??
+      aspectListLiveContextDocument.symbolicTime?.signifiedDatetime ??
+      aspectListLiveContextDocument.displayDatetime ??
+      null
+    : null;
   // Presentation memory of the last live focus. A row-link open must not move
   // the list AT ALL — including snapping back to the pane's open-time focus
   // after live follow has drifted (stepping). Hold whatever the list was
@@ -2982,6 +4464,18 @@ function RightPaneStack({
   const [lastDirectionsLiveFocus, setLastDirectionsLiveFocus] = useState<string | null>(null);
   const [lastTransitListLiveFocus, setLastTransitListLiveFocus] = useState<string | null>(null);
   const [lastSynodicCyclesLiveFocus, setLastSynodicCyclesLiveFocus] = useState<string | null>(null);
+  const lastAspectListLiveFocusRef = useRef<{
+    paneIdentity: string | null;
+    focusDatetime: string | null;
+  }>({ paneIdentity: null, focusDatetime: null });
+  const [retainedAspectListFocus, setRetainedAspectListFocus] = useState<{
+    paneIdentity: string;
+    focusDatetime: string | null;
+  } | null>(null);
+  const [lastAspectListContext, setLastAspectListContext] = useState<{
+    paneIdentity: string;
+    documentId: string;
+  } | null>(null);
   const directionsPaneIdentity = directionsPane
     ? `${directionsPane.documentId}:${directionsPane.openSeq ?? 0}`
     : null;
@@ -2990,6 +4484,9 @@ function RightPaneStack({
     : null;
   const synodicCyclesPaneIdentity = synodicCyclesPane
     ? `${synodicCyclesPane.documentId}:${synodicCyclesPane.openSeq ?? 0}`
+    : null;
+  const aspectListPaneIdentity = aspectListPane
+    ? `${aspectListPane.documentId}:${aspectListPane.openSeq ?? 0}`
     : null;
   useEffect(() => {
     queueMicrotask(() => setLastDirectionsLiveFocus(null));
@@ -3024,6 +4521,58 @@ function RightPaneStack({
       ),
     );
   }, [synodicCyclesLiveFocusDatetime]);
+  useLayoutEffect(() => {
+    const tracked = lastAspectListLiveFocusRef.current;
+    if (tracked.paneIdentity !== aspectListPaneIdentity) {
+      lastAspectListLiveFocusRef.current = {
+        paneIdentity: aspectListPaneIdentity,
+        focusDatetime: aspectListLiveFocusDatetime,
+      };
+      return;
+    }
+    if (aspectListLiveFocusDatetime) {
+      tracked.focusDatetime = aspectListLiveFocusDatetime;
+    }
+  }, [aspectListLiveFocusDatetime, aspectListPaneIdentity]);
+  useEffect(() => {
+    let cancelled = false;
+    const retainCurrentFocus = aspectListPaneIdentity && !aspectListLiveContextDocument;
+    const tracked = lastAspectListLiveFocusRef.current;
+    const focusDatetime =
+      tracked.paneIdentity === aspectListPaneIdentity
+        ? tracked.focusDatetime
+        : aspectListPane?.focusDatetime ?? null;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setRetainedAspectListFocus((current) => {
+        if (!retainCurrentFocus) return current === null ? current : null;
+        if (
+          current?.paneIdentity === aspectListPaneIdentity &&
+          current.focusDatetime === focusDatetime
+        ) {
+          return current;
+        }
+        return { paneIdentity: aspectListPaneIdentity, focusDatetime };
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [aspectListLiveContextDocument, aspectListPane?.focusDatetime, aspectListPaneIdentity]);
+  useEffect(() => {
+    if (!aspectListPaneIdentity || !aspectListLiveContextDocument) return;
+    queueMicrotask(() =>
+      setLastAspectListContext((previous) =>
+        previous?.paneIdentity === aspectListPaneIdentity &&
+        previous.documentId === aspectListLiveContextDocument.id
+          ? previous
+          : {
+              paneIdentity: aspectListPaneIdentity,
+              documentId: aspectListLiveContextDocument.id,
+            },
+      ),
+    );
+  }, [aspectListLiveContextDocument, aspectListPaneIdentity]);
 
   if (featureCatalogPane) {
     return (
@@ -3119,6 +4668,49 @@ function RightPaneStack({
           sourceName={synodicCyclesPane.sourceName}
           focusDatetime={synodicCyclesFocusDatetime ?? undefined}
           onClose={closeSynodicCyclesPane}
+        />
+      </RightInspectorPaneFrame>
+    );
+  }
+
+  if (aspectListPane) {
+    const retainedContextDocumentId =
+      lastAspectListContext?.paneIdentity === aspectListPaneIdentity
+        ? lastAspectListContext.documentId
+        : null;
+    const contextDocumentId =
+      aspectListLiveContextDocument?.id ??
+      retainedContextDocumentId ??
+      aspectListPane.documentId;
+    const contextDocument =
+      aspectListLiveContextDocument?.id === contextDocumentId
+        ? aspectListLiveContextDocument
+        : daemonDocuments.find((document) => document.documentId === contextDocumentId);
+    const retainedAspectListLiveFocus =
+      retainedAspectListFocus?.paneIdentity === aspectListPaneIdentity
+        ? retainedAspectListFocus.focusDatetime
+        : null;
+    const aspectListFocusDatetime = resolveListFocusDatetime(
+      aspectListPane.followPolicy,
+      aspectListLiveFocusDatetime,
+      retainedAspectListLiveFocus ?? aspectListPane.focusDatetime,
+    );
+    return (
+      <RightInspectorPaneFrame kind="aspect-list">
+        <AspectListPanel
+          key={`${aspectListPane.documentId}:${aspectListPane.openSeq ?? 0}`}
+          documentId={contextDocumentId}
+          parentDocumentId={contextDocument?.parentDocumentId ?? null}
+          preferencesDocumentId={aspectListPane.documentId}
+          sourceName={contextDocument?.sourceName ?? aspectListPane.sourceName}
+          focusDatetime={aspectListFocusDatetime ?? undefined}
+          contextRevision={aspectListContextRevision(chart, contextDocumentId)}
+          comparisonVisible={
+            chart?.document?.documentId === contextDocumentId
+              ? chart.comparisonChart != null
+              : undefined
+          }
+          onClose={closeAspectListPane}
         />
       </RightInspectorPaneFrame>
     );
@@ -3244,6 +4836,17 @@ function RightPaneStack({
     );
   }
 
+  if (styleEditorOpen) {
+    return (
+      <RightInspectorPaneFrame kind="chart-style">
+        <ChartStylePanel
+          applyThemeToApp
+          onClose={() => setStyleEditorOpen(false)}
+        />
+      </RightInspectorPaneFrame>
+    );
+  }
+
   if (!inspectorOpen && !notesOpen) return null;
 
   // Notes are anchored to the radix — derived docs (transits, SR, …) share the
@@ -3299,9 +4902,10 @@ function RightInspectorPaneFrame({
   const policy = rightPaneWidthPolicy(kind);
   return (
     <div
+      data-aries-surface="panel"
       data-right-inspector-pane={kind}
       data-right-pane-role={policy.role}
-      className="h-full w-full min-w-0 overflow-hidden"
+      className="h-full w-full min-w-0 overflow-hidden [&>*]:bg-transparent"
       style={
         {
           "--right-pane-min-content-width": `${policy.minContentWidth}px`,
@@ -3368,7 +4972,36 @@ function splitOverlayRows(rows: OverlayInfoRow[]) {
   };
 }
 
+function overlayTypographyCss(
+  wheelStyle: WheelRenderStyle,
+  classId: WheelChartOverlayClass,
+  defaults: Readonly<{
+    font: string;
+    size: number;
+    color: string;
+  }>,
+): React.CSSProperties {
+  const paint = resolveWheelTypographyPaint(
+    wheelStyle,
+    wheelStyle.authoringTargetProfile,
+    classId,
+    wheelStyle.authoringTargetRadius,
+    defaults,
+  );
+  return {
+    color: paint.color,
+    fontFamily: paint.font,
+    fontSize: paint.size,
+    fontWeight: paint.weight,
+    fontStyle: paint.style,
+    letterSpacing: paint.tracking,
+    opacity: paint.opacity,
+  };
+}
+
 function CornerLines({
+  semanticClassId,
+  wheelStyle,
   lines,
   color,
   fontSize,
@@ -3376,6 +5009,8 @@ function CornerLines({
   lineHeight,
   style,
 }: {
+  semanticClassId: WheelChartOverlayClass;
+  wheelStyle: WheelRenderStyle;
   lines: string[];
   color: string;
   fontSize: number;
@@ -3392,14 +5027,22 @@ function CornerLines({
       className="pointer-events-none absolute z-10 select-none font-ui"
       style={{
         ...style,
-        color,
-        fontSize,
+        ...overlayTypographyCss(wheelStyle, semanticClassId, {
+          font: wheelStyle.typography.families.ui,
+          size: fontSize,
+          color,
+        }),
         lineHeight,
       }}
     >
       <div className="flex flex-col" style={{ gap }}>
         {lines.map((line) => (
-          <div key={`${line}-${fontSize}`}>{line}</div>
+          <div
+            key={`${line}-${fontSize}`}
+            data-aries-style-class={semanticClassId}
+          >
+            {line}
+          </div>
         ))}
       </div>
     </div>
@@ -3407,6 +5050,7 @@ function CornerLines({
 }
 
 function OverlayCorner({
+  wheelStyle,
   sections,
   palette,
   labelSize,
@@ -3419,6 +5063,7 @@ function OverlayCorner({
   maxWidth,
   style,
 }: {
+  wheelStyle: WheelRenderStyle;
   sections: ReturnType<typeof splitOverlayRows>;
   palette: ChartPalette;
   labelSize: number;
@@ -3471,6 +5116,7 @@ function OverlayCorner({
           return (
             <OverlayRow
               key={`${overlayRowIdentity(row)}-${index}`}
+              wheelStyle={wheelStyle}
               row={row}
               palette={palette}
               labelSize={labelSize}
@@ -3492,7 +5138,21 @@ function overlayRowIdentity(row: OverlayInfoRow): string {
   return `${row.group ?? "row"}:${row.label}:${glyphs}`;
 }
 
+function overlayEventClass(
+  group: OverlayInfoRow["group"],
+  component: "label" | "glyph" | "trailing",
+): WheelChartOverlayClass {
+  if (group === "dayhour") {
+    return `chartOverlay.events.dayHour.${component}`;
+  }
+  if (group === "header") {
+    return `chartOverlay.events.header.${component}`;
+  }
+  return `chartOverlay.events.signal.${component}`;
+}
+
 function OverlayRow({
+  wheelStyle,
   row,
   palette,
   labelSize,
@@ -3500,6 +5160,7 @@ function OverlayRow({
   lineHeight,
   glyphLineHeight,
 }: {
+  wheelStyle: WheelRenderStyle;
   row: OverlayInfoRow;
   palette: ChartPalette;
   labelSize: number;
@@ -3510,6 +5171,9 @@ function OverlayRow({
   const firstGlyph = row.glyphs[0] ?? null;
   const secondGlyph = row.group === "header" ? (row.glyphs[1] ?? null) : null;
   const trailingText = row.group === "header" ? "" : (row.trailing ?? "");
+  const labelClass = overlayEventClass(row.group, "label");
+  const glyphClass = overlayEventClass(row.group, "glyph");
+  const trailingClass = overlayEventClass(row.group, "trailing");
   const rowBoxStyle: React.CSSProperties = {
     height: lineHeight,
     lineHeight: `${lineHeight}px`,
@@ -3520,7 +5184,15 @@ function OverlayRow({
     <>
       <div
         className="justify-self-start whitespace-nowrap"
-        style={{ ...rowBoxStyle, color: palette.textDim, fontSize: labelSize }}
+        data-aries-style-class={labelClass}
+        style={{
+          ...rowBoxStyle,
+          ...overlayTypographyCss(wheelStyle, labelClass, {
+            font: wheelStyle.typography.families.ui,
+            size: labelSize,
+            color: palette.textDim,
+          }),
+        }}
       >
         {row.label}
       </div>
@@ -3530,9 +5202,13 @@ function OverlayRow({
       >
         {firstGlyph ? (
           <span
+            data-aries-style-class={glyphClass}
             style={{
-              color: overlayGlyphColor(firstGlyph, palette),
-              fontSize: iconSize,
+              ...overlayTypographyCss(wheelStyle, glyphClass, {
+                font: wheelStyle.typography.families.symbols,
+                size: iconSize,
+                color: overlayGlyphColor(firstGlyph, palette),
+              }),
               lineHeight: glyphLineHeight,
             }}
           >
@@ -3542,14 +5218,27 @@ function OverlayRow({
       </div>
       <div
         className="justify-self-start whitespace-nowrap"
-        style={{ ...rowBoxStyle, color: palette.textDim, fontSize: labelSize }}
+        data-aries-style-class={
+          secondGlyph || trailingText ? trailingClass : undefined
+        }
+        style={{
+          ...rowBoxStyle,
+          ...overlayTypographyCss(wheelStyle, trailingClass, {
+            font: secondGlyph
+              ? wheelStyle.typography.families.symbols
+              : wheelStyle.typography.families.ui,
+            size: secondGlyph ? iconSize : labelSize,
+            color: secondGlyph
+              ? overlayGlyphColor(secondGlyph, palette)
+              : palette.textDim,
+          }),
+        }}
       >
         {secondGlyph ? (
           <span
             className="font-symbols leading-none"
+            data-aries-style-class={trailingClass}
             style={{
-              color: overlayGlyphColor(secondGlyph, palette),
-              fontSize: iconSize,
               lineHeight: glyphLineHeight,
             }}
           >
@@ -3622,10 +5311,11 @@ export function StatusBar({
     : "0px";
   return (
     <footer
-      className="relative z-20 flex h-[var(--morinus-status-height)] w-full shrink-0 select-none overflow-hidden bg-[color:var(--aries-background)] text-[length:var(--aries-font-size-statusbar)] font-normal leading-none text-[color:var(--aries-statusbar-text)]"
+      data-aries-surface="statusbar"
+      className="relative z-20 flex h-[var(--morinus-status-height)] w-full shrink-0 select-none overflow-hidden bg-[color:var(--aries-statusbar-background)] text-[length:var(--aries-font-size-statusbar)] font-normal leading-none text-[color:var(--aries-statusbar-text)]"
     >
       <div
-        className="flex h-full shrink-0 items-center gap-[var(--aries-statusbar-gap)] overflow-hidden bg-[color:var(--aries-background)] px-[var(--morinus-nav-side-margin)]"
+        className="flex h-full shrink-0 items-center gap-[var(--aries-statusbar-gap)] overflow-hidden bg-transparent px-[var(--morinus-nav-side-margin)]"
         style={{ width: leftCellWidth }}
       >
         {sidebarOpen ? (
@@ -3634,7 +5324,7 @@ export function StatusBar({
             onClick={onOpenSettings}
             aria-label={t("toolbar.settings")}
             title={t("toolbar.settings")}
-            className="flex size-[var(--aries-statusbar-action-size)] shrink-0 items-center justify-center rounded-md text-[length:var(--aries-font-size-nav)] text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            className="flex size-[var(--aries-statusbar-action-size)] shrink-0 items-center justify-center rounded-[var(--aries-toolbar-control-radius)] text-[length:var(--aries-font-size-nav)] text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           >
             <Settings className="size-[var(--aries-control-icon-size)] shrink-0" />
           </button>
@@ -3642,13 +5332,13 @@ export function StatusBar({
         {sidebarOpen && buildField ? <StatusText>{buildField}</StatusText> : null}
       </div>
       <div
-        className="flex h-full items-center overflow-hidden bg-[color:var(--aries-background)]"
+        className="flex h-full items-center overflow-hidden bg-transparent"
         style={{ flex: "1 1 0%", minWidth: 0 }}
       >
-        <StatusField style={{ flex: "0 0 160px" }}>{nameField}</StatusField>
-        <StatusField style={{ flex: "0 0 80px" }}>{typeField}</StatusField>
-        <StatusField style={{ flex: "3 1 0%" }}>{datetimeField}</StatusField>
-        <StatusField style={{ flex: "2 1 0%" }}>{detailField}</StatusField>
+        <StatusField style={{ flex: "0 0 var(--aries-statusbar-name-width)" }}>{nameField}</StatusField>
+        <StatusField style={{ flex: "0 0 var(--aries-statusbar-kind-width)" }}>{typeField}</StatusField>
+        <StatusField style={{ flex: "var(--aries-statusbar-datetime-grow) 1 0%" }}>{datetimeField}</StatusField>
+        <StatusField style={{ flex: "var(--aries-statusbar-detail-grow) 1 0%" }}>{detailField}</StatusField>
       </div>
     </footer>
   );

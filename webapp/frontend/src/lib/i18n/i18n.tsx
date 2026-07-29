@@ -88,9 +88,8 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
       : fallbackLang;
 
   useEffect(() => {
-    // The options event is derived directly above for an immediate render. Keep
-    // this authoritative read as startup/reconnect recovery for a webview that
-    // mounted before the sidecar or missed an event while its socket was down.
+    // The options event already carries langid. Read the full options payload
+    // only for startup/reconnect recovery, never once more for every event.
     if (daemonConnection === "closed") return;
 
     const controller = new AbortController();
@@ -104,7 +103,7 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
         }
       });
     return () => controller.abort();
-  }, [daemonConnection, optionsChange?.seq, syncLangId]);
+  }, [daemonConnection, syncLangId]);
 
   useEffect(() => {
     document.documentElement.lang = lang;

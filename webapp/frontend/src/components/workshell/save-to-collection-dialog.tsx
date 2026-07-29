@@ -103,10 +103,11 @@ export function SaveToCollectionDialog({
             {t("saveDialog.description")}
           </DialogDescription>
         </DialogHeader>
-        <div className="flex flex-col gap-3 py-1">
-          <label className="flex flex-col gap-1 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)]">
+        <div className="flex flex-col gap-[var(--aries-form-row-gap)] py-[var(--aries-control-padding-y)]">
+          <label className="flex flex-col gap-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)]">
             <span className="text-[color:var(--aries-text-muted)]">{t("saveDialog.name")}</span>
             <input
+              data-aries-control-appearance="local"
               ref={nameRef}
               value={name}
               onChange={(e) => setName(e.currentTarget.value)}
@@ -116,12 +117,13 @@ export function SaveToCollectionDialog({
                   confirm();
                 }
               }}
-              className="rounded border border-[color:var(--aries-border-subtle)] bg-transparent px-2 py-1.5 text-[color:var(--aries-text-primary)] outline-none focus:border-[color:var(--aries-focus-ring)]"
+              className="rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-border-subtle)] bg-transparent px-[var(--aries-control-padding-x-compact)] py-[var(--aries-control-gap)] text-[color:var(--aries-text-primary)] outline-none focus:border-[color:var(--aries-focus-ring)]"
             />
           </label>
-          <label className="flex flex-col gap-1 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)]">
+          <label className="flex flex-col gap-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)]">
             <span className="text-[color:var(--aries-text-muted)]">{t("saveDialog.collection")}</span>
             <select
+              data-aries-control-appearance="local"
               value={selected}
               onChange={(e) => setSelected(e.currentTarget.value)}
               onKeyDown={(e) => {
@@ -130,7 +132,7 @@ export function SaveToCollectionDialog({
                   confirm();
                 }
               }}
-              className="rounded border border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface)] px-2 py-1.5 text-[color:var(--aries-text-primary)] outline-none focus:border-[color:var(--aries-focus-ring)]"
+              className="rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface)] px-[var(--aries-control-padding-x-compact)] py-[var(--aries-control-gap)] text-[color:var(--aries-text-primary)] outline-none focus:border-[color:var(--aries-focus-ring)]"
             >
               {collections.map((c) => (
                 <option key={c.path} value={c.path}>
@@ -141,9 +143,10 @@ export function SaveToCollectionDialog({
             </select>
           </label>
           {creatingNew ? (
-            <label className="flex flex-col gap-1 text-[length:var(--aries-font-size-small)]">
+            <label className="flex flex-col gap-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-small)]">
               <span className="text-[color:var(--aries-text-muted)]">{t("saveDialog.newCollectionName")}</span>
               <input
+                data-aries-control-appearance="local"
                 value={newCollectionName}
                 placeholder={t("saveDialog.newCollectionPlaceholder")}
                 onChange={(e) => setNewCollectionName(e.currentTarget.value)}
@@ -153,7 +156,7 @@ export function SaveToCollectionDialog({
                     confirm();
                   }
                 }}
-                className="rounded border border-[color:var(--aries-border-subtle)] bg-transparent px-2 py-1.5 text-[color:var(--aries-text-primary)] outline-none focus:border-[color:var(--aries-focus-ring)]"
+                className="rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-border-subtle)] bg-transparent px-[var(--aries-control-padding-x-compact)] py-[var(--aries-control-gap)] text-[color:var(--aries-text-primary)] outline-none focus:border-[color:var(--aries-focus-ring)]"
               />
             </label>
           ) : null}

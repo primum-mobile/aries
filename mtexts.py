@@ -3894,7 +3894,7 @@ try:
 except:
 	txts['RE'] = u'RE'
 
-partstxts = (txts['AC'], txts['HC2'], txts['HC3'], txts['IC'], txts['HC5'], txts['HC6'], txts['DC2'], txts['HC8'], txts['HC9'], txts['MC'], txts['HC11'], txts['HC12'], txts['SU'], txts['MO'], txts['ME'], txts['VE'], txts['MA'], txts['JU'], txts['SA'], txts['AC']+u'!', txts['HC2']+u'!', txts['HC3']+u'!', txts['IC']+u'!', txts['HC5']+u'!', txts['HC6']+u'!', txts['DC2']+u'!', txts['HC8']+u'!', txts['HC9']+u'!', txts['MC']+u'!', txts['HC11']+u'!', txts['HC12']+u'!', txts['LF'], txts['LF']+u'!', txts['SY'], txts['SY']+u'!', txts['DE'], txts['DE']+u'!', txts['RE'], txts['RE']+u'!', txts['AscNode'], txts['DescNode'])
+partstxts = (txts['AC'], txts['HC2'], txts['HC3'], txts['IC'], txts['HC5'], txts['HC6'], txts['DC2'], txts['HC8'], txts['HC9'], txts['MC'], txts['HC11'], txts['HC12'], txts['SU'], txts['MO'], txts['ME'], txts['VE'], txts['MA'], txts['JU'], txts['SA'], txts['AC']+u'!', txts['HC2']+u'!', txts['HC3']+u'!', txts['IC']+u'!', txts['HC5']+u'!', txts['HC6']+u'!', txts['DC2']+u'!', txts['HC8']+u'!', txts['HC9']+u'!', txts['MC']+u'!', txts['HC11']+u'!', txts['HC12']+u'!', txts['LF'], txts['LF']+u'!', txts['SY'], txts['SY']+u'!', txts['DE'], txts['DE']+u'!', txts['RE'], txts['RE']+u'!', txts['AscNode'], txts['DescNode'], txts['Uranus'], txts['Neptune'], txts['Pluto'])
 partsreftxts = (txts['AC'], txts['HC2'], txts['HC3'], txts['IC'], txts['HC5'], txts['HC6'], txts['DC2'], txts['HC8'], txts['HC9'], txts['MC'], txts['HC11'], txts['HC12'])
 
 #Arabic Parts
@@ -3942,8 +3942,11 @@ RE = DEGLORD+1
 REFLORD = RE+1
 ASCNODE = REFLORD+1
 DESCNODE = ASCNODE+1
+URANUS = DESCNODE+1
+NEPTUNE = URANUS+1
+PLUTO = NEPTUNE+1
 
-conv = {partstxts[ASC]:ASC, partstxts[DESC]:DESC, partstxts[MC]:MC, partstxts[IC]:IC, partstxts[SUN]:SUN, partstxts[MOON]:MOON, partstxts[MERCURY]:MERCURY, partstxts[VENUS]:VENUS, partstxts[MARS]:MARS, partstxts[JUPITER]:JUPITER, partstxts[SATURN]:SATURN, partstxts[HC2]:HC2, partstxts[HC3]:HC3, partstxts[HC5]:HC5, partstxts[HC6]:HC6, partstxts[HC8]:HC8, partstxts[HC9]:HC9, partstxts[HC11]:HC11, partstxts[HC12]:HC12, partstxts[ASCLORD]:ASCLORD, partstxts[DESCLORD]:DESCLORD, partstxts[MCLORD]:MCLORD, partstxts[ICLORD]:ICLORD, partstxts[HC2LORD]:HC2LORD, partstxts[HC3LORD]:HC3LORD, partstxts[HC5LORD]:HC5LORD, partstxts[HC6LORD]:HC6LORD, partstxts[HC8LORD]:HC8LORD, partstxts[HC9LORD]:HC9LORD, partstxts[HC11LORD]:HC11LORD, partstxts[HC12LORD]:HC12LORD, partstxts[LOF]:LOF, partstxts[LOFLORD]:LOFLORD, partstxts[SYZ]:SYZ, partstxts[SYZLORD]:SYZLORD, partstxts[DEG]:DEG, partstxts[DEGLORD]:DEGLORD, partstxts[RE]:RE, partstxts[REFLORD]:REFLORD, partstxts[ASCNODE]:ASCNODE, partstxts[DESCNODE]:DESCNODE}
+conv = {partstxts[ASC]:ASC, partstxts[DESC]:DESC, partstxts[MC]:MC, partstxts[IC]:IC, partstxts[SUN]:SUN, partstxts[MOON]:MOON, partstxts[MERCURY]:MERCURY, partstxts[VENUS]:VENUS, partstxts[MARS]:MARS, partstxts[JUPITER]:JUPITER, partstxts[SATURN]:SATURN, partstxts[HC2]:HC2, partstxts[HC3]:HC3, partstxts[HC5]:HC5, partstxts[HC6]:HC6, partstxts[HC8]:HC8, partstxts[HC9]:HC9, partstxts[HC11]:HC11, partstxts[HC12]:HC12, partstxts[ASCLORD]:ASCLORD, partstxts[DESCLORD]:DESCLORD, partstxts[MCLORD]:MCLORD, partstxts[ICLORD]:ICLORD, partstxts[HC2LORD]:HC2LORD, partstxts[HC3LORD]:HC3LORD, partstxts[HC5LORD]:HC5LORD, partstxts[HC6LORD]:HC6LORD, partstxts[HC8LORD]:HC8LORD, partstxts[HC9LORD]:HC9LORD, partstxts[HC11LORD]:HC11LORD, partstxts[HC12LORD]:HC12LORD, partstxts[LOF]:LOF, partstxts[LOFLORD]:LOFLORD, partstxts[SYZ]:SYZ, partstxts[SYZLORD]:SYZLORD, partstxts[DEG]:DEG, partstxts[DEGLORD]:DEGLORD, partstxts[RE]:RE, partstxts[REFLORD]:REFLORD, partstxts[ASCNODE]:ASCNODE, partstxts[DESCNODE]:DESCNODE, partstxts[URANUS]:URANUS, partstxts[NEPTUNE]:NEPTUNE, partstxts[PLUTO]:PLUTO}
 
 topicalTypeList = (txts['TopicalPlanet'], txts['TopicalPlanets'], txts['TopicalHousecusp'], txts['TopicalArabicPart'], txts['TopicalSyzygy'], txts['LightOfTheTime'])
 topicalPlanetsList = (txts['Sun'], txts['Moon'], txts['Mercury'], txts['Venus'], txts['Mars'], txts['Jupiter'], txts['Saturn'])
@@ -4012,7 +4015,7 @@ def setLang(langid):
 	if 'RE' not in txts:
 		txts['RE'] = u'RE'
 
-	partstxts = (txts['AC'], txts['HC2'], txts['HC3'], txts['IC'], txts['HC5'], txts['HC6'], txts['DC2'], txts['HC8'], txts['HC9'], txts['MC'], txts['HC11'], txts['HC12'], txts['SU'], txts['MO'], txts['ME'], txts['VE'], txts['MA'], txts['JU'], txts['SA'], txts['AC']+u'!', txts['HC2']+u'!', txts['HC3']+u'!', txts['IC']+u'!', txts['HC5']+u'!', txts['HC6']+u'!', txts['DC2']+u'!', txts['HC8']+u'!', txts['HC9']+u'!', txts['MC']+u'!', txts['HC11']+u'!', txts['HC12']+u'!', txts['LF'], txts['LF']+u'!', txts['SY'], txts['SY']+u'!', txts['DE'], txts['DE']+u'!', txts['RE'], txts['RE']+u'!', txts['AscNode'], txts['DescNode'])
+	partstxts = (txts['AC'], txts['HC2'], txts['HC3'], txts['IC'], txts['HC5'], txts['HC6'], txts['DC2'], txts['HC8'], txts['HC9'], txts['MC'], txts['HC11'], txts['HC12'], txts['SU'], txts['MO'], txts['ME'], txts['VE'], txts['MA'], txts['JU'], txts['SA'], txts['AC']+u'!', txts['HC2']+u'!', txts['HC3']+u'!', txts['IC']+u'!', txts['HC5']+u'!', txts['HC6']+u'!', txts['DC2']+u'!', txts['HC8']+u'!', txts['HC9']+u'!', txts['MC']+u'!', txts['HC11']+u'!', txts['HC12']+u'!', txts['LF'], txts['LF']+u'!', txts['SY'], txts['SY']+u'!', txts['DE'], txts['DE']+u'!', txts['RE'], txts['RE']+u'!', txts['AscNode'], txts['DescNode'], txts['Uranus'], txts['Neptune'], txts['Pluto'])
 	partsreftxts = (txts['AC'], txts['HC2'], txts['HC3'], txts['IC'], txts['HC5'], txts['HC6'], txts['DC2'], txts['HC8'], txts['HC9'], txts['MC'], txts['HC11'], txts['HC12'])
 
 	#Arabic Parts
@@ -4060,8 +4063,11 @@ def setLang(langid):
 	REFLORD = RE+1
 	ASCNODE = REFLORD+1
 	DESCNODE = ASCNODE+1
+	URANUS = DESCNODE+1
+	NEPTUNE = URANUS+1
+	PLUTO = NEPTUNE+1
 
-	conv = {partstxts[ASC]:ASC, partstxts[DESC]:DESC, partstxts[MC]:MC, partstxts[IC]:IC, partstxts[SUN]:SUN, partstxts[MOON]:MOON, partstxts[MERCURY]:MERCURY, partstxts[VENUS]:VENUS, partstxts[MARS]:MARS, partstxts[JUPITER]:JUPITER, partstxts[SATURN]:SATURN, partstxts[HC2]:HC2, partstxts[HC3]:HC3, partstxts[HC5]:HC5, partstxts[HC6]:HC6, partstxts[HC8]:HC8, partstxts[HC9]:HC9, partstxts[HC11]:HC11, partstxts[HC12]:HC12, partstxts[ASCLORD]:ASCLORD, partstxts[DESCLORD]:DESCLORD, partstxts[MCLORD]:MCLORD, partstxts[ICLORD]:ICLORD, partstxts[HC2LORD]:HC2LORD, partstxts[HC3LORD]:HC3LORD, partstxts[HC5LORD]:HC5LORD, partstxts[HC6LORD]:HC6LORD, partstxts[HC8LORD]:HC8LORD, partstxts[HC9LORD]:HC9LORD, partstxts[HC11LORD]:HC11LORD, partstxts[HC12LORD]:HC12LORD, partstxts[LOF]:LOF, partstxts[LOFLORD]:LOFLORD, partstxts[SYZ]:SYZ, partstxts[SYZLORD]:SYZLORD, partstxts[DEG]:DEG, partstxts[DEGLORD]:DEGLORD, partstxts[RE]:RE, partstxts[REFLORD]:REFLORD, partstxts[ASCNODE]:ASCNODE, partstxts[DESCNODE]:DESCNODE}
+	conv = {partstxts[ASC]:ASC, partstxts[DESC]:DESC, partstxts[MC]:MC, partstxts[IC]:IC, partstxts[SUN]:SUN, partstxts[MOON]:MOON, partstxts[MERCURY]:MERCURY, partstxts[VENUS]:VENUS, partstxts[MARS]:MARS, partstxts[JUPITER]:JUPITER, partstxts[SATURN]:SATURN, partstxts[HC2]:HC2, partstxts[HC3]:HC3, partstxts[HC5]:HC5, partstxts[HC6]:HC6, partstxts[HC8]:HC8, partstxts[HC9]:HC9, partstxts[HC11]:HC11, partstxts[HC12]:HC12, partstxts[ASCLORD]:ASCLORD, partstxts[DESCLORD]:DESCLORD, partstxts[MCLORD]:MCLORD, partstxts[ICLORD]:ICLORD, partstxts[HC2LORD]:HC2LORD, partstxts[HC3LORD]:HC3LORD, partstxts[HC5LORD]:HC5LORD, partstxts[HC6LORD]:HC6LORD, partstxts[HC8LORD]:HC8LORD, partstxts[HC9LORD]:HC9LORD, partstxts[HC11LORD]:HC11LORD, partstxts[HC12LORD]:HC12LORD, partstxts[LOF]:LOF, partstxts[LOFLORD]:LOFLORD, partstxts[SYZ]:SYZ, partstxts[SYZLORD]:SYZLORD, partstxts[DEG]:DEG, partstxts[DEGLORD]:DEGLORD, partstxts[RE]:RE, partstxts[REFLORD]:REFLORD, partstxts[ASCNODE]:ASCNODE, partstxts[DESCNODE]:DESCNODE, partstxts[URANUS]:URANUS, partstxts[NEPTUNE]:NEPTUNE, partstxts[PLUTO]:PLUTO}
 	globals().pop('_conv_rev_cache', None)
 
 	topicalTypeList = (txts['TopicalPlanet'], txts['TopicalPlanets'], txts['TopicalHousecusp'], txts['TopicalArabicPart'], txts['TopicalSyzygy'], txts['LightOfTheTime'])

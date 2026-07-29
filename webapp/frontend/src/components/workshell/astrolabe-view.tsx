@@ -4,6 +4,10 @@ import * as React from "react";
 
 import { CanvasDraw } from "@/lib/chart/canvas-draw";
 import {
+  registerChartExportRenderer,
+  renderCanvasChartExport,
+} from "@/lib/chart/chart-export-registry";
+import {
   resolveAstrolabeRenderStyle,
   resolveAstrolabeStrokeWidths,
   type AstrolabeRenderStyle,
@@ -540,17 +544,20 @@ export function AstrolabeView({
   });
   const geometryRevision = String(sessionRefreshSeq);
   const chartTextFont = morinusTextFontFromTokens(theme?.appTokens);
-  const fontsReady = fontsReadyFor === chartTextFont;
+  const chartSymbolFont =
+    theme?.appTokens?.["--aries-font-symbols"]?.trim() || '"AriesMorinus"';
+  const chartFontKey = `${chartTextFont}\u0000${chartSymbolFont}`;
+  const fontsReady = fontsReadyFor === chartFontKey;
 
   React.useEffect(() => {
     let cancelled = false;
-    void awaitFonts(chartTextFont).then(() => {
-      if (!cancelled) setFontsReadyFor(chartTextFont);
+    void awaitFonts(chartTextFont, chartSymbolFont).then(() => {
+      if (!cancelled) setFontsReadyFor(chartFontKey);
     });
     return () => {
       cancelled = true;
     };
-  }, [chartTextFont]);
+  }, [chartFontKey, chartSymbolFont, chartTextFont]);
 
   // Geometry fetch — COALESCING, mirroring the desktop drag model
   // (_on_drag → apply_delta → drawBkg, morin.py:19414-19431) where wx natively
@@ -619,7 +626,7 @@ export function AstrolabeView({
       const renderStyle = resolveAstrolabeRenderStyle(wrap, {
         revision: styleRevision,
         fontUi: chartTextFont,
-        fontSymbols: '"AriesMorinus"',
+        fontSymbols: chartSymbolFont,
         payloadColors: {
           atmospheric: {
             sky: geo.atmospheric.sky,
@@ -638,7 +645,16 @@ export function AstrolabeView({
     const ro = new ResizeObserver(paint);
     ro.observe(wrap);
     return () => ro.disconnect();
-  }, [chartTextFont, geo, fontsReady, toggles, t, styleRevision]);
+  }, [chartSymbolFont, chartTextFont, geo, fontsReady, toggles, t, styleRevision]);
+
+  React.useEffect(() => {
+    if (!documentId || !geo || !canvasRef.current) return;
+    return registerChartExportRenderer(documentId, (request) => {
+      const canvas = canvasRef.current;
+      if (!canvas) throw new Error("visible astrolabe renderer unavailable");
+      return renderCanvasChartExport(canvas, request);
+    });
+  }, [documentId, geo]);
 
   const toggle = React.useCallback((key: keyof LayerToggles) => {
     setToggles((t) => ({ ...t, [key]: !t[key] }));

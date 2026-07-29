@@ -285,14 +285,22 @@ def _converse_target_specs(catalog):
 
 
 def _append_converse_planet_rows(rows, catalog, radix, samples, targets, method):
-    flags = searchbackend._planet_flags(radix)
+    context = searchbackend._planet_ephemeris_context(radix)
+    flags = context.flags
     for prom_id in _secondary_progressed_promittor_ids(catalog):
         prom = catalog.get(prom_id)
         if prom is None or prom.planet_index is None:
             continue
 
         def state_at(age, _prom=prom, _flags=flags, _method=method):
-            return _converse_planet_state(radix, _prom, age, _flags, _method)
+            return _converse_planet_state(
+                radix,
+                _prom,
+                age,
+                _flags,
+                _method,
+                context,
+            )
 
         _append_converse_rows_for_promissor(
             rows, catalog, radix, prom_id, prom.label, state_at, samples, targets,
@@ -450,11 +458,12 @@ def _converse_real_event_info_for_age(radix, age_years):
     return event_jd, real_tuple, event_date, event_time
 
 
-def _converse_planet_state(radix, prom, age, flags, method):
+def _converse_planet_state(radix, prom, age, flags, method, context):
     symbolic_age = _converse_symbolic_age(radix, age, method)
     jd_reg = float(radix.time.jd) - float(symbolic_age)
     try:
-        _serr, xx = astrology.swe_calc_ut(jd_reg, int(prom.planet_index), int(flags))
+        with context.activate():
+            _serr, xx = astrology.swe_calc_ut(jd_reg, int(prom.planet_index), int(flags))
         lon = util.normalize(float(xx[0]))
         speed = float(xx[3]) if len(xx) > 3 else None
         return lon, speed, jd_reg, symbolic_age
@@ -518,6 +527,8 @@ def serialize_secondary_rows(radix, rows, catalog):
             "date": "%04d-%02d-%02d" % (dt[0], dt[1], dt[2]) if dt else (row.event_date or ""),
             "time": "%02d:%02d:%02d" % (dt[3], dt[4], dt[5]) if dt else (row.event_time or ""),
             "motionCode": _row_motion_code(row),
+            "isStation": is_secondary_station_row(row),
+            "stationCode": _row_station_code(row),
             "prom": row.promittor_label or "",
             "sig": row.significator_label or "",
             "aspect": _row_aspect_label(row),
@@ -579,6 +590,17 @@ def _row_motion_code(row):
     return str(value) if value else None
 
 
+def is_secondary_station_row(row):
+    return bool(_row_metadata(row).get('secondary_station'))
+
+
+def _row_station_code(row):
+    if not is_secondary_station_row(row):
+        return None
+    value = _row_metadata(row).get('station_code')
+    return str(value) if value else None
+
+
 def _row_aspect_index(row):
     value = _row_metadata(row).get('aspect_index')
     if value is not None:
@@ -596,7 +618,7 @@ def _row_aspect_label(row):
     return searchbackend.ASPECT_LABEL_BY_ID.get(row.aspect, row.aspect or '')
 
 
-def build_secondary_rows_text(radix, rows, catalog):
+def build_secondary_rows_text(radix, rows, catalog, aspect_label_for_index=None):
     """Save-As-Text export — transcribed from secdirframe.onSaveAsText
     (secdirframe.py:1237-1269): bulk cheby display materialisation + sweph
     refinement first, then the tab-separated Age/Date/Time/Progressed/Aspect/
@@ -624,12 +646,18 @@ def build_secondary_rows_text(radix, rows, catalog):
     lines = [header]
     for row in rows:
         date_txt, time_txt = _row_date_time_text(row)
+        aspect_text = _row_aspect_label(row)
+        aspect_index = _row_aspect_index(row)
+        if callable(aspect_label_for_index) and aspect_index is not None:
+            compact = aspect_label_for_index(aspect_index)
+            if compact:
+                aspect_text = str(compact)
         values = (
             _row_age_text(radix, row),
             date_txt,
             time_txt,
             row.promittor_label,
-            _row_aspect_label(row),
+            aspect_text,
             row.significator_label,
         )
         if has_motion:

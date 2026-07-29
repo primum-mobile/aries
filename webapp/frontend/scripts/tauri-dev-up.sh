@@ -28,8 +28,18 @@ roots = [
     "webapp/frontend/src",
     "webapp/frontend/src-tauri/src",
     "webapp/frontend/src-tauri/tauri.conf.json",
+    "webapp/frontend/src-tauri/native-menu-manifest.json",
+    "webapp/frontend/.tmp/daemon-build.stamp",
     "webapp/frontend/package.json",
     "webapp/frontend/package-lock.json",
+    "Res",
+    "Data/rt_0p5.txt",
+    "parsers/query_corpus.py",
+    "corpus/parsed",
+    "scripts/stage_corpus_resources.py",
+    "scripts/stage_corpus_pack_seed.py",
+    "scripts/stage_tauri_runtime_resources.py",
+    "scripts/staging_tree.py",
     "notes_web/src",
     "notes_web/vite.config.js",
     "notes_web/package.json",
@@ -59,6 +69,8 @@ for root in roots:
         if not child.is_file():
             continue
         rel_parts = child.relative_to(project).parts
+        if rel_parts[:2] == ("Res", "notes"):
+            continue
         if any(part in ignored_parts for part in rel_parts):
             continue
         files.append(child)
@@ -83,25 +95,31 @@ if [ "$CURRENT_SOURCE_STAMP" != "$LAST_SOURCE_STAMP" ]; then
 fi
 
 frontend_ready() {
-  local body
   local pids
   local pid
   local command
-  body="$(curl -fsS "http://127.0.0.1:${PORT}/" 2>/dev/null || true)"
-  [ -n "$body" ] && grep -qE '(__next|/_next/)' <<<"$body" || return 1
+  local process_cwd
 
   pids="$(lsof -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null || true)"
   for pid in $pids; do
     command="$(ps -p "$pid" -o command= 2>/dev/null || true)"
     if printf '%s' "$command" | grep -Eqi '(next dev|next-server|node .*next|node .*next/dist)'; then
-      return 0
+      process_cwd="$(
+        lsof -a -p "$pid" -d cwd -Fn 2>/dev/null \
+          | sed -n 's/^n//p' \
+          | head -n 1
+      )"
+      if [ "$process_cwd" = "$APP_DIR" ]; then
+        return 0
+      fi
     fi
   done
   return 1
 }
 
 daemon_ready() {
-  curl -fsS "http://127.0.0.1:${DAEMON_PORT}/health" >/dev/null 2>&1
+  curl -fsS --connect-timeout 1 --max-time 2 \
+    "http://127.0.0.1:${DAEMON_PORT}/health" >/dev/null 2>&1
 }
 
 daemon_owned_by_tauri() {

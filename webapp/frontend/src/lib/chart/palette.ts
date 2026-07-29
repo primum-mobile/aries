@@ -52,6 +52,41 @@ const ELEMENT_COLOR_VARS = [
 
 const SIGN_ELEMENT_INDEX = [0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3] as const;
 
+function parseCssRgbChannels(value: string | undefined): readonly [number, number, number] | null {
+  if (!value) return null;
+  const hex = value.trim().match(/^#([0-9a-f]{6})$/i);
+  if (hex) {
+    return [
+      Number.parseInt(hex[1].slice(0, 2), 16),
+      Number.parseInt(hex[1].slice(2, 4), 16),
+      Number.parseInt(hex[1].slice(4, 6), 16),
+    ];
+  }
+  const functional = value.trim().match(
+    /^rgba?\(\s*([\d.]+)(?:\s+|,\s*)([\d.]+)(?:\s+|,\s*)([\d.]+)(?:\s*[/,].*)?\)$/i,
+  );
+  if (!functional) return null;
+  const channels = functional.slice(1, 4).map((channel) => (
+    Math.min(255, Math.max(0, Number(channel)))
+  ));
+  return channels.every(Number.isFinite)
+    ? [channels[0], channels[1], channels[2]]
+    : null;
+}
+
+function deriveDimChartText(
+  textBright: string | undefined,
+  background: string | undefined,
+): string | null {
+  const foregroundChannels = parseCssRgbChannels(textBright);
+  const backgroundChannels = parseCssRgbChannels(background);
+  if (!foregroundChannels || !backgroundChannels) return null;
+  const mixed = foregroundChannels.map((channel, index) => (
+    Math.round((channel + backgroundChannels[index]) / 2)
+  ));
+  return `rgb(${mixed[0]} ${mixed[1]} ${mixed[2]})`;
+}
+
 export function neutralChartPalette(): ChartPalette {
   return {
     background: "rgb(35,36,40)",
@@ -183,6 +218,16 @@ export function readPaletteProfileOverrides(
   copy("casus", "--morinus-dignity-casus");
   copy("textBright", "--morinus-text-bright");
   copy("textDim", "--morinus-text-dim");
+  if (
+    !chart["--morinus-text-dim"]
+    && (chart["--morinus-background"] || chart["--morinus-text-bright"])
+  ) {
+    const effectiveChart = theme?.chartPalette ?? chart;
+    result.textDim = deriveDimChartText(
+      chart["--morinus-text-bright"] ?? effectiveChart["--morinus-text-bright"],
+      chart["--morinus-background"] ?? effectiveChart["--morinus-background"],
+    ) ?? result.textBright ?? effectiveChart["--morinus-text-bright"];
+  }
   let namedPalette: ChartPalette | undefined;
   const named = () => {
     namedPalette ??= readPaletteFromTheme(theme);

@@ -1,5 +1,137 @@
 {
   "_comment": "Engine/chart labels ADDED by the webapp (post-wx): chart-overlay signals (radixsignals.py) + table column headers + legacy engine-vocab completions. Daemon-served via mtexts.txts. This file is the source of truth; mtexts.py _install_signal_overlay_texts() loads it and i18n_tool.py audits it (make i18n-check). English is the fallback; a language missing a key renders English. Add a key to 'en' + a translation, that's it. Keep {placeholders} verbatim.",
+  "Anomalistic": {
+    "en": "Anomalistic",
+    "hu": "Anomalisztikus",
+    "it": "Anomalistico",
+    "fr": "Anomalistique",
+    "ru": "Аномалистический",
+    "es": "Anomalístico",
+    "zh-Hans": "近点月",
+    "zh-Hant": "近點月",
+    "ko": "근점월",
+    "de": "Anomalistisch"
+  },
+  "Apogee": {
+    "en": "Apogee",
+    "hu": "Apogeum",
+    "it": "Apogeo",
+    "fr": "Apogée",
+    "ru": "Апогей",
+    "es": "Apogeo",
+    "zh-Hans": "远地点",
+    "zh-Hant": "遠地點",
+    "ko": "원지점",
+    "de": "Apogäum"
+  },
+  "Draconic": {
+    "en": "Draconic",
+    "hu": "Drakonikus",
+    "it": "Draconico",
+    "fr": "Draconitique",
+    "ru": "Драконический",
+    "es": "Dracónico",
+    "zh-Hans": "交点月",
+    "zh-Hant": "交點月",
+    "ko": "교점월",
+    "de": "Drakonitisch"
+  },
+  "Fastest": {
+    "en": "Fastest",
+    "hu": "Leggyorsabb",
+    "it": "Più veloce",
+    "fr": "La plus rapide",
+    "ru": "Самая быстрая",
+    "es": "Más rápida",
+    "zh-Hans": "最快",
+    "zh-Hant": "最快",
+    "ko": "가장 빠름",
+    "de": "Am schnellsten"
+  },
+  "NorthBending": {
+    "en": "North Bending",
+    "hu": "Északi hajlás",
+    "it": "Flessione nord",
+    "fr": "Courbure nord",
+    "ru": "Северный изгиб",
+    "es": "Flexión norte",
+    "zh-Hans": "北弯点",
+    "zh-Hant": "北彎點",
+    "ko": "북쪽 굽이점",
+    "de": "Nördliche Biegung"
+  },
+  "Perigee": {
+    "en": "Perigee",
+    "hu": "Perigeum",
+    "it": "Perigeo",
+    "fr": "Périgée",
+    "ru": "Перигей",
+    "es": "Perigeo",
+    "zh-Hans": "近地点",
+    "zh-Hant": "近地點",
+    "ko": "근지점",
+    "de": "Perigäum"
+  },
+  "Slowest": {
+    "en": "Slowest",
+    "hu": "Leglassabb",
+    "it": "Più lenta",
+    "fr": "La plus lente",
+    "ru": "Самая медленная",
+    "es": "Más lenta",
+    "zh-Hans": "最慢",
+    "zh-Hant": "最慢",
+    "ko": "가장 느림",
+    "de": "Am langsamsten"
+  },
+  "SouthBending": {
+    "en": "South Bending",
+    "hu": "Déli hajlás",
+    "it": "Flessione sud",
+    "fr": "Courbure sud",
+    "ru": "Южный изгиб",
+    "es": "Flexión sur",
+    "zh-Hans": "南弯点",
+    "zh-Hant": "南彎點",
+    "ko": "남쪽 굽이점",
+    "de": "Südliche Biegung"
+  },
+  "SlowingDown": {
+    "en": "Slowing down",
+    "hu": "Lassul",
+    "it": "Rallentamento",
+    "fr": "Ralentissement",
+    "ru": "Замедляется",
+    "es": "Desacelerando",
+    "zh-Hans": "正在减速",
+    "zh-Hant": "正在減速",
+    "ko": "감속 중",
+    "de": "Verlangsamt"
+  },
+  "SpeedingUp": {
+    "en": "Speeding up",
+    "hu": "Gyorsul",
+    "it": "Accelerazione",
+    "fr": "Accélération",
+    "ru": "Ускоряется",
+    "es": "Acelerando",
+    "zh-Hans": "正在加速",
+    "zh-Hant": "正在加速",
+    "ko": "가속 중",
+    "de": "Beschleunigt"
+  },
+  "SquareNodes": {
+    "en": "Square Nodes",
+    "hu": "Kvadrát a holdcsomópontokhoz",
+    "it": "Quadratura ai nodi",
+    "fr": "Carré aux nœuds",
+    "ru": "Квадрат к узлам",
+    "es": "Cuadratura a los nodos",
+    "zh-Hans": "与交点成刑",
+    "zh-Hant": "與交點成刑",
+    "ko": "교점과 사각",
+    "de": "Quadrat zu den Knoten"
+  },
   "AC": {
     "en": "Asc",
     "fr": "AC",
@@ -1595,7 +1727,7 @@
   },
   "Exact": {
     "en": "Exact",
-    "fr": "Exact",
+    "fr": "Précis",
     "es": "Exacto",
     "it": "Esatto",
     "ru": "Точный",
@@ -2478,16 +2610,16 @@
     "de": "Mondhäuser..."
   },
   "LunarPhaseRowFmt": {
-    "en": "{elongation} ({phase}) · {day} · {target} in {remaining}",
-    "hu": "{elongation} ({phase}) · {day} · {target} {remaining} múlva",
-    "it": "{elongation} ({phase}) · {day} · {target} tra {remaining}",
-    "fr": "{elongation} ({phase}) · {day} · {target} dans {remaining}",
-    "ru": "{elongation} ({phase}) · {day} · {target} через {remaining}",
-    "es": "{elongation} ({phase}) · {day} · {target} en {remaining}",
-    "zh-Hans": "{elongation}（{phase}）· {day} · 距{target} {remaining}",
-    "zh-Hant": "{elongation}（{phase}）· {day} · 距{target} {remaining}",
-    "ko": "{elongation} ({phase}) · {day} · {target}까지 {remaining}",
-    "de": "{elongation} ({phase}) · {day} · {target} in {remaining}"
+    "en": "{elongation} · {phase} · {day}",
+    "hu": "{elongation} · {phase} · {day}",
+    "it": "{elongation} · {phase} · {day}",
+    "fr": "{elongation} · {phase} · {day}",
+    "ru": "{elongation} · {phase} · {day}",
+    "es": "{elongation} · {phase} · {day}",
+    "zh-Hans": "{elongation} · {phase} · {day}",
+    "zh-Hant": "{elongation} · {phase} · {day}",
+    "ko": "{elongation} · {phase} · {day}",
+    "de": "{elongation} · {phase} · {day}"
   },
   "MF": {
     "en": "M/F",
@@ -4175,6 +4307,18 @@
     "it": "Sistema (automatico)",
     "ru": "Система (авто)",
     "de": "System (automatisch)"
+  },
+  "ThemeNasaAtlas": {
+    "en": "NASA Atlas",
+    "fr": "Atlas NASA",
+    "es": "Atlas de la NASA",
+    "it": "Atlante NASA",
+    "ru": "Атлас NASA",
+    "de": "NASA-Sternatlas",
+    "hu": "NASA-atlasz",
+    "ko": "NASA 지도",
+    "zh-Hans": "NASA 图集",
+    "zh-Hant": "NASA 圖集"
   },
   "TLPFocusNow": {
     "en": "Focus NOW",

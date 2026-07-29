@@ -1939,12 +1939,17 @@ class DirectionsService:
             if custom_significator is None:
                 custom_significator = self._document_custom_significator(effective_document_id)
             opts, normalized_sig = _options_for_custom_significator(opts, custom_significator)
+            aspect_label_for_index = (
+                common.aspect_text_export_mark
+                if bool(getattr(opts, "list_export_aspect_symbols", False))
+                else None
+            )
             if mode == "radix":
                 pd_opts, _windowed = _primary_options_for_age_window(opts, start_age, end_age)
                 with _temporary_radix_direction_chart(radix):
                     with _temporary_custom_significator(radix, normalized_sig):
                         pds = _project(radix, pd_opts, range_mode, direction)
-                        text = pds.format2text()
+                        text = pds.format2text(aspect_label_for_index)
             else:
                 sr_chart, _label, _display_dt, _target_year = self._resolve_revolution_chart(
                     radix,
@@ -1960,9 +1965,9 @@ class DirectionsService:
                     if getattr(opts, "pdrevshownatalpromissors", False):
                         with _temporary_natal_radix_promissors(sr_chart, radix, pds.options):
                             _append_natal_radix_promissor_directions(pds, radix)
-                            text = pds.format2text()
+                            text = pds.format2text(aspect_label_for_index)
                     else:
-                        text = pds.format2text()
+                        text = pds.format2text(aspect_label_for_index)
             base_name = getattr(radix, "name", name) or name
             # wx default filename: chart.name + mtexts.txts['PD']
             # (primdirslistwnd.onSaveAsText:1567/1579).
@@ -2314,7 +2319,17 @@ class SecondaryDirectionsService:
             method=engine_method,
             direction=direction_mode,
         )
-        return radix, rows, truncated, catalog, start_age, end_age, reference_age, direction_mode
+        return (
+            radix,
+            _opts,
+            rows,
+            truncated,
+            catalog,
+            start_age,
+            end_age,
+            reference_age,
+            direction_mode,
+        )
 
     def secondary_directions_text(
         self,
@@ -2327,11 +2342,12 @@ class SecondaryDirectionsService:
         method: str = "secondary",
         direction: str = _secdir.SECONDARY_DIRECTION_DIRECT,
         reference_datetime: Optional[str] = None,
+        stations_only: bool = False,
     ) -> dict:
         """Save-As-Text payload (secdirframe.onSaveAsText:1237) — formatting is
         the engine's build_secondary_rows_text, never the skin."""
         with self._lock:
-            radix, rows, _truncated, catalog, _start, _end, _ref, _dir = self._build_secondary_rows(
+            radix, opts, rows, _truncated, catalog, _start, _end, _ref, _dir = self._build_secondary_rows(
                 source=source,
                 name=name,
                 document_id=document_id,
@@ -2341,8 +2357,20 @@ class SecondaryDirectionsService:
                 direction=direction,
                 reference_datetime=reference_datetime,
             )
+            if stations_only:
+                rows = [row for row in rows if _secdir.is_secondary_station_row(row)]
+            aspect_label_for_index = (
+                common.aspect_text_export_mark
+                if bool(getattr(opts, "list_export_aspect_symbols", False))
+                else None
+            )
             return {
-                "text": _secdir.build_secondary_rows_text(radix, rows, catalog),
+                "text": _secdir.build_secondary_rows_text(
+                    radix,
+                    rows,
+                    catalog,
+                    aspect_label_for_index,
+                ),
                 "filename": "secondary-directions.txt",
             }
 
@@ -2359,7 +2387,7 @@ class SecondaryDirectionsService:
         reference_datetime: Optional[str] = None,
     ) -> dict:
         with self._lock:
-            radix, rows, truncated, catalog, start_age, end_age, reference_age, direction_mode = self._build_secondary_rows(
+            radix, _opts, rows, truncated, catalog, start_age, end_age, reference_age, direction_mode = self._build_secondary_rows(
                 source=source,
                 name=name,
                 document_id=document_id,

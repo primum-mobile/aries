@@ -14,18 +14,23 @@ TAURI_STATE="down"
 PID_STATE="absent"
 
 frontend_ready() {
-  local body
   local pids
   local pid
   local command
-  body="$(curl -fsS "http://127.0.0.1:${PORT}/" 2>/dev/null || true)"
-  [ -n "$body" ] && grep -qE '(__next|/_next/)' <<<"$body" || return 1
+  local process_cwd
 
   pids="$(lsof -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null || true)"
   for pid in $pids; do
     command="$(ps -p "$pid" -o command= 2>/dev/null || true)"
     if printf '%s' "$command" | grep -Eqi '(next dev|next-server|node .*next|node .*next/dist)'; then
-      return 0
+      process_cwd="$(
+        lsof -a -p "$pid" -d cwd -Fn 2>/dev/null \
+          | sed -n 's/^n//p' \
+          | head -n 1
+      )"
+      if [ "$process_cwd" = "$APP_DIR" ]; then
+        return 0
+      fi
     fi
   done
   return 1
@@ -49,7 +54,8 @@ daemon_owned_by_tauri() {
 if frontend_ready; then
   FRONTEND_STATE="up"
 fi
-if curl -fsS "http://127.0.0.1:${DAEMON_PORT}/health" >/dev/null 2>&1; then
+if curl -fsS --connect-timeout 1 --max-time 2 \
+  "http://127.0.0.1:${DAEMON_PORT}/health" >/dev/null 2>&1; then
   if daemon_owned_by_tauri; then
     DAEMON_STATE="up"
   else

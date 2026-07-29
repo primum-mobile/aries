@@ -49,6 +49,9 @@ KEY_DOWN = 317
 #   "cycle_offset"    -> bump the lunar/planetary cycle offset by delta.
 #   "synodic_event"   -> jump a planetary-return document to the next/previous
 #                        Sun-planet cycle event (Shift+Left/Right).
+#   "converse_phase"  -> jump the PHYSICAL prenatal chart to the mirrored
+#                        previous/next classical phase while keeping the
+#                        SYMBOLIC cursor direction intuitive.
 @dataclass(frozen=True)
 class StepPlan:
     kind: str
@@ -220,6 +223,34 @@ class CycleRevolutionStepper:
         return None
 
 
+class ConverseTransitStepper:
+    """Civil stepping for the symbolic half of a converse-transit session.
+
+    The key map intentionally matches an ordinary transit chart.  Only the
+    deriver differs: advancing this symbolic cursor makes the physical prenatal
+    chart move backward by the same absolute-time amount.
+    """
+
+    def plan(self, keycode, *, shift=False, alt=False) -> Optional[StepPlan]:
+        if keycode in (KEY_UP, KEY_DOWN):
+            delta = 1 if keycode == KEY_UP else -1
+            if shift and not alt:
+                return StepPlan(kind="converse_phase", delta=delta)
+            return StepPlan(kind="source_datetime", unit="week", delta=delta)
+        if keycode in (KEY_LEFT, KEY_RIGHT):
+            delta = -1 if keycode == KEY_LEFT else 1
+            if shift and alt:
+                unit = "second"
+            elif alt:
+                unit = "minute"
+            elif shift:
+                unit = "hour"
+            else:
+                unit = "day"
+            return StepPlan(kind="source_datetime", unit=unit, delta=delta)
+        return None
+
+
 # -- feature-kind dispatch (the single stepping brain selector) -------------
 
 _PROGRESSION_KINDS = frozenset({"secondary", "solar_arc", "minor", "tertiary"})
@@ -228,6 +259,7 @@ _progression_stepper = ProgressionStepper()
 _profection_stepper = ProfectionStepper()
 _solar_stepper = SolarRevolutionStepper()
 _cycle_stepper = CycleRevolutionStepper()
+_converse_transit_stepper = ConverseTransitStepper()
 
 
 def plan_for_feature_kind(
@@ -258,6 +290,8 @@ def plan_for_feature_kind(
         return _cycle_stepper.plan(keycode, shift=shift, alt=alt)
     if feature_kind == "planetary_return":
         return _cycle_stepper.plan(keycode, shift=shift, alt=alt, allow_synodic=True)
+    if feature_kind == "converse_transits":
+        return _converse_transit_stepper.plan(keycode, shift=shift, alt=alt)
     return None
 
 
@@ -267,6 +301,31 @@ def _radix_calflag(radix) -> int:
     if cal == chart.Time.JULIAN:
         return astrology.SE_JUL_CAL
     return astrology.SE_GREG_CAL
+
+
+# -- fold policy -----------------------------------------------------------
+#
+# A held key is one transport burst, and a burst may only collapse N presses
+# into one call when the two are exactly equivalent. That is a property of the
+# UNIT, not of the document kind: fixed-length units add associatively, calendar
+# units clamp. 5x(+1 month) from 31 Jan lands on 28 Jun; one (+5 months) lands on
+# 30 Jun. 4x(+1 year) from 29 Feb 2024 lands on 28 Feb 2028; one (+4 years) lands
+# on 29 Feb 2028.
+#
+# Callers that fold a repeat count MUST consult this before doing so; callers
+# stepping a non-fold-safe unit must loop one transition at a time (see
+# SupplementaryStepper._step, workspace_service.py). Doctrine:
+# doc/policy-time-architecture.md T3a; per-intent table:
+# doc/temporal-capability-matrix.md.
+FOLD_SAFE_UNITS = frozenset({"week", "day", "hour", "minute", "second"})
+
+
+def is_fold_safe_unit(unit: Optional[str]) -> bool:
+    """True when N single steps of ``unit`` equal one step of delta N.
+
+    False for 'year' and 'month', which clamp at month ends and leap days.
+    """
+    return unit in FOLD_SAFE_UNITS
 
 
 def step_source_datetime(radix, when: datetime.datetime, unit: str, delta: int) -> Optional[datetime.datetime]:

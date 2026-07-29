@@ -81,6 +81,9 @@ class ArabicParts:
     REFLORD = RE+1
     ASCNODE = REFLORD+1
     DESCNODE = ASCNODE+1
+    URANUS = DESCNODE+1
+    NEPTUNE = URANUS+1
+    PLUTO = NEPTUNE+1
 
     HNUM = houses.Houses.HOUSE_NUM-1
 
@@ -292,6 +295,14 @@ class ArabicParts:
         except Exception:
             self._ayanamsha_deg = 0.0
 
+        # ``motion_regimes`` is aligned with ``parts``; the by-config variant
+        # retains the original options index (including inactive entries).
+        # The immutable trace contains only formula/selector branches.  Raw
+        # longitudes never enter it, so ordinary continuous motion does not
+        # look like a semantic regime change to exact-aspect root finding.
+        self.motion_regimes = None
+        self.motion_regimes_by_config = None
+
         if ar == None:
             self.parts = None
         else:
@@ -321,6 +332,88 @@ class ArabicParts:
                 asclon = cps[idAsc]
                 return self.getLoFLon(opts.lotoffortune, asclon, pls, fort.abovehorizon)
 
+            def _freeze_regime(value):
+                if isinstance(value, dict):
+                    return tuple(
+                        (str(key), _freeze_regime(item))
+                        for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+                    )
+                if isinstance(value, (list, tuple)):
+                    return tuple(_freeze_regime(item) for item in value)
+                if isinstance(value, set):
+                    return tuple(sorted((_freeze_regime(item) for item in value), key=repr))
+                if isinstance(value, float):
+                    if math.isnan(value):
+                        return ('float', 'nan')
+                    if math.isinf(value):
+                        return ('infinite-float', 1 if value > 0.0 else -1)
+                    return round(value, 9)
+                if value is None or isinstance(value, (bool, int, str)):
+                    return value
+                value_type = type(value)
+                return ('object', value_type.__module__, value_type.__qualname__)
+
+            def _fortune_regime():
+                # LFMOONSUN never changes formula at the horizon.  The other
+                # two options do, so their active orientation is the selector.
+                formula_type = int(getattr(opts, 'lotoffortune', chart.Chart.LFMOONSUN))
+                above = bool(getattr(fort, 'abovehorizon', False))
+                if formula_type == chart.Chart.LFMOONSUN:
+                    orientation = 'moon-sun'
+                elif formula_type == chart.Chart.LFDSUNMOON:
+                    orientation = 'sun-moon' if above else 'moon-sun'
+                else:
+                    orientation = 'moon-sun' if above else 'sun-moon'
+                return ('fortune', formula_type, orientation)
+
+            def _syzygy_regime():
+                supplied = getattr(syz, 'regime', None)
+                if supplied is not None:
+                    return _freeze_regime(supplied)
+                event_time = getattr(getattr(syz, 'time', None), 'jd', None)
+                try:
+                    event_time = round(float(event_time), 7)
+                except Exception:
+                    event_time = None
+                newmoon = getattr(syz, 'newmoon', None)
+                phase = 'new' if newmoon is True else 'full' if newmoon is False else 'unknown'
+                selected = getattr(syz, 'selected', None)
+                return ('syzygy', phase, event_time, selected)
+
+            def _active_formula_regime(ar_item, formula_ids, ref_triplet):
+                selectors = []
+                above = bool(getattr(fort, 'abovehorizon', False))
+                if ArabicParts.get_diurnal_flag(ar_item) or ArabicParts.has_nocturnal_formula(ar_item):
+                    selectors.append(('sect', 'day' if above else 'night'))
+                if ArabicParts.is_gendered_item(ar_item):
+                    selectors.append(('gender', 'male' if male else 'female'))
+
+                source = 'base'
+                if (not male) and ArabicParts.has_female_formula(ar_item):
+                    source = 'female'
+                if (not above) and ArabicParts.has_nocturnal_formula(ar_item):
+                    source = 'nocturnal'
+                if ArabicParts.should_swap_formula(ar_item, above, male):
+                    selectors.append(('swapped', True))
+                return (
+                    'formula',
+                    tuple(int(code) for code in formula_ids),
+                    _freeze_regime(ref_triplet),
+                    source,
+                    tuple(selectors),
+                )
+
+            def _sign_lord(lon):
+                sign = int(lon / chart.Chart.SIGN_DEG)
+                lord = -1
+                for pid in range(astrology.SE_SATURN + 1):
+                    if opts.dignities[pid][0][sign]:
+                        lord = pid
+                return sign, lord
+
+            def _fallback_trace(reason, target=None):
+                return ('fallback', str(reason), _freeze_regime(target), _fortune_regime())
+
             def _node_lon(code):
                 try:
                     idx = astrology.SE_MEAN_NODE if code == ArabicParts.ASCNODE else astrology.SE_TRUE_NODE
@@ -329,12 +422,16 @@ class ArabicParts:
                     return _lof_lon()
 
             # k: 표시 리스트(LoF 제외)에서 0-based 인덱스
-            def _calc_lon_by_k(k, visiting):
+            def _calc_lon_by_k(k, visiting, trace_out=None):
+                if trace_out is None:
+                    trace_out = []
                 # 범위 밖이면 LoF로 폴백
                 if k < 0 or k >= len(ar):
+                    trace_out.append(_fallback_trace('out-of-range', k))
                     return _lof_lon()
                 # 순환 참조 감지 → LoF 폴백
                 if k in visiting:
+                    trace_out.append(_fallback_trace('cycle', k))
                     return _lof_lon()
 
                 ii = k
@@ -342,11 +439,15 @@ class ArabicParts:
                 formula_ids, ref_triplet = ArabicParts.get_active_formula_triplet(
                     ar[ii], fort.abovehorizon, male
                 )
+                trace_out.append(_active_formula_regime(ar[ii], formula_ids, ref_triplet))
                 A_id, B_id, C_id = formula_ids
                 refA, refB, refC = ref_triplet
                 # Resolve a single formula token to longitude
-                def _resolve_token(code, sub_refdeg_val=0, depth=0):
+                def _resolve_token(code, sub_refdeg_val=0, depth=0, selector_trace=None):
+                    if selector_trace is None:
+                        selector_trace = trace_out
                     if depth > 10:
+                        selector_trace.append(_fallback_trace('depth', code))
                         return _lof_lon()
                     if code < ArabicParts.PLOFFS:
                         return cps[self.adjustAscendant(code, opts)]
@@ -354,56 +455,62 @@ class ArabicParts:
                         return pls.planets[code - ArabicParts.PLOFFS].data[planets.Planet.LONG]
                     elif code < ArabicParts.SPECIAL:
                         cid = self.adjustAscendant(code - ArabicParts.LORDOFFS, opts)
-                        sign = int(cps[cid] / chart.Chart.SIGN_DEG)
-                        lord = -1
-                        for pid in range(astrology.SE_SATURN + 1):
-                            if opts.dignities[pid][0][sign]:
-                                lord = pid
+                        sign, lord = _sign_lord(cps[cid])
+                        selector_trace.append(('houseLord', int(code), int(cid), sign, lord))
+                        if lord == -1:
+                            selector_trace.append(_fallback_trace('house-lord', (code, cid, sign)))
                         return pls.planets[lord].data[planets.Planet.LONG] if lord != -1 else _lof_lon()
                     elif code < ArabicParts.SYZ:
                         lon = _lof_lon()
                         if code == ArabicParts.LOFLORD:
-                            sign = int(lon / chart.Chart.SIGN_DEG)
-                            lord = -1
-                            for pid in range(astrology.SE_SATURN + 1):
-                                if opts.dignities[pid][0][sign]:
-                                    lord = pid
+                            sign, lord = _sign_lord(lon)
+                            selector_trace.append(('fortuneLord', _fortune_regime(), sign, lord))
+                            if lord == -1:
+                                selector_trace.append(_fallback_trace('fortune-lord', sign))
                             return pls.planets[lord].data[planets.Planet.LONG] if lord != -1 else _lof_lon()
+                        selector_trace.append(_fortune_regime())
                         return lon
                     elif code <= ArabicParts.SYZLORD:
                         lon = syz.lon
                         if code == ArabicParts.SYZLORD:
-                            sign = int(lon / chart.Chart.SIGN_DEG)
-                            lord = -1
-                            for pid in range(astrology.SE_SATURN + 1):
-                                if opts.dignities[pid][0][sign]:
-                                    lord = pid
+                            sign, lord = _sign_lord(lon)
+                            selector_trace.append(('syzygyLord', _syzygy_regime(), sign, lord))
+                            if lord == -1:
+                                selector_trace.append(_fallback_trace('syzygy-lord', sign))
                             return pls.planets[lord].data[planets.Planet.LONG] if lord != -1 else _lof_lon()
+                        selector_trace.append(_syzygy_regime())
                         return lon
                     elif code < ArabicParts.RE:
                         # DEG / DEGLORD
                         val = float(sub_refdeg_val) % 360.0
                         if code == ArabicParts.DEGLORD:
-                            sign = int(val / chart.Chart.SIGN_DEG)
-                            lord = -1
-                            for pid in range(astrology.SE_SATURN + 1):
-                                if opts.dignities[pid][0][sign]:
-                                    lord = pid
+                            sign, lord = _sign_lord(val)
+                            selector_trace.append(('degreeLord', sign, lord))
+                            if lord == -1:
+                                selector_trace.append(_fallback_trace('degree-lord', sign))
                             return pls.planets[lord].data[planets.Planet.LONG] if lord != -1 else _lof_lon()
                         return self._deg_abs_to_internal(val, opts)
                     elif code in (ArabicParts.RE, ArabicParts.REFLORD):
                         # RE / REFLORD
-                        lonX = _re_resolve(code, sub_refdeg_val, depth + 1)
+                        lonX = _re_resolve(code, sub_refdeg_val, depth + 1, selector_trace)
                         return lonX
                     elif code in (ArabicParts.ASCNODE, ArabicParts.DESCNODE):
                         return _node_lon(code)
+                    elif ArabicParts.URANUS <= code <= ArabicParts.PLUTO:
+                        planet_id = astrology.SE_URANUS + (code - ArabicParts.URANUS)
+                        return pls.planets[planet_id].data[planets.Planet.LONG]
+                    selector_trace.append(_fallback_trace('unknown-token', code))
                     return _lof_lon()
 
                 # Evaluate an embedded formula tuple → longitude
-                def _eval_embedded(formula_tuple, depth=0):
+                def _eval_embedded(formula_tuple, depth=0, embedded_trace=None):
+                    if embedded_trace is None:
+                        embedded_trace = []
                     if depth > 10:
+                        embedded_trace.append(_fallback_trace('embedded-depth', depth))
                         return _lof_lon()
                     if not isinstance(formula_tuple, (list, tuple)) or len(formula_tuple) < 3:
+                        embedded_trace.append(_fallback_trace('invalid-embedded', formula_tuple))
                         return _lof_lon()
                     formula_tuple = embedded_formula_pack(
                         formula_tuple[:3],
@@ -428,24 +535,39 @@ class ArabicParts:
                                 matches_source = False
                         if matches_source:
                             if src_idx in visiting:
+                                embedded_trace.append(_fallback_trace('cycle', src_idx))
                                 return _lof_lon()
-                            return _calc_lon_by_k(src_idx, visiting | {k})
+                            child_trace = []
+                            lon = _calc_lon_by_k(src_idx, visiting | {k}, child_trace)
+                            embedded_trace.append(
+                                ('configReference', int(src_idx), tuple(child_trace))
+                            )
+                            return lon
 
                     eA, eB, eC = embedded_codes
                     # Optional nested refdeg for sub-formulas with DE/RE
                     sub_rd = embedded_ref
-                    lA = _resolve_token(eA, sub_rd[0], depth)
-                    lB = _resolve_token(eB, sub_rd[1], depth)
-                    lC = _resolve_token(eC, sub_rd[2], depth)
+                    inline_trace = [
+                        ('formula', tuple(embedded_codes), _freeze_regime(embedded_ref), 'embedded', ())
+                    ]
+                    lA = _resolve_token(eA, sub_rd[0], depth, inline_trace)
+                    lB = _resolve_token(eB, sub_rd[1], depth, inline_trace)
+                    lC = _resolve_token(eC, sub_rd[2], depth, inline_trace)
+                    embedded_trace.append(('embeddedFormula', tuple(inline_trace)))
                     return util.normalize(lA + lB - lC)
 
                 # RE/REFLORD reference resolver
-                def _re_resolve(idX, ref_value, depth=0):
+                def _re_resolve(idX, ref_value, depth=0, selector_trace=None):
+                    if selector_trace is None:
+                        selector_trace = trace_out
                     if depth > 10:
+                        selector_trace.append(_fallback_trace('reference-depth', depth))
                         return _lof_lon()
+                    reference_trace = []
                     # Embedded formula: tuple (A, B, C [, sub_refdeg])
                     if isinstance(ref_value, (list, tuple)):
-                        lonX = _eval_embedded(ref_value, depth)
+                        identity = ('embedded', _freeze_regime(ref_value))
+                        lonX = _eval_embedded(ref_value, depth, reference_trace)
                     # Legacy name-based reference (string)
                     elif isinstance(ref_value, str):
                         ref = 0
@@ -453,22 +575,33 @@ class ArabicParts:
                             if ar[ri][ArabicParts.NAME] == ref_value:
                                 ref = ri + 1
                                 break
-                        lonX = _lof_lon() if ref == 0 else _calc_lon_by_k(ref - 1, visiting | {k})
+                        identity = ('name', ref_value, ref - 1 if ref else None)
+                        if ref == 0:
+                            reference_trace.append(_fallback_trace('missing-reference', identity))
+                            lonX = _lof_lon()
+                        else:
+                            lonX = _calc_lon_by_k(ref - 1, visiting | {k}, reference_trace)
                     else:
                         # Legacy numeric index
                         ref = int(ref_value)
-                        lonX = _lof_lon() if ref == 0 else _calc_lon_by_k(ref - 1, visiting | {k})
+                        identity = ('index', ref - 1 if ref else None)
+                        if ref == 0:
+                            reference_trace.append(_fallback_trace('missing-reference', identity))
+                            lonX = _lof_lon()
+                        else:
+                            lonX = _calc_lon_by_k(ref - 1, visiting | {k}, reference_trace)
+                    reference_event = ('reference', identity, tuple(reference_trace))
                     # REFLORD: resolve to sign lord
                     if idX in (ArabicParts.REFLORD,):
-                        sign = int(lonX / chart.Chart.SIGN_DEG)
-                        lord = -1
-                        for pid in range(astrology.SE_SATURN + 1):
-                            if opts.dignities[pid][0][sign]:
-                                lord = pid
+                        sign, lord = _sign_lord(lonX)
+                        selector_trace.append(('referenceLord', reference_event, sign, lord))
                         if lord != -1:
                             lonX = pls.planets[lord].data[planets.Planet.LONG]
                         else:
+                            selector_trace.append(_fallback_trace('reference-lord', sign))
                             lonX = _lof_lon()
+                    else:
+                        selector_trace.append(reference_event)
                     return lonX
 
                 lonA = _resolve_token(A_id, refA)
@@ -485,6 +618,8 @@ class ArabicParts:
             # --- /FORWARD RE SUPPORT ---
 
             self.parts = []
+            self.motion_regimes = []
+            self.motion_regimes_by_config = [None] * len(ar)
             num = len(ar)
             for i in range(num):
                 try:
@@ -495,10 +630,12 @@ class ArabicParts:
                 formula_ids, _ = ArabicParts.get_formula_triplet(ar[i], male)
                 part = [ar[i][ArabicParts.NAME], formula_ids, ArabicParts.get_diurnal_flag(ar[i]), 0.0, [[-1,0],[-1,0],[-1,0]], ArabicParts.is_gendered_item(ar[i])]
                 # calc longitude via the unified forward/recursive resolver
+                motion_trace = []
                 try:
-                    lon = _calc_lon_by_k(i, set())
+                    lon = _calc_lon_by_k(i, set(), motion_trace)
                 except Exception:
                     lon = _lof_lon()
+                    motion_trace.append(_fallback_trace('exception', i))
                 part[ArabicParts.LONG] = lon
 
                 tmplon = lon
@@ -526,6 +663,12 @@ class ArabicParts:
                 part[ArabicParts.DEGWINNER] = degwinner
 
                 self.parts.append(part)
+                regime = ('arabicPart', tuple(motion_trace))
+                self.motion_regimes.append(regime)
+                self.motion_regimes_by_config[i] = regime
+
+            self.motion_regimes = tuple(self.motion_regimes)
+            self.motion_regimes_by_config = tuple(self.motion_regimes_by_config)
 
 
     def adjustAscendant(self, Id, opts):
@@ -754,7 +897,7 @@ def _format_formula_token(code, idx_abc, ref_triplet, ref_names=None):
 # ---------------------------------------------------------------------------
 
 # Canonical (language-independent) names for formula codes, used in JSON
-# export/import. Verbatim from arabicpartsdlg.py:18-30 (_CODE_TO_NAME).
+# export/import. Verbatim legacy codes stay unchanged; outer planets append.
 CODE_TO_NAME = {
     0: 'ASC', 1: 'HC2', 2: 'HC3', 3: 'IC', 4: 'HC5', 5: 'HC6',
     6: 'DESC', 7: 'HC8', 8: 'HC9', 9: 'MC', 10: 'HC11', 11: 'HC12',
@@ -766,6 +909,7 @@ CODE_TO_NAME = {
     31: 'LOF', 32: 'LOF!', 33: 'SYZ', 34: 'SYZ!',
     35: 'DEG', 36: 'DEG!', 37: 'RE', 38: 'RE!',
     39: 'ASC_NODE', 40: 'DESC_NODE',
+    41: 'URANUS', 42: 'NEPTUNE', 43: 'PLUTO',
 }
 NAME_TO_CODE = {v: k for k, v in CODE_TO_NAME.items()}
 

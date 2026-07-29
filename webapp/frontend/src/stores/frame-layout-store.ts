@@ -17,6 +17,7 @@ export const RIGHT_PANE_COLLAPSE_THRESHOLD = SIDEBAR_COLLAPSE_THRESHOLD;
 const RIGHT_PANE_COMPACT_LIST_MIN_WIDTH = 360;
 const RIGHT_PANE_DENSE_LIST_MIN_WIDTH = RIGHT_PANE_COMPACT_LIST_MIN_WIDTH;
 const RIGHT_PANE_DIRECTIONS_MIN_WIDTH = 330;
+const RIGHT_PANE_SYNODIC_MIN_WIDTH = 420;
 const RIGHT_PANE_STANDARD_TABLE_MIN_WIDTH = RIGHT_PANE_COMPACT_LIST_MIN_WIDTH;
 const RIGHT_PANE_TIME_LORD_LIST_MIN_WIDTH = RIGHT_PANE_COMPACT_LIST_MIN_WIDTH;
 
@@ -27,13 +28,16 @@ export type RightPaneModuleKind =
   | "inspector-notes"
   | "transit-search"
   | "directions"
+  | "synodic-cycles"
   | "zodiacal-releasing"
   | "firdaria"
   | "decennials"
   | "profections"
   | "eclipses"
   | "lunar-mansions"
+  | "aspect-list"
   | "ascensional-transits"
+  | "astrocart-controls"
   | "feature-catalog";
 
 export type RightPaneModuleRole =
@@ -42,7 +46,8 @@ export type RightPaneModuleRole =
   | "dense-event-list"
   | "symbolic-directions-list"
   | "standard-inspector-table"
-  | "time-lord-table";
+  | "time-lord-table"
+  | "configuration-pane";
 
 export type RightPaneWidthPolicy = {
   kind: RightPaneModuleKind;
@@ -102,6 +107,14 @@ const RIGHT_PANE_WIDTH_POLICIES: Record<RightPaneModuleKind, RightPaneWidthPolic
     maxWidth: 760,
     reclaimSidebar: true,
   },
+  "synodic-cycles": {
+    kind: "synodic-cycles",
+    role: "symbolic-directions-list",
+    minContentWidth: RIGHT_PANE_SYNODIC_MIN_WIDTH,
+    preferredWidth: 600,
+    maxWidth: 760,
+    reclaimSidebar: true,
+  },
   "zodiacal-releasing": {
     kind: "zodiacal-releasing",
     role: "time-lord-table",
@@ -150,12 +163,28 @@ const RIGHT_PANE_WIDTH_POLICIES: Record<RightPaneModuleKind, RightPaneWidthPolic
     maxWidth: 760,
     reclaimSidebar: true,
   },
+  "aspect-list": {
+    kind: "aspect-list",
+    role: "standard-inspector-table",
+    minContentWidth: RIGHT_PANE_STANDARD_TABLE_MIN_WIDTH,
+    preferredWidth: 520,
+    maxWidth: 700,
+    reclaimSidebar: true,
+  },
   "ascensional-transits": {
     kind: "ascensional-transits",
     role: "dense-event-list",
     minContentWidth: RIGHT_PANE_DENSE_LIST_MIN_WIDTH,
     preferredWidth: 520,
     maxWidth: 760,
+    reclaimSidebar: true,
+  },
+  "astrocart-controls": {
+    kind: "astrocart-controls",
+    role: "configuration-pane",
+    minContentWidth: 360,
+    preferredWidth: 390,
+    maxWidth: 560,
     reclaimSidebar: true,
   },
   "feature-catalog": {

@@ -58,6 +58,8 @@ body {
   overflow: hidden;
   background: color-mix(in srgb, var(--notes-background) 94%, var(--notes-surface) 6%);
   border-bottom: 1px solid color-mix(in srgb, var(--notes-border) 54%, transparent);
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .tool-group {

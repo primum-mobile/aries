@@ -39,7 +39,7 @@ type AmbientSpotlightTriggerOptions = {
   onOpen: (initialText?: string) => void;
 };
 
-type NotesEditorAmbientKeyDetail = {
+type AmbientKeyDetail = {
   eventType: "keydown" | "keyup";
   key: string;
   metaKey?: boolean;
@@ -297,13 +297,14 @@ export function useAmbientSpotlightTriggers({
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (open || !targetAllowsAmbientInput(event.target)) return;
+      if (open || !ambientScopeIsClear()) return;
       if (event.key === "Shift") {
         markShiftDown();
         return;
       }
       markShiftChord();
       if (
+        !targetAllowsAmbientDigit(event.target) ||
         event.repeat ||
         event.metaKey ||
         event.ctrlKey ||
@@ -317,13 +318,13 @@ export function useAmbientSpotlightTriggers({
     };
 
     const onKeyUp = (event: KeyboardEvent) => {
-      if (open || event.key !== "Shift" || !targetAllowsAmbientInput(event.target)) return;
+      if (open || event.key !== "Shift" || !ambientScopeIsClear()) return;
       handleShiftUp(event);
     };
 
-    const onNotesEditorAmbientKey = (event: Event) => {
+    const onEmbeddedAmbientKey = (event: Event) => {
       if (open || !ambientScopeIsClear()) return;
-      const detail = (event as CustomEvent<NotesEditorAmbientKeyDetail>).detail;
+      const detail = (event as CustomEvent<AmbientKeyDetail>).detail;
       if (!detail || typeof detail.key !== "string") return;
       if (detail.eventType === "keydown") {
         if (detail.key === "Shift") {
@@ -343,33 +344,35 @@ export function useAmbientSpotlightTriggers({
       }
     };
 
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
-    window.addEventListener("aries://notes-editor-ambient-key", onNotesEditorAmbientKey);
+    // Ambient input owns the capture phase so a previously focused app control
+    // cannot consume the first digit/Shift before Spotlight sees it. This is
+    // especially important after a modal closes and restores focus to the
+    // button that opened it.
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("keyup", onKeyUp, true);
+    window.addEventListener("aries://notes-editor-ambient-key", onEmbeddedAmbientKey);
+    window.addEventListener("aries://embedded-ambient-key", onEmbeddedAmbientKey);
     return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
-      window.removeEventListener("aries://notes-editor-ambient-key", onNotesEditorAmbientKey);
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("keyup", onKeyUp, true);
+      window.removeEventListener("aries://notes-editor-ambient-key", onEmbeddedAmbientKey);
+      window.removeEventListener("aries://embedded-ambient-key", onEmbeddedAmbientKey);
     };
   }, [onOpen, open]);
 }
 
-function targetAllowsAmbientInput(target: EventTarget | null): boolean {
+export function targetAllowsAmbientDigit(target: EventTarget | null): boolean {
   const element = target as HTMLElement | null;
   if (!element) return true;
   if (
     element.tagName === "INPUT" ||
     element.tagName === "TEXTAREA" ||
     element.tagName === "SELECT" ||
-    element.tagName === "BUTTON" ||
     element.isContentEditable
   ) {
     return false;
   }
-  if (element.closest('[role="dialog"], [role="alertdialog"]')) {
-    return false;
-  }
-  return ambientScopeIsClear();
+  return !element.closest('[role="dialog"], [role="alertdialog"]');
 }
 
 function ambientScopeIsClear(): boolean {

@@ -44,6 +44,7 @@ import {
   LIST_PANE_CLASSES,
   LIST_ROLE_CLASSES,
   LIST_ROW_CLASSES,
+  LIST_TEXT_CLASSES,
   useFixedRowHeightAnchor,
   useListRowHeight,
 } from "@/lib/list-tokens";
@@ -96,9 +97,11 @@ import { PrimDirSettingsSheet } from "./primdir-settings";
 import { ListSegmentedControl } from "./list-controls";
 import {
   buildStableRowKeys,
+  filterRetainedRows,
   spanContainsAge,
   stitchRows,
   useEdgeExtend,
+  visiblePrependedRowCount,
   type AgeSpan,
   type StitchedRows,
 } from "./stitched-list-harness";
@@ -713,13 +716,14 @@ function RectificationStepper({
 
   return (
     <ControlTooltip label={t("dirview.rectification")}>
-      <div className="inline-flex h-8 items-center rounded-md border border-border bg-background p-[var(--aries-segmented-control-padding)]">
-        <span className="px-1 text-[length:var(--aries-font-size-section)] font-medium text-muted-foreground">
+      <div className="inline-flex h-[var(--aries-control-height)] items-center rounded-[var(--aries-radius-md)] border border-border bg-background p-[var(--aries-segmented-control-padding)]">
+        <span className="px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-section)] font-medium text-muted-foreground">
           {t("dirview.step")}
         </span>
         <select
+          data-aries-control-appearance="local"
           aria-label={t("dirview.rectificationStep")}
-          className="h-6 w-[46px] rounded-sm border-0 bg-transparent px-1 text-xs tabular-nums text-foreground outline-none disabled:opacity-50"
+          className="h-[var(--aries-control-height-compact)] w-[46px] rounded-[var(--aries-radius-sm)] border-0 bg-transparent px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-base)] tabular-nums text-foreground outline-none disabled:opacity-50"
           disabled={pending}
           value={stepSeconds}
           onChange={(event) => setStepSeconds(Number(event.target.value) || 60)}
@@ -734,7 +738,7 @@ function RectificationStepper({
           type="button"
           size="icon-xs"
           variant="ghost"
-          className="h-6 w-6 text-sm"
+          className="text-[length:var(--aries-font-size-control)]"
           disabled={pending}
           onClick={() => step(-1)}
           aria-label={t("dirview.rectifyBackward")}
@@ -745,7 +749,7 @@ function RectificationStepper({
           type="button"
           size="icon-xs"
           variant="ghost"
-          className="h-6 w-6 text-sm"
+          className="text-[length:var(--aries-font-size-control)]"
           disabled={pending}
           onClick={() => step(1)}
           aria-label={t("dirview.rectifyForward")}
@@ -796,7 +800,7 @@ function useDirectionsRadixRefreshSeq(
 }
 
 function useDirectionsOptionsSeq(): number {
-  const lastOptionsChange = useDaemonWorkspaceStore((s) => s.lastOptionsChange);
+  const lastOptionsChange = useDaemonWorkspaceStore((s) => s.lastRetainedDataOptionsChange);
   const [seq, setSeq] = React.useState(0);
 
   React.useEffect(() => {
@@ -904,6 +908,7 @@ const SECONDARY_STITCH_CHUNK_YEARS: Record<SecondaryMethod, number> = {
 const SECONDARY_STITCH_MAX_AGE = 150;
 const SECONDARY_STITCHED_CACHE = "directions:secondary-stitched";
 const SECONDARY_STITCH_CACHE_MAX_ROWS = 25000;
+const SECONDARY_STATION_FILTER_IDS: readonly boolean[] = Object.freeze([true]);
 
 type SecondaryStitchStore = StitchedRows<SecondaryDirectionRow> & {
   /** Frozen initial-chunk meta — title/columns/referenceAge are identical for
@@ -916,6 +921,10 @@ type SecondaryStitchStore = StitchedRows<SecondaryDirectionRow> & {
  * against the daemon: adjacent windows concatenate row-for-row on this key). */
 function secondaryStitchRowKey(row: SecondaryDirectionRow): string {
   return [row.date, row.motionCode ?? "", row.prom, row.aspect, row.sig].join("\u0000");
+}
+
+function secondaryStationFilterKey(row: SecondaryDirectionRow): boolean {
+  return row.isStation === true;
 }
 
 function rememberStitchedSecondaryStore(key: string, store: SecondaryStitchStore): void {
@@ -1835,7 +1844,8 @@ export function DateTransitLink({
       disabled={disabled}
       onClick={openTransit}
       className={cn(
-        "inline-block cursor-pointer whitespace-nowrap font-medium tabular-nums underline-offset-2 hover:text-primary hover:underline",
+        LIST_TEXT_CLASSES.date,
+        "inline-block cursor-pointer whitespace-nowrap tabular-nums underline-offset-2 hover:text-primary hover:underline",
         disabled ? "pointer-events-none cursor-default" : "",
       )}
     >
@@ -3279,6 +3289,7 @@ type AgeWindow = { start: number; end: number } | null;
 type SecondaryDirectionsViewState = {
   method: SecondaryMethod;
   directionMode: SecondaryDirectionMode;
+  stationsOnly: boolean;
   requestFocusDatetime: string;
   targetAgeRange: AgeRange | null;
   targetAgeSeek: DirectionsAgeSeek;
@@ -3362,6 +3373,9 @@ function SecondaryDirectionsPanel({
   const [directionMode, setDirectionMode] = React.useState<SecondaryDirectionMode>(
     cachedViewState?.directionMode ?? "direct",
   );
+  const [stationsOnly, setStationsOnly] = React.useState(
+    cachedViewState?.stationsOnly ?? false,
+  );
   const [requestFocusDatetime, setRequestFocusDatetime] = React.useState(initialRequestFocusDatetime);
   const [targetAgeRange, setTargetAgeRange] = React.useState<AgeRange | null>(
     cachedViewState?.targetAgeRange ?? null,
@@ -3426,8 +3440,10 @@ function SecondaryDirectionsPanel({
   const restoredViewportRef = React.useRef<DirectionViewportAnchor | null>(
     cachedViewState?.viewport ?? null,
   );
+  const stationFilterAnchorMsRef = React.useRef<number | null>(null);
   const methodRef = React.useRef(method);
   const directionModeRef = React.useRef(directionMode);
+  const stationsOnlyRef = React.useRef(stationsOnly);
   const requestFocusDatetimeRef = React.useRef(requestFocusDatetime);
   const targetAgeRangeRef = React.useRef(targetAgeRange);
   const targetAgeSeekRef = React.useRef(targetAgeSeek);
@@ -3445,6 +3461,9 @@ function SecondaryDirectionsPanel({
   React.useEffect(() => {
     directionModeRef.current = directionMode;
   }, [directionMode]);
+  React.useEffect(() => {
+    stationsOnlyRef.current = stationsOnly;
+  }, [stationsOnly]);
   React.useEffect(() => {
     requestFocusDatetimeRef.current = requestFocusDatetime;
   }, [requestFocusDatetime]);
@@ -3480,6 +3499,7 @@ function SecondaryDirectionsPanel({
       secondaryDirectionsViewStateCache.set(viewStateKey, {
         method: methodRef.current,
         directionMode: directionModeRef.current,
+        stationsOnly: stationsOnlyRef.current,
         requestFocusDatetime: requestFocusDatetimeRef.current,
         targetAgeRange: targetAgeRangeRef.current,
         targetAgeSeek: targetAgeSeekRef.current,
@@ -3671,7 +3691,14 @@ function SecondaryDirectionsPanel({
             meta: base.meta,
           };
           if (prependedCount > 0) {
-            scrollPlanRef.current = { kind: "prepend", count: prependedCount };
+            const visibleCount = visiblePrependedRowCount(
+              nextStore.rows,
+              prependedCount,
+              stationsOnlyRef.current ? SECONDARY_STATION_FILTER_IDS : null,
+              secondaryStationFilterKey,
+            );
+            scrollPlanRef.current =
+              visibleCount > 0 ? { kind: "prepend", count: visibleCount } : null;
           }
           extendInFlightRef.current = false;
           setStore(nextStore);
@@ -3712,7 +3739,16 @@ function SecondaryDirectionsPanel({
     else if (store.coverage.end < desired.end - 0.01) extendCoverage("next");
   }, [store, method, extendCoverage]);
 
-  const rows = React.useMemo(() => store?.rows ?? [], [store]);
+  const sourceRows = React.useMemo(() => store?.rows ?? [], [store]);
+  const rows = React.useMemo(
+    () =>
+      filterRetainedRows(
+        sourceRows,
+        stationsOnly ? SECONDARY_STATION_FILTER_IDS : null,
+        secondaryStationFilterKey,
+      ),
+    [sourceRows, stationsOnly],
+  );
   const rowKeys = React.useMemo(() => buildStableRowKeys(rows, secondaryStitchRowKey), [rows]);
   const secondaryDefaultColumns = React.useMemo(
     () => [
@@ -3833,6 +3869,21 @@ function SecondaryDirectionsPanel({
     const target = ageRangesForPage(pageStart)[0];
     loadSecondaryAgeRange(target, "next");
   }, [ageRangePageStart, loadSecondaryAgeRange]);
+  const toggleStationsOnly = React.useCallback(() => {
+    const anchorIndex = scrollAnchorRowIndex(
+      scrollerRef.current,
+      rows.length,
+      SECONDARY_FOCUS_ANCHOR,
+      rowHeightRef.current,
+    );
+    const anchorRow = anchorIndex >= 0 ? rows[anchorIndex] : null;
+    stationFilterAnchorMsRef.current = anchorRow
+      ? parseDateMs(anchorRow.eventDatetime ?? anchorRow.date)
+      : null;
+    const next = !stationsOnlyRef.current;
+    stationsOnlyRef.current = next;
+    setStationsOnly(next);
+  }, [rows]);
   useEdgeExtend({
     scrollerRef,
     rowCount: rows.length,
@@ -3895,6 +3946,24 @@ function SecondaryDirectionsPanel({
       rowHeightRef.current,
     );
   }, [active, islandSignature, rows.length]);
+
+  React.useLayoutEffect(() => {
+    const anchorMs = stationFilterAnchorMsRef.current;
+    if (!active || anchorMs == null || rows.length === 0) return undefined;
+    const targetIndex = nearestDateIndex(
+      rows,
+      anchorMs,
+      (row) => row.eventDatetime ?? row.date,
+    );
+    stationFilterAnchorMsRef.current = null;
+    return scheduleFocusedDirectionScroll(
+      scrollerRef,
+      targetIndex,
+      rows.length,
+      SECONDARY_FOCUS_ANCHOR,
+      rowHeightRef.current,
+    );
+  }, [active, rows, stationsOnly]);
 
   const secondaryMenuBefore = React.useCallback(
     (eventDatetime: string | null, sessionLabel: string) => (
@@ -4023,6 +4092,7 @@ function SecondaryDirectionsPanel({
                       endAge: storeRef.current.coverage.end,
                     }
                   : { referenceDatetime: requestFocusDatetime }),
+                stationsOnly,
               })
                 .then((result) =>
                   saveTextFile(
@@ -4040,7 +4110,7 @@ function SecondaryDirectionsPanel({
         </>
       );
     },
-    [directionMode, documentId, glyphColorRows, method, requestFocusDatetime, rows, secondaryColumnLabels, secondaryColumnOrder, source, sourceName, store, t, tf],
+    [directionMode, documentId, glyphColorRows, method, requestFocusDatetime, rows, secondaryColumnLabels, secondaryColumnOrder, source, sourceName, stationsOnly, store, t, tf],
   );
 
   const renderSecondaryCell = React.useCallback(
@@ -4159,6 +4229,15 @@ function SecondaryDirectionsPanel({
               setIsland((prev) => ({ nonce: prev.nonce + 1, window: null }));
             }}
           />
+          <Button
+            type="button"
+            size="xs"
+            variant={stationsOnly ? "default" : "outline"}
+            aria-pressed={stationsOnly}
+            onClick={toggleStationsOnly}
+          >
+            {t("dirview.stationsOnly")}
+          </Button>
           <AgeRangePager
             ranges={ageRanges}
             value={visibleAgeAnchorIdx}

@@ -25,6 +25,7 @@
           ]
         },
         { "type": "item", "id": "menu.export", "label": "Export...", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14210,14590,15534-15576,21271; Packet 10C /api/io/export" },
+        { "type": "item", "id": "menu.copy-chart-png", "label": "Copy Chart as PNG", "accelerator": "CmdOrCtrl+Shift+C", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "Aries retained WYSIWYG chart renderer and native clipboard" },
         { "type": "item", "id": "menu.startup.set", "label": "Use Current As Startup Chart", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14211,14696,15374-15390,21262; Packet 10B /api/io/startup/set-current" },
         { "type": "item", "id": "menu.startup.clear", "label": "Clear Startup Chart", "enabled": true, "status": "live", "source": "morin.py:14212,14697,15393-15396,21263; Packet 10B /api/io/startup/clear" },
         { "type": "check", "id": "menu.restore-open-charts", "label": "Restore Open Charts On Launch", "enabled": true, "checked": false, "status": "live", "source": "morin.py:14213-14214,14698,15398-15406; Packet 10B /api/io/restore-open" },

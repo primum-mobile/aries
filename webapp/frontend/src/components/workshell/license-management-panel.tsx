@@ -182,15 +182,18 @@ export function LicenseManagementPanel({
   const showKeyEntry = status !== null && !active;
 
   return (
-    <section className="border-t pt-3" aria-labelledby="aries-license-heading">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
+    <section className="border-t pt-[var(--aries-dialog-section-padding-y)]" aria-labelledby="aries-license-heading">
+      <div className="flex items-center justify-between gap-[var(--aries-form-row-gap)]">
+        <div className="flex items-center gap-[var(--aries-form-field-gap)]">
           <KeyRound className="size-4 text-foreground/65" aria-hidden />
           <h3 id="aries-license-heading" className="text-[length:var(--aries-font-size-reading)] font-medium">
             {t("license.title")}
           </h3>
           {status ? (
-            <span data-ui-pill className="rounded-full bg-muted px-2 py-0.5 text-[length:var(--aries-font-size-section)] text-foreground/65">
+            <span
+              data-ui-pill
+              className="rounded-[var(--aries-radius-ui-control)] bg-muted px-[var(--aries-control-padding-x-compact)] py-[calc(var(--aries-control-padding-y)/2)] text-[length:var(--aries-font-size-section)] text-foreground/65"
+            >
               {t(statusKey(status.state))}
             </span>
           ) : null}
@@ -210,30 +213,33 @@ export function LicenseManagementPanel({
       </div>
 
       {status?.provider === "trial" && status.leaseExpiresAt ? (
-        <p className="mt-2 text-[length:var(--aries-font-size-section)] text-muted-foreground">
+        <p className="mt-[var(--aries-form-field-gap)] text-[length:var(--aries-font-size-section)] text-muted-foreground">
           {t("license.trialExpires", { date: dateFormatter.format(new Date(status.leaseExpiresAt)) })}
         </p>
       ) : null}
 
       {busy === "load" && status === null ? (
-        <div className="flex items-center gap-2 py-4 text-xs text-muted-foreground">
+        <div className="flex items-center gap-[var(--aries-form-field-gap)] py-[var(--aries-dialog-padding)] text-[length:var(--aries-font-size-base)] text-muted-foreground">
           <LoaderCircle className="size-3.5 animate-spin" aria-hidden />
           {t("license.loading")}
         </div>
       ) : null}
 
       {error ? (
-        <div className="mt-2 rounded-md bg-destructive/10 px-2.5 py-2 text-xs text-destructive" role="alert">
+        <div
+          className="mt-[var(--aries-form-field-gap)] rounded-[var(--aries-radius-ui-control-compact)] bg-destructive/10 px-[var(--aries-control-padding-x)] py-[var(--aries-form-field-gap)] text-[length:var(--aries-font-size-base)] text-destructive"
+          role="alert"
+        >
           {t(error)}
         </div>
       ) : null}
 
       {showKeyEntry ? (
-        <div className="mt-3 space-y-2">
-          <label htmlFor="aries-license-key" className="text-xs font-medium text-foreground/75">
+        <div className="mt-[var(--aries-form-row-gap)] space-y-[var(--aries-form-field-gap)]">
+          <label htmlFor="aries-license-key" className="text-[length:var(--aries-font-size-base)] font-medium text-foreground/75">
             {t("license.keyLabel")}
           </label>
-          <div className="flex gap-2">
+          <div className="flex gap-[var(--aries-form-field-gap)]">
             <Input
               id="aries-license-key"
               type="password"
@@ -260,27 +266,33 @@ export function LicenseManagementPanel({
       ) : null}
 
       {devices ? (
-        <div className="mt-3 space-y-2">
-          <div className="flex items-center justify-between text-xs">
+        <div className="mt-[var(--aries-form-row-gap)] space-y-[var(--aries-form-field-gap)]">
+          <div className="flex items-center justify-between text-[length:var(--aries-font-size-base)]">
             <span className="font-medium text-foreground/75">{t("license.devices")}</span>
             <span className="text-muted-foreground">
               {t("license.deviceCount", { count: devices.devices.length, seats: devices.seats })}
             </span>
           </div>
-          <div className="divide-y divide-border/40 overflow-hidden rounded-md border border-border/50">
+          <div className="divide-y divide-border/40 overflow-hidden rounded-[var(--aries-radius-ui-control-compact)] border border-border/50">
             {devices.devices.map((device) => (
-              <div key={device.activationId} className="flex items-center gap-2.5 px-2.5 py-2">
+              <div
+                key={device.activationId}
+                className="flex items-center gap-[var(--aries-form-group-gap)] px-[var(--aries-control-padding-x)] py-[var(--aries-form-field-gap)]"
+              >
                 <Monitor className="size-4 shrink-0 text-foreground/45" aria-hidden />
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 text-xs">
+                  <div className="flex items-center gap-[var(--aries-form-field-gap)] text-[length:var(--aries-font-size-base)]">
                     <span className="truncate font-medium">{device.deviceName}</span>
                     {device.current ? (
-                      <span data-ui-pill className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[length:var(--aries-font-size-micro)] text-foreground/60">
+                      <span
+                        data-ui-pill
+                        className="shrink-0 rounded-[var(--aries-radius-ui-control)] bg-muted px-[var(--aries-control-gap)] py-[calc(var(--aries-control-padding-y)/2)] text-[length:var(--aries-font-size-micro)] text-foreground/60"
+                      >
                         {t("license.currentDevice")}
                       </span>
                     ) : null}
                   </div>
-                  <div className="mt-0.5 text-[length:var(--aries-font-size-section)] text-muted-foreground">
+                  <div className="mt-[calc(var(--aries-control-gap-compact)/2)] text-[length:var(--aries-font-size-section)] text-muted-foreground">
                     {t(platformKey(device.platform))} · {t("license.lastSeen", {
                       date: dateFormatter.format(new Date(device.lastSeenAt)),
                     })}
@@ -307,7 +319,7 @@ export function LicenseManagementPanel({
       ) : null}
 
       {active ? (
-        <div className="mt-3">
+        <div className="mt-[var(--aries-form-row-gap)]">
           <Button
             type="button"
             variant="outline"

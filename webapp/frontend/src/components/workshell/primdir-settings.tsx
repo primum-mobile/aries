@@ -1145,9 +1145,10 @@ export function PrimDirSettingsBody({
         </div>
         {s.pdpromarabicparts && s.arabicPartNames.length > 0 ? (
           <select
+            data-aries-control-appearance="local"
             value={s.pdpromarabicpartname}
             onChange={(e) => onPatch({ pdpromarabicpartname: e.target.value })}
-            className="ml-1 mt-1 h-6 rounded border bg-background px-1 text-[length:var(--aries-font-size-small)]"
+            className="ml-1 mt-1 h-[var(--aries-control-height-compact)] rounded-[var(--aries-radius-control-compact)] border bg-background px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-small)]"
           >
             {s.arabicPartNames.map((n) => (
               <option key={n} value={n}>
@@ -1193,10 +1194,11 @@ export function PrimDirSettingsBody({
             }}
           />
           <select
+            data-aries-control-appearance="local"
             disabled={!s.promplanets[1] || !s.pdsecmotion}
             value={s.pdsecmotioniter}
             onChange={(e) => onPatch({ pdsecmotioniter: Number(e.target.value) })}
-            className="h-6 rounded border bg-background px-1 text-[length:var(--aries-font-size-small)] disabled:opacity-40"
+            className="h-[var(--aries-control-height-compact)] rounded-[var(--aries-radius-control-compact)] border bg-background px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-small)] disabled:opacity-40"
           >
             {SMITER_LABEL_KEYS.map((k, i) => (
               <option key={k} value={i}>
@@ -1288,9 +1290,10 @@ export function PrimDirSettingsBody({
         {/* Arabic-part significator picker (primarydirsdlg.py:828 SingleChoice) */}
         {s.pdsigarabicparts && s.arabicPartNames.length > 0 ? (
           <select
+            data-aries-control-appearance="local"
             value={s.pdsigarabicpartname}
             onChange={(e) => onPatch({ pdsigarabicpartname: e.target.value })}
-            className="ml-1 mt-1 h-6 rounded border bg-background px-1 text-[length:var(--aries-font-size-small)]"
+            className="ml-1 mt-1 h-[var(--aries-control-height-compact)] rounded-[var(--aries-radius-control-compact)] border bg-background px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-small)]"
           >
             {s.arabicPartNames.map((n) => (
               <option key={n} value={n}>
@@ -1351,9 +1354,10 @@ export function PrimDirSettingsBody({
             {t("primdir.celestialRingRoles")}
           </span>
           <select
+            data-aries-control-appearance="local"
             value={s.pdinchartreverse ? "outer-promissor" : "outer-significator"}
             onChange={(e) => onPatch({ pdinchartreverse: e.target.value === "outer-promissor" })}
-            className="mt-1 h-6 w-full rounded border bg-background px-1 text-[length:var(--aries-font-size-small)]"
+            className="mt-1 h-[var(--aries-control-height-compact)] w-full rounded-[var(--aries-radius-control-compact)] border bg-background px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-small)]"
           >
             <option value="outer-promissor">{t("primdir.outerPromissorRadixSignificator")}</option>
             <option value="outer-significator">{t("primdir.outerSignificatorRadixPromissorMorinus")}</option>
@@ -1406,9 +1410,10 @@ export function PrimDirSettingsBody({
         <div className="flex items-center gap-2">
           <span className="text-[length:var(--aries-font-size-small)] font-medium text-muted-foreground">{t("primdir.listView")}</span>
           <select
+            data-aries-control-appearance="local"
             value={s.pdlistmode}
             onChange={(e) => onPatch({ pdlistmode: Number(e.target.value) })}
-            className="h-6 rounded border bg-background px-1 text-[length:var(--aries-font-size-small)]"
+            className="h-[var(--aries-control-height-compact)] rounded-[var(--aries-radius-control-compact)] border bg-background px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-small)]"
           >
             <option value={0}>{t("primdir.paged")}</option>
             <option value={1}>{t("primdir.continuous")}</option>
@@ -1449,11 +1454,12 @@ function KeysBlock({
         onChange={(v) => onPatch({ pdkeydyn: v === 0 })}
       />
       <select
+        data-aries-control-appearance="local"
         value={presetSel}
         onChange={(e) =>
           onPatch(dynamic ? { pdkeyd: Number(e.target.value) } : { pdkeys: Number(e.target.value) })
         }
-        className="mt-1 h-6 w-full rounded border bg-background px-1 text-[length:var(--aries-font-size-small)]"
+        className="mt-1 h-[var(--aries-control-height-compact)] w-full rounded-[var(--aries-radius-control-compact)] border bg-background px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-small)]"
       >
         {presetKeys.map((k, i) => (
           <option key={k} value={i}>

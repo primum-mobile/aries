@@ -11,11 +11,26 @@ import { spotlightShortcutCoolingDown } from "@/shortcuts/spotlight-cooldown";
 type DispatchShortcutCommand = (commandId: string) => void;
 type CommandEnabledPredicate = (commandId: string) => boolean;
 
+export const EMBEDDED_MANIFEST_SHORTCUT_EVENT =
+  "aries://embedded-manifest-shortcut";
+
 type ParsedShortcut = {
   key: string;
   requireCommand: boolean;
   requireAlt?: boolean;
   requireShift?: boolean;
+};
+
+type ShortcutGesture = {
+  key: string;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+};
+
+type EmbeddedManifestShortcutDetail = Partial<ShortcutGesture> & {
+  repeat?: boolean;
 };
 
 function parseShortcut(row: ShortcutEntry): ParsedShortcut | null {
@@ -81,30 +96,76 @@ export function useManifestShortcutDispatch(
       );
     if (rows.length === 0) return;
 
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.repeat || !targetAllowsShortcut(event.target)) return;
-      if (!chartScopeIsClear()) return;
-      if (!event.metaKey && !event.ctrlKey && !event.altKey && spotlightShortcutCoolingDown()) {
+    const dispatchGesture = (
+      gesture: ShortcutGesture,
+      preventDefault: () => void,
+    ) => {
+      if (
+        !gesture.metaKey &&
+        !gesture.ctrlKey &&
+        !gesture.altKey &&
+        spotlightShortcutCoolingDown()
+      ) {
         return;
       }
-      const key = event.key.toLowerCase();
+      const key = gesture.key.toLowerCase();
       for (const { row, parsed } of rows) {
         if (parsed.key !== key) continue;
-        const commandHeld = event.metaKey || event.ctrlKey;
+        const commandHeld = gesture.metaKey || gesture.ctrlKey;
         if (parsed.requireCommand !== commandHeld) continue;
-        if (Boolean(parsed.requireAlt) !== event.altKey) continue;
-        if (parsed.requireShift && !event.shiftKey) continue;
-        if (!parsed.requireCommand && (event.metaKey || event.ctrlKey || event.altKey)) {
+        if (Boolean(parsed.requireAlt) !== gesture.altKey) continue;
+        if (parsed.requireShift && !gesture.shiftKey) continue;
+        if (!parsed.requireCommand && (gesture.metaKey || gesture.ctrlKey || gesture.altKey)) {
           continue;
         }
         if (!isCommandEnabled(row.commandId ?? "")) return;
-        event.preventDefault();
+        preventDefault();
         dispatch(row.commandId ?? "");
         return;
       }
     };
 
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat || !targetAllowsShortcut(event.target)) return;
+      if (!chartScopeIsClear()) return;
+      dispatchGesture(event, () => event.preventDefault());
+    };
+
+    const onEmbeddedShortcut = (event: Event) => {
+      const detail = (
+        event as CustomEvent<EmbeddedManifestShortcutDetail>
+      ).detail;
+      if (
+        detail?.repeat ||
+        typeof detail?.key !== "string" ||
+        detail.key.length === 0 ||
+        !chartScopeIsClear()
+      ) {
+        return;
+      }
+      dispatchGesture(
+        {
+          key: detail.key,
+          metaKey: detail.metaKey === true,
+          ctrlKey: detail.ctrlKey === true,
+          altKey: detail.altKey === true,
+          shiftKey: detail.shiftKey === true,
+        },
+        () => undefined,
+      );
+    };
+
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener(
+      EMBEDDED_MANIFEST_SHORTCUT_EVENT,
+      onEmbeddedShortcut,
+    );
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener(
+        EMBEDDED_MANIFEST_SHORTCUT_EVENT,
+        onEmbeddedShortcut,
+      );
+    };
   }, [manifest, dispatch, isCommandEnabled]);
 }

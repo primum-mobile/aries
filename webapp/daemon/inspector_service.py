@@ -1,12 +1,14 @@
 """Daemon-side inspector payload — the FLAGSHIP faithful translation.
 
-The inspector's content is built ENTIRELY by
+The inspector's core content is built by
 ``chartinspector.build_payload(region, options)`` (chartinspector.py:922), which
 already computes position, house, motion, declination, phasis, lunar
 phase/tithi/mansion, essential-dignity rows, joy, mutual reception, last/next
 aspect, and the aspect list — with glyphs and colours. ``chartinspector`` is
 wx-free (verified: it imports cleanly daemon-side), so the daemon calls it
-directly. No field is re-derived here.
+directly. The one extension is the Moon-only ``lunar_conditions`` block, which
+serializes the canonical current-state calculation from ``engine.lunar_cycle``;
+the daemon does not re-derive that state.
 
 What this module DOES do is reproduce the ``region`` dict that the wx renderer
 (graphchart.py) hands to ``build_payload`` — specifically ``region['data']`` —
@@ -54,6 +56,7 @@ import astrology
 import chart
 import chartinspector
 import common
+from engine import lunar_cycle
 import fixedstar_natures
 import fixstars as fixstars_mod
 import fortune as fortune_mod
@@ -74,6 +77,13 @@ _ANGLE_OBJECT_ID = {"asc": "asc", "mc": "mc", "dc": "desc", "dsc": "desc", "desc
 _ANGLE_ASCMC = {
     "asc": houses.Houses.ASC,
     "mc": houses.Houses.MC,
+}
+
+_ANGLE_HOUSE = {
+    "asc": 1,
+    "mc": 10,
+    "desc": 7,
+    "ic": 4,
 }
 
 
@@ -186,6 +196,33 @@ def _planet_region(chrt, partner_chart, options, body_id, chart_role="primary"):
     return {"kind": "planet", "object_id": int(body_id), "chart_role": chart_role, "data": data}
 
 
+def _lunar_conditions_payload(region) -> Optional[dict]:
+    """Serialize the canonical lunar-condition state for a Moon region.
+
+    The state itself belongs to ``engine.lunar_cycle``.  Keeping this adapter
+    next to the region builder means inner- and outer-ring Moon inspectors use
+    the exact chart object and Julian date that the hovered glyph represents.
+    """
+    if region.get("kind") != "planet" or int(region.get("object_id", -1)) != astrology.SE_MOON:
+        return None
+    chrt = region.get("data", {}).get("chart")
+    if chrt is None:
+        return None
+    state = lunar_cycle.lunar_condition_snapshot(chrt, float(chrt.time.jd))
+    return {
+        "increasing_in_light": bool(state.increasing_in_light),
+        "increasing_in_latitude": bool(state.increasing_in_latitude),
+        "increasing_in_number": bool(state.increasing_in_number),
+        "swift": bool(state.swift),
+        "longitude_speed": float(state.longitude_speed),
+        "longitude_acceleration": float(state.longitude_acceleration),
+        "latitude": float(state.latitude),
+        "latitude_speed": float(state.latitude_speed),
+        "elongation": float(state.elongation),
+        "exact_states": list(state.exact_states),
+    }
+
+
 def _vertex_region(chrt, partner_chart, options, chart_role):
     """Reproduce graphchart's Vertex hover-region data (graphchart.py:2174-2196,
     body_id == common.CHART_OBJECT_VERTEX). The Vertex is drawn via
@@ -247,21 +284,33 @@ def _syzygy_region(chrt, options, chart_role="primary"):
     return {"kind": "syzygy", "object_id": "syzygy", "chart_role": chart_role, "data": data}
 
 
-def _angle_region(chrt, options, angle_key, chart_role="primary"):
+def _angle_region(chrt, partner_chart, options, angle_key, chart_role="primary"):
     object_id = _ANGLE_OBJECT_ID.get(angle_key, angle_key)
     ascmc = chrt.houses.ascmc
     if object_id == "asc":
         lon = ascmc[houses.Houses.ASC]
+        declination = chrt.houses.ascmc2[houses.Houses.ASC][houses.Houses.DECL]
     elif object_id == "mc":
         lon = ascmc[houses.Houses.MC]
+        declination = chrt.houses.ascmc2[houses.Houses.MC][houses.Houses.DECL]
     elif object_id == "desc":
         lon = util.normalize(ascmc[houses.Houses.ASC] + 180.0)
+        declination = -chrt.houses.ascmc2[houses.Houses.ASC][houses.Houses.DECL]
     elif object_id == "ic":
         lon = util.normalize(ascmc[houses.Houses.MC] + 180.0)
+        declination = -chrt.houses.ascmc2[houses.Houses.MC][houses.Houses.DECL]
     else:
         raise SystemExit(f"unknown angle {angle_key}")
     display_lon = lon
-    data = {"chart": chrt, "longitude": lon, "display_lon": display_lon}
+    data = {
+        "chart": chrt,
+        "partner_chart": partner_chart,
+        "longitude": lon,
+        "display_lon": display_lon,
+        "house_index": _ANGLE_HOUSE[object_id],
+        "declination": declination,
+        "colour": tuple(options.clrAscMC),
+    }
     return {"kind": "angle", "object_id": object_id, "chart_role": chart_role, "data": data}
 
 
@@ -776,7 +825,8 @@ def _aspect_hover_data(chrt, options, asp, body_a, body_b):
         and b_speed is not None
     ):
         try:
-            if body_a.get("role") != body_b.get("role"):
+            cross_role = body_a.get("role") != body_b.get("role")
+            if cross_role:
                 state = chartinspector.relative_cross_chart_aspect_state(body_a, body_b, int(asp.typ))
             else:
                 state = chart.Chart.directed_aspect_state_from_motion(
@@ -785,7 +835,9 @@ def _aspect_hover_data(chrt, options, asp, body_a, body_b):
                     float(body_b["lon"]), float(b_speed),
                     int(asp.typ),
                 )
-            if state is not None:
+            # Same-chart aspects already carry the engine's canonical phase in
+            # asp.appl.  Only a cross-ring relation needs role-relative motion.
+            if state is not None and cross_role:
                 data["applying"] = bool(state.get("is_applying"))
             if state is not None and state.get("actor_side") == "other":
                 actor, target = body_b, body_a
@@ -958,6 +1010,7 @@ class InspectorService:
         when_iso: Optional[str] = None,
         binding_payload: Optional[dict] = None,
         view_mode: Optional[int] = None,
+        defer_signals: bool = False,
     ) -> Optional[dict]:
         # Resolve the chart the user is hovering (inner ring) + its biwheel
         # partner (outer ring), matching what the React hit-test hovers.
@@ -974,7 +1027,14 @@ class InspectorService:
         )
         opts = self._presentation_options(opts)
         region = self._build_region(chrt, partner_chart, opts, kind, object_id, chart_role)
-        return chartinspector.build_payload(region, opts)
+        if defer_signals:
+            payload = chartinspector.build_payload(region, opts, defer_signals=True)
+        else:
+            payload = chartinspector.build_payload(region, opts)
+        lunar_conditions = _lunar_conditions_payload(region)
+        if lunar_conditions is not None:
+            payload["lunar_conditions"] = lunar_conditions
+        return payload
 
     def flag_payload(
         self,
@@ -1033,7 +1093,7 @@ class InspectorService:
         if kind == "syzygy":
             return _syzygy_region(chrt, options, chart_role)
         if kind == "angle":
-            return _angle_region(chrt, options, str(object_id), chart_role)
+            return _angle_region(chrt, partner_chart, options, str(object_id), chart_role)
         if kind == "house":
             return _house_region(chrt, options, int(object_id))
         if kind == "sign":

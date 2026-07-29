@@ -7,15 +7,19 @@ import type {
   SymbolicTimeReadout,
 } from "@/lib/chart/types";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
-import type {
-  DirectionCustomSignificator,
-  SupplementaryBindingPayload,
-  WorkspaceOpenResult,
+import {
+  patchSidebarListPreferences,
+  type SidebarListPreferencesPatch,
+  type SidebarListPreferencesPayload,
+  type DirectionCustomSignificator,
+  type SupplementaryBindingPayload,
+  type WorkspaceOpenResult,
 } from "@/lib/daemon/client";
 import {
   sourceLiveFollowPolicy,
   type ListFollowPolicy,
 } from "@/lib/list-follow-policy";
+import { sameRetainedPaneActivation } from "@/lib/retained-pane-activation.mjs";
 
 export type HoverRegion =
   | {
@@ -100,6 +104,12 @@ export type TransitListPaneState = {
   followPolicy?: ListFollowPolicy;
   openSeq?: number;
   focusDatetime?: string | null;
+};
+
+export type TransitListPreferences = {
+  selectedPromittorId: string | null;
+  promittorDrawerOpen: boolean;
+  direction: "direct" | "converse" | "both";
 };
 
 export type DirectionsPaneState = {
@@ -194,6 +204,141 @@ export type SynodicCyclesPaneState = {
   openSeq?: number;
 };
 
+export type AspectListMode =
+  | "primary"
+  | "outer"
+  | "outerToPrimary"
+  | "primaryToOuter";
+
+export type AspectListPaneState = {
+  documentId: string;
+  sourceName: string;
+  focusDatetime?: string | null;
+  followPolicy?: ListFollowPolicy;
+  openSeq?: number;
+};
+
+export type AspectListPreferences = {
+  mode: AspectListMode | null;
+  maxOrb: number;
+  sortBy: "body" | "orb" | "exact";
+  sortDirection: "asc" | "desc";
+  /** Positive display focus; empty means every ordinary point. */
+  focusedFilterIds: string[];
+  /** Relationship rule for two or more focused endpoints. */
+  focusMatchMode: "or" | "and";
+  /** Motion constraint for rows with an R, SR, or SD endpoint. */
+  rxFocusEnabled: boolean;
+  /** Retained inclusion overrides keyed by the active secondary-ring mode. */
+  secondaryRingEnabledByMode: Record<string, boolean>;
+  filterDrawerOpen: boolean;
+};
+
+const DEFAULT_SIDEBAR_LIST_PREFERENCES: SidebarListPreferencesPayload = {
+  schemaVersion: 1,
+  aspectList: {
+    mode: null,
+    maxOrb: 10,
+    sortBy: "orb",
+    sortDirection: "asc",
+    focusedFilterIds: [],
+    focusMatchMode: "or",
+    rxFocusEnabled: false,
+    secondaryRingEnabledByMode: {},
+    filterDrawerOpen: false,
+  },
+  transitList: {
+    selectedPromittorId: null,
+    promittorDrawerOpen: false,
+    direction: "direct",
+  },
+};
+
+let pendingSidebarListPreferencePatch: SidebarListPreferencesPatch | null = null;
+let sidebarListPreferenceWrite: Promise<void> | null = null;
+
+function mergeSidebarListPreferencePatches(
+  current: SidebarListPreferencesPatch | null,
+  patch: SidebarListPreferencesPatch,
+): SidebarListPreferencesPatch {
+  return {
+    ...(current?.aspectList || patch.aspectList
+      ? {
+          aspectList: {
+            ...current?.aspectList,
+            ...patch.aspectList,
+          },
+        }
+      : {}),
+    ...(current?.transitList || patch.transitList
+      ? {
+          transitList: {
+            ...current?.transitList,
+            ...patch.transitList,
+          },
+        }
+      : {}),
+  };
+}
+
+async function drainSidebarListPreferenceWrites(): Promise<void> {
+  while (pendingSidebarListPreferencePatch) {
+    const patch = pendingSidebarListPreferencePatch;
+    pendingSidebarListPreferencePatch = null;
+    try {
+      await patchSidebarListPreferences(patch);
+    } catch (error) {
+      pendingSidebarListPreferencePatch = mergeSidebarListPreferencePatches(
+        patch,
+        pendingSidebarListPreferencePatch ?? {},
+      );
+      throw error;
+    }
+  }
+}
+
+function startSidebarListPreferenceWrite(): Promise<void> {
+  const write = drainSidebarListPreferenceWrites();
+  sidebarListPreferenceWrite = write;
+  const clearWrite = () => {
+    if (sidebarListPreferenceWrite === write) {
+      sidebarListPreferenceWrite = null;
+    }
+  };
+  // Clear the active slot on either outcome without replacing the rejection
+  // returned to callers. A pending patch is retained by the drain on failure.
+  void write.then(clearWrite, clearWrite);
+  return write;
+}
+
+/**
+ * Await every queued retained-list preference write before native teardown.
+ *
+ * Recheck the queue after each active request settles. A user change can land
+ * in the promise-reaction handoff after the drain's final empty check but
+ * before its active slot clears; returning that old promise directly strands
+ * the new patch and makes the following app launch appear to reset the flag.
+ */
+export async function flushSidebarListPreferenceWrites(): Promise<void> {
+  while (pendingSidebarListPreferencePatch || sidebarListPreferenceWrite) {
+    const write =
+      sidebarListPreferenceWrite ?? startSidebarListPreferenceWrite();
+    await write;
+  }
+}
+
+function persistSidebarListPreferencePatch(
+  patch: SidebarListPreferencesPatch,
+): void {
+  pendingSidebarListPreferencePatch = mergeSidebarListPreferencePatches(
+    pendingSidebarListPreferencePatch,
+    patch,
+  );
+  void flushSidebarListPreferenceWrites().catch((error) => {
+    console.warn("[sidebar-list-preferences]", error);
+  });
+}
+
 // Ascensional Transits right pane — companion list/options for the
 // chart-backed AT child. The chart stays in the main document surface; the
 // daemon-owned AT list lives in the same closable/resizable right pane ontology
@@ -206,6 +351,10 @@ export type AscensionalTransitsPaneState = {
   ascensionalEventPlace?: Record<string, unknown> | null;
   ascensionalFilterToActiveMoment?: boolean | null;
   ascensionalApplyPrecession?: boolean | null;
+};
+
+export type AstrocartControlsPaneState = {
+  documentId: string;
 };
 
 export type FeatureCatalogPaneState = {
@@ -227,7 +376,9 @@ export type RightInspectorPaneState =
   | { kind: "eclipses"; state: EclipsesPaneState }
   | { kind: "lunar-mansions"; state: LunarMansionsPaneState }
   | { kind: "synodic-cycles"; state: SynodicCyclesPaneState }
+  | { kind: "aspect-list"; state: AspectListPaneState }
   | { kind: "ascensional-transits"; state: AscensionalTransitsPaneState }
+  | { kind: "astrocart-controls"; state: AstrocartControlsPaneState }
   | { kind: "feature-catalog"; state: FeatureCatalogPaneState };
 
 export type RightInspectorPaneKind = RightInspectorPaneState["kind"];
@@ -244,7 +395,9 @@ type RightPaneKey =
   | "eclipsesPane"
   | "lunarMansionsPane"
   | "synodicCyclesPane"
+  | "aspectListPane"
   | "ascensionalTransitsPane"
+  | "astrocartControlsPane"
   | "featureCatalogPane";
 
 const RIGHT_PANE_KEYS = [
@@ -259,7 +412,9 @@ const RIGHT_PANE_KEYS = [
   "eclipsesPane",
   "lunarMansionsPane",
   "synodicCyclesPane",
+  "aspectListPane",
   "ascensionalTransitsPane",
+  "astrocartControlsPane",
   "featureCatalogPane",
 ] as const satisfies readonly RightPaneKey[];
 
@@ -276,6 +431,7 @@ const RIGHT_PANE_KEYS = [
 
 export type SupplementaryKind =
   | "transits"
+  | "converse-transits"
   | "solar-revolution"
   | "lunar-revolution"
   | "planetary-return"
@@ -289,6 +445,7 @@ export type SupplementaryKind =
 
 export const SUPPLEMENTARY_KIND_LABELS: Record<SupplementaryKind, string> = {
   "transits": "Transits",
+  "converse-transits": "Converse Transits",
   "solar-revolution": "Solar Revolution",
   "lunar-revolution": "Lunar Revolution",
   "planetary-return": "Planetary Return",
@@ -410,6 +567,9 @@ type WorkspaceState = {
   inspectorActiveRegion: HoverRegion | null;
   transitSearchPane: TransitSearchPaneState | null;
   transitListPane: TransitListPaneState | null;
+  transitListPreferencesByDocument: Record<string, TransitListPreferences>;
+  sidebarListPreferenceDefaults: SidebarListPreferencesPayload | null;
+  sidebarListPreferencesHydrated: boolean;
   directionsPane: DirectionsPaneState | null;
   timeLordPane: TimeLordPaneState | null;
   zodiacalReleasingPane: ZodiacalReleasingPaneState | null;
@@ -419,7 +579,10 @@ type WorkspaceState = {
   eclipsesPane: EclipsesPaneState | null;
   lunarMansionsPane: LunarMansionsPaneState | null;
   synodicCyclesPane: SynodicCyclesPaneState | null;
+  aspectListPane: AspectListPaneState | null;
+  aspectListPreferencesByDocument: Record<string, AspectListPreferences>;
   ascensionalTransitsPane: AscensionalTransitsPaneState | null;
+  astrocartControlsPane: AstrocartControlsPaneState | null;
   featureCatalogPane: FeatureCatalogPaneState | null;
   timedChartListRowLinkDocumentIds: Record<string, true>;
 
@@ -428,11 +591,14 @@ type WorkspaceState = {
   // option flags + aspect data; the skin owns which body is selected and
   // whether all aspects are hidden. Ephemeral (session-only).
   //   • selectedAspectBody: body/point key whose aspects render exclusively, or null.
-  //   • hideAllAspects: the midband_empty "hide all" toggle ({'kind':'hide_all'}).
+  //   • hideAllAspects: the midband_empty / A "hide all" gate.
+  //   • minorOnlyAspects: M's inner-wheel exception while that gate stays shut
+  //     for comparison/transit aspects.
   // Selecting a target clears hideAllAspects and vice-versa (mutually exclusive,
   // mirroring morin._on_chart_click_for_aspects' single _click_aspect_planet).
   selectedAspectBody: string | null;
   hideAllAspects: boolean;
+  minorOnlyAspects: boolean;
 
   // Inspector Zone B — the active interpretation lens (discipline/theme/context)
   // that pack alerts evaluate against. PRESENTATION-only cursor: the daemon owns
@@ -477,6 +643,13 @@ type WorkspaceState = {
   closeTransitSearchPane: () => void;
   openTransitListPane: (state: TransitListPaneState) => void;
   closeTransitListPane: () => void;
+  setTransitListPreferences: (
+    documentId: string,
+    patch: Partial<TransitListPreferences>,
+  ) => void;
+  hydrateSidebarListPreferences: (
+    preferences: SidebarListPreferencesPayload,
+  ) => void;
   openDirectionsPane: (state: DirectionsPaneState) => void;
   closeDirectionsPane: () => void;
   openTimeLordPane: (state: TimeLordPaneState) => void;
@@ -495,8 +668,16 @@ type WorkspaceState = {
   closeLunarMansionsPane: () => void;
   openSynodicCyclesPane: (state: SynodicCyclesPaneState) => void;
   closeSynodicCyclesPane: () => void;
+  openAspectListPane: (state: AspectListPaneState) => void;
+  closeAspectListPane: () => void;
+  setAspectListPreferences: (
+    documentId: string,
+    patch: Partial<AspectListPreferences>,
+  ) => void;
   openAscensionalTransitsPane: (state: AscensionalTransitsPaneState) => void;
   closeAscensionalTransitsPane: () => void;
+  openAstrocartControlsPane: (state: AstrocartControlsPaneState) => void;
+  closeAstrocartControlsPane: () => void;
   openFeatureCatalogPane: () => void;
   openHelpPane: () => void;
   openLegalDocumentPane: (document: "license" | "notices") => void;
@@ -522,6 +703,9 @@ type WorkspaceState = {
   /** Toggle the midband_empty "hide all aspects" state; clears any body
    * selection. Port of the hide_all branch (morin.py:4257-4258). */
   toggleHideAllAspects: () => void;
+  /** Toggle M's inner-wheel minor-only exception without opening A's
+   * comparison/transit gate. Has an effect only while hideAllAspects is set. */
+  toggleMinorOnlyAspects: () => void;
   /** Clear all click-aspect selection (back to normal render). */
   clearAspectSelection: () => void;
 
@@ -568,7 +752,9 @@ const EMPTY_RIGHT_PANES = {
   eclipsesPane: null,
   lunarMansionsPane: null,
   synodicCyclesPane: null,
+  aspectListPane: null,
   ascensionalTransitsPane: null,
+  astrocartControlsPane: null,
   featureCatalogPane: null,
 } satisfies Pick<WorkspaceState, RightPaneKey>;
 
@@ -577,6 +763,33 @@ function openExclusiveRightPane<K extends RightPaneKey>(
   value: WorkspaceState[K],
 ): Pick<WorkspaceState, RightPaneKey> {
   return { ...EMPTY_RIGHT_PANES, [key]: value } as Pick<WorkspaceState, RightPaneKey>;
+}
+
+function activateRetainedRightPane<K extends RightPaneKey>(
+  current: WorkspaceState,
+  key: K,
+  requested: Exclude<WorkspaceState[K], null>,
+  remountOnSemanticChange = false,
+): WorkspaceState | Pick<WorkspaceState, RightPaneKey> {
+  const active = current[key] as Record<string, unknown> | null;
+  const next = (
+    remountOnSemanticChange
+      ? {
+          ...requested,
+          openSeq: Number(active?.openSeq ?? 0) + 1,
+        }
+      : requested
+  ) as Exclude<WorkspaceState[K], null>;
+  if (
+    active &&
+    sameRetainedPaneActivation(
+      active,
+      next as Record<string, unknown>,
+    )
+  ) {
+    return current;
+  }
+  return openExclusiveRightPane(key, next as WorkspaceState[K]);
 }
 
 function applyDaemonWorkspaceOpenResult(
@@ -651,6 +864,9 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   inspectorActiveRegion: null,
   transitSearchPane: null,
   transitListPane: null,
+  transitListPreferencesByDocument: {},
+  sidebarListPreferenceDefaults: null,
+  sidebarListPreferencesHydrated: false,
   directionsPane: null,
   timeLordPane: null,
   zodiacalReleasingPane: null,
@@ -660,11 +876,15 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   eclipsesPane: null,
   lunarMansionsPane: null,
   synodicCyclesPane: null,
+  aspectListPane: null,
+  aspectListPreferencesByDocument: {},
   ascensionalTransitsPane: null,
+  astrocartControlsPane: null,
   featureCatalogPane: null,
   timedChartListRowLinkDocumentIds: {},
   selectedAspectBody: null,
   hideAllAspects: false,
+  minorOnlyAspects: false,
   inspectorLens: null,
   packsVersion: 0,
   timedChartShowRadix: false,
@@ -677,8 +897,8 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   },
   setInspectorActiveRegion: (region) => set({ inspectorActiveRegion: region }),
   openTransitSearchPane: (state) =>
-    set(
-      openExclusiveRightPane("transitSearchPane", {
+    set((current) =>
+      activateRetainedRightPane(current, "transitSearchPane", {
         ...state,
         followPolicy: state.followPolicy ?? defaultFollowPolicyForPane(state.documentId),
         significatorId: state.significatorId ?? null,
@@ -689,17 +909,47 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   closeTransitSearchPane: () => set({ transitSearchPane: null }),
   openTransitListPane: (state) =>
     set((current) =>
-      openExclusiveRightPane("transitListPane", {
+      activateRetainedRightPane(current, "transitListPane", {
         ...state,
         followPolicy: state.followPolicy ?? defaultFollowPolicyForPane(state.documentId),
-        openSeq: (current.transitListPane?.openSeq ?? 0) + 1,
         focusDatetime: state.focusDatetime ?? null,
-      }),
+      }, true),
     ),
   closeTransitListPane: () => set({ transitListPane: null }),
+  setTransitListPreferences: (documentId, patch) => {
+    set((current) => {
+      const defaults =
+        current.sidebarListPreferenceDefaults ?? DEFAULT_SIDEBAR_LIST_PREFERENCES;
+      const next = {
+        ...(current.transitListPreferencesByDocument[documentId] ??
+          defaults.transitList),
+        ...patch,
+      };
+      return {
+        transitListPreferencesByDocument: {
+          ...current.transitListPreferencesByDocument,
+          [documentId]: next,
+        },
+        sidebarListPreferenceDefaults: {
+          ...defaults,
+          transitList: {
+            ...defaults.transitList,
+            ...patch,
+          },
+        },
+      };
+    });
+    persistSidebarListPreferencePatch({ transitList: patch });
+  },
+  hydrateSidebarListPreferences: (preferences) =>
+    set((current) => ({
+      sidebarListPreferenceDefaults:
+        current.sidebarListPreferenceDefaults ?? preferences,
+      sidebarListPreferencesHydrated: true,
+    })),
   openDirectionsPane: (state) =>
     set((current) =>
-      openExclusiveRightPane("directionsPane", {
+      activateRetainedRightPane(current, "directionsPane", {
         ...state,
         followPolicy:
           state.followPolicy ??
@@ -708,65 +958,116 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
             state.cursorDocumentId ?? state.documentId,
             state.focusDatetime ?? null,
           ),
-        openSeq: (current.directionsPane?.openSeq ?? 0) + 1,
-      }),
+      }, true),
     ),
   closeDirectionsPane: () => set({ directionsPane: null }),
   openTimeLordPane: (state) =>
-    set(openExclusiveRightPane("timeLordPane", {
-      ...state,
-      followPolicy: state.followPolicy ?? defaultFollowPolicyForPane(state.documentId),
-    })),
+    set((current) =>
+      activateRetainedRightPane(current, "timeLordPane", {
+        ...state,
+        followPolicy: state.followPolicy ?? defaultFollowPolicyForPane(state.documentId),
+      }),
+    ),
   closeTimeLordPane: () => set({ timeLordPane: null }),
   openZodiacalReleasingPane: (state) =>
-    set(openExclusiveRightPane("zodiacalReleasingPane", {
-      ...state,
-      followPolicy: state.followPolicy ?? defaultFollowPolicyForPane(state.documentId),
-    })),
+    set((current) =>
+      activateRetainedRightPane(current, "zodiacalReleasingPane", {
+        ...state,
+        followPolicy: state.followPolicy ?? defaultFollowPolicyForPane(state.documentId),
+      }),
+    ),
   closeZodiacalReleasingPane: () => set({ zodiacalReleasingPane: null }),
   openFirdariaPane: (state) =>
-    set(openExclusiveRightPane("firdariaPane", {
-      ...state,
-      followPolicy: state.followPolicy ?? defaultFollowPolicyForPane(state.documentId),
-    })),
+    set((current) =>
+      activateRetainedRightPane(current, "firdariaPane", {
+        ...state,
+        followPolicy: state.followPolicy ?? defaultFollowPolicyForPane(state.documentId),
+      }),
+    ),
   closeFirdariaPane: () => set({ firdariaPane: null }),
   openDecennialsPane: (state) =>
-    set(openExclusiveRightPane("decennialsPane", {
-      ...state,
-      followPolicy: state.followPolicy ?? defaultFollowPolicyForPane(state.documentId),
-    })),
+    set((current) =>
+      activateRetainedRightPane(current, "decennialsPane", {
+        ...state,
+        followPolicy: state.followPolicy ?? defaultFollowPolicyForPane(state.documentId),
+      }),
+    ),
   closeDecennialsPane: () => set({ decennialsPane: null }),
   openProfectionsPane: (state) =>
-    set(openExclusiveRightPane("profectionsPane", {
-      ...state,
-      followPolicy: state.followPolicy ?? defaultFollowPolicyForPane(state.documentId),
-    })),
+    set((current) =>
+      activateRetainedRightPane(current, "profectionsPane", {
+        ...state,
+        followPolicy: state.followPolicy ?? defaultFollowPolicyForPane(state.documentId),
+      }),
+    ),
   closeProfectionsPane: () => set({ profectionsPane: null }),
   openEclipsesPane: (state) =>
-    set(openExclusiveRightPane("eclipsesPane", {
-      ...state,
-      followPolicy: state.followPolicy ?? defaultFollowPolicyForPane(state.documentId),
-    })),
+    set((current) =>
+      activateRetainedRightPane(current, "eclipsesPane", {
+        ...state,
+        followPolicy: state.followPolicy ?? defaultFollowPolicyForPane(state.documentId),
+      }),
+    ),
   closeEclipsesPane: () => set({ eclipsesPane: null }),
   openLunarMansionsPane: (state) =>
-    set(openExclusiveRightPane("lunarMansionsPane", state)),
+    set((current) =>
+      activateRetainedRightPane(current, "lunarMansionsPane", state),
+    ),
   closeLunarMansionsPane: () => set({ lunarMansionsPane: null }),
   openSynodicCyclesPane: (state) =>
     set((current) =>
-      openExclusiveRightPane("synodicCyclesPane", {
+      activateRetainedRightPane(current, "synodicCyclesPane", {
         ...state,
         followPolicy: state.followPolicy ?? defaultFollowPolicyForPane(state.documentId),
         focusDatetime: state.focusDatetime ?? null,
-        openSeq: (current.synodicCyclesPane?.openSeq ?? 0) + 1,
-      }),
+      }, true),
     ),
   closeSynodicCyclesPane: () => set({ synodicCyclesPane: null }),
+  openAspectListPane: (state) =>
+    set((current) =>
+      activateRetainedRightPane(current, "aspectListPane", {
+        ...state,
+        followPolicy: state.followPolicy ?? defaultFollowPolicyForPane(state.documentId),
+        focusDatetime: state.focusDatetime ?? null,
+      }, true),
+    ),
+  closeAspectListPane: () => set({ aspectListPane: null }),
+  setAspectListPreferences: (documentId, patch) => {
+    set((current) => {
+      const defaults =
+        current.sidebarListPreferenceDefaults ?? DEFAULT_SIDEBAR_LIST_PREFERENCES;
+      const next = {
+        ...(current.aspectListPreferencesByDocument[documentId] ??
+          defaults.aspectList),
+        ...patch,
+      };
+      return {
+        aspectListPreferencesByDocument: {
+          ...current.aspectListPreferencesByDocument,
+          [documentId]: next,
+        },
+        sidebarListPreferenceDefaults: {
+          ...defaults,
+          aspectList: {
+            ...defaults.aspectList,
+            ...patch,
+          },
+        },
+      };
+    });
+    persistSidebarListPreferencePatch({ aspectList: patch });
+  },
   openAscensionalTransitsPane: (state) =>
-    set(openExclusiveRightPane("ascensionalTransitsPane", {
-      ...state,
-      followPolicy: state.followPolicy ?? defaultFollowPolicyForPane(state.documentId),
-    })),
+    set((current) =>
+      activateRetainedRightPane(current, "ascensionalTransitsPane", {
+        ...state,
+        followPolicy: state.followPolicy ?? defaultFollowPolicyForPane(state.documentId),
+      }),
+    ),
   closeAscensionalTransitsPane: () => set({ ascensionalTransitsPane: null }),
+  openAstrocartControlsPane: (state) =>
+    set(openExclusiveRightPane("astrocartControlsPane", state)),
+  closeAstrocartControlsPane: () => set({ astrocartControlsPane: null }),
   openFeatureCatalogPane: () =>
     set((current) =>
       openExclusiveRightPane("featureCatalogPane", {
@@ -827,13 +1128,22 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     set((state) => ({
       selectedAspectBody: state.selectedAspectBody === bodyKey ? null : bodyKey,
       hideAllAspects: false,
+      minorOnlyAspects: false,
     })),
   toggleHideAllAspects: () =>
     set((state) => ({
       hideAllAspects: !state.hideAllAspects,
       selectedAspectBody: null,
+      minorOnlyAspects: false,
     })),
-  clearAspectSelection: () => set({ selectedAspectBody: null, hideAllAspects: false }),
+  toggleMinorOnlyAspects: () =>
+    set((state) => (
+      state.hideAllAspects
+        ? { minorOnlyAspects: !state.minorOnlyAspects, selectedAspectBody: null }
+        : {}
+    )),
+  clearAspectSelection: () =>
+    set({ selectedAspectBody: null, hideAllAspects: false, minorOnlyAspects: false }),
   setInspectorLens: (lens) => set({ inspectorLens: lens }),
   setTimedChartShowRadix: (value) => set({ timedChartShowRadix: value }),
   bumpPacksVersion: () => set((state) => ({ packsVersion: state.packsVersion + 1 })),

@@ -114,9 +114,48 @@ def planet_display_label(se_id, opts=None):
 
 def overlay_source_display_label(se_id, family, opts=None):
     label = planet_display_label(se_id, opts)
+    return overlay_list_display_label(label, family)
+
+
+def overlay_list_display_label(label, family):
     if family == "dodecatemoria":
         return f"{label} {mtexts.txts.get('Dodeca12thMark', '(12th)')}"
     return label
+
+
+def ring_item_display_marker(item):
+    """Return the compact semantic qualifier shared by Search and sidebar lists."""
+    family = str((item or {}).get("family") or "")
+    if family == "antiscia":
+        return "(A)"
+    if family == "contra_antiscia":
+        return "CA"
+    if family == "dodecatemoria":
+        return str(mtexts.txts.get("Dodeca12thMark", "(12th)"))
+    return ""
+
+
+def ring_item_display_segments(item):
+    """Preserve composite glyph runs for point families that have no single glyph."""
+    if str((item or {}).get("family") or "") != "midpoint":
+        return []
+    segments = []
+    for segment in (item or {}).get("segments") or ():
+        if not isinstance(segment, dict):
+            continue
+        text = str(segment.get("text") or "")
+        kind = str(segment.get("kind") or "text")
+        if not text or kind not in ("text", "planet", "glyph"):
+            continue
+        out = {"text": text, "kind": kind}
+        if "seId" in segment:
+            try:
+                out["seId"] = int(segment.get("seId"))
+            except (TypeError, ValueError):
+                pass
+        segments.append(out)
+    return segments
+
 
 DIGNITY_MAP = {
     chart_mod.Chart.DOMICIL: "domicil",
@@ -625,16 +664,22 @@ def _syzygy_lon(chrt):
         return None
 
 
+def _ensure_syzygy_lon(chrt):
+    """Return the chart's prenatal Syzygy longitude, calculating it lazily."""
+    lon = _syzygy_lon(chrt)
+    if lon is not None:
+        return lon
+    try:
+        chrt.calcSyzygy()
+    except Exception:
+        return None
+    return _syzygy_lon(chrt)
+
+
 def export_syzygy(chrt):
     if not getattr(chrt.options, "showprenatalsyzygy", False):
         return None
-    lon = _syzygy_lon(chrt)
-    if lon is None:
-        try:
-            chrt.calcSyzygy()
-        except Exception:
-            pass
-        lon = _syzygy_lon(chrt)
+    lon = _ensure_syzygy_lon(chrt)
     if lon is None:
         return None
     try:
@@ -726,6 +771,20 @@ def should_show_aspect(chrt, asp, lon1, lon2):
     return chrt._passes_traditional_aspect_filter(asp.typ, lon1, lon2)
 
 
+_ANGLE_ASPECT_DISPLAY_FIELDS = {
+    "asc": "showaspectstoasc",
+    "mc": "showaspectstomc",
+    "dc": "showaspectstodsc",
+    "ic": "showaspectstoic",
+}
+
+
+def should_draw_angle_aspects(chrt, angle_key):
+    """Normal wheel visibility only; click adjacency remains complete."""
+    field = _ANGLE_ASPECT_DISPLAY_FIELDS.get(angle_key)
+    return field is not None and bool(getattr(chrt.options, field, True))
+
+
 def export_aspects(chrt):
     if not getattr(chrt.options, "aspects", True):
         return []
@@ -765,9 +824,10 @@ def export_aspects(chrt):
         if body is None:
             continue
         lon = float(body.data[0])
-        for angle_idx, angle_key in ((houses.Houses.ASC, "asc"), (houses.Houses.MC, "mc")):
-            angle_lon = float(chrt.houses.ascmc[angle_idx])
-            asp = chrt.get_ascmc_aspect(angle_idx, pid)
+        for angle_key, angle_lon in _angle_longitudes(chrt):
+            if not should_draw_angle_aspects(chrt, angle_key):
+                continue
+            asp = _angle_aspect(chrt, pid, angle_key, angle_lon)
             if not should_show_aspect(chrt, asp, lon, angle_lon):
                 continue
             aspects.append(
@@ -1515,6 +1575,9 @@ def export_chart(
         "showFixstarsToHcs": bool(getattr(chrt.options, "showfixstarshcs", False)),
         "showFixstarsToLoF": bool(getattr(chrt.options, "showfixstarslof", False)),
         "showHouses": show_houses,
+        "showOuterHouseLines": bool(
+            getattr(render_options, "showouterhouselines", True)
+        ),
         "showPositions": bool(getattr(chrt.options, "positions", False)),
         "showInformation": bool(getattr(chrt.options, "information", True)),
         "showHouseSystem": bool(getattr(chrt.options, "housesystem", False)),
@@ -1743,6 +1806,8 @@ def export_ring_item(
     segments=None,
     fit_policy=None,
     search_object_id=None,
+    semantic_id=None,
+    motion_ref=None,
 ):
     payload = {
         "id": item_id,
@@ -1757,7 +1822,16 @@ def export_ring_item(
         payload["fitPolicy"] = fit_policy
     if search_object_id:
         payload["searchObjectId"] = search_object_id
+    if semantic_id:
+        payload["semanticId"] = semantic_id
+    if motion_ref:
+        payload["motionRef"] = motion_ref
     return payload
+
+
+def _semantic_identity(*parts):
+    """Build a stable internal identity without embedding presentation text."""
+    return ":".join(str(part) for part in parts)
 
 
 # wx-free port of graphchart.isShowAsp(CONJUNCTIO, lon1, lon2)
@@ -1847,6 +1921,7 @@ def export_fixstar_items(chrt):
     items = []
     fsdata = ensure_fixstars(chrt)
     shown = shown_fixstar_indices(chrt)
+    configured_codes = list(getattr(chrt.options, "fixstars", {}).keys())
     for idx, star in enumerate(fsdata):
         if idx not in shown:
             continue
@@ -1859,15 +1934,96 @@ def export_fixstar_items(chrt):
         d, m, s = util.decToDeg(display_lon)
         d, m = util.roundDeg(d % chart_mod.Chart.SIGN_DEG, m, s)
         label = f"{name} {d}\u00B0{str(m).zfill(2)}'"
-        items.append(
-            export_ring_item(
-                f"fixstar-{idx}",
-                "fixstar",
-                star[fixstars.FixStars.LON],
-                label,
-                segments=[{"text": label, "kind": "text"}],
-            )
+        code = str(star[fixstars.FixStars.NOMNAME] or "")
+        try:
+            original_index = int(chrt.fixstars.mixed[idx])
+            code = code or str(configured_codes[original_index])
+        except Exception:
+            pass
+        item = export_ring_item(
+            f"fixstar-{idx}",
+            "fixstar",
+            star[fixstars.FixStars.LON],
+            label,
+            segments=[{"text": label, "kind": "text"}],
+            semantic_id=_semantic_identity("fixed-star", code or idx),
+            motion_ref={"kind": "fixedStar", "code": code} if code else None,
         )
+        # The wheel keeps the degree suffix, while compact semantic lists need
+        # only the star's name.  Keep both representations in the payload.
+        item["listLabel"] = name
+        items.append(item)
+    return items
+
+
+def export_asteroid_items(chrt, role="primary"):
+    items = []
+    for item in common.collect_asteroid_ring_items(chrt, chrt.options):
+        try:
+            body_id = int(item["bodyId"])
+            lon = float(item["lon"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        label = str(item.get("name") or astrology.swe_get_planet_name(body_id))
+        payload = export_ring_item(
+            f"asteroid-{body_id}",
+            "asteroid",
+            lon,
+            label,
+            role=role,
+            segments=[{"text": label, "kind": "text"}],
+            semantic_id=_semantic_identity("ephemeris-body", body_id),
+            motion_ref={"kind": "ephemerisBody", "bodyId": body_id},
+        )
+        payload["speed"] = float(item.get("speed", 0.0) or 0.0)
+        items.append(payload)
+    return items
+
+
+def export_hybrid_items(chrt, role="primary"):
+    items = []
+    for index, item in enumerate(collect_hybrid_ring_items(chrt)):
+        family = str(item.get("family") or "hybrid_hit")
+        label = str(item.get("name") or family)
+        try:
+            lon = float(item["lon"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        motion_ref = None
+        semantic_id = None
+        if family == "asteroid" and item.get("bodyId") is not None:
+            body_id = int(item["bodyId"])
+            motion_ref = {"kind": "ephemerisBody", "bodyId": body_id}
+            semantic_id = _semantic_identity("ephemeris-body", body_id)
+        elif family == "fixstar" and item.get("starCode"):
+            code = str(item["starCode"])
+            motion_ref = {"kind": "fixedStar", "code": code}
+            semantic_id = _semantic_identity("fixed-star", code)
+        elif family == "arabic_part" and item.get("configIndex") is not None:
+            config_index = int(item["configIndex"])
+            motion_ref = {"kind": "arabicPart", "configIndex": config_index}
+            semantic_id = _semantic_identity("arabic-part", config_index)
+        elif family == "dodecatemoria" and item.get("bodyId") is not None:
+            body_id = int(item["bodyId"])
+            motion_ref = {
+                "kind": "projection",
+                "projection": "dodecatemoria",
+                "source": {"kind": "planet", "bodyId": body_id},
+            }
+            semantic_id = _semantic_identity("dodecatemoria", "planet", body_id)
+        payload = export_ring_item(
+            f"hybrid-{family}-{semantic_id or index}",
+            family,
+            lon,
+            label,
+            role=role,
+            segments=[{"text": label, "kind": "text"}],
+            semantic_id=semantic_id or _semantic_identity("hybrid", family, index),
+            motion_ref=motion_ref,
+        )
+        if family == "asteroid":
+            payload["speed"] = float(item.get("speed", 0.0) or 0.0)
+        items.append(payload)
     return items
 
 
@@ -1906,6 +2062,8 @@ def export_midpoint_ring_items(chrt):
                     {"text": "/", "kind": "text"},
                     {"text": common.common.get_planet_glyph(p2), "kind": "planet", "seId": p2},
                 ],
+                semantic_id=_semantic_identity("midpoint", p1, p2),
+                motion_ref={"kind": "midpoint", "p1": p1, "p2": p2},
             )
         )
     return items
@@ -1916,8 +2074,20 @@ def export_arabic_part_items(chrt, role="primary"):
     ensure_arabic_parts(chrt)
     parts_obj = getattr(chrt, "parts", None)
     parts_list = list(getattr(parts_obj, "parts", None) or [])
+    active_config_indices = []
+    for config_index, configured_part in enumerate(getattr(chrt.options, "arabicparts", ()) or ()):
+        try:
+            if not arabicparts.ArabicParts.is_active_item(configured_part):
+                continue
+        except Exception:
+            pass
+        active_config_indices.append(config_index)
     part_entries = [
-        (part, "part:%03d" % idx)
+        (
+            part,
+            "part:%03d" % idx,
+            active_config_indices[idx] if idx < len(active_config_indices) else idx,
+        )
         for idx, part in enumerate(parts_list)
     ]
     if (
@@ -1930,14 +2100,14 @@ def export_arabic_part_items(chrt, role="primary"):
                 ({
                     arabicparts.ArabicParts.LONG: float(chrt.fortune.fortune[fortune.Fortune.LON]),
                     arabicparts.ArabicParts.NAME: mtexts.txts.get("LotOfFortune", "Fortuna"),
-                }, "point:lof")
+                }, "point:lof", None)
             )
         except Exception:
             pass
     # Arabic Parts mode mirrors graphchart.drawChart's ARABICPARTS branch:
     # `apshow = range(len(parts_ap))`, so every computed part is drawn. The
     # direct-hit/conjunction filter belongs only to Hybrid Hits.
-    for idx, (part, search_object_id) in enumerate(part_entries):
+    for idx, (part, search_object_id, config_index) in enumerate(part_entries):
         try:
             lon = float(part[arabicparts.ArabicParts.LONG])
             label = str(part[arabicparts.ArabicParts.NAME])
@@ -1952,6 +2122,14 @@ def export_arabic_part_items(chrt, role="primary"):
                 role=role,
                 segments=[{"text": label, "kind": "text"}],
                 search_object_id=search_object_id,
+                semantic_id=(
+                    "lot-of-fortune" if config_index is None
+                    else _semantic_identity("arabic-part", int(config_index))
+                ),
+                motion_ref=(
+                    {"kind": "fortune"} if config_index is None
+                    else {"kind": "arabicPart", "configIndex": int(config_index)}
+                ),
             )
         )
     return items
@@ -2030,20 +2208,24 @@ def export_parallel_transit_items(chrt):
     return items
 
 
-def _build_overlay_lon_helpers(chrt):
+def _build_overlay_lon_helpers(chrt, antis=None):
     from antiscia import Antiscia
 
     target_chart = chrt
     ayanopt = getattr(chrt.options, "ayanamsha", 0)
     ayan = getattr(target_chart, "ayanamsha_offset", 0.0)
-    antis = Antiscia(
-        target_chart.planets.planets,
-        target_chart.houses.ascmc,
-        target_chart.fortune.fortune,
-        getattr(target_chart, "obl", (0.0,))[0],
-        ayanopt,
-        ayan,
-    )
+    if antis is None:
+        # Classical/dodecatemoria callers retain the original standalone
+        # helper behavior. Morin callers explicitly pass the chart's canonical
+        # collection so latitude-bearing branches are never flattened here.
+        antis = Antiscia(
+            target_chart.planets.planets,
+            target_chart.houses.ascmc,
+            target_chart.fortune.fortune,
+            getattr(target_chart, "obl", (0.0,))[0],
+            ayanopt,
+            ayan,
+        )
 
     def antis_lon(lon):
         ant, _ = antis.calc(antis._to_tropical(lon))
@@ -2059,8 +2241,108 @@ def _build_overlay_lon_helpers(chrt):
     return antis_lon, contra_lon, dodec_lon
 
 
+def _ensure_chart_antiscia(chrt):
+    """Return the chart's canonical antiscia collection for current options."""
+    expected_morin = bool(getattr(chrt.options, "morin_antiscia", False))
+    current = getattr(chrt, "antiscia", None)
+    if current is not None and bool(getattr(current, "morin_antiscia", False)) == expected_morin:
+        return current
+    try:
+        chrt.calcAntiscia()
+        current = getattr(chrt, "antiscia", None)
+    except Exception:
+        current = None
+    if current is not None and bool(getattr(current, "morin_antiscia", False)) == expected_morin:
+        return current
+
+    # Step/deferred charts may not have populated their optional technique
+    # objects yet. Build the same canonical engine object Chart.calcAntiscia
+    # uses, with the live doctrine option, rather than duplicating projection
+    # geometry in the exporter.
+    try:
+        from antiscia import Antiscia
+
+        return Antiscia(
+            chrt.planets.planets,
+            chrt.houses.ascmc,
+            chrt.fortune.fortune,
+            getattr(chrt, "obl", (0.0,))[0],
+            getattr(chrt.options, "ayanamsha", 0),
+            getattr(chrt, "ayanamsha_offset", 0.0),
+            morin_antiscia=expected_morin,
+        )
+    except Exception:
+        return None
+
+
+def _morin_planet_projection_points(chrt, antis, kind, planet):
+    """Yield ``(branch, longitude, direction)`` from canonical Morin math."""
+    from antiscia import Antiscion
+
+    direction_names = {
+        Antiscion.UNDIRECTED: "undirected",
+        Antiscion.SINISTER: "sinister",
+        Antiscion.DEXTER: "dexter",
+    }
+
+    def direction_name(value):
+        return direction_names.get(int(value or Antiscion.UNDIRECTED), "undirected")
+
+    se_id = int(planet["seId"])
+    if kind == "antiscia":
+        primary = getattr(antis, "plantiscia", ()) or ()
+        secondary = getattr(antis, "plantiscia_secondary", ()) or ()
+        contra = False
+    else:
+        primary = getattr(antis, "plcontraant", ()) or ()
+        secondary = getattr(antis, "plcontraant_secondary", ()) or ()
+        contra = True
+
+    # The chart-wide arrays are the source of truth for the ordinary planet
+    # matrix. Chiron is an optional body outside that fixed matrix, so project
+    # it through the same Antiscia engine helper when it is visible.
+    if 0 <= se_id < len(primary):
+        candidates = (
+            ("primary", primary[se_id]),
+            ("secondary", secondary[se_id] if se_id < len(secondary) else None),
+        )
+        for branch, point in candidates:
+            if point is None or not bool(getattr(point, "valid", True)):
+                continue
+            yield (
+                branch,
+                float(point.lon),
+                direction_name(getattr(point, "direction", 0)),
+            )
+        return
+
+    from antiscia import Antiscia
+
+    points = Antiscia.morin_projection_points(
+        float(planet["longitude"]),
+        float(planet.get("latitude", 0.0)),
+        getattr(chrt, "obl", (0.0,))[0],
+        getattr(chrt.options, "ayanamsha", 0),
+        getattr(chrt, "ayanamsha_offset", 0.0),
+        contra=contra,
+    )
+    for branch in ("primary", "secondary"):
+        point = points.get(branch)
+        if point is None or not bool(point.get("valid", True)):
+            continue
+        yield branch, float(point["lon"]), direction_name(point.get("direction", 0))
+
+
 def export_overlay_family_items(chrt, kind, role="primary"):
-    antis_lon, contra_lon, dodec_lon = _build_overlay_lon_helpers(chrt)
+    morin_planet_mode = (
+        kind in ("antiscia", "contra_antiscia")
+        and bool(getattr(chrt.options, "morin_antiscia", False))
+    )
+    chart_antiscia = _ensure_chart_antiscia(chrt) if morin_planet_mode else None
+    antis_lon, contra_lon, dodec_lon = _build_overlay_lon_helpers(
+        chrt,
+        antis=chart_antiscia if morin_planet_mode else None,
+    )
     if kind == "antiscia":
         calc_fn = antis_lon
         suffix = "antiscia"
@@ -2072,33 +2354,83 @@ def export_overlay_family_items(chrt, kind, role="primary"):
         suffix = "dodec"
 
     items = []
-    for idx, planet in enumerate(export_planets(chrt)):
-        se_id = int(planet["seId"])
-        items.append(
-            export_ring_item(
-                f"{suffix}-planet-{idx}",
+    exported_planets = export_planets(chrt)
+    if morin_planet_mode and chart_antiscia is not None:
+        projection = "morin_antiscia" if kind == "antiscia" else "morin_contra_antiscia"
+        for planet in exported_planets:
+            se_id = int(planet["seId"])
+            projected_points = list(_morin_planet_projection_points(
+                chrt,
+                chart_antiscia,
                 kind,
-                calc_fn(float(planet["longitude"])),
-                overlay_source_display_label(se_id, kind, chrt.options),
-                role=role,
-                segments=[{"text": common.common.get_planet_glyph(se_id), "kind": "planet", "seId": se_id}],
+                planet,
+            ))
+            branch_count = len(projected_points)
+            for branch, projected_lon, branch_direction in projected_points:
+                items.append(
+                    export_ring_item(
+                        f"{suffix}-planet-{se_id}-{branch}",
+                        kind,
+                        projected_lon,
+                        overlay_source_display_label(se_id, kind, chrt.options),
+                        role=role,
+                        segments=[{
+                            "text": common.common.get_planet_glyph(se_id),
+                            "kind": "planet",
+                            "seId": se_id,
+                        }],
+                        semantic_id=_semantic_identity(projection, "planet", se_id, branch),
+                        motion_ref={
+                            "kind": "projection",
+                            "projection": projection,
+                            "branch": branch,
+                            "branchCount": branch_count,
+                            "branchDirection": branch_direction,
+                            "source": {"kind": "planet", "bodyId": se_id},
+                        },
+                    )
+                )
+    elif not morin_planet_mode:
+        for idx, planet in enumerate(exported_planets):
+            se_id = int(planet["seId"])
+            items.append(
+                export_ring_item(
+                    f"{suffix}-planet-{idx}",
+                    kind,
+                    calc_fn(float(planet["longitude"])),
+                    overlay_source_display_label(se_id, kind, chrt.options),
+                    role=role,
+                    segments=[{"text": common.common.get_planet_glyph(se_id), "kind": "planet", "seId": se_id}],
+                    semantic_id=_semantic_identity(kind, "planet", se_id),
+                    motion_ref={
+                        "kind": "projection",
+                        "projection": kind,
+                        "source": {"kind": "planet", "bodyId": se_id},
+                    },
+                )
             )
-        )
 
     if getattr(chrt.options, "showlof", True) and getattr(chrt, "fortune", None) is not None:
-        items.append(
-            export_ring_item(
-                f"{suffix}-fortune",
-                kind,
-                calc_fn(float(chrt.fortune.fortune[fortune.Fortune.LON])),
-                str(mtexts.txts.get("LotOfFortune", "Fortuna")),
-                role=role,
-                # graphchart.drawAntis draws the Lot's Morinus glyph (common.common.fortune)
-                # at the projected longitude, not a text label -> emit a symbols-font glyph
-                # segment so the renderer matches the desktop.
-                segments=[{"text": common.common.fortune, "kind": "glyph"}],
-            )
+        fortune_label = str(mtexts.txts.get("LotOfFortune", "Fortuna"))
+        item = export_ring_item(
+            f"{suffix}-fortune",
+            kind,
+            calc_fn(float(chrt.fortune.fortune[fortune.Fortune.LON])),
+            fortune_label,
+            role=role,
+            # graphchart.drawAntis draws the Lot's Morinus glyph (common.common.fortune)
+            # at the projected longitude, not a text label -> emit a symbols-font glyph
+            # segment so the renderer matches the desktop.
+            segments=[{"text": common.common.fortune, "kind": "glyph"}],
+            semantic_id=_semantic_identity(kind, "fortune"),
+            motion_ref={
+                "kind": "projection",
+                "projection": kind,
+                "source": {"kind": "fortune"},
+            },
         )
+        item["listLabel"] = overlay_list_display_label(fortune_label, kind)
+        items.append(item)
 
     # graphchart.drawAntis labels Asc/MC with the stripped single letters
     # (mtexts StripAsc='A' / StripMC='M') in the antis text font, not the
@@ -2107,16 +2439,25 @@ def export_overlay_family_items(chrt, kind, role="primary"):
         ("asc", houses.Houses.ASC, mtexts.txts.get("StripAsc", "A")),
         ("mc", houses.Houses.MC, mtexts.txts.get("StripMC", "M")),
     ):
-        items.append(
-            export_ring_item(
-                f"{suffix}-{angle_key}",
-                kind,
-                calc_fn(float(chrt.houses.ascmc[angle_idx])),
-                label,
-                role=role,
-                segments=[{"text": label, "kind": "text"}],
-            )
+        item = export_ring_item(
+            f"{suffix}-{angle_key}",
+            kind,
+            calc_fn(float(chrt.houses.ascmc[angle_idx])),
+            label,
+            role=role,
+            segments=[{"text": label, "kind": "text"}],
+            semantic_id=_semantic_identity(kind, angle_key),
+            motion_ref={
+                "kind": "projection",
+                "projection": kind,
+                "source": {"kind": "angleSource", "angle": angle_key},
+            },
         )
+        item["listLabel"] = overlay_list_display_label(
+            str(mtexts.txts.get("Asc" if angle_key == "asc" else "MC", angle_key)),
+            kind,
+        )
+        items.append(item)
     items.sort(key=lambda item: item["longitude"])
     return items
 
@@ -2180,6 +2521,141 @@ def _interchart_point_aspect(
 
 def _zero_orbs():
     return [0.0] * chart_mod.Chart.ASPECT_NUM
+
+
+_TECHNIQUE_STANDARD_BODY_IDS = (
+    *range(astrology.SE_SUN, astrology.SE_PLUTO + 1),
+    astrology.SE_MEAN_NODE,
+    astrology.SE_TRUE_NODE,
+    astrology.SE_CHIRON,
+)
+
+
+def _technique_body(chrt, body_id):
+    getter = getattr(chrt, "get_planet_body", None)
+    if callable(getter):
+        try:
+            body = getter(body_id)
+        except Exception:
+            body = None
+        if body is not None:
+            return body
+    try:
+        return common.common.get_chart_planet(chrt, body_id)
+    except Exception:
+        return None
+
+
+def _technique_body_orbs(chrt, options, body_id):
+    try:
+        orb_index = int(chrt.get_planet_orb_index(body_id))
+    except Exception:
+        if body_id == astrology.SE_CHIRON:
+            orb_index = astrology.SE_PLUTO
+        elif body_id == astrology.SE_TRUE_NODE:
+            orb_index = astrology.SE_MEAN_NODE
+        else:
+            orb_index = int(body_id)
+    try:
+        source = list(options.orbis[orb_index])
+    except Exception:
+        return _zero_orbs()
+    return [
+        float(source[index]) if index < len(source) else 0.0
+        for index in range(chart_mod.Chart.ASPECT_NUM)
+    ]
+
+
+def technique_aspect_endpoints(chrt, options=None):
+    """Return every chart-computable standard endpoint used by techniques.
+
+    This is deliberately a calculation registry, not a wheel-visibility
+    registry. Display gates (including nodes, trans-Saturnians, Chiron,
+    Fortune, Vertex, and prenatal Syzygy) never change membership. Active
+    outer-ring families are separate typed sources and are not included here.
+    """
+    technique_options = options if options is not None else chrt.options
+    endpoints = []
+
+    for body_id in _TECHNIQUE_STANDARD_BODY_IDS:
+        body = _technique_body(chrt, body_id)
+        if body is None:
+            continue
+        key = planet_id_from_se_id(body_id)
+        if key is None:
+            continue
+        try:
+            lon = float(body.data[planets.Planet.LONG])
+        except Exception:
+            continue
+        endpoints.append(
+            {
+                "key": key,
+                "kind": "planet",
+                "lon": lon,
+                "orbs": _technique_body_orbs(chrt, technique_options, body_id),
+            }
+        )
+
+    try:
+        angle_orbs = [
+            float(value)
+            for value in list(technique_options.orbisAscMC)[:chart_mod.Chart.ASPECT_NUM]
+        ]
+    except Exception:
+        angle_orbs = _zero_orbs()
+    if len(angle_orbs) < chart_mod.Chart.ASPECT_NUM:
+        angle_orbs.extend([0.0] * (chart_mod.Chart.ASPECT_NUM - len(angle_orbs)))
+    for key, lon in _angle_longitudes(chrt):
+        endpoints.append(
+            {
+                "key": key,
+                "kind": "angle",
+                "lon": float(lon),
+                "orbs": angle_orbs[:],
+            }
+        )
+
+    try:
+        fortune_lon = float(chrt.fortune.fortune[fortune.Fortune.LON])
+    except Exception:
+        fortune_lon = None
+    if fortune_lon is not None:
+        endpoints.append(
+            {
+                "key": "fortune",
+                "kind": "fortune",
+                "lon": fortune_lon,
+                "orbs": _zero_orbs(),
+            }
+        )
+
+    try:
+        vertex_lon = float(chrt.houses.ascmc[houses.Houses.VERTEX])
+    except Exception:
+        vertex_lon = None
+    if vertex_lon is not None:
+        endpoints.append(
+            {
+                "key": "vertex",
+                "kind": "vertex",
+                "lon": vertex_lon,
+                "orbs": _zero_orbs(),
+            }
+        )
+
+    syzygy_lon = _ensure_syzygy_lon(chrt)
+    if syzygy_lon is not None:
+        endpoints.append(
+            {
+                "key": "syzygy",
+                "kind": "syzygy",
+                "lon": float(syzygy_lon),
+                "orbs": _zero_orbs(),
+            }
+        )
+
+    return endpoints
 
 
 def _interchart_planet_endpoints(chrt, options):
@@ -2499,15 +2975,9 @@ def export_snapshot(
             outer_ring_items[mode] = _timed_export(perf, f"outer.{mode}", builder)
 
     include_outer("fixstars", lambda: export_fixstar_items(primary))
-    include_outer("asteroids", lambda: export_row_ring_items(
-            common.build_ring_text_rows(common.collect_asteroid_ring_items(primary, primary.options)),
-            "asteroid",
-        ))
+    include_outer("asteroids", lambda: export_asteroid_items(primary))
     include_outer("midpoints", lambda: export_midpoint_ring_items(primary))
-    include_outer("hybrid_hits", lambda: export_row_ring_items(
-            common.build_ring_text_rows(collect_hybrid_ring_items(primary)),
-            "hybrid_hit",
-        ))
+    include_outer("hybrid_hits", lambda: export_hybrid_items(primary))
     include_outer("antiscia", lambda: export_overlay_family_items(
             comparison if comparison is not None else primary,
             "antiscia",

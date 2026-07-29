@@ -14,6 +14,11 @@ import argparse
 import shutil
 from pathlib import Path
 
+try:
+    from scripts.staging_tree import create_staging_directory, publish_staged_tree
+except ModuleNotFoundError:
+    from staging_tree import create_staging_directory, publish_staged_tree
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DESTINATION = (
@@ -120,10 +125,7 @@ def stage_runtime_resources(source_root: Path, destination: Path) -> list[str]:
         if not required.is_file():
             raise FileNotFoundError(f"missing required Tauri resource: {required}")
 
-    temporary = destination.with_name(destination.name + ".tmp")
-    if temporary.exists():
-        shutil.rmtree(temporary)
-    temporary.mkdir(parents=True)
+    temporary = create_staging_directory(destination)
 
     try:
         staged = _stage_res(source_res, temporary)
@@ -131,9 +133,7 @@ def stage_runtime_resources(source_root: Path, destination: Path) -> list[str]:
         _copy_file(corpus_parser, temporary / "parsers" / "query_corpus.py")
         staged.extend(("data/rt_0p5.txt", "parsers/query_corpus.py"))
 
-        if destination.exists():
-            shutil.rmtree(destination)
-        temporary.replace(destination)
+        publish_staged_tree(temporary, destination)
     except BaseException:
         shutil.rmtree(temporary, ignore_errors=True)
         raise

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 from __future__ import annotations
+from functools import wraps
 from typing import Iterable
 
 import astrology
@@ -22,9 +23,33 @@ from .constants import (
 from .normalize import crossed_zero, wrap180, wrap360
 
 
-def _set_ephe_path(ephe_path: str | None) -> None:
+def _configure_ephemeris_context(
+	ephe_path: str | None,
+	sidereal_mode: int | None,
+	topocentric_position: tuple[float, float, float] | None,
+) -> None:
 	if ephe_path:
 		astrology.swe_set_ephe_path(ephe_path)
+	if sidereal_mode is not None:
+		astrology.swe_set_sid_mode(int(sidereal_mode), 0.0, 0.0)
+	if topocentric_position is not None:
+		astrology.swe_set_topo(*topocentric_position)
+
+
+def _set_ephe_path(ephe_path: str | None) -> None:
+	_configure_ephemeris_context(ephe_path, None, None)
+
+
+def _atomic_ephemeris_call(function):
+	@wraps(function)
+	def wrapped(*args, **kwargs):
+		with astrology.swiss_context(
+			kwargs.get("ephe_path"),
+			kwargs.get("sidereal_mode"),
+			kwargs.get("topocentric_position"),
+		):
+			return function(*args, **kwargs)
+	return wrapped
 
 
 def _eval_lon_speed(jd_ut: float, planet: int, flags: int) -> tuple[float, float]:
@@ -305,6 +330,7 @@ def _refine_relative_root(
 	return best_jd, best_speed
 
 
+@_atomic_ephemeris_call
 def search_station_times_raw(
 	planet: int,
 	jd_start: float,
@@ -312,11 +338,13 @@ def search_station_times_raw(
 	*,
 	ephe_path: str | None = None,
 	flags: int = 0,
+	sidereal_mode: int | None = None,
+	topocentric_position: tuple[float, float, float] | None = None,
 	step_days: float | None = None,
 	eps_speed: float = STATION_SPEED_EPS,
 	eps_days: float = DEFAULT_EPS_DAYS,
 ) -> list[tuple]:
-	_set_ephe_path(ephe_path)
+	_configure_ephemeris_context(ephe_path, sidereal_mode, topocentric_position)
 	base_step = float(default_step_days_for_planet(planet) if step_days is None else step_days)
 	accept_speed = max(float(eps_speed) * 1000.0, 1e-6)
 	jd = float(jd_start)
@@ -338,6 +366,7 @@ def search_station_times_raw(
 	return _dedupe_and_sort(raw_hits)
 
 
+@_atomic_ephemeris_call
 def search_longitude_transits_raw(
 	planet: int,
 	jd_start: float,
@@ -346,11 +375,13 @@ def search_longitude_transits_raw(
 	*,
 	ephe_path: str | None = None,
 	flags: int = 0,
+	sidereal_mode: int | None = None,
+	topocentric_position: tuple[float, float, float] | None = None,
 	step_days: float | None = None,
 	eps_deg: float = DEFAULT_EPS_DEG,
 	eps_days: float = DEFAULT_EPS_DAYS,
 ) -> list[tuple]:
-	_set_ephe_path(ephe_path)
+	_configure_ephemeris_context(ephe_path, sidereal_mode, topocentric_position)
 	base_step = float(default_step_days_for_planet(planet) if step_days is None else step_days)
 	seen = set()
 	unique_targets = []
@@ -416,6 +447,7 @@ def search_longitude_transits_raw(
 	return _dedupe_and_sort(raw_hits)
 
 
+@_atomic_ephemeris_call
 def search_longitude_transits_batch_raw(
 	planets: Iterable[int],
 	jd_start: float,
@@ -424,11 +456,13 @@ def search_longitude_transits_batch_raw(
 	*,
 	ephe_path: str | None = None,
 	flags: int = 0,
+	sidereal_mode: int | None = None,
+	topocentric_position: tuple[float, float, float] | None = None,
 	step_days: float | None = None,
 	eps_deg: float = DEFAULT_EPS_DEG,
 	eps_days: float = DEFAULT_EPS_DAYS,
 ) -> list[tuple]:
-	_set_ephe_path(ephe_path)
+	_configure_ephemeris_context(ephe_path, sidereal_mode, topocentric_position)
 	raw_hits: list[tuple] = []
 	for planet in planets:
 		raw_hits.extend(
@@ -439,6 +473,8 @@ def search_longitude_transits_batch_raw(
 				targets_deg,
 				ephe_path=None,
 				flags=flags,
+				sidereal_mode=sidereal_mode,
+				topocentric_position=topocentric_position,
 				step_days=step_days,
 				eps_deg=eps_deg,
 				eps_days=eps_days,
@@ -447,6 +483,7 @@ def search_longitude_transits_batch_raw(
 	return _dedupe_and_sort(raw_hits)
 
 
+@_atomic_ephemeris_call
 def search_station_times_batch_raw(
 	planets: Iterable[int],
 	jd_start: float,
@@ -454,11 +491,13 @@ def search_station_times_batch_raw(
 	*,
 	ephe_path: str | None = None,
 	flags: int = 0,
+	sidereal_mode: int | None = None,
+	topocentric_position: tuple[float, float, float] | None = None,
 	step_days: float | None = None,
 	eps_speed: float = STATION_SPEED_EPS,
 	eps_days: float = DEFAULT_EPS_DAYS,
 ) -> list[tuple]:
-	_set_ephe_path(ephe_path)
+	_configure_ephemeris_context(ephe_path, sidereal_mode, topocentric_position)
 	raw_hits: list[tuple] = []
 	for planet in planets:
 		raw_hits.extend(
@@ -468,6 +507,8 @@ def search_station_times_batch_raw(
 				jd_end,
 				ephe_path=None,
 				flags=flags,
+				sidereal_mode=sidereal_mode,
+				topocentric_position=topocentric_position,
 				step_days=step_days,
 				eps_speed=eps_speed,
 				eps_days=eps_days,
@@ -476,6 +517,7 @@ def search_station_times_batch_raw(
 	return _dedupe_and_sort(raw_hits)
 
 
+@_atomic_ephemeris_call
 def search_relative_aspects_batch_raw(
 	body_codes: Iterable[int],
 	jd_start: float,
@@ -484,11 +526,13 @@ def search_relative_aspects_batch_raw(
 	*,
 	ephe_path: str | None = None,
 	flags: int = 0,
+	sidereal_mode: int | None = None,
+	topocentric_position: tuple[float, float, float] | None = None,
 	step_days: float | None = None,
 	eps_deg: float = DEFAULT_EPS_DEG,
 	eps_days: float = DEFAULT_EPS_DAYS,
 ) -> list[tuple]:
-	_set_ephe_path(ephe_path)
+	_configure_ephemeris_context(ephe_path, sidereal_mode, topocentric_position)
 	body_codes = [int(code) for code in body_codes]
 	specs = [(int(prom_idx), int(sig_idx), float(offset)) for prom_idx, sig_idx, offset in specs]
 	if not body_codes or not specs:

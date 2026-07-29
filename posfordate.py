@@ -209,20 +209,37 @@ def _revjul_datetime_fields(jd_value, calflag):
 def _offset_body_longitudes(body, arc):
     if body is None:
         return
+    shifted_equatorial = False
     try:
-        body.data = (util.normalize(body.data[0] + arc),) + tuple(body.data[1:])
+        body.dataEqu = (
+            util.normalize(body.dataEqu[0] + arc),
+        ) + tuple(body.dataEqu[1:])
+        shifted_equatorial = True
     except Exception:
         pass
     try:
-        body.dataEqu = (util.normalize(body.dataEqu[0] + arc),) + tuple(body.dataEqu[1:])
+        data = list(body.data)
+        data[0] = util.normalize(data[0] + arc)
+        # ``Asteroid`` embeds RA/declination in data[2:4] rather than exposing
+        # Planet.dataEqu. Keep its canonical in-mundo coordinate on the same
+        # solar arc while preserving declination and any horizontal fields.
+        if (
+            not shifted_equatorial
+            and getattr(body, 'aId', None) is not None
+            and len(data) >= 4
+        ):
+            data[2] = util.normalize(data[2] + arc)
+        body.data = tuple(data)
     except Exception:
         pass
 
 
 def _offset_dynamic_chart_bodies(chrt, arc):
     """Apply a uniform solar-arc shift to chart-side dynamic bodies."""
-    for attr_name in ('chiron',):
-        _offset_body_longitudes(getattr(chrt, attr_name, None), arc)
+    _offset_body_longitudes(getattr(chrt, 'chiron', None), arc)
+    asteroid_rows = getattr(getattr(chrt, 'asteroids', None), 'asteroids', ())
+    for body in tuple(asteroid_rows or ()):
+        _offset_body_longitudes(body, arc)
 
 
 def _cotrans_lon_to_equ(lon, obl, ayan_offset=0.0):
@@ -396,11 +413,55 @@ def _build_houses_from_armc(armc, place, options, obl, ayan):
     return house_obj
 
 
+def _progression_zero_angle_identity(radix_chart, options):
+    """Canonical progressed-angle state for the mathematical Δt = 0 root."""
+    natal_houses = radix_chart.houses
+    try:
+        obl = float(radix_chart.obl[0])
+    except (AttributeError, IndexError, TypeError, ValueError):
+        obl = float(natal_houses.obl)
+    try:
+        ayan = float(radix_chart.ayanamsha_offset)
+    except (AttributeError, TypeError, ValueError):
+        ayan = _ayan_ut(float(radix_chart.time.jd), options)
+    try:
+        raequasc = float(radix_chart.raequasc)
+    except (AttributeError, TypeError, ValueError):
+        raequasc, _declequasc, _dist = astrology.swe_cotrans(
+            util.to_tropical_lon(
+                natal_houses.ascmc[houses.Houses.EQUASC],
+                ayan,
+            ),
+            0.0,
+            1.0,
+            -obl,
+        )
+    return {
+        'houses': natal_houses,
+        'asc_lon': float(natal_houses.ascmc[houses.Houses.ASC]),
+        'mc_lon': float(natal_houses.ascmc[houses.Houses.MC]),
+        'armc': float(natal_houses.ascmc[houses.Houses.ARMC]),
+        'raequasc': raequasc,
+        'obl': obl,
+        'ayan': ayan,
+    }
+
+
 def _build_houses_from_progressed_angle_method(radix_chart, options, angle_method, age_years, jd_prog, symbolic_age):
     angle_method = progression_angle_method(angle_method)
+    natal_houses = radix_chart.houses
+
+    # The progressed-angle map is an identity at Δt = 0 for every supported
+    # method. Preserve that mathematical boundary exactly instead of sending
+    # the natal MC/ARMC through an inverse + forward house transformation,
+    # whose floating-point round trip cannot reproduce the same coordinates.
+    if symbolic_age == 0.0:
+        return copy.deepcopy(
+            _progression_zero_angle_identity(radix_chart, options)['houses']
+        )
+
     obl_final = _obl_ut(jd_prog)
     ayan_final = _ayan_ut(jd_prog, options)
-    natal_houses = radix_chart.houses
 
     if angle_method == TRUE_SOLAR_ARC_LON:
         pflag = astrology.SEFLG_SWIEPH | astrology.SEFLG_SPEED
@@ -441,6 +502,163 @@ def _build_houses_from_progressed_angle_method(radix_chart, options, angle_metho
     return _build_houses_from_armc(armc, radix_chart.place, options, obl_final, ayan_final)
 
 
+class ProgressedAngleSampler:
+    """Project only the progressed angle fields needed by search/root fitting."""
+
+    def __init__(self, radix_chart, options, method=SECONDARY, angle_method=None):
+        self.radix_chart = radix_chart
+        self.options = options
+        self.method = progression_method(method)
+        self.scale = progression_symbolic_scale(self.method)
+        self.birth_jd = float(radix_chart.time.jd)
+        self.natal_houses = radix_chart.houses
+        if angle_method is None:
+            angle_method = getattr(
+                options,
+                'progressed_angle_method',
+                TRUE_SOLAR_ARC_LON,
+            )
+        self.angle_method = progression_angle_method(angle_method)
+        self._natal_sun = None
+
+    def _sun_flags(self):
+        flags = astrology.SEFLG_SWIEPH | astrology.SEFLG_SPEED
+        if self.angle_method == TRUE_SOLAR_ARC_RA:
+            flags |= astrology.SEFLG_EQUATORIAL
+        elif getattr(self.options, 'ayanamsha', 0) != 0:
+            astrology.swe_set_sid_mode(
+                astrology.ayanamsha_swe_mode(self.options.ayanamsha),
+                0,
+                0,
+            )
+            flags |= astrology.SEFLG_SIDEREAL
+        return flags
+
+    def _solar_arc_armc(self, jd_prog, obl_final, ayan_final):
+        flags = self._sun_flags()
+        _serr, progressed_sun = astrology.swe_calc_ut(
+            jd_prog,
+            astrology.SE_SUN,
+            flags,
+        )
+        if self._natal_sun is None:
+            _serr, self._natal_sun = astrology.swe_calc_ut(
+                self.birth_jd,
+                astrology.SE_SUN,
+                flags,
+            )
+        if self.angle_method == TRUE_SOLAR_ARC_LON:
+            mc_arc = _signed_shortest_angle_delta(
+                progressed_sun[0],
+                self._natal_sun[0],
+            )
+            mc_lon = util.normalize(
+                self.natal_houses.ascmc[houses.Houses.MC] + mc_arc
+            )
+            armc = _armc_from_mc_longitude(
+                util.to_tropical_lon(mc_lon, ayan_final),
+                obl_final,
+            )
+        else:
+            armc = util.normalize(
+                self.natal_houses.ascmc[houses.Houses.ARMC]
+                + _signed_shortest_angle_delta(
+                    progressed_sun[0],
+                    self._natal_sun[0],
+                )
+            )
+        return armc
+
+    def sample(self, symbolic_age):
+        symbolic_age = float(symbolic_age)
+        jd_prog = self.birth_jd + symbolic_age
+        age_years = (
+            symbolic_age / self.scale
+            if self.scale != 0.0
+            else symbolic_age
+        )
+
+        # This optimized path bypasses
+        # _build_houses_from_progressed_angle_method, so enforce the same
+        # mathematical identity boundary here.  Returning the natal angle
+        # state directly at Δt = 0 prevents the longitude methods from adding
+        # inverse/forward-coordinate round-trip noise.
+        if symbolic_age == 0.0:
+            identity = _progression_zero_angle_identity(
+                self.radix_chart,
+                self.options,
+            )
+            return {
+                'jd_prog': float(self.birth_jd),
+                'age_years': 0.0,
+                'symbolic_age': 0.0,
+                'asc_lon': identity['asc_lon'],
+                'mc_lon': identity['mc_lon'],
+                'armc': identity['armc'],
+                'obl': identity['obl'],
+                'ayan': identity['ayan'],
+            }
+
+        obl_final = _obl_ut(jd_prog)
+        ayan_final = _ayan_ut(jd_prog, self.options)
+
+        if self.angle_method in (TRUE_SOLAR_ARC_LON, TRUE_SOLAR_ARC_RA):
+            armc = self._solar_arc_armc(jd_prog, obl_final, ayan_final)
+        else:
+            naibod_arc = (
+                primdirs.PrimDirs.staticData[primdirs.PrimDirs.NAIBOD][primdirs.PrimDirs.DEG]
+                + primdirs.PrimDirs.staticData[primdirs.PrimDirs.NAIBOD][primdirs.PrimDirs.MIN] / 60.0
+                + primdirs.PrimDirs.staticData[primdirs.PrimDirs.NAIBOD][primdirs.PrimDirs.SEC] / 3600.0
+            ) * age_years
+            if self.angle_method == NAIBOD_LON:
+                mc_lon = util.normalize(
+                    self.natal_houses.ascmc[houses.Houses.MC] + naibod_arc
+                )
+                natal_obl = float(
+                    getattr(self.radix_chart, 'obl', (obl_final,))[0]
+                )
+                armc = _armc_from_mc_longitude(
+                    util.to_tropical_lon(mc_lon, ayan_final),
+                    natal_obl,
+                )
+            elif self.angle_method == NAIBOD_RA:
+                armc = util.normalize(
+                    self.natal_houses.ascmc[houses.Houses.ARMC] + naibod_arc
+                )
+            else:
+                armc = util.normalize(
+                    self.natal_houses.ascmc[houses.Houses.ARMC]
+                    + age_years * MEAN_QUOTIDIAN_ARMC_DEG_PER_YEAR
+                )
+
+        hsys = (
+            self.options.hsys
+            if getattr(self.options, 'hsys', None) in houses.Houses.hsystems
+            else houses.Houses.hsystems[0]
+        )
+        _res, _raw_cusps, raw_ascmc = astrology.swe_houses_armc(
+            util.normalize(float(armc)),
+            float(self.radix_chart.place.lat),
+            float(obl_final),
+            ord(hsys),
+        )
+        asc_lon = float(raw_ascmc[houses.Houses.ASC])
+        mc_lon = float(raw_ascmc[houses.Houses.MC])
+        if getattr(self.options, 'ayanamsha', 0) != 0:
+            asc_lon = util.normalize(asc_lon - ayan_final)
+            mc_lon = util.normalize(mc_lon - ayan_final)
+        return {
+            'jd_prog': float(jd_prog),
+            'age_years': float(age_years),
+            'symbolic_age': float(symbolic_age),
+            'asc_lon': float(asc_lon),
+            'mc_lon': float(mc_lon),
+            'armc': util.normalize(float(armc)),
+            'obl': float(obl_final),
+            'ayan': float(ayan_final),
+        }
+
+
 def progressed_angle_state_for_symbolic_age(radix_chart, options, symbolic_age, method=SECONDARY, angle_method=None):
     """Return progressed house/angle state without building a full Chart."""
     method = progression_method(method)
@@ -452,6 +670,22 @@ def progressed_angle_state_for_symbolic_age(radix_chart, options, symbolic_age, 
     if angle_method is None:
         angle_method = getattr(options, 'progressed_angle_method', TRUE_SOLAR_ARC_LON)
     angle_method = progression_angle_method(angle_method)
+
+    if symbolic_age == 0.0:
+        identity = _progression_zero_angle_identity(radix_chart, options)
+        houses_obj = copy.deepcopy(identity['houses'])
+        return {
+            'jd_prog': float(birth_jd),
+            'age_years': 0.0,
+            'symbolic_age': 0.0,
+            'houses': houses_obj,
+            'asc_lon': identity['asc_lon'],
+            'mc_lon': identity['mc_lon'],
+            'ascmc2': houses_obj.ascmc2,
+            'raequasc': identity['raequasc'],
+            'obl': identity['obl'],
+            'armc': identity['armc'],
+        }
 
     houses_obj = _build_houses_from_progressed_angle_method(
         radix_chart, options, angle_method, age_years, jd_prog, symbolic_age
@@ -472,6 +706,7 @@ def progressed_angle_state_for_symbolic_age(radix_chart, options, symbolic_age, 
         'ascmc2': houses_obj.ascmc2,
         'raequasc': float(raequasc),
         'obl': float(obl_final),
+        'armc': float(houses_obj.ascmc[houses.Houses.ARMC]),
     }
 
 

@@ -4,6 +4,7 @@
 "use client";
 
 import * as React from "react";
+import { flushSync } from "react-dom";
 
 import { Clipboard, X } from "lucide-react";
 
@@ -24,11 +25,12 @@ import {
   cancelTransitSearch,
   exportSearchRows,
   fetchTransitSearchContextCatalog,
-  fetchTransitSearchProgress,
+  followTransitSearchProgress,
   openDirectionsTimedChart,
   startTransitSearchContext,
   type TimedChartAction,
   type TransitSearchCatalog,
+  type TransitSearchCursorState,
   type TransitSearchObject,
   type TransitSearchObjectSegment,
   type TransitSearchProgressResult,
@@ -44,6 +46,7 @@ import {
   useListRowHeight,
 } from "@/lib/list-tokens";
 import {
+  forgetListPayload,
   getCachedListPayload,
   rememberListPayload,
 } from "@/lib/table/payload-cache";
@@ -57,18 +60,17 @@ import { beginWorkspaceSnapshotCommand } from "@/stores/workspace-command-snapsh
 import { ListCalendarStepper, ListSegmentedControl } from "./list-controls";
 import {
   buildStableRowKeys,
-  stitchRows,
   useEdgeExtend,
-  visiblePrependedRowCount,
   type AgeSpan,
 } from "./stitched-list-harness";
+import { STEP_SETTLE_REFRESH_MS } from "./step-refresh";
 
 type TransitDirectionMode = "direct" | "converse" | "both";
 type TransitColumnKey = "prom" | "aspect" | "sig" | "date" | "time" | "dc";
 type SearchDisplay = TransitSearchRow["promDisplay"];
 type TransitSpan = AgeSpan;
 type TransitPromittorItem = {
-  id: string | null;
+  id: string;
   label: string;
   glyph: string;
   marker: string;
@@ -79,31 +81,59 @@ type TransitMonthStore = {
   rows: TransitSearchRow[];
   coverage: TransitSpan;
   islandNonce: number;
+  streamKey: string;
   summary: string;
   truncated: boolean;
+  exhaustedPrevious: boolean;
+  exhaustedNext: boolean;
 };
 
 type TransitListViewState = {
   direction: TransitDirectionMode;
-  selectedPromittorId: string | null;
   requestFocusDatetime: string;
   visibleMonthIndex: number;
 };
 
+type TransitIsland = {
+  nonce: number;
+  window: TransitSpan;
+  anchorDatetime: string;
+};
+
+type TransitFrameExtensionRequest = {
+  anchorDatetime: string;
+};
+
+type TransitFrameFocusOverride = {
+  datetime: string;
+  sourceCursor: string;
+};
+
 const TRANSIT_COLUMNS: readonly TransitColumnKey[] = ["prom", "aspect", "sig", "date", "time", "dc"];
 const TRANSIT_ROW_CLASS = LIST_ROW_CLASSES.flagged;
-const TRANSIT_STITCHED_CACHE = "transits:stitched-list";
+const TRANSIT_STITCHED_CACHE = "transits:cursor-list:v1";
 const TRANSIT_STITCH_CACHE_MAX_ROWS = 12000;
-const TRANSIT_STITCH_PREFETCH_MONTHS = 2;
-const TRANSIT_POINT_MIN_BACKGROUND_ROWS = 16;
-const TRANSIT_MIN_MONTH_INDEX = 0;
+const TRANSIT_INITIAL_MIN_ROWS = 96;
+const TRANSIT_EDGE_MIN_ROWS = 48;
+const TRANSIT_EDGE_RETRY_BASE_MS = 1000;
+const TRANSIT_EDGE_MAX_AUTO_RETRIES = 3;
+const TRANSIT_MIN_MONTH_INDEX = 12;
 const TRANSIT_MAX_MONTH_INDEX = 9999 * 12 + 11;
 const TRANSIT_FOCUS_ANCHOR = 0.25;
 const VIRTUAL_OVERSCAN_ROWS = 12;
 const VIRTUAL_SCROLL_SYNC_EVENT = "aries:virtual-scroll-sync";
-const TRANSIT_PROGRESS_POLL_MS = 180;
+const TRANSIT_FRAME_EDGE_ROWS = 6;
 const TRANSIT_LIST_FALLBACK_ASPECTS = ["conjunction", "sextile", "square", "trine", "opposition"];
 const transitListViewStateCache = new Map<string, TransitListViewState>();
+const transitStreamViewportCache = new Map<string, Omit<TransitListViewState, "direction">>();
+const EMPTY_PROMITTOR_IDS: readonly string[] = Object.freeze([]);
+const EMPTY_TIMESTAMPS: readonly number[] = Object.freeze([]);
+
+function dispatchVirtualScrollSync(scroller: HTMLDivElement, beforePaint = false): void {
+  scroller.dispatchEvent(
+    new CustomEvent(VIRTUAL_SCROLL_SYNC_EVENT, { detail: { beforePaint } }),
+  );
+}
 
 function listCacheKey(parts: Record<string, unknown>): string {
   return JSON.stringify(parts);
@@ -140,6 +170,17 @@ export function TransitListView({
     () => transitListViewStateCache.get(documentId) ?? null,
     [documentId],
   );
+  const transitListPreferences = useWorkspaceStore(
+    (state) =>
+      state.transitListPreferencesByDocument[documentId] ??
+      state.sidebarListPreferenceDefaults?.transitList,
+  );
+  const sidebarListPreferencesHydrated = useWorkspaceStore(
+    (state) => state.sidebarListPreferencesHydrated,
+  );
+  const setTransitListPreferences = useWorkspaceStore(
+    (state) => state.setTransitListPreferences,
+  );
   const initialRequestFocusDatetime = cachedViewState?.requestFocusDatetime ?? effectiveFocusDatetime;
   const effectiveFocusDatetimeRef = React.useRef(effectiveFocusDatetime);
   React.useEffect(() => {
@@ -147,22 +188,51 @@ export function TransitListView({
   }, [effectiveFocusDatetime]);
 
   const [direction, setDirection] = React.useState<TransitDirectionMode>(
-    cachedViewState?.direction ?? "direct",
+    cachedViewState?.direction ?? transitListPreferences?.direction ?? "direct",
   );
   const [catalog, setCatalog] = React.useState<TransitSearchCatalog | null>(null);
   const [catalogOptionsSeq, setCatalogOptionsSeq] = React.useState(-1);
-  const [selectedPromittorId, setSelectedPromittorId] = React.useState<string | null>(
-    cachedViewState?.selectedPromittorId ?? null,
+  const configuredPromittorId = transitListPreferences?.selectedPromittorId ?? null;
+  const promittorDrawerOpen = transitListPreferences?.promittorDrawerOpen ?? false;
+  const availablePromittorIds = React.useMemo(
+    () => (catalog ? transitListPromittorIds(catalog) : EMPTY_PROMITTOR_IDS),
+    [catalog],
   );
-  const [promittorDrawerOpen, setPromittorDrawerOpen] = React.useState(false);
-  const [requestFocusDatetime, setRequestFocusDatetime] = React.useState(initialRequestFocusDatetime);
-  const [island, setIsland] = React.useState<{ nonce: number; window: TransitSpan }>(() => ({
+  const selectedPromittorId =
+    configuredPromittorId && availablePromittorIds.includes(configuredPromittorId)
+      ? configuredPromittorId
+      : null;
+  const activePromittorIds = React.useMemo<readonly string[] | null>(
+    () => (selectedPromittorId ? [selectedPromittorId] : null),
+    [selectedPromittorId],
+  );
+  const activePromittorKey = selectedPromittorId ?? "all";
+  const [requestFocusDatetime, setRequestFocusDatetime] = React.useState(
+    initialRequestFocusDatetime,
+  );
+  const [frameFocusOverride, setFrameFocusOverride] =
+    React.useState<TransitFrameFocusOverride | null>(
+      () =>
+        cachedViewState
+          ? {
+              datetime: cachedViewState.requestFocusDatetime,
+              sourceCursor: effectiveFocusDatetime,
+            }
+          : null,
+  );
+  const frameFocusDatetime =
+    frameFocusOverride && sameTransitFocusInstant(frameFocusOverride.sourceCursor, effectiveFocusDatetime)
+      ? frameFocusOverride.datetime
+      : effectiveFocusDatetime;
+  const [island, setIsland] = React.useState<TransitIsland>(() => ({
     nonce: 0,
     window: transitSeedWindowForFocus(initialRequestFocusDatetime),
+    anchorDatetime: initialRequestFocusDatetime,
   }));
   const [store, setStore] = React.useState<TransitMonthStore | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const [edgeCheckNonce, setEdgeCheckNonce] = React.useState(0);
   const [visibleMonthIndex, setVisibleMonthIndex] = React.useState(() =>
     cachedViewState?.visibleMonthIndex ?? monthIndexForDate(initialRequestFocusDatetime),
   );
@@ -174,10 +244,18 @@ export function TransitListView({
   const initialInFlightRef = React.useRef(false);
   const extendInFlightRef = React.useRef(false);
   const extendControllerRef = React.useRef<AbortController | null>(null);
-  const extendCooldownUntilRef = React.useRef(0);
+  const extendCooldownUntilRef = React.useRef({ previous: 0, next: 0 });
+  const extendRetryTimerRef = React.useRef<number | null>(null);
+  const extendRetryAttemptsRef = React.useRef({ previous: 0, next: 0 });
+  const extendCoverageRef = React.useRef<(direction: "previous" | "next") => void>(() => undefined);
   const scrollPlanRef = React.useRef<{ kind: "prepend"; count: number } | null>(null);
-  const selectedPromittorIdRef = React.useRef<string | null>(null);
-  const pointFillDirectionRef = React.useRef<"previous" | "next">("previous");
+  const programmaticFrameFollowRef = React.useRef(false);
+  const programmaticFrameFollowGenerationRef = React.useRef(0);
+  const pendingFrameFocusRef = React.useRef<string | null>(null);
+  const frameFocusSettleTimerRef = React.useRef<number | null>(null);
+  const runSettledFrameFocusRef = React.useRef<() => void>(() => undefined);
+  const frameFocusEffectMountedRef = React.useRef(false);
+  const activePromittorIdsRef = React.useRef<readonly string[] | null>(activePromittorIds);
   const optionsSeq = useTransitOptionsSeq();
   const directionRef = React.useRef(direction);
   const rowsRef = React.useRef<TransitSearchRow[]>([]);
@@ -185,14 +263,52 @@ export function TransitListView({
   const requestFocusDatetimeRef = React.useRef(requestFocusDatetime);
   const pendingMonthJumpRef = React.useRef<number | null>(null);
   const restoredCachedViewStateRef = React.useRef(Boolean(cachedViewState));
-  const skipInitialFocusSyncRef = React.useRef(Boolean(cachedViewState));
+
+  const cancelFrameFocusSettle = React.useCallback(() => {
+    pendingFrameFocusRef.current = null;
+    if (frameFocusSettleTimerRef.current !== null) {
+      window.clearTimeout(frameFocusSettleTimerRef.current);
+      frameFocusSettleTimerRef.current = null;
+    }
+  }, []);
+  const queueFrameFocusSettle = React.useCallback((delay = STEP_SETTLE_REFRESH_MS) => {
+    if (frameFocusSettleTimerRef.current !== null) {
+      window.clearTimeout(frameFocusSettleTimerRef.current);
+    }
+    frameFocusSettleTimerRef.current = window.setTimeout(() => {
+      frameFocusSettleTimerRef.current = null;
+      runSettledFrameFocusRef.current();
+    }, delay);
+  }, []);
+  const markProgrammaticFrameFollow = React.useCallback((scroller: HTMLDivElement) => {
+    const generation = programmaticFrameFollowGenerationRef.current + 1;
+    programmaticFrameFollowGenerationRef.current = generation;
+    programmaticFrameFollowRef.current = true;
+    scroller.dataset.transitListFrameFollow = "true";
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (programmaticFrameFollowGenerationRef.current !== generation) return;
+        programmaticFrameFollowRef.current = false;
+        delete scroller.dataset.transitListFrameFollow;
+      });
+    });
+  }, []);
+
+  React.useEffect(
+    () => () => {
+      cancelFrameFocusSettle();
+      programmaticFrameFollowGenerationRef.current += 1;
+      programmaticFrameFollowRef.current = false;
+    },
+    [cancelFrameFocusSettle],
+  );
 
   React.useEffect(() => {
     storeRef.current = store;
   }, [store]);
   React.useEffect(() => {
-    selectedPromittorIdRef.current = selectedPromittorId;
-  }, [selectedPromittorId]);
+    activePromittorIdsRef.current = activePromittorIds;
+  }, [activePromittorIds]);
   React.useEffect(() => {
     directionRef.current = direction;
   }, [direction]);
@@ -202,21 +318,26 @@ export function TransitListView({
   React.useEffect(() => {
     requestFocusDatetimeRef.current = requestFocusDatetime;
   }, [requestFocusDatetime]);
-
   const stitchKey = React.useMemo(
     () =>
       listCacheKey({
         documentId,
         direction,
-        promittorId: selectedPromittorId ?? "all",
+        promittorScope: activePromittorKey,
         optionsSeq,
         catalogOptionsSeq,
       }),
-    [catalogOptionsSeq, direction, documentId, optionsSeq, selectedPromittorId],
+    [activePromittorKey, catalogOptionsSeq, direction, documentId, optionsSeq],
   );
+  const viewportKey = React.useMemo(
+    () => transitViewportKey(documentId, direction, activePromittorKey),
+    [activePromittorKey, direction, documentId],
+  );
+  const viewportKeyRef = React.useRef(viewportKey);
   React.useEffect(() => {
     stitchKeyRef.current = stitchKey;
-  }, [stitchKey]);
+    viewportKeyRef.current = viewportKey;
+  }, [stitchKey, viewportKey]);
 
   React.useEffect(() => {
     const controller = new AbortController();
@@ -241,58 +362,70 @@ export function TransitListView({
       return;
     }
     queueMicrotask(() => {
-      const focus = effectiveFocusDatetimeRef.current;
-      pendingMonthJumpRef.current = null;
-      setSelectedPromittorId(null);
-      setPromittorDrawerOpen(false);
+      const focus = viewportTransitFocusIso(
+        rowsRef.current,
+        scrollerRef.current,
+        visibleMonthIndexRef.current,
+        rowHeightRef.current,
+      ) || requestFocusDatetimeRef.current || effectiveFocusDatetimeRef.current;
+      cancelFrameFocusSettle();
       setRequestFocusDatetime(focus);
+      setFrameFocusOverride({
+        datetime: focus,
+        sourceCursor: effectiveFocusDatetimeRef.current,
+      });
+      pendingMonthJumpRef.current = null;
+      requestFocusDatetimeRef.current = focus;
       setIsland((prev) => ({
         nonce: prev.nonce + 1,
         window: transitSeedWindowForFocus(focus),
+        anchorDatetime: focus,
       }));
     });
-  }, [optionsSeq]);
+  }, [cancelFrameFocusSettle, optionsSeq]);
 
   React.useEffect(() => {
-    if (skipInitialFocusSyncRef.current) {
-      skipInitialFocusSyncRef.current = false;
-      return;
-    }
-    queueMicrotask(() => {
-      const focusMonth = monthIndexForDate(effectiveFocusDatetime);
-      const current = storeRef.current;
-      pendingMonthJumpRef.current = null;
-      setRequestFocusDatetime((prev) => (prev === effectiveFocusDatetime ? prev : effectiveFocusDatetime));
-      const desired = transitSeedWindowForMonth(focusMonth);
-      if (current && monthSpanContainsSpan(current.coverage, desired)) return;
-      setIsland((prev) => ({
-        nonce: prev.nonce + 1,
-        window: desired,
-      }));
-    });
-  }, [effectiveFocusDatetime]);
-
-  React.useEffect(() => {
-    if (!catalog) return undefined;
+    if (!catalog || catalogOptionsSeq !== optionsSeq) return undefined;
     const worldSeq = worldSeqRef.current + 1;
     worldSeqRef.current = worldSeq;
-    extendCooldownUntilRef.current = 0;
+    extendCooldownUntilRef.current = { previous: 0, next: 0 };
     extendInFlightRef.current = false;
     extendControllerRef.current?.abort();
     extendControllerRef.current = null;
+    if (extendRetryTimerRef.current !== null) {
+      window.clearTimeout(extendRetryTimerRef.current);
+      extendRetryTimerRef.current = null;
+    }
+    extendRetryAttemptsRef.current = { previous: 0, next: 0 };
     scrollPlanRef.current = null;
     cancelCurrentSearch(currentSessionRef);
     const controller = new AbortController();
+    const cleanupCurrentWorld = () => {
+      controller.abort();
+      if (worldSeqRef.current === worldSeq) {
+        initialInFlightRef.current = false;
+      }
+      extendControllerRef.current?.abort();
+      extendControllerRef.current = null;
+      extendInFlightRef.current = false;
+      if (extendRetryTimerRef.current !== null) {
+        window.clearTimeout(extendRetryTimerRef.current);
+        extendRetryTimerRef.current = null;
+      }
+      cancelCurrentSearch(currentSessionRef);
+    };
     const cached = getCachedListPayload<TransitMonthStore>(TRANSIT_STITCHED_CACHE, stitchKey);
-    if (stitchedTransitStoreCoversSpan(cached, island.window)) {
+    if (cached && stitchedTransitStoreCoversFocus(cached, island.window, island.anchorDatetime)) {
       initialInFlightRef.current = false;
       queueMicrotask(() => {
         if (controller.signal.aborted || worldSeqRef.current !== worldSeq) return;
-        setStore(cached);
+        const next = normalizeTransitStore(cached, stitchKey, island.nonce);
+        storeRef.current = next;
+        setStore(next);
         setLoading(false);
         setError(null);
       });
-      return () => controller.abort();
+      return cleanupCurrentWorld;
     }
 
     initialInFlightRef.current = true;
@@ -301,38 +434,35 @@ export function TransitListView({
       setLoading(true);
       setError(null);
     });
-    fetchTransitChunk({
+    const applyPayload = (payload: TransitSearchProgressResult) => {
+      if (controller.signal.aborted || worldSeqRef.current !== worldSeq) return;
+      if (!cursorPayloadReadyForSwap(payload)) return;
+      const next = transitStoreFromCursorPayload(
+        payload,
+        island,
+        stitchKey,
+      );
+      if (!next) return;
+      storeRef.current = next;
+      React.startTransition(() => setStore(next));
+      rememberTransitStitchStore(stitchKey, next);
+    };
+    fetchTransitCursor({
       catalog,
       documentId,
       direction,
-      promittorId: selectedPromittorId,
+      promittorIds: activePromittorIds,
       span: island.window,
+      loadDirection: "around",
+      rowBudget: Math.max(
+        TRANSIT_INITIAL_MIN_ROWS,
+        viewportTransitRowCount(scrollerRef.current, rowHeightRef.current) * 4,
+      ),
+      anchorDatetime: island.anchorDatetime,
       signal: controller.signal,
       sessionRef: currentSessionRef,
-      onRows: (payload) => {
-        if (controller.signal.aborted || worldSeqRef.current !== worldSeq || payload.rows.length === 0) return;
-        const next: TransitMonthStore = {
-          rows: payload.rows,
-          coverage: island.window,
-          islandNonce: island.nonce,
-          summary: payload.summary || "No transits.",
-          truncated: payload.truncated,
-        };
-        React.startTransition(() => setStore(next));
-      },
+      onRows: applyPayload,
     })
-      .then((data) => {
-        if (controller.signal.aborted || worldSeqRef.current !== worldSeq) return;
-        const next: TransitMonthStore = {
-          rows: data.rows,
-          coverage: island.window,
-          islandNonce: island.nonce,
-          summary: data.summary,
-          truncated: data.truncated,
-        };
-        React.startTransition(() => setStore(next));
-        rememberTransitStitchStore(stitchKey, next);
-      })
       .catch((err) => {
         if ((err as { name?: string }).name === "AbortError") return;
         if (controller.signal.aborted || worldSeqRef.current !== worldSeq) return;
@@ -345,32 +475,48 @@ export function TransitListView({
         }
       });
 
-    return () => {
-      controller.abort();
-      if (worldSeqRef.current === worldSeq) {
-        initialInFlightRef.current = false;
-      }
-      extendControllerRef.current?.abort();
-      extendControllerRef.current = null;
-      extendInFlightRef.current = false;
-      cancelCurrentSearch(currentSessionRef);
-    };
-  }, [catalog, direction, documentId, island, selectedPromittorId, stitchKey, t]);
+    return cleanupCurrentWorld;
+  }, [
+    activePromittorIds,
+    catalog,
+    catalogOptionsSeq,
+    direction,
+    documentId,
+    island,
+    optionsSeq,
+    stitchKey,
+    t,
+  ]);
 
   const extendCoverage = React.useCallback(
-    (loadDirection: "previous" | "next") => {
+    (
+      loadDirection: "previous" | "next",
+      frameRequest?: TransitFrameExtensionRequest,
+    ): boolean => {
       const current = storeRef.current;
-      if (!catalog || !current || extendInFlightRef.current || initialInFlightRef.current) return;
-      if (Date.now() < extendCooldownUntilRef.current) return;
+      if (
+        !catalog
+        || !current
+        || extendInFlightRef.current
+        || initialInFlightRef.current
+        || (!frameRequest && programmaticFrameFollowRef.current)
+      ) return false;
+      if (current.streamKey !== stitchKeyRef.current) return false;
+      if (current.islandNonce !== island.nonce) return false;
+      if (Date.now() < extendCooldownUntilRef.current[loadDirection]) return false;
+      if (
+        (loadDirection === "previous" && current.exhaustedPrevious)
+        || (loadDirection === "next" && current.exhaustedNext)
+      ) return false;
       let span: TransitSpan;
       if (loadDirection === "previous") {
-        if (current.coverage.start <= TRANSIT_MIN_MONTH_INDEX) return;
+        if (current.coverage.start <= TRANSIT_MIN_MONTH_INDEX) return false;
         span = {
           start: Math.max(TRANSIT_MIN_MONTH_INDEX, current.coverage.start - 1),
           end: current.coverage.start,
         };
       } else {
-        if (current.coverage.end > TRANSIT_MAX_MONTH_INDEX) return;
+        if (current.coverage.end > TRANSIT_MAX_MONTH_INDEX) return false;
         span = {
           start: current.coverage.end,
           end: Math.min(TRANSIT_MAX_MONTH_INDEX + 1, current.coverage.end + 1),
@@ -378,80 +524,289 @@ export function TransitListView({
       }
       const worldSeq = worldSeqRef.current;
       const controller = new AbortController();
+      if (extendRetryTimerRef.current !== null) {
+        window.clearTimeout(extendRetryTimerRef.current);
+        extendRetryTimerRef.current = null;
+      }
       extendInFlightRef.current = true;
       extendControllerRef.current = controller;
-      fetchTransitChunk({
+      const applyPayload = (payload: TransitSearchProgressResult) => {
+        if (
+          controller.signal.aborted
+          || worldSeqRef.current !== worldSeq
+          || payload.cancelled
+          || payload.error
+          || !payload.cursor
+        ) return;
+        const base = storeRef.current;
+        if (!base || base.streamKey !== stitchKeyRef.current) return;
+        const chunkSpan = transitSpanForCursor(payload.cursor);
+        const { rows: stitchedRows, prependedCount } = stitchTransitCursorRows(
+          base.rows,
+          payload.rows,
+          loadDirection,
+        );
+        const nextStore: TransitMonthStore = {
+          ...base,
+          rows: stitchedRows,
+          coverage: {
+            start: Math.min(base.coverage.start, chunkSpan.start),
+            end: Math.max(base.coverage.end, chunkSpan.end),
+          },
+          summary: payload.summary,
+          truncated: base.truncated || payload.truncated,
+          exhaustedPrevious:
+            loadDirection === "previous"
+              ? payload.cursor.exhaustedPrevious
+              : base.exhaustedPrevious,
+          exhaustedNext:
+            loadDirection === "next"
+              ? payload.cursor.exhaustedNext
+              : base.exhaustedNext,
+        };
+        if (prependedCount > 0) {
+          const pending = scrollPlanRef.current;
+          scrollPlanRef.current = {
+            kind: "prepend",
+            count: prependedCount + (pending?.kind === "prepend" ? pending.count : 0),
+          };
+        }
+        storeRef.current = nextStore;
+        setStore(nextStore);
+        rememberTransitStitchStore(stitchKeyRef.current, nextStore);
+      };
+      fetchTransitCursor({
         catalog,
         documentId,
         direction,
-        promittorId: selectedPromittorIdRef.current,
+        promittorIds: activePromittorIdsRef.current,
         span,
+        loadDirection,
+        rowBudget: Math.max(
+          TRANSIT_EDGE_MIN_ROWS,
+          viewportTransitRowCount(scrollerRef.current, rowHeightRef.current) * 2,
+        ),
+        anchorDatetime: frameRequest?.anchorDatetime ?? monthSpanAnchorIso(span),
         signal: controller.signal,
         sessionRef: currentSessionRef,
+        onRows: applyPayload,
       })
-        .then((data) => {
-          if (worldSeqRef.current !== worldSeq) return;
-          const base = storeRef.current;
-          if (!base) return;
-          const { next, prependedCount } = stitchRows(
-            base,
-            data.rows,
-            span,
-            transitStitchRowKey,
-          );
-          const nextStore: TransitMonthStore = {
-            ...next,
-            summary: data.summary,
-            truncated: base.truncated || data.truncated,
-          };
-          const activePromittorId = selectedPromittorIdRef.current;
-          const visiblePrependedCount = visiblePrependedRowCount(
-            next.rows,
-            prependedCount,
-            activePromittorId ? [activePromittorId] : null,
-            (row) => row.promittorId,
-          );
-          if (visiblePrependedCount > 0) {
-            scrollPlanRef.current = { kind: "prepend", count: visiblePrependedCount };
-          }
-          if (extendControllerRef.current === controller) {
-            extendControllerRef.current = null;
-            extendInFlightRef.current = false;
-          }
-          setStore(nextStore);
-          rememberTransitStitchStore(stitchKeyRef.current, nextStore);
+        .then(() => {
+          if (controller.signal.aborted || worldSeqRef.current !== worldSeq) return;
+          extendRetryAttemptsRef.current[loadDirection] = 0;
+          extendCooldownUntilRef.current[loadDirection] = 0;
+          setError(null);
         })
         .catch((err) => {
           if ((err as { name?: string }).name === "AbortError") return;
-          extendCooldownUntilRef.current = Date.now() + 4000;
+          if (controller.signal.aborted || worldSeqRef.current !== worldSeq) return;
+          if (frameRequest) {
+            setError((err as Error).message || t("tlview.loadFailed"));
+            console.error("[transit-frame-settle-extend]", err);
+            return;
+          }
+          const attempt = extendRetryAttemptsRef.current[loadDirection] + 1;
+          extendRetryAttemptsRef.current[loadDirection] = attempt;
+          const retryDelay = transitEdgeRetryDelay(attempt);
+          extendCooldownUntilRef.current[loadDirection] = Date.now() + retryDelay;
+          if (attempt <= TRANSIT_EDGE_MAX_AUTO_RETRIES) {
+            extendRetryTimerRef.current = window.setTimeout(() => {
+              extendRetryTimerRef.current = null;
+              if (
+                controller.signal.aborted
+                || worldSeqRef.current !== worldSeq
+                || !transitScrollerAtEdge(
+                  scrollerRef.current,
+                  loadDirection,
+                  rowHeightRef.current * 6,
+                )
+              ) return;
+              extendCooldownUntilRef.current[loadDirection] = 0;
+              extendCoverageRef.current(loadDirection);
+            }, retryDelay);
+          } else {
+            setError((err as Error).message || t("tlview.loadFailed"));
+          }
           console.error("[transit-stitch-extend]", err);
         })
         .finally(() => {
           if (extendControllerRef.current === controller) {
             extendControllerRef.current = null;
             extendInFlightRef.current = false;
+            if (
+              !frameRequest
+              && !controller.signal.aborted
+              && worldSeqRef.current === worldSeq
+            ) {
+              setEdgeCheckNonce((value) => value + 1);
+            }
+            if (pendingFrameFocusRef.current) {
+              queueFrameFocusSettle(0);
+            }
           }
         });
+      return true;
     },
-    [catalog, direction, documentId],
+    [catalog, direction, documentId, island.nonce, queueFrameFocusSettle, t],
   );
+  React.useLayoutEffect(() => {
+    extendCoverageRef.current = extendCoverage;
+  }, [extendCoverage]);
+
+  const runSettledFrameFocus = React.useCallback(() => {
+    const settledFocus = pendingFrameFocusRef.current;
+    if (!settledFocus) return;
+    const current = storeRef.current;
+    if (!current) {
+      if (initialInFlightRef.current) queueFrameFocusSettle();
+      else {
+        const desired = transitSeedWindowForFocus(settledFocus);
+        pendingFrameFocusRef.current = null;
+        setIsland((prev) =>
+          monthSpansEqual(prev.window, desired) && prev.anchorDatetime === settledFocus
+            ? prev
+            : {
+                nonce: prev.nonce + 1,
+                window: desired,
+                anchorDatetime: settledFocus,
+              },
+        );
+      }
+      return;
+    }
+    if (
+      current.streamKey !== stitchKeyRef.current
+      || current.islandNonce !== island.nonce
+      || initialInFlightRef.current
+      || extendInFlightRef.current
+    ) {
+      queueFrameFocusSettle();
+      return;
+    }
+
+    const desired = transitSeedWindowForFocus(settledFocus);
+    const settledFocusMs = resolveDateMs(settledFocus);
+    const currentRowTimestamps = transitRowsTimestamps(current.rows);
+    let extensionDirection: "previous" | "next" | null = null;
+    if (monthSpanContainsSpan(current.coverage, desired)) {
+      const focusPosition = transitFocusResidentPosition(
+        currentRowTimestamps,
+        settledFocusMs,
+      );
+      if (focusPosition !== "inside") {
+        if (
+          transitFocusInsideResidentRows(
+            currentRowTimestamps,
+            settledFocusMs,
+            current.exhaustedPrevious,
+            current.exhaustedNext,
+          )
+        ) {
+          pendingFrameFocusRef.current = null;
+          return;
+        }
+        if (focusPosition === "before") extensionDirection = "previous";
+        else if (focusPosition === "after") extensionDirection = "next";
+        else {
+          pendingFrameFocusRef.current = null;
+          setIsland((prev) =>
+            monthSpansEqual(prev.window, desired) && prev.anchorDatetime === settledFocus
+              ? prev
+              : {
+                  nonce: prev.nonce + 1,
+                  window: desired,
+                  anchorDatetime: settledFocus,
+                },
+          );
+          return;
+        }
+      }
+      if (extensionDirection === null) {
+        const focusIndex = nearestTransitTimestampIndex(
+          currentRowTimestamps,
+          settledFocusMs,
+        );
+        if (
+          focusIndex >= 0
+          && focusIndex < TRANSIT_FRAME_EDGE_ROWS
+          && !current.exhaustedPrevious
+          && current.coverage.start > TRANSIT_MIN_MONTH_INDEX
+        ) {
+          extensionDirection = "previous";
+        } else if (
+          focusIndex >= Math.max(0, current.rows.length - TRANSIT_FRAME_EDGE_ROWS)
+          && !current.exhaustedNext
+          && current.coverage.end <= TRANSIT_MAX_MONTH_INDEX
+        ) {
+          extensionDirection = "next";
+        } else {
+          pendingFrameFocusRef.current = null;
+          return;
+        }
+      }
+    } else if (desired.end === current.coverage.start) {
+      extensionDirection = "previous";
+    } else if (desired.start === current.coverage.end) {
+      extensionDirection = "next";
+    } else {
+      pendingFrameFocusRef.current = null;
+      setIsland((prev) =>
+        monthSpansEqual(prev.window, desired) && prev.anchorDatetime === settledFocus
+          ? prev
+          : {
+              nonce: prev.nonce + 1,
+              window: desired,
+              anchorDatetime: settledFocus,
+            },
+      );
+      return;
+    }
+
+    if (
+      (extensionDirection === "previous"
+        && (current.exhaustedPrevious || current.coverage.start <= TRANSIT_MIN_MONTH_INDEX))
+      || (extensionDirection === "next"
+        && (current.exhaustedNext || current.coverage.end > TRANSIT_MAX_MONTH_INDEX))
+    ) {
+      pendingFrameFocusRef.current = null;
+      return;
+    }
+    if (!extendCoverage(extensionDirection, { anchorDatetime: settledFocus })) {
+      pendingFrameFocusRef.current = settledFocus;
+      queueFrameFocusSettle();
+    }
+  }, [extendCoverage, island.nonce, queueFrameFocusSettle, setIsland]);
+  React.useLayoutEffect(() => {
+    runSettledFrameFocusRef.current = runSettledFrameFocus;
+  }, [runSettledFrameFocus]);
 
   React.useEffect(() => {
-    if (!store) return;
-    if (extendInFlightRef.current || initialInFlightRef.current) return;
-    const desired = transitDesiredCoverageForMonth(visibleMonthIndex);
-    if (store.coverage.start > desired.start) extendCoverage("previous");
-    else if (store.coverage.end < desired.end) extendCoverage("next");
-  }, [extendCoverage, store, visibleMonthIndex]);
+    if (!frameFocusEffectMountedRef.current) {
+      frameFocusEffectMountedRef.current = true;
+      return;
+    }
+    pendingFrameFocusRef.current = effectiveFocusDatetime;
+    runSettledFrameFocusRef.current();
+  }, [effectiveFocusDatetime]);
 
   const sourceRows = React.useMemo(() => store?.rows ?? [], [store]);
+  const authoritativeStream = store?.streamKey === stitchKey;
+  const authoritativeIsland =
+    authoritativeStream && store?.islandNonce === island.nonce;
   const rows = React.useMemo(
     () =>
-      selectedPromittorId
-        ? sourceRows.filter((row) => row.promittorId === selectedPromittorId)
-        : sourceRows,
-    [selectedPromittorId, sourceRows],
+      authoritativeStream
+        ? sourceRows
+        : bootstrapTransitRows(sourceRows, activePromittorIds),
+    [activePromittorIds, authoritativeStream, sourceRows],
   );
+  const authoritativeRowTimestamps = React.useMemo(
+    () => transitRowsTimestamps(sourceRows),
+    [sourceRows],
+  );
+  const residentRowTimestamps = authoritativeIsland
+    ? authoritativeRowTimestamps
+    : EMPTY_TIMESTAMPS;
   React.useEffect(() => {
     rowsRef.current = rows;
   }, [rows]);
@@ -465,56 +820,32 @@ export function TransitListView({
           visibleMonthIndexRef.current,
           rowHeightRef.current,
         ) || requestFocusDatetimeRef.current;
-      transitListViewStateCache.set(documentId, {
-        direction: directionRef.current,
-        selectedPromittorId: selectedPromittorIdRef.current,
+      const viewState = {
         requestFocusDatetime: viewportFocus,
         visibleMonthIndex: monthIndexForDate(viewportFocus),
+      };
+      transitStreamViewportCache.set(viewportKeyRef.current, viewState);
+      transitListViewStateCache.set(documentId, {
+        direction: directionRef.current,
+        ...viewState,
       });
     };
   }, [documentId]);
 
-  React.useEffect(() => {
-    if (!selectedPromittorId || !store) return;
-    if (extendInFlightRef.current || initialInFlightRef.current) return;
-    const targetRows = Math.max(
-      TRANSIT_POINT_MIN_BACKGROUND_ROWS,
-      viewportTransitRowCount(scrollerRef.current, rowHeightRef.current) * 2,
-    );
-    if (rows.length >= targetRows) return;
-    const canPrevious = store.coverage.start > TRANSIT_MIN_MONTH_INDEX;
-    const canNext = store.coverage.end <= TRANSIT_MAX_MONTH_INDEX;
-    if (!canPrevious && !canNext) return;
-    const edge = transitScrollEdgeDirection(scrollerRef.current, rowHeightRef.current * 6);
-    if (edge === "previous" && canPrevious) {
-      extendCoverage("previous");
-      return;
-    }
-    if (edge === "next" && canNext) {
-      extendCoverage("next");
-      return;
-    }
-    const preferred = pointFillDirectionRef.current;
-    const loadDirection =
-      preferred === "previous"
-        ? canPrevious
-          ? "previous"
-          : "next"
-        : canNext
-          ? "next"
-          : "previous";
-    pointFillDirectionRef.current = loadDirection === "previous" ? "next" : "previous";
-    extendCoverage(loadDirection);
-  }, [extendCoverage, rows.length, selectedPromittorId, store]);
   const rowKeys = React.useMemo(() => buildStableRowKeys(rows, transitStitchRowKey), [rows]);
-  const focusTargetMs = React.useMemo(
-    () => resolveDateMs(requestFocusDatetime),
-    [requestFocusDatetime],
-  );
-  const focusIndex = React.useMemo(
-    () => nearestTransitDateIndex(rows, focusTargetMs),
-    [focusTargetMs, rows],
-  );
+  const focusTargetMs = resolveDateMs(frameFocusDatetime);
+  const focusIndex = nearestTransitTimestampIndex(residentRowTimestamps, focusTargetMs);
+  const focusIsResident =
+    authoritativeIsland
+    && rows.length > 0
+    && Number.isFinite(focusTargetMs)
+    && monthSpanContainsMonth(store?.coverage, monthIndexForDate(frameFocusDatetime))
+    && transitFocusInsideResidentRows(
+      residentRowTimestamps,
+      focusTargetMs,
+      store?.exhaustedPrevious,
+      store?.exhaustedNext,
+    );
   useFixedRowHeightAnchor(scrollerRef, rows.length, rowHeight, {
     syncEvent: VIRTUAL_SCROLL_SYNC_EVENT,
   });
@@ -523,27 +854,16 @@ export function TransitListView({
     scrollerRef,
     rowCount: rows.length,
     thresholdPx: rowHeight * 6,
-    canExtendBackward: (store?.coverage.start ?? TRANSIT_MIN_MONTH_INDEX) > TRANSIT_MIN_MONTH_INDEX,
-    canExtendForward: (store?.coverage.end ?? TRANSIT_MAX_MONTH_INDEX + 1) <= TRANSIT_MAX_MONTH_INDEX,
+    canExtendBackward:
+      authoritativeIsland
+      && !store?.exhaustedPrevious
+      && (store?.coverage.start ?? TRANSIT_MIN_MONTH_INDEX) > TRANSIT_MIN_MONTH_INDEX,
+    canExtendForward:
+      authoritativeIsland
+      && !store?.exhaustedNext
+      && (store?.coverage.end ?? TRANSIT_MAX_MONTH_INDEX + 1) <= TRANSIT_MAX_MONTH_INDEX,
     onExtend: extendCoverage,
-  });
-
-  React.useEffect(() => {
-    if (!store) return;
-    if (extendInFlightRef.current || initialInFlightRef.current) return;
-    const edge = transitScrollEdgeDirection(scrollerRef.current, rowHeightRef.current * 6);
-    if (edge === "previous" && store.coverage.start > TRANSIT_MIN_MONTH_INDEX) {
-      extendCoverage("previous");
-    } else if (edge === "next" && store.coverage.end <= TRANSIT_MAX_MONTH_INDEX) {
-      extendCoverage("next");
-    }
-  }, [extendCoverage, rows.length, store]);
-
-  const focusIndexRef = React.useRef(focusIndex);
-  const rowCountRef = React.useRef(rows.length);
-  React.useLayoutEffect(() => {
-    focusIndexRef.current = focusIndex;
-    rowCountRef.current = rows.length;
+    recheckToken: edgeCheckNonce,
   });
 
   React.useLayoutEffect(() => {
@@ -553,43 +873,65 @@ export function TransitListView({
     if (!scroller || scroller.clientHeight <= 0) return;
     scrollPlanRef.current = null;
     scroller.scrollTop += plan.count * rowHeight;
-    scroller.dispatchEvent(new Event(VIRTUAL_SCROLL_SYNC_EVENT));
+    dispatchVirtualScrollSync(scroller);
   }, [rowHeight, store]);
 
-  const focusSignature = `ms:${focusTargetMs}`;
-  const islandSignature = store ? `${store.islandNonce}` : "empty";
+  const islandSignature = authoritativeIsland && store ? `${store.islandNonce}` : "pending";
   React.useLayoutEffect(() => {
-    if (rowCountRef.current === 0) return undefined;
+    if (!focusIsResident || rows.length === 0) return undefined;
     scrollPlanRef.current = null;
     return scheduleFocusedTransitScroll(
       scrollerRef,
-      focusIndexRef.current,
-      rowCountRef.current,
+      focusIndex,
+      rows.length,
       TRANSIT_FOCUS_ANCHOR,
       rowHeightRef.current,
+      markProgrammaticFrameFollow,
     );
-  }, [focusSignature, islandSignature, selectedPromittorId]);
+  }, [
+    activePromittorKey,
+    focusIndex,
+    focusIsResident,
+    islandSignature,
+    markProgrammaticFrameFollow,
+    rows.length,
+  ]);
+
+  const syncVisibleMonthFromRow = React.useCallback((row: TransitSearchRow | undefined) => {
+    const month = monthIndexForTransitRow(row);
+    if (month == null) return;
+    const pendingMonth = pendingMonthJumpRef.current;
+    if (pendingMonth != null) {
+      const current = storeRef.current;
+      const pendingSpan = transitSeedWindowForMonth(pendingMonth);
+      if (
+        !current
+        || current.streamKey !== stitchKeyRef.current
+        || !monthSpanContainsSpan(current.coverage, pendingSpan)
+      ) {
+        return;
+      }
+      if (month !== pendingMonth) return;
+      pendingMonthJumpRef.current = null;
+    }
+    visibleMonthIndexRef.current = month;
+    setVisibleMonthIndex((prev) => (prev === month ? prev : month));
+  }, [setVisibleMonthIndex]);
+
+  React.useEffect(() => {
+    if (!focusIsResident || focusIndex < 0) return;
+    syncVisibleMonthFromRow(rows[focusIndex]);
+  }, [focusIndex, focusIsResident, rows, syncVisibleMonthFromRow]);
 
   React.useEffect(() => {
     const scroller = scrollerRef.current;
-    if (!scroller || rows.length === 0) return undefined;
+    if (!authoritativeIsland || !scroller || rows.length === 0) return undefined;
     let frame = 0;
     const sync = () => {
       frame = 0;
+      if (programmaticFrameFollowRef.current) return;
       const row = rows[visibleTransitMonthAnchorIndex(scroller, rows.length, rowHeight)];
-      const month = monthIndexForTransitRow(row);
-      if (month != null) {
-        const pendingMonth = pendingMonthJumpRef.current;
-        if (pendingMonth != null) {
-          const current = storeRef.current;
-          const pendingSpan = transitSeedWindowForMonth(pendingMonth);
-          if (!current || !monthSpanContainsSpan(current.coverage, pendingSpan) || month !== pendingMonth) {
-            return;
-          }
-          pendingMonthJumpRef.current = null;
-        }
-        setVisibleMonthIndex((prev) => (prev === month ? prev : month));
-      }
+      syncVisibleMonthFromRow(row);
     };
     const schedule = () => {
       if (!frame) frame = requestAnimationFrame(sync);
@@ -602,103 +944,181 @@ export function TransitListView({
       scroller.removeEventListener(VIRTUAL_SCROLL_SYNC_EVENT, schedule);
       if (frame) cancelAnimationFrame(frame);
     };
-  }, [rowHeight, rows]);
+  }, [authoritativeIsland, rowHeight, rows, syncVisibleMonthFromRow]);
 
   const monthLabel = React.useMemo(
     () => formatMonthIndexLabel(visibleMonthIndex),
     [visibleMonthIndex],
   );
   const promittorItems = React.useMemo(() => transitPromittorItems(catalog, t), [catalog, t]);
-  const selectedPromittorLabel = React.useMemo(
-    () => transitPromittorLabel(promittorItems, selectedPromittorId, t),
-    [promittorItems, selectedPromittorId, t],
+  const selectedPromittorItem = React.useMemo(
+    () => promittorItems.find((item) => item.id === selectedPromittorId) ?? null,
+    [promittorItems, selectedPromittorId],
   );
-  const ensureSourceWindowForFocus = React.useCallback(
-    (nextFocus: string, force = false) => {
-      const desired = transitSeedWindowForFocus(nextFocus);
-      const current = storeRef.current;
-      if (!force && current && monthSpanContainsSpan(current.coverage, desired)) return;
-      setIsland((prev) =>
-        monthSpansEqual(prev.window, desired)
-          ? prev
-          : {
-              nonce: prev.nonce + 1,
-              window: desired,
-            },
-      );
-    },
-    [],
-  );
-  const changePromittor = React.useCallback(
-    (promittorId: string | null) => {
-      if (promittorId === selectedPromittorId) {
-        setPromittorDrawerOpen(false);
-        return;
-      }
-      const nextFocus = viewportTransitFocusIso(
-        rows,
-        scrollerRef.current,
-        visibleMonthIndex,
-        rowHeight,
-      );
-      const nextMonth = monthIndexForDate(nextFocus);
+  const promittorSelectionLabel = selectedPromittorItem?.label ?? t("tlview.all");
+  const captureCurrentViewport = React.useCallback(() => {
+    const nextFocus = viewportTransitFocusIso(
+      rows,
+      scrollerRef.current,
+      visibleMonthIndex,
+      rowHeight,
+    );
+    const viewState = {
+      requestFocusDatetime: nextFocus,
+      visibleMonthIndex: monthIndexForDate(nextFocus),
+    };
+    transitStreamViewportCache.set(viewportKey, viewState);
+    transitListViewStateCache.set(documentId, { direction, ...viewState });
+    return viewState;
+  }, [direction, documentId, rowHeight, rows, viewportKey, visibleMonthIndex]);
+  const activateStreamViewport = React.useCallback(
+    (
+      nextViewportKey: string,
+      fallback: Omit<TransitListViewState, "direction">,
+    ) => {
+      const restored = transitStreamViewportCache.get(nextViewportKey) ?? fallback;
+      const nextFocus = restored.requestFocusDatetime;
+      const nextMonth = restored.visibleMonthIndex;
+      cancelFrameFocusSettle();
+      setRequestFocusDatetime(nextFocus);
+      setFrameFocusOverride({
+        datetime: nextFocus,
+        sourceCursor: effectiveFocusDatetimeRef.current,
+      });
       pendingMonthJumpRef.current = null;
       visibleMonthIndexRef.current = nextMonth;
       requestFocusDatetimeRef.current = nextFocus;
       setVisibleMonthIndex(nextMonth);
-      setRequestFocusDatetime(nextFocus);
-      pointFillDirectionRef.current = "previous";
-      setSelectedPromittorId(promittorId);
-      ensureSourceWindowForFocus(nextFocus, true);
-      setPromittorDrawerOpen(false);
+      setIsland((prev) => ({
+        nonce: prev.nonce + 1,
+        window: transitSeedWindowForFocus(nextFocus),
+        anchorDatetime: nextFocus,
+      }));
     },
-    [ensureSourceWindowForFocus, rowHeight, rows, selectedPromittorId, visibleMonthIndex],
+    [cancelFrameFocusSettle],
+  );
+  const selectPromittor = React.useCallback(
+    (promittorId: string | null) => {
+      const nextPromittorKey = promittorId ?? "all";
+      if (nextPromittorKey === activePromittorKey) {
+        setTransitListPreferences(documentId, {
+          selectedPromittorId: promittorId,
+          promittorDrawerOpen: false,
+        });
+        return;
+      }
+      const currentView = captureCurrentViewport();
+      activateStreamViewport(
+        transitViewportKey(documentId, direction, nextPromittorKey),
+        currentView,
+      );
+      setTransitListPreferences(documentId, {
+        selectedPromittorId: promittorId,
+        promittorDrawerOpen: false,
+      });
+    },
+    [
+      activateStreamViewport,
+      activePromittorKey,
+      captureCurrentViewport,
+      direction,
+      documentId,
+      setTransitListPreferences,
+    ],
   );
   const jumpByMonths = React.useCallback((delta: number) => {
     const nextMonth = clampMonthIndex((pendingMonthJumpRef.current ?? visibleMonthIndexRef.current) + delta);
     const nextFocus = monthSpanAnchorIso(transitSeedWindowForMonth(nextMonth));
+    cancelFrameFocusSettle();
+    setRequestFocusDatetime(nextFocus);
+    setFrameFocusOverride({
+      datetime: nextFocus,
+      sourceCursor: effectiveFocusDatetimeRef.current,
+    });
     pendingMonthJumpRef.current = nextMonth;
     visibleMonthIndexRef.current = nextMonth;
     requestFocusDatetimeRef.current = nextFocus;
     setVisibleMonthIndex(nextMonth);
-    setRequestFocusDatetime(nextFocus);
-    ensureSourceWindowForFocus(nextFocus);
-  }, [ensureSourceWindowForFocus]);
+    pendingFrameFocusRef.current = nextFocus;
+    runSettledFrameFocusRef.current();
+  }, [cancelFrameFocusSettle]);
   const jumpToCurrent = React.useCallback(() => {
     const nextFocus = localWallclockIso();
     const nextMonth = monthIndexForDate(nextFocus);
+    cancelFrameFocusSettle();
+    setRequestFocusDatetime(nextFocus);
+    setFrameFocusOverride({
+      datetime: nextFocus,
+      sourceCursor: effectiveFocusDatetimeRef.current,
+    });
     pendingMonthJumpRef.current = nextMonth;
     visibleMonthIndexRef.current = nextMonth;
     requestFocusDatetimeRef.current = nextFocus;
     setVisibleMonthIndex(nextMonth);
-    setRequestFocusDatetime(nextFocus);
-    ensureSourceWindowForFocus(nextFocus);
-  }, [ensureSourceWindowForFocus]);
+    pendingFrameFocusRef.current = nextFocus;
+    runSettledFrameFocusRef.current();
+  }, [cancelFrameFocusSettle]);
   const changeDirection = React.useCallback(
     (nextDirection: TransitDirectionMode) => {
       if (nextDirection === direction) return;
-      const nextFocus = viewportTransitFocusIso(
-        rows,
-        scrollerRef.current,
-        visibleMonthIndex,
-        rowHeight,
+      const currentView = captureCurrentViewport();
+      activateStreamViewport(
+        transitViewportKey(documentId, nextDirection, activePromittorKey),
+        currentView,
       );
-      const nextMonth = monthIndexForDate(nextFocus);
-      pendingMonthJumpRef.current = null;
-      visibleMonthIndexRef.current = nextMonth;
-      requestFocusDatetimeRef.current = nextFocus;
-      setVisibleMonthIndex(nextMonth);
-      setRequestFocusDatetime(nextFocus);
-      ensureSourceWindowForFocus(nextFocus, true);
       setDirection(nextDirection);
+      setTransitListPreferences(documentId, { direction: nextDirection });
     },
-    [direction, ensureSourceWindowForFocus, rowHeight, rows, visibleMonthIndex],
+    [
+      activateStreamViewport,
+      activePromittorKey,
+      captureCurrentViewport,
+      direction,
+      documentId,
+      setDirection,
+      setTransitListPreferences,
+    ],
   );
+  React.useEffect(() => {
+    if (
+      cachedViewState ||
+      !sidebarListPreferencesHydrated ||
+      !transitListPreferences?.direction ||
+      transitListPreferences.direction === direction
+    ) {
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      changeDirection(transitListPreferences.direction);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [
+    cachedViewState,
+    changeDirection,
+    direction,
+    sidebarListPreferencesHydrated,
+    transitListPreferences?.direction,
+  ]);
 
   return (
     <div className={LIST_PANE_CLASSES.root}>
-      <div className={LIST_PANE_CLASSES.compactHeader}>
-        <div className={LIST_PANE_CLASSES.compactControlRow}>
+      <div className={LIST_PANE_CLASSES.standardHeader}>
+        <div className={LIST_PANE_CLASSES.titleRow}>
+          <div className={LIST_PANE_CLASSES.titleLeading}>
+            {onClose ? (
+              <Button
+                type="button"
+                {...LIST_BUTTON_PROPS.icon}
+                onClick={onClose}
+                aria-label={t("tlview.closeTransits")}
+              >
+                <X className="size-3.5" />
+              </Button>
+            ) : null}
+            <h2 className={LIST_PANE_CLASSES.title}>{t("sidebar.action.transits")}</h2>
+          </div>
+        </div>
+        <div className={LIST_PANE_CLASSES.controlRow}>
           <ListSegmentedControl
             label={t("tlview.direction")}
             options={directionOptions}
@@ -709,10 +1129,17 @@ export function TransitListView({
           <Button
             type="button"
             {...LIST_BUTTON_PROPS.command}
-            onClick={() => setPromittorDrawerOpen((open) => !open)}
+            onClick={() =>
+              setTransitListPreferences(documentId, {
+                promittorDrawerOpen: !promittorDrawerOpen,
+              })
+            }
+            aria-expanded={promittorDrawerOpen}
           >
-            {t("tlview.point")}: {selectedPromittorLabel}
+            {t("tlview.point")}: {promittorSelectionLabel}
           </Button>
+        </div>
+        <div className={LIST_PANE_CLASSES.controlRow}>
           <ListCalendarStepper
             label={monthLabel}
             onJump={jumpByMonths}
@@ -725,21 +1152,30 @@ export function TransitListView({
             {t("tlview.current")}
           </Button>
         </div>
-        {onClose ? (
-          <Button type="button" {...LIST_BUTTON_PROPS.icon} onClick={onClose} aria-label={t("tlview.closeTransits")}>
-            <X className="size-3.5" />
-          </Button>
-        ) : null}
         {promittorDrawerOpen ? (
           <TransitPromittorDrawer
             items={promittorItems}
-            activeId={selectedPromittorId ?? "all"}
-            onSelect={changePromittor}
+            activeId={selectedPromittorId}
+            onSelect={selectPromittor}
           />
         ) : null}
+        {error && rows.length > 0 ? (
+          <div
+            role="status"
+            className="w-full text-[length:var(--aries-font-size-small)] text-destructive"
+          >
+            {error}
+          </div>
+        ) : null}
       </div>
-      <div ref={scrollerRef} className={LIST_PANE_CLASSES.scroller}>
-        {error ? (
+      <div
+        ref={scrollerRef}
+        className={LIST_PANE_CLASSES.scroller}
+        data-transit-list-focus-index={focusIndex}
+        data-transit-list-focus-resident={focusIsResident ? "true" : "false"}
+        data-transit-list-focus-target-ms={Math.trunc(focusTargetMs)}
+      >
+        {error && rows.length === 0 ? (
           <div className={LIST_PANE_CLASSES.error}>{error}</div>
         ) : (
           <table className={cn("aries-list caption-bottom border-collapse", LIST_ROLE_CLASSES.symbolic)}>
@@ -909,12 +1345,27 @@ function TransitDateButton({
       event.stopPropagation();
       if (disabled) return;
       const finishSnapshotCommand = beginWorkspaceSnapshotCommand();
-      void openDirectionsTimedChart(documentId, "transits", row.openDatetime, null, null, null, showRadix)
+      void openDirectionsTimedChart(
+        documentId,
+        "transits",
+        row.openDatetime,
+        null,
+        null,
+        null,
+        showRadix,
+        row.technique === "converse_transits"
+          ? {
+              sourceTechnique: row.technique,
+              symbolicWhenIso: row.displayDatetime,
+              symbolicEventJd: row.eventJd,
+            }
+          : null,
+      )
         .then((result) => applyTimedChartOpenResult(result))
         .catch((err) => console.error("[transit-list-open]", err))
         .finally(finishSnapshotCommand);
     },
-    [applyTimedChartOpenResult, disabled, documentId, row.openDatetime, showRadix],
+    [applyTimedChartOpenResult, disabled, documentId, row, showRadix],
   );
   return (
     <button
@@ -944,7 +1395,22 @@ function TransitRowContextMenu({
     (action: TimedChartAction) => {
       if (!row.canOpenChart || !row.openDatetime) return;
       const finishSnapshotCommand = beginWorkspaceSnapshotCommand();
-      void openDirectionsTimedChart(documentId, action, row.openDatetime, null, null, null, showRadix)
+      void openDirectionsTimedChart(
+        documentId,
+        action,
+        row.openDatetime,
+        null,
+        null,
+        null,
+        showRadix,
+        row.technique === "converse_transits"
+          ? {
+              sourceTechnique: row.technique,
+              symbolicWhenIso: row.displayDatetime,
+              symbolicEventJd: row.eventJd,
+            }
+          : null,
+      )
         .then((result) => applyTimedChartOpenResult(result))
         .catch((err) => console.error("[transit-list-timed-chart]", err))
         .finally(finishSnapshotCommand);
@@ -986,7 +1452,7 @@ function TransitPromittorDrawer({
   onSelect,
 }: {
   items: TransitPromittorItem[];
-  activeId: string;
+  activeId: string | null;
   onSelect: (id: string | null) => void;
 }) {
   const t = useT();
@@ -1016,20 +1482,35 @@ function TransitPromittorDrawer({
   return (
     <div className="w-full max-h-48 overflow-auto border-t border-border/70 pt-2">
       <div className="flex flex-col gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <span className="mr-1 min-w-14 text-[length:var(--aries-font-size-section)] text-muted-foreground">
+            {t("tlview.point")}
+          </span>
+          <Button
+            type="button"
+            size="xs"
+            variant={activeId === null ? "default" : "outline"}
+            aria-pressed={activeId === null}
+            onClick={() => onSelect(null)}
+            className="h-6 max-w-44 justify-start gap-1 px-2 text-[length:var(--aries-font-size-small)]"
+          >
+            {t("tlview.all")}
+          </Button>
+        </div>
         {groups.map((group) => (
           <div key={group.group} className="flex min-w-0 flex-wrap items-center gap-1.5">
             <span className="mr-1 min-w-14 text-[length:var(--aries-font-size-section)] text-muted-foreground">
               {group.group}
             </span>
             {group.items.map((item) => {
-              const id = item.id ?? "all";
-              const selected = id === activeId;
+              const active = item.id === activeId;
               return (
                 <Button
-                  key={id}
+                  key={item.id}
                   type="button"
                   size="xs"
-                  variant={selected ? "default" : "outline"}
+                  variant={active ? "default" : "outline"}
+                  aria-pressed={active}
                   onClick={() => onSelect(item.id)}
                   className="h-6 max-w-44 justify-start gap-1 px-2 text-[length:var(--aries-font-size-small)]"
                 >
@@ -1146,12 +1627,16 @@ function useVirtualRows(
       frame = 0;
       measureNow();
     };
-    const measureSync = () => {
+    const measureSync = (event: Event) => {
       if (frame) {
         cancelAnimationFrame(frame);
         frame = 0;
       }
-      measureNow();
+      if ((event as CustomEvent<{ beforePaint?: boolean }>).detail?.beforePaint) {
+        flushSync(measureNow);
+      } else {
+        measureNow();
+      }
     };
     const scheduleMeasure = () => {
       if (frame) return;
@@ -1182,7 +1667,7 @@ function useVirtualRows(
     );
     if (scroller.scrollTop <= maxTop) return;
     scroller.scrollTop = maxTop;
-    scroller.dispatchEvent(new Event(VIRTUAL_SCROLL_SYNC_EVENT));
+    dispatchVirtualScrollSync(scroller);
     measureNow();
   }, [measureNow, rowCount, rowHeight, scrollerRef]);
 
@@ -1253,12 +1738,15 @@ function Glyph({
   );
 }
 
-async function fetchTransitChunk({
+async function fetchTransitCursor({
   catalog,
   documentId,
   direction,
-  promittorId,
+  promittorIds,
   span,
+  loadDirection,
+  rowBudget,
+  anchorDatetime,
   signal,
   sessionRef,
   onRows,
@@ -1266,16 +1754,15 @@ async function fetchTransitChunk({
   catalog: TransitSearchCatalog;
   documentId: string;
   direction: TransitDirectionMode;
-  promittorId?: string | null;
+  promittorIds: readonly string[] | null;
   span: TransitSpan;
+  loadDirection: "around" | "previous" | "next";
+  rowBudget: number;
+  anchorDatetime: string;
   signal: AbortSignal;
   sessionRef: React.MutableRefObject<string | null>;
   onRows?: (payload: TransitSearchProgressResult) => void;
-}): Promise<{
-  rows: TransitSearchRow[];
-  summary: string;
-  truncated: boolean;
-}> {
+}): Promise<TransitSearchProgressResult> {
   const previousSessionId = sessionRef.current;
   if (previousSessionId) {
     sessionRef.current = null;
@@ -1287,36 +1774,59 @@ async function fetchTransitChunk({
     fromDate: range.fromDate,
     toDate: range.toDate,
     techniques: directionTechniques(direction),
-    promittorIds: promittorId ? [promittorId] : transitListPromittorIds(catalog),
+    promittorIds:
+      promittorIds === null ? transitListPromittorIds(catalog) : [...promittorIds],
     significatorIds: transitListSignificatorIds(catalog),
     aspects: transitListAspectIds(catalog),
     includeSignChanges: false,
     partFilter: "",
     limit: catalog.defaults.limit,
     persistSettings: false,
+    ownerScope: "transit-list",
+    cursorDirection: loadDirection,
+    cursorRowBudget: rowBudget,
+    cursorAnchorDate: cursorAnchorDateForSpan(anchorDatetime, span),
   };
   const initial = await startTransitSearchContext(request, signal);
   let current = initial;
-  sessionRef.current = current.complete ? null : current.sessionId;
-  onRows?.(current);
-  while (!signal.aborted && !current.complete) {
-    await delay(TRANSIT_PROGRESS_POLL_MS, signal);
-    current = await fetchTransitSearchProgress(current.sessionId, signal);
-    sessionRef.current = current.complete ? null : current.sessionId;
-    onRows?.(current);
+  const sessionId = current.sessionId;
+  if (signal.aborted) {
+    void cancelTransitSearch(sessionId).catch(() => undefined);
+    throw new DOMException("Aborted", "AbortError");
   }
-  if (current.error) {
-    throw new Error(current.error);
-  }
-  return {
-    rows: current.rows,
-    summary: current.summary || "No transits.",
-    truncated: current.truncated,
+  sessionRef.current = current.complete ? null : sessionId;
+  const cancelOnAbort = () => {
+    if (sessionRef.current === sessionId) sessionRef.current = null;
+    void cancelTransitSearch(sessionId).catch(() => undefined);
   };
+  signal.addEventListener("abort", cancelOnAbort, { once: true });
+  try {
+    current = await followTransitSearchProgress(
+      current,
+      signal,
+      (next) => {
+        current = next;
+        if (sessionRef.current === sessionId) {
+          sessionRef.current = current.complete ? null : sessionId;
+        }
+        onRows?.(current);
+      },
+    );
+    if (current.cancelled || signal.aborted) {
+      throw new DOMException("Aborted", "AbortError");
+    }
+    if (current.error) {
+      throw new Error(current.error);
+    }
+    return current;
+  } finally {
+    signal.removeEventListener("abort", cancelOnAbort);
+    if (sessionRef.current === sessionId) sessionRef.current = null;
+  }
 }
 
 function useTransitOptionsSeq(): number {
-  const lastOptionsChange = useDaemonWorkspaceStore((s) => s.lastOptionsChange);
+  const lastOptionsChange = useDaemonWorkspaceStore((s) => s.lastRetainedDataOptionsChange);
   const [seq, setSeq] = React.useState(0);
 
   React.useEffect(() => {
@@ -1344,9 +1854,169 @@ function cancelCurrentSearch(sessionRef: React.MutableRefObject<string | null>):
   void cancelTransitSearch(sessionId).catch(() => undefined);
 }
 
+function normalizeTransitStore(
+  store: TransitMonthStore,
+  streamKey: string,
+  islandNonce: number,
+): TransitMonthStore {
+  return {
+    ...store,
+    streamKey,
+    islandNonce,
+    exhaustedPrevious: store.exhaustedPrevious ?? false,
+    exhaustedNext: store.exhaustedNext ?? false,
+  };
+}
+
+function cursorPayloadReadyForSwap(payload: TransitSearchProgressResult): boolean {
+  if (payload.cancelled || payload.error) return false;
+  return (
+    payload.complete
+    || payload.cursor?.satisfied === true
+    || payload.cursor?.exhausted === true
+  );
+}
+
+function transitStoreFromCursorPayload(
+  payload: TransitSearchProgressResult,
+  island: { nonce: number; window: TransitSpan },
+  streamKey: string,
+): TransitMonthStore | null {
+  if (!payload.cursor) {
+    if (!payload.complete) return null;
+    return {
+      rows: [],
+      coverage: island.window,
+      islandNonce: island.nonce,
+      streamKey,
+      summary: payload.summary,
+      truncated: payload.truncated,
+      exhaustedPrevious: true,
+      exhaustedNext: true,
+    };
+  }
+  if (payload.rows.length === 0 && !payload.complete && !payload.cursor.exhausted) return null;
+  return {
+    rows: payload.rows,
+    coverage: transitSpanForCursor(payload.cursor),
+    islandNonce: island.nonce,
+    streamKey,
+    summary: payload.summary,
+    truncated: payload.truncated,
+    exhaustedPrevious: payload.cursor.exhaustedPrevious,
+    exhaustedNext: payload.cursor.exhaustedNext,
+  };
+}
+
+function transitSpanForCursor(cursor: TransitSearchCursorState): TransitSpan {
+  return {
+    start: monthIndexForDate(cursor.coverageFrom),
+    end: Math.min(
+      TRANSIT_MAX_MONTH_INDEX + 1,
+      monthIndexForDate(cursor.coverageTo) + 1,
+    ),
+  };
+}
+
+function stitchTransitCursorRows(
+  currentRows: readonly TransitSearchRow[],
+  cursorRows: readonly TransitSearchRow[],
+  loadDirection: "previous" | "next",
+): { rows: TransitSearchRow[]; prependedCount: number } {
+  const seen = new Set(currentRows.map(transitStitchRowKey));
+  const fresh = cursorRows.filter((row) => !seen.has(transitStitchRowKey(row)));
+  const rows = [...currentRows, ...fresh].sort(compareTransitRows);
+  const firstRetainedKey = currentRows.length > 0 ? transitStitchRowKey(currentRows[0]) : null;
+  const firstRetainedIndex =
+    firstRetainedKey === null
+      ? 0
+      : rows.findIndex((row) => transitStitchRowKey(row) === firstRetainedKey);
+  return {
+    rows,
+    prependedCount:
+      loadDirection === "previous" && firstRetainedIndex > 0 ? firstRetainedIndex : 0,
+  };
+}
+
+function compareTransitRows(left: TransitSearchRow, right: TransitSearchRow): number {
+  const leftMs = transitRowDateMs(left) ?? Number.POSITIVE_INFINITY;
+  const rightMs = transitRowDateMs(right) ?? Number.POSITIVE_INFINITY;
+  if (leftMs !== rightMs) return leftMs - rightMs;
+  return transitStitchRowKey(left).localeCompare(transitStitchRowKey(right));
+}
+
+function bootstrapTransitRows(
+  sourceRows: readonly TransitSearchRow[],
+  activePromittorIds: readonly string[] | null,
+): TransitSearchRow[] {
+  if (activePromittorIds === null) return sourceRows.slice();
+  const active = new Set(activePromittorIds);
+  const filtered = sourceRows.filter((row) => active.has(row.promittorId));
+  return filtered.length === sourceRows.length
+    ? filtered
+    : sourceRows.slice();
+}
+
+function transitScrollerAtEdge(
+  scroller: HTMLDivElement | null,
+  direction: "previous" | "next",
+  thresholdPx: number,
+): boolean {
+  if (!scroller || scroller.clientHeight <= 0) return false;
+  const maxTop = scroller.scrollHeight - scroller.clientHeight;
+  if (maxTop <= 0) return false;
+  return direction === "previous"
+    ? scroller.scrollTop <= thresholdPx
+    : maxTop - scroller.scrollTop <= thresholdPx;
+}
+
+function transitEdgeRetryDelay(attempt: number): number {
+  const exponent = Math.max(
+    0,
+    Math.min(TRANSIT_EDGE_MAX_AUTO_RETRIES - 1, Math.trunc(attempt) - 1),
+  );
+  return TRANSIT_EDGE_RETRY_BASE_MS * 2 ** exponent;
+}
+
+function transitViewportKey(
+  documentId: string,
+  direction: TransitDirectionMode,
+  promittorKey: string,
+): string {
+  return listCacheKey({ documentId, direction, promittorScope: promittorKey });
+}
+
+function cursorAnchorDateForSpan(value: string, span: TransitSpan): string {
+  const range = monthSpanRange(span);
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime())) return range.fromDate;
+  const candidate = isoDate(parsed);
+  if (candidate < range.fromDate) return range.fromDate;
+  if (candidate > range.toDate) return range.toDate;
+  return candidate;
+}
+
 function rememberTransitStitchStore(key: string, store: TransitMonthStore): void {
-  if (store.rows.length > TRANSIT_STITCH_CACHE_MAX_ROWS) return;
+  if (store.rows.length > TRANSIT_STITCH_CACHE_MAX_ROWS) {
+    forgetListPayload(TRANSIT_STITCHED_CACHE, key);
+    return;
+  }
   rememberListPayload(TRANSIT_STITCHED_CACHE, key, store);
+}
+
+function stitchedTransitStoreCoversFocus(
+  store: TransitMonthStore | null,
+  span: TransitSpan,
+  focusDatetime: string,
+): boolean {
+  if (!stitchedTransitStoreCoversSpan(store, span)) return false;
+  const rowTimestamps = store ? transitRowsTimestamps(store.rows) : [];
+  return transitFocusInsideResidentRows(
+    rowTimestamps,
+    resolveDateMs(focusDatetime),
+    store?.exhaustedPrevious,
+    store?.exhaustedNext,
+  );
 }
 
 function stitchedTransitStoreCoversSpan(
@@ -1376,13 +2046,8 @@ function transitPromittorItems(
   if (!catalog) return [];
   const objects = new Map<string, TransitSearchObject>();
   for (const obj of catalog.objects) objects.set(obj.id, obj);
-  const ids = catalog.presets.promittors.planets.length
-    ? catalog.presets.promittors.planets
-    : catalog.defaults.promittorIds;
-  const items: TransitPromittorItem[] = [
-    { id: null, label: t("tlview.all"), glyph: "", marker: "", group: t("tlview.point") },
-  ];
-  for (const id of ids) {
+  const items: TransitPromittorItem[] = [];
+  for (const id of transitListPromittorIds(catalog)) {
     const obj = objects.get(id);
     if (!obj) continue;
     items.push({
@@ -1390,19 +2055,20 @@ function transitPromittorItems(
       label: obj.label,
       glyph: obj.glyph,
       marker: obj.displayMarker,
-      group: t("tlview.planets"),
+      group: transitPromittorGroupLabel(obj.family, t),
     });
   }
   return items;
 }
 
-function transitPromittorLabel(
-  items: readonly TransitPromittorItem[],
-  selectedId: string | null,
-  t: TFunc,
-): string {
-  if (!selectedId) return t("tlview.all");
-  return items.find((item) => item.id === selectedId)?.label ?? t("tlview.all");
+function transitPromittorGroupLabel(family: string, t: TFunc): string {
+  if (family === "planet") return t("tlview.planets");
+  if (family === "node") return t("common.nodes");
+  if (family === "angle") return t("styleLab.scene.angles");
+  if (family === "fortune") return t("common.fortune");
+  if (family === "fixed_star") return t("common.fixedStars");
+  if (family === "syzygy") return t("common.syzygy");
+  return t("dirview.points");
 }
 
 function transitListPromittorIds(catalog: TransitSearchCatalog): string[] {
@@ -1419,14 +2085,6 @@ function transitListAspectIds(catalog: TransitSearchCatalog): string[] {
 
 function nonEmptyIds(primary: readonly string[], fallback: readonly string[]): string[] {
   return primary.length ? [...primary] : [...fallback];
-}
-
-function transitDesiredCoverageForMonth(monthIndex: number): TransitSpan {
-  const base = transitSeedWindowForMonth(monthIndex);
-  return {
-    start: Math.max(TRANSIT_MIN_MONTH_INDEX, base.start - TRANSIT_STITCH_PREFETCH_MONTHS),
-    end: Math.min(TRANSIT_MAX_MONTH_INDEX + 1, base.end + TRANSIT_STITCH_PREFETCH_MONTHS),
-  };
 }
 
 function transitSeedWindowForFocus(value?: string | null, sourceMonths = 1): TransitSpan {
@@ -1458,6 +2116,13 @@ function monthSpanContainsSpan(outer: TransitSpan | null | undefined, inner: Tra
   return !!outer && outer.start <= inner.start && outer.end >= inner.end;
 }
 
+function monthSpanContainsMonth(
+  outer: TransitSpan | null | undefined,
+  monthIndex: number,
+): boolean {
+  return !!outer && outer.start <= monthIndex && monthIndex < outer.end;
+}
+
 function monthSpansEqual(left: TransitSpan, right: TransitSpan): boolean {
   return left.start === right.start && left.end === right.end;
 }
@@ -1465,7 +2130,7 @@ function monthSpansEqual(left: TransitSpan, right: TransitSpan): boolean {
 function monthSpanAnchorIso(span: TransitSpan): string {
   const date = dateFromMonthIndex(span.start);
   const pad = (value: number) => String(value).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-01T12:00:00`;
+  return `${String(date.getFullYear()).padStart(4, "0")}-${pad(date.getMonth() + 1)}-01T12:00:00`;
 }
 
 function formatMonthIndexLabel(monthIndex: number): string {
@@ -1487,18 +2152,23 @@ function clampMonthIndex(index: number): number {
 function monthSpanRange(span: TransitSpan): { fromDate: string; toDate: string } {
   const first = dateFromMonthIndex(span.start);
   const last = dateFromMonthIndex(Math.max(span.start, span.end - 1));
-  const toDate = new Date(last.getFullYear(), last.getMonth() + 1, 0, 12, 0, 0, 0);
+  const toDate = new Date(0);
+  toDate.setFullYear(last.getFullYear(), last.getMonth() + 1, 0);
+  toDate.setHours(12, 0, 0, 0);
   return { fromDate: isoDate(first), toDate: isoDate(toDate) };
 }
 
 function dateFromMonthIndex(index: number): Date {
   const year = Math.floor(index / 12);
   const month = index - year * 12;
-  return new Date(year, month, 1, 12, 0, 0, 0);
+  const date = new Date(0);
+  date.setFullYear(year, month, 1);
+  date.setHours(12, 0, 0, 0);
+  return date;
 }
 
 function isoDate(value: Date): string {
-  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+  return `${String(value.getFullYear()).padStart(4, "0")}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
 }
 
 function directionTechniques(direction: TransitDirectionMode): string[] {
@@ -1510,6 +2180,13 @@ function directionTechniques(direction: TransitDirectionMode): string[] {
 function resolveDateMs(value?: string | null): number {
   const ms = parseDateMs(value);
   return ms ?? Date.now();
+}
+
+function sameTransitFocusInstant(left?: string | null, right?: string | null): boolean {
+  const leftMs = parseDateMs(left);
+  const rightMs = parseDateMs(right);
+  if (leftMs != null && rightMs != null) return Math.abs(leftMs - rightMs) < 1000;
+  return (left ?? null) === (right ?? null);
 }
 
 function parseDateMs(value?: string | null): number | null {
@@ -1526,6 +2203,10 @@ function transitRowDateMs(row: TransitSearchRow): number | null {
     parseDateMs(row.openDatetime) ??
     parseDateMs(`${row.displayDate}T${shortDisplayTime(row)}`)
   );
+}
+
+function transitRowsTimestamps(rows: readonly TransitSearchRow[]): number[] {
+  return rows.map((row) => transitRowDateMs(row) ?? Number.POSITIVE_INFINITY);
 }
 
 function transitRowEventIso(row: TransitSearchRow | undefined): string | null {
@@ -1548,18 +2229,6 @@ function monthIndexForTransitRow(row: TransitSearchRow | undefined): number | nu
 function viewportTransitRowCount(scroller: HTMLDivElement | null, rowHeight: number): number {
   const height = eventListBodyViewportHeight(scroller, rowHeight * 12);
   return Math.max(1, Math.ceil(height / rowHeight));
-}
-
-function transitScrollEdgeDirection(
-  scroller: HTMLDivElement | null,
-  thresholdPx: number,
-): "previous" | "next" | null {
-  if (!scroller || scroller.clientHeight <= 0) return null;
-  const maxTop = scroller.scrollHeight - scroller.clientHeight;
-  if (maxTop <= 0) return null;
-  if (scroller.scrollTop <= thresholdPx) return "previous";
-  if (maxTop - scroller.scrollTop <= thresholdPx) return "next";
-  return null;
 }
 
 function visibleTransitMonthAnchorIndex(
@@ -1587,20 +2256,57 @@ function viewportTransitFocusIso(
   return monthSpanAnchorIso(transitSeedWindowForMonth(fallbackMonthIndex));
 }
 
-function nearestTransitDateIndex(rows: readonly TransitSearchRow[], targetMs: number): number {
-  if (!rows.length) return -1;
-  let bestIndex = 0;
-  let bestDelta = Number.POSITIVE_INFINITY;
-  rows.forEach((row, index) => {
-    const ms = transitRowDateMs(row);
-    if (ms == null) return;
-    const delta = Math.abs(ms - targetMs);
-    if (delta < bestDelta) {
-      bestDelta = delta;
-      bestIndex = index;
-    }
-  });
-  return bestIndex;
+type TransitFocusResidentPosition = "inside" | "before" | "after" | "empty" | "invalid";
+
+function transitFocusResidentPosition(
+  rowTimestamps: readonly number[],
+  targetMs: number,
+): TransitFocusResidentPosition {
+  if (!Number.isFinite(targetMs)) return "invalid";
+  let firstTimestamp = Number.POSITIVE_INFINITY;
+  let lastTimestamp = Number.NEGATIVE_INFINITY;
+  for (const value of rowTimestamps) {
+    if (!Number.isFinite(value)) continue;
+    if (firstTimestamp === Number.POSITIVE_INFINITY) firstTimestamp = value;
+    lastTimestamp = value;
+  }
+  if (firstTimestamp === Number.POSITIVE_INFINITY) return "empty";
+  if (targetMs < firstTimestamp) return "before";
+  if (targetMs > lastTimestamp) return "after";
+  return "inside";
+}
+
+function transitFocusInsideResidentRows(
+  rowTimestamps: readonly number[],
+  targetMs: number,
+  exhaustedPrevious = false,
+  exhaustedNext = false,
+): boolean {
+  const position = transitFocusResidentPosition(rowTimestamps, targetMs);
+  return (
+    position === "inside"
+    || (position === "before" && exhaustedPrevious)
+    || (position === "after" && exhaustedNext)
+  );
+}
+
+function nearestTransitTimestampIndex(
+  rowTimestamps: readonly number[],
+  targetMs: number,
+): number {
+  if (!rowTimestamps.length) return -1;
+  let low = 0;
+  let high = rowTimestamps.length;
+  while (low < high) {
+    const mid = low + Math.floor((high - low) / 2);
+    if (rowTimestamps[mid] < targetMs) low = mid + 1;
+    else high = mid;
+  }
+  if (low <= 0) return 0;
+  if (low >= rowTimestamps.length) return rowTimestamps.length - 1;
+  const before = rowTimestamps[low - 1];
+  const after = rowTimestamps[low];
+  return targetMs - before <= after - targetMs ? low - 1 : low;
 }
 
 function scrollFocusedTransitRow(
@@ -1609,18 +2315,30 @@ function scrollFocusedTransitRow(
   anchorRatio: number,
   targetIndex: number,
   rowHeight: number,
+  markProgrammaticScroll: (scroller: HTMLDivElement) => void,
 ): boolean {
   const viewportHeight = eventListBodyViewportHeight(scroller);
-  if (!scroller || rowCount <= 0 || targetIndex < 0 || viewportHeight <= 0) {
+  if (
+    !scroller
+    || rowCount <= 0
+    || targetIndex < 0
+    || rowHeight <= 0
+    || viewportHeight <= 0
+  ) {
     return false;
   }
   const rowTop = targetIndex * rowHeight;
+  const rowBottom = rowTop + rowHeight;
+  const viewportTop = scroller.scrollTop;
+  const viewportBottom = viewportTop + viewportHeight;
+  if (rowTop >= viewportTop && rowBottom <= viewportBottom) return true;
   const targetTop = rowTop - viewportHeight * anchorRatio + rowHeight / 2;
   const maxTop = Math.max(0, rowCount * rowHeight - viewportHeight);
   const nextTop = Math.max(0, Math.min(maxTop, targetTop));
   if (Math.abs(scroller.scrollTop - nextTop) <= 1) return true;
+  markProgrammaticScroll(scroller);
   scroller.scrollTop = nextTop;
-  scroller.dispatchEvent(new Event(VIRTUAL_SCROLL_SYNC_EVENT));
+  dispatchVirtualScrollSync(scroller, true);
   return true;
 }
 
@@ -1630,6 +2348,7 @@ function scheduleFocusedTransitScroll(
   rowCount: number,
   anchorRatio: number,
   rowHeight: number,
+  markProgrammaticScroll: (scroller: HTMLDivElement) => void,
 ): () => void {
   if (rowIndex < 0 || rowCount <= 0) return () => {};
   let frame = 0;
@@ -1638,7 +2357,16 @@ function scheduleFocusedTransitScroll(
   const tick = () => {
     if (cancelled) return;
     const scroller = scrollerRef.current;
-    if (scrollFocusedTransitRow(scroller, rowCount, anchorRatio, rowIndex, rowHeight)) return;
+    if (
+      scrollFocusedTransitRow(
+        scroller,
+        rowCount,
+        anchorRatio,
+        rowIndex,
+        rowHeight,
+        markProgrammaticScroll,
+      )
+    ) return;
     attempts += 1;
     if (attempts < 30) {
       frame = requestAnimationFrame(tick);
@@ -1664,24 +2392,6 @@ function localWallclockIso(): string {
   const now = new Date();
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-}
-
-function delay(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal.aborted) {
-      reject(new DOMException("Aborted", "AbortError"));
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      window.clearTimeout(timer);
-      reject(new DOMException("Aborted", "AbortError"));
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
 }
 
 async function copyText(text: string): Promise<void> {

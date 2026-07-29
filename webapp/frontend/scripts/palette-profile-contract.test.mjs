@@ -98,6 +98,27 @@ test("named body and aspect roles are concrete palette fallbacks", () => {
   assert.equal(profile.aspects[12], "named-parallel");
 });
 
+test("profile foreground and background rederive dim overlay text", () => {
+  const profile = readPaletteProfileOverrides({
+    chartPalette: {
+      "--morinus-background": "rgb(35 36 40)",
+      "--morinus-text-bright": "rgb(220 220 221)",
+      "--morinus-text-dim": "rgb(120 121 123)",
+    },
+    profileOverrides: {
+      appTokens: {},
+      chartPalette: {
+        "--morinus-background": "rgb(255 255 255)",
+        "--morinus-text-bright": "rgb(0 0 0)",
+      },
+      chartData: {},
+    },
+  });
+
+  assert.equal(profile.textBright, "rgb(0 0 0)");
+  assert.equal(profile.textDim, "rgb(128 128 128)");
+});
+
 test("retained dignity and point colors receive the active profile layer", () => {
   const original = chart();
   const comparison = chart({ individual: true });

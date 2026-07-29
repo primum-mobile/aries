@@ -20,6 +20,7 @@ const end = "/* END GENERATED RENDERER STYLE TOKENS */";
 const rendererLabels = {
   astrocart: "Astrocartography",
   astrolabe: "Astrolabe",
+  ephemeris: "Graphic Ephemeris",
   mundane: "Mundane chart",
   sphere: "Astrolog Sphere",
   square: "Square chart",
@@ -103,21 +104,28 @@ const mundanePublic = new Set([
   "overlayLineHeight",
 ]);
 
-function isPublicMetric(renderer, key) {
+function isPublicMetric(renderer, key, styleModule) {
   if (renderer === "square") return squarePublic.has(key);
   if (renderer === "sphere") return true;
   if (renderer === "strip") return stripPublic.has(key);
   if (renderer === "astrolabe") return !astrolabeInternal.has(key);
   if (renderer === "mundane") return mundanePublic.has(key);
   if (renderer === "astrocart") return true;
-  // WHEEL_RENDER_TOKEN_SPECS contains only the deliberately reviewed authoring
-  // subset. Ring geometry, collision, hit priorities, and algorithms are not
-  // present in that map and therefore remain internal.
-  if (renderer === "wheel") return true;
+  if (renderer === "ephemeris") return true;
+  if (renderer === "wheel") {
+    const internal = new Set(styleModule.WHEEL_RENDER_INTERNAL_TOKEN_KEYS ?? []);
+    return !internal.has(key);
+  }
   return false;
 }
 
-function cssUnit(key) {
+function cssUnit(renderer, key, styleModule) {
+  if (
+    renderer === "wheel"
+    && Object.hasOwn(styleModule.WHEEL_RENDER_TOKEN_UNIT_OVERRIDES ?? {}, key)
+  ) {
+    return styleModule.WHEEL_RENDER_TOKEN_UNIT_OVERRIDES[key];
+  }
   if (key === "innerFramePixelAdjustment") return "px";
   if (/Pattern$/.test(key)) return "";
   if (/HueRotate/.test(key)) return "deg";
@@ -240,10 +248,13 @@ function astrocartBounds(styleModule, key, fallback) {
   const inferred = numericBounds("astrocart", key, fallback);
   let field = key.startsWith("map")
     ? key.slice(3, 4).toLowerCase() + key.slice(4)
-    : key;
+    : key.startsWith("chrome")
+      ? key.slice(6, 7).toLowerCase() + key.slice(7)
+      : key;
   if (field === "paranLineOpacity") field = "paranOpacity";
 
-  let exact = styleModule.ASTROCART_RENDERER_NUMBER_BOUNDS?.[field];
+  let exact = styleModule.ASTROCART_RENDERER_NUMBER_BOUNDS?.[field]
+    ?? styleModule.ASTROCART_CHROME_NUMBER_BOUNDS?.[field];
   if (!exact && field.endsWith("LineWidthScale")) {
     exact = styleModule.ASTROCART_POINT_LINE_WIDTH_SCALE_BOUNDS;
   }
@@ -271,9 +282,9 @@ function rendererBounds(styleModule, renderer, key, fallback) {
   return undefined;
 }
 
-function formatCssValue(key, value) {
+function formatCssValue(renderer, key, value, styleModule) {
   if (typeof value === "string") return value;
-  return `${String(value)}${cssUnit(key)}`;
+  return `${String(value)}${cssUnit(renderer, key, styleModule)}`;
 }
 
 async function loadStyleModule(path) {
@@ -299,7 +310,7 @@ const rendererTokens = new Map();
 const sourceFiles = readdirSync(chartRoot)
   .filter((name) => (
     name.endsWith("-render-style.ts") || name === "astrocart-style.ts"
-  ) && name !== "ephemeris-render-style.ts")
+  ))
   .sort();
 
 for (const file of sourceFiles) {
@@ -318,10 +329,13 @@ for (const file of sourceFiles) {
       const match = /^--aries-([a-z0-9]+)-/.exec(cssVar);
       if (!match || existingCssVars.has(cssVar)) continue;
       const renderer = match[1];
-      declarations.push({ cssVar, value: formatCssValue(key, fallback) });
+      declarations.push({
+        cssVar,
+        value: formatCssValue(renderer, key, fallback, styleModule),
+      });
       if (!rendererTokens.has(renderer)) rendererTokens.set(renderer, []);
       rendererTokens.get(renderer).push(cssVar);
-      if (palette || font || isPublicMetric(renderer, key)) {
+      if (palette || font || isPublicMetric(renderer, key, styleModule)) {
         const bounds = !palette && !font
           ? rendererBounds(styleModule, renderer, key, fallback)
           : undefined;

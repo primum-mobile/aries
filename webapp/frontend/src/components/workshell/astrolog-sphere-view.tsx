@@ -6,6 +6,10 @@
 import * as React from "react";
 
 import { CanvasDraw } from "@/lib/chart/canvas-draw";
+import {
+  registerChartExportRenderer,
+  renderCanvasChartExport,
+} from "@/lib/chart/chart-export-registry";
 import { morinusTextFontFromTokens } from "@/lib/chart/chart-fonts";
 import { awaitFonts } from "@/lib/chart/draw-chart";
 import {
@@ -51,6 +55,9 @@ type ProjectedPoint = {
 
 type Quaternion = [number, number, number, number];
 type Vec3 = [number, number, number];
+type SphereProfileOverrides = Readonly<Record<string, string>>;
+
+const EMPTY_SPHERE_PROFILE_OVERRIDES: SphereProfileOverrides = Object.freeze({});
 
 const DEFAULT_LAYERS: Layers = {
   houses: true,
@@ -164,9 +171,24 @@ function clipToSphere(draw: CanvasDraw, layout: Layout) {
   draw.ctx.clip();
 }
 
-function wireColor(style: SphereRenderStyle, line: AstrologSpherePolyline): string {
-  if (line.kind === "bound" || line.kind === "decan") return style.palette.faintWire;
-  return style.palette.wire;
+function semanticSphereColor(
+  profileOverrides: SphereProfileOverrides,
+  role: string | null | undefined,
+  fallback: string,
+): string {
+  return (role ? profileOverrides[role]?.trim() : "") || fallback;
+}
+
+function wireColor(
+  style: SphereRenderStyle,
+  line: AstrologSpherePolyline,
+  profileOverrides: SphereProfileOverrides,
+): string {
+  const fallback = line.color
+    || (line.kind === "bound" || line.kind === "decan"
+      ? style.palette.faintWire
+      : style.palette.wire);
+  return semanticSphereColor(profileOverrides, line.colorRole, fallback);
 }
 
 function strokePolyline(
@@ -175,6 +197,7 @@ function strokePolyline(
   line: AstrologSpherePolyline,
   view: SphereView,
   style: SphereRenderStyle,
+  profileOverrides: SphereProfileOverrides,
   opts: { backVisible: boolean; opacity: Readonly<{ front: number; back: number }> },
 ) {
   const pts = line.points;
@@ -191,7 +214,7 @@ function strokePolyline(
     const opacity = front ? opts.opacity.front : opts.opacity.back;
     ctx.save();
     ctx.globalAlpha = opacity;
-    ctx.strokeStyle = wireColor(style, line);
+    ctx.strokeStyle = wireColor(style, line, profileOverrides);
     ctx.lineWidth = width;
     ctx.lineCap = style.strokes.lineCap;
     ctx.lineJoin = style.strokes.lineJoin;
@@ -257,6 +280,7 @@ function drawBodies(
   view: SphereView,
   backVisible: boolean,
   style: SphereRenderStyle,
+  profileOverrides: SphereProfileOverrides,
 ) {
   const bodySize = resolveSphereFontSize(style.typography.body, layout.r);
   const dotR = resolveSphereDotRadius(style, layout.r);
@@ -264,9 +288,14 @@ function drawBodies(
     const [x, y, projected] = mapPoint(layout, body.point, view);
     if (!projected.front && !backVisible) continue;
     const opacity = projected.front ? style.opacities.body.front : style.opacities.body.back;
-    draw.circle([x, y], dotR, { fill: style.palette.wire, opacity });
+    const color = semanticSphereColor(
+      profileOverrides,
+      body.colorRole,
+      body.color || style.palette.wire,
+    );
+    draw.circle([x, y], dotR, { fill: color, opacity });
     if (projected.front) {
-      drawCenteredGlyph(draw, layout, body, view, style, bodySize, style.palette.wire, opacity);
+      drawCenteredGlyph(draw, layout, body, view, style, bodySize, color, opacity);
     }
   }
 }
@@ -278,6 +307,7 @@ function drawLabels(
   layers: Layers,
   view: SphereView,
   style: SphereRenderStyle,
+  profileOverrides: SphereProfileOverrides,
 ) {
   const signSize = resolveSphereFontSize(style.typography.sign, layout.r);
   const houseSize = resolveSphereFontSize(style.typography.house, layout.r);
@@ -287,18 +317,33 @@ function drawLabels(
   for (const label of geo.signLabels) {
     const projected = transformPoint(label.point, view);
     const opacity = projected.front ? style.opacities.signLabel.front : style.opacities.signLabel.back;
-    drawCenteredGlyph(draw, layout, label, view, style, signSize, style.palette.wire, opacity);
+    const color = semanticSphereColor(
+      profileOverrides,
+      label.colorRole,
+      label.color || style.palette.wire,
+    );
+    drawCenteredGlyph(draw, layout, label, view, style, signSize, color, opacity);
   }
   if (layers.houses) {
     for (const label of geo.houseLabels) {
       const projected = transformPoint(label.point, view);
       const opacity = projected.front ? style.opacities.houseLabel.front : style.opacities.houseLabel.back;
-      drawCenteredText(draw, layout, label, view, style, houseSize, style.palette.wire, opacity);
+      const color = semanticSphereColor(
+        profileOverrides,
+        label.colorRole,
+        label.color || style.palette.wire,
+      );
+      drawCenteredText(draw, layout, label, view, style, houseSize, color, opacity);
     }
   }
   if (layers.decans) {
     for (const label of geo.decanLabels) {
       if (transformPoint(label.point, view).front) {
+        const color = semanticSphereColor(
+          profileOverrides,
+          label.colorRole,
+          label.color || style.palette.wire,
+        );
         drawCenteredGlyph(
           draw,
           layout,
@@ -306,7 +351,7 @@ function drawLabels(
           view,
           style,
           decanSize,
-          style.palette.wire,
+          color,
           style.opacities.decanLabel,
         );
       }
@@ -315,6 +360,11 @@ function drawLabels(
   if (layers.bounds) {
     for (const label of geo.boundLabels) {
       if (transformPoint(label.point, view).front) {
+        const color = semanticSphereColor(
+          profileOverrides,
+          label.colorRole,
+          label.color || style.palette.wire,
+        );
         drawCenteredGlyph(
           draw,
           layout,
@@ -322,7 +372,7 @@ function drawLabels(
           view,
           style,
           boundSize,
-          style.palette.wire,
+          color,
           style.opacities.boundLabel,
         );
       }
@@ -338,6 +388,7 @@ function render(
   cssH: number,
   style: SphereRenderStyle,
   view: SphereView,
+  profileOverrides: SphereProfileOverrides,
 ) {
   const draw = new CanvasDraw(canvas);
   draw.setDefaultFont(style.typography.fontUi);
@@ -356,20 +407,20 @@ function render(
   clipToSphere(draw, layout);
   for (const line of geo.reference) {
     const isTick = line.kind === "horizonTick" || line.kind === "primeTick" || line.kind === "eclipticTick";
-    strokePolyline(draw, layout, line, view, style, {
+    strokePolyline(draw, layout, line, view, style, profileOverrides, {
       backVisible: layers.back,
       opacity: isTick ? style.opacities.referenceTick : style.opacities.reference,
     });
   }
   for (const line of geo.signBoundaries) {
-    strokePolyline(draw, layout, line, view, style, {
+    strokePolyline(draw, layout, line, view, style, profileOverrides, {
       backVisible: layers.back,
       opacity: style.opacities.signBoundary,
     });
   }
   if (layers.decans) {
     for (const line of geo.decanBoundaries) {
-      strokePolyline(draw, layout, line, view, style, {
+      strokePolyline(draw, layout, line, view, style, profileOverrides, {
         backVisible: layers.back,
         opacity: style.opacities.decanBoundary,
       });
@@ -377,7 +428,7 @@ function render(
   }
   if (layers.houses) {
     for (const line of geo.houses) {
-      strokePolyline(draw, layout, line, view, style, {
+      strokePolyline(draw, layout, line, view, style, profileOverrides, {
         backVisible: layers.back,
         opacity: style.opacities.houseBoundary,
       });
@@ -385,7 +436,7 @@ function render(
   }
   if (layers.bounds) {
     for (const line of geo.boundTicks) {
-      strokePolyline(draw, layout, line, view, style, {
+      strokePolyline(draw, layout, line, view, style, profileOverrides, {
         backVisible: layers.back,
         opacity: style.opacities.boundTick,
       });
@@ -393,8 +444,10 @@ function render(
   }
   draw.ctx.restore();
 
-  drawLabels(draw, layout, geo, layers, view, style);
-  if (layers.bodies) drawBodies(draw, layout, geo, view, layers.back, style);
+  drawLabels(draw, layout, geo, layers, view, style, profileOverrides);
+  if (layers.bodies) {
+    drawBodies(draw, layout, geo, view, layers.back, style, profileOverrides);
+  }
   draw.circle([layout.cx, layout.cy], resolveSphereDotRadius(style, layout.r), {
     fill: style.palette.wire,
   });
@@ -433,17 +486,22 @@ export function AstrologSphereView({
       : 0;
   });
   const chartTextFont = morinusTextFontFromTokens(theme?.appTokens);
-  const fontsReady = fontsReadyFor === chartTextFont;
+  const chartSymbolFont =
+    theme?.appTokens?.["--aries-font-symbols"]?.trim() || '"AriesMorinus"';
+  const chartFontKey = `${chartTextFont}\u0000${chartSymbolFont}`;
+  const fontsReady = fontsReadyFor === chartFontKey;
+  const chartProfileOverrides =
+    theme?.chartPalette ?? EMPTY_SPHERE_PROFILE_OVERRIDES;
 
   React.useEffect(() => {
     let cancelled = false;
-    void awaitFonts(chartTextFont).then(() => {
-      if (!cancelled) setFontsReadyFor(chartTextFont);
+    void awaitFonts(chartTextFont, chartSymbolFont).then(() => {
+      if (!cancelled) setFontsReadyFor(chartFontKey);
     });
     return () => {
       cancelled = true;
     };
-  }, [chartTextFont]);
+  }, [chartFontKey, chartSymbolFont, chartTextFont]);
 
   React.useEffect(() => {
     const controller = new AbortController();
@@ -476,14 +534,42 @@ export function AstrologSphereView({
       const renderStyle = resolveSphereRenderStyle(wrap, {
         revision: styleRevision,
         fontUi: chartTextFont,
+        fontSymbols: chartSymbolFont,
       });
-      render(canvas, geo, layers, rect.width, rect.height, renderStyle, view);
+      render(
+        canvas,
+        geo,
+        layers,
+        rect.width,
+        rect.height,
+        renderStyle,
+        view,
+        chartProfileOverrides,
+      );
     };
     paint();
     const ro = new ResizeObserver(paint);
     ro.observe(wrap);
     return () => ro.disconnect();
-  }, [chartTextFont, fontsReady, geo, layers, view, styleRevision]);
+  }, [
+    chartProfileOverrides,
+    chartSymbolFont,
+    chartTextFont,
+    fontsReady,
+    geo,
+    layers,
+    view,
+    styleRevision,
+  ]);
+
+  React.useEffect(() => {
+    if (!documentId || !geo || !canvasRef.current) return;
+    return registerChartExportRenderer(documentId, (request) => {
+      const canvas = canvasRef.current;
+      if (!canvas) throw new Error("visible sphere renderer unavailable");
+      return renderCanvasChartExport(canvas, request);
+    });
+  }, [documentId, geo]);
 
   const toggle = React.useCallback((key: keyof Layers) => {
     setLayers((current) => ({ ...current, [key]: !current[key] }));

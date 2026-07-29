@@ -49,6 +49,11 @@ export type AuthoringNumericPreset =
   | "labelSize"
   | "strokeWidth"
   | "dashLength"
+  | "patternCell"
+  | "patternDot"
+  | "patternDensity"
+  | "patternAngle"
+  | "patternSeed"
   | "radius"
   | "offset"
   | "opacity"
@@ -124,6 +129,31 @@ export const AUTHORING_NUMERIC_PROPERTIES: Readonly<
     softBounds: { min: 0, max: 24 }, hardBounds: { min: 0, max: 96 },
     projection: "chart-px",
   }),
+  patternCell: createNumericProperty({
+    editorUnit: "px", step: 0.5, fineStep: 0.1, largeStep: 2, precision: 1,
+    softBounds: { min: 1, max: 16 }, hardBounds: { min: 0.5, max: 48 },
+    projection: "chart-px",
+  }),
+  patternDot: createNumericProperty({
+    editorUnit: "px", step: 0.25, fineStep: 0.05, largeStep: 1, precision: 2,
+    softBounds: { min: 0.25, max: 4 }, hardBounds: { min: 0.25, max: 24 },
+    projection: "chart-px",
+  }),
+  patternDensity: createNumericProperty({
+    editorUnit: "%", step: 1, fineStep: 0.1, largeStep: 10, precision: 1,
+    softBounds: { min: 0, max: 100 }, hardBounds: { min: 0, max: 100 },
+    projection: "identity",
+  }),
+  patternAngle: createNumericProperty({
+    editorUnit: "deg", step: 1, fineStep: 0.1, largeStep: 15, precision: 1,
+    softBounds: { min: -180, max: 180 }, hardBounds: { min: -180, max: 180 },
+    projection: "identity",
+  }),
+  patternSeed: createNumericProperty({
+    editorUnit: "", step: 1, fineStep: 1, largeStep: 100, precision: 0,
+    softBounds: { min: 0, max: 65535 }, hardBounds: { min: 0, max: 65535 },
+    projection: "identity",
+  }),
   radius: createNumericProperty({
     editorUnit: "px", step: 1, fineStep: 0.1, largeStep: 10, precision: 1,
     softBounds: { min: 0, max: 400 }, hardBounds: { min: 0, max: 400 },
@@ -178,6 +208,25 @@ export type ChartStyleColor = Readonly<{
   alpha?: number;
 }>;
 export type ChartStyleStrokeStyle = "solid" | "dashed" | "dotted";
+export type ChartStyleFillPattern =
+  | "none"
+  | "solid"
+  | "stipple"
+  | "bayer2"
+  | "bayer4"
+  | "bayer8"
+  | "noise"
+  | "blueNoise"
+  | "paper"
+  | "newsprint"
+  | "hatch"
+  | "crosshatch"
+  | "scanline"
+  | "atkinson"
+  | "floydSteinberg";
+export type ChartStyleGradientType = "none" | "linear" | "radial";
+export type ChartStyleDirectionSource = "fixed" | "sun";
+export type ChartStyleTextureMask = "none" | "crescent";
 export type ChartStyleLineCap = "butt" | "round" | "square";
 export type ChartStyleLineJoin = "bevel" | "round" | "miter";
 
@@ -199,6 +248,24 @@ export type ChartStyleClassProperties = Readonly<{
   strokeStyle?: ChartStyleStrokeStyle;
   dashLength?: ChartStyleDimension;
   dashGap?: ChartStyleDimension;
+  fillPattern?: ChartStyleFillPattern;
+  shadowPattern?: ChartStyleFillPattern;
+  cellSize?: ChartStyleDimension;
+  dotSize?: ChartStyleDimension;
+  backgroundColor?: ChartStyleColor;
+  patternColor?: ChartStyleColor;
+  gradientType?: ChartStyleGradientType;
+  gradientDirection?: ChartStyleDirectionSource;
+  gradientStartColor?: ChartStyleColor;
+  gradientEndColor?: ChartStyleColor;
+  gradientAngle?: number;
+  textureMask?: ChartStyleTextureMask;
+  maskDirection?: ChartStyleDirectionSource;
+  maskAngle?: number;
+  maskAmount?: number;
+  density?: number;
+  angle?: number;
+  seed?: number;
   lineCap?: ChartStyleLineCap;
   lineJoin?: ChartStyleLineJoin;
   fontRef?: ChartStyleFontRef;
@@ -207,6 +274,7 @@ export type ChartStyleClassProperties = Readonly<{
   color?: ChartStyleColor;
   opacity?: number;
   blur?: ChartStyleDimension;
+  shadowColor?: ChartStyleColor;
   shadowX?: ChartStyleDimension;
   shadowY?: ChartStyleDimension;
   shadowBlur?: ChartStyleDimension;

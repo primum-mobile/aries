@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Max Lange
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-export const ASTROCART_STYLE_SCHEMA_VERSION = 8 as const;
+export const ASTROCART_STYLE_SCHEMA_VERSION = 10 as const;
 export const ASTROCART_TITLEBAR_SAFE_TOP = 34;
 export const ASTROCART_TITLEBAR_SAFE_TOP_BOUNDS = Object.freeze([0, 256] as const);
 export const ASTROCART_POINT_LINE_WIDTH_SCALE_BOUNDS = Object.freeze([0.25, 3] as const);
@@ -38,6 +38,16 @@ export type AstrocartChromeStyle = Readonly<{
   menuShadow: string;
   menuHoverBg: string;
   menuHoverFg: string;
+  fontUi: string;
+  fontSymbols: string;
+  controlSize: number;
+  panelRadius: number;
+  fontSize: number;
+  smallFontSize: number;
+  inset: number;
+  gap: number;
+  paddingX: number;
+  paddingY: number;
 }>;
 
 /** Complete, versioned MapLibre presentation seam. Interaction, collision,
@@ -91,8 +101,6 @@ export type AstrocartRendererStyle = Readonly<{
   streetNameHalo: string;
   buildingColor: string;
   buildingOutlineColor: string;
-  terrainShadowColor: string;
-  terrainHighlightColor: string;
   parkColor: string;
   parkOutlineColor: string;
   residentialColor: string;
@@ -108,6 +116,19 @@ export type AstrocartRendererStyle = Readonly<{
   paranOpacity: number;
   paranDashOn: number;
   paranDashOff: number;
+  localSpaceOppositionWidthScale: number;
+  localSpaceOppositionOpacityScale: number;
+  localSpaceOppositionDashOnScale: number;
+  localSpaceOppositionDashOffScale: number;
+  aspectLineWidthScale: number;
+  aspectLineOpacityScale: number;
+  aspectLineDashOn: number;
+  aspectLineDashOff: number;
+  zenithRadiusMin: number;
+  zenithRadiusWidthScale: number;
+  zenithStrokeWidthMin: number;
+  transitLayerOpacity: number;
+  progressionLayerOpacity: number;
   labelSize: number;
   labelSpacing: number;
   labelHaloWidth: number;
@@ -126,8 +147,6 @@ export type AstrocartRendererStyle = Readonly<{
   localRegionBorderWidth: number;
   localRegionBorderOpacity: number;
   buildingOpacityScale: number;
-  terrainExaggeration: number;
-  hillshadeExaggeration: number;
   residentialOpacityScale: number;
   parkFillOpacityScale: number;
   parkOutlineOpacityScale: number;
@@ -214,14 +233,12 @@ export type AstrocartStyle = Readonly<{
   renderer: AstrocartRendererStyle;
   points: Readonly<Record<string, AstrocartPointStyle>>;
   behavior: Readonly<{
-    localSpaceAdditive: boolean;
     showEcliptic: boolean;
     showEquator: boolean;
     showAscCircle: boolean;
     showMcCircle: boolean;
     showHouseLines: boolean;
     showZodiacLines: boolean;
-    terrainRelief: boolean;
   }>;
 }>;
 
@@ -245,6 +262,19 @@ export const ASTROCART_CHROME_STRING_FIELDS = Object.freeze([
   "menuShadow",
   "menuHoverBg",
   "menuHoverFg",
+  "fontUi",
+  "fontSymbols",
+] as const satisfies readonly (keyof AstrocartChromeStyle)[]);
+
+export const ASTROCART_CHROME_NUMBER_FIELDS = Object.freeze([
+  "controlSize",
+  "panelRadius",
+  "fontSize",
+  "smallFontSize",
+  "inset",
+  "gap",
+  "paddingX",
+  "paddingY",
 ] as const satisfies readonly (keyof AstrocartChromeStyle)[]);
 
 export const ASTROCART_RENDERER_STRING_FIELDS = Object.freeze([
@@ -290,8 +320,6 @@ export const ASTROCART_RENDERER_STRING_FIELDS = Object.freeze([
   "streetNameHalo",
   "buildingColor",
   "buildingOutlineColor",
-  "terrainShadowColor",
-  "terrainHighlightColor",
   "parkColor",
   "parkOutlineColor",
   "residentialColor",
@@ -314,6 +342,19 @@ export const ASTROCART_RENDERER_NUMBER_FIELDS = Object.freeze([
   "paranOpacity",
   "paranDashOn",
   "paranDashOff",
+  "localSpaceOppositionWidthScale",
+  "localSpaceOppositionOpacityScale",
+  "localSpaceOppositionDashOnScale",
+  "localSpaceOppositionDashOffScale",
+  "aspectLineWidthScale",
+  "aspectLineOpacityScale",
+  "aspectLineDashOn",
+  "aspectLineDashOff",
+  "zenithRadiusMin",
+  "zenithRadiusWidthScale",
+  "zenithStrokeWidthMin",
+  "transitLayerOpacity",
+  "progressionLayerOpacity",
   "labelSize",
   "labelSpacing",
   "labelHaloWidth",
@@ -328,8 +369,6 @@ export const ASTROCART_RENDERER_NUMBER_FIELDS = Object.freeze([
   "localRegionBorderWidth",
   "localRegionBorderOpacity",
   "buildingOpacityScale",
-  "terrainExaggeration",
-  "hillshadeExaggeration",
   "residentialOpacityScale",
   "parkFillOpacityScale",
   "parkOutlineOpacityScale",
@@ -408,6 +447,7 @@ export const ASTROCART_RENDERER_NUMBER_FIELDS = Object.freeze([
 ] as const satisfies readonly (keyof AstrocartRendererStyle)[]);
 
 type AstrocartRendererNumberField = (typeof ASTROCART_RENDERER_NUMBER_FIELDS)[number];
+type AstrocartChromeNumberField = (typeof ASTROCART_CHROME_NUMBER_FIELDS)[number];
 type AstrocartNumberBounds = readonly [minimum: number, maximum: number];
 
 function freezeNumberBounds<T extends Record<string, AstrocartNumberBounds>>(bounds: T): Readonly<T> {
@@ -434,6 +474,19 @@ export const ASTROCART_RENDERER_NUMBER_BOUNDS = freezeNumberBounds({
   paranOpacity: [0, 1],
   paranDashOn: [0.25, 8],
   paranDashOff: [0.25, 8],
+  localSpaceOppositionWidthScale: [0.25, 3],
+  localSpaceOppositionOpacityScale: [0, 1.5],
+  localSpaceOppositionDashOnScale: [0.25, 3],
+  localSpaceOppositionDashOffScale: [0.25, 3],
+  aspectLineWidthScale: [0.25, 3],
+  aspectLineOpacityScale: [0, 1.5],
+  aspectLineDashOn: [0.25, 12],
+  aspectLineDashOff: [0.25, 12],
+  zenithRadiusMin: [0.5, 12],
+  zenithRadiusWidthScale: [0.25, 6],
+  zenithStrokeWidthMin: [0, 6],
+  transitLayerOpacity: [0, 1],
+  progressionLayerOpacity: [0, 1],
   labelSize: [4.4, 22],
   labelSpacing: [0, 16],
   labelHaloWidth: [0.25, 8],
@@ -448,8 +501,6 @@ export const ASTROCART_RENDERER_NUMBER_BOUNDS = freezeNumberBounds({
   localRegionBorderWidth: [0.1, 3],
   localRegionBorderOpacity: [0, 1],
   buildingOpacityScale: [0, 2],
-  terrainExaggeration: [0, 3],
-  hillshadeExaggeration: [0, 1],
   residentialOpacityScale: [0, 2],
   parkFillOpacityScale: [0, 2],
   parkOutlineOpacityScale: [0, 2],
@@ -527,6 +578,17 @@ export const ASTROCART_RENDERER_NUMBER_BOUNDS = freezeNumberBounds({
   referencePoleLabelHaloWidth: [0, 4],
 } satisfies Record<AstrocartRendererNumberField, AstrocartNumberBounds>);
 
+export const ASTROCART_CHROME_NUMBER_BOUNDS = freezeNumberBounds({
+  controlSize: [18, 56],
+  panelRadius: [0, 24],
+  fontSize: [7, 24],
+  smallFontSize: [6, 20],
+  inset: [0, 48],
+  gap: [0, 24],
+  paddingX: [0, 32],
+  paddingY: [0, 24],
+} satisfies Record<AstrocartChromeNumberField, AstrocartNumberBounds>);
+
 export const ASTROCART_RENDERER_BOOLEAN_FIELDS = Object.freeze([
   "countryLabelsOn",
   "cityLabelsOn",
@@ -589,12 +651,6 @@ export const ASTROCART_RENDER_PALETTE_SPECS = freezeProfileSpecs({
   mapRoadColor: ["--aries-astrocart-map-road-color", "#454d57"],
   mapStreetNameColor: ["--aries-astrocart-map-street-name-color", "rgba(230,235,240,0.42)"],
   mapStreetNameHalo: ["--aries-astrocart-map-street-name-halo", "rgba(10,12,16,0.22)"],
-  mapBuildingColor: ["--aries-astrocart-map-building-color", "rgba(10,12,16,0.44)"],
-  mapBuildingOutlineColor: ["--aries-astrocart-map-building-outline-color", "rgba(126,134,144,0.14)"],
-  mapTerrainShadowColor: ["--aries-astrocart-map-terrain-shadow-color", "#111820"],
-  mapTerrainHighlightColor: ["--aries-astrocart-map-terrain-highlight-color", "#697682"],
-  mapParkColor: ["--aries-astrocart-map-park-color", "rgba(74,92,78,0.14)"],
-  mapParkOutlineColor: ["--aries-astrocart-map-park-outline-color", "rgba(118,142,122,0.16)"],
   mapResidentialColor: ["--aries-astrocart-map-residential-color", "rgba(70,76,84,0.08)"],
   mapFallbackMcColor: ["--aries-astrocart-map-fallback-mc-color", "#e74c3c"],
   mapFallbackIcColor: ["--aries-astrocart-map-fallback-ic-color", "#8e44ad"],
@@ -629,6 +685,14 @@ export const ASTROCART_RENDER_PALETTE_SPECS = freezeProfileSpecs({
 });
 
 export const ASTROCART_RENDER_TOKEN_SPECS = freezeProfileSpecs({
+  chromeControlSize: ["--aries-astrocart-chrome-control-size", 28],
+  chromePanelRadius: ["--aries-astrocart-chrome-panel-radius", 6],
+  chromeFontSize: ["--aries-astrocart-chrome-font-size", 11],
+  chromeSmallFontSize: ["--aries-astrocart-chrome-small-font-size", 10],
+  chromeInset: ["--aries-astrocart-chrome-inset", 8],
+  chromeGap: ["--aries-astrocart-chrome-gap", 4],
+  chromePaddingX: ["--aries-astrocart-chrome-padding-x", 8],
+  chromePaddingY: ["--aries-astrocart-chrome-padding-y", 6],
   mapCountryLabelSize: ["--aries-astrocart-map-country-label-size", 12],
   mapCityLabelSize: ["--aries-astrocart-map-city-label-size", 10.5],
   mapMinorPlaceLabelSize: ["--aries-astrocart-map-minor-place-label-size", 9.4],
@@ -645,6 +709,19 @@ export const ASTROCART_RENDER_TOKEN_SPECS = freezeProfileSpecs({
   mapParanLineOpacity: ["--aries-astrocart-map-paran-line-opacity", 0.7],
   mapParanDashOn: ["--aries-astrocart-map-paran-dash-on", 1],
   mapParanDashOff: ["--aries-astrocart-map-paran-dash-off", 2],
+  mapLocalSpaceOppositionWidthScale: ["--aries-astrocart-map-local-space-opposition-width-scale", 0.9],
+  mapLocalSpaceOppositionOpacityScale: ["--aries-astrocart-map-local-space-opposition-opacity-scale", 0.88],
+  mapLocalSpaceOppositionDashOnScale: ["--aries-astrocart-map-local-space-opposition-dash-on-scale", 0.65],
+  mapLocalSpaceOppositionDashOffScale: ["--aries-astrocart-map-local-space-opposition-dash-off-scale", 1.25],
+  mapAspectLineWidthScale: ["--aries-astrocart-map-aspect-line-width-scale", 0.82],
+  mapAspectLineOpacityScale: ["--aries-astrocart-map-aspect-line-opacity-scale", 0.78],
+  mapAspectLineDashOn: ["--aries-astrocart-map-aspect-line-dash-on", 0.45],
+  mapAspectLineDashOff: ["--aries-astrocart-map-aspect-line-dash-off", 1.55],
+  mapZenithRadiusMin: ["--aries-astrocart-map-zenith-radius-min", 3],
+  mapZenithRadiusWidthScale: ["--aries-astrocart-map-zenith-radius-width-scale", 2],
+  mapZenithStrokeWidthMin: ["--aries-astrocart-map-zenith-stroke-width-min", 1],
+  mapTransitLayerOpacity: ["--aries-astrocart-map-transit-layer-opacity", 0.82],
+  mapProgressionLayerOpacity: ["--aries-astrocart-map-progression-layer-opacity", 0.68],
   mapLabelSize: ["--aries-astrocart-map-label-size", 11],
   mapLabelSpacing: ["--aries-astrocart-map-label-spacing", 0.04],
   mapLabelHaloWidth: ["--aries-astrocart-map-label-halo-width", 1],
@@ -658,12 +735,7 @@ export const ASTROCART_RENDER_TOKEN_SPECS = freezeProfileSpecs({
   mapLocalCountryBorderOpacity: ["--aries-astrocart-map-local-country-border-opacity", 0.62],
   mapLocalRegionBorderWidth: ["--aries-astrocart-map-local-region-border-width", 0.45],
   mapLocalRegionBorderOpacity: ["--aries-astrocart-map-local-region-border-opacity", 0.28],
-  mapBuildingOpacityScale: ["--aries-astrocart-map-building-opacity-scale", 1],
-  mapTerrainExaggeration: ["--aries-astrocart-map-terrain-exaggeration", 1],
-  mapHillshadeExaggeration: ["--aries-astrocart-map-hillshade-exaggeration", 0.35],
   mapResidentialOpacityScale: ["--aries-astrocart-map-residential-opacity-scale", 1],
-  mapParkFillOpacityScale: ["--aries-astrocart-map-park-fill-opacity-scale", 1],
-  mapParkOutlineOpacityScale: ["--aries-astrocart-map-park-outline-opacity-scale", 1],
   mapHospitalFillOpacityScale: ["--aries-astrocart-map-hospital-fill-opacity-scale", 1],
   mapRoadWidthScale: ["--aries-astrocart-map-road-width-scale", 1],
   mapRoadOpacityScale: ["--aries-astrocart-map-road-opacity-scale", 1],
@@ -808,6 +880,19 @@ function requireBoundedRendererNumbers(
   }
 }
 
+function requireBoundedChromeNumbers(
+  value: Record<string, unknown>,
+  label: string,
+): void {
+  for (const field of ASTROCART_CHROME_NUMBER_FIELDS) {
+    const item = value[field] as number;
+    const [minimum, maximum] = ASTROCART_CHROME_NUMBER_BOUNDS[field];
+    if (item < minimum || item > maximum) {
+      throw new Error(`${label}.${field} must be between ${minimum} and ${maximum}`);
+    }
+  }
+}
+
 /** Validate the daemon payload before it crosses the iframe message boundary. */
 export function parseAstrocartStyle(value: unknown): AstrocartStyle {
   const candidate = record(value, "AstrocartStyle");
@@ -828,6 +913,8 @@ export function parseAstrocartStyle(value: unknown): AstrocartStyle {
 
   const chrome = record(candidate.chrome, "AstrocartStyle.chrome");
   requireFields(chrome, ASTROCART_CHROME_STRING_FIELDS, "string", "AstrocartStyle.chrome");
+  requireFields(chrome, ASTROCART_CHROME_NUMBER_FIELDS, "number", "AstrocartStyle.chrome");
+  requireBoundedChromeNumbers(chrome, "AstrocartStyle.chrome");
   const titlebarSafeTop = chrome.titlebarSafeTop;
   if (typeof titlebarSafeTop !== "number" || !Number.isFinite(titlebarSafeTop)) {
     throw new Error("AstrocartStyle.chrome.titlebarSafeTop must be finite");
@@ -842,7 +929,11 @@ export function parseAstrocartStyle(value: unknown): AstrocartStyle {
   }
   requireExactFields(
     chrome,
-    [...ASTROCART_CHROME_STRING_FIELDS, "titlebarSafeTop"],
+    [
+      ...ASTROCART_CHROME_STRING_FIELDS,
+      ...ASTROCART_CHROME_NUMBER_FIELDS,
+      "titlebarSafeTop",
+    ],
     "AstrocartStyle.chrome",
   );
 
@@ -900,14 +991,12 @@ export function parseAstrocartStyle(value: unknown): AstrocartStyle {
   }
   const behavior = record(candidate.behavior, "AstrocartStyle.behavior");
   const behaviorFields = [
-    "localSpaceAdditive",
     "showEcliptic",
     "showEquator",
     "showAscCircle",
     "showMcCircle",
     "showHouseLines",
     "showZodiacLines",
-    "terrainRelief",
   ] as const;
   for (const field of behaviorFields) {
     if (typeof behavior[field] !== "boolean") {
@@ -925,14 +1014,12 @@ export function parseAstrocartStyle(value: unknown): AstrocartStyle {
     renderer: Object.freeze({ ...renderer }) as AstrocartRendererStyle,
     points: Object.freeze(points),
     behavior: Object.freeze({
-      localSpaceAdditive: behavior.localSpaceAdditive as boolean,
       showEcliptic: behavior.showEcliptic as boolean,
       showEquator: behavior.showEquator as boolean,
       showAscCircle: behavior.showAscCircle as boolean,
       showMcCircle: behavior.showMcCircle as boolean,
       showHouseLines: behavior.showHouseLines as boolean,
       showZodiacLines: behavior.showZodiacLines as boolean,
-      terrainRelief: behavior.terrainRelief as boolean,
     }),
   });
 }

@@ -3,6 +3,7 @@
   "generatedFrom": [
     "src/lib/chart/astrocart-style.ts",
     "src/lib/chart/astrolabe-render-style.ts",
+    "src/lib/chart/ephemeris-render-style.ts",
     "src/lib/chart/mundane-render-style.ts",
     "src/lib/chart/sphere-render-style.ts",
     "src/lib/chart/square-render-style.ts",
@@ -126,7 +127,11 @@
         "--aries-astrocart-chrome-button-active-bg",
         "--aries-astrocart-chrome-button-active-fg",
         "--aries-astrocart-chrome-button-hover-bg",
+        "--aries-astrocart-chrome-control-size",
         "--aries-astrocart-chrome-dim",
+        "--aries-astrocart-chrome-font-size",
+        "--aries-astrocart-chrome-gap",
+        "--aries-astrocart-chrome-inset",
         "--aries-astrocart-chrome-key-line",
         "--aries-astrocart-chrome-key-paran",
         "--aries-astrocart-chrome-menu-bg",
@@ -134,11 +139,19 @@
         "--aries-astrocart-chrome-menu-hover-bg",
         "--aries-astrocart-chrome-menu-hover-fg",
         "--aries-astrocart-chrome-menu-shadow",
+        "--aries-astrocart-chrome-padding-x",
+        "--aries-astrocart-chrome-padding-y",
         "--aries-astrocart-chrome-page-bg",
+        "--aries-astrocart-chrome-panel-radius",
         "--aries-astrocart-chrome-popup-bg",
         "--aries-astrocart-chrome-rule",
+        "--aries-astrocart-chrome-small-font-size",
         "--aries-astrocart-chrome-soft",
         "--aries-astrocart-chrome-text",
+        "--aries-astrocart-map-aspect-line-dash-off",
+        "--aries-astrocart-map-aspect-line-dash-on",
+        "--aries-astrocart-map-aspect-line-opacity-scale",
+        "--aries-astrocart-map-aspect-line-width-scale",
         "--aries-astrocart-map-asterism-highlight-color",
         "--aries-astrocart-map-asterism-label-halo-width",
         "--aries-astrocart-map-asterism-label-opacity",
@@ -154,9 +167,6 @@
         "--aries-astrocart-map-asterism-star-radius-max",
         "--aries-astrocart-map-asterism-star-radius-min",
         "--aries-astrocart-map-border-color",
-        "--aries-astrocart-map-building-color",
-        "--aries-astrocart-map-building-opacity-scale",
-        "--aries-astrocart-map-building-outline-color",
         "--aries-astrocart-map-casing",
         "--aries-astrocart-map-casing-opacity",
         "--aries-astrocart-map-casing-width",
@@ -209,7 +219,6 @@
         "--aries-astrocart-map-fallback-ic-color",
         "--aries-astrocart-map-fallback-mc-color",
         "--aries-astrocart-map-fallback-unknown-color",
-        "--aries-astrocart-map-hillshade-exaggeration",
         "--aries-astrocart-map-hospital-fill-color",
         "--aries-astrocart-map-hospital-fill-opacity-scale",
         "--aries-astrocart-map-hospital-icon-opacity",
@@ -233,6 +242,10 @@
         "--aries-astrocart-map-local-country-border-width",
         "--aries-astrocart-map-local-region-border-opacity",
         "--aries-astrocart-map-local-region-border-width",
+        "--aries-astrocart-map-local-space-opposition-dash-off-scale",
+        "--aries-astrocart-map-local-space-opposition-dash-on-scale",
+        "--aries-astrocart-map-local-space-opposition-opacity-scale",
+        "--aries-astrocart-map-local-space-opposition-width-scale",
         "--aries-astrocart-map-mars-line-color",
         "--aries-astrocart-map-mars-line-opacity",
         "--aries-astrocart-map-mars-line-width-scale",
@@ -267,13 +280,10 @@
         "--aries-astrocart-map-paran-label-spacing",
         "--aries-astrocart-map-paran-line-opacity",
         "--aries-astrocart-map-paran-width",
-        "--aries-astrocart-map-park-color",
-        "--aries-astrocart-map-park-fill-opacity-scale",
-        "--aries-astrocart-map-park-outline-color",
-        "--aries-astrocart-map-park-outline-opacity-scale",
         "--aries-astrocart-map-pluto-line-color",
         "--aries-astrocart-map-pluto-line-opacity",
         "--aries-astrocart-map-pluto-line-width-scale",
+        "--aries-astrocart-map-progression-layer-opacity",
         "--aries-astrocart-map-reference-asc-color",
         "--aries-astrocart-map-reference-ecliptic-color",
         "--aries-astrocart-map-reference-equator-color",
@@ -314,9 +324,7 @@
         "--aries-astrocart-map-sun-line-color",
         "--aries-astrocart-map-sun-line-opacity",
         "--aries-astrocart-map-sun-line-width-scale",
-        "--aries-astrocart-map-terrain-exaggeration",
-        "--aries-astrocart-map-terrain-highlight-color",
-        "--aries-astrocart-map-terrain-shadow-color",
+        "--aries-astrocart-map-transit-layer-opacity",
         "--aries-astrocart-map-uranus-line-color",
         "--aries-astrocart-map-uranus-line-opacity",
         "--aries-astrocart-map-uranus-line-width-scale",
@@ -331,7 +339,10 @@
         "--aries-astrocart-map-water-label-spacing",
         "--aries-astrocart-map-water-line-label-opacity",
         "--aries-astrocart-map-water-line-opacity",
-        "--aries-astrocart-map-water-point-label-opacity"
+        "--aries-astrocart-map-water-point-label-opacity",
+        "--aries-astrocart-map-zenith-radius-min",
+        "--aries-astrocart-map-zenith-radius-width-scale",
+        "--aries-astrocart-map-zenith-stroke-width-min"
       ],
       "set": {
         "class": "public",
@@ -554,40 +565,31 @@
         "--aries-wheel-angle-pattern",
         "--aries-wheel-angle-position-degree-scale",
         "--aries-wheel-angle-position-minute-scale",
+        "--aries-wheel-angle-position-sign-scale",
         "--aries-wheel-angle-ray-color",
         "--aries-wheel-angle-width-scale",
         "--aries-wheel-anglo-angle-position-degree-scale",
         "--aries-wheel-anglo-angle-position-gap-scale",
         "--aries-wheel-anglo-angle-position-minute-scale",
         "--aries-wheel-anglo-angle-position-scale",
-        "--aries-wheel-anglo-angle-position-sign-scale",
-        "--aries-wheel-anglo-aspect-boundary-ring-radius",
+        "--aries-wheel-anglo-arrow-inset",
+        "--aries-wheel-anglo-arrow-maximum",
         "--aries-wheel-anglo-aspect-leader-inset-scale",
         "--aries-wheel-anglo-aspect-scale",
         "--aries-wheel-anglo-base-ring-color",
-        "--aries-wheel-anglo-base-ring-radius",
         "--aries-wheel-anglo-body-degree-scale",
         "--aries-wheel-anglo-body-leader-color",
         "--aries-wheel-anglo-body-minute-scale",
-        "--aries-wheel-anglo-body-sign-scale",
         "--aries-wheel-anglo-cusp-label-scale",
-        "--aries-wheel-anglo-cusp-outer-ring-radius",
         "--aries-wheel-anglo-house-boundary-ring-color",
-        "--aries-wheel-anglo-house-boundary-ring-radius",
         "--aries-wheel-anglo-house-label-color",
         "--aries-wheel-anglo-house-position-degree-scale",
         "--aries-wheel-anglo-house-position-gap-scale",
         "--aries-wheel-anglo-house-position-minute-scale",
-        "--aries-wheel-anglo-house-position-sign-scale",
         "--aries-wheel-anglo-house-scale",
-        "--aries-wheel-anglo-inner-boundary-ring-radius",
-        "--aries-wheel-anglo-inner-degree-ring-radius",
         "--aries-wheel-anglo-inner-scale",
         "--aries-wheel-anglo-leader-inset-scale",
-        "--aries-wheel-anglo-outer-degree-ring-radius",
-        "--aries-wheel-anglo-outer-house-ring-radius",
         "--aries-wheel-anglo-outer-leader-color",
-        "--aries-wheel-anglo-outer-maximum-ring-radius",
         "--aries-wheel-anglo-outer-scale",
         "--aries-wheel-anglo-planet-scale",
         "--aries-wheel-anglo-position-inset-scale",
@@ -598,10 +600,7 @@
         "--aries-wheel-anglo-structural-stroke",
         "--aries-wheel-anglo-subdivision-scale",
         "--aries-wheel-anglo-subdivision-sector",
-        "--aries-wheel-anglo-term-ring-radius",
         "--aries-wheel-anglo-zodiac-comparison-with-houses",
-        "--aries-wheel-anglo-zodiac-inner-ring-radius",
-        "--aries-wheel-anglo-zodiac-outer-ring-radius",
         "--aries-wheel-anglo-zodiac-single",
         "--aries-wheel-anglo-zodiac-with-outer",
         "--aries-wheel-asc-mc-stroke-base",
@@ -654,30 +653,22 @@
         "--aries-wheel-body-leader-width-scale",
         "--aries-wheel-body-position-degree-scale",
         "--aries-wheel-body-position-minute-scale",
+        "--aries-wheel-body-position-sign-scale",
         "--aries-wheel-body-scale",
         "--aries-wheel-chart-ring-stroke-fallback",
         "--aries-wheel-chart-ring-stroke-max",
         "--aries-wheel-chart-ring-stroke-min",
         "--aries-wheel-classic-arrow-length",
-        "--aries-wheel-classic-aspect-boundary-ring-radius",
-        "--aries-wheel-classic-base-ring-radius",
-        "--aries-wheel-classic-cusp-outer-ring-radius",
         "--aries-wheel-classic-decan-sector-length",
         "--aries-wheel-classic-degree-tick-length",
-        "--aries-wheel-classic-house-boundary-ring-radius",
         "--aries-wheel-classic-house-sector-length",
         "--aries-wheel-classic-inner-aspect-angle",
         "--aries-wheel-classic-inner-base",
-        "--aries-wheel-classic-inner-boundary-ring-radius",
-        "--aries-wheel-classic-inner-degree-ring-radius",
         "--aries-wheel-classic-inner-house-name",
         "--aries-wheel-classic-inner-position",
         "--aries-wheel-classic-inner-position-angle",
         "--aries-wheel-classic-inner-position-houses",
-        "--aries-wheel-classic-outer-degree-ring-radius",
-        "--aries-wheel-classic-outer-house-ring-radius",
         "--aries-wheel-classic-outer-line",
-        "--aries-wheel-classic-outer-maximum-ring-radius",
         "--aries-wheel-classic-outer-projected-label",
         "--aries-wheel-classic-outer-projected-line",
         "--aries-wheel-classic-outer-scale",
@@ -688,25 +679,13 @@
         "--aries-wheel-classic-sign-scale",
         "--aries-wheel-classic-sign-sector-length",
         "--aries-wheel-classic-subdivision-scale",
-        "--aries-wheel-classic-term-ring-radius",
         "--aries-wheel-classic-term-sector-length",
-        "--aries-wheel-classic-zodiac-inner-ring-radius",
-        "--aries-wheel-classic-zodiac-outer-ring-radius",
-        "--aries-wheel-compact-aspect-boundary-ring-radius",
         "--aries-wheel-compact-base",
-        "--aries-wheel-compact-base-ring-radius",
         "--aries-wheel-compact-comparison-position-lane-0",
         "--aries-wheel-compact-comparison-position-lane-1",
         "--aries-wheel-compact-comparison-position-lane-2",
-        "--aries-wheel-compact-cusp-outer-ring-radius",
-        "--aries-wheel-compact-house-boundary-ring-radius",
         "--aries-wheel-compact-house-name",
         "--aries-wheel-compact-house-sector",
-        "--aries-wheel-compact-inner-boundary-ring-radius",
-        "--aries-wheel-compact-inner-degree-ring-radius",
-        "--aries-wheel-compact-outer-degree-ring-radius",
-        "--aries-wheel-compact-outer-house-ring-radius",
-        "--aries-wheel-compact-outer-maximum-ring-radius",
         "--aries-wheel-compact-outer-scale",
         "--aries-wheel-compact-position-inset",
         "--aries-wheel-compact-position-minute-inset-comparison",
@@ -718,9 +697,6 @@
         "--aries-wheel-compact-single-position-lane-1",
         "--aries-wheel-compact-single-position-lane-2",
         "--aries-wheel-compact-subdivision-scale",
-        "--aries-wheel-compact-term-ring-radius",
-        "--aries-wheel-compact-zodiac-inner-ring-radius",
-        "--aries-wheel-compact-zodiac-outer-ring-radius",
         "--aries-wheel-cusp-outer-ring-color",
         "--aries-wheel-cusp-outer-ring-dash-off",
         "--aries-wheel-cusp-outer-ring-dash-on",
@@ -806,6 +782,7 @@
         "--aries-wheel-house-label-scale",
         "--aries-wheel-house-position-degree-scale",
         "--aries-wheel-house-position-minute-scale",
+        "--aries-wheel-house-position-sign-scale",
         "--aries-wheel-house-second-offset-scale",
         "--aries-wheel-inner-boundary-ring-color",
         "--aries-wheel-inner-boundary-ring-dash-off",
@@ -897,6 +874,7 @@
         "--aries-wheel-subdivision-opacity",
         "--aries-wheel-subdivision-pattern",
         "--aries-wheel-subdivision-width-scale",
+        "--aries-wheel-surveil-accent-color",
         "--aries-wheel-surveil-glyph-gap-min",
         "--aries-wheel-surveil-glyph-gap-scale",
         "--aries-wheel-surveil-glyph-size-min",
@@ -1048,6 +1026,28 @@
         "Review Astrocartography foreground/background contrast after changing this role."
       ]
     },
+    "--aries-astrocart-chrome-control-size": {
+      "semanticId": "renderer.astrocart.metric.chromeControlSize",
+      "label": "Astrocartography chrome control size",
+      "description": "Astrocartography chrome control size design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.chromeControlSize; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 18,
+        "max": 56,
+        "step": 0.5
+      }
+    },
     "--aries-astrocart-chrome-dim": {
       "semanticId": "renderer.astrocart.color.chromeDim",
       "label": "Astrocartography chrome dim",
@@ -1064,6 +1064,72 @@
       "safetyNotes": [
         "Review Astrocartography foreground/background contrast after changing this role."
       ]
+    },
+    "--aries-astrocart-chrome-font-size": {
+      "semanticId": "renderer.astrocart.metric.chromeFontSize",
+      "label": "Astrocartography chrome font size",
+      "description": "Astrocartography chrome font size design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.chromeFontSize; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 7,
+        "max": 24,
+        "step": 0.5
+      }
+    },
+    "--aries-astrocart-chrome-gap": {
+      "semanticId": "renderer.astrocart.metric.chromeGap",
+      "label": "Astrocartography chrome gap",
+      "description": "Astrocartography chrome gap design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.chromeGap; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 24,
+        "step": 1
+      }
+    },
+    "--aries-astrocart-chrome-inset": {
+      "semanticId": "renderer.astrocart.metric.chromeInset",
+      "label": "Astrocartography chrome inset",
+      "description": "Astrocartography chrome inset design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.chromeInset; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 48,
+        "step": 1
+      }
     },
     "--aries-astrocart-chrome-key-line": {
       "semanticId": "renderer.astrocart.color.chromeKeyLine",
@@ -1184,6 +1250,50 @@
         "Review Astrocartography foreground/background contrast after changing this role."
       ]
     },
+    "--aries-astrocart-chrome-padding-x": {
+      "semanticId": "renderer.astrocart.metric.chromePaddingX",
+      "label": "Astrocartography chrome padding x",
+      "description": "Astrocartography chrome padding x design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.chromePaddingX; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 32,
+        "step": 1
+      }
+    },
+    "--aries-astrocart-chrome-padding-y": {
+      "semanticId": "renderer.astrocart.metric.chromePaddingY",
+      "label": "Astrocartography chrome padding y",
+      "description": "Astrocartography chrome padding y design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.chromePaddingY; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 24,
+        "step": 1
+      }
+    },
     "--aries-astrocart-chrome-page-bg": {
       "semanticId": "renderer.astrocart.color.chromePageBg",
       "label": "Astrocartography chrome page bg",
@@ -1200,6 +1310,28 @@
       "safetyNotes": [
         "Review Astrocartography foreground/background contrast after changing this role."
       ]
+    },
+    "--aries-astrocart-chrome-panel-radius": {
+      "semanticId": "renderer.astrocart.metric.chromePanelRadius",
+      "label": "Astrocartography chrome panel radius",
+      "description": "Astrocartography chrome panel radius design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.chromePanelRadius; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 24,
+        "step": 0.5
+      }
     },
     "--aries-astrocart-chrome-popup-bg": {
       "semanticId": "renderer.astrocart.color.chromePopupBg",
@@ -1235,6 +1367,28 @@
         "Review Astrocartography foreground/background contrast after changing this role."
       ]
     },
+    "--aries-astrocart-chrome-small-font-size": {
+      "semanticId": "renderer.astrocart.metric.chromeSmallFontSize",
+      "label": "Astrocartography chrome small font size",
+      "description": "Astrocartography chrome small font size design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.chromeSmallFontSize; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 6,
+        "max": 20,
+        "step": 0.5
+      }
+    },
     "--aries-astrocart-chrome-soft": {
       "semanticId": "renderer.astrocart.color.chromeSoft",
       "label": "Astrocartography chrome soft",
@@ -1268,6 +1422,94 @@
       "safetyNotes": [
         "Review Astrocartography foreground/background contrast after changing this role."
       ]
+    },
+    "--aries-astrocart-map-aspect-line-dash-off": {
+      "semanticId": "renderer.astrocart.metric.mapAspectLineDashOff",
+      "label": "Astrocartography map aspect line dash off",
+      "description": "Astrocartography map aspect line dash off design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.mapAspectLineDashOff; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.25,
+        "max": 12,
+        "step": 0.25
+      }
+    },
+    "--aries-astrocart-map-aspect-line-dash-on": {
+      "semanticId": "renderer.astrocart.metric.mapAspectLineDashOn",
+      "label": "Astrocartography map aspect line dash on",
+      "description": "Astrocartography map aspect line dash on design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.mapAspectLineDashOn; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.25,
+        "max": 12,
+        "step": 0.25
+      }
+    },
+    "--aries-astrocart-map-aspect-line-opacity-scale": {
+      "semanticId": "renderer.astrocart.metric.mapAspectLineOpacityScale",
+      "label": "Astrocartography map aspect line opacity scale",
+      "description": "Astrocartography map aspect line opacity scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.mapAspectLineOpacityScale; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 1.5,
+        "step": 0.01
+      }
+    },
+    "--aries-astrocart-map-aspect-line-width-scale": {
+      "semanticId": "renderer.astrocart.metric.mapAspectLineWidthScale",
+      "label": "Astrocartography map aspect line width scale",
+      "description": "Astrocartography map aspect line width scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.mapAspectLineWidthScale; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.25,
+        "max": 3,
+        "step": 0.01
+      }
     },
     "--aries-astrocart-map-asterism-highlight-color": {
       "semanticId": "renderer.astrocart.color.mapAsterismHighlightColor",
@@ -1575,62 +1817,6 @@
       "scope": "chart",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrocart.color.mapBorderColor; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Review Astrocartography foreground/background contrast after changing this role."
-      ]
-    },
-    "--aries-astrocart-map-building-color": {
-      "semanticId": "renderer.astrocart.color.mapBuildingColor",
-      "label": "Astrocartography map building color",
-      "description": "Astrocartography map building color color resolved once for the complete renderer paint.",
-      "tier": "renderer-palette",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrocart.color.mapBuildingColor; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Review Astrocartography foreground/background contrast after changing this role."
-      ]
-    },
-    "--aries-astrocart-map-building-opacity-scale": {
-      "semanticId": "renderer.astrocart.metric.mapBuildingOpacityScale",
-      "label": "Astrocartography map building opacity scale",
-      "description": "Astrocartography map building opacity scale design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrocart.metric.mapBuildingOpacityScale; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 2,
-        "step": 0.01
-      }
-    },
-    "--aries-astrocart-map-building-outline-color": {
-      "semanticId": "renderer.astrocart.color.mapBuildingOutlineColor",
-      "label": "Astrocartography map building outline color",
-      "description": "Astrocartography map building outline color color resolved once for the complete renderer paint.",
-      "tier": "renderer-palette",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrocart.color.mapBuildingOutlineColor; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
       "affectedSurfaces": [
         "Astrocartography"
       ],
@@ -2709,28 +2895,6 @@
         "Review Astrocartography foreground/background contrast after changing this role."
       ]
     },
-    "--aries-astrocart-map-hillshade-exaggeration": {
-      "semanticId": "renderer.astrocart.metric.mapHillshadeExaggeration",
-      "label": "Astrocartography map hillshade exaggeration",
-      "description": "Astrocartography map hillshade exaggeration design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrocart.metric.mapHillshadeExaggeration; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.01
-      }
-    },
     "--aries-astrocart-map-hospital-fill-color": {
       "semanticId": "renderer.astrocart.color.mapHospitalFillColor",
       "label": "Astrocartography map hospital fill color",
@@ -3200,6 +3364,94 @@
         "min": 0.1,
         "max": 3,
         "step": 0.25
+      }
+    },
+    "--aries-astrocart-map-local-space-opposition-dash-off-scale": {
+      "semanticId": "renderer.astrocart.metric.mapLocalSpaceOppositionDashOffScale",
+      "label": "Astrocartography map local space opposition dash off scale",
+      "description": "Astrocartography map local space opposition dash off scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.mapLocalSpaceOppositionDashOffScale; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.25,
+        "max": 3,
+        "step": 0.01
+      }
+    },
+    "--aries-astrocart-map-local-space-opposition-dash-on-scale": {
+      "semanticId": "renderer.astrocart.metric.mapLocalSpaceOppositionDashOnScale",
+      "label": "Astrocartography map local space opposition dash on scale",
+      "description": "Astrocartography map local space opposition dash on scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.mapLocalSpaceOppositionDashOnScale; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.25,
+        "max": 3,
+        "step": 0.01
+      }
+    },
+    "--aries-astrocart-map-local-space-opposition-opacity-scale": {
+      "semanticId": "renderer.astrocart.metric.mapLocalSpaceOppositionOpacityScale",
+      "label": "Astrocartography map local space opposition opacity scale",
+      "description": "Astrocartography map local space opposition opacity scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.mapLocalSpaceOppositionOpacityScale; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 1.5,
+        "step": 0.01
+      }
+    },
+    "--aries-astrocart-map-local-space-opposition-width-scale": {
+      "semanticId": "renderer.astrocart.metric.mapLocalSpaceOppositionWidthScale",
+      "label": "Astrocartography map local space opposition width scale",
+      "description": "Astrocartography map local space opposition width scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.mapLocalSpaceOppositionWidthScale; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.25,
+        "max": 3,
+        "step": 0.01
       }
     },
     "--aries-astrocart-map-mars-line-color": {
@@ -3895,84 +4147,6 @@
         "step": 0.25
       }
     },
-    "--aries-astrocart-map-park-color": {
-      "semanticId": "renderer.astrocart.color.mapParkColor",
-      "label": "Astrocartography map park color",
-      "description": "Astrocartography map park color color resolved once for the complete renderer paint.",
-      "tier": "renderer-palette",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrocart.color.mapParkColor; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Review Astrocartography foreground/background contrast after changing this role."
-      ]
-    },
-    "--aries-astrocart-map-park-fill-opacity-scale": {
-      "semanticId": "renderer.astrocart.metric.mapParkFillOpacityScale",
-      "label": "Astrocartography map park fill opacity scale",
-      "description": "Astrocartography map park fill opacity scale design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrocart.metric.mapParkFillOpacityScale; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 2,
-        "step": 0.01
-      }
-    },
-    "--aries-astrocart-map-park-outline-color": {
-      "semanticId": "renderer.astrocart.color.mapParkOutlineColor",
-      "label": "Astrocartography map park outline color",
-      "description": "Astrocartography map park outline color color resolved once for the complete renderer paint.",
-      "tier": "renderer-palette",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrocart.color.mapParkOutlineColor; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Review Astrocartography foreground/background contrast after changing this role."
-      ]
-    },
-    "--aries-astrocart-map-park-outline-opacity-scale": {
-      "semanticId": "renderer.astrocart.metric.mapParkOutlineOpacityScale",
-      "label": "Astrocartography map park outline opacity scale",
-      "description": "Astrocartography map park outline opacity scale design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrocart.metric.mapParkOutlineOpacityScale; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 2,
-        "step": 0.01
-      }
-    },
     "--aries-astrocart-map-pluto-line-color": {
       "semanticId": "renderer.astrocart.color.mapPlutoLineColor",
       "label": "Astrocartography map pluto line color",
@@ -4031,6 +4205,28 @@
       "bounds": {
         "min": 0.25,
         "max": 3,
+        "step": 0.01
+      }
+    },
+    "--aries-astrocart-map-progression-layer-opacity": {
+      "semanticId": "renderer.astrocart.metric.mapProgressionLayerOpacity",
+      "label": "Astrocartography map progression layer opacity",
+      "description": "Astrocartography map progression layer opacity design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.mapProgressionLayerOpacity; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 1,
         "step": 0.01
       }
     },
@@ -4849,14 +5045,14 @@
         "step": 0.01
       }
     },
-    "--aries-astrocart-map-terrain-exaggeration": {
-      "semanticId": "renderer.astrocart.metric.mapTerrainExaggeration",
-      "label": "Astrocartography map terrain exaggeration",
-      "description": "Astrocartography map terrain exaggeration design metric shared by every dependent paint and geometry path.",
+    "--aries-astrocart-map-transit-layer-opacity": {
+      "semanticId": "renderer.astrocart.metric.mapTransitLayerOpacity",
+      "label": "Astrocartography map transit layer opacity",
+      "description": "Astrocartography map transit layer opacity design metric shared by every dependent paint and geometry path.",
       "tier": "renderer-metric",
       "scope": "chart",
       "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrocart.metric.mapTerrainExaggeration; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "editTarget": "daemon style profile renderer.astrocart.metric.mapTransitLayerOpacity; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
       "affectedSurfaces": [
         "Astrocartography"
       ],
@@ -4867,43 +5063,9 @@
       ],
       "bounds": {
         "min": 0,
-        "max": 3,
-        "step": 1
+        "max": 1,
+        "step": 0.01
       }
-    },
-    "--aries-astrocart-map-terrain-highlight-color": {
-      "semanticId": "renderer.astrocart.color.mapTerrainHighlightColor",
-      "label": "Astrocartography map terrain highlight color",
-      "description": "Astrocartography map terrain highlight color color resolved once for the complete renderer paint.",
-      "tier": "renderer-palette",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrocart.color.mapTerrainHighlightColor; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Review Astrocartography foreground/background contrast after changing this role."
-      ]
-    },
-    "--aries-astrocart-map-terrain-shadow-color": {
-      "semanticId": "renderer.astrocart.color.mapTerrainShadowColor",
-      "label": "Astrocartography map terrain shadow color",
-      "description": "Astrocartography map terrain shadow color color resolved once for the complete renderer paint.",
-      "tier": "renderer-palette",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrocart.color.mapTerrainShadowColor; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Review Astrocartography foreground/background contrast after changing this role."
-      ]
     },
     "--aries-astrocart-map-uranus-line-color": {
       "semanticId": "renderer.astrocart.color.mapUranusLineColor",
@@ -5213,6 +5375,72 @@
         "min": 0,
         "max": 1,
         "step": 0.01
+      }
+    },
+    "--aries-astrocart-map-zenith-radius-min": {
+      "semanticId": "renderer.astrocart.metric.mapZenithRadiusMin",
+      "label": "Astrocartography map zenith radius min",
+      "description": "Astrocartography map zenith radius min design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.mapZenithRadiusMin; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.5,
+        "max": 12,
+        "step": 0.5
+      }
+    },
+    "--aries-astrocart-map-zenith-radius-width-scale": {
+      "semanticId": "renderer.astrocart.metric.mapZenithRadiusWidthScale",
+      "label": "Astrocartography map zenith radius width scale",
+      "description": "Astrocartography map zenith radius width scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.mapZenithRadiusWidthScale; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.25,
+        "max": 6,
+        "step": 0.01
+      }
+    },
+    "--aries-astrocart-map-zenith-stroke-width-min": {
+      "semanticId": "renderer.astrocart.metric.mapZenithStrokeWidthMin",
+      "label": "Astrocartography map zenith stroke width min",
+      "description": "Astrocartography map zenith stroke width min design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.mapZenithStrokeWidthMin; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 6,
+        "step": 0.25
       }
     },
     "--aries-astrolabe-almucantar": {
@@ -8918,6 +9146,28 @@
         "step": 0.01
       }
     },
+    "--aries-wheel-angle-position-sign-scale": {
+      "semanticId": "renderer.wheel.metric.anglePositionSignScale",
+      "label": "Chart wheel angle position sign scale",
+      "description": "Chart wheel angle position sign scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.wheel.metric.anglePositionSignScale; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
+      "affectedSurfaces": [
+        "Chart wheel"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.13,
+        "max": 1.56,
+        "step": 0.01
+      }
+    },
     "--aries-wheel-angle-ray-color": {
       "semanticId": "renderer.wheel.color.angleRay",
       "label": "Chart wheel angle ray",
@@ -9045,14 +9295,14 @@
         "step": 0.001
       }
     },
-    "--aries-wheel-anglo-angle-position-sign-scale": {
-      "semanticId": "renderer.wheel.metric.angloAnglePositionSignScale",
-      "label": "Chart wheel anglo angle position sign scale",
-      "description": "Chart wheel anglo angle position sign scale design metric shared by every dependent paint and geometry path.",
+    "--aries-wheel-anglo-arrow-inset": {
+      "semanticId": "renderer.wheel.metric.angloArrowInset",
+      "label": "Chart wheel anglo arrow inset",
+      "description": "Chart wheel anglo arrow inset design metric shared by every dependent paint and geometry path.",
       "tier": "renderer-metric",
       "scope": "chart",
       "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloAnglePositionSignScale; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
+      "editTarget": "daemon style profile renderer.wheel.metric.angloArrowInset; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
         "Chart wheel"
       ],
@@ -9062,19 +9312,19 @@
         "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
       ],
       "bounds": {
-        "min": 0.13,
-        "max": 1.56,
-        "step": 0.01
+        "min": 0.005,
+        "max": 0.1,
+        "step": 0.001
       }
     },
-    "--aries-wheel-anglo-aspect-boundary-ring-radius": {
-      "semanticId": "renderer.wheel.metric.angloAspectBoundaryRingRadius",
-      "label": "Chart wheel anglo aspect boundary ring radius",
-      "description": "Chart wheel anglo aspect boundary ring radius design metric shared by every dependent paint and geometry path.",
+    "--aries-wheel-anglo-arrow-maximum": {
+      "semanticId": "renderer.wheel.metric.angloArrowMaximum",
+      "label": "Chart wheel anglo arrow maximum",
+      "description": "Chart wheel anglo arrow maximum design metric shared by every dependent paint and geometry path.",
       "tier": "renderer-metric",
       "scope": "chart",
       "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloAspectBoundaryRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
+      "editTarget": "daemon style profile renderer.wheel.metric.angloArrowMaximum; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
         "Chart wheel"
       ],
@@ -9084,7 +9334,7 @@
         "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
       ],
       "bounds": {
-        "min": 0,
+        "min": 0.9,
         "max": 1,
         "step": 0.001
       }
@@ -9150,28 +9400,6 @@
         "Review Chart wheel foreground/background contrast after changing this role."
       ]
     },
-    "--aries-wheel-anglo-base-ring-radius": {
-      "semanticId": "renderer.wheel.metric.angloBaseRingRadius",
-      "label": "Chart wheel anglo base ring radius",
-      "description": "Chart wheel anglo base ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloBaseRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
     "--aries-wheel-anglo-body-degree-scale": {
       "semanticId": "renderer.wheel.metric.angloBodyDegreeScale",
       "label": "Chart wheel anglo body degree scale",
@@ -9233,28 +9461,6 @@
         "step": 0.01
       }
     },
-    "--aries-wheel-anglo-body-sign-scale": {
-      "semanticId": "renderer.wheel.metric.angloBodySignScale",
-      "label": "Chart wheel anglo body sign scale",
-      "description": "Chart wheel anglo body sign scale design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloBodySignScale; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0.14,
-        "max": 1.69,
-        "step": 0.01
-      }
-    },
     "--aries-wheel-anglo-cusp-label-scale": {
       "semanticId": "renderer.wheel.metric.angloCuspLabelScale",
       "label": "Chart wheel anglo cusp label scale",
@@ -9277,28 +9483,6 @@
         "step": 0.001
       }
     },
-    "--aries-wheel-anglo-cusp-outer-ring-radius": {
-      "semanticId": "renderer.wheel.metric.angloCuspOuterRingRadius",
-      "label": "Chart wheel anglo cusp outer ring radius",
-      "description": "Chart wheel anglo cusp outer ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloCuspOuterRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
     "--aries-wheel-anglo-house-boundary-ring-color": {
       "semanticId": "renderer.wheel.color.angloHouseBoundaryRing",
       "label": "Chart wheel anglo house boundary ring",
@@ -9315,28 +9499,6 @@
       "safetyNotes": [
         "Review Chart wheel foreground/background contrast after changing this role."
       ]
-    },
-    "--aries-wheel-anglo-house-boundary-ring-radius": {
-      "semanticId": "renderer.wheel.metric.angloHouseBoundaryRingRadius",
-      "label": "Chart wheel anglo house boundary ring radius",
-      "description": "Chart wheel anglo house boundary ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloHouseBoundaryRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
     },
     "--aries-wheel-anglo-house-label-color": {
       "semanticId": "renderer.wheel.color.angloHouseLabel",
@@ -9421,28 +9583,6 @@
         "step": 0.01
       }
     },
-    "--aries-wheel-anglo-house-position-sign-scale": {
-      "semanticId": "renderer.wheel.metric.angloHousePositionSignScale",
-      "label": "Chart wheel anglo house position sign scale",
-      "description": "Chart wheel anglo house position sign scale design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloHousePositionSignScale; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0.13,
-        "max": 1.56,
-        "step": 0.01
-      }
-    },
     "--aries-wheel-anglo-house-scale": {
       "semanticId": "renderer.wheel.metric.angloHouseScale",
       "label": "Chart wheel anglo house scale",
@@ -9462,50 +9602,6 @@
       "bounds": {
         "min": 0.15,
         "max": 0.75,
-        "step": 0.001
-      }
-    },
-    "--aries-wheel-anglo-inner-boundary-ring-radius": {
-      "semanticId": "renderer.wheel.metric.angloInnerBoundaryRingRadius",
-      "label": "Chart wheel anglo inner boundary ring radius",
-      "description": "Chart wheel anglo inner boundary ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloInnerBoundaryRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    "--aries-wheel-anglo-inner-degree-ring-radius": {
-      "semanticId": "renderer.wheel.metric.angloInnerDegreeRingRadius",
-      "label": "Chart wheel anglo inner degree ring radius",
-      "description": "Chart wheel anglo inner degree ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloInnerDegreeRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
         "step": 0.001
       }
     },
@@ -9553,50 +9649,6 @@
         "step": 0.001
       }
     },
-    "--aries-wheel-anglo-outer-degree-ring-radius": {
-      "semanticId": "renderer.wheel.metric.angloOuterDegreeRingRadius",
-      "label": "Chart wheel anglo outer degree ring radius",
-      "description": "Chart wheel anglo outer degree ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloOuterDegreeRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    "--aries-wheel-anglo-outer-house-ring-radius": {
-      "semanticId": "renderer.wheel.metric.angloOuterHouseRingRadius",
-      "label": "Chart wheel anglo outer house ring radius",
-      "description": "Chart wheel anglo outer house ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloOuterHouseRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
     "--aries-wheel-anglo-outer-leader-color": {
       "semanticId": "renderer.wheel.color.angloOuterLeader",
       "label": "Chart wheel anglo outer leader",
@@ -9613,28 +9665,6 @@
       "safetyNotes": [
         "Review Chart wheel foreground/background contrast after changing this role."
       ]
-    },
-    "--aries-wheel-anglo-outer-maximum-ring-radius": {
-      "semanticId": "renderer.wheel.metric.angloOuterMaximumRingRadius",
-      "label": "Chart wheel anglo outer maximum ring radius",
-      "description": "Chart wheel anglo outer maximum ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloOuterMaximumRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
     },
     "--aries-wheel-anglo-outer-scale": {
       "semanticId": "renderer.wheel.metric.angloOuterScale",
@@ -9856,28 +9886,6 @@
         "step": 0.001
       }
     },
-    "--aries-wheel-anglo-term-ring-radius": {
-      "semanticId": "renderer.wheel.metric.angloTermRingRadius",
-      "label": "Chart wheel anglo term ring radius",
-      "description": "Chart wheel anglo term ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloTermRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
     "--aries-wheel-anglo-zodiac-comparison-with-houses": {
       "semanticId": "renderer.wheel.metric.angloZodiacComparisonWithHouses",
       "label": "Chart wheel anglo zodiac comparison with houses",
@@ -9897,50 +9905,6 @@
       "bounds": {
         "min": 0.55,
         "max": 0.95,
-        "step": 0.001
-      }
-    },
-    "--aries-wheel-anglo-zodiac-inner-ring-radius": {
-      "semanticId": "renderer.wheel.metric.angloZodiacInnerRingRadius",
-      "label": "Chart wheel anglo zodiac inner ring radius",
-      "description": "Chart wheel anglo zodiac inner ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloZodiacInnerRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    "--aries-wheel-anglo-zodiac-outer-ring-radius": {
-      "semanticId": "renderer.wheel.metric.angloZodiacOuterRingRadius",
-      "label": "Chart wheel anglo zodiac outer ring radius",
-      "description": "Chart wheel anglo zodiac outer ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloZodiacOuterRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
         "step": 0.001
       }
     },
@@ -11073,6 +11037,28 @@
         "step": 0.01
       }
     },
+    "--aries-wheel-body-position-sign-scale": {
+      "semanticId": "renderer.wheel.metric.bodyPositionSignScale",
+      "label": "Chart wheel body position sign scale",
+      "description": "Chart wheel body position sign scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.wheel.metric.bodyPositionSignScale; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
+      "affectedSurfaces": [
+        "Chart wheel"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.14,
+        "max": 1.69,
+        "step": 0.01
+      }
+    },
     "--aries-wheel-body-scale": {
       "semanticId": "renderer.wheel.metric.bodyScale",
       "label": "Chart wheel body scale",
@@ -11183,72 +11169,6 @@
         "step": 0.001
       }
     },
-    "--aries-wheel-classic-aspect-boundary-ring-radius": {
-      "semanticId": "renderer.wheel.metric.classicAspectBoundaryRingRadius",
-      "label": "Chart wheel classic aspect boundary ring radius",
-      "description": "Chart wheel classic aspect boundary ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.classicAspectBoundaryRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    "--aries-wheel-classic-base-ring-radius": {
-      "semanticId": "renderer.wheel.metric.classicBaseRingRadius",
-      "label": "Chart wheel classic base ring radius",
-      "description": "Chart wheel classic base ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.classicBaseRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    "--aries-wheel-classic-cusp-outer-ring-radius": {
-      "semanticId": "renderer.wheel.metric.classicCuspOuterRingRadius",
-      "label": "Chart wheel classic cusp outer ring radius",
-      "description": "Chart wheel classic cusp outer ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.classicCuspOuterRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
     "--aries-wheel-classic-decan-sector-length": {
       "semanticId": "renderer.wheel.metric.classicDecanSectorLength",
       "label": "Chart wheel classic decan sector length",
@@ -11290,28 +11210,6 @@
       "bounds": {
         "min": 0.002,
         "max": 0.03,
-        "step": 0.001
-      }
-    },
-    "--aries-wheel-classic-house-boundary-ring-radius": {
-      "semanticId": "renderer.wheel.metric.classicHouseBoundaryRingRadius",
-      "label": "Chart wheel classic house boundary ring radius",
-      "description": "Chart wheel classic house boundary ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.classicHouseBoundaryRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
         "step": 0.001
       }
     },
@@ -11378,50 +11276,6 @@
       "bounds": {
         "min": 0.03,
         "max": 0.3,
-        "step": 0.001
-      }
-    },
-    "--aries-wheel-classic-inner-boundary-ring-radius": {
-      "semanticId": "renderer.wheel.metric.classicInnerBoundaryRingRadius",
-      "label": "Chart wheel classic inner boundary ring radius",
-      "description": "Chart wheel classic inner boundary ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.classicInnerBoundaryRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    "--aries-wheel-classic-inner-degree-ring-radius": {
-      "semanticId": "renderer.wheel.metric.classicInnerDegreeRingRadius",
-      "label": "Chart wheel classic inner degree ring radius",
-      "description": "Chart wheel classic inner degree ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.classicInnerDegreeRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
         "step": 0.001
       }
     },
@@ -11513,50 +11367,6 @@
         "step": 0.001
       }
     },
-    "--aries-wheel-classic-outer-degree-ring-radius": {
-      "semanticId": "renderer.wheel.metric.classicOuterDegreeRingRadius",
-      "label": "Chart wheel classic outer degree ring radius",
-      "description": "Chart wheel classic outer degree ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.classicOuterDegreeRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    "--aries-wheel-classic-outer-house-ring-radius": {
-      "semanticId": "renderer.wheel.metric.classicOuterHouseRingRadius",
-      "label": "Chart wheel classic outer house ring radius",
-      "description": "Chart wheel classic outer house ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.classicOuterHouseRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
     "--aries-wheel-classic-outer-line": {
       "semanticId": "renderer.wheel.metric.classicOuterLine",
       "label": "Chart wheel classic outer line",
@@ -11576,28 +11386,6 @@
       "bounds": {
         "min": 0.65,
         "max": 1.05,
-        "step": 0.001
-      }
-    },
-    "--aries-wheel-classic-outer-maximum-ring-radius": {
-      "semanticId": "renderer.wheel.metric.classicOuterMaximumRingRadius",
-      "label": "Chart wheel classic outer maximum ring radius",
-      "description": "Chart wheel classic outer maximum ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.classicOuterMaximumRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
         "step": 0.001
       }
     },
@@ -11821,28 +11609,6 @@
         "step": 0.01
       }
     },
-    "--aries-wheel-classic-term-ring-radius": {
-      "semanticId": "renderer.wheel.metric.classicTermRingRadius",
-      "label": "Chart wheel classic term ring radius",
-      "description": "Chart wheel classic term ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.classicTermRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
     "--aries-wheel-classic-term-sector-length": {
       "semanticId": "renderer.wheel.metric.classicTermSectorLength",
       "label": "Chart wheel classic term sector length",
@@ -11865,72 +11631,6 @@
         "step": 0.001
       }
     },
-    "--aries-wheel-classic-zodiac-inner-ring-radius": {
-      "semanticId": "renderer.wheel.metric.classicZodiacInnerRingRadius",
-      "label": "Chart wheel classic zodiac inner ring radius",
-      "description": "Chart wheel classic zodiac inner ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.classicZodiacInnerRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    "--aries-wheel-classic-zodiac-outer-ring-radius": {
-      "semanticId": "renderer.wheel.metric.classicZodiacOuterRingRadius",
-      "label": "Chart wheel classic zodiac outer ring radius",
-      "description": "Chart wheel classic zodiac outer ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.classicZodiacOuterRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    "--aries-wheel-compact-aspect-boundary-ring-radius": {
-      "semanticId": "renderer.wheel.metric.compactAspectBoundaryRingRadius",
-      "label": "Chart wheel compact aspect boundary ring radius",
-      "description": "Chart wheel compact aspect boundary ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.compactAspectBoundaryRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
     "--aries-wheel-compact-base": {
       "semanticId": "renderer.wheel.metric.compactBase",
       "label": "Chart wheel compact base",
@@ -11950,28 +11650,6 @@
       "bounds": {
         "min": 0.05,
         "max": 0.35,
-        "step": 0.001
-      }
-    },
-    "--aries-wheel-compact-base-ring-radius": {
-      "semanticId": "renderer.wheel.metric.compactBaseRingRadius",
-      "label": "Chart wheel compact base ring radius",
-      "description": "Chart wheel compact base ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.compactBaseRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
         "step": 0.001
       }
     },
@@ -12041,50 +11719,6 @@
         "step": 0.001
       }
     },
-    "--aries-wheel-compact-cusp-outer-ring-radius": {
-      "semanticId": "renderer.wheel.metric.compactCuspOuterRingRadius",
-      "label": "Chart wheel compact cusp outer ring radius",
-      "description": "Chart wheel compact cusp outer ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.compactCuspOuterRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    "--aries-wheel-compact-house-boundary-ring-radius": {
-      "semanticId": "renderer.wheel.metric.compactHouseBoundaryRingRadius",
-      "label": "Chart wheel compact house boundary ring radius",
-      "description": "Chart wheel compact house boundary ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.compactHouseBoundaryRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
     "--aries-wheel-compact-house-name": {
       "semanticId": "renderer.wheel.metric.compactHouseName",
       "label": "Chart wheel compact house name",
@@ -12126,116 +11760,6 @@
       "bounds": {
         "min": 0.02,
         "max": 0.15,
-        "step": 0.001
-      }
-    },
-    "--aries-wheel-compact-inner-boundary-ring-radius": {
-      "semanticId": "renderer.wheel.metric.compactInnerBoundaryRingRadius",
-      "label": "Chart wheel compact inner boundary ring radius",
-      "description": "Chart wheel compact inner boundary ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.compactInnerBoundaryRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    "--aries-wheel-compact-inner-degree-ring-radius": {
-      "semanticId": "renderer.wheel.metric.compactInnerDegreeRingRadius",
-      "label": "Chart wheel compact inner degree ring radius",
-      "description": "Chart wheel compact inner degree ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.compactInnerDegreeRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    "--aries-wheel-compact-outer-degree-ring-radius": {
-      "semanticId": "renderer.wheel.metric.compactOuterDegreeRingRadius",
-      "label": "Chart wheel compact outer degree ring radius",
-      "description": "Chart wheel compact outer degree ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.compactOuterDegreeRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    "--aries-wheel-compact-outer-house-ring-radius": {
-      "semanticId": "renderer.wheel.metric.compactOuterHouseRingRadius",
-      "label": "Chart wheel compact outer house ring radius",
-      "description": "Chart wheel compact outer house ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.compactOuterHouseRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    "--aries-wheel-compact-outer-maximum-ring-radius": {
-      "semanticId": "renderer.wheel.metric.compactOuterMaximumRingRadius",
-      "label": "Chart wheel compact outer maximum ring radius",
-      "description": "Chart wheel compact outer maximum ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.compactOuterMaximumRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
         "step": 0.001
       }
     },
@@ -12479,72 +12003,6 @@
         "min": 0.010416666666666666,
         "max": 1,
         "step": 0.01
-      }
-    },
-    "--aries-wheel-compact-term-ring-radius": {
-      "semanticId": "renderer.wheel.metric.compactTermRingRadius",
-      "label": "Chart wheel compact term ring radius",
-      "description": "Chart wheel compact term ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.compactTermRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    "--aries-wheel-compact-zodiac-inner-ring-radius": {
-      "semanticId": "renderer.wheel.metric.compactZodiacInnerRingRadius",
-      "label": "Chart wheel compact zodiac inner ring radius",
-      "description": "Chart wheel compact zodiac inner ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.compactZodiacInnerRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    "--aries-wheel-compact-zodiac-outer-ring-radius": {
-      "semanticId": "renderer.wheel.metric.compactZodiacOuterRingRadius",
-      "label": "Chart wheel compact zodiac outer ring radius",
-      "description": "Chart wheel compact zodiac outer ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.compactZodiacOuterRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
       }
     },
     "--aries-wheel-cusp-outer-ring-color": {
@@ -14334,6 +13792,28 @@
       "bounds": {
         "min": 0.0625,
         "max": 1,
+        "step": 0.01
+      }
+    },
+    "--aries-wheel-house-position-sign-scale": {
+      "semanticId": "renderer.wheel.metric.housePositionSignScale",
+      "label": "Chart wheel house position sign scale",
+      "description": "Chart wheel house position sign scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.wheel.metric.housePositionSignScale; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
+      "affectedSurfaces": [
+        "Chart wheel"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.13,
+        "max": 1.56,
         "step": 0.01
       }
     },
@@ -16308,6 +15788,23 @@
         "max": 4,
         "step": 0.01
       }
+    },
+    "--aries-wheel-surveil-accent-color": {
+      "semanticId": "renderer.wheel.color.surveilAccent",
+      "label": "Chart wheel surveil accent",
+      "description": "Chart wheel surveil accent color resolved once for the complete renderer paint.",
+      "tier": "renderer-palette",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.wheel.color.surveilAccent; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
+      "affectedSurfaces": [
+        "Chart wheel"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Review Chart wheel foreground/background contrast after changing this role."
+      ]
     },
     "--aries-wheel-surveil-glyph-gap-min": {
       "semanticId": "renderer.wheel.metric.surveilGlyphGapMin",

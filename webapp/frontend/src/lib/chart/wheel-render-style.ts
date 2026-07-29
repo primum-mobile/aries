@@ -1,6 +1,7 @@
 // Copyright (C) 2026 Max Lange
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import type { DitherRasterPattern } from "../render/dither-pattern";
 import type { ChartPalette } from "./types";
 
 export const WHEEL_RENDER_STYLE_SCHEMA_VERSION = 1 as const;
@@ -47,6 +48,7 @@ export interface WheelElementColors {
   readonly angloOuterLeader: string;
   readonly angleRay: string;
   readonly angleLabel: string;
+  readonly surveilAccent: string;
 }
 
 type WheelRenderPaletteSpecs = {
@@ -82,6 +84,7 @@ export const WHEEL_RENDER_PALETTE_SPECS: Readonly<WheelRenderPaletteSpecs> = dee
   angloOuterLeader: ["--aries-wheel-anglo-outer-leader-color", "var(--morinus-angles)"],
   angleRay: ["--aries-wheel-angle-ray-color", "var(--morinus-angles)"],
   angleLabel: ["--aries-wheel-angle-label-color", "var(--morinus-angles)"],
+  surveilAccent: ["--aries-wheel-surveil-accent-color", "rgb(229,146,70)"],
 });
 
 export interface WheelRingSet {
@@ -275,6 +278,7 @@ export interface WheelGeometryInput {
   readonly showHouses: boolean;
   readonly showPositions: boolean;
   readonly comparisonWithOuterHouses: boolean;
+  readonly restrainedAngloComparison?: boolean;
 }
 
 export interface WheelTypographyRatios {
@@ -290,14 +294,17 @@ export interface WheelTypographyRatios {
   readonly houseLabelScale: number;
   readonly bodyPosition: Readonly<{
     degreeScale: number;
+    signScale: number;
     minuteScale: number;
   }>;
   readonly anglePosition: Readonly<{
     degreeScale: number;
+    signScale: number;
     minuteScale: number;
   }>;
   readonly housePosition: Readonly<{
     degreeScale: number;
+    signScale: number;
     minuteScale: number;
   }>;
   readonly aspectGlyphScale: number;
@@ -457,6 +464,9 @@ export const WHEEL_AUTHORING_TYPOGRAPHY_CLASSES = [
   "bodies.inner.position.minute",
   "bodies.outer.glyph",
   "bodies.outer.motion",
+  "bodies.fortune",
+  "bodies.vertex",
+  "bodies.prenatalSyzygy",
   "aspects.primary.glyph",
   "aspects.interchart.glyph",
   "secondaryRing.fixedStar.label",
@@ -476,6 +486,18 @@ export const WHEEL_AUTHORING_TYPOGRAPHY_CLASSES = [
   "surveil.marker.glyph",
   "surveil.marker.label",
   "surveil.sourceLabel",
+  "chartOverlay.information.topLeft",
+  "chartOverlay.information.bottomLeft",
+  "chartOverlay.houseSystem.bottomRight",
+  "chartOverlay.events.dayHour.label",
+  "chartOverlay.events.dayHour.glyph",
+  "chartOverlay.events.dayHour.trailing",
+  "chartOverlay.events.header.label",
+  "chartOverlay.events.header.glyph",
+  "chartOverlay.events.header.trailing",
+  "chartOverlay.events.signal.label",
+  "chartOverlay.events.signal.glyph",
+  "chartOverlay.events.signal.trailing",
 ] as const;
 
 export type WheelAuthoringTypographyClass =
@@ -535,11 +557,214 @@ export const WHEEL_AUTHORING_LINE_CLASSES = [
 export type WheelAuthoringLineClass =
   (typeof WHEEL_AUTHORING_LINE_CLASSES)[number];
 
+export const WHEEL_CHART_OVERLAY_CLASSES = [
+  "chartOverlay.information.topLeft",
+  "chartOverlay.information.bottomLeft",
+  "chartOverlay.houseSystem.bottomRight",
+  "chartOverlay.events.dayHour.label",
+  "chartOverlay.events.dayHour.glyph",
+  "chartOverlay.events.dayHour.trailing",
+  "chartOverlay.events.header.label",
+  "chartOverlay.events.header.glyph",
+  "chartOverlay.events.header.trailing",
+  "chartOverlay.events.signal.label",
+  "chartOverlay.events.signal.glyph",
+  "chartOverlay.events.signal.trailing",
+] as const;
+
+export type WheelChartOverlayClass =
+  (typeof WHEEL_CHART_OVERLAY_CLASSES)[number];
+
+export type WheelSecondaryRingClassIds = Readonly<{
+  leader: WheelAuthoringLineClass;
+  label?: WheelAuthoringTypographyClass;
+  glyph?: WheelAuthoringTypographyClass;
+  text?: WheelAuthoringTypographyClass;
+  motion?: WheelAuthoringTypographyClass;
+}>;
+
+const WHEEL_SECONDARY_RING_CLASS_IDS = deepFreeze({
+  fixedStar: {
+    leader: "secondaryRing.fixedStar.leader",
+    label: "secondaryRing.fixedStar.label",
+  },
+  asteroid: {
+    leader: "secondaryRing.asteroid.leader",
+    label: "secondaryRing.asteroid.label",
+  },
+  midpoint: {
+    leader: "secondaryRing.midpoint.leader",
+    glyph: "secondaryRing.midpoint.glyph",
+    text: "secondaryRing.midpoint.text",
+  },
+  hybridHit: {
+    leader: "secondaryRing.hybridHit.leader",
+    label: "secondaryRing.hybridHit.label",
+  },
+  antiscia: {
+    leader: "secondaryRing.antiscia.leader",
+    glyph: "secondaryRing.antiscia.glyph",
+    text: "secondaryRing.antiscia.text",
+  },
+  contraAntiscia: {
+    leader: "secondaryRing.contraAntiscia.leader",
+    glyph: "secondaryRing.contraAntiscia.glyph",
+    text: "secondaryRing.contraAntiscia.text",
+  },
+  dodecatemoria: {
+    leader: "secondaryRing.dodecatemoria.leader",
+    glyph: "secondaryRing.dodecatemoria.glyph",
+    text: "secondaryRing.dodecatemoria.text",
+  },
+  arabicPart: {
+    leader: "secondaryRing.arabicPart.leader",
+    label: "secondaryRing.arabicPart.label",
+  },
+  parallelTransit: {
+    leader: "secondaryRing.parallelTransit.leader",
+    glyph: "secondaryRing.parallelTransit.glyph",
+    motion: "secondaryRing.parallelTransit.motion",
+  },
+} satisfies Record<string, WheelSecondaryRingClassIds>);
+
+/**
+ * Resolve daemon outer-ring family spelling to the one semantic class set
+ * shared by production paint and the Style Lab scene.
+ */
+export function resolveWheelSecondaryRingClassIds(
+  family: string,
+): WheelSecondaryRingClassIds | null {
+  const normalized = family.trim().toLowerCase().replaceAll("-", "_");
+  if (normalized.includes("fixed")) return WHEEL_SECONDARY_RING_CLASS_IDS.fixedStar;
+  if (normalized.includes("asteroid")) return WHEEL_SECONDARY_RING_CLASS_IDS.asteroid;
+  if (normalized.includes("midpoint")) return WHEEL_SECONDARY_RING_CLASS_IDS.midpoint;
+  if (normalized.includes("hybrid")) return WHEEL_SECONDARY_RING_CLASS_IDS.hybridHit;
+  if (normalized.includes("contra") && normalized.includes("antis")) {
+    return WHEEL_SECONDARY_RING_CLASS_IDS.contraAntiscia;
+  }
+  if (normalized.includes("antis")) return WHEEL_SECONDARY_RING_CLASS_IDS.antiscia;
+  if (normalized.includes("dodec")) return WHEEL_SECONDARY_RING_CLASS_IDS.dodecatemoria;
+  if (normalized.includes("arab") || normalized === "lot") {
+    return WHEEL_SECONDARY_RING_CLASS_IDS.arabicPart;
+  }
+  if (normalized.includes("parallel")) {
+    return WHEEL_SECONDARY_RING_CLASS_IDS.parallelTransit;
+  }
+  return null;
+}
+
+/** Frame-invariant regions painted on the retained fill canvas. */
+export const WHEEL_AUTHORING_FILL_CLASSES = [
+  "canvas.background",
+  "fills.chartField",
+  "fills.houseField",
+  "fills.centerField",
+  "fills.zodiacBand",
+  "fills.subdivisionBand",
+] as const;
+
+export type WheelAuthoringFillClass =
+  (typeof WHEEL_AUTHORING_FILL_CLASSES)[number];
+
+export type WheelAuthoringFillPattern =
+  | "none"
+  | "solid"
+  | "paper"
+  | "hatch"
+  | "crosshatch"
+  | "scanline"
+  | DitherRasterPattern;
+
+export type WheelAuthoringGradientType = "none" | "linear" | "radial";
+export type WheelAuthoringDirectionSource = "fixed" | "sun";
+export type WheelAuthoringTextureMask = "none" | "crescent";
+
+export type WheelAuthoringFillPaintOverride = Readonly<{
+  fillPattern?: WheelAuthoringFillPattern;
+  cellSizePx?: number;
+  dotSizePx?: number;
+  backgroundColor?: string;
+  patternColor?: string;
+  gradientType?: WheelAuthoringGradientType;
+  gradientDirection?: WheelAuthoringDirectionSource;
+  gradientStartColor?: string;
+  gradientEndColor?: string;
+  gradientAngle?: number;
+  textureMask?: WheelAuthoringTextureMask;
+  maskDirection?: WheelAuthoringDirectionSource;
+  maskAngle?: number;
+  maskAmount?: number;
+  shadowPattern?: WheelAuthoringFillPattern;
+  shadowColor?: string;
+  shadowXpx?: number;
+  shadowYpx?: number;
+  shadowBlurPx?: number;
+  opacity?: number;
+  density?: number;
+  angle?: number;
+  seed?: number;
+}>;
+
+export type ResolvedWheelFillPaint = Readonly<{
+  fillPattern: WheelAuthoringFillPattern;
+  cellSizePx: number;
+  dotSizePx: number;
+  backgroundColor: string;
+  backgroundEnabled: boolean;
+  patternColor: string;
+  gradientType: WheelAuthoringGradientType;
+  gradientDirection: WheelAuthoringDirectionSource;
+  gradientStartColor: string;
+  gradientEndColor: string;
+  gradientAngle: number;
+  textureMask: WheelAuthoringTextureMask;
+  maskDirection: WheelAuthoringDirectionSource;
+  maskAngle: number;
+  maskAmount: number;
+  shadowPattern: WheelAuthoringFillPattern;
+  shadowColor: string;
+  shadowXpx: number;
+  shadowYpx: number;
+  shadowBlurPx: number;
+  opacity: number;
+  density: number;
+  angle: number;
+  seed: number;
+}>;
+
 export type WheelAuthoringStrokeStyle =
   | "renderer"
   | "solid"
   | "dashed"
   | "dotted";
+
+/**
+ * Portable font identity carried by profile-v2. The renderer consumes
+ * `cssFamily`; the remaining fields keep exports deterministic and allow the
+ * daemon to validate bundled/local/asset provenance without reducing a font
+ * choice to an untyped CSS string.
+ */
+export type WheelAuthoringFontRef = Readonly<{
+  role: "text" | "symbols";
+  source: "bundled" | "local" | "asset" | "generic";
+  family: readonly string[];
+  cssFamily: string;
+  style: string;
+  weight: number;
+  postscriptName?: string;
+  assetId?: string;
+  variationAxes?: Readonly<Record<string, number>>;
+}>;
+
+export type WheelAuthoringTypographyOverride = Readonly<{
+  fontRef?: WheelAuthoringFontRef;
+  /** Final font size at the profile-v2 reference radius. */
+  fontSizePx?: number;
+  /** Final letter spacing at the profile-v2 reference radius. */
+  trackingPx?: number;
+  color?: string;
+  opacity?: number;
+}>;
 
 export type WheelAuthoringLinePaintOverride = Readonly<{
   /** Final stroke width at the profile-v2 reference radius, never a multiplier. */
@@ -547,6 +772,7 @@ export type WheelAuthoringLinePaintOverride = Readonly<{
   strokeStyle?: WheelAuthoringStrokeStyle;
   dashOnPx?: number;
   dashOffPx?: number;
+  color?: string;
   opacity?: number;
   lineCap?: CanvasLineCap;
   lineJoin?: CanvasLineJoin;
@@ -563,7 +789,11 @@ export type WheelAuthoringOverrides = Readonly<{
     Partial<
       Record<
         WheelTypographyProfile,
-        Readonly<Partial<Record<WheelAuthoringTypographyClass, number>>>
+        Readonly<
+          Partial<
+            Record<WheelAuthoringTypographyClass, WheelAuthoringTypographyOverride>
+          >
+        >
       >
     >
   >;
@@ -572,6 +802,14 @@ export type WheelAuthoringOverrides = Readonly<{
       Record<
         WheelTypographyProfile,
         Readonly<Partial<Record<WheelAuthoringLineClass, WheelAuthoringLinePaintOverride>>>
+      >
+    >
+  >;
+  fillPaint: Readonly<
+    Partial<
+      Record<
+        WheelTypographyProfile,
+        Readonly<Partial<Record<WheelAuthoringFillClass, WheelAuthoringFillPaintOverride>>>
       >
     >
   >;
@@ -835,10 +1073,23 @@ const WHEEL_LINE_PAINT_CSS_VARS: Readonly<
 export interface ResolvedWheelLinePaint {
   readonly width: number;
   readonly dash?: number[];
+  /** Canvas line color. Circle callers consume the identical value as outline. */
+  readonly fill?: string;
+  readonly outline?: string;
   readonly opacity: number;
   readonly lineCap?: CanvasLineCap;
   readonly lineJoin?: CanvasLineJoin;
 }
+
+export type ResolvedWheelTypographyPaint = Readonly<{
+  font: string;
+  size: number;
+  weight: number;
+  style: string;
+  tracking: number;
+  color: string;
+  opacity: number;
+}>;
 
 export interface WheelLabelStyle {
   readonly houseClassicOffsetScale: number;
@@ -1035,6 +1286,8 @@ export type WheelRenderTokens = {
   angloAspectLeaderInsetScale: number;
   angloPositionInsetScale: number;
   angloAnglePositionScale: number;
+  angloArrowInset: number;
+  angloArrowMaximum: number;
   biwheelOuterMax: number;
   biwheelOuterHouseSector: number;
   biwheelZodiacInset: number;
@@ -1062,10 +1315,13 @@ export type WheelRenderTokens = {
   syzygyScale: number;
   houseLabelScale: number;
   bodyPositionDegreeScale: number;
+  bodyPositionSignScale: number;
   bodyPositionMinuteScale: number;
   anglePositionDegreeScale: number;
+  anglePositionSignScale: number;
   anglePositionMinuteScale: number;
   housePositionDegreeScale: number;
+  housePositionSignScale: number;
   housePositionMinuteScale: number;
   aspectGlyphScale: number;
   aspectGlyphOffsetScale: number;
@@ -1073,13 +1329,16 @@ export type WheelRenderTokens = {
   outerLabelScale: number;
   outerProjectedGlyphScale: number;
   angloBodyDegreeScale: number;
+  /** @deprecated Use bodyPositionSignScale. Retained for sparse profile migration. */
   angloBodySignScale: number;
   angloBodyMinuteScale: number;
   angloAnglePositionDegreeScale: number;
+  /** @deprecated Use anglePositionSignScale. Retained for sparse profile migration. */
   angloAnglePositionSignScale: number;
   angloAnglePositionMinuteScale: number;
   angloAnglePositionGapScale: number;
   angloHousePositionDegreeScale: number;
+  /** @deprecated Use housePositionSignScale. Retained for sparse profile migration. */
   angloHousePositionSignScale: number;
   angloHousePositionMinuteScale: number;
   angloHousePositionGapScale: number;
@@ -1198,14 +1457,17 @@ export interface ResolvedWheelTypographyMetrics {
   readonly outerHouseLabelSize: number;
   readonly bodyPosition: Readonly<{
     degreeSize: number;
+    signSize: number;
     minuteSize: number;
   }>;
   readonly anglePosition: Readonly<{
     degreeSize: number;
+    signSize: number;
     minuteSize: number;
   }>;
   readonly housePosition: Readonly<{
     degreeSize: number;
+    signSize: number;
     minuteSize: number;
   }>;
   readonly angloBodyPosition: Readonly<{
@@ -1226,17 +1488,104 @@ export interface ResolvedWheelTypographyMetrics {
     gap: number;
   }>;
   readonly aspectGlyphSize: number;
+  readonly interchartAspectGlyphSize: number;
   readonly aspectGlyphOffset: number;
   readonly motionSize: number;
   readonly outerMotionSize: number;
   readonly outerLabelSize: number;
   readonly outerProjectedGlyphSize: number;
+  readonly secondaryRing: Readonly<
+    Partial<Record<WheelAuthoringTypographyClass, number>>
+  >;
 }
 
 export interface ResolvedWheelStrokeMetrics {
   readonly medium: number;
   readonly degreeTick: number;
   readonly ascMc: number;
+}
+
+export interface ResolvedWheelOverlayMetrics {
+  readonly chartSize: number;
+  readonly compact: boolean;
+  readonly infoFontSize: number;
+  readonly iconSize: number;
+  readonly labelSize: number;
+  readonly lineHeight: number;
+  readonly gapAfterDayHour: number;
+  readonly gapBetweenGroups: number;
+  readonly columnGap: number;
+  readonly edgeInset: number;
+  readonly topEdgeInset: number;
+  readonly maxWidth?: string;
+}
+
+/** Shared DOM/scene projection for the four chart-corner overlay clusters. */
+export function resolveWheelOverlayMetrics(
+  overlays: WheelOverlayStyle,
+  viewport: Readonly<{ width: number; height: number }>,
+): ResolvedWheelOverlayMetrics {
+  const chartSize = Math.min(viewport.width, viewport.height);
+  const compact =
+    viewport.width > 0 && viewport.width <= overlays.compactBreakpoint;
+  const symbolSize = chartSize > 0 ? chartSize / 32 : 0;
+  const infoFontSize = Math.max(
+    compact ? overlays.compactInfoFontMin : overlays.infoFontMin,
+    symbolSize * (
+      compact ? overlays.compactInfoFontScale : overlays.infoFontScale
+    ),
+  );
+  const iconSize = Math.max(
+    compact ? overlays.compactIconMin : overlays.iconMin,
+    ((2 * symbolSize) / 3) * (
+      compact ? overlays.compactIconScale : overlays.iconScale
+    ),
+  );
+  const labelSize = Math.max(
+    compact ? overlays.compactLabelMin : overlays.labelMin,
+    symbolSize * (
+      compact ? overlays.compactLabelScale : overlays.labelScale
+    ),
+  );
+  const lineHeight = Math.max(
+    1,
+    Math.round(
+      Math.max(iconSize, labelSize)
+      * overlays.fontBoxScale
+      * overlays.rowHeightFactor,
+    ),
+  );
+  const edgeInset = chartSize > 0
+    ? Math.max(
+        compact ? overlays.compactEdgeInsetMin : 0,
+        chartSize * overlays.edgeInsetScale,
+      )
+    : 0;
+  return Object.freeze({
+    chartSize,
+    compact,
+    infoFontSize,
+    iconSize,
+    labelSize,
+    lineHeight,
+    gapAfterDayHour: Math.round(
+      lineHeight * overlays.gapAfterDayHourScale,
+    ),
+    gapBetweenGroups: Math.round(
+      lineHeight * overlays.groupGapScale,
+    ),
+    columnGap: Math.max(
+      overlays.columnGapMin,
+      Math.floor(symbolSize * overlays.columnGapScale),
+    ),
+    edgeInset,
+    topEdgeInset: compact
+      ? edgeInset
+      : edgeInset + overlays.titlebarSafeTop,
+    ...(viewport.width > 0 && viewport.width < 640
+      ? { maxWidth: `${overlays.maxWidthViewportScale * 100}vw` }
+      : {}),
+  });
 }
 
 const DEFAULT_UI_FONT = "'FreeSans', ui-sans-serif, system-ui, sans-serif";
@@ -1322,6 +1671,7 @@ function elementColorsFromPalette(palette: ChartPalette): WheelElementColors {
     angloOuterLeader: palette.angles,
     angleRay: palette.angles,
     angleLabel: palette.angles,
+    surveilAccent: palette.surveilAccent ?? "rgb(229,146,70)",
   });
 }
 
@@ -1427,7 +1777,7 @@ export const ANGLO_WHEEL_GEOMETRY_PROFILE: AngloWheelGeometryProfile = deepFreez
     degree5: 0.948,
     degree10: 0.94,
     line: 0.93,
-    projectedLabel: 0.985,
+    projectedLabel: 0.95,
     angle: 0.965,
     arrow: 0.985,
   },
@@ -1445,10 +1795,13 @@ export const ANGLO_WHEEL_GEOMETRY_PROFILE: AngloWheelGeometryProfile = deepFreez
     degree10: 0.901,
     max: 0.99,
     house: 0.94,
-    houseName: 0.965,
+    // Venus' golden-section proportion places the number lane between the
+    // outer bodies (0.86) and the restrained cusp endpoint (0.94):
+    // 0.86 + (0.94 - 0.86) / phi ≈ 0.91.
+    houseName: 0.91,
     planet: 0.86,
     line: 0.825,
-    projectedLabel: 0.885,
+    projectedLabel: 0.86,
     retrograde: 0.835,
   },
 });
@@ -1655,7 +2008,10 @@ function resolveCanonicalWheelRingSet(
   const biwheel = geometry.biwheel;
 
   if (input.profile === "anglo") {
-    if (input.mode === "comparison" && input.comparisonWithOuterHouses) {
+    if (
+      input.mode === "comparison" &&
+      (input.comparisonWithOuterHouses || input.restrainedAngloComparison)
+    ) {
       const anglo = geometry.anglo;
       const comparison = anglo.comparisonWithHouses;
       const core = resolveAngloRings(
@@ -1951,6 +2307,167 @@ export function resolveWheelAuthoringPx(
   return authoringPx * target / safeAuthoringReferenceRadius(style);
 }
 
+const DEFAULT_WHEEL_FILL_PAINT: ResolvedWheelFillPaint = deepFreeze({
+  fillPattern: "none",
+  cellSizePx: 4,
+  dotSizePx: 1,
+  backgroundColor: "transparent",
+  backgroundEnabled: false,
+  patternColor: "currentColor",
+  gradientType: "none",
+  gradientDirection: "fixed",
+  gradientStartColor: "transparent",
+  gradientEndColor: "transparent",
+  gradientAngle: 0,
+  textureMask: "none",
+  maskDirection: "fixed",
+  maskAngle: 0,
+  maskAmount: 28,
+  shadowPattern: "none",
+  shadowColor: "transparent",
+  shadowXpx: 6,
+  shadowYpx: 6,
+  shadowBlurPx: 0,
+  opacity: 0.2,
+  density: 50,
+  angle: 45,
+  seed: 0,
+});
+
+/** Resolve one retained fill class into safe runtime chart pixels. */
+export function resolveWheelFillPaint(
+  style: WheelRenderStyle,
+  profile: WheelTypographyProfile,
+  classId: WheelAuthoringFillClass,
+  targetWheelRadius = style.authoringTargetRadius,
+): ResolvedWheelFillPaint {
+  const source = style.authoringOverrides.fillPaint[profile]?.[classId];
+  const sourceCell = source?.cellSizePx ?? DEFAULT_WHEEL_FILL_PAINT.cellSizePx;
+  const sourceDot = source?.dotSizePx ?? DEFAULT_WHEEL_FILL_PAINT.dotSizePx;
+  const sourceShadowX = source?.shadowXpx ?? DEFAULT_WHEEL_FILL_PAINT.shadowXpx;
+  const sourceShadowY = source?.shadowYpx ?? DEFAULT_WHEEL_FILL_PAINT.shadowYpx;
+  const sourceShadowBlur =
+    source?.shadowBlurPx ?? DEFAULT_WHEEL_FILL_PAINT.shadowBlurPx;
+  const cellSizePx = Math.max(
+    0.5,
+    resolveWheelAuthoringPx(style, Math.min(48, Math.max(0.5, sourceCell)), targetWheelRadius),
+  );
+  const dotSizePx = Math.min(
+    cellSizePx,
+    Math.max(
+      0.25,
+      resolveWheelAuthoringPx(style, Math.min(24, Math.max(0.25, sourceDot)), targetWheelRadius),
+    ),
+  );
+  return deepFreeze({
+    fillPattern: (
+      source?.fillPattern === "solid"
+      || source?.fillPattern === "stipple"
+      || source?.fillPattern === "bayer2"
+      || source?.fillPattern === "bayer4"
+      || source?.fillPattern === "bayer8"
+      || source?.fillPattern === "noise"
+      || source?.fillPattern === "blueNoise"
+      || source?.fillPattern === "paper"
+      || source?.fillPattern === "newsprint"
+      || source?.fillPattern === "hatch"
+      || source?.fillPattern === "crosshatch"
+      || source?.fillPattern === "scanline"
+      || source?.fillPattern === "atkinson"
+      || source?.fillPattern === "floydSteinberg"
+    ) ? source.fillPattern : "none",
+    cellSizePx,
+    dotSizePx,
+    backgroundColor: source?.backgroundColor ?? style.palette.background,
+    backgroundEnabled: source?.backgroundColor != null,
+    patternColor: source?.patternColor ?? style.palette.frame,
+    gradientType: (
+      source?.gradientType === "linear" || source?.gradientType === "radial"
+    ) ? source.gradientType : "none",
+    gradientDirection: source?.gradientDirection === "sun" ? "sun" : "fixed",
+    gradientStartColor: source?.gradientStartColor ?? style.palette.background,
+    gradientEndColor: source?.gradientEndColor ?? style.palette.frame,
+    gradientAngle: Math.min(
+      180,
+      Math.max(-180, source?.gradientAngle ?? DEFAULT_WHEEL_FILL_PAINT.gradientAngle),
+    ),
+    textureMask: source?.textureMask === "crescent" ? "crescent" : "none",
+    maskDirection: source?.maskDirection === "sun" ? "sun" : "fixed",
+    maskAngle: Math.min(
+      180,
+      Math.max(-180, source?.maskAngle ?? DEFAULT_WHEEL_FILL_PAINT.maskAngle),
+    ),
+    maskAmount: Math.min(
+      100,
+      Math.max(0, source?.maskAmount ?? DEFAULT_WHEEL_FILL_PAINT.maskAmount),
+    ),
+    shadowPattern: (
+      source?.shadowPattern === "solid"
+      || source?.shadowPattern === "stipple"
+      || source?.shadowPattern === "bayer2"
+      || source?.shadowPattern === "bayer4"
+      || source?.shadowPattern === "bayer8"
+      || source?.shadowPattern === "noise"
+      || source?.shadowPattern === "blueNoise"
+      || source?.shadowPattern === "paper"
+      || source?.shadowPattern === "newsprint"
+      || source?.shadowPattern === "hatch"
+      || source?.shadowPattern === "crosshatch"
+      || source?.shadowPattern === "scanline"
+      || source?.shadowPattern === "atkinson"
+      || source?.shadowPattern === "floydSteinberg"
+    ) ? source.shadowPattern : "none",
+    shadowColor: source?.shadowColor ?? DEFAULT_WHEEL_FILL_PAINT.shadowColor,
+    shadowXpx: resolveWheelAuthoringPx(
+      style,
+      Math.min(128, Math.max(-128, sourceShadowX)),
+      targetWheelRadius,
+    ),
+    shadowYpx: resolveWheelAuthoringPx(
+      style,
+      Math.min(128, Math.max(-128, sourceShadowY)),
+      targetWheelRadius,
+    ),
+    shadowBlurPx: resolveWheelAuthoringPx(
+      style,
+      Math.min(64, Math.max(0, sourceShadowBlur)),
+      targetWheelRadius,
+    ),
+    opacity: Math.min(1, Math.max(0, source?.opacity ?? DEFAULT_WHEEL_FILL_PAINT.opacity)),
+    density: Math.min(100, Math.max(0, source?.density ?? DEFAULT_WHEEL_FILL_PAINT.density)),
+    angle: Math.min(180, Math.max(-180, source?.angle ?? DEFAULT_WHEEL_FILL_PAINT.angle)),
+    seed: Math.min(
+      65535,
+      Math.max(0, Math.round(source?.seed ?? DEFAULT_WHEEL_FILL_PAINT.seed)),
+    ),
+  });
+}
+
+/** Whether a retained fill needs one settled repaint when the Sun moves. */
+export function wheelFillUsesSolarDirection(
+  style: WheelRenderStyle,
+  profile: WheelTypographyProfile,
+): boolean {
+  for (const classId of WHEEL_AUTHORING_FILL_CLASSES) {
+    const source = style.authoringOverrides.fillPaint[profile]?.[classId];
+    if (
+      source?.gradientType !== "none"
+      && source?.gradientType != null
+      && source.gradientDirection === "sun"
+    ) {
+      return true;
+    }
+    if (
+      classId !== "canvas.background"
+      && source?.textureMask === "crescent"
+      && source.maskDirection === "sun"
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function applyPaintedRingRadiusOverrides(
   style: WheelRenderStyle,
   input: WheelGeometryInput,
@@ -2043,6 +2560,11 @@ const PROFILE_SIGN = deepFreeze({
   compact: 1 / 20,
   anglo: 1 / 25,
 });
+const PROFILE_MOTION_SCALE = deepFreeze({
+  classic: 1,
+  compact: 1,
+  anglo: 1.2,
+});
 const PROFILE_SUBDIVISION = deepFreeze({
   classic: 1 / 24,
   compact: 1 / 24,
@@ -2062,14 +2584,17 @@ const DEFAULT_RATIOS: WheelTypographyRatios = deepFreeze({
   houseLabelScale: 0.5,
   bodyPosition: {
     degreeScale: 0.5,
+    signScale: 0.56,
     minuteScale: 0.25,
   },
   anglePosition: {
     degreeScale: 0.5,
+    signScale: 0.52,
     minuteScale: 0.25,
   },
   housePosition: {
     degreeScale: 0.5,
+    signScale: 0.52,
     minuteScale: 0.25,
   },
   aspectGlyphScale: 0.5,
@@ -2176,6 +2701,7 @@ export const DEFAULT_WHEEL_AUTHORING_OVERRIDES: WheelAuthoringOverrides = deepFr
   referenceRadius: 400,
   typography: {},
   linePaint: {},
+  fillPaint: {},
   ringRadii: {},
 });
 
@@ -2593,6 +3119,14 @@ export const WHEEL_RENDER_TOKEN_SPECS: Readonly<WheelRenderTokenSpecs> = deepFre
     "--aries-wheel-anglo-angle-position-scale",
     ANGLO_WHEEL_GEOMETRY_PROFILE.anglePositionScale,
   ],
+  angloArrowInset: [
+    "--aries-wheel-anglo-arrow-inset",
+    ANGLO_WHEEL_GEOMETRY_PROFILE.arrowInset,
+  ],
+  angloArrowMaximum: [
+    "--aries-wheel-anglo-arrow-maximum",
+    ANGLO_WHEEL_GEOMETRY_PROFILE.arrowMaximum,
+  ],
   biwheelOuterMax: [
     "--aries-wheel-biwheel-outer-max",
     BIWHEEL_GEOMETRY_PROFILE.outerMax,
@@ -2662,6 +3196,10 @@ export const WHEEL_RENDER_TOKEN_SPECS: Readonly<WheelRenderTokenSpecs> = deepFre
     "--aries-wheel-body-position-degree-scale",
     DEFAULT_RATIOS.bodyPosition.degreeScale,
   ],
+  bodyPositionSignScale: [
+    "--aries-wheel-body-position-sign-scale",
+    DEFAULT_RATIOS.bodyPosition.signScale,
+  ],
   bodyPositionMinuteScale: [
     "--aries-wheel-body-position-minute-scale",
     DEFAULT_RATIOS.bodyPosition.minuteScale,
@@ -2670,6 +3208,10 @@ export const WHEEL_RENDER_TOKEN_SPECS: Readonly<WheelRenderTokenSpecs> = deepFre
     "--aries-wheel-angle-position-degree-scale",
     DEFAULT_RATIOS.anglePosition.degreeScale,
   ],
+  anglePositionSignScale: [
+    "--aries-wheel-angle-position-sign-scale",
+    DEFAULT_RATIOS.anglePosition.signScale,
+  ],
   anglePositionMinuteScale: [
     "--aries-wheel-angle-position-minute-scale",
     DEFAULT_RATIOS.anglePosition.minuteScale,
@@ -2677,6 +3219,10 @@ export const WHEEL_RENDER_TOKEN_SPECS: Readonly<WheelRenderTokenSpecs> = deepFre
   housePositionDegreeScale: [
     "--aries-wheel-house-position-degree-scale",
     DEFAULT_RATIOS.housePosition.degreeScale,
+  ],
+  housePositionSignScale: [
+    "--aries-wheel-house-position-sign-scale",
+    DEFAULT_RATIOS.housePosition.signScale,
   ],
   housePositionMinuteScale: [
     "--aries-wheel-house-position-minute-scale",
@@ -2990,6 +3536,20 @@ export const WHEEL_RENDER_TOKEN_SPECS: Readonly<WheelRenderTokenSpecs> = deepFre
   ...wheelRingRadiusTokenSpecs(),
 });
 
+/**
+ * Sparse pre-profile-v2 drafts may still carry the old Anglo-only sign metric
+ * ids. Migrate those authored keys to the canonical semantic position metrics;
+ * runtime paint deliberately has one authority and never guesses authorship by
+ * comparing a resolved value with its default.
+ */
+export const WHEEL_RENDER_DEPRECATED_TOKEN_ALIASES = deepFreeze({
+  angloBodySignScale: "bodyPositionSignScale",
+  angloAnglePositionSignScale: "anglePositionSignScale",
+  angloHousePositionSignScale: "housePositionSignScale",
+} as const satisfies Readonly<
+  Partial<Record<keyof WheelRenderTokens, keyof WheelRenderTokens>>
+>);
+
 function defaultWheelRenderTokens(): Readonly<WheelRenderTokens> {
   const tokens = {} as WheelRenderTokens;
   for (const key of Object.keys(WHEEL_RENDER_TOKEN_SPECS) as Array<keyof WheelRenderTokens>) {
@@ -3018,10 +3578,13 @@ const POSITIVE_WHEEL_RENDER_TOKEN_KEYS = new Set<keyof WheelRenderTokens>([
   "syzygyScale",
   "houseLabelScale",
   "bodyPositionDegreeScale",
+  "bodyPositionSignScale",
   "bodyPositionMinuteScale",
   "anglePositionDegreeScale",
+  "anglePositionSignScale",
   "anglePositionMinuteScale",
   "housePositionDegreeScale",
+  "housePositionSignScale",
   "housePositionMinuteScale",
   "aspectGlyphScale",
   "motionScale",
@@ -3148,6 +3711,8 @@ export const WHEEL_RENDER_TOKEN_RANGES: ReadonlyMap<
   ["angloAspectLeaderInsetScale", [0.005, 0.12]],
   ["angloPositionInsetScale", [0.01, 0.2]],
   ["angloAnglePositionScale", [0.2, 0.75]],
+  ["angloArrowInset", [0.005, 0.1]],
+  ["angloArrowMaximum", [0.9, 1]],
   ["biwheelOuterMax", [0.85, 1]],
   ["biwheelOuterHouseSector", [0.02, 0.12]],
   ["biwheelZodiacInset", [0.05, 0.25]],
@@ -3160,6 +3725,9 @@ export const WHEEL_RENDER_TOKEN_RANGES: ReadonlyMap<
   ["biwheelOuterMinimum", [0.6, 0.9]],
   ["termGlyphScale", [0.25, 3]],
   ["decanGlyphScale", [0.25, 3]],
+  ["bodyPositionSignScale", [0.14, 1.69]],
+  ["anglePositionSignScale", [0.13, 1.56]],
+  ["housePositionSignScale", [0.13, 1.56]],
   ["outerProjectedGlyphScale", [0.25, 3]],
   ["angleLabelWeight", [1, 1000]],
   ["overlayCompactBreakpoint", [240, 800]],
@@ -3269,6 +3837,8 @@ const ANGLO_GEOMETRY_TOKEN_KEYS = [
   "angloAspectLeaderInsetScale",
   "angloPositionInsetScale",
   "angloAnglePositionScale",
+  "angloArrowInset",
+  "angloArrowMaximum",
 ] as const satisfies readonly (keyof WheelRenderTokens)[];
 
 const BIWHEEL_GEOMETRY_TOKEN_KEYS = [
@@ -3283,6 +3853,39 @@ const BIWHEEL_GEOMETRY_TOKEN_KEYS = [
   "biwheelRetrogradeOffset",
   "biwheelOuterMinimum",
 ] as const satisfies readonly (keyof WheelRenderTokens)[];
+
+const WHEEL_RING_RADIUS_TOKEN_KEYS = (
+  ["classic", "compact", "anglo"] as const
+).flatMap((profile) =>
+  WHEEL_PAINTED_RING_ROLES.map((role) => wheelRingRadiusTokenKey(profile, role)),
+);
+
+/**
+ * Explicit source units beat name inference in the generated CSS/public
+ * contract. These renderer values are normalized wheel fractions, never CSS
+ * pixels; Profile V2 exposes painted ring radii separately in chart-px.
+ */
+export const WHEEL_RENDER_TOKEN_UNIT_OVERRIDES = deepFreeze(
+  Object.fromEntries(
+    [
+      ...CLASSIC_GEOMETRY_TOKEN_KEYS,
+      ...COMPACT_GEOMETRY_TOKEN_KEYS,
+      ...ANGLO_GEOMETRY_TOKEN_KEYS,
+      ...BIWHEEL_GEOMETRY_TOKEN_KEYS,
+      ...WHEEL_RING_RADIUS_TOKEN_KEYS,
+    ].map((key) => [key, ""] as const),
+  ),
+) as Readonly<Partial<Record<keyof WheelRenderTokens, "" | "px" | "deg">>>;
+
+/**
+ * Compatibility/sentinel ratios remain valid runtime CSS inputs but are not
+ * authoring controls. Canonical painted-ring editing is the Profile V2
+ * `radius` property in conventional chart pixels.
+ */
+export const WHEEL_RENDER_INTERNAL_TOKEN_KEYS = deepFreeze([
+  ...Object.keys(WHEEL_RENDER_DEPRECATED_TOKEN_ALIASES),
+  ...WHEEL_RING_RADIUS_TOKEN_KEYS,
+] as Array<keyof WheelRenderTokens>);
 
 function strictlyDescending(values: readonly number[]): boolean {
   return values.every((value, index) => index === 0 || values[index - 1] > value);
@@ -3371,7 +3974,13 @@ function safeAngloGeometryTokens(tokens: WheelRenderTokens): boolean {
     tokens.angloRulerBaseScale > tokens.angloRulerSubdivisionScale * 2 &&
     tokens.angloPositionInsetScale <
       tokens.angloPlanetScale - tokens.angloAspectScale &&
-    tokens.angloSubdivisionSector * 2 < tokens.angloSignInnerScale
+    tokens.angloSubdivisionSector * 2 < tokens.angloSignInnerScale &&
+    tokens.angloArrowMaximum >=
+      Math.max(
+        tokens.angloZodiacSingle,
+        tokens.angloZodiacWithOuter,
+        tokens.angloZodiacComparisonWithHouses,
+      )
   );
 }
 
@@ -3395,10 +4004,24 @@ function safeBiwheelGeometryTokens(tokens: WheelRenderTokens): boolean {
 export function resolveWheelRenderTokens(
   readValue: WheelCssValueReader = () => "",
 ): Readonly<WheelRenderTokens> {
+  const keys = Object.keys(WHEEL_RENDER_TOKEN_SPECS) as Array<keyof WheelRenderTokens>;
+  const rawValues = new Map<keyof WheelRenderTokens, string>();
+  for (const key of keys) {
+    const cssVar = WHEEL_RENDER_TOKEN_SPECS[key][0];
+    rawValues.set(key, (readValue(cssVar) ?? "").trim());
+  }
+  for (const [deprecatedKey, canonicalKey] of Object.entries(
+    WHEEL_RENDER_DEPRECATED_TOKEN_ALIASES,
+  ) as Array<[keyof WheelRenderTokens, keyof WheelRenderTokens]>) {
+    if (!rawValues.get(canonicalKey) && rawValues.get(deprecatedKey)) {
+      rawValues.set(canonicalKey, rawValues.get(deprecatedKey) ?? "");
+    }
+  }
+
   const tokens = {} as WheelRenderTokens;
-  for (const key of Object.keys(WHEEL_RENDER_TOKEN_SPECS) as Array<keyof WheelRenderTokens>) {
-    const [cssVar, fallback] = WHEEL_RENDER_TOKEN_SPECS[key];
-    const value = Number.parseFloat((readValue(cssVar) ?? "").trim());
+  for (const key of keys) {
+    const fallback = WHEEL_RENDER_TOKEN_SPECS[key][1];
+    const value = Number.parseFloat(rawValues.get(key) ?? "");
     const range = WHEEL_RENDER_TOKEN_RANGES.get(key);
     const validPattern = !String(key).endsWith("Pattern") || Number.isInteger(value);
     const valid =
@@ -3553,6 +4176,7 @@ export function hasWheelAuthoringOverrides(
     );
   return profileHasValues(overrides.typography)
     || profileHasValues(overrides.linePaint)
+    || profileHasValues(overrides.fillPaint)
     || profileHasValues(overrides.ringRadii);
 }
 
@@ -3750,6 +4374,8 @@ export function createTokenizedWheelRenderStyle({
       aspectLeaderInsetScale: tokens.angloAspectLeaderInsetScale,
       positionInsetScale: tokens.angloPositionInsetScale,
       anglePositionScale: tokens.angloAnglePositionScale,
+      arrowInset: tokens.angloArrowInset,
+      arrowMaximum: tokens.angloArrowMaximum,
     },
     biwheel: {
       outerMax: tokens.biwheelOuterMax,
@@ -3794,14 +4420,17 @@ export function createTokenizedWheelRenderStyle({
     houseLabelScale: tokens.houseLabelScale,
     bodyPosition: {
       degreeScale: tokens.bodyPositionDegreeScale,
+      signScale: tokens.bodyPositionSignScale,
       minuteScale: tokens.bodyPositionMinuteScale,
     },
     anglePosition: {
       degreeScale: tokens.anglePositionDegreeScale,
+      signScale: tokens.anglePositionSignScale,
       minuteScale: tokens.anglePositionMinuteScale,
     },
     housePosition: {
       degreeScale: tokens.housePositionDegreeScale,
+      signScale: tokens.housePositionSignScale,
       minuteScale: tokens.housePositionMinuteScale,
     },
     aspectGlyphScale: tokens.aspectGlyphScale,
@@ -3812,18 +4441,18 @@ export function createTokenizedWheelRenderStyle({
     angloBodyPosition: {
       ...baseTypography.angloBodyPosition,
       degreeScale: tokens.angloBodyDegreeScale,
-      signScale: tokens.angloBodySignScale,
+      signScale: tokens.bodyPositionSignScale,
       minuteScale: tokens.angloBodyMinuteScale,
     },
     angloAnglePosition: {
       degreeScale: tokens.angloAnglePositionDegreeScale,
-      signScale: tokens.angloAnglePositionSignScale,
+      signScale: tokens.anglePositionSignScale,
       minuteScale: tokens.angloAnglePositionMinuteScale,
       gapScale: tokens.angloAnglePositionGapScale,
     },
     angloHousePosition: {
       degreeScale: tokens.angloHousePositionDegreeScale,
-      signScale: tokens.angloHousePositionSignScale,
+      signScale: tokens.housePositionSignScale,
       minuteScale: tokens.angloHousePositionMinuteScale,
       gapScale: tokens.angloHousePositionGapScale,
     },
@@ -3982,6 +4611,69 @@ export function resolveWheelTypographyMetrics(
     fallback: number,
   ) => resolveWheelAuthoringTypographyPx(style, profile, classId, maxRadius, fallback);
   const subdivisionSize = scaled(ratios.subdivision[profile]);
+  const outerLabelSize = outerLayoutUnit * ratios.outerLabelScale;
+  const outerProjectedGlyphSize =
+    outerLayoutUnit * ratios.outerProjectedGlyphScale;
+  const outerMotionSize =
+    outerLayoutUnit * ratios.motionScale * PROFILE_MOTION_SCALE[profile];
+  const secondaryRing = Object.freeze({
+    "secondaryRing.fixedStar.label": direct(
+      "secondaryRing.fixedStar.label",
+      outerLabelSize,
+    ),
+    "secondaryRing.asteroid.label": direct(
+      "secondaryRing.asteroid.label",
+      outerLabelSize,
+    ),
+    "secondaryRing.midpoint.glyph": direct(
+      "secondaryRing.midpoint.glyph",
+      outerLabelSize,
+    ),
+    "secondaryRing.midpoint.text": direct(
+      "secondaryRing.midpoint.text",
+      outerLabelSize,
+    ),
+    "secondaryRing.hybridHit.label": direct(
+      "secondaryRing.hybridHit.label",
+      outerLabelSize,
+    ),
+    "secondaryRing.antiscia.glyph": direct(
+      "secondaryRing.antiscia.glyph",
+      outerProjectedGlyphSize,
+    ),
+    "secondaryRing.antiscia.text": direct(
+      "secondaryRing.antiscia.text",
+      outerProjectedGlyphSize,
+    ),
+    "secondaryRing.contraAntiscia.glyph": direct(
+      "secondaryRing.contraAntiscia.glyph",
+      outerProjectedGlyphSize,
+    ),
+    "secondaryRing.contraAntiscia.text": direct(
+      "secondaryRing.contraAntiscia.text",
+      outerProjectedGlyphSize,
+    ),
+    "secondaryRing.dodecatemoria.glyph": direct(
+      "secondaryRing.dodecatemoria.glyph",
+      outerProjectedGlyphSize,
+    ),
+    "secondaryRing.dodecatemoria.text": direct(
+      "secondaryRing.dodecatemoria.text",
+      outerProjectedGlyphSize,
+    ),
+    "secondaryRing.arabicPart.label": direct(
+      "secondaryRing.arabicPart.label",
+      outerLabelSize,
+    ),
+    "secondaryRing.parallelTransit.glyph": direct(
+      "secondaryRing.parallelTransit.glyph",
+      outerProjectedGlyphSize,
+    ),
+    "secondaryRing.parallelTransit.motion": direct(
+      "secondaryRing.parallelTransit.motion",
+      outerMotionSize,
+    ),
+  } satisfies Partial<Record<WheelAuthoringTypographyClass, number>>);
   return Object.freeze({
     layoutUnit,
     outerLayoutUnit,
@@ -4009,6 +4701,10 @@ export function resolveWheelTypographyMetrics(
         "bodies.inner.position.degree",
         layoutUnit * bodyPosition.degreeScale,
       ),
+      signSize: direct(
+        "bodies.inner.position.sign",
+        layoutUnit * bodyPosition.signScale,
+      ),
       minuteSize: direct(
         "bodies.inner.position.minute",
         layoutUnit * bodyPosition.minuteScale,
@@ -4019,6 +4715,10 @@ export function resolveWheelTypographyMetrics(
         "angles.inner.position.degree",
         layoutUnit * anglePosition.degreeScale,
       ),
+      signSize: direct(
+        "angles.inner.position.sign",
+        layoutUnit * anglePosition.signScale,
+      ),
       minuteSize: direct(
         "angles.inner.position.minute",
         layoutUnit * anglePosition.minuteScale,
@@ -4028,6 +4728,10 @@ export function resolveWheelTypographyMetrics(
       degreeSize: direct(
         "houses.inner.position.degree",
         layoutUnit * housePosition.degreeScale,
+      ),
+      signSize: direct(
+        "houses.inner.position.sign",
+        layoutUnit * housePosition.signScale,
       ),
       minuteSize: direct(
         "houses.inner.position.minute",
@@ -4079,11 +4783,19 @@ export function resolveWheelTypographyMetrics(
       gap: layoutUnit * angloHousePosition.gapScale,
     }),
     aspectGlyphSize: direct("aspects.primary.glyph", layoutUnit * ratios.aspectGlyphScale),
+    interchartAspectGlyphSize: direct(
+      "aspects.interchart.glyph",
+      layoutUnit * ratios.aspectGlyphScale,
+    ),
     aspectGlyphOffset: layoutUnit * ratios.aspectGlyphOffsetScale,
-    motionSize: direct("bodies.inner.motion", layoutUnit * ratios.motionScale),
-    outerMotionSize: direct("bodies.outer.motion", outerLayoutUnit * ratios.motionScale),
-    outerLabelSize: outerLayoutUnit * ratios.outerLabelScale,
-    outerProjectedGlyphSize: outerLayoutUnit * ratios.outerProjectedGlyphScale,
+    motionSize: direct(
+      "bodies.inner.motion",
+      layoutUnit * ratios.motionScale * PROFILE_MOTION_SCALE[profile],
+    ),
+    outerMotionSize: direct("bodies.outer.motion", outerMotionSize),
+    outerLabelSize,
+    outerProjectedGlyphSize,
+    secondaryRing,
   });
 }
 
@@ -4095,13 +4807,68 @@ export function resolveWheelAuthoringTypographyPx(
   maxRadius: number,
   fallback: number,
 ): number {
-  const sourcePx = style.authoringOverrides.typography[profile]?.[classId];
+  const sourcePx =
+    style.authoringOverrides.typography[profile]?.[classId]?.fontSizePx;
   if (sourcePx === undefined || !Number.isFinite(sourcePx)) return fallback;
   // Profile validation owns the tighter class-specific 96/128 px bounds. This
   // final renderer guard prevents malformed external source from exploding a
   // Canvas allocation before validation can report it.
   const safeSourcePx = Math.min(256, Math.max(0.25, sourcePx));
   return resolveWheelAuthoringPx(style, safeSourcePx, maxRadius);
+}
+
+/**
+ * Resolve every profile-v2 text property for one semantic class. Callers pass
+ * the occurrence palette/font fallback so sparse class overrides preserve the
+ * exact production appearance.
+ */
+export function resolveWheelTypographyPaint(
+  style: WheelRenderStyle,
+  profile: WheelTypographyProfile,
+  classId: WheelAuthoringTypographyClass,
+  maxRadius: number,
+  defaults: Readonly<{
+    font: string;
+    size: number;
+    color: string;
+    weight?: number;
+    style?: string;
+    tracking?: number;
+    opacity?: number;
+  }>,
+): ResolvedWheelTypographyPaint {
+  const direct = style.authoringOverrides.typography[profile]?.[classId];
+  const sourceTracking = direct?.trackingPx;
+  const sourceOpacity = direct?.opacity;
+  const sourceWeight = direct?.fontRef?.weight;
+  return Object.freeze({
+    font: direct?.fontRef?.cssFamily?.trim() || defaults.font,
+    size: resolveWheelAuthoringTypographyPx(
+      style,
+      profile,
+      classId,
+      maxRadius,
+      defaults.size,
+    ),
+    weight:
+      sourceWeight !== undefined && Number.isFinite(sourceWeight)
+        ? Math.min(1000, Math.max(1, sourceWeight))
+        : defaults.weight ?? 400,
+    style: direct?.fontRef?.style?.trim() || defaults.style || "normal",
+    tracking:
+      sourceTracking !== undefined && Number.isFinite(sourceTracking)
+        ? resolveWheelAuthoringPx(
+            style,
+            Math.min(64, Math.max(-32, sourceTracking)),
+            maxRadius,
+          )
+        : defaults.tracking ?? 0,
+    color: direct?.color?.trim() || defaults.color,
+    opacity:
+      sourceOpacity !== undefined && Number.isFinite(sourceOpacity)
+        ? Math.min(1, Math.max(0, sourceOpacity))
+        : Math.min(1, Math.max(0, defaults.opacity ?? 1)),
+  });
 }
 
 export function resolveScaledWheelStroke(
@@ -4163,6 +4930,7 @@ export function resolveWheelLinePaint(
   baseWidth: number,
   defaults: Readonly<{
     dash?: readonly number[];
+    color?: string;
     opacity?: number;
     lineCap?: CanvasLineCap;
     lineJoin?: CanvasLineJoin;
@@ -4217,6 +4985,12 @@ export function resolveWheelLinePaint(
   return Object.freeze({
     width,
     dash,
+    ...((direct?.color?.trim() || defaults.color?.trim())
+      ? {
+          fill: direct?.color?.trim() || defaults.color?.trim(),
+          outline: direct?.color?.trim() || defaults.color?.trim(),
+        }
+      : {}),
     opacity: Math.min(1, Math.max(0, (defaults.opacity ?? 1) * opacityScale)),
     lineCap,
     lineJoin: direct?.lineJoin ?? defaults.lineJoin,

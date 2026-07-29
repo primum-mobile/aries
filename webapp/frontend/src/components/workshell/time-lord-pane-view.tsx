@@ -23,7 +23,11 @@ import { useT, type TFunc } from "@/lib/i18n/i18n";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 import type { TimeLordTableId } from "@/stores/workspace-store";
 import { TimeLordTableView } from "./time-lord-table-view";
-import { downloadText, tableToAlignedText, tableToTsv } from "./generic-table-view";
+import {
+  downloadText,
+  tableToConfiguredAlignedText,
+  tableToConfiguredTsv,
+} from "./generic-table-view";
 import { exportTablePayloadPdf } from "./table-pdf-export";
 import { exportTextContent } from "./text-export";
 import { useSettledWorkspaceRefreshSeq } from "./step-refresh";
@@ -67,7 +71,7 @@ export function TimeLordPaneView({ documentId, parentDocumentId, tableId, source
   const [error, setError] = React.useState<string | null>(null);
   const requestSeqRef = React.useRef(0);
   const lastSessionChange = useDaemonWorkspaceStore((s) => s.lastSessionChange);
-  const lastOptionsChange = useDaemonWorkspaceStore((s) => s.lastOptionsChange);
+  const lastOptionsChange = useDaemonWorkspaceStore((s) => s.lastRetainedDataOptionsChange);
   const refreshSeq = useSettledWorkspaceRefreshSeq({
     documentId,
     parentDocumentId,
@@ -181,10 +185,11 @@ export function TimeLordPaneView({ documentId, parentDocumentId, tableId, source
           <PaneToolbarButton
             type="button"
             onClick={() => {
-              const text = tableToTsv(payload, payload.rows);
-              void navigator.clipboard?.writeText(text).catch(() => {
-                downloadText(`${fileStem}.tsv`, text, "text/tab-separated-values");
-              });
+              void tableToConfiguredTsv(payload, payload.rows).then((text) =>
+                navigator.clipboard?.writeText(text).catch(() => {
+                  downloadText(`${fileStem}.tsv`, text, "text/tab-separated-values");
+                })
+              );
             }}
             title={t("timelord.copyRows")}
           >
@@ -192,31 +197,35 @@ export function TimeLordPaneView({ documentId, parentDocumentId, tableId, source
           </PaneToolbarButton>
           <PaneToolbarButton
             type="button"
-            onClick={() =>
-              void exportTextContent({
+            onClick={() => {
+              void tableToConfiguredTsv(payload, payload.rows).then((text) =>
+                exportTextContent({
                 filename: fileStem,
                 extension: "tsv",
                 mimeType: "text/tab-separated-values;charset=utf-8",
-                text: tableToTsv(payload, payload.rows),
+                text,
                 title: t("timelord.exportTsvDialog"),
                 filters: [{ name: t("timelord.tsvFiles"), extensions: ["tsv"] }],
-              }).catch(() => {})
-            }
+                })
+              ).catch(() => {});
+            }}
             title={t("timelord.exportTsv")}
           >
             <Download />
           </PaneToolbarButton>
           <PaneToolbarButton
             type="button"
-            onClick={() =>
-              void exportTextContent({
+            onClick={() => {
+              void tableToConfiguredAlignedText(payload, payload.rows, { title }).then((text) =>
+                exportTextContent({
                 filename: fileStem,
                 extension: "txt",
-                text: tableToAlignedText(payload, payload.rows, { title }),
+                text,
                 title: t("timelord.exportTextDialog"),
                 filters: [{ name: t("timelord.textFiles"), extensions: ["txt"] }],
-              }).catch(() => {})
-            }
+                })
+              ).catch(() => {});
+            }}
             title={t("timelord.exportText")}
           >
             <FileText />

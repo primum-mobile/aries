@@ -75,11 +75,6 @@ const PAINTED_RING_ROLES = Object.freeze([
 const GENERIC_LINE_PAINT_ROLES = Object.freeze(
   WHEEL_LINE_PAINT_ROLES.filter((role) => !PAINTED_RING_ROLES.includes(role)),
 );
-const paintedRingRadiusMetrics = (profile) =>
-  PAINTED_RING_ROLES.map(
-    (role) => `metric.${profile}${role[0].toUpperCase()}${role.slice(1)}Radius`,
-  );
-
 // Renderer-owned applicability contract. Keep this exhaustive: a new editable
 // wheel token must be assigned from its draw-chart/wheel-render-style call site
 // instead of inheriting a variant from its name.
@@ -90,11 +85,12 @@ const WHEEL_VARIANT_GROUPS = Object.freeze([
       "metric.angleLabelScale",
       "metric.angleLabelWeight",
       "metric.angloAnglePositionScale",
+      "metric.angloArrowInset",
+      "metric.angloArrowMaximum",
       "metric.angloAspectLeaderInsetScale",
       "metric.angloAspectScale",
       "metric.angloBodyDegreeScale",
       "metric.angloBodyMinuteScale",
-      "metric.angloBodySignScale",
       "metric.angloCuspLabelScale",
       "metric.angloHouseScale",
       "metric.angloInnerScale",
@@ -107,11 +103,9 @@ const WHEEL_VARIANT_GROUPS = Object.freeze([
       "metric.angloAnglePositionDegreeScale",
       "metric.angloAnglePositionGapScale",
       "metric.angloAnglePositionMinuteScale",
-      "metric.angloAnglePositionSignScale",
       "metric.angloHousePositionDegreeScale",
       "metric.angloHousePositionGapScale",
       "metric.angloHousePositionMinuteScale",
-      "metric.angloHousePositionSignScale",
       "metric.angloSignInnerScale",
       "metric.angloSignScale",
       "metric.angloStructuralStroke",
@@ -120,6 +114,9 @@ const WHEEL_VARIANT_GROUPS = Object.freeze([
       "metric.angloZodiacComparisonWithHouses",
       "metric.angloZodiacSingle",
       "metric.angloZodiacWithOuter",
+      "metric.bodyPositionSignScale",
+      "metric.anglePositionSignScale",
+      "metric.housePositionSignScale",
       "metric.aspectAngloDashOff",
       "metric.aspectAngloDashOn",
       "metric.aspectAngloThicknessDefault",
@@ -133,7 +130,6 @@ const WHEEL_VARIANT_GROUPS = Object.freeze([
       "color.angloHouseBoundaryRing",
       "color.angloBaseRing",
       "color.cuspOuterRing",
-      ...paintedRingRadiusMetrics("anglo"),
       ...wheelLinePaintMetrics(["cuspOuterRing"]),
     ],
   },
@@ -152,7 +148,6 @@ const WHEEL_VARIANT_GROUPS = Object.freeze([
       "metric.classicSignScale",
       "metric.classicSubdivisionScale",
       "color.aspectBoundaryRing",
-      ...paintedRingRadiusMetrics("classic"),
       ...wheelLinePaintMetrics(["aspectBoundaryRing"]),
     ],
   },
@@ -176,7 +171,6 @@ const WHEEL_VARIANT_GROUPS = Object.freeze([
       "metric.compactSinglePositionLane1",
       "metric.compactSinglePositionLane2",
       "metric.compactSubdivisionScale",
-      ...paintedRingRadiusMetrics("compact"),
     ],
   },
   {
@@ -247,6 +241,7 @@ const WHEEL_VARIANT_GROUPS = Object.freeze([
       "color.decanGlyph",
       "color.houseCusp",
       "color.outerLeader",
+      "color.surveilAccent",
       "color.termBoundary",
       "color.termGlyph",
       "color.zodiacSpoke",

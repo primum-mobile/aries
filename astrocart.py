@@ -34,8 +34,8 @@ circumpolar at φ and no curve is emitted.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from math import acos, atan2, cos, degrees, radians, sin, tan
-from typing import Iterable
+from math import acos, atan2, cos, degrees, isfinite, radians, sin, tan
+from typing import Callable, Iterable
 
 import astrology
 import houses
@@ -79,10 +79,17 @@ KIND_CUSTOM = "custom"
 class ACGPoint:
     """A resolvable point on the celestial sphere.
 
-    Exactly one resolution source must be set:
+    One ecliptic resolution source must be set when zodiacal or geodetic
+    geometry is requested:
         * body_id        — Swiss Ephemeris integer (``astrology.SE_SUN`` etc.)
         * star_name      — fixed star catalog name (passed to ``swe_fixstar_ut``)
         * ecliptic       — (lon, lat) in degrees — for lots, midpoints, antiscia
+
+    ``equatorial`` is an optional canonical (RA, declination) pair. It may
+    coexist with ``ecliptic`` for a derived/moving point whose supplementary
+    chart already owns both representations; in-mundo lines and physical
+    zenith/paran overlays must use that pair without reprojecting ecliptic
+    coordinates.
 
     If ``antipode`` is true, the resolved (α, δ) is flipped through the origin
     — used for descending nodes and opposition points.
@@ -96,6 +103,8 @@ class ACGPoint:
     ecliptic: tuple[float, float] | None = None
     antipode: bool = False
     color_hex: str | None = None  # optional display hint; renderer may ignore
+    # Appended for positional compatibility with the original point contract.
+    equatorial: tuple[float, float] | None = None
 
 
 # Swiss Ephemeris default: 10 planets + Chiron + both lunar nodes.
@@ -131,8 +140,24 @@ NATAL_ASC_POINT_ID = "natal_asc"
 # Synthetic celestial point for the chart's own rising ecliptic degree.
 
 LINE_SYSTEM_IN_MUNDO = "in_mundo"
+LINE_SYSTEM_ZODIACAL = "zodiacal"
 LINE_SYSTEM_GEODETIC_GREENWICH = "geodetic_greenwich"
 LINE_SYSTEM_GEODETIC_GIZA = "geodetic_giza"
+LINE_SYSTEM_GEODETIC_CUSTOM = "geodetic_custom"
+
+MARKER_ZENITH = "ZENITH"
+LINE_ASPECT = "ASPECT"
+
+ASPECT_BRANCH_PLUS = "plus"
+ASPECT_BRANCH_MINUS = "minus"
+ASPECT_BRANCH_SINGLE = "single"
+ASPECT_BRANCHES = (
+    ASPECT_BRANCH_PLUS,
+    ASPECT_BRANCH_MINUS,
+    ASPECT_BRANCH_SINGLE,
+)
+
+ASPECT_LINE_LABEL_KEY = "astrocart.aspectLineLabel"
 
 GEODETIC_GREENWICH_MERIDIAN_LON = 0.0
 # Great Pyramid of Giza meridian, east-positive decimal degrees.
@@ -144,6 +169,65 @@ class ACGLine:
     point_id: str
     kind: str
     segments: tuple[tuple[tuple[float, float], ...], ...]
+
+
+@dataclass(frozen=True)
+class ACGAspectSpec:
+    """A stable, selectable ecliptic-aspect definition.
+
+    ``aspect_id`` and ``name`` are stable machine-readable identifiers.
+    ``label_key`` is resolved at the service/UI boundary, while ``angle_deg``
+    is normalized to an undirected separation in the 0°..180° range before
+    any geometry is produced.
+    """
+
+    aspect_id: str
+    name: str
+    label_key: str
+    angle_deg: float
+
+
+@dataclass(frozen=True)
+class ACGAspectLine:
+    """One branch of a source point's aspect locus to a selected angle.
+
+    These are deliberately separate from ``ACGLine``: an aspect-to-angle
+    locus is not the source point itself on MC/IC/ASC/DSC and therefore must
+    not participate in zenith-marker or paran computation.
+    """
+
+    point_id: str
+    target_angle: str
+    aspect_id: str
+    aspect_name: str
+    aspect_key: str
+    aspect_angle: float
+    branch: str
+    branch_sign: int
+    segments: tuple[tuple[tuple[float, float], ...], ...]
+
+
+# Aries' complete ecliptic-aspect block, matching ``chart.Chart.Aspects``.
+# This registry is calculation data only; it does not read mutable chart or UI
+# option state. Callers opt into any subset explicitly.
+ECLIPTIC_ASPECT_SPECS: tuple[ACGAspectSpec, ...] = (
+    ACGAspectSpec("conjunction", "conjunction", "Conjunctio", 0.0),
+    ACGAspectSpec("semisextile", "semisextile", "Semisextil", 30.0),
+    ACGAspectSpec("semisquare", "semisquare", "Semiquadrat", 45.0),
+    ACGAspectSpec("sextile", "sextile", "Sextil", 60.0),
+    ACGAspectSpec("quintile", "quintile", "Quintile", 72.0),
+    ACGAspectSpec("square", "square", "Quadrat", 90.0),
+    ACGAspectSpec("trine", "trine", "Trigon", 120.0),
+    ACGAspectSpec("sesquisquare", "sesquisquare", "Sesquiquadrat", 135.0),
+    ACGAspectSpec("biquintile", "biquintile", "Biquintile", 144.0),
+    ACGAspectSpec("quincunx", "quincunx", "Quinqunx", 150.0),
+    ACGAspectSpec("opposition", "opposition", "Oppositio", 180.0),
+    ACGAspectSpec("septile", "septile", "Septile", 360.0 / 7.0),
+)
+
+ASPECT_SPEC_BY_ID: dict[str, ACGAspectSpec] = {
+    spec.aspect_id: spec for spec in ECLIPTIC_ASPECT_SPECS
+}
 
 
 @dataclass(frozen=True)
@@ -160,6 +244,16 @@ class ACGParan:
 
 
 @dataclass(frozen=True)
+class ACGMarker:
+    """A point-like geographic annotation derived from a celestial point."""
+
+    point_id: str
+    kind: str
+    longitude: float
+    latitude: float
+
+
+@dataclass(frozen=True)
 class ACGResult:
     jd_ut: float
     theta0_deg: float
@@ -167,10 +261,21 @@ class ACGResult:
     lines: tuple[ACGLine, ...]
     lat_range: tuple[float, float]
     points: tuple[ACGPoint, ...] = field(default_factory=tuple)
+    # Keep ``parans`` immediately after ``points``: callers historically used
+    # the first seven fields positionally before aspect/marker systems existed.
     parans: tuple[ACGParan, ...] = field(default_factory=tuple)
+    aspect_lines: tuple[ACGAspectLine, ...] = field(default_factory=tuple)
+    markers: tuple[ACGMarker, ...] = field(default_factory=tuple)
+    line_system: str = LINE_SYSTEM_IN_MUNDO
+    # Parans always mean simultaneous physical angularity. They do not change
+    # coordinate systems when the displayed longitude lines are zodiacal.
+    paran_system: str = LINE_SYSTEM_IN_MUNDO
 
     def lines_for(self, point_id: str) -> tuple[ACGLine, ...]:
         return tuple(l for l in self.lines if l.point_id == point_id)
+
+    def aspect_lines_for(self, point_id: str) -> tuple[ACGAspectLine, ...]:
+        return tuple(l for l in self.aspect_lines if l.point_id == point_id)
 
     def to_geojson(self) -> dict:
         # Serve boundary: point labels ("N. Node", "S. Node", planet names)
@@ -187,6 +292,7 @@ class ACGResult:
                 "point": line.point_id,
                 "label": label_by_id.get(line.point_id, line.point_id),
                 "kind": line.kind,
+                "line_system": self.line_system,
             }
             color = color_by_id.get(line.point_id)
             if color:
@@ -196,6 +302,65 @@ class ACGResult:
                 "geometry": {
                     "type": "MultiLineString",
                     "coordinates": [list(map(list, seg)) for seg in line.segments],
+                },
+                "properties": props,
+            })
+        for line in self.aspect_lines:
+            point_label = label_by_id.get(line.point_id, line.point_id)
+            props = {
+                "point": line.point_id,
+                "label": point_label,
+                "kind": LINE_ASPECT,
+                "target_angle": line.target_angle,
+                "aspect_id": line.aspect_id,
+                "aspect_name": line.aspect_name,
+                "aspect_key": line.aspect_key,
+                "aspect_angle": line.aspect_angle,
+                "branch": line.branch,
+                "branch_sign": line.branch_sign,
+                "line_system": self.line_system,
+                # Keep phrase construction at the service/UI boundary so
+                # languages can control word order. No served English
+                # sentence is baked into this calculation result.
+                "label_key": ASPECT_LINE_LABEL_KEY,
+                "label_args": {
+                    "point": line.point_id,
+                    "point_label": point_label,
+                    "aspect_id": line.aspect_id,
+                    "aspect_key": line.aspect_key,
+                    "target_angle": line.target_angle,
+                },
+            }
+            color = color_by_id.get(line.point_id)
+            if color:
+                props["color"] = color
+            features.append({
+                "type": "Feature",
+                "geometry": {
+                    "type": "MultiLineString",
+                    "coordinates": [list(map(list, seg)) for seg in line.segments],
+                },
+                "properties": props,
+            })
+        for marker in self.markers:
+            props = {
+                "point": marker.point_id,
+                "label": label_by_id.get(marker.point_id, marker.point_id),
+                "kind": marker.kind,
+                # Zeniths are physical substellar points even while the
+                # selectable line layer is rendered zodiacally.
+                "line_system": LINE_SYSTEM_IN_MUNDO,
+                "display_line_system": self.line_system,
+                "method": "substellar",
+            }
+            color = color_by_id.get(marker.point_id)
+            if color:
+                props["color"] = color
+            features.append({
+                "type": "Feature",
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [marker.longitude, marker.latitude],
                 },
                 "properties": props,
             })
@@ -215,9 +380,18 @@ class ACGResult:
                     "b_point": p.point_b_id,
                     "b_angle": p.angle_b,
                     "label": f"{a_label} {p.angle_a} × {b_label} {p.angle_b}",
+                    "line_system": self.paran_system,
+                    "display_line_system": self.line_system,
                 },
             })
-        return {"type": "FeatureCollection", "features": features}
+        return {
+            "type": "FeatureCollection",
+            "features": features,
+            "metadata": {
+                "line_system": self.line_system,
+                "paran_system": self.paran_system,
+            },
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -383,13 +557,118 @@ def _gst_deg(jd_ut: float) -> float:
     return float(astrology.swe_sidtime(jd_ut)) * 15.0
 
 
+def _normalize_aspect_angle(value: float) -> float:
+    """Return an undirected aspect separation in the closed 0°..180° range."""
+    if isinstance(value, bool):
+        raise ValueError("aspect angle must be a finite number")
+    try:
+        angle = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("aspect angle must be a finite number") from exc
+    if not isfinite(angle):
+        raise ValueError("aspect angle must be a finite number")
+    angle %= 360.0
+    if angle > 180.0:
+        angle = 360.0 - angle
+    if abs(angle) < 1e-12:
+        return 0.0
+    if abs(angle - 180.0) < 1e-12:
+        return 180.0
+    return angle
+
+
+def _coerce_aspect_spec(value: ACGAspectSpec | str) -> ACGAspectSpec:
+    if isinstance(value, str):
+        lookup = value.strip().casefold()
+        for candidate in ECLIPTIC_ASPECT_SPECS:
+            if lookup in {
+                candidate.aspect_id.casefold(),
+                candidate.name.casefold(),
+                candidate.label_key.casefold(),
+            }:
+                return candidate
+        raise ValueError(f"unknown ACG aspect specification {value!r}")
+    if not isinstance(value, ACGAspectSpec):
+        raise TypeError(f"cannot coerce {value!r} to ACGAspectSpec")
+
+    aspect_id = value.aspect_id.strip() if isinstance(value.aspect_id, str) else ""
+    name = value.name.strip() if isinstance(value.name, str) else ""
+    label_key = value.label_key.strip() if isinstance(value.label_key, str) else ""
+    if not aspect_id or not name or not label_key:
+        raise ValueError("aspect id, name, and label key must be non-empty")
+    return ACGAspectSpec(
+        aspect_id=aspect_id,
+        name=name,
+        label_key=label_key,
+        angle_deg=_normalize_aspect_angle(value.angle_deg),
+    )
+
+
+def _normalize_aspect_specs(
+    aspects: Iterable[ACGAspectSpec | str] | None,
+) -> tuple[ACGAspectSpec, ...]:
+    """Validate and deduplicate a caller-selected aspect set."""
+    if aspects is None:
+        return ()
+    if isinstance(aspects, (ACGAspectSpec, str)):
+        aspects = (aspects,)
+
+    normalized: list[ACGAspectSpec] = []
+    by_id: dict[str, ACGAspectSpec] = {}
+    for raw in aspects:
+        spec = _coerce_aspect_spec(raw)
+        previous = by_id.get(spec.aspect_id)
+        if previous is not None:
+            if previous != spec:
+                raise ValueError(
+                    f"conflicting ACG aspect definitions for {spec.aspect_id!r}"
+                )
+            continue
+        by_id[spec.aspect_id] = spec
+        normalized.append(spec)
+    return tuple(normalized)
+
+
+def _normalize_aspect_targets(
+    targets: Iterable[str] | str | None,
+) -> tuple[str, ...]:
+    if targets is None:
+        return ()
+    if isinstance(targets, str):
+        targets = (targets,)
+    normalized: list[str] = []
+    for target in targets:
+        if target not in ALL_KINDS:
+            raise ValueError(
+                f"aspect target must be one of {ALL_KINDS!r}, got {target!r}"
+            )
+        if target not in normalized:
+            normalized.append(target)
+    return tuple(normalized)
+
+
+def _aspect_branches(angle_deg: float) -> tuple[tuple[str, float], ...]:
+    """Return unique signed branches for one normalized aspect separation."""
+    if angle_deg == 0.0 or angle_deg == 180.0:
+        return ((ASPECT_BRANCH_SINGLE, angle_deg),)
+    return (
+        (ASPECT_BRANCH_PLUS, angle_deg),
+        (ASPECT_BRANCH_MINUS, -angle_deg),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Point resolution
 
 def resolve_equatorial(point: ACGPoint, jd_ut: float, iflag: int = astrology.SEFLG_SWIEPH) -> tuple[float, float]:
     """Return (ra_deg, dec_deg) for a point at the given instant."""
     flag = (iflag & ~astrology.SEFLG_SIDEREAL) | astrology.SEFLG_EQUATORIAL
-    if point.body_id is not None:
+    if point.equatorial is not None:
+        ra, dec = float(point.equatorial[0]), float(point.equatorial[1])
+        if not (isfinite(ra) and isfinite(dec)):
+            raise ValueError(f"ACGPoint {point.id!r} has invalid equatorial coordinates")
+        ra %= 360.0
+    elif point.body_id is not None:
         _ret, eq, _err = astrology.swe_calc_ut_ex(jd_ut, int(point.body_id), flag)
         ra, dec = float(eq[0]), float(eq[1])
     elif point.star_name is not None:
@@ -409,7 +688,10 @@ def resolve_equatorial(point: ACGPoint, jd_ut: float, iflag: int = astrology.SEF
 
 def resolve_ecliptic(point: ACGPoint, jd_ut: float, iflag: int = astrology.SEFLG_SWIEPH) -> tuple[float, float]:
     """Return (ecliptic_lon_deg, ecliptic_lat_deg) for a point at the instant."""
-    flag = iflag & ~getattr(astrology, "SEFLG_EQUATORIAL", 0)
+    flag = iflag & ~(
+        getattr(astrology, "SEFLG_EQUATORIAL", 0)
+        | getattr(astrology, "SEFLG_SIDEREAL", 0)
+    )
     if point.body_id is not None:
         _ret, ecl, _err = astrology.swe_calc_ut_ex(jd_ut, int(point.body_id), flag)
         lon, lat = float(ecl[0]), float(ecl[1])
@@ -425,6 +707,21 @@ def resolve_ecliptic(point: ACGPoint, jd_ut: float, iflag: int = astrology.SEFLG
         lon = (lon + 180.0) % 360.0
         lat = -lat
     return lon % 360.0, lat
+
+
+def resolve_zodiacal_equatorial(
+    point: ACGPoint,
+    jd_ut: float,
+    iflag: int = astrology.SEFLG_SWIEPH,
+) -> tuple[float, float]:
+    """Return zodiacal ACG coordinates for ``point``.
+
+    Zodiacal ACG uses the point's tropical ecliptic longitude but suppresses
+    ecliptic latitude before rotating through the date-correct true obliquity.
+    This is an ordinary chart-time ACG coordinate, not a geodetic mapping.
+    """
+    ecl_lon, _ecl_lat = resolve_ecliptic(point, jd_ut, iflag)
+    return _ecl_to_equ(ecl_lon, 0.0, _true_obliquity_deg(jd_ut))
 
 
 def _coerce_point(x) -> ACGPoint:
@@ -454,8 +751,8 @@ def _horizon_points(
     The valid latitude band is bounded by the circumpolar condition
     |tan φ · tan δ| ≤ 1 → |φ| ≤ 90° − |δ|. To keep the curve visually
     closed we clamp the sampling range to that band and insert the
-    exact termination points (where H = 180°, i.e. the curve meets the
-    antimeridian of the MC longitude).
+    exact termination points (where H = 0°/180°, i.e. the curve meets
+    one of the MC/IC meridians).
     """
     if abs(dec) < 1e-9:
         # δ = 0 — body is on celestial equator; ASC/DSC are vertical
@@ -477,20 +774,17 @@ def _horizon_points(
 
     dec_rad = radians(dec)
 
-    # At the circumpolar edges the curve meets one of the meridians:
-    #   δ > 0  → south edge meets MC (H=0),   north edge meets IC (H=180)
-    #   δ < 0  → south edge meets IC,          north edge meets MC
-    h_south = 0.0 if dec > 0 else 180.0
-    h_north = 180.0 if dec > 0 else 0.0
-
-    start_lon = ra + sign * h_south - theta0
-    end_lon = ra + sign * h_north - theta0
-
     def _lon_at(phi: float) -> float:
         cos_h = -tan(radians(phi)) * tan(dec_rad)
         cos_h = max(-1.0, min(1.0, cos_h))
         H = degrees(acos(cos_h))
         return ra + sign * H - theta0
+
+    # The requested latitude window can end before either circumpolar
+    # boundary. Evaluate its actual horizon intersection instead of stamping
+    # the H=0°/180° boundary longitude onto an off-boundary endpoint.
+    start_lon = _lon_at(eff_min)
+    end_lon = _lon_at(eff_max)
 
     points = _adaptive_latitude_curve(
         eff_min,
@@ -549,17 +843,15 @@ def _geodetic_horizon_points(
         return []
 
     dec_rad = radians(dec)
-    h_south = 0.0 if dec > 0 else 180.0
-    h_north = 180.0 if dec > 0 else 0.0
-
-    start_lon = _geo_lon_for_ramc(ra + sign * h_south)
-    end_lon = _geo_lon_for_ramc(ra + sign * h_north)
 
     def _lon_at(phi: float) -> float:
         cos_h = -tan(radians(phi)) * tan(dec_rad)
         cos_h = max(-1.0, min(1.0, cos_h))
         H = degrees(acos(cos_h))
         return _geo_lon_for_ramc(ra + sign * H)
+
+    start_lon = _lon_at(eff_min)
+    end_lon = _lon_at(eff_max)
 
     return _adaptive_latitude_curve(
         eff_min,
@@ -570,6 +862,52 @@ def _geodetic_horizon_points(
         max_lat_step=step,
         max_error_meters=max_error_meters,
     )
+
+
+def _geodetic_angle_locus_segments(
+    ecl_lon: float,
+    eps: float,
+    meridian_lon: float,
+    target_angle: str,
+    lat_min: float,
+    lat_max: float,
+    step_deg: float,
+    horizon_error_meters: float,
+) -> tuple[tuple[tuple[float, float], ...], ...]:
+    """Return one angle locus in the selected geodetic longitude system."""
+    if target_angle == LINE_MC:
+        return _meridian_segments(ecl_lon + meridian_lon, lat_min, lat_max)
+    if target_angle == LINE_IC:
+        return _meridian_segments(
+            ecl_lon + meridian_lon + 180.0,
+            lat_min,
+            lat_max,
+        )
+    if target_angle == LINE_ASC:
+        points = _geodetic_horizon_points(
+            ecl_lon,
+            eps,
+            meridian_lon,
+            lat_min,
+            lat_max,
+            step_deg,
+            sign=-1,
+            max_error_meters=horizon_error_meters,
+        )
+        return _split_antimeridian(points)
+    if target_angle == LINE_DSC:
+        points = _geodetic_horizon_points(
+            ecl_lon,
+            eps,
+            meridian_lon,
+            lat_min,
+            lat_max,
+            step_deg,
+            sign=+1,
+            max_error_meters=horizon_error_meters,
+        )
+        return _split_antimeridian(points)
+    raise ValueError(f"unsupported ACG target angle {target_angle!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -811,16 +1149,69 @@ def compute_parans(
 # ---------------------------------------------------------------------------
 # Public API
 
-def compute_acg(
+def _angle_locus_segments(
+    ra: float,
+    dec: float,
+    theta0: float,
+    target_angle: str,
+    lat_min: float,
+    lat_max: float,
+    step_deg: float,
+    horizon_error_meters: float,
+) -> tuple[tuple[tuple[float, float], ...], ...]:
+    """Solve one celestial coordinate's locus on exactly one chart angle."""
+    if target_angle == LINE_MC:
+        return _meridian_segments(ra - theta0, lat_min, lat_max)
+    if target_angle == LINE_IC:
+        return _meridian_segments(ra - theta0 + 180.0, lat_min, lat_max)
+    if target_angle == LINE_ASC:
+        points = _horizon_points(
+            ra,
+            dec,
+            theta0,
+            lat_min,
+            lat_max,
+            step_deg,
+            sign=-1,
+            max_error_meters=horizon_error_meters,
+        )
+        return _split_antimeridian(points)
+    if target_angle == LINE_DSC:
+        points = _horizon_points(
+            ra,
+            dec,
+            theta0,
+            lat_min,
+            lat_max,
+            step_deg,
+            sign=+1,
+            max_error_meters=horizon_error_meters,
+        )
+        return _split_antimeridian(points)
+    raise ValueError(f"unsupported ACG target angle {target_angle!r}")
+
+
+def _compute_ordinary_acg(
     jd_ut: float,
-    points: Iterable = DEFAULT_POINTS,
-    kinds: Iterable[str] = ALL_KINDS,
-    lat_range: tuple[float, float] = (-GEOGRAPHIC_LAT_LIMIT, GEOGRAPHIC_LAT_LIMIT),
-    step_deg: float = 1.0,
-    iflag: int = astrology.SEFLG_SWIEPH,
-    include_parans: bool = True,
-    horizon_error_meters: float = HORIZON_CHORD_ERROR_METERS,
-    paran_scan_step_deg: float = PARAN_SCAN_STEP_DEG,
+    points: Iterable,
+    kinds: Iterable[str],
+    lat_range: tuple[float, float],
+    step_deg: float,
+    iflag: int,
+    include_parans: bool,
+    include_zenith_markers: bool,
+    horizon_error_meters: float,
+    paran_scan_step_deg: float,
+    aspects: Iterable[ACGAspectSpec | str] | None,
+    aspect_targets: Iterable[str] | str | None,
+    *,
+    line_system: str,
+    resolver: Callable[[ACGPoint], tuple[float, float]],
+    aspect_basis_resolver: Callable[[ACGPoint], tuple[float, float]] | None = None,
+    aspect_branch_resolver: Callable[
+        [float, float, float], tuple[float, float]
+    ] | None = None,
+    zenith_resolver: Callable[[ACGPoint], tuple[float, float]] | None = None,
 ) -> ACGResult:
     if step_deg <= 0:
         raise ValueError("step_deg must be positive")
@@ -830,16 +1221,33 @@ def compute_acg(
 
     theta0 = _gst_deg(jd_ut)
     kinds_set = set(kinds)
+    aspect_specs = _normalize_aspect_specs(aspects)
+    selected_aspect_targets = (
+        _normalize_aspect_targets(aspect_targets) if aspect_specs else ()
+    )
     resolved_points = tuple(_coerce_point(p) for p in points)
     equatorial: dict[str, tuple[float, float]] = {}
+    zenith_equatorial: dict[str, tuple[float, float]] = {}
     out_lines: list[ACGLine] = []
+    out_aspect_lines: list[ACGAspectLine] = []
 
     for pt in resolved_points:
         try:
-            ra, dec = resolve_equatorial(pt, jd_ut, iflag)
+            ra, dec = resolver(pt)
         except Exception:
             continue
         equatorial[pt.id] = (ra, dec)
+        if include_zenith_markers:
+            try:
+                zenith_equatorial[pt.id] = (
+                    zenith_resolver(pt) if zenith_resolver is not None else (ra, dec)
+                )
+            except Exception:
+                # A point can still have a valid display-system line even when
+                # its physical coordinate is unavailable. Zeniths, unlike the
+                # selectable line system, are always physical substellar
+                # points and therefore omit only that marker.
+                pass
 
         if LINE_MC in kinds_set:
             out_lines.append(ACGLine(pt.id, LINE_MC,
@@ -862,6 +1270,71 @@ def compute_acg(
             )
             out_lines.append(ACGLine(pt.id, LINE_DSC, _split_antimeridian(pts)))
 
+        if aspect_specs and selected_aspect_targets:
+            # In mundo uses actual RA/declination as its aspect coordinate:
+            # branches are RA±A and retain the source's physical declination.
+            # Zodiacal callers supply an ecliptic basis/branch resolver below.
+            if aspect_basis_resolver is None:
+                basis_coordinate, basis_latitude = ra, dec
+            else:
+                try:
+                    basis_coordinate, basis_latitude = aspect_basis_resolver(pt)
+                except Exception:
+                    continue
+
+            for aspect in aspect_specs:
+                for branch, signed_angle in _aspect_branches(aspect.angle_deg):
+                    if aspect_branch_resolver is None:
+                        branch_ra = (basis_coordinate + signed_angle) % 360.0
+                        branch_dec = basis_latitude
+                    else:
+                        branch_ra, branch_dec = aspect_branch_resolver(
+                            basis_coordinate,
+                            basis_latitude,
+                            signed_angle,
+                        )
+                    for target_angle in selected_aspect_targets:
+                        out_aspect_lines.append(ACGAspectLine(
+                            point_id=pt.id,
+                            target_angle=target_angle,
+                            aspect_id=aspect.aspect_id,
+                            aspect_name=aspect.name,
+                            aspect_key=aspect.label_key,
+                            aspect_angle=aspect.angle_deg,
+                            branch=branch,
+                            branch_sign=(
+                                1 if branch == ASPECT_BRANCH_PLUS
+                                else -1 if branch == ASPECT_BRANCH_MINUS
+                                else 0
+                            ),
+                            segments=_angle_locus_segments(
+                                branch_ra,
+                                branch_dec,
+                                theta0,
+                                target_angle,
+                                lat_min,
+                                lat_max,
+                                step_deg,
+                                horizon_error_meters,
+                            ),
+                        ))
+
+    markers = (
+        tuple(
+            ACGMarker(
+                point_id=point_id,
+                kind=MARKER_ZENITH,
+                longitude=_norm_lon(ra - theta0),
+                latitude=dec,
+            )
+            for point_id, (ra, dec) in zenith_equatorial.items()
+        )
+        if include_zenith_markers else ()
+    )
+    # Parans retain their established meaning: simultaneous physical
+    # in-mundo angularity, independent of the displayed line coordinate
+    # system. In particular, zodiacal longitude lines do not reinterpret
+    # paran latitudes using latitude-suppressed coordinates.
     parans = (
         compute_parans(jd_ut, resolved_points, iflag=iflag, scan_step_deg=paran_scan_step_deg)
         if include_parans else ()
@@ -874,7 +1347,116 @@ def compute_acg(
         lines=tuple(out_lines),
         lat_range=lat_range,
         points=resolved_points,
+        aspect_lines=tuple(out_aspect_lines),
         parans=parans,
+        markers=markers,
+        line_system=line_system,
+        paran_system=LINE_SYSTEM_IN_MUNDO,
+    )
+
+
+def compute_acg(
+    jd_ut: float,
+    points: Iterable = DEFAULT_POINTS,
+    kinds: Iterable[str] = ALL_KINDS,
+    lat_range: tuple[float, float] = (-GEOGRAPHIC_LAT_LIMIT, GEOGRAPHIC_LAT_LIMIT),
+    step_deg: float = 1.0,
+    iflag: int = astrology.SEFLG_SWIEPH,
+    include_parans: bool = True,
+    horizon_error_meters: float = HORIZON_CHORD_ERROR_METERS,
+    paran_scan_step_deg: float = PARAN_SCAN_STEP_DEG,
+    include_zenith_markers: bool = False,
+    aspects: Iterable[ACGAspectSpec | str] | None = (),
+    aspect_targets: Iterable[str] | str | None = ALL_KINDS,
+) -> ACGResult:
+    """Compute ordinary in-mundo ACG lines at the chart instant.
+
+    Aspect loci, when selected, follow the professional in-mundo convention:
+    apply the aspect as ``RA ± aspect`` while preserving the source point's
+    actual declination, then solve only each selected target angle locus.
+    """
+    return _compute_ordinary_acg(
+        jd_ut,
+        points,
+        kinds,
+        lat_range,
+        step_deg,
+        iflag,
+        include_parans,
+        include_zenith_markers,
+        horizon_error_meters,
+        paran_scan_step_deg,
+        aspects,
+        aspect_targets,
+        line_system=LINE_SYSTEM_IN_MUNDO,
+        resolver=lambda point: resolve_equatorial(point, jd_ut, iflag),
+    )
+
+
+def compute_zodiacal_acg(
+    jd_ut: float,
+    points: Iterable = DEFAULT_POINTS,
+    kinds: Iterable[str] = ALL_KINDS,
+    lat_range: tuple[float, float] = (-GEOGRAPHIC_LAT_LIMIT, GEOGRAPHIC_LAT_LIMIT),
+    step_deg: float = 1.0,
+    iflag: int = astrology.SEFLG_SWIEPH,
+    include_parans: bool = True,
+    horizon_error_meters: float = HORIZON_CHORD_ERROR_METERS,
+    paran_scan_step_deg: float = PARAN_SCAN_STEP_DEG,
+    include_zenith_markers: bool = False,
+    aspects: Iterable[ACGAspectSpec | str] | None = (),
+    aspect_targets: Iterable[str] | str | None = ALL_KINDS,
+) -> ACGResult:
+    """Compute chart-time zodiacal ACG lines.
+
+    Each point is resolved to tropical ecliptic longitude, its ecliptic
+    latitude is suppressed, and the longitude is rotated to equatorial
+    coordinates with true obliquity. Geographic lines remain anchored to this
+    chart instant's GST. Parans, when requested, remain physical in-mundo
+    simultaneous angularity and are declared as such on the result.
+    """
+    eps = _true_obliquity_deg(jd_ut)
+    ecliptic_cache: dict[int, tuple[float, float]] = {}
+
+    def _resolve_ecliptic(point: ACGPoint) -> tuple[float, float]:
+        cache_key = id(point)
+        coordinate = ecliptic_cache.get(cache_key)
+        if coordinate is None:
+            coordinate = resolve_ecliptic(point, jd_ut, iflag)
+            ecliptic_cache[cache_key] = coordinate
+        return coordinate
+
+    def _resolve(point: ACGPoint) -> tuple[float, float]:
+        ecl_lon, _ecl_lat = _resolve_ecliptic(point)
+        return _ecl_to_equ(ecl_lon, 0.0, eps)
+
+    def _resolve_aspect_branch(
+        ecl_lon: float,
+        _ecl_lat: float,
+        signed_angle: float,
+    ) -> tuple[float, float]:
+        # Zodiacal aspects are formed in tropical ecliptic longitude first;
+        # each λ±A branch has β=0 before the date-correct obliquity rotation.
+        return _ecl_to_equ(ecl_lon + signed_angle, 0.0, eps)
+
+    return _compute_ordinary_acg(
+        jd_ut,
+        points,
+        kinds,
+        lat_range,
+        step_deg,
+        iflag,
+        include_parans,
+        include_zenith_markers,
+        horizon_error_meters,
+        paran_scan_step_deg,
+        aspects,
+        aspect_targets,
+        line_system=LINE_SYSTEM_ZODIACAL,
+        resolver=_resolve,
+        aspect_basis_resolver=_resolve_ecliptic,
+        aspect_branch_resolver=_resolve_aspect_branch,
+        zenith_resolver=lambda point: resolve_equatorial(point, jd_ut, iflag),
     )
 
 
@@ -889,6 +1471,9 @@ def compute_geodetic_acg(
     include_parans: bool = True,
     horizon_error_meters: float = HORIZON_CHORD_ERROR_METERS,
     paran_scan_step_deg: float = PARAN_SCAN_STEP_DEG,
+    include_zenith_markers: bool = False,
+    aspects: Iterable[ACGAspectSpec | str] | None = (),
+    aspect_targets: Iterable[str] | str | None = ALL_KINDS,
 ) -> ACGResult:
     """Geodetic zodiacal-offset astrocartography lines.
 
@@ -896,6 +1481,10 @@ def compute_geodetic_acg(
     is 0°; the Giza variant uses the Great Pyramid meridian. MC/IC lines are the
     direct geodetic equivalents of a point's zodiacal longitude. ASC/DSC lines
     are computed from the ecliptic horizon under that geodetic MC.
+
+    Aspect branches are formed in tropical ecliptic longitude before the same
+    geodetic angle solve. Parans and zenith markers remain physical in-mundo
+    overlays: changing the display meridian never relocates them.
     """
     if step_deg <= 0:
         raise ValueError("step_deg must be positive")
@@ -904,10 +1493,17 @@ def compute_geodetic_acg(
         raise ValueError("lat_range must be (min, max) with min < max")
 
     eps = _true_obliquity_deg(jd_ut)
+    physical_theta0 = _gst_deg(jd_ut)
     kinds_set = set(kinds)
+    aspect_specs = _normalize_aspect_specs(aspects)
+    selected_aspect_targets = (
+        _normalize_aspect_targets(aspect_targets) if aspect_specs else ()
+    )
     resolved_points = tuple(_coerce_point(p) for p in points)
     equatorial: dict[str, tuple[float, float]] = {}
+    zenith_equatorial: dict[str, tuple[float, float]] = {}
     out_lines: list[ACGLine] = []
+    out_aspect_lines: list[ACGAspectLine] = []
 
     for pt in resolved_points:
         try:
@@ -916,6 +1512,15 @@ def compute_geodetic_acg(
             continue
         ra, dec = _ecl_to_equ(ecl_lon, 0.0, eps)
         equatorial[pt.id] = (ra, dec)
+        if include_zenith_markers:
+            try:
+                zenith_equatorial[pt.id] = resolve_equatorial(
+                    pt,
+                    jd_ut,
+                    iflag,
+                )
+            except Exception:
+                pass
 
         if LINE_MC in kinds_set:
             out_lines.append(ACGLine(pt.id, LINE_MC,
@@ -938,12 +1543,60 @@ def compute_geodetic_acg(
             )
             out_lines.append(ACGLine(pt.id, LINE_DSC, _split_antimeridian(pts)))
 
+        for aspect in aspect_specs:
+            for branch, signed_angle in _aspect_branches(aspect.angle_deg):
+                branch_lon = (ecl_lon + signed_angle) % 360.0
+                for target_angle in selected_aspect_targets:
+                    out_aspect_lines.append(ACGAspectLine(
+                        point_id=pt.id,
+                        target_angle=target_angle,
+                        aspect_id=aspect.aspect_id,
+                        aspect_name=aspect.name,
+                        aspect_key=aspect.label_key,
+                        aspect_angle=aspect.angle_deg,
+                        branch=branch,
+                        branch_sign=(
+                            1 if branch == ASPECT_BRANCH_PLUS
+                            else -1 if branch == ASPECT_BRANCH_MINUS
+                            else 0
+                        ),
+                        segments=_geodetic_angle_locus_segments(
+                            branch_lon,
+                            eps,
+                            meridian_lon,
+                            target_angle,
+                            lat_min,
+                            lat_max,
+                            step_deg,
+                            horizon_error_meters,
+                        ),
+                    ))
+
+    markers = (
+        tuple(
+            ACGMarker(
+                point_id=point_id,
+                kind=MARKER_ZENITH,
+                longitude=_norm_lon(ra - physical_theta0),
+                latitude=dec,
+            )
+            for point_id, (ra, dec) in zenith_equatorial.items()
+        )
+        if include_zenith_markers else ()
+    )
     # Parans are latitude crossings and remain the same latitude set across
     # standard/geodetic longitude-line modes.
     parans = (
         compute_parans(jd_ut, resolved_points, iflag=iflag, scan_step_deg=paran_scan_step_deg)
         if include_parans else ()
     )
+    normalized_meridian = _norm_lon(meridian_lon)
+    if abs(normalized_meridian) < 1e-9:
+        line_system = LINE_SYSTEM_GEODETIC_GREENWICH
+    elif abs(_norm_lon(normalized_meridian - GEODETIC_GIZA_MERIDIAN_LON)) < 1e-9:
+        line_system = LINE_SYSTEM_GEODETIC_GIZA
+    else:
+        line_system = LINE_SYSTEM_GEODETIC_CUSTOM
     return ACGResult(
         jd_ut=jd_ut,
         theta0_deg=meridian_lon % 360.0,
@@ -951,7 +1604,11 @@ def compute_geodetic_acg(
         lines=tuple(out_lines),
         lat_range=lat_range,
         points=resolved_points,
+        aspect_lines=tuple(out_aspect_lines),
         parans=parans,
+        markers=markers,
+        line_system=line_system,
+        paran_system=LINE_SYSTEM_IN_MUNDO,
     )
 
 
@@ -959,6 +1616,12 @@ def compute_acg_for_chart(chart, points: Iterable | None = None, **kwargs) -> AC
     if points is None:
         points = points_from_chart(chart)
     return compute_acg(chart.time.jd, points=points, **kwargs)
+
+
+def compute_zodiacal_acg_for_chart(chart, points: Iterable | None = None, **kwargs) -> ACGResult:
+    if points is None:
+        points = points_from_chart(chart)
+    return compute_zodiacal_acg(chart.time.jd, points=points, **kwargs)
 
 
 def compute_geodetic_acg_for_chart(chart, points: Iterable | None = None, **kwargs) -> ACGResult:

@@ -14,6 +14,10 @@ class Asteroid:
 		equatorial_flag = (int(flag) & ~astrology.SEFLG_SIDEREAL) | astrology.SEFLG_EQUATORIAL
 		rflag, datEqu, serr = astrology.swe_calc_ut_ex(tjd_ut, aId, equatorial_flag)
 		self.data = (dat[0], dat[1], datEqu[0], datEqu[1])
+		# Asteroids are ordinary Swiss Ephemeris bodies.  Keep their real
+		# ecliptic velocity available to semantic consumers (Aspect List,
+		# transit search) instead of flattening them into static ring labels.
+		self.speed = float(dat[3]) if len(dat) > 3 else 0.0
 		if placelat is not None and ascmc2 is not None:
 			elv, azm = self._calc_horizontal(placelat, ascmc2, datEqu[0], datEqu[1])
 			self.data = self.data + (elv, azm)

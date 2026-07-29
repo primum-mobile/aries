@@ -18,6 +18,9 @@ export interface TextOpts {
   font?: string;
   size?: number; // px
   weight?: string | number;
+  style?: string;
+  tracking?: number; // px
+  opacity?: number;
   align?: CanvasTextAlign;
   baseline?: CanvasTextBaseline;
 }
@@ -135,7 +138,11 @@ export class CanvasDraw {
     const size = Math.max(1, Math.round(opts?.size ?? 14));
     const family = opts?.font ?? this.defaultFont;
     const weight = opts?.weight ?? 400;
-    return `${weight} ${size}px ${family}`;
+    const requestedStyle = opts?.style?.trim().toLowerCase();
+    const style = requestedStyle === "italic" || requestedStyle?.startsWith("oblique")
+      ? requestedStyle
+      : "normal";
+    return `${style} ${weight} ${size}px ${family}`;
   }
 
   private applyFont(opts?: TextOpts) {
@@ -149,13 +156,43 @@ export class CanvasDraw {
     ctx.fillStyle = opts?.fill ?? "#fff";
     ctx.textAlign = opts?.align ?? "left";
     ctx.textBaseline = opts?.baseline ?? "top";
-    ctx.fillText(text, this.snap(xy[0]), this.snap(xy[1]));
+    if (opts?.opacity != null) {
+      ctx.globalAlpha = Math.min(1, Math.max(0, opts.opacity));
+    }
+    const tracking = Number.isFinite(opts?.tracking)
+      ? Number(opts?.tracking)
+      : 0;
+    if (tracking === 0) {
+      ctx.fillText(text, this.snap(xy[0]), this.snap(xy[1]));
+    } else {
+      const glyphs = Array.from(text);
+      if (glyphs.length < 2) {
+        ctx.fillText(text, this.snap(xy[0]), this.snap(xy[1]));
+      } else {
+        const widths = glyphs.map((glyph) => ctx.measureText(glyph).width);
+        const totalWidth = widths.reduce((sum, width) => sum + width, 0)
+          + tracking * (glyphs.length - 1);
+        let cursor = xy[0];
+        if (ctx.textAlign === "center") cursor -= totalWidth / 2;
+        else if (ctx.textAlign === "right" || ctx.textAlign === "end") {
+          cursor -= totalWidth;
+        }
+        ctx.textAlign = "left";
+        for (let index = 0; index < glyphs.length; index += 1) {
+          ctx.fillText(glyphs[index], this.snap(cursor), this.snap(xy[1]));
+          cursor += widths[index] + tracking;
+        }
+      }
+    }
     ctx.restore();
   }
 
   textsize(text: string, opts?: TextOpts): Pt {
     const font = this.fontSpec(opts);
-    const cacheKey = `${font}\n${text}`;
+    const tracking = Number.isFinite(opts?.tracking)
+      ? Number(opts?.tracking)
+      : 0;
+    const cacheKey = `${font}\n${tracking}\n${text}`;
     const cached = textSizeCache.get(cacheKey);
     if (cached) {
       return cached;
@@ -164,7 +201,16 @@ export class CanvasDraw {
     ctx.save();
     ctx.font = font;
     const metrics = ctx.measureText(text);
-    const w = metrics.width;
+    const glyphs = Array.from(text);
+    const w = tracking === 0 || glyphs.length < 2
+      ? metrics.width
+      : Math.max(
+          0,
+          glyphs.reduce(
+            (width, glyph) => width + ctx.measureText(glyph).width,
+            0,
+          ) + (glyphs.length - 1) * tracking,
+        );
     const h =
       (metrics.actualBoundingBoxAscent || 0) +
       (metrics.actualBoundingBoxDescent || 0) ||

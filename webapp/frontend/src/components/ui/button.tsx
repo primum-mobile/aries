@@ -10,9 +10,9 @@ const buttonVariants = cva(
       variant: {
         default: "bg-primary text-primary-foreground [a]:hover:bg-primary/80",
         outline:
-          "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
+          "border-border bg-background hover:bg-muted hover:text-foreground hover:[--aries-material-state-background:var(--muted)] aria-expanded:bg-muted aria-expanded:text-foreground aria-expanded:[--aries-material-state-background:var(--muted)] dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-secondary/80 aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
+          "bg-secondary text-secondary-foreground hover:bg-secondary/80 hover:[--aries-material-state-background:color-mix(in_srgb,var(--secondary)_80%,transparent)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground aria-expanded:[--aries-material-state-background:var(--secondary)]",
         ghost:
           "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50",
         destructive:
@@ -22,8 +22,8 @@ const buttonVariants = cva(
       size: {
         default:
           "h-[var(--aries-control-height)] gap-[var(--aries-control-gap)] px-[var(--aries-control-padding-x)] has-data-[icon=inline-end]:pr-[var(--aries-control-icon-padding-x)] has-data-[icon=inline-start]:pl-[var(--aries-control-icon-padding-x)]",
-        xs: "h-[var(--aries-control-height-compact)] gap-[var(--aries-control-gap-compact)] rounded-[var(--aries-radius-ui-control-compact)] px-[var(--aries-control-padding-x-compact)] text-xs in-data-[slot=button-group]:rounded-[var(--aries-radius-ui-control)] has-data-[icon=inline-end]:pr-[var(--aries-control-icon-padding-x-compact)] has-data-[icon=inline-start]:pl-[var(--aries-control-icon-padding-x-compact)] [&_svg:not([class*='size-'])]:size-[var(--aries-control-icon-size-xs)]",
-        sm: "h-[var(--aries-control-height-small)] gap-[var(--aries-control-gap-compact)] rounded-[var(--aries-radius-ui-control-compact)] px-[var(--aries-control-padding-x)] text-[0.8rem] in-data-[slot=button-group]:rounded-[var(--aries-radius-ui-control)] has-data-[icon=inline-end]:pr-[var(--aries-control-icon-padding-x-compact)] has-data-[icon=inline-start]:pl-[var(--aries-control-icon-padding-x-compact)] [&_svg:not([class*='size-'])]:size-[var(--aries-control-icon-size)]",
+        xs: "h-[var(--aries-control-height-compact)] gap-[var(--aries-control-gap-compact)] rounded-[var(--aries-radius-ui-control-compact)] px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-base)] in-data-[slot=button-group]:rounded-[var(--aries-radius-ui-control)] has-data-[icon=inline-end]:pr-[var(--aries-control-icon-padding-x-compact)] has-data-[icon=inline-start]:pl-[var(--aries-control-icon-padding-x-compact)] [&_svg:not([class*='size-'])]:size-[var(--aries-control-icon-size-xs)]",
+        sm: "h-[var(--aries-control-height-small)] gap-[var(--aries-control-gap-compact)] rounded-[var(--aries-radius-ui-control-compact)] px-[var(--aries-control-padding-x)] text-[length:var(--aries-font-size-reading)] in-data-[slot=button-group]:rounded-[var(--aries-radius-ui-control)] has-data-[icon=inline-end]:pr-[var(--aries-control-icon-padding-x-compact)] has-data-[icon=inline-start]:pl-[var(--aries-control-icon-padding-x-compact)] [&_svg:not([class*='size-'])]:size-[var(--aries-control-icon-size)]",
         lg: "h-[var(--aries-control-height-large)] gap-[var(--aries-control-gap)] px-[var(--aries-control-padding-x)] has-data-[icon=inline-end]:pr-[var(--aries-control-icon-padding-x)] has-data-[icon=inline-start]:pl-[var(--aries-control-icon-padding-x)]",
         icon: "size-[var(--aries-control-height)]",
         "icon-xs":
@@ -49,6 +49,11 @@ function Button({
   return (
     <ButtonPrimitive
       data-slot="button"
+      data-aries-surface={
+        variant === "outline" || variant === "secondary"
+          ? "control"
+          : undefined
+      }
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
     />

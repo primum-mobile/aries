@@ -91,6 +91,11 @@ if (runs.length === 0) {
 const run = runs.at(-1);
 const measured = { ...(run.metrics ?? {}), ...(run.diagnostics ?? {}) };
 const nativeMetrics = latestNativeMetrics();
+const requiredMetricNames = new Set(
+  Array.isArray(run.requiredMetrics)
+    ? run.requiredMetrics
+    : Object.keys(budgets.metrics),
+);
 const budgetRows = [];
 let failedBudgets = 0;
 let missingBudgets = 0;
@@ -102,8 +107,9 @@ for (const [metricName, budget] of Object.entries(budgets.metrics)) {
   const p95 = metric?.p95Ms ?? null;
   const referenceP95 = budget.reference?.p95 ?? null;
   const delta = changePercent(p95, referenceP95);
-  let verdict = "No data";
-  if (metric && Number.isFinite(p95)) {
+  const required = requiredMetricNames.has(metricName);
+  let verdict = required ? "No data" : "Skipped";
+  if (required && metric && Number.isFinite(p95)) {
     verdict = metric.samples < 10
       ? "Insufficient"
       : Number.isFinite(limit) && p95 > limit
@@ -158,20 +164,56 @@ const overlayContinuity = run.overlayContinuity ?? null;
 const displayToggleCoherence = run.displayToggleCoherence ?? null;
 const missedStepRecovery = run.missedStepRecovery ?? null;
 const unpaintedStepRecovery = run.unpaintedStepRecovery ?? null;
-const coherenceFailed =
-  (visualCadence != null && visualCadence.passed !== true) ||
-  (overlayContinuity != null && overlayContinuity.passed !== true) ||
-  (visualContinuity != null && visualContinuity.passed !== true) ||
-  (displayToggleCoherence != null && displayToggleCoherence.passed !== true) ||
-  (missedStepRecovery != null && missedStepRecovery.passed !== true) ||
-  (unpaintedStepRecovery != null && unpaintedStepRecovery.passed !== true);
-const coherenceMissing =
-  visualCadence == null ||
-  overlayContinuity == null ||
-  visualContinuity == null ||
-  displayToggleCoherence == null ||
-  missedStepRecovery == null ||
-  unpaintedStepRecovery == null;
+const retainedTransitList = run.retainedTransitList ?? null;
+const noListSearchRequests = Array.isArray(run.noListSearchRequests)
+  ? run.noListSearchRequests
+  : null;
+const contractStatuses = {
+  visualCadence: visualCadence?.passed ?? null,
+  overlayContinuity: overlayContinuity?.passed ?? null,
+  visualContinuity: visualContinuity?.passed ?? null,
+  displayToggleCoherence: displayToggleCoherence?.passed ?? null,
+  missedStepRecovery: missedStepRecovery?.passed ?? null,
+  unpaintedStepRecovery: unpaintedStepRecovery?.passed ?? null,
+  noListSearchIsolation:
+    noListSearchRequests == null ? null : noListSearchRequests.length === 0,
+  retainedTransitList: retainedTransitList?.passed ?? null,
+};
+const requiredContractNames = new Set(
+  Array.isArray(run.requiredContracts)
+    ? run.requiredContracts
+    : Object.keys(contractStatuses),
+);
+const requiredContractStatuses = [...requiredContractNames].map(
+  (name) => contractStatuses[name] ?? null,
+);
+const coherenceFailed = requiredContractStatuses.some((status) => status === false);
+const coherenceMissing = requiredContractStatuses.some((status) => status == null);
+const contractVerdict = coherenceFailed
+  ? "Fail"
+  : coherenceMissing
+    ? "No data"
+    : "Pass";
+const contractSummary = [
+  `one-input-per-paint cadence ${visualCadence?.passed === true ? "passed" : visualCadence ? "failed" : "not measured"}`,
+  `overlay continuity ${overlayContinuity?.passed === true ? "passed" : overlayContinuity ? "failed" : "not measured"}`,
+  `settled-frame continuity ${visualContinuity?.passed === true ? "passed" : visualContinuity ? "failed" : "not measured"}`,
+  ...(requiredContractNames.has("displayToggleCoherence")
+    ? [`display-toggle ordering ${displayToggleCoherence?.passed === true ? "passed" : displayToggleCoherence ? "failed" : "not measured"}`]
+    : []),
+  ...(requiredContractNames.has("missedStepRecovery")
+    ? [`missed-step recovery ${missedStepRecovery?.passed === true ? "passed" : missedStepRecovery ? "failed" : "not measured"}`]
+    : []),
+  ...(requiredContractNames.has("unpaintedStepRecovery")
+    ? [`unpainted-step recovery ${unpaintedStepRecovery?.passed === true ? "passed" : unpaintedStepRecovery ? "failed" : "not measured"}`]
+    : []),
+  ...(requiredContractNames.has("noListSearchIsolation")
+    ? [`no-list Search isolation ${noListSearchRequests == null ? "not measured" : noListSearchRequests.length === 0 ? "passed" : "failed"}`]
+    : []),
+  ...(requiredContractNames.has("retainedTransitList")
+    ? [`retained Transit List frame lane ${retainedTransitList?.passed === true ? "passed" : retainedTransitList ? "failed" : "not measured"}`]
+    : []),
+].join("; ");
 const verdict = failedBudgets > 0 || coherenceFailed
   ? "FAIL"
   : missingBudgets > 0 || coherenceMissing
@@ -180,7 +222,7 @@ const verdict = failedBudgets > 0 || coherenceFailed
 const lines = [
   "# Aries render budget regression report",
   "",
-  `**Verdict: ${verdict}.** ${failedBudgets} budget failure(s); ${missingBudgets} metric(s) without current evidence; one-input-per-paint cadence ${visualCadence?.passed === true ? "passed" : visualCadence ? "failed" : "not measured"}; overlay continuity ${overlayContinuity?.passed === true ? "passed" : overlayContinuity ? "failed" : "not measured"}; settled-frame continuity ${visualContinuity?.passed === true ? "passed" : visualContinuity ? "failed" : "not measured"}; display-toggle ordering ${displayToggleCoherence?.passed === true ? "passed" : displayToggleCoherence ? "failed" : "not measured"}; missed-step recovery ${missedStepRecovery?.passed === true ? "passed" : missedStepRecovery ? "failed" : "not measured"}; unpainted-step recovery ${unpaintedStepRecovery?.passed === true ? "passed" : unpaintedStepRecovery ? "failed" : "not measured"}.`,
+  `**Verdict: ${verdict}.** ${failedBudgets} budget failure(s); ${missingBudgets} metric(s) without current evidence; ${contractSummary}.`,
   "",
   "## Run identity",
   "",
@@ -188,6 +230,7 @@ const lines = [
   `- Commit: \`${run.gitCommit}\`${run.gitDirty ? " (dirty worktree)" : ""}`,
   `- Platform: ${run.platform}`,
   `- Harness: ${run.harnessMode ?? "isolated daemon"}; Chromium ${run.browserVersion ?? "version not recorded"}`,
+  `- Scenario profile: ${run.scenarioProfile ?? "legacy extended"}`,
   `- Sample: ${run.warmupSteps} warmups + ${run.measuredSteps} measured ${run.key} steps`,
   `- Budget version: recorded ${run.budgetVersion}; evaluated ${budgets.version}`,
   "",
@@ -205,11 +248,36 @@ const lines = [
   `- Overlay settle: ${overlayContinuity?.cheapRowsMatchSettle === true ? "last step day/hour/lord-of-year matched full truth" : "cheap-row mismatch"}; deferred slots ${overlayContinuity?.deferredSlotsStayedPopulated === true ? "remained populated" : "blanked"}.`,
   `- Step-fast → settled body layout: ${visualContinuity?.sameBodyLayout === true ? "identical" : "not proven"}.`,
   `- Settled canvas invalidation: ${visualContinuity?.overlayOnly === true ? "semantic overlay only (no geometry repaint)" : "not proven"}.`,
-  `- H display toggle: ${displayToggleCoherence?.toggles === 2 && displayToggleCoherence?.onePaintPerToggle === true ? "one canonical paint in each hide/show direction" : `${displayToggleCoherence?.totalPaints ?? "—"} paints across ${displayToggleCoherence?.toggles ?? "—"} toggles`}; stepped cursor ${displayToggleCoherence?.sameCursor === true && displayToggleCoherence?.sameSemanticFrame === true ? "preserved" : "changed or not proven"}; stale post-toggle settle paints ${displayToggleCoherence?.staleSettlePaints ?? "—"}.`,
-  `- Missed step-frame recovery: ${missedStepRecovery?.fullRecoveryPaints === 1 && missedStepRecovery?.totalPaints === 1 && missedStepRecovery?.overlayOnlyPaints === 0 ? "one full current-frame paint" : `${missedStepRecovery?.fullRecoveryPaints ?? "—"} full paints / ${missedStepRecovery?.totalPaints ?? "—"} total`}; cursor ${missedStepRecovery?.cursorAdvanced === true ? "advanced" : "not proven"}; semantic frame ${missedStepRecovery?.semanticFrameAdvanced === true ? "advanced" : "not proven"}; recovery events ${missedStepRecovery?.recoveryEvents ?? "—"}.`,
-  `- Published-but-unpainted step recovery: ${unpaintedStepRecovery?.fullRecoveryPaints === 1 && unpaintedStepRecovery?.totalPaints === 1 && unpaintedStepRecovery?.overlayOnlyPaints === 0 ? "one full current-frame paint" : `${unpaintedStepRecovery?.fullRecoveryPaints ?? "—"} full paints / ${unpaintedStepRecovery?.totalPaints ?? "—"} total`}; published ${unpaintedStepRecovery?.recoveryHadPublishedStep === true ? "yes" : "not proven"}; painted before settle ${unpaintedStepRecovery?.recoveryHadPaintedStep === false ? "no" : "yes or not proven"}; exact suppressed frame ${unpaintedStepRecovery?.recoveredSuppressedFrame === true ? "recovered" : "not proven"}.`,
-  `- Contract verdict: ${visualCadence?.passed === true && overlayContinuity?.passed === true && visualContinuity?.passed === true && displayToggleCoherence?.passed === true && missedStepRecovery?.passed === true && unpaintedStepRecovery?.passed === true ? "Pass" : visualCadence || overlayContinuity || visualContinuity || displayToggleCoherence || missedStepRecovery || unpaintedStepRecovery ? "Fail" : "No data"}.`,
+  ...(displayToggleCoherence
+    ? [`- H display toggle: ${displayToggleCoherence.toggles === 2 && displayToggleCoherence.onePaintPerToggle === true ? "one canonical paint in each hide/show direction" : `${displayToggleCoherence.totalPaints ?? "—"} paints across ${displayToggleCoherence.toggles ?? "—"} toggles`}; stepped cursor ${displayToggleCoherence.sameCursor === true && displayToggleCoherence.sameSemanticFrame === true ? "preserved" : "changed or not proven"}; stale post-toggle settle paints ${displayToggleCoherence.staleSettlePaints ?? "—"}.`]
+    : []),
+  ...(missedStepRecovery
+    ? [`- Missed step-frame recovery: ${missedStepRecovery.fullRecoveryPaints === 1 && missedStepRecovery.totalPaints === 1 && missedStepRecovery.overlayOnlyPaints === 0 ? "one full current-frame paint" : `${missedStepRecovery.fullRecoveryPaints ?? "—"} full paints / ${missedStepRecovery.totalPaints ?? "—"} total`}; cursor ${missedStepRecovery.cursorAdvanced === true ? "advanced" : "not proven"}; semantic frame ${missedStepRecovery.semanticFrameAdvanced === true ? "advanced" : "not proven"}; recovery events ${missedStepRecovery.recoveryEvents ?? "—"}.`]
+    : []),
+  ...(unpaintedStepRecovery
+    ? [`- Published-but-unpainted step recovery: ${unpaintedStepRecovery.fullRecoveryPaints === 1 && unpaintedStepRecovery.totalPaints === 1 && unpaintedStepRecovery.overlayOnlyPaints === 0 ? "one full current-frame paint" : `${unpaintedStepRecovery.fullRecoveryPaints ?? "—"} full paints / ${unpaintedStepRecovery.totalPaints ?? "—"} total`}; published ${unpaintedStepRecovery.recoveryHadPublishedStep === true ? "yes" : "not proven"}; painted before settle ${unpaintedStepRecovery.recoveryHadPaintedStep === false ? "no" : "yes or not proven"}; exact suppressed frame ${unpaintedStepRecovery.recoveredSuppressedFrame === true ? "recovered" : "not proven"}.`]
+    : []),
+  `- Search requests during the no-list stepping burst: ${noListSearchRequests == null ? "not recorded" : noListSearchRequests.length}.`,
+  `- Contract verdict: ${contractVerdict}.`,
   "",
+  ...(retainedTransitList
+    ? [
+        "",
+        "## Retained Transit List frame lane",
+        "",
+      ]
+    : []),
+  ...(retainedTransitList?.directions?.length
+    ? retainedTransitList.directions.flatMap((direction) => [
+        `### ${direction.label}`,
+        "",
+        `- Cursor follow: ${direction.contract?.everyPaintTargetConsumed === true && direction.contract?.finalTargetMatchesPaint === true ? "every presented frame consumed" : "missing or stale frame"}; ${direction.contract?.stepFastPaints ?? "—"} paints for ${direction.contract?.expectedInputs ?? "—"} inputs.`,
+        `- Resident rows: ${direction.contract?.residentThroughout === true && direction.contract?.rowsNeverBlank === true && direction.contract?.retainedScroller === true ? "retained without blank/re-key" : "retention contract failed"}.`,
+        `- Search starts during in-coverage burst: ${direction.contract?.searchStarts ?? "—"}; programmatic scroll events: ${direction.contract?.scrollEvents ?? "—"}.`,
+        `- Key → paint p95: ${formatValue(direction.metrics?.["time-step.first-useful-paint"]?.p95Ms, "ms")}; command p95: ${formatValue(direction.metrics?.["time-step.command-total"]?.p95Ms, "ms")}; paint-delay p95: ${formatValue(direction.metrics?.["time-step.paint-gap-over-input"]?.p95Ms, "ms")}.`,
+        "",
+      ])
+    : []),
   "## Time-step attribution",
   "",
   "| Stage | Average | Share of key-to-paint average | p95 |",
@@ -264,17 +332,26 @@ const lines = [
     ? [`Largest recorded daemon phase: \`${largestDaemonPhase[0]}\` at ${formatValue(largestDaemonPhase[1]?.averageMs, "ms")} average / ${formatValue(largestDaemonPhase[1]?.p95Ms, "ms")} p95.`]
     : ["Daemon phase timing was not present in this recorded run."]),
   "",
-  "## Evidence gaps",
-  "",
-  ...(measured["list.scroll-to-frame"] || nativeMetrics.has("list.scroll-to-frame")
-    ? ["- Stitched-list scrolling has current automatic runtime evidence."]
-    : ["- Stitched-list scrolling has no current ≥10-sample runtime summary. This report does not claim list performance passed."]),
-  ...(measured["chart.canvas.full"]
-    ? ["- Full-chart paint has current controlled headless-harness evidence; fewer than 10 samples remains insufficient."]
-    : nativeMetrics.has("chart.canvas.full")
-      ? ["- Full-chart paint has current automatic native runtime evidence; fewer than 10 samples remains insufficient."]
-      : ["- Full-chart paint has no current runtime evidence."]),
-  "",
+  ...(requiredMetricNames.has("list.scroll-to-frame") ||
+  requiredMetricNames.has("chart.canvas.full")
+    ? [
+        "## Evidence gaps",
+        "",
+        ...(requiredMetricNames.has("list.scroll-to-frame")
+          ? measured["list.scroll-to-frame"] || nativeMetrics.has("list.scroll-to-frame")
+            ? ["- Stitched-list scrolling has current automatic runtime evidence."]
+            : ["- Stitched-list scrolling has no current ≥10-sample runtime summary. This report does not claim list performance passed."]
+          : []),
+        ...(requiredMetricNames.has("chart.canvas.full")
+          ? measured["chart.canvas.full"]
+            ? ["- Full-chart paint has current controlled headless-harness evidence; fewer than 10 samples remains insufficient."]
+            : nativeMetrics.has("chart.canvas.full")
+              ? ["- Full-chart paint has current automatic native runtime evidence; fewer than 10 samples remains insufficient."]
+              : ["- Full-chart paint has no current runtime evidence."]
+          : []),
+        "",
+      ]
+    : []),
   "## Files",
   "",
   `- Controlled run log: \`${runLogPath}\``,

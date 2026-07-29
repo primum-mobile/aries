@@ -51,3 +51,6 @@ rm -f "sweastrology${ext_suffix}"
 # PyInstaller's daemon spec loads the extension from the repo root so each
 # Python ABI gets a stable import path regardless of where setuptools wrote it.
 ln -sf "SWEP/src/sweastrology${ext_suffix}" "${repo_root}/sweastrology${ext_suffix}"
+
+cd "${repo_root}"
+"${python_bin}" scripts/build_transit_kernel.py build_ext --inplace --force

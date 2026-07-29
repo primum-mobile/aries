@@ -21,6 +21,8 @@ const styleJavascript = ts.transpileModule(styleSource, {
   },
 }).outputText;
 const {
+  ASTROCART_CHROME_NUMBER_BOUNDS,
+  ASTROCART_CHROME_NUMBER_FIELDS,
   ASTROCART_CHROME_STRING_FIELDS,
   ASTROCART_POINT_LINE_OPACITY_BOUNDS,
   ASTROCART_POINT_LINE_WIDTH_SCALE_BOUNDS,
@@ -40,6 +42,10 @@ const {
 function fixture() {
   const chrome = { titlebarSafeTop: ASTROCART_TITLEBAR_SAFE_TOP };
   for (const field of ASTROCART_CHROME_STRING_FIELDS) chrome[field] = `${field}-value`;
+  for (const field of ASTROCART_CHROME_NUMBER_FIELDS) {
+    const [minimum, maximum] = ASTROCART_CHROME_NUMBER_BOUNDS[field];
+    chrome[field] = (minimum + maximum) / 2;
+  }
   const renderer = {};
   for (const field of ASTROCART_RENDERER_STRING_FIELDS) renderer[field] = `${field}-value`;
   for (const field of ASTROCART_RENDERER_NUMBER_FIELDS) {
@@ -64,30 +70,31 @@ function fixture() {
       },
     },
     behavior: {
-      localSpaceAdditive: false,
       showEcliptic: true,
       showEquator: true,
       showAscCircle: true,
       showMcCircle: true,
       showHouseLines: true,
       showZodiacLines: true,
-      terrainRelief: true,
     },
   };
 }
 
-test("the adapter validates and freezes all 20 chrome plus 160 renderer values", () => {
-  assert.equal(ASTROCART_CHROME_STRING_FIELDS.length + 1, 20);
+test("the adapter validates and freezes the complete chrome and renderer values", () => {
+  assert.equal(
+    ASTROCART_CHROME_STRING_FIELDS.length + ASTROCART_CHROME_NUMBER_FIELDS.length + 1,
+    30,
+  );
   assert.equal(
     ASTROCART_RENDERER_STRING_FIELDS.length +
       ASTROCART_RENDERER_NUMBER_FIELDS.length +
       ASTROCART_RENDERER_BOOLEAN_FIELDS.length,
-    160,
+    169,
   );
   const style = parseAstrocartStyle(fixture());
-  assert.equal(style.schemaVersion, 8);
+  assert.equal(style.schemaVersion, 10);
   assert.equal(style.chrome.titlebarSafeTop, 34);
-  assert.equal(Object.keys(style.renderer).length, 160);
+  assert.equal(Object.keys(style.renderer).length, 169);
   for (const group of [style, style.chrome, style.renderer, style.points, style.points.sun, style.behavior]) {
     assert.ok(Object.isFrozen(group));
   }
@@ -131,15 +138,15 @@ test("the iframe adapter rejects partial, malformed, and future schemas", () => 
 
   const extendedPoint = fixture();
   extendedPoint.points.sun.unversionedSetting = true;
-  assert.throws(() => parseAstrocartStyle(extendedPoint), /unversionedSetting is not part of schema v8/);
+  assert.throws(() => parseAstrocartStyle(extendedPoint), /unversionedSetting is not part of schema v10/);
 
   const future = fixture();
-  future.schemaVersion = 9;
+  future.schemaVersion = 11;
   assert.throws(() => parseAstrocartStyle(future), /unsupported AstrocartStyle schema/);
 
   const extended = fixture();
   extended.renderer.unversionedSetting = true;
-  assert.throws(() => parseAstrocartStyle(extended), /unversionedSetting is not part of schema v8/);
+  assert.throws(() => parseAstrocartStyle(extended), /unversionedSetting is not part of schema v10/);
 });
 
 test("only a validated immutable style crosses the iframe message boundary", () => {
@@ -153,13 +160,15 @@ test("only a validated immutable style crosses the iframe message boundary", () 
 test("all generated profile bounds equal the strict iframe envelope", () => {
   const publicTokens = rendererContract.publicTokens;
   const entries = Object.entries(ASTROCART_RENDER_TOKEN_SPECS);
-  assert.equal(entries.length, 133);
+  assert.equal(entries.length, 149);
   for (const [key, [cssVar]] of entries) {
     let field = key.startsWith("map")
       ? key.slice(3, 4).toLowerCase() + key.slice(4)
+      : key.startsWith("chrome")
+        ? key.slice(6, 7).toLowerCase() + key.slice(7)
       : key;
     if (field === "paranLineOpacity") field = "paranOpacity";
-    let expected = ASTROCART_RENDERER_NUMBER_BOUNDS[field];
+    let expected = ASTROCART_RENDERER_NUMBER_BOUNDS[field] ?? ASTROCART_CHROME_NUMBER_BOUNDS[field];
     if (!expected && field.endsWith("LineWidthScale")) {
       expected = ASTROCART_POINT_LINE_WIDTH_SCALE_BOUNDS;
     }

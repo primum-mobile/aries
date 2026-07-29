@@ -29,6 +29,15 @@ except Exception:
 
 
 def _maybe_run_export_helper(argv: list[str]) -> None:
+    if len(argv) == 2 and argv[1] == "--verify-native-transit-kernel":
+        from aries.astrology.transit_fast import api as transit_fast_api
+
+        if not transit_fast_api.native_backend_available():
+            raise SystemExit(
+                transit_fast_api.native_backend_error()
+                or "Native transit kernel is unavailable"
+            )
+        raise SystemExit(0)
     if len(argv) != 3:
         return
     if argv[1] == "--export-chart-image":
@@ -40,6 +49,15 @@ def _maybe_run_export_helper(argv: list[str]) -> None:
 
 
 _maybe_run_export_helper(sys.argv)
+
+if getattr(sys, "frozen", False):
+    from aries.astrology.transit_fast import api as transit_fast_api
+
+    if not transit_fast_api.native_backend_available():
+        raise SystemExit(
+            transit_fast_api.native_backend_error()
+            or "Native transit kernel is unavailable"
+        )
 
 import uvicorn  # noqa: E402
 

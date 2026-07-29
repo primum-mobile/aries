@@ -113,11 +113,19 @@ function flagIdentityKey(parts: {
 function useHoverSemanticOptionsSeq(): number {
   const lastOptionsChange = useDaemonWorkspaceStore((state) => state.lastOptionsChange);
   const [seq, setSeq] = React.useState(() =>
-    lastOptionsChange?.styleOnly ? 0 : (lastOptionsChange?.seq ?? 0),
+    lastOptionsChange?.styleOnly || lastOptionsChange?.listDataChanged === false
+      ? 0
+      : (lastOptionsChange?.seq ?? 0),
   );
 
   React.useEffect(() => {
-    if (!lastOptionsChange || lastOptionsChange.styleOnly) return;
+    if (
+      !lastOptionsChange ||
+      lastOptionsChange.styleOnly ||
+      lastOptionsChange.listDataChanged === false
+    ) {
+      return;
+    }
     let cancelled = false;
     queueMicrotask(() => {
       if (!cancelled) setSeq(lastOptionsChange.seq);

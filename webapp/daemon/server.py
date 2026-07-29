@@ -3,11 +3,15 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import math
 import os
+import re
+import struct
 import sys
 import threading
+from contextlib import asynccontextmanager
 from pathlib import Path, PurePosixPath
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 
 def _daemon_base_dir() -> Path:
@@ -40,6 +44,7 @@ FIND_TRANSITS_TECHNIQUES = ("transits",)
 
 _transit_search_service = None
 _tables_service = None
+_aspect_list_service = None
 _style_font_store = None
 _style_font_store_directory = None
 _style_font_store_lock = threading.Lock()
@@ -320,6 +325,15 @@ def tables_service():
     return _tables_service
 
 
+def aspect_list_service():
+    global _aspect_list_service
+    if _aspect_list_service is None:
+        from .aspect_list_service import aspect_list_payload as service
+
+        _aspect_list_service = service
+    return _aspect_list_service
+
+
 def style_font_store():
     """Return the font store for the current daemon options directory."""
     global _style_font_store, _style_font_store_directory
@@ -337,7 +351,19 @@ def style_font_store():
         return _style_font_store
 
 
-app = FastAPI(title="Aries Web Daemon")
+@asynccontextmanager
+async def _daemon_lifespan(asgi_app: FastAPI):
+    from .native_ipc import start_native_ipc_server
+
+    native_ipc = await start_native_ipc_server(asgi_app)
+    try:
+        yield
+    finally:
+        if native_ipc is not None:
+            await native_ipc.stop()
+
+
+app = FastAPI(title="Aries Web Daemon", lifespan=_daemon_lifespan)
 
 
 _TAURI_CORS_ORIGINS = [
@@ -1351,6 +1377,7 @@ def directions_secondary_export_text(
     method: str = Query(default="secondary", description="secondary|minor|tertiary"),
     direction: str = Query(default="direct", description="direct|converse|both"),
     reference_datetime: Optional[str] = Query(default=None, alias="referenceDatetime"),
+    stations_only: bool = Query(default=False, alias="stationsOnly"),
 ) -> dict:
     """Save-As-Text export of the secondary/minor/tertiary list — the same
     window of rows as /api/directions/secondary, formatted by the engine
@@ -1365,6 +1392,7 @@ def directions_secondary_export_text(
             method=method,
             direction=direction,
             reference_datetime=reference_datetime,
+            stations_only=stations_only,
         )
     except SystemExit as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -1419,6 +1447,9 @@ def directions_timed_chart(body: dict = Body(...)) -> dict:
             time_context=body.get("timeContext") if isinstance(body.get("timeContext"), dict) else None,
             session_label=body.get("sessionLabel") if isinstance(body.get("sessionLabel"), str) else None,
             show_radix=show_radix,
+            source_technique=body.get("sourceTechnique") if isinstance(body.get("sourceTechnique"), str) else None,
+            symbolic_when_iso=body.get("symbolicWhenIso") if isinstance(body.get("symbolicWhenIso"), str) else None,
+            symbolic_event_jd=body.get("symbolicEventJd"),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1506,6 +1537,7 @@ def inspector_payload(
     view_mode: Optional[int] = Query(default=None, alias="viewMode"),
     when: Optional[str] = Query(default=None, description="ISO datetime for supplementary; defaults to now"),
     binding: Optional[str] = Query(default=None, description="JSON SupplementaryBinding payload"),
+    defer_signals: bool = Query(default=False, alias="deferSignals", description="defer expensive Phasis/station rows during step-fast"),
 ) -> dict:
     """Faithful inspector payload — calls chartinspector.build_payload over a
     daemon-rebuilt chart. Mirrors what the wx hover pushes (state-contract B.1):
@@ -1526,6 +1558,7 @@ def inspector_payload(
             when_iso=when,
             binding_payload=binding_payload,
             view_mode=view_mode,
+            defer_signals=defer_signals,
         )
         if payload is None:
             raise HTTPException(status_code=404, detail="no payload for region")
@@ -2073,10 +2106,482 @@ def workspace_document_astrocart_asterisms(doc_id: str) -> dict:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@app.get("/api/workspace/document/{doc_id}/astrocart/spec")
+def workspace_document_astrocart_spec(doc_id: str) -> dict:
+    """Daemon-owned ACG feature configuration for the live parent radix."""
+    try:
+        return workspace_service.astrocart_spec_for_document(doc_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+class WorkspaceAstrocartSpecPayload(BaseModel):
+    # ``Any`` is intentional: the route must preserve the complete nested
+    # object before canonical normalization rather than letting Pydantic discard
+    # future semantic fields.  The route below enforces the object boundary.
+    spec: Any = Field(...)
+
+
+@app.post("/api/workspace/document/{doc_id}/astrocart/spec")
+def workspace_document_astrocart_store_spec(
+    doc_id: str,
+    payload: WorkspaceAstrocartSpecPayload,
+) -> dict:
+    if not isinstance(payload.spec, dict):
+        raise HTTPException(status_code=400, detail="spec must be an object")
+    try:
+        return workspace_service.store_astrocart_spec_for_document(
+            doc_id,
+            payload.spec,
+        )
+    except ValueError as exc:
+        # Input fields are normalized rather than rejected, so a ValueError
+        # here is the established unknown-workspace-document failure.
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+_ASTROCART_PDF_PNG_DATA_URL_PREFIX = "data:image/png;base64,"
+_ASTROCART_PDF_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+_ASTROCART_PDF_BASE64_PATTERN = re.compile(r"[A-Za-z0-9+/]*={0,2}\Z")
+_ASTROCART_PDF_ATLAS_MIN_PAGES = 2
+_ASTROCART_PDF_ATLAS_MAX_PAGES = 25
+_ASTROCART_PDF_ATLAS_MAX_DIMENSION = 4096
+_ASTROCART_PDF_ATLAS_MAX_PAGE_URL_CHARS = 32_000_000
+_ASTROCART_PDF_ATLAS_MAX_PAGE_BYTES = 24_000_000
+_ASTROCART_PDF_ATLAS_MAX_TOTAL_BYTES = 128_000_000
+
+
+def _astrocart_pdf_atlas_error(detail: str) -> None:
+    raise HTTPException(status_code=400, detail=detail)
+
+
+def _astrocart_pdf_atlas_number(
+    value: Any,
+    *,
+    name: str,
+    low: float,
+    high: float,
+) -> float:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(float(value))
+        or not low <= float(value) <= high
+    ):
+        _astrocart_pdf_atlas_error(f"atlas {name} is invalid")
+    return float(value)
+
+
+def _astrocart_pdf_atlas_bounds(value: Any, *, page_number: int) -> None:
+    if not isinstance(value, (list, tuple)):
+        _astrocart_pdf_atlas_error(
+            f"atlas page {page_number} bounds are invalid"
+        )
+    if (
+        len(value) == 2
+        and all(isinstance(corner, (list, tuple)) and len(corner) == 2 for corner in value)
+    ):
+        west, south = value[0]
+        east, north = value[1]
+    elif len(value) == 4:
+        west, south, east, north = value
+    else:
+        _astrocart_pdf_atlas_error(
+            f"atlas page {page_number} bounds are invalid"
+        )
+    _astrocart_pdf_atlas_number(
+        west,
+        name=f"page {page_number} west bound",
+        low=-180,
+        high=180,
+    )
+    south_number = _astrocart_pdf_atlas_number(
+        south,
+        name=f"page {page_number} south bound",
+        low=-90,
+        high=90,
+    )
+    _astrocart_pdf_atlas_number(
+        east,
+        name=f"page {page_number} east bound",
+        low=-180,
+        high=180,
+    )
+    north_number = _astrocart_pdf_atlas_number(
+        north,
+        name=f"page {page_number} north bound",
+        low=-90,
+        high=90,
+    )
+    if south_number >= north_number:
+        _astrocart_pdf_atlas_error(
+            f"atlas page {page_number} bounds are invalid"
+        )
+
+
+def _astrocart_pdf_png_data_url_bytes(
+    data_url: Any,
+    *,
+    page_number: int,
+) -> tuple[int, int, int]:
+    prefix_length = len(_ASTROCART_PDF_PNG_DATA_URL_PREFIX)
+    if (
+        not isinstance(data_url, str)
+        or not data_url.startswith(_ASTROCART_PDF_PNG_DATA_URL_PREFIX)
+        or len(data_url) > _ASTROCART_PDF_ATLAS_MAX_PAGE_URL_CHARS
+    ):
+        _astrocart_pdf_atlas_error(
+            f"atlas page {page_number} must be a bounded PNG data URL"
+        )
+    encoded_length = len(data_url) - prefix_length
+    padding = (
+        2 if data_url.endswith("==")
+        else 1 if data_url.endswith("=")
+        else 0
+    )
+    if (
+        encoded_length < 32
+        or encoded_length % 4 != 0
+        or data_url.find("=", prefix_length, len(data_url) - padding) != -1
+        or _ASTROCART_PDF_BASE64_PATTERN.fullmatch(
+            data_url,
+            prefix_length,
+        ) is None
+    ):
+        _astrocart_pdf_atlas_error(
+            f"atlas page {page_number} PNG encoding is invalid"
+        )
+    page_bytes = (encoded_length // 4) * 3 - padding
+    if not 1 <= page_bytes <= _ASTROCART_PDF_ATLAS_MAX_PAGE_BYTES:
+        _astrocart_pdf_atlas_error(
+            f"atlas page {page_number} PNG is outside the size limit"
+        )
+    try:
+        header = base64.b64decode(
+            data_url[prefix_length:prefix_length + 32],
+            validate=True,
+        )
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"atlas page {page_number} PNG encoding is invalid",
+        ) from exc
+    if (
+        len(header) < 24
+        or header[:8] != _ASTROCART_PDF_PNG_SIGNATURE
+        or header[12:16] != b"IHDR"
+    ):
+        _astrocart_pdf_atlas_error(
+            f"atlas page {page_number} is not a PNG"
+        )
+    width, height = struct.unpack(">II", header[16:24])
+    if (
+        width < 1
+        or height < 1
+        or width > _ASTROCART_PDF_ATLAS_MAX_DIMENSION
+        or height > _ASTROCART_PDF_ATLAS_MAX_DIMENSION
+    ):
+        _astrocart_pdf_atlas_error(
+            f"atlas page {page_number} dimensions are invalid"
+        )
+    return page_bytes, width, height
+
+
+def _validated_astrocart_pdf_atlas(payload: Any) -> dict[str, Any] | None:
+    atlas = payload.get("atlas")
+    if atlas is None:
+        return None
+    if not isinstance(atlas, dict):
+        _astrocart_pdf_atlas_error("atlas must be an object")
+    pages = atlas.get("pages")
+    if (
+        not isinstance(pages, list)
+        or not _ASTROCART_PDF_ATLAS_MIN_PAGES
+        <= len(pages)
+        <= _ASTROCART_PDF_ATLAS_MAX_PAGES
+    ):
+        _astrocart_pdf_atlas_error("atlas must contain 2 to 25 pages")
+
+    total_bytes = 0
+    for index, page in enumerate(pages):
+        page_number = index + 1
+        if not isinstance(page, dict):
+            _astrocart_pdf_atlas_error(
+                f"atlas page {page_number} must be an object"
+            )
+        expected_role = "overview" if index == 0 else "detail"
+        if page.get("role") != expected_role:
+            _astrocart_pdf_atlas_error(
+                "atlas must begin with one overview followed by detail pages"
+            )
+        if page.get("containsAstrology") is not True:
+            _astrocart_pdf_atlas_error(
+                "atlas pages must contain rendered astrology"
+            )
+        if page.get("projection") not in {"globe", "mercator"}:
+            _astrocart_pdf_atlas_error(
+                f"atlas page {page_number} projection is invalid"
+            )
+
+        page_bytes, png_width, png_height = _astrocart_pdf_png_data_url_bytes(
+            page.get("dataUrl"),
+            page_number=page_number,
+        )
+        total_bytes += page_bytes
+        if total_bytes > _ASTROCART_PDF_ATLAS_MAX_TOTAL_BYTES:
+            _astrocart_pdf_atlas_error("atlas exceeds the total size limit")
+        for name, decoded in (("width", png_width), ("height", png_height)):
+            declared = page.get(name)
+            if (
+                isinstance(declared, bool)
+                or not isinstance(declared, int)
+                or declared != decoded
+            ):
+                _astrocart_pdf_atlas_error(
+                    f"atlas page {page_number} {name} does not match its PNG"
+                )
+
+        center = page.get("center")
+        if not isinstance(center, (list, tuple)) or len(center) != 2:
+            _astrocart_pdf_atlas_error(
+                f"atlas page {page_number} center is invalid"
+            )
+        _astrocart_pdf_atlas_number(
+            center[0],
+            name=f"page {page_number} center longitude",
+            low=-180,
+            high=180,
+        )
+        _astrocart_pdf_atlas_number(
+            center[1],
+            name=f"page {page_number} center latitude",
+            low=-90,
+            high=90,
+        )
+        _astrocart_pdf_atlas_number(
+            page.get("zoom"),
+            name=f"page {page_number} zoom",
+            low=-2,
+            high=30,
+        )
+        _astrocart_pdf_atlas_number(
+            page.get("bearing"),
+            name=f"page {page_number} bearing",
+            low=-360,
+            high=360,
+        )
+        _astrocart_pdf_atlas_number(
+            page.get("pitch"),
+            name=f"page {page_number} pitch",
+            low=0,
+            high=85,
+        )
+
+        bounds = page.get("bounds")
+        if expected_role == "detail" and bounds is None:
+            _astrocart_pdf_atlas_error(
+                f"atlas page {page_number} bounds are required"
+            )
+        if bounds is not None:
+            _astrocart_pdf_atlas_bounds(bounds, page_number=page_number)
+        scale_km = page.get("scaleKm")
+        if expected_role == "detail" and scale_km is None:
+            _astrocart_pdf_atlas_error(
+                f"atlas page {page_number} scale is required"
+            )
+        if scale_km is not None:
+            _astrocart_pdf_atlas_number(
+                scale_km,
+                name=f"page {page_number} scale",
+                low=0.001,
+                high=100_000,
+            )
+
+        for name, maximum in (("sheetId", 64), ("title", 256)):
+            value = page.get(name)
+            if value is not None and (
+                not isinstance(value, str) or len(value) > maximum
+            ):
+                _astrocart_pdf_atlas_error(
+                    f"atlas page {page_number} {name} is invalid"
+                )
+        neighbors = page.get("neighbors")
+        if neighbors is not None:
+            if not isinstance(neighbors, dict) or any(
+                direction not in {"north", "east", "south", "west"}
+                or (
+                    neighbor is not None
+                    and (
+                        not isinstance(neighbor, str)
+                        or len(neighbor) > 64
+                    )
+                )
+                for direction, neighbor in neighbors.items()
+            ):
+                _astrocart_pdf_atlas_error(
+                    f"atlas page {page_number} neighbors are invalid"
+                )
+
+    attribution = atlas.get("attribution")
+    if (
+        not isinstance(attribution, str)
+        or not attribution.strip()
+        or len(attribution) > 1024
+    ):
+        _astrocart_pdf_atlas_error("atlas attribution is invalid")
+    return atlas
+
+
+def _workspace_astrocart_pdf_options(
+    payload: Any,
+    *,
+    require_path: bool,
+) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="payload must be an object")
+
+    def optional_text(name: str, *, maximum: int) -> str | None:
+        value = payload.get(name)
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise HTTPException(
+                status_code=400,
+                detail=f"{name} must be a string",
+            )
+        if len(value) > maximum:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{name} is too long",
+            )
+        return value
+
+    path = optional_text("path", maximum=4096)
+    if require_path and not str(path or "").strip():
+        raise HTTPException(status_code=400, detail="path is required")
+
+    filename = optional_text("filename", maximum=255)
+    mode = optional_text("mode", maximum=64)
+    modes = payload.get("modes")
+    if modes is not None:
+        if (
+            not isinstance(modes, list)
+            or not modes
+            or len(modes) > 4
+            or any(
+                not isinstance(item, str)
+                or not item.strip()
+                or len(item) > 64
+                for item in modes
+            )
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="modes must be a non-empty string list",
+            )
+        modes = list(modes)
+    if mode is not None and modes is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="provide either mode or modes",
+        )
+
+    selection = payload.get("selection")
+    if selection is not None and not isinstance(selection, dict):
+        raise HTTPException(
+            status_code=400,
+            detail="selection must be an object",
+        )
+    localized_labels = payload.get("localizedLabels")
+    if localized_labels is not None and not isinstance(localized_labels, dict):
+        raise HTTPException(
+            status_code=400,
+            detail="localizedLabels must be an object",
+        )
+    if "basemap" in payload:
+        raise HTTPException(
+            status_code=400,
+            detail="basemap is no longer accepted; provide atlas",
+        )
+    atlas = _validated_astrocart_pdf_atlas(payload)
+
+    page_format = (optional_text("pageFormat", maximum=8) or "A4").upper()
+    if page_format not in {"A4", "A3"}:
+        raise HTTPException(
+            status_code=400,
+            detail="pageFormat must be A4 or A3",
+        )
+    locale = optional_text("locale", maximum=64) or "en"
+    return {
+        "path": path if require_path else None,
+        "filename": filename,
+        "mode": mode,
+        "modes": modes,
+        "expected_spec_key": optional_text("expectedSpecKey", maximum=128),
+        "selection": selection,
+        "page_format": page_format,
+        "locale": locale,
+        "title": optional_text("title", maximum=512) or "",
+        "subtitle": optional_text("subtitle", maximum=1024) or "",
+        "chart_date": optional_text("chartDate", maximum=256) or "",
+        "selection_summary": (
+            optional_text("selectionSummary", maximum=4096) or ""
+        ),
+        "localized_labels": localized_labels,
+        "atlas": atlas,
+    }
+
+
+@app.post("/api/workspace/document/{doc_id}/astrocart/export")
+def workspace_document_astrocart_export_pdf(
+    doc_id: str,
+    payload: Any = Body(...),
+) -> dict:
+    """Write the daemon-owned retained ACG map to a native-selected PDF path."""
+    options = _workspace_astrocart_pdf_options(payload, require_path=True)
+    try:
+        return workspace_service.export_astrocart_pdf_for_document(
+            doc_id,
+            **options,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/workspace/document/{doc_id}/astrocart/export-bytes")
+def workspace_document_astrocart_export_pdf_bytes(
+    doc_id: str,
+    payload: Any = Body(...),
+) -> dict:
+    """Return the same print-map ACG PDF for a browser Blob download."""
+    options = _workspace_astrocart_pdf_options(payload, require_path=False)
+    try:
+        result = workspace_service.export_astrocart_pdf_for_document(
+            doc_id,
+            **options,
+        )
+        data = result.pop("data")
+        result["dataBase64"] = base64.b64encode(data).decode("ascii")
+        return result
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @app.get("/api/workspace/document/{doc_id}/astrocart/view-state")
 def workspace_document_astrocart_view_state(doc_id: str) -> dict:
-    """Per-radix astrocart viewport state. Wx twin:
-    AstrocartPanel.get_state/apply_state + MFrame.table_state_for_radix."""
+    """Global static ACG view preferences plus this radix's camera/timing state."""
     try:
         return workspace_service.astrocart_view_state_for_document(doc_id)
     except ValueError as exc:
@@ -2087,6 +2592,7 @@ def workspace_document_astrocart_view_state(doc_id: str) -> dict:
 
 class WorkspaceAstrocartViewStatePayload(BaseModel):
     state: dict
+    scope: Literal["camera", "global", "all"] = "all"
 
 
 @app.post("/api/workspace/document/{doc_id}/astrocart/view-state")
@@ -2095,7 +2601,11 @@ def workspace_document_astrocart_store_view_state(
     payload: WorkspaceAstrocartViewStatePayload,
 ) -> dict:
     try:
-        return workspace_service.store_astrocart_view_state_for_document(doc_id, payload.state)
+        return workspace_service.store_astrocart_view_state_for_document(
+            doc_id,
+            payload.state,
+            scope=payload.scope,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -2322,8 +2832,8 @@ def notes_scratch_commit(payload: NotesScratchPayload) -> dict:
 
 # ---------------------------------------------------------------------------
 # Options + appearance — canonical options.py exposed for read/patch.
-# A change re-renders every open chart (headless _refresh_current_views,
-# morin.py:3393) and broadcasts options.changed.
+# Each group uses its cheapest valid invalidation; list-only policy must never
+# re-render charts. Every accepted change broadcasts options.changed.
 # Spec: doc/migration/surfaces/options.md
 # ---------------------------------------------------------------------------
 
@@ -2332,6 +2842,9 @@ class OptionsPatchPayload(BaseModel):
     # Grouped partial patch, e.g. {"houseSystem": {"hsys": "R"}}.
     colors: Optional[dict] = None
     display: Optional[dict] = None
+    # Global Aspect List calculation policy. Kept separate from chart display
+    # so changing it can never alter or invalidate chart drawing.
+    aspectList: Optional[dict] = None
     houseSystem: Optional[dict] = None
     ayanamsha: Optional[dict] = None
     orbs: Optional[dict] = None
@@ -2340,6 +2853,9 @@ class OptionsPatchPayload(BaseModel):
     lunarMansions: Optional[dict] = None
     speculum: Optional[dict] = None
     defaultLocation: Optional[dict] = None
+    # PDF chart export appearance. Keep declared here or Pydantic drops the
+    # group before options_service._apply_export can persist it.
+    export: Optional[dict] = None
     primaryDirections: Optional[dict] = None
     # Annual-profection flags (zodprof / usezodprojsprof / profwholesign):
     # the Profections pane Mode select + UseZodProjs check write through here
@@ -2369,6 +2885,11 @@ class OptionsPatchPayload(BaseModel):
     # declared here (the profections-table lesson) — keep in sync with
     # set_options' group branches.
     planetsPoints: Optional[dict] = None
+
+
+class SidebarListPreferencesPatchPayload(BaseModel):
+    aspectList: Optional[dict] = None
+    transitList: Optional[dict] = None
 
 
 class ArabicPartSpecPayload(BaseModel):
@@ -2411,6 +2932,7 @@ class LegacyStyleMigrationPayload(BaseModel):
 class StyleDraftCreatePayload(BaseModel):
     draftId: str | None = None
     sourceProfileId: str | None = None
+    sourceThemeName: str | None = None
     profile: dict[str, Any] | None = None
     profileId: str | None = None
     name: str | None = None
@@ -2425,12 +2947,16 @@ class StyleDraftPatchPayload(BaseModel):
     # Direct class-level profile-v2 values stay out of the legacy public token
     # catalog and use their own validated authoring channel.
     authoringOverrides: dict[str, Any] = Field(default_factory=dict)
+    # Non-chart application materials use a separate closed class/property
+    # grammar and never accept arbitrary CSS.
+    appAuthoringOverrides: dict[str, Any] = Field(default_factory=dict)
     baseRevision: int | None = None
 
 
 class StyleDraftValidatePayload(BaseModel):
     overrides: dict[str, Any] = Field(default_factory=dict)
     authoringOverrides: dict[str, Any] = Field(default_factory=dict)
+    appAuthoringOverrides: dict[str, Any] = Field(default_factory=dict)
     baseRevision: int | None = None
 
 
@@ -2438,6 +2964,23 @@ class StyleDraftCommitPayload(BaseModel):
     baseRevision: int | None = None
     activate: bool = False
     discard: bool = False
+
+
+class StyleDraftSaveAsPayload(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    baseRevision: int | None = None
+    overrides: dict[str, Any] = Field(default_factory=dict)
+    authoringOverrides: dict[str, Any] = Field(default_factory=dict)
+    appAuthoringOverrides: dict[str, Any] = Field(default_factory=dict)
+
+
+class StyleDraftRevertPayload(BaseModel):
+    baseRevision: int | None = None
+    factoryDefault: bool = False
+
+
+class StyleLabThemeImportPayload(BaseModel):
+    profile: dict[str, Any]
 
 
 class StyleLabChartSourcesPayload(BaseModel):
@@ -2471,6 +3014,28 @@ def options_get() -> dict:
     orbs / dignities) + the available theme presets."""
     try:
         return options_service.get_options()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/options/sidebar-list-preferences")
+def options_sidebar_list_preferences_get() -> dict:
+    """Durable retained-list controls without chart/list invalidation."""
+    try:
+        return options_service.get_sidebar_list_preferences()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/options/sidebar-list-preferences")
+def options_sidebar_list_preferences_set(
+    payload: SidebarListPreferencesPatchPayload,
+) -> dict:
+    patch = {key: value for key, value in payload.model_dump().items() if value is not None}
+    try:
+        return options_service.set_sidebar_list_preferences(patch)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -2636,6 +3201,12 @@ def _publish_style_draft(action: str, result: dict) -> None:
             "removedTokenIds": list(result.get("removedTokenIds") or []),
             "changedAuthoringIds": list(result.get("changedAuthoringIds") or []),
             "removedAuthoringIds": list(result.get("removedAuthoringIds") or []),
+            "changedAppAuthoringIds": list(
+                result.get("changedAppAuthoringIds") or []
+            ),
+            "removedAppAuthoringIds": list(
+                result.get("removedAppAuthoringIds") or []
+            ),
             "refreshMode": "display-overlay",
             "styleOnly": True,
         })
@@ -2744,12 +3315,84 @@ def style_lab_catalog(
     return result
 
 
+@app.get("/api/style-lab/theme-sources")
+def style_lab_theme_sources(response: Response) -> dict:
+    """Real Aries theme presets, resolved for isolated Style Lab preview."""
+    try:
+        result = options_service.get_style_lab_theme_sources()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    response.headers["Cache-Control"] = "no-store"
+    return result
+
+
+@app.get("/api/style-lab/drafts/{draft_id}/export")
+def style_lab_draft_export(draft_id: str, response: Response) -> dict:
+    """Return a self-contained profile whose appearance is portable."""
+    try:
+        profile = style_draft_service.export_profile(draft_id)
+        result = options_service.build_portable_style_profile_export(profile)
+    except ValueError as exc:
+        _raise_style_draft_error(exc)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    response.headers["Cache-Control"] = "no-store"
+    return result
+
+
+@app.delete("/api/style-lab/themes/{profile_id}")
+def style_lab_theme_delete(profile_id: str, response: Response) -> dict:
+    """Delete one user-authored theme while keeping bundled presets immutable."""
+    try:
+        sources = options_service.get_style_lab_theme_sources().get("sources") or []
+        source = next(
+            (
+                candidate
+                for candidate in sources
+                if isinstance(candidate, dict)
+                and candidate.get("profileId") == profile_id
+                and candidate.get("deletable") is True
+            ),
+            None,
+        )
+        if source is None:
+            raise ValueError("only saved user themes can be deleted")
+        result = options_service.delete_style_profile(profile_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    if result.get("refreshMode"):
+        workspace_service.broadcast_options_changed(
+            result.get("refreshedDocumentIds"),
+            result.get("refreshMode"),
+            style_only=True,
+        )
+    response.headers["Cache-Control"] = "no-store"
+    return {
+        **result,
+        "deleted": True,
+        "deletedProfileId": profile_id,
+        "deletedThemeName": str(source.get("name") or ""),
+    }
+
+
 @app.get("/api/style-lab/authoring-schema")
 def style_lab_authoring_schema(response: Response) -> dict:
     from .style_authoring_service import authoring_schema
 
     response.headers["Cache-Control"] = "no-store"
     return authoring_schema()
+
+
+@app.get("/api/style-lab/app-authoring-schema")
+def style_lab_app_authoring_schema(response: Response) -> dict:
+    from .app_style_authoring_service import app_authoring_schema
+
+    response.headers["Cache-Control"] = "no-store"
+    return app_authoring_schema()
 
 
 @app.get("/api/style-lab/catalog/{semantic_id}")
@@ -2834,8 +3477,13 @@ def style_lab_draft_list(response: Response) -> dict:
 @app.post("/api/style-lab/drafts", status_code=201)
 def style_lab_draft_create(payload: StyleDraftCreatePayload, response: Response) -> dict:
     try:
-        if payload.profile is not None and payload.sourceProfileId is not None:
-            raise ValueError("pass profile or sourceProfileId, not both")
+        source_count = sum((
+            payload.profile is not None,
+            payload.sourceProfileId is not None,
+            payload.sourceThemeName is not None,
+        ))
+        if source_count > 1:
+            raise ValueError("pass profile, sourceProfileId, or sourceThemeName, not more than one")
         source_profile = payload.profile
         if payload.sourceProfileId is not None:
             if payload.sourceProfileId == "active":
@@ -2844,6 +3492,8 @@ def style_lab_draft_create(payload: StyleDraftCreatePayload, response: Response)
                     raise HTTPException(status_code=404, detail="there is no active style profile")
             else:
                 source_profile = options_service.get_style_profile_export(payload.sourceProfileId)
+        elif payload.sourceThemeName is not None:
+            source_profile = options_service.get_style_lab_theme_profile(payload.sourceThemeName)
         resolved_base_preset_id = (
             payload.basePresetId
             if payload.basePresetId is not None
@@ -2853,10 +3503,17 @@ def style_lab_draft_create(payload: StyleDraftCreatePayload, response: Response)
         result = style_draft_service.create_draft(
             draft_id=payload.draftId,
             profile=source_profile,
-            profile_id=payload.profileId,
+            profile_id=(
+                payload.profileId
+                if payload.profileId is not None
+                else (source_profile or {}).get("id")
+                if payload.sourceThemeName is not None
+                else None
+            ),
             name=payload.name,
             scope=payload.scope,
             base_preset_id=payload.basePresetId,
+            source_theme_name=payload.sourceThemeName,
         )
     except HTTPException:
         raise
@@ -2892,6 +3549,7 @@ def style_lab_draft_patch(
             draft_id,
             payload.overrides,
             authoring_overrides=payload.authoringOverrides,
+            app_authoring_overrides=payload.appAuthoringOverrides,
             expected=expected,
         )
     except ValueError as exc:
@@ -2915,6 +3573,7 @@ def style_lab_draft_validate(
             draft_id,
             payload.overrides,
             authoring_overrides=payload.authoringOverrides,
+            app_authoring_overrides=payload.appAuthoringOverrides,
             expected=expected,
         )
         options_service.validate_style_profile_base(result.get("profile"))
@@ -2959,6 +3618,106 @@ def style_lab_draft_commit(
         )
     _set_style_draft_etag(response, result)
     _publish_style_draft("committed", result)
+    return result
+
+
+@app.post("/api/style-lab/drafts/{draft_id}/save-as")
+def style_lab_draft_save_as(
+    draft_id: str,
+    payload: StyleDraftSaveAsPayload,
+    request: Request,
+    response: Response,
+) -> dict:
+    expected = _style_draft_expected(request, payload.baseRevision)
+    try:
+        result = style_draft_service.save_draft_as(
+            draft_id,
+            name=payload.name,
+            expected=expected,
+            overrides=payload.overrides,
+            authoring_overrides=payload.authoringOverrides,
+            app_authoring_overrides=payload.appAuthoringOverrides,
+            persist=lambda profile: options_service.save_style_profile(
+                profile,
+                activate=False,
+            ),
+        )
+    except ValueError as exc:
+        _raise_style_draft_error(exc)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    _set_style_draft_etag(response, result)
+    _publish_style_draft("saved-as", result)
+    return result
+
+
+@app.post("/api/style-lab/drafts/{draft_id}/revert")
+def style_lab_draft_revert(
+    draft_id: str,
+    payload: StyleDraftRevertPayload,
+    request: Request,
+    response: Response,
+) -> dict:
+    expected = _style_draft_expected(request, payload.baseRevision)
+    try:
+        if payload.factoryDefault:
+            draft = style_draft_service.get_draft(draft_id)
+            source_theme_name = str(draft.get("sourceThemeName") or "")
+            if not source_theme_name or source_theme_name.startswith("profile:"):
+                raise ValueError("only system themes have factory defaults")
+            factory = options_service.get_style_lab_factory_theme_profile(
+                source_theme_name
+            )
+            result = style_draft_service.restore_draft(
+                draft_id,
+                factory,
+                expected=expected,
+                persist=lambda profile: options_service.save_style_profile(
+                    profile,
+                    activate=False,
+                ),
+            )
+        else:
+            result = style_draft_service.revert_draft(
+                draft_id,
+                expected=expected,
+            )
+    except ValueError as exc:
+        _raise_style_draft_error(exc)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    persistence = result.get("persistence") or {}
+    if persistence.get("refreshMode"):
+        workspace_service.broadcast_options_changed(
+            persistence.get("refreshedDocumentIds"),
+            persistence.get("refreshMode"),
+            style_only=True,
+        )
+    _set_style_draft_etag(response, result)
+    if result.get("changed"):
+        _publish_style_draft("reverted", result)
+    return result
+
+
+@app.post("/api/style-lab/themes/import", status_code=201)
+def style_lab_theme_import(
+    payload: StyleLabThemeImportPayload,
+    response: Response,
+) -> dict:
+    try:
+        result = style_draft_service.import_profile(
+            payload.profile,
+            persist=lambda profile: options_service.save_style_profile(
+                profile,
+                activate=False,
+            ),
+        )
+    except ValueError as exc:
+        _raise_style_draft_error(exc)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    _set_style_draft_etag(response, result)
+    _publish_style_draft("imported", result)
     return result
 
 
@@ -3144,7 +3903,7 @@ def options_cycle_secondary() -> dict:
     workspace_service.broadcast_options_changed(
         result.get("refreshedDocumentIds"),
         result.get("refreshMode"),
-        list_data_changed=False,
+        list_data_changed=result.get("listDataChanged", True),
     )
     return result
 
@@ -3177,7 +3936,7 @@ def options_toggle_aspects() -> dict:
     workspace_service.broadcast_options_changed(
         result.get("refreshedDocumentIds"),
         result.get("refreshMode"),
-        list_data_changed=False,
+        list_data_changed=result.get("listDataChanged", True),
     )
     return result
 
@@ -3193,7 +3952,8 @@ def options_toggle_minor_aspects() -> dict:
     workspace_service.broadcast_options_changed(
         result.get("refreshedDocumentIds"),
         result.get("refreshMode"),
-        list_data_changed=False,
+        list_data_changed=result.get("listDataChanged", True),
+        inspector_data_changed=True,
     )
     return result
 
@@ -3401,6 +4161,11 @@ class TransitSearchPayload(BaseModel):
     objectMotionFilters: dict[str, str] = Field(default_factory=dict)
     limit: int = 500
     persistSettings: bool = True
+    ownerScope: str = "search"
+    ownerGeneration: Optional[int] = None
+    cursorDirection: Optional[str] = None
+    cursorRowBudget: Optional[int] = None
+    cursorAnchorDate: Optional[str] = None
 
 
 class TransitSearchContextPayload(BaseModel):
@@ -3423,6 +4188,11 @@ class TransitSearchContextRunPayload(TransitSearchContextPayload):
     objectMotionFilters: dict[str, str] = Field(default_factory=dict)
     limit: int = 500
     persistSettings: bool = True
+    ownerScope: str = "search"
+    ownerGeneration: Optional[int] = None
+    cursorDirection: Optional[str] = None
+    cursorRowBudget: Optional[int] = None
+    cursorAnchorDate: Optional[str] = None
 
 
 class SearchDefaultRangePayload(BaseModel):
@@ -3777,9 +4547,19 @@ def transit_search_context_start(payload: TransitSearchContextRunPayload) -> dic
 
 
 @app.get("/api/search/progress")
-def transit_search_progress(sessionId: str) -> dict:
+async def transit_search_progress(
+    request: Request,
+    sessionId: str,
+    afterRevision: Optional[int] = None,
+    waitMs: int = 0,
+) -> dict:
     try:
-        return _transit_search_service_instance().progress(sessionId)
+        return await _transit_search_service_instance().progress_after(
+            sessionId,
+            after_revision=afterRevision,
+            wait_ms=waitMs,
+            is_disconnected=request.is_disconnected,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
@@ -4169,7 +4949,12 @@ def options_default_location_from_map(payload: DefaultLocationFromMapPayload) ->
 
 
 @app.get("/api/tables/{table_id}")
-def generic_table_payload(table_id: str, documentId: str = Query(...)) -> dict:
+def generic_table_payload(
+    table_id: str,
+    documentId: str = Query(...),
+    fromYear: Optional[int] = Query(None),
+    toYear: Optional[int] = Query(None),
+) -> dict:
     """Generic embedded table rows for Packet 05A.
 
     The route resolves the chart from daemon workspace memory, then asks the
@@ -4183,12 +4968,128 @@ def generic_table_payload(table_id: str, documentId: str = Query(...)) -> dict:
             raise ValueError(
                 f"document {documentId!r} is table {resolved_id!r}, not {table_id!r}"
             )
+        binding = context.get("binding")
+        if fromYear is not None or toYear is not None:
+            if str(resolved_id) != "eclipses":
+                raise ValueError("bounded year queries are only available for eclipses")
+            if fromYear is None or toYear is None:
+                raise ValueError("fromYear and toYear must be supplied together")
+            if fromYear > toYear:
+                raise ValueError("fromYear must not be after toYear")
+            # Infinite-scroll reads are deliberately ephemeral. Crossing an
+            # edge must not widen the canonical table binding, broadcast a
+            # document change, or rebuild all previously loaded decades.
+            binding = {
+                **dict(binding or {}),
+                "from": [fromYear, 1, 1],
+                "to": [toYear, 12, 31],
+            }
         return tables_service().payload_for_chart(
             table_id,
             context["chart"],
-            binding=context.get("binding"),
+            binding=binding,
             current_datetime=context.get("current_datetime"),
             chart_anchor_datetime=context.get("chart_anchor_datetime"),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/aspect-list")
+def aspect_list_payload(
+    documentId: str = Query(...),
+    mode: Optional[str] = Query(None),
+) -> dict:
+    """Current aspect relationships for the retained Aspect List."""
+    try:
+        context = workspace_service.table_context(
+            documentId,
+            requested_table_id="aspect_list",
+        )
+        if str(context.get("table_id") or "") != "aspect_list":
+            raise ValueError(f"document {documentId!r} is not an Aspect List host")
+        payload = aspect_list_service()(context, mode)
+        payload["retainedListDataKey"] = options_service.get_retained_list_data_key()
+        return payload
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/aspect-list/perfections")
+def aspect_list_perfections_payload(
+    documentId: str = Query(...),
+    mode: Optional[str] = Query(None),
+    maxOrb: float = Query(10.0, ge=0.0, le=30.0),
+    contextKey: str = Query(...),
+    rowIds: Optional[list[str]] = Query(None),
+) -> dict:
+    """Lazily resolve a bounded exact-instant viewport batch."""
+    try:
+        from .aspect_list_service import (
+            aspect_list_context_key,
+            aspect_list_perfections,
+        )
+
+        context = workspace_service.table_context(
+            documentId,
+            requested_table_id="aspect_list",
+        )
+        current_context_key = aspect_list_context_key(context, mode)
+        if not contextKey or current_context_key != str(contextKey):
+            raise ValueError("Aspect List context changed; refresh the list")
+        result = aspect_list_perfections(
+            context,
+            mode,
+            maxOrb,
+            row_ids=rowIds,
+        )
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/aspect-list/open-perfection")
+def aspect_list_open_perfection(body: dict = Body(...)) -> dict:
+    """Open the current row at exact 0°00′ with the required chart context."""
+    try:
+        from .aspect_list_service import (
+            aspect_list_context_key,
+            aspect_list_perfections,
+        )
+
+        document_id = str(body.get("documentId") or "")
+        mode = str(body.get("mode") or "")
+        row_id = str(body.get("rowId") or "")
+        context_key = str(body.get("contextKey") or "")
+        action = str(body.get("action") or "exact")
+        show_radix = body.get("showRadix")
+        if not context_key:
+            raise ValueError("Aspect List context key is required")
+        context = workspace_service.table_context(
+            document_id,
+            requested_table_id="aspect_list",
+        )
+        current_context_key = aspect_list_context_key(context, mode)
+        if current_context_key != context_key:
+            raise ValueError("Aspect List context changed; refresh the list")
+        result = aspect_list_perfections(context, mode, 30.0, row_id=row_id)
+        event = result["rows"][0]
+        if event.get("status") != "ready":
+            raise ValueError("This aspect has no available exact perfection")
+        return workspace_service.open_aspect_perfection(
+            document_id=document_id,
+            mode=mode,
+            event_jd=float(event["exactJd"]),
+            expected_context_key=context_key,
+            action=action,
+            show_radix=(bool(show_radix) if show_radix is not None else None),
+            preserve_source_frame=bool(event.get("sourceFrameRequired", False)),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

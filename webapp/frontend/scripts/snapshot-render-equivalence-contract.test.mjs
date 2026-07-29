@@ -138,7 +138,7 @@ test("aspect click and hide state override an overlay-only zero-dirty plan", asy
   );
   assert.match(
     chartCanvas,
-    /const aspectInteractionPaintKey = JSON\.stringify\(\[\s*chart\.document\?\.documentId \?\? null,\s*exclusiveOnClick,\s*selectedAspectBody,\s*hideAllAspects,/,
+    /const aspectInteractionPaintKey = JSON\.stringify\(\[\s*chart\.document\?\.documentId \?\? null,\s*exclusiveOnClick,\s*selectedAspectBody,\s*hideAllAspects,\s*minorOnlyAspects,/,
   );
   assert.match(
     chartCanvas,
@@ -146,6 +146,6 @@ test("aspect click and hide state override an overlay-only zero-dirty plan", asy
   );
   assert.match(
     chartCanvas,
-    /hitRegionsRef\.current = computeHitRegions\([\s\S]*?clickAspectState: \{ selectedBody: selectedAspectBody, hideAll: hideAllAspects \},\s*\}\);\s*paintedAspectInteractionKeyRef\.current = aspectInteractionPaintKey;/,
+    /hitRegionsRef\.current = computeHitRegions\([\s\S]*?clickAspectState: \{\s*selectedBody: selectedAspectBody,\s*hideAll: hideAllAspects,\s*minorOnly: minorOnlyAspects,\s*\},\s*\}\);\s*paintedAspectInteractionKeyRef\.current = aspectInteractionPaintKey;/,
   );
 });

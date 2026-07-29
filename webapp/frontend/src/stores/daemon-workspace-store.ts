@@ -9,6 +9,7 @@ import {
   workspaceState,
   type DaemonDocumentSummary,
   type DaemonEvent,
+  type RetainedListDisplay,
   type WorkspaceEventSubscription,
 } from "@/lib/daemon/client";
 import { isAbortError } from "@/lib/abort-error";
@@ -39,6 +40,24 @@ import {
 // NOT daemon-owned.
 // ---------------------------------------------------------------------------
 
+export type DaemonWorkspaceOptionsChange = {
+  refreshedDocumentIds: string[];
+  refreshMode: string;
+  styleOnly: boolean;
+  listDataChanged: boolean;
+  retainedListDataKey?: string;
+  /** A narrow display change altered the daemon-built inspector payload even
+   * though resident list/table query data remains valid. */
+  inspectorDataChanged: boolean;
+  langid?: number;
+  schemaVersion: number;
+  themeVersion: number;
+  styleRevision: number;
+  paletteHash: string;
+  styleHash: string;
+  seq: number;
+};
+
 export type DaemonWorkspaceState = {
   /** Document summaries in daemon tree order. Empty until the first seed. */
   documents: DaemonDocumentSummary[];
@@ -51,24 +70,21 @@ export type DaemonWorkspaceState = {
     docId: string | null;
     changeReason: string;
     rebuiltChildIds: string[];
+    /** False when this tick exists only to repaint chart presentation. Retained
+     * list/table data must not treat it as a semantic mutation. */
+    listDataChanged: boolean;
     /** Monotonic counter so identical successive events still trigger. */
     seq: number;
   } | null;
   /** Latest daemon options event. ThemeProvider uses this to update root CSS
    * variables once per style identity, without polling. */
-  lastOptionsChange: {
-    refreshedDocumentIds: string[];
-    refreshMode: string;
-    styleOnly: boolean;
-    listDataChanged: boolean;
-    langid?: number;
-    schemaVersion: number;
-    themeVersion: number;
-    styleRevision: number;
-    paletteHash: string;
-    styleHash: string;
-    seq: number;
-  } | null;
+  lastOptionsChange: DaemonWorkspaceOptionsChange | null;
+  /** Latest options transaction that can change retained row/query semantics.
+   * Presentation-only options never publish into this slice, so resident lists
+   * are not notified merely to discover that no data work is required. */
+  lastRetainedDataOptionsChange: DaemonWorkspaceOptionsChange | null;
+  /** Daemon-owned display facets applied to retained source rows in memory. */
+  retainedListDisplay: RetainedListDisplay;
   /** The snapshot a navigate POST returned for a stepped doc, pushed by the
    * navigate handler so the active surface paints from the POST result (in
    * ``step_fast`` overlay mode) instead of waiting for session.changed -> a
@@ -107,6 +123,7 @@ export type DaemonWorkspaceState = {
     docId: string | null;
     changeReason: string;
     rebuiltChildIds: string[];
+    listDataChanged?: boolean;
     displayDatetime?: string | null;
     tabSuffix?: string | null;
   }) => void;
@@ -115,6 +132,9 @@ export type DaemonWorkspaceState = {
     refreshMode?: string | null;
     styleOnly?: boolean;
     listDataChanged?: boolean;
+    retainedListDataKey?: string;
+    retainedListDisplay?: RetainedListDisplay;
+    inspectorDataChanged?: boolean;
     langid?: number;
     schemaVersion: number;
     themeVersion: number;
@@ -122,6 +142,7 @@ export type DaemonWorkspaceState = {
     paletteHash: string;
     styleHash: string;
   }) => void;
+  _applyRetainedListDisplay: (display: RetainedListDisplay) => void;
   /** Push a navigate-POST snapshot for an immediate step paint (no second GET). */
   pushSteppedSnapshot: (docId: string, snapshot: ChartRenderSnapshot) => void;
   /** Push a command-return snapshot for an immediate open/activate paint. */
@@ -155,12 +176,34 @@ function mergeDocumentSummaries(
   return next;
 }
 
+function sameRetainedListDisplay(
+  left: RetainedListDisplay,
+  right: RetainedListDisplay,
+): boolean {
+  const current = left.hiddenObjectIds;
+  const next = right.hiddenObjectIds;
+  return (
+    current.length === next.length &&
+    current.every((objectId, index) => objectId === next[index])
+  );
+}
+
+function isRetainedListDisplay(value: unknown): value is RetainedListDisplay {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Array.isArray((value as Partial<RetainedListDisplay>).hiddenObjectIds)
+  );
+}
+
 export const useDaemonWorkspaceStore = create<DaemonWorkspaceState>()((set) => ({
   documents: [],
   activeDocumentId: null,
   connection: "connecting",
   lastSessionChange: null,
   lastOptionsChange: null,
+  lastRetainedDataOptionsChange: null,
+  retainedListDisplay: { hiddenObjectIds: [] },
   steppedSnapshot: null,
   commandSnapshot: null,
 
@@ -281,6 +324,7 @@ export const useDaemonWorkspaceStore = create<DaemonWorkspaceState>()((set) => (
           docId: change.docId,
           changeReason: change.changeReason,
           rebuiltChildIds: change.rebuiltChildIds,
+          listDataChanged: change.listDataChanged !== false,
           seq: (state.lastSessionChange?.seq ?? 0) + 1,
         },
       };
@@ -295,14 +339,24 @@ export const useDaemonWorkspaceStore = create<DaemonWorkspaceState>()((set) => (
         !styleOnly &&
         touches(docId) &&
         docId !== state.activeDocumentId;
+      const optionsChange = {
+        ...change,
+        refreshMode: change.refreshMode || "recalc",
+        styleOnly,
+        listDataChanged,
+        inspectorDataChanged: change.inspectorDataChanged === true,
+        seq: (state.lastOptionsChange?.seq ?? 0) + 1,
+      };
       return {
-        lastOptionsChange: {
-          ...change,
-          refreshMode: change.refreshMode || "recalc",
-          styleOnly,
-          listDataChanged,
-          seq: (state.lastOptionsChange?.seq ?? 0) + 1,
-        },
+        lastOptionsChange: optionsChange,
+        lastRetainedDataOptionsChange: listDataChanged
+          ? optionsChange
+          : state.lastRetainedDataOptionsChange,
+        retainedListDisplay:
+          isRetainedListDisplay(change.retainedListDisplay) &&
+          !sameRetainedListDisplay(state.retainedListDisplay, change.retainedListDisplay)
+            ? change.retainedListDisplay
+            : state.retainedListDisplay,
         // Cache invalidation and presented-frame lifetime are separate. Keep
         // the active chart's exact stepped/command frame visible until the
         // canonical options refresh publishes its replacement atomically.
@@ -315,6 +369,12 @@ export const useDaemonWorkspaceStore = create<DaemonWorkspaceState>()((set) => (
           ? null
           : state.commandSnapshot,
       };
+    }),
+  _applyRetainedListDisplay: (display) =>
+    set((state) => {
+      if (!isRetainedListDisplay(display)) return state;
+      if (sameRetainedListDisplay(state.retainedListDisplay, display)) return state;
+      return { retainedListDisplay: display };
     }),
   pushSteppedSnapshot: (docId, snapshot) => {
     // Normalize the partial overlay before publishing. React renders this exact
@@ -420,6 +480,7 @@ function handleEvent(event: DaemonEvent): void {
         docId: event.docId,
         changeReason: event.changeReason,
         rebuiltChildIds: event.rebuiltChildIds ?? [],
+        listDataChanged: event.listDataChanged,
         displayDatetime: event.displayDatetime,
         tabSuffix: event.tabSuffix,
       });
@@ -430,12 +491,14 @@ function handleEvent(event: DaemonEvent): void {
         const refreshMode = event.refreshMode || "recalc";
         const styleOnly = event.styleOnly === true;
         const listDataChanged = event.listDataChanged !== false;
+        const inspectorDataChanged = event.inspectorDataChanged === true;
         const styleIdentity = normalizeOptionsStyleIdentity(event);
         // Empty historically meant "broadcast-only, assume every chart". A
         // targeted PD projection refresh is different: with no open PD chart,
         // empty means exactly no document changed and must not invalidate the
         // retained Directions list or synthesize a session change for it.
-        const targetedEmptyRefresh = refreshMode === "pd-in-chart";
+        const targetedEmptyRefresh =
+          refreshMode === "pd-in-chart" || refreshMode === "retained-data";
         const touchedIds =
           refreshedIds.length > 0 || targetedEmptyRefresh
             ? refreshedIds
@@ -446,6 +509,9 @@ function handleEvent(event: DaemonEvent): void {
           refreshMode,
           styleOnly,
           listDataChanged,
+          retainedListDataKey: event.retainedListDataKey,
+          retainedListDisplay: event.retainedListDisplay,
+          inspectorDataChanged,
           langid: event.langid,
           ...styleIdentity,
         });
@@ -461,6 +527,10 @@ function handleEvent(event: DaemonEvent): void {
             docId: activeTouched ? store.activeDocumentId : null,
             changeReason: refreshMode === "display-overlay" ? "display-overlay" : "options",
             rebuiltChildIds: touchedIds,
+            // lastOptionsChange is the one retained-data authority for this
+            // transaction. This companion tick only wakes chart/session
+            // consumers and must not launch a duplicate list request.
+            listDataChanged: false,
           });
         }
       }

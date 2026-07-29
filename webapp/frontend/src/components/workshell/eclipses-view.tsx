@@ -17,6 +17,7 @@ import {
   ContextMenuSubTrigger,
 } from "@/components/ui/context-menu";
 import {
+  fetchEclipseTableRange,
   fetchGenericTablePayload,
   openDirectionsTimedChart,
   setEclipseChartMoment,
@@ -42,7 +43,12 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
 import { beginWorkspaceSnapshotCommand } from "@/stores/workspace-command-snapshot-gate";
 
 import { TimedChartContextMenu } from "./directions-view";
-import { CellView, downloadText, tableToAlignedText, tableToTsv } from "./generic-table-view";
+import {
+  CellView,
+  downloadText,
+  tableToConfiguredAlignedText,
+  tableToConfiguredTsv,
+} from "./generic-table-view";
 import {
   isListDateColumn,
   listColumnDisplayOrder,
@@ -91,8 +97,7 @@ type ScrollPlan =
   | { kind: "preserve"; anchor: ScrollAnchor | null }
   | {
       kind: "preservePrepend";
-      scrollTop: number;
-      firstRowId: string | null;
+      count: number;
       rowHeight: number;
     };
 
@@ -115,14 +120,30 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
   const [error, setError] = React.useState<string | null>(null);
   const [actionError, setActionError] = React.useState<string | null>(null);
   const [pending, setPending] = React.useState(false);
-  const lastOptionsChange = useDaemonWorkspaceStore((s) => s.lastOptionsChange);
+  const lastOptionsChange = useDaemonWorkspaceStore((s) => s.lastRetainedDataOptionsChange);
   const listRef = React.useRef<HTMLDivElement | null>(null);
   const scrollPlanRef = React.useRef<ScrollPlan | null>({ kind: "focus" });
   const hasFocusedInitialRef = React.useRef(false);
   const pendingRef = React.useRef(false);
   const scrollExtendArmedRef = React.useRef(false);
   const scrollExtendInFlightRef = React.useRef(false);
+  const scrollExtendControllerRef = React.useRef<AbortController | null>(null);
+  const payloadRef = React.useRef(payload);
+  const payloadDocumentIdRef = React.useRef(documentId);
   const layoutPreset = useListLayoutPreset();
+
+  React.useLayoutEffect(() => {
+    if (payloadDocumentIdRef.current !== documentId) {
+      payloadDocumentIdRef.current = documentId;
+      const cached = getCachedGenericTablePayload(TABLE_ID, documentId);
+      payloadRef.current = cached;
+      setPayload(cached);
+      scrollPlanRef.current = { kind: "focus" };
+      hasFocusedInitialRef.current = false;
+      return;
+    }
+    payloadRef.current = payload;
+  }, [documentId, payload]);
 
   const armScrollExtension = React.useCallback(() => {
     window.requestAnimationFrame(() => {
@@ -151,21 +172,36 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
     columnIds: visibleColumnIds,
   });
 
-  const fetchPayload = React.useCallback(
+  const cancelScrollExtension = React.useCallback(() => {
+    scrollExtendControllerRef.current?.abort();
+    scrollExtendControllerRef.current = null;
+    scrollExtendInFlightRef.current = false;
+  }, []);
+
+  const fetchRetainedPayload = React.useCallback(
     async (signal?: AbortSignal) => {
+      const current = payloadDocumentIdRef.current === documentId ? payloadRef.current : null;
+      const currentEclipses = asRecord(asRecord(current?.capabilities).eclipses);
+      const currentFrom = asDateTriple(currentEclipses.from);
+      const currentTo = asDateTriple(currentEclipses.to);
+      if (currentFrom && currentTo) {
+        return fetchEclipseTableRange(documentId, currentFrom[0], currentTo[0], signal);
+      }
       return fetchGenericTablePayload(TABLE_ID, documentId, signal);
     },
     [documentId],
   );
 
   React.useEffect(() => {
+    cancelScrollExtension();
     const controller = new AbortController();
     if (hasFocusedInitialRef.current && listRef.current) {
       scrollPlanRef.current = { kind: "preserve", anchor: captureScrollAnchor(listRef.current) };
     }
-    fetchPayload(controller.signal)
+    fetchRetainedPayload(controller.signal)
       .then((next) => {
         rememberGenericTablePayload(TABLE_ID, documentId, next);
+        payloadRef.current = next;
         setPayload(next);
         setError(null);
         setActionError(null);
@@ -175,7 +211,9 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
         setError(err instanceof Error ? err.message : String(err));
       });
     return () => controller.abort();
-  }, [documentId, fetchPayload, refreshSeq]);
+  }, [cancelScrollExtension, documentId, fetchRetainedPayload, refreshSeq]);
+
+  React.useEffect(() => cancelScrollExtension, [cancelScrollExtension]);
 
   const capabilities = asRecord(payload?.capabilities);
   const dateConvention = coerceDateConvention(capabilities.dateConvention);
@@ -264,25 +302,33 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
   }, [armScrollExtension, chartMoment, documentId, focusIndex, from, rowHeight, rows, to]);
 
   const updateBinding = React.useCallback(
-    async (binding: Record<string, unknown>, scrollPlan: ScrollPlan) => {
+    async (
+      binding: Record<string, unknown>,
+      scrollPlan: ScrollPlan,
+    ) => {
+      cancelScrollExtension();
       scrollPlanRef.current = scrollPlan;
       pendingRef.current = true;
       setPending(true);
       try {
         await workspaceUpdateTableBinding(documentId, binding, TABLE_ID);
-        const refreshed = await fetchPayload();
+        const refreshed = await fetchGenericTablePayload(TABLE_ID, documentId);
         rememberGenericTablePayload(TABLE_ID, documentId, refreshed);
+        payloadRef.current = refreshed;
         setPayload(refreshed);
         setError(null);
         setActionError(null);
       } catch (err) {
+        if (scrollPlanRef.current === scrollPlan) {
+          scrollPlanRef.current = null;
+        }
         setError(err instanceof Error ? err.message : String(err));
       } finally {
         pendingRef.current = false;
         setPending(false);
       }
     },
-    [documentId, fetchPayload],
+    [cancelScrollExtension, documentId],
   );
 
   // -10y/+10y and the year box re-CENTRE the window: wx _shift_range /
@@ -292,7 +338,6 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
   const recenterOnYear = React.useCallback(
     (year: number) => {
       scrollExtendArmedRef.current = false;
-      scrollExtendInFlightRef.current = false;
       void updateBinding({
         from: [year - rangeYears, 1, 1],
         to: [year + rangeYears, 12, 31],
@@ -307,7 +352,6 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
     (date: [number, number, number]) => {
       const year = date[0];
       scrollExtendArmedRef.current = false;
-      scrollExtendInFlightRef.current = false;
       void updateBinding({
         from: [year - rangeYears, 1, 1],
         to: [year + rangeYears, 12, 31],
@@ -342,10 +386,9 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
     recenterOnYear(year);
   }, [recenterOnYear]);
 
-  // wx _maybe_extend_range_for_scroll extends by one cached 10-year chunk when
-  // the first/last visible row is within EDGE_TRIGGER_ROWS. On prepend it
-  // restores old_view_y + inserted_rows * LINE_HEIGHT. Do the same using stable
-  // row ids instead of DOM height, because virtualization changes DOM height.
+  // Edge scrolling reads only the adjacent 10-year island. It must not mutate
+  // the canonical table binding: that broadcasts a document change and makes
+  // the daemon rebuild every decade already loaded into the pane.
   const extendRange = React.useCallback(
     (direction: "before" | "after") => {
       if (
@@ -359,38 +402,53 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
         return;
       }
       scrollExtendInFlightRef.current = true;
-      const sticky: Record<string, unknown> = { year: centerYear };
-      if (Array.isArray(eclipses.focusDate) && eclipses.focusDate.length >= 3) {
-        sticky.focus = eclipses.focusDate.slice(0, 3);
-      }
-      const plan: ScrollPlan =
-        direction === "before"
-          ? {
-              kind: "preservePrepend",
-              scrollTop: listRef.current.scrollTop,
-              firstRowId: rows[0]?.id ?? null,
-              rowHeight: rowHeightRef.current,
-            }
-          : {
-              kind: "preserve",
-              anchor: captureScrollAnchor(listRef.current),
-            };
-      const binding = direction === "before"
-        ? {
-            ...sticky,
-            from: [from[0] - chunkYears, 1, 1],
-            to: [to[0], to[1], to[2]],
+      const controller = new AbortController();
+      scrollExtendControllerRef.current = controller;
+      const fromYear = direction === "before" ? from[0] - chunkYears : to[0] + 1;
+      const toYear = direction === "before" ? from[0] - 1 : to[0] + chunkYears;
+      void fetchEclipseTableRange(documentId, fromYear, toYear, controller.signal)
+        .then((chunk) => {
+          if (
+            controller.signal.aborted ||
+            scrollExtendControllerRef.current !== controller
+          ) {
+            return;
           }
-        : {
-            ...sticky,
-            from: [from[0], from[1], from[2]],
-            to: [to[0] + chunkYears, 12, 31],
-          };
-      void updateBinding(binding, plan).finally(() => {
-        scrollExtendInFlightRef.current = false;
-      });
+          const current = payloadRef.current;
+          if (!current) return;
+          const stitched = stitchEclipsePayload(current, chunk, direction);
+          scrollPlanRef.current = direction === "before"
+            ? {
+                kind: "preservePrepend",
+                count: stitched.prependedCount,
+                rowHeight: rowHeightRef.current,
+              }
+            : {
+                kind: "preserve",
+                anchor: null,
+              };
+          // Release before React commits the rows so the layout correction and
+          // continued trackpad input never contend with a stale in-flight gate.
+          scrollExtendControllerRef.current = null;
+          scrollExtendInFlightRef.current = false;
+          rememberGenericTablePayload(TABLE_ID, documentId, stitched.payload);
+          payloadRef.current = stitched.payload;
+          setPayload(stitched.payload);
+          setError(null);
+          setActionError(null);
+        })
+        .catch((err) => {
+          if (isAbortError(err, controller.signal)) return;
+          setError(err instanceof Error ? err.message : String(err));
+        })
+        .finally(() => {
+          if (scrollExtendControllerRef.current === controller) {
+            scrollExtendControllerRef.current = null;
+            scrollExtendInFlightRef.current = false;
+          }
+        });
     },
-    [centerYear, chunkYears, eclipses.focusDate, from, rows, to, updateBinding],
+    [chunkYears, documentId, from, to],
   );
 
   const checkScrollEdges = React.useCallback(() => {
@@ -407,16 +465,25 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
     }
     const rowTop = getTableHeaderHeight(el);
     const bodyScrollTop = Math.max(0, el.scrollTop - rowTop);
+    const bodyViewportHeight = Math.max(rowHeightRef.current, el.clientHeight - rowTop);
+    const viewportRows = Math.max(
+      1,
+      Math.ceil(bodyViewportHeight / rowHeightRef.current),
+    );
+    // Eclipse chunks take longer to materialize than the denser retained lists.
+    // Start the adjacent fetch one viewport before the hard edge so trackpad
+    // momentum never stalls there and resumes against newly appended rows.
+    const triggerRows = Math.max(edgeRows, viewportRows);
     const firstVis = Math.max(0, Math.floor(bodyScrollTop / rowHeightRef.current));
     const lastVis = Math.min(
       rows.length - 1,
-      firstVis + Math.max(1, Math.floor(el.clientHeight / rowHeightRef.current)),
+      firstVis + viewportRows - 1,
     );
-    if (firstVis <= edgeRows) {
+    if (firstVis <= triggerRows) {
       extendRange("before");
       return;
     }
-    if ((rows.length - 1 - lastVis) <= edgeRows) {
+    if ((rows.length - 1 - lastVis) <= triggerRows) {
       extendRange("after");
     }
   }, [edgeRows, extendRange, rows.length]);
@@ -448,25 +515,29 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
   const changeChartMoment = React.useCallback(
     async (mode: EclipseChartMomentMode) => {
       if (mode === chartMoment) return;
+      cancelScrollExtension();
       scrollPlanRef.current = {
         kind: "preserve",
         anchor: listRef.current ? captureScrollAnchor(listRef.current) : null,
       };
+      pendingRef.current = true;
       setPending(true);
       try {
         await setEclipseChartMoment(mode);
-        const refreshed = await fetchPayload();
+        const refreshed = await fetchRetainedPayload();
         rememberGenericTablePayload(TABLE_ID, documentId, refreshed);
+        payloadRef.current = refreshed;
         setPayload(refreshed);
         setError(null);
         setActionError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       } finally {
+        pendingRef.current = false;
         setPending(false);
       }
     },
-    [chartMoment, documentId, fetchPayload],
+    [cancelScrollExtension, chartMoment, documentId, fetchRetainedPayload],
   );
 
   if (error && !payload) {
@@ -527,6 +598,7 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
             <ChevronLeft />
           </PaneToolbarButton>
           <input
+            data-aries-control-appearance="local"
             key={centerYear}
             aria-label={t("eclipsesView.eclipseCenterYear")}
             className="h-[var(--aries-control-height-small)] w-20 rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-border-subtle)] bg-background px-[var(--aries-control-padding-x-compact)] text-center text-[length:var(--aries-font-size-small)]"
@@ -568,10 +640,11 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
             type="button"
             density="small"
             onClick={() => {
-              const text = tableToTsv(exportPayload, exportPayload.rows);
-              void navigator.clipboard?.writeText(text).catch(() => {
-                downloadText("eclipses.tsv", text, "text/tab-separated-values");
-              });
+              void tableToConfiguredTsv(exportPayload, exportPayload.rows).then((text) =>
+                navigator.clipboard?.writeText(text).catch(() => {
+                  downloadText("eclipses.tsv", text, "text/tab-separated-values");
+                })
+              );
             }}
           >
             <Copy />
@@ -580,16 +653,18 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
           <PaneToolbarButton
             type="button"
             density="small"
-            onClick={() =>
-              void exportTextContent({
+            onClick={() => {
+              void tableToConfiguredTsv(exportPayload, exportPayload.rows).then((text) =>
+                exportTextContent({
                 filename: "eclipses",
                 extension: "tsv",
                 mimeType: "text/tab-separated-values;charset=utf-8",
-                text: tableToTsv(exportPayload, exportPayload.rows),
+                text,
                 title: t("eclipsesView.exportTsvTitle"),
                 filters: [{ name: t("eclipsesView.tsvFiles"), extensions: ["tsv"] }],
-              }).catch(() => {})
-            }
+                })
+              ).catch(() => {});
+            }}
           >
             <Download />
             TSV
@@ -597,18 +672,20 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
           <PaneToolbarButton
             type="button"
             density="small"
-            onClick={() =>
-              void exportTextContent({
+            onClick={() => {
+              void tableToConfiguredAlignedText(exportPayload, exportPayload.rows, {
+                title: exportPayload.title ?? t("eclipsesView.eclipses"),
+                headerLines: [formatRange(from, to, dateConvention)],
+              }).then((text) =>
+                exportTextContent({
                 filename: "eclipses",
                 extension: "txt",
-                text: tableToAlignedText(exportPayload, exportPayload.rows, {
-                  title: exportPayload.title ?? t("eclipsesView.eclipses"),
-                  headerLines: [formatRange(from, to, dateConvention)],
-                }),
+                text,
                 title: t("eclipsesView.exportTextTitle"),
                 filters: [{ name: t("eclipsesView.textFiles"), extensions: ["txt"] }],
-              }).catch(() => {})
-            }
+                })
+              ).catch(() => {});
+            }}
           >
             <FileText />
             TXT
@@ -927,6 +1004,54 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
+function stitchEclipsePayload(
+  current: GenericTablePayload,
+  chunk: GenericTablePayload,
+  direction: "before" | "after",
+): { payload: GenericTablePayload; prependedCount: number } {
+  const currentRows = current.rows.length === 1 && current.rows[0]?.id === "empty"
+    ? []
+    : current.rows;
+  const chunkRows = chunk.rows.length === 1 && chunk.rows[0]?.id === "empty"
+    ? []
+    : chunk.rows;
+  const seen = new Set(currentRows.map((row) => row.id));
+  const freshRows = chunkRows.filter((row) => {
+    if (seen.has(row.id)) return false;
+    seen.add(row.id);
+    return true;
+  });
+  const rows = direction === "before"
+    ? [...freshRows, ...currentRows]
+    : [...currentRows, ...freshRows];
+  const currentCapabilities = asRecord(current.capabilities);
+  const chunkCapabilities = asRecord(chunk.capabilities);
+  const currentEclipses = asRecord(currentCapabilities.eclipses);
+  const chunkEclipses = asRecord(chunkCapabilities.eclipses);
+  const nextFrom = direction === "before"
+    ? asDateTriple(chunkEclipses.from) ?? asDateTriple(currentEclipses.from)
+    : asDateTriple(currentEclipses.from) ?? asDateTriple(chunkEclipses.from);
+  const nextTo = direction === "after"
+    ? asDateTriple(chunkEclipses.to) ?? asDateTriple(currentEclipses.to)
+    : asDateTriple(currentEclipses.to) ?? asDateTriple(chunkEclipses.to);
+
+  return {
+    payload: {
+      ...current,
+      rows: rows.length ? rows : current.rows,
+      capabilities: {
+        ...currentCapabilities,
+        eclipses: {
+          ...currentEclipses,
+          ...(nextFrom ? { from: nextFrom } : {}),
+          ...(nextTo ? { to: nextTo } : {}),
+        },
+      },
+    },
+    prependedCount: direction === "before" ? freshRows.length : 0,
+  };
+}
+
 function columnAlign(align?: string): ListHeadAlign {
   return align === "right" ? "right" : align === "left" ? "left" : "center";
 }
@@ -1039,14 +1164,21 @@ function useVirtualRows(
 
     scheduleMeasure();
     scroller.addEventListener("scroll", scheduleMeasure, { passive: true });
-    scroller.addEventListener(ECLIPSE_VIRTUAL_SCROLL_SYNC_EVENT, measureNow);
+    const measureSync = () => {
+      if (frame) {
+        cancelAnimationFrame(frame);
+        frame = 0;
+      }
+      measureNow();
+    };
+    scroller.addEventListener(ECLIPSE_VIRTUAL_SCROLL_SYNC_EVENT, measureSync);
     const resizeObserver =
       typeof ResizeObserver !== "undefined" ? new ResizeObserver(scheduleMeasure) : null;
     resizeObserver?.observe(scroller);
 
     return () => {
       scroller.removeEventListener("scroll", scheduleMeasure);
-      scroller.removeEventListener(ECLIPSE_VIRTUAL_SCROLL_SYNC_EVENT, measureNow);
+      scroller.removeEventListener(ECLIPSE_VIRTUAL_SCROLL_SYNC_EVENT, measureSync);
       resizeObserver?.disconnect();
       if (frame) cancelAnimationFrame(frame);
     };
@@ -1176,19 +1308,20 @@ function restorePrependedScroll(
   rows: readonly GenericTableRow[],
   rowHeight: number,
 ) {
-  const prependRows = plan.firstRowId
-    ? rows.findIndex((candidate) => candidate.id === plan.firstRowId)
-    : 0;
   const sourceRowHeight = plan.rowHeight > 0 ? plan.rowHeight : rowHeight;
   const headerHeight = getTableHeaderHeight(container);
-  const bodyScrollTop = Math.max(0, plan.scrollTop - headerHeight);
+  // Use the live position at commit time. A trackpad burst can continue while
+  // the adjacent chunk is loading; restoring the request-start position fights
+  // that newer input and produces a visible snap.
+  const currentScrollTop = container.scrollTop;
+  const bodyScrollTop = Math.max(0, currentScrollTop - headerHeight);
   const anchorUnits = bodyScrollTop / sourceRowHeight;
-  const translatedTop = plan.scrollTop <= headerHeight
-    ? plan.scrollTop
+  const translatedTop = currentScrollTop <= headerHeight
+    ? currentScrollTop
     : headerHeight + anchorUnits * rowHeight;
   clampScrollTop(
     container,
-    translatedTop + Math.max(0, prependRows) * rowHeight,
+    translatedTop + Math.max(0, plan.count) * rowHeight,
     rows.length,
     rowHeight,
   );

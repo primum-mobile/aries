@@ -6,6 +6,7 @@ import {
   WHEEL_RENDER_TOKEN_SPECS,
   projectWheelAuthoringStyle,
   resolveWheelRingSet,
+  resolveWheelSecondaryRingClassIds,
   resolveWheelTypographyMetrics,
   wheelRingRadiusTokenKey,
   type WheelGeometryInput,
@@ -37,6 +38,7 @@ import {
 import { AUTHORING_NUMERIC_PROPERTIES } from "./authoring-schema";
 import {
   WHEEL_SEMANTIC_CLASS_MANIFEST,
+  isWheelSemanticClassId,
   resolveWheelSemanticCapabilities,
   resolveWheelSemanticApplicability,
   type WheelPreviewFeatureId,
@@ -58,6 +60,7 @@ export const WHEEL_STYLE_SCENE_ELEMENT_IDS = {
   layerGeometry: "wheel.layers.geometry",
   layerDynamic: "wheel.layers.dynamic",
   layerOuterLabel: "wheel.layers.outer-label",
+  fills: "wheel.fills",
   rings: "wheel.rings",
   zodiac: "wheel.zodiac",
   houses: "wheel.houses",
@@ -108,6 +111,19 @@ export interface WheelStyleSceneBuildInput {
   readonly authoringScope?: WheelAuthoringEditScope;
 }
 
+type StyleTargetHitRegion = Extract<
+  ChartHitRegion,
+  { kind: "style_target" }
+>;
+
+function asStyleTargetHitRegion(
+  region: ChartHitRegion,
+): StyleTargetHitRegion | null {
+  return region.kind === "style_target" && region.styleOnly === true
+    ? region
+    : null;
+}
+
 export interface WheelStyleScene {
   readonly schemaVersion: typeof WHEEL_STYLE_SCENE_SCHEMA_VERSION;
   readonly profile: WheelTypographyProfile;
@@ -142,6 +158,7 @@ const MANIFEST_PARENT_IDS = Object.freeze({
   canvas: WHEEL_STYLE_SCENE_ELEMENT_IDS.root,
   layers: WHEEL_STYLE_SCENE_ELEMENT_IDS.root,
   rings: WHEEL_STYLE_SCENE_ELEMENT_IDS.rings,
+  fills: WHEEL_STYLE_SCENE_ELEMENT_IDS.fills,
   zodiac: WHEEL_STYLE_SCENE_ELEMENT_IDS.zodiac,
   subdivisions: WHEEL_STYLE_SCENE_ELEMENT_IDS.zodiac,
   houses: WHEEL_STYLE_SCENE_ELEMENT_IDS.houses,
@@ -153,6 +170,13 @@ const MANIFEST_PARENT_IDS = Object.freeze({
   chartOverlay: WHEEL_STYLE_SCENE_ELEMENT_IDS.overlays,
 } as const);
 
+const WHEEL_SEMANTIC_CLASS_BY_ID = new Map(
+  WHEEL_SEMANTIC_CLASS_MANIFEST.map((definition) => [
+    definition.id,
+    definition,
+  ]),
+);
+
 const CHART_COLOR_TOKENS = {
   background: ["chart.color.background", "--morinus-background"],
   frame: ["chart.color.frame", "--morinus-frame"],
@@ -163,8 +187,16 @@ const CHART_COLOR_TOKENS = {
   positions: ["chart.color.positions", "--morinus-positions"],
   fortune: ["chart.color.body.fortune", "--morinus-body-fortune"],
   peregrin: ["chart.color.peregrine", "--morinus-peregrin"],
+  textDim: ["chart.color.textDim", "--morinus-text-dim"],
   textBright: ["chart.color.textBright", "--morinus-text-bright"],
 } as const;
+
+const ELEMENT_COLOR_TOKENS = [
+  ["chart.color.element.fire", "--morinus-element-fire"],
+  ["chart.color.element.earth", "--morinus-element-earth"],
+  ["chart.color.element.air", "--morinus-element-air"],
+  ["chart.color.element.water", "--morinus-element-water"],
+] as const;
 
 const WHEEL_COLOR_TOKENS = {
   outerMaximumRing: ["renderer.wheel.color.outerMaximumRing", "--aries-wheel-outer-maximum-ring-color"],
@@ -195,6 +227,7 @@ const WHEEL_COLOR_TOKENS = {
   angloOuterLeader: ["renderer.wheel.color.angloOuterLeader", "--aries-wheel-anglo-outer-leader-color"],
   angleRay: ["renderer.wheel.color.angleRay", "--aries-wheel-angle-ray-color"],
   angleLabel: ["renderer.wheel.color.angleLabel", "--aries-wheel-angle-label-color"],
+  surveilAccent: ["renderer.wheel.color.surveilAccent", "--aries-wheel-surveil-accent-color"],
 } as const;
 
 const APP_FONT_TOKENS = {
@@ -345,6 +378,32 @@ function previewFeatures(
   }
 
   for (const region of hitRegions) {
+    const styleTarget = asStyleTargetHitRegion(region);
+    if (styleTarget) {
+      const { classId } = styleTarget;
+      if (classId.includes(".position.")) features.add("positions");
+      if (classId.endsWith(".motion")) features.add("motionMarkers");
+      if (classId.startsWith("houses.outer.")) {
+        features.add("houses");
+        features.add("comparison.outerHouses");
+      }
+      if (classId.startsWith("surveil.")) features.add("surveil");
+      if (classId.startsWith("aspects.")) features.add("aspects");
+      if (classId === "chartOverlay.information.topLeft") {
+        features.add("overlay.information.topLeft");
+      } else if (classId === "chartOverlay.information.bottomLeft") {
+        features.add("overlay.information.bottomLeft");
+      } else if (classId === "chartOverlay.houseSystem.bottomRight") {
+        features.add("overlay.houseSystem.bottomRight");
+      } else if (classId.startsWith("chartOverlay.events.dayHour.")) {
+        features.add("overlay.events.dayHour");
+      } else if (classId.startsWith("chartOverlay.events.header.")) {
+        features.add("overlay.events.header");
+      } else if (classId.startsWith("chartOverlay.events.signal.")) {
+        features.add("overlay.events.signal");
+      }
+      continue;
+    }
     if (region.kind === "aspect") {
       features.add("aspects");
       if (region.shape === "glyph") features.add("aspectGlyphs");
@@ -414,8 +473,17 @@ function applicableAuthoringDefaults(
     resolveWheelSemanticCapabilities(definition, profile),
   );
   return Object.freeze({
+    ...(capabilities.has("fontRef") && defaults.fontRef != null
+      ? { fontRef: defaults.fontRef }
+      : {}),
     ...(capabilities.has("fontSize") && defaults.fontSizePx != null
       ? { fontSizePx: defaults.fontSizePx }
+      : {}),
+    ...(capabilities.has("tracking") && defaults.trackingPx != null
+      ? { trackingPx: defaults.trackingPx }
+      : {}),
+    ...(capabilities.has("color") && defaults.color != null
+      ? { color: defaults.color }
       : {}),
     ...(capabilities.has("strokeWidth") && defaults.strokeWidthPx != null
       ? { strokeWidthPx: defaults.strokeWidthPx }
@@ -431,6 +499,72 @@ function applicableAuthoringDefaults(
       : {}),
     ...(capabilities.has("opacity") && defaults.opacityPercent != null
       ? { opacityPercent: defaults.opacityPercent }
+      : {}),
+    ...(capabilities.has("fillPattern") && defaults.fillPattern != null
+      ? { fillPattern: defaults.fillPattern }
+      : {}),
+    ...(capabilities.has("cellSize") && defaults.cellSizePx != null
+      ? { cellSizePx: defaults.cellSizePx }
+      : {}),
+    ...(capabilities.has("dotSize") && defaults.dotSizePx != null
+      ? { dotSizePx: defaults.dotSizePx }
+      : {}),
+    ...(capabilities.has("backgroundColor") && defaults.backgroundColor != null
+      ? { backgroundColor: defaults.backgroundColor }
+      : {}),
+    ...(capabilities.has("patternColor") && defaults.patternColor != null
+      ? { patternColor: defaults.patternColor }
+      : {}),
+    ...(capabilities.has("gradientType") && defaults.gradientType != null
+      ? { gradientType: defaults.gradientType }
+      : {}),
+    ...(capabilities.has("gradientDirection") && defaults.gradientDirection != null
+      ? { gradientDirection: defaults.gradientDirection }
+      : {}),
+    ...(capabilities.has("gradientStartColor") && defaults.gradientStartColor != null
+      ? { gradientStartColor: defaults.gradientStartColor }
+      : {}),
+    ...(capabilities.has("gradientEndColor") && defaults.gradientEndColor != null
+      ? { gradientEndColor: defaults.gradientEndColor }
+      : {}),
+    ...(capabilities.has("gradientAngle") && defaults.gradientAngleDegrees != null
+      ? { gradientAngleDegrees: defaults.gradientAngleDegrees }
+      : {}),
+    ...(capabilities.has("textureMask") && defaults.textureMask != null
+      ? { textureMask: defaults.textureMask }
+      : {}),
+    ...(capabilities.has("maskDirection") && defaults.maskDirection != null
+      ? { maskDirection: defaults.maskDirection }
+      : {}),
+    ...(capabilities.has("maskAngle") && defaults.maskAngleDegrees != null
+      ? { maskAngleDegrees: defaults.maskAngleDegrees }
+      : {}),
+    ...(capabilities.has("maskAmount") && defaults.maskAmountPercent != null
+      ? { maskAmountPercent: defaults.maskAmountPercent }
+      : {}),
+    ...(capabilities.has("shadowPattern") && defaults.shadowPattern != null
+      ? { shadowPattern: defaults.shadowPattern }
+      : {}),
+    ...(capabilities.has("shadowColor") && defaults.shadowColor != null
+      ? { shadowColor: defaults.shadowColor }
+      : {}),
+    ...(capabilities.has("shadowX") && defaults.shadowXpx != null
+      ? { shadowXpx: defaults.shadowXpx }
+      : {}),
+    ...(capabilities.has("shadowY") && defaults.shadowYpx != null
+      ? { shadowYpx: defaults.shadowYpx }
+      : {}),
+    ...(capabilities.has("shadowBlur") && defaults.shadowBlurPx != null
+      ? { shadowBlurPx: defaults.shadowBlurPx }
+      : {}),
+    ...(capabilities.has("density") && defaults.densityPercent != null
+      ? { densityPercent: defaults.densityPercent }
+      : {}),
+    ...(capabilities.has("angle") && defaults.angleDegrees != null
+      ? { angleDegrees: defaults.angleDegrees }
+      : {}),
+    ...(capabilities.has("seed") && defaults.seed != null
+      ? { seed: defaults.seed }
       : {}),
     ...(capabilities.has("lineCap") && defaults.lineCap != null
       ? { lineCap: defaults.lineCap }
@@ -881,6 +1015,470 @@ function regionPointGeometry(region: ChartHitRegion): StyleSceneHitGeometry {
   return { kind: "disc", center: [region.x, region.y], radius: region.r };
 }
 
+function styleTargetGeometry(
+  region: StyleTargetHitRegion,
+): StyleSceneHitGeometry | null {
+  if (region.shape === "line") {
+    return region.x1 != null
+      && region.y1 != null
+      && region.x2 != null
+      && region.y2 != null
+        ? {
+            kind: "line",
+            start: [region.x1, region.y1],
+            end: [region.x2, region.y2],
+            tolerance: region.tolerance ?? 4,
+          }
+        : null;
+  }
+  return (
+    region.left != null
+    && region.top != null
+    && region.width != null
+    && region.height != null
+  )
+    ? {
+        kind: "rectangle",
+        x: region.left,
+        y: region.top,
+        width: region.width,
+        height: region.height,
+      }
+    : null;
+}
+
+function positionMetric(
+  classId: string,
+  profile: WheelTypographyProfile,
+  style: WheelRenderStyle,
+): readonly [key: keyof WheelRenderTokens, value: number] | null {
+  const ratios = style.typography.ratios;
+  const component = classId.endsWith(".degree")
+    ? "degree"
+    : classId.endsWith(".sign")
+      ? "sign"
+      : classId.endsWith(".minute")
+        ? "minute"
+        : null;
+  if (component == null) return null;
+
+  if (classId.startsWith("bodies.")) {
+    if (component === "sign") {
+      return [
+        "bodyPositionSignScale",
+        profile === "anglo"
+          ? ratios.angloBodyPosition.signScale
+          : ratios.bodyPosition.signScale,
+      ];
+    }
+    if (component === "degree") {
+      return profile === "anglo"
+        ? ["angloBodyDegreeScale", ratios.angloBodyPosition.degreeScale]
+        : ["bodyPositionDegreeScale", ratios.bodyPosition.degreeScale];
+    }
+    return profile === "anglo"
+      ? ["angloBodyMinuteScale", ratios.angloBodyPosition.minuteScale]
+      : ["bodyPositionMinuteScale", ratios.bodyPosition.minuteScale];
+  }
+
+  if (classId.startsWith("angles.")) {
+    if (component === "sign") {
+      return [
+        "anglePositionSignScale",
+        profile === "anglo"
+          ? ratios.angloAnglePosition.signScale
+          : ratios.anglePosition.signScale,
+      ];
+    }
+    if (component === "degree") {
+      return profile === "anglo"
+        ? [
+            "angloAnglePositionDegreeScale",
+            ratios.angloAnglePosition.degreeScale,
+          ]
+        : ["anglePositionDegreeScale", ratios.anglePosition.degreeScale];
+    }
+    return profile === "anglo"
+      ? [
+          "angloAnglePositionMinuteScale",
+          ratios.angloAnglePosition.minuteScale,
+        ]
+      : ["anglePositionMinuteScale", ratios.anglePosition.minuteScale];
+  }
+
+  if (classId.startsWith("houses.")) {
+    if (component === "sign") {
+      return [
+        "housePositionSignScale",
+        profile === "anglo"
+          ? ratios.angloHousePosition.signScale
+          : ratios.housePosition.signScale,
+      ];
+    }
+    if (component === "degree") {
+      return profile === "anglo"
+        ? [
+            "angloHousePositionDegreeScale",
+            ratios.angloHousePosition.degreeScale,
+          ]
+        : ["housePositionDegreeScale", ratios.housePosition.degreeScale];
+    }
+    return profile === "anglo"
+      ? [
+          "angloHousePositionMinuteScale",
+          ratios.angloHousePosition.minuteScale,
+        ]
+      : ["housePositionMinuteScale", ratios.housePosition.minuteScale];
+  }
+  return null;
+}
+
+function bodyMotionColorBindings(
+  region: StyleTargetHitRegion,
+  hitRegions: readonly ChartHitRegion[],
+  useIndividualBodyColors: boolean | undefined,
+): readonly StyleSceneTokenBinding[] {
+  const match = /body:([^:]+):motion$/.exec(region.itemId);
+  const bodyId = match?.[1];
+  const outer = region.classId === "bodies.outer.motion";
+  const bodyRegion = bodyId == null
+    ? undefined
+    : hitRegions.find(
+        (candidate) =>
+          candidate.kind === "planet"
+          && candidate.planetId === bodyId
+          && (candidate.chartRole === "outer") === outer,
+      );
+  if (!bodyId || bodyRegion?.kind !== "planet") {
+    return Object.freeze([colorBinding(CHART_COLOR_TOKENS.positions)]);
+  }
+
+  const primary = bodyColorToken(bodyId);
+  if (useIndividualBodyColors === false) {
+    return Object.freeze([
+      colorBinding(
+        dignityColorToken(bodyRegion.dignity) ?? CHART_COLOR_TOKENS.peregrin,
+      ),
+    ]);
+  }
+  const dignity = dignityColorToken(bodyRegion.dignity);
+  return Object.freeze([
+    colorBinding(primary),
+    ...(useIndividualBodyColors == null && dignity
+      ? [colorBinding(dignity)]
+      : []),
+  ]);
+}
+
+function styleTargetTokenBindings(
+  region: StyleTargetHitRegion,
+  style: WheelRenderStyle,
+  profile: WheelTypographyProfile,
+  hitRegions: readonly ChartHitRegion[],
+  useIndividualBodyColors: boolean | undefined,
+  useZodiacElementColors: boolean | undefined,
+  signColors: readonly string[] | undefined,
+): readonly StyleSceneTokenBinding[] {
+  const { classId } = region;
+  if (
+    classId === "angles.inner.ray"
+    || classId === "angles.outer.ray"
+    || classId === "angles.inner.arrowhead"
+    || classId === "angles.outer.arrowhead"
+  ) {
+    return Object.freeze([
+      ...linePaintBindings(style, "angle"),
+      colorBinding(
+        WHEEL_COLOR_TOKENS.angleRay,
+        style.elementColors.angleRay,
+      ),
+    ]);
+  }
+  const position = positionMetric(classId, profile, style);
+  if (position) {
+    const isSign = classId.endsWith(".sign");
+    const fontToken = isSign
+      ? classId.startsWith("bodies.")
+        ? APP_FONT_TOKENS.bodySymbols
+        : APP_FONT_TOKENS.signSymbols
+      : APP_FONT_TOKENS.ui;
+    const fontFamily = isSign
+      ? classId.startsWith("bodies.")
+        ? style.typography.families.bodySymbols
+        : style.typography.families.signSymbols
+      : style.typography.families.ui;
+    const colorToken =
+      isSign && useZodiacElementColors && region.signIndex != null
+        ? ELEMENT_COLOR_TOKENS[region.signIndex % ELEMENT_COLOR_TOKENS.length]
+        : isSign
+          ? CHART_COLOR_TOKENS.signs
+          : CHART_COLOR_TOKENS.positions;
+    const colorValue =
+      isSign && region.signIndex != null
+        ? signColors?.[region.signIndex] ?? style.palette.signs
+        : isSign
+          ? style.palette.signs
+          : style.palette.positions;
+    return Object.freeze([
+      colorBinding(colorToken, colorValue),
+      fontBinding(fontToken, fontFamily),
+      metricBinding(position[0], "font-size", position[1]),
+    ]);
+  }
+
+  if (
+    classId === "bodies.inner.motion"
+    || classId === "bodies.outer.motion"
+  ) {
+    return Object.freeze([
+      ...bodyMotionColorBindings(
+        region,
+        hitRegions,
+        useIndividualBodyColors,
+      ),
+      fontBinding(APP_FONT_TOKENS.ui, style.typography.families.ui),
+      metricBinding(
+        "motionScale",
+        "font-size",
+        style.typography.ratios.motionScale,
+      ),
+    ]);
+  }
+
+  if (classId === "houses.outer.label") {
+    const colorKey = profile === "anglo"
+      ? "angloHouseLabel"
+      : "houseLabel";
+    return Object.freeze([
+      colorBinding(
+        WHEEL_COLOR_TOKENS[colorKey],
+        style.elementColors[colorKey],
+      ),
+      fontBinding(APP_FONT_TOKENS.ui, style.typography.families.ui),
+      metricBinding(
+        "houseLabelScale",
+        "font-size",
+        style.typography.ratios.houseLabelScale,
+      ),
+    ]);
+  }
+
+  if (
+    classId === "houses.inner.cusp"
+    || classId === "houses.outer.cusp"
+  ) {
+    return Object.freeze([
+      ...linePaintBindings(style, "houseCusp"),
+      colorBinding(
+        WHEEL_COLOR_TOKENS.houseCusp,
+        style.elementColors.houseCusp,
+      ),
+    ]);
+  }
+
+  if (classId === "surveil.tick") {
+    return Object.freeze([
+      ...linePaintBindings(style, "outerLeader"),
+      colorBinding(
+        WHEEL_COLOR_TOKENS.surveilAccent,
+        style.elementColors.surveilAccent,
+      ),
+      metricBinding(
+        "surveilTickLengthMin",
+        "offset",
+        style.labels.surveil.tickLengthMin,
+      ),
+      metricBinding(
+        "surveilTickLengthScale",
+        "offset",
+        style.labels.surveil.tickLengthScale,
+      ),
+    ]);
+  }
+
+  if (classId.startsWith("surveil.")) {
+    const symbol = classId === "surveil.marker.glyph";
+    return Object.freeze([
+      colorBinding(
+        WHEEL_COLOR_TOKENS.surveilAccent,
+        style.elementColors.surveilAccent,
+      ),
+      fontBinding(
+        symbol ? APP_FONT_TOKENS.symbols : APP_FONT_TOKENS.ui,
+        symbol
+          ? style.typography.families.symbols
+          : style.typography.families.ui,
+      ),
+      metricBinding(
+        "surveilGlyphSizeMin",
+        "font-size",
+        style.labels.surveil.glyphSizeMin,
+      ),
+      metricBinding(
+        "surveilGlyphSizeScale",
+        "font-size",
+        style.labels.surveil.glyphSizeScale,
+      ),
+      ...(classId === "surveil.sourceLabel"
+        ? [
+            metricBinding(
+              "surveilLabelGapMin",
+              "spacing",
+              style.labels.surveil.labelGapMin,
+            ),
+            metricBinding(
+              "surveilLabelGapScale",
+              "spacing",
+              style.labels.surveil.labelGapScale,
+            ),
+          ]
+        : []),
+    ]);
+  }
+
+  if (classId.startsWith("secondaryRing.")) {
+    if (classId.endsWith(".leader")) {
+      return Object.freeze([
+        ...linePaintBindings(style, "outerLeader"),
+        colorBinding(
+          WHEEL_COLOR_TOKENS.outerLeader,
+          style.elementColors.outerLeader,
+        ),
+      ]);
+    }
+    const symbol = classId.endsWith(".glyph");
+    const motion = classId.endsWith(".motion");
+    const projected =
+      classId.startsWith("secondaryRing.antiscia.")
+      || classId.startsWith("secondaryRing.contraAntiscia.")
+      || classId.startsWith("secondaryRing.dodecatemoria.")
+      || classId === "secondaryRing.parallelTransit.glyph";
+    const metricKey: keyof WheelRenderTokens = motion
+      ? "motionScale"
+      : projected
+        ? "outerProjectedGlyphScale"
+        : "outerLabelScale";
+    const metricValue = motion
+      ? style.typography.ratios.motionScale
+      : projected
+        ? style.typography.ratios.outerProjectedGlyphScale
+        : style.typography.ratios.outerLabelScale;
+    return Object.freeze([
+      colorBinding(CHART_COLOR_TOKENS.positions, style.palette.positions),
+      colorBinding(CHART_COLOR_TOKENS.signs, style.palette.signs),
+      colorBinding(CHART_COLOR_TOKENS.textBright, style.palette.textBright),
+      fontBinding(
+        symbol ? APP_FONT_TOKENS.symbols : APP_FONT_TOKENS.ui,
+        symbol
+          ? style.typography.families.symbols
+          : style.typography.families.ui,
+      ),
+      metricBinding(metricKey, "font-size", metricValue),
+    ]);
+  }
+
+  if (classId.startsWith("chartOverlay.")) {
+    const information =
+      classId.startsWith("chartOverlay.information.")
+      || classId === "chartOverlay.houseSystem.bottomRight";
+    const symbol =
+      classId.endsWith(".glyph")
+      || classId === "chartOverlay.events.header.trailing";
+    const compact = region.compactOverlay === true;
+    const metricKey: keyof WheelRenderTokens = information
+      ? compact
+        ? "overlayCompactInfoFontScale"
+        : "overlayInfoFontScale"
+      : symbol
+        ? compact
+          ? "overlayCompactIconScale"
+          : "overlayIconScale"
+        : compact
+          ? "overlayCompactLabelScale"
+          : "overlayLabelScale";
+    const metricValue = information
+      ? compact
+        ? style.overlays.compactInfoFontScale
+        : style.overlays.infoFontScale
+      : symbol
+        ? compact
+          ? style.overlays.compactIconScale
+          : style.overlays.iconScale
+        : compact
+          ? style.overlays.compactLabelScale
+          : style.overlays.labelScale;
+    const color = region.bodyId
+      ? colorBinding(
+          bodyColorToken(region.bodyId),
+          region.colorValue,
+        )
+      : colorBinding(
+          CHART_COLOR_TOKENS.textDim,
+          region.colorValue ?? style.palette.textDim,
+        );
+    return Object.freeze([
+      color,
+      fontBinding(
+        symbol ? APP_FONT_TOKENS.symbols : APP_FONT_TOKENS.ui,
+        symbol
+          ? style.typography.families.symbols
+          : style.typography.families.ui,
+      ),
+      metricBinding(metricKey, "font-size", metricValue),
+    ]);
+  }
+
+  return Object.freeze([]);
+}
+
+function appendStyleTargetElement(
+  elements: StyleSceneElement[],
+  tags: readonly string[],
+  style: WheelRenderStyle,
+  profile: WheelTypographyProfile,
+  hitRegions: readonly ChartHitRegion[],
+  useIndividualBodyColors: boolean | undefined,
+  useZodiacElementColors: boolean | undefined,
+  signColors: readonly string[] | undefined,
+  region: StyleTargetHitRegion,
+): void {
+  // This class is derived once from interchart aspect endpoints below, matching
+  // the renderer's longitude deduplication without a second hit-region source.
+  if (region.classId === "aspects.interchart.endpointMarker") return;
+  if (!isWheelSemanticClassId(region.classId)) return;
+  const definition = WHEEL_SEMANTIC_CLASS_BY_ID.get(region.classId);
+  if (!definition) return;
+  const hitGeometry = styleTargetGeometry(region);
+  if (!hitGeometry) return;
+  elements.push(element({
+    classId: definition.id,
+    id: `wheel.style-target.${safeIdPart(region.itemId)}`,
+    parentId: MANIFEST_PARENT_IDS[definition.groupId],
+    labelKey: definition.labelKey,
+    layer: definition.layer,
+    primitive: definition.primitive,
+    tokenBindings: styleTargetTokenBindings(
+      region,
+      style,
+      profile,
+      hitRegions,
+      useIndividualBodyColors,
+      useZodiacElementColors,
+      signColors,
+    ),
+    editability: EDITABLE,
+    hitGeometry,
+    handles: [],
+    priority: (region.priority ?? 45) + 100,
+    stateTags: Object.freeze([
+      ...tags,
+      "production-style-target",
+      `style-target:${region.classId}`,
+      `item:${region.itemId}`,
+    ]),
+  }, tags));
+}
+
 function linearHandle(
   elementId: string,
   idSuffix: string,
@@ -1097,43 +1695,46 @@ function appendHouseElements(
   rings: Readonly<WheelRingSet>,
   maxRadius: number,
   region: Extract<ChartHitRegion, { kind: "house" }>,
+  includeCusp: boolean,
 ): void {
   const layoutUnit = resolveWheelTypographyMetrics(style, profile, maxRadius).layoutUnit;
   const suffix = safeIdPart(region.houseIndex);
-  const cuspId = `wheel.house.cusp.${suffix}`;
-  const start = projectWheelPoint(center, rings.rBase, region.longitude, ascendantDegrees);
-  const end = projectWheelPoint(center, rings.rInner, region.longitude, ascendantDegrees);
-  const cuspHandle = linearHandle(
-    cuspId,
-    "stroke",
-    end,
-    linePaintTokenKey("houseCusp", "WidthScale"),
-    "stroke-width",
-    style.linePaint.houseCusp.widthScale,
-    0.05,
-  );
-  handles.push(cuspHandle);
-  elements.push(
-    element(
-      {
-        classId: "houses.inner.cusp",
-        id: cuspId,
-        parentId: WHEEL_STYLE_SCENE_ELEMENT_IDS.houses,
-        labelKey: "styleLab.scene.houseCusp",
-        layer: "geometry",
-        primitive: "line",
-        tokenBindings: Object.freeze([
-          ...linePaintBindings(style, "houseCusp"),
-          colorBinding(WHEEL_COLOR_TOKENS.houseCusp, style.elementColors.houseCusp),
-        ]),
-        editability: EDITABLE,
-        hitGeometry: { kind: "line", start, end, tolerance: Math.max(5, maxRadius * 0.01) },
-        handles: Object.freeze([cuspHandle]),
-        priority: (region.priority ?? 22) + 100,
-      },
-      Object.freeze([...tags, `house:${region.houseIndex}`]),
-    ),
-  );
+  if (includeCusp) {
+    const cuspId = `wheel.house.cusp.${suffix}`;
+    const start = projectWheelPoint(center, rings.rBase, region.longitude, ascendantDegrees);
+    const end = projectWheelPoint(center, rings.rInner, region.longitude, ascendantDegrees);
+    const cuspHandle = linearHandle(
+      cuspId,
+      "stroke",
+      end,
+      linePaintTokenKey("houseCusp", "WidthScale"),
+      "stroke-width",
+      style.linePaint.houseCusp.widthScale,
+      0.05,
+    );
+    handles.push(cuspHandle);
+    elements.push(
+      element(
+        {
+          classId: "houses.inner.cusp",
+          id: cuspId,
+          parentId: WHEEL_STYLE_SCENE_ELEMENT_IDS.houses,
+          labelKey: "styleLab.scene.houseCusp",
+          layer: "geometry",
+          primitive: "line",
+          tokenBindings: Object.freeze([
+            ...linePaintBindings(style, "houseCusp"),
+            colorBinding(WHEEL_COLOR_TOKENS.houseCusp, style.elementColors.houseCusp),
+          ]),
+          editability: EDITABLE,
+          hitGeometry: { kind: "line", start, end, tolerance: Math.max(5, maxRadius * 0.01) },
+          handles: Object.freeze([cuspHandle]),
+          priority: (region.priority ?? 22) + 100,
+        },
+        Object.freeze([...tags, `house:${region.houseIndex}`]),
+      ),
+    );
+  }
 
   const labelId = `wheel.house.label.${suffix}`;
   const labelHandle = linearHandle(
@@ -1205,14 +1806,8 @@ function appendSignElement(
     1 / Math.max(1, maxRadius),
   );
   handles.push(scaleHandle);
-  const elementColorTokens = [
-    ["chart.color.element.fire", "--morinus-element-fire"],
-    ["chart.color.element.earth", "--morinus-element-earth"],
-    ["chart.color.element.air", "--morinus-element-air"],
-    ["chart.color.element.water", "--morinus-element-water"],
-  ] as const;
   const signColorToken = useZodiacElementColors
-    ? elementColorTokens[region.signIndex % elementColorTokens.length]
+    ? ELEMENT_COLOR_TOKENS[region.signIndex % ELEMENT_COLOR_TOKENS.length]
     : CHART_COLOR_TOKENS.signs;
   elements.push(
     element(
@@ -1376,6 +1971,7 @@ function appendAngleElement(
   maxRadius: number,
   ascendantDegrees: number,
   region: Extract<ChartHitRegion, { kind: "angle" }>,
+  includeRay: boolean,
 ): void {
   const role = region.chartRole === "outer" ? "outer" : "primary";
   const typography = resolveWheelTypographyMetrics(style, profile, maxRadius);
@@ -1387,42 +1983,44 @@ function appendAngleElement(
     role === "outer" ? (rings.rOuterMin ?? rings.r30) : rings.rBase;
   const start = projectWheelPoint(center, startRadius, region.longitude, ascendantDegrees);
   const end: StyleScenePoint = [region.x, region.y];
-  const strokeHandle = linearHandle(
-    id,
-    "stroke",
-    end,
-    linePaintTokenKey("angle", "WidthScale"),
-    "stroke-width",
-    style.linePaint.angle.widthScale,
-    0.05,
-  );
-  handles.push(strokeHandle);
-  elements.push(
-    element(
-      {
-        classId: role === "outer" ? "angles.outer.ray" : "angles.inner.ray",
-        id,
-        parentId: WHEEL_STYLE_SCENE_ELEMENT_IDS.angles,
-        labelKey: "styleLab.scene.angle",
-        layer: role === "outer" ? "outer-label" : "geometry",
-        primitive: "line",
-        tokenBindings: Object.freeze([
-          ...linePaintBindings(style, "angle"),
-          colorBinding(WHEEL_COLOR_TOKENS.angleRay, style.elementColors.angleRay),
-        ]),
-        editability: EDITABLE,
-        hitGeometry: {
-          kind: "line",
-          start,
-          end,
-          tolerance: Math.max(5, maxRadius * 0.01),
+  if (includeRay) {
+    const strokeHandle = linearHandle(
+      id,
+      "stroke",
+      end,
+      linePaintTokenKey("angle", "WidthScale"),
+      "stroke-width",
+      style.linePaint.angle.widthScale,
+      0.05,
+    );
+    handles.push(strokeHandle);
+    elements.push(
+      element(
+        {
+          classId: role === "outer" ? "angles.outer.ray" : "angles.inner.ray",
+          id,
+          parentId: WHEEL_STYLE_SCENE_ELEMENT_IDS.angles,
+          labelKey: "styleLab.scene.angle",
+          layer: "geometry",
+          primitive: "line",
+          tokenBindings: Object.freeze([
+            ...linePaintBindings(style, "angle"),
+            colorBinding(WHEEL_COLOR_TOKENS.angleRay, style.elementColors.angleRay),
+          ]),
+          editability: EDITABLE,
+          hitGeometry: {
+            kind: "line",
+            start,
+            end,
+            tolerance: Math.max(5, maxRadius * 0.01),
+          },
+          handles: Object.freeze([strokeHandle]),
+          priority: (region.priority ?? 30) + 100,
         },
-        handles: Object.freeze([strokeHandle]),
-        priority: (region.priority ?? 30) + 100,
-      },
-      Object.freeze([...tags, `role:${role}`, `angle:${region.angleId}`]),
-    ),
-  );
+        Object.freeze([...tags, `role:${role}`, `angle:${region.angleId}`]),
+      ),
+    );
+  }
   if (
     region.left != null &&
     region.top != null &&
@@ -1565,38 +2163,104 @@ function appendAspectElement(
   );
 }
 
+function appendInterchartEndpointMarker(
+  elements: StyleSceneElement[],
+  handles: StyleSceneHandle[],
+  tags: readonly string[],
+  style: WheelRenderStyle,
+  profile: WheelTypographyProfile,
+  center: StyleScenePoint,
+  rings: Readonly<WheelRingSet>,
+  maxRadius: number,
+  region: Extract<ChartHitRegion, { kind: "aspect" }>,
+  seenEndpoints: Set<string>,
+): void {
+  if (region.scope !== "interchart" || region.shape === "glyph") return;
+  const endpoint: StyleScenePoint = [
+    region.x2 ?? region.x,
+    region.y2 ?? region.y,
+  ];
+  const dx = endpoint[0] - center[0];
+  const dy = endpoint[1] - center[1];
+  const distance = Math.hypot(dx, dy);
+  if (distance <= 0) return;
+  const unitX = dx / distance;
+  const unitY = dy / distance;
+  const endpointKey = `${unitX.toFixed(6)}:${unitY.toFixed(6)}`;
+  if (seenEndpoints.has(endpointKey)) return;
+  seenEndpoints.add(endpointKey);
+
+  const start: StyleScenePoint = [
+    center[0] + unitX * rings.rAsp,
+    center[1] + unitY * rings.rAsp,
+  ];
+  const end: StyleScenePoint = [
+    center[0] + unitX * rings.rLLine2,
+    center[1] + unitY * rings.rLLine2,
+  ];
+  const id = `wheel.aspect.interchart.endpoint.${safeIdPart(region.p2)}`;
+  const midpoint: StyleScenePoint = [
+    (start[0] + end[0]) / 2,
+    (start[1] + end[1]) / 2,
+  ];
+  const strokeHandle = linearHandle(
+    id,
+    "stroke",
+    midpoint,
+    linePaintTokenKey("bodyLeader", "WidthScale"),
+    "stroke-width",
+    style.linePaint.bodyLeader.widthScale,
+    0.05,
+  );
+  const colorKey = profile === "anglo"
+    ? "angloBodyLeader"
+    : "bodyLeader";
+  handles.push(strokeHandle);
+  elements.push(element({
+    classId: "aspects.interchart.endpointMarker",
+    id,
+    parentId: WHEEL_STYLE_SCENE_ELEMENT_IDS.aspects,
+    labelKey: "styleLab.class.interchartEndpointMarker",
+    layer: "dynamic",
+    primitive: "line",
+    tokenBindings: Object.freeze([
+      ...linePaintBindings(style, "bodyLeader"),
+      colorBinding(
+        WHEEL_COLOR_TOKENS[colorKey],
+        style.elementColors[colorKey],
+      ),
+    ]),
+    editability: EDITABLE,
+    hitGeometry: {
+      kind: "line",
+      start,
+      end,
+      tolerance: Math.max(region.tolerance ?? 4, maxRadius * 0.008),
+    },
+    handles: Object.freeze([strokeHandle]),
+    priority: (region.priority ?? 18) + 101,
+    stateTags: Object.freeze([
+      ...tags,
+      "scope:interchart",
+      "component:endpoint-marker",
+      `endpoint:${region.p2}`,
+    ]),
+  }, tags));
+}
+
 function secondaryClassId(
   family: string,
   projectedGlyph: boolean,
   segments?: readonly { kind: "text" | "planet" | "glyph" }[],
 ): string {
-  const normalized = family.trim().toLowerCase().replaceAll("-", "_");
-  const base = normalized.includes("fixed")
-    ? "fixedStar"
-    : normalized.includes("asteroid")
-      ? "asteroid"
-      : normalized.includes("midpoint")
-        ? "midpoint"
-        : normalized.includes("hybrid")
-          ? "hybridHit"
-          : normalized.includes("contra") && normalized.includes("antis")
-            ? "contraAntiscia"
-            : normalized.includes("antis")
-              ? "antiscia"
-              : normalized.includes("dodec")
-                ? "dodecatemoria"
-                : normalized.includes("arab") || normalized === "lot"
-                  ? "arabicPart"
-                  : normalized.includes("parallel")
-                    ? "parallelTransit"
-                    : normalized.replaceAll("_", "-") || "other";
-  if (base === "hybridHit" || base === "fixedStar" || base === "asteroid" || base === "arabicPart") {
-    return `secondaryRing.${base}.label`;
-  }
+  const classes = resolveWheelSecondaryRingClassIds(family);
+  if (!classes) return `secondaryRing.${safeIdPart(family)}.label`;
+  if (classes.label) return classes.label;
   const hasText = segments?.some((segment) => segment.kind === "text") ?? false;
   const hasGlyph = segments?.some((segment) => segment.kind !== "text") ?? false;
-  const component = hasText && !hasGlyph ? "text" : projectedGlyph ? "glyph" : "label";
-  return `secondaryRing.${base}.${component}`;
+  if (hasText && !hasGlyph && classes.text) return classes.text;
+  if (projectedGlyph && classes.glyph) return classes.glyph;
+  return classes.glyph ?? classes.text ?? classes.motion ?? classes.leader;
 }
 
 function appendSecondaryElement(
@@ -1638,10 +2302,16 @@ function appendSecondaryElement(
   );
   handles.push(scaleHandle);
   const labelGeometry = regionPointGeometry(region);
+  const labelClassId = secondaryClassId(
+    region.family,
+    projectedGlyph,
+    region.segments,
+  );
+  const symbolClass = labelClassId.endsWith(".glyph");
   elements.push(
     element(
       {
-        classId: secondaryClassId(region.family, projectedGlyph, region.segments),
+        classId: labelClassId,
         id,
         parentId: WHEEL_STYLE_SCENE_ELEMENT_IDS.secondary,
         labelKey: "styleLab.scene.secondaryLabel",
@@ -1651,7 +2321,12 @@ function appendSecondaryElement(
           colorBinding(CHART_COLOR_TOKENS.positions, style.palette.positions),
           colorBinding(CHART_COLOR_TOKENS.signs, style.palette.signs),
           colorBinding(CHART_COLOR_TOKENS.textBright, style.palette.textBright),
-          fontBinding(APP_FONT_TOKENS.ui, style.typography.families.ui),
+          fontBinding(
+            symbolClass ? APP_FONT_TOKENS.symbols : APP_FONT_TOKENS.ui,
+            symbolClass
+              ? style.typography.families.symbols
+              : style.typography.families.ui,
+          ),
           metricBinding(scaleKey, "font-size", scaleValue),
         ]),
         editability: EDITABLE,
@@ -1663,6 +2338,9 @@ function appendSecondaryElement(
     ),
   );
   if (region.leader) {
+    const leaderClassId =
+      resolveWheelSecondaryRingClassIds(region.family)?.leader;
+    if (!leaderClassId) return;
     const leaderId = `${id}.leader`;
     const leaderMidpoint: StyleScenePoint = [
       (region.leader.start[0] + region.leader.end[0]) / 2,
@@ -1679,7 +2357,7 @@ function appendSecondaryElement(
     );
     handles.push(leaderHandle);
     elements.push(element({
-      classId: `${secondaryClassId(region.family, projectedGlyph, region.segments).replace(/\.(glyph|label|text)$/, "")}.leader`,
+      classId: leaderClassId,
       id: leaderId,
       parentId: WHEEL_STYLE_SCENE_ELEMENT_IDS.secondary,
       labelKey: "styleLab.scene.outerLeader",
@@ -1732,6 +2410,7 @@ export function buildWheelStyleScene(
     groupElement(WHEEL_STYLE_SCENE_ELEMENT_IDS.layerGeometry, WHEEL_STYLE_SCENE_ELEMENT_IDS.root, "styleLab.scene.geometryLayer", "geometry", tags, "layers.geometry"),
     groupElement(WHEEL_STYLE_SCENE_ELEMENT_IDS.layerDynamic, WHEEL_STYLE_SCENE_ELEMENT_IDS.root, "styleLab.scene.dynamicLayer", "dynamic", tags, "layers.dynamic"),
     groupElement(WHEEL_STYLE_SCENE_ELEMENT_IDS.layerOuterLabel, WHEEL_STYLE_SCENE_ELEMENT_IDS.root, "styleLab.scene.outerLabelLayer", "outer-label", tags, "layers.outerLabel"),
+    groupElement(WHEEL_STYLE_SCENE_ELEMENT_IDS.fills, WHEEL_STYLE_SCENE_ELEMENT_IDS.root, "styleLab.scene.fills", "geometry", tags),
     groupElement(WHEEL_STYLE_SCENE_ELEMENT_IDS.rings, WHEEL_STYLE_SCENE_ELEMENT_IDS.root, "styleLab.scene.rings", "geometry", tags),
     groupElement(WHEEL_STYLE_SCENE_ELEMENT_IDS.zodiac, WHEEL_STYLE_SCENE_ELEMENT_IDS.root, "styleLab.scene.zodiac", "geometry", tags),
     groupElement(WHEEL_STYLE_SCENE_ELEMENT_IDS.houses, WHEEL_STYLE_SCENE_ELEMENT_IDS.root, "styleLab.scene.houses", "geometry", tags),
@@ -1748,7 +2427,13 @@ export function buildWheelStyleScene(
         labelKey: "styleLab.scene.canvas",
         layer: "geometry",
         primitive: "surface",
-        tokenBindings: [colorBinding(CHART_COLOR_TOKENS.background, style.palette.background)],
+        tokenBindings: [],
+        authoringDefaults: readWheelAuthoringClassDefaults(
+          style,
+          geometry.profile,
+          "canvas.background",
+          { geometry, targetWheelRadius: geometry.maxRadius },
+        ),
         editability: EDITABLE,
         hitGeometry: { kind: "rectangle", x: 0, y: 0, width: viewport.width, height: viewport.height },
         handles: [],
@@ -1757,6 +2442,78 @@ export function buildWheelStyleScene(
       tags,
     ),
   );
+
+  const addFillRegion = (
+    classId:
+      | "fills.chartField"
+      | "fills.houseField"
+      | "fills.centerField"
+      | "fills.zodiacBand"
+      | "fills.subdivisionBand",
+    id: string,
+    labelKey: string,
+    hitGeometry: StyleSceneHitGeometry,
+    priority = 2,
+  ) => {
+    elements.push(element({
+      classId,
+      id,
+      parentId: WHEEL_STYLE_SCENE_ELEMENT_IDS.fills,
+      labelKey,
+      layer: "geometry",
+      primitive: "surface",
+      tokenBindings: [],
+      authoringDefaults: readWheelAuthoringClassDefaults(
+        style,
+        geometry.profile,
+        classId,
+        { geometry, targetWheelRadius: geometry.maxRadius },
+      ),
+      editability: EDITABLE,
+      hitGeometry,
+      handles: [],
+      priority,
+    }, tags));
+  };
+  addFillRegion(
+    "fills.chartField",
+    "wheel.fill.chart-field",
+    "styleLab.scene.chartField",
+    { kind: "disc", center, radius: rings.rOuterMax ?? rings.r30 },
+    -25,
+  );
+  addFillRegion(
+    "fills.houseField",
+    "wheel.fill.house-field",
+    "styleLab.scene.houseField",
+    {
+      kind: "annulus",
+      center,
+      innerRadius: rings.rAsp,
+      outerRadius: rings.rInner,
+    },
+    -5,
+  );
+  addFillRegion(
+    "fills.centerField",
+    "wheel.fill.center-field",
+    "styleLab.scene.centerField",
+    { kind: "disc", center, radius: rings.rAsp },
+  );
+  addFillRegion(
+    "fills.zodiacBand",
+    "wheel.fill.zodiac-band",
+    "styleLab.scene.zodiacBand",
+    { kind: "annulus", center, innerRadius: rings.r0, outerRadius: rings.r30 },
+  );
+  if (geometry.showTerms || geometry.showDecans) {
+    addFillRegion(
+      "fills.subdivisionBand",
+      "wheel.fill.subdivision-band",
+      "styleLab.scene.subdivisionBand",
+      { kind: "annulus", center, innerRadius: rings.rInner, outerRadius: rings.r0 },
+    );
+  }
 
   const ring = (
     id: string,
@@ -1929,14 +2686,14 @@ export function buildWheelStyleScene(
       "styleLab.scene.tickInner5",
       rings.r0,
       rings.r5,
-      (degree) => degree % 10 === 5,
+      (degree) => degree % 5 === 0,
     );
     addDegreeTickClass(
       "zodiac.tick.inner.1deg",
       "styleLab.scene.tickInner1",
       rings.r0,
       rings.r1,
-      (degree) => degree % 5 !== 0,
+      () => true,
     );
   }
   if (outerDegreePainted) {
@@ -1952,14 +2709,18 @@ export function buildWheelStyleScene(
       "styleLab.scene.tickOuter5",
       rings.rOuter0,
       rings.rOuter5,
-      (degree) => degree % 10 === 5,
+      geometry.profile === "anglo"
+        ? (degree) => degree % 10 === 5
+        : (degree) => degree % 5 === 0,
     );
     addDegreeTickClass(
       "zodiac.tick.outer.1deg",
       "styleLab.scene.tickOuter1",
       rings.rOuter0,
       rings.rOuter1,
-      (degree) => degree % 5 !== 0,
+      geometry.profile === "anglo"
+        ? (degree) => degree % 5 !== 0
+        : () => true,
     );
   }
   if (geometry.profile === "anglo" && rings.rCuspOuter != null) {
@@ -2120,8 +2881,39 @@ export function buildWheelStyleScene(
     }, tags),
   );
 
-  for (const region of input.hitRegions ?? []) {
-    if (region.kind === "planet" || region.kind === "fortune" || region.kind === "vertex" || region.kind === "syzygy") {
+  const hitRegions = input.hitRegions ?? [];
+  const interchartEndpointMarkers = new Set<string>();
+  const exactSecondaryOwners = new Set(
+    hitRegions.flatMap((region) => {
+      const target = asStyleTargetHitRegion(region);
+      return target?.ownerId?.startsWith("secondary:")
+        ? [target.ownerId]
+        : [];
+    }),
+  );
+  const hasExactInnerCusps = hitRegions.some(
+    (region) =>
+      asStyleTargetHitRegion(region)?.classId === "houses.inner.cusp",
+  );
+  const hasExactAngleRays = hitRegions.some((region) => {
+    const classId = asStyleTargetHitRegion(region)?.classId;
+    return classId === "angles.inner.ray" || classId === "angles.outer.ray";
+  });
+  for (const region of hitRegions) {
+    const styleTarget = asStyleTargetHitRegion(region);
+    if (styleTarget) {
+      appendStyleTargetElement(
+        elements,
+        tags,
+        style,
+        geometry.profile,
+        hitRegions,
+        input.useIndividualBodyColors,
+        input.useZodiacElementColors,
+        input.signColors,
+        styleTarget,
+      );
+    } else if (region.kind === "planet" || region.kind === "fortune" || region.kind === "vertex" || region.kind === "syzygy") {
       appendBodyElement(
         elements,
         handles,
@@ -2144,6 +2936,7 @@ export function buildWheelStyleScene(
         rings,
         geometry.maxRadius,
         region,
+        !hasExactInnerCusps,
       );
     } else if (region.kind === "sign") {
       appendSignElement(
@@ -2179,10 +2972,28 @@ export function buildWheelStyleScene(
         geometry.maxRadius,
         ascendantDegrees,
         region,
+        !hasExactAngleRays,
       );
     } else if (region.kind === "aspect") {
       appendAspectElement(elements, handles, tags, style, geometry.profile, region);
-    } else if (region.kind === "secondary_ring") {
+      appendInterchartEndpointMarker(
+        elements,
+        handles,
+        tags,
+        style,
+        geometry.profile,
+        center,
+        rings,
+        geometry.maxRadius,
+        region,
+        interchartEndpointMarkers,
+      );
+    } else if (
+      region.kind === "secondary_ring"
+      && !exactSecondaryOwners.has(
+        `secondary:${region.family}:${region.itemId}`,
+      )
+    ) {
       appendSecondaryElement(elements, handles, tags, style, geometry.profile, geometry.maxRadius, region);
     }
   }
@@ -2192,19 +3003,31 @@ export function buildWheelStyleScene(
     style,
     geometry,
     tags,
-    input.hitRegions ?? [],
+    hitRegions,
   );
 
-  const elementsWithAuthoringDefaults = elements.map((sceneElement) => Object.freeze({
-    ...sceneElement,
-    authoringDefaults: sceneElement.authoringDefaults
+  const elementsWithAuthoringDefaults = elements.map((sceneElement) => {
+    const defaults = sceneElement.authoringDefaults
       ?? readWheelAuthoringClassDefaults(
         style,
         geometry.profile,
         sceneElement.classId,
         { geometry, targetWheelRadius: geometry.maxRadius },
-      ),
-  }));
+      );
+    const definition = isWheelSemanticClassId(sceneElement.classId)
+      ? WHEEL_SEMANTIC_CLASS_BY_ID.get(sceneElement.classId)
+      : undefined;
+    return Object.freeze({
+      ...sceneElement,
+      authoringDefaults: definition
+        ? applicableAuthoringDefaults(
+            definition,
+            geometry.profile,
+            defaults,
+          )
+        : defaults,
+    });
+  });
   const elementsById = new Map(
     elementsWithAuthoringDefaults.map((sceneElement) => [sceneElement.id, sceneElement]),
   );

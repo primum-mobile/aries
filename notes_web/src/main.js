@@ -349,6 +349,10 @@ function bindToolbar() {
 }
 
 function bindEditorShortcuts() {
+  // Notes keep normal text editing, but the containing WKWebView must never
+  // expose browser navigation/reload/inspection chrome.
+  document.addEventListener('contextmenu', (event) => event.preventDefault(), true);
+
   const postAmbientKey = (event, eventType) => {
     if (event.key !== 'Shift' && !event.shiftKey) return;
     post({

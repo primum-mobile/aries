@@ -5,8 +5,8 @@
     "inventory": "src/styles/style-token-inventory.generated.json"
   },
   "counts": {
-    "public": 1077,
-    "editable": 1077,
+    "public": 1110,
+    "editable": 1110,
     "blockedByCoupling": 0,
     "supportingDerived": 11
   },
@@ -783,9 +783,135 @@
     {
       "id": "app.sidebar-on-surface",
       "foreground": "--aries-sidebar-text",
-      "background": "--aries-surface",
+      "background": "--aries-sidebar-background",
       "minimumRatio": 4.5,
       "usage": "Sidebar labels and glyphs",
+      "review": {
+        "status": "required-on-change",
+        "modes": [
+          "dark",
+          "light"
+        ]
+      }
+    },
+    {
+      "id": "app.titlebar-on-surface",
+      "foreground": "--aries-titlebar-text",
+      "background": "--aries-titlebar-background",
+      "minimumRatio": 4.5,
+      "usage": "Titlebar titles and navigation labels",
+      "review": {
+        "status": "required-on-change",
+        "modes": [
+          "dark",
+          "light"
+        ]
+      }
+    },
+    {
+      "id": "app.statusbar-on-surface",
+      "foreground": "--aries-statusbar-text",
+      "background": "--aries-statusbar-background",
+      "minimumRatio": 4.5,
+      "usage": "Workspace status and coordinate metadata",
+      "review": {
+        "status": "required-on-change",
+        "modes": [
+          "dark",
+          "light"
+        ]
+      }
+    },
+    {
+      "id": "app.panel-on-surface",
+      "foreground": "--aries-panel-text",
+      "background": "--aries-panel-background",
+      "minimumRatio": 4.5,
+      "usage": "Retained panel and card content",
+      "review": {
+        "status": "required-on-change",
+        "modes": [
+          "dark",
+          "light"
+        ]
+      }
+    },
+    {
+      "id": "app.inspector-on-surface",
+      "foreground": "--aries-inspector-text",
+      "background": "--aries-inspector-background",
+      "minimumRatio": 4.5,
+      "usage": "Inspector labels and readings",
+      "review": {
+        "status": "required-on-change",
+        "modes": [
+          "dark",
+          "light"
+        ]
+      }
+    },
+    {
+      "id": "app.overlay-on-surface",
+      "foreground": "--aries-overlay-text",
+      "background": "--aries-overlay-background",
+      "minimumRatio": 4.5,
+      "usage": "Dialog, sheet, and elevated overlay content",
+      "review": {
+        "status": "required-on-change",
+        "modes": [
+          "dark",
+          "light"
+        ]
+      }
+    },
+    {
+      "id": "app.popover-on-surface",
+      "foreground": "--aries-popover-text",
+      "background": "--aries-popover-background",
+      "minimumRatio": 4.5,
+      "usage": "Menus, pickers, and popover content",
+      "review": {
+        "status": "required-on-change",
+        "modes": [
+          "dark",
+          "light"
+        ]
+      }
+    },
+    {
+      "id": "app.control-on-surface",
+      "foreground": "--aries-control-text",
+      "background": "--aries-control-background",
+      "minimumRatio": 4.5,
+      "usage": "Inputs, buttons, and segmented controls",
+      "review": {
+        "status": "required-on-change",
+        "modes": [
+          "dark",
+          "light"
+        ]
+      }
+    },
+    {
+      "id": "app.data-body-on-surface",
+      "foreground": "--aries-data-body-text",
+      "background": "--aries-data-body-background",
+      "minimumRatio": 4.5,
+      "usage": "Dense data rows and table bodies",
+      "review": {
+        "status": "required-on-change",
+        "modes": [
+          "dark",
+          "light"
+        ]
+      }
+    },
+    {
+      "id": "app.data-header-on-surface",
+      "foreground": "--aries-data-header-text",
+      "background": "--aries-data-header-background",
+      "minimumRatio": 4.5,
+      "usage": "Table headers and grouped data labels",
       "review": {
         "status": "required-on-change",
         "modes": [
@@ -1017,6 +1143,32 @@
         "id": "accent",
         "authority": "legacy-preview-v1"
       }
+    },
+    {
+      "semanticId": "app.color.interactiveAccentForeground",
+      "cssVar": "--aries-accent-foreground",
+      "label": "Interactive accent foreground",
+      "description": "Text and glyph foreground over selected rows and other interactive accent fills.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-text-primary)",
+      "effectiveAuthority": "daemon-theme-state",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload profile appTokens",
+      "affectedSurfaces": [
+        "selected rows",
+        "accented controls",
+        "workspace navigation"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Maintain normal-text contrast against the interactive accent."
+      ],
+      "dependencies": [
+        "--aries-text-primary"
+      ]
     },
     {
       "semanticId": "chart.aspectMatrix.applyingMarkerSize",
@@ -1468,6 +1620,32 @@
       ]
     },
     {
+      "semanticId": "renderer.astrocart.metric.chromeControlSize",
+      "cssVar": "--aries-astrocart-chrome-control-size",
+      "label": "Astrocartography chrome control size",
+      "description": "Astrocartography chrome control size design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "28px",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.chromeControlSize; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 18,
+        "max": 56,
+        "step": 0.5
+      }
+    },
+    {
       "semanticId": "renderer.astrocart.color.chromeDim",
       "cssVar": "--aries-astrocart-chrome-dim",
       "label": "Astrocartography chrome dim",
@@ -1487,6 +1665,84 @@
       "safetyNotes": [
         "Review Astrocartography foreground/background contrast after changing this role."
       ]
+    },
+    {
+      "semanticId": "renderer.astrocart.metric.chromeFontSize",
+      "cssVar": "--aries-astrocart-chrome-font-size",
+      "label": "Astrocartography chrome font size",
+      "description": "Astrocartography chrome font size design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "11px",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.chromeFontSize; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 7,
+        "max": 24,
+        "step": 0.5
+      }
+    },
+    {
+      "semanticId": "renderer.astrocart.metric.chromeGap",
+      "cssVar": "--aries-astrocart-chrome-gap",
+      "label": "Astrocartography chrome gap",
+      "description": "Astrocartography chrome gap design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "4px",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.chromeGap; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 24,
+        "step": 1
+      }
+    },
+    {
+      "semanticId": "renderer.astrocart.metric.chromeInset",
+      "cssVar": "--aries-astrocart-chrome-inset",
+      "label": "Astrocartography chrome inset",
+      "description": "Astrocartography chrome inset design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "8px",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.chromeInset; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 48,
+        "step": 1
+      }
     },
     {
       "semanticId": "renderer.astrocart.color.chromeKeyLine",
@@ -1636,6 +1892,58 @@
       ]
     },
     {
+      "semanticId": "renderer.astrocart.metric.chromePaddingX",
+      "cssVar": "--aries-astrocart-chrome-padding-x",
+      "label": "Astrocartography chrome padding x",
+      "description": "Astrocartography chrome padding x design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "8px",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.chromePaddingX; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 32,
+        "step": 1
+      }
+    },
+    {
+      "semanticId": "renderer.astrocart.metric.chromePaddingY",
+      "cssVar": "--aries-astrocart-chrome-padding-y",
+      "label": "Astrocartography chrome padding y",
+      "description": "Astrocartography chrome padding y design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "6px",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.chromePaddingY; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 24,
+        "step": 1
+      }
+    },
+    {
       "semanticId": "renderer.astrocart.color.chromePageBg",
       "cssVar": "--aries-astrocart-chrome-page-bg",
       "label": "Astrocartography chrome page bg",
@@ -1655,6 +1963,32 @@
       "safetyNotes": [
         "Review Astrocartography foreground/background contrast after changing this role."
       ]
+    },
+    {
+      "semanticId": "renderer.astrocart.metric.chromePanelRadius",
+      "cssVar": "--aries-astrocart-chrome-panel-radius",
+      "label": "Astrocartography chrome panel radius",
+      "description": "Astrocartography chrome panel radius design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "6px",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.chromePanelRadius; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 24,
+        "step": 0.5
+      }
     },
     {
       "semanticId": "renderer.astrocart.color.chromePopupBg",
@@ -1699,6 +2033,32 @@
       ]
     },
     {
+      "semanticId": "renderer.astrocart.metric.chromeSmallFontSize",
+      "cssVar": "--aries-astrocart-chrome-small-font-size",
+      "label": "Astrocartography chrome small font size",
+      "description": "Astrocartography chrome small font size design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "10px",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.chromeSmallFontSize; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 6,
+        "max": 20,
+        "step": 0.5
+      }
+    },
+    {
       "semanticId": "renderer.astrocart.color.chromeSoft",
       "cssVar": "--aries-astrocart-chrome-soft",
       "label": "Astrocartography chrome soft",
@@ -1739,6 +2099,110 @@
       "safetyNotes": [
         "Review Astrocartography foreground/background contrast after changing this role."
       ]
+    },
+    {
+      "semanticId": "renderer.astrocart.metric.mapAspectLineDashOff",
+      "cssVar": "--aries-astrocart-map-aspect-line-dash-off",
+      "label": "Astrocartography map aspect line dash off",
+      "description": "Astrocartography map aspect line dash off design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "1.55px",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.mapAspectLineDashOff; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.25,
+        "max": 12,
+        "step": 0.25
+      }
+    },
+    {
+      "semanticId": "renderer.astrocart.metric.mapAspectLineDashOn",
+      "cssVar": "--aries-astrocart-map-aspect-line-dash-on",
+      "label": "Astrocartography map aspect line dash on",
+      "description": "Astrocartography map aspect line dash on design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "0.45px",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.mapAspectLineDashOn; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.25,
+        "max": 12,
+        "step": 0.25
+      }
+    },
+    {
+      "semanticId": "renderer.astrocart.metric.mapAspectLineOpacityScale",
+      "cssVar": "--aries-astrocart-map-aspect-line-opacity-scale",
+      "label": "Astrocartography map aspect line opacity scale",
+      "description": "Astrocartography map aspect line opacity scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.78",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.mapAspectLineOpacityScale; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 1.5,
+        "step": 0.01
+      }
+    },
+    {
+      "semanticId": "renderer.astrocart.metric.mapAspectLineWidthScale",
+      "cssVar": "--aries-astrocart-map-aspect-line-width-scale",
+      "label": "Astrocartography map aspect line width scale",
+      "description": "Astrocartography map aspect line width scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.82",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.mapAspectLineWidthScale; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.25,
+        "max": 3,
+        "step": 0.01
+      }
     },
     {
       "semanticId": "renderer.astrocart.color.mapAsterismHighlightColor",
@@ -2106,74 +2570,6 @@
       "default": "#59616a",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrocart.color.mapBorderColor; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Review Astrocartography foreground/background contrast after changing this role."
-      ]
-    },
-    {
-      "semanticId": "renderer.astrocart.color.mapBuildingColor",
-      "cssVar": "--aries-astrocart-map-building-color",
-      "label": "Astrocartography map building color",
-      "description": "Astrocartography map building color color resolved once for the complete renderer paint.",
-      "tier": "renderer-palette",
-      "scope": "chart",
-      "type": "color",
-      "unit": "",
-      "default": "rgba(10,12,16,0.44)",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrocart.color.mapBuildingColor; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Review Astrocartography foreground/background contrast after changing this role."
-      ]
-    },
-    {
-      "semanticId": "renderer.astrocart.metric.mapBuildingOpacityScale",
-      "cssVar": "--aries-astrocart-map-building-opacity-scale",
-      "label": "Astrocartography map building opacity scale",
-      "description": "Astrocartography map building opacity scale design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "",
-      "default": "1",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrocart.metric.mapBuildingOpacityScale; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 2,
-        "step": 0.01
-      }
-    },
-    {
-      "semanticId": "renderer.astrocart.color.mapBuildingOutlineColor",
-      "cssVar": "--aries-astrocart-map-building-outline-color",
-      "label": "Astrocartography map building outline color",
-      "description": "Astrocartography map building outline color color resolved once for the complete renderer paint.",
-      "tier": "renderer-palette",
-      "scope": "chart",
-      "type": "color",
-      "unit": "",
-      "default": "rgba(126,134,144,0.14)",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrocart.color.mapBuildingOutlineColor; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
       "affectedSurfaces": [
         "Astrocartography"
       ],
@@ -3461,32 +3857,6 @@
       ]
     },
     {
-      "semanticId": "renderer.astrocart.metric.mapHillshadeExaggeration",
-      "cssVar": "--aries-astrocart-map-hillshade-exaggeration",
-      "label": "Astrocartography map hillshade exaggeration",
-      "description": "Astrocartography map hillshade exaggeration design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0.35px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrocart.metric.mapHillshadeExaggeration; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.01
-      }
-    },
-    {
       "semanticId": "renderer.astrocart.color.mapHospitalFillColor",
       "cssVar": "--aries-astrocart-map-hospital-fill-color",
       "label": "Astrocartography map hospital fill color",
@@ -4047,6 +4417,110 @@
         "min": 0.1,
         "max": 3,
         "step": 0.25
+      }
+    },
+    {
+      "semanticId": "renderer.astrocart.metric.mapLocalSpaceOppositionDashOffScale",
+      "cssVar": "--aries-astrocart-map-local-space-opposition-dash-off-scale",
+      "label": "Astrocartography map local space opposition dash off scale",
+      "description": "Astrocartography map local space opposition dash off scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "1.25",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.mapLocalSpaceOppositionDashOffScale; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.25,
+        "max": 3,
+        "step": 0.01
+      }
+    },
+    {
+      "semanticId": "renderer.astrocart.metric.mapLocalSpaceOppositionDashOnScale",
+      "cssVar": "--aries-astrocart-map-local-space-opposition-dash-on-scale",
+      "label": "Astrocartography map local space opposition dash on scale",
+      "description": "Astrocartography map local space opposition dash on scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.65",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.mapLocalSpaceOppositionDashOnScale; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.25,
+        "max": 3,
+        "step": 0.01
+      }
+    },
+    {
+      "semanticId": "renderer.astrocart.metric.mapLocalSpaceOppositionOpacityScale",
+      "cssVar": "--aries-astrocart-map-local-space-opposition-opacity-scale",
+      "label": "Astrocartography map local space opposition opacity scale",
+      "description": "Astrocartography map local space opposition opacity scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.88",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.mapLocalSpaceOppositionOpacityScale; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 1.5,
+        "step": 0.01
+      }
+    },
+    {
+      "semanticId": "renderer.astrocart.metric.mapLocalSpaceOppositionWidthScale",
+      "cssVar": "--aries-astrocart-map-local-space-opposition-width-scale",
+      "label": "Astrocartography map local space opposition width scale",
+      "description": "Astrocartography map local space opposition width scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.9",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.mapLocalSpaceOppositionWidthScale; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.25,
+        "max": 3,
+        "step": 0.01
       }
     },
     {
@@ -4879,100 +5353,6 @@
       }
     },
     {
-      "semanticId": "renderer.astrocart.color.mapParkColor",
-      "cssVar": "--aries-astrocart-map-park-color",
-      "label": "Astrocartography map park color",
-      "description": "Astrocartography map park color color resolved once for the complete renderer paint.",
-      "tier": "renderer-palette",
-      "scope": "chart",
-      "type": "color",
-      "unit": "",
-      "default": "rgba(74,92,78,0.14)",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrocart.color.mapParkColor; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Review Astrocartography foreground/background contrast after changing this role."
-      ]
-    },
-    {
-      "semanticId": "renderer.astrocart.metric.mapParkFillOpacityScale",
-      "cssVar": "--aries-astrocart-map-park-fill-opacity-scale",
-      "label": "Astrocartography map park fill opacity scale",
-      "description": "Astrocartography map park fill opacity scale design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "",
-      "default": "1",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrocart.metric.mapParkFillOpacityScale; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 2,
-        "step": 0.01
-      }
-    },
-    {
-      "semanticId": "renderer.astrocart.color.mapParkOutlineColor",
-      "cssVar": "--aries-astrocart-map-park-outline-color",
-      "label": "Astrocartography map park outline color",
-      "description": "Astrocartography map park outline color color resolved once for the complete renderer paint.",
-      "tier": "renderer-palette",
-      "scope": "chart",
-      "type": "color",
-      "unit": "",
-      "default": "rgba(118,142,122,0.16)",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrocart.color.mapParkOutlineColor; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Review Astrocartography foreground/background contrast after changing this role."
-      ]
-    },
-    {
-      "semanticId": "renderer.astrocart.metric.mapParkOutlineOpacityScale",
-      "cssVar": "--aries-astrocart-map-park-outline-opacity-scale",
-      "label": "Astrocartography map park outline opacity scale",
-      "description": "Astrocartography map park outline opacity scale design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "",
-      "default": "1",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrocart.metric.mapParkOutlineOpacityScale; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 2,
-        "step": 0.01
-      }
-    },
-    {
       "semanticId": "renderer.astrocart.color.mapPlutoLineColor",
       "cssVar": "--aries-astrocart-map-pluto-line-color",
       "label": "Astrocartography map pluto line color",
@@ -5042,6 +5422,32 @@
       "bounds": {
         "min": 0.25,
         "max": 3,
+        "step": 0.01
+      }
+    },
+    {
+      "semanticId": "renderer.astrocart.metric.mapProgressionLayerOpacity",
+      "cssVar": "--aries-astrocart-map-progression-layer-opacity",
+      "label": "Astrocartography map progression layer opacity",
+      "description": "Astrocartography map progression layer opacity design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.68",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.mapProgressionLayerOpacity; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 1,
         "step": 0.01
       }
     },
@@ -6021,17 +6427,17 @@
       }
     },
     {
-      "semanticId": "renderer.astrocart.metric.mapTerrainExaggeration",
-      "cssVar": "--aries-astrocart-map-terrain-exaggeration",
-      "label": "Astrocartography map terrain exaggeration",
-      "description": "Astrocartography map terrain exaggeration design metric shared by every dependent paint and geometry path.",
+      "semanticId": "renderer.astrocart.metric.mapTransitLayerOpacity",
+      "cssVar": "--aries-astrocart-map-transit-layer-opacity",
+      "label": "Astrocartography map transit layer opacity",
+      "description": "Astrocartography map transit layer opacity design metric shared by every dependent paint and geometry path.",
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "1px",
+      "unit": "",
+      "default": "0.82",
       "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrocart.metric.mapTerrainExaggeration; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "editTarget": "daemon style profile renderer.astrocart.metric.mapTransitLayerOpacity; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
       "affectedSurfaces": [
         "Astrocartography"
       ],
@@ -6042,51 +6448,9 @@
       ],
       "bounds": {
         "min": 0,
-        "max": 3,
-        "step": 1
+        "max": 1,
+        "step": 0.01
       }
-    },
-    {
-      "semanticId": "renderer.astrocart.color.mapTerrainHighlightColor",
-      "cssVar": "--aries-astrocart-map-terrain-highlight-color",
-      "label": "Astrocartography map terrain highlight color",
-      "description": "Astrocartography map terrain highlight color color resolved once for the complete renderer paint.",
-      "tier": "renderer-palette",
-      "scope": "chart",
-      "type": "color",
-      "unit": "",
-      "default": "#697682",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrocart.color.mapTerrainHighlightColor; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Review Astrocartography foreground/background contrast after changing this role."
-      ]
-    },
-    {
-      "semanticId": "renderer.astrocart.color.mapTerrainShadowColor",
-      "cssVar": "--aries-astrocart-map-terrain-shadow-color",
-      "label": "Astrocartography map terrain shadow color",
-      "description": "Astrocartography map terrain shadow color color resolved once for the complete renderer paint.",
-      "tier": "renderer-palette",
-      "scope": "chart",
-      "type": "color",
-      "unit": "",
-      "default": "#111820",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrocart.color.mapTerrainShadowColor; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Review Astrocartography foreground/background contrast after changing this role."
-      ]
     },
     {
       "semanticId": "renderer.astrocart.color.mapUranusLineColor",
@@ -6456,6 +6820,84 @@
         "min": 0,
         "max": 1,
         "step": 0.01
+      }
+    },
+    {
+      "semanticId": "renderer.astrocart.metric.mapZenithRadiusMin",
+      "cssVar": "--aries-astrocart-map-zenith-radius-min",
+      "label": "Astrocartography map zenith radius min",
+      "description": "Astrocartography map zenith radius min design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "3px",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.mapZenithRadiusMin; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.5,
+        "max": 12,
+        "step": 0.5
+      }
+    },
+    {
+      "semanticId": "renderer.astrocart.metric.mapZenithRadiusWidthScale",
+      "cssVar": "--aries-astrocart-map-zenith-radius-width-scale",
+      "label": "Astrocartography map zenith radius width scale",
+      "description": "Astrocartography map zenith radius width scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "2",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.mapZenithRadiusWidthScale; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.25,
+        "max": 6,
+        "step": 0.01
+      }
+    },
+    {
+      "semanticId": "renderer.astrocart.metric.mapZenithStrokeWidthMin",
+      "cssVar": "--aries-astrocart-map-zenith-stroke-width-min",
+      "label": "Astrocartography map zenith stroke width min",
+      "description": "Astrocartography map zenith stroke width min design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "1px",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrocart.metric.mapZenithStrokeWidthMin; fallback webapp/frontend/src/lib/chart/astrocart-style.ts",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 6,
+        "step": 0.25
       }
     },
     {
@@ -7988,6 +8430,32 @@
       }
     },
     {
+      "semanticId": "app.control.background",
+      "cssVar": "--aries-control-background",
+      "label": "Control background",
+      "description": "Base color for inputs, segmented controls, and interactive fields.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-surface-subtle)",
+      "effectiveAuthority": "daemon-theme-state",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload appTokens[\"--aries-control-background\"]",
+      "affectedSurfaces": [
+        "inputs",
+        "buttons",
+        "segmented controls"
+      ],
+      "inheritanceMode": "daemon-resolved",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Retain clear hover, focus, disabled, and selected states."
+      ],
+      "dependencies": [
+        "--aries-surface-subtle"
+      ]
+    },
+    {
       "semanticId": "app.control.gap",
       "cssVar": "--aries-control-gap",
       "label": "Control content gap",
@@ -8211,6 +8679,132 @@
       }
     },
     {
+      "semanticId": "app.control.foreground",
+      "cssVar": "--aries-control-text",
+      "label": "Control foreground",
+      "description": "Primary text and glyph foreground over interactive control materials.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-text-primary)",
+      "effectiveAuthority": "daemon-theme-state",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload appTokens[\"--aries-control-text\"]",
+      "affectedSurfaces": [
+        "inputs",
+        "buttons",
+        "segmented controls"
+      ],
+      "inheritanceMode": "daemon-resolved",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Maintain normal-text contrast over every control texture value."
+      ],
+      "dependencies": [
+        "--aries-text-primary"
+      ]
+    },
+    {
+      "semanticId": "app.data.bodyBackground",
+      "cssVar": "--aries-data-body-background",
+      "label": "Data body background",
+      "description": "Base color for table bodies and dense retained data regions.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-background)",
+      "effectiveAuthority": "daemon-theme-state",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload appTokens[\"--aries-data-body-background\"]",
+      "affectedSurfaces": [
+        "workspace tables",
+        "dense data lists"
+      ],
+      "inheritanceMode": "daemon-resolved",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep small tabular text readable and row states distinct."
+      ],
+      "dependencies": [
+        "--aries-background"
+      ]
+    },
+    {
+      "semanticId": "app.data.bodyForeground",
+      "cssVar": "--aries-data-body-text",
+      "label": "Data body foreground",
+      "description": "Primary text and glyph foreground over table body materials.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-text-primary)",
+      "effectiveAuthority": "daemon-theme-state",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload appTokens[\"--aries-data-body-text\"]",
+      "affectedSurfaces": [
+        "workspace tables",
+        "dense data lists"
+      ],
+      "inheritanceMode": "daemon-resolved",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Maintain normal-text contrast over every data-body texture value."
+      ],
+      "dependencies": [
+        "--aries-text-primary"
+      ]
+    },
+    {
+      "semanticId": "app.data.headerBackground",
+      "cssVar": "--aries-data-header-background",
+      "label": "Data header background",
+      "description": "Base color for table headers and grouped data section labels.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-surface)",
+      "effectiveAuthority": "daemon-theme-state",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload appTokens[\"--aries-data-header-background\"]",
+      "affectedSurfaces": [
+        "workspace table headers",
+        "data section headers"
+      ],
+      "inheritanceMode": "daemon-resolved",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Preserve distinction from body rows without reducing header contrast."
+      ],
+      "dependencies": [
+        "--aries-surface"
+      ]
+    },
+    {
+      "semanticId": "app.data.headerForeground",
+      "cssVar": "--aries-data-header-text",
+      "label": "Data header foreground",
+      "description": "Primary text and glyph foreground over table header materials.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-text-primary)",
+      "effectiveAuthority": "daemon-theme-state",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload appTokens[\"--aries-data-header-text\"]",
+      "affectedSurfaces": [
+        "workspace table headers",
+        "data section headers"
+      ],
+      "inheritanceMode": "daemon-resolved",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Maintain normal-text contrast over every data-header texture value."
+      ],
+      "dependencies": [
+        "--aries-text-primary"
+      ]
+    },
+    {
       "semanticId": "app.color.destructive",
       "cssVar": "--aries-destructive",
       "label": "Destructive action",
@@ -8365,6 +8959,32 @@
         "min": 0,
         "max": 24,
         "step": 1
+      }
+    },
+    {
+      "semanticId": "app.dialog.listMaxHeight",
+      "cssVar": "--aries-dialog-list-max-height",
+      "label": "Dialog list maximum height",
+      "description": "Maximum height of a scrolling list embedded in an informational dialog.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "224px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-dialog-list-max-height",
+      "affectedSurfaces": [
+        "About dialog contributor list"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep enough surrounding dialog content visible while allowing useful list scrolling."
+      ],
+      "bounds": {
+        "min": 96,
+        "max": 560,
+        "step": 8
       }
     },
     {
@@ -9666,6 +10286,58 @@
       }
     },
     {
+      "semanticId": "app.typography.sidebarNavigationSize",
+      "cssVar": "--aries-font-size-nav",
+      "label": "Sidebar navigation font size",
+      "description": "Text size of workspace navigation rows and footer links.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "14px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-font-size-nav",
+      "affectedSurfaces": [
+        "workspace sidebar navigation"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Check row height, long labels, and drag-state overlays together."
+      ],
+      "bounds": {
+        "min": 9,
+        "max": 24,
+        "step": 1
+      }
+    },
+    {
+      "semanticId": "app.typography.sidebarSectionSize",
+      "cssVar": "--aries-font-size-nav-section",
+      "label": "Sidebar section font size",
+      "description": "Text size of expandable sidebar section headings.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "12px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-font-size-nav-section",
+      "affectedSurfaces": [
+        "workspace sidebar section headings"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep headings distinct from navigation rows without clipping."
+      ],
+      "bounds": {
+        "min": 8,
+        "max": 20,
+        "step": 1
+      }
+    },
+    {
       "semanticId": "app.type.sizeReading",
       "cssVar": "--aries-font-size-reading",
       "label": "Reading text size",
@@ -9762,6 +10434,58 @@
       "legacyMigration": {
         "id": "fontSizeSmall",
         "authority": "legacy-preview-v1"
+      }
+    },
+    {
+      "semanticId": "app.typography.statusbarSize",
+      "cssVar": "--aries-font-size-statusbar",
+      "label": "Statusbar font size",
+      "description": "Text size of workspace status fields.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "11px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-font-size-statusbar",
+      "affectedSurfaces": [
+        "workspace statusbar"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep all status fields legible within the fixed statusbar height."
+      ],
+      "bounds": {
+        "min": 8,
+        "max": 20,
+        "step": 1
+      }
+    },
+    {
+      "semanticId": "app.typography.titlebarSize",
+      "cssVar": "--aries-font-size-titlebar",
+      "label": "Titlebar font size",
+      "description": "Text size of the centered workspace title.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "13px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-font-size-titlebar",
+      "affectedSurfaces": [
+        "workspace titlebar"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Check long document titles and narrow windows."
+      ],
+      "bounds": {
+        "min": 9,
+        "max": 24,
+        "step": 1
       }
     },
     {
@@ -9956,7 +10680,7 @@
       "scope": "app",
       "type": "number",
       "unit": "px",
-      "default": "20px",
+      "default": "var(--aries-section-gap)",
       "effectiveAuthority": "css-root",
       "editTarget": "webapp/frontend/src/app/globals.css :root --aries-form-section-gap",
       "affectedSurfaces": [
@@ -9971,7 +10695,10 @@
         "min": 8,
         "max": 40,
         "step": 1
-      }
+      },
+      "dependencies": [
+        "--aries-section-gap"
+      ]
     },
     {
       "semanticId": "app.inspector.type.alertGlyphSize",
@@ -10048,6 +10775,163 @@
       ]
     },
     {
+      "semanticId": "app.inspector.cardGap",
+      "cssVar": "--aries-inspector-card-gap",
+      "label": "Inspector card gap",
+      "description": "Vertical separation between stacked inspector cards and related citation content.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "8px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-inspector-card-gap",
+      "affectedSurfaces": [
+        "inspector alert cards",
+        "inspector citations"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Preserve clear grouping between separate cards and text blocks."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 32,
+        "step": 1
+      }
+    },
+    {
+      "semanticId": "app.inspector.cardPaddingInline",
+      "cssVar": "--aries-inspector-card-padding-x",
+      "label": "Inspector card horizontal padding",
+      "description": "Horizontal inset inside inspector cards.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "12px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-inspector-card-padding-x",
+      "affectedSurfaces": [
+        "inspector alert cards"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep card text clear of borders at every inspector width."
+      ],
+      "bounds": {
+        "min": 2,
+        "max": 32,
+        "step": 1
+      }
+    },
+    {
+      "semanticId": "app.inspector.cardPaddingBlock",
+      "cssVar": "--aries-inspector-card-padding-y",
+      "label": "Inspector card vertical padding",
+      "description": "Vertical inset inside inspector cards.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "8px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-inspector-card-padding-y",
+      "affectedSurfaces": [
+        "inspector alert cards"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Retain a readable card rhythm without wasting narrow-pane space."
+      ],
+      "bounds": {
+        "min": 2,
+        "max": 24,
+        "step": 1
+      }
+    },
+    {
+      "semanticId": "app.inspector.citationGap",
+      "cssVar": "--aries-inspector-citation-gap",
+      "label": "Inspector citation gap",
+      "description": "Vertical separation between an inspector citation label and its passage text.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "12px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-inspector-citation-gap",
+      "affectedSurfaces": [
+        "inspector passage citations"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the citation visibly attached to its passage while preserving reading rhythm."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 32,
+        "step": 1
+      }
+    },
+    {
+      "semanticId": "app.inspector.closeIconSize",
+      "cssVar": "--aries-inspector-close-icon-size",
+      "label": "Inspector close icon size",
+      "description": "Glyph size of the inspector close action.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "14px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-inspector-close-icon-size",
+      "affectedSurfaces": [
+        "chart inspector"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the close glyph legible without colliding with headings."
+      ],
+      "bounds": {
+        "min": 8,
+        "max": 28,
+        "step": 1
+      }
+    },
+    {
+      "semanticId": "app.inspector.closeInset",
+      "cssVar": "--aries-inspector-close-inset",
+      "label": "Inspector close inset",
+      "description": "Top and trailing inset of the inspector close action.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "12px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-inspector-close-inset",
+      "affectedSurfaces": [
+        "chart inspector"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the close action aligned and clear of inspector headings."
+      ],
+      "bounds": {
+        "min": 2,
+        "max": 32,
+        "step": 1
+      }
+    },
+    {
       "semanticId": "app.inspector.layout.columnGap",
       "cssVar": "--aries-inspector-column-gap",
       "label": "Inspector column gap",
@@ -10069,6 +10953,84 @@
       ],
       "bounds": {
         "min": 6,
+        "max": 32,
+        "step": 1
+      }
+    },
+    {
+      "semanticId": "app.inspector.controlHeight",
+      "cssVar": "--aries-inspector-control-height",
+      "label": "Inspector control height",
+      "description": "Height of compact controls embedded in inspector sections.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "24px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-inspector-control-height",
+      "affectedSurfaces": [
+        "inspector section controls"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep text vertically centered and the pointer target usable."
+      ],
+      "bounds": {
+        "min": 18,
+        "max": 44,
+        "step": 1
+      }
+    },
+    {
+      "semanticId": "app.inspector.controlPaddingInline",
+      "cssVar": "--aries-inspector-control-padding-x",
+      "label": "Inspector control horizontal padding",
+      "description": "Horizontal inset inside compact inspector controls.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "4px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-inspector-control-padding-x",
+      "affectedSurfaces": [
+        "inspector section controls"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep selected values readable in the narrow inspector pane."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 20,
+        "step": 1
+      }
+    },
+    {
+      "semanticId": "app.inspector.controlSectionPaddingBottom",
+      "cssVar": "--aries-inspector-control-section-padding-bottom",
+      "label": "Inspector control section bottom padding",
+      "description": "Bottom inset retained below inspector sections that contain controls.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "12px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-inspector-control-section-padding-bottom",
+      "affectedSurfaces": [
+        "inspector section controls"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Preserve separation from the following inspector section."
+      ],
+      "bounds": {
+        "min": 0,
         "max": 32,
         "step": 1
       }
@@ -10120,6 +11082,32 @@
       "bounds": {
         "min": 16,
         "max": 40,
+        "step": 1
+      }
+    },
+    {
+      "semanticId": "app.inspector.headingGap",
+      "cssVar": "--aries-inspector-heading-gap",
+      "label": "Inspector heading gap",
+      "description": "Inline gap between heading glyphs, labels, and companion controls in the inspector.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "8px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-inspector-heading-gap",
+      "affectedSurfaces": [
+        "chart inspector headings"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep heading groups readable without separating related controls."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 24,
         "step": 1
       }
     },
@@ -10604,7 +11592,7 @@
       "scope": "app",
       "type": "number",
       "unit": "px",
-      "default": "8px",
+      "default": "calc(var(--aries-section-gap) * 2 / 5)",
       "effectiveAuthority": "css-root",
       "editTarget": "webapp/frontend/src/app/globals.css :root --aries-inspector-section-gap",
       "affectedSurfaces": [
@@ -10617,6 +11605,35 @@
       ],
       "bounds": {
         "min": 2,
+        "max": 20,
+        "step": 1
+      },
+      "dependencies": [
+        "--aries-section-gap"
+      ]
+    },
+    {
+      "semanticId": "app.inspector.statusDotSize",
+      "cssVar": "--aries-inspector-status-dot-size",
+      "label": "Inspector status marker size",
+      "description": "Diameter of status dots in inspector alert cards.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "8px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-inspector-status-dot-size",
+      "affectedSurfaces": [
+        "inspector alert cards"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep status distinctions visible without overpowering alert text."
+      ],
+      "bounds": {
+        "min": 4,
         "max": 20,
         "step": 1
       }
@@ -11165,6 +12182,60 @@
       }
     },
     {
+      "semanticId": "app.menu.commandListMaxHeight",
+      "cssVar": "--aries-menu-command-max-height",
+      "label": "Command-list maximum height",
+      "description": "Maximum scrolling height shared by command-palette result lists.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "288px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-menu-command-max-height",
+      "affectedSurfaces": [
+        "command palette",
+        "command search result lists"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep several results visible without obscuring the full workspace."
+      ],
+      "bounds": {
+        "min": 160,
+        "max": 600,
+        "step": 8
+      }
+    },
+    {
+      "semanticId": "app.menu.contextAlignOffset",
+      "cssVar": "--aries-menu-context-align-offset",
+      "label": "Context menu alignment offset",
+      "description": "Inline alignment adjustment between a context anchor and its panel.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "4px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-menu-context-align-offset",
+      "affectedSurfaces": [
+        "context menus",
+        "context submenus"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the pointer context and nested-menu travel path obvious."
+      ],
+      "bounds": {
+        "min": -24,
+        "max": 24,
+        "step": 1
+      }
+    },
+    {
       "semanticId": "app.menu.contextMinWidth",
       "cssVar": "--aries-menu-context-min-width",
       "label": "Context menu minimum width",
@@ -11191,6 +12262,58 @@
       }
     },
     {
+      "semanticId": "app.menu.contextPopupMinWidth",
+      "cssVar": "--aries-menu-context-popup-min-width",
+      "label": "Generic context menu minimum width",
+      "description": "Minimum inline size shared by ordinary context-menu panels before feature-specific overrides.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "144px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-menu-context-popup-min-width",
+      "affectedSurfaces": [
+        "generic context menus"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Check short utility menus as well as long localized labels."
+      ],
+      "bounds": {
+        "min": 80,
+        "max": 360,
+        "step": 4
+      }
+    },
+    {
+      "semanticId": "app.menu.contextSideOffset",
+      "cssVar": "--aries-menu-context-side-offset",
+      "label": "Context menu offset",
+      "description": "Distance between the pointer context anchor and its primary menu panel.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "0px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-menu-context-side-offset",
+      "affectedSurfaces": [
+        "context menus"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the menu close enough to preserve the pointer's context."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 32,
+        "step": 1
+      }
+    },
+    {
       "semanticId": "app.menu.contextSubmenuMinWidth",
       "cssVar": "--aries-menu-context-submenu-min-width",
       "label": "Context submenu minimum width",
@@ -11213,6 +12336,58 @@
       "bounds": {
         "min": 128,
         "max": 480,
+        "step": 4
+      }
+    },
+    {
+      "semanticId": "app.menu.dropdownMinWidth",
+      "cssVar": "--aries-menu-dropdown-min-width",
+      "label": "Dropdown menu minimum width",
+      "description": "Minimum inline size shared by ordinary dropdown panels.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "128px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-menu-dropdown-min-width",
+      "affectedSurfaces": [
+        "dropdown menus"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep compact dropdowns usable without forcing excessive width."
+      ],
+      "bounds": {
+        "min": 80,
+        "max": 360,
+        "step": 4
+      }
+    },
+    {
+      "semanticId": "app.menu.dropdownSubmenuMinWidth",
+      "cssVar": "--aries-menu-dropdown-submenu-min-width",
+      "label": "Dropdown submenu minimum width",
+      "description": "Minimum inline size shared by nested dropdown panels.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "96px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-menu-dropdown-submenu-min-width",
+      "affectedSurfaces": [
+        "dropdown submenus"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Check nested localized choices at the minimum width."
+      ],
+      "bounds": {
+        "min": 72,
+        "max": 360,
         "step": 4
       }
     },
@@ -11355,6 +12530,163 @@
       }
     },
     {
+      "semanticId": "app.menu.pickerSideOffset",
+      "cssVar": "--aries-menu-picker-side-offset",
+      "label": "Picker popup offset",
+      "description": "Distance between a compact picker trigger and its floating choice panel.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "8px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-menu-picker-side-offset",
+      "affectedSurfaces": [
+        "Style Lab color picker"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the picker near its swatch while leaving the trigger visible."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 32,
+        "step": 1
+      }
+    },
+    {
+      "semanticId": "app.menu.popupAlignOffset",
+      "cssVar": "--aries-menu-popup-align-offset",
+      "label": "Dropdown alignment offset",
+      "description": "Inline alignment adjustment between a dropdown trigger and its panel.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "0px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-menu-popup-align-offset",
+      "affectedSurfaces": [
+        "dropdown menus"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the panel visually anchored to its trigger."
+      ],
+      "bounds": {
+        "min": -24,
+        "max": 24,
+        "step": 1
+      }
+    },
+    {
+      "semanticId": "app.menu.popupSideOffset",
+      "cssVar": "--aries-menu-popup-side-offset",
+      "label": "Menu popup offset",
+      "description": "Distance between a dropdown trigger and its floating menu panel.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "4px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-menu-popup-side-offset",
+      "affectedSurfaces": [
+        "dropdown menus",
+        "inspector choice menus"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep menus visually attached to their triggers without covering them."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 32,
+        "step": 1
+      }
+    },
+    {
+      "semanticId": "app.menu.quickOptionsMaxHeight",
+      "cssVar": "--aries-menu-quick-max-height",
+      "label": "Quick-options maximum height",
+      "description": "Pixel cap on the retained quick-options menu before it scrolls.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "620px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-menu-quick-max-height",
+      "affectedSurfaces": [
+        "titlebar quick-options menu"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "The viewport-relative cap still prevents the menu from escaping short windows."
+      ],
+      "bounds": {
+        "min": 240,
+        "max": 900,
+        "step": 8
+      }
+    },
+    {
+      "semanticId": "app.menu.quickOptionsViewportMaxHeight",
+      "cssVar": "--aries-menu-quick-viewport-max-height",
+      "label": "Quick-options viewport height cap",
+      "description": "Maximum share of viewport height available to the retained quick-options menu.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "vh",
+      "default": "76vh",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-menu-quick-viewport-max-height",
+      "affectedSurfaces": [
+        "titlebar quick-options menu"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Leave enough viewport around the menu to preserve its transient context."
+      ],
+      "bounds": {
+        "min": 40,
+        "max": 95,
+        "step": 1
+      }
+    },
+    {
+      "semanticId": "app.menu.quickOptionsWidth",
+      "cssVar": "--aries-menu-quick-width",
+      "label": "Quick-options menu width",
+      "description": "Inline size of the retained quick-options menu opened from the titlebar.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "288px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-menu-quick-width",
+      "affectedSurfaces": [
+        "titlebar quick-options menu"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Check long localized option labels and narrow application windows."
+      ],
+      "bounds": {
+        "min": 200,
+        "max": 480,
+        "step": 4
+      }
+    },
+    {
       "semanticId": "app.menu.selectionReserve",
       "cssVar": "--aries-menu-selection-reserve",
       "label": "Menu selection reserve",
@@ -11378,6 +12710,59 @@
       "bounds": {
         "min": 20,
         "max": 56,
+        "step": 1
+      }
+    },
+    {
+      "semanticId": "app.menu.submenuAlignOffset",
+      "cssVar": "--aries-menu-submenu-align-offset",
+      "label": "Submenu alignment offset",
+      "description": "Block-axis alignment adjustment between a dropdown menu and its nested panel.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "-3px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-menu-submenu-align-offset",
+      "affectedSurfaces": [
+        "dropdown submenus"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep parent and nested rows visually aligned and pointer-reachable."
+      ],
+      "bounds": {
+        "min": -24,
+        "max": 24,
+        "step": 1
+      }
+    },
+    {
+      "semanticId": "app.menu.submenuSideOffset",
+      "cssVar": "--aries-menu-submenu-side-offset",
+      "label": "Submenu offset",
+      "description": "Distance between a parent menu and its nested submenu panel.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "0px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-menu-submenu-side-offset",
+      "affectedSurfaces": [
+        "dropdown submenus",
+        "context submenus"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Avoid a gap that makes pointer travel between nested menus unreliable."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 24,
         "step": 1
       }
     },
@@ -12754,6 +14139,58 @@
       }
     },
     {
+      "semanticId": "app.overlay.background",
+      "cssVar": "--aries-overlay-background",
+      "label": "Overlay background",
+      "description": "Base color for modal dialogs, sheets, and elevated workspace overlays.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-surface)",
+      "effectiveAuthority": "daemon-theme-state",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload appTokens[\"--aries-overlay-background\"]",
+      "affectedSurfaces": [
+        "dialogs",
+        "sheets",
+        "elevated overlays"
+      ],
+      "inheritanceMode": "daemon-resolved",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Use transparency only with a solid fallback and verify text against varied content behind the overlay."
+      ],
+      "dependencies": [
+        "--aries-surface"
+      ]
+    },
+    {
+      "semanticId": "app.overlay.foreground",
+      "cssVar": "--aries-overlay-text",
+      "label": "Overlay foreground",
+      "description": "Primary text and glyph foreground over modal and sheet materials.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-text-primary)",
+      "effectiveAuthority": "daemon-theme-state",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload appTokens[\"--aries-overlay-text\"]",
+      "affectedSurfaces": [
+        "dialogs",
+        "sheets",
+        "elevated overlays"
+      ],
+      "inheritanceMode": "daemon-resolved",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Maintain normal-text contrast over every overlay texture value."
+      ],
+      "dependencies": [
+        "--aries-text-primary"
+      ]
+    },
+    {
       "semanticId": "app.pane.content.padding",
       "cssVar": "--aries-pane-content-padding",
       "label": "Pane content padding",
@@ -13104,7 +14541,7 @@
       "scope": "app",
       "type": "number",
       "unit": "px",
-      "default": "12px",
+      "default": "calc(var(--aries-section-gap) * 3 / 5)",
       "effectiveAuthority": "css-root",
       "editTarget": "webapp/frontend/src/app/globals.css :root --aries-pane-title-gap",
       "affectedSurfaces": [
@@ -13119,7 +14556,10 @@
         "min": 0,
         "max": 24,
         "step": 1
-      }
+      },
+      "dependencies": [
+        "--aries-section-gap"
+      ]
     },
     {
       "semanticId": "app.pane.wideInset",
@@ -13148,6 +14588,32 @@
         "max": 48,
         "step": 1
       }
+    },
+    {
+      "semanticId": "app.panel.background",
+      "cssVar": "--aries-panel-background",
+      "label": "Panel background",
+      "description": "Base color for retained panes, cards, and secondary workspace regions.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-surface)",
+      "effectiveAuthority": "daemon-theme-state",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload appTokens[\"--aries-panel-background\"]",
+      "affectedSurfaces": [
+        "retained panels",
+        "cards",
+        "right panes"
+      ],
+      "inheritanceMode": "daemon-resolved",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Preserve hierarchy from the canvas without lowering foreground contrast."
+      ],
+      "dependencies": [
+        "--aries-surface"
+      ]
     },
     {
       "semanticId": "app.panel.paddingInline",
@@ -13208,6 +14674,84 @@
         "id": "panelPaddingY",
         "authority": "legacy-preview-v1"
       }
+    },
+    {
+      "semanticId": "app.panel.foreground",
+      "cssVar": "--aries-panel-text",
+      "label": "Panel foreground",
+      "description": "Primary text and glyph foreground over panel materials.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-text-primary)",
+      "effectiveAuthority": "daemon-theme-state",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload appTokens[\"--aries-panel-text\"]",
+      "affectedSurfaces": [
+        "retained panels",
+        "cards",
+        "right panes"
+      ],
+      "inheritanceMode": "daemon-resolved",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Maintain normal-text contrast over every panel texture value."
+      ],
+      "dependencies": [
+        "--aries-text-primary"
+      ]
+    },
+    {
+      "semanticId": "app.popover.background",
+      "cssVar": "--aries-popover-background",
+      "label": "Popover background",
+      "description": "Base color for menus, pickers, and transient floating controls.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-background)",
+      "effectiveAuthority": "daemon-theme-state",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload appTokens[\"--aries-popover-background\"]",
+      "affectedSurfaces": [
+        "menus",
+        "pickers",
+        "popovers"
+      ],
+      "inheritanceMode": "daemon-resolved",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep compact labels and selection marks legible at the material extrema."
+      ],
+      "dependencies": [
+        "--aries-background"
+      ]
+    },
+    {
+      "semanticId": "app.popover.foreground",
+      "cssVar": "--aries-popover-text",
+      "label": "Popover foreground",
+      "description": "Primary text and glyph foreground over transient floating surfaces.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-text-primary)",
+      "effectiveAuthority": "daemon-theme-state",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload appTokens[\"--aries-popover-text\"]",
+      "affectedSurfaces": [
+        "menus",
+        "pickers",
+        "popovers"
+      ],
+      "inheritanceMode": "daemon-resolved",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Maintain normal-text contrast over every popover texture value."
+      ],
+      "dependencies": [
+        "--aries-text-primary"
+      ]
     },
     {
       "semanticId": "app.radius.base",
@@ -13899,6 +15443,31 @@
       }
     },
     {
+      "semanticId": "app.sidebar.accentForeground",
+      "cssVar": "--aries-sidebar-accent-foreground",
+      "label": "Sidebar selection foreground",
+      "description": "Text and glyph foreground over selected or accented sidebar rows.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "color-mix(\n    in srgb,\n    var(--aries-sidebar-text) 91%,\n    var(--aries-surface)\n  )",
+      "effectiveAuthority": "daemon-theme-state",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload profile appTokens",
+      "affectedSurfaces": [
+        "selected workspace sidebar rows"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Maintain normal-text contrast against the interactive accent."
+      ],
+      "dependencies": [
+        "--aries-sidebar-text",
+        "--aries-surface"
+      ]
+    },
+    {
       "semanticId": "app.sidebar.actionIconSize",
       "cssVar": "--aries-sidebar-action-icon-size",
       "label": "Sidebar action icon size",
@@ -13924,6 +15493,30 @@
         "max": 18,
         "step": 1
       }
+    },
+    {
+      "semanticId": "app.sidebar.background",
+      "cssVar": "--aries-sidebar-background",
+      "label": "Sidebar background",
+      "description": "Independent base color beneath retained workspace navigation.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-surface)",
+      "effectiveAuthority": "daemon-theme-state",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload appTokens[\"--aries-sidebar-background\"]",
+      "affectedSurfaces": [
+        "workspace sidebar"
+      ],
+      "inheritanceMode": "daemon-resolved",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep sidebar text and selection states legible over the material at its darkest and lightest points."
+      ],
+      "dependencies": [
+        "--aries-surface"
+      ]
     },
     {
       "semanticId": "app.sidebar.closeActionSize",
@@ -15640,6 +17233,32 @@
       }
     },
     {
+      "semanticId": "app.spotlight.dialogTop",
+      "cssVar": "--aries-spotlight-dialog-top",
+      "label": "Command palette vertical position",
+      "description": "Viewport-relative top position of the generic command palette.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "%",
+      "default": "33.333333%",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-spotlight-dialog-top",
+      "affectedSurfaces": [
+        "command palette"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the palette clear of the titlebar and leave enough space for its result list."
+      ],
+      "bounds": {
+        "min": 10,
+        "max": 60,
+        "step": 1
+      }
+    },
+    {
       "semanticId": "app.spotlight.type.primarySize",
       "cssVar": "--aries-spotlight-font-size",
       "label": "Spotlight primary text size",
@@ -16324,6 +17943,82 @@
       }
     },
     {
+      "semanticId": "app.statusbar.background",
+      "cssVar": "--aries-statusbar-background",
+      "label": "Statusbar background",
+      "description": "Base color beneath workspace status and coordinate metadata.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-background)",
+      "effectiveAuthority": "daemon-theme-state",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload appTokens[\"--aries-statusbar-background\"]",
+      "affectedSurfaces": [
+        "workspace statusbar"
+      ],
+      "inheritanceMode": "daemon-resolved",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep status metadata readable at the material extrema."
+      ],
+      "dependencies": [
+        "--aries-background"
+      ]
+    },
+    {
+      "semanticId": "app.shell.statusbarDatetimeGrow",
+      "cssVar": "--aries-statusbar-datetime-grow",
+      "label": "Statusbar date field flex ratio",
+      "description": "Relative share of remaining statusbar width assigned to the date and time field.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "",
+      "default": "3",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-statusbar-datetime-grow",
+      "affectedSurfaces": [
+        "workspace statusbar"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Tune together with the detail-field ratio and test every supported status format."
+      ],
+      "bounds": {
+        "min": 0.25,
+        "max": 8,
+        "step": 0.25
+      }
+    },
+    {
+      "semanticId": "app.shell.statusbarDetailGrow",
+      "cssVar": "--aries-statusbar-detail-grow",
+      "label": "Statusbar detail field flex ratio",
+      "description": "Relative share of remaining statusbar width assigned to coordinates and supplementary details.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "",
+      "default": "2",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-statusbar-detail-grow",
+      "affectedSurfaces": [
+        "workspace statusbar"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Tune together with the date-field ratio and test long coordinate strings."
+      ],
+      "bounds": {
+        "min": 0.25,
+        "max": 8,
+        "step": 0.25
+      }
+    },
+    {
       "semanticId": "app.statusbar.fieldPaddingInline",
       "cssVar": "--aries-statusbar-field-padding-x",
       "label": "Status field horizontal padding",
@@ -16402,6 +18097,32 @@
       }
     },
     {
+      "semanticId": "app.shell.statusbarKindWidth",
+      "cssVar": "--aries-statusbar-kind-width",
+      "label": "Statusbar chart-kind field width",
+      "description": "Fixed flex basis reserved for the active chart or document kind.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "80px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-statusbar-kind-width",
+      "affectedSurfaces": [
+        "workspace statusbar"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Check translated chart-kind labels and narrow windows."
+      ],
+      "bounds": {
+        "min": 40,
+        "max": 240,
+        "step": 4
+      }
+    },
+    {
       "semanticId": "app.statusbar.lineBox",
       "cssVar": "--aries-statusbar-line-box",
       "label": "Status bar line box",
@@ -16425,6 +18146,32 @@
         "min": 10,
         "max": 24,
         "step": 1
+      }
+    },
+    {
+      "semanticId": "app.shell.statusbarNameWidth",
+      "cssVar": "--aries-statusbar-name-width",
+      "label": "Statusbar name field width",
+      "description": "Fixed flex basis reserved for the active chart or document name.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "160px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-statusbar-name-width",
+      "affectedSurfaces": [
+        "workspace statusbar"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Check narrow windows and long names without starving date and coordinate fields."
+      ],
+      "bounds": {
+        "min": 60,
+        "max": 360,
+        "step": 4
       }
     },
     {
@@ -17251,6 +18998,133 @@
       }
     },
     {
+      "semanticId": "app.titlebar.background",
+      "cssVar": "--aries-titlebar-background",
+      "label": "Titlebar background",
+      "description": "Base color beneath the retained native titlebar content.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-background)",
+      "effectiveAuthority": "daemon-theme-state",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload appTokens[\"--aries-titlebar-background\"]",
+      "affectedSurfaces": [
+        "workspace titlebar"
+      ],
+      "inheritanceMode": "daemon-resolved",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Preserve native traffic-light separation and title legibility."
+      ],
+      "dependencies": [
+        "--aries-background"
+      ]
+    },
+    {
+      "semanticId": "app.shell.titlebarClusterGap",
+      "cssVar": "--aries-titlebar-cluster-gap",
+      "label": "Titlebar action gap",
+      "description": "Spacing between actions in the leading and trailing titlebar clusters.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "4px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-titlebar-cluster-gap",
+      "affectedSurfaces": [
+        "workspace titlebar actions"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep each action distinct while preserving room for the centered title."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 20,
+        "step": 1
+      }
+    },
+    {
+      "semanticId": "app.shell.titlebarPaddingInline",
+      "cssVar": "--aries-titlebar-padding-x",
+      "label": "Titlebar horizontal padding",
+      "description": "Outer horizontal inset of the unified workspace titlebar.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "8px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-titlebar-padding-x",
+      "affectedSurfaces": [
+        "workspace titlebar"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep native window controls and trailing toolbar actions clear."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 32,
+        "step": 1
+      }
+    },
+    {
+      "semanticId": "app.titlebar.foreground",
+      "cssVar": "--aries-titlebar-text",
+      "label": "Titlebar foreground",
+      "description": "Primary title and navigation foreground over the titlebar material.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "color-mix(in srgb, var(--aries-text-primary) 84%, var(--aries-background))",
+      "effectiveAuthority": "daemon-theme-state",
+      "editTarget": "webapp/daemon/options_service.py::_theme_state_payload appTokens[\"--aries-titlebar-text\"]",
+      "affectedSurfaces": [
+        "workspace titlebar"
+      ],
+      "inheritanceMode": "daemon-resolved",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Maintain normal-text contrast over every titlebar texture value."
+      ],
+      "dependencies": [
+        "--aries-background",
+        "--aries-text-primary"
+      ]
+    },
+    {
+      "semanticId": "app.shell.titlebarTitlePaddingInline",
+      "cssVar": "--aries-titlebar-title-padding-x",
+      "label": "Titlebar title horizontal padding",
+      "description": "Horizontal inset retained around the centered workspace title.",
+      "tier": "component",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "8px",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-titlebar-title-padding-x",
+      "affectedSurfaces": [
+        "workspace titlebar title"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Check long titles between the leading and trailing action clusters."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 32,
+        "step": 1
+      }
+    },
+    {
       "semanticId": "app.toolbar.controlHeight",
       "cssVar": "--aries-toolbar-control-height",
       "label": "Toolbar control height",
@@ -17645,6 +19519,32 @@
       }
     },
     {
+      "semanticId": "renderer.wheel.metric.anglePositionSignScale",
+      "cssVar": "--aries-wheel-angle-position-sign-scale",
+      "label": "Chart wheel angle position sign scale",
+      "description": "Chart wheel angle position sign scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.52",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.wheel.metric.anglePositionSignScale; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
+      "affectedSurfaces": [
+        "Chart wheel"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.13,
+        "max": 1.56,
+        "step": 0.01
+      }
+    },
+    {
       "semanticId": "renderer.wheel.color.angleRay",
       "cssVar": "--aries-wheel-angle-ray-color",
       "label": "Chart wheel angle ray",
@@ -17799,17 +19699,17 @@
       }
     },
     {
-      "semanticId": "renderer.wheel.metric.angloAnglePositionSignScale",
-      "cssVar": "--aries-wheel-anglo-angle-position-sign-scale",
-      "label": "Chart wheel anglo angle position sign scale",
-      "description": "Chart wheel anglo angle position sign scale design metric shared by every dependent paint and geometry path.",
+      "semanticId": "renderer.wheel.metric.angloArrowInset",
+      "cssVar": "--aries-wheel-anglo-arrow-inset",
+      "label": "Chart wheel anglo arrow inset",
+      "description": "Chart wheel anglo arrow inset design metric shared by every dependent paint and geometry path.",
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "0.52",
+      "default": "0.035",
       "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloAnglePositionSignScale; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
+      "editTarget": "daemon style profile renderer.wheel.metric.angloArrowInset; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
         "Chart wheel"
       ],
@@ -17819,23 +19719,23 @@
         "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
       ],
       "bounds": {
-        "min": 0.13,
-        "max": 1.56,
-        "step": 0.01
+        "min": 0.005,
+        "max": 0.1,
+        "step": 0.001
       }
     },
     {
-      "semanticId": "renderer.wheel.metric.angloAspectBoundaryRingRadius",
-      "cssVar": "--aries-wheel-anglo-aspect-boundary-ring-radius",
-      "label": "Chart wheel anglo aspect boundary ring radius",
-      "description": "Chart wheel anglo aspect boundary ring radius design metric shared by every dependent paint and geometry path.",
+      "semanticId": "renderer.wheel.metric.angloArrowMaximum",
+      "cssVar": "--aries-wheel-anglo-arrow-maximum",
+      "label": "Chart wheel anglo arrow maximum",
+      "description": "Chart wheel anglo arrow maximum design metric shared by every dependent paint and geometry path.",
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0.995",
       "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloAspectBoundaryRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
+      "editTarget": "daemon style profile renderer.wheel.metric.angloArrowMaximum; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
         "Chart wheel"
       ],
@@ -17845,7 +19745,7 @@
         "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
       ],
       "bounds": {
-        "min": 0,
+        "min": 0.9,
         "max": 1,
         "step": 0.001
       }
@@ -17927,32 +19827,6 @@
       ]
     },
     {
-      "semanticId": "renderer.wheel.metric.angloBaseRingRadius",
-      "cssVar": "--aries-wheel-anglo-base-ring-radius",
-      "label": "Chart wheel anglo base ring radius",
-      "description": "Chart wheel anglo base ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloBaseRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
       "semanticId": "renderer.wheel.metric.angloBodyDegreeScale",
       "cssVar": "--aries-wheel-anglo-body-degree-scale",
       "label": "Chart wheel anglo body degree scale",
@@ -18029,32 +19903,6 @@
       }
     },
     {
-      "semanticId": "renderer.wheel.metric.angloBodySignScale",
-      "cssVar": "--aries-wheel-anglo-body-sign-scale",
-      "label": "Chart wheel anglo body sign scale",
-      "description": "Chart wheel anglo body sign scale design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "",
-      "default": "0.56",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloBodySignScale; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0.14,
-        "max": 1.69,
-        "step": 0.01
-      }
-    },
-    {
       "semanticId": "renderer.wheel.metric.angloCuspLabelScale",
       "cssVar": "--aries-wheel-anglo-cusp-label-scale",
       "label": "Chart wheel anglo cusp label scale",
@@ -18081,32 +19929,6 @@
       }
     },
     {
-      "semanticId": "renderer.wheel.metric.angloCuspOuterRingRadius",
-      "cssVar": "--aries-wheel-anglo-cusp-outer-ring-radius",
-      "label": "Chart wheel anglo cusp outer ring radius",
-      "description": "Chart wheel anglo cusp outer ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloCuspOuterRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
       "semanticId": "renderer.wheel.color.angloHouseBoundaryRing",
       "cssVar": "--aries-wheel-anglo-house-boundary-ring-color",
       "label": "Chart wheel anglo house boundary ring",
@@ -18129,32 +19951,6 @@
       "dependencies": [
         "--morinus-frame"
       ]
-    },
-    {
-      "semanticId": "renderer.wheel.metric.angloHouseBoundaryRingRadius",
-      "cssVar": "--aries-wheel-anglo-house-boundary-ring-radius",
-      "label": "Chart wheel anglo house boundary ring radius",
-      "description": "Chart wheel anglo house boundary ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloHouseBoundaryRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
     },
     {
       "semanticId": "renderer.wheel.color.angloHouseLabel",
@@ -18259,32 +20055,6 @@
       }
     },
     {
-      "semanticId": "renderer.wheel.metric.angloHousePositionSignScale",
-      "cssVar": "--aries-wheel-anglo-house-position-sign-scale",
-      "label": "Chart wheel anglo house position sign scale",
-      "description": "Chart wheel anglo house position sign scale design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "",
-      "default": "0.52",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloHousePositionSignScale; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0.13,
-        "max": 1.56,
-        "step": 0.01
-      }
-    },
-    {
       "semanticId": "renderer.wheel.metric.angloHouseScale",
       "cssVar": "--aries-wheel-anglo-house-scale",
       "label": "Chart wheel anglo house scale",
@@ -18307,58 +20077,6 @@
       "bounds": {
         "min": 0.15,
         "max": 0.75,
-        "step": 0.001
-      }
-    },
-    {
-      "semanticId": "renderer.wheel.metric.angloInnerBoundaryRingRadius",
-      "cssVar": "--aries-wheel-anglo-inner-boundary-ring-radius",
-      "label": "Chart wheel anglo inner boundary ring radius",
-      "description": "Chart wheel anglo inner boundary ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloInnerBoundaryRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
-      "semanticId": "renderer.wheel.metric.angloInnerDegreeRingRadius",
-      "cssVar": "--aries-wheel-anglo-inner-degree-ring-radius",
-      "label": "Chart wheel anglo inner degree ring radius",
-      "description": "Chart wheel anglo inner degree ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloInnerDegreeRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
         "step": 0.001
       }
     },
@@ -18415,58 +20133,6 @@
       }
     },
     {
-      "semanticId": "renderer.wheel.metric.angloOuterDegreeRingRadius",
-      "cssVar": "--aries-wheel-anglo-outer-degree-ring-radius",
-      "label": "Chart wheel anglo outer degree ring radius",
-      "description": "Chart wheel anglo outer degree ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloOuterDegreeRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
-      "semanticId": "renderer.wheel.metric.angloOuterHouseRingRadius",
-      "cssVar": "--aries-wheel-anglo-outer-house-ring-radius",
-      "label": "Chart wheel anglo outer house ring radius",
-      "description": "Chart wheel anglo outer house ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloOuterHouseRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
       "semanticId": "renderer.wheel.color.angloOuterLeader",
       "cssVar": "--aries-wheel-anglo-outer-leader-color",
       "label": "Chart wheel anglo outer leader",
@@ -18489,32 +20155,6 @@
       "dependencies": [
         "--morinus-angles"
       ]
-    },
-    {
-      "semanticId": "renderer.wheel.metric.angloOuterMaximumRingRadius",
-      "cssVar": "--aries-wheel-anglo-outer-maximum-ring-radius",
-      "label": "Chart wheel anglo outer maximum ring radius",
-      "description": "Chart wheel anglo outer maximum ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloOuterMaximumRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
     },
     {
       "semanticId": "renderer.wheel.metric.angloOuterScale",
@@ -18758,8 +20398,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.047px",
+      "unit": "",
+      "default": "0.047",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.angloSubdivisionSector; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -18777,32 +20417,6 @@
       }
     },
     {
-      "semanticId": "renderer.wheel.metric.angloTermRingRadius",
-      "cssVar": "--aries-wheel-anglo-term-ring-radius",
-      "label": "Chart wheel anglo term ring radius",
-      "description": "Chart wheel anglo term ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloTermRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
       "semanticId": "renderer.wheel.metric.angloZodiacComparisonWithHouses",
       "cssVar": "--aries-wheel-anglo-zodiac-comparison-with-houses",
       "label": "Chart wheel anglo zodiac comparison with houses",
@@ -18810,8 +20424,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.8px",
+      "unit": "",
+      "default": "0.8",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.angloZodiacComparisonWithHouses; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -18829,58 +20443,6 @@
       }
     },
     {
-      "semanticId": "renderer.wheel.metric.angloZodiacInnerRingRadius",
-      "cssVar": "--aries-wheel-anglo-zodiac-inner-ring-radius",
-      "label": "Chart wheel anglo zodiac inner ring radius",
-      "description": "Chart wheel anglo zodiac inner ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloZodiacInnerRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
-      "semanticId": "renderer.wheel.metric.angloZodiacOuterRingRadius",
-      "cssVar": "--aries-wheel-anglo-zodiac-outer-ring-radius",
-      "label": "Chart wheel anglo zodiac outer ring radius",
-      "description": "Chart wheel anglo zodiac outer ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.angloZodiacOuterRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
       "semanticId": "renderer.wheel.metric.angloZodiacSingle",
       "cssVar": "--aries-wheel-anglo-zodiac-single",
       "label": "Chart wheel anglo zodiac single",
@@ -18888,8 +20450,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.895px",
+      "unit": "",
+      "default": "0.895",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.angloZodiacSingle; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -18914,8 +20476,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.895px",
+      "unit": "",
+      "default": "0.895",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.angloZodiacWithOuter; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -19768,8 +21330,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.04px",
+      "unit": "",
+      "default": "0.04",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.biwheelArrowLength; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -19794,8 +21356,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.92px",
+      "unit": "",
+      "default": "0.92",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.biwheelOuterAngle; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -19820,8 +21382,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.06px",
+      "unit": "",
+      "default": "0.06",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.biwheelOuterHouseSector; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -19846,8 +21408,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.03px",
+      "unit": "",
+      "default": "0.03",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.biwheelOuterLineOffset; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -19872,8 +21434,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.97px",
+      "unit": "",
+      "default": "0.97",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.biwheelOuterMax; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -19898,8 +21460,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.78px",
+      "unit": "",
+      "default": "0.78",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.biwheelOuterMinimum; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -19924,8 +21486,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.15px",
+      "unit": "",
+      "default": "0.15",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.biwheelOuterPlanetSector; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -19950,8 +21512,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.9px",
+      "unit": "",
+      "default": "0.9",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.biwheelProjectedLabel; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -19976,8 +21538,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.01px",
+      "unit": "",
+      "default": "0.01",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.biwheelRetrogradeOffset; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -20002,8 +21564,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.12px",
+      "unit": "",
+      "default": "0.12",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.biwheelZodiacInset; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -20227,6 +21789,32 @@
       }
     },
     {
+      "semanticId": "renderer.wheel.metric.bodyPositionSignScale",
+      "cssVar": "--aries-wheel-body-position-sign-scale",
+      "label": "Chart wheel body position sign scale",
+      "description": "Chart wheel body position sign scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.56",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.wheel.metric.bodyPositionSignScale; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
+      "affectedSurfaces": [
+        "Chart wheel"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.14,
+        "max": 1.69,
+        "step": 0.01
+      }
+    },
+    {
       "semanticId": "renderer.wheel.metric.bodyScale",
       "cssVar": "--aries-wheel-body-scale",
       "label": "Chart wheel body scale",
@@ -20338,8 +21926,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.04px",
+      "unit": "",
+      "default": "0.04",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.classicArrowLength; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -20357,84 +21945,6 @@
       }
     },
     {
-      "semanticId": "renderer.wheel.metric.classicAspectBoundaryRingRadius",
-      "cssVar": "--aries-wheel-classic-aspect-boundary-ring-radius",
-      "label": "Chart wheel classic aspect boundary ring radius",
-      "description": "Chart wheel classic aspect boundary ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.classicAspectBoundaryRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
-      "semanticId": "renderer.wheel.metric.classicBaseRingRadius",
-      "cssVar": "--aries-wheel-classic-base-ring-radius",
-      "label": "Chart wheel classic base ring radius",
-      "description": "Chart wheel classic base ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.classicBaseRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
-      "semanticId": "renderer.wheel.metric.classicCuspOuterRingRadius",
-      "cssVar": "--aries-wheel-classic-cusp-outer-ring-radius",
-      "label": "Chart wheel classic cusp outer ring radius",
-      "description": "Chart wheel classic cusp outer ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.classicCuspOuterRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
       "semanticId": "renderer.wheel.metric.classicDecanSectorLength",
       "cssVar": "--aries-wheel-classic-decan-sector-length",
       "label": "Chart wheel classic decan sector length",
@@ -20442,8 +21952,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.08px",
+      "unit": "",
+      "default": "0.08",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.classicDecanSectorLength; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -20468,8 +21978,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.01px",
+      "unit": "",
+      "default": "0.01",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.classicDegreeTickLength; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -20487,32 +21997,6 @@
       }
     },
     {
-      "semanticId": "renderer.wheel.metric.classicHouseBoundaryRingRadius",
-      "cssVar": "--aries-wheel-classic-house-boundary-ring-radius",
-      "label": "Chart wheel classic house boundary ring radius",
-      "description": "Chart wheel classic house boundary ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.classicHouseBoundaryRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
       "semanticId": "renderer.wheel.metric.classicHouseSectorLength",
       "cssVar": "--aries-wheel-classic-house-sector-length",
       "label": "Chart wheel classic house sector length",
@@ -20520,8 +22004,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.06px",
+      "unit": "",
+      "default": "0.06",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.classicHouseSectorLength; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -20546,8 +22030,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.43px",
+      "unit": "",
+      "default": "0.43",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.classicInnerAspectAngle; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -20572,8 +22056,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.11px",
+      "unit": "",
+      "default": "0.11",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.classicInnerBase; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -20591,58 +22075,6 @@
       }
     },
     {
-      "semanticId": "renderer.wheel.metric.classicInnerBoundaryRingRadius",
-      "cssVar": "--aries-wheel-classic-inner-boundary-ring-radius",
-      "label": "Chart wheel classic inner boundary ring radius",
-      "description": "Chart wheel classic inner boundary ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.classicInnerBoundaryRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
-      "semanticId": "renderer.wheel.metric.classicInnerDegreeRingRadius",
-      "cssVar": "--aries-wheel-classic-inner-degree-ring-radius",
-      "label": "Chart wheel classic inner degree ring radius",
-      "description": "Chart wheel classic inner degree ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.classicInnerDegreeRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
       "semanticId": "renderer.wheel.metric.classicInnerHouseName",
       "cssVar": "--aries-wheel-classic-inner-house-name",
       "label": "Chart wheel classic inner house name",
@@ -20650,8 +22082,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.14px",
+      "unit": "",
+      "default": "0.14",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.classicInnerHouseName; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -20676,8 +22108,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.48px",
+      "unit": "",
+      "default": "0.48",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.classicInnerPosition; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -20702,8 +22134,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.41px",
+      "unit": "",
+      "default": "0.41",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.classicInnerPositionAngle; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -20728,8 +22160,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.32px",
+      "unit": "",
+      "default": "0.32",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.classicInnerPositionHouses; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -20747,58 +22179,6 @@
       }
     },
     {
-      "semanticId": "renderer.wheel.metric.classicOuterDegreeRingRadius",
-      "cssVar": "--aries-wheel-classic-outer-degree-ring-radius",
-      "label": "Chart wheel classic outer degree ring radius",
-      "description": "Chart wheel classic outer degree ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.classicOuterDegreeRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
-      "semanticId": "renderer.wheel.metric.classicOuterHouseRingRadius",
-      "cssVar": "--aries-wheel-classic-outer-house-ring-radius",
-      "label": "Chart wheel classic outer house ring radius",
-      "description": "Chart wheel classic outer house ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.classicOuterHouseRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
       "semanticId": "renderer.wheel.metric.classicOuterLine",
       "cssVar": "--aries-wheel-classic-outer-line",
       "label": "Chart wheel classic outer line",
@@ -20806,8 +22186,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.86px",
+      "unit": "",
+      "default": "0.86",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.classicOuterLine; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -20825,32 +22205,6 @@
       }
     },
     {
-      "semanticId": "renderer.wheel.metric.classicOuterMaximumRingRadius",
-      "cssVar": "--aries-wheel-classic-outer-maximum-ring-radius",
-      "label": "Chart wheel classic outer maximum ring radius",
-      "description": "Chart wheel classic outer maximum ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.classicOuterMaximumRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
       "semanticId": "renderer.wheel.metric.classicOuterProjectedLabel",
       "cssVar": "--aries-wheel-classic-outer-projected-label",
       "label": "Chart wheel classic outer projected label",
@@ -20858,8 +22212,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.9px",
+      "unit": "",
+      "default": "0.9",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.classicOuterProjectedLabel; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -20884,8 +22238,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.86px",
+      "unit": "",
+      "default": "0.86",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.classicOuterProjectedLine; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -20936,8 +22290,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.83px",
+      "unit": "",
+      "default": "0.83",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.classicOuterZodiac; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -20962,8 +22316,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.03px",
+      "unit": "",
+      "default": "0.03",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.classicPlanetLineLength; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -20988,8 +22342,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.15px",
+      "unit": "",
+      "default": "0.15",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.classicPlanetSectorLength; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -21014,8 +22368,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.01px",
+      "unit": "",
+      "default": "0.01",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.classicRetrogradeOffset; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -21066,8 +22420,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.15px",
+      "unit": "",
+      "default": "0.15",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.classicSignSectorLength; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -21111,32 +22465,6 @@
       }
     },
     {
-      "semanticId": "renderer.wheel.metric.classicTermRingRadius",
-      "cssVar": "--aries-wheel-classic-term-ring-radius",
-      "label": "Chart wheel classic term ring radius",
-      "description": "Chart wheel classic term ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.classicTermRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
       "semanticId": "renderer.wheel.metric.classicTermSectorLength",
       "cssVar": "--aries-wheel-classic-term-sector-length",
       "label": "Chart wheel classic term sector length",
@@ -21144,8 +22472,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.08px",
+      "unit": "",
+      "default": "0.08",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.classicTermSectorLength; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -21163,84 +22491,6 @@
       }
     },
     {
-      "semanticId": "renderer.wheel.metric.classicZodiacInnerRingRadius",
-      "cssVar": "--aries-wheel-classic-zodiac-inner-ring-radius",
-      "label": "Chart wheel classic zodiac inner ring radius",
-      "description": "Chart wheel classic zodiac inner ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.classicZodiacInnerRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
-      "semanticId": "renderer.wheel.metric.classicZodiacOuterRingRadius",
-      "cssVar": "--aries-wheel-classic-zodiac-outer-ring-radius",
-      "label": "Chart wheel classic zodiac outer ring radius",
-      "description": "Chart wheel classic zodiac outer ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.classicZodiacOuterRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
-      "semanticId": "renderer.wheel.metric.compactAspectBoundaryRingRadius",
-      "cssVar": "--aries-wheel-compact-aspect-boundary-ring-radius",
-      "label": "Chart wheel compact aspect boundary ring radius",
-      "description": "Chart wheel compact aspect boundary ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.compactAspectBoundaryRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
       "semanticId": "renderer.wheel.metric.compactBase",
       "cssVar": "--aries-wheel-compact-base",
       "label": "Chart wheel compact base",
@@ -21248,8 +22498,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.24px",
+      "unit": "",
+      "default": "0.24",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.compactBase; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -21267,32 +22517,6 @@
       }
     },
     {
-      "semanticId": "renderer.wheel.metric.compactBaseRingRadius",
-      "cssVar": "--aries-wheel-compact-base-ring-radius",
-      "label": "Chart wheel compact base ring radius",
-      "description": "Chart wheel compact base ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.compactBaseRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
       "semanticId": "renderer.wheel.metric.compactComparisonPositionLane0",
       "cssVar": "--aries-wheel-compact-comparison-position-lane-0",
       "label": "Chart wheel compact comparison position lane0",
@@ -21300,8 +22524,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.34px",
+      "unit": "",
+      "default": "0.34",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.compactComparisonPositionLane0; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -21326,8 +22550,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.26px",
+      "unit": "",
+      "default": "0.26",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.compactComparisonPositionLane1; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -21352,8 +22576,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.2px",
+      "unit": "",
+      "default": "0.2",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.compactComparisonPositionLane2; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -21371,58 +22595,6 @@
       }
     },
     {
-      "semanticId": "renderer.wheel.metric.compactCuspOuterRingRadius",
-      "cssVar": "--aries-wheel-compact-cusp-outer-ring-radius",
-      "label": "Chart wheel compact cusp outer ring radius",
-      "description": "Chart wheel compact cusp outer ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.compactCuspOuterRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
-      "semanticId": "renderer.wheel.metric.compactHouseBoundaryRingRadius",
-      "cssVar": "--aries-wheel-compact-house-boundary-ring-radius",
-      "label": "Chart wheel compact house boundary ring radius",
-      "description": "Chart wheel compact house boundary ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.compactHouseBoundaryRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
       "semanticId": "renderer.wheel.metric.compactHouseName",
       "cssVar": "--aries-wheel-compact-house-name",
       "label": "Chart wheel compact house name",
@@ -21430,8 +22602,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.27px",
+      "unit": "",
+      "default": "0.27",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.compactHouseName; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -21456,8 +22628,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.06px",
+      "unit": "",
+      "default": "0.06",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.compactHouseSector; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -21471,136 +22643,6 @@
       "bounds": {
         "min": 0.02,
         "max": 0.15,
-        "step": 0.001
-      }
-    },
-    {
-      "semanticId": "renderer.wheel.metric.compactInnerBoundaryRingRadius",
-      "cssVar": "--aries-wheel-compact-inner-boundary-ring-radius",
-      "label": "Chart wheel compact inner boundary ring radius",
-      "description": "Chart wheel compact inner boundary ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.compactInnerBoundaryRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
-      "semanticId": "renderer.wheel.metric.compactInnerDegreeRingRadius",
-      "cssVar": "--aries-wheel-compact-inner-degree-ring-radius",
-      "label": "Chart wheel compact inner degree ring radius",
-      "description": "Chart wheel compact inner degree ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.compactInnerDegreeRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
-      "semanticId": "renderer.wheel.metric.compactOuterDegreeRingRadius",
-      "cssVar": "--aries-wheel-compact-outer-degree-ring-radius",
-      "label": "Chart wheel compact outer degree ring radius",
-      "description": "Chart wheel compact outer degree ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.compactOuterDegreeRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
-      "semanticId": "renderer.wheel.metric.compactOuterHouseRingRadius",
-      "cssVar": "--aries-wheel-compact-outer-house-ring-radius",
-      "label": "Chart wheel compact outer house ring radius",
-      "description": "Chart wheel compact outer house ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.compactOuterHouseRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
-      "semanticId": "renderer.wheel.metric.compactOuterMaximumRingRadius",
-      "cssVar": "--aries-wheel-compact-outer-maximum-ring-radius",
-      "label": "Chart wheel compact outer maximum ring radius",
-      "description": "Chart wheel compact outer maximum ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.compactOuterMaximumRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
         "step": 0.001
       }
     },
@@ -21638,8 +22680,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.15px",
+      "unit": "",
+      "default": "0.15",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.compactPositionInset; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -21664,8 +22706,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.05px",
+      "unit": "",
+      "default": "0.05",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.compactPositionMinuteInsetComparison; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -21690,8 +22732,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.05px",
+      "unit": "",
+      "default": "0.05",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.compactPositionMinuteInsetSingle; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -21716,8 +22758,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.04px",
+      "unit": "",
+      "default": "0.04",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.compactPositionMinuteInsetWithOuter; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -21742,8 +22784,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.05px",
+      "unit": "",
+      "default": "0.05",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.compactRetrogradeInset; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -21794,8 +22836,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.36px",
+      "unit": "",
+      "default": "0.36",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.compactSinglePositionLane0; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -21820,8 +22862,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.3px",
+      "unit": "",
+      "default": "0.3",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.compactSinglePositionLane1; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -21846,8 +22888,8 @@
       "tier": "renderer-metric",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.24px",
+      "unit": "",
+      "default": "0.24",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.wheel.metric.compactSinglePositionLane2; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
       "affectedSurfaces": [
@@ -21888,84 +22930,6 @@
         "min": 0.010416666666666666,
         "max": 1,
         "step": 0.01
-      }
-    },
-    {
-      "semanticId": "renderer.wheel.metric.compactTermRingRadius",
-      "cssVar": "--aries-wheel-compact-term-ring-radius",
-      "label": "Chart wheel compact term ring radius",
-      "description": "Chart wheel compact term ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.compactTermRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
-      "semanticId": "renderer.wheel.metric.compactZodiacInnerRingRadius",
-      "cssVar": "--aries-wheel-compact-zodiac-inner-ring-radius",
-      "label": "Chart wheel compact zodiac inner ring radius",
-      "description": "Chart wheel compact zodiac inner ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.compactZodiacInnerRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
-    },
-    {
-      "semanticId": "renderer.wheel.metric.compactZodiacOuterRingRadius",
-      "cssVar": "--aries-wheel-compact-zodiac-outer-ring-radius",
-      "label": "Chart wheel compact zodiac outer ring radius",
-      "description": "Chart wheel compact zodiac outer ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.wheel.metric.compactZodiacOuterRingRadius; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
       }
     },
     {
@@ -24134,6 +25098,32 @@
       "bounds": {
         "min": 0.0625,
         "max": 1,
+        "step": 0.01
+      }
+    },
+    {
+      "semanticId": "renderer.wheel.metric.housePositionSignScale",
+      "cssVar": "--aries-wheel-house-position-sign-scale",
+      "label": "Chart wheel house position sign scale",
+      "description": "Chart wheel house position sign scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.52",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.wheel.metric.housePositionSignScale; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
+      "affectedSurfaces": [
+        "Chart wheel"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.13,
+        "max": 1.56,
         "step": 0.01
       }
     },
@@ -26490,6 +27480,27 @@
         "max": 4,
         "step": 0.01
       }
+    },
+    {
+      "semanticId": "renderer.wheel.color.surveilAccent",
+      "cssVar": "--aries-wheel-surveil-accent-color",
+      "label": "Chart wheel surveil accent",
+      "description": "Chart wheel surveil accent color resolved once for the complete renderer paint.",
+      "tier": "renderer-palette",
+      "scope": "chart",
+      "type": "color",
+      "unit": "",
+      "default": "rgb(229,146,70)",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.wheel.color.surveilAccent; fallback webapp/frontend/src/lib/chart/wheel-render-style.ts",
+      "affectedSurfaces": [
+        "Chart wheel"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Review Chart wheel foreground/background contrast after changing this role."
+      ]
     },
     {
       "semanticId": "renderer.wheel.metric.surveilGlyphGapMin",

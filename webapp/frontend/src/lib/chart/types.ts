@@ -272,6 +272,10 @@ export interface OuterRingItem {
   segments?: RingLabelSegment[];
   fitPolicy?: "bitmap" | "none";
   searchObjectId?: string;
+  /** Stable calculation identity retained independently of label/order/lon. */
+  semanticId?: string;
+  /** Daemon-owned trajectory provenance used by semantic list services. */
+  motionRef?: Record<string, unknown>;
   motion?: string;
 }
 
@@ -328,6 +332,7 @@ export interface Chart {
     showFixstarsToHcs?: boolean;
     showFixstarsToLoF?: boolean;
     showHouses?: boolean;
+    showOuterHouseLines?: boolean;
     showPositions?: boolean;
     showInformation?: boolean;
     showHouseSystem?: boolean;
@@ -402,9 +407,9 @@ export interface ChartRenderSnapshot {
   settleOverlayOnly?: boolean;
   renderInvalidation?: RenderInvalidation;
   outerRingMode: OuterRingMode;
-  // Daemon-owned comparison grammar. `standard` keeps the primary house wheel
-  // and places the comparison bodies outside it; `with-houses` is the distinct
-  // biwheel form with a second house annulus.
+  // Daemon-owned comparison grammar. Classic/Compact may use `with-houses` for
+  // a second house annulus. Anglo keeps one coherent comparison layout and
+  // expresses the outer chart's houses as simple cusp lines in either mode.
   comparisonLayout?: "standard" | "with-houses";
   comparisonWholeSign?: boolean;
   interChartAspects?: InterChartAspect[];

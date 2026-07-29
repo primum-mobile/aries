@@ -218,14 +218,15 @@ def secondary_direction_symbolic_info(radix_chart, directed_chart, method=posfor
 	prog_jd = float(directed_chart.time.jd)
 	delta_ephem_days = prog_jd - birth_jd
 	age_years = delta_ephem_days / scale if scale != 0.0 else delta_ephem_days
-	if method == posfordate.SOLAR_ARC:
-		# Solar Arc is built from the exact real-cursor calendar age. Reversing
-		# that value through the chart Time/JD loses seconds because Time stores
-		# whole seconds. Preserve the builder's canonical age when available.
-		try:
-			age_years = float(directed_chart._progression_age_years)
-		except (AttributeError, TypeError, ValueError):
-			pass
+	# Every progression builder stamps the exact source calendar age before its
+	# ephemeris Time is rounded to whole seconds.  Prefer that canonical value
+	# for the inverse real-date readout; deriving it back from chart.time.jd can
+	# move a secondary progression's visible cursor by several minutes.
+	try:
+		age_years = float(directed_chart._progression_age_years)
+	except (AttributeError, TypeError, ValueError):
+		pass
+	else:
 		delta_ephem_days = age_years * scale
 	if method in (posfordate.SECONDARY, posfordate.TERTIARY) and day_type == posfordate.PROGRESSION_DAY_TYPE_Q1:
 		age_years *= BIJA_RATIO

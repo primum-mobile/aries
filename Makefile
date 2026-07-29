@@ -3,8 +3,9 @@
 .PHONY: help run check package build-ext clean web web-tauri web-tauri-status
 .PHONY: web-tauri-stop web-tauri-reset web-live-smoke web-daemon web-dev
 .PHONY: perf-check perf-report speedlog
+.PHONY: worktree-check worktree-bootstrap
 .PHONY: web-frontend web-hosted-build web-notes web-corpus web-runtime-resources web-legal web-venv web-build-deps web-check-deps
-.PHONY: web-daemon-binary web-verify-parity style-check style-token-check
+.PHONY: web-daemon-current web-daemon-binary web-verify-parity style-check style-token-check
 
 # POSIX-oriented helper targets.
 # On native Windows shells, prefer direct `python` / PowerShell commands.
@@ -18,6 +19,13 @@ ARIES_VERSION ?=
 ARIES_PACK_SEED_SOURCES ?=
 export ARIES_VERSION
 
+DAEMON_BUILD_STAMP := webapp/frontend/.tmp/daemon-build.stamp
+DAEMON_BUILD_INPUTS := Makefile scripts/build_sweastrology.sh scripts/build_transit_kernel.py
+DAEMON_BUILD_INPUTS += $(wildcard *.py)
+DAEMON_BUILD_INPUTS += $(shell find aries engine forecasting parsers rectification SWEP/src webapp/daemon webapp/frontend/scripts webapp/interface \
+	-type f \( -name '*.py' -o -name '*.pyx' -o -name '*.pxd' -o -name '*.c' -o -name '*.h' -o -name '*.spec' \) \
+	-not -path '*/__pycache__/*' 2>/dev/null)
+
 # Public command surface. Owner-only signing and release targets are loaded from
 # ops/ in the private workspace and are intentionally absent from source exports.
 help:
@@ -30,11 +38,11 @@ help:
 		$(MAKE) --no-print-directory owner-help; \
 	fi
 
-run: web-venv web-notes web-corpus
+run: worktree-check web-daemon-current
 	@if [ ! -x webapp/frontend/src-tauri/binaries/aries-daemon/aries-daemon ]; then \
 		$(MAKE) web-daemon-binary; \
 	fi
-	$(MAKE) web-tauri
+	cd webapp/frontend && bash ./scripts/tauri-dev-up.sh
 
 check: build-ext web-corpus web-runtime-resources web-legal web-check-deps
 	cd webapp/frontend && npm run lint
@@ -69,8 +77,15 @@ speedlog:
 	@LOG_PATH="$$($(PYTHON) -c 'import tempfile; print(tempfile.gettempdir() + "/aries-speedlog.jsonl")')"; \
 	if [ -f "$$LOG_PATH" ]; then tail -n 20 "$$LOG_PATH"; else printf '%s\n' "No automatic speedlog yet: $$LOG_PATH"; fi
 
+worktree-check:
+	@$(PYTHON) scripts/worktree_runtime.py check
+
+worktree-bootstrap:
+	@$(PYTHON) scripts/worktree_runtime.py bootstrap
+
 build-ext:
 	cd $(SWEP_SRC) && $(PYTHON) setup.py build_ext --inplace
+	$(PYTHON) scripts/build_transit_kernel.py build_ext --inplace
 
 web-venv:
 	@if [ ! -x "$(WEB_PYTHON)" ]; then \
@@ -114,7 +129,7 @@ web-dev: web-venv web-notes
 
 # Persistent Aries desktop dev app. Starts `tauri dev` detached and leaves it
 # running across development sessions; rerunning is idempotent.
-web-tauri: web-venv web-notes web-corpus
+web-tauri:
 	cd webapp/frontend && bash ./scripts/tauri-dev-up.sh
 
 style-token-check:
@@ -148,13 +163,23 @@ web-build-deps: web-venv
 web-check-deps: web-build-deps
 	$(WEB_PYTHON) -m pip install -r requirements-dev.txt
 
+$(DAEMON_BUILD_STAMP): $(DAEMON_BUILD_INPUTS)
+	@echo "Daemon sources changed; rebuilding native sidecar..."
+	@$(MAKE) --no-print-directory web-daemon-binary
+
+web-daemon-current: $(DAEMON_BUILD_STAMP)
+
 web-daemon-binary: web-build-deps
 	@ARCH=$$($(WEB_PYTHON) -c 'import platform; print(platform.machine())'); \
 	case "$$ARCH" in arm64|x86_64) ;; *) echo "Unsupported daemon Python arch: $$ARCH" >&2; exit 1 ;; esac; \
 	PYTHON_BIN="$(WEB_PYTHON)" ./scripts/build_sweastrology.sh "$$ARCH"; \
 	SWE_SO=$$($(WEB_PYTHON) -c 'import sysconfig; print("sweastrology" + sysconfig.get_config_var("EXT_SUFFIX"))'); \
 	SWE_ARCHS=$$(lipo -archs "$$SWE_SO" 2>/dev/null || true); \
-	case " $$SWE_ARCHS " in *" $$ARCH "*) ;; *) echo "$$SWE_SO has architecture(s) '$$SWE_ARCHS', expected $$ARCH" >&2; exit 1 ;; esac
+	case " $$SWE_ARCHS " in *" $$ARCH "*) ;; *) echo "$$SWE_SO has architecture(s) '$$SWE_ARCHS', expected $$ARCH" >&2; exit 1 ;; esac; \
+	KERNEL_SO=$$($(WEB_PYTHON) -c 'import sysconfig; print("aries/astrology/transit_fast/_transit_kernel" + sysconfig.get_config_var("EXT_SUFFIX"))'); \
+	KERNEL_ARCHS=$$(lipo -archs "$$KERNEL_SO" 2>/dev/null || true); \
+	case " $$KERNEL_ARCHS " in *" $$ARCH "*) ;; *) echo "$$KERNEL_SO has architecture(s) '$$KERNEL_ARCHS', expected $$ARCH" >&2; exit 1 ;; esac; \
+	$(WEB_PYTHON) -c 'from aries.astrology.transit_fast import api; assert api.native_backend_available(), "native transit kernel import failed"'
 	$(WEB_PYTHON) -m PyInstaller webapp/daemon/aries-daemon.spec --clean --noconfirm --workpath webapp/.pyinstaller-build --distpath webapp/.pyinstaller-dist
 	@ARCH=$$($(WEB_PYTHON) -c 'import platform; print(platform.machine())'); \
 	if [ "$$ARCH" = "arm64" ]; then TRIPLE=aarch64-apple-darwin; else TRIPLE=x86_64-apple-darwin; fi; \
@@ -166,7 +191,14 @@ web-daemon-binary: web-build-deps
 	SWE_SO=$$($(WEB_PYTHON) -c 'import sysconfig; print("sweastrology" + sysconfig.get_config_var("EXT_SUFFIX"))'); \
 	DAEMON_ARCHS=$$(lipo -archs webapp/frontend/src-tauri/binaries/aries-daemon/_internal/$$SWE_SO 2>/dev/null || true); \
 	case " $$DAEMON_ARCHS " in *" $$ARCH "*) ;; *) echo "Bundled $$SWE_SO has architecture(s) '$$DAEMON_ARCHS', expected $$ARCH" >&2; exit 1 ;; esac; \
+	KERNEL_SO=$$($(WEB_PYTHON) -c 'import sysconfig; print("_transit_kernel" + sysconfig.get_config_var("EXT_SUFFIX"))'); \
+	KERNEL_PATH=webapp/frontend/src-tauri/binaries/aries-daemon/_internal/aries/astrology/transit_fast/$$KERNEL_SO; \
+	KERNEL_ARCHS=$$(lipo -archs "$$KERNEL_PATH" 2>/dev/null || true); \
+	case " $$KERNEL_ARCHS " in *" $$ARCH "*) ;; *) echo "Bundled $$KERNEL_SO has architecture(s) '$$KERNEL_ARCHS', expected $$ARCH" >&2; exit 1 ;; esac; \
+	webapp/frontend/src-tauri/binaries/aries-daemon/aries-daemon --verify-native-transit-kernel; \
 	echo "Daemon bundle at webapp/frontend/src-tauri/binaries/aries-daemon ($$TRIPLE)"
+	@mkdir -p $(dir $(DAEMON_BUILD_STAMP))
+	@touch $(DAEMON_BUILD_STAMP)
 
 web-verify-parity: web-venv
 	@$(WEB_PYTHON) -m uvicorn webapp.daemon.server:app --host 127.0.0.1 --port $(WEB_DAEMON_PORT) & \

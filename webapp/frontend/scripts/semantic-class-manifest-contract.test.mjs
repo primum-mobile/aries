@@ -20,6 +20,11 @@ const manifest = await import(
 const expectedIds = [
   "canvas.background",
   ...["geometry", "dynamic", "outerLabel"].map((id) => `layers.${id}`),
+  "fills.chartField",
+  "fills.houseField",
+  "fills.centerField",
+  "fills.zodiacBand",
+  "fills.subdivisionBand",
   ...[
     "outerMaximum", "outerHouse", "outerDegree", "zodiacOuter", "innerDegree",
     "zodiacInner", "term", "angloCuspOuter", "innerBoundary", "aspectBoundary",
@@ -74,7 +79,7 @@ const expectedIds = [
 
 test("wheel-v2 exposes the exact complete semantic class tree", () => {
   assert.equal(manifest.WHEEL_SEMANTIC_CLASS_MANIFEST_VERSION, "wheel-v2");
-  assert.equal(expectedIds.length, 105);
+  assert.equal(expectedIds.length, 110);
   assert.deepEqual(
     [...manifest.WHEEL_SEMANTIC_CLASS_IDS].sort(),
     [...expectedIds].sort(),
@@ -89,7 +94,15 @@ test("wheel-v2 exposes the exact complete semantic class tree", () => {
 test("every class has capabilities, declarative applicability, and a preview state", () => {
   for (const definition of manifest.WHEEL_SEMANTIC_CLASS_MANIFEST) {
     assert.match(definition.labelKey, /^(?:styleLab|quickopt)\./, definition.id);
-    assert.ok(definition.capabilities.length > 0, `${definition.id} capabilities`);
+    if (definition.id.startsWith("layers.")) {
+      assert.deepEqual(
+        definition.capabilities,
+        [],
+        `${definition.id} uses the retained scalar layer-effect controls`,
+      );
+    } else {
+      assert.ok(definition.capabilities.length > 0, `${definition.id} capabilities`);
+    }
     assert.ok(definition.applicability.variants.length > 0, `${definition.id} variants`);
     assert.ok(definition.applicability.layouts.length > 0, `${definition.id} layouts`);
     assert.ok(definition.applicability.previewStateId, `${definition.id} preview`);
@@ -99,15 +112,65 @@ test("every class has capabilities, declarative applicability, and a preview sta
   }
 });
 
-test("effects are truthful retained-layer capabilities, not pretend per-class CSS", () => {
-  const effectCapabilities = new Set([
-    "blur", "shadowColor", "shadowX", "shadowY", "shadowBlur", "hueRotate",
+test("layer effects stay on retained scalar controls, not duplicate profile-v2 class properties", () => {
+  const compositorCapabilities = new Set([
+    "blur", "hueRotate",
     "brightness", "contrast", "saturation", "grayscale", "invert", "sepia",
   ]);
+  const shadowCapabilities = new Set([
+    "shadowColor", "shadowX", "shadowY", "shadowBlur",
+  ]);
   for (const definition of manifest.WHEEL_SEMANTIC_CLASS_MANIFEST) {
-    const hasEffect = definition.capabilities.some((item) => effectCapabilities.has(item));
-    assert.equal(hasEffect, definition.id.startsWith("layers."), definition.id);
+    const hasCompositor = definition.capabilities.some(
+      (item) => compositorCapabilities.has(item),
+    );
+    assert.equal(hasCompositor, false, definition.id);
+    const hasShadow = definition.capabilities.some((item) => shadowCapabilities.has(item));
+    assert.equal(
+      hasShadow,
+      definition.id.startsWith("fills.") && definition.id !== "canvas.background",
+      definition.id,
+    );
   }
+});
+
+test("canvas background is the retained chart material rather than a color-only surface", () => {
+  const canvas = manifest.getWheelSemanticClass("canvas.background");
+  assert.deepEqual(canvas.capabilities, [
+    "backgroundColor",
+    "patternColor",
+    "gradientType",
+    "gradientDirection",
+    "gradientStartColor",
+    "gradientEndColor",
+    "gradientAngle",
+    "fillPattern",
+    "cellSize",
+    "dotSize",
+    "density",
+    "angle",
+    "seed",
+    "opacity",
+  ]);
+  const chartField = manifest.getWheelSemanticClass("fills.chartField");
+  assert.ok(chartField.capabilities.includes("textureMask"));
+  assert.ok(chartField.capabilities.includes("shadowPattern"));
+  assert.ok(!canvas.capabilities.includes("textureMask"));
+  const houseField = manifest.getWheelSemanticClass("fills.houseField");
+  assert.ok(houseField.capabilities.includes("shadowBlur"));
+  const center = manifest.getWheelSemanticClass("fills.centerField");
+  assert.deepEqual(center.capabilities.slice(-10), [
+    "textureMask",
+    "maskDirection",
+    "maskAngle",
+    "maskAmount",
+    "shadowPattern",
+    "shadowColor",
+    "shadowX",
+    "shadowY",
+    "shadowBlur",
+    "opacity",
+  ]);
 });
 
 test("documented variant and preview applicability is explicit", () => {

@@ -43,6 +43,16 @@
     --menu-shadow:    rgba(0,0,0,0.45);
     --menu-hover-bg:  #0a84ff;
     --menu-hover-fg:  #ffffff;
+    --chrome-font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --chrome-font-symbols: 'Morinus', serif;
+    --chrome-control-size: 28px;
+    --chrome-panel-radius: 6px;
+    --chrome-font-size: 11px;
+    --chrome-small-font-size: 10px;
+    --chrome-inset: 8px;
+    --chrome-gap: 4px;
+    --chrome-padding-x: 8px;
+    --chrome-padding-y: 6px;
   }
   /* Light theme (Daylight / Paper Mono / Classic Morinus) — explicit opt-in. */
   body.theme-light {
@@ -68,7 +78,9 @@
     color-scheme:light;
   }
   html, body, #map { margin:0; padding:0; width:100%; height:100%; background:var(--page-bg); }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color:var(--chrome-text); }
+  body { font-family:var(--chrome-font-ui); color:var(--chrome-text); }
+  body { -webkit-user-select:none; user-select:none; }
+  input, textarea, [contenteditable="true"] { -webkit-user-select:text; user-select:text; }
   .maplibregl-map,
   .maplibregl-canvas-container,
   .maplibregl-canvas {
@@ -90,16 +102,12 @@
   #place-labels {
     position:absolute; inset:0; pointer-events:none; overflow:hidden;
     z-index:3;
-    font-size:11px; line-height:1; color:var(--chrome-soft);
+    font-size:var(--chrome-font-size); line-height:1; color:var(--chrome-soft);
   }
   #acg-dom-labels {
     position:absolute; inset:0; pointer-events:none; overflow:hidden;
     z-index:3;
-    font-size:11px; line-height:1; color:var(--chrome-text);
-  }
-  #acg-dom-labels.is-moving {
-    opacity:0;
-    transition:opacity 80ms linear;
+    font-size:var(--chrome-font-size); line-height:1; color:var(--chrome-text);
   }
   .place-label, .acg-dom-label {
     position:absolute; transform:translate(-50%, -50%);
@@ -108,6 +116,14 @@
   }
   .place-label.major { font-weight:600; color:var(--chrome-text); opacity:0.92; }
   .acg-dom-label { font-weight:600; }
+  .acg-dom-label.zenith {
+    display:flex; align-items:center; gap:var(--chrome-gap);
+  }
+  .acg-dom-label-glyph {
+    font-family:var(--chrome-font-symbols);
+    font-size:1.2em;
+    font-weight:400;
+  }
   .maplibregl-ctrl-top-left { top:var(--titlebar-safe-top); }
   .maplibregl-ctrl-group {
     background:var(--chrome-bg);
@@ -116,7 +132,7 @@
     overflow:hidden;
   }
   .maplibregl-ctrl-group button {
-    width:28px; height:28px;
+    width:var(--chrome-control-size); height:var(--chrome-control-size);
     background:transparent;
   }
   .maplibregl-ctrl-group button + button {
@@ -125,7 +141,7 @@
   .maplibregl-ctrl-group button:hover:not(:disabled) {
     background:var(--btn-hover-bg);
   }
-  body:not(.terrain-relief) .maplibregl-ctrl-compass { display:none; }
+  .maplibregl-ctrl-compass { display:none; }
   body:not(.theme-light) .maplibregl-ctrl button .maplibregl-ctrl-icon {
     filter:invert(1);
     opacity:0.88;
@@ -155,7 +171,7 @@
     border:2px solid var(--chrome-text);
     border-radius:50%;
     color:var(--chrome-text);
-    font:700 14px/18px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font:700 14px/18px var(--chrome-font-ui);
     text-align:center;
   }
   .place-dot {
@@ -163,65 +179,77 @@
     background:currentColor; margin-right:4px; vertical-align:middle;
   }
   #legend {
-    position:absolute; top:calc(var(--titlebar-safe-top) + 8px); right:8px;
+    position:absolute; top:calc(var(--titlebar-safe-top) + var(--chrome-inset)); right:var(--chrome-inset);
     z-index:7;
     background:var(--chrome-bg);
-    border-radius:6px; font-size:11px;
+    border-radius:var(--chrome-panel-radius); font-size:var(--chrome-font-size);
     max-width:210px; line-height:1.4; pointer-events:auto;
     border:1px solid var(--chrome-border);
     color:var(--chrome-text);
     overflow:hidden;
   }
   #legend-toggle {
-    width:100%; display:flex; align-items:center; gap:8px;
+    width:100%; display:flex; align-items:center; gap:var(--chrome-inset);
     border:0; background:transparent; color:var(--chrome-soft);
-    padding:6px 9px; cursor:pointer; border-radius:5px;
-    font:inherit; font-size:10px; font-weight:600;
+    padding:var(--chrome-padding-y) var(--chrome-padding-x); cursor:pointer;
+    border-radius:var(--chrome-panel-radius);
+    font:inherit; font-size:var(--chrome-small-font-size); font-weight:600;
     text-transform:uppercase; letter-spacing:0.08em;
   }
   #legend-toggle:hover { background:var(--btn-hover-bg); }
   #legend-toggle .legend-state {
     margin-left:auto; color:var(--chrome-dim); font-size:12px; line-height:1;
   }
-  #legend-body { padding:0 10px 8px 10px; }
+  #legend-body { padding:0 var(--chrome-padding-x) var(--chrome-padding-y); }
   #legend.collapsed { max-width:none; }
   #legend.collapsed #legend-body { display:none; }
-  #legend.collapsed #legend-toggle { padding:5px 9px; }
-  #legend h4 { margin:0 0 6px 0; font-size:10px; font-weight:600; color:var(--chrome-soft); opacity:0.75; text-transform:uppercase; letter-spacing:0.08em; }
-  #legend section + section { margin-top:8px; padding-top:8px; border-top:1px solid var(--chrome-rule); }
-  #legend .row { display:flex; align-items:center; gap:6px; }
+  #legend.collapsed #legend-toggle { padding:var(--chrome-padding-y) var(--chrome-padding-x); }
+  #legend h4 { margin:0 0 var(--chrome-padding-y) 0; font-size:var(--chrome-small-font-size); font-weight:600; color:var(--chrome-soft); opacity:0.75; text-transform:uppercase; letter-spacing:0.08em; }
+  #legend section + section { margin-top:var(--chrome-inset); padding-top:var(--chrome-inset); border-top:1px solid var(--chrome-rule); }
+  #legend .row { display:flex; align-items:center; gap:var(--chrome-padding-y); }
   #legend .sw { width:18px; height:2px; flex-shrink:0; }
-  #legend .glyph { font-family:'Morinus', serif; font-size:14px; width:16px; text-align:center; display:inline-block; }
-  #legend .kind-row { display:flex; align-items:center; gap:6px; color:var(--chrome-dim); font-size:10px; }
+  #legend .glyph { font-family:var(--chrome-font-symbols); font-size:calc(var(--chrome-font-size) + 3px); width:16px; text-align:center; display:inline-block; }
+  #legend .kind-row { display:flex; align-items:center; gap:var(--chrome-padding-y); color:var(--chrome-dim); font-size:var(--chrome-small-font-size); }
   #legend .kind-row .sw { width:24px; }
   #legend .kind-row .ks { border-top:1.8px solid var(--key-line); width:24px; height:0; }
   #legend .kind-row .kd { border-top:1.8px dashed var(--key-line); width:24px; height:0; }
   #legend .kind-row .kp { border-top:1.2px dashed var(--key-paran); width:24px; height:0; }
   #status {
-    position:absolute; bottom:8px; left:8px;
-    background:var(--chrome-bg-thin); padding:4px 8px;
-    border-radius:4px; font-size:10px; color:var(--chrome-dim);
+    position:absolute; bottom:var(--chrome-inset); left:var(--chrome-inset);
+    background:var(--chrome-bg-thin);
+    padding:var(--chrome-gap) var(--chrome-padding-x);
+    border-radius:var(--chrome-panel-radius); font-size:var(--chrome-small-font-size); color:var(--chrome-dim);
     border:1px solid var(--chrome-border);
   }
   .maplibregl-popup-content {
     background:var(--popup-bg) !important; color:var(--chrome-text) !important;
     border:1px solid var(--chrome-border);
-    font-size:11px; padding:6px 8px;
+    font-size:var(--chrome-font-size);
+    padding:var(--chrome-padding-y) var(--chrome-padding-x);
+    border-radius:var(--chrome-panel-radius);
   }
   .maplibregl-popup-tip { border-top-color:var(--popup-bg) !important; }
   #top-controls {
-    position:absolute; top:calc(var(--titlebar-safe-top) + 8px); left:88px;
-    z-index:7; display:flex; align-items:flex-start; gap:4px;
+    position:absolute;
+    top:calc(var(--titlebar-safe-top) + var(--chrome-inset));
+    left:calc(
+      var(--chrome-control-size) + var(--chrome-control-size) +
+      var(--chrome-control-size) + var(--chrome-gap)
+    );
+    z-index:7; display:flex; align-items:flex-start; gap:var(--chrome-gap);
   }
   #proj, #overlays {
     background:var(--chrome-bg);
     border:1px solid var(--chrome-border);
-    border-radius:5px; padding:2px;
-    font-size:11px; display:flex; gap:1px;
+    border-radius:var(--chrome-panel-radius);
+    padding:max(0px, calc(var(--chrome-padding-y) - 4px));
+    font-size:var(--chrome-font-size); display:flex; gap:1px;
   }
   #proj button, #overlays button {
     background:transparent; color:var(--chrome-dim); border:0;
-    min-height:24px; padding:3px 9px; cursor:pointer; border-radius:3px;
+    min-height:calc(var(--chrome-control-size) - 4px);
+    padding:max(0px, calc(var(--chrome-padding-y) - 3px)) var(--chrome-padding-x);
+    cursor:pointer; border-radius:calc(var(--chrome-panel-radius) / 2);
     font: inherit; line-height:16px; letter-spacing:0;
   }
   #proj button.on, #overlays button.on {
@@ -233,10 +261,11 @@
   }
   #place-search-input {
     width:100%; box-sizing:border-box;
-    height:28px; padding:0 9px;
+    height:var(--chrome-control-size); padding:0 var(--chrome-padding-x);
     background:var(--chrome-bg); color:var(--chrome-text);
-    border:1px solid var(--chrome-border); border-radius:5px;
-    font: inherit; font-size:11px; line-height:26px;
+    border:1px solid var(--chrome-border); border-radius:var(--chrome-panel-radius);
+    font:inherit; font-size:var(--chrome-font-size);
+    line-height:calc(var(--chrome-control-size) - 2px);
     outline:none; -webkit-appearance:none;
   }
   #place-search-input::placeholder {
@@ -253,20 +282,19 @@
   }
   #place-search-input:focus { border-color:var(--chrome-soft); }
   #place-search-results {
-    display:none; margin-top:4px;
+    display:none; margin-top:var(--chrome-gap);
     background:var(--menu-bg); color:var(--chrome-text);
-    border:1px solid var(--menu-border); border-radius:6px;
-    box-shadow:0 16px 36px var(--menu-shadow);
-    padding:4px; max-height:300px; overflow-y:auto;
-    -webkit-backdrop-filter: blur(22px) saturate(180%);
-    backdrop-filter: blur(22px) saturate(180%);
+    border:1px solid var(--menu-border); border-radius:var(--chrome-panel-radius);
+    box-shadow:none;
+    padding:var(--chrome-gap); max-height:300px; overflow-y:auto;
   }
   .place-search-result {
-    display:flex; align-items:baseline; gap:8px;
-    width:100%; padding:5px 9px;
+    display:flex; align-items:baseline; gap:var(--chrome-inset);
+    width:100%;
+    padding:max(0px, calc(var(--chrome-padding-y) - 1px)) var(--chrome-padding-x);
     border:0; background:transparent;
-    color:inherit; text-align:left; border-radius:4px;
-    font:inherit; font-size:12px; line-height:1.25;
+    color:inherit; text-align:left; border-radius:var(--chrome-panel-radius);
+    font:inherit; font-size:calc(var(--chrome-font-size) + 1px); line-height:1.25;
     cursor:default;
   }
   .place-search-result:hover,
@@ -278,14 +306,14 @@
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
   .place-search-result .name .secondary {
-    display:block; font-size:10px; opacity:0.55;
+    display:block; font-size:var(--chrome-small-font-size); opacity:0.55;
     line-height:1.2; margin-top:1px;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
   .place-search-result:hover .name .secondary,
   .place-search-result.active .name .secondary { opacity:0.85; }
   .place-search-result .country {
-    flex:0 0 auto; font-size:10px; opacity:0.6; letter-spacing:0.04em;
+    flex:0 0 auto; font-size:var(--chrome-small-font-size); opacity:0.6; letter-spacing:0.04em;
   }
   .place-search-result:hover .country,
   .place-search-result.active .country { opacity:0.85; }
@@ -299,8 +327,9 @@
     margin-top:4px; padding-top:7px;
   }
   .place-search-loading {
-    display:flex; align-items:center; gap:7px;
-    padding:6px 9px; color:var(--chrome-dim); font-size:11px;
+    display:flex; align-items:center; gap:var(--chrome-padding-y);
+    padding:var(--chrome-padding-y) var(--chrome-padding-x);
+    color:var(--chrome-dim); font-size:var(--chrome-font-size);
   }
   .place-search-loading::before {
     content:''; display:inline-block;
@@ -310,21 +339,25 @@
   }
   @keyframes place-search-spin { to { transform: rotate(360deg); } }
   .place-search-empty {
-    padding:6px 9px; color:var(--chrome-dim); font-size:11px;
+    padding:var(--chrome-padding-y) var(--chrome-padding-x);
+    color:var(--chrome-dim); font-size:var(--chrome-font-size);
   }
   #acg-menu {
     position:absolute; z-index:8; min-width:190px; display:none;
     background:var(--menu-bg); color:var(--chrome-text);
-    border:1px solid var(--menu-border); border-radius:7px;
-    box-shadow:0 16px 36px var(--menu-shadow);
-    padding:5px; font-size:14px;
-    -webkit-backdrop-filter: blur(22px) saturate(180%);
-    backdrop-filter: blur(22px) saturate(180%);
+    border:1px solid var(--menu-border); border-radius:var(--chrome-panel-radius);
+    box-shadow:none;
+    padding:max(0px, calc(var(--chrome-padding-y) - 1px));
+    font-size:calc(var(--chrome-font-size) + 3px);
   }
   #acg-menu button {
     width:100%; display:block; border:0; background:transparent;
-    color:inherit; text-align:left; border-radius:4px;
-    padding:6px 23px 6px 12px; font:inherit; line-height:1.25;
+    color:inherit; text-align:left; border-radius:var(--chrome-panel-radius);
+    padding:var(--chrome-padding-y)
+      calc(var(--chrome-padding-x) + var(--chrome-padding-x) + var(--chrome-gap))
+      var(--chrome-padding-y)
+      calc(var(--chrome-padding-x) + var(--chrome-gap));
+    font:inherit; line-height:1.25;
     cursor:default;
   }
   #acg-menu button:hover {
@@ -350,12 +383,11 @@
   #acg-hint {
     position:absolute; left:50%; bottom:34px; transform:translateX(-50%);
     background:var(--menu-bg); color:var(--chrome-text);
-    border:1px solid var(--menu-border); border-radius:7px;
-    box-shadow:0 12px 28px var(--menu-shadow);
-    padding:8px 14px; font-size:12.5px; letter-spacing:0.01em;
+    border:1px solid var(--menu-border); border-radius:var(--chrome-panel-radius);
+    box-shadow:none;
+    padding:var(--chrome-inset) calc(var(--chrome-padding-x) + var(--chrome-padding-y));
+    font-size:calc(var(--chrome-font-size) + 1.5px); letter-spacing:0.01em;
     pointer-events:none; opacity:0; transition:opacity 220ms ease-in-out;
-    -webkit-backdrop-filter: blur(22px) saturate(180%);
-    backdrop-filter: blur(22px) saturate(180%);
     z-index:12;
   }
   #acg-hint.on { opacity:0.94; }
@@ -366,7 +398,7 @@
   }
   .acg-birthplace-marker-glyph {
     color:var(--chrome-text);
-    font:700 15px/16px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font:700 15px/16px var(--chrome-font-ui);
     text-shadow:0 0 2px var(--popup-bg), 0 0 5px var(--popup-bg);
     transform-origin:50% 60%;
     transition:transform 90ms ease, color 90ms ease;
@@ -385,7 +417,7 @@
     align-items:center;
     justify-content:center;
     text-align:center;
-    font-family:'Morinus', serif;
+    font-family:var(--chrome-font-symbols);
     font-style:normal;
     font-weight:400;
     line-height:1;
@@ -409,14 +441,14 @@
   .acg-reference-pole-sign {
     width:1.35em;
     height:1.35em;
-    font-family:'Morinus', serif;
+    font-family:var(--chrome-font-symbols);
     font-style:normal;
     font-weight:400;
   }
   .acg-reference-house-number {
     width:1.55em;
     height:1.25em;
-    font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family:var(--chrome-font-ui);
     font-weight:600;
   }
 </style>
@@ -435,9 +467,9 @@
   <button data-action="set_ascensional_event_place" data-context="ascensional_event_place">Set event place</button>
 </div>
 <div id="acg-hint"></div>
-<div id="legend">
-  <button id="legend-toggle" type="button" aria-expanded="true" aria-label="Collapse legend">
-    <span>Legend</span><span class="legend-state">-</span>
+<div id="legend" class="collapsed">
+  <button id="legend-toggle" type="button" aria-expanded="false" aria-label="Expand legend">
+    <span>Legend</span><span class="legend-state">+</span>
   </button>
   <div id="legend-body">
     <section>
@@ -454,6 +486,9 @@
       </div>
       <div class="kind-row" id="legend-local-space-row" style="display:none"><span class="ks"></span><span>Local Space — bearing from origin</span></div>
       <div class="kind-row" id="legend-paran-row" style="display:none"><span class="kp"></span><span>Paran — A × B co-angular</span></div>
+      <div class="kind-row" id="legend-local-space-opposition-row" style="display:none"><span class="kd"></span><span class="localized-kind-label"></span></div>
+      <div class="kind-row" id="legend-aspect-row" style="display:none"><span class="kd"></span><span class="localized-kind-label"></span></div>
+      <div class="kind-row" id="legend-zenith-row" style="display:none"><span class="glyph">·</span><span class="localized-kind-label"></span></div>
     </section>
   </div>
 </div>
@@ -479,7 +514,7 @@
 (function () {
   let DEV_SETTINGS = {};
   let ACTIVE_ASTROCART_STYLE = null;
-  const ASTROCART_STYLE_SCHEMA_VERSION = 8;
+  const ASTROCART_STYLE_SCHEMA_VERSION = 10;
   const ASTROCART_CHROME_CSS_FIELDS = Object.freeze({
     pageBg: '--page-bg',
     chromeBg: '--chrome-bg',
@@ -500,6 +535,28 @@
     menuShadow: '--menu-shadow',
     menuHoverBg: '--menu-hover-bg',
     menuHoverFg: '--menu-hover-fg',
+    fontUi: '--chrome-font-ui',
+    fontSymbols: '--chrome-font-symbols',
+  });
+  const ASTROCART_CHROME_NUMBER_CSS_FIELDS = Object.freeze({
+    controlSize: '--chrome-control-size',
+    panelRadius: '--chrome-panel-radius',
+    fontSize: '--chrome-font-size',
+    smallFontSize: '--chrome-small-font-size',
+    inset: '--chrome-inset',
+    gap: '--chrome-gap',
+    paddingX: '--chrome-padding-x',
+    paddingY: '--chrome-padding-y',
+  });
+  const ASTROCART_CHROME_NUMBER_BOUNDS = Object.freeze({
+    controlSize: Object.freeze([18, 56]),
+    panelRadius: Object.freeze([0, 24]),
+    fontSize: Object.freeze([7, 24]),
+    smallFontSize: Object.freeze([6, 20]),
+    inset: Object.freeze([0, 48]),
+    gap: Object.freeze([0, 24]),
+    paddingX: Object.freeze([0, 32]),
+    paddingY: Object.freeze([0, 24]),
   });
   const ASTROCART_RENDERER_STRING_FIELDS = Object.freeze([
     'casing', 'labelColor', 'labelHalo', 'paranColor', 'paranHalo',
@@ -508,7 +565,6 @@
     'minorPlaceLabelColor', 'minorPlaceLabelHalo', 'waterLabelColor', 'waterLabelHalo',
     'hospitalLabelColor', 'hospitalLabelHalo', 'hospitalFillColor', 'roadColor',
     'streetNameColor', 'streetNameHalo', 'buildingColor', 'buildingOutlineColor',
-    'terrainShadowColor', 'terrainHighlightColor',
     'parkColor', 'parkOutlineColor', 'residentialColor',
     'fallbackMcColor', 'fallbackIcColor', 'fallbackAscColor', 'fallbackDscColor',
     'fallbackUnknownColor', 'eclipseShadowColor', 'eclipseOutlineColor',
@@ -521,14 +577,19 @@
     'countryLabelSize', 'cityLabelSize', 'minorPlaceLabelSize',
     'waterLabelSize', 'casingWidth', 'casingOpacity', 'solidWidth', 'solidOpacity',
     'dashedWidth', 'dashedOpacity', 'dashedOn', 'dashedOff', 'paranWidth',
-    'paranOpacity', 'paranDashOn', 'paranDashOff', 'labelSize', 'labelSpacing',
+    'paranOpacity', 'paranDashOn', 'paranDashOff',
+    'localSpaceOppositionWidthScale', 'localSpaceOppositionOpacityScale',
+    'localSpaceOppositionDashOnScale', 'localSpaceOppositionDashOffScale',
+    'aspectLineWidthScale', 'aspectLineOpacityScale', 'aspectLineDashOn',
+    'aspectLineDashOff', 'zenithRadiusMin', 'zenithRadiusWidthScale',
+    'zenithStrokeWidthMin', 'transitLayerOpacity', 'progressionLayerOpacity',
+    'labelSize', 'labelSpacing',
     'labelHaloWidth', 'labelOpacity', 'domLabelOpacityScale',
     'paranLabelSize', 'paranLabelSpacing',
     'paranLabelHaloWidth', 'paranLabelOpacity',
     'localCountryBorderWidth', 'localCountryBorderOpacity',
     'localRegionBorderWidth', 'localRegionBorderOpacity',
     'buildingOpacityScale', 'residentialOpacityScale', 'parkFillOpacityScale',
-    'terrainExaggeration', 'hillshadeExaggeration',
     'parkOutlineOpacityScale', 'hospitalFillOpacityScale',
     'roadWidthScale', 'roadOpacityScale', 'roadBlur',
     'waterLineOpacity', 'waterLabelSpacing', 'waterLabelHaloWidth',
@@ -573,6 +634,19 @@
     paranOpacity: Object.freeze([0, 1]),
     paranDashOn: Object.freeze([0.25, 8]),
     paranDashOff: Object.freeze([0.25, 8]),
+    localSpaceOppositionWidthScale: Object.freeze([0.25, 3]),
+    localSpaceOppositionOpacityScale: Object.freeze([0, 1.5]),
+    localSpaceOppositionDashOnScale: Object.freeze([0.25, 3]),
+    localSpaceOppositionDashOffScale: Object.freeze([0.25, 3]),
+    aspectLineWidthScale: Object.freeze([0.25, 3]),
+    aspectLineOpacityScale: Object.freeze([0, 1.5]),
+    aspectLineDashOn: Object.freeze([0.25, 12]),
+    aspectLineDashOff: Object.freeze([0.25, 12]),
+    zenithRadiusMin: Object.freeze([0.5, 12]),
+    zenithRadiusWidthScale: Object.freeze([0.25, 6]),
+    zenithStrokeWidthMin: Object.freeze([0, 6]),
+    transitLayerOpacity: Object.freeze([0, 1]),
+    progressionLayerOpacity: Object.freeze([0, 1]),
     labelSize: Object.freeze([4.4, 22]),
     labelSpacing: Object.freeze([0, 16]),
     labelHaloWidth: Object.freeze([0.25, 8]),
@@ -587,8 +661,6 @@
     localRegionBorderWidth: Object.freeze([0.1, 3]),
     localRegionBorderOpacity: Object.freeze([0, 1]),
     buildingOpacityScale: Object.freeze([0, 2]),
-    terrainExaggeration: Object.freeze([0, 3]),
-    hillshadeExaggeration: Object.freeze([0, 1]),
     residentialOpacityScale: Object.freeze([0, 2]),
     parkFillOpacityScale: Object.freeze([0, 2]),
     parkOutlineOpacityScale: Object.freeze([0, 2]),
@@ -688,9 +760,18 @@
     if (!['dark', 'light'].includes(payload.mode)) return null;
     if (typeof payload.styleRevision !== 'string' || typeof payload.styleHash !== 'string') return null;
     const chrome = payload.chrome;
-    if (!hasExactFields(chrome, [...Object.keys(ASTROCART_CHROME_CSS_FIELDS), 'titlebarSafeTop'])) return null;
+    if (!hasExactFields(chrome, [
+      ...Object.keys(ASTROCART_CHROME_CSS_FIELDS),
+      ...Object.keys(ASTROCART_CHROME_NUMBER_CSS_FIELDS),
+      'titlebarSafeTop',
+    ])) return null;
     for (const key of Object.keys(ASTROCART_CHROME_CSS_FIELDS)) {
       if (typeof chrome[key] !== 'string') return null;
+    }
+    for (const key of Object.keys(ASTROCART_CHROME_NUMBER_CSS_FIELDS)) {
+      if (!Number.isFinite(chrome[key])) return null;
+      const bounds = ASTROCART_CHROME_NUMBER_BOUNDS[key];
+      if (!bounds || chrome[key] < bounds[0] || chrome[key] > bounds[1]) return null;
     }
     if (
       !Number.isFinite(chrome.titlebarSafeTop) ||
@@ -736,9 +817,8 @@
       });
     }
     const behaviorFields = [
-      'localSpaceAdditive', 'showEcliptic', 'showEquator',
-      'showAscCircle', 'showMcCircle', 'showHouseLines', 'showZodiacLines',
-      'terrainRelief',
+      'showEcliptic', 'showEquator', 'showAscCircle', 'showMcCircle',
+      'showHouseLines', 'showZodiacLines',
     ];
     if (!hasExactFields(payload.behavior, behaviorFields)) return null;
     if (behaviorFields.some((field) => typeof payload.behavior[field] !== 'boolean')) return null;
@@ -751,14 +831,12 @@
       renderer: Object.freeze(Object.assign({}, renderer)),
       points: Object.freeze(points),
       behavior: Object.freeze({
-        localSpaceAdditive: payload.behavior.localSpaceAdditive,
         showEcliptic: payload.behavior.showEcliptic,
         showEquator: payload.behavior.showEquator,
         showAscCircle: payload.behavior.showAscCircle,
         showMcCircle: payload.behavior.showMcCircle,
         showHouseLines: payload.behavior.showHouseLines,
         showZodiacLines: payload.behavior.showZodiacLines,
-        terrainRelief: payload.behavior.terrainRelief,
       }),
     });
   }
@@ -769,6 +847,11 @@
     for (const [field, cssVar] of Object.entries(ASTROCART_CHROME_CSS_FIELDS)) {
       document.documentElement.style.setProperty(cssVar, chrome[field]);
       document.body.style.setProperty(cssVar, chrome[field]);
+    }
+    for (const [field, cssVar] of Object.entries(ASTROCART_CHROME_NUMBER_CSS_FIELDS)) {
+      const value = `${chrome[field]}px`;
+      document.documentElement.style.setProperty(cssVar, value);
+      document.body.style.setProperty(cssVar, value);
     }
     applyPageBg(chrome.pageBg);
     applyTitlebarSafeTop(chrome.titlebarSafeTop);
@@ -818,6 +901,13 @@
   const ACG_PERF_MODE = ['1', 'true', 'on'].includes(
     (URL_THEME.get('perf') || '').trim().toLowerCase()
   );
+  // The interactive globe is fill-rate sensitive on Retina displays. Keep
+  // enough backing resolution for crisp line work while avoiding the 2x
+  // canvas cost; exact print capture owns its independent high-resolution map.
+  const LIVE_MAP_PIXEL_RATIO = Math.min(
+    1.25,
+    Math.max(1, Number(window.devicePixelRatio) || 1)
+  );
   const perfStartedAt = (window.performance && performance.now) ? performance.now() : Date.now();
   const perfState = {
     enabled: ACG_PERF_MODE,
@@ -836,6 +926,8 @@
     domLabelRebuilds: 0,
     domLabelSettleRebuilds: 0,
     domLabelSkippedWhileMoving: 0,
+    domLabelBurstSettles: 0,
+    placeLabelSkippedWhileMoving: 0,
     domLabelLastCount: 0,
     domLabelLastMs: 0,
     domLabelTotalMs: 0,
@@ -847,10 +939,15 @@
     placeLabelLastRenderMs: 0,
     placeLabelMaxRenderMs: 0,
     placeLabelSource: 'none',
+    runtimeSceneDeferredPushes: 0,
+    runtimeSceneCoherentFlushes: 0,
     polarOverlayPathCount: 0,
     polarOverlayDraws: 0,
     polarOverlayLastMs: 0,
     polarOverlayMaxMs: 0,
+    printCaptureCount: 0,
+    printCaptureLastMs: 0,
+    printCaptureLastBytes: 0,
   };
   let perfLastRenderAt = 0;
   document.body.classList.toggle('theme-light', !IS_DARK);
@@ -861,7 +958,22 @@
   // layers and no API key. We keep the source remote, but restyle it locally
   // so Morinus can control ocean/land/border/place-label colors directly.
   const BASE_VECTOR_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
-  const TERRAIN_DEM_URL = 'https://tiles.mapterhorn.com/tilejson.json';
+  const PRINT_BASEMAP_ATTRIBUTION =
+    'OpenFreeMap © OpenMapTiles · Data © OpenStreetMap contributors · https://www.openstreetmap.org/copyright';
+  const PRINT_LOCAL_ATTRIBUTION =
+    'OpenMapTiles · Data © OpenStreetMap contributors · https://www.openstreetmap.org/copyright';
+  const PRINT_ATLAS_OVERLAY_HALO = 'rgba(255,255,255,0.94)';
+  const PRINT_ATLAS_LABEL_COLOR = '#202327';
+  const PRINT_ATLAS_PAGE_TIMEOUT_MS = 10000;
+  const PRINT_ATLAS_PNG_DATA_URL_PREFIX = 'data:image/png;base64,';
+  const PRINT_ATLAS_MAX_PAGE_URL_CHARS = 32000000;
+  const PRINT_ATLAS_MAX_PAGE_BYTES = 24000000;
+  const PRINT_ATLAS_MAX_TOTAL_BYTES = 128000000;
+  const PRINT_ATLAS_LOGICAL_WIDTH = 1200;
+  const PRINT_ATLAS_LOGICAL_HEIGHT = 780;
+  const PRINT_ATLAS_DETAIL_ZOOM = 2.5;
+  const PRINT_ATLAS_DETAIL_COLUMNS = [-120, 0, 120];
+  const PRINT_ATLAS_DETAIL_ROWS = [79.171335, 40.979898, -40.979898, -79.171335];
   let BASE_VECTOR_STYLE = null;
   const HIDE_LAYER_IDS = new Set([
     'natural_earth',
@@ -1042,6 +1154,836 @@
       });
   }
 
+  function printCaptureAbortError() {
+    const error = new Error('print atlas capture aborted');
+    error.name = 'AbortError';
+    return error;
+  }
+
+  function throwIfPrintCaptureAborted(signal) {
+    if (signal && signal.aborted) throw printCaptureAbortError();
+  }
+
+  const atlasGrayscaleCache = new Map();
+  const atlasColorCanvas = document.createElement('canvas');
+  atlasColorCanvas.width = 1;
+  atlasColorCanvas.height = 1;
+  const atlasColorContext = atlasColorCanvas.getContext('2d', {
+    alpha: true,
+    willReadFrequently: true,
+  });
+
+  function grayscaleAtlasColor(value) {
+    if (typeof value !== 'string' || !value) return value;
+    const cacheKey = `${IS_DARK ? 'print-light' : 'desaturate'}:${value}`;
+    if (atlasGrayscaleCache.has(cacheKey)) {
+      return atlasGrayscaleCache.get(cacheKey);
+    }
+    if (
+      !atlasColorContext ||
+      !window.CSS ||
+      typeof CSS.supports !== 'function' ||
+      !CSS.supports('color', value)
+    ) {
+      atlasGrayscaleCache.set(cacheKey, value);
+      return value;
+    }
+    atlasColorContext.clearRect(0, 0, 1, 1);
+    atlasColorContext.fillStyle = value;
+    atlasColorContext.fillRect(0, 0, 1, 1);
+    const rgba = atlasColorContext.getImageData(0, 0, 1, 1).data;
+    const luminance = Math.round(
+      rgba[0] * 0.2126 +
+      rgba[1] * 0.7152 +
+      rgba[2] * 0.0722
+    );
+    const gray = IS_DARK
+      ? Math.round(246 - luminance * 0.72)
+      : luminance;
+    const converted = `rgba(${gray},${gray},${gray},${rgba[3] / 255})`;
+    atlasGrayscaleCache.set(cacheKey, converted);
+    return converted;
+  }
+
+  function grayscaleAtlasColorValue(value) {
+    if (Array.isArray(value)) {
+      return value.map((entry) => grayscaleAtlasColorValue(entry));
+    }
+    return grayscaleAtlasColor(value);
+  }
+
+  function grayscaleAtlasObjectColors(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+    const next = {};
+    for (const [key, entry] of Object.entries(value)) {
+      if (key.includes('color') || key.endsWith('-gradient')) {
+        next[key] = grayscaleAtlasColorValue(entry);
+      }
+      else if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+        next[key] = grayscaleAtlasObjectColors(entry);
+      } else {
+        next[key] = entry;
+      }
+    }
+    return next;
+  }
+
+  function isColoredAtlasOverlayLayer(layer) {
+    if (!layer) return false;
+    return [
+      ACG_SOURCE_ID,
+      ACG_LABEL_SOURCE_ID,
+      ECLIPSE_SOURCE_ID,
+      ASTERISM_SOURCE_ID,
+    ].includes(String(layer.source || ''));
+  }
+
+  function applyPrintAtlasOverlayContrast(style) {
+    const layerById = new Map(
+      (style.layers || []).map((layer) => [String(layer && layer.id || ''), layer]),
+    );
+    const casing = layerById.get('acg-casing');
+    if (casing && casing.paint) {
+      casing.paint['line-color'] = PRINT_ATLAS_OVERLAY_HALO;
+    }
+    const zeniths = layerById.get('acg-zeniths');
+    if (zeniths && zeniths.paint) {
+      zeniths.paint['circle-stroke-color'] = PRINT_ATLAS_OVERLAY_HALO;
+    }
+    const lineLabels = layerById.get('acg-labels');
+    if (lineLabels && lineLabels.paint) {
+      lineLabels.paint['text-color'] = PRINT_ATLAS_LABEL_COLOR;
+    }
+    for (const layer of style.layers || []) {
+      if (
+        !layer ||
+        !isColoredAtlasOverlayLayer(layer) ||
+        !layer.paint ||
+        !Object.prototype.hasOwnProperty.call(layer.paint, 'text-halo-color')
+      ) continue;
+      layer.paint['text-halo-color'] = PRINT_ATLAS_OVERLAY_HALO;
+    }
+  }
+
+  function printAtlasVisibilityState(selection) {
+    const state = JSON.parse(JSON.stringify(viewOptions));
+    const source = selection && typeof selection === 'object' ? selection : null;
+    if (!source) return state;
+    if (Object.prototype.hasOwnProperty.call(source, 'pointIds')) {
+      state.filters.points = normalizedVisibilitySelection(source.pointIds);
+    }
+    if (Object.prototype.hasOwnProperty.call(source, 'lineKinds')) {
+      const kinds = normalizedVisibilitySelection(source.lineKinds) || [];
+      state.filters.kinds = kinds;
+      state.parans = kinds.includes('paran');
+      state.aspects = kinds.includes('aspect');
+      state.localSpaceOppositions = kinds.includes('local_space_opposition');
+      state.zeniths = kinds.includes('zenith');
+    }
+    if (Object.prototype.hasOwnProperty.call(source, 'aspectIds')) {
+      state.filters.aspects = normalizedVisibilitySelection(source.aspectIds);
+    }
+    if (Object.prototype.hasOwnProperty.call(source, 'layerKinds')) {
+      const layers = normalizedVisibilitySelection(source.layerKinds) || [];
+      for (const role of ['natal', 'transit', 'progression']) {
+        state.layers[role] = layers.includes(role);
+      }
+    }
+    if (typeof source.includeZenith === 'boolean') {
+      state.zeniths = source.includeZenith;
+    }
+    return state;
+  }
+
+  function applyPrintAtlasVisibility(style, visibility) {
+    const layerById = new Map(
+      (style.layers || []).map((layer) => [String(layer && layer.id || ''), layer]),
+    );
+    for (const [id, filter] of [
+      ['acg-casing', acgCasingFilter(visibility)],
+      ['acg-lines-solid', acgSolidFilter(visibility)],
+      ['acg-lines-dashed', acgDashedFilter(visibility)],
+      ['acg-local-space-oppositions', acgLocalSpaceOppositionFilter(visibility)],
+      ['acg-aspects', acgAspectFilter(visibility)],
+      ['acg-parans', acgParanFilter(visibility)],
+      ['acg-zeniths', acgZenithFilter(visibility)],
+      ['acg-labels', acgLabelFilter(visibility)],
+      ['acg-zenith-labels', acgZenithFilter(visibility)],
+      ['acg-paran-labels', acgParanFilter(visibility)],
+    ]) {
+      const layer = layerById.get(id);
+      if (layer) layer.filter = filter;
+    }
+    for (const [id, visible] of [
+      ['acg-local-space-oppositions', visibility.localSpaceOppositions],
+      ['acg-aspects', visibility.aspects],
+      ['acg-parans', visibility.parans],
+      ['acg-paran-labels', visibility.parans && currentDevSettings().paranLabelsOn],
+      ['acg-zeniths', visibility.zeniths],
+      ['acg-zenith-labels', visibility.zeniths && currentDevSettings().labelsOn],
+      ['acg-labels', currentDevSettings().labelsOn],
+    ]) {
+      const layer = layerById.get(id);
+      if (!layer) continue;
+      layer.layout = Object.assign({}, layer.layout || {}, {
+        visibility: visible ? 'visible' : 'none',
+      });
+    }
+  }
+
+  function snapshotPrecisePrintGeojson(geojson) {
+    if (
+      !geojson ||
+      typeof geojson !== 'object' ||
+      geojson.type !== 'FeatureCollection' ||
+      !Array.isArray(geojson.features) ||
+      !geojson.meta ||
+      geojson.meta.precision !== 'precise'
+    ) {
+      throw new Error('print atlas requires precise GeoJSON');
+    }
+    let snapshot = null;
+    try {
+      snapshot = JSON.parse(JSON.stringify(geojson));
+    } catch (_) {
+      throw new Error('print atlas requires valid precise GeoJSON');
+    }
+    if (
+      !snapshot ||
+      snapshot.type !== 'FeatureCollection' ||
+      !Array.isArray(snapshot.features) ||
+      !snapshot.meta ||
+      snapshot.meta.precision !== 'precise'
+    ) {
+      throw new Error('print atlas requires valid precise GeoJSON');
+    }
+    return snapshot;
+  }
+
+  function activeStyleForPrintAtlas(selection, scene) {
+    if (!map || typeof map.getStyle !== 'function') {
+      throw new Error('active map style unavailable');
+    }
+    const style = JSON.parse(JSON.stringify(map.getStyle()));
+    if (!style || !Array.isArray(style.layers) || !style.sources) {
+      throw new Error('active map style unavailable');
+    }
+    if (style.sources[ACG_SOURCE_ID]) {
+      style.sources[ACG_SOURCE_ID].data = scene.mapData;
+    }
+    if (style.sources[ACG_LABEL_SOURCE_ID]) {
+      style.sources[ACG_LABEL_SOURCE_ID].data = scene.mapData;
+    }
+    if (style.sources[ASTERISM_SOURCE_ID]) {
+      style.sources[ASTERISM_SOURCE_ID].data = scene.mapAsterismData;
+    }
+    if (style.sources[ECLIPSE_SOURCE_ID]) {
+      style.sources[ECLIPSE_SOURCE_ID].data = scene.mapEclipseData;
+    }
+    for (const layer of style.layers) {
+      if (
+        !layer ||
+        (
+          isColoredAtlasOverlayLayer(layer) &&
+          !String(layer.id || '').startsWith('acg-reference-')
+        )
+      ) continue;
+      layer.paint = grayscaleAtlasObjectColors(layer.paint || {});
+      if (
+        Object.keys(layer.paint).some((key) => key.endsWith('-pattern'))
+      ) {
+        layer.layout = Object.assign({}, layer.layout || {}, {
+          visibility: 'none',
+        });
+        continue;
+      }
+      if (layer.type === 'symbol' && layer.layout && layer.layout['icon-image']) {
+        layer.paint['icon-opacity'] = 0;
+      }
+      if (layer.type === 'raster') {
+        layer.paint['raster-saturation'] = -1;
+      }
+    }
+    if (style.sky) style.sky = grayscaleAtlasObjectColors(style.sky);
+    if (style.light) style.light = grayscaleAtlasObjectColors(style.light);
+    if (style.fog) style.fog = grayscaleAtlasObjectColors(style.fog);
+    applyPrintAtlasOverlayContrast(style);
+    applyPrintAtlasVisibility(style, printAtlasVisibilityState(selection));
+    return style;
+  }
+
+  function encodePrintCanvas(canvasElement, signal) {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        if (signal) signal.removeEventListener('abort', onAbort);
+        callback(value);
+      };
+      const onAbort = () => finish(reject, printCaptureAbortError());
+      if (signal && signal.aborted) {
+        onAbort();
+        return;
+      }
+      if (signal) signal.addEventListener('abort', onAbort, { once: true });
+      canvasElement.toBlob((blob) => {
+        if (settled || (signal && signal.aborted)) return;
+        if (!blob) {
+          finish(reject, new Error('print map encoding failed'));
+          return;
+        }
+        const reader = new FileReader();
+        reader.onerror = () => finish(
+          reject,
+          new Error('print atlas encoding failed'),
+        );
+        reader.onload = () => finish(resolve, String(reader.result || ''));
+        reader.readAsDataURL(blob);
+      }, 'image/png');
+    });
+  }
+
+  function printAtlasDataUrlBytes(dataUrl) {
+    if (
+      typeof dataUrl !== 'string' ||
+      !dataUrl.startsWith(PRINT_ATLAS_PNG_DATA_URL_PREFIX) ||
+      dataUrl.length > PRINT_ATLAS_MAX_PAGE_URL_CHARS
+    ) {
+      throw new Error('print atlas page is outside the size limit');
+    }
+    const encodedLength = dataUrl.length - PRINT_ATLAS_PNG_DATA_URL_PREFIX.length;
+    const padding = dataUrl.endsWith('==') ? 2 : (dataUrl.endsWith('=') ? 1 : 0);
+    if (encodedLength < 4 || encodedLength % 4 !== 0) {
+      throw new Error('print atlas encoding failed');
+    }
+    const bytes = encodedLength / 4 * 3 - padding;
+    if (bytes < 1 || bytes > PRINT_ATLAS_MAX_PAGE_BYTES) {
+      throw new Error('print atlas page is outside the size limit');
+    }
+    return bytes;
+  }
+
+  function normalizedAtlasLongitude(longitude) {
+    const wrapped = ((Number(longitude) + 180) % 360 + 360) % 360 - 180;
+    return Math.abs(wrapped + 180) < 1e-9 ? -180 : wrapped;
+  }
+
+  function renderPrintAtlasPolarOverlay(printMap, visibility, scene) {
+    const overlayCanvas = document.createElement('canvas');
+    const tokens = Object.assign({}, currentThemeTokens(), {
+      casing: PRINT_ATLAS_OVERLAY_HALO,
+      labelColor: PRINT_ATLAS_LABEL_COLOR,
+      labelHalo: PRINT_ATLAS_OVERLAY_HALO,
+    });
+    return renderPolarOverlay(printMap, {
+      canvas: overlayCanvas,
+      visibility,
+      settings: currentDevSettings(),
+      tokens,
+      behavior: referenceBehavior(),
+      referenceColorTransform: grayscaleAtlasColor,
+      updateHitTargets: false,
+      paths: scene.polarPaths,
+      points: scene.polarPoints,
+      polygons: scene.polarPolygons,
+    });
+  }
+
+  function printAtlasProjectedPoint(printMap, coordinate) {
+    if (
+      !printMap ||
+      !Array.isArray(coordinate) ||
+      coordinate.length < 2 ||
+      !Number.isFinite(Number(coordinate[0])) ||
+      !Number.isFinite(Number(coordinate[1]))
+    ) return null;
+    const projection = printMap.getProjection && printMap.getProjection();
+    if (
+      projection &&
+      projection.type === 'globe' &&
+      !isPolarCoordinateVisible(coordinate, printMap.getCenter(), printMap)
+    ) return null;
+    try {
+      const point = printMap.project(coordinate);
+      const width = Number(printMap.transform && printMap.transform.width) || 0;
+      const height = Number(printMap.transform && printMap.transform.height) || 0;
+      if (
+        !point ||
+        !Number.isFinite(point.x) ||
+        !Number.isFinite(point.y) ||
+        point.x < 0 ||
+        point.y < 0 ||
+        (width && point.x > width) ||
+        (height && point.y > height)
+      ) return null;
+      return point;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function drawPrintAtlasReferenceLabels(context, printMap, scene) {
+    const behavior = referenceBehavior();
+    const settings = currentDevSettings();
+    for (const feature of scene.asterismData.features || []) {
+      const properties = feature && feature.properties || {};
+      const geometry = feature && feature.geometry || {};
+      const coordinate = geometry.coordinates;
+      const isEclipticSign =
+        properties.kind === 'REFERENCE_ZODIAC_SIGN' &&
+        !!behavior.showEcliptic;
+      const isPoleSign =
+        properties.kind === 'REFERENCE_ZODIAC_POLE_SIGN' &&
+        !!behavior.showZodiacLines;
+      const isHouseNumber =
+        properties.kind === 'REFERENCE_HOUSE_POLE_LABEL' &&
+        !!behavior.showHouseLines;
+      if (
+        geometry.type !== 'Point' ||
+        !(isEclipticSign || isPoleSign || isHouseNumber)
+      ) continue;
+      const point = printAtlasProjectedPoint(printMap, coordinate);
+      if (!point) continue;
+      let text = '';
+      let size = settings.referenceSignSize;
+      let opacity = settings.referenceSignOpacity;
+      let haloWidth = settings.referenceSignHaloWidth;
+      let color = settings.referenceZodiacGridColor;
+      let font = "'Morinus', serif";
+      if (isHouseNumber) {
+        text = String(properties.label || properties.house || '');
+        size = settings.referencePoleHouseSize;
+        opacity = settings.referencePoleLabelOpacity;
+        haloWidth = settings.referencePoleLabelHaloWidth;
+        color = houseReferenceColor(Number(properties.house), settings);
+        font = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+      } else {
+        const signStyle =
+          ACTIVE_ASTROCART_STYLE &&
+          ACTIVE_ASTROCART_STYLE.points &&
+          ACTIVE_ASTROCART_STYLE.points[`zodiac_sign_${properties.sign}`];
+        text = String(
+          signStyle && signStyle.glyphMorinus || properties.glyph || '',
+        );
+        if (isPoleSign) {
+          size = settings.referencePoleSignSize;
+          opacity = settings.referencePoleLabelOpacity;
+          haloWidth = settings.referencePoleLabelHaloWidth;
+        }
+        color = zodiacReferenceColor(Number(properties.sign), settings);
+      }
+      if (!text) continue;
+      context.save();
+      context.globalAlpha = Math.max(0, Math.min(1, Number(opacity) || 0));
+      context.font = `${isHouseNumber ? '600 ' : ''}${size}px ${font}`;
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.lineJoin = 'round';
+      context.strokeStyle = PRINT_ATLAS_OVERLAY_HALO;
+      context.lineWidth = Math.max(1, (Number(haloWidth) || 0) * 2);
+      context.strokeText(text, point.x, point.y);
+      context.fillStyle = grayscaleAtlasColor(color);
+      context.fillText(text, point.x, point.y);
+      context.restore();
+    }
+  }
+
+  function drawPrintAtlasBirthplaceMarker(context, printMap, scene) {
+    const coordinate = birthplaceCoordinates(scene.data);
+    const point = printAtlasProjectedPoint(printMap, coordinate);
+    if (!point) return;
+    context.save();
+    context.font =
+      "700 15px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.lineJoin = 'round';
+    context.strokeStyle = PRINT_ATLAS_OVERLAY_HALO;
+    context.lineWidth = 3;
+    context.strokeText('*', point.x, point.y);
+    context.fillStyle = PRINT_ATLAS_LABEL_COLOR;
+    context.fillText('*', point.x, point.y);
+    context.restore();
+  }
+
+  function renderPrintAtlasSupplementOverlay(printMap, visibility, scene) {
+    const projection = printMap.getProjection && printMap.getProjection();
+    let overlayCanvas = null;
+    if (projection && projection.type === 'globe') {
+      overlayCanvas = renderPrintAtlasPolarOverlay(
+        printMap,
+        visibility,
+        scene,
+      );
+    } else {
+      overlayCanvas = document.createElement('canvas');
+      if (!preparePolarOverlayCanvas(printMap, overlayCanvas)) return null;
+    }
+    const context = overlayCanvas && overlayCanvas.getContext('2d');
+    if (!context) return overlayCanvas;
+    drawPrintAtlasReferenceLabels(context, printMap, scene);
+    drawPrintAtlasBirthplaceMarker(context, printMap, scene);
+    return overlayCanvas;
+  }
+
+  function compositePrintAtlasCanvas(baseCanvas, overlayCanvas) {
+    if (!overlayCanvas) return baseCanvas;
+    const composite = document.createElement('canvas');
+    composite.width = baseCanvas.width;
+    composite.height = baseCanvas.height;
+    const context = composite.getContext('2d', { alpha: false });
+    if (!context) throw new Error('print atlas compositor unavailable');
+    context.drawImage(baseCanvas, 0, 0);
+    context.drawImage(
+      overlayCanvas,
+      0,
+      0,
+      baseCanvas.width,
+      baseCanvas.height,
+    );
+    return composite;
+  }
+
+  function printAtlasPageSpecs(pageFormat) {
+    const targetWidth = String(pageFormat || '').toUpperCase() === 'A3'
+      ? 4096
+      : 3508;
+    const targetHeight = Math.round(
+      targetWidth * PRINT_ATLAS_LOGICAL_HEIGHT / PRINT_ATLAS_LOGICAL_WIDTH,
+    );
+    const currentCenter = map.getCenter();
+    const currentProjection = map.getProjection();
+    const liveWidth = Math.max(
+      1,
+      Number(map.transform && map.transform.width) ||
+      Number(map.getCanvas() && map.getCanvas().clientWidth) ||
+      PRINT_ATLAS_LOGICAL_WIDTH,
+    );
+    const liveHeight = Math.max(
+      1,
+      Number(map.transform && map.transform.height) ||
+      Number(map.getCanvas() && map.getCanvas().clientHeight) ||
+      PRINT_ATLAS_LOGICAL_HEIGHT,
+    );
+    const overviewScale = Math.min(
+      PRINT_ATLAS_LOGICAL_WIDTH / liveWidth,
+      PRINT_ATLAS_LOGICAL_HEIGHT / liveHeight,
+    );
+    const pages = [{
+      role: 'overview',
+      projection: (
+        currentProjection && currentProjection.type
+      ) || selectedProjection || 'globe',
+      center: [
+        normalizedAtlasLongitude(currentCenter.lng),
+        Math.max(-90, Math.min(90, currentCenter.lat)),
+      ],
+      zoom: Math.max(
+        -2,
+        Math.min(
+          30,
+          map.getZoom() + Math.log2(Math.max(0.01, overviewScale)),
+        ),
+      ),
+      bearing: map.getBearing(),
+      pitch: map.getPitch(),
+      targetWidth,
+      targetHeight,
+      containsAstrology: true,
+    }];
+    PRINT_ATLAS_DETAIL_ROWS.forEach((latitude, rowIndex) => {
+      PRINT_ATLAS_DETAIL_COLUMNS.forEach((longitude, columnIndex) => {
+        const sheetId = `${String.fromCharCode(65 + columnIndex)}${rowIndex + 1}`;
+        pages.push({
+          role: 'detail',
+          sheetId,
+          title: '',
+          projection: 'mercator',
+          center: [longitude, latitude],
+          zoom: PRINT_ATLAS_DETAIL_ZOOM,
+          bearing: 0,
+          pitch: 0,
+          targetWidth,
+          targetHeight,
+          containsAstrology: true,
+          grid: {
+            column: columnIndex,
+            row: rowIndex,
+            columns: PRINT_ATLAS_DETAIL_COLUMNS.length,
+            rows: PRINT_ATLAS_DETAIL_ROWS.length,
+          },
+        });
+      });
+    });
+    return pages;
+  }
+
+  function atlasDistanceKm(a, b) {
+    const radians = Math.PI / 180;
+    const lat1 = Number(a.lat) * radians;
+    const lat2 = Number(b.lat) * radians;
+    const deltaLat = (Number(b.lat) - Number(a.lat)) * radians;
+    const deltaLon = (Number(b.lng) - Number(a.lng)) * radians;
+    const sinLat = Math.sin(deltaLat / 2);
+    const sinLon = Math.sin(deltaLon / 2);
+    const haversine = (
+      sinLat * sinLat +
+      Math.cos(lat1) * Math.cos(lat2) * sinLon * sinLon
+    );
+    return 6371.0088 * 2 * Math.atan2(
+      Math.sqrt(haversine),
+      Math.sqrt(Math.max(0, 1 - haversine)),
+    );
+  }
+
+  function printAtlasPageMetadata(printMap, page) {
+    const bounds = printMap.getBounds();
+    const centerY = PRINT_ATLAS_LOGICAL_HEIGHT / 2;
+    const scaleStart = printMap.unproject([
+      PRINT_ATLAS_LOGICAL_WIDTH * 0.4,
+      centerY,
+    ]);
+    const scaleEnd = printMap.unproject([
+      PRINT_ATLAS_LOGICAL_WIDTH * 0.6,
+      centerY,
+    ]);
+    return {
+      bounds: [
+        [normalizedAtlasLongitude(bounds.getWest()), bounds.getSouth()],
+        [normalizedAtlasLongitude(bounds.getEast()), bounds.getNorth()],
+      ],
+      scaleKm: atlasDistanceKm(scaleStart, scaleEnd),
+      neighbors: page.grid ? {
+        north: page.grid.row > 0
+          ? `${String.fromCharCode(65 + page.grid.column)}${page.grid.row}`
+          : null,
+        east: `${String.fromCharCode(
+          65 + (page.grid.column + 1) % page.grid.columns,
+        )}${page.grid.row + 1}`,
+        south: page.grid.row + 1 < page.grid.rows
+          ? `${String.fromCharCode(65 + page.grid.column)}${page.grid.row + 2}`
+          : null,
+        west: `${String.fromCharCode(
+          65 + (page.grid.column + page.grid.columns - 1) % page.grid.columns,
+        )}${page.grid.row + 1}`,
+      } : undefined,
+    };
+  }
+
+  function waitForPrintAtlasIdle(printMap, signal) {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let timeout = null;
+      const finish = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        if (timeout != null) window.clearTimeout(timeout);
+        if (signal) signal.removeEventListener('abort', onAbort);
+        printMap.off('idle', onIdle);
+        callback(value);
+      };
+      const onAbort = () => finish(reject, printCaptureAbortError());
+      const onIdle = () => finish(resolve);
+      if (signal && signal.aborted) {
+        onAbort();
+        return;
+      }
+      if (signal) signal.addEventListener('abort', onAbort, { once: true });
+      printMap.once('idle', onIdle);
+      timeout = window.setTimeout(
+        () => finish(reject, new Error('print atlas page timed out')),
+        PRINT_ATLAS_PAGE_TIMEOUT_MS,
+      );
+      printMap.triggerRepaint();
+    });
+  }
+
+  function waitForPrintAtlasLoad(printMap, signal) {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let timeout = null;
+      const finish = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        if (timeout != null) window.clearTimeout(timeout);
+        if (signal) signal.removeEventListener('abort', onAbort);
+        printMap.off('load', onLoad);
+        callback(value);
+      };
+      const onAbort = () => finish(reject, printCaptureAbortError());
+      const onLoad = () => finish(resolve);
+      if (signal && signal.aborted) {
+        onAbort();
+        return;
+      }
+      if (signal) signal.addEventListener('abort', onAbort, { once: true });
+      printMap.once('load', onLoad);
+      timeout = window.setTimeout(
+        () => finish(reject, new Error('print atlas style timed out')),
+        PRINT_ATLAS_PAGE_TIMEOUT_MS,
+      );
+    });
+  }
+
+  async function capturePrintAtlas(pageFormat, selection, geojson, signal) {
+    if (!window.maplibregl || !map || !mapReady) {
+      throw new Error('active map renderer unavailable');
+    }
+    throwIfPrintCaptureAborted(signal);
+    const preciseData = snapshotPrecisePrintGeojson(geojson);
+    if (ACTIVE_ASTROCART_STYLE) {
+      applyDisplayStyleToData(preciseData, ACTIVE_ASTROCART_STYLE);
+    }
+    const startedAt = performance.now();
+    const pageSpecs = printAtlasPageSpecs(pageFormat);
+    const printScene = buildRuntimeOverlayScene(
+      preciseData,
+      currentAsterismData,
+      currentEclipseData,
+      pageSpecs[0].projection,
+    );
+    const targetWidth = pageSpecs[0].targetWidth;
+    const targetHeight = pageSpecs[0].targetHeight;
+    const pixelRatio = targetWidth / PRINT_ATLAS_LOGICAL_WIDTH;
+    const printVisibility = printAtlasVisibilityState(selection);
+    const activeStyle = activeStyleForPrintAtlas(selection, printScene);
+    const host = document.createElement('div');
+    host.setAttribute('aria-hidden', 'true');
+    Object.assign(host.style, {
+      position: 'fixed',
+      left: '-10000px',
+      top: '0',
+      width: `${PRINT_ATLAS_LOGICAL_WIDTH}px`,
+      height: `${PRINT_ATLAS_LOGICAL_HEIGHT}px`,
+      pointerEvents: 'none',
+      zIndex: '-1',
+    });
+    document.body.appendChild(host);
+    let printMap = null;
+    try {
+      const firstPage = pageSpecs[0];
+      printMap = new maplibregl.Map({
+        container: host,
+        style: activeStyle,
+        center: firstPage.center,
+        zoom: firstPage.zoom,
+        bearing: firstPage.bearing,
+        pitch: firstPage.pitch,
+        minZoom: -2,
+        projection: { type: firstPage.projection },
+        interactive: false,
+        attributionControl: false,
+        renderWorldCopies: true,
+        fadeDuration: 0,
+        pixelRatio,
+        antialias: true,
+        preserveDrawingBuffer: true,
+        canvasContextAttributes: {
+          antialias: true,
+          preserveDrawingBuffer: true,
+        },
+      });
+      await waitForPrintAtlasLoad(printMap, signal);
+      if (document.fonts && document.fonts.ready) {
+        await document.fonts.ready;
+      }
+      const pages = [];
+      let atlasBytes = 0;
+      for (const page of pageSpecs) {
+        throwIfPrintCaptureAborted(signal);
+        printMap.setProjection({ type: page.projection });
+        printMap.jumpTo({
+          center: page.center,
+          zoom: page.zoom,
+          bearing: page.bearing,
+          pitch: page.pitch,
+        });
+        await waitForPrintAtlasIdle(printMap, signal);
+        await new Promise((resolve) => window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(resolve);
+        }));
+        const canvas = printMap.getCanvas();
+        if (!canvas.width || !canvas.height) {
+          throw new Error('print atlas canvas is empty');
+        }
+        throwIfPrintCaptureAborted(signal);
+        const renderedProjection = printMap.getProjection();
+        const polarOverlayCanvas = renderPrintAtlasSupplementOverlay(
+          printMap,
+          printVisibility,
+          printScene,
+        );
+        const captureCanvas = compositePrintAtlasCanvas(
+          canvas,
+          polarOverlayCanvas,
+        );
+        const captureWidth = captureCanvas.width;
+        const captureHeight = captureCanvas.height;
+        let dataUrl = '';
+        try {
+          dataUrl = await encodePrintCanvas(captureCanvas, signal);
+          atlasBytes += printAtlasDataUrlBytes(dataUrl);
+        } finally {
+          if (polarOverlayCanvas) {
+            polarOverlayCanvas.width = 1;
+            polarOverlayCanvas.height = 1;
+          }
+          if (captureCanvas !== canvas) {
+            captureCanvas.width = 1;
+            captureCanvas.height = 1;
+          }
+        }
+        if (atlasBytes > PRINT_ATLAS_MAX_TOTAL_BYTES) {
+          throw new Error('print atlas is outside the total size limit');
+        }
+        const metadata = printAtlasPageMetadata(printMap, page);
+        const renderedCenter = printMap.getCenter();
+        pages.push({
+          dataUrl,
+          width: captureWidth,
+          height: captureHeight,
+          role: page.role,
+          ...(page.sheetId ? { sheetId: page.sheetId } : {}),
+          ...(page.title ? { title: page.title } : {}),
+          projection: (
+            renderedProjection && renderedProjection.type
+          ) || page.projection,
+          center: [
+            normalizedAtlasLongitude(renderedCenter.lng),
+            Math.max(-90, Math.min(90, renderedCenter.lat)),
+          ],
+          zoom: printMap.getZoom(),
+          bearing: printMap.getBearing(),
+          pitch: printMap.getPitch(),
+          containsAstrology: true,
+          ...metadata,
+        });
+      }
+      const attribution = USE_LOCAL_BASEMAP
+        ? PRINT_LOCAL_ATTRIBUTION
+        : PRINT_BASEMAP_ATTRIBUTION;
+      const result = {
+        pages,
+        attribution,
+      };
+      perfState.printCaptureCount += 1;
+      perfState.printCaptureLastMs = performance.now() - startedAt;
+      perfState.printCaptureLastBytes = pages.reduce((total, page) => (
+        total + Math.floor(
+          (page.dataUrl.length - page.dataUrl.indexOf(',') - 1) * 0.75,
+        )
+      ), 0);
+      postPerfSnapshot('print-atlas');
+      return result;
+    } finally {
+      if (printMap) {
+        try { printMap.remove(); } catch (_) {}
+      }
+      host.remove();
+    }
+  }
+
   function themeTokens(isDark) {
     return {
       casing:     isDark ? 'rgba(10,12,16,0.85)' : 'rgba(255,255,255,0.85)',
@@ -1088,8 +2030,6 @@
       streetNameHalo: isDark ? 'rgba(10,12,16,0.22)' : 'rgba(255,255,255,0.26)',
       buildingColor: isDark ? 'rgba(10,12,16,0.44)' : 'rgba(116,124,134,0.16)',
       buildingOutlineColor: isDark ? 'rgba(126,134,144,0.14)' : 'rgba(92,100,110,0.12)',
-      terrainShadowColor: isDark ? '#111820' : '#74808b',
-      terrainHighlightColor: isDark ? '#697682' : '#ffffff',
       parkColor: isDark ? 'rgba(74,92,78,0.14)' : 'rgba(142,168,146,0.16)',
       parkOutlineColor: isDark ? 'rgba(118,142,122,0.16)' : 'rgba(122,150,126,0.18)',
       residentialColor: isDark ? 'rgba(70,76,84,0.08)' : 'rgba(174,182,190,0.08)',
@@ -1114,6 +2054,19 @@
       paranOpacity: isDark ? 0.7 : 0.55,
       paranDashOn: 1.0,
       paranDashOff: 2.0,
+      localSpaceOppositionWidthScale: 0.9,
+      localSpaceOppositionOpacityScale: 0.88,
+      localSpaceOppositionDashOnScale: 0.65,
+      localSpaceOppositionDashOffScale: 1.25,
+      aspectLineWidthScale: 0.82,
+      aspectLineOpacityScale: 0.78,
+      aspectLineDashOn: 0.45,
+      aspectLineDashOff: 1.55,
+      zenithRadiusMin: 3.0,
+      zenithRadiusWidthScale: 2.0,
+      zenithStrokeWidthMin: 1.0,
+      transitLayerOpacity: 0.82,
+      progressionLayerOpacity: 0.68,
       labelSize: 11.0,
       labelSpacing: 0.04,
       labelHaloWidth: 1.0,
@@ -1132,8 +2085,6 @@
       localRegionBorderWidth: 0.45,
       localRegionBorderOpacity: 0.28,
       buildingOpacityScale: 1.0,
-      terrainExaggeration: 1.0,
-      hillshadeExaggeration: 0.35,
       residentialOpacityScale: 1.0,
       parkFillOpacityScale: 1.0,
       parkOutlineOpacityScale: 1.0,
@@ -1327,8 +2278,12 @@
       'acg-casing',
       'acg-lines-solid',
       'acg-lines-dashed',
+      'acg-local-space-oppositions',
+      'acg-aspects',
       'acg-parans',
+      'acg-zeniths',
       'acg-labels',
+      'acg-zenith-labels',
       'acg-paran-labels',
     ]) {
       if (map.getLayer(id)) {
@@ -1628,8 +2583,6 @@
   const ECLIPSE_SOURCE_ID = 'eclipse-path';
   const ASTERISM_SOURCE_ID = 'asterisms';
   const NATAL_ASC_POINT_ID = 'natal_asc';
-  const TERRAIN_SOURCE_ID = 'aries-terrain';
-  const HILLSHADE_LAYER_ID = 'aries-hillshade';
   // MapLibre's GeoJSON pipeline still tiles through Web Mercator while the
   // globe is active, so lines and points stop at this latitude. A retained
   // canvas fills only that small missing cap through map.project(); the same
@@ -1642,17 +2595,22 @@
     ACG_LABEL_SOURCE_ID,
     ECLIPSE_SOURCE_ID,
     ASTERISM_SOURCE_ID,
-    TERRAIN_SOURCE_ID,
   ]);
   const ONLINE_BASEMAP_SOURCE_IDS = new Set(['openmaptiles', 'ne2_shaded']);
 
   let map = null;
   let mapReady = false;
+  let mapPresented = false;
+  const printAtlasCaptureControllers = new Map();
   let pendingOnlineBasemapStyle = null;
   let onlineBasemapAdopted = false;
   let onlineBasemapAdoptionScheduled = false;
   let runtimeOverlayReplayTimer = null;
   let mapHostActive = true;
+  let retainedDataDirty = false;
+  let retainedAsterismDirty = false;
+  let retainedEclipseDirty = false;
+  let retainedEclipseFitPending = false;
   let currentData = { type: 'FeatureCollection', features: [] };
   let currentMapData = currentData;
   let pendingData = null;
@@ -1668,6 +2626,8 @@
   let polarAsterismStarHitTargets = [];
   let asterismStarPopup = null;
   let asterismStarPopupMode = '';
+  let asterismHoverEnabled = false;
+  const activeMapMotionPhases = new Set();
   let referenceSignMarkers = [];
   let referenceSignFontReady = !(document.fonts && document.fonts.load);
   let referenceSignFontPromise = null;
@@ -1685,28 +2645,49 @@
   let cityLabelsController = null;
   let cityLabelsTimer = null;
   let cityLabelsRequestKey = '';
-  let placeLabelRenderRaf = 0;
   const placeLabelElements = new Map();
   const acgLabelElements = new Map();
   const acgLabelAnchorChoices = new Map();
   let acgLabelCollisionBoxes = [];
   let pendingViewState = null;
   let pendingCenter = null;
-  let viewOptions = { parans: false, asterisms: false };
+  let viewOptions = {
+    parans: false,
+    asterisms: false,
+    aspects: true,
+    zeniths: true,
+    localSpaceOppositions: false,
+    layers: { natal: true, transit: true, progression: true },
+    filters: { points: null, kinds: null, aspects: null, techniques: null },
+  };
   let viewOptionsInitialized = false;
   let selectedProjection = 'globe';
-  let legendCollapsed = false;
+  let legendCollapsed = true;
+  let legendUserSet = false;
   let hintHideTimer = null;
   let viewStatePostTimer = null;
   let viewStatePersistenceEnabled = false;
-  let domAcgLabelsMoving = false;
   let domAcgLabelsDirty = false;
-  let domAcgLabelRaf = 0;
+  let placeLabelsDirty = false;
+  let domLabelLayoutRaf = 0;
+  let domLabelLayoutReason = '';
   let domLabelRendererMode = '';
   let birthplaceMarker = null;
   let birthplaceMarkerElement = null;
   let birthplaceDrag = null;
-  let uiLabels = { birthplaceMarker: '', asterisms: '' };
+  let uiLabels = {
+    birthplaceMarker: '',
+    asterisms: '',
+    aspect: '',
+    zenith: '',
+    localSpaceOpposition: '',
+    natalLayer: '',
+    transitLayer: '',
+    progressionLayer: '',
+    aspectLabels: {},
+    techniqueLabels: {},
+    pointLabels: {},
+  };
   const BIRTHPLACE_LONG_PRESS_MS = 420;
   const BIRTHPLACE_PRESS_MOVE_TOLERANCE_PX = 6;
 
@@ -1728,6 +2709,14 @@
   function recordRenderFrame() {
     if (!ACG_PERF_MODE) return;
     const now = perfNow();
+    // MapLibre renders on demand. An interval between two otherwise idle
+    // render callbacks is not a dropped frame, so only sample cadence while a
+    // continuous move/zoom burst is active.
+    if (activeMapMotionPhases.size === 0) {
+      perfLastRenderAt = 0;
+      perfState.renderFrames += 1;
+      return;
+    }
     if (perfLastRenderAt > 0) {
       const delta = now - perfLastRenderAt;
       perfState.lastFrameMs = delta;
@@ -1774,6 +2763,8 @@
       domLabelRebuilds: perfState.domLabelRebuilds,
       domLabelSettleRebuilds: perfState.domLabelSettleRebuilds,
       domLabelSkippedWhileMoving: perfState.domLabelSkippedWhileMoving,
+      domLabelBurstSettles: perfState.domLabelBurstSettles,
+      placeLabelSkippedWhileMoving: perfState.placeLabelSkippedWhileMoving,
       domLabelLastCount: perfState.domLabelLastCount,
       domLabelLastMs: perfState.domLabelLastMs,
       domLabelAvgMs: perfState.domLabelRebuilds ? perfState.domLabelTotalMs / perfState.domLabelRebuilds : 0,
@@ -1785,6 +2776,8 @@
       placeLabelLastRenderMs: perfState.placeLabelLastRenderMs,
       placeLabelMaxRenderMs: perfState.placeLabelMaxRenderMs,
       placeLabelSource: perfState.placeLabelSource,
+      runtimeSceneDeferredPushes: perfState.runtimeSceneDeferredPushes,
+      runtimeSceneCoherentFlushes: perfState.runtimeSceneCoherentFlushes,
       polarOverlayPathCount: perfState.polarOverlayPathCount,
       polarOverlayDraws: perfState.polarOverlayDraws,
       polarOverlayLastMs: perfState.polarOverlayLastMs,
@@ -1838,22 +2831,18 @@
       ensureEclipseLayers();
       ensureAsterismLayer();
       ensureAcgLayers();
-      const acgSource = map.getSource(ACG_SOURCE_ID);
-      const acgLabelSource = map.getSource(ACG_LABEL_SOURCE_ID);
-      const asterismSource = map.getSource(ASTERISM_SOURCE_ID);
-      const eclipseSource = map.getSource(ECLIPSE_SOURCE_ID);
-      if (acgSource) acgSource.setData(currentMapData);
-      if (acgLabelSource) acgLabelSource.setData(currentMapData);
-      if (asterismSource) asterismSource.setData(currentMapAsterismData);
-      if (eclipseSource) eclipseSource.setData(currentMapEclipseData);
-      syncBirthplaceMarker();
+      const allSceneParts = { data: true, asterism: true, eclipse: true };
+      if (runtimeOverlaySceneDeferred()) {
+        deferRuntimeOverlayScene(allSceneParts, { fit: false });
+        return true;
+      }
+      applyRuntimeOverlayScene(allSceneParts, {
+        fit: false,
+        reason: 'style-replay',
+      });
       syncParanVisibility();
       syncAsterismVisibility();
-      syncReferenceVisibility();
-      syncTerrainRelief();
       raiseAcgLayers();
-      renderDomAcgLabels('style-replay');
-      updateLegend();
       return !!(
         map.getLayer('acg-lines-solid') &&
         map.getLayer('acg-reference-asc') &&
@@ -1936,6 +2925,11 @@
       maxPitch: 85,
       projection: { type: selectedProjection },
       attributionControl: { compact: true },
+      pixelRatio: LIVE_MAP_PIXEL_RATIO,
+      // Symbol collision fades keep MapLibre rendering after the useful
+      // camera paint. Astrocartography labels should settle immediately so a
+      // completed gesture has no animation tail competing with the next one.
+      fadeDuration: 0,
     });
     ensurePolarOverlayCanvas();
     let fallbackStylePending = false;
@@ -2000,8 +2994,9 @@
     // has set a viewport we must not clobber it. Use window.ACG.fitGlobe()
     // explicitly if you want to re-centre the sphere in the current viewport.
     map.addControl(new maplibregl.NavigationControl({
-      showCompass: true,
-      visualizePitch: true,
+      // The compass is intentionally hidden in the product CSS. Do not mount
+      // its camera listeners and per-frame DOM transform work.
+      showCompass: false,
     }), 'top-left');
     map.on('style.load', () => {
       const firstStyleLoad = !mapReady;
@@ -2045,7 +3040,6 @@
       pushData();
       pushAsterismData();
       pushEclipseData({ fit: fitPendingEclipse });
-      syncTerrainRelief();
       mapReady = true;
       postToParent({ type: 'ready' });
       if (firstStyleLoad) {
@@ -2056,7 +3050,13 @@
       setStatus(`${(currentData.features || []).length} lines loaded`);
       if (firstStyleLoad) scheduleOnlineBasemapAdoption();
     });
-    for (const layer of ['acg-lines-solid', 'acg-lines-dashed']) {
+    for (const layer of [
+      'acg-lines-solid',
+      'acg-lines-dashed',
+      'acg-local-space-oppositions',
+      'acg-aspects',
+      'acg-zeniths',
+    ]) {
       map.on('click', layer, onLineClick);
       map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
@@ -2066,10 +3066,7 @@
       map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
     }
-    map.on('mousemove', 'acg-asterism-star-hit', onAsterismStarMove);
-    map.on('mouseenter', 'acg-asterism-star-hit', () => { map.getCanvas().style.cursor = 'pointer'; });
-    map.on('mouseleave', 'acg-asterism-star-hit', () => hideAsterismStarPopup('native'));
-    map.on('mousemove', onPolarAsterismStarMove);
+    setAsterismHoverEnabled(true);
     map.on('mouseleave', () => hideAsterismStarPopup());
     map.on('error', (event) => {
       if (fallbackStylePending) {
@@ -2109,8 +3106,12 @@
       if (ACG_PERF_MODE) recordRenderFrame();
       renderPolarOverlay();
     });
-    map.on('movestart', () => beginDomAcgMovement('move'));
-    map.on('zoomstart', () => beginDomAcgMovement('zoom'));
+    map.on('movestart', () => {
+      beginDomAcgMovement(beginMapMotion('move'));
+    });
+    map.on('zoomstart', () => {
+      beginDomAcgMovement(beginMapMotion('zoom'));
+    });
     map.on('move', () => {
       if (ACG_PERF_MODE) perfState.moveEvents += 1;
       scheduleDomAcgLabels('move');
@@ -2125,13 +3126,17 @@
       scheduleDomAcgLabels('resize');
     });
     map.on('moveend', () => {
-      endDomAcgMovement('moveend');
-      scheduleCityLabelsRefresh('moveend');
+      const motionSettled = endMapMotion('move');
+      if (motionSettled) flushRetainedRuntimeOverlayScene('moveend');
+      endDomAcgMovement('moveend', motionSettled);
+      if (motionSettled) scheduleCityLabelsRefresh('moveend');
       scheduleViewStatePost('moveend');
     });
     map.on('zoomend', () => {
-      endDomAcgMovement('zoomend');
-      scheduleCityLabelsRefresh('zoomend');
+      const motionSettled = endMapMotion('zoom');
+      if (motionSettled) flushRetainedRuntimeOverlayScene('zoomend');
+      endDomAcgMovement('zoomend', motionSettled);
+      if (motionSettled) scheduleCityLabelsRefresh('zoomend');
     });
     wireControlsOnce();
     setStatus('map ready');
@@ -2140,7 +3145,11 @@
   function revealMapAfterStyledPaint() {
     const mapEl = document.getElementById('map');
     if (!mapEl || !mapEl.classList.contains('map-booting')) return;
-    const reveal = () => mapEl.classList.remove('map-booting');
+    const reveal = () => {
+      mapEl.classList.remove('map-booting');
+      mapPresented = true;
+      postToParent({ type: 'presented' });
+    };
     if (map && typeof map.once === 'function') {
       let rendered = 0;
       const afterRender = () => {
@@ -2172,6 +3181,8 @@
       container.classList.remove('map-booting');
       container.innerHTML = `<div style="padding:14px;color:var(--chrome-dim);font-size:12px">${message}</div>`;
     }
+    mapPresented = true;
+    postToParent({ type: 'presented' });
     setStatus(message);
   }
 
@@ -2192,22 +3203,25 @@
       initMap();
       return;
     }
-    // Paint from local resources immediately. The online Liberty style is a
-    // progressive enhancement, never a gate for ACG/eclipses/asterisms. When
-    // it arrives, transformStyle retains the live overlay sources and layers
-    // while MapLibre swaps only the basemap beneath them.
-    USE_LOCAL_BASEMAP = !!LOCAL_VECTOR_TILE_URL;
-    USE_MINIMAL_BASEMAP = !USE_LOCAL_BASEMAP;
-    setPerfTileSource(USE_LOCAL_BASEMAP ? 'local' : 'minimal');
-    setStatus(USE_LOCAL_BASEMAP ? 'loading map…' : 'map ready');
-    initMap();
-    loadBaseVectorStyle(8000).then(
-      (style) => {
-        pendingOnlineBasemapStyle = style;
-        scheduleOnlineBasemapAdoption();
-      },
-      () => {},
-    );
+    // Fetch the provider style ourselves so its light default background never
+    // reaches MapLibre. buildStyle() themes this cached object before the WebGL
+    // map exists, keeping the first globe frame native to the active theme.
+    USE_LOCAL_BASEMAP = false;
+    USE_MINIMAL_BASEMAP = false;
+    onlineBasemapAdopted = true;
+    pendingOnlineBasemapStyle = null;
+    setPerfTileSource('online');
+    setStatus('loading map…');
+    loadBaseVectorStyle(8000)
+      .then(() => initMap())
+      .catch(() => {
+        USE_LOCAL_BASEMAP = !!LOCAL_VECTOR_TILE_URL;
+        USE_MINIMAL_BASEMAP = !USE_LOCAL_BASEMAP;
+        onlineBasemapAdopted = false;
+        setPerfTileSource(USE_LOCAL_BASEMAP ? 'local' : 'minimal');
+        setStatus(USE_LOCAL_BASEMAP ? 'loading offline map…' : 'map ready');
+        initMap();
+      });
   }
 
   function ensureEclipseLayers() {
@@ -2350,6 +3364,190 @@
     return ['*', baseValue, ['number', ['get', property], 1]];
   }
 
+  function acgLayerOpacityScaleExpression(settings = currentDevSettings()) {
+    return [
+      'match',
+      ['coalesce', ['get', 'astrocart_layer'], 'natal'],
+      'transit', settings.transitLayerOpacity,
+      'progression', settings.progressionLayerOpacity,
+      1,
+    ];
+  }
+
+  function acgLayerOpacityScale(properties) {
+    const settings = currentDevSettings();
+    const role = normalizedAcgLayerRole(properties);
+    if (role === 'transit') return settings.transitLayerOpacity;
+    if (role === 'progression') return settings.progressionLayerOpacity;
+    return 1;
+  }
+
+  function scaledPointLayerOpacity(baseValue, property) {
+    return [
+      '*',
+      baseValue,
+      ['number', ['get', property], 1],
+      acgLayerOpacityScaleExpression(),
+    ];
+  }
+
+  function localizedTechniqueLabelExpression() {
+    const labels = uiLabels.techniqueLabels && typeof uiLabels.techniqueLabels === 'object'
+      ? uiLabels.techniqueLabels
+      : {};
+    const fallback = [
+      'case',
+      ['==', ['get', 'astrocart_layer'], 'transit'],
+      String(uiLabels.transitLayer || ''),
+      ['==', ['get', 'astrocart_layer'], 'progression'],
+      String(uiLabels.progressionLayer || ''),
+      '',
+    ];
+    const expression = ['match', ['coalesce', ['get', 'astrocart_technique'], '']];
+    for (const [key, label] of Object.entries(labels)) {
+      if (!key || !label) continue;
+      expression.push(String(key), String(label));
+    }
+    expression.push(fallback);
+    return expression.length > 3 ? expression : fallback;
+  }
+
+  function acgLayerPrefixExpression() {
+    const techniqueLabel = localizedTechniqueLabelExpression();
+    return [
+      'case',
+      ['!=', techniqueLabel, ''],
+      ['concat', '[', techniqueLabel, '] '],
+      [
+        'all',
+        ['has', 'layer_label'],
+        ['!=', ['get', 'layer_label'], ''],
+      ],
+      ['concat', '[', ['get', 'layer_label'], '] '],
+      '',
+    ];
+  }
+
+  function localizedPointLabelExpression(pointProperty, labelProperty) {
+    const labels = uiLabels.pointLabels && typeof uiLabels.pointLabels === 'object'
+      ? uiLabels.pointLabels
+      : {};
+    const fallback = [
+      'coalesce',
+      ['get', labelProperty || 'label'],
+      ['get', pointProperty || 'point'],
+      '',
+    ];
+    const expression = ['match', ['coalesce', ['get', pointProperty || 'point'], '']];
+    for (const [key, label] of Object.entries(labels)) {
+      if (!key || !label) continue;
+      expression.push(String(key), String(label));
+    }
+    expression.push(fallback);
+    return expression.length > 3 ? expression : fallback;
+  }
+
+  function localizedPointLabel(properties, pointProperty = 'point', labelProperty = 'label') {
+    const p = properties || {};
+    const labels = uiLabels.pointLabels && typeof uiLabels.pointLabels === 'object'
+      ? uiLabels.pointLabels
+      : {};
+    const pointId = String(p[pointProperty] || '');
+    return String(labels[pointId] || p[labelProperty] || pointId || '').trim();
+  }
+
+  function localizedAspectLabelExpression() {
+    const labels = uiLabels.aspectLabels && typeof uiLabels.aspectLabels === 'object'
+      ? uiLabels.aspectLabels
+      : {};
+    const expression = [
+      'match',
+      ['coalesce', ['get', 'aspect_key'], ['get', 'aspect_id'], ''],
+    ];
+    for (const [key, label] of Object.entries(labels)) {
+      if (!key || !label) continue;
+      expression.push(String(key), String(label));
+    }
+    expression.push(['coalesce', ['get', 'aspect_name'], String(uiLabels.aspect || ''), '']);
+    return expression.length > 3
+      ? expression
+      : ['coalesce', ['get', 'aspect_name'], String(uiLabels.aspect || ''), ''];
+  }
+
+  function localizedAspectLabel(properties) {
+    const p = properties || {};
+    const labels = uiLabels.aspectLabels && typeof uiLabels.aspectLabels === 'object'
+      ? uiLabels.aspectLabels
+      : {};
+    const key = String(p.aspect_key || p.aspect_id || '');
+    return String(labels[key] || labels[String(p.aspect_id || '')] || uiLabels.aspect || '');
+  }
+
+  function acgLineLabelExpression() {
+    const baseLabel = localizedPointLabelExpression('point', 'label');
+    const localSpaceLabel = [
+      'concat',
+      baseLabel,
+      ' ',
+      [
+        'coalesce',
+        ['get', 'bearing_label'],
+        ['to-string', ['get', 'source_bearing']],
+        '',
+      ],
+    ];
+    const localSpaceOppositionLabel = [
+      'concat',
+      localSpaceLabel,
+      uiLabels.localSpaceOpposition ? ` ${uiLabels.localSpaceOpposition}` : '',
+    ];
+    const aspectLabel = [
+      'concat',
+      baseLabel,
+      ' ',
+      localizedAspectLabelExpression(),
+      ' ',
+      ['coalesce', ['get', 'target_angle'], ''],
+    ];
+    return [
+      'concat',
+      acgLayerPrefixExpression(),
+      [
+        'case',
+        ['==', ['get', 'kind'], 'LOCAL_SPACE'],
+        localSpaceLabel,
+        ['==', ['get', 'kind'], 'LOCAL_SPACE_OPPOSITION'],
+        localSpaceOppositionLabel,
+        ['==', ['get', 'kind'], 'ASPECT'],
+        aspectLabel,
+        ['concat', baseLabel, ' ', ['get', 'kind']],
+      ],
+    ];
+  }
+
+  function acgZenithLabelExpression() {
+    return [
+      'concat',
+      acgLayerPrefixExpression(),
+      localizedPointLabelExpression('point', 'label'),
+      uiLabels.zenith ? ` ${uiLabels.zenith}` : '',
+    ];
+  }
+
+  function acgParanLabelExpression() {
+    return [
+      'concat',
+      acgLayerPrefixExpression(),
+      localizedPointLabelExpression('a_point', 'a_label'),
+      ' ',
+      ['coalesce', ['get', 'a_angle'], ''],
+      ' × ',
+      localizedPointLabelExpression('b_point', 'b_label'),
+      ' ',
+      ['coalesce', ['get', 'b_angle'], ''],
+    ];
+  }
+
   function asterismStarRadiusExpression(settings) {
     return [
       'interpolate', ['exponential', 1.35],
@@ -2398,6 +3596,48 @@
     map.getCanvas().style.cursor = 'pointer';
   }
 
+  function onAsterismStarEnter() {
+    if (map) map.getCanvas().style.cursor = 'pointer';
+  }
+
+  function onAsterismStarLeave() {
+    hideAsterismStarPopup('native');
+  }
+
+  function setAsterismHoverEnabled(enabled) {
+    if (!map || asterismHoverEnabled === enabled) return;
+    const action = enabled ? 'on' : 'off';
+    map[action]('mousemove', 'acg-asterism-star-hit', onAsterismStarMove);
+    map[action]('mouseenter', 'acg-asterism-star-hit', onAsterismStarEnter);
+    map[action]('mouseleave', 'acg-asterism-star-hit', onAsterismStarLeave);
+    map[action]('mousemove', onPolarAsterismStarMove);
+    asterismHoverEnabled = enabled;
+    if (!enabled) {
+      hideAsterismStarPopup();
+      map.getCanvas().style.cursor = '';
+    }
+  }
+
+  function beginMapMotion(phase) {
+    const burstStarted = activeMapMotionPhases.size === 0;
+    activeMapMotionPhases.add(phase);
+    if (burstStarted) {
+      if (ACG_PERF_MODE) perfLastRenderAt = perfNow();
+      setAsterismHoverEnabled(false);
+    }
+    return burstStarted;
+  }
+
+  function endMapMotion(phase) {
+    const phaseEnded = activeMapMotionPhases.delete(phase);
+    const burstSettled = phaseEnded && activeMapMotionPhases.size === 0;
+    if (burstSettled) {
+      if (ACG_PERF_MODE) perfLastRenderAt = 0;
+      setAsterismHoverEnabled(true);
+    }
+    return burstSettled;
+  }
+
   function onAsterismStarMove(event) {
     const feature = event.features && event.features[0];
     const name = String(feature && feature.properties && feature.properties.name || '').trim();
@@ -2407,6 +3647,7 @@
   function onPolarAsterismStarMove(event) {
     if (
       !map || !mapHostActive || selectedProjection !== 'globe' ||
+      activeMapMotionPhases.size > 0 ||
       !viewOptions.asterisms || !event || !event.point
     ) {
       hideAsterismStarPopup('polar');
@@ -2439,6 +3680,120 @@
     return ACTIVE_ASTROCART_STYLE && ACTIVE_ASTROCART_STYLE.behavior || {};
   }
 
+  function normalizedAcgLayerRole(properties) {
+    const role = String(properties && properties.astrocart_layer || '').trim().toLowerCase();
+    return role || 'natal';
+  }
+
+  function normalizedAcgTechnique(properties) {
+    const technique = String(properties && properties.astrocart_technique || '').trim().toLowerCase();
+    return technique || 'natal';
+  }
+
+  function normalizedVisibilitySelection(value) {
+    if (value == null) return null;
+    const raw = Array.isArray(value)
+      ? value
+      : (typeof value === 'object'
+        ? Object.entries(value).filter((entry) => !!entry[1]).map((entry) => entry[0])
+        : [value]);
+    return [...new Set(raw.map((item) => String(item).trim().toLowerCase()).filter(Boolean))];
+  }
+
+  function visibilitySelectionMatches(selection, values) {
+    if (selection == null) return true;
+    const normalized = values
+      .map((value) => String(value == null ? '' : value).trim().toLowerCase())
+      .filter(Boolean);
+    return normalized.some((value) => selection.includes(value));
+  }
+
+  function isAcgLayerRoleVisible(properties, options = viewOptions) {
+    const role = normalizedAcgLayerRole(properties);
+    if (role === 'transit') return !!options.layers.transit;
+    if (role === 'progression') return !!options.layers.progression;
+    if (role === 'natal' || role === 'current') return !!options.layers.natal;
+    return false;
+  }
+
+  function acgSelectionFilter(propertyNames, selection, fallback = '') {
+    if (selection == null) return null;
+    if (!selection.length) return ['==', ['get', propertyNames[0]], '__aries_hidden_selection__'];
+    const candidates = propertyNames.map((propertyName) => [
+      'match',
+      ['downcase', ['to-string', ['coalesce', ['get', propertyName], fallback]]],
+      selection,
+      true,
+      false,
+    ]);
+    return candidates.length === 1 ? candidates[0] : ['any', ...candidates];
+  }
+
+  function acgAttributeVisibilityFilter(options = viewOptions) {
+    const filters = [];
+    for (const filter of [
+      acgSelectionFilter(['point', 'a_point', 'b_point'], options.filters.points),
+      acgSelectionFilter(['kind'], options.filters.kinds),
+      acgSelectionFilter(
+        ['astrocart_technique'],
+        options.filters.techniques,
+        'natal',
+      ),
+    ]) {
+      if (filter) filters.push(filter);
+    }
+    const aspectFilter = acgSelectionFilter(
+      ['aspect_id', 'aspect_key', 'aspect_name', 'aspect_angle'],
+      options.filters.aspects,
+    );
+    if (aspectFilter) {
+      filters.push([
+        'any',
+        ['!=', ['get', 'kind'], 'ASPECT'],
+        aspectFilter,
+      ]);
+    }
+    if (!filters.length) return null;
+    return ['all', ...filters];
+  }
+
+  function acgLayerRoleFilter(options = viewOptions) {
+    const filters = [];
+    if (options.layers.natal) {
+      filters.push([
+        'any',
+        ['!', ['has', 'astrocart_layer']],
+        ['==', ['get', 'astrocart_layer'], ''],
+        ['==', ['get', 'astrocart_layer'], 'natal'],
+        ['==', ['get', 'astrocart_layer'], 'current'],
+      ]);
+    }
+    if (options.layers.transit) {
+      filters.push(['==', ['get', 'astrocart_layer'], 'transit']);
+    }
+    if (options.layers.progression) {
+      filters.push(['==', ['get', 'astrocart_layer'], 'progression']);
+    }
+    if (!filters.length) return ['==', ['get', 'astrocart_layer'], '__aries_hidden_layer__'];
+    if (filters.length === 1) return filters[0];
+    return ['any', ...filters];
+  }
+
+  function acgKindFilter(geometryType, kinds, options = viewOptions) {
+    const kindFilter = kinds.length
+      ? ['match', ['get', 'kind'], kinds, true, false]
+      : ['==', ['get', 'kind'], '__aries_hidden_kind__'];
+    const filters = [
+      'all',
+      ['==', ['geometry-type'], geometryType],
+      kindFilter,
+      acgLayerRoleFilter(options),
+    ];
+    const attributeFilter = acgAttributeVisibilityFilter(options);
+    if (attributeFilter) filters.push(attributeFilter);
+    return filters;
+  }
+
   function ascendantOverlayFilter(baseFilter) {
     if (referenceBehavior().showAscCircle) return baseFilter;
     return [
@@ -2448,29 +3803,79 @@
     ];
   }
 
-  function acgCasingFilter() {
-    return ascendantOverlayFilter(['!=', ['get', 'kind'], 'PARAN']);
+  function acgCasingFilter(options = viewOptions) {
+    const kinds = ['MC', 'IC', 'ASC', 'DSC', 'LOCAL_SPACE'];
+    if (options.localSpaceOppositions) kinds.push('LOCAL_SPACE_OPPOSITION');
+    if (options.aspects) kinds.push('ASPECT');
+    return ascendantOverlayFilter(acgKindFilter('LineString', kinds, options));
   }
 
-  function acgSolidFilter() {
+  function acgSolidFilter(options = viewOptions) {
     return ascendantOverlayFilter(
-      ['match', ['get', 'kind'], ['MC', 'ASC', 'LOCAL_SPACE'], true, false],
+      acgKindFilter('LineString', ['MC', 'ASC', 'LOCAL_SPACE'], options),
     );
   }
 
-  function acgDashedFilter() {
+  function acgDashedFilter(options = viewOptions) {
     return ascendantOverlayFilter(
-      ['match', ['get', 'kind'], ['IC', 'DSC'], true, false],
+      acgKindFilter('LineString', ['IC', 'DSC'], options),
     );
   }
 
-  function acgLabelFilter() {
-    return ascendantOverlayFilter(['!=', ['get', 'kind'], 'PARAN']);
+  function acgLocalSpaceOppositionFilter(options = viewOptions) {
+    const kinds = options.localSpaceOppositions ? ['LOCAL_SPACE_OPPOSITION'] : [];
+    return ascendantOverlayFilter(acgKindFilter('LineString', kinds, options));
   }
 
-  function isAcgFeatureVisible(feature) {
+  function acgAspectFilter(options = viewOptions) {
+    const kinds = options.aspects ? ['ASPECT'] : [];
+    return ascendantOverlayFilter(acgKindFilter('LineString', kinds, options));
+  }
+
+  function acgParanFilter(options = viewOptions) {
+    return acgKindFilter('LineString', ['PARAN'], options);
+  }
+
+  function acgZenithFilter(options = viewOptions) {
+    const kinds = options.zeniths ? ['ZENITH'] : [];
+    return acgKindFilter('Point', kinds, options);
+  }
+
+  function acgLabelFilter(options = viewOptions) {
+    const kinds = ['MC', 'IC', 'ASC', 'DSC', 'LOCAL_SPACE'];
+    if (options.localSpaceOppositions) kinds.push('LOCAL_SPACE_OPPOSITION');
+    if (options.aspects) kinds.push('ASPECT');
+    return ascendantOverlayFilter(acgKindFilter('LineString', kinds, options));
+  }
+
+  function isAcgPropertiesVisible(props, options = viewOptions) {
+    if (!isAcgLayerRoleVisible(props, options)) return false;
+    if (!visibilitySelectionMatches(
+      options.filters.points,
+      [props.point, props.a_point, props.b_point],
+    )) return false;
+    if (!visibilitySelectionMatches(options.filters.kinds, [props.kind])) return false;
+    if (
+      props.kind === 'ASPECT' &&
+      !visibilitySelectionMatches(
+        options.filters.aspects,
+        [props.aspect_id, props.aspect_key, props.aspect_name, props.aspect_angle],
+      )
+    ) return false;
+    if (!visibilitySelectionMatches(
+      options.filters.techniques,
+      [normalizedAcgTechnique(props)],
+    )) return false;
+    if (props.point === NATAL_ASC_POINT_ID && !referenceBehavior().showAscCircle) return false;
+    if (props.kind === 'LOCAL_SPACE_OPPOSITION') return !!options.localSpaceOppositions;
+    if (props.kind === 'ASPECT') return !!options.aspects;
+    if (props.kind === 'ZENITH') return !!options.zeniths;
+    return true;
+  }
+
+  function isAcgFeatureVisible(feature, options = viewOptions) {
     const props = feature && feature.properties || {};
-    return props.point !== NATAL_ASC_POINT_ID || !!referenceBehavior().showAscCircle;
+    return isAcgPropertiesVisible(props, options);
   }
 
   function syncAcgLineVisibility() {
@@ -2479,9 +3884,22 @@
       ['acg-casing', acgCasingFilter()],
       ['acg-lines-solid', acgSolidFilter()],
       ['acg-lines-dashed', acgDashedFilter()],
+      ['acg-local-space-oppositions', acgLocalSpaceOppositionFilter()],
+      ['acg-aspects', acgAspectFilter()],
+      ['acg-parans', acgParanFilter()],
+      ['acg-zeniths', acgZenithFilter()],
       ['acg-labels', acgLabelFilter()],
+      ['acg-zenith-labels', acgZenithFilter()],
     ]) {
       if (map.getLayer(id)) map.setFilter(id, filter);
+    }
+    for (const [id, visible] of [
+      ['acg-local-space-oppositions', viewOptions.localSpaceOppositions],
+      ['acg-aspects', viewOptions.aspects],
+      ['acg-zeniths', viewOptions.zeniths],
+      ['acg-zenith-labels', viewOptions.zeniths && currentDevSettings().labelsOn],
+    ]) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
     }
   }
 
@@ -2824,7 +4242,7 @@
         paint: {
           'line-color': t.casing,
           'line-width': scaledPointLineMetric(s.casingWidth, 'line_width_scale'),
-          'line-opacity': scaledPointLineMetric(s.casingOpacity, 'line_opacity'),
+          'line-opacity': scaledPointLayerOpacity(s.casingOpacity, 'line_opacity'),
         },
       });
     }
@@ -2837,7 +4255,7 @@
         paint: {
           'line-color': colorExpr,
           'line-width': scaledPointLineMetric(s.solidWidth, 'line_width_scale'),
-          'line-opacity': scaledPointLineMetric(s.solidOpacity, 'line_opacity'),
+          'line-opacity': scaledPointLayerOpacity(s.solidOpacity, 'line_opacity'),
         },
       });
     }
@@ -2850,8 +4268,61 @@
         paint: {
           'line-color': colorExpr,
           'line-width': scaledPointLineMetric(s.dashedWidth, 'line_width_scale'),
-          'line-opacity': scaledPointLineMetric(s.dashedOpacity, 'line_opacity'),
+          'line-opacity': scaledPointLayerOpacity(s.dashedOpacity, 'line_opacity'),
           'line-dasharray': [s.dashedOn, s.dashedOff],
+        },
+      });
+    }
+    if (!map.getLayer('acg-local-space-oppositions')) {
+      map.addLayer({
+        id: 'acg-local-space-oppositions',
+        type: 'line',
+        source: ACG_SOURCE_ID,
+        filter: acgLocalSpaceOppositionFilter(),
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+          'visibility': viewOptions.localSpaceOppositions ? 'visible' : 'none',
+        },
+        paint: {
+          'line-color': colorExpr,
+          'line-width': scaledPointLineMetric(
+            s.dashedWidth * s.localSpaceOppositionWidthScale,
+            'line_width_scale'
+          ),
+          'line-opacity': scaledPointLayerOpacity(
+            s.dashedOpacity * s.localSpaceOppositionOpacityScale,
+            'line_opacity'
+          ),
+          'line-dasharray': [
+            s.dashedOn * s.localSpaceOppositionDashOnScale,
+            s.dashedOff * s.localSpaceOppositionDashOffScale,
+          ],
+        },
+      });
+    }
+    if (!map.getLayer('acg-aspects')) {
+      map.addLayer({
+        id: 'acg-aspects',
+        type: 'line',
+        source: ACG_SOURCE_ID,
+        filter: acgAspectFilter(),
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+          'visibility': viewOptions.aspects ? 'visible' : 'none',
+        },
+        paint: {
+          'line-color': colorExpr,
+          'line-width': scaledPointLineMetric(
+            s.solidWidth * s.aspectLineWidthScale,
+            'line_width_scale'
+          ),
+          'line-opacity': scaledPointLayerOpacity(
+            s.solidOpacity * s.aspectLineOpacityScale,
+            'line_opacity'
+          ),
+          'line-dasharray': [s.aspectLineDashOn, s.aspectLineDashOff],
         },
       });
     }
@@ -2860,15 +4331,37 @@
         id: 'acg-parans',
         type: 'line',
         source: ACG_SOURCE_ID,
-        filter: ['==', ['get', 'kind'], 'PARAN'],
+        filter: acgParanFilter(),
         layout: {
           'visibility': viewOptions.parans ? 'visible' : 'none',
         },
         paint: {
           'line-color': t.paranColor,
           'line-width': s.paranWidth,
-          'line-opacity': s.paranOpacity,
+          'line-opacity': scaledPointLayerOpacity(s.paranOpacity, 'line_opacity'),
           'line-dasharray': [s.paranDashOn, s.paranDashOff],
+        },
+      });
+    }
+    if (!map.getLayer('acg-zeniths')) {
+      map.addLayer({
+        id: 'acg-zeniths',
+        type: 'circle',
+        source: ACG_SOURCE_ID,
+        filter: acgZenithFilter(),
+        layout: {
+          'visibility': viewOptions.zeniths ? 'visible' : 'none',
+        },
+        paint: {
+          'circle-color': colorExpr,
+          'circle-radius': Math.max(
+            s.zenithRadiusMin,
+            s.solidWidth * s.zenithRadiusWidthScale
+          ),
+          'circle-opacity': scaledPointLayerOpacity(s.solidOpacity, 'line_opacity'),
+          'circle-stroke-color': t.casing,
+          'circle-stroke-width': Math.max(s.zenithStrokeWidthMin, s.casingWidth),
+          'circle-stroke-opacity': scaledPointLayerOpacity(s.casingOpacity, 'line_opacity'),
         },
       });
     }
@@ -2881,12 +4374,7 @@
         layout: {
           'symbol-placement': 'line',
           'text-font': ['Noto Sans Regular'],
-          'text-field': [
-            'case',
-            ['==', ['get', 'kind'], 'LOCAL_SPACE'],
-            ['concat', ['get', 'label'], ' ', ['coalesce', ['get', 'bearing_label'], '']],
-            ['concat', ['get', 'label'], ' ', ['get', 'kind']],
-          ],
+          'text-field': acgLineLabelExpression(),
           'text-size': s.labelSize,
           'text-letter-spacing': s.labelSpacing,
           'text-keep-upright': true,
@@ -2896,7 +4384,31 @@
           'text-color': t.labelColor,
           'text-halo-color': t.labelHalo,
           'text-halo-width': s.labelHaloOn ? s.labelHaloWidth : 0.0,
-          'text-opacity': s.labelOpacity,
+          'text-opacity': scaledPointLayerOpacity(s.labelOpacity, 'line_opacity'),
+        },
+      });
+    }
+    if (!USE_LOCAL_BASEMAP && !USE_MINIMAL_BASEMAP && !map.getLayer('acg-zenith-labels')) {
+      map.addLayer({
+        id: 'acg-zenith-labels',
+        type: 'symbol',
+        source: ACG_LABEL_SOURCE_ID,
+        filter: acgZenithFilter(),
+        layout: {
+          'text-field': acgZenithLabelExpression(),
+          'text-font': ['Noto Sans Regular'],
+          'text-size': s.labelSize,
+          'text-letter-spacing': s.labelSpacing,
+          'text-anchor': 'left',
+          'text-offset': [0.8, 0],
+          'text-padding': 2,
+          'visibility': (viewOptions.zeniths && s.labelsOn) ? 'visible' : 'none',
+        },
+        paint: {
+          'text-color': colorExpr,
+          'text-halo-color': t.labelHalo,
+          'text-halo-width': s.labelHaloOn ? s.labelHaloWidth : 0.0,
+          'text-opacity': scaledPointLayerOpacity(s.labelOpacity, 'line_opacity'),
         },
       });
     }
@@ -2905,11 +4417,11 @@
         id: 'acg-paran-labels',
         type: 'symbol',
         source: ACG_LABEL_SOURCE_ID,
-        filter: ['==', ['get', 'kind'], 'PARAN'],
+        filter: acgParanFilter(),
         layout: {
           'symbol-placement': 'line-center',
           'text-font': ['Noto Sans Regular'],
-          'text-field': ['get', 'label'],
+          'text-field': acgParanLabelExpression(),
           'text-size': s.paranLabelSize,
           'text-letter-spacing': s.paranLabelSpacing,
           'text-max-angle': 0,
@@ -2919,7 +4431,7 @@
           'text-color': t.paranColor,
           'text-halo-color': t.paranHalo,
           'text-halo-width': s.paranLabelHaloOn ? s.paranLabelHaloWidth : 0.0,
-          'text-opacity': s.paranLabelOpacity,
+          'text-opacity': scaledPointLayerOpacity(s.paranLabelOpacity, 'line_opacity'),
         },
       });
     }
@@ -3071,50 +4583,139 @@
     birthplaceMarker.setLngLat(coordinates);
   }
 
-  function pushData() {
-    rebuildPolarOverlayPaths();
-    if (map && typeof map.isStyleLoaded === 'function' && map.isStyleLoaded()) {
-      ensureAcgLayers();
+  function runtimeOverlaySceneDeferred() {
+    return !mapHostActive || isDomLabelMovementActive();
+  }
+
+  function deferRuntimeOverlayScene(parts, options = {}) {
+    const next = parts || {};
+    if (next.data) retainedDataDirty = true;
+    if (next.asterism) retainedAsterismDirty = true;
+    if (next.eclipse) {
+      retainedEclipseDirty = true;
+      // The latest eclipse intent owns whether its eventual coherent swap
+      // should reframe. Hidden maps intentionally preserve their prior camera.
+      retainedEclipseFitPending = mapHostActive && !!options.fit;
     }
-    const src = map && map.getSource && map.getSource(ACG_SOURCE_ID);
-    if (src) src.setData(currentMapData);
-    const labelSrc = map && map.getSource && map.getSource(ACG_LABEL_SOURCE_ID);
-    if (labelSrc) labelSrc.setData(currentMapData);
-    syncTerrainRelief();
-    syncBirthplaceMarker();
-    renderDomAcgLabels('data');
-    updateLegend();
+    if (ACG_PERF_MODE && isDomLabelMovementActive()) {
+      perfState.runtimeSceneDeferredPushes += 1;
+    }
+    return false;
+  }
+
+  function applyRuntimeOverlayScene(parts, options = {}) {
+    const next = parts || {};
+    if (!next.data && !next.asterism && !next.eclipse) return false;
+    rebuildPolarOverlayPaths();
+
+    if (map && typeof map.isStyleLoaded === 'function' && map.isStyleLoaded()) {
+      if (next.data) ensureAcgLayers();
+      if (next.asterism) ensureAsterismLayer();
+      if (next.eclipse) ensureEclipseLayers();
+    }
+
+    if (next.asterism) {
+      polarAsterismStarHitTargets = [];
+      hideAsterismStarPopup('polar');
+    }
+
+    if (next.data) {
+      const source = map && map.getSource && map.getSource(ACG_SOURCE_ID);
+      const labelSource = map && map.getSource && map.getSource(ACG_LABEL_SOURCE_ID);
+      if (source) source.setData(currentMapData);
+      if (labelSource) labelSource.setData(currentMapData);
+    }
+    if (next.asterism) {
+      const source = map && map.getSource && map.getSource(ASTERISM_SOURCE_ID);
+      if (source) source.setData(currentMapAsterismData);
+    }
+    if (next.eclipse) {
+      const source = map && map.getSource && map.getSource(ECLIPSE_SOURCE_ID);
+      if (source) source.setData(currentMapEclipseData);
+    }
+
+    if (next.data) {
+      syncBirthplaceMarker();
+      updateLegend();
+    }
+    if (next.asterism) {
+      syncReferenceVisibility();
+      if (map && (
+        !map.getLayer('acg-reference-asc') ||
+        !map.getLayer('acg-asterisms')
+      )) scheduleRuntimeOverlayReplay();
+    }
+    if (next.eclipse && options.fit) fitFeatureCollection(currentEclipseData);
+    if (next.data || next.eclipse) {
+      scheduleDomAcgLabels(options.reason || 'scene-data');
+    }
+    if (map && typeof map.triggerRepaint === 'function') map.triggerRepaint();
+    return true;
+  }
+
+  function flushRetainedRuntimeOverlayScene(reason) {
+    if (runtimeOverlaySceneDeferred()) return false;
+    const parts = {
+      data: retainedDataDirty,
+      asterism: retainedAsterismDirty,
+      eclipse: retainedEclipseDirty,
+    };
+    if (!parts.data && !parts.asterism && !parts.eclipse) return false;
+    const fitEclipse = parts.eclipse && retainedEclipseFitPending;
+    retainedDataDirty = false;
+    retainedAsterismDirty = false;
+    retainedEclipseDirty = false;
+    retainedEclipseFitPending = false;
+    if (parts.data && ACTIVE_ASTROCART_STYLE) {
+      applyDisplayStyle(ACTIVE_ASTROCART_STYLE, false);
+    }
+    const applied = applyRuntimeOverlayScene(parts, {
+      fit: fitEclipse,
+      reason: reason || 'scene-flush',
+    });
+    if (!applied) return false;
+    if (ACG_PERF_MODE) perfState.runtimeSceneCoherentFlushes += 1;
+    if (parts.data) {
+      setStatus(`${(currentData.features || []).length} lines loaded`);
+    }
+    if (parts.eclipse) {
+      const count = (currentEclipseData.features || []).length;
+      if (count) setStatus(`${count} eclipse path features loaded`);
+    }
+    postPerfSnapshot(reason || 'scene-flush');
+    return true;
+  }
+
+  function pushData() {
+    if (runtimeOverlaySceneDeferred()) {
+      return deferRuntimeOverlayScene({ data: true });
+    }
+    retainedDataDirty = false;
+    return applyRuntimeOverlayScene({ data: true }, { reason: 'data' });
   }
 
   function pushAsterismData() {
-    rebuildPolarOverlayPaths();
-    polarAsterismStarHitTargets = [];
-    hideAsterismStarPopup('polar');
-    if (map && typeof map.isStyleLoaded === 'function' && map.isStyleLoaded()) {
-      ensureAsterismLayer();
+    if (runtimeOverlaySceneDeferred()) {
+      return deferRuntimeOverlayScene({ asterism: true });
     }
-    const source = map && map.getSource && map.getSource(ASTERISM_SOURCE_ID);
-    if (source) source.setData(currentMapAsterismData);
-    syncReferenceVisibility();
-    if (map && (
-      !map.getLayer('acg-reference-asc') ||
-      !map.getLayer('acg-asterisms')
-    )) scheduleRuntimeOverlayReplay();
+    retainedAsterismDirty = false;
+    return applyRuntimeOverlayScene({ asterism: true }, { reason: 'asterism-data' });
   }
 
   function refreshPolarProjectionData() {
-    rebuildPolarOverlayPaths();
-    const asterismSource = map && map.getSource && map.getSource(ASTERISM_SOURCE_ID);
-    const eclipseSource = map && map.getSource && map.getSource(ECLIPSE_SOURCE_ID);
-    if (asterismSource) asterismSource.setData(currentMapAsterismData);
-    if (eclipseSource) eclipseSource.setData(currentMapEclipseData);
-    hideAsterismStarPopup();
-    if (map && typeof map.triggerRepaint === 'function') map.triggerRepaint();
+    const allSources = { data: true, asterism: true, eclipse: true };
+    if (runtimeOverlaySceneDeferred()) {
+      return deferRuntimeOverlayScene(allSources, { fit: false });
+    }
+    return applyRuntimeOverlayScene(allSources, {
+      fit: false,
+      reason: 'projection-data',
+    });
   }
 
-  function applyDisplayStyle(payload, shouldPush = true) {
+  function applyDisplayStyleToData(data, payload) {
     const pointStyles = payload && payload.points || {};
-    for (const feature of currentData.features || []) {
+    for (const feature of data && data.features || []) {
       const props = feature && feature.properties || {};
       if (props.point && pointStyles[props.point]) {
         const style = pointStyles[props.point];
@@ -3135,21 +4736,29 @@
         }
       }
     }
-    if (payload && payload.behavior) {
-      currentData.meta = Object.assign({}, currentData.meta || {}, {
-        localSpaceAdditive: payload.behavior.localSpaceAdditive,
-      });
+    return data;
+  }
+
+  function applyDisplayStyle(payload, shouldPush = true) {
+    applyDisplayStyleToData(currentData, payload);
+    if (runtimeOverlaySceneDeferred()) {
+      deferRuntimeOverlayScene({ data: true });
+      return;
     }
     syncReferenceVisibility();
     if (shouldPush) pushData();
   }
 
   function pushEclipseData(options = {}) {
-    rebuildPolarOverlayPaths();
-    const src = map && map.getSource && map.getSource(ECLIPSE_SOURCE_ID);
-    if (src) src.setData(currentMapEclipseData);
-    if (options.fit) fitFeatureCollection(currentEclipseData);
-    renderDomAcgLabels('eclipse-data');
+    if (runtimeOverlaySceneDeferred()) {
+      return deferRuntimeOverlayScene({ eclipse: true }, options);
+    }
+    retainedEclipseDirty = false;
+    retainedEclipseFitPending = false;
+    return applyRuntimeOverlayScene(
+      { eclipse: true },
+      { fit: !!options.fit, reason: 'eclipse-data' },
+    );
   }
 
   function applyDevColors() {
@@ -3180,24 +4789,68 @@
     if (map.getLayer('acg-casing')) {
       map.setPaintProperty('acg-casing', 'line-color', t.casing);
       map.setPaintProperty('acg-casing', 'line-width', scaledPointLineMetric(s.casingWidth, 'line_width_scale'));
-      map.setPaintProperty('acg-casing', 'line-opacity', scaledPointLineMetric(s.casingOpacity, 'line_opacity'));
+      map.setPaintProperty('acg-casing', 'line-opacity', scaledPointLayerOpacity(s.casingOpacity, 'line_opacity'));
     }
     if (map.getLayer('acg-lines-solid')) {
       map.setPaintProperty('acg-lines-solid', 'line-color', acgLineColorExpression(s));
       map.setPaintProperty('acg-lines-solid', 'line-width', scaledPointLineMetric(s.solidWidth, 'line_width_scale'));
-      map.setPaintProperty('acg-lines-solid', 'line-opacity', scaledPointLineMetric(s.solidOpacity, 'line_opacity'));
+      map.setPaintProperty('acg-lines-solid', 'line-opacity', scaledPointLayerOpacity(s.solidOpacity, 'line_opacity'));
     }
     if (map.getLayer('acg-lines-dashed')) {
       map.setPaintProperty('acg-lines-dashed', 'line-color', acgLineColorExpression(s));
       map.setPaintProperty('acg-lines-dashed', 'line-width', scaledPointLineMetric(s.dashedWidth, 'line_width_scale'));
-      map.setPaintProperty('acg-lines-dashed', 'line-opacity', scaledPointLineMetric(s.dashedOpacity, 'line_opacity'));
+      map.setPaintProperty('acg-lines-dashed', 'line-opacity', scaledPointLayerOpacity(s.dashedOpacity, 'line_opacity'));
       map.setPaintProperty('acg-lines-dashed', 'line-dasharray', [s.dashedOn, s.dashedOff]);
+    }
+    if (map.getLayer('acg-local-space-oppositions')) {
+      map.setPaintProperty('acg-local-space-oppositions', 'line-color', acgLineColorExpression(s));
+      map.setPaintProperty('acg-local-space-oppositions', 'line-width', scaledPointLineMetric(
+        s.dashedWidth * s.localSpaceOppositionWidthScale,
+        'line_width_scale'
+      ));
+      map.setPaintProperty('acg-local-space-oppositions', 'line-opacity', scaledPointLayerOpacity(
+        s.dashedOpacity * s.localSpaceOppositionOpacityScale,
+        'line_opacity'
+      ));
+      map.setPaintProperty('acg-local-space-oppositions', 'line-dasharray', [
+        s.dashedOn * s.localSpaceOppositionDashOnScale,
+        s.dashedOff * s.localSpaceOppositionDashOffScale,
+      ]);
+    }
+    if (map.getLayer('acg-aspects')) {
+      map.setPaintProperty('acg-aspects', 'line-color', acgLineColorExpression(s));
+      map.setPaintProperty('acg-aspects', 'line-width', scaledPointLineMetric(
+        s.solidWidth * s.aspectLineWidthScale,
+        'line_width_scale'
+      ));
+      map.setPaintProperty('acg-aspects', 'line-opacity', scaledPointLayerOpacity(
+        s.solidOpacity * s.aspectLineOpacityScale,
+        'line_opacity'
+      ));
+      map.setPaintProperty('acg-aspects', 'line-dasharray', [
+        s.aspectLineDashOn,
+        s.aspectLineDashOff,
+      ]);
     }
     if (map.getLayer('acg-parans')) {
       map.setPaintProperty('acg-parans', 'line-color', t.paranColor);
       map.setPaintProperty('acg-parans', 'line-width', s.paranWidth);
-      map.setPaintProperty('acg-parans', 'line-opacity', s.paranOpacity);
+      map.setPaintProperty('acg-parans', 'line-opacity', scaledPointLayerOpacity(s.paranOpacity, 'line_opacity'));
       map.setPaintProperty('acg-parans', 'line-dasharray', [s.paranDashOn, s.paranDashOff]);
+    }
+    if (map.getLayer('acg-zeniths')) {
+      map.setPaintProperty('acg-zeniths', 'circle-color', acgLineColorExpression(s));
+      map.setPaintProperty('acg-zeniths', 'circle-radius', Math.max(
+        s.zenithRadiusMin,
+        s.solidWidth * s.zenithRadiusWidthScale
+      ));
+      map.setPaintProperty('acg-zeniths', 'circle-opacity', scaledPointLayerOpacity(s.solidOpacity, 'line_opacity'));
+      map.setPaintProperty('acg-zeniths', 'circle-stroke-color', t.casing);
+      map.setPaintProperty('acg-zeniths', 'circle-stroke-width', Math.max(
+        s.zenithStrokeWidthMin,
+        s.casingWidth
+      ));
+      map.setPaintProperty('acg-zeniths', 'circle-stroke-opacity', scaledPointLayerOpacity(s.casingOpacity, 'line_opacity'));
     }
     if (map.getLayer('acg-asterism-shadow')) {
       map.setPaintProperty('acg-asterism-shadow', 'line-color', s.asterismShadowColor);
@@ -3235,21 +4888,33 @@
     }
     if (map.getLayer('acg-labels')) {
       map.setLayoutProperty('acg-labels', 'visibility', s.labelsOn ? 'visible' : 'none');
+      map.setLayoutProperty('acg-labels', 'text-field', acgLineLabelExpression());
       map.setLayoutProperty('acg-labels', 'text-size', s.labelSize);
       map.setLayoutProperty('acg-labels', 'text-letter-spacing', s.labelSpacing);
       map.setPaintProperty('acg-labels', 'text-color', t.labelColor);
       map.setPaintProperty('acg-labels', 'text-halo-color', t.labelHalo);
       map.setPaintProperty('acg-labels', 'text-halo-width', s.labelHaloOn ? s.labelHaloWidth : 0.0);
-      map.setPaintProperty('acg-labels', 'text-opacity', s.labelOpacity);
+      map.setPaintProperty('acg-labels', 'text-opacity', scaledPointLayerOpacity(s.labelOpacity, 'line_opacity'));
+    }
+    if (map.getLayer('acg-zenith-labels')) {
+      map.setLayoutProperty('acg-zenith-labels', 'visibility', (viewOptions.zeniths && s.labelsOn) ? 'visible' : 'none');
+      map.setLayoutProperty('acg-zenith-labels', 'text-field', acgZenithLabelExpression());
+      map.setLayoutProperty('acg-zenith-labels', 'text-size', s.labelSize);
+      map.setLayoutProperty('acg-zenith-labels', 'text-letter-spacing', s.labelSpacing);
+      map.setPaintProperty('acg-zenith-labels', 'text-color', acgLineColorExpression(s));
+      map.setPaintProperty('acg-zenith-labels', 'text-halo-color', t.labelHalo);
+      map.setPaintProperty('acg-zenith-labels', 'text-halo-width', s.labelHaloOn ? s.labelHaloWidth : 0.0);
+      map.setPaintProperty('acg-zenith-labels', 'text-opacity', scaledPointLayerOpacity(s.labelOpacity, 'line_opacity'));
     }
     if (map.getLayer('acg-paran-labels')) {
       map.setLayoutProperty('acg-paran-labels', 'visibility', (viewOptions.parans && s.paranLabelsOn) ? 'visible' : 'none');
+      map.setLayoutProperty('acg-paran-labels', 'text-field', acgParanLabelExpression());
       map.setLayoutProperty('acg-paran-labels', 'text-size', s.paranLabelSize);
       map.setLayoutProperty('acg-paran-labels', 'text-letter-spacing', s.paranLabelSpacing);
       map.setPaintProperty('acg-paran-labels', 'text-color', t.paranColor);
       map.setPaintProperty('acg-paran-labels', 'text-halo-color', t.paranHalo);
       map.setPaintProperty('acg-paran-labels', 'text-halo-width', s.paranLabelHaloOn ? s.paranLabelHaloWidth : 0.0);
-      map.setPaintProperty('acg-paran-labels', 'text-opacity', s.paranLabelOpacity);
+      map.setPaintProperty('acg-paran-labels', 'text-opacity', scaledPointLayerOpacity(s.paranLabelOpacity, 'line_opacity'));
     }
     if (map.getLayer('eclipse-path-shadow')) {
       map.setPaintProperty('eclipse-path-shadow', 'line-color', s.eclipseShadowColor);
@@ -3291,9 +4956,8 @@
       map.setPaintProperty('eclipse-path-label', 'text-halo-width', s.eclipseLabelHaloWidth);
       map.setPaintProperty('eclipse-path-label', 'text-opacity', s.eclipseLabelOpacity);
     }
-    syncTerrainRelief();
     raiseAcgLayers();
-    renderDomAcgLabels('settings');
+    scheduleDomAcgLabels('settings');
   }
 
   function updateLegend() {
@@ -3305,10 +4969,16 @@
     let hasParan = false;
     let hasLocalSpace = false;
     let hasAcgAngles = false;
+    let hasLocalSpaceOpposition = false;
+    let hasAspect = false;
+    let hasZenith = false;
     for (const f of currentData.features || []) {
       if (!isAcgFeatureVisible(f)) continue;
       if (f.properties.kind === 'PARAN') { hasParan = true; continue; }
       if (f.properties.kind === 'LOCAL_SPACE') hasLocalSpace = true;
+      if (f.properties.kind === 'LOCAL_SPACE_OPPOSITION') hasLocalSpaceOpposition = true;
+      if (f.properties.kind === 'ASPECT') hasAspect = true;
+      if (f.properties.kind === 'ZENITH') hasZenith = true;
       if (['MC', 'IC', 'ASC', 'DSC'].includes(f.properties.kind)) hasAcgAngles = true;
       const pt = f.properties.point;
       if (!seen.has(pt)) {
@@ -3335,6 +5005,18 @@
     if (localRow) localRow.style.display = hasLocalSpace ? '' : 'none';
     const paranRow = document.getElementById('legend-paran-row');
     if (paranRow) paranRow.style.display = hasParan ? '' : 'none';
+    for (const [id, present, label] of [
+      ['legend-local-space-opposition-row', hasLocalSpaceOpposition, uiLabels.localSpaceOpposition],
+      ['legend-aspect-row', hasAspect, uiLabels.aspect],
+      ['legend-zenith-row', hasZenith, uiLabels.zenith],
+    ]) {
+      const row = document.getElementById(id);
+      const text = String(label || '').trim();
+      if (!row) continue;
+      const labelElement = row.querySelector('.localized-kind-label');
+      if (labelElement) labelElement.textContent = text;
+      row.style.display = present && text ? '' : 'none';
+    }
   }
 
   function normalizePlaceFeature(f) {
@@ -3538,14 +5220,81 @@
   }
 
   function schedulePlaceLabelsRender(reason) {
-    if (placeLabelRenderRaf) return;
-    placeLabelRenderRaf = window.requestAnimationFrame(() => {
-      placeLabelRenderRaf = 0;
-      renderPlaceLabels(reason || 'raf');
+    placeLabelsDirty = true;
+    domLabelLayoutReason = reason || domLabelLayoutReason;
+    if (isDomLabelMovementActive()) {
+      if (ACG_PERF_MODE) perfState.placeLabelSkippedWhileMoving += 1;
+      return;
+    }
+    requestDomLabelLayout();
+  }
+
+  function isDomLabelMovementActive() {
+    return activeMapMotionPhases.size > 0;
+  }
+
+  function requestDomLabelLayout(reason) {
+    if (reason) domLabelLayoutReason = reason;
+    if (isDomLabelMovementActive() || domLabelLayoutRaf) return;
+    if (!domAcgLabelsDirty && !placeLabelsDirty) return;
+    domLabelLayoutRaf = window.requestAnimationFrame(() => {
+      domLabelLayoutRaf = 0;
+      if (isDomLabelMovementActive()) return;
+      const rebuildAcgLabels = domAcgLabelsDirty;
+      const rebuildPlaceLabels = placeLabelsDirty;
+      const authoritativeReason = domLabelLayoutReason || 'raf';
+      domAcgLabelsDirty = false;
+      placeLabelsDirty = false;
+      domLabelLayoutReason = '';
+      if (rebuildAcgLabels) renderDomAcgLabels(authoritativeReason);
+      if (rebuildPlaceLabels) renderPlaceLabels(authoritativeReason);
     });
   }
 
+  function beginDomAcgMovement(burstStarted) {
+    if (!burstStarted) return;
+    if (domLabelLayoutRaf) {
+      window.cancelAnimationFrame(domLabelLayoutRaf);
+      domLabelLayoutRaf = 0;
+    }
+    // Retain the last coherent label scene during the gesture. The map canvas
+    // remains free to animate; DOM labels are authoritatively placed once the
+    // complete move/zoom burst has settled.
+    domAcgLabelsDirty = true;
+    placeLabelsDirty = true;
+    const layer = document.getElementById('acg-dom-labels');
+    if (layer) layer.classList.remove('is-moving');
+  }
+
+  function endDomAcgMovement(reason, burstSettled) {
+    if (!burstSettled) return;
+    if (ACG_PERF_MODE) perfState.domLabelBurstSettles += 1;
+    requestDomLabelLayout(reason || 'settle');
+    postPerfSnapshot(reason || 'settle');
+  }
+
+  function scheduleDomAcgLabels(reason) {
+    domAcgLabelsDirty = true;
+    // Place labels share the ACG collision boxes, so both layouts belong to
+    // one authoritative frame whenever the ACG label scene changes.
+    placeLabelsDirty = true;
+    domLabelLayoutReason = reason || domLabelLayoutReason;
+    if (isDomLabelMovementActive()) {
+      if (ACG_PERF_MODE) {
+        perfState.domLabelSkippedWhileMoving += 1;
+        perfState.placeLabelSkippedWhileMoving += 1;
+      }
+      return;
+    }
+    requestDomLabelLayout();
+  }
+
   function renderPlaceLabels(reason) {
+    if (isDomLabelMovementActive()) {
+      placeLabelsDirty = true;
+      if (ACG_PERF_MODE) perfState.placeLabelSkippedWhileMoving += 1;
+      return;
+    }
     const layer = document.getElementById('place-labels');
     if (!layer) return;
     const started = perfNow();
@@ -3621,40 +5370,6 @@
     perfState.placeLabelMaxRenderMs = Math.max(perfState.placeLabelMaxRenderMs, elapsed);
   }
 
-  function beginDomAcgMovement() {
-    domAcgLabelsMoving = true;
-    if (!USE_LOCAL_BASEMAP && !USE_MINIMAL_BASEMAP) {
-      const layer = document.getElementById('acg-dom-labels');
-      if (layer) layer.classList.add('is-moving');
-    }
-  }
-
-  function endDomAcgMovement(reason) {
-    const wasDirty = domAcgLabelsDirty;
-    domAcgLabelsMoving = false;
-    domAcgLabelsDirty = false;
-    const layer = document.getElementById('acg-dom-labels');
-    if (layer) layer.classList.remove('is-moving');
-    if (wasDirty || USE_LOCAL_BASEMAP || USE_MINIMAL_BASEMAP) {
-      scheduleDomAcgLabels(reason || 'settle');
-    }
-    postPerfSnapshot(reason || 'settle');
-  }
-
-  function scheduleDomAcgLabels(reason) {
-    if (domAcgLabelsMoving && !USE_LOCAL_BASEMAP && !USE_MINIMAL_BASEMAP) {
-      domAcgLabelsDirty = true;
-      if (ACG_PERF_MODE) perfState.domLabelSkippedWhileMoving += 1;
-      return;
-    }
-    if (domAcgLabelsMoving) domAcgLabelsDirty = true;
-    if (domAcgLabelRaf) return;
-    domAcgLabelRaf = window.requestAnimationFrame(() => {
-      domAcgLabelRaf = 0;
-      renderDomAcgLabels(reason || 'raf');
-    });
-  }
-
   function geometrySegments(geom) {
     if (!geom) return [];
     if (geom.type === 'LineString') return [geom.coordinates || []];
@@ -3728,11 +5443,53 @@
     return fallbackLineAnchors(feature.geometry);
   }
 
+  function acgLayerDisplayLabel(properties) {
+    const technique = normalizedAcgTechnique(properties);
+    const techniqueLabels = uiLabels.techniqueLabels &&
+      typeof uiLabels.techniqueLabels === 'object'
+      ? uiLabels.techniqueLabels
+      : {};
+    const techniqueLabel = String(techniqueLabels[technique] || '').trim();
+    if (techniqueLabel) return techniqueLabel;
+    const explicit = String(properties && properties.layer_label || '').trim();
+    if (explicit) return explicit;
+    const role = normalizedAcgLayerRole(properties);
+    if (role === 'transit') return String(uiLabels.transitLayer || '').trim();
+    if (role === 'progression') return String(uiLabels.progressionLayer || '').trim();
+    return '';
+  }
+
+  function prefixedAcgLabel(properties, text) {
+    const layerLabel = acgLayerDisplayLabel(properties);
+    return layerLabel ? `[${layerLabel}] ${text}` : text;
+  }
+
+  function acgFeatureLabelText(properties) {
+    const p = properties || {};
+    const pointLabel = localizedPointLabel(p);
+    const kind = String(p.kind || '');
+    let text = pointLabel;
+    if (kind === 'LOCAL_SPACE' || kind === 'LOCAL_SPACE_OPPOSITION') {
+      const bearing = String(p.bearing_label ?? p.source_bearing ?? '').trim();
+      const opposition = kind === 'LOCAL_SPACE_OPPOSITION'
+        ? String(uiLabels.localSpaceOpposition || '').trim()
+        : '';
+      text = `${pointLabel} ${bearing} ${opposition}`.trim();
+    } else if (kind === 'ASPECT') {
+      text = `${pointLabel} ${localizedAspectLabel(p)} ${p.target_angle || ''}`.trim();
+    } else if (kind === 'ZENITH') {
+      text = `${pointLabel} ${String(uiLabels.zenith || '').trim()}`.trim();
+    } else if (['MC', 'IC', 'ASC', 'DSC'].includes(kind)) {
+      text = `${pointLabel} ${kind}`.trim();
+    }
+    return prefixedAcgLabel(p, text);
+  }
+
   function labelDescriptor(feature, source) {
     if (source === 'acg' && !isAcgFeatureVisible(feature)) return null;
     const p = feature && feature.properties || {};
     const kind = p.kind || '';
-    const modeKey = p.astrocart_mode ? `${p.astrocart_mode}:` : '';
+    const modeKey = `${p.astrocart_mode || ''}:${normalizedAcgLayerRole(p)}:`;
     const settings = currentDevSettings();
     const theme = currentThemeTokens();
     if (source === 'eclipse') {
@@ -3756,112 +5513,85 @@
       const latitudeKey = line.length && Number.isFinite(Number(line[0][1])) ? Number(line[0][1]).toFixed(6) : '';
       return {
         id: p.label_id || `${modeKey}paran:${p.a_point || ''}:${p.a_angle || ''}:${p.b_point || ''}:${p.b_angle || ''}:${latitudeKey}`,
-        text: String(p.label || ''),
+        text: prefixedAcgLabel(
+          p,
+          `${localizedPointLabel(p, 'a_point', 'a_label')} ${p.a_angle || ''} × ${localizedPointLabel(p, 'b_point', 'b_label')} ${p.b_angle || ''}`.trim(),
+        ),
         color: theme.paranColor,
         fontSize: settings.paranLabelSize,
         letterSpacing: settings.paranLabelSpacing,
         haloColor: theme.paranHalo,
         haloWidth: settings.paranLabelHaloOn ? settings.paranLabelHaloWidth : 0,
-        opacity: settings.paranLabelOpacity * settings.domLabelOpacityScale,
+        opacity: settings.paranLabelOpacity * settings.domLabelOpacityScale * acgLayerOpacityScale(p),
         priority: 3,
         yOffset: 0,
       };
     }
-    if (!settings.labelsOn || !['MC', 'IC', 'ASC', 'DSC', 'LOCAL_SPACE'].includes(kind)) return null;
-    const text = kind === 'LOCAL_SPACE'
-      ? `${p.label || p.point || ''} ${p.bearing_label || ''}`.trim()
-      : `${p.label || p.point || ''} ${kind}`.trim();
+    if (
+      !settings.labelsOn ||
+      ![
+        'MC',
+        'IC',
+        'ASC',
+        'DSC',
+        'LOCAL_SPACE',
+        'LOCAL_SPACE_OPPOSITION',
+        'ASPECT',
+        'ZENITH',
+      ].includes(kind)
+    ) return null;
+    const text = acgFeatureLabelText(p);
     return {
       id: p.label_id || `${modeKey}${kind}:${p.point || p.label || ''}`,
       text,
+      glyph: kind === 'ZENITH' ? String(p.glyph_morinus || '') : '',
+      className: kind === 'ZENITH' ? 'zenith' : '',
       color: p.color || theme.labelColor,
       fontSize: settings.labelSize,
       letterSpacing: settings.labelSpacing,
       haloColor: theme.labelHalo,
       haloWidth: settings.labelHaloOn ? settings.labelHaloWidth : 0,
-      opacity: settings.labelOpacity * settings.domLabelOpacityScale,
-      priority: kind === 'LOCAL_SPACE' ? 2 : 1,
-      yOffset: 0,
+      opacity: settings.labelOpacity * settings.domLabelOpacityScale * acgLayerOpacityScale(p),
+      priority: kind === 'ZENITH' ? 0 : (kind === 'LOCAL_SPACE' ? 2 : 1),
+      yOffset: kind === 'ZENITH' ? -10 : 0,
     };
   }
 
-  function representativeCoordinate(geom) {
-    if (!geom) return null;
-    let line = null;
-    if (geom.type === 'LineString') {
-      line = geom.coordinates;
-    } else if (geom.type === 'MultiLineString') {
-      line = (geom.coordinates || []).reduce((best, current) => {
-        if (!best || (current && current.length > best.length)) return current;
-        return best;
-      }, null);
-    }
-    if (!line || !line.length) return null;
-    return line[Math.floor(line.length / 2)];
-  }
-
-  function renderOnlineDomAcgLabels(layer, reason) {
-    if (!mapHostActive) return;
-    const started = perfNow();
-    let renderedCount = 0;
-    layer.replaceChildren();
-    acgLabelElements.clear();
-    acgLabelAnchorChoices.clear();
-    acgLabelCollisionBoxes = [];
-    if (!ACG_DOM_LABELS || !map || !currentData || !currentData.features) {
-      recordDomLabelPerf(perfNow() - started, renderedCount, reason);
+  function applyDomAcgLabelContent(element, descriptor) {
+    const glyph = String(descriptor.glyph || '');
+    const contentKey = `${glyph}\u0000${descriptor.text}`;
+    if (element.dataset.contentKey === contentKey) return;
+    element.dataset.contentKey = contentKey;
+    if (!glyph) {
+      element.textContent = descriptor.text;
       return;
     }
-    const w = window.innerWidth || 1;
-    const h = window.innerHeight || 1;
-    const settings = currentDevSettings();
-    const theme = currentThemeTokens();
-    const used = [];
-    const out = [];
-    const featureLimit = 80;
-    for (const f of currentData.features) {
-      if (!isAcgFeatureVisible(f)) continue;
-      const p = f.properties || {};
-      if (p.kind === 'PARAN') continue;
-      if (!['MC', 'IC', 'ASC', 'DSC'].includes(p.kind)) continue;
-      const coord = representativeCoordinate(f.geometry);
-      if (!coord || !isCoordinateVisibleOnCurrentProjection(coord)) continue;
-      let pt;
-      try { pt = map.project(coord); } catch (_) { continue; }
-      if (!pt || pt.x < 12 || pt.x > w - 12 || pt.y < 12 || pt.y > h - 12) continue;
-      if (used.some((item) => Math.abs(item.x - pt.x) < 36 && Math.abs(item.y - pt.y) < 14)) continue;
-      used.push({ x: pt.x, y: pt.y });
-      out.push({
-        x: pt.x,
-        y: pt.y,
-        color: p.color || theme.labelColor,
-        opacity: settings.labelOpacity * settings.domLabelOpacityScale,
-        label: `${p.label || p.point || ''} ${p.kind}`,
-      });
-      if (out.length >= featureLimit) break;
-    }
-    for (const item of out) {
-      const el = document.createElement('div');
-      el.className = 'acg-dom-label';
-      el.style.left = `${item.x}px`;
-      el.style.top = `${item.y}px`;
-      el.style.color = item.color;
-      el.style.opacity = String(item.opacity);
-      el.textContent = item.label;
-      layer.appendChild(el);
-      renderedCount += 1;
-    }
-    recordDomLabelPerf(perfNow() - started, renderedCount, reason);
+    const glyphElement = document.createElement('span');
+    glyphElement.className = 'acg-dom-label-glyph';
+    glyphElement.textContent = glyph;
+    const textElement = document.createElement('span');
+    textElement.textContent = descriptor.text;
+    element.replaceChildren(glyphElement, textElement);
   }
 
   function renderDomAcgLabels(reason) {
+    if (isDomLabelMovementActive()) {
+      domAcgLabelsDirty = true;
+      placeLabelsDirty = true;
+      if (ACG_PERF_MODE) perfState.domLabelSkippedWhileMoving += 1;
+      return;
+    }
     if (!mapHostActive) return;
     const layer = document.getElementById('acg-dom-labels');
     if (!layer) return;
     const offlineRenderer = USE_LOCAL_BASEMAP || USE_MINIMAL_BASEMAP;
     if (!offlineRenderer) {
       domLabelRendererMode = 'online';
-      renderOnlineDomAcgLabels(layer, reason);
+      layer.replaceChildren();
+      acgLabelElements.clear();
+      acgLabelAnchorChoices.clear();
+      acgLabelCollisionBoxes = [];
+      recordDomLabelPerf(0, 0, reason);
       return;
     }
     if (domLabelRendererMode !== 'offline') {
@@ -3876,14 +5606,14 @@
     acgLabelCollisionBoxes = [];
     if (!ACG_DOM_LABELS || !map || !currentData || !currentData.features) {
       recordDomLabelPerf(perfNow() - started, renderedCount, reason);
-      renderPlaceLabels('acg-empty');
       return;
     }
     const w = window.innerWidth || 1;
     const h = window.innerHeight || 1;
     const safeTop = Math.max(12, Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--titlebar-safe-top')) + 12 || 12);
     const screenCenter = { x: w / 2, y: h / 2 };
-    const features = (currentData.features || []).map((feature) => ({ feature, source: 'acg' }));
+    const features = (currentData.features || [])
+      .map((feature) => ({ feature, source: 'acg' }));
     for (const feature of currentEclipseData.features || []) features.push({ feature, source: 'eclipse' });
     const descriptors = features
       .map((entry) => ({ ...entry, descriptor: labelDescriptor(entry.feature, entry.source) }))
@@ -3928,8 +5658,8 @@
         acgLabelElements.set(descriptor.id, el);
         layer.appendChild(el);
       }
-      if (el.textContent !== descriptor.text) el.textContent = descriptor.text;
-      el.className = 'acg-dom-label';
+      applyDomAcgLabelContent(el, descriptor);
+      el.className = `acg-dom-label${descriptor.className ? ` ${descriptor.className}` : ''}`;
       el.style.left = `${item.x}px`;
       el.style.top = `${item.y}px`;
       el.style.color = descriptor.color;
@@ -3943,7 +5673,6 @@
       renderedCount += 1;
     }
     recordDomLabelPerf(perfNow() - started, renderedCount, reason);
-    renderPlaceLabels('acg-layout');
   }
 
   function isCoordinateVisibleOnCurrentProjection(coord) {
@@ -4152,7 +5881,7 @@
     const properties = feature && feature.properties || {};
     if (
       !geometry || geometry.type !== 'Point' ||
-      properties.kind !== 'ASTERISM_STAR' ||
+      !['ASTERISM_STAR', 'ZENITH'].includes(properties.kind) ||
       !Array.isArray(geometry.coordinates)
     ) return false;
     const lon = Number(geometry.coordinates[0]);
@@ -4191,10 +5920,11 @@
     }
   }
 
-  function appendPolarOverlayPoints(data, target) {
+  function appendPolarOverlayPoints(data, source, target) {
     for (const feature of data && data.features || []) {
       if (!isPolarOverlayPoint(feature)) continue;
       target.push({
+        source,
         properties: feature.properties || {},
         coordinate: feature.geometry.coordinates.slice(0, 2),
       });
@@ -4215,32 +5945,72 @@
     }
   }
 
-  function rebuildPolarOverlayPaths() {
+  function buildRuntimeOverlayScene(
+    data,
+    asterismData,
+    eclipseData,
+    projectionName = selectedProjection,
+  ) {
+    const acgData = data || { type: 'FeatureCollection', features: [] };
+    const starsAndReferences =
+      asterismData || { type: 'FeatureCollection', features: [] };
+    const eclipsePaths =
+      eclipseData || { type: 'FeatureCollection', features: [] };
     const paths = [];
     const polygons = [];
     const points = [];
-    appendPolarOverlayPaths(currentAsterismData, 'asterism', paths);
-    appendPolarOverlayPaths(currentEclipseData, 'eclipse', paths);
-    appendPolarOverlayPaths(currentData, 'acg', paths);
-    appendPolarOverlayPolygons(currentEclipseData, 'eclipse', polygons);
-    appendPolarOverlayPoints(currentAsterismData, points);
-    polarOverlayPaths = paths;
-    polarOverlayPolygons = polygons;
-    polarOverlayPoints = points;
-    currentMapAsterismData = clipFeatureCollectionToMapBand(currentAsterismData, {
-      omitPolarPoints: selectedProjection === 'globe',
-    });
-    currentMapEclipseData = clipFeatureCollectionToMapBand(currentEclipseData, {
-      omitKinds: ['ECLIPSE_POLAR_PATH'],
-    });
-    currentMapData = clipFeatureCollectionToMapBand(currentData);
-    if (ACG_PERF_MODE) perfState.polarOverlayPathCount = paths.length;
+    appendPolarOverlayPaths(starsAndReferences, 'asterism', paths);
+    appendPolarOverlayPaths(eclipsePaths, 'eclipse', paths);
+    appendPolarOverlayPaths(acgData, 'acg', paths);
+    appendPolarOverlayPolygons(eclipsePaths, 'eclipse', polygons);
+    appendPolarOverlayPoints(starsAndReferences, 'asterism', points);
+    appendPolarOverlayPoints(acgData, 'acg', points);
+    return {
+      data: acgData,
+      asterismData: starsAndReferences,
+      eclipseData: eclipsePaths,
+      mapData: clipFeatureCollectionToMapBand(acgData, {
+        omitPolarPoints: projectionName === 'globe',
+      }),
+      mapAsterismData: clipFeatureCollectionToMapBand(starsAndReferences, {
+        omitPolarPoints: projectionName === 'globe',
+      }),
+      mapEclipseData: clipFeatureCollectionToMapBand(eclipsePaths, {
+        omitKinds: ['ECLIPSE_POLAR_PATH'],
+      }),
+      polarPaths: paths,
+      polarPolygons: polygons,
+      polarPoints: points,
+    };
   }
 
-  function ensurePolarOverlayCanvas() {
+  function rebuildPolarOverlayPaths() {
+    const scene = buildRuntimeOverlayScene(
+      currentData,
+      currentAsterismData,
+      currentEclipseData,
+      selectedProjection,
+    );
+    polarOverlayPaths = scene.polarPaths;
+    polarOverlayPolygons = scene.polarPolygons;
+    polarOverlayPoints = scene.polarPoints;
+    currentMapAsterismData = scene.mapAsterismData;
+    currentMapEclipseData = scene.mapEclipseData;
+    currentMapData = scene.mapData;
+    if (ACG_PERF_MODE) {
+      perfState.polarOverlayPathCount = scene.polarPaths.length;
+    }
+  }
+
+  function ensurePolarOverlayCanvas(targetMap = map) {
+    if (targetMap !== map) return null;
     let canvas = document.getElementById('polar-line-overlay');
-    if (canvas || !map || typeof map.getCanvasContainer !== 'function') return canvas;
-    const container = map.getCanvasContainer();
+    if (
+      canvas ||
+      !targetMap ||
+      typeof targetMap.getCanvasContainer !== 'function'
+    ) return canvas;
+    const container = targetMap.getCanvasContainer();
     if (!container) return null;
     canvas = document.createElement('canvas');
     canvas.id = 'polar-line-overlay';
@@ -4259,19 +6029,23 @@
     context.clearRect(0, 0, canvas.width, canvas.height);
   }
 
-  function preparePolarOverlayCanvas() {
-    const canvas = ensurePolarOverlayCanvas();
-    const mapCanvas = map && map.getCanvas && map.getCanvas();
+  function preparePolarOverlayCanvas(targetMap = map, targetCanvas = null) {
+    const canvas = targetCanvas || ensurePolarOverlayCanvas(targetMap);
+    const mapCanvas = targetMap && targetMap.getCanvas && targetMap.getCanvas();
     if (!canvas || !mapCanvas) return null;
     // Transform dimensions are already MapLibre's logical CSS-pixel size and
     // avoid a forced layout read in this per-render path.
     const width = Math.max(
       0,
-      Number(map.transform && map.transform.width) || parseFloat(mapCanvas.style.width) || 0,
+      Number(targetMap.transform && targetMap.transform.width) ||
+        parseFloat(mapCanvas.style.width) ||
+        0,
     );
     const height = Math.max(
       0,
-      Number(map.transform && map.transform.height) || parseFloat(mapCanvas.style.height) || 0,
+      Number(targetMap.transform && targetMap.transform.height) ||
+        parseFloat(mapCanvas.style.height) ||
+        0,
     );
     if (!width || !height) return null;
     const pixelWidth = Math.max(1, Number(mapCanvas.width) || Math.round(width));
@@ -4282,13 +6056,14 @@
     if (!context) return null;
     context.setTransform(pixelWidth / width, 0, 0, pixelHeight / height, 0, 0);
     context.clearRect(0, 0, width, height);
-    return { context, width, height };
+    return { canvas, context, width, height };
   }
 
-  function isPolarCoordinateVisible(coordinate, center) {
-    if (!map) return false;
+  function isPolarCoordinateVisible(coordinate, center, targetMap = map) {
+    if (!targetMap) return false;
     try {
       if (
+        targetMap === map &&
         map.transform &&
         typeof map.transform.isLocationOccluded === 'function' &&
         window.maplibregl && maplibregl.LngLat
@@ -4296,31 +6071,41 @@
         const lngLat = maplibregl.LngLat.convert(coordinate);
         return !map.transform.isLocationOccluded(lngLat);
       }
+      if (
+        targetMap.transform &&
+        typeof targetMap.transform.isLocationOccluded === 'function' &&
+        window.maplibregl && maplibregl.LngLat
+      ) {
+        const lngLat = maplibregl.LngLat.convert(coordinate);
+        return !targetMap.transform.isLocationOccluded(lngLat);
+      }
     } catch (_) {}
     return angularDistanceDeg(
       center.lng, center.lat, Number(coordinate[0]), Number(coordinate[1]),
     ) <= 90.0;
   }
 
-  function polarHorizonCoordinate(a, b, center, aVisible) {
+  function polarHorizonCoordinate(a, b, center, aVisible, targetMap = map) {
     let low = 0;
     let high = 1;
     for (let index = 0; index < 18; index += 1) {
       const middle = (low + high) / 2;
       const middleCoordinate = interpolateWrappedCoordinate(a, b, middle);
-      if (isPolarCoordinateVisible(middleCoordinate, center) === aVisible) low = middle;
+      if (
+        isPolarCoordinateVisible(middleCoordinate, center, targetMap) === aVisible
+      ) low = middle;
       else high = middle;
     }
     return interpolateWrappedCoordinate(a, b, (low + high) / 2);
   }
 
-  function projectPolarCoordinate(coordinate) {
+  function projectPolarCoordinate(coordinate, targetMap = map) {
     const lat = Math.max(
       -POLAR_OVERLAY_MAX_LATITUDE,
       Math.min(POLAR_OVERLAY_MAX_LATITUDE, Number(coordinate[1])),
     );
     try {
-      const point = map.project([Number(coordinate[0]), lat]);
+      const point = targetMap.project([Number(coordinate[0]), lat]);
       return Number.isFinite(point && point.x) && Number.isFinite(point && point.y)
         ? point
         : null;
@@ -4329,18 +6114,23 @@
     }
   }
 
-  function tracePolarOverlayPath(context, coordinates, center) {
+  function tracePolarOverlayPath(
+    context,
+    coordinates,
+    center,
+    targetMap = map,
+  ) {
     if (!Array.isArray(coordinates) || coordinates.length < 2) return false;
     let traced = false;
     let pathOpen = false;
     let previous = coordinates[0];
-    let previousVisible = isPolarCoordinateVisible(previous, center);
+    let previousVisible = isPolarCoordinateVisible(previous, center, targetMap);
     for (let index = 1; index < coordinates.length; index += 1) {
       const current = coordinates[index];
-      const currentVisible = isPolarCoordinateVisible(current, center);
+      const currentVisible = isPolarCoordinateVisible(current, center, targetMap);
       if (previousVisible && currentVisible) {
-        const previousPoint = projectPolarCoordinate(previous);
-        const currentPoint = projectPolarCoordinate(current);
+        const previousPoint = projectPolarCoordinate(previous, targetMap);
+        const currentPoint = projectPolarCoordinate(current, targetMap);
         if (previousPoint && currentPoint) {
           if (!pathOpen) context.moveTo(previousPoint.x, previousPoint.y);
           context.lineTo(currentPoint.x, currentPoint.y);
@@ -4350,10 +6140,16 @@
           pathOpen = false;
         }
       } else if (previousVisible !== currentVisible) {
-        const horizon = polarHorizonCoordinate(previous, current, center, previousVisible);
-        const horizonPoint = projectPolarCoordinate(horizon);
+        const horizon = polarHorizonCoordinate(
+          previous,
+          current,
+          center,
+          previousVisible,
+          targetMap,
+        );
+        const horizonPoint = projectPolarCoordinate(horizon, targetMap);
         if (previousVisible) {
-          const previousPoint = projectPolarCoordinate(previous);
+          const previousPoint = projectPolarCoordinate(previous, targetMap);
           if (previousPoint && horizonPoint) {
             if (!pathOpen) context.moveTo(previousPoint.x, previousPoint.y);
             context.lineTo(horizonPoint.x, horizonPoint.y);
@@ -4361,7 +6157,7 @@
           }
           pathOpen = false;
         } else {
-          const currentPoint = projectPolarCoordinate(current);
+          const currentPoint = projectPolarCoordinate(current, targetMap);
           if (horizonPoint && currentPoint) {
             context.moveTo(horizonPoint.x, horizonPoint.y);
             context.lineTo(currentPoint.x, currentPoint.y);
@@ -4380,7 +6176,7 @@
     return traced;
   }
 
-  function visiblePolarRing(coordinates, center) {
+  function visiblePolarRing(coordinates, center, targetMap = map) {
     const input = Array.isArray(coordinates) ? coordinates.slice() : [];
     if (input.length > 1) {
       const first = input[0];
@@ -4393,11 +6189,19 @@
     if (input.length < 3) return [];
     const output = [];
     let previous = input[input.length - 1];
-    let previousVisible = isPolarCoordinateVisible(previous, center);
+    let previousVisible = isPolarCoordinateVisible(previous, center, targetMap);
     for (const current of input) {
-      const currentVisible = isPolarCoordinateVisible(current, center);
+      const currentVisible = isPolarCoordinateVisible(current, center, targetMap);
       if (currentVisible !== previousVisible) {
-        output.push(polarHorizonCoordinate(previous, current, center, previousVisible));
+        output.push(
+          polarHorizonCoordinate(
+            previous,
+            current,
+            center,
+            previousVisible,
+            targetMap,
+          ),
+        );
       }
       if (currentVisible) output.push(current);
       previous = current;
@@ -4421,14 +6225,25 @@
     return settings.fallbackUnknownColor;
   }
 
-  function polarReferenceStroke(path, settings, behavior) {
+  function unchangedPolarColor(color) {
+    return color;
+  }
+
+  function polarReferenceStroke(
+    path,
+    settings,
+    behavior,
+    colorTransform = unchangedPolarColor,
+  ) {
     if (path.source !== 'asterism') return null;
     const properties = path.properties;
     switch (properties.kind) {
       case 'REFERENCE_HOUSE_LINE':
         if (!behavior.showHouseLines) return null;
         return {
-          color: houseReferenceColor(Number(properties.house), settings),
+          color: colorTransform(
+            houseReferenceColor(Number(properties.house), settings),
+          ),
           width: settings.referenceGridLineWidth,
           opacity: Math.min(1, settings.referenceGridLineOpacity * (properties.angle ? 1.45 : 1)),
           lineCap: 'round',
@@ -4436,7 +6251,9 @@
       case 'REFERENCE_ZODIAC_LINE':
         if (!behavior.showZodiacLines) return null;
         return {
-          color: zodiacReferenceColor(Number(properties.sign), settings),
+          color: colorTransform(
+            zodiacReferenceColor(Number(properties.sign), settings),
+          ),
           width: settings.referenceGridLineWidth,
           opacity: settings.referenceGridLineOpacity,
           lineCap: 'round',
@@ -4444,7 +6261,7 @@
       case 'REFERENCE_ECLIPTIC':
         if (!behavior.showEcliptic) return null;
         return {
-          color: settings.referenceEclipticColor,
+          color: colorTransform(settings.referenceEclipticColor),
           width: settings.referenceLineWidth * 1.25,
           opacity: settings.referenceLineOpacity,
           lineCap: 'round',
@@ -4452,7 +6269,7 @@
       case 'REFERENCE_ZODIAC_TICK':
         if (!behavior.showEcliptic) return null;
         return {
-          color: settings.referenceEclipticColor,
+          color: colorTransform(settings.referenceEclipticColor),
           width: settings.referenceLineWidth * 0.8,
           opacity: settings.referenceLineOpacity,
           lineCap: 'round',
@@ -4460,7 +6277,7 @@
       case 'REFERENCE_EQUATOR':
         if (!behavior.showEquator) return null;
         return {
-          color: settings.referenceEquatorColor,
+          color: colorTransform(settings.referenceEquatorColor),
           width: settings.referenceLineWidth,
           opacity: settings.referenceLineOpacity,
           dash: [settings.referenceLineWidth * 2, settings.referenceLineWidth * 2],
@@ -4469,7 +6286,7 @@
       case 'REFERENCE_ASC':
         if (!behavior.showAscCircle) return null;
         return {
-          color: settings.referenceAscColor,
+          color: colorTransform(settings.referenceAscColor),
           width: settings.referenceLineWidth,
           opacity: settings.referenceLineOpacity,
           lineCap: 'round',
@@ -4477,7 +6294,7 @@
       case 'REFERENCE_MC':
         if (!behavior.showMcCircle) return null;
         return {
-          color: settings.referenceMcColor,
+          color: colorTransform(settings.referenceMcColor),
           width: settings.referenceLineWidth,
           opacity: settings.referenceLineOpacity,
           lineCap: 'round',
@@ -4487,11 +6304,16 @@
     }
   }
 
-  function polarAsterismStroke(path, settings, shadow) {
+  function polarAsterismStroke(
+    path,
+    settings,
+    shadow,
+    visibility = viewOptions,
+  ) {
     if (
       path.source !== 'asterism' ||
       path.properties.kind !== 'ASTERISM' ||
-      !viewOptions.asterisms
+      !visibility.asterisms
     ) return null;
     if (shadow) {
       return {
@@ -4546,31 +6368,91 @@
     return null;
   }
 
-  function isPolarAcgPathVisible(path) {
-    return path.source === 'acg' && (
-      path.properties.point !== NATAL_ASC_POINT_ID || !!referenceBehavior().showAscCircle
+  function isPolarAcgPathVisible(path, visibility = viewOptions) {
+    return (
+      path.source === 'acg' &&
+      isAcgPropertiesVisible(path.properties || {}, visibility)
     );
   }
 
-  function polarAcgCasingStroke(path, settings, tokens) {
-    if (!isPolarAcgPathVisible(path) || path.properties.kind === 'PARAN') return null;
+  function polarAcgCasingStroke(
+    path,
+    settings,
+    tokens,
+    visibility = viewOptions,
+  ) {
+    if (
+      !isPolarAcgPathVisible(path, visibility) ||
+      ![
+        'MC',
+        'IC',
+        'ASC',
+        'DSC',
+        'LOCAL_SPACE',
+        'LOCAL_SPACE_OPPOSITION',
+        'ASPECT',
+      ].includes(path.properties.kind)
+    ) return null;
     return {
       color: tokens.casing,
       width: settings.casingWidth * polarMetric(path.properties.line_width_scale, 1),
-      opacity: settings.casingOpacity * polarMetric(path.properties.line_opacity, 1),
+      opacity: settings.casingOpacity *
+        polarMetric(path.properties.line_opacity, 1) *
+        acgLayerOpacityScale(path.properties),
     };
   }
 
-  function polarAcgLineStroke(path, settings, tokens) {
-    if (!isPolarAcgPathVisible(path)) return null;
+  function polarAcgLineStroke(
+    path,
+    settings,
+    tokens,
+    visibility = viewOptions,
+  ) {
+    if (!isPolarAcgPathVisible(path, visibility)) return null;
     const properties = path.properties;
     if (properties.kind === 'PARAN') {
-      if (!viewOptions.parans) return null;
+      if (!visibility.parans) return null;
       return {
         color: tokens.paranColor,
         width: settings.paranWidth,
-        opacity: settings.paranOpacity,
+        opacity: settings.paranOpacity * acgLayerOpacityScale(properties),
         dash: [settings.paranDashOn * settings.paranWidth, settings.paranDashOff * settings.paranWidth],
+      };
+    }
+    if (properties.kind === 'LOCAL_SPACE_OPPOSITION') {
+      const width = settings.dashedWidth *
+        settings.localSpaceOppositionWidthScale *
+        polarMetric(properties.line_width_scale, 1);
+      return {
+        color: resolvedAcgLineColor(properties, settings),
+        width,
+        opacity: settings.dashedOpacity *
+          settings.localSpaceOppositionOpacityScale *
+          polarMetric(properties.line_opacity, 1) *
+          acgLayerOpacityScale(properties),
+        dash: [
+          settings.dashedOn * settings.localSpaceOppositionDashOnScale * width,
+          settings.dashedOff * settings.localSpaceOppositionDashOffScale * width,
+        ],
+        lineCap: 'round',
+      };
+    }
+    if (properties.kind === 'ASPECT') {
+      const width = settings.solidWidth *
+        settings.aspectLineWidthScale *
+        polarMetric(properties.line_width_scale, 1);
+      return {
+        color: resolvedAcgLineColor(properties, settings),
+        width,
+        opacity: settings.solidOpacity *
+          settings.aspectLineOpacityScale *
+          polarMetric(properties.line_opacity, 1) *
+          acgLayerOpacityScale(properties),
+        dash: [
+          settings.aspectLineDashOn * width,
+          settings.aspectLineDashOff * width,
+        ],
+        lineCap: 'round',
       };
     }
     const solid = ['MC', 'ASC', 'LOCAL_SPACE'].includes(properties.kind);
@@ -4582,13 +6464,27 @@
       color: resolvedAcgLineColor(properties, settings),
       width,
       opacity: (dashed ? settings.dashedOpacity : settings.solidOpacity) *
-        polarMetric(properties.line_opacity, 1),
+        polarMetric(properties.line_opacity, 1) *
+        acgLayerOpacityScale(properties),
       dash: dashed ? [settings.dashedOn * width, settings.dashedOff * width] : null,
     };
   }
 
-  function strokePolarOverlayPaths(context, center, styleForPath) {
-    for (const path of polarOverlayPaths) {
+  function projectPolarOverlayPaths(paths, center, targetMap = map) {
+    const projected = [];
+    for (const path of paths) {
+      const geometry = new Path2D();
+      if (!tracePolarOverlayPath(geometry, path.coordinates, center, targetMap)) {
+        continue;
+      }
+      projected.push({ path, geometry });
+    }
+    return projected;
+  }
+
+  function strokePolarOverlayPaths(context, styleForPath, projectedPaths) {
+    for (const projected of projectedPaths) {
+      const path = projected.path;
       const style = styleForPath(path);
       if (!style) continue;
       const width = Math.max(0, polarMetric(style.width, 0));
@@ -4602,21 +6498,34 @@
       context.lineJoin = style.lineCap || 'miter';
       context.setLineDash(Array.isArray(style.dash) ? style.dash : []);
       context.filter = style.blur ? `blur(${Math.max(0, style.blur)}px)` : 'none';
-      context.beginPath();
-      if (tracePolarOverlayPath(context, path.coordinates, center)) context.stroke();
+      context.stroke(projected.geometry);
       context.restore();
     }
   }
 
-  function drawPolarAsterismStars(context, center, settings) {
+  function drawPolarAsterismStars(
+    context,
+    center,
+    settings,
+    targetMap = map,
+    visibility = viewOptions,
+    points = polarOverlayPoints,
+    updateHitTargets = true,
+  ) {
     const hitTargets = [];
-    if (!viewOptions.asterisms) {
-      polarAsterismStarHitTargets = hitTargets;
+    if (!visibility.asterisms) {
+      if (updateHitTargets) polarAsterismStarHitTargets = hitTargets;
       return;
     }
-    for (const polarPoint of polarOverlayPoints) {
-      if (!isPolarCoordinateVisible(polarPoint.coordinate, center)) continue;
-      const point = projectPolarCoordinate(polarPoint.coordinate);
+    for (const polarPoint of points) {
+      if (polarPoint.source !== 'asterism') continue;
+      const coordinateVisible = targetMap === map
+        ? isPolarCoordinateVisible(polarPoint.coordinate, center)
+        : isPolarCoordinateVisible(polarPoint.coordinate, center, targetMap);
+      if (!coordinateVisible) continue;
+      const point = targetMap === map
+        ? projectPolarCoordinate(polarPoint.coordinate)
+        : projectPolarCoordinate(polarPoint.coordinate, targetMap);
       if (!point) continue;
       const properties = polarPoint.properties || {};
       const radius = Math.max(0, asterismStarRadius(properties.magnitude, settings));
@@ -4655,20 +6564,116 @@
         point,
       });
     }
-    polarAsterismStarHitTargets = hitTargets;
+    if (updateHitTargets) polarAsterismStarHitTargets = hitTargets;
   }
 
-  function drawPolarEclipseShadows(context, center, settings) {
+  function drawPolarZenithPoints(
+    context,
+    center,
+    settings,
+    tokens,
+    targetMap = map,
+    visibility = viewOptions,
+    points = polarOverlayPoints,
+  ) {
+    if (!visibility.zeniths) return;
+    for (const polarPoint of points) {
+      const properties = polarPoint.properties || {};
+      const propertiesVisible = visibility === viewOptions
+        ? isAcgPropertiesVisible(properties)
+        : isAcgPropertiesVisible(properties, visibility);
+      const coordinateVisible = targetMap === map
+        ? isPolarCoordinateVisible(polarPoint.coordinate, center)
+        : isPolarCoordinateVisible(polarPoint.coordinate, center, targetMap);
+      if (
+        polarPoint.source !== 'acg' ||
+        properties.kind !== 'ZENITH' ||
+        !propertiesVisible ||
+        !coordinateVisible
+      ) continue;
+      const point = targetMap === map
+        ? projectPolarCoordinate(polarPoint.coordinate)
+        : projectPolarCoordinate(polarPoint.coordinate, targetMap);
+      if (!point) continue;
+      const layerOpacity = acgLayerOpacityScale(properties);
+      const radius = Math.max(
+        settings.zenithRadiusMin,
+        settings.solidWidth * settings.zenithRadiusWidthScale
+      );
+      const color = resolvedAcgLineColor(properties, settings);
+
+      context.save();
+      context.globalAlpha = settings.casingOpacity * layerOpacity;
+      context.fillStyle = tokens.casing;
+      context.beginPath();
+      context.arc(
+        point.x,
+        point.y,
+        radius + Math.max(settings.zenithStrokeWidthMin, settings.casingWidth),
+        0,
+        Math.PI * 2
+      );
+      context.fill();
+      context.restore();
+
+      context.save();
+      context.globalAlpha = settings.solidOpacity * layerOpacity;
+      context.fillStyle = color;
+      context.beginPath();
+      context.arc(point.x, point.y, radius, 0, Math.PI * 2);
+      context.fill();
+      context.restore();
+
+      if (!settings.labelsOn) continue;
+      let labelX = point.x + radius + 4;
+      const labelY = point.y + settings.labelSize * 0.35;
+      const glyph = String(properties.glyph_morinus || '');
+      context.save();
+      context.globalAlpha = settings.labelOpacity * layerOpacity;
+      context.textAlign = 'left';
+      if (glyph) {
+        context.font = `${Math.max(10, settings.labelSize * 1.2)}px 'Morinus', serif`;
+        context.strokeStyle = tokens.labelHalo;
+        context.lineWidth = settings.labelHaloOn ? settings.labelHaloWidth * 2 : 0;
+        if (context.lineWidth) context.strokeText(glyph, labelX, labelY);
+        context.fillStyle = color;
+        context.fillText(glyph, labelX, labelY);
+        labelX += context.measureText(glyph).width + 4;
+      }
+      const label = acgFeatureLabelText(properties);
+      if (label) {
+        context.font = `600 ${settings.labelSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
+        context.strokeStyle = tokens.labelHalo;
+        context.lineWidth = settings.labelHaloOn ? settings.labelHaloWidth * 2 : 0;
+        if (context.lineWidth) context.strokeText(label, labelX, labelY);
+        context.fillStyle = color;
+        context.fillText(label, labelX, labelY);
+      }
+      context.restore();
+    }
+  }
+
+  function drawPolarEclipseShadows(
+    context,
+    center,
+    settings,
+    targetMap = map,
+    polygons = polarOverlayPolygons,
+  ) {
     context.save();
     context.globalAlpha = Math.max(0, Math.min(1, polarMetric(settings.eclipseFillOpacity, 1)));
     context.fillStyle = settings.eclipseShadowColor;
     context.beginPath();
     let traced = false;
-    for (const polygon of polarOverlayPolygons) {
+    for (const polygon of polygons) {
       if (polygon.source !== 'eclipse') continue;
-      const visibleRing = visiblePolarRing(polygon.coordinates, center);
+      const visibleRing = targetMap === map
+        ? visiblePolarRing(polygon.coordinates, center)
+        : visiblePolarRing(polygon.coordinates, center, targetMap);
       if (!visibleRing.length) continue;
-      const projected = visibleRing.map(projectPolarCoordinate);
+      const projected = visibleRing.map(
+        (coordinate) => projectPolarCoordinate(coordinate, targetMap),
+      );
       if (projected.length < 3 || projected.some((point) => !point)) continue;
       context.moveTo(projected[0].x, projected[0].y);
       for (const point of projected.slice(1)) context.lineTo(point.x, point.y);
@@ -4679,62 +6684,142 @@
     context.restore();
   }
 
-  function renderPolarOverlay() {
-    const started = ACG_PERF_MODE ? perfNow() : 0;
+  function renderPolarOverlay(targetMap = map, options = {}) {
+    const liveTarget = targetMap === map && !options.canvas;
+    const started = ACG_PERF_MODE && liveTarget ? perfNow() : 0;
     let projectionType = selectedProjection;
     try {
-      const projection = map && map.getProjection && map.getProjection();
+      const projection =
+        targetMap && targetMap.getProjection && targetMap.getProjection();
       projectionType = projection && projection.type || projectionType;
     } catch (_) {}
-    if (!map || !mapHostActive || projectionType !== 'globe') {
-      clearPolarOverlay();
-      return;
+    if (
+      !targetMap ||
+      (liveTarget && !mapHostActive) ||
+      projectionType !== 'globe'
+    ) {
+      if (liveTarget) clearPolarOverlay();
+      return null;
     }
-    const prepared = preparePolarOverlayCanvas();
-    if (!prepared) return;
-    const settings = currentDevSettings();
-    const tokens = currentThemeTokens();
-    const behavior = referenceBehavior();
-    const center = map.getCenter();
+    const prepared = preparePolarOverlayCanvas(
+      targetMap,
+      options.canvas || null,
+    );
+    if (!prepared) return null;
+    const settings = options.settings || currentDevSettings();
+    const tokens = options.tokens || currentThemeTokens();
+    const behavior = options.behavior || referenceBehavior();
+    const visibility = options.visibility || viewOptions;
+    const paths = options.paths || polarOverlayPaths;
+    const points = options.points || polarOverlayPoints;
+    const polygons = options.polygons || polarOverlayPolygons;
+    const referenceColorTransform =
+      options.referenceColorTransform || unchangedPolarColor;
+    const updateHitTargets = Object.prototype.hasOwnProperty.call(
+      options,
+      'updateHitTargets',
+    )
+      ? !!options.updateHitTargets
+      : liveTarget;
+    const center = targetMap.getCenter();
+    const projectedPaths = projectPolarOverlayPaths(paths, center, targetMap);
     strokePolarOverlayPaths(
-      prepared.context, center, (path) => polarReferenceStroke(path, settings, behavior),
+      prepared.context,
+      (path) => polarReferenceStroke(
+        path,
+        settings,
+        behavior,
+        referenceColorTransform,
+      ),
+      projectedPaths,
     );
     strokePolarOverlayPaths(
-      prepared.context, center, (path) => polarAsterismStroke(path, settings, true),
+      prepared.context,
+      (path) => polarAsterismStroke(path, settings, true, visibility),
+      projectedPaths,
     );
     strokePolarOverlayPaths(
-      prepared.context, center, (path) => polarAsterismStroke(path, settings, false),
+      prepared.context,
+      (path) => polarAsterismStroke(path, settings, false, visibility),
+      projectedPaths,
     );
-    drawPolarAsterismStars(prepared.context, center, settings);
+    drawPolarAsterismStars(
+      prepared.context,
+      center,
+      settings,
+      targetMap,
+      visibility,
+      points,
+      updateHitTargets,
+    );
+    drawPolarZenithPoints(
+      prepared.context,
+      center,
+      settings,
+      tokens,
+      targetMap,
+      visibility,
+      points,
+    );
     strokePolarOverlayPaths(
-      prepared.context, center, (path) => polarEclipseStroke(path, settings, true),
+      prepared.context,
+      (path) => polarEclipseStroke(path, settings, true),
+      projectedPaths,
     );
-    drawPolarEclipseShadows(prepared.context, center, settings);
+    drawPolarEclipseShadows(
+      prepared.context,
+      center,
+      settings,
+      targetMap,
+      polygons,
+    );
     strokePolarOverlayPaths(
-      prepared.context, center, (path) => polarEclipseStroke(path, settings, false),
+      prepared.context,
+      (path) => polarEclipseStroke(path, settings, false),
+      projectedPaths,
     );
     strokePolarOverlayPaths(
-      prepared.context, center, (path) => polarAcgCasingStroke(path, settings, tokens),
+      prepared.context,
+      (path) => polarAcgCasingStroke(
+        path,
+        settings,
+        tokens,
+        visibility,
+      ),
+      projectedPaths,
     );
     strokePolarOverlayPaths(
-      prepared.context, center, (path) => polarAcgLineStroke(path, settings, tokens),
+      prepared.context,
+      (path) => polarAcgLineStroke(
+        path,
+        settings,
+        tokens,
+        visibility,
+      ),
+      projectedPaths,
     );
-    if (ACG_PERF_MODE) {
+    if (ACG_PERF_MODE && liveTarget) {
       const elapsed = perfNow() - started;
       perfState.polarOverlayDraws += 1;
       perfState.polarOverlayLastMs = elapsed;
       perfState.polarOverlayMaxMs = Math.max(perfState.polarOverlayMaxMs, elapsed);
     }
+    return prepared.canvas;
   }
 
   function onLineClick(e) {
     if (!e.features || !e.features.length) return;
     const f = e.features[0];
-    const label = f.properties.label || f.properties.point;
+    const label = localizedPointLabel(f.properties);
     const kind = f.properties.kind;
+    const kindLabel = kind === 'LOCAL_SPACE_OPPOSITION'
+      ? (uiLabels.localSpaceOpposition || '')
+      : (kind === 'ASPECT'
+        ? localizedAspectLabel(f.properties)
+        : (kind === 'ZENITH' ? (uiLabels.zenith || '') : kind));
     new maplibregl.Popup()
       .setLngLat(e.lngLat)
-      .setHTML(`<strong>${label}</strong> ${kind}<br><span style="opacity:0.7">${e.lngLat.lng.toFixed(2)}°, ${e.lngLat.lat.toFixed(2)}°</span>`)
+      .setHTML(`<strong>${label}</strong> ${kindLabel}<br><span style="opacity:0.7">${e.lngLat.lng.toFixed(2)}°, ${e.lngLat.lat.toFixed(2)}°</span>`)
       .addTo(map);
     sendToHost({ type: 'click', point: f.properties.point, kind: kind,
                  lon: e.lngLat.lng, lat: e.lngLat.lat });
@@ -4807,6 +6892,9 @@
   function wireContextMenu() {
     const menu = document.getElementById('acg-menu');
     if (!menu) return;
+    // The map exposes its own Aries menu. Never fall through to WKWebView's
+    // Back/Reload/Inspect website menu elsewhere in the embedded document.
+    document.addEventListener('contextmenu', (event) => event.preventDefault(), true);
     menu.addEventListener('click', (event) => {
       const btn = event.target.closest('button[data-action]');
       if (!btn || !contextMenuTarget) return;
@@ -4816,6 +6904,38 @@
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') hideContextMenu();
     });
+  }
+
+  function wireAmbientInput() {
+    const forward = (event, eventType) => {
+      const target = event.target;
+      const targetIsEditable = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable);
+      const isShiftSignal = event.key === 'Shift' || event.shiftKey;
+      const isAmbientDigit =
+        !targetIsEditable &&
+        eventType === 'keydown' &&
+        !event.repeat &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        /^[0-9]$/.test(event.key);
+      if (!isShiftSignal && !isAmbientDigit) return;
+      if (isAmbientDigit) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      postToParent({
+        type: 'ambient-key',
+        eventType: eventType,
+        key: event.key,
+        metaKey: event.metaKey,
+        ctrlKey: event.ctrlKey,
+        altKey: event.altKey,
+        repeat: event.repeat,
+      });
+    };
+    window.addEventListener('keydown', (event) => forward(event, 'keydown'), true);
+    window.addEventListener('keyup', (event) => forward(event, 'keyup'), true);
   }
 
   function routeHostKeyCommand(event) {
@@ -4939,9 +7059,11 @@
     const visible = !!viewOptions.parans;
     const s = currentDevSettings();
     if (map && map.getLayer('acg-parans')) {
+      map.setFilter('acg-parans', acgParanFilter());
       map.setLayoutProperty('acg-parans', 'visibility', visible ? 'visible' : 'none');
     }
     if (map && map.getLayer('acg-paran-labels')) {
+      map.setFilter('acg-paran-labels', acgParanFilter());
       map.setLayoutProperty('acg-paran-labels', 'visibility', (visible && s.paranLabelsOn) ? 'visible' : 'none');
     }
     const btn = document.querySelector('#overlays button[data-overlay="parans"]');
@@ -4979,66 +7101,70 @@
     syncAsterismVisibility();
   }
 
+  function syncVisibilityFilters() {
+    syncAcgLineVisibility();
+    scheduleDomAcgLabels('visibility-filters');
+    updateLegend();
+    if (map && typeof map.triggerRepaint === 'function') map.triggerRepaint();
+  }
+
+  function setVisibilityFilters(filters) {
+    const next = filters && typeof filters === 'object' ? filters : {};
+    const attributes = next.filters && typeof next.filters === 'object'
+      ? next.filters
+      : next;
+    if (typeof next.parans === 'boolean') setParansVisible(next.parans);
+    if (typeof next.aspects === 'boolean') viewOptions.aspects = next.aspects;
+    if (typeof next.zeniths === 'boolean') viewOptions.zeniths = next.zeniths;
+    if (typeof next.localSpaceOppositions === 'boolean') {
+      viewOptions.localSpaceOppositions = next.localSpaceOppositions;
+    }
+
+    const layerInput = next.layers && typeof next.layers === 'object'
+      ? next.layers
+      : (next.dynamicLayers && typeof next.dynamicLayers === 'object' ? next.dynamicLayers : null);
+    if (Array.isArray(next.layers)) {
+      const selectedLayers = normalizedVisibilitySelection(next.layers) || [];
+      for (const role of ['natal', 'transit', 'progression']) {
+        viewOptions.layers[role] = selectedLayers.includes(role);
+      }
+    } else {
+      for (const role of ['natal', 'transit', 'progression']) {
+        if (layerInput && typeof layerInput[role] === 'boolean') {
+          viewOptions.layers[role] = layerInput[role];
+        } else if (typeof next[role] === 'boolean') {
+          viewOptions.layers[role] = next[role];
+        }
+      }
+    }
+
+    for (const [filterName, aliases] of Object.entries({
+      points: ['points', 'pointIds', 'point'],
+      kinds: ['kinds', 'featureKinds', 'kind'],
+      aspects: ['aspectNames', 'aspectTypes', 'aspect'],
+      techniques: ['techniques', 'techniqueIds', 'technique'],
+    })) {
+      const alias = aliases.find((name) => Object.prototype.hasOwnProperty.call(attributes, name));
+      if (alias) {
+        viewOptions.filters[filterName] = normalizedVisibilitySelection(attributes[alias]);
+      } else if (
+        filterName === 'aspects' &&
+        Object.prototype.hasOwnProperty.call(attributes, 'aspects') &&
+        typeof attributes.aspects !== 'boolean'
+      ) {
+        viewOptions.filters.aspects = normalizedVisibilitySelection(attributes.aspects);
+      }
+    }
+
+    syncVisibilityFilters();
+  }
+
   function firstSymbolLayerId() {
     const style = map && map.getStyle && map.getStyle();
     const layer = style && Array.isArray(style.layers)
       ? style.layers.find((candidate) => candidate && candidate.type === 'symbol')
       : null;
     return layer && layer.id || undefined;
-  }
-
-  function ensureTerrainResources() {
-    if (!map || !map.getStyle || !map.getStyle()) return false;
-    try {
-      const beforeId = firstSymbolLayerId();
-      if (!map.getLayer(HILLSHADE_LAYER_ID)) {
-        if (!map.getSource(TERRAIN_SOURCE_ID)) {
-          map.addSource(TERRAIN_SOURCE_ID, {
-            type: 'raster-dem',
-            url: TERRAIN_DEM_URL,
-            encoding: 'terrarium',
-          });
-        }
-        map.addLayer({
-          id: HILLSHADE_LAYER_ID,
-          type: 'hillshade',
-          source: TERRAIN_SOURCE_ID,
-          layout: { visibility: 'none' },
-          paint: {
-            'hillshade-illumination-anchor': 'map',
-          },
-        }, beforeId);
-      }
-      return true;
-    } catch (err) {
-      console.warn('[acg-terrain] optional resources unavailable', err);
-      return false;
-    }
-  }
-
-  function syncTerrainRelief() {
-    const behavior = referenceBehavior();
-    // MapLibre supports this DEM terrain in both Mercator and globe
-    // projections. Keep the persistent option authoritative across view
-    // switches instead of silently disabling it on the globe.
-    const enabled = !!behavior.terrainRelief;
-    const s = currentDevSettings();
-    document.body.classList.toggle('terrain-relief', enabled);
-    if (!map || !map.getStyle || !map.getStyle()) return;
-    if (enabled) ensureTerrainResources();
-    setLayerVisibility(HILLSHADE_LAYER_ID, enabled);
-    if (map.getLayer(HILLSHADE_LAYER_ID)) {
-      map.setPaintProperty(HILLSHADE_LAYER_ID, 'hillshade-shadow-color', s.terrainShadowColor);
-      map.setPaintProperty(HILLSHADE_LAYER_ID, 'hillshade-highlight-color', s.terrainHighlightColor);
-      map.setPaintProperty(HILLSHADE_LAYER_ID, 'hillshade-exaggeration', s.hillshadeExaggeration);
-    }
-    if (typeof map.setTerrain === 'function') {
-      try {
-        map.setTerrain(enabled && map.getSource(TERRAIN_SOURCE_ID)
-          ? { source: TERRAIN_SOURCE_ID, exaggeration: s.terrainExaggeration }
-          : null);
-      } catch (_) {}
-    }
   }
 
   function applyAsterismButtonLabel() {
@@ -5064,6 +7190,45 @@
     }
   }
 
+  function restoredLegendState(state) {
+    const hasNestedLegend = !!(
+      state &&
+      Object.prototype.hasOwnProperty.call(state, 'legend')
+    );
+    const nested = hasNestedLegend && state.legend && typeof state.legend === 'object'
+      ? state.legend
+      : null;
+    if (
+      nested &&
+      nested.userSet === true &&
+      Object.prototype.hasOwnProperty.call(nested, 'collapsed')
+    ) {
+      return { collapsed: !!nested.collapsed, userSet: true };
+    }
+    if (hasNestedLegend) {
+      return { collapsed: true, userSet: false };
+    }
+    const hasLegacyLegendState = !!(
+      state &&
+      (
+        Object.prototype.hasOwnProperty.call(state, 'legendCollapsed') ||
+        Object.prototype.hasOwnProperty.call(state, 'legendUserSet')
+      )
+    );
+    if (!hasLegacyLegendState) return null;
+    // The top-level fields predate the nested shape. Only restore them when a
+    // caller also supplies the new explicit marker; old implicit false values
+    // must migrate to the new collapsed default.
+    if (
+      state &&
+      state.legendUserSet === true &&
+      Object.prototype.hasOwnProperty.call(state, 'legendCollapsed')
+    ) {
+      return { collapsed: !!state.legendCollapsed, userSet: true };
+    }
+    return { collapsed: true, userSet: false };
+  }
+
   function applyChromeState(state) {
     if (!state) return;
     const overlays = state.overlays || state.viewOptions || {};
@@ -5075,10 +7240,34 @@
     if (Object.prototype.hasOwnProperty.call(overlays, 'asterisms')) {
       setAsterismsVisible(overlays.asterisms);
     }
-    if (state.legend && Object.prototype.hasOwnProperty.call(state.legend, 'collapsed')) {
-      setLegendCollapsed(state.legend.collapsed);
-    } else if (Object.prototype.hasOwnProperty.call(state, 'legendCollapsed')) {
-      setLegendCollapsed(state.legendCollapsed);
+    setVisibilityFilters({
+      aspects: Object.prototype.hasOwnProperty.call(overlays, 'aspects')
+        ? overlays.aspects
+        : viewOptions.aspects,
+      zeniths: Object.prototype.hasOwnProperty.call(overlays, 'zeniths')
+        ? overlays.zeniths
+        : viewOptions.zeniths,
+      localSpaceOppositions: Object.prototype.hasOwnProperty.call(overlays, 'localSpaceOppositions')
+        ? overlays.localSpaceOppositions
+        : viewOptions.localSpaceOppositions,
+      layers: overlays.layers || viewOptions.layers,
+      points: overlays.filters && Object.prototype.hasOwnProperty.call(overlays.filters, 'points')
+        ? overlays.filters.points
+        : viewOptions.filters.points,
+      kinds: overlays.filters && Object.prototype.hasOwnProperty.call(overlays.filters, 'kinds')
+        ? overlays.filters.kinds
+        : viewOptions.filters.kinds,
+      aspectNames: overlays.filters && Object.prototype.hasOwnProperty.call(overlays.filters, 'aspects')
+        ? overlays.filters.aspects
+        : viewOptions.filters.aspects,
+      techniques: overlays.filters && Object.prototype.hasOwnProperty.call(overlays.filters, 'techniques')
+        ? overlays.filters.techniques
+        : viewOptions.filters.techniques,
+    });
+    const restoredLegend = restoredLegendState(state);
+    if (restoredLegend) {
+      legendUserSet = restoredLegend.userSet;
+      setLegendCollapsed(restoredLegend.collapsed);
     }
   }
 
@@ -5090,7 +7279,6 @@
     hideMapUntilStyledPaint();
     try {
       map.setProjection({ type: name });
-      syncTerrainRelief();
       refreshPolarProjectionData();
     } catch (err) {
       revealMapAfterStyledPaint();
@@ -5103,7 +7291,7 @@
     } else if (name === 'mercator') {
       map.easeTo({ zoom: 1.3, duration: 400 });
     }
-    scheduleViewStatePost('projection');
+    postViewState('projection', { force: true });
     revealMapAfterStyledPaint();
   }
 
@@ -5122,16 +7310,20 @@
       if (state.projection) {
         map.setProjection({ type: state.projection });
         setProjectionButtonState(state.projection);
-        syncTerrainRelief();
         refreshPolarProjectionData();
       }
+      // Chrome-only updates and old/incomplete saved states must not pass
+      // explicit undefined values into MapLibre. WKWebView can turn those
+      // values into a NaN camera, leaving the globe present but unpainted.
+      const camera = {};
       const c = state.center || {};
-      map.jumpTo({
-        center: (c.lng != null && c.lat != null) ? [c.lng, c.lat] : undefined,
-        zoom: state.zoom,
-        bearing: state.bearing,
-        pitch: state.pitch,
-      });
+      if (Number.isFinite(c.lng) && Number.isFinite(c.lat)) {
+        camera.center = [c.lng, c.lat];
+      }
+      for (const key of ['zoom', 'bearing', 'pitch']) {
+        if (Number.isFinite(state[key])) camera[key] = state[key];
+      }
+      if (Object.keys(camera).length) map.jumpTo(camera);
       return true;
     } catch (_) {
       return false;
@@ -5161,10 +7353,13 @@
   function toggleOverlay(name) {
     if (name === 'parans') {
       setParansVisible(!viewOptions.parans);
-      scheduleViewStatePost('overlay');
+      // Paint the retained map chrome first, then immediately tell the React
+      // host to commit the canonical map spec. A first-enable needs new paran
+      // geometry, so it must not wait behind the ordinary camera debounce.
+      postViewState('overlay-parans', { force: true });
     } else if (name === 'asterisms') {
       setAsterismsVisible(!viewOptions.asterisms);
-      scheduleViewStatePost('overlay');
+      postViewState('overlay-asterisms', { force: true });
     }
   }
 
@@ -5178,8 +7373,9 @@
     const btn = document.getElementById('legend-toggle');
     if (!btn) return;
     wireChromeButton(btn, () => {
+      legendUserSet = true;
       setLegendCollapsed(!legendCollapsed);
-      scheduleViewStatePost('legend');
+      postViewState('legend', { force: true });
     });
     setLegendCollapsed(legendCollapsed);
   }
@@ -5203,6 +7399,7 @@
     if (controlsWired) return;
     controlsWired = true;
     wireContextMenu();
+    wireAmbientInput();
     wireProjectionButtons();
     wireOverlayButtons();
     wireLegendToggle();
@@ -5610,12 +7807,17 @@
         const data = geojson || { type: 'FeatureCollection', features: [] };
         if (!mapReady) { pendingData = data; return; }
         currentData = data;
+        if (runtimeOverlaySceneDeferred()) {
+          deferRuntimeOverlayScene({ data: true });
+          return;
+        }
         if (ACTIVE_ASTROCART_STYLE) {
           applyDisplayStyle(ACTIVE_ASTROCART_STYLE, false);
         }
-        pushData();
-        setStatus(`${(currentData.features || []).length} lines loaded`);
-        postPerfSnapshot('set-data');
+        if (pushData()) {
+          setStatus(`${(currentData.features || []).length} lines loaded`);
+          postPerfSnapshot('set-data');
+        }
       } catch (err) { setStatus('error: ' + err.message); }
     },
     setAsterismData(geojson) {
@@ -5631,9 +7833,10 @@
         const data = geojson || { type: 'FeatureCollection', features: [] };
         if (!mapReady) { pendingEclipseData = data; return; }
         currentEclipseData = data;
-        pushEclipseData({ fit: true });
-        const count = (currentEclipseData.features || []).length;
-        if (count) setStatus(`${count} eclipse path features loaded`);
+        if (pushEclipseData({ fit: true })) {
+          const count = (currentEclipseData.features || []).length;
+          if (count) setStatus(`${count} eclipse path features loaded`);
+        }
       } catch (err) { setStatus('eclipse error: ' + err.message); }
     },
     setStyle(url) {
@@ -5646,7 +7849,6 @@
         ensureEclipseLayers();
         ensureAsterismLayer();
         ensureAcgLayers();
-        syncTerrainRelief();
         applyDevColors();
         pushData();
         pushAsterismData();
@@ -5735,8 +7937,21 @@
       uiLabels = Object.assign({}, uiLabels, labels || {});
       applyBirthplaceMarkerLabel();
       applyAsterismButtonLabel();
+      if (map && map.getLayer('acg-labels')) {
+        map.setLayoutProperty('acg-labels', 'text-field', acgLineLabelExpression());
+      }
+      if (map && map.getLayer('acg-zenith-labels')) {
+        map.setLayoutProperty('acg-zenith-labels', 'text-field', acgZenithLabelExpression());
+      }
+      if (map && map.getLayer('acg-paran-labels')) {
+        map.setLayoutProperty('acg-paran-labels', 'text-field', acgParanLabelExpression());
+      }
+      scheduleDomAcgLabels('ui-labels');
+      updateLegend();
+      if (map && typeof map.triggerRepaint === 'function') map.triggerRepaint();
     },
-    /** Serialisable view state for Python-side per-radix persistence. */
+    setVisibilityFilters,
+    /** Serialisable view state for host-owned map persistence. */
     getState() {
       if (!map) return null;
       const c = map.getCenter();
@@ -5750,8 +7965,21 @@
         overlays: {
           parans: !!viewOptions.parans,
           asterisms: !!viewOptions.asterisms,
+          aspects: !!viewOptions.aspects,
+          zeniths: !!viewOptions.zeniths,
+          localSpaceOppositions: !!viewOptions.localSpaceOppositions,
+          layers: Object.assign({}, viewOptions.layers),
+          filters: {
+            points: viewOptions.filters.points && viewOptions.filters.points.slice(),
+            kinds: viewOptions.filters.kinds && viewOptions.filters.kinds.slice(),
+            aspects: viewOptions.filters.aspects && viewOptions.filters.aspects.slice(),
+            techniques: viewOptions.filters.techniques && viewOptions.filters.techniques.slice(),
+          },
         },
-        legend: { collapsed: !!legendCollapsed },
+        legend: {
+          collapsed: !!legendCollapsed,
+          userSet: !!legendUserSet,
+        },
       };
     },
     /** Reapply a prior getState(). Queues until the style has loaded. */
@@ -5769,6 +7997,34 @@
     fitGlobe() {
       if (!map) return;
       map.easeTo({ center: [0, 0], zoom: globeZoomForViewport(), duration: 400 });
+    },
+    /** Restore a neutral camera without changing projection or map overlays. */
+    resetView() {
+      if (!map || !mapReady) return false;
+      const projection = map.getProjection();
+      const projectionName = (
+        projection && projection.type
+      ) || selectedProjection || 'globe';
+      const zoom = projectionName === 'globe' ? globeZoomForViewport() : 1.3;
+      try {
+        map.stop();
+        map.jumpTo({
+          center: [0, 0],
+          zoom: zoom,
+          bearing: 0,
+          pitch: 0,
+        });
+        // jumpTo emits moveend synchronously. Replace its debounced persistence
+        // with one explicit camera-only state so reset never writes twice.
+        if (viewStatePostTimer) {
+          window.clearTimeout(viewStatePostTimer);
+          viewStatePostTimer = null;
+        }
+        postViewState('reset-view', { force: true });
+        return true;
+      } catch (_) {
+        return false;
+      }
     },
     fitEclipse() {
       fitFeatureCollection(currentEclipseData);
@@ -5803,6 +8059,7 @@
       menu.setAttribute('data-mode', next);
     },
     getPerfState,
+    capturePrintAtlas,
   };
 
   document.addEventListener('keydown', routeHostKeyCommand, true);
@@ -5837,6 +8094,11 @@
         case 'aries.setUiLabels':
           if (typeof acg.setUiLabels === 'function') acg.setUiLabels(data.labels);
           break;
+        case 'aries.setVisibilityFilters':
+          if (typeof acg.setVisibilityFilters === 'function') {
+            acg.setVisibilityFilters(data.filters || data.payload);
+          }
+          break;
         case 'aries.setCenter':
           if (typeof acg.setCenter === 'function') acg.setCenter(data.lat, data.lon);
           break;
@@ -5845,6 +8107,9 @@
           break;
         case 'aries.applyState':
           if (typeof acg.applyState === 'function') acg.applyState(data.state);
+          break;
+        case 'aries.resetView':
+          if (typeof acg.resetView === 'function') acg.resetView();
           break;
         case 'aries.setStatePersistence':
           setViewStatePersistenceEnabled(!!data.enabled);
@@ -5857,6 +8122,7 @@
               // camera animation, replay timers, labels, and pending viewport
               // work must not contend with the active chart.
               map.stop();
+              retainedEclipseFitPending = false;
               if (runtimeOverlayReplayTimer) {
                 window.clearTimeout(runtimeOverlayReplayTimer);
                 runtimeOverlayReplayTimer = null;
@@ -5869,13 +8135,9 @@
                 try { cityLabelsController.abort(); } catch (_) {}
                 cityLabelsController = null;
               }
-              if (domAcgLabelRaf) {
-                window.cancelAnimationFrame(domAcgLabelRaf);
-                domAcgLabelRaf = 0;
-              }
-              if (placeLabelRenderRaf) {
-                window.cancelAnimationFrame(placeLabelRenderRaf);
-                placeLabelRenderRaf = 0;
+              if (domLabelLayoutRaf) {
+                window.cancelAnimationFrame(domLabelLayoutRaf);
+                domLabelLayoutRaf = 0;
               }
               hideAsterismStarPopup();
               clearPolarOverlay();
@@ -5883,8 +8145,8 @@
               // MapLibre requires resize() when a CSS-hidden container is shown.
               window.requestAnimationFrame(() => {
                 map.resize();
+                flushRetainedRuntimeOverlayScene('reactivate');
                 scheduleOnlineBasemapAdoption();
-                scheduleRuntimeOverlayReplay();
                 scheduleCityLabelsRefresh('reactivate');
                 renderPolarOverlay();
                 map.triggerRepaint();
@@ -5898,8 +8160,59 @@
         case 'aries.getPerf':
           postPerfSnapshot(data.reason || 'request');
           break;
+        case 'aries.capturePrintAtlas':
+          {
+            const requestId = String(data.requestId || '');
+            const previous = printAtlasCaptureControllers.get(requestId);
+            if (previous) previous.abort();
+            const controller = new AbortController();
+            printAtlasCaptureControllers.set(requestId, controller);
+            Promise.resolve(
+              typeof acg.capturePrintAtlas === 'function'
+                ? acg.capturePrintAtlas(
+                    data.pageFormat,
+                    data.selection,
+                    data.geojson,
+                    controller.signal,
+                  )
+                : null,
+            ).then(
+              (atlas) => postToParent({
+                type: 'print-atlas',
+                requestId,
+                ok: !!atlas,
+                atlas,
+              }),
+              (error) => {
+                if (!controller.signal.aborted) {
+                  console.error('[acg-print]', error);
+                }
+                postToParent({
+                  type: 'print-atlas',
+                  requestId,
+                  ok: false,
+                });
+              },
+            ).finally(() => {
+              if (printAtlasCaptureControllers.get(requestId) === controller) {
+                printAtlasCaptureControllers.delete(requestId);
+              }
+            });
+          }
+          break;
+        case 'aries.cancelPrintAtlas':
+          {
+            const requestId = String(data.requestId || '');
+            const controller = printAtlasCaptureControllers.get(requestId);
+            if (controller) {
+              controller.abort();
+              printAtlasCaptureControllers.delete(requestId);
+            }
+          }
+          break;
         case 'aries.getReady':
           if (mapReady) postToParent({ type: 'ready' });
+          if (mapPresented) postToParent({ type: 'presented' });
           break;
       }
     } catch (err) {

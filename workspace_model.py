@@ -82,6 +82,7 @@ DEFAULT_SECTIONS = (
 			WorkspaceAction('positions', 'Positions', shortcut=_action_shortcut('positions', 'TMPositions')),
 			WorkspaceAction('lunar_mansions', mtexts.txts.get('LunarMansions', 'Lunar Mansions...').rstrip('. …')),
 			WorkspaceAction('aspects', 'Aspects', shortcut=_action_shortcut('aspects', 'TMAspects')),
+			WorkspaceAction('aspect_list', 'aspect_list', shortcut=_action_shortcut('aspect_list')),
 			WorkspaceAction('dodecatemoria', 'Dodecatemoria', shortcut=_action_shortcut('dodecatemoria', 'TMDodecatemoria')),
 			WorkspaceAction('midpoints', 'Midpoints', shortcut=_action_shortcut('midpoints', 'TMMidpoints')),
 			WorkspaceAction('asteroids', 'Asteroids'),

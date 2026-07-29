@@ -10,13 +10,19 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  ClipboardPaste,
   Cloud,
   CloudOff,
+  Copy,
+  CopyPlus,
   Download,
   LoaderCircle,
   MoveHorizontal,
   Redo2,
+  RefreshCw,
   RotateCcw,
+  Trash2,
+  Upload,
   Undo2,
   X,
 } from "lucide-react";
@@ -26,32 +32,64 @@ import {
   useMemo,
   useRef,
   useState,
+  type ChangeEvent,
+  type FormEvent,
   type ReactNode,
 } from "react";
 
 import { useT, useTFallback, type TFunc } from "@/lib/i18n/i18n";
+import { rootCssPixelOffset } from "@/lib/css-token-value";
+import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { AppThemeControls } from "@/components/workshell/app-theme-controls";
+import { StyleLabColorPicker } from "@/components/workshell/style-lab-color-picker";
+import { applyThemePreset, type ThemeState } from "@/lib/daemon/client";
+import { APP_MATERIAL_PATTERNS } from "@/lib/theme/app-material";
 import {
   AUTHORING_NUMERIC_PROPERTIES,
   type AuthoringNumericPreset,
+  type ChartStyleFontRef,
 } from "@/lib/style-lab/authoring-schema";
 import {
   WHEEL_SEMANTIC_CLASS_MANIFEST,
   isWheelSemanticClassId,
+  type WheelSemanticVariant,
 } from "@/lib/style-lab/semantic-class-manifest";
 import {
+  buildElementStylePastePatch,
+  buildWheelVariantSyncPatch,
+  copyElementStyle,
+  isWheelAuthoringFlatProperty,
+  type ElementStyleClipboard,
+  type StyleTransferControl,
+} from "@/lib/style-lab/style-transfer";
+import {
   WHEEL_AUTHORING_OVERRIDE_PREFIX,
-  createChartStyleProfileV2FromFlatOverrides,
   wheelAuthoringOverrideId,
   type WheelAuthoringEditScope,
   type WheelAuthoringFlatProperty,
 } from "@/lib/style-lab/wheel-authoring-adapter";
+
 import {
   commitCurrentStyleLabDraft,
   createCurrentStyleLabDraft,
+  createStyleLabDraftFromTheme,
+  deleteStyleLabTheme,
+  discardCurrentStyleLabDraft,
   fetchCurrentStyleLabDraft,
+  fetchStyleLabDraftExport,
+  fetchStyleLabThemeSources,
+  importStyleLabTheme,
   patchCurrentStyleLabDraft,
+  revertCurrentStyleLabDraft,
+  saveCurrentStyleLabDraftAsTheme,
   StyleLabApiError,
   type StyleLabDraft,
+  type StyleLabThemeSource,
   type StyleLabTokenValue,
 } from "@/lib/style-lab/client";
 import type {
@@ -74,7 +112,13 @@ import {
   type ChartStyleAuthoringEditScope,
   type ChartStyleTokenMetadata,
 } from "@/stores/chart-style-editor-store";
+import { useThemeStore } from "@/stores/theme-store";
 import publicCatalogJson from "@/styles/style-token-public.generated.json";
+
+const inspectorComboboxSideOffset = rootCssPixelOffset(
+  "--aries-menu-popup-side-offset",
+  4,
+);
 
 type PublicStyleToken = {
   semanticId: string;
@@ -95,8 +139,44 @@ type BoundControl = {
   binding: StyleSceneTokenBinding;
   token: ChartStyleTokenMetadata;
   section: "element" | "effects";
-  authoringKind?: "stroke-style";
+  authoringKind?:
+    | "stroke-style"
+    | "line-cap"
+    | "line-join"
+    | "fill-pattern"
+    | "shadow-pattern"
+    | "gradient-type"
+    | "direction-source"
+    | "texture-mask"
+    | "font-ref";
 };
+
+const MAX_THEME_IMPORT_BYTES = 2 * 1024 * 1024;
+const MAX_THEME_IMPORT_COUNT = 16;
+
+function parseThemeExchangeFile(source: string): unknown[] {
+  const trimmed = source.trim();
+  if (!trimmed) throw new Error("empty theme file");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    parsed = trimmed
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+  }
+  const profiles = Array.isArray(parsed) ? parsed : [parsed];
+  if (
+    !profiles.length
+    || profiles.length > MAX_THEME_IMPORT_COUNT
+    || profiles.some((profile) => profile == null || typeof profile !== "object" || Array.isArray(profile))
+  ) {
+    throw new Error("invalid theme exchange file");
+  }
+  return profiles;
+}
 
 type InspectorSection =
   | "geometry"
@@ -104,6 +184,15 @@ type InspectorSection =
   | "stroke"
   | "appearance"
   | "effects";
+
+type InspectorControlGroup =
+  | "default"
+  | "fill"
+  | "texture"
+  | "mask"
+  | "compositing"
+  | "filters"
+  | "shadow";
 
 type InspectorChoice = Readonly<{
   id: string;
@@ -144,6 +233,16 @@ const INSPECTOR_SECTION_ORDER: readonly InspectorSection[] = [
   "stroke",
   "appearance",
   "effects",
+];
+
+const INSPECTOR_CONTROL_GROUP_ORDER: readonly InspectorControlGroup[] = [
+  "default",
+  "fill",
+  "texture",
+  "mask",
+  "compositing",
+  "filters",
+  "shadow",
 ];
 
 function cloneValue(value: StyleLabTokenValue): StyleLabTokenValue {
@@ -266,6 +365,113 @@ function authoringNumberControl(
   };
 }
 
+function authoringColorControl(
+  element: StyleSceneElement,
+  editScope: ChartStyleAuthoringEditScope,
+  property:
+    | "color"
+    | "backgroundColor"
+    | "patternColor"
+    | "gradientStartColor"
+    | "gradientEndColor"
+    | "shadowColor",
+  value: string,
+): BoundControl {
+  const semanticId = wheelAuthoringOverrideId(
+    styleElementEditScope(element, editScope),
+    styleClassId(element),
+    property,
+  );
+  return {
+    binding: {
+      semanticId,
+      cssVar: "",
+      property: "color",
+      value,
+    },
+    token: {
+      semanticId,
+      cssVar: "",
+      label: property,
+      description: property,
+      type: "color",
+      unit: "",
+      defaultValue: value,
+      supportsAlpha: true,
+    },
+    section: "element",
+  };
+}
+
+function authoringFontControl(
+  element: StyleSceneElement,
+  editScope: ChartStyleAuthoringEditScope,
+  fontRef: ChartStyleFontRef,
+): BoundControl {
+  const semanticId = wheelAuthoringOverrideId(
+    styleElementEditScope(element, editScope),
+    styleClassId(element),
+    "fontRef",
+  );
+  return {
+    binding: {
+      semanticId,
+      cssVar: "",
+      property: "font-family",
+    },
+    token: {
+      semanticId,
+      cssVar: "",
+      label: "fontRef",
+      description: "fontRef",
+      type: "font-family",
+      unit: "",
+      defaultValue: fontRef,
+    },
+    section: "element",
+    authoringKind: "font-ref",
+  };
+}
+
+function authoringSelectControl(
+  element: StyleSceneElement,
+  editScope: ChartStyleAuthoringEditScope,
+  property:
+    | "gradientType"
+    | "gradientDirection"
+    | "textureMask"
+    | "maskDirection"
+    | "lineCap"
+    | "lineJoin",
+  value: string,
+  authoringKind: NonNullable<BoundControl["authoringKind"]>,
+): BoundControl {
+  const semanticId = wheelAuthoringOverrideId(
+    styleElementEditScope(element, editScope),
+    styleClassId(element),
+    property,
+  );
+  return {
+    binding: {
+      semanticId,
+      cssVar: "",
+      property: "effect",
+      value,
+    },
+    token: {
+      semanticId,
+      cssVar: "",
+      label: property,
+      description: property,
+      type: "font-family",
+      unit: "",
+      defaultValue: value,
+    },
+    section: "element",
+    authoringKind,
+  };
+}
+
 function colorFromValue(value: StyleLabTokenValue | string | number): Color | null {
   try {
     if (Array.isArray(value)) {
@@ -368,6 +574,32 @@ function isLayerEffect(token: ChartStyleTokenMetadata): boolean {
     /^renderer\.wheel\.metric\.(?:geometry|dynamic|outerLabel)(?:Opacity|Blur|Brightness|Contrast|Saturate|Hue|Grayscale|Invert|Sepia|Shadow)/.test(token.semanticId);
 }
 
+const MATERIAL_PROPERTY_ORDER = [
+  "backgroundColor",
+  "gradientType",
+  "gradientDirection",
+  "gradientStartColor",
+  "gradientEndColor",
+  "gradientAngle",
+  "fillPattern",
+  "patternColor",
+  "cellSize",
+  "dotSize",
+  "density",
+  "angle",
+  "seed",
+  "textureMask",
+  "maskDirection",
+  "maskAmount",
+  "maskAngle",
+  "shadowPattern",
+  "shadowColor",
+  "shadowX",
+  "shadowY",
+  "shadowBlur",
+  "opacity",
+] as const;
+
 function propertyOrder(element: StyleSceneElement, control: BoundControl): number {
   const { property } = control.binding;
   const id = control.token.semanticId.toLowerCase();
@@ -387,6 +619,15 @@ function propertyOrder(element: StyleSceneElement, control: BoundControl): numbe
     if (/shadowblur$/.test(id)) return 320;
     return 330;
   }
+  if (element.primitive === "surface") {
+    const materialProperty = control.token.semanticId.slice(
+      control.token.semanticId.lastIndexOf(".") + 1,
+    );
+    const materialIndex = MATERIAL_PROPERTY_ORDER.indexOf(
+      materialProperty as (typeof MATERIAL_PROPERTY_ORDER)[number],
+    );
+    if (materialIndex >= 0) return 100 + materialIndex * 10;
+  }
   const sectionOffset = 0;
   const strokedPrimitive = element.primitive === "line" || element.primitive === "circle";
   if (element.primitive === "text") {
@@ -402,6 +643,8 @@ function propertyOrder(element: StyleSceneElement, control: BoundControl): numbe
   if (property === "spacing") return sectionOffset + 30;
   if (property === "stroke-width") return sectionOffset + 40;
   if (property === "stroke-dash") return sectionOffset + 50;
+  if (control.authoringKind === "line-cap") return sectionOffset + 60;
+  if (control.authoringKind === "line-join") return sectionOffset + 70;
   if (property === "font-family") return sectionOffset + 55;
   if (property === "font-size") return sectionOffset + 60;
   if (property === "font-weight") return sectionOffset + 70;
@@ -430,8 +673,29 @@ function controlsForElement(
   if (authoring?.radiusPx != null) {
     controls.push(authoringNumberControl(element, editScope, "radius", "radius", "radius", authoring.radiusPx));
   }
+  if (authoring?.fontRef != null) {
+    controls.push(authoringFontControl(element, editScope, authoring.fontRef));
+  }
   if (authoring?.fontSizePx != null) {
     controls.push(authoringNumberControl(element, editScope, "fontSize", "font-size", "glyphSize", authoring.fontSizePx));
+  }
+  if (authoring?.trackingPx != null) {
+    controls.push(authoringNumberControl(
+      element,
+      editScope,
+      "tracking",
+      "spacing",
+      "tracking",
+      authoring.trackingPx,
+    ));
+  }
+  if (authoring?.color != null) {
+    controls.push(authoringColorControl(
+      element,
+      editScope,
+      "color",
+      authoring.color,
+    ));
   }
   if (authoring?.strokeWidthPx != null) {
     controls.push(authoringNumberControl(
@@ -468,6 +732,262 @@ function controlsForElement(
       section: "element",
       authoringKind: "stroke-style",
     });
+  }
+  if (authoring?.lineCap != null) {
+    controls.push(authoringSelectControl(
+      element,
+      editScope,
+      "lineCap",
+      authoring.lineCap,
+      "line-cap",
+    ));
+  }
+  if (authoring?.lineJoin != null) {
+    controls.push(authoringSelectControl(
+      element,
+      editScope,
+      "lineJoin",
+      authoring.lineJoin,
+      "line-join",
+    ));
+  }
+  if (authoring?.fillPattern != null) {
+    const semanticId = wheelAuthoringOverrideId(
+      styleElementEditScope(element, editScope),
+      styleClassId(element),
+      "fillPattern",
+    );
+    controls.push({
+      binding: {
+        semanticId,
+        cssVar: "",
+        property: "effect",
+        value: authoring.fillPattern,
+      },
+      token: {
+        semanticId,
+        cssVar: "",
+        label: "fillPattern",
+        description: "fillPattern",
+        type: "font-family",
+        unit: "",
+        defaultValue: authoring.fillPattern,
+      },
+      section: "element",
+      authoringKind: "fill-pattern",
+    });
+  }
+  if (authoring?.shadowPattern != null) {
+    const semanticId = wheelAuthoringOverrideId(
+      styleElementEditScope(element, editScope),
+      styleClassId(element),
+      "shadowPattern",
+    );
+    controls.push({
+      binding: {
+        semanticId,
+        cssVar: "",
+        property: "effect",
+        value: authoring.shadowPattern,
+      },
+      token: {
+        semanticId,
+        cssVar: "",
+        label: "shadowPattern",
+        description: "shadowPattern",
+        type: "font-family",
+        unit: "",
+        defaultValue: authoring.shadowPattern,
+      },
+      section: "element",
+      authoringKind: "shadow-pattern",
+    });
+  }
+  if (authoring?.cellSizePx != null) {
+    controls.push(authoringNumberControl(
+      element,
+      editScope,
+      "cellSize",
+      "spacing",
+      "patternCell",
+      authoring.cellSizePx,
+    ));
+  }
+  if (authoring?.dotSizePx != null) {
+    controls.push(authoringNumberControl(
+      element,
+      editScope,
+      "dotSize",
+      "spacing",
+      "patternDot",
+      authoring.dotSizePx,
+    ));
+  }
+  if (authoring?.densityPercent != null) {
+    controls.push(authoringNumberControl(
+      element,
+      editScope,
+      "density",
+      "opacity",
+      "patternDensity",
+      authoring.densityPercent,
+    ));
+  }
+  if (authoring?.angleDegrees != null) {
+    controls.push(authoringNumberControl(
+      element,
+      editScope,
+      "angle",
+      "effect",
+      "patternAngle",
+      authoring.angleDegrees,
+    ));
+  }
+  if (authoring?.seed != null) {
+    controls.push(authoringNumberControl(
+      element,
+      editScope,
+      "seed",
+      "effect",
+      "patternSeed",
+      authoring.seed,
+    ));
+  }
+  if (authoring?.backgroundColor != null) {
+    controls.push(authoringColorControl(
+      element,
+      editScope,
+      "backgroundColor",
+      authoring.backgroundColor,
+    ));
+  }
+  if (authoring?.patternColor != null) {
+    controls.push(authoringColorControl(
+      element,
+      editScope,
+      "patternColor",
+      authoring.patternColor,
+    ));
+  }
+  if (authoring?.gradientType != null) {
+    controls.push(authoringSelectControl(
+      element,
+      editScope,
+      "gradientType",
+      authoring.gradientType,
+      "gradient-type",
+    ));
+  }
+  if (authoring?.gradientDirection != null) {
+    controls.push(authoringSelectControl(
+      element,
+      editScope,
+      "gradientDirection",
+      authoring.gradientDirection,
+      "direction-source",
+    ));
+  }
+  if (authoring?.gradientStartColor != null) {
+    controls.push(authoringColorControl(
+      element,
+      editScope,
+      "gradientStartColor",
+      authoring.gradientStartColor,
+    ));
+  }
+  if (authoring?.gradientEndColor != null) {
+    controls.push(authoringColorControl(
+      element,
+      editScope,
+      "gradientEndColor",
+      authoring.gradientEndColor,
+    ));
+  }
+  if (authoring?.gradientAngleDegrees != null) {
+    controls.push(authoringNumberControl(
+      element,
+      editScope,
+      "gradientAngle",
+      "effect",
+      "patternAngle",
+      authoring.gradientAngleDegrees,
+    ));
+  }
+  if (authoring?.textureMask != null) {
+    controls.push(authoringSelectControl(
+      element,
+      editScope,
+      "textureMask",
+      authoring.textureMask,
+      "texture-mask",
+    ));
+  }
+  if (authoring?.maskDirection != null) {
+    controls.push(authoringSelectControl(
+      element,
+      editScope,
+      "maskDirection",
+      authoring.maskDirection,
+      "direction-source",
+    ));
+  }
+  if (authoring?.maskAngleDegrees != null) {
+    controls.push(authoringNumberControl(
+      element,
+      editScope,
+      "maskAngle",
+      "effect",
+      "patternAngle",
+      authoring.maskAngleDegrees,
+    ));
+  }
+  if (authoring?.maskAmountPercent != null) {
+    controls.push(authoringNumberControl(
+      element,
+      editScope,
+      "maskAmount",
+      "effect",
+      "patternDensity",
+      authoring.maskAmountPercent,
+    ));
+  }
+  if (authoring?.shadowColor != null) {
+    controls.push(authoringColorControl(
+      element,
+      editScope,
+      "shadowColor",
+      authoring.shadowColor,
+    ));
+  }
+  if (authoring?.shadowXpx != null) {
+    controls.push(authoringNumberControl(
+      element,
+      editScope,
+      "shadowX",
+      "offset",
+      "shadowOffset",
+      authoring.shadowXpx,
+    ));
+  }
+  if (authoring?.shadowYpx != null) {
+    controls.push(authoringNumberControl(
+      element,
+      editScope,
+      "shadowY",
+      "offset",
+      "shadowOffset",
+      authoring.shadowYpx,
+    ));
+  }
+  if (authoring?.shadowBlurPx != null) {
+    controls.push(authoringNumberControl(
+      element,
+      editScope,
+      "shadowBlur",
+      "effect",
+      "blur",
+      authoring.shadowBlurPx,
+    ));
   }
   if (authoring?.dashOnPx != null || authoring?.strokeStyle != null) {
     controls.push(authoringNumberControl(
@@ -597,6 +1117,28 @@ function controlLabel(
   tf: (key: string, fallback: string) => string,
 ): string {
   const semanticId = control.token.semanticId;
+  if (semanticId.endsWith(".fillPattern")) return t("styleLab.control.fillPattern");
+  if (semanticId.endsWith(".shadowPattern")) return t("styleLab.control.shadowPattern");
+  if (semanticId.endsWith(".backgroundColor")) return t("styleLab.control.fillBackgroundColor");
+  if (semanticId.endsWith(".patternColor")) return t("styleLab.control.fillPatternColor");
+  if (semanticId.endsWith(".gradientType")) return t("styleLab.control.gradientType");
+  if (semanticId.endsWith(".gradientDirection")) return t("styleLab.control.gradientDirection");
+  if (semanticId.endsWith(".gradientStartColor")) return t("styleLab.control.gradientStartColor");
+  if (semanticId.endsWith(".gradientEndColor")) return t("styleLab.control.gradientEndColor");
+  if (semanticId.endsWith(".gradientAngle")) return t("styleLab.control.gradientAngle");
+  if (semanticId.endsWith(".textureMask")) return t("styleLab.control.textureMask");
+  if (semanticId.endsWith(".maskDirection")) return t("styleLab.control.maskDirection");
+  if (semanticId.endsWith(".maskAngle")) return t("styleLab.control.maskAngle");
+  if (semanticId.endsWith(".maskAmount")) return t("styleLab.control.maskAmount");
+  if (semanticId.endsWith(".shadowColor")) return t("styleLab.control.shadowColor");
+  if (semanticId.endsWith(".shadowX")) return t("styleLab.control.shadowOffsetX");
+  if (semanticId.endsWith(".shadowY")) return t("styleLab.control.shadowOffsetY");
+  if (semanticId.endsWith(".shadowBlur")) return t("styleLab.control.shadowBlur");
+  if (semanticId.endsWith(".cellSize")) return t("styleLab.control.patternCell");
+  if (semanticId.endsWith(".dotSize")) return t("styleLab.control.patternDot");
+  if (semanticId.endsWith(".density")) return t("styleLab.app.material.density");
+  if (semanticId.endsWith(".angle")) return t("styleLab.app.material.angle");
+  if (semanticId.endsWith(".seed")) return t("styleLab.app.material.seed");
   if (semanticId.endsWith("Pattern")) return t("styleLab.control.strokeStyle");
   if (semanticId.endsWith("DashOn")) return t("styleLab.control.dashLength");
   if (semanticId.endsWith("DashOff")) return t("styleLab.control.dashGap");
@@ -652,21 +1194,235 @@ function patternControlFor(
 }
 
 function visibleControlsForElement(
+  element: StyleSceneElement,
   controls: readonly BoundControl[],
   overrides: Readonly<ChartStyleSemanticOverrides>,
 ): BoundControl[] {
   return controls.filter((control) => {
     const patternControl = patternControlFor(control, controls);
-    if (!patternControl) return true;
-    const patternValue = currentValue(patternControl, overrides);
-    if (typeof patternValue === "string") {
-      return control.token.semanticId.endsWith(".dashLength")
-        ? patternValue === "dashed"
-        : patternValue === "dashed" || patternValue === "dotted";
+    if (patternControl) {
+      const patternValue = currentValue(patternControl, overrides);
+      if (typeof patternValue === "string") {
+        return control.token.semanticId.endsWith(".dashLength")
+          ? patternValue === "dashed"
+          : patternValue === "dashed" || patternValue === "dotted";
+      }
+      const pattern = Number(patternValue);
+      return control.token.semanticId.endsWith("DashOn") ? pattern === 2 : pattern === 2 || pattern === 3;
     }
-    const pattern = Number(patternValue);
-    return control.token.semanticId.endsWith("DashOn") ? pattern === 2 : pattern === 2 || pattern === 3;
+
+    if (element.primitive !== "surface") return true;
+    const property = control.token.semanticId.slice(
+      control.token.semanticId.lastIndexOf(".") + 1,
+    );
+    const valueFor = (suffix: string): StyleLabTokenValue | null => {
+      const candidate = controls.find((item) =>
+        item.token.semanticId.endsWith(`.${suffix}`)
+      );
+      return candidate ? currentValue(candidate, overrides) : null;
+    };
+    const fillPattern = String(valueFor("fillPattern") ?? "none");
+    const shadowPattern = String(valueFor("shadowPattern") ?? "none");
+    const gradientType = String(valueFor("gradientType") ?? "none");
+    const gradientDirection = String(valueFor("gradientDirection") ?? "fixed");
+    const textureMask = String(valueFor("textureMask") ?? "none");
+    const hasDetailedTexture = (
+      (fillPattern !== "none" && fillPattern !== "solid")
+      || (shadowPattern !== "none" && shadowPattern !== "solid")
+    );
+
+    if (
+      property === "gradientDirection"
+      || property === "gradientStartColor"
+      || property === "gradientEndColor"
+    ) {
+      return gradientType !== "none";
+    }
+    if (property === "gradientAngle") {
+      return gradientType !== "none" && gradientDirection !== "sun";
+    }
+    if (property === "patternColor") return fillPattern !== "none";
+    if (
+      property === "cellSize"
+      || property === "dotSize"
+      || property === "density"
+      || property === "seed"
+    ) {
+      return hasDetailedTexture;
+    }
+    if (property === "angle") {
+      return (
+        fillPattern === "hatch"
+        || fillPattern === "crosshatch"
+        || fillPattern === "scanline"
+        || shadowPattern === "hatch"
+        || shadowPattern === "crosshatch"
+        || shadowPattern === "scanline"
+      );
+    }
+    if (
+      property === "maskDirection"
+      || property === "maskAngle"
+      || property === "maskAmount"
+    ) {
+      return textureMask !== "none";
+    }
+    if (
+      property === "shadowColor"
+      || property === "shadowX"
+      || property === "shadowY"
+      || property === "shadowBlur"
+    ) {
+      return shadowPattern !== "none";
+    }
+    return true;
   });
+}
+
+function inspectorControlGroupFor(
+  element: StyleSceneElement,
+  section: InspectorSection,
+  control: BoundControl,
+): InspectorControlGroup {
+  const semanticId = control.token.semanticId;
+  const property = semanticId.slice(semanticId.lastIndexOf(".") + 1);
+  if (section === "effects") {
+    if (/shadow(?:color|offsetx|offsety|blur)$/i.test(semanticId)) return "shadow";
+    if (/opacity$/i.test(semanticId) && !/(grayscale|invert|sepia)opacity$/i.test(semanticId)) {
+      return "compositing";
+    }
+    return "filters";
+  }
+  if (element.primitive !== "surface" || section !== "appearance") return "default";
+  if (
+    property === "backgroundColor"
+    || property === "gradientType"
+    || property === "gradientDirection"
+    || property === "gradientStartColor"
+    || property === "gradientEndColor"
+    || property === "gradientAngle"
+  ) {
+    return "fill";
+  }
+  if (
+    property === "fillPattern"
+    || property === "patternColor"
+    || property === "cellSize"
+    || property === "dotSize"
+    || property === "density"
+    || property === "angle"
+    || property === "seed"
+  ) {
+    return "texture";
+  }
+  if (
+    property === "textureMask"
+    || property === "maskDirection"
+    || property === "maskAngle"
+    || property === "maskAmount"
+  ) {
+    return "mask";
+  }
+  if (
+    property === "shadowPattern"
+    || property === "shadowColor"
+    || property === "shadowX"
+    || property === "shadowY"
+    || property === "shadowBlur"
+  ) {
+    return "shadow";
+  }
+  if (property === "opacity") return "compositing";
+  return "default";
+}
+
+function inspectorControlGroupLabel(
+  group: InspectorControlGroup,
+  t: TFunc,
+): string {
+  if (group === "fill") return t("styleLab.group.fill");
+  if (group === "texture") return t("styleLab.group.texture");
+  if (group === "mask") return t("styleLab.group.mask");
+  if (group === "compositing") return t("styleLab.group.compositing");
+  if (group === "filters") return t("styleLab.group.filters");
+  if (group === "shadow") return t("styleLab.group.shadow");
+  return "";
+}
+
+function controlWithSuffix(
+  controls: readonly BoundControl[],
+  suffix: string,
+): BoundControl | null {
+  return controls.find((control) =>
+    control.token.semanticId.endsWith(`.${suffix}`)
+    || control.token.semanticId.endsWith(suffix)
+  ) ?? null;
+}
+
+function inspectorControlGroupSummary(
+  group: InspectorControlGroup,
+  controls: readonly BoundControl[],
+  overrides: Readonly<ChartStyleSemanticOverrides>,
+  t: TFunc,
+): string | null {
+  if (group === "texture" || group === "shadow") {
+    const control = controlWithSuffix(
+      controls,
+      group === "texture" ? "fillPattern" : "shadowPattern",
+    );
+    if (!control) return null;
+    const pattern = String(currentValue(control, overrides));
+    return pattern === "none"
+      ? t("styleLab.group.off")
+      : t(`styleLab.app.pattern.${pattern}`);
+  }
+  if (group === "mask") {
+    const control = controlWithSuffix(controls, "textureMask");
+    if (!control) return null;
+    return String(currentValue(control, overrides)) === "none"
+      ? t("styleLab.group.off")
+      : t("styleLab.control.maskCrescent");
+  }
+  return null;
+}
+
+function InspectorPropertyGroup({
+  title,
+  summary,
+  defaultOpen,
+  children,
+}: {
+  title: string;
+  summary?: string | null;
+  defaultOpen: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger
+        className="group flex h-8 w-full items-center gap-1.5 border-t border-[color:var(--aries-inspector-divider-color)] px-[var(--aries-inspector-padding-x)] text-left first:border-t-0 hover:bg-[var(--aries-navbar-hover-bg)]"
+      >
+        <ChevronDown
+          aria-hidden="true"
+          size={12}
+          className={cn(
+            "shrink-0 text-[color:var(--aries-inspector-muted-color)] transition-transform",
+            !open && "-rotate-90",
+          )}
+        />
+        <span className="min-w-0 flex-1 truncate text-[length:var(--aries-font-size-micro)] font-medium text-[color:var(--aries-inspector-title-color)]">
+          {title}
+        </span>
+        {summary ? (
+          <span className="max-w-[45%] truncate text-[length:var(--aries-font-size-micro)] text-[color:var(--aries-inspector-muted-color)]">
+            {summary}
+          </span>
+        ) : null}
+      </CollapsibleTrigger>
+      <CollapsibleContent>{children}</CollapsibleContent>
+    </Collapsible>
+  );
 }
 
 function inspectorSectionFor(
@@ -825,10 +1581,13 @@ function InspectorCombobox({
         <Combobox.Positioner
           side="bottom"
           align="start"
-          sideOffset={4}
+          sideOffset={inspectorComboboxSideOffset}
           className="z-[120] w-[var(--anchor-width)]"
         >
-          <Combobox.Popup className="max-h-[min(18rem,var(--available-height))] min-w-[12rem] overflow-hidden rounded-[var(--aries-radius-popover)] border border-[color:var(--aries-inspector-divider-color)] bg-[var(--aries-inspector-background)] text-[color:var(--aries-inspector-value-color)] shadow-xl outline-none">
+          <Combobox.Popup
+            data-aries-surface="popover"
+            className="max-h-[min(18rem,var(--available-height))] min-w-[12rem] overflow-hidden rounded-[var(--aries-radius-popover)] border border-[color:var(--aries-inspector-divider-color)] bg-[var(--aries-inspector-background)] text-[color:var(--aries-inspector-value-color)] shadow-xl outline-none"
+          >
             <Combobox.List className="max-h-64 overflow-y-auto p-1">
               {(option: InspectorChoice, index: number) => (
                 <Combobox.Item
@@ -903,6 +1662,7 @@ function PatternControl({
       onReset={() => resetProperty(control.token.semanticId)}
     >
       <select
+        data-aries-control-appearance="local"
         value={pattern}
         aria-label={label}
         className="h-7 w-full rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] bg-[var(--aries-inspector-background)] px-2 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-inspector-value-color)] outline-none focus:border-[color:var(--aries-inspector-interactive-color)]"
@@ -946,6 +1706,7 @@ function StrokeStyleControl({
       onReset={() => resetProperty(control.token.semanticId)}
     >
       <select
+        data-aries-control-appearance="local"
         value={String(value)}
         aria-label={label}
         className="h-7 w-full rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] bg-[var(--aries-inspector-background)] px-2 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-inspector-value-color)] outline-none focus:border-[color:var(--aries-inspector-interactive-color)]"
@@ -956,6 +1717,196 @@ function StrokeStyleControl({
         <option value="solid">{t("styleLab.control.patternSolid")}</option>
         <option value="dashed">{t("styleLab.control.patternDashed")}</option>
         <option value="dotted">{t("styleLab.control.patternDotted")}</option>
+      </select>
+    </PropertyRow>
+  );
+}
+
+function LineEndpointControl({
+  control,
+  value,
+  overridden,
+}: {
+  control: BoundControl;
+  value: StyleLabTokenValue;
+  overridden: boolean;
+}) {
+  const t = useT();
+  const beginGesture = useChartStyleEditorStore((state) => state.beginGesture);
+  const setOverride = useChartStyleEditorStore((state) => state.setOverride);
+  const endGesture = useChartStyleEditorStore((state) => state.endGesture);
+  const cancelGesture = useChartStyleEditorStore((state) => state.cancelGesture);
+  const resetProperty = useChartStyleEditorStore((state) => state.resetProperty);
+  const isCap = control.authoringKind === "line-cap";
+  const label = isCap
+    ? t("styleLab.control.lineCap")
+    : t("styleLab.control.lineJoin");
+  const options = isCap
+    ? [
+        ["butt", t("styleLab.control.lineCapButt")],
+        ["round", t("styleLab.control.lineCapRound")],
+        ["square", t("styleLab.control.lineCapSquare")],
+      ]
+    : [
+        ["bevel", t("styleLab.control.lineJoinBevel")],
+        ["round", t("styleLab.control.lineJoinRound")],
+        ["miter", t("styleLab.control.lineJoinMiter")],
+      ];
+  return (
+    <PropertyRow
+      label={label}
+      overridden={overridden}
+      onReset={() => resetProperty(control.token.semanticId)}
+    >
+      <select
+        data-aries-control-appearance="local"
+        value={String(value)}
+        aria-label={label}
+        className="h-7 w-full rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] bg-[var(--aries-inspector-background)] px-2 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-inspector-value-color)] outline-none focus:border-[color:var(--aries-inspector-interactive-color)]"
+        onFocus={beginGesture}
+        onChange={(event) => setOverride(
+          control.token.semanticId,
+          event.currentTarget.value,
+        )}
+        onKeyDown={(event) => {
+          if (event.key !== "Escape") return;
+          event.preventDefault();
+          cancelGesture();
+          event.currentTarget.blur();
+        }}
+        onBlur={endGesture}
+      >
+        {options.map(([optionValue, optionLabel]) => (
+          <option key={optionValue} value={optionValue}>{optionLabel}</option>
+        ))}
+      </select>
+    </PropertyRow>
+  );
+}
+
+function FillPatternControl({
+  control,
+  value,
+  overridden,
+  siblingControls,
+  overrides,
+}: {
+  control: BoundControl;
+  value: StyleLabTokenValue;
+  overridden: boolean;
+  siblingControls: readonly BoundControl[];
+  overrides: Readonly<ChartStyleSemanticOverrides>;
+}) {
+  const t = useT();
+  const beginGesture = useChartStyleEditorStore((state) => state.beginGesture);
+  const setOverride = useChartStyleEditorStore((state) => state.setOverride);
+  const endGesture = useChartStyleEditorStore((state) => state.endGesture);
+  const resetProperty = useChartStyleEditorStore((state) => state.resetProperty);
+  const label = control.authoringKind === "shadow-pattern"
+    ? t("styleLab.control.shadowPattern")
+    : t("styleLab.control.fillPattern");
+  return (
+    <PropertyRow
+      label={label}
+      overridden={overridden}
+      onReset={() => resetProperty(control.token.semanticId)}
+    >
+      <select
+        data-aries-control-appearance="local"
+        value={String(value)}
+        aria-label={label}
+        className="h-7 w-full rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] bg-[var(--aries-inspector-background)] px-2 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-inspector-value-color)] outline-none focus:border-[color:var(--aries-inspector-interactive-color)]"
+        onFocus={beginGesture}
+        onChange={(event) => {
+          const next = event.currentTarget.value;
+          setOverride(control.token.semanticId, next);
+          if (
+            control.authoringKind !== "shadow-pattern"
+            || String(value) !== "none"
+            || next === "none"
+          ) {
+            return;
+          }
+          const shadowColor = controlWithSuffix(siblingControls, "shadowColor");
+          const shadowX = controlWithSuffix(siblingControls, "shadowX");
+          const shadowY = controlWithSuffix(siblingControls, "shadowY");
+          const shadowBlur = controlWithSuffix(siblingControls, "shadowBlur");
+          if (
+            shadowColor
+            && colorAlpha(currentValue(shadowColor, overrides)) <= 0
+          ) {
+            setOverride(shadowColor.token.semanticId, [0, 0, 0, 0.22]);
+          }
+          const x = shadowX ? Number(currentValue(shadowX, overrides)) : 0;
+          const y = shadowY ? Number(currentValue(shadowY, overrides)) : 0;
+          const blur = shadowBlur ? Number(currentValue(shadowBlur, overrides)) : 0;
+          if (x === 0 && y === 0 && blur === 0) {
+            if (shadowY) setOverride(shadowY.token.semanticId, 4);
+            if (shadowBlur) setOverride(shadowBlur.token.semanticId, 8);
+          }
+        }}
+        onBlur={endGesture}
+      >
+        {APP_MATERIAL_PATTERNS.map((pattern) => (
+          <option key={pattern} value={pattern}>
+            {t(`styleLab.app.pattern.${pattern}`)}
+          </option>
+        ))}
+      </select>
+    </PropertyRow>
+  );
+}
+
+function MaterialModeControl({
+  control,
+  value,
+  overridden,
+}: {
+  control: BoundControl;
+  value: StyleLabTokenValue;
+  overridden: boolean;
+}) {
+  const t = useT();
+  const tf = useTFallback();
+  const beginGesture = useChartStyleEditorStore((state) => state.beginGesture);
+  const setOverride = useChartStyleEditorStore((state) => state.setOverride);
+  const endGesture = useChartStyleEditorStore((state) => state.endGesture);
+  const resetProperty = useChartStyleEditorStore((state) => state.resetProperty);
+  const label = controlLabel(control, t, tf);
+  const options =
+    control.authoringKind === "gradient-type"
+      ? [
+          ["none", t("styleLab.control.gradientNone")],
+          ["linear", t("styleLab.control.gradientLinear")],
+          ["radial", t("styleLab.control.gradientRadial")],
+        ]
+      : control.authoringKind === "texture-mask"
+        ? [
+            ["none", t("styleLab.control.maskNone")],
+            ["crescent", t("styleLab.control.maskCrescent")],
+          ]
+        : [
+            ["fixed", t("styleLab.control.directionFixed")],
+            ["sun", t("styleLab.control.directionSun")],
+          ];
+  return (
+    <PropertyRow
+      label={label}
+      overridden={overridden}
+      onReset={() => resetProperty(control.token.semanticId)}
+    >
+      <select
+        data-aries-control-appearance="local"
+        value={String(value)}
+        aria-label={label}
+        className="h-7 w-full rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] bg-[var(--aries-inspector-background)] px-2 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-inspector-value-color)] outline-none focus:border-[color:var(--aries-inspector-interactive-color)]"
+        onFocus={beginGesture}
+        onChange={(event) => setOverride(control.token.semanticId, event.currentTarget.value)}
+        onBlur={endGesture}
+      >
+        {options.map(([optionValue, optionLabel]) => (
+          <option key={optionValue} value={optionValue}>{optionLabel}</option>
+        ))}
       </select>
     </PropertyRow>
   );
@@ -1089,6 +2040,7 @@ function NumberControl({
       <div className={cn("flex min-w-0 items-center gap-1", radiusControl && "grid grid-cols-[4.75rem_minmax(0,1fr)]") }>
         {radiusControl ? (
           <select
+            data-aries-control-appearance="local"
             value={radiusMode}
             aria-label={t("styleLab.control.size")}
             className="h-7 min-w-0 rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] bg-[var(--aries-inspector-background)] px-1 text-[length:var(--aries-font-size-micro)] text-[color:var(--aries-inspector-value-color)] outline-none focus:border-[color:var(--aries-inspector-interactive-color)]"
@@ -1179,25 +2131,15 @@ function ColorControl({
       onReset={() => resetProperty(control.token.semanticId)}
     >
       <div className="flex min-w-0 items-center gap-1">
-        <label
-          className="relative size-6 shrink-0 overflow-hidden rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)]"
-          title={t("styleLab.control.colorPicker")}
-        >
-          <span className="absolute inset-0" style={{ background: hex }} />
-          <input
-            type="color"
-            value={hex}
-            aria-label={t("styleLab.control.colorPicker")}
-            className="absolute size-px opacity-0"
-            onPointerDown={beginGesture}
-            onFocus={beginGesture}
-            onChange={(event) => changeColor(event.currentTarget.value)}
-            onPointerUp={endGesture}
-            onPointerCancel={endGesture}
-            onBlur={endGesture}
-          />
-        </label>
+        <StyleLabColorPicker
+          value={hex}
+          label={t("styleLab.control.colorPicker")}
+          onChange={changeColor}
+          onGestureStart={beginGesture}
+          onGestureEnd={endGesture}
+        />
         <input
+          data-aries-control-appearance="local"
           value={typedColor ?? hex.toUpperCase()}
           aria-label={t("styleLab.control.colorValue")}
           className="h-7 min-w-0 flex-1 rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] bg-[var(--aries-inspector-background)] px-1.5 font-mono text-[length:var(--aries-font-size-micro)] outline-none focus:border-[color:var(--aries-inspector-interactive-color)]"
@@ -1283,13 +2225,25 @@ function FontControl({
   const endGesture = useChartStyleEditorStore((state) => state.endGesture);
   const resetProperty = useChartStyleEditorStore((state) => state.resetProperty);
   const label = controlLabel(control, t, tf);
-  const symbolRole = control.token.semanticId.toLowerCase().includes("symbol");
   const loadedRef = useRef(false);
   const [loadingFonts, setLoadingFonts] = useState(false);
   const [localFontError, setLocalFontError] = useState(false);
   const [localFonts, setLocalFonts] = useState<BrowserLocalFontData[]>([]);
   const [packagedFonts, setPackagedFonts] = useState<StyleLabFontAsset[]>([]);
-  const currentCssFamily = String(value);
+  const currentFontRef = (
+    value != null
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && (value as ChartStyleFontRef).role != null
+  )
+    ? value as ChartStyleFontRef
+    : null;
+  const symbolRole = currentFontRef?.role === "symbols"
+    || (
+      currentFontRef == null
+      && control.token.semanticId.toLowerCase().includes("symbol")
+    );
+  const currentCssFamily = currentFontRef?.cssFamily ?? String(value);
 
   const loadFonts = async () => {
     if (loadedRef.current || loadingFonts) return;
@@ -1393,8 +2347,45 @@ function FontControl({
     const choice = choices.find((candidate) => candidate.id === choiceId);
     if (!choice) return;
     const commit = (cssFamily: string) => {
+      const nextValue: StyleLabTokenValue = control.authoringKind === "font-ref"
+        ? {
+            role: symbolRole ? "symbols" : "text",
+            source: choice.asset
+              ? "asset"
+              : choice.localFont
+                ? "local"
+                : choice.source === "bundled"
+                  ? "bundled"
+                  : choice.source === "current" && currentFontRef
+                    ? currentFontRef.source
+                    : "generic",
+            family: [
+              choice.asset?.family
+                ?? choice.localFont?.family
+                ?? unquoteFontFamily(cssFamily),
+            ],
+            cssFamily,
+            style:
+              choice.localFont?.style
+              ?? choice.asset?.subfamily
+              ?? currentFontRef?.style
+              ?? "normal",
+            weight: currentFontRef?.weight ?? 400,
+            ...(choice.localFont?.postscriptName
+              ? { postscriptName: choice.localFont.postscriptName }
+              : {}),
+            ...(choice.asset ? { assetId: choice.asset.id } : {}),
+            ...(choice.asset?.axes?.length
+              ? {
+                  variationAxes: Object.fromEntries(
+                    choice.asset.axes.map((axis) => [axis.tag, axis.default]),
+                  ),
+                }
+              : {}),
+          }
+        : cssFamily;
       beginGesture();
-      setOverride(control.token.semanticId, cssFamily);
+      setOverride(control.token.semanticId, nextValue);
       endGesture();
     };
     if (choice.asset) {
@@ -1443,14 +2434,43 @@ function FontControl({
 function PropertyControl({
   control,
   overrides,
+  siblingControls,
 }: {
   control: BoundControl;
   overrides: Readonly<ChartStyleSemanticOverrides>;
+  siblingControls: readonly BoundControl[];
 }) {
   const overridden = Object.hasOwn(overrides, control.token.semanticId);
   const value = currentValue(control, overrides);
   if (control.authoringKind === "stroke-style") {
     return <StrokeStyleControl control={control} value={value} overridden={overridden} />;
+  }
+  if (
+    control.authoringKind === "line-cap"
+    || control.authoringKind === "line-join"
+  ) {
+    return <LineEndpointControl control={control} value={value} overridden={overridden} />;
+  }
+  if (
+    control.authoringKind === "fill-pattern"
+    || control.authoringKind === "shadow-pattern"
+  ) {
+    return (
+      <FillPatternControl
+        control={control}
+        value={value}
+        overridden={overridden}
+        siblingControls={siblingControls}
+        overrides={overrides}
+      />
+    );
+  }
+  if (
+    control.authoringKind === "gradient-type"
+    || control.authoringKind === "direction-source"
+    || control.authoringKind === "texture-mask"
+  ) {
+    return <MaterialModeControl control={control} value={value} overridden={overridden} />;
   }
   if (control.token.type === "color") {
     return <ColorControl control={control} value={value} overridden={overridden} />;
@@ -1464,7 +2484,150 @@ function PropertyControl({
   return <FontControl control={control} value={value} overridden={overridden} />;
 }
 
-export function ChartStylePanel({ onClose }: { onClose?: () => void }) {
+function DeleteThemeDialog({
+  source,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  source: StyleLabThemeSource;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const t = useT();
+  return (
+    <div
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="style-lab-delete-theme-title"
+      aria-describedby="style-lab-delete-theme-description"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[color:var(--aries-overlay-scrim)] px-[var(--aries-form-section-gap)]"
+    >
+      <div
+        data-aries-surface="overlay"
+        className="w-full max-w-[var(--aries-dialog-width-confirm)] rounded-[var(--aries-radius-dialog)] border border-[color:var(--aries-inspector-divider-color)] bg-[var(--aries-background)] p-[var(--aries-dialog-padding)] shadow-xl"
+      >
+        <div
+          id="style-lab-delete-theme-title"
+          className="mb-[var(--aries-dialog-header-gap)] text-[length:var(--aries-font-size-large)] font-medium text-[color:var(--aries-inspector-title-color)]"
+        >
+          {t("styleLab.delete.title", { name: source.label })}
+        </div>
+        <p
+          id="style-lab-delete-theme-description"
+          className="text-[length:var(--aries-font-size-reading)] leading-[var(--aries-font-line-height-reading)] text-[color:var(--aries-inspector-muted-color)]"
+        >
+          {t("styleLab.delete.body")}
+        </p>
+        <div className="mt-[var(--aries-dialog-gap)] flex justify-end gap-[var(--aries-dialog-footer-gap)]">
+          <Button type="button" variant="outline" onClick={onCancel} disabled={busy}>
+            {t("picker.cancel")}
+          </Button>
+          <Button type="button" variant="destructive" onClick={onConfirm} disabled={busy}>
+            {t("picker.delete")}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SyncWheelStylesDialog({
+  classLabel,
+  source,
+  targets,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  classLabel: string;
+  source: WheelSemanticVariant;
+  targets: readonly WheelSemanticVariant[];
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: (targets: readonly WheelSemanticVariant[]) => void;
+}) {
+  const t = useT();
+  const [selectedTargets, setSelectedTargets] = useState<Set<WheelSemanticVariant>>(
+    () => new Set(targets),
+  );
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="style-lab-sync-title"
+      aria-describedby="style-lab-sync-description"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[color:var(--aries-overlay-scrim)] px-[var(--aries-form-section-gap)]"
+    >
+      <div
+        data-aries-surface="overlay"
+        className="w-full max-w-[var(--aries-dialog-width-confirm)] rounded-[var(--aries-radius-dialog)] border border-[color:var(--aries-inspector-divider-color)] bg-[var(--aries-background)] p-[var(--aries-dialog-padding)] shadow-xl"
+      >
+        <div
+          id="style-lab-sync-title"
+          className="mb-[var(--aries-dialog-header-gap)] text-[length:var(--aries-font-size-large)] font-medium text-[color:var(--aries-inspector-title-color)]"
+        >
+          {t("styleLab.sync.title", { name: classLabel })}
+        </div>
+        <p
+          id="style-lab-sync-description"
+          className="text-[length:var(--aries-font-size-reading)] leading-[var(--aries-font-line-height-reading)] text-[color:var(--aries-inspector-muted-color)]"
+        >
+          {t("styleLab.sync.description", {
+            source: t(`styleLab.variant.${source}`),
+          })}
+        </p>
+        <fieldset className="mt-[var(--aries-form-field-gap)] space-y-1">
+          <legend className="mb-1 text-[length:var(--aries-font-size-small)] font-medium text-[color:var(--aries-inspector-title-color)]">
+            {t("styleLab.sync.targets")}
+          </legend>
+          {targets.map((target) => (
+            <label
+              key={target}
+              className="flex min-h-8 items-center gap-2 rounded-[var(--aries-radius-control-compact)] px-2 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-inspector-value-color)] hover:bg-[var(--aries-navbar-hover-bg)]"
+            >
+              <input
+                type="checkbox"
+                checked={selectedTargets.has(target)}
+                disabled={busy}
+                onChange={(event) => {
+                  setSelectedTargets((current) => {
+                    const next = new Set(current);
+                    if (event.currentTarget.checked) next.add(target);
+                    else next.delete(target);
+                    return next;
+                  });
+                }}
+              />
+              {t(`styleLab.variant.${target}`)}
+            </label>
+          ))}
+        </fieldset>
+        <div className="mt-[var(--aries-dialog-gap)] flex justify-end gap-[var(--aries-dialog-footer-gap)]">
+          <Button type="button" variant="outline" onClick={onCancel} disabled={busy}>
+            {t("picker.cancel")}
+          </Button>
+          <Button
+            type="button"
+            onClick={() => onConfirm([...selectedTargets])}
+            disabled={busy || !selectedTargets.size}
+          >
+            {t("styleLab.sync.apply")}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ChartStylePanel({
+  onClose,
+  applyThemeToApp = false,
+}: {
+  onClose?: () => void;
+  applyThemeToApp?: boolean;
+}) {
   const t = useT();
   const selectedElement = useChartStyleEditorStore((state) => state.selectedElement);
   const sceneElements = useChartStyleEditorStore((state) => state.sceneElements);
@@ -1476,17 +2639,37 @@ export function ChartStylePanel({ onClose }: { onClose?: () => void }) {
   const redoStack = useChartStyleEditorStore((state) => state.redoStack);
   const syncStatus = useChartStyleEditorStore((state) => state.syncStatus);
   const syncDetail = useChartStyleEditorStore((state) => state.syncDetail);
+  const remoteRevision = useChartStyleEditorStore((state) => state.remoteRevision);
+  const remoteSourceThemeName = useChartStyleEditorStore(
+    (state) => state.remoteSourceThemeName,
+  );
+  const remoteModifiedFromBaseline = useChartStyleEditorStore(
+    (state) => state.remoteModifiedFromBaseline,
+  );
   const authoringEditScope = useChartStyleEditorStore((state) => state.authoringEditScope);
+  const editorDomain = useChartStyleEditorStore((state) => state.editorDomain);
   const setActive = useChartStyleEditorStore((state) => state.setActive);
+  const setLiveAppThemePreview = useChartStyleEditorStore(
+    (state) => state.setLiveAppThemePreview,
+  );
   const setTokenMetadata = useChartStyleEditorStore((state) => state.setTokenMetadata);
   const setSyncStatus = useChartStyleEditorStore((state) => state.setSyncStatus);
   const acceptRemoteDraft = useChartStyleEditorStore((state) => state.acceptRemoteDraft);
-  const setRemoteDraftMeta = useChartStyleEditorStore((state) => state.setRemoteDraftMeta);
+  const setStyleLabBaseTheme = useChartStyleEditorStore((state) => state.setStyleLabBaseTheme);
   const selectElement = useChartStyleEditorStore((state) => state.selectElement);
   const setAuthoringEditScope = useChartStyleEditorStore((state) => state.setAuthoringEditScope);
+  const setEditorDomain = useChartStyleEditorStore((state) => state.setEditorDomain);
+  const applyOverrides = useChartStyleEditorStore((state) => state.applyOverrides);
   const undo = useChartStyleEditorStore((state) => state.undo);
   const redo = useChartStyleEditorStore((state) => state.redo);
-  const resetAll = useChartStyleEditorStore((state) => state.resetAll);
+  const [themeSources, setThemeSources] = useState<readonly StyleLabThemeSource[]>([]);
+  const [saveAsOpen, setSaveAsOpen] = useState(false);
+  const [newThemeName, setNewThemeName] = useState("");
+  const [deleteThemeSource, setDeleteThemeSource] = useState<StyleLabThemeSource | null>(null);
+  const [elementClipboard, setElementClipboard] = useState<ElementStyleClipboard | null>(null);
+  const [syncDialogOpen, setSyncDialogOpen] = useState(false);
+  const [transferNotice, setTransferNotice] = useState<string | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const initializedRef = useRef(false);
   const remoteAvailableRef = useRef(true);
@@ -1515,8 +2698,18 @@ export function ChartStylePanel({ onClose }: { onClose?: () => void }) {
 
   useEffect(() => {
     setActive(true);
-    return () => setActive(false);
-  }, [setActive]);
+    setLiveAppThemePreview(applyThemeToApp);
+    return () => {
+      setLiveAppThemePreview(false);
+      setActive(false);
+    };
+  }, [applyThemeToApp, setActive, setLiveAppThemePreview]);
+
+  useEffect(() => {
+    if (!transferNotice) return;
+    const timer = window.setTimeout(() => setTransferNotice(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [transferNotice]);
 
   const flushSync = useCallback(() => {
     if (!initializedRef.current || !remoteAvailableRef.current) return;
@@ -1552,7 +2745,11 @@ export function ChartStylePanel({ onClose }: { onClose?: () => void }) {
           current.setSyncStatus("conflict", t("styleLab.status.conflictDetail"));
           return;
         }
-        retryDelay = POLL_INTERVAL_MS;
+        retryDelay = error instanceof StyleLabApiError
+          && error.status >= 400
+          && error.status < 500
+          ? null
+          : POLL_INTERVAL_MS;
         current.setSyncStatus("error", error instanceof Error ? error.message : String(error));
       })
       .finally(() => {
@@ -1576,21 +2773,56 @@ export function ChartStylePanel({ onClose }: { onClose?: () => void }) {
 
   useEffect(() => {
     const controller = new AbortController();
-    const loadDraft = async (): Promise<StyleLabDraft> => {
+    const loadDraft = async (): Promise<{
+      draft: StyleLabDraft;
+      sources: readonly StyleLabThemeSource[];
+    }> => {
+      const sources = await fetchStyleLabThemeSources(controller.signal);
+      let draft: StyleLabDraft | null = null;
       try {
-        return await fetchCurrentStyleLabDraft(controller.signal);
+        draft = await fetchCurrentStyleLabDraft(controller.signal);
       } catch (error) {
-        if (error instanceof StyleLabApiError && error.status === 404) {
-          return createCurrentStyleLabDraft(t("styleLab.draft.workingName"), controller.signal);
-        }
-        throw error;
+        if (!(error instanceof StyleLabApiError && error.status === 404)) throw error;
       }
+      const legacyDraftIsEmpty = draft != null
+        && !draft.sourceThemeName
+        && !Object.keys(draft.overrides ?? {}).length
+        && !Object.keys(draft.authoringOverrides ?? {}).length
+        && !Object.keys(draft.appAuthoringOverrides ?? {}).length;
+      if (draft == null || legacyDraftIsEmpty) {
+        const source = sources.find((candidate) => candidate.selected)
+          ?? sources.find((candidate) => candidate.name === "Daylight")
+          ?? sources[0];
+        if (source) {
+          draft = await createStyleLabDraftFromTheme(source.name, controller.signal);
+        }
+      }
+      if (draft == null) {
+        draft = await createCurrentStyleLabDraft(
+          t("styleLab.draft.workingName"),
+          controller.signal,
+        );
+      }
+      return { draft, sources };
     };
     setSyncStatus("connecting");
     void loadDraft()
-      .then((draft) => {
+      .then(({ draft, sources }) => {
         if (controller.signal.aborted) return;
+        setThemeSources(sources);
         acceptRemoteDraft(draft, { clearHistory: true });
+        const source = sources.find(
+          (candidate) => candidate.name === draft.sourceThemeName,
+        );
+        if (source) {
+          setStyleLabBaseTheme({
+            sourceThemeName: source.name,
+            mode: source.mode,
+            appTokens: source.appTokens,
+            chartPalette: source.chartPalette,
+            appAuthoring: source.appAuthoring,
+          });
+        }
         initializedRef.current = true;
       })
       .catch((error: unknown) => {
@@ -1600,7 +2832,21 @@ export function ChartStylePanel({ onClose }: { onClose?: () => void }) {
         setSyncStatus("local", error instanceof Error ? error.message : String(error));
       });
     return () => controller.abort();
-  }, [acceptRemoteDraft, setSyncStatus, t]);
+  }, [acceptRemoteDraft, setStyleLabBaseTheme, setSyncStatus, t]);
+
+  useEffect(() => {
+    const source = themeSources.find(
+      (candidate) => candidate.name === remoteSourceThemeName,
+    );
+    if (!source) return;
+    setStyleLabBaseTheme({
+      sourceThemeName: source.name,
+      mode: source.mode,
+      appTokens: source.appTokens,
+      chartPalette: source.chartPalette,
+      appAuthoring: source.appAuthoring,
+    });
+  }, [remoteSourceThemeName, setStyleLabBaseTheme, themeSources]);
 
   useEffect(() => {
     if (!initializedRef.current || !remoteAvailableRef.current) return;
@@ -1664,42 +2910,302 @@ export function ChartStylePanel({ onClose }: { onClose?: () => void }) {
       baseRevision: state.remoteRevision ?? undefined,
       activate: false,
     })
-      .then((draft) => {
-        setRemoteDraftMeta(draft.revision, draft.etag ?? null, draft.id);
+      .then(async (draft) => {
+        acceptRemoteDraft(draft);
+        try {
+          const sources = await fetchStyleLabThemeSources();
+          setThemeSources(sources);
+          const source = sources.find(
+            (candidate) => candidate.name === draft.sourceThemeName,
+          );
+          if (source) {
+            setStyleLabBaseTheme({
+              sourceThemeName: source.name,
+              mode: source.mode,
+              appTokens: source.appTokens,
+              chartPalette: source.chartPalette,
+              appAuthoring: source.appAuthoring,
+            });
+          }
+        } catch {
+          // The in-place save succeeded. Retain the current preview until the
+          // source catalogue reconnects.
+        }
         setSyncStatus("synced", t("styleLab.status.committed"));
       })
       .catch((error: unknown) => {
         setSyncStatus("error", error instanceof Error ? error.message : String(error));
       });
-  }, [setRemoteDraftMeta, setSyncStatus, t]);
+  }, [acceptRemoteDraft, setStyleLabBaseTheme, setSyncStatus, t]);
+
+  const saveAsTheme = useCallback((event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const name = newThemeName.trim();
+    if (!name) return;
+    const state = useChartStyleEditorStore.getState();
+    if (syncInFlightRef.current || state.remoteRevision == null) return;
+    const desired = cloneChartStyleOverrides(
+      persistedStyleOverrides(state.semanticOverrides),
+    );
+    const delta = syncDelta(state.syncedOverrides, desired);
+    if (syncTimerRef.current != null) {
+      window.clearTimeout(syncTimerRef.current);
+      syncTimerRef.current = null;
+    }
+    syncInFlightRef.current = true;
+    state.setSyncStatus("saving");
+    void saveCurrentStyleLabDraftAsTheme(name, {
+      baseRevision: state.remoteRevision ?? undefined,
+      overrides: delta,
+    })
+      .then(async (draft) => {
+        acceptRemoteDraft(draft, { clearHistory: true });
+        try {
+          const sources = await fetchStyleLabThemeSources();
+          setThemeSources(sources);
+          const source = sources.find(
+            (candidate) => candidate.name === draft.sourceThemeName,
+          );
+          if (source) {
+            setStyleLabBaseTheme({
+              sourceThemeName: source.name,
+              mode: source.mode,
+              appTokens: source.appTokens,
+              chartPalette: source.chartPalette,
+              appAuthoring: source.appAuthoring,
+            });
+          }
+        } catch {
+          // The theme itself is already saved; the retained source list will
+          // refresh on the next Style Lab connection if the daemon restarted.
+        }
+        setSaveAsOpen(false);
+        setNewThemeName("");
+        setSyncStatus("synced", t("styleLab.status.themeSaved", { name }));
+      })
+      .catch((error: unknown) => {
+        setSyncStatus("error", error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        syncInFlightRef.current = false;
+      });
+  }, [
+    acceptRemoteDraft,
+    newThemeName,
+    setStyleLabBaseTheme,
+    setSyncStatus,
+    t,
+  ]);
+
+  const deleteSavedTheme = useCallback(() => {
+    const target = deleteThemeSource;
+    if (!target?.deletable || !target.profileId) return;
+    const state = useChartStyleEditorStore.getState();
+    if (
+      syncInFlightRef.current
+      || state.syncStatus !== "synced"
+      || target.name !== state.remoteSourceThemeName
+      || !equalChartStyleOverrides(
+        state.syncedOverrides,
+        persistedStyleOverrides(state.semanticOverrides),
+      )
+    ) return;
+    if (syncTimerRef.current != null) {
+      window.clearTimeout(syncTimerRef.current);
+      syncTimerRef.current = null;
+    }
+    syncInFlightRef.current = true;
+    state.setSyncStatus("saving");
+    void deleteStyleLabTheme(target.profileId)
+      .then(async () => {
+        try {
+          await discardCurrentStyleLabDraft({
+            baseRevision: state.remoteRevision ?? undefined,
+            etag: state.remoteEtag,
+          });
+        } catch {
+          // The saved theme is already gone. A stale in-memory draft is safe
+          // and will be superseded by the fallback source below.
+        }
+        const sources = await fetchStyleLabThemeSources();
+        const fallback = sources.find((candidate) => candidate.selected)
+          ?? sources.find((candidate) => candidate.name === "Daylight")
+          ?? sources[0];
+        const draft = fallback
+          ? await createStyleLabDraftFromTheme(fallback.name)
+          : await createCurrentStyleLabDraft(t("styleLab.draft.workingName"));
+        setThemeSources(sources);
+        acceptRemoteDraft(draft, { clearHistory: true });
+        if (fallback) {
+          setStyleLabBaseTheme({
+            sourceThemeName: fallback.name,
+            mode: fallback.mode,
+            appTokens: fallback.appTokens,
+            chartPalette: fallback.chartPalette,
+            appAuthoring: fallback.appAuthoring,
+          });
+        }
+        setDeleteThemeSource(null);
+        setSaveAsOpen(false);
+        setNewThemeName("");
+        setSyncStatus(
+          "synced",
+          t("styleLab.status.themeDeleted", { name: target.label }),
+        );
+      })
+      .catch((error: unknown) => {
+        setSyncStatus("error", error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        syncInFlightRef.current = false;
+      });
+  }, [
+    acceptRemoteDraft,
+    deleteThemeSource,
+    setStyleLabBaseTheme,
+    setSyncStatus,
+    t,
+  ]);
+
+  const revertWorkingDraft = useCallback(() => {
+    const state = useChartStyleEditorStore.getState();
+    if (
+      syncInFlightRef.current
+      || state.syncStatus !== "synced"
+      || !equalChartStyleOverrides(state.syncedOverrides, state.semanticOverrides)
+    ) return;
+    state.setSyncStatus("saving");
+    const source = themeSources.find(
+      (candidate) => candidate.name === state.remoteSourceThemeName,
+    );
+    const factoryDefault = !state.remoteModifiedFromBaseline
+      && source?.system === true
+      && source.factoryModified === true;
+    void revertCurrentStyleLabDraft({
+      baseRevision: state.remoteRevision ?? undefined,
+      factoryDefault,
+    })
+      .then(async (draft) => {
+        acceptRemoteDraft(draft, { clearHistory: true });
+        if (factoryDefault) {
+          try {
+            const sources = await fetchStyleLabThemeSources();
+            setThemeSources(sources);
+            const restored = sources.find(
+              (candidate) => candidate.name === draft.sourceThemeName,
+            );
+            if (restored) {
+              setStyleLabBaseTheme({
+                sourceThemeName: restored.name,
+                mode: restored.mode,
+                appTokens: restored.appTokens,
+                chartPalette: restored.chartPalette,
+                appAuthoring: restored.appAuthoring,
+              });
+            }
+          } catch {
+            // The factory profile is already restored; the catalogue will
+            // refresh on the next retained connection.
+          }
+        }
+        setSyncStatus("synced", t("styleLab.status.reverted"));
+      })
+      .catch((error: unknown) => {
+        setSyncStatus("error", error instanceof Error ? error.message : String(error));
+      });
+  }, [
+    acceptRemoteDraft,
+    setStyleLabBaseTheme,
+    setSyncStatus,
+    t,
+    themeSources,
+  ]);
+
+  const importThemeFile = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+    if (syncInFlightRef.current) {
+      input.value = "";
+      return;
+    }
+    if (syncTimerRef.current != null) {
+      window.clearTimeout(syncTimerRef.current);
+      syncTimerRef.current = null;
+    }
+    syncInFlightRef.current = true;
+    const run = async () => {
+      if (file.size > MAX_THEME_IMPORT_BYTES) {
+        throw new Error(t("styleLab.import.tooLarge"));
+      }
+      let profiles: unknown[];
+      try {
+        profiles = parseThemeExchangeFile(await file.text());
+      } catch {
+        throw new Error(t("styleLab.import.invalidFile"));
+      }
+      useChartStyleEditorStore.getState().setSyncStatus("saving");
+      let importedDraft: StyleLabDraft | null = null;
+      for (const profile of profiles) {
+        importedDraft = await importStyleLabTheme(profile);
+      }
+      if (!importedDraft) throw new Error(t("styleLab.import.invalidFile"));
+      acceptRemoteDraft(importedDraft, { clearHistory: true });
+      const sources = await fetchStyleLabThemeSources();
+      setThemeSources(sources);
+      const source = sources.find(
+        (candidate) => candidate.name === importedDraft?.sourceThemeName,
+      );
+      if (source) {
+        let appliedThemeState: ThemeState | null = null;
+        if (applyThemeToApp) {
+          const options = await applyThemePreset(source.name);
+          appliedThemeState = options.themeState;
+        }
+        setStyleLabBaseTheme({
+          sourceThemeName: source.name,
+          mode: source.mode,
+          appTokens: source.appTokens,
+          chartPalette: source.chartPalette,
+          appAuthoring: source.appAuthoring,
+        });
+        if (appliedThemeState) {
+          useThemeStore.getState().applyThemeState(appliedThemeState);
+        }
+        if (applyThemeToApp) {
+          setThemeSources((current) => current.map((candidate) => ({
+            ...candidate,
+            selected: candidate.name === source.name,
+          })));
+        }
+      }
+      setSyncStatus(
+        "synced",
+        profiles.length === 1
+          ? t("styleLab.status.themeImported", { name: importedDraft.name ?? file.name })
+          : t("styleLab.status.themesImported", { count: profiles.length }),
+      );
+    };
+    void run()
+      .catch((error: unknown) => {
+        setSyncStatus("error", error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        syncInFlightRef.current = false;
+        input.value = "";
+      });
+  }, [
+    acceptRemoteDraft,
+    applyThemeToApp,
+    setStyleLabBaseTheme,
+    setSyncStatus,
+    t,
+  ]);
 
   const exportProfile = useCallback(() => {
     setSyncStatus("saving");
-    void fetchCurrentStyleLabDraft()
-      .then((draft) => {
-        const editorOverrides = useChartStyleEditorStore.getState().semanticOverrides;
-        const authoringProfile = createChartStyleProfileV2FromFlatOverrides(editorOverrides);
-        const authoringOverrides = Object.fromEntries(
-          Object.entries(editorOverrides).filter(
-            ([semanticId]) => semanticId.startsWith(WHEEL_AUTHORING_OVERRIDE_PREFIX),
-          ),
-        );
-        const legacyTokenOverrides = Object.fromEntries(
-          Object.entries(editorOverrides).filter(
-            ([semanticId]) => !semanticId.startsWith(WHEEL_AUTHORING_OVERRIDE_PREFIX),
-          ),
-        );
-        const profile = {
-          kind: "aries.chart-style-profile",
-          ...authoringProfile,
-          tokenSchemaVersion: draft.tokenSchemaVersion ?? 1,
-          id: draft.profileId ?? "chart-style-working",
-          name: draft.name ?? t("styleLab.draft.workingName"),
-          scope: draft.scope ?? "chart",
-          basePresetId: draft.basePresetId ?? null,
-          authoringOverrides,
-          legacyTokenOverrides,
-        };
+    void fetchStyleLabDraftExport()
+      .then((profile) => {
         const blob = new Blob(
           [`${JSON.stringify(profile, null, 2)}\n`],
           { type: "application/json" },
@@ -1707,7 +3213,7 @@ export function ChartStylePanel({ onClose }: { onClose?: () => void }) {
         const url = URL.createObjectURL(blob);
         const anchor = document.createElement("a");
         anchor.href = url;
-        anchor.download = `${profile.id}.aries-chart-style.json`;
+        anchor.download = `${profile.id}.aries-theme.json`;
         anchor.click();
         URL.revokeObjectURL(url);
         setSyncStatus("synced");
@@ -1715,16 +3221,103 @@ export function ChartStylePanel({ onClose }: { onClose?: () => void }) {
       .catch((error: unknown) => {
         setSyncStatus("error", error instanceof Error ? error.message : String(error));
       });
-  }, [setSyncStatus, t]);
+  }, [setSyncStatus]);
+
+  const selectThemeSource = useCallback((sourceThemeName: string) => {
+    const source = themeSources.find((candidate) => candidate.name === sourceThemeName);
+    if (!source) return;
+    const state = useChartStyleEditorStore.getState();
+    if (
+      syncInFlightRef.current
+      || state.syncStatus !== "synced"
+      || !equalChartStyleOverrides(
+        state.syncedOverrides,
+        persistedStyleOverrides(state.semanticOverrides),
+      )
+    ) return;
+    state.setSyncStatus("connecting");
+    void (async () => {
+      const draft = await createStyleLabDraftFromTheme(source.name);
+      let appliedThemeState: ThemeState | null = null;
+      if (applyThemeToApp) {
+        const options = await applyThemePreset(source.name);
+        appliedThemeState = options.themeState;
+      }
+      setStyleLabBaseTheme({
+        sourceThemeName: source.name,
+        mode: source.mode,
+        appTokens: source.appTokens,
+        chartPalette: source.chartPalette,
+        appAuthoring: source.appAuthoring,
+      });
+      useChartStyleEditorStore.getState().acceptRemoteDraft(
+        draft,
+        { clearHistory: true },
+      );
+      if (appliedThemeState) {
+        useThemeStore.getState().applyThemeState(appliedThemeState);
+      }
+      if (applyThemeToApp) {
+        setThemeSources((current) => current.map((candidate) => ({
+          ...candidate,
+          selected: candidate.name === source.name,
+        })));
+      }
+    })()
+      .then(() => {
+        useChartStyleEditorStore.getState().setSyncStatus("synced");
+      })
+      .catch((error: unknown) => {
+        useChartStyleEditorStore.getState().setSyncStatus(
+          "error",
+          error instanceof Error ? error.message : String(error),
+        );
+      });
+  }, [applyThemeToApp, setStyleLabBaseTheme, themeSources]);
 
   const controls = useMemo(
     () => controlsForElement(selectedElement, tokenMetadata, authoringEditScope),
     [authoringEditScope, selectedElement, tokenMetadata],
   );
-  const visibleControls = useMemo(
-    () => visibleControlsForElement(controls, semanticOverrides),
+  const transferControls = useMemo<StyleTransferControl[]>(
+    () => controls.map((control) => ({
+      semanticId: control.token.semanticId,
+      property: control.binding.property,
+      value: currentValue(control, semanticOverrides),
+    })),
     [controls, semanticOverrides],
   );
+  const visibleControls = useMemo(
+    () => selectedElement
+      ? visibleControlsForElement(selectedElement, controls, semanticOverrides)
+      : [],
+    [controls, selectedElement, semanticOverrides],
+  );
+  const selectedClassId = selectedElement
+    && isWheelSemanticClassId(styleClassId(selectedElement))
+    ? styleClassId(selectedElement)
+    : null;
+  const selectedClassDefinition = selectedClassId
+    ? WHEEL_SEMANTIC_CLASS_MANIFEST.find((definition) => definition.id === selectedClassId) ?? null
+    : null;
+  const selectedClassLabel = selectedClassDefinition
+    ? t(selectedClassDefinition.labelKey)
+    : selectedElement
+      ? t(selectedElement.labelKey)
+      : "";
+  const sourceVariant = selectedElement ? styleElementProfile(selectedElement) : "classic";
+  const syncTargetVariants = selectedClassDefinition
+    ? selectedClassDefinition.applicability.variants.filter(
+      (variant) => variant !== sourceVariant,
+    )
+    : [];
+  const sourceVariantOverrideCount = selectedClassId
+    ? Object.keys(semanticOverrides).filter((semanticId) =>
+      semanticId.startsWith(
+        `${WHEEL_AUTHORING_OVERRIDE_PREFIX}${sourceVariant}.${selectedClassId}.`,
+      )
+    ).length
+    : 0;
   const classElements = useMemo(() => {
     const byClass = new Map<string, StyleSceneElement>();
     for (const element of sceneElements) {
@@ -1802,11 +3395,129 @@ export function ChartStylePanel({ onClose }: { onClose?: () => void }) {
     }
     return result;
   }, [selectedElement, visibleControls]);
+  const controlGroupsBySection = useMemo(() => {
+    const result = new Map<
+      InspectorSection,
+      Map<InspectorControlGroup, BoundControl[]>
+    >();
+    if (!selectedElement) return result;
+    for (const [section, sectionControls] of controlsBySection) {
+      const groups = new Map<InspectorControlGroup, BoundControl[]>();
+      for (const control of sectionControls) {
+        const group = inspectorControlGroupFor(selectedElement, section, control);
+        groups.set(group, [...(groups.get(group) ?? []), control]);
+      }
+      result.set(section, groups);
+    }
+    return result;
+  }, [controlsBySection, selectedElement]);
+  const copySelectedElementStyle = useCallback(() => {
+    if (!selectedElement || !selectedClassId || !selectedClassLabel) return;
+    const clipboard = copyElementStyle(
+      {
+        sourceClassId: selectedClassId,
+        sourceLabel: selectedClassLabel,
+        sourceProfile: sourceVariant,
+      },
+      transferControls,
+    );
+    if (!clipboard.entries.length) {
+      setTransferNotice(t("styleLab.transfer.noCompatibleProperties"));
+      return;
+    }
+    setElementClipboard(clipboard);
+    setTransferNotice(t("styleLab.transfer.copied", { name: selectedClassLabel }));
+  }, [
+    selectedClassId,
+    selectedClassLabel,
+    selectedElement,
+    sourceVariant,
+    t,
+    transferControls,
+  ]);
+  const pasteSelectedElementStyle = useCallback(() => {
+    if (!elementClipboard || !selectedElement) return;
+    const patch = buildElementStylePastePatch(elementClipboard, transferControls);
+    const count = Object.keys(patch).length;
+    if (!count) {
+      setTransferNotice(t("styleLab.transfer.alreadyMatched"));
+      return;
+    }
+    applyOverrides(patch);
+    setTransferNotice(t("styleLab.transfer.pasted", {
+      count,
+      name: elementClipboard.sourceLabel,
+    }));
+  }, [applyOverrides, elementClipboard, selectedElement, t, transferControls]);
+  const syncSelectedElementStyle = useCallback((
+    targets: readonly WheelSemanticVariant[],
+  ) => {
+    if (!selectedClassDefinition || !selectedClassId) return;
+    const allowedProperties = Object.fromEntries(
+      targets.map((target) => {
+        const capabilities = selectedClassDefinition.variantCapabilities?.[target]
+          ?? selectedClassDefinition.capabilities;
+        return [
+          target,
+          new Set(capabilities.filter(isWheelAuthoringFlatProperty)),
+        ] as const;
+      }),
+    );
+    const patch = buildWheelVariantSyncPatch(semanticOverrides, {
+      classId: selectedClassId,
+      source: sourceVariant,
+      targets,
+      allowedProperties,
+    });
+    const count = Object.keys(patch).length;
+    setSyncDialogOpen(false);
+    if (!count) {
+      setTransferNotice(t("styleLab.transfer.alreadyMatched"));
+      return;
+    }
+    applyOverrides(patch);
+    setTransferNotice(t("styleLab.transfer.synced", {
+      count,
+      targetCount: targets.length,
+    }));
+  }, [
+    applyOverrides,
+    selectedClassDefinition,
+    selectedClassId,
+    semanticOverrides,
+    sourceVariant,
+    t,
+  ]);
   const pending = !equalChartStyleOverrides(
     syncedOverrides,
     persistedStyleOverrides(semanticOverrides),
   );
   const canSave = syncStatus === "synced" && !pending;
+  const canSaveAs = syncStatus !== "connecting"
+    && syncStatus !== "saving"
+    && remoteRevision != null;
+  const selectedThemeSource = themeSources.find(
+    (source) => source.name === remoteSourceThemeName,
+  ) ?? null;
+  const canRevert = canSave && (
+    remoteModifiedFromBaseline
+    || (
+      selectedThemeSource?.system === true
+      && selectedThemeSource.factoryModified === true
+    )
+  );
+  const canSwitchTheme = canSave;
+  const canDeleteTheme = canSave
+    && selectedThemeSource?.deletable === true
+    && Boolean(selectedThemeSource.profileId);
+  const canCopyElement = editorDomain === "chart"
+    && Boolean(selectedElement)
+    && transferControls.length > 0;
+  const canPasteElement = canCopyElement && Boolean(elementClipboard);
+  const canSyncElement = canCopyElement
+    && authoringEditScope === "variant"
+    && sourceVariantOverrideCount > 0
+    && syncTargetVariants.length > 0;
   const syncIcon = syncStatus === "saving" || syncStatus === "connecting"
     ? <LoaderCircle size={13} className="animate-spin" />
     : syncStatus === "synced"
@@ -1814,36 +3525,102 @@ export function ChartStylePanel({ onClose }: { onClose?: () => void }) {
       : <CloudOff size={13} />;
 
   return (
-    <aside className="flex h-full w-full min-w-0 flex-col bg-[var(--aries-inspector-background)] text-[color:var(--aries-inspector-value-color)]">
+    <aside
+      data-aries-surface="inspector"
+      className="flex h-full w-full min-w-0 flex-col bg-[var(--aries-inspector-background)] text-[color:var(--aries-inspector-value-color)]"
+    >
       <header className="shrink-0 border-b border-[color:var(--aries-inspector-divider-color)] p-2">
-        <div className="flex min-w-0 items-center gap-1">
-          <div className="mr-1 min-w-0 flex-1">
-            <InspectorCombobox
-              value={selectedElement && isWheelSemanticClassId(styleClassId(selectedElement))
-                ? styleClassId(selectedElement)
-                : null}
-              options={classChoices}
-              label={t("styleLab.element.title")}
-              placeholder={t("styleLab.element.title")}
-              emptyLabel={t("picker.noSearchResults")}
-              onValueChange={(classId) => {
-                const element = classElements.get(classId);
-                if (element) selectElement(element);
-              }}
-            />
-          </div>
+        <div className="mb-2 flex min-w-0 items-center gap-1">
           <select
-            aria-label={t("styleLab.authoringScope.label")}
-            title={t("styleLab.authoringScope.label")}
-            value={authoringEditScope}
-            className="h-7 w-[7.25rem] min-w-0 rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] bg-[var(--aries-inspector-background)] px-1 text-[length:var(--aries-font-size-micro)] text-[color:var(--aries-inspector-value-color)] outline-none focus:border-[color:var(--aries-inspector-interactive-color)]"
-            onChange={(event) => setAuthoringEditScope(
-              event.currentTarget.value as ChartStyleAuthoringEditScope,
-            )}
+            data-aries-control-appearance="local"
+            aria-label={t("quickopt.themePresets")}
+            title={t("quickopt.themePresets")}
+            value={remoteSourceThemeName ?? ""}
+            disabled={!canSwitchTheme || !themeSources.length}
+            className="h-8 min-w-0 flex-1 rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] bg-[var(--aries-inspector-background)] px-2 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-inspector-value-color)] outline-none focus:border-[color:var(--aries-inspector-interactive-color)] disabled:opacity-50"
+            onChange={(event) => {
+              setDeleteThemeSource(null);
+              selectThemeSource(event.currentTarget.value);
+            }}
           >
-            <option value="base">{t("styleLab.authoringScope.shared")}</option>
-            <option value="variant">{t("styleLab.authoringScope.variant")}</option>
+            <option value="" disabled>{t("quickopt.themePresets")}</option>
+            {themeSources.map((source) => (
+              <option key={source.name} value={source.name}>{source.label}</option>
+            ))}
           </select>
+          <IconButton
+            label={t("styleLab.action.deleteTheme")}
+            disabled={!canDeleteTheme}
+            onClick={() => setDeleteThemeSource(selectedThemeSource)}
+          >
+            <Trash2 size={14} />
+          </IconButton>
+        </div>
+        <div
+          className="mb-2 grid grid-cols-2 rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] p-0.5"
+          role="group"
+          aria-label={t("styleLab.domain.label")}
+        >
+          {(["chart", "app"] as const).map((domain) => (
+            <button
+              key={domain}
+              type="button"
+              aria-pressed={editorDomain === domain}
+              onClick={() => setEditorDomain(domain)}
+              className={cn(
+                "h-7 rounded-[var(--aries-radius-control-compact)] text-[length:var(--aries-font-size-small)]",
+                editorDomain === domain
+                  ? "bg-[var(--aries-accent)] text-[color:var(--aries-accent-foreground)]"
+                  : "text-[color:var(--aries-inspector-muted-color)] hover:bg-[var(--aries-navbar-hover-bg)]",
+              )}
+            >
+              {t(`styleLab.domain.${domain}`)}
+            </button>
+          ))}
+        </div>
+        <div className="flex min-w-0 items-center gap-1">
+          {editorDomain === "chart" ? (
+            <>
+              <div className="mr-1 min-w-0 flex-1">
+                <InspectorCombobox
+                  value={selectedElement && isWheelSemanticClassId(styleClassId(selectedElement))
+                    ? styleClassId(selectedElement)
+                    : null}
+                  options={classChoices}
+                  label={t("styleLab.element.title")}
+                  placeholder={t("styleLab.element.title")}
+                  emptyLabel={t("picker.noSearchResults")}
+                  onValueChange={(classId) => {
+                    const element = classElements.get(classId);
+                    if (element) {
+                      setSyncDialogOpen(false);
+                      selectElement(element);
+                    }
+                  }}
+                />
+              </div>
+              <select
+                data-aries-control-appearance="local"
+                aria-label={t("styleLab.authoringScope.label")}
+                title={t("styleLab.authoringScope.label")}
+                value={authoringEditScope}
+                className="h-7 w-[7.25rem] min-w-0 rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] bg-[var(--aries-inspector-background)] px-1 text-[length:var(--aries-font-size-micro)] text-[color:var(--aries-inspector-value-color)] outline-none focus:border-[color:var(--aries-inspector-interactive-color)]"
+                onChange={(event) => {
+                  setSyncDialogOpen(false);
+                  setAuthoringEditScope(
+                    event.currentTarget.value as ChartStyleAuthoringEditScope,
+                  );
+                }}
+              >
+                <option value="base">{t("styleLab.authoringScope.shared")}</option>
+                <option value="variant">{t("styleLab.authoringScope.variant")}</option>
+              </select>
+            </>
+          ) : (
+            <div className="mr-1 min-w-0 flex-1 truncate text-[length:var(--aries-font-size-micro)] text-[color:var(--aries-inspector-muted-color)]">
+              {t("styleLab.app.editorDescription")}
+            </div>
+          )}
           <IconButton label={t("styleLab.action.undo")} disabled={!undoStack.length} onClick={undo}>
             <Undo2 size={14} />
           </IconButton>
@@ -1856,16 +3633,67 @@ export function ChartStylePanel({ onClose }: { onClose?: () => void }) {
             </IconButton>
           ) : null}
         </div>
+        {editorDomain === "chart" ? (
+          <div className="mt-2 flex min-w-0 items-center gap-1">
+            <button
+              type="button"
+              disabled={!canCopyElement}
+              onClick={copySelectedElementStyle}
+              className="inline-flex h-7 shrink-0 items-center gap-1 rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] px-2 text-[length:var(--aries-font-size-micro)] text-[color:var(--aries-inspector-title-color)] hover:bg-[var(--aries-navbar-hover-bg)] disabled:cursor-default disabled:opacity-30"
+              title={t("styleLab.action.copyElement")}
+            >
+              <Copy size={12} />
+              {t("styleLab.action.copyElement")}
+            </button>
+            <button
+              type="button"
+              disabled={!canPasteElement}
+              onClick={pasteSelectedElementStyle}
+              className="inline-flex h-7 shrink-0 items-center gap-1 rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] px-2 text-[length:var(--aries-font-size-micro)] text-[color:var(--aries-inspector-title-color)] hover:bg-[var(--aries-navbar-hover-bg)] disabled:cursor-default disabled:opacity-30"
+              title={elementClipboard
+                ? t("styleLab.transfer.pasteFrom", { name: elementClipboard.sourceLabel })
+                : t("styleLab.action.pasteElement")}
+            >
+              <ClipboardPaste size={12} />
+              {t("styleLab.action.pasteElement")}
+            </button>
+            <button
+              type="button"
+              disabled={!canSyncElement}
+              onClick={() => setSyncDialogOpen(true)}
+              className="inline-flex h-7 shrink-0 items-center gap-1 rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] px-2 text-[length:var(--aries-font-size-micro)] text-[color:var(--aries-inspector-title-color)] hover:bg-[var(--aries-navbar-hover-bg)] disabled:cursor-default disabled:opacity-30"
+              title={authoringEditScope === "base"
+                ? t("styleLab.sync.sharedAlready")
+                : sourceVariantOverrideCount === 0
+                  ? t("styleLab.sync.noOverrides", {
+                    source: t(`styleLab.variant.${sourceVariant}`),
+                  })
+                  : t("styleLab.action.syncElement")}
+            >
+              <RefreshCw size={12} />
+              {t("styleLab.action.syncElement")}
+            </button>
+            <span
+              aria-live="polite"
+              className="min-w-0 flex-1 truncate pl-1 text-[length:var(--aries-font-size-micro)] text-[color:var(--aries-inspector-muted-color)]"
+            >
+              {transferNotice}
+            </span>
+          </div>
+        ) : null}
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {!selectedElement || !visibleControls.length ? (
+        {editorDomain === "app" ? (
+          <AppThemeControls key={remoteSourceThemeName ?? "base"} />
+        ) : !selectedElement || !visibleControls.length ? (
           <div className="px-[var(--aries-inspector-padding-x)] py-6 text-[length:var(--aries-font-size-small)] leading-relaxed text-[color:var(--aries-inspector-muted-color)]">
             {t("styleLab.scene.description")}
           </div>
         ) : (
           INSPECTOR_SECTION_ORDER.map((section) => {
             const sectionControls = controlsBySection.get(section);
+            const sectionGroups = controlGroupsBySection.get(section);
             if (!sectionControls?.length) return null;
             return (
               <section
@@ -1875,19 +3703,120 @@ export function ChartStylePanel({ onClose }: { onClose?: () => void }) {
                 <h3 className="flex h-7 items-center px-[var(--aries-inspector-padding-x)] text-[length:var(--aries-font-size-small)] font-medium text-[color:var(--aries-inspector-title-color)]">
                   {inspectorSectionLabel(section, t)}
                 </h3>
-                {sectionControls.map((control) => (
-                  <PropertyControl
-                    key={control.token.semanticId}
-                    control={control}
-                    overrides={semanticOverrides}
-                  />
-                ))}
+                {sectionGroups && (
+                  sectionGroups.size > 1
+                  || !sectionGroups.has("default")
+                ) ? (
+                  INSPECTOR_CONTROL_GROUP_ORDER.map((group) => {
+                    const groupControls = sectionGroups.get(group);
+                    if (!groupControls?.length) return null;
+                    if (group === "default") {
+                      return groupControls.map((control) => (
+                        <PropertyControl
+                          key={control.token.semanticId}
+                          control={control}
+                          overrides={semanticOverrides}
+                          siblingControls={controls}
+                        />
+                      ));
+                    }
+                    const summary = inspectorControlGroupSummary(
+                      group,
+                      groupControls,
+                      semanticOverrides,
+                      t,
+                    );
+                    const defaultOpen = (
+                      group === "fill"
+                      || group === "compositing"
+                      || (
+                        (group === "texture" || group === "mask" || group === "shadow")
+                        && summary !== t("styleLab.group.off")
+                      )
+                    );
+                    return (
+                      <InspectorPropertyGroup
+                        key={`${selectedElement.id}:${section}:${group}`}
+                        title={inspectorControlGroupLabel(group, t)}
+                        summary={summary}
+                        defaultOpen={defaultOpen}
+                      >
+                        {groupControls.map((control) => (
+                          <PropertyControl
+                            key={control.token.semanticId}
+                            control={control}
+                            overrides={semanticOverrides}
+                            siblingControls={controls}
+                          />
+                        ))}
+                      </InspectorPropertyGroup>
+                    );
+                  })
+                ) : (
+                  sectionControls.map((control) => (
+                    <PropertyControl
+                      key={control.token.semanticId}
+                      control={control}
+                      overrides={semanticOverrides}
+                      siblingControls={controls}
+                    />
+                  ))
+                )}
               </section>
             );
           })
         )}
       </div>
+      {saveAsOpen ? (
+        <form
+          className="shrink-0 border-t border-[color:var(--aries-inspector-divider-color)] p-2"
+          onSubmit={saveAsTheme}
+        >
+          <label
+            htmlFor="style-lab-new-theme-name"
+            className="mb-1 block text-[length:var(--aries-font-size-micro)] text-[color:var(--aries-inspector-muted-color)]"
+          >
+            {t("styleLab.saveAs.name")}
+          </label>
+          <input
+            data-aries-control-appearance="local"
+            id="style-lab-new-theme-name"
+            autoFocus
+            maxLength={80}
+            value={newThemeName}
+            placeholder={t("styleLab.saveAs.placeholder")}
+            className="h-8 w-full rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] bg-[var(--aries-inspector-background)] px-2 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-inspector-value-color)] outline-none focus:border-[color:var(--aries-inspector-interactive-color)]"
+            onChange={(event) => setNewThemeName(event.currentTarget.value)}
+          />
+          <div className="mt-2 flex justify-end gap-1">
+            <button
+              type="button"
+              className="inline-flex h-7 items-center rounded-[var(--aries-radius-control-compact)] px-2 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-inspector-muted-color)] hover:bg-[var(--aries-navbar-hover-bg)]"
+              onClick={() => {
+                setSaveAsOpen(false);
+                setNewThemeName("");
+              }}
+            >
+              {t("styleLab.saveAs.cancel")}
+            </button>
+            <button
+              type="submit"
+              disabled={!canSaveAs || !newThemeName.trim()}
+              className="inline-flex h-7 items-center rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] px-2 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-inspector-title-color)] hover:bg-[var(--aries-navbar-hover-bg)] disabled:cursor-default disabled:opacity-30"
+            >
+              {t("styleLab.saveAs.save")}
+            </button>
+          </div>
+        </form>
+      ) : null}
       <footer className="flex h-11 shrink-0 items-center gap-1 border-t border-[color:var(--aries-inspector-divider-color)] px-2">
+        <input
+          ref={importInputRef}
+          type="file"
+          accept=".json,.jsonl,.aries-chart-style.json,application/json,application/x-ndjson"
+          className="hidden"
+          onChange={importThemeFile}
+        />
         <div
           className={cn(
             "flex size-7 shrink-0 items-center justify-center",
@@ -1902,14 +3831,23 @@ export function ChartStylePanel({ onClose }: { onClose?: () => void }) {
           {syncIcon}
         </div>
         <div className="min-w-0 flex-1 truncate text-[length:var(--aries-font-size-micro)] text-[color:var(--aries-inspector-muted-color)]">
-          {t(`styleLab.status.${syncStatus}`)}
+          {(syncStatus === "error" || syncStatus === "conflict") && syncDetail
+            ? syncDetail
+            : t(`styleLab.status.${syncStatus}`)}
         </div>
         <IconButton
-          label={t("styleLab.action.resetAll")}
-          disabled={!Object.keys(semanticOverrides).length}
-          onClick={resetAll}
+          label={t("styleLab.action.revert")}
+          disabled={!canRevert}
+          onClick={revertWorkingDraft}
         >
           <RotateCcw size={14} />
+        </IconButton>
+        <IconButton
+          label={t("styleLab.action.import")}
+          disabled={!canSave}
+          onClick={() => importInputRef.current?.click()}
+        >
+          <Upload size={14} />
         </IconButton>
         <IconButton
           label={t("styleLab.action.export")}
@@ -1917,6 +3855,13 @@ export function ChartStylePanel({ onClose }: { onClose?: () => void }) {
           onClick={exportProfile}
         >
           <Download size={14} />
+        </IconButton>
+        <IconButton
+          label={t("styleLab.action.saveAsTheme")}
+          disabled={!canSaveAs}
+          onClick={() => setSaveAsOpen((open) => !open)}
+        >
+          <CopyPlus size={14} />
         </IconButton>
         <button
           type="button"
@@ -1928,6 +3873,24 @@ export function ChartStylePanel({ onClose }: { onClose?: () => void }) {
           {t("styleLab.action.commit")}
         </button>
       </footer>
+      {deleteThemeSource ? (
+        <DeleteThemeDialog
+          source={deleteThemeSource}
+          busy={syncStatus === "saving"}
+          onCancel={() => setDeleteThemeSource(null)}
+          onConfirm={deleteSavedTheme}
+        />
+      ) : null}
+      {syncDialogOpen && selectedClassDefinition ? (
+        <SyncWheelStylesDialog
+          classLabel={selectedClassLabel}
+          source={sourceVariant}
+          targets={syncTargetVariants}
+          busy={syncStatus === "saving"}
+          onCancel={() => setSyncDialogOpen(false)}
+          onConfirm={syncSelectedElementStyle}
+        />
+      ) : null}
     </aside>
   );
 }

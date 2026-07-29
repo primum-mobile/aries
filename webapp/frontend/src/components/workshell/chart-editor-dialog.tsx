@@ -593,6 +593,7 @@ function EditorBody({
           <Group title={t("editor.groupIdentity")}>
             <Row label={t("editor.name")}>
               <input
+                data-aries-control-appearance="local"
                 ref={nameRef}
                 value={s.name}
                 onChange={(e) => set("name", e.target.value)}
@@ -665,6 +666,7 @@ function EditorBody({
             </div>
             <div className="flex items-center gap-[var(--aries-form-field-gap)]">
               <input
+                data-aries-control-appearance="local"
                 value={s.placeSearch}
                 onChange={(e) => set("placeSearch", e.target.value)}
                 onKeyDown={(e) => {
@@ -784,6 +786,7 @@ function EditorBody({
           <Group title={t("editor.groupAltitude")}>
             <Row label={t("editor.altitude")}>
               <input
+                data-aries-control-appearance="local"
                 inputMode="numeric"
                 value={s.altitude}
                 maxLength={5}
@@ -799,6 +802,7 @@ function EditorBody({
         <div className="flex flex-col gap-[var(--aries-dialog-gap)] px-[var(--aries-dialog-padding)] py-[var(--aries-dialog-padding)]">
           <Group title={t("editor.groupNotes")} className="flex-1">
             <textarea
+              data-aries-control-appearance="local"
               value={s.notes}
               maxLength={500}
               onChange={(e) => set("notes", e.target.value)}
@@ -911,7 +915,7 @@ function humanizeDaemonError(err: unknown): string {
 
 function fieldCls(extra = ""): string {
   return (
-    "h-[var(--aries-control-height-small)] rounded-md border border-border/60 bg-transparent px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-base)] " +
+    "h-[var(--aries-control-height-small)] rounded-[var(--aries-radius-ui-control-compact)] border border-border/60 bg-transparent px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-base)] " +
     "outline-none transition-colors placeholder:text-foreground/35 " +
     "focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/40 " +
     "disabled:opacity-40 " +
@@ -976,6 +980,7 @@ function NumField({
     <label className="flex flex-col gap-[var(--aries-control-gap-compact)]">
       <span className="text-[length:var(--aries-font-size-section)] text-foreground/45">{label}</span>
       <input
+        data-aries-control-appearance="local"
         inputMode="numeric"
         value={value}
         maxLength={maxLength}
@@ -1060,6 +1065,7 @@ function Select({
 }) {
   return (
     <select
+      data-aries-control-appearance="local"
       value={value}
       disabled={disabled}
       onChange={(e) => onChange(e.target.value)}

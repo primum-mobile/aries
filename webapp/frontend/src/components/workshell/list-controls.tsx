@@ -79,6 +79,7 @@ export function PaneSelect({
 }: React.ComponentProps<"select"> & { surface?: boolean }) {
   return (
     <select
+      data-aries-control-appearance="local"
       className={cn(
         "h-[var(--aries-control-height-small)] rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-border-subtle)] px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-small)]",
         surface ? "bg-[color:var(--aries-surface)]" : "bg-background",
@@ -274,16 +275,58 @@ export function ListToggleDrawer<T extends ListToggleDrawerItem>({
   items,
   isActive,
   onToggle,
+  deselectAllLabel,
+  selectAllLabel,
+  onDeselectAll,
+  onSelectAll,
 }: {
   label: string;
   items: readonly T[];
   isActive: (item: T) => boolean;
   onToggle: (item: T, active: boolean) => void;
+  deselectAllLabel?: string;
+  selectAllLabel?: string;
+  onDeselectAll?: () => void;
+  onSelectAll?: () => void;
 }) {
+  const activeCount = items.reduce(
+    (count, item) => count + (isActive(item) ? 1 : 0),
+    0,
+  );
+  const showBulkActions = Boolean(
+    deselectAllLabel &&
+    selectAllLabel &&
+    onDeselectAll &&
+    onSelectAll,
+  );
   return (
     <div className="max-h-[var(--aries-pane-drawer-list-max-height)] w-full overflow-auto border-t border-border/70 pt-[var(--aries-pane-header-padding-y)]">
+      <div className="mb-[var(--aries-control-gap)] flex min-w-0 items-center justify-between gap-[var(--aries-control-gap)]">
+        <span className="min-w-14 text-[length:var(--aries-font-size-section)] text-muted-foreground">{label}</span>
+        {showBulkActions ? (
+          <div className="flex shrink-0 items-center gap-1">
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              disabled={activeCount === 0}
+              onClick={onDeselectAll}
+            >
+              {deselectAllLabel}
+            </Button>
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              disabled={activeCount === items.length}
+              onClick={onSelectAll}
+            >
+              {selectAllLabel}
+            </Button>
+          </div>
+        ) : null}
+      </div>
       <div className="flex min-w-0 flex-wrap items-center gap-[var(--aries-control-gap)]">
-        <span className="mr-1 min-w-14 text-[length:var(--aries-font-size-section)] text-muted-foreground">{label}</span>
         {items.map((item) => {
           const active = isActive(item);
           return (
@@ -294,7 +337,7 @@ export function ListToggleDrawer<T extends ListToggleDrawerItem>({
               variant={active ? "default" : "outline"}
               aria-pressed={active}
               onClick={() => onToggle(item, !active)}
-              className="h-[var(--aries-control-height-compact)] max-w-44 justify-start gap-[var(--aries-control-gap-compact)] rounded-[var(--aries-radius-control-compact)] px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-small)]"
+              className="h-[var(--aries-control-height-compact)] max-w-44 justify-start gap-[var(--aries-control-gap-compact)] px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-small)]"
             >
               {item.glyph ? (
                 <span className="aries-search-glyph shrink-0" style={{ fontFamily: "'AriesMorinus'" }}>

@@ -20,6 +20,10 @@ import type { WorkspaceManifest } from "@/lib/daemon/client";
 import { rightPanePriorityLayout, useFrameLayoutStore } from "@/stores/frame-layout-store";
 import { useWorkspaceStore, type WorkspaceDocument } from "@/stores/workspace-store";
 import type { SettingsTabId } from "./settings-dialog";
+import {
+  pointIsInsideChartNavbarHoverZone,
+  readChartNavbarHoverZone,
+} from "./chart-navbar-hover-zone";
 
 type WorkspaceFrameProps = {
   chart: ChartRenderSnapshot | null;
@@ -31,7 +35,8 @@ type WorkspaceFrameProps = {
   onReorder: (docId: string, beforeId: string | null) => void;
   onSolarAverageWindowSelect: (maxBirthday: number, returnKind: "solar" | "lunar") => void;
   onOpenSettings: (tab?: SettingsTabId) => void;
-  onMenuCommand: (command: string) => void;
+  onOpenStyleLab: () => void;
+  onMenuCommand: (command: string) => void | Promise<boolean>;
   isMenuCommandEnabled: (command: string) => boolean;
   onRevealKeyHints?: (placement: KeyHintPlacement) => void;
   children: React.ReactNode;
@@ -47,6 +52,7 @@ export function WorkspaceFrame({
   onReorder,
   onSolarAverageWindowSelect,
   onOpenSettings,
+  onOpenStyleLab,
   onMenuCommand,
   isMenuCommandEnabled,
   onRevealKeyHints,
@@ -107,9 +113,23 @@ export function WorkspaceFrame({
   const eclipsesPane = useWorkspaceStore((s) => s.eclipsesPane);
   const lunarMansionsPane = useWorkspaceStore((s) => s.lunarMansionsPane);
   const synodicCyclesPane = useWorkspaceStore((s) => s.synodicCyclesPane);
+  const aspectListPane = useWorkspaceStore((s) => s.aspectListPane);
   const ascensionalTransitsPane = useWorkspaceStore((s) => s.ascensionalTransitsPane);
+  const astrocartControlsPane = useWorkspaceStore((s) => s.astrocartControlsPane);
   const featureCatalogPane = useWorkspaceStore((s) => s.featureCatalogPane);
   const fullBleed = activeDocument?.kind === "astrocart";
+  const canCopyChart = Boolean(
+    activeDocument &&
+      activeDocument.kind !== "directions" &&
+      activeDocument.kind !== "transit-search" &&
+      activeDocument.kind !== "ascensional-transits" &&
+      activeDocument.kind !== "table",
+  );
+  const handleCopyChart = React.useCallback(
+    () => onMenuCommand("menu.copy-chart-png"),
+    [onMenuCommand],
+  );
+  const activeAstrocartDocumentId = fullBleed ? activeDocument.id : null;
   const activeRightPane = activeRightPaneModule({
     inspectorOpen,
     notesOpen,
@@ -125,7 +145,10 @@ export function WorkspaceFrame({
     eclipsesPane,
     lunarMansionsPane,
     synodicCyclesPane,
+    aspectListPane,
     ascensionalTransitsPane,
+    astrocartControlsPane,
+    activeAstrocartDocumentId,
     featureCatalogPane,
   });
   const effectiveSidebarWidth = activeRightPane
@@ -141,6 +164,27 @@ export function WorkspaceFrame({
   const handleShellPointerMove = React.useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (!onRevealKeyHints) return;
+      const navbarHoverZone = readChartNavbarHoverZone();
+      if (navbarHoverZone?.moved) {
+        if (!pointIsInsideChartNavbarHoverZone(
+          navbarHoverZone,
+          event.clientX,
+          event.clientY,
+        )) {
+          return;
+        }
+        const now = window.performance.now();
+        if (
+          lastKeyHintEdgePlacementRef.current === navbarHoverZone.placement &&
+          now - lastKeyHintEdgeRevealRef.current < 700
+        ) {
+          return;
+        }
+        lastKeyHintEdgeRevealRef.current = now;
+        lastKeyHintEdgePlacementRef.current = navbarHoverZone.placement;
+        onRevealKeyHints(navbarHoverZone.placement);
+        return;
+      }
       const rect = event.currentTarget.getBoundingClientRect();
       const y = event.clientY - rect.top;
       const edgeSize = Math.min(92, Math.max(52, rect.height * 0.1));
@@ -185,8 +229,11 @@ export function WorkspaceFrame({
         manifest={manifest}
         overlay={fullBleed}
         onOpenSettings={onOpenSettings}
+        onOpenStyleLab={onOpenStyleLab}
         onMenuCommand={onMenuCommand}
         isMenuCommandEnabled={isMenuCommandEnabled}
+        canCopyChart={canCopyChart}
+        onCopyChart={handleCopyChart}
       />
       <SidebarProvider
         open={sidebarOpen}
@@ -208,8 +255,8 @@ export function WorkspaceFrame({
           onReorder={onReorder}
           onSolarAverageWindowSelect={onSolarAverageWindowSelect}
         />
-        <SidebarSash />
-        <SidebarInset className="flex min-w-0 flex-col bg-background">
+        <SidebarSash activeAstrocartDocumentId={activeAstrocartDocumentId} />
+        <SidebarInset className="flex min-w-0 flex-col bg-[var(--aries-background)]">
           {children}
         </SidebarInset>
       </SidebarProvider>

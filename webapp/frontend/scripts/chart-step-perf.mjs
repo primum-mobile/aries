@@ -17,10 +17,15 @@ const daemonPort = useNativeDaemon
   ? positiveInt("ARIES_DAEMON_PORT", 8765)
   : positiveInt("ARIES_PERF_DAEMON_PORT", 8877);
 const daemonUrl = `http://127.0.0.1:${daemonPort}`;
+const scenarioProfile = process.env.CHART_STEP_PROFILE === "core" ? "core" : "extended";
+const runExtendedScenarios = scenarioProfile === "extended";
 const retainAstrocart = process.env.CHART_STEP_RETAINED_ASTROCART === "1";
 const measureListScroll = process.env.CHART_STEP_LIST_SCROLL === "1";
+const measureLiveTransitList = process.env.CHART_STEP_LIVE_TRANSIT_LIST === "1";
 const measureFullPaint = process.env.CHART_STEP_FULL_PAINT === "1";
 const measuredSteps = positiveInt("CHART_STEP_RUNS", 30);
+const liveListSteps = positiveInt("CHART_STEP_LIVE_LIST_RUNS", 12);
+const liveListIntervalMs = positiveInt("CHART_STEP_LIVE_LIST_INTERVAL_MS", 30);
 // Retained-map runs include a longer warm-up so map activation/teardown is not
 // mixed into the steady-state step distribution. This adds well under a second
 // while keeping the commit gate deterministic; explicit overrides still win.
@@ -154,6 +159,113 @@ function phaseDiagnostics(events, rootKeys, prefix) {
   );
 }
 
+function createTransitSearchTracker(page) {
+  const state = {
+    activeSessionIds: new Set(),
+    inFlightStarts: 0,
+    lastActivityAt: Date.now(),
+    measurementActive: false,
+    measuredStarts: 0,
+    totalStarts: 0,
+  };
+
+  const transitListStartBody = (request) => {
+    if (new URL(request.url()).pathname !== "/api/search/context/start") return null;
+    try {
+      const body = request.postDataJSON();
+      return body?.ownerScope === "transit-list" ? body : null;
+    } catch {
+      return null;
+    }
+  };
+
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (transitListStartBody(request)) {
+      state.inFlightStarts += 1;
+      state.totalStarts += 1;
+      if (state.measurementActive) state.measuredStarts += 1;
+      state.lastActivityAt = Date.now();
+      return;
+    }
+    if (url.pathname !== "/api/search/cancel") return;
+    try {
+      const sessionId = request.postDataJSON()?.sessionId;
+      if (typeof sessionId === "string") state.activeSessionIds.delete(sessionId);
+    } catch {
+      // The response path still resolves the active session.
+    }
+    state.lastActivityAt = Date.now();
+  });
+
+  page.on("response", async (response) => {
+    const url = new URL(response.url());
+    const isStart = url.pathname === "/api/search/context/start";
+    const isProgress = url.pathname === "/api/search/progress";
+    if (!isStart && !isProgress) return;
+    const request = response.request();
+    if (isStart && !transitListStartBody(request)) return;
+    try {
+      const payload = await response.json();
+      const sessionId = payload?.sessionId;
+      if (isStart) state.inFlightStarts = Math.max(0, state.inFlightStarts - 1);
+      if (typeof sessionId === "string") {
+        if (payload?.complete || payload?.cancelled || payload?.error) {
+          state.activeSessionIds.delete(sessionId);
+        } else {
+          state.activeSessionIds.add(sessionId);
+        }
+      }
+    } catch {
+      if (isStart) state.inFlightStarts = Math.max(0, state.inFlightStarts - 1);
+    }
+    state.lastActivityAt = Date.now();
+  });
+
+  return {
+    beginMeasurement() {
+      state.measuredStarts = 0;
+      state.measurementActive = true;
+    },
+    endMeasurement() {
+      state.measurementActive = false;
+      return state.measuredStarts;
+    },
+    snapshot() {
+      return {
+        activeSessions: state.activeSessionIds.size,
+        inFlightStarts: state.inFlightStarts,
+        lastActivityAt: state.lastActivityAt,
+        measuredStarts: state.measuredStarts,
+        totalStarts: state.totalStarts,
+      };
+    },
+  };
+}
+
+async function waitForTransitSearchQuiescence(tracker) {
+  const deadline = Date.now() + timeoutMs;
+  let quietSince = 0;
+  while (Date.now() < deadline) {
+    const state = tracker.snapshot();
+    if (state.totalStarts > 0 && state.inFlightStarts === 0 && state.activeSessions === 0) {
+      if (!quietSince) quietSince = Date.now();
+      if (
+        Date.now() - quietSince >= 300
+        && Date.now() - state.lastActivityAt >= 300
+      ) {
+        return;
+      }
+    } else {
+      quietSince = 0;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(
+    `Transit List Search did not become quiescent: ${JSON.stringify(tracker.snapshot())}`,
+  );
+}
+
 async function openChart(page, context) {
   await page.goto(`${frontendUrl}/?chartPerf=1`, {
     waitUntil: "domcontentloaded",
@@ -278,8 +390,7 @@ async function readRetainedAstrocartPerf(page) {
   return frame.evaluate(() => window.ACG?.getPerfState?.() ?? null);
 }
 
-async function runListScrollScenario(page) {
-  if (!measureListScroll) return;
+async function openTransitListSurface(page, tracker) {
   if (useNativeDaemon) {
     throw new Error("The list scenario may not change launcher options on the user's native daemon.");
   }
@@ -301,7 +412,198 @@ async function runListScrollScenario(page) {
   await action.click();
   const table = page.locator("table.aries-list").last();
   await table.waitFor({ state: "visible", timeout: timeoutMs });
-  const scroller = table.locator("xpath=..");
+  const scroller = page.locator("[data-transit-list-focus-target-ms]").last();
+  await scroller.waitFor({ state: "visible", timeout: timeoutMs });
+  await page.waitForFunction(
+    (element) =>
+      element.getAttribute("data-transit-list-focus-resident") === "true"
+      && element.querySelectorAll("tbody tr").length > 0,
+    await scroller.elementHandle(),
+    { timeout: timeoutMs },
+  );
+  await waitForTransitSearchQuiescence(tracker);
+  return { table, scroller };
+}
+
+async function installTransitListObservation(page, scroller) {
+  await page.evaluate((element) => {
+    const previous = window.__ARIES_TRANSIT_LIST_FOLLOW_OBSERVER__;
+    previous?.observer?.disconnect();
+    if (previous?.onScroll) previous.scroller?.removeEventListener("scroll", previous.onScroll);
+    const observations = [];
+    const state = {
+      scroller: element,
+      observations,
+      scrollEvents: 0,
+      observer: null,
+      onScroll: null,
+    };
+    const record = () => {
+      observations.push({
+        targetMs: Number(element.getAttribute("data-transit-list-focus-target-ms")),
+        focusIndex: Number(element.getAttribute("data-transit-list-focus-index")),
+        resident: element.getAttribute("data-transit-list-focus-resident") === "true",
+        rowCount: element.querySelectorAll("tbody tr").length,
+        scrollTop: element.scrollTop,
+      });
+    };
+    state.observer = new MutationObserver(record);
+    state.observer.observe(element, {
+      attributes: true,
+      attributeFilter: [
+        "data-transit-list-focus-target-ms",
+        "data-transit-list-focus-index",
+        "data-transit-list-focus-resident",
+      ],
+    });
+    state.onScroll = () => {
+      state.scrollEvents += 1;
+    };
+    element.addEventListener("scroll", state.onScroll, { passive: true });
+    record();
+    window.__ARIES_TRANSIT_LIST_FOLLOW_OBSERVER__ = state;
+  }, await scroller.elementHandle());
+}
+
+async function resetTransitListObservation(page) {
+  await page.evaluate(() => {
+    window.__ARIES_CHART_PERF_EVENTS__ = [];
+    const state = window.__ARIES_TRANSIT_LIST_FOLLOW_OBSERVER__;
+    if (!state) return;
+    state.observations.length = 0;
+    state.scrollEvents = 0;
+  });
+}
+
+async function readTransitListObservation(page) {
+  return page.evaluate(() => {
+    const state = window.__ARIES_TRANSIT_LIST_FOLLOW_OBSERVER__;
+    const current = document.querySelector("[data-transit-list-focus-target-ms]");
+    return {
+      observations: state?.observations ?? [],
+      scrollEvents: state?.scrollEvents ?? 0,
+      sameScroller: Boolean(state?.scroller && current === state.scroller),
+      finalTargetMs: Number(current?.getAttribute("data-transit-list-focus-target-ms")),
+      finalFocusIndex: Number(current?.getAttribute("data-transit-list-focus-index")),
+      finalResident: current?.getAttribute("data-transit-list-focus-resident") === "true",
+      finalRowCount: current?.querySelectorAll("tbody tr").length ?? 0,
+    };
+  });
+}
+
+async function runLiveTransitListDirection(
+  page,
+  docId,
+  tracker,
+  { label, keyName },
+) {
+  await resetTransitListObservation(page);
+  tracker.beginMeasurement();
+  await stepKeyBurst(page, keyName, liveListSteps, liveListIntervalMs);
+  await waitForCoherentSettle(page, docId);
+  await page.waitForTimeout(50);
+  const searchStarts = tracker.endMeasurement();
+  const events = await page.evaluate(() => window.__ARIES_CHART_PERF_EVENTS__ ?? []);
+  const observation = await readTransitListObservation(page);
+  const paints = events.filter(
+    (event) =>
+      event.name === "chart-canvas-paint"
+      && event.detail?.docId === docId
+      && event.detail?.mode === "step_fast",
+  );
+  const navigateCommands = events.filter(
+    (event) =>
+      event.name === "workspace-command"
+      && event.detail?.path === "/api/workspace/navigate-key",
+  );
+  const intents = events.filter((event) => event.name === "chart-step-intent");
+  const paintTargetMs = paints
+    .map((event) => Date.parse(event.detail?.displayDatetime ?? ""))
+    .filter((value) => Number.isFinite(value));
+  const observedTargetMs = new Set(
+    observation.observations
+      .map((item) => item.targetMs)
+      .filter((value) => Number.isFinite(value)),
+  );
+  const appliedInputs = intents.reduce(
+    (total, event) => total + (Number(event.detail?.repeat) || 0),
+    0,
+  );
+  const metrics = {
+    "time-step.first-useful-paint": summarizeMetric(
+      paints
+        .map((event) => event.detail?.stepIntentToPaintMs)
+        .filter((value) => typeof value === "number" && Number.isFinite(value)),
+      budgetValue("time-step.first-useful-paint"),
+    ),
+    "time-step.command-total": summarizeMetric(
+      numericEventDetails(navigateCommands, "workspace-command", "totalMs"),
+      budgetValue("time-step.command-total"),
+    ),
+    "time-step.paint-gap-over-input": summarizeMetric(
+      paints
+        .slice(1)
+        .map((event, index) => event.at - paints[index].at)
+        .slice(0, Math.max(0, intents.length - 1))
+        .map((paintGap, index) => {
+          const current = intents[index]?.detail?.intentAt;
+          const next = intents[index + 1]?.detail?.intentAt;
+          const inputGap =
+            typeof current === "number" && typeof next === "number" ? next - current : 0;
+          return Math.max(0, paintGap - inputGap);
+        }),
+      budgetValue("time-step.paint-gap-over-input"),
+    ),
+  };
+  const contract = {
+    expectedInputs: liveListSteps,
+    appliedInputs,
+    navigateCommands: navigateCommands.length,
+    stepFastPaints: paints.length,
+    searchStarts,
+    focusMutations: observation.observations.length,
+    scrollEvents: observation.scrollEvents,
+    everyPaintTargetConsumed:
+      paintTargetMs.length === paints.length
+      && paintTargetMs.every((targetMs) => observedTargetMs.has(targetMs)),
+    finalTargetMatchesPaint:
+      paintTargetMs.length > 0
+      && observation.finalTargetMs === paintTargetMs.at(-1),
+    residentThroughout:
+      observation.finalResident
+      && observation.observations.length > 0
+      && observation.observations.every((item) => item.resident),
+    rowsNeverBlank:
+      observation.finalRowCount > 0
+      && observation.observations.every((item) => item.rowCount > 0),
+    retainedScroller: observation.sameScroller,
+    noSearchPerFrame: searchStarts === 0,
+    noUnneededScroll: observation.scrollEvents === 0,
+    oneInputPerPaint:
+      intents.length === paints.length
+      && intents.every((event) => event.detail?.repeat === 1),
+    onePaintPerInput: paints.length === liveListSteps,
+    oneCommandPerInput: navigateCommands.length === liveListSteps,
+    noDroppedInputs: appliedInputs === liveListSteps,
+  };
+  contract.passed =
+    contract.everyPaintTargetConsumed
+    && contract.finalTargetMatchesPaint
+    && contract.residentThroughout
+    && contract.rowsNeverBlank
+    && contract.retainedScroller
+    && contract.noSearchPerFrame
+    && contract.noUnneededScroll
+    && contract.oneInputPerPaint
+    && contract.onePaintPerInput
+    && contract.oneCommandPerInput
+    && contract.noDroppedInputs
+    && !Object.values(metrics).some((metric) => metric.breached);
+  return { label, key: keyName, contract, metrics };
+}
+
+async function runListScrollScenario(page, scroller) {
+  if (!measureListScroll) return [];
   // A sparse current-month fixture can fit in the harness's tall viewport.
   // Constrain only this browser context so the canonical virtual list has a
   // real retained-pane scroll range; application layout/options are untouched.
@@ -344,6 +646,38 @@ async function runListScrollScenario(page) {
       { timeout: timeoutMs },
     );
   }
+  return page.evaluate(() => window.__ARIES_CHART_PERF_EVENTS__ ?? []);
+}
+
+async function runRetainedTransitListScenario(page, docId, tracker) {
+  if (!measureListScroll && !measureLiveTransitList) return null;
+  const { scroller } = await openTransitListSurface(page, tracker);
+  const directions = [];
+  if (measureLiveTransitList) {
+    await installTransitListObservation(page, scroller);
+    directions.push(
+      await runLiveTransitListDirection(page, docId, tracker, {
+        label: "forward",
+        keyName: "Shift+ArrowRight",
+      }),
+    );
+    directions.push(
+      await runLiveTransitListDirection(page, docId, tracker, {
+        label: "backward",
+        keyName: "Shift+ArrowLeft",
+      }),
+    );
+  }
+  await resetTransitListObservation(page);
+  const scrollEvents = await runListScrollScenario(page, scroller);
+  return {
+    kind: "transit",
+    listOpen: true,
+    inCoverage: true,
+    directions,
+    scrollEvents,
+    passed: directions.every((direction) => direction.contract.passed),
+  };
 }
 
 async function runFullPaintScenario(page, docId) {
@@ -425,13 +759,16 @@ async function readLatestOverlayPerfState(page, docId) {
   }, docId);
 }
 
-async function stepBurst(page) {
-  for (let index = 0; index < burstSize; index += 1) {
-    await page.keyboard.press(key);
-    if (burstIntervalMs > 0 && index + 1 < burstSize) {
-      await page.waitForTimeout(burstIntervalMs);
+async function stepKeyBurst(page, keyName, count, intervalMs) {
+  if (count <= 0) return;
+  await dispatchStepKey(page, keyName, "keydown", false);
+  for (let index = 1; index < count; index += 1) {
+    if (intervalMs > 0) {
+      await page.waitForTimeout(intervalMs);
     }
+    await dispatchStepKey(page, keyName, "keydown", true);
   }
+  await dispatchStepKey(page, keyName, "keyup", false);
   let previousCommandCount = -1;
   let stableSince = Date.now();
   const deadline = Date.now() + timeoutMs;
@@ -452,6 +789,104 @@ async function stepBurst(page) {
     await page.waitForTimeout(25);
   }
   throw new Error("Timed out waiting for chart-step burst to settle.");
+}
+
+async function stepBurst(page) {
+  await stepKeyBurst(page, key, burstSize, burstIntervalMs);
+}
+
+// ---------------------------------------------------------------------------
+// Held-key cadence sweep.
+//
+// Every internal timer constant forms a resonance band with the input period,
+// so a single cadence can never find one — that is geometry, not luck. The
+// 2026-07-20 stutter was invisible at the harness's synthetic 30 ms and fired
+// 23 times in 44 steps at the real macOS repeat interval (KeyRepeat x ~15 ms,
+// commonly 80-100 ms). `stepOnce` cannot express a held key at all: it awaits
+// the paint before pressing again, so the burst never stays open.
+//
+// Invariant asserted here (doc/policy-time-architecture.md T1/T6):
+//   ZERO full settles while the key is held, EXACTLY ONE after release.
+// ---------------------------------------------------------------------------
+const cadenceSweepMs = (process.env.CHART_STEP_CADENCE_SWEEP_MS
+  ?? "8,16,33,50,66,83,100,150,250")
+  .split(",")
+  .map((value) => Number.parseInt(value.trim(), 10))
+  .filter((value) => Number.isFinite(value) && value > 0);
+const cadenceSweepRepeats = positiveInt("CHART_STEP_CADENCE_REPEATS", 12);
+
+async function dispatchStepKey(page, keyName, type, repeat = false) {
+  await page.evaluate(
+    ({ k, t, r }) => {
+      // Real key events target the focused element (document.body when none),
+      // never window — dispatching at window gives handlers a target with no
+      // .closest() and is not a faithful held-key simulation.
+      (document.activeElement ?? document.body).dispatchEvent(
+        new KeyboardEvent(t, { key: k, repeat: r, bubbles: true, cancelable: true }),
+      );
+    },
+    { k: keyName, t: type, r: repeat },
+  );
+}
+
+async function runHeldKeyCadenceSweep(page, docId) {
+  const results = [];
+  for (const intervalMs of cadenceSweepMs) {
+    await page.evaluate(() => {
+      window.__ARIES_CHART_PERF_EVENTS__ = [];
+    });
+    // Leading edge, then autorepeat, then release — one envelope.
+    await dispatchStepKey(page, key, "keydown", false);
+    for (let index = 1; index < cadenceSweepRepeats; index += 1) {
+      await page.waitForTimeout(intervalMs);
+      await dispatchStepKey(page, key, "keydown", true);
+    }
+    const releasedAt = await page.evaluate(() => performance.now());
+    await dispatchStepKey(page, key, "keyup", false);
+
+    // Let the close edge resolve: the residual backlog collapses, the final
+    // commit paints, then exactly one authoritative settle runs.
+    await page.waitForTimeout(Math.max(600, intervalMs * 4));
+
+    const observed = await page.evaluate((activeDocId) => {
+      const events = window.__ARIES_CHART_PERF_EVENTS__ ?? [];
+      const settles = events.filter((event) => event.name === "chart-step-settle-start");
+      const paints = events.filter(
+        (event) =>
+          event.name === "chart-canvas-paint" &&
+          event.detail?.docId === activeDocId &&
+          event.detail?.mode === "step_fast",
+      );
+      const intents = events.filter((event) => event.name === "chart-step-intent");
+      return {
+        settleTimes: settles.map((event) => event.at),
+        paints: paints.length,
+        paintTimes: paints.map((event) => event.at),
+        appliedInputs: intents.reduce(
+          (total, event) => total + (Number(event.detail?.repeat) || 0),
+          0,
+        ),
+      };
+    }, docId);
+
+    const settlesDuringHold = observed.settleTimes.filter((at) => at < releasedAt).length;
+    const settlesAfterRelease = observed.settleTimes.length - settlesDuringHold;
+    const paintsAfterRelease = observed.paintTimes.filter((at) => at > releasedAt).length;
+    results.push({
+      intervalMs,
+      emittedInputs: cadenceSweepRepeats,
+      appliedInputs: observed.appliedInputs,
+      paints: observed.paints,
+      settlesDuringHold,
+      settlesAfterRelease,
+      paintsAfterRelease,
+      passed:
+        settlesDuringHold === 0 &&
+        settlesAfterRelease === 1 &&
+        observed.appliedInputs === cadenceSweepRepeats,
+    });
+  }
+  return { results, passed: results.every((row) => row.passed) };
 }
 
 async function waitForCoherentSettle(page, docId) {
@@ -917,6 +1352,8 @@ const daemonToken = isolatedDaemon?.daemonToken ?? discoverDaemonToken();
 let browser = null;
 let context = null;
 let page = null;
+let transitSearchTracker = null;
+const searchRequestPaths = [];
 let tracePath = null;
 let traceStarted = false;
 
@@ -942,6 +1379,11 @@ try {
     retainAstrocart,
   });
   page = await context.newPage();
+  page.on("request", (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (pathname.startsWith("/api/search/")) searchRequestPaths.push(pathname);
+  });
+  transitSearchTracker = createTransitSearchTracker(page);
   if (traceEnabled) {
     tracePath = path.join(perfDir, "chart-step-trace.zip");
     mkdirSync(path.dirname(tracePath), { recursive: true });
@@ -958,6 +1400,7 @@ try {
     ? await readRetainedAstrocartPerf(page)
     : null;
   const overlayBaseline = await readLatestOverlayPerfState(page, docId);
+  const searchRequestBaseline = searchRequestPaths.length;
   await page.evaluate(() => {
     window.__ARIES_CHART_PERF_EVENTS__ = [];
   });
@@ -968,14 +1411,26 @@ try {
   }
   await waitForCoherentSettle(page, docId);
   await runFullPaintScenario(page, docId);
-  await runListScrollScenario(page);
+  const noListSearchRequests = searchRequestPaths.slice(searchRequestBaseline);
+  const events = await page.evaluate(() => window.__ARIES_CHART_PERF_EVENTS__ ?? []);
+  const displayToggleCoherence = runExtendedScenarios
+    ? await runHouseToggleCoherenceScenario(page, docId)
+    : null;
+  const missedStepRecovery = runExtendedScenarios
+    ? await runMissedStepRecoveryScenario(page, docId)
+    : null;
+  const unpaintedStepRecovery = runExtendedScenarios
+    ? await runUnpaintedStepRecoveryScenario(page, docId)
+    : null;
+  const heldKeyCadence = await runHeldKeyCadenceSweep(page, docId);
+  const retainedTransitList = await runRetainedTransitListScenario(
+    page,
+    docId,
+    transitSearchTracker,
+  );
   const retainedAstrocartPerfAfter = retainAstrocart
     ? await readRetainedAstrocartPerf(page)
     : null;
-  const events = await page.evaluate(() => window.__ARIES_CHART_PERF_EVENTS__ ?? []);
-  const displayToggleCoherence = await runHouseToggleCoherenceScenario(page, docId);
-  const missedStepRecovery = await runMissedStepRecoveryScenario(page, docId);
-  const unpaintedStepRecovery = await runUnpaintedStepRecoveryScenario(page, docId);
   const paints = events.filter(
     (event) =>
       event.name === "chart-canvas-paint" &&
@@ -1172,8 +1627,12 @@ try {
       budgetValue("chart.canvas.full"),
     ),
     "list.scroll-to-frame": summarizeMetric(
-      numericEventDetails(events, "list-scroll-frame", "eventToFrameMs"),
-      budgetValue("list.scroll-to-frame"),
+      numericEventDetails(
+        retainedTransitList?.scrollEvents ?? [],
+        "list-scroll-frame",
+        "eventToFrameMs",
+      ),
+      measureListScroll ? budgetValue("list.scroll-to-frame") : null,
     ),
     ...(burstSize > 0
       ? {
@@ -1237,6 +1696,28 @@ try {
       "daemon.export.phase",
     ),
   };
+  const requiredMetrics = [
+    "chart.canvas.step_fast",
+    "chart.canvas.body-layout",
+    "time-step.first-useful-paint",
+    "time-step.command-total",
+    "time-step.command-parse",
+    "time-step.payload-bytes",
+    ...(burstSize > 0 ? ["time-step.paint-gap-over-input"] : []),
+    ...(measureFullPaint ? ["chart.canvas.full"] : []),
+    ...(measureListScroll ? ["list.scroll-to-frame"] : []),
+  ];
+  const requiredContracts = [
+    "visualCadence",
+    "overlayContinuity",
+    "visualContinuity",
+    "noListSearchIsolation",
+    "heldKeyCadence",
+    ...(runExtendedScenarios
+      ? ["displayToggleCoherence", "missedStepRecovery", "unpaintedStepRecovery"]
+      : []),
+    ...(retainedTransitList ? ["retainedTransitList"] : []),
+  ];
   const result = {
     recordedAt: new Date().toISOString(),
     budgetVersion: budgets.version,
@@ -1248,6 +1729,9 @@ try {
         : gitValue(["status", "--porcelain"], "") !== "",
     platform: `${os.platform()} ${os.release()} ${os.arch()}`,
     harnessMode: useNativeDaemon ? "shared native daemon" : "isolated daemon",
+    scenarioProfile,
+    requiredMetrics,
+    requiredContracts,
     browserVersion: browser.version(),
     frontendUrl,
     key,
@@ -1276,6 +1760,11 @@ try {
             canvasMs: rounded(paints[index]?.detail?.totalMs),
             intentToPaintMs: rounded(paints[index]?.detail?.stepIntentToPaintMs),
             dynamicProfile: paints[index]?.detail?.dynamicProfile ?? null,
+            bodyLayoutSignature: paints[index]?.detail?.bodyLayoutSignature ?? null,
+            semanticFrameSignature: paints[index]?.detail?.semanticFrameSignature ?? null,
+            width: paints[index]?.detail?.width ?? null,
+            height: paints[index]?.detail?.height ?? null,
+            chartSize: paints[index]?.detail?.chartSize ?? null,
           })),
         }
       : null,
@@ -1290,6 +1779,9 @@ try {
     displayToggleCoherence,
     missedStepRecovery,
     unpaintedStepRecovery,
+    heldKeyCadence,
+    noListSearchRequests,
+    retainedTransitList,
     metrics,
     diagnostics,
   };
@@ -1300,9 +1792,28 @@ try {
   console.log(`visual cadence: ${visualCadence.passed ? "PASS" : "FAIL"}`);
   console.log(`overlay continuity: ${overlayContinuity.passed ? "PASS" : "FAIL"}`);
   console.log(`visual continuity: ${visualContinuity.passed ? "PASS" : "FAIL"}`);
-  console.log(`display-toggle coherence: ${displayToggleCoherence.passed ? "PASS" : "FAIL"}`);
-  console.log(`missed-step recovery: ${missedStepRecovery.passed ? "PASS" : "FAIL"}`);
-  console.log(`unpainted-step recovery: ${unpaintedStepRecovery.passed ? "PASS" : "FAIL"}`);
+  if (displayToggleCoherence) {
+    console.log(`display-toggle coherence: ${displayToggleCoherence.passed ? "PASS" : "FAIL"}`);
+  }
+  if (missedStepRecovery) {
+    console.log(`missed-step recovery: ${missedStepRecovery.passed ? "PASS" : "FAIL"}`);
+  }
+  if (unpaintedStepRecovery) {
+    console.log(`unpainted-step recovery: ${unpaintedStepRecovery.passed ? "PASS" : "FAIL"}`);
+  }
+  console.log(`held-key cadence sweep: ${heldKeyCadence.passed ? "PASS" : "FAIL"}`);
+  for (const row of heldKeyCadence.results) {
+    console.log(
+      `  ${String(row.intervalMs).padStart(4)} ms repeat  ` +
+        `inputs ${row.appliedInputs}/${row.emittedInputs}  paints ${row.paints}  ` +
+        `settles held/released ${row.settlesDuringHold}/${row.settlesAfterRelease}  ` +
+        (row.passed ? "ok" : "FAIL"),
+    );
+  }
+  console.log(`no-list Search requests: ${noListSearchRequests.length}`);
+  if (retainedTransitList) {
+    console.log(`retained Transit List stepping: ${retainedTransitList.passed ? "PASS" : "FAIL"}`);
+  }
   console.log(`speedlog: ${outputPath}`);
   const burstContractBreached = burstSize > 0 && appliedStepInputs !== burstSize;
   if (
@@ -1310,9 +1821,12 @@ try {
     !visualCadence.passed ||
     !overlayContinuity.passed ||
     !visualContinuity.passed ||
-    !displayToggleCoherence.passed ||
-    !missedStepRecovery.passed ||
-    !unpaintedStepRecovery.passed ||
+    (displayToggleCoherence != null && !displayToggleCoherence.passed) ||
+    (missedStepRecovery != null && !missedStepRecovery.passed) ||
+    (unpaintedStepRecovery != null && !unpaintedStepRecovery.passed) ||
+    !heldKeyCadence.passed ||
+    noListSearchRequests.length > 0 ||
+    (retainedTransitList != null && !retainedTransitList.passed) ||
     Object.values({ ...metrics, ...diagnostics }).some((metric) => metric.breached)
   ) {
     throw new Error(
@@ -1324,12 +1838,18 @@ try {
           ? `Aries time-step overlay blanked or settled incoherently: ${JSON.stringify(overlayContinuity)}.`
         : !visualContinuity.passed
           ? `Aries settled frame changed visible step geometry: ${JSON.stringify(visualContinuity)}.`
-        : !displayToggleCoherence.passed
+        : displayToggleCoherence != null && !displayToggleCoherence.passed
           ? `Aries house toggle produced duplicate or stale paints: ${JSON.stringify(displayToggleCoherence)}.`
-        : !missedStepRecovery.passed
+        : missedStepRecovery != null && !missedStepRecovery.passed
           ? `Aries missed-step settle did not recover one coherent full paint: ${JSON.stringify(missedStepRecovery)}.`
-        : !unpaintedStepRecovery.passed
+        : unpaintedStepRecovery != null && !unpaintedStepRecovery.passed
           ? `Aries unpainted-step settle did not recover one coherent full paint: ${JSON.stringify(unpaintedStepRecovery)}.`
+        : !heldKeyCadence.passed
+          ? `Aries held-key burst broke the settle contract (expected 0 settles while held, exactly 1 after release): ${JSON.stringify(heldKeyCadence.results.filter((row) => !row.passed))}.`
+        : noListSearchRequests.length > 0
+          ? `Aries no-list stepping unexpectedly started Search requests: ${noListSearchRequests.join(", ")}.`
+        : retainedTransitList != null && !retainedTransitList.passed
+          ? `Aries retained Transit List violated the resident frame lane: ${JSON.stringify(retainedTransitList)}.`
         : `Aries performance budget exceeded. Re-run with CHART_STEP_TRACE=1 for a Playwright trace.`,
     );
   }

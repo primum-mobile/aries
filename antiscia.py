@@ -252,6 +252,35 @@ class Antiscia:
 			_pack(sec_c, -decl_p),
 		)
 
+	@classmethod
+	def morin_projection_points(cls, lon, lat, obl, ayanopt=0, ayan=0.0, contra=False):
+		'''Return the valid Morin projection branches for one moving source.
+
+		``lon`` is expressed in the chart's selected zodiac.  The returned
+		``primary``/``secondary`` mapping uses that same zodiac; either value is
+		``None`` when that branch does not exist.  This is the canonical
+		lightweight entry point for consumers (for example, time-sampled aspect
+		lists) that need Morin's latitude/declination geometry without
+		constructing a complete chart-wide ``Antiscia`` collection.
+		'''
+		projector = cls.__new__(cls)
+		lon_tropical = util.to_tropical_lon(
+			float(lon),
+			float(ayan) if ayanopt != 0 else 0.0,
+		)
+		primary, secondary, contra_primary, contra_secondary = projector._morin_pair(
+			lon_tropical,
+			float(lat),
+			float(obl),
+			int(ayanopt),
+			float(ayan),
+		)
+		selected = (contra_primary, contra_secondary) if contra else (primary, secondary)
+		return {
+			'primary': selected[0],
+			'secondary': selected[1],
+		}
+
 	def _roots_for_decl(self, decl, obl):
 		'''Two ecliptic longitudes (degrees, 0..360) where the ecliptic itself
 		has declination ``decl``. Returns None when |decl| >= obl.
@@ -353,5 +382,3 @@ class Antiscia:
 				print ('%s %s %f %f %f %f' % (anttxt[ant.typ], 'MC', ant.lon, ant.lat, ant.ra, ant.decl))
 
 			i += 1
-
-

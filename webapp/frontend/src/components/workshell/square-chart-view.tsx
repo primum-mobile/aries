@@ -6,6 +6,10 @@
 import * as React from "react";
 
 import { useStyleRevision } from "@/hooks/use-style-revision";
+import {
+  registerChartExportRenderer,
+  renderCanvasChartExport,
+} from "@/lib/chart/chart-export-registry";
 import { readPalette } from "@/lib/chart/palette";
 import {
   resolveSquareFrameWidths,
@@ -341,11 +345,12 @@ export function SquareChartView({
       const canvas = canvasRef.current;
       const css = getComputedStyle(canvas);
       const textFontFamily = css.getPropertyValue("--morinus-font-text").trim() || "'FreeSans', ui-sans-serif, system-ui, sans-serif";
+      const symbolFontFamily = css.getPropertyValue("--aries-font-symbols").trim() || '"AriesMorinus"';
       const renderStyle = resolveSquareRenderStyle(canvas, {
         revision: styleRevision,
         palette: readSquarePalette(canvas),
         fontUi: textFontFamily,
-        fontSymbols: '"AriesMorinus"',
+        fontSymbols: symbolFontFamily,
       });
       drawSquareChart(canvas, data, side, renderStyle);
     };
@@ -354,6 +359,15 @@ export function SquareChartView({
       cancelled = true;
     };
   }, [data, side, styleRevision]);
+
+  React.useEffect(() => {
+    if (!data || !canvasRef.current) return;
+    return registerChartExportRenderer(documentId, (request) => {
+      const canvas = canvasRef.current;
+      if (!canvas) throw new Error("visible square chart renderer unavailable");
+      return renderCanvasChartExport(canvas, request);
+    });
+  }, [data, documentId]);
 
   return (
     <div

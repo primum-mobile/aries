@@ -384,11 +384,10 @@ def _moon_mansion_text(chrt, options, lon_in_chart):
 
 
 def _lunar_phase_text(chrt, options):
-	"""Line 1: '<phase> · Day N · <Δλ d°m'> (<next quarter> in <d°m'>)' (anchor-aware).
+	"""Line 1: '<Δλ d°m'> · <phase> · Day N' (anchor-aware).
 
-	Arc-minute notation throughout — astrologers read elongation directly
-	(0° = NM, 90° = Q1, 180° = FM, 270° = Q3); the parenthetical is the arc
-	remaining to the next quarter.
+	The exact elongation is the canonical phase measurement
+	(0° = NM, 90° = Q1, 180° = FM, 270° = Q3).
 	"""
 	if chrt is None:
 		return None
@@ -407,17 +406,13 @@ def _lunar_phase_text(chrt, options):
 	else:
 		day_text = '%s %d' % (day_label, day_true)
 	elong_arc = _format_arc_dm(info.delta_lambda)
-	remaining_deg = (1.0 - info.progress) * 90.0
-	remaining_arc = _format_arc_dm(remaining_deg)
 	return _safe_text(
 		'LunarPhaseRowFmt',
-		'{elongation} ({phase}) · {day} · {target} in {remaining}',
+		'{elongation} · {phase} · {day}',
 	).format(
 		elongation=elong_arc,
 		phase=lunar._localize_phase_name(info.name),
 		day=day_text,
-		target=lunar._localize_phase_name(info.target_name),
-		remaining=remaining_arc,
 	)
 
 
@@ -781,6 +776,8 @@ def _flag_accent_colour_role(region, options, accent):
 		return '--morinus-body-fortune' if getattr(options, 'useplanetcolors', False) else '--morinus-peregrin'
 	if kind == 'syzygy':
 		return '--morinus-signs'
+	if kind == 'angle':
+		return '--morinus-angles'
 	if kind == 'aspect':
 		return _aspect_colour_role(data.get('aspect_type', region.get('object_id')))
 	return _literal_colour_role(options, accent)
@@ -925,20 +922,34 @@ def _other_essential_dignity_labels(chrt, planet_index, lon=None):
 
 def _dignity_display_items(chrt, options, planet_index, lon=None):
 	headline = _dignity_text(chrt, planet_index) if chrt is not None else None
-	if headline is None:
-		return []
+	minor_labels = _other_essential_dignity_labels(chrt, planet_index, lon=lon)
+
+	# Chart.dignity() is the inherited five-colour renderer classifier.  Its
+	# PEREGRIN bucket means "none of domicile/exaltation/detriment/fall", not
+	# the traditional judgment "no essential dignity whatsoever".  Keep that
+	# stable renderer contract, but never promote its neutral fallback into a
+	# false inspector statement when triplicity, term, or face is present.
+	#
+	# The traditional essential-dignity tables belong to the seven classical
+	# planets.  Outer planets and other bodies may continue to use the neutral
+	# renderer colour, but receive no textual essential-dignity classification.
+	if int(planet_index) > astrology.SE_SATURN:
+		headline = None
+	elif headline == _DIGNITY_LABELS[chart.Chart.PEREGRIN] and minor_labels:
+		headline = None
+
 	sign_colour = _dignity_colour(chrt, options, planet_index)
 	sign_colour_role = _dignity_colour_role(chrt, planet_index)
 	minor_colour = _minor_dignity_colour(options)
-	items = [
-		{
+	items = []
+	if headline is not None:
+		items.append({
 			'label': _safe_text('Dignity', 'Dignity'),
 			'value': _safe_text(headline, headline),
 			'colour': sign_colour,
 			'colour_role': sign_colour_role,
-		},
-	]
-	for label in _other_essential_dignity_labels(chrt, planet_index, lon=lon):
+		})
+	for label in minor_labels:
 		items.append({
 			'label': '',
 			'value': label,
@@ -1160,16 +1171,7 @@ def _current_aspect_rows(chrt, planet_index, options, partner_chart=None, curren
 	return [text for _, text in rows], [item for _, item in items]
 
 
-def _flag_aspect_rows(chrt, planet_index, options, limit=2, partner_chart=None, current_role='primary'):
-	if chrt is None:
-		return [(_safe_text('Aspect', 'Aspect'), '—')]
-	_aspect_rows, aspect_items = _current_aspect_rows(
-		chrt,
-		planet_index,
-		options,
-		partner_chart=partner_chart,
-		current_role=current_role,
-	)
+def _flag_rows_from_aspect_items(aspect_items, limit=2):
 	if not aspect_items:
 		return [(_safe_text('Aspect', 'Aspect'), '—')]
 	rows = []
@@ -1191,6 +1193,212 @@ def _flag_aspect_rows(chrt, planet_index, options, limit=2, partner_chart=None, 
 			spans.append({'text': (' ' if glyph else '') + suffix})
 		rows.append((_safe_text('Aspect', 'Aspect') if index == 0 else '', item.get('full_text') or suffix or '—', None, spans))
 	return rows
+
+
+def _flag_aspect_rows(chrt, planet_index, options, limit=2, partner_chart=None, current_role='primary'):
+	if chrt is None:
+		return [(_safe_text('Aspect', 'Aspect'), '—')]
+	_aspect_rows, aspect_items = _current_aspect_rows(
+		chrt,
+		planet_index,
+		options,
+		partner_chart=partner_chart,
+		current_role=current_role,
+	)
+	return _flag_rows_from_aspect_items(aspect_items, limit=limit)
+
+
+def _normalise_angle_key(angle_key):
+	key = str(angle_key or '').lower()
+	if key in ('dc', 'dsc'):
+		return 'desc'
+	return key
+
+
+def _angle_longitude(chrt, angle_key):
+	key = _normalise_angle_key(angle_key)
+	try:
+		if key == 'asc':
+			return float(chrt.houses.ascmc[houses.Houses.ASC])
+		if key == 'mc':
+			return float(chrt.houses.ascmc[houses.Houses.MC])
+		if key == 'desc':
+			return util.normalize(float(chrt.houses.ascmc[houses.Houses.ASC]) + 180.0)
+		if key == 'ic':
+			return util.normalize(float(chrt.houses.ascmc[houses.Houses.MC]) + 180.0)
+	except Exception:
+		return None
+	return None
+
+
+def _angle_declination(chrt, angle_key):
+	key = _normalise_angle_key(angle_key)
+	try:
+		if key in ('asc', 'desc'):
+			value = float(chrt.houses.ascmc2[houses.Houses.ASC][houses.Houses.DECL])
+			return -value if key == 'desc' else value
+		if key in ('mc', 'ic'):
+			value = float(chrt.houses.ascmc2[houses.Houses.MC][houses.Houses.DECL])
+			return -value if key == 'ic' else value
+	except Exception:
+		return None
+	return None
+
+
+def _angle_planet_aspect(chrt, angle_key, planet_chart, planet_index):
+	"""Return the chart-engine aspect between one angle and one planet.
+
+	ASC/MC on a single chart preserve the precomputed angle matrix. DSC/IC and
+	cross-chart pairs use the same dynamic aspect builder and Asc/MC orb family
+	as the complete click-adjacency exporter.
+	"""
+	key = _normalise_angle_key(angle_key)
+	angle_lon = _angle_longitude(chrt, key)
+	try:
+		body = planet_chart.get_planet_body(int(planet_index))
+	except Exception:
+		body = None
+	if angle_lon is None or body is None:
+		return None
+	if planet_chart is chrt and key in ('asc', 'mc'):
+		angle_index = houses.Houses.ASC if key == 'asc' else houses.Houses.MC
+		try:
+			return chrt.get_ascmc_aspect(angle_index, int(planet_index))
+		except Exception:
+			return None
+	try:
+		orb_index = chrt.get_planet_orb_index(int(planet_index))
+		orb_by_aspect = [
+			chrt.options.orbisAscMC[aspect_type] + chrt.options.orbis[orb_index][aspect_type]
+			for aspect_type in range(chart.Chart.ASPECT_NUM)
+		]
+		angle_decl = _angle_declination(chrt, key)
+		planet_decl = body.dataEqu[planets.Planet.DECLEQU]
+		parallel_orbs = [
+			chrt.options.orbisparAscMC[0] + chrt.options.orbisplanetspar[orb_index][0],
+			chrt.options.orbisparAscMC[1] + chrt.options.orbisplanetspar[orb_index][1],
+		]
+		return chrt._build_dynamic_aspect(
+			body.data[planets.Planet.LONG],
+			angle_lon,
+			body.data[planets.Planet.SPLON],
+			0.0,
+			orb_by_aspect,
+			planet_decl,
+			angle_decl,
+			parallel_orbs,
+			int(planet_index) in (astrology.SE_MEAN_NODE, astrology.SE_TRUE_NODE),
+		)
+	except Exception:
+		return None
+
+
+def _directed_angle_aspect(chrt, angle_key, planet_chart, planet_index, asp, current_role='primary'):
+	if asp is None or getattr(asp, 'typ', chart.Chart.NONE) == chart.Chart.NONE:
+		return None
+	angle_lon = _angle_longitude(chrt, angle_key)
+	try:
+		body = planet_chart.get_planet_body(int(planet_index))
+		planet_lon = float(body.data[planets.Planet.LONG])
+		planet_speed = float(body.data[planets.Planet.SPLON])
+	except Exception:
+		return None
+	if angle_lon is None:
+		return None
+	try:
+		state = chart.Chart.directed_aspect_state_from_motion(
+			-1,
+			int(planet_index),
+			float(angle_lon),
+			0.0,
+			planet_lon,
+			planet_speed,
+			int(asp.typ),
+		)
+	except Exception:
+		return None
+	# In a biwheel, the outer ring is the moving chart. Preserve that semantic
+	# actor even when the selected outer endpoint is an angle rather than a
+	# planet; the aspect state itself still comes from the chart engine.
+	if planet_chart is not chrt and (current_role or 'primary') == 'outer':
+		state['current_is_actor'] = True
+		state['other_is_actor'] = False
+		state['actor_id'] = -1
+		state['target_id'] = int(planet_index)
+	return state
+
+
+def _current_angle_aspect_rows(chrt, angle_key, options, partner_chart=None, current_role='primary'):
+	rows = []
+	items = []
+	target_chart = partner_chart if partner_chart is not None and partner_chart is not chrt else chrt
+	try:
+		planet_ids = target_chart.get_visible_aspect_planet_ids(include_chiron=True)
+	except Exception:
+		planet_ids = []
+	angle_lon = _angle_longitude(chrt, angle_key)
+	if angle_lon is None:
+		return rows, items
+	angle_name_en = _ANGLE_LABELS.get(_normalise_angle_key(angle_key), 'Angle')
+	angle_name = _safe_text(angle_name_en, angle_name_en)
+	for planet_index in planet_ids:
+		if not _planet_visible_in_inspector(options, planet_index):
+			continue
+		try:
+			body = target_chart.get_planet_body(planet_index)
+			planet_lon = float(body.data[planets.Planet.LONG])
+		except Exception:
+			continue
+		asp = _angle_planet_aspect(chrt, angle_key, target_chart, planet_index)
+		if asp is None or not _is_aspect_enabled(chrt, options, asp.typ, angle_lon, planet_lon):
+			continue
+		directed_state = _directed_angle_aspect(
+			chrt,
+			angle_key,
+			target_chart,
+			planet_index,
+			asp,
+			current_role=current_role,
+		)
+		label_state = _directed_aspect_labels(
+			angle_name,
+			_planet_name(planet_index, options),
+			_aspect_text(asp.typ),
+			directed_state,
+		)
+		if label_state is None:
+			continue
+		text = '%s %s' % (label_state['compact_text'], _format_orb(asp.aspdif))
+		if asp.exact:
+			text += ' %s' % _safe_text('exact', 'exact')
+		rows.append((float(asp.aspdif), text))
+		suffix = '%s %s' % (label_state['suffix_text'], _format_orb(asp.aspdif))
+		if asp.exact:
+			suffix += ' %s' % _safe_text('exact', 'exact')
+		items.append((float(asp.aspdif), {
+			'prefix_text': label_state['prefix_text'],
+			'aspect_glyph': _aspect_glyph(asp.typ),
+			'suffix_text': suffix,
+			'aspect_colour': tuple(options.clraspect[asp.typ]) if asp.typ < len(getattr(options, 'clraspect', ())) else None,
+			'aspect_colour_role': _aspect_colour_role(asp.typ),
+			'full_text': label_state['full_text'],
+		}))
+	rows.sort(key=lambda item: (item[0], item[1]))
+	items.sort(key=lambda item: (item[0], item[1].get('full_text', '')))
+	return [text for _, text in rows], [item for _, item in items]
+
+
+def _flag_angle_aspect_rows(chrt, angle_key, options, limit=2, partner_chart=None, current_role='primary'):
+	if chrt is None:
+		return [(_safe_text('Aspect', 'Aspect'), '—')]
+	_aspect_rows, aspect_items = _current_angle_aspect_rows(
+		chrt,
+		angle_key,
+		options,
+		partner_chart=partner_chart,
+		current_role=current_role,
+	)
+	return _flag_rows_from_aspect_items(aspect_items, limit=limit)
 
 
 def _moon_traditional_witness_rows(chrt, options, limit_each=2, partner_chart=None, current_role='primary'):
@@ -1382,7 +1590,70 @@ def _nearest_aspect_events(chrt, planet_index, options):
 	return result
 
 
-def build_payload(region, options):
+def _nearest_angle_aspect_events(chrt, angle_key, options):
+	normalised_key = _normalise_angle_key(angle_key)
+	key = (_chart_signature(chrt), _aspect_option_signature(options), 'angle', normalised_key)
+	cached = _ASPECT_EVENT_CACHE.get(key)
+	if cached is not None:
+		return cached
+	angle_lon = _angle_longitude(chrt, normalised_key)
+	if angle_lon is None:
+		result = ('—', '—')
+		_ASPECT_EVENT_CACHE[key] = result
+		return result
+	try:
+		planet_ids = chrt.get_visible_aspect_planet_ids(include_chiron=True)
+	except Exception:
+		planet_ids = []
+	next_hit = None
+	last_hit = None
+	for planet_index in planet_ids:
+		if not _planet_visible_in_inspector(options, planet_index):
+			continue
+		try:
+			body = chrt.get_planet_body(planet_index)
+			planet_lon = float(body.data[planets.Planet.LONG])
+			relative_speed = float(body.data[planets.Planet.SPLON])
+		except Exception:
+			continue
+		if abs(relative_speed) < 1e-7:
+			continue
+		delta = util.normalize(planet_lon - angle_lon)
+		for aspect_type, target_deg in enumerate(chart.Chart.Aspects):
+			if not _is_aspect_enabled(chrt, options, aspect_type, angle_lon, planet_lon):
+				continue
+			targets = [float(target_deg)]
+			if target_deg not in (0.0, 180.0):
+				targets.append(360.0 - float(target_deg))
+			for target in targets:
+				for turn in (-1, 0, 1):
+					days = (target - delta + (360.0 * turn)) / relative_speed
+					if 0.0 < days <= _ASPECT_SEARCH_DAYS:
+						candidate = (days, planet_index, aspect_type)
+						if next_hit is None or candidate[0] < next_hit[0]:
+							next_hit = candidate
+					elif -_ASPECT_SEARCH_DAYS <= days < 0.0:
+						candidate = (abs(days), planet_index, aspect_type)
+						if last_hit is None or candidate[0] < last_hit[0]:
+							last_hit = candidate
+
+	def _fmt(hit, future):
+		if hit is None:
+			return '—'
+		days, planet_index, aspect_type = hit
+		direction = '+%.1fd' % days if future else '-%.1fd' % days
+		return '%s %s %s' % (
+			_planet_name(planet_index, options),
+			_aspect_text(aspect_type),
+			direction,
+		)
+
+	result = (_fmt(last_hit, False), _fmt(next_hit, True))
+	_ASPECT_EVENT_CACHE[key] = result
+	return result
+
+
+def build_payload(region, options, defer_signals=False):
 	if not region:
 		return None
 
@@ -1447,9 +1718,11 @@ def build_payload(region, options):
 				))
 			else:
 				dignity_rows.append(item.get('value'))
-		if not is_luminary:
+		phasis_row = None
+		if not is_luminary and not defer_signals:
 			phase = _nearest_signal_text(chrt, planet_index) if chrt is not None else None
-			smart_rows.append('%s: %s' % (_safe_text('Phasis', 'Phasis'), phase or '—'))
+			phasis_row = '%s: %s' % (_safe_text('Phasis', 'Phasis'), phase or '—')
+			smart_rows.append(phasis_row)
 		if planet_index == astrology.SE_MOON and chrt is not None:
 			phase_row = _lunar_phase_text(chrt, options)
 			if phase_row:
@@ -1491,6 +1764,8 @@ def build_payload(region, options):
 			'aspect_rows': aspect_rows,
 			'aspect_items': aspect_items,
 			'manzil': mansion_info,
+			'phasis_row': phasis_row,
+			'deferred_slots': ['phasis'] if not is_luminary and defer_signals else [],
 			'rows': smart_rows,
 			'footer': '',
 		}
@@ -1536,29 +1811,56 @@ def build_payload(region, options):
 		}
 
 	if kind == 'angle':
-		angle_key = region.get('object_id')
+		angle_key = _normalise_angle_key(region.get('object_id'))
+		chrt = _chart_ref(data)
+		partner_chart = data.get('partner_chart')
+		current_role = region.get('chart_role') or 'primary'
 		_, pos_text = _format_position(data.get('display_lon', data.get('longitude', 0.0)))
 		angle_name_en = _ANGLE_LABELS.get(angle_key, 'Angle')
 		opp_name_en = _ANGLE_OPPOSITES.get(angle_key, 'Opposite')
 		angle_name = _safe_text(angle_name_en, angle_name_en)
 		opp_name = _safe_text(opp_name_en, opp_name_en)
 		axis_row = '%s: %s / %s' % (_safe_text('Axis pair', 'Axis pair'), angle_name, opp_name)
+		smart_rows = [
+			pos_text,
+			_house_text(data.get('house_index')),
+		]
+		declination = data.get('declination')
+		if declination is not None:
+			smart_rows.append('%s %s' % (
+				_safe_text('Declination', 'Declination'),
+				_format_signed_angle(declination),
+			))
+		smart_rows.append(axis_row)
+		last_aspect, next_aspect = (
+			_nearest_angle_aspect_events(chrt, angle_key, options)
+			if chrt is not None
+			else ('—', '—')
+		)
+		detail_rows = [
+			'%s: %s' % (_safe_text('Last aspect', 'Last aspect'), last_aspect),
+			'%s: %s' % (_safe_text('Next aspect', 'Next aspect'), next_aspect),
+		]
+		aspect_rows, aspect_items = _current_angle_aspect_rows(
+			chrt,
+			angle_key,
+			options,
+			partner_chart=partner_chart,
+			current_role=current_role,
+		) if chrt is not None else ([], [])
 		return {
 			'glyph': '',
 			'title': angle_name,
 			'meta': role,
 			'accent': accent,
 			'accentRole': accent_role,
-			'smart_rows': [
-				pos_text,
-				axis_row,
-			],
-			'detail_rows': [],
-			'aspect_rows': [],
-			'rows': [
-				pos_text,
-				axis_row,
-			],
+			'smart_rows': smart_rows,
+			'dignity_rows': [],
+			'dignity_items': [],
+			'detail_rows': detail_rows,
+			'aspect_rows': aspect_rows,
+			'aspect_items': aspect_items,
+			'rows': smart_rows,
 			'footer': '',
 		}
 
@@ -1784,13 +2086,23 @@ def build_flag_payload(region, options):
 		]
 		return payload
 	if kind == 'angle':
+		angle_key = _normalise_angle_key(region.get('object_id'))
+		chrt = _chart_ref(data)
+		partner_chart = data.get('partner_chart')
+		current_role = region.get('chart_role') or 'primary'
 		_, pos_text = _format_position(data.get('display_lon', data.get('longitude', 0.0)))
-		angle_name_en = _ANGLE_LABELS.get(region.get('object_id'), 'Angle')
+		angle_name_en = _ANGLE_LABELS.get(angle_key, 'Angle')
 		payload['title'] = _safe_text(angle_name_en, angle_name_en)
 		payload['rows'] = [
 			(_safe_text('Long', 'Long'), pos_text),
-			(_safe_text('Dign', 'Dign'), '—'),
 		]
+		payload['rows'].extend(_flag_angle_aspect_rows(
+			chrt,
+			angle_key,
+			options,
+			partner_chart=partner_chart,
+			current_role=current_role,
+		))
 		return payload
 	if kind == 'house':
 		_, pos_text = _format_position(data.get('display_lon', data.get('longitude', 0.0)))

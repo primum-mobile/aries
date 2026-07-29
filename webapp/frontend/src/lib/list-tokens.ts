@@ -131,6 +131,7 @@ export const LIST_PANE_CLASSES = {
   compactControlRow:
     "flex flex-wrap items-center gap-x-[var(--aries-pane-control-compact-gap-x)] gap-y-[var(--aries-pane-control-gap-y)]",
   titleRow: "flex items-start justify-between gap-[var(--aries-pane-title-gap)]",
+  titleLeading: "flex min-w-0 items-center gap-[var(--aries-control-gap)]",
   titleGroup: "flex items-baseline gap-[var(--aries-pane-title-gap)]",
   title: "text-sm font-semibold",
   metadata: "text-[length:var(--aries-font-size-small)] text-muted-foreground",
@@ -156,6 +157,11 @@ export const LIST_ROW_CLASSES = {
   striped: "aries-list-row--striped",
   current: "aries-list-row--current",
   flagged: "aries-list-row--flagged",
+} as const;
+
+export const LIST_TEXT_CLASSES = {
+  date: "aries-list-date-text",
+  secondary: "aries-list-secondary-text",
 } as const;
 
 export const LIST_BUTTON_PROPS = {

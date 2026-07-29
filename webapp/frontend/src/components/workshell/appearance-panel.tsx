@@ -159,10 +159,11 @@ function FontControl({
 }) {
   return (
     <select
+      data-aries-control-appearance="local"
       id={`appearance-${token.id}`}
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      className="h-8 rounded-md border border-input bg-background px-2 text-[length:var(--aries-font-size-base)] text-foreground outline-none focus-visible:border-ring"
+      className="h-[var(--aries-control-height)] rounded-[var(--aries-radius-ui-control-compact)] border border-input bg-background px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-base)] text-foreground outline-none focus-visible:border-ring"
     >
       {token.options.map((option) => (
         <option key={option.label} value={option.value}>
@@ -223,9 +224,10 @@ function ColorControl({
         className="h-8 w-11 rounded border border-input bg-transparent p-0.5"
       />
       <input
+        data-aries-control-appearance="local"
         value={hex}
         onChange={(event) => onChange(normalizeColor(event.target.value, hex))}
-        className="h-8 rounded-md border border-input bg-background px-2 font-mono text-[length:var(--aries-font-size-small)] text-foreground outline-none focus-visible:border-ring"
+        className="h-[var(--aries-control-height)] rounded-[var(--aries-radius-ui-control-compact)] border border-input bg-background px-[var(--aries-control-padding-x-compact)] font-mono text-[length:var(--aries-font-size-small)] text-foreground outline-none focus-visible:border-ring"
         aria-label={t("appearance.hexValue", { label: token.label })}
       />
     </div>

@@ -31,6 +31,7 @@ import { recordChartPerf } from "@/lib/chart/perf";
 import {
   acquireDaemonWorkspace,
   useDaemonWorkspaceStore,
+  type DaemonWorkspaceState,
 } from "@/stores/daemon-workspace-store";
 import { beginWorkspaceSnapshotCommand } from "@/stores/workspace-command-snapshot-gate";
 import {
@@ -61,6 +62,7 @@ import {
 // reports the engine feature_kind, e.g. "solar_return").
 const FEATURE_TO_PUBLIC: Record<string, SupplementaryKind> = {
   transits: "transits",
+  converse_transits: "converse-transits",
   solar_return: "solar-revolution",
   lunar_return: "lunar-revolution",
   planetary_return: "planetary-return",
@@ -381,12 +383,7 @@ export type DaemonWorkspaceView = {
   activeEnabledActions: Record<string, boolean>;
   connection: "connecting" | "open" | "closed";
   /** rebuiltChildIds from the latest session.changed (step C live-refresh). */
-  lastSessionChange: {
-    docId: string | null;
-    changeReason: string;
-    rebuiltChildIds: string[];
-    seq: number;
-  } | null;
+  lastSessionChange: DaemonWorkspaceState["lastSessionChange"];
 };
 
 export function useDaemonWorkspaceView(): DaemonWorkspaceView {

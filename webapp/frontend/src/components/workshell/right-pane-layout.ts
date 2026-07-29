@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type { RightPaneModuleKind } from "@/stores/frame-layout-store";
+import type { AstrocartControlsPaneState } from "@/stores/workspace-store";
 
 type ActiveRightPaneInput = {
   inspectorOpen: boolean;
@@ -18,12 +19,21 @@ type ActiveRightPaneInput = {
   eclipsesPane: unknown | null;
   lunarMansionsPane: unknown | null;
   synodicCyclesPane: unknown | null;
+  aspectListPane: unknown | null;
   ascensionalTransitsPane: unknown | null;
+  astrocartControlsPane?: AstrocartControlsPaneState | null;
+  activeAstrocartDocumentId?: string | null;
   featureCatalogPane: unknown | null;
 };
 
 export function activeRightPaneModule(input: ActiveRightPaneInput): RightPaneModuleKind | null {
   if (input.featureCatalogPane) return "feature-catalog";
+  if (
+    input.astrocartControlsPane &&
+    input.astrocartControlsPane.documentId === input.activeAstrocartDocumentId
+  ) {
+    return "astrocart-controls";
+  }
   if (input.transitSearchPane) return "transit-search";
   if (input.transitListPane) return "directions";
   if (input.directionsPane) return "directions";
@@ -34,7 +44,8 @@ export function activeRightPaneModule(input: ActiveRightPaneInput): RightPaneMod
   if (input.profectionsPane) return "profections";
   if (input.eclipsesPane) return "eclipses";
   if (input.lunarMansionsPane) return "lunar-mansions";
-  if (input.synodicCyclesPane) return "directions";
+  if (input.synodicCyclesPane) return "synodic-cycles";
+  if (input.aspectListPane) return "aspect-list";
   if (input.ascensionalTransitsPane) return "ascensional-transits";
   if (input.styleEditorOpen) return "chart-style";
   if (input.inspectorOpen && input.notesOpen) return "inspector-notes";

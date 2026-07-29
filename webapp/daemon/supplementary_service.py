@@ -18,7 +18,14 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import phasiscalc
-from engine import cursor_steppers, solilunar, supplementary_adapter, synodic_cycle
+import moonphasejump
+from engine import (
+    converse_transits,
+    cursor_steppers,
+    solilunar,
+    supplementary_adapter,
+    synodic_cycle,
+)
 from engine.supplementary_headless_driver import (
     HeadlessChartSession,
     SupplementaryHeadlessDriver,
@@ -29,6 +36,7 @@ from webapp.frontend.scripts import export_chart_json
 
 PUBLIC_TO_FEATURE_KIND = {
     "transits": "transits",
+    "converse-transits": "converse_transits",
     "solar-revolution": "solar_return",
     "lunar-revolution": "lunar_return",
     "secondary-progression": "secondary",
@@ -54,6 +62,7 @@ SUPPLEMENTARY_KINDS = set(PUBLIC_TO_FEATURE_KIND)
 # ("Mars Return") in workspace_service._open_child.
 FEATURE_KIND_DISPLAY_LABELS = {
     "transits": "Transits",
+    "converse_transits": "ConverseTransits",
     "solar_return": "Solar Return",
     "lunar_return": "Lunar Return",
     "planetary_return": "Planetary Return",
@@ -359,10 +368,18 @@ class SupplementaryService:
             if feature_kind == "lunar_return":
                 retained["lunar_cycle_offset"] = int(retained.get("lunar_cycle_offset", 0) or 0) + plan.delta
             else:
+                step_anchor = retained.get("raw_return_datetime")
                 if self._has_synodic_event(retained):
                     when = self._synodic_anchor_datetime(retained, when)
+                    step_anchor = (
+                        when.year, when.month, when.day,
+                        when.hour, when.minute, when.second,
+                    )
                     retained = self._clear_synodic_event(retained)
                     retained["cycle_offset"] = 0
+                if step_anchor is not None:
+                    retained["planetary_step_anchor_datetime"] = tuple(int(value) for value in step_anchor[:6])
+                    retained["planetary_step_delta"] = int(plan.delta)
                 retained["cycle_offset"] = int(retained.get("cycle_offset", 0) or 0) + plan.delta
         elif plan.kind == "synodic_event":
             if feature_kind != "planetary_return":
@@ -392,12 +409,105 @@ class SupplementaryService:
             retained["synodic_event_datetime"] = event_tuple
             retained["raw_synodic_datetime"] = event_tuple
             retained["synodic_event"] = event.to_payload(calflag)
+        elif plan.kind == "converse_phase":
+            if feature_kind != "converse_transits":
+                binding.retained_state = retained
+                return when, binding.to_payload()
+            physical_dt = display_tuple_to_datetime(
+                retained.get("physical_cursor_datetime")
+            )
+            if physical_dt is None:
+                binding.retained_state = retained
+                return when, binding.to_payload()
+            physical_time = supplementary_adapter.retained_clock_time(
+                retained,
+                "physical",
+                (
+                    physical_dt.year,
+                    physical_dt.month,
+                    physical_dt.day,
+                    physical_dt.hour,
+                    physical_dt.minute,
+                    physical_dt.second,
+                ),
+                fallback_place=getattr(radix, "place", None),
+                fallback_time=getattr(radix, "time", None),
+            )
+            physical_place = supplementary_adapter.payload_to_place(
+                retained.get("physical_place_payload"),
+                fallback=getattr(radix, "place", None),
+            )
+            if physical_time is None or physical_place is None:
+                binding.retained_state = retained
+                return when, binding.to_payload()
+            converse_enabled = bool(retained.get("converse_enabled", True))
+            try:
+                # A forward symbolic phase is backward only while the physical
+                # chart is projected conversely. Direct mode follows it.
+                next_physical_time = moonphasejump.jump_to_classical_phase(
+                    physical_time,
+                    physical_place,
+                    -int(plan.delta) if converse_enabled else int(plan.delta),
+                )
+            except Exception:
+                next_physical_time = None
+            if next_physical_time is None:
+                binding.retained_state = retained
+                return when, binding.to_payload()
+            symbolic_jd = (
+                converse_transits.mirrored_jd(
+                    getattr(getattr(radix, "time", None), "jd"),
+                    next_physical_time.jd,
+                )
+                if converse_enabled
+                else float(next_physical_time.jd)
+            )
+            symbolic_dt = supplementary_adapter.retained_clock_local_tuple_for_jd(
+                retained,
+                "symbolic",
+                symbolic_jd,
+                fallback_place=getattr(radix, "place", None),
+                fallback_time=getattr(radix, "time", None),
+            )
+            when = datetime.datetime(*symbolic_dt)
+            retained.update({
+                "symbolic_cursor_datetime": tuple(symbolic_dt),
+                "symbolic_cursor_jd": float(symbolic_jd),
+                "physical_cursor_datetime": (
+                    int(next_physical_time.origyear),
+                    int(next_physical_time.origmonth),
+                    int(next_physical_time.origday),
+                    int(next_physical_time.hour),
+                    int(next_physical_time.minute),
+                    int(next_physical_time.second),
+                ),
+                "physical_cursor_jd": float(next_physical_time.jd),
+            })
         elif plan.kind == "source_datetime":
-            next_when = cursor_steppers.step_source_datetime(radix, when, plan.unit, plan.delta)
+            if feature_kind == "converse_transits":
+                next_when = self._step_converse_source_datetime(
+                    radix,
+                    when,
+                    plan.unit,
+                    plan.delta,
+                    retained,
+                )
+            else:
+                next_when = cursor_steppers.step_source_datetime(
+                    radix,
+                    when,
+                    plan.unit,
+                    plan.delta,
+                )
             if next_when is not None:
                 when = next_when
                 if feature_kind == "profections":
                     retained["_profections_snap_override"] = False
+                elif feature_kind == "converse_transits":
+                    # Civil-unit navigation changed the symbolic instant; the
+                    # adapter now derives its exact JD from the stepped clock.
+                    retained.pop("symbolic_cursor_datetime", None)
+                    retained.pop("symbolic_cursor_jd", None)
         elif plan.kind == "source_snap":
             snapped = cursor_steppers.resolve_profection_snap_datetime(radix, when, plan)
             if snapped is not None:
@@ -411,6 +521,53 @@ class SupplementaryService:
 
         binding.retained_state = retained
         return when, binding.to_payload()
+
+    @staticmethod
+    def _step_converse_source_datetime(
+        radix,
+        when: datetime.datetime,
+        unit: str,
+        delta: int,
+        retained: dict[str, Any],
+    ) -> Optional[datetime.datetime]:
+        if unit not in ("week", "day", "hour", "minute", "second"):
+            return None
+        clock_time = supplementary_adapter.retained_clock_time(
+            retained,
+            "symbolic",
+            (when.year, when.month, when.day, when.hour, when.minute, when.second),
+            fallback_place=getattr(radix, "place", None),
+            fallback_time=getattr(radix, "time", None),
+        )
+        place = supplementary_adapter.payload_to_place(
+            retained.get("symbolic_place_payload"),
+            fallback=getattr(radix, "place", None),
+        )
+        if clock_time is None or place is None:
+            return None
+        stepped = clock_time.step_datetime_fields(
+            when.year,
+            when.month,
+            when.day,
+            when.hour,
+            when.minute,
+            when.second,
+            unit,
+            int(delta),
+            clock_time.bc,
+            clock_time.cal,
+            clock_time.zt,
+            clock_time.plus,
+            clock_time.zh,
+            clock_time.zm,
+            clock_time.daylightsaving,
+            place,
+            tzid=getattr(clock_time, "tzid", ""),
+        )
+        try:
+            return datetime.datetime(*[int(value) for value in stepped["tuple"][:6]])
+        except (TypeError, ValueError, OverflowError):
+            return None
 
     @staticmethod
     def _has_synodic_event(retained: dict[str, Any]) -> bool:

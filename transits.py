@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import astrology
+from aries.astrology.ephemeris_context import EphemerisContext
 import chart
 import fortune
 import planets
@@ -49,15 +50,16 @@ class Transits:
 		self.flags = Transits.NONE
 
 
-	def month(self, year, month, chrt, planet = -1, pos = None):
-		self.flags = astrology.SEFLG_SPEED+astrology.SEFLG_SWIEPH
-		if chrt.options.topocentric:
-			self.flags += astrology.SEFLG_TOPOCTR
-		# Every transit search must use the same zodiac frame as its radix
-		# targets, including ordinary planet/aspect/sign/antiscia lists.
-		if chrt.options.ayanamsha != 0:
-			astrology.swe_set_sid_mode(astrology.ayanamsha_swe_mode(chrt.options.ayanamsha), 0, 0)
-			self.flags |= astrology.SEFLG_SIDEREAL
+	@staticmethod
+	def _ephemeris_context(chrt):
+		# Import lazily: common also owns legacy desktop initialization.
+		import common
+		return EphemerisContext.for_chart(chrt, ephe_path=common.get_ephe_path())
+
+
+	def month(self, year, month, chrt, planet = -1, pos = None, context = None):
+		context = context or self._ephemeris_context(chrt)
+		self.flags = context.flags
 
 		lastday = 1
 		for day in range(1, 31):
@@ -68,7 +70,7 @@ class Transits:
 				valid = util.checkDate(year, month, day+1)
 				if valid:
 					lastday = day+1
-					self.day(year, month, day, chrt, planet, pos)
+					self._day_with_context(year, month, day, chrt, planet, pos, context)
 				else:
 					break
 			else:
@@ -82,26 +84,29 @@ class Transits:
 
 		cnt = len(self.transits)
 
-		if planet == Transits.NONE:
-			self.cycle(time1, chrt, time2)
-		else:
-			self.cycleplanet(time1, chrt, time2, planet, pos)
+		with context.activate():
+			if planet == Transits.NONE:
+				self.cycle(time1, chrt, time2)
+			else:
+				self.cycleplanet(time1, chrt, time2, planet, pos)
 
 		self.order(cnt)
 
 #		self.printTransits(self.transits)
 
 
-	def day(self, year, month, day, chrt, planet = -1, pos = None):
-		if self.flags == Transits.NONE:
-			self.flags = astrology.SEFLG_SPEED+astrology.SEFLG_SWIEPH
-			if chrt.options.topocentric:
-				self.flags += astrology.SEFLG_TOPOCTR
-			# month() 없이 day()가 직접 호출될 때도 동일 규칙 적용
-			if chrt.options.ayanamsha != 0:
-				astrology.swe_set_sid_mode(astrology.ayanamsha_swe_mode(chrt.options.ayanamsha), 0, 0)
-				self.flags |= astrology.SEFLG_SIDEREAL
+	def day(self, year, month, day, chrt, planet = -1, pos = None, context = None):
+		context = context or self._ephemeris_context(chrt)
+		self.flags = context.flags
+		self._day_with_context(year, month, day, chrt, planet, pos, context)
 
+
+	def _day_with_context(self, year, month, day, chrt, planet, pos, context):
+		with context.activate():
+			self._day_in_active_context(year, month, day, chrt, planet, pos)
+
+
+	def _day_in_active_context(self, year, month, day, chrt, planet, pos):
 		time1 = chart.Time(year, month, day, 0, 0, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
 		time2 = chart.Time(year, month, day+1, 0, 0, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
 				

@@ -32,6 +32,7 @@ import ephemcalc
 import mtexts
 import planets
 import util
+from aries.astrology.ephemeris_context import EphemerisContext
 from aries.astrology.transit_fast import search_longitude_transits_batch, search_station_times_batch
 
 from webapp.daemon.chart_service import chart_snapshot_service
@@ -178,10 +179,8 @@ def _fast_ephemeris_series(year: int, options, start_month: int) -> dict:
     Ephemeris for ecliptic positions directly in the selected zodiac. Keep that
     exact behavior here; this is only a daemon-side fast path for the renderer.
     """
-    flags = astrology.SEFLG_SPEED + astrology.SEFLG_SWIEPH
-    if getattr(options, 'ayanamsha', 0) != 0:
-        astrology.swe_set_sid_mode(astrology.ayanamsha_swe_mode(options.ayanamsha), 0, 0)
-        flags |= astrology.SEFLG_SIDEREAL
+    context = _longitude_context(options)
+    flags = context.flags
 
     days = _month_offsets(year, start_month)[-1]
     start_jd = astrology.swe_julday(int(year), int(start_month), 1, 0.0, astrology.SE_GREG_CAL)
@@ -189,14 +188,16 @@ def _fast_ephemeris_series(year: int, options, start_month: int) -> dict:
     for planet_id in ephemcalc.EphemCalc.get_planet_ids(options):
         longitudes = []
         declinations = []
-        for day in range(days):
-            jd_ut = start_jd + day
-            _serr, ecl = astrology.swe_calc_ut(jd_ut, planet_id, flags)
-            equatorial_flags = (flags & ~astrology.SEFLG_SIDEREAL) | astrology.SEFLG_EQUATORIAL
-            _serr_equ, equ = astrology.swe_calc_ut(jd_ut, planet_id, equatorial_flags)
-            lon = float(ecl[planets.Planet.LONG])
-            longitudes.append(lon)
-            declinations.append(float(equ[planets.Planet.DECLEQU]))
+        for chunk_start in range(0, days, 32):
+            with context.activate():
+                for day in range(chunk_start, min(chunk_start + 32, days)):
+                    jd_ut = start_jd + day
+                    _serr, ecl = astrology.swe_calc_ut(jd_ut, planet_id, flags)
+                    equatorial_flags = (flags & ~astrology.SEFLG_SIDEREAL) | astrology.SEFLG_EQUATORIAL
+                    _serr_equ, equ = astrology.swe_calc_ut(jd_ut, planet_id, equatorial_flags)
+                    lon = float(ecl[planets.Planet.LONG])
+                    longitudes.append(lon)
+                    declinations.append(float(equ[planets.Planet.DECLEQU]))
         series[planet_id] = {
             'longitude': longitudes,
             'declination': declinations,
@@ -206,17 +207,24 @@ def _fast_ephemeris_series(year: int, options, start_month: int) -> dict:
 
 # --- station math, transcribed from graphephemwnd.py:365-537 ----------------
 
-def _longitude_flags(options) -> int:
+def _longitude_context(options) -> EphemerisContext:
     flags = int(_FLAGS)
+    sidereal_mode = None
     if int(getattr(options, 'ayanamsha', 0) or 0) != 0:
-        astrology.swe_set_sid_mode(astrology.ayanamsha_swe_mode(options.ayanamsha), 0, 0)
+        sidereal_mode = astrology.ayanamsha_swe_mode(options.ayanamsha)
         flags |= astrology.SEFLG_SIDEREAL
-    return flags
+    return EphemerisContext(
+        flags=flags,
+        ephe_path=common.get_ephe_path(),
+        sidereal_mode=sidereal_mode,
+    )
 
 
 def _speed_lon(options, planet_id: int, jd_ut: float) -> Optional[float]:
     try:
-        pl = planets.Planet(float(jd_ut), int(planet_id), _longitude_flags(options))
+        context = _longitude_context(options)
+        with context.activate():
+            pl = planets.Planet(float(jd_ut), int(planet_id), context.flags)
         return float(pl.data[planets.Planet.SPLON])
     except Exception:
         return None
@@ -232,7 +240,9 @@ def _speed_decl(planet_id: int, jd_ut: float) -> Optional[float]:
 
 def _lon_at_jd(options, planet_id: int, jd_ut: float) -> Optional[float]:
     try:
-        pl = planets.Planet(float(jd_ut), int(planet_id), _longitude_flags(options))
+        context = _longitude_context(options)
+        with context.activate():
+            pl = planets.Planet(float(jd_ut), int(planet_id), context.flags)
         return float(pl.data[planets.Planet.LONG])
     except Exception:
         return None
@@ -315,7 +325,11 @@ def _longitude_station_hit_map(options, series_by_planet, planet_ids, start_jd: 
         return result
     try:
         hits = search_station_times_batch(
-            list(result.keys()), float(start_jd), float(end_jd), flags=_longitude_flags(options))
+            list(result.keys()),
+            float(start_jd),
+            float(end_jd),
+            context=_longitude_context(options),
+        )
         for hit in hits:
             if getattr(hit, 'hit_type', None) != 'station':
                 continue
@@ -509,10 +523,7 @@ def _longitude_sign_events(options, year: int, planet_ids, start_jd, days) -> li
     out: list[dict] = []
     if start_jd is None or days <= 0 or not planet_ids:
         return out
-    search_flags = int(_FLAGS)
-    if getattr(options, 'ayanamsha', 0) != 0:
-        astrology.swe_set_sid_mode(astrology.ayanamsha_swe_mode(options.ayanamsha), 0, 0)
-        search_flags |= astrology.SEFLG_SIDEREAL
+    context = _longitude_context(options)
     search_targets: list[tuple[float, int]] = []
     for sign_index in range(chart.Chart.SIGN_NUM):
         display_target = float(sign_index * chart.Chart.SIGN_DEG)
@@ -523,8 +534,7 @@ def _longitude_sign_events(options, year: int, planet_ids, start_jd, days) -> li
             float(start_jd),
             float(start_jd) + float(days),
             [target for target, _sign in search_targets],
-            ephe_path=common.get_ephe_path(),
-            flags=search_flags,
+            context=context,
         )
     except Exception:
         return out

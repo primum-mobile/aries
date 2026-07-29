@@ -77,6 +77,7 @@ import {
   patchOptions,
   workspaceToggleComparison,
   fetchOptions,
+  fetchSidebarListPreferences,
   fetchWorkspaceManifest,
   fetchStartupRestoreState,
   fetchDocumentSnapshot,
@@ -91,8 +92,6 @@ import {
   quitPreflight,
   openRecentChart,
   decodeBase64Bytes,
-  exportActiveChart,
-  exportActiveChartBytes,
   exportRenderedChart,
   exportRenderedChartBytes,
   importCharts,
@@ -133,10 +132,15 @@ import {
 } from "@/lib/chart/document-snapshot-cache";
 import { perfNow, recordChartPerf, recordStartupPerfOnce } from "@/lib/chart/perf";
 import {
+  navigateGraphicEphemeris,
+  type GraphicEphemerisNavigationKey,
+} from "@/lib/chart/graphic-ephemeris-navigation.mjs";
+import {
   canReusePaintedDocumentCanvas,
   wasDocumentSnapshotPainted,
 } from "@/lib/chart/painted-snapshot-registry";
 import {
+  flushSidebarListPreferenceWrites,
   localizedWorkspaceDocumentTitle,
   useWorkspaceStore,
   type SupplementaryKind,
@@ -168,7 +172,11 @@ import {
   type WorkspaceCommandRequestPayload,
 } from "@/stores/workspace-command-bus";
 import { warmChartFonts } from "@/lib/chart/draw-chart";
-import { renderRegisteredChartExport } from "@/lib/chart/chart-export-registry";
+import {
+  renderRegisteredChartExport,
+  type ChartExportRenderRequest,
+} from "@/lib/chart/chart-export-registry";
+import { renderChartSurfaceExport } from "@/lib/chart/chart-export-renderer";
 import { useShortcut } from "@/shortcuts/use-shortcut";
 import { useManifestShortcutDispatch } from "@/shortcuts/manifest-shortcuts";
 import { noteSpotlightDismissed } from "@/shortcuts/spotlight-cooldown";
@@ -184,7 +192,10 @@ import {
 } from "@/lib/shell/chart-picker-window";
 import { safeShellUnlisten } from "@/lib/shell/unlisten";
 import { confirmQuit, resolveShellHost, type ShellOpenSelection } from "@/lib/shell-host";
-import { tableToAlignedText, tableToTsv } from "@/components/workshell/generic-table-view";
+import {
+  tableToConfiguredAlignedText,
+  tableToConfiguredTsv,
+} from "@/components/workshell/generic-table-view";
 import { exportTablePayloadPdf, writeTablePayloadPdf } from "@/components/workshell/table-pdf-export";
 import { exportTextContent } from "@/components/workshell/text-export";
 import {
@@ -883,8 +894,8 @@ async function exportTableDocument(
     extension === "json"
       ? JSON.stringify(payload, null, 2)
       : extension === "tsv"
-        ? tableToTsv(payload, payload.rows)
-        : tableToAlignedText(payload, payload.rows);
+        ? await tableToConfiguredTsv(payload, payload.rows)
+        : await tableToConfiguredAlignedText(payload, payload.rows);
   await exportTextContent({
     path,
     filename: stem,
@@ -1000,6 +1011,7 @@ function shortcutActiveChartCommandIds(
 function shellMenuRuntimeStates(
   nodes: NativeMenuNode[],
   hasActiveChart: boolean,
+  hasCopyableActiveChart: boolean,
   hasActiveRadix: boolean,
   hasActiveSaveTarget: boolean,
   runtimeEnabledActions: Record<string, boolean>,
@@ -1015,6 +1027,8 @@ function shellMenuRuntimeStates(
         : runtimeEnabledActions;
       const hasRequiredContext = SAVE_CHART_COMMANDS.has(node.id)
         ? hasActiveSaveTarget
+        : node.id === "menu.copy-chart-png"
+        ? hasCopyableActiveChart
         : ROOT_RADIX_COMMANDS.has(node.id)
         ? hasActiveRadix
         : hasActiveChart;
@@ -1080,6 +1094,9 @@ export function HomeClient() {
   const tf = useTFallback();
   const daemonConnection = useDaemonWorkspaceStore((state) => state.connection);
   const nativeQuickOptionsSeq = useDaemonWorkspaceStore((state) => state.lastOptionsChange?.seq ?? 0);
+  const applyRetainedListDisplay = useDaemonWorkspaceStore(
+    (state) => state._applyRetainedListDisplay,
+  );
   useEffect(() => {
     recordStartupPerfOnce("home-client-mounted");
     const frame = window.requestAnimationFrame(() => {
@@ -1296,6 +1313,7 @@ export function HomeClient() {
   const openDirectionsPane = useWorkspaceStore((s) => s.openDirectionsPane);
   const openTimeLordPane = useWorkspaceStore((s) => s.openTimeLordPane);
   const openSynodicCyclesPane = useWorkspaceStore((s) => s.openSynodicCyclesPane);
+  const openAspectListPane = useWorkspaceStore((s) => s.openAspectListPane);
   const surveilStudiesDialogOpen = useSurveilStore((s) => s.studiesDialogOpen);
   const openSurveilStudiesDialog = useSurveilStore((s) => s.openStudiesDialog);
   const aboutDialogOpen = useHelpAboutStore((s) => s.aboutOpen);
@@ -1307,11 +1325,27 @@ export function HomeClient() {
   const openFeatureCatalogPane = useWorkspaceStore((s) => s.openFeatureCatalogPane);
   const openHelpPane = useWorkspaceStore((s) => s.openHelpPane);
   const reconcileWorkspaceChrome = useWorkspaceStore((s) => s.reconcileWorkspaceChrome);
+  const hydrateSidebarListPreferences = useWorkspaceStore(
+    (s) => s.hydrateSidebarListPreferences,
+  );
   const clearAspectSelection = useWorkspaceStore((s) => s.clearAspectSelection);
   const toggleHideAllAspects = useWorkspaceStore((s) => s.toggleHideAllAspects);
+  const toggleMinorOnlyAspects = useWorkspaceStore((s) => s.toggleMinorOnlyAspects);
   const closeAllRightPanes = useWorkspaceStore((s) => s.closeAllRightPanes);
   const setTimedChartShowRadix = useWorkspaceStore((s) => s.setTimedChartShowRadix);
   const toggleInspector = useFrameLayoutStore((s) => s.toggleInspector);
+  const setStyleEditorOpen = useFrameLayoutStore((s) => s.setStyleEditorOpen);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchSidebarListPreferences(controller.signal)
+      .then(hydrateSidebarListPreferences)
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        console.warn("[sidebar-list-preferences]", error);
+      });
+    return () => controller.abort();
+  }, [hydrateSidebarListPreferences]);
 
   useEffect(() => {
     try {
@@ -1404,6 +1438,12 @@ export function HomeClient() {
     setSettingsInitialTab(tab);
     setSettingsOpen(true);
   }, []);
+  const openStyleLab = useCallback(() => {
+    setSettingsOpen(false);
+    closeAllRightPanes();
+    closeInspectorAndNotes();
+    setStyleEditorOpen(true);
+  }, [closeAllRightPanes, setStyleEditorOpen]);
   const setSpotlightOpen = useCallback((open: boolean) => {
     if (!open) noteSpotlightDismissed();
     setSpotlight((current) => ({ ...current, open }));
@@ -1470,6 +1510,8 @@ export function HomeClient() {
     key: string;
     shift: boolean;
     alt: boolean;
+    /** Envelope this intent was born under; 0 for non-envelope keys (Space). */
+    envelopeId: number;
     intentAt: number;
     intentTimes: number[];
     repeat: number;
@@ -1480,11 +1522,35 @@ export function HomeClient() {
   // one paint.
   const stepQueueFrameRef = useRef<number | null>(null);
   const settleFrameRef = useRef<number | null>(null);
-  // Settle debounce: after the last step in a burst, refetch full semantic
-  // overlay truth. The step_fast frame already owns current, collision-validated
-  // wheel geometry; settle updates state without repainting Canvas layers.
+  // Settle: after the burst CLOSES, refetch full semantic overlay truth. The
+  // step_fast frame already owns current, collision-validated wheel geometry;
+  // settle updates state without repainting Canvas layers.
   const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const settleRequestRef = useRef<AbortController | null>(null);
+  // -- burst envelope (doc/policy-time-architecture.md T1) -------------------
+  // A held arrow is ONE transport burst with explicit edges: keydown opens,
+  // keyup / blur / visibility loss closes. Burst state is never inferred from
+  // elapsed time. Inferring it from a quiet window is what made stepping
+  // stutter: a 32 ms window expired between real 80-100 ms key repeats, so a
+  // held key looked like dozens of finished bursts and each false completion
+  // launched a full authoritative snapshot that then blocked the next step.
+  //
+  // One envelope per PHYSICAL KEY (T1 / D6). Holding Right and Left at once is
+  // two envelopes; releasing Right and immediately pressing it again is two
+  // envelopes. Each is identified by a monotonic id, and a queued intent
+  // remembers the id it was born under — so "has my envelope closed?" is
+  // answered per intent, not by asking whether SOME key happens to be down.
+  // A global held-key test made direction reversal replay the released key's
+  // backlog one paint at a time while the opposite key was down.
+  const heldStepEnvelopesRef = useRef<Map<string, number>>(new Map());
+  const stepEnvelopeSeqRef = useRef(0);
+  // The last completed step leaves its settle trigger here so the close edge
+  // can fire it, whichever of the two happens second.
+  const armSettleRef = useRef<(() => void) | null>(null);
+  // Safety net ONLY for a lost keyup (OS-swallowed release, dropped focus event
+  // with no blur). Never the normal detector, and deliberately far longer than
+  // any plausible key-repeat interval so it cannot fire mid-burst.
+  const burstSafetyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stepGenerationRef = useRef(0);
   const pushSteppedSnapshot = useDaemonWorkspaceStore((s) => s.pushSteppedSnapshot);
   const pushCommandSnapshot = useDaemonWorkspaceStore((s) => s.pushCommandSnapshot);
@@ -1501,6 +1567,77 @@ export function HomeClient() {
     settleRequestRef.current?.abort();
     settleRequestRef.current = null;
   }, []);
+  // Close edge for the burst envelope. Idempotent: a keyup, a blur and the lost
+  // keyup safety net may all arrive, and only the first does work.
+  // The settle waits for EVERY envelope to close, so this is the one place a
+  // global "nothing is held" test is correct.
+  const settleWhenFullyIdle = useCallback(() => {
+    if (heldStepEnvelopesRef.current.size > 0) return;
+    // If a request is still in flight or intents remain queued, the drain owns
+    // the close: its `finally` arms the settle once, after the last commit.
+    // Only when the pipeline is already idle must the close edge trigger it.
+    if (steppingRef.current || pendingStepsRef.current.length > 0) return;
+    const armSettle = armSettleRef.current;
+    armSettleRef.current = null;
+    armSettle?.();
+  }, []);
+  // Full close: every envelope at once (Space barrier, blur, visibility loss,
+  // lost-keyup safety net). Idempotent — several of these may arrive together.
+  const closeStepBurst = useCallback(() => {
+    if (burstSafetyTimerRef.current != null) {
+      clearTimeout(burstSafetyTimerRef.current);
+      burstSafetyTimerRef.current = null;
+    }
+    if (heldStepEnvelopesRef.current.size === 0) return;
+    heldStepEnvelopesRef.current.clear();
+    settleWhenFullyIdle();
+  }, [settleWhenFullyIdle]);
+  // Close ONE envelope. Its queued backlog becomes collapsible immediately,
+  // even while another arrow is still held.
+  const releaseStepKey = useCallback((key: string) => {
+    if (!heldStepEnvelopesRef.current.delete(key)) return;
+    if (heldStepEnvelopesRef.current.size === 0 && burstSafetyTimerRef.current != null) {
+      clearTimeout(burstSafetyTimerRef.current);
+      burstSafetyTimerRef.current = null;
+    }
+    settleWhenFullyIdle();
+  }, [settleWhenFullyIdle]);
+  // Returns the envelope id this intent belongs to. Re-pressing a key that is
+  // already down keeps its envelope (that is autorepeat, not a new press).
+  const openStepBurst = useCallback((key: string) => {
+    let envelopeId = heldStepEnvelopesRef.current.get(key);
+    if (envelopeId === undefined) {
+      stepEnvelopeSeqRef.current += 1;
+      envelopeId = stepEnvelopeSeqRef.current;
+      heldStepEnvelopesRef.current.set(key, envelopeId);
+    }
+    if (burstSafetyTimerRef.current != null) {
+      clearTimeout(burstSafetyTimerRef.current);
+    }
+    burstSafetyTimerRef.current = setTimeout(() => {
+      burstSafetyTimerRef.current = null;
+      closeStepBurst();
+    }, BURST_LOST_KEYUP_SAFETY_MS);
+    return envelopeId;
+  }, [closeStepBurst]);
+  // Real close edges. `keyup` is the canonical one; blur and visibility loss
+  // cover the cases where the OS never delivers it.
+  useEffect(() => {
+    const onKeyUp = (event: KeyboardEvent) => {
+      const key = normalizeStepKey(event.key);
+      if (key == null) return;
+      releaseStepKey(key);
+    };
+    const onLostInput = () => closeStepBurst();
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onLostInput);
+    document.addEventListener("visibilitychange", onLostInput);
+    return () => {
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onLostInput);
+      document.removeEventListener("visibilitychange", onLostInput);
+    };
+  }, [closeStepBurst, releaseStepKey]);
   useEffect(() => {
     const controller = new AbortController();
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1553,6 +1690,7 @@ export function HomeClient() {
     fetchOptions(controller.signal)
       .then((next) => {
         setNativeQuickOptions(next);
+        applyRetainedListDisplay(next.retainedListDisplay);
         applyKeyPromptOptions(next);
       })
       .catch((err) => {
@@ -1562,7 +1700,7 @@ export function HomeClient() {
         console.error("[key-hints-options]", err);
       });
     return () => controller.abort();
-  }, [applyKeyPromptOptions]);
+  }, [applyKeyPromptOptions, applyRetainedListDisplay]);
 
   useEffect(() => {
     if (daemonConnection !== "open") return undefined;
@@ -1570,6 +1708,7 @@ export function HomeClient() {
     fetchOptions(controller.signal)
       .then((next) => {
         setNativeQuickOptions(next);
+        applyRetainedListDisplay(next.retainedListDisplay);
         applyKeyPromptOptions(next);
       })
       .catch((err) => {
@@ -1579,7 +1718,12 @@ export function HomeClient() {
         console.error("[native-quick-options-sync]", err);
       });
     return () => controller.abort();
-  }, [applyKeyPromptOptions, daemonConnection, nativeQuickOptionsSeq]);
+  }, [
+    applyKeyPromptOptions,
+    applyRetainedListDisplay,
+    daemonConnection,
+    nativeQuickOptionsSeq,
+  ]);
 
   useEffect(() => {
     if (!nativeQuickOptions) return;
@@ -1643,14 +1787,22 @@ export function HomeClient() {
 
   const handleOptionsPatched = useCallback((next?: OptionsPayload) => {
     supersedePendingStepSettle();
-    if (next) setNativeQuickOptions(next);
+    if (next) {
+      setNativeQuickOptions(next);
+      applyRetainedListDisplay(next.retainedListDisplay);
+    }
     applyKeyPromptOptions(next);
     if (next?.quickCharts) {
       setTimedChartShowRadix(Boolean(next.quickCharts.timed_chart_show_radix_default));
     }
     // options.changed is the single canonical snapshot invalidation channel.
     // Starting another GET here raced that event and produced duplicate paints.
-  }, [applyKeyPromptOptions, setTimedChartShowRadix, supersedePendingStepSettle]);
+  }, [
+    applyKeyPromptOptions,
+    applyRetainedListDisplay,
+    setTimedChartShowRadix,
+    supersedePendingStepSettle,
+  ]);
 
   // Live language switch → relabel the native menu bar in place. The daemon
   // localizes menu labels by the active language (manifest_service), and the
@@ -1835,6 +1987,13 @@ export function HomeClient() {
     [documents, activeDoc?.id],
   );
   const hasActiveChart = activeLaunchParent !== null;
+  const hasCopyableActiveChart = Boolean(
+    activeDoc &&
+      activeDoc.kind !== "directions" &&
+      activeDoc.kind !== "transit-search" &&
+      activeDoc.kind !== "ascensional-transits" &&
+      activeDoc.kind !== "table",
+  );
   const activeDocUsesParentRuntimeGate = usesParentRuntimeGate(activeDoc);
   const activeLaunchParentEnabledActions = activeLaunchParent?.enabledActions ?? EMPTY_ENABLED_ACTIONS;
   const activeRadixEnabledActions = activeRadix?.enabledActions ?? activeLaunchParentEnabledActions;
@@ -1891,6 +2050,7 @@ export function HomeClient() {
     (command: string): boolean => {
       if (command === "workspace.close-active") return activeDoc !== null;
       if (CHART_INDEPENDENT_COMMANDS.has(command)) return true;
+      if (command === "menu.copy-chart-png") return hasCopyableActiveChart;
       if (SAVE_CHART_COMMANDS.has(command)) return activeSaveTarget !== null;
       if (ROOT_RADIX_COMMANDS.has(command)) return activeRadix !== null;
       if (!manifest) return false;
@@ -1911,6 +2071,7 @@ export function HomeClient() {
       activeChartCommandIds,
       enabledIds,
       hasActiveChart,
+      hasCopyableActiveChart,
       launcherIsRuntimeEnabled,
       manifest,
       supplementaryIds,
@@ -1921,6 +2082,7 @@ export function HomeClient() {
     const states = shellMenuRuntimeStates(
       manifest?.nativeMenu?.menus ?? [],
       hasActiveChart,
+      hasCopyableActiveChart,
       hasActiveRadix,
       activeSaveTarget !== null,
       launcherEnabledActions,
@@ -1930,6 +2092,7 @@ export function HomeClient() {
   }, [
     manifest,
     hasActiveChart,
+    hasCopyableActiveChart,
     hasActiveRadix,
     activeSaveTarget,
     launcherEnabledActions,
@@ -2158,6 +2321,16 @@ export function HomeClient() {
         if (launchedTableId === "synodic_cycles") {
           ensureChartSurfaceForPaneLauncher(launchParent);
           openSynodicCyclesPane({
+            documentId: launchParent.id,
+            sourceName: launchParent.sourceName,
+            focusDatetime: launchDatetime ?? launchParent.displayDatetime ?? null,
+          });
+          closeInspectorAndNotes();
+          return;
+        }
+        if (launchedTableId === "aspect_list") {
+          ensureChartSurfaceForPaneLauncher(launchParent);
+          openAspectListPane({
             documentId: launchParent.id,
             sourceName: launchParent.sourceName,
             focusDatetime: launchDatetime ?? launchParent.displayDatetime ?? null,
@@ -2399,6 +2572,7 @@ export function HomeClient() {
       openDirectionsPane,
       openTimeLordPane,
       openSynodicCyclesPane,
+      openAspectListPane,
       openEclipsesPane,
       openLunarMansionsPane,
       openReturnWithSavedLocationMode,
@@ -2555,6 +2729,14 @@ export function HomeClient() {
       const alt = Boolean(modifiers.alt);
       const intentAt = perfNow();
 
+      // Open this key's envelope on the leading edge (T1). Space is a barrier,
+      // not a burst: it resets the cursor, so it closes every open envelope
+      // instead of joining one.
+      const envelopeId = isStepEnvelopeKey(key) ? openStepBurst(key) : 0;
+      if (envelopeId === 0) {
+        closeStepBurst();
+      }
+
       // Coalesce equal repeatable intents, but retain their full delta. Classical
       // phase jumps (Shift+Up/Down) stay individually ordered because they are
       // event searches rather than a linear calendar displacement.
@@ -2568,7 +2750,10 @@ export function HomeClient() {
           latest.paintsSnapshot === target.paintsSnapshot &&
           latest?.key === key &&
           latest.shift === shift &&
-          latest.alt === alt
+          latest.alt === alt &&
+          // Never merge across envelopes: a release and re-press is two
+          // presses, and only the closed one may collapse.
+          latest.envelopeId === envelopeId
         ) {
           latest.repeat += 1;
           latest.intentTimes.push(intentAt);
@@ -2579,6 +2764,7 @@ export function HomeClient() {
             key,
             shift,
             alt,
+            envelopeId,
             intentAt,
             intentTimes: [intentAt],
             repeat: 1,
@@ -2646,9 +2832,9 @@ export function HomeClient() {
           .catch((err) => console.error("[ws-navigate-key]", err))
           .finally(() => {
             if (pendingStepsRef.current.length > 0) {
-              // Consume one semantic input now so its daemon request overlaps
-              // the current snapshot's presentation. The promise gates only
-              // publication of that response, preserving one input per paint.
+              // Consume queued input now so its daemon request overlaps the
+              // current snapshot's presentation. The promise gates only
+              // publication of that response.
               const priorPresentation = new Promise<void>((resolve) => {
                 stepQueueFrameRef.current = window.requestAnimationFrame(() => {
                   stepQueueFrameRef.current = null;
@@ -2661,8 +2847,27 @@ export function HomeClient() {
                 steppingRef.current = false;
                 return;
               }
+              // T3a. While THIS INTENT'S OWN key is still held, drain one intent
+              // per response so every true moment gets its own frame. Once that
+              // envelope has closed the user has already released it, and
+              // replaying its backlog frame by frame would keep stepping the
+              // wheel after the finger stopped — so the remaining run collapses
+              // into one commit. Scoped per envelope, not to "is anything held":
+              // a global test let a direction reversal keep the released key
+              // replaying while the opposite arrow was down.
+              //
+              // This folds PAINTS, never transitions: each daemon route applies
+              // `repeat` under its own declared fold policy (civil units are
+              // fold-safe; supplementary and PD-in-Chart loop one transition at
+              // a time). See doc/temporal-capability-matrix.md.
+              const envelopeStillOpen =
+                pending.envelopeId !== 0 &&
+                heldStepEnvelopesRef.current.get(pending.key) === pending.envelopeId;
+              const take = envelopeStillOpen
+                ? 1
+                : Math.min(pending.repeat, NAVIGATE_MAX_REPEAT);
               const pendingIntentAt = pending.intentTimes.shift() ?? pending.intentAt;
-              pending.repeat -= 1;
+              pending.repeat -= take;
               if (pending.repeat <= 0) {
                 pendingStepsRef.current.shift();
               } else {
@@ -2675,45 +2880,46 @@ export function HomeClient() {
                 pending.shift,
                 pending.alt,
                 pendingIntentAt,
-                1,
+                take,
                 priorPresentation,
               );
               return;
             }
             steppingRef.current = false;
-            // Burst settled: preserve the just-painted step for two presentation
-            // boundaries, then require a short input-quiet window before asking
-            // for full semantic truth. Current frame-critical rows already
-            // arrived in step_fast; retained term/signal slots remain visible
-            // until the authoritative settle swaps them atomically. This keeps
-            // a 30 ms held-key stream from launching an obsolete full GET after
-            // every individual response.
+            // Preserve the just-painted step for two presentation boundaries,
+            // then ask for full semantic truth. Frame-critical rows already
+            // arrived in step_fast; retained term/signal slots stay visible
+            // until the authoritative settle swaps them atomically.
+            //
+            // T1/T6: this runs ONCE per burst, gated on the close edge — never
+            // on a quiet-window timer. If the key is still held, the settle
+            // trigger is parked and the close edge fires it.
             if (!paintsSnapshot) {
               return;
             }
-            if (settleFrameRef.current != null) {
-              window.cancelAnimationFrame(settleFrameRef.current);
-            }
-            if (settleTimerRef.current != null) {
-              clearTimeout(settleTimerRef.current);
-            }
-            settleFrameRef.current = window.requestAnimationFrame(() => {
+            const armSettle = () => {
+              if (settleFrameRef.current != null) {
+                window.cancelAnimationFrame(settleFrameRef.current);
+              }
+              if (settleTimerRef.current != null) {
+                clearTimeout(settleTimerRef.current);
+                settleTimerRef.current = null;
+              }
               settleFrameRef.current = window.requestAnimationFrame(() => {
-                settleFrameRef.current = null;
-                if (stepGeneration !== stepGenerationRef.current) return;
-                settleTimerRef.current = setTimeout(() => {
-                  settleTimerRef.current = null;
+                settleFrameRef.current = window.requestAnimationFrame(() => {
+                  settleFrameRef.current = null;
                   if (
                     stepGeneration !== stepGenerationRef.current ||
                     steppingRef.current ||
-                    pendingStepsRef.current.length > 0
+                    pendingStepsRef.current.length > 0 ||
+                    heldStepEnvelopesRef.current.size > 0
                   ) return;
                   const controller = new AbortController();
                   settleRequestRef.current = controller;
                   recordChartPerf("chart-step-settle-start", {
                     docId: targetDocId,
                     generation: stepGeneration,
-                    quietWindowMs: STEP_SETTLE_QUIET_WINDOW_MS,
+                    trigger: "burst-close",
                   });
                   void fetchDocumentSnapshot(targetDocId, controller.signal)
                     .then((snapshot) => {
@@ -2766,18 +2972,42 @@ export function HomeClient() {
                         settleRequestRef.current = null;
                       }
                     });
-                }, STEP_SETTLE_QUIET_WINDOW_MS);
+                });
               });
-            });
+            };
+            if (heldStepEnvelopesRef.current.size > 0) {
+              // A key is still held. Park the trigger — the close edge owns it,
+              // so exactly one settle runs per burst no matter how many
+              // responses land while the finger is down.
+              armSettleRef.current = armSettle;
+              return;
+            }
+            armSettleRef.current = null;
+            armSettle();
           });
       };
 
       fire(docId, target.paintsSnapshot, key, shift, alt, intentAt, 1);
     },
-    [pushSteppedSnapshot],
+    [pushSteppedSnapshot, closeStepBurst, openStepBurst],
   );
   const navigateKey = useCallback(
     (key: string, event: KeyboardEvent) => {
+      const activeDocument = activeDocRef.current;
+      if (
+        activeDocument?.kind === "ephemeris" &&
+        !event.shiftKey &&
+        !event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        isStepEnvelopeKey(key)
+      ) {
+        navigateGraphicEphemeris(
+          activeDocument.id,
+          key as GraphicEphemerisNavigationKey,
+        );
+        return;
+      }
       navigateKeyWithModifiers(key, {
         shift: event.shiftKey,
         alt: event.altKey,
@@ -2897,6 +3127,20 @@ export function HomeClient() {
       }
       if (!commandIsRuntimeEnabled(command)) return;
       if (command === "toggle-inspector") {
+        const activeDocument = activeDocRef.current;
+        if (activeDocument?.kind === "astrocart") {
+          const workspace = useWorkspaceStore.getState();
+          const controlsAlreadyOpen =
+            workspace.astrocartControlsPane?.documentId === activeDocument.id;
+          closeInspectorAndNotes();
+          workspace.closeAllRightPanes();
+          if (!controlsAlreadyOpen) {
+            workspace.openAstrocartControlsPane({
+              documentId: activeDocument.id,
+            });
+          }
+          return;
+        }
         closeAllRightPanes();
         toggleInspector();
         return;
@@ -2991,9 +3235,10 @@ export function HomeClient() {
           });
         return;
       }
-      if (command === "menu.export") {
+      if (command === "menu.export" || command === "menu.copy-chart-png") {
         const host = resolveShellHost();
         if (activeDoc?.kind === "table" && activeDoc.tableId) {
+          if (command === "menu.copy-chart-png") return;
           if (!host.capabilities.nativeFileDialogs) {
             void exportTableDocument(activeDoc, tf).catch((err) => console.error("[export-table]", err));
             return;
@@ -3007,16 +3252,90 @@ export function HomeClient() {
           return;
         }
         const currentActiveChart = activeChartRef.current;
-        const documentId = currentActiveChart?.document?.documentId ?? activeDoc?.id;
+        // View documents register their own retained renderer under the view
+        // document id even though useActiveDocumentChart resolves their parent
+        // wheel for runtime/menu context.
+        const documentId = activeDoc?.id ?? currentActiveChart?.document?.documentId;
         if (!documentId) return;
-        const renderExport = async (kind: "pdf" | "png") => {
-          const opts = await fetchOptions();
-          return renderRegisteredChartExport(documentId, {
-            kind,
-            colorMode: opts.export.pdfChartColorMode,
-            includeOverlays: kind === "png" || opts.export.pdfIncludeOverlays,
-          });
+        const renderProfileWheelFallback = (request: ChartExportRenderRequest) => {
+          if (
+            !currentActiveChart
+            || currentActiveChart.document?.documentId !== documentId
+          ) {
+            throw new Error("visible chart renderer unavailable");
+          }
+          const aspectState = useWorkspaceStore.getState();
+          return renderChartSurfaceExport(
+            currentActiveChart,
+            useThemeStore.getState().theme,
+            {
+              width: Math.max(1, document.documentElement.clientWidth),
+              height: Math.max(1, document.documentElement.clientHeight),
+            },
+            request,
+            {
+              selectedBody: aspectState.selectedAspectBody,
+              hideAll: aspectState.hideAllAspects,
+              minorOnly: aspectState.minorOnlyAspects,
+            },
+          );
         };
+        const renderExport = async (
+          kind: "pdf" | "png",
+          output: ChartExportRenderRequest["output"] = "base64",
+        ) => {
+          const request: ChartExportRenderRequest = kind === "png"
+            ? {
+                kind,
+                output,
+                colorMode: nativeQuickOptions?.export.pngChartAppearance ?? "screen",
+                rasterPreset: "clean",
+                includeOverlays: nativeQuickOptions?.export.pngIncludeOverlays ?? true,
+                dignityHighlights:
+                  nativeQuickOptions?.dignities.dignitylabelcolors ?? false,
+                individualBodyColors:
+                  nativeQuickOptions?.colors.useplanetcolors ?? false,
+              }
+            : await fetchOptions().then((opts) => ({
+                kind,
+                output,
+                colorMode: opts.export.pdfChartColorMode,
+                rasterPreset: opts.export.pdfChartRasterPreset,
+                includeOverlays: opts.export.pdfIncludeOverlays,
+                dignityHighlights: opts.dignities.dignitylabelcolors,
+                individualBodyColors: opts.colors.useplanetcolors,
+              }));
+          try {
+            return await renderRegisteredChartExport(documentId, request);
+          } catch (err) {
+            if (!String(err).includes("visible chart renderer unavailable")) throw err;
+            return renderProfileWheelFallback(request);
+          }
+        };
+        const requireBase64 = (rendered: Awaited<ReturnType<typeof renderExport>>) => {
+          if (!rendered.pngBase64) {
+            throw new Error("chart export did not return encoded PNG data");
+          }
+          return {
+            pngBase64: rendered.pngBase64,
+            width: rendered.width,
+            height: rendered.height,
+          };
+        };
+        if (command === "menu.copy-chart-png") {
+          return renderExport("png", "bytes")
+            .then((rendered) => {
+              if (!rendered.pngBytes) {
+                throw new Error("chart copy did not return PNG bytes");
+              }
+              return host.copyImage(rendered.pngBytes, "image/png");
+            })
+            .then(() => true)
+            .catch((err) => {
+              console.error("[copy-chart-png]", err);
+              return false;
+            });
+        }
         if (!host.capabilities.nativeFileDialogs) {
           void renderExport("pdf")
             .then((rendered) => exportRenderedChartBytes({
@@ -3024,7 +3343,7 @@ export function HomeClient() {
               filename: `${exportBaseName(activeDoc)}.pdf`,
               documentId,
               title: exportBaseName(activeDoc),
-              ...rendered,
+              ...requireBase64(rendered),
             }))
             .then((result) =>
               host.downloadBytes(
@@ -3033,18 +3352,6 @@ export function HomeClient() {
                 result.mimeType,
               ),
             )
-            .catch((err) => {
-              if (!String(err).includes("visible chart renderer unavailable")) throw err;
-              return exportActiveChartBytes({
-                kind: "pdf",
-                filename: `${exportBaseName(activeDoc)}.pdf`,
-                documentId,
-              }).then((result) => host.downloadBytes(
-                result.filename,
-                decodeBase64Bytes(result.dataBase64),
-                result.mimeType,
-              ));
-            })
             .catch((err) => console.error("[export-chart]", err));
           return;
         }
@@ -3058,12 +3365,8 @@ export function HomeClient() {
                 path,
                 documentId,
                 title: exportBaseName(activeDoc),
-                ...rendered,
-              }))
-              .catch((err) => {
-                if (!String(err).includes("visible chart renderer unavailable")) throw err;
-                return exportActiveChart({ kind, path, documentId });
-              });
+                ...requireBase64(rendered),
+              }));
           })
           .catch((err) => console.error("[export-chart]", err));
         return;
@@ -3127,6 +3430,34 @@ export function HomeClient() {
         return;
       }
       if (command === "toggle-minor-aspects") {
+        const aspectState = useWorkspaceStore.getState();
+        if (aspectState.hideAllAspects) {
+          // A remains the comparison/transit master. M adds or removes only an
+          // inner-wheel minor exception; ensure the daemon's minor set is
+          // available before revealing it.
+          if (aspectState.minorOnlyAspects) {
+            toggleMinorOnlyAspects();
+            return;
+          }
+          if (activeChartRef.current?.primaryChart.options.showMinorAspects) {
+            toggleMinorOnlyAspects();
+            return;
+          }
+          supersedePendingStepSettle();
+          void toggleMinorAspects()
+            .then((result) => {
+              const current = useWorkspaceStore.getState();
+              if (
+                result.minorAspects &&
+                current.hideAllAspects &&
+                !current.minorOnlyAspects
+              ) {
+                current.toggleMinorOnlyAspects();
+              }
+            })
+            .catch((err) => console.error("[toggle-minor-aspects]", err));
+          return;
+        }
         supersedePendingStepSettle();
         void toggleMinorAspects().catch((err) => console.error("[toggle-minor-aspects]", err));
         return;
@@ -3245,6 +3576,7 @@ export function HomeClient() {
       handleSelect,
       hasActiveRadix,
       manifest,
+      nativeQuickOptions,
       openAboutDialog,
       openFeatureCatalogPane,
       openHelpPane,
@@ -3262,6 +3594,7 @@ export function HomeClient() {
       runNativeQuickOptionCommand,
       tf,
       toggleHideAllAspects,
+      toggleMinorOnlyAspects,
       toggleInspector,
       supersedePendingStepSettle,
     ],
@@ -3329,18 +3662,31 @@ export function HomeClient() {
     }
   }, []);
 
+  const flushQuitPersistence = useCallback(async () => {
+    const results = await Promise.allSettled([
+      flushDirtyNotes(),
+      flushSidebarListPreferenceWrites(),
+    ]);
+    for (const result of results) {
+      if (result.status === "rejected") {
+        console.error("[quit-persistence]", result.reason);
+      }
+    }
+  }, [flushDirtyNotes]);
+
   // App-quit guard entry (wx onClose, morin.py:15615). The native shell holds
   // the close and emits aries://quit-requested; we run quit-preflight and, if any
   // BOUND+DIRTY radix needs confirmation, raise the Save/Discard/Cancel modal.
-  // Nothing dirty (or preflight failed) → flush notes and confirm quit straight
-  // through (UNBOUND charts auto-persist daemon-side, never prompted).
+  // Nothing dirty (or preflight failed) → flush notes and retained-list
+  // preferences, then confirm quit straight through (UNBOUND charts
+  // auto-persist daemon-side, never prompted).
   const handleQuitRequested = useCallback(async () => {
     let result;
     try {
       result = await quitPreflight();
     } catch (err) {
       console.error("[quit-preflight]", err);
-      await flushDirtyNotes();
+      await flushQuitPersistence();
       await confirmQuit();
       return;
     }
@@ -3348,13 +3694,14 @@ export function HomeClient() {
       setQuitPrompt({ prompts: result.prompts, busy: false });
       return;
     }
-    await flushDirtyNotes();
+    await flushQuitPersistence();
     await confirmQuit();
-  }, [flushDirtyNotes]);
+  }, [flushQuitPersistence]);
 
   // Save → write each bound+dirty radix into its bound collection (reuse the
-  // shipped POST /api/io/save; in-place save never forks), flush dirty notes, then
-  // confirm quit (wx _do_save per dirty session, morin.py:12141, 12146-12172).
+  // shipped POST /api/io/save; in-place save never forks), flush quit
+  // persistence, then confirm quit (wx _do_save per dirty session,
+  // morin.py:12141, 12146-12172).
   const handleQuitSave = useCallback(async () => {
     const prompts = quitPrompt?.prompts ?? [];
     setQuitPrompt((prev) => (prev ? { ...prev, busy: true } : prev));
@@ -3365,7 +3712,7 @@ export function HomeClient() {
         // rather than silently dropping the save.
         await ioSaveChart({ documentId: prompt.documentId });
       }
-      await flushDirtyNotes();
+      await flushQuitPersistence();
     } catch (err) {
       console.error("[quit-save]", err);
       setQuitPrompt((prev) => (prev ? { ...prev, busy: false } : prev));
@@ -3373,17 +3720,17 @@ export function HomeClient() {
     }
     setQuitPrompt(null);
     await confirmQuit();
-  }, [flushDirtyNotes, quitPrompt]);
+  }, [flushQuitPersistence, quitPrompt]);
 
-  // Discard → flush dirty notes (sidecar lifecycle is decoupled from the chart
-  // Record; notes are never discarded by discarding chart edits, wx onExit
-  // flushes them regardless), then confirm quit (wx "No", morin.py:12143).
+  // Discard → flush notes and retained-list preferences (sidecar lifecycle is
+  // decoupled from the chart Record; notes are never discarded by discarding
+  // chart edits), then confirm quit (wx "No", morin.py:12143).
   const handleQuitDiscard = useCallback(async () => {
     setQuitPrompt((prev) => (prev ? { ...prev, busy: true } : prev));
-    await flushDirtyNotes();
+    await flushQuitPersistence();
     setQuitPrompt(null);
     await confirmQuit();
-  }, [flushDirtyNotes]);
+  }, [flushQuitPersistence]);
 
   // Cancel → abort the quit, leave everything open (wx onClose early return,
   // morin.py:15616-15617). Native close was already prevented; not calling
@@ -3468,6 +3815,7 @@ export function HomeClient() {
           onReorder={reorderSibling}
           onSolarAverageWindowSelect={handleSolarAverageWindowSelect}
           onOpenSettings={openSettings}
+          onOpenStyleLab={openStyleLab}
           onMenuCommand={dispatchManifestCommand}
           isMenuCommandEnabled={commandIsRuntimeEnabled}
           onRevealKeyHints={
@@ -3752,13 +4100,14 @@ function RevolutionLocationDialog({
             >
               <div className="flex gap-2">
                 <input
+                  data-aries-control-appearance="local"
                   value={query}
                   onChange={(event) => {
                     setQuery(event.currentTarget.value);
                     setSelected(null);
                   }}
                   placeholder={t("home.searchCityPlaceholder")}
-                  className="min-w-0 flex-1 rounded border border-border/60 bg-transparent px-2 py-1 text-foreground outline-none focus:border-border"
+                  className="min-w-0 flex-1 rounded-[var(--aries-radius-control-compact)] border border-border/60 bg-transparent px-[var(--aries-control-padding-x-compact)] py-[var(--aries-control-padding-y)] text-foreground outline-none focus:border-border"
                 />
                 <button
                   type="submit"
@@ -4061,9 +4410,10 @@ function AafPasteImportDialog({
           <label className="flex flex-col gap-1 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)]">
             <span className="text-[color:var(--aries-text-muted)]">{t("home.collection")}</span>
             <select
+              data-aries-control-appearance="local"
               value={selectedCollection}
               onChange={(event) => setSelectedCollection(event.currentTarget.value)}
-              className="rounded border border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface)] px-2 py-1.5 text-[color:var(--aries-text-primary)] outline-none focus:border-[color:var(--aries-focus-ring)]"
+              className="rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface)] px-[var(--aries-control-padding-x-compact)] py-[var(--aries-control-gap)] text-[color:var(--aries-text-primary)] outline-none focus:border-[color:var(--aries-focus-ring)]"
             >
               {collections.map((collection) => (
                 <option key={collection.path} value={collection.path}>
@@ -4077,10 +4427,11 @@ function AafPasteImportDialog({
             <label className="flex flex-col gap-1 text-[length:var(--aries-font-size-small)]">
               <span className="text-[color:var(--aries-text-muted)]">{t("home.newCollectionName")}</span>
               <input
+                data-aries-control-appearance="local"
                 value={newCollectionName}
                 placeholder="Astro-Seek"
                 onChange={(event) => setNewCollectionName(event.currentTarget.value)}
-                className="rounded border border-[color:var(--aries-border-subtle)] bg-transparent px-2 py-1.5 text-[color:var(--aries-text-primary)] outline-none focus:border-[color:var(--aries-focus-ring)]"
+                className="rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-border-subtle)] bg-transparent px-[var(--aries-control-padding-x-compact)] py-[var(--aries-control-gap)] text-[color:var(--aries-text-primary)] outline-none focus:border-[color:var(--aries-focus-ring)]"
               />
             </label>
           ) : null}
@@ -4215,11 +4566,41 @@ type ActiveDocumentChart = {
   chart: ChartRenderSnapshot | null;
 };
 
-const STEP_SETTLE_QUIET_WINDOW_MS = 32;
+// Mirrors the daemon's `repeat` bound (WorkspaceNavigateKeyPayload, ge=1 le=64).
+// A close-edge collapse must never exceed it or the request is rejected.
+const NAVIGATE_MAX_REPEAT = 64;
+
+// Safety net for a LOST keyup only (see T1). Not a burst detector: it is an
+// order of magnitude longer than any real key-repeat interval (macOS repeat is
+// `KeyRepeat x ~15 ms`, commonly 80-100 ms), so it can never fire mid-burst and
+// resurrect the false-settle stutter it replaced.
+const BURST_LOST_KEYUP_SAFETY_MS = 2_000;
+
+/** Internal step keys that own a burst envelope. Space is a barrier, not one. */
+const STEP_ENVELOPE_KEYS: ReadonlySet<string> = new Set(["left", "right", "up", "down"]);
+
+function isStepEnvelopeKey(key: string): boolean {
+  return STEP_ENVELOPE_KEYS.has(key);
+}
+
+/** Arrow `KeyboardEvent.key` -> the internal step key, or null if not a step key. */
+function normalizeStepKey(key: string): string | null {
+  switch (key) {
+    case "ArrowLeft":
+      return "left";
+    case "ArrowRight":
+      return "right";
+    case "ArrowUp":
+      return "up";
+    case "ArrowDown":
+      return "down";
+    default:
+      return null;
+  }
+}
 // The step-fast overlay keeps every visible slot populated. Two presentation
-// boundaries plus this sub-repeat quiet window prevent obsolete full exports
-// from contending with a held-key stream while preserving a prompt single-step
-// authoritative refresh.
+// boundaries prevent obsolete full exports from contending with a held-key
+// stream while preserving a prompt single-step authoritative refresh.
 const DEFERRED_FULL_REFRESH_SETTLE_MS = 0;
 const deferredFullRefreshInFlight = new Set<string>();
 type DeferredFullRefreshSchedule = {

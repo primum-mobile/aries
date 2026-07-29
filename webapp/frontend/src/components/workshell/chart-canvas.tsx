@@ -14,7 +14,10 @@ import { ChartContextMenu } from "@/components/workshell/chart-context-menu";
 import { ChartHoverFlag, type FlagAnchor } from "@/components/workshell/chart-hover-flag";
 import { CanvasDraw } from "@/lib/chart/canvas-draw";
 import { morinusTextFontFromTokens } from "@/lib/chart/chart-fonts";
-import { resolveWheelRenderStyleFromTokens } from "@/lib/chart/wheel-render-style";
+import {
+  resolveWheelRenderStyleFromTokens,
+  wheelFillUsesSolarDirection,
+} from "@/lib/chart/wheel-render-style";
 import {
   awaitFonts,
   chartFontsAreReady,
@@ -22,6 +25,7 @@ import {
   drawSnapshotLayer,
   findHitRegion,
   type ChartHitRegion,
+  type OuterLabelCollisionBounds,
 } from "@/lib/chart/draw-chart";
 import { fetchDocumentSnapshot, patchOptions } from "@/lib/daemon/client";
 import type { ThemeState } from "@/lib/daemon/client";
@@ -56,6 +60,7 @@ import { useThemeStore } from "@/stores/theme-store";
 import { hoverRegionKey, useWorkspaceStore, type HoverRegion } from "@/stores/workspace-store";
 
 type DirtyState = {
+  fill: boolean;
   geometry: boolean;
   dynamic: boolean;
   outerLabel: boolean;
@@ -82,7 +87,7 @@ type RenderedCanvasState = {
 type MidbandHitRegion = Extract<ChartHitRegion, { kind: "midband_empty" }>;
 
 const DEFERRED_OUTER_LABEL_DELAY_MS = 1;
-
+const TITLEBAR_OUTER_LABEL_CLEARANCE_PX = 6;
 function scenePoint(
   center: StyleScenePoint,
   radius: number,
@@ -134,25 +139,32 @@ function polarSectorPath(
   ].join(" ");
 }
 
-function SceneGeometryOutline({
+function SceneGeometryStroke({
   geometry,
-  tone,
+  className,
+  strokeWidth,
   keyPrefix,
 }: {
   geometry: StyleSceneHitGeometry;
-  tone: "hover" | "selected";
+  className: string;
+  strokeWidth: number;
   keyPrefix: string;
 }) {
-  const className = tone === "selected"
-    ? "fill-[rgba(125,165,255,0.07)] stroke-[rgba(160,191,255,0.9)]"
-    : "fill-[rgba(125,165,255,0.035)] stroke-[rgba(160,191,255,0.55)]";
-  const common = { className: cn(className, "pointer-events-none [vector-effect:non-scaling-stroke]"), strokeWidth: tone === "selected" ? 1.25 : 1 };
+  const common = {
+    className: cn(
+      className,
+      "pointer-events-none fill-none [vector-effect:non-scaling-stroke]",
+    ),
+    fill: "none",
+    strokeWidth,
+  };
   if (geometry.kind === "compound") {
     return geometry.geometries.map((child, index) => (
-      <SceneGeometryOutline
+      <SceneGeometryStroke
         key={`${keyPrefix}:${index}`}
         geometry={child}
-        tone={tone}
+        className={className}
+        strokeWidth={strokeWidth}
         keyPrefix={`${keyPrefix}:${index}`}
       />
     ));
@@ -178,6 +190,38 @@ function SceneGeometryOutline({
     );
   }
   return <path {...common} d={polarSectorPath(geometry)} />;
+}
+
+function SceneGeometryOutline({
+  geometry,
+  tone,
+  keyPrefix,
+}: {
+  geometry: StyleSceneHitGeometry;
+  tone: "hover" | "selected";
+  keyPrefix: string;
+}) {
+  const selected = tone === "selected";
+  return (
+    <>
+      <SceneGeometryStroke
+        geometry={geometry}
+        className={selected
+          ? "[stroke:var(--aries-background)]"
+          : "opacity-60 [stroke:var(--aries-background)]"}
+        strokeWidth={selected ? 4 : 3}
+        keyPrefix={`${keyPrefix}:halo`}
+      />
+      <SceneGeometryStroke
+        geometry={geometry}
+        className={selected
+          ? "[stroke:var(--aries-style-lab-selection)]"
+          : "opacity-70 [stroke:var(--aries-style-lab-selection)] [stroke-dasharray:3_2]"}
+        strokeWidth={selected ? 1.5 : 1}
+        keyPrefix={`${keyPrefix}:outline`}
+      />
+    </>
+  );
 }
 
 function chartTargetRect(width: number, height: number): ChartTargetRect {
@@ -208,15 +252,17 @@ function dirtyStateFromSnapshot(chart: ChartRenderSnapshot): DirtyState {
   const plan = chart.renderInvalidation;
   if (plan) {
     return {
+      fill: false,
       geometry: Boolean(plan.geometry),
       dynamic: Boolean(plan.dynamic),
       outerLabel: Boolean(plan.outerLabel),
     };
   }
   if (chart.overlayRenderMode === "step_fast") {
-    return { geometry: true, dynamic: true, outerLabel: true };
+    return { fill: false, geometry: true, dynamic: true, outerLabel: true };
   }
   return {
+    fill: false,
     geometry: true,
     dynamic: true,
     outerLabel: chart.overlayRenderMode === "full",
@@ -429,6 +475,7 @@ export function ChartCanvas({
   inheritAppTheme?: boolean;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
+  const fillRef = useRef<HTMLCanvasElement>(null);
   const geometryRef = useRef<HTMLCanvasElement>(null);
   const dynamicRef = useRef<HTMLCanvasElement>(null);
   const outerLabelRef = useRef<HTMLCanvasElement>(null);
@@ -438,7 +485,11 @@ export function ChartCanvas({
   const renderedSizeRef = useRef<RenderedCanvasState | null>(null);
   const retainedPaintTransformRef = useRef<RetainedPaintTransform | null>(null);
   const renderedDocumentRef = useRef<string | null>(null);
+  const paintedFillSignatureRef = useRef<string | null>(null);
+  const paintedSolarFillSignatureRef = useRef<string | null>(null);
+  const paintedRenderStyleRevisionRef = useRef<string | null>(null);
   const paintedAspectInteractionKeyRef = useRef<string | null>(null);
+  const paintedStyleTargetModeRef = useRef<boolean | null>(null);
   const hitRegionsRef = useRef<ChartHitRegion[]>([]);
   const styleSceneRef = useRef<WheelStyleScene | null>(null);
   const styleHandleDragRef = useRef<{
@@ -461,6 +512,7 @@ export function ChartCanvas({
   const inspectorOpen = useFrameLayoutStore((s) => s.inspectorOpen);
   const selectedAspectBody = useWorkspaceStore((s) => s.selectedAspectBody);
   const hideAllAspects = useWorkspaceStore((s) => s.hideAllAspects);
+  const minorOnlyAspects = useWorkspaceStore((s) => s.minorOnlyAspects);
   const toggleSelectedAspectBody = useWorkspaceStore((s) => s.toggleSelectedAspectBody);
   const toggleHideAllAspects = useWorkspaceStore((s) => s.toggleHideAllAspects);
   const clearAspectSelection = useWorkspaceStore((s) => s.clearAspectSelection);
@@ -470,6 +522,7 @@ export function ChartCanvas({
   const styleEditorActive = useChartStyleEditorStore((s) => s.active);
   const styleEditorRevision = useChartStyleEditorStore((s) => s.revision);
   const styleCssOverrides = useChartStyleEditorStore((s) => s.cssOverrides);
+  const styleLabBaseTheme = useChartStyleEditorStore((s) => s.styleLabBaseTheme);
   const styleSemanticOverrides = useChartStyleEditorStore((s) => s.semanticOverrides);
   const styleAuthoringEditScope = useChartStyleEditorStore((s) => s.authoringEditScope);
   const selectedStyleElement = useChartStyleEditorStore((s) => s.selectedElement);
@@ -501,24 +554,34 @@ export function ChartCanvas({
 
   const isolatedStyleLabTheme = useMemo<ThemeState | null>(() => {
     if (inheritAppTheme) return null;
+    const appTokens = {
+      ...styleLabBaseTheme.appTokens,
+      ...styleCssOverrides,
+    };
+    const chartPalette = {
+      ...styleLabBaseTheme.chartPalette,
+      ...styleCssOverrides,
+    };
     return {
-      activePreset: "style-lab",
-      mode: "dark",
+      activePreset: styleLabBaseTheme.sourceThemeName ?? "style-lab",
+      mode: styleLabBaseTheme.mode,
       schemaVersion: 1,
       version: 1,
       styleRevision: styleEditorRevision,
       paletteHash: "style-lab",
       styleHash: `style-lab-${styleEditorRevision}`,
-      appTokens: { ...styleCssOverrides },
-      chartPalette: { ...styleCssOverrides },
+      appTokens,
+      chartPalette,
       activeProfile: null,
       profileOverrides: {
-        appTokens: { ...styleCssOverrides },
-        chartPalette: { ...styleCssOverrides },
+        appTokens,
+        chartPalette,
         chartData: {},
+        wheelAuthoring: {},
+        appAuthoring: styleLabBaseTheme.appAuthoring,
       },
     };
-  }, [inheritAppTheme, styleCssOverrides, styleEditorRevision]);
+  }, [inheritAppTheme, styleCssOverrides, styleEditorRevision, styleLabBaseTheme]);
 
   // Click-to-toggle is gated on the daemon's exclusiveOnClick flag (meaning is
   // daemon-owned). When OFF, clicks behave as today (hover/pin only).
@@ -530,6 +593,7 @@ export function ChartCanvas({
     exclusiveOnClick,
     selectedAspectBody,
     hideAllAspects,
+    minorOnlyAspects,
   ]);
 
   const effectiveTheme = useMemo(() => {
@@ -597,6 +661,17 @@ export function ChartCanvas({
     "--aries-wheel-font-aspect-symbols",
     chartSymbolFont,
   );
+  const effectiveWheelAuthoringOverrides = useMemo(
+    () => ({
+      ...(effectiveTheme?.profileOverrides?.wheelAuthoring ?? {}),
+      ...(styleEditorActive ? styleSemanticOverrides : {}),
+    }),
+    [
+      effectiveTheme?.profileOverrides?.wheelAuthoring,
+      styleEditorActive,
+      styleSemanticOverrides,
+    ],
+  );
 
   useEffect(() => {
     const handleReady = () => setFontAssetRevision((value) => value + 1);
@@ -633,7 +708,9 @@ export function ChartCanvas({
           fontDecanSymbols: chartDecanSymbolFont,
           fontAspectSymbols: chartAspectSymbolFont,
           fontUi: chartTextFont,
-          authoringOverrides: compileFlatWheelAuthoringOverrides(styleSemanticOverrides),
+          authoringOverrides: compileFlatWheelAuthoringOverrides(
+            effectiveWheelAuthoringOverrides,
+          ),
         },
       ),
     [
@@ -642,7 +719,7 @@ export function ChartCanvas({
       styleEditorRevision,
       styleEditorActive,
       styleCssOverrides,
-      styleSemanticOverrides,
+      effectiveWheelAuthoringOverrides,
       chartTextFont,
       chartSymbolFont,
       chartBodySymbolFont,
@@ -734,10 +811,11 @@ export function ChartCanvas({
 
   useLayoutEffect(() => {
     const wrap = wrapRef.current;
+    const fillCanvas = fillRef.current;
     const geometryCanvas = geometryRef.current;
     const dynamicCanvas = dynamicRef.current;
     const outerLabelCanvas = outerLabelRef.current;
-    if (!wrap || !geometryCanvas || !dynamicCanvas || !outerLabelCanvas) {
+    if (!wrap || !fillCanvas || !geometryCanvas || !dynamicCanvas || !outerLabelCanvas) {
       return;
     }
 
@@ -745,13 +823,18 @@ export function ChartCanvas({
     if (renderedDocumentRef.current !== layoutDocumentId) {
       renderedSizeRef.current = null;
       hitRegionsRef.current = [];
+      paintedFillSignatureRef.current = null;
+      paintedSolarFillSignatureRef.current = null;
+      paintedRenderStyleRevisionRef.current = null;
       renderedDocumentRef.current = layoutDocumentId;
     }
 
     let cancelled = false;
+    const fillDraw = new CanvasDraw(fillCanvas);
     const geometryDraw = new CanvasDraw(geometryCanvas);
     const dynamicDraw = new CanvasDraw(dynamicCanvas);
     const outerLabelDraw = new CanvasDraw(outerLabelCanvas);
+    fillDraw.setDefaultFont(chartTextFont);
     geometryDraw.setDefaultFont(chartTextFont);
     dynamicDraw.setDefaultFont(chartTextFont);
     outerLabelDraw.setDefaultFont(chartTextFont);
@@ -776,10 +859,26 @@ export function ChartCanvas({
         : `translate(${x}px, ${y}px) scale(${scale})`;
     };
 
-    const paintCanvasesAtNaturalSize = (width: number, height: number) => {
+    const paintCanvasesAtNaturalSize = (
+      width: number,
+      height: number,
+      includeFill: boolean,
+    ) => {
+      const retainedTransform = retainedPaintTransformRef.current;
+      const restoreRetainedFill = includeFill || (
+        retainedTransform != null
+        && (
+          retainedTransform.scale !== 1
+          || retainedTransform.x !== 0
+          || retainedTransform.y !== 0
+        )
+      );
       retainedPaintTransformRef.current = { x: 0, y: 0, scale: 1 };
       for (const canvas of [geometryCanvas, dynamicCanvas, outerLabelCanvas]) {
         applyCanvasPaintRect(canvas, width, height);
+      }
+      if (restoreRetainedFill) {
+        applyCanvasPaintRect(fillCanvas, width, height);
       }
     };
 
@@ -799,10 +898,36 @@ export function ChartCanvas({
         x,
         y,
       };
-      for (const canvas of [geometryCanvas, dynamicCanvas, outerLabelCanvas]) {
+      for (const canvas of [fillCanvas, geometryCanvas, dynamicCanvas, outerLabelCanvas]) {
         applyCanvasPaintRect(canvas, rendered.width, rendered.height, x, y, scale);
       }
     };
+
+    const primary = renderSnapshot.primaryChart;
+    const fillProfile = primary.options.theme === 2
+      ? "anglo"
+      : primary.options.theme === 1
+        ? "compact"
+        : "classic";
+    const fillSignature = [
+      renderStyle.revision,
+      renderStyle.palette.background,
+      renderStyle.palette.frame,
+      fillProfile,
+      Boolean(renderSnapshot.comparisonChart),
+      Boolean(primary.options.showTerms),
+      Boolean(primary.options.showDecans),
+      Boolean(primary.options.showHouses),
+      primary.options.showOuterHouseLines !== false,
+      renderSnapshot.document?.compoundKind ?? "",
+    ].join("|");
+    // Sun-oriented materials remain retained through step_fast. The next full
+    // settled snapshot repaints the fill once with the current solar bearing.
+    const solarFillSignature =
+      chart.overlayRenderMode !== "step_fast"
+      && wheelFillUsesSolarDirection(renderStyle, fillProfile)
+        ? String(primary.planets.find((planet) => planet.id === "sun")?.longitude ?? "")
+        : null;
 
     const render = (dirty: DirtyState): boolean => {
       if (cancelled) {
@@ -832,17 +957,66 @@ export function ChartCanvas({
         return false;
       }
       const previous = renderedSizeRef.current;
-      const effectiveDirty =
+      const effectiveDirty: DirtyState =
         !previous || !sameHostSize(previous, rect.width, rect.height)
-          ? { geometry: true, dynamic: true, outerLabel: true }
-          : dirty;
+          ? { fill: true, geometry: true, dynamic: true, outerLabel: true }
+          : {
+              ...dirty,
+              fill:
+                dirty.fill
+                || paintedFillSignatureRef.current !== fillSignature
+                || (
+                  solarFillSignature != null
+                  && paintedSolarFillSignatureRef.current !== solarFillSignature
+                ),
+            };
       const target = chartTargetRect(rect.width, rect.height);
+      const titlebar = document.querySelector<HTMLElement>(
+        "[data-aries-titlebar-title]",
+      );
+      const outerLabelCollisionBounds: OuterLabelCollisionBounds[] = [];
+      if (titlebar) {
+        const titleRect = titlebar.getBoundingClientRect();
+        const clearance = TITLEBAR_OUTER_LABEL_CLEARANCE_PX;
+        const x = titleRect.left - rect.left - clearance;
+        const y = titleRect.top - rect.top - clearance;
+        const w = titleRect.width + clearance * 2;
+        const h = titleRect.height + clearance * 2;
+        if (
+          titleRect.width > 0
+          && titleRect.height > 0
+          && x < rect.width
+          && y < rect.height
+          && x + w > 0
+          && y + h > 0
+        ) {
+          outerLabelCollisionBounds.push({ x, y, w, h });
+        }
+      }
       renderedSizeRef.current = { width: rect.width, height: rect.height, target };
-      paintCanvasesAtNaturalSize(rect.width, rect.height);
+      paintCanvasesAtNaturalSize(
+        rect.width,
+        rect.height,
+      effectiveDirty.fill,
+      );
+      let fillMs = 0;
       let geometryMs = 0;
       let dynamicMs = 0;
       let outerLabelMs = 0;
       let dynamicProfile: ReturnType<CanvasDraw["endProfile"]> = null;
+    if (effectiveDirty.fill) {
+        const layerStartedAt = perfNow();
+        fillDraw.resize(rect.width, rect.height);
+        drawSnapshotLayer(fillDraw, renderSnapshot, "fill", {
+          width: rect.width,
+          height: rect.height,
+          chartSize: target.side,
+          renderStyle,
+        });
+        paintedFillSignatureRef.current = fillSignature;
+        paintedSolarFillSignatureRef.current = solarFillSignature;
+        fillMs = perfNow() - layerStartedAt;
+      }
       if (effectiveDirty.geometry) {
         const layerStartedAt = perfNow();
         geometryDraw.resize(rect.width, rect.height);
@@ -851,6 +1025,7 @@ export function ChartCanvas({
           height: rect.height,
           chartSize: target.side,
           renderStyle,
+        geometryOwnsBackground: false,
         });
         geometryMs = perfNow() - layerStartedAt;
       }
@@ -865,7 +1040,12 @@ export function ChartCanvas({
           renderStyle,
           // Click-to-toggle selection (UI state). Gated inside draw-chart on the
           // chart's clickAspectFlags.exclusiveOnClick — ignored when OFF.
-          clickAspectState: { selectedBody: selectedAspectBody, hideAll: hideAllAspects },
+          clickAspectState: {
+            selectedBody: selectedAspectBody,
+            hideAll: hideAllAspects,
+            minorOnly: minorOnlyAspects,
+          },
+          outerLabelCollisionBounds,
         });
         dynamicProfile = dynamicDraw.endProfile();
         dynamicMs = perfNow() - layerStartedAt;
@@ -878,12 +1058,16 @@ export function ChartCanvas({
           height: rect.height,
           chartSize: target.side,
           renderStyle,
+          outerLabelCollisionBounds,
         });
         outerLabelMs = perfNow() - layerStartedAt;
       }
       const hitStartedAt = perfNow();
       const refreshHitRegions =
-        effectiveDirty.geometry || effectiveDirty.dynamic || effectiveDirty.outerLabel;
+        effectiveDirty.geometry
+        || effectiveDirty.dynamic
+        || effectiveDirty.outerLabel
+        || paintedStyleTargetModeRef.current !== styleEditorActive;
       if (refreshHitRegions) {
         hitRegionsRef.current = computeHitRegions(renderSnapshot, {
           width: rect.width,
@@ -891,9 +1075,16 @@ export function ChartCanvas({
           chartSize: target.side,
           renderStyle,
           textsize: (text, textOpts) => outerLabelDraw.textsize(text, textOpts),
-          clickAspectState: { selectedBody: selectedAspectBody, hideAll: hideAllAspects },
+          clickAspectState: {
+            selectedBody: selectedAspectBody,
+            hideAll: hideAllAspects,
+            minorOnly: minorOnlyAspects,
+          },
+          includeStyleTargets: styleEditorActive,
+          outerLabelCollisionBounds,
         });
         paintedAspectInteractionKeyRef.current = aspectInteractionPaintKey;
+        paintedStyleTargetModeRef.current = styleEditorActive;
         if (styleEditorActive) {
           const primary = renderSnapshot.primaryChart;
           const profile = primary.options.theme === 2
@@ -902,10 +1093,11 @@ export function ChartCanvas({
               ? "compact"
               : "classic";
           const comparison = Boolean(renderSnapshot.comparisonChart);
-          const comparisonWithOuterHouses = Boolean(
+          const comparisonWithOuterHouseBand = Boolean(
             comparison &&
             primary.options.showHouses &&
-            (profile !== "anglo" || renderSnapshot.comparisonLayout === "with-houses"),
+            primary.options.showOuterHouseLines !== false &&
+            profile !== "anglo",
           );
           const nextStyleScene = buildWheelStyleScene({
             style: renderStyle,
@@ -919,7 +1111,11 @@ export function ChartCanvas({
               showDecans: Boolean(primary.options.showDecans),
               showHouses: Boolean(primary.options.showHouses),
               showPositions: Boolean(primary.options.showPositions),
-              comparisonWithOuterHouses,
+              comparisonWithOuterHouses: comparisonWithOuterHouseBand,
+              restrainedAngloComparison:
+                comparison &&
+                profile === "anglo" &&
+                renderSnapshot.document?.compoundKind === "synastry",
             },
             center: [rect.width / 2, rect.height / 2],
             viewport: { width: rect.width, height: rect.height },
@@ -946,7 +1142,7 @@ export function ChartCanvas({
         let flagReanchored = false;
         if (trackedFlag && trackedKey) {
           const refreshedHit = hitRegionsRef.current.find((candidate) => {
-            if (candidate.kind === "midband_empty") return false;
+            if (candidate.styleOnly || candidate.kind === "midband_empty") return false;
             return hoverRegionKey(hitToHover(candidate)) === trackedKey;
           });
           if (refreshedHit) {
@@ -996,6 +1192,7 @@ export function ChartCanvas({
         height: Math.round(rect.height),
         chartSize: Math.round(target.side),
         geometryMs,
+        fillMs,
         dynamicMs,
         dynamicProfile,
         outerLabelMs,
@@ -1010,6 +1207,7 @@ export function ChartCanvas({
           : undefined,
         overlay: perfEnabled ? overlayPerfState(renderSnapshot) : undefined,
       });
+      paintedRenderStyleRevisionRef.current = String(renderStyle.revision);
       return true;
     };
 
@@ -1030,6 +1228,17 @@ export function ChartCanvas({
     };
 
     const dirty = dirtyStateFromSnapshot(chart);
+    // The snapshot plan covers daemon-owned chart-frame changes only. Style
+    // Lab edits are synchronous local paint inputs and may affect any retained
+    // layer (including glyph metrics and the editable hit scene), so a new
+    // resolved style revision must reach every canvas in this paint rather than
+    // waiting for a later snapshot, resize, or time step to dirty that layer.
+    if (paintedRenderStyleRevisionRef.current !== String(renderStyle.revision)) {
+      dirty.fill = true;
+      dirty.geometry = true;
+      dirty.dynamic = true;
+      dirty.outerLabel = true;
+    }
     // Snapshot invalidation describes daemon-frame changes only. A local
     // aspect selection is its own Canvas input, so it must not inherit an
     // overlay-only settle's zero-dirty plan and wait for an unrelated redraw.
@@ -1049,7 +1258,7 @@ export function ChartCanvas({
         }
         deferTimerRef.current = window.setTimeout(() => {
           deferTimerRef.current = null;
-          schedule({ geometry: false, dynamic: false, outerLabel: true });
+          schedule({ fill: false, geometry: false, dynamic: false, outerLabel: true });
         }, DEFERRED_OUTER_LABEL_DELAY_MS);
       };
       if (immediate) {
@@ -1063,7 +1272,18 @@ export function ChartCanvas({
     };
 
     const fontWaitStartedAt = perfNow();
-    const fontsAlreadyReady = chartFontsAreReady(chartTextFont, chartSymbolFont);
+    const roleFonts = [
+      chartBodySymbolFont,
+      chartSignSymbolFont,
+      chartTermSymbolFont,
+      chartDecanSymbolFont,
+      chartAspectSymbolFont,
+    ];
+    const fontsAlreadyReady = chartFontsAreReady(
+      chartTextFont,
+      chartSymbolFont,
+      roleFonts,
+    );
     if (fontsAlreadyReady) {
       recordChartPerf("chart-font-wait", {
         docId: chart.document?.documentId ?? null,
@@ -1072,7 +1292,7 @@ export function ChartCanvas({
       });
       drawInitial(true);
     } else {
-      awaitFonts(chartTextFont, chartSymbolFont)
+      awaitFonts(chartTextFont, chartSymbolFont, roleFonts)
         .then(() => {
           recordChartPerf("chart-font-wait", {
             docId: chart.document?.documentId ?? null,
@@ -1106,7 +1326,7 @@ export function ChartCanvas({
         window.clearTimeout(resizeSettleTimerRef.current);
       }
       resizeSettleTimerRef.current = window.setTimeout(() => {
-        schedule({ geometry: true, dynamic: true, outerLabel: true });
+        schedule({ fill: true, geometry: true, dynamic: true, outerLabel: true });
       }, 90);
     });
     ro.observe(wrap);
@@ -1124,7 +1344,7 @@ export function ChartCanvas({
         window.clearTimeout(resizeSettleTimerRef.current);
       }
     };
-  }, [chart, renderSnapshot, chartTextFont, chartSymbolFont, renderStyle, selectedAspectBody, hideAllAspects, aspectInteractionPaintKey, styleEditorActive, styleAuthoringEditScope, setHoveredRegion, setTrackedFlagAnchor, mapRenderedPointToViewport, updateHoverFromClientPoint]);
+  }, [chart, renderSnapshot, chartTextFont, chartSymbolFont, chartBodySymbolFont, chartSignSymbolFont, chartTermSymbolFont, chartDecanSymbolFont, chartAspectSymbolFont, renderStyle, selectedAspectBody, hideAllAspects, minorOnlyAspects, aspectInteractionPaintKey, styleEditorActive, styleAuthoringEditScope, setHoveredRegion, setTrackedFlagAnchor, mapRenderedPointToViewport, updateHoverFromClientPoint]);
 
   const stylePointFromClient = useCallback((clientX: number, clientY: number): StyleScenePoint | null => {
     const wrap = wrapRef.current;
@@ -1300,9 +1520,14 @@ export function ChartCanvas({
         onPointerCancel={endStyleHandleDrag}
         onClick={handleClick}
       >
+        <canvas ref={fillRef} className="absolute inset-0 block" />
         <canvas ref={geometryRef} className="absolute inset-0 block" />
         <canvas ref={dynamicRef} className="absolute inset-0 block" />
-        <canvas ref={outerLabelRef} className="absolute inset-0 block" />
+        <canvas
+          ref={outerLabelRef}
+          data-aries-chart-layer="outer-label"
+          className="pointer-events-none absolute inset-0 z-[41] block"
+        />
         {styleEditorActive && currentStyleScene ? (
           <svg
             className="pointer-events-none absolute inset-0 size-full overflow-visible"

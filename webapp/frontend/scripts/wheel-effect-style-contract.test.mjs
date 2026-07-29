@@ -52,9 +52,10 @@ test("wheel compositor exposes the complete bounded paint-only effect set", () =
 });
 
 test("effects stay on retained canvas compositing and out of chart geometry", () => {
-  assert.match(globals, /\.aries-chart-paint-effects > canvas:nth-of-type\(1\)/);
   assert.match(globals, /\.aries-chart-paint-effects > canvas:nth-of-type\(2\)/);
   assert.match(globals, /\.aries-chart-paint-effects > canvas:nth-of-type\(3\)/);
+  assert.match(globals, /\.aries-chart-paint-effects > canvas:nth-of-type\(4\)/);
+  assert.doesNotMatch(globals, /\.aries-chart-paint-effects > canvas:nth-of-type\(1\)/);
   for (const filter of [
     "blur(",
     "brightness(",
@@ -70,4 +71,44 @@ test("effects stay on retained canvas compositing and out of chart geometry", ()
   }
   assert.match(chartCanvas, /aries-chart-paint-effects/);
   assert.doesNotMatch(drawChart, /--aries-wheel-effect-/);
+});
+
+test("fill textures are deterministic retained-layer assets, not time-step work", () => {
+  assert.match(drawChart, /const fillTextureTileCache = new Map/);
+  const textureStart = drawChart.indexOf("function fillTexturePattern(");
+  const textureEnd = drawChart.indexOf("function paintFillRegion(", textureStart);
+  assert.ok(textureStart >= 0 && textureEnd > textureStart);
+  const textureSource = drawChart.slice(textureStart, textureEnd);
+  assert.doesNotMatch(textureSource, /Math\.random/);
+  assert.match(textureSource, /fillTextureTileCache\.get/);
+  assert.match(drawChart, /if \(layer === "fill"\)[\s\S]*?drawRetainedFillLayer/);
+  assert.match(
+    drawChart,
+    /draw\.fillBackground\(style\.palette\.background\);[\s\S]*?paintCanvasBackgroundMaterial/,
+  );
+  assert.match(
+    drawChart,
+    /resolveWheelFillPaint\([\s\S]*?"canvas\.background"/,
+  );
+  assert.match(
+    drawChart,
+    /paintCanvasBackgroundMaterial\([\s\S]*?paintFillRegion\([\s\S]*?"fills\.chartField"[\s\S]*?"fills\.houseField"[\s\S]*?"fills\.centerField"/,
+  );
+  assert.match(chartCanvas, /const fillSignature = \[\s*renderStyle\.revision,/);
+  assert.match(chartCanvas, /overlayRenderMode === "step_fast"[\s\S]*?fill: false/);
+  assert.match(drawChart, /createLinearGradient/);
+  assert.match(drawChart, /createRadialGradient/);
+  assert.match(drawChart, /textureMask === "crescent"[\s\S]*?ctx\.clip\("evenodd"\)/);
+  assert.match(
+    drawChart,
+    /paint\.shadowPattern !== "none"[\s\S]*?ctx\.shadowOffsetX[\s\S]*?fillTexturePattern/,
+  );
+  assert.match(
+    chartCanvas,
+    /overlayRenderMode !== "step_fast"[\s\S]*?wheelFillUsesSolarDirection/,
+  );
+  assert.match(
+    chartCanvas,
+    /solarFillSignature != null[\s\S]*?paintedSolarFillSignatureRef/,
+  );
 });

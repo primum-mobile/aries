@@ -11,6 +11,11 @@ import argparse
 import shutil
 from pathlib import Path
 
+try:
+    from scripts.staging_tree import create_staging_directory, publish_staged_tree
+except ModuleNotFoundError:
+    from staging_tree import create_staging_directory, publish_staged_tree
+
 
 IGNORED_RESOURCE_NAMES = frozenset({".DS_Store", "__pycache__"})
 IGNORED_RESOURCE_SUFFIXES = (".bak", ".pyc")
@@ -47,34 +52,36 @@ def stage_corpus(
     if destination == source or source in destination.parents:
         raise ValueError("corpus staging destination must be outside the source tree")
 
-    if destination.exists():
-        shutil.rmtree(destination)
-    destination.mkdir(parents=True)
-    if not source.is_dir():
-        return []
-    target_root = destination
+    temporary = create_staging_directory(destination)
+    target_root = temporary
     if destination_subdir:
-        target_root = destination / destination_subdir
+        target_root = temporary / destination_subdir
         target_root.mkdir(parents=True)
 
     staged: list[str] = []
-    for entry in sorted(source.iterdir(), key=lambda path: path.name):
-        if _ignored_resource(Path(entry.name)):
-            continue
-        target = target_root / entry.name
-        if entry.is_dir():
-            shutil.copytree(
-                entry,
-                target,
-                symlinks=True,
-                ignore=shutil.ignore_patterns(
-                    *IGNORED_RESOURCE_NAMES,
-                    *(f"*{suffix}" for suffix in IGNORED_RESOURCE_SUFFIXES),
-                ),
-            )
-        else:
-            shutil.copy2(entry, target, follow_symlinks=False)
-        staged.append(entry.name)
+    try:
+        if source.is_dir():
+            for entry in sorted(source.iterdir(), key=lambda path: path.name):
+                if _ignored_resource(Path(entry.name)):
+                    continue
+                target = target_root / entry.name
+                if entry.is_dir():
+                    shutil.copytree(
+                        entry,
+                        target,
+                        symlinks=True,
+                        ignore=shutil.ignore_patterns(
+                            *IGNORED_RESOURCE_NAMES,
+                            *(f"*{suffix}" for suffix in IGNORED_RESOURCE_SUFFIXES),
+                        ),
+                    )
+                else:
+                    shutil.copy2(entry, target, follow_symlinks=False)
+                staged.append(entry.name)
+        publish_staged_tree(temporary, destination)
+    except BaseException:
+        shutil.rmtree(temporary, ignore_errors=True)
+        raise
     return staged
 
 

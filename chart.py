@@ -28,6 +28,7 @@ import util
 import mtexts
 import geonames
 import common
+from aries.astrology.ephemeris_context import EphemerisContext
 
 
 # if long is 'E' or/and lat is 'S' -> negate value
@@ -523,12 +524,16 @@ class Chart:
 		#nutation in long
 		#nutation in obl
 
-		astrology.swe_set_topo(place.lon, place.lat, place.altitude)
-
 		self.create()
 
 
 	def create(self):
+		context = EphemerisContext.for_chart(self, ephe_path=common.get_ephe_path())
+		with context.activate():
+			self._create_in_active_context()
+
+
+	def _create_in_active_context(self):
 		common.ensure_swe_ready()
 		astrology.swe_set_topo(self.place.lon, self.place.lat, self.place.altitude)
 		pflag, hflag, fsflag, astflag = self._zodiac_flags()
@@ -760,6 +765,12 @@ class Chart:
 			return point
 
 	def _apply_house_geometry(self, houses_obj, materialize_optional=False):
+		context = EphemerisContext.for_chart(self, ephe_path=common.get_ephe_path())
+		with context.activate():
+			self._apply_house_geometry_in_active_context(houses_obj, materialize_optional)
+
+
+	def _apply_house_geometry_in_active_context(self, houses_obj, materialize_optional=False):
 		if houses_obj == None:
 			return
 		self.houses = houses_obj
@@ -1010,39 +1021,36 @@ class Chart:
 		return math.fabs(Chart._aspect_distance_static(lon1, lon2) - Chart.Aspects[aspect_type])
 
 	@staticmethod
+	def _signed_aspect_orb(lon1, lon2, aspect_type):
+		relation = (float(lon1) - float(lon2)) % 360.0
+		angle = float(Chart.Aspects[aspect_type])
+		positive = (relation - angle + 180.0) % 360.0 - 180.0
+		if aspect_type in (Chart.CONJUNCTIO, Chart.OPPOSITIO):
+			return positive
+		negative = (relation + angle + 180.0) % 360.0 - 180.0
+		return positive if math.fabs(positive) <= math.fabs(negative) else negative
+
+	@staticmethod
 	def directed_aspect_state_from_motion(current_idx, other_idx, lon_current, speed_current, lon_other, speed_other, aspect_type):
-		current_delta = Chart._aspect_orb_delta(lon_current, lon_other, aspect_type)
-		next_lon_current = util.normalize(float(lon_current) + float(speed_current) / 24.0)
-		next_lon_other = util.normalize(float(lon_other) + float(speed_other) / 24.0)
-		next_delta = Chart._aspect_orb_delta(next_lon_current, next_lon_other, aspect_type)
-		full_motion = current_delta - next_delta
+		speed_current = float(speed_current)
+		speed_other = float(speed_other)
+		phase_metric = Chart._signed_aspect_orb(
+			lon_current,
+			lon_other,
+			aspect_type,
+		) * (speed_current - speed_other)
+		eps = 1e-12
 
-		current_only = current_delta - Chart._aspect_orb_delta(next_lon_current, lon_other, aspect_type)
-		other_only = current_delta - Chart._aspect_orb_delta(lon_current, next_lon_other, aspect_type)
-		eps = 1e-9
-
-		if full_motion > eps:
+		if phase_metric < -eps:
 			is_applying = True
 			is_separating = False
-			if current_only > other_only + eps:
-				actor_id = current_idx
-			elif other_only > current_only + eps:
-				actor_id = other_idx
-			else:
-				actor_id = current_idx if math.fabs(float(speed_current)) >= math.fabs(float(speed_other)) else other_idx
-		elif full_motion < -eps:
+		elif phase_metric > eps:
 			is_applying = False
 			is_separating = True
-			if current_only < other_only - eps:
-				actor_id = current_idx
-			elif other_only < current_only - eps:
-				actor_id = other_idx
-			else:
-				actor_id = current_idx if math.fabs(float(speed_current)) >= math.fabs(float(speed_other)) else other_idx
 		else:
 			is_applying = False
 			is_separating = False
-			actor_id = current_idx if math.fabs(float(speed_current)) >= math.fabs(float(speed_other)) else other_idx
+		actor_id = current_idx if math.fabs(speed_current) >= math.fabs(speed_other) else other_idx
 
 		target_id = other_idx if actor_id == current_idx else current_idx
 		return {
@@ -1098,11 +1106,8 @@ class Chart:
 		return Chart.NONE
 
 	def _is_applying_dynamic(self, lon1, speed1, lon2, speed2, aspect_type):
-		current = math.fabs(self._aspect_distance(lon1, lon2) - Chart.Aspects[aspect_type])
-		next_lon1 = util.normalize(float(lon1) + float(speed1) / 24.0)
-		next_lon2 = util.normalize(float(lon2) + float(speed2) / 24.0)
-		next_delta = math.fabs(self._aspect_distance(next_lon1, next_lon2) - Chart.Aspects[aspect_type])
-		return next_delta < current
+		signed_orb = Chart._signed_aspect_orb(lon1, lon2, aspect_type)
+		return signed_orb * (float(speed1) - float(speed2)) < -1e-12
 
 	def _build_dynamic_aspect(self, lon1, lon2, speed1, speed2, orb_by_aspect, decl1=None, decl2=None, parallel_orbs=None, node_only_conjunction=False):
 		asp = Asp()
@@ -1160,6 +1165,11 @@ class Chart:
 			other_body.data[planets.Planet.SPLON],
 			asp.typ,
 		)
+		# The aspect matrix/dynamic builder already owns phase semantics.  The
+		# directed helper supplies actor/target identity only; never replace the
+		# canonical result with a second hover-only phase calculation.
+		state['is_applying'] = bool(asp.appl)
+		state['is_separating'] = not bool(asp.appl)
 		state['aspect_type'] = asp.typ
 		state['orb'] = asp.aspdif
 		state['exact'] = asp.exact

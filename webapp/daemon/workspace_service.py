@@ -62,8 +62,18 @@ from engine.workspace_session_controller import (
     WorkspaceSessionController,
 )
 from webapp.daemon.chart_service import chart_snapshot_service
-from webapp.daemon.astrocart_service import astrocart_service
+from webapp.daemon.astrocart_service import (
+    ASTROCART_MODE_ORDER,
+    ASTROCART_MODES,
+    ASTROCART_MODE_STANDARD,
+    astrocart_service,
+)
+from webapp.daemon import astrocart_spec
 from webapp.daemon.ephemeris_service import ephemeris_service
+from webapp.daemon.event_time import (
+    EVENT_TABLE_TIME_UT,
+    table_event_clock,
+)
 from webapp.daemon.options_service import options_service
 from webapp.daemon.supplementary_service import (
     FEATURE_KIND_DISPLAY_LABELS,
@@ -87,6 +97,26 @@ import posfordate  # per-method progression rate / method normalization (posford
 # real datetime (radix + N symbolic years), derived from the chart — not the
 # progressed ephemeris orig date. Mirrors engine/supplementary_adapter.py:190.
 _PROGRESSION_FEATURE_KINDS = ('secondary', 'solar_arc', 'minor', 'tertiary')
+_ASTROCART_PREFERENCES_SAVE_LOCK = threading.Lock()
+
+# Aspect List phase/perfection must follow the chart technique that produced the
+# visible wheel.  These techniques evolve on the meaningful civil cursor, not
+# directly on ``chart.time.jd`` (which is a progressed/symbolic ephemeris epoch
+# for several of them).  Returns and transits are deliberately absent: once
+# their snapshot is built, ordinary physical ephemeris motion is the coherent
+# local trajectory around that instant.
+_ASPECT_SYMBOLIC_FEATURE_KINDS = {
+    'secondary', 'solar_arc', 'minor', 'tertiary',
+    'profections', 'converse_transits',
+}
+
+# Solar/lunar/planetary returns and transits are ordinary physical charts at a
+# real epoch.  Solar Average is deliberately not in either evolving set: it is
+# an aggregate across an age range and its canonical rebuilder ignores the
+# session cursor (there is no meaningful event-time trajectory to root-find).
+_ASPECT_PHYSICAL_FEATURE_KINDS = {
+    'transits', 'solar_return', 'lunar_return', 'planetary_return',
+}
 
 _ROOT_RECORD_CACHE_MAX = 128
 
@@ -702,6 +732,7 @@ class WorkspaceService:
         *,
         style_only: bool = False,
         list_data_changed: bool = True,
+        inspector_data_changed: bool = False,
     ) -> None:
         """Fan an ``options.changed`` event out to all connected clients.
 
@@ -716,6 +747,9 @@ class WorkspaceService:
             "refreshMode": refresh_mode or "recalc",
             "styleOnly": bool(style_only),
             "listDataChanged": bool(list_data_changed),
+            "retainedListDataKey": options_service.get_retained_list_data_key(),
+            "retainedListDisplay": options_service.get_retained_list_display(),
+            "inspectorDataChanged": bool(inspector_data_changed),
             "langid": int(getattr(options_service.options, "langid", 0) or 0),
             "schemaVersion": theme_state["schemaVersion"],
             "themeVersion": theme_state["version"],
@@ -785,6 +819,8 @@ class WorkspaceService:
                 "displayDatetime": display_dt,
                 "tabSuffix": tab_suffix,
             }
+            if event.change_reason == "options-refresh":
+                session_event["listDataChanged"] = False
             step_broadcast_key = str(event.document_id)
             if event.change_reason == 'step' and not event.rebuilt_child_ids:
                 # One direct navigate response paints each chart step. Retained
@@ -830,7 +866,15 @@ class WorkspaceService:
         cs = session.get('chart_session')
         feature_kind = session.get('supplementary_feature_kind')
         public_feature_kind = FEATURE_TO_PUBLIC_KIND.get(feature_kind)
-        if session.get('timed_event_title'):
+        if feature_kind == 'converse_transits':
+            retained = (session.get('supplementary_binding') or {}).get('retained_state') or {}
+            if bool(retained.get('converse_enabled', True)):
+                title_key = "supplementary.converse-transits"
+            elif session.get('timed_event_title'):
+                title_key = None
+            else:
+                title_key = "supplementary.transits"
+        elif session.get('timed_event_title'):
             # Row-opened charts carry a data-bearing event title (Solar Eclipse,
             # Ven con. Mon, …), so the generic supplementary localization key
             # must not replace it in the sidebar/titlebar.
@@ -962,7 +1006,10 @@ class WorkspaceService:
             comparison
             and (
                 session.get("launcher_kind") == "transits"
-                or session.get("supplementary_feature_kind") == "transits"
+                or session.get("supplementary_feature_kind") in {
+                    "transits",
+                    "converse_transits",
+                }
             )
         ):
             return comparison
@@ -1079,6 +1126,10 @@ class WorkspaceService:
             if session.get("supplementary_feature_kind") == "profections":
                 items.append({"type": "separator"})
                 items.append(self._profections_mode_menu())
+            converse_item = self._converse_transit_mode_item(doc_id, session)
+            if converse_item is not None:
+                items.append({"type": "separator"})
+                items.append(converse_item)
             items.append({"type": "separator"})
             items.append(self._overlay_menu())
             items.append({"type": "separator"})
@@ -1117,6 +1168,12 @@ class WorkspaceService:
 
             items: list[dict] = []
             items.extend(self._duplicate_chart_items(doc_id, session, include_parallel=True))
+
+            converse_item = self._converse_transit_mode_item(doc_id, session)
+            if converse_item is not None:
+                items.append({"type": "separator"})
+                items.append(converse_item)
+
             items.append({"type": "separator"})
             items.append(self._other_revolutions_menu(doc_id, session))
 
@@ -1581,37 +1638,13 @@ class WorkspaceService:
     def _custom_point_marker_for_region(region: dict) -> str:
         if str(region.get("kind") or "") != "secondary_ring":
             return ""
-        family = str(region.get("family") or "")
-        if family == "antiscia":
-            return "(A)"
-        if family == "contra_antiscia":
-            return "CA"
-        if family == "dodecatemoria":
-            return "(12th)"
-        return ""
+        return export_chart_json.ring_item_display_marker(region)
 
     @staticmethod
     def _custom_point_segments_for_region(region: dict) -> list[dict]:
         if str(region.get("kind") or "") != "secondary_ring":
             return []
-        if str(region.get("family") or "") != "midpoint":
-            return []
-        segments = []
-        for segment in region.get("segments") or []:
-            if not isinstance(segment, dict):
-                continue
-            text = str(segment.get("text") or "")
-            kind = str(segment.get("kind") or "text")
-            if not text or kind not in ("text", "planet", "glyph"):
-                continue
-            out = {"text": text, "kind": kind}
-            if "seId" in segment:
-                try:
-                    out["seId"] = int(segment.get("seId"))
-                except Exception:
-                    pass
-            segments.append(out)
-        return segments
+        return export_chart_json.ring_item_display_segments(region)
 
     @staticmethod
     def _region_longitude(region: dict) -> Optional[float]:
@@ -1786,6 +1819,10 @@ class WorkspaceService:
                 doc_id = str(payload.get("documentId") or "")
                 return self._toggle_marr_sidereal_return(doc_id)
 
+            if action_id == "workspace.toggle_converse_transit":
+                doc_id = str(payload.get("documentId") or "")
+                return self._toggle_converse_transit(doc_id)
+
             if action_id == "workspace.set_return_calculation_mode":
                 doc_id = str(payload.get("documentId") or "")
                 return self._set_return_calculation_mode(doc_id, payload.get("mode"))
@@ -1844,6 +1881,7 @@ class WorkspaceService:
                 self.broadcast_options_changed(
                     result.get("refreshedDocumentIds"),
                     result.get("refreshMode"),
+                    list_data_changed=result.get("listDataChanged", True),
                 )
                 return result
 
@@ -1854,6 +1892,7 @@ class WorkspaceService:
                 self.broadcast_options_changed(
                     result.get("refreshedDocumentIds"),
                     result.get("refreshMode"),
+                    list_data_changed=result.get("listDataChanged", True),
                 )
                 return result
 
@@ -1864,6 +1903,7 @@ class WorkspaceService:
                 self.broadcast_options_changed(
                     result.get("refreshedDocumentIds"),
                     result.get("refreshMode"),
+                    list_data_changed=result.get("listDataChanged", True),
                 )
                 return result
 
@@ -1874,6 +1914,7 @@ class WorkspaceService:
                 self.broadcast_options_changed(
                     result.get("refreshedDocumentIds"),
                     result.get("refreshMode"),
+                    list_data_changed=result.get("listDataChanged", True),
                 )
                 return result
 
@@ -1992,6 +2033,35 @@ class WorkspaceService:
             "label": "Sidereal Return (Marr)",
             "checked": bool(checked),
             "actionId": "workspace.toggle_marr_sidereal_return",
+            "payload": {"documentId": document_id},
+        }
+
+    @staticmethod
+    def _converse_transit_enabled(session: Optional[dict]) -> bool:
+        if isinstance(session, dict) and session.get("supplementary_feature_kind") == "transits":
+            return False
+        retained = (
+            (session.get("supplementary_binding") or {}).get("retained_state") or {}
+            if isinstance(session, dict)
+            else {}
+        )
+        return bool(retained.get("converse_enabled", True))
+
+    def _converse_transit_mode_item(
+        self,
+        document_id: str,
+        session: dict,
+    ) -> Optional[dict]:
+        if session.get("supplementary_feature_kind") not in {
+            "transits",
+            "converse_transits",
+        }:
+            return None
+        return {
+            "type": "checkbox",
+            "label": "Converse transits",
+            "checked": self._converse_transit_enabled(session),
+            "actionId": "workspace.toggle_converse_transit",
             "payload": {"documentId": document_id},
         }
 
@@ -2276,6 +2346,139 @@ class WorkspaceService:
             "activeDocumentId": self._controller.active_document_id(),
             "documents": self._tree_payload(),
         }
+
+    def _toggle_converse_transit(self, document_id: str) -> dict:
+        """Flip any transit session at its current symbolic/civil cursor."""
+        session = self._controller.session(document_id)
+        if session is None:
+            raise ValueError(f"unknown document {document_id!r}")
+        feature_kind = session.get("supplementary_feature_kind")
+        if feature_kind not in {"transits", "converse_transits"}:
+            raise ValueError("document is not a transit session")
+        cs = session.get("chart_session")
+        radix = getattr(cs, "radix", None) if cs is not None else None
+        current_chart = getattr(cs, "chart", None) if cs is not None else None
+        current_dt = _display_to_datetime(
+            getattr(cs, "display_datetime", None) if cs is not None else None
+        )
+        if cs is None or radix is None or current_chart is None or current_dt is None:
+            raise ValueError("transit session has no current cursor")
+
+        binding_payload = copy.deepcopy(session.get("supplementary_binding") or {})
+        retained = dict(binding_payload.get("retained_state") or {})
+        converse_enabled = not self._converse_transit_enabled(session)
+        retained["converse_enabled"] = converse_enabled
+        current_tuple = _datetime_to_display(current_dt)
+        retained["display_datetime"] = current_tuple
+        retained["symbolic_cursor_datetime"] = current_tuple
+        if feature_kind == "transits":
+            current_time = getattr(current_chart, "time", None)
+            current_place = getattr(current_chart, "place", None)
+            if current_time is None or current_place is None:
+                raise ValueError("transit session has no time context")
+            clock_context = {
+                "place_payload": supplementary_adapter.place_to_payload(current_place),
+                "cal": int(current_time.cal),
+                "zt": int(current_time.zt),
+                "plus": bool(current_time.plus),
+                "zh": int(current_time.zh),
+                "zm": int(current_time.zm),
+                "daylight": bool(current_time.daylightsaving),
+                "tzid": str(getattr(current_time, "tzid", "") or ""),
+                "tzauto": bool(getattr(current_time, "tzauto", False)),
+            }
+            for prefix in ("symbolic", "physical"):
+                for key, value in clock_context.items():
+                    retained[f"{prefix}_{key}"] = value
+            try:
+                symbolic_jd = float(getattr(cs, "cursor_jd", current_time.jd))
+            except (TypeError, ValueError):
+                symbolic_jd = float(current_time.jd)
+            if math.isfinite(symbolic_jd):
+                retained["symbolic_cursor_jd"] = symbolic_jd
+
+            document = self._controller.state.find_document(document_id)
+            direct_title = str(
+                getattr(document, "title", "")
+                or session.get("custom_title_root")
+                or session.get("base_title")
+                or ""
+            ).strip()
+            session["transit_direct_title"] = direct_title
+            session["transit_direct_timed_event_title"] = bool(
+                session.get("timed_event_title", False)
+            )
+        binding_payload["feature_kind"] = "converse_transits"
+        binding_payload["parent_source_datetime"] = current_tuple
+        binding_payload["retained_state"] = retained
+
+        built = supplementary_service.build_result(
+            radix=radix,
+            kind="converse-transits",
+            when=current_dt,
+            binding_payload=binding_payload,
+        )
+        derived_chart = built.get("chart")
+        binding = built.get("binding")
+        if derived_chart is None or binding is None:
+            raise RuntimeError("could not rebuild converse-transit session")
+
+        derived_chart.name = getattr(current_chart, "name", derived_chart.name)
+        derived_chart.male = getattr(current_chart, "male", derived_chart.male)
+        derived_chart.notes = getattr(current_chart, "notes", "")
+        binding.parent_source_datetime = current_tuple
+        self._controller._apply_supplementary_binding(session, binding)
+        session["chart"] = derived_chart
+        if converse_enabled:
+            session["timed_event_title"] = False
+            title = mtexts.txts.get("ConverseTransits", "Converse Transits")
+        else:
+            restore_timed_title = bool(
+                session.get("transit_direct_timed_event_title", False)
+            )
+            restored_title = str(session.get("transit_direct_title") or "").strip()
+            session["timed_event_title"] = restore_timed_title
+            title = (
+                restored_title
+                if restore_timed_title and restored_title
+                else mtexts.txts.get("Transits", "Transits")
+            )
+        self._update_document_title(
+            session,
+            title,
+            str(session.get("custom_subtitle") or ""),
+        )
+        cs.navigation_title_label = title
+        cs._initial_chart = derived_chart
+        cs._initial_display_datetime = built["display_datetime"]
+        cs.change_chart(
+            derived_chart,
+            display_datetime=built["display_datetime"],
+            change_reason="options",
+        )
+        retained_result = dict(getattr(binding, "retained_state", {}) or {})
+        self._controller._sync_converse_symbolic_cursor_jd(cs, retained_result)
+        cs._stepper = SupplementaryStepper(
+            controller=self._controller,
+            session=session,
+            cs=cs,
+            radix=radix,
+            feature_kind="converse_transits",
+        )
+        self._save_restore_open_charts_state()
+        result = {
+            "ok": True,
+            "rebuilt": True,
+            "documentId": document_id,
+            "activeDocumentId": self._controller.active_document_id(),
+            "converseEnabled": converse_enabled,
+            "documents": self._tree_payload(),
+        }
+        return self._attach_full_snapshot(
+            result,
+            document_id,
+            overlay_render_mode="full",
+        )
 
     def _set_lunar_return_mode(self, document_id: str, mode: Any) -> dict:
         session = self._controller.session(document_id)
@@ -4529,6 +4732,7 @@ class WorkspaceService:
         planet_type: Optional[int] = None,
         binding_payload: Optional[dict[str, Any]] = None,
         comparison_chart=None,
+        comparison_layout: Optional[str] = None,
         session_label: Optional[str] = None,
         reuse_existing: bool = False,
         include_perf: bool = False,
@@ -4597,6 +4801,7 @@ class WorkspaceService:
                     planet_type=planet_type,
                     binding_payload=binding_payload,
                     comparison_chart=comparison_chart,
+                    comparison_layout=comparison_layout,
                     session_label=session_label,
                     reuse_existing=reuse_existing,
                     perf=perf,
@@ -4977,6 +5182,7 @@ class WorkspaceService:
         planet_type: Optional[int] = None,
         binding_payload: Optional[dict[str, Any]] = None,
         comparison_chart=None,
+        comparison_layout: Optional[str] = None,
         session_label: Optional[str] = None,
         reuse_existing: bool = False,
         perf: Optional[dict[str, Any]] = None,
@@ -5111,17 +5317,12 @@ class WorkspaceService:
             body = PLANETARY_RETURN_BODY_NAMES.get(int(retained_pt)) if retained_pt is not None else None
             if body:
                 label = f"{body} {mtexts.txts.get('Return', 'Return')}"
-        # A progression/direction child's DISPLAY cursor must be the SIGNIFIED
-        # real datetime (radix + N symbolic years), NOT the progressed chart's
-        # ephemeris orig date (e.g. 1988). The desktop seeds this open display via
-        # morin._secondary_display_datetime_for_chart (morin.py:9508,18611), which
-        # DERIVES the signified FROM THE CHART through
-        # symbolic_time.secondary_direction_symbolic_info(...)['signified_datetime']
-        # (morin.py:5963-5972) — the SAME derivation the title/status/context use
-        # (morin.py:5537,5557; chart_context_view.py:243,259). We derive it the
-        # identical way here (not from the raw ``when``, which is quantized off by
-        # ~tens of seconds vs the chart jd) so the open display is bit-consistent
-        # with the readout. ChartSession then sets BOTH display_datetime AND
+        # A progression/direction child's DISPLAY cursor must be the exact
+        # SIGNIFIED real datetime (radix + N symbolic years), NOT the progressed
+        # chart's ephemeris orig date (e.g. 1988). The adapter already carries
+        # that authoritative cursor alongside the derived chart; do not
+        # reconstruct it from the chart's whole-second ephemeris Time.
+        # ChartSession then sets BOTH display_datetime AND
         # _initial_display_datetime (chart_session.py:61-65), so the chart never
         # opens on the radix date and SPACE restores the INITIAL signified
         # (policy-time-architecture.md:59-64). Gated to the four progression
@@ -5130,21 +5331,8 @@ class WorkspaceService:
         # Profections are the exception below: their visible cursor is the
         # normalized profection source and must also become their step source.
         open_display_datetime = None
-        if engine_feature_kind == 'solar_arc':
+        if engine_feature_kind in _PROGRESSION_FEATURE_KINDS:
             open_display_datetime = built["display_datetime"]
-        elif engine_feature_kind in _PROGRESSION_FEATURE_KINDS:
-            method = self._progression_method_for_feature_kind(engine_feature_kind)
-            day_type = posfordate.progression_chart_day_type(
-                derived_chart,
-                default=getattr(getattr(radix, 'options', None),
-                                'progression_day_type',
-                                posfordate.PROGRESSION_DAY_TYPE_Q2))
-            info = symbolic_time.secondary_direction_symbolic_info(
-                radix, derived_chart, method=method, day_type=day_type)
-            if info is not None and info.get('signified_datetime') is not None:
-                open_display_datetime = info['signified_datetime']
-            else:
-                open_display_datetime = built["display_datetime"]
         elif engine_feature_kind == 'profections':
             # A profection chart is built on the RADIX Time object, so its
             # chart.time.orig* is the BIRTH date — the corner/title must instead
@@ -5246,8 +5434,18 @@ class WorkspaceService:
                 child_session['return_average_kind'] = self._return_average_kind(return_average_kind)
             if child_session is not None and engine_feature_kind == 'transits':
                 child_session['comparison_name'] = self._chart_label(radix, "Radix")
+            elif child_session is not None and engine_feature_kind == 'converse_transits':
+                child_session['comparison_name'] = self._chart_label(
+                    comparison_chart if comparison_chart is not None else radix,
+                    "Comparison" if comparison_chart is not None and comparison_chart is not radix else "Radix",
+                )
             if child_session is not None:
                 child_session['timed_event_title'] = bool(timed_event_label)
+                if (
+                    comparison_chart is not None
+                    and comparison_layout in ('standard', 'with-houses')
+                ):
+                    child_session['comparison_layout'] = comparison_layout
                 parent_anchor = self._controller._comparison_chart_for_parent(parent_session)
                 child_session['show_radix_comparison'] = bool(
                     comparison_chart is not None
@@ -5262,6 +5460,12 @@ class WorkspaceService:
                     radix=radix,
                     feature_kind=engine_feature_kind,
                 )
+                if engine_feature_kind == 'converse_transits':
+                    retained = getattr(built["binding"], "retained_state", {}) or {}
+                    self._controller._sync_converse_symbolic_cursor_jd(
+                        child_cs,
+                        retained,
+                    )
         mark_child_phase("session_setup", phase_started_at)
         return document
 
@@ -5330,6 +5534,351 @@ class WorkspaceService:
             return
         self._radix_view_state[(namespace, key)] = dict(state or {})
 
+    @staticmethod
+    def _astrocart_preferences_payload(value: Any) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            value = {}
+        spec = value.get("spec")
+        view = value.get("view")
+        return {
+            "schemaVersion": 1,
+            "spec": copy.deepcopy(spec) if isinstance(spec, dict) else {},
+            "view": copy.deepcopy(view) if isinstance(view, dict) else {},
+        }
+
+    def _astrocart_preferences_locked(self) -> dict[str, Any]:
+        return self._astrocart_preferences_payload(
+            getattr(
+                chart_snapshot_service.options,
+                "astrocartography_preferences",
+                {},
+            )
+        )
+
+    @staticmethod
+    def _store_astrocart_preferences_locked(preferences: dict[str, Any]) -> None:
+        chart_snapshot_service.options.astrocartography_preferences = (
+            WorkspaceService._astrocart_preferences_payload(preferences)
+        )
+
+    @staticmethod
+    def _save_astrocart_preferences() -> None:
+        save = getattr(
+            chart_snapshot_service.options,
+            "saveAstrocartographyPreferences",
+            None,
+        )
+        if callable(save):
+            # Parans produces a static view POST and a canonical spec POST in
+            # quick succession. Serialize their shared option-file write so two
+            # FastAPI worker threads cannot truncate the pickle concurrently.
+            with _ASTROCART_PREFERENCES_SAVE_LOCK:
+                save()
+
+    @staticmethod
+    def _astrocart_static_spec_payload(payload: Any) -> dict[str, Any]:
+        static = copy.deepcopy(payload) if isinstance(payload, dict) else {}
+        static.pop("dynamicLayers", None)
+        static.pop("dynamic_layers", None)
+        return static
+
+    @staticmethod
+    def _astrocart_dynamic_spec_payload(payload: Any) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            return {"dynamicLayers": []}
+        layers = payload.get("dynamicLayers", payload.get("dynamic_layers", []))
+        return {
+            "dynamicLayers": copy.deepcopy(layers) if isinstance(layers, list) else [],
+        }
+
+    @staticmethod
+    def _astrocart_merge_unavailable_point_preferences(
+        incoming: dict[str, Any],
+        previous: dict[str, Any],
+        available_point_ids: tuple[str, ...],
+    ) -> dict[str, Any]:
+        """Retain global selections a chart cannot currently represent.
+
+        A configured asteroid or Lot may be absent from another radix's active
+        catalog. Toggling Parans or another static setting on that second map
+        must not silently erase the first chart's still-valid global selection.
+        """
+        merged = copy.deepcopy(incoming)
+        available = set(available_point_ids)
+
+        def values_at(payload: dict[str, Any], path: tuple[str, ...]) -> list[str]:
+            current: Any = payload
+            for key in path:
+                if not isinstance(current, dict):
+                    return []
+                current = current.get(key)
+            if not isinstance(current, list):
+                return []
+            return [value for value in current if isinstance(value, str)]
+
+        def set_at(payload: dict[str, Any], path: tuple[str, ...], values: list[str]) -> None:
+            current = payload
+            for key in path[:-1]:
+                child = current.get(key)
+                if not isinstance(child, dict):
+                    child = {}
+                    current[key] = child
+                current = child
+            current[path[-1]] = values
+
+        for path in (
+            ("staticAngleLinePointIds",),
+            ("paran", "participantIds"),
+            ("aspects", "actorIds"),
+        ):
+            selected = values_at(merged, path)
+            unavailable = [
+                point_id
+                for point_id in values_at(previous, path)
+                if point_id not in available and point_id not in selected
+            ]
+            set_at(merged, path, selected + unavailable)
+        return merged
+
+    @staticmethod
+    def _astrocart_static_view_payload(state: Any) -> dict[str, Any]:
+        """Allowlist durable, non-camera, non-timing ACG view preferences."""
+        if not isinstance(state, dict):
+            return {}
+        result: dict[str, Any] = {}
+        projection = state.get("projection")
+        if projection in ("globe", "mercator"):
+            result["projection"] = projection
+        if "lineModes" in state:
+            raw_modes = state.get("lineModes")
+            requested = (
+                {
+                    mode
+                    for mode in raw_modes
+                    if isinstance(mode, str) and mode in ASTROCART_MODES
+                }
+                if isinstance(raw_modes, list)
+                else set()
+            )
+            normalized_modes = [
+                mode for mode in ASTROCART_MODE_ORDER if mode in requested
+            ]
+            # An explicit empty selection is meaningful: it hides every natal
+            # line mode while dynamic timing layers remain independently
+            # available. Unknown-only or malformed legacy payloads still fall
+            # back to the standard view.
+            result["lineModes"] = (
+                normalized_modes
+                if normalized_modes or raw_modes == []
+                else [ASTROCART_MODE_STANDARD]
+            )
+
+        overlays = state.get("overlays")
+        if isinstance(overlays, dict):
+            durable_overlays: dict[str, Any] = {}
+            for key in (
+                "asterisms",
+                "aspects",
+                "zeniths",
+                "localSpaceOppositions",
+            ):
+                if isinstance(overlays.get(key), bool):
+                    durable_overlays[key] = overlays[key]
+            layers = overlays.get("layers")
+            if isinstance(layers, dict) and isinstance(layers.get("natal"), bool):
+                durable_overlays["layers"] = {
+                    "natal": layers["natal"],
+                }
+            filters = overlays.get("filters")
+            if isinstance(filters, dict):
+                durable_filters = {}
+                for key in ("points", "kinds", "aspects"):
+                    value = filters.get(key)
+                    if value is None and key in filters:
+                        durable_filters[key] = None
+                    elif isinstance(value, list):
+                        durable_filters[key] = [
+                            item for item in value if isinstance(item, str)
+                        ]
+                if durable_filters:
+                    durable_overlays["filters"] = durable_filters
+            if durable_overlays:
+                result["overlays"] = durable_overlays
+
+        legend = state.get("legend")
+        if isinstance(legend, dict):
+            durable_legend = {
+                key: legend[key]
+                for key in ("collapsed", "userSet")
+                if isinstance(legend.get(key), bool)
+            }
+            if durable_legend:
+                result["legend"] = durable_legend
+        return result
+
+    @staticmethod
+    def _astrocart_transient_view_payload(state: Any) -> dict[str, Any]:
+        """Retain one radix's camera and timing visibility only in daemon RAM."""
+        if not isinstance(state, dict):
+            return {}
+        result = {
+            key: copy.deepcopy(state[key])
+            for key in ("zoom", "center", "bearing", "pitch")
+            if key in state
+        }
+        overlays = state.get("overlays")
+        if not isinstance(overlays, dict):
+            return result
+        transient_overlays: dict[str, Any] = {}
+        layers = overlays.get("layers")
+        if isinstance(layers, dict):
+            transient_layers = {
+                key: copy.deepcopy(layers[key])
+                for key in ("transit", "progression")
+                if key in layers
+            }
+            if transient_layers:
+                transient_overlays["layers"] = transient_layers
+        filters = overlays.get("filters")
+        if isinstance(filters, dict) and "techniques" in filters:
+            transient_overlays["filters"] = {
+                "techniques": copy.deepcopy(filters["techniques"]),
+            }
+        if transient_overlays:
+            result["overlays"] = transient_overlays
+        return result
+
+    @staticmethod
+    def _astrocart_merge_payloads(
+        base: dict[str, Any],
+        overlay: dict[str, Any],
+    ) -> dict[str, Any]:
+        merged = copy.deepcopy(base)
+        for key, value in overlay.items():
+            if isinstance(value, dict) and isinstance(merged.get(key), dict):
+                merged[key] = WorkspaceService._astrocart_merge_payloads(
+                    merged[key],
+                    value,
+                )
+            else:
+                merged[key] = copy.deepcopy(value)
+        return merged
+
+    def _astrocart_spec_for_radix_locked(
+        self,
+        radix,
+        *,
+        incoming: Optional[dict[str, Any]] = None,
+    ) -> tuple[
+        astrocart_spec.AstrocartPointCatalog,
+        astrocart_spec.AstrocartMapSpec,
+    ]:
+        """Resolve global static ACG preferences plus this radix's timing state."""
+        catalog = astrocart_spec.build_point_catalog(
+            radix,
+            chart_snapshot_service.options,
+        )
+        preferences = self._astrocart_preferences_locked()
+        global_static = self._astrocart_static_spec_payload(preferences["spec"])
+        transient = self._view_state_for_radix("astrocart-spec", radix)
+        if incoming is None:
+            static_source = (
+                global_static
+                if global_static
+                else self._astrocart_static_spec_payload(
+                    astrocart_spec.AstrocartMapSpec.default_for_catalog(
+                        catalog
+                    ).to_payload()
+                )
+            )
+            combined = self._astrocart_merge_payloads(
+                static_source,
+                self._astrocart_dynamic_spec_payload(transient),
+            )
+        else:
+            incoming_spec = astrocart_spec.normalize_spec_for_catalog(
+                incoming,
+                catalog,
+            )
+            previous_spec = astrocart_spec.normalize_spec_for_catalog(
+                (
+                    global_static
+                    if global_static
+                    else astrocart_spec.AstrocartMapSpec.default_for_catalog(
+                        catalog
+                    )
+                ),
+                catalog,
+            )
+            incoming_spec = (
+                astrocart_spec.enroll_newly_activated_paran_participants(
+                    incoming_spec,
+                    previous_spec,
+                    catalog,
+                )
+            )
+            incoming_payload = incoming_spec.to_payload()
+            static_source = self._astrocart_merge_unavailable_point_preferences(
+                self._astrocart_static_spec_payload(incoming_payload),
+                global_static,
+                catalog.point_ids,
+            )
+            preferences["spec"] = static_source
+            self._store_astrocart_preferences_locked(preferences)
+            combined = self._astrocart_merge_payloads(
+                static_source,
+                self._astrocart_dynamic_spec_payload(incoming_payload),
+            )
+
+        normalized = astrocart_spec.normalize_spec_for_catalog(combined, catalog)
+        # Dynamic layers remain scoped to the source radix and daemon lifetime.
+        # Static configuration never enters the per-radix retained-state map.
+        self._store_view_state_for_radix(
+            "astrocart-spec",
+            radix,
+            self._astrocart_dynamic_spec_payload(normalized.to_payload()),
+        )
+        return catalog, normalized
+
+    def astrocart_spec_for_document(self, document_id: str) -> dict:
+        """Authoritative retained ACG configuration for a workspace map."""
+        with self._lock:
+            parent_id = self._timed_chart_parent_document_id(document_id)
+            radix = self._parent_radix(parent_id)
+            catalog, spec = self._astrocart_spec_for_radix_locked(radix)
+        return astrocart_service.configuration_payload_for_chart(
+            radix,
+            spec=spec,
+            catalog=catalog,
+        )
+
+    def store_astrocart_spec_for_document(
+        self,
+        document_id: str,
+        spec_payload: dict,
+    ) -> dict:
+        """Normalize and retain ACG configuration against the live radix."""
+        if not isinstance(spec_payload, dict):
+            raise ValueError("spec must be an object")
+        with self._lock:
+            previous_static = self._astrocart_preferences_locked()["spec"]
+            parent_id = self._timed_chart_parent_document_id(document_id)
+            radix = self._parent_radix(parent_id)
+            catalog, spec = self._astrocart_spec_for_radix_locked(
+                radix,
+                incoming=spec_payload,
+            )
+            static_changed = (
+                self._astrocart_preferences_locked()["spec"] != previous_static
+            )
+        if static_changed:
+            self._save_astrocart_preferences()
+        return astrocart_service.configuration_payload_for_chart(
+            radix,
+            spec=spec,
+            catalog=catalog,
+        )
+
     def astrocart_geojson_for_document(
         self,
         document_id: str,
@@ -5352,19 +5901,303 @@ class WorkspaceService:
             parent_id = self._timed_chart_parent_document_id(document_id)
             radix = self._parent_radix(parent_id)
             source_name = self._chart_label(radix, "Radix")
+            catalog, spec = self._astrocart_spec_for_radix_locked(radix)
         if modes is not None:
             return astrocart_service.lines_geojson_for_chart_modes(
                 radix,
                 source_name=source_name,
                 modes=modes,
                 precision=precision,
+                spec=spec,
+                catalog=catalog,
             )
         return astrocart_service.lines_geojson_for_chart(
             radix,
             source_name=source_name,
             mode=mode,
             precision=precision,
+            spec=spec,
+            catalog=catalog,
         )
+
+    @staticmethod
+    def _astrocart_pdf_output_path(path: str) -> Path:
+        raw_path = str(path or "").strip()
+        if not raw_path or "\x00" in raw_path:
+            raise ValueError("no astrocart PDF export path selected")
+        destination = Path(raw_path).expanduser()
+        if destination.suffix.lower() != ".pdf":
+            destination = destination.with_suffix(".pdf")
+        if not destination.parent.is_dir():
+            raise ValueError(
+                f"export directory does not exist: {destination.parent}"
+            )
+        if destination.is_dir():
+            raise ValueError("astrocart PDF export path is a directory")
+        return destination
+
+    @staticmethod
+    def _astrocart_pdf_download_filename(
+        filename: Optional[str],
+        source_name: str,
+    ) -> str:
+        raw_name = str(filename or "").strip()
+        if "\x00" in raw_name:
+            raise ValueError("astrocart PDF filename is invalid")
+        candidate = Path(raw_name).name if raw_name else str(source_name or "")
+        stem = (Path(candidate).stem or candidate).strip().strip(".")
+        safe_stem = "".join(
+            "-" if char in '<>:"/\\|?*' or ord(char) < 32 else char
+            for char in stem
+        ).strip().strip(".")
+        if not safe_stem:
+            safe_stem = "aries"
+        return f"{safe_stem[:180]}.pdf"
+
+    def export_astrocart_pdf_for_document(
+        self,
+        document_id: str,
+        *,
+        path: Optional[str] = None,
+        filename: Optional[str] = None,
+        mode: Optional[str] = None,
+        modes: Optional[list[str]] = None,
+        expected_spec_key: Optional[str] = None,
+        selection: Optional[dict[str, Any]] = None,
+        page_format: str = "A4",
+        locale: str = "en",
+        title: str = "",
+        subtitle: str = "",
+        chart_date: str = "",
+        selection_summary: str = "",
+        localized_labels: Optional[dict[str, Any]] = None,
+        atlas: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        """Render the retained map as a bounded print atlas.
+
+        The workspace lock protects only document/radix/spec resolution.
+        Geometry, atlas validation, style derivation, bundled resource reads,
+        and ReportLab work happen after release so an export cannot stall chart
+        navigation.
+        """
+        # ReportLab is an export-only dependency. Keep it off daemon startup
+        # and routine chart/workspace paths, including the hermetic speed gate.
+        from webapp.daemon import astrocart_pdf_service
+
+        if modes is not None:
+            if not isinstance(modes, (list, tuple)) or not modes:
+                raise ValueError("astrocart PDF modes must be a non-empty list")
+            if any(not isinstance(item, str) or not item.strip() for item in modes):
+                raise ValueError("astrocart PDF modes must contain strings")
+            if mode is not None:
+                raise ValueError("astrocart PDF accepts either mode or modes")
+            requested_modes: Optional[tuple[str, ...]] = tuple(modes)
+        else:
+            requested_modes = None
+            if mode is not None and (
+                not isinstance(mode, str) or not mode.strip()
+            ):
+                raise ValueError("astrocart PDF mode must be a string")
+
+        if selection is not None and not isinstance(selection, dict):
+            raise ValueError("astrocart PDF selection must be an object")
+        if expected_spec_key is not None and (
+            not isinstance(expected_spec_key, str)
+            or not expected_spec_key.strip()
+        ):
+            raise ValueError("astrocart PDF expected spec key must be a string")
+        try:
+            normalized_selection = (
+                astrocart_pdf_service.normalize_export_selection(selection)
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValueError(str(exc)) from exc
+
+        normalized_page_format = str(page_format or "").strip().upper()
+        if normalized_page_format not in astrocart_pdf_service.PAGE_FORMATS:
+            raise ValueError(
+                f"unsupported astrocart PDF page format: {page_format}"
+            )
+        if not isinstance(localized_labels, (dict, type(None))):
+            raise ValueError("astrocart PDF localized labels must be an object")
+        if not isinstance(atlas, (dict, type(None))):
+            raise ValueError("astrocart PDF atlas must be an object")
+        destination = (
+            self._astrocart_pdf_output_path(path)
+            if path is not None
+            else None
+        )
+
+        with self._lock:
+            try:
+                parent_id = self._timed_chart_parent_document_id(document_id)
+                radix = self._parent_radix(parent_id)
+            except ValueError as exc:
+                raise LookupError(str(exc)) from exc
+            source_name = str(self._chart_label(radix, "Radix"))
+            catalog, spec = self._astrocart_spec_for_radix_locked(radix)
+            if (
+                expected_spec_key is not None
+                and spec.cache_key() != expected_spec_key
+            ):
+                raise ValueError("astrocart map changed during PDF preparation")
+            pdf_color_mode = str(
+                getattr(
+                    getattr(radix, "options", None),
+                    "pdf_chart_color_mode",
+                    "monochrome",
+                )
+                or "monochrome"
+            )
+
+        if atlas is not None:
+            atlas_mode_values = (
+                requested_modes
+                if requested_modes is not None
+                else ((mode or ASTROCART_MODE_STANDARD),)
+            )
+            requested_atlas_modes: set[str] = set()
+            for atlas_mode in atlas_mode_values:
+                normalized_atlas_mode = atlas_mode.strip().lower()
+                if normalized_atlas_mode not in ASTROCART_MODES:
+                    raise ValueError(
+                        f"unknown astrocartography mode: {atlas_mode}"
+                    )
+                requested_atlas_modes.add(normalized_atlas_mode)
+            normalized_atlas_modes = tuple(
+                atlas_mode
+                for atlas_mode in ASTROCART_MODE_ORDER
+                if atlas_mode in requested_atlas_modes
+            )
+            geojson = {
+                "type": "FeatureCollection",
+                "features": [],
+                "meta": {
+                    "radix": source_name,
+                    "precision": "precise",
+                    "modes": list(normalized_atlas_modes),
+                    **(
+                        {"mode": normalized_atlas_modes[0]}
+                        if len(normalized_atlas_modes) == 1
+                        else {}
+                    ),
+                },
+            }
+            style = None
+        elif requested_modes is not None:
+            geojson = astrocart_service.lines_geojson_for_chart_modes(
+                radix,
+                source_name=source_name,
+                modes=requested_modes,
+                precision="precise",
+                spec=spec,
+                catalog=catalog,
+            )
+            style = astrocart_service.display_style_for_chart(radix)
+        else:
+            geojson = astrocart_service.lines_geojson_for_chart(
+                radix,
+                source_name=source_name,
+                mode=mode,
+                precision="precise",
+                spec=spec,
+                catalog=catalog,
+            )
+            style = astrocart_service.display_style_for_chart(radix)
+        resolved_chart_date = str(chart_date or "").strip()
+        if not resolved_chart_date:
+            try:
+                date_text, time_text = export_chart_json.format_chart_datetime(radix)
+                resolved_chart_date = " ".join(
+                    value for value in (str(date_text).strip(), str(time_text).strip())
+                    if value
+                )
+            except Exception:
+                resolved_chart_date = ""
+        resolved_filename = self._astrocart_pdf_download_filename(
+            filename if destination is None else destination.name,
+            source_name,
+        )
+        render_options = {
+            "title": str(title or source_name),
+            "client_name": source_name,
+            "chart_date": resolved_chart_date,
+            "subtitle": str(subtitle or ""),
+            "localized_labels": copy.deepcopy(localized_labels or {}),
+            "selection_summary": str(selection_summary or ""),
+            "selection": normalized_selection,
+            "page_format": normalized_page_format,
+            "locale": str(locale or "en"),
+            "style": style,
+            "color_mode": pdf_color_mode,
+            "atlas": atlas,
+        }
+        render_started_at = time.perf_counter()
+        if destination is None:
+            data = astrocart_pdf_service.render_astrocart_pdf_bytes(
+                geojson,
+                **render_options,
+            )
+        else:
+            written = astrocart_pdf_service.write_astrocart_pdf(
+                destination,
+                geojson,
+                **render_options,
+            )
+            data = None
+            destination = written
+        render_ms = (time.perf_counter() - render_started_at) * 1000.0
+
+        metadata = geojson.get("meta")
+        if not isinstance(metadata, dict):
+            metadata = {}
+        normalized_modes = metadata.get("modes")
+        if not isinstance(normalized_modes, list):
+            normalized_mode = metadata.get("mode")
+            normalized_modes = (
+                [normalized_mode]
+                if isinstance(normalized_mode, str) and normalized_mode
+                else list(requested_modes or ((mode or "standard"),))
+            )
+        byte_size = (
+            len(data)
+            if data is not None
+            else int(destination.stat().st_size)
+        )
+        feature_count = (
+            0
+            if atlas is not None
+            else astrocart_pdf_service.count_export_features(
+                geojson,
+                normalized_selection,
+            )
+        )
+        atlas_bytes = astrocart_pdf_service.atlas_payload_bytes(atlas)
+        atlas_page_count = len(atlas.get("pages", ())) if atlas is not None else 0
+        result: dict[str, Any] = {
+            "ok": True,
+            "schema": astrocart_pdf_service.ASTROCART_PDF_SCHEMA,
+            "schemaVersion": astrocart_pdf_service.ASTROCART_PDF_SCHEMA_VERSION,
+            "kind": "pdf",
+            "mimeType": "application/pdf",
+            "bytes": byte_size,
+            "filename": resolved_filename,
+            "documentId": document_id,
+            "sourceName": source_name,
+            "precision": "precise",
+            "modes": normalized_modes,
+            "specKey": spec.cache_key(),
+            "selection": normalized_selection.to_payload(),
+            "featureCount": feature_count,
+            "atlasBytes": atlas_bytes,
+            "atlasPageCount": atlas_page_count,
+            "renderMs": round(render_ms, 3),
+        }
+        if destination is not None:
+            result["path"] = str(destination)
+        else:
+            result["data"] = data
+        return result
 
     def astrocart_display_style_for_document(self, document_id: str) -> dict:
         """Live ACG colors/glyphs without recalculating line geometry."""
@@ -5384,16 +6217,70 @@ class WorkspaceService:
         with self._lock:
             parent_id = self._timed_chart_parent_document_id(document_id)
             radix = self._parent_radix(parent_id)
-            return {"state": self._view_state_for_radix("astrocart", radix)}
+            preferences = self._astrocart_preferences_locked()
+            static_view = self._astrocart_static_view_payload(preferences["view"])
+            transient_view = self._view_state_for_radix("astrocart", radix)
+            state = self._astrocart_merge_payloads(static_view, transient_view)
+            overlays = state.get("overlays")
+            if not isinstance(overlays, dict):
+                overlays = {}
+                state["overlays"] = overlays
+            # Parans are calculation-backed: the canonical global spec decides
+            # both geometry generation and restored visibility. Read that one
+            # static preference directly; rebuilding the complete point catalog
+            # would put unnecessary chart work on every retained-map activation.
+            static_spec = self._astrocart_static_spec_payload(preferences["spec"])
+            overlays["parans"] = (
+                astrocart_spec.AstrocartMapSpec.from_payload(
+                    static_spec
+                ).paran_enabled
+                if static_spec
+                else False
+            )
+            return {"state": state}
 
-    def store_astrocart_view_state_for_document(self, document_id: str, state: dict) -> dict:
+    def store_astrocart_view_state_for_document(
+        self,
+        document_id: str,
+        state: dict,
+        *,
+        scope: str = "all",
+    ) -> dict:
         if not isinstance(state, dict):
             raise ValueError("state must be an object")
+        if scope not in ("camera", "global", "all"):
+            raise ValueError("scope must be camera, global, or all")
         with self._lock:
             parent_id = self._timed_chart_parent_document_id(document_id)
             radix = self._parent_radix(parent_id)
-            self._store_view_state_for_radix("astrocart", radix, state)
-            return {"ok": True}
+            preferences = self._astrocart_preferences_locked()
+            static_changed = False
+            if scope in ("global", "all"):
+                incoming_static = self._astrocart_static_view_payload(state)
+                updated_static = self._astrocart_merge_payloads(
+                    self._astrocart_static_view_payload(preferences["view"]),
+                    incoming_static,
+                )
+                static_changed = updated_static != preferences["view"]
+                preferences["view"] = updated_static
+                if static_changed:
+                    self._store_astrocart_preferences_locked(preferences)
+            if scope in ("camera", "all"):
+                current_transient = self._view_state_for_radix(
+                    "astrocart",
+                    radix,
+                )
+                self._store_view_state_for_radix(
+                    "astrocart",
+                    radix,
+                    self._astrocart_merge_payloads(
+                        current_transient,
+                        self._astrocart_transient_view_payload(state),
+                    ),
+                )
+        if static_changed:
+            self._save_astrocart_preferences()
+        return {"ok": True}
 
     def _timed_chart_parent_document_id(self, document_id: str) -> str:
         """Resolve the chart document that owns timed-row child actions.
@@ -5657,6 +6544,10 @@ class WorkspaceService:
         time_context: Optional[dict[str, Any]] = None,
         session_label: Optional[str] = None,
         show_radix: bool = False,
+        calculation_base=None,
+        comparison_override=None,
+        force_compound: Optional[bool] = None,
+        comparison_layout: Optional[str] = None,
     ) -> dict:
         """Open wx commonwnd 'Open as Transit' at the selected event moment.
 
@@ -5666,9 +6557,17 @@ class WorkspaceService:
         """
         with self._lock:
             radix = self._parent_radix(parent_document_id)
-            compound_base = self._timed_chart_parent_chart(parent_document_id)
-            open_as_compound = self._subcharts_open_compound_default() or bool(show_radix)
-            comparison_chart = radix if show_radix else compound_base
+            compound_base = calculation_base or self._timed_chart_parent_chart(parent_document_id)
+            open_as_compound = (
+                bool(force_compound)
+                if force_compound is not None
+                else self._subcharts_open_compound_default() or bool(show_radix)
+            )
+            comparison_chart = (
+                comparison_override
+                if comparison_override is not None
+                else radix if show_radix else compound_base
+            )
             if display_datetime is not None:
                 try:
                     y, m, d, h, mi, s = [
@@ -5736,12 +6635,20 @@ class WorkspaceService:
                 session = self._controller.session(document.document_id)
                 if session is not None:
                     session['timed_event_title'] = bool(str(session_label or "").strip())
-                    session['comparison_name'] = self._chart_label(radix, "Radix")
+                    session['comparison_name'] = self._chart_label(
+                        comparison_chart if comparison_override is not None else radix,
+                        "Comparison" if comparison_override is not None else "Radix",
+                    )
                     session['show_radix_comparison'] = bool(
                         show_radix
                         and comparison_chart is radix
                         and comparison_chart is not compound_base
                     )
+                    if (
+                        open_as_compound
+                        and comparison_layout in ('standard', 'with-houses')
+                    ):
+                        session['comparison_layout'] = comparison_layout
             self._manager.broadcast_threadsafe({
                 "type": "documents.changed",
                 "tree": self._tree_payload(),
@@ -5754,6 +6661,397 @@ class WorkspaceService:
                 "activeDocumentId": self._controller.active_document_id(),
                 "documents": self._tree_payload(),
             }, document.document_id)
+
+    def _open_converse_timed_transit_chart(
+        self,
+        parent_document_id: str,
+        physical_when_iso: str,
+        *,
+        symbolic_when_iso: str,
+        symbolic_event_jd: Optional[float],
+        time_context: Optional[dict[str, Any]] = None,
+        show_radix: bool = False,
+    ) -> dict:
+        """Open a converse row as a dual-clock supplementary transit.
+
+        ``symbolic_when_iso`` is the saved event-list clock and owns the
+        header/navigation cursor. ``physical_when_iso`` remains the row's real
+        prenatal chart time; the adapter re-derives that physical instant from
+        the exact symbolic JD so every subsequent step keeps both clocks paired.
+        """
+        try:
+            symbolic_when = datetime.datetime.fromisoformat(
+                str(symbolic_when_iso or "")
+            )
+            # Validate the physical row contract even though the canonical
+            # deriver recomputes it from the exact mirrored symbolic JD.
+            datetime.datetime.fromisoformat(str(physical_when_iso or ""))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("invalid converse-transit timed-chart datetime") from exc
+
+        with self._lock:
+            radix = self._parent_radix(parent_document_id)
+            compound_base = self._timed_chart_parent_chart(parent_document_id)
+            open_as_compound = (
+                self._subcharts_open_compound_default() or bool(show_radix)
+            )
+            comparison_chart = radix if show_radix else compound_base
+
+            physical_ctx = time_context if isinstance(time_context, dict) else {}
+            physical_place = (
+                physical_ctx.get("place")
+                if isinstance(physical_ctx.get("place"), export_chart_json.chart_mod.Place)
+                else compound_base.place
+            )
+            (
+                physical_zt,
+                physical_plus,
+                physical_zh,
+                physical_zm,
+                physical_daylight,
+                physical_tzid,
+                physical_tzauto,
+            ) = self._time_context_fields(compound_base, physical_ctx)
+
+            symbolic_clock = table_event_clock(chart_snapshot_service.options)
+            symbolic_place = default_location_model.place_from_options(
+                chart_snapshot_service.options
+            )
+            symbolic_fields = symbolic_clock.local_zone_fields((
+                symbolic_when.year,
+                symbolic_when.month,
+                symbolic_when.day,
+                symbolic_when.hour,
+                symbolic_when.minute,
+                symbolic_when.second,
+            ))
+            symbolic_is_ut = symbolic_clock.basis == EVENT_TABLE_TIME_UT
+            symbolic_zt = (
+                export_chart_json.chart_mod.Time.GREENWICH
+                if symbolic_is_ut
+                else export_chart_json.chart_mod.Time.ZONE
+            )
+            symbolic_tuple = (
+                symbolic_when.year,
+                symbolic_when.month,
+                symbolic_when.day,
+                symbolic_when.hour,
+                symbolic_when.minute,
+                symbolic_when.second,
+            )
+            retained = {
+                "converse_enabled": True,
+                "display_datetime": symbolic_tuple,
+                "symbolic_cursor_datetime": symbolic_tuple,
+                "symbolic_place_payload": supplementary_adapter.place_to_payload(
+                    symbolic_place
+                ),
+                "symbolic_cal": int(compound_base.time.cal),
+                "symbolic_zt": int(symbolic_zt),
+                "symbolic_plus": True if symbolic_is_ut else bool(symbolic_fields["plus"]),
+                "symbolic_zh": 0 if symbolic_is_ut else int(symbolic_fields["zh"]),
+                "symbolic_zm": 0 if symbolic_is_ut else int(symbolic_fields["zm"]),
+                "symbolic_daylight": False if symbolic_is_ut else bool(
+                    symbolic_fields["daylightsaving"]
+                ),
+                "symbolic_tzid": "" if symbolic_is_ut else str(
+                    symbolic_fields.get("tzid") or symbolic_clock.zone_id or ""
+                ),
+                "symbolic_tzauto": False if symbolic_is_ut else bool(
+                    symbolic_fields.get("tzauto", symbolic_clock.automatic)
+                ),
+                "physical_place_payload": supplementary_adapter.place_to_payload(
+                    physical_place
+                ),
+                "physical_cal": int(compound_base.time.cal),
+                "physical_zt": int(physical_zt),
+                "physical_plus": bool(physical_plus),
+                "physical_zh": int(physical_zh),
+                "physical_zm": int(physical_zm),
+                "physical_daylight": bool(physical_daylight),
+                "physical_tzid": str(physical_tzid or ""),
+                "physical_tzauto": bool(physical_tzauto),
+            }
+            try:
+                exact_symbolic_jd = float(symbolic_event_jd)
+            except (TypeError, ValueError):
+                exact_symbolic_jd = None
+            if exact_symbolic_jd is not None and math.isfinite(exact_symbolic_jd):
+                retained["symbolic_cursor_jd"] = exact_symbolic_jd
+            binding_payload = {
+                "feature_kind": "converse_transits",
+                "parent_source_datetime": symbolic_tuple,
+                "retained_state": retained,
+            }
+            session_label = mtexts.txts.get(
+                "ConverseTransits",
+                "Converse Transits",
+            )
+
+        return self.open_document(
+            kind="supplementary",
+            parent_document_id=parent_document_id,
+            feature_kind="converse-transits",
+            when_iso=symbolic_when.isoformat(),
+            binding_payload=binding_payload,
+            comparison_chart=comparison_chart if open_as_compound else None,
+            session_label=session_label,
+        )
+
+    def _open_pd_aspect_perfection(
+        self,
+        *,
+        owner_document_id: str,
+        display_datetime: tuple[int, int, int, int, int, int],
+        comparison_chart=None,
+        comparison_layout: Optional[str] = None,
+    ) -> dict:
+        """Open a PD-in-Chart perfection through its canonical cursor builder."""
+        with self._lock:
+            owner = self._controller.session(owner_document_id)
+            if owner is None or owner.get("launcher_kind") != "pd_in_chart":
+                raise ValueError("Aspect List PD trajectory is no longer available")
+            owner_cs = owner.get("chart_session")
+            radix = getattr(owner_cs, "radix", None) if owner_cs is not None else None
+            if radix is None:
+                raise ValueError("Aspect List PD trajectory has no radix")
+            when = datetime.datetime(*[int(value) for value in display_datetime[:6]])
+            built = self._build_pd_in_chart_for_cursor(owner, when)
+            if built is None:
+                raise ValueError("Aspect List PD perfection could not be built")
+            pd_chart, arc = built
+            label = str(
+                owner.get("custom_title_root")
+                or owner.get("base_title")
+                or mtexts.txts.get("PDsInChart", "PDs in Chart")
+            ).strip()
+            document = self._controller.open_document(
+                pd_chart,
+                radix=radix,
+                session_label=label,
+                view_mode=(
+                    chart_session.ChartSession.COMPOUND
+                    if comparison_chart is not None
+                    else chart_session.ChartSession.CHART
+                ),
+                display_datetime=display_datetime,
+                comparison_chart=comparison_chart,
+                parent_document_id_override=owner.get("parent_document_id"),
+                launcher_kind="pd_in_chart",
+                dirty=False,
+            )
+            if document is not None:
+                session = self._controller.session(document.document_id)
+                if session is not None:
+                    binding = copy.deepcopy(owner.get("pd_in_chart_binding") or {})
+                    binding.update({
+                        "initialArc": abs(float(arc)),
+                        "currentArc": abs(float(arc)),
+                        "exactArc": abs(float(arc)),
+                        "initialDisplayDatetime": tuple(display_datetime),
+                        "hasEventDatetime": True,
+                    })
+                    session["pd_in_chart_binding"] = binding
+                    session["option_refresh_handler"] = self._refresh_pd_in_chart_options
+                    if (
+                        comparison_chart is not None
+                        and comparison_layout in ('standard', 'with-houses')
+                    ):
+                        session['comparison_layout'] = comparison_layout
+                    if owner.get("chart_visual_mode") == _CHART_VISUAL_MUNDANE:
+                        session["chart_visual_mode"] = _CHART_VISUAL_MUNDANE
+            self._manager.broadcast_threadsafe({
+                "type": "documents.changed",
+                "tree": self._tree_payload(),
+            })
+            self._save_restore_open_charts_state()
+            if document is None:
+                return {"documentId": None, "documents": self._tree_payload()}
+            return self._attach_full_snapshot({
+                "documentId": document.document_id,
+                "activeDocumentId": self._controller.active_document_id(),
+                "documents": self._tree_payload(),
+            }, document.document_id)
+
+    def open_aspect_perfection(
+        self,
+        *,
+        document_id: str,
+        mode: str,
+        event_jd: float,
+        expected_context_key: Optional[str] = None,
+        action: str = "exact",
+        show_radix: Optional[bool] = None,
+        preserve_source_frame: bool = False,
+    ) -> dict:
+        """Open the exact event represented by an Aspect List row.
+
+        Within-chart views open a standalone exact chart. Cross-chart views
+        preserve the comparison structure, independent of endpoint type. The
+        explicit generic menu alternatives retain the same validated row and
+        instant, then use the canonical timed-chart builders.
+        """
+        with self._lock:
+            context = self.table_context(document_id, requested_table_id="aspect_list")
+            primary = context.get("chart")
+            outer = context.get("comparison_chart")
+            role_contexts = context.get("role_contexts") or {}
+            if primary is None:
+                raise ValueError("Aspect List document has no primary chart")
+            if mode not in ("primary", "outer", "outerToPrimary", "primaryToOuter"):
+                raise ValueError("unknown Aspect List view")
+            action = str(action or "exact")
+            if action not in ("exact", "solar", "transits", "chart"):
+                raise ValueError("unknown Aspect List perfection action")
+            if mode != "primary" and outer is None:
+                raise ValueError("Aspect List comparison chart is no longer available")
+            if expected_context_key is not None:
+                from .aspect_list_service import aspect_list_context_key
+
+                current_context_key = aspect_list_context_key(context, mode)
+                if not expected_context_key or current_context_key != str(expected_context_key):
+                    raise ValueError("Aspect List context changed; refresh the list")
+
+            exact_role = (
+                "outer" if mode in ("outer", "outerToPrimary", "primaryToOuter")
+                else "primary"
+            )
+            calculation_base = outer if exact_role == "outer" else primary
+            role_context = role_contexts.get(exact_role) or {}
+            trajectory_kind = str(role_context.get("trajectoryKind") or "physical")
+            try:
+                exact_jd = float(event_jd)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("invalid Aspect List perfection time") from exc
+            if not math.isfinite(exact_jd):
+                raise ValueError("invalid Aspect List perfection time")
+            calendar = int(role_context.get("calendar", calculation_base.time.cal) or 0)
+            decoded_datetime = self._jd_to_calendar_datetime(exact_jd, calendar)
+            if decoded_datetime is None:
+                raise ValueError("Aspect List perfection time could not be decoded")
+            feature_kind = str(role_context.get("featureKind") or "")
+            exact_binding_payload = copy.deepcopy(role_context.get("binding") or {})
+            if trajectory_kind in ("supplementary", "pd_in_chart"):
+                if (
+                    trajectory_kind == "supplementary"
+                    and feature_kind == "converse_transits"
+                ):
+                    candidate = self._aspect_converse_candidate(
+                        exact_binding_payload,
+                        calculation_base,
+                        exact_jd,
+                    )
+                    if candidate is None:
+                        raise ValueError(
+                            "Aspect List perfection time could not be decoded"
+                        )
+                    display_datetime, exact_binding_payload = candidate
+                else:
+                    display_datetime = tuple(decoded_datetime)
+                zone = {}
+            else:
+                zone = moment.utc_to_place_local_zone(
+                    decoded_datetime, calculation_base.place,
+                ) or {}
+                display_datetime = tuple(zone.get("datetime") or decoded_datetime)
+            is_cross = mode in ("outerToPrimary", "primaryToOuter")
+            comparison_layout = str(
+                (context.get("aspect_context") or {}).get("comparisonLayout") or ""
+            )
+            if comparison_layout not in ('standard', 'with-houses'):
+                comparison_layout = 'standard'
+            if trajectory_kind in ("static", "unsupported"):
+                raise ValueError("This chart role has no supported perfection trajectory")
+            if action != "exact":
+                # Generic alternatives are deliberate destinations, but they
+                # still originate from the validated relationship row. Cross-
+                # chart actions attach to the displayed primary chart; within-
+                # chart actions attach to the selected role. Physical rows keep
+                # their absolute JD, while symbolic/PD trajectories keep their
+                # canonical civil timeline rather than being reinterpreted as
+                # a physical UT Julian day.
+                action_role = "primary" if is_cross else exact_role
+                action_role_context = role_contexts.get(action_role) or {}
+                action_document_id = str(
+                    action_role_context.get("ownerDocumentId") or document_id
+                )
+                action_when = datetime.datetime(
+                    *[int(value) for value in display_datetime[:6]]
+                ).isoformat()
+                return self.open_directions_timed_chart(
+                    directions_document_id=action_document_id,
+                    action=action,
+                    when_iso=action_when,
+                    event_jd=(exact_jd if trajectory_kind == "physical" else None),
+                    show_radix=show_radix,
+                )
+            if trajectory_kind == "supplementary":
+                parent_document_id = str(role_context.get("parentDocumentId") or "")
+                if not parent_document_id or feature_kind not in _ASPECT_SYMBOLIC_FEATURE_KINDS:
+                    raise ValueError("Aspect List symbolic trajectory is no longer available")
+                return self.open_document(
+                    kind="supplementary",
+                    parent_document_id=parent_document_id,
+                    feature_kind=feature_kind,
+                    when_iso=datetime.datetime(*display_datetime[:6]).isoformat(),
+                    binding_payload=exact_binding_payload,
+                    comparison_chart=primary if is_cross else None,
+                    comparison_layout=comparison_layout if is_cross else None,
+                )
+            if trajectory_kind == "pd_in_chart":
+                owner_document_id = str(role_context.get("ownerDocumentId") or "")
+                if not owner_document_id:
+                    raise ValueError("Aspect List PD trajectory is no longer available")
+                return self._open_pd_aspect_perfection(
+                    owner_document_id=owner_document_id,
+                    display_datetime=tuple(int(value) for value in display_datetime[:6]),
+                    comparison_chart=primary if is_cross else None,
+                    comparison_layout=comparison_layout if is_cross else None,
+                )
+            time_context = {
+                "place": calculation_base.place,
+                "zt": export_chart_json.chart_mod.Time.ZONE,
+                "plus": bool(zone.get("plus", True)),
+                "zh": int(zone.get("zh", 0) or 0),
+                "zm": int(zone.get("zm", 0) or 0),
+                "daylightsaving": bool(zone.get("daylightsaving", False)),
+                "tzid": str(zone.get("tzid") or ""),
+                "tzauto": bool(zone.get("tzid")),
+            }
+            parent_document_id = str(role_context.get("ownerDocumentId") or document_id)
+            if mode in ("primary", "outer"):
+                if preserve_source_frame:
+                    return self._open_timed_transit_chart(
+                        parent_document_id,
+                        "",
+                        display_datetime=display_datetime,
+                        calendar=calendar,
+                        time_context=time_context,
+                        calculation_base=calculation_base,
+                        comparison_override=calculation_base,
+                        force_compound=True,
+                        comparison_layout=comparison_layout,
+                    )
+                return self._open_timed_transit_chart(
+                    parent_document_id,
+                    "",
+                    display_datetime=display_datetime,
+                    calendar=calendar,
+                    time_context=time_context,
+                    calculation_base=calculation_base,
+                    force_compound=False,
+                )
+            return self._open_timed_transit_chart(
+                parent_document_id,
+                "",
+                display_datetime=display_datetime,
+                calendar=calendar,
+                time_context=time_context,
+                calculation_base=calculation_base,
+                comparison_override=primary,
+                force_compound=True,
+                comparison_layout=comparison_layout,
+            )
 
     def open_spotlight_horary(
         self,
@@ -6015,6 +7313,15 @@ class WorkspaceService:
                     cs,
                     tuple(merged),
                 )
+            if feature_kind == 'converse_transits':
+                return self._apply_spotlight_current_converse_transit(
+                    active_id,
+                    session,
+                    cs,
+                    tuple(merged),
+                    location_context=ctx,
+                    cursor_changed=has_temporal,
+                )
 
             try:
                 needs_full_chart = bool(cs._navigation_requires_full_chart())
@@ -6096,6 +7403,101 @@ class WorkspaceService:
             )
             result["activeDocumentId"] = self._controller.active_document_id()
             return result
+
+    def _apply_spotlight_current_converse_transit(
+        self,
+        document_id: str,
+        session: dict[str, Any],
+        cs,
+        display_dt: tuple[int, int, int, int, int, int],
+        *,
+        location_context: Optional[dict[str, Any]] = None,
+        cursor_changed: bool = True,
+    ) -> dict:
+        """Apply Spotlight to the symbolic cursor without flattening its clocks."""
+        radix = getattr(cs, 'radix', None)
+        current_chart = getattr(cs, 'chart', None)
+        if radix is None or current_chart is None:
+            raise ValueError("converse transit session has no radix")
+        when = _display_to_datetime(display_dt)
+        if when is None:
+            raise ValueError("spotlight converse-transit datetime is invalid")
+        binding = supplementary_adapter.SupplementaryBinding.from_payload(
+            session.get('supplementary_binding') or {},
+            feature_kind='converse_transits',
+        ) or supplementary_adapter.SupplementaryBinding('converse_transits')
+        retained = dict(binding.retained_state or {})
+        if cursor_changed:
+            retained.pop('symbolic_cursor_datetime', None)
+            retained.pop('symbolic_cursor_jd', None)
+        ctx = location_context if isinstance(location_context, dict) else None
+        if ctx is not None and ctx.get('place') is not None:
+            retained.update({
+                'physical_place_payload': supplementary_adapter.place_to_payload(
+                    ctx.get('place')
+                ),
+                'physical_zt': int(ctx.get(
+                    'zt',
+                    retained.get('physical_zt', export_chart_json.chart_mod.Time.ZONE),
+                )),
+                'physical_plus': bool(ctx.get(
+                    'plus',
+                    retained.get('physical_plus', True),
+                )),
+                'physical_zh': int(ctx.get(
+                    'zh',
+                    retained.get('physical_zh', 0),
+                ) or 0),
+                'physical_zm': int(ctx.get(
+                    'zm',
+                    retained.get('physical_zm', 0),
+                ) or 0),
+                'physical_daylight': bool(ctx.get(
+                    'daylightsaving',
+                    retained.get('physical_daylight', False),
+                )),
+                'physical_tzid': str(ctx.get(
+                    'tzid',
+                    retained.get('physical_tzid', ''),
+                ) or ''),
+                'physical_tzauto': bool(ctx.get(
+                    'tzauto',
+                    retained.get('physical_tzauto', False),
+                )),
+            })
+        binding.retained_state = retained
+        built = supplementary_service.build_result(
+            radix=radix,
+            kind='converse-transits',
+            when=when,
+            binding_payload=binding.to_payload(),
+        )
+        derived_chart = built.get('chart')
+        result_display_dt = built.get('display_datetime')
+        result_binding = built.get('binding')
+        if derived_chart is None or result_display_dt is None or result_binding is None:
+            raise ValueError("converse transit session could not be rebuilt")
+        derived_chart.name = getattr(current_chart, 'name', derived_chart.name)
+        derived_chart.male = getattr(current_chart, 'male', derived_chart.male)
+        derived_chart.notes = getattr(current_chart, 'notes', '')
+        was_dirty = bool(session.get('dirty', False))
+        session['parent_source_datetime'] = _datetime_to_display(when)
+        session['chart'] = derived_chart
+        self._controller._apply_supplementary_binding(session, result_binding)
+        cs.change_chart(
+            derived_chart,
+            display_datetime=result_display_dt,
+            change_reason='step',
+        )
+        result = self._navigate_key_result(
+            document_id,
+            cs,
+            True,
+            was_dirty=was_dirty,
+            include_documents=True,
+        )
+        result['activeDocumentId'] = self._controller.active_document_id()
+        return result
 
     def _apply_spotlight_current_progression(
         self,
@@ -7275,7 +8677,15 @@ class WorkspaceService:
             variants[variant] = comp
         return comp
 
-    def _replace_active_composite_chart(self, session: dict, comp, pair, variant: str) -> bool:
+    def _replace_active_composite_chart(
+        self,
+        session: dict,
+        comp,
+        pair,
+        variant: str,
+        *,
+        change_reason: str = 'options',
+    ) -> bool:
         cs = session.get('chart_session')
         center, partner = pair
         if cs is None or comp is None or center is None or partner is None:
@@ -7295,7 +8705,11 @@ class WorkspaceService:
         cs._initial_chart = comp
         cs._initial_display_datetime = display_dt
         cs.view_mode = chart_session.ChartSession.CHART
-        cs.change_chart(comp, display_datetime=display_dt, change_reason='options')
+        cs.change_chart(
+            comp,
+            display_datetime=display_dt,
+            change_reason=change_reason,
+        )
         return True
 
     def _refresh_relationship_session_for_options(self, session: dict, mode: str) -> bool:
@@ -7308,7 +8722,6 @@ class WorkspaceService:
         rebuild the composite from its source participants with the current
         options, and clear stale cached variants for plain synastry.
         """
-        del mode
         if not self._is_relationship_session(session):
             return False
         session['composite_variants'] = None
@@ -7332,7 +8745,15 @@ class WorkspaceService:
             variants = self._ensure_synastry_composite_variants(session, center, partner)
             variants[variant] = comp
             title = self._composite_session_title(center, partner, davison=(variant == 'davison'))
-        if not self._replace_active_composite_chart(session, comp, pair, variant):
+        if not self._replace_active_composite_chart(
+            session,
+            comp,
+            pair,
+            variant,
+            change_reason=(
+                'options-refresh' if mode == 'house-system' else 'options'
+            ),
+        ):
             return False
         session['base_title'] = title
         session['custom_title_root'] = title
@@ -8303,6 +9724,290 @@ class WorkspaceService:
     def _normalize_search_chart_role(chart_role: Optional[str]) -> Optional[str]:
         return "outer" if chart_role == "outer" else "primary" if chart_role == "primary" else None
 
+    def _aspect_list_owner_session(self, host_session: dict, chrt) -> Optional[dict]:
+        """Resolve the workspace session that owns one displayed wheel role.
+
+        ``_select_render_charts`` may return the live child, its immediate
+        parent, or the branch radix after the show-radix center switch.  Role
+        names and symbolic motion therefore have to resolve from the returned
+        chart object, not from the Aspect List host alone.
+        """
+        if chrt is None:
+            return None
+        host_cs = host_session.get("chart_session") if isinstance(host_session, dict) else None
+        if host_cs is not None and getattr(host_cs, "chart", None) is chrt:
+            return host_session
+        owner_id = self._controller._document_id_for_chart(chrt)
+        if owner_id is None:
+            return None
+        return self._controller.session(str(owner_id))
+
+    def _aspect_list_role_label(self, owner: Optional[dict], chrt, fallback: str) -> str:
+        """Use the actual owning document/session label for a wheel role."""
+        if isinstance(owner, dict):
+            # A synastry document owns the current center participant, but its
+            # document title describes the relationship rather than that
+            # participant.  Participant names remain the truthful role labels.
+            if owner.get("compound_kind") == "synastry":
+                return self._chart_label(chrt, fallback)
+            label = str(
+                owner.get("custom_title_root")
+                or owner.get("base_title")
+                or ""
+            ).strip()
+            if label:
+                return label.rstrip(" *")
+        return self._chart_label(chrt, fallback)
+
+    def _aspect_symbolic_builder(
+        self,
+        owner: dict,
+        feature_kind: str,
+        radix,
+    ):
+        """Snapshot the canonical Binding -> Deriver trajectory for a role."""
+        binding_payload = copy.deepcopy(owner.get("supplementary_binding") or {})
+        planet_type = owner.get("planetary_return_type")
+        calendar = int(getattr(getattr(radix, "time", None), "cal", 0) or 0)
+
+        def build(candidate_jd: float):
+            candidate_binding = binding_payload
+            if feature_kind == "converse_transits":
+                candidate = self._aspect_converse_candidate(
+                    binding_payload,
+                    radix,
+                    candidate_jd,
+                )
+                if candidate is None:
+                    return None
+                values, candidate_binding = candidate
+            else:
+                values = self._jd_to_calendar_datetime(float(candidate_jd), calendar)
+                if values is None:
+                    return None
+            when = datetime.datetime(*[int(value) for value in values[:6]])
+            if feature_kind == "solar_arc":
+                result = self._build_solar_arc_child_result(
+                    radix,
+                    when,
+                    binding_payload=candidate_binding,
+                )
+            else:
+                public_kind = FEATURE_TO_PUBLIC_KIND.get(feature_kind)
+                if public_kind is None:
+                    return None
+                result = supplementary_service.build_result(
+                    radix=radix,
+                    kind=public_kind,
+                    when=when,
+                    binding_payload=candidate_binding,
+                    planet_type=(
+                        int(planet_type)
+                        if planet_type is not None and feature_kind == "planetary_return"
+                        else None
+                    ),
+                )
+            return result.get("chart") if isinstance(result, dict) else None
+
+        return build
+
+    def _aspect_converse_candidate(
+        self,
+        binding_payload: dict[str, Any],
+        radix,
+        candidate_jd: float,
+    ) -> Optional[tuple[tuple[int, int, int, int, int, int], dict[str, Any]]]:
+        """Keep one Aspect List candidate on the retained symbolic clock."""
+        try:
+            exact_jd = float(candidate_jd)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(exact_jd):
+            return None
+        candidate_binding = copy.deepcopy(binding_payload or {})
+        retained = dict(candidate_binding.get("retained_state") or {})
+        values = supplementary_adapter.retained_clock_local_tuple_for_jd(
+            retained,
+            "symbolic",
+            exact_jd,
+            fallback_place=getattr(radix, "place", None),
+            fallback_time=getattr(radix, "time", None),
+        )
+        if values is None:
+            return None
+        display_datetime = tuple(int(value) for value in values[:6])
+        retained.update({
+            "display_datetime": display_datetime,
+            "symbolic_cursor_datetime": display_datetime,
+            "symbolic_cursor_jd": exact_jd,
+        })
+        candidate_binding["parent_source_datetime"] = display_datetime
+        candidate_binding["retained_state"] = retained
+        return display_datetime, candidate_binding
+
+    def _aspect_symbolic_anchor_jd(
+        self,
+        owner: dict,
+        owner_cs,
+        display_dt,
+        radix,
+        feature_kind: str,
+    ) -> Optional[float]:
+        """Resolve a symbolic trajectory anchor without demoting exact state."""
+        if feature_kind == "converse_transits":
+            binding = owner.get("supplementary_binding") or {}
+            retained = (
+                binding.get("retained_state") or {}
+                if isinstance(binding, dict)
+                else {}
+            )
+            for candidate in (
+                retained.get("symbolic_cursor_jd"),
+                getattr(owner_cs, "cursor_jd", None),
+            ):
+                try:
+                    exact_jd = float(candidate)
+                except (TypeError, ValueError):
+                    continue
+                if math.isfinite(exact_jd):
+                    return exact_jd
+        return self._display_datetime_jd(display_dt, radix)
+
+    def _aspect_pd_builder(self, owner: dict, radix):
+        """Snapshot the existing PD-in-Chart cursor builder without mutation."""
+        session_snapshot = dict(owner)
+        session_snapshot["pd_in_chart_binding"] = copy.deepcopy(
+            owner.get("pd_in_chart_binding") or {}
+        )
+        calendar = int(getattr(getattr(radix, "time", None), "cal", 0) or 0)
+
+        def build(candidate_jd: float):
+            values = self._jd_to_calendar_datetime(float(candidate_jd), calendar)
+            if values is None:
+                return None
+            result = self._build_pd_in_chart_for_cursor(
+                session_snapshot,
+                datetime.datetime(*[int(value) for value in values[:6]]),
+            )
+            return result[0] if result is not None else None
+
+        return build
+
+    def _aspect_list_role_context(
+        self,
+        host_session: dict,
+        chrt,
+        role: str,
+    ) -> dict[str, Any]:
+        """Describe one displayed chart role's real motion/time authority."""
+        owner = self._aspect_list_owner_session(host_session, chrt)
+        owner_cs = owner.get("chart_session") if isinstance(owner, dict) else None
+        owner_id = str(owner.get("document_id") or "") if isinstance(owner, dict) else ""
+        fallback = mtexts.txts.get("Chart", "Chart")
+        context: dict[str, Any] = {
+            "role": role,
+            "ownerDocumentId": owner_id or None,
+            "label": self._aspect_list_role_label(owner, chrt, fallback),
+            "trajectoryKind": "physical",
+            "anchorJd": float(chrt.time.jd),
+            "calendar": int(getattr(chrt.time, "cal", 0) or 0),
+            "featureKind": None,
+            "launcherKind": owner.get("launcher_kind") if isinstance(owner, dict) else None,
+            "pointMotionPolicy": {"syzygy": "anchor-fixed"},
+        }
+        if not isinstance(owner, dict):
+            return context
+
+        # Arithmetic midpoint composites do not describe bodies coexisting at
+        # one physical epoch.  Their current orb is valid, but phase/perfection
+        # would be fabricated.  Davison composites retain an actual time/place
+        # chart and therefore keep the physical trajectory.
+        if (
+            owner.get("compound_kind") == "composite_from_synastry"
+            and owner.get("composite_variant") != "davison"
+        ):
+            context["trajectoryKind"] = "static"
+            context["unsupportedReason"] = "arithmetic-composite-is-static"
+            return context
+
+        display_dt = getattr(owner_cs, "display_datetime", None) if owner_cs is not None else None
+        radix = getattr(owner_cs, "radix", None) if owner_cs is not None else None
+        feature_kind = owner.get("supplementary_feature_kind")
+        if feature_kind == "solar_average" or owner.get("launcher_kind") == "solar_average":
+            context.update({
+                "trajectoryKind": "static",
+                "featureKind": "solar_average",
+                "unsupportedReason": "solar-average-has-no-single-timeline",
+            })
+            return context
+        if feature_kind in _ASPECT_SYMBOLIC_FEATURE_KINDS and radix is not None:
+            anchor_jd = self._aspect_symbolic_anchor_jd(
+                owner,
+                owner_cs,
+                display_dt,
+                radix,
+                str(feature_kind),
+            )
+            if anchor_jd is None:
+                context["trajectoryKind"] = "unsupported"
+                context["unsupportedReason"] = "missing-symbolic-cursor"
+                return context
+            binding_payload = copy.deepcopy(owner.get("supplementary_binding") or {})
+            context.update({
+                "trajectoryKind": "supplementary",
+                "anchorJd": float(anchor_jd),
+                "calendar": int(getattr(radix.time, "cal", 0) or 0),
+                "featureKind": str(feature_kind),
+                "parentDocumentId": owner.get("parent_document_id"),
+                "binding": binding_payload,
+                "builder": self._aspect_symbolic_builder(owner, str(feature_kind), radix),
+                # Symbolic techniques own their point transforms.  Do not
+                # impose the ordinary physical-chart fixed-Syzygy policy on a
+                # canonical supplementary builder.
+                "pointMotionPolicy": {"syzygy": "trajectory"},
+            })
+            if feature_kind == "converse_transits":
+                def display_for_jd(candidate_jd):
+                    candidate = self._aspect_converse_candidate(
+                        binding_payload,
+                        radix,
+                        candidate_jd,
+                    )
+                    return candidate[0] if candidate is not None else None
+
+                context["displayForJd"] = display_for_jd
+            return context
+
+        # A newly introduced supplementary technique must declare its motion
+        # authority above before Aspect List may claim applying/separating or
+        # manufacture an exact date.  Ordinary root/relationship documents have
+        # no feature kind and retain the physical default.
+        if feature_kind is not None and feature_kind not in _ASPECT_PHYSICAL_FEATURE_KINDS:
+            context.update({
+                "trajectoryKind": "unsupported",
+                "featureKind": str(feature_kind),
+                "unsupportedReason": "undeclared-technique-trajectory",
+            })
+            return context
+
+        if owner.get("launcher_kind") == "pd_in_chart" and radix is not None:
+            anchor_jd = self._display_datetime_jd(display_dt, radix)
+            if anchor_jd is None:
+                context["trajectoryKind"] = "unsupported"
+                context["unsupportedReason"] = "missing-pd-cursor"
+                return context
+            context.update({
+                "trajectoryKind": "pd_in_chart",
+                "anchorJd": float(anchor_jd),
+                "calendar": int(getattr(radix.time, "cal", 0) or 0),
+                "featureKind": "pd_in_chart",
+                "parentDocumentId": owner.get("parent_document_id"),
+                "binding": copy.deepcopy(owner.get("pd_in_chart_binding") or {}),
+                "builder": self._aspect_pd_builder(owner, radix),
+                "pointMotionPolicy": {"syzygy": "trajectory"},
+            })
+        return context
+
     def table_context(self, document_id: str, requested_table_id: Optional[str] = None) -> dict[str, Any]:
         """Return the live chart + table id for a generic table document.
 
@@ -8319,6 +10024,8 @@ class WorkspaceService:
         cursor is that document's own display datetime (morin.py:4119-4147).
         """
         with self._lock:
+            comparison_chart = None
+            cs = None
             session = self._controller.session(document_id)
             if session is None:
                 raise ValueError(f"unknown table document {document_id!r}")
@@ -8358,6 +10065,8 @@ class WorkspaceService:
                         chrt = getattr(cs, "chart", None) if cs is not None else None
                         if chrt is None:
                             chrt = session.get("chart")
+                        if table_id == "aspect_list" and cs is not None and chrt is not None:
+                            chrt, comparison_chart = self._select_render_charts(session, cs, chrt)
                     # Non-Time-Lord right-pane tables may inherit the active
                     # chart cursor. Time Lords are re-anchored to wall-clock
                     # time below so their default branch is today's period.
@@ -8386,8 +10095,43 @@ class WorkspaceService:
                 # override this in tables_service; the chart cursor remains a
                 # separate toolbar anchor for the Current/Birth toggle.
                 current_datetime = None
+            role_contexts: dict[str, dict[str, Any]] = {}
+            primary_label = self._chart_label(chrt, mtexts.txts.get("Chart", "Chart"))
+            outer_label = (
+                self._chart_label(comparison_chart, mtexts.txts.get("Comparison", "Comparison"))
+                if comparison_chart is not None
+                else None
+            )
+            if table_id == "aspect_list":
+                role_contexts["primary"] = self._aspect_list_role_context(
+                    session, chrt, "primary",
+                )
+                primary_label = str(role_contexts["primary"]["label"])
+                if comparison_chart is not None:
+                    role_contexts["outer"] = self._aspect_list_role_context(
+                        session, comparison_chart, "outer",
+                    )
+                    outer_label = str(role_contexts["outer"]["label"])
+            aspect_context = {}
+            if table_id == "aspect_list":
+                aspect_context = {
+                    "hostDocumentId": str(document_id),
+                    "hostSessionIdentity": id(cs) if cs is not None else None,
+                    "viewMode": int(getattr(cs, "view_mode", -1)) if cs is not None else None,
+                    "showRadixComparison": bool(session.get("show_radix_comparison", False)),
+                    "parentDocumentId": session.get("parent_document_id"),
+                    "compoundKind": session.get("compound_kind"),
+                    "compositeVariant": session.get("composite_variant"),
+                    "comparisonLayout": session.get("comparison_layout"),
+                }
             return {
                 "chart": chrt,
+                "comparison_chart": comparison_chart,
+                "primary_label": primary_label,
+                "outer_label": outer_label,
+                "role_contexts": role_contexts,
+                "host_document_id": document_id,
+                "aspect_context": aspect_context,
                 "table_id": table_id,
                 "binding": binding,
                 "current_datetime": current_datetime,
@@ -8442,6 +10186,9 @@ class WorkspaceService:
         time_context: Optional[dict[str, Any]] = None,
         session_label: Optional[str] = None,
         show_radix: Optional[bool] = None,
+        source_technique: Optional[str] = None,
+        symbolic_when_iso: Optional[str] = None,
+        symbolic_event_jd: Optional[float] = None,
     ) -> dict:
         """Timed-chart context action from any direction-list popup.
 
@@ -8503,6 +10250,15 @@ class WorkspaceService:
                 session_label=session_label,
             )
         if action == "transits":
+            if source_technique == "converse_transits":
+                return self._open_converse_timed_transit_chart(
+                    parent_document_id,
+                    event_when,
+                    symbolic_when_iso=str(symbolic_when_iso or ""),
+                    symbolic_event_jd=symbolic_event_jd,
+                    time_context=time_context,
+                    show_radix=effective_show_radix,
+                )
             return self._open_timed_transit_chart(
                 parent_document_id,
                 event_when,
@@ -8803,7 +10559,9 @@ class WorkspaceService:
         cs.change_chart(
             current_chart,
             display_datetime=_datetime_to_display(current_when),
-            change_reason="options",
+            change_reason=(
+                "options-refresh" if mode == "house-system" else "options"
+            ),
         )
         return True
 
@@ -10374,6 +12132,12 @@ class WorkspaceService:
                 stepped = self._navigate_pd_in_chart(session, cs, unit, int(delta))
             elif session.get('supplementary_feature_kind') in _PROGRESSION_FEATURE_KINDS:
                 stepped = self._navigate_progression_direct(session, cs, unit, int(delta))
+            elif session.get('supplementary_feature_kind') == 'converse_transits':
+                stepped = self._navigate_converse_transit_direct(
+                    cs,
+                    unit,
+                    int(delta),
+                )
             else:
                 stepped = bool(cs.navigate_relative(unit, int(delta)))
             if stepped and self._is_at_visual_session(session):
@@ -10381,6 +12145,29 @@ class WorkspaceService:
             return self._navigate_key_result(
                 document_id, cs, stepped, was_dirty=was_dirty, include_documents=True,
             )
+
+    @staticmethod
+    def _navigate_converse_transit_direct(cs, unit: str, delta: int) -> bool:
+        """Route the legacy unit API through the dual-clock stepper too."""
+        if int(delta) == 0:
+            return False
+        modifiers = {
+            "day": (False, False, 316, 314),
+            "hour": (True, False, 316, 314),
+            "minute": (False, True, 316, 314),
+            "second": (True, True, 316, 314),
+            "week": (False, False, 315, 317),
+        }.get(str(unit))
+        if modifiers is None:
+            return False
+        shift, alt, positive_key, negative_key = modifiers
+        keycode = positive_key if int(delta) > 0 else negative_key
+        return bool(cs._forward_stepper_arrow(
+            keycode,
+            shift_down=shift,
+            alt_down=alt,
+            repeat=abs(int(delta)),
+        ))
 
     def _navigate_progression_direct(self, session: dict, cs, unit: str, delta: int) -> bool:
         feature_kind = session.get('supplementary_feature_kind')
@@ -10513,9 +12300,30 @@ class WorkspaceService:
                 if normalized not in ('left', 'right'):
                     return finish(False, was_dirty=was_dirty)
                 unit = 'week' if alt else 'month' if shift else 'year'
-                delta = (-1 if normalized == 'left' else 1) * repeat
-                stepped = self._navigate_pd_in_chart(session, cs, unit, delta)
-                return finish(stepped, was_dirty=was_dirty, applied_steps=repeat)
+                direction = -1 if normalized == 'left' else 1
+                # Fold policy is a property of the (family, intent) pair, not of
+                # the document kind — doc/temporal-capability-matrix.md §3.5.
+                # 'week' is a fixed-length unit, so N presses are exactly one
+                # call with delta N. 'month' and 'year' clamp at month ends and
+                # leap days, where the two diverge: 5x(+1 month) from 31 Jan
+                # lands on 28 Jun, one (+5 months) lands on 30 Jun. Those are
+                # sequence_required and must execute one transition at a time,
+                # the same way SupplementaryStepper._step loops over `repeat`.
+                if cursor_steppers.is_fold_safe_unit(unit):
+                    stepped = self._navigate_pd_in_chart(
+                        session, cs, unit, direction * repeat,
+                    )
+                    applied = repeat if stepped else 0
+                else:
+                    applied = 0
+                    for _ in range(repeat):
+                        if not self._navigate_pd_in_chart(session, cs, unit, direction):
+                            break
+                        applied += 1
+                    stepped = applied > 0
+                return finish(
+                    stepped, was_dirty=was_dirty, applied_steps=applied or repeat,
+                )
 
             feature_kind = session.get('supplementary_feature_kind')
             if (
@@ -10631,7 +12439,12 @@ class WorkspaceService:
                 return result
             if session.get('compound_kind') == 'synastry':
                 return self._toggle_synastry_center(document_id, session, cs)
-            toggled = bool(cs.toggleComparisonView())
+            # This command returns the authoritative full snapshot directly.
+            # Suppress ChartSession's generic change callback here so Tab does
+            # not also emit session.changed/documents.changed, advance retained
+            # list mutation epochs, and turn cached singleton/comparison worlds
+            # into one-use entries. Legacy/wx callers keep the notifying default.
+            toggled = bool(cs.toggleComparisonView(notify=False))
             result = {
                 "documentId": document_id,
                 "toggled": toggled,
@@ -10665,7 +12478,7 @@ class WorkspaceService:
         if self._is_mdo_visual_session(session):
             return "deferred"
         feature_kind = session.get("supplementary_feature_kind")
-        if feature_kind in self._INTRINSIC_FEATURE_KINDS:
+        if feature_kind in self._INTRINSIC_FEATURE_KINDS or feature_kind == 'converse_transits':
             return "step_fast"
         return "deferred"
 

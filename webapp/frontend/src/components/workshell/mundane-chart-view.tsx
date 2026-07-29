@@ -7,6 +7,10 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 
 import { useStyleRevision } from "@/hooks/use-style-revision";
+import {
+  registerChartExportRenderer,
+  renderCanvasChartExport,
+} from "@/lib/chart/chart-export-registry";
 import { readPalette } from "@/lib/chart/palette";
 import {
   DEFAULT_MUNDANE_RENDER_STYLE,
@@ -37,6 +41,7 @@ import {
   createResolvedSemanticChartColorResolver,
   semanticChartColor,
 } from "@/lib/theme/semantic-color";
+import { useThemeStore } from "@/stores/theme-store";
 
 // Mundane Chart renderer. The wx source is mundanechart.py: drawChart() owns
 // the radius table, tick rings, ASC/MC axes, planet-line rings, position labels,
@@ -907,11 +912,12 @@ export function MundaneChartView({
     if (!host) return;
     const css = getComputedStyle(host);
     const textFontFamily = css.getPropertyValue("--morinus-font-text").trim() || "'FreeSans', ui-sans-serif, system-ui, sans-serif";
+    const symbolFontFamily = css.getPropertyValue("--aries-font-symbols").trim() || '"AriesMorinus"';
     setRenderStyle(resolveMundaneRenderStyle(host, {
       revision: styleRevision,
       palette: readMundanePalette(host),
       fontUi: textFontFamily,
-      fontSymbols: '"AriesMorinus"',
+      fontSymbols: symbolFontFamily,
     }));
   }, [styleRevision]);
 
@@ -954,6 +960,15 @@ export function MundaneChartView({
       cancelled = true;
     };
   }, [data, side, renderStyle]);
+
+  React.useEffect(() => {
+    if (!data || !canvasRef.current) return;
+    return registerChartExportRenderer(documentId, (request) => {
+      const canvas = canvasRef.current;
+      if (!canvas) throw new Error("visible mundane chart renderer unavailable");
+      return renderCanvasChartExport(canvas, request);
+    });
+  }, [data, documentId]);
 
   const clearHoverFlag = React.useCallback(() => {
     hoveredKeyRef.current = null;
@@ -1073,11 +1088,37 @@ function MundaneCornerLines({
 }
 
 function MundaneHoverFlag({ anchor }: { anchor: MundaneFlagAnchor | null }) {
+  const styleRevision = useStyleRevision();
+  const appTokens = useThemeStore((state) => state.theme?.appTokens);
   const [visibleAnchor, setVisibleAnchor] = React.useState<MundaneFlagAnchor | null>(null);
   const cardRef = React.useRef<HTMLDivElement | null>(null);
-  const [cardSize, setCardSize] = React.useState({ width: 180, height: 96 });
+  const [cardSize, setCardSize] = React.useState({ width: 0, height: 0 });
   const [viewportSize, setViewportSize] = React.useState({ width: 0, height: 0 });
   const activeAnchor = anchor && visibleAnchor?.key === anchor.key ? visibleAnchor : null;
+  const flagGeometry = React.useMemo(() => {
+    const rootStyle =
+      typeof document === "undefined"
+        ? null
+        : window.getComputedStyle(document.documentElement);
+    const value = (name: string) => {
+      const parsed = Number.parseFloat(
+        appTokens?.[name] ?? rootStyle?.getPropertyValue(name) ?? "",
+      );
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+    return {
+      viewportMargin: value("--aries-inspector-hover-flag-viewport-margin"),
+      anchorGapX: value("--aries-inspector-hover-flag-anchor-gap-x"),
+      anchorGapY: value("--aries-inspector-hover-flag-anchor-gap-y"),
+      compactMinWidth: value("--aries-inspector-hover-flag-compact-min-width"),
+      minWidth: value("--aries-inspector-hover-flag-min-width"),
+      compactMinHeight: value("--aries-inspector-hover-flag-compact-min-height"),
+      minHeight: value("--aries-inspector-hover-flag-min-height"),
+      accentBorderOpacity: value(
+        "--aries-inspector-hover-flag-accent-border-opacity",
+      ),
+    };
+  }, [appTokens]);
 
   React.useEffect(() => {
     if (!anchor) return;
@@ -1101,7 +1142,7 @@ function MundaneHoverFlag({ anchor }: { anchor: MundaneFlagAnchor | null }) {
     if (rect.width > 0 && rect.height > 0) {
       setCardSize({ width: rect.width, height: rect.height });
     }
-  }, [activeAnchor]);
+  }, [activeAnchor, styleRevision]);
 
   if (!activeAnchor) return null;
   const payload = activeAnchor.payload;
@@ -1115,11 +1156,17 @@ function MundaneHoverFlag({ anchor }: { anchor: MundaneFlagAnchor | null }) {
   const compact = Boolean(payload.compact);
   const viewportWidth = viewportSize.width || (typeof window !== "undefined" ? window.innerWidth : 0);
   const viewportHeight = viewportSize.height || (typeof window !== "undefined" ? window.innerHeight : 0);
-  const margin = 8;
-  const xGap = 12;
-  const yGap = 10;
-  const cardWidth = Math.max(cardSize.width, compact ? 120 : 180);
-  const cardHeight = Math.max(cardSize.height, compact ? 56 : 96);
+  const margin = flagGeometry.viewportMargin;
+  const xGap = flagGeometry.anchorGapX;
+  const yGap = flagGeometry.anchorGapY;
+  const cardWidth = Math.max(
+    cardSize.width,
+    compact ? flagGeometry.compactMinWidth : flagGeometry.minWidth,
+  );
+  const cardHeight = Math.max(
+    cardSize.height,
+    compact ? flagGeometry.compactMinHeight : flagGeometry.minHeight,
+  );
   let left = activeAnchor.x + xGap;
   let top = activeAnchor.y - cardHeight - yGap;
 
@@ -1140,17 +1187,41 @@ function MundaneHoverFlag({ anchor }: { anchor: MundaneFlagAnchor | null }) {
     <div className="pointer-events-none fixed" style={{ left, top, zIndex: 2147483647 }}>
       <div
         ref={cardRef}
-        className="rounded-md border bg-background/95 shadow-md backdrop-blur-sm"
+        data-aries-surface="popover"
+        className="rounded-[var(--aries-radius-md)] border bg-background/95"
         style={{
           borderColor:
-            semanticAlphaColor(payload.accentRole, payload.accent, 0.55) ?? "var(--border)",
-          paddingInline: compact ? 7 : 9,
-          paddingBlock: compact ? 4 : 6,
-          minWidth: compact ? undefined : 96,
-          maxWidth: "min(360px, calc(100vw - 16px))",
+            semanticAlphaColor(
+              payload.accentRole,
+              payload.accent,
+              flagGeometry.accentBorderOpacity,
+            ) ?? "var(--border)",
+          paddingInline: compact
+            ? "calc(var(--aries-control-padding-x) * 7 / 10)"
+            : "calc(var(--aries-control-padding-x) * 9 / 10)",
+          paddingBlock: compact
+            ? "var(--aries-control-padding-y)"
+            : "var(--aries-control-gap)",
+          minWidth: compact
+            ? undefined
+            : "var(--aries-inspector-hover-flag-content-min-width)",
+          maxWidth:
+            "min(var(--aries-dialog-width-xs), calc(100vw - var(--aries-inspector-hover-flag-viewport-margin) - var(--aries-inspector-hover-flag-viewport-margin)))",
+          boxShadow: "var(--aries-inspector-hover-flag-shadow)",
+          backdropFilter:
+            "blur(var(--aries-inspector-hover-flag-backdrop-blur))",
+          WebkitBackdropFilter:
+            "blur(var(--aries-inspector-hover-flag-backdrop-blur))",
         }}
       >
-        <div className="flex items-baseline whitespace-nowrap" style={{ gap: compact ? 4 : 8 }}>
+        <div
+          className="flex items-baseline whitespace-nowrap"
+          style={{
+            gap: compact
+              ? "var(--aries-control-gap-compact)"
+              : "var(--aries-inspector-section-gap)",
+          }}
+        >
           {glyph ? (
             <span
               className="leading-none text-foreground/90"
@@ -1158,24 +1229,56 @@ function MundaneHoverFlag({ anchor }: { anchor: MundaneFlagAnchor | null }) {
                 color: compact
                   ? semanticChartColor(payload.accentRole, rgbCss(payload.accent))
                   : undefined,
-                fontFamily: '"AriesMorinus"',
-                fontSize: compact ? 14 : 16,
+                fontFamily: "var(--aries-font-symbols)",
+                fontSize: compact
+                  ? "var(--aries-font-size-large)"
+                  : "var(--aries-font-size-dialog-title)",
               }}
             >
               {glyph}
             </span>
           ) : null}
-          <span className="font-semibold leading-tight text-foreground/90" style={{ fontSize: compact ? 11 : 13 }}>
+          <span
+            className="font-semibold leading-tight text-foreground/90"
+            style={{
+              fontSize: compact
+                ? "var(--aries-font-size-small)"
+                : "var(--aries-font-size-reading)",
+            }}
+          >
             {title}
           </span>
+          {payload.motionGlyph ? (
+            <span
+              className="shrink-0 leading-none text-foreground/70"
+              style={{
+                color: semanticChartColor(payload.accentRole, rgbCss(payload.accent)),
+                fontFamily:
+                  payload.motionUsesSymbolFont
+                    ? "var(--aries-font-symbols)"
+                    : undefined,
+                fontSize: compact
+                  ? "var(--aries-font-size-section)"
+                  : "var(--aries-font-size-base)",
+              }}
+              aria-label={payload.motionLabel || undefined}
+              title={payload.motionLabel || undefined}
+            >
+              {payload.motionGlyph}
+            </span>
+          ) : null}
         </div>
         {rows.length > 0 ? (
           <div
-            className="grid items-baseline gap-x-2 gap-y-[2px]"
+            className="grid items-baseline gap-x-[var(--aries-inspector-section-gap)] gap-y-[var(--aries-inspector-row-gap)]"
             style={{
               gridTemplateColumns: "auto 1fr",
-              fontSize: compact ? 10 : 11,
-              marginTop: compact ? 4 : 6,
+              fontSize: compact
+                ? "var(--aries-font-size-section)"
+                : "var(--aries-font-size-small)",
+              marginTop: compact
+                ? "var(--aries-control-gap-compact)"
+                : "var(--aries-control-gap)",
             }}
           >
             {rows.map((row, idx) => (
@@ -1206,7 +1309,7 @@ function MundaneFlagRow({ row }: { row: InspectorFlagRow }) {
               key={i}
               style={{
                 color: semanticChartColor(span.colourRole, rgbCss(span.colour)),
-                fontFamily: span.glyph ? '"AriesMorinus"' : undefined,
+                fontFamily: span.glyph ? "var(--aries-font-symbols)" : undefined,
               }}
             >
               {span.text}

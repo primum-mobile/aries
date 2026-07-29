@@ -14,14 +14,14 @@ test("the checked-in style contract resolves one provider graph", () => {
   const result = buildStyleTokenInventory(frontendRoot);
   assert.deepEqual(result.errors, []);
   assert.deepEqual(result.inventory.counts, {
-    tokens: 1420,
-    cssTokens: 1409,
-    cssDeclarations: 1477,
+    tokens: 1482,
+    cssTokens: 1471,
+    cssDeclarations: 1539,
     runtimeOnlyTokens: 7,
     externalTokens: 4,
-    public: 1077,
-    derived: 197,
-    runtime: 146,
+    public: 1110,
+    derived: 198,
+    runtime: 174,
   });
   assert.deepEqual(
     result.inventory.tokens.filter((token) => token.runtimeProviderFiles).map((token) => token.name),
@@ -36,11 +36,19 @@ test("the checked-in style contract resolves one provider graph", () => {
     ],
   );
   assert.deepEqual(result.publicManifest.counts, {
-    public: 1077,
-    editable: 1077,
+    public: 1110,
+    editable: 1110,
     blockedByCoupling: 0,
     supportingDerived: 11,
   });
+  for (const name of [
+    "--aries-wheel-anglo-arrow-inset",
+    "--aries-wheel-anglo-arrow-maximum",
+  ]) {
+    const token = result.inventory.tokens.find((candidate) => candidate.name === name);
+    assert.equal(token?.type, "number", name);
+    assert.equal(token?.unit, "", `${name} is a normalized wheel ratio`);
+  }
   assert.deepEqual(
     result.publicManifest.tokens.filter(({ handoffStatus }) => handoffStatus === "blocked-by-coupling").map(({ cssVar }) => cssVar),
     [],
@@ -104,6 +112,23 @@ test("the checked-in style contract resolves one provider graph", () => {
       "src/components/workshell/appearance-panel.tsx",
       "src/components/workshell/style-token-bridge.tsx",
     ]);
+  }
+  const sectionGap = result.inventory.tokens.find(({ name }) => name === "--aries-section-gap");
+  assert.ok(
+    sectionGap?.consumerFiles.includes("src/components/workshell/settings-dialog.tsx"),
+    "the public panel section gap must reach the reusable Settings section stack",
+  );
+  for (const dependent of [
+    "--aries-form-section-gap",
+    "--aries-inspector-section-gap",
+    "--aries-pane-title-gap",
+    "--aries-sheet-content-gap",
+  ]) {
+    const token = result.inventory.tokens.find(({ name }) => name === dependent);
+    assert.ok(
+      token?.dependencies.includes("--aries-section-gap"),
+      `${dependent} must inherit the global retained-panel rhythm by default`,
+    );
   }
   const uiScale = result.inventory.tokens.find(({ name }) => name === "--aries-ui-scale");
   assert.equal(uiScale?.class, "runtime", "UI scale remains migration/runtime until it scales the complete system");

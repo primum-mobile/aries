@@ -9,7 +9,7 @@ use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     Mutex,
 };
 use std::thread;
@@ -25,6 +25,10 @@ use tauri::{
     AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Position, Size, Url, WebviewUrl,
     WebviewWindow, WebviewWindowBuilder, Window, Wry,
 };
+#[cfg(unix)]
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+#[cfg(unix)]
+use tokio::net::UnixStream;
 
 mod licensing;
 #[cfg(target_os = "windows")]
@@ -35,6 +39,8 @@ struct DaemonProcess {
     stopping: AtomicBool,
     access_allowed: AtomicBool,
     launch_lock: Mutex<()>,
+    http_agent: ureq::Agent,
+    native_transport: NativeDaemonTransport,
     port: u16,
     daemon_base_url: String,
     daemon_token: String,
@@ -54,11 +60,218 @@ impl DaemonProcess {
             stopping: AtomicBool::new(false),
             access_allowed: AtomicBool::new(access_allowed),
             launch_lock: Mutex::new(()),
+            http_agent: ureq::AgentBuilder::new()
+                .timeout(Duration::from_secs(60))
+                .build(),
+            native_transport: NativeDaemonTransport::new(&daemon_token),
             port,
             daemon_base_url,
             daemon_token,
             native_started_at,
         }
+    }
+}
+
+const NATIVE_REQUEST_MAGIC: &[u8; 4] = b"ARQ1";
+const NATIVE_RESPONSE_MAGIC: &[u8; 4] = b"ARS1";
+const NATIVE_RESPONSE_HEADER_BYTES: usize = 10;
+const NATIVE_MAX_PATH_BYTES: usize = 8 * 1024;
+const NATIVE_MAX_BODY_BYTES: usize = 32 * 1024 * 1024;
+const NATIVE_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+
+#[cfg(unix)]
+struct NativeDaemonConnection {
+    generation: u64,
+    stream: Option<UnixStream>,
+}
+
+struct NativeDaemonTransport {
+    #[cfg(unix)]
+    socket_path: PathBuf,
+    #[cfg(unix)]
+    generation: AtomicU64,
+    #[cfg(unix)]
+    connection: tokio::sync::Mutex<NativeDaemonConnection>,
+}
+
+enum NativeTransportError {
+    Unavailable(String),
+    Failed(String),
+}
+
+impl NativeDaemonTransport {
+    fn new(daemon_token: &str) -> Self {
+        #[cfg(unix)]
+        {
+            let token_prefix = daemon_token.get(..12).unwrap_or(daemon_token);
+            let socket_path = std::env::temp_dir().join(format!(
+                "aries-native-{}-{token_prefix}.sock",
+                std::process::id()
+            ));
+            Self {
+                socket_path,
+                generation: AtomicU64::new(0),
+                connection: tokio::sync::Mutex::new(NativeDaemonConnection {
+                    generation: 0,
+                    stream: None,
+                }),
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = daemon_token;
+            Self {}
+        }
+    }
+
+    fn socket_path(&self) -> Option<&Path> {
+        #[cfg(unix)]
+        {
+            Some(&self.socket_path)
+        }
+        #[cfg(not(unix))]
+        {
+            None
+        }
+    }
+
+    fn mark_daemon_starting(&self) {
+        #[cfg(unix)]
+        {
+            self.generation.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    async fn request(
+        &self,
+        request: &NativeDaemonRequest,
+    ) -> Result<NativeDaemonResponse, NativeTransportError> {
+        #[cfg(unix)]
+        {
+            self.request_unix(request).await
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = request;
+            Err(NativeTransportError::Unavailable(
+                "native daemon sockets are unavailable on this platform".to_string(),
+            ))
+        }
+    }
+
+    #[cfg(unix)]
+    async fn request_unix(
+        &self,
+        request: &NativeDaemonRequest,
+    ) -> Result<NativeDaemonResponse, NativeTransportError> {
+        let method = match request.method.trim().to_ascii_uppercase().as_str() {
+            "GET" => 0_u8,
+            "POST" => 1_u8,
+            _ => {
+                return Err(NativeTransportError::Failed(
+                    "native daemon request method is unsupported".to_string(),
+                ));
+            }
+        };
+        let path = request.path.as_bytes();
+        let body = request.body.as_deref().unwrap_or("").as_bytes();
+        if path.is_empty() || path.len() > NATIVE_MAX_PATH_BYTES || path.len() > u16::MAX as usize {
+            return Err(NativeTransportError::Failed(
+                "native daemon request path is too large".to_string(),
+            ));
+        }
+        if body.len() > NATIVE_MAX_BODY_BYTES || body.len() > u32::MAX as usize {
+            return Err(NativeTransportError::Failed(
+                "native daemon request body is too large".to_string(),
+            ));
+        }
+
+        let generation = self.generation.load(Ordering::SeqCst);
+        let mut connection = self.connection.lock().await;
+        if connection.generation != generation {
+            connection.stream = None;
+            connection.generation = generation;
+        }
+        if connection.stream.is_none() {
+            let stream = match tokio::time::timeout(
+                NATIVE_REQUEST_TIMEOUT,
+                UnixStream::connect(&self.socket_path),
+            )
+            .await
+            {
+                Ok(Ok(stream)) => stream,
+                Ok(Err(error)) => {
+                    return Err(NativeTransportError::Unavailable(format!(
+                        "native daemon socket is unavailable: {error}"
+                    )));
+                }
+                Err(_) => {
+                    return Err(NativeTransportError::Unavailable(
+                        "native daemon socket connection timed out".to_string(),
+                    ));
+                }
+            };
+            connection.stream = Some(stream);
+        }
+        let stream = connection
+            .stream
+            .as_mut()
+            .expect("native daemon stream was just connected");
+
+        let mut frame = Vec::with_capacity(11 + path.len() + body.len());
+        frame.extend_from_slice(NATIVE_REQUEST_MAGIC);
+        frame.push(method);
+        frame.extend_from_slice(&(path.len() as u16).to_be_bytes());
+        frame.extend_from_slice(&(body.len() as u32).to_be_bytes());
+        frame.extend_from_slice(path);
+        frame.extend_from_slice(body);
+        let exchange = async {
+            stream
+                .write_all(&frame)
+                .await
+                .map_err(|error| format!("native daemon request write failed: {error}"))?;
+            let mut header = [0_u8; NATIVE_RESPONSE_HEADER_BYTES];
+            stream
+                .read_exact(&mut header)
+                .await
+                .map_err(|error| format!("native daemon response header failed: {error}"))?;
+            if &header[..4] != NATIVE_RESPONSE_MAGIC {
+                return Err("native daemon response protocol is invalid".to_string());
+            }
+            let status = u16::from_be_bytes([header[4], header[5]]);
+            let body_length =
+                u32::from_be_bytes([header[6], header[7], header[8], header[9]]) as usize;
+            if body_length > NATIVE_MAX_BODY_BYTES {
+                return Err("native daemon response is too large".to_string());
+            }
+            let mut response_body = vec![0_u8; body_length];
+            stream
+                .read_exact(&mut response_body)
+                .await
+                .map_err(|error| format!("native daemon response body failed: {error}"))?;
+            let body = String::from_utf8(response_body)
+                .map_err(|error| format!("native daemon response is not UTF-8: {error}"))?;
+            Ok::<(u16, String), String>((status, body))
+        };
+        let (status, body) = match tokio::time::timeout(NATIVE_REQUEST_TIMEOUT, exchange).await {
+            Ok(Ok(response)) => response,
+            Ok(Err(error)) => {
+                connection.stream = None;
+                return Err(NativeTransportError::Failed(error));
+            }
+            Err(_) => {
+                connection.stream = None;
+                return Err(NativeTransportError::Failed(
+                    "native daemon request timed out".to_string(),
+                ));
+            }
+        };
+        Ok(NativeDaemonResponse {
+            status,
+            content_length: body.len(),
+            body,
+            transport: "unix-ipc",
+        })
     }
 }
 
@@ -95,6 +308,19 @@ const NATIVE_MENU_MANIFEST_JSON: &str = include_str!("../native-menu-manifest.js
 const MAIN_WINDOW_STATE_FILE: &str = "main-window-size.json";
 const MAIN_WINDOW_MIN_WIDTH: f64 = 1024.0;
 const MAIN_WINDOW_MIN_HEIGHT: f64 = 720.0;
+const DESKTOP_WEBVIEW_GUARD_SCRIPT: &str = r#"
+(function () {
+  if (window.__ARIES_DESKTOP_WEBVIEW_GUARD__) return;
+  Object.defineProperty(window, "__ARIES_DESKTOP_WEBVIEW_GUARD__", {
+    value: true,
+    configurable: false,
+    writable: false
+  });
+  document.addEventListener("contextmenu", function (event) {
+    event.preventDefault();
+  }, true);
+})();
+"#;
 #[cfg(all(target_os = "macos", not(target_arch = "x86_64")))]
 const MAIN_TRAFFIC_LIGHT_X: f64 = 19.0;
 #[cfg(all(target_os = "macos", not(target_arch = "x86_64")))]
@@ -182,6 +408,23 @@ struct FrontendPerfEvent {
     name: String,
     at: f64,
     detail: serde_json::Value,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeDaemonRequest {
+    method: String,
+    path: String,
+    body: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeDaemonResponse {
+    status: u16,
+    body: String,
+    content_length: usize,
+    transport: &'static str,
 }
 
 const RECENT_CHARTS_SUBMENU_ID: &str = "menu.recent-charts";
@@ -452,7 +695,13 @@ fn write_dev_daemon_connection(
     fs::rename(temporary, path)
 }
 
-fn apply_daemon_environment(command: &mut Command, port: u16, daemon_token: &str, base_dir: &Path) {
+fn apply_daemon_environment(
+    command: &mut Command,
+    port: u16,
+    daemon_token: &str,
+    base_dir: &Path,
+    native_socket_path: Option<&Path>,
+) {
     if let Err(error) = write_dev_daemon_connection(base_dir, port, daemon_token) {
         log::warn!("failed to publish development daemon connection: {error}");
     }
@@ -467,6 +716,9 @@ fn apply_daemon_environment(command: &mut Command, port: u16, daemon_token: &str
         .env("ARIES_DAEMON_PARENT_PID", daemon_parent_pid())
         .env("ARIES_DAEMON_BASE_DIR", base_dir)
         .env("ARIES_DAEMON_CORS_ORIGINS", cors_origins);
+    if let Some(path) = native_socket_path {
+        command.env("ARIES_DAEMON_SOCKET", path);
+    }
 }
 
 fn attach_daemon_logs(command: &mut Command, handle: &tauri::AppHandle) {
@@ -555,9 +807,16 @@ fn legal_document_filename(document: &str) -> Option<&'static str> {
     }
 }
 
+fn valid_native_daemon_path(path: &str) -> bool {
+    (path == "/health" || path.starts_with("/api/"))
+        && !path.contains("://")
+        && !path.contains('\r')
+        && !path.contains('\n')
+}
+
 #[cfg(test)]
 mod legal_document_tests {
-    use super::legal_document_filename;
+    use super::{legal_document_filename, valid_native_daemon_path};
 
     #[test]
     fn legal_document_names_are_allowlisted() {
@@ -568,6 +827,19 @@ mod legal_document_tests {
         );
         assert_eq!(legal_document_filename("../LICENSE"), None);
         assert_eq!(legal_document_filename("DEPENDENCY_LICENSES.txt"), None);
+    }
+
+    #[test]
+    fn native_daemon_paths_stay_inside_the_local_api() {
+        assert!(valid_native_daemon_path("/health"));
+        assert!(valid_native_daemon_path(
+            "/api/workspace/navigate-key?perf=1"
+        ));
+        assert!(!valid_native_daemon_path(
+            "https://example.com/api/workspace"
+        ));
+        assert!(!valid_native_daemon_path("/assets/private"));
+        assert!(!valid_native_daemon_path("/api/workspace\nX-Forged: true"));
     }
 }
 
@@ -589,10 +861,94 @@ fn read_legal_document(app: tauri::AppHandle, document: String) -> Result<String
         .map_err(|error| format!("could not read bundled {filename}: {error}"))
 }
 
+fn send_native_daemon_request(
+    http_agent: &ureq::Agent,
+    access_allowed: bool,
+    daemon_base_url: &str,
+    daemon_token: &str,
+    request: NativeDaemonRequest,
+) -> Result<NativeDaemonResponse, String> {
+    if !access_allowed {
+        return Err("aries daemon access is not licensed".to_string());
+    }
+    if !valid_native_daemon_path(&request.path) {
+        return Err("native daemon path is outside the local API".to_string());
+    }
+    let method = request.method.trim().to_ascii_uppercase();
+    if method != "GET" && method != "POST" {
+        return Err("native daemon request method is unsupported".to_string());
+    }
+
+    let url = format!("{daemon_base_url}{}", request.path);
+    let mut call = http_agent
+        .request(&method, &url)
+        .set("X-Aries-Token", daemon_token);
+    if request.body.is_some() {
+        call = call.set("Content-Type", "application/json");
+    }
+    let response = match request.body {
+        Some(body) => call.send_string(&body),
+        None => call.call(),
+    };
+    let response = match response {
+        Ok(response) => response,
+        Err(ureq::Error::Status(_, response)) => response,
+        Err(ureq::Error::Transport(error)) => {
+            return Err(format!("native daemon transport failed: {error}"));
+        }
+    };
+    let status = response.status();
+    let body = response
+        .into_string()
+        .map_err(|error| format!("native daemon response failed: {error}"))?;
+    Ok(NativeDaemonResponse {
+        status,
+        content_length: body.len(),
+        body,
+        transport: "rust-http-fallback",
+    })
+}
+
+#[tauri::command]
+async fn native_daemon_request(
+    state: tauri::State<'_, DaemonProcess>,
+    request: NativeDaemonRequest,
+) -> Result<NativeDaemonResponse, String> {
+    let access_allowed = state.access_allowed.load(Ordering::SeqCst);
+    if !access_allowed {
+        return Err("aries daemon access is not licensed".to_string());
+    }
+    if !valid_native_daemon_path(&request.path) {
+        return Err("native daemon path is outside the local API".to_string());
+    }
+    match state.native_transport.request(&request).await {
+        Ok(response) => Ok(response),
+        Err(NativeTransportError::Failed(error)) => Err(error),
+        Err(NativeTransportError::Unavailable(error)) => {
+            log::warn!("{error}; using local HTTP compatibility transport");
+            let http_agent = state.http_agent.clone();
+            let daemon_base_url = state.daemon_base_url.clone();
+            let daemon_token = state.daemon_token.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                send_native_daemon_request(
+                    &http_agent,
+                    access_allowed,
+                    &daemon_base_url,
+                    &daemon_token,
+                    request,
+                )
+            })
+            .await
+            .map_err(|task_error| format!("native daemon fallback task failed: {task_error}"))?
+        }
+    }
+}
+
 fn spawn_daemon(
     handle: &tauri::AppHandle,
     port: u16,
     daemon_token: &str,
+    native_socket_path: Option<&Path>,
 ) -> std::io::Result<Child> {
     let mut command = if cfg!(debug_assertions) {
         let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -616,7 +972,13 @@ fn spawn_daemon(
         if let Ok(python_path) = std::env::join_paths(python_paths) {
             command.env("PYTHONPATH", python_path);
         }
-        apply_daemon_environment(&mut command, port, daemon_token, &repo_root);
+        apply_daemon_environment(
+            &mut command,
+            port,
+            daemon_token,
+            &repo_root,
+            native_socket_path,
+        );
         command
     } else {
         let resource_dir = bundled_resource_dir(handle)?;
@@ -631,7 +993,13 @@ fn spawn_daemon(
             .join(daemon_binary);
         if resource_sidecar.exists() {
             let mut command = Command::new(resource_sidecar);
-            apply_daemon_environment(&mut command, port, daemon_token, &resource_dir);
+            apply_daemon_environment(
+                &mut command,
+                port,
+                daemon_token,
+                &resource_dir,
+                native_socket_path,
+            );
             attach_daemon_logs(&mut command, handle);
             configure_daemon_process(&mut command);
             return command.spawn();
@@ -641,14 +1009,26 @@ fn spawn_daemon(
             .and_then(|path| path.parent().map(|parent| parent.join(daemon_binary)));
         if let Some(bin_path) = adjacent_sidecar.filter(|path| path.exists()) {
             let mut command = Command::new(bin_path);
-            apply_daemon_environment(&mut command, port, daemon_token, &resource_dir);
+            apply_daemon_environment(
+                &mut command,
+                port,
+                daemon_token,
+                &resource_dir,
+                native_socket_path,
+            );
             attach_daemon_logs(&mut command, handle);
             configure_daemon_process(&mut command);
             return command.spawn();
         }
         let bin_path = resource_dir.join("binaries").join(daemon_binary);
         let mut command = Command::new(bin_path);
-        apply_daemon_environment(&mut command, port, daemon_token, &resource_dir);
+        apply_daemon_environment(
+            &mut command,
+            port,
+            daemon_token,
+            &resource_dir,
+            native_socket_path,
+        );
         command
     };
     attach_daemon_logs(&mut command, handle);
@@ -727,8 +1107,14 @@ fn start_daemon_if_permitted(app: &AppHandle<Wry>, reason: &str) -> Result<Optio
         }
     }
 
-    let mut daemon = spawn_daemon(app, state.port, &state.daemon_token)
-        .map_err(|error| format!("failed to spawn aries daemon: {error}"))?;
+    state.native_transport.mark_daemon_starting();
+    let mut daemon = spawn_daemon(
+        app,
+        state.port,
+        &state.daemon_token,
+        state.native_transport.socket_path(),
+    )
+    .map_err(|error| format!("failed to spawn aries daemon: {error}"))?;
     let pid = daemon.id();
     if state.stopping.load(Ordering::SeqCst) || !state.access_allowed.load(Ordering::SeqCst) {
         let _ = daemon.kill();
@@ -1358,6 +1744,68 @@ fn schedule_compact_macos_traffic_lights(window: WebviewWindow<Wry>, context: &'
     }
 }
 
+#[cfg(target_os = "macos")]
+fn sampled_macos_color_hex(color: *mut objc2_app_kit::NSColor) -> Option<String> {
+    use objc2_app_kit::NSColorSpace;
+
+    // SAFETY: AppKit supplies this pointer to the selection handler and keeps
+    // the NSColor alive for the duration of the callback. A null pointer means
+    // the user cancelled the sampler.
+    let color = unsafe { color.as_ref() }?;
+    let color = color.colorUsingColorSpace(&NSColorSpace::sRGBColorSpace())?;
+    let component = |value: f64| -> u8 { (value.clamp(0.0, 1.0) * 255.0).round() as u8 };
+    Some(format!(
+        "#{:02X}{:02X}{:02X}",
+        component(color.redComponent()),
+        component(color.greenComponent()),
+        component(color.blueComponent()),
+    ))
+}
+
+#[tauri::command]
+async fn sample_screen_color(app: AppHandle) -> Result<Option<String>, String> {
+    #[cfg(target_os = "macos")]
+    {
+        use block2::RcBlock;
+        use objc2_app_kit::{NSColor, NSColorSampler};
+        use std::sync::Arc;
+        use tokio::sync::oneshot;
+
+        let (sender, receiver) = oneshot::channel();
+        app.run_on_main_thread(move || {
+            let sender = Arc::new(Mutex::new(Some(sender)));
+            let selection_sender = Arc::clone(&sender);
+            let selection_handler = RcBlock::new(move |color: *mut NSColor| {
+                let sampled = sampled_macos_color_hex(color);
+                let mut sender = selection_sender
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                if let Some(sender) = sender.take() {
+                    let _ = sender.send(sampled);
+                }
+            });
+            let sampler = NSColorSampler::new();
+            // SAFETY: NSColorSampler requires this call on the main thread;
+            // run_on_main_thread provides that guarantee. AppKit retains the
+            // sampler and selection block until selection or cancellation.
+            unsafe {
+                sampler.showSamplerWithSelectionHandler(&selection_handler);
+            }
+        })
+        .map_err(|error| format!("failed to start the macOS color sampler: {error}"))?;
+
+        return receiver
+            .await
+            .map_err(|error| format!("macOS color sampler did not finish: {error}"));
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        Err("native screen color sampling is unavailable on this platform".to_string())
+    }
+}
+
 fn build_manifest_submenu(
     handle: &AppHandle,
     node: &NativeMenuNode,
@@ -1740,13 +2188,15 @@ pub fn run() {
     let windows_caption_inset = windows_titlebar::caption_controls_inset_css_px();
     #[cfg(not(target_os = "windows"))]
     let windows_caption_inset = 0;
-    let init_script = format!(
+    let runtime_init_script = format!(
     "Object.defineProperty(window,\"__ARIES_TAURI_RUNTIME__\",{{value:true,configurable:false,writable:false}});Object.defineProperty(window,\"__ARIES_NATIVE_PLATFORM__\",{{value:\"{native_platform}\",configurable:false,writable:false}});Object.defineProperty(window,\"__ARIES_WINDOWS_CAPTION_INSET__\",{{value:{windows_caption_inset},configurable:false,writable:false}});Object.defineProperty(window,\"__ARIES_DAEMON_URL__\",{{value:\"{daemon_base_url}\",configurable:false,writable:false}});Object.defineProperty(window,\"__ARIES_DAEMON_TOKEN__\",{{value:\"{daemon_token}\",configurable:false,writable:false}});Object.defineProperty(window,\"__ARIES_NATIVE_PERF__\",{{value:{native_perf},configurable:false,writable:false}});Object.defineProperty(window,\"__ARIES_SPEEDLOG__\",{{value:{speedlog},configurable:false,writable:false}});"
   );
+    let init_script = format!("{runtime_init_script}{DESKTOP_WEBVIEW_GUARD_SCRIPT}");
 
     tauri::Builder::default()
         .append_invoke_initialization_script(init_script)
         .menu(build_native_menu)
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -1761,6 +2211,8 @@ pub fn run() {
             confirm_quit,
             record_frontend_perf,
             read_legal_document,
+            native_daemon_request,
+            sample_screen_color,
             licensing::license_status,
             licensing::license_activate,
             licensing::license_refresh,

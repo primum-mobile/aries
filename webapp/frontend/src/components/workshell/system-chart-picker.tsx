@@ -712,12 +712,12 @@ export function SystemChartPicker({
       {view === "list" ? (
         <>
           <header className="flex shrink-0 items-center gap-[var(--aries-pane-control-gap-x)] px-[var(--aries-pane-wide-inset)] pb-[var(--aries-pane-header-padding-y)] pt-[var(--aries-pane-content-padding)]">
-            <div className="min-w-0 flex-1 truncate text-[18px] leading-none">
+            <div className="min-w-0 flex-1 truncate text-[length:var(--aries-font-size-dialog-title)] leading-none">
               {directory || t("picker.chartCollections")}
             </div>
             <Button
               variant="outline"
-              className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width-wide)] rounded-md text-[length:var(--aries-font-size-large)] font-normal"
+              className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width-wide)] text-[length:var(--aries-font-size-large)] font-normal"
               onClick={() => setView("search")}
             >
               {t("picker.search")}
@@ -870,7 +870,7 @@ export function SystemChartPicker({
             {canSynastry ? (
               <Button
                 variant="outline"
-                className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width-action)] rounded-md text-[length:var(--aries-font-size-large)] font-normal"
+                className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width-action)] text-[length:var(--aries-font-size-large)] font-normal"
                 onClick={() => void openSelected(true)}
               >
                 {t("picker.synastry")}
@@ -878,7 +878,7 @@ export function SystemChartPicker({
             ) : null}
             <Button
               variant="outline"
-              className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width-wide)] rounded-md text-[length:var(--aries-font-size-large)] font-normal"
+              className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width-wide)] text-[length:var(--aries-font-size-large)] font-normal"
               onClick={() => void openSelected(false)}
               disabled={!canOpen}
             >
@@ -886,7 +886,7 @@ export function SystemChartPicker({
             </Button>
             <Button
               variant="outline"
-              className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width-wide)] rounded-md text-[length:var(--aries-font-size-large)] font-normal"
+              className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width-wide)] text-[length:var(--aries-font-size-large)] font-normal"
               onClick={closeAndReset}
             >
               {t("picker.cancel")}
@@ -939,7 +939,8 @@ function RenameChartDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[color:var(--aries-overlay-scrim)] px-[var(--aries-pane-wide-inset)]">
       <form
-        className="w-full max-w-[var(--aries-dialog-width-xs)] rounded-md border border-border bg-background p-[var(--aries-dialog-padding)] shadow-xl"
+        data-aries-surface="overlay"
+        className="w-full max-w-[var(--aries-dialog-width-xs)] rounded-[var(--aries-radius-dialog)] border border-border bg-background p-[var(--aries-dialog-padding)] shadow-xl"
         onSubmit={(event) => {
           event.preventDefault();
           onConfirm();
@@ -984,7 +985,10 @@ function DeleteChartsDialog({
       : t("picker.deleteBodyOne", { name: rows[0]?.name ?? t("picker.chartFallback") });
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[color:var(--aries-overlay-scrim)] px-[var(--aries-pane-wide-inset)]">
-      <div className="w-full max-w-[var(--aries-dialog-width-confirm)] rounded-md border border-border bg-background p-[var(--aries-dialog-padding)] shadow-xl">
+      <div
+        data-aries-surface="overlay"
+        className="w-full max-w-[var(--aries-dialog-width-confirm)] rounded-[var(--aries-radius-dialog)] border border-border bg-background p-[var(--aries-dialog-padding)] shadow-xl"
+      >
         <div className="mb-[var(--aries-dialog-header-gap)] text-[length:var(--aries-font-size-large)] font-medium">{title}</div>
         <p className="text-[length:var(--aries-font-size-reading)] leading-[var(--aries-font-line-height-reading)] text-muted-foreground">{body}</p>
         <div className="mt-[var(--aries-dialog-gap)] flex justify-end gap-[var(--aries-dialog-footer-gap)]">
@@ -1436,7 +1440,7 @@ function ClauseDrawer({
 }) {
   const t = useT();
   return (
-    <section className="min-w-0 overflow-hidden rounded-md border border-border bg-background">
+    <section className="min-w-0 overflow-hidden rounded-[var(--aries-radius-md)] border border-border bg-background">
       <div className="flex min-h-[var(--aries-control-height-large)] items-center gap-[var(--aries-form-field-gap)] px-[var(--aries-control-padding-x-compact)]">
         <button
           type="button"
@@ -1446,10 +1450,10 @@ function ClauseDrawer({
         >
           {open ? <ChevronDown className="size-[var(--aries-control-icon-size)] shrink-0 text-muted-foreground" /> : <ChevronRight className="size-[var(--aries-control-icon-size)] shrink-0 text-muted-foreground" />}
           <span className="min-w-0">
-            <span className="mr-2 text-[length:var(--aries-font-size-base)] font-semibold">{title}</span>
+            <span className="mr-[var(--aries-form-field-gap)] text-[length:var(--aries-font-size-base)] font-semibold">{title}</span>
             <span className="text-[length:var(--aries-font-size-small)] text-muted-foreground">{subtitle}</span>
           </span>
-          <span className="ml-auto rounded-sm border border-border px-1.5 py-0.5 text-[length:var(--aries-font-size-section)] tabular-nums text-muted-foreground">
+          <span className="ml-auto rounded-[var(--aries-radius-control-compact)] border border-border px-[var(--aries-control-gap)] py-[calc(var(--aries-control-padding-y)/2)] text-[length:var(--aries-font-size-section)] tabular-nums text-muted-foreground">
             {count}
           </span>
         </button>
@@ -1551,10 +1555,11 @@ function Choice({
   const t = useT();
   return (
     <select
+      data-aries-control-appearance="local"
       value={value}
       aria-label={ariaLabel}
       onChange={(event) => onChange(event.target.value)}
-      className="h-[var(--aries-control-height-small)] min-w-0 rounded-md border border-input bg-background px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-base)]"
+      className="h-[var(--aries-control-height-small)] min-w-0 rounded-[var(--aries-radius-ui-control-compact)] border border-input bg-background px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-base)]"
     >
       {(choices.length ? choices : [{ value: "", label: t("picker.any") }]).map((choice) => (
         <option key={choice.value} value={choice.value}>
@@ -1616,7 +1621,7 @@ function ChartMatchGlyph({
 }) {
   return (
     <span
-      className="font-symbols shrink-0 text-[15px]"
+      className="font-symbols shrink-0 text-[length:var(--aries-font-size-large)]"
       style={{ color: semanticChartColor(colorRole, color) }}
       title={title}
       aria-hidden={!title}

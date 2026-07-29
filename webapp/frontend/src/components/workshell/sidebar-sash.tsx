@@ -43,7 +43,11 @@ const RESIZING_ATTR = "data-sidebar-resizing";
  * of the pointermove loop, matching the React guidance to keep high-frequency
  * transient values out of render state.
  */
-export function SidebarSash() {
+export function SidebarSash({
+  activeAstrocartDocumentId,
+}: {
+  activeAstrocartDocumentId: string | null;
+}) {
   const t = useT();
   const sidebarOpen = useFrameLayoutStore((s) => s.sidebarOpen);
   const width = useFrameLayoutStore((s) => s.sidebarWidth);
@@ -67,7 +71,9 @@ export function SidebarSash() {
   const eclipsesPane = useWorkspaceStore((s) => s.eclipsesPane);
   const lunarMansionsPane = useWorkspaceStore((s) => s.lunarMansionsPane);
   const synodicCyclesPane = useWorkspaceStore((s) => s.synodicCyclesPane);
+  const aspectListPane = useWorkspaceStore((s) => s.aspectListPane);
   const ascensionalTransitsPane = useWorkspaceStore((s) => s.ascensionalTransitsPane);
+  const astrocartControlsPane = useWorkspaceStore((s) => s.astrocartControlsPane);
   const featureCatalogPane = useWorkspaceStore((s) => s.featureCatalogPane);
   const activeRightPane = activeRightPaneModule({
     inspectorOpen,
@@ -84,7 +90,10 @@ export function SidebarSash() {
     eclipsesPane,
     lunarMansionsPane,
     synodicCyclesPane,
+    aspectListPane,
     ascensionalTransitsPane,
+    astrocartControlsPane,
+    activeAstrocartDocumentId,
     featureCatalogPane,
   });
   const visualWidth = activeRightPane
@@ -227,7 +236,10 @@ export function SidebarSash() {
         eclipsesPane: workspaceState.eclipsesPane,
         lunarMansionsPane: workspaceState.lunarMansionsPane,
         synodicCyclesPane: workspaceState.synodicCyclesPane,
+        aspectListPane: workspaceState.aspectListPane,
         ascensionalTransitsPane: workspaceState.ascensionalTransitsPane,
+        astrocartControlsPane: workspaceState.astrocartControlsPane,
+        activeAstrocartDocumentId,
         featureCatalogPane: workspaceState.featureCatalogPane,
       });
       const currentVisualWidth = currentRightPane
@@ -276,7 +288,13 @@ export function SidebarSash() {
         /* synthetic events may lack a real pointer to capture */
       }
     },
-    [endDrag, sidebarOpen, setSidebarDragging, updateDragWidth],
+    [
+      activeAstrocartDocumentId,
+      endDrag,
+      sidebarOpen,
+      setSidebarDragging,
+      updateDragWidth,
+    ],
   );
 
   React.useEffect(() => {

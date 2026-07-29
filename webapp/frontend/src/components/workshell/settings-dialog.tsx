@@ -153,7 +153,7 @@ function SettingsBody({
 
   if (error) {
     return (
-      <div className="px-4 py-8 text-center text-[length:var(--aries-font-size-base)] text-foreground/70">
+      <div className="px-[var(--aries-dialog-padding)] py-[var(--aries-section-gap)] text-center text-[length:var(--aries-font-size-base)] text-foreground/70">
         {t("settings.loadFailed")}: {error}
       </div>
     );
@@ -161,11 +161,11 @@ function SettingsBody({
 
   return (
     <>
-      <DialogHeader className="border-b border-border/40 px-4 pb-3 pt-4">
+      <DialogHeader className="border-b border-border/40 px-[var(--aries-dialog-padding)] pb-[var(--aries-pane-header-padding-y)] pt-[var(--aries-dialog-padding)]">
         <DialogTitle className="text-[length:var(--aries-font-size-large)] font-medium tracking-tight">{t("settings.title")}</DialogTitle>
       </DialogHeader>
       {opts === null ? (
-        <div className="px-4 py-10 text-center text-[length:var(--aries-font-size-base)] text-foreground/55">{t("settings.loading")}</div>
+        <div className="px-[var(--aries-dialog-padding)] py-[calc(var(--aries-section-gap)*2)] text-center text-[length:var(--aries-font-size-base)] text-foreground/55">{t("settings.loading")}</div>
       ) : (
         <Tabs defaultValue={initialTab} orientation="vertical" className="gap-[var(--aries-tabs-rail-gap)]">
           <TabsList
@@ -279,7 +279,7 @@ function SettingsBody({
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mb-[var(--aries-control-gap)] mt-[var(--aries-form-row-gap)] text-[length:var(--aries-font-size-section)] font-medium text-foreground/45 first:mt-0">
+    <div className="mb-[var(--aries-control-gap)] mt-[var(--aries-section-gap)] text-[length:var(--aries-font-size-section)] font-medium text-foreground/45 first:mt-0">
       {children}
     </div>
   );
@@ -295,7 +295,7 @@ function Row({ label, children }: { label: React.ReactNode; children: React.Reac
 }
 
 function SubLabel({ children }: { children: React.ReactNode }) {
-  return <span className="pl-4 text-foreground/70">{children}</span>;
+  return <span className="pl-[var(--aries-panel-padding-x)] text-foreground/70">{children}</span>;
 }
 
 function rgbToHex(rgb: RGB | null): string {
@@ -324,7 +324,7 @@ function Swatch({
   onCommit: (rgb: RGB) => void;
 }) {
   return (
-    <label className="relative block h-4 w-7 cursor-pointer overflow-hidden rounded-xs border border-border/60">
+    <label className="relative block h-[var(--aries-control-icon-size-default)] w-[var(--aries-control-height-small)] cursor-pointer overflow-hidden rounded-[var(--aries-radius-xs)] border border-border/60">
       <span
         aria-hidden
         className="absolute inset-0"
@@ -392,6 +392,7 @@ function NumberField({
 }) {
   return (
     <input
+      data-aries-control-appearance="local"
       key={value}
       type="number"
       step={step}
@@ -425,6 +426,7 @@ function Select({
 }) {
   return (
     <select
+      data-aries-control-appearance="local"
       value={value}
       onChange={(e) => onChange(e.target.value)}
       style={{ width }}
@@ -437,7 +439,7 @@ function Select({
 
 function Glyph({ ch }: { ch: string }) {
   return (
-    <span className="font-symbols inline-block w-4 text-center text-[length:var(--aries-font-size-reading)] text-foreground/70">
+    <span className="font-symbols inline-block w-[var(--aries-control-icon-size-default)] text-center text-[length:var(--aries-font-size-reading)] text-foreground/70">
       {ch}
     </span>
   );
@@ -460,7 +462,7 @@ function Slider({
 }) {
   const [local, setLocal] = React.useState(value);
   return (
-    <span className="flex items-center gap-2">
+    <span className="flex items-center gap-[var(--aries-form-field-gap)]">
       <input
         type="range"
         min={min}
@@ -531,6 +533,28 @@ function ExportTab({ opts, sendPatch }: TabProps) {
 
   return (
     <div className="flex flex-col gap-0">
+      <SectionLabel>{t("settings.pngCopy")}</SectionLabel>
+      <Row label={t("settings.pngAppearance")}>
+        <Select
+          value={e.pngChartAppearance}
+          width={190}
+          onChange={(value) => setPatch({ pngChartAppearance: value as OptionsPayload["export"]["pngChartAppearance"] })}
+        >
+          {e.pngChartAppearanceChoices.map((choice) => (
+            <option key={choice.value} value={choice.value}>
+              {t(choice.labelKey)}
+            </option>
+          ))}
+        </Select>
+      </Row>
+      <Row label={t("settings.includeOverlays")}>
+        <Toggle checked={e.pngIncludeOverlays} onChange={(value) => setPatch({ pngIncludeOverlays: value })} />
+      </Row>
+      <Row label={t("settings.pngFormat")}>
+        <span className="text-[length:var(--aries-font-size-base)] text-foreground/55">
+          {t("settings.pngSquare")}
+        </span>
+      </Row>
       <SectionLabel>{t("settings.pdf")}</SectionLabel>
       <Row label={t("settings.chartColors")}>
         <Select
@@ -545,8 +569,28 @@ function ExportTab({ opts, sendPatch }: TabProps) {
           ))}
         </Select>
       </Row>
+      <Row label={t("settings.pdfRasterPreset")}>
+        <Select
+          value={e.pdfChartRasterPreset}
+          width={190}
+          onChange={(value) => setPatch({ pdfChartRasterPreset: value as OptionsPayload["export"]["pdfChartRasterPreset"] })}
+        >
+          {e.pdfChartRasterPresetChoices.map((choice) => (
+            <option key={choice.value} value={choice.value}>
+              {t(choice.labelKey)}
+            </option>
+          ))}
+        </Select>
+      </Row>
       <Row label={t("settings.includeOverlays")}>
         <Toggle checked={e.pdfIncludeOverlays} onChange={(value) => setPatch({ pdfIncludeOverlays: value })} />
+      </Row>
+      <SectionLabel>{t("settings.listExports")}</SectionLabel>
+      <Row label={t("settings.showAspectSymbolsInListExports")}>
+        <Toggle
+          checked={e.listExportAspectSymbols}
+          onChange={(value) => setPatch({ listExportAspectSymbols: value })}
+        />
       </Row>
     </div>
   );
@@ -638,14 +682,14 @@ function ColorsTab({
   return (
     <div className="flex flex-col gap-0">
       <SectionLabel>{t("settings.palettePreset")}</SectionLabel>
-      <div className="flex flex-wrap gap-1.5 pb-1">
+      <div className="flex flex-wrap gap-[var(--aries-control-gap)] pb-[var(--aries-segmented-control-padding)]">
         {opts.themePresets.map((preset) => (
           <button
             key={preset.name}
             type="button"
             onClick={() => applyPreset(preset.name)}
             aria-pressed={Boolean(preset.selected)}
-            className={`rounded-md border px-2.5 py-1 text-[length:var(--aries-font-size-small)] hover:border-border hover:text-foreground ${
+            className={`rounded-[var(--aries-radius-control-compact)] border px-[var(--aries-control-padding-x)] py-[var(--aries-control-padding-y)] text-[length:var(--aries-font-size-small)] hover:border-border hover:text-foreground ${
               preset.selected
                 ? "border-foreground/35 bg-foreground/10 text-foreground"
                 : "border-border/60 text-foreground/80"
@@ -655,11 +699,11 @@ function ColorsTab({
           </button>
         ))}
       </div>
-      <div className="flex flex-wrap gap-1.5 pb-1">
+      <div className="flex flex-wrap gap-[var(--aries-control-gap)] pb-[var(--aries-segmented-control-padding)]">
         <button
           type="button"
           onClick={copyTable}
-          className="rounded-md border border-border/60 px-2.5 py-1 text-[length:var(--aries-font-size-small)] text-foreground/80 hover:border-border hover:text-foreground"
+          className="rounded-[var(--aries-radius-control-compact)] border border-border/60 px-[var(--aries-control-padding-x)] py-[var(--aries-control-padding-y)] text-[length:var(--aries-font-size-small)] text-foreground/80 hover:border-border hover:text-foreground"
         >
           {t("settings.copyTable")}
         </button>
@@ -699,7 +743,7 @@ function ColorsTab({
         <Row
           key={p.index}
           label={
-            <span className="flex items-center gap-1.5">
+            <span className="flex items-center gap-[var(--aries-control-gap)]">
               <Glyph ch={p.glyph} />
               {p.label}
             </span>
@@ -717,7 +761,7 @@ function ColorsTab({
         <Row
           key={label}
           label={
-            <span className="flex items-center gap-1.5">
+            <span className="flex items-center gap-[var(--aries-control-gap)]">
               <Glyph ch={cat.aspectGlyphs[i] ?? ""} />
               {label}
             </span>
@@ -739,12 +783,19 @@ const MINOR_ASPECT_INDICES = new Set([1, 2, 4, 7, 8, 9, 11]);
 function AppearanceTab({ opts, sendPatch }: TabProps) {
   const t = useT();
   const d = opts.display;
+  const aspectList = opts.aspectList;
   const q = opts.quickCharts;
   const cat = opts.catalog;
   type DisplayPatch = Partial<OptionsPayload["display"]>;
   type QuickChartsPatch = Partial<OptionsQuickCharts>;
   const setDisplayPatch = (patch: DisplayPatch) => {
     sendPatch({ display: patch }, { ...opts, display: { ...d, ...patch } });
+  };
+  const setAspectListPatch = (patch: Partial<OptionsPayload["aspectList"]>) => {
+    sendPatch(
+      { aspectList: patch },
+      { ...opts, aspectList: { ...aspectList, ...patch } },
+    );
   };
   const setQuickChartsPatch = (patch: QuickChartsPatch) => {
     sendPatch({ quickCharts: patch }, { ...opts, quickCharts: { ...q, ...patch } });
@@ -849,7 +900,7 @@ function AppearanceTab({ opts, sendPatch }: TabProps) {
         <Row
           key={label}
           label={
-            <span className="flex items-center gap-1.5">
+            <span className="flex items-center gap-[var(--aries-control-gap)]">
               <Glyph ch={cat.aspectGlyphs[i] ?? ""} />
               {label}
             </span>
@@ -862,6 +913,37 @@ function AppearanceTab({ opts, sendPatch }: TabProps) {
           />
         </Row>
       ))}
+      <Row label={t("settings.aspectsToAngles")}>
+        <span />
+      </Row>
+      <Row label={<SubLabel>{t("primdir.angleAsc")}</SubLabel>}>
+        <Toggle
+          checked={d.showaspectstoasc}
+          disabled={!d.aspects}
+          onChange={(v) => setBool("showaspectstoasc", v)}
+        />
+      </Row>
+      <Row label={<SubLabel>{t("primdir.angleMC")}</SubLabel>}>
+        <Toggle
+          checked={d.showaspectstomc}
+          disabled={!d.aspects}
+          onChange={(v) => setBool("showaspectstomc", v)}
+        />
+      </Row>
+      <Row label={<SubLabel>{t("primdir.angleDsc")}</SubLabel>}>
+        <Toggle
+          checked={d.showaspectstodsc}
+          disabled={!d.aspects}
+          onChange={(v) => setBool("showaspectstodsc", v)}
+        />
+      </Row>
+      <Row label={<SubLabel>{t("primdir.angleIC")}</SubLabel>}>
+        <Toggle
+          checked={d.showaspectstoic}
+          disabled={!d.aspects}
+          onChange={(v) => setBool("showaspectstoic", v)}
+        />
+      </Row>
       {/* Aspect behaviour toggles (appearance1dlg.py). The exclusive-on-click subs
           are gated on their master (and the master on `aspects`) — mirrors
           _sync_dependent_aspect_toggles (appearance1dlg.py:726-730). */}
@@ -935,7 +1017,7 @@ function AppearanceTab({ opts, sendPatch }: TabProps) {
         <Row
           key={item.label}
           label={
-            <span className="flex items-center gap-1.5">
+            <span className="flex items-center gap-[var(--aries-control-gap)]">
               <Glyph ch={item.glyph} />
               {item.label}
             </span>
@@ -992,6 +1074,13 @@ function AppearanceTab({ opts, sendPatch }: TabProps) {
       </Row>
       <Row label={t("settings.houses")}>
         <Toggle checked={d.houses} onChange={(v) => setBool("houses", v)} />
+      </Row>
+      <Row label={<SubLabel>{t("settings.outerHouseLines")}</SubLabel>}>
+        <Toggle
+          checked={d.houses && d.showouterhouselines}
+          disabled={!d.houses}
+          onChange={(v) => setBool("showouterhouselines", v)}
+        />
       </Row>
       <Row label={t("settings.inTables")}>
         <Toggle checked={d.intables} onChange={(v) => setBool("intables", v)} />
@@ -1234,6 +1323,14 @@ function AppearanceTab({ opts, sendPatch }: TabProps) {
       <Row label={t("settings.showChartNavigationBar")}>
         <Toggle checked={d.show_help_chip} onChange={(v) => setBool("show_help_chip", v)} />
       </Row>
+
+      <SectionLabel>{t("aspectList.title")}</SectionLabel>
+      <Row label={t("settings.showAspectsForDerivedPoints")}>
+        <Toggle
+          checked={aspectList.showAspectsForDerivedPoints}
+          onChange={(v) => setAspectListPatch({ showAspectsForDerivedPoints: v })}
+        />
+      </Row>
     </div>
   );
 }
@@ -1361,7 +1458,7 @@ function HouseSystemTab({ opts, sendPatch }: TabProps) {
           key={entry.code}
           type="button"
           onClick={() => pick(entry.code)}
-          className="flex h-7 items-center justify-between border-b border-border/40 text-left last:border-b-0"
+          className="flex h-[var(--aries-control-height-small)] items-center justify-between border-b border-border/40 text-left last:border-b-0"
         >
           <span className="text-[length:var(--aries-font-size-base)] text-foreground/85">{entry.label}</span>
           <span
@@ -1495,7 +1592,7 @@ function OrbsTab({ opts, sendPatch }: TabProps) {
         <Row
           key={label}
           label={
-            <span className="flex items-center gap-1.5">
+            <span className="flex items-center gap-[var(--aries-control-gap)]">
               <Glyph ch={cat.aspectGlyphs[i] ?? ""} />
               {label}
             </span>
@@ -1659,9 +1756,9 @@ function DignityGridEditor({ opts, sendPatch }: TabProps) {
         <table className="border-separate border-spacing-0 text-[length:var(--aries-font-size-small)]">
           <thead>
             <tr>
-              <th className="sticky left-0 z-10 bg-popover px-1 py-0.5 text-left font-normal text-foreground/55" />
+              <th className="sticky left-0 z-10 bg-popover px-[var(--aries-table-cell-x-standard)] py-[var(--aries-segmented-control-padding)] text-left font-normal text-foreground/55" />
               {SIGN_GLYPH_CHARS.map((ch, si) => (
-                <th key={si} className="px-1 py-0.5 text-center font-normal text-foreground/55">
+                <th key={si} className="px-[var(--aries-table-cell-x-standard)] py-[var(--aries-segmented-control-padding)] text-center font-normal text-foreground/55">
                   <Glyph ch={ch} />
                 </th>
               ))}
@@ -1671,12 +1768,12 @@ function DignityGridEditor({ opts, sendPatch }: TabProps) {
             {planets.map((plName, pi) =>
               types.map((tyName, ti) => (
                 <tr key={`${pi}-${ti}`}>
-                  <td className="sticky left-0 z-10 whitespace-nowrap bg-popover px-1 py-0.5 text-foreground/70">
+                  <td className="sticky left-0 z-10 whitespace-nowrap bg-popover px-[var(--aries-table-cell-x-standard)] py-[var(--aries-segmented-control-padding)] text-foreground/70">
                     {plName}
                     <span className="ml-1 text-foreground/40">{ti === 0 ? t("settings.domicileAbbr") : t("settings.exaltationAbbr")}</span>
                   </td>
                   {SIGN_GLYPH_CHARS.map((_, si) => (
-                    <td key={si} className="px-1 py-0.5 text-center">
+                    <td key={si} className="px-[var(--aries-table-cell-x-standard)] py-[var(--aries-segmented-control-padding)] text-center">
                       <input
                         type="checkbox"
                         checked={Boolean(grid[pi]?.[ti]?.[si])}
@@ -1759,7 +1856,7 @@ function TermsGridEditor({ opts, sendPatch }: TabProps) {
               const valid = termSignValid(row);
               return (
                 <tr key={si}>
-                  <td className="whitespace-nowrap px-1 text-foreground/70">
+                  <td className="whitespace-nowrap px-[var(--aries-table-cell-x-standard)] text-foreground/70">
                     <Glyph ch={SIGN_GLYPH_CHARS[si]} />
                     <span className="ml-1 text-foreground/55">{signLabels[si]}</span>
                   </td>
@@ -1775,7 +1872,7 @@ function TermsGridEditor({ opts, sendPatch }: TabProps) {
                       </span>
                     </td>
                   ))}
-                  <td className="px-1 text-right tabular-nums text-foreground/40">
+                  <td className="px-[var(--aries-table-cell-x-standard)] text-right tabular-nums text-foreground/40">
                     {valid ? "" : `∑ ${row.reduce((a, [, d]) => a + d, 0)}`}
                   </td>
                 </tr>
@@ -1784,7 +1881,7 @@ function TermsGridEditor({ opts, sendPatch }: TabProps) {
           </tbody>
         </table>
       </div>
-      <p className="px-1 pb-2 text-[length:var(--aries-font-size-section)] text-foreground/40">
+      <p className="px-[var(--aries-table-cell-x-standard)] pb-[var(--aries-form-field-gap)] text-[length:var(--aries-font-size-section)] text-foreground/40">
         {t("settings.termsBoundsHelp")}
       </p>
     </>
@@ -1802,9 +1899,10 @@ function TermPlanetSelect({
 }) {
   return (
     <select
+      data-aries-control-appearance="local"
       value={value}
       onChange={(e) => onChange(Number(e.target.value))}
-      className="h-5 rounded-xs border border-border/60 bg-transparent px-0.5 text-[length:var(--aries-font-size-small)] outline-none focus:border-border"
+      className="h-[var(--aries-control-height-micro)] rounded-[var(--aries-radius-xs)] border border-border/60 bg-transparent px-[var(--aries-segmented-control-padding)] text-[length:var(--aries-font-size-small)] outline-none focus:border-border"
     >
       {choices.map((c) => (
         <option key={c.value} value={c.value}>
@@ -1818,6 +1916,7 @@ function TermPlanetSelect({
 function TermDegInput({ value, onCommit }: { value: number; onCommit: (n: number) => void }) {
   return (
     <input
+      data-aries-control-appearance="local"
       key={value}
       type="number"
       min={0}
@@ -1834,7 +1933,7 @@ function TermDegInput({ value, onCommit }: { value: number; onCommit: (n: number
         if (n !== value) onCommit(n);
         else e.target.value = String(value);
       }}
-      className="h-5 w-[34px] rounded-xs border border-border/60 bg-transparent px-1 text-right text-[length:var(--aries-font-size-small)] tabular-nums outline-none focus:border-border"
+      className="h-[var(--aries-control-height-micro)] w-[34px] rounded-[var(--aries-radius-xs)] border border-border/60 bg-transparent px-[var(--aries-control-gap-compact)] text-right text-[length:var(--aries-font-size-small)] tabular-nums outline-none focus:border-border"
     />
   );
 }
@@ -1859,14 +1958,14 @@ function GlyphChoiceRow<V extends boolean | number>({
   onPick: (v: V) => void;
 }) {
   return (
-    <span className="flex items-center gap-1.5">
+    <span className="flex items-center gap-[var(--aries-control-gap)]">
       {choices.map((c) => (
         <button
           key={String(c.value)}
           type="button"
           onClick={() => onPick(c.value)}
           className={
-            "font-symbols flex h-7 w-7 items-center justify-center rounded-[var(--aries-radius-control-compact)] border text-[15px] " +
+            "font-symbols flex h-[var(--aries-control-height-small)] w-[var(--aries-control-height-small)] items-center justify-center rounded-[var(--aries-radius-control-compact)] border text-[length:var(--aries-font-size-large)] " +
             (current === c.value
               ? "border-foreground/80 bg-muted text-foreground"
               : "border-border/60 text-foreground/70 hover:border-border")
@@ -1950,7 +2049,7 @@ function SignToggle({
           type="button"
           onClick={() => onChange(o.v)}
           className={
-            "w-7 py-0.5 text-center " +
+            "w-[var(--aries-control-height-small)] py-[var(--aries-segmented-control-padding)] text-center " +
             (value === o.v ? "bg-foreground/80 text-background" : "text-foreground/70")
           }
         >
@@ -1974,6 +2073,7 @@ function TextField({
 }) {
   return (
     <input
+      data-aries-control-appearance="local"
       key={value}
       type="text"
       defaultValue={value}
@@ -2021,9 +2121,10 @@ function PlaceSearch({ onPick }: { onPick: (c: PlaceCandidate) => void }) {
   };
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-1.5">
+    <div className="flex flex-col gap-[var(--aries-control-gap)]">
+      <div className="flex items-center gap-[var(--aries-control-gap)]">
         <input
+          data-aries-control-appearance="local"
           type="text"
           value={query}
           placeholder={t("settings.searchCity")}
@@ -2034,13 +2135,13 @@ function PlaceSearch({ onPick }: { onPick: (c: PlaceCandidate) => void }) {
               run();
             }
           }}
-          className="h-6 flex-1 rounded-[var(--aries-radius-control-compact)] border border-border/60 bg-transparent px-1.5 text-[length:var(--aries-font-size-base)] outline-none focus:border-border"
+          className="h-[var(--aries-control-height-compact)] flex-1 rounded-[var(--aries-radius-control-compact)] border border-border/60 bg-transparent px-[var(--aries-control-gap)] text-[length:var(--aries-font-size-base)] outline-none focus:border-border"
         />
         <button
           type="button"
           onClick={run}
           disabled={busy}
-          className="h-6 rounded-[var(--aries-radius-control-compact)] border border-border/60 px-2.5 text-[length:var(--aries-font-size-base)] text-foreground/80 hover:border-border hover:text-foreground disabled:opacity-50"
+          className="h-[var(--aries-control-height-compact)] rounded-[var(--aries-radius-control-compact)] border border-border/60 px-[var(--aries-control-padding-x)] text-[length:var(--aries-font-size-base)] text-foreground/80 hover:border-border hover:text-foreground disabled:opacity-50"
         >
           {busy ? "…" : t("settings.search")}
         </button>
@@ -2053,7 +2154,7 @@ function PlaceSearch({ onPick }: { onPick: (c: PlaceCandidate) => void }) {
               key={`${c.label}-${i}`}
               type="button"
               onClick={() => pick(c)}
-              className="flex w-full items-center justify-between gap-3 border-b border-border/40 px-2 py-1 text-left last:border-b-0 hover:bg-muted"
+              className="flex w-full items-center justify-between gap-[var(--aries-form-row-gap)] border-b border-border/40 px-[var(--aries-control-padding-x-compact)] py-[var(--aries-control-padding-y)] text-left last:border-b-0 hover:bg-muted"
             >
               <span className="truncate text-[length:var(--aries-font-size-base)] text-foreground/85">{c.label}</span>
               <span className="shrink-0 text-[length:var(--aries-font-size-small)] text-foreground/50">{c.countryName}</span>
@@ -2372,7 +2473,7 @@ function DefaultLocationTab({
         <button
           type="button"
           onClick={() => setMapOpen(true)}
-          className="h-6 shrink-0 rounded-[var(--aries-radius-control-compact)] border border-border/60 px-2.5 text-[length:var(--aries-font-size-base)] text-foreground/80 hover:border-border hover:text-foreground"
+          className="h-[var(--aries-control-height-compact)] shrink-0 rounded-[var(--aries-radius-control-compact)] border border-border/60 px-[var(--aries-control-padding-x)] text-[length:var(--aries-font-size-base)] text-foreground/80 hover:border-border hover:text-foreground"
         >
           {t("settings.pickOnMap")}
         </button>
@@ -2488,6 +2589,9 @@ function RevolutionsTab({ opts, sendPatch }: TabProps) {
   return (
     <div className="flex flex-col gap-0">
       <SectionLabel>{t("settings.solarReturn")}</SectionLabel>
+      <Row label={t("settings.precessedSidereal")}>
+        <Toggle checked={r.revsidereal_marr_solar} onChange={(v) => setBool("revsidereal_marr_solar", v)} />
+      </Row>
       <Row label={t("settings.year")}>
         <Select value={r.revolutions_solaryearmode} width={150} onChange={(v) => setInt("revolutions_solaryearmode", v)}>
           <option value={0}>{t("settings.currentYear")}</option>
@@ -2500,6 +2604,9 @@ function RevolutionsTab({ opts, sendPatch }: TabProps) {
       </Row>
 
       <SectionLabel>{t("settings.lunarReturn")}</SectionLabel>
+      <Row label={t("settings.precessedSidereal")}>
+        <Toggle checked={r.revsidereal_marr_lunar} onChange={(v) => setBool("revsidereal_marr_lunar", v)} />
+      </Row>
       <Row label={t("settings.location")}>{locationSelect("revolutions_lunarlocationmode")}</Row>
       <Row label={t("settings.parentChart")}>
         <Select value={r.revolutions_lunarparentmode} width={170} onChange={(v) => setInt("revolutions_lunarparentmode", v)}>
@@ -2515,18 +2622,10 @@ function RevolutionsTab({ opts, sendPatch }: TabProps) {
       </Row>
 
       <SectionLabel>{t("settings.planetaryReturns")}</SectionLabel>
-      <Row label={t("settings.location")}>{locationSelect("revolutions_planetslocationmode")}</Row>
-
-      <SectionLabel>{t("settings.siderealReturnsMarr")}</SectionLabel>
-      <Row label={t("settings.solarTarget")}>
-        <Toggle checked={r.revsidereal_marr_solar} onChange={(v) => setBool("revsidereal_marr_solar", v)} />
-      </Row>
-      <Row label={t("settings.lunarTarget")}>
-        <Toggle checked={r.revsidereal_marr_lunar} onChange={(v) => setBool("revsidereal_marr_lunar", v)} />
-      </Row>
-      <Row label={t("settings.planetaryTarget")}>
+      <Row label={t("settings.precessedSidereal")}>
         <Toggle checked={r.revsidereal_marr_planet} onChange={(v) => setBool("revsidereal_marr_planet", v)} />
       </Row>
+      <Row label={t("settings.location")}>{locationSelect("revolutions_planetslocationmode")}</Row>
     </div>
   );
 }
@@ -2655,7 +2754,7 @@ function StepAlertsTab({ opts, sendPatch }: TabProps) {
         <Row
           key={`prom-${body.id}`}
           label={
-            <span className="flex items-center gap-1.5">
+            <span className="flex items-center gap-[var(--aries-control-gap)]">
               <Glyph ch={body.glyph} />
               {body.label}
             </span>
@@ -2674,7 +2773,7 @@ function StepAlertsTab({ opts, sendPatch }: TabProps) {
         <Row
           key={`sig-${body.id}`}
           label={
-            <span className="flex items-center gap-1.5">
+            <span className="flex items-center gap-[var(--aries-control-gap)]">
               <Glyph ch={body.glyph} />
               {body.label}
             </span>
@@ -2895,7 +2994,7 @@ function PlanetsPointsTab({ opts, sendPatch }: TabProps) {
       <SectionLabel>{t("settings.parts")}</SectionLabel>
       {/* Synthetic locked Fortuna row — the wx list pins LoF as #1 and blocks
           edit/remove/deactivate (arabicpartsdlg.py:791-803). */}
-      <div className="flex h-7 items-center justify-between gap-3 border-b border-border/40 text-[length:var(--aries-font-size-base)]">
+      <div className="flex h-[var(--aries-control-height-small)] items-center justify-between gap-[var(--aries-form-row-gap)] border-b border-border/40 text-[length:var(--aries-font-size-base)]">
         <span className="truncate text-foreground/80">
           #1 {t("settings.fortuna")}
           <span className="ml-2 text-foreground/45">{fortunaMode?.label ?? ""}</span>
@@ -2906,7 +3005,7 @@ function PlanetsPointsTab({ opts, sendPatch }: TabProps) {
         const isEditing = editor?.mode === "edit" && editor.index === part.index;
         return (
           <React.Fragment key={part.index}>
-            <div className="flex h-7 items-center justify-between gap-3 border-b border-border/40 text-[length:var(--aries-font-size-base)]">
+            <div className="flex h-[var(--aries-control-height-small)] items-center justify-between gap-[var(--aries-form-row-gap)] border-b border-border/40 text-[length:var(--aries-font-size-base)]">
               <span className="min-w-0 flex-1 truncate text-foreground/80">
                 #{part.index + 2} {part.name}
                 <span className="ml-2 text-foreground/45">{part.formula}</span>
@@ -2919,7 +3018,7 @@ function PlanetsPointsTab({ opts, sendPatch }: TabProps) {
                   <span className="ml-1 text-foreground/45">{t("settings.badgeMaleFemale")}</span>
                 ) : null}
               </span>
-              <span className="flex shrink-0 items-center gap-2">
+              <span className="flex shrink-0 items-center gap-[var(--aries-form-field-gap)]">
                 <Toggle
                   checked={part.active}
                   onChange={(v) => setPartActive(part.index, v)}
@@ -2933,14 +3032,14 @@ function PlanetsPointsTab({ opts, sendPatch }: TabProps) {
                         : { mode: "edit", index: part.index },
                     )
                   }
-                  className="rounded-xs border border-border/60 px-1.5 py-0.5 text-[length:var(--aries-font-size-small)] text-foreground/60 hover:text-foreground"
+                  className="rounded-[var(--aries-radius-xs)] border border-border/60 px-[var(--aries-control-gap)] py-[var(--aries-segmented-control-padding)] text-[length:var(--aries-font-size-small)] text-foreground/60 hover:text-foreground"
                 >
                   {isEditing ? t("settings.close") : t("settings.edit")}
                 </button>
                 <button
                   type="button"
                   onClick={() => removePart(part.index)}
-                  className="rounded-xs border border-border/60 px-1.5 py-0.5 text-[length:var(--aries-font-size-small)] text-foreground/60 hover:text-foreground"
+                  className="rounded-[var(--aries-radius-xs)] border border-border/60 px-[var(--aries-control-gap)] py-[var(--aries-segmented-control-padding)] text-[length:var(--aries-font-size-small)] text-foreground/60 hover:text-foreground"
                 >
                   {t("settings.remove")}
                 </button>
@@ -2964,16 +3063,16 @@ function PlanetsPointsTab({ opts, sendPatch }: TabProps) {
         );
       })}
       {p.parts.length === 0 ? (
-        <div className="py-2 text-[length:var(--aries-font-size-small)] text-foreground/45">{t("settings.noCustomParts")}</div>
+        <div className="py-[var(--aries-form-field-gap)] text-[length:var(--aries-font-size-small)] text-foreground/45">{t("settings.noCustomParts")}</div>
       ) : null}
 
-      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+      <div className="mt-[var(--aries-form-field-gap)] flex flex-wrap items-center gap-[var(--aries-control-gap)]">
         <ActionButton onClick={() => setEditor({ mode: "add" })}>{t("settings.addPart")}</ActionButton>
         <ActionButton onClick={() => setAllActive(() => true)}>{t("settings.allOn")}</ActionButton>
         <ActionButton onClick={() => setAllActive(() => false)}>{t("settings.allOff")}</ActionButton>
         <ActionButton onClick={() => setAllActive((part) => !part.active)}>{t("settings.invert")}</ActionButton>
         <ActionButton onClick={removeAll}>{t("settings.removeAll")}</ActionButton>
-        <span className="mx-1 h-4 w-px bg-border/60" />
+        <span className="mx-[var(--aries-control-gap-compact)] h-[var(--aries-control-icon-size-default)] w-[var(--aries-sash-rule-size)] bg-border/60" />
         <ActionButton onClick={exportParts}>{t("settings.export")}</ActionButton>
         <ActionButton onClick={() => fileInputRef.current?.click()}>{t("settings.import")}</ActionButton>
         <input
@@ -3057,7 +3156,10 @@ function SettingsConfirmDialog({
   const t = useT();
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[color:var(--aries-overlay-scrim)] px-[var(--aries-form-section-gap)]">
-      <div className="w-full max-w-[var(--aries-dialog-width-confirm)] rounded-[var(--aries-radius-md)] border border-border bg-background p-[var(--aries-dialog-padding)] shadow-xl">
+      <div
+        data-aries-surface="overlay"
+        className="w-full max-w-[var(--aries-dialog-width-confirm)] rounded-[var(--aries-radius-md)] border border-border bg-background p-[var(--aries-dialog-padding)] shadow-xl"
+      >
         <div className="mb-[var(--aries-dialog-header-gap)] text-[length:var(--aries-font-size-large)] font-medium">{title}</div>
         <p className="text-[length:var(--aries-font-size-reading)] leading-[var(--aries-font-line-height-reading)] text-muted-foreground">{body}</p>
         <div className="mt-[var(--aries-dialog-gap)] flex justify-end gap-[var(--aries-dialog-footer-gap)]">
@@ -3293,23 +3395,24 @@ function ArabicPartEditor({
     <div
       className={
         mode === "edit"
-          ? "flex flex-col gap-2 border-b border-border/40 bg-muted/20 px-2 py-2"
-          : "mt-2 flex flex-col gap-2 rounded-[var(--aries-radius-control-compact)] border border-border/60 p-2"
+          ? "flex flex-col gap-[var(--aries-form-field-gap)] border-b border-border/40 bg-muted/20 px-[var(--aries-control-padding-x-compact)] py-[var(--aries-form-field-gap)]"
+          : "mt-[var(--aries-form-field-gap)] flex flex-col gap-[var(--aries-form-field-gap)] rounded-[var(--aries-radius-control-compact)] border border-border/60 p-[var(--aries-form-field-gap)]"
       }
     >
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center justify-between gap-[var(--aries-form-field-gap)]">
         <span className="text-[length:var(--aries-font-size-small)] font-medium text-foreground/55">
           {mode === "edit" ? t("settings.editPart", { name: part?.name ?? "" }) : t("settings.newPart")}
         </span>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-[var(--aries-form-field-gap)]">
         <span className="w-12 text-[length:var(--aries-font-size-small)] text-foreground/60">{t("settings.name")}</span>
         <input
+          data-aries-control-appearance="local"
           type="text"
           maxLength={20}
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="h-6 w-[200px] rounded-xs border border-border/60 bg-transparent px-1.5 text-[length:var(--aries-font-size-base)] outline-none focus:border-border"
+          className="h-[var(--aries-control-height-compact)] w-[200px] rounded-[var(--aries-radius-xs)] border border-border/60 bg-transparent px-[var(--aries-control-gap)] text-[length:var(--aries-font-size-base)] outline-none focus:border-border"
         />
         {duplicate ? (
           <span className="text-[length:var(--aries-font-size-small)] text-[color:var(--aries-validation-error)]">{t("settings.alreadyExists")}</span>
@@ -3328,11 +3431,11 @@ function ArabicPartEditor({
           setRefdeg(nextRefdeg);
         }}
       />
-      <label className="flex items-center gap-2 text-[length:var(--aries-font-size-base)] text-foreground/80">
+      <label className="flex items-center gap-[var(--aries-form-field-gap)] text-[length:var(--aries-font-size-base)] text-foreground/80">
         <Toggle checked={!nocturnalOn && diurnal} onChange={setDiurnal} disabled={nocturnalOn} />
         {t("settings.diurnalSwapBc")}
       </label>
-      <label className="flex items-center gap-2 text-[length:var(--aries-font-size-base)] text-foreground/80">
+      <label className="flex items-center gap-[var(--aries-form-field-gap)] text-[length:var(--aries-font-size-base)] text-foreground/80">
         <Toggle
           checked={nocturnalOn}
           onChange={setNocturnalOn}
@@ -3354,11 +3457,11 @@ function ArabicPartEditor({
           }}
         />
       ) : null}
-      <label className="flex items-center gap-2 text-[length:var(--aries-font-size-base)] text-foreground/80">
+      <label className="flex items-center gap-[var(--aries-form-field-gap)] text-[length:var(--aries-font-size-base)] text-foreground/80">
         <Toggle checked={gendered} onChange={setGendered} />
         {t("settings.switchForFemale")}
       </label>
-      <label className="flex items-center gap-2 text-[length:var(--aries-font-size-base)] text-foreground/80">
+      <label className="flex items-center gap-[var(--aries-form-field-gap)] text-[length:var(--aries-font-size-base)] text-foreground/80">
         <Toggle checked={femaleOn} onChange={setFemaleOn} />
         {t("settings.separateFemaleFormula")}
       </label>
@@ -3390,7 +3493,7 @@ function ArabicPartEditor({
                 : "")
             : "…"}
       </div>
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-[var(--aries-control-gap)]">
         {mode === "add" ? (
           <ActionButton
             disabled={!canSave}
@@ -3442,7 +3545,7 @@ function FormulaSlots({
     onChange(nextCodes, nextRef);
   };
   return (
-    <div className="flex flex-wrap items-start gap-1.5">
+    <div className="flex flex-wrap items-start gap-[var(--aries-control-gap)]">
       {[0, 1, 2].map((i) => {
         const term = terms.find((t) => t.value === codes[i]);
         const kind = term?.kind ?? "";
@@ -3452,9 +3555,9 @@ function FormulaSlots({
         return (
           <React.Fragment key={i}>
             {ops[i] ? (
-              <span className="pt-1 text-[length:var(--aries-font-size-base)] text-foreground/60">{ops[i]}</span>
+              <span className="pt-[var(--aries-control-padding-y)] text-[length:var(--aries-font-size-base)] text-foreground/60">{ops[i]}</span>
             ) : null}
-            <span className="flex flex-col gap-1">
+            <span className="flex flex-col gap-[var(--aries-control-gap-compact)]">
               <Select
                 value={codes[i]}
                 width={110}
@@ -3470,7 +3573,7 @@ function FormulaSlots({
                 ))}
               </Select>
               {kind === "DE" ? (
-                <span className="flex items-center gap-1">
+                <span className="flex items-center gap-[var(--aries-control-gap-compact)]">
                   <Select
                     value={Math.floor(deAbs / 30)}
                     width={90}
@@ -3833,31 +3936,33 @@ function FixedStarsTab({ opts, sendPatch }: TabProps) {
     <div className="flex flex-col gap-0">
       <SectionLabel>{t("settings.whichFixedStarsActive")}</SectionLabel>
       {fs.catalog.length === 0 ? (
-        <div className="py-2 text-[length:var(--aries-font-size-small)] text-foreground/45">
+        <div className="py-[var(--aries-form-field-gap)] text-[length:var(--aries-font-size-small)] text-foreground/45">
           {t("settings.fixStarCatalogNotFound")}
         </div>
       ) : (
         <>
-          <div className="mb-2 flex items-center gap-2">
+          <div className="mb-[var(--aries-form-field-gap)] flex items-center gap-[var(--aries-form-field-gap)]">
             <input
+              data-aries-control-appearance="local"
               type="text"
               value={nameQuery}
               onChange={(e) => setNameQuery(e.target.value)}
               placeholder={t("settings.searchName")}
-              className="h-7 flex-1 rounded-[var(--aries-radius-control-compact)] border border-border/60 bg-transparent px-2 text-[length:var(--aries-font-size-base)] outline-none focus:border-foreground/40"
+              className="h-[var(--aries-control-height-small)] flex-1 rounded-[var(--aries-radius-control-compact)] border border-border/60 bg-transparent px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-base)] outline-none focus:border-foreground/40"
             />
             <input
+              data-aries-control-appearance="local"
               type="text"
               value={codeQuery}
               onChange={(e) => setCodeQuery(e.target.value)}
               placeholder={t("settings.searchNomenclature")}
-              className="h-7 flex-1 rounded-[var(--aries-radius-control-compact)] border border-border/60 bg-transparent px-2 text-[length:var(--aries-font-size-base)] outline-none focus:border-foreground/40"
+              className="h-[var(--aries-control-height-small)] flex-1 rounded-[var(--aries-radius-control-compact)] border border-border/60 bg-transparent px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-base)] outline-none focus:border-foreground/40"
             />
           </div>
 
           {/* Header row */}
-          <div className="flex h-6 items-center gap-2 border-b border-border/60 px-1 text-[length:var(--aries-font-size-section)] font-medium text-foreground/45">
-            <FixedStarSortHeader sortKey="selected" sort={sort} onSort={setSort} className="w-5 shrink-0" ariaLabel={t("settings.sortSelected")} />
+          <div className="flex h-[var(--aries-control-height-compact)] items-center gap-[var(--aries-form-field-gap)] border-b border-border/60 px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-section)] font-medium text-foreground/45">
+            <FixedStarSortHeader sortKey="selected" sort={sort} onSort={setSort} className="w-[var(--aries-control-height-micro)] shrink-0" ariaLabel={t("settings.sortSelected")} />
             <FixedStarSortHeader sortKey="name" sort={sort} onSort={setSort} className="min-w-0 flex-1" label={t("settings.name")} />
             <FixedStarSortHeader sortKey="code" sort={sort} onSort={setSort} className="w-24 shrink-0" label={t("settings.nomenclAbbr")} />
             <FixedStarSortHeader sortKey="lon" sort={sort} onSort={setSort} className="w-24 shrink-0" label={t("settings.longitude")} />
@@ -3877,7 +3982,7 @@ function FixedStarsTab({ opts, sendPatch }: TabProps) {
                 return (
                   <div
                     key={`${row.index}-${row.code}`}
-                    className="absolute left-0 right-0 flex items-center gap-2 border-b border-border/30 px-1 text-[length:var(--aries-font-size-base)]"
+                    className="absolute left-0 right-0 flex items-center gap-[var(--aries-form-field-gap)] border-b border-border/30 px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-base)]"
                     style={{ top: rowIndex * rowHeight, height: rowHeight }}
                   >
                     <input
@@ -3931,7 +4036,7 @@ function FixedStarSortHeader({
     <button
       type="button"
       aria-label={ariaLabel ?? t("settings.sortBy", { label: label ?? sortKey })}
-      className={`flex min-w-0 items-center gap-1 text-left hover:text-foreground/80 ${className ?? ""}`}
+      className={`flex min-w-0 items-center gap-[var(--aries-control-gap-compact)] text-left hover:text-foreground/80 ${className ?? ""}`}
       onClick={() =>
         onSort((current) => ({
           key: sortKey,

@@ -310,6 +310,6 @@ test("one style feeds Astrolabe paint while payload colors and interaction mecha
   assert.match(paintBlock, /revision: styleRevision/);
   assert.match(
     paintBlock,
-    /\}, \[chartTextFont, geo, fontsReady, toggles, t, styleRevision\]\);/,
+    /\}, \[chartSymbolFont, chartTextFont, geo, fontsReady, toggles, t, styleRevision\]\);/,
   );
 });

@@ -24,7 +24,7 @@ import { useT } from "@/lib/i18n/i18n";
 import { semanticChartColor } from "@/lib/theme/semantic-color";
 
 import { TimedChartContextMenu } from "./directions-view";
-import { downloadText, tableToTsv } from "./generic-table-view";
+import { downloadText, tableToConfiguredTsv } from "./generic-table-view";
 import { exportTablePayloadPdf } from "./table-pdf-export";
 import { exportTextContent } from "./text-export";
 import { ColumnResizeHandle, useResizableTableColumns } from "./resizable-table-columns";
@@ -94,7 +94,7 @@ export function DecennialsView({ documentId, parentDocumentId, sourceName, onClo
   // Drill selection (the open DecPopupFrame in wx) — presentation-only, keyed
   // by the L2 row id. wx does not persist it across rebuilds either.
   const [drilledRowId, setDrilledRowId] = React.useState<string | null>(null);
-  const lastOptionsChange = useDaemonWorkspaceStore((s) => s.lastOptionsChange);
+  const lastOptionsChange = useDaemonWorkspaceStore((s) => s.lastRetainedDataOptionsChange);
 
   // Refresh on relevant options only. Table controls below fetch explicitly;
   // chart/session activation must not invalidate the source list.
@@ -261,10 +261,11 @@ export function DecennialsView({ documentId, parentDocumentId, sourceName, onClo
           <PaneToolbarButton
             type="button"
             onClick={() => {
-              const text = tableToTsv(payload, payload.rows);
-              void navigator.clipboard?.writeText(text).catch(() => {
-                downloadText("decennials.tsv", text, "text/tab-separated-values");
-              });
+              void tableToConfiguredTsv(payload, payload.rows).then((text) =>
+                navigator.clipboard?.writeText(text).catch(() => {
+                  downloadText("decennials.tsv", text, "text/tab-separated-values");
+                })
+              );
             }}
             title={t("decview.copyRows")}
           >
@@ -272,16 +273,18 @@ export function DecennialsView({ documentId, parentDocumentId, sourceName, onClo
           </PaneToolbarButton>
           <PaneToolbarButton
             type="button"
-            onClick={() =>
-              void exportTextContent({
+            onClick={() => {
+              void tableToConfiguredTsv(payload, payload.rows).then((text) =>
+                exportTextContent({
                 filename: "decennials",
                 extension: "tsv",
                 mimeType: "text/tab-separated-values;charset=utf-8",
-                text: tableToTsv(payload, payload.rows),
+                text,
                 title: t("decview.exportTsvTitle"),
                 filters: [{ name: t("decview.tsvFiles"), extensions: ["tsv"] }],
-              }).catch(() => {})
-            }
+                })
+              ).catch(() => {});
+            }}
             title={t("decview.exportTsv")}
           >
             <Download />

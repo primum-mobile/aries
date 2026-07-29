@@ -10,12 +10,18 @@ import {
   loadStoredStyleLabFonts,
   STYLE_FONT_ASSETS_READY_EVENT,
 } from "@/lib/style-lab/fonts";
+import { APP_AUTHORING_OVERRIDE_PREFIX } from "@/lib/style-lab/client";
 import {
   LEGACY_STYLE_TOKEN_MIGRATION_ACK_KEY,
   LEGACY_STYLE_TOKEN_STORAGE_KEY,
   THEME_STATE_STORAGE_KEY,
 } from "@/lib/theme/constants";
+import {
+  compileThemeAppMaterials,
+  installAppMaterialStyleSheet,
+} from "@/lib/theme/app-material-runtime";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
+import { useChartStyleEditorStore } from "@/stores/chart-style-editor-store";
 import { syncThemeStateFromStorage, useThemeStore } from "@/stores/theme-store";
 
 let appliedThemeTokenNames = new Set<string>();
@@ -39,9 +45,22 @@ function pendingLegacyStyleMigration(): { raw: string; values: Record<string, un
   }
 }
 
-function applyThemeToRoot(theme: ThemeState): void {
+type LiveStyleLabThemePreview = Readonly<{
+  sourceThemeName: string;
+  mode: "light" | "dark";
+  appTokens: Readonly<Record<string, string>>;
+  chartPalette: Readonly<Record<string, string>>;
+  appAuthoring: Readonly<Record<string, unknown>>;
+}>;
+
+function applyThemeToRoot(
+  theme: ThemeState,
+  preview?: LiveStyleLabThemePreview,
+): void {
   const root = document.documentElement;
-  const tokens = { ...theme.appTokens, ...theme.chartPalette };
+  const appTokens = preview?.appTokens ?? theme.appTokens;
+  const chartPalette = preview?.chartPalette ?? theme.chartPalette;
+  const tokens = { ...appTokens, ...chartPalette };
   const nextTokenNames = new Set(Object.keys(tokens));
   for (const name of appliedThemeTokenNames) {
     if (!nextTokenNames.has(name)) root.style.removeProperty(name);
@@ -50,16 +69,35 @@ function applyThemeToRoot(theme: ThemeState): void {
     root.style.setProperty(name, value);
   }
   appliedThemeTokenNames = nextTokenNames;
-  root.style.colorScheme = theme.mode;
-  root.classList.toggle("dark", theme.mode === "dark");
-  root.classList.toggle("day", theme.mode === "light");
-  root.dataset.themePreset = theme.activePreset;
+  const mode = preview?.mode ?? theme.mode;
+  root.style.colorScheme = mode;
+  root.classList.toggle("dark", mode === "dark");
+  root.classList.toggle("day", mode === "light");
+  root.dataset.themePreset = preview?.sourceThemeName ?? theme.activePreset;
+  if (preview) root.dataset.styleLabThemePreview = "active";
+  else delete root.dataset.styleLabThemePreview;
   root.dataset.themeVersion = String(theme.version);
   root.dataset.styleSchemaVersion = String(theme.schemaVersion);
   root.dataset.styleRevision = String(theme.styleRevision);
   root.dataset.styleHash = theme.styleHash;
   root.dataset.presentationCursor = theme.presentationCursor === true ? "glow" : "system";
   root.dataset.themeReady = "ready";
+  try {
+    installAppMaterialStyleSheet(
+      compileThemeAppMaterials(
+        preview?.appAuthoring ?? theme.profileOverrides.appAuthoring,
+        appTokens,
+      ),
+    );
+  } catch (error) {
+    // Daemon profiles are validated before ThemeState publication. A stale
+    // browser cache still degrades to the semantic solid palette instead of
+    // leaving the retained app shell partially styled.
+    console.error("[app-material-theme]", error);
+    installAppMaterialStyleSheet(
+      compileThemeAppMaterials({}, appTokens),
+    );
+  }
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
@@ -67,6 +105,19 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const fetchThemeState = useThemeStore((state) => state.fetchThemeState);
   const connection = useDaemonWorkspaceStore((state) => state.connection);
   const optionsChange = useDaemonWorkspaceStore((state) => state.lastOptionsChange);
+  const liveAppThemePreview = useChartStyleEditorStore(
+    (state) => state.liveAppThemePreview,
+  );
+  const styleLabBaseTheme = useChartStyleEditorStore(
+    (state) => state.styleLabBaseTheme,
+  );
+  const styleLabCssOverrides = useChartStyleEditorStore(
+    (state) => state.cssOverrides,
+  );
+  const styleLabSemanticOverrides = useChartStyleEditorStore(
+    (state) => state.semanticOverrides,
+  );
+  const styleLabRevision = useChartStyleEditorStore((state) => state.revision);
 
   useEffect(() => {
     if (syncThemeStateFromStorage()) return undefined;
@@ -130,8 +181,37 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useLayoutEffect(() => {
     if (!theme) return;
-    applyThemeToRoot(theme);
-  }, [theme]);
+    const preview = liveAppThemePreview && styleLabBaseTheme.sourceThemeName
+      ? {
+          sourceThemeName: styleLabBaseTheme.sourceThemeName,
+          mode: styleLabBaseTheme.mode,
+          appTokens: {
+            ...styleLabBaseTheme.appTokens,
+            ...styleLabCssOverrides,
+          },
+          chartPalette: {
+            ...styleLabBaseTheme.chartPalette,
+            ...styleLabCssOverrides,
+          },
+          appAuthoring: {
+            ...styleLabBaseTheme.appAuthoring,
+            ...Object.fromEntries(
+              Object.entries(styleLabSemanticOverrides).filter(([semanticId]) =>
+                semanticId.startsWith(APP_AUTHORING_OVERRIDE_PREFIX)
+              ),
+            ),
+          },
+        } satisfies LiveStyleLabThemePreview
+      : undefined;
+    applyThemeToRoot(theme, preview);
+  }, [
+    liveAppThemePreview,
+    styleLabBaseTheme,
+    styleLabCssOverrides,
+    styleLabRevision,
+    styleLabSemanticOverrides,
+    theme,
+  ]);
 
   useEffect(() => {
     const appOverrides = theme?.profileOverrides.appTokens;

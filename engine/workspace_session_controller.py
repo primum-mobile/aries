@@ -34,6 +34,7 @@ structured event for the presentation layer (daemon -> React) to act on.
 from __future__ import annotations
 
 import datetime
+import math
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -404,6 +405,13 @@ class WorkspaceSessionController:
         refreshed: List[str] = []
         refreshed_set: set[str] = set()
         seen_charts: set[int] = set()
+        # The top-level options.changed event is the retained-data authority
+        # for a house-system transaction.  Chart sessions still publish so
+        # resident snapshots repaint, but those intermediate events must not
+        # trigger a second retained-list request before the typed patch arrives.
+        option_change_reason = (
+            'options-refresh' if mode == 'house-system' else 'options'
+        )
 
         def mark(document_id: Optional[str]) -> None:
             if not document_id or document_id in refreshed_set:
@@ -451,7 +459,10 @@ class WorkspaceSessionController:
                 continue
 
             if feature_kind in ('secondary', 'solar_arc', 'minor', 'tertiary', 'profections'):
-                if self._refresh_progression_session_for_option_change(session):
+                if self._refresh_progression_session_for_option_change(
+                    session,
+                    change_reason=option_change_reason,
+                ):
                     mark(document_id)
                     continue
 
@@ -463,17 +474,27 @@ class WorkspaceSessionController:
                     )
                 if self._refresh_session_chart_objects_for_options(session, mode, seen_charts):
                     mark(document_id)
-                    self._emit_options_changed(document_id)
+                    self._emit_options_changed(
+                        document_id,
+                        change_reason=option_change_reason,
+                    )
                 continue
 
             if feature_kind is not None and parent_session is not None:
-                if self._rebuild_child_session_for_options(session, parent_session):
+                if self._rebuild_child_session_for_options(
+                    session,
+                    parent_session,
+                    change_reason=option_change_reason,
+                ):
                     mark(document_id)
                     continue
 
             if self._refresh_session_chart_objects_for_options(session, mode, seen_charts):
                 mark(document_id)
-                self._emit_options_changed(document_id)
+                self._emit_options_changed(
+                    document_id,
+                    change_reason=option_change_reason,
+                )
 
         return refreshed
 
@@ -527,15 +548,26 @@ class WorkspaceSessionController:
             changed |= self._refresh_chart_object_for_options(obj, mode, seen_charts)
         return changed or has_chart_reference
 
-    def _emit_options_changed(self, document_id: str, rebuilt_child_ids: Optional[List[str]] = None) -> None:
+    def _emit_options_changed(
+        self,
+        document_id: str,
+        rebuilt_child_ids: Optional[List[str]] = None,
+        *,
+        change_reason: str = 'options',
+    ) -> None:
         self._emit(SessionChangedEvent(
             document_id=document_id,
-            change_reason='options',
+            change_reason=change_reason,
             is_active=(document_id == self._state.active_document_id()),
             rebuilt_child_ids=list(rebuilt_child_ids or []),
         ))
 
-    def _refresh_progression_session_for_option_change(self, session: dict) -> bool:
+    def _refresh_progression_session_for_option_change(
+        self,
+        session: dict,
+        *,
+        change_reason: str = 'options',
+    ) -> bool:
         """Rebuild symbolic progression / profection children from their OWN
         display cursor (not the parent radix cursor).
 
@@ -590,11 +622,17 @@ class WorkspaceSessionController:
         result.binding.parent_source_datetime = self._datetime_to_display_tuple(source_dt)
         session['chart'] = result.chart
         cs.change_chart(result.chart, display_datetime=result.display_datetime or display_dt,
-                        change_reason='options')
+                        change_reason=change_reason)
         self._apply_supplementary_binding(session, result.binding)
         return True
 
-    def _rebuild_child_session_for_options(self, session: dict, parent_session: dict) -> bool:
+    def _rebuild_child_session_for_options(
+        self,
+        session: dict,
+        parent_session: dict,
+        *,
+        change_reason: str = 'options',
+    ) -> bool:
         """Option-refresh child rebuild without the cursor-change gate.
 
         ``_rebuild_child_session`` is the normal parent-cursor cascade and may
@@ -653,7 +691,7 @@ class WorkspaceSessionController:
         )
         self._apply_rebuilt_child(session, cs, base_chart, persisted_source_dt,
                                   result.chart, result.display_datetime,
-                                  change_reason='options')
+                                  change_reason=change_reason)
         result.binding.parent_source_datetime = session.get('parent_source_datetime')
         self._apply_supplementary_binding(session, result.binding)
         return True
@@ -813,8 +851,9 @@ class WorkspaceSessionController:
 
     def _launch_reference_datetime(self, feature_kind, parent_cs) -> datetime.datetime:
         # morin.py:6323/6360: cursor-driven children inherit the immediate
-        # parent session cursor, except unstepped root-like sessions still open
-        # from wall clock instead of their birth-time display tuple.
+        # parent session cursor, except root-like sessions always open from wall
+        # clock. Stepping a radix changes that radix session's own display
+        # cursor; it does not turn the radix into a timed derivation parent.
         if self._uses_parent_launch_cursor(feature_kind, parent_cs):
             dt = self._parent_launch_cursor_datetime(parent_cs)
             if dt is not None:
@@ -832,20 +871,12 @@ class WorkspaceSessionController:
         display_dt = getattr(parent_cs, 'display_datetime', None)
         if display_dt is None:
             return None
-        if self._launch_cursor_defaults_to_wall_clock(parent_cs, display_dt):
+        if self._launch_cursor_defaults_to_wall_clock(parent_cs):
             return datetime.datetime.now()
         return self._display_tuple_to_datetime(display_dt)
 
     @staticmethod
-    def _launch_cursor_defaults_to_wall_clock(parent_cs, display_dt) -> bool:
-        initial_dt = getattr(parent_cs, '_initial_display_datetime', None)
-        try:
-            current_tuple = tuple(int(v) for v in tuple(display_dt)[:6])
-            initial_tuple = tuple(int(v) for v in tuple(initial_dt or ())[:6])
-        except Exception:
-            return False
-        if len(initial_tuple) != 6 or current_tuple != initial_tuple:
-            return False
+    def _launch_cursor_defaults_to_wall_clock(parent_cs) -> bool:
         if getattr(parent_cs, '_launch_with_wall_clock_when_unset', False):
             return True
         chart_obj = getattr(parent_cs, 'chart', None)
@@ -983,6 +1014,14 @@ class WorkspaceSessionController:
             retained['display_datetime'] = display_dt
             retained['place_payload'] = supplementary_adapter.place_to_payload(
                 getattr(getattr(cs, 'chart', None), 'place', None))
+        elif feature_kind == 'converse_transits':
+            # The visible cursor is symbolic; the chart itself is the mirrored
+            # physical transit. Preserve both retained clock contexts and only
+            # advance the symbolic display stamp here.
+            retained['display_datetime'] = display_dt
+            if display_dt is not None:
+                retained['symbolic_cursor_datetime'] = display_dt
+            self._sync_converse_symbolic_cursor_jd(cs, retained)
         elif feature_kind == 'profections':
             retained['display_datetime'] = display_dt
             chrt = getattr(cs, 'chart', None)
@@ -995,6 +1034,21 @@ class WorkspaceSessionController:
                 retained.setdefault('display_datetime', display_dt)
         binding.retained_state = retained
         self._apply_supplementary_binding(session, binding)
+
+    @staticmethod
+    def _sync_converse_symbolic_cursor_jd(cs, retained) -> None:
+        """Keep the session cursor on the symbolic clock, not the chart epoch."""
+        if cs is None or not isinstance(retained, dict):
+            return
+        try:
+            symbolic_jd = float(retained.get('symbolic_cursor_jd'))
+        except (TypeError, ValueError):
+            return
+        if not math.isfinite(symbolic_jd):
+            return
+        cs.cursor_jd = symbolic_jd
+        if getattr(cs, 'chart', None) is getattr(cs, '_initial_chart', None):
+            cs._initial_cursor_jd = symbolic_jd
 
     # -- CHILD REFRESH (morin.py:7202) -------------------------------------
 

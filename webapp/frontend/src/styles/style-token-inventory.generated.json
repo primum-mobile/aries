@@ -6,14 +6,14 @@
     "legacyOverlay": "src/styles/style-tokens.ts"
   },
   "counts": {
-    "tokens": 1420,
-    "cssTokens": 1409,
-    "cssDeclarations": 1477,
+    "tokens": 1482,
+    "cssTokens": 1471,
+    "cssDeclarations": 1539,
     "runtimeOnlyTokens": 7,
     "externalTokens": 4,
-    "public": 1077,
-    "derived": 197,
-    "runtime": 146
+    "public": 1110,
+    "derived": 198,
+    "runtime": 174
   },
   "legacyMigration": {
     "authority": "legacy-preview-v1",
@@ -223,7 +223,11 @@
     },
     {
       "id": "app.palette",
-      "tokenCount": 18
+      "tokenCount": 27
+    },
+    {
+      "id": "app.material-runtime",
+      "tokenCount": 2
     },
     {
       "id": "app.navbar",
@@ -235,11 +239,15 @@
     },
     {
       "id": "app.spotlight",
-      "tokenCount": 14
+      "tokenCount": 15
     },
     {
       "id": "app.inspector",
-      "tokenCount": 47
+      "tokenCount": 48
+    },
+    {
+      "id": "app.style-lab",
+      "tokenCount": 1
     },
     {
       "id": "app.pane",
@@ -255,7 +263,7 @@
     },
     {
       "id": "app.controls",
-      "tokenCount": 21
+      "tokenCount": 26
     },
     {
       "id": "app.toolbar",
@@ -267,7 +275,7 @@
     },
     {
       "id": "app.dialog",
-      "tokenCount": 23
+      "tokenCount": 24
     },
     {
       "id": "app.form",
@@ -275,7 +283,7 @@
     },
     {
       "id": "app.menu",
-      "tokenCount": 13
+      "tokenCount": 27
     },
     {
       "id": "app.sash",
@@ -303,11 +311,11 @@
     },
     {
       "id": "app.sidebar",
-      "tokenCount": 26
+      "tokenCount": 27
     },
     {
       "id": "app.shell",
-      "tokenCount": 21
+      "tokenCount": 32
     },
     {
       "id": "foundation.radius",
@@ -359,7 +367,7 @@
     },
     {
       "id": "renderer.astrocart",
-      "tokenCount": 212
+      "tokenCount": 222
     },
     {
       "id": "renderer.astrolabe",
@@ -383,7 +391,7 @@
     },
     {
       "id": "renderer.wheel",
-      "tokenCount": 393
+      "tokenCount": 399
     }
   ],
   "tokens": [
@@ -431,9 +439,9 @@
       "scope": "platform",
       "type": "color",
       "unit": "",
-      "default": "var(--aries-text-primary)",
+      "default": "var(--aries-accent-foreground)",
       "dependencies": [
-        "--aries-text-primary"
+        "--aries-accent-foreground"
       ],
       "selectors": [
         ":root",
@@ -442,11 +450,11 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "var(--aries-text-primary)"
+          "value": "var(--aries-accent-foreground)"
         },
         {
           "selector": ".day",
-          "value": "var(--aries-text-primary)"
+          "value": "var(--aries-accent-foreground)"
         }
       ],
       "consumerFiles": [
@@ -503,14 +511,45 @@
       "consumerFiles": [
         "src/app/globals.css",
         "src/components/workshell/app-sidebar.tsx",
+        "src/components/workshell/app-theme-preview.tsx",
+        "src/components/workshell/astrocart-controls.tsx",
         "src/components/workshell/astrolabe-view.tsx",
-        "src/components/workshell/workspace-content.tsx"
+        "src/components/workshell/chart-style-panel.tsx"
       ],
       "legacyId": "accent",
       "migrationAuthority": "legacy-preview-v1",
       "legacyConsumerFiles": [
         "src/components/workshell/appearance-panel.tsx",
         "src/components/workshell/style-token-bridge.tsx"
+      ]
+    },
+    {
+      "id": "--aries-accent-foreground",
+      "name": "--aries-accent-foreground",
+      "family": "app.palette",
+      "class": "public",
+      "role": "semantic-color",
+      "owner": "app-theme",
+      "provider": "daemon-theme-state",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-text-primary)",
+      "dependencies": [
+        "--aries-text-primary"
+      ],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "var(--aries-text-primary)"
+        }
+      ],
+      "consumerFiles": [
+        "src/app/globals.css",
+        "src/components/workshell/chart-style-panel.tsx"
       ]
     },
     {
@@ -1238,6 +1277,37 @@
       ]
     },
     {
+      "id": "--aries-astrocart-chrome-control-size",
+      "name": "--aries-astrocart-chrome-control-size",
+      "family": "renderer.astrocart",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "astrocart-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "px",
+      "default": "28px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "28px"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/astrocart-style.ts"
+      ],
+      "bounds": {
+        "min": 18,
+        "max": 56,
+        "step": 0.5
+      }
+    },
+    {
       "id": "--aries-astrocart-chrome-dim",
       "name": "--aries-astrocart-chrome-dim",
       "family": "renderer.astrocart",
@@ -1262,6 +1332,99 @@
       "consumerFiles": [
         "src/lib/chart/astrocart-style.ts"
       ]
+    },
+    {
+      "id": "--aries-astrocart-chrome-font-size",
+      "name": "--aries-astrocart-chrome-font-size",
+      "family": "renderer.astrocart",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "astrocart-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "px",
+      "default": "11px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "11px"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/astrocart-style.ts"
+      ],
+      "bounds": {
+        "min": 7,
+        "max": 24,
+        "step": 0.5
+      }
+    },
+    {
+      "id": "--aries-astrocart-chrome-gap",
+      "name": "--aries-astrocart-chrome-gap",
+      "family": "renderer.astrocart",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "astrocart-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "px",
+      "default": "4px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "4px"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/astrocart-style.ts"
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 24,
+        "step": 1
+      }
+    },
+    {
+      "id": "--aries-astrocart-chrome-inset",
+      "name": "--aries-astrocart-chrome-inset",
+      "family": "renderer.astrocart",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "astrocart-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "px",
+      "default": "8px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "8px"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/astrocart-style.ts"
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 48,
+        "step": 1
+      }
     },
     {
       "id": "--aries-astrocart-chrome-key-line",
@@ -1446,6 +1609,68 @@
       ]
     },
     {
+      "id": "--aries-astrocart-chrome-padding-x",
+      "name": "--aries-astrocart-chrome-padding-x",
+      "family": "renderer.astrocart",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "astrocart-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "px",
+      "default": "8px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "8px"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/astrocart-style.ts"
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 32,
+        "step": 1
+      }
+    },
+    {
+      "id": "--aries-astrocart-chrome-padding-y",
+      "name": "--aries-astrocart-chrome-padding-y",
+      "family": "renderer.astrocart",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "astrocart-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "px",
+      "default": "6px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "6px"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/astrocart-style.ts"
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 24,
+        "step": 1
+      }
+    },
+    {
       "id": "--aries-astrocart-chrome-page-bg",
       "name": "--aries-astrocart-chrome-page-bg",
       "family": "renderer.astrocart",
@@ -1470,6 +1695,37 @@
       "consumerFiles": [
         "src/lib/chart/astrocart-style.ts"
       ]
+    },
+    {
+      "id": "--aries-astrocart-chrome-panel-radius",
+      "name": "--aries-astrocart-chrome-panel-radius",
+      "family": "renderer.astrocart",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "astrocart-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "px",
+      "default": "6px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "6px"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/astrocart-style.ts"
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 24,
+        "step": 0.5
+      }
     },
     {
       "id": "--aries-astrocart-chrome-popup-bg",
@@ -1524,6 +1780,37 @@
       ]
     },
     {
+      "id": "--aries-astrocart-chrome-small-font-size",
+      "name": "--aries-astrocart-chrome-small-font-size",
+      "family": "renderer.astrocart",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "astrocart-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "px",
+      "default": "10px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "10px"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/astrocart-style.ts"
+      ],
+      "bounds": {
+        "min": 6,
+        "max": 20,
+        "step": 0.5
+      }
+    },
+    {
       "id": "--aries-astrocart-chrome-soft",
       "name": "--aries-astrocart-chrome-soft",
       "family": "renderer.astrocart",
@@ -1574,6 +1861,130 @@
       "consumerFiles": [
         "src/lib/chart/astrocart-style.ts"
       ]
+    },
+    {
+      "id": "--aries-astrocart-map-aspect-line-dash-off",
+      "name": "--aries-astrocart-map-aspect-line-dash-off",
+      "family": "renderer.astrocart",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "astrocart-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "px",
+      "default": "1.55px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "1.55px"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/astrocart-style.ts"
+      ],
+      "bounds": {
+        "min": 0.25,
+        "max": 12,
+        "step": 0.25
+      }
+    },
+    {
+      "id": "--aries-astrocart-map-aspect-line-dash-on",
+      "name": "--aries-astrocart-map-aspect-line-dash-on",
+      "family": "renderer.astrocart",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "astrocart-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "px",
+      "default": "0.45px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0.45px"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/astrocart-style.ts"
+      ],
+      "bounds": {
+        "min": 0.25,
+        "max": 12,
+        "step": 0.25
+      }
+    },
+    {
+      "id": "--aries-astrocart-map-aspect-line-opacity-scale",
+      "name": "--aries-astrocart-map-aspect-line-opacity-scale",
+      "family": "renderer.astrocart",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "astrocart-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0.78",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0.78"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/astrocart-style.ts"
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 1.5,
+        "step": 0.01
+      }
+    },
+    {
+      "id": "--aries-astrocart-map-aspect-line-width-scale",
+      "name": "--aries-astrocart-map-aspect-line-width-scale",
+      "family": "renderer.astrocart",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "astrocart-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0.82",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0.82"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/astrocart-style.ts"
+      ],
+      "bounds": {
+        "min": 0.25,
+        "max": 3,
+        "step": 0.01
+      }
     },
     {
       "id": "--aries-astrocart-map-asterism-highlight-color",
@@ -2019,89 +2430,6 @@
         {
           "selector": ":root",
           "value": "#59616a"
-        }
-      ],
-      "consumerFiles": [
-        "src/lib/chart/astrocart-style.ts"
-      ]
-    },
-    {
-      "id": "--aries-astrocart-map-building-color",
-      "name": "--aries-astrocart-map-building-color",
-      "family": "renderer.astrocart",
-      "class": "public",
-      "role": "renderer-style",
-      "owner": "astrocart-renderer",
-      "provider": "css-declaration",
-      "scope": "renderer",
-      "type": "color",
-      "unit": "",
-      "default": "rgba(10,12,16,0.44)",
-      "dependencies": [],
-      "selectors": [
-        ":root"
-      ],
-      "declarations": [
-        {
-          "selector": ":root",
-          "value": "rgba(10,12,16,0.44)"
-        }
-      ],
-      "consumerFiles": [
-        "src/lib/chart/astrocart-style.ts"
-      ]
-    },
-    {
-      "id": "--aries-astrocart-map-building-opacity-scale",
-      "name": "--aries-astrocart-map-building-opacity-scale",
-      "family": "renderer.astrocart",
-      "class": "public",
-      "role": "renderer-style",
-      "owner": "astrocart-renderer",
-      "provider": "css-declaration",
-      "scope": "renderer",
-      "type": "number",
-      "unit": "",
-      "default": "1",
-      "dependencies": [],
-      "selectors": [
-        ":root"
-      ],
-      "declarations": [
-        {
-          "selector": ":root",
-          "value": "1"
-        }
-      ],
-      "consumerFiles": [
-        "src/lib/chart/astrocart-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 2,
-        "step": 0.01
-      }
-    },
-    {
-      "id": "--aries-astrocart-map-building-outline-color",
-      "name": "--aries-astrocart-map-building-outline-color",
-      "family": "renderer.astrocart",
-      "class": "public",
-      "role": "renderer-style",
-      "owner": "astrocart-renderer",
-      "provider": "css-declaration",
-      "scope": "renderer",
-      "type": "color",
-      "unit": "",
-      "default": "rgba(126,134,144,0.14)",
-      "dependencies": [],
-      "selectors": [
-        ":root"
-      ],
-      "declarations": [
-        {
-          "selector": ":root",
-          "value": "rgba(126,134,144,0.14)"
         }
       ],
       "consumerFiles": [
@@ -3646,37 +3974,6 @@
       ]
     },
     {
-      "id": "--aries-astrocart-map-hillshade-exaggeration",
-      "name": "--aries-astrocart-map-hillshade-exaggeration",
-      "family": "renderer.astrocart",
-      "class": "public",
-      "role": "renderer-style",
-      "owner": "astrocart-renderer",
-      "provider": "css-declaration",
-      "scope": "renderer",
-      "type": "number",
-      "unit": "px",
-      "default": "0.35px",
-      "dependencies": [],
-      "selectors": [
-        ":root"
-      ],
-      "declarations": [
-        {
-          "selector": ":root",
-          "value": "0.35px"
-        }
-      ],
-      "consumerFiles": [
-        "src/lib/chart/astrocart-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.01
-      }
-    },
-    {
       "id": "--aries-astrocart-map-hospital-fill-color",
       "name": "--aries-astrocart-map-hospital-fill-color",
       "family": "renderer.astrocart",
@@ -4352,6 +4649,130 @@
         "min": 0.1,
         "max": 3,
         "step": 0.25
+      }
+    },
+    {
+      "id": "--aries-astrocart-map-local-space-opposition-dash-off-scale",
+      "name": "--aries-astrocart-map-local-space-opposition-dash-off-scale",
+      "family": "renderer.astrocart",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "astrocart-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "1.25",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "1.25"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/astrocart-style.ts"
+      ],
+      "bounds": {
+        "min": 0.25,
+        "max": 3,
+        "step": 0.01
+      }
+    },
+    {
+      "id": "--aries-astrocart-map-local-space-opposition-dash-on-scale",
+      "name": "--aries-astrocart-map-local-space-opposition-dash-on-scale",
+      "family": "renderer.astrocart",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "astrocart-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0.65",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0.65"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/astrocart-style.ts"
+      ],
+      "bounds": {
+        "min": 0.25,
+        "max": 3,
+        "step": 0.01
+      }
+    },
+    {
+      "id": "--aries-astrocart-map-local-space-opposition-opacity-scale",
+      "name": "--aries-astrocart-map-local-space-opposition-opacity-scale",
+      "family": "renderer.astrocart",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "astrocart-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0.88",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0.88"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/astrocart-style.ts"
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 1.5,
+        "step": 0.01
+      }
+    },
+    {
+      "id": "--aries-astrocart-map-local-space-opposition-width-scale",
+      "name": "--aries-astrocart-map-local-space-opposition-width-scale",
+      "family": "renderer.astrocart",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "astrocart-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0.9",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0.9"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/astrocart-style.ts"
+      ],
+      "bounds": {
+        "min": 0.25,
+        "max": 3,
+        "step": 0.01
       }
     },
     {
@@ -5355,120 +5776,6 @@
       }
     },
     {
-      "id": "--aries-astrocart-map-park-color",
-      "name": "--aries-astrocart-map-park-color",
-      "family": "renderer.astrocart",
-      "class": "public",
-      "role": "renderer-style",
-      "owner": "astrocart-renderer",
-      "provider": "css-declaration",
-      "scope": "renderer",
-      "type": "color",
-      "unit": "",
-      "default": "rgba(74,92,78,0.14)",
-      "dependencies": [],
-      "selectors": [
-        ":root"
-      ],
-      "declarations": [
-        {
-          "selector": ":root",
-          "value": "rgba(74,92,78,0.14)"
-        }
-      ],
-      "consumerFiles": [
-        "src/lib/chart/astrocart-style.ts"
-      ]
-    },
-    {
-      "id": "--aries-astrocart-map-park-fill-opacity-scale",
-      "name": "--aries-astrocart-map-park-fill-opacity-scale",
-      "family": "renderer.astrocart",
-      "class": "public",
-      "role": "renderer-style",
-      "owner": "astrocart-renderer",
-      "provider": "css-declaration",
-      "scope": "renderer",
-      "type": "number",
-      "unit": "",
-      "default": "1",
-      "dependencies": [],
-      "selectors": [
-        ":root"
-      ],
-      "declarations": [
-        {
-          "selector": ":root",
-          "value": "1"
-        }
-      ],
-      "consumerFiles": [
-        "src/lib/chart/astrocart-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 2,
-        "step": 0.01
-      }
-    },
-    {
-      "id": "--aries-astrocart-map-park-outline-color",
-      "name": "--aries-astrocart-map-park-outline-color",
-      "family": "renderer.astrocart",
-      "class": "public",
-      "role": "renderer-style",
-      "owner": "astrocart-renderer",
-      "provider": "css-declaration",
-      "scope": "renderer",
-      "type": "color",
-      "unit": "",
-      "default": "rgba(118,142,122,0.16)",
-      "dependencies": [],
-      "selectors": [
-        ":root"
-      ],
-      "declarations": [
-        {
-          "selector": ":root",
-          "value": "rgba(118,142,122,0.16)"
-        }
-      ],
-      "consumerFiles": [
-        "src/lib/chart/astrocart-style.ts"
-      ]
-    },
-    {
-      "id": "--aries-astrocart-map-park-outline-opacity-scale",
-      "name": "--aries-astrocart-map-park-outline-opacity-scale",
-      "family": "renderer.astrocart",
-      "class": "public",
-      "role": "renderer-style",
-      "owner": "astrocart-renderer",
-      "provider": "css-declaration",
-      "scope": "renderer",
-      "type": "number",
-      "unit": "",
-      "default": "1",
-      "dependencies": [],
-      "selectors": [
-        ":root"
-      ],
-      "declarations": [
-        {
-          "selector": ":root",
-          "value": "1"
-        }
-      ],
-      "consumerFiles": [
-        "src/lib/chart/astrocart-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 2,
-        "step": 0.01
-      }
-    },
-    {
       "id": "--aries-astrocart-map-pluto-line-color",
       "name": "--aries-astrocart-map-pluto-line-color",
       "family": "renderer.astrocart",
@@ -5553,6 +5860,37 @@
       "bounds": {
         "min": 0.25,
         "max": 3,
+        "step": 0.01
+      }
+    },
+    {
+      "id": "--aries-astrocart-map-progression-layer-opacity",
+      "name": "--aries-astrocart-map-progression-layer-opacity",
+      "family": "renderer.astrocart",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "astrocart-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0.68",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0.68"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/astrocart-style.ts"
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 1,
         "step": 0.01
       }
     },
@@ -6732,8 +7070,8 @@
       }
     },
     {
-      "id": "--aries-astrocart-map-terrain-exaggeration",
-      "name": "--aries-astrocart-map-terrain-exaggeration",
+      "id": "--aries-astrocart-map-transit-layer-opacity",
+      "name": "--aries-astrocart-map-transit-layer-opacity",
       "family": "renderer.astrocart",
       "class": "public",
       "role": "renderer-style",
@@ -6741,8 +7079,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "1px",
+      "unit": "",
+      "default": "0.82",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -6750,7 +7088,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "1px"
+          "value": "0.82"
         }
       ],
       "consumerFiles": [
@@ -6758,61 +7096,9 @@
       ],
       "bounds": {
         "min": 0,
-        "max": 3,
-        "step": 1
+        "max": 1,
+        "step": 0.01
       }
-    },
-    {
-      "id": "--aries-astrocart-map-terrain-highlight-color",
-      "name": "--aries-astrocart-map-terrain-highlight-color",
-      "family": "renderer.astrocart",
-      "class": "public",
-      "role": "renderer-style",
-      "owner": "astrocart-renderer",
-      "provider": "css-declaration",
-      "scope": "renderer",
-      "type": "color",
-      "unit": "",
-      "default": "#697682",
-      "dependencies": [],
-      "selectors": [
-        ":root"
-      ],
-      "declarations": [
-        {
-          "selector": ":root",
-          "value": "#697682"
-        }
-      ],
-      "consumerFiles": [
-        "src/lib/chart/astrocart-style.ts"
-      ]
-    },
-    {
-      "id": "--aries-astrocart-map-terrain-shadow-color",
-      "name": "--aries-astrocart-map-terrain-shadow-color",
-      "family": "renderer.astrocart",
-      "class": "public",
-      "role": "renderer-style",
-      "owner": "astrocart-renderer",
-      "provider": "css-declaration",
-      "scope": "renderer",
-      "type": "color",
-      "unit": "",
-      "default": "#111820",
-      "dependencies": [],
-      "selectors": [
-        ":root"
-      ],
-      "declarations": [
-        {
-          "selector": ":root",
-          "value": "#111820"
-        }
-      ],
-      "consumerFiles": [
-        "src/lib/chart/astrocart-style.ts"
-      ]
     },
     {
       "id": "--aries-astrocart-map-uranus-line-color",
@@ -7257,6 +7543,99 @@
         "min": 0,
         "max": 1,
         "step": 0.01
+      }
+    },
+    {
+      "id": "--aries-astrocart-map-zenith-radius-min",
+      "name": "--aries-astrocart-map-zenith-radius-min",
+      "family": "renderer.astrocart",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "astrocart-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "px",
+      "default": "3px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "3px"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/astrocart-style.ts"
+      ],
+      "bounds": {
+        "min": 0.5,
+        "max": 12,
+        "step": 0.5
+      }
+    },
+    {
+      "id": "--aries-astrocart-map-zenith-radius-width-scale",
+      "name": "--aries-astrocart-map-zenith-radius-width-scale",
+      "family": "renderer.astrocart",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "astrocart-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "2",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "2"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/astrocart-style.ts"
+      ],
+      "bounds": {
+        "min": 0.25,
+        "max": 6,
+        "step": 0.01
+      }
+    },
+    {
+      "id": "--aries-astrocart-map-zenith-stroke-width-min",
+      "name": "--aries-astrocart-map-zenith-stroke-width-min",
+      "family": "renderer.astrocart",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "astrocart-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "px",
+      "default": "1px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "1px"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/astrocart-style.ts"
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 6,
+        "step": 0.25
       }
     },
     {
@@ -9297,11 +9676,16 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
+        "src/components/workshell/app-theme-controls.tsx",
+        "src/components/workshell/chart-canvas.tsx",
+        "src/components/workshell/chart-style-panel.tsx",
         "src/components/workshell/notes-panel.tsx",
         "src/components/workshell/strip-view.tsx",
-        "src/components/workshell/workspace-content.tsx",
+        "src/components/workshell/workspace-frame.tsx",
+        "src/lib/chart/chart-export-registry.ts",
         "src/lib/chart/strip-render-style.ts",
-        "src/lib/shell/chart-picker-window.ts"
+        "src/lib/shell/chart-picker-window.ts",
+        "src/lib/theme/app-material-runtime.ts"
       ],
       "legacyId": "background",
       "migrationAuthority": "legacy-preview-v1",
@@ -9368,9 +9752,12 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
+        "src/components/workshell/app-theme-preview.tsx",
+        "src/components/workshell/aspect-list-panel.tsx",
         "src/components/workshell/astrolabe-view.tsx",
         "src/components/workshell/decennials-view.tsx",
         "src/components/workshell/eclipses-view.tsx",
+        "src/components/workshell/generic-table-view.tsx",
         "src/components/workshell/home-client.tsx",
         "src/components/workshell/list-column-layout.tsx",
         "src/components/workshell/list-controls.tsx",
@@ -9383,7 +9770,6 @@
         "src/components/workshell/strip-view.tsx",
         "src/components/workshell/surveil-studies-dialog.tsx",
         "src/components/workshell/time-lord-table-view.tsx",
-        "src/components/workshell/workspace-content.tsx",
         "src/components/workshell/zodiacal-releasing-view.tsx",
         "src/lib/chart/strip-render-style.ts"
       ],
@@ -9392,6 +9778,35 @@
       "legacyConsumerFiles": [
         "src/components/workshell/appearance-panel.tsx",
         "src/components/workshell/style-token-bridge.tsx"
+      ]
+    },
+    {
+      "id": "--aries-control-background",
+      "name": "--aries-control-background",
+      "family": "app.controls",
+      "class": "public",
+      "role": "control-layout",
+      "owner": "ui-controls",
+      "provider": "daemon-theme-state",
+      "scope": "component",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-surface-subtle)",
+      "dependencies": [
+        "--aries-surface-subtle"
+      ],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "var(--aries-surface-subtle)"
+        }
+      ],
+      "consumerFiles": [
+        "src/app/globals.css",
+        "src/lib/theme/app-material-runtime.ts"
       ]
     },
     {
@@ -9419,17 +9834,28 @@
       "consumerFiles": [
         "src/app/globals.css",
         "src/components/ui/button.tsx",
+        "src/components/ui/input-group.tsx",
+        "src/components/ui/tooltip.tsx",
+        "src/components/workshell/about-dialog.tsx",
         "src/components/workshell/ambient-spotlight.tsx",
+        "src/components/workshell/app-theme-controls.tsx",
         "src/components/workshell/astrolabe-view.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
         "src/components/workshell/chart-hover-flag.tsx",
         "src/components/workshell/feature-catalog-view.tsx",
+        "src/components/workshell/help-dialog.tsx",
+        "src/components/workshell/home-client.tsx",
         "src/components/workshell/inspector-panel.tsx",
+        "src/components/workshell/license-management-panel.tsx",
         "src/components/workshell/list-controls.tsx",
+        "src/components/workshell/mundane-chart-view.tsx",
+        "src/components/workshell/save-to-collection-dialog.tsx",
         "src/components/workshell/settings-dialog.tsx",
+        "src/components/workshell/surveil-studies-dialog.tsx",
         "src/components/workshell/system-chart-picker.tsx",
         "src/components/workshell/transit-search-view.tsx",
-        "src/components/workshell/workspace-content.tsx"
+        "src/components/workshell/workspace-content.tsx",
+        "src/lib/list-tokens.ts"
       ],
       "bounds": {
         "min": 0,
@@ -9464,15 +9890,28 @@
       "consumerFiles": [
         "src/app/globals.css",
         "src/components/ui/button.tsx",
+        "src/components/ui/input-group.tsx",
+        "src/components/ui/tabs.tsx",
+        "src/components/ui/tooltip.tsx",
+        "src/components/workshell/about-dialog.tsx",
         "src/components/workshell/app-sidebar.tsx",
+        "src/components/workshell/app-theme-controls.tsx",
+        "src/components/workshell/aspect-list-panel.tsx",
         "src/components/workshell/aspect-matrix-view.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
         "src/components/workshell/chart-hover-flag.tsx",
+        "src/components/workshell/generic-table-view.tsx",
         "src/components/workshell/inspector-panel.tsx",
+        "src/components/workshell/license-management-panel.tsx",
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/list-head-label.tsx",
+        "src/components/workshell/mundane-chart-view.tsx",
+        "src/components/workshell/primdir-settings.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
+        "src/components/workshell/save-to-collection-dialog.tsx",
         "src/components/workshell/settings-dialog.tsx",
+        "src/components/workshell/sidebar-list-table.tsx",
+        "src/components/workshell/surveil-studies-dialog.tsx",
         "src/components/workshell/system-chart-picker.tsx",
         "src/components/workshell/time-lord-table-view.tsx",
         "src/components/workshell/transit-search-view.tsx",
@@ -9507,6 +9946,8 @@
         "src/components/ui/command.tsx",
         "src/components/ui/input-group.tsx",
         "src/components/ui/input.tsx",
+        "src/components/workshell/app-theme-controls.tsx",
+        "src/components/workshell/astrocart-controls.tsx",
         "src/components/workshell/settings-dialog.tsx",
         "src/components/workshell/system-chart-picker.tsx",
         "src/components/workshell/transit-search-view.tsx"
@@ -9544,7 +9985,10 @@
       "consumerFiles": [
         "src/app/globals.css",
         "src/components/ui/button.tsx",
+        "src/components/ui/input-group.tsx",
+        "src/components/ui/input.tsx",
         "src/components/workshell/list-controls.tsx",
+        "src/components/workshell/primdir-settings.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
         "src/components/workshell/settings-dialog.tsx",
         "src/components/workshell/system-chart-picker.tsx",
@@ -9637,8 +10081,11 @@
       ],
       "consumerFiles": [
         "src/components/ui/button.tsx",
+        "src/components/workshell/app-theme-controls.tsx",
+        "src/components/workshell/astrocart-controls.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
         "src/components/workshell/eclipses-view.tsx",
+        "src/components/workshell/generic-table-view.tsx",
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
         "src/components/workshell/sectioned-table-view.tsx",
@@ -9730,7 +10177,10 @@
       "consumerFiles": [
         "src/app/globals.css",
         "src/components/ui/button.tsx",
+        "src/components/ui/input-group.tsx",
+        "src/components/workshell/aspect-list-panel.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
+        "src/components/workshell/generic-table-view.tsx",
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
         "src/components/workshell/synodic-cycle-list-view.tsx",
@@ -9770,6 +10220,8 @@
       ],
       "consumerFiles": [
         "src/components/ui/button.tsx",
+        "src/components/ui/input-group.tsx",
+        "src/components/ui/tabs.tsx",
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
         "src/components/workshell/settings-dialog.tsx"
@@ -9980,10 +10432,15 @@
       "consumerFiles": [
         "src/app/globals.css",
         "src/components/ui/button.tsx",
+        "src/components/ui/input-group.tsx",
         "src/components/ui/input.tsx",
+        "src/components/ui/textarea.tsx",
+        "src/components/ui/tooltip.tsx",
         "src/components/workshell/ambient-spotlight.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
         "src/components/workshell/chart-hover-flag.tsx",
+        "src/components/workshell/license-management-panel.tsx",
+        "src/components/workshell/mundane-chart-view.tsx",
         "src/components/workshell/settings-dialog.tsx",
         "src/components/workshell/system-chart-picker.tsx",
         "src/components/workshell/workspace-content.tsx"
@@ -10021,16 +10478,24 @@
       "consumerFiles": [
         "src/app/globals.css",
         "src/components/ui/button.tsx",
+        "src/components/ui/command.tsx",
+        "src/components/ui/input-group.tsx",
+        "src/components/workshell/app-theme-controls.tsx",
         "src/components/workshell/aspect-matrix-view.tsx",
+        "src/components/workshell/astrocart-controls.tsx",
         "src/components/workshell/astrolabe-view.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
         "src/components/workshell/eclipses-view.tsx",
+        "src/components/workshell/generic-table-view.tsx",
+        "src/components/workshell/home-client.tsx",
+        "src/components/workshell/license-management-panel.tsx",
         "src/components/workshell/list-controls.tsx",
+        "src/components/workshell/save-to-collection-dialog.tsx",
         "src/components/workshell/sectioned-table-view.tsx",
         "src/components/workshell/settings-dialog.tsx",
+        "src/components/workshell/surveil-studies-dialog.tsx",
         "src/components/workshell/system-chart-picker.tsx",
         "src/components/workshell/transit-search-view.tsx",
-        "src/components/workshell/workspace-content.tsx",
         "src/lib/list-tokens.ts"
       ]
     },
@@ -10059,10 +10524,18 @@
       "consumerFiles": [
         "src/app/globals.css",
         "src/components/ui/input.tsx",
+        "src/components/ui/tooltip.tsx",
         "src/components/workshell/app-sidebar-sortable.tsx",
         "src/components/workshell/app-sidebar.tsx",
         "src/components/workshell/chart-hover-flag.tsx",
-        "src/components/workshell/list-controls.tsx"
+        "src/components/workshell/home-client.tsx",
+        "src/components/workshell/license-management-panel.tsx",
+        "src/components/workshell/list-controls.tsx",
+        "src/components/workshell/mundane-chart-view.tsx",
+        "src/components/workshell/save-to-collection-dialog.tsx",
+        "src/components/workshell/settings-dialog.tsx",
+        "src/components/workshell/surveil-studies-dialog.tsx",
+        "src/components/workshell/system-chart-picker.tsx"
       ],
       "bounds": {
         "min": 0,
@@ -10100,6 +10573,236 @@
         "max": 480,
         "step": 4
       }
+    },
+    {
+      "id": "--aries-control-text",
+      "name": "--aries-control-text",
+      "family": "app.controls",
+      "class": "public",
+      "role": "control-layout",
+      "owner": "ui-controls",
+      "provider": "daemon-theme-state",
+      "scope": "component",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-text-primary)",
+      "dependencies": [
+        "--aries-text-primary"
+      ],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "var(--aries-text-primary)"
+        }
+      ],
+      "consumerFiles": [
+        "src/app/globals.css",
+        "src/lib/theme/app-material-runtime.ts"
+      ]
+    },
+    {
+      "id": "--aries-control-textarea-min-height",
+      "name": "--aries-control-textarea-min-height",
+      "family": "app.controls",
+      "class": "derived",
+      "role": "control-layout",
+      "owner": "ui-controls",
+      "provider": "css-expression",
+      "scope": "component",
+      "type": "number",
+      "unit": "px",
+      "default": "calc(var(--aries-control-height) * 2)",
+      "dependencies": [
+        "--aries-control-height"
+      ],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "calc(var(--aries-control-height) * 2)"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/ui/textarea.tsx"
+      ]
+    },
+    {
+      "id": "--aries-control-tooltip-arrow-size",
+      "name": "--aries-control-tooltip-arrow-size",
+      "family": "app.controls",
+      "class": "derived",
+      "role": "control-layout",
+      "owner": "ui-controls",
+      "provider": "css-expression",
+      "scope": "component",
+      "type": "number",
+      "unit": "px",
+      "default": "calc(var(--aries-control-gap) + var(--aries-control-gap-compact))",
+      "dependencies": [
+        "--aries-control-gap",
+        "--aries-control-gap-compact"
+      ],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "calc(var(--aries-control-gap) + var(--aries-control-gap-compact))"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/ui/tooltip.tsx"
+      ]
+    },
+    {
+      "id": "--aries-control-tooltip-side-offset",
+      "name": "--aries-control-tooltip-side-offset",
+      "family": "app.controls",
+      "class": "derived",
+      "role": "control-layout",
+      "owner": "ui-controls",
+      "provider": "css-expression",
+      "scope": "component",
+      "type": "number",
+      "unit": "px",
+      "default": "var(--aries-control-gap-compact)",
+      "dependencies": [
+        "--aries-control-gap-compact"
+      ],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "var(--aries-control-gap-compact)"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/ui/tooltip.tsx"
+      ]
+    },
+    {
+      "id": "--aries-data-body-background",
+      "name": "--aries-data-body-background",
+      "family": "app.palette",
+      "class": "public",
+      "role": "semantic-color",
+      "owner": "app-theme",
+      "provider": "daemon-theme-state",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-background)",
+      "dependencies": [
+        "--aries-background"
+      ],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "var(--aries-background)"
+        }
+      ],
+      "consumerFiles": [
+        "src/app/globals.css",
+        "src/lib/theme/app-material-runtime.ts"
+      ]
+    },
+    {
+      "id": "--aries-data-body-text",
+      "name": "--aries-data-body-text",
+      "family": "app.palette",
+      "class": "public",
+      "role": "semantic-color",
+      "owner": "app-theme",
+      "provider": "daemon-theme-state",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-text-primary)",
+      "dependencies": [
+        "--aries-text-primary"
+      ],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "var(--aries-text-primary)"
+        }
+      ],
+      "consumerFiles": [
+        "src/app/globals.css",
+        "src/lib/theme/app-material-runtime.ts"
+      ]
+    },
+    {
+      "id": "--aries-data-header-background",
+      "name": "--aries-data-header-background",
+      "family": "app.palette",
+      "class": "public",
+      "role": "semantic-color",
+      "owner": "app-theme",
+      "provider": "daemon-theme-state",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-surface)",
+      "dependencies": [
+        "--aries-surface"
+      ],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "var(--aries-surface)"
+        }
+      ],
+      "consumerFiles": [
+        "src/app/globals.css",
+        "src/lib/theme/app-material-runtime.ts"
+      ]
+    },
+    {
+      "id": "--aries-data-header-text",
+      "name": "--aries-data-header-text",
+      "family": "app.palette",
+      "class": "public",
+      "role": "semantic-color",
+      "owner": "app-theme",
+      "provider": "daemon-theme-state",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-text-primary)",
+      "dependencies": [
+        "--aries-text-primary"
+      ],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "var(--aries-text-primary)"
+        }
+      ],
+      "consumerFiles": [
+        "src/app/globals.css",
+        "src/lib/theme/app-material-runtime.ts"
+      ]
     },
     {
       "id": "--aries-destructive",
@@ -10213,6 +10916,7 @@
       ],
       "consumerFiles": [
         "src/components/ui/dialog.tsx",
+        "src/components/workshell/chart-style-panel.tsx",
         "src/components/workshell/settings-dialog.tsx",
         "src/components/workshell/system-chart-picker.tsx"
       ],
@@ -10246,7 +10950,9 @@
       ],
       "consumerFiles": [
         "src/components/ui/dialog.tsx",
+        "src/components/workshell/about-dialog.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
+        "src/components/workshell/chart-style-panel.tsx",
         "src/components/workshell/settings-dialog.tsx",
         "src/components/workshell/system-chart-picker.tsx"
       ],
@@ -10280,6 +10986,7 @@
       ],
       "consumerFiles": [
         "src/components/ui/dialog.tsx",
+        "src/components/workshell/chart-style-panel.tsx",
         "src/components/workshell/settings-dialog.tsx",
         "src/components/workshell/system-chart-picker.tsx"
       ],
@@ -10287,6 +10994,37 @@
         "min": 0,
         "max": 24,
         "step": 1
+      }
+    },
+    {
+      "id": "--aries-dialog-list-max-height",
+      "name": "--aries-dialog-list-max-height",
+      "family": "app.dialog",
+      "class": "public",
+      "role": "dialog-layout",
+      "owner": "ui-dialog",
+      "provider": "css-declaration",
+      "scope": "component",
+      "type": "number",
+      "unit": "px",
+      "default": "224px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "224px"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/workshell/about-dialog.tsx"
+      ],
+      "bounds": {
+        "min": 96,
+        "max": 560,
+        "step": 8
       }
     },
     {
@@ -10345,6 +11083,8 @@
       "consumerFiles": [
         "src/components/ui/dialog.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
+        "src/components/workshell/chart-style-panel.tsx",
+        "src/components/workshell/license-management-panel.tsx",
         "src/components/workshell/settings-dialog.tsx",
         "src/components/workshell/system-chart-picker.tsx"
       ],
@@ -10377,7 +11117,9 @@
         }
       ],
       "consumerFiles": [
-        "src/components/workshell/chart-editor-dialog.tsx"
+        "src/components/workshell/about-dialog.tsx",
+        "src/components/workshell/chart-editor-dialog.tsx",
+        "src/components/workshell/license-management-panel.tsx"
       ],
       "bounds": {
         "min": 4,
@@ -10533,6 +11275,7 @@
         }
       ],
       "consumerFiles": [
+        "src/components/workshell/chart-style-panel.tsx",
         "src/components/workshell/settings-dialog.tsx",
         "src/components/workshell/system-chart-picker.tsx"
       ],
@@ -10846,6 +11589,7 @@
       "consumerFiles": [
         "src/components/ui/dialog.tsx",
         "src/components/workshell/chart-hover-flag.tsx",
+        "src/components/workshell/mundane-chart-view.tsx",
         "src/components/workshell/system-chart-picker.tsx"
       ],
       "bounds": {
@@ -12496,6 +13240,7 @@
         }
       ],
       "consumerFiles": [
+        "src/components/workshell/chart-style-panel.tsx",
         "src/components/workshell/feature-catalog-view.tsx",
         "src/components/workshell/legal-document-view.tsx",
         "src/components/workshell/settings-dialog.tsx",
@@ -12590,8 +13335,10 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
+        "src/components/ui/button.tsx",
         "src/components/ui/context-menu.tsx",
         "src/components/ui/dropdown-menu.tsx",
+        "src/components/workshell/app-theme-preview.tsx",
         "src/components/workshell/aspect-matrix-view.tsx",
         "src/components/workshell/astrolabe-view.tsx",
         "src/components/workshell/astrolog-sphere-view.tsx",
@@ -12603,7 +13350,9 @@
         "src/components/workshell/eclipses-view.tsx",
         "src/components/workshell/feature-catalog-view.tsx",
         "src/components/workshell/firdaria-view.tsx",
+        "src/components/workshell/generic-table-view.tsx",
         "src/components/workshell/inspector-panel.tsx",
+        "src/components/workshell/license-management-panel.tsx",
         "src/components/workshell/mundane-chart-view.tsx",
         "src/components/workshell/notes-panel.tsx",
         "src/components/workshell/primdir-settings.tsx",
@@ -12652,11 +13401,15 @@
       ],
       "consumerFiles": [
         "src/components/ui/button.tsx",
+        "src/components/ui/command.tsx",
         "src/components/ui/context-menu.tsx",
         "src/components/ui/dialog.tsx",
         "src/components/ui/dropdown-menu.tsx",
+        "src/components/ui/input-group.tsx",
         "src/components/ui/input.tsx",
-        "src/components/ui/sheet.tsx"
+        "src/components/ui/sheet.tsx",
+        "src/components/ui/tabs.tsx",
+        "src/components/ui/textarea.tsx"
       ],
       "bounds": {
         "min": 11,
@@ -12690,7 +13443,9 @@
         "src/components/ui/dialog.tsx",
         "src/components/ui/input.tsx",
         "src/components/ui/sheet.tsx",
-        "src/components/workshell/chart-hover-flag.tsx"
+        "src/components/workshell/chart-hover-flag.tsx",
+        "src/components/workshell/mundane-chart-view.tsx",
+        "src/components/workshell/system-chart-picker.tsx"
       ],
       "bounds": {
         "min": 13,
@@ -12762,6 +13517,8 @@
         "src/components/workshell/aspect-matrix-view.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
         "src/components/workshell/chart-hover-flag.tsx",
+        "src/components/workshell/chart-style-panel.tsx",
+        "src/components/workshell/mundane-chart-view.tsx",
         "src/components/workshell/primdir-settings.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
         "src/components/workshell/settings-dialog.tsx",
@@ -12796,8 +13553,12 @@
         }
       ],
       "consumerFiles": [
+        "src/components/workshell/app-theme-controls.tsx",
+        "src/components/workshell/app-theme-preview.tsx",
+        "src/components/workshell/astrocart-controls.tsx",
         "src/components/workshell/chart-style-panel.tsx",
         "src/components/workshell/license-management-panel.tsx",
+        "src/components/workshell/style-lab-color-picker.tsx",
         "src/components/workshell/workspace-content.tsx"
       ],
       "bounds": {
@@ -12810,7 +13571,7 @@
       "id": "--aries-font-size-nav",
       "name": "--aries-font-size-nav",
       "family": "app.typography",
-      "class": "runtime",
+      "class": "public",
       "role": "typography",
       "owner": "app-theme",
       "provider": "css-declaration",
@@ -12831,13 +13592,18 @@
       "consumerFiles": [
         "src/components/workshell/app-sidebar.tsx",
         "src/components/workshell/workspace-content.tsx"
-      ]
+      ],
+      "bounds": {
+        "min": 9,
+        "max": 24,
+        "step": 1
+      }
     },
     {
       "id": "--aries-font-size-nav-section",
       "name": "--aries-font-size-nav-section",
       "family": "app.typography",
-      "class": "runtime",
+      "class": "public",
       "role": "typography",
       "owner": "app-theme",
       "provider": "css-declaration",
@@ -12857,7 +13623,12 @@
       ],
       "consumerFiles": [
         "src/components/workshell/app-sidebar.tsx"
-      ]
+      ],
+      "bounds": {
+        "min": 8,
+        "max": 20,
+        "step": 1
+      }
     },
     {
       "id": "--aries-font-size-reading",
@@ -12882,10 +13653,14 @@
         }
       ],
       "consumerFiles": [
+        "src/components/ui/button.tsx",
+        "src/components/workshell/about-dialog.tsx",
         "src/components/workshell/chart-hover-flag.tsx",
+        "src/components/workshell/chart-style-panel.tsx",
         "src/components/workshell/help-dialog.tsx",
         "src/components/workshell/inspector-panel.tsx",
         "src/components/workshell/license-management-panel.tsx",
+        "src/components/workshell/mundane-chart-view.tsx",
         "src/components/workshell/settings-dialog.tsx",
         "src/components/workshell/system-chart-picker.tsx",
         "src/components/workshell/workspace-content.tsx"
@@ -12926,13 +13701,16 @@
       ],
       "consumerFiles": [
         "src/components/workshell/ascensional-transits-view.tsx",
+        "src/components/workshell/aspect-list-panel.tsx",
         "src/components/workshell/aspect-matrix-view.tsx",
+        "src/components/workshell/astrocart-controls.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
         "src/components/workshell/chart-hover-flag.tsx",
         "src/components/workshell/directions-view.tsx",
         "src/components/workshell/inspector-panel.tsx",
         "src/components/workshell/license-management-panel.tsx",
         "src/components/workshell/list-controls.tsx",
+        "src/components/workshell/mundane-chart-view.tsx",
         "src/components/workshell/notes-panel.tsx",
         "src/components/workshell/primdir-settings.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
@@ -12977,8 +13755,16 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
+        "src/components/ui/command.tsx",
+        "src/components/ui/context-menu.tsx",
+        "src/components/ui/dropdown-menu.tsx",
+        "src/components/ui/tooltip.tsx",
+        "src/components/workshell/app-theme-controls.tsx",
+        "src/components/workshell/app-theme-preview.tsx",
         "src/components/workshell/ascensional-transits-view.tsx",
+        "src/components/workshell/aspect-list-panel.tsx",
         "src/components/workshell/aspect-matrix-view.tsx",
+        "src/components/workshell/astrocart-controls.tsx",
         "src/components/workshell/astrolabe-view.tsx",
         "src/components/workshell/astrolog-sphere-view.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
@@ -12988,11 +13774,13 @@
         "src/components/workshell/directions-view.tsx",
         "src/components/workshell/eclipses-view.tsx",
         "src/components/workshell/firdaria-view.tsx",
+        "src/components/workshell/generic-table-view.tsx",
         "src/components/workshell/home-client.tsx",
         "src/components/workshell/inspector-panel.tsx",
         "src/components/workshell/legal-document-view.tsx",
         "src/components/workshell/list-column-layout.tsx",
         "src/components/workshell/list-controls.tsx",
+        "src/components/workshell/mundane-chart-view.tsx",
         "src/components/workshell/notes-panel.tsx",
         "src/components/workshell/primdir-settings.tsx",
         "src/components/workshell/profections-view.tsx",
@@ -13000,9 +13788,11 @@
         "src/components/workshell/save-to-collection-dialog.tsx",
         "src/components/workshell/sectioned-table-view.tsx",
         "src/components/workshell/settings-dialog.tsx",
+        "src/components/workshell/style-lab-color-picker.tsx",
         "src/components/workshell/surveil-studies-dialog.tsx",
         "src/components/workshell/system-chart-picker.tsx",
         "src/components/workshell/time-lord-table-view.tsx",
+        "src/components/workshell/titlebar-options-menu.tsx",
         "src/components/workshell/transit-list-view.tsx",
         "src/components/workshell/transit-search-view.tsx",
         "src/components/workshell/whats-new-view.tsx",
@@ -13027,7 +13817,7 @@
       "id": "--aries-font-size-statusbar",
       "name": "--aries-font-size-statusbar",
       "family": "app.typography",
-      "class": "runtime",
+      "class": "public",
       "role": "typography",
       "owner": "app-theme",
       "provider": "css-declaration",
@@ -13047,13 +13837,18 @@
       ],
       "consumerFiles": [
         "src/components/workshell/workspace-content.tsx"
-      ]
+      ],
+      "bounds": {
+        "min": 8,
+        "max": 20,
+        "step": 1
+      }
     },
     {
       "id": "--aries-font-size-titlebar",
       "name": "--aries-font-size-titlebar",
       "family": "app.typography",
-      "class": "runtime",
+      "class": "public",
       "role": "typography",
       "owner": "app-theme",
       "provider": "css-declaration",
@@ -13073,7 +13868,12 @@
       ],
       "consumerFiles": [
         "src/components/workshell/workspace-content.tsx"
-      ]
+      ],
+      "bounds": {
+        "min": 9,
+        "max": 24,
+        "step": 1
+      }
     },
     {
       "id": "--aries-font-symbols",
@@ -13100,10 +13900,15 @@
       "consumerFiles": [
         "src/app/globals.css",
         "src/components/workshell/aspect-matrix-view.tsx",
+        "src/components/workshell/astrolabe-view.tsx",
+        "src/components/workshell/astrolog-sphere-view.tsx",
         "src/components/workshell/chart-canvas.tsx",
         "src/components/workshell/chart-hover-flag.tsx",
         "src/components/workshell/chart-style-panel.tsx",
+        "src/components/workshell/graph-ephemeris-view.tsx",
         "src/components/workshell/inspector-panel.tsx",
+        "src/components/workshell/mundane-chart-view.tsx",
+        "src/components/workshell/square-chart-view.tsx",
         "src/components/workshell/strip-view.tsx",
         "src/components/workshell/theme-provider.tsx",
         "src/lib/chart/chart-export-renderer.ts",
@@ -13135,6 +13940,7 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
+        "src/components/workshell/app-theme-controls.tsx",
         "src/components/workshell/notes-panel.tsx",
         "src/components/workshell/strip-view.tsx",
         "src/components/workshell/theme-provider.tsx",
@@ -13197,7 +14003,15 @@
         }
       ],
       "consumerFiles": [
+        "src/components/ui/input-group.tsx",
+        "src/components/ui/textarea.tsx",
+        "src/components/workshell/about-dialog.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
+        "src/components/workshell/chart-style-panel.tsx",
+        "src/components/workshell/help-dialog.tsx",
+        "src/components/workshell/license-management-panel.tsx",
+        "src/components/workshell/settings-dialog.tsx",
+        "src/components/workshell/surveil-studies-dialog.tsx",
         "src/components/workshell/system-chart-picker.tsx",
         "src/components/workshell/transit-search-view.tsx"
       ],
@@ -13231,6 +14045,7 @@
       ],
       "consumerFiles": [
         "src/components/workshell/chart-editor-dialog.tsx",
+        "src/components/workshell/license-management-panel.tsx",
         "src/components/workshell/system-chart-picker.tsx"
       ],
       "bounds": {
@@ -13294,9 +14109,14 @@
         }
       ],
       "consumerFiles": [
+        "src/components/ui/input-group.tsx",
+        "src/components/workshell/about-dialog.tsx",
         "src/components/workshell/ambient-spotlight.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
+        "src/components/workshell/license-management-panel.tsx",
+        "src/components/workshell/save-to-collection-dialog.tsx",
         "src/components/workshell/settings-dialog.tsx",
+        "src/components/workshell/surveil-studies-dialog.tsx",
         "src/components/workshell/transit-search-view.tsx"
       ],
       "bounds": {
@@ -13316,19 +14136,22 @@
       "scope": "component",
       "type": "number",
       "unit": "px",
-      "default": "20px",
-      "dependencies": [],
+      "default": "var(--aries-section-gap)",
+      "dependencies": [
+        "--aries-section-gap"
+      ],
       "selectors": [
         ":root"
       ],
       "declarations": [
         {
           "selector": ":root",
-          "value": "20px"
+          "value": "var(--aries-section-gap)"
         }
       ],
       "consumerFiles": [
         "src/components/workshell/chart-editor-dialog.tsx",
+        "src/components/workshell/chart-style-panel.tsx",
         "src/components/workshell/feature-catalog-view.tsx",
         "src/components/workshell/settings-dialog.tsx"
       ],
@@ -13433,8 +14256,11 @@
         }
       ],
       "consumerFiles": [
+        "src/app/globals.css",
+        "src/components/workshell/app-theme-controls.tsx",
         "src/components/workshell/chart-style-panel.tsx",
-        "src/components/workshell/inspector-panel.tsx"
+        "src/components/workshell/inspector-panel.tsx",
+        "src/lib/theme/app-material-runtime.ts"
       ]
     },
     {
@@ -13497,7 +14323,7 @@
       "id": "--aries-inspector-card-gap",
       "name": "--aries-inspector-card-gap",
       "family": "app.inspector",
-      "class": "runtime",
+      "class": "public",
       "role": "inspector",
       "owner": "inspector",
       "provider": "css-declaration",
@@ -13517,13 +14343,18 @@
       ],
       "consumerFiles": [
         "src/components/workshell/inspector-panel.tsx"
-      ]
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 32,
+        "step": 1
+      }
     },
     {
       "id": "--aries-inspector-card-padding-x",
       "name": "--aries-inspector-card-padding-x",
       "family": "app.inspector",
-      "class": "runtime",
+      "class": "public",
       "role": "inspector",
       "owner": "inspector",
       "provider": "css-declaration",
@@ -13543,13 +14374,18 @@
       ],
       "consumerFiles": [
         "src/components/workshell/inspector-panel.tsx"
-      ]
+      ],
+      "bounds": {
+        "min": 2,
+        "max": 32,
+        "step": 1
+      }
     },
     {
       "id": "--aries-inspector-card-padding-y",
       "name": "--aries-inspector-card-padding-y",
       "family": "app.inspector",
-      "class": "runtime",
+      "class": "public",
       "role": "inspector",
       "owner": "inspector",
       "provider": "css-declaration",
@@ -13569,13 +14405,49 @@
       ],
       "consumerFiles": [
         "src/components/workshell/inspector-panel.tsx"
-      ]
+      ],
+      "bounds": {
+        "min": 2,
+        "max": 24,
+        "step": 1
+      }
+    },
+    {
+      "id": "--aries-inspector-citation-gap",
+      "name": "--aries-inspector-citation-gap",
+      "family": "app.inspector",
+      "class": "public",
+      "role": "inspector",
+      "owner": "inspector",
+      "provider": "css-declaration",
+      "scope": "component",
+      "type": "number",
+      "unit": "px",
+      "default": "12px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "12px"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/workshell/inspector-panel.tsx"
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 32,
+        "step": 1
+      }
     },
     {
       "id": "--aries-inspector-close-icon-size",
       "name": "--aries-inspector-close-icon-size",
       "family": "app.inspector",
-      "class": "runtime",
+      "class": "public",
       "role": "inspector",
       "owner": "inspector",
       "provider": "css-declaration",
@@ -13596,13 +14468,18 @@
       "consumerFiles": [
         "src/app/globals.css",
         "src/components/workshell/inspector-panel.tsx"
-      ]
+      ],
+      "bounds": {
+        "min": 8,
+        "max": 28,
+        "step": 1
+      }
     },
     {
       "id": "--aries-inspector-close-inset",
       "name": "--aries-inspector-close-inset",
       "family": "app.inspector",
-      "class": "runtime",
+      "class": "public",
       "role": "inspector",
       "owner": "inspector",
       "provider": "css-declaration",
@@ -13623,7 +14500,12 @@
       "consumerFiles": [
         "src/app/globals.css",
         "src/components/workshell/inspector-panel.tsx"
-      ]
+      ],
+      "bounds": {
+        "min": 2,
+        "max": 32,
+        "step": 1
+      }
     },
     {
       "id": "--aries-inspector-close-reserve",
@@ -13690,7 +14572,7 @@
       "id": "--aries-inspector-control-height",
       "name": "--aries-inspector-control-height",
       "family": "app.inspector",
-      "class": "runtime",
+      "class": "public",
       "role": "inspector",
       "owner": "inspector",
       "provider": "css-declaration",
@@ -13710,13 +14592,18 @@
       ],
       "consumerFiles": [
         "src/components/workshell/inspector-panel.tsx"
-      ]
+      ],
+      "bounds": {
+        "min": 18,
+        "max": 44,
+        "step": 1
+      }
     },
     {
       "id": "--aries-inspector-control-padding-x",
       "name": "--aries-inspector-control-padding-x",
       "family": "app.inspector",
-      "class": "runtime",
+      "class": "public",
       "role": "inspector",
       "owner": "inspector",
       "provider": "css-declaration",
@@ -13736,13 +14623,18 @@
       ],
       "consumerFiles": [
         "src/components/workshell/inspector-panel.tsx"
-      ]
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 20,
+        "step": 1
+      }
     },
     {
       "id": "--aries-inspector-control-section-padding-bottom",
       "name": "--aries-inspector-control-section-padding-bottom",
       "family": "app.inspector",
-      "class": "runtime",
+      "class": "public",
       "role": "inspector",
       "owner": "inspector",
       "provider": "css-declaration",
@@ -13762,7 +14654,12 @@
       ],
       "consumerFiles": [
         "src/components/workshell/inspector-panel.tsx"
-      ]
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 32,
+        "step": 1
+      }
     },
     {
       "id": "--aries-inspector-divider-color",
@@ -13790,8 +14687,10 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
+        "src/components/workshell/app-theme-controls.tsx",
         "src/components/workshell/chart-style-panel.tsx",
-        "src/components/workshell/inspector-panel.tsx"
+        "src/components/workshell/inspector-panel.tsx",
+        "src/components/workshell/style-lab-color-picker.tsx"
       ]
     },
     {
@@ -13829,7 +14728,7 @@
       "id": "--aries-inspector-heading-gap",
       "name": "--aries-inspector-heading-gap",
       "family": "app.inspector",
-      "class": "runtime",
+      "class": "public",
       "role": "inspector",
       "owner": "inspector",
       "provider": "css-declaration",
@@ -13850,7 +14749,12 @@
       "consumerFiles": [
         "src/app/globals.css",
         "src/components/workshell/inspector-panel.tsx"
-      ]
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 24,
+        "step": 1
+      }
     },
     {
       "id": "--aries-inspector-hover-flag-accent-border-opacity",
@@ -13875,7 +14779,8 @@
         }
       ],
       "consumerFiles": [
-        "src/components/workshell/chart-hover-flag.tsx"
+        "src/components/workshell/chart-hover-flag.tsx",
+        "src/components/workshell/mundane-chart-view.tsx"
       ],
       "bounds": {
         "min": 0,
@@ -13906,7 +14811,8 @@
         }
       ],
       "consumerFiles": [
-        "src/components/workshell/chart-hover-flag.tsx"
+        "src/components/workshell/chart-hover-flag.tsx",
+        "src/components/workshell/mundane-chart-view.tsx"
       ],
       "bounds": {
         "min": 0,
@@ -13937,7 +14843,8 @@
         }
       ],
       "consumerFiles": [
-        "src/components/workshell/chart-hover-flag.tsx"
+        "src/components/workshell/chart-hover-flag.tsx",
+        "src/components/workshell/mundane-chart-view.tsx"
       ],
       "bounds": {
         "min": 0,
@@ -13968,7 +14875,8 @@
         }
       ],
       "consumerFiles": [
-        "src/components/workshell/chart-hover-flag.tsx"
+        "src/components/workshell/chart-hover-flag.tsx",
+        "src/components/workshell/mundane-chart-view.tsx"
       ],
       "bounds": {
         "min": 0,
@@ -13999,7 +14907,8 @@
         }
       ],
       "consumerFiles": [
-        "src/components/workshell/chart-hover-flag.tsx"
+        "src/components/workshell/chart-hover-flag.tsx",
+        "src/components/workshell/mundane-chart-view.tsx"
       ],
       "bounds": {
         "min": 32,
@@ -14030,7 +14939,8 @@
         }
       ],
       "consumerFiles": [
-        "src/components/workshell/chart-hover-flag.tsx"
+        "src/components/workshell/chart-hover-flag.tsx",
+        "src/components/workshell/mundane-chart-view.tsx"
       ],
       "bounds": {
         "min": 80,
@@ -14061,7 +14971,8 @@
         }
       ],
       "consumerFiles": [
-        "src/components/workshell/chart-hover-flag.tsx"
+        "src/components/workshell/chart-hover-flag.tsx",
+        "src/components/workshell/mundane-chart-view.tsx"
       ],
       "bounds": {
         "min": 64,
@@ -14092,7 +15003,8 @@
         }
       ],
       "consumerFiles": [
-        "src/components/workshell/chart-hover-flag.tsx"
+        "src/components/workshell/chart-hover-flag.tsx",
+        "src/components/workshell/mundane-chart-view.tsx"
       ],
       "bounds": {
         "min": 48,
@@ -14123,7 +15035,8 @@
         }
       ],
       "consumerFiles": [
-        "src/components/workshell/chart-hover-flag.tsx"
+        "src/components/workshell/chart-hover-flag.tsx",
+        "src/components/workshell/mundane-chart-view.tsx"
       ],
       "bounds": {
         "min": 96,
@@ -14154,7 +15067,8 @@
         }
       ],
       "consumerFiles": [
-        "src/components/workshell/chart-hover-flag.tsx"
+        "src/components/workshell/chart-hover-flag.tsx",
+        "src/components/workshell/mundane-chart-view.tsx"
       ]
     },
     {
@@ -14180,7 +15094,8 @@
         }
       ],
       "consumerFiles": [
-        "src/components/workshell/chart-hover-flag.tsx"
+        "src/components/workshell/chart-hover-flag.tsx",
+        "src/components/workshell/mundane-chart-view.tsx"
       ],
       "bounds": {
         "min": 2,
@@ -14214,8 +15129,10 @@
         }
       ],
       "consumerFiles": [
+        "src/components/workshell/app-theme-controls.tsx",
         "src/components/workshell/chart-style-panel.tsx",
-        "src/components/workshell/inspector-panel.tsx"
+        "src/components/workshell/inspector-panel.tsx",
+        "src/components/workshell/style-lab-color-picker.tsx"
       ]
     },
     {
@@ -14244,6 +15161,7 @@
         }
       ],
       "consumerFiles": [
+        "src/components/workshell/app-theme-controls.tsx",
         "src/components/workshell/chart-style-panel.tsx",
         "src/components/workshell/inspector-panel.tsx"
       ]
@@ -14305,6 +15223,7 @@
         }
       ],
       "consumerFiles": [
+        "src/components/workshell/app-theme-controls.tsx",
         "src/components/workshell/chart-style-panel.tsx",
         "src/components/workshell/inspector-panel.tsx"
       ]
@@ -14429,6 +15348,7 @@
         }
       ],
       "consumerFiles": [
+        "src/components/workshell/app-theme-controls.tsx",
         "src/components/workshell/chart-style-panel.tsx",
         "src/components/workshell/inspector-panel.tsx"
       ],
@@ -14491,7 +15411,8 @@
       ],
       "consumerFiles": [
         "src/components/workshell/chart-hover-flag.tsx",
-        "src/components/workshell/inspector-panel.tsx"
+        "src/components/workshell/inspector-panel.tsx",
+        "src/components/workshell/mundane-chart-view.tsx"
       ],
       "bounds": {
         "min": 0,
@@ -14502,6 +15423,41 @@
     {
       "id": "--aries-inspector-section-gap",
       "name": "--aries-inspector-section-gap",
+      "family": "app.inspector",
+      "class": "public",
+      "role": "inspector",
+      "owner": "inspector",
+      "provider": "css-declaration",
+      "scope": "component",
+      "type": "number",
+      "unit": "px",
+      "default": "calc(var(--aries-section-gap) * 2 / 5)",
+      "dependencies": [
+        "--aries-section-gap"
+      ],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "calc(var(--aries-section-gap) * 2 / 5)"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/workshell/chart-hover-flag.tsx",
+        "src/components/workshell/inspector-panel.tsx",
+        "src/components/workshell/mundane-chart-view.tsx"
+      ],
+      "bounds": {
+        "min": 2,
+        "max": 20,
+        "step": 1
+      }
+    },
+    {
+      "id": "--aries-inspector-status-dot-size",
+      "name": "--aries-inspector-status-dot-size",
       "family": "app.inspector",
       "class": "public",
       "role": "inspector",
@@ -14522,40 +15478,13 @@
         }
       ],
       "consumerFiles": [
-        "src/components/workshell/chart-hover-flag.tsx",
         "src/components/workshell/inspector-panel.tsx"
       ],
       "bounds": {
-        "min": 2,
+        "min": 4,
         "max": 20,
         "step": 1
       }
-    },
-    {
-      "id": "--aries-inspector-status-dot-size",
-      "name": "--aries-inspector-status-dot-size",
-      "family": "app.inspector",
-      "class": "runtime",
-      "role": "inspector",
-      "owner": "inspector",
-      "provider": "css-declaration",
-      "scope": "component",
-      "type": "number",
-      "unit": "px",
-      "default": "8px",
-      "dependencies": [],
-      "selectors": [
-        ":root"
-      ],
-      "declarations": [
-        {
-          "selector": ":root",
-          "value": "8px"
-        }
-      ],
-      "consumerFiles": [
-        "src/components/workshell/inspector-panel.tsx"
-      ]
     },
     {
       "id": "--aries-inspector-strong-color",
@@ -14674,7 +15603,8 @@
         }
       ],
       "consumerFiles": [
-        "src/app/globals.css"
+        "src/app/globals.css",
+        "src/lib/theme/app-material-runtime.ts"
       ],
       "legacyId": "inspectorText",
       "migrationAuthority": "legacy-preview-v1",
@@ -14708,6 +15638,7 @@
         }
       ],
       "consumerFiles": [
+        "src/components/workshell/app-theme-controls.tsx",
         "src/components/workshell/chart-style-panel.tsx",
         "src/components/workshell/inspector-panel.tsx"
       ]
@@ -14817,6 +15748,7 @@
       "consumerFiles": [
         "src/app/globals.css",
         "src/components/workshell/directions-view.tsx",
+        "src/components/workshell/generic-table-view.tsx",
         "src/components/workshell/list-head-label.tsx"
       ]
     },
@@ -14955,7 +15887,8 @@
         }
       ],
       "consumerFiles": [
-        "src/app/globals.css"
+        "src/app/globals.css",
+        "src/components/workshell/generic-table-view.tsx"
       ]
     },
     {
@@ -15385,8 +16318,7 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
-        "src/components/workshell/browser-menu-bar.tsx",
-        "src/components/workshell/workspace-content.tsx"
+        "src/components/workshell/browser-menu-bar.tsx"
       ]
     },
     {
@@ -15730,6 +16662,120 @@
       ]
     },
     {
+      "id": "--aries-material-background",
+      "name": "--aries-material-background",
+      "family": "app.material-runtime",
+      "class": "runtime",
+      "role": "resolved-material-color",
+      "owner": "app-material-compiler",
+      "provider": "css-declaration",
+      "scope": "component",
+      "type": "color",
+      "unit": "",
+      "default": "transparent",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "transparent"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/ui/tooltip.tsx"
+      ]
+    },
+    {
+      "id": "--aries-material-state-background",
+      "name": "--aries-material-state-background",
+      "family": "app.material-runtime",
+      "class": "runtime",
+      "role": "resolved-material-color",
+      "owner": "app-material-compiler",
+      "provider": "css-declaration",
+      "scope": "component",
+      "type": "color",
+      "unit": "",
+      "default": "initial",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "initial"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/theme/app-material-runtime.ts"
+      ]
+    },
+    {
+      "id": "--aries-menu-command-max-height",
+      "name": "--aries-menu-command-max-height",
+      "family": "app.menu",
+      "class": "public",
+      "role": "menu-layout",
+      "owner": "ui-menus",
+      "provider": "css-declaration",
+      "scope": "component",
+      "type": "number",
+      "unit": "px",
+      "default": "288px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "288px"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/ui/command.tsx"
+      ],
+      "bounds": {
+        "min": 160,
+        "max": 600,
+        "step": 8
+      }
+    },
+    {
+      "id": "--aries-menu-context-align-offset",
+      "name": "--aries-menu-context-align-offset",
+      "family": "app.menu",
+      "class": "public",
+      "role": "menu-layout",
+      "owner": "ui-menus",
+      "provider": "css-declaration",
+      "scope": "component",
+      "type": "number",
+      "unit": "px",
+      "default": "4px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "4px"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/ui/context-menu.tsx"
+      ],
+      "bounds": {
+        "min": -24,
+        "max": 24,
+        "step": 1
+      }
+    },
+    {
       "id": "--aries-menu-context-min-width",
       "name": "--aries-menu-context-min-width",
       "family": "app.menu",
@@ -15758,6 +16804,68 @@
         "min": 128,
         "max": 480,
         "step": 4
+      }
+    },
+    {
+      "id": "--aries-menu-context-popup-min-width",
+      "name": "--aries-menu-context-popup-min-width",
+      "family": "app.menu",
+      "class": "public",
+      "role": "menu-layout",
+      "owner": "ui-menus",
+      "provider": "css-declaration",
+      "scope": "component",
+      "type": "number",
+      "unit": "px",
+      "default": "144px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "144px"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/ui/context-menu.tsx"
+      ],
+      "bounds": {
+        "min": 80,
+        "max": 360,
+        "step": 4
+      }
+    },
+    {
+      "id": "--aries-menu-context-side-offset",
+      "name": "--aries-menu-context-side-offset",
+      "family": "app.menu",
+      "class": "public",
+      "role": "menu-layout",
+      "owner": "ui-menus",
+      "provider": "css-declaration",
+      "scope": "component",
+      "type": "number",
+      "unit": "px",
+      "default": "0px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0px"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/ui/context-menu.tsx"
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 32,
+        "step": 1
       }
     },
     {
@@ -15792,6 +16900,68 @@
       }
     },
     {
+      "id": "--aries-menu-dropdown-min-width",
+      "name": "--aries-menu-dropdown-min-width",
+      "family": "app.menu",
+      "class": "public",
+      "role": "menu-layout",
+      "owner": "ui-menus",
+      "provider": "css-declaration",
+      "scope": "component",
+      "type": "number",
+      "unit": "px",
+      "default": "128px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "128px"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/ui/dropdown-menu.tsx"
+      ],
+      "bounds": {
+        "min": 80,
+        "max": 360,
+        "step": 4
+      }
+    },
+    {
+      "id": "--aries-menu-dropdown-submenu-min-width",
+      "name": "--aries-menu-dropdown-submenu-min-width",
+      "family": "app.menu",
+      "class": "public",
+      "role": "menu-layout",
+      "owner": "ui-menus",
+      "provider": "css-declaration",
+      "scope": "component",
+      "type": "number",
+      "unit": "px",
+      "default": "96px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "96px"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/ui/dropdown-menu.tsx"
+      ],
+      "bounds": {
+        "min": 72,
+        "max": 360,
+        "step": 4
+      }
+    },
+    {
       "id": "--aries-menu-icon-size",
       "name": "--aries-menu-icon-size",
       "family": "app.menu",
@@ -15815,6 +16985,7 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
+        "src/components/ui/command.tsx",
         "src/components/ui/context-menu.tsx",
         "src/components/ui/dropdown-menu.tsx"
       ],
@@ -15910,6 +17081,7 @@
         }
       ],
       "consumerFiles": [
+        "src/components/ui/command.tsx",
         "src/components/ui/context-menu.tsx",
         "src/components/ui/dropdown-menu.tsx"
       ]
@@ -15939,6 +17111,7 @@
         }
       ],
       "consumerFiles": [
+        "src/components/ui/command.tsx",
         "src/components/ui/context-menu.tsx",
         "src/components/ui/dropdown-menu.tsx"
       ]
@@ -15968,6 +17141,7 @@
         }
       ],
       "consumerFiles": [
+        "src/components/ui/command.tsx",
         "src/components/ui/context-menu.tsx",
         "src/components/ui/dropdown-menu.tsx"
       ]
@@ -15995,8 +17169,10 @@
         }
       ],
       "consumerFiles": [
+        "src/components/ui/command.tsx",
         "src/components/ui/context-menu.tsx",
-        "src/components/ui/dropdown-menu.tsx"
+        "src/components/ui/dropdown-menu.tsx",
+        "src/components/workshell/titlebar-options-menu.tsx"
       ],
       "bounds": {
         "min": 0,
@@ -16027,8 +17203,10 @@
         }
       ],
       "consumerFiles": [
+        "src/components/ui/command.tsx",
         "src/components/ui/context-menu.tsx",
-        "src/components/ui/dropdown-menu.tsx"
+        "src/components/ui/dropdown-menu.tsx",
+        "src/components/workshell/titlebar-options-menu.tsx"
       ],
       "bounds": {
         "min": 0,
@@ -16060,6 +17238,7 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
+        "src/components/ui/command.tsx",
         "src/components/ui/context-menu.tsx",
         "src/components/ui/dropdown-menu.tsx",
         "src/components/workshell/ambient-spotlight.tsx"
@@ -16068,6 +17247,193 @@
         "min": 0,
         "max": 12,
         "step": 1
+      }
+    },
+    {
+      "id": "--aries-menu-picker-side-offset",
+      "name": "--aries-menu-picker-side-offset",
+      "family": "app.menu",
+      "class": "public",
+      "role": "menu-layout",
+      "owner": "ui-menus",
+      "provider": "css-declaration",
+      "scope": "component",
+      "type": "number",
+      "unit": "px",
+      "default": "8px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "8px"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/workshell/style-lab-color-picker.tsx"
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 32,
+        "step": 1
+      }
+    },
+    {
+      "id": "--aries-menu-popup-align-offset",
+      "name": "--aries-menu-popup-align-offset",
+      "family": "app.menu",
+      "class": "public",
+      "role": "menu-layout",
+      "owner": "ui-menus",
+      "provider": "css-declaration",
+      "scope": "component",
+      "type": "number",
+      "unit": "px",
+      "default": "0px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0px"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/ui/dropdown-menu.tsx"
+      ],
+      "bounds": {
+        "min": -24,
+        "max": 24,
+        "step": 1
+      }
+    },
+    {
+      "id": "--aries-menu-popup-side-offset",
+      "name": "--aries-menu-popup-side-offset",
+      "family": "app.menu",
+      "class": "public",
+      "role": "menu-layout",
+      "owner": "ui-menus",
+      "provider": "css-declaration",
+      "scope": "component",
+      "type": "number",
+      "unit": "px",
+      "default": "4px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "4px"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/ui/dropdown-menu.tsx",
+        "src/components/workshell/chart-style-panel.tsx"
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 32,
+        "step": 1
+      }
+    },
+    {
+      "id": "--aries-menu-quick-max-height",
+      "name": "--aries-menu-quick-max-height",
+      "family": "app.menu",
+      "class": "public",
+      "role": "menu-layout",
+      "owner": "ui-menus",
+      "provider": "css-declaration",
+      "scope": "component",
+      "type": "number",
+      "unit": "px",
+      "default": "620px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "620px"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/workshell/titlebar-options-menu.tsx"
+      ],
+      "bounds": {
+        "min": 240,
+        "max": 900,
+        "step": 8
+      }
+    },
+    {
+      "id": "--aries-menu-quick-viewport-max-height",
+      "name": "--aries-menu-quick-viewport-max-height",
+      "family": "app.menu",
+      "class": "public",
+      "role": "menu-layout",
+      "owner": "ui-menus",
+      "provider": "css-declaration",
+      "scope": "component",
+      "type": "number",
+      "unit": "vh",
+      "default": "76vh",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "76vh"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/workshell/titlebar-options-menu.tsx"
+      ],
+      "bounds": {
+        "min": 40,
+        "max": 95,
+        "step": 1
+      }
+    },
+    {
+      "id": "--aries-menu-quick-width",
+      "name": "--aries-menu-quick-width",
+      "family": "app.menu",
+      "class": "public",
+      "role": "menu-layout",
+      "owner": "ui-menus",
+      "provider": "css-declaration",
+      "scope": "component",
+      "type": "number",
+      "unit": "px",
+      "default": "288px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "288px"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/workshell/titlebar-options-menu.tsx"
+      ],
+      "bounds": {
+        "min": 200,
+        "max": 480,
+        "step": 4
       }
     },
     {
@@ -16130,6 +17496,69 @@
         "src/components/ui/context-menu.tsx",
         "src/components/ui/dropdown-menu.tsx"
       ]
+    },
+    {
+      "id": "--aries-menu-submenu-align-offset",
+      "name": "--aries-menu-submenu-align-offset",
+      "family": "app.menu",
+      "class": "public",
+      "role": "menu-layout",
+      "owner": "ui-menus",
+      "provider": "css-declaration",
+      "scope": "component",
+      "type": "number",
+      "unit": "px",
+      "default": "-3px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "-3px"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/ui/dropdown-menu.tsx"
+      ],
+      "bounds": {
+        "min": -24,
+        "max": 24,
+        "step": 1
+      }
+    },
+    {
+      "id": "--aries-menu-submenu-side-offset",
+      "name": "--aries-menu-submenu-side-offset",
+      "family": "app.menu",
+      "class": "public",
+      "role": "menu-layout",
+      "owner": "ui-menus",
+      "provider": "css-declaration",
+      "scope": "component",
+      "type": "number",
+      "unit": "px",
+      "default": "0px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0px"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/ui/context-menu.tsx",
+        "src/components/ui/dropdown-menu.tsx"
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 24,
+        "step": 1
+      }
     },
     {
       "id": "--aries-mode-hint-arrow-width",
@@ -16357,6 +17786,7 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
+        "src/components/workshell/chart-copy-control.tsx",
         "src/components/workshell/sidebar-sash.tsx",
         "src/components/workshell/titlebar-options-menu.tsx",
         "src/components/workshell/workspace-content.tsx"
@@ -16386,6 +17816,7 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
+        "src/components/workshell/chart-copy-control.tsx",
         "src/components/workshell/sidebar-sash.tsx",
         "src/components/workshell/titlebar-options-menu.tsx",
         "src/components/workshell/workspace-content.tsx"
@@ -18748,6 +20179,7 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
+        "src/components/workshell/app-theme-controls.tsx",
         "src/components/workshell/chart-style-panel.tsx"
       ]
     },
@@ -19250,6 +20682,37 @@
       }
     },
     {
+      "id": "--aries-overlay-background",
+      "name": "--aries-overlay-background",
+      "family": "app.palette",
+      "class": "public",
+      "role": "semantic-color",
+      "owner": "app-theme",
+      "provider": "daemon-theme-state",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-surface)",
+      "dependencies": [
+        "--aries-surface"
+      ],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "var(--aries-surface)"
+        }
+      ],
+      "consumerFiles": [
+        "src/app/globals.css",
+        "src/components/ui/dialog.tsx",
+        "src/components/ui/sheet.tsx",
+        "src/lib/theme/app-material-runtime.ts"
+      ]
+    },
+    {
       "id": "--aries-overlay-scrim",
       "name": "--aries-overlay-scrim",
       "family": "app.palette",
@@ -19281,8 +20744,40 @@
       "consumerFiles": [
         "src/components/ui/dialog.tsx",
         "src/components/ui/sheet.tsx",
+        "src/components/workshell/chart-style-panel.tsx",
         "src/components/workshell/settings-dialog.tsx",
         "src/components/workshell/system-chart-picker.tsx"
+      ]
+    },
+    {
+      "id": "--aries-overlay-text",
+      "name": "--aries-overlay-text",
+      "family": "app.palette",
+      "class": "public",
+      "role": "semantic-color",
+      "owner": "app-theme",
+      "provider": "daemon-theme-state",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-text-primary)",
+      "dependencies": [
+        "--aries-text-primary"
+      ],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "var(--aries-text-primary)"
+        }
+      ],
+      "consumerFiles": [
+        "src/app/globals.css",
+        "src/components/ui/dialog.tsx",
+        "src/components/ui/sheet.tsx",
+        "src/lib/theme/app-material-runtime.ts"
       ]
     },
     {
@@ -19309,6 +20804,8 @@
       ],
       "consumerFiles": [
         "src/components/workshell/feature-catalog-view.tsx",
+        "src/components/workshell/generic-table-view.tsx",
+        "src/components/workshell/help-dialog.tsx",
         "src/components/workshell/legal-document-view.tsx",
         "src/components/workshell/sectioned-table-view.tsx",
         "src/components/workshell/system-chart-picker.tsx",
@@ -19411,6 +20908,8 @@
       ],
       "consumerFiles": [
         "src/components/workshell/ascensional-transits-view.tsx",
+        "src/components/workshell/astrocart-controls.tsx",
+        "src/components/workshell/generic-table-view.tsx",
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
         "src/components/workshell/sectioned-table-view.tsx",
@@ -19539,8 +21038,10 @@
         }
       ],
       "consumerFiles": [
+        "src/components/workshell/astrocart-controls.tsx",
         "src/components/workshell/astrolabe-view.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
+        "src/components/workshell/generic-table-view.tsx",
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
         "src/components/workshell/sectioned-table-view.tsx",
@@ -19576,6 +21077,7 @@
         }
       ],
       "consumerFiles": [
+        "src/components/workshell/astrocart-controls.tsx",
         "src/components/workshell/astrolabe-view.tsx",
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
@@ -19610,6 +21112,7 @@
         }
       ],
       "consumerFiles": [
+        "src/components/workshell/aspect-list-panel.tsx",
         "src/components/workshell/list-controls.tsx",
         "src/lib/list-tokens.ts"
       ],
@@ -19643,10 +21146,13 @@
       ],
       "consumerFiles": [
         "src/components/workshell/ambient-spotlight.tsx",
+        "src/components/workshell/astrocart-controls.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
+        "src/components/workshell/generic-table-view.tsx",
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
         "src/components/workshell/sectioned-table-view.tsx",
+        "src/components/workshell/settings-dialog.tsx",
         "src/components/workshell/system-chart-picker.tsx",
         "src/components/workshell/transit-search-view.tsx",
         "src/lib/list-tokens.ts"
@@ -19711,7 +21217,11 @@
         }
       ],
       "consumerFiles": [
+        "src/components/ui/command.tsx",
+        "src/components/workshell/about-dialog.tsx",
+        "src/components/workshell/aspect-list-panel.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
+        "src/components/workshell/generic-table-view.tsx",
         "src/components/workshell/system-chart-picker.tsx",
         "src/lib/list-tokens.ts"
       ],
@@ -19732,15 +21242,17 @@
       "scope": "component",
       "type": "number",
       "unit": "px",
-      "default": "12px",
-      "dependencies": [],
+      "default": "calc(var(--aries-section-gap) * 3 / 5)",
+      "dependencies": [
+        "--aries-section-gap"
+      ],
       "selectors": [
         ":root"
       ],
       "declarations": [
         {
           "selector": ":root",
-          "value": "12px"
+          "value": "calc(var(--aries-section-gap) * 3 / 5)"
         }
       ],
       "consumerFiles": [
@@ -19789,6 +21301,36 @@
       }
     },
     {
+      "id": "--aries-panel-background",
+      "name": "--aries-panel-background",
+      "family": "app.shell",
+      "class": "public",
+      "role": "shell",
+      "owner": "workspace-shell",
+      "provider": "daemon-theme-state",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-surface)",
+      "dependencies": [
+        "--aries-surface"
+      ],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "var(--aries-surface)"
+        }
+      ],
+      "consumerFiles": [
+        "src/app/globals.css",
+        "src/components/workshell/workspace-content.tsx",
+        "src/lib/theme/app-material-runtime.ts"
+      ]
+    },
+    {
       "id": "--aries-panel-padding-x",
       "name": "--aries-panel-padding-x",
       "family": "app.shell",
@@ -19814,6 +21356,7 @@
         "src/app/globals.css",
         "src/components/workshell/feature-catalog-view.tsx",
         "src/components/workshell/legal-document-view.tsx",
+        "src/components/workshell/settings-dialog.tsx",
         "src/components/workshell/whats-new-view.tsx"
       ],
       "legacyId": "panelPaddingX",
@@ -19853,6 +21396,7 @@
       "consumerFiles": [
         "src/app/globals.css",
         "src/components/workshell/feature-catalog-view.tsx",
+        "src/components/workshell/help-dialog.tsx",
         "src/components/workshell/legal-document-view.tsx",
         "src/components/workshell/whats-new-view.tsx"
       ],
@@ -19867,6 +21411,102 @@
         "max": 28,
         "step": 1
       }
+    },
+    {
+      "id": "--aries-panel-text",
+      "name": "--aries-panel-text",
+      "family": "app.shell",
+      "class": "public",
+      "role": "shell",
+      "owner": "workspace-shell",
+      "provider": "daemon-theme-state",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-text-primary)",
+      "dependencies": [
+        "--aries-text-primary"
+      ],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "var(--aries-text-primary)"
+        }
+      ],
+      "consumerFiles": [
+        "src/app/globals.css",
+        "src/components/workshell/workspace-content.tsx",
+        "src/lib/theme/app-material-runtime.ts"
+      ]
+    },
+    {
+      "id": "--aries-popover-background",
+      "name": "--aries-popover-background",
+      "family": "app.palette",
+      "class": "public",
+      "role": "semantic-color",
+      "owner": "app-theme",
+      "provider": "daemon-theme-state",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-background)",
+      "dependencies": [
+        "--aries-background"
+      ],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "var(--aries-background)"
+        }
+      ],
+      "consumerFiles": [
+        "src/app/globals.css",
+        "src/components/ui/context-menu.tsx",
+        "src/components/ui/dropdown-menu.tsx",
+        "src/components/ui/tooltip.tsx",
+        "src/components/workshell/style-lab-color-picker.tsx",
+        "src/lib/theme/app-material-runtime.ts"
+      ]
+    },
+    {
+      "id": "--aries-popover-text",
+      "name": "--aries-popover-text",
+      "family": "app.palette",
+      "class": "public",
+      "role": "semantic-color",
+      "owner": "app-theme",
+      "provider": "daemon-theme-state",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-text-primary)",
+      "dependencies": [
+        "--aries-text-primary"
+      ],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "var(--aries-text-primary)"
+        }
+      ],
+      "consumerFiles": [
+        "src/app/globals.css",
+        "src/components/ui/context-menu.tsx",
+        "src/components/ui/dropdown-menu.tsx",
+        "src/components/ui/tooltip.tsx",
+        "src/components/workshell/style-lab-color-picker.tsx",
+        "src/lib/theme/app-material-runtime.ts"
+      ]
     },
     {
       "id": "--aries-radius-2xs",
@@ -19922,6 +21562,8 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
+        "src/components/workshell/app-theme-preview.tsx",
+        "src/components/workshell/astrocart-controls.tsx",
         "src/components/workshell/browser-menu-bar.tsx",
         "src/components/workshell/titlebar-options-menu.tsx",
         "src/components/workshell/workspace-content.tsx"
@@ -19953,17 +21595,26 @@
       ],
       "consumerFiles": [
         "src/components/ui/input-group.tsx",
+        "src/components/ui/tooltip.tsx",
         "src/components/workshell/app-sidebar.tsx",
+        "src/components/workshell/app-theme-controls.tsx",
+        "src/components/workshell/app-theme-preview.tsx",
         "src/components/workshell/astrolabe-view.tsx",
         "src/components/workshell/chart-style-panel.tsx",
         "src/components/workshell/eclipses-view.tsx",
+        "src/components/workshell/generic-table-view.tsx",
+        "src/components/workshell/home-client.tsx",
         "src/components/workshell/inspector-panel.tsx",
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/notes-panel.tsx",
+        "src/components/workshell/primdir-settings.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
+        "src/components/workshell/save-to-collection-dialog.tsx",
         "src/components/workshell/sectioned-table-view.tsx",
         "src/components/workshell/settings-dialog.tsx",
-        "src/components/workshell/workspace-content.tsx"
+        "src/components/workshell/style-lab-color-picker.tsx",
+        "src/components/workshell/surveil-studies-dialog.tsx",
+        "src/components/workshell/system-chart-picker.tsx"
       ]
     },
     {
@@ -19992,7 +21643,9 @@
       ],
       "consumerFiles": [
         "src/components/ui/command.tsx",
-        "src/components/ui/dialog.tsx"
+        "src/components/ui/dialog.tsx",
+        "src/components/workshell/chart-style-panel.tsx",
+        "src/components/workshell/system-chart-picker.tsx"
       ]
     },
     {
@@ -20048,7 +21701,11 @@
       "consumerFiles": [
         "src/app/globals.css",
         "src/components/workshell/chart-hover-flag.tsx",
-        "src/components/workshell/settings-dialog.tsx"
+        "src/components/workshell/help-dialog.tsx",
+        "src/components/workshell/inspector-panel.tsx",
+        "src/components/workshell/mundane-chart-view.tsx",
+        "src/components/workshell/settings-dialog.tsx",
+        "src/components/workshell/system-chart-picker.tsx"
       ],
       "bounds": {
         "min": 0,
@@ -20081,6 +21738,7 @@
         }
       ],
       "consumerFiles": [
+        "src/components/ui/command.tsx",
         "src/components/ui/context-menu.tsx",
         "src/components/ui/dropdown-menu.tsx"
       ]
@@ -20112,7 +21770,10 @@
       "consumerFiles": [
         "src/components/ui/context-menu.tsx",
         "src/components/ui/dropdown-menu.tsx",
-        "src/components/workshell/chart-style-panel.tsx"
+        "src/components/ui/tooltip.tsx",
+        "src/components/workshell/app-theme-preview.tsx",
+        "src/components/workshell/chart-style-panel.tsx",
+        "src/components/workshell/style-lab-color-picker.tsx"
       ]
     },
     {
@@ -20202,6 +21863,7 @@
         "src/components/ui/input-group.tsx",
         "src/components/ui/input.tsx",
         "src/components/ui/textarea.tsx",
+        "src/components/workshell/license-management-panel.tsx",
         "src/components/workshell/settings-dialog.tsx"
       ]
     },
@@ -20231,7 +21893,10 @@
       ],
       "consumerFiles": [
         "src/components/ui/button.tsx",
-        "src/components/workshell/retained-pane-shell.tsx"
+        "src/components/workshell/chart-editor-dialog.tsx",
+        "src/components/workshell/license-management-panel.tsx",
+        "src/components/workshell/retained-pane-shell.tsx",
+        "src/components/workshell/system-chart-picker.tsx"
       ]
     },
     {
@@ -20486,6 +22151,7 @@
       "consumerFiles": [
         "src/components/ui/resizable.tsx",
         "src/components/workshell/resizable-table-columns.tsx",
+        "src/components/workshell/settings-dialog.tsx",
         "src/components/workshell/sidebar-sash.tsx",
         "src/components/workshell/workspace-content.tsx"
       ],
@@ -20726,7 +22392,9 @@
         }
       ],
       "consumerFiles": [
-        "src/app/globals.css"
+        "src/app/globals.css",
+        "src/components/workshell/help-dialog.tsx",
+        "src/components/workshell/settings-dialog.tsx"
       ],
       "legacyId": "sectionGap",
       "migrationAuthority": "legacy-preview-v1",
@@ -20827,8 +22495,10 @@
         }
       ],
       "consumerFiles": [
+        "src/components/ui/input-group.tsx",
+        "src/components/ui/tooltip.tsx",
         "src/components/workshell/astrolabe-view.tsx",
-        "src/components/workshell/workspace-content.tsx",
+        "src/components/workshell/settings-dialog.tsx",
         "src/lib/list-tokens.ts"
       ],
       "bounds": {
@@ -21277,10 +22947,10 @@
       "id": "--aries-sidebar-accent-foreground",
       "name": "--aries-sidebar-accent-foreground",
       "family": "app.sidebar",
-      "class": "derived",
+      "class": "public",
       "role": "sidebar",
       "owner": "workspace-sidebar",
-      "provider": "css-expression",
+      "provider": "daemon-theme-state",
       "scope": "component",
       "type": "color",
       "unit": "",
@@ -21304,7 +22974,8 @@
         }
       ],
       "consumerFiles": [
-        "src/app/globals.css"
+        "src/app/globals.css",
+        "src/components/workshell/app-theme-preview.tsx"
       ]
     },
     {
@@ -21337,6 +23008,35 @@
         "max": 18,
         "step": 1
       }
+    },
+    {
+      "id": "--aries-sidebar-background",
+      "name": "--aries-sidebar-background",
+      "family": "app.sidebar",
+      "class": "public",
+      "role": "sidebar",
+      "owner": "workspace-sidebar",
+      "provider": "daemon-theme-state",
+      "scope": "component",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-surface)",
+      "dependencies": [
+        "--aries-surface"
+      ],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "var(--aries-surface)"
+        }
+      ],
+      "consumerFiles": [
+        "src/app/globals.css",
+        "src/lib/theme/app-material-runtime.ts"
+      ]
     },
     {
       "id": "--aries-sidebar-close-action-size",
@@ -21977,7 +23677,8 @@
         }
       ],
       "consumerFiles": [
-        "src/app/globals.css"
+        "src/app/globals.css",
+        "src/lib/theme/app-material-runtime.ts"
       ],
       "legacyId": "sidebarText",
       "migrationAuthority": "legacy-preview-v1",
@@ -23584,6 +25285,37 @@
       }
     },
     {
+      "id": "--aries-spotlight-dialog-top",
+      "name": "--aries-spotlight-dialog-top",
+      "family": "app.spotlight",
+      "class": "public",
+      "role": "spotlight",
+      "owner": "spotlight",
+      "provider": "css-declaration",
+      "scope": "component",
+      "type": "number",
+      "unit": "%",
+      "default": "33.333333%",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "33.333333%"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/ui/command.tsx"
+      ],
+      "bounds": {
+        "min": 10,
+        "max": 60,
+        "step": 1
+      }
+    },
+    {
       "id": "--aries-spotlight-font-size",
       "name": "--aries-spotlight-font-size",
       "family": "app.spotlight",
@@ -24672,6 +26404,98 @@
       }
     },
     {
+      "id": "--aries-statusbar-background",
+      "name": "--aries-statusbar-background",
+      "family": "app.shell",
+      "class": "public",
+      "role": "shell",
+      "owner": "workspace-shell",
+      "provider": "daemon-theme-state",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-background)",
+      "dependencies": [
+        "--aries-background"
+      ],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "var(--aries-background)"
+        }
+      ],
+      "consumerFiles": [
+        "src/app/globals.css",
+        "src/components/workshell/workspace-content.tsx",
+        "src/lib/theme/app-material-runtime.ts"
+      ]
+    },
+    {
+      "id": "--aries-statusbar-datetime-grow",
+      "name": "--aries-statusbar-datetime-grow",
+      "family": "app.shell",
+      "class": "public",
+      "role": "shell",
+      "owner": "workspace-shell",
+      "provider": "css-declaration",
+      "scope": "app",
+      "type": "number",
+      "unit": "",
+      "default": "3",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "3"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/workshell/workspace-content.tsx"
+      ],
+      "bounds": {
+        "min": 0.25,
+        "max": 8,
+        "step": 0.25
+      }
+    },
+    {
+      "id": "--aries-statusbar-detail-grow",
+      "name": "--aries-statusbar-detail-grow",
+      "family": "app.shell",
+      "class": "public",
+      "role": "shell",
+      "owner": "workspace-shell",
+      "provider": "css-declaration",
+      "scope": "app",
+      "type": "number",
+      "unit": "",
+      "default": "2",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "2"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/workshell/workspace-content.tsx"
+      ],
+      "bounds": {
+        "min": 0.25,
+        "max": 8,
+        "step": 0.25
+      }
+    },
+    {
       "id": "--aries-statusbar-field-padding-x",
       "name": "--aries-statusbar-field-padding-x",
       "family": "app.shell",
@@ -24765,6 +26589,37 @@
       }
     },
     {
+      "id": "--aries-statusbar-kind-width",
+      "name": "--aries-statusbar-kind-width",
+      "family": "app.shell",
+      "class": "public",
+      "role": "shell",
+      "owner": "workspace-shell",
+      "provider": "css-declaration",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "80px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "80px"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/workshell/workspace-content.tsx"
+      ],
+      "bounds": {
+        "min": 40,
+        "max": 240,
+        "step": 4
+      }
+    },
+    {
       "id": "--aries-statusbar-line-box",
       "name": "--aries-statusbar-line-box",
       "family": "app.shell",
@@ -24796,6 +26651,37 @@
       }
     },
     {
+      "id": "--aries-statusbar-name-width",
+      "name": "--aries-statusbar-name-width",
+      "family": "app.shell",
+      "class": "public",
+      "role": "shell",
+      "owner": "workspace-shell",
+      "provider": "css-declaration",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "160px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "160px"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/workshell/workspace-content.tsx"
+      ],
+      "bounds": {
+        "min": 60,
+        "max": 360,
+        "step": 4
+      }
+    },
+    {
       "id": "--aries-statusbar-text",
       "name": "--aries-statusbar-text",
       "family": "app.shell",
@@ -24821,7 +26707,9 @@
         }
       ],
       "consumerFiles": [
-        "src/components/workshell/workspace-content.tsx"
+        "src/app/globals.css",
+        "src/components/workshell/workspace-content.tsx",
+        "src/lib/theme/app-material-runtime.ts"
       ]
     },
     {
@@ -25369,6 +27257,32 @@
       ]
     },
     {
+      "id": "--aries-style-lab-selection",
+      "name": "--aries-style-lab-selection",
+      "family": "app.style-lab",
+      "class": "runtime",
+      "role": "editor-affordance",
+      "owner": "style-lab",
+      "provider": "css-declaration",
+      "scope": "component",
+      "type": "color",
+      "unit": "",
+      "default": "#ff2bd6",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "#ff2bd6"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/workshell/chart-canvas.tsx"
+      ]
+    },
+    {
       "id": "--aries-surface",
       "name": "--aries-surface",
       "family": "app.palette",
@@ -25399,6 +27313,7 @@
         "src/app/globals.css",
         "src/components/workshell/ascensional-transits-view.tsx",
         "src/components/workshell/astrolabe-view.tsx",
+        "src/components/workshell/generic-table-view.tsx",
         "src/components/workshell/home-client.tsx",
         "src/components/workshell/list-column-layout.tsx",
         "src/components/workshell/list-controls.tsx",
@@ -25408,7 +27323,7 @@
         "src/components/workshell/save-to-collection-dialog.tsx",
         "src/components/workshell/sectioned-table-view.tsx",
         "src/components/workshell/surveil-studies-dialog.tsx",
-        "src/components/workshell/workspace-content.tsx"
+        "src/lib/theme/app-material-runtime.ts"
       ],
       "legacyId": "surface",
       "migrationAuthority": "legacy-preview-v1",
@@ -25446,11 +27361,14 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
+        "src/components/workshell/astrocart-controls.tsx",
+        "src/components/workshell/generic-table-view.tsx",
         "src/components/workshell/list-column-layout.tsx",
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/notes-panel.tsx",
         "src/components/workshell/profections-view.tsx",
-        "src/components/workshell/sectioned-table-view.tsx"
+        "src/components/workshell/sectioned-table-view.tsx",
+        "src/lib/theme/app-material-runtime.ts"
       ],
       "legacyId": "surfaceSubtle",
       "migrationAuthority": "legacy-preview-v1",
@@ -25498,9 +27416,9 @@
       "scope": "component",
       "type": "color",
       "unit": "",
-      "default": "var(--aries-background)",
+      "default": "var(--aries-data-body-background)",
       "dependencies": [
-        "--aries-background"
+        "--aries-data-body-background"
       ],
       "selectors": [
         ":root"
@@ -25508,7 +27426,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "var(--aries-background)"
+          "value": "var(--aries-data-body-background)"
         }
       ],
       "consumerFiles": [
@@ -25571,7 +27489,8 @@
         }
       ],
       "consumerFiles": [
-        "src/app/globals.css"
+        "src/app/globals.css",
+        "src/components/workshell/settings-dialog.tsx"
       ],
       "legacyId": "tableCellX",
       "migrationAuthority": "legacy-preview-v1",
@@ -25766,9 +27685,9 @@
       "scope": "component",
       "type": "color",
       "unit": "",
-      "default": "var(--aries-surface)",
+      "default": "var(--aries-data-header-background)",
       "dependencies": [
-        "--aries-surface"
+        "--aries-data-header-background"
       ],
       "selectors": [
         ":root"
@@ -25776,7 +27695,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "var(--aries-surface)"
+          "value": "var(--aries-data-header-background)"
         }
       ],
       "consumerFiles": [
@@ -26556,12 +28475,15 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
+        "src/components/workshell/app-theme-preview.tsx",
         "src/components/workshell/ascensional-transits-view.tsx",
+        "src/components/workshell/aspect-list-panel.tsx",
         "src/components/workshell/aspect-matrix-view.tsx",
         "src/components/workshell/astrolabe-view.tsx",
         "src/components/workshell/decennials-view.tsx",
         "src/components/workshell/eclipses-view.tsx",
         "src/components/workshell/firdaria-view.tsx",
+        "src/components/workshell/generic-table-view.tsx",
         "src/components/workshell/home-client.tsx",
         "src/components/workshell/list-column-layout.tsx",
         "src/components/workshell/list-controls.tsx",
@@ -26570,6 +28492,7 @@
         "src/components/workshell/retained-pane-shell.tsx",
         "src/components/workshell/save-to-collection-dialog.tsx",
         "src/components/workshell/sectioned-table-view.tsx",
+        "src/components/workshell/sidebar-list-table.tsx",
         "src/components/workshell/strip-view.tsx",
         "src/components/workshell/surveil-studies-dialog.tsx",
         "src/components/workshell/system-chart-picker.tsx",
@@ -26577,7 +28500,8 @@
         "src/components/workshell/time-lord-table-view.tsx",
         "src/components/workshell/workspace-content.tsx",
         "src/components/workshell/zodiacal-releasing-view.tsx",
-        "src/lib/chart/strip-render-style.ts"
+        "src/lib/chart/strip-render-style.ts",
+        "src/lib/theme/app-material-runtime.ts"
       ],
       "legacyId": "textMuted",
       "migrationAuthority": "legacy-preview-v1",
@@ -26620,6 +28544,7 @@
         "src/components/workshell/astrolabe-view.tsx",
         "src/components/workshell/decennials-view.tsx",
         "src/components/workshell/firdaria-view.tsx",
+        "src/components/workshell/generic-table-view.tsx",
         "src/components/workshell/home-client.tsx",
         "src/components/workshell/list-column-layout.tsx",
         "src/components/workshell/list-controls.tsx",
@@ -26632,7 +28557,8 @@
         "src/components/workshell/time-lord-table-view.tsx",
         "src/components/workshell/workspace-content.tsx",
         "src/components/workshell/zodiacal-releasing-view.tsx",
-        "src/lib/chart/strip-render-style.ts"
+        "src/lib/chart/strip-render-style.ts",
+        "src/lib/theme/app-material-runtime.ts"
       ],
       "legacyId": "textPrimary",
       "migrationAuthority": "legacy-preview-v1",
@@ -26640,6 +28566,67 @@
         "src/components/workshell/appearance-panel.tsx",
         "src/components/workshell/style-token-bridge.tsx"
       ]
+    },
+    {
+      "id": "--aries-titlebar-background",
+      "name": "--aries-titlebar-background",
+      "family": "app.shell",
+      "class": "public",
+      "role": "shell",
+      "owner": "workspace-shell",
+      "provider": "daemon-theme-state",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-background)",
+      "dependencies": [
+        "--aries-background"
+      ],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "var(--aries-background)"
+        }
+      ],
+      "consumerFiles": [
+        "src/app/globals.css",
+        "src/components/workshell/workspace-content.tsx",
+        "src/lib/theme/app-material-runtime.ts"
+      ]
+    },
+    {
+      "id": "--aries-titlebar-cluster-gap",
+      "name": "--aries-titlebar-cluster-gap",
+      "family": "app.shell",
+      "class": "public",
+      "role": "shell",
+      "owner": "workspace-shell",
+      "provider": "css-declaration",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "4px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "4px"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/workshell/workspace-content.tsx"
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 20,
+        "step": 1
+      }
     },
     {
       "id": "--aries-titlebar-icon",
@@ -26667,6 +28654,7 @@
         }
       ],
       "consumerFiles": [
+        "src/components/workshell/chart-copy-control.tsx",
         "src/components/workshell/titlebar-options-menu.tsx",
         "src/components/workshell/workspace-content.tsx"
       ]
@@ -26727,9 +28715,41 @@
         }
       ],
       "consumerFiles": [
+        "src/components/workshell/chart-copy-control.tsx",
         "src/components/workshell/titlebar-options-menu.tsx",
         "src/components/workshell/workspace-content.tsx"
       ]
+    },
+    {
+      "id": "--aries-titlebar-padding-x",
+      "name": "--aries-titlebar-padding-x",
+      "family": "app.shell",
+      "class": "public",
+      "role": "shell",
+      "owner": "workspace-shell",
+      "provider": "css-declaration",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "8px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "8px"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/workshell/workspace-content.tsx"
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 32,
+        "step": 1
+      }
     },
     {
       "id": "--aries-titlebar-seam-rule",
@@ -26764,10 +28784,10 @@
       "id": "--aries-titlebar-text",
       "name": "--aries-titlebar-text",
       "family": "app.shell",
-      "class": "derived",
+      "class": "public",
       "role": "shell",
       "owner": "workspace-shell",
-      "provider": "css-expression",
+      "provider": "daemon-theme-state",
       "scope": "app",
       "type": "color",
       "unit": "",
@@ -26786,9 +28806,43 @@
         }
       ],
       "consumerFiles": [
+        "src/app/globals.css",
         "src/components/workshell/browser-menu-bar.tsx",
-        "src/components/workshell/workspace-content.tsx"
+        "src/components/workshell/chart-copy-control.tsx",
+        "src/components/workshell/workspace-content.tsx",
+        "src/lib/theme/app-material-runtime.ts"
       ]
+    },
+    {
+      "id": "--aries-titlebar-title-padding-x",
+      "name": "--aries-titlebar-title-padding-x",
+      "family": "app.shell",
+      "class": "public",
+      "role": "shell",
+      "owner": "workspace-shell",
+      "provider": "css-declaration",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "8px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "8px"
+        }
+      ],
+      "consumerFiles": [
+        "src/components/workshell/workspace-content.tsx"
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 32,
+        "step": 1
+      }
     },
     {
       "id": "--aries-toolbar-control-height",
@@ -26848,7 +28902,8 @@
         }
       ],
       "consumerFiles": [
-        "src/app/globals.css"
+        "src/app/globals.css",
+        "src/components/workshell/workspace-content.tsx"
       ],
       "bounds": {
         "min": 0,
@@ -27290,6 +29345,37 @@
       }
     },
     {
+      "id": "--aries-wheel-angle-position-sign-scale",
+      "name": "--aries-wheel-angle-position-sign-scale",
+      "family": "renderer.wheel",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0.52",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0.52"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts"
+      ],
+      "bounds": {
+        "min": 0.13,
+        "max": 1.56,
+        "step": 0.01
+      }
+    },
+    {
       "id": "--aries-wheel-angle-ray-color",
       "name": "--aries-wheel-angle-ray-color",
       "family": "renderer.wheel",
@@ -27477,7 +29563,7 @@
       "id": "--aries-wheel-anglo-angle-position-sign-scale",
       "name": "--aries-wheel-anglo-angle-position-sign-scale",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
@@ -27497,16 +29583,11 @@
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0.13,
-        "max": 1.56,
-        "step": 0.01
-      }
+      ]
     },
     {
-      "id": "--aries-wheel-anglo-aspect-boundary-ring-radius",
-      "name": "--aries-wheel-anglo-aspect-boundary-ring-radius",
+      "id": "--aries-wheel-anglo-arrow-inset",
+      "name": "--aries-wheel-anglo-arrow-inset",
       "family": "renderer.wheel",
       "class": "public",
       "role": "renderer-style",
@@ -27514,8 +29595,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0.035",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -27523,17 +29604,74 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0.035"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
       ],
       "bounds": {
-        "min": 0,
+        "min": 0.005,
+        "max": 0.1,
+        "step": 0.001
+      }
+    },
+    {
+      "id": "--aries-wheel-anglo-arrow-maximum",
+      "name": "--aries-wheel-anglo-arrow-maximum",
+      "family": "renderer.wheel",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0.995",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0.995"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts"
+      ],
+      "bounds": {
+        "min": 0.9,
         "max": 1,
         "step": 0.001
       }
+    },
+    {
+      "id": "--aries-wheel-anglo-aspect-boundary-ring-radius",
+      "name": "--aries-wheel-anglo-aspect-boundary-ring-radius",
+      "family": "renderer.wheel",
+      "class": "runtime",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts"
+      ]
     },
     {
       "id": "--aries-wheel-anglo-aspect-leader-inset-scale",
@@ -27630,14 +29768,14 @@
       "id": "--aries-wheel-anglo-base-ring-radius",
       "name": "--aries-wheel-anglo-base-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -27645,17 +29783,12 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-anglo-body-degree-scale",
@@ -27752,7 +29885,7 @@
       "id": "--aries-wheel-anglo-body-sign-scale",
       "name": "--aries-wheel-anglo-body-sign-scale",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
@@ -27772,12 +29905,7 @@
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0.14,
-        "max": 1.69,
-        "step": 0.01
-      }
+      ]
     },
     {
       "id": "--aries-wheel-anglo-cusp-label-scale",
@@ -27814,14 +29942,14 @@
       "id": "--aries-wheel-anglo-cusp-outer-ring-radius",
       "name": "--aries-wheel-anglo-cusp-outer-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -27829,17 +29957,12 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-anglo-house-boundary-ring-color",
@@ -27874,14 +29997,14 @@
       "id": "--aries-wheel-anglo-house-boundary-ring-radius",
       "name": "--aries-wheel-anglo-house-boundary-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -27889,17 +30012,12 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-anglo-house-label-color",
@@ -28027,7 +30145,7 @@
       "id": "--aries-wheel-anglo-house-position-sign-scale",
       "name": "--aries-wheel-anglo-house-position-sign-scale",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
@@ -28047,12 +30165,7 @@
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0.13,
-        "max": 1.56,
-        "step": 0.01
-      }
+      ]
     },
     {
       "id": "--aries-wheel-anglo-house-scale",
@@ -28089,14 +30202,14 @@
       "id": "--aries-wheel-anglo-inner-boundary-ring-radius",
       "name": "--aries-wheel-anglo-inner-boundary-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -28104,30 +30217,25 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-anglo-inner-degree-ring-radius",
       "name": "--aries-wheel-anglo-inner-degree-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -28135,17 +30243,12 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-anglo-inner-scale",
@@ -28213,14 +30316,14 @@
       "id": "--aries-wheel-anglo-outer-degree-ring-radius",
       "name": "--aries-wheel-anglo-outer-degree-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -28228,30 +30331,25 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-anglo-outer-house-ring-radius",
       "name": "--aries-wheel-anglo-outer-house-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -28259,17 +30357,12 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-anglo-outer-leader-color",
@@ -28304,14 +30397,14 @@
       "id": "--aries-wheel-anglo-outer-maximum-ring-radius",
       "name": "--aries-wheel-anglo-outer-maximum-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -28319,17 +30412,12 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-anglo-outer-scale",
@@ -28620,8 +30708,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.047px",
+      "unit": "",
+      "default": "0.047",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -28629,7 +30717,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.047px"
+          "value": "0.047"
         }
       ],
       "consumerFiles": [
@@ -28645,14 +30733,14 @@
       "id": "--aries-wheel-anglo-term-ring-radius",
       "name": "--aries-wheel-anglo-term-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -28660,17 +30748,12 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-anglo-zodiac-comparison-with-houses",
@@ -28682,8 +30765,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.8px",
+      "unit": "",
+      "default": "0.8",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -28691,7 +30774,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.8px"
+          "value": "0.8"
         }
       ],
       "consumerFiles": [
@@ -28707,14 +30790,14 @@
       "id": "--aries-wheel-anglo-zodiac-inner-ring-radius",
       "name": "--aries-wheel-anglo-zodiac-inner-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -28722,30 +30805,25 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-anglo-zodiac-outer-ring-radius",
       "name": "--aries-wheel-anglo-zodiac-outer-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -28753,17 +30831,12 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-anglo-zodiac-single",
@@ -28775,8 +30848,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.895px",
+      "unit": "",
+      "default": "0.895",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -28784,7 +30857,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.895px"
+          "value": "0.895"
         }
       ],
       "consumerFiles": [
@@ -28806,8 +30879,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.895px",
+      "unit": "",
+      "default": "0.895",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -28815,7 +30888,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.895px"
+          "value": "0.895"
         }
       ],
       "consumerFiles": [
@@ -29825,8 +31898,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.04px",
+      "unit": "",
+      "default": "0.04",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -29834,7 +31907,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.04px"
+          "value": "0.04"
         }
       ],
       "consumerFiles": [
@@ -29856,8 +31929,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.92px",
+      "unit": "",
+      "default": "0.92",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -29865,7 +31938,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.92px"
+          "value": "0.92"
         }
       ],
       "consumerFiles": [
@@ -29887,8 +31960,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.06px",
+      "unit": "",
+      "default": "0.06",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -29896,7 +31969,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.06px"
+          "value": "0.06"
         }
       ],
       "consumerFiles": [
@@ -29918,8 +31991,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.03px",
+      "unit": "",
+      "default": "0.03",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -29927,7 +32000,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.03px"
+          "value": "0.03"
         }
       ],
       "consumerFiles": [
@@ -29949,8 +32022,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.97px",
+      "unit": "",
+      "default": "0.97",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -29958,7 +32031,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.97px"
+          "value": "0.97"
         }
       ],
       "consumerFiles": [
@@ -29980,8 +32053,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.78px",
+      "unit": "",
+      "default": "0.78",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -29989,7 +32062,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.78px"
+          "value": "0.78"
         }
       ],
       "consumerFiles": [
@@ -30011,8 +32084,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.15px",
+      "unit": "",
+      "default": "0.15",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -30020,7 +32093,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.15px"
+          "value": "0.15"
         }
       ],
       "consumerFiles": [
@@ -30042,8 +32115,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.9px",
+      "unit": "",
+      "default": "0.9",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -30051,7 +32124,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.9px"
+          "value": "0.9"
         }
       ],
       "consumerFiles": [
@@ -30073,8 +32146,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.01px",
+      "unit": "",
+      "default": "0.01",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -30082,7 +32155,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.01px"
+          "value": "0.01"
         }
       ],
       "consumerFiles": [
@@ -30104,8 +32177,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.12px",
+      "unit": "",
+      "default": "0.12",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -30113,7 +32186,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.12px"
+          "value": "0.12"
         }
       ],
       "consumerFiles": [
@@ -30372,6 +32445,37 @@
       }
     },
     {
+      "id": "--aries-wheel-body-position-sign-scale",
+      "name": "--aries-wheel-body-position-sign-scale",
+      "family": "renderer.wheel",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0.56",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0.56"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts"
+      ],
+      "bounds": {
+        "min": 0.14,
+        "max": 1.69,
+        "step": 0.01
+      }
+    },
+    {
       "id": "--aries-wheel-body-scale",
       "name": "--aries-wheel-body-scale",
       "family": "renderer.wheel",
@@ -30505,8 +32609,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.04px",
+      "unit": "",
+      "default": "0.04",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -30514,7 +32618,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.04px"
+          "value": "0.04"
         }
       ],
       "consumerFiles": [
@@ -30530,14 +32634,14 @@
       "id": "--aries-wheel-classic-aspect-boundary-ring-radius",
       "name": "--aries-wheel-classic-aspect-boundary-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -30545,30 +32649,25 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-classic-base-ring-radius",
       "name": "--aries-wheel-classic-base-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -30576,30 +32675,25 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-classic-cusp-outer-ring-radius",
       "name": "--aries-wheel-classic-cusp-outer-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -30607,17 +32701,12 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-classic-decan-sector-length",
@@ -30629,8 +32718,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.08px",
+      "unit": "",
+      "default": "0.08",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -30638,7 +32727,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.08px"
+          "value": "0.08"
         }
       ],
       "consumerFiles": [
@@ -30660,8 +32749,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.01px",
+      "unit": "",
+      "default": "0.01",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -30669,7 +32758,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.01px"
+          "value": "0.01"
         }
       ],
       "consumerFiles": [
@@ -30685,14 +32774,14 @@
       "id": "--aries-wheel-classic-house-boundary-ring-radius",
       "name": "--aries-wheel-classic-house-boundary-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -30700,17 +32789,12 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-classic-house-sector-length",
@@ -30722,8 +32806,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.06px",
+      "unit": "",
+      "default": "0.06",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -30731,7 +32815,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.06px"
+          "value": "0.06"
         }
       ],
       "consumerFiles": [
@@ -30753,8 +32837,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.43px",
+      "unit": "",
+      "default": "0.43",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -30762,7 +32846,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.43px"
+          "value": "0.43"
         }
       ],
       "consumerFiles": [
@@ -30784,8 +32868,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.11px",
+      "unit": "",
+      "default": "0.11",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -30793,7 +32877,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.11px"
+          "value": "0.11"
         }
       ],
       "consumerFiles": [
@@ -30809,14 +32893,14 @@
       "id": "--aries-wheel-classic-inner-boundary-ring-radius",
       "name": "--aries-wheel-classic-inner-boundary-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -30824,30 +32908,25 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-classic-inner-degree-ring-radius",
       "name": "--aries-wheel-classic-inner-degree-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -30855,17 +32934,12 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-classic-inner-house-name",
@@ -30877,8 +32951,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.14px",
+      "unit": "",
+      "default": "0.14",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -30886,7 +32960,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.14px"
+          "value": "0.14"
         }
       ],
       "consumerFiles": [
@@ -30908,8 +32982,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.48px",
+      "unit": "",
+      "default": "0.48",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -30917,7 +32991,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.48px"
+          "value": "0.48"
         }
       ],
       "consumerFiles": [
@@ -30939,8 +33013,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.41px",
+      "unit": "",
+      "default": "0.41",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -30948,7 +33022,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.41px"
+          "value": "0.41"
         }
       ],
       "consumerFiles": [
@@ -30970,8 +33044,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.32px",
+      "unit": "",
+      "default": "0.32",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -30979,7 +33053,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.32px"
+          "value": "0.32"
         }
       ],
       "consumerFiles": [
@@ -30995,14 +33069,14 @@
       "id": "--aries-wheel-classic-outer-degree-ring-radius",
       "name": "--aries-wheel-classic-outer-degree-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -31010,30 +33084,25 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-classic-outer-house-ring-radius",
       "name": "--aries-wheel-classic-outer-house-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -31041,17 +33110,12 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-classic-outer-line",
@@ -31063,8 +33127,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.86px",
+      "unit": "",
+      "default": "0.86",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -31072,7 +33136,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.86px"
+          "value": "0.86"
         }
       ],
       "consumerFiles": [
@@ -31088,14 +33152,14 @@
       "id": "--aries-wheel-classic-outer-maximum-ring-radius",
       "name": "--aries-wheel-classic-outer-maximum-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -31103,17 +33167,12 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-classic-outer-projected-label",
@@ -31125,8 +33184,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.9px",
+      "unit": "",
+      "default": "0.9",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -31134,7 +33193,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.9px"
+          "value": "0.9"
         }
       ],
       "consumerFiles": [
@@ -31156,8 +33215,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.86px",
+      "unit": "",
+      "default": "0.86",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -31165,7 +33224,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.86px"
+          "value": "0.86"
         }
       ],
       "consumerFiles": [
@@ -31218,8 +33277,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.83px",
+      "unit": "",
+      "default": "0.83",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -31227,7 +33286,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.83px"
+          "value": "0.83"
         }
       ],
       "consumerFiles": [
@@ -31249,8 +33308,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.03px",
+      "unit": "",
+      "default": "0.03",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -31258,7 +33317,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.03px"
+          "value": "0.03"
         }
       ],
       "consumerFiles": [
@@ -31280,8 +33339,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.15px",
+      "unit": "",
+      "default": "0.15",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -31289,7 +33348,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.15px"
+          "value": "0.15"
         }
       ],
       "consumerFiles": [
@@ -31311,8 +33370,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.01px",
+      "unit": "",
+      "default": "0.01",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -31320,7 +33379,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.01px"
+          "value": "0.01"
         }
       ],
       "consumerFiles": [
@@ -31373,8 +33432,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.15px",
+      "unit": "",
+      "default": "0.15",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -31382,7 +33441,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.15px"
+          "value": "0.15"
         }
       ],
       "consumerFiles": [
@@ -31429,14 +33488,14 @@
       "id": "--aries-wheel-classic-term-ring-radius",
       "name": "--aries-wheel-classic-term-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -31444,17 +33503,12 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-classic-term-sector-length",
@@ -31466,8 +33520,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.08px",
+      "unit": "",
+      "default": "0.08",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -31475,7 +33529,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.08px"
+          "value": "0.08"
         }
       ],
       "consumerFiles": [
@@ -31491,14 +33545,14 @@
       "id": "--aries-wheel-classic-zodiac-inner-ring-radius",
       "name": "--aries-wheel-classic-zodiac-inner-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -31506,30 +33560,25 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-classic-zodiac-outer-ring-radius",
       "name": "--aries-wheel-classic-zodiac-outer-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -31537,30 +33586,25 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-compact-aspect-boundary-ring-radius",
       "name": "--aries-wheel-compact-aspect-boundary-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -31568,17 +33612,12 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-compact-base",
@@ -31590,8 +33629,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.24px",
+      "unit": "",
+      "default": "0.24",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -31599,7 +33638,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.24px"
+          "value": "0.24"
         }
       ],
       "consumerFiles": [
@@ -31615,14 +33654,14 @@
       "id": "--aries-wheel-compact-base-ring-radius",
       "name": "--aries-wheel-compact-base-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -31630,17 +33669,12 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-compact-comparison-position-lane-0",
@@ -31652,8 +33686,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.34px",
+      "unit": "",
+      "default": "0.34",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -31661,7 +33695,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.34px"
+          "value": "0.34"
         }
       ],
       "consumerFiles": [
@@ -31683,8 +33717,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.26px",
+      "unit": "",
+      "default": "0.26",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -31692,7 +33726,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.26px"
+          "value": "0.26"
         }
       ],
       "consumerFiles": [
@@ -31714,8 +33748,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.2px",
+      "unit": "",
+      "default": "0.2",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -31723,7 +33757,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.2px"
+          "value": "0.2"
         }
       ],
       "consumerFiles": [
@@ -31739,14 +33773,14 @@
       "id": "--aries-wheel-compact-cusp-outer-ring-radius",
       "name": "--aries-wheel-compact-cusp-outer-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -31754,30 +33788,25 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-compact-house-boundary-ring-radius",
       "name": "--aries-wheel-compact-house-boundary-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -31785,17 +33814,12 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-compact-house-name",
@@ -31807,8 +33831,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.27px",
+      "unit": "",
+      "default": "0.27",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -31816,7 +33840,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.27px"
+          "value": "0.27"
         }
       ],
       "consumerFiles": [
@@ -31838,8 +33862,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.06px",
+      "unit": "",
+      "default": "0.06",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -31847,7 +33871,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.06px"
+          "value": "0.06"
         }
       ],
       "consumerFiles": [
@@ -31863,14 +33887,14 @@
       "id": "--aries-wheel-compact-inner-boundary-ring-radius",
       "name": "--aries-wheel-compact-inner-boundary-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -31878,30 +33902,25 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-compact-inner-degree-ring-radius",
       "name": "--aries-wheel-compact-inner-degree-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -31909,30 +33928,25 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-compact-outer-degree-ring-radius",
       "name": "--aries-wheel-compact-outer-degree-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -31940,30 +33954,25 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-compact-outer-house-ring-radius",
       "name": "--aries-wheel-compact-outer-house-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -31971,30 +33980,25 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-compact-outer-maximum-ring-radius",
       "name": "--aries-wheel-compact-outer-maximum-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -32002,17 +34006,12 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-compact-outer-scale",
@@ -32055,8 +34054,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.15px",
+      "unit": "",
+      "default": "0.15",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -32064,7 +34063,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.15px"
+          "value": "0.15"
         }
       ],
       "consumerFiles": [
@@ -32086,8 +34085,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.05px",
+      "unit": "",
+      "default": "0.05",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -32095,7 +34094,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.05px"
+          "value": "0.05"
         }
       ],
       "consumerFiles": [
@@ -32117,8 +34116,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.05px",
+      "unit": "",
+      "default": "0.05",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -32126,7 +34125,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.05px"
+          "value": "0.05"
         }
       ],
       "consumerFiles": [
@@ -32148,8 +34147,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.04px",
+      "unit": "",
+      "default": "0.04",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -32157,7 +34156,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.04px"
+          "value": "0.04"
         }
       ],
       "consumerFiles": [
@@ -32179,8 +34178,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.05px",
+      "unit": "",
+      "default": "0.05",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -32188,7 +34187,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.05px"
+          "value": "0.05"
         }
       ],
       "consumerFiles": [
@@ -32241,8 +34240,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.36px",
+      "unit": "",
+      "default": "0.36",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -32250,7 +34249,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.36px"
+          "value": "0.36"
         }
       ],
       "consumerFiles": [
@@ -32272,8 +34271,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.3px",
+      "unit": "",
+      "default": "0.3",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -32281,7 +34280,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.3px"
+          "value": "0.3"
         }
       ],
       "consumerFiles": [
@@ -32303,8 +34302,8 @@
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0.24px",
+      "unit": "",
+      "default": "0.24",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -32312,7 +34311,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.24px"
+          "value": "0.24"
         }
       ],
       "consumerFiles": [
@@ -32359,14 +34358,14 @@
       "id": "--aries-wheel-compact-term-ring-radius",
       "name": "--aries-wheel-compact-term-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -32374,30 +34373,25 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-compact-zodiac-inner-ring-radius",
       "name": "--aries-wheel-compact-zodiac-inner-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -32405,30 +34399,25 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-compact-zodiac-outer-ring-radius",
       "name": "--aries-wheel-compact-zodiac-outer-ring-radius",
       "family": "renderer.wheel",
-      "class": "public",
+      "class": "runtime",
       "role": "renderer-style",
       "owner": "wheel-renderer",
       "provider": "css-declaration",
       "scope": "renderer",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -32436,17 +34425,12 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0px"
+          "value": "0"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/wheel-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      }
+      ]
     },
     {
       "id": "--aries-wheel-cusp-outer-ring-color",
@@ -35095,6 +37079,37 @@
       "bounds": {
         "min": 0.0625,
         "max": 1,
+        "step": 0.01
+      }
+    },
+    {
+      "id": "--aries-wheel-house-position-sign-scale",
+      "name": "--aries-wheel-house-position-sign-scale",
+      "family": "renderer.wheel",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0.52",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0.52"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts"
+      ],
+      "bounds": {
+        "min": 0.13,
+        "max": 1.56,
         "step": 0.01
       }
     },
@@ -37908,6 +39923,33 @@
       }
     },
     {
+      "id": "--aries-wheel-surveil-accent-color",
+      "name": "--aries-wheel-surveil-accent-color",
+      "family": "renderer.wheel",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "color",
+      "unit": "",
+      "default": "rgb(229,146,70)",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "rgb(229,146,70)"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts",
+        "src/lib/style-lab/wheel-style-scene.ts"
+      ]
+    },
+    {
       "id": "--aries-wheel-surveil-glyph-gap-min",
       "name": "--aries-wheel-surveil-glyph-gap-min",
       "family": "renderer.wheel",
@@ -39271,9 +41313,9 @@
       "scope": "platform",
       "type": "color",
       "unit": "",
-      "default": "var(--aries-surface)",
+      "default": "var(--aries-panel-background)",
       "dependencies": [
-        "--aries-surface"
+        "--aries-panel-background"
       ],
       "selectors": [
         ":root",
@@ -39282,11 +41324,11 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "var(--aries-surface)"
+          "value": "var(--aries-panel-background)"
         },
         {
           "selector": ".day",
-          "value": "var(--aries-surface)"
+          "value": "var(--aries-panel-background)"
         }
       ],
       "consumerFiles": [
@@ -39305,9 +41347,9 @@
       "scope": "platform",
       "type": "color",
       "unit": "",
-      "default": "var(--aries-text-primary)",
+      "default": "var(--aries-panel-text)",
       "dependencies": [
-        "--aries-text-primary"
+        "--aries-panel-text"
       ],
       "selectors": [
         ":root",
@@ -39316,11 +41358,11 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "var(--aries-text-primary)"
+          "value": "var(--aries-panel-text)"
         },
         {
           "selector": ".day",
-          "value": "var(--aries-text-primary)"
+          "value": "var(--aries-panel-text)"
         }
       ],
       "consumerFiles": [
@@ -42166,7 +44208,8 @@
         "src/app/globals.css",
         "src/lib/chart/palette.ts",
         "src/lib/chart/strip-render-style.ts",
-        "src/lib/chart/wheel-render-style.ts"
+        "src/lib/chart/wheel-render-style.ts",
+        "src/lib/style-lab/wheel-style-scene.ts"
       ]
     },
     {
@@ -42200,6 +44243,7 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
+        "src/components/ui/button.tsx",
         "src/components/workshell/notes-panel.tsx"
       ]
     },
@@ -42248,9 +44292,9 @@
       "scope": "platform",
       "type": "color",
       "unit": "",
-      "default": "var(--aries-background)",
+      "default": "var(--aries-popover-background)",
       "dependencies": [
-        "--aries-background"
+        "--aries-popover-background"
       ],
       "selectors": [
         ":root",
@@ -42259,11 +44303,11 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "var(--aries-background)"
+          "value": "var(--aries-popover-background)"
         },
         {
           "selector": ".day",
-          "value": "var(--aries-background)"
+          "value": "var(--aries-popover-background)"
         }
       ],
       "consumerFiles": [
@@ -42281,9 +44325,9 @@
       "scope": "platform",
       "type": "color",
       "unit": "",
-      "default": "var(--aries-text-primary)",
+      "default": "var(--aries-popover-text)",
       "dependencies": [
-        "--aries-text-primary"
+        "--aries-popover-text"
       ],
       "selectors": [
         ":root",
@@ -42292,11 +44336,11 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "var(--aries-text-primary)"
+          "value": "var(--aries-popover-text)"
         },
         {
           "selector": ".day",
-          "value": "var(--aries-text-primary)"
+          "value": "var(--aries-popover-text)"
         }
       ],
       "consumerFiles": [
@@ -42655,7 +44699,8 @@
         }
       ],
       "consumerFiles": [
-        "src/app/globals.css"
+        "src/app/globals.css",
+        "src/components/ui/button.tsx"
       ]
     },
     {
@@ -42669,9 +44714,9 @@
       "scope": "platform",
       "type": "color",
       "unit": "",
-      "default": "var(--aries-text-primary)",
+      "default": "var(--aries-accent-foreground)",
       "dependencies": [
-        "--aries-text-primary"
+        "--aries-accent-foreground"
       ],
       "selectors": [
         ":root",
@@ -42680,11 +44725,11 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "var(--aries-text-primary)"
+          "value": "var(--aries-accent-foreground)"
         },
         {
           "selector": ".day",
-          "value": "var(--aries-text-primary)"
+          "value": "var(--aries-accent-foreground)"
         }
       ],
       "consumerFiles": [
@@ -42702,9 +44747,9 @@
       "scope": "platform",
       "type": "color",
       "unit": "",
-      "default": "var(--aries-surface)",
+      "default": "var(--aries-sidebar-background)",
       "dependencies": [
-        "--aries-surface"
+        "--aries-sidebar-background"
       ],
       "selectors": [
         ":root",
@@ -42713,11 +44758,11 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "var(--aries-surface)"
+          "value": "var(--aries-sidebar-background)"
         },
         {
           "selector": ".day",
-          "value": "var(--aries-surface)"
+          "value": "var(--aries-sidebar-background)"
         }
       ],
       "consumerFiles": [

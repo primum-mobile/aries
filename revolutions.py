@@ -6,6 +6,9 @@ import mtexts
 import planets
 import transits
 import util
+from aries.astrology.ephemeris_context import EphemerisContext
+from aries.astrology.transit_fast import api as transit_fast
+from aries.astrology.transit_fast.constants import BODY_PERIOD_DAYS
 
 _PLANETARY_MONTH_HIT_CACHE = weakref.WeakKeyDictionary()
 _LUNAR_MONTH_HIT_CACHE = weakref.WeakKeyDictionary()
@@ -294,6 +297,106 @@ class Revolutions:
             bucket[cache_key] = hits
         return hits
 
+    def _native_planetary_adjacent(self, typ, ref_dt, chrt, direction, inclusive=False):
+        planet, _months = self._planet_params(typ)
+        if planet is None:
+            return None
+        try:
+            import common
+            context = EphemerisContext.for_chart(chrt, ephe_path=common.get_ephe_path())
+            if _marr_sidereal_enabled(chrt, planet):
+                return self._marr_planetary_adjacent(
+                    typ,
+                    ref_dt,
+                    chrt,
+                    direction,
+                    inclusive=inclusive,
+                    context=context,
+                )
+            target = float(chrt.planets.planets[planet].data[planets.Planet.LONG])
+            anchor_jd = _approx_jd_from_datetime(chrt, ref_dt)
+            hit = transit_fast.search_adjacent_longitude_transit(
+                planet,
+                anchor_jd,
+                target,
+                direction,
+                reference_jd=float(chrt.time.jd),
+                context=context,
+                inclusive=bool(inclusive),
+            )
+            if hit is None:
+                return ()
+            from chart import Time as _Time
+            calflag = astrology.SE_JUL_CAL if chrt.time.cal == _Time.JULIAN else astrology.SE_GREG_CAL
+            year, month, day, hour = astrology.swe_revjul(float(hit.jd_ut), calflag)
+            return self._rounded_transit_values(year, month, day, hour)
+        except (AttributeError, ImportError, TypeError, ValueError):
+            # Minimal synthetic charts and source checkouts without the native
+            # extension retain the established month scanner.
+            return None
+
+    def _marr_planetary_adjacent(self, typ, ref_dt, chrt, direction, *, inclusive, context):
+        planet, _months = self._planet_params(typ)
+        if planet is None:
+            return None
+        period_days = BODY_PERIOD_DAYS.get(planet)
+        if period_days is None:
+            return None
+        direction = 1 if int(direction) >= 0 else -1
+
+        def nearest(start_dt, end_dt):
+            hits = self.enumerate_planetary_hits_in_range(
+                typ,
+                start_dt,
+                end_dt,
+                chrt,
+                inclusive_start=bool(inclusive) if direction > 0 else True,
+                inclusive_end=bool(inclusive) if direction < 0 else False,
+            )
+            if direction > 0:
+                eligible = [
+                    item for item in hits
+                    if (item[0] >= ref_dt if inclusive else item[0] > ref_dt)
+                ]
+            else:
+                eligible = [
+                    item for item in hits
+                    if (item[0] <= ref_dt if inclusive else item[0] < ref_dt)
+                ]
+            if not eligible:
+                return None
+            return min(eligible, key=lambda item: item[0]) if direction > 0 else max(eligible, key=lambda item: item[0])
+
+        local_days = min(1000.0, max(400.0, float(period_days) * 0.025))
+        local_start = ref_dt if direction > 0 else ref_dt - datetime.timedelta(days=local_days)
+        local_end = ref_dt + datetime.timedelta(days=local_days) if direction > 0 else ref_dt
+        found = nearest(local_start, local_end)
+        if found is not None:
+            return found[1]
+
+        anchor_jd = _approx_jd_from_datetime(chrt, ref_dt)
+        candidate_jd = transit_fast.estimate_orbital_return_jd(
+            planet,
+            float(chrt.time.jd),
+            anchor_jd,
+            direction,
+            context=context,
+        )
+        from chart import Time as _Time
+        calflag = astrology.SE_JUL_CAL if chrt.time.cal == _Time.JULIAN else astrology.SE_GREG_CAL
+        candidate_values = self._rounded_transit_values(*astrology.swe_revjul(candidate_jd, calflag))
+        candidate_dt = self._dt_from_t(candidate_values)
+        half_window = min(1200.0, max(500.0, float(period_days) * 0.0075))
+        max_half_window = max(half_window, float(period_days) * 0.6)
+        while half_window <= max_half_window:
+            start_dt = candidate_dt - datetime.timedelta(days=half_window)
+            end_dt = candidate_dt + datetime.timedelta(days=half_window)
+            found = nearest(start_dt, end_dt)
+            if found is not None:
+                return found[1]
+            half_window *= 2.0
+        return None
+
     def enumerate_planetary_hits_in_range(self, typ, start_dt, end_dt, chrt, inclusive_start=True, inclusive_end=False):
         if not Revolutions.is_planetary_type(typ):
             return []
@@ -348,6 +451,11 @@ class Revolutions:
         _planet, months = self._planet_params(typ)
         if months <= 0:
             return False
+        native_values = self._native_planetary_adjacent(
+            typ, ref_dt, chrt, 1, inclusive=inclusive,
+        )
+        if native_values is not None:
+            return bool(native_values) and self._set_hit_values(native_values)
         year = int(ref_dt.year)
         month = int(ref_dt.month)
         for _ in range(int(months)+1):
@@ -362,6 +470,11 @@ class Revolutions:
         _planet, months = self._planet_params(typ)
         if months <= 0:
             return False
+        native_values = self._native_planetary_adjacent(
+            typ, ref_dt, chrt, -1, inclusive=inclusive,
+        )
+        if native_values is not None:
+            return bool(native_values) and self._set_hit_values(native_values)
 
         year = int(ref_dt.year)
         month = int(ref_dt.month)

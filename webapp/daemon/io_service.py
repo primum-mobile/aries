@@ -333,28 +333,15 @@ class IoService:
             raise RuntimeError("PDF export requires ReportLab") from exc
 
         margin = 36.0
-        portrait = pagesizes.letter
-        landscape = pagesizes.landscape(portrait)
+        page = pagesizes.letter
 
-        def fit(page):
-            area_width = page[0] - 2 * margin
-            area_height = page[1] - 2 * margin
-            scale = min(area_width / width, area_height / height)
-            image_width = width * scale
-            image_height = height * scale
-            left = margin + (area_width - image_width) / 2
-            bottom = margin + (area_height - image_height) / 2
-            return page, scale, image_width, image_height, left, bottom
-
-        portrait_fit = fit(portrait)
-        landscape_fit = fit(landscape)
-        aspect = width / max(1.0, float(height))
-        selected = (
-            landscape_fit
-            if aspect > 1.15 and landscape_fit[1] > portrait_fit[1] + 0.01
-            else portrait_fit
-        )
-        page, _scale, image_width, image_height, left, bottom = selected
+        area_width = page[0] - 2 * margin
+        area_height = page[1] - 2 * margin
+        scale = min(area_width / width, area_height / height)
+        image_width = width * scale
+        image_height = height * scale
+        left = margin + (area_width - image_width) / 2
+        bottom = margin + (area_height - image_height) / 2
         doc = canvas.Canvas(str(destination), pagesize=page)
         chart_title = str(title or "Aries Chart Export")
         doc.setTitle(chart_title)

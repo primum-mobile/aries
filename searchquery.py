@@ -11,6 +11,15 @@ class SearchQuery(object):
 	TECHNIQUE_PRIMARY_DIRECTIONS = 'primary_directions'
 	TECHNIQUE_MUNDANE_WEATHER = 'mundane_weather'
 	TECHNIQUE_HELIACAL_PHASES = 'heliacal_phases'
+	TECHNIQUE_INGRESS_SYNODIC = 'sign_changes'
+	ASPECT_TECHNIQUES = (
+		TECHNIQUE_TRANSITS,
+		TECHNIQUE_CONVERSE_TRANSITS,
+		TECHNIQUE_PROFECTIONS,
+		TECHNIQUE_SECONDARY_DIRECTIONS,
+		TECHNIQUE_PRIMARY_DIRECTIONS,
+		TECHNIQUE_MUNDANE_WEATHER,
+	)
 
 	ASPECT_CONJUNCTION = 'conjunction'
 	ASPECT_SEXTILE = 'sextile'
@@ -105,20 +114,19 @@ class SearchQuery(object):
 		if len(self.promittor_ids) == 0:
 			return 0
 
-		if len(self.techniques) == 0:
-			return 0
-
-		aspect_count = len(self.aspects)
-		if aspect_count != 0 and len(self.significator_ids) != 0:
-			return len(self.promittor_ids)*len(self.significator_ids)*len(self.techniques)*aspect_count
-
-		if self.include_sign_changes and (self.TECHNIQUE_MUNDANE_WEATHER in self.techniques or self.TECHNIQUE_TRANSITS in self.techniques):
-			return len(self.promittor_ids)
-
+		count = 0
+		aspect_techniques = [
+			technique
+			for technique in self.techniques
+			if technique in self.ASPECT_TECHNIQUES
+		]
+		if len(aspect_techniques) != 0 and len(self.aspects) != 0 and len(self.significator_ids) != 0:
+			count += len(self.promittor_ids)*len(self.significator_ids)*len(aspect_techniques)*len(self.aspects)
+		if self.include_sign_changes:
+			count += len(self.promittor_ids)
 		if self.TECHNIQUE_HELIACAL_PHASES in self.techniques:
-			return len(self.promittor_ids)
-
-		return 0
+			count += len(self.promittor_ids)
+		return count
 
 
 class SearchResult(object):

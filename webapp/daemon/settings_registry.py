@@ -31,6 +31,7 @@ THEME_PRESET_DEFINITIONS: tuple[dict, ...] = (
     {"name": "My Colors", "mtextKey": "MyColors"},
     {"name": "Midnight"},
     {"name": "Daylight"},
+    {"name": "NASA Atlas", "mtextKey": "ThemeNasaAtlas"},
     {"name": "Diurnal"},
     {"name": "Classic Morinus"},
     {"name": "Taurus"},
@@ -84,8 +85,6 @@ MIRRORED_SECTIONS: tuple[dict, ...] = (
             {"id": "astrocart-house-lines", "group": "display", "field": "astrocart_show_house_lines", "kind": "boolean", "label": "House lines", "labelKey": "settings.astrocartHouseLines"},
             {"id": "astrocart-zodiac-lines", "group": "display", "field": "astrocart_show_zodiac_lines", "kind": "boolean", "label": "Zodiac lines", "labelKey": "settings.astrocartZodiacLines"},
             {"id": "astrocart-country-labels", "group": "display", "field": "astrocart_show_country_labels", "kind": "boolean", "label": "Show countries", "labelKey": "settings.astrocartCountryLabels"},
-            {"id": "astrocart-terrain-relief", "group": "display", "field": "astrocart_terrain_relief", "kind": "boolean", "label": "Terrain relief", "labelKey": "settings.astrocartTerrainRelief"},
-            {"id": "astrocart-local-space-additive", "group": "display", "field": "astrocart_localspace_additive", "kind": "boolean", "label": "Local Space over ACG", "labelKey": "settings.localSpaceOverAcg"},
         ],
     },
 )

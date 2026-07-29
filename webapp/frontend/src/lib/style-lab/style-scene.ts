@@ -1,6 +1,8 @@
 // Copyright (C) 2026 Max Lange
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import type { ChartStyleFontRef } from "./authoring-schema";
+
 export type StyleScenePoint = readonly [x: number, y: number];
 
 export type StyleSceneHitGeometry =
@@ -83,7 +85,10 @@ export interface StyleSceneTokenBinding {
 
 /** Exact conventional values exposed by the profile-v2 inspector. */
 export type StyleSceneAuthoringDefaults = Readonly<{
+  fontRef?: ChartStyleFontRef;
   fontSizePx?: number;
+  trackingPx?: number;
+  color?: string;
   strokeWidthPx?: number;
   strokeStyle?: "solid" | "dashed" | "dotted";
   dashOnPx?: number;
@@ -91,6 +96,58 @@ export type StyleSceneAuthoringDefaults = Readonly<{
   opacityPercent?: number;
   lineCap?: CanvasLineCap;
   lineJoin?: CanvasLineJoin;
+  fillPattern?:
+    | "none"
+    | "solid"
+    | "stipple"
+    | "bayer2"
+    | "bayer4"
+    | "bayer8"
+    | "noise"
+    | "blueNoise"
+    | "paper"
+    | "newsprint"
+    | "hatch"
+    | "crosshatch"
+    | "scanline"
+    | "atkinson"
+    | "floydSteinberg";
+  shadowPattern?:
+    | "none"
+    | "solid"
+    | "stipple"
+    | "bayer2"
+    | "bayer4"
+    | "bayer8"
+    | "noise"
+    | "blueNoise"
+    | "paper"
+    | "newsprint"
+    | "hatch"
+    | "crosshatch"
+    | "scanline"
+    | "atkinson"
+    | "floydSteinberg";
+  cellSizePx?: number;
+  dotSizePx?: number;
+  backgroundColor?: string;
+  patternColor?: string;
+  gradientType?: "none" | "linear" | "radial";
+  gradientDirection?: "fixed" | "sun";
+  gradientStartColor?: string;
+  gradientEndColor?: string;
+  gradientAngleDegrees?: number;
+  textureMask?: "none" | "crescent";
+  maskDirection?: "fixed" | "sun";
+  maskAngleDegrees?: number;
+  maskAmountPercent?: number;
+  shadowColor?: string;
+  shadowXpx?: number;
+  shadowYpx?: number;
+  shadowBlurPx?: number;
+  densityPercent?: number;
+  angleDegrees?: number;
+  seed?: number;
   radiusPx?: number;
   diameterPx?: number;
 }>;

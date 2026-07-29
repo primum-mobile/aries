@@ -10,21 +10,16 @@ import { Calendar, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
-  TableBody,
-  TableCell,
-  TableRow,
-} from "@/components/ui/table";
-import {
   fetchSynodicCycles,
   type SynodicCyclePayload,
   type SynodicCycleRow,
+  type SynodicLunarItem,
   type SynodicPlanetItem,
 } from "@/lib/daemon/client";
 import { eventListBodyViewportHeight } from "@/lib/event-list-time";
 import {
   LIST_BUTTON_PROPS,
   LIST_PANE_CLASSES,
-  LIST_ROLE_CLASSES,
   LIST_ROW_CLASSES,
   useFixedRowHeightAnchor,
   useListRowHeight,
@@ -40,6 +35,13 @@ import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 
 import { DateTransitLink, TimedChartContextMenu } from "./directions-view";
 import { ListCalendarStepper, ListToggleDrawer } from "./list-controls";
+import {
+  SidebarListBody,
+  SidebarListCell,
+  SidebarListRow,
+  SidebarListSpacerRow,
+  SidebarListTable,
+} from "./sidebar-list-table";
 import {
   buildStableRowKeys,
   filterRetainedRows,
@@ -58,6 +60,7 @@ type SynodicMonthStore = {
   summary: string;
   truncated: boolean;
   planetItems: SynodicPlanetItem[];
+  lunarItems: SynodicLunarItem[];
   currentDatetime: string;
   birthDatetime: string;
   optionsSeq: number;
@@ -68,6 +71,7 @@ type SynodicListViewState = {
   visibleMonthIndex: number;
   activeIngressPlanetIds: number[] | null;
   activeSynodicPlanetIds: number[] | null;
+  activeLunarCycleIds: string[] | null;
 };
 
 const SYNODIC_ROW_CLASS = LIST_ROW_CLASSES.flagged;
@@ -84,7 +88,7 @@ const VIRTUAL_OVERSCAN_ROWS = 24;
 const VIRTUAL_SCROLL_SYNC_EVENT = "aries:virtual-scroll-sync";
 const synodicListViewStateCache = new Map<string, SynodicListViewState>();
 
-type SynodicFilterGroup = "ingress" | "synodic";
+type SynodicFilterGroup = "ingress" | "synodic" | "lunar";
 
 function listCacheKey(parts: Record<string, unknown>): string {
   return JSON.stringify(parts);
@@ -125,8 +129,12 @@ export function SynodicCycleListView({
   const [activeSynodicPlanetIds, setActiveSynodicPlanetIds] = React.useState<number[] | null>(
     cachedViewState?.activeSynodicPlanetIds ?? null,
   );
+  const [activeLunarCycleIds, setActiveLunarCycleIds] = React.useState<string[] | null>(
+    cachedViewState?.activeLunarCycleIds ?? null,
+  );
   const [ingressDrawerOpen, setIngressDrawerOpen] = React.useState(false);
   const [synodicDrawerOpen, setSynodicDrawerOpen] = React.useState(false);
+  const [lunarDrawerOpen, setLunarDrawerOpen] = React.useState(false);
   const [island, setIsland] = React.useState<{
     nonce: number;
     window: SynodicSpan | null;
@@ -143,6 +151,7 @@ export function SynodicCycleListView({
   const storeRef = React.useRef<SynodicMonthStore | null>(null);
   const activeIngressPlanetIdsRef = React.useRef<number[] | null>(activeIngressPlanetIds);
   const activeSynodicPlanetIdsRef = React.useRef<number[] | null>(activeSynodicPlanetIds);
+  const activeLunarCycleIdsRef = React.useRef<string[] | null>(activeLunarCycleIds);
   const visibleMonthIndexRef = React.useRef(visibleMonthIndex);
   const requestFocusDatetimeRef = React.useRef(requestFocusDatetime);
   const rowsRef = React.useRef<SynodicCycleRow[]>([]);
@@ -168,6 +177,9 @@ export function SynodicCycleListView({
     activeSynodicPlanetIdsRef.current = activeSynodicPlanetIds;
   }, [activeSynodicPlanetIds]);
   React.useEffect(() => {
+    activeLunarCycleIdsRef.current = activeLunarCycleIds;
+  }, [activeLunarCycleIds]);
+  React.useEffect(() => {
     visibleMonthIndexRef.current = visibleMonthIndex;
   }, [visibleMonthIndex]);
   React.useEffect(() => {
@@ -178,8 +190,9 @@ export function SynodicCycleListView({
     () => [
       activeIngressPlanetIds ? activeIngressPlanetIds.join(",") : "ingress:default",
       activeSynodicPlanetIds ? activeSynodicPlanetIds.join(",") : "synodic:default",
+      activeLunarCycleIds ? activeLunarCycleIds.join(",") : "lunar:default",
     ].join("|"),
-    [activeIngressPlanetIds, activeSynodicPlanetIds],
+    [activeIngressPlanetIds, activeLunarCycleIds, activeSynodicPlanetIds],
   );
   const stitchKey = React.useMemo(
     () => listCacheKey({ documentId, optionsSeq }),
@@ -263,6 +276,7 @@ export function SynodicCycleListView({
           summary: data.summary,
           truncated: data.truncated,
           planetItems: data.meta.planetItems,
+          lunarItems: data.meta.lunarItems,
           currentDatetime: data.meta.currentDatetime,
           birthDatetime: data.meta.birthDatetime,
           optionsSeq,
@@ -271,7 +285,10 @@ export function SynodicCycleListView({
           setActiveIngressPlanetIds(
             data.meta.activePlanetIds.filter((planetId) =>
               data.meta.planetItems.some(
-                (item) => item.id === planetId && item.objectId !== "planet:moon",
+                (item) =>
+                  item.id === planetId &&
+                  supportsSynodicFilterGroup(item, "ingress") &&
+                  item.objectId !== "planet:moon",
               ),
             ),
           );
@@ -280,10 +297,15 @@ export function SynodicCycleListView({
           setActiveSynodicPlanetIds(
             data.meta.activePlanetIds.filter((planetId) =>
               data.meta.planetItems.some(
-                (item) => item.id === planetId && item.objectId !== "planet:sun",
+                (item) =>
+                  item.id === planetId &&
+                  supportsSynodicFilterGroup(item, "synodic"),
               ),
             ),
           );
+        }
+        if (activeLunarCycleIdsRef.current == null) {
+          setActiveLunarCycleIds(data.meta.activeLunarCycleIds);
         }
         if (requestedWindow == null) {
           const focus = data.meta.focusDatetime || monthSpanAnchorIso(span);
@@ -298,8 +320,10 @@ export function SynodicCycleListView({
           const replacementMonth = monthIndexForDate(replacementFocus);
           const active = activeSynodicFilterKeys(
             data.meta.planetItems,
+            data.meta.lunarItems,
             activeIngressPlanetIdsRef.current,
             activeSynodicPlanetIdsRef.current,
+            activeLunarCycleIdsRef.current,
           );
           const replacementRows = filterRetainedRows(next.rows, active, synodicRowFilterKey);
           const replacementIndex = nearestSynodicDateIndex(
@@ -406,14 +430,17 @@ export function SynodicCycleListView({
             summary: data.summary,
             truncated: base.truncated || data.truncated,
             planetItems: data.meta.planetItems,
+            lunarItems: data.meta.lunarItems,
             currentDatetime: data.meta.currentDatetime,
             birthDatetime: data.meta.birthDatetime,
             optionsSeq: base.optionsSeq,
           };
           const active = activeSynodicFilterKeys(
             data.meta.planetItems,
+            data.meta.lunarItems,
             activeIngressPlanetIdsRef.current,
             activeSynodicPlanetIdsRef.current,
+            activeLunarCycleIdsRef.current,
           );
           const visiblePrependedCount = visiblePrependedRowCount(
             next.rows,
@@ -479,18 +506,30 @@ export function SynodicCycleListView({
 
   const sourceRows = React.useMemo(() => store?.rows ?? [], [store]);
   const planetItems = React.useMemo(() => store?.planetItems ?? [], [store]);
-  const ingressPlanetItems = planetItems;
+  const lunarItems = React.useMemo(() => store?.lunarItems ?? [], [store]);
+  const ingressPlanetItems = React.useMemo(
+    () => planetItems.filter((item) => supportsSynodicFilterGroup(item, "ingress")),
+    [planetItems],
+  );
   const synodicPlanetItems = React.useMemo(
-    () => planetItems.filter((item) => item.objectId !== "planet:sun"),
+    () => planetItems.filter((item) => supportsSynodicFilterGroup(item, "synodic")),
     [planetItems],
   );
   const activeFilterKeys = React.useMemo(
     () => activeSynodicFilterKeys(
       planetItems,
+      lunarItems,
       activeIngressPlanetIds,
       activeSynodicPlanetIds,
+      activeLunarCycleIds,
     ),
-    [activeIngressPlanetIds, activeSynodicPlanetIds, planetItems],
+    [
+      activeIngressPlanetIds,
+      activeLunarCycleIds,
+      activeSynodicPlanetIds,
+      lunarItems,
+      planetItems,
+    ],
   );
   const rows = React.useMemo(
     () => filterRetainedRows(sourceRows, activeFilterKeys, synodicRowFilterKey),
@@ -498,7 +537,8 @@ export function SynodicCycleListView({
   );
   const filterActive =
     (activeIngressPlanetIds != null && activeIngressPlanetIds.length < ingressPlanetItems.length) ||
-    (activeSynodicPlanetIds != null && activeSynodicPlanetIds.length < synodicPlanetItems.length);
+    (activeSynodicPlanetIds != null && activeSynodicPlanetIds.length < synodicPlanetItems.length) ||
+    (activeLunarCycleIds != null && activeLunarCycleIds.length < lunarItems.length);
   React.useEffect(() => {
     rowsRef.current = rows;
   }, [rows]);
@@ -544,6 +584,7 @@ export function SynodicCycleListView({
       synodicListViewStateCache.set(documentId, {
         activeIngressPlanetIds: activeIngressPlanetIdsRef.current,
         activeSynodicPlanetIds: activeSynodicPlanetIdsRef.current,
+        activeLunarCycleIds: activeLunarCycleIdsRef.current,
         requestFocusDatetime: viewportFocus,
         visibleMonthIndex: monthIndexForDate(viewportFocus),
       });
@@ -653,12 +694,16 @@ export function SynodicCycleListView({
   const monthLabel = React.useMemo(() => formatMonthIndexLabel(visibleMonthIndex), [visibleMonthIndex]);
   const ingressActiveCount = activeIngressPlanetIds?.length ?? ingressPlanetItems.length;
   const synodicActiveCount = activeSynodicPlanetIds?.length ?? synodicPlanetItems.length;
+  const lunarActiveCount = activeLunarCycleIds?.length ?? lunarItems.length;
   const ingressLabel = ingressActiveCount === ingressPlanetItems.length
     ? t("synodic.all")
     : `${ingressActiveCount}/${ingressPlanetItems.length}`;
   const synodicLabel = synodicActiveCount === synodicPlanetItems.length
     ? t("synodic.all")
     : `${synodicActiveCount}/${synodicPlanetItems.length}`;
+  const lunarLabel = lunarActiveCount === lunarItems.length
+    ? t("synodic.all")
+    : `${lunarActiveCount}/${lunarItems.length}`;
   const ensureSourceWindowForFocus = React.useCallback((nextFocus: string, force = false) => {
     const desired = synodicSeedWindowForFocus(nextFocus, SYNODIC_SEED_MONTHS);
     const current = storeRef.current;
@@ -702,17 +747,25 @@ export function SynodicCycleListView({
   const currentViewportLabel = t("listViewport.current");
   const birthViewportLabel = t("listViewport.birth");
 
+  const prepareFilterChange = React.useCallback(() => {
+    const nextFocus = viewportSynodicFocusIso(
+      rows,
+      scrollerRef.current,
+      visibleMonthIndex,
+      rowHeight,
+    );
+    filterAnchorRef.current = nextFocus;
+    pendingMonthJumpRef.current = null;
+    filterFillDirectionRef.current = "previous";
+  }, [rowHeight, rows, visibleMonthIndex]);
+
   const togglePlanet = React.useCallback(
-    (group: SynodicFilterGroup, planetId: number, checked: boolean) => {
-      const nextFocus = viewportSynodicFocusIso(
-        rows,
-        scrollerRef.current,
-        visibleMonthIndex,
-        rowHeight,
-      );
-      filterAnchorRef.current = nextFocus;
-      pendingMonthJumpRef.current = null;
-      filterFillDirectionRef.current = "previous";
+    (
+      group: Exclude<SynodicFilterGroup, "lunar">,
+      planetId: number,
+      checked: boolean,
+    ) => {
+      prepareFilterChange();
       const items = group === "ingress" ? ingressPlanetItems : synodicPlanetItems;
       const setActiveIds = group === "ingress" ? setActiveIngressPlanetIds : setActiveSynodicPlanetIds;
       const activeIdsRef = group === "ingress" ? activeIngressPlanetIdsRef : activeSynodicPlanetIdsRef;
@@ -726,19 +779,74 @@ export function SynodicCycleListView({
         return sorted;
       });
     },
-    [ingressPlanetItems, rowHeight, rows, synodicPlanetItems, visibleMonthIndex],
+    [ingressPlanetItems, prepareFilterChange, synodicPlanetItems],
+  );
+  const setPlanetGroupSelection = React.useCallback(
+    (
+      group: Exclude<SynodicFilterGroup, "lunar">,
+      checked: boolean,
+    ) => {
+      prepareFilterChange();
+      const items = group === "ingress" ? ingressPlanetItems : synodicPlanetItems;
+      const setActiveIds = group === "ingress" ? setActiveIngressPlanetIds : setActiveSynodicPlanetIds;
+      const activeIdsRef = group === "ingress" ? activeIngressPlanetIdsRef : activeSynodicPlanetIdsRef;
+      const next = checked ? items.map((item) => item.id) : [];
+      activeIdsRef.current = next;
+      setActiveIds(next);
+    },
+    [ingressPlanetItems, prepareFilterChange, synodicPlanetItems],
+  );
+  const toggleLunarCycle = React.useCallback(
+    (cycleId: string, checked: boolean) => {
+      prepareFilterChange();
+      setActiveLunarCycleIds((prev) => {
+        const base = prev ?? lunarItems.map((item) => item.id);
+        const next = checked
+          ? Array.from(new Set([...base, cycleId]))
+          : base.filter((id) => id !== cycleId);
+        const sorted = sortLunarCycleIds(next, lunarItems);
+        activeLunarCycleIdsRef.current = sorted;
+        return sorted;
+      });
+    },
+    [lunarItems, prepareFilterChange],
+  );
+  const setLunarCycleSelection = React.useCallback(
+    (checked: boolean) => {
+      prepareFilterChange();
+      const next = checked ? lunarItems.map((item) => item.id) : [];
+      activeLunarCycleIdsRef.current = next;
+      setActiveLunarCycleIds(next);
+    },
+    [lunarItems, prepareFilterChange],
   );
 
   return (
     <div className={cn("font-morinus-text", LIST_PANE_CLASSES.root)}>
-      <div className={LIST_PANE_CLASSES.compactHeader}>
-        <div className={LIST_PANE_CLASSES.compactControlRow}>
+      <div className={LIST_PANE_CLASSES.standardHeader}>
+        <div className={LIST_PANE_CLASSES.titleRow}>
+          <div className={LIST_PANE_CLASSES.titleLeading}>
+            {onClose ? (
+              <Button
+                type="button"
+                {...LIST_BUTTON_PROPS.icon}
+                onClick={onClose}
+                aria-label={t("synodic.close")}
+              >
+                <X className="size-3.5" />
+              </Button>
+            ) : null}
+            <h2 className={LIST_PANE_CLASSES.title}>{t("table.synodic_cycles")}</h2>
+          </div>
+        </div>
+        <div className={LIST_PANE_CLASSES.controlRow}>
           <Button
             type="button"
             {...LIST_BUTTON_PROPS.command}
             onClick={() => {
               setIngressDrawerOpen((open) => !open);
               setSynodicDrawerOpen(false);
+              setLunarDrawerOpen(false);
             }}
             aria-expanded={ingressDrawerOpen}
           >
@@ -750,11 +858,26 @@ export function SynodicCycleListView({
             onClick={() => {
               setSynodicDrawerOpen((open) => !open);
               setIngressDrawerOpen(false);
+              setLunarDrawerOpen(false);
             }}
             aria-expanded={synodicDrawerOpen}
           >
             {t("synodic.synodics")}: {synodicLabel}
           </Button>
+          <Button
+            type="button"
+            {...LIST_BUTTON_PROPS.command}
+            onClick={() => {
+              setLunarDrawerOpen((open) => !open);
+              setIngressDrawerOpen(false);
+              setSynodicDrawerOpen(false);
+            }}
+            aria-expanded={lunarDrawerOpen}
+          >
+            {t("synodic.lunar")}: {lunarLabel}
+          </Button>
+        </div>
+        <div className={LIST_PANE_CLASSES.controlRow}>
           <ListCalendarStepper
             label={monthLabel}
             onJump={jumpByMonths}
@@ -780,11 +903,6 @@ export function SynodicCycleListView({
             </span>
           </Button>
         </div>
-        {onClose ? (
-          <Button type="button" {...LIST_BUTTON_PROPS.icon} onClick={onClose} aria-label={t("synodic.close")}>
-            <X className="size-3.5" />
-          </Button>
-        ) : null}
         {ingressDrawerOpen ? (
           <ListToggleDrawer
             label={t("synodic.ingresses")}
@@ -793,6 +911,10 @@ export function SynodicCycleListView({
               (activeIngressPlanetIds ?? ingressPlanetItems.map((planet) => planet.id)).includes(item.id)
             }
             onToggle={(item, active) => togglePlanet("ingress", item.id, active)}
+            deselectAllLabel={t("listFilters.deselectAll")}
+            selectAllLabel={t("listFilters.selectAll")}
+            onDeselectAll={() => setPlanetGroupSelection("ingress", false)}
+            onSelectAll={() => setPlanetGroupSelection("ingress", true)}
           />
         ) : null}
         {synodicDrawerOpen ? (
@@ -803,6 +925,24 @@ export function SynodicCycleListView({
               (activeSynodicPlanetIds ?? synodicPlanetItems.map((planet) => planet.id)).includes(item.id)
             }
             onToggle={(item, active) => togglePlanet("synodic", item.id, active)}
+            deselectAllLabel={t("listFilters.deselectAll")}
+            selectAllLabel={t("listFilters.selectAll")}
+            onDeselectAll={() => setPlanetGroupSelection("synodic", false)}
+            onSelectAll={() => setPlanetGroupSelection("synodic", true)}
+          />
+        ) : null}
+        {lunarDrawerOpen ? (
+          <ListToggleDrawer
+            label={t("synodic.lunar")}
+            items={lunarItems}
+            isActive={(item) =>
+              (activeLunarCycleIds ?? lunarItems.map((cycle) => cycle.id)).includes(item.id)
+            }
+            onToggle={(item, active) => toggleLunarCycle(item.id, active)}
+            deselectAllLabel={t("listFilters.deselectAll")}
+            selectAllLabel={t("listFilters.selectAll")}
+            onDeselectAll={() => setLunarCycleSelection(false)}
+            onSelectAll={() => setLunarCycleSelection(true)}
           />
         ) : null}
       </div>
@@ -815,7 +955,7 @@ export function SynodicCycleListView({
         {error && !store ? (
           <div className={LIST_PANE_CLASSES.error}>{error}</div>
         ) : (
-          <table className={cn("aries-list caption-bottom border-collapse", LIST_ROLE_CLASSES.symbolic)}>
+          <SidebarListTable profile="transit-cursor">
             <VirtualizedTableRows
               rows={rows}
               loading={loading}
@@ -834,7 +974,7 @@ export function SynodicCycleListView({
                 />
               )}
             />
-          </table>
+          </SidebarListTable>
         )}
       </div>
     </div>
@@ -860,12 +1000,12 @@ function SynodicRow({
       eventJd={row.eventJd}
       sessionLabel={row.sessionLabel}
     >
-      <TableRow
+      <SidebarListRow
         className={SYNODIC_ROW_CLASS}
         data-initial-focus={focused || undefined}
         style={{ height: rowHeight }}
       >
-        <TableCell className="text-center">
+        <SidebarListCell className="text-center">
           <span className="inline-flex items-center justify-center gap-1" title={row.planetLabel}>
             <Glyph
               ch={row.planetGlyph}
@@ -878,8 +1018,8 @@ function SynodicRow({
               </span>
             ) : null}
           </span>
-        </TableCell>
-        <TableCell
+        </SidebarListCell>
+        <SidebarListCell
           className="text-center text-muted-foreground"
           title={row.eventType === "ingress" ? (row.motionMarker === "R" ? t("synodic.retrogradeIngress") : t("synodic.directIngress")) : row.eventLabel}
         >
@@ -887,11 +1027,11 @@ function SynodicRow({
             {row.eventType === "eclipse" ? <EclipseMark /> : null}
             {row.eventLabel}
           </span>
-        </TableCell>
-        <TableCell className="text-center">
+        </SidebarListCell>
+        <SidebarListCell className="text-center">
           <SynodicDetailCell row={row} />
-        </TableCell>
-        <TableCell className="text-center tabular-nums">
+        </SidebarListCell>
+        <SidebarListCell className="text-center tabular-nums">
           <DateTransitLink
             documentId={documentId}
             eventDatetime={row.openDatetime}
@@ -900,11 +1040,11 @@ function SynodicRow({
           >
             {row.displayDate}
           </DateTransitLink>
-        </TableCell>
-        <TableCell className="aries-search-time-text text-right tabular-nums" title={row.displayTime}>
+        </SidebarListCell>
+        <SidebarListCell className="aries-search-time-text text-right tabular-nums" title={row.displayTime}>
           {shortDisplayTime(row)}
-        </TableCell>
-      </TableRow>
+        </SidebarListCell>
+      </SidebarListRow>
     </TimedChartContextMenu>
   );
 }
@@ -984,37 +1124,29 @@ function VirtualizedTableRows<T>({
 
   if (rows.length === 0 && !loading) {
     return (
-      <TableBody data-rendered-row-count={0} data-total-row-count={0}>
-        <TableRow>
-          <TableCell colSpan={colSpan} className="h-24 text-center text-muted-foreground">
+      <SidebarListBody data-rendered-row-count={0} data-total-row-count={0}>
+        <SidebarListRow>
+          <SidebarListCell colSpan={colSpan} className="h-24 text-center text-muted-foreground">
             {emptyLabel}
-          </TableCell>
-        </TableRow>
-      </TableBody>
+          </SidebarListCell>
+        </SidebarListRow>
+      </SidebarListBody>
     );
   }
 
   return (
-    <TableBody data-rendered-row-count={visibleRows.length} data-total-row-count={rows.length}>
-      {virtual.paddingTop > 0 ? <VirtualSpacerRow colSpan={colSpan} height={virtual.paddingTop} /> : null}
+    <SidebarListBody data-rendered-row-count={visibleRows.length} data-total-row-count={rows.length}>
+      {virtual.paddingTop > 0 ? <SidebarListSpacerRow colSpan={colSpan} height={virtual.paddingTop} /> : null}
       {visibleRows.map((row, offset) => renderRow(row, virtual.startIndex + offset))}
-      {virtual.paddingBottom > 0 ? <VirtualSpacerRow colSpan={colSpan} height={virtual.paddingBottom} /> : null}
+      {virtual.paddingBottom > 0 ? <SidebarListSpacerRow colSpan={colSpan} height={virtual.paddingBottom} /> : null}
       {rows.length === 0 && loading ? (
-        <TableRow>
-          <TableCell colSpan={colSpan} className="h-24 text-center text-muted-foreground">
+        <SidebarListRow>
+          <SidebarListCell colSpan={colSpan} className="h-24 text-center text-muted-foreground">
             {t("synodic.computing")}
-          </TableCell>
-        </TableRow>
+          </SidebarListCell>
+        </SidebarListRow>
       ) : null}
-    </TableBody>
-  );
-}
-
-function VirtualSpacerRow({ colSpan, height }: { colSpan: number; height: number }) {
-  return (
-    <TableRow aria-hidden="true" data-virtual-spacer className="border-0 hover:bg-transparent" style={{ height }}>
-      <TableCell colSpan={colSpan} className="border-0 p-0" style={{ height }} />
-    </TableRow>
+    </SidebarListBody>
   );
 }
 
@@ -1304,7 +1436,9 @@ function scheduleFocusedSynodicScroll(
 }
 
 function useSynodicOptionsSeq(): number {
-  const lastOptionsChange = useDaemonWorkspaceStore((state) => state.lastOptionsChange);
+  const lastOptionsChange = useDaemonWorkspaceStore(
+    (state) => state.lastRetainedDataOptionsChange,
+  );
   const [seq, setSeq] = React.useState(0);
 
   React.useEffect(() => {
@@ -1359,22 +1493,43 @@ function synodicStitchRowKey(row: SynodicCycleRow): string {
 }
 
 function synodicRowFilterKey(row: SynodicCycleRow): string {
+  if (row.filterGroup && row.filterId != null) {
+    return `${row.filterGroup}:${row.filterId}`;
+  }
   const group: SynodicFilterGroup = row.eventType === "ingress" ? "ingress" : "synodic";
   return `${group}:${row.planetId}`;
 }
 
 function activeSynodicFilterKeys(
   planetItems: readonly SynodicPlanetItem[],
+  lunarItems: readonly SynodicLunarItem[],
   activeIngressPlanetIds: readonly number[] | null,
   activeSynodicPlanetIds: readonly number[] | null,
+  activeLunarCycleIds: readonly string[] | null,
 ): string[] {
-  const ingressIds = activeIngressPlanetIds ?? planetItems.map((item) => item.id);
-  const synodicPlanetItems = planetItems.filter((item) => item.objectId !== "planet:sun");
+  const ingressPlanetItems = planetItems.filter((item) =>
+    supportsSynodicFilterGroup(item, "ingress")
+  );
+  const ingressIds = activeIngressPlanetIds ?? ingressPlanetItems.map((item) => item.id);
+  const synodicPlanetItems = planetItems.filter((item) =>
+    supportsSynodicFilterGroup(item, "synodic")
+  );
   const synodicIds = activeSynodicPlanetIds ?? synodicPlanetItems.map((item) => item.id);
+  const lunarIds = activeLunarCycleIds ?? lunarItems.map((item) => item.id);
   return [
     ...ingressIds.map((planetId) => `ingress:${planetId}`),
     ...synodicIds.map((planetId) => `synodic:${planetId}`),
+    ...lunarIds.map((cycleId) => `lunar:${cycleId}`),
   ];
+}
+
+function supportsSynodicFilterGroup(
+  item: SynodicPlanetItem,
+  group: Exclude<SynodicFilterGroup, "lunar">,
+): boolean {
+  if (item.eventGroups) return item.eventGroups.includes(group);
+  if (group === "ingress") return true;
+  return item.objectId !== "planet:sun";
 }
 
 function stitchedSynodicStoreCoversSpan(
@@ -1410,6 +1565,16 @@ function resolveDateMs(value: string): number {
 function sortPlanetIds(ids: number[], items: readonly SynodicPlanetItem[]): number[] {
   const order = new Map(items.map((item, index) => [item.id, index]));
   return Array.from(new Set(ids)).sort((a, b) => (order.get(a) ?? 999) - (order.get(b) ?? 999));
+}
+
+function sortLunarCycleIds(
+  ids: string[],
+  items: readonly SynodicLunarItem[],
+): string[] {
+  const order = new Map(items.map((item, index) => [item.id, index]));
+  return Array.from(new Set(ids)).sort(
+    (a, b) => (order.get(a) ?? 999) - (order.get(b) ?? 999),
+  );
 }
 
 function shortDisplayTime(row: SynodicCycleRow): string {

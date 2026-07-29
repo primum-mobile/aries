@@ -341,7 +341,11 @@ test("one resolved style object feeds paint, geometry, hit testing, and canvas e
     source.indexOf("function positive"),
   );
   assert.match(semanticOptionsHook, /lastOptionsChange\?\.styleOnly/);
-  assert.match(semanticOptionsHook, /if \(!lastOptionsChange \|\| lastOptionsChange\.styleOnly\) return/);
+  assert.match(
+    semanticOptionsHook,
+    /if\s*\(\s*!lastOptionsChange\s*\|\|\s*lastOptionsChange\.styleOnly\s*\|\|\s*lastOptionsChange\.listDataChanged === false\s*\)\s*\{\s*return;\s*\}/,
+    "Graph Ephemeris must refetch only for semantic option changes, never renderer-only events",
+  );
   assert.match(semanticOptionsHook, /setSeq\(lastOptionsChange\.seq\)/);
   assert.doesNotMatch(source, /lastOptionsChange\?\.seq \?\? 0\);\n  const chartTextFont/);
   assert.doesNotMatch(

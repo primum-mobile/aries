@@ -21,6 +21,7 @@ import {
 } from "@/lib/shell-host";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/i18n";
+import { refreshWorkspaceManifest } from "@/stores/use-workspace-manifest";
 import { ManifestMenuItems } from "./browser-menu-bar";
 import type { SettingsTabId } from "./settings-dialog";
 
@@ -28,6 +29,7 @@ type Props = {
   manifest: WorkspaceManifest | null;
   onCommand: (command: string) => void;
   isCommandEnabled: (command: string) => boolean;
+  onOpenStyleLab?: () => void;
   onOpenSettings?: (tab?: SettingsTabId) => void;
 };
 
@@ -52,6 +54,7 @@ export function TitlebarOptionsMenu({
   manifest,
   onCommand,
   isCommandEnabled,
+  onOpenStyleLab,
   onOpenSettings,
 }: Props) {
   const t = useT();
@@ -73,8 +76,17 @@ export function TitlebarOptionsMenu({
     return () => window.removeEventListener("blur", dismissOnWindowBlur);
   }, [open]);
 
+  const handleOpenChange = React.useCallback((nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (nextOpen) {
+      // Keep the retained menu immediate, then refresh it quietly so profiles
+      // saved by the standalone Style Lab appear without restarting Aries.
+      void refreshWorkspaceManifest();
+    }
+  }, []);
+
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
+    <DropdownMenu open={open} onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger
         aria-label={t("quickopt.quickOptions")}
         title={t("quickopt.quickOptions")}
@@ -87,9 +99,9 @@ export function TitlebarOptionsMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
-        className="max-h-[min(76vh,620px)] w-72 rounded-[var(--aries-radius-control)]"
+        className="max-h-[min(var(--aries-menu-quick-viewport-max-height),var(--aries-menu-quick-max-height))] w-[var(--aries-menu-quick-width)] rounded-[var(--aries-radius-control)]"
       >
-        <div className="px-1.5 py-1 text-xs font-medium text-muted-foreground">
+        <div className="px-[var(--aries-menu-label-padding-x)] py-[var(--aries-menu-label-padding-y)] text-[length:var(--aries-font-size-small)] font-medium text-muted-foreground">
           {t("quickopt.options")}
         </div>
         {optionsMenu ? (
@@ -103,6 +115,9 @@ export function TitlebarOptionsMenu({
           <DropdownMenuItem disabled>{t("quickopt.optionsUnavailable")}</DropdownMenuItem>
         )}
         <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={onOpenStyleLab}>
+          {t("styleLab.title")}
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={() => onOpenSettings?.("appearance")}>
           {t("quickopt.openFullSettings")}
         </DropdownMenuItem>

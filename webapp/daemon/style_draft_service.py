@@ -15,6 +15,7 @@ import json
 import re
 import threading
 import time
+import unicodedata
 import uuid
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -29,7 +30,11 @@ from webapp.daemon.style_profile_service import (
     PROFILE_KIND,
     PROFILE_SCHEMA_VERSION,
     StyleProfileError,
+    normalize_imported_style_profile,
     validate_style_profile,
+)
+from webapp.daemon.app_style_authoring_service import (
+    apply_app_authoring_patch,
 )
 from webapp.daemon.style_authoring_service import (
     apply_authoring_patch,
@@ -103,6 +108,12 @@ def _normalized_search_text(value: Any) -> str:
     return " ".join(re.sub(r"[^a-z0-9]+", " ", raw.lower()).split())
 
 
+def _new_profile_id(name: str) -> str:
+    ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
+    slug = re.sub(r"[^a-z0-9]+", "-", ascii_name.lower()).strip("-")[:48] or "theme"
+    return f"{slug}-{uuid.uuid4().hex[:8]}"
+
+
 class StyleDraftService:
     """Thread-safe in-memory drafts with compare-and-swap mutations."""
 
@@ -127,7 +138,13 @@ class StyleDraftService:
     @staticmethod
     def _public(record: Mapping[str, Any]) -> dict:
         profile = record["profile"]
-        chart_style_profile = profile["chartStyleProfileV2"]
+        baseline_profile = record.get("baselineProfile") or profile
+        chart_style_profile = (
+            profile.get("chartStyleProfileV2")
+            or build_chart_style_profile_v2(
+                profile.get("authoringOverrides") or {}
+            )
+        )
         draft_id = str(record["draftId"])
         revision = int(record["revision"])
         return {
@@ -144,8 +161,17 @@ class StyleDraftService:
             "name": profile["name"],
             "scope": profile["scope"],
             "basePresetId": profile["basePresetId"],
+            "sourceThemeName": record.get("sourceThemeName"),
+            "modifiedFromBaseline": (
+                profile.get("contentHash") != baseline_profile.get("contentHash")
+            ),
             "overrides": deepcopy(profile["overrides"]),
-            "authoringOverrides": deepcopy(profile["authoringOverrides"]),
+            "authoringOverrides": deepcopy(
+                profile.get("authoringOverrides") or {}
+            ),
+            "appAuthoringOverrides": deepcopy(
+                profile.get("appAuthoringOverrides") or {}
+            ),
             "chartStyleProfileV2": deepcopy(chart_style_profile),
             "profileContentHash": profile["contentHash"],
             "createdAt": _utc_timestamp(float(record["createdAt"])),
@@ -163,8 +189,11 @@ class StyleDraftService:
             "profileId": draft["profileId"],
             "name": draft["name"],
             "scope": draft["scope"],
+            "basePresetId": draft["basePresetId"],
+            "sourceThemeName": draft["sourceThemeName"],
             "overrideCount": len(draft["overrides"]),
             "authoringOverrideCount": len(draft["authoringOverrides"]),
+            "appAuthoringOverrideCount": len(draft["appAuthoringOverrides"]),
             "current": current,
             "createdAt": draft["createdAt"],
             "updatedAt": draft["updatedAt"],
@@ -207,6 +236,7 @@ class StyleDraftService:
             "basePresetId": base_preset_id,
             "overrides": {},
             "authoringOverrides": {},
+            "appAuthoringOverrides": {},
             "chartStyleProfileV2": build_chart_style_profile_v2({}),
         })
 
@@ -230,8 +260,17 @@ class StyleDraftService:
         name: Optional[str] = None,
         scope: Optional[str] = None,
         base_preset_id: Optional[str] = None,
+        source_theme_name: Optional[str] = None,
     ) -> dict:
         with self._lock:
+            if source_theme_name is not None:
+                source_theme_name = str(source_theme_name).strip()
+                if not source_theme_name:
+                    raise StyleDraftError("source theme name must not be empty")
+                for record in self._drafts.values():
+                    if record.get("sourceThemeName") == source_theme_name:
+                        self._current_id = str(record["draftId"])
+                        return self._public(record)
             if len(self._drafts) >= MAX_OPEN_DRAFTS:
                 raise StyleDraftError(f"at most {MAX_OPEN_DRAFTS} style drafts may be open")
             resolved_id = draft_id or f"draft-{uuid.uuid4().hex[:12]}"
@@ -258,6 +297,9 @@ class StyleDraftService:
                     "chartStyleProfileV2": source.get("chartStyleProfileV2")
                     or build_chart_style_profile_v2({}),
                     "authoringOverrides": source.get("authoringOverrides") or {},
+                    "appAuthoringOverrides": (
+                        source.get("appAuthoringOverrides") or {}
+                    ),
                 })
             else:
                 normalized = self._new_profile(
@@ -271,6 +313,8 @@ class StyleDraftService:
                 "draftId": resolved_id,
                 "revision": 1,
                 "profile": normalized,
+                "baselineProfile": deepcopy(normalized),
+                "sourceThemeName": source_theme_name,
                 "createdAt": now,
                 "updatedAt": now,
             }
@@ -282,12 +326,28 @@ class StyleDraftService:
         with self._lock:
             return self._public(self._record(draft_id))
 
+    def export_profile(self, draft_id: str) -> dict:
+        """Return the exact validated profile behind a draft for serialization."""
+        with self._lock:
+            return validate_style_profile(
+                self._profile_from_record(self._record(draft_id))
+            )
+
     @staticmethod
     def _candidate_profile(
         record: Mapping[str, Any],
         overrides: Mapping[str, Any],
         authoring_overrides: Optional[Mapping[str, Any]] = None,
-    ) -> tuple[dict, list[str], list[str], list[str], list[str]]:
+        app_authoring_overrides: Optional[Mapping[str, Any]] = None,
+    ) -> tuple[
+        dict,
+        list[str],
+        list[str],
+        list[str],
+        list[str],
+        list[str],
+        list[str],
+    ]:
         if not isinstance(overrides, Mapping):
             raise StyleDraftError("draft overrides patch must be an object")
         current = record["profile"]
@@ -305,11 +365,22 @@ class StyleDraftService:
             elif merged.get(semantic_id) != value:
                 merged[semantic_id] = value
                 changed.append(semantic_id)
-        current_chart_style = current["chartStyleProfileV2"]
-        current_authoring = current["authoringOverrides"]
+        current_authoring = current.get("authoringOverrides") or {}
+        current_chart_style = (
+            current.get("chartStyleProfileV2")
+            or build_chart_style_profile_v2(current_authoring)
+        )
         merged_authoring, authoring_changed, authoring_removed = apply_authoring_patch(
             current_authoring,
             authoring_overrides or {},
+        )
+        (
+            merged_app_authoring,
+            app_authoring_changed,
+            app_authoring_removed,
+        ) = apply_app_authoring_patch(
+            current.get("appAuthoringOverrides") or {},
+            app_authoring_overrides or {},
         )
         candidate = validate_style_profile({
             "kind": PROFILE_KIND,
@@ -321,6 +392,7 @@ class StyleDraftService:
             "basePresetId": current["basePresetId"],
             "overrides": merged,
             "authoringOverrides": merged_authoring,
+            "appAuthoringOverrides": merged_app_authoring,
             "chartStyleProfileV2": build_chart_style_profile_v2(
                 merged_authoring,
                 base=current_chart_style["base"],
@@ -333,6 +405,8 @@ class StyleDraftService:
             sorted(removed),
             authoring_changed,
             authoring_removed,
+            app_authoring_changed,
+            app_authoring_removed,
         )
 
     def patch_draft(
@@ -341,15 +415,34 @@ class StyleDraftService:
         overrides: Mapping[str, Any],
         *,
         authoring_overrides: Optional[Mapping[str, Any]] = None,
+        app_authoring_overrides: Optional[Mapping[str, Any]] = None,
         expected: str | int,
     ) -> dict:
         with self._lock:
             record = self._record(draft_id)
             self._assert_expected(record, expected)
-            candidate, changed, removed, authoring_changed, authoring_removed = (
-                self._candidate_profile(record, overrides, authoring_overrides)
+            (
+                candidate,
+                changed,
+                removed,
+                authoring_changed,
+                authoring_removed,
+                app_authoring_changed,
+                app_authoring_removed,
+            ) = self._candidate_profile(
+                record,
+                overrides,
+                authoring_overrides,
+                app_authoring_overrides,
             )
-            any_change = bool(changed or removed or authoring_changed or authoring_removed)
+            any_change = bool(
+                changed
+                or removed
+                or authoring_changed
+                or authoring_removed
+                or app_authoring_changed
+                or app_authoring_removed
+            )
             if any_change:
                 record["profile"] = candidate
                 record["revision"] = int(record["revision"]) + 1
@@ -362,6 +455,8 @@ class StyleDraftService:
                 "removedTokenIds": removed,
                 "changedAuthoringIds": authoring_changed,
                 "removedAuthoringIds": authoring_removed,
+                "changedAppAuthoringIds": app_authoring_changed,
+                "removedAppAuthoringIds": app_authoring_removed,
                 "changed": any_change,
                 "refreshMode": "display-overlay" if any_change else None,
             }
@@ -372,26 +467,50 @@ class StyleDraftService:
         overrides: Optional[Mapping[str, Any]] = None,
         *,
         authoring_overrides: Optional[Mapping[str, Any]] = None,
+        app_authoring_overrides: Optional[Mapping[str, Any]] = None,
         expected: Optional[str | int] = None,
     ) -> dict:
         with self._lock:
             record = self._record(draft_id)
             if expected is not None:
                 self._assert_expected(record, expected)
-            candidate, changed, removed, authoring_changed, authoring_removed = (
-                self._candidate_profile(record, overrides or {}, authoring_overrides)
+            (
+                candidate,
+                changed,
+                removed,
+                authoring_changed,
+                authoring_removed,
+                app_authoring_changed,
+                app_authoring_removed,
+            ) = self._candidate_profile(
+                record,
+                overrides or {},
+                authoring_overrides,
+                app_authoring_overrides,
             )
             return {
                 "valid": True,
                 "revision": int(record["revision"]),
                 "etag": self._public(record)["etag"],
-                "wouldChange": bool(changed or removed or authoring_changed or authoring_removed),
+                "wouldChange": bool(
+                    changed
+                    or removed
+                    or authoring_changed
+                    or authoring_removed
+                    or app_authoring_changed
+                    or app_authoring_removed
+                ),
                 "changedTokenIds": changed,
                 "removedTokenIds": removed,
                 "changedAuthoringIds": authoring_changed,
                 "removedAuthoringIds": authoring_removed,
+                "changedAppAuthoringIds": app_authoring_changed,
+                "removedAppAuthoringIds": app_authoring_removed,
                 "profile": candidate,
                 "chartStyleProfileV2": deepcopy(candidate["chartStyleProfileV2"]),
+                "appAuthoringOverrides": deepcopy(
+                    candidate.get("appAuthoringOverrides") or {}
+                ),
             }
 
     def discard_draft(self, draft_id: str, *, expected: str | int) -> dict:
@@ -408,6 +527,61 @@ class StyleDraftService:
                 "revision": draft["revision"],
                 "etag": draft["etag"],
                 "profileId": draft["profileId"],
+            }
+
+    def revert_draft(self, draft_id: str, *, expected: str | int) -> dict:
+        """Restore the immutable saved/source snapshot without persisting."""
+        with self._lock:
+            record = self._record(draft_id)
+            self._assert_expected(record, expected)
+            baseline = validate_style_profile(
+                deepcopy(record.get("baselineProfile") or record["profile"])
+            )
+            changed = baseline["contentHash"] != record["profile"]["contentHash"]
+            if changed:
+                record["profile"] = baseline
+                record["revision"] = int(record["revision"]) + 1
+                record["updatedAt"] = time.time()
+            draft = self._public(record)
+            return {
+                **draft,
+                "draft": deepcopy(draft),
+                "reverted": True,
+                "changed": changed,
+                "refreshMode": "display-overlay" if changed else None,
+            }
+
+    def restore_draft(
+        self,
+        draft_id: str,
+        profile: Mapping[str, Any],
+        *,
+        expected: str | int,
+        persist: Callable[[dict], Any],
+    ) -> dict:
+        """Replace and persist a draft with its daemon-owned factory profile."""
+        with self._lock:
+            record = self._record(draft_id)
+            self._assert_expected(record, expected)
+            restored = validate_style_profile(profile)
+            if restored["id"] != record["profile"]["id"]:
+                raise StyleDraftError("factory profile identity does not match the open theme")
+            persistence = persist(deepcopy(restored))
+            changed = restored["contentHash"] != record["profile"]["contentHash"]
+            if changed:
+                record["profile"] = restored
+                record["baselineProfile"] = deepcopy(restored)
+                record["revision"] = int(record["revision"]) + 1
+                record["updatedAt"] = time.time()
+            draft = self._public(record)
+            return {
+                **draft,
+                "draft": deepcopy(draft),
+                "reverted": True,
+                "factoryRestored": True,
+                "changed": changed,
+                "persistence": persistence,
+                "refreshMode": "display-overlay" if changed else None,
             }
 
     def commit_draft(
@@ -429,6 +603,8 @@ class StyleDraftService:
             self._assert_expected(record, expected)
             profile = validate_style_profile(self._profile_from_record(record))
             persistence = persist(deepcopy(profile))
+            if not discard:
+                record["baselineProfile"] = deepcopy(profile)
             draft = self._public(record)
             if discard:
                 del self._drafts[str(record["draftId"])]
@@ -443,6 +619,106 @@ class StyleDraftService:
                 "revision": draft["revision"],
                 "etag": draft["etag"],
                 "profile": profile,
+                "persistence": persistence,
+            }
+
+    def save_draft_as(
+        self,
+        draft_id: str,
+        *,
+        name: str,
+        expected: str | int,
+        overrides: Optional[Mapping[str, Any]] = None,
+        authoring_overrides: Optional[Mapping[str, Any]] = None,
+        app_authoring_overrides: Optional[Mapping[str, Any]] = None,
+        persist: Callable[[dict], Any],
+    ) -> dict:
+        """Fork and persist the checked revision plus a pending editor patch.
+
+        The source draft remains open and untouched. The fork becomes current
+        so later ordinary saves update the new user theme. Persistence happens
+        before publication, under the same CAS lock as a normal commit.
+        """
+        clean_name = str(name or "").strip()
+        if not clean_name or len(clean_name) > 80:
+            raise StyleDraftError("theme name must contain 1 to 80 characters")
+        with self._lock:
+            source_record = self._record(draft_id)
+            self._assert_expected(source_record, expected)
+            if len(self._drafts) >= MAX_OPEN_DRAFTS:
+                raise StyleDraftError(f"at most {MAX_OPEN_DRAFTS} style drafts may be open")
+            profile_id = _new_profile_id(clean_name)
+            source_profile, _, _, _, _, _, _ = self._candidate_profile(
+                source_record,
+                overrides or {},
+                authoring_overrides,
+                app_authoring_overrides,
+            )
+            profile = validate_style_profile({
+                **source_profile,
+                "id": profile_id,
+                "name": clean_name,
+            })
+            persistence = persist(deepcopy(profile))
+            now = time.time()
+            new_draft_id = f"draft-{uuid.uuid4().hex[:12]}"
+            new_record = {
+                "draftId": new_draft_id,
+                "revision": 1,
+                "profile": profile,
+                "baselineProfile": deepcopy(profile),
+                "sourceThemeName": f"profile:{profile_id}",
+                "createdAt": now,
+                "updatedAt": now,
+            }
+            self._drafts[new_draft_id] = new_record
+            self._current_id = new_draft_id
+            draft = self._public(new_record)
+            return {
+                **draft,
+                "savedAs": True,
+                "committed": True,
+                "draft": draft,
+                "profile": profile,
+                "themeSelector": new_record["sourceThemeName"],
+                "persistence": persistence,
+            }
+
+    def import_profile(
+        self,
+        payload: Mapping[str, Any],
+        *,
+        persist: Callable[[dict], Any],
+    ) -> dict:
+        """Validate an exchange file, save it under a fresh id, and edit a clone."""
+        with self._lock:
+            if len(self._drafts) >= MAX_OPEN_DRAFTS:
+                raise StyleDraftError(f"at most {MAX_OPEN_DRAFTS} style drafts may be open")
+            source = normalize_imported_style_profile(payload)
+            profile_id = _new_profile_id(str(source["name"]))
+            profile = validate_style_profile({**source, "id": profile_id})
+            persistence = persist(deepcopy(profile))
+            now = time.time()
+            draft_id = f"draft-{uuid.uuid4().hex[:12]}"
+            record = {
+                "draftId": draft_id,
+                "revision": 1,
+                "profile": profile,
+                "baselineProfile": deepcopy(profile),
+                "sourceThemeName": f"profile:{profile_id}",
+                "createdAt": now,
+                "updatedAt": now,
+            }
+            self._drafts[draft_id] = record
+            self._current_id = draft_id
+            draft = self._public(record)
+            return {
+                **draft,
+                "draft": draft,
+                "imported": True,
+                "committed": True,
+                "profile": profile,
+                "themeSelector": record["sourceThemeName"],
                 "persistence": persistence,
             }
 

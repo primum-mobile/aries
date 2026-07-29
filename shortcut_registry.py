@@ -40,6 +40,7 @@ WORKSPACE_SHORTCUT_OVERRIDES = {
 	'eclipses': 'E',
 	'zodiacal_releasing': 'Z',
 	'synodic_cycles': 'Q',
+	'aspect_list': 'X',
 }
 
 
@@ -74,6 +75,7 @@ MAIN_QUICK_SHORTCUTS = (
 	# in the shared registry publishes the live web command without inventing a
 	# legacy wx table handler.
 	('Q', 'synodic_cycles', None),
+	('X', 'aspect_list', None),
 	('H', 'toggle_houses', 'onToggleHouses'),
 )
 
@@ -96,6 +98,7 @@ WEB_BOUND_QUICK_ACTIONS = frozenset({
 	'eclipses',
 	'zodiacal_releasing',
 	'synodic_cycles',
+	'aspect_list',
 })
 
 

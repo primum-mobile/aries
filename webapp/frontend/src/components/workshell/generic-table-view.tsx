@@ -39,6 +39,21 @@ import { useSettledWorkspaceRefreshSeq } from "./step-refresh";
 import { exportTablePayloadPdf } from "./table-pdf-export";
 import { exportTextContent } from "./text-export";
 import { ColumnResizeHandle, useResizableTableColumns } from "./resizable-table-columns";
+import {
+  compactListAngleText,
+  downloadText,
+  tableCellText,
+  tableToConfiguredAlignedText,
+  tableToConfiguredTsv,
+} from "./table-text-export";
+
+export {
+  downloadText,
+  tableToConfiguredAlignedText,
+  tableToConfiguredTsv,
+  tableToAlignedText,
+  tableToTsv,
+} from "./table-text-export";
 
 type Props = {
   documentId: string;
@@ -46,16 +61,11 @@ type Props = {
   tableId: string;
 };
 
-const DMS_SECONDS_RE = /(\d{1,3}\s*°\s*\d{1,2}\s*(?:['′]|’))\s*\d{1,2}\s*(?:"|″)/g;
 const TABLE_EXPORT_BUTTON_CLASS =
   "inline-flex h-[var(--aries-control-height-small)] items-center gap-[var(--aries-control-gap-compact)] " +
   "rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-border-subtle)] " +
   "px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-small)] " +
   "text-[color:var(--aries-text-primary)] hover:bg-[color:var(--aries-surface-subtle)]";
-
-function compactListAngleText(text: string): string {
-  return text.replace(DMS_SECONDS_RE, "$1");
-}
 
 export function GenericTableView({ documentId, parentDocumentId, tableId }: Props) {
   const t = useT();
@@ -66,7 +76,7 @@ export function GenericTableView({ documentId, parentDocumentId, tableId }: Prop
   const [sortState, setSortState] = React.useState<{ columnId: string; direction: "asc" | "desc" } | null>(null);
   const requestSeqRef = React.useRef(0);
   const lastSessionChange = useDaemonWorkspaceStore((s) => s.lastSessionChange);
-  const lastOptionsChange = useDaemonWorkspaceStore((s) => s.lastOptionsChange);
+  const lastOptionsChange = useDaemonWorkspaceStore((s) => s.lastRetainedDataOptionsChange);
   const layoutPreset = useListLayoutPreset();
 
   const refreshSeq = useSettledWorkspaceRefreshSeq({
@@ -160,7 +170,7 @@ export function GenericTableView({ documentId, parentDocumentId, tableId }: Prop
           <button
             type="button"
             className={TABLE_EXPORT_BUTTON_CLASS}
-            onClick={() => copyRows(payload, sortedRows)}
+            onClick={() => void copyRows(payload, sortedRows)}
           >
             <Copy className="size-[var(--aries-control-icon-size)]" />
             {t("table.copy")}
@@ -168,16 +178,18 @@ export function GenericTableView({ documentId, parentDocumentId, tableId }: Prop
           <button
             type="button"
             className={TABLE_EXPORT_BUTTON_CLASS}
-            onClick={() =>
-              void exportTextContent({
+            onClick={() => {
+              void tableToConfiguredTsv(payload, sortedRows).then((text) =>
+                exportTextContent({
                 filename: payload.tableId,
                 extension: "tsv",
                 mimeType: "text/tab-separated-values;charset=utf-8",
-                text: tableToTsv(payload, sortedRows),
+                text,
                 title: t("table.exportTsvTitle"),
                 filters: [{ name: t("table.tsvFiles"), extensions: ["tsv"] }],
-              }).catch(() => {})
-            }
+                })
+              ).catch(() => {});
+            }}
           >
             <Download className="size-[var(--aries-control-icon-size)]" />
             TSV
@@ -185,15 +197,17 @@ export function GenericTableView({ documentId, parentDocumentId, tableId }: Prop
           <button
             type="button"
             className={TABLE_EXPORT_BUTTON_CLASS}
-            onClick={() =>
-              void exportTextContent({
+            onClick={() => {
+              void tableToConfiguredAlignedText(payload, sortedRows).then((text) =>
+                exportTextContent({
                 filename: payload.tableId,
                 extension: "txt",
-                text: tableToAlignedText(payload, sortedRows),
+                text,
                 title: t("table.exportTextTitle"),
                 filters: [{ name: t("table.textFiles"), extensions: ["txt"] }],
-              }).catch(() => {})
-            }
+                })
+              ).catch(() => {});
+            }}
           >
             <FileText className="size-[var(--aries-control-icon-size)]" />
             TXT
@@ -414,72 +428,11 @@ function sortRows(
     .map(({ row }) => row);
 }
 
-function copyRows(payload: GenericTablePayload, rows: GenericTableRow[]) {
-  const text = tableToTsv(payload, rows);
+async function copyRows(payload: GenericTablePayload, rows: GenericTableRow[]) {
+  const text = await tableToConfiguredTsv(payload, rows);
   void navigator.clipboard?.writeText(text).catch(() => {
     downloadText(`${payload.tableId}.tsv`, text, "text/tab-separated-values");
   });
-}
-
-export function tableToTsv(payload: GenericTablePayload, rows: GenericTableRow[]) {
-  const header = payload.columns.map((column) => column.label).join("\t");
-  const body = rows.map((row) => row.cells.map(cellText).join("\t"));
-  return [header, ...body].join("\n");
-}
-
-export function tableToAlignedText(
-  payload: GenericTablePayload,
-  rows: GenericTableRow[],
-  options?: {
-    title?: string;
-    columns?: GenericTableColumn[];
-    headerLines?: string[];
-  },
-) {
-  const columns = options?.columns ?? payload.columns;
-  const widths = columns.map((column, index) => {
-    const cells = rows.map((row) => cellText(row.cells[index]));
-    return Math.max(displayLength(column.label), ...cells.map(displayLength));
-  });
-  const lines: string[] = [];
-  const title = options?.title ?? payload.title;
-  if (title) lines.push(title);
-  if (payload.sourceName && !title.includes(payload.sourceName)) lines.push(`  ${payload.sourceName}`);
-  if (options?.headerLines?.length) {
-    lines.push(...options.headerLines.map((line) => `  ${line}`));
-  }
-  if (lines.length) lines.push("");
-  if (!columns.length) {
-    lines.push("  (no columns)");
-    return lines.join("\n");
-  }
-  lines.push(formatAlignedRow(columns.map((column) => column.label), columns, widths));
-  if (!rows.length) {
-    lines.push("  (no rows)");
-  } else {
-    lines.push(
-      ...rows.map((row) =>
-        formatAlignedRow(
-          columns.map((_, index) => cellText(row.cells[index])),
-          columns,
-          widths,
-        ),
-      ),
-    );
-  }
-  if (payload.notes?.length) {
-    lines.push("", ...payload.notes.map((note) => `... ${note}`));
-  }
-  if (payload.deferrals?.length) {
-    lines.push("", ...payload.deferrals.map((note) => `... ${note}`));
-  }
-  return lines.join("\n");
-}
-
-function cellText(cell?: GenericTableCell): string {
-  if (!cell) return "";
-  if (cell.runs?.length) return compactListAngleText(cell.runs.map((run) => run.text).join(""));
-  return compactListAngleText(`${cell.glyph ?? ""}${cell.text ?? ""}`);
 }
 
 function cellSortValue(cell?: GenericTableCell): string | number {
@@ -487,7 +440,7 @@ function cellSortValue(cell?: GenericTableCell): string | number {
   if (typeof cell.sortValue === "number" || typeof cell.sortValue === "string") {
     return cell.sortValue;
   }
-  return cellText(cell);
+  return tableCellText(cell);
 }
 
 function compareSortValues(left: string | number, right: string | number): number {
@@ -496,34 +449,6 @@ function compareSortValues(left: string | number, right: string | number): numbe
     numeric: true,
     sensitivity: "base",
   });
-}
-
-function formatAlignedRow(values: string[], columns: GenericTableColumn[], widths: number[]) {
-  return `  ${values.map((value, index) => alignText(value, widths[index] ?? 0, columns[index]?.align)).join("   ")}`;
-}
-
-function alignText(value: string, width: number, align?: string) {
-  const padding = Math.max(0, width - displayLength(value));
-  if (align === "right") return `${" ".repeat(padding)}${value}`;
-  if (align === "center") {
-    const left = Math.floor(padding / 2);
-    return `${" ".repeat(left)}${value}${" ".repeat(padding - left)}`;
-  }
-  return `${value}${" ".repeat(padding)}`;
-}
-
-function displayLength(value: string) {
-  return Array.from(value).length;
-}
-
-export function downloadText(filename: string, text: string, type: string) {
-  const blob = new Blob([text], { type });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(url);
 }
 
 export function alignClass(align?: string) {

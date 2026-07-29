@@ -33,7 +33,11 @@ from webapp.daemon.astrolabe_service import (
     workspace_chart_for_document,
 )
 from webapp.daemon.chart_service import chart_snapshot_service
-from webapp.daemon.display_palette import effective_display_options
+from webapp.daemon.display_palette import (
+    chart_body_color_role,
+    effective_display_options,
+    sign_color_role,
+)
 from webapp.frontend.scripts import export_chart_json
 
 _DEG = math.pi / 180.0
@@ -183,8 +187,18 @@ def _project_ecliptic(
     return _project_equatorial(ra, decl, ramc, latitude, rotation, tilt)
 
 
-def _polyline(points: list[dict], *, id_: str, label: str, kind: str, color: str, width: float = 1.0, dash=None) -> dict:
-    return {
+def _polyline(
+    points: list[dict],
+    *,
+    id_: str,
+    label: str,
+    kind: str,
+    color: str,
+    color_role: str | None = None,
+    width: float = 1.0,
+    dash=None,
+) -> dict:
+    value = {
         "id": id_,
         "label": label,
         "kind": kind,
@@ -193,6 +207,9 @@ def _polyline(points: list[dict], *, id_: str, label: str, kind: str, color: str
         "dash": dash or [],
         "points": points,
     }
+    if color_role:
+        value["colorRole"] = color_role
+    return value
 
 
 def _sample_local_circle(
@@ -389,6 +406,12 @@ class AstrologSphereService:
                 ayan_offset=ayan, width=1.8,
             ),
         ]
+        for line in reference:
+            line["colorRole"] = (
+                "--morinus-signs"
+                if line["kind"] == "ecliptic"
+                else "--morinus-frame"
+            )
         reference.extend(_sphere_tick_lines(kind="horizonTick", rotation=rotation, tilt=tilt))
         reference.extend(_sphere_tick_lines(kind="primeTick", rotation=rotation, tilt=tilt))
         reference.extend(_sphere_tick_lines(
@@ -402,6 +425,8 @@ class AstrologSphereService:
             ayan_offset=ayan,
             skip_multiple=30,
         ))
+        for line in reference:
+            line.setdefault("colorRole", "--morinus-frame")
 
         signs_out = []
         sign_boundaries = []
@@ -422,12 +447,15 @@ class AstrologSphereService:
                 ayan_offset=ayan,
                 width=1.0,
             ))
+            sign_role = sign_color_role(opts, sign, resolved_color=sign_color)
+            sign_boundaries[-1]["colorRole"] = sign_role or "--morinus-signs"
             label_lon = sign * 30.0 + 15.0
             for label_lat in (78.0, -78.0):
                 signs_out.append({
                     "sign": sign,
                     "glyph": signs[sign],
                     "color": sign_color,
+                    "colorRole": sign_role or "--morinus-signs",
                     "lon": label_lon,
                     "point": _project_ecliptic(
                         chrt, opts, label_lon, label_lat, ramc, latitude, rotation, tilt, ayan,
@@ -448,6 +476,7 @@ class AstrologSphereService:
                     ayan_offset=ayan,
                     width=0.7,
                 ))
+                decan_boundaries[-1]["colorRole"] = "--morinus-positions"
 
         cusps = list(getattr(chrt.houses, "cusps", ()))
         house_lines = []
@@ -472,12 +501,15 @@ class AstrologSphereService:
                 ayan_offset=ayan,
                 width=1.25 if i in (1, 4, 7, 10) else 0.9,
             ))
+            house_lines[-1]["colorRole"] = "--morinus-houses"
             next_lon = float(cusps[1 if i == 12 else i + 1])
             mid_lon = _circular_midpoint(cusp_lon, next_lon)
             for label_lat in (82.0, -82.0):
                 house_labels.append({
                     "house": i,
                     "glyph": common.common.Housenames[i - 1],
+                    "color": color,
+                    "colorRole": "--morinus-housenums",
                     "lon": mid_lon,
                     "point": _project_ecliptic(
                         chrt, opts, mid_lon, label_lat, ramc, latitude, rotation, tilt, ayan,
@@ -497,6 +529,13 @@ class AstrologSphereService:
                 "id": int(bid),
                 "glyph": glyph,
                 "color": color,
+                "colorRole": chart_body_color_role(
+                    opts,
+                    chrt,
+                    bid,
+                    is_fortune=bid == planets.Planets.PLANETS_NUM,
+                    resolved_color=color,
+                ),
                 "ra": float(ra),
                 "decl": float(decl),
                 "lon": float(lon),
@@ -547,11 +586,20 @@ class AstrologSphereService:
         for sign, rulers in enumerate(active[:12]):
             for idx, pid in enumerate((rulers or [])[:3]):
                 lon = sign * 30.0 + idx * 10.0 + 5.0
+                body_color = _body_color_hex(chrt, opts, int(pid))
                 labels.append({
                     "sign": sign,
                     "decan": idx + 1,
                     "planetId": int(pid),
                     "glyph": _planet_glyph(int(pid)),
+                    "color": body_color,
+                    "colorRole": chart_body_color_role(
+                        opts,
+                        chrt,
+                        int(pid),
+                        is_fortune=int(pid) == planets.Planets.PLANETS_NUM,
+                        resolved_color=body_color,
+                    ),
                     "lon": lon,
                     "point": _project_ecliptic(
                         chrt, opts, lon, 8.0, ramc, latitude, rotation, tilt, ayan,
@@ -598,13 +646,23 @@ class AstrologSphereService:
                         label=f"Bound {sign + 1}.{idx + 1}",
                         kind="bound",
                         color="rgba(226, 205, 144, 0.82)",
+                        color_role="--morinus-positions",
                         width=1.0,
                     ))
+                body_color = _body_color_hex(chrt, opts, pid)
                 labels.append({
                     "sign": sign,
                     "bound": idx + 1,
                     "planetId": pid,
                     "glyph": _planet_glyph(pid),
+                    "color": body_color,
+                    "colorRole": chart_body_color_role(
+                        opts,
+                        chrt,
+                        pid,
+                        is_fortune=pid == planets.Planets.PLANETS_NUM,
+                        resolved_color=body_color,
+                    ),
                     "lon": mid,
                     "size": span,
                     "point": _project_ecliptic(

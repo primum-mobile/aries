@@ -163,11 +163,11 @@ function HelpSection({
   children: React.ReactNode;
 }) {
   return (
-    <section className="space-y-1.5">
+    <section className="space-y-[var(--aries-control-gap)]">
       <h2 className="text-[length:var(--aries-font-size-reading)] font-semibold text-foreground">
         {title}
       </h2>
-      <div className="space-y-2 text-[length:var(--aries-font-size-reading)] leading-relaxed text-muted-foreground">
+      <div className="space-y-[var(--aries-form-field-gap)] text-[length:var(--aries-font-size-reading)] leading-relaxed text-muted-foreground">
         {children}
       </div>
     </section>
@@ -206,30 +206,30 @@ export function HelpView({ onClose }: { onClose: () => void }) {
         </Button>
       </header>
 
-      <div className={`${LIST_PANE_CLASSES.scroller} px-4 py-3`}>
-        <div className="space-y-5 pb-4">
+      <div className={`${LIST_PANE_CLASSES.scroller} px-[var(--aries-pane-content-padding)] py-[var(--aries-panel-padding-y)]`}>
+        <div className="space-y-[var(--aries-section-gap)] pb-[var(--aries-pane-content-padding)]">
           <p className="text-[length:var(--aries-font-size-reading)] leading-relaxed text-muted-foreground">
             {t("help.intro")}
           </p>
 
           <HelpSection title={t("help.shortcutsTitle")}>
             <p>{t("help.shortcutsIntro")}</p>
-            <div className="overflow-hidden rounded-md border border-border">
+            <div className="overflow-hidden rounded-[var(--aries-radius-md)] border border-border">
               <table className={`${LIST_ROLE_CLASSES.standard} w-full table-auto border-collapse text-left text-[length:var(--aries-font-size-reading)]`}>
                 <thead className="bg-muted/50 text-foreground">
                   <tr>
-                    <th className="whitespace-nowrap border-b border-border px-2 py-1.5 font-medium">
+                    <th className="aries-list-head whitespace-nowrap border-b border-border font-medium">
                       {t("help.shortcutKey")}
                     </th>
-                    <th className="border-b border-border px-2 py-1.5 font-medium">
+                    <th className="aries-list-head border-b border-border font-medium">
                       {t("help.shortcutFunction")}
                     </th>
                   </tr>
                 </thead>
                 <tbody>
                   {shortcuts.map((shortcut) => (
-                    <tr key={`${shortcut.keys}:${shortcut.action}`} className="border-b border-border/70 last:border-b-0">
-                      <td className="whitespace-nowrap px-2 py-1.5 align-top text-foreground">
+                    <tr key={`${shortcut.keys}:${shortcut.action}`} className="aries-list-row border-b border-border/70 last:border-b-0">
+                      <td className="aries-list-cell whitespace-nowrap align-top text-foreground">
                         <kbd className="aries-help-kbd">
                           {formatShortcutKeys(
                             shortcut.keys,
@@ -238,7 +238,7 @@ export function HelpView({ onClose }: { onClose: () => void }) {
                           )}
                         </kbd>
                       </td>
-                      <td className="px-2 py-1.5 align-top">{shortcut.action}</td>
+                      <td className="aries-list-cell align-top">{shortcut.action}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -2699,10 +2699,15 @@ class PrimDirs:
 		f.close()
 
 
-	def format2text(self):
+	def format2text(self, aspect_label_for_index=None):
 		bodies = (mtexts.txts['Sun'], mtexts.txts['Moon'], mtexts.txts['Mercury'], mtexts.txts['Venus'], mtexts.txts['Mars'], mtexts.txts['Jupiter'], mtexts.txts['Saturn'], mtexts.txts['Uranus'], mtexts.txts['Neptune'], mtexts.txts['Pluto'], mtexts.txts['AscNode'], mtexts.txts['DescNode'], 'Asc', 'Desc', 'MC', 'IC', 'HC2', 'HC3', 'HC5', 'HC6', 'HC8', 'HC9', 'HC11', 'HC12', mtexts.txts['LoF'], mtexts.txts['Syzygy'], mtexts.txts['Customer2'])
 		signs = ['('+mtexts.txts['Aries']+')', '('+mtexts.txts['Taurus']+')', '('+mtexts.txts['Gemini']+')', '('+mtexts.txts['Cancer']+')', '('+mtexts.txts['Leo']+')', '('+mtexts.txts['Virgo']+')', '('+mtexts.txts['Libra']+')', '('+mtexts.txts['Scorpio']+')', '('+mtexts.txts['Sagittarius']+')', '('+mtexts.txts['Capricornus']+')', '('+mtexts.txts['Aquarius']+')', '('+mtexts.txts['Pisces']+')']
-		aspects = (mtexts.txts['Conjunctio'], mtexts.txts['Semisextil'], mtexts.txts['Semiquadrat'], mtexts.txts['Sextil'], mtexts.txts['Quintile'], mtexts.txts['Quadrat'], mtexts.txts['Trigon'], mtexts.txts['Sesquiquadrat'], mtexts.txts['Biquintile'], mtexts.txts['Quinqunx'], mtexts.txts['Oppositio'], mtexts.txts['Parallel'], mtexts.txts['Contraparallel'], mtexts.txts['RaptParallel'], mtexts.txts['RaptParallel'], mtexts.txts['MidPoint'])
+		aspects = (mtexts.txts['Conjunctio'], mtexts.txts['Semisextil'], mtexts.txts['Semiquadrat'], mtexts.txts['Sextil'], mtexts.txts['Quintile'], mtexts.txts['Quadrat'], mtexts.txts['Trigon'], mtexts.txts['Sesquiquadrat'], mtexts.txts['Biquintile'], mtexts.txts['Quinqunx'], mtexts.txts['Oppositio'], mtexts.txts['Septile'], mtexts.txts['Parallel'], mtexts.txts['Contraparallel'], mtexts.txts['RaptParallel'], mtexts.txts['RaptParallel'], mtexts.txts['MidPoint'])
+		if callable(aspect_label_for_index):
+			aspects = tuple(
+				aspect_label_for_index(index) or label
+				for index, label in enumerate(aspects)
+			)
 
 		pdsystem = (mtexts.txts['PlacidianSemiArc'], mtexts.txts['PlacidianUnderThePole'], mtexts.txts['Regiomontan'], mtexts.txts['Campanian'])
 		pdkeysdyn = (mtexts.txts['TrueSolarEquatorialArc'], mtexts.txts['BirthdaySolarEquatorialArc'], mtexts.txts['TrueSolarEclipticalArc'], mtexts.txts['BirthdaySolarEclipticalArc'])
@@ -2851,9 +2856,9 @@ class PrimDirs:
 			#significators
 			if pd.sigasp == chart.Chart.PARALLEL or pd.sigasp == chart.Chart.CONTRAPARALLEL:
 				formattxt += '%s %s '
-				partxt = mtexts.txts['Parallel']
+				partxt = aspects[chart.Chart.PARALLEL]
 				if pd.parallelaxis == 0 and pd.sigasp == chart.Chart.CONTRAPARALLEL:
-					partxt = mtexts.txts['Contraparallel']
+					partxt = aspects[chart.Chart.CONTRAPARALLEL]
 				tuptxt.append(partxt)
 				sigtxt = self._format_pd_body_label(pd.sig, False, pd.sigdyn)
 				if sigtxt is None:
@@ -2865,7 +2870,7 @@ class PrimDirs:
 					tuptxt.append(angles[pd.parallelaxis-PrimDir.OFFSANGLES])
 			elif pd.sigasp == chart.Chart.RAPTPAR or pd.sigasp == chart.Chart.RAPTCONTRAPAR:
 				formattxt += '%s %s '
-				tuptxt.append(mtexts.txts['RaptParallel'])
+				tuptxt.append(aspects[pd.sigasp])
 				angles = ('('+mtexts.txts['Asc']+')', '('+mtexts.txts['Dsc']+')', '('+mtexts.txts['MC']+')', '('+mtexts.txts['IC']+')')
 				tuptxt.append(angles[pd.parallelaxis-PrimDir.OFFSANGLES])
 			elif pd.sig == PrimDir.LOF:

@@ -6,6 +6,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import ts from "typescript";
 
 import { buildStyleTokenInventory } from "./style-token-contract.mjs";
 
@@ -29,6 +30,114 @@ function assertConsumes(path, tokenNames) {
   for (const name of tokenNames) {
     assert.ok(source.includes(`var(${name})`), `${path} must consume ${name}`);
   }
+}
+
+const NON_CONTROL_INPUT_TYPES = new Set([
+  "checkbox",
+  "radio",
+  "range",
+  "color",
+  "file",
+  "hidden",
+  "button",
+  "submit",
+  "reset",
+  "image",
+]);
+
+function jsxStringAttribute(element, name) {
+  const attribute = element.attributes.properties.find(
+    (property) =>
+      ts.isJsxAttribute(property) && property.name.getText() === name,
+  );
+  if (!attribute || !ts.isJsxAttribute(attribute) || !attribute.initializer) {
+    return null;
+  }
+  if (ts.isStringLiteral(attribute.initializer)) {
+    return attribute.initializer.text;
+  }
+  if (
+    ts.isJsxExpression(attribute.initializer) &&
+    attribute.initializer.expression &&
+    ts.isStringLiteral(attribute.initializer.expression)
+  ) {
+    return attribute.initializer.expression.text;
+  }
+  return null;
+}
+
+function assertMountedFormControlsDeclareAppearance(
+  path,
+  { checkDensity = true, requireControls = true } = {},
+) {
+  const source = readSource(path);
+  const sourceFile = ts.createSourceFile(
+    path,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  );
+  const controls = [];
+  const failures = [];
+  const fixedDensityPatterns = [
+    /(?:^|[\s"'`])h-\d+(?:\.\d+)?\b/,
+    /\b(?:p|px|py)-\d+(?:\.\d+)?\b/,
+    /\btext-(?:xs|sm|base|lg|xl)\b/,
+    /\brounded(?:-(?:none|sm|md|lg|xl|2xl|3xl|full))?\b(?!-\[)/,
+  ];
+
+  const visit = (node) => {
+    if (
+      ts.isJsxSelfClosingElement(node) ||
+      ts.isJsxOpeningElement(node)
+    ) {
+      const tagName = node.tagName.getText(sourceFile);
+      if (tagName === "input" || tagName === "select" || tagName === "textarea") {
+        const inputType = jsxStringAttribute(node, "type")?.toLowerCase() ?? "";
+        if (tagName !== "input" || !NON_CONTROL_INPUT_TYPES.has(inputType)) {
+          const { line } = sourceFile.getLineAndCharacterOfPosition(
+            node.getStart(sourceFile),
+          );
+          const location = `${path}:${line + 1}`;
+          controls.push(location);
+          const appearance = jsxStringAttribute(
+            node,
+            "data-aries-control-appearance",
+          );
+          const surface = jsxStringAttribute(node, "data-aries-surface");
+          const openingSource = source.slice(
+            node.getStart(sourceFile),
+            node.getEnd(),
+          );
+          if (appearance === "local" && surface != null) {
+            failures.push(
+              `${location} local controls must not also declare a generic material surface`,
+            );
+          } else if (appearance !== "local" && surface !== "control") {
+            failures.push(`${location} must declare data-aries-surface="control"`);
+          }
+          if (appearance === "local" && !openingSource.includes("className=")) {
+            failures.push(`${location} local controls must declare their appearance class`);
+          }
+          if (checkDensity) {
+            for (const pattern of fixedDensityPatterns) {
+              if (pattern.test(openingSource)) {
+                failures.push(`${location} bypasses control density with ${pattern}`);
+              }
+            }
+          }
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  if (requireControls) {
+    assert.ok(controls.length > 0, `${path} must contain mounted form controls`);
+  }
+  assert.deepEqual(failures, [], failures.join("\n"));
+  return controls.length;
 }
 
 test("the live inventory exposes the bounded chrome-layout authoring surface", () => {
@@ -61,7 +170,23 @@ test("the live inventory exposes the bounded chrome-layout authoring surface", (
     ["app.dialog.footerGap", "--aries-dialog-footer-gap"],
     ["app.dialog.closeInset", "--aries-dialog-close-inset"],
     ["app.dialog.mapActionMinWidth", "--aries-dialog-map-action-min-width"],
+    ["app.dialog.listMaxHeight", "--aries-dialog-list-max-height"],
     ["app.menu.padding", "--aries-menu-padding"],
+    ["app.menu.quickOptionsWidth", "--aries-menu-quick-width"],
+    ["app.menu.quickOptionsMaxHeight", "--aries-menu-quick-max-height"],
+    ["app.menu.quickOptionsViewportMaxHeight", "--aries-menu-quick-viewport-max-height"],
+    ["app.menu.commandListMaxHeight", "--aries-menu-command-max-height"],
+    ["app.menu.contextPopupMinWidth", "--aries-menu-context-popup-min-width"],
+    ["app.menu.dropdownMinWidth", "--aries-menu-dropdown-min-width"],
+    ["app.menu.dropdownSubmenuMinWidth", "--aries-menu-dropdown-submenu-min-width"],
+    ["app.menu.popupSideOffset", "--aries-menu-popup-side-offset"],
+    ["app.menu.popupAlignOffset", "--aries-menu-popup-align-offset"],
+    ["app.menu.contextSideOffset", "--aries-menu-context-side-offset"],
+    ["app.menu.contextAlignOffset", "--aries-menu-context-align-offset"],
+    ["app.menu.submenuSideOffset", "--aries-menu-submenu-side-offset"],
+    ["app.menu.submenuAlignOffset", "--aries-menu-submenu-align-offset"],
+    ["app.menu.pickerSideOffset", "--aries-menu-picker-side-offset"],
+    ["app.spotlight.dialogTop", "--aries-spotlight-dialog-top"],
     ["app.sash.ruleSize", "--aries-sash-rule-size"],
     ["app.sash.idleColor", "--aries-sash-idle-color"],
     ["app.sash.hoverColor", "--aries-sash-hover-color"],
@@ -82,11 +207,28 @@ test("the live inventory exposes the bounded chrome-layout authoring surface", (
     ["app.notes.padding", "--aries-notes-padding"],
     ["app.sheet.padding", "--aries-sheet-padding"],
     ["app.inspector.layout.paddingInline", "--aries-inspector-padding-x"],
+    ["app.inspector.headingGap", "--aries-inspector-heading-gap"],
+    ["app.inspector.cardGap", "--aries-inspector-card-gap"],
+    ["app.inspector.citationGap", "--aries-inspector-citation-gap"],
+    ["app.inspector.cardPaddingInline", "--aries-inspector-card-padding-x"],
+    ["app.inspector.cardPaddingBlock", "--aries-inspector-card-padding-y"],
+    ["app.inspector.controlHeight", "--aries-inspector-control-height"],
     ["app.inspector.type.titleSize", "--aries-inspector-title-size"],
     ["app.inspector.color.title", "--aries-inspector-title-color"],
     ["app.inspector.color.value", "--aries-inspector-value-color"],
     ["app.inspector.color.label", "--aries-inspector-label-color"],
     ["app.sidebar.sectionHeaderHeight", "--aries-sidebar-section-header-height"],
+    ["app.typography.titlebarSize", "--aries-font-size-titlebar"],
+    ["app.typography.statusbarSize", "--aries-font-size-statusbar"],
+    ["app.typography.sidebarNavigationSize", "--aries-font-size-nav"],
+    ["app.typography.sidebarSectionSize", "--aries-font-size-nav-section"],
+    ["app.shell.statusbarNameWidth", "--aries-statusbar-name-width"],
+    ["app.shell.statusbarKindWidth", "--aries-statusbar-kind-width"],
+    ["app.shell.statusbarDatetimeGrow", "--aries-statusbar-datetime-grow"],
+    ["app.shell.statusbarDetailGrow", "--aries-statusbar-detail-grow"],
+    ["app.shell.titlebarPaddingInline", "--aries-titlebar-padding-x"],
+    ["app.shell.titlebarTitlePaddingInline", "--aries-titlebar-title-padding-x"],
+    ["app.shell.titlebarClusterGap", "--aries-titlebar-cluster-gap"],
   ]);
 
   for (const [semanticId, cssVar] of expected) {
@@ -135,6 +277,9 @@ test("shared chrome primitives consume semantic layout variables", () => {
     "--aries-tabs-list-padding",
     "--aries-tabs-indicator-size",
     "--aries-tabs-indicator-offset",
+    "--aries-control-gap-compact",
+    "--aries-control-icon-size-default",
+    "--aries-font-size-control",
   ]);
   assertConsumes("src/components/workshell/settings-dialog.tsx", [
     "--aries-tabs-rail-width",
@@ -153,12 +298,51 @@ test("shared chrome primitives consume semantic layout variables", () => {
     "--aries-control-height",
     "--aries-control-gap",
     "--aries-control-padding-x",
+    "--aries-font-size-base",
+    "--aries-font-size-reading",
   ]);
   assertConsumes("src/components/ui/input.tsx", [
     "--aries-radius-ui-control",
     "--aries-control-height",
     "--aries-control-padding-x",
     "--aries-control-padding-y",
+  ]);
+  assertConsumes("src/components/ui/textarea.tsx", [
+    "--aries-radius-ui-control",
+    "--aries-control-textarea-min-height",
+    "--aries-control-padding-x",
+    "--aries-form-field-gap",
+    "--aries-font-size-control",
+  ]);
+  assertConsumes("src/components/ui/input-group.tsx", [
+    "--aries-control-height",
+    "--aries-control-height-compact",
+    "--aries-control-gap",
+    "--aries-control-padding-x",
+    "--aries-form-field-gap",
+    "--aries-font-size-control",
+  ]);
+  assertConsumes("src/components/ui/tooltip.tsx", [
+    "--aries-radius-popover",
+    "--aries-control-tooltip-arrow-size",
+    "--aries-control-gap",
+    "--aries-control-padding-x",
+    "--aries-control-padding-y",
+    "--aries-font-size-small",
+  ]);
+  assert.ok(
+    readSource("src/components/ui/tooltip.tsx").includes(
+      "--aries-control-tooltip-side-offset",
+    ),
+    "tooltip positioning must resolve the active density offset",
+  );
+  assertConsumes("src/components/workshell/settings-dialog.tsx", [
+    "--aries-section-gap",
+    "--aries-dialog-padding",
+    "--aries-control-height-micro",
+    "--aries-control-height-compact",
+    "--aries-control-height-small",
+    "--aries-form-field-gap",
   ]);
   for (const path of [
     "src/components/ui/context-menu.tsx",
@@ -174,6 +358,66 @@ test("shared chrome primitives consume semantic layout variables", () => {
       "--aries-menu-separator-gap",
       "--aries-menu-indicator-inset",
     ]);
+  }
+  assertConsumes("src/components/ui/command.tsx", [
+    "--aries-radius-dialog",
+    "--aries-radius-menu-item",
+    "--aries-control-height",
+    "--aries-control-padding-x-compact",
+    "--aries-menu-padding",
+    "--aries-menu-command-max-height",
+    "--aries-menu-label-padding-x",
+    "--aries-menu-label-padding-y",
+    "--aries-menu-item-gap",
+    "--aries-menu-item-padding-x",
+    "--aries-menu-item-padding-y",
+    "--aries-menu-icon-size",
+    "--aries-spotlight-dialog-top",
+    "--aries-font-size-control",
+    "--aries-font-size-small",
+  ]);
+  assertConsumes("src/components/workshell/titlebar-options-menu.tsx", [
+    "--aries-menu-quick-width",
+    "--aries-menu-quick-max-height",
+    "--aries-menu-quick-viewport-max-height",
+    "--aries-menu-label-padding-x",
+    "--aries-menu-label-padding-y",
+    "--aries-font-size-small",
+  ]);
+  for (const [path, tokens] of [
+    [
+      "src/components/ui/dropdown-menu.tsx",
+      [
+        "--aries-menu-dropdown-min-width",
+        "--aries-menu-dropdown-submenu-min-width",
+        "--aries-menu-popup-side-offset",
+        "--aries-menu-popup-align-offset",
+        "--aries-menu-submenu-side-offset",
+        "--aries-menu-submenu-align-offset",
+      ],
+    ],
+    [
+      "src/components/ui/context-menu.tsx",
+      [
+        "--aries-menu-context-popup-min-width",
+        "--aries-menu-context-side-offset",
+        "--aries-menu-context-align-offset",
+        "--aries-menu-submenu-side-offset",
+      ],
+    ],
+    [
+      "src/components/workshell/chart-style-panel.tsx",
+      ["--aries-menu-popup-side-offset"],
+    ],
+    [
+      "src/components/workshell/style-lab-color-picker.tsx",
+      ["--aries-menu-picker-side-offset"],
+    ],
+  ]) {
+    const source = readSource(path);
+    for (const token of tokens) {
+      assert.ok(source.includes(token), `${path} must resolve ${token}`);
+    }
   }
   assertConsumes("src/components/ui/resizable.tsx", [
     "--aries-sash-rule-size",
@@ -248,6 +492,102 @@ test("shared chrome primitives consume semantic layout variables", () => {
     "--aries-sidebar-close-action-size",
     "--aries-sidebar-action-icon-size",
   ]);
+});
+
+test("generic form and tooltip primitives do not bypass the density contract", () => {
+  const forbiddenByFile = new Map([
+    [
+      "src/components/ui/tooltip.tsx",
+      [/\bgap-1\.5\b/, /\bpx-3\b/, /\bpy-1\.5\b/, /\btext-xs\b/, /\bsize-2\.5\b/, /sideOffset\s*=\s*4/],
+    ],
+    [
+      "src/components/ui/textarea.tsx",
+      [/\bmin-h-16\b/, /\bpx-2\.5\b/, /\bpy-2\b/, /\btext-base\b/, /\btext-sm\b/],
+    ],
+    [
+      "src/components/ui/input-group.tsx",
+      [/\bh-6\b/, /\bsize-6\b/, /\bsize-8\b/, /\bgap-2\b/, /\bpx-2\.5\b/, /\bpy-2\b/, /\btext-sm\b/],
+    ],
+    [
+      "src/components/workshell/settings-dialog.tsx",
+      [/\bh-[567]\b/, /\bpt-4\b/, /\bpb-3\b/, /\bpx-4\b/],
+    ],
+    [
+      "src/components/ui/command.tsx",
+      [/\bp-1\b/, /\bpx-2\b/, /\bpy-1\.5\b/, /\bgap-2\b/, /\btext-sm\b/, /\btext-xs\b/, /\bmax-h-72\b/, /\bsize-4\b/],
+    ],
+    [
+      "src/components/workshell/titlebar-options-menu.tsx",
+      [/\bw-72\b/, /\bpx-1\.5\b/, /\bpy-1\b/, /\btext-xs\b/, /76vh/, /620px/],
+    ],
+  ]);
+  const failures = [];
+  for (const [path, patterns] of forbiddenByFile) {
+    const source = readSource(path);
+    for (const pattern of patterns) {
+      if (pattern.test(source)) failures.push(`${path}: ${pattern}`);
+    }
+  }
+  assert.deepEqual(
+    failures,
+    [],
+    `shared density consumers must use active profile roles:\n${failures.join("\n")}`,
+  );
+});
+
+test("mounted dialog form controls declare one appearance owner", () => {
+  const paths = [
+    "src/components/workshell/settings-dialog.tsx",
+    "src/components/workshell/chart-editor-dialog.tsx",
+    "src/components/workshell/save-to-collection-dialog.tsx",
+    "src/components/workshell/surveil-studies-dialog.tsx",
+  ];
+  const count = paths.reduce(
+    (total, path) => total + assertMountedFormControlsDeclareAppearance(path),
+    0,
+  );
+  assert.equal(count, 20, "the mounted ordinary-control inventory changed");
+
+  const editor = readSource(
+    "src/components/workshell/chart-editor-dialog.tsx",
+  );
+  const fieldClass = editor.match(
+    /function fieldCls\([\s\S]*?^}/m,
+  )?.[0];
+  assert.ok(fieldClass, "chart editor field class must remain discoverable");
+  assert.match(fieldClass, /--aries-control-height-small/);
+  assert.match(fieldClass, /--aries-control-padding-x-compact/);
+  assert.match(fieldClass, /--aries-radius-ui-control-compact/);
+  assert.doesNotMatch(fieldClass, /\brounded-md\b/);
+});
+
+test("all mounted ordinary raw controls declare one appearance owner", () => {
+  const chartStylePanel =
+    "src/components/workshell/chart-style-panel.tsx";
+  const paths = sourceFiles(join(sourceRoot, "components"))
+    .filter((path) => path.endsWith(".tsx"))
+    .map((path) => relative(frontendRoot, path))
+    // Chart Style Panel has its own focused authoring lane and contract.
+    .filter((path) => path !== chartStylePanel);
+  const count = paths.reduce(
+    (total, path) =>
+      total +
+      assertMountedFormControlsDeclareAppearance(path, {
+        checkDensity: false,
+        requireControls: false,
+      }),
+    0,
+  );
+  assert.equal(count, 51, "the mounted ordinary-control inventory changed");
+});
+
+test("context menus stay above the floating workspace navbar", () => {
+  const globals = readSource("src/app/globals.css");
+  const contextMenu = readSource("src/components/ui/context-menu.tsx");
+
+  assert.match(globals, /\.aries-mode-hint\s*\{[\s\S]*?z-index:\s*70;/);
+  assert.match(contextMenu, /className="isolate z-\[100\] outline-none"/);
+  assert.match(contextMenu, /className=\{cn\("z-\[100\] max-h-/);
 });
 
 test("generic panel dividers preserve their brighter pre-tokenization states", () => {
@@ -326,6 +666,40 @@ test("native titlebar alignment remains on the proven pre-tokenization geometry"
     optionsMenu,
     /h-\[var\(--morinus-header-btn-h\)\] w-\[var\(--morinus-header-btn-w\)\]/,
   );
+});
+
+test("outer chart labels cross only the titlebar backplate and stay below transient chrome", () => {
+  const content = readSource("src/components/workshell/workspace-content.tsx");
+  const copyControl = readSource("src/components/workshell/chart-copy-control.tsx");
+  const chartCanvas = readSource("src/components/workshell/chart-canvas.tsx");
+  const dialog = readSource("src/components/ui/dialog.tsx");
+  const dropdown = readSource("src/components/ui/dropdown-menu.tsx");
+  const contextMenu = readSource("src/components/ui/context-menu.tsx");
+
+  assert.match(
+    content,
+    /data-aries-titlebar-backplate=""[\s\S]*?z-\[40\][\s\S]*?bg-\[var\(--aries-titlebar-background\)\]/,
+  );
+  assert.match(copyControl, /data-aries-titlebar-title=""/);
+  assert.match(
+    chartCanvas,
+    /data-aries-chart-layer="outer-label"[\s\S]*?z-\[41\]/,
+  );
+  assert.match(
+    chartCanvas,
+    /querySelector<HTMLElement>\(\s*"\[data-aries-titlebar-title\]"/,
+  );
+  assert.equal(
+    (chartCanvas.match(/\n\s+outerLabelCollisionBounds,\n/g) ?? []).length,
+    3,
+  );
+  assert.match(
+    content,
+    /z-\[42\][^"\n]*col-start-2/,
+  );
+  assert.match(dialog, /fixed inset-0 isolate z-50[\s\S]*?backdrop-blur/);
+  assert.match(dropdown, /isolate z-50 outline-none/);
+  assert.match(contextMenu, /isolate z-\[100\] outline-none/);
 });
 
 test("Windows extends the native DWM frame without replacing caption controls in HTML", () => {
@@ -413,7 +787,7 @@ test("migrated dialog actions and retained-list close controls keep their establ
   const picker = readSource("src/components/workshell/system-chart-picker.tsx");
   assert.match(
     picker,
-    /max-w-\[var\(--aries-dialog-width-confirm\)\][^\n]*rounded-md border border-border/,
+    /max-w-\[var\(--aries-dialog-width-confirm\)\][^\n]*rounded-\[var\(--aries-radius-dialog\)\] border border-border/,
   );
 
   const shell = readSource("src/components/workshell/retained-pane-shell.tsx");
@@ -452,6 +826,145 @@ test("shared list segmented controls retain their proven six-pixel item corners"
     controls.indexOf("export function ListCalendarStepper"),
   );
   assert.doesNotMatch(segmentedControl, /var\(--aries-radius-control-compact\)/);
+});
+
+test("retained sidebar lists use the structural table facade, not token-only raw cells", () => {
+  const facade = readSource("src/components/workshell/sidebar-list-table.tsx");
+  assert.match(facade, /data-slot="sidebar-list-table"/);
+  assert.match(facade, /"directions-titled"/);
+  assert.match(facade, /"transit-cursor"/);
+  assert.match(facade, /LIST_ROLE_CLASSES\.symbolic/);
+  assert.match(facade, /aries-sidebar-list-table caption-bottom w-full table-auto border-collapse/);
+  assert.doesNotMatch(facade, /--aries-list-outer-x:\s*7px/);
+  assert.doesNotMatch(facade, /NarrativeCell|NarrativeContent|max-w-|overflow-hidden|text-ellipsis/);
+  assert.match(facade, /export function SidebarListDateCell/);
+  assert.match(facade, /LIST_TEXT_CLASSES\.date,\s*"text-right tabular-nums"/);
+  assert.match(facade, /export function SidebarListTimeCell/);
+  assert.match(facade, /LIST_TEXT_CLASSES\.secondary,\s*"text-left tabular-nums"/);
+  assert.doesNotMatch(facade, /data-slot="table-container"|overflow-x|max-content|table-fixed/);
+  for (const primitive of ["TableHeader", "TableBody", "TableRow", "TableHead", "TableCell"]) {
+    assert.match(facade, new RegExp(`${primitive} as SidebarList`));
+  }
+
+  const listTokens = readSource("src/lib/list-tokens.ts");
+  assert.match(listTokens, /root:\s*"[^"]*bg-background/);
+  assert.match(listTokens, /scroller:\s*"flex-1 min-h-0 overflow-auto"/);
+  assert.match(listTokens, /stickyHeader:\s*"sticky top-0 z-10 bg-background"/);
+  assert.match(listTokens, /date:\s*"aries-list-date-text"/);
+  assert.match(listTokens, /secondary:\s*"aries-list-secondary-text"/);
+  assert.doesNotMatch(
+    listTokens.match(/root:\s*"[^"]*"/)?.[0] ?? "",
+    /bg-muted|--aries-surface|bg-card/,
+  );
+
+  const tablePrimitives = readSource("src/components/ui/table.tsx");
+  assert.match(tablePrimitives, /aries-list-row aries-list-row--hover aries-list-row--selected border-b/);
+  assert.match(tablePrimitives, /aries-list-head text-foreground/);
+  assert.match(tablePrimitives, /aries-list-cell align-middle/);
+  const globalCss = readSource("src/app/globals.css");
+  assert.match(
+    globalCss,
+    /\.aries-list \{[\s\S]*?table-layout: auto;[\s\S]*?min-width: 100%;[\s\S]*?width: 100%;/,
+  );
+  assert.match(
+    globalCss,
+    /\.aries-sidebar-list-table tr > \.aries-list-cell:first-child,[\s\S]*?padding-left: max\(var\(--aries-list-cell-x\), var\(--aries-list-outer-x\)\);/,
+  );
+  assert.match(
+    globalCss,
+    /\.aries-list tr > \.aries-list-cell:last-child,[\s\S]*?padding-right: max\(var\(--aries-list-cell-x\), var\(--aries-list-outer-x\)\);/,
+  );
+  assert.match(
+    globalCss,
+    /\.aries-list-date-text \{[\s\S]*?font-size: inherit;[\s\S]*?font-weight: 500;/,
+  );
+  assert.doesNotMatch(globalCss, /\.aries-sidebar-list-narrative/);
+  const sidebarTableRule =
+    globalCss.match(/\.aries-sidebar-list-table\s*\{[\s\S]*?\n\s*\}/)?.[0] ?? "";
+  assert.doesNotMatch(
+    sidebarTableRule,
+    /max-width:\s*0|overflow:\s*hidden|text-overflow:\s*ellipsis/,
+  );
+  assert.match(globalCss, /\.aries-list-secondary-text \{[\s\S]*?color: var\(--aries-text-dim\);/);
+  const secondaryTextRule = globalCss.match(/\.aries-list-secondary-text \{[\s\S]*?\n\s*\}/)?.[0] ?? "";
+  assert.doesNotMatch(secondaryTextRule, /font-size|text-transform/);
+
+  const aspect = readSource("src/components/workshell/aspect-list-panel.tsx");
+  const tableBlock = aspect.slice(aspect.indexOf("function AspectListTable"));
+  assert.match(tableBlock, /<SidebarListTable profile="directions-titled">/);
+  assert.match(tableBlock, /<SidebarListHeader className=\{LIST_PANE_CLASSES\.stickyHeader\}>/);
+  for (const primitive of [
+    "SidebarListBody",
+    "SidebarListRow",
+    "SidebarListHead",
+    "SidebarListCell",
+    "SidebarListSpacerRow",
+    "SidebarListSortHeader",
+  ]) {
+    assert.match(tableBlock, new RegExp(`<${primitive}\\b`));
+  }
+  assert.doesNotMatch(tableBlock, /<(?:thead|tbody|tr|th|td)\b/);
+  assert.doesNotMatch(
+    tableBlock,
+    /table-fixed|<colgroup|ColumnResizeHandle|useResizableTableColumns|min-w-\[|w-\[[^\]]*(?:px|ch)|overflow-hidden|\btruncate\b|text-ellipsis/,
+  );
+  assert.doesNotMatch(tableBlock, /aspectList\.phase/);
+  assert.match(
+    tableBlock,
+    /<SidebarListHead[\s\S]*?colSpan=\{2\}[\s\S]*?aria-sort=\{sortBy === "exact"[\s\S]*?aspectList\.perfection[\s\S]*?onSort\("exact"\)/,
+  );
+  assert.match(tableBlock, /<SidebarListSpacerRow colSpan=\{4\}/);
+  assert.doesNotMatch(tableBlock, /NarrativeCell|NarrativeContent/);
+  assert.doesNotMatch(tableBlock, /colSpan=\{3\}/);
+  assert.doesNotMatch(tableBlock, /colSpan=\{5\}/);
+  assert.match(
+    tableBlock,
+    /<SidebarListCell className="text-right tabular-nums">[\s\S]*?row\.orbFormatted[\s\S]*?compactPhase[\s\S]*?<\/SidebarListCell>/,
+  );
+  assert.match(aspect, /aspectList\.applyingShort/);
+  assert.match(aspect, /aspectList\.separatingShort/);
+  assert.match(tableBlock, /<SidebarListDateCell>[\s\S]*?<button[\s\S]*?perfection\.exactDate[\s\S]*?<\/button>[\s\S]*?<\/SidebarListDateCell>/);
+  assert.match(tableBlock, /<SidebarListTimeCell title=\{perfection\.exactTime\}>[\s\S]*?shortClockTime\(perfection\.exactTime\)/);
+  assert.match(
+    tableBlock,
+    /<SidebarListDateCell>[\s\S]*?<\/SidebarListDateCell>[\s\S]*?<SidebarListTimeCell/,
+  );
+  assert.match(tableBlock, /shortClockTime\(perfection\.exactTime\)/);
+  assert.match(
+    tableBlock,
+    /<AspectListRowContextMenu\b[\s\S]*?<SidebarListRow\b[\s\S]*?<\/SidebarListRow>[\s\S]*?<\/AspectListRowContextMenu>/,
+    "Aspect List must expose its context-preserving actions from the entire data row",
+  );
+
+  const synodic = readSource("src/components/workshell/synodic-cycle-list-view.tsx");
+  assert.match(synodic, /<SidebarListTable profile="transit-cursor">/);
+  assert.doesNotMatch(synodic, /<table\b|LIST_ROLE_CLASSES/);
+  assert.doesNotMatch(
+    synodic,
+    /NarrativeCell|NarrativeContent|max-w-0|overflow-hidden|text-ellipsis/,
+  );
+
+  const frameLayout = readSource("src/stores/frame-layout-store.ts");
+  const rightPaneLayout = readSource("src/components/workshell/right-pane-layout.ts");
+  assert.match(frameLayout, /const RIGHT_PANE_SYNODIC_MIN_WIDTH = 420;/);
+  assert.match(
+    frameLayout,
+    /"synodic-cycles": \{[\s\S]*?minContentWidth: RIGHT_PANE_SYNODIC_MIN_WIDTH/,
+  );
+  assert.match(
+    rightPaneLayout,
+    /if \(input\.synodicCyclesPane\) return "synodic-cycles";/,
+  );
+
+  const headerBlock = aspect.slice(
+    aspect.indexOf("<div className={LIST_PANE_CLASSES.standardHeader}>"),
+    aspect.indexOf("{error && payload ?"),
+  );
+  assert.match(headerBlock, /LIST_PANE_CLASSES\.controlRow/);
+  assert.match(headerBlock, /LIST_PANE_CLASSES\.labeledControl/);
+  assert.match(headerBlock, /LIST_PANE_CLASSES\.controlLabel/);
+  assert.equal((headerBlock.match(/<PaneSelect/g) ?? []).length, 2);
+  assert.doesNotMatch(headerBlock, /<(?:select|input)\b/);
 });
 
 test("retained time-lord controls preserve their caller-specific pre-tokenization gaps", () => {
@@ -586,6 +1099,7 @@ test("public list row-height roles are the sole authority for fixed-row virtuali
   const consumers = new Map([
     ["src/components/workshell/directions-view.tsx", "symbolic"],
     ["src/components/workshell/transit-list-view.tsx", "symbolic"],
+    ["src/components/workshell/transit-search-view.tsx", "dense"],
     ["src/components/workshell/synodic-cycle-list-view.tsx", "symbolic"],
     ["src/components/workshell/time-lord-table-view.tsx", "symbolic"],
     ["src/components/workshell/eclipses-view.tsx", "standard"],
@@ -613,6 +1127,12 @@ test("public list row-height roles are the sole authority for fixed-row virtuali
   ]) {
     assert.match(readSource(path), /useFixedRowHeightAnchor\(/);
   }
+  const aspect = readSource("src/components/workshell/aspect-list-panel.tsx");
+  assert.ok(aspect.includes('useListRowHeight("symbolic")'));
+  assert.match(aspect, /useFixedRowHeightAnchor\(/);
+  assert.match(aspect, /topSpacer = start \* rowHeight/);
+  assert.match(aspect, /bottomSpacer = Math\.max\(0, \(rows\.length - end\) \* rowHeight\)/);
+  assert.match(aspect, /style=\{\{ height: rowHeight \}\}/);
   for (const path of [
     "src/components/workshell/time-lord-table-view.tsx",
     "src/components/workshell/eclipses-view.tsx",
@@ -755,7 +1275,11 @@ test("inspector colours repaint from semantic roles without refetching the hover
   assert.match(fetchEffect, /bindingKey/);
   assert.match(fetchEffect, /retryTick/);
   assert.match(fetchEffect, /semanticOptionsSeq/);
-  assert.match(hover, /if \(!lastOptionsChange \|\| lastOptionsChange\.styleOnly\) return/);
+  assert.match(
+    hover,
+    /if\s*\(\s*!lastOptionsChange\s*\|\|\s*lastOptionsChange\.styleOnly\s*\|\|\s*lastOptionsChange\.listDataChanged === false\s*\)\s*\{\s*return;\s*\}/,
+    "hover flags must refetch only for semantic option changes, never renderer-only events",
+  );
 
   assert.match(hover, /semanticChartColor\(payload\.accentRole, rgbCss\(payload\.accent\)\)/);
   assert.match(hover, /semanticChartColor\(span\.colourRole, rgbCss\(span\.colour\)\)/);
@@ -787,4 +1311,127 @@ test("directions PDF export resolves the active semantic palette at export time"
   assert.match(directions, /directionGlyphPdfCell\(/);
   assert.match(directions, /resolvedSemanticChartColor\(colorRole, color\)/);
   assert.match(directions, /circumSignColors/);
+});
+
+test("mounted informational dialogs consume semantic density roles", () => {
+  const expectedByFile = new Map([
+    [
+      "src/components/workshell/about-dialog.tsx",
+      [
+        "--aries-font-size-reading",
+        "--aries-dialog-gap",
+        "--aries-dialog-section-padding-y",
+        "--aries-form-row-gap",
+        "--aries-form-field-gap",
+        "--aries-pane-state-padding",
+      ],
+    ],
+    [
+      "src/components/workshell/help-dialog.tsx",
+      [
+        "--aries-font-size-reading",
+        "--aries-control-gap",
+        "--aries-form-field-gap",
+        "--aries-pane-content-padding",
+        "--aries-panel-padding-y",
+        "--aries-section-gap",
+        "--aries-radius-md",
+      ],
+    ],
+    [
+      "src/components/workshell/license-management-panel.tsx",
+      [
+        "--aries-font-size-base",
+        "--aries-dialog-section-padding-y",
+        "--aries-dialog-padding",
+        "--aries-form-row-gap",
+        "--aries-form-group-gap",
+        "--aries-form-field-gap",
+        "--aries-control-padding-x",
+        "--aries-radius-ui-control",
+        "--aries-radius-ui-control-compact",
+      ],
+    ],
+    [
+      "src/components/workshell/system-chart-picker.tsx",
+      [
+        "--aries-font-size-dialog-title",
+        "--aries-font-size-large",
+        "--aries-radius-dialog",
+        "--aries-radius-md",
+        "--aries-radius-control-compact",
+        "--aries-radius-ui-control-compact",
+        "--aries-control-padding-y",
+      ],
+    ],
+  ]);
+  for (const [path, tokens] of expectedByFile) {
+    assertConsumes(path, tokens);
+  }
+
+  const help = readSource("src/components/workshell/help-dialog.tsx");
+  assert.match(help, /className="aries-list-head/);
+  assert.match(help, /className="aries-list-cell/);
+  assert.match(help, /className="aries-list-row/);
+
+  const forbiddenByFile = new Map([
+    [
+      "src/components/workshell/about-dialog.tsx",
+      [
+        /\btext-2xl\b/,
+        /\btext-sm\b/,
+        /\bspace-y-(?:1|1\.5|4)\b/,
+        /\bgap-[xy]-(?:1|4)\b/,
+        /\bpt-(?:2|4)\b/,
+        /\bmb-(?:2|3)\b/,
+        /\bpr-1\b/,
+        /\bpy-8\b/,
+      ],
+    ],
+    [
+      "src/components/workshell/help-dialog.tsx",
+      [
+        /\bspace-y-(?:1\.5|2|5)\b/,
+        /\bpx-(?:2|4)\b/,
+        /\bpy-(?:1\.5|3)\b/,
+        /\bpb-4\b/,
+        /\brounded-md\b/,
+      ],
+    ],
+    [
+      "src/components/workshell/license-management-panel.tsx",
+      [
+        /\btext-xs\b/,
+        /\bgap-(?:2|2\.5|3)\b/,
+        /\bspace-y-2\b/,
+        /\b(?:mt|pt)-3\b/,
+        /\bmt-(?:0\.5|2)\b/,
+        /\bpx-(?:1\.5|2|2\.5)\b/,
+        /\bpy-(?:0\.5|2|4)\b/,
+        /\brounded-(?:full|md)\b/,
+      ],
+    ],
+    [
+      "src/components/workshell/system-chart-picker.tsx",
+      [
+        /text-\[(?:15|18)px\]/,
+        /\brounded-(?:md|sm)\b/,
+        /\bmr-2\b/,
+        /\bpx-1\.5\b/,
+        /\bpy-0\.5\b/,
+      ],
+    ],
+  ]);
+  const failures = [];
+  for (const [path, patterns] of forbiddenByFile) {
+    const source = readSource(path);
+    for (const pattern of patterns) {
+      if (pattern.test(source)) failures.push(`${path}: ${pattern}`);
+    }
+  }
+  assert.deepEqual(
+    failures,
+    [],
+    `mounted informational dialogs must use semantic density roles:\n${failures.join("\n")}`,
+  );
 });

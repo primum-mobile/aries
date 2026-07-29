@@ -131,7 +131,13 @@ class Options:
 		self.def_aspect = self.aspect[:]
 		self.def_symbols = self.symbols = True
 		self.def_traditionalaspects = self.traditionalaspects = False
+		self.def_showaspectsforderivedpoints = self.showaspectsforderivedpoints = False
+		self.def_showaspectstoasc = self.showaspectstoasc = True
+		self.def_showaspectstomc = self.showaspectstomc = True
+		self.def_showaspectstodsc = self.showaspectstodsc = True
+		self.def_showaspectstoic = self.showaspectstoic = True
 		self.def_houses = self.houses = True
+		self.def_showouterhouselines = self.showouterhouselines = True
 		self.def_positions = self.positions = False
 		self.def_intables = self.intables = False
 		self.def_bw = self.bw = False
@@ -180,7 +186,11 @@ class Options:
 		self.def_showlofouterring = self.showlofouterring = False
 		self.def_showprenatalsyzygy = self.showprenatalsyzygy = False
 		self.def_pdf_chart_color_mode = self.pdf_chart_color_mode = 'monochrome'
+		self.def_pdf_chart_raster_preset = self.pdf_chart_raster_preset = 'clean'
 		self.def_pdf_include_overlays = self.pdf_include_overlays = True
+		self.def_png_chart_appearance = self.png_chart_appearance = 'screen'
+		self.def_png_include_overlays = self.png_include_overlays = True
+		self.def_list_export_aspect_symbols = self.list_export_aspect_symbols = False
 		self.def_showterms = self.showterms = False
 		self.def_showdecans = self.showdecans = False
 		self.def_showanglearrowheads = self.showanglearrowheads = True
@@ -708,6 +718,36 @@ class Options:
 		self.def_workspace_sidebar_action_order = copy.deepcopy(self.workspace_sidebar_action_order)
 		self.workspace_sidebar_collapsed_sections = []
 		self.def_workspace_sidebar_collapsed_sections = self.workspace_sidebar_collapsed_sections[:]
+		self.astrocartography_preferences = {
+			'schemaVersion': 1,
+			'spec': {},
+			'view': {},
+		}
+		self.def_astrocartography_preferences = copy.deepcopy(
+			self.astrocartography_preferences
+		)
+		self.sidebar_list_preferences = {
+			'schemaVersion': 1,
+			'aspectList': {
+				'mode': None,
+				'maxOrb': 10,
+				'sortBy': 'orb',
+				'sortDirection': 'asc',
+				'focusedFilterIds': [],
+				'focusMatchMode': 'or',
+				'rxFocusEnabled': False,
+				'secondaryRingEnabledByMode': {},
+				'filterDrawerOpen': False,
+			},
+			'transitList': {
+				'selectedPromittorId': None,
+				'promittorDrawerOpen': False,
+				'direction': 'direct',
+			},
+		}
+		self.def_sidebar_list_preferences = copy.deepcopy(
+			self.sidebar_list_preferences
+		)
 		# Composite construction method
 		self.composite_method = Options.COMPOSITE_ASC_MIDPOINT
 		self.def_composite_method = self.composite_method
@@ -787,6 +827,14 @@ class Options:
 		self.compositeopt = os.path.join(self.optsdirtxt, self.optionsfilestxt[34])
 		self.userpanelopt = os.path.join(self.optsdirtxt, 'userpanel.opt')
 		self.restoreopenchartsopt = os.path.join(self.optsdirtxt, self.optionsfilestxt[36])
+		self.astrocartographypreferencesopt = os.path.join(
+			self.optsdirtxt,
+			'astrocartography.opt',
+		)
+		self.sidebarlistpreferencesopt = os.path.join(
+			self.optsdirtxt,
+			'sidebar_lists.opt',
+		)
 		self.load()
 # ########################################
 
@@ -1083,6 +1131,114 @@ class Options:
 			return normalized
 		return {}
 
+	@staticmethod
+	def _normalize_astrocartography_preferences(preferences):
+		if not isinstance(preferences, dict):
+			preferences = {}
+		spec = preferences.get('spec')
+		view = preferences.get('view')
+		return {
+			'schemaVersion': 1,
+			'spec': copy.deepcopy(spec) if isinstance(spec, dict) else {},
+			'view': copy.deepcopy(view) if isinstance(view, dict) else {},
+		}
+
+	@staticmethod
+	def _normalize_sidebar_list_preferences(preferences):
+		if not isinstance(preferences, dict):
+			preferences = {}
+		aspect = preferences.get('aspectList')
+		transit = preferences.get('transitList')
+		if not isinstance(aspect, dict):
+			aspect = {}
+		if not isinstance(transit, dict):
+			transit = {}
+
+		mode = aspect.get('mode')
+		if mode not in (None, 'primary', 'outer', 'outerToPrimary', 'primaryToOuter'):
+			mode = None
+		try:
+			max_orb = float(aspect.get('maxOrb', 10))
+		except (TypeError, ValueError):
+			max_orb = 10
+		if not 0 < max_orb <= 30:
+			max_orb = 10
+		if max_orb.is_integer():
+			max_orb = int(max_orb)
+		sort_by = aspect.get('sortBy')
+		if sort_by not in ('body', 'orb', 'exact'):
+			sort_by = 'orb'
+		sort_direction = aspect.get('sortDirection')
+		if sort_direction not in ('asc', 'desc'):
+			sort_direction = 'asc'
+		focus_match_mode = aspect.get('focusMatchMode')
+		if focus_match_mode not in ('or', 'and'):
+			focus_match_mode = 'or'
+		focused_filter_ids = []
+		raw_focused_filter_ids = aspect.get('focusedFilterIds')
+		if isinstance(raw_focused_filter_ids, (list, tuple)):
+			for value in raw_focused_filter_ids:
+				if not isinstance(value, str):
+					continue
+				value = value.strip()
+				if value and value not in focused_filter_ids:
+					focused_filter_ids.append(value)
+				if len(focused_filter_ids) >= 512:
+					break
+		secondary_ring_enabled_by_mode = {}
+		known_secondary_ring_modes = (
+			'fixstars',
+			'asteroids',
+			'midpoints',
+			'hybrid_hits',
+			'antiscia',
+			'dodecatemoria',
+			'contra_antiscia',
+			'arabic_parts',
+		)
+		raw_secondary_ring_enabled = aspect.get('secondaryRingEnabledByMode')
+		if isinstance(raw_secondary_ring_enabled, dict):
+			for key in known_secondary_ring_modes:
+				if key in raw_secondary_ring_enabled:
+					secondary_ring_enabled_by_mode[key] = bool(
+						raw_secondary_ring_enabled[key]
+					)
+		elif 'includeArabicParts' in aspect:
+			# One-time compatibility for preferences written before the family
+			# control followed the context-active secondary ring.
+			secondary_ring_enabled_by_mode['arabic_parts'] = bool(
+				aspect.get('includeArabicParts')
+			)
+
+		selected_promittor_id = transit.get('selectedPromittorId')
+		if not isinstance(selected_promittor_id, str) or not selected_promittor_id.strip():
+			selected_promittor_id = None
+		else:
+			selected_promittor_id = selected_promittor_id.strip()
+		direction = transit.get('direction')
+		if direction not in ('direct', 'converse', 'both'):
+			direction = 'direct'
+
+		return {
+			'schemaVersion': 1,
+			'aspectList': {
+				'mode': mode,
+				'maxOrb': max_orb,
+				'sortBy': sort_by,
+				'sortDirection': sort_direction,
+				'focusedFilterIds': focused_filter_ids,
+				'focusMatchMode': focus_match_mode,
+				'rxFocusEnabled': bool(aspect.get('rxFocusEnabled', False)),
+				'secondaryRingEnabledByMode': secondary_ring_enabled_by_mode,
+				'filterDrawerOpen': bool(aspect.get('filterDrawerOpen', False)),
+			},
+			'transitList': {
+				'selectedPromittorId': selected_promittor_id,
+				'promittorDrawerOpen': bool(transit.get('promittorDrawerOpen', False)),
+				'direction': direction,
+			},
+		}
+
 	def get_user_panel_presets(self):
 		return copy.deepcopy(self.user_panel_presets)
 
@@ -1147,7 +1303,13 @@ class Options:
 		self.aspect = self.def_aspect[:]
 		self.symbols = self.def_symbols
 		self.traditionalaspects = self.def_traditionalaspects
+		self.showaspectsforderivedpoints = self.def_showaspectsforderivedpoints
+		self.showaspectstoasc = self.def_showaspectstoasc
+		self.showaspectstomc = self.def_showaspectstomc
+		self.showaspectstodsc = self.def_showaspectstodsc
+		self.showaspectstoic = self.def_showaspectstoic
 		self.houses = self.def_houses
+		self.showouterhouselines = self.def_showouterhouselines
 		self.positions = self.def_positions
 		self.intables = self.def_intables
 		self.bw = self.def_bw
@@ -1182,7 +1344,11 @@ class Options:
 		self.showlofouterring = self.def_showlofouterring
 		self.showprenatalsyzygy = self.def_showprenatalsyzygy
 		self.pdf_chart_color_mode = self.def_pdf_chart_color_mode
+		self.pdf_chart_raster_preset = self.def_pdf_chart_raster_preset
 		self.pdf_include_overlays = self.def_pdf_include_overlays
+		self.png_chart_appearance = self.def_png_chart_appearance
+		self.png_include_overlays = self.def_png_include_overlays
+		self.list_export_aspect_symbols = self.def_list_export_aspect_symbols
 		self.showterms = self.def_showterms
 		self.showdecans = self.def_showdecans
 		self.showanglearrowheads = self.def_showanglearrowheads
@@ -1486,6 +1652,9 @@ class Options:
 		self.recent_chart_refs = self.def_recent_chart_refs[:]
 		self.chart_picker_sort_column = self.def_chart_picker_sort_column
 		self.chart_picker_sort_ascending = self.def_chart_picker_sort_ascending
+		self.astrocartography_preferences = copy.deepcopy(
+			self.def_astrocartography_preferences
+		)
 		self.last_hor_dir = self.def_last_hor_dir
 		self.revolutions_solaryearmode = self.def_revolutions_solaryearmode
 		self.revolutions_solarlocationmode = self.def_revolutions_solarlocationmode
@@ -1726,6 +1895,54 @@ class Options:
 				)
 			except Exception:
 				self.anglo_dense_label_layout = self.def_anglo_dense_label_layout
+			try:
+				value = str(pickle.load(f))
+				self.pdf_chart_raster_preset = (
+					value if value in ('clean', 'atkinson', 'blue-noise', 'newsprint')
+					else self.def_pdf_chart_raster_preset
+				)
+			except Exception:
+				self.pdf_chart_raster_preset = self.def_pdf_chart_raster_preset
+			try:
+				self.showouterhouselines = bool(pickle.load(f))
+			except Exception:
+				self.showouterhouselines = self.def_showouterhouselines
+			try:
+				self.showaspectstoasc = bool(pickle.load(f))
+			except Exception:
+				self.showaspectstoasc = self.def_showaspectstoasc
+			try:
+				self.showaspectstomc = bool(pickle.load(f))
+			except Exception:
+				self.showaspectstomc = self.def_showaspectstomc
+			try:
+				self.showaspectstodsc = bool(pickle.load(f))
+			except Exception:
+				self.showaspectstodsc = self.def_showaspectstodsc
+			try:
+				self.showaspectstoic = bool(pickle.load(f))
+			except Exception:
+				self.showaspectstoic = self.def_showaspectstoic
+			try:
+				value = str(pickle.load(f))
+				self.png_chart_appearance = (
+					value if value in ('screen', 'monochrome', 'colored-details')
+					else self.def_png_chart_appearance
+				)
+			except Exception:
+				self.png_chart_appearance = self.def_png_chart_appearance
+			try:
+				self.png_include_overlays = bool(pickle.load(f))
+			except Exception:
+				self.png_include_overlays = self.def_png_include_overlays
+			try:
+				self.showaspectsforderivedpoints = bool(pickle.load(f))
+			except Exception:
+				self.showaspectsforderivedpoints = self.def_showaspectsforderivedpoints
+			try:
+				self.list_export_aspect_symbols = bool(pickle.load(f))
+			except Exception:
+				self.list_export_aspect_symbols = self.def_list_export_aspect_symbols
 			if (
 				isinstance(self.ringorb_asteroids, bool) and
 				isinstance(self.ringorb_hybrid, bool) and
@@ -2516,6 +2733,32 @@ class Options:
 			res = False
 
 		try:
+			optfile = self.astrocartographypreferencesopt
+			f = self._open_opt_for_load(optfile)
+			self.astrocartography_preferences = (
+				self._normalize_astrocartography_preferences(pickle.load(f))
+			)
+			f.close()
+		except (IOError, EOFError, pickle.PickleError, TypeError, ValueError):
+			# This Tauri-only preference store has no factory pickle. A missing
+			# or obsolete file is a valid fresh-install state.
+			self.astrocartography_preferences = copy.deepcopy(
+				self.def_astrocartography_preferences
+			)
+
+		try:
+			optfile = self.sidebarlistpreferencesopt
+			f = self._open_opt_for_load(optfile)
+			self.sidebar_list_preferences = (
+				self._normalize_sidebar_list_preferences(pickle.load(f))
+			)
+			f.close()
+		except (IOError, EOFError, pickle.PickleError, TypeError, ValueError):
+			self.sidebar_list_preferences = copy.deepcopy(
+				self.def_sidebar_list_preferences
+			)
+
+		try:
 			optfile = self.lasthordiropt
 			f = self._open_opt_for_load(optfile)
 			self.last_hor_dir = pickle.load(f)
@@ -2647,6 +2890,16 @@ class Options:
 			pickle.dump(bool(self.astrocart_terrain_relief), f)
 			pickle.dump(bool(self.astrocart_show_country_labels), f)
 			pickle.dump(str(self.anglo_dense_label_layout), f)
+			pickle.dump(str(self.pdf_chart_raster_preset), f)
+			pickle.dump(bool(self.showouterhouselines), f)
+			pickle.dump(bool(self.showaspectstoasc), f)
+			pickle.dump(bool(self.showaspectstomc), f)
+			pickle.dump(bool(self.showaspectstodsc), f)
+			pickle.dump(bool(self.showaspectstoic), f)
+			pickle.dump(str(self.png_chart_appearance), f)
+			pickle.dump(bool(self.png_include_overlays), f)
+			pickle.dump(bool(self.showaspectsforderivedpoints), f)
+			pickle.dump(bool(self.list_export_aspect_symbols), f)
 			f.close()
 			return True
 		except IOError:
@@ -3312,6 +3565,40 @@ class Options:
 			dlg.ShowModal()
 			return False
 
+	def saveAstrocartographyPreferences(self):
+		try:
+			optfile = self.astrocartographypreferencesopt
+			f = open(optfile, 'wb')
+			pickle.dump(
+				self._normalize_astrocartography_preferences(
+					self.astrocartography_preferences
+				),
+				f,
+			)
+			f.close()
+			return True
+		except IOError:
+			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
+			dlg.ShowModal()
+			return False
+
+	def saveSidebarListPreferences(self):
+		try:
+			optfile = self.sidebarlistpreferencesopt
+			f = open(optfile, 'wb')
+			pickle.dump(
+				self._normalize_sidebar_list_preferences(
+					self.sidebar_list_preferences
+				),
+				f,
+			)
+			f.close()
+			return True
+		except IOError:
+			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
+			dlg.ShowModal()
+			return False
+
 	def saveLastHorDir(self):
 		try:
 			optfile = self.lasthordiropt
@@ -3374,6 +3661,8 @@ class Options:
 		self.saveStepAlerts()
 		self.saveWorkspaceSidebarOrder()
 		self.saveWorkspaceSidebarCollapsed()
+		self.saveAstrocartographyPreferences()
+		self.saveSidebarListPreferences()
 		self.saveLastHorDir()
 		self.saveUserPanelPresets()
 		self.saveComposite()
@@ -3400,5 +3689,9 @@ class Options:
 			f = os.path.join(self.optsdirtxt, self.optionsfilestxt[i])
 			if os.path.exists(f):
 				os.remove(f)
+		if os.path.exists(self.astrocartographypreferencesopt):
+			os.remove(self.astrocartographypreferencesopt)
+		if os.path.exists(self.sidebarlistpreferencesopt):
+			os.remove(self.sidebarlistpreferencesopt)
 
 

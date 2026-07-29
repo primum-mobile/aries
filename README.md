@@ -19,6 +19,7 @@ official supported installers.
 | `Cmd/Ctrl + R` | Here and Now |
 | `Cmd/Ctrl + S` | Save |
 | `Cmd/Ctrl + Shift + S` | Save As |
+| `Cmd/Ctrl + Shift + C` | Copy chart as PNG |
 | `Cmd/Ctrl + W` | Close active document |
 | `Cmd/Ctrl + B` | Toggle sidebar |
 | `Cmd/Ctrl + F` | Search |
@@ -39,6 +40,7 @@ official supported installers.
 | `E` | Eclipses |
 | `Z` | Zodiacal Releasing |
 | `Q` | Synodic Cycles |
+| `X` | Aspect List |
 | `A` | Toggle aspects |
 | `M` | Toggle minor aspects |
 | `H` | Toggle houses |

@@ -439,7 +439,15 @@ test("one resolved object feeds paint, collision, hover geometry, and overlays",
   assert.match(styleBlock, /revision: styleRevision/);
   assert.match(styleBlock, /\}, \[styleRevision\]\);/);
 
-  assert.match(source, /semanticAlphaColor\(payload\.accentRole, payload\.accent, 0\.55\)/);
+  assert.match(
+    source,
+    /semanticAlphaColor\([\s\S]*?payload\.accentRole,[\s\S]*?payload\.accent,[\s\S]*?flagGeometry\.accentBorderOpacity,/,
+  );
+  assert.match(source, /--aries-inspector-hover-flag-viewport-margin/);
+  assert.match(source, /--aries-inspector-hover-flag-anchor-gap-x/);
+  assert.match(source, /--aries-inspector-hover-flag-shadow/);
+  assert.match(source, /--aries-inspector-hover-flag-backdrop-blur/);
+  assert.match(source, /fontFamily: "var\(--aries-font-symbols\)"/);
   assert.match(
     source,
     /semanticChartColor\(payload\.accentRole, rgbCss\(payload\.accent\)\)/,

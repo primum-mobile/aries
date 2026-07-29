@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { X } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -15,6 +15,7 @@ import {
   type InspectorAlertsPayload,
   type InspectorAspectItem,
   type InspectorDignityItem,
+  type InspectorLunarExactState,
   type InspectorManzil,
   type InspectorPassagesPayload,
   type InspectorPassageParagraph,
@@ -146,7 +147,10 @@ export function InspectorPanel({ chart }: { chart: ChartRenderSnapshot | null })
   }, [setInspectorOpen]);
 
   return (
-    <aside className={cn("relative flex h-full w-full min-w-0 flex-col gap-0 overflow-y-auto bg-[var(--aries-inspector-background)]", INSPECTOR_VALUE_COLOR, TEXT_BASE)}>
+    <aside
+      data-aries-surface="inspector"
+      className={cn("relative flex h-full w-full min-w-0 flex-col gap-0 overflow-y-auto bg-[var(--aries-inspector-background)]", INSPECTOR_VALUE_COLOR, TEXT_BASE)}
+    >
       <Button
         type="button"
         size="icon-sm"
@@ -198,6 +202,7 @@ function useInspectorPayload(
   const supplementaryKind = activeDoc?.supplementaryFeatureKind;
   const comparisonName = activeDoc?.comparisonSourceName;
   const viewMode = chart?.document?.viewMode;
+  const deferSignals = chart?.overlayRenderMode === "step_fast";
   // Match ChartHoverFlag's live path: the POST-pushed step_fast snapshot is the
   // immediate cursor/binding source. The stable payload identity below keeps
   // the old focused card mounted until this request swaps in its new values.
@@ -212,6 +217,7 @@ function useInspectorPayload(
     documentId: docId ?? "",
     lastSessionChange,
     lastOptionsChange,
+    refreshOnInspectorDataChange: true,
   });
 
   const canFetch = Boolean(
@@ -256,12 +262,19 @@ function useInspectorPayload(
         viewMode,
         when: when ?? undefined,
         binding,
+        deferSignals,
       },
       controller.signal,
     )
       .then((payload) => {
         if (controller.signal.aborted) return;
-        setPayloadState({ identity: payloadIdentity, payload });
+        setPayloadState((current) => ({
+          identity: payloadIdentity,
+          payload: retainDeferredInspectorSlots(
+            current?.identity === payloadIdentity ? current.payload : null,
+            payload,
+          ),
+        }));
       })
       .catch((err) => {
         if ((err as { name?: string }).name === "AbortError") return;
@@ -278,9 +291,29 @@ function useInspectorPayload(
     // This is retained inspector chrome, so an identity change must not expose
     // the empty hint or collapse the pane between the click and response.
     return () => controller.abort();
-  }, [canFetch, payloadIdentity, kind, objectId, docId, chartRole, sourceName, hereNow, supplementaryKind, comparisonName, viewMode, when, bindingJson, refreshSeq]);
+  }, [canFetch, payloadIdentity, kind, objectId, docId, chartRole, sourceName, hereNow, supplementaryKind, comparisonName, viewMode, when, bindingJson, deferSignals, refreshSeq]);
 
   return canFetch ? payloadState?.payload ?? null : null;
+}
+
+/**
+ * Step-fast keeps the previous expensive semantic slot visible while every
+ * cheap inspector field continues to update from the live stepped chart.
+ */
+function retainDeferredInspectorSlots(
+  current: InspectorPayload | null,
+  next: InspectorPayload,
+): InspectorPayload {
+  if (!next.deferred_slots?.includes("phasis") || !current?.phasis_row) {
+    return next;
+  }
+  const phasisRow = current.phasis_row;
+  return {
+    ...next,
+    phasis_row: phasisRow,
+    smart_rows: [...next.smart_rows, phasisRow],
+    rows: [...(next.rows ?? next.smart_rows), phasisRow],
+  };
 }
 
 /**
@@ -669,6 +702,7 @@ const LensPickerSection = React.memo(function LensPickerSection() {
       <SectionLabel>{t("inspector.interpretation")}</SectionLabel>
       <div className="flex items-center gap-[var(--aries-inspector-heading-gap)]">
         <select
+          data-aries-control-appearance="local"
           aria-label={t("inspector.discipline")}
           className={selectClass}
           value={discipline}
@@ -682,6 +716,7 @@ const LensPickerSection = React.memo(function LensPickerSection() {
           ))}
         </select>
         <select
+          data-aries-control-appearance="local"
           aria-label={t("inspector.theme")}
           className={selectClass}
           value={lens?.discipline === discipline ? lens?.theme ?? "" : ""}
@@ -701,6 +736,7 @@ const LensPickerSection = React.memo(function LensPickerSection() {
           <label className={cn("flex min-w-0 flex-1 items-center gap-[var(--aries-control-gap-compact)]", INSPECTOR_MUTED_COLOR, TEXT_SMALL)}>
             {t("inspector.quesited")}:
             <select
+              data-aries-control-appearance="local"
               aria-label={t("inspector.quesitedHouse")}
               className={selectClass}
               value={contextHouse("quesited_house")}
@@ -717,6 +753,7 @@ const LensPickerSection = React.memo(function LensPickerSection() {
           <label className={cn("flex min-w-0 flex-1 items-center gap-[var(--aries-control-gap-compact)]", INSPECTOR_MUTED_COLOR, TEXT_SMALL)}>
             {t("inspector.querent")}:
             <select
+              data-aries-control-appearance="local"
               aria-label={t("inspector.querentHouse")}
               className={selectClass}
               value={contextHouse("querent_house")}
@@ -748,6 +785,89 @@ function RegionPayload({ payload }: { payload: InspectorPayload | null }) {
   const aspectItems = payload.aspect_items ?? [];
   const meta = payload.meta?.trim() ?? "";
   const showMeta = meta.length > 0 && meta.toLowerCase() !== "secondary ring";
+  const lunarConditions = payload.lunar_conditions;
+  const exactLunarLabels = lunarConditions
+    ? lunarConditions.exact_states
+        .map((state) => LUNAR_EXACT_STATE_KEYS[state])
+        .filter((key): key is string => Boolean(key))
+        .map((key) => t(key))
+    : [];
+  const atLongitudeSpeedExtremum =
+    lunarConditions?.exact_states.some(
+      (state) => state === "slowest" || state === "fastest",
+    ) ?? false;
+  const atLatitudeBending =
+    lunarConditions?.exact_states.some(
+      (state) => state === "north_bending" || state === "south_bending",
+    ) ?? false;
+  const lunarIncreasingItems: string[] = [];
+  const lunarDecreasingItems: string[] = [];
+  if (lunarConditions) {
+    const addCondition = (increasing: boolean, label: string) => {
+      (increasing ? lunarIncreasingItems : lunarDecreasingItems).push(label);
+    };
+    addCondition(
+      lunarConditions.increasing_in_light,
+      t("lunarCondition.light"),
+    );
+    if (!atLatitudeBending) {
+      addCondition(
+        lunarConditions.increasing_in_latitude,
+        t("lunarCondition.latitude"),
+      );
+    }
+    if (!atLongitudeSpeedExtremum) {
+      addCondition(
+        lunarConditions.increasing_in_number,
+        t("lunarCondition.speed"),
+      );
+    }
+  }
+  const lunarConditionGroups = [
+    ...(lunarIncreasingItems.length
+      ? [
+          t("lunarCondition.increasingGroup", {
+            items: lunarIncreasingItems.join(", "),
+          }),
+        ]
+      : []),
+    ...(lunarDecreasingItems.length
+      ? [
+          t("lunarCondition.decreasingGroup", {
+            items: lunarDecreasingItems.join(", "),
+          }),
+        ]
+      : []),
+  ];
+  const lunarSpeedStatus = lunarConditions
+    ? {
+        label: lunarConditions.swift
+          ? t("lunarCondition.swift")
+          : t("lunarCondition.slow"),
+        color: lunarConditions.swift
+          ? "var(--aries-status-good)"
+          : "var(--aries-status-avoid)",
+        trend: !atLongitudeSpeedExtremum
+          ? {
+              direction: lunarConditions.increasing_in_number
+                ? ("up" as const)
+                : ("down" as const),
+              label: lunarConditions.increasing_in_number
+                ? t("lunarCondition.increasingGroup", {
+                    items: t("lunarCondition.speed"),
+                  })
+                : t("lunarCondition.decreasingGroup", {
+                    items: t("lunarCondition.speed"),
+                  }),
+            }
+          : undefined,
+      }
+    : undefined;
+  const summaryRows = [
+    ...payload.smart_rows,
+    ...(exactLunarLabels.length ? [exactLunarLabels.join(" · ")] : []),
+    ...(lunarConditionGroups.length ? [lunarConditionGroups.join(" · ")] : []),
+  ];
 
   return (
     <div className="flex flex-col gap-0 px-[var(--aries-inspector-padding-x)] pb-[var(--aries-inspector-padding-bottom)] pt-[var(--aries-inspector-padding-top)]">
@@ -762,9 +882,9 @@ function RegionPayload({ payload }: { payload: InspectorPayload | null }) {
       />
 
       {/* Summary block — smart_rows, in order. */}
-      {payload.smart_rows.length ? (
+      {summaryRows.length ? (
         <div className="mt-[var(--aries-inspector-section-gap)] flex flex-col gap-[var(--aries-inspector-row-gap)]">
-          {payload.smart_rows.map((row, i) => (
+          {summaryRows.map((row, i) => (
             <div key={`smart-${i}`} className={cn("tabular-nums leading-snug", INSPECTOR_VALUE_COLOR, TEXT_BASE)} style={INSPECTOR_WRAP_STYLE}>
               {row}
             </div>
@@ -794,7 +914,11 @@ function RegionPayload({ payload }: { payload: InspectorPayload | null }) {
             {detailRows.length ? (
               <div className="flex min-w-0 flex-1 flex-col gap-[var(--aries-inspector-row-gap)]">
                 {detailRows.map((row, i) => (
-                  <DetailRow key={`det-${i}`} text={row} />
+                  <DetailRow
+                    key={`det-${i}`}
+                    text={row}
+                    status={i === 0 ? lunarSpeedStatus : undefined}
+                  />
                 ))}
               </div>
             ) : null}
@@ -811,6 +935,13 @@ function RegionPayload({ payload }: { payload: InspectorPayload | null }) {
     </div>
   );
 }
+
+const LUNAR_EXACT_STATE_KEYS: Record<InspectorLunarExactState, string> = {
+  slowest: "lunarCondition.slowest",
+  fastest: "lunarCondition.fastest",
+  north_bending: "lunarCondition.northBending",
+  south_bending: "lunarCondition.southBending",
+};
 
 /** Stable focused-object chrome; React skips it while only live rows change. */
 const InspectorIdentityHeader = React.memo(function InspectorIdentityHeader({
@@ -943,7 +1074,20 @@ function DignityRow({ item }: { item: InspectorDignityItem }) {
 
 /** A detail row: "Label: value" split on the first colon (matches the wx
  * FlexGrid split, workspace_shell.py:1760-1766); no-colon rows render whole. */
-function DetailRow({ text }: { text: string }) {
+function DetailRow({
+  text,
+  status,
+}: {
+  text: string;
+  status?: {
+    label: string;
+    color: string;
+    trend?: {
+      direction: "up" | "down";
+      label: string;
+    };
+  };
+}) {
   const idx = text.indexOf(":");
   if (idx === -1) {
     return <div className={cn("tabular-nums", INSPECTOR_VALUE_COLOR, TEXT_SMALL)} style={INSPECTOR_WRAP_STYLE}>{text}</div>;
@@ -954,6 +1098,26 @@ function DetailRow({ text }: { text: string }) {
     <div className={cn("flex min-w-0 items-baseline gap-[var(--aries-control-gap)]", TEXT_SMALL)}>
       <span className={INSPECTOR_LABEL_COLOR}>{label}</span>
       <span className={cn("min-w-0 tabular-nums", INSPECTOR_VALUE_COLOR)} style={INSPECTOR_WRAP_STYLE}>{value}</span>
+      {status ? (
+        <>
+          {status.trend ? (
+            <span
+              className={cn("inline-flex shrink-0 items-center", INSPECTOR_MUTED_COLOR)}
+              aria-label={status.trend.label}
+              title={status.trend.label}
+            >
+              {status.trend.direction === "up" ? (
+                <ArrowUpRight className="size-[0.9em]" strokeWidth={2} aria-hidden />
+              ) : (
+                <ArrowDownRight className="size-[0.9em]" strokeWidth={2} aria-hidden />
+              )}
+            </span>
+          ) : null}
+          <span className="shrink-0 font-medium" style={{ color: status.color }}>
+            {status.label}
+          </span>
+        </>
+      ) : null}
     </div>
   );
 }
@@ -1025,7 +1189,7 @@ function SignificationText({ section }: { section: InspectorPassageSection }) {
   return (
     <div className={cn("leading-relaxed", INSPECTOR_VALUE_COLOR, TEXT_READING)}>
       {section.citation_label ? (
-        <div className={cn("mb-3 italic", INSPECTOR_LABEL_COLOR)}>
+        <div className={cn("mb-[var(--aries-inspector-citation-gap)] italic", INSPECTOR_LABEL_COLOR)}>
           <PassageRuns runs={section.citation_runs} fallback={section.citation_label} />
         </div>
       ) : null}
@@ -1164,7 +1328,7 @@ const ALERT_STATUS_COLOUR: Record<string, string> = {
 function AlertCard({ alert, showPackTag }: { alert: InspectorAlert; showPackTag?: boolean }) {
   const dot = (alert.status && ALERT_STATUS_COLOUR[alert.status]) || "var(--aries-status-neutral)";
   return (
-    <div className="rounded-md border border-[color:var(--aries-inspector-card-border-color)] bg-[var(--aries-inspector-card-background)] px-[var(--aries-inspector-card-padding-x)] py-[var(--aries-inspector-card-padding-y)]">
+    <div className="rounded-[var(--aries-radius-md)] border border-[color:var(--aries-inspector-card-border-color)] bg-[var(--aries-inspector-card-background)] px-[var(--aries-inspector-card-padding-x)] py-[var(--aries-inspector-card-padding-y)]">
       <div className="flex items-center gap-[var(--aries-inspector-heading-gap)]">
         <span
           className="size-[var(--aries-inspector-status-dot-size)] shrink-0 rounded-full"

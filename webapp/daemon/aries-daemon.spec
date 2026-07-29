@@ -11,6 +11,7 @@ from PyInstaller.utils.hooks import collect_submodules
 REPO_ROOT = Path(SPECPATH).resolve().parent.parent
 ENTRY = str(REPO_ROOT / "webapp" / "daemon" / "__main__.py")
 SWEASTROLOGY_NAME = f"sweastrology{sysconfig.get_config_var('EXT_SUFFIX')}"
+TRANSIT_KERNEL_NAME = f"_transit_kernel{sysconfig.get_config_var('EXT_SUFFIX')}"
 SWEASTROLOGY = next(
     (
         candidate
@@ -26,6 +27,11 @@ if SWEASTROLOGY is None:
     raise SystemExit(
         f"Missing {SWEASTROLOGY_NAME}. Build the Swiss Ephemeris extension first."
     )
+TRANSIT_KERNEL = REPO_ROOT / "aries" / "astrology" / "transit_fast" / TRANSIT_KERNEL_NAME
+if not TRANSIT_KERNEL.is_file():
+    raise SystemExit(
+        f"Missing {TRANSIT_KERNEL_NAME}. Build the native transit kernel first."
+    )
 
 block_cipher = None
 REPORTLAB_HIDDENIMPORTS = collect_submodules("reportlab")
@@ -37,6 +43,7 @@ a = Analysis(
     pathex=[str(REPO_ROOT)],
     binaries=[
         (str(SWEASTROLOGY), "."),
+        (str(TRANSIT_KERNEL), "aries/astrology/transit_fast"),
     ],
     # Keep the one-file sidecar small. Static resources are bundled by Tauri as
     # app resources and passed through ARIES_DAEMON_BASE_DIR at runtime; embedding
@@ -77,6 +84,7 @@ a = Analysis(
         "arabicparts",
         "chart_context_view",
         "sweastrology",
+        "aries.astrology.transit_fast._transit_kernel",
     ] + REPORTLAB_HIDDENIMPORTS + FONTTOOLS_HIDDENIMPORTS + BROTLI_HIDDENIMPORTS,
     hookspath=[],
     runtime_hooks=[],

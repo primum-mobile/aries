@@ -19,7 +19,9 @@ function rightWorkspacePaneIsOpen(state: WorkspaceSnapshot): boolean {
     state.eclipsesPane !== null ||
     state.lunarMansionsPane !== null ||
     state.synodicCyclesPane !== null ||
+    state.aspectListPane !== null ||
     state.ascensionalTransitsPane !== null ||
+    state.astrocartControlsPane !== null ||
     state.featureCatalogPane !== null
   );
 }

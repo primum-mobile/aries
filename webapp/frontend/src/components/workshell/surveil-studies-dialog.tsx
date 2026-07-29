@@ -156,13 +156,14 @@ export function SurveilStudiesDialog() {
             {t("studies.description")}
           </DialogDescription>
         </DialogHeader>
-        <div className="flex flex-col gap-3 py-1">
-          <label className="flex flex-col gap-1 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)]">
+        <div className="flex flex-col gap-[var(--aries-form-row-gap)] py-[var(--aries-control-padding-y)]">
+          <label className="flex flex-col gap-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)]">
             <span className="text-[color:var(--aries-text-muted)]">{t("studies.study")}</span>
             <select
+              data-aries-control-appearance="local"
               value={creating ? NEW_STUDY : activeStudy}
               onChange={(e) => void onSelectStudy(e.currentTarget.value)}
-              className="rounded border border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface)] px-2 py-1.5 text-[color:var(--aries-text-primary)] outline-none focus:border-[color:var(--aries-focus-ring)]"
+              className="rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface)] px-[var(--aries-control-padding-x-compact)] py-[var(--aries-control-gap)] text-[color:var(--aries-text-primary)] outline-none focus:border-[color:var(--aries-focus-ring)]"
             >
               {studies.map((study) => (
                 <option key={study.name} value={study.name}>
@@ -173,10 +174,11 @@ export function SurveilStudiesDialog() {
             </select>
           </label>
           {creating ? (
-            <label className="flex flex-col gap-1 text-[length:var(--aries-font-size-small)]">
+            <label className="flex flex-col gap-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-small)]">
               <span className="text-[color:var(--aries-text-muted)]">{t("studies.newStudyName")}</span>
-              <div className="flex gap-2">
+              <div className="flex gap-[var(--aries-form-field-gap)]">
                 <input
+                  data-aries-control-appearance="local"
                   value={newName}
                   placeholder={t("studies.newStudyPlaceholder")}
                   autoFocus
@@ -187,7 +189,7 @@ export function SurveilStudiesDialog() {
                       void confirmNewStudy();
                     }
                   }}
-                  className="flex-1 rounded border border-[color:var(--aries-border-subtle)] bg-transparent px-2 py-1.5 text-[color:var(--aries-text-primary)] outline-none focus:border-[color:var(--aries-focus-ring)]"
+                  className="flex-1 rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-border-subtle)] bg-transparent px-[var(--aries-control-padding-x-compact)] py-[var(--aries-control-gap)] text-[color:var(--aries-text-primary)] outline-none focus:border-[color:var(--aries-focus-ring)]"
                 />
                 <Button disabled={!newName.trim()} onClick={() => void confirmNewStudy()}>
                   {t("studies.add")}

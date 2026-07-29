@@ -25,6 +25,7 @@ const {
   WHEEL_PAINTED_RING_ROLES,
   WHEEL_RENDER_FONT_SPECS,
   WHEEL_RENDER_PALETTE_SPECS,
+  WHEEL_RENDER_DEPRECATED_TOKEN_ALIASES,
   WHEEL_RENDER_TOKEN_RANGES,
   WHEEL_RENDER_TOKEN_SPECS,
   createTokenizedWheelRenderStyle,
@@ -52,6 +53,22 @@ test("default wheel profile preserves classic, compact, and Anglo metrics", () =
   const classic = resolveWheelTypographyMetrics(DEFAULT_WHEEL_RENDER_STYLE, "classic", 400);
   const compact = resolveWheelTypographyMetrics(DEFAULT_WHEEL_RENDER_STYLE, "compact", 400);
   const anglo = resolveWheelTypographyMetrics(DEFAULT_WHEEL_RENDER_STYLE, "anglo", 400);
+  const secondaryRing = (label, projected, motion) => ({
+    "secondaryRing.fixedStar.label": label,
+    "secondaryRing.asteroid.label": label,
+    "secondaryRing.midpoint.glyph": label,
+    "secondaryRing.midpoint.text": label,
+    "secondaryRing.hybridHit.label": label,
+    "secondaryRing.antiscia.glyph": projected,
+    "secondaryRing.antiscia.text": projected,
+    "secondaryRing.contraAntiscia.glyph": projected,
+    "secondaryRing.contraAntiscia.text": projected,
+    "secondaryRing.dodecatemoria.glyph": projected,
+    "secondaryRing.dodecatemoria.text": projected,
+    "secondaryRing.arabicPart.label": label,
+    "secondaryRing.parallelTransit.glyph": projected,
+    "secondaryRing.parallelTransit.motion": motion,
+  });
 
   const shared = {
     layoutUnit: 25,
@@ -61,9 +78,9 @@ test("default wheel profile preserves classic, compact, and Anglo metrics", () =
     angleLabelWeight: 500,
     syzygyScale: 0.58,
     houseLabelSize: 12.5,
-    bodyPosition: { degreeSize: 12.5, minuteSize: 6.25 },
-    anglePosition: { degreeSize: 12.5, minuteSize: 6.25 },
-    housePosition: { degreeSize: 12.5, minuteSize: 6.25 },
+    bodyPosition: { degreeSize: 12.5, signSize: 14.000000000000002, minuteSize: 6.25 },
+    anglePosition: { degreeSize: 12.5, signSize: 13, minuteSize: 6.25 },
+    housePosition: { degreeSize: 12.5, signSize: 13, minuteSize: 6.25 },
     angloBodyPosition: {
       degreeSize: 11.5,
       signSize: 14.000000000000002,
@@ -72,6 +89,7 @@ test("default wheel profile preserves classic, compact, and Anglo metrics", () =
     angloAnglePosition: { degreeSize: 10, signSize: 13, minuteSize: 8.5, gap: 2 },
     angloHousePosition: { degreeSize: 10, signSize: 13, minuteSize: 8.5, gap: 2 },
     aspectGlyphSize: 12.5,
+    interchartAspectGlyphSize: 12.5,
     aspectGlyphOffset: 6.25,
     motionSize: 6.25,
   };
@@ -88,10 +106,12 @@ test("default wheel profile preserves classic, compact, and Anglo metrics", () =
     outerMotionSize: 6.25,
     outerLabelSize: 12.5,
     outerProjectedGlyphSize: 25,
+    secondaryRing: secondaryRing(12.5, 25, 6.25),
   });
   assert.deepEqual(compact, classic);
   assert.deepEqual(anglo, {
     ...shared,
+    motionSize: 7.5,
     outerLayoutUnit: 20,
     outerSize: 20,
     signSize: 16,
@@ -100,9 +120,10 @@ test("default wheel profile preserves classic, compact, and Anglo metrics", () =
     decanSize: 12.5,
     outerAngleLabelSize: 15,
     outerHouseLabelSize: 10,
-    outerMotionSize: 5,
+    outerMotionSize: 6,
     outerLabelSize: 10,
     outerProjectedGlyphSize: 20,
+    secondaryRing: secondaryRing(10, 20, 6),
   });
 });
 
@@ -216,7 +237,7 @@ test("Canvas line and circle paints retain subpixel widths and circle dash seman
 });
 
 test("authorable wheel token defaults reproduce the exact internal visual profile", () => {
-  assert.equal(Object.keys(WHEEL_RENDER_TOKEN_SPECS).length, 319);
+  assert.equal(Object.keys(WHEEL_RENDER_TOKEN_SPECS).length, 324);
   assert.ok(
     Object.values(WHEEL_RENDER_TOKEN_SPECS).every(([cssVar]) =>
       cssVar.startsWith("--aries-wheel-"),
@@ -250,6 +271,92 @@ test("authorable wheel token defaults reproduce the exact internal visual profil
   assertDeepFrozen(DEFAULT_WHEEL_RENDER_TOKENS);
   assertDeepFrozen(WHEEL_RENDER_TOKEN_SPECS);
   assertDeepFrozen(tokenized);
+});
+
+test("canonical position-sign tokens preserve Anglo paint and own sign sizing", () => {
+  assert.deepEqual(WHEEL_RENDER_DEPRECATED_TOKEN_ALIASES, {
+    angloBodySignScale: "bodyPositionSignScale",
+    angloAnglePositionSignScale: "anglePositionSignScale",
+    angloHousePositionSignScale: "housePositionSignScale",
+  });
+  assert.deepEqual(WHEEL_RENDER_TOKEN_RANGES.get("bodyPositionSignScale"), [0.14, 1.69]);
+  assert.deepEqual(WHEEL_RENDER_TOKEN_RANGES.get("anglePositionSignScale"), [0.13, 1.56]);
+  assert.deepEqual(WHEEL_RENDER_TOKEN_RANGES.get("housePositionSignScale"), [0.13, 1.56]);
+
+  const style = createTokenizedWheelRenderStyle({
+    tokens: {
+      ...DEFAULT_WHEEL_RENDER_TOKENS,
+      bodyPositionSignScale: 0.7,
+      anglePositionSignScale: 0.6,
+      housePositionSignScale: 0.65,
+      // Deprecated aliases remain readable for sparse-profile migration but
+      // cannot become a second runtime authority.
+      angloBodySignScale: 1.2,
+      angloAnglePositionSignScale: 1.1,
+      angloHousePositionSignScale: 1,
+    },
+  });
+  const metrics = resolveWheelTypographyMetrics(style, "anglo", 400);
+  assert.equal(metrics.bodyPosition.signSize, 17.5);
+  assert.equal(metrics.angloBodyPosition.signSize, 17.5);
+  assert.equal(metrics.anglePosition.signSize, 15);
+  assert.equal(metrics.angloAnglePosition.signSize, 15);
+  assert.equal(metrics.housePosition.signSize, 16.25);
+  assert.equal(metrics.angloHousePosition.signSize, 16.25);
+
+  const legacyOnly = resolveWheelRenderTokens((cssVar) => ({
+    "--aries-wheel-anglo-body-sign-scale": "0.72",
+    "--aries-wheel-anglo-angle-position-sign-scale": "0.62",
+    "--aries-wheel-anglo-house-position-sign-scale": "0.67",
+  })[cssVar]);
+  assert.equal(legacyOnly.bodyPositionSignScale, 0.72);
+  assert.equal(legacyOnly.anglePositionSignScale, 0.62);
+  assert.equal(legacyOnly.housePositionSignScale, 0.67);
+
+  const canonicalWins = resolveWheelRenderTokens((cssVar) => ({
+    "--aries-wheel-body-position-sign-scale": "0.74",
+    "--aries-wheel-anglo-body-sign-scale": "0.72",
+    "--aries-wheel-angle-position-sign-scale": "0.64",
+    "--aries-wheel-anglo-angle-position-sign-scale": "0.62",
+    "--aries-wheel-house-position-sign-scale": "0.69",
+    "--aries-wheel-anglo-house-position-sign-scale": "0.67",
+  })[cssVar]);
+  assert.equal(canonicalWins.bodyPositionSignScale, 0.74);
+  assert.equal(canonicalWins.anglePositionSignScale, 0.64);
+  assert.equal(canonicalWins.housePositionSignScale, 0.69);
+  assertDeepFrozen(WHEEL_RENDER_DEPRECATED_TOKEN_ALIASES);
+});
+
+test("Anglo arrow tokens own bounded arrow geometry and reject an inner cap", () => {
+  assert.deepEqual(WHEEL_RENDER_TOKEN_RANGES.get("angloArrowInset"), [0.005, 0.1]);
+  assert.deepEqual(WHEEL_RENDER_TOKEN_RANGES.get("angloArrowMaximum"), [0.9, 1]);
+  const input = {
+    profile: "anglo",
+    mode: "single",
+    maxRadius: 400,
+    hasOuterRing: false,
+    showTerms: false,
+    showDecans: false,
+    showHouses: true,
+    showPositions: true,
+    comparisonWithOuterHouses: false,
+  };
+  const custom = createTokenizedWheelRenderStyle({
+    tokens: {
+      ...DEFAULT_WHEEL_RENDER_TOKENS,
+      angloArrowInset: 0.06,
+      angloArrowMaximum: 0.95,
+    },
+  });
+  assert.equal(resolveWheelRingSet(DEFAULT_WHEEL_RENDER_STYLE, input).rArrow, 372);
+  assert.equal(resolveWheelRingSet(custom, input).rArrow, 380);
+
+  const rejected = resolveWheelRenderTokens((cssVar) => ({
+    "--aries-wheel-anglo-zodiac-single": "0.98",
+    "--aries-wheel-anglo-arrow-maximum": "0.95",
+  })[cssVar]);
+  assert.equal(rejected.angloZodiacSingle, DEFAULT_WHEEL_RENDER_TOKENS.angloZodiacSingle);
+  assert.equal(rejected.angloArrowMaximum, DEFAULT_WHEEL_RENDER_TOKENS.angloArrowMaximum);
 });
 
 test("exact glyph families and subdivision scales are independently authorable", () => {
@@ -318,6 +425,7 @@ test("exact wheel primitives own independent colors with retained palette fallba
     "angloOuterLeader",
     "angleRay",
     "angleLabel",
+    "surveilAccent",
   ]);
   const palette = {
     ...DEFAULT_WHEEL_RENDER_STYLE.palette,
@@ -549,10 +657,435 @@ test("profile activation and deactivation resolve directly from the live theme m
 
 test("wheel DOM corner overlays consume the same typed profile style", () => {
   assert.match(workspaceContentSource, /const overlayStyle = wheelStyle\.overlays/);
-  assert.match(workspaceContentSource, /overlayStyle\.rowHeightFactor/);
-  assert.match(workspaceContentSource, /overlayStyle\.titlebarSafeTop/);
+  assert.match(workspaceContentSource, /resolveWheelOverlayMetrics\(overlayStyle, viewport\)/);
+  assert.match(workspaceContentSource, /resolveWheelTypographyPaint\(/);
+  assert.match(workspaceContentSource, /data-aries-style-class=\{semanticClassId\}/);
   assert.match(workspaceContentSource, /readPaletteProfileOverrides\(theme\)/);
   assert.doesNotMatch(workspaceContentSource, /WX_OVERLAY_|DOM_OVERLAY_FONT_BOX_SCALE/);
+});
+
+test("wheel overlay hit regions expose all twelve exact semantic text classes", async () => {
+  const drawChart = await loadDrawChartCollisionInternals();
+  const chart = {
+    meta: {
+      dateDisplay: "2026.July.26",
+      timeDisplay: "12:34:56",
+      place: "Berlin",
+      placeCoords: "13E 52N",
+      cornerLines: {
+        topLeft: ["2026.July.26", "12:34:56"],
+        bottomLeft: ["Berlin", "13E 52N"],
+      },
+      houseSystemLines: ["Placidus"],
+    },
+    planets: [{
+      id: "sun",
+      seId: 0,
+      longitude: 10,
+      latitude: 0,
+      speed: 1,
+      glyph: "A",
+      color: "#ffaa00",
+    }],
+    angles: { asc: 0, dsc: 180, mc: 90, ic: 270 },
+    houses: { cusps: Array.from({ length: 12 }, (_, index) => index * 30) },
+    aspects: [],
+    overlay: {
+      rows: [
+        {
+          group: "dayhour",
+          label: "Day",
+          glyphs: [{ char: "A", kind: "planet", seId: 0 }],
+          trailing: "+1d",
+        },
+        {
+          group: "header",
+          label: "Term lord",
+          glyphs: [
+            { char: "A", kind: "planet", seId: 0 },
+            { char: "B", kind: "sign" },
+          ],
+        },
+        {
+          group: "signal",
+          label: "Morning rise",
+          glyphs: [{ char: "A", kind: "planet", seId: 0 }],
+          trailing: "-5d",
+        },
+      ],
+    },
+    options: {
+      theme: 0,
+      signVariant: 1,
+      showHouses: false,
+      showPositions: false,
+      showAspects: false,
+      showSymbols: false,
+      showTerms: false,
+      showDecans: false,
+      showInformation: true,
+      showHouseSystem: true,
+    },
+  };
+  const regions = drawChart.computeHitRegions(
+    {
+      primaryChart: chart,
+      displayDatetime: "2026-07-26T12:34:56+02:00",
+      renderVariant: "round",
+      overlayRenderMode: "full",
+      outerRingMode: "none",
+    },
+    {
+      width: 800,
+      height: 800,
+      renderStyle: DEFAULT_WHEEL_RENDER_STYLE,
+      includeStyleTargets: true,
+      textsize: (text, opts) => {
+        const size = opts?.size ?? 14;
+        const tracking = opts?.tracking ?? 0;
+        return [
+          String(text).length * size * 0.5
+            + Math.max(0, String(text).length - 1) * tracking,
+          size,
+        ];
+      },
+    },
+  );
+  const overlayTargets = regions.filter(
+    (region) =>
+      region.kind === "style_target"
+      && region.classId.startsWith("chartOverlay."),
+  );
+  assert.deepEqual(
+    [...new Set(overlayTargets.map((region) => region.classId))].sort(),
+    [
+      "chartOverlay.events.dayHour.glyph",
+      "chartOverlay.events.dayHour.label",
+      "chartOverlay.events.dayHour.trailing",
+      "chartOverlay.events.header.glyph",
+      "chartOverlay.events.header.label",
+      "chartOverlay.events.header.trailing",
+      "chartOverlay.events.signal.glyph",
+      "chartOverlay.events.signal.label",
+      "chartOverlay.events.signal.trailing",
+      "chartOverlay.houseSystem.bottomRight",
+      "chartOverlay.information.bottomLeft",
+      "chartOverlay.information.topLeft",
+    ],
+  );
+  assert.ok(
+    overlayTargets.every(
+      (region) =>
+        region.shape === "rect"
+        && region.width > 0
+        && region.height > 0,
+    ),
+  );
+  assert.ok(
+    overlayTargets.some(
+      (region) =>
+        region.classId === "chartOverlay.events.dayHour.glyph"
+        && region.bodyId === "sun"
+        && region.colorValue === DEFAULT_WHEEL_RENDER_STYLE.palette.planets[0],
+    ),
+  );
+});
+
+test("comparison house-cusp style targets match the twelve painted cusps exactly", async () => {
+  const drawChart = await loadDrawChartCollisionInternals();
+  const chart = {
+    meta: {
+      dateDisplay: "2026.July.26",
+      timeDisplay: "12:34:56",
+      place: "Berlin",
+      placeCoords: "13E 52N",
+    },
+    planets: [],
+    angles: { asc: 0, dsc: 180, mc: 90, ic: 270 },
+    houses: { cusps: Array.from({ length: 12 }, (_, index) => index * 30) },
+    aspects: [],
+    options: {
+      theme: 0,
+      signVariant: 1,
+      showHouses: true,
+      showOuterHouseLines: true,
+      showPositions: false,
+      showAspects: false,
+      showSymbols: false,
+      showTerms: false,
+      showDecans: false,
+      showInformation: false,
+      showHouseSystem: false,
+    },
+  };
+  const regions = drawChart.computeHitRegions(
+    {
+      primaryChart: chart,
+      comparisonChart: {
+        ...chart,
+        angles: { asc: 12, dsc: 192, mc: 101, ic: 281 },
+        houses: {
+          cusps: Array.from(
+            { length: 12 },
+            (_, index) => index * 30 + 7,
+          ),
+        },
+      },
+      displayDatetime: "2026-07-26T12:34:56+02:00",
+      renderVariant: "round",
+      overlayRenderMode: "full",
+      outerRingMode: "none",
+    },
+    {
+      width: 800,
+      height: 800,
+      renderStyle: DEFAULT_WHEEL_RENDER_STYLE,
+      includeStyleTargets: true,
+      textsize: (text, opts) => [
+        String(text).length * (opts?.size ?? 14) * 0.5,
+        opts?.size ?? 14,
+      ],
+    },
+  );
+  const outerCusps = regions.filter(
+    (region) =>
+      region.kind === "style_target"
+      && region.classId === "houses.outer.cusp",
+  );
+  assert.equal(outerCusps.length, 12);
+  assert.equal(new Set(outerCusps.map((region) => region.itemId)).size, 12);
+});
+
+test("body collision measurement consumes full profile-v2 typography paint", async () => {
+  const drawChart = await loadDrawChartCollisionInternals();
+  const style = createWheelRenderStyle({
+    palette: DEFAULT_WHEEL_RENDER_STYLE.palette,
+    authoringOverrides: {
+      referenceRadius: 400,
+      typography: {
+        classic: {
+          "bodies.inner.glyph": {
+            fontRef: {
+              cssFamily: "AuditFace",
+              weight: 650,
+              style: "italic",
+            },
+            trackingPx: 7,
+          },
+        },
+      },
+      linePaint: {},
+      fillPaint: {},
+      ringRadii: {},
+    },
+  });
+  const typography = resolveWheelTypographyMetrics(style, "classic", 400);
+  const measured = [];
+  const chart = {
+    meta: {
+      dateDisplay: "",
+      timeDisplay: "",
+      place: "",
+      placeCoords: "",
+    },
+    planets: [
+      {
+        id: "sun",
+        seId: 0,
+        longitude: 10,
+        latitude: 0,
+        speed: 1,
+        glyph: "A",
+      },
+      {
+        id: "moon",
+        seId: 1,
+        longitude: 10.1,
+        latitude: 0,
+        speed: 1,
+        glyph: "B",
+      },
+    ],
+    angles: { asc: 0, dsc: 180, mc: 90, ic: 270 },
+    houses: { cusps: Array.from({ length: 12 }, (_, index) => index * 30) },
+    aspects: [],
+    options: {
+      theme: 0,
+      signVariant: 1,
+      showHouses: false,
+      showPositions: false,
+      showAspects: false,
+      showSymbols: false,
+      showTerms: false,
+      showDecans: false,
+    },
+  };
+  drawChart.arrangeBodies(
+    {
+      textsize: (text, opts) => {
+        measured.push({ text, opts });
+        return [
+          String(text).length * 10
+            + Math.max(0, String(text).length - 1) * (opts?.tracking ?? 0),
+          opts?.size ?? 14,
+        ];
+      },
+    },
+    chart,
+    [400, 400],
+    chart.angles.asc,
+    250,
+    "FallbackBody",
+    "FallbackUi",
+    typography,
+    style,
+    false,
+    false,
+    true,
+    false,
+    false,
+    false,
+  );
+  const bodyMeasures = measured.filter(
+    ({ text }) => text === "A" || text === "B",
+  );
+  assert.ok(bodyMeasures.length >= 2);
+  assert.ok(
+    bodyMeasures.every(({ opts }) =>
+      opts.font === "AuditFace"
+      && opts.weight === 650
+      && opts.style === "italic"
+      && opts.tracking === 7
+    ),
+  );
+});
+
+test("Anglo filled angle arrows consume the resolved semantic class color", async () => {
+  const drawChart = await loadDrawChartCollisionInternals();
+  const style = createWheelRenderStyle({
+    palette: DEFAULT_WHEEL_RENDER_STYLE.palette,
+    authoringTargetProfile: "anglo",
+    authoringOverrides: {
+      referenceRadius: 400,
+      typography: {},
+      linePaint: {
+        anglo: {
+          "angles.inner.arrowhead": {
+            color: "#123456",
+            opacity: 0.42,
+          },
+        },
+      },
+      fillPaint: {},
+      ringRadii: {},
+    },
+  });
+  const fills = [];
+  const context = {
+    fillStyle: "",
+    globalAlpha: 1,
+    save() {},
+    restore() {},
+    beginPath() {},
+    moveTo() {},
+    lineTo() {},
+    closePath() {},
+    fill() {
+      fills.push({
+        fillStyle: this.fillStyle,
+        globalAlpha: this.globalAlpha,
+      });
+    },
+  };
+  drawChart.drawAngloCuspArrow(
+    { ctx: context },
+    [100, 100],
+    { rInner: 80, r30: 100 },
+    0,
+    0,
+    "#legacy-angle",
+    style,
+  );
+  assert.deepEqual(fills, [{
+    fillStyle: "#123456",
+    globalAlpha: 0.42,
+  }]);
+});
+
+test("motion-marker collision uses the resolved body glyph size", async () => {
+  const drawChart = await loadDrawChartCollisionInternals();
+  const markerX = (fontSizePx) => {
+    const style = createWheelRenderStyle({
+      palette: DEFAULT_WHEEL_RENDER_STYLE.palette,
+      authoringOverrides: {
+        referenceRadius: 400,
+        typography: {
+          classic: {
+            "bodies.inner.glyph": { fontSizePx },
+          },
+        },
+        linePaint: {},
+        fillPaint: {},
+        ringRadii: {},
+      },
+    });
+    const recordedText = [];
+    const draw = new drawChart.CanvasDraw(recordingCanvas(recordedText));
+    draw.resize(800, 800, 1);
+    const chart = {
+      meta: {
+        dateDisplay: "",
+        timeDisplay: "",
+        place: "",
+        placeCoords: "",
+      },
+      planets: [{
+        id: "sun",
+        seId: 0,
+        longitude: 0,
+        latitude: 0,
+        speed: -1,
+        glyph: "A",
+        motion: "R",
+      }],
+      angles: { asc: 0, dsc: 180, mc: 90, ic: 270 },
+      houses: { cusps: Array.from({ length: 12 }, (_, index) => index * 30) },
+      aspects: [],
+      options: {
+        theme: 0,
+        signVariant: 1,
+        showHouses: false,
+        showPositions: false,
+        showAspects: false,
+        showSymbols: false,
+        showTerms: false,
+        showDecans: false,
+      },
+    };
+    drawChart.drawPlanets(
+      draw,
+      [400, 400],
+      { rPlanet: 200, rRetr: 190 },
+      chart.angles.asc,
+      chart,
+      new Map(),
+      new Map(),
+      style.palette,
+      "FallbackBody",
+      "FallbackUi",
+      resolveWheelTypographyMetrics(style, "classic", 400),
+      style,
+    );
+    return recordedText.find(({ text }) => text === "R")?.x;
+  };
+  const defaultMarkerX = markerX(25);
+  const enlargedMarkerX = markerX(80);
+  assert.equal(typeof defaultMarkerX, "number");
+  assert.equal(typeof enlargedMarkerX, "number");
+  assert.ok(
+    enlargedMarkerX > defaultMarkerX + 10,
+    `expected enlarged glyph collision to move marker inward: ${defaultMarkerX} -> ${enlargedMarkerX}`,
+  );
 });
 
 test("default geometry preserves the full wheel mode and subdivision matrix", () => {
@@ -598,7 +1131,7 @@ test("default geometry preserves the full wheel mode and subdivision matrix", ()
   assert.equal(matrix.length, 48);
   assert.equal(
     createHash("sha256").update(JSON.stringify(matrix)).digest("hex"),
-    "a49f25d136690135c80461284928cd623ffd42363ecd34b446c09f5e5398d002",
+    "7173ff11dd57e0bbe5bcdb9a5560a89814ce6ababfd3a5b9d15905b039881cfb",
   );
   const selected = Object.fromEntries(
     matrix
@@ -651,6 +1184,78 @@ test("default geometry preserves the full wheel mode and subdivision matrix", ()
       rOuterHouse: 940,
     },
   });
+});
+
+test("Anglo projected points use the current outer-body perimeter", () => {
+  const single = resolveWheelRingSet(DEFAULT_WHEEL_RENDER_STYLE, {
+    profile: "anglo",
+    mode: "single",
+    maxRadius: 400,
+    hasOuterRing: true,
+    showTerms: false,
+    showDecans: false,
+    showHouses: true,
+    showPositions: true,
+    comparisonWithOuterHouses: false,
+  });
+  const comparison = resolveWheelRingSet(DEFAULT_WHEEL_RENDER_STYLE, {
+    profile: "anglo",
+    mode: "comparison",
+    maxRadius: 400,
+    hasOuterRing: true,
+    showTerms: false,
+    showDecans: false,
+    showHouses: true,
+    showPositions: true,
+    comparisonWithOuterHouses: true,
+  });
+
+  assert.equal(single.rAntis, 380);
+  assert.equal(comparison.rAntis, comparison.rOuterPlanet);
+  assert.equal(comparison.rAntis, 344);
+});
+
+test("restrained Anglo comparisons reserve a golden-section outer-house number lane", () => {
+  const standard = resolveWheelRingSet(DEFAULT_WHEEL_RENDER_STYLE, {
+    profile: "anglo",
+    mode: "comparison",
+    maxRadius: 400,
+    hasOuterRing: true,
+    showTerms: false,
+    showDecans: false,
+    showHouses: true,
+    showPositions: true,
+    comparisonWithOuterHouses: false,
+    restrainedAngloComparison: false,
+  });
+  const comparison = resolveWheelRingSet(DEFAULT_WHEEL_RENDER_STYLE, {
+    profile: "anglo",
+    mode: "comparison",
+    maxRadius: 400,
+    hasOuterRing: true,
+    showTerms: false,
+    showDecans: false,
+    showHouses: true,
+    showPositions: true,
+    comparisonWithOuterHouses: false,
+    restrainedAngloComparison: true,
+  });
+
+  assert.equal(standard.r30, 358);
+  assert.equal(standard.rOuterPlanet, 380);
+  assert.equal(standard.rOuterHouseName, undefined);
+  assert.equal(comparison.r30, 320);
+  assert.equal(comparison.rOuterPlanet, 344);
+  assert.equal(comparison.rOuterHouse, 376);
+  assert.equal(comparison.rOuterHouseName, 364);
+  assert.ok(
+    Math.abs(
+      (comparison.rOuterHouseName - comparison.rOuterPlanet) /
+        (comparison.rOuterHouse - comparison.rOuterPlanet) -
+        1 / ((1 + Math.sqrt(5)) / 2),
+    ) < 0.01,
+  );
+  assert.equal(comparison.rOuterMax, 396);
 });
 
 test("render styles own an immutable snapshot of the dynamic palette", () => {
@@ -729,10 +1334,12 @@ test("ChartCanvas passes one memoized renderStyle to every draw and hit path", a
   assert.match(source, /effectiveTheme\?\.chartPalette,/);
   assert.doesNotMatch(source, /getComputedStyle/);
   assert.doesNotMatch(source, /createWheelRenderStyle\(/);
-  assert.equal((source.match(/drawSnapshotLayer\(/g) ?? []).length, 3);
-  assert.equal((source.match(/\n\s+renderStyle,\n/g) ?? []).length, 4);
+  assert.equal((source.match(/drawSnapshotLayer\(/g) ?? []).length, 4);
+  assert.equal((source.match(/\n\s+renderStyle,\n/g) ?? []).length, 5);
   assert.doesNotMatch(source, /\n\s+palette,\n\s+renderStyle,/);
   assert.match(source, /computeHitRegions\([\s\S]*?renderStyle,/);
+  assert.match(source, /overlayRenderMode === "step_fast"[\s\S]*?fill: false/);
+  assert.match(source, /drawSnapshotLayer\(fillDraw, renderSnapshot, "fill"/);
 });
 
 test("draw and hit paths resolve the shared metrics instead of private literals", async () => {
@@ -751,7 +1358,7 @@ test("draw and hit paths resolve the shared metrics instead of private literals"
   );
   assert.match(source, /style\.outerLabels\.edgePadFactor/);
   assert.equal((source.match(/effectiveRings\(style,/g) ?? []).length, 2);
-  assert.equal((source.match(/comparisonRings\(style,/g) ?? []).length, 2);
+  assert.equal((source.match(/\? comparisonRings\(/g) ?? []).length, 2);
   for (const section of ["geometry", "typography", "strokes", "labels", "collision", "hit"]) {
     assert.match(source, new RegExp(`style\\.${section}`));
   }
@@ -760,6 +1367,61 @@ test("draw and hit paths resolve the shared metrics instead of private literals"
   assert.doesNotMatch(source, /renderVariant !== "round-compact"/);
   assert.doesNotMatch(source, /function chart(?:Outer)?SymbolSize/);
   assert.doesNotMatch(source, /const ANGLO_ANGLE_LABEL_(?:SCALE|WEIGHT)/);
+});
+
+test("Anglo comparisons share one restrained outer-house treatment", async () => {
+  const drawSource = await readSource(
+    new URL("../src/lib/chart/draw-chart.ts", import.meta.url),
+  );
+  const canvasSource = await readSource(
+    new URL("../src/components/workshell/chart-canvas.tsx", import.meta.url),
+  );
+
+  assert.match(
+    drawSource,
+    /function comparisonShowsHouseCusps[\s\S]*?snapshot\.comparisonChart[\s\S]*?chart\.options\.showHouses[\s\S]*?chart\.options\.showOuterHouseLines !== false/,
+  );
+  assert.match(
+    drawSource,
+    /function comparisonUsesOuterHouseBand[\s\S]*?comparisonShowsHouseCusps\(snapshot, chart\) && !isAngloWheel\(chart\)/,
+  );
+  assert.match(
+    drawSource,
+    /function usesRestrainedAngloComparison[\s\S]*?snapshot\.document\?\.compoundKind === "synastry"/,
+  );
+  assert.match(
+    drawSource,
+    /if \(comparisonChart && showOuterHouseCusps\) \{\s*drawOuterHouses\(/,
+  );
+  assert.match(
+    drawSource,
+    /const outerHouseNameRadius =\s*ringset\.rOuterHouseName \?\? ringset\.rOuterArrow \?\? ringset\.rOuterASCMC/,
+  );
+  assert.match(
+    drawSource,
+    /const outerRadius = restrainedAngloComparison[\s\S]*?\? ringset\.rOuterHouse[\s\S]*?: ringset\.rOuterHouseName \?\? ringset\.rOuterASCMC \?\? ringset\.rOuterArrow/,
+  );
+  assert.match(
+    drawSource,
+    /showOuterHouseBand \|\| restrainedAngloComparison/,
+  );
+  assert.match(
+    drawSource,
+    /const outerSymbolSize = restrainedAngloComparison[\s\S]*?\? typography\.bodySize[\s\S]*?: typography\.outerSize/,
+  );
+  assert.match(
+    drawSource,
+    /outer && !usePrimaryGlyphSize[\s\S]*?\? typography\.outerSize[\s\S]*?: typography\.bodySize/,
+  );
+  assert.doesNotMatch(drawSource, /comparisonLayout/);
+  assert.match(
+    canvasSource,
+    /const comparisonWithOuterHouseBand = Boolean\([\s\S]*?primary\.options\.showOuterHouseLines !== false[\s\S]*?profile !== "anglo"/,
+  );
+  assert.match(
+    canvasSource,
+    /restrainedAngloComparison:[\s\S]*?comparison[\s\S]*?profile === "anglo"[\s\S]*?renderSnapshot\.document\?\.compoundKind === "synastry"/,
+  );
 });
 
 test("maximum body glyph size is bounded and isolated from every other typography group", () => {
@@ -784,6 +1446,71 @@ test("maximum body glyph size is bounded and isolated from every other typograph
     cssVar === "--aries-wheel-body-scale" ? "0.126" : undefined
   );
   assert.equal(rejected.bodyScale, DEFAULT_WHEEL_RENDER_TOKENS.bodyScale);
+});
+
+test("prenatal syzygy keeps its dedicated glyph scale", async () => {
+  const drawChart = await loadDrawChartCollisionInternals();
+  const bodySize = 25;
+  const syzygyScale = DEFAULT_WHEEL_RENDER_STYLE.typography.ratios.syzygyScale;
+
+  assert.ok(
+    Math.abs(drawChart.bodyGlyphSize("__syzygy", bodySize, syzygyScale) - 14.5) < 1e-9,
+  );
+  assert.equal(drawChart.bodyGlyphSize("sun", bodySize, syzygyScale), bodySize);
+});
+
+test("Surveil targets distinguish Morinus glyphs from text labels", async () => {
+  const drawChart = await loadDrawChartCollisionInternals();
+  const rings = resolveWheelRingSet(DEFAULT_WHEEL_RENDER_STYLE, {
+    profile: "classic",
+    mode: "single",
+    maxRadius: 400,
+    hasOuterRing: false,
+    showTerms: false,
+    showDecans: false,
+    showHouses: true,
+    showPositions: true,
+    comparisonWithOuterHouses: false,
+  });
+  const measurer = {
+    textsize: (text, opts) => [
+      String(text).length * (opts?.size ?? 12) * 0.6,
+      opts?.size ?? 12,
+    ],
+  };
+  const layout = (mark) =>
+    drawChart.layoutSurveilMark(
+      measurer,
+      [400, 400],
+      rings,
+      0,
+      mark,
+      { surveilAccent: "#ff8800" },
+      "Aries UI",
+      "Aries Morinus",
+      25,
+      DEFAULT_WHEEL_RENDER_STYLE,
+    );
+  assert.equal(
+    layout({
+      id: "sun",
+      longitude: 15,
+      label: "Sun",
+      glyph: "A",
+      glyphFont: "morinus",
+    }).marker.classId,
+    "surveil.marker.glyph",
+  );
+  assert.equal(
+    layout({
+      id: "asc",
+      longitude: 30,
+      label: "Asc",
+      glyph: "Asc",
+      glyphFont: "text",
+    }).marker.classId,
+    "surveil.marker.label",
+  );
 });
 
 test("maximum body glyph layout terminates with finite shifts", { timeout: 5_000 }, async () => {
@@ -853,6 +1580,176 @@ test("maximum body glyph layout terminates with finite shifts", { timeout: 5_000
   );
   assert.ok(fixedStarLayout.shifts.every(Number.isFinite));
   assert.ok(fixedStarLayout.yOffsets.every(Number.isFinite));
+});
+
+test("outer-ring title avoidance keeps every label family outside the wheel", { timeout: 5_000 }, async () => {
+  const drawChart = await loadDrawChartCollisionInternals();
+  const center = [400, 400];
+  const labelRadius = 300;
+  const measurer = { textsize: () => [100, 18] };
+  const typography = resolveWheelTypographyMetrics(
+    DEFAULT_WHEEL_RENDER_STYLE,
+    "classic",
+    400,
+  );
+  const titleBounds = { x: 250, y: 75, w: 300, h: 50 };
+  const items = [
+    {
+      id: "outer-alkaid",
+      family: "fixed_stars",
+      longitude: 260,
+      label: "Alkaid 27°18′",
+    },
+    {
+      id: "outer-children",
+      family: "arabic_parts",
+      longitude: 260,
+      label: "Children",
+    },
+    {
+      id: "outer-dodecatemoria-mars",
+      family: "dodecatemoria",
+      longitude: 260,
+      label: "Mars",
+      segments: [{ text: "E", kind: "planet", seId: 4 }],
+    },
+  ];
+  for (const item of items) {
+    const outerItemArgs = [
+      measurer,
+      center,
+      285,
+      0,
+      [item],
+      labelRadius,
+      labelRadius,
+      "sans-serif",
+      "AriesMorinus",
+      typography,
+      { planets: [] },
+      DEFAULT_WHEEL_RENDER_STYLE.palette,
+      DEFAULT_WHEEL_RENDER_STYLE,
+    ];
+    const unobstructedOuterItem = drawChart.prepareOuterRingItems(
+      ...outerItemArgs,
+    );
+    const obstructedOuterItem = drawChart.prepareOuterRingItems(
+      ...outerItemArgs,
+      [titleBounds],
+    );
+    assert.equal(unobstructedOuterItem.shifts[0], 0, item.family);
+    assert.ok(
+      Math.abs(obstructedOuterItem.shifts[0]) >= 1.5,
+      item.family,
+    );
+    assert.ok(
+      Math.abs(obstructedOuterItem.shifts[0]) < 2,
+      item.family,
+    );
+    assert.equal(unobstructedOuterItem.yOffsets[0], 0, item.family);
+    assert.ok(obstructedOuterItem.yOffsets[0] > 0, item.family);
+  }
+
+  for (const [family, width, height] of [
+    ["fixed_stars", 100, 18],
+    ["arabic_parts", 240, 18],
+    ["dodecatemoria", 42, 42],
+  ]) {
+    const radial = -Math.PI / 2;
+    const x = center[0] - width / 2;
+    const y = center[1] - labelRadius + 30;
+    const [outsideX, outsideY] = drawChart.ensureTextOutsideOuterWheel(
+      center,
+      285,
+      radial,
+      x,
+      y,
+      width,
+      height,
+      labelRadius,
+      3,
+    );
+    const minimumCornerRadius = Math.min(
+      Math.hypot(outsideX - center[0], outsideY - height / 2 - center[1]),
+      Math.hypot(outsideX + width - center[0], outsideY - height / 2 - center[1]),
+      Math.hypot(outsideX - center[0], outsideY + height / 2 - center[1]),
+      Math.hypot(outsideX + width - center[0], outsideY + height / 2 - center[1]),
+    );
+    assert.ok(minimumCornerRadius >= 288, family);
+  }
+
+  const chart = {
+    planets: [],
+    angles: { asc: 0, dsc: 180, mc: 90, ic: 270 },
+    houses: { cusps: Array.from({ length: 12 }, (_, index) => index * 30) },
+    aspects: [],
+    options: {
+      uranus: true,
+      pluto: 0,
+      theme: 0,
+      signVariant: 1,
+      showHouses: false,
+      showPositions: false,
+      showInformation: false,
+      showHouseSystem: false,
+      showAspects: false,
+      showSymbols: false,
+      showTerms: false,
+      showDecans: false,
+    },
+  };
+  const rings = resolveWheelRingSet(DEFAULT_WHEEL_RENDER_STYLE, {
+    profile: "classic",
+    mode: "single",
+    maxRadius: 400,
+    hasOuterRing: true,
+    showTerms: false,
+    showDecans: false,
+    showHouses: false,
+    showPositions: false,
+    comparisonWithOuterHouses: false,
+  });
+  for (const [mode, item] of [
+    ["fixstars", items[0]],
+    ["arabic_parts", items[1]],
+    ["dodecatemoria", items[2]],
+  ]) {
+    const recordedText = [];
+    const draw = new drawChart.CanvasDraw(recordingCanvas(recordedText));
+    draw.resize(800, 800, 1);
+    drawChart.drawSnapshotLayer(
+      draw,
+      {
+        primaryChart: chart,
+        displayDatetime: "2026-07-27T13:16:33+02:00",
+        renderVariant: "round-classic",
+        overlayRenderMode: "full",
+        outerRingMode: mode,
+        outerRingItems: { [mode]: [item] },
+      },
+      "outer-label",
+      {
+        width: 800,
+        height: 800,
+        chartSize: 800,
+        renderStyle: DEFAULT_WHEEL_RENDER_STYLE,
+        outerLabelCollisionBounds: [titleBounds],
+      },
+    );
+    assert.ok(recordedText.length > 0, mode);
+    for (const run of recordedText) {
+      const minimumCornerRadius = Math.min(
+        Math.hypot(run.x - center[0], run.y - center[1]),
+        Math.hypot(run.x + run.w - center[0], run.y - center[1]),
+        Math.hypot(run.x - center[0], run.y + run.h - center[1]),
+        Math.hypot(run.x + run.w - center[0], run.y + run.h - center[1]),
+      );
+      assert.ok(
+        minimumCornerRadius >= rings.rOuterLine,
+        `${mode} run ${run.text} crossed the outer wheel`,
+      );
+    }
+  }
 });
 
 test("Anglo dense-layout modes distinguish soft house cusps from hard angles", { timeout: 5_000 }, async () => {
@@ -1413,6 +2310,52 @@ test("July 21 2026 H round trips preserve each explicit Anglo layout mode", { ti
   );
 });
 
+test("A keeps transit aspects gated while M reveals only inner-wheel minor aspects", async () => {
+  const drawChart = await loadDrawChartCollisionInternals();
+  const primaryAspects = Array.from({ length: 12 }, (_, type) => ({
+    p1: "sun",
+    p2: "moon",
+    type,
+    orb: 0,
+    maxOrb: 1,
+    exact: true,
+  }));
+  const chart = {
+    aspects: primaryAspects,
+    clickAspectFlags: { exclusiveOnClick: true },
+  };
+  const minorOnlyState = {
+    selectedBody: null,
+    hideAll: true,
+    minorOnly: true,
+  };
+
+  assert.deepEqual(
+    drawChart.resolveAspectsForDraw(chart, minorOnlyState).map((aspect) => aspect.type),
+    [1, 2, 4, 7, 8, 9, 11],
+  );
+  assert.deepEqual(
+    drawChart.resolveInterChartAspectsForDraw(
+      chart,
+      primaryAspects.map((aspect) => ({
+        outer: "mars",
+        inner: "sun",
+        type: aspect.type,
+        orb: aspect.orb,
+        maxOrb: aspect.maxOrb,
+        exact: aspect.exact,
+      })),
+      undefined,
+      minorOnlyState,
+    ),
+    [],
+  );
+  assert.equal(
+    drawChart.resolveAspectsForDraw(chart, { ...minorOnlyState, minorOnly: false }),
+    null,
+  );
+});
+
 test("April 15 2026 dense Aries cluster satisfies both fixed-radius Anglo modes", { timeout: 5_000 }, async () => {
   const drawChart = await loadDrawChartCollisionInternals();
   const width = 1_632;
@@ -1521,72 +2464,6 @@ test("April 15 2026 dense Aries cluster satisfies both fixed-radius Anglo modes"
     }
     return result;
   };
-  const radialInterval = (cusp, box, asc) => {
-    const unitPoint = polarPoint(1, cusp, asc);
-    const unit = [unitPoint[0] - center[0], unitPoint[1] - center[1]];
-    let entry = Number.NEGATIVE_INFINITY;
-    let exit = Number.POSITIVE_INFINITY;
-    for (const [origin, direction, minimum, maximum] of [
-      [center[0], unit[0], box.x, box.x + box.w],
-      [center[1], unit[1], box.y, box.y + box.h],
-    ]) {
-      if (Math.abs(direction) < 1e-9) {
-        if (origin < minimum || origin > maximum) return null;
-        continue;
-      }
-      const first = (minimum - origin) / direction;
-      const second = (maximum - origin) / direction;
-      entry = Math.max(entry, Math.min(first, second));
-      exit = Math.min(exit, Math.max(first, second));
-      if (entry > exit) return null;
-    }
-    return exit > 0 ? [Math.max(0, entry), exit] : null;
-  };
-  const segmentIntersectsBox = (segment, box, inset = 0.5) => {
-    const minimums = [box.x + inset, box.y + inset];
-    const maximums = [box.x + box.w - inset, box.y + box.h - inset];
-    let entry = 0;
-    let exit = 1;
-    for (let axis = 0; axis < 2; axis += 1) {
-      const origin = segment.from[axis];
-      const direction = segment.to[axis] - origin;
-      if (Math.abs(direction) < 1e-9) {
-        if (origin < minimums[axis] || origin > maximums[axis]) return false;
-        continue;
-      }
-      const first = (minimums[axis] - origin) / direction;
-      const second = (maximums[axis] - origin) / direction;
-      entry = Math.max(entry, Math.min(first, second));
-      exit = Math.min(exit, Math.max(first, second));
-      if (entry > exit) return false;
-    }
-    return true;
-  };
-  const connectedPath = (segments, start, end) => {
-    const queue = [{ point: start, path: [], used: new Set() }];
-    const visited = new Set();
-    while (queue.length) {
-      const current = queue.shift();
-      if (samePoint(current.point, end)) return current.path;
-      const key = `${Math.round(current.point[0])}:${Math.round(current.point[1])}:${current.path.length}`;
-      if (visited.has(key) || current.path.length >= 12) continue;
-      visited.add(key);
-      for (let index = 0; index < segments.length; index += 1) {
-        if (current.used.has(index)) continue;
-        const segment = segments[index];
-        const next = samePoint(current.point, segment.from)
-          ? segment.to
-          : samePoint(current.point, segment.to)
-            ? segment.from
-            : null;
-        if (!next) continue;
-        const used = new Set(current.used);
-        used.add(index);
-        queue.push({ point: next, path: [...current.path, segment], used });
-      }
-    }
-    return null;
-  };
   const render = (mode) => {
     const recordedText = [];
     const recordedLines = [];
@@ -1656,7 +2533,6 @@ test("April 15 2026 dense Aries cluster satisfies both fixed-radius Anglo modes"
   const results = new Map(
     ["leader-columns", "routed-cusps"].map((mode) => [mode, render(mode)]),
   );
-  let routedDoglegCusp = null;
   for (const mode of ["leader-columns", "routed-cusps"]) {
     const result = results.get(mode);
     const { chart, clusterBoxes, regions } = result;
@@ -1753,42 +2629,6 @@ test("April 15 2026 dense Aries cluster satisfies both fixed-radius Anglo modes"
       );
     }
 
-    if (mode === "routed-cusps") {
-      const startRadius = Math.min(result.rings.rBase, result.rings.rInner);
-      const endRadius = Math.max(result.rings.rBase, result.rings.rInner);
-      const ordinaryCusps = chart.houses.cusps.filter((cusp) =>
-        angleRays.every((angle) => Math.abs(signedDelta(cusp, angle)) > 1e-9)
-      );
-      for (const cusp of ordinaryCusps) {
-        const occupied = result.bodyBoxes
-          .flatMap((entry) => entry.boxes)
-          .map((box) => ({ box, interval: radialInterval(cusp, box, chart.angles.asc) }))
-          .filter(({ interval }) =>
-            interval && interval[1] > startRadius && interval[0] < endRadius
-          );
-        if (!occupied.length) continue;
-        const start = polarPoint(startRadius, cusp, chart.angles.asc);
-        const end = polarPoint(endRadius, cusp, chart.angles.asc);
-        const path = connectedPath(result.geometryLines, start, end);
-        if (!path || path.length < 3 || hasSegment(result.geometryLines, start, end)) continue;
-        const offRayMiddle = path.some((segment) =>
-          Math.abs(signedDelta(longitudeAtPoint(...segment.from, chart.angles.asc), cusp)) > 0.2 &&
-          Math.abs(signedDelta(longitudeAtPoint(...segment.to, chart.angles.asc), cusp)) > 0.2
-        );
-        if (!offRayMiddle) continue;
-        assert.ok(
-          path.every((segment) =>
-            result.bodyBoxes.flatMap((entry) => entry.boxes).every((box) =>
-              !segmentIntersectsBox(segment, box)
-            )
-          ),
-          `routed cusp ${cusp} may not cross occupied component bounds`,
-        );
-        routedDoglegCusp = cusp;
-        break;
-      }
-      assert.notEqual(routedDoglegCusp, null, "routed mode must dogleg an occupied ordinary cusp");
-    }
     assert.deepEqual(overlaps, [], mode);
   }
 
@@ -1827,7 +2667,7 @@ test("April 15 2026 dense Aries cluster satisfies both fixed-radius Anglo modes"
   }
 });
 
-test("occupied Anglo angles route the structural ray only in routed-cusps mode", { timeout: 5_000 }, async () => {
+test("occupied Anglo angle rays stay straight in every dense-layout mode", { timeout: 5_000 }, async () => {
   const drawChart = await loadDrawChartCollisionInternals();
   const center = [400, 400];
   const maxRadius = 400;
@@ -1854,60 +2694,6 @@ test("occupied Anglo angles route the structural ray only in routed-cusps mode",
     (samePoint(segment.from, from) && samePoint(segment.to, to)) ||
     (samePoint(segment.from, to) && samePoint(segment.to, from))
   );
-  const connectedPath = (segments, start, end) => {
-    const queue = [{ point: start, path: [], used: new Set() }];
-    while (queue.length) {
-      const current = queue.shift();
-      if (samePoint(current.point, end)) return current.path;
-      if (current.path.length >= 8) continue;
-      for (let index = 0; index < segments.length; index += 1) {
-        if (current.used.has(index)) continue;
-        const segment = segments[index];
-        const next = samePoint(current.point, segment.from)
-          ? segment.to
-          : samePoint(current.point, segment.to)
-            ? segment.from
-            : null;
-        if (!next) continue;
-        const used = new Set(current.used);
-        used.add(index);
-        queue.push({ point: next, path: [...current.path, segment], used });
-      }
-    }
-    return null;
-  };
-  const segmentIntersectsBox = (segment, box, inset = 0.5) => {
-    const minimums = [box.x + inset, box.y + inset];
-    const maximums = [box.x + box.w - inset, box.y + box.h - inset];
-    let entry = 0;
-    let exit = 1;
-    for (let axis = 0; axis < 2; axis += 1) {
-      const origin = segment.from[axis];
-      const direction = segment.to[axis] - origin;
-      if (Math.abs(direction) < 1e-9) {
-        if (origin < minimums[axis] || origin > maximums[axis]) return false;
-        continue;
-      }
-      const first = (minimums[axis] - origin) / direction;
-      const second = (maximums[axis] - origin) / direction;
-      entry = Math.max(entry, Math.min(first, second));
-      exit = Math.min(exit, Math.max(first, second));
-      if (entry > exit) return false;
-    }
-    return true;
-  };
-
-  const midpointRadius = (rings.rBase + rings.rInner) / 2;
-  const rayPoint = polarPoint(midpointRadius, asc);
-  const occupiedBox = {
-    x: rayPoint[0] - 18,
-    y: rayPoint[1] - 4,
-    w: 36,
-    h: 24,
-  };
-  const componentBounds = new Map([["sun", [occupiedBox]]]);
-  const start = polarPoint(Math.min(rings.rBase, rings.rInner), asc);
-  const end = polarPoint(Math.max(rings.rBase, rings.rInner), asc);
   const render = (mode) => {
     const recordedLines = [];
     const draw = new drawChart.CanvasDraw(recordingCanvas([], recordedLines));
@@ -1918,7 +2704,7 @@ test("occupied Anglo angles route the structural ray only in routed-cusps mode",
       rings,
       asc,
       {
-        planets: [],
+        planets: [{ id: "sun", longitude: asc, glyph: "A" }],
         angles: { asc, dsc: 180, mc: 90, ic: 270 },
         houses: { cusps: Array.from({ length: 12 }, (_, index) => 15 + index * 30) },
         aspects: [],
@@ -1932,30 +2718,737 @@ test("occupied Anglo angles route the structural ray only in routed-cusps mode",
       chartSize,
       {},
       DEFAULT_WHEEL_RENDER_STYLE,
-      componentBounds,
     );
     return recordedLines;
   };
 
-  const routedLines = render("routed-cusps");
-  const routedPath = connectedPath(routedLines, start, end);
-  assert.ok(routedPath, "the routed ASC must remain connected between its exact endpoints");
-  assert.ok(routedPath.length >= 3, "an occupied ASC must use a dogleg");
-  assert.equal(hasSegment(routedLines, start, end), false, "the occupied ASC may not stay straight");
-  assert.ok(
-    routedPath.some((segment) =>
-      Math.abs(segment.from[1] - center[1]) > 1 &&
-      Math.abs(segment.to[1] - center[1]) > 1
-    ),
-    "the dogleg must contain an off-ray middle segment",
+  for (const mode of ["leader-columns", "routed-cusps"]) {
+    const lines = render(mode);
+    for (const longitude of [asc, 180, 90, 270]) {
+      assert.ok(
+        hasSegment(
+          lines,
+          polarPoint(Math.min(rings.rBase, rings.rInner), longitude),
+          polarPoint(Math.max(rings.rBase, rings.rInner), longitude),
+        ),
+        `${mode} keeps the hard ${longitude}° angle ray straight`,
+      );
+    }
+  }
+});
+
+function fixturePolarPoint(center, radius, longitude, asc) {
+  const angle = (180 + longitude - asc) * Math.PI / 180;
+  return [
+    center[0] + Math.cos(angle) * radius,
+    center[1] - Math.sin(angle) * radius,
+  ];
+}
+
+function renderScreenshotCuspFixture(
+  drawChart,
+  columns,
+  {
+    center = [400, 400],
+    asc = 0,
+    longitude = 0,
+    innerRadius = 100,
+    outerRadius = 300,
+    previousCusp,
+    nextCusp,
+    structuralLongitudes,
+    lineWidth = 1,
+    structuralLineWidth,
+  } = {},
+) {
+  const resolvedPreviousCusp = previousCusp ?? longitude - 30;
+  const resolvedNextCusp = nextCusp ?? longitude + 30;
+  const recordedLines = [];
+  const draw = new drawChart.CanvasDraw(recordingCanvas([], recordedLines));
+  draw.resize(800, 800, 1);
+  drawChart.drawRoutedRadialLine(
+    draw,
+    center,
+    asc,
+    longitude,
+    innerRadius,
+    outerRadius,
+    { fill: "#fff", width: lineWidth },
+    {
+      columns,
+      previousCusp: resolvedPreviousCusp,
+      nextCusp: resolvedNextCusp,
+      structuralLongitudes: structuralLongitudes ?? [
+        resolvedPreviousCusp,
+        longitude,
+        resolvedNextCusp,
+      ],
+      structuralLineWidth,
+    },
   );
-  assert.ok(
-    routedPath.every((segment) => !segmentIntersectsBox(segment, occupiedBox)),
-    "the routed ASC may not pass through occupied component bounds",
+  const exactRay = {
+    from: fixturePolarPoint(center, innerRadius, longitude, asc),
+    to: fixturePolarPoint(center, outerRadius, longitude, asc),
+  };
+  return {
+    recordedLines,
+    exactRay,
+    straightRay: {
+      from: exactRay.from.map(Math.round),
+      to: exactRay.to.map(Math.round),
+    },
+  };
+}
+
+function fixtureSegmentIntersectsBox(segment, box, inset = 0) {
+  const minimums = [box.x + inset, box.y + inset];
+  const maximums = [box.x + box.w - inset, box.y + box.h - inset];
+  let entry = 0;
+  let exit = 1;
+  for (let axis = 0; axis < 2; axis += 1) {
+    const origin = segment.from[axis];
+    const direction = segment.to[axis] - origin;
+    if (Math.abs(direction) < 1e-9) {
+      if (origin < minimums[axis] || origin > maximums[axis]) return false;
+      continue;
+    }
+    const first = (minimums[axis] - origin) / direction;
+    const second = (maximums[axis] - origin) / direction;
+    entry = Math.max(entry, Math.min(first, second));
+    exit = Math.min(exit, Math.max(first, second));
+    if (entry > exit) return false;
+  }
+  return true;
+}
+
+function fixtureSegmentsMatch(left, right) {
+  const samePoint = (a, b) => a[0] === b[0] && a[1] === b[1];
+  return (
+    samePoint(left.from, right.from) && samePoint(left.to, right.to)
+  ) || (
+    samePoint(left.from, right.to) && samePoint(left.to, right.from)
+  );
+}
+
+function fixtureSegmentDistance(left, right) {
+  const cross = (a, b) => a[0] * b[1] - a[1] * b[0];
+  const leftVector = [left.to[0] - left.from[0], left.to[1] - left.from[1]];
+  const rightVector = [right.to[0] - right.from[0], right.to[1] - right.from[1]];
+  const starts = [right.from[0] - left.from[0], right.from[1] - left.from[1]];
+  const denominator = cross(leftVector, rightVector);
+  if (Math.abs(denominator) > 1e-9) {
+    const leftProgress = cross(starts, rightVector) / denominator;
+    const rightProgress = cross(starts, leftVector) / denominator;
+    if (
+      leftProgress >= 0 && leftProgress <= 1 &&
+      rightProgress >= 0 && rightProgress <= 1
+    ) return 0;
+  }
+  const pointDistance = (point, segment) => {
+    const dx = segment.to[0] - segment.from[0];
+    const dy = segment.to[1] - segment.from[1];
+    const lengthSquared = dx * dx + dy * dy;
+    const progress = lengthSquared > 0
+      ? Math.max(0, Math.min(1, (
+        (point[0] - segment.from[0]) * dx +
+        (point[1] - segment.from[1]) * dy
+      ) / lengthSquared))
+      : 0;
+    return Math.hypot(
+      point[0] - (segment.from[0] + dx * progress),
+      point[1] - (segment.from[1] + dy * progress),
+    );
+  };
+  return Math.min(
+    pointDistance(left.from, right),
+    pointDistance(left.to, right),
+    pointDistance(right.from, left),
+    pointDistance(right.to, left),
+  );
+}
+
+function projectedFixtureBoxWouldBlock(center, asc, longitude, innerRadius, outerRadius, box) {
+  const radialPoint = fixturePolarPoint(center, 1, longitude, asc);
+  const tangentPoint = fixturePolarPoint(center, 1, longitude + 90, asc);
+  const radial = [radialPoint[0] - center[0], radialPoint[1] - center[1]];
+  const tangent = [tangentPoint[0] - center[0], tangentPoint[1] - center[1]];
+  const projected = [
+    [box.x, box.y],
+    [box.x + box.w, box.y],
+    [box.x, box.y + box.h],
+    [box.x + box.w, box.y + box.h],
+  ].map(([x, y]) => {
+    const dx = x - center[0];
+    const dy = y - center[1];
+    return {
+      s: dx * radial[0] + dy * radial[1],
+      t: dx * tangent[0] + dy * tangent[1],
+    };
+  });
+  const sMin = Math.min(...projected.map(({ s }) => s));
+  const sMax = Math.max(...projected.map(({ s }) => s));
+  const tMin = Math.min(...projected.map(({ t }) => t));
+  const tMax = Math.max(...projected.map(({ t }) => t));
+  return sMax > innerRadius && sMin < outerRadius && tMin <= 0 && tMax >= 0;
+}
+
+function fixtureRootedPath(segments, start, center, outerRadius, tolerance = 1.5) {
+  const samePoint = (left, right) =>
+    Math.hypot(left[0] - right[0], left[1] - right[1]) <= tolerance;
+  const queue = [{ point: start, path: [], used: new Set() }];
+  while (queue.length) {
+    const current = queue.shift();
+    if (
+      current.path.length > 0 &&
+      Math.abs(Math.hypot(
+        current.point[0] - center[0],
+        current.point[1] - center[1],
+      ) - outerRadius) <= tolerance
+    ) {
+      return current.path;
+    }
+    if (current.path.length >= 8) continue;
+    for (let index = 0; index < segments.length; index += 1) {
+      if (current.used.has(index)) continue;
+      const segment = segments[index];
+      const next = samePoint(current.point, segment.from)
+        ? segment.to
+        : samePoint(current.point, segment.to)
+          ? segment.from
+          : null;
+      if (!next) continue;
+      const used = new Set(current.used);
+      used.add(index);
+      queue.push({ point: next, path: [...current.path, segment], used });
+    }
+  }
+  return null;
+}
+
+test("February 22 1990 screenshot geometry routes the occupied Capricorn-Moon cluster as one dogleg", { timeout: 5_000 }, async () => {
+  const drawChart = await loadDrawChartCollisionInternals();
+  // Renderer-only reconstruction of the reported screenshot's component
+  // bounds. The date names the regression; no astrology is reconstructed.
+  const componentBounds = new Map([
+    ["moon", [
+      { x: 230, y: 398, w: 24, h: 32 },
+      { x: 228, y: 390, w: 28, h: 8 },
+    ]],
+    ["mars", [{ x: 215, y: 382, w: 41, h: 8 }]],
+    ["saturn", [{ x: 205, y: 382, w: 10, h: 8 }]],
+  ]);
+  const columns = [...componentBounds.entries()].map(([key, components], index) => ({
+    key,
+    footLongitude: index + 1,
+    displayedLongitude: index + 1,
+    components,
+  }));
+  const allBoxes = [...componentBounds.values()].flat();
+  const { recordedLines, straightRay } = renderScreenshotCuspFixture(
+    drawChart,
+    columns,
   );
 
-  const leaderLines = render("leader-columns");
-  assert.ok(hasSegment(leaderLines, start, end), "leader mode keeps the occupied ASC straight");
+  assert.deepEqual(
+    allBoxes.filter((box) => fixtureSegmentIntersectsBox(straightRay, box)),
+    [componentBounds.get("moon")[0]],
+    "only the first Moon component triggers routing",
+  );
+  assert.equal(
+    recordedLines.some((segment) => fixtureSegmentsMatch(segment, straightRay)),
+    false,
+    "an occupied cusp may not remain one straight segment",
+  );
+  assert.equal(recordedLines.length, 3, "one rooted turn and one offset shaft avoid the cluster");
+  assert.deepEqual(
+    [recordedLines[0].from, ...recordedLines.map((segment) => segment.to)],
+    [
+      [300, 400],
+      [259, 400],
+      [259, 380],
+      [101, 380],
+    ],
+    "the rooted cusp leaves the exact inner foot once, clears both ink and stroke, and never returns into a bracket",
+  );
+  assert.ok(
+    Math.abs(Math.hypot(
+      recordedLines.at(-1).to[0] - 400,
+      recordedLines.at(-1).to[1] - 400,
+    ) - 300) <= 1,
+    "the offset shaft must finish on the outer circle",
+  );
+  assert.ok(
+    recordedLines.every((segment) =>
+      allBoxes.every((box) => !fixtureSegmentIntersectsBox(segment, box))
+    ),
+    "the connected dogleg may not cross any cluster component",
+  );
+});
+
+test("opposite-house feet use a broken true cusp instead of one cross-house dogleg", { timeout: 5_000 }, async () => {
+  const drawChart = await loadDrawChartCollisionInternals();
+  const columns = [
+    {
+      key: "previous",
+      footLongitude: 359,
+      displayedLongitude: 359,
+      components: [{ x: 250, y: 390, w: 30, h: 20 }],
+    },
+    {
+      key: "next",
+      footLongitude: 1,
+      displayedLongitude: 1,
+      components: [{ x: 230, y: 390, w: 20, h: 20 }],
+    },
+  ];
+  const { recordedLines, straightRay } = renderScreenshotCuspFixture(drawChart, columns);
+
+  assert.equal(recordedLines.length, 2, "mixed house ownership must use the segmented fallback");
+  assert.ok(
+    recordedLines.every((segment) =>
+      Math.abs(segment.from[1] - straightRay.from[1]) < 1e-6 &&
+      Math.abs(segment.to[1] - straightRay.to[1]) < 1e-6
+    ),
+    "the fallback stays on the immutable true cusp ray",
+  );
+  assert.deepEqual(recordedLines[0].from, straightRay.from, "the inner root remains exact");
+  assert.deepEqual(recordedLines.at(-1).to, straightRay.to, "the unobstructed outer tail remains exact");
+});
+
+test("a body from a non-adjacent house cannot assign an invented side to a cusp", { timeout: 5_000 }, async () => {
+  const drawChart = await loadDrawChartCollisionInternals();
+  const columns = [{
+    key: "distant-house-body",
+    footLongitude: 90,
+    displayedLongitude: 0,
+    components: [{ x: 240, y: 390, w: 30, h: 20 }],
+  }];
+  const { recordedLines, straightRay } = renderScreenshotCuspFixture(drawChart, columns);
+
+  assert.equal(recordedLines.length, 2, "non-adjacent ownership must use the segmented fallback");
+  assert.ok(
+    recordedLines.every((segment) =>
+      segment.from[1] === straightRay.from[1] &&
+      segment.to[1] === straightRay.to[1]
+    ),
+    "the renderer keeps the truthful cusp instead of guessing a house side",
+  );
+});
+
+test("August 19 2026 Mercury routing ignores a distant historical cluster member", { timeout: 5_000 }, async () => {
+  const drawChart = await loadDrawChartCollisionInternals();
+  const mercury = {
+    key: "mercury",
+    footLongitude: 1,
+    displayedLongitude: 1,
+    components: [{ x: 238, y: 394, w: 22, h: 20 }],
+  };
+  const distantJupiter = {
+    key: "jupiter",
+    footLongitude: 8,
+    displayedLongitude: 24,
+    components: [{ x: 150, y: 330, w: 30, h: 30 }],
+  };
+  const local = renderScreenshotCuspFixture(drawChart, [mercury]).recordedLines;
+  const withHistoricalMember = renderScreenshotCuspFixture(
+    drawChart,
+    [mercury, distantJupiter],
+  ).recordedLines;
+
+  assert.equal(local.length, 3, "Mercury alone must exercise the rooted route");
+  assert.deepEqual(
+    withHistoricalMember,
+    local,
+    "a non-touching old collision member may not enlarge the current Mercury route",
+  );
+});
+
+test("a subpixel cusp does not route around paint that its actual stroke misses", { timeout: 5_000 }, async () => {
+  const drawChart = await loadDrawChartCollisionInternals();
+  const lineWidth = 0.5;
+  const box = { x: 220, y: 400.6, w: 20, h: 10 };
+  const column = {
+    key: "mercury",
+    footLongitude: 1,
+    displayedLongitude: 1,
+    components: [box],
+  };
+  const { exactRay, recordedLines, straightRay } = renderScreenshotCuspFixture(
+    drawChart,
+    [column],
+    { lineWidth },
+  );
+
+  assert.equal(fixtureSegmentIntersectsBox(exactRay, box), false, "the snapped centerline misses");
+  assert.ok(box.y - straightRay.from[1] < 1, "the miss is deliberately below one pixel");
+  assert.ok(
+    box.y - straightRay.from[1] > lineWidth / 2,
+    "the authored stroke edge also clears the painted component",
+  );
+  assert.equal(recordedLines.length, 1, "no fixed one-pixel inflation may trigger routing");
+  assert.deepEqual(
+    { from: recordedLines[0].from, to: recordedLines[0].to },
+    straightRay,
+    "the genuinely clear subpixel cusp remains exact and straight",
+  );
+});
+
+test("thick cusp paint cannot overlap a nearby hard ray whose centerline stays clear", { timeout: 5_000 }, async () => {
+  const drawChart = await loadDrawChartCollisionInternals();
+  const center = [400, 400];
+  const innerRadius = 100;
+  const outerRadius = 300;
+  const hardLongitude = 1;
+  const column = {
+    key: "mercury",
+    footLongitude: 5,
+    displayedLongitude: 5,
+    components: [{ x: 238, y: 394, w: 22, h: 20 }],
+  };
+  const thin = renderScreenshotCuspFixture(drawChart, [column], {
+    center,
+    innerRadius,
+    outerRadius,
+    structuralLongitudes: [hardLongitude],
+    lineWidth: 0.5,
+    structuralLineWidth: 0.5,
+  });
+  const thick = renderScreenshotCuspFixture(drawChart, [column], {
+    center,
+    innerRadius,
+    outerRadius,
+    structuralLongitudes: [hardLongitude],
+    lineWidth: 6,
+    structuralLineWidth: 6,
+  });
+  const hardRay = {
+    from: fixturePolarPoint(center, innerRadius, hardLongitude, 0).map(Math.round),
+    to: fixturePolarPoint(center, outerRadius, hardLongitude, 0).map(Math.round),
+  };
+  const centerlineGap = Math.min(
+    ...thin.recordedLines.map((segment) => fixtureSegmentDistance(segment, hardRay)),
+  );
+
+  assert.equal(thin.recordedLines.length, 3, "thin non-overlapping strokes may use the rooted route");
+  assert.ok(centerlineGap > 0, "the candidate and hard-ray centerlines do not cross");
+  assert.ok(centerlineGap < 6, "the two thick half-widths would nevertheless overlap");
+  assert.equal(thick.recordedLines.length, 2, "stroke overlap must choose the segmented fallback");
+  assert.ok(
+    thick.recordedLines.every((segment) =>
+      Math.abs(segment.from[1] - thick.straightRay.from[1]) < 1e-6 &&
+      Math.abs(segment.to[1] - thick.straightRay.to[1]) < 1e-6
+    ),
+    "the fallback keeps only collinear true-cusp fragments",
+  );
+});
+
+test("production-layout screenshot pattern routes measured Moon-Mars-Saturn bounds as one cluster", { timeout: 5_000 }, async () => {
+  const drawChart = await loadDrawChartCollisionInternals();
+  const width = 800;
+  const height = 800;
+  const chartSize = 800;
+  const center = [width / 2, height / 2];
+  const maxRadius = chartSize / 2;
+  // Renderer-only density pattern. The values constrain three label columns
+  // like the screenshot; they are not an astrology reconstruction.
+  const chart = {
+    planets: [
+      ["moon", 40, "B"],
+      ["mars", 40.5, "E"],
+      ["saturn", 41, "G"],
+    ].map(([id, longitude, glyph]) => ({
+      id,
+      longitude,
+      glyph,
+      degText: String(Math.floor(longitude % 30)),
+      minText: String(Math.round((longitude % 1) * 60)).padStart(2, "0"),
+      motion: "",
+    })),
+    angles: {
+      asc: 0,
+      dsc: 180,
+      mc: 90,
+      ic: 270,
+      ascDegMin: { degText: "0", minText: "00" },
+      mcDegMin: { degText: "0", minText: "00" },
+    },
+    houses: {
+      cusps: [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330],
+    },
+    aspects: [],
+    options: {
+      theme: 2,
+      signVariant: 1,
+      showHouses: true,
+      showPositions: true,
+      showAspects: false,
+      showSymbols: false,
+      showTerms: false,
+      showDecans: false,
+      showCusplessAscMcLabels: true,
+      angloDenseLabelLayout: "routed-cusps",
+    },
+  };
+  const rings = resolveWheelRingSet(DEFAULT_WHEEL_RENDER_STYLE, {
+    profile: "anglo",
+    mode: "single",
+    maxRadius,
+    hasOuterRing: false,
+    showTerms: false,
+    showDecans: false,
+    showHouses: true,
+    showPositions: true,
+    comparisonWithOuterHouses: false,
+  });
+  const typography = resolveWheelTypographyMetrics(
+    DEFAULT_WHEEL_RENDER_STYLE,
+    "anglo",
+    maxRadius,
+  );
+  const snapshot = {
+    primaryChart: chart,
+    displayDatetime: "production-layout-screenshot-pattern",
+    renderVariant: "round-anglo",
+    overlayRenderMode: "full",
+    outerRingMode: "none",
+  };
+  const measureDraw = new drawChart.CanvasDraw(recordingCanvas([]));
+  measureDraw.resize(width, height, 1);
+  const layout = drawChart.getBodyLayout(
+    measureDraw,
+    chart,
+    center,
+    chart.angles.asc,
+    rings.rPlanet,
+    rings.rPos,
+    rings.rRetr,
+    DEFAULT_WHEEL_RENDER_STYLE.typography.families.bodySymbols,
+    DEFAULT_WHEEL_RENDER_STYLE.typography.families.ui,
+    typography,
+    DEFAULT_WHEEL_RENDER_STYLE,
+  );
+  const ownerKeys = ["moon", "mars", "saturn"];
+  const ownerBounds = new Map(
+    ownerKeys.map((key) => [key, layout.componentBounds.get(key)]),
+  );
+  assert.ok(
+    [...ownerBounds.values()].every((bounds) => bounds?.length === 4),
+    "production layout must measure glyph, degree, sign, and minute bounds",
+  );
+  // Default routing keeps 2px of visible air plus half the 1px cusp stroke.
+  // Two such clearance halos form one current painted obstruction at 5px.
+  const boundsTouch = (left, right, clearance = 5) =>
+    left.x <= right.x + right.w + clearance &&
+    left.x + left.w + clearance >= right.x &&
+    left.y <= right.y + right.h + clearance &&
+    left.y + left.h + clearance >= right.y;
+  const physicallyConnected = new Set([ownerKeys[0]]);
+  for (let pass = 0; pass < ownerKeys.length; pass += 1) {
+    for (const candidate of ownerKeys) {
+      if (physicallyConnected.has(candidate)) continue;
+      if ([...physicallyConnected].some((member) =>
+        ownerBounds.get(member).some((left) =>
+          ownerBounds.get(candidate).some((right) => boundsTouch(left, right))
+        )
+      )) {
+        physicallyConnected.add(candidate);
+      }
+    }
+  }
+  assert.ok(
+    ownerKeys.every((key) => physicallyConnected.has(key)),
+    "the measured columns must form one current-frame physical component",
+  );
+
+  const moonGlyph = ownerBounds.get("moon")[0];
+  const moonCenter = [moonGlyph.x + moonGlyph.w / 2, moonGlyph.y + moonGlyph.h / 2];
+  const cusp = (
+    chart.angles.asc +
+    Math.atan2(center[1] - moonCenter[1], moonCenter[0] - center[0]) * 180 / Math.PI -
+    180 +
+    360
+  ) % 360;
+  assert.ok(
+    [chart.angles.asc, chart.angles.dsc, chart.angles.mc, chart.angles.ic]
+      .every((angle) => Math.abs(((cusp - angle + 540) % 360) - 180) > 1e-6),
+    "the measured Moon ray must be an ordinary cusp, not an angle",
+  );
+  chart.houses.cusps[1] = cusp;
+  const routeStart = fixturePolarPoint(
+    center,
+    Math.min(rings.rBase, rings.rInner),
+    cusp,
+    chart.angles.asc,
+  );
+  const routeEnd = fixturePolarPoint(
+    center,
+    Math.max(rings.rBase, rings.rInner),
+    cusp,
+    chart.angles.asc,
+  );
+  const straightRay = { from: routeStart, to: routeEnd };
+  assert.ok(
+    ownerBounds.get("moon").some((box) => fixtureSegmentIntersectsBox(straightRay, box)),
+    "the ordinary cusp must pass through a measured Moon component",
+  );
+
+  const directLines = [];
+  const directDraw = new drawChart.CanvasDraw(recordingCanvas([], directLines));
+  directDraw.resize(width, height, 1);
+  const columns = ownerKeys.map((key) => {
+    const planet = chart.planets.find((entry) => entry.id === key);
+    return {
+      key,
+      footLongitude: planet.longitude,
+      displayedLongitude: planet.longitude + (layout.bodyShifts.get(key) ?? 0),
+      components: ownerBounds.get(key),
+    };
+  });
+  drawChart.drawRoutedRadialLine(
+    directDraw,
+    center,
+    chart.angles.asc,
+    cusp,
+    rings.rBase,
+    rings.rInner,
+    { fill: "#fff", width: 1 },
+    {
+      columns,
+      previousCusp: chart.houses.cusps[0],
+      nextCusp: chart.houses.cusps[2],
+      structuralLongitudes: [
+        ...chart.houses.cusps,
+        chart.angles.asc,
+        chart.angles.dsc,
+        chart.angles.mc,
+        chart.angles.ic,
+      ],
+    },
+  );
+  const snappedStart = routeStart.map(Math.round);
+  const snappedEnd = routeEnd.map(Math.round);
+  const outerRadius = Math.max(rings.rBase, rings.rInner);
+  const directPath = fixtureRootedPath(
+    directLines,
+    snappedStart,
+    center,
+    outerRadius,
+  );
+  assert.ok(directPath, `direct measured route: ${JSON.stringify(directLines)}`);
+  assert.equal(directPath.length, 3, `direct measured route: ${JSON.stringify(directLines)}`);
+  assert.equal(
+    directPath.some((segment) => fixtureSegmentsMatch(segment, {
+      from: snappedStart,
+      to: snappedEnd,
+    })),
+    false,
+    "an occupied rooted cusp may not stay straight",
+  );
+  assert.ok(
+    Math.hypot(
+      directPath.at(-1).to[0] - snappedEnd[0],
+      directPath.at(-1).to[1] - snappedEnd[1],
+    ) > 1.5,
+    "the rooted route must not return to the original outer endpoint",
+  );
+
+  const recordedLines = [];
+  const geometryDraw = new drawChart.CanvasDraw(recordingCanvas([], recordedLines));
+  geometryDraw.resize(width, height, 1);
+  drawChart.drawSnapshotLayer(
+    geometryDraw,
+    snapshot,
+    "geometry",
+    { width, height, chartSize, renderStyle: DEFAULT_WHEEL_RENDER_STYLE },
+  );
+  const routedPath = fixtureRootedPath(recordedLines, snappedStart, center, outerRadius);
+  const clusterBoxes = ownerKeys.flatMap((key) => ownerBounds.get(key));
+  assert.ok(routedPath, "the measured ordinary cusp must remain rooted at its inner endpoint");
+  assert.equal(routedPath.length, 3, "the measured cluster needs one rooted three-segment route");
+  assert.ok(
+    routedPath.every((segment) =>
+      clusterBoxes.every((box) => !fixtureSegmentIntersectsBox(segment, box))
+    ),
+    "the production geometry dogleg may not cross any measured cluster component",
+  );
+});
+
+test("July 11 2026 screenshot geometry keeps the clear Mercury-Sun cusp exactly straight", { timeout: 5_000 }, async () => {
+  const drawChart = await loadDrawChartCollisionInternals();
+  // Renderer-only reconstruction of the reported screenshot's component
+  // bounds. An oblique projected envelope covers the ray, but every painted member clears it.
+  const projectedFalsePositive = { x: 306, y: 446, w: 16, h: 10 };
+  const componentBounds = new Map([
+    ["mercury", [
+      projectedFalsePositive,
+      { x: 273, y: 448, w: 12, h: 12 },
+    ]],
+    ["sun", [
+      { x: 288, y: 505, w: 12, h: 12 },
+      { x: 264, y: 522, w: 12, h: 12 },
+    ]],
+  ]);
+  const allBoxes = [...componentBounds.values()].flat();
+  const center = [400, 400];
+  const asc = 0;
+  const longitude = 35;
+  const innerRadius = 100;
+  const outerRadius = 300;
+  const columns = [
+    {
+      key: "mercury",
+      footLongitude: 34,
+      displayedLongitude: 34,
+      components: componentBounds.get("mercury"),
+    },
+    {
+      key: "sun",
+      footLongitude: 36,
+      displayedLongitude: 36,
+      components: componentBounds.get("sun"),
+    },
+  ];
+  const { exactRay, recordedLines, straightRay } = renderScreenshotCuspFixture(
+    drawChart,
+    columns,
+    {
+      center,
+      asc,
+      longitude,
+      innerRadius,
+      outerRadius,
+      previousCusp: 5,
+      nextCusp: 65,
+      structuralLongitudes: [5, 35, 65, 125, 215, 305],
+    },
+  );
+
+  assert.ok(
+    projectedFixtureBoxWouldBlock(
+      center,
+      asc,
+      longitude,
+      innerRadius,
+      outerRadius,
+      projectedFalsePositive,
+    ),
+    "the old projected s/t envelope must classify the known component as blocked",
+  );
+  assert.equal(
+    fixtureSegmentIntersectsBox(exactRay, projectedFalsePositive),
+    false,
+    "the exact oblique segment/AABB test must clear that same component",
+  );
+  assert.ok(
+    allBoxes.every((box) => !fixtureSegmentIntersectsBox(exactRay, box)),
+    "the screenshot ray must genuinely clear every Mercury and Sun component",
+  );
+  assert.equal(recordedLines.length, 1, "nearby columns alone may not cut the cusp");
+  assert.deepEqual(
+    { from: recordedLines[0].from, to: recordedLines[0].to },
+    straightRay,
+    "the clear Mercury-Sun cusp remains perfectly straight at its exact endpoints",
+  );
 });
 
 test("routed Anglo cusps include retrograde and station marker bounds", { timeout: 5_000 }, async () => {
@@ -2057,14 +3550,13 @@ test("routed Anglo cusps include retrograde and station marker bounds", { timeou
     return { recordedText, recordedLines };
   };
 
-  for (const marker of ["R", "S"]) {
+  for (const marker of ["R", "S", "SR", "SD"]) {
     const probe = render(makeChart(marker), "dynamic");
     const probeBody = probe.recordedText.slice(0, 5);
     assert.equal(probeBody[4]?.text, marker, `${marker} fixture must paint its motion marker`);
-    const markerSize = probeBody[4].fontSize;
     const markerLongitude = longitudeAtPoint(
-      probeBody[4].x + markerSize / 2,
-      probeBody[4].y + markerSize / 2,
+      probeBody[4].x + probeBody[4].w / 2,
+      probeBody[4].y + probeBody[4].h / 2,
     );
     const chart = makeChart(marker, markerLongitude);
     const dynamic = render(chart, "dynamic");
@@ -2074,8 +3566,8 @@ test("routed Anglo cusps include retrograde and station marker bounds", { timeou
     const markerBounds = {
       x: paintedMarker.x,
       y: paintedMarker.y,
-      w: paintedMarker.fontSize,
-      h: paintedMarker.fontSize,
+      w: paintedMarker.w,
+      h: paintedMarker.h,
     };
     const start = polarPoint(Math.min(rings.rBase, rings.rInner), markerLongitude);
     const end = polarPoint(Math.max(rings.rBase, rings.rInner), markerLongitude);
@@ -2109,18 +3601,133 @@ test("routed Anglo cusps include retrograde and station marker bounds", { timeou
     );
 
     const geometry = render(chart, "geometry").recordedLines;
-    assert.ok(
-      geometry.some((segment) => samePoint(segment.from, start) || samePoint(segment.to, start)),
-      `${marker} routed cusp must preserve its inner endpoint`,
+    const rootedPath = fixtureRootedPath(
+      geometry,
+      start.map(Math.round),
+      center,
+      Math.max(rings.rBase, rings.rInner),
+    );
+    assert.ok(rootedPath, `${marker} routed cusp must preserve its inner endpoint`);
+    assert.equal(rootedPath.length, 3, `${marker} uses one rooted turn and one offset shaft`);
+    assert.equal(
+      samePoint(rootedPath.at(-1).to, end),
+      false,
+      `${marker} route may not return into an outer bracket`,
     );
     assert.ok(
-      geometry.some((segment) => samePoint(segment.from, end) || samePoint(segment.to, end)),
-      `${marker} routed cusp must preserve its outer endpoint`,
-    );
-    assert.ok(
-      geometry.every((segment) => !segmentIntersectsBox(segment, markerBounds)),
+      rootedPath.every((segment) => !segmentIntersectsBox(segment, markerBounds)),
       `${marker} routed cusp may not cross the painted motion marker`,
     );
+  }
+});
+
+test("Anglo collision solve includes retrograde and station markers", { timeout: 5_000 }, async () => {
+  const drawChart = await loadDrawChartCollisionInternals();
+  const maxRadius = 400;
+  const markerStyle = createWheelRenderStyle({
+    palette: DEFAULT_WHEEL_RENDER_STYLE.palette,
+    authoringOverrides: {
+      referenceRadius: maxRadius,
+      typography: {
+        anglo: {
+          "bodies.inner.motion": 18,
+        },
+      },
+      linePaint: {},
+      fillPaint: {},
+      ringRadii: {},
+    },
+  });
+  const rings = resolveWheelRingSet(DEFAULT_WHEEL_RENDER_STYLE, {
+    profile: "anglo",
+    mode: "single",
+    maxRadius,
+    hasOuterRing: false,
+    showTerms: false,
+    showDecans: false,
+    showHouses: false,
+    showPositions: true,
+    comparisonWithOuterHouses: false,
+  });
+  const typography = resolveWheelTypographyMetrics(
+    markerStyle,
+    "anglo",
+    maxRadius,
+  );
+  const bodyIds = ["mercury", "venus", "sun", "moon"];
+  const chart = {
+    planets: bodyIds.map((id, index) => ({
+      id,
+      longitude: index * 0.25,
+      glyph: String.fromCharCode(65 + index),
+      degText: String(2 + index),
+      minText: "00",
+      motion: ["R", "SR", "SD", "S"][index],
+    })),
+    angles: { asc: 45, dsc: 225, mc: 315, ic: 135 },
+    houses: { cusps: Array.from({ length: 12 }, (_, index) => index * 30) },
+    aspects: [],
+    options: {
+      theme: 2,
+      signVariant: 1,
+      showHouses: true,
+      showPositions: true,
+      showCusplessAscMcLabels: true,
+      angloDenseLabelLayout: "leader-columns",
+    },
+  };
+  const measurer = new drawChart.CanvasDraw(recordingCanvas([]));
+  measurer.resize(800, 800, 1);
+  const withoutMarkers = drawChart.arrangeBodies(
+    measurer,
+    chart,
+    [400, 400],
+    chart.angles.asc,
+    rings.rPlanet,
+    "AriesMorinus",
+    "sans-serif",
+    typography,
+    markerStyle,
+    true,
+    true,
+    true,
+    true,
+    false,
+    false,
+  );
+  const layout = drawChart.getBodyLayout(
+    measurer,
+    chart,
+    [400, 400],
+    chart.angles.asc,
+    rings.rPlanet,
+    rings.rPos,
+    rings.rRetr,
+    "AriesMorinus",
+    "sans-serif",
+    typography,
+    markerStyle,
+  );
+
+  assert.notDeepEqual(layout.bodyShifts, withoutMarkers);
+  const columns = bodyIds.map((id) => [id, layout.componentBounds.get(id)]);
+  for (let leftIdx = 0; leftIdx < columns.length - 1; leftIdx += 1) {
+    for (let rightIdx = leftIdx + 1; rightIdx < columns.length; rightIdx += 1) {
+      const [leftId, leftBoxes] = columns[leftIdx];
+      const [rightId, rightBoxes] = columns[rightIdx];
+      for (const left of leftBoxes) {
+        for (const right of rightBoxes) {
+          assert.equal(
+            left.x < right.x + right.w &&
+              left.x + left.w > right.x &&
+              left.y < right.y + right.h &&
+              left.y + left.h > right.y,
+            false,
+            `${leftId} and ${rightId} components must remain collision-free`,
+          );
+        }
+      }
+    }
   }
 });
 
@@ -2594,19 +4201,42 @@ async function loadDrawChartCollisionInternals() {
   const glyphsUrl = dataUrl(
     transpile(await readSource(new URL("../src/lib/chart/glyphs.ts", import.meta.url))),
   );
+  const ditherPatternUrl = dataUrl(
+    transpile(
+      await readSource(
+        new URL("../src/lib/render/dither-pattern.ts", import.meta.url),
+      ),
+    ),
+  );
   let drawChartSource = await readSource(
     new URL("../src/lib/chart/draw-chart.ts", import.meta.url),
   );
   drawChartSource = drawChartSource
+    .replace("function bodyGlyphSize(", "export function bodyGlyphSize(")
     .replace("function arrangeBodies(", "export function arrangeBodies(")
+    .replace("function prepareOuterRingItems(", "export function prepareOuterRingItems(")
     .replace("function prepareFixedStars(", "export function prepareFixedStars(")
+    .replace(
+      "function ensureTextOutsideOuterWheel(",
+      "export function ensureTextOutsideOuterWheel(",
+    )
     .replace("function getBodyLayout(", "export function getBodyLayout(")
-    .replace("function drawAscMC(", "export function drawAscMC(");
+    .replace("function layoutSurveilMark(", "export function layoutSurveilMark(")
+    .replace("function drawRoutedRadialLine(", "export function drawRoutedRadialLine(")
+    .replace("function drawAngloCuspArrow(", "export function drawAngloCuspArrow(")
+    .replace("function drawPlanets(", "export function drawPlanets(")
+    .replace("function drawAscMC(", "export function drawAscMC(")
+    .replace("function resolveAspectsForDraw(", "export function resolveAspectsForDraw(")
+    .replace(
+      "function resolveInterChartAspectsForDraw(",
+      "export function resolveInterChartAspectsForDraw(",
+    );
   const drawChartJavascript = transpile(drawChartSource)
     .replaceAll('"./canvas-draw"', `"${canvasDrawUrl}"`)
     .replaceAll('"./chart-fonts"', `"${chartFontsUrl}"`)
     .replaceAll('"./wheel-render-style"', `"${wheelStyleUrl}"`)
-    .replaceAll('"./glyphs"', `"${glyphsUrl}"`);
+    .replaceAll('"./glyphs"', `"${glyphsUrl}"`)
+    .replaceAll('"../render/dither-pattern"', `"${ditherPatternUrl}"`);
   return { ...(await import(dataUrl(drawChartJavascript))), CanvasDraw: canvasDraw.CanvasDraw };
 }
 

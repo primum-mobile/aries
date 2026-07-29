@@ -47,6 +47,28 @@ CHART_ANGLE_GLYPHS = {
 	'ic': '2',
 }
 
+# Unicode's astrological aspect set covers the classical 0/30/45/60/90/120/
+# 135/150/180-degree marks. The remaining enabled Aries aspects use established
+# compact table notation so plain-text exports never depend on Morinus.ttf.
+ASPECT_TEXT_EXPORT_MARKS = (
+	'☌', '⚺', '∠', '⚹', 'Q', '□', '△', '⚼', 'BQ', '⚻', '☍',
+	'Sept', 'Par', 'CPar',
+)
+RAPT_PARALLEL_TEXT_EXPORT_MARK = 'RPar'
+
+
+def aspect_text_export_mark(aspect_idx):
+	try:
+		index = int(aspect_idx)
+	except (TypeError, ValueError):
+		return ''
+	if 0 <= index < len(ASPECT_TEXT_EXPORT_MARKS):
+		return ASPECT_TEXT_EXPORT_MARKS[index]
+	if index in (14, 15):
+		return RAPT_PARALLEL_TEXT_EXPORT_MARK
+	return ''
+
+
 _SWE_READY = False
 _SWE_READY_PATH = None
 
@@ -254,6 +276,8 @@ def collect_asteroid_ring_items(chrt, options):
 			'family': 'asteroid',
 			'name': getattr(body, 'name', mtexts.txts.get('Asteroid', 'Asteroid')),
 			'lon': lon,
+			'bodyId': int(getattr(body, 'aId')),
+			'speed': float(getattr(body, 'speed', 0.0)),
 		})
 	items.sort(key=lambda item: item['lon'])
 	return items
@@ -300,27 +324,50 @@ def collect_hybrid_ring_items(chrt, options):
 					'family': 'dodecatemoria',
 					'name': '%s dodec' % get_planet_name(body_id),
 					'lon': lon,
+					'bodyId': int(body_id),
 				})
 	except Exception:
 		pass
 
-	for part in getattr(getattr(chrt, 'parts', None), 'parts', ()) or ():
+	active_part_indices = []
+	for config_index, configured_part in enumerate(getattr(options, 'arabicparts', ()) or ()):
+		try:
+			if not arabicparts.ArabicParts.is_active_item(configured_part):
+				continue
+		except Exception:
+			pass
+		active_part_indices.append(config_index)
+	for active_index, part in enumerate(getattr(getattr(chrt, 'parts', None), 'parts', ()) or ()):
 		try:
 			lon = float(part[arabicparts.ArabicParts.LONG])
 			name = part[arabicparts.ArabicParts.NAME]
 		except Exception:
 			continue
 		if chart_has_ring_direct_hit(chrt, options, lon, orb):
-			items.append({'family': 'arabic_part', 'name': name, 'lon': lon})
+			config_index = active_part_indices[active_index] if active_index < len(active_part_indices) else active_index
+			items.append({
+				'family': 'arabic_part',
+				'name': name,
+				'lon': lon,
+				'configIndex': int(config_index),
+			})
 
-	for star in getattr(getattr(chrt, 'fixstars', None), 'data', ()) or ():
+	fixstar_obj = getattr(chrt, 'fixstars', None)
+	fixstar_codes = list(getattr(options, 'fixstars', {}).keys())
+	for star_index, star in enumerate(getattr(fixstar_obj, 'data', ()) or ()):
 		try:
 			lon = float(star[fixstars.FixStars.LON])
 			name = astrology.display_fixstar_name(star[fixstars.FixStars.NOMNAME], options, star[fixstars.FixStars.NAME])
 		except Exception:
 			continue
 		if chart_has_ring_direct_hit(chrt, options, lon, orb):
-			items.append({'family': 'fixstar', 'name': name, 'lon': lon})
+			code = str(star[fixstars.FixStars.NOMNAME] or '')
+			try:
+				original_index = int(fixstar_obj.mixed[star_index])
+				code = code or str(fixstar_codes[original_index])
+			except Exception:
+				pass
+			items.append({'family': 'fixstar', 'name': name, 'lon': lon, 'starCode': code})
 
 	asteroid_list = getattr(getattr(chrt, 'asteroids', None), 'asteroids', None) or []
 	for body in asteroid_list:
@@ -328,7 +375,13 @@ def collect_hybrid_ring_items(chrt, options):
 			continue
 		lon = float(body.data[0])
 		if chart_has_ring_direct_hit(chrt, options, lon, orb, skip_body_id=getattr(body, 'aId', None)):
-			items.append({'family': 'asteroid', 'name': getattr(body, 'name', mtexts.txts.get('Asteroid', 'Asteroid')), 'lon': lon})
+			items.append({
+				'family': 'asteroid',
+				'name': getattr(body, 'name', mtexts.txts.get('Asteroid', 'Asteroid')),
+				'lon': lon,
+				'bodyId': int(getattr(body, 'aId')),
+				'speed': float(getattr(body, 'speed', 0.0)),
+			})
 
 	items.sort(key=lambda item: item['lon'])
 	return items

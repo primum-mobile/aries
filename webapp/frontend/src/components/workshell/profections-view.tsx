@@ -24,7 +24,7 @@ import { semanticChartColor } from "@/lib/theme/semantic-color";
 import { cn } from "@/lib/utils";
 
 import { TimedChartContextMenu } from "./directions-view";
-import { CellView, downloadText, tableToTsv } from "./generic-table-view";
+import { CellView, downloadText, tableToConfiguredTsv } from "./generic-table-view";
 import { exportTablePayloadPdf } from "./table-pdf-export";
 import { exportTextContent } from "./text-export";
 import { useSettledWorkspaceRefreshSeq } from "./step-refresh";
@@ -93,7 +93,7 @@ export function ProfectionsView({ documentId, parentDocumentId, sourceName, onCl
   );
   const [error, setError] = React.useState<string | null>(null);
   const [pending, setPending] = React.useState(false);
-  const lastOptionsChange = useDaemonWorkspaceStore((s) => s.lastOptionsChange);
+  const lastOptionsChange = useDaemonWorkspaceStore((s) => s.lastRetainedDataOptionsChange);
 
   // Refresh on relevant options only. Table controls below fetch explicitly;
   // chart/session activation must not invalidate the source list.
@@ -309,10 +309,11 @@ export function ProfectionsView({ documentId, parentDocumentId, sourceName, onCl
           <PaneToolbarButton
             type="button"
             onClick={() => {
-              const text = tableToTsv(payload, payload.rows);
-              void navigator.clipboard?.writeText(text).catch(() => {
-                downloadText("profections.tsv", text, "text/tab-separated-values");
-              });
+              void tableToConfiguredTsv(payload, payload.rows).then((text) =>
+                navigator.clipboard?.writeText(text).catch(() => {
+                  downloadText("profections.tsv", text, "text/tab-separated-values");
+                })
+              );
             }}
             title={t("profview.copyRows")}
           >
@@ -320,16 +321,18 @@ export function ProfectionsView({ documentId, parentDocumentId, sourceName, onCl
           </PaneToolbarButton>
           <PaneToolbarButton
             type="button"
-            onClick={() =>
-              void exportTextContent({
+            onClick={() => {
+              void tableToConfiguredTsv(payload, payload.rows).then((text) =>
+                exportTextContent({
                 filename: "profections",
                 extension: "tsv",
                 mimeType: "text/tab-separated-values;charset=utf-8",
-                text: tableToTsv(payload, payload.rows),
+                text,
                 title: t("profview.exportTsvDialog"),
                 filters: [{ name: t("profview.tsvFiles"), extensions: ["tsv"] }],
-              }).catch(() => {})
-            }
+                })
+              ).catch(() => {});
+            }}
             title={t("profview.exportTsv")}
           >
             <Download />

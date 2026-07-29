@@ -53,6 +53,7 @@ MENU_LABEL_KEYS: dict[str, str] = {
     "Primary directions": "chartmenu.primaryDirections",
     "Other Revolutions": "chartmenu.otherRevolutions",
     "Parallel Transit": "chartmenu.parallelTransit",
+    "Converse transits": "chartmenu.converseTransit",
     "Sidereal Return (Marr)": "chartmenu.siderealReturnMarr",
     "Tithi Pravesha (Annual Soli-Lunar Return)": "chartmenu.tithiPravesha",
     "Lunar Phase (Embolismic)": "chartmenu.lunarPhaseEmbolismic",

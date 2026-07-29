@@ -58,7 +58,9 @@ export function LunarMansionsView({ documentId, parentDocumentId, sourceName, on
   const lastCurrentRowRef = React.useRef<string | null>(null);
   const rowHeight = useListRowHeight("standard");
   const lastSessionChange = useDaemonWorkspaceStore((state) => state.lastSessionChange);
-  const lastOptionsChange = useDaemonWorkspaceStore((state) => state.lastOptionsChange);
+  const lastOptionsChange = useDaemonWorkspaceStore(
+    (state) => state.lastRetainedDataOptionsChange,
+  );
   const refreshSeq = useSettledWorkspaceRefreshSeq({
     documentId,
     parentDocumentId,

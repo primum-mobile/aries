@@ -1,8 +1,121 @@
 # -*- coding: utf-8 -*-
+from contextlib import contextmanager
 from functools import lru_cache
+import os
+from threading import local, RLock
 
 from sweastrology import *  # legacy: provides lots of names/constants used elsewhere
 import sweastrology as _swe
+
+
+_RAW_SWE_FUNCTIONS = getattr(_swe, "_aries_raw_swe_functions", None)
+if _RAW_SWE_FUNCTIONS is None:
+	_RAW_SWE_FUNCTIONS = {
+		name: value
+		for name, value in vars(_swe).items()
+		if name.startswith("swe_") and callable(value)
+	}
+	setattr(_swe, "_aries_raw_swe_functions", _RAW_SWE_FUNCTIONS)
+_SWISS_CONTEXT_LOCK = RLock()
+_SWISS_THREAD_CONTEXT = local()
+_SWISS_EPHE_PATH = None
+_SWISS_SIDEREAL = None
+_SWISS_TOPO = None
+
+
+def _normalized_ephe_path(path):
+	if path is None:
+		return None
+	return os.path.abspath(os.fspath(path))
+
+
+def swe_set_ephe_path(path):
+	global _SWISS_EPHE_PATH, _SWISS_SIDEREAL, _SWISS_TOPO
+	normalized = _normalized_ephe_path(path)
+	with _SWISS_CONTEXT_LOCK:
+		_SWISS_THREAD_CONTEXT.ephe_path = normalized
+		if normalized == _SWISS_EPHE_PATH:
+			return
+		_RAW_SWE_FUNCTIONS["swe_set_ephe_path"](normalized)
+		_SWISS_EPHE_PATH = normalized
+		# swe_set_ephe_path closes Swiss's cached files and calculation state.
+		_SWISS_SIDEREAL = None
+		_SWISS_TOPO = None
+
+
+def swe_set_sid_mode(mode, t0=0.0, ayan_t0=0.0):
+	global _SWISS_SIDEREAL
+	value = (int(mode), float(t0), float(ayan_t0))
+	with _SWISS_CONTEXT_LOCK:
+		_SWISS_THREAD_CONTEXT.sidereal = value
+		if value == _SWISS_SIDEREAL:
+			return
+		_RAW_SWE_FUNCTIONS["swe_set_sid_mode"](*value)
+		_SWISS_SIDEREAL = value
+
+
+def swe_set_topo(geolon, geolat, geoalt):
+	global _SWISS_TOPO
+	value = (float(geolon), float(geolat), float(geoalt))
+	with _SWISS_CONTEXT_LOCK:
+		_SWISS_THREAD_CONTEXT.topocentric = value
+		if value == _SWISS_TOPO:
+			return
+		_RAW_SWE_FUNCTIONS["swe_set_topo"](*value)
+		_SWISS_TOPO = value
+
+
+def swe_close():
+	global _SWISS_EPHE_PATH, _SWISS_SIDEREAL, _SWISS_TOPO
+	with _SWISS_CONTEXT_LOCK:
+		_RAW_SWE_FUNCTIONS["swe_close"]()
+		_SWISS_EPHE_PATH = None
+		_SWISS_SIDEREAL = None
+		_SWISS_TOPO = None
+		_SWISS_THREAD_CONTEXT.__dict__.clear()
+
+
+@contextmanager
+def swiss_context(ephe_path=None, sidereal_mode=None, topocentric_position=None):
+	"""Activate one complete root-extension context for an atomic calculation."""
+	with _SWISS_CONTEXT_LOCK:
+		previous_thread_context = dict(_SWISS_THREAD_CONTEXT.__dict__)
+		try:
+			if ephe_path is not None:
+				swe_set_ephe_path(ephe_path)
+			if sidereal_mode is not None:
+				swe_set_sid_mode(sidereal_mode, 0.0, 0.0)
+			if topocentric_position is not None:
+				swe_set_topo(*topocentric_position)
+			yield
+		finally:
+			_SWISS_THREAD_CONTEXT.__dict__.clear()
+			_SWISS_THREAD_CONTEXT.__dict__.update(previous_thread_context)
+			_restore_thread_context_locked()
+
+
+def _restore_thread_context_locked():
+	global _SWISS_EPHE_PATH, _SWISS_SIDEREAL, _SWISS_TOPO
+	ephe_path = getattr(_SWISS_THREAD_CONTEXT, "ephe_path", None)
+	sidereal = getattr(_SWISS_THREAD_CONTEXT, "sidereal", None)
+	topocentric = getattr(_SWISS_THREAD_CONTEXT, "topocentric", None)
+	if ephe_path is not None and ephe_path != _SWISS_EPHE_PATH:
+		_RAW_SWE_FUNCTIONS["swe_set_ephe_path"](ephe_path)
+		_SWISS_EPHE_PATH = ephe_path
+		_SWISS_SIDEREAL = None
+		_SWISS_TOPO = None
+	if sidereal is not None and sidereal != _SWISS_SIDEREAL:
+		_RAW_SWE_FUNCTIONS["swe_set_sid_mode"](*sidereal)
+		_SWISS_SIDEREAL = sidereal
+	if topocentric is not None and topocentric != _SWISS_TOPO:
+		_RAW_SWE_FUNCTIONS["swe_set_topo"](*topocentric)
+		_SWISS_TOPO = topocentric
+
+
+def _raw_swe_call(name, *args, **kwargs):
+	with _SWISS_CONTEXT_LOCK:
+		_restore_thread_context_locked()
+		return _RAW_SWE_FUNCTIONS[name](*args, **kwargs)
 
 
 def _unwrap_1tuple(v):
@@ -14,7 +127,7 @@ def _unwrap_1tuple(v):
 
 def swe_calc_ex(tjd, ipl, iflag):
 	"""Return (retflag, xx[0..5], serr)."""
-	r = _swe.swe_calc(tjd, ipl, iflag)
+	r = _raw_swe_call("swe_calc", tjd, ipl, iflag)
 	if isinstance(r, tuple) and len(r) >= 3:
 		retflag = _unwrap_1tuple(r[0])
 		xx = r[1]
@@ -32,7 +145,7 @@ def swe_calc(tjd, ipl, iflag):
 
 def swe_calc_ut_ex(tjd_ut, ipl, iflag):
 	"""Return (retflag, xx[0..5], serr)."""
-	r = _swe.swe_calc_ut(tjd_ut, ipl, iflag)
+	r = _raw_swe_call("swe_calc_ut", tjd_ut, ipl, iflag)
 	if isinstance(r, tuple) and len(r) >= 3:
 		retflag = _unwrap_1tuple(r[0])
 		xx = r[1]
@@ -49,14 +162,14 @@ def swe_calc_ut(tjd_ut, ipl, iflag):
 
 def swe_houses_ex(tjd_ut, iflag, geolat, geolon, hsys):
 	"""Return (res, cusps, ascmc) with `res` unwrapped to int."""
-	r = _swe.swe_houses_ex(tjd_ut, iflag, geolat, geolon, hsys)
+	r = _raw_swe_call("swe_houses_ex", tjd_ut, iflag, geolat, geolon, hsys)
 	if isinstance(r, tuple) and len(r) >= 3:
 		return _unwrap_1tuple(r[0]), r[1], r[2]
 	return 0, (), ()
 
 
 def swe_houses(tjd_ut, geolat, geolon, hsys):
-	r = _swe.swe_houses(tjd_ut, geolat, geolon, hsys)
+	r = _raw_swe_call("swe_houses", tjd_ut, geolat, geolon, hsys)
 	if isinstance(r, tuple) and len(r) >= 3:
 		return _unwrap_1tuple(r[0]), r[1], r[2]
 	return 0, (), ()
@@ -64,7 +177,7 @@ def swe_houses(tjd_ut, geolat, geolon, hsys):
 
 def swe_fixstar(star, tjd, iflag):
 	"""Return (ret, xx[0..5], serr) with `ret` and `serr` unwrapped."""
-	r = _swe.swe_fixstar(star, tjd, iflag)
+	r = _raw_swe_call("swe_fixstar", star, tjd, iflag)
 	if isinstance(r, tuple) and len(r) >= 3:
 		return _unwrap_1tuple(r[0]), r[1], _unwrap_1tuple(r[2])
 	return 0, (), ""
@@ -75,7 +188,7 @@ def swe_fixstar_ut(star, tjd_ut, iflag):
 	Return (ret, name_tuple, xx[0..5], serr).
 	Keep `name` as a 1-tuple to preserve legacy callers that use `name[0]`.
 	"""
-	r = _swe.swe_fixstar_ut(star, tjd_ut, iflag)
+	r = _raw_swe_call("swe_fixstar_ut", star, tjd_ut, iflag)
 	if isinstance(r, tuple) and len(r) >= 4:
 		ret = _unwrap_1tuple(r[0])
 		name = r[1]
@@ -90,7 +203,7 @@ def swe_fixstar_mag(star):
 	Return (ret, name_tuple, mag_tuple_or_float, serr).
 	Keep `name` as a 1-tuple for compatibility.
 	"""
-	r = _swe.swe_fixstar_mag(star)
+	r = _raw_swe_call("swe_fixstar_mag", star)
 	if isinstance(r, tuple) and len(r) >= 4:
 		ret = _unwrap_1tuple(r[0])
 		name = r[1]
@@ -102,7 +215,7 @@ def swe_fixstar_mag(star):
 
 def swe_sol_eclipse_when_glob(tjd_start, ifl, ifltype, backward):
 	"""Return (retflag, tret[0..9], serr) for the next/previous solar eclipse."""
-	r = _swe.swe_sol_eclipse_when_glob(tjd_start, ifl, ifltype, backward)
+	r = _raw_swe_call("swe_sol_eclipse_when_glob", tjd_start, ifl, ifltype, backward)
 	if isinstance(r, tuple) and len(r) >= 3:
 		return _unwrap_1tuple(r[0]), r[1], _unwrap_1tuple(r[2])
 	return 0, (), ""
@@ -110,10 +223,81 @@ def swe_sol_eclipse_when_glob(tjd_start, ifl, ifltype, backward):
 
 def swe_lun_eclipse_when(tjd_start, ifl, ifltype, backward):
 	"""Return (retflag, tret[0..9], serr) for the next/previous lunar eclipse."""
-	r = _swe.swe_lun_eclipse_when(tjd_start, ifl, ifltype, backward)
+	r = _raw_swe_call("swe_lun_eclipse_when", tjd_start, ifl, ifltype, backward)
 	if isinstance(r, tuple) and len(r) >= 3:
 		return _unwrap_1tuple(r[0]), r[1], _unwrap_1tuple(r[2])
 	return 0, (), ""
+
+
+def swe_get_ayanamsa(*args):
+	return _raw_swe_call("swe_get_ayanamsa", *args)
+
+
+def swe_get_ayanamsa_ut(*args):
+	return _raw_swe_call("swe_get_ayanamsa_ut", *args)
+
+
+def swe_heliacal_ut(*args):
+	return _raw_swe_call("swe_heliacal_ut", *args)
+
+
+def swe_lun_eclipse_how(*args):
+	return _raw_swe_call("swe_lun_eclipse_how", *args)
+
+
+def swe_pheno_ut(*args):
+	return _raw_swe_call("swe_pheno_ut", *args)
+
+
+def swe_rise_trans(*args):
+	return _raw_swe_call("swe_rise_trans", *args)
+
+
+def swe_sol_eclipse_where(*args):
+	return _raw_swe_call("swe_sol_eclipse_where", *args)
+
+
+def _locked_raw_swe_call(name):
+	def call(*args, **kwargs):
+		return _raw_swe_call(name, *args, **kwargs)
+
+	call.__name__ = name
+	call.__qualname__ = name
+	return call
+
+
+_CONTEXT_SETTER_NAMES = {
+	"swe_close",
+	"swe_set_ephe_path",
+	"swe_set_sid_mode",
+	"swe_set_topo",
+}
+_COMPATIBILITY_ADAPTER_NAMES = {
+	"swe_calc",
+	"swe_calc_ut",
+	"swe_fixstar",
+	"swe_fixstar_mag",
+	"swe_fixstar_ut",
+	"swe_get_ayanamsa",
+	"swe_get_ayanamsa_ut",
+	"swe_heliacal_ut",
+	"swe_houses",
+	"swe_houses_ex",
+	"swe_lun_eclipse_how",
+	"swe_lun_eclipse_when",
+	"swe_pheno_ut",
+	"swe_rise_trans",
+	"swe_sol_eclipse_when_glob",
+	"swe_sol_eclipse_where",
+}
+for _name in _RAW_SWE_FUNCTIONS:
+	if _name in _CONTEXT_SETTER_NAMES:
+		setattr(_swe, _name, globals()[_name])
+		continue
+	_locked_call = _locked_raw_swe_call(_name)
+	setattr(_swe, _name, _locked_call)
+	if _name not in _COMPATIBILITY_ADAPTER_NAMES:
+		globals()[_name] = _locked_call
 
 SE_JUL_CAL = 0
 SE_GREG_CAL = 1

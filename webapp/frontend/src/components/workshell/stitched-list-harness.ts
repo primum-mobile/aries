@@ -90,6 +90,19 @@ export function filterRetainedRows<T, Id>(
   return sourceRows.filter((row) => active.has(idOf(row)));
 }
 
+/** Project daemon-owned display visibility over resident rows without changing
+ * the source array or its query/cache identity. Rows may expose one or several
+ * canonical semantic object ids. */
+export function filterRetainedRowsByHiddenIds<T, Id>(
+  sourceRows: readonly T[],
+  hiddenIds: readonly Id[],
+  idsOf: (row: T) => readonly Id[],
+): readonly T[] {
+  if (hiddenIds.length === 0) return sourceRows;
+  const hidden = new Set(hiddenIds);
+  return sourceRows.filter((row) => !idsOf(row).some((id) => hidden.has(id)));
+}
+
 /** Convert a source prepend count to the number of currently visible rows so
  * scroll compensation remains exact while display filters are active. */
 export function visiblePrependedRowCount<T, Id>(
@@ -115,6 +128,7 @@ export function useEdgeExtend({
   canExtendBackward,
   canExtendForward,
   onExtend,
+  recheckToken,
 }: {
   scrollerRef: React.RefObject<HTMLDivElement | null>;
   rowCount: number;
@@ -122,6 +136,7 @@ export function useEdgeExtend({
   canExtendBackward: boolean;
   canExtendForward: boolean;
   onExtend: (direction: "previous" | "next") => void;
+  recheckToken?: unknown;
 }) {
   const thresholdPxRef = React.useRef(thresholdPx);
   React.useLayoutEffect(() => {
@@ -171,5 +186,12 @@ export function useEdgeExtend({
       scroller.removeEventListener("scroll", onScroll);
       if (frame) cancelAnimationFrame(frame);
     };
-  }, [canExtendBackward, canExtendForward, onExtend, rowCount, scrollerRef]);
+  }, [
+    canExtendBackward,
+    canExtendForward,
+    onExtend,
+    recheckToken,
+    rowCount,
+    scrollerRef,
+  ]);
 }

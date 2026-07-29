@@ -52,6 +52,16 @@ export function normalizeThemeState(value) {
         typeof candidate.profileOverrides.chartData === "object"
           ? candidate.profileOverrides.chartData
           : {},
+      wheelAuthoring:
+        candidate.profileOverrides?.wheelAuthoring &&
+        typeof candidate.profileOverrides.wheelAuthoring === "object"
+          ? candidate.profileOverrides.wheelAuthoring
+          : {},
+      appAuthoring:
+        candidate.profileOverrides?.appAuthoring &&
+        typeof candidate.profileOverrides.appAuthoring === "object"
+          ? candidate.profileOverrides.appAuthoring
+          : {},
     },
   };
 }

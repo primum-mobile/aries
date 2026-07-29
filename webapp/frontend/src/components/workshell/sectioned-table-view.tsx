@@ -73,6 +73,7 @@ function TopicSelector({
         {t("table.topic")}
       </label>
       <select
+        data-aries-control-appearance="local"
         id="almuten-topic"
         className="h-[var(--aries-control-height-small)] rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface)] px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-small)]"
         value={String(topical.topic)}

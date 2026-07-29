@@ -4,7 +4,21 @@ import * as React from "react"
 import { ContextMenu as ContextMenuPrimitive } from "@base-ui/react/context-menu"
 
 import { cn } from "@/lib/utils"
+import { rootCssPixelOffset } from "@/lib/css-token-value"
 import { ChevronRightIcon, CheckIcon } from "lucide-react"
+
+const contextMenuSideOffset = rootCssPixelOffset(
+  "--aries-menu-context-side-offset",
+  0,
+)
+const contextMenuAlignOffset = rootCssPixelOffset(
+  "--aries-menu-context-align-offset",
+  4,
+)
+const contextSubmenuSideOffset = rootCssPixelOffset(
+  "--aries-menu-submenu-side-offset",
+  0,
+)
 
 function ContextMenu({ ...props }: ContextMenuPrimitive.Root.Props) {
   return <ContextMenuPrimitive.Root data-slot="context-menu" {...props} />
@@ -32,9 +46,9 @@ function ContextMenuTrigger({
 function ContextMenuContent({
   className,
   align = "start",
-  alignOffset = 4,
+  alignOffset = contextMenuAlignOffset,
   side = "right",
-  sideOffset = 0,
+  sideOffset = contextMenuSideOffset,
   ...props
 }: ContextMenuPrimitive.Popup.Props &
   Pick<
@@ -44,7 +58,7 @@ function ContextMenuContent({
   return (
     <ContextMenuPrimitive.Portal>
       <ContextMenuPrimitive.Positioner
-        className="isolate z-50 outline-none"
+        className="isolate z-[100] outline-none"
         align={align}
         alignOffset={alignOffset}
         side={side}
@@ -52,7 +66,8 @@ function ContextMenuContent({
       >
         <ContextMenuPrimitive.Popup
           data-slot="context-menu-content"
-          className={cn("z-50 max-h-(--available-height) min-w-36 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-[var(--aries-radius-popover)] bg-popover p-[var(--aries-menu-padding)] text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 outline-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95", className )}
+          data-aries-surface="popover"
+          className={cn("z-[100] max-h-(--available-height) min-w-[var(--aries-menu-context-popup-min-width)] origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-[var(--aries-radius-popover)] bg-[var(--aries-popover-background)] p-[var(--aries-menu-padding)] text-[color:var(--aries-popover-text)] shadow-md ring-1 ring-foreground/10 duration-100 outline-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95", className )}
           {...props}
         />
       </ContextMenuPrimitive.Positioner>
@@ -147,6 +162,7 @@ function ContextMenuSubContent({
       data-slot="context-menu-sub-content"
       className="shadow-lg"
       side="right"
+      sideOffset={contextSubmenuSideOffset}
       {...props}
     />
   )
@@ -244,7 +260,7 @@ function ContextMenuShortcut({
     <span
       data-slot="context-menu-shortcut"
       className={cn(
-        "ml-auto text-xs text-muted-foreground group-focus/context-menu-item:text-accent-foreground",
+        "ml-auto text-[length:var(--aries-font-size-small)] text-muted-foreground group-focus/context-menu-item:text-accent-foreground",
         className
       )}
       {...props}

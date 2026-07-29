@@ -77,11 +77,15 @@ const themeBootScript = `
 `;
 
 const bootPaintStyle = `
-html,
-body {
+html {
   min-height: 100%;
   background: var(--background, #232428);
   color-scheme: dark;
+}
+body {
+  min-height: 100%;
+  background: var(--background, #232428);
+  color-scheme: inherit;
 }
 `;
 

@@ -28,6 +28,7 @@ export type WheelSemanticPrimitive =
 export type WheelSemanticGroupId =
   | "canvas"
   | "layers"
+  | "fills"
   | "rings"
   | "zodiac"
   | "subdivisions"
@@ -51,6 +52,24 @@ export type WheelStyleCapability =
   | "fontRef"
   | "fontSize"
   | "tracking"
+  | "fillPattern"
+  | "shadowPattern"
+  | "cellSize"
+  | "dotSize"
+  | "density"
+  | "angle"
+  | "seed"
+  | "backgroundColor"
+  | "patternColor"
+  | "gradientType"
+  | "gradientDirection"
+  | "gradientStartColor"
+  | "gradientEndColor"
+  | "gradientAngle"
+  | "textureMask"
+  | "maskDirection"
+  | "maskAngle"
+  | "maskAmount"
   | "color"
   | "opacity"
   | "blur"
@@ -213,7 +232,51 @@ export const WHEEL_STYLE_CAPABILITY_SETS = Object.freeze({
     "color",
     "opacity",
   ] as const),
-  filledShape: Object.freeze(["color", "opacity"] as const),
+  filledShape: Object.freeze([
+    "color",
+    "opacity",
+  ] as const),
+  retainedFill: Object.freeze([
+    "backgroundColor",
+    "patternColor",
+    "gradientType",
+    "gradientDirection",
+    "gradientStartColor",
+    "gradientEndColor",
+    "gradientAngle",
+    "fillPattern",
+    "cellSize",
+    "dotSize",
+    "density",
+    "angle",
+    "seed",
+    "opacity",
+  ] as const),
+  maskedFill: Object.freeze([
+    "backgroundColor",
+    "patternColor",
+    "gradientType",
+    "gradientDirection",
+    "gradientStartColor",
+    "gradientEndColor",
+    "gradientAngle",
+    "fillPattern",
+    "cellSize",
+    "dotSize",
+    "density",
+    "angle",
+    "seed",
+    "textureMask",
+    "maskDirection",
+    "maskAngle",
+    "maskAmount",
+    "shadowPattern",
+    "shadowColor",
+    "shadowX",
+    "shadowY",
+    "shadowBlur",
+    "opacity",
+  ] as const),
   marker: Object.freeze(["radius", "color", "opacity"] as const),
   inheritedPoint: Object.freeze(["color"] as const),
 });
@@ -243,24 +306,52 @@ const C = WHEEL_STYLE_CAPABILITY_SETS;
 const WHEEL_SEMANTIC_CLASS_INPUTS = {
   "canvas.background": define({
     labelKey: "styleLab.scene.canvas", groupId: "canvas", layer: "geometry",
-    primitive: "surface", capabilities: C.surface,
+    primitive: "surface", capabilities: C.retainedFill,
     applicability: applicability("classic.single.default"), colorTarget: "class",
+  }),
+
+  "fills.chartField": define({
+    labelKey: "styleLab.scene.chartField", groupId: "fills", layer: "geometry",
+    primitive: "surface", capabilities: C.maskedFill,
+    applicability: applicability("classic.single.default"), colorTarget: "class",
+  }),
+  "fills.houseField": define({
+    labelKey: "styleLab.scene.houseField", groupId: "fills", layer: "geometry",
+    primitive: "surface", capabilities: C.maskedFill,
+    applicability: applicability("classic.single.default"), colorTarget: "class",
+  }),
+  "fills.centerField": define({
+    labelKey: "styleLab.scene.centerField", groupId: "fills", layer: "geometry",
+    primitive: "surface", capabilities: C.maskedFill,
+    applicability: applicability("classic.single.default"), colorTarget: "class",
+  }),
+  "fills.zodiacBand": define({
+    labelKey: "styleLab.scene.zodiacBand", groupId: "fills", layer: "geometry",
+    primitive: "surface", capabilities: C.maskedFill,
+    applicability: applicability("classic.single.default"), colorTarget: "class",
+  }),
+  "fills.subdivisionBand": define({
+    labelKey: "styleLab.scene.subdivisionBand", groupId: "fills", layer: "geometry",
+    primitive: "surface", capabilities: C.maskedFill,
+    applicability: applicability("classic.single.terms", {
+      requiredFeatures: ["terms"],
+    }), colorTarget: "class",
   }),
 
   "layers.geometry": define({
     labelKey: "styleLab.scene.geometryLayer", groupId: "layers", layer: "geometry",
-    primitive: "group", capabilities: C.compositor,
-    applicability: applicability("classic.single.default"), colorTarget: "class",
+    primitive: "group", capabilities: Object.freeze([]),
+    applicability: applicability("classic.single.default"),
   }),
   "layers.dynamic": define({
     labelKey: "styleLab.scene.dynamicLayer", groupId: "layers", layer: "dynamic",
-    primitive: "group", capabilities: C.compositor,
-    applicability: applicability("classic.single.default"), colorTarget: "class",
+    primitive: "group", capabilities: Object.freeze([]),
+    applicability: applicability("classic.single.default"),
   }),
   "layers.outerLabel": define({
     labelKey: "styleLab.scene.outerLabelLayer", groupId: "layers", layer: "outer-label",
-    primitive: "group", capabilities: C.compositor,
-    applicability: applicability("classic.single.outer.fixedStar"), colorTarget: "class",
+    primitive: "group", capabilities: Object.freeze([]),
+    applicability: applicability("classic.single.outer.fixedStar"),
   }),
 
   "rings.outerMaximum": define({
@@ -396,7 +487,7 @@ const WHEEL_SEMANTIC_CLASS_INPUTS = {
     applicability: applicability("classic.single.terms", { requiredFeatures: ["terms"] }), colorTarget: "class",
   }),
   "subdivisions.term.glyph": define({
-    labelKey: "styleLab.scene.termGlyph", groupId: "subdivisions", layer: "geometry",
+    labelKey: "styleLab.scene.termGlyph", groupId: "subdivisions", layer: "dynamic",
     primitive: "text", capabilities: C.text,
     applicability: applicability("classic.single.terms", { requiredFeatures: ["terms"] }), fontRole: "symbols", colorTarget: "palette-role",
   }),
@@ -406,7 +497,7 @@ const WHEEL_SEMANTIC_CLASS_INPUTS = {
     applicability: applicability("classic.single.decans", { requiredFeatures: ["decans"] }), colorTarget: "class",
   }),
   "subdivisions.decan.glyph": define({
-    labelKey: "styleLab.scene.decanGlyph", groupId: "subdivisions", layer: "geometry",
+    labelKey: "styleLab.scene.decanGlyph", groupId: "subdivisions", layer: "dynamic",
     primitive: "text", capabilities: C.text,
     applicability: applicability("classic.single.decans", { requiredFeatures: ["decans"] }), fontRole: "symbols", colorTarget: "palette-role",
   }),
@@ -442,7 +533,7 @@ const WHEEL_SEMANTIC_CLASS_INPUTS = {
     applicability: applicability("classic.comparison.outerHouses", { layouts: COMPARISON_ONLY, requiredFeatures: ["houses", "comparison.outerHouses"] }), colorTarget: "class",
   }),
   "houses.outer.label": define({
-    labelKey: "styleLab.class.outerHouseLabel", groupId: "houses", layer: "outer-label",
+    labelKey: "styleLab.class.outerHouseLabel", groupId: "houses", layer: "geometry",
     primitive: "text", capabilities: C.text,
     applicability: applicability("classic.comparison.outerHouses", { layouts: COMPARISON_ONLY, requiredFeatures: ["houses", "comparison.outerHouses"] }), fontRole: "text", colorTarget: "class",
   }),
@@ -486,8 +577,8 @@ const WHEEL_SEMANTIC_CLASS_INPUTS = {
   "angles.outer.arrowhead": define({
     labelKey: "styleLab.class.outerAngleArrowhead", groupId: "angles", layer: "geometry",
     primitive: "line", capabilities: C.openLine,
-    variantCapabilities: { classic: C.openLine, compact: C.openLine, anglo: C.filledShape },
-    applicability: applicability("classic.comparison.default", { layouts: COMPARISON_ONLY, requiredFeatures: ["angleArrowheads"] }), colorTarget: "class",
+    variantCapabilities: { classic: C.openLine, compact: C.openLine },
+    applicability: applicability("classic.comparison.default", { variants: CLASSIC_COMPACT, layouts: COMPARISON_ONLY, requiredFeatures: ["angleArrowheads"] }), colorTarget: "class",
   }),
   "angles.outer.label": define({
     labelKey: "styleLab.class.outerAngleLabel", groupId: "angles", layer: "outer-label",
@@ -508,7 +599,7 @@ const WHEEL_SEMANTIC_CLASS_INPUTS = {
   "bodies.inner.motion": define({
     labelKey: "styleLab.class.innerBodyMotion", groupId: "bodies", layer: "dynamic",
     primitive: "text", capabilities: C.text,
-    applicability: applicability("classic.single.default", { requiredFeatures: ["motionMarkers"] }), fontRole: "symbols", colorTarget: "palette-role",
+    applicability: applicability("classic.single.default", { requiredFeatures: ["motionMarkers"] }), fontRole: "text", colorTarget: "palette-role",
   }),
   "bodies.inner.position.degree": define({
     labelKey: "styleLab.class.bodyPositionDegree", groupId: "bodies", layer: "dynamic",
@@ -536,9 +627,9 @@ const WHEEL_SEMANTIC_CLASS_INPUTS = {
     applicability: applicability("classic.comparison.default", { layouts: COMPARISON_ONLY }), fontRole: "symbols", colorTarget: "palette-role",
   }),
   "bodies.outer.motion": define({
-    labelKey: "styleLab.class.outerBodyMotion", groupId: "bodies", layer: "outer-label",
+    labelKey: "styleLab.class.outerBodyMotion", groupId: "bodies", layer: "dynamic",
     primitive: "text", capabilities: C.text,
-    applicability: applicability("classic.comparison.default", { layouts: COMPARISON_ONLY, requiredFeatures: ["motionMarkers"] }), fontRole: "symbols", colorTarget: "palette-role",
+    applicability: applicability("classic.comparison.default", { layouts: COMPARISON_ONLY, requiredFeatures: ["motionMarkers"] }), fontRole: "text", colorTarget: "palette-role",
   }),
   "bodies.fortune": define({
     labelKey: "quickopt.fortuna", groupId: "bodies", layer: "dynamic",
@@ -568,7 +659,7 @@ const WHEEL_SEMANTIC_CLASS_INPUTS = {
   }),
   "aspects.interchart.endpointMarker": define({
     labelKey: "styleLab.class.interchartEndpointMarker", groupId: "aspects", layer: "dynamic",
-    primitive: "circle", capabilities: C.marker,
+    primitive: "line", capabilities: C.openLine,
     applicability: applicability("classic.comparison.aspects", { layouts: COMPARISON_ONLY, requiredFeatures: ["aspects"] }), colorTarget: "palette-role",
   }),
   "aspects.interchart.line": define({
@@ -695,13 +786,13 @@ const WHEEL_SEMANTIC_CLASS_INPUTS = {
   "secondaryRing.parallelTransit.motion": define({
     labelKey: "styleLab.class.parallelTransitMotion", groupId: "secondaryRing", layer: "outer-label",
     primitive: "text", capabilities: C.text,
-    applicability: applicability("classic.single.outer.parallelTransit", { requiredFeatures: ["outerRing.parallelTransit", "motionMarkers"] }), fontRole: "symbols", colorTarget: "palette-role",
+    applicability: applicability("classic.single.outer.parallelTransit", { requiredFeatures: ["outerRing.parallelTransit", "motionMarkers"] }), fontRole: "text", colorTarget: "palette-role",
   }),
 
   "surveil.tick": define({
     labelKey: "styleLab.class.surveilTick", groupId: "surveil", layer: "outer-label",
     primitive: "line", capabilities: C.openLine,
-    applicability: applicability("classic.single.surveil", { requiredFeatures: ["surveil"] }), colorTarget: "class",
+    applicability: applicability("classic.single.surveil", { requiredFeatures: ["surveil"] }), colorTarget: "palette-role",
   }),
   "surveil.marker.glyph": define({
     labelKey: "styleLab.class.surveilMarkerGlyph", groupId: "surveil", layer: "outer-label",
@@ -762,7 +853,7 @@ const WHEEL_SEMANTIC_CLASS_INPUTS = {
   "chartOverlay.events.header.trailing": define({
     labelKey: "styleLab.class.eventHeaderTrailing", groupId: "chartOverlay", layer: "overlay",
     primitive: "text", capabilities: C.text,
-    applicability: applicability("classic.single.overlays", { requiredFeatures: ["overlay.events.header"] }), fontRole: "text", colorTarget: "palette-role",
+    applicability: applicability("classic.single.overlays", { requiredFeatures: ["overlay.events.header"] }), fontRole: "symbols", colorTarget: "palette-role",
   }),
   "chartOverlay.events.signal.label": define({
     labelKey: "styleLab.class.eventSignalLabel", groupId: "chartOverlay", layer: "overlay",

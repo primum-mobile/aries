@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
 } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ChartStylePanel } from "@/components/workshell/chart-style-panel";
+import { AppThemePreview } from "@/components/workshell/app-theme-preview";
 import { SystemChartPicker } from "@/components/workshell/system-chart-picker";
 import { ChartSurface } from "@/components/workshell/workspace-content";
 import type { ChartRenderSnapshot, RenderVariant } from "@/lib/chart/types";
@@ -90,6 +92,19 @@ function StyleLabSurface() {
   const styleGestureActive = useChartStyleEditorStore(
     (state) => state.gestureStart !== null,
   );
+  const editorDomain = useChartStyleEditorStore((state) => state.editorDomain);
+  const styleLabBaseTheme = useChartStyleEditorStore(
+    (state) => state.styleLabBaseTheme,
+  );
+  const styleCssOverrides = useChartStyleEditorStore(
+    (state) => state.cssOverrides,
+  );
+  const shellThemeStyle = useMemo(() => ({
+    ...styleLabBaseTheme.appTokens,
+    ...styleLabBaseTheme.chartPalette,
+    ...styleCssOverrides,
+    colorScheme: styleLabBaseTheme.mode,
+  }) as CSSProperties, [styleCssOverrides, styleLabBaseTheme]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -183,26 +198,38 @@ function StyleLabSurface() {
   ) : null;
 
   if (picker) {
-    return <main className={styles.pickerShell}>{picker}</main>;
+    return <main className={styles.pickerShell} style={shellThemeStyle}>{picker}</main>;
   }
 
   return (
-    <main className={styles.labShell}>
+    <main className={styles.labShell} style={shellThemeStyle}>
       <section
         className={styles.chartStage}
-        aria-label={t("styleLab.preview.label")}
-        aria-busy={snapshotStatus === "loading"}
-      >
-        {chart ? (
-          <ChartSurface
-            chart={chart}
-            appControlsEnabled={false}
-            inheritAppTheme={false}
-          />
-        ) : (
-          <div className={styles.emptyState}>{statusLabel}</div>
+        aria-label={t(
+          editorDomain === "app"
+            ? "styleLab.app.preview.label"
+            : "styleLab.preview.label",
         )}
-        <div className={styles.chartActions}>
+        aria-busy={editorDomain === "chart" && snapshotStatus === "loading"}
+      >
+        {editorDomain === "app" ? (
+          chart ? (
+            <div className={styles.appPreviewStage}>
+              <AppThemePreview chart={chart} />
+            </div>
+          ) : (
+            <div className={styles.emptyState}>{statusLabel}</div>
+          )
+        ) : chart ? (
+            <ChartSurface
+              chart={chart}
+              appControlsEnabled={false}
+              inheritAppTheme={false}
+            />
+          ) : (
+            <div className={styles.emptyState}>{statusLabel}</div>
+          )}
+        {editorDomain === "chart" ? <div className={styles.chartActions}>
           <div className={styles.variantSwitcher} role="group" aria-label={t("styleLab.variant.label")}>
             {VARIANTS.map((variant) => (
               <button
@@ -332,7 +359,7 @@ function StyleLabSurface() {
           >
             <FolderOpen aria-hidden="true" />
           </Button>
-        </div>
+        </div> : null}
       </section>
 
       <div className={styles.inspectorPane} aria-label={t("styleLab.inspector.label")}>

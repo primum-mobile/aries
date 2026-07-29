@@ -30,7 +30,7 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 REPO_ROOT = Path(os.environ.get("ARIES_DAEMON_BASE_DIR", "").strip() or Path(__file__).resolve().parents[2])
 if str(REPO_ROOT) not in sys.path:
@@ -50,6 +50,13 @@ from engine import solilunar
 
 from webapp.daemon.chart_service import chart_snapshot_service
 from webapp.daemon import settings_registry
+from webapp.daemon.builtin_style_profiles import (
+    BUILTIN_STYLE_PRESET_NAMES,
+    BUILTIN_STYLE_PROFILE_IDS,
+    NASA_ATLAS_PRESET_NAME,
+    builtin_style_profile,
+    nasa_atlas_upgrade_for,
+)
 from webapp.daemon.event_time import (
     EVENT_TABLE_TIME_BASIS_VALUES,
     EVENT_TABLE_TIME_DEFAULT_LOCATION,
@@ -57,15 +64,70 @@ from webapp.daemon.event_time import (
     event_table_time_basis,
 )
 from webapp.daemon.style_profile_service import (
+    PROFILE_KIND,
+    PROFILE_SCHEMA_VERSION,
     StyleProfileError,
     StyleProfileStore,
     split_style_profile_css_overrides,
+    validate_style_profile,
 )
+from webapp.daemon.style_authoring_service import build_chart_style_profile_v2
+from webapp.daemon.style_profile_catalog_generated import TOKEN_SCHEMA_VERSION
 
 
 logger = logging.getLogger(__name__)
 
 THEME_STATE_SCHEMA_VERSION = 2
+_ACTIVE_PROFILE_UNSET = object()
+_STYLE_PROFILE_THEME_PREFIX = "profile:"
+_RETIRED_BUILTIN_STYLE_PROFILE_IDS = frozenset({
+    "chrome-glass-light",
+    "chrome-glass-dark",
+})
+_UNIFIED_APP_SURFACE_PRESETS = frozenset({
+    "Midnight",
+    "Daylight",
+    "Diurnal",
+    "Taurus",
+    "Nocturne",
+    "Sirius",
+})
+
+
+def _style_profile_theme_name(profile_id: str) -> str:
+    return f"{_STYLE_PROFILE_THEME_PREFIX}{profile_id}"
+
+
+def _style_profile_id_from_theme_name(name: str) -> Optional[str]:
+    if not str(name).startswith(_STYLE_PROFILE_THEME_PREFIX):
+        return None
+    profile_id = str(name)[len(_STYLE_PROFILE_THEME_PREFIX):].strip()
+    if not profile_id:
+        raise StyleProfileError("saved theme selector is missing its profile id")
+    return profile_id
+
+
+def _style_lab_system_profile_id(name: str) -> str:
+    builtin = builtin_style_profile(name)
+    if builtin is not None:
+        return str(builtin["id"])
+    slug = ''.join(
+        character.lower() if character.isalnum() else '-'
+        for character in str(name)
+    ).strip('-')
+    while '--' in slug:
+        slug = slug.replace('--', '-')
+    return f'theme-source-{slug}'
+
+
+def _style_lab_system_preset_name(profile: Any) -> Optional[str]:
+    if not isinstance(profile, Mapping):
+        return None
+    profile_id = str(profile.get('id') or '')
+    for name in PALETTE_PRESET_NAMES:
+        if profile_id == _style_lab_system_profile_id(name):
+            return name
+    return None
 
 
 def _jsonable_refdeg(trip) -> list:
@@ -649,10 +711,11 @@ _COLOR_BOOL_FIELDS = ('useplanetcolors', 'usezodiacelementcolors', 'follow_os_th
 # is intentionally not exported in the webapp; PDF monochrome is an export
 # setting. `showkeyprompts` gates keyboard learning hints (:129).
 _DISPLAY_BOOL_FIELDS = (
-    'houses', 'housesystem', 'topocentric', 'morin_antiscia',
+    'houses', 'showouterhouselines', 'housesystem', 'topocentric', 'morin_antiscia',
     'showvertex', 'showaspectstovertex',
     # Aspect drawing master + sub-toggles (appearance1dlg.py:805/818-819).
     'aspects', 'symbols', 'traditionalaspects',
+    'showaspectstoasc', 'showaspectstomc', 'showaspectstodsc', 'showaspectstoic',
 	# Body show-toggles (appearance1dlg.py:855-871).
 	'showchiron', 'shownodes', 'aspectstonodes',
 	'showlof', 'showaspectstolof', 'showlofouterring', 'showprenatalsyzygy',
@@ -677,14 +740,11 @@ _DISPLAY_BOOL_FIELDS = (
     # Radix overlay event rows. These are display-only toggles: disabling them
     # also prevents the full-overlay Cazimi/eclipse scans from running.
     'showcazimi', 'showeclipseoverlay',
-    # Astrocart Local Space composition: Local-only or overlaid on normal ACG.
-    'astrocart_localspace_additive',
     # Display-only celestial reference circles on Astrocartography maps.
     'astrocart_show_ecliptic', 'astrocart_show_equator',
     'astrocart_show_asc_circle', 'astrocart_show_mc_circle',
     'astrocart_show_house_lines', 'astrocart_show_zodiac_lines',
     'astrocart_show_country_labels',
-    'astrocart_terrain_relief',
     # Show the two parties in the aspect hover flag. build_flag_payload reads it
     # at chartinspector.py:1262; inspector_service already calls that builder
     # (inspector_service.py:599), so exposing the option makes the flag honour it.
@@ -727,24 +787,59 @@ _DISPLAY_BOOL_VECTOR_FIELDS = ('transcendental', 'aspect')  # list[bool]
 # (chart.py:458-469; appearance1dlg.py:806-817).
 _MINOR_ASPECT_INDICES = (1, 2, 4, 7, 8, 9, 11)
 _DISPLAY_OVERLAY_ONLY_FIELDS = {
+    'houses',
+    'showouterhouselines',
+    'housesystem',
     'theme',
     'anglo_dense_label_layout',
+    # Body visibility changes the retained list projection, never the
+    # canonical point universe or its calculated aspect rows.
+    'transcendental',
+    'showchiron',
+    'shownodes',
+    'showlof',
+    'showvertex',
+    'showprenatalsyzygy',
+    'aspectstonodes',
+    'showaspectstolof',
+    'showaspectstovertex',
+    'showlofouterring',
     'showfixstars',
     'aspects',
+    'symbols',
     'traditionalaspects',
     'aspect',
+    'showaspectstoasc',
+    'showaspectstomc',
+    'showaspectstodsc',
+    'showaspectstoic',
     'exclusive_aspects_on_click',
     'exclusive_aspects_on_click_show_minor',
     'exclusive_aspects_on_click_traditional',
     'aspect_thickness_mode',
     'aspect_opacity_mode',
+    'fontfamily',
     'phasismode',
     'cazimimode',
     'showcazimi',
     'showeclipseoverlay',
+    'showterms',
+    'showdecans',
+    'planetarydayhour',
+    'information',
+    'showseconds',
+    'positions',
+    'intables',
+    'extendedradixstations',
+    'aspect_flag_show_parties',
+    'showfixstarsnodes',
+    'showfixstarshcs',
+    'showfixstarslof',
+    'usetradfixstarnamespdlist',
+    'ascmcsize',
+    'chartringthickness',
     'showanglearrowheads',
     'showcusplessascmclabels',
-    'astrocart_localspace_additive',
     'astrocart_show_ecliptic',
     'astrocart_show_equator',
     'astrocart_show_asc_circle',
@@ -752,7 +847,6 @@ _DISPLAY_OVERLAY_ONLY_FIELDS = {
     'astrocart_show_house_lines',
     'astrocart_show_zodiac_lines',
     'astrocart_show_country_labels',
-    'astrocart_terrain_relief',
     'synodicmode',
 }
 _DISPLAY_TEXT_ONLY_FIELDS = {'dateconvention'}
@@ -763,8 +857,28 @@ _DISPLAY_UI_STYLE_ONLY_FIELDS = {'presentation_cursor'}
 # daemon list payloads.
 _LIST_NEUTRAL_DISPLAY_FIELDS = (
     _DISPLAY_OVERLAY_ONLY_FIELDS
-    - {'phasismode', 'cazimimode', 'synodicmode'}
+    - {
+        'showfixstars',
+        'phasismode',
+        'cazimimode',
+        'synodicmode',
+        'usetradfixstarnamespdlist',
+        # The chart's configured aspect set is also the Aspect List's row gate.
+        # It remains a display-only chart refresh, but retained list data changes.
+        'aspects',
+        'aspect',
+        'traditionalaspects',
+    }
 ) | _DISPLAY_UI_STYLE_ONLY_FIELDS
+_RETAINED_LIST_DATA_IGNORED_PAYLOAD_GROUPS = {
+    'colors',
+    'export',
+    'retainedListDisplay',
+    'themePresets',
+    'themeState',
+    'catalog',
+    'settingsRegistry',
+}
 # Numeric sliders (appearance1dlg.py:287-304). The legacy wx tablesize slider is
 # intentionally not exported in the webapp: current web table surfaces do not
 # consume it, and table density will get a separate retained-table sizing model.
@@ -781,6 +895,19 @@ _PDF_CHART_COLOR_MODE_CATALOG = (
     {'value': 'colored-details', 'label': 'Colored details', 'labelKey': 'ColoredDetails'},
 )
 _PDF_CHART_COLOR_MODE_VALUES = {item['value'] for item in _PDF_CHART_COLOR_MODE_CATALOG}
+_PDF_CHART_RASTER_PRESET_CATALOG = (
+    {'value': 'clean', 'labelKey': 'settings.pdfRasterClean'},
+    {'value': 'atkinson', 'labelKey': 'settings.pdfRasterAtkinson'},
+    {'value': 'blue-noise', 'labelKey': 'settings.pdfRasterBlueNoise'},
+    {'value': 'newsprint', 'labelKey': 'settings.pdfRasterNewsprint'},
+)
+_PDF_CHART_RASTER_PRESET_VALUES = {item['value'] for item in _PDF_CHART_RASTER_PRESET_CATALOG}
+_PNG_CHART_APPEARANCE_CATALOG = (
+    {'value': 'screen', 'labelKey': 'settings.pngAppearanceScreen'},
+    {'value': 'monochrome', 'labelKey': 'settings.pngAppearanceMonochrome'},
+    {'value': 'colored-details', 'labelKey': 'settings.pngAppearanceColoredDetails'},
+)
+_PNG_CHART_APPEARANCE_VALUES = {item['value'] for item in _PNG_CHART_APPEARANCE_CATALOG}
 _EVENT_TABLE_TIME_BASIS_CATALOG = (
     {'value': EVENT_TABLE_TIME_DEFAULT_LOCATION, 'label': 'Default Location', 'labelKey': 'DefaultLocation'},
     {'value': EVENT_TABLE_TIME_UT, 'label': 'UT', 'labelKey': 'UT'},
@@ -1361,6 +1488,13 @@ _PROFILE_CHART_BASE_ATTRS = {
     'chart.color.element.water': 'clrsignelementwater',
 }
 
+_PROFILE_APP_BASE_ATTRS = {
+    'app.color.background': 'clrappbackground',
+    'app.color.textPrimary': 'clrapptexts',
+    'app.color.surface': 'clrsidebar',
+    'app.sidebar.foreground': 'clrsidebartext',
+}
+
 _PROFILE_CHART_BASE_EXTRA_ATTRS = (
     'clrtable',
     'clrindividual',
@@ -1451,6 +1585,18 @@ def _profile_base_chart_semantic_overrides(opts, profile: Optional[dict]) -> dic
         result[semantic_id] = list(bodies[index])
     for semantic_id, _css_var, index in _PROFILE_ASPECT_COLOR_ROLES:
         result[semantic_id] = list(aspects[index])
+    return result
+
+
+def _profile_base_app_semantic_overrides(opts, profile: Optional[dict]) -> dict[str, list[int]]:
+    values, use_app_base, _ = _style_profile_base_values(opts, profile)
+    if not use_app_base:
+        return {}
+    result: dict[str, list[int]] = {}
+    for semantic_id, attr in _PROFILE_APP_BASE_ATTRS.items():
+        rgb = _rgb(values.get(attr))
+        if rgb is not None:
+            result[semantic_id] = rgb
     return result
 
 
@@ -1575,14 +1721,30 @@ def _theme_state_payload(opts, active_profile: Optional[dict] = None) -> dict:
     # overrides before calculating mode, muted text, borders, and accents.
     effective_app_bg = typed_rgb('app.color.background', app_bg)
     effective_app_text = typed_rgb('app.color.textPrimary', app_text)
-    effective_sidebar = typed_rgb('app.color.surface', sidebar)
     is_dark = _relative_luminance(effective_app_bg) < 0.5
+    active_palette_name = (
+        _current_palette_preset_name(opts)
+        if active_profile is None
+        else None
+    )
+    # These established palettes predate independently authored full-pane
+    # materials. Their subtle clrsidebar value belongs to controls and small
+    # regions, not an entire sidebar or inspector. Keep their app backgrounds
+    # unified; saved/custom profiles remain free to author app.color.surface
+    # or individual pane backgrounds.
+    surface_fallback = (
+        effective_app_bg
+        if active_palette_name in _UNIFIED_APP_SURFACE_PRESETS
+        else sidebar
+    )
+    effective_sidebar = typed_rgb('app.color.surface', surface_fallback)
     toward_text = effective_app_text if is_dark else (0, 0, 0)
     surface_subtle = _mix_rgb(effective_sidebar, toward_text, 0.10 if is_dark else 0.06)
     accent = _mix_rgb(effective_sidebar, toward_text, 0.18 if is_dark else 0.11)
     border = _mix_rgb(effective_sidebar, toward_text, 0.20 if is_dark else 0.18)
     muted_text = _mix_rgb(effective_app_text, effective_app_bg, 0.34 if is_dark else 0.28)
     dim_text = _mix_rgb(effective_app_text, effective_app_bg, 0.50 if is_dark else 0.42)
+    titlebar_text = _mix_rgb(effective_app_text, effective_app_bg, 0.16)
 
     text_font_stack = _web_text_font_stack(opts)
     app_tokens = {
@@ -1597,31 +1759,49 @@ def _theme_state_payload(opts, active_profile: Optional[dict] = None) -> dict:
         '--aries-surface': _css_rgb(effective_sidebar),
         '--aries-surface-subtle': _css_rgb(surface_subtle),
         '--aries-accent': _css_rgb(accent),
+        '--aries-accent-foreground': 'var(--aries-text-primary)',
         '--aries-border-subtle': _css_rgb(border),
+        '--aries-sidebar-background': 'var(--aries-surface)',
+        '--aries-sidebar-accent-foreground': 'var(--aries-accent-foreground)',
+        '--aries-titlebar-background': 'var(--aries-background)',
+        '--aries-titlebar-text': _css_rgb(titlebar_text),
+        '--aries-statusbar-background': 'var(--aries-background)',
+        '--aries-panel-background': 'var(--aries-surface)',
+        '--aries-panel-text': 'var(--aries-text-primary)',
+        '--aries-overlay-background': 'var(--aries-surface)',
+        '--aries-overlay-text': 'var(--aries-text-primary)',
+        '--aries-popover-background': 'var(--aries-background)',
+        '--aries-popover-text': 'var(--aries-text-primary)',
+        '--aries-control-background': 'var(--aries-surface-subtle)',
+        '--aries-control-text': 'var(--aries-text-primary)',
+        '--aries-data-body-background': 'var(--aries-background)',
+        '--aries-data-body-text': 'var(--aries-text-primary)',
+        '--aries-data-header-background': 'var(--aries-surface)',
+        '--aries-data-header-text': 'var(--aries-text-primary)',
 
         # Compatibility aliases are references, not a second concrete palette.
         # This keeps shadcn/Tailwind consumers synchronized with Aries semantic
         # tokens when a future profile or transient design preview overrides one.
         '--background': 'var(--aries-background)',
         '--foreground': 'var(--aries-text-primary)',
-        '--card': 'var(--aries-surface)',
-        '--card-foreground': 'var(--aries-text-primary)',
-        '--popover': 'var(--aries-background)',
-        '--popover-foreground': 'var(--aries-text-primary)',
+        '--card': 'var(--aries-panel-background)',
+        '--card-foreground': 'var(--aries-panel-text)',
+        '--popover': 'var(--aries-popover-background)',
+        '--popover-foreground': 'var(--aries-popover-text)',
         '--primary': 'var(--aries-text-primary)',
         '--primary-foreground': 'var(--aries-surface)',
         '--secondary': 'var(--aries-accent)',
-        '--secondary-foreground': 'var(--aries-text-primary)',
+        '--secondary-foreground': 'var(--aries-accent-foreground)',
         '--muted': 'var(--aries-surface-subtle)',
         '--muted-foreground': 'var(--aries-text-dim)',
         '--accent': 'var(--aries-accent)',
-        '--accent-foreground': 'var(--aries-text-primary)',
+        '--accent-foreground': 'var(--aries-accent-foreground)',
         '--destructive': 'var(--aries-destructive)',
         '--border': 'var(--aries-border-subtle)',
         '--input': 'var(--aries-border-subtle)',
         '--ring': 'var(--aries-text-muted)',
 
-        '--sidebar': 'var(--aries-surface)',
+        '--sidebar': 'var(--aries-sidebar-background)',
         '--sidebar-foreground': 'var(--aries-sidebar-text)',
         '--sidebar-primary': 'var(--aries-text-primary)',
         '--sidebar-primary-foreground': 'var(--aries-surface)',
@@ -1681,8 +1861,15 @@ def _theme_state_payload(opts, active_profile: Optional[dict] = None) -> dict:
             key: active_profile.get(key)
             for key in ('id', 'name', 'scope', 'basePresetId', 'contentHash')
         }
+    builtin_preset_name = _style_lab_system_preset_name(active_profile)
     return {
-        'activePreset': _current_palette_preset_name(opts),
+        'activePreset': (
+            builtin_preset_name
+            if builtin_preset_name is not None
+            else _style_profile_theme_name(str(active_profile['id']))
+            if active_profile
+            else _current_palette_preset_name(opts)
+        ),
         'mode': 'dark' if is_dark else 'light',
         'presentationCursor': bool(getattr(opts, 'presentation_cursor', False)),
         'appTokens': app_tokens,
@@ -1692,6 +1879,12 @@ def _theme_state_payload(opts, active_profile: Optional[dict] = None) -> dict:
             'appTokens': profile_app_tokens,
             'chartPalette': profile_chart_tokens,
             'chartData': _profile_chart_data_overrides(opts, active_profile),
+            'wheelAuthoring': copy.deepcopy(
+                (active_profile or {}).get('authoringOverrides') or {}
+            ),
+            'appAuthoring': copy.deepcopy(
+                (active_profile or {}).get('appAuthoringOverrides') or {}
+            ),
         },
     }
 
@@ -1751,6 +1944,8 @@ def _resolve_palette_preset_values(opts, name: str) -> dict:
     if name == 'Midnight':
         return dict(_CURRENT_COLOR_NIGHT_PRESET)
     if name == 'Daylight':
+        return dict(_CURRENT_COLOR_DAY_PRESET)
+    if name == NASA_ATLAS_PRESET_NAME:
         return dict(_CURRENT_COLOR_DAY_PRESET)
     if name == 'Diurnal':
         return dict(_DIURNAL_PRESET)
@@ -2065,6 +2260,7 @@ class OptionsService:
         self._theme_hash: Optional[str] = None
         self._theme_version = 0
         self._style_profile_store: Optional[StyleProfileStore] = None
+        self._retained_list_data_key: Optional[str] = None
 
     def set_controller(self, controller) -> None:
         self._controller = controller
@@ -2078,6 +2274,7 @@ class OptionsService:
     def get_options(self) -> dict:
         with self._lock:
             opts = self.options
+            active_style_profile = self._style_profiles().active_profile()
             # Heal historical Auto-TZ records whose name/coordinates were
             # changed while an older city's tzid remained saved.  Frontend
             # boot always reads this payload, so canonical in-memory state and
@@ -2088,9 +2285,10 @@ class OptionsService:
                     opts.saveDefLocation()
                 except Exception:
                     pass
-            return {
+            payload = {
                 'colors': self._read_colors(opts),
                 'display': self._read_display(opts),
+                'aspectList': self._read_aspect_list(opts),
                 'houseSystem': self._read_house_system(opts),
                 'ayanamsha': self._read_ayanamsha(opts),
                 'orbs': self._read_orbs(opts),
@@ -2112,11 +2310,124 @@ class OptionsService:
                 'relationshipCharts': self._read_relationship_charts(opts),
                 'languages': self._read_languages(opts),
                 'planetsPoints': self._read_planets_points(opts),
-                'themePresets': self._read_theme_presets(opts),
-                'themeState': self._read_theme_state(opts),
+                'retainedListDisplay': self._read_retained_list_display(opts),
+                'themePresets': self._read_theme_presets(opts, active_style_profile),
+                'themeState': self._read_theme_state(opts, active_style_profile),
                 'catalog': self._read_catalog(opts),
                 'settingsRegistry': settings_registry.registry_payload(),
             }
+            retained_list_data_key = self._retained_list_data_key_from_payload(payload)
+            self._retained_list_data_key = retained_list_data_key
+            payload['retainedListDataKey'] = retained_list_data_key
+            return payload
+
+    @staticmethod
+    def _retained_list_data_key_from_payload(payload: Mapping[str, Any]) -> str:
+        """Content identity for option state that can alter retained data.
+
+        Event sequence numbers authorize request ordering but cannot identify a
+        reusable data world. Keep this key content-derived and omit projection,
+        style, export and catalog data that retained lists never query.
+        """
+        semantic: dict[str, Any] = {}
+        for group, value in payload.items():
+            if group in _RETAINED_LIST_DATA_IGNORED_PAYLOAD_GROUPS:
+                continue
+            if group == 'display' and isinstance(value, Mapping):
+                semantic[group] = {
+                    key: item
+                    for key, item in value.items()
+                    if key not in _LIST_NEUTRAL_DISPLAY_FIELDS
+                }
+                continue
+            if group == 'dignities' and isinstance(value, Mapping):
+                semantic[group] = {
+                    key: item
+                    for key, item in value.items()
+                    if key != 'showterms'
+                }
+                continue
+            semantic[group] = value
+        encoded = json.dumps(
+            semantic,
+            sort_keys=True,
+            separators=(',', ':'),
+            ensure_ascii=True,
+        ).encode('utf-8')
+        return f"retained-v1:{hashlib.sha256(encoded).hexdigest()}"
+
+    def get_retained_list_data_key(self) -> str:
+        with self._lock:
+            if self._retained_list_data_key is None:
+                self.get_options()
+            return str(self._retained_list_data_key)
+
+    @staticmethod
+    def _read_retained_list_display(opts) -> dict:
+        """Projection-only body visibility shared by resident list renderers.
+
+        These ids address rows already present in each list's canonical source
+        universe. They must never participate in calculation/cache identity.
+        """
+        hidden: list[str] = []
+        transcendental = list(getattr(opts, 'transcendental', ()) or ())
+        for index, key in enumerate(('uranus', 'neptune', 'pluto')):
+            if index >= len(transcendental) or not bool(transcendental[index]):
+                hidden.append(f'planet:{key}')
+        if not bool(getattr(opts, 'showchiron', True)):
+            hidden.append('planet:chiron')
+        if not bool(getattr(opts, 'shownodes', True)):
+            hidden.extend(('planet:nnode', 'planet:snode'))
+        if not bool(getattr(opts, 'showlof', True)):
+            hidden.append('point:fortune')
+        if not bool(getattr(opts, 'showvertex', True)):
+            hidden.append('point:vertex')
+        if not bool(getattr(opts, 'showprenatalsyzygy', False)):
+            hidden.append('point:syzygy')
+        return {'hiddenObjectIds': hidden}
+
+    def get_retained_list_display(self) -> dict:
+        with self._lock:
+            return self._read_retained_list_display(self.options)
+
+    def get_sidebar_list_preferences(self) -> dict:
+        """Small durable preference payload for retained sidebar lists.
+
+        This deliberately bypasses the chart-options refresh fan-out: chooser,
+        sorting, and drawer controls are presentation state and must not
+        recalculate charts or invalidate retained list data.
+        """
+        with self._lock:
+            opts = self.options
+            normalized = opts._normalize_sidebar_list_preferences(
+                getattr(opts, 'sidebar_list_preferences', None)
+            )
+            opts.sidebar_list_preferences = copy.deepcopy(normalized)
+            return copy.deepcopy(normalized)
+
+    def set_sidebar_list_preferences(self, patch: dict) -> dict:
+        if not isinstance(patch, dict):
+            raise ValueError('patch must be an object')
+        with self._lock:
+            opts = self.options
+            current = opts._normalize_sidebar_list_preferences(
+                getattr(opts, 'sidebar_list_preferences', None)
+            )
+            candidate = copy.deepcopy(current)
+            for group in ('aspectList', 'transitList'):
+                fields = patch.get(group)
+                if not isinstance(fields, dict):
+                    continue
+                candidate[group] = {
+                    **candidate.get(group, {}),
+                    **fields,
+                }
+            normalized = opts._normalize_sidebar_list_preferences(candidate)
+            if normalized != current:
+                opts.sidebar_list_preferences = copy.deepcopy(normalized)
+                if not opts.saveSidebarListPreferences():
+                    raise RuntimeError('could not persist sidebar list preferences')
+            return copy.deepcopy(normalized)
 
     def preview_options(self, patch: dict):
         """Return an in-memory options clone with a live-preview patch applied.
@@ -2154,9 +2465,123 @@ class OptionsService:
         with self._lock:
             return self._style_profiles().profile(profile_id)
 
+    def build_portable_style_profile_export(self, profile: dict) -> dict:
+        """Freeze a draft's local palette base into portable semantic values."""
+        with self._lock:
+            source = validate_style_profile(profile)
+            if source.get('basePresetId') is None:
+                return source
+            overrides = _profile_base_app_semantic_overrides(self.options, source)
+            overrides.update(_profile_base_chart_semantic_overrides(self.options, source))
+            overrides.update(source.get('overrides') or {})
+            return validate_style_profile({
+                **source,
+                'basePresetId': None,
+                'overrides': overrides,
+            })
+
     def get_active_style_profile(self) -> Optional[dict]:
         with self._lock:
             return self._style_profiles().active_profile()
+
+    @staticmethod
+    def _style_lab_factory_theme_profile(name: str) -> dict:
+        """Portable factory profile for one real Aries theme preset."""
+        profile_id = _style_profile_id_from_theme_name(name)
+        if profile_id is not None:
+            raise StyleProfileError("saved user themes do not have factory profiles")
+        if name not in PALETTE_PRESET_NAMES:
+            raise StyleProfileError(f"unknown palette preset: {name!r}")
+        builtin_profile = builtin_style_profile(name)
+        if builtin_profile is not None:
+            return builtin_profile
+        return validate_style_profile({
+            'kind': PROFILE_KIND,
+            'profileSchemaVersion': PROFILE_SCHEMA_VERSION,
+            'tokenSchemaVersion': TOKEN_SCHEMA_VERSION,
+            'id': _style_lab_system_profile_id(name),
+            'name': name,
+            'scope': 'combined',
+            'basePresetId': name,
+            'overrides': {},
+            'authoringOverrides': {},
+            'appAuthoringOverrides': {},
+            'chartStyleProfileV2': build_chart_style_profile_v2({}),
+        })
+
+    def _style_lab_theme_profile(self, name: str) -> dict:
+        """Editable source profile for one real Aries theme preset.
+
+        User themes and saved system-theme overrides retain their persistence
+        identity. A system theme without a saved override resolves to its
+        factory profile.
+        """
+        profile_id = _style_profile_id_from_theme_name(name)
+        if profile_id is not None:
+            return self._style_profiles().profile(profile_id)
+        factory = self._style_lab_factory_theme_profile(name)
+        try:
+            return self._style_profiles().profile(str(factory['id']))
+        except StyleProfileError:
+            return factory
+
+    def get_style_lab_theme_profile(self, name: str) -> dict:
+        """Return an editable source without changing active app options."""
+        with self._lock:
+            return self._style_lab_theme_profile(name)
+
+    def get_style_lab_factory_theme_profile(self, name: str) -> dict:
+        """Return the immutable shipped definition for a system theme."""
+        with self._lock:
+            return self._style_lab_factory_theme_profile(name)
+
+    def get_style_lab_theme_sources(self) -> dict:
+        """Actual Theme presets plus their fully resolved preview tokens."""
+        with self._lock:
+            opts = self.options
+            presets = self._read_theme_presets(opts, self._style_profiles().active_profile())
+            sources = []
+            for preset in presets:
+                name = str(preset['name'])
+                profile_id = _style_profile_id_from_theme_name(name)
+                profile = self._style_lab_theme_profile(name)
+                system = profile_id is None
+                factory = (
+                    self._style_lab_factory_theme_profile(name)
+                    if system
+                    else None
+                )
+                theme = _theme_state_payload(opts, profile)
+                sources.append({
+                    'name': name,
+                    'label': str(preset.get('label') or name),
+                    'profileId': profile_id,
+                    'deletable': profile_id is not None,
+                    'system': system,
+                    'factoryModified': bool(
+                        factory
+                        and profile.get('contentHash') != factory.get('contentHash')
+                    ),
+                    'mode': theme['mode'],
+                    'selected': bool(preset.get('selected')),
+                    'basePresetId': profile.get('basePresetId'),
+                    'appTokens': copy.deepcopy(theme['appTokens']),
+                    'chartPalette': copy.deepcopy(theme['chartPalette']),
+                    'appAuthoring': copy.deepcopy(
+                        theme['profileOverrides']['appAuthoring']
+                    ),
+                })
+            return {'sources': sources}
+
+    def get_theme_presets(self) -> list:
+        """Return the current built-in and user-authored app theme selectors."""
+        with self._lock:
+            return copy.deepcopy(
+                self._read_theme_presets(
+                    self.options,
+                    self._style_profiles().active_profile(),
+                )
+            )
 
     def validate_style_profile_base(self, profile: Optional[dict]) -> dict:
         """Validate daemon-owned preset references without persisting a profile."""
@@ -2252,6 +2677,15 @@ class OptionsService:
             raise StyleProfileError('options directory is unavailable')
         if self._style_profile_store is None or str(self._style_profile_store.path.parent) != opts_dir:
             self._style_profile_store = StyleProfileStore(opts_dir)
+            self._style_profile_store.discard_profiles(
+                _RETIRED_BUILTIN_STYLE_PROFILE_IDS
+            )
+            replacement = nasa_atlas_upgrade_for(
+                self._style_profile_store.active_profile()
+            )
+            if replacement is not None:
+                self._validate_style_profile_base(replacement)
+                self._style_profile_store.upsert(replacement, activate=True)
         return self._style_profile_store
 
     @staticmethod
@@ -2350,8 +2784,10 @@ class OptionsService:
             'shouldPrompt': mode == 'ask',
         }
 
-    def _read_theme_state(self, opts) -> dict:
-        payload = _theme_state_payload(opts, self._style_profiles().active_profile())
+    def _read_theme_state(self, opts, active_profile: Any = _ACTIVE_PROFILE_UNSET) -> dict:
+        if active_profile is _ACTIVE_PROFILE_UNSET:
+            active_profile = self._style_profiles().active_profile()
+        payload = _theme_state_payload(opts, active_profile)
         palette_hash = _theme_payload_hash(payload)
         if palette_hash != self._theme_hash:
             self._theme_hash = palette_hash
@@ -3536,14 +3972,37 @@ class OptionsService:
         out['fontfamily'] = _coerce_font_profile(ff)
         return out
 
+    @staticmethod
+    def _read_aspect_list(opts) -> dict:
+        """List-only aspect policy; never part of the chart display contract."""
+        return {
+            'showAspectsForDerivedPoints': bool(
+                getattr(opts, 'showaspectsforderivedpoints', False)
+            ),
+        }
+
     def _read_export(self, opts) -> dict:
         mode = str(getattr(opts, 'pdf_chart_color_mode', 'monochrome') or 'monochrome')
         if mode not in _PDF_CHART_COLOR_MODE_VALUES:
             mode = 'monochrome'
+        raster_preset = str(getattr(opts, 'pdf_chart_raster_preset', 'clean') or 'clean')
+        if raster_preset not in _PDF_CHART_RASTER_PRESET_VALUES:
+            raster_preset = 'clean'
+        png_appearance = str(getattr(opts, 'png_chart_appearance', 'screen') or 'screen')
+        if png_appearance not in _PNG_CHART_APPEARANCE_VALUES:
+            png_appearance = 'screen'
         return {
+            'pngChartAppearance': png_appearance,
+            'pngIncludeOverlays': bool(getattr(opts, 'png_include_overlays', True)),
+            'pngChartAppearanceChoices': [dict(item) for item in _PNG_CHART_APPEARANCE_CATALOG],
             'pdfChartColorMode': mode,
+            'pdfChartRasterPreset': raster_preset,
             'pdfIncludeOverlays': bool(getattr(opts, 'pdf_include_overlays', True)),
+            'listExportAspectSymbols': bool(
+                getattr(opts, 'list_export_aspect_symbols', False)
+            ),
             'pdfChartColorModeChoices': _localized(_PDF_CHART_COLOR_MODE_CATALOG),
+            'pdfChartRasterPresetChoices': [dict(item) for item in _PDF_CHART_RASTER_PRESET_CATALOG],
         }
 
     def _read_house_system(self, opts) -> dict:
@@ -4136,14 +4595,21 @@ class OptionsService:
             rebuilt.extend([tuple(nocturnal_codes), tuple(nocturnal_trip)])
         return tuple(rebuilt)
 
-    def _read_theme_presets(self, opts=None) -> list:
+    def _read_theme_presets(self, opts=None, active_profile: Any = _ACTIVE_PROFILE_UNSET) -> list:
         presets = []
-        selected = _current_palette_preset_name(opts) if opts is not None else None
+        if opts is not None and active_profile is _ACTIVE_PROFILE_UNSET:
+            active_profile = self._style_profiles().active_profile()
+        elif active_profile is _ACTIVE_PROFILE_UNSET:
+            active_profile = None
+        selected = _style_lab_system_preset_name(active_profile)
+        if selected is None and active_profile is None and opts is not None:
+            selected = _current_palette_preset_name(opts)
         modes = {
             _SYSTEM_AUTO_NAME: 'system',
             _MY_COLORS_NAME: 'custom',
             'Midnight': 'dark',
             'Daylight': 'light',
+            NASA_ATLAS_PRESET_NAME: 'light',
             'Diurnal': 'light',
             'Classic Morinus': 'light',
             'Taurus': 'dark',
@@ -4153,7 +4619,11 @@ class OptionsService:
         for name in PALETTE_PRESET_NAMES:
             values = _resolve_palette_preset_values(opts, name) if opts is not None else (
                 _CURRENT_COLOR_NIGHT_PRESET if name == 'Midnight' else
-                _CURRENT_COLOR_DAY_PRESET if name in (_SYSTEM_AUTO_NAME, 'Daylight') else
+                _CURRENT_COLOR_DAY_PRESET if name in (
+                    _SYSTEM_AUTO_NAME,
+                    'Daylight',
+                    NASA_ATLAS_PRESET_NAME,
+                ) else
                 _DIURNAL_PRESET if name == 'Diurnal' else
                 _CLASSIC_MORINUS_PRESET if name == 'Classic Morinus' else
                 _TAURUS_PRESET if name == 'Taurus' else
@@ -4171,6 +4641,37 @@ class OptionsService:
                     if attr in values
                 },
             })
+        if opts is not None:
+            stored_profiles = self._style_profiles().payload().get('profiles') or []
+            for profile in sorted(
+                (
+                    profile
+                    for profile in stored_profiles
+                    if (
+                        isinstance(profile, dict)
+                        and profile.get('id') not in BUILTIN_STYLE_PROFILE_IDS
+                        and not str(profile.get('id') or '').startswith('theme-source-')
+                    )
+                ),
+                key=lambda profile: (
+                    str(profile.get('name') or '').casefold(),
+                    str(profile.get('id') or ''),
+                ),
+            ):
+                profile_id = str(profile.get('id') or '')
+                if not profile_id:
+                    continue
+                theme = _theme_state_payload(opts, profile)
+                presets.append({
+                    'name': _style_profile_theme_name(profile_id),
+                    'label': str(profile.get('name') or profile_id),
+                    'mode': theme['mode'],
+                    'selected': bool(
+                        active_profile
+                        and active_profile.get('id') == profile_id
+                    ),
+                    'chrome': {},
+                })
         return presets
 
     # -- PATCH -------------------------------------------------------------
@@ -4201,12 +4702,21 @@ class OptionsService:
                 continue
             if group == 'display' and set(fields).issubset(_LIST_NEUTRAL_DISPLAY_FIELDS):
                 continue
+            # The same stored flag is mirrored through Appearance and
+            # Dignities. Showing the terms ring does not alter any list row.
+            if group == 'dignities' and set(fields).issubset({'showterms'}):
+                continue
+            # ``housesystem`` is the small on-wheel house-system label.  It is
+            # presentation even when written through the historical
+            # houseSystem group rather than the display group.
+            if group == 'houseSystem' and set(fields).issubset({'housesystem'}):
+                continue
             return True
         return False
 
     def set_options(self, patch: dict) -> dict:
         """Apply a partial, grouped update to the live options object, coercing
-        each field, then re-render all open sessions.
+        each field, then apply the cheapest valid refresh for the changed group.
 
         ``patch`` mirrors the ``get_options`` group shape, e.g.
         ``{"houseSystem": {"hsys": "R"}, "colors": {"clrtexts": [10,20,30]}}``.
@@ -4237,15 +4747,27 @@ class OptionsService:
                     self._autosave_group(opts, group, fields, group_changed)
                 elif group == 'display':
                     group_changed = self._apply_display(opts, fields)
+                    if group_changed and 'fontfamily' in fields:
+                        self._update_active_profile_ui_typeface(opts)
                     changed |= group_changed
                     if group_changed:
                         request_refresh(self._display_refresh_mode(fields))
+                    self._autosave_group(opts, group, fields, group_changed)
+                elif group == 'aspectList':
+                    group_changed = self._apply_aspect_list(opts, fields)
+                    changed |= group_changed
+                    if group_changed:
+                        request_refresh('retained-data')
                     self._autosave_group(opts, group, fields, group_changed)
                 elif group == 'houseSystem':
                     group_changed = self._apply_house_system(opts, fields)
                     changed |= group_changed
                     if group_changed:
-                        request_refresh('house-system')
+                        request_refresh(
+                            'display-overlay'
+                            if set(fields).issubset({'housesystem'})
+                            else 'house-system'
+                        )
                     self._autosave_group(opts, group, fields, group_changed)
                 elif group == 'ayanamsha':
                     group_changed = self._apply_ayanamsha(opts, fields)
@@ -4263,7 +4785,11 @@ class OptionsService:
                     group_changed = self._apply_dignities(opts, fields)
                     changed |= group_changed
                     if group_changed:
-                        request_refresh('recalc')
+                        request_refresh(
+                            'display-overlay'
+                            if set(fields).issubset({'showterms'})
+                            else 'recalc'
+                        )
                     self._autosave_group(opts, group, fields, group_changed)
                 elif group == 'symbols':
                     group_changed = self._apply_symbols(opts, fields)
@@ -4406,7 +4932,7 @@ class OptionsService:
             resolved_refresh_mode = refresh_mode or 'recalc'
             refreshed = (
                 []
-                if resolved_refresh_mode == 'ui-style'
+                if resolved_refresh_mode in {'ui-style', 'retained-data'}
                 else self._refresh_all(resolved_refresh_mode) if refresh_mode else []
             )
         result = self.get_options()
@@ -4414,6 +4940,31 @@ class OptionsService:
         result['refreshMode'] = resolved_refresh_mode if refresh_mode else None
         result['listDataChanged'] = self._patch_affects_list_data(patch)
         return result
+
+    def _update_active_profile_ui_typeface(self, opts) -> bool:
+        """Persist Settings' typeface choice into the active app theme.
+
+        A combined/app profile is the final CSS authority, so changing only the
+        legacy option would appear to do nothing until that profile was
+        deactivated. Keep the normal Settings control authoritative by editing
+        the active theme in place; chart-only profiles continue to inherit the
+        legacy application typeface.
+        """
+        store = self._style_profiles()
+        profile = store.active_profile()
+        if not profile or profile.get('scope') not in ('app', 'combined'):
+            return False
+        overrides = copy.deepcopy(profile.get('overrides') or {})
+        font_stack = _web_text_font_stack(opts)
+        if overrides.get('app.type.familyUi') == font_stack:
+            return False
+        overrides['app.type.familyUi'] = font_stack
+        updated = copy.deepcopy(profile)
+        updated['overrides'] = overrides
+        updated.pop('contentHash', None)
+        self._validate_style_profile_base(updated)
+        store.upsert(updated, activate=True)
+        return True
 
     def set_revolutions_scoped(self, fields: dict) -> dict:
         """Apply Revolutions options without the global open-document refresh.
@@ -4451,6 +5002,8 @@ class OptionsService:
             savers.append('saveAppearance1')
             if 'fontfamily' in fields:
                 savers.append('saveLanguages')
+        elif group == 'aspectList':
+            savers.append('saveAppearance1')
         elif group == 'export':
             savers.append('saveAppearance1')
         elif group == 'houseSystem':
@@ -4646,17 +5199,50 @@ class OptionsService:
             changed = True
         return changed
 
+    @staticmethod
+    def _apply_aspect_list(opts, fields: dict) -> bool:
+        if 'showAspectsForDerivedPoints' not in fields:
+            return False
+        value = bool(fields['showAspectsForDerivedPoints'])
+        if bool(getattr(opts, 'showaspectsforderivedpoints', False)) == value:
+            return False
+        opts.showaspectsforderivedpoints = value
+        return True
+
     def _apply_export(self, opts, fields: dict) -> bool:
         changed = False
+        if 'pngChartAppearance' in fields:
+            appearance = str(fields['pngChartAppearance'] or '')
+            if (
+                appearance in _PNG_CHART_APPEARANCE_VALUES
+                and str(getattr(opts, 'png_chart_appearance', 'screen')) != appearance
+            ):
+                opts.png_chart_appearance = appearance
+                changed = True
+        if 'pngIncludeOverlays' in fields:
+            include = bool(fields['pngIncludeOverlays'])
+            if bool(getattr(opts, 'png_include_overlays', True)) != include:
+                opts.png_include_overlays = include
+                changed = True
         if 'pdfChartColorMode' in fields:
             mode = str(fields['pdfChartColorMode'] or '')
             if mode in _PDF_CHART_COLOR_MODE_VALUES and str(getattr(opts, 'pdf_chart_color_mode', 'monochrome')) != mode:
                 opts.pdf_chart_color_mode = mode
                 changed = True
+        if 'pdfChartRasterPreset' in fields:
+            preset = str(fields['pdfChartRasterPreset'] or '')
+            if preset in _PDF_CHART_RASTER_PRESET_VALUES and str(getattr(opts, 'pdf_chart_raster_preset', 'clean')) != preset:
+                opts.pdf_chart_raster_preset = preset
+                changed = True
         if 'pdfIncludeOverlays' in fields:
             include = bool(fields['pdfIncludeOverlays'])
             if bool(getattr(opts, 'pdf_include_overlays', True)) != include:
                 opts.pdf_include_overlays = include
+                changed = True
+        if 'listExportAspectSymbols' in fields:
+            include = bool(fields['listExportAspectSymbols'])
+            if bool(getattr(opts, 'list_export_aspect_symbols', False)) != include:
+                opts.list_export_aspect_symbols = include
                 changed = True
         return changed
 
@@ -4979,15 +5565,47 @@ class OptionsService:
     # -- THEME -------------------------------------------------------------
 
     def apply_theme_preset(self, name: str) -> dict:
-        """Apply colorsdlg's palette preset semantics, then redraw charts."""
-        if name not in PALETTE_PRESET_NAMES:
+        """Apply a complete built-in or saved theme, then redraw charts."""
+        profile_id = _style_profile_id_from_theme_name(name)
+        if profile_id is None and name not in PALETTE_PRESET_NAMES:
             raise ValueError(f'unknown palette preset: {name!r}')
         with self._lock:
             opts = self.options
-            changed = _apply_palette_values(opts, name, _resolve_palette_preset_values(opts, name))
-            if name != _SYSTEM_AUTO_NAME and changed:
-                _maybe_update_custom_palette(opts)
-            self._autosave_group(opts, 'colors', {}, changed)
+            store = self._style_profiles()
+            before_profile = store.active_profile()
+            palette_changed = False
+            if profile_id is not None:
+                profile = store.profile(profile_id)
+                self._validate_style_profile_base(profile)
+                store.activate(profile_id)
+            elif name in BUILTIN_STYLE_PRESET_NAMES:
+                profile = self._style_lab_theme_profile(name)
+                self._validate_style_profile_base(profile)
+                store.upsert(profile, activate=True)
+            else:
+                try:
+                    profile = store.profile(_style_lab_system_profile_id(name))
+                except StyleProfileError:
+                    profile = None
+                if profile is not None:
+                    self._validate_style_profile_base(profile)
+                    store.activate(str(profile['id']))
+                else:
+                    if before_profile is not None:
+                        store.activate(None)
+                    palette_changed = _apply_palette_values(
+                        opts,
+                        name,
+                        _resolve_palette_preset_values(opts, name),
+                    )
+                    if name != _SYSTEM_AUTO_NAME and palette_changed:
+                        _maybe_update_custom_palette(opts)
+                    self._autosave_group(opts, 'colors', {}, palette_changed)
+            after_profile = store.active_profile()
+            changed = (
+                palette_changed
+                or self._active_style_profile_changed(before_profile, after_profile)
+            )
             refresh_mode = 'display-overlay'
             refreshed = self._refresh_all(refresh_mode) if changed else []
         result = self.get_options()
@@ -5113,6 +5731,7 @@ class OptionsService:
         result['showfixstars'] = new_value
         result['refreshedDocumentIds'] = refreshed
         result['refreshMode'] = refresh_mode
+        result['listDataChanged'] = True
         return result
 
     def toggle_houses(self) -> dict:
@@ -5157,6 +5776,7 @@ class OptionsService:
         result['aspects'] = new_value
         result['refreshedDocumentIds'] = refreshed
         result['refreshMode'] = refresh_mode
+        result['listDataChanged'] = True
         return result
 
     def toggle_minor_aspects(self) -> dict:
@@ -5208,6 +5828,7 @@ class OptionsService:
         result['minorAspects'] = new_value
         result['refreshedDocumentIds'] = refreshed
         result['refreshMode'] = refresh_mode if changed else None
+        result['listDataChanged'] = changed
         return result
 
     # -- RE-RENDER ---------------------------------------------------------

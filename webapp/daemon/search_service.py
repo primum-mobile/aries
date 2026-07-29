@@ -11,6 +11,7 @@ Source surface: ``searchwnd.SearchWnd`` / ``searchframe.SearchFrame``.
 """
 from __future__ import annotations
 
+import asyncio
 import calendar
 import datetime
 import math
@@ -18,6 +19,7 @@ import sys
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Optional
 
@@ -48,6 +50,21 @@ from webapp.daemon.event_time import DefaultLocationClock, table_event_clock
 
 RESULT_LIMIT = 500
 SEARCH_JOB_TTL_SECONDS = 5 * 60
+SEARCH_PROGRESS_MAX_WAIT_MS = 30_000
+SEARCH_PROGRESS_DISCONNECT_CHECK_SECONDS = 0.25
+SEARCH_MAX_WORKERS = 4
+_PRIVATE_ROW_METADATA_KEYS = frozenset(
+    {
+        "cheby_exact_candidate",
+        "cheby_hydrated",
+        "cheby_lazy",
+        "cheby_lazy_display",
+        "display_datetime",
+        "display_hydrated",
+        "prom_display",
+        "sig_display",
+    }
+)
 
 # (technique id, mtexts key, English fallback). Labels are resolved from
 # mtexts at SERVE time (see _technique_payloads) so the active langid applies.
@@ -81,6 +98,9 @@ class _SearchJob:
         self.owner_key = owner_key
         self.time_display = dict(time_display)
         self._lock = threading.Lock()
+        self._revision_waiters: set[
+            tuple[asyncio.AbstractEventLoop, asyncio.Event]
+        ] = set()
         self.rows: list[dict[str, Any]] = []
         self.summary = mtexts.txts.get("Searching", "Searching")
         self.truncated = False
@@ -88,6 +108,8 @@ class _SearchJob:
         self.cancelled = False
         self.phase = ""
         self.error = ""
+        self.cursor: dict[str, Any] | None = None
+        self.revision = 0
         now = time.monotonic()
         self.created_at = now
         self.updated_at = now
@@ -99,6 +121,8 @@ class _SearchJob:
         truncated: bool,
         summary: str,
         phase: str,
+        cursor: Optional[dict[str, Any]] = None,
+        time_display: Optional[dict[str, Any]] = None,
     ) -> None:
         with self._lock:
             if self.cancelled:
@@ -107,12 +131,16 @@ class _SearchJob:
             self.truncated = bool(truncated)
             self.summary = summary
             self.phase = phase
-            self.updated_at = time.monotonic()
+            if cursor is not None:
+                self.cursor = dict(cursor)
+            if time_display is not None:
+                self.time_display = dict(time_display)
+            self._touch_locked()
 
     def finish(self) -> None:
         with self._lock:
             self.complete = True
-            self.updated_at = time.monotonic()
+            self._touch_locked()
 
     def fail(self, message: str) -> None:
         with self._lock:
@@ -121,23 +149,28 @@ class _SearchJob:
             self.error = message
             self.summary = mtexts.txts.get("SearchFailed", "Search failed")
             self.complete = True
-            self.updated_at = time.monotonic()
+            self._touch_locked()
 
     def cancel(self) -> None:
         with self._lock:
             self.cancelled = True
             self.complete = True
             self.summary = mtexts.txts.get("SearchCancelled", "Search cancelled")
-            self.updated_at = time.monotonic()
+            self._touch_locked()
 
     def is_cancelled(self) -> bool:
         with self._lock:
             return bool(self.cancelled)
 
+    def is_complete(self) -> bool:
+        with self._lock:
+            return bool(self.complete)
+
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
-            return {
+            payload = {
                 "sessionId": self.session_id,
+                "revision": self.revision,
                 "rows": list(self.rows),
                 "truncated": bool(self.truncated),
                 "summary": self.summary,
@@ -147,6 +180,44 @@ class _SearchJob:
                 "error": self.error,
                 "timeDisplay": dict(self.time_display),
             }
+            if self.cursor is not None:
+                payload["cursor"] = dict(self.cursor)
+            return payload
+
+    async def wait_for_revision(
+        self,
+        after_revision: int,
+        timeout_seconds: float,
+    ) -> bool:
+        if timeout_seconds <= 0:
+            return False
+        loop = asyncio.get_running_loop()
+        event = asyncio.Event()
+        waiter = (loop, event)
+        with self._lock:
+            if self.revision > after_revision or self.complete:
+                return True
+            self._revision_waiters.add(waiter)
+        try:
+            try:
+                await asyncio.wait_for(event.wait(), timeout=timeout_seconds)
+                return True
+            except asyncio.TimeoutError:
+                return False
+        finally:
+            with self._lock:
+                self._revision_waiters.discard(waiter)
+
+    def _touch_locked(self) -> None:
+        self.revision += 1
+        self.updated_at = time.monotonic()
+        waiters = tuple(self._revision_waiters)
+        self._revision_waiters.clear()
+        for loop, event in waiters:
+            try:
+                loop.call_soon_threadsafe(event.set)
+            except RuntimeError:
+                pass
 
 
 class TransitSearchService:
@@ -157,7 +228,11 @@ class TransitSearchService:
         self._has_saved_search_state = False
         self._jobs: dict[str, _SearchJob] = {}
         self._jobs_lock = threading.Lock()
-        self._search_worker_lock = threading.Lock()
+        self._owner_generations: dict[str, int] = {}
+        self._search_executor = ThreadPoolExecutor(
+            max_workers=SEARCH_MAX_WORKERS,
+            thread_name_prefix="aries-search",
+        )
 
     def catalog(
         self,
@@ -283,23 +358,7 @@ class TransitSearchService:
         persist: bool = True,
     ) -> dict:
         catalog = searchcatalog.SearchCatalog(chrt, custom_points=custom_points)
-        query = searchquery.SearchQuery()
-        query.set_techniques(self._valid_techniques(payload.get("techniques")) or list(DEFAULT_TECHNIQUES))
-        query.set_promittor_ids(
-            self._valid_ids(catalog, payload.get("promittorIds"), can_promittor=True)
-        )
-        query.set_significator_ids(
-            self._valid_ids(catalog, payload.get("significatorIds"), can_significator=True)
-        )
-        query.set_aspects(self._valid_aspects(payload.get("aspects")))
-        query.set_include_sign_changes(bool(payload.get("includeSignChanges", False)))
-        query.set_object_motion_filters(payload.get("objectMotionFilters") or {})
-        progression_method = payload.get("progressionMethod")
-        if progression_method is not None:
-            try:
-                query.set_progression_method(int(progression_method))
-            except Exception:
-                pass
+        query = self._query_from_payload(catalog, payload)
 
         start_date = self._parse_date(payload.get("fromDate"))
         end_date = self._parse_date(payload.get("toDate"))
@@ -323,12 +382,7 @@ class TransitSearchService:
                 "timeDisplay": time_display,
             }
 
-        raw_limit = payload.get("limit", RESULT_LIMIT)
-        try:
-            limit = int(raw_limit)
-        except Exception:
-            limit = RESULT_LIMIT
-        limit = max(1, min(RESULT_LIMIT, limit))
+        limit = self._result_limit(payload)
         if persist:
             self._persist_search_options(query, start_date, end_date, payload)
 
@@ -336,17 +390,13 @@ class TransitSearchService:
             catalog, chrt, query, start_date, end_date, limit
         )
         display_options = effective_display_options(chart_snapshot_service.options)
-        serialized = [
-            self._row_payload(
-                row,
-                catalog,
-                chrt,
-                index,
-                display_clock=display_clock,
-                display_options=display_options,
-            )
-            for index, row in enumerate(rows)
-        ]
+        serialized = self._serialize_rows(
+            rows,
+            catalog,
+            chrt,
+            display_clock=display_clock,
+            display_options=display_options,
+        )
         return {
             "rows": serialized,
             "truncated": bool(truncated),
@@ -373,23 +423,7 @@ class TransitSearchService:
         persist: bool = True,
     ) -> dict:
         catalog = searchcatalog.SearchCatalog(chrt, custom_points=custom_points)
-        query = searchquery.SearchQuery()
-        query.set_techniques(self._valid_techniques(payload.get("techniques")) or list(DEFAULT_TECHNIQUES))
-        query.set_promittor_ids(
-            self._valid_ids(catalog, payload.get("promittorIds"), can_promittor=True)
-        )
-        query.set_significator_ids(
-            self._valid_ids(catalog, payload.get("significatorIds"), can_significator=True)
-        )
-        query.set_aspects(self._valid_aspects(payload.get("aspects")))
-        query.set_include_sign_changes(bool(payload.get("includeSignChanges", False)))
-        query.set_object_motion_filters(payload.get("objectMotionFilters") or {})
-        progression_method = payload.get("progressionMethod")
-        if progression_method is not None:
-            try:
-                query.set_progression_method(int(progression_method))
-            except Exception:
-                pass
+        query = self._query_from_payload(catalog, payload)
 
         start_date = self._parse_date(payload.get("fromDate"))
         end_date = self._parse_date(payload.get("toDate"))
@@ -403,18 +437,22 @@ class TransitSearchService:
             offsets=display_clock.offsets_for_range(start_date, end_date),
         )
 
-        raw_limit = payload.get("limit", RESULT_LIMIT)
-        try:
-            limit = int(raw_limit)
-        except Exception:
-            limit = RESULT_LIMIT
-        limit = max(1, min(RESULT_LIMIT, limit))
+        limit = self._result_limit(payload)
+        cursor_direction, cursor_row_budget, cursor_anchor_date = self._cursor_request(
+            payload,
+            limit,
+            start_date,
+            end_date,
+            query,
+        )
+        session_id = uuid.uuid4().hex
+        owner_key = self._owner_key(payload)
+        job = _SearchJob(session_id, owner_key, time_display)
+        if not self._remember_job(job, self._owner_generation(payload)):
+            job.cancel()
+            return job.snapshot()
         if persist:
             self._persist_search_options(query, start_date, end_date, payload)
-
-        session_id = uuid.uuid4().hex
-        job = _SearchJob(session_id, self._owner_key(payload), time_display)
-        self._remember_job(job)
         if query.get_combination_count() == 0:
             job.update(
                 rows=[],
@@ -428,21 +466,69 @@ class TransitSearchService:
             job.finish()
             return job.snapshot()
 
-        thread = threading.Thread(
-            target=self._run_search_job,
-            args=(job, catalog, chrt, query, start_date, end_date, limit),
-            daemon=True,
+        self._search_executor.submit(
+            self._run_search_job,
+            job,
+            catalog,
+            chrt,
+            query,
+            start_date,
+            end_date,
+            limit,
+            cursor_direction,
+            cursor_row_budget,
+            cursor_anchor_date,
         )
-        thread.start()
         return job.snapshot()
 
-    def progress(self, session_id: str) -> dict:
+    def progress(
+        self,
+        session_id: str,
+    ) -> dict:
         self._cleanup_jobs()
         with self._jobs_lock:
             job = self._jobs.get(str(session_id or ""))
         if job is None:
             raise ValueError("unknown search session")
         return job.snapshot()
+
+    async def progress_after(
+        self,
+        session_id: str,
+        *,
+        after_revision: Optional[int] = None,
+        wait_ms: int = 0,
+        is_disconnected=None,
+    ) -> dict:
+        revision = None if after_revision is None else max(0, int(after_revision))
+        bounded_wait_ms = max(0, min(SEARCH_PROGRESS_MAX_WAIT_MS, int(wait_ms)))
+        deadline = time.monotonic() + bounded_wait_ms / 1000.0
+        self._cleanup_jobs()
+        with self._jobs_lock:
+            job = self._jobs.get(str(session_id or ""))
+        if job is None:
+            raise ValueError("unknown search session")
+        snapshot = job.snapshot()
+        while True:
+            if (
+                revision is None
+                or snapshot["revision"] > revision
+                or snapshot["complete"]
+                or bounded_wait_ms == 0
+            ):
+                return snapshot
+            if is_disconnected is not None and await is_disconnected():
+                return job.snapshot()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return job.snapshot()
+            wait_slice = (
+                min(SEARCH_PROGRESS_DISCONNECT_CHECK_SECONDS, remaining)
+                if is_disconnected is not None
+                else remaining
+            )
+            if await job.wait_for_revision(revision, wait_slice):
+                snapshot = job.snapshot()
 
     def cancel(self, session_id: str) -> dict:
         with self._jobs_lock:
@@ -461,32 +547,65 @@ class TransitSearchService:
         start_date: datetime.date,
         end_date: datetime.date,
         limit: int,
+        cursor_direction: Optional[str],
+        cursor_row_budget: Optional[int],
+        cursor_anchor_date: Optional[datetime.date],
     ) -> None:
         try:
+            if job.is_cancelled():
+                return
             emitted = False
             display_clock = table_event_clock(chart_snapshot_service.options)
             display_options = effective_display_options(chart_snapshot_service.options)
-            # Swiss Ephemeris mode/topocentric flags are process-global. Keep
-            # worker searches serialized while still letting the UI return and
-            # poll progressively.
-            with self._search_worker_lock:
+            initial_time_display = job.snapshot()["timeDisplay"]
+            if cursor_direction is not None and cursor_row_budget is not None:
+                for rows, truncated, cursor in searchbackend.search_cursor_progress(
+                    catalog,
+                    chrt,
+                    query,
+                    start_date,
+                    end_date,
+                    cursor_row_budget,
+                    direction=cursor_direction,
+                    anchor_date=cursor_anchor_date,
+                    should_cancel=job.is_cancelled,
+                ):
+                    if job.is_cancelled():
+                        return
+                    emitted = True
+                    serialized = self._serialize_rows(
+                        rows,
+                        catalog,
+                        chrt,
+                        display_clock=display_clock,
+                        display_options=display_options,
+                    )
+                    job.update(
+                        rows=serialized,
+                        truncated=truncated,
+                        summary=self._summary_text(serialized, truncated),
+                        phase="cursor",
+                        cursor=cursor,
+                        time_display=self._time_display_for_rows(
+                            display_clock,
+                            initial_time_display,
+                            serialized,
+                        ),
+                    )
+            else:
                 for phase, rows, truncated in searchbackend.search_progress(
                     catalog, chrt, query, start_date, end_date, limit
                 ):
                     if job.is_cancelled():
                         return
                     emitted = True
-                    serialized = [
-                        self._row_payload(
-                            row,
-                            catalog,
-                            chrt,
-                            index,
-                            display_clock=display_clock,
-                            display_options=display_options,
-                        )
-                        for index, row in enumerate(rows)
-                    ]
+                    serialized = self._serialize_rows(
+                        rows,
+                        catalog,
+                        chrt,
+                        display_clock=display_clock,
+                        display_options=display_options,
+                    )
                     job.update(
                         rows=serialized,
                         truncated=truncated,
@@ -499,13 +618,25 @@ class TransitSearchService:
         except Exception as exc:
             job.fail(str(exc))
 
-    def _remember_job(self, job: _SearchJob) -> None:
+    def _remember_job(
+        self,
+        job: _SearchJob,
+        owner_generation: Optional[int] = None,
+    ) -> bool:
         self._cleanup_jobs()
         with self._jobs_lock:
+            latest_generation = self._owner_generations.get(job.owner_key)
+            if latest_generation is not None and (
+                owner_generation is None or owner_generation <= latest_generation
+            ):
+                return False
+            if owner_generation is not None:
+                self._owner_generations[job.owner_key] = owner_generation
             for existing in self._jobs.values():
-                if existing.owner_key == job.owner_key and not existing.complete:
+                if existing.owner_key == job.owner_key and not existing.is_complete():
                     existing.cancel()
             self._jobs[job.session_id] = job
+        return True
 
     def _cleanup_jobs(self) -> None:
         cutoff = time.monotonic() - SEARCH_JOB_TTL_SECONDS
@@ -520,9 +651,133 @@ class TransitSearchService:
 
     @staticmethod
     def _owner_key(payload: dict[str, Any]) -> str:
-        return ":".join(
+        scope = str(payload.get("ownerScope") or "search")
+        context = (
             str(payload.get(key) or "")
             for key in ("documentId", "chartRole", "significatorId")
+        )
+        return ":".join((scope, *context))
+
+    @staticmethod
+    def _owner_generation(payload: dict[str, Any]) -> Optional[int]:
+        raw = payload.get("ownerGeneration")
+        if raw is None:
+            return None
+        try:
+            generation = int(raw)
+        except Exception as exc:
+            raise ValueError("ownerGeneration must be an integer") from exc
+        if generation < 0:
+            raise ValueError("ownerGeneration must not be negative")
+        return generation
+
+    def _query_from_payload(
+        self,
+        catalog: searchcatalog.SearchCatalog,
+        payload: dict[str, Any],
+    ) -> searchquery.SearchQuery:
+        query = searchquery.SearchQuery()
+        query.set_techniques(self._valid_techniques(payload.get("techniques")))
+        query.set_promittor_ids(
+            self._valid_ids(catalog, payload.get("promittorIds"), can_promittor=True)
+        )
+        query.set_significator_ids(
+            self._valid_ids(catalog, payload.get("significatorIds"), can_significator=True)
+        )
+        query.set_aspects(self._valid_aspects(payload.get("aspects")))
+        query.set_include_sign_changes(bool(payload.get("includeSignChanges", False)))
+        query.set_object_motion_filters(payload.get("objectMotionFilters") or {})
+        progression_method = payload.get("progressionMethod")
+        if progression_method is not None:
+            try:
+                query.set_progression_method(int(progression_method))
+            except Exception:
+                pass
+        return query
+
+    @staticmethod
+    def _result_limit(payload: dict[str, Any]) -> int:
+        try:
+            limit = int(payload.get("limit", RESULT_LIMIT))
+        except Exception:
+            limit = RESULT_LIMIT
+        return max(1, min(RESULT_LIMIT, limit))
+
+    def _cursor_request(
+        self,
+        payload: dict[str, Any],
+        result_limit: int,
+        start_date: datetime.date,
+        end_date: datetime.date,
+        query: searchquery.SearchQuery,
+    ) -> tuple[Optional[str], Optional[int], Optional[datetime.date]]:
+        raw_direction = payload.get("cursorDirection")
+        if raw_direction is None or str(raw_direction).strip() == "":
+            return None, None, None
+        direction = str(raw_direction).strip().lower()
+        if direction not in searchbackend.CURSOR_DIRECTIONS:
+            raise ValueError("cursorDirection must be around, previous, or next")
+        if (end_date - start_date).days >= searchbackend.CURSOR_MAX_SEED_DAYS:
+            raise ValueError("cursor search seed must not exceed one calendar month")
+        unsupported = set(query.techniques) - set(searchbackend.CURSOR_TECHNIQUES)
+        if unsupported:
+            raise ValueError("cursor search supports transits and converse transits only")
+        try:
+            row_budget = int(payload.get("cursorRowBudget", result_limit))
+        except Exception as exc:
+            raise ValueError("cursorRowBudget must be an integer") from exc
+        if row_budget < 1:
+            raise ValueError("cursorRowBudget must be positive")
+        raw_anchor = payload.get("cursorAnchorDate")
+        anchor_date = (
+            self._parse_date(raw_anchor)
+            if raw_anchor
+            else start_date + datetime.timedelta(days=(end_date - start_date).days // 2)
+        )
+        if anchor_date is None or anchor_date < start_date or anchor_date > end_date:
+            raise ValueError("cursorAnchorDate must be inside the seed range")
+        return direction, min(RESULT_LIMIT, row_budget), anchor_date
+
+    def _serialize_rows(
+        self,
+        rows,
+        catalog: searchcatalog.SearchCatalog,
+        chrt,
+        *,
+        display_clock: DefaultLocationClock,
+        display_options,
+    ) -> list[dict[str, Any]]:
+        rows = searchbackend.cheby_finalize_search_rows(catalog, chrt, rows)
+        searchbackend.cheby_apply_lazy_display_rows(catalog, chrt, rows)
+        return [
+            self._row_payload(
+                row,
+                catalog,
+                chrt,
+                index,
+                display_clock=display_clock,
+                display_options=display_options,
+            )
+            for index, row in enumerate(rows)
+        ]
+
+    @staticmethod
+    def _time_display_for_rows(
+        display_clock: DefaultLocationClock,
+        initial_time_display: dict[str, Any],
+        rows: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        offsets = {
+            int(value)
+            for value in initial_time_display.get("offsetsMinutes", [])
+        }
+        offsets.update(
+            int(row.get("displayUtcOffsetMinutes", 0))
+            for row in rows
+        )
+        return display_clock.metadata(
+            mtexts.txts.get("Time", "Time"),
+            offsets=offsets,
         )
 
     def save_settings(
@@ -785,7 +1040,11 @@ class TransitSearchService:
         open_tuple = self._display_datetime_for_chart_instant(chrt, open_event_tuple)
         prom = catalog.get(row.promittor_id)
         sig = catalog.get(row.significator_id)
-        metadata = dict(row.metadata)
+        metadata = {
+            key: value
+            for key, value in row.metadata.items()
+            if key not in _PRIVATE_ROW_METADATA_KEYS
+        }
         metadata["aspect_color"] = self._aspect_color(row, display_options)
         metadata["aspect_color_role"] = self._aspect_color_role(row, display_options)
         if row.metadata.get("sign_change"):

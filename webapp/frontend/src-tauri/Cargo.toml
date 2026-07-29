@@ -39,16 +39,19 @@ log = "0.4"
 # license/update contract. The latter requires rustls-backed HTTPS.
 sha2 = "0.10"
 ureq = { version = "2.10", default-features = false, features = ["json", "tls"] }
-tauri = { version = "2.11.2", features = [] }
+tauri = { version = "2.11.2", features = ["image-png"] }
 tauri-plugin-log = "2"
+tauri-plugin-clipboard-manager = "2.3.2"
 tauri-plugin-dialog = "2.7.1"
 tauri-plugin-shell = "2.3.5"
 tauri-plugin-updater = "2.10.1"
+tokio = { version = "1.52.3", features = ["io-util", "net", "sync", "time"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6.2"
 keyring = { version = "3.6.3", default-features = false, features = ["apple-native"] }
 objc2 = "0.6.4"
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSButton", "NSCell", "NSControl", "NSView", "NSWindow"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSButton", "NSCell", "NSColor", "NSColorSampler", "NSColorSpace", "NSControl", "NSView", "NSWindow", "block2", "objc2-core-foundation"] }
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSGeometry", "NSString", "NSUserDefaults"] }
 security-framework = "=3.0.1"
 security-framework-sys = "=2.12.1"

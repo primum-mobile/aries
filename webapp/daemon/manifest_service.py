@@ -28,6 +28,7 @@ Spec parity: doc/migration/surfaces (workspace-daemon).
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -51,6 +52,7 @@ from webapp.daemon import label_i18n, settings_registry
 NATIVE_MENU_MANIFEST_PATH = (
     REPO_ROOT / "webapp" / "frontend" / "src-tauri" / "native-menu-manifest.json"
 )
+logger = logging.getLogger(__name__)
 
 
 # Canonical workspace_model.action_id -> the dispatch id the skin handles in
@@ -676,11 +678,37 @@ def _mirrored_options_submenus() -> list[dict]:
     return sections
 
 
-def _theme_presets_submenu() -> dict:
+def _live_theme_presets() -> list[dict] | None:
+    """Read the shared profile store without making manifest import cyclic."""
+    try:
+        from webapp.daemon.options_service import options_service
+
+        return options_service.get_theme_presets()
+    except Exception as exc:
+        logger.warning("could not load live theme presets for menu: %s", exc)
+        return None
+
+
+def _theme_presets_submenu(theme_presets: list[dict] | None = None) -> dict:
     children = []
-    for definition in settings_registry.THEME_PRESET_DEFINITIONS:
-        name = definition["name"]
-        label = str(mtexts.txts.get(definition.get("mtextKey"), name))
+    if theme_presets is None:
+        theme_presets = [
+            {
+                "name": definition["name"],
+                "label": str(
+                    mtexts.txts.get(
+                        definition.get("mtextKey"),
+                        definition["name"],
+                    )
+                ),
+            }
+            for definition in settings_registry.THEME_PRESET_DEFINITIONS
+        ]
+    for preset in theme_presets:
+        name = str(preset.get("name") or "").strip()
+        if not name:
+            continue
+        label = str(preset.get("label") or name)
         children.append(_quick_check(f"quick.options.theme-preset:{name}", label))
     children.extend([
         {"type": "separator"},
@@ -698,7 +726,7 @@ def _theme_presets_submenu() -> dict:
     )
 
 
-def _options_menu_children() -> list[dict]:
+def _options_menu_children(theme_presets: list[dict] | None = None) -> list[dict]:
     house_labels = {
         'P': 'Placidus', 'K': 'Koch', 'R': 'Regiomontanus', 'C': 'Campanus',
         'E': 'Equal', 'W': 'Whole Sign', 'X': 'Axial Rotation', 'Q': 'True Ascendant', 'M': 'Morinus',
@@ -924,7 +952,7 @@ def _options_menu_children() -> list[dict]:
             ])),
             _quick_check("quick.options.display:usetradfixstarnamespdlist", "Traditional fixed-star names in PD lists"),
         ]),
-        _theme_presets_submenu(),
+        _theme_presets_submenu(theme_presets),
     ]
 
 
@@ -1004,6 +1032,7 @@ _NATIVE_MENU_LABEL_KEYS = {
 # native-menu localization regression test.
 _NATIVE_MENU_FRONTEND_KEYS = {
     "menu.save.as": "nativeMenu.saveAs",
+    "menu.copy-chart-png": "nativeMenu.copyChartAsPng",
     "menu.startup.set": "nativeMenu.useCurrentAsStartupChart",
     "menu.startup.clear": "nativeMenu.clearStartupChart",
     "menu.restore-open-charts": "nativeMenu.restoreOpenChartsOnLaunch",
@@ -1112,7 +1141,7 @@ def _native_menu_manifest() -> dict:
         # The generated quick-options tree fully replaces the broad legacy
         # settings catalog. The titlebar drawer supplies its separate Full
         # settings entry; Cycle secondary view remains available by shortcut.
-        options_menu["children"] = _options_menu_children()
+        options_menu["children"] = _options_menu_children(_live_theme_presets())
     packs_submenu = _corpus_packs_submenu()
     if packs_submenu is not None:
         menus = manifest.setdefault("menus", [])

@@ -33,13 +33,23 @@ class PlanetaryHours:
 
         #lon, lat, height, atmpress, celsius
         #in GMT, searches after jd!
+        rise_flags = (
+            astrology.SE_CALC_RISE |
+            astrology.SE_BIT_DISC_CENTER |
+            astrology.SE_BIT_NO_REFRACTION
+        )
+        set_flags = (
+            astrology.SE_CALC_SET |
+            astrology.SE_BIT_DISC_CENTER |
+            astrology.SE_BIT_NO_REFRACTION
+        )
         ret, risetime, serr = astrology.swe_rise_trans(jd, astrology.SE_SUN, '', astrology.SEFLG_SWIEPH,
-            astrology.SE_CALC_RISE | astrology.SE_BIT_DISC_CENTER | astrology.SE_BIT_NO_REFRACTION,
+            rise_flags,
             lon, lat, float(altitude), 0.0, 0.0)
 
 #		self.logCalc(risetime)#
         ret, settime, serr = astrology.swe_rise_trans(jd, astrology.SE_SUN, '', astrology.SEFLG_SWIEPH,
-            astrology.SE_CALC_SET | astrology.SE_BIT_DISC_CENTER | astrology.SE_BIT_NO_REFRACTION,
+            set_flags,
             lon, lat, float(altitude), 0.0, 0.0)
 
 #		self.logCalc(settime)#
@@ -51,14 +61,15 @@ class PlanetaryHours:
         if risetime > settime: # daytime
             self.daytime = True
 #			print 'daytime'#
-            ret, self.risetime, serr = astrology.swe_rise_trans(jd-1.0, astrology.SE_SUN, '', astrology.SEFLG_SWIEPH,
-                astrology.SE_CALC_RISE | astrology.SE_BIT_DISC_CENTER | astrology.SE_BIT_NO_REFRACTION,
+            # Anchor the preceding sunrise from the already-resolved upcoming
+            # sunset.  Searching from jd-1 can briefly select yesterday's
+            # sunrise when consecutive sunrise times differ by a few seconds.
+            ret, self.risetime, serr = astrology.swe_rise_trans(settime-1.0, astrology.SE_SUN, '', astrology.SEFLG_SWIEPH,
+                rise_flags,
                 lon, lat, float(altitude), 0.0, 0.0)
 
 #			self.logCalc(risetime)#
-            ret, self.settime, serr = astrology.swe_rise_trans(jd, astrology.SE_SUN, '', astrology.SEFLG_SWIEPH,
-                astrology.SE_CALC_SET | astrology.SE_BIT_DISC_CENTER | astrology.SE_BIT_NO_REFRACTION,
-                lon, lat, float(altitude), 0.0, 0.0)
+            self.settime = settime
 
             #From GMT to Local
             self.risetime += offs
@@ -73,9 +84,13 @@ class PlanetaryHours:
         else:# nighttime
             self.daytime = False
 #			print 'nightime'#
-            ret, self.risetime, serr = astrology.swe_rise_trans(jd, astrology.SE_SUN, '', astrology.SEFLG_SWIEPH, astrology.SE_CALC_RISE, lon, lat, float(altitude), 0.0, 10.0)
+            self.risetime = risetime
 #			self.logCalc(risetime)#
-            ret, self.settime, serr = astrology.swe_rise_trans(jd-1.0, astrology.SE_SUN, '', astrology.SEFLG_SWIEPH, astrology.SE_CALC_SET, lon, lat, float(altitude), 0.0, 10.0)
+            # The next sunrise is a stable anchor for the preceding sunset.
+            # This avoids the same one-day seasonal-drift ambiguity at dusk.
+            ret, self.settime, serr = astrology.swe_rise_trans(
+                risetime-1.0, astrology.SE_SUN, '', astrology.SEFLG_SWIEPH,
+                set_flags, lon, lat, float(altitude), 0.0, 0.0)
 #			self.logCalc(settime)#
 
             #From GMT to Local

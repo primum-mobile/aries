@@ -11,6 +11,7 @@ import {
 } from "../src/lib/theme/style-state.mjs";
 
 const frontendRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const rootLayout = readFileSync(resolve(frontendRoot, "src/app/layout.tsx"), "utf8");
 
 const legacyTheme = {
   activePreset: "Midnight",
@@ -29,7 +30,13 @@ test("legacy cached ThemeState receives compatible style identity", () => {
   assert.equal(normalized.styleHash, "legacy-hash");
   assert.equal(styleRevisionKey(normalized), "1:7:legacy-hash");
   assert.equal(normalized.activeProfile, null);
-  assert.deepEqual(normalized.profileOverrides, { appTokens: {}, chartPalette: {}, chartData: {} });
+  assert.deepEqual(normalized.profileOverrides, {
+    appTokens: {},
+    chartPalette: {},
+    chartData: {},
+    wheelAuthoring: {},
+    appAuthoring: {},
+  });
 });
 
 test("current ThemeState preserves explicit style identity", () => {
@@ -53,6 +60,12 @@ test("current ThemeState preserves explicit style identity", () => {
       appTokens: { "--aries-surface": "rgb(12 13 14)" },
       chartPalette: { "--morinus-frame": "rgb(210 211 212)" },
       chartData: { aspects: ["rgb(1 2 3)"] },
+      wheelAuthoring: {
+        "authoring.wheel.base.houses.inner.cusp.strokeStyle": "dotted",
+      },
+      appAuthoring: {
+        "authoring.app.sidebar.pattern": "blueNoise",
+      },
     },
   });
   assert.ok(normalized);
@@ -68,6 +81,79 @@ test("current ThemeState preserves explicit style identity", () => {
   assert.deepEqual(normalized.profileOverrides.chartData, {
     aspects: ["rgb(1 2 3)"],
   });
+  assert.deepEqual(normalized.profileOverrides.wheelAuthoring, {
+    "authoring.wheel.base.houses.inner.cusp.strokeStyle": "dotted",
+  });
+  assert.deepEqual(normalized.profileOverrides.appAuthoring, {
+    "authoring.app.sidebar.pattern": "blueNoise",
+  });
+});
+
+test("active profile wheel authoring reaches both live canvas and export", () => {
+  const canvas = readFileSync(
+    resolve(frontendRoot, "src/components/workshell/chart-canvas.tsx"),
+    "utf8",
+  );
+  const chartExport = readFileSync(
+    resolve(frontendRoot, "src/lib/chart/chart-export-renderer.ts"),
+    "utf8",
+  );
+  assert.match(canvas, /effectiveTheme\?\.profileOverrides\?\.wheelAuthoring/);
+  assert.match(
+    canvas,
+    /compileFlatWheelAuthoringOverrides\(\s*effectiveWheelAuthoringOverrides/,
+  );
+  assert.match(chartExport, /resolvedTheme\?\.profileOverrides\?\.wheelAuthoring/);
+});
+
+test("chart export receives the live transient aspect visibility state", () => {
+  const surface = readFileSync(
+    resolve(frontendRoot, "src/components/workshell/workspace-content.tsx"),
+    "utf8",
+  );
+  const chartExport = readFileSync(
+    resolve(frontendRoot, "src/lib/chart/chart-export-renderer.ts"),
+    "utf8",
+  );
+  assert.match(
+    surface,
+    /\{\s*selectedBody:\s*selectedAspectBody,\s*hideAll:\s*hideAllAspects,\s*minorOnly:\s*minorOnlyAspects,\s*\}/,
+  );
+  assert.match(chartExport, /layer === "dynamic" \? \{ clickAspectState \} : \{\}/);
+});
+
+test("app materials compile at theme application and stay outside chart stepping", () => {
+  const themeProvider = readFileSync(
+    resolve(frontendRoot, "src/components/workshell/theme-provider.tsx"),
+    "utf8",
+  );
+  const chartCanvas = readFileSync(
+    resolve(frontendRoot, "src/components/workshell/chart-canvas.tsx"),
+    "utf8",
+  );
+  const drawChart = readFileSync(
+    resolve(frontendRoot, "src/lib/chart/draw-chart.ts"),
+    "utf8",
+  );
+  const appMaterial = readFileSync(
+    resolve(frontendRoot, "src/lib/theme/app-material.ts"),
+    "utf8",
+  );
+  const appMaterialRuntime = readFileSync(
+    resolve(frontendRoot, "src/lib/theme/app-material-runtime.ts"),
+    "utf8",
+  );
+  assert.match(
+    themeProvider,
+    /preview\?\.appAuthoring \?\? theme\.profileOverrides\.appAuthoring/,
+  );
+  assert.match(themeProvider, /liveAppThemePreview/);
+  assert.match(themeProvider, /installAppMaterialStyleSheet/);
+  assert.match(appMaterial, /shadowColor/);
+  assert.match(appMaterial, /shadowBlur/);
+  assert.match(appMaterialRuntime, /box-shadow:\$\{material\.boxShadow\}/);
+  assert.doesNotMatch(chartCanvas, /app-material(?:-runtime)?/);
+  assert.doesNotMatch(drawChart, /app-material(?:-runtime)?/);
 });
 
 test("legacy options.changed event receives compatible style identity", () => {
@@ -88,6 +174,12 @@ test("legacy options.changed event receives compatible style identity", () => {
 
 test("invalid cached ThemeState is rejected", () => {
   assert.equal(normalizeThemeState({ mode: "dark" }), null);
+});
+
+test("native controls inherit the active light or dark root color scheme", () => {
+  assert.match(rootLayout, /root\.style\.colorScheme = theme\.mode === "light" \? "light" : "dark"/);
+  assert.match(rootLayout, /body \{[\s\S]*?color-scheme: inherit;/);
+  assert.doesNotMatch(rootLayout, /html,\s*body \{[\s\S]*?color-scheme: dark;/);
 });
 
 test("the programmatic chart focus anchor never paints a native WKWebView outline", () => {

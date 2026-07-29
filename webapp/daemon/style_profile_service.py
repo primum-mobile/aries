@@ -20,7 +20,7 @@ import threading
 from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Mapping, Optional
+from typing import Any, Iterable, Mapping, Optional
 
 from webapp.daemon.file_transaction import exclusive_file_transaction
 
@@ -29,6 +29,9 @@ from webapp.daemon.style_profile_catalog_generated import (
     STYLE_PROFILE_RELATIONS,
     STYLE_PROFILE_TOKENS,
     TOKEN_SCHEMA_VERSION,
+)
+from webapp.daemon.app_style_authoring_service import (
+    validate_app_authoring_overrides,
 )
 from webapp.daemon.style_authoring_service import (
     build_chart_style_profile_v2,
@@ -39,6 +42,7 @@ from webapp.daemon.style_authoring_service import (
 
 
 PROFILE_KIND = "aries.style-profile"
+PORTABLE_CHART_STYLE_KIND = "aries.chart-style-profile"
 PROFILE_SCHEMA_VERSION = 1
 STORE_KIND = "aries.style-profile-store"
 STORE_SCHEMA_VERSION = 1
@@ -47,9 +51,6 @@ STYLE_PROFILE_FILENAME = "style-profiles.json"
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 _FONT_RE = re.compile(r"^[A-Za-z0-9 '\",._-]+$")
 _VAR_RE = re.compile(r"^var\((--[a-z0-9-]+)\)$")
-_ALPHA_FUNCTION_RE = re.compile(r"^(?:rgba|hsla)\(", re.IGNORECASE)
-_MODERN_ALPHA_FUNCTION_RE = re.compile(r"^(?:rgb|hsl)\([^)]*/", re.IGNORECASE)
-_ALPHA_HEX_RE = re.compile(r"^#(?:[0-9a-f]{4}|[0-9a-f]{8})$", re.IGNORECASE)
 
 
 class StyleProfileError(ValueError):
@@ -73,16 +74,6 @@ def _profile_scope_for_token(token: Mapping[str, Any]) -> str:
     return "app"
 
 
-def _default_color_has_alpha(token: Mapping[str, Any]) -> bool:
-    default = str(token.get("default") or "").strip()
-    return bool(
-        default.lower() == "transparent"
-        or _ALPHA_FUNCTION_RE.match(default)
-        or _MODERN_ALPHA_FUNCTION_RE.match(default)
-        or _ALPHA_HEX_RE.match(default)
-    )
-
-
 def _validate_color(value: Any, token: Mapping[str, Any], semantic_id: str) -> list:
     if not isinstance(value, (list, tuple)) or len(value) not in (3, 4):
         raise StyleProfileError(f"{semantic_id} must be an RGB or RGBA array")
@@ -92,8 +83,6 @@ def _validate_color(value: Any, token: Mapping[str, Any], semantic_id: str) -> l
             raise StyleProfileError(f"{semantic_id} RGB channels must be integers from 0 to 255")
         rgb.append(channel)
     if len(value) == 4:
-        if not _default_color_has_alpha(token):
-            raise StyleProfileError(f"{semantic_id} does not support an alpha channel")
         alpha = value[3]
         if isinstance(alpha, bool) or not isinstance(alpha, (int, float)):
             raise StyleProfileError(f"{semantic_id} alpha must be a number from 0 to 1")
@@ -317,8 +306,77 @@ def validate_style_profile(payload: Any) -> dict:
             base=validated_chart_style["base"],
             reference_space=validated_chart_style["referenceSpace"],
         )
+    raw_app_authoring = payload.get("appAuthoringOverrides")
+    if raw_app_authoring is not None:
+        app_authoring_overrides = validate_app_authoring_overrides(
+            raw_app_authoring
+        )
+        if app_authoring_overrides and scope not in ("app", "combined"):
+            raise StyleProfileError(
+                "app authoring overrides require an app or combined profile"
+            )
+        normalized["appAuthoringOverrides"] = app_authoring_overrides
     normalized["contentHash"] = _content_hash(normalized)
     return normalized
+
+
+def normalize_imported_style_profile(payload: Any) -> dict:
+    """Normalize persisted profiles and portable Style Lab exchange files."""
+    if not isinstance(payload, Mapping):
+        raise StyleProfileError("imported style profile must be an object")
+    if payload.get("kind") == PROFILE_KIND:
+        return validate_style_profile(payload)
+    if payload.get("kind") != PORTABLE_CHART_STYLE_KIND:
+        raise StyleProfileError(
+            f"style profile kind must be {PROFILE_KIND} or {PORTABLE_CHART_STYLE_KIND}"
+        )
+
+    chart_style = validate_chart_style_profile_v2(payload)
+    nested_authoring = flatten_chart_style_profile_v2(chart_style)
+    raw_authoring = payload.get("authoringOverrides")
+    authoring = (
+        validate_authoring_overrides(raw_authoring)
+        if raw_authoring is not None
+        else nested_authoring
+    )
+    channels_match = authoring.keys() == nested_authoring.keys() and all(
+        (
+            abs(float(value) - float(nested_authoring[semantic_id])) <= 1e-9
+            if (
+                isinstance(value, (int, float))
+                and not isinstance(value, bool)
+                and isinstance(nested_authoring[semantic_id], (int, float))
+                and not isinstance(nested_authoring[semantic_id], bool)
+            )
+            else value == nested_authoring[semantic_id]
+        )
+        for semantic_id, value in authoring.items()
+    )
+    if not channels_match:
+        raise StyleProfileError(
+            "imported style profile authoringOverrides do not match its nested styles"
+        )
+    legacy_overrides = payload.get("legacyTokenOverrides", {})
+    if not isinstance(legacy_overrides, Mapping):
+        raise StyleProfileError("imported style profile legacyTokenOverrides must be an object")
+
+    normalized_payload = {
+        "kind": PROFILE_KIND,
+        "profileSchemaVersion": PROFILE_SCHEMA_VERSION,
+        "tokenSchemaVersion": payload.get("tokenSchemaVersion"),
+        "id": payload.get("id"),
+        "name": payload.get("name"),
+        "scope": payload.get("scope"),
+        "basePresetId": payload.get("basePresetId"),
+        "overrides": legacy_overrides,
+        "authoringOverrides": authoring,
+        "chartStyleProfileV2": chart_style,
+    }
+    if "appAuthoringOverrides" in payload:
+        normalized_payload["appAuthoringOverrides"] = payload.get(
+            "appAuthoringOverrides"
+        )
+    return validate_style_profile(normalized_payload)
 
 
 def _color_to_css(value: list) -> str:
@@ -533,6 +591,35 @@ class StyleProfileStore:
             if state["activeProfileId"] == profile_id:
                 state["activeProfileId"] = None
             self._commit(state)
+
+    def discard_profiles(self, profile_ids: Iterable[str]) -> dict:
+        """Remove retired profile identities without failing on absent entries."""
+        retired_ids = {
+            str(profile_id).strip()
+            for profile_id in profile_ids
+            if str(profile_id).strip()
+        }
+        with self._transaction():
+            state = deepcopy(self._state)
+            active = state["profiles"].get(state["activeProfileId"])
+            removed_ids = []
+            for profile_id in sorted(retired_ids):
+                if state["profiles"].pop(profile_id, None) is not None:
+                    removed_ids.append(profile_id)
+                self._remove_quarantine_for_profile(state, profile_id)
+            removed_active = (
+                deepcopy(active)
+                if active is not None and active.get("id") in retired_ids
+                else None
+            )
+            if state["activeProfileId"] in retired_ids:
+                state["activeProfileId"] = None
+            if state != self._state:
+                self._commit(state)
+            return {
+                "removedProfileIds": removed_ids,
+                "removedActiveProfile": removed_active,
+            }
 
     def migrate_legacy(self, values: Any, *, activate: bool = True) -> dict:
         if not isinstance(values, Mapping):

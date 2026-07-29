@@ -271,7 +271,7 @@ class ChartSession(object):
 			self.change_chart(self._initial_chart, display_datetime=self._initial_display_datetime)
 		return True
 
-	def toggleComparisonView(self):
+	def toggleComparisonView(self, notify=True):
 		handler = getattr(self, '_comparison_toggle_handler', None)
 		if callable(handler):
 			try:
@@ -286,7 +286,8 @@ class ChartSession(object):
 			self.view_mode = self.CHART
 		elif self.view_mode == self.CHART:
 			self.view_mode = self.COMPOUND
-		self._fire_change()
+		if notify:
+			self._fire_change()
 		return True
 
 	def _chart_display_datetime(self, chrt):

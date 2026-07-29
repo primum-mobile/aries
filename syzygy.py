@@ -30,6 +30,11 @@ class Syzygy:
 	def __init__(self, chrt, previous_opposite=None):
 		self.time = chrt.time
 		self.lon = chrt.planets.planets[astrology.SE_MOON].data[planets.Planet.LONG]
+		# Stable semantic identity for consumers that follow the prenatal point
+		# through rebuilt charts.  The longitude may later receive a continuous
+		# profection/arc offset; this marker changes only when the configured
+		# full-moon rule actually switches from Moon to Sun.
+		self.selected_body = 'moon'
 
 		self.flags = astrology.SEFLG_SPEED+astrology.SEFLG_SWIEPH
 		if chrt.options.ayanamsha != 0:
@@ -71,6 +76,7 @@ class Syzygy:
 					else:
 						sun = planets.Planet(self.time.jd, astrology.SE_SUN, self.flags)
 						self.lon = sun.data[planets.Planet.LONG]
+						self.selected_body = 'sun'
 				else:
 					moon = planets.Planet(self.time.jd, astrology.SE_MOON, self.flags, chrt.place.lat, chrt.houses.ascmc2)
 					if moon.abovehorizon:
@@ -78,6 +84,7 @@ class Syzygy:
 					else:
 						sun = planets.Planet(self.time.jd, astrology.SE_SUN, self.flags)
 						self.lon = sun.data[planets.Planet.LONG]
+						self.selected_body = 'sun'
 
 		ra, decl, dist = astrology.swe_cotrans(
 			util.to_tropical_lon(self.lon, _ayanamsha_at(chrt, self.time.jd)),

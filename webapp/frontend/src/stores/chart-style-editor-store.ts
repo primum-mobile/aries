@@ -7,6 +7,7 @@ import type { StyleSceneElement } from "@/lib/style-lab/style-scene";
 import {
   styleLabDraftEditorOverrides,
   type StyleLabDraft,
+  type StyleLabScalarValue,
   type StyleLabTokenValue,
 } from "@/lib/style-lab/client";
 
@@ -19,6 +20,7 @@ export type ChartStyleSyncStatus =
   | "error";
 
 export type ChartStyleAuthoringEditScope = "base" | "variant";
+export type StyleEditorDomain = "chart" | "app";
 
 export type ChartStyleTokenBounds = Readonly<{
   min: number;
@@ -40,6 +42,13 @@ export type ChartStyleTokenMetadata = Readonly<{
 
 export type ChartStyleSemanticOverrides = Record<string, StyleLabTokenValue>;
 export type ChartStyleCssOverrides = Record<string, string>;
+export type ChartStyleLabBaseTheme = Readonly<{
+  sourceThemeName: string | null;
+  mode: "light" | "dark";
+  appTokens: Readonly<Record<string, string>>;
+  chartPalette: Readonly<Record<string, string>>;
+  appAuthoring: Readonly<Record<string, StyleLabScalarValue>>;
+}>;
 
 const HISTORY_LIMIT = 80;
 
@@ -108,11 +117,13 @@ function boundsIndex(tokens: readonly ChartStyleTokenMetadata[]) {
 
 export type ChartStyleEditorState = {
   active: boolean;
+  liveAppThemePreview: boolean;
   hoveredElement: StyleSceneElement | null;
   selectedElement: StyleSceneElement | null;
   sceneElements: readonly StyleSceneElement[];
   activePropertyId: string | null;
   authoringEditScope: ChartStyleAuthoringEditScope;
+  editorDomain: StyleEditorDomain;
 
   semanticOverrides: ChartStyleSemanticOverrides;
   cssOverrides: ChartStyleCssOverrides;
@@ -129,13 +140,18 @@ export type ChartStyleEditorState = {
   remoteRevision: number | null;
   remoteEtag: string | null;
   remoteDraftId: string | null;
+  remoteSourceThemeName: string | null;
+  remoteModifiedFromBaseline: boolean;
+  styleLabBaseTheme: ChartStyleLabBaseTheme;
 
   setActive: (active: boolean) => void;
+  setLiveAppThemePreview: (active: boolean) => void;
   setHoveredElement: (element: StyleSceneElement | null) => void;
   selectElement: (element: StyleSceneElement | null) => void;
   setSceneElements: (elements: readonly StyleSceneElement[]) => void;
   setActiveProperty: (semanticId: string | null) => void;
   setAuthoringEditScope: (scope: ChartStyleAuthoringEditScope) => void;
+  setEditorDomain: (domain: StyleEditorDomain) => void;
   clearSelection: () => void;
   setTokenMetadata: (tokens: readonly ChartStyleTokenMetadata[]) => void;
 
@@ -144,6 +160,10 @@ export type ChartStyleEditorState = {
   endGesture: () => void;
   cancelGesture: () => void;
   resetProperty: (semanticId: string) => void;
+  resetProperties: (semanticIds: readonly string[]) => void;
+  applyOverrides: (
+    patch: Readonly<Record<string, StyleLabTokenValue | null>>,
+  ) => void;
   resetAll: () => void;
   undo: () => void;
   redo: () => void;
@@ -163,16 +183,19 @@ export type ChartStyleEditorState = {
     etag: string | null,
     draftId?: string | null,
   ) => void;
+  setStyleLabBaseTheme: (theme: ChartStyleLabBaseTheme) => void;
   markSynced: (draft: StyleLabDraft, overrides?: Readonly<ChartStyleSemanticOverrides>) => void;
 };
 
 export const useChartStyleEditorStore = create<ChartStyleEditorState>()((set, get) => ({
   active: false,
+  liveAppThemePreview: false,
   hoveredElement: null,
   selectedElement: null,
   sceneElements: [],
   activePropertyId: null,
   authoringEditScope: "variant",
+  editorDomain: "chart",
 
   semanticOverrides: {},
   cssOverrides: {},
@@ -189,6 +212,15 @@ export const useChartStyleEditorStore = create<ChartStyleEditorState>()((set, ge
   remoteRevision: null,
   remoteEtag: null,
   remoteDraftId: null,
+  remoteSourceThemeName: null,
+  remoteModifiedFromBaseline: false,
+  styleLabBaseTheme: {
+    sourceThemeName: null,
+    mode: "dark",
+    appTokens: {},
+    chartPalette: {},
+    appAuthoring: {},
+  },
 
   setActive: (active) => set((state) => ({
     active,
@@ -198,6 +230,7 @@ export const useChartStyleEditorStore = create<ChartStyleEditorState>()((set, ge
     activePropertyId: active ? state.activePropertyId : null,
     gestureStart: active ? state.gestureStart : null,
   })),
+  setLiveAppThemePreview: (liveAppThemePreview) => set({ liveAppThemePreview }),
   setHoveredElement: (hoveredElement) => set({ hoveredElement }),
   selectElement: (selectedElement) => {
     const defaultBinding = selectedElement && (
@@ -226,6 +259,7 @@ export const useChartStyleEditorStore = create<ChartStyleEditorState>()((set, ge
       ? state
       : { authoringEditScope, revision: state.revision + 1 }
   )),
+  setEditorDomain: (editorDomain) => set({ editorDomain }),
   clearSelection: () => set({ selectedElement: null, activePropertyId: null }),
   setTokenMetadata: (tokens) => set((state) => {
     const tokenMetadata = metadataIndex(tokens);
@@ -286,6 +320,51 @@ export const useChartStyleEditorStore = create<ChartStyleEditorState>()((set, ge
       gestureStart: null,
       revision: state.revision + 1,
       activePropertyId: semanticId,
+    };
+  }),
+  resetProperties: (semanticIds) => set((state) => {
+    const resetIds = [...new Set(semanticIds)].filter((semanticId) =>
+      Object.hasOwn(state.semanticOverrides, semanticId)
+    );
+    if (!resetIds.length) return state;
+    const before = cloneChartStyleOverrides(state.semanticOverrides);
+    const semanticOverrides = cloneChartStyleOverrides(state.semanticOverrides);
+    for (const semanticId of resetIds) delete semanticOverrides[semanticId];
+    return {
+      semanticOverrides,
+      cssOverrides: buildCssOverrides(semanticOverrides, state.tokenMetadata),
+      undoStack: [...state.undoStack.slice(-(HISTORY_LIMIT - 1)), before],
+      redoStack: [],
+      gestureStart: null,
+      revision: state.revision + 1,
+      activePropertyId: resetIds[0] ?? state.activePropertyId,
+    };
+  }),
+  applyOverrides: (patch) => set((state) => {
+    const semanticOverrides = cloneChartStyleOverrides(state.semanticOverrides);
+    const changedIds: string[] = [];
+    for (const [semanticId, value] of Object.entries(patch)) {
+      if (value === null) {
+        if (!Object.hasOwn(semanticOverrides, semanticId)) continue;
+        delete semanticOverrides[semanticId];
+      } else {
+        if (sameValue(semanticOverrides[semanticId], value)) continue;
+        semanticOverrides[semanticId] = cloneValue(value);
+      }
+      changedIds.push(semanticId);
+    }
+    if (!changedIds.length) return state;
+    return {
+      semanticOverrides,
+      cssOverrides: buildCssOverrides(semanticOverrides, state.tokenMetadata),
+      undoStack: [
+        ...state.undoStack.slice(-(HISTORY_LIMIT - 1)),
+        cloneChartStyleOverrides(state.semanticOverrides),
+      ],
+      redoStack: [],
+      gestureStart: null,
+      revision: state.revision + 1,
+      activePropertyId: changedIds[0] ?? state.activePropertyId,
     };
   }),
   resetAll: () => set((state) => {
@@ -371,6 +450,8 @@ export const useChartStyleEditorStore = create<ChartStyleEditorState>()((set, ge
       remoteRevision: draft.revision,
       remoteEtag: draft.etag ?? null,
       remoteDraftId: draft.id,
+      remoteSourceThemeName: draft.sourceThemeName ?? null,
+      remoteModifiedFromBaseline: Boolean(draft.modifiedFromBaseline),
       syncStatus: equalChartStyleOverrides(remote, semanticOverrides) ? "synced" : "saving",
       syncDetail: null,
       revision: state.revision + 1,
@@ -384,6 +465,7 @@ export const useChartStyleEditorStore = create<ChartStyleEditorState>()((set, ge
     remoteEtag,
     remoteDraftId: remoteDraftId === undefined ? state.remoteDraftId : remoteDraftId,
   })),
+  setStyleLabBaseTheme: (styleLabBaseTheme) => set({ styleLabBaseTheme }),
   markSynced: (draft, overrides) => {
     const desired = cloneChartStyleOverrides(overrides ?? get().semanticOverrides);
     set({
@@ -391,6 +473,8 @@ export const useChartStyleEditorStore = create<ChartStyleEditorState>()((set, ge
       remoteRevision: draft.revision,
       remoteEtag: draft.etag ?? null,
       remoteDraftId: draft.id,
+      remoteSourceThemeName: draft.sourceThemeName ?? null,
+      remoteModifiedFromBaseline: Boolean(draft.modifiedFromBaseline),
       syncStatus: "synced",
       syncDetail: null,
     });

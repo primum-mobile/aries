@@ -15,6 +15,19 @@ function retainedPayloadKey(namespace: string, key: string): string {
   return `${namespace}\u0000${key}`;
 }
 
+/**
+ * Build one collision-safe identity for a retained list's semantic query
+ * world. Presentation lenses (for example TAB hiding a comparison ring) must
+ * be omitted unless they actually change the list query. Callers can then
+ * return to an already visited world without discarding its rows or derived
+ * detail.
+ */
+export function retainedListWorldKey(
+  parts: readonly (string | number | boolean | null | undefined)[],
+): string {
+  return JSON.stringify(parts.map((part) => part ?? null));
+}
+
 export function getCachedGenericTablePayload(
   tableId: string,
   documentId: string,
@@ -54,4 +67,8 @@ export function rememberListPayload<T>(namespace: string, key: string, payload: 
     if (!oldest) break;
     retainedPayloadCache.delete(oldest);
   }
+}
+
+export function forgetListPayload(namespace: string, key: string): void {
+  retainedPayloadCache.delete(retainedPayloadKey(namespace, key));
 }

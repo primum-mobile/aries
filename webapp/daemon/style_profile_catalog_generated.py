@@ -89,6 +89,26 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
+    "app.color.interactiveAccentForeground": {
+      "cssVar": "--aries-accent-foreground",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-text-primary)",
+      "bounds": null,
+      "label": "Interactive accent foreground",
+      "description": "Text and glyph foreground over selected rows and other interactive accent fills.",
+      "tier": "semantic-app",
+      "affectedSurfaces": [
+        "selected rows",
+        "accented controls",
+        "workspace navigation"
+      ],
+      "safetyNotes": [
+        "Maintain normal-text contrast against the interactive accent."
+      ],
+      "variantApplicability": null
+    },
     "app.color.surface": {
       "cssVar": "--aries-surface",
       "scope": "app",
@@ -186,6 +206,46 @@ _CATALOG = json.loads(r'''{
       ],
       "safetyNotes": [
         "Review dark/light modes, affected surfaces, and recorded contrast pairs before changing this role."
+      ],
+      "variantApplicability": null
+    },
+    "app.control.background": {
+      "cssVar": "--aries-control-background",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-surface-subtle)",
+      "bounds": null,
+      "label": "Control background",
+      "description": "Base color for inputs, segmented controls, and interactive fields.",
+      "tier": "semantic-app",
+      "affectedSurfaces": [
+        "inputs",
+        "buttons",
+        "segmented controls"
+      ],
+      "safetyNotes": [
+        "Retain clear hover, focus, disabled, and selected states."
+      ],
+      "variantApplicability": null
+    },
+    "app.control.foreground": {
+      "cssVar": "--aries-control-text",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-text-primary)",
+      "bounds": null,
+      "label": "Control foreground",
+      "description": "Primary text and glyph foreground over interactive control materials.",
+      "tier": "semantic-app",
+      "affectedSurfaces": [
+        "inputs",
+        "buttons",
+        "segmented controls"
+      ],
+      "safetyNotes": [
+        "Maintain normal-text contrast over every control texture value."
       ],
       "variantApplicability": null
     },
@@ -452,6 +512,82 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
+    "app.data.bodyBackground": {
+      "cssVar": "--aries-data-body-background",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-background)",
+      "bounds": null,
+      "label": "Data body background",
+      "description": "Base color for table bodies and dense retained data regions.",
+      "tier": "semantic-app",
+      "affectedSurfaces": [
+        "workspace tables",
+        "dense data lists"
+      ],
+      "safetyNotes": [
+        "Keep small tabular text readable and row states distinct."
+      ],
+      "variantApplicability": null
+    },
+    "app.data.bodyForeground": {
+      "cssVar": "--aries-data-body-text",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-text-primary)",
+      "bounds": null,
+      "label": "Data body foreground",
+      "description": "Primary text and glyph foreground over table body materials.",
+      "tier": "semantic-app",
+      "affectedSurfaces": [
+        "workspace tables",
+        "dense data lists"
+      ],
+      "safetyNotes": [
+        "Maintain normal-text contrast over every data-body texture value."
+      ],
+      "variantApplicability": null
+    },
+    "app.data.headerBackground": {
+      "cssVar": "--aries-data-header-background",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-surface)",
+      "bounds": null,
+      "label": "Data header background",
+      "description": "Base color for table headers and grouped data section labels.",
+      "tier": "semantic-app",
+      "affectedSurfaces": [
+        "workspace table headers",
+        "data section headers"
+      ],
+      "safetyNotes": [
+        "Preserve distinction from body rows without reducing header contrast."
+      ],
+      "variantApplicability": null
+    },
+    "app.data.headerForeground": {
+      "cssVar": "--aries-data-header-text",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-text-primary)",
+      "bounds": null,
+      "label": "Data header foreground",
+      "description": "Primary text and glyph foreground over table header materials.",
+      "tier": "semantic-app",
+      "affectedSurfaces": [
+        "workspace table headers",
+        "data section headers"
+      ],
+      "safetyNotes": [
+        "Maintain normal-text contrast over every data-header texture value."
+      ],
+      "variantApplicability": null
+    },
     "app.dialog.closeInset": {
       "cssVar": "--aries-dialog-close-inset",
       "scope": "app",
@@ -563,6 +699,28 @@ _CATALOG = json.loads(r'''{
       ],
       "safetyNotes": [
         "Preserve a clear title-description relationship at all supported sizes."
+      ],
+      "variantApplicability": null
+    },
+    "app.dialog.listMaxHeight": {
+      "cssVar": "--aries-dialog-list-max-height",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "224px",
+      "bounds": {
+        "min": 96,
+        "max": 560,
+        "step": 8
+      },
+      "label": "Dialog list maximum height",
+      "description": "Maximum height of a scrolling list embedded in an informational dialog.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "About dialog contributor list"
+      ],
+      "safetyNotes": [
+        "Keep enough surrounding dialog content visible while allowing useful list scrolling."
       ],
       "variantApplicability": null
     },
@@ -1096,7 +1254,7 @@ _CATALOG = json.loads(r'''{
       "scope": "app",
       "type": "number",
       "unit": "px",
-      "default": "20px",
+      "default": "var(--aries-section-gap)",
       "bounds": {
         "min": 8,
         "max": 40,
@@ -1110,6 +1268,139 @@ _CATALOG = json.loads(r'''{
       ],
       "safetyNotes": [
         "Check the complete form still fits its configured viewport height."
+      ],
+      "variantApplicability": null
+    },
+    "app.inspector.cardGap": {
+      "cssVar": "--aries-inspector-card-gap",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "8px",
+      "bounds": {
+        "min": 0,
+        "max": 32,
+        "step": 1
+      },
+      "label": "Inspector card gap",
+      "description": "Vertical separation between stacked inspector cards and related citation content.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "inspector alert cards",
+        "inspector citations"
+      ],
+      "safetyNotes": [
+        "Preserve clear grouping between separate cards and text blocks."
+      ],
+      "variantApplicability": null
+    },
+    "app.inspector.cardPaddingBlock": {
+      "cssVar": "--aries-inspector-card-padding-y",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "8px",
+      "bounds": {
+        "min": 2,
+        "max": 24,
+        "step": 1
+      },
+      "label": "Inspector card vertical padding",
+      "description": "Vertical inset inside inspector cards.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "inspector alert cards"
+      ],
+      "safetyNotes": [
+        "Retain a readable card rhythm without wasting narrow-pane space."
+      ],
+      "variantApplicability": null
+    },
+    "app.inspector.cardPaddingInline": {
+      "cssVar": "--aries-inspector-card-padding-x",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "12px",
+      "bounds": {
+        "min": 2,
+        "max": 32,
+        "step": 1
+      },
+      "label": "Inspector card horizontal padding",
+      "description": "Horizontal inset inside inspector cards.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "inspector alert cards"
+      ],
+      "safetyNotes": [
+        "Keep card text clear of borders at every inspector width."
+      ],
+      "variantApplicability": null
+    },
+    "app.inspector.citationGap": {
+      "cssVar": "--aries-inspector-citation-gap",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "12px",
+      "bounds": {
+        "min": 0,
+        "max": 32,
+        "step": 1
+      },
+      "label": "Inspector citation gap",
+      "description": "Vertical separation between an inspector citation label and its passage text.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "inspector passage citations"
+      ],
+      "safetyNotes": [
+        "Keep the citation visibly attached to its passage while preserving reading rhythm."
+      ],
+      "variantApplicability": null
+    },
+    "app.inspector.closeIconSize": {
+      "cssVar": "--aries-inspector-close-icon-size",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "14px",
+      "bounds": {
+        "min": 8,
+        "max": 28,
+        "step": 1
+      },
+      "label": "Inspector close icon size",
+      "description": "Glyph size of the inspector close action.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "chart inspector"
+      ],
+      "safetyNotes": [
+        "Keep the close glyph legible without colliding with headings."
+      ],
+      "variantApplicability": null
+    },
+    "app.inspector.closeInset": {
+      "cssVar": "--aries-inspector-close-inset",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "12px",
+      "bounds": {
+        "min": 2,
+        "max": 32,
+        "step": 1
+      },
+      "label": "Inspector close inset",
+      "description": "Top and trailing inset of the inspector close action.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "chart inspector"
+      ],
+      "safetyNotes": [
+        "Keep the close action aligned and clear of inspector headings."
       ],
       "variantApplicability": null
     },
@@ -1255,6 +1546,94 @@ _CATALOG = json.loads(r'''{
       ],
       "safetyNotes": [
         "Verify dense inspector content and both light and dark palettes after changing this role."
+      ],
+      "variantApplicability": null
+    },
+    "app.inspector.controlHeight": {
+      "cssVar": "--aries-inspector-control-height",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "24px",
+      "bounds": {
+        "min": 18,
+        "max": 44,
+        "step": 1
+      },
+      "label": "Inspector control height",
+      "description": "Height of compact controls embedded in inspector sections.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "inspector section controls"
+      ],
+      "safetyNotes": [
+        "Keep text vertically centered and the pointer target usable."
+      ],
+      "variantApplicability": null
+    },
+    "app.inspector.controlPaddingInline": {
+      "cssVar": "--aries-inspector-control-padding-x",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "4px",
+      "bounds": {
+        "min": 0,
+        "max": 20,
+        "step": 1
+      },
+      "label": "Inspector control horizontal padding",
+      "description": "Horizontal inset inside compact inspector controls.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "inspector section controls"
+      ],
+      "safetyNotes": [
+        "Keep selected values readable in the narrow inspector pane."
+      ],
+      "variantApplicability": null
+    },
+    "app.inspector.controlSectionPaddingBottom": {
+      "cssVar": "--aries-inspector-control-section-padding-bottom",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "12px",
+      "bounds": {
+        "min": 0,
+        "max": 32,
+        "step": 1
+      },
+      "label": "Inspector control section bottom padding",
+      "description": "Bottom inset retained below inspector sections that contain controls.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "inspector section controls"
+      ],
+      "safetyNotes": [
+        "Preserve separation from the following inspector section."
+      ],
+      "variantApplicability": null
+    },
+    "app.inspector.headingGap": {
+      "cssVar": "--aries-inspector-heading-gap",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "8px",
+      "bounds": {
+        "min": 0,
+        "max": 24,
+        "step": 1
+      },
+      "label": "Inspector heading gap",
+      "description": "Inline gap between heading glyphs, labels, and companion controls in the inspector.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "chart inspector headings"
+      ],
+      "safetyNotes": [
+        "Keep heading groups readable without separating related controls."
       ],
       "variantApplicability": null
     },
@@ -1615,7 +1994,7 @@ _CATALOG = json.loads(r'''{
       "scope": "app",
       "type": "number",
       "unit": "px",
-      "default": "8px",
+      "default": "calc(var(--aries-section-gap) * 2 / 5)",
       "bounds": {
         "min": 2,
         "max": 20,
@@ -1629,6 +2008,28 @@ _CATALOG = json.loads(r'''{
       ],
       "safetyNotes": [
         "Verify dense inspector content and both light and dark palettes after changing this role."
+      ],
+      "variantApplicability": null
+    },
+    "app.inspector.statusDotSize": {
+      "cssVar": "--aries-inspector-status-dot-size",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "8px",
+      "bounds": {
+        "min": 4,
+        "max": 20,
+        "step": 1
+      },
+      "label": "Inspector status marker size",
+      "description": "Diameter of status dots in inspector alert cards.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "inspector alert cards"
+      ],
+      "safetyNotes": [
+        "Keep status distinctions visible without overpowering alert text."
       ],
       "variantApplicability": null
     },
@@ -2089,6 +2490,52 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
+    "app.menu.commandListMaxHeight": {
+      "cssVar": "--aries-menu-command-max-height",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "288px",
+      "bounds": {
+        "min": 160,
+        "max": 600,
+        "step": 8
+      },
+      "label": "Command-list maximum height",
+      "description": "Maximum scrolling height shared by command-palette result lists.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "command palette",
+        "command search result lists"
+      ],
+      "safetyNotes": [
+        "Keep several results visible without obscuring the full workspace."
+      ],
+      "variantApplicability": null
+    },
+    "app.menu.contextAlignOffset": {
+      "cssVar": "--aries-menu-context-align-offset",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "4px",
+      "bounds": {
+        "min": -24,
+        "max": 24,
+        "step": 1
+      },
+      "label": "Context menu alignment offset",
+      "description": "Inline alignment adjustment between a context anchor and its panel.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "context menus",
+        "context submenus"
+      ],
+      "safetyNotes": [
+        "Keep the pointer context and nested-menu travel path obvious."
+      ],
+      "variantApplicability": null
+    },
     "app.menu.contextMinWidth": {
       "cssVar": "--aries-menu-context-min-width",
       "scope": "app",
@@ -2111,6 +2558,50 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
+    "app.menu.contextPopupMinWidth": {
+      "cssVar": "--aries-menu-context-popup-min-width",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "144px",
+      "bounds": {
+        "min": 80,
+        "max": 360,
+        "step": 4
+      },
+      "label": "Generic context menu minimum width",
+      "description": "Minimum inline size shared by ordinary context-menu panels before feature-specific overrides.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "generic context menus"
+      ],
+      "safetyNotes": [
+        "Check short utility menus as well as long localized labels."
+      ],
+      "variantApplicability": null
+    },
+    "app.menu.contextSideOffset": {
+      "cssVar": "--aries-menu-context-side-offset",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "0px",
+      "bounds": {
+        "min": 0,
+        "max": 32,
+        "step": 1
+      },
+      "label": "Context menu offset",
+      "description": "Distance between the pointer context anchor and its primary menu panel.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "context menus"
+      ],
+      "safetyNotes": [
+        "Keep the menu close enough to preserve the pointer's context."
+      ],
+      "variantApplicability": null
+    },
     "app.menu.contextSubmenuMinWidth": {
       "cssVar": "--aries-menu-context-submenu-min-width",
       "scope": "app",
@@ -2130,6 +2621,50 @@ _CATALOG = json.loads(r'''{
       ],
       "safetyNotes": [
         "Keep nested menus readable without covering excessive chart area."
+      ],
+      "variantApplicability": null
+    },
+    "app.menu.dropdownMinWidth": {
+      "cssVar": "--aries-menu-dropdown-min-width",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "128px",
+      "bounds": {
+        "min": 80,
+        "max": 360,
+        "step": 4
+      },
+      "label": "Dropdown menu minimum width",
+      "description": "Minimum inline size shared by ordinary dropdown panels.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "dropdown menus"
+      ],
+      "safetyNotes": [
+        "Keep compact dropdowns usable without forcing excessive width."
+      ],
+      "variantApplicability": null
+    },
+    "app.menu.dropdownSubmenuMinWidth": {
+      "cssVar": "--aries-menu-dropdown-submenu-min-width",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "96px",
+      "bounds": {
+        "min": 72,
+        "max": 360,
+        "step": 4
+      },
+      "label": "Dropdown submenu minimum width",
+      "description": "Minimum inline size shared by nested dropdown panels.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "dropdown submenus"
+      ],
+      "safetyNotes": [
+        "Check nested localized choices at the minimum width."
       ],
       "variantApplicability": null
     },
@@ -2251,6 +2786,139 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
+    "app.menu.pickerSideOffset": {
+      "cssVar": "--aries-menu-picker-side-offset",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "8px",
+      "bounds": {
+        "min": 0,
+        "max": 32,
+        "step": 1
+      },
+      "label": "Picker popup offset",
+      "description": "Distance between a compact picker trigger and its floating choice panel.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "Style Lab color picker"
+      ],
+      "safetyNotes": [
+        "Keep the picker near its swatch while leaving the trigger visible."
+      ],
+      "variantApplicability": null
+    },
+    "app.menu.popupAlignOffset": {
+      "cssVar": "--aries-menu-popup-align-offset",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "0px",
+      "bounds": {
+        "min": -24,
+        "max": 24,
+        "step": 1
+      },
+      "label": "Dropdown alignment offset",
+      "description": "Inline alignment adjustment between a dropdown trigger and its panel.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "dropdown menus"
+      ],
+      "safetyNotes": [
+        "Keep the panel visually anchored to its trigger."
+      ],
+      "variantApplicability": null
+    },
+    "app.menu.popupSideOffset": {
+      "cssVar": "--aries-menu-popup-side-offset",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "4px",
+      "bounds": {
+        "min": 0,
+        "max": 32,
+        "step": 1
+      },
+      "label": "Menu popup offset",
+      "description": "Distance between a dropdown trigger and its floating menu panel.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "dropdown menus",
+        "inspector choice menus"
+      ],
+      "safetyNotes": [
+        "Keep menus visually attached to their triggers without covering them."
+      ],
+      "variantApplicability": null
+    },
+    "app.menu.quickOptionsMaxHeight": {
+      "cssVar": "--aries-menu-quick-max-height",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "620px",
+      "bounds": {
+        "min": 240,
+        "max": 900,
+        "step": 8
+      },
+      "label": "Quick-options maximum height",
+      "description": "Pixel cap on the retained quick-options menu before it scrolls.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "titlebar quick-options menu"
+      ],
+      "safetyNotes": [
+        "The viewport-relative cap still prevents the menu from escaping short windows."
+      ],
+      "variantApplicability": null
+    },
+    "app.menu.quickOptionsViewportMaxHeight": {
+      "cssVar": "--aries-menu-quick-viewport-max-height",
+      "scope": "app",
+      "type": "number",
+      "unit": "vh",
+      "default": "76vh",
+      "bounds": {
+        "min": 40,
+        "max": 95,
+        "step": 1
+      },
+      "label": "Quick-options viewport height cap",
+      "description": "Maximum share of viewport height available to the retained quick-options menu.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "titlebar quick-options menu"
+      ],
+      "safetyNotes": [
+        "Leave enough viewport around the menu to preserve its transient context."
+      ],
+      "variantApplicability": null
+    },
+    "app.menu.quickOptionsWidth": {
+      "cssVar": "--aries-menu-quick-width",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "288px",
+      "bounds": {
+        "min": 200,
+        "max": 480,
+        "step": 4
+      },
+      "label": "Quick-options menu width",
+      "description": "Inline size of the retained quick-options menu opened from the titlebar.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "titlebar quick-options menu"
+      ],
+      "safetyNotes": [
+        "Check long localized option labels and narrow application windows."
+      ],
+      "variantApplicability": null
+    },
     "app.menu.selectionReserve": {
       "cssVar": "--aries-menu-selection-reserve",
       "scope": "app",
@@ -2271,6 +2939,51 @@ _CATALOG = json.loads(r'''{
       ],
       "safetyNotes": [
         "Keep the indicator clear of translated item labels."
+      ],
+      "variantApplicability": null
+    },
+    "app.menu.submenuAlignOffset": {
+      "cssVar": "--aries-menu-submenu-align-offset",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "-3px",
+      "bounds": {
+        "min": -24,
+        "max": 24,
+        "step": 1
+      },
+      "label": "Submenu alignment offset",
+      "description": "Block-axis alignment adjustment between a dropdown menu and its nested panel.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "dropdown submenus"
+      ],
+      "safetyNotes": [
+        "Keep parent and nested rows visually aligned and pointer-reachable."
+      ],
+      "variantApplicability": null
+    },
+    "app.menu.submenuSideOffset": {
+      "cssVar": "--aries-menu-submenu-side-offset",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "0px",
+      "bounds": {
+        "min": 0,
+        "max": 24,
+        "step": 1
+      },
+      "label": "Submenu offset",
+      "description": "Distance between a parent menu and its nested submenu panel.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "dropdown submenus",
+        "context submenus"
+      ],
+      "safetyNotes": [
+        "Avoid a gap that makes pointer travel between nested menus unreliable."
       ],
       "variantApplicability": null
     },
@@ -2662,6 +3375,46 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
+    "app.overlay.background": {
+      "cssVar": "--aries-overlay-background",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-surface)",
+      "bounds": null,
+      "label": "Overlay background",
+      "description": "Base color for modal dialogs, sheets, and elevated workspace overlays.",
+      "tier": "semantic-app",
+      "affectedSurfaces": [
+        "dialogs",
+        "sheets",
+        "elevated overlays"
+      ],
+      "safetyNotes": [
+        "Use transparency only with a solid fallback and verify text against varied content behind the overlay."
+      ],
+      "variantApplicability": null
+    },
+    "app.overlay.foreground": {
+      "cssVar": "--aries-overlay-text",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-text-primary)",
+      "bounds": null,
+      "label": "Overlay foreground",
+      "description": "Primary text and glyph foreground over modal and sheet materials.",
+      "tier": "semantic-app",
+      "affectedSurfaces": [
+        "dialogs",
+        "sheets",
+        "elevated overlays"
+      ],
+      "safetyNotes": [
+        "Maintain normal-text contrast over every overlay texture value."
+      ],
+      "variantApplicability": null
+    },
     "app.pane.content.padding": {
       "cssVar": "--aries-pane-content-padding",
       "scope": "app",
@@ -2957,7 +3710,7 @@ _CATALOG = json.loads(r'''{
       "scope": "app",
       "type": "number",
       "unit": "px",
-      "default": "12px",
+      "default": "calc(var(--aries-section-gap) * 3 / 5)",
       "bounds": {
         "min": 0,
         "max": 24,
@@ -2995,6 +3748,46 @@ _CATALOG = json.loads(r'''{
       ],
       "safetyNotes": [
         "Verify full-window pickers at their minimum supported desktop width."
+      ],
+      "variantApplicability": null
+    },
+    "app.panel.background": {
+      "cssVar": "--aries-panel-background",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-surface)",
+      "bounds": null,
+      "label": "Panel background",
+      "description": "Base color for retained panes, cards, and secondary workspace regions.",
+      "tier": "semantic-app",
+      "affectedSurfaces": [
+        "retained panels",
+        "cards",
+        "right panes"
+      ],
+      "safetyNotes": [
+        "Preserve hierarchy from the canvas without lowering foreground contrast."
+      ],
+      "variantApplicability": null
+    },
+    "app.panel.foreground": {
+      "cssVar": "--aries-panel-text",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-text-primary)",
+      "bounds": null,
+      "label": "Panel foreground",
+      "description": "Primary text and glyph foreground over panel materials.",
+      "tier": "semantic-app",
+      "affectedSurfaces": [
+        "retained panels",
+        "cards",
+        "right panes"
+      ],
+      "safetyNotes": [
+        "Maintain normal-text contrast over every panel texture value."
       ],
       "variantApplicability": null
     },
@@ -3061,6 +3854,46 @@ _CATALOG = json.loads(r'''{
       ],
       "safetyNotes": [
         "Verify retained desktop surfaces at compact and wide pane sizes after changing this role."
+      ],
+      "variantApplicability": null
+    },
+    "app.popover.background": {
+      "cssVar": "--aries-popover-background",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-background)",
+      "bounds": null,
+      "label": "Popover background",
+      "description": "Base color for menus, pickers, and transient floating controls.",
+      "tier": "semantic-app",
+      "affectedSurfaces": [
+        "menus",
+        "pickers",
+        "popovers"
+      ],
+      "safetyNotes": [
+        "Keep compact labels and selection marks legible at the material extrema."
+      ],
+      "variantApplicability": null
+    },
+    "app.popover.foreground": {
+      "cssVar": "--aries-popover-text",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-text-primary)",
+      "bounds": null,
+      "label": "Popover foreground",
+      "description": "Primary text and glyph foreground over transient floating surfaces.",
+      "tier": "semantic-app",
+      "affectedSurfaces": [
+        "menus",
+        "pickers",
+        "popovers"
+      ],
+      "safetyNotes": [
+        "Maintain normal-text contrast over every popover texture value."
       ],
       "variantApplicability": null
     },
@@ -3533,6 +4366,178 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
+    "app.shell.statusbarDatetimeGrow": {
+      "cssVar": "--aries-statusbar-datetime-grow",
+      "scope": "app",
+      "type": "number",
+      "unit": "",
+      "default": "3",
+      "bounds": {
+        "min": 0.25,
+        "max": 8,
+        "step": 0.25
+      },
+      "label": "Statusbar date field flex ratio",
+      "description": "Relative share of remaining statusbar width assigned to the date and time field.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "workspace statusbar"
+      ],
+      "safetyNotes": [
+        "Tune together with the detail-field ratio and test every supported status format."
+      ],
+      "variantApplicability": null
+    },
+    "app.shell.statusbarDetailGrow": {
+      "cssVar": "--aries-statusbar-detail-grow",
+      "scope": "app",
+      "type": "number",
+      "unit": "",
+      "default": "2",
+      "bounds": {
+        "min": 0.25,
+        "max": 8,
+        "step": 0.25
+      },
+      "label": "Statusbar detail field flex ratio",
+      "description": "Relative share of remaining statusbar width assigned to coordinates and supplementary details.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "workspace statusbar"
+      ],
+      "safetyNotes": [
+        "Tune together with the date-field ratio and test long coordinate strings."
+      ],
+      "variantApplicability": null
+    },
+    "app.shell.statusbarKindWidth": {
+      "cssVar": "--aries-statusbar-kind-width",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "80px",
+      "bounds": {
+        "min": 40,
+        "max": 240,
+        "step": 4
+      },
+      "label": "Statusbar chart-kind field width",
+      "description": "Fixed flex basis reserved for the active chart or document kind.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "workspace statusbar"
+      ],
+      "safetyNotes": [
+        "Check translated chart-kind labels and narrow windows."
+      ],
+      "variantApplicability": null
+    },
+    "app.shell.statusbarNameWidth": {
+      "cssVar": "--aries-statusbar-name-width",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "160px",
+      "bounds": {
+        "min": 60,
+        "max": 360,
+        "step": 4
+      },
+      "label": "Statusbar name field width",
+      "description": "Fixed flex basis reserved for the active chart or document name.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "workspace statusbar"
+      ],
+      "safetyNotes": [
+        "Check narrow windows and long names without starving date and coordinate fields."
+      ],
+      "variantApplicability": null
+    },
+    "app.shell.titlebarClusterGap": {
+      "cssVar": "--aries-titlebar-cluster-gap",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "4px",
+      "bounds": {
+        "min": 0,
+        "max": 20,
+        "step": 1
+      },
+      "label": "Titlebar action gap",
+      "description": "Spacing between actions in the leading and trailing titlebar clusters.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "workspace titlebar actions"
+      ],
+      "safetyNotes": [
+        "Keep each action distinct while preserving room for the centered title."
+      ],
+      "variantApplicability": null
+    },
+    "app.shell.titlebarPaddingInline": {
+      "cssVar": "--aries-titlebar-padding-x",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "8px",
+      "bounds": {
+        "min": 0,
+        "max": 32,
+        "step": 1
+      },
+      "label": "Titlebar horizontal padding",
+      "description": "Outer horizontal inset of the unified workspace titlebar.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "workspace titlebar"
+      ],
+      "safetyNotes": [
+        "Keep native window controls and trailing toolbar actions clear."
+      ],
+      "variantApplicability": null
+    },
+    "app.shell.titlebarTitlePaddingInline": {
+      "cssVar": "--aries-titlebar-title-padding-x",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "8px",
+      "bounds": {
+        "min": 0,
+        "max": 32,
+        "step": 1
+      },
+      "label": "Titlebar title horizontal padding",
+      "description": "Horizontal inset retained around the centered workspace title.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "workspace titlebar title"
+      ],
+      "safetyNotes": [
+        "Check long titles between the leading and trailing action clusters."
+      ],
+      "variantApplicability": null
+    },
+    "app.sidebar.accentForeground": {
+      "cssVar": "--aries-sidebar-accent-foreground",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "color-mix(\n    in srgb,\n    var(--aries-sidebar-text) 91%,\n    var(--aries-surface)\n  )",
+      "bounds": null,
+      "label": "Sidebar selection foreground",
+      "description": "Text and glyph foreground over selected or accented sidebar rows.",
+      "tier": "semantic-app",
+      "affectedSurfaces": [
+        "selected workspace sidebar rows"
+      ],
+      "safetyNotes": [
+        "Maintain normal-text contrast against the interactive accent."
+      ],
+      "variantApplicability": null
+    },
     "app.sidebar.actionIconSize": {
       "cssVar": "--aries-sidebar-action-icon-size",
       "scope": "app",
@@ -3553,6 +4558,24 @@ _CATALOG = json.loads(r'''{
       ],
       "safetyNotes": [
         "Keep icons inside both section headers and close-action targets."
+      ],
+      "variantApplicability": null
+    },
+    "app.sidebar.background": {
+      "cssVar": "--aries-sidebar-background",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-surface)",
+      "bounds": null,
+      "label": "Sidebar background",
+      "description": "Independent base color beneath retained workspace navigation.",
+      "tier": "semantic-app",
+      "affectedSurfaces": [
+        "workspace sidebar"
+      ],
+      "safetyNotes": [
+        "Keep sidebar text and selection states legible over the material at its darkest and lightest points."
       ],
       "variantApplicability": null
     },
@@ -4004,6 +5027,28 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
+    "app.spotlight.dialogTop": {
+      "cssVar": "--aries-spotlight-dialog-top",
+      "scope": "app",
+      "type": "number",
+      "unit": "%",
+      "default": "33.333333%",
+      "bounds": {
+        "min": 10,
+        "max": 60,
+        "step": 1
+      },
+      "label": "Command palette vertical position",
+      "description": "Viewport-relative top position of the generic command palette.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "command palette"
+      ],
+      "safetyNotes": [
+        "Keep the palette clear of the titlebar and leave enough space for its result list."
+      ],
+      "variantApplicability": null
+    },
     "app.spotlight.iconSize": {
       "cssVar": "--aries-spotlight-icon-size",
       "scope": "app",
@@ -4400,6 +5445,24 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
+    "app.statusbar.background": {
+      "cssVar": "--aries-statusbar-background",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-background)",
+      "bounds": null,
+      "label": "Statusbar background",
+      "description": "Base color beneath workspace status and coordinate metadata.",
+      "tier": "semantic-app",
+      "affectedSurfaces": [
+        "workspace statusbar"
+      ],
+      "safetyNotes": [
+        "Keep status metadata readable at the material extrema."
+      ],
+      "variantApplicability": null
+    },
     "app.statusbar.fieldPaddingInline": {
       "cssVar": "--aries-statusbar-field-padding-x",
       "scope": "app",
@@ -4755,6 +5818,42 @@ _CATALOG = json.loads(r'''{
       ],
       "safetyNotes": [
         "Keep enough dialog width for the active settings panel."
+      ],
+      "variantApplicability": null
+    },
+    "app.titlebar.background": {
+      "cssVar": "--aries-titlebar-background",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "var(--aries-background)",
+      "bounds": null,
+      "label": "Titlebar background",
+      "description": "Base color beneath the retained native titlebar content.",
+      "tier": "semantic-app",
+      "affectedSurfaces": [
+        "workspace titlebar"
+      ],
+      "safetyNotes": [
+        "Preserve native traffic-light separation and title legibility."
+      ],
+      "variantApplicability": null
+    },
+    "app.titlebar.foreground": {
+      "cssVar": "--aries-titlebar-text",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "color-mix(in srgb, var(--aries-text-primary) 84%, var(--aries-background))",
+      "bounds": null,
+      "label": "Titlebar foreground",
+      "description": "Primary title and navigation foreground over the titlebar material.",
+      "tier": "semantic-app",
+      "affectedSurfaces": [
+        "workspace titlebar"
+      ],
+      "safetyNotes": [
+        "Maintain normal-text contrast over every titlebar texture value."
       ],
       "variantApplicability": null
     },
@@ -5157,6 +6256,94 @@ _CATALOG = json.loads(r'''{
       ],
       "safetyNotes": [
         "Preserve the recorded typography hierarchy and dense desktop layout fit."
+      ],
+      "variantApplicability": null
+    },
+    "app.typography.sidebarNavigationSize": {
+      "cssVar": "--aries-font-size-nav",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "14px",
+      "bounds": {
+        "min": 9,
+        "max": 24,
+        "step": 1
+      },
+      "label": "Sidebar navigation font size",
+      "description": "Text size of workspace navigation rows and footer links.",
+      "tier": "semantic-app",
+      "affectedSurfaces": [
+        "workspace sidebar navigation"
+      ],
+      "safetyNotes": [
+        "Check row height, long labels, and drag-state overlays together."
+      ],
+      "variantApplicability": null
+    },
+    "app.typography.sidebarSectionSize": {
+      "cssVar": "--aries-font-size-nav-section",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "12px",
+      "bounds": {
+        "min": 8,
+        "max": 20,
+        "step": 1
+      },
+      "label": "Sidebar section font size",
+      "description": "Text size of expandable sidebar section headings.",
+      "tier": "semantic-app",
+      "affectedSurfaces": [
+        "workspace sidebar section headings"
+      ],
+      "safetyNotes": [
+        "Keep headings distinct from navigation rows without clipping."
+      ],
+      "variantApplicability": null
+    },
+    "app.typography.statusbarSize": {
+      "cssVar": "--aries-font-size-statusbar",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "11px",
+      "bounds": {
+        "min": 8,
+        "max": 20,
+        "step": 1
+      },
+      "label": "Statusbar font size",
+      "description": "Text size of workspace status fields.",
+      "tier": "semantic-app",
+      "affectedSurfaces": [
+        "workspace statusbar"
+      ],
+      "safetyNotes": [
+        "Keep all status fields legible within the fixed statusbar height."
+      ],
+      "variantApplicability": null
+    },
+    "app.typography.titlebarSize": {
+      "cssVar": "--aries-font-size-titlebar",
+      "scope": "app",
+      "type": "number",
+      "unit": "px",
+      "default": "13px",
+      "bounds": {
+        "min": 9,
+        "max": 24,
+        "step": 1
+      },
+      "label": "Titlebar font size",
+      "description": "Text size of the centered workspace title.",
+      "tier": "semantic-app",
+      "affectedSurfaces": [
+        "workspace titlebar"
+      ],
+      "safetyNotes": [
+        "Check long document titles and narrow windows."
       ],
       "variantApplicability": null
     },
@@ -6740,42 +7927,6 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
-    "renderer.astrocart.color.mapBuildingColor": {
-      "cssVar": "--aries-astrocart-map-building-color",
-      "scope": "chart",
-      "type": "color",
-      "unit": "",
-      "default": "rgba(10,12,16,0.44)",
-      "bounds": null,
-      "label": "Astrocartography map building color",
-      "description": "Astrocartography map building color color resolved once for the complete renderer paint.",
-      "tier": "renderer-palette",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "safetyNotes": [
-        "Review Astrocartography foreground/background contrast after changing this role."
-      ],
-      "variantApplicability": null
-    },
-    "renderer.astrocart.color.mapBuildingOutlineColor": {
-      "cssVar": "--aries-astrocart-map-building-outline-color",
-      "scope": "chart",
-      "type": "color",
-      "unit": "",
-      "default": "rgba(126,134,144,0.14)",
-      "bounds": null,
-      "label": "Astrocartography map building outline color",
-      "description": "Astrocartography map building outline color color resolved once for the complete renderer paint.",
-      "tier": "renderer-palette",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "safetyNotes": [
-        "Review Astrocartography foreground/background contrast after changing this role."
-      ],
-      "variantApplicability": null
-    },
     "renderer.astrocart.color.mapCasing": {
       "cssVar": "--aries-astrocart-map-casing",
       "scope": "chart",
@@ -7370,42 +8521,6 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
-    "renderer.astrocart.color.mapParkColor": {
-      "cssVar": "--aries-astrocart-map-park-color",
-      "scope": "chart",
-      "type": "color",
-      "unit": "",
-      "default": "rgba(74,92,78,0.14)",
-      "bounds": null,
-      "label": "Astrocartography map park color",
-      "description": "Astrocartography map park color color resolved once for the complete renderer paint.",
-      "tier": "renderer-palette",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "safetyNotes": [
-        "Review Astrocartography foreground/background contrast after changing this role."
-      ],
-      "variantApplicability": null
-    },
-    "renderer.astrocart.color.mapParkOutlineColor": {
-      "cssVar": "--aries-astrocart-map-park-outline-color",
-      "scope": "chart",
-      "type": "color",
-      "unit": "",
-      "default": "rgba(118,142,122,0.16)",
-      "bounds": null,
-      "label": "Astrocartography map park outline color",
-      "description": "Astrocartography map park outline color color resolved once for the complete renderer paint.",
-      "tier": "renderer-palette",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "safetyNotes": [
-        "Review Astrocartography foreground/background contrast after changing this role."
-      ],
-      "variantApplicability": null
-    },
     "renderer.astrocart.color.mapPlutoLineColor": {
       "cssVar": "--aries-astrocart-map-pluto-line-color",
       "scope": "chart",
@@ -7658,42 +8773,6 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
-    "renderer.astrocart.color.mapTerrainHighlightColor": {
-      "cssVar": "--aries-astrocart-map-terrain-highlight-color",
-      "scope": "chart",
-      "type": "color",
-      "unit": "",
-      "default": "#697682",
-      "bounds": null,
-      "label": "Astrocartography map terrain highlight color",
-      "description": "Astrocartography map terrain highlight color color resolved once for the complete renderer paint.",
-      "tier": "renderer-palette",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "safetyNotes": [
-        "Review Astrocartography foreground/background contrast after changing this role."
-      ],
-      "variantApplicability": null
-    },
-    "renderer.astrocart.color.mapTerrainShadowColor": {
-      "cssVar": "--aries-astrocart-map-terrain-shadow-color",
-      "scope": "chart",
-      "type": "color",
-      "unit": "",
-      "default": "#111820",
-      "bounds": null,
-      "label": "Astrocartography map terrain shadow color",
-      "description": "Astrocartography map terrain shadow color color resolved once for the complete renderer paint.",
-      "tier": "renderer-palette",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "safetyNotes": [
-        "Review Astrocartography foreground/background contrast after changing this role."
-      ],
-      "variantApplicability": null
-    },
     "renderer.astrocart.color.mapUranusLineColor": {
       "cssVar": "--aries-astrocart-map-uranus-line-color",
       "scope": "chart",
@@ -7763,6 +8842,270 @@ _CATALOG = json.loads(r'''{
       ],
       "safetyNotes": [
         "Review Astrocartography foreground/background contrast after changing this role."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrocart.metric.chromeControlSize": {
+      "cssVar": "--aries-astrocart-chrome-control-size",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "28px",
+      "bounds": {
+        "min": 18,
+        "max": 56,
+        "step": 0.5
+      },
+      "label": "Astrocartography chrome control size",
+      "description": "Astrocartography chrome control size design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrocart.metric.chromeFontSize": {
+      "cssVar": "--aries-astrocart-chrome-font-size",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "11px",
+      "bounds": {
+        "min": 7,
+        "max": 24,
+        "step": 0.5
+      },
+      "label": "Astrocartography chrome font size",
+      "description": "Astrocartography chrome font size design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrocart.metric.chromeGap": {
+      "cssVar": "--aries-astrocart-chrome-gap",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "4px",
+      "bounds": {
+        "min": 0,
+        "max": 24,
+        "step": 1
+      },
+      "label": "Astrocartography chrome gap",
+      "description": "Astrocartography chrome gap design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrocart.metric.chromeInset": {
+      "cssVar": "--aries-astrocart-chrome-inset",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "8px",
+      "bounds": {
+        "min": 0,
+        "max": 48,
+        "step": 1
+      },
+      "label": "Astrocartography chrome inset",
+      "description": "Astrocartography chrome inset design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrocart.metric.chromePaddingX": {
+      "cssVar": "--aries-astrocart-chrome-padding-x",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "8px",
+      "bounds": {
+        "min": 0,
+        "max": 32,
+        "step": 1
+      },
+      "label": "Astrocartography chrome padding x",
+      "description": "Astrocartography chrome padding x design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrocart.metric.chromePaddingY": {
+      "cssVar": "--aries-astrocart-chrome-padding-y",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "6px",
+      "bounds": {
+        "min": 0,
+        "max": 24,
+        "step": 1
+      },
+      "label": "Astrocartography chrome padding y",
+      "description": "Astrocartography chrome padding y design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrocart.metric.chromePanelRadius": {
+      "cssVar": "--aries-astrocart-chrome-panel-radius",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "6px",
+      "bounds": {
+        "min": 0,
+        "max": 24,
+        "step": 0.5
+      },
+      "label": "Astrocartography chrome panel radius",
+      "description": "Astrocartography chrome panel radius design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrocart.metric.chromeSmallFontSize": {
+      "cssVar": "--aries-astrocart-chrome-small-font-size",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "10px",
+      "bounds": {
+        "min": 6,
+        "max": 20,
+        "step": 0.5
+      },
+      "label": "Astrocartography chrome small font size",
+      "description": "Astrocartography chrome small font size design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrocart.metric.mapAspectLineDashOff": {
+      "cssVar": "--aries-astrocart-map-aspect-line-dash-off",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "1.55px",
+      "bounds": {
+        "min": 0.25,
+        "max": 12,
+        "step": 0.25
+      },
+      "label": "Astrocartography map aspect line dash off",
+      "description": "Astrocartography map aspect line dash off design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrocart.metric.mapAspectLineDashOn": {
+      "cssVar": "--aries-astrocart-map-aspect-line-dash-on",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "0.45px",
+      "bounds": {
+        "min": 0.25,
+        "max": 12,
+        "step": 0.25
+      },
+      "label": "Astrocartography map aspect line dash on",
+      "description": "Astrocartography map aspect line dash on design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrocart.metric.mapAspectLineOpacityScale": {
+      "cssVar": "--aries-astrocart-map-aspect-line-opacity-scale",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.78",
+      "bounds": {
+        "min": 0,
+        "max": 1.5,
+        "step": 0.01
+      },
+      "label": "Astrocartography map aspect line opacity scale",
+      "description": "Astrocartography map aspect line opacity scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrocart.metric.mapAspectLineWidthScale": {
+      "cssVar": "--aries-astrocart-map-aspect-line-width-scale",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.82",
+      "bounds": {
+        "min": 0.25,
+        "max": 3,
+        "step": 0.01
+      },
+      "label": "Astrocartography map aspect line width scale",
+      "description": "Astrocartography map aspect line width scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
       ],
       "variantApplicability": null
     },
@@ -8021,28 +9364,6 @@ _CATALOG = json.loads(r'''{
       },
       "label": "Astrocartography map asterism star radius min",
       "description": "Astrocartography map asterism star radius min design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
-      ],
-      "variantApplicability": null
-    },
-    "renderer.astrocart.metric.mapBuildingOpacityScale": {
-      "cssVar": "--aries-astrocart-map-building-opacity-scale",
-      "scope": "chart",
-      "type": "number",
-      "unit": "",
-      "default": "1",
-      "bounds": {
-        "min": 0,
-        "max": 2,
-        "step": 0.01
-      },
-      "label": "Astrocartography map building opacity scale",
-      "description": "Astrocartography map building opacity scale design metric shared by every dependent paint and geometry path.",
       "tier": "renderer-metric",
       "affectedSurfaces": [
         "Astrocartography"
@@ -8866,28 +10187,6 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
-    "renderer.astrocart.metric.mapHillshadeExaggeration": {
-      "cssVar": "--aries-astrocart-map-hillshade-exaggeration",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0.35px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.01
-      },
-      "label": "Astrocartography map hillshade exaggeration",
-      "description": "Astrocartography map hillshade exaggeration design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
-      ],
-      "variantApplicability": null
-    },
     "renderer.astrocart.metric.mapHospitalFillOpacityScale": {
       "cssVar": "--aries-astrocart-map-hospital-fill-opacity-scale",
       "scope": "chart",
@@ -9231,6 +10530,94 @@ _CATALOG = json.loads(r'''{
       },
       "label": "Astrocartography map local region border width",
       "description": "Astrocartography map local region border width design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrocart.metric.mapLocalSpaceOppositionDashOffScale": {
+      "cssVar": "--aries-astrocart-map-local-space-opposition-dash-off-scale",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "1.25",
+      "bounds": {
+        "min": 0.25,
+        "max": 3,
+        "step": 0.01
+      },
+      "label": "Astrocartography map local space opposition dash off scale",
+      "description": "Astrocartography map local space opposition dash off scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrocart.metric.mapLocalSpaceOppositionDashOnScale": {
+      "cssVar": "--aries-astrocart-map-local-space-opposition-dash-on-scale",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.65",
+      "bounds": {
+        "min": 0.25,
+        "max": 3,
+        "step": 0.01
+      },
+      "label": "Astrocartography map local space opposition dash on scale",
+      "description": "Astrocartography map local space opposition dash on scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrocart.metric.mapLocalSpaceOppositionOpacityScale": {
+      "cssVar": "--aries-astrocart-map-local-space-opposition-opacity-scale",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.88",
+      "bounds": {
+        "min": 0,
+        "max": 1.5,
+        "step": 0.01
+      },
+      "label": "Astrocartography map local space opposition opacity scale",
+      "description": "Astrocartography map local space opposition opacity scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrocart.metric.mapLocalSpaceOppositionWidthScale": {
+      "cssVar": "--aries-astrocart-map-local-space-opposition-width-scale",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.9",
+      "bounds": {
+        "min": 0.25,
+        "max": 3,
+        "step": 0.01
+      },
+      "label": "Astrocartography map local space opposition width scale",
+      "description": "Astrocartography map local space opposition width scale design metric shared by every dependent paint and geometry path.",
       "tier": "renderer-metric",
       "affectedSurfaces": [
         "Astrocartography"
@@ -9746,50 +11133,6 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
-    "renderer.astrocart.metric.mapParkFillOpacityScale": {
-      "cssVar": "--aries-astrocart-map-park-fill-opacity-scale",
-      "scope": "chart",
-      "type": "number",
-      "unit": "",
-      "default": "1",
-      "bounds": {
-        "min": 0,
-        "max": 2,
-        "step": 0.01
-      },
-      "label": "Astrocartography map park fill opacity scale",
-      "description": "Astrocartography map park fill opacity scale design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
-      ],
-      "variantApplicability": null
-    },
-    "renderer.astrocart.metric.mapParkOutlineOpacityScale": {
-      "cssVar": "--aries-astrocart-map-park-outline-opacity-scale",
-      "scope": "chart",
-      "type": "number",
-      "unit": "",
-      "default": "1",
-      "bounds": {
-        "min": 0,
-        "max": 2,
-        "step": 0.01
-      },
-      "label": "Astrocartography map park outline opacity scale",
-      "description": "Astrocartography map park outline opacity scale design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Astrocartography"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
-      ],
-      "variantApplicability": null
-    },
     "renderer.astrocart.metric.mapPlutoLineOpacity": {
       "cssVar": "--aries-astrocart-map-pluto-line-opacity",
       "scope": "chart",
@@ -9825,6 +11168,28 @@ _CATALOG = json.loads(r'''{
       },
       "label": "Astrocartography map pluto line width scale",
       "description": "Astrocartography map pluto line width scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrocart.metric.mapProgressionLayerOpacity": {
+      "cssVar": "--aries-astrocart-map-progression-layer-opacity",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.68",
+      "bounds": {
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      "label": "Astrocartography map progression layer opacity",
+      "description": "Astrocartography map progression layer opacity design metric shared by every dependent paint and geometry path.",
       "tier": "renderer-metric",
       "affectedSurfaces": [
         "Astrocartography"
@@ -10428,19 +11793,19 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
-    "renderer.astrocart.metric.mapTerrainExaggeration": {
-      "cssVar": "--aries-astrocart-map-terrain-exaggeration",
+    "renderer.astrocart.metric.mapTransitLayerOpacity": {
+      "cssVar": "--aries-astrocart-map-transit-layer-opacity",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "1px",
+      "unit": "",
+      "default": "0.82",
       "bounds": {
         "min": 0,
-        "max": 3,
-        "step": 1
+        "max": 1,
+        "step": 0.01
       },
-      "label": "Astrocartography map terrain exaggeration",
-      "description": "Astrocartography map terrain exaggeration design metric shared by every dependent paint and geometry path.",
+      "label": "Astrocartography map transit layer opacity",
+      "description": "Astrocartography map transit layer opacity design metric shared by every dependent paint and geometry path.",
       "tier": "renderer-metric",
       "affectedSurfaces": [
         "Astrocartography"
@@ -10683,6 +12048,72 @@ _CATALOG = json.loads(r'''{
       },
       "label": "Astrocartography map water point label opacity",
       "description": "Astrocartography map water point label opacity design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrocart.metric.mapZenithRadiusMin": {
+      "cssVar": "--aries-astrocart-map-zenith-radius-min",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "3px",
+      "bounds": {
+        "min": 0.5,
+        "max": 12,
+        "step": 0.5
+      },
+      "label": "Astrocartography map zenith radius min",
+      "description": "Astrocartography map zenith radius min design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrocart.metric.mapZenithRadiusWidthScale": {
+      "cssVar": "--aries-astrocart-map-zenith-radius-width-scale",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "2",
+      "bounds": {
+        "min": 0.25,
+        "max": 6,
+        "step": 0.01
+      },
+      "label": "Astrocartography map zenith radius width scale",
+      "description": "Astrocartography map zenith radius width scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrocartography"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrocartography renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrocart.metric.mapZenithStrokeWidthMin": {
+      "cssVar": "--aries-astrocart-map-zenith-stroke-width-min",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "1px",
+      "bounds": {
+        "min": 0,
+        "max": 6,
+        "step": 0.25
+      },
+      "label": "Astrocartography map zenith stroke width min",
+      "description": "Astrocartography map zenith stroke width min design metric shared by every dependent paint and geometry path.",
       "tier": "renderer-metric",
       "affectedSurfaces": [
         "Astrocartography"
@@ -15186,6 +16617,28 @@ _CATALOG = json.loads(r'''{
         "anglo"
       ]
     },
+    "renderer.wheel.color.surveilAccent": {
+      "cssVar": "--aries-wheel-surveil-accent-color",
+      "scope": "chart",
+      "type": "color",
+      "unit": "",
+      "default": "rgb(229,146,70)",
+      "bounds": null,
+      "label": "Chart wheel surveil accent",
+      "description": "Chart wheel surveil accent color resolved once for the complete renderer paint.",
+      "tier": "renderer-palette",
+      "affectedSurfaces": [
+        "Chart wheel"
+      ],
+      "safetyNotes": [
+        "Review Chart wheel foreground/background contrast after changing this role."
+      ],
+      "variantApplicability": [
+        "classic",
+        "compact",
+        "anglo"
+      ]
+    },
     "renderer.wheel.color.termBoundary": {
       "cssVar": "--aries-wheel-term-boundary-color",
       "scope": "chart",
@@ -15674,6 +17127,30 @@ _CATALOG = json.loads(r'''{
         "compact"
       ]
     },
+    "renderer.wheel.metric.anglePositionSignScale": {
+      "cssVar": "--aries-wheel-angle-position-sign-scale",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.52",
+      "bounds": {
+        "min": 0.13,
+        "max": 1.56,
+        "step": 0.01
+      },
+      "label": "Chart wheel angle position sign scale",
+      "description": "Chart wheel angle position sign scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Chart wheel"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
+      ],
+      "variantApplicability": [
+        "anglo"
+      ]
+    },
     "renderer.wheel.metric.angleWidthScale": {
       "cssVar": "--aries-wheel-angle-width-scale",
       "scope": "chart",
@@ -15796,19 +17273,19 @@ _CATALOG = json.loads(r'''{
         "anglo"
       ]
     },
-    "renderer.wheel.metric.angloAnglePositionSignScale": {
-      "cssVar": "--aries-wheel-anglo-angle-position-sign-scale",
+    "renderer.wheel.metric.angloArrowInset": {
+      "cssVar": "--aries-wheel-anglo-arrow-inset",
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "0.52",
+      "default": "0.035",
       "bounds": {
-        "min": 0.13,
-        "max": 1.56,
-        "step": 0.01
+        "min": 0.005,
+        "max": 0.1,
+        "step": 0.001
       },
-      "label": "Chart wheel anglo angle position sign scale",
-      "description": "Chart wheel anglo angle position sign scale design metric shared by every dependent paint and geometry path.",
+      "label": "Chart wheel anglo arrow inset",
+      "description": "Chart wheel anglo arrow inset design metric shared by every dependent paint and geometry path.",
       "tier": "renderer-metric",
       "affectedSurfaces": [
         "Chart wheel"
@@ -15820,19 +17297,19 @@ _CATALOG = json.loads(r'''{
         "anglo"
       ]
     },
-    "renderer.wheel.metric.angloAspectBoundaryRingRadius": {
-      "cssVar": "--aries-wheel-anglo-aspect-boundary-ring-radius",
+    "renderer.wheel.metric.angloArrowMaximum": {
+      "cssVar": "--aries-wheel-anglo-arrow-maximum",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0px",
+      "unit": "",
+      "default": "0.995",
       "bounds": {
-        "min": 0,
+        "min": 0.9,
         "max": 1,
         "step": 0.001
       },
-      "label": "Chart wheel anglo aspect boundary ring radius",
-      "description": "Chart wheel anglo aspect boundary ring radius design metric shared by every dependent paint and geometry path.",
+      "label": "Chart wheel anglo arrow maximum",
+      "description": "Chart wheel anglo arrow maximum design metric shared by every dependent paint and geometry path.",
       "tier": "renderer-metric",
       "affectedSurfaces": [
         "Chart wheel"
@@ -15892,30 +17369,6 @@ _CATALOG = json.loads(r'''{
         "anglo"
       ]
     },
-    "renderer.wheel.metric.angloBaseRingRadius": {
-      "cssVar": "--aries-wheel-anglo-base-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel anglo base ring radius",
-      "description": "Chart wheel anglo base ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "anglo"
-      ]
-    },
     "renderer.wheel.metric.angloBodyDegreeScale": {
       "cssVar": "--aries-wheel-anglo-body-degree-scale",
       "scope": "chart",
@@ -15964,30 +17417,6 @@ _CATALOG = json.loads(r'''{
         "anglo"
       ]
     },
-    "renderer.wheel.metric.angloBodySignScale": {
-      "cssVar": "--aries-wheel-anglo-body-sign-scale",
-      "scope": "chart",
-      "type": "number",
-      "unit": "",
-      "default": "0.56",
-      "bounds": {
-        "min": 0.14,
-        "max": 1.69,
-        "step": 0.01
-      },
-      "label": "Chart wheel anglo body sign scale",
-      "description": "Chart wheel anglo body sign scale design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "anglo"
-      ]
-    },
     "renderer.wheel.metric.angloCuspLabelScale": {
       "cssVar": "--aries-wheel-anglo-cusp-label-scale",
       "scope": "chart",
@@ -16001,54 +17430,6 @@ _CATALOG = json.loads(r'''{
       },
       "label": "Chart wheel anglo cusp label scale",
       "description": "Chart wheel anglo cusp label scale design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "anglo"
-      ]
-    },
-    "renderer.wheel.metric.angloCuspOuterRingRadius": {
-      "cssVar": "--aries-wheel-anglo-cusp-outer-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel anglo cusp outer ring radius",
-      "description": "Chart wheel anglo cusp outer ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "anglo"
-      ]
-    },
-    "renderer.wheel.metric.angloHouseBoundaryRingRadius": {
-      "cssVar": "--aries-wheel-anglo-house-boundary-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel anglo house boundary ring radius",
-      "description": "Chart wheel anglo house boundary ring radius design metric shared by every dependent paint and geometry path.",
       "tier": "renderer-metric",
       "affectedSurfaces": [
         "Chart wheel"
@@ -16132,30 +17513,6 @@ _CATALOG = json.loads(r'''{
         "anglo"
       ]
     },
-    "renderer.wheel.metric.angloHousePositionSignScale": {
-      "cssVar": "--aries-wheel-anglo-house-position-sign-scale",
-      "scope": "chart",
-      "type": "number",
-      "unit": "",
-      "default": "0.52",
-      "bounds": {
-        "min": 0.13,
-        "max": 1.56,
-        "step": 0.01
-      },
-      "label": "Chart wheel anglo house position sign scale",
-      "description": "Chart wheel anglo house position sign scale design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "anglo"
-      ]
-    },
     "renderer.wheel.metric.angloHouseScale": {
       "cssVar": "--aries-wheel-anglo-house-scale",
       "scope": "chart",
@@ -16169,54 +17526,6 @@ _CATALOG = json.loads(r'''{
       },
       "label": "Chart wheel anglo house scale",
       "description": "Chart wheel anglo house scale design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "anglo"
-      ]
-    },
-    "renderer.wheel.metric.angloInnerBoundaryRingRadius": {
-      "cssVar": "--aries-wheel-anglo-inner-boundary-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel anglo inner boundary ring radius",
-      "description": "Chart wheel anglo inner boundary ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "anglo"
-      ]
-    },
-    "renderer.wheel.metric.angloInnerDegreeRingRadius": {
-      "cssVar": "--aries-wheel-anglo-inner-degree-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel anglo inner degree ring radius",
-      "description": "Chart wheel anglo inner degree ring radius design metric shared by every dependent paint and geometry path.",
       "tier": "renderer-metric",
       "affectedSurfaces": [
         "Chart wheel"
@@ -16265,78 +17574,6 @@ _CATALOG = json.loads(r'''{
       },
       "label": "Chart wheel anglo leader inset scale",
       "description": "Chart wheel anglo leader inset scale design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "anglo"
-      ]
-    },
-    "renderer.wheel.metric.angloOuterDegreeRingRadius": {
-      "cssVar": "--aries-wheel-anglo-outer-degree-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel anglo outer degree ring radius",
-      "description": "Chart wheel anglo outer degree ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "anglo"
-      ]
-    },
-    "renderer.wheel.metric.angloOuterHouseRingRadius": {
-      "cssVar": "--aries-wheel-anglo-outer-house-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel anglo outer house ring radius",
-      "description": "Chart wheel anglo outer house ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "anglo"
-      ]
-    },
-    "renderer.wheel.metric.angloOuterMaximumRingRadius": {
-      "cssVar": "--aries-wheel-anglo-outer-maximum-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel anglo outer maximum ring radius",
-      "description": "Chart wheel anglo outer maximum ring radius design metric shared by every dependent paint and geometry path.",
       "tier": "renderer-metric",
       "affectedSurfaces": [
         "Chart wheel"
@@ -16568,8 +17805,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-anglo-subdivision-sector",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.047px",
+      "unit": "",
+      "default": "0.047",
       "bounds": {
         "min": 0.01,
         "max": 0.1,
@@ -16588,36 +17825,12 @@ _CATALOG = json.loads(r'''{
         "anglo"
       ]
     },
-    "renderer.wheel.metric.angloTermRingRadius": {
-      "cssVar": "--aries-wheel-anglo-term-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel anglo term ring radius",
-      "description": "Chart wheel anglo term ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "anglo"
-      ]
-    },
     "renderer.wheel.metric.angloZodiacComparisonWithHouses": {
       "cssVar": "--aries-wheel-anglo-zodiac-comparison-with-houses",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.8px",
+      "unit": "",
+      "default": "0.8",
       "bounds": {
         "min": 0.55,
         "max": 0.95,
@@ -16636,60 +17849,12 @@ _CATALOG = json.loads(r'''{
         "anglo"
       ]
     },
-    "renderer.wheel.metric.angloZodiacInnerRingRadius": {
-      "cssVar": "--aries-wheel-anglo-zodiac-inner-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel anglo zodiac inner ring radius",
-      "description": "Chart wheel anglo zodiac inner ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "anglo"
-      ]
-    },
-    "renderer.wheel.metric.angloZodiacOuterRingRadius": {
-      "cssVar": "--aries-wheel-anglo-zodiac-outer-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel anglo zodiac outer ring radius",
-      "description": "Chart wheel anglo zodiac outer ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "anglo"
-      ]
-    },
     "renderer.wheel.metric.angloZodiacSingle": {
       "cssVar": "--aries-wheel-anglo-zodiac-single",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.895px",
+      "unit": "",
+      "default": "0.895",
       "bounds": {
         "min": 0.6,
         "max": 0.98,
@@ -16712,8 +17877,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-anglo-zodiac-with-outer",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.895px",
+      "unit": "",
+      "default": "0.895",
       "bounds": {
         "min": 0.6,
         "max": 0.98,
@@ -17487,8 +18652,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-biwheel-arrow-length",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.04px",
+      "unit": "",
+      "default": "0.04",
       "bounds": {
         "min": 0.005,
         "max": 0.1,
@@ -17512,8 +18677,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-biwheel-outer-angle",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.92px",
+      "unit": "",
+      "default": "0.92",
       "bounds": {
         "min": 0.75,
         "max": 0.99,
@@ -17537,8 +18702,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-biwheel-outer-house-sector",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.06px",
+      "unit": "",
+      "default": "0.06",
       "bounds": {
         "min": 0.02,
         "max": 0.12,
@@ -17562,8 +18727,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-biwheel-outer-line-offset",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.03px",
+      "unit": "",
+      "default": "0.03",
       "bounds": {
         "min": 0,
         "max": 0.1,
@@ -17587,8 +18752,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-biwheel-outer-max",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.97px",
+      "unit": "",
+      "default": "0.97",
       "bounds": {
         "min": 0.85,
         "max": 1,
@@ -17612,8 +18777,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-biwheel-outer-minimum",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.78px",
+      "unit": "",
+      "default": "0.78",
       "bounds": {
         "min": 0.6,
         "max": 0.9,
@@ -17637,8 +18802,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-biwheel-outer-planet-sector",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.15px",
+      "unit": "",
+      "default": "0.15",
       "bounds": {
         "min": 0.05,
         "max": 0.25,
@@ -17662,8 +18827,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-biwheel-projected-label",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.9px",
+      "unit": "",
+      "default": "0.9",
       "bounds": {
         "min": 0.7,
         "max": 1.05,
@@ -17687,8 +18852,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-biwheel-retrograde-offset",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.01px",
+      "unit": "",
+      "default": "0.01",
       "bounds": {
         "min": 0,
         "max": 0.08,
@@ -17712,8 +18877,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-biwheel-zodiac-inset",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.12px",
+      "unit": "",
+      "default": "0.12",
       "bounds": {
         "min": 0.05,
         "max": 0.25,
@@ -17913,6 +19078,30 @@ _CATALOG = json.loads(r'''{
         "compact"
       ]
     },
+    "renderer.wheel.metric.bodyPositionSignScale": {
+      "cssVar": "--aries-wheel-body-position-sign-scale",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.56",
+      "bounds": {
+        "min": 0.14,
+        "max": 1.69,
+        "step": 0.01
+      },
+      "label": "Chart wheel body position sign scale",
+      "description": "Chart wheel body position sign scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Chart wheel"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
+      ],
+      "variantApplicability": [
+        "anglo"
+      ]
+    },
     "renderer.wheel.metric.bodyScale": {
       "cssVar": "--aries-wheel-body-scale",
       "scope": "chart",
@@ -18018,8 +19207,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-classic-arrow-length",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.04px",
+      "unit": "",
+      "default": "0.04",
       "bounds": {
         "min": 0.01,
         "max": 0.1,
@@ -18039,84 +19228,12 @@ _CATALOG = json.loads(r'''{
         "compact"
       ]
     },
-    "renderer.wheel.metric.classicAspectBoundaryRingRadius": {
-      "cssVar": "--aries-wheel-classic-aspect-boundary-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel classic aspect boundary ring radius",
-      "description": "Chart wheel classic aspect boundary ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "classic"
-      ]
-    },
-    "renderer.wheel.metric.classicBaseRingRadius": {
-      "cssVar": "--aries-wheel-classic-base-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel classic base ring radius",
-      "description": "Chart wheel classic base ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "classic"
-      ]
-    },
-    "renderer.wheel.metric.classicCuspOuterRingRadius": {
-      "cssVar": "--aries-wheel-classic-cusp-outer-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel classic cusp outer ring radius",
-      "description": "Chart wheel classic cusp outer ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "classic"
-      ]
-    },
     "renderer.wheel.metric.classicDecanSectorLength": {
       "cssVar": "--aries-wheel-classic-decan-sector-length",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.08px",
+      "unit": "",
+      "default": "0.08",
       "bounds": {
         "min": 0.015,
         "max": 0.16,
@@ -18140,8 +19257,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-classic-degree-tick-length",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.01px",
+      "unit": "",
+      "default": "0.01",
       "bounds": {
         "min": 0.002,
         "max": 0.03,
@@ -18161,36 +19278,12 @@ _CATALOG = json.loads(r'''{
         "compact"
       ]
     },
-    "renderer.wheel.metric.classicHouseBoundaryRingRadius": {
-      "cssVar": "--aries-wheel-classic-house-boundary-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel classic house boundary ring radius",
-      "description": "Chart wheel classic house boundary ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "classic"
-      ]
-    },
     "renderer.wheel.metric.classicHouseSectorLength": {
       "cssVar": "--aries-wheel-classic-house-sector-length",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.06px",
+      "unit": "",
+      "default": "0.06",
       "bounds": {
         "min": 0.02,
         "max": 0.14,
@@ -18213,8 +19306,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-classic-inner-aspect-angle",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.43px",
+      "unit": "",
+      "default": "0.43",
       "bounds": {
         "min": 0.15,
         "max": 0.65,
@@ -18237,8 +19330,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-classic-inner-base",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.11px",
+      "unit": "",
+      "default": "0.11",
       "bounds": {
         "min": 0.03,
         "max": 0.3,
@@ -18257,60 +19350,12 @@ _CATALOG = json.loads(r'''{
         "classic"
       ]
     },
-    "renderer.wheel.metric.classicInnerBoundaryRingRadius": {
-      "cssVar": "--aries-wheel-classic-inner-boundary-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel classic inner boundary ring radius",
-      "description": "Chart wheel classic inner boundary ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "classic"
-      ]
-    },
-    "renderer.wheel.metric.classicInnerDegreeRingRadius": {
-      "cssVar": "--aries-wheel-classic-inner-degree-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel classic inner degree ring radius",
-      "description": "Chart wheel classic inner degree ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "classic"
-      ]
-    },
     "renderer.wheel.metric.classicInnerHouseName": {
       "cssVar": "--aries-wheel-classic-inner-house-name",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.14px",
+      "unit": "",
+      "default": "0.14",
       "bounds": {
         "min": 0.04,
         "max": 0.4,
@@ -18333,8 +19378,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-classic-inner-position",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.48px",
+      "unit": "",
+      "default": "0.48",
       "bounds": {
         "min": 0.2,
         "max": 0.7,
@@ -18357,8 +19402,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-classic-inner-position-angle",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.41px",
+      "unit": "",
+      "default": "0.41",
       "bounds": {
         "min": 0.12,
         "max": 0.62,
@@ -18381,8 +19426,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-classic-inner-position-houses",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.32px",
+      "unit": "",
+      "default": "0.32",
       "bounds": {
         "min": 0.1,
         "max": 0.55,
@@ -18401,60 +19446,12 @@ _CATALOG = json.loads(r'''{
         "classic"
       ]
     },
-    "renderer.wheel.metric.classicOuterDegreeRingRadius": {
-      "cssVar": "--aries-wheel-classic-outer-degree-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel classic outer degree ring radius",
-      "description": "Chart wheel classic outer degree ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "classic"
-      ]
-    },
-    "renderer.wheel.metric.classicOuterHouseRingRadius": {
-      "cssVar": "--aries-wheel-classic-outer-house-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel classic outer house ring radius",
-      "description": "Chart wheel classic outer house ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "classic"
-      ]
-    },
     "renderer.wheel.metric.classicOuterLine": {
       "cssVar": "--aries-wheel-classic-outer-line",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.86px",
+      "unit": "",
+      "default": "0.86",
       "bounds": {
         "min": 0.65,
         "max": 1.05,
@@ -18474,36 +19471,12 @@ _CATALOG = json.loads(r'''{
         "compact"
       ]
     },
-    "renderer.wheel.metric.classicOuterMaximumRingRadius": {
-      "cssVar": "--aries-wheel-classic-outer-maximum-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel classic outer maximum ring radius",
-      "description": "Chart wheel classic outer maximum ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "classic"
-      ]
-    },
     "renderer.wheel.metric.classicOuterProjectedLabel": {
       "cssVar": "--aries-wheel-classic-outer-projected-label",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.9px",
+      "unit": "",
+      "default": "0.9",
       "bounds": {
         "min": 0.65,
         "max": 1.15,
@@ -18527,8 +19500,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-classic-outer-projected-line",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.86px",
+      "unit": "",
+      "default": "0.86",
       "bounds": {
         "min": 0.65,
         "max": 1.05,
@@ -18576,8 +19549,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-classic-outer-zodiac",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.83px",
+      "unit": "",
+      "default": "0.83",
       "bounds": {
         "min": 0.65,
         "max": 0.95,
@@ -18601,8 +19574,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-classic-planet-line-length",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.03px",
+      "unit": "",
+      "default": "0.03",
       "bounds": {
         "min": 0.005,
         "max": 0.08,
@@ -18626,8 +19599,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-classic-planet-sector-length",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.15px",
+      "unit": "",
+      "default": "0.15",
       "bounds": {
         "min": 0.05,
         "max": 0.3,
@@ -18651,8 +19624,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-classic-retrograde-offset",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.01px",
+      "unit": "",
+      "default": "0.01",
       "bounds": {
         "min": 0.002,
         "max": 0.06,
@@ -18699,8 +19672,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-classic-sign-sector-length",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.15px",
+      "unit": "",
+      "default": "0.15",
       "bounds": {
         "min": 0.05,
         "max": 0.28,
@@ -18744,36 +19717,12 @@ _CATALOG = json.loads(r'''{
         "classic"
       ]
     },
-    "renderer.wheel.metric.classicTermRingRadius": {
-      "cssVar": "--aries-wheel-classic-term-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel classic term ring radius",
-      "description": "Chart wheel classic term ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "classic"
-      ]
-    },
     "renderer.wheel.metric.classicTermSectorLength": {
       "cssVar": "--aries-wheel-classic-term-sector-length",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.08px",
+      "unit": "",
+      "default": "0.08",
       "bounds": {
         "min": 0.015,
         "max": 0.16,
@@ -18793,84 +19742,12 @@ _CATALOG = json.loads(r'''{
         "compact"
       ]
     },
-    "renderer.wheel.metric.classicZodiacInnerRingRadius": {
-      "cssVar": "--aries-wheel-classic-zodiac-inner-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel classic zodiac inner ring radius",
-      "description": "Chart wheel classic zodiac inner ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "classic"
-      ]
-    },
-    "renderer.wheel.metric.classicZodiacOuterRingRadius": {
-      "cssVar": "--aries-wheel-classic-zodiac-outer-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel classic zodiac outer ring radius",
-      "description": "Chart wheel classic zodiac outer ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "classic"
-      ]
-    },
-    "renderer.wheel.metric.compactAspectBoundaryRingRadius": {
-      "cssVar": "--aries-wheel-compact-aspect-boundary-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel compact aspect boundary ring radius",
-      "description": "Chart wheel compact aspect boundary ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "compact"
-      ]
-    },
     "renderer.wheel.metric.compactBase": {
       "cssVar": "--aries-wheel-compact-base",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.24px",
+      "unit": "",
+      "default": "0.24",
       "bounds": {
         "min": 0.05,
         "max": 0.35,
@@ -18889,36 +19766,12 @@ _CATALOG = json.loads(r'''{
         "compact"
       ]
     },
-    "renderer.wheel.metric.compactBaseRingRadius": {
-      "cssVar": "--aries-wheel-compact-base-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel compact base ring radius",
-      "description": "Chart wheel compact base ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "compact"
-      ]
-    },
     "renderer.wheel.metric.compactComparisonPositionLane0": {
       "cssVar": "--aries-wheel-compact-comparison-position-lane-0",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.34px",
+      "unit": "",
+      "default": "0.34",
       "bounds": {
         "min": 0.12,
         "max": 0.6,
@@ -18941,8 +19794,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-compact-comparison-position-lane-1",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.26px",
+      "unit": "",
+      "default": "0.26",
       "bounds": {
         "min": 0.1,
         "max": 0.55,
@@ -18965,8 +19818,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-compact-comparison-position-lane-2",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.2px",
+      "unit": "",
+      "default": "0.2",
       "bounds": {
         "min": 0.08,
         "max": 0.5,
@@ -18985,60 +19838,12 @@ _CATALOG = json.loads(r'''{
         "compact"
       ]
     },
-    "renderer.wheel.metric.compactCuspOuterRingRadius": {
-      "cssVar": "--aries-wheel-compact-cusp-outer-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel compact cusp outer ring radius",
-      "description": "Chart wheel compact cusp outer ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "compact"
-      ]
-    },
-    "renderer.wheel.metric.compactHouseBoundaryRingRadius": {
-      "cssVar": "--aries-wheel-compact-house-boundary-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel compact house boundary ring radius",
-      "description": "Chart wheel compact house boundary ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "compact"
-      ]
-    },
     "renderer.wheel.metric.compactHouseName": {
       "cssVar": "--aries-wheel-compact-house-name",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.27px",
+      "unit": "",
+      "default": "0.27",
       "bounds": {
         "min": 0.07,
         "max": 0.45,
@@ -19061,8 +19866,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-compact-house-sector",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.06px",
+      "unit": "",
+      "default": "0.06",
       "bounds": {
         "min": 0.02,
         "max": 0.15,
@@ -19070,126 +19875,6 @@ _CATALOG = json.loads(r'''{
       },
       "label": "Chart wheel compact house sector",
       "description": "Chart wheel compact house sector design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "compact"
-      ]
-    },
-    "renderer.wheel.metric.compactInnerBoundaryRingRadius": {
-      "cssVar": "--aries-wheel-compact-inner-boundary-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel compact inner boundary ring radius",
-      "description": "Chart wheel compact inner boundary ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "compact"
-      ]
-    },
-    "renderer.wheel.metric.compactInnerDegreeRingRadius": {
-      "cssVar": "--aries-wheel-compact-inner-degree-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel compact inner degree ring radius",
-      "description": "Chart wheel compact inner degree ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "compact"
-      ]
-    },
-    "renderer.wheel.metric.compactOuterDegreeRingRadius": {
-      "cssVar": "--aries-wheel-compact-outer-degree-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel compact outer degree ring radius",
-      "description": "Chart wheel compact outer degree ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "compact"
-      ]
-    },
-    "renderer.wheel.metric.compactOuterHouseRingRadius": {
-      "cssVar": "--aries-wheel-compact-outer-house-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel compact outer house ring radius",
-      "description": "Chart wheel compact outer house ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "compact"
-      ]
-    },
-    "renderer.wheel.metric.compactOuterMaximumRingRadius": {
-      "cssVar": "--aries-wheel-compact-outer-maximum-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel compact outer maximum ring radius",
-      "description": "Chart wheel compact outer maximum ring radius design metric shared by every dependent paint and geometry path.",
       "tier": "renderer-metric",
       "affectedSurfaces": [
         "Chart wheel"
@@ -19229,8 +19914,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-compact-position-inset",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.15px",
+      "unit": "",
+      "default": "0.15",
       "bounds": {
         "min": 0.05,
         "max": 0.3,
@@ -19253,8 +19938,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-compact-position-minute-inset-comparison",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.05px",
+      "unit": "",
+      "default": "0.05",
       "bounds": {
         "min": 0.01,
         "max": 0.15,
@@ -19277,8 +19962,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-compact-position-minute-inset-single",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.05px",
+      "unit": "",
+      "default": "0.05",
       "bounds": {
         "min": 0.01,
         "max": 0.15,
@@ -19301,8 +19986,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-compact-position-minute-inset-with-outer",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.04px",
+      "unit": "",
+      "default": "0.04",
       "bounds": {
         "min": 0.01,
         "max": 0.15,
@@ -19325,8 +20010,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-compact-retrograde-inset",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.05px",
+      "unit": "",
+      "default": "0.05",
       "bounds": {
         "min": 0.01,
         "max": 0.15,
@@ -19373,8 +20058,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-compact-single-position-lane-0",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.36px",
+      "unit": "",
+      "default": "0.36",
       "bounds": {
         "min": 0.12,
         "max": 0.6,
@@ -19397,8 +20082,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-compact-single-position-lane-1",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.3px",
+      "unit": "",
+      "default": "0.3",
       "bounds": {
         "min": 0.1,
         "max": 0.55,
@@ -19421,8 +20106,8 @@ _CATALOG = json.loads(r'''{
       "cssVar": "--aries-wheel-compact-single-position-lane-2",
       "scope": "chart",
       "type": "number",
-      "unit": "px",
-      "default": "0.24px",
+      "unit": "",
+      "default": "0.24",
       "bounds": {
         "min": 0.08,
         "max": 0.5,
@@ -19454,78 +20139,6 @@ _CATALOG = json.loads(r'''{
       },
       "label": "Chart wheel compact subdivision scale",
       "description": "Chart wheel compact subdivision scale design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "compact"
-      ]
-    },
-    "renderer.wheel.metric.compactTermRingRadius": {
-      "cssVar": "--aries-wheel-compact-term-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel compact term ring radius",
-      "description": "Chart wheel compact term ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "compact"
-      ]
-    },
-    "renderer.wheel.metric.compactZodiacInnerRingRadius": {
-      "cssVar": "--aries-wheel-compact-zodiac-inner-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel compact zodiac inner ring radius",
-      "description": "Chart wheel compact zodiac inner ring radius design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Chart wheel"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
-      ],
-      "variantApplicability": [
-        "compact"
-      ]
-    },
-    "renderer.wheel.metric.compactZodiacOuterRingRadius": {
-      "cssVar": "--aries-wheel-compact-zodiac-outer-ring-radius",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "0px",
-      "bounds": {
-        "min": 0,
-        "max": 1,
-        "step": 0.001
-      },
-      "label": "Chart wheel compact zodiac outer ring radius",
-      "description": "Chart wheel compact zodiac outer ring radius design metric shared by every dependent paint and geometry path.",
       "tier": "renderer-metric",
       "affectedSurfaces": [
         "Chart wheel"
@@ -21002,6 +21615,30 @@ _CATALOG = json.loads(r'''{
       "variantApplicability": [
         "classic",
         "compact"
+      ]
+    },
+    "renderer.wheel.metric.housePositionSignScale": {
+      "cssVar": "--aries-wheel-house-position-sign-scale",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.52",
+      "bounds": {
+        "min": 0.13,
+        "max": 1.56,
+        "step": 0.01
+      },
+      "label": "Chart wheel house position sign scale",
+      "description": "Chart wheel house position sign scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Chart wheel"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Chart wheel renderer parity tests."
+      ],
+      "variantApplicability": [
+        "anglo"
       ]
     },
     "renderer.wheel.metric.houseSecondOffsetScale": {
