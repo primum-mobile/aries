@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 """Daemon-side Mundane Chart (planets by mundane position) data.
 
 Canonical brain: ``mundanechart.MundaneChart`` (the wx-fused renderer the
@@ -320,12 +325,23 @@ def _planet_glyph(body_id: int) -> str:
         return ""
 
 
-def _at_hover_flag(point, body_id: int, chrt, opts, chart_role: str, partner_chart=None) -> dict:
+def _at_hover_flag(
+    point,
+    body_id: int,
+    chrt,
+    opts,
+    chart_role: str,
+    partner_chart=None,
+    *,
+    pd_direction_context: bool = False,
+) -> dict:
     try:
         if point.kind == "lof":
             region = _fortune_region(chrt, opts, chart_role=chart_role)
         else:
             region = _planet_region(chrt, partner_chart, opts, body_id, chart_role=chart_role)
+        if pd_direction_context:
+            region.setdefault("data", {})["pd_direction_context"] = True
         payload = chartinspector.build_flag_payload(region, opts) or {}
         rows = list(payload.get("rows") or [])
         rows.insert(1 if rows else 0, ("MDO", _format_mdo(float(point.mdo), int(point.quadrant))))
@@ -536,6 +552,7 @@ class MundaneChartService:
                     live,
                     opts,
                     overlay_top_left_override=_progression_overlay_top_left(session),
+                    pd_direction_context=(session.get("launcher_kind") == "pd_in_chart"),
                 )
             else:
                 payload = self._build(
@@ -555,6 +572,7 @@ class MundaneChartService:
                 live,
                 opts,
                 overlay_top_left_override=top_left_override,
+                pd_direction_context=(session.get("launcher_kind") == "pd_in_chart"),
             )
             payload["visualMode"] = "mdo"
             return payload
@@ -582,6 +600,7 @@ class MundaneChartService:
         opts,
         *,
         overlay_top_left_override: Optional[list[str]] = None,
+        pd_direction_context: bool = False,
     ) -> dict:
         radix_bodies = self._at_bodies(
             self._chart_mdo_points(radix, opts, include_cusps=False),
@@ -590,6 +609,7 @@ class MundaneChartService:
             force_lof=False,
             chart_role="primary",
             partner_chart=live,
+            pd_direction_context=pd_direction_context,
         )
         live_bodies = self._at_bodies(
             self._chart_mdo_points(live, opts, include_cusps=False),
@@ -598,6 +618,7 @@ class MundaneChartService:
             force_lof=False,
             chart_role="outer",
             partner_chart=radix,
+            pd_direction_context=pd_direction_context,
         )
         return self._build(
             radix,
@@ -617,6 +638,7 @@ class MundaneChartService:
         opts,
         *,
         overlay_top_left_override: Optional[list[str]] = None,
+        pd_direction_context: bool = False,
     ) -> dict:
         """Legacy MundaneWnd comparison, without AT/MDO contact semantics."""
         radix_bodies = self._at_bodies(
@@ -627,6 +649,7 @@ class MundaneChartService:
             chart_role="primary",
             partner_chart=live,
             position_mode="mundane",
+            pd_direction_context=pd_direction_context,
         )
         live_bodies = self._at_bodies(
             self._chart_mdo_points(live, opts, include_cusps=False),
@@ -636,6 +659,7 @@ class MundaneChartService:
             chart_role="outer",
             partner_chart=radix,
             position_mode="mundane",
+            pd_direction_context=pd_direction_context,
         )
         return self._build(
             radix,
@@ -855,6 +879,13 @@ class MundaneChartService:
         )
         if top_left_override is not None:
             top_left = list(top_left_override)
+        if (
+            corner_lines is None
+            and bool(getattr(chrt.options, "showradixnameincanvas", False))
+        ):
+            name = str(getattr(chrt, "name", "") or "").strip()
+            if name and (not top_left or top_left[0] != name):
+                top_left = [name, *top_left]
         return {
             "showInformation": bool(getattr(chrt.options, "information", True)),
             "showHouseSystem": (
@@ -942,6 +973,7 @@ class MundaneChartService:
         chart_role: str = "primary",
         partner_chart=None,
         position_mode: str = "mdo",
+        pd_direction_context: bool = False,
     ) -> list[dict]:
         bodies = []
         for point in points:
@@ -977,7 +1009,15 @@ class MundaneChartService:
                 "posDeg": int(d),
                 "posMin": int(m),
                 "isLof": bool(point.kind == "lof"),
-                "hoverFlag": _at_hover_flag(point, body_id, chrt, opts, chart_role, partner_chart),
+                "hoverFlag": _at_hover_flag(
+                    point,
+                    body_id,
+                    chrt,
+                    opts,
+                    chart_role,
+                    partner_chart,
+                    pd_direction_context=pd_direction_context,
+                ),
             })
         return bodies
 

@@ -676,3 +676,54 @@ export function deriveLinkedPalette(input: LinkedPaletteInput): LinkedPalette {
     contrastReport: buildLinkedPaletteContrastReport(paletteWithoutReport),
   };
 }
+
+
+/**
+ * Shift one colour's hue toward another's, keeping its own chroma and lightness.
+ *
+ * This is the primitive behind deriving an application theme from chart
+ * colours: the app's accent should *agree* with the chart's key colour without
+ * being replaced by it, so a blue interface beside a deep red chart becomes a
+ * warmer blue rather than turning red. Material calls this harmonisation and
+ * implements it in HCT; done here in OKLCH, which is perceptually uniform for
+ * the same reason and comes from `colorjs.io`, already a dependency.
+ *
+ * `amount` is the fraction of the hue distance to travel, clamped to [0, 1].
+ * Material's default is 0.15, chosen so the result stays recognisably itself;
+ * that is the default here too. Rotation always takes the shorter way round the
+ * hue circle, so harmonising toward a hue 350 degrees away moves 10 degrees
+ * backwards rather than 350 forwards.
+ *
+ * Chroma and lightness are deliberately untouched: they carry the contrast
+ * guarantees this module enforces elsewhere, and moving them would silently
+ * break a palette that had already been checked.
+ */
+export function harmonizeToward(
+  color: string,
+  source: string,
+  amount = 0.15,
+): string {
+  const fraction = Math.min(1, Math.max(0, Number.isFinite(amount) ? amount : 0));
+  if (fraction === 0) return color;
+  let base: Color;
+  let anchor: Color;
+  try {
+    base = new Color(color).to("oklch");
+    anchor = new Color(source).to("oklch");
+  } catch {
+    // An unparseable colour is left exactly as it was rather than replaced by a
+    // guess; a theme is better unharmonised than wrong.
+    return color;
+  }
+  // An achromatic colour has no meaningful hue of its own, so it adopts the
+  // source's rather than rotating from an arbitrary one.
+  const chroma = typeof base.c === "number" ? base.c : 0;
+  const anchorHue = typeof anchor.h === "number" ? anchor.h : null;
+  const baseHue = typeof base.h === "number" ? base.h : null;
+  const from = chroma > 0 && baseHue !== null ? baseHue : anchorHue;
+  if (from === null || anchorHue === null) return color;
+  // Shorter way round the circle.
+  const delta = ((anchorHue - from + 540) % 360) - 180;
+  base.h = (from + delta * fraction + 360) % 360;
+  return base.to("srgb").toString({ format: "hex" });
+}

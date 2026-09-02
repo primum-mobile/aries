@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 """Wx-free WorkspaceSessionController — the migration keystone.
 
 This is the non-GUI extraction of the ``morin.MFrame`` workspace coordinator.
@@ -35,6 +40,7 @@ from __future__ import annotations
 
 import datetime
 import math
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -119,6 +125,7 @@ class WorkspaceSessionController:
         # active-document id in WorkspaceState is the real authority.
         self.active_chart = None
         self._on_event: Optional[Callable[[SessionChangedEvent], None]] = None
+        self._child_refresh_suppression_depth = 0
 
     # -- accessors ---------------------------------------------------------
 
@@ -149,6 +156,22 @@ class WorkspaceSessionController:
     def _emit(self, event: SessionChangedEvent) -> None:
         if self._on_event is not None:
             self._on_event(event)
+
+    @contextmanager
+    def suspend_child_refresh(self):
+        """Batch an explicit coherent re-derivation without implicit cascades.
+
+        Ordinary session changes still synchronize their own chart, binding,
+        title, and event. Only the automatic descendant rebuild is suspended;
+        the caller must explicitly rebuild every affected visible session.
+        """
+        self._child_refresh_suppression_depth += 1
+        try:
+            yield
+        finally:
+            self._child_refresh_suppression_depth = max(
+                0, self._child_refresh_suppression_depth - 1,
+            )
 
     # -- reverse lookups (morin.py:5126-5144) ------------------------------
 
@@ -970,7 +993,11 @@ class WorkspaceSessionController:
         # Binding persist for this session's feature_kind (morin.py:8908-8911).
         self._sync_binding_state(cs, session)
         # Child cascade (morin.py:8912).
-        rebuilt = self._refresh_child_sessions(session)
+        rebuilt = (
+            []
+            if self._child_refresh_suppression_depth > 0
+            else self._refresh_child_sessions(session)
+        )
         # Title recompute (morin.py:8913).
         if session is not None:
             self._sync_runtime_title(session)

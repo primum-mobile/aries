@@ -8,6 +8,11 @@ import type {
   GenericTableRow,
 } from "@/lib/daemon/client";
 import { fetchOptions } from "@/lib/daemon/client";
+import type {
+  TableExportDialogLabels,
+  TableExportDocument,
+} from "./table-pdf-export";
+import { exportTextContent } from "./text-export";
 
 const DMS_SECONDS_RE = /(\d{1,3}\s*°\s*\d{1,2}\s*(?:['′]|’))\s*\d{1,2}\s*(?:"|″)/g;
 
@@ -16,7 +21,7 @@ export function compactListAngleText(text: string): string {
 }
 
 export type TableTextExportOptions = {
-  useAspectSymbols?: boolean;
+  useAstrologicalGlyphs?: boolean;
 };
 
 export type TableAlignedTextOptions = TableTextExportOptions & {
@@ -25,43 +30,80 @@ export type TableAlignedTextOptions = TableTextExportOptions & {
   headerLines?: string[];
 };
 
+export type AdHocTableTextDocument = {
+  title: string;
+  sourceName?: string;
+  columns: Array<
+    Pick<GenericTableColumn, "label" | "align"> &
+      Partial<
+        Pick<
+          GenericTableColumn,
+          | "exportLabel"
+          | "exportSymbolLabel"
+          | "headerGlyph"
+          | "widthFactor"
+          | "colorHex"
+          | "colorRole"
+        >
+      >
+  >;
+  rows: GenericTableCell[][];
+  headerLines?: string[];
+  notes?: string[];
+};
+
 export async function loadTableTextExportOptions(): Promise<TableTextExportOptions> {
   try {
     const options = await fetchOptions();
-    return { useAspectSymbols: options.export.listExportAspectSymbols };
+    return { useAstrologicalGlyphs: options.export.listExportAspectSymbols };
   } catch {
-    return { useAspectSymbols: false };
+    return { useAstrologicalGlyphs: false };
   }
-}
-
-export async function tableToConfiguredTsv(
-  payload: GenericTablePayload,
-  rows: GenericTableRow[],
-) {
-  return tableToTsv(payload, rows, await loadTableTextExportOptions());
 }
 
 export async function tableToConfiguredAlignedText(
   payload: GenericTablePayload,
   rows: GenericTableRow[],
-  options?: Omit<TableAlignedTextOptions, "useAspectSymbols">,
+  options?: Omit<TableAlignedTextOptions, "useAstrologicalGlyphs">,
 ) {
   const preference = await loadTableTextExportOptions();
   return tableToAlignedText(payload, rows, { ...options, ...preference });
 }
 
-export function tableToTsv(
-  payload: GenericTablePayload,
-  rows: GenericTableRow[],
-  options?: TableTextExportOptions,
-) {
-  const header = payload.columns
-    .map((column) => tableColumnExportLabel(column, options))
-    .join("\t");
-  const body = rows.map((row) =>
-    row.cells.map((cell) => tableCellText(cell, options)).join("\t")
-  );
-  return [header, ...body].join("\n");
+export async function adHocTableToConfiguredAlignedText(
+  document: AdHocTableTextDocument,
+): Promise<string> {
+  const payload: GenericTablePayload = {
+    tableId: "text-export",
+    title: document.title,
+    sourceName: document.sourceName ?? "",
+    columns: document.columns.map((column, index) => ({
+      id: `column-${index}`,
+      ...column,
+    })),
+    rows: document.rows.map((cells, index) => ({ id: `row-${index}`, cells })),
+    notes: document.notes,
+  };
+  return tableToConfiguredAlignedText(payload, payload.rows, {
+    title: document.title,
+    headerLines: document.headerLines,
+  });
+}
+
+/** Save the label-safe, tab-delimited representation. This is intentionally
+ * independent from the structured PDF renderer. */
+export async function exportTableTextDocument(
+  document: TableExportDocument,
+  labels: TableExportDialogLabels,
+): Promise<boolean> {
+  return exportTextContent({
+    filename: document.fileStem,
+    text: document.text,
+    extension: "txt",
+    mimeType: "text/plain;charset=utf-8",
+    title: labels.title,
+    filters: [{ name: labels.textFiles, extensions: ["txt"] }],
+  });
 }
 
 export function tableToAlignedText(
@@ -70,44 +112,40 @@ export function tableToAlignedText(
   options?: TableAlignedTextOptions,
 ) {
   const columns = options?.columns ?? payload.columns;
-  const labels = columns.map((column) => tableColumnExportLabel(column, options));
-  const widths = columns.map((column, index) => {
-    const cells = rows.map((row) => tableCellText(row.cells[index], options));
-    return Math.max(displayLength(labels[index] ?? ""), ...cells.map(displayLength));
-  });
   const lines: string[] = [];
   const title = options?.title ?? payload.title;
   if (title) lines.push(title);
-  if (payload.sourceName && !title.includes(payload.sourceName)) lines.push(`  ${payload.sourceName}`);
+  if (payload.sourceName && !title.includes(payload.sourceName)) lines.push(payload.sourceName);
   if (options?.headerLines?.length) {
-    lines.push(...options.headerLines.map((line) => `  ${line}`));
+    lines.push(...options.headerLines);
   }
   if (lines.length) lines.push("");
-  if (!columns.length) {
-    lines.push("  (no columns)");
-    return lines.join("\n");
-  }
-  lines.push(formatAlignedRow(labels, columns, widths));
-  if (!rows.length) {
-    lines.push("  (no rows)");
+
+  if (!options?.columns && payload.capabilities?.sections === true && payload.sections?.length) {
+    payload.sections.forEach((section, index) => {
+      if (index > 0) lines.push("");
+      if (section.title) lines.push(section.title);
+      lines.push(...alignedTableLines(section.columns, section.rows, options));
+    });
   } else {
-    lines.push(
-      ...rows.map((row) =>
-        formatAlignedRow(
-          columns.map((_, index) => tableCellText(row.cells[index], options)),
-          columns,
-          widths,
-        ),
-      ),
-    );
-  }
-  if (payload.notes?.length) {
-    lines.push("", ...payload.notes.map((note) => `... ${note}`));
-  }
-  if (payload.deferrals?.length) {
-    lines.push("", ...payload.deferrals.map((note) => `... ${note}`));
+    lines.push(...alignedTableLines(columns, rows, options));
   }
   return lines.join("\n");
+}
+
+function alignedTableLines(
+  columns: GenericTableColumn[],
+  rows: GenericTableRow[],
+  options?: TableAlignedTextOptions,
+): string[] {
+  if (!columns.length) return ["  (no columns)"];
+  const labels = columns.map((column) => tableColumnExportLabel(column, options));
+  const valueRows = rows.map((row) =>
+    columns.map((_, index) => tableCellText(row.cells[index], options)),
+  );
+  const tableRows = labels.some(Boolean) ? [labels, ...valueRows] : valueRows;
+  const lines = formatTabularRows(tableRows, columns);
+  return rows.length ? lines : [...lines, "  (no rows)"];
 }
 
 export function tableCellText(
@@ -115,7 +153,7 @@ export function tableCellText(
   options?: TableTextExportOptions,
 ): string {
   if (!cell) return "";
-  if (options?.useAspectSymbols && cell.exportSymbolText != null) {
+  if (options?.useAstrologicalGlyphs && cell.exportSymbolText != null) {
     return compactListAngleText(cell.exportSymbolText);
   }
   if (cell.exportText != null) return compactListAngleText(cell.exportText);
@@ -124,7 +162,7 @@ export function tableCellText(
     return compactListAngleText(
       cell.runs
         .map((run) =>
-          options?.useAspectSymbols
+          options?.useAstrologicalGlyphs
             ? run.exportSymbolText ?? run.exportText ?? run.text
             : run.exportText ?? run.text
         )
@@ -139,36 +177,92 @@ function tableColumnExportLabel(
   column: GenericTableColumn,
   options?: TableTextExportOptions,
 ): string {
-  if (options?.useAspectSymbols && column.exportSymbolLabel) {
+  if (options?.useAstrologicalGlyphs && column.exportSymbolLabel) {
     return column.exportSymbolLabel;
   }
   return column.exportLabel ?? column.label;
 }
 
-function formatAlignedRow(values: string[], columns: GenericTableColumn[], widths: number[]) {
-  return `  ${values.map((value, index) => alignText(value, widths[index] ?? 0, columns[index]?.align)).join("   ")}`;
+function formatTabularRows(values: string[][], columns: GenericTableColumn[]): string[] {
+  const sanitizedRows = values.map((row) => row.map(sanitizeTextField));
+  const widths = columns.map((_, columnIndex) =>
+    sanitizedRows.reduce(
+      (width, row) => Math.max(width, monospaceTextWidth(row[columnIndex] ?? "")),
+      0,
+    ),
+  );
+  return sanitizedRows.map((row) => formatTabRow(row, columns, widths));
 }
 
-function alignText(value: string, width: number, align?: string) {
-  const padding = Math.max(0, width - displayLength(value));
+function formatTabRow(
+  values: string[],
+  columns: GenericTableColumn[],
+  widths: number[],
+) {
+  return values
+    .map((value, index) =>
+      padMonospaceField(
+        value,
+        widths[index] ?? 0,
+        columns[index]?.align,
+        index === values.length - 1,
+      ),
+    )
+    .join("\t");
+}
+
+function padMonospaceField(
+  value: string,
+  width: number,
+  align: GenericTableColumn["align"],
+  isLast: boolean,
+): string {
+  const padding = Math.max(0, width - monospaceTextWidth(value));
   if (align === "right") return `${" ".repeat(padding)}${value}`;
   if (align === "center") {
-    const left = Math.floor(padding / 2);
-    return `${" ".repeat(left)}${value}${" ".repeat(padding - left)}`;
+    const before = Math.floor(padding / 2);
+    return `${" ".repeat(before)}${value}${isLast ? "" : " ".repeat(padding - before)}`;
   }
-  return `${value}${" ".repeat(padding)}`;
+  return `${value}${isLast ? "" : " ".repeat(padding)}`;
 }
 
-function displayLength(value: string) {
-  return Array.from(value).length;
+/** Approximate terminal/editor cell width without introducing another runtime
+ * dependency. This keeps localized CJK labels and common symbols aligned in
+ * the same plain-text table as Latin labels. */
+function monospaceTextWidth(value: string): number {
+  let width = 0;
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    if (
+      /\p{Mark}/u.test(character) ||
+      codePoint === 0x200d ||
+      (codePoint >= 0xfe00 && codePoint <= 0xfe0f) ||
+      (codePoint >= 0xe0100 && codePoint <= 0xe01ef)
+    ) {
+      continue;
+    }
+    width += isWideTextCodePoint(codePoint) ? 2 : 1;
+  }
+  return width;
 }
 
-export function downloadText(filename: string, text: string, type: string) {
-  const blob = new Blob([text], { type });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(url);
+function isWideTextCodePoint(codePoint: number): boolean {
+  return codePoint >= 0x1100 && (
+    codePoint <= 0x115f ||
+    codePoint === 0x2329 ||
+    codePoint === 0x232a ||
+    (codePoint >= 0x2e80 && codePoint <= 0xa4cf && codePoint !== 0x303f) ||
+    (codePoint >= 0xac00 && codePoint <= 0xd7a3) ||
+    (codePoint >= 0xf900 && codePoint <= 0xfaff) ||
+    (codePoint >= 0xfe10 && codePoint <= 0xfe19) ||
+    (codePoint >= 0xfe30 && codePoint <= 0xfe6f) ||
+    (codePoint >= 0xff00 && codePoint <= 0xff60) ||
+    (codePoint >= 0xffe0 && codePoint <= 0xffe6) ||
+    (codePoint >= 0x1f300 && codePoint <= 0x1faff) ||
+    (codePoint >= 0x20000 && codePoint <= 0x3fffd)
+  );
+}
+
+function sanitizeTextField(value: string) {
+  return value.replace(/[\t\r\n]+/g, " ").trim();
 }

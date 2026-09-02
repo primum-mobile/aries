@@ -2609,6 +2609,21 @@ static CYTHON_INLINE void __Pyx__ExceptionReset(PyThreadState *tstate, PyObject 
 #define __Pyx_ExceptionReset(type, value, tb)  PyErr_SetExcInfo(type, value, tb)
 #endif
 
+/* dict_getitem_default.proto */
+static PyObject* __Pyx_PyDict_GetItemDefault(PyObject* d, PyObject* key, PyObject* default_value);
+
+/* PyObjectCall2Args.proto (used by CallUnboundCMethod1) */
+static CYTHON_INLINE PyObject* __Pyx_PyObject_Call2Args(PyObject* function, PyObject* arg1, PyObject* arg2);
+
+/* CallUnboundCMethod1.proto */
+CYTHON_UNUSED
+static PyObject* __Pyx__CallUnboundCMethod1(__Pyx_CachedCFunction* cfunc, PyObject* self, PyObject* arg);
+#if CYTHON_COMPILING_IN_CPYTHON
+static CYTHON_INLINE PyObject* __Pyx_CallUnboundCMethod1(__Pyx_CachedCFunction* cfunc, PyObject* self, PyObject* arg);
+#else
+#define __Pyx_CallUnboundCMethod1(cfunc, self, arg)  __Pyx__CallUnboundCMethod1(cfunc, self, arg)
+#endif
+
 /* FunctionExport.proto */
 static int __Pyx_ExportFunction(PyObject *api_dict, const char *name, void (*f)(void), const char *sig);
 
@@ -2851,8 +2866,10 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_body
 static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__ensure_capacity(__pyx_t_5aries_9astrology_12transit_fast_6_types_CHit **, size_t *, size_t); /*proto*/
 static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_unique_c(__pyx_t_5aries_9astrology_12transit_fast_6_types_CHit **, size_t *, size_t *, double, int, double, double, int, double, int); /*proto*/
 static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_station_root_seeded_c(double, double, double, double, int, int, double, double, double *, double *); /*proto*/
-static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_longitude_root_seeded_c(int, double, double, double, double, double, double, double, int, double, double, double *, double *); /*proto*/
-static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_relative_root_c(int, int, double, double, double, double, double, double, double, double, double, double, double, int, double, double, double *, double *); /*proto*/
+static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_longitude_root_seeded_c(int, double, double, double, double, double, double, double, int, double, double, double *, double *, double *); /*proto*/
+static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_relative_root_c(int, int, double, double, double, double, double, double, double, double, double, double, double, int, double, double, double *, double *, double *); /*proto*/
+static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_relative_speed_turn_c(int, int, double, double, double, double, double, double, double, double, double, double, int, double, double *, double *, double *, double *, double *); /*proto*/
+static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_relative_segment_c(__pyx_t_5aries_9astrology_12transit_fast_6_types_CHit **, size_t *, size_t *, int, int, int, double, double, double, double, double, double, double, double, double, double, double, int, double, double); /*proto*/
 static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_arc_hits_range_c(__pyx_t_5aries_9astrology_12transit_fast_6_types_CHit **, size_t *, size_t *, int, double *, size_t, size_t, double, double, double, double, double, double, int, double, double); /*proto*/
 static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_arc_hits_c(__pyx_t_5aries_9astrology_12transit_fast_6_types_CHit **, size_t *, size_t *, int, double *, size_t, double, double, double, double, double, double, int, double, double); /*proto*/
 static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_direct_crossings_into_c(int, double, double, double *, size_t, int, __pyx_t_5aries_9astrology_12transit_fast_6_types_CHit **, size_t *, size_t *); /*proto*/
@@ -2860,7 +2877,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__hit
 static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_station_times_into_c(int, double, double, int, double, double, double, __pyx_t_5aries_9astrology_12transit_fast_6_types_CHit **, size_t *, size_t *); /*proto*/
 static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_targets_c(PyObject *, double **, size_t *); /*proto*/
 static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_longitude_transits_prepared_into_c(int, double, double, double *, size_t, int, double, double, double, __pyx_t_5aries_9astrology_12transit_fast_6_types_CHit **, size_t *, size_t *); /*proto*/
-static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_relative_aspects_into_c(int *, Py_ssize_t, int *, int *, double *, Py_ssize_t, double, double, double, int, double, double, double *, double *, double *, double *, __pyx_t_5aries_9astrology_12transit_fast_6_types_CHit **, size_t *, size_t *); /*proto*/
+static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_relative_aspects_into_c(int *, Py_ssize_t, int *, int *, int *, Py_ssize_t, double *, Py_ssize_t, double, double, double, int, double, double, double *, double *, double *, double *, int *, double *, double *, double *, double *, double *, __pyx_t_5aries_9astrology_12transit_fast_6_types_CHit **, size_t *, size_t *); /*proto*/
 /* #### Code section: typeinfo ### */
 /* #### Code section: before_global_var ### */
 #define __Pyx_MODULE_NAME "aries.astrology.transit_fast._transit_kernel"
@@ -2901,6 +2918,7 @@ typedef struct {
   PyObject *__pyx_empty_tuple;
   PyObject *__pyx_empty_bytes;
   PyObject *__pyx_empty_unicode;
+  __Pyx_CachedCFunction __pyx_umethod_PyDict_Type_get;
   __Pyx_CachedCFunction __pyx_umethod_PyDict_Type_items;
   __Pyx_CachedCFunction __pyx_umethod_PyDict_Type_pop;
   __Pyx_CachedCFunction __pyx_umethod_PyDict_Type_values;
@@ -2915,8 +2933,8 @@ typedef struct {
   double __pyx_k__10;
   double __pyx_k__11;
   PyObject *__pyx_codeobj_tab[8];
-  PyObject *__pyx_string_tab[106];
-  PyObject *__pyx_number_tab[3];
+  PyObject *__pyx_string_tab[107];
+  PyObject *__pyx_number_tab[4];
 /* #### Code section: module_state_contents ### */
 /* CommonTypesMetaclass.module_state_decls */
 PyTypeObject *__pyx_CommonTypesMetaclassType;
@@ -2959,8 +2977,8 @@ static __pyx_mstatetype * const __pyx_mstate_global = &__pyx_mstate_global_stati
 /* #### Code section: constant_name_defines ### */
 #define __pyx_kp_u_ __pyx_string_tab[0]
 #define __pyx_kp_u_Could_not_allocate_native_Swiss __pyx_string_tab[1]
-#define __pyx_kp_u_Could_not_allocate_target_buffer __pyx_string_tab[2]
-#define __pyx_kp_u_Could_not_allocate_weather_state __pyx_string_tab[3]
+#define __pyx_kp_u_Could_not_allocate_relative_aspe __pyx_string_tab[2]
+#define __pyx_kp_u_Could_not_allocate_target_buffer __pyx_string_tab[3]
 #define __pyx_kp_u_Could_not_grow_transit_hit_buffe __pyx_string_tab[4]
 #define __pyx_kp_u_Julian_day_bounds_must_be_finite __pyx_string_tab[5]
 #define __pyx_kp_u_None __pyx_string_tab[6]
@@ -3020,52 +3038,54 @@ static __pyx_mstatetype * const __pyx_mstate_global = &__pyx_mstate_global_stati
 #define __pyx_n_u_eps_speed __pyx_string_tab[60]
 #define __pyx_n_u_flags __pyx_string_tab[61]
 #define __pyx_n_u_func __pyx_string_tab[62]
-#define __pyx_n_u_hits_to_python_locals_lambda __pyx_string_tab[63]
-#define __pyx_n_u_is_coroutine __pyx_string_tab[64]
-#define __pyx_n_u_item __pyx_string_tab[65]
-#define __pyx_n_u_items __pyx_string_tab[66]
-#define __pyx_n_u_jd_end __pyx_string_tab[67]
-#define __pyx_n_u_jd_start __pyx_string_tab[68]
-#define __pyx_n_u_key __pyx_string_tab[69]
-#define __pyx_n_u_lambda __pyx_string_tab[70]
-#define __pyx_n_u_main __pyx_string_tab[71]
-#define __pyx_n_u_module __pyx_string_tab[72]
-#define __pyx_n_u_name __pyx_string_tab[73]
-#define __pyx_n_u_out __pyx_string_tab[74]
-#define __pyx_n_u_planet __pyx_string_tab[75]
-#define __pyx_n_u_planets __pyx_string_tab[76]
-#define __pyx_n_u_pop __pyx_string_tab[77]
-#define __pyx_n_u_pyx_capi __pyx_string_tab[78]
-#define __pyx_n_u_qualname __pyx_string_tab[79]
-#define __pyx_n_u_round __pyx_string_tab[80]
-#define __pyx_n_u_search_longitude_transits_batch __pyx_string_tab[81]
-#define __pyx_n_u_search_longitude_transits_raw __pyx_string_tab[82]
-#define __pyx_n_u_search_relative_aspects_batch_ra __pyx_string_tab[83]
-#define __pyx_n_u_search_station_times_batch_raw __pyx_string_tab[84]
-#define __pyx_n_u_search_station_times_raw __pyx_string_tab[85]
-#define __pyx_n_u_set_name __pyx_string_tab[86]
-#define __pyx_n_u_setdefault __pyx_string_tab[87]
-#define __pyx_n_u_sidereal_mode __pyx_string_tab[88]
-#define __pyx_n_u_sort __pyx_string_tab[89]
-#define __pyx_n_u_sort_raw_hits_py __pyx_string_tab[90]
-#define __pyx_n_u_sort_raw_hits_py_locals_lambda __pyx_string_tab[91]
-#define __pyx_n_u_specs __pyx_string_tab[92]
-#define __pyx_n_u_step_days __pyx_string_tab[93]
-#define __pyx_n_u_targets_deg __pyx_string_tab[94]
-#define __pyx_n_u_test __pyx_string_tab[95]
-#define __pyx_n_u_topocentric_position __pyx_string_tab[96]
-#define __pyx_n_u_values __pyx_string_tab[97]
-#define __pyx_kp_b_PyObject_PyObject_double_double __pyx_string_tab[98]
-#define __pyx_kp_b_iso88591_1_Q_a_DA_Q_eehhrrs_c_c_1_Q_Q_Q __pyx_string_tab[99]
-#define __pyx_kp_b_iso88591_1_Q_q_A_q_a_1KzQTT___q_1Kq_1IQ __pyx_string_tab[100]
-#define __pyx_kp_b_iso88591_1_Q_q_A_q_q_1IQ_1Ja_D_j_uA_1_Zs __pyx_string_tab[101]
-#define __pyx_kp_b_iso88591_1_Q_q_a_1KzQTT___q_1Kq_1Kq_1Ja __pyx_string_tab[102]
-#define __pyx_kp_b_iso88591_1_Q_q_q_1Kq_1Ja_D_j_uA_1_Zs_TU __pyx_string_tab[103]
-#define __pyx_kp_b_iso88591_E_a __pyx_string_tab[104]
-#define __pyx_kp_b_iso88591_nD_T_d_4t1D_AQ __pyx_string_tab[105]
+#define __pyx_n_u_get __pyx_string_tab[63]
+#define __pyx_n_u_hits_to_python_locals_lambda __pyx_string_tab[64]
+#define __pyx_n_u_is_coroutine __pyx_string_tab[65]
+#define __pyx_n_u_item __pyx_string_tab[66]
+#define __pyx_n_u_items __pyx_string_tab[67]
+#define __pyx_n_u_jd_end __pyx_string_tab[68]
+#define __pyx_n_u_jd_start __pyx_string_tab[69]
+#define __pyx_n_u_key __pyx_string_tab[70]
+#define __pyx_n_u_lambda __pyx_string_tab[71]
+#define __pyx_n_u_main __pyx_string_tab[72]
+#define __pyx_n_u_module __pyx_string_tab[73]
+#define __pyx_n_u_name __pyx_string_tab[74]
+#define __pyx_n_u_out __pyx_string_tab[75]
+#define __pyx_n_u_planet __pyx_string_tab[76]
+#define __pyx_n_u_planets __pyx_string_tab[77]
+#define __pyx_n_u_pop __pyx_string_tab[78]
+#define __pyx_n_u_pyx_capi __pyx_string_tab[79]
+#define __pyx_n_u_qualname __pyx_string_tab[80]
+#define __pyx_n_u_round __pyx_string_tab[81]
+#define __pyx_n_u_search_longitude_transits_batch __pyx_string_tab[82]
+#define __pyx_n_u_search_longitude_transits_raw __pyx_string_tab[83]
+#define __pyx_n_u_search_relative_aspects_batch_ra __pyx_string_tab[84]
+#define __pyx_n_u_search_station_times_batch_raw __pyx_string_tab[85]
+#define __pyx_n_u_search_station_times_raw __pyx_string_tab[86]
+#define __pyx_n_u_set_name __pyx_string_tab[87]
+#define __pyx_n_u_setdefault __pyx_string_tab[88]
+#define __pyx_n_u_sidereal_mode __pyx_string_tab[89]
+#define __pyx_n_u_sort __pyx_string_tab[90]
+#define __pyx_n_u_sort_raw_hits_py __pyx_string_tab[91]
+#define __pyx_n_u_sort_raw_hits_py_locals_lambda __pyx_string_tab[92]
+#define __pyx_n_u_specs __pyx_string_tab[93]
+#define __pyx_n_u_step_days __pyx_string_tab[94]
+#define __pyx_n_u_targets_deg __pyx_string_tab[95]
+#define __pyx_n_u_test __pyx_string_tab[96]
+#define __pyx_n_u_topocentric_position __pyx_string_tab[97]
+#define __pyx_n_u_values __pyx_string_tab[98]
+#define __pyx_kp_b_PyObject_PyObject_double_double __pyx_string_tab[99]
+#define __pyx_kp_b_iso88591_1_Q_a_DA_Q_eehhrrs_c_c_1_Q_Q_Q __pyx_string_tab[100]
+#define __pyx_kp_b_iso88591_1_Q_q_A_q_a_1KzQTT___q_1Kq_1IQ __pyx_string_tab[101]
+#define __pyx_kp_b_iso88591_1_Q_q_A_q_q_1IQ_1Ja_D_j_uA_1_Zs __pyx_string_tab[102]
+#define __pyx_kp_b_iso88591_1_Q_q_a_1KzQTT___q_1Kq_1Kq_1Ja __pyx_string_tab[103]
+#define __pyx_kp_b_iso88591_1_Q_q_q_1Kq_1Ja_D_j_uA_1_Zs_TU __pyx_string_tab[104]
+#define __pyx_kp_b_iso88591_E_a __pyx_string_tab[105]
+#define __pyx_kp_b_iso88591_nD_T_d_4t1D_AQ __pyx_string_tab[106]
 #define __pyx_int_0 __pyx_number_tab[0]
-#define __pyx_int_1 __pyx_number_tab[1]
-#define __pyx_int_12 __pyx_number_tab[2]
+#define __pyx_int_neg_1 __pyx_number_tab[1]
+#define __pyx_int_1 __pyx_number_tab[2]
+#define __pyx_int_12 __pyx_number_tab[3]
 /* #### Code section: module_state_clear ### */
 #if CYTHON_USE_MODULE_STATE
 static CYTHON_SMALL_CODE int __pyx_m_clear(PyObject *m) {
@@ -3081,8 +3101,8 @@ static CYTHON_SMALL_CODE int __pyx_m_clear(PyObject *m) {
   __Pyx_State_RemoveModule(NULL);
   #endif
   for (int i=0; i<8; ++i) { Py_CLEAR(clear_module_state->__pyx_codeobj_tab[i]); }
-  for (int i=0; i<106; ++i) { Py_CLEAR(clear_module_state->__pyx_string_tab[i]); }
-  for (int i=0; i<3; ++i) { Py_CLEAR(clear_module_state->__pyx_number_tab[i]); }
+  for (int i=0; i<107; ++i) { Py_CLEAR(clear_module_state->__pyx_string_tab[i]); }
+  for (int i=0; i<4; ++i) { Py_CLEAR(clear_module_state->__pyx_number_tab[i]); }
 /* #### Code section: module_state_clear_contents ### */
 /* CommonTypesMetaclass.module_state_clear */
 Py_CLEAR(clear_module_state->__pyx_CommonTypesMetaclassType);
@@ -3106,8 +3126,8 @@ static CYTHON_SMALL_CODE int __pyx_m_traverse(PyObject *m, visitproc visit, void
   __Pyx_VISIT_CONST(traverse_module_state->__pyx_empty_bytes);
   __Pyx_VISIT_CONST(traverse_module_state->__pyx_empty_unicode);
   for (int i=0; i<8; ++i) { __Pyx_VISIT_CONST(traverse_module_state->__pyx_codeobj_tab[i]); }
-  for (int i=0; i<106; ++i) { __Pyx_VISIT_CONST(traverse_module_state->__pyx_string_tab[i]); }
-  for (int i=0; i<3; ++i) { __Pyx_VISIT_CONST(traverse_module_state->__pyx_number_tab[i]); }
+  for (int i=0; i<107; ++i) { __Pyx_VISIT_CONST(traverse_module_state->__pyx_string_tab[i]); }
+  for (int i=0; i<4; ++i) { __Pyx_VISIT_CONST(traverse_module_state->__pyx_number_tab[i]); }
 /* #### Code section: module_state_traverse_contents ### */
 /* CommonTypesMetaclass.module_state_traverse */
 Py_VISIT(traverse_module_state->__pyx_CommonTypesMetaclassType);
@@ -3121,7 +3141,7 @@ return 0;
 #endif
 /* #### Code section: module_code ### */
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":67
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":69
  *
  *
  * cdef inline void _acquire_native_swe_lock() noexcept nogil:             # <<<<<<<<<<<<<<
@@ -3131,7 +3151,7 @@ return 0;
 
 static CYTHON_INLINE void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__acquire_native_swe_lock(void) {
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":68
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":70
  *
  * cdef inline void _acquire_native_swe_lock() noexcept nogil:
  * 	PyThread_acquire_lock(_native_swe_lock, WAIT_LOCK)             # <<<<<<<<<<<<<<
@@ -3140,7 +3160,7 @@ static CYTHON_INLINE void __pyx_f_5aries_9astrology_12transit_fast_15_transit_ke
 */
   (void)(PyThread_acquire_lock(__pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__native_swe_lock, WAIT_LOCK));
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":67
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":69
  *
  *
  * cdef inline void _acquire_native_swe_lock() noexcept nogil:             # <<<<<<<<<<<<<<
@@ -3151,7 +3171,7 @@ static CYTHON_INLINE void __pyx_f_5aries_9astrology_12transit_fast_15_transit_ke
   /* function exit code */
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":71
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":73
  *
  *
  * cdef inline void _release_native_swe_lock() noexcept nogil:             # <<<<<<<<<<<<<<
@@ -3161,7 +3181,7 @@ static CYTHON_INLINE void __pyx_f_5aries_9astrology_12transit_fast_15_transit_ke
 
 static CYTHON_INLINE void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__release_native_swe_lock(void) {
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":72
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":74
  *
  * cdef inline void _release_native_swe_lock() noexcept nogil:
  * 	PyThread_release_lock(_native_swe_lock)             # <<<<<<<<<<<<<<
@@ -3170,7 +3190,7 @@ static CYTHON_INLINE void __pyx_f_5aries_9astrology_12transit_fast_15_transit_ke
 */
   PyThread_release_lock(__pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__native_swe_lock);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":71
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":73
  *
  *
  * cdef inline void _release_native_swe_lock() noexcept nogil:             # <<<<<<<<<<<<<<
@@ -3181,7 +3201,7 @@ static CYTHON_INLINE void __pyx_f_5aries_9astrology_12transit_fast_15_transit_ke
   /* function exit code */
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":75
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":77
  *
  *
  * cdef void _validate_scan_bounds(double jd_start, double jd_end):             # <<<<<<<<<<<<<<
@@ -3201,7 +3221,7 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("_validate_scan_bounds", 0);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":76
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":78
  *
  * cdef void _validate_scan_bounds(double jd_start, double jd_end):
  * 	if not isfinite(jd_start) or not isfinite(jd_end):             # <<<<<<<<<<<<<<
@@ -3219,7 +3239,7 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate
   __pyx_L4_bool_binop_done:;
   if (unlikely(__pyx_t_1)) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":77
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":79
  * cdef void _validate_scan_bounds(double jd_start, double jd_end):
  * 	if not isfinite(jd_start) or not isfinite(jd_end):
  * 		raise ValueError("Julian-day bounds must be finite")             # <<<<<<<<<<<<<<
@@ -3232,14 +3252,14 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate
       PyObject *__pyx_callargs[2] = {__pyx_t_4, __pyx_mstate_global->__pyx_kp_u_Julian_day_bounds_must_be_finite};
       __pyx_t_3 = __Pyx_PyObject_FastCall((PyObject*)(((PyTypeObject*)PyExc_ValueError)), __pyx_callargs+__pyx_t_5, (2-__pyx_t_5) | (__pyx_t_5*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
       __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
-      if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 77, __pyx_L1_error)
+      if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 79, __pyx_L1_error)
       __Pyx_GOTREF(__pyx_t_3);
     }
     __Pyx_Raise(__pyx_t_3, 0, 0, 0);
     __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
-    __PYX_ERR(0, 77, __pyx_L1_error)
+    __PYX_ERR(0, 79, __pyx_L1_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":76
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":78
  *
  * cdef void _validate_scan_bounds(double jd_start, double jd_end):
  * 	if not isfinite(jd_start) or not isfinite(jd_end):             # <<<<<<<<<<<<<<
@@ -3248,7 +3268,7 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":78
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":80
  * 	if not isfinite(jd_start) or not isfinite(jd_end):
  * 		raise ValueError("Julian-day bounds must be finite")
  * 	if jd_end <= jd_start:             # <<<<<<<<<<<<<<
@@ -3258,7 +3278,7 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate
   __pyx_t_1 = (__pyx_v_jd_end <= __pyx_v_jd_start);
   if (unlikely(__pyx_t_1)) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":79
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":81
  * 		raise ValueError("Julian-day bounds must be finite")
  * 	if jd_end <= jd_start:
  * 		raise ValueError("jd_end must be greater than jd_start")             # <<<<<<<<<<<<<<
@@ -3271,14 +3291,14 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate
       PyObject *__pyx_callargs[2] = {__pyx_t_4, __pyx_mstate_global->__pyx_kp_u_jd_end_must_be_greater_than_jd_s};
       __pyx_t_3 = __Pyx_PyObject_FastCall((PyObject*)(((PyTypeObject*)PyExc_ValueError)), __pyx_callargs+__pyx_t_5, (2-__pyx_t_5) | (__pyx_t_5*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
       __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
-      if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 79, __pyx_L1_error)
+      if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 81, __pyx_L1_error)
       __Pyx_GOTREF(__pyx_t_3);
     }
     __Pyx_Raise(__pyx_t_3, 0, 0, 0);
     __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
-    __PYX_ERR(0, 79, __pyx_L1_error)
+    __PYX_ERR(0, 81, __pyx_L1_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":78
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":80
  * 	if not isfinite(jd_start) or not isfinite(jd_end):
  * 		raise ValueError("Julian-day bounds must be finite")
  * 	if jd_end <= jd_start:             # <<<<<<<<<<<<<<
@@ -3287,7 +3307,7 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":75
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":77
  *
  *
  * cdef void _validate_scan_bounds(double jd_start, double jd_end):             # <<<<<<<<<<<<<<
@@ -3305,7 +3325,7 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate
   __Pyx_RefNannyFinishContext();
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":82
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":84
  *
  *
  * cdef void _validate_positive_double(double value, str name):             # <<<<<<<<<<<<<<
@@ -3327,7 +3347,7 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("_validate_positive_double", 0);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":83
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":85
  *
  * cdef void _validate_positive_double(double value, str name):
  * 	if not isfinite(value) or value <= 0.0:             # <<<<<<<<<<<<<<
@@ -3345,7 +3365,7 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate
   __pyx_L4_bool_binop_done:;
   if (unlikely(__pyx_t_1)) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":84
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":86
  * cdef void _validate_positive_double(double value, str name):
  * 	if not isfinite(value) or value <= 0.0:
  * 		raise ValueError(f"{name} must be finite and greater than zero")             # <<<<<<<<<<<<<<
@@ -3353,9 +3373,9 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate
  *
 */
     __pyx_t_4 = NULL;
-    __pyx_t_5 = __Pyx_PyUnicode_Unicode(__pyx_v_name); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 84, __pyx_L1_error)
+    __pyx_t_5 = __Pyx_PyUnicode_Unicode(__pyx_v_name); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 86, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_5);
-    __pyx_t_6 = __Pyx_PyUnicode_Concat__Pyx_ReferenceSharing_OwnStrongReferenceInPlace(__pyx_t_5, __pyx_mstate_global->__pyx_kp_u_must_be_finite_and_greater_than); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 84, __pyx_L1_error)
+    __pyx_t_6 = __Pyx_PyUnicode_Concat__Pyx_ReferenceSharing_OwnStrongReferenceInPlace(__pyx_t_5, __pyx_mstate_global->__pyx_kp_u_must_be_finite_and_greater_than); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 86, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_6);
     __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
     __pyx_t_7 = 1;
@@ -3364,14 +3384,14 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate
       __pyx_t_3 = __Pyx_PyObject_FastCall((PyObject*)(((PyTypeObject*)PyExc_ValueError)), __pyx_callargs+__pyx_t_7, (2-__pyx_t_7) | (__pyx_t_7*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
       __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
       __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
-      if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 84, __pyx_L1_error)
+      if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 86, __pyx_L1_error)
       __Pyx_GOTREF(__pyx_t_3);
     }
     __Pyx_Raise(__pyx_t_3, 0, 0, 0);
     __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
-    __PYX_ERR(0, 84, __pyx_L1_error)
+    __PYX_ERR(0, 86, __pyx_L1_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":83
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":85
  *
  * cdef void _validate_positive_double(double value, str name):
  * 	if not isfinite(value) or value <= 0.0:             # <<<<<<<<<<<<<<
@@ -3380,7 +3400,7 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":82
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":84
  *
  *
  * cdef void _validate_positive_double(double value, str name):             # <<<<<<<<<<<<<<
@@ -3400,7 +3420,7 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate
   __Pyx_RefNannyFinishContext();
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":87
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":89
  *
  *
  * cdef void _configure_ephemeris_context(             # <<<<<<<<<<<<<<
@@ -3428,7 +3448,7 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configur
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("_configure_ephemeris_context", 0);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":94
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":96
  * ):
  * 	global _active_ephe_path, _active_sidereal_mode, _active_topocentric_position
  * 	cdef object normalized_topo = None             # <<<<<<<<<<<<<<
@@ -3438,18 +3458,18 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configur
   __Pyx_INCREF(Py_None);
   __pyx_v_normalized_topo = Py_None;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":95
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":97
  * 	global _active_ephe_path, _active_sidereal_mode, _active_topocentric_position
  * 	cdef object normalized_topo = None
  * 	if not ephe_path:             # <<<<<<<<<<<<<<
  * 		raise ValueError("native transit searches require an explicit ephe_path")
  * 	if flags & _SIDEREAL_FLAG and sidereal_mode is None:
 */
-  __pyx_t_1 = __Pyx_PyObject_IsTrue(__pyx_v_ephe_path); if (unlikely((__pyx_t_1 < 0))) __PYX_ERR(0, 95, __pyx_L1_error)
+  __pyx_t_1 = __Pyx_PyObject_IsTrue(__pyx_v_ephe_path); if (unlikely((__pyx_t_1 < 0))) __PYX_ERR(0, 97, __pyx_L1_error)
   __pyx_t_2 = (!__pyx_t_1);
   if (unlikely(__pyx_t_2)) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":96
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":98
  * 	cdef object normalized_topo = None
  * 	if not ephe_path:
  * 		raise ValueError("native transit searches require an explicit ephe_path")             # <<<<<<<<<<<<<<
@@ -3462,14 +3482,14 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configur
       PyObject *__pyx_callargs[2] = {__pyx_t_4, __pyx_mstate_global->__pyx_kp_u_native_transit_searches_require};
       __pyx_t_3 = __Pyx_PyObject_FastCall((PyObject*)(((PyTypeObject*)PyExc_ValueError)), __pyx_callargs+__pyx_t_5, (2-__pyx_t_5) | (__pyx_t_5*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
       __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
-      if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 96, __pyx_L1_error)
+      if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 98, __pyx_L1_error)
       __Pyx_GOTREF(__pyx_t_3);
     }
     __Pyx_Raise(__pyx_t_3, 0, 0, 0);
     __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
-    __PYX_ERR(0, 96, __pyx_L1_error)
+    __PYX_ERR(0, 98, __pyx_L1_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":95
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":97
  * 	global _active_ephe_path, _active_sidereal_mode, _active_topocentric_position
  * 	cdef object normalized_topo = None
  * 	if not ephe_path:             # <<<<<<<<<<<<<<
@@ -3478,7 +3498,7 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configur
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":97
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":99
  * 	if not ephe_path:
  * 		raise ValueError("native transit searches require an explicit ephe_path")
  * 	if flags & _SIDEREAL_FLAG and sidereal_mode is None:             # <<<<<<<<<<<<<<
@@ -3496,7 +3516,7 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configur
   __pyx_L5_bool_binop_done:;
   if (unlikely(__pyx_t_2)) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":98
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":100
  * 		raise ValueError("native transit searches require an explicit ephe_path")
  * 	if flags & _SIDEREAL_FLAG and sidereal_mode is None:
  * 		raise ValueError("sidereal flags require an explicit sidereal_mode")             # <<<<<<<<<<<<<<
@@ -3509,14 +3529,14 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configur
       PyObject *__pyx_callargs[2] = {__pyx_t_4, __pyx_mstate_global->__pyx_kp_u_sidereal_flags_require_an_explic};
       __pyx_t_3 = __Pyx_PyObject_FastCall((PyObject*)(((PyTypeObject*)PyExc_ValueError)), __pyx_callargs+__pyx_t_5, (2-__pyx_t_5) | (__pyx_t_5*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
       __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
-      if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 98, __pyx_L1_error)
+      if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 100, __pyx_L1_error)
       __Pyx_GOTREF(__pyx_t_3);
     }
     __Pyx_Raise(__pyx_t_3, 0, 0, 0);
     __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
-    __PYX_ERR(0, 98, __pyx_L1_error)
+    __PYX_ERR(0, 100, __pyx_L1_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":97
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":99
  * 	if not ephe_path:
  * 		raise ValueError("native transit searches require an explicit ephe_path")
  * 	if flags & _SIDEREAL_FLAG and sidereal_mode is None:             # <<<<<<<<<<<<<<
@@ -3525,7 +3545,7 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configur
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":99
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":101
  * 	if flags & _SIDEREAL_FLAG and sidereal_mode is None:
  * 		raise ValueError("sidereal flags require an explicit sidereal_mode")
  * 	if flags & _TOPOCENTRIC_FLAG and topocentric_position is None:             # <<<<<<<<<<<<<<
@@ -3543,7 +3563,7 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configur
   __pyx_L8_bool_binop_done:;
   if (unlikely(__pyx_t_2)) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":100
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":102
  * 		raise ValueError("sidereal flags require an explicit sidereal_mode")
  * 	if flags & _TOPOCENTRIC_FLAG and topocentric_position is None:
  * 		raise ValueError("topocentric flags require an explicit topocentric_position")             # <<<<<<<<<<<<<<
@@ -3556,14 +3576,14 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configur
       PyObject *__pyx_callargs[2] = {__pyx_t_4, __pyx_mstate_global->__pyx_kp_u_topocentric_flags_require_an_exp};
       __pyx_t_3 = __Pyx_PyObject_FastCall((PyObject*)(((PyTypeObject*)PyExc_ValueError)), __pyx_callargs+__pyx_t_5, (2-__pyx_t_5) | (__pyx_t_5*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
       __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
-      if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 100, __pyx_L1_error)
+      if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 102, __pyx_L1_error)
       __Pyx_GOTREF(__pyx_t_3);
     }
     __Pyx_Raise(__pyx_t_3, 0, 0, 0);
     __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
-    __PYX_ERR(0, 100, __pyx_L1_error)
+    __PYX_ERR(0, 102, __pyx_L1_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":99
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":101
  * 	if flags & _SIDEREAL_FLAG and sidereal_mode is None:
  * 		raise ValueError("sidereal flags require an explicit sidereal_mode")
  * 	if flags & _TOPOCENTRIC_FLAG and topocentric_position is None:             # <<<<<<<<<<<<<<
@@ -3572,27 +3592,27 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configur
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":101
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":103
  * 	if flags & _TOPOCENTRIC_FLAG and topocentric_position is None:
  * 		raise ValueError("topocentric flags require an explicit topocentric_position")
  * 	if ephe_path and ephe_path != _active_ephe_path:             # <<<<<<<<<<<<<<
  * 		swe_set_ephe_path(ephe_path.encode("utf-8"))
  * 		_active_ephe_path = ephe_path
 */
-  __pyx_t_1 = __Pyx_PyObject_IsTrue(__pyx_v_ephe_path); if (unlikely((__pyx_t_1 < 0))) __PYX_ERR(0, 101, __pyx_L1_error)
+  __pyx_t_1 = __Pyx_PyObject_IsTrue(__pyx_v_ephe_path); if (unlikely((__pyx_t_1 < 0))) __PYX_ERR(0, 103, __pyx_L1_error)
   if (__pyx_t_1) {
   } else {
     __pyx_t_2 = __pyx_t_1;
     goto __pyx_L11_bool_binop_done;
   }
-  __pyx_t_3 = PyObject_RichCompare(__pyx_v_ephe_path, __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__active_ephe_path, Py_NE); __Pyx_XGOTREF(__pyx_t_3); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 101, __pyx_L1_error)
-  __pyx_t_1 = __Pyx_PyObject_IsTrue(__pyx_t_3); if (unlikely((__pyx_t_1 < 0))) __PYX_ERR(0, 101, __pyx_L1_error)
+  __pyx_t_3 = PyObject_RichCompare(__pyx_v_ephe_path, __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__active_ephe_path, Py_NE); __Pyx_XGOTREF(__pyx_t_3); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 103, __pyx_L1_error)
+  __pyx_t_1 = __Pyx_PyObject_IsTrue(__pyx_t_3); if (unlikely((__pyx_t_1 < 0))) __PYX_ERR(0, 103, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
   __pyx_t_2 = __pyx_t_1;
   __pyx_L11_bool_binop_done:;
   if (__pyx_t_2) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":102
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":104
  * 		raise ValueError("topocentric flags require an explicit topocentric_position")
  * 	if ephe_path and ephe_path != _active_ephe_path:
  * 		swe_set_ephe_path(ephe_path.encode("utf-8"))             # <<<<<<<<<<<<<<
@@ -3606,14 +3626,14 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configur
       PyObject *__pyx_callargs[2] = {__pyx_t_4, __pyx_mstate_global->__pyx_kp_u_utf_8};
       __pyx_t_3 = __Pyx_PyObject_FastCallMethod((PyObject*)__pyx_mstate_global->__pyx_n_u_encode, __pyx_callargs+__pyx_t_5, (2-__pyx_t_5) | (1*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
       __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
-      if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 102, __pyx_L1_error)
+      if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 104, __pyx_L1_error)
       __Pyx_GOTREF(__pyx_t_3);
     }
-    __pyx_t_6 = __Pyx_PyObject_AsString(__pyx_t_3); if (unlikely((!__pyx_t_6) && PyErr_Occurred())) __PYX_ERR(0, 102, __pyx_L1_error)
+    __pyx_t_6 = __Pyx_PyObject_AsString(__pyx_t_3); if (unlikely((!__pyx_t_6) && PyErr_Occurred())) __PYX_ERR(0, 104, __pyx_L1_error)
     swe_set_ephe_path(__pyx_t_6);
     __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":103
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":105
  * 	if ephe_path and ephe_path != _active_ephe_path:
  * 		swe_set_ephe_path(ephe_path.encode("utf-8"))
  * 		_active_ephe_path = ephe_path             # <<<<<<<<<<<<<<
@@ -3625,7 +3645,7 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configur
     __Pyx_DECREF_SET(__pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__active_ephe_path, __pyx_v_ephe_path);
     __Pyx_GIVEREF(__pyx_v_ephe_path);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":104
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":106
  * 		swe_set_ephe_path(ephe_path.encode("utf-8"))
  * 		_active_ephe_path = ephe_path
  * 		_active_sidereal_mode = None             # <<<<<<<<<<<<<<
@@ -3637,7 +3657,7 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configur
     __Pyx_DECREF_SET(__pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__active_sidereal_mode, Py_None);
     __Pyx_GIVEREF(Py_None);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":105
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":107
  * 		_active_ephe_path = ephe_path
  * 		_active_sidereal_mode = None
  * 		_active_topocentric_position = None             # <<<<<<<<<<<<<<
@@ -3649,7 +3669,7 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configur
     __Pyx_DECREF_SET(__pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__active_topocentric_position, Py_None);
     __Pyx_GIVEREF(Py_None);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":101
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":103
  * 	if flags & _TOPOCENTRIC_FLAG and topocentric_position is None:
  * 		raise ValueError("topocentric flags require an explicit topocentric_position")
  * 	if ephe_path and ephe_path != _active_ephe_path:             # <<<<<<<<<<<<<<
@@ -3658,7 +3678,7 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configur
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":106
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":108
  * 		_active_sidereal_mode = None
  * 		_active_topocentric_position = None
  * 	if sidereal_mode is not None and sidereal_mode != _active_sidereal_mode:             # <<<<<<<<<<<<<<
@@ -3671,27 +3691,27 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configur
     __pyx_t_2 = __pyx_t_1;
     goto __pyx_L14_bool_binop_done;
   }
-  __pyx_t_3 = PyObject_RichCompare(__pyx_v_sidereal_mode, __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__active_sidereal_mode, Py_NE); __Pyx_XGOTREF(__pyx_t_3); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 106, __pyx_L1_error)
-  __pyx_t_1 = __Pyx_PyObject_IsTrue(__pyx_t_3); if (unlikely((__pyx_t_1 < 0))) __PYX_ERR(0, 106, __pyx_L1_error)
+  __pyx_t_3 = PyObject_RichCompare(__pyx_v_sidereal_mode, __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__active_sidereal_mode, Py_NE); __Pyx_XGOTREF(__pyx_t_3); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 108, __pyx_L1_error)
+  __pyx_t_1 = __Pyx_PyObject_IsTrue(__pyx_t_3); if (unlikely((__pyx_t_1 < 0))) __PYX_ERR(0, 108, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
   __pyx_t_2 = __pyx_t_1;
   __pyx_L14_bool_binop_done:;
   if (__pyx_t_2) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":107
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":109
  * 		_active_topocentric_position = None
  * 	if sidereal_mode is not None and sidereal_mode != _active_sidereal_mode:
  * 		swe_set_sid_mode(int(sidereal_mode), 0.0, 0.0)             # <<<<<<<<<<<<<<
  * 		_active_sidereal_mode = sidereal_mode
  * 	if topocentric_position is not None:
 */
-    __pyx_t_3 = __Pyx_PyNumber_Int(__pyx_v_sidereal_mode); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 107, __pyx_L1_error)
+    __pyx_t_3 = __Pyx_PyNumber_Int(__pyx_v_sidereal_mode); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 109, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_3);
-    __pyx_t_7 = __Pyx_PyLong_As_int32(__pyx_t_3); if (unlikely((__pyx_t_7 == ((int32)-1)) && PyErr_Occurred())) __PYX_ERR(0, 107, __pyx_L1_error)
+    __pyx_t_7 = __Pyx_PyLong_As_int32(__pyx_t_3); if (unlikely((__pyx_t_7 == ((int32)-1)) && PyErr_Occurred())) __PYX_ERR(0, 109, __pyx_L1_error)
     __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
     swe_set_sid_mode(__pyx_t_7, 0.0, 0.0);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":108
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":110
  * 	if sidereal_mode is not None and sidereal_mode != _active_sidereal_mode:
  * 		swe_set_sid_mode(int(sidereal_mode), 0.0, 0.0)
  * 		_active_sidereal_mode = sidereal_mode             # <<<<<<<<<<<<<<
@@ -3703,7 +3723,7 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configur
     __Pyx_DECREF_SET(__pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__active_sidereal_mode, __pyx_v_sidereal_mode);
     __Pyx_GIVEREF(__pyx_v_sidereal_mode);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":106
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":108
  * 		_active_sidereal_mode = None
  * 		_active_topocentric_position = None
  * 	if sidereal_mode is not None and sidereal_mode != _active_sidereal_mode:             # <<<<<<<<<<<<<<
@@ -3712,7 +3732,7 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configur
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":109
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":111
  * 		swe_set_sid_mode(int(sidereal_mode), 0.0, 0.0)
  * 		_active_sidereal_mode = sidereal_mode
  * 	if topocentric_position is not None:             # <<<<<<<<<<<<<<
@@ -3722,67 +3742,67 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configur
   __pyx_t_2 = (__pyx_v_topocentric_position != Py_None);
   if (__pyx_t_2) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":111
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":113
  * 	if topocentric_position is not None:
  * 		normalized_topo = (
  * 			float(topocentric_position[0]),             # <<<<<<<<<<<<<<
  * 			float(topocentric_position[1]),
  * 			float(topocentric_position[2]),
 */
-    __pyx_t_3 = __Pyx_GetItemInt(__pyx_v_topocentric_position, 0, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 111, __pyx_L1_error)
+    __pyx_t_3 = __Pyx_GetItemInt(__pyx_v_topocentric_position, 0, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 113, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_3);
-    __pyx_t_4 = __Pyx_PyNumber_Float(__pyx_t_3); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 111, __pyx_L1_error)
+    __pyx_t_4 = __Pyx_PyNumber_Float(__pyx_t_3); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 113, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_4);
     __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":112
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":114
  * 		normalized_topo = (
  * 			float(topocentric_position[0]),
  * 			float(topocentric_position[1]),             # <<<<<<<<<<<<<<
  * 			float(topocentric_position[2]),
  * 		)
 */
-    __pyx_t_3 = __Pyx_GetItemInt(__pyx_v_topocentric_position, 1, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 112, __pyx_L1_error)
+    __pyx_t_3 = __Pyx_GetItemInt(__pyx_v_topocentric_position, 1, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 114, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_3);
-    __pyx_t_8 = __Pyx_PyNumber_Float(__pyx_t_3); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 112, __pyx_L1_error)
+    __pyx_t_8 = __Pyx_PyNumber_Float(__pyx_t_3); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 114, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_8);
     __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":113
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":115
  * 			float(topocentric_position[0]),
  * 			float(topocentric_position[1]),
  * 			float(topocentric_position[2]),             # <<<<<<<<<<<<<<
  * 		)
  * 	if normalized_topo is not None and normalized_topo != _active_topocentric_position:
 */
-    __pyx_t_3 = __Pyx_GetItemInt(__pyx_v_topocentric_position, 2, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 113, __pyx_L1_error)
+    __pyx_t_3 = __Pyx_GetItemInt(__pyx_v_topocentric_position, 2, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 115, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_3);
-    __pyx_t_9 = __Pyx_PyNumber_Float(__pyx_t_3); if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 113, __pyx_L1_error)
+    __pyx_t_9 = __Pyx_PyNumber_Float(__pyx_t_3); if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 115, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_9);
     __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":111
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":113
  * 	if topocentric_position is not None:
  * 		normalized_topo = (
  * 			float(topocentric_position[0]),             # <<<<<<<<<<<<<<
  * 			float(topocentric_position[1]),
  * 			float(topocentric_position[2]),
 */
-    __pyx_t_3 = PyTuple_New(3); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 111, __pyx_L1_error)
+    __pyx_t_3 = PyTuple_New(3); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 113, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_3);
     __Pyx_GIVEREF(__pyx_t_4);
-    if (__Pyx_PyTuple_SET_ITEM(__pyx_t_3, 0, __pyx_t_4) != (0)) __PYX_ERR(0, 111, __pyx_L1_error);
+    if (__Pyx_PyTuple_SET_ITEM(__pyx_t_3, 0, __pyx_t_4) != (0)) __PYX_ERR(0, 113, __pyx_L1_error);
     __Pyx_GIVEREF(__pyx_t_8);
-    if (__Pyx_PyTuple_SET_ITEM(__pyx_t_3, 1, __pyx_t_8) != (0)) __PYX_ERR(0, 111, __pyx_L1_error);
+    if (__Pyx_PyTuple_SET_ITEM(__pyx_t_3, 1, __pyx_t_8) != (0)) __PYX_ERR(0, 113, __pyx_L1_error);
     __Pyx_GIVEREF(__pyx_t_9);
-    if (__Pyx_PyTuple_SET_ITEM(__pyx_t_3, 2, __pyx_t_9) != (0)) __PYX_ERR(0, 111, __pyx_L1_error);
+    if (__Pyx_PyTuple_SET_ITEM(__pyx_t_3, 2, __pyx_t_9) != (0)) __PYX_ERR(0, 113, __pyx_L1_error);
     __pyx_t_4 = 0;
     __pyx_t_8 = 0;
     __pyx_t_9 = 0;
     __Pyx_DECREF_SET(__pyx_v_normalized_topo, __pyx_t_3);
     __pyx_t_3 = 0;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":109
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":111
  * 		swe_set_sid_mode(int(sidereal_mode), 0.0, 0.0)
  * 		_active_sidereal_mode = sidereal_mode
  * 	if topocentric_position is not None:             # <<<<<<<<<<<<<<
@@ -3791,7 +3811,7 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configur
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":115
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":117
  * 			float(topocentric_position[2]),
  * 		)
  * 	if normalized_topo is not None and normalized_topo != _active_topocentric_position:             # <<<<<<<<<<<<<<
@@ -3804,50 +3824,50 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configur
     __pyx_t_2 = __pyx_t_1;
     goto __pyx_L18_bool_binop_done;
   }
-  __pyx_t_3 = PyObject_RichCompare(__pyx_v_normalized_topo, __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__active_topocentric_position, Py_NE); __Pyx_XGOTREF(__pyx_t_3); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 115, __pyx_L1_error)
-  __pyx_t_1 = __Pyx_PyObject_IsTrue(__pyx_t_3); if (unlikely((__pyx_t_1 < 0))) __PYX_ERR(0, 115, __pyx_L1_error)
+  __pyx_t_3 = PyObject_RichCompare(__pyx_v_normalized_topo, __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__active_topocentric_position, Py_NE); __Pyx_XGOTREF(__pyx_t_3); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 117, __pyx_L1_error)
+  __pyx_t_1 = __Pyx_PyObject_IsTrue(__pyx_t_3); if (unlikely((__pyx_t_1 < 0))) __PYX_ERR(0, 117, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
   __pyx_t_2 = __pyx_t_1;
   __pyx_L18_bool_binop_done:;
   if (__pyx_t_2) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":117
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":119
  * 	if normalized_topo is not None and normalized_topo != _active_topocentric_position:
  * 		swe_set_topo(
  * 			float(normalized_topo[0]),             # <<<<<<<<<<<<<<
  * 			float(normalized_topo[1]),
  * 			float(normalized_topo[2]),
 */
-    __pyx_t_3 = __Pyx_GetItemInt(__pyx_v_normalized_topo, 0, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_OwnStrongReference); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 117, __pyx_L1_error)
+    __pyx_t_3 = __Pyx_GetItemInt(__pyx_v_normalized_topo, 0, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_OwnStrongReference); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 119, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_3);
-    __pyx_t_10 = __Pyx_PyObject_AsDouble(__pyx_t_3); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_10, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 117, __pyx_L1_error)
+    __pyx_t_10 = __Pyx_PyObject_AsDouble(__pyx_t_3); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_10, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 119, __pyx_L1_error)
     __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":118
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":120
  * 		swe_set_topo(
  * 			float(normalized_topo[0]),
  * 			float(normalized_topo[1]),             # <<<<<<<<<<<<<<
  * 			float(normalized_topo[2]),
  * 		)
 */
-    __pyx_t_3 = __Pyx_GetItemInt(__pyx_v_normalized_topo, 1, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_OwnStrongReference); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 118, __pyx_L1_error)
+    __pyx_t_3 = __Pyx_GetItemInt(__pyx_v_normalized_topo, 1, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_OwnStrongReference); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 120, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_3);
-    __pyx_t_11 = __Pyx_PyObject_AsDouble(__pyx_t_3); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_11, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 118, __pyx_L1_error)
+    __pyx_t_11 = __Pyx_PyObject_AsDouble(__pyx_t_3); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_11, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 120, __pyx_L1_error)
     __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":119
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":121
  * 			float(normalized_topo[0]),
  * 			float(normalized_topo[1]),
  * 			float(normalized_topo[2]),             # <<<<<<<<<<<<<<
  * 		)
  * 		_active_topocentric_position = normalized_topo
 */
-    __pyx_t_3 = __Pyx_GetItemInt(__pyx_v_normalized_topo, 2, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_OwnStrongReference); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 119, __pyx_L1_error)
+    __pyx_t_3 = __Pyx_GetItemInt(__pyx_v_normalized_topo, 2, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_OwnStrongReference); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 121, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_3);
-    __pyx_t_12 = __Pyx_PyObject_AsDouble(__pyx_t_3); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_12, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 119, __pyx_L1_error)
+    __pyx_t_12 = __Pyx_PyObject_AsDouble(__pyx_t_3); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_12, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 121, __pyx_L1_error)
     __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":116
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":118
  * 		)
  * 	if normalized_topo is not None and normalized_topo != _active_topocentric_position:
  * 		swe_set_topo(             # <<<<<<<<<<<<<<
@@ -3856,7 +3876,7 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configur
 */
     swe_set_topo(__pyx_t_10, __pyx_t_11, __pyx_t_12);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":121
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":123
  * 			float(normalized_topo[2]),
  * 		)
  * 		_active_topocentric_position = normalized_topo             # <<<<<<<<<<<<<<
@@ -3868,7 +3888,7 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configur
     __Pyx_DECREF_SET(__pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__active_topocentric_position, __pyx_v_normalized_topo);
     __Pyx_GIVEREF(__pyx_v_normalized_topo);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":115
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":117
  * 			float(topocentric_position[2]),
  * 		)
  * 	if normalized_topo is not None and normalized_topo != _active_topocentric_position:             # <<<<<<<<<<<<<<
@@ -3877,7 +3897,7 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configur
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":87
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":89
  *
  *
  * cdef void _configure_ephemeris_context(             # <<<<<<<<<<<<<<
@@ -3898,7 +3918,7 @@ static void __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configur
   __Pyx_RefNannyFinishContext();
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":124
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":126
  *
  *
  * cdef inline double _wrap360_c(double x) noexcept nogil:             # <<<<<<<<<<<<<<
@@ -3911,7 +3931,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   double __pyx_r;
   int __pyx_t_1;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":125
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":127
  *
  * cdef inline double _wrap360_c(double x) noexcept nogil:
  * 	cdef double value = x % 360.0             # <<<<<<<<<<<<<<
@@ -3920,7 +3940,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
   __pyx_v_value = __Pyx_mod_double(__pyx_v_x, 360.0, 1);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":126
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":128
  * cdef inline double _wrap360_c(double x) noexcept nogil:
  * 	cdef double value = x % 360.0
  * 	if value < 0.0:             # <<<<<<<<<<<<<<
@@ -3930,7 +3950,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   __pyx_t_1 = (__pyx_v_value < 0.0);
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":127
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":129
  * 	cdef double value = x % 360.0
  * 	if value < 0.0:
  * 		value += 360.0             # <<<<<<<<<<<<<<
@@ -3939,7 +3959,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
     __pyx_v_value = (__pyx_v_value + 360.0);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":126
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":128
  * cdef inline double _wrap360_c(double x) noexcept nogil:
  * 	cdef double value = x % 360.0
  * 	if value < 0.0:             # <<<<<<<<<<<<<<
@@ -3948,7 +3968,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":128
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":130
  * 	if value < 0.0:
  * 		value += 360.0
  * 	return value             # <<<<<<<<<<<<<<
@@ -3958,7 +3978,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   __pyx_r = __pyx_v_value;
   goto __pyx_L0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":124
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":126
  *
  *
  * cdef inline double _wrap360_c(double x) noexcept nogil:             # <<<<<<<<<<<<<<
@@ -3971,7 +3991,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":131
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":133
  *
  *
  * cdef inline double _wrap180_c(double x) noexcept nogil:             # <<<<<<<<<<<<<<
@@ -3984,7 +4004,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   double __pyx_r;
   int __pyx_t_1;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":132
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":134
  *
  * cdef inline double _wrap180_c(double x) noexcept nogil:
  * 	cdef double value = _wrap360_c(x)             # <<<<<<<<<<<<<<
@@ -3993,7 +4013,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
   __pyx_v_value = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__wrap360_c(__pyx_v_x);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":133
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":135
  * cdef inline double _wrap180_c(double x) noexcept nogil:
  * 	cdef double value = _wrap360_c(x)
  * 	if value >= 180.0:             # <<<<<<<<<<<<<<
@@ -4003,7 +4023,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   __pyx_t_1 = (__pyx_v_value >= 180.0);
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":134
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":136
  * 	cdef double value = _wrap360_c(x)
  * 	if value >= 180.0:
  * 		value -= 360.0             # <<<<<<<<<<<<<<
@@ -4012,7 +4032,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
     __pyx_v_value = (__pyx_v_value - 360.0);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":133
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":135
  * cdef inline double _wrap180_c(double x) noexcept nogil:
  * 	cdef double value = _wrap360_c(x)
  * 	if value >= 180.0:             # <<<<<<<<<<<<<<
@@ -4021,7 +4041,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":135
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":137
  * 	if value >= 180.0:
  * 		value -= 360.0
  * 	return value             # <<<<<<<<<<<<<<
@@ -4031,7 +4051,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   __pyx_r = __pyx_v_value;
   goto __pyx_L0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":131
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":133
  *
  *
  * cdef inline double _wrap180_c(double x) noexcept nogil:             # <<<<<<<<<<<<<<
@@ -4044,7 +4064,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":138
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":140
  *
  *
  * cdef inline double _relative_delta_c(double prom_lon, double sig_lon, double offset) noexcept nogil:             # <<<<<<<<<<<<<<
@@ -4057,7 +4077,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   double __pyx_r;
   int __pyx_t_1;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":139
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":141
  *
  * cdef inline double _relative_delta_c(double prom_lon, double sig_lon, double offset) noexcept nogil:
  * 	cdef double target = sig_lon + offset             # <<<<<<<<<<<<<<
@@ -4066,7 +4086,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
   __pyx_v_target = (__pyx_v_sig_lon + __pyx_v_offset);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":140
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":142
  * cdef inline double _relative_delta_c(double prom_lon, double sig_lon, double offset) noexcept nogil:
  * 	cdef double target = sig_lon + offset
  * 	if target < 0.0:             # <<<<<<<<<<<<<<
@@ -4076,7 +4096,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   __pyx_t_1 = (__pyx_v_target < 0.0);
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":141
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":143
  * 	cdef double target = sig_lon + offset
  * 	if target < 0.0:
  * 		target += 360.0             # <<<<<<<<<<<<<<
@@ -4085,7 +4105,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
     __pyx_v_target = (__pyx_v_target + 360.0);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":140
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":142
  * cdef inline double _relative_delta_c(double prom_lon, double sig_lon, double offset) noexcept nogil:
  * 	cdef double target = sig_lon + offset
  * 	if target < 0.0:             # <<<<<<<<<<<<<<
@@ -4095,7 +4115,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
     goto __pyx_L3;
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":142
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":144
  * 	if target < 0.0:
  * 		target += 360.0
  * 	elif target >= 360.0:             # <<<<<<<<<<<<<<
@@ -4105,7 +4125,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   __pyx_t_1 = (__pyx_v_target >= 360.0);
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":143
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":145
  * 		target += 360.0
  * 	elif target >= 360.0:
  * 		target -= 360.0             # <<<<<<<<<<<<<<
@@ -4114,7 +4134,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
     __pyx_v_target = (__pyx_v_target - 360.0);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":142
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":144
  * 	if target < 0.0:
  * 		target += 360.0
  * 	elif target >= 360.0:             # <<<<<<<<<<<<<<
@@ -4124,7 +4144,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   }
   __pyx_L3:;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":144
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":146
  * 	elif target >= 360.0:
  * 		target -= 360.0
  * 	return _wrap180_c(prom_lon - target)             # <<<<<<<<<<<<<<
@@ -4134,7 +4154,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   __pyx_r = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__wrap180_c((__pyx_v_prom_lon - __pyx_v_target));
   goto __pyx_L0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":138
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":140
  *
  *
  * cdef inline double _relative_delta_c(double prom_lon, double sig_lon, double offset) noexcept nogil:             # <<<<<<<<<<<<<<
@@ -4147,7 +4167,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":147
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":149
  *
  *
  * cdef inline bint _crossed_zero_c(double f0, double f1) noexcept nogil:             # <<<<<<<<<<<<<<
@@ -4160,7 +4180,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   int __pyx_t_1;
   int __pyx_t_2;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":148
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":150
  *
  * cdef inline bint _crossed_zero_c(double f0, double f1) noexcept nogil:
  * 	if f0 == 0.0 or f1 == 0.0:             # <<<<<<<<<<<<<<
@@ -4178,7 +4198,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   __pyx_L4_bool_binop_done:;
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":149
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":151
  * cdef inline bint _crossed_zero_c(double f0, double f1) noexcept nogil:
  * 	if f0 == 0.0 or f1 == 0.0:
  * 		return True             # <<<<<<<<<<<<<<
@@ -4188,7 +4208,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
     __pyx_r = 1;
     goto __pyx_L0;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":148
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":150
  *
  * cdef inline bint _crossed_zero_c(double f0, double f1) noexcept nogil:
  * 	if f0 == 0.0 or f1 == 0.0:             # <<<<<<<<<<<<<<
@@ -4197,7 +4217,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":150
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":152
  * 	if f0 == 0.0 or f1 == 0.0:
  * 		return True
  * 	return (f0 < 0.0 < f1) or (f1 < 0.0 < f0)             # <<<<<<<<<<<<<<
@@ -4222,7 +4242,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   __pyx_r = __pyx_t_1;
   goto __pyx_L0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":147
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":149
  *
  *
  * cdef inline bint _crossed_zero_c(double f0, double f1) noexcept nogil:             # <<<<<<<<<<<<<<
@@ -4235,7 +4255,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":153
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":155
  *
  *
  * cdef inline bint _is_longitude_zero_crossing_c(double f0, double f1) noexcept nogil:             # <<<<<<<<<<<<<<
@@ -4247,7 +4267,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   int __pyx_r;
   int __pyx_t_1;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":154
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":156
  *
  * cdef inline bint _is_longitude_zero_crossing_c(double f0, double f1) noexcept nogil:
  * 	if not _crossed_zero_c(f0, f1):             # <<<<<<<<<<<<<<
@@ -4257,7 +4277,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   __pyx_t_1 = (!__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__crossed_zero_c(__pyx_v_f0, __pyx_v_f1));
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":155
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":157
  * cdef inline bint _is_longitude_zero_crossing_c(double f0, double f1) noexcept nogil:
  * 	if not _crossed_zero_c(f0, f1):
  * 		return False             # <<<<<<<<<<<<<<
@@ -4267,7 +4287,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
     __pyx_r = 0;
     goto __pyx_L0;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":154
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":156
  *
  * cdef inline bint _is_longitude_zero_crossing_c(double f0, double f1) noexcept nogil:
  * 	if not _crossed_zero_c(f0, f1):             # <<<<<<<<<<<<<<
@@ -4276,7 +4296,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":156
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":158
  * 	if not _crossed_zero_c(f0, f1):
  * 		return False
  * 	return fabs(f1 - f0) < 180.0             # <<<<<<<<<<<<<<
@@ -4286,7 +4306,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   __pyx_r = (fabs((__pyx_v_f1 - __pyx_v_f0)) < 180.0);
   goto __pyx_L0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":153
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":155
  *
  *
  * cdef inline bint _is_longitude_zero_crossing_c(double f0, double f1) noexcept nogil:             # <<<<<<<<<<<<<<
@@ -4299,7 +4319,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":159
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":161
  *
  *
  * cdef inline bint _is_relative_zero_crossing_c(double f0, double f1, double eps_deg) noexcept nogil:             # <<<<<<<<<<<<<<
@@ -4312,7 +4332,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   int __pyx_t_1;
   int __pyx_t_2;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":160
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":162
  *
  * cdef inline bint _is_relative_zero_crossing_c(double f0, double f1, double eps_deg) noexcept nogil:
  * 	if fabs(f0) <= eps_deg or fabs(f1) <= eps_deg:             # <<<<<<<<<<<<<<
@@ -4330,7 +4350,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   __pyx_L4_bool_binop_done:;
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":161
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":163
  * cdef inline bint _is_relative_zero_crossing_c(double f0, double f1, double eps_deg) noexcept nogil:
  * 	if fabs(f0) <= eps_deg or fabs(f1) <= eps_deg:
  * 		return True             # <<<<<<<<<<<<<<
@@ -4340,7 +4360,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
     __pyx_r = 1;
     goto __pyx_L0;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":160
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":162
  *
  * cdef inline bint _is_relative_zero_crossing_c(double f0, double f1, double eps_deg) noexcept nogil:
  * 	if fabs(f0) <= eps_deg or fabs(f1) <= eps_deg:             # <<<<<<<<<<<<<<
@@ -4349,7 +4369,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":162
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":164
  * 	if fabs(f0) <= eps_deg or fabs(f1) <= eps_deg:
  * 		return True
  * 	if not _crossed_zero_c(f0, f1):             # <<<<<<<<<<<<<<
@@ -4359,7 +4379,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   __pyx_t_1 = (!__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__crossed_zero_c(__pyx_v_f0, __pyx_v_f1));
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":163
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":165
  * 		return True
  * 	if not _crossed_zero_c(f0, f1):
  * 		return False             # <<<<<<<<<<<<<<
@@ -4369,7 +4389,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
     __pyx_r = 0;
     goto __pyx_L0;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":162
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":164
  * 	if fabs(f0) <= eps_deg or fabs(f1) <= eps_deg:
  * 		return True
  * 	if not _crossed_zero_c(f0, f1):             # <<<<<<<<<<<<<<
@@ -4378,7 +4398,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":164
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":166
  * 	if not _crossed_zero_c(f0, f1):
  * 		return False
  * 	return fabs(f1 - f0) < 180.0             # <<<<<<<<<<<<<<
@@ -4388,7 +4408,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   __pyx_r = (fabs((__pyx_v_f1 - __pyx_v_f0)) < 180.0);
   goto __pyx_L0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":159
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":161
  *
  *
  * cdef inline bint _is_relative_zero_crossing_c(double f0, double f1, double eps_deg) noexcept nogil:             # <<<<<<<<<<<<<<
@@ -4401,7 +4421,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":167
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":169
  *
  *
  * cdef inline double _adaptive_step_c(double base_step, double speed, double eps_days) noexcept nogil:             # <<<<<<<<<<<<<<
@@ -4415,7 +4435,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   double __pyx_r;
   int __pyx_t_1;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":168
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":170
  *
  * cdef inline double _adaptive_step_c(double base_step, double speed, double eps_days) noexcept nogil:
  * 	cdef double abs_speed = fabs(speed)             # <<<<<<<<<<<<<<
@@ -4424,7 +4444,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
   __pyx_v_abs_speed = fabs(__pyx_v_speed);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":169
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":171
  * cdef inline double _adaptive_step_c(double base_step, double speed, double eps_days) noexcept nogil:
  * 	cdef double abs_speed = fabs(speed)
  * 	cdef double step = base_step             # <<<<<<<<<<<<<<
@@ -4433,7 +4453,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
   __pyx_v_step = __pyx_v_base_step;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":170
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":172
  * 	cdef double abs_speed = fabs(speed)
  * 	cdef double step = base_step
  * 	if abs_speed <= _LOW_SPEED_WARN:             # <<<<<<<<<<<<<<
@@ -4443,7 +4463,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   __pyx_t_1 = (__pyx_v_abs_speed <= __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__LOW_SPEED_WARN);
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":171
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":173
  * 	cdef double step = base_step
  * 	if abs_speed <= _LOW_SPEED_WARN:
  * 		step *= 0.25             # <<<<<<<<<<<<<<
@@ -4452,7 +4472,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
     __pyx_v_step = (__pyx_v_step * 0.25);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":170
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":172
  * 	cdef double abs_speed = fabs(speed)
  * 	cdef double step = base_step
  * 	if abs_speed <= _LOW_SPEED_WARN:             # <<<<<<<<<<<<<<
@@ -4462,7 +4482,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
     goto __pyx_L3;
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":172
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":174
  * 	if abs_speed <= _LOW_SPEED_WARN:
  * 		step *= 0.25
  * 	elif abs_speed >= 2.0:             # <<<<<<<<<<<<<<
@@ -4472,7 +4492,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   __pyx_t_1 = (__pyx_v_abs_speed >= 2.0);
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":173
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":175
  * 		step *= 0.25
  * 	elif abs_speed >= 2.0:
  * 		step *= 1.5             # <<<<<<<<<<<<<<
@@ -4481,7 +4501,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
     __pyx_v_step = (__pyx_v_step * 1.5);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":172
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":174
  * 	if abs_speed <= _LOW_SPEED_WARN:
  * 		step *= 0.25
  * 	elif abs_speed >= 2.0:             # <<<<<<<<<<<<<<
@@ -4491,7 +4511,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   }
   __pyx_L3:;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":174
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":176
  * 	elif abs_speed >= 2.0:
  * 		step *= 1.5
  * 	if step < eps_days * 64.0:             # <<<<<<<<<<<<<<
@@ -4501,7 +4521,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   __pyx_t_1 = (__pyx_v_step < (__pyx_v_eps_days * 64.0));
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":175
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":177
  * 		step *= 1.5
  * 	if step < eps_days * 64.0:
  * 		step = eps_days * 64.0             # <<<<<<<<<<<<<<
@@ -4510,7 +4530,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
     __pyx_v_step = (__pyx_v_eps_days * 64.0);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":174
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":176
  * 	elif abs_speed >= 2.0:
  * 		step *= 1.5
  * 	if step < eps_days * 64.0:             # <<<<<<<<<<<<<<
@@ -4519,7 +4539,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":176
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":178
  * 	if step < eps_days * 64.0:
  * 		step = eps_days * 64.0
  * 	if step < 1e-4:             # <<<<<<<<<<<<<<
@@ -4529,7 +4549,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   __pyx_t_1 = (__pyx_v_step < 1e-4);
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":177
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":179
  * 		step = eps_days * 64.0
  * 	if step < 1e-4:
  * 		step = 1e-4             # <<<<<<<<<<<<<<
@@ -4538,7 +4558,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
     __pyx_v_step = 1e-4;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":176
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":178
  * 	if step < eps_days * 64.0:
  * 		step = eps_days * 64.0
  * 	if step < 1e-4:             # <<<<<<<<<<<<<<
@@ -4547,7 +4567,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":178
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":180
  * 	if step < 1e-4:
  * 		step = 1e-4
  * 	return step             # <<<<<<<<<<<<<<
@@ -4557,7 +4577,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   __pyx_r = __pyx_v_step;
   goto __pyx_L0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":167
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":169
  *
  *
  * cdef inline double _adaptive_step_c(double base_step, double speed, double eps_days) noexcept nogil:             # <<<<<<<<<<<<<<
@@ -4570,7 +4590,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":181
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":183
  *
  *
  * cdef inline double _adaptive_station_step_c(double base_step, double speed, double eps_days) noexcept nogil:             # <<<<<<<<<<<<<<
@@ -4584,7 +4604,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   double __pyx_r;
   int __pyx_t_1;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":182
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":184
  *
  * cdef inline double _adaptive_station_step_c(double base_step, double speed, double eps_days) noexcept nogil:
  * 	cdef double abs_speed = fabs(speed)             # <<<<<<<<<<<<<<
@@ -4593,7 +4613,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
   __pyx_v_abs_speed = fabs(__pyx_v_speed);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":183
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":185
  * cdef inline double _adaptive_station_step_c(double base_step, double speed, double eps_days) noexcept nogil:
  * 	cdef double abs_speed = fabs(speed)
  * 	cdef double step = base_step             # <<<<<<<<<<<<<<
@@ -4602,7 +4622,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
   __pyx_v_step = __pyx_v_base_step;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":184
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":186
  * 	cdef double abs_speed = fabs(speed)
  * 	cdef double step = base_step
  * 	if abs_speed <= _STATION_SPEED_EPS * 100.0:             # <<<<<<<<<<<<<<
@@ -4612,7 +4632,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   __pyx_t_1 = (__pyx_v_abs_speed <= (__pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__STATION_SPEED_EPS * 100.0));
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":185
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":187
  * 	cdef double step = base_step
  * 	if abs_speed <= _STATION_SPEED_EPS * 100.0:
  * 		step *= 0.1             # <<<<<<<<<<<<<<
@@ -4621,7 +4641,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
     __pyx_v_step = (__pyx_v_step * 0.1);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":184
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":186
  * 	cdef double abs_speed = fabs(speed)
  * 	cdef double step = base_step
  * 	if abs_speed <= _STATION_SPEED_EPS * 100.0:             # <<<<<<<<<<<<<<
@@ -4631,7 +4651,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
     goto __pyx_L3;
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":186
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":188
  * 	if abs_speed <= _STATION_SPEED_EPS * 100.0:
  * 		step *= 0.1
  * 	elif abs_speed <= _LOW_SPEED_WARN:             # <<<<<<<<<<<<<<
@@ -4641,7 +4661,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   __pyx_t_1 = (__pyx_v_abs_speed <= __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__LOW_SPEED_WARN);
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":187
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":189
  * 		step *= 0.1
  * 	elif abs_speed <= _LOW_SPEED_WARN:
  * 		step *= 0.2             # <<<<<<<<<<<<<<
@@ -4650,7 +4670,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
     __pyx_v_step = (__pyx_v_step * 0.2);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":186
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":188
  * 	if abs_speed <= _STATION_SPEED_EPS * 100.0:
  * 		step *= 0.1
  * 	elif abs_speed <= _LOW_SPEED_WARN:             # <<<<<<<<<<<<<<
@@ -4660,7 +4680,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
     goto __pyx_L3;
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":188
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":190
  * 	elif abs_speed <= _LOW_SPEED_WARN:
  * 		step *= 0.2
  * 	elif abs_speed <= 1e-3:             # <<<<<<<<<<<<<<
@@ -4670,7 +4690,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   __pyx_t_1 = (__pyx_v_abs_speed <= 1e-3);
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":189
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":191
  * 		step *= 0.2
  * 	elif abs_speed <= 1e-3:
  * 		step *= 0.5             # <<<<<<<<<<<<<<
@@ -4679,7 +4699,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
     __pyx_v_step = (__pyx_v_step * 0.5);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":188
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":190
  * 	elif abs_speed <= _LOW_SPEED_WARN:
  * 		step *= 0.2
  * 	elif abs_speed <= 1e-3:             # <<<<<<<<<<<<<<
@@ -4689,7 +4709,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
     goto __pyx_L3;
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":190
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":192
  * 	elif abs_speed <= 1e-3:
  * 		step *= 0.5
  * 	elif abs_speed >= 2.0:             # <<<<<<<<<<<<<<
@@ -4699,7 +4719,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   __pyx_t_1 = (__pyx_v_abs_speed >= 2.0);
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":191
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":193
  * 		step *= 0.5
  * 	elif abs_speed >= 2.0:
  * 		step *= 1.25             # <<<<<<<<<<<<<<
@@ -4708,7 +4728,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
     __pyx_v_step = (__pyx_v_step * 1.25);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":190
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":192
  * 	elif abs_speed <= 1e-3:
  * 		step *= 0.5
  * 	elif abs_speed >= 2.0:             # <<<<<<<<<<<<<<
@@ -4718,7 +4738,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   }
   __pyx_L3:;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":192
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":194
  * 	elif abs_speed >= 2.0:
  * 		step *= 1.25
  * 	if step < eps_days * 64.0:             # <<<<<<<<<<<<<<
@@ -4728,7 +4748,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   __pyx_t_1 = (__pyx_v_step < (__pyx_v_eps_days * 64.0));
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":193
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":195
  * 		step *= 1.25
  * 	if step < eps_days * 64.0:
  * 		step = eps_days * 64.0             # <<<<<<<<<<<<<<
@@ -4737,7 +4757,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
     __pyx_v_step = (__pyx_v_eps_days * 64.0);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":192
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":194
  * 	elif abs_speed >= 2.0:
  * 		step *= 1.25
  * 	if step < eps_days * 64.0:             # <<<<<<<<<<<<<<
@@ -4746,7 +4766,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":194
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":196
  * 	if step < eps_days * 64.0:
  * 		step = eps_days * 64.0
  * 	if step < 1e-4:             # <<<<<<<<<<<<<<
@@ -4756,7 +4776,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   __pyx_t_1 = (__pyx_v_step < 1e-4);
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":195
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":197
  * 		step = eps_days * 64.0
  * 	if step < 1e-4:
  * 		step = 1e-4             # <<<<<<<<<<<<<<
@@ -4765,7 +4785,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
     __pyx_v_step = 1e-4;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":194
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":196
  * 	if step < eps_days * 64.0:
  * 		step = eps_days * 64.0
  * 	if step < 1e-4:             # <<<<<<<<<<<<<<
@@ -4774,7 +4794,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":196
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":198
  * 	if step < 1e-4:
  * 		step = 1e-4
  * 	return step             # <<<<<<<<<<<<<<
@@ -4784,7 +4804,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   __pyx_r = __pyx_v_step;
   goto __pyx_L0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":181
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":183
  *
  *
  * cdef inline double _adaptive_station_step_c(double base_step, double speed, double eps_days) noexcept nogil:             # <<<<<<<<<<<<<<
@@ -4797,7 +4817,7 @@ static CYTHON_INLINE double __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":199
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":201
  *
  *
  * cdef inline size_t _lower_bound_c(double* values, size_t count, double target) noexcept nogil:             # <<<<<<<<<<<<<<
@@ -4812,7 +4832,7 @@ static CYTHON_INLINE size_t __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   size_t __pyx_r;
   int __pyx_t_1;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":200
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":202
  *
  * cdef inline size_t _lower_bound_c(double* values, size_t count, double target) noexcept nogil:
  * 	cdef size_t lo = 0             # <<<<<<<<<<<<<<
@@ -4821,7 +4841,7 @@ static CYTHON_INLINE size_t __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
   __pyx_v_lo = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":201
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":203
  * cdef inline size_t _lower_bound_c(double* values, size_t count, double target) noexcept nogil:
  * 	cdef size_t lo = 0
  * 	cdef size_t hi = count             # <<<<<<<<<<<<<<
@@ -4830,7 +4850,7 @@ static CYTHON_INLINE size_t __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
   __pyx_v_hi = __pyx_v_count;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":203
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":205
  * 	cdef size_t hi = count
  * 	cdef size_t mid
  * 	while lo < hi:             # <<<<<<<<<<<<<<
@@ -4841,7 +4861,7 @@ static CYTHON_INLINE size_t __pyx_f_5aries_9astrology_12transit_fast_15_transit_
     __pyx_t_1 = (__pyx_v_lo < __pyx_v_hi);
     if (!__pyx_t_1) break;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":204
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":206
  * 	cdef size_t mid
  * 	while lo < hi:
  * 		mid = (lo + hi) // 2             # <<<<<<<<<<<<<<
@@ -4850,7 +4870,7 @@ static CYTHON_INLINE size_t __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
     __pyx_v_mid = ((__pyx_v_lo + __pyx_v_hi) / 2);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":205
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":207
  * 	while lo < hi:
  * 		mid = (lo + hi) // 2
  * 		if values[mid] < target:             # <<<<<<<<<<<<<<
@@ -4860,7 +4880,7 @@ static CYTHON_INLINE size_t __pyx_f_5aries_9astrology_12transit_fast_15_transit_
     __pyx_t_1 = ((__pyx_v_values[__pyx_v_mid]) < __pyx_v_target);
     if (__pyx_t_1) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":206
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":208
  * 		mid = (lo + hi) // 2
  * 		if values[mid] < target:
  * 			lo = mid + 1             # <<<<<<<<<<<<<<
@@ -4869,7 +4889,7 @@ static CYTHON_INLINE size_t __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
       __pyx_v_lo = (__pyx_v_mid + 1);
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":205
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":207
  * 	while lo < hi:
  * 		mid = (lo + hi) // 2
  * 		if values[mid] < target:             # <<<<<<<<<<<<<<
@@ -4879,7 +4899,7 @@ static CYTHON_INLINE size_t __pyx_f_5aries_9astrology_12transit_fast_15_transit_
       goto __pyx_L5;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":208
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":210
  * 			lo = mid + 1
  * 		else:
  * 			hi = mid             # <<<<<<<<<<<<<<
@@ -4892,7 +4912,7 @@ static CYTHON_INLINE size_t __pyx_f_5aries_9astrology_12transit_fast_15_transit_
     __pyx_L5:;
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":209
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":211
  * 		else:
  * 			hi = mid
  * 	return lo             # <<<<<<<<<<<<<<
@@ -4902,7 +4922,7 @@ static CYTHON_INLINE size_t __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   __pyx_r = __pyx_v_lo;
   goto __pyx_L0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":199
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":201
  *
  *
  * cdef inline size_t _lower_bound_c(double* values, size_t count, double target) noexcept nogil:             # <<<<<<<<<<<<<<
@@ -4915,7 +4935,7 @@ static CYTHON_INLINE size_t __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":212
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":214
  *
  *
  * cdef inline size_t _upper_bound_c(double* values, size_t count, double target) noexcept nogil:             # <<<<<<<<<<<<<<
@@ -4930,7 +4950,7 @@ static CYTHON_INLINE size_t __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   size_t __pyx_r;
   int __pyx_t_1;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":213
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":215
  *
  * cdef inline size_t _upper_bound_c(double* values, size_t count, double target) noexcept nogil:
  * 	cdef size_t lo = 0             # <<<<<<<<<<<<<<
@@ -4939,7 +4959,7 @@ static CYTHON_INLINE size_t __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
   __pyx_v_lo = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":214
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":216
  * cdef inline size_t _upper_bound_c(double* values, size_t count, double target) noexcept nogil:
  * 	cdef size_t lo = 0
  * 	cdef size_t hi = count             # <<<<<<<<<<<<<<
@@ -4948,7 +4968,7 @@ static CYTHON_INLINE size_t __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
   __pyx_v_hi = __pyx_v_count;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":216
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":218
  * 	cdef size_t hi = count
  * 	cdef size_t mid
  * 	while lo < hi:             # <<<<<<<<<<<<<<
@@ -4959,7 +4979,7 @@ static CYTHON_INLINE size_t __pyx_f_5aries_9astrology_12transit_fast_15_transit_
     __pyx_t_1 = (__pyx_v_lo < __pyx_v_hi);
     if (!__pyx_t_1) break;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":217
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":219
  * 	cdef size_t mid
  * 	while lo < hi:
  * 		mid = (lo + hi) // 2             # <<<<<<<<<<<<<<
@@ -4968,7 +4988,7 @@ static CYTHON_INLINE size_t __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
     __pyx_v_mid = ((__pyx_v_lo + __pyx_v_hi) / 2);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":218
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":220
  * 	while lo < hi:
  * 		mid = (lo + hi) // 2
  * 		if values[mid] <= target:             # <<<<<<<<<<<<<<
@@ -4978,7 +4998,7 @@ static CYTHON_INLINE size_t __pyx_f_5aries_9astrology_12transit_fast_15_transit_
     __pyx_t_1 = ((__pyx_v_values[__pyx_v_mid]) <= __pyx_v_target);
     if (__pyx_t_1) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":219
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":221
  * 		mid = (lo + hi) // 2
  * 		if values[mid] <= target:
  * 			lo = mid + 1             # <<<<<<<<<<<<<<
@@ -4987,7 +5007,7 @@ static CYTHON_INLINE size_t __pyx_f_5aries_9astrology_12transit_fast_15_transit_
 */
       __pyx_v_lo = (__pyx_v_mid + 1);
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":218
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":220
  * 	while lo < hi:
  * 		mid = (lo + hi) // 2
  * 		if values[mid] <= target:             # <<<<<<<<<<<<<<
@@ -4997,7 +5017,7 @@ static CYTHON_INLINE size_t __pyx_f_5aries_9astrology_12transit_fast_15_transit_
       goto __pyx_L5;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":221
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":223
  * 			lo = mid + 1
  * 		else:
  * 			hi = mid             # <<<<<<<<<<<<<<
@@ -5010,7 +5030,7 @@ static CYTHON_INLINE size_t __pyx_f_5aries_9astrology_12transit_fast_15_transit_
     __pyx_L5:;
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":222
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":224
  * 		else:
  * 			hi = mid
  * 	return lo             # <<<<<<<<<<<<<<
@@ -5020,7 +5040,7 @@ static CYTHON_INLINE size_t __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   __pyx_r = __pyx_v_lo;
   goto __pyx_L0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":212
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":214
  *
  *
  * cdef inline size_t _upper_bound_c(double* values, size_t count, double target) noexcept nogil:             # <<<<<<<<<<<<<<
@@ -5033,7 +5053,7 @@ static CYTHON_INLINE size_t __pyx_f_5aries_9astrology_12transit_fast_15_transit_
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":225
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":227
  *
  *
  * cdef inline bint _can_use_direct_crossing_c(int planet, int flags) noexcept nogil:             # <<<<<<<<<<<<<<
@@ -5046,7 +5066,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   int __pyx_t_1;
   int __pyx_t_2;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":226
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":228
  *
  * cdef inline bint _can_use_direct_crossing_c(int planet, int flags) noexcept nogil:
  * 	if planet != _SUN_ID and planet != _MOON_ID:             # <<<<<<<<<<<<<<
@@ -5064,7 +5084,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   __pyx_L4_bool_binop_done:;
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":227
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":229
  * cdef inline bint _can_use_direct_crossing_c(int planet, int flags) noexcept nogil:
  * 	if planet != _SUN_ID and planet != _MOON_ID:
  * 		return False             # <<<<<<<<<<<<<<
@@ -5074,7 +5094,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
     __pyx_r = 0;
     goto __pyx_L0;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":226
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":228
  *
  * cdef inline bint _can_use_direct_crossing_c(int planet, int flags) noexcept nogil:
  * 	if planet != _SUN_ID and planet != _MOON_ID:             # <<<<<<<<<<<<<<
@@ -5083,7 +5103,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":228
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":230
  * 	if planet != _SUN_ID and planet != _MOON_ID:
  * 		return False
  * 	return (flags & _DIRECT_UNSUPPORTED_FLAGS) == 0             # <<<<<<<<<<<<<<
@@ -5093,7 +5113,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   __pyx_r = ((__pyx_v_flags & __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__DIRECT_UNSUPPORTED_FLAGS) == 0);
   goto __pyx_L0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":225
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":227
  *
  *
  * cdef inline bint _can_use_direct_crossing_c(int planet, int flags) noexcept nogil:             # <<<<<<<<<<<<<<
@@ -5106,7 +5126,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":231
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":233
  *
  *
  * cdef double _direct_cross_ut_c(             # <<<<<<<<<<<<<<
@@ -5135,7 +5155,7 @@ static double __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__direct
   PyGILState_STATE __pyx_gilstate_save;
   __Pyx_RefNannySetupContext("_direct_cross_ut_c", 1);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":239
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":241
  * 	cdef char serr[256]
  * 	cdef double result
  * 	memset(serr, 0, sizeof(serr))             # <<<<<<<<<<<<<<
@@ -5144,7 +5164,7 @@ static double __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__direct
 */
   (void)(memset(__pyx_v_serr, 0, (sizeof(__pyx_v_serr))));
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":240
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":242
  * 	cdef double result
  * 	memset(serr, 0, sizeof(serr))
  * 	if planet == _MOON_ID:             # <<<<<<<<<<<<<<
@@ -5154,7 +5174,7 @@ static double __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__direct
   __pyx_t_1 = (__pyx_v_planet == __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__MOON_ID);
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":241
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":243
  * 	memset(serr, 0, sizeof(serr))
  * 	if planet == _MOON_ID:
  * 		result = swe_mooncross_ut(target_deg, jd_ut, flags | _SWIEPH_FLAG, serr)             # <<<<<<<<<<<<<<
@@ -5163,7 +5183,7 @@ static double __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__direct
 */
     __pyx_v_result = swe_mooncross_ut(__pyx_v_target_deg, __pyx_v_jd_ut, (__pyx_v_flags | __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__SWIEPH_FLAG), __pyx_v_serr);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":240
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":242
  * 	cdef double result
  * 	memset(serr, 0, sizeof(serr))
  * 	if planet == _MOON_ID:             # <<<<<<<<<<<<<<
@@ -5173,7 +5193,7 @@ static double __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__direct
     goto __pyx_L3;
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":243
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":245
  * 		result = swe_mooncross_ut(target_deg, jd_ut, flags | _SWIEPH_FLAG, serr)
  * 	else:
  * 		result = swe_solcross_ut(target_deg, jd_ut, flags | _SWIEPH_FLAG, serr)             # <<<<<<<<<<<<<<
@@ -5185,7 +5205,7 @@ static double __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__direct
   }
   __pyx_L3:;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":244
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":246
  * 	else:
  * 		result = swe_solcross_ut(target_deg, jd_ut, flags | _SWIEPH_FLAG, serr)
  * 	if result < 0.0:             # <<<<<<<<<<<<<<
@@ -5195,7 +5215,7 @@ static double __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__direct
   __pyx_t_1 = (__pyx_v_result < 0.0);
   if (unlikely(__pyx_t_1)) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":245
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":247
  * 		result = swe_solcross_ut(target_deg, jd_ut, flags | _SWIEPH_FLAG, serr)
  * 	if result < 0.0:
  * 		with gil:             # <<<<<<<<<<<<<<
@@ -5206,7 +5226,7 @@ static double __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__direct
         PyGILState_STATE __pyx_gilstate_save = __Pyx_PyGILState_Ensure();
         /*try:*/ {
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":246
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":248
  * 	if result < 0.0:
  * 		with gil:
  * 			raise RuntimeError(f"Swiss Ephemeris returned no crossing data for planet={planet} target={target_deg} jd={jd_ut}: {(<bytes>serr).decode('utf-8', 'ignore')!r}")             # <<<<<<<<<<<<<<
@@ -5214,28 +5234,28 @@ static double __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__direct
  *
 */
           __pyx_t_3 = NULL;
-          __pyx_t_4 = __Pyx_PyUnicode_From_int(__pyx_v_planet, 0, ' ', 'd'); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 246, __pyx_L6_error)
+          __pyx_t_4 = __Pyx_PyUnicode_From_int(__pyx_v_planet, 0, ' ', 'd'); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 248, __pyx_L6_error)
           __Pyx_GOTREF(__pyx_t_4);
-          __pyx_t_5 = PyFloat_FromDouble(__pyx_v_target_deg); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 246, __pyx_L6_error)
+          __pyx_t_5 = PyFloat_FromDouble(__pyx_v_target_deg); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 248, __pyx_L6_error)
           __Pyx_GOTREF(__pyx_t_5);
-          __pyx_t_6 = __Pyx_PyObject_FormatSimple(__pyx_t_5, __pyx_mstate_global->__pyx_empty_unicode); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 246, __pyx_L6_error)
+          __pyx_t_6 = __Pyx_PyObject_FormatSimple(__pyx_t_5, __pyx_mstate_global->__pyx_empty_unicode); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 248, __pyx_L6_error)
           __Pyx_GOTREF(__pyx_t_6);
           __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-          __pyx_t_5 = PyFloat_FromDouble(__pyx_v_jd_ut); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 246, __pyx_L6_error)
+          __pyx_t_5 = PyFloat_FromDouble(__pyx_v_jd_ut); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 248, __pyx_L6_error)
           __Pyx_GOTREF(__pyx_t_5);
-          __pyx_t_7 = __Pyx_PyObject_FormatSimple(__pyx_t_5, __pyx_mstate_global->__pyx_empty_unicode); if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 246, __pyx_L6_error)
+          __pyx_t_7 = __Pyx_PyObject_FormatSimple(__pyx_t_5, __pyx_mstate_global->__pyx_empty_unicode); if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 248, __pyx_L6_error)
           __Pyx_GOTREF(__pyx_t_7);
           __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-          __pyx_t_5 = __Pyx_PyBytes_FromString(__pyx_v_serr); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 246, __pyx_L6_error)
+          __pyx_t_5 = __Pyx_PyBytes_FromString(__pyx_v_serr); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 248, __pyx_L6_error)
           __Pyx_GOTREF(__pyx_t_5);
           if (unlikely(__pyx_t_5 == Py_None)) {
             PyErr_Format(PyExc_AttributeError, "'NoneType' object has no attribute '%.30s'", "decode");
-            __PYX_ERR(0, 246, __pyx_L6_error)
+            __PYX_ERR(0, 248, __pyx_L6_error)
           }
-          __pyx_t_8 = __Pyx_decode_bytes(((PyObject*)__pyx_t_5), 0, PY_SSIZE_T_MAX, NULL, __pyx_k_ignore, PyUnicode_DecodeUTF8); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 246, __pyx_L6_error)
+          __pyx_t_8 = __Pyx_decode_bytes(((PyObject*)__pyx_t_5), 0, PY_SSIZE_T_MAX, NULL, __pyx_k_ignore, PyUnicode_DecodeUTF8); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 248, __pyx_L6_error)
           __Pyx_GOTREF(__pyx_t_8);
           __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-          __pyx_t_5 = __Pyx_PyObject_FormatSimpleAndDecref(PyObject_Repr(__pyx_t_8), __pyx_mstate_global->__pyx_empty_unicode); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 246, __pyx_L6_error)
+          __pyx_t_5 = __Pyx_PyObject_FormatSimpleAndDecref(PyObject_Repr(__pyx_t_8), __pyx_mstate_global->__pyx_empty_unicode); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 248, __pyx_L6_error)
           __Pyx_GOTREF(__pyx_t_5);
           __Pyx_DECREF(__pyx_t_8); __pyx_t_8 = 0;
           __pyx_t_9[0] = __pyx_mstate_global->__pyx_kp_u_Swiss_Ephemeris_returned_no_cros;
@@ -5247,7 +5267,7 @@ static double __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__direct
           __pyx_t_9[6] = __pyx_mstate_global->__pyx_kp_u_;
           __pyx_t_9[7] = __pyx_t_5;
           __pyx_t_8 = __Pyx_PyUnicode_Join(__pyx_t_9, 8, 53 + __Pyx_PyUnicode_GET_LENGTH(__pyx_t_4) + 8 + __Pyx_PyUnicode_GET_LENGTH(__pyx_t_6) + 4 + __Pyx_PyUnicode_GET_LENGTH(__pyx_t_7) + 2 + __Pyx_PyUnicode_GET_LENGTH(__pyx_t_5), 127 | __Pyx_PyUnicode_MAX_CHAR_VALUE(__pyx_t_6) | __Pyx_PyUnicode_MAX_CHAR_VALUE(__pyx_t_7) | __Pyx_PyUnicode_MAX_CHAR_VALUE(__pyx_t_5));
-          if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 246, __pyx_L6_error)
+          if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 248, __pyx_L6_error)
           __Pyx_GOTREF(__pyx_t_8);
           __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
           __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
@@ -5259,15 +5279,15 @@ static double __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__direct
             __pyx_t_2 = __Pyx_PyObject_FastCall((PyObject*)(((PyTypeObject*)PyExc_RuntimeError)), __pyx_callargs+__pyx_t_10, (2-__pyx_t_10) | (__pyx_t_10*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
             __Pyx_XDECREF(__pyx_t_3); __pyx_t_3 = 0;
             __Pyx_DECREF(__pyx_t_8); __pyx_t_8 = 0;
-            if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 246, __pyx_L6_error)
+            if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 248, __pyx_L6_error)
             __Pyx_GOTREF(__pyx_t_2);
           }
           __Pyx_Raise(__pyx_t_2, 0, 0, 0);
           __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
-          __PYX_ERR(0, 246, __pyx_L6_error)
+          __PYX_ERR(0, 248, __pyx_L6_error)
         }
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":245
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":247
  * 		result = swe_solcross_ut(target_deg, jd_ut, flags | _SWIEPH_FLAG, serr)
  * 	if result < 0.0:
  * 		with gil:             # <<<<<<<<<<<<<<
@@ -5282,7 +5302,7 @@ static double __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__direct
         }
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":244
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":246
  * 	else:
  * 		result = swe_solcross_ut(target_deg, jd_ut, flags | _SWIEPH_FLAG, serr)
  * 	if result < 0.0:             # <<<<<<<<<<<<<<
@@ -5291,7 +5311,7 @@ static double __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__direct
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":247
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":249
  * 		with gil:
  * 			raise RuntimeError(f"Swiss Ephemeris returned no crossing data for planet={planet} target={target_deg} jd={jd_ut}: {(<bytes>serr).decode('utf-8', 'ignore')!r}")
  * 	return result             # <<<<<<<<<<<<<<
@@ -5301,7 +5321,7 @@ static double __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__direct
   __pyx_r = __pyx_v_result;
   goto __pyx_L0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":231
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":233
  *
  *
  * cdef double _direct_cross_ut_c(             # <<<<<<<<<<<<<<
@@ -5327,7 +5347,7 @@ static double __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__direct
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":250
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":252
  *
  *
  * cdef int _eval_lon_speed(             # <<<<<<<<<<<<<<
@@ -5356,7 +5376,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_
   PyGILState_STATE __pyx_gilstate_save;
   __Pyx_RefNannySetupContext("_eval_lon_speed", 1);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":260
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":262
  * 	cdef char serr[256]
  * 	cdef int retflag
  * 	memset(serr, 0, sizeof(serr))             # <<<<<<<<<<<<<<
@@ -5365,7 +5385,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_
 */
   (void)(memset(__pyx_v_serr, 0, (sizeof(__pyx_v_serr))));
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":261
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":263
  * 	cdef int retflag
  * 	memset(serr, 0, sizeof(serr))
  * 	retflag = swe_calc_ut(jd_ut, planet, flags | _SWIEPH_FLAG | _SPEED_FLAG, xx, serr)             # <<<<<<<<<<<<<<
@@ -5374,7 +5394,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_
 */
   __pyx_v_retflag = swe_calc_ut(__pyx_v_jd_ut, __pyx_v_planet, ((__pyx_v_flags | __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__SWIEPH_FLAG) | __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__SPEED_FLAG), __pyx_v_xx, __pyx_v_serr);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":262
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":264
  * 	memset(serr, 0, sizeof(serr))
  * 	retflag = swe_calc_ut(jd_ut, planet, flags | _SWIEPH_FLAG | _SPEED_FLAG, xx, serr)
  * 	if retflag < 0:             # <<<<<<<<<<<<<<
@@ -5384,7 +5404,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_
   __pyx_t_1 = (__pyx_v_retflag < 0);
   if (unlikely(__pyx_t_1)) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":263
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":265
  * 	retflag = swe_calc_ut(jd_ut, planet, flags | _SWIEPH_FLAG | _SPEED_FLAG, xx, serr)
  * 	if retflag < 0:
  * 		with gil:             # <<<<<<<<<<<<<<
@@ -5395,7 +5415,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_
         PyGILState_STATE __pyx_gilstate_save = __Pyx_PyGILState_Ensure();
         /*try:*/ {
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":264
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":266
  * 	if retflag < 0:
  * 		with gil:
  * 			raise RuntimeError(f"Swiss Ephemeris returned no longitude data for planet={planet} jd={jd_ut}: {(<bytes>serr).decode('utf-8', 'ignore')!r}")             # <<<<<<<<<<<<<<
@@ -5403,23 +5423,23 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_
  * 	speed[0] = xx[3]
 */
           __pyx_t_3 = NULL;
-          __pyx_t_4 = __Pyx_PyUnicode_From_int(__pyx_v_planet, 0, ' ', 'd'); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 264, __pyx_L5_error)
+          __pyx_t_4 = __Pyx_PyUnicode_From_int(__pyx_v_planet, 0, ' ', 'd'); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 266, __pyx_L5_error)
           __Pyx_GOTREF(__pyx_t_4);
-          __pyx_t_5 = PyFloat_FromDouble(__pyx_v_jd_ut); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 264, __pyx_L5_error)
+          __pyx_t_5 = PyFloat_FromDouble(__pyx_v_jd_ut); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 266, __pyx_L5_error)
           __Pyx_GOTREF(__pyx_t_5);
-          __pyx_t_6 = __Pyx_PyObject_FormatSimple(__pyx_t_5, __pyx_mstate_global->__pyx_empty_unicode); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 264, __pyx_L5_error)
+          __pyx_t_6 = __Pyx_PyObject_FormatSimple(__pyx_t_5, __pyx_mstate_global->__pyx_empty_unicode); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 266, __pyx_L5_error)
           __Pyx_GOTREF(__pyx_t_6);
           __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-          __pyx_t_5 = __Pyx_PyBytes_FromString(__pyx_v_serr); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 264, __pyx_L5_error)
+          __pyx_t_5 = __Pyx_PyBytes_FromString(__pyx_v_serr); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 266, __pyx_L5_error)
           __Pyx_GOTREF(__pyx_t_5);
           if (unlikely(__pyx_t_5 == Py_None)) {
             PyErr_Format(PyExc_AttributeError, "'NoneType' object has no attribute '%.30s'", "decode");
-            __PYX_ERR(0, 264, __pyx_L5_error)
+            __PYX_ERR(0, 266, __pyx_L5_error)
           }
-          __pyx_t_7 = __Pyx_decode_bytes(((PyObject*)__pyx_t_5), 0, PY_SSIZE_T_MAX, NULL, __pyx_k_ignore, PyUnicode_DecodeUTF8); if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 264, __pyx_L5_error)
+          __pyx_t_7 = __Pyx_decode_bytes(((PyObject*)__pyx_t_5), 0, PY_SSIZE_T_MAX, NULL, __pyx_k_ignore, PyUnicode_DecodeUTF8); if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 266, __pyx_L5_error)
           __Pyx_GOTREF(__pyx_t_7);
           __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-          __pyx_t_5 = __Pyx_PyObject_FormatSimpleAndDecref(PyObject_Repr(__pyx_t_7), __pyx_mstate_global->__pyx_empty_unicode); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 264, __pyx_L5_error)
+          __pyx_t_5 = __Pyx_PyObject_FormatSimpleAndDecref(PyObject_Repr(__pyx_t_7), __pyx_mstate_global->__pyx_empty_unicode); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 266, __pyx_L5_error)
           __Pyx_GOTREF(__pyx_t_5);
           __Pyx_DECREF(__pyx_t_7); __pyx_t_7 = 0;
           __pyx_t_8[0] = __pyx_mstate_global->__pyx_kp_u_Swiss_Ephemeris_returned_no_long;
@@ -5429,7 +5449,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_
           __pyx_t_8[4] = __pyx_mstate_global->__pyx_kp_u_;
           __pyx_t_8[5] = __pyx_t_5;
           __pyx_t_7 = __Pyx_PyUnicode_Join(__pyx_t_8, 6, 54 + __Pyx_PyUnicode_GET_LENGTH(__pyx_t_4) + 4 + __Pyx_PyUnicode_GET_LENGTH(__pyx_t_6) + 2 + __Pyx_PyUnicode_GET_LENGTH(__pyx_t_5), 127 | __Pyx_PyUnicode_MAX_CHAR_VALUE(__pyx_t_6) | __Pyx_PyUnicode_MAX_CHAR_VALUE(__pyx_t_5));
-          if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 264, __pyx_L5_error)
+          if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 266, __pyx_L5_error)
           __Pyx_GOTREF(__pyx_t_7);
           __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
           __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
@@ -5440,15 +5460,15 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_
             __pyx_t_2 = __Pyx_PyObject_FastCall((PyObject*)(((PyTypeObject*)PyExc_RuntimeError)), __pyx_callargs+__pyx_t_9, (2-__pyx_t_9) | (__pyx_t_9*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
             __Pyx_XDECREF(__pyx_t_3); __pyx_t_3 = 0;
             __Pyx_DECREF(__pyx_t_7); __pyx_t_7 = 0;
-            if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 264, __pyx_L5_error)
+            if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 266, __pyx_L5_error)
             __Pyx_GOTREF(__pyx_t_2);
           }
           __Pyx_Raise(__pyx_t_2, 0, 0, 0);
           __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
-          __PYX_ERR(0, 264, __pyx_L5_error)
+          __PYX_ERR(0, 266, __pyx_L5_error)
         }
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":263
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":265
  * 	retflag = swe_calc_ut(jd_ut, planet, flags | _SWIEPH_FLAG | _SPEED_FLAG, xx, serr)
  * 	if retflag < 0:
  * 		with gil:             # <<<<<<<<<<<<<<
@@ -5463,7 +5483,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_
         }
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":262
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":264
  * 	memset(serr, 0, sizeof(serr))
  * 	retflag = swe_calc_ut(jd_ut, planet, flags | _SWIEPH_FLAG | _SPEED_FLAG, xx, serr)
  * 	if retflag < 0:             # <<<<<<<<<<<<<<
@@ -5472,7 +5492,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":265
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":267
  * 		with gil:
  * 			raise RuntimeError(f"Swiss Ephemeris returned no longitude data for planet={planet} jd={jd_ut}: {(<bytes>serr).decode('utf-8', 'ignore')!r}")
  * 	lon[0] = xx[0]             # <<<<<<<<<<<<<<
@@ -5481,7 +5501,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_
 */
   (__pyx_v_lon[0]) = (__pyx_v_xx[0]);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":266
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":268
  * 			raise RuntimeError(f"Swiss Ephemeris returned no longitude data for planet={planet} jd={jd_ut}: {(<bytes>serr).decode('utf-8', 'ignore')!r}")
  * 	lon[0] = xx[0]
  * 	speed[0] = xx[3]             # <<<<<<<<<<<<<<
@@ -5490,7 +5510,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_
 */
   (__pyx_v_speed[0]) = (__pyx_v_xx[3]);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":267
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":269
  * 	lon[0] = xx[0]
  * 	speed[0] = xx[3]
  * 	return 0             # <<<<<<<<<<<<<<
@@ -5500,7 +5520,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_
   __pyx_r = 0;
   goto __pyx_L0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":250
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":252
  *
  *
  * cdef int _eval_lon_speed(             # <<<<<<<<<<<<<<
@@ -5525,7 +5545,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":270
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":272
  *
  *
  * cdef int _eval_body_lon_speed(             # <<<<<<<<<<<<<<
@@ -5544,7 +5564,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_body
   int __pyx_clineno = 0;
   PyGILState_STATE __pyx_gilstate_save;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":277
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":279
  * 	double* speed,
  * ) except -1 nogil:
  * 	cdef int planet = body_code             # <<<<<<<<<<<<<<
@@ -5553,7 +5573,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_body
 */
   __pyx_v_planet = __pyx_v_body_code;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":278
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":280
  * ) except -1 nogil:
  * 	cdef int planet = body_code
  * 	cdef bint is_desc = False             # <<<<<<<<<<<<<<
@@ -5562,7 +5582,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_body
 */
   __pyx_v_is_desc = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":279
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":281
  * 	cdef int planet = body_code
  * 	cdef bint is_desc = False
  * 	if planet >= 1000:             # <<<<<<<<<<<<<<
@@ -5572,7 +5592,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_body
   __pyx_t_1 = (__pyx_v_planet >= 0x3E8);
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":280
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":282
  * 	cdef bint is_desc = False
  * 	if planet >= 1000:
  * 		planet -= 1000             # <<<<<<<<<<<<<<
@@ -5581,7 +5601,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_body
 */
     __pyx_v_planet = (__pyx_v_planet - 0x3E8);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":281
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":283
  * 	if planet >= 1000:
  * 		planet -= 1000
  * 		is_desc = True             # <<<<<<<<<<<<<<
@@ -5590,7 +5610,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_body
 */
     __pyx_v_is_desc = 1;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":279
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":281
  * 	cdef int planet = body_code
  * 	cdef bint is_desc = False
  * 	if planet >= 1000:             # <<<<<<<<<<<<<<
@@ -5599,16 +5619,16 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_body
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":282
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":284
  * 		planet -= 1000
  * 		is_desc = True
  * 	_eval_lon_speed(jd_ut, planet, flags, lon, speed)             # <<<<<<<<<<<<<<
  * 	if is_desc:
  * 		lon[0] = _wrap360_c(lon[0] + 180.0)
 */
-  __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_speed(__pyx_v_jd_ut, __pyx_v_planet, __pyx_v_flags, __pyx_v_lon, __pyx_v_speed); if (unlikely(__pyx_t_2 == ((int)-1))) __PYX_ERR(0, 282, __pyx_L1_error)
+  __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_speed(__pyx_v_jd_ut, __pyx_v_planet, __pyx_v_flags, __pyx_v_lon, __pyx_v_speed); if (unlikely(__pyx_t_2 == ((int)-1))) __PYX_ERR(0, 284, __pyx_L1_error)
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":283
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":285
  * 		is_desc = True
  * 	_eval_lon_speed(jd_ut, planet, flags, lon, speed)
  * 	if is_desc:             # <<<<<<<<<<<<<<
@@ -5617,7 +5637,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_body
 */
   if (__pyx_v_is_desc) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":284
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":286
  * 	_eval_lon_speed(jd_ut, planet, flags, lon, speed)
  * 	if is_desc:
  * 		lon[0] = _wrap360_c(lon[0] + 180.0)             # <<<<<<<<<<<<<<
@@ -5626,7 +5646,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_body
 */
     (__pyx_v_lon[0]) = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__wrap360_c(((__pyx_v_lon[0]) + 180.0));
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":283
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":285
  * 		is_desc = True
  * 	_eval_lon_speed(jd_ut, planet, flags, lon, speed)
  * 	if is_desc:             # <<<<<<<<<<<<<<
@@ -5635,7 +5655,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_body
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":285
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":287
  * 	if is_desc:
  * 		lon[0] = _wrap360_c(lon[0] + 180.0)
  * 	return 0             # <<<<<<<<<<<<<<
@@ -5645,7 +5665,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_body
   __pyx_r = 0;
   goto __pyx_L0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":270
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":272
  *
  *
  * cdef int _eval_body_lon_speed(             # <<<<<<<<<<<<<<
@@ -5663,7 +5683,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_body
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":288
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":290
  *
  *
  * cdef int _ensure_capacity(             # <<<<<<<<<<<<<<
@@ -5686,7 +5706,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__ensure_ca
   PyGILState_STATE __pyx_gilstate_save;
   __Pyx_RefNannySetupContext("_ensure_capacity", 1);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":295
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":297
  * 	cdef size_t new_capacity
  * 	cdef void* new_ptr
  * 	if needed <= capacity_ptr[0]:             # <<<<<<<<<<<<<<
@@ -5696,7 +5716,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__ensure_ca
   __pyx_t_1 = (__pyx_v_needed <= (__pyx_v_capacity_ptr[0]));
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":296
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":298
  * 	cdef void* new_ptr
  * 	if needed <= capacity_ptr[0]:
  * 		return 0             # <<<<<<<<<<<<<<
@@ -5706,7 +5726,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__ensure_ca
     __pyx_r = 0;
     goto __pyx_L0;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":295
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":297
  * 	cdef size_t new_capacity
  * 	cdef void* new_ptr
  * 	if needed <= capacity_ptr[0]:             # <<<<<<<<<<<<<<
@@ -5715,7 +5735,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__ensure_ca
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":297
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":299
  * 	if needed <= capacity_ptr[0]:
  * 		return 0
  * 	new_capacity = 16 if capacity_ptr[0] == 0 else capacity_ptr[0] * 2             # <<<<<<<<<<<<<<
@@ -5730,7 +5750,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__ensure_ca
   }
   __pyx_v_new_capacity = __pyx_t_2;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":298
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":300
  * 		return 0
  * 	new_capacity = 16 if capacity_ptr[0] == 0 else capacity_ptr[0] * 2
  * 	while new_capacity < needed:             # <<<<<<<<<<<<<<
@@ -5741,7 +5761,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__ensure_ca
     __pyx_t_1 = (__pyx_v_new_capacity < __pyx_v_needed);
     if (!__pyx_t_1) break;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":299
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":301
  * 	new_capacity = 16 if capacity_ptr[0] == 0 else capacity_ptr[0] * 2
  * 	while new_capacity < needed:
  * 		new_capacity *= 2             # <<<<<<<<<<<<<<
@@ -5751,7 +5771,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__ensure_ca
     __pyx_v_new_capacity = (__pyx_v_new_capacity * 2);
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":300
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":302
  * 	while new_capacity < needed:
  * 		new_capacity *= 2
  * 	new_ptr = realloc(hits_ptr[0], new_capacity * cython.sizeof(CHit))             # <<<<<<<<<<<<<<
@@ -5760,7 +5780,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__ensure_ca
 */
   __pyx_v_new_ptr = realloc((__pyx_v_hits_ptr[0]), (__pyx_v_new_capacity * (sizeof(__pyx_t_5aries_9astrology_12transit_fast_6_types_CHit))));
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":301
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":303
  * 		new_capacity *= 2
  * 	new_ptr = realloc(hits_ptr[0], new_capacity * cython.sizeof(CHit))
  * 	if new_ptr == NULL:             # <<<<<<<<<<<<<<
@@ -5770,7 +5790,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__ensure_ca
   __pyx_t_1 = (__pyx_v_new_ptr == NULL);
   if (unlikely(__pyx_t_1)) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":302
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":304
  * 	new_ptr = realloc(hits_ptr[0], new_capacity * cython.sizeof(CHit))
  * 	if new_ptr == NULL:
  * 		with gil:             # <<<<<<<<<<<<<<
@@ -5781,7 +5801,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__ensure_ca
         PyGILState_STATE __pyx_gilstate_save = __Pyx_PyGILState_Ensure();
         /*try:*/ {
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":303
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":305
  * 	if new_ptr == NULL:
  * 		with gil:
  * 			raise MemoryError("Could not grow transit hit buffer")             # <<<<<<<<<<<<<<
@@ -5794,15 +5814,15 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__ensure_ca
             PyObject *__pyx_callargs[2] = {__pyx_t_4, __pyx_mstate_global->__pyx_kp_u_Could_not_grow_transit_hit_buffe};
             __pyx_t_3 = __Pyx_PyObject_FastCall((PyObject*)(((PyTypeObject*)PyExc_MemoryError)), __pyx_callargs+__pyx_t_2, (2-__pyx_t_2) | (__pyx_t_2*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
             __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
-            if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 303, __pyx_L8_error)
+            if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 305, __pyx_L8_error)
             __Pyx_GOTREF(__pyx_t_3);
           }
           __Pyx_Raise(__pyx_t_3, 0, 0, 0);
           __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
-          __PYX_ERR(0, 303, __pyx_L8_error)
+          __PYX_ERR(0, 305, __pyx_L8_error)
         }
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":302
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":304
  * 	new_ptr = realloc(hits_ptr[0], new_capacity * cython.sizeof(CHit))
  * 	if new_ptr == NULL:
  * 		with gil:             # <<<<<<<<<<<<<<
@@ -5817,7 +5837,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__ensure_ca
         }
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":301
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":303
  * 		new_capacity *= 2
  * 	new_ptr = realloc(hits_ptr[0], new_capacity * cython.sizeof(CHit))
  * 	if new_ptr == NULL:             # <<<<<<<<<<<<<<
@@ -5826,7 +5846,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__ensure_ca
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":304
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":306
  * 		with gil:
  * 			raise MemoryError("Could not grow transit hit buffer")
  * 	hits_ptr[0] = <CHit*>new_ptr             # <<<<<<<<<<<<<<
@@ -5835,7 +5855,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__ensure_ca
 */
   (__pyx_v_hits_ptr[0]) = ((__pyx_t_5aries_9astrology_12transit_fast_6_types_CHit *)__pyx_v_new_ptr);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":305
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":307
  * 			raise MemoryError("Could not grow transit hit buffer")
  * 	hits_ptr[0] = <CHit*>new_ptr
  * 	capacity_ptr[0] = new_capacity             # <<<<<<<<<<<<<<
@@ -5844,7 +5864,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__ensure_ca
 */
   (__pyx_v_capacity_ptr[0]) = __pyx_v_new_capacity;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":306
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":308
  * 	hits_ptr[0] = <CHit*>new_ptr
  * 	capacity_ptr[0] = new_capacity
  * 	return 0             # <<<<<<<<<<<<<<
@@ -5854,7 +5874,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__ensure_ca
   __pyx_r = 0;
   goto __pyx_L0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":288
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":290
  *
  *
  * cdef int _ensure_capacity(             # <<<<<<<<<<<<<<
@@ -5875,7 +5895,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__ensure_ca
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":309
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":311
  *
  *
  * cdef int _append_unique_c(             # <<<<<<<<<<<<<<
@@ -5896,7 +5916,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
   int __pyx_clineno = 0;
   PyGILState_STATE __pyx_gilstate_save;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":321
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":323
  * 	int retrograde,
  * ) except -1 nogil:
  * 	cdef size_t i = count_ptr[0]             # <<<<<<<<<<<<<<
@@ -5905,7 +5925,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
 */
   __pyx_v_i = (__pyx_v_count_ptr[0]);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":322
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":324
  * ) except -1 nogil:
  * 	cdef size_t i = count_ptr[0]
  * 	cdef CHit* hits = hits_ptr[0]             # <<<<<<<<<<<<<<
@@ -5914,7 +5934,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
 */
   __pyx_v_hits = (__pyx_v_hits_ptr[0]);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":323
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":325
  * 	cdef size_t i = count_ptr[0]
  * 	cdef CHit* hits = hits_ptr[0]
  * 	while i > 0:             # <<<<<<<<<<<<<<
@@ -5925,7 +5945,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
     __pyx_t_1 = (__pyx_v_i > 0);
     if (!__pyx_t_1) break;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":324
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":326
  * 	cdef CHit* hits = hits_ptr[0]
  * 	while i > 0:
  * 		i -= 1             # <<<<<<<<<<<<<<
@@ -5934,7 +5954,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
 */
     __pyx_v_i = (__pyx_v_i - 1);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":325
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":327
  * 	while i > 0:
  * 		i -= 1
  * 		if hits[i].planet != planet:             # <<<<<<<<<<<<<<
@@ -5944,7 +5964,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
     __pyx_t_1 = ((__pyx_v_hits[__pyx_v_i]).planet != __pyx_v_planet);
     if (__pyx_t_1) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":326
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":328
  * 		i -= 1
  * 		if hits[i].planet != planet:
  * 			break             # <<<<<<<<<<<<<<
@@ -5953,7 +5973,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
 */
       goto __pyx_L4_break;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":325
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":327
  * 	while i > 0:
  * 		i -= 1
  * 		if hits[i].planet != planet:             # <<<<<<<<<<<<<<
@@ -5962,7 +5982,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
 */
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":327
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":329
  * 		if hits[i].planet != planet:
  * 			break
  * 		if hits[i].jd_ut + _DEDUP_EPS_DAYS < jd_ut:             # <<<<<<<<<<<<<<
@@ -5972,7 +5992,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
     __pyx_t_1 = (((__pyx_v_hits[__pyx_v_i]).jd_ut + __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__DEDUP_EPS_DAYS) < __pyx_v_jd_ut);
     if (__pyx_t_1) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":328
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":330
  * 			break
  * 		if hits[i].jd_ut + _DEDUP_EPS_DAYS < jd_ut:
  * 			break             # <<<<<<<<<<<<<<
@@ -5981,7 +6001,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
 */
       goto __pyx_L4_break;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":327
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":329
  * 		if hits[i].planet != planet:
  * 			break
  * 		if hits[i].jd_ut + _DEDUP_EPS_DAYS < jd_ut:             # <<<<<<<<<<<<<<
@@ -5990,7 +6010,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
 */
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":330
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":332
  * 			break
  * 		if (
  * 			fabs(hits[i].jd_ut - jd_ut) < _DEDUP_EPS_DAYS             # <<<<<<<<<<<<<<
@@ -6004,7 +6024,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
       goto __pyx_L8_bool_binop_done;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":331
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":333
  * 		if (
  * 			fabs(hits[i].jd_ut - jd_ut) < _DEDUP_EPS_DAYS
  * 			and hits[i].planet == planet             # <<<<<<<<<<<<<<
@@ -6018,7 +6038,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
       goto __pyx_L8_bool_binop_done;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":332
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":334
  * 			fabs(hits[i].jd_ut - jd_ut) < _DEDUP_EPS_DAYS
  * 			and hits[i].planet == planet
  * 			and hits[i].hit_kind == hit_kind             # <<<<<<<<<<<<<<
@@ -6032,7 +6052,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
       goto __pyx_L8_bool_binop_done;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":333
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":335
  * 			and hits[i].planet == planet
  * 			and hits[i].hit_kind == hit_kind
  * 			and fabs(hits[i].target_deg - target_deg) < _DEFAULT_EPS_DEG             # <<<<<<<<<<<<<<
@@ -6046,7 +6066,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
       goto __pyx_L8_bool_binop_done;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":334
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":336
  * 			and hits[i].hit_kind == hit_kind
  * 			and fabs(hits[i].target_deg - target_deg) < _DEFAULT_EPS_DEG
  * 			and fabs(hits[i].aspect_deg - aspect_deg) < _DEFAULT_EPS_DEG             # <<<<<<<<<<<<<<
@@ -6057,7 +6077,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
     __pyx_t_1 = __pyx_t_2;
     __pyx_L8_bool_binop_done:;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":329
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":331
  * 		if hits[i].jd_ut + _DEDUP_EPS_DAYS < jd_ut:
  * 			break
  * 		if (             # <<<<<<<<<<<<<<
@@ -6066,7 +6086,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
 */
     if (__pyx_t_1) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":336
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":338
  * 			and fabs(hits[i].aspect_deg - aspect_deg) < _DEFAULT_EPS_DEG
  * 		):
  * 			return 0             # <<<<<<<<<<<<<<
@@ -6076,7 +6096,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
       __pyx_r = 0;
       goto __pyx_L0;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":329
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":331
  * 		if hits[i].jd_ut + _DEDUP_EPS_DAYS < jd_ut:
  * 			break
  * 		if (             # <<<<<<<<<<<<<<
@@ -6087,16 +6107,16 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
   }
   __pyx_L4_break:;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":337
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":339
  * 		):
  * 			return 0
  * 	_ensure_capacity(hits_ptr, capacity_ptr, count_ptr[0] + 1)             # <<<<<<<<<<<<<<
  * 	hits = hits_ptr[0]
  * 	hits[count_ptr[0]].jd_ut = jd_ut
 */
-  __pyx_t_3 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__ensure_capacity(__pyx_v_hits_ptr, __pyx_v_capacity_ptr, ((__pyx_v_count_ptr[0]) + 1)); if (unlikely(__pyx_t_3 == ((int)-1))) __PYX_ERR(0, 337, __pyx_L1_error)
+  __pyx_t_3 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__ensure_capacity(__pyx_v_hits_ptr, __pyx_v_capacity_ptr, ((__pyx_v_count_ptr[0]) + 1)); if (unlikely(__pyx_t_3 == ((int)-1))) __PYX_ERR(0, 339, __pyx_L1_error)
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":338
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":340
  * 			return 0
  * 	_ensure_capacity(hits_ptr, capacity_ptr, count_ptr[0] + 1)
  * 	hits = hits_ptr[0]             # <<<<<<<<<<<<<<
@@ -6105,7 +6125,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
 */
   __pyx_v_hits = (__pyx_v_hits_ptr[0]);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":339
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":341
  * 	_ensure_capacity(hits_ptr, capacity_ptr, count_ptr[0] + 1)
  * 	hits = hits_ptr[0]
  * 	hits[count_ptr[0]].jd_ut = jd_ut             # <<<<<<<<<<<<<<
@@ -6114,7 +6134,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
 */
   (__pyx_v_hits[(__pyx_v_count_ptr[0])]).jd_ut = __pyx_v_jd_ut;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":340
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":342
  * 	hits = hits_ptr[0]
  * 	hits[count_ptr[0]].jd_ut = jd_ut
  * 	hits[count_ptr[0]].planet = planet             # <<<<<<<<<<<<<<
@@ -6123,7 +6143,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
 */
   (__pyx_v_hits[(__pyx_v_count_ptr[0])]).planet = __pyx_v_planet;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":341
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":343
  * 	hits[count_ptr[0]].jd_ut = jd_ut
  * 	hits[count_ptr[0]].planet = planet
  * 	hits[count_ptr[0]].target_deg = target_deg             # <<<<<<<<<<<<<<
@@ -6132,7 +6152,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
 */
   (__pyx_v_hits[(__pyx_v_count_ptr[0])]).target_deg = __pyx_v_target_deg;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":342
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":344
  * 	hits[count_ptr[0]].planet = planet
  * 	hits[count_ptr[0]].target_deg = target_deg
  * 	hits[count_ptr[0]].aspect_deg = aspect_deg             # <<<<<<<<<<<<<<
@@ -6141,7 +6161,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
 */
   (__pyx_v_hits[(__pyx_v_count_ptr[0])]).aspect_deg = __pyx_v_aspect_deg;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":343
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":345
  * 	hits[count_ptr[0]].target_deg = target_deg
  * 	hits[count_ptr[0]].aspect_deg = aspect_deg
  * 	hits[count_ptr[0]].speed = speed             # <<<<<<<<<<<<<<
@@ -6150,7 +6170,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
 */
   (__pyx_v_hits[(__pyx_v_count_ptr[0])]).speed = __pyx_v_speed;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":344
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":346
  * 	hits[count_ptr[0]].aspect_deg = aspect_deg
  * 	hits[count_ptr[0]].speed = speed
  * 	hits[count_ptr[0]].retrograde = retrograde             # <<<<<<<<<<<<<<
@@ -6159,7 +6179,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
 */
   (__pyx_v_hits[(__pyx_v_count_ptr[0])]).retrograde = __pyx_v_retrograde;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":345
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":347
  * 	hits[count_ptr[0]].speed = speed
  * 	hits[count_ptr[0]].retrograde = retrograde
  * 	hits[count_ptr[0]].pass_index = 0             # <<<<<<<<<<<<<<
@@ -6168,7 +6188,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
 */
   (__pyx_v_hits[(__pyx_v_count_ptr[0])]).pass_index = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":346
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":348
  * 	hits[count_ptr[0]].retrograde = retrograde
  * 	hits[count_ptr[0]].pass_index = 0
  * 	hits[count_ptr[0]].hit_kind = hit_kind             # <<<<<<<<<<<<<<
@@ -6177,7 +6197,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
 */
   (__pyx_v_hits[(__pyx_v_count_ptr[0])]).hit_kind = __pyx_v_hit_kind;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":347
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":349
  * 	hits[count_ptr[0]].pass_index = 0
  * 	hits[count_ptr[0]].hit_kind = hit_kind
  * 	count_ptr[0] += 1             # <<<<<<<<<<<<<<
@@ -6187,7 +6207,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
   __pyx_t_4 = 0;
   (__pyx_v_count_ptr[__pyx_t_4]) = ((__pyx_v_count_ptr[__pyx_t_4]) + 1);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":348
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":350
  * 	hits[count_ptr[0]].hit_kind = hit_kind
  * 	count_ptr[0] += 1
  * 	return 0             # <<<<<<<<<<<<<<
@@ -6197,7 +6217,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
   __pyx_r = 0;
   goto __pyx_L0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":309
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":311
  *
  *
  * cdef int _append_unique_c(             # <<<<<<<<<<<<<<
@@ -6215,7 +6235,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_un
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":351
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":353
  *
  *
  * cdef int _refine_station_root_seeded_c(             # <<<<<<<<<<<<<<
@@ -6249,7 +6269,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
   int __pyx_clineno = 0;
   PyGILState_STATE __pyx_gilstate_save;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":363
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":365
  * 	double* result_speed,
  * ) except -1 nogil:
  * 	cdef double lo = jd_lo             # <<<<<<<<<<<<<<
@@ -6258,7 +6278,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
 */
   __pyx_v_lo = __pyx_v_jd_lo;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":364
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":366
  * ) except -1 nogil:
  * 	cdef double lo = jd_lo
  * 	cdef double hi = jd_hi             # <<<<<<<<<<<<<<
@@ -6267,7 +6287,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
 */
   __pyx_v_hi = __pyx_v_jd_hi;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":365
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":367
  * 	cdef double lo = jd_lo
  * 	cdef double hi = jd_hi
  * 	cdef double slo = speed_lo             # <<<<<<<<<<<<<<
@@ -6276,7 +6296,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
 */
   __pyx_v_slo = __pyx_v_speed_lo;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":366
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":368
  * 	cdef double hi = jd_hi
  * 	cdef double slo = speed_lo
  * 	cdef double shi = speed_hi             # <<<<<<<<<<<<<<
@@ -6285,7 +6305,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
 */
   __pyx_v_shi = __pyx_v_speed_hi;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":374
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":376
  * 	cdef double den
  * 	cdef int i
  * 	best_jd = lo if fabs(slo) <= fabs(shi) else hi             # <<<<<<<<<<<<<<
@@ -6300,7 +6320,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
   }
   __pyx_v_best_jd = __pyx_t_1;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":375
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":377
  * 	cdef int i
  * 	best_jd = lo if fabs(slo) <= fabs(shi) else hi
  * 	best_speed = slo if fabs(slo) <= fabs(shi) else shi             # <<<<<<<<<<<<<<
@@ -6315,7 +6335,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
   }
   __pyx_v_best_speed = __pyx_t_1;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":377
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":379
  * 	best_speed = slo if fabs(slo) <= fabs(shi) else shi
  *
  * 	for i in range(_BISECTION_MAX_ITERS):             # <<<<<<<<<<<<<<
@@ -6327,7 +6347,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
   for (__pyx_t_5 = 0; __pyx_t_5 < __pyx_t_4; __pyx_t_5+=1) {
     __pyx_v_i = __pyx_t_5;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":378
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":380
  *
  * 	for i in range(_BISECTION_MAX_ITERS):
  * 		if fabs(best_speed) <= eps_speed or (hi - lo) <= eps_days:             # <<<<<<<<<<<<<<
@@ -6345,7 +6365,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
     __pyx_L6_bool_binop_done:;
     if (__pyx_t_2) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":379
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":381
  * 	for i in range(_BISECTION_MAX_ITERS):
  * 		if fabs(best_speed) <= eps_speed or (hi - lo) <= eps_days:
  * 			break             # <<<<<<<<<<<<<<
@@ -6354,7 +6374,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
 */
       goto __pyx_L4_break;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":378
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":380
  *
  * 	for i in range(_BISECTION_MAX_ITERS):
  * 		if fabs(best_speed) <= eps_speed or (hi - lo) <= eps_days:             # <<<<<<<<<<<<<<
@@ -6363,7 +6383,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
 */
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":380
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":382
  * 		if fabs(best_speed) <= eps_speed or (hi - lo) <= eps_days:
  * 			break
  * 		if _crossed_zero_c(slo, shi):             # <<<<<<<<<<<<<<
@@ -6373,7 +6393,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
     __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__crossed_zero_c(__pyx_v_slo, __pyx_v_shi);
     if (__pyx_t_2) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":381
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":383
  * 			break
  * 		if _crossed_zero_c(slo, shi):
  * 			mid = (lo + hi) * 0.5             # <<<<<<<<<<<<<<
@@ -6382,7 +6402,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
 */
       __pyx_v_mid = ((__pyx_v_lo + __pyx_v_hi) * 0.5);
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":380
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":382
  * 		if fabs(best_speed) <= eps_speed or (hi - lo) <= eps_days:
  * 			break
  * 		if _crossed_zero_c(slo, shi):             # <<<<<<<<<<<<<<
@@ -6392,7 +6412,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
       goto __pyx_L8;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":383
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":385
  * 			mid = (lo + hi) * 0.5
  * 		else:
  * 			den = shi - slo             # <<<<<<<<<<<<<<
@@ -6402,7 +6422,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
     /*else*/ {
       __pyx_v_den = (__pyx_v_shi - __pyx_v_slo);
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":384
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":386
  * 		else:
  * 			den = shi - slo
  * 			mid = (lo + hi) * 0.5 if den == 0.0 else hi - shi * (hi - lo) / den             # <<<<<<<<<<<<<<
@@ -6418,13 +6438,13 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
           PyGILState_STATE __pyx_gilstate_save = __Pyx_PyGILState_Ensure();
           PyErr_SetString(PyExc_ZeroDivisionError, "float division");
           __Pyx_PyGILState_Release(__pyx_gilstate_save);
-          __PYX_ERR(0, 384, __pyx_L1_error)
+          __PYX_ERR(0, 386, __pyx_L1_error)
         }
         __pyx_t_1 = (__pyx_v_hi - (__pyx_t_7 / __pyx_v_den));
       }
       __pyx_v_mid = __pyx_t_1;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":385
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":387
  * 			den = shi - slo
  * 			mid = (lo + hi) * 0.5 if den == 0.0 else hi - shi * (hi - lo) / den
  * 			if mid <= lo or mid >= hi:             # <<<<<<<<<<<<<<
@@ -6442,7 +6462,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
       __pyx_L10_bool_binop_done:;
       if (__pyx_t_2) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":386
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":388
  * 			mid = (lo + hi) * 0.5 if den == 0.0 else hi - shi * (hi - lo) / den
  * 			if mid <= lo or mid >= hi:
  * 				mid = (lo + hi) * 0.5             # <<<<<<<<<<<<<<
@@ -6451,7 +6471,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
 */
         __pyx_v_mid = ((__pyx_v_lo + __pyx_v_hi) * 0.5);
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":385
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":387
  * 			den = shi - slo
  * 			mid = (lo + hi) * 0.5 if den == 0.0 else hi - shi * (hi - lo) / den
  * 			if mid <= lo or mid >= hi:             # <<<<<<<<<<<<<<
@@ -6462,16 +6482,16 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
     }
     __pyx_L8:;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":387
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":389
  * 			if mid <= lo or mid >= hi:
  * 				mid = (lo + hi) * 0.5
  * 		_eval_lon_speed(mid, planet, flags, &lon_tmp, &smid)             # <<<<<<<<<<<<<<
  * 		if fabs(smid) < fabs(best_speed):
  * 			best_jd = mid
 */
-    __pyx_t_8 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_speed(__pyx_v_mid, __pyx_v_planet, __pyx_v_flags, (&__pyx_v_lon_tmp), (&__pyx_v_smid)); if (unlikely(__pyx_t_8 == ((int)-1))) __PYX_ERR(0, 387, __pyx_L1_error)
+    __pyx_t_8 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_speed(__pyx_v_mid, __pyx_v_planet, __pyx_v_flags, (&__pyx_v_lon_tmp), (&__pyx_v_smid)); if (unlikely(__pyx_t_8 == ((int)-1))) __PYX_ERR(0, 389, __pyx_L1_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":388
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":390
  * 				mid = (lo + hi) * 0.5
  * 		_eval_lon_speed(mid, planet, flags, &lon_tmp, &smid)
  * 		if fabs(smid) < fabs(best_speed):             # <<<<<<<<<<<<<<
@@ -6481,7 +6501,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
     __pyx_t_2 = (fabs(__pyx_v_smid) < fabs(__pyx_v_best_speed));
     if (__pyx_t_2) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":389
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":391
  * 		_eval_lon_speed(mid, planet, flags, &lon_tmp, &smid)
  * 		if fabs(smid) < fabs(best_speed):
  * 			best_jd = mid             # <<<<<<<<<<<<<<
@@ -6490,7 +6510,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
 */
       __pyx_v_best_jd = __pyx_v_mid;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":390
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":392
  * 		if fabs(smid) < fabs(best_speed):
  * 			best_jd = mid
  * 			best_speed = smid             # <<<<<<<<<<<<<<
@@ -6499,7 +6519,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
 */
       __pyx_v_best_speed = __pyx_v_smid;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":388
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":390
  * 				mid = (lo + hi) * 0.5
  * 		_eval_lon_speed(mid, planet, flags, &lon_tmp, &smid)
  * 		if fabs(smid) < fabs(best_speed):             # <<<<<<<<<<<<<<
@@ -6508,7 +6528,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
 */
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":391
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":393
  * 			best_jd = mid
  * 			best_speed = smid
  * 		if fabs(smid) <= eps_speed:             # <<<<<<<<<<<<<<
@@ -6518,7 +6538,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
     __pyx_t_2 = (fabs(__pyx_v_smid) <= __pyx_v_eps_speed);
     if (__pyx_t_2) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":392
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":394
  * 			best_speed = smid
  * 		if fabs(smid) <= eps_speed:
  * 			result_jd[0] = mid             # <<<<<<<<<<<<<<
@@ -6527,7 +6547,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
 */
       (__pyx_v_result_jd[0]) = __pyx_v_mid;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":393
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":395
  * 		if fabs(smid) <= eps_speed:
  * 			result_jd[0] = mid
  * 			result_speed[0] = smid             # <<<<<<<<<<<<<<
@@ -6536,7 +6556,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
 */
       (__pyx_v_result_speed[0]) = __pyx_v_smid;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":394
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":396
  * 			result_jd[0] = mid
  * 			result_speed[0] = smid
  * 			return 0             # <<<<<<<<<<<<<<
@@ -6546,7 +6566,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
       __pyx_r = 0;
       goto __pyx_L0;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":391
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":393
  * 			best_jd = mid
  * 			best_speed = smid
  * 		if fabs(smid) <= eps_speed:             # <<<<<<<<<<<<<<
@@ -6555,7 +6575,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
 */
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":395
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":397
  * 			result_speed[0] = smid
  * 			return 0
  * 		if _crossed_zero_c(slo, smid):             # <<<<<<<<<<<<<<
@@ -6565,7 +6585,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
     __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__crossed_zero_c(__pyx_v_slo, __pyx_v_smid);
     if (__pyx_t_2) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":396
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":398
  * 			return 0
  * 		if _crossed_zero_c(slo, smid):
  * 			hi = mid             # <<<<<<<<<<<<<<
@@ -6574,7 +6594,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
 */
       __pyx_v_hi = __pyx_v_mid;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":397
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":399
  * 		if _crossed_zero_c(slo, smid):
  * 			hi = mid
  * 			shi = smid             # <<<<<<<<<<<<<<
@@ -6583,7 +6603,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
 */
       __pyx_v_shi = __pyx_v_smid;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":395
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":397
  * 			result_speed[0] = smid
  * 			return 0
  * 		if _crossed_zero_c(slo, smid):             # <<<<<<<<<<<<<<
@@ -6593,7 +6613,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
       goto __pyx_L14;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":398
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":400
  * 			hi = mid
  * 			shi = smid
  * 		elif _crossed_zero_c(smid, shi):             # <<<<<<<<<<<<<<
@@ -6603,7 +6623,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
     __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__crossed_zero_c(__pyx_v_smid, __pyx_v_shi);
     if (__pyx_t_2) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":399
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":401
  * 			shi = smid
  * 		elif _crossed_zero_c(smid, shi):
  * 			lo = mid             # <<<<<<<<<<<<<<
@@ -6612,7 +6632,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
 */
       __pyx_v_lo = __pyx_v_mid;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":400
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":402
  * 		elif _crossed_zero_c(smid, shi):
  * 			lo = mid
  * 			slo = smid             # <<<<<<<<<<<<<<
@@ -6621,7 +6641,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
 */
       __pyx_v_slo = __pyx_v_smid;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":398
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":400
  * 			hi = mid
  * 			shi = smid
  * 		elif _crossed_zero_c(smid, shi):             # <<<<<<<<<<<<<<
@@ -6631,7 +6651,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
       goto __pyx_L14;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":401
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":403
  * 			lo = mid
  * 			slo = smid
  * 		elif fabs(slo) <= fabs(shi):             # <<<<<<<<<<<<<<
@@ -6641,7 +6661,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
     __pyx_t_2 = (fabs(__pyx_v_slo) <= fabs(__pyx_v_shi));
     if (__pyx_t_2) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":402
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":404
  * 			slo = smid
  * 		elif fabs(slo) <= fabs(shi):
  * 			hi = mid             # <<<<<<<<<<<<<<
@@ -6650,7 +6670,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
 */
       __pyx_v_hi = __pyx_v_mid;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":403
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":405
  * 		elif fabs(slo) <= fabs(shi):
  * 			hi = mid
  * 			shi = smid             # <<<<<<<<<<<<<<
@@ -6659,7 +6679,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
 */
       __pyx_v_shi = __pyx_v_smid;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":401
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":403
  * 			lo = mid
  * 			slo = smid
  * 		elif fabs(slo) <= fabs(shi):             # <<<<<<<<<<<<<<
@@ -6669,7 +6689,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
       goto __pyx_L14;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":405
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":407
  * 			shi = smid
  * 		else:
  * 			lo = mid             # <<<<<<<<<<<<<<
@@ -6679,7 +6699,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
     /*else*/ {
       __pyx_v_lo = __pyx_v_mid;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":406
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":408
  * 		else:
  * 			lo = mid
  * 			slo = smid             # <<<<<<<<<<<<<<
@@ -6692,7 +6712,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
   }
   __pyx_L4_break:;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":408
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":410
  * 			slo = smid
  *
  * 	result_jd[0] = best_jd             # <<<<<<<<<<<<<<
@@ -6701,7 +6721,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
 */
   (__pyx_v_result_jd[0]) = __pyx_v_best_jd;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":409
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":411
  *
  * 	result_jd[0] = best_jd
  * 	result_speed[0] = best_speed             # <<<<<<<<<<<<<<
@@ -6710,7 +6730,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
 */
   (__pyx_v_result_speed[0]) = __pyx_v_best_speed;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":410
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":412
  * 	result_jd[0] = best_jd
  * 	result_speed[0] = best_speed
  * 	return 0             # <<<<<<<<<<<<<<
@@ -6720,7 +6740,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
   __pyx_r = 0;
   goto __pyx_L0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":351
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":353
  *
  *
  * cdef int _refine_station_root_seeded_c(             # <<<<<<<<<<<<<<
@@ -6738,7 +6758,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":413
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":415
  *
  *
  * cdef int _refine_longitude_root_seeded_c(             # <<<<<<<<<<<<<<
@@ -6746,7 +6766,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_st
  * 	double target_deg,
 */
 
-static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_longitude_root_seeded_c(int __pyx_v_planet, double __pyx_v_target_deg, double __pyx_v_jd_lo, double __pyx_v_lon_lo, double __pyx_v_speed_lo, double __pyx_v_jd_hi, double __pyx_v_lon_hi, double __pyx_v_speed_hi, int __pyx_v_flags, double __pyx_v_eps_deg, double __pyx_v_eps_days, double *__pyx_v_result_jd, double *__pyx_v_result_speed) {
+static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_longitude_root_seeded_c(int __pyx_v_planet, double __pyx_v_target_deg, double __pyx_v_jd_lo, double __pyx_v_lon_lo, double __pyx_v_speed_lo, double __pyx_v_jd_hi, double __pyx_v_lon_hi, double __pyx_v_speed_hi, int __pyx_v_flags, double __pyx_v_eps_deg, double __pyx_v_eps_days, double *__pyx_v_result_jd, double *__pyx_v_result_speed, double *__pyx_v_result_residual) {
   double __pyx_v_lo;
   double __pyx_v_hi;
   double __pyx_v_lon_x;
@@ -6773,8 +6793,8 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
   int __pyx_clineno = 0;
   PyGILState_STATE __pyx_gilstate_save;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":428
- * 	double* result_speed,
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":431
+ * 	double* result_residual,
  * ) except -1 nogil:
  * 	cdef double lo = jd_lo             # <<<<<<<<<<<<<<
  * 	cdef double hi = jd_hi
@@ -6782,7 +6802,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
 */
   __pyx_v_lo = __pyx_v_jd_lo;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":429
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":432
  * ) except -1 nogil:
  * 	cdef double lo = jd_lo
  * 	cdef double hi = jd_hi             # <<<<<<<<<<<<<<
@@ -6791,7 +6811,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
 */
   __pyx_v_hi = __pyx_v_jd_hi;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":441
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":444
  * 	cdef double x_next
  * 	cdef int i
  * 	f_lo = _wrap180_c(lon_lo - target_deg)             # <<<<<<<<<<<<<<
@@ -6800,7 +6820,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
 */
   __pyx_v_f_lo = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__wrap180_c((__pyx_v_lon_lo - __pyx_v_target_deg));
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":442
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":445
  * 	cdef int i
  * 	f_lo = _wrap180_c(lon_lo - target_deg)
  * 	f_hi = _wrap180_c(lon_hi - target_deg)             # <<<<<<<<<<<<<<
@@ -6809,7 +6829,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
 */
   __pyx_v_f_hi = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__wrap180_c((__pyx_v_lon_hi - __pyx_v_target_deg));
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":443
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":446
  * 	f_lo = _wrap180_c(lon_lo - target_deg)
  * 	f_hi = _wrap180_c(lon_hi - target_deg)
  * 	best_jd = lo if fabs(f_lo) <= fabs(f_hi) else hi             # <<<<<<<<<<<<<<
@@ -6824,7 +6844,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
   }
   __pyx_v_best_jd = __pyx_t_1;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":444
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":447
  * 	f_hi = _wrap180_c(lon_hi - target_deg)
  * 	best_jd = lo if fabs(f_lo) <= fabs(f_hi) else hi
  * 	best_err = f_lo if fabs(f_lo) <= fabs(f_hi) else f_hi             # <<<<<<<<<<<<<<
@@ -6839,7 +6859,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
   }
   __pyx_v_best_err = __pyx_t_1;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":445
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":448
  * 	best_jd = lo if fabs(f_lo) <= fabs(f_hi) else hi
  * 	best_err = f_lo if fabs(f_lo) <= fabs(f_hi) else f_hi
  * 	best_speed = speed_lo if fabs(f_lo) <= fabs(f_hi) else speed_hi             # <<<<<<<<<<<<<<
@@ -6854,7 +6874,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
   }
   __pyx_v_best_speed = __pyx_t_1;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":446
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":449
  * 	best_err = f_lo if fabs(f_lo) <= fabs(f_hi) else f_hi
  * 	best_speed = speed_lo if fabs(f_lo) <= fabs(f_hi) else speed_hi
  * 	if fabs(speed_lo) > _STATION_SPEED_EPS:             # <<<<<<<<<<<<<<
@@ -6864,7 +6884,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
   __pyx_t_2 = (fabs(__pyx_v_speed_lo) > __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__STATION_SPEED_EPS);
   if (__pyx_t_2) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":447
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":450
  * 	best_speed = speed_lo if fabs(f_lo) <= fabs(f_hi) else speed_hi
  * 	if fabs(speed_lo) > _STATION_SPEED_EPS:
  * 		x = lo - (f_lo / speed_lo)             # <<<<<<<<<<<<<<
@@ -6875,11 +6895,11 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
       PyGILState_STATE __pyx_gilstate_save = __Pyx_PyGILState_Ensure();
       PyErr_SetString(PyExc_ZeroDivisionError, "float division");
       __Pyx_PyGILState_Release(__pyx_gilstate_save);
-      __PYX_ERR(0, 447, __pyx_L1_error)
+      __PYX_ERR(0, 450, __pyx_L1_error)
     }
     __pyx_v_x = (__pyx_v_lo - (__pyx_v_f_lo / __pyx_v_speed_lo));
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":448
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":451
  * 	if fabs(speed_lo) > _STATION_SPEED_EPS:
  * 		x = lo - (f_lo / speed_lo)
  * 		if x <= lo or x >= hi:             # <<<<<<<<<<<<<<
@@ -6897,7 +6917,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
     __pyx_L5_bool_binop_done:;
     if (__pyx_t_2) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":449
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":452
  * 		x = lo - (f_lo / speed_lo)
  * 		if x <= lo or x >= hi:
  * 			x = (lo + hi) * 0.5             # <<<<<<<<<<<<<<
@@ -6906,7 +6926,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
 */
       __pyx_v_x = ((__pyx_v_lo + __pyx_v_hi) * 0.5);
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":448
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":451
  * 	if fabs(speed_lo) > _STATION_SPEED_EPS:
  * 		x = lo - (f_lo / speed_lo)
  * 		if x <= lo or x >= hi:             # <<<<<<<<<<<<<<
@@ -6915,7 +6935,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
 */
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":446
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":449
  * 	best_err = f_lo if fabs(f_lo) <= fabs(f_hi) else f_hi
  * 	best_speed = speed_lo if fabs(f_lo) <= fabs(f_hi) else speed_hi
  * 	if fabs(speed_lo) > _STATION_SPEED_EPS:             # <<<<<<<<<<<<<<
@@ -6925,7 +6945,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
     goto __pyx_L3;
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":450
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":453
  * 		if x <= lo or x >= hi:
  * 			x = (lo + hi) * 0.5
  * 	elif fabs(speed_hi) > _STATION_SPEED_EPS:             # <<<<<<<<<<<<<<
@@ -6935,7 +6955,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
   __pyx_t_2 = (fabs(__pyx_v_speed_hi) > __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__STATION_SPEED_EPS);
   if (__pyx_t_2) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":451
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":454
  * 			x = (lo + hi) * 0.5
  * 	elif fabs(speed_hi) > _STATION_SPEED_EPS:
  * 		x = hi - (f_hi / speed_hi)             # <<<<<<<<<<<<<<
@@ -6946,11 +6966,11 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
       PyGILState_STATE __pyx_gilstate_save = __Pyx_PyGILState_Ensure();
       PyErr_SetString(PyExc_ZeroDivisionError, "float division");
       __Pyx_PyGILState_Release(__pyx_gilstate_save);
-      __PYX_ERR(0, 451, __pyx_L1_error)
+      __PYX_ERR(0, 454, __pyx_L1_error)
     }
     __pyx_v_x = (__pyx_v_hi - (__pyx_v_f_hi / __pyx_v_speed_hi));
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":452
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":455
  * 	elif fabs(speed_hi) > _STATION_SPEED_EPS:
  * 		x = hi - (f_hi / speed_hi)
  * 		if x <= lo or x >= hi:             # <<<<<<<<<<<<<<
@@ -6968,7 +6988,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
     __pyx_L8_bool_binop_done:;
     if (__pyx_t_2) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":453
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":456
  * 		x = hi - (f_hi / speed_hi)
  * 		if x <= lo or x >= hi:
  * 			x = (lo + hi) * 0.5             # <<<<<<<<<<<<<<
@@ -6977,7 +6997,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
 */
       __pyx_v_x = ((__pyx_v_lo + __pyx_v_hi) * 0.5);
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":452
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":455
  * 	elif fabs(speed_hi) > _STATION_SPEED_EPS:
  * 		x = hi - (f_hi / speed_hi)
  * 		if x <= lo or x >= hi:             # <<<<<<<<<<<<<<
@@ -6986,7 +7006,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
 */
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":450
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":453
  * 		if x <= lo or x >= hi:
  * 			x = (lo + hi) * 0.5
  * 	elif fabs(speed_hi) > _STATION_SPEED_EPS:             # <<<<<<<<<<<<<<
@@ -6996,7 +7016,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
     goto __pyx_L3;
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":455
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":458
  * 			x = (lo + hi) * 0.5
  * 	else:
  * 		x = (lo + hi) * 0.5             # <<<<<<<<<<<<<<
@@ -7008,7 +7028,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
   }
   __pyx_L3:;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":457
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":460
  * 		x = (lo + hi) * 0.5
  *
  * 	for i in range(_NEWTON_MAX_ITERS + _BISECTION_MAX_ITERS):             # <<<<<<<<<<<<<<
@@ -7020,16 +7040,16 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
   for (__pyx_t_6 = 0; __pyx_t_6 < __pyx_t_5; __pyx_t_6+=1) {
     __pyx_v_i = __pyx_t_6;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":458
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":461
  *
  * 	for i in range(_NEWTON_MAX_ITERS + _BISECTION_MAX_ITERS):
  * 		_eval_lon_speed(x, planet, flags, &lon_x, &speed_x)             # <<<<<<<<<<<<<<
  * 		f_x = _wrap180_c(lon_x - target_deg)
  * 		if fabs(f_x) < fabs(best_err):
 */
-    __pyx_t_7 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_speed(__pyx_v_x, __pyx_v_planet, __pyx_v_flags, (&__pyx_v_lon_x), (&__pyx_v_speed_x)); if (unlikely(__pyx_t_7 == ((int)-1))) __PYX_ERR(0, 458, __pyx_L1_error)
+    __pyx_t_7 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_speed(__pyx_v_x, __pyx_v_planet, __pyx_v_flags, (&__pyx_v_lon_x), (&__pyx_v_speed_x)); if (unlikely(__pyx_t_7 == ((int)-1))) __PYX_ERR(0, 461, __pyx_L1_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":459
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":462
  * 	for i in range(_NEWTON_MAX_ITERS + _BISECTION_MAX_ITERS):
  * 		_eval_lon_speed(x, planet, flags, &lon_x, &speed_x)
  * 		f_x = _wrap180_c(lon_x - target_deg)             # <<<<<<<<<<<<<<
@@ -7038,7 +7058,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
 */
     __pyx_v_f_x = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__wrap180_c((__pyx_v_lon_x - __pyx_v_target_deg));
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":460
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":463
  * 		_eval_lon_speed(x, planet, flags, &lon_x, &speed_x)
  * 		f_x = _wrap180_c(lon_x - target_deg)
  * 		if fabs(f_x) < fabs(best_err):             # <<<<<<<<<<<<<<
@@ -7048,7 +7068,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
     __pyx_t_2 = (fabs(__pyx_v_f_x) < fabs(__pyx_v_best_err));
     if (__pyx_t_2) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":461
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":464
  * 		f_x = _wrap180_c(lon_x - target_deg)
  * 		if fabs(f_x) < fabs(best_err):
  * 			best_jd = x             # <<<<<<<<<<<<<<
@@ -7057,25 +7077,25 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
 */
       __pyx_v_best_jd = __pyx_v_x;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":462
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":465
  * 		if fabs(f_x) < fabs(best_err):
  * 			best_jd = x
  * 			best_err = f_x             # <<<<<<<<<<<<<<
  * 			best_speed = speed_x
- * 		if fabs(f_x) <= eps_deg or (hi - lo) <= eps_days:
+ * 		if fabs(f_x) <= eps_deg:
 */
       __pyx_v_best_err = __pyx_v_f_x;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":463
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":466
  * 			best_jd = x
  * 			best_err = f_x
  * 			best_speed = speed_x             # <<<<<<<<<<<<<<
- * 		if fabs(f_x) <= eps_deg or (hi - lo) <= eps_days:
+ * 		if fabs(f_x) <= eps_deg:
  * 			result_jd[0] = x
 */
       __pyx_v_best_speed = __pyx_v_speed_x;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":460
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":463
  * 		_eval_lon_speed(x, planet, flags, &lon_x, &speed_x)
  * 		f_x = _wrap180_c(lon_x - target_deg)
  * 		if fabs(f_x) < fabs(best_err):             # <<<<<<<<<<<<<<
@@ -7084,64 +7104,93 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
 */
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":464
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":467
  * 			best_err = f_x
  * 			best_speed = speed_x
- * 		if fabs(f_x) <= eps_deg or (hi - lo) <= eps_days:             # <<<<<<<<<<<<<<
+ * 		if fabs(f_x) <= eps_deg:             # <<<<<<<<<<<<<<
  * 			result_jd[0] = x
  * 			result_speed[0] = speed_x
 */
-    __pyx_t_3 = (fabs(__pyx_v_f_x) <= __pyx_v_eps_deg);
-    if (!__pyx_t_3) {
-    } else {
-      __pyx_t_2 = __pyx_t_3;
-      goto __pyx_L14_bool_binop_done;
-    }
-    __pyx_t_3 = ((__pyx_v_hi - __pyx_v_lo) <= __pyx_v_eps_days);
-    __pyx_t_2 = __pyx_t_3;
-    __pyx_L14_bool_binop_done:;
+    __pyx_t_2 = (fabs(__pyx_v_f_x) <= __pyx_v_eps_deg);
     if (__pyx_t_2) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":465
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":468
  * 			best_speed = speed_x
- * 		if fabs(f_x) <= eps_deg or (hi - lo) <= eps_days:
+ * 		if fabs(f_x) <= eps_deg:
  * 			result_jd[0] = x             # <<<<<<<<<<<<<<
  * 			result_speed[0] = speed_x
- * 			return 0
+ * 			result_residual[0] = f_x
 */
       (__pyx_v_result_jd[0]) = __pyx_v_x;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":466
- * 		if fabs(f_x) <= eps_deg or (hi - lo) <= eps_days:
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":469
+ * 		if fabs(f_x) <= eps_deg:
  * 			result_jd[0] = x
  * 			result_speed[0] = speed_x             # <<<<<<<<<<<<<<
+ * 			result_residual[0] = f_x
  * 			return 0
- * 		if _crossed_zero_c(f_lo, f_x):
 */
       (__pyx_v_result_speed[0]) = __pyx_v_speed_x;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":467
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":470
  * 			result_jd[0] = x
  * 			result_speed[0] = speed_x
+ * 			result_residual[0] = f_x             # <<<<<<<<<<<<<<
+ * 			return 0
+ * 		if (hi - lo) <= eps_days:
+*/
+      (__pyx_v_result_residual[0]) = __pyx_v_f_x;
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":471
+ * 			result_speed[0] = speed_x
+ * 			result_residual[0] = f_x
  * 			return 0             # <<<<<<<<<<<<<<
- * 		if _crossed_zero_c(f_lo, f_x):
- * 			hi = x
+ * 		if (hi - lo) <= eps_days:
+ * 			break
 */
       __pyx_r = 0;
       goto __pyx_L0;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":464
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":467
  * 			best_err = f_x
  * 			best_speed = speed_x
- * 		if fabs(f_x) <= eps_deg or (hi - lo) <= eps_days:             # <<<<<<<<<<<<<<
+ * 		if fabs(f_x) <= eps_deg:             # <<<<<<<<<<<<<<
  * 			result_jd[0] = x
  * 			result_speed[0] = speed_x
 */
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":468
- * 			result_speed[0] = speed_x
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":472
+ * 			result_residual[0] = f_x
  * 			return 0
+ * 		if (hi - lo) <= eps_days:             # <<<<<<<<<<<<<<
+ * 			break
+ * 		if _crossed_zero_c(f_lo, f_x):
+*/
+    __pyx_t_2 = ((__pyx_v_hi - __pyx_v_lo) <= __pyx_v_eps_days);
+    if (__pyx_t_2) {
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":473
+ * 			return 0
+ * 		if (hi - lo) <= eps_days:
+ * 			break             # <<<<<<<<<<<<<<
+ * 		if _crossed_zero_c(f_lo, f_x):
+ * 			hi = x
+*/
+      goto __pyx_L11_break;
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":472
+ * 			result_residual[0] = f_x
+ * 			return 0
+ * 		if (hi - lo) <= eps_days:             # <<<<<<<<<<<<<<
+ * 			break
+ * 		if _crossed_zero_c(f_lo, f_x):
+*/
+    }
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":474
+ * 		if (hi - lo) <= eps_days:
+ * 			break
  * 		if _crossed_zero_c(f_lo, f_x):             # <<<<<<<<<<<<<<
  * 			hi = x
  * 			f_hi = f_x
@@ -7149,8 +7198,8 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
     __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__crossed_zero_c(__pyx_v_f_lo, __pyx_v_f_x);
     if (__pyx_t_2) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":469
- * 			return 0
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":475
+ * 			break
  * 		if _crossed_zero_c(f_lo, f_x):
  * 			hi = x             # <<<<<<<<<<<<<<
  * 			f_hi = f_x
@@ -7158,7 +7207,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
 */
       __pyx_v_hi = __pyx_v_x;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":470
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":476
  * 		if _crossed_zero_c(f_lo, f_x):
  * 			hi = x
  * 			f_hi = f_x             # <<<<<<<<<<<<<<
@@ -7167,17 +7216,17 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
 */
       __pyx_v_f_hi = __pyx_v_f_x;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":468
- * 			result_speed[0] = speed_x
- * 			return 0
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":474
+ * 		if (hi - lo) <= eps_days:
+ * 			break
  * 		if _crossed_zero_c(f_lo, f_x):             # <<<<<<<<<<<<<<
  * 			hi = x
  * 			f_hi = f_x
 */
-      goto __pyx_L16;
+      goto __pyx_L15;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":471
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":477
  * 			hi = x
  * 			f_hi = f_x
  * 		elif _crossed_zero_c(f_x, f_hi):             # <<<<<<<<<<<<<<
@@ -7187,7 +7236,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
     __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__crossed_zero_c(__pyx_v_f_x, __pyx_v_f_hi);
     if (__pyx_t_2) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":472
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":478
  * 			f_hi = f_x
  * 		elif _crossed_zero_c(f_x, f_hi):
  * 			lo = x             # <<<<<<<<<<<<<<
@@ -7196,7 +7245,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
 */
       __pyx_v_lo = __pyx_v_x;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":473
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":479
  * 		elif _crossed_zero_c(f_x, f_hi):
  * 			lo = x
  * 			f_lo = f_x             # <<<<<<<<<<<<<<
@@ -7205,17 +7254,17 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
 */
       __pyx_v_f_lo = __pyx_v_f_x;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":471
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":477
  * 			hi = x
  * 			f_hi = f_x
  * 		elif _crossed_zero_c(f_x, f_hi):             # <<<<<<<<<<<<<<
  * 			lo = x
  * 			f_lo = f_x
 */
-      goto __pyx_L16;
+      goto __pyx_L15;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":474
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":480
  * 			lo = x
  * 			f_lo = f_x
  * 		elif fabs(f_lo) <= fabs(f_hi):             # <<<<<<<<<<<<<<
@@ -7225,7 +7274,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
     __pyx_t_2 = (fabs(__pyx_v_f_lo) <= fabs(__pyx_v_f_hi));
     if (__pyx_t_2) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":475
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":481
  * 			f_lo = f_x
  * 		elif fabs(f_lo) <= fabs(f_hi):
  * 			hi = x             # <<<<<<<<<<<<<<
@@ -7234,7 +7283,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
 */
       __pyx_v_hi = __pyx_v_x;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":476
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":482
  * 		elif fabs(f_lo) <= fabs(f_hi):
  * 			hi = x
  * 			f_hi = f_x             # <<<<<<<<<<<<<<
@@ -7243,17 +7292,17 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
 */
       __pyx_v_f_hi = __pyx_v_f_x;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":474
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":480
  * 			lo = x
  * 			f_lo = f_x
  * 		elif fabs(f_lo) <= fabs(f_hi):             # <<<<<<<<<<<<<<
  * 			hi = x
  * 			f_hi = f_x
 */
-      goto __pyx_L16;
+      goto __pyx_L15;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":478
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":484
  * 			f_hi = f_x
  * 		else:
  * 			lo = x             # <<<<<<<<<<<<<<
@@ -7263,7 +7312,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
     /*else*/ {
       __pyx_v_lo = __pyx_v_x;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":479
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":485
  * 		else:
  * 			lo = x
  * 			f_lo = f_x             # <<<<<<<<<<<<<<
@@ -7272,9 +7321,9 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
 */
       __pyx_v_f_lo = __pyx_v_f_x;
     }
-    __pyx_L16:;
+    __pyx_L15:;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":481
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":487
  * 			f_lo = f_x
  *
  * 		if fabs(speed_x) > _STATION_SPEED_EPS:             # <<<<<<<<<<<<<<
@@ -7284,7 +7333,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
     __pyx_t_2 = (fabs(__pyx_v_speed_x) > __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__STATION_SPEED_EPS);
     if (__pyx_t_2) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":482
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":488
  *
  * 		if fabs(speed_x) > _STATION_SPEED_EPS:
  * 			x_next = x - (f_x / speed_x)             # <<<<<<<<<<<<<<
@@ -7295,11 +7344,11 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
         PyGILState_STATE __pyx_gilstate_save = __Pyx_PyGILState_Ensure();
         PyErr_SetString(PyExc_ZeroDivisionError, "float division");
         __Pyx_PyGILState_Release(__pyx_gilstate_save);
-        __PYX_ERR(0, 482, __pyx_L1_error)
+        __PYX_ERR(0, 488, __pyx_L1_error)
       }
       __pyx_v_x_next = (__pyx_v_x - (__pyx_v_f_x / __pyx_v_speed_x));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":483
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":489
  * 		if fabs(speed_x) > _STATION_SPEED_EPS:
  * 			x_next = x - (f_x / speed_x)
  * 			if x_next <= lo or x_next >= hi:             # <<<<<<<<<<<<<<
@@ -7310,14 +7359,14 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
       if (!__pyx_t_3) {
       } else {
         __pyx_t_2 = __pyx_t_3;
-        goto __pyx_L19_bool_binop_done;
+        goto __pyx_L18_bool_binop_done;
       }
       __pyx_t_3 = (__pyx_v_x_next >= __pyx_v_hi);
       __pyx_t_2 = __pyx_t_3;
-      __pyx_L19_bool_binop_done:;
+      __pyx_L18_bool_binop_done:;
       if (__pyx_t_2) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":484
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":490
  * 			x_next = x - (f_x / speed_x)
  * 			if x_next <= lo or x_next >= hi:
  * 				x_next = (lo + hi) * 0.5             # <<<<<<<<<<<<<<
@@ -7326,7 +7375,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
 */
         __pyx_v_x_next = ((__pyx_v_lo + __pyx_v_hi) * 0.5);
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":483
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":489
  * 		if fabs(speed_x) > _STATION_SPEED_EPS:
  * 			x_next = x - (f_x / speed_x)
  * 			if x_next <= lo or x_next >= hi:             # <<<<<<<<<<<<<<
@@ -7335,17 +7384,17 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
 */
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":481
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":487
  * 			f_lo = f_x
  *
  * 		if fabs(speed_x) > _STATION_SPEED_EPS:             # <<<<<<<<<<<<<<
  * 			x_next = x - (f_x / speed_x)
  * 			if x_next <= lo or x_next >= hi:
 */
-      goto __pyx_L17;
+      goto __pyx_L16;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":486
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":492
  * 				x_next = (lo + hi) * 0.5
  * 		else:
  * 			x_next = (lo + hi) * 0.5             # <<<<<<<<<<<<<<
@@ -7355,9 +7404,9 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
     /*else*/ {
       __pyx_v_x_next = ((__pyx_v_lo + __pyx_v_hi) * 0.5);
     }
-    __pyx_L17:;
+    __pyx_L16:;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":487
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":493
  * 		else:
  * 			x_next = (lo + hi) * 0.5
  * 		x = x_next             # <<<<<<<<<<<<<<
@@ -7366,28 +7415,38 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
 */
     __pyx_v_x = __pyx_v_x_next;
   }
+  __pyx_L11_break:;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":489
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":495
  * 		x = x_next
  *
  * 	result_jd[0] = best_jd             # <<<<<<<<<<<<<<
  * 	result_speed[0] = best_speed
- * 	return 0
+ * 	result_residual[0] = best_err
 */
   (__pyx_v_result_jd[0]) = __pyx_v_best_jd;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":490
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":496
  *
  * 	result_jd[0] = best_jd
  * 	result_speed[0] = best_speed             # <<<<<<<<<<<<<<
+ * 	result_residual[0] = best_err
  * 	return 0
- *
 */
   (__pyx_v_result_speed[0]) = __pyx_v_best_speed;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":491
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":497
  * 	result_jd[0] = best_jd
  * 	result_speed[0] = best_speed
+ * 	result_residual[0] = best_err             # <<<<<<<<<<<<<<
+ * 	return 0
+ *
+*/
+  (__pyx_v_result_residual[0]) = __pyx_v_best_err;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":498
+ * 	result_speed[0] = best_speed
+ * 	result_residual[0] = best_err
  * 	return 0             # <<<<<<<<<<<<<<
  *
  *
@@ -7395,7 +7454,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
   __pyx_r = 0;
   goto __pyx_L0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":413
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":415
  *
  *
  * cdef int _refine_longitude_root_seeded_c(             # <<<<<<<<<<<<<<
@@ -7413,7 +7472,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":494
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":501
  *
  *
  * cdef int _refine_relative_root_c(             # <<<<<<<<<<<<<<
@@ -7421,7 +7480,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_lo
  * 	int sig_code,
 */
 
-static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_relative_root_c(int __pyx_v_prom_code, int __pyx_v_sig_code, double __pyx_v_offset, double __pyx_v_jd_lo, double __pyx_v_jd_hi, double __pyx_v_prom_lon_lo, double __pyx_v_prom_speed_lo, double __pyx_v_sig_lon_lo, double __pyx_v_sig_speed_lo, double __pyx_v_prom_lon_hi, double __pyx_v_prom_speed_hi, double __pyx_v_sig_lon_hi, double __pyx_v_sig_speed_hi, int __pyx_v_flags, double __pyx_v_eps_deg, double __pyx_v_eps_days, double *__pyx_v_result_jd, double *__pyx_v_result_speed) {
+static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_relative_root_c(int __pyx_v_prom_code, int __pyx_v_sig_code, double __pyx_v_offset, double __pyx_v_jd_lo, double __pyx_v_jd_hi, double __pyx_v_prom_lon_lo, double __pyx_v_prom_speed_lo, double __pyx_v_sig_lon_lo, double __pyx_v_sig_speed_lo, double __pyx_v_prom_lon_hi, double __pyx_v_prom_speed_hi, double __pyx_v_sig_lon_hi, double __pyx_v_sig_speed_hi, int __pyx_v_flags, double __pyx_v_eps_deg, double __pyx_v_eps_days, double *__pyx_v_result_jd, double *__pyx_v_result_speed, double *__pyx_v_result_residual) {
   double __pyx_v_lo;
   double __pyx_v_hi;
   double __pyx_v_prom_lon_x;
@@ -7453,8 +7512,8 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
   int __pyx_clineno = 0;
   PyGILState_STATE __pyx_gilstate_save;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":514
- * 	double* result_speed,
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":522
+ * 	double* result_residual,
  * ) except -1 nogil:
  * 	cdef double lo = jd_lo             # <<<<<<<<<<<<<<
  * 	cdef double hi = jd_hi
@@ -7462,7 +7521,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
 */
   __pyx_v_lo = __pyx_v_jd_lo;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":515
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":523
  * ) except -1 nogil:
  * 	cdef double lo = jd_lo
  * 	cdef double hi = jd_hi             # <<<<<<<<<<<<<<
@@ -7471,7 +7530,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
 */
   __pyx_v_hi = __pyx_v_jd_hi;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":532
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":540
  * 	cdef double x_next
  * 	cdef int i
  * 	speed_lo = prom_speed_lo - sig_speed_lo             # <<<<<<<<<<<<<<
@@ -7480,7 +7539,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
 */
   __pyx_v_speed_lo = (__pyx_v_prom_speed_lo - __pyx_v_sig_speed_lo);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":533
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":541
  * 	cdef int i
  * 	speed_lo = prom_speed_lo - sig_speed_lo
  * 	speed_hi = prom_speed_hi - sig_speed_hi             # <<<<<<<<<<<<<<
@@ -7489,7 +7548,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
 */
   __pyx_v_speed_hi = (__pyx_v_prom_speed_hi - __pyx_v_sig_speed_hi);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":534
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":542
  * 	speed_lo = prom_speed_lo - sig_speed_lo
  * 	speed_hi = prom_speed_hi - sig_speed_hi
  * 	f_lo = _relative_delta_c(prom_lon_lo, sig_lon_lo, offset)             # <<<<<<<<<<<<<<
@@ -7498,7 +7557,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
 */
   __pyx_v_f_lo = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__relative_delta_c(__pyx_v_prom_lon_lo, __pyx_v_sig_lon_lo, __pyx_v_offset);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":535
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":543
  * 	speed_hi = prom_speed_hi - sig_speed_hi
  * 	f_lo = _relative_delta_c(prom_lon_lo, sig_lon_lo, offset)
  * 	f_hi = _relative_delta_c(prom_lon_hi, sig_lon_hi, offset)             # <<<<<<<<<<<<<<
@@ -7507,7 +7566,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
 */
   __pyx_v_f_hi = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__relative_delta_c(__pyx_v_prom_lon_hi, __pyx_v_sig_lon_hi, __pyx_v_offset);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":536
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":544
  * 	f_lo = _relative_delta_c(prom_lon_lo, sig_lon_lo, offset)
  * 	f_hi = _relative_delta_c(prom_lon_hi, sig_lon_hi, offset)
  * 	best_jd = lo if fabs(f_lo) <= fabs(f_hi) else hi             # <<<<<<<<<<<<<<
@@ -7522,7 +7581,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
   }
   __pyx_v_best_jd = __pyx_t_1;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":537
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":545
  * 	f_hi = _relative_delta_c(prom_lon_hi, sig_lon_hi, offset)
  * 	best_jd = lo if fabs(f_lo) <= fabs(f_hi) else hi
  * 	best_err = f_lo if fabs(f_lo) <= fabs(f_hi) else f_hi             # <<<<<<<<<<<<<<
@@ -7537,7 +7596,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
   }
   __pyx_v_best_err = __pyx_t_1;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":538
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":546
  * 	best_jd = lo if fabs(f_lo) <= fabs(f_hi) else hi
  * 	best_err = f_lo if fabs(f_lo) <= fabs(f_hi) else f_hi
  * 	best_speed = speed_lo if fabs(f_lo) <= fabs(f_hi) else speed_hi             # <<<<<<<<<<<<<<
@@ -7552,7 +7611,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
   }
   __pyx_v_best_speed = __pyx_t_1;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":539
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":547
  * 	best_err = f_lo if fabs(f_lo) <= fabs(f_hi) else f_hi
  * 	best_speed = speed_lo if fabs(f_lo) <= fabs(f_hi) else speed_hi
  * 	if fabs(speed_lo) > _STATION_SPEED_EPS:             # <<<<<<<<<<<<<<
@@ -7562,7 +7621,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
   __pyx_t_2 = (fabs(__pyx_v_speed_lo) > __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__STATION_SPEED_EPS);
   if (__pyx_t_2) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":540
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":548
  * 	best_speed = speed_lo if fabs(f_lo) <= fabs(f_hi) else speed_hi
  * 	if fabs(speed_lo) > _STATION_SPEED_EPS:
  * 		x = lo - (f_lo / speed_lo)             # <<<<<<<<<<<<<<
@@ -7573,11 +7632,11 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
       PyGILState_STATE __pyx_gilstate_save = __Pyx_PyGILState_Ensure();
       PyErr_SetString(PyExc_ZeroDivisionError, "float division");
       __Pyx_PyGILState_Release(__pyx_gilstate_save);
-      __PYX_ERR(0, 540, __pyx_L1_error)
+      __PYX_ERR(0, 548, __pyx_L1_error)
     }
     __pyx_v_x = (__pyx_v_lo - (__pyx_v_f_lo / __pyx_v_speed_lo));
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":541
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":549
  * 	if fabs(speed_lo) > _STATION_SPEED_EPS:
  * 		x = lo - (f_lo / speed_lo)
  * 		if x <= lo or x >= hi:             # <<<<<<<<<<<<<<
@@ -7595,7 +7654,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
     __pyx_L5_bool_binop_done:;
     if (__pyx_t_2) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":542
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":550
  * 		x = lo - (f_lo / speed_lo)
  * 		if x <= lo or x >= hi:
  * 			x = (lo + hi) * 0.5             # <<<<<<<<<<<<<<
@@ -7604,7 +7663,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
 */
       __pyx_v_x = ((__pyx_v_lo + __pyx_v_hi) * 0.5);
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":541
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":549
  * 	if fabs(speed_lo) > _STATION_SPEED_EPS:
  * 		x = lo - (f_lo / speed_lo)
  * 		if x <= lo or x >= hi:             # <<<<<<<<<<<<<<
@@ -7613,7 +7672,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
 */
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":539
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":547
  * 	best_err = f_lo if fabs(f_lo) <= fabs(f_hi) else f_hi
  * 	best_speed = speed_lo if fabs(f_lo) <= fabs(f_hi) else speed_hi
  * 	if fabs(speed_lo) > _STATION_SPEED_EPS:             # <<<<<<<<<<<<<<
@@ -7623,7 +7682,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
     goto __pyx_L3;
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":543
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":551
  * 		if x <= lo or x >= hi:
  * 			x = (lo + hi) * 0.5
  * 	elif fabs(speed_hi) > _STATION_SPEED_EPS:             # <<<<<<<<<<<<<<
@@ -7633,7 +7692,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
   __pyx_t_2 = (fabs(__pyx_v_speed_hi) > __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__STATION_SPEED_EPS);
   if (__pyx_t_2) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":544
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":552
  * 			x = (lo + hi) * 0.5
  * 	elif fabs(speed_hi) > _STATION_SPEED_EPS:
  * 		x = hi - (f_hi / speed_hi)             # <<<<<<<<<<<<<<
@@ -7644,11 +7703,11 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
       PyGILState_STATE __pyx_gilstate_save = __Pyx_PyGILState_Ensure();
       PyErr_SetString(PyExc_ZeroDivisionError, "float division");
       __Pyx_PyGILState_Release(__pyx_gilstate_save);
-      __PYX_ERR(0, 544, __pyx_L1_error)
+      __PYX_ERR(0, 552, __pyx_L1_error)
     }
     __pyx_v_x = (__pyx_v_hi - (__pyx_v_f_hi / __pyx_v_speed_hi));
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":545
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":553
  * 	elif fabs(speed_hi) > _STATION_SPEED_EPS:
  * 		x = hi - (f_hi / speed_hi)
  * 		if x <= lo or x >= hi:             # <<<<<<<<<<<<<<
@@ -7666,7 +7725,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
     __pyx_L8_bool_binop_done:;
     if (__pyx_t_2) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":546
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":554
  * 		x = hi - (f_hi / speed_hi)
  * 		if x <= lo or x >= hi:
  * 			x = (lo + hi) * 0.5             # <<<<<<<<<<<<<<
@@ -7675,7 +7734,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
 */
       __pyx_v_x = ((__pyx_v_lo + __pyx_v_hi) * 0.5);
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":545
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":553
  * 	elif fabs(speed_hi) > _STATION_SPEED_EPS:
  * 		x = hi - (f_hi / speed_hi)
  * 		if x <= lo or x >= hi:             # <<<<<<<<<<<<<<
@@ -7684,7 +7743,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
 */
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":543
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":551
  * 		if x <= lo or x >= hi:
  * 			x = (lo + hi) * 0.5
  * 	elif fabs(speed_hi) > _STATION_SPEED_EPS:             # <<<<<<<<<<<<<<
@@ -7694,7 +7753,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
     goto __pyx_L3;
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":548
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":556
  * 			x = (lo + hi) * 0.5
  * 	else:
  * 		x = (lo + hi) * 0.5             # <<<<<<<<<<<<<<
@@ -7706,7 +7765,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
   }
   __pyx_L3:;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":550
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":558
  * 		x = (lo + hi) * 0.5
  *
  * 	for i in range(_NEWTON_MAX_ITERS + _BISECTION_MAX_ITERS):             # <<<<<<<<<<<<<<
@@ -7718,25 +7777,25 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
   for (__pyx_t_6 = 0; __pyx_t_6 < __pyx_t_5; __pyx_t_6+=1) {
     __pyx_v_i = __pyx_t_6;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":551
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":559
  *
  * 	for i in range(_NEWTON_MAX_ITERS + _BISECTION_MAX_ITERS):
  * 		_eval_body_lon_speed(x, prom_code, flags, &prom_lon_x, &prom_speed_x)             # <<<<<<<<<<<<<<
  * 		_eval_body_lon_speed(x, sig_code, flags, &sig_lon_x, &sig_speed_x)
  * 		speed_x = prom_speed_x - sig_speed_x
 */
-    __pyx_t_7 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_body_lon_speed(__pyx_v_x, __pyx_v_prom_code, __pyx_v_flags, (&__pyx_v_prom_lon_x), (&__pyx_v_prom_speed_x)); if (unlikely(__pyx_t_7 == ((int)-1))) __PYX_ERR(0, 551, __pyx_L1_error)
+    __pyx_t_7 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_body_lon_speed(__pyx_v_x, __pyx_v_prom_code, __pyx_v_flags, (&__pyx_v_prom_lon_x), (&__pyx_v_prom_speed_x)); if (unlikely(__pyx_t_7 == ((int)-1))) __PYX_ERR(0, 559, __pyx_L1_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":552
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":560
  * 	for i in range(_NEWTON_MAX_ITERS + _BISECTION_MAX_ITERS):
  * 		_eval_body_lon_speed(x, prom_code, flags, &prom_lon_x, &prom_speed_x)
  * 		_eval_body_lon_speed(x, sig_code, flags, &sig_lon_x, &sig_speed_x)             # <<<<<<<<<<<<<<
  * 		speed_x = prom_speed_x - sig_speed_x
  * 		f_x = _relative_delta_c(prom_lon_x, sig_lon_x, offset)
 */
-    __pyx_t_7 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_body_lon_speed(__pyx_v_x, __pyx_v_sig_code, __pyx_v_flags, (&__pyx_v_sig_lon_x), (&__pyx_v_sig_speed_x)); if (unlikely(__pyx_t_7 == ((int)-1))) __PYX_ERR(0, 552, __pyx_L1_error)
+    __pyx_t_7 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_body_lon_speed(__pyx_v_x, __pyx_v_sig_code, __pyx_v_flags, (&__pyx_v_sig_lon_x), (&__pyx_v_sig_speed_x)); if (unlikely(__pyx_t_7 == ((int)-1))) __PYX_ERR(0, 560, __pyx_L1_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":553
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":561
  * 		_eval_body_lon_speed(x, prom_code, flags, &prom_lon_x, &prom_speed_x)
  * 		_eval_body_lon_speed(x, sig_code, flags, &sig_lon_x, &sig_speed_x)
  * 		speed_x = prom_speed_x - sig_speed_x             # <<<<<<<<<<<<<<
@@ -7745,7 +7804,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
 */
     __pyx_v_speed_x = (__pyx_v_prom_speed_x - __pyx_v_sig_speed_x);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":554
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":562
  * 		_eval_body_lon_speed(x, sig_code, flags, &sig_lon_x, &sig_speed_x)
  * 		speed_x = prom_speed_x - sig_speed_x
  * 		f_x = _relative_delta_c(prom_lon_x, sig_lon_x, offset)             # <<<<<<<<<<<<<<
@@ -7754,7 +7813,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
 */
     __pyx_v_f_x = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__relative_delta_c(__pyx_v_prom_lon_x, __pyx_v_sig_lon_x, __pyx_v_offset);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":555
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":563
  * 		speed_x = prom_speed_x - sig_speed_x
  * 		f_x = _relative_delta_c(prom_lon_x, sig_lon_x, offset)
  * 		if fabs(f_x) < fabs(best_err):             # <<<<<<<<<<<<<<
@@ -7764,7 +7823,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
     __pyx_t_2 = (fabs(__pyx_v_f_x) < fabs(__pyx_v_best_err));
     if (__pyx_t_2) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":556
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":564
  * 		f_x = _relative_delta_c(prom_lon_x, sig_lon_x, offset)
  * 		if fabs(f_x) < fabs(best_err):
  * 			best_jd = x             # <<<<<<<<<<<<<<
@@ -7773,25 +7832,25 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
 */
       __pyx_v_best_jd = __pyx_v_x;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":557
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":565
  * 		if fabs(f_x) < fabs(best_err):
  * 			best_jd = x
  * 			best_err = f_x             # <<<<<<<<<<<<<<
  * 			best_speed = speed_x
- * 		if fabs(f_x) <= eps_deg or (hi - lo) <= eps_days:
+ * 		if fabs(f_x) <= eps_deg:
 */
       __pyx_v_best_err = __pyx_v_f_x;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":558
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":566
  * 			best_jd = x
  * 			best_err = f_x
  * 			best_speed = speed_x             # <<<<<<<<<<<<<<
- * 		if fabs(f_x) <= eps_deg or (hi - lo) <= eps_days:
+ * 		if fabs(f_x) <= eps_deg:
  * 			result_jd[0] = x
 */
       __pyx_v_best_speed = __pyx_v_speed_x;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":555
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":563
  * 		speed_x = prom_speed_x - sig_speed_x
  * 		f_x = _relative_delta_c(prom_lon_x, sig_lon_x, offset)
  * 		if fabs(f_x) < fabs(best_err):             # <<<<<<<<<<<<<<
@@ -7800,64 +7859,93 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
 */
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":559
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":567
  * 			best_err = f_x
  * 			best_speed = speed_x
- * 		if fabs(f_x) <= eps_deg or (hi - lo) <= eps_days:             # <<<<<<<<<<<<<<
+ * 		if fabs(f_x) <= eps_deg:             # <<<<<<<<<<<<<<
  * 			result_jd[0] = x
  * 			result_speed[0] = speed_x
 */
-    __pyx_t_3 = (fabs(__pyx_v_f_x) <= __pyx_v_eps_deg);
-    if (!__pyx_t_3) {
-    } else {
-      __pyx_t_2 = __pyx_t_3;
-      goto __pyx_L14_bool_binop_done;
-    }
-    __pyx_t_3 = ((__pyx_v_hi - __pyx_v_lo) <= __pyx_v_eps_days);
-    __pyx_t_2 = __pyx_t_3;
-    __pyx_L14_bool_binop_done:;
+    __pyx_t_2 = (fabs(__pyx_v_f_x) <= __pyx_v_eps_deg);
     if (__pyx_t_2) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":560
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":568
  * 			best_speed = speed_x
- * 		if fabs(f_x) <= eps_deg or (hi - lo) <= eps_days:
+ * 		if fabs(f_x) <= eps_deg:
  * 			result_jd[0] = x             # <<<<<<<<<<<<<<
  * 			result_speed[0] = speed_x
- * 			return 0
+ * 			result_residual[0] = f_x
 */
       (__pyx_v_result_jd[0]) = __pyx_v_x;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":561
- * 		if fabs(f_x) <= eps_deg or (hi - lo) <= eps_days:
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":569
+ * 		if fabs(f_x) <= eps_deg:
  * 			result_jd[0] = x
  * 			result_speed[0] = speed_x             # <<<<<<<<<<<<<<
+ * 			result_residual[0] = f_x
  * 			return 0
- * 		if _crossed_zero_c(f_lo, f_x):
 */
       (__pyx_v_result_speed[0]) = __pyx_v_speed_x;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":562
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":570
  * 			result_jd[0] = x
  * 			result_speed[0] = speed_x
+ * 			result_residual[0] = f_x             # <<<<<<<<<<<<<<
+ * 			return 0
+ * 		if (hi - lo) <= eps_days:
+*/
+      (__pyx_v_result_residual[0]) = __pyx_v_f_x;
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":571
+ * 			result_speed[0] = speed_x
+ * 			result_residual[0] = f_x
  * 			return 0             # <<<<<<<<<<<<<<
- * 		if _crossed_zero_c(f_lo, f_x):
- * 			hi = x
+ * 		if (hi - lo) <= eps_days:
+ * 			break
 */
       __pyx_r = 0;
       goto __pyx_L0;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":559
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":567
  * 			best_err = f_x
  * 			best_speed = speed_x
- * 		if fabs(f_x) <= eps_deg or (hi - lo) <= eps_days:             # <<<<<<<<<<<<<<
+ * 		if fabs(f_x) <= eps_deg:             # <<<<<<<<<<<<<<
  * 			result_jd[0] = x
  * 			result_speed[0] = speed_x
 */
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":563
- * 			result_speed[0] = speed_x
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":572
+ * 			result_residual[0] = f_x
  * 			return 0
+ * 		if (hi - lo) <= eps_days:             # <<<<<<<<<<<<<<
+ * 			break
+ * 		if _crossed_zero_c(f_lo, f_x):
+*/
+    __pyx_t_2 = ((__pyx_v_hi - __pyx_v_lo) <= __pyx_v_eps_days);
+    if (__pyx_t_2) {
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":573
+ * 			return 0
+ * 		if (hi - lo) <= eps_days:
+ * 			break             # <<<<<<<<<<<<<<
+ * 		if _crossed_zero_c(f_lo, f_x):
+ * 			hi = x
+*/
+      goto __pyx_L11_break;
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":572
+ * 			result_residual[0] = f_x
+ * 			return 0
+ * 		if (hi - lo) <= eps_days:             # <<<<<<<<<<<<<<
+ * 			break
+ * 		if _crossed_zero_c(f_lo, f_x):
+*/
+    }
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":574
+ * 		if (hi - lo) <= eps_days:
+ * 			break
  * 		if _crossed_zero_c(f_lo, f_x):             # <<<<<<<<<<<<<<
  * 			hi = x
  * 			f_hi = f_x
@@ -7865,8 +7953,8 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
     __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__crossed_zero_c(__pyx_v_f_lo, __pyx_v_f_x);
     if (__pyx_t_2) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":564
- * 			return 0
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":575
+ * 			break
  * 		if _crossed_zero_c(f_lo, f_x):
  * 			hi = x             # <<<<<<<<<<<<<<
  * 			f_hi = f_x
@@ -7874,7 +7962,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
 */
       __pyx_v_hi = __pyx_v_x;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":565
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":576
  * 		if _crossed_zero_c(f_lo, f_x):
  * 			hi = x
  * 			f_hi = f_x             # <<<<<<<<<<<<<<
@@ -7883,17 +7971,17 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
 */
       __pyx_v_f_hi = __pyx_v_f_x;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":563
- * 			result_speed[0] = speed_x
- * 			return 0
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":574
+ * 		if (hi - lo) <= eps_days:
+ * 			break
  * 		if _crossed_zero_c(f_lo, f_x):             # <<<<<<<<<<<<<<
  * 			hi = x
  * 			f_hi = f_x
 */
-      goto __pyx_L16;
+      goto __pyx_L15;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":566
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":577
  * 			hi = x
  * 			f_hi = f_x
  * 		elif _crossed_zero_c(f_x, f_hi):             # <<<<<<<<<<<<<<
@@ -7903,7 +7991,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
     __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__crossed_zero_c(__pyx_v_f_x, __pyx_v_f_hi);
     if (__pyx_t_2) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":567
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":578
  * 			f_hi = f_x
  * 		elif _crossed_zero_c(f_x, f_hi):
  * 			lo = x             # <<<<<<<<<<<<<<
@@ -7912,7 +8000,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
 */
       __pyx_v_lo = __pyx_v_x;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":568
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":579
  * 		elif _crossed_zero_c(f_x, f_hi):
  * 			lo = x
  * 			f_lo = f_x             # <<<<<<<<<<<<<<
@@ -7921,17 +8009,17 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
 */
       __pyx_v_f_lo = __pyx_v_f_x;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":566
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":577
  * 			hi = x
  * 			f_hi = f_x
  * 		elif _crossed_zero_c(f_x, f_hi):             # <<<<<<<<<<<<<<
  * 			lo = x
  * 			f_lo = f_x
 */
-      goto __pyx_L16;
+      goto __pyx_L15;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":569
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":580
  * 			lo = x
  * 			f_lo = f_x
  * 		elif fabs(f_lo) <= fabs(f_hi):             # <<<<<<<<<<<<<<
@@ -7941,7 +8029,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
     __pyx_t_2 = (fabs(__pyx_v_f_lo) <= fabs(__pyx_v_f_hi));
     if (__pyx_t_2) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":570
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":581
  * 			f_lo = f_x
  * 		elif fabs(f_lo) <= fabs(f_hi):
  * 			hi = x             # <<<<<<<<<<<<<<
@@ -7950,7 +8038,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
 */
       __pyx_v_hi = __pyx_v_x;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":571
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":582
  * 		elif fabs(f_lo) <= fabs(f_hi):
  * 			hi = x
  * 			f_hi = f_x             # <<<<<<<<<<<<<<
@@ -7959,17 +8047,17 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
 */
       __pyx_v_f_hi = __pyx_v_f_x;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":569
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":580
  * 			lo = x
  * 			f_lo = f_x
  * 		elif fabs(f_lo) <= fabs(f_hi):             # <<<<<<<<<<<<<<
  * 			hi = x
  * 			f_hi = f_x
 */
-      goto __pyx_L16;
+      goto __pyx_L15;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":573
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":584
  * 			f_hi = f_x
  * 		else:
  * 			lo = x             # <<<<<<<<<<<<<<
@@ -7979,7 +8067,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
     /*else*/ {
       __pyx_v_lo = __pyx_v_x;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":574
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":585
  * 		else:
  * 			lo = x
  * 			f_lo = f_x             # <<<<<<<<<<<<<<
@@ -7988,9 +8076,9 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
 */
       __pyx_v_f_lo = __pyx_v_f_x;
     }
-    __pyx_L16:;
+    __pyx_L15:;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":575
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":586
  * 			lo = x
  * 			f_lo = f_x
  * 		if fabs(speed_x) > _STATION_SPEED_EPS:             # <<<<<<<<<<<<<<
@@ -8000,7 +8088,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
     __pyx_t_2 = (fabs(__pyx_v_speed_x) > __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__STATION_SPEED_EPS);
     if (__pyx_t_2) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":576
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":587
  * 			f_lo = f_x
  * 		if fabs(speed_x) > _STATION_SPEED_EPS:
  * 			x_next = x - (f_x / speed_x)             # <<<<<<<<<<<<<<
@@ -8011,11 +8099,11 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
         PyGILState_STATE __pyx_gilstate_save = __Pyx_PyGILState_Ensure();
         PyErr_SetString(PyExc_ZeroDivisionError, "float division");
         __Pyx_PyGILState_Release(__pyx_gilstate_save);
-        __PYX_ERR(0, 576, __pyx_L1_error)
+        __PYX_ERR(0, 587, __pyx_L1_error)
       }
       __pyx_v_x_next = (__pyx_v_x - (__pyx_v_f_x / __pyx_v_speed_x));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":577
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":588
  * 		if fabs(speed_x) > _STATION_SPEED_EPS:
  * 			x_next = x - (f_x / speed_x)
  * 			if x_next <= lo or x_next >= hi:             # <<<<<<<<<<<<<<
@@ -8026,14 +8114,14 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
       if (!__pyx_t_3) {
       } else {
         __pyx_t_2 = __pyx_t_3;
-        goto __pyx_L19_bool_binop_done;
+        goto __pyx_L18_bool_binop_done;
       }
       __pyx_t_3 = (__pyx_v_x_next >= __pyx_v_hi);
       __pyx_t_2 = __pyx_t_3;
-      __pyx_L19_bool_binop_done:;
+      __pyx_L18_bool_binop_done:;
       if (__pyx_t_2) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":578
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":589
  * 			x_next = x - (f_x / speed_x)
  * 			if x_next <= lo or x_next >= hi:
  * 				x_next = (lo + hi) * 0.5             # <<<<<<<<<<<<<<
@@ -8042,7 +8130,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
 */
         __pyx_v_x_next = ((__pyx_v_lo + __pyx_v_hi) * 0.5);
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":577
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":588
  * 		if fabs(speed_x) > _STATION_SPEED_EPS:
  * 			x_next = x - (f_x / speed_x)
  * 			if x_next <= lo or x_next >= hi:             # <<<<<<<<<<<<<<
@@ -8051,17 +8139,17 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
 */
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":575
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":586
  * 			lo = x
  * 			f_lo = f_x
  * 		if fabs(speed_x) > _STATION_SPEED_EPS:             # <<<<<<<<<<<<<<
  * 			x_next = x - (f_x / speed_x)
  * 			if x_next <= lo or x_next >= hi:
 */
-      goto __pyx_L17;
+      goto __pyx_L16;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":580
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":591
  * 				x_next = (lo + hi) * 0.5
  * 		else:
  * 			x_next = (lo + hi) * 0.5             # <<<<<<<<<<<<<<
@@ -8071,9 +8159,9 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
     /*else*/ {
       __pyx_v_x_next = ((__pyx_v_lo + __pyx_v_hi) * 0.5);
     }
-    __pyx_L17:;
+    __pyx_L16:;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":581
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":592
  * 		else:
  * 			x_next = (lo + hi) * 0.5
  * 		x = x_next             # <<<<<<<<<<<<<<
@@ -8082,28 +8170,38 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
 */
     __pyx_v_x = __pyx_v_x_next;
   }
+  __pyx_L11_break:;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":583
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":594
  * 		x = x_next
  *
  * 	result_jd[0] = best_jd             # <<<<<<<<<<<<<<
  * 	result_speed[0] = best_speed
- * 	return 0
+ * 	result_residual[0] = best_err
 */
   (__pyx_v_result_jd[0]) = __pyx_v_best_jd;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":584
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":595
  *
  * 	result_jd[0] = best_jd
  * 	result_speed[0] = best_speed             # <<<<<<<<<<<<<<
+ * 	result_residual[0] = best_err
  * 	return 0
- *
 */
   (__pyx_v_result_speed[0]) = __pyx_v_best_speed;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":585
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":596
  * 	result_jd[0] = best_jd
  * 	result_speed[0] = best_speed
+ * 	result_residual[0] = best_err             # <<<<<<<<<<<<<<
+ * 	return 0
+ *
+*/
+  (__pyx_v_result_residual[0]) = __pyx_v_best_err;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":597
+ * 	result_speed[0] = best_speed
+ * 	result_residual[0] = best_err
  * 	return 0             # <<<<<<<<<<<<<<
  *
  *
@@ -8111,7 +8209,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
   __pyx_r = 0;
   goto __pyx_L0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":494
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":501
  *
  *
  * cdef int _refine_relative_root_c(             # <<<<<<<<<<<<<<
@@ -8129,7 +8227,1045 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_re
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":588
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":600
+ *
+ *
+ * cdef int _refine_relative_speed_turn_c(             # <<<<<<<<<<<<<<
+ * 	int prom_code,
+ * 	int sig_code,
+*/
+
+static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_relative_speed_turn_c(int __pyx_v_prom_code, int __pyx_v_sig_code, double __pyx_v_jd_lo, double __pyx_v_jd_hi, double __pyx_v_prom_lon_lo, double __pyx_v_prom_speed_lo, double __pyx_v_sig_lon_lo, double __pyx_v_sig_speed_lo, double __pyx_v_prom_lon_hi, double __pyx_v_prom_speed_hi, double __pyx_v_sig_lon_hi, double __pyx_v_sig_speed_hi, int __pyx_v_flags, double __pyx_v_eps_days, double *__pyx_v_result_jd, double *__pyx_v_result_prom_lon, double *__pyx_v_result_prom_speed, double *__pyx_v_result_sig_lon, double *__pyx_v_result_sig_speed) {
+  double __pyx_v_lo;
+  double __pyx_v_hi;
+  double __pyx_v_rel_speed_lo;
+  double __pyx_v_rel_speed_hi;
+  double __pyx_v_rel_speed_x;
+  double __pyx_v_den;
+  double __pyx_v_bracket_den;
+  double __pyx_v_x;
+  double __pyx_v_x_next;
+  double __pyx_v_previous_x;
+  double __pyx_v_previous_speed;
+  double __pyx_v_prom_lon_x;
+  double __pyx_v_prom_speed_x;
+  double __pyx_v_sig_lon_x;
+  double __pyx_v_sig_speed_x;
+  CYTHON_UNUSED int __pyx_v_i;
+  int __pyx_r;
+  int __pyx_t_1;
+  double __pyx_t_2;
+  double __pyx_t_3;
+  int __pyx_t_4;
+  int __pyx_t_5;
+  int __pyx_t_6;
+  int __pyx_t_7;
+  int __pyx_t_8;
+  int __pyx_lineno = 0;
+  const char *__pyx_filename = NULL;
+  int __pyx_clineno = 0;
+  PyGILState_STATE __pyx_gilstate_save;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":621
+ * 	double* result_sig_speed,
+ * ) except -1 nogil:
+ * 	cdef double lo = jd_lo             # <<<<<<<<<<<<<<
+ * 	cdef double hi = jd_hi
+ * 	cdef double rel_speed_lo = prom_speed_lo - sig_speed_lo
+*/
+  __pyx_v_lo = __pyx_v_jd_lo;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":622
+ * ) except -1 nogil:
+ * 	cdef double lo = jd_lo
+ * 	cdef double hi = jd_hi             # <<<<<<<<<<<<<<
+ * 	cdef double rel_speed_lo = prom_speed_lo - sig_speed_lo
+ * 	cdef double rel_speed_hi = prom_speed_hi - sig_speed_hi
+*/
+  __pyx_v_hi = __pyx_v_jd_hi;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":623
+ * 	cdef double lo = jd_lo
+ * 	cdef double hi = jd_hi
+ * 	cdef double rel_speed_lo = prom_speed_lo - sig_speed_lo             # <<<<<<<<<<<<<<
+ * 	cdef double rel_speed_hi = prom_speed_hi - sig_speed_hi
+ * 	cdef double rel_speed_x
+*/
+  __pyx_v_rel_speed_lo = (__pyx_v_prom_speed_lo - __pyx_v_sig_speed_lo);
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":624
+ * 	cdef double hi = jd_hi
+ * 	cdef double rel_speed_lo = prom_speed_lo - sig_speed_lo
+ * 	cdef double rel_speed_hi = prom_speed_hi - sig_speed_hi             # <<<<<<<<<<<<<<
+ * 	cdef double rel_speed_x
+ * 	cdef double den
+*/
+  __pyx_v_rel_speed_hi = (__pyx_v_prom_speed_hi - __pyx_v_sig_speed_hi);
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":637
+ * 	cdef double sig_speed_x
+ * 	cdef int i
+ * 	if rel_speed_lo == 0.0:             # <<<<<<<<<<<<<<
+ * 		result_jd[0] = lo
+ * 		result_prom_lon[0] = prom_lon_lo
+*/
+  __pyx_t_1 = (__pyx_v_rel_speed_lo == 0.0);
+  if (__pyx_t_1) {
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":638
+ * 	cdef int i
+ * 	if rel_speed_lo == 0.0:
+ * 		result_jd[0] = lo             # <<<<<<<<<<<<<<
+ * 		result_prom_lon[0] = prom_lon_lo
+ * 		result_prom_speed[0] = prom_speed_lo
+*/
+    (__pyx_v_result_jd[0]) = __pyx_v_lo;
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":639
+ * 	if rel_speed_lo == 0.0:
+ * 		result_jd[0] = lo
+ * 		result_prom_lon[0] = prom_lon_lo             # <<<<<<<<<<<<<<
+ * 		result_prom_speed[0] = prom_speed_lo
+ * 		result_sig_lon[0] = sig_lon_lo
+*/
+    (__pyx_v_result_prom_lon[0]) = __pyx_v_prom_lon_lo;
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":640
+ * 		result_jd[0] = lo
+ * 		result_prom_lon[0] = prom_lon_lo
+ * 		result_prom_speed[0] = prom_speed_lo             # <<<<<<<<<<<<<<
+ * 		result_sig_lon[0] = sig_lon_lo
+ * 		result_sig_speed[0] = sig_speed_lo
+*/
+    (__pyx_v_result_prom_speed[0]) = __pyx_v_prom_speed_lo;
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":641
+ * 		result_prom_lon[0] = prom_lon_lo
+ * 		result_prom_speed[0] = prom_speed_lo
+ * 		result_sig_lon[0] = sig_lon_lo             # <<<<<<<<<<<<<<
+ * 		result_sig_speed[0] = sig_speed_lo
+ * 		return 0
+*/
+    (__pyx_v_result_sig_lon[0]) = __pyx_v_sig_lon_lo;
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":642
+ * 		result_prom_speed[0] = prom_speed_lo
+ * 		result_sig_lon[0] = sig_lon_lo
+ * 		result_sig_speed[0] = sig_speed_lo             # <<<<<<<<<<<<<<
+ * 		return 0
+ * 	if rel_speed_hi == 0.0:
+*/
+    (__pyx_v_result_sig_speed[0]) = __pyx_v_sig_speed_lo;
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":643
+ * 		result_sig_lon[0] = sig_lon_lo
+ * 		result_sig_speed[0] = sig_speed_lo
+ * 		return 0             # <<<<<<<<<<<<<<
+ * 	if rel_speed_hi == 0.0:
+ * 		result_jd[0] = hi
+*/
+    __pyx_r = 0;
+    goto __pyx_L0;
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":637
+ * 	cdef double sig_speed_x
+ * 	cdef int i
+ * 	if rel_speed_lo == 0.0:             # <<<<<<<<<<<<<<
+ * 		result_jd[0] = lo
+ * 		result_prom_lon[0] = prom_lon_lo
+*/
+  }
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":644
+ * 		result_sig_speed[0] = sig_speed_lo
+ * 		return 0
+ * 	if rel_speed_hi == 0.0:             # <<<<<<<<<<<<<<
+ * 		result_jd[0] = hi
+ * 		result_prom_lon[0] = prom_lon_hi
+*/
+  __pyx_t_1 = (__pyx_v_rel_speed_hi == 0.0);
+  if (__pyx_t_1) {
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":645
+ * 		return 0
+ * 	if rel_speed_hi == 0.0:
+ * 		result_jd[0] = hi             # <<<<<<<<<<<<<<
+ * 		result_prom_lon[0] = prom_lon_hi
+ * 		result_prom_speed[0] = prom_speed_hi
+*/
+    (__pyx_v_result_jd[0]) = __pyx_v_hi;
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":646
+ * 	if rel_speed_hi == 0.0:
+ * 		result_jd[0] = hi
+ * 		result_prom_lon[0] = prom_lon_hi             # <<<<<<<<<<<<<<
+ * 		result_prom_speed[0] = prom_speed_hi
+ * 		result_sig_lon[0] = sig_lon_hi
+*/
+    (__pyx_v_result_prom_lon[0]) = __pyx_v_prom_lon_hi;
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":647
+ * 		result_jd[0] = hi
+ * 		result_prom_lon[0] = prom_lon_hi
+ * 		result_prom_speed[0] = prom_speed_hi             # <<<<<<<<<<<<<<
+ * 		result_sig_lon[0] = sig_lon_hi
+ * 		result_sig_speed[0] = sig_speed_hi
+*/
+    (__pyx_v_result_prom_speed[0]) = __pyx_v_prom_speed_hi;
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":648
+ * 		result_prom_lon[0] = prom_lon_hi
+ * 		result_prom_speed[0] = prom_speed_hi
+ * 		result_sig_lon[0] = sig_lon_hi             # <<<<<<<<<<<<<<
+ * 		result_sig_speed[0] = sig_speed_hi
+ * 		return 0
+*/
+    (__pyx_v_result_sig_lon[0]) = __pyx_v_sig_lon_hi;
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":649
+ * 		result_prom_speed[0] = prom_speed_hi
+ * 		result_sig_lon[0] = sig_lon_hi
+ * 		result_sig_speed[0] = sig_speed_hi             # <<<<<<<<<<<<<<
+ * 		return 0
+ * 	den = rel_speed_hi - rel_speed_lo
+*/
+    (__pyx_v_result_sig_speed[0]) = __pyx_v_sig_speed_hi;
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":650
+ * 		result_sig_lon[0] = sig_lon_hi
+ * 		result_sig_speed[0] = sig_speed_hi
+ * 		return 0             # <<<<<<<<<<<<<<
+ * 	den = rel_speed_hi - rel_speed_lo
+ * 	x = (lo + hi) * 0.5 if den == 0.0 else hi - rel_speed_hi * (hi - lo) / den
+*/
+    __pyx_r = 0;
+    goto __pyx_L0;
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":644
+ * 		result_sig_speed[0] = sig_speed_lo
+ * 		return 0
+ * 	if rel_speed_hi == 0.0:             # <<<<<<<<<<<<<<
+ * 		result_jd[0] = hi
+ * 		result_prom_lon[0] = prom_lon_hi
+*/
+  }
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":651
+ * 		result_sig_speed[0] = sig_speed_hi
+ * 		return 0
+ * 	den = rel_speed_hi - rel_speed_lo             # <<<<<<<<<<<<<<
+ * 	x = (lo + hi) * 0.5 if den == 0.0 else hi - rel_speed_hi * (hi - lo) / den
+ * 	if x <= lo or x >= hi:
+*/
+  __pyx_v_den = (__pyx_v_rel_speed_hi - __pyx_v_rel_speed_lo);
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":652
+ * 		return 0
+ * 	den = rel_speed_hi - rel_speed_lo
+ * 	x = (lo + hi) * 0.5 if den == 0.0 else hi - rel_speed_hi * (hi - lo) / den             # <<<<<<<<<<<<<<
+ * 	if x <= lo or x >= hi:
+ * 		x = (lo + hi) * 0.5
+*/
+  __pyx_t_1 = (__pyx_v_den == 0.0);
+  if (__pyx_t_1) {
+    __pyx_t_2 = ((__pyx_v_lo + __pyx_v_hi) * 0.5);
+  } else {
+    __pyx_t_3 = (__pyx_v_rel_speed_hi * (__pyx_v_hi - __pyx_v_lo));
+    if (unlikely(__pyx_v_den == 0)) {
+      PyGILState_STATE __pyx_gilstate_save = __Pyx_PyGILState_Ensure();
+      PyErr_SetString(PyExc_ZeroDivisionError, "float division");
+      __Pyx_PyGILState_Release(__pyx_gilstate_save);
+      __PYX_ERR(0, 652, __pyx_L1_error)
+    }
+    __pyx_t_2 = (__pyx_v_hi - (__pyx_t_3 / __pyx_v_den));
+  }
+  __pyx_v_x = __pyx_t_2;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":653
+ * 	den = rel_speed_hi - rel_speed_lo
+ * 	x = (lo + hi) * 0.5 if den == 0.0 else hi - rel_speed_hi * (hi - lo) / den
+ * 	if x <= lo or x >= hi:             # <<<<<<<<<<<<<<
+ * 		x = (lo + hi) * 0.5
+ * 	previous_x = lo
+*/
+  __pyx_t_4 = (__pyx_v_x <= __pyx_v_lo);
+  if (!__pyx_t_4) {
+  } else {
+    __pyx_t_1 = __pyx_t_4;
+    goto __pyx_L6_bool_binop_done;
+  }
+  __pyx_t_4 = (__pyx_v_x >= __pyx_v_hi);
+  __pyx_t_1 = __pyx_t_4;
+  __pyx_L6_bool_binop_done:;
+  if (__pyx_t_1) {
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":654
+ * 	x = (lo + hi) * 0.5 if den == 0.0 else hi - rel_speed_hi * (hi - lo) / den
+ * 	if x <= lo or x >= hi:
+ * 		x = (lo + hi) * 0.5             # <<<<<<<<<<<<<<
+ * 	previous_x = lo
+ * 	previous_speed = rel_speed_lo
+*/
+    __pyx_v_x = ((__pyx_v_lo + __pyx_v_hi) * 0.5);
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":653
+ * 	den = rel_speed_hi - rel_speed_lo
+ * 	x = (lo + hi) * 0.5 if den == 0.0 else hi - rel_speed_hi * (hi - lo) / den
+ * 	if x <= lo or x >= hi:             # <<<<<<<<<<<<<<
+ * 		x = (lo + hi) * 0.5
+ * 	previous_x = lo
+*/
+  }
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":655
+ * 	if x <= lo or x >= hi:
+ * 		x = (lo + hi) * 0.5
+ * 	previous_x = lo             # <<<<<<<<<<<<<<
+ * 	previous_speed = rel_speed_lo
+ * 	for i in range(_BISECTION_MAX_ITERS):
+*/
+  __pyx_v_previous_x = __pyx_v_lo;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":656
+ * 		x = (lo + hi) * 0.5
+ * 	previous_x = lo
+ * 	previous_speed = rel_speed_lo             # <<<<<<<<<<<<<<
+ * 	for i in range(_BISECTION_MAX_ITERS):
+ * 		if (hi - lo) <= eps_days:
+*/
+  __pyx_v_previous_speed = __pyx_v_rel_speed_lo;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":657
+ * 	previous_x = lo
+ * 	previous_speed = rel_speed_lo
+ * 	for i in range(_BISECTION_MAX_ITERS):             # <<<<<<<<<<<<<<
+ * 		if (hi - lo) <= eps_days:
+ * 			break
+*/
+  __pyx_t_5 = __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__BISECTION_MAX_ITERS;
+  __pyx_t_6 = __pyx_t_5;
+  for (__pyx_t_7 = 0; __pyx_t_7 < __pyx_t_6; __pyx_t_7+=1) {
+    __pyx_v_i = __pyx_t_7;
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":658
+ * 	previous_speed = rel_speed_lo
+ * 	for i in range(_BISECTION_MAX_ITERS):
+ * 		if (hi - lo) <= eps_days:             # <<<<<<<<<<<<<<
+ * 			break
+ * 		_eval_body_lon_speed(x, prom_code, flags, &prom_lon_x, &prom_speed_x)
+*/
+    __pyx_t_1 = ((__pyx_v_hi - __pyx_v_lo) <= __pyx_v_eps_days);
+    if (__pyx_t_1) {
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":659
+ * 	for i in range(_BISECTION_MAX_ITERS):
+ * 		if (hi - lo) <= eps_days:
+ * 			break             # <<<<<<<<<<<<<<
+ * 		_eval_body_lon_speed(x, prom_code, flags, &prom_lon_x, &prom_speed_x)
+ * 		_eval_body_lon_speed(x, sig_code, flags, &sig_lon_x, &sig_speed_x)
+*/
+      goto __pyx_L9_break;
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":658
+ * 	previous_speed = rel_speed_lo
+ * 	for i in range(_BISECTION_MAX_ITERS):
+ * 		if (hi - lo) <= eps_days:             # <<<<<<<<<<<<<<
+ * 			break
+ * 		_eval_body_lon_speed(x, prom_code, flags, &prom_lon_x, &prom_speed_x)
+*/
+    }
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":660
+ * 		if (hi - lo) <= eps_days:
+ * 			break
+ * 		_eval_body_lon_speed(x, prom_code, flags, &prom_lon_x, &prom_speed_x)             # <<<<<<<<<<<<<<
+ * 		_eval_body_lon_speed(x, sig_code, flags, &sig_lon_x, &sig_speed_x)
+ * 		rel_speed_x = prom_speed_x - sig_speed_x
+*/
+    __pyx_t_8 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_body_lon_speed(__pyx_v_x, __pyx_v_prom_code, __pyx_v_flags, (&__pyx_v_prom_lon_x), (&__pyx_v_prom_speed_x)); if (unlikely(__pyx_t_8 == ((int)-1))) __PYX_ERR(0, 660, __pyx_L1_error)
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":661
+ * 			break
+ * 		_eval_body_lon_speed(x, prom_code, flags, &prom_lon_x, &prom_speed_x)
+ * 		_eval_body_lon_speed(x, sig_code, flags, &sig_lon_x, &sig_speed_x)             # <<<<<<<<<<<<<<
+ * 		rel_speed_x = prom_speed_x - sig_speed_x
+ * 		if rel_speed_x == 0.0 or fabs(x - previous_x) <= eps_days:
+*/
+    __pyx_t_8 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_body_lon_speed(__pyx_v_x, __pyx_v_sig_code, __pyx_v_flags, (&__pyx_v_sig_lon_x), (&__pyx_v_sig_speed_x)); if (unlikely(__pyx_t_8 == ((int)-1))) __PYX_ERR(0, 661, __pyx_L1_error)
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":662
+ * 		_eval_body_lon_speed(x, prom_code, flags, &prom_lon_x, &prom_speed_x)
+ * 		_eval_body_lon_speed(x, sig_code, flags, &sig_lon_x, &sig_speed_x)
+ * 		rel_speed_x = prom_speed_x - sig_speed_x             # <<<<<<<<<<<<<<
+ * 		if rel_speed_x == 0.0 or fabs(x - previous_x) <= eps_days:
+ * 			result_jd[0] = x
+*/
+    __pyx_v_rel_speed_x = (__pyx_v_prom_speed_x - __pyx_v_sig_speed_x);
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":663
+ * 		_eval_body_lon_speed(x, sig_code, flags, &sig_lon_x, &sig_speed_x)
+ * 		rel_speed_x = prom_speed_x - sig_speed_x
+ * 		if rel_speed_x == 0.0 or fabs(x - previous_x) <= eps_days:             # <<<<<<<<<<<<<<
+ * 			result_jd[0] = x
+ * 			result_prom_lon[0] = prom_lon_x
+*/
+    __pyx_t_4 = (__pyx_v_rel_speed_x == 0.0);
+    if (!__pyx_t_4) {
+    } else {
+      __pyx_t_1 = __pyx_t_4;
+      goto __pyx_L12_bool_binop_done;
+    }
+    __pyx_t_4 = (fabs((__pyx_v_x - __pyx_v_previous_x)) <= __pyx_v_eps_days);
+    __pyx_t_1 = __pyx_t_4;
+    __pyx_L12_bool_binop_done:;
+    if (__pyx_t_1) {
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":664
+ * 		rel_speed_x = prom_speed_x - sig_speed_x
+ * 		if rel_speed_x == 0.0 or fabs(x - previous_x) <= eps_days:
+ * 			result_jd[0] = x             # <<<<<<<<<<<<<<
+ * 			result_prom_lon[0] = prom_lon_x
+ * 			result_prom_speed[0] = prom_speed_x
+*/
+      (__pyx_v_result_jd[0]) = __pyx_v_x;
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":665
+ * 		if rel_speed_x == 0.0 or fabs(x - previous_x) <= eps_days:
+ * 			result_jd[0] = x
+ * 			result_prom_lon[0] = prom_lon_x             # <<<<<<<<<<<<<<
+ * 			result_prom_speed[0] = prom_speed_x
+ * 			result_sig_lon[0] = sig_lon_x
+*/
+      (__pyx_v_result_prom_lon[0]) = __pyx_v_prom_lon_x;
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":666
+ * 			result_jd[0] = x
+ * 			result_prom_lon[0] = prom_lon_x
+ * 			result_prom_speed[0] = prom_speed_x             # <<<<<<<<<<<<<<
+ * 			result_sig_lon[0] = sig_lon_x
+ * 			result_sig_speed[0] = sig_speed_x
+*/
+      (__pyx_v_result_prom_speed[0]) = __pyx_v_prom_speed_x;
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":667
+ * 			result_prom_lon[0] = prom_lon_x
+ * 			result_prom_speed[0] = prom_speed_x
+ * 			result_sig_lon[0] = sig_lon_x             # <<<<<<<<<<<<<<
+ * 			result_sig_speed[0] = sig_speed_x
+ * 			return 0
+*/
+      (__pyx_v_result_sig_lon[0]) = __pyx_v_sig_lon_x;
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":668
+ * 			result_prom_speed[0] = prom_speed_x
+ * 			result_sig_lon[0] = sig_lon_x
+ * 			result_sig_speed[0] = sig_speed_x             # <<<<<<<<<<<<<<
+ * 			return 0
+ * 		if _crossed_zero_c(rel_speed_lo, rel_speed_x):
+*/
+      (__pyx_v_result_sig_speed[0]) = __pyx_v_sig_speed_x;
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":669
+ * 			result_sig_lon[0] = sig_lon_x
+ * 			result_sig_speed[0] = sig_speed_x
+ * 			return 0             # <<<<<<<<<<<<<<
+ * 		if _crossed_zero_c(rel_speed_lo, rel_speed_x):
+ * 			hi = x
+*/
+      __pyx_r = 0;
+      goto __pyx_L0;
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":663
+ * 		_eval_body_lon_speed(x, sig_code, flags, &sig_lon_x, &sig_speed_x)
+ * 		rel_speed_x = prom_speed_x - sig_speed_x
+ * 		if rel_speed_x == 0.0 or fabs(x - previous_x) <= eps_days:             # <<<<<<<<<<<<<<
+ * 			result_jd[0] = x
+ * 			result_prom_lon[0] = prom_lon_x
+*/
+    }
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":670
+ * 			result_sig_speed[0] = sig_speed_x
+ * 			return 0
+ * 		if _crossed_zero_c(rel_speed_lo, rel_speed_x):             # <<<<<<<<<<<<<<
+ * 			hi = x
+ * 			rel_speed_hi = rel_speed_x
+*/
+    __pyx_t_1 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__crossed_zero_c(__pyx_v_rel_speed_lo, __pyx_v_rel_speed_x);
+    if (__pyx_t_1) {
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":671
+ * 			return 0
+ * 		if _crossed_zero_c(rel_speed_lo, rel_speed_x):
+ * 			hi = x             # <<<<<<<<<<<<<<
+ * 			rel_speed_hi = rel_speed_x
+ * 		else:
+*/
+      __pyx_v_hi = __pyx_v_x;
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":672
+ * 		if _crossed_zero_c(rel_speed_lo, rel_speed_x):
+ * 			hi = x
+ * 			rel_speed_hi = rel_speed_x             # <<<<<<<<<<<<<<
+ * 		else:
+ * 			lo = x
+*/
+      __pyx_v_rel_speed_hi = __pyx_v_rel_speed_x;
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":670
+ * 			result_sig_speed[0] = sig_speed_x
+ * 			return 0
+ * 		if _crossed_zero_c(rel_speed_lo, rel_speed_x):             # <<<<<<<<<<<<<<
+ * 			hi = x
+ * 			rel_speed_hi = rel_speed_x
+*/
+      goto __pyx_L14;
+    }
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":674
+ * 			rel_speed_hi = rel_speed_x
+ * 		else:
+ * 			lo = x             # <<<<<<<<<<<<<<
+ * 			rel_speed_lo = rel_speed_x
+ * 		den = rel_speed_x - previous_speed
+*/
+    /*else*/ {
+      __pyx_v_lo = __pyx_v_x;
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":675
+ * 		else:
+ * 			lo = x
+ * 			rel_speed_lo = rel_speed_x             # <<<<<<<<<<<<<<
+ * 		den = rel_speed_x - previous_speed
+ * 		x_next = x - rel_speed_x * (x - previous_x) / den if den != 0.0 else (lo + hi) * 0.5
+*/
+      __pyx_v_rel_speed_lo = __pyx_v_rel_speed_x;
+    }
+    __pyx_L14:;
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":676
+ * 			lo = x
+ * 			rel_speed_lo = rel_speed_x
+ * 		den = rel_speed_x - previous_speed             # <<<<<<<<<<<<<<
+ * 		x_next = x - rel_speed_x * (x - previous_x) / den if den != 0.0 else (lo + hi) * 0.5
+ * 		if x_next <= lo or x_next >= hi:
+*/
+    __pyx_v_den = (__pyx_v_rel_speed_x - __pyx_v_previous_speed);
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":677
+ * 			rel_speed_lo = rel_speed_x
+ * 		den = rel_speed_x - previous_speed
+ * 		x_next = x - rel_speed_x * (x - previous_x) / den if den != 0.0 else (lo + hi) * 0.5             # <<<<<<<<<<<<<<
+ * 		if x_next <= lo or x_next >= hi:
+ * 			bracket_den = rel_speed_hi - rel_speed_lo
+*/
+    __pyx_t_1 = (__pyx_v_den != 0.0);
+    if (__pyx_t_1) {
+      __pyx_t_3 = (__pyx_v_rel_speed_x * (__pyx_v_x - __pyx_v_previous_x));
+      if (unlikely(__pyx_v_den == 0)) {
+        PyGILState_STATE __pyx_gilstate_save = __Pyx_PyGILState_Ensure();
+        PyErr_SetString(PyExc_ZeroDivisionError, "float division");
+        __Pyx_PyGILState_Release(__pyx_gilstate_save);
+        __PYX_ERR(0, 677, __pyx_L1_error)
+      }
+      __pyx_t_2 = (__pyx_v_x - (__pyx_t_3 / __pyx_v_den));
+    } else {
+      __pyx_t_2 = ((__pyx_v_lo + __pyx_v_hi) * 0.5);
+    }
+    __pyx_v_x_next = __pyx_t_2;
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":678
+ * 		den = rel_speed_x - previous_speed
+ * 		x_next = x - rel_speed_x * (x - previous_x) / den if den != 0.0 else (lo + hi) * 0.5
+ * 		if x_next <= lo or x_next >= hi:             # <<<<<<<<<<<<<<
+ * 			bracket_den = rel_speed_hi - rel_speed_lo
+ * 			x_next = (lo + hi) * 0.5 if bracket_den == 0.0 else hi - rel_speed_hi * (hi - lo) / bracket_den
+*/
+    __pyx_t_4 = (__pyx_v_x_next <= __pyx_v_lo);
+    if (!__pyx_t_4) {
+    } else {
+      __pyx_t_1 = __pyx_t_4;
+      goto __pyx_L16_bool_binop_done;
+    }
+    __pyx_t_4 = (__pyx_v_x_next >= __pyx_v_hi);
+    __pyx_t_1 = __pyx_t_4;
+    __pyx_L16_bool_binop_done:;
+    if (__pyx_t_1) {
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":679
+ * 		x_next = x - rel_speed_x * (x - previous_x) / den if den != 0.0 else (lo + hi) * 0.5
+ * 		if x_next <= lo or x_next >= hi:
+ * 			bracket_den = rel_speed_hi - rel_speed_lo             # <<<<<<<<<<<<<<
+ * 			x_next = (lo + hi) * 0.5 if bracket_den == 0.0 else hi - rel_speed_hi * (hi - lo) / bracket_den
+ * 			if x_next <= lo or x_next >= hi:
+*/
+      __pyx_v_bracket_den = (__pyx_v_rel_speed_hi - __pyx_v_rel_speed_lo);
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":680
+ * 		if x_next <= lo or x_next >= hi:
+ * 			bracket_den = rel_speed_hi - rel_speed_lo
+ * 			x_next = (lo + hi) * 0.5 if bracket_den == 0.0 else hi - rel_speed_hi * (hi - lo) / bracket_den             # <<<<<<<<<<<<<<
+ * 			if x_next <= lo or x_next >= hi:
+ * 				x_next = (lo + hi) * 0.5
+*/
+      __pyx_t_1 = (__pyx_v_bracket_den == 0.0);
+      if (__pyx_t_1) {
+        __pyx_t_2 = ((__pyx_v_lo + __pyx_v_hi) * 0.5);
+      } else {
+        __pyx_t_3 = (__pyx_v_rel_speed_hi * (__pyx_v_hi - __pyx_v_lo));
+        if (unlikely(__pyx_v_bracket_den == 0)) {
+          PyGILState_STATE __pyx_gilstate_save = __Pyx_PyGILState_Ensure();
+          PyErr_SetString(PyExc_ZeroDivisionError, "float division");
+          __Pyx_PyGILState_Release(__pyx_gilstate_save);
+          __PYX_ERR(0, 680, __pyx_L1_error)
+        }
+        __pyx_t_2 = (__pyx_v_hi - (__pyx_t_3 / __pyx_v_bracket_den));
+      }
+      __pyx_v_x_next = __pyx_t_2;
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":681
+ * 			bracket_den = rel_speed_hi - rel_speed_lo
+ * 			x_next = (lo + hi) * 0.5 if bracket_den == 0.0 else hi - rel_speed_hi * (hi - lo) / bracket_den
+ * 			if x_next <= lo or x_next >= hi:             # <<<<<<<<<<<<<<
+ * 				x_next = (lo + hi) * 0.5
+ * 		previous_x = x
+*/
+      __pyx_t_4 = (__pyx_v_x_next <= __pyx_v_lo);
+      if (!__pyx_t_4) {
+      } else {
+        __pyx_t_1 = __pyx_t_4;
+        goto __pyx_L19_bool_binop_done;
+      }
+      __pyx_t_4 = (__pyx_v_x_next >= __pyx_v_hi);
+      __pyx_t_1 = __pyx_t_4;
+      __pyx_L19_bool_binop_done:;
+      if (__pyx_t_1) {
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":682
+ * 			x_next = (lo + hi) * 0.5 if bracket_den == 0.0 else hi - rel_speed_hi * (hi - lo) / bracket_den
+ * 			if x_next <= lo or x_next >= hi:
+ * 				x_next = (lo + hi) * 0.5             # <<<<<<<<<<<<<<
+ * 		previous_x = x
+ * 		previous_speed = rel_speed_x
+*/
+        __pyx_v_x_next = ((__pyx_v_lo + __pyx_v_hi) * 0.5);
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":681
+ * 			bracket_den = rel_speed_hi - rel_speed_lo
+ * 			x_next = (lo + hi) * 0.5 if bracket_den == 0.0 else hi - rel_speed_hi * (hi - lo) / bracket_den
+ * 			if x_next <= lo or x_next >= hi:             # <<<<<<<<<<<<<<
+ * 				x_next = (lo + hi) * 0.5
+ * 		previous_x = x
+*/
+      }
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":678
+ * 		den = rel_speed_x - previous_speed
+ * 		x_next = x - rel_speed_x * (x - previous_x) / den if den != 0.0 else (lo + hi) * 0.5
+ * 		if x_next <= lo or x_next >= hi:             # <<<<<<<<<<<<<<
+ * 			bracket_den = rel_speed_hi - rel_speed_lo
+ * 			x_next = (lo + hi) * 0.5 if bracket_den == 0.0 else hi - rel_speed_hi * (hi - lo) / bracket_den
+*/
+    }
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":683
+ * 			if x_next <= lo or x_next >= hi:
+ * 				x_next = (lo + hi) * 0.5
+ * 		previous_x = x             # <<<<<<<<<<<<<<
+ * 		previous_speed = rel_speed_x
+ * 		x = x_next
+*/
+    __pyx_v_previous_x = __pyx_v_x;
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":684
+ * 				x_next = (lo + hi) * 0.5
+ * 		previous_x = x
+ * 		previous_speed = rel_speed_x             # <<<<<<<<<<<<<<
+ * 		x = x_next
+ * 	x = (lo + hi) * 0.5
+*/
+    __pyx_v_previous_speed = __pyx_v_rel_speed_x;
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":685
+ * 		previous_x = x
+ * 		previous_speed = rel_speed_x
+ * 		x = x_next             # <<<<<<<<<<<<<<
+ * 	x = (lo + hi) * 0.5
+ * 	_eval_body_lon_speed(x, prom_code, flags, &prom_lon_x, &prom_speed_x)
+*/
+    __pyx_v_x = __pyx_v_x_next;
+  }
+  __pyx_L9_break:;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":686
+ * 		previous_speed = rel_speed_x
+ * 		x = x_next
+ * 	x = (lo + hi) * 0.5             # <<<<<<<<<<<<<<
+ * 	_eval_body_lon_speed(x, prom_code, flags, &prom_lon_x, &prom_speed_x)
+ * 	_eval_body_lon_speed(x, sig_code, flags, &sig_lon_x, &sig_speed_x)
+*/
+  __pyx_v_x = ((__pyx_v_lo + __pyx_v_hi) * 0.5);
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":687
+ * 		x = x_next
+ * 	x = (lo + hi) * 0.5
+ * 	_eval_body_lon_speed(x, prom_code, flags, &prom_lon_x, &prom_speed_x)             # <<<<<<<<<<<<<<
+ * 	_eval_body_lon_speed(x, sig_code, flags, &sig_lon_x, &sig_speed_x)
+ * 	result_jd[0] = x
+*/
+  __pyx_t_5 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_body_lon_speed(__pyx_v_x, __pyx_v_prom_code, __pyx_v_flags, (&__pyx_v_prom_lon_x), (&__pyx_v_prom_speed_x)); if (unlikely(__pyx_t_5 == ((int)-1))) __PYX_ERR(0, 687, __pyx_L1_error)
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":688
+ * 	x = (lo + hi) * 0.5
+ * 	_eval_body_lon_speed(x, prom_code, flags, &prom_lon_x, &prom_speed_x)
+ * 	_eval_body_lon_speed(x, sig_code, flags, &sig_lon_x, &sig_speed_x)             # <<<<<<<<<<<<<<
+ * 	result_jd[0] = x
+ * 	result_prom_lon[0] = prom_lon_x
+*/
+  __pyx_t_5 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_body_lon_speed(__pyx_v_x, __pyx_v_sig_code, __pyx_v_flags, (&__pyx_v_sig_lon_x), (&__pyx_v_sig_speed_x)); if (unlikely(__pyx_t_5 == ((int)-1))) __PYX_ERR(0, 688, __pyx_L1_error)
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":689
+ * 	_eval_body_lon_speed(x, prom_code, flags, &prom_lon_x, &prom_speed_x)
+ * 	_eval_body_lon_speed(x, sig_code, flags, &sig_lon_x, &sig_speed_x)
+ * 	result_jd[0] = x             # <<<<<<<<<<<<<<
+ * 	result_prom_lon[0] = prom_lon_x
+ * 	result_prom_speed[0] = prom_speed_x
+*/
+  (__pyx_v_result_jd[0]) = __pyx_v_x;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":690
+ * 	_eval_body_lon_speed(x, sig_code, flags, &sig_lon_x, &sig_speed_x)
+ * 	result_jd[0] = x
+ * 	result_prom_lon[0] = prom_lon_x             # <<<<<<<<<<<<<<
+ * 	result_prom_speed[0] = prom_speed_x
+ * 	result_sig_lon[0] = sig_lon_x
+*/
+  (__pyx_v_result_prom_lon[0]) = __pyx_v_prom_lon_x;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":691
+ * 	result_jd[0] = x
+ * 	result_prom_lon[0] = prom_lon_x
+ * 	result_prom_speed[0] = prom_speed_x             # <<<<<<<<<<<<<<
+ * 	result_sig_lon[0] = sig_lon_x
+ * 	result_sig_speed[0] = sig_speed_x
+*/
+  (__pyx_v_result_prom_speed[0]) = __pyx_v_prom_speed_x;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":692
+ * 	result_prom_lon[0] = prom_lon_x
+ * 	result_prom_speed[0] = prom_speed_x
+ * 	result_sig_lon[0] = sig_lon_x             # <<<<<<<<<<<<<<
+ * 	result_sig_speed[0] = sig_speed_x
+ * 	return 0
+*/
+  (__pyx_v_result_sig_lon[0]) = __pyx_v_sig_lon_x;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":693
+ * 	result_prom_speed[0] = prom_speed_x
+ * 	result_sig_lon[0] = sig_lon_x
+ * 	result_sig_speed[0] = sig_speed_x             # <<<<<<<<<<<<<<
+ * 	return 0
+ *
+*/
+  (__pyx_v_result_sig_speed[0]) = __pyx_v_sig_speed_x;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":694
+ * 	result_sig_lon[0] = sig_lon_x
+ * 	result_sig_speed[0] = sig_speed_x
+ * 	return 0             # <<<<<<<<<<<<<<
+ *
+ *
+*/
+  __pyx_r = 0;
+  goto __pyx_L0;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":600
+ *
+ *
+ * cdef int _refine_relative_speed_turn_c(             # <<<<<<<<<<<<<<
+ * 	int prom_code,
+ * 	int sig_code,
+*/
+
+  /* function exit code */
+  __pyx_L1_error:;
+  __pyx_gilstate_save = __Pyx_PyGILState_Ensure();
+  __Pyx_AddTraceback("aries.astrology.transit_fast._transit_kernel._refine_relative_speed_turn_c", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __pyx_r = -1;
+  __Pyx_PyGILState_Release(__pyx_gilstate_save);
+  __pyx_L0:;
+  return __pyx_r;
+}
+
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":697
+ *
+ *
+ * cdef inline int _append_relative_segment_c(             # <<<<<<<<<<<<<<
+ * 	CHit** hits_ptr,
+ * 	size_t* count_ptr,
+*/
+
+static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_relative_segment_c(__pyx_t_5aries_9astrology_12transit_fast_6_types_CHit **__pyx_v_hits_ptr, size_t *__pyx_v_count_ptr, size_t *__pyx_v_capacity_ptr, int __pyx_v_spec_idx, int __pyx_v_prom_code, int __pyx_v_sig_code, double __pyx_v_offset, double __pyx_v_jd_lo, double __pyx_v_jd_hi, double __pyx_v_prom_lon_lo, double __pyx_v_prom_speed_lo, double __pyx_v_sig_lon_lo, double __pyx_v_sig_speed_lo, double __pyx_v_prom_lon_hi, double __pyx_v_prom_speed_hi, double __pyx_v_sig_lon_hi, double __pyx_v_sig_speed_hi, int __pyx_v_flags, double __pyx_v_eps_deg, double __pyx_v_eps_days) {
+  double __pyx_v_delta_lo;
+  double __pyx_v_delta_hi;
+  double __pyx_v_hit_jd;
+  double __pyx_v_hit_speed;
+  double __pyx_v_hit_residual;
+  int __pyx_r;
+  int __pyx_t_1;
+  int __pyx_t_2;
+  int __pyx_t_3;
+  int __pyx_lineno = 0;
+  const char *__pyx_filename = NULL;
+  int __pyx_clineno = 0;
+  PyGILState_STATE __pyx_gilstate_save;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":724
+ * 	cdef double hit_speed
+ * 	cdef double hit_residual
+ * 	if jd_hi <= jd_lo:             # <<<<<<<<<<<<<<
+ * 		return 0
+ * 	delta_lo = _relative_delta_c(prom_lon_lo, sig_lon_lo, offset)
+*/
+  __pyx_t_1 = (__pyx_v_jd_hi <= __pyx_v_jd_lo);
+  if (__pyx_t_1) {
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":725
+ * 	cdef double hit_residual
+ * 	if jd_hi <= jd_lo:
+ * 		return 0             # <<<<<<<<<<<<<<
+ * 	delta_lo = _relative_delta_c(prom_lon_lo, sig_lon_lo, offset)
+ * 	delta_hi = _relative_delta_c(prom_lon_hi, sig_lon_hi, offset)
+*/
+    __pyx_r = 0;
+    goto __pyx_L0;
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":724
+ * 	cdef double hit_speed
+ * 	cdef double hit_residual
+ * 	if jd_hi <= jd_lo:             # <<<<<<<<<<<<<<
+ * 		return 0
+ * 	delta_lo = _relative_delta_c(prom_lon_lo, sig_lon_lo, offset)
+*/
+  }
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":726
+ * 	if jd_hi <= jd_lo:
+ * 		return 0
+ * 	delta_lo = _relative_delta_c(prom_lon_lo, sig_lon_lo, offset)             # <<<<<<<<<<<<<<
+ * 	delta_hi = _relative_delta_c(prom_lon_hi, sig_lon_hi, offset)
+ * 	if fabs(delta_lo) <= eps_deg:
+*/
+  __pyx_v_delta_lo = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__relative_delta_c(__pyx_v_prom_lon_lo, __pyx_v_sig_lon_lo, __pyx_v_offset);
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":727
+ * 		return 0
+ * 	delta_lo = _relative_delta_c(prom_lon_lo, sig_lon_lo, offset)
+ * 	delta_hi = _relative_delta_c(prom_lon_hi, sig_lon_hi, offset)             # <<<<<<<<<<<<<<
+ * 	if fabs(delta_lo) <= eps_deg:
+ * 		return _append_unique_c(
+*/
+  __pyx_v_delta_hi = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__relative_delta_c(__pyx_v_prom_lon_hi, __pyx_v_sig_lon_hi, __pyx_v_offset);
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":728
+ * 	delta_lo = _relative_delta_c(prom_lon_lo, sig_lon_lo, offset)
+ * 	delta_hi = _relative_delta_c(prom_lon_hi, sig_lon_hi, offset)
+ * 	if fabs(delta_lo) <= eps_deg:             # <<<<<<<<<<<<<<
+ * 		return _append_unique_c(
+ * 			hits_ptr,
+*/
+  __pyx_t_1 = (fabs(__pyx_v_delta_lo) <= __pyx_v_eps_deg);
+  if (__pyx_t_1) {
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":739
+ * 			_HIT_LONGITUDE,
+ * 			prom_speed_lo - sig_speed_lo,
+ * 			1 if prom_speed_lo - sig_speed_lo < 0.0 else 0,             # <<<<<<<<<<<<<<
+ * 		)
+ * 	if fabs(delta_hi) <= eps_deg:
+*/
+    __pyx_t_1 = ((__pyx_v_prom_speed_lo - __pyx_v_sig_speed_lo) < 0.0);
+    if (__pyx_t_1) {
+      __pyx_t_2 = 1;
+    } else {
+      __pyx_t_2 = 0;
+    }
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":729
+ * 	delta_hi = _relative_delta_c(prom_lon_hi, sig_lon_hi, offset)
+ * 	if fabs(delta_lo) <= eps_deg:
+ * 		return _append_unique_c(             # <<<<<<<<<<<<<<
+ * 			hits_ptr,
+ * 			count_ptr,
+*/
+    __pyx_t_3 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_unique_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_jd_lo, __pyx_v_spec_idx, 0.0, 0.0, __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__HIT_LONGITUDE, (__pyx_v_prom_speed_lo - __pyx_v_sig_speed_lo), __pyx_t_2); if (unlikely(__pyx_t_3 == ((int)-1))) __PYX_ERR(0, 729, __pyx_L1_error)
+    __pyx_r = __pyx_t_3;
+    goto __pyx_L0;
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":728
+ * 	delta_lo = _relative_delta_c(prom_lon_lo, sig_lon_lo, offset)
+ * 	delta_hi = _relative_delta_c(prom_lon_hi, sig_lon_hi, offset)
+ * 	if fabs(delta_lo) <= eps_deg:             # <<<<<<<<<<<<<<
+ * 		return _append_unique_c(
+ * 			hits_ptr,
+*/
+  }
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":741
+ * 			1 if prom_speed_lo - sig_speed_lo < 0.0 else 0,
+ * 		)
+ * 	if fabs(delta_hi) <= eps_deg:             # <<<<<<<<<<<<<<
+ * 		return _append_unique_c(
+ * 			hits_ptr,
+*/
+  __pyx_t_1 = (fabs(__pyx_v_delta_hi) <= __pyx_v_eps_deg);
+  if (__pyx_t_1) {
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":752
+ * 			_HIT_LONGITUDE,
+ * 			prom_speed_hi - sig_speed_hi,
+ * 			1 if prom_speed_hi - sig_speed_hi < 0.0 else 0,             # <<<<<<<<<<<<<<
+ * 		)
+ * 	if not _is_relative_zero_crossing_c(delta_lo, delta_hi, eps_deg):
+*/
+    __pyx_t_1 = ((__pyx_v_prom_speed_hi - __pyx_v_sig_speed_hi) < 0.0);
+    if (__pyx_t_1) {
+      __pyx_t_3 = 1;
+    } else {
+      __pyx_t_3 = 0;
+    }
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":742
+ * 		)
+ * 	if fabs(delta_hi) <= eps_deg:
+ * 		return _append_unique_c(             # <<<<<<<<<<<<<<
+ * 			hits_ptr,
+ * 			count_ptr,
+*/
+    __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_unique_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_jd_hi, __pyx_v_spec_idx, 0.0, 0.0, __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__HIT_LONGITUDE, (__pyx_v_prom_speed_hi - __pyx_v_sig_speed_hi), __pyx_t_3); if (unlikely(__pyx_t_2 == ((int)-1))) __PYX_ERR(0, 742, __pyx_L1_error)
+    __pyx_r = __pyx_t_2;
+    goto __pyx_L0;
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":741
+ * 			1 if prom_speed_lo - sig_speed_lo < 0.0 else 0,
+ * 		)
+ * 	if fabs(delta_hi) <= eps_deg:             # <<<<<<<<<<<<<<
+ * 		return _append_unique_c(
+ * 			hits_ptr,
+*/
+  }
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":754
+ * 			1 if prom_speed_hi - sig_speed_hi < 0.0 else 0,
+ * 		)
+ * 	if not _is_relative_zero_crossing_c(delta_lo, delta_hi, eps_deg):             # <<<<<<<<<<<<<<
+ * 		return 0
+ * 	_refine_relative_root_c(
+*/
+  __pyx_t_1 = (!__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__is_relative_zero_crossing_c(__pyx_v_delta_lo, __pyx_v_delta_hi, __pyx_v_eps_deg));
+  if (__pyx_t_1) {
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":755
+ * 		)
+ * 	if not _is_relative_zero_crossing_c(delta_lo, delta_hi, eps_deg):
+ * 		return 0             # <<<<<<<<<<<<<<
+ * 	_refine_relative_root_c(
+ * 		prom_code,
+*/
+    __pyx_r = 0;
+    goto __pyx_L0;
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":754
+ * 			1 if prom_speed_hi - sig_speed_hi < 0.0 else 0,
+ * 		)
+ * 	if not _is_relative_zero_crossing_c(delta_lo, delta_hi, eps_deg):             # <<<<<<<<<<<<<<
+ * 		return 0
+ * 	_refine_relative_root_c(
+*/
+  }
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":756
+ * 	if not _is_relative_zero_crossing_c(delta_lo, delta_hi, eps_deg):
+ * 		return 0
+ * 	_refine_relative_root_c(             # <<<<<<<<<<<<<<
+ * 		prom_code,
+ * 		sig_code,
+*/
+  __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_relative_root_c(__pyx_v_prom_code, __pyx_v_sig_code, __pyx_v_offset, __pyx_v_jd_lo, __pyx_v_jd_hi, __pyx_v_prom_lon_lo, __pyx_v_prom_speed_lo, __pyx_v_sig_lon_lo, __pyx_v_sig_speed_lo, __pyx_v_prom_lon_hi, __pyx_v_prom_speed_hi, __pyx_v_sig_lon_hi, __pyx_v_sig_speed_hi, __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days, (&__pyx_v_hit_jd), (&__pyx_v_hit_speed), (&__pyx_v_hit_residual)); if (unlikely(__pyx_t_2 == ((int)-1))) __PYX_ERR(0, 756, __pyx_L1_error)
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":777
+ * 		&hit_residual,
+ * 	)
+ * 	if fabs(hit_residual) > eps_deg:             # <<<<<<<<<<<<<<
+ * 		return 0
+ * 	return _append_unique_c(
+*/
+  __pyx_t_1 = (fabs(__pyx_v_hit_residual) > __pyx_v_eps_deg);
+  if (__pyx_t_1) {
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":778
+ * 	)
+ * 	if fabs(hit_residual) > eps_deg:
+ * 		return 0             # <<<<<<<<<<<<<<
+ * 	return _append_unique_c(
+ * 		hits_ptr,
+*/
+    __pyx_r = 0;
+    goto __pyx_L0;
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":777
+ * 		&hit_residual,
+ * 	)
+ * 	if fabs(hit_residual) > eps_deg:             # <<<<<<<<<<<<<<
+ * 		return 0
+ * 	return _append_unique_c(
+*/
+  }
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":789
+ * 		_HIT_LONGITUDE,
+ * 		hit_speed,
+ * 		1 if hit_speed < 0.0 else 0,             # <<<<<<<<<<<<<<
+ * 	)
+ *
+*/
+  __pyx_t_1 = (__pyx_v_hit_speed < 0.0);
+  if (__pyx_t_1) {
+    __pyx_t_2 = 1;
+  } else {
+    __pyx_t_2 = 0;
+  }
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":779
+ * 	if fabs(hit_residual) > eps_deg:
+ * 		return 0
+ * 	return _append_unique_c(             # <<<<<<<<<<<<<<
+ * 		hits_ptr,
+ * 		count_ptr,
+*/
+  __pyx_t_3 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_unique_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_hit_jd, __pyx_v_spec_idx, 0.0, 0.0, __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__HIT_LONGITUDE, __pyx_v_hit_speed, __pyx_t_2); if (unlikely(__pyx_t_3 == ((int)-1))) __PYX_ERR(0, 779, __pyx_L1_error)
+  __pyx_r = __pyx_t_3;
+  goto __pyx_L0;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":697
+ *
+ *
+ * cdef inline int _append_relative_segment_c(             # <<<<<<<<<<<<<<
+ * 	CHit** hits_ptr,
+ * 	size_t* count_ptr,
+*/
+
+  /* function exit code */
+  __pyx_L1_error:;
+  __pyx_gilstate_save = __Pyx_PyGILState_Ensure();
+  __Pyx_AddTraceback("aries.astrology.transit_fast._transit_kernel._append_relative_segment_c", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __pyx_r = -1;
+  __Pyx_PyGILState_Release(__pyx_gilstate_save);
+  __pyx_L0:;
+  return __pyx_r;
+}
+
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":793
  *
  *
  * cdef inline int _append_arc_hits_range_c(             # <<<<<<<<<<<<<<
@@ -8144,6 +9280,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   double __pyx_v_f_hi;
   double __pyx_v_hit_jd;
   double __pyx_v_hit_speed;
+  double __pyx_v_hit_residual;
   int __pyx_r;
   size_t __pyx_t_1;
   size_t __pyx_t_2;
@@ -8156,9 +9293,9 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   int __pyx_clineno = 0;
   PyGILState_STATE __pyx_gilstate_save;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":612
- * 	cdef double hit_jd
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":818
  * 	cdef double hit_speed
+ * 	cdef double hit_residual
  * 	for idx in range(idx_lo, idx_hi):             # <<<<<<<<<<<<<<
  * 		target_deg = targets[idx]
  * 		f_lo = _wrap180_c(lon_lo - target_deg)
@@ -8168,8 +9305,8 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   for (__pyx_t_3 = __pyx_v_idx_lo; __pyx_t_3 < __pyx_t_2; __pyx_t_3+=1) {
     __pyx_v_idx = __pyx_t_3;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":613
- * 	cdef double hit_speed
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":819
+ * 	cdef double hit_residual
  * 	for idx in range(idx_lo, idx_hi):
  * 		target_deg = targets[idx]             # <<<<<<<<<<<<<<
  * 		f_lo = _wrap180_c(lon_lo - target_deg)
@@ -8177,7 +9314,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
 */
     __pyx_v_target_deg = (__pyx_v_targets[__pyx_v_idx]);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":614
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":820
  * 	for idx in range(idx_lo, idx_hi):
  * 		target_deg = targets[idx]
  * 		f_lo = _wrap180_c(lon_lo - target_deg)             # <<<<<<<<<<<<<<
@@ -8186,7 +9323,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
 */
     __pyx_v_f_lo = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__wrap180_c((__pyx_v_lon_lo - __pyx_v_target_deg));
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":615
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":821
  * 		target_deg = targets[idx]
  * 		f_lo = _wrap180_c(lon_lo - target_deg)
  * 		f_hi = _wrap180_c(lon_hi - target_deg)             # <<<<<<<<<<<<<<
@@ -8195,7 +9332,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
 */
     __pyx_v_f_hi = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__wrap180_c((__pyx_v_lon_hi - __pyx_v_target_deg));
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":616
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":822
  * 		f_lo = _wrap180_c(lon_lo - target_deg)
  * 		f_hi = _wrap180_c(lon_hi - target_deg)
  * 		if fabs(f_lo) <= eps_deg:             # <<<<<<<<<<<<<<
@@ -8205,7 +9342,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
     __pyx_t_4 = (fabs(__pyx_v_f_lo) <= __pyx_v_eps_deg);
     if (__pyx_t_4) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":617
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":823
  * 		f_hi = _wrap180_c(lon_hi - target_deg)
  * 		if fabs(f_lo) <= eps_deg:
  * 			_append_unique_c(hits_ptr, count_ptr, capacity_ptr, jd_lo, planet, target_deg, 0.0, _HIT_LONGITUDE, speed_lo, 1 if speed_lo < 0.0 else 0)             # <<<<<<<<<<<<<<
@@ -8218,9 +9355,9 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
       } else {
         __pyx_t_5 = 0;
       }
-      __pyx_t_6 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_unique_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_jd_lo, __pyx_v_planet, __pyx_v_target_deg, 0.0, __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__HIT_LONGITUDE, __pyx_v_speed_lo, __pyx_t_5); if (unlikely(__pyx_t_6 == ((int)-1))) __PYX_ERR(0, 617, __pyx_L1_error)
+      __pyx_t_6 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_unique_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_jd_lo, __pyx_v_planet, __pyx_v_target_deg, 0.0, __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__HIT_LONGITUDE, __pyx_v_speed_lo, __pyx_t_5); if (unlikely(__pyx_t_6 == ((int)-1))) __PYX_ERR(0, 823, __pyx_L1_error)
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":616
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":822
  * 		f_lo = _wrap180_c(lon_lo - target_deg)
  * 		f_hi = _wrap180_c(lon_hi - target_deg)
  * 		if fabs(f_lo) <= eps_deg:             # <<<<<<<<<<<<<<
@@ -8230,7 +9367,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
       goto __pyx_L5;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":618
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":824
  * 		if fabs(f_lo) <= eps_deg:
  * 			_append_unique_c(hits_ptr, count_ptr, capacity_ptr, jd_lo, planet, target_deg, 0.0, _HIT_LONGITUDE, speed_lo, 1 if speed_lo < 0.0 else 0)
  * 		elif fabs(f_hi) <= eps_deg:             # <<<<<<<<<<<<<<
@@ -8240,7 +9377,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
     __pyx_t_4 = (fabs(__pyx_v_f_hi) <= __pyx_v_eps_deg);
     if (__pyx_t_4) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":619
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":825
  * 			_append_unique_c(hits_ptr, count_ptr, capacity_ptr, jd_lo, planet, target_deg, 0.0, _HIT_LONGITUDE, speed_lo, 1 if speed_lo < 0.0 else 0)
  * 		elif fabs(f_hi) <= eps_deg:
  * 			_append_unique_c(hits_ptr, count_ptr, capacity_ptr, jd_hi, planet, target_deg, 0.0, _HIT_LONGITUDE, speed_hi, 1 if speed_hi < 0.0 else 0)             # <<<<<<<<<<<<<<
@@ -8253,9 +9390,9 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
       } else {
         __pyx_t_6 = 0;
       }
-      __pyx_t_5 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_unique_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_jd_hi, __pyx_v_planet, __pyx_v_target_deg, 0.0, __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__HIT_LONGITUDE, __pyx_v_speed_hi, __pyx_t_6); if (unlikely(__pyx_t_5 == ((int)-1))) __PYX_ERR(0, 619, __pyx_L1_error)
+      __pyx_t_5 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_unique_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_jd_hi, __pyx_v_planet, __pyx_v_target_deg, 0.0, __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__HIT_LONGITUDE, __pyx_v_speed_hi, __pyx_t_6); if (unlikely(__pyx_t_5 == ((int)-1))) __PYX_ERR(0, 825, __pyx_L1_error)
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":618
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":824
  * 		if fabs(f_lo) <= eps_deg:
  * 			_append_unique_c(hits_ptr, count_ptr, capacity_ptr, jd_lo, planet, target_deg, 0.0, _HIT_LONGITUDE, speed_lo, 1 if speed_lo < 0.0 else 0)
  * 		elif fabs(f_hi) <= eps_deg:             # <<<<<<<<<<<<<<
@@ -8265,7 +9402,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
       goto __pyx_L5;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":620
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":826
  * 		elif fabs(f_hi) <= eps_deg:
  * 			_append_unique_c(hits_ptr, count_ptr, capacity_ptr, jd_hi, planet, target_deg, 0.0, _HIT_LONGITUDE, speed_hi, 1 if speed_hi < 0.0 else 0)
  * 		elif _is_longitude_zero_crossing_c(f_lo, f_hi):             # <<<<<<<<<<<<<<
@@ -8275,31 +9412,50 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
     __pyx_t_4 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__is_longitude_zero_crossing_c(__pyx_v_f_lo, __pyx_v_f_hi);
     if (__pyx_t_4) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":621
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":827
  * 			_append_unique_c(hits_ptr, count_ptr, capacity_ptr, jd_hi, planet, target_deg, 0.0, _HIT_LONGITUDE, speed_hi, 1 if speed_hi < 0.0 else 0)
  * 		elif _is_longitude_zero_crossing_c(f_lo, f_hi):
  * 			_refine_longitude_root_seeded_c(             # <<<<<<<<<<<<<<
  * 				planet,
  * 				target_deg,
 */
-      __pyx_t_5 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_longitude_root_seeded_c(__pyx_v_planet, __pyx_v_target_deg, __pyx_v_jd_lo, __pyx_v_lon_lo, __pyx_v_speed_lo, __pyx_v_jd_hi, __pyx_v_lon_hi, __pyx_v_speed_hi, __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days, (&__pyx_v_hit_jd), (&__pyx_v_hit_speed)); if (unlikely(__pyx_t_5 == ((int)-1))) __PYX_ERR(0, 621, __pyx_L1_error)
+      __pyx_t_5 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_longitude_root_seeded_c(__pyx_v_planet, __pyx_v_target_deg, __pyx_v_jd_lo, __pyx_v_lon_lo, __pyx_v_speed_lo, __pyx_v_jd_hi, __pyx_v_lon_hi, __pyx_v_speed_hi, __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days, (&__pyx_v_hit_jd), (&__pyx_v_hit_speed), (&__pyx_v_hit_residual)); if (unlikely(__pyx_t_5 == ((int)-1))) __PYX_ERR(0, 827, __pyx_L1_error)
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":636
- * 				&hit_speed,
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":843
+ * 				&hit_residual,
  * 			)
- * 			_append_unique_c(hits_ptr, count_ptr, capacity_ptr, hit_jd, planet, target_deg, 0.0, _HIT_LONGITUDE, hit_speed, 1 if hit_speed < 0.0 else 0)             # <<<<<<<<<<<<<<
+ * 			if fabs(hit_residual) <= eps_deg:             # <<<<<<<<<<<<<<
+ * 				_append_unique_c(hits_ptr, count_ptr, capacity_ptr, hit_jd, planet, target_deg, 0.0, _HIT_LONGITUDE, hit_speed, 1 if hit_speed < 0.0 else 0)
+ * 	return 0
+*/
+      __pyx_t_4 = (fabs(__pyx_v_hit_residual) <= __pyx_v_eps_deg);
+      if (__pyx_t_4) {
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":844
+ * 			)
+ * 			if fabs(hit_residual) <= eps_deg:
+ * 				_append_unique_c(hits_ptr, count_ptr, capacity_ptr, hit_jd, planet, target_deg, 0.0, _HIT_LONGITUDE, hit_speed, 1 if hit_speed < 0.0 else 0)             # <<<<<<<<<<<<<<
  * 	return 0
  *
 */
-      __pyx_t_4 = (__pyx_v_hit_speed < 0.0);
-      if (__pyx_t_4) {
-        __pyx_t_5 = 1;
-      } else {
-        __pyx_t_5 = 0;
-      }
-      __pyx_t_6 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_unique_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_hit_jd, __pyx_v_planet, __pyx_v_target_deg, 0.0, __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__HIT_LONGITUDE, __pyx_v_hit_speed, __pyx_t_5); if (unlikely(__pyx_t_6 == ((int)-1))) __PYX_ERR(0, 636, __pyx_L1_error)
+        __pyx_t_4 = (__pyx_v_hit_speed < 0.0);
+        if (__pyx_t_4) {
+          __pyx_t_5 = 1;
+        } else {
+          __pyx_t_5 = 0;
+        }
+        __pyx_t_6 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_unique_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_hit_jd, __pyx_v_planet, __pyx_v_target_deg, 0.0, __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__HIT_LONGITUDE, __pyx_v_hit_speed, __pyx_t_5); if (unlikely(__pyx_t_6 == ((int)-1))) __PYX_ERR(0, 844, __pyx_L1_error)
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":620
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":843
+ * 				&hit_residual,
+ * 			)
+ * 			if fabs(hit_residual) <= eps_deg:             # <<<<<<<<<<<<<<
+ * 				_append_unique_c(hits_ptr, count_ptr, capacity_ptr, hit_jd, planet, target_deg, 0.0, _HIT_LONGITUDE, hit_speed, 1 if hit_speed < 0.0 else 0)
+ * 	return 0
+*/
+      }
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":826
  * 		elif fabs(f_hi) <= eps_deg:
  * 			_append_unique_c(hits_ptr, count_ptr, capacity_ptr, jd_hi, planet, target_deg, 0.0, _HIT_LONGITUDE, speed_hi, 1 if speed_hi < 0.0 else 0)
  * 		elif _is_longitude_zero_crossing_c(f_lo, f_hi):             # <<<<<<<<<<<<<<
@@ -8310,9 +9466,9 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
     __pyx_L5:;
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":637
- * 			)
- * 			_append_unique_c(hits_ptr, count_ptr, capacity_ptr, hit_jd, planet, target_deg, 0.0, _HIT_LONGITUDE, hit_speed, 1 if hit_speed < 0.0 else 0)
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":845
+ * 			if fabs(hit_residual) <= eps_deg:
+ * 				_append_unique_c(hits_ptr, count_ptr, capacity_ptr, hit_jd, planet, target_deg, 0.0, _HIT_LONGITUDE, hit_speed, 1 if hit_speed < 0.0 else 0)
  * 	return 0             # <<<<<<<<<<<<<<
  *
  *
@@ -8320,7 +9476,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   __pyx_r = 0;
   goto __pyx_L0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":588
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":793
  *
  *
  * cdef inline int _append_arc_hits_range_c(             # <<<<<<<<<<<<<<
@@ -8338,7 +9494,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":640
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":848
  *
  *
  * cdef inline int _append_arc_hits_c(             # <<<<<<<<<<<<<<
@@ -8361,7 +9517,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   int __pyx_clineno = 0;
   PyGILState_STATE __pyx_gilstate_save;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":662
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":870
  * 	cdef size_t idx_lo
  * 	cdef size_t idx_hi
  * 	if jd_hi <= jd_lo or target_count == 0:             # <<<<<<<<<<<<<<
@@ -8379,7 +9535,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   __pyx_L4_bool_binop_done:;
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":663
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":871
  * 	cdef size_t idx_hi
  * 	if jd_hi <= jd_lo or target_count == 0:
  * 		return 0             # <<<<<<<<<<<<<<
@@ -8389,7 +9545,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
     __pyx_r = 0;
     goto __pyx_L0;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":662
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":870
  * 	cdef size_t idx_lo
  * 	cdef size_t idx_hi
  * 	if jd_hi <= jd_lo or target_count == 0:             # <<<<<<<<<<<<<<
@@ -8398,7 +9554,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":664
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":872
  * 	if jd_hi <= jd_lo or target_count == 0:
  * 		return 0
  * 	if fabs(speed_lo) > _STATION_SPEED_EPS:             # <<<<<<<<<<<<<<
@@ -8408,7 +9564,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   __pyx_t_1 = (fabs(__pyx_v_speed_lo) > __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__STATION_SPEED_EPS);
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":665
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":873
  * 		return 0
  * 	if fabs(speed_lo) > _STATION_SPEED_EPS:
  * 		direction = 1 if speed_lo > 0.0 else -1             # <<<<<<<<<<<<<<
@@ -8423,7 +9579,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
     }
     __pyx_v_direction = __pyx_t_3;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":664
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":872
  * 	if jd_hi <= jd_lo or target_count == 0:
  * 		return 0
  * 	if fabs(speed_lo) > _STATION_SPEED_EPS:             # <<<<<<<<<<<<<<
@@ -8433,7 +9589,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
     goto __pyx_L6;
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":666
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":874
  * 	if fabs(speed_lo) > _STATION_SPEED_EPS:
  * 		direction = 1 if speed_lo > 0.0 else -1
  * 	elif fabs(speed_hi) > _STATION_SPEED_EPS:             # <<<<<<<<<<<<<<
@@ -8443,7 +9599,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   __pyx_t_1 = (fabs(__pyx_v_speed_hi) > __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__STATION_SPEED_EPS);
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":667
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":875
  * 		direction = 1 if speed_lo > 0.0 else -1
  * 	elif fabs(speed_hi) > _STATION_SPEED_EPS:
  * 		direction = 1 if speed_hi > 0.0 else -1             # <<<<<<<<<<<<<<
@@ -8458,7 +9614,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
     }
     __pyx_v_direction = __pyx_t_3;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":666
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":874
  * 	if fabs(speed_lo) > _STATION_SPEED_EPS:
  * 		direction = 1 if speed_lo > 0.0 else -1
  * 	elif fabs(speed_hi) > _STATION_SPEED_EPS:             # <<<<<<<<<<<<<<
@@ -8468,7 +9624,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
     goto __pyx_L6;
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":669
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":877
  * 		direction = 1 if speed_hi > 0.0 else -1
  * 	else:
  * 		forward_span = _wrap360_c(lon_hi - lon_lo)             # <<<<<<<<<<<<<<
@@ -8478,7 +9634,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   /*else*/ {
     __pyx_v_forward_span = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__wrap360_c((__pyx_v_lon_hi - __pyx_v_lon_lo));
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":670
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":878
  * 	else:
  * 		forward_span = _wrap360_c(lon_hi - lon_lo)
  * 		reverse_span = _wrap360_c(lon_lo - lon_hi)             # <<<<<<<<<<<<<<
@@ -8487,7 +9643,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
 */
     __pyx_v_reverse_span = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__wrap360_c((__pyx_v_lon_lo - __pyx_v_lon_hi));
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":671
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":879
  * 		forward_span = _wrap360_c(lon_hi - lon_lo)
  * 		reverse_span = _wrap360_c(lon_lo - lon_hi)
  * 		direction = 1 if forward_span <= reverse_span else -1             # <<<<<<<<<<<<<<
@@ -8504,7 +9660,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   }
   __pyx_L6:;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":673
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":881
  * 		direction = 1 if forward_span <= reverse_span else -1
  *
  * 	if direction > 0:             # <<<<<<<<<<<<<<
@@ -8514,7 +9670,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   __pyx_t_1 = (__pyx_v_direction > 0);
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":674
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":882
  *
  * 	if direction > 0:
  * 		forward_span = _wrap360_c(lon_hi - lon_lo)             # <<<<<<<<<<<<<<
@@ -8523,7 +9679,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
 */
     __pyx_v_forward_span = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__wrap360_c((__pyx_v_lon_hi - __pyx_v_lon_lo));
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":675
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":883
  * 	if direction > 0:
  * 		forward_span = _wrap360_c(lon_hi - lon_lo)
  * 		if forward_span >= 180.0:             # <<<<<<<<<<<<<<
@@ -8533,18 +9689,18 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
     __pyx_t_1 = (__pyx_v_forward_span >= 180.0);
     if (__pyx_t_1) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":676
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":884
  * 		forward_span = _wrap360_c(lon_hi - lon_lo)
  * 		if forward_span >= 180.0:
  * 			return _append_arc_hits_range_c(hits_ptr, count_ptr, capacity_ptr, planet, targets, 0, target_count, jd_lo, lon_lo, speed_lo, jd_hi, lon_hi, speed_hi, flags, eps_deg, eps_days)             # <<<<<<<<<<<<<<
  * 		if lon_hi >= lon_lo:
  * 			idx_lo = _lower_bound_c(targets, target_count, lon_lo - eps_deg)
 */
-      __pyx_t_3 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_arc_hits_range_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_planet, __pyx_v_targets, 0, __pyx_v_target_count, __pyx_v_jd_lo, __pyx_v_lon_lo, __pyx_v_speed_lo, __pyx_v_jd_hi, __pyx_v_lon_hi, __pyx_v_speed_hi, __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days); if (unlikely(__pyx_t_3 == ((int)-1))) __PYX_ERR(0, 676, __pyx_L1_error)
+      __pyx_t_3 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_arc_hits_range_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_planet, __pyx_v_targets, 0, __pyx_v_target_count, __pyx_v_jd_lo, __pyx_v_lon_lo, __pyx_v_speed_lo, __pyx_v_jd_hi, __pyx_v_lon_hi, __pyx_v_speed_hi, __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days); if (unlikely(__pyx_t_3 == ((int)-1))) __PYX_ERR(0, 884, __pyx_L1_error)
       __pyx_r = __pyx_t_3;
       goto __pyx_L0;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":675
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":883
  * 	if direction > 0:
  * 		forward_span = _wrap360_c(lon_hi - lon_lo)
  * 		if forward_span >= 180.0:             # <<<<<<<<<<<<<<
@@ -8553,7 +9709,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
 */
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":677
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":885
  * 		if forward_span >= 180.0:
  * 			return _append_arc_hits_range_c(hits_ptr, count_ptr, capacity_ptr, planet, targets, 0, target_count, jd_lo, lon_lo, speed_lo, jd_hi, lon_hi, speed_hi, flags, eps_deg, eps_days)
  * 		if lon_hi >= lon_lo:             # <<<<<<<<<<<<<<
@@ -8563,7 +9719,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
     __pyx_t_1 = (__pyx_v_lon_hi >= __pyx_v_lon_lo);
     if (__pyx_t_1) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":678
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":886
  * 			return _append_arc_hits_range_c(hits_ptr, count_ptr, capacity_ptr, planet, targets, 0, target_count, jd_lo, lon_lo, speed_lo, jd_hi, lon_hi, speed_hi, flags, eps_deg, eps_days)
  * 		if lon_hi >= lon_lo:
  * 			idx_lo = _lower_bound_c(targets, target_count, lon_lo - eps_deg)             # <<<<<<<<<<<<<<
@@ -8572,7 +9728,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
 */
       __pyx_v_idx_lo = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__lower_bound_c(__pyx_v_targets, __pyx_v_target_count, (__pyx_v_lon_lo - __pyx_v_eps_deg));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":679
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":887
  * 		if lon_hi >= lon_lo:
  * 			idx_lo = _lower_bound_c(targets, target_count, lon_lo - eps_deg)
  * 			idx_hi = _upper_bound_c(targets, target_count, lon_hi + eps_deg)             # <<<<<<<<<<<<<<
@@ -8581,18 +9737,18 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
 */
       __pyx_v_idx_hi = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__upper_bound_c(__pyx_v_targets, __pyx_v_target_count, (__pyx_v_lon_hi + __pyx_v_eps_deg));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":680
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":888
  * 			idx_lo = _lower_bound_c(targets, target_count, lon_lo - eps_deg)
  * 			idx_hi = _upper_bound_c(targets, target_count, lon_hi + eps_deg)
  * 			return _append_arc_hits_range_c(hits_ptr, count_ptr, capacity_ptr, planet, targets, idx_lo, idx_hi, jd_lo, lon_lo, speed_lo, jd_hi, lon_hi, speed_hi, flags, eps_deg, eps_days)             # <<<<<<<<<<<<<<
  * 		idx_lo = _lower_bound_c(targets, target_count, lon_lo - eps_deg)
  * 		_append_arc_hits_range_c(hits_ptr, count_ptr, capacity_ptr, planet, targets, idx_lo, target_count, jd_lo, lon_lo, speed_lo, jd_hi, lon_hi, speed_hi, flags, eps_deg, eps_days)
 */
-      __pyx_t_3 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_arc_hits_range_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_planet, __pyx_v_targets, __pyx_v_idx_lo, __pyx_v_idx_hi, __pyx_v_jd_lo, __pyx_v_lon_lo, __pyx_v_speed_lo, __pyx_v_jd_hi, __pyx_v_lon_hi, __pyx_v_speed_hi, __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days); if (unlikely(__pyx_t_3 == ((int)-1))) __PYX_ERR(0, 680, __pyx_L1_error)
+      __pyx_t_3 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_arc_hits_range_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_planet, __pyx_v_targets, __pyx_v_idx_lo, __pyx_v_idx_hi, __pyx_v_jd_lo, __pyx_v_lon_lo, __pyx_v_speed_lo, __pyx_v_jd_hi, __pyx_v_lon_hi, __pyx_v_speed_hi, __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days); if (unlikely(__pyx_t_3 == ((int)-1))) __PYX_ERR(0, 888, __pyx_L1_error)
       __pyx_r = __pyx_t_3;
       goto __pyx_L0;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":677
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":885
  * 		if forward_span >= 180.0:
  * 			return _append_arc_hits_range_c(hits_ptr, count_ptr, capacity_ptr, planet, targets, 0, target_count, jd_lo, lon_lo, speed_lo, jd_hi, lon_hi, speed_hi, flags, eps_deg, eps_days)
  * 		if lon_hi >= lon_lo:             # <<<<<<<<<<<<<<
@@ -8601,7 +9757,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
 */
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":681
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":889
  * 			idx_hi = _upper_bound_c(targets, target_count, lon_hi + eps_deg)
  * 			return _append_arc_hits_range_c(hits_ptr, count_ptr, capacity_ptr, planet, targets, idx_lo, idx_hi, jd_lo, lon_lo, speed_lo, jd_hi, lon_hi, speed_hi, flags, eps_deg, eps_days)
  * 		idx_lo = _lower_bound_c(targets, target_count, lon_lo - eps_deg)             # <<<<<<<<<<<<<<
@@ -8610,16 +9766,16 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
 */
     __pyx_v_idx_lo = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__lower_bound_c(__pyx_v_targets, __pyx_v_target_count, (__pyx_v_lon_lo - __pyx_v_eps_deg));
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":682
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":890
  * 			return _append_arc_hits_range_c(hits_ptr, count_ptr, capacity_ptr, planet, targets, idx_lo, idx_hi, jd_lo, lon_lo, speed_lo, jd_hi, lon_hi, speed_hi, flags, eps_deg, eps_days)
  * 		idx_lo = _lower_bound_c(targets, target_count, lon_lo - eps_deg)
  * 		_append_arc_hits_range_c(hits_ptr, count_ptr, capacity_ptr, planet, targets, idx_lo, target_count, jd_lo, lon_lo, speed_lo, jd_hi, lon_hi, speed_hi, flags, eps_deg, eps_days)             # <<<<<<<<<<<<<<
  * 		idx_hi = _upper_bound_c(targets, target_count, lon_hi + eps_deg)
  * 		return _append_arc_hits_range_c(hits_ptr, count_ptr, capacity_ptr, planet, targets, 0, idx_hi, jd_lo, lon_lo, speed_lo, jd_hi, lon_hi, speed_hi, flags, eps_deg, eps_days)
 */
-    __pyx_t_3 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_arc_hits_range_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_planet, __pyx_v_targets, __pyx_v_idx_lo, __pyx_v_target_count, __pyx_v_jd_lo, __pyx_v_lon_lo, __pyx_v_speed_lo, __pyx_v_jd_hi, __pyx_v_lon_hi, __pyx_v_speed_hi, __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days); if (unlikely(__pyx_t_3 == ((int)-1))) __PYX_ERR(0, 682, __pyx_L1_error)
+    __pyx_t_3 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_arc_hits_range_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_planet, __pyx_v_targets, __pyx_v_idx_lo, __pyx_v_target_count, __pyx_v_jd_lo, __pyx_v_lon_lo, __pyx_v_speed_lo, __pyx_v_jd_hi, __pyx_v_lon_hi, __pyx_v_speed_hi, __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days); if (unlikely(__pyx_t_3 == ((int)-1))) __PYX_ERR(0, 890, __pyx_L1_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":683
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":891
  * 		idx_lo = _lower_bound_c(targets, target_count, lon_lo - eps_deg)
  * 		_append_arc_hits_range_c(hits_ptr, count_ptr, capacity_ptr, planet, targets, idx_lo, target_count, jd_lo, lon_lo, speed_lo, jd_hi, lon_hi, speed_hi, flags, eps_deg, eps_days)
  * 		idx_hi = _upper_bound_c(targets, target_count, lon_hi + eps_deg)             # <<<<<<<<<<<<<<
@@ -8628,18 +9784,18 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
 */
     __pyx_v_idx_hi = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__upper_bound_c(__pyx_v_targets, __pyx_v_target_count, (__pyx_v_lon_hi + __pyx_v_eps_deg));
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":684
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":892
  * 		_append_arc_hits_range_c(hits_ptr, count_ptr, capacity_ptr, planet, targets, idx_lo, target_count, jd_lo, lon_lo, speed_lo, jd_hi, lon_hi, speed_hi, flags, eps_deg, eps_days)
  * 		idx_hi = _upper_bound_c(targets, target_count, lon_hi + eps_deg)
  * 		return _append_arc_hits_range_c(hits_ptr, count_ptr, capacity_ptr, planet, targets, 0, idx_hi, jd_lo, lon_lo, speed_lo, jd_hi, lon_hi, speed_hi, flags, eps_deg, eps_days)             # <<<<<<<<<<<<<<
  *
  * 	reverse_span = _wrap360_c(lon_lo - lon_hi)
 */
-    __pyx_t_3 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_arc_hits_range_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_planet, __pyx_v_targets, 0, __pyx_v_idx_hi, __pyx_v_jd_lo, __pyx_v_lon_lo, __pyx_v_speed_lo, __pyx_v_jd_hi, __pyx_v_lon_hi, __pyx_v_speed_hi, __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days); if (unlikely(__pyx_t_3 == ((int)-1))) __PYX_ERR(0, 684, __pyx_L1_error)
+    __pyx_t_3 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_arc_hits_range_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_planet, __pyx_v_targets, 0, __pyx_v_idx_hi, __pyx_v_jd_lo, __pyx_v_lon_lo, __pyx_v_speed_lo, __pyx_v_jd_hi, __pyx_v_lon_hi, __pyx_v_speed_hi, __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days); if (unlikely(__pyx_t_3 == ((int)-1))) __PYX_ERR(0, 892, __pyx_L1_error)
     __pyx_r = __pyx_t_3;
     goto __pyx_L0;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":673
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":881
  * 		direction = 1 if forward_span <= reverse_span else -1
  *
  * 	if direction > 0:             # <<<<<<<<<<<<<<
@@ -8648,7 +9804,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":686
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":894
  * 		return _append_arc_hits_range_c(hits_ptr, count_ptr, capacity_ptr, planet, targets, 0, idx_hi, jd_lo, lon_lo, speed_lo, jd_hi, lon_hi, speed_hi, flags, eps_deg, eps_days)
  *
  * 	reverse_span = _wrap360_c(lon_lo - lon_hi)             # <<<<<<<<<<<<<<
@@ -8657,7 +9813,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
 */
   __pyx_v_reverse_span = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__wrap360_c((__pyx_v_lon_lo - __pyx_v_lon_hi));
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":687
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":895
  *
  * 	reverse_span = _wrap360_c(lon_lo - lon_hi)
  * 	if reverse_span >= 180.0:             # <<<<<<<<<<<<<<
@@ -8667,18 +9823,18 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   __pyx_t_1 = (__pyx_v_reverse_span >= 180.0);
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":688
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":896
  * 	reverse_span = _wrap360_c(lon_lo - lon_hi)
  * 	if reverse_span >= 180.0:
  * 		return _append_arc_hits_range_c(hits_ptr, count_ptr, capacity_ptr, planet, targets, 0, target_count, jd_lo, lon_lo, speed_lo, jd_hi, lon_hi, speed_hi, flags, eps_deg, eps_days)             # <<<<<<<<<<<<<<
  * 	if lon_lo >= lon_hi:
  * 		idx_lo = _lower_bound_c(targets, target_count, lon_hi - eps_deg)
 */
-    __pyx_t_3 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_arc_hits_range_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_planet, __pyx_v_targets, 0, __pyx_v_target_count, __pyx_v_jd_lo, __pyx_v_lon_lo, __pyx_v_speed_lo, __pyx_v_jd_hi, __pyx_v_lon_hi, __pyx_v_speed_hi, __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days); if (unlikely(__pyx_t_3 == ((int)-1))) __PYX_ERR(0, 688, __pyx_L1_error)
+    __pyx_t_3 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_arc_hits_range_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_planet, __pyx_v_targets, 0, __pyx_v_target_count, __pyx_v_jd_lo, __pyx_v_lon_lo, __pyx_v_speed_lo, __pyx_v_jd_hi, __pyx_v_lon_hi, __pyx_v_speed_hi, __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days); if (unlikely(__pyx_t_3 == ((int)-1))) __PYX_ERR(0, 896, __pyx_L1_error)
     __pyx_r = __pyx_t_3;
     goto __pyx_L0;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":687
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":895
  *
  * 	reverse_span = _wrap360_c(lon_lo - lon_hi)
  * 	if reverse_span >= 180.0:             # <<<<<<<<<<<<<<
@@ -8687,7 +9843,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":689
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":897
  * 	if reverse_span >= 180.0:
  * 		return _append_arc_hits_range_c(hits_ptr, count_ptr, capacity_ptr, planet, targets, 0, target_count, jd_lo, lon_lo, speed_lo, jd_hi, lon_hi, speed_hi, flags, eps_deg, eps_days)
  * 	if lon_lo >= lon_hi:             # <<<<<<<<<<<<<<
@@ -8697,7 +9853,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   __pyx_t_1 = (__pyx_v_lon_lo >= __pyx_v_lon_hi);
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":690
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":898
  * 		return _append_arc_hits_range_c(hits_ptr, count_ptr, capacity_ptr, planet, targets, 0, target_count, jd_lo, lon_lo, speed_lo, jd_hi, lon_hi, speed_hi, flags, eps_deg, eps_days)
  * 	if lon_lo >= lon_hi:
  * 		idx_lo = _lower_bound_c(targets, target_count, lon_hi - eps_deg)             # <<<<<<<<<<<<<<
@@ -8706,7 +9862,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
 */
     __pyx_v_idx_lo = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__lower_bound_c(__pyx_v_targets, __pyx_v_target_count, (__pyx_v_lon_hi - __pyx_v_eps_deg));
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":691
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":899
  * 	if lon_lo >= lon_hi:
  * 		idx_lo = _lower_bound_c(targets, target_count, lon_hi - eps_deg)
  * 		idx_hi = _upper_bound_c(targets, target_count, lon_lo + eps_deg)             # <<<<<<<<<<<<<<
@@ -8715,18 +9871,18 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
 */
     __pyx_v_idx_hi = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__upper_bound_c(__pyx_v_targets, __pyx_v_target_count, (__pyx_v_lon_lo + __pyx_v_eps_deg));
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":692
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":900
  * 		idx_lo = _lower_bound_c(targets, target_count, lon_hi - eps_deg)
  * 		idx_hi = _upper_bound_c(targets, target_count, lon_lo + eps_deg)
  * 		return _append_arc_hits_range_c(hits_ptr, count_ptr, capacity_ptr, planet, targets, idx_lo, idx_hi, jd_lo, lon_lo, speed_lo, jd_hi, lon_hi, speed_hi, flags, eps_deg, eps_days)             # <<<<<<<<<<<<<<
  * 	idx_hi = _upper_bound_c(targets, target_count, lon_lo + eps_deg)
  * 	_append_arc_hits_range_c(hits_ptr, count_ptr, capacity_ptr, planet, targets, 0, idx_hi, jd_lo, lon_lo, speed_lo, jd_hi, lon_hi, speed_hi, flags, eps_deg, eps_days)
 */
-    __pyx_t_3 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_arc_hits_range_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_planet, __pyx_v_targets, __pyx_v_idx_lo, __pyx_v_idx_hi, __pyx_v_jd_lo, __pyx_v_lon_lo, __pyx_v_speed_lo, __pyx_v_jd_hi, __pyx_v_lon_hi, __pyx_v_speed_hi, __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days); if (unlikely(__pyx_t_3 == ((int)-1))) __PYX_ERR(0, 692, __pyx_L1_error)
+    __pyx_t_3 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_arc_hits_range_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_planet, __pyx_v_targets, __pyx_v_idx_lo, __pyx_v_idx_hi, __pyx_v_jd_lo, __pyx_v_lon_lo, __pyx_v_speed_lo, __pyx_v_jd_hi, __pyx_v_lon_hi, __pyx_v_speed_hi, __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days); if (unlikely(__pyx_t_3 == ((int)-1))) __PYX_ERR(0, 900, __pyx_L1_error)
     __pyx_r = __pyx_t_3;
     goto __pyx_L0;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":689
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":897
  * 	if reverse_span >= 180.0:
  * 		return _append_arc_hits_range_c(hits_ptr, count_ptr, capacity_ptr, planet, targets, 0, target_count, jd_lo, lon_lo, speed_lo, jd_hi, lon_hi, speed_hi, flags, eps_deg, eps_days)
  * 	if lon_lo >= lon_hi:             # <<<<<<<<<<<<<<
@@ -8735,7 +9891,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":693
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":901
  * 		idx_hi = _upper_bound_c(targets, target_count, lon_lo + eps_deg)
  * 		return _append_arc_hits_range_c(hits_ptr, count_ptr, capacity_ptr, planet, targets, idx_lo, idx_hi, jd_lo, lon_lo, speed_lo, jd_hi, lon_hi, speed_hi, flags, eps_deg, eps_days)
  * 	idx_hi = _upper_bound_c(targets, target_count, lon_lo + eps_deg)             # <<<<<<<<<<<<<<
@@ -8744,16 +9900,16 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
 */
   __pyx_v_idx_hi = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__upper_bound_c(__pyx_v_targets, __pyx_v_target_count, (__pyx_v_lon_lo + __pyx_v_eps_deg));
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":694
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":902
  * 		return _append_arc_hits_range_c(hits_ptr, count_ptr, capacity_ptr, planet, targets, idx_lo, idx_hi, jd_lo, lon_lo, speed_lo, jd_hi, lon_hi, speed_hi, flags, eps_deg, eps_days)
  * 	idx_hi = _upper_bound_c(targets, target_count, lon_lo + eps_deg)
  * 	_append_arc_hits_range_c(hits_ptr, count_ptr, capacity_ptr, planet, targets, 0, idx_hi, jd_lo, lon_lo, speed_lo, jd_hi, lon_hi, speed_hi, flags, eps_deg, eps_days)             # <<<<<<<<<<<<<<
  * 	idx_lo = _lower_bound_c(targets, target_count, lon_hi - eps_deg)
  * 	return _append_arc_hits_range_c(hits_ptr, count_ptr, capacity_ptr, planet, targets, idx_lo, target_count, jd_lo, lon_lo, speed_lo, jd_hi, lon_hi, speed_hi, flags, eps_deg, eps_days)
 */
-  __pyx_t_3 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_arc_hits_range_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_planet, __pyx_v_targets, 0, __pyx_v_idx_hi, __pyx_v_jd_lo, __pyx_v_lon_lo, __pyx_v_speed_lo, __pyx_v_jd_hi, __pyx_v_lon_hi, __pyx_v_speed_hi, __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days); if (unlikely(__pyx_t_3 == ((int)-1))) __PYX_ERR(0, 694, __pyx_L1_error)
+  __pyx_t_3 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_arc_hits_range_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_planet, __pyx_v_targets, 0, __pyx_v_idx_hi, __pyx_v_jd_lo, __pyx_v_lon_lo, __pyx_v_speed_lo, __pyx_v_jd_hi, __pyx_v_lon_hi, __pyx_v_speed_hi, __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days); if (unlikely(__pyx_t_3 == ((int)-1))) __PYX_ERR(0, 902, __pyx_L1_error)
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":695
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":903
  * 	idx_hi = _upper_bound_c(targets, target_count, lon_lo + eps_deg)
  * 	_append_arc_hits_range_c(hits_ptr, count_ptr, capacity_ptr, planet, targets, 0, idx_hi, jd_lo, lon_lo, speed_lo, jd_hi, lon_hi, speed_hi, flags, eps_deg, eps_days)
  * 	idx_lo = _lower_bound_c(targets, target_count, lon_hi - eps_deg)             # <<<<<<<<<<<<<<
@@ -8762,18 +9918,18 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
 */
   __pyx_v_idx_lo = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__lower_bound_c(__pyx_v_targets, __pyx_v_target_count, (__pyx_v_lon_hi - __pyx_v_eps_deg));
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":696
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":904
  * 	_append_arc_hits_range_c(hits_ptr, count_ptr, capacity_ptr, planet, targets, 0, idx_hi, jd_lo, lon_lo, speed_lo, jd_hi, lon_hi, speed_hi, flags, eps_deg, eps_days)
  * 	idx_lo = _lower_bound_c(targets, target_count, lon_hi - eps_deg)
  * 	return _append_arc_hits_range_c(hits_ptr, count_ptr, capacity_ptr, planet, targets, idx_lo, target_count, jd_lo, lon_lo, speed_lo, jd_hi, lon_hi, speed_hi, flags, eps_deg, eps_days)             # <<<<<<<<<<<<<<
  *
  *
 */
-  __pyx_t_3 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_arc_hits_range_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_planet, __pyx_v_targets, __pyx_v_idx_lo, __pyx_v_target_count, __pyx_v_jd_lo, __pyx_v_lon_lo, __pyx_v_speed_lo, __pyx_v_jd_hi, __pyx_v_lon_hi, __pyx_v_speed_hi, __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days); if (unlikely(__pyx_t_3 == ((int)-1))) __PYX_ERR(0, 696, __pyx_L1_error)
+  __pyx_t_3 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_arc_hits_range_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_planet, __pyx_v_targets, __pyx_v_idx_lo, __pyx_v_target_count, __pyx_v_jd_lo, __pyx_v_lon_lo, __pyx_v_speed_lo, __pyx_v_jd_hi, __pyx_v_lon_hi, __pyx_v_speed_hi, __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days); if (unlikely(__pyx_t_3 == ((int)-1))) __PYX_ERR(0, 904, __pyx_L1_error)
   __pyx_r = __pyx_t_3;
   goto __pyx_L0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":640
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":848
  *
  *
  * cdef inline int _append_arc_hits_c(             # <<<<<<<<<<<<<<
@@ -8791,7 +9947,7 @@ static CYTHON_INLINE int __pyx_f_5aries_9astrology_12transit_fast_15_transit_ker
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":699
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":907
  *
  *
  * cdef int _search_direct_crossings_into_c(             # <<<<<<<<<<<<<<
@@ -8819,7 +9975,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_di
   int __pyx_clineno = 0;
   PyGILState_STATE __pyx_gilstate_save;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":716
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":924
  * 	cdef double lon
  * 	cdef double speed
  * 	for idx in range(target_count):             # <<<<<<<<<<<<<<
@@ -8831,7 +9987,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_di
   for (__pyx_t_3 = 0; __pyx_t_3 < __pyx_t_2; __pyx_t_3+=1) {
     __pyx_v_idx = __pyx_t_3;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":717
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":925
  * 	cdef double speed
  * 	for idx in range(target_count):
  * 		target_deg = targets[idx]             # <<<<<<<<<<<<<<
@@ -8840,7 +9996,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_di
 */
     __pyx_v_target_deg = (__pyx_v_targets[__pyx_v_idx]);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":718
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":926
  * 	for idx in range(target_count):
  * 		target_deg = targets[idx]
  * 		probe_jd = jd_start             # <<<<<<<<<<<<<<
@@ -8849,7 +10005,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_di
 */
     __pyx_v_probe_jd = __pyx_v_jd_start;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":719
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":927
  * 		target_deg = targets[idx]
  * 		probe_jd = jd_start
  * 		while probe_jd <= jd_end:             # <<<<<<<<<<<<<<
@@ -8860,17 +10016,17 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_di
       __pyx_t_4 = (__pyx_v_probe_jd <= __pyx_v_jd_end);
       if (!__pyx_t_4) break;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":720
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":928
  * 		probe_jd = jd_start
  * 		while probe_jd <= jd_end:
  * 			hit_jd = _direct_cross_ut_c(planet, target_deg, probe_jd, flags)             # <<<<<<<<<<<<<<
  * 			if hit_jd < jd_start - _DEDUP_EPS_DAYS:
  * 				probe_jd += 1e-6
 */
-      __pyx_t_5 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__direct_cross_ut_c(__pyx_v_planet, __pyx_v_target_deg, __pyx_v_probe_jd, __pyx_v_flags); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_5, ((double)(-2.0))) && __Pyx_ErrOccurredWithGIL())) __PYX_ERR(0, 720, __pyx_L1_error)
+      __pyx_t_5 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__direct_cross_ut_c(__pyx_v_planet, __pyx_v_target_deg, __pyx_v_probe_jd, __pyx_v_flags); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_5, ((double)(-2.0))) && __Pyx_ErrOccurredWithGIL())) __PYX_ERR(0, 928, __pyx_L1_error)
       __pyx_v_hit_jd = __pyx_t_5;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":721
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":929
  * 		while probe_jd <= jd_end:
  * 			hit_jd = _direct_cross_ut_c(planet, target_deg, probe_jd, flags)
  * 			if hit_jd < jd_start - _DEDUP_EPS_DAYS:             # <<<<<<<<<<<<<<
@@ -8880,7 +10036,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_di
       __pyx_t_4 = (__pyx_v_hit_jd < (__pyx_v_jd_start - __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__DEDUP_EPS_DAYS));
       if (__pyx_t_4) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":722
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":930
  * 			hit_jd = _direct_cross_ut_c(planet, target_deg, probe_jd, flags)
  * 			if hit_jd < jd_start - _DEDUP_EPS_DAYS:
  * 				probe_jd += 1e-6             # <<<<<<<<<<<<<<
@@ -8889,7 +10045,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_di
 */
         __pyx_v_probe_jd = (__pyx_v_probe_jd + 1e-6);
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":723
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":931
  * 			if hit_jd < jd_start - _DEDUP_EPS_DAYS:
  * 				probe_jd += 1e-6
  * 				continue             # <<<<<<<<<<<<<<
@@ -8898,7 +10054,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_di
 */
         goto __pyx_L5_continue;
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":721
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":929
  * 		while probe_jd <= jd_end:
  * 			hit_jd = _direct_cross_ut_c(planet, target_deg, probe_jd, flags)
  * 			if hit_jd < jd_start - _DEDUP_EPS_DAYS:             # <<<<<<<<<<<<<<
@@ -8907,7 +10063,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_di
 */
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":724
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":932
  * 				probe_jd += 1e-6
  * 				continue
  * 			if hit_jd > jd_end + _DEDUP_EPS_DAYS:             # <<<<<<<<<<<<<<
@@ -8917,7 +10073,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_di
       __pyx_t_4 = (__pyx_v_hit_jd > (__pyx_v_jd_end + __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__DEDUP_EPS_DAYS));
       if (__pyx_t_4) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":725
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":933
  * 				continue
  * 			if hit_jd > jd_end + _DEDUP_EPS_DAYS:
  * 				break             # <<<<<<<<<<<<<<
@@ -8926,7 +10082,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_di
 */
         goto __pyx_L6_break;
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":724
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":932
  * 				probe_jd += 1e-6
  * 				continue
  * 			if hit_jd > jd_end + _DEDUP_EPS_DAYS:             # <<<<<<<<<<<<<<
@@ -8935,16 +10091,16 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_di
 */
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":726
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":934
  * 			if hit_jd > jd_end + _DEDUP_EPS_DAYS:
  * 				break
  * 			_eval_lon_speed(hit_jd, planet, flags, &lon, &speed)             # <<<<<<<<<<<<<<
  * 			_append_unique_c(hits_ptr, count_ptr, capacity_ptr, hit_jd, planet, target_deg, 0.0, _HIT_LONGITUDE, speed, 1 if speed < 0.0 else 0)
  * 			probe_jd = hit_jd + 1e-6
 */
-      __pyx_t_6 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_speed(__pyx_v_hit_jd, __pyx_v_planet, __pyx_v_flags, (&__pyx_v_lon), (&__pyx_v_speed)); if (unlikely(__pyx_t_6 == ((int)-1))) __PYX_ERR(0, 726, __pyx_L1_error)
+      __pyx_t_6 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_speed(__pyx_v_hit_jd, __pyx_v_planet, __pyx_v_flags, (&__pyx_v_lon), (&__pyx_v_speed)); if (unlikely(__pyx_t_6 == ((int)-1))) __PYX_ERR(0, 934, __pyx_L1_error)
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":727
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":935
  * 				break
  * 			_eval_lon_speed(hit_jd, planet, flags, &lon, &speed)
  * 			_append_unique_c(hits_ptr, count_ptr, capacity_ptr, hit_jd, planet, target_deg, 0.0, _HIT_LONGITUDE, speed, 1 if speed < 0.0 else 0)             # <<<<<<<<<<<<<<
@@ -8957,9 +10113,9 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_di
       } else {
         __pyx_t_6 = 0;
       }
-      __pyx_t_7 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_unique_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_hit_jd, __pyx_v_planet, __pyx_v_target_deg, 0.0, __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__HIT_LONGITUDE, __pyx_v_speed, __pyx_t_6); if (unlikely(__pyx_t_7 == ((int)-1))) __PYX_ERR(0, 727, __pyx_L1_error)
+      __pyx_t_7 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_unique_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_hit_jd, __pyx_v_planet, __pyx_v_target_deg, 0.0, __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__HIT_LONGITUDE, __pyx_v_speed, __pyx_t_6); if (unlikely(__pyx_t_7 == ((int)-1))) __PYX_ERR(0, 935, __pyx_L1_error)
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":728
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":936
  * 			_eval_lon_speed(hit_jd, planet, flags, &lon, &speed)
  * 			_append_unique_c(hits_ptr, count_ptr, capacity_ptr, hit_jd, planet, target_deg, 0.0, _HIT_LONGITUDE, speed, 1 if speed < 0.0 else 0)
  * 			probe_jd = hit_jd + 1e-6             # <<<<<<<<<<<<<<
@@ -8972,7 +10128,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_di
     __pyx_L6_break:;
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":729
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":937
  * 			_append_unique_c(hits_ptr, count_ptr, capacity_ptr, hit_jd, planet, target_deg, 0.0, _HIT_LONGITUDE, speed, 1 if speed < 0.0 else 0)
  * 			probe_jd = hit_jd + 1e-6
  * 	return 0             # <<<<<<<<<<<<<<
@@ -8982,7 +10138,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_di
   __pyx_r = 0;
   goto __pyx_L0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":699
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":907
  *
  *
  * cdef int _search_direct_crossings_into_c(             # <<<<<<<<<<<<<<
@@ -9000,7 +10156,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_di
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":747
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":955
  * 			)
  * 		)
  * 	out.sort(key=lambda item: (item[0], item[2], item[3], item[1], item[4]))             # <<<<<<<<<<<<<<
@@ -9047,32 +10203,32 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   {
     PyObject ** const __pyx_pyargnames[] = {&__pyx_mstate_global->__pyx_n_u_item,0};
     const Py_ssize_t __pyx_kwds_len = (__pyx_kwds) ? __Pyx_NumKwargs_FASTCALL(__pyx_kwds) : 0;
-    if (unlikely(__pyx_kwds_len) < 0) __PYX_ERR(0, 747, __pyx_L3_error)
+    if (unlikely(__pyx_kwds_len) < 0) __PYX_ERR(0, 955, __pyx_L3_error)
     if (__pyx_kwds_len > 0) {
       switch (__pyx_nargs) {
         case  1:
         values[0] = __Pyx_ArgRef_FASTCALL(__pyx_args, 0);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 747, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 955, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  0: break;
         default: goto __pyx_L5_argtuple_error;
       }
       const Py_ssize_t kwd_pos_args = __pyx_nargs;
-      if (__Pyx_ParseKeywords(__pyx_kwds, __pyx_kwvalues, __pyx_pyargnames, 0, values, kwd_pos_args, __pyx_kwds_len, "lambda", 0) < (0)) __PYX_ERR(0, 747, __pyx_L3_error)
+      if (__Pyx_ParseKeywords(__pyx_kwds, __pyx_kwvalues, __pyx_pyargnames, 0, values, kwd_pos_args, __pyx_kwds_len, "lambda", 0) < (0)) __PYX_ERR(0, 955, __pyx_L3_error)
       for (Py_ssize_t i = __pyx_nargs; i < 1; i++) {
-        if (unlikely(!values[i])) { __Pyx_RaiseArgtupleInvalid("lambda", 1, 1, 1, i); __PYX_ERR(0, 747, __pyx_L3_error) }
+        if (unlikely(!values[i])) { __Pyx_RaiseArgtupleInvalid("lambda", 1, 1, 1, i); __PYX_ERR(0, 955, __pyx_L3_error) }
       }
     } else if (unlikely(__pyx_nargs != 1)) {
       goto __pyx_L5_argtuple_error;
     } else {
       values[0] = __Pyx_ArgRef_FASTCALL(__pyx_args, 0);
-      if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 747, __pyx_L3_error)
+      if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 955, __pyx_L3_error)
     }
     __pyx_v_item = values[0];
   }
   goto __pyx_L6_skip;
   __pyx_L5_argtuple_error:;
-  __Pyx_RaiseArgtupleInvalid("lambda", 1, 1, 1, __pyx_nargs); __PYX_ERR(0, 747, __pyx_L3_error)
+  __Pyx_RaiseArgtupleInvalid("lambda", 1, 1, 1, __pyx_nargs); __PYX_ERR(0, 955, __pyx_L3_error)
   __pyx_L6_skip:;
   goto __pyx_L4_argument_unpacking_done;
   __pyx_L3_error:;
@@ -9107,28 +10263,28 @@ static PyObject *__pyx_lambda_funcdef_lambda(CYTHON_UNUSED PyObject *__pyx_self,
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("lambda", 0);
   __Pyx_XDECREF(__pyx_r);
-  __pyx_t_1 = __Pyx_GetItemInt(__pyx_v_item, 0, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 747, __pyx_L1_error)
+  __pyx_t_1 = __Pyx_GetItemInt(__pyx_v_item, 0, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 955, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
-  __pyx_t_2 = __Pyx_GetItemInt(__pyx_v_item, 2, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 747, __pyx_L1_error)
+  __pyx_t_2 = __Pyx_GetItemInt(__pyx_v_item, 2, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 955, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
-  __pyx_t_3 = __Pyx_GetItemInt(__pyx_v_item, 3, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 747, __pyx_L1_error)
+  __pyx_t_3 = __Pyx_GetItemInt(__pyx_v_item, 3, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 955, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_3);
-  __pyx_t_4 = __Pyx_GetItemInt(__pyx_v_item, 1, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 747, __pyx_L1_error)
+  __pyx_t_4 = __Pyx_GetItemInt(__pyx_v_item, 1, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 955, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
-  __pyx_t_5 = __Pyx_GetItemInt(__pyx_v_item, 4, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 747, __pyx_L1_error)
+  __pyx_t_5 = __Pyx_GetItemInt(__pyx_v_item, 4, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 955, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
-  __pyx_t_6 = PyTuple_New(5); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 747, __pyx_L1_error)
+  __pyx_t_6 = PyTuple_New(5); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 955, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_6);
   __Pyx_GIVEREF(__pyx_t_1);
-  if (__Pyx_PyTuple_SET_ITEM(__pyx_t_6, 0, __pyx_t_1) != (0)) __PYX_ERR(0, 747, __pyx_L1_error);
+  if (__Pyx_PyTuple_SET_ITEM(__pyx_t_6, 0, __pyx_t_1) != (0)) __PYX_ERR(0, 955, __pyx_L1_error);
   __Pyx_GIVEREF(__pyx_t_2);
-  if (__Pyx_PyTuple_SET_ITEM(__pyx_t_6, 1, __pyx_t_2) != (0)) __PYX_ERR(0, 747, __pyx_L1_error);
+  if (__Pyx_PyTuple_SET_ITEM(__pyx_t_6, 1, __pyx_t_2) != (0)) __PYX_ERR(0, 955, __pyx_L1_error);
   __Pyx_GIVEREF(__pyx_t_3);
-  if (__Pyx_PyTuple_SET_ITEM(__pyx_t_6, 2, __pyx_t_3) != (0)) __PYX_ERR(0, 747, __pyx_L1_error);
+  if (__Pyx_PyTuple_SET_ITEM(__pyx_t_6, 2, __pyx_t_3) != (0)) __PYX_ERR(0, 955, __pyx_L1_error);
   __Pyx_GIVEREF(__pyx_t_4);
-  if (__Pyx_PyTuple_SET_ITEM(__pyx_t_6, 3, __pyx_t_4) != (0)) __PYX_ERR(0, 747, __pyx_L1_error);
+  if (__Pyx_PyTuple_SET_ITEM(__pyx_t_6, 3, __pyx_t_4) != (0)) __PYX_ERR(0, 955, __pyx_L1_error);
   __Pyx_GIVEREF(__pyx_t_5);
-  if (__Pyx_PyTuple_SET_ITEM(__pyx_t_6, 4, __pyx_t_5) != (0)) __PYX_ERR(0, 747, __pyx_L1_error);
+  if (__Pyx_PyTuple_SET_ITEM(__pyx_t_6, 4, __pyx_t_5) != (0)) __PYX_ERR(0, 955, __pyx_L1_error);
   __pyx_t_1 = 0;
   __pyx_t_2 = 0;
   __pyx_t_3 = 0;
@@ -9154,7 +10310,7 @@ static PyObject *__pyx_lambda_funcdef_lambda(CYTHON_UNUSED PyObject *__pyx_self,
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":732
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":940
  *
  *
  * cdef list _hits_to_python(CHit* hits, size_t count):             # <<<<<<<<<<<<<<
@@ -9184,19 +10340,19 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__hit
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("_hits_to_python", 0);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":733
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":941
  *
  * cdef list _hits_to_python(CHit* hits, size_t count):
  * 	cdef list out = []             # <<<<<<<<<<<<<<
  * 	cdef size_t i
  * 	for i in range(count):
 */
-  __pyx_t_1 = PyList_New(0); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 733, __pyx_L1_error)
+  __pyx_t_1 = PyList_New(0); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 941, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
   __pyx_v_out = ((PyObject*)__pyx_t_1);
   __pyx_t_1 = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":735
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":943
  * 	cdef list out = []
  * 	cdef size_t i
  * 	for i in range(count):             # <<<<<<<<<<<<<<
@@ -9208,99 +10364,99 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__hit
   for (__pyx_t_4 = 0; __pyx_t_4 < __pyx_t_3; __pyx_t_4+=1) {
     __pyx_v_i = __pyx_t_4;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":738
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":946
  * 		out.append(
  * 			(
  * 				hits[i].jd_ut,             # <<<<<<<<<<<<<<
  * 				hits[i].planet,
  * 				hits[i].target_deg,
 */
-    __pyx_t_1 = PyFloat_FromDouble((__pyx_v_hits[__pyx_v_i]).jd_ut); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 738, __pyx_L1_error)
+    __pyx_t_1 = PyFloat_FromDouble((__pyx_v_hits[__pyx_v_i]).jd_ut); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 946, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_1);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":739
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":947
  * 			(
  * 				hits[i].jd_ut,
  * 				hits[i].planet,             # <<<<<<<<<<<<<<
  * 				hits[i].target_deg,
  * 				hits[i].aspect_deg,
 */
-    __pyx_t_5 = __Pyx_PyLong_From_int((__pyx_v_hits[__pyx_v_i]).planet); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 739, __pyx_L1_error)
+    __pyx_t_5 = __Pyx_PyLong_From_int((__pyx_v_hits[__pyx_v_i]).planet); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 947, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_5);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":740
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":948
  * 				hits[i].jd_ut,
  * 				hits[i].planet,
  * 				hits[i].target_deg,             # <<<<<<<<<<<<<<
  * 				hits[i].aspect_deg,
  * 				hits[i].hit_kind,
 */
-    __pyx_t_6 = PyFloat_FromDouble((__pyx_v_hits[__pyx_v_i]).target_deg); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 740, __pyx_L1_error)
+    __pyx_t_6 = PyFloat_FromDouble((__pyx_v_hits[__pyx_v_i]).target_deg); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 948, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_6);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":741
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":949
  * 				hits[i].planet,
  * 				hits[i].target_deg,
  * 				hits[i].aspect_deg,             # <<<<<<<<<<<<<<
  * 				hits[i].hit_kind,
  * 				hits[i].speed,
 */
-    __pyx_t_7 = PyFloat_FromDouble((__pyx_v_hits[__pyx_v_i]).aspect_deg); if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 741, __pyx_L1_error)
+    __pyx_t_7 = PyFloat_FromDouble((__pyx_v_hits[__pyx_v_i]).aspect_deg); if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 949, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_7);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":742
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":950
  * 				hits[i].target_deg,
  * 				hits[i].aspect_deg,
  * 				hits[i].hit_kind,             # <<<<<<<<<<<<<<
  * 				hits[i].speed,
  * 				bool(hits[i].retrograde),
 */
-    __pyx_t_8 = __Pyx_PyLong_From_int((__pyx_v_hits[__pyx_v_i]).hit_kind); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 742, __pyx_L1_error)
+    __pyx_t_8 = __Pyx_PyLong_From_int((__pyx_v_hits[__pyx_v_i]).hit_kind); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 950, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_8);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":743
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":951
  * 				hits[i].aspect_deg,
  * 				hits[i].hit_kind,
  * 				hits[i].speed,             # <<<<<<<<<<<<<<
  * 				bool(hits[i].retrograde),
  * 			)
 */
-    __pyx_t_9 = PyFloat_FromDouble((__pyx_v_hits[__pyx_v_i]).speed); if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 743, __pyx_L1_error)
+    __pyx_t_9 = PyFloat_FromDouble((__pyx_v_hits[__pyx_v_i]).speed); if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 951, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_9);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":744
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":952
  * 				hits[i].hit_kind,
  * 				hits[i].speed,
  * 				bool(hits[i].retrograde),             # <<<<<<<<<<<<<<
  * 			)
  * 		)
 */
-    __pyx_t_10 = __Pyx_PyBool_FromLong((!(!((__pyx_v_hits[__pyx_v_i]).retrograde != 0)))); if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 744, __pyx_L1_error)
+    __pyx_t_10 = __Pyx_PyBool_FromLong((!(!((__pyx_v_hits[__pyx_v_i]).retrograde != 0)))); if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 952, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_10);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":738
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":946
  * 		out.append(
  * 			(
  * 				hits[i].jd_ut,             # <<<<<<<<<<<<<<
  * 				hits[i].planet,
  * 				hits[i].target_deg,
 */
-    __pyx_t_11 = PyTuple_New(7); if (unlikely(!__pyx_t_11)) __PYX_ERR(0, 738, __pyx_L1_error)
+    __pyx_t_11 = PyTuple_New(7); if (unlikely(!__pyx_t_11)) __PYX_ERR(0, 946, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_11);
     __Pyx_GIVEREF(__pyx_t_1);
-    if (__Pyx_PyTuple_SET_ITEM(__pyx_t_11, 0, __pyx_t_1) != (0)) __PYX_ERR(0, 738, __pyx_L1_error);
+    if (__Pyx_PyTuple_SET_ITEM(__pyx_t_11, 0, __pyx_t_1) != (0)) __PYX_ERR(0, 946, __pyx_L1_error);
     __Pyx_GIVEREF(__pyx_t_5);
-    if (__Pyx_PyTuple_SET_ITEM(__pyx_t_11, 1, __pyx_t_5) != (0)) __PYX_ERR(0, 738, __pyx_L1_error);
+    if (__Pyx_PyTuple_SET_ITEM(__pyx_t_11, 1, __pyx_t_5) != (0)) __PYX_ERR(0, 946, __pyx_L1_error);
     __Pyx_GIVEREF(__pyx_t_6);
-    if (__Pyx_PyTuple_SET_ITEM(__pyx_t_11, 2, __pyx_t_6) != (0)) __PYX_ERR(0, 738, __pyx_L1_error);
+    if (__Pyx_PyTuple_SET_ITEM(__pyx_t_11, 2, __pyx_t_6) != (0)) __PYX_ERR(0, 946, __pyx_L1_error);
     __Pyx_GIVEREF(__pyx_t_7);
-    if (__Pyx_PyTuple_SET_ITEM(__pyx_t_11, 3, __pyx_t_7) != (0)) __PYX_ERR(0, 738, __pyx_L1_error);
+    if (__Pyx_PyTuple_SET_ITEM(__pyx_t_11, 3, __pyx_t_7) != (0)) __PYX_ERR(0, 946, __pyx_L1_error);
     __Pyx_GIVEREF(__pyx_t_8);
-    if (__Pyx_PyTuple_SET_ITEM(__pyx_t_11, 4, __pyx_t_8) != (0)) __PYX_ERR(0, 738, __pyx_L1_error);
+    if (__Pyx_PyTuple_SET_ITEM(__pyx_t_11, 4, __pyx_t_8) != (0)) __PYX_ERR(0, 946, __pyx_L1_error);
     __Pyx_GIVEREF(__pyx_t_9);
-    if (__Pyx_PyTuple_SET_ITEM(__pyx_t_11, 5, __pyx_t_9) != (0)) __PYX_ERR(0, 738, __pyx_L1_error);
+    if (__Pyx_PyTuple_SET_ITEM(__pyx_t_11, 5, __pyx_t_9) != (0)) __PYX_ERR(0, 946, __pyx_L1_error);
     __Pyx_GIVEREF(__pyx_t_10);
-    if (__Pyx_PyTuple_SET_ITEM(__pyx_t_11, 6, __pyx_t_10) != (0)) __PYX_ERR(0, 738, __pyx_L1_error);
+    if (__Pyx_PyTuple_SET_ITEM(__pyx_t_11, 6, __pyx_t_10) != (0)) __PYX_ERR(0, 946, __pyx_L1_error);
     __pyx_t_1 = 0;
     __pyx_t_5 = 0;
     __pyx_t_6 = 0;
@@ -9309,18 +10465,18 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__hit
     __pyx_t_9 = 0;
     __pyx_t_10 = 0;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":736
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":944
  * 	cdef size_t i
  * 	for i in range(count):
  * 		out.append(             # <<<<<<<<<<<<<<
  * 			(
  * 				hits[i].jd_ut,
 */
-    __pyx_t_12 = __Pyx_PyList_Append(__pyx_v_out, __pyx_t_11); if (unlikely(__pyx_t_12 == ((int)-1))) __PYX_ERR(0, 736, __pyx_L1_error)
+    __pyx_t_12 = __Pyx_PyList_Append(__pyx_v_out, __pyx_t_11); if (unlikely(__pyx_t_12 == ((int)-1))) __PYX_ERR(0, 944, __pyx_L1_error)
     __Pyx_DECREF(__pyx_t_11); __pyx_t_11 = 0;
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":747
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":955
  * 			)
  * 		)
  * 	out.sort(key=lambda item: (item[0], item[2], item[3], item[1], item[4]))             # <<<<<<<<<<<<<<
@@ -9329,24 +10485,24 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__hit
 */
   __pyx_t_10 = __pyx_v_out;
   __Pyx_INCREF(__pyx_t_10);
-  __pyx_t_9 = __Pyx_CyFunction_New(&__pyx_mdef_5aries_9astrology_12transit_fast_15_transit_kernel_15_hits_to_python_lambda, 0, __pyx_mstate_global->__pyx_n_u_hits_to_python_locals_lambda, NULL, __pyx_mstate_global->__pyx_n_u_aries_astrology_transit_fast__tr, __pyx_mstate_global->__pyx_d, ((PyObject *)__pyx_mstate_global->__pyx_codeobj_tab[0])); if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 747, __pyx_L1_error)
+  __pyx_t_9 = __Pyx_CyFunction_New(&__pyx_mdef_5aries_9astrology_12transit_fast_15_transit_kernel_15_hits_to_python_lambda, 0, __pyx_mstate_global->__pyx_n_u_hits_to_python_locals_lambda, NULL, __pyx_mstate_global->__pyx_n_u_aries_astrology_transit_fast__tr, __pyx_mstate_global->__pyx_d, ((PyObject *)__pyx_mstate_global->__pyx_codeobj_tab[0])); if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 955, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_9);
   __pyx_t_2 = 0;
   {
     PyObject *__pyx_callargs[2 + ((CYTHON_VECTORCALL) ? 1 : 0)] = {__pyx_t_10, NULL};
-    __pyx_t_8 = __Pyx_MakeVectorcallBuilderKwds(1); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 747, __pyx_L1_error)
+    __pyx_t_8 = __Pyx_MakeVectorcallBuilderKwds(1); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 955, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_8);
-    if (__Pyx_VectorcallBuilder_AddArg(__pyx_mstate_global->__pyx_n_u_key, __pyx_t_9, __pyx_t_8, __pyx_callargs+1, 0) < (0)) __PYX_ERR(0, 747, __pyx_L1_error)
+    if (__Pyx_VectorcallBuilder_AddArg(__pyx_mstate_global->__pyx_n_u_key, __pyx_t_9, __pyx_t_8, __pyx_callargs+1, 0) < (0)) __PYX_ERR(0, 955, __pyx_L1_error)
     __pyx_t_11 = __Pyx_Object_VectorcallMethod_CallFromBuilder((PyObject*)__pyx_mstate_global->__pyx_n_u_sort, __pyx_callargs+__pyx_t_2, (1-__pyx_t_2) | (1*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET), __pyx_t_8);
     __Pyx_XDECREF(__pyx_t_10); __pyx_t_10 = 0;
     __Pyx_DECREF(__pyx_t_9); __pyx_t_9 = 0;
     __Pyx_DECREF(__pyx_t_8); __pyx_t_8 = 0;
-    if (unlikely(!__pyx_t_11)) __PYX_ERR(0, 747, __pyx_L1_error)
+    if (unlikely(!__pyx_t_11)) __PYX_ERR(0, 955, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_11);
   }
   __Pyx_DECREF(__pyx_t_11); __pyx_t_11 = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":748
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":956
  * 		)
  * 	out.sort(key=lambda item: (item[0], item[2], item[3], item[1], item[4]))
  * 	return out             # <<<<<<<<<<<<<<
@@ -9358,7 +10514,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__hit
   __pyx_r = __pyx_v_out;
   goto __pyx_L0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":732
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":940
  *
  *
  * cdef list _hits_to_python(CHit* hits, size_t count):             # <<<<<<<<<<<<<<
@@ -9385,7 +10541,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__hit
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":751
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":959
  *
  *
  * def _sort_raw_hits_py(out):             # <<<<<<<<<<<<<<
@@ -9432,32 +10588,32 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   {
     PyObject ** const __pyx_pyargnames[] = {&__pyx_mstate_global->__pyx_n_u_out,0};
     const Py_ssize_t __pyx_kwds_len = (__pyx_kwds) ? __Pyx_NumKwargs_FASTCALL(__pyx_kwds) : 0;
-    if (unlikely(__pyx_kwds_len) < 0) __PYX_ERR(0, 751, __pyx_L3_error)
+    if (unlikely(__pyx_kwds_len) < 0) __PYX_ERR(0, 959, __pyx_L3_error)
     if (__pyx_kwds_len > 0) {
       switch (__pyx_nargs) {
         case  1:
         values[0] = __Pyx_ArgRef_FASTCALL(__pyx_args, 0);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 751, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 959, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  0: break;
         default: goto __pyx_L5_argtuple_error;
       }
       const Py_ssize_t kwd_pos_args = __pyx_nargs;
-      if (__Pyx_ParseKeywords(__pyx_kwds, __pyx_kwvalues, __pyx_pyargnames, 0, values, kwd_pos_args, __pyx_kwds_len, "_sort_raw_hits_py", 0) < (0)) __PYX_ERR(0, 751, __pyx_L3_error)
+      if (__Pyx_ParseKeywords(__pyx_kwds, __pyx_kwvalues, __pyx_pyargnames, 0, values, kwd_pos_args, __pyx_kwds_len, "_sort_raw_hits_py", 0) < (0)) __PYX_ERR(0, 959, __pyx_L3_error)
       for (Py_ssize_t i = __pyx_nargs; i < 1; i++) {
-        if (unlikely(!values[i])) { __Pyx_RaiseArgtupleInvalid("_sort_raw_hits_py", 1, 1, 1, i); __PYX_ERR(0, 751, __pyx_L3_error) }
+        if (unlikely(!values[i])) { __Pyx_RaiseArgtupleInvalid("_sort_raw_hits_py", 1, 1, 1, i); __PYX_ERR(0, 959, __pyx_L3_error) }
       }
     } else if (unlikely(__pyx_nargs != 1)) {
       goto __pyx_L5_argtuple_error;
     } else {
       values[0] = __Pyx_ArgRef_FASTCALL(__pyx_args, 0);
-      if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 751, __pyx_L3_error)
+      if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 959, __pyx_L3_error)
     }
     __pyx_v_out = values[0];
   }
   goto __pyx_L6_skip;
   __pyx_L5_argtuple_error:;
-  __Pyx_RaiseArgtupleInvalid("_sort_raw_hits_py", 1, 1, 1, __pyx_nargs); __PYX_ERR(0, 751, __pyx_L3_error)
+  __Pyx_RaiseArgtupleInvalid("_sort_raw_hits_py", 1, 1, 1, __pyx_nargs); __PYX_ERR(0, 959, __pyx_L3_error)
   __pyx_L6_skip:;
   goto __pyx_L4_argument_unpacking_done;
   __pyx_L3_error:;
@@ -9478,7 +10634,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":752
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":960
  *
  * def _sort_raw_hits_py(out):
  * 	out.sort(key=lambda item: (item[0], item[2], item[3], item[1], item[4]))             # <<<<<<<<<<<<<<
@@ -9525,32 +10681,32 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   {
     PyObject ** const __pyx_pyargnames[] = {&__pyx_mstate_global->__pyx_n_u_item,0};
     const Py_ssize_t __pyx_kwds_len = (__pyx_kwds) ? __Pyx_NumKwargs_FASTCALL(__pyx_kwds) : 0;
-    if (unlikely(__pyx_kwds_len) < 0) __PYX_ERR(0, 752, __pyx_L3_error)
+    if (unlikely(__pyx_kwds_len) < 0) __PYX_ERR(0, 960, __pyx_L3_error)
     if (__pyx_kwds_len > 0) {
       switch (__pyx_nargs) {
         case  1:
         values[0] = __Pyx_ArgRef_FASTCALL(__pyx_args, 0);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 752, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 960, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  0: break;
         default: goto __pyx_L5_argtuple_error;
       }
       const Py_ssize_t kwd_pos_args = __pyx_nargs;
-      if (__Pyx_ParseKeywords(__pyx_kwds, __pyx_kwvalues, __pyx_pyargnames, 0, values, kwd_pos_args, __pyx_kwds_len, "lambda1", 0) < (0)) __PYX_ERR(0, 752, __pyx_L3_error)
+      if (__Pyx_ParseKeywords(__pyx_kwds, __pyx_kwvalues, __pyx_pyargnames, 0, values, kwd_pos_args, __pyx_kwds_len, "lambda1", 0) < (0)) __PYX_ERR(0, 960, __pyx_L3_error)
       for (Py_ssize_t i = __pyx_nargs; i < 1; i++) {
-        if (unlikely(!values[i])) { __Pyx_RaiseArgtupleInvalid("lambda1", 1, 1, 1, i); __PYX_ERR(0, 752, __pyx_L3_error) }
+        if (unlikely(!values[i])) { __Pyx_RaiseArgtupleInvalid("lambda1", 1, 1, 1, i); __PYX_ERR(0, 960, __pyx_L3_error) }
       }
     } else if (unlikely(__pyx_nargs != 1)) {
       goto __pyx_L5_argtuple_error;
     } else {
       values[0] = __Pyx_ArgRef_FASTCALL(__pyx_args, 0);
-      if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 752, __pyx_L3_error)
+      if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 960, __pyx_L3_error)
     }
     __pyx_v_item = values[0];
   }
   goto __pyx_L6_skip;
   __pyx_L5_argtuple_error:;
-  __Pyx_RaiseArgtupleInvalid("lambda1", 1, 1, 1, __pyx_nargs); __PYX_ERR(0, 752, __pyx_L3_error)
+  __Pyx_RaiseArgtupleInvalid("lambda1", 1, 1, 1, __pyx_nargs); __PYX_ERR(0, 960, __pyx_L3_error)
   __pyx_L6_skip:;
   goto __pyx_L4_argument_unpacking_done;
   __pyx_L3_error:;
@@ -9585,28 +10741,28 @@ static PyObject *__pyx_lambda_funcdef_lambda1(CYTHON_UNUSED PyObject *__pyx_self
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("lambda1", 0);
   __Pyx_XDECREF(__pyx_r);
-  __pyx_t_1 = __Pyx_GetItemInt(__pyx_v_item, 0, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 752, __pyx_L1_error)
+  __pyx_t_1 = __Pyx_GetItemInt(__pyx_v_item, 0, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 960, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
-  __pyx_t_2 = __Pyx_GetItemInt(__pyx_v_item, 2, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 752, __pyx_L1_error)
+  __pyx_t_2 = __Pyx_GetItemInt(__pyx_v_item, 2, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 960, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
-  __pyx_t_3 = __Pyx_GetItemInt(__pyx_v_item, 3, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 752, __pyx_L1_error)
+  __pyx_t_3 = __Pyx_GetItemInt(__pyx_v_item, 3, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 960, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_3);
-  __pyx_t_4 = __Pyx_GetItemInt(__pyx_v_item, 1, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 752, __pyx_L1_error)
+  __pyx_t_4 = __Pyx_GetItemInt(__pyx_v_item, 1, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 960, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
-  __pyx_t_5 = __Pyx_GetItemInt(__pyx_v_item, 4, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 752, __pyx_L1_error)
+  __pyx_t_5 = __Pyx_GetItemInt(__pyx_v_item, 4, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 960, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
-  __pyx_t_6 = PyTuple_New(5); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 752, __pyx_L1_error)
+  __pyx_t_6 = PyTuple_New(5); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 960, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_6);
   __Pyx_GIVEREF(__pyx_t_1);
-  if (__Pyx_PyTuple_SET_ITEM(__pyx_t_6, 0, __pyx_t_1) != (0)) __PYX_ERR(0, 752, __pyx_L1_error);
+  if (__Pyx_PyTuple_SET_ITEM(__pyx_t_6, 0, __pyx_t_1) != (0)) __PYX_ERR(0, 960, __pyx_L1_error);
   __Pyx_GIVEREF(__pyx_t_2);
-  if (__Pyx_PyTuple_SET_ITEM(__pyx_t_6, 1, __pyx_t_2) != (0)) __PYX_ERR(0, 752, __pyx_L1_error);
+  if (__Pyx_PyTuple_SET_ITEM(__pyx_t_6, 1, __pyx_t_2) != (0)) __PYX_ERR(0, 960, __pyx_L1_error);
   __Pyx_GIVEREF(__pyx_t_3);
-  if (__Pyx_PyTuple_SET_ITEM(__pyx_t_6, 2, __pyx_t_3) != (0)) __PYX_ERR(0, 752, __pyx_L1_error);
+  if (__Pyx_PyTuple_SET_ITEM(__pyx_t_6, 2, __pyx_t_3) != (0)) __PYX_ERR(0, 960, __pyx_L1_error);
   __Pyx_GIVEREF(__pyx_t_4);
-  if (__Pyx_PyTuple_SET_ITEM(__pyx_t_6, 3, __pyx_t_4) != (0)) __PYX_ERR(0, 752, __pyx_L1_error);
+  if (__Pyx_PyTuple_SET_ITEM(__pyx_t_6, 3, __pyx_t_4) != (0)) __PYX_ERR(0, 960, __pyx_L1_error);
   __Pyx_GIVEREF(__pyx_t_5);
-  if (__Pyx_PyTuple_SET_ITEM(__pyx_t_6, 4, __pyx_t_5) != (0)) __PYX_ERR(0, 752, __pyx_L1_error);
+  if (__Pyx_PyTuple_SET_ITEM(__pyx_t_6, 4, __pyx_t_5) != (0)) __PYX_ERR(0, 960, __pyx_L1_error);
   __pyx_t_1 = 0;
   __pyx_t_2 = 0;
   __pyx_t_3 = 0;
@@ -9632,7 +10788,7 @@ static PyObject *__pyx_lambda_funcdef_lambda1(CYTHON_UNUSED PyObject *__pyx_self
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":751
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":959
  *
  *
  * def _sort_raw_hits_py(out):             # <<<<<<<<<<<<<<
@@ -9653,7 +10809,7 @@ static PyObject *__pyx_pf_5aries_9astrology_12transit_fast_15_transit_kernel__so
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("_sort_raw_hits_py", 0);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":752
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":960
  *
  * def _sort_raw_hits_py(out):
  * 	out.sort(key=lambda item: (item[0], item[2], item[3], item[1], item[4]))             # <<<<<<<<<<<<<<
@@ -9662,24 +10818,24 @@ static PyObject *__pyx_pf_5aries_9astrology_12transit_fast_15_transit_kernel__so
 */
   __pyx_t_2 = __pyx_v_out;
   __Pyx_INCREF(__pyx_t_2);
-  __pyx_t_3 = __Pyx_CyFunction_New(&__pyx_mdef_5aries_9astrology_12transit_fast_15_transit_kernel_17_sort_raw_hits_py_lambda1, 0, __pyx_mstate_global->__pyx_n_u_sort_raw_hits_py_locals_lambda, NULL, __pyx_mstate_global->__pyx_n_u_aries_astrology_transit_fast__tr, __pyx_mstate_global->__pyx_d, ((PyObject *)__pyx_mstate_global->__pyx_codeobj_tab[1])); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 752, __pyx_L1_error)
+  __pyx_t_3 = __Pyx_CyFunction_New(&__pyx_mdef_5aries_9astrology_12transit_fast_15_transit_kernel_17_sort_raw_hits_py_lambda1, 0, __pyx_mstate_global->__pyx_n_u_sort_raw_hits_py_locals_lambda, NULL, __pyx_mstate_global->__pyx_n_u_aries_astrology_transit_fast__tr, __pyx_mstate_global->__pyx_d, ((PyObject *)__pyx_mstate_global->__pyx_codeobj_tab[1])); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 960, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_3);
   __pyx_t_4 = 0;
   {
     PyObject *__pyx_callargs[2 + ((CYTHON_VECTORCALL) ? 1 : 0)] = {__pyx_t_2, NULL};
-    __pyx_t_5 = __Pyx_MakeVectorcallBuilderKwds(1); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 752, __pyx_L1_error)
+    __pyx_t_5 = __Pyx_MakeVectorcallBuilderKwds(1); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 960, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_5);
-    if (__Pyx_VectorcallBuilder_AddArg(__pyx_mstate_global->__pyx_n_u_key, __pyx_t_3, __pyx_t_5, __pyx_callargs+1, 0) < (0)) __PYX_ERR(0, 752, __pyx_L1_error)
+    if (__Pyx_VectorcallBuilder_AddArg(__pyx_mstate_global->__pyx_n_u_key, __pyx_t_3, __pyx_t_5, __pyx_callargs+1, 0) < (0)) __PYX_ERR(0, 960, __pyx_L1_error)
     __pyx_t_1 = __Pyx_Object_VectorcallMethod_CallFromBuilder((PyObject*)__pyx_mstate_global->__pyx_n_u_sort, __pyx_callargs+__pyx_t_4, (1-__pyx_t_4) | (1*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET), __pyx_t_5);
     __Pyx_XDECREF(__pyx_t_2); __pyx_t_2 = 0;
     __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
     __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-    if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 752, __pyx_L1_error)
+    if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 960, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_1);
   }
   __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":753
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":961
  * def _sort_raw_hits_py(out):
  * 	out.sort(key=lambda item: (item[0], item[2], item[3], item[1], item[4]))
  * 	return out             # <<<<<<<<<<<<<<
@@ -9691,7 +10847,7 @@ static PyObject *__pyx_pf_5aries_9astrology_12transit_fast_15_transit_kernel__so
   __pyx_r = __pyx_v_out;
   goto __pyx_L0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":751
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":959
  *
  *
  * def _sort_raw_hits_py(out):             # <<<<<<<<<<<<<<
@@ -9713,7 +10869,7 @@ static PyObject *__pyx_pf_5aries_9astrology_12transit_fast_15_transit_kernel__so
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":756
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":964
  *
  *
  * cdef int _search_station_times_into_c(             # <<<<<<<<<<<<<<
@@ -9741,7 +10897,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_st
   int __pyx_clineno = 0;
   PyGILState_STATE __pyx_gilstate_save;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":768
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":976
  * 	size_t* capacity_ptr,
  * ) except -1 nogil:
  * 	cdef double accept_speed = eps_speed * 1000.0             # <<<<<<<<<<<<<<
@@ -9750,7 +10906,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_st
 */
   __pyx_v_accept_speed = (__pyx_v_eps_speed * 1000.0);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":769
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":977
  * ) except -1 nogil:
  * 	cdef double accept_speed = eps_speed * 1000.0
  * 	cdef double jd = jd_start             # <<<<<<<<<<<<<<
@@ -9759,7 +10915,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_st
 */
   __pyx_v_jd = __pyx_v_jd_start;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":777
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":985
  * 	cdef double hit_jd
  * 	cdef double hit_speed
  * 	if accept_speed < 1e-6:             # <<<<<<<<<<<<<<
@@ -9769,7 +10925,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_st
   __pyx_t_1 = (__pyx_v_accept_speed < 1e-6);
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":778
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":986
  * 	cdef double hit_speed
  * 	if accept_speed < 1e-6:
  * 		accept_speed = 1e-6             # <<<<<<<<<<<<<<
@@ -9778,7 +10934,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_st
 */
     __pyx_v_accept_speed = 1e-6;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":777
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":985
  * 	cdef double hit_jd
  * 	cdef double hit_speed
  * 	if accept_speed < 1e-6:             # <<<<<<<<<<<<<<
@@ -9787,16 +10943,16 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_st
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":779
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":987
  * 	if accept_speed < 1e-6:
  * 		accept_speed = 1e-6
  * 	_eval_lon_speed(jd, planet, flags, &lon0, &speed0)             # <<<<<<<<<<<<<<
  * 	while jd < jd_end:
  * 		jd_next = jd + _adaptive_station_step_c(base_step, speed0, eps_days)
 */
-  __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_speed(__pyx_v_jd, __pyx_v_planet, __pyx_v_flags, (&__pyx_v_lon0), (&__pyx_v_speed0)); if (unlikely(__pyx_t_2 == ((int)-1))) __PYX_ERR(0, 779, __pyx_L1_error)
+  __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_speed(__pyx_v_jd, __pyx_v_planet, __pyx_v_flags, (&__pyx_v_lon0), (&__pyx_v_speed0)); if (unlikely(__pyx_t_2 == ((int)-1))) __PYX_ERR(0, 987, __pyx_L1_error)
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":780
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":988
  * 		accept_speed = 1e-6
  * 	_eval_lon_speed(jd, planet, flags, &lon0, &speed0)
  * 	while jd < jd_end:             # <<<<<<<<<<<<<<
@@ -9807,7 +10963,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_st
     __pyx_t_1 = (__pyx_v_jd < __pyx_v_jd_end);
     if (!__pyx_t_1) break;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":781
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":989
  * 	_eval_lon_speed(jd, planet, flags, &lon0, &speed0)
  * 	while jd < jd_end:
  * 		jd_next = jd + _adaptive_station_step_c(base_step, speed0, eps_days)             # <<<<<<<<<<<<<<
@@ -9816,7 +10972,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_st
 */
     __pyx_v_jd_next = (__pyx_v_jd + __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__adaptive_station_step_c(__pyx_v_base_step, __pyx_v_speed0, __pyx_v_eps_days));
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":782
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":990
  * 	while jd < jd_end:
  * 		jd_next = jd + _adaptive_station_step_c(base_step, speed0, eps_days)
  * 		if jd_next > jd_end:             # <<<<<<<<<<<<<<
@@ -9826,7 +10982,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_st
     __pyx_t_1 = (__pyx_v_jd_next > __pyx_v_jd_end);
     if (__pyx_t_1) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":783
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":991
  * 		jd_next = jd + _adaptive_station_step_c(base_step, speed0, eps_days)
  * 		if jd_next > jd_end:
  * 			jd_next = jd_end             # <<<<<<<<<<<<<<
@@ -9835,7 +10991,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_st
 */
       __pyx_v_jd_next = __pyx_v_jd_end;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":782
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":990
  * 	while jd < jd_end:
  * 		jd_next = jd + _adaptive_station_step_c(base_step, speed0, eps_days)
  * 		if jd_next > jd_end:             # <<<<<<<<<<<<<<
@@ -9844,16 +11000,16 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_st
 */
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":784
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":992
  * 		if jd_next > jd_end:
  * 			jd_next = jd_end
  * 		_eval_lon_speed(jd_next, planet, flags, &lon1, &speed1)             # <<<<<<<<<<<<<<
  * 		if fabs(speed0) <= eps_speed or fabs(speed1) <= eps_speed or _crossed_zero_c(speed0, speed1) or fabs(speed0) <= _LOW_SPEED_WARN or fabs(speed1) <= _LOW_SPEED_WARN:
  * 			_refine_station_root_seeded_c(
 */
-    __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_speed(__pyx_v_jd_next, __pyx_v_planet, __pyx_v_flags, (&__pyx_v_lon1), (&__pyx_v_speed1)); if (unlikely(__pyx_t_2 == ((int)-1))) __PYX_ERR(0, 784, __pyx_L1_error)
+    __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_speed(__pyx_v_jd_next, __pyx_v_planet, __pyx_v_flags, (&__pyx_v_lon1), (&__pyx_v_speed1)); if (unlikely(__pyx_t_2 == ((int)-1))) __PYX_ERR(0, 992, __pyx_L1_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":785
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":993
  * 			jd_next = jd_end
  * 		_eval_lon_speed(jd_next, planet, flags, &lon1, &speed1)
  * 		if fabs(speed0) <= eps_speed or fabs(speed1) <= eps_speed or _crossed_zero_c(speed0, speed1) or fabs(speed0) <= _LOW_SPEED_WARN or fabs(speed1) <= _LOW_SPEED_WARN:             # <<<<<<<<<<<<<<
@@ -9889,16 +11045,16 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_st
     __pyx_L8_bool_binop_done:;
     if (__pyx_t_1) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":786
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":994
  * 		_eval_lon_speed(jd_next, planet, flags, &lon1, &speed1)
  * 		if fabs(speed0) <= eps_speed or fabs(speed1) <= eps_speed or _crossed_zero_c(speed0, speed1) or fabs(speed0) <= _LOW_SPEED_WARN or fabs(speed1) <= _LOW_SPEED_WARN:
  * 			_refine_station_root_seeded_c(             # <<<<<<<<<<<<<<
  * 				jd,
  * 				speed0,
 */
-      __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_station_root_seeded_c(__pyx_v_jd, __pyx_v_speed0, __pyx_v_jd_next, __pyx_v_speed1, __pyx_v_planet, __pyx_v_flags, __pyx_v_eps_speed, __pyx_v_eps_days, (&__pyx_v_hit_jd), (&__pyx_v_hit_speed)); if (unlikely(__pyx_t_2 == ((int)-1))) __PYX_ERR(0, 786, __pyx_L1_error)
+      __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_station_root_seeded_c(__pyx_v_jd, __pyx_v_speed0, __pyx_v_jd_next, __pyx_v_speed1, __pyx_v_planet, __pyx_v_flags, __pyx_v_eps_speed, __pyx_v_eps_days, (&__pyx_v_hit_jd), (&__pyx_v_hit_speed)); if (unlikely(__pyx_t_2 == ((int)-1))) __PYX_ERR(0, 994, __pyx_L1_error)
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":798
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1006
  * 				&hit_speed,
  * 			)
  * 			if jd_start <= hit_jd <= jd_end and fabs(hit_speed) <= accept_speed:             # <<<<<<<<<<<<<<
@@ -9919,7 +11075,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_st
       __pyx_L14_bool_binop_done:;
       if (__pyx_t_1) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":799
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1007
  * 			)
  * 			if jd_start <= hit_jd <= jd_end and fabs(hit_speed) <= accept_speed:
  * 				_append_unique_c(hits_ptr, count_ptr, capacity_ptr, hit_jd, planet, 0.0, 0.0, _HIT_STATION, hit_speed, 1 if hit_speed < 0.0 else 0)             # <<<<<<<<<<<<<<
@@ -9932,9 +11088,9 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_st
         } else {
           __pyx_t_2 = 0;
         }
-        __pyx_t_4 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_unique_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_hit_jd, __pyx_v_planet, 0.0, 0.0, __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__HIT_STATION, __pyx_v_hit_speed, __pyx_t_2); if (unlikely(__pyx_t_4 == ((int)-1))) __PYX_ERR(0, 799, __pyx_L1_error)
+        __pyx_t_4 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_unique_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_hit_jd, __pyx_v_planet, 0.0, 0.0, __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__HIT_STATION, __pyx_v_hit_speed, __pyx_t_2); if (unlikely(__pyx_t_4 == ((int)-1))) __PYX_ERR(0, 1007, __pyx_L1_error)
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":798
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1006
  * 				&hit_speed,
  * 			)
  * 			if jd_start <= hit_jd <= jd_end and fabs(hit_speed) <= accept_speed:             # <<<<<<<<<<<<<<
@@ -9943,7 +11099,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_st
 */
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":785
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":993
  * 			jd_next = jd_end
  * 		_eval_lon_speed(jd_next, planet, flags, &lon1, &speed1)
  * 		if fabs(speed0) <= eps_speed or fabs(speed1) <= eps_speed or _crossed_zero_c(speed0, speed1) or fabs(speed0) <= _LOW_SPEED_WARN or fabs(speed1) <= _LOW_SPEED_WARN:             # <<<<<<<<<<<<<<
@@ -9952,7 +11108,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_st
 */
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":800
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1008
  * 			if jd_start <= hit_jd <= jd_end and fabs(hit_speed) <= accept_speed:
  * 				_append_unique_c(hits_ptr, count_ptr, capacity_ptr, hit_jd, planet, 0.0, 0.0, _HIT_STATION, hit_speed, 1 if hit_speed < 0.0 else 0)
  * 		jd = jd_next             # <<<<<<<<<<<<<<
@@ -9961,7 +11117,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_st
 */
     __pyx_v_jd = __pyx_v_jd_next;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":801
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1009
  * 				_append_unique_c(hits_ptr, count_ptr, capacity_ptr, hit_jd, planet, 0.0, 0.0, _HIT_STATION, hit_speed, 1 if hit_speed < 0.0 else 0)
  * 		jd = jd_next
  * 		lon0 = lon1             # <<<<<<<<<<<<<<
@@ -9970,7 +11126,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_st
 */
     __pyx_v_lon0 = __pyx_v_lon1;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":802
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1010
  * 		jd = jd_next
  * 		lon0 = lon1
  * 		speed0 = speed1             # <<<<<<<<<<<<<<
@@ -9980,7 +11136,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_st
     __pyx_v_speed0 = __pyx_v_speed1;
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":803
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1011
  * 		lon0 = lon1
  * 		speed0 = speed1
  * 	return 0             # <<<<<<<<<<<<<<
@@ -9990,7 +11146,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_st
   __pyx_r = 0;
   goto __pyx_L0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":756
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":964
  *
  *
  * cdef int _search_station_times_into_c(             # <<<<<<<<<<<<<<
@@ -10008,7 +11164,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_st
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":806
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":1014
  *
  *
  * cdef int _prepare_targets_c(             # <<<<<<<<<<<<<<
@@ -10043,31 +11199,31 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_t
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("_prepare_targets_c", 0);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":812
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1020
  * ) except -1:
  * 	cdef double target_value
  * 	cdef object seen_targets = set()             # <<<<<<<<<<<<<<
  * 	cdef list normalized_targets = []
  * 	cdef size_t idx
 */
-  __pyx_t_1 = PySet_New(0); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 812, __pyx_L1_error)
+  __pyx_t_1 = PySet_New(0); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1020, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
   __pyx_v_seen_targets = __pyx_t_1;
   __pyx_t_1 = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":813
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1021
  * 	cdef double target_value
  * 	cdef object seen_targets = set()
  * 	cdef list normalized_targets = []             # <<<<<<<<<<<<<<
  * 	cdef size_t idx
  * 	for target in targets_deg:
 */
-  __pyx_t_1 = PyList_New(0); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 813, __pyx_L1_error)
+  __pyx_t_1 = PyList_New(0); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1021, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
   __pyx_v_normalized_targets = ((PyObject*)__pyx_t_1);
   __pyx_t_1 = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":815
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1023
  * 	cdef list normalized_targets = []
  * 	cdef size_t idx
  * 	for target in targets_deg:             # <<<<<<<<<<<<<<
@@ -10079,9 +11235,9 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_t
     __pyx_t_2 = 0;
     __pyx_t_3 = NULL;
   } else {
-    __pyx_t_2 = -1; __pyx_t_1 = PyObject_GetIter(__pyx_v_targets_deg); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 815, __pyx_L1_error)
+    __pyx_t_2 = -1; __pyx_t_1 = PyObject_GetIter(__pyx_v_targets_deg); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1023, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_1);
-    __pyx_t_3 = (CYTHON_COMPILING_IN_LIMITED_API) ? PyIter_Next : __Pyx_PyObject_GetIterNextFunc(__pyx_t_1); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 815, __pyx_L1_error)
+    __pyx_t_3 = (CYTHON_COMPILING_IN_LIMITED_API) ? PyIter_Next : __Pyx_PyObject_GetIterNextFunc(__pyx_t_1); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1023, __pyx_L1_error)
   }
   for (;;) {
     if (likely(!__pyx_t_3)) {
@@ -10089,7 +11245,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_t
         {
           Py_ssize_t __pyx_temp = __Pyx_PyList_GET_SIZE(__pyx_t_1);
           #if !CYTHON_ASSUME_SAFE_SIZE
-          if (unlikely((__pyx_temp < 0))) __PYX_ERR(0, 815, __pyx_L1_error)
+          if (unlikely((__pyx_temp < 0))) __PYX_ERR(0, 1023, __pyx_L1_error)
           #endif
           if (__pyx_t_2 >= __pyx_temp) break;
         }
@@ -10099,7 +11255,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_t
         {
           Py_ssize_t __pyx_temp = __Pyx_PyTuple_GET_SIZE(__pyx_t_1);
           #if !CYTHON_ASSUME_SAFE_SIZE
-          if (unlikely((__pyx_temp < 0))) __PYX_ERR(0, 815, __pyx_L1_error)
+          if (unlikely((__pyx_temp < 0))) __PYX_ERR(0, 1023, __pyx_L1_error)
           #endif
           if (__pyx_t_2 >= __pyx_temp) break;
         }
@@ -10110,13 +11266,13 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_t
         #endif
         ++__pyx_t_2;
       }
-      if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 815, __pyx_L1_error)
+      if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1023, __pyx_L1_error)
     } else {
       __pyx_t_4 = __pyx_t_3(__pyx_t_1);
       if (unlikely(!__pyx_t_4)) {
         PyObject* exc_type = PyErr_Occurred();
         if (exc_type) {
-          if (unlikely(!__Pyx_PyErr_GivenExceptionMatches(exc_type, PyExc_StopIteration))) __PYX_ERR(0, 815, __pyx_L1_error)
+          if (unlikely(!__Pyx_PyErr_GivenExceptionMatches(exc_type, PyExc_StopIteration))) __PYX_ERR(0, 1023, __pyx_L1_error)
           PyErr_Clear();
         }
         break;
@@ -10126,17 +11282,17 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_t
     __Pyx_XDECREF_SET(__pyx_v_target, __pyx_t_4);
     __pyx_t_4 = 0;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":816
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1024
  * 	cdef size_t idx
  * 	for target in targets_deg:
  * 		target_value = float(target)             # <<<<<<<<<<<<<<
  * 		if not isfinite(target_value):
  * 			raise ValueError("targets_deg values must be finite")
 */
-    __pyx_t_5 = __Pyx_PyObject_AsDouble(__pyx_v_target); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_5, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 816, __pyx_L1_error)
+    __pyx_t_5 = __Pyx_PyObject_AsDouble(__pyx_v_target); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_5, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 1024, __pyx_L1_error)
     __pyx_v_target_value = __pyx_t_5;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":817
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1025
  * 	for target in targets_deg:
  * 		target_value = float(target)
  * 		if not isfinite(target_value):             # <<<<<<<<<<<<<<
@@ -10146,7 +11302,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_t
     __pyx_t_6 = (!isfinite(__pyx_v_target_value));
     if (unlikely(__pyx_t_6)) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":818
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1026
  * 		target_value = float(target)
  * 		if not isfinite(target_value):
  * 			raise ValueError("targets_deg values must be finite")             # <<<<<<<<<<<<<<
@@ -10159,14 +11315,14 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_t
         PyObject *__pyx_callargs[2] = {__pyx_t_7, __pyx_mstate_global->__pyx_kp_u_targets_deg_values_must_be_finit};
         __pyx_t_4 = __Pyx_PyObject_FastCall((PyObject*)(((PyTypeObject*)PyExc_ValueError)), __pyx_callargs+__pyx_t_8, (2-__pyx_t_8) | (__pyx_t_8*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
         __Pyx_XDECREF(__pyx_t_7); __pyx_t_7 = 0;
-        if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 818, __pyx_L1_error)
+        if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1026, __pyx_L1_error)
         __Pyx_GOTREF(__pyx_t_4);
       }
       __Pyx_Raise(__pyx_t_4, 0, 0, 0);
       __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-      __PYX_ERR(0, 818, __pyx_L1_error)
+      __PYX_ERR(0, 1026, __pyx_L1_error)
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":817
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1025
  * 	for target in targets_deg:
  * 		target_value = float(target)
  * 		if not isfinite(target_value):             # <<<<<<<<<<<<<<
@@ -10175,7 +11331,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_t
 */
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":819
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1027
  * 		if not isfinite(target_value):
  * 			raise ValueError("targets_deg values must be finite")
  * 		target_value = _wrap360_c(target_value)             # <<<<<<<<<<<<<<
@@ -10184,7 +11340,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_t
 */
     __pyx_v_target_value = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__wrap360_c(__pyx_v_target_value);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":820
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1028
  * 			raise ValueError("targets_deg values must be finite")
  * 		target_value = _wrap360_c(target_value)
  * 		if round(target_value, 12) in seen_targets:             # <<<<<<<<<<<<<<
@@ -10192,7 +11348,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_t
  * 		seen_targets.add(round(target_value, 12))
 */
     __pyx_t_7 = NULL;
-    __pyx_t_9 = PyFloat_FromDouble(__pyx_v_target_value); if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 820, __pyx_L1_error)
+    __pyx_t_9 = PyFloat_FromDouble(__pyx_v_target_value); if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 1028, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_9);
     __pyx_t_8 = 1;
     {
@@ -10200,14 +11356,14 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_t
       __pyx_t_4 = __Pyx_PyObject_FastCall((PyObject*)__pyx_builtin_round, __pyx_callargs+__pyx_t_8, (3-__pyx_t_8) | (__pyx_t_8*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
       __Pyx_XDECREF(__pyx_t_7); __pyx_t_7 = 0;
       __Pyx_DECREF(__pyx_t_9); __pyx_t_9 = 0;
-      if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 820, __pyx_L1_error)
+      if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1028, __pyx_L1_error)
       __Pyx_GOTREF(__pyx_t_4);
     }
-    __pyx_t_6 = (__Pyx_PySequence_ContainsTF(__pyx_t_4, __pyx_v_seen_targets, Py_EQ)); if (unlikely((__pyx_t_6 < 0))) __PYX_ERR(0, 820, __pyx_L1_error)
+    __pyx_t_6 = (__Pyx_PySequence_ContainsTF(__pyx_t_4, __pyx_v_seen_targets, Py_EQ)); if (unlikely((__pyx_t_6 < 0))) __PYX_ERR(0, 1028, __pyx_L1_error)
     __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
     if (__pyx_t_6) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":821
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1029
  * 		target_value = _wrap360_c(target_value)
  * 		if round(target_value, 12) in seen_targets:
  * 			continue             # <<<<<<<<<<<<<<
@@ -10216,7 +11372,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_t
 */
       goto __pyx_L3_continue;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":820
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1028
  * 			raise ValueError("targets_deg values must be finite")
  * 		target_value = _wrap360_c(target_value)
  * 		if round(target_value, 12) in seen_targets:             # <<<<<<<<<<<<<<
@@ -10225,7 +11381,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_t
 */
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":822
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1030
  * 		if round(target_value, 12) in seen_targets:
  * 			continue
  * 		seen_targets.add(round(target_value, 12))             # <<<<<<<<<<<<<<
@@ -10235,7 +11391,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_t
     __pyx_t_9 = __pyx_v_seen_targets;
     __Pyx_INCREF(__pyx_t_9);
     __pyx_t_10 = NULL;
-    __pyx_t_11 = PyFloat_FromDouble(__pyx_v_target_value); if (unlikely(!__pyx_t_11)) __PYX_ERR(0, 822, __pyx_L1_error)
+    __pyx_t_11 = PyFloat_FromDouble(__pyx_v_target_value); if (unlikely(!__pyx_t_11)) __PYX_ERR(0, 1030, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_11);
     __pyx_t_8 = 1;
     {
@@ -10243,7 +11399,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_t
       __pyx_t_7 = __Pyx_PyObject_FastCall((PyObject*)__pyx_builtin_round, __pyx_callargs+__pyx_t_8, (3-__pyx_t_8) | (__pyx_t_8*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
       __Pyx_XDECREF(__pyx_t_10); __pyx_t_10 = 0;
       __Pyx_DECREF(__pyx_t_11); __pyx_t_11 = 0;
-      if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 822, __pyx_L1_error)
+      if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 1030, __pyx_L1_error)
       __Pyx_GOTREF(__pyx_t_7);
     }
     __pyx_t_8 = 0;
@@ -10252,24 +11408,24 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_t
       __pyx_t_4 = __Pyx_PyObject_FastCallMethod((PyObject*)__pyx_mstate_global->__pyx_n_u_add, __pyx_callargs+__pyx_t_8, (2-__pyx_t_8) | (1*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
       __Pyx_XDECREF(__pyx_t_9); __pyx_t_9 = 0;
       __Pyx_DECREF(__pyx_t_7); __pyx_t_7 = 0;
-      if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 822, __pyx_L1_error)
+      if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1030, __pyx_L1_error)
       __Pyx_GOTREF(__pyx_t_4);
     }
     __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":823
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1031
  * 			continue
  * 		seen_targets.add(round(target_value, 12))
  * 		normalized_targets.append(target_value)             # <<<<<<<<<<<<<<
  * 	count_out[0] = len(normalized_targets)
  * 	if count_out[0] == 0:
 */
-    __pyx_t_4 = PyFloat_FromDouble(__pyx_v_target_value); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 823, __pyx_L1_error)
+    __pyx_t_4 = PyFloat_FromDouble(__pyx_v_target_value); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1031, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_4);
-    __pyx_t_12 = __Pyx_PyList_Append(__pyx_v_normalized_targets, __pyx_t_4); if (unlikely(__pyx_t_12 == ((int)-1))) __PYX_ERR(0, 823, __pyx_L1_error)
+    __pyx_t_12 = __Pyx_PyList_Append(__pyx_v_normalized_targets, __pyx_t_4); if (unlikely(__pyx_t_12 == ((int)-1))) __PYX_ERR(0, 1031, __pyx_L1_error)
     __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":815
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1023
  * 	cdef list normalized_targets = []
  * 	cdef size_t idx
  * 	for target in targets_deg:             # <<<<<<<<<<<<<<
@@ -10280,17 +11436,17 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_t
   }
   __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":824
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1032
  * 		seen_targets.add(round(target_value, 12))
  * 		normalized_targets.append(target_value)
  * 	count_out[0] = len(normalized_targets)             # <<<<<<<<<<<<<<
  * 	if count_out[0] == 0:
  * 		targets_out[0] = NULL
 */
-  __pyx_t_2 = __Pyx_PyList_GET_SIZE(__pyx_v_normalized_targets); if (unlikely(__pyx_t_2 == ((Py_ssize_t)-1))) __PYX_ERR(0, 824, __pyx_L1_error)
+  __pyx_t_2 = __Pyx_PyList_GET_SIZE(__pyx_v_normalized_targets); if (unlikely(__pyx_t_2 == ((Py_ssize_t)-1))) __PYX_ERR(0, 1032, __pyx_L1_error)
   (__pyx_v_count_out[0]) = __pyx_t_2;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":825
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1033
  * 		normalized_targets.append(target_value)
  * 	count_out[0] = len(normalized_targets)
  * 	if count_out[0] == 0:             # <<<<<<<<<<<<<<
@@ -10300,7 +11456,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_t
   __pyx_t_6 = ((__pyx_v_count_out[0]) == 0);
   if (__pyx_t_6) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":826
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1034
  * 	count_out[0] = len(normalized_targets)
  * 	if count_out[0] == 0:
  * 		targets_out[0] = NULL             # <<<<<<<<<<<<<<
@@ -10309,7 +11465,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_t
 */
     (__pyx_v_targets_out[0]) = NULL;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":827
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1035
  * 	if count_out[0] == 0:
  * 		targets_out[0] = NULL
  * 		return 0             # <<<<<<<<<<<<<<
@@ -10319,7 +11475,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_t
     __pyx_r = 0;
     goto __pyx_L0;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":825
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1033
  * 		normalized_targets.append(target_value)
  * 	count_out[0] = len(normalized_targets)
  * 	if count_out[0] == 0:             # <<<<<<<<<<<<<<
@@ -10328,7 +11484,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_t
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":828
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1036
  * 		targets_out[0] = NULL
  * 		return 0
  * 	targets_out[0] = <double*>malloc(count_out[0] * cython.sizeof(double))             # <<<<<<<<<<<<<<
@@ -10337,7 +11493,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_t
 */
   (__pyx_v_targets_out[0]) = ((double *)malloc(((__pyx_v_count_out[0]) * (sizeof(double)))));
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":829
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1037
  * 		return 0
  * 	targets_out[0] = <double*>malloc(count_out[0] * cython.sizeof(double))
  * 	if targets_out[0] == NULL:             # <<<<<<<<<<<<<<
@@ -10347,7 +11503,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_t
   __pyx_t_6 = ((__pyx_v_targets_out[0]) == NULL);
   if (unlikely(__pyx_t_6)) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":830
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1038
  * 	targets_out[0] = <double*>malloc(count_out[0] * cython.sizeof(double))
  * 	if targets_out[0] == NULL:
  * 		raise MemoryError("Could not allocate target buffers")             # <<<<<<<<<<<<<<
@@ -10360,14 +11516,14 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_t
       PyObject *__pyx_callargs[2] = {__pyx_t_4, __pyx_mstate_global->__pyx_kp_u_Could_not_allocate_target_buffer};
       __pyx_t_1 = __Pyx_PyObject_FastCall((PyObject*)(((PyTypeObject*)PyExc_MemoryError)), __pyx_callargs+__pyx_t_8, (2-__pyx_t_8) | (__pyx_t_8*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
       __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
-      if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 830, __pyx_L1_error)
+      if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1038, __pyx_L1_error)
       __Pyx_GOTREF(__pyx_t_1);
     }
     __Pyx_Raise(__pyx_t_1, 0, 0, 0);
     __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
-    __PYX_ERR(0, 830, __pyx_L1_error)
+    __PYX_ERR(0, 1038, __pyx_L1_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":829
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1037
  * 		return 0
  * 	targets_out[0] = <double*>malloc(count_out[0] * cython.sizeof(double))
  * 	if targets_out[0] == NULL:             # <<<<<<<<<<<<<<
@@ -10376,16 +11532,16 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_t
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":831
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1039
  * 	if targets_out[0] == NULL:
  * 		raise MemoryError("Could not allocate target buffers")
  * 	normalized_targets.sort()             # <<<<<<<<<<<<<<
  * 	for idx in range(count_out[0]):
  * 		targets_out[0][idx] = float(normalized_targets[idx])
 */
-  __pyx_t_12 = PyList_Sort(__pyx_v_normalized_targets); if (unlikely(__pyx_t_12 == ((int)-1))) __PYX_ERR(0, 831, __pyx_L1_error)
+  __pyx_t_12 = PyList_Sort(__pyx_v_normalized_targets); if (unlikely(__pyx_t_12 == ((int)-1))) __PYX_ERR(0, 1039, __pyx_L1_error)
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":832
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1040
  * 		raise MemoryError("Could not allocate target buffers")
  * 	normalized_targets.sort()
  * 	for idx in range(count_out[0]):             # <<<<<<<<<<<<<<
@@ -10397,21 +11553,21 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_t
   for (__pyx_t_14 = 0; __pyx_t_14 < __pyx_t_13; __pyx_t_14+=1) {
     __pyx_v_idx = __pyx_t_14;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":833
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1041
  * 	normalized_targets.sort()
  * 	for idx in range(count_out[0]):
  * 		targets_out[0][idx] = float(normalized_targets[idx])             # <<<<<<<<<<<<<<
  * 	return 0
  *
 */
-    __pyx_t_1 = __Pyx_GetItemInt_List(__pyx_v_normalized_targets, __pyx_v_idx, size_t, 0, __Pyx_PyLong_FromSize_t, 1, 0, 1, 1, __Pyx_ReferenceSharing_OwnStrongReference); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 833, __pyx_L1_error)
+    __pyx_t_1 = __Pyx_GetItemInt_List(__pyx_v_normalized_targets, __pyx_v_idx, size_t, 0, __Pyx_PyLong_FromSize_t, 1, 0, 1, 1, __Pyx_ReferenceSharing_OwnStrongReference); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1041, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_1);
-    __pyx_t_5 = __Pyx_PyObject_AsDouble(__pyx_t_1); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_5, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 833, __pyx_L1_error)
+    __pyx_t_5 = __Pyx_PyObject_AsDouble(__pyx_t_1); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_5, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 1041, __pyx_L1_error)
     __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
     ((__pyx_v_targets_out[0])[__pyx_v_idx]) = __pyx_t_5;
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":834
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1042
  * 	for idx in range(count_out[0]):
  * 		targets_out[0][idx] = float(normalized_targets[idx])
  * 	return 0             # <<<<<<<<<<<<<<
@@ -10421,7 +11577,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_t
   __pyx_r = 0;
   goto __pyx_L0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":806
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1014
  *
  *
  * cdef int _prepare_targets_c(             # <<<<<<<<<<<<<<
@@ -10447,7 +11603,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_t
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":837
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":1045
  *
  *
  * cdef int _search_longitude_transits_prepared_into_c(             # <<<<<<<<<<<<<<
@@ -10465,18 +11621,20 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_lo
   double __pyx_v_lon1;
   double __pyx_v_speed0;
   double __pyx_v_speed1;
+  double __pyx_v_station_eps;
   int __pyx_v_have_station;
   int __pyx_r;
   int __pyx_t_1;
   int __pyx_t_2;
   int __pyx_t_3;
+  double __pyx_t_4;
   int __pyx_lineno = 0;
   const char *__pyx_filename = NULL;
   int __pyx_clineno = 0;
   PyGILState_STATE __pyx_gilstate_save;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":861
- * 	cdef double speed1
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1070
+ * 	cdef double station_eps
  * 	cdef bint have_station
  * 	if target_count == 0:             # <<<<<<<<<<<<<<
  * 		return 0
@@ -10485,7 +11643,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_lo
   __pyx_t_1 = (__pyx_v_target_count == 0);
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":862
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1071
  * 	cdef bint have_station
  * 	if target_count == 0:
  * 		return 0             # <<<<<<<<<<<<<<
@@ -10495,8 +11653,8 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_lo
     __pyx_r = 0;
     goto __pyx_L0;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":861
- * 	cdef double speed1
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1070
+ * 	cdef double station_eps
  * 	cdef bint have_station
  * 	if target_count == 0:             # <<<<<<<<<<<<<<
  * 		return 0
@@ -10504,7 +11662,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_lo
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":863
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1072
  * 	if target_count == 0:
  * 		return 0
  * 	if _can_use_direct_crossing_c(planet, flags):             # <<<<<<<<<<<<<<
@@ -10514,18 +11672,18 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_lo
   __pyx_t_1 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__can_use_direct_crossing_c(__pyx_v_planet, __pyx_v_flags);
   if (__pyx_t_1) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":864
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1073
  * 		return 0
  * 	if _can_use_direct_crossing_c(planet, flags):
  * 		return _search_direct_crossings_into_c(planet, jd_start, jd_end, unique_targets, target_count, flags, hits_ptr, count_ptr, capacity_ptr)             # <<<<<<<<<<<<<<
  * 	jd = jd_start
  * 	_eval_lon_speed(jd, planet, flags, &lon0, &speed0)
 */
-    __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_direct_crossings_into_c(__pyx_v_planet, __pyx_v_jd_start, __pyx_v_jd_end, __pyx_v_unique_targets, __pyx_v_target_count, __pyx_v_flags, __pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr); if (unlikely(__pyx_t_2 == ((int)-1))) __PYX_ERR(0, 864, __pyx_L1_error)
+    __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_direct_crossings_into_c(__pyx_v_planet, __pyx_v_jd_start, __pyx_v_jd_end, __pyx_v_unique_targets, __pyx_v_target_count, __pyx_v_flags, __pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr); if (unlikely(__pyx_t_2 == ((int)-1))) __PYX_ERR(0, 1073, __pyx_L1_error)
     __pyx_r = __pyx_t_2;
     goto __pyx_L0;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":863
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1072
  * 	if target_count == 0:
  * 		return 0
  * 	if _can_use_direct_crossing_c(planet, flags):             # <<<<<<<<<<<<<<
@@ -10534,7 +11692,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_lo
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":865
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1074
  * 	if _can_use_direct_crossing_c(planet, flags):
  * 		return _search_direct_crossings_into_c(planet, jd_start, jd_end, unique_targets, target_count, flags, hits_ptr, count_ptr, capacity_ptr)
  * 	jd = jd_start             # <<<<<<<<<<<<<<
@@ -10543,16 +11701,16 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_lo
 */
   __pyx_v_jd = __pyx_v_jd_start;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":866
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1075
  * 		return _search_direct_crossings_into_c(planet, jd_start, jd_end, unique_targets, target_count, flags, hits_ptr, count_ptr, capacity_ptr)
  * 	jd = jd_start
  * 	_eval_lon_speed(jd, planet, flags, &lon0, &speed0)             # <<<<<<<<<<<<<<
  * 	while jd < jd_end:
  * 		jd_next = jd + _adaptive_step_c(base_step, speed0, eps_days)
 */
-  __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_speed(__pyx_v_jd, __pyx_v_planet, __pyx_v_flags, (&__pyx_v_lon0), (&__pyx_v_speed0)); if (unlikely(__pyx_t_2 == ((int)-1))) __PYX_ERR(0, 866, __pyx_L1_error)
+  __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_speed(__pyx_v_jd, __pyx_v_planet, __pyx_v_flags, (&__pyx_v_lon0), (&__pyx_v_speed0)); if (unlikely(__pyx_t_2 == ((int)-1))) __PYX_ERR(0, 1075, __pyx_L1_error)
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":867
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1076
  * 	jd = jd_start
  * 	_eval_lon_speed(jd, planet, flags, &lon0, &speed0)
  * 	while jd < jd_end:             # <<<<<<<<<<<<<<
@@ -10563,7 +11721,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_lo
     __pyx_t_1 = (__pyx_v_jd < __pyx_v_jd_end);
     if (!__pyx_t_1) break;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":868
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1077
  * 	_eval_lon_speed(jd, planet, flags, &lon0, &speed0)
  * 	while jd < jd_end:
  * 		jd_next = jd + _adaptive_step_c(base_step, speed0, eps_days)             # <<<<<<<<<<<<<<
@@ -10572,7 +11730,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_lo
 */
     __pyx_v_jd_next = (__pyx_v_jd + __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__adaptive_step_c(__pyx_v_base_step, __pyx_v_speed0, __pyx_v_eps_days));
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":869
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1078
  * 	while jd < jd_end:
  * 		jd_next = jd + _adaptive_step_c(base_step, speed0, eps_days)
  * 		if jd_next > jd_end:             # <<<<<<<<<<<<<<
@@ -10582,7 +11740,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_lo
     __pyx_t_1 = (__pyx_v_jd_next > __pyx_v_jd_end);
     if (__pyx_t_1) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":870
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1079
  * 		jd_next = jd + _adaptive_step_c(base_step, speed0, eps_days)
  * 		if jd_next > jd_end:
  * 			jd_next = jd_end             # <<<<<<<<<<<<<<
@@ -10591,7 +11749,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_lo
 */
       __pyx_v_jd_next = __pyx_v_jd_end;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":869
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1078
  * 	while jd < jd_end:
  * 		jd_next = jd + _adaptive_step_c(base_step, speed0, eps_days)
  * 		if jd_next > jd_end:             # <<<<<<<<<<<<<<
@@ -10600,21 +11758,21 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_lo
 */
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":871
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1080
  * 		if jd_next > jd_end:
  * 			jd_next = jd_end
  * 		_eval_lon_speed(jd_next, planet, flags, &lon1, &speed1)             # <<<<<<<<<<<<<<
  * 		have_station = _crossed_zero_c(speed0, speed1) or fabs(speed0) <= _LOW_SPEED_WARN or fabs(speed1) <= _LOW_SPEED_WARN
  * 		if have_station:
 */
-    __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_speed(__pyx_v_jd_next, __pyx_v_planet, __pyx_v_flags, (&__pyx_v_lon1), (&__pyx_v_speed1)); if (unlikely(__pyx_t_2 == ((int)-1))) __PYX_ERR(0, 871, __pyx_L1_error)
+    __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_speed(__pyx_v_jd_next, __pyx_v_planet, __pyx_v_flags, (&__pyx_v_lon1), (&__pyx_v_speed1)); if (unlikely(__pyx_t_2 == ((int)-1))) __PYX_ERR(0, 1080, __pyx_L1_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":872
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1081
  * 			jd_next = jd_end
  * 		_eval_lon_speed(jd_next, planet, flags, &lon1, &speed1)
  * 		have_station = _crossed_zero_c(speed0, speed1) or fabs(speed0) <= _LOW_SPEED_WARN or fabs(speed1) <= _LOW_SPEED_WARN             # <<<<<<<<<<<<<<
  * 		if have_station:
- * 			_refine_station_root_seeded_c(
+ * 			station_eps = 0.0 if _crossed_zero_c(speed0, speed1) else _STATION_SPEED_EPS
 */
     __pyx_t_3 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__crossed_zero_c(__pyx_v_speed0, __pyx_v_speed1);
     if (!__pyx_t_3) {
@@ -10633,34 +11791,49 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_lo
     __pyx_L8_bool_binop_done:;
     __pyx_v_have_station = __pyx_t_1;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":873
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1082
  * 		_eval_lon_speed(jd_next, planet, flags, &lon1, &speed1)
  * 		have_station = _crossed_zero_c(speed0, speed1) or fabs(speed0) <= _LOW_SPEED_WARN or fabs(speed1) <= _LOW_SPEED_WARN
  * 		if have_station:             # <<<<<<<<<<<<<<
+ * 			station_eps = 0.0 if _crossed_zero_c(speed0, speed1) else _STATION_SPEED_EPS
  * 			_refine_station_root_seeded_c(
- * 				jd,
 */
     if (__pyx_v_have_station) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":874
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1083
  * 		have_station = _crossed_zero_c(speed0, speed1) or fabs(speed0) <= _LOW_SPEED_WARN or fabs(speed1) <= _LOW_SPEED_WARN
  * 		if have_station:
+ * 			station_eps = 0.0 if _crossed_zero_c(speed0, speed1) else _STATION_SPEED_EPS             # <<<<<<<<<<<<<<
+ * 			_refine_station_root_seeded_c(
+ * 				jd,
+*/
+      __pyx_t_1 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__crossed_zero_c(__pyx_v_speed0, __pyx_v_speed1);
+      if (__pyx_t_1) {
+        __pyx_t_4 = 0.0;
+      } else {
+        __pyx_t_4 = __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__STATION_SPEED_EPS;
+      }
+      __pyx_v_station_eps = __pyx_t_4;
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1084
+ * 		if have_station:
+ * 			station_eps = 0.0 if _crossed_zero_c(speed0, speed1) else _STATION_SPEED_EPS
  * 			_refine_station_root_seeded_c(             # <<<<<<<<<<<<<<
  * 				jd,
  * 				speed0,
 */
-      __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_station_root_seeded_c(__pyx_v_jd, __pyx_v_speed0, __pyx_v_jd_next, __pyx_v_speed1, __pyx_v_planet, __pyx_v_flags, __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__STATION_SPEED_EPS, __pyx_v_eps_days, (&__pyx_v_station_jd), (&__pyx_v_station_speed)); if (unlikely(__pyx_t_2 == ((int)-1))) __PYX_ERR(0, 874, __pyx_L1_error)
+      __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_station_root_seeded_c(__pyx_v_jd, __pyx_v_speed0, __pyx_v_jd_next, __pyx_v_speed1, __pyx_v_planet, __pyx_v_flags, __pyx_v_station_eps, __pyx_v_eps_days, (&__pyx_v_station_jd), (&__pyx_v_station_speed)); if (unlikely(__pyx_t_2 == ((int)-1))) __PYX_ERR(0, 1084, __pyx_L1_error)
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":886
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1096
  * 				&station_speed,
  * 			)
  * 			_eval_lon_speed(station_jd, planet, flags, &station_lon, &station_speed)             # <<<<<<<<<<<<<<
  * 			if jd < station_jd < jd_next:
  * 				_append_arc_hits_c(hits_ptr, count_ptr, capacity_ptr, planet, unique_targets, target_count, jd, lon0, speed0, station_jd, station_lon, station_speed, flags, eps_deg, eps_days)
 */
-      __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_speed(__pyx_v_station_jd, __pyx_v_planet, __pyx_v_flags, (&__pyx_v_station_lon), (&__pyx_v_station_speed)); if (unlikely(__pyx_t_2 == ((int)-1))) __PYX_ERR(0, 886, __pyx_L1_error)
+      __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_lon_speed(__pyx_v_station_jd, __pyx_v_planet, __pyx_v_flags, (&__pyx_v_station_lon), (&__pyx_v_station_speed)); if (unlikely(__pyx_t_2 == ((int)-1))) __PYX_ERR(0, 1096, __pyx_L1_error)
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":887
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1097
  * 			)
  * 			_eval_lon_speed(station_jd, planet, flags, &station_lon, &station_speed)
  * 			if jd < station_jd < jd_next:             # <<<<<<<<<<<<<<
@@ -10673,25 +11846,25 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_lo
       }
       if (__pyx_t_1) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":888
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1098
  * 			_eval_lon_speed(station_jd, planet, flags, &station_lon, &station_speed)
  * 			if jd < station_jd < jd_next:
  * 				_append_arc_hits_c(hits_ptr, count_ptr, capacity_ptr, planet, unique_targets, target_count, jd, lon0, speed0, station_jd, station_lon, station_speed, flags, eps_deg, eps_days)             # <<<<<<<<<<<<<<
  * 				_append_arc_hits_c(hits_ptr, count_ptr, capacity_ptr, planet, unique_targets, target_count, station_jd, station_lon, station_speed, jd_next, lon1, speed1, flags, eps_deg, eps_days)
  * 			else:
 */
-        __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_arc_hits_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_planet, __pyx_v_unique_targets, __pyx_v_target_count, __pyx_v_jd, __pyx_v_lon0, __pyx_v_speed0, __pyx_v_station_jd, __pyx_v_station_lon, __pyx_v_station_speed, __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days); if (unlikely(__pyx_t_2 == ((int)-1))) __PYX_ERR(0, 888, __pyx_L1_error)
+        __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_arc_hits_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_planet, __pyx_v_unique_targets, __pyx_v_target_count, __pyx_v_jd, __pyx_v_lon0, __pyx_v_speed0, __pyx_v_station_jd, __pyx_v_station_lon, __pyx_v_station_speed, __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days); if (unlikely(__pyx_t_2 == ((int)-1))) __PYX_ERR(0, 1098, __pyx_L1_error)
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":889
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1099
  * 			if jd < station_jd < jd_next:
  * 				_append_arc_hits_c(hits_ptr, count_ptr, capacity_ptr, planet, unique_targets, target_count, jd, lon0, speed0, station_jd, station_lon, station_speed, flags, eps_deg, eps_days)
  * 				_append_arc_hits_c(hits_ptr, count_ptr, capacity_ptr, planet, unique_targets, target_count, station_jd, station_lon, station_speed, jd_next, lon1, speed1, flags, eps_deg, eps_days)             # <<<<<<<<<<<<<<
  * 			else:
  * 				_append_arc_hits_c(hits_ptr, count_ptr, capacity_ptr, planet, unique_targets, target_count, jd, lon0, speed0, jd_next, lon1, speed1, flags, eps_deg, eps_days)
 */
-        __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_arc_hits_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_planet, __pyx_v_unique_targets, __pyx_v_target_count, __pyx_v_station_jd, __pyx_v_station_lon, __pyx_v_station_speed, __pyx_v_jd_next, __pyx_v_lon1, __pyx_v_speed1, __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days); if (unlikely(__pyx_t_2 == ((int)-1))) __PYX_ERR(0, 889, __pyx_L1_error)
+        __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_arc_hits_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_planet, __pyx_v_unique_targets, __pyx_v_target_count, __pyx_v_station_jd, __pyx_v_station_lon, __pyx_v_station_speed, __pyx_v_jd_next, __pyx_v_lon1, __pyx_v_speed1, __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days); if (unlikely(__pyx_t_2 == ((int)-1))) __PYX_ERR(0, 1099, __pyx_L1_error)
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":887
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1097
  * 			)
  * 			_eval_lon_speed(station_jd, planet, flags, &station_lon, &station_speed)
  * 			if jd < station_jd < jd_next:             # <<<<<<<<<<<<<<
@@ -10701,7 +11874,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_lo
         goto __pyx_L12;
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":891
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1101
  * 				_append_arc_hits_c(hits_ptr, count_ptr, capacity_ptr, planet, unique_targets, target_count, station_jd, station_lon, station_speed, jd_next, lon1, speed1, flags, eps_deg, eps_days)
  * 			else:
  * 				_append_arc_hits_c(hits_ptr, count_ptr, capacity_ptr, planet, unique_targets, target_count, jd, lon0, speed0, jd_next, lon1, speed1, flags, eps_deg, eps_days)             # <<<<<<<<<<<<<<
@@ -10709,21 +11882,21 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_lo
  * 			_append_arc_hits_c(hits_ptr, count_ptr, capacity_ptr, planet, unique_targets, target_count, jd, lon0, speed0, jd_next, lon1, speed1, flags, eps_deg, eps_days)
 */
       /*else*/ {
-        __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_arc_hits_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_planet, __pyx_v_unique_targets, __pyx_v_target_count, __pyx_v_jd, __pyx_v_lon0, __pyx_v_speed0, __pyx_v_jd_next, __pyx_v_lon1, __pyx_v_speed1, __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days); if (unlikely(__pyx_t_2 == ((int)-1))) __PYX_ERR(0, 891, __pyx_L1_error)
+        __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_arc_hits_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_planet, __pyx_v_unique_targets, __pyx_v_target_count, __pyx_v_jd, __pyx_v_lon0, __pyx_v_speed0, __pyx_v_jd_next, __pyx_v_lon1, __pyx_v_speed1, __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days); if (unlikely(__pyx_t_2 == ((int)-1))) __PYX_ERR(0, 1101, __pyx_L1_error)
       }
       __pyx_L12:;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":873
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1082
  * 		_eval_lon_speed(jd_next, planet, flags, &lon1, &speed1)
  * 		have_station = _crossed_zero_c(speed0, speed1) or fabs(speed0) <= _LOW_SPEED_WARN or fabs(speed1) <= _LOW_SPEED_WARN
  * 		if have_station:             # <<<<<<<<<<<<<<
+ * 			station_eps = 0.0 if _crossed_zero_c(speed0, speed1) else _STATION_SPEED_EPS
  * 			_refine_station_root_seeded_c(
- * 				jd,
 */
       goto __pyx_L11;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":893
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1103
  * 				_append_arc_hits_c(hits_ptr, count_ptr, capacity_ptr, planet, unique_targets, target_count, jd, lon0, speed0, jd_next, lon1, speed1, flags, eps_deg, eps_days)
  * 		else:
  * 			_append_arc_hits_c(hits_ptr, count_ptr, capacity_ptr, planet, unique_targets, target_count, jd, lon0, speed0, jd_next, lon1, speed1, flags, eps_deg, eps_days)             # <<<<<<<<<<<<<<
@@ -10731,11 +11904,11 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_lo
  * 		lon0 = lon1
 */
     /*else*/ {
-      __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_arc_hits_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_planet, __pyx_v_unique_targets, __pyx_v_target_count, __pyx_v_jd, __pyx_v_lon0, __pyx_v_speed0, __pyx_v_jd_next, __pyx_v_lon1, __pyx_v_speed1, __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days); if (unlikely(__pyx_t_2 == ((int)-1))) __PYX_ERR(0, 893, __pyx_L1_error)
+      __pyx_t_2 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_arc_hits_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_planet, __pyx_v_unique_targets, __pyx_v_target_count, __pyx_v_jd, __pyx_v_lon0, __pyx_v_speed0, __pyx_v_jd_next, __pyx_v_lon1, __pyx_v_speed1, __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days); if (unlikely(__pyx_t_2 == ((int)-1))) __PYX_ERR(0, 1103, __pyx_L1_error)
     }
     __pyx_L11:;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":894
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1104
  * 		else:
  * 			_append_arc_hits_c(hits_ptr, count_ptr, capacity_ptr, planet, unique_targets, target_count, jd, lon0, speed0, jd_next, lon1, speed1, flags, eps_deg, eps_days)
  * 		jd = jd_next             # <<<<<<<<<<<<<<
@@ -10744,7 +11917,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_lo
 */
     __pyx_v_jd = __pyx_v_jd_next;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":895
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1105
  * 			_append_arc_hits_c(hits_ptr, count_ptr, capacity_ptr, planet, unique_targets, target_count, jd, lon0, speed0, jd_next, lon1, speed1, flags, eps_deg, eps_days)
  * 		jd = jd_next
  * 		lon0 = lon1             # <<<<<<<<<<<<<<
@@ -10753,7 +11926,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_lo
 */
     __pyx_v_lon0 = __pyx_v_lon1;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":896
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1106
  * 		jd = jd_next
  * 		lon0 = lon1
  * 		speed0 = speed1             # <<<<<<<<<<<<<<
@@ -10763,7 +11936,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_lo
     __pyx_v_speed0 = __pyx_v_speed1;
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":897
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1107
  * 		lon0 = lon1
  * 		speed0 = speed1
  * 	return 0             # <<<<<<<<<<<<<<
@@ -10773,7 +11946,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_lo
   __pyx_r = 0;
   goto __pyx_L0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":837
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1045
  *
  *
  * cdef int _search_longitude_transits_prepared_into_c(             # <<<<<<<<<<<<<<
@@ -10791,7 +11964,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_lo
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":900
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":1110
  *
  *
  * cdef int _search_relative_aspects_into_c(             # <<<<<<<<<<<<<<
@@ -10799,18 +11972,19 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_lo
  * 	Py_ssize_t body_count,
 */
 
-static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_relative_aspects_into_c(int *__pyx_v_body_code_arr, Py_ssize_t __pyx_v_body_count, int *__pyx_v_prom_indices, int *__pyx_v_sig_indices, double *__pyx_v_spec_offsets, Py_ssize_t __pyx_v_spec_count, double __pyx_v_jd_start, double __pyx_v_jd_end, double __pyx_v_base_step, int __pyx_v_flags, double __pyx_v_eps_deg, double __pyx_v_eps_days, double *__pyx_v_lon0, double *__pyx_v_lon1, double *__pyx_v_speed0, double *__pyx_v_speed1, __pyx_t_5aries_9astrology_12transit_fast_6_types_CHit **__pyx_v_hits_ptr, size_t *__pyx_v_count_ptr, size_t *__pyx_v_capacity_ptr) {
+static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_relative_aspects_into_c(int *__pyx_v_body_code_arr, Py_ssize_t __pyx_v_body_count, int *__pyx_v_prom_indices, int *__pyx_v_sig_indices, int *__pyx_v_pair_slots, Py_ssize_t __pyx_v_pair_count, double *__pyx_v_spec_offsets, Py_ssize_t __pyx_v_spec_count, double __pyx_v_jd_start, double __pyx_v_jd_end, double __pyx_v_base_step, int __pyx_v_flags, double __pyx_v_eps_deg, double __pyx_v_eps_days, double *__pyx_v_lon0, double *__pyx_v_lon1, double *__pyx_v_speed0, double *__pyx_v_speed1, int *__pyx_v_turn_status, double *__pyx_v_turn_jd, double *__pyx_v_turn_prom_lon, double *__pyx_v_turn_prom_speed, double *__pyx_v_turn_sig_lon, double *__pyx_v_turn_sig_speed, __pyx_t_5aries_9astrology_12transit_fast_6_types_CHit **__pyx_v_hits_ptr, size_t *__pyx_v_count_ptr, size_t *__pyx_v_capacity_ptr) {
   double __pyx_v_jd;
   double __pyx_v_jd_next;
   Py_ssize_t __pyx_v_i;
   int __pyx_v_prom_idx;
   int __pyx_v_sig_idx;
+  int __pyx_v_pair_slot;
   int __pyx_v_prom_code;
   int __pyx_v_sig_code;
   double __pyx_v_offset;
-  double __pyx_v_delta0;
-  double __pyx_v_delta1;
-  double __pyx_v_hit_jd;
+  double __pyx_v_rel_speed0;
+  double __pyx_v_rel_speed1;
+  double __pyx_v_turn_residual;
   double __pyx_v_hit_speed;
   int __pyx_r;
   Py_ssize_t __pyx_t_1;
@@ -10825,7 +11999,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_re
   int __pyx_clineno = 0;
   PyGILState_STATE __pyx_gilstate_save;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":921
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1139
  * 	size_t* capacity_ptr,
  * ) except -1 nogil:
  * 	cdef double jd = jd_start             # <<<<<<<<<<<<<<
@@ -10834,8 +12008,8 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_re
 */
   __pyx_v_jd = __pyx_v_jd_start;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":933
- * 	cdef double hit_jd
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1152
+ * 	cdef double turn_residual
  * 	cdef double hit_speed
  * 	for i in range(body_count):             # <<<<<<<<<<<<<<
  * 		_eval_body_lon_speed(jd, body_code_arr[i], flags, &lon0[i], &speed0[i])
@@ -10846,17 +12020,17 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_re
   for (__pyx_t_3 = 0; __pyx_t_3 < __pyx_t_2; __pyx_t_3+=1) {
     __pyx_v_i = __pyx_t_3;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":934
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1153
  * 	cdef double hit_speed
  * 	for i in range(body_count):
  * 		_eval_body_lon_speed(jd, body_code_arr[i], flags, &lon0[i], &speed0[i])             # <<<<<<<<<<<<<<
  * 	while jd < jd_end:
  * 		jd_next = jd + base_step
 */
-    __pyx_t_4 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_body_lon_speed(__pyx_v_jd, (__pyx_v_body_code_arr[__pyx_v_i]), __pyx_v_flags, (&(__pyx_v_lon0[__pyx_v_i])), (&(__pyx_v_speed0[__pyx_v_i]))); if (unlikely(__pyx_t_4 == ((int)-1))) __PYX_ERR(0, 934, __pyx_L1_error)
+    __pyx_t_4 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_body_lon_speed(__pyx_v_jd, (__pyx_v_body_code_arr[__pyx_v_i]), __pyx_v_flags, (&(__pyx_v_lon0[__pyx_v_i])), (&(__pyx_v_speed0[__pyx_v_i]))); if (unlikely(__pyx_t_4 == ((int)-1))) __PYX_ERR(0, 1153, __pyx_L1_error)
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":935
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1154
  * 	for i in range(body_count):
  * 		_eval_body_lon_speed(jd, body_code_arr[i], flags, &lon0[i], &speed0[i])
  * 	while jd < jd_end:             # <<<<<<<<<<<<<<
@@ -10867,7 +12041,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_re
     __pyx_t_5 = (__pyx_v_jd < __pyx_v_jd_end);
     if (!__pyx_t_5) break;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":936
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1155
  * 		_eval_body_lon_speed(jd, body_code_arr[i], flags, &lon0[i], &speed0[i])
  * 	while jd < jd_end:
  * 		jd_next = jd + base_step             # <<<<<<<<<<<<<<
@@ -10876,7 +12050,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_re
 */
     __pyx_v_jd_next = (__pyx_v_jd + __pyx_v_base_step);
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":937
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1156
  * 	while jd < jd_end:
  * 		jd_next = jd + base_step
  * 		if jd_next > jd_end:             # <<<<<<<<<<<<<<
@@ -10886,7 +12060,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_re
     __pyx_t_5 = (__pyx_v_jd_next > __pyx_v_jd_end);
     if (__pyx_t_5) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":938
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1157
  * 		jd_next = jd + base_step
  * 		if jd_next > jd_end:
  * 			jd_next = jd_end             # <<<<<<<<<<<<<<
@@ -10895,7 +12069,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_re
 */
       __pyx_v_jd_next = __pyx_v_jd_end;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":937
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1156
  * 	while jd < jd_end:
  * 		jd_next = jd + base_step
  * 		if jd_next > jd_end:             # <<<<<<<<<<<<<<
@@ -10904,31 +12078,53 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_re
 */
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":939
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1158
  * 		if jd_next > jd_end:
  * 			jd_next = jd_end
  * 		for i in range(body_count):             # <<<<<<<<<<<<<<
  * 			_eval_body_lon_speed(jd_next, body_code_arr[i], flags, &lon1[i], &speed1[i])
- * 		for i in range(spec_count):
+ * 		for i in range(pair_count):
 */
     __pyx_t_1 = __pyx_v_body_count;
     __pyx_t_2 = __pyx_t_1;
     for (__pyx_t_3 = 0; __pyx_t_3 < __pyx_t_2; __pyx_t_3+=1) {
       __pyx_v_i = __pyx_t_3;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":940
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1159
  * 			jd_next = jd_end
  * 		for i in range(body_count):
  * 			_eval_body_lon_speed(jd_next, body_code_arr[i], flags, &lon1[i], &speed1[i])             # <<<<<<<<<<<<<<
+ * 		for i in range(pair_count):
+ * 			turn_status[i] = -1
+*/
+      __pyx_t_4 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_body_lon_speed(__pyx_v_jd_next, (__pyx_v_body_code_arr[__pyx_v_i]), __pyx_v_flags, (&(__pyx_v_lon1[__pyx_v_i])), (&(__pyx_v_speed1[__pyx_v_i]))); if (unlikely(__pyx_t_4 == ((int)-1))) __PYX_ERR(0, 1159, __pyx_L1_error)
+    }
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1160
+ * 		for i in range(body_count):
+ * 			_eval_body_lon_speed(jd_next, body_code_arr[i], flags, &lon1[i], &speed1[i])
+ * 		for i in range(pair_count):             # <<<<<<<<<<<<<<
+ * 			turn_status[i] = -1
+ * 		for i in range(spec_count):
+*/
+    __pyx_t_1 = __pyx_v_pair_count;
+    __pyx_t_2 = __pyx_t_1;
+    for (__pyx_t_3 = 0; __pyx_t_3 < __pyx_t_2; __pyx_t_3+=1) {
+      __pyx_v_i = __pyx_t_3;
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1161
+ * 			_eval_body_lon_speed(jd_next, body_code_arr[i], flags, &lon1[i], &speed1[i])
+ * 		for i in range(pair_count):
+ * 			turn_status[i] = -1             # <<<<<<<<<<<<<<
  * 		for i in range(spec_count):
  * 			prom_idx = prom_indices[i]
 */
-      __pyx_t_4 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__eval_body_lon_speed(__pyx_v_jd_next, (__pyx_v_body_code_arr[__pyx_v_i]), __pyx_v_flags, (&(__pyx_v_lon1[__pyx_v_i])), (&(__pyx_v_speed1[__pyx_v_i]))); if (unlikely(__pyx_t_4 == ((int)-1))) __PYX_ERR(0, 940, __pyx_L1_error)
+      (__pyx_v_turn_status[__pyx_v_i]) = -1;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":941
- * 		for i in range(body_count):
- * 			_eval_body_lon_speed(jd_next, body_code_arr[i], flags, &lon1[i], &speed1[i])
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1162
+ * 		for i in range(pair_count):
+ * 			turn_status[i] = -1
  * 		for i in range(spec_count):             # <<<<<<<<<<<<<<
  * 			prom_idx = prom_indices[i]
  * 			sig_idx = sig_indices[i]
@@ -10938,147 +12134,311 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_re
     for (__pyx_t_3 = 0; __pyx_t_3 < __pyx_t_2; __pyx_t_3+=1) {
       __pyx_v_i = __pyx_t_3;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":942
- * 			_eval_body_lon_speed(jd_next, body_code_arr[i], flags, &lon1[i], &speed1[i])
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1163
+ * 			turn_status[i] = -1
  * 		for i in range(spec_count):
  * 			prom_idx = prom_indices[i]             # <<<<<<<<<<<<<<
  * 			sig_idx = sig_indices[i]
- * 			offset = spec_offsets[i]
+ * 			pair_slot = pair_slots[i]
 */
       __pyx_v_prom_idx = (__pyx_v_prom_indices[__pyx_v_i]);
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":943
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1164
  * 		for i in range(spec_count):
  * 			prom_idx = prom_indices[i]
  * 			sig_idx = sig_indices[i]             # <<<<<<<<<<<<<<
+ * 			pair_slot = pair_slots[i]
  * 			offset = spec_offsets[i]
- * 			delta0 = _relative_delta_c(lon0[prom_idx], lon0[sig_idx], offset)
 */
       __pyx_v_sig_idx = (__pyx_v_sig_indices[__pyx_v_i]);
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":944
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1165
  * 			prom_idx = prom_indices[i]
  * 			sig_idx = sig_indices[i]
+ * 			pair_slot = pair_slots[i]             # <<<<<<<<<<<<<<
+ * 			offset = spec_offsets[i]
+ * 			prom_code = body_code_arr[prom_idx]
+*/
+      __pyx_v_pair_slot = (__pyx_v_pair_slots[__pyx_v_i]);
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1166
+ * 			sig_idx = sig_indices[i]
+ * 			pair_slot = pair_slots[i]
  * 			offset = spec_offsets[i]             # <<<<<<<<<<<<<<
- * 			delta0 = _relative_delta_c(lon0[prom_idx], lon0[sig_idx], offset)
- * 			delta1 = _relative_delta_c(lon1[prom_idx], lon1[sig_idx], offset)
+ * 			prom_code = body_code_arr[prom_idx]
+ * 			sig_code = body_code_arr[sig_idx]
 */
       __pyx_v_offset = (__pyx_v_spec_offsets[__pyx_v_i]);
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":945
- * 			sig_idx = sig_indices[i]
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1167
+ * 			pair_slot = pair_slots[i]
  * 			offset = spec_offsets[i]
- * 			delta0 = _relative_delta_c(lon0[prom_idx], lon0[sig_idx], offset)             # <<<<<<<<<<<<<<
- * 			delta1 = _relative_delta_c(lon1[prom_idx], lon1[sig_idx], offset)
- * 			if not _is_relative_zero_crossing_c(delta0, delta1, eps_deg) and fabs(delta0) > eps_deg and fabs(delta1) > eps_deg:
-*/
-      __pyx_v_delta0 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__relative_delta_c((__pyx_v_lon0[__pyx_v_prom_idx]), (__pyx_v_lon0[__pyx_v_sig_idx]), __pyx_v_offset);
-
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":946
- * 			offset = spec_offsets[i]
- * 			delta0 = _relative_delta_c(lon0[prom_idx], lon0[sig_idx], offset)
- * 			delta1 = _relative_delta_c(lon1[prom_idx], lon1[sig_idx], offset)             # <<<<<<<<<<<<<<
- * 			if not _is_relative_zero_crossing_c(delta0, delta1, eps_deg) and fabs(delta0) > eps_deg and fabs(delta1) > eps_deg:
- * 				continue
-*/
-      __pyx_v_delta1 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__relative_delta_c((__pyx_v_lon1[__pyx_v_prom_idx]), (__pyx_v_lon1[__pyx_v_sig_idx]), __pyx_v_offset);
-
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":947
- * 			delta0 = _relative_delta_c(lon0[prom_idx], lon0[sig_idx], offset)
- * 			delta1 = _relative_delta_c(lon1[prom_idx], lon1[sig_idx], offset)
- * 			if not _is_relative_zero_crossing_c(delta0, delta1, eps_deg) and fabs(delta0) > eps_deg and fabs(delta1) > eps_deg:             # <<<<<<<<<<<<<<
- * 				continue
- * 			prom_code = body_code_arr[prom_idx]
-*/
-      __pyx_t_6 = (!__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__is_relative_zero_crossing_c(__pyx_v_delta0, __pyx_v_delta1, __pyx_v_eps_deg));
-      if (__pyx_t_6) {
-      } else {
-        __pyx_t_5 = __pyx_t_6;
-        goto __pyx_L13_bool_binop_done;
-      }
-      __pyx_t_6 = (fabs(__pyx_v_delta0) > __pyx_v_eps_deg);
-      if (__pyx_t_6) {
-      } else {
-        __pyx_t_5 = __pyx_t_6;
-        goto __pyx_L13_bool_binop_done;
-      }
-      __pyx_t_6 = (fabs(__pyx_v_delta1) > __pyx_v_eps_deg);
-      __pyx_t_5 = __pyx_t_6;
-      __pyx_L13_bool_binop_done:;
-      if (__pyx_t_5) {
-
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":948
- * 			delta1 = _relative_delta_c(lon1[prom_idx], lon1[sig_idx], offset)
- * 			if not _is_relative_zero_crossing_c(delta0, delta1, eps_deg) and fabs(delta0) > eps_deg and fabs(delta1) > eps_deg:
- * 				continue             # <<<<<<<<<<<<<<
- * 			prom_code = body_code_arr[prom_idx]
- * 			sig_code = body_code_arr[sig_idx]
-*/
-        goto __pyx_L10_continue;
-
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":947
- * 			delta0 = _relative_delta_c(lon0[prom_idx], lon0[sig_idx], offset)
- * 			delta1 = _relative_delta_c(lon1[prom_idx], lon1[sig_idx], offset)
- * 			if not _is_relative_zero_crossing_c(delta0, delta1, eps_deg) and fabs(delta0) > eps_deg and fabs(delta1) > eps_deg:             # <<<<<<<<<<<<<<
- * 				continue
- * 			prom_code = body_code_arr[prom_idx]
-*/
-      }
-
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":949
- * 			if not _is_relative_zero_crossing_c(delta0, delta1, eps_deg) and fabs(delta0) > eps_deg and fabs(delta1) > eps_deg:
- * 				continue
  * 			prom_code = body_code_arr[prom_idx]             # <<<<<<<<<<<<<<
  * 			sig_code = body_code_arr[sig_idx]
- * 			_refine_relative_root_c(
+ * 			if turn_status[pair_slot] < 0:
 */
       __pyx_v_prom_code = (__pyx_v_body_code_arr[__pyx_v_prom_idx]);
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":950
- * 				continue
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1168
+ * 			offset = spec_offsets[i]
  * 			prom_code = body_code_arr[prom_idx]
  * 			sig_code = body_code_arr[sig_idx]             # <<<<<<<<<<<<<<
- * 			_refine_relative_root_c(
- * 				prom_code,
+ * 			if turn_status[pair_slot] < 0:
+ * 				rel_speed0 = speed0[prom_idx] - speed0[sig_idx]
 */
       __pyx_v_sig_code = (__pyx_v_body_code_arr[__pyx_v_sig_idx]);
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":951
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1169
  * 			prom_code = body_code_arr[prom_idx]
  * 			sig_code = body_code_arr[sig_idx]
- * 			_refine_relative_root_c(             # <<<<<<<<<<<<<<
- * 				prom_code,
- * 				sig_code,
+ * 			if turn_status[pair_slot] < 0:             # <<<<<<<<<<<<<<
+ * 				rel_speed0 = speed0[prom_idx] - speed0[sig_idx]
+ * 				rel_speed1 = speed1[prom_idx] - speed1[sig_idx]
 */
-      __pyx_t_4 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_relative_root_c(__pyx_v_prom_code, __pyx_v_sig_code, __pyx_v_offset, __pyx_v_jd, __pyx_v_jd_next, (__pyx_v_lon0[__pyx_v_prom_idx]), (__pyx_v_speed0[__pyx_v_prom_idx]), (__pyx_v_lon0[__pyx_v_sig_idx]), (__pyx_v_speed0[__pyx_v_sig_idx]), (__pyx_v_lon1[__pyx_v_prom_idx]), (__pyx_v_speed1[__pyx_v_prom_idx]), (__pyx_v_lon1[__pyx_v_sig_idx]), (__pyx_v_speed1[__pyx_v_sig_idx]), __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days, (&__pyx_v_hit_jd), (&__pyx_v_hit_speed)); if (unlikely(__pyx_t_4 == ((int)-1))) __PYX_ERR(0, 951, __pyx_L1_error)
-
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":981
- * 				_HIT_LONGITUDE,
- * 				hit_speed,
- * 				1 if hit_speed < 0.0 else 0,             # <<<<<<<<<<<<<<
- * 			)
- * 		for i in range(body_count):
-*/
-      __pyx_t_5 = (__pyx_v_hit_speed < 0.0);
+      __pyx_t_5 = ((__pyx_v_turn_status[__pyx_v_pair_slot]) < 0);
       if (__pyx_t_5) {
-        __pyx_t_4 = 1;
-      } else {
-        __pyx_t_4 = 0;
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1170
+ * 			sig_code = body_code_arr[sig_idx]
+ * 			if turn_status[pair_slot] < 0:
+ * 				rel_speed0 = speed0[prom_idx] - speed0[sig_idx]             # <<<<<<<<<<<<<<
+ * 				rel_speed1 = speed1[prom_idx] - speed1[sig_idx]
+ * 				if (rel_speed0 < 0.0 < rel_speed1) or (rel_speed1 < 0.0 < rel_speed0):
+*/
+        __pyx_v_rel_speed0 = ((__pyx_v_speed0[__pyx_v_prom_idx]) - (__pyx_v_speed0[__pyx_v_sig_idx]));
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1171
+ * 			if turn_status[pair_slot] < 0:
+ * 				rel_speed0 = speed0[prom_idx] - speed0[sig_idx]
+ * 				rel_speed1 = speed1[prom_idx] - speed1[sig_idx]             # <<<<<<<<<<<<<<
+ * 				if (rel_speed0 < 0.0 < rel_speed1) or (rel_speed1 < 0.0 < rel_speed0):
+ * 					_refine_relative_speed_turn_c(
+*/
+        __pyx_v_rel_speed1 = ((__pyx_v_speed1[__pyx_v_prom_idx]) - (__pyx_v_speed1[__pyx_v_sig_idx]));
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1172
+ * 				rel_speed0 = speed0[prom_idx] - speed0[sig_idx]
+ * 				rel_speed1 = speed1[prom_idx] - speed1[sig_idx]
+ * 				if (rel_speed0 < 0.0 < rel_speed1) or (rel_speed1 < 0.0 < rel_speed0):             # <<<<<<<<<<<<<<
+ * 					_refine_relative_speed_turn_c(
+ * 						prom_code,
+*/
+        __pyx_t_6 = (__pyx_v_rel_speed0 < 0.0);
+        if (__pyx_t_6) {
+          __pyx_t_6 = (0.0 < __pyx_v_rel_speed1);
+        }
+        if (!__pyx_t_6) {
+        } else {
+          __pyx_t_5 = __pyx_t_6;
+          goto __pyx_L16_bool_binop_done;
+        }
+        __pyx_t_6 = (__pyx_v_rel_speed1 < 0.0);
+        if (__pyx_t_6) {
+          __pyx_t_6 = (0.0 < __pyx_v_rel_speed0);
+        }
+        __pyx_t_5 = __pyx_t_6;
+        __pyx_L16_bool_binop_done:;
+        if (__pyx_t_5) {
+
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1173
+ * 				rel_speed1 = speed1[prom_idx] - speed1[sig_idx]
+ * 				if (rel_speed0 < 0.0 < rel_speed1) or (rel_speed1 < 0.0 < rel_speed0):
+ * 					_refine_relative_speed_turn_c(             # <<<<<<<<<<<<<<
+ * 						prom_code,
+ * 						sig_code,
+*/
+          __pyx_t_4 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__refine_relative_speed_turn_c(__pyx_v_prom_code, __pyx_v_sig_code, __pyx_v_jd, __pyx_v_jd_next, (__pyx_v_lon0[__pyx_v_prom_idx]), (__pyx_v_speed0[__pyx_v_prom_idx]), (__pyx_v_lon0[__pyx_v_sig_idx]), (__pyx_v_speed0[__pyx_v_sig_idx]), (__pyx_v_lon1[__pyx_v_prom_idx]), (__pyx_v_speed1[__pyx_v_prom_idx]), (__pyx_v_lon1[__pyx_v_sig_idx]), (__pyx_v_speed1[__pyx_v_sig_idx]), __pyx_v_flags, __pyx_v_eps_days, (&(__pyx_v_turn_jd[__pyx_v_pair_slot])), (&(__pyx_v_turn_prom_lon[__pyx_v_pair_slot])), (&(__pyx_v_turn_prom_speed[__pyx_v_pair_slot])), (&(__pyx_v_turn_sig_lon[__pyx_v_pair_slot])), (&(__pyx_v_turn_sig_speed[__pyx_v_pair_slot]))); if (unlikely(__pyx_t_4 == ((int)-1))) __PYX_ERR(0, 1173, __pyx_L1_error)
+
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1194
+ * 						&turn_sig_speed[pair_slot],
+ * 					)
+ * 					turn_status[pair_slot] = 1             # <<<<<<<<<<<<<<
+ * 				else:
+ * 					turn_status[pair_slot] = 0
+*/
+          (__pyx_v_turn_status[__pyx_v_pair_slot]) = 1;
+
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1172
+ * 				rel_speed0 = speed0[prom_idx] - speed0[sig_idx]
+ * 				rel_speed1 = speed1[prom_idx] - speed1[sig_idx]
+ * 				if (rel_speed0 < 0.0 < rel_speed1) or (rel_speed1 < 0.0 < rel_speed0):             # <<<<<<<<<<<<<<
+ * 					_refine_relative_speed_turn_c(
+ * 						prom_code,
+*/
+          goto __pyx_L15;
+        }
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1196
+ * 					turn_status[pair_slot] = 1
+ * 				else:
+ * 					turn_status[pair_slot] = 0             # <<<<<<<<<<<<<<
+ * 			if turn_status[pair_slot] == 1:
+ * 				turn_residual = _relative_delta_c(turn_prom_lon[pair_slot], turn_sig_lon[pair_slot], offset)
+*/
+        /*else*/ {
+          (__pyx_v_turn_status[__pyx_v_pair_slot]) = 0;
+        }
+        __pyx_L15:;
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1169
+ * 			prom_code = body_code_arr[prom_idx]
+ * 			sig_code = body_code_arr[sig_idx]
+ * 			if turn_status[pair_slot] < 0:             # <<<<<<<<<<<<<<
+ * 				rel_speed0 = speed0[prom_idx] - speed0[sig_idx]
+ * 				rel_speed1 = speed1[prom_idx] - speed1[sig_idx]
+*/
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":971
- * 				&hit_speed,
- * 			)
- * 			_append_unique_c(             # <<<<<<<<<<<<<<
- * 				hits_ptr,
- * 				count_ptr,
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1197
+ * 				else:
+ * 					turn_status[pair_slot] = 0
+ * 			if turn_status[pair_slot] == 1:             # <<<<<<<<<<<<<<
+ * 				turn_residual = _relative_delta_c(turn_prom_lon[pair_slot], turn_sig_lon[pair_slot], offset)
+ * 				if fabs(turn_residual) <= eps_deg:
 */
-      __pyx_t_7 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_unique_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, __pyx_v_hit_jd, ((int)__pyx_v_i), 0.0, 0.0, __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__HIT_LONGITUDE, __pyx_v_hit_speed, __pyx_t_4); if (unlikely(__pyx_t_7 == ((int)-1))) __PYX_ERR(0, 971, __pyx_L1_error)
-      __pyx_L10_continue:;
+      __pyx_t_5 = ((__pyx_v_turn_status[__pyx_v_pair_slot]) == 1);
+      if (__pyx_t_5) {
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1198
+ * 					turn_status[pair_slot] = 0
+ * 			if turn_status[pair_slot] == 1:
+ * 				turn_residual = _relative_delta_c(turn_prom_lon[pair_slot], turn_sig_lon[pair_slot], offset)             # <<<<<<<<<<<<<<
+ * 				if fabs(turn_residual) <= eps_deg:
+ * 					hit_speed = turn_prom_speed[pair_slot] - turn_sig_speed[pair_slot]
+*/
+        __pyx_v_turn_residual = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__relative_delta_c((__pyx_v_turn_prom_lon[__pyx_v_pair_slot]), (__pyx_v_turn_sig_lon[__pyx_v_pair_slot]), __pyx_v_offset);
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1199
+ * 			if turn_status[pair_slot] == 1:
+ * 				turn_residual = _relative_delta_c(turn_prom_lon[pair_slot], turn_sig_lon[pair_slot], offset)
+ * 				if fabs(turn_residual) <= eps_deg:             # <<<<<<<<<<<<<<
+ * 					hit_speed = turn_prom_speed[pair_slot] - turn_sig_speed[pair_slot]
+ * 					_append_unique_c(
+*/
+        __pyx_t_5 = (fabs(__pyx_v_turn_residual) <= __pyx_v_eps_deg);
+        if (__pyx_t_5) {
+
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1200
+ * 				turn_residual = _relative_delta_c(turn_prom_lon[pair_slot], turn_sig_lon[pair_slot], offset)
+ * 				if fabs(turn_residual) <= eps_deg:
+ * 					hit_speed = turn_prom_speed[pair_slot] - turn_sig_speed[pair_slot]             # <<<<<<<<<<<<<<
+ * 					_append_unique_c(
+ * 						hits_ptr,
+*/
+          __pyx_v_hit_speed = ((__pyx_v_turn_prom_speed[__pyx_v_pair_slot]) - (__pyx_v_turn_sig_speed[__pyx_v_pair_slot]));
+
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1211
+ * 						_HIT_LONGITUDE,
+ * 						hit_speed,
+ * 						1 if hit_speed < 0.0 else 0,             # <<<<<<<<<<<<<<
+ * 					)
+ * 					continue
+*/
+          __pyx_t_5 = (__pyx_v_hit_speed < 0.0);
+          if (__pyx_t_5) {
+            __pyx_t_4 = 1;
+          } else {
+            __pyx_t_4 = 0;
+          }
+
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1201
+ * 				if fabs(turn_residual) <= eps_deg:
+ * 					hit_speed = turn_prom_speed[pair_slot] - turn_sig_speed[pair_slot]
+ * 					_append_unique_c(             # <<<<<<<<<<<<<<
+ * 						hits_ptr,
+ * 						count_ptr,
+*/
+          __pyx_t_7 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_unique_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, (__pyx_v_turn_jd[__pyx_v_pair_slot]), ((int)__pyx_v_i), 0.0, 0.0, __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__HIT_LONGITUDE, __pyx_v_hit_speed, __pyx_t_4); if (unlikely(__pyx_t_7 == ((int)-1))) __PYX_ERR(0, 1201, __pyx_L1_error)
+
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1213
+ * 						1 if hit_speed < 0.0 else 0,
+ * 					)
+ * 					continue             # <<<<<<<<<<<<<<
+ * 				if jd < turn_jd[pair_slot] < jd_next:
+ * 					_append_relative_segment_c(
+*/
+          goto __pyx_L12_continue;
+
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1199
+ * 			if turn_status[pair_slot] == 1:
+ * 				turn_residual = _relative_delta_c(turn_prom_lon[pair_slot], turn_sig_lon[pair_slot], offset)
+ * 				if fabs(turn_residual) <= eps_deg:             # <<<<<<<<<<<<<<
+ * 					hit_speed = turn_prom_speed[pair_slot] - turn_sig_speed[pair_slot]
+ * 					_append_unique_c(
+*/
+        }
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1214
+ * 					)
+ * 					continue
+ * 				if jd < turn_jd[pair_slot] < jd_next:             # <<<<<<<<<<<<<<
+ * 					_append_relative_segment_c(
+ * 						hits_ptr, count_ptr, capacity_ptr, int(i), prom_code, sig_code, offset,
+*/
+        __pyx_t_5 = (__pyx_v_jd < (__pyx_v_turn_jd[__pyx_v_pair_slot]));
+        if (__pyx_t_5) {
+          __pyx_t_5 = ((__pyx_v_turn_jd[__pyx_v_pair_slot]) < __pyx_v_jd_next);
+        }
+        if (__pyx_t_5) {
+
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1215
+ * 					continue
+ * 				if jd < turn_jd[pair_slot] < jd_next:
+ * 					_append_relative_segment_c(             # <<<<<<<<<<<<<<
+ * 						hits_ptr, count_ptr, capacity_ptr, int(i), prom_code, sig_code, offset,
+ * 						jd, turn_jd[pair_slot],
+*/
+          __pyx_t_7 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_relative_segment_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, ((int)__pyx_v_i), __pyx_v_prom_code, __pyx_v_sig_code, __pyx_v_offset, __pyx_v_jd, (__pyx_v_turn_jd[__pyx_v_pair_slot]), (__pyx_v_lon0[__pyx_v_prom_idx]), (__pyx_v_speed0[__pyx_v_prom_idx]), (__pyx_v_lon0[__pyx_v_sig_idx]), (__pyx_v_speed0[__pyx_v_sig_idx]), (__pyx_v_turn_prom_lon[__pyx_v_pair_slot]), (__pyx_v_turn_prom_speed[__pyx_v_pair_slot]), (__pyx_v_turn_sig_lon[__pyx_v_pair_slot]), (__pyx_v_turn_sig_speed[__pyx_v_pair_slot]), __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days); if (unlikely(__pyx_t_7 == ((int)-1))) __PYX_ERR(0, 1215, __pyx_L1_error)
+
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1222
+ * 						flags, eps_deg, eps_days,
+ * 					)
+ * 					_append_relative_segment_c(             # <<<<<<<<<<<<<<
+ * 						hits_ptr, count_ptr, capacity_ptr, int(i), prom_code, sig_code, offset,
+ * 						turn_jd[pair_slot], jd_next,
+*/
+          __pyx_t_7 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_relative_segment_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, ((int)__pyx_v_i), __pyx_v_prom_code, __pyx_v_sig_code, __pyx_v_offset, (__pyx_v_turn_jd[__pyx_v_pair_slot]), __pyx_v_jd_next, (__pyx_v_turn_prom_lon[__pyx_v_pair_slot]), (__pyx_v_turn_prom_speed[__pyx_v_pair_slot]), (__pyx_v_turn_sig_lon[__pyx_v_pair_slot]), (__pyx_v_turn_sig_speed[__pyx_v_pair_slot]), (__pyx_v_lon1[__pyx_v_prom_idx]), (__pyx_v_speed1[__pyx_v_prom_idx]), (__pyx_v_lon1[__pyx_v_sig_idx]), (__pyx_v_speed1[__pyx_v_sig_idx]), __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days); if (unlikely(__pyx_t_7 == ((int)-1))) __PYX_ERR(0, 1222, __pyx_L1_error)
+
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1229
+ * 						flags, eps_deg, eps_days,
+ * 					)
+ * 					continue             # <<<<<<<<<<<<<<
+ * 			_append_relative_segment_c(
+ * 				hits_ptr, count_ptr, capacity_ptr, int(i), prom_code, sig_code, offset,
+*/
+          goto __pyx_L12_continue;
+
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1214
+ * 					)
+ * 					continue
+ * 				if jd < turn_jd[pair_slot] < jd_next:             # <<<<<<<<<<<<<<
+ * 					_append_relative_segment_c(
+ * 						hits_ptr, count_ptr, capacity_ptr, int(i), prom_code, sig_code, offset,
+*/
+        }
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1197
+ * 				else:
+ * 					turn_status[pair_slot] = 0
+ * 			if turn_status[pair_slot] == 1:             # <<<<<<<<<<<<<<
+ * 				turn_residual = _relative_delta_c(turn_prom_lon[pair_slot], turn_sig_lon[pair_slot], offset)
+ * 				if fabs(turn_residual) <= eps_deg:
+*/
+      }
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1230
+ * 					)
+ * 					continue
+ * 			_append_relative_segment_c(             # <<<<<<<<<<<<<<
+ * 				hits_ptr, count_ptr, capacity_ptr, int(i), prom_code, sig_code, offset,
+ * 				jd, jd_next,
+*/
+      __pyx_t_7 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__append_relative_segment_c(__pyx_v_hits_ptr, __pyx_v_count_ptr, __pyx_v_capacity_ptr, ((int)__pyx_v_i), __pyx_v_prom_code, __pyx_v_sig_code, __pyx_v_offset, __pyx_v_jd, __pyx_v_jd_next, (__pyx_v_lon0[__pyx_v_prom_idx]), (__pyx_v_speed0[__pyx_v_prom_idx]), (__pyx_v_lon0[__pyx_v_sig_idx]), (__pyx_v_speed0[__pyx_v_sig_idx]), (__pyx_v_lon1[__pyx_v_prom_idx]), (__pyx_v_speed1[__pyx_v_prom_idx]), (__pyx_v_lon1[__pyx_v_sig_idx]), (__pyx_v_speed1[__pyx_v_sig_idx]), __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days); if (unlikely(__pyx_t_7 == ((int)-1))) __PYX_ERR(0, 1230, __pyx_L1_error)
+      __pyx_L12_continue:;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":983
- * 				1 if hit_speed < 0.0 else 0,
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1237
+ * 				flags, eps_deg, eps_days,
  * 			)
  * 		for i in range(body_count):             # <<<<<<<<<<<<<<
  * 			lon0[i] = lon1[i]
@@ -11089,7 +12449,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_re
     for (__pyx_t_3 = 0; __pyx_t_3 < __pyx_t_2; __pyx_t_3+=1) {
       __pyx_v_i = __pyx_t_3;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":984
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1238
  * 			)
  * 		for i in range(body_count):
  * 			lon0[i] = lon1[i]             # <<<<<<<<<<<<<<
@@ -11098,7 +12458,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_re
 */
       (__pyx_v_lon0[__pyx_v_i]) = (__pyx_v_lon1[__pyx_v_i]);
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":985
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1239
  * 		for i in range(body_count):
  * 			lon0[i] = lon1[i]
  * 			speed0[i] = speed1[i]             # <<<<<<<<<<<<<<
@@ -11108,7 +12468,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_re
       (__pyx_v_speed0[__pyx_v_i]) = (__pyx_v_speed1[__pyx_v_i]);
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":986
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1240
  * 			lon0[i] = lon1[i]
  * 			speed0[i] = speed1[i]
  * 		jd = jd_next             # <<<<<<<<<<<<<<
@@ -11118,7 +12478,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_re
     __pyx_v_jd = __pyx_v_jd_next;
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":987
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1241
  * 			speed0[i] = speed1[i]
  * 		jd = jd_next
  * 	return 0             # <<<<<<<<<<<<<<
@@ -11128,7 +12488,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_re
   __pyx_r = 0;
   goto __pyx_L0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":900
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1110
  *
  *
  * cdef int _search_relative_aspects_into_c(             # <<<<<<<<<<<<<<
@@ -11146,7 +12506,7 @@ static int __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_re
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":990
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":1244
  *
  *
  * cpdef list search_station_times_raw(             # <<<<<<<<<<<<<<
@@ -11163,7 +12523,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 ); /*proto*/
 static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_search_station_times_raw(int __pyx_v_planet, double __pyx_v_jd_start, double __pyx_v_jd_end, CYTHON_UNUSED int __pyx_skip_dispatch, struct __pyx_opt_args_5aries_9astrology_12transit_fast_15_transit_kernel_search_station_times_raw *__pyx_optional_args) {
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":994
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1248
  * 	double jd_start,
  * 	double jd_end,
  * 	object ephe_path=None,             # <<<<<<<<<<<<<<
@@ -11173,7 +12533,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
   PyObject *__pyx_v_ephe_path = ((PyObject *)Py_None);
   int __pyx_v_flags = ((int)0);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":996
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1250
  * 	object ephe_path=None,
  * 	int flags=0,
  * 	object sidereal_mode=None,             # <<<<<<<<<<<<<<
@@ -11182,7 +12542,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   PyObject *__pyx_v_sidereal_mode = ((PyObject *)Py_None);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":997
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1251
  * 	int flags=0,
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,             # <<<<<<<<<<<<<<
@@ -11191,7 +12551,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   PyObject *__pyx_v_topocentric_position = ((PyObject *)Py_None);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":998
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1252
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,
  * 	object step_days=None,             # <<<<<<<<<<<<<<
@@ -11258,7 +12618,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
     }
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1002
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1256
  * 	double eps_days=DEFAULT_EPS_DAYS,
  * ):
  * 	cdef CHit* hits = NULL             # <<<<<<<<<<<<<<
@@ -11267,7 +12627,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   __pyx_v_hits = NULL;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1003
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1257
  * ):
  * 	cdef CHit* hits = NULL
  * 	cdef size_t count = 0             # <<<<<<<<<<<<<<
@@ -11276,7 +12636,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   __pyx_v_count = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1004
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1258
  * 	cdef CHit* hits = NULL
  * 	cdef size_t count = 0
  * 	cdef size_t capacity = 0             # <<<<<<<<<<<<<<
@@ -11285,7 +12645,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   __pyx_v_capacity = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1005
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1259
  * 	cdef size_t count = 0
  * 	cdef size_t capacity = 0
  * 	cdef bint lock_held = False             # <<<<<<<<<<<<<<
@@ -11294,7 +12654,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   __pyx_v_lock_held = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1006
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1260
  * 	cdef size_t capacity = 0
  * 	cdef bint lock_held = False
  * 	cdef double base_step = float(default_step_days_for_planet(planet) if step_days is None else step_days)             # <<<<<<<<<<<<<<
@@ -11304,9 +12664,9 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
   __pyx_t_2 = (__pyx_v_step_days == Py_None);
   if (__pyx_t_2) {
     __pyx_t_4 = NULL;
-    __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_default_step_days_for_planet); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1006, __pyx_L1_error)
+    __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_default_step_days_for_planet); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1260, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_5);
-    __pyx_t_6 = __Pyx_PyLong_From_int(__pyx_v_planet); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 1006, __pyx_L1_error)
+    __pyx_t_6 = __Pyx_PyLong_From_int(__pyx_v_planet); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 1260, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_6);
     __pyx_t_7 = 1;
     #if CYTHON_UNPACK_METHODS
@@ -11326,7 +12686,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
       __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
       __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-      if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1006, __pyx_L1_error)
+      if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1260, __pyx_L1_error)
       __Pyx_GOTREF(__pyx_t_3);
     }
     __pyx_t_1 = __pyx_t_3;
@@ -11335,11 +12695,11 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
     __Pyx_INCREF(__pyx_v_step_days);
     __pyx_t_1 = __pyx_v_step_days;
   }
-  __pyx_t_8 = __Pyx_PyObject_AsDouble(__pyx_t_1); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_8, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 1006, __pyx_L1_error)
+  __pyx_t_8 = __Pyx_PyObject_AsDouble(__pyx_t_1); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_8, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 1260, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
   __pyx_v_base_step = __pyx_t_8;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1009
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1263
  * 	cdef double slice_start
  * 	cdef double slice_end
  * 	try:             # <<<<<<<<<<<<<<
@@ -11348,43 +12708,43 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   /*try:*/ {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1010
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1264
  * 	cdef double slice_end
  * 	try:
  * 		_validate_scan_bounds(jd_start, jd_end)             # <<<<<<<<<<<<<<
  * 		_validate_positive_double(base_step, "step_days")
  * 		_validate_positive_double(eps_speed, "eps_speed")
 */
-    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_scan_bounds(__pyx_v_jd_start, __pyx_v_jd_end); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1010, __pyx_L4_error)
+    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_scan_bounds(__pyx_v_jd_start, __pyx_v_jd_end); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1264, __pyx_L4_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1011
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1265
  * 	try:
  * 		_validate_scan_bounds(jd_start, jd_end)
  * 		_validate_positive_double(base_step, "step_days")             # <<<<<<<<<<<<<<
  * 		_validate_positive_double(eps_speed, "eps_speed")
  * 		_validate_positive_double(eps_days, "eps_days")
 */
-    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_base_step, __pyx_mstate_global->__pyx_n_u_step_days); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1011, __pyx_L4_error)
+    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_base_step, __pyx_mstate_global->__pyx_n_u_step_days); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1265, __pyx_L4_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1012
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1266
  * 		_validate_scan_bounds(jd_start, jd_end)
  * 		_validate_positive_double(base_step, "step_days")
  * 		_validate_positive_double(eps_speed, "eps_speed")             # <<<<<<<<<<<<<<
  * 		_validate_positive_double(eps_days, "eps_days")
  * 		slice_start = jd_start
 */
-    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_eps_speed, __pyx_mstate_global->__pyx_n_u_eps_speed); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1012, __pyx_L4_error)
+    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_eps_speed, __pyx_mstate_global->__pyx_n_u_eps_speed); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1266, __pyx_L4_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1013
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1267
  * 		_validate_positive_double(base_step, "step_days")
  * 		_validate_positive_double(eps_speed, "eps_speed")
  * 		_validate_positive_double(eps_days, "eps_days")             # <<<<<<<<<<<<<<
  * 		slice_start = jd_start
  * 		while slice_start < jd_end:
 */
-    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_eps_days, __pyx_mstate_global->__pyx_n_u_eps_days); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1013, __pyx_L4_error)
+    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_eps_days, __pyx_mstate_global->__pyx_n_u_eps_days); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1267, __pyx_L4_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1014
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1268
  * 		_validate_positive_double(eps_speed, "eps_speed")
  * 		_validate_positive_double(eps_days, "eps_days")
  * 		slice_start = jd_start             # <<<<<<<<<<<<<<
@@ -11393,7 +12753,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
     __pyx_v_slice_start = __pyx_v_jd_start;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1015
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1269
  * 		_validate_positive_double(eps_days, "eps_days")
  * 		slice_start = jd_start
  * 		while slice_start < jd_end:             # <<<<<<<<<<<<<<
@@ -11404,7 +12764,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_2 = (__pyx_v_slice_start < __pyx_v_jd_end);
       if (!__pyx_t_2) break;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1016
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1270
  * 		slice_start = jd_start
  * 		while slice_start < jd_end:
  * 			slice_end = min(jd_end, slice_start + _MAX_NATIVE_LOCK_SPAN_DAYS)             # <<<<<<<<<<<<<<
@@ -11421,7 +12781,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       }
       __pyx_v_slice_end = __pyx_t_10;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1017
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1271
  * 		while slice_start < jd_end:
  * 			slice_end = min(jd_end, slice_start + _MAX_NATIVE_LOCK_SPAN_DAYS)
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -11434,7 +12794,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
           __Pyx_FastGIL_Remember();
           /*try:*/ {
 
-            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1018
+            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1272
  * 			slice_end = min(jd_end, slice_start + _MAX_NATIVE_LOCK_SPAN_DAYS)
  * 			with nogil:
  * 				_acquire_native_swe_lock()             # <<<<<<<<<<<<<<
@@ -11444,7 +12804,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__acquire_native_swe_lock();
           }
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1017
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1271
  * 		while slice_start < jd_end:
  * 			slice_end = min(jd_end, slice_start + _MAX_NATIVE_LOCK_SPAN_DAYS)
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -11461,7 +12821,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
           }
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1019
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1273
  * 			with nogil:
  * 				_acquire_native_swe_lock()
  * 			lock_held = True             # <<<<<<<<<<<<<<
@@ -11470,16 +12830,16 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
       __pyx_v_lock_held = 1;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1020
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1274
  * 				_acquire_native_swe_lock()
  * 			lock_held = True
  * 			_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position)             # <<<<<<<<<<<<<<
  * 			with nogil:
  * 				_search_station_times_into_c(planet, slice_start, slice_end, flags, base_step, eps_speed, eps_days, &hits, &count, &capacity)
 */
-      __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configure_ephemeris_context(__pyx_v_ephe_path, __pyx_v_flags, __pyx_v_sidereal_mode, __pyx_v_topocentric_position); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1020, __pyx_L4_error)
+      __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configure_ephemeris_context(__pyx_v_ephe_path, __pyx_v_flags, __pyx_v_sidereal_mode, __pyx_v_topocentric_position); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1274, __pyx_L4_error)
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1021
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1275
  * 			lock_held = True
  * 			_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position)
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -11492,16 +12852,16 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
           __Pyx_FastGIL_Remember();
           /*try:*/ {
 
-            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1022
+            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1276
  * 			_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position)
  * 			with nogil:
  * 				_search_station_times_into_c(planet, slice_start, slice_end, flags, base_step, eps_speed, eps_days, &hits, &count, &capacity)             # <<<<<<<<<<<<<<
  * 				_release_native_swe_lock()
  * 			lock_held = False
 */
-            __pyx_t_11 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_station_times_into_c(__pyx_v_planet, __pyx_v_slice_start, __pyx_v_slice_end, __pyx_v_flags, __pyx_v_base_step, __pyx_v_eps_speed, __pyx_v_eps_days, (&__pyx_v_hits), (&__pyx_v_count), (&__pyx_v_capacity)); if (unlikely(__pyx_t_11 == ((int)-1))) __PYX_ERR(0, 1022, __pyx_L16_error)
+            __pyx_t_11 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_station_times_into_c(__pyx_v_planet, __pyx_v_slice_start, __pyx_v_slice_end, __pyx_v_flags, __pyx_v_base_step, __pyx_v_eps_speed, __pyx_v_eps_days, (&__pyx_v_hits), (&__pyx_v_count), (&__pyx_v_capacity)); if (unlikely(__pyx_t_11 == ((int)-1))) __PYX_ERR(0, 1276, __pyx_L16_error)
 
-            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1023
+            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1277
  * 			with nogil:
  * 				_search_station_times_into_c(planet, slice_start, slice_end, flags, base_step, eps_speed, eps_days, &hits, &count, &capacity)
  * 				_release_native_swe_lock()             # <<<<<<<<<<<<<<
@@ -11511,7 +12871,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__release_native_swe_lock();
           }
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1021
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1275
  * 			lock_held = True
  * 			_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position)
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -11533,7 +12893,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
           }
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1024
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1278
  * 				_search_station_times_into_c(planet, slice_start, slice_end, flags, base_step, eps_speed, eps_days, &hits, &count, &capacity)
  * 				_release_native_swe_lock()
  * 			lock_held = False             # <<<<<<<<<<<<<<
@@ -11542,7 +12902,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
       __pyx_v_lock_held = 0;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1025
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1279
  * 				_release_native_swe_lock()
  * 			lock_held = False
  * 			slice_start = slice_end             # <<<<<<<<<<<<<<
@@ -11552,7 +12912,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_v_slice_start = __pyx_v_slice_end;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1026
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1280
  * 			lock_held = False
  * 			slice_start = slice_end
  * 		return _hits_to_python(hits, count)             # <<<<<<<<<<<<<<
@@ -11560,14 +12920,14 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
  * 		if lock_held:
 */
     __Pyx_XDECREF(__pyx_r);
-    __pyx_t_1 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__hits_to_python(__pyx_v_hits, __pyx_v_count); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1026, __pyx_L4_error)
+    __pyx_t_1 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__hits_to_python(__pyx_v_hits, __pyx_v_count); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1280, __pyx_L4_error)
     __Pyx_GOTREF(__pyx_t_1);
     __pyx_r = ((PyObject*)__pyx_t_1);
     __pyx_t_1 = 0;
     goto __pyx_L3_return;
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1028
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1282
  * 		return _hits_to_python(hits, count)
  * 	finally:
  * 		if lock_held:             # <<<<<<<<<<<<<<
@@ -11597,7 +12957,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       {
         if (__pyx_v_lock_held) {
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1029
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1283
  * 	finally:
  * 		if lock_held:
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -11610,7 +12970,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
               __Pyx_FastGIL_Remember();
               /*try:*/ {
 
-                /* "aries/astrology/transit_fast/_transit_kernel.pyx":1030
+                /* "aries/astrology/transit_fast/_transit_kernel.pyx":1284
  * 		if lock_held:
  * 			with nogil:
  * 				_release_native_swe_lock()             # <<<<<<<<<<<<<<
@@ -11620,7 +12980,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
                 __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__release_native_swe_lock();
               }
 
-              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1029
+              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1283
  * 	finally:
  * 		if lock_held:
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -11637,7 +12997,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
               }
           }
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1028
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1282
  * 		return _hits_to_python(hits, count)
  * 	finally:
  * 		if lock_held:             # <<<<<<<<<<<<<<
@@ -11646,7 +13006,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         }
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1031
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1285
  * 			with nogil:
  * 				_release_native_swe_lock()
  * 		if hits != NULL:             # <<<<<<<<<<<<<<
@@ -11656,7 +13016,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
         __pyx_t_2 = (__pyx_v_hits != NULL);
         if (__pyx_t_2) {
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1032
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1286
  * 				_release_native_swe_lock()
  * 		if hits != NULL:
  * 			free(hits)             # <<<<<<<<<<<<<<
@@ -11665,7 +13025,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
           free(__pyx_v_hits);
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1031
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1285
  * 			with nogil:
  * 				_release_native_swe_lock()
  * 		if hits != NULL:             # <<<<<<<<<<<<<<
@@ -11690,7 +13050,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_20 = __pyx_r;
       __pyx_r = 0;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1028
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1282
  * 		return _hits_to_python(hits, count)
  * 	finally:
  * 		if lock_held:             # <<<<<<<<<<<<<<
@@ -11699,7 +13059,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
       if (__pyx_v_lock_held) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1029
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1283
  * 	finally:
  * 		if lock_held:
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -11712,7 +13072,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             __Pyx_FastGIL_Remember();
             /*try:*/ {
 
-              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1030
+              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1284
  * 		if lock_held:
  * 			with nogil:
  * 				_release_native_swe_lock()             # <<<<<<<<<<<<<<
@@ -11722,7 +13082,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
               __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__release_native_swe_lock();
             }
 
-            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1029
+            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1283
  * 	finally:
  * 		if lock_held:
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -11739,7 +13099,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             }
         }
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1028
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1282
  * 		return _hits_to_python(hits, count)
  * 	finally:
  * 		if lock_held:             # <<<<<<<<<<<<<<
@@ -11748,7 +13108,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1031
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1285
  * 			with nogil:
  * 				_release_native_swe_lock()
  * 		if hits != NULL:             # <<<<<<<<<<<<<<
@@ -11758,7 +13118,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_2 = (__pyx_v_hits != NULL);
       if (__pyx_t_2) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1032
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1286
  * 				_release_native_swe_lock()
  * 		if hits != NULL:
  * 			free(hits)             # <<<<<<<<<<<<<<
@@ -11767,7 +13127,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         free(__pyx_v_hits);
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1031
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1285
  * 			with nogil:
  * 				_release_native_swe_lock()
  * 		if hits != NULL:             # <<<<<<<<<<<<<<
@@ -11781,7 +13141,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
     }
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":990
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1244
  *
  *
  * cpdef list search_station_times_raw(             # <<<<<<<<<<<<<<
@@ -11852,56 +13212,56 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   {
     PyObject ** const __pyx_pyargnames[] = {&__pyx_mstate_global->__pyx_n_u_planet,&__pyx_mstate_global->__pyx_n_u_jd_start,&__pyx_mstate_global->__pyx_n_u_jd_end,&__pyx_mstate_global->__pyx_n_u_ephe_path,&__pyx_mstate_global->__pyx_n_u_flags,&__pyx_mstate_global->__pyx_n_u_sidereal_mode,&__pyx_mstate_global->__pyx_n_u_topocentric_position,&__pyx_mstate_global->__pyx_n_u_step_days,&__pyx_mstate_global->__pyx_n_u_eps_speed,&__pyx_mstate_global->__pyx_n_u_eps_days,0};
     const Py_ssize_t __pyx_kwds_len = (__pyx_kwds) ? __Pyx_NumKwargs_FASTCALL(__pyx_kwds) : 0;
-    if (unlikely(__pyx_kwds_len) < 0) __PYX_ERR(0, 990, __pyx_L3_error)
+    if (unlikely(__pyx_kwds_len) < 0) __PYX_ERR(0, 1244, __pyx_L3_error)
     if (__pyx_kwds_len > 0) {
       switch (__pyx_nargs) {
         case 10:
         values[9] = __Pyx_ArgRef_FASTCALL(__pyx_args, 9);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[9])) __PYX_ERR(0, 990, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[9])) __PYX_ERR(0, 1244, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  9:
         values[8] = __Pyx_ArgRef_FASTCALL(__pyx_args, 8);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[8])) __PYX_ERR(0, 990, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[8])) __PYX_ERR(0, 1244, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  8:
         values[7] = __Pyx_ArgRef_FASTCALL(__pyx_args, 7);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[7])) __PYX_ERR(0, 990, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[7])) __PYX_ERR(0, 1244, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  7:
         values[6] = __Pyx_ArgRef_FASTCALL(__pyx_args, 6);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[6])) __PYX_ERR(0, 990, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[6])) __PYX_ERR(0, 1244, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  6:
         values[5] = __Pyx_ArgRef_FASTCALL(__pyx_args, 5);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[5])) __PYX_ERR(0, 990, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[5])) __PYX_ERR(0, 1244, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  5:
         values[4] = __Pyx_ArgRef_FASTCALL(__pyx_args, 4);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[4])) __PYX_ERR(0, 990, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[4])) __PYX_ERR(0, 1244, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  4:
         values[3] = __Pyx_ArgRef_FASTCALL(__pyx_args, 3);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[3])) __PYX_ERR(0, 990, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[3])) __PYX_ERR(0, 1244, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  3:
         values[2] = __Pyx_ArgRef_FASTCALL(__pyx_args, 2);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[2])) __PYX_ERR(0, 990, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[2])) __PYX_ERR(0, 1244, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  2:
         values[1] = __Pyx_ArgRef_FASTCALL(__pyx_args, 1);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[1])) __PYX_ERR(0, 990, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[1])) __PYX_ERR(0, 1244, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  1:
         values[0] = __Pyx_ArgRef_FASTCALL(__pyx_args, 0);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 990, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 1244, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  0: break;
         default: goto __pyx_L5_argtuple_error;
       }
       const Py_ssize_t kwd_pos_args = __pyx_nargs;
-      if (__Pyx_ParseKeywords(__pyx_kwds, __pyx_kwvalues, __pyx_pyargnames, 0, values, kwd_pos_args, __pyx_kwds_len, "search_station_times_raw", 0) < (0)) __PYX_ERR(0, 990, __pyx_L3_error)
+      if (__Pyx_ParseKeywords(__pyx_kwds, __pyx_kwvalues, __pyx_pyargnames, 0, values, kwd_pos_args, __pyx_kwds_len, "search_station_times_raw", 0) < (0)) __PYX_ERR(0, 1244, __pyx_L3_error)
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":994
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1248
  * 	double jd_start,
  * 	double jd_end,
  * 	object ephe_path=None,             # <<<<<<<<<<<<<<
@@ -11910,7 +13270,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[3]) values[3] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":996
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1250
  * 	object ephe_path=None,
  * 	int flags=0,
  * 	object sidereal_mode=None,             # <<<<<<<<<<<<<<
@@ -11919,7 +13279,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[5]) values[5] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":997
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1251
  * 	int flags=0,
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,             # <<<<<<<<<<<<<<
@@ -11928,7 +13288,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[6]) values[6] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":998
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1252
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,
  * 	object step_days=None,             # <<<<<<<<<<<<<<
@@ -11937,50 +13297,50 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[7]) values[7] = __Pyx_NewRef(((PyObject *)Py_None));
       for (Py_ssize_t i = __pyx_nargs; i < 3; i++) {
-        if (unlikely(!values[i])) { __Pyx_RaiseArgtupleInvalid("search_station_times_raw", 0, 3, 10, i); __PYX_ERR(0, 990, __pyx_L3_error) }
+        if (unlikely(!values[i])) { __Pyx_RaiseArgtupleInvalid("search_station_times_raw", 0, 3, 10, i); __PYX_ERR(0, 1244, __pyx_L3_error) }
       }
     } else {
       switch (__pyx_nargs) {
         case 10:
         values[9] = __Pyx_ArgRef_FASTCALL(__pyx_args, 9);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[9])) __PYX_ERR(0, 990, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[9])) __PYX_ERR(0, 1244, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  9:
         values[8] = __Pyx_ArgRef_FASTCALL(__pyx_args, 8);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[8])) __PYX_ERR(0, 990, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[8])) __PYX_ERR(0, 1244, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  8:
         values[7] = __Pyx_ArgRef_FASTCALL(__pyx_args, 7);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[7])) __PYX_ERR(0, 990, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[7])) __PYX_ERR(0, 1244, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  7:
         values[6] = __Pyx_ArgRef_FASTCALL(__pyx_args, 6);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[6])) __PYX_ERR(0, 990, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[6])) __PYX_ERR(0, 1244, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  6:
         values[5] = __Pyx_ArgRef_FASTCALL(__pyx_args, 5);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[5])) __PYX_ERR(0, 990, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[5])) __PYX_ERR(0, 1244, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  5:
         values[4] = __Pyx_ArgRef_FASTCALL(__pyx_args, 4);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[4])) __PYX_ERR(0, 990, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[4])) __PYX_ERR(0, 1244, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  4:
         values[3] = __Pyx_ArgRef_FASTCALL(__pyx_args, 3);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[3])) __PYX_ERR(0, 990, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[3])) __PYX_ERR(0, 1244, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  3:
         values[2] = __Pyx_ArgRef_FASTCALL(__pyx_args, 2);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[2])) __PYX_ERR(0, 990, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[2])) __PYX_ERR(0, 1244, __pyx_L3_error)
         values[1] = __Pyx_ArgRef_FASTCALL(__pyx_args, 1);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[1])) __PYX_ERR(0, 990, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[1])) __PYX_ERR(0, 1244, __pyx_L3_error)
         values[0] = __Pyx_ArgRef_FASTCALL(__pyx_args, 0);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 990, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 1244, __pyx_L3_error)
         break;
         default: goto __pyx_L5_argtuple_error;
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":994
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1248
  * 	double jd_start,
  * 	double jd_end,
  * 	object ephe_path=None,             # <<<<<<<<<<<<<<
@@ -11989,7 +13349,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[3]) values[3] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":996
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1250
  * 	object ephe_path=None,
  * 	int flags=0,
  * 	object sidereal_mode=None,             # <<<<<<<<<<<<<<
@@ -11998,7 +13358,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[5]) values[5] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":997
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1251
  * 	int flags=0,
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,             # <<<<<<<<<<<<<<
@@ -12007,7 +13367,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[6]) values[6] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":998
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1252
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,
  * 	object step_days=None,             # <<<<<<<<<<<<<<
@@ -12016,12 +13376,12 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[7]) values[7] = __Pyx_NewRef(((PyObject *)Py_None));
     }
-    __pyx_v_planet = __Pyx_PyLong_As_int(values[0]); if (unlikely((__pyx_v_planet == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 991, __pyx_L3_error)
-    __pyx_v_jd_start = __Pyx_PyFloat_AsDouble(values[1]); if (unlikely((__pyx_v_jd_start == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 992, __pyx_L3_error)
-    __pyx_v_jd_end = __Pyx_PyFloat_AsDouble(values[2]); if (unlikely((__pyx_v_jd_end == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 993, __pyx_L3_error)
+    __pyx_v_planet = __Pyx_PyLong_As_int(values[0]); if (unlikely((__pyx_v_planet == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 1245, __pyx_L3_error)
+    __pyx_v_jd_start = __Pyx_PyFloat_AsDouble(values[1]); if (unlikely((__pyx_v_jd_start == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1246, __pyx_L3_error)
+    __pyx_v_jd_end = __Pyx_PyFloat_AsDouble(values[2]); if (unlikely((__pyx_v_jd_end == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1247, __pyx_L3_error)
     __pyx_v_ephe_path = values[3];
     if (values[4]) {
-      __pyx_v_flags = __Pyx_PyLong_As_int(values[4]); if (unlikely((__pyx_v_flags == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 995, __pyx_L3_error)
+      __pyx_v_flags = __Pyx_PyLong_As_int(values[4]); if (unlikely((__pyx_v_flags == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 1249, __pyx_L3_error)
     } else {
       __pyx_v_flags = ((int)0);
     }
@@ -12029,19 +13389,19 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
     __pyx_v_topocentric_position = values[6];
     __pyx_v_step_days = values[7];
     if (values[8]) {
-      __pyx_v_eps_speed = __Pyx_PyFloat_AsDouble(values[8]); if (unlikely((__pyx_v_eps_speed == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 999, __pyx_L3_error)
+      __pyx_v_eps_speed = __Pyx_PyFloat_AsDouble(values[8]); if (unlikely((__pyx_v_eps_speed == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1253, __pyx_L3_error)
     } else {
       __pyx_v_eps_speed = __pyx_mstate_global->__pyx_k__2;
     }
     if (values[9]) {
-      __pyx_v_eps_days = __Pyx_PyFloat_AsDouble(values[9]); if (unlikely((__pyx_v_eps_days == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1000, __pyx_L3_error)
+      __pyx_v_eps_days = __Pyx_PyFloat_AsDouble(values[9]); if (unlikely((__pyx_v_eps_days == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1254, __pyx_L3_error)
     } else {
       __pyx_v_eps_days = __pyx_mstate_global->__pyx_k__3;
     }
   }
   goto __pyx_L6_skip;
   __pyx_L5_argtuple_error:;
-  __Pyx_RaiseArgtupleInvalid("search_station_times_raw", 0, 3, 10, __pyx_nargs); __PYX_ERR(0, 990, __pyx_L3_error)
+  __Pyx_RaiseArgtupleInvalid("search_station_times_raw", 0, 3, 10, __pyx_nargs); __PYX_ERR(0, 1244, __pyx_L3_error)
   __pyx_L6_skip:;
   goto __pyx_L4_argument_unpacking_done;
   __pyx_L3_error:;
@@ -12054,7 +13414,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   __pyx_L4_argument_unpacking_done:;
   __pyx_r = __pyx_pf_5aries_9astrology_12transit_fast_15_transit_kernel_2search_station_times_raw(__pyx_self, __pyx_v_planet, __pyx_v_jd_start, __pyx_v_jd_end, __pyx_v_ephe_path, __pyx_v_flags, __pyx_v_sidereal_mode, __pyx_v_topocentric_position, __pyx_v_step_days, __pyx_v_eps_speed, __pyx_v_eps_days);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":990
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1244
  *
  *
  * cpdef list search_station_times_raw(             # <<<<<<<<<<<<<<
@@ -12088,7 +13448,7 @@ static PyObject *__pyx_pf_5aries_9astrology_12transit_fast_15_transit_kernel_2se
   __pyx_t_2.step_days = __pyx_v_step_days;
   __pyx_t_2.eps_speed = __pyx_v_eps_speed;
   __pyx_t_2.eps_days = __pyx_v_eps_days;
-  __pyx_t_1 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_search_station_times_raw(__pyx_v_planet, __pyx_v_jd_start, __pyx_v_jd_end, 1, &__pyx_t_2); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 990, __pyx_L1_error)
+  __pyx_t_1 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_search_station_times_raw(__pyx_v_planet, __pyx_v_jd_start, __pyx_v_jd_end, 1, &__pyx_t_2); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1244, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
   __pyx_r = __pyx_t_1;
   __pyx_t_1 = 0;
@@ -12105,7 +13465,7 @@ static PyObject *__pyx_pf_5aries_9astrology_12transit_fast_15_transit_kernel_2se
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":1035
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":1289
  *
  *
  * cpdef list search_station_times_batch_raw(             # <<<<<<<<<<<<<<
@@ -12122,7 +13482,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 ); /*proto*/
 static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_search_station_times_batch_raw(PyObject *__pyx_v_planets, double __pyx_v_jd_start, double __pyx_v_jd_end, CYTHON_UNUSED int __pyx_skip_dispatch, struct __pyx_opt_args_5aries_9astrology_12transit_fast_15_transit_kernel_search_station_times_batch_raw *__pyx_optional_args) {
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1039
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1293
  * 	double jd_start,
  * 	double jd_end,
  * 	object ephe_path=None,             # <<<<<<<<<<<<<<
@@ -12132,7 +13492,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
   PyObject *__pyx_v_ephe_path = ((PyObject *)Py_None);
   int __pyx_v_flags = ((int)0);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1041
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1295
  * 	object ephe_path=None,
  * 	int flags=0,
  * 	object sidereal_mode=None,             # <<<<<<<<<<<<<<
@@ -12141,7 +13501,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   PyObject *__pyx_v_sidereal_mode = ((PyObject *)Py_None);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1042
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1296
  * 	int flags=0,
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,             # <<<<<<<<<<<<<<
@@ -12150,7 +13510,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   PyObject *__pyx_v_topocentric_position = ((PyObject *)Py_None);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1043
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1297
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,
  * 	object step_days=None,             # <<<<<<<<<<<<<<
@@ -12222,7 +13582,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
   }
   __Pyx_INCREF(__pyx_v_planets);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1047
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1301
  * 	double eps_days=DEFAULT_EPS_DAYS,
  * ):
  * 	cdef CHit* hits = NULL             # <<<<<<<<<<<<<<
@@ -12231,7 +13591,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   __pyx_v_hits = NULL;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1048
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1302
  * ):
  * 	cdef CHit* hits = NULL
  * 	cdef size_t count = 0             # <<<<<<<<<<<<<<
@@ -12240,7 +13600,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   __pyx_v_count = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1049
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1303
  * 	cdef CHit* hits = NULL
  * 	cdef size_t count = 0
  * 	cdef size_t capacity = 0             # <<<<<<<<<<<<<<
@@ -12249,7 +13609,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   __pyx_v_capacity = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1051
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1305
  * 	cdef size_t capacity = 0
  * 	cdef int planet
  * 	cdef bint lock_held = False             # <<<<<<<<<<<<<<
@@ -12258,7 +13618,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   __pyx_v_lock_held = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1055
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1309
  * 	cdef double slice_start
  * 	cdef double slice_end
  * 	try:             # <<<<<<<<<<<<<<
@@ -12267,46 +13627,46 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   /*try:*/ {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1056
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1310
  * 	cdef double slice_end
  * 	try:
  * 		_validate_scan_bounds(jd_start, jd_end)             # <<<<<<<<<<<<<<
  * 		_validate_positive_double(eps_speed, "eps_speed")
  * 		_validate_positive_double(eps_days, "eps_days")
 */
-    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_scan_bounds(__pyx_v_jd_start, __pyx_v_jd_end); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1056, __pyx_L4_error)
+    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_scan_bounds(__pyx_v_jd_start, __pyx_v_jd_end); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1310, __pyx_L4_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1057
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1311
  * 	try:
  * 		_validate_scan_bounds(jd_start, jd_end)
  * 		_validate_positive_double(eps_speed, "eps_speed")             # <<<<<<<<<<<<<<
  * 		_validate_positive_double(eps_days, "eps_days")
  * 		planets = list(planets)
 */
-    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_eps_speed, __pyx_mstate_global->__pyx_n_u_eps_speed); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1057, __pyx_L4_error)
+    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_eps_speed, __pyx_mstate_global->__pyx_n_u_eps_speed); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1311, __pyx_L4_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1058
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1312
  * 		_validate_scan_bounds(jd_start, jd_end)
  * 		_validate_positive_double(eps_speed, "eps_speed")
  * 		_validate_positive_double(eps_days, "eps_days")             # <<<<<<<<<<<<<<
  * 		planets = list(planets)
  * 		for planet in planets:
 */
-    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_eps_days, __pyx_mstate_global->__pyx_n_u_eps_days); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1058, __pyx_L4_error)
+    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_eps_days, __pyx_mstate_global->__pyx_n_u_eps_days); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1312, __pyx_L4_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1059
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1313
  * 		_validate_positive_double(eps_speed, "eps_speed")
  * 		_validate_positive_double(eps_days, "eps_days")
  * 		planets = list(planets)             # <<<<<<<<<<<<<<
  * 		for planet in planets:
  * 			base_step = float(default_step_days_for_planet(planet) if step_days is None else step_days)
 */
-    __pyx_t_1 = PySequence_List(__pyx_v_planets); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1059, __pyx_L4_error)
+    __pyx_t_1 = PySequence_List(__pyx_v_planets); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1313, __pyx_L4_error)
     __Pyx_GOTREF(__pyx_t_1);
     __Pyx_DECREF_SET(__pyx_v_planets, __pyx_t_1);
     __pyx_t_1 = 0;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1060
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1314
  * 		_validate_positive_double(eps_days, "eps_days")
  * 		planets = list(planets)
  * 		for planet in planets:             # <<<<<<<<<<<<<<
@@ -12318,9 +13678,9 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_2 = 0;
       __pyx_t_3 = NULL;
     } else {
-      __pyx_t_2 = -1; __pyx_t_1 = PyObject_GetIter(__pyx_v_planets); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1060, __pyx_L4_error)
+      __pyx_t_2 = -1; __pyx_t_1 = PyObject_GetIter(__pyx_v_planets); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1314, __pyx_L4_error)
       __Pyx_GOTREF(__pyx_t_1);
-      __pyx_t_3 = (CYTHON_COMPILING_IN_LIMITED_API) ? PyIter_Next : __Pyx_PyObject_GetIterNextFunc(__pyx_t_1); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1060, __pyx_L4_error)
+      __pyx_t_3 = (CYTHON_COMPILING_IN_LIMITED_API) ? PyIter_Next : __Pyx_PyObject_GetIterNextFunc(__pyx_t_1); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1314, __pyx_L4_error)
     }
     for (;;) {
       if (likely(!__pyx_t_3)) {
@@ -12328,7 +13688,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
           {
             Py_ssize_t __pyx_temp = __Pyx_PyList_GET_SIZE(__pyx_t_1);
             #if !CYTHON_ASSUME_SAFE_SIZE
-            if (unlikely((__pyx_temp < 0))) __PYX_ERR(0, 1060, __pyx_L4_error)
+            if (unlikely((__pyx_temp < 0))) __PYX_ERR(0, 1314, __pyx_L4_error)
             #endif
             if (__pyx_t_2 >= __pyx_temp) break;
           }
@@ -12338,7 +13698,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
           {
             Py_ssize_t __pyx_temp = __Pyx_PyTuple_GET_SIZE(__pyx_t_1);
             #if !CYTHON_ASSUME_SAFE_SIZE
-            if (unlikely((__pyx_temp < 0))) __PYX_ERR(0, 1060, __pyx_L4_error)
+            if (unlikely((__pyx_temp < 0))) __PYX_ERR(0, 1314, __pyx_L4_error)
             #endif
             if (__pyx_t_2 >= __pyx_temp) break;
           }
@@ -12349,24 +13709,24 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
           #endif
           ++__pyx_t_2;
         }
-        if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1060, __pyx_L4_error)
+        if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1314, __pyx_L4_error)
       } else {
         __pyx_t_4 = __pyx_t_3(__pyx_t_1);
         if (unlikely(!__pyx_t_4)) {
           PyObject* exc_type = PyErr_Occurred();
           if (exc_type) {
-            if (unlikely(!__Pyx_PyErr_GivenExceptionMatches(exc_type, PyExc_StopIteration))) __PYX_ERR(0, 1060, __pyx_L4_error)
+            if (unlikely(!__Pyx_PyErr_GivenExceptionMatches(exc_type, PyExc_StopIteration))) __PYX_ERR(0, 1314, __pyx_L4_error)
             PyErr_Clear();
           }
           break;
         }
       }
       __Pyx_GOTREF(__pyx_t_4);
-      __pyx_t_5 = __Pyx_PyLong_As_int(__pyx_t_4); if (unlikely((__pyx_t_5 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 1060, __pyx_L4_error)
+      __pyx_t_5 = __Pyx_PyLong_As_int(__pyx_t_4); if (unlikely((__pyx_t_5 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 1314, __pyx_L4_error)
       __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
       __pyx_v_planet = __pyx_t_5;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1061
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1315
  * 		planets = list(planets)
  * 		for planet in planets:
  * 			base_step = float(default_step_days_for_planet(planet) if step_days is None else step_days)             # <<<<<<<<<<<<<<
@@ -12376,9 +13736,9 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_6 = (__pyx_v_step_days == Py_None);
       if (__pyx_t_6) {
         __pyx_t_8 = NULL;
-        __Pyx_GetModuleGlobalName(__pyx_t_9, __pyx_mstate_global->__pyx_n_u_default_step_days_for_planet); if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 1061, __pyx_L4_error)
+        __Pyx_GetModuleGlobalName(__pyx_t_9, __pyx_mstate_global->__pyx_n_u_default_step_days_for_planet); if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 1315, __pyx_L4_error)
         __Pyx_GOTREF(__pyx_t_9);
-        __pyx_t_10 = __Pyx_PyLong_From_int(__pyx_v_planet); if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 1061, __pyx_L4_error)
+        __pyx_t_10 = __Pyx_PyLong_From_int(__pyx_v_planet); if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 1315, __pyx_L4_error)
         __Pyx_GOTREF(__pyx_t_10);
         __pyx_t_11 = 1;
         #if CYTHON_UNPACK_METHODS
@@ -12398,7 +13758,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
           __Pyx_XDECREF(__pyx_t_8); __pyx_t_8 = 0;
           __Pyx_DECREF(__pyx_t_10); __pyx_t_10 = 0;
           __Pyx_DECREF(__pyx_t_9); __pyx_t_9 = 0;
-          if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 1061, __pyx_L4_error)
+          if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 1315, __pyx_L4_error)
           __Pyx_GOTREF(__pyx_t_7);
         }
         __pyx_t_4 = __pyx_t_7;
@@ -12407,20 +13767,20 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
         __Pyx_INCREF(__pyx_v_step_days);
         __pyx_t_4 = __pyx_v_step_days;
       }
-      __pyx_t_12 = __Pyx_PyObject_AsDouble(__pyx_t_4); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_12, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 1061, __pyx_L4_error)
+      __pyx_t_12 = __Pyx_PyObject_AsDouble(__pyx_t_4); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_12, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 1315, __pyx_L4_error)
       __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
       __pyx_v_base_step = __pyx_t_12;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1062
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1316
  * 		for planet in planets:
  * 			base_step = float(default_step_days_for_planet(planet) if step_days is None else step_days)
  * 			_validate_positive_double(base_step, "step_days")             # <<<<<<<<<<<<<<
  * 		slice_start = jd_start
  * 		while slice_start < jd_end:
 */
-      __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_base_step, __pyx_mstate_global->__pyx_n_u_step_days); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1062, __pyx_L4_error)
+      __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_base_step, __pyx_mstate_global->__pyx_n_u_step_days); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1316, __pyx_L4_error)
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1060
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1314
  * 		_validate_positive_double(eps_days, "eps_days")
  * 		planets = list(planets)
  * 		for planet in planets:             # <<<<<<<<<<<<<<
@@ -12430,7 +13790,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
     }
     __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1063
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1317
  * 			base_step = float(default_step_days_for_planet(planet) if step_days is None else step_days)
  * 			_validate_positive_double(base_step, "step_days")
  * 		slice_start = jd_start             # <<<<<<<<<<<<<<
@@ -12439,7 +13799,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
     __pyx_v_slice_start = __pyx_v_jd_start;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1064
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1318
  * 			_validate_positive_double(base_step, "step_days")
  * 		slice_start = jd_start
  * 		while slice_start < jd_end:             # <<<<<<<<<<<<<<
@@ -12450,7 +13810,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_6 = (__pyx_v_slice_start < __pyx_v_jd_end);
       if (!__pyx_t_6) break;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1065
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1319
  * 		slice_start = jd_start
  * 		while slice_start < jd_end:
  * 			slice_end = min(jd_end, slice_start + _MAX_NATIVE_LOCK_SPAN_DAYS)             # <<<<<<<<<<<<<<
@@ -12467,7 +13827,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       }
       __pyx_v_slice_end = __pyx_t_14;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1066
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1320
  * 		while slice_start < jd_end:
  * 			slice_end = min(jd_end, slice_start + _MAX_NATIVE_LOCK_SPAN_DAYS)
  * 			for planet in planets:             # <<<<<<<<<<<<<<
@@ -12479,9 +13839,9 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
         __pyx_t_2 = 0;
         __pyx_t_3 = NULL;
       } else {
-        __pyx_t_2 = -1; __pyx_t_1 = PyObject_GetIter(__pyx_v_planets); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1066, __pyx_L4_error)
+        __pyx_t_2 = -1; __pyx_t_1 = PyObject_GetIter(__pyx_v_planets); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1320, __pyx_L4_error)
         __Pyx_GOTREF(__pyx_t_1);
-        __pyx_t_3 = (CYTHON_COMPILING_IN_LIMITED_API) ? PyIter_Next : __Pyx_PyObject_GetIterNextFunc(__pyx_t_1); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1066, __pyx_L4_error)
+        __pyx_t_3 = (CYTHON_COMPILING_IN_LIMITED_API) ? PyIter_Next : __Pyx_PyObject_GetIterNextFunc(__pyx_t_1); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1320, __pyx_L4_error)
       }
       for (;;) {
         if (likely(!__pyx_t_3)) {
@@ -12489,7 +13849,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             {
               Py_ssize_t __pyx_temp = __Pyx_PyList_GET_SIZE(__pyx_t_1);
               #if !CYTHON_ASSUME_SAFE_SIZE
-              if (unlikely((__pyx_temp < 0))) __PYX_ERR(0, 1066, __pyx_L4_error)
+              if (unlikely((__pyx_temp < 0))) __PYX_ERR(0, 1320, __pyx_L4_error)
               #endif
               if (__pyx_t_2 >= __pyx_temp) break;
             }
@@ -12499,7 +13859,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             {
               Py_ssize_t __pyx_temp = __Pyx_PyTuple_GET_SIZE(__pyx_t_1);
               #if !CYTHON_ASSUME_SAFE_SIZE
-              if (unlikely((__pyx_temp < 0))) __PYX_ERR(0, 1066, __pyx_L4_error)
+              if (unlikely((__pyx_temp < 0))) __PYX_ERR(0, 1320, __pyx_L4_error)
               #endif
               if (__pyx_t_2 >= __pyx_temp) break;
             }
@@ -12510,24 +13870,24 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             #endif
             ++__pyx_t_2;
           }
-          if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1066, __pyx_L4_error)
+          if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1320, __pyx_L4_error)
         } else {
           __pyx_t_4 = __pyx_t_3(__pyx_t_1);
           if (unlikely(!__pyx_t_4)) {
             PyObject* exc_type = PyErr_Occurred();
             if (exc_type) {
-              if (unlikely(!__Pyx_PyErr_GivenExceptionMatches(exc_type, PyExc_StopIteration))) __PYX_ERR(0, 1066, __pyx_L4_error)
+              if (unlikely(!__Pyx_PyErr_GivenExceptionMatches(exc_type, PyExc_StopIteration))) __PYX_ERR(0, 1320, __pyx_L4_error)
               PyErr_Clear();
             }
             break;
           }
         }
         __Pyx_GOTREF(__pyx_t_4);
-        __pyx_t_5 = __Pyx_PyLong_As_int(__pyx_t_4); if (unlikely((__pyx_t_5 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 1066, __pyx_L4_error)
+        __pyx_t_5 = __Pyx_PyLong_As_int(__pyx_t_4); if (unlikely((__pyx_t_5 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 1320, __pyx_L4_error)
         __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
         __pyx_v_planet = __pyx_t_5;
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1067
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1321
  * 			slice_end = min(jd_end, slice_start + _MAX_NATIVE_LOCK_SPAN_DAYS)
  * 			for planet in planets:
  * 				base_step = float(default_step_days_for_planet(planet) if step_days is None else step_days)             # <<<<<<<<<<<<<<
@@ -12537,9 +13897,9 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
         __pyx_t_6 = (__pyx_v_step_days == Py_None);
         if (__pyx_t_6) {
           __pyx_t_9 = NULL;
-          __Pyx_GetModuleGlobalName(__pyx_t_10, __pyx_mstate_global->__pyx_n_u_default_step_days_for_planet); if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 1067, __pyx_L4_error)
+          __Pyx_GetModuleGlobalName(__pyx_t_10, __pyx_mstate_global->__pyx_n_u_default_step_days_for_planet); if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 1321, __pyx_L4_error)
           __Pyx_GOTREF(__pyx_t_10);
-          __pyx_t_8 = __Pyx_PyLong_From_int(__pyx_v_planet); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 1067, __pyx_L4_error)
+          __pyx_t_8 = __Pyx_PyLong_From_int(__pyx_v_planet); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 1321, __pyx_L4_error)
           __Pyx_GOTREF(__pyx_t_8);
           __pyx_t_11 = 1;
           #if CYTHON_UNPACK_METHODS
@@ -12559,7 +13919,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             __Pyx_XDECREF(__pyx_t_9); __pyx_t_9 = 0;
             __Pyx_DECREF(__pyx_t_8); __pyx_t_8 = 0;
             __Pyx_DECREF(__pyx_t_10); __pyx_t_10 = 0;
-            if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 1067, __pyx_L4_error)
+            if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 1321, __pyx_L4_error)
             __Pyx_GOTREF(__pyx_t_7);
           }
           __pyx_t_4 = __pyx_t_7;
@@ -12568,11 +13928,11 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
           __Pyx_INCREF(__pyx_v_step_days);
           __pyx_t_4 = __pyx_v_step_days;
         }
-        __pyx_t_14 = __Pyx_PyObject_AsDouble(__pyx_t_4); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_14, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 1067, __pyx_L4_error)
+        __pyx_t_14 = __Pyx_PyObject_AsDouble(__pyx_t_4); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_14, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 1321, __pyx_L4_error)
         __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
         __pyx_v_base_step = __pyx_t_14;
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1068
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1322
  * 			for planet in planets:
  * 				base_step = float(default_step_days_for_planet(planet) if step_days is None else step_days)
  * 				with nogil:             # <<<<<<<<<<<<<<
@@ -12585,7 +13945,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             __Pyx_FastGIL_Remember();
             /*try:*/ {
 
-              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1069
+              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1323
  * 				base_step = float(default_step_days_for_planet(planet) if step_days is None else step_days)
  * 				with nogil:
  * 					_acquire_native_swe_lock()             # <<<<<<<<<<<<<<
@@ -12595,7 +13955,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
               __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__acquire_native_swe_lock();
             }
 
-            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1068
+            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1322
  * 			for planet in planets:
  * 				base_step = float(default_step_days_for_planet(planet) if step_days is None else step_days)
  * 				with nogil:             # <<<<<<<<<<<<<<
@@ -12612,7 +13972,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             }
         }
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1070
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1324
  * 				with nogil:
  * 					_acquire_native_swe_lock()
  * 				lock_held = True             # <<<<<<<<<<<<<<
@@ -12621,16 +13981,16 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         __pyx_v_lock_held = 1;
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1071
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1325
  * 					_acquire_native_swe_lock()
  * 				lock_held = True
  * 				_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position)             # <<<<<<<<<<<<<<
  * 				with nogil:
  * 					_search_station_times_into_c(int(planet), slice_start, slice_end, flags, base_step, eps_speed, eps_days, &hits, &count, &capacity)
 */
-        __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configure_ephemeris_context(__pyx_v_ephe_path, __pyx_v_flags, __pyx_v_sidereal_mode, __pyx_v_topocentric_position); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1071, __pyx_L4_error)
+        __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configure_ephemeris_context(__pyx_v_ephe_path, __pyx_v_flags, __pyx_v_sidereal_mode, __pyx_v_topocentric_position); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1325, __pyx_L4_error)
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1072
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1326
  * 				lock_held = True
  * 				_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position)
  * 				with nogil:             # <<<<<<<<<<<<<<
@@ -12643,16 +14003,16 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             __Pyx_FastGIL_Remember();
             /*try:*/ {
 
-              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1073
+              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1327
  * 				_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position)
  * 				with nogil:
  * 					_search_station_times_into_c(int(planet), slice_start, slice_end, flags, base_step, eps_speed, eps_days, &hits, &count, &capacity)             # <<<<<<<<<<<<<<
  * 					_release_native_swe_lock()
  * 				lock_held = False
 */
-              __pyx_t_5 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_station_times_into_c(__pyx_v_planet, __pyx_v_slice_start, __pyx_v_slice_end, __pyx_v_flags, __pyx_v_base_step, __pyx_v_eps_speed, __pyx_v_eps_days, (&__pyx_v_hits), (&__pyx_v_count), (&__pyx_v_capacity)); if (unlikely(__pyx_t_5 == ((int)-1))) __PYX_ERR(0, 1073, __pyx_L21_error)
+              __pyx_t_5 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_station_times_into_c(__pyx_v_planet, __pyx_v_slice_start, __pyx_v_slice_end, __pyx_v_flags, __pyx_v_base_step, __pyx_v_eps_speed, __pyx_v_eps_days, (&__pyx_v_hits), (&__pyx_v_count), (&__pyx_v_capacity)); if (unlikely(__pyx_t_5 == ((int)-1))) __PYX_ERR(0, 1327, __pyx_L21_error)
 
-              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1074
+              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1328
  * 				with nogil:
  * 					_search_station_times_into_c(int(planet), slice_start, slice_end, flags, base_step, eps_speed, eps_days, &hits, &count, &capacity)
  * 					_release_native_swe_lock()             # <<<<<<<<<<<<<<
@@ -12662,7 +14022,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
               __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__release_native_swe_lock();
             }
 
-            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1072
+            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1326
  * 				lock_held = True
  * 				_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position)
  * 				with nogil:             # <<<<<<<<<<<<<<
@@ -12684,7 +14044,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             }
         }
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1075
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1329
  * 					_search_station_times_into_c(int(planet), slice_start, slice_end, flags, base_step, eps_speed, eps_days, &hits, &count, &capacity)
  * 					_release_native_swe_lock()
  * 				lock_held = False             # <<<<<<<<<<<<<<
@@ -12693,7 +14053,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         __pyx_v_lock_held = 0;
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1066
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1320
  * 		while slice_start < jd_end:
  * 			slice_end = min(jd_end, slice_start + _MAX_NATIVE_LOCK_SPAN_DAYS)
  * 			for planet in planets:             # <<<<<<<<<<<<<<
@@ -12703,7 +14063,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       }
       __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1076
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1330
  * 					_release_native_swe_lock()
  * 				lock_held = False
  * 			slice_start = slice_end             # <<<<<<<<<<<<<<
@@ -12713,7 +14073,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_v_slice_start = __pyx_v_slice_end;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1077
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1331
  * 				lock_held = False
  * 			slice_start = slice_end
  * 		return _hits_to_python(hits, count)             # <<<<<<<<<<<<<<
@@ -12721,14 +14081,14 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
  * 		if lock_held:
 */
     __Pyx_XDECREF(__pyx_r);
-    __pyx_t_1 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__hits_to_python(__pyx_v_hits, __pyx_v_count); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1077, __pyx_L4_error)
+    __pyx_t_1 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__hits_to_python(__pyx_v_hits, __pyx_v_count); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1331, __pyx_L4_error)
     __Pyx_GOTREF(__pyx_t_1);
     __pyx_r = ((PyObject*)__pyx_t_1);
     __pyx_t_1 = 0;
     goto __pyx_L3_return;
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1079
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1333
  * 		return _hits_to_python(hits, count)
  * 	finally:
  * 		if lock_held:             # <<<<<<<<<<<<<<
@@ -12759,7 +14119,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       {
         if (__pyx_v_lock_held) {
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1080
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1334
  * 	finally:
  * 		if lock_held:
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -12772,7 +14132,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
               __Pyx_FastGIL_Remember();
               /*try:*/ {
 
-                /* "aries/astrology/transit_fast/_transit_kernel.pyx":1081
+                /* "aries/astrology/transit_fast/_transit_kernel.pyx":1335
  * 		if lock_held:
  * 			with nogil:
  * 				_release_native_swe_lock()             # <<<<<<<<<<<<<<
@@ -12782,7 +14142,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
                 __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__release_native_swe_lock();
               }
 
-              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1080
+              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1334
  * 	finally:
  * 		if lock_held:
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -12799,7 +14159,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
               }
           }
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1079
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1333
  * 		return _hits_to_python(hits, count)
  * 	finally:
  * 		if lock_held:             # <<<<<<<<<<<<<<
@@ -12808,7 +14168,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         }
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1082
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1336
  * 			with nogil:
  * 				_release_native_swe_lock()
  * 		if hits != NULL:             # <<<<<<<<<<<<<<
@@ -12818,7 +14178,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
         __pyx_t_6 = (__pyx_v_hits != NULL);
         if (__pyx_t_6) {
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1083
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1337
  * 				_release_native_swe_lock()
  * 		if hits != NULL:
  * 			free(hits)             # <<<<<<<<<<<<<<
@@ -12827,7 +14187,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
           free(__pyx_v_hits);
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1082
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1336
  * 			with nogil:
  * 				_release_native_swe_lock()
  * 		if hits != NULL:             # <<<<<<<<<<<<<<
@@ -12852,7 +14212,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_23 = __pyx_r;
       __pyx_r = 0;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1079
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1333
  * 		return _hits_to_python(hits, count)
  * 	finally:
  * 		if lock_held:             # <<<<<<<<<<<<<<
@@ -12861,7 +14221,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
       if (__pyx_v_lock_held) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1080
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1334
  * 	finally:
  * 		if lock_held:
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -12874,7 +14234,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             __Pyx_FastGIL_Remember();
             /*try:*/ {
 
-              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1081
+              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1335
  * 		if lock_held:
  * 			with nogil:
  * 				_release_native_swe_lock()             # <<<<<<<<<<<<<<
@@ -12884,7 +14244,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
               __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__release_native_swe_lock();
             }
 
-            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1080
+            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1334
  * 	finally:
  * 		if lock_held:
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -12901,7 +14261,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             }
         }
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1079
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1333
  * 		return _hits_to_python(hits, count)
  * 	finally:
  * 		if lock_held:             # <<<<<<<<<<<<<<
@@ -12910,7 +14270,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1082
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1336
  * 			with nogil:
  * 				_release_native_swe_lock()
  * 		if hits != NULL:             # <<<<<<<<<<<<<<
@@ -12920,7 +14280,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_6 = (__pyx_v_hits != NULL);
       if (__pyx_t_6) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1083
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1337
  * 				_release_native_swe_lock()
  * 		if hits != NULL:
  * 			free(hits)             # <<<<<<<<<<<<<<
@@ -12929,7 +14289,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         free(__pyx_v_hits);
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1082
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1336
  * 			with nogil:
  * 				_release_native_swe_lock()
  * 		if hits != NULL:             # <<<<<<<<<<<<<<
@@ -12943,7 +14303,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
     }
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1035
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1289
  *
  *
  * cpdef list search_station_times_batch_raw(             # <<<<<<<<<<<<<<
@@ -13016,56 +14376,56 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   {
     PyObject ** const __pyx_pyargnames[] = {&__pyx_mstate_global->__pyx_n_u_planets,&__pyx_mstate_global->__pyx_n_u_jd_start,&__pyx_mstate_global->__pyx_n_u_jd_end,&__pyx_mstate_global->__pyx_n_u_ephe_path,&__pyx_mstate_global->__pyx_n_u_flags,&__pyx_mstate_global->__pyx_n_u_sidereal_mode,&__pyx_mstate_global->__pyx_n_u_topocentric_position,&__pyx_mstate_global->__pyx_n_u_step_days,&__pyx_mstate_global->__pyx_n_u_eps_speed,&__pyx_mstate_global->__pyx_n_u_eps_days,0};
     const Py_ssize_t __pyx_kwds_len = (__pyx_kwds) ? __Pyx_NumKwargs_FASTCALL(__pyx_kwds) : 0;
-    if (unlikely(__pyx_kwds_len) < 0) __PYX_ERR(0, 1035, __pyx_L3_error)
+    if (unlikely(__pyx_kwds_len) < 0) __PYX_ERR(0, 1289, __pyx_L3_error)
     if (__pyx_kwds_len > 0) {
       switch (__pyx_nargs) {
         case 10:
         values[9] = __Pyx_ArgRef_FASTCALL(__pyx_args, 9);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[9])) __PYX_ERR(0, 1035, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[9])) __PYX_ERR(0, 1289, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  9:
         values[8] = __Pyx_ArgRef_FASTCALL(__pyx_args, 8);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[8])) __PYX_ERR(0, 1035, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[8])) __PYX_ERR(0, 1289, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  8:
         values[7] = __Pyx_ArgRef_FASTCALL(__pyx_args, 7);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[7])) __PYX_ERR(0, 1035, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[7])) __PYX_ERR(0, 1289, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  7:
         values[6] = __Pyx_ArgRef_FASTCALL(__pyx_args, 6);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[6])) __PYX_ERR(0, 1035, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[6])) __PYX_ERR(0, 1289, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  6:
         values[5] = __Pyx_ArgRef_FASTCALL(__pyx_args, 5);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[5])) __PYX_ERR(0, 1035, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[5])) __PYX_ERR(0, 1289, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  5:
         values[4] = __Pyx_ArgRef_FASTCALL(__pyx_args, 4);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[4])) __PYX_ERR(0, 1035, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[4])) __PYX_ERR(0, 1289, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  4:
         values[3] = __Pyx_ArgRef_FASTCALL(__pyx_args, 3);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[3])) __PYX_ERR(0, 1035, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[3])) __PYX_ERR(0, 1289, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  3:
         values[2] = __Pyx_ArgRef_FASTCALL(__pyx_args, 2);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[2])) __PYX_ERR(0, 1035, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[2])) __PYX_ERR(0, 1289, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  2:
         values[1] = __Pyx_ArgRef_FASTCALL(__pyx_args, 1);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[1])) __PYX_ERR(0, 1035, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[1])) __PYX_ERR(0, 1289, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  1:
         values[0] = __Pyx_ArgRef_FASTCALL(__pyx_args, 0);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 1035, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 1289, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  0: break;
         default: goto __pyx_L5_argtuple_error;
       }
       const Py_ssize_t kwd_pos_args = __pyx_nargs;
-      if (__Pyx_ParseKeywords(__pyx_kwds, __pyx_kwvalues, __pyx_pyargnames, 0, values, kwd_pos_args, __pyx_kwds_len, "search_station_times_batch_raw", 0) < (0)) __PYX_ERR(0, 1035, __pyx_L3_error)
+      if (__Pyx_ParseKeywords(__pyx_kwds, __pyx_kwvalues, __pyx_pyargnames, 0, values, kwd_pos_args, __pyx_kwds_len, "search_station_times_batch_raw", 0) < (0)) __PYX_ERR(0, 1289, __pyx_L3_error)
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1039
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1293
  * 	double jd_start,
  * 	double jd_end,
  * 	object ephe_path=None,             # <<<<<<<<<<<<<<
@@ -13074,7 +14434,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[3]) values[3] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1041
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1295
  * 	object ephe_path=None,
  * 	int flags=0,
  * 	object sidereal_mode=None,             # <<<<<<<<<<<<<<
@@ -13083,7 +14443,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[5]) values[5] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1042
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1296
  * 	int flags=0,
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,             # <<<<<<<<<<<<<<
@@ -13092,7 +14452,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[6]) values[6] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1043
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1297
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,
  * 	object step_days=None,             # <<<<<<<<<<<<<<
@@ -13101,50 +14461,50 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[7]) values[7] = __Pyx_NewRef(((PyObject *)Py_None));
       for (Py_ssize_t i = __pyx_nargs; i < 3; i++) {
-        if (unlikely(!values[i])) { __Pyx_RaiseArgtupleInvalid("search_station_times_batch_raw", 0, 3, 10, i); __PYX_ERR(0, 1035, __pyx_L3_error) }
+        if (unlikely(!values[i])) { __Pyx_RaiseArgtupleInvalid("search_station_times_batch_raw", 0, 3, 10, i); __PYX_ERR(0, 1289, __pyx_L3_error) }
       }
     } else {
       switch (__pyx_nargs) {
         case 10:
         values[9] = __Pyx_ArgRef_FASTCALL(__pyx_args, 9);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[9])) __PYX_ERR(0, 1035, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[9])) __PYX_ERR(0, 1289, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  9:
         values[8] = __Pyx_ArgRef_FASTCALL(__pyx_args, 8);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[8])) __PYX_ERR(0, 1035, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[8])) __PYX_ERR(0, 1289, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  8:
         values[7] = __Pyx_ArgRef_FASTCALL(__pyx_args, 7);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[7])) __PYX_ERR(0, 1035, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[7])) __PYX_ERR(0, 1289, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  7:
         values[6] = __Pyx_ArgRef_FASTCALL(__pyx_args, 6);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[6])) __PYX_ERR(0, 1035, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[6])) __PYX_ERR(0, 1289, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  6:
         values[5] = __Pyx_ArgRef_FASTCALL(__pyx_args, 5);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[5])) __PYX_ERR(0, 1035, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[5])) __PYX_ERR(0, 1289, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  5:
         values[4] = __Pyx_ArgRef_FASTCALL(__pyx_args, 4);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[4])) __PYX_ERR(0, 1035, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[4])) __PYX_ERR(0, 1289, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  4:
         values[3] = __Pyx_ArgRef_FASTCALL(__pyx_args, 3);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[3])) __PYX_ERR(0, 1035, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[3])) __PYX_ERR(0, 1289, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  3:
         values[2] = __Pyx_ArgRef_FASTCALL(__pyx_args, 2);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[2])) __PYX_ERR(0, 1035, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[2])) __PYX_ERR(0, 1289, __pyx_L3_error)
         values[1] = __Pyx_ArgRef_FASTCALL(__pyx_args, 1);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[1])) __PYX_ERR(0, 1035, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[1])) __PYX_ERR(0, 1289, __pyx_L3_error)
         values[0] = __Pyx_ArgRef_FASTCALL(__pyx_args, 0);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 1035, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 1289, __pyx_L3_error)
         break;
         default: goto __pyx_L5_argtuple_error;
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1039
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1293
  * 	double jd_start,
  * 	double jd_end,
  * 	object ephe_path=None,             # <<<<<<<<<<<<<<
@@ -13153,7 +14513,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[3]) values[3] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1041
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1295
  * 	object ephe_path=None,
  * 	int flags=0,
  * 	object sidereal_mode=None,             # <<<<<<<<<<<<<<
@@ -13162,7 +14522,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[5]) values[5] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1042
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1296
  * 	int flags=0,
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,             # <<<<<<<<<<<<<<
@@ -13171,7 +14531,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[6]) values[6] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1043
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1297
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,
  * 	object step_days=None,             # <<<<<<<<<<<<<<
@@ -13181,11 +14541,11 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
       if (!values[7]) values[7] = __Pyx_NewRef(((PyObject *)Py_None));
     }
     __pyx_v_planets = values[0];
-    __pyx_v_jd_start = __Pyx_PyFloat_AsDouble(values[1]); if (unlikely((__pyx_v_jd_start == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1037, __pyx_L3_error)
-    __pyx_v_jd_end = __Pyx_PyFloat_AsDouble(values[2]); if (unlikely((__pyx_v_jd_end == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1038, __pyx_L3_error)
+    __pyx_v_jd_start = __Pyx_PyFloat_AsDouble(values[1]); if (unlikely((__pyx_v_jd_start == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1291, __pyx_L3_error)
+    __pyx_v_jd_end = __Pyx_PyFloat_AsDouble(values[2]); if (unlikely((__pyx_v_jd_end == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1292, __pyx_L3_error)
     __pyx_v_ephe_path = values[3];
     if (values[4]) {
-      __pyx_v_flags = __Pyx_PyLong_As_int(values[4]); if (unlikely((__pyx_v_flags == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 1040, __pyx_L3_error)
+      __pyx_v_flags = __Pyx_PyLong_As_int(values[4]); if (unlikely((__pyx_v_flags == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 1294, __pyx_L3_error)
     } else {
       __pyx_v_flags = ((int)0);
     }
@@ -13193,19 +14553,19 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
     __pyx_v_topocentric_position = values[6];
     __pyx_v_step_days = values[7];
     if (values[8]) {
-      __pyx_v_eps_speed = __Pyx_PyFloat_AsDouble(values[8]); if (unlikely((__pyx_v_eps_speed == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1044, __pyx_L3_error)
+      __pyx_v_eps_speed = __Pyx_PyFloat_AsDouble(values[8]); if (unlikely((__pyx_v_eps_speed == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1298, __pyx_L3_error)
     } else {
       __pyx_v_eps_speed = __pyx_mstate_global->__pyx_k__4;
     }
     if (values[9]) {
-      __pyx_v_eps_days = __Pyx_PyFloat_AsDouble(values[9]); if (unlikely((__pyx_v_eps_days == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1045, __pyx_L3_error)
+      __pyx_v_eps_days = __Pyx_PyFloat_AsDouble(values[9]); if (unlikely((__pyx_v_eps_days == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1299, __pyx_L3_error)
     } else {
       __pyx_v_eps_days = __pyx_mstate_global->__pyx_k__5;
     }
   }
   goto __pyx_L6_skip;
   __pyx_L5_argtuple_error:;
-  __Pyx_RaiseArgtupleInvalid("search_station_times_batch_raw", 0, 3, 10, __pyx_nargs); __PYX_ERR(0, 1035, __pyx_L3_error)
+  __Pyx_RaiseArgtupleInvalid("search_station_times_batch_raw", 0, 3, 10, __pyx_nargs); __PYX_ERR(0, 1289, __pyx_L3_error)
   __pyx_L6_skip:;
   goto __pyx_L4_argument_unpacking_done;
   __pyx_L3_error:;
@@ -13218,7 +14578,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   __pyx_L4_argument_unpacking_done:;
   __pyx_r = __pyx_pf_5aries_9astrology_12transit_fast_15_transit_kernel_4search_station_times_batch_raw(__pyx_self, __pyx_v_planets, __pyx_v_jd_start, __pyx_v_jd_end, __pyx_v_ephe_path, __pyx_v_flags, __pyx_v_sidereal_mode, __pyx_v_topocentric_position, __pyx_v_step_days, __pyx_v_eps_speed, __pyx_v_eps_days);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1035
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1289
  *
  *
  * cpdef list search_station_times_batch_raw(             # <<<<<<<<<<<<<<
@@ -13252,7 +14612,7 @@ static PyObject *__pyx_pf_5aries_9astrology_12transit_fast_15_transit_kernel_4se
   __pyx_t_2.step_days = __pyx_v_step_days;
   __pyx_t_2.eps_speed = __pyx_v_eps_speed;
   __pyx_t_2.eps_days = __pyx_v_eps_days;
-  __pyx_t_1 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_search_station_times_batch_raw(__pyx_v_planets, __pyx_v_jd_start, __pyx_v_jd_end, 1, &__pyx_t_2); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1035, __pyx_L1_error)
+  __pyx_t_1 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_search_station_times_batch_raw(__pyx_v_planets, __pyx_v_jd_start, __pyx_v_jd_end, 1, &__pyx_t_2); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1289, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
   __pyx_r = __pyx_t_1;
   __pyx_t_1 = 0;
@@ -13269,7 +14629,7 @@ static PyObject *__pyx_pf_5aries_9astrology_12transit_fast_15_transit_kernel_4se
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":1086
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":1340
  *
  *
  * cpdef list search_longitude_transits_raw(             # <<<<<<<<<<<<<<
@@ -13286,7 +14646,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 ); /*proto*/
 static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_search_longitude_transits_raw(int __pyx_v_planet, double __pyx_v_jd_start, double __pyx_v_jd_end, PyObject *__pyx_v_targets_deg, CYTHON_UNUSED int __pyx_skip_dispatch, struct __pyx_opt_args_5aries_9astrology_12transit_fast_15_transit_kernel_search_longitude_transits_raw *__pyx_optional_args) {
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1091
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1345
  * 	double jd_end,
  * 	object targets_deg,
  * 	object ephe_path=None,             # <<<<<<<<<<<<<<
@@ -13296,7 +14656,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
   PyObject *__pyx_v_ephe_path = ((PyObject *)Py_None);
   int __pyx_v_flags = ((int)0);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1093
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1347
  * 	object ephe_path=None,
  * 	int flags=0,
  * 	object sidereal_mode=None,             # <<<<<<<<<<<<<<
@@ -13305,7 +14665,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   PyObject *__pyx_v_sidereal_mode = ((PyObject *)Py_None);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1094
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1348
  * 	int flags=0,
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,             # <<<<<<<<<<<<<<
@@ -13314,7 +14674,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   PyObject *__pyx_v_topocentric_position = ((PyObject *)Py_None);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1095
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1349
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,
  * 	object step_days=None,             # <<<<<<<<<<<<<<
@@ -13383,7 +14743,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
     }
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1099
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1353
  * 	double eps_days=DEFAULT_EPS_DAYS,
  * ):
  * 	cdef CHit* hits = NULL             # <<<<<<<<<<<<<<
@@ -13392,7 +14752,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   __pyx_v_hits = NULL;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1100
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1354
  * ):
  * 	cdef CHit* hits = NULL
  * 	cdef size_t count = 0             # <<<<<<<<<<<<<<
@@ -13401,7 +14761,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   __pyx_v_count = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1101
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1355
  * 	cdef CHit* hits = NULL
  * 	cdef size_t count = 0
  * 	cdef size_t capacity = 0             # <<<<<<<<<<<<<<
@@ -13410,7 +14770,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   __pyx_v_capacity = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1102
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1356
  * 	cdef size_t count = 0
  * 	cdef size_t capacity = 0
  * 	cdef double* unique_targets = NULL             # <<<<<<<<<<<<<<
@@ -13419,7 +14779,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   __pyx_v_unique_targets = NULL;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1103
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1357
  * 	cdef size_t capacity = 0
  * 	cdef double* unique_targets = NULL
  * 	cdef size_t target_count = 0             # <<<<<<<<<<<<<<
@@ -13428,7 +14788,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   __pyx_v_target_count = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1104
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1358
  * 	cdef double* unique_targets = NULL
  * 	cdef size_t target_count = 0
  * 	cdef bint lock_held = False             # <<<<<<<<<<<<<<
@@ -13437,7 +14797,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   __pyx_v_lock_held = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1105
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1359
  * 	cdef size_t target_count = 0
  * 	cdef bint lock_held = False
  * 	cdef double base_step = float(default_step_days_for_planet(planet) if step_days is None else step_days)             # <<<<<<<<<<<<<<
@@ -13447,9 +14807,9 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
   __pyx_t_2 = (__pyx_v_step_days == Py_None);
   if (__pyx_t_2) {
     __pyx_t_4 = NULL;
-    __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_default_step_days_for_planet); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1105, __pyx_L1_error)
+    __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_default_step_days_for_planet); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1359, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_5);
-    __pyx_t_6 = __Pyx_PyLong_From_int(__pyx_v_planet); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 1105, __pyx_L1_error)
+    __pyx_t_6 = __Pyx_PyLong_From_int(__pyx_v_planet); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 1359, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_6);
     __pyx_t_7 = 1;
     #if CYTHON_UNPACK_METHODS
@@ -13469,7 +14829,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
       __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
       __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-      if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1105, __pyx_L1_error)
+      if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1359, __pyx_L1_error)
       __Pyx_GOTREF(__pyx_t_3);
     }
     __pyx_t_1 = __pyx_t_3;
@@ -13478,11 +14838,11 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
     __Pyx_INCREF(__pyx_v_step_days);
     __pyx_t_1 = __pyx_v_step_days;
   }
-  __pyx_t_8 = __Pyx_PyObject_AsDouble(__pyx_t_1); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_8, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 1105, __pyx_L1_error)
+  __pyx_t_8 = __Pyx_PyObject_AsDouble(__pyx_t_1); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_8, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 1359, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
   __pyx_v_base_step = __pyx_t_8;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1108
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1362
  * 	cdef double slice_start
  * 	cdef double slice_end
  * 	try:             # <<<<<<<<<<<<<<
@@ -13491,52 +14851,52 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   /*try:*/ {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1109
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1363
  * 	cdef double slice_end
  * 	try:
  * 		_validate_scan_bounds(jd_start, jd_end)             # <<<<<<<<<<<<<<
  * 		_validate_positive_double(base_step, "step_days")
  * 		_validate_positive_double(eps_deg, "eps_deg")
 */
-    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_scan_bounds(__pyx_v_jd_start, __pyx_v_jd_end); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1109, __pyx_L4_error)
+    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_scan_bounds(__pyx_v_jd_start, __pyx_v_jd_end); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1363, __pyx_L4_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1110
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1364
  * 	try:
  * 		_validate_scan_bounds(jd_start, jd_end)
  * 		_validate_positive_double(base_step, "step_days")             # <<<<<<<<<<<<<<
  * 		_validate_positive_double(eps_deg, "eps_deg")
  * 		_validate_positive_double(eps_days, "eps_days")
 */
-    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_base_step, __pyx_mstate_global->__pyx_n_u_step_days); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1110, __pyx_L4_error)
+    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_base_step, __pyx_mstate_global->__pyx_n_u_step_days); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1364, __pyx_L4_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1111
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1365
  * 		_validate_scan_bounds(jd_start, jd_end)
  * 		_validate_positive_double(base_step, "step_days")
  * 		_validate_positive_double(eps_deg, "eps_deg")             # <<<<<<<<<<<<<<
  * 		_validate_positive_double(eps_days, "eps_days")
  * 		_prepare_targets_c(targets_deg, &unique_targets, &target_count)
 */
-    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_eps_deg, __pyx_mstate_global->__pyx_n_u_eps_deg); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1111, __pyx_L4_error)
+    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_eps_deg, __pyx_mstate_global->__pyx_n_u_eps_deg); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1365, __pyx_L4_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1112
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1366
  * 		_validate_positive_double(base_step, "step_days")
  * 		_validate_positive_double(eps_deg, "eps_deg")
  * 		_validate_positive_double(eps_days, "eps_days")             # <<<<<<<<<<<<<<
  * 		_prepare_targets_c(targets_deg, &unique_targets, &target_count)
  * 		if target_count == 0:
 */
-    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_eps_days, __pyx_mstate_global->__pyx_n_u_eps_days); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1112, __pyx_L4_error)
+    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_eps_days, __pyx_mstate_global->__pyx_n_u_eps_days); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1366, __pyx_L4_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1113
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1367
  * 		_validate_positive_double(eps_deg, "eps_deg")
  * 		_validate_positive_double(eps_days, "eps_days")
  * 		_prepare_targets_c(targets_deg, &unique_targets, &target_count)             # <<<<<<<<<<<<<<
  * 		if target_count == 0:
  * 			return []
 */
-    __pyx_t_9 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_targets_c(__pyx_v_targets_deg, (&__pyx_v_unique_targets), (&__pyx_v_target_count)); if (unlikely(__pyx_t_9 == ((int)-1))) __PYX_ERR(0, 1113, __pyx_L4_error)
+    __pyx_t_9 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_targets_c(__pyx_v_targets_deg, (&__pyx_v_unique_targets), (&__pyx_v_target_count)); if (unlikely(__pyx_t_9 == ((int)-1))) __PYX_ERR(0, 1367, __pyx_L4_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1114
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1368
  * 		_validate_positive_double(eps_days, "eps_days")
  * 		_prepare_targets_c(targets_deg, &unique_targets, &target_count)
  * 		if target_count == 0:             # <<<<<<<<<<<<<<
@@ -13546,7 +14906,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
     __pyx_t_2 = (__pyx_v_target_count == 0);
     if (__pyx_t_2) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1115
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1369
  * 		_prepare_targets_c(targets_deg, &unique_targets, &target_count)
  * 		if target_count == 0:
  * 			return []             # <<<<<<<<<<<<<<
@@ -13554,13 +14914,13 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
  * 		while slice_start < jd_end:
 */
       __Pyx_XDECREF(__pyx_r);
-      __pyx_t_1 = PyList_New(0); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1115, __pyx_L4_error)
+      __pyx_t_1 = PyList_New(0); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1369, __pyx_L4_error)
       __Pyx_GOTREF(__pyx_t_1);
       __pyx_r = ((PyObject*)__pyx_t_1);
       __pyx_t_1 = 0;
       goto __pyx_L3_return;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1114
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1368
  * 		_validate_positive_double(eps_days, "eps_days")
  * 		_prepare_targets_c(targets_deg, &unique_targets, &target_count)
  * 		if target_count == 0:             # <<<<<<<<<<<<<<
@@ -13569,7 +14929,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1116
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1370
  * 		if target_count == 0:
  * 			return []
  * 		slice_start = jd_start             # <<<<<<<<<<<<<<
@@ -13578,7 +14938,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
     __pyx_v_slice_start = __pyx_v_jd_start;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1117
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1371
  * 			return []
  * 		slice_start = jd_start
  * 		while slice_start < jd_end:             # <<<<<<<<<<<<<<
@@ -13589,7 +14949,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_2 = (__pyx_v_slice_start < __pyx_v_jd_end);
       if (!__pyx_t_2) break;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1118
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1372
  * 		slice_start = jd_start
  * 		while slice_start < jd_end:
  * 			slice_end = min(jd_end, slice_start + _MAX_NATIVE_LOCK_SPAN_DAYS)             # <<<<<<<<<<<<<<
@@ -13606,7 +14966,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       }
       __pyx_v_slice_end = __pyx_t_11;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1119
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1373
  * 		while slice_start < jd_end:
  * 			slice_end = min(jd_end, slice_start + _MAX_NATIVE_LOCK_SPAN_DAYS)
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -13619,7 +14979,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
           __Pyx_FastGIL_Remember();
           /*try:*/ {
 
-            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1120
+            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1374
  * 			slice_end = min(jd_end, slice_start + _MAX_NATIVE_LOCK_SPAN_DAYS)
  * 			with nogil:
  * 				_acquire_native_swe_lock()             # <<<<<<<<<<<<<<
@@ -13629,7 +14989,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__acquire_native_swe_lock();
           }
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1119
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1373
  * 		while slice_start < jd_end:
  * 			slice_end = min(jd_end, slice_start + _MAX_NATIVE_LOCK_SPAN_DAYS)
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -13646,7 +15006,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
           }
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1121
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1375
  * 			with nogil:
  * 				_acquire_native_swe_lock()
  * 			lock_held = True             # <<<<<<<<<<<<<<
@@ -13655,16 +15015,16 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
       __pyx_v_lock_held = 1;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1122
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1376
  * 				_acquire_native_swe_lock()
  * 			lock_held = True
  * 			_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position)             # <<<<<<<<<<<<<<
  * 			with nogil:
  * 				_search_longitude_transits_prepared_into_c(planet, slice_start, slice_end, unique_targets, target_count, flags, base_step, eps_deg, eps_days, &hits, &count, &capacity)
 */
-      __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configure_ephemeris_context(__pyx_v_ephe_path, __pyx_v_flags, __pyx_v_sidereal_mode, __pyx_v_topocentric_position); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1122, __pyx_L4_error)
+      __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configure_ephemeris_context(__pyx_v_ephe_path, __pyx_v_flags, __pyx_v_sidereal_mode, __pyx_v_topocentric_position); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1376, __pyx_L4_error)
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1123
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1377
  * 			lock_held = True
  * 			_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position)
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -13677,16 +15037,16 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
           __Pyx_FastGIL_Remember();
           /*try:*/ {
 
-            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1124
+            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1378
  * 			_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position)
  * 			with nogil:
  * 				_search_longitude_transits_prepared_into_c(planet, slice_start, slice_end, unique_targets, target_count, flags, base_step, eps_deg, eps_days, &hits, &count, &capacity)             # <<<<<<<<<<<<<<
  * 				_release_native_swe_lock()
  * 			lock_held = False
 */
-            __pyx_t_9 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_longitude_transits_prepared_into_c(__pyx_v_planet, __pyx_v_slice_start, __pyx_v_slice_end, __pyx_v_unique_targets, __pyx_v_target_count, __pyx_v_flags, __pyx_v_base_step, __pyx_v_eps_deg, __pyx_v_eps_days, (&__pyx_v_hits), (&__pyx_v_count), (&__pyx_v_capacity)); if (unlikely(__pyx_t_9 == ((int)-1))) __PYX_ERR(0, 1124, __pyx_L17_error)
+            __pyx_t_9 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_longitude_transits_prepared_into_c(__pyx_v_planet, __pyx_v_slice_start, __pyx_v_slice_end, __pyx_v_unique_targets, __pyx_v_target_count, __pyx_v_flags, __pyx_v_base_step, __pyx_v_eps_deg, __pyx_v_eps_days, (&__pyx_v_hits), (&__pyx_v_count), (&__pyx_v_capacity)); if (unlikely(__pyx_t_9 == ((int)-1))) __PYX_ERR(0, 1378, __pyx_L17_error)
 
-            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1125
+            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1379
  * 			with nogil:
  * 				_search_longitude_transits_prepared_into_c(planet, slice_start, slice_end, unique_targets, target_count, flags, base_step, eps_deg, eps_days, &hits, &count, &capacity)
  * 				_release_native_swe_lock()             # <<<<<<<<<<<<<<
@@ -13696,7 +15056,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__release_native_swe_lock();
           }
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1123
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1377
  * 			lock_held = True
  * 			_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position)
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -13718,7 +15078,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
           }
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1126
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1380
  * 				_search_longitude_transits_prepared_into_c(planet, slice_start, slice_end, unique_targets, target_count, flags, base_step, eps_deg, eps_days, &hits, &count, &capacity)
  * 				_release_native_swe_lock()
  * 			lock_held = False             # <<<<<<<<<<<<<<
@@ -13727,7 +15087,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
       __pyx_v_lock_held = 0;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1127
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1381
  * 				_release_native_swe_lock()
  * 			lock_held = False
  * 			slice_start = slice_end             # <<<<<<<<<<<<<<
@@ -13737,7 +15097,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_v_slice_start = __pyx_v_slice_end;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1128
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1382
  * 			lock_held = False
  * 			slice_start = slice_end
  * 		return _hits_to_python(hits, count)             # <<<<<<<<<<<<<<
@@ -13745,14 +15105,14 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
  * 		if lock_held:
 */
     __Pyx_XDECREF(__pyx_r);
-    __pyx_t_1 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__hits_to_python(__pyx_v_hits, __pyx_v_count); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1128, __pyx_L4_error)
+    __pyx_t_1 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__hits_to_python(__pyx_v_hits, __pyx_v_count); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1382, __pyx_L4_error)
     __Pyx_GOTREF(__pyx_t_1);
     __pyx_r = ((PyObject*)__pyx_t_1);
     __pyx_t_1 = 0;
     goto __pyx_L3_return;
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1130
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1384
  * 		return _hits_to_python(hits, count)
  * 	finally:
  * 		if lock_held:             # <<<<<<<<<<<<<<
@@ -13782,7 +15142,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       {
         if (__pyx_v_lock_held) {
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1131
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1385
  * 	finally:
  * 		if lock_held:
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -13795,7 +15155,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
               __Pyx_FastGIL_Remember();
               /*try:*/ {
 
-                /* "aries/astrology/transit_fast/_transit_kernel.pyx":1132
+                /* "aries/astrology/transit_fast/_transit_kernel.pyx":1386
  * 		if lock_held:
  * 			with nogil:
  * 				_release_native_swe_lock()             # <<<<<<<<<<<<<<
@@ -13805,7 +15165,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
                 __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__release_native_swe_lock();
               }
 
-              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1131
+              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1385
  * 	finally:
  * 		if lock_held:
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -13822,7 +15182,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
               }
           }
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1130
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1384
  * 		return _hits_to_python(hits, count)
  * 	finally:
  * 		if lock_held:             # <<<<<<<<<<<<<<
@@ -13831,7 +15191,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         }
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1133
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1387
  * 			with nogil:
  * 				_release_native_swe_lock()
  * 		if hits != NULL:             # <<<<<<<<<<<<<<
@@ -13841,7 +15201,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
         __pyx_t_2 = (__pyx_v_hits != NULL);
         if (__pyx_t_2) {
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1134
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1388
  * 				_release_native_swe_lock()
  * 		if hits != NULL:
  * 			free(hits)             # <<<<<<<<<<<<<<
@@ -13850,7 +15210,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
           free(__pyx_v_hits);
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1133
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1387
  * 			with nogil:
  * 				_release_native_swe_lock()
  * 		if hits != NULL:             # <<<<<<<<<<<<<<
@@ -13859,7 +15219,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         }
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1135
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1389
  * 		if hits != NULL:
  * 			free(hits)
  * 		if unique_targets != NULL:             # <<<<<<<<<<<<<<
@@ -13869,7 +15229,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
         __pyx_t_2 = (__pyx_v_unique_targets != NULL);
         if (__pyx_t_2) {
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1136
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1390
  * 			free(hits)
  * 		if unique_targets != NULL:
  * 			free(unique_targets)             # <<<<<<<<<<<<<<
@@ -13878,7 +15238,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
           free(__pyx_v_unique_targets);
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1135
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1389
  * 		if hits != NULL:
  * 			free(hits)
  * 		if unique_targets != NULL:             # <<<<<<<<<<<<<<
@@ -13903,7 +15263,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_20 = __pyx_r;
       __pyx_r = 0;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1130
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1384
  * 		return _hits_to_python(hits, count)
  * 	finally:
  * 		if lock_held:             # <<<<<<<<<<<<<<
@@ -13912,7 +15272,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
       if (__pyx_v_lock_held) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1131
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1385
  * 	finally:
  * 		if lock_held:
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -13925,7 +15285,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             __Pyx_FastGIL_Remember();
             /*try:*/ {
 
-              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1132
+              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1386
  * 		if lock_held:
  * 			with nogil:
  * 				_release_native_swe_lock()             # <<<<<<<<<<<<<<
@@ -13935,7 +15295,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
               __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__release_native_swe_lock();
             }
 
-            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1131
+            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1385
  * 	finally:
  * 		if lock_held:
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -13952,7 +15312,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             }
         }
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1130
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1384
  * 		return _hits_to_python(hits, count)
  * 	finally:
  * 		if lock_held:             # <<<<<<<<<<<<<<
@@ -13961,7 +15321,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1133
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1387
  * 			with nogil:
  * 				_release_native_swe_lock()
  * 		if hits != NULL:             # <<<<<<<<<<<<<<
@@ -13971,7 +15331,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_2 = (__pyx_v_hits != NULL);
       if (__pyx_t_2) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1134
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1388
  * 				_release_native_swe_lock()
  * 		if hits != NULL:
  * 			free(hits)             # <<<<<<<<<<<<<<
@@ -13980,7 +15340,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         free(__pyx_v_hits);
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1133
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1387
  * 			with nogil:
  * 				_release_native_swe_lock()
  * 		if hits != NULL:             # <<<<<<<<<<<<<<
@@ -13989,7 +15349,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1135
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1389
  * 		if hits != NULL:
  * 			free(hits)
  * 		if unique_targets != NULL:             # <<<<<<<<<<<<<<
@@ -13999,7 +15359,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_2 = (__pyx_v_unique_targets != NULL);
       if (__pyx_t_2) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1136
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1390
  * 			free(hits)
  * 		if unique_targets != NULL:
  * 			free(unique_targets)             # <<<<<<<<<<<<<<
@@ -14008,7 +15368,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         free(__pyx_v_unique_targets);
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1135
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1389
  * 		if hits != NULL:
  * 			free(hits)
  * 		if unique_targets != NULL:             # <<<<<<<<<<<<<<
@@ -14022,7 +15382,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
     }
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1086
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1340
  *
  *
  * cpdef list search_longitude_transits_raw(             # <<<<<<<<<<<<<<
@@ -14094,60 +15454,60 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   {
     PyObject ** const __pyx_pyargnames[] = {&__pyx_mstate_global->__pyx_n_u_planet,&__pyx_mstate_global->__pyx_n_u_jd_start,&__pyx_mstate_global->__pyx_n_u_jd_end,&__pyx_mstate_global->__pyx_n_u_targets_deg,&__pyx_mstate_global->__pyx_n_u_ephe_path,&__pyx_mstate_global->__pyx_n_u_flags,&__pyx_mstate_global->__pyx_n_u_sidereal_mode,&__pyx_mstate_global->__pyx_n_u_topocentric_position,&__pyx_mstate_global->__pyx_n_u_step_days,&__pyx_mstate_global->__pyx_n_u_eps_deg,&__pyx_mstate_global->__pyx_n_u_eps_days,0};
     const Py_ssize_t __pyx_kwds_len = (__pyx_kwds) ? __Pyx_NumKwargs_FASTCALL(__pyx_kwds) : 0;
-    if (unlikely(__pyx_kwds_len) < 0) __PYX_ERR(0, 1086, __pyx_L3_error)
+    if (unlikely(__pyx_kwds_len) < 0) __PYX_ERR(0, 1340, __pyx_L3_error)
     if (__pyx_kwds_len > 0) {
       switch (__pyx_nargs) {
         case 11:
         values[10] = __Pyx_ArgRef_FASTCALL(__pyx_args, 10);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[10])) __PYX_ERR(0, 1086, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[10])) __PYX_ERR(0, 1340, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case 10:
         values[9] = __Pyx_ArgRef_FASTCALL(__pyx_args, 9);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[9])) __PYX_ERR(0, 1086, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[9])) __PYX_ERR(0, 1340, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  9:
         values[8] = __Pyx_ArgRef_FASTCALL(__pyx_args, 8);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[8])) __PYX_ERR(0, 1086, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[8])) __PYX_ERR(0, 1340, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  8:
         values[7] = __Pyx_ArgRef_FASTCALL(__pyx_args, 7);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[7])) __PYX_ERR(0, 1086, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[7])) __PYX_ERR(0, 1340, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  7:
         values[6] = __Pyx_ArgRef_FASTCALL(__pyx_args, 6);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[6])) __PYX_ERR(0, 1086, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[6])) __PYX_ERR(0, 1340, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  6:
         values[5] = __Pyx_ArgRef_FASTCALL(__pyx_args, 5);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[5])) __PYX_ERR(0, 1086, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[5])) __PYX_ERR(0, 1340, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  5:
         values[4] = __Pyx_ArgRef_FASTCALL(__pyx_args, 4);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[4])) __PYX_ERR(0, 1086, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[4])) __PYX_ERR(0, 1340, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  4:
         values[3] = __Pyx_ArgRef_FASTCALL(__pyx_args, 3);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[3])) __PYX_ERR(0, 1086, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[3])) __PYX_ERR(0, 1340, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  3:
         values[2] = __Pyx_ArgRef_FASTCALL(__pyx_args, 2);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[2])) __PYX_ERR(0, 1086, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[2])) __PYX_ERR(0, 1340, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  2:
         values[1] = __Pyx_ArgRef_FASTCALL(__pyx_args, 1);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[1])) __PYX_ERR(0, 1086, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[1])) __PYX_ERR(0, 1340, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  1:
         values[0] = __Pyx_ArgRef_FASTCALL(__pyx_args, 0);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 1086, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 1340, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  0: break;
         default: goto __pyx_L5_argtuple_error;
       }
       const Py_ssize_t kwd_pos_args = __pyx_nargs;
-      if (__Pyx_ParseKeywords(__pyx_kwds, __pyx_kwvalues, __pyx_pyargnames, 0, values, kwd_pos_args, __pyx_kwds_len, "search_longitude_transits_raw", 0) < (0)) __PYX_ERR(0, 1086, __pyx_L3_error)
+      if (__Pyx_ParseKeywords(__pyx_kwds, __pyx_kwvalues, __pyx_pyargnames, 0, values, kwd_pos_args, __pyx_kwds_len, "search_longitude_transits_raw", 0) < (0)) __PYX_ERR(0, 1340, __pyx_L3_error)
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1091
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1345
  * 	double jd_end,
  * 	object targets_deg,
  * 	object ephe_path=None,             # <<<<<<<<<<<<<<
@@ -14156,7 +15516,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[4]) values[4] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1093
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1347
  * 	object ephe_path=None,
  * 	int flags=0,
  * 	object sidereal_mode=None,             # <<<<<<<<<<<<<<
@@ -14165,7 +15525,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[6]) values[6] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1094
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1348
  * 	int flags=0,
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,             # <<<<<<<<<<<<<<
@@ -14174,7 +15534,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[7]) values[7] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1095
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1349
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,
  * 	object step_days=None,             # <<<<<<<<<<<<<<
@@ -14183,52 +15543,52 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[8]) values[8] = __Pyx_NewRef(((PyObject *)Py_None));
       for (Py_ssize_t i = __pyx_nargs; i < 4; i++) {
-        if (unlikely(!values[i])) { __Pyx_RaiseArgtupleInvalid("search_longitude_transits_raw", 0, 4, 11, i); __PYX_ERR(0, 1086, __pyx_L3_error) }
+        if (unlikely(!values[i])) { __Pyx_RaiseArgtupleInvalid("search_longitude_transits_raw", 0, 4, 11, i); __PYX_ERR(0, 1340, __pyx_L3_error) }
       }
     } else {
       switch (__pyx_nargs) {
         case 11:
         values[10] = __Pyx_ArgRef_FASTCALL(__pyx_args, 10);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[10])) __PYX_ERR(0, 1086, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[10])) __PYX_ERR(0, 1340, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case 10:
         values[9] = __Pyx_ArgRef_FASTCALL(__pyx_args, 9);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[9])) __PYX_ERR(0, 1086, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[9])) __PYX_ERR(0, 1340, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  9:
         values[8] = __Pyx_ArgRef_FASTCALL(__pyx_args, 8);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[8])) __PYX_ERR(0, 1086, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[8])) __PYX_ERR(0, 1340, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  8:
         values[7] = __Pyx_ArgRef_FASTCALL(__pyx_args, 7);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[7])) __PYX_ERR(0, 1086, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[7])) __PYX_ERR(0, 1340, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  7:
         values[6] = __Pyx_ArgRef_FASTCALL(__pyx_args, 6);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[6])) __PYX_ERR(0, 1086, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[6])) __PYX_ERR(0, 1340, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  6:
         values[5] = __Pyx_ArgRef_FASTCALL(__pyx_args, 5);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[5])) __PYX_ERR(0, 1086, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[5])) __PYX_ERR(0, 1340, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  5:
         values[4] = __Pyx_ArgRef_FASTCALL(__pyx_args, 4);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[4])) __PYX_ERR(0, 1086, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[4])) __PYX_ERR(0, 1340, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  4:
         values[3] = __Pyx_ArgRef_FASTCALL(__pyx_args, 3);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[3])) __PYX_ERR(0, 1086, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[3])) __PYX_ERR(0, 1340, __pyx_L3_error)
         values[2] = __Pyx_ArgRef_FASTCALL(__pyx_args, 2);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[2])) __PYX_ERR(0, 1086, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[2])) __PYX_ERR(0, 1340, __pyx_L3_error)
         values[1] = __Pyx_ArgRef_FASTCALL(__pyx_args, 1);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[1])) __PYX_ERR(0, 1086, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[1])) __PYX_ERR(0, 1340, __pyx_L3_error)
         values[0] = __Pyx_ArgRef_FASTCALL(__pyx_args, 0);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 1086, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 1340, __pyx_L3_error)
         break;
         default: goto __pyx_L5_argtuple_error;
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1091
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1345
  * 	double jd_end,
  * 	object targets_deg,
  * 	object ephe_path=None,             # <<<<<<<<<<<<<<
@@ -14237,7 +15597,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[4]) values[4] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1093
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1347
  * 	object ephe_path=None,
  * 	int flags=0,
  * 	object sidereal_mode=None,             # <<<<<<<<<<<<<<
@@ -14246,7 +15606,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[6]) values[6] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1094
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1348
  * 	int flags=0,
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,             # <<<<<<<<<<<<<<
@@ -14255,7 +15615,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[7]) values[7] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1095
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1349
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,
  * 	object step_days=None,             # <<<<<<<<<<<<<<
@@ -14264,13 +15624,13 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[8]) values[8] = __Pyx_NewRef(((PyObject *)Py_None));
     }
-    __pyx_v_planet = __Pyx_PyLong_As_int(values[0]); if (unlikely((__pyx_v_planet == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 1087, __pyx_L3_error)
-    __pyx_v_jd_start = __Pyx_PyFloat_AsDouble(values[1]); if (unlikely((__pyx_v_jd_start == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1088, __pyx_L3_error)
-    __pyx_v_jd_end = __Pyx_PyFloat_AsDouble(values[2]); if (unlikely((__pyx_v_jd_end == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1089, __pyx_L3_error)
+    __pyx_v_planet = __Pyx_PyLong_As_int(values[0]); if (unlikely((__pyx_v_planet == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 1341, __pyx_L3_error)
+    __pyx_v_jd_start = __Pyx_PyFloat_AsDouble(values[1]); if (unlikely((__pyx_v_jd_start == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1342, __pyx_L3_error)
+    __pyx_v_jd_end = __Pyx_PyFloat_AsDouble(values[2]); if (unlikely((__pyx_v_jd_end == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1343, __pyx_L3_error)
     __pyx_v_targets_deg = values[3];
     __pyx_v_ephe_path = values[4];
     if (values[5]) {
-      __pyx_v_flags = __Pyx_PyLong_As_int(values[5]); if (unlikely((__pyx_v_flags == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 1092, __pyx_L3_error)
+      __pyx_v_flags = __Pyx_PyLong_As_int(values[5]); if (unlikely((__pyx_v_flags == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 1346, __pyx_L3_error)
     } else {
       __pyx_v_flags = ((int)0);
     }
@@ -14278,19 +15638,19 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
     __pyx_v_topocentric_position = values[7];
     __pyx_v_step_days = values[8];
     if (values[9]) {
-      __pyx_v_eps_deg = __Pyx_PyFloat_AsDouble(values[9]); if (unlikely((__pyx_v_eps_deg == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1096, __pyx_L3_error)
+      __pyx_v_eps_deg = __Pyx_PyFloat_AsDouble(values[9]); if (unlikely((__pyx_v_eps_deg == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1350, __pyx_L3_error)
     } else {
       __pyx_v_eps_deg = __pyx_mstate_global->__pyx_k__6;
     }
     if (values[10]) {
-      __pyx_v_eps_days = __Pyx_PyFloat_AsDouble(values[10]); if (unlikely((__pyx_v_eps_days == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1097, __pyx_L3_error)
+      __pyx_v_eps_days = __Pyx_PyFloat_AsDouble(values[10]); if (unlikely((__pyx_v_eps_days == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1351, __pyx_L3_error)
     } else {
       __pyx_v_eps_days = __pyx_mstate_global->__pyx_k__7;
     }
   }
   goto __pyx_L6_skip;
   __pyx_L5_argtuple_error:;
-  __Pyx_RaiseArgtupleInvalid("search_longitude_transits_raw", 0, 4, 11, __pyx_nargs); __PYX_ERR(0, 1086, __pyx_L3_error)
+  __Pyx_RaiseArgtupleInvalid("search_longitude_transits_raw", 0, 4, 11, __pyx_nargs); __PYX_ERR(0, 1340, __pyx_L3_error)
   __pyx_L6_skip:;
   goto __pyx_L4_argument_unpacking_done;
   __pyx_L3_error:;
@@ -14303,7 +15663,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   __pyx_L4_argument_unpacking_done:;
   __pyx_r = __pyx_pf_5aries_9astrology_12transit_fast_15_transit_kernel_6search_longitude_transits_raw(__pyx_self, __pyx_v_planet, __pyx_v_jd_start, __pyx_v_jd_end, __pyx_v_targets_deg, __pyx_v_ephe_path, __pyx_v_flags, __pyx_v_sidereal_mode, __pyx_v_topocentric_position, __pyx_v_step_days, __pyx_v_eps_deg, __pyx_v_eps_days);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1086
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1340
  *
  *
  * cpdef list search_longitude_transits_raw(             # <<<<<<<<<<<<<<
@@ -14337,7 +15697,7 @@ static PyObject *__pyx_pf_5aries_9astrology_12transit_fast_15_transit_kernel_6se
   __pyx_t_2.step_days = __pyx_v_step_days;
   __pyx_t_2.eps_deg = __pyx_v_eps_deg;
   __pyx_t_2.eps_days = __pyx_v_eps_days;
-  __pyx_t_1 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_search_longitude_transits_raw(__pyx_v_planet, __pyx_v_jd_start, __pyx_v_jd_end, __pyx_v_targets_deg, 1, &__pyx_t_2); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1086, __pyx_L1_error)
+  __pyx_t_1 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_search_longitude_transits_raw(__pyx_v_planet, __pyx_v_jd_start, __pyx_v_jd_end, __pyx_v_targets_deg, 1, &__pyx_t_2); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1340, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
   __pyx_r = __pyx_t_1;
   __pyx_t_1 = 0;
@@ -14354,7 +15714,7 @@ static PyObject *__pyx_pf_5aries_9astrology_12transit_fast_15_transit_kernel_6se
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":1139
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":1393
  *
  *
  * cpdef list search_longitude_transits_batch_raw(             # <<<<<<<<<<<<<<
@@ -14371,7 +15731,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 ); /*proto*/
 static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_search_longitude_transits_batch_raw(PyObject *__pyx_v_planets, double __pyx_v_jd_start, double __pyx_v_jd_end, PyObject *__pyx_v_targets_deg, CYTHON_UNUSED int __pyx_skip_dispatch, struct __pyx_opt_args_5aries_9astrology_12transit_fast_15_transit_kernel_search_longitude_transits_batch_raw *__pyx_optional_args) {
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1144
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1398
  * 	double jd_end,
  * 	object targets_deg,
  * 	object ephe_path=None,             # <<<<<<<<<<<<<<
@@ -14381,7 +15741,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
   PyObject *__pyx_v_ephe_path = ((PyObject *)Py_None);
   int __pyx_v_flags = ((int)0);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1146
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1400
  * 	object ephe_path=None,
  * 	int flags=0,
  * 	object sidereal_mode=None,             # <<<<<<<<<<<<<<
@@ -14390,7 +15750,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   PyObject *__pyx_v_sidereal_mode = ((PyObject *)Py_None);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1147
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1401
  * 	int flags=0,
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,             # <<<<<<<<<<<<<<
@@ -14399,7 +15759,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   PyObject *__pyx_v_topocentric_position = ((PyObject *)Py_None);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1148
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1402
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,
  * 	object step_days=None,             # <<<<<<<<<<<<<<
@@ -14475,7 +15835,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
   }
   __Pyx_INCREF(__pyx_v_planets);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1152
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1406
  * 	double eps_days=DEFAULT_EPS_DAYS,
  * ):
  * 	cdef CHit* hits = NULL             # <<<<<<<<<<<<<<
@@ -14484,7 +15844,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   __pyx_v_hits = NULL;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1153
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1407
  * ):
  * 	cdef CHit* hits = NULL
  * 	cdef size_t count = 0             # <<<<<<<<<<<<<<
@@ -14493,7 +15853,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   __pyx_v_count = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1154
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1408
  * 	cdef CHit* hits = NULL
  * 	cdef size_t count = 0
  * 	cdef size_t capacity = 0             # <<<<<<<<<<<<<<
@@ -14502,7 +15862,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   __pyx_v_capacity = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1156
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1410
  * 	cdef size_t capacity = 0
  * 	cdef int planet
  * 	cdef double* unique_targets = NULL             # <<<<<<<<<<<<<<
@@ -14511,7 +15871,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   __pyx_v_unique_targets = NULL;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1157
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1411
  * 	cdef int planet
  * 	cdef double* unique_targets = NULL
  * 	cdef size_t target_count = 0             # <<<<<<<<<<<<<<
@@ -14520,7 +15880,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   __pyx_v_target_count = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1158
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1412
  * 	cdef double* unique_targets = NULL
  * 	cdef size_t target_count = 0
  * 	cdef bint lock_held = False             # <<<<<<<<<<<<<<
@@ -14529,7 +15889,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   __pyx_v_lock_held = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1162
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1416
  * 	cdef double slice_start
  * 	cdef double slice_end
  * 	try:             # <<<<<<<<<<<<<<
@@ -14538,46 +15898,46 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   /*try:*/ {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1163
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1417
  * 	cdef double slice_end
  * 	try:
  * 		_validate_scan_bounds(jd_start, jd_end)             # <<<<<<<<<<<<<<
  * 		_validate_positive_double(eps_deg, "eps_deg")
  * 		_validate_positive_double(eps_days, "eps_days")
 */
-    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_scan_bounds(__pyx_v_jd_start, __pyx_v_jd_end); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1163, __pyx_L4_error)
+    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_scan_bounds(__pyx_v_jd_start, __pyx_v_jd_end); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1417, __pyx_L4_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1164
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1418
  * 	try:
  * 		_validate_scan_bounds(jd_start, jd_end)
  * 		_validate_positive_double(eps_deg, "eps_deg")             # <<<<<<<<<<<<<<
  * 		_validate_positive_double(eps_days, "eps_days")
  * 		planets = list(planets)
 */
-    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_eps_deg, __pyx_mstate_global->__pyx_n_u_eps_deg); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1164, __pyx_L4_error)
+    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_eps_deg, __pyx_mstate_global->__pyx_n_u_eps_deg); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1418, __pyx_L4_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1165
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1419
  * 		_validate_scan_bounds(jd_start, jd_end)
  * 		_validate_positive_double(eps_deg, "eps_deg")
  * 		_validate_positive_double(eps_days, "eps_days")             # <<<<<<<<<<<<<<
  * 		planets = list(planets)
  * 		for planet in planets:
 */
-    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_eps_days, __pyx_mstate_global->__pyx_n_u_eps_days); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1165, __pyx_L4_error)
+    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_eps_days, __pyx_mstate_global->__pyx_n_u_eps_days); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1419, __pyx_L4_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1166
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1420
  * 		_validate_positive_double(eps_deg, "eps_deg")
  * 		_validate_positive_double(eps_days, "eps_days")
  * 		planets = list(planets)             # <<<<<<<<<<<<<<
  * 		for planet in planets:
  * 			base_step = float(default_step_days_for_planet(planet) if step_days is None else step_days)
 */
-    __pyx_t_1 = PySequence_List(__pyx_v_planets); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1166, __pyx_L4_error)
+    __pyx_t_1 = PySequence_List(__pyx_v_planets); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1420, __pyx_L4_error)
     __Pyx_GOTREF(__pyx_t_1);
     __Pyx_DECREF_SET(__pyx_v_planets, __pyx_t_1);
     __pyx_t_1 = 0;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1167
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1421
  * 		_validate_positive_double(eps_days, "eps_days")
  * 		planets = list(planets)
  * 		for planet in planets:             # <<<<<<<<<<<<<<
@@ -14589,9 +15949,9 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_2 = 0;
       __pyx_t_3 = NULL;
     } else {
-      __pyx_t_2 = -1; __pyx_t_1 = PyObject_GetIter(__pyx_v_planets); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1167, __pyx_L4_error)
+      __pyx_t_2 = -1; __pyx_t_1 = PyObject_GetIter(__pyx_v_planets); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1421, __pyx_L4_error)
       __Pyx_GOTREF(__pyx_t_1);
-      __pyx_t_3 = (CYTHON_COMPILING_IN_LIMITED_API) ? PyIter_Next : __Pyx_PyObject_GetIterNextFunc(__pyx_t_1); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1167, __pyx_L4_error)
+      __pyx_t_3 = (CYTHON_COMPILING_IN_LIMITED_API) ? PyIter_Next : __Pyx_PyObject_GetIterNextFunc(__pyx_t_1); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1421, __pyx_L4_error)
     }
     for (;;) {
       if (likely(!__pyx_t_3)) {
@@ -14599,7 +15959,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
           {
             Py_ssize_t __pyx_temp = __Pyx_PyList_GET_SIZE(__pyx_t_1);
             #if !CYTHON_ASSUME_SAFE_SIZE
-            if (unlikely((__pyx_temp < 0))) __PYX_ERR(0, 1167, __pyx_L4_error)
+            if (unlikely((__pyx_temp < 0))) __PYX_ERR(0, 1421, __pyx_L4_error)
             #endif
             if (__pyx_t_2 >= __pyx_temp) break;
           }
@@ -14609,7 +15969,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
           {
             Py_ssize_t __pyx_temp = __Pyx_PyTuple_GET_SIZE(__pyx_t_1);
             #if !CYTHON_ASSUME_SAFE_SIZE
-            if (unlikely((__pyx_temp < 0))) __PYX_ERR(0, 1167, __pyx_L4_error)
+            if (unlikely((__pyx_temp < 0))) __PYX_ERR(0, 1421, __pyx_L4_error)
             #endif
             if (__pyx_t_2 >= __pyx_temp) break;
           }
@@ -14620,24 +15980,24 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
           #endif
           ++__pyx_t_2;
         }
-        if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1167, __pyx_L4_error)
+        if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1421, __pyx_L4_error)
       } else {
         __pyx_t_4 = __pyx_t_3(__pyx_t_1);
         if (unlikely(!__pyx_t_4)) {
           PyObject* exc_type = PyErr_Occurred();
           if (exc_type) {
-            if (unlikely(!__Pyx_PyErr_GivenExceptionMatches(exc_type, PyExc_StopIteration))) __PYX_ERR(0, 1167, __pyx_L4_error)
+            if (unlikely(!__Pyx_PyErr_GivenExceptionMatches(exc_type, PyExc_StopIteration))) __PYX_ERR(0, 1421, __pyx_L4_error)
             PyErr_Clear();
           }
           break;
         }
       }
       __Pyx_GOTREF(__pyx_t_4);
-      __pyx_t_5 = __Pyx_PyLong_As_int(__pyx_t_4); if (unlikely((__pyx_t_5 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 1167, __pyx_L4_error)
+      __pyx_t_5 = __Pyx_PyLong_As_int(__pyx_t_4); if (unlikely((__pyx_t_5 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 1421, __pyx_L4_error)
       __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
       __pyx_v_planet = __pyx_t_5;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1168
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1422
  * 		planets = list(planets)
  * 		for planet in planets:
  * 			base_step = float(default_step_days_for_planet(planet) if step_days is None else step_days)             # <<<<<<<<<<<<<<
@@ -14647,9 +16007,9 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_6 = (__pyx_v_step_days == Py_None);
       if (__pyx_t_6) {
         __pyx_t_8 = NULL;
-        __Pyx_GetModuleGlobalName(__pyx_t_9, __pyx_mstate_global->__pyx_n_u_default_step_days_for_planet); if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 1168, __pyx_L4_error)
+        __Pyx_GetModuleGlobalName(__pyx_t_9, __pyx_mstate_global->__pyx_n_u_default_step_days_for_planet); if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 1422, __pyx_L4_error)
         __Pyx_GOTREF(__pyx_t_9);
-        __pyx_t_10 = __Pyx_PyLong_From_int(__pyx_v_planet); if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 1168, __pyx_L4_error)
+        __pyx_t_10 = __Pyx_PyLong_From_int(__pyx_v_planet); if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 1422, __pyx_L4_error)
         __Pyx_GOTREF(__pyx_t_10);
         __pyx_t_11 = 1;
         #if CYTHON_UNPACK_METHODS
@@ -14669,7 +16029,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
           __Pyx_XDECREF(__pyx_t_8); __pyx_t_8 = 0;
           __Pyx_DECREF(__pyx_t_10); __pyx_t_10 = 0;
           __Pyx_DECREF(__pyx_t_9); __pyx_t_9 = 0;
-          if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 1168, __pyx_L4_error)
+          if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 1422, __pyx_L4_error)
           __Pyx_GOTREF(__pyx_t_7);
         }
         __pyx_t_4 = __pyx_t_7;
@@ -14678,20 +16038,20 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
         __Pyx_INCREF(__pyx_v_step_days);
         __pyx_t_4 = __pyx_v_step_days;
       }
-      __pyx_t_12 = __Pyx_PyObject_AsDouble(__pyx_t_4); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_12, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 1168, __pyx_L4_error)
+      __pyx_t_12 = __Pyx_PyObject_AsDouble(__pyx_t_4); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_12, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 1422, __pyx_L4_error)
       __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
       __pyx_v_base_step = __pyx_t_12;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1169
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1423
  * 		for planet in planets:
  * 			base_step = float(default_step_days_for_planet(planet) if step_days is None else step_days)
  * 			_validate_positive_double(base_step, "step_days")             # <<<<<<<<<<<<<<
  * 		_prepare_targets_c(targets_deg, &unique_targets, &target_count)
  * 		if target_count == 0 or not planets:
 */
-      __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_base_step, __pyx_mstate_global->__pyx_n_u_step_days); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1169, __pyx_L4_error)
+      __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_base_step, __pyx_mstate_global->__pyx_n_u_step_days); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1423, __pyx_L4_error)
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1167
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1421
  * 		_validate_positive_double(eps_days, "eps_days")
  * 		planets = list(planets)
  * 		for planet in planets:             # <<<<<<<<<<<<<<
@@ -14701,16 +16061,16 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
     }
     __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1170
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1424
  * 			base_step = float(default_step_days_for_planet(planet) if step_days is None else step_days)
  * 			_validate_positive_double(base_step, "step_days")
  * 		_prepare_targets_c(targets_deg, &unique_targets, &target_count)             # <<<<<<<<<<<<<<
  * 		if target_count == 0 or not planets:
  * 			return []
 */
-    __pyx_t_5 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_targets_c(__pyx_v_targets_deg, (&__pyx_v_unique_targets), (&__pyx_v_target_count)); if (unlikely(__pyx_t_5 == ((int)-1))) __PYX_ERR(0, 1170, __pyx_L4_error)
+    __pyx_t_5 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__prepare_targets_c(__pyx_v_targets_deg, (&__pyx_v_unique_targets), (&__pyx_v_target_count)); if (unlikely(__pyx_t_5 == ((int)-1))) __PYX_ERR(0, 1424, __pyx_L4_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1171
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1425
  * 			_validate_positive_double(base_step, "step_days")
  * 		_prepare_targets_c(targets_deg, &unique_targets, &target_count)
  * 		if target_count == 0 or not planets:             # <<<<<<<<<<<<<<
@@ -14723,13 +16083,13 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_6 = __pyx_t_13;
       goto __pyx_L10_bool_binop_done;
     }
-    __pyx_t_13 = __Pyx_PyObject_IsTrue(__pyx_v_planets); if (unlikely((__pyx_t_13 < 0))) __PYX_ERR(0, 1171, __pyx_L4_error)
+    __pyx_t_13 = __Pyx_PyObject_IsTrue(__pyx_v_planets); if (unlikely((__pyx_t_13 < 0))) __PYX_ERR(0, 1425, __pyx_L4_error)
     __pyx_t_14 = (!__pyx_t_13);
     __pyx_t_6 = __pyx_t_14;
     __pyx_L10_bool_binop_done:;
     if (__pyx_t_6) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1172
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1426
  * 		_prepare_targets_c(targets_deg, &unique_targets, &target_count)
  * 		if target_count == 0 or not planets:
  * 			return []             # <<<<<<<<<<<<<<
@@ -14737,13 +16097,13 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
  * 		while slice_start < jd_end:
 */
       __Pyx_XDECREF(__pyx_r);
-      __pyx_t_1 = PyList_New(0); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1172, __pyx_L4_error)
+      __pyx_t_1 = PyList_New(0); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1426, __pyx_L4_error)
       __Pyx_GOTREF(__pyx_t_1);
       __pyx_r = ((PyObject*)__pyx_t_1);
       __pyx_t_1 = 0;
       goto __pyx_L3_return;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1171
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1425
  * 			_validate_positive_double(base_step, "step_days")
  * 		_prepare_targets_c(targets_deg, &unique_targets, &target_count)
  * 		if target_count == 0 or not planets:             # <<<<<<<<<<<<<<
@@ -14752,7 +16112,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1173
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1427
  * 		if target_count == 0 or not planets:
  * 			return []
  * 		slice_start = jd_start             # <<<<<<<<<<<<<<
@@ -14761,7 +16121,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
     __pyx_v_slice_start = __pyx_v_jd_start;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1174
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1428
  * 			return []
  * 		slice_start = jd_start
  * 		while slice_start < jd_end:             # <<<<<<<<<<<<<<
@@ -14772,7 +16132,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_6 = (__pyx_v_slice_start < __pyx_v_jd_end);
       if (!__pyx_t_6) break;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1175
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1429
  * 		slice_start = jd_start
  * 		while slice_start < jd_end:
  * 			slice_end = min(jd_end, slice_start + _MAX_NATIVE_LOCK_SPAN_DAYS)             # <<<<<<<<<<<<<<
@@ -14789,7 +16149,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       }
       __pyx_v_slice_end = __pyx_t_16;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1176
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1430
  * 		while slice_start < jd_end:
  * 			slice_end = min(jd_end, slice_start + _MAX_NATIVE_LOCK_SPAN_DAYS)
  * 			for planet in planets:             # <<<<<<<<<<<<<<
@@ -14801,9 +16161,9 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
         __pyx_t_2 = 0;
         __pyx_t_3 = NULL;
       } else {
-        __pyx_t_2 = -1; __pyx_t_1 = PyObject_GetIter(__pyx_v_planets); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1176, __pyx_L4_error)
+        __pyx_t_2 = -1; __pyx_t_1 = PyObject_GetIter(__pyx_v_planets); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1430, __pyx_L4_error)
         __Pyx_GOTREF(__pyx_t_1);
-        __pyx_t_3 = (CYTHON_COMPILING_IN_LIMITED_API) ? PyIter_Next : __Pyx_PyObject_GetIterNextFunc(__pyx_t_1); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1176, __pyx_L4_error)
+        __pyx_t_3 = (CYTHON_COMPILING_IN_LIMITED_API) ? PyIter_Next : __Pyx_PyObject_GetIterNextFunc(__pyx_t_1); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1430, __pyx_L4_error)
       }
       for (;;) {
         if (likely(!__pyx_t_3)) {
@@ -14811,7 +16171,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             {
               Py_ssize_t __pyx_temp = __Pyx_PyList_GET_SIZE(__pyx_t_1);
               #if !CYTHON_ASSUME_SAFE_SIZE
-              if (unlikely((__pyx_temp < 0))) __PYX_ERR(0, 1176, __pyx_L4_error)
+              if (unlikely((__pyx_temp < 0))) __PYX_ERR(0, 1430, __pyx_L4_error)
               #endif
               if (__pyx_t_2 >= __pyx_temp) break;
             }
@@ -14821,7 +16181,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             {
               Py_ssize_t __pyx_temp = __Pyx_PyTuple_GET_SIZE(__pyx_t_1);
               #if !CYTHON_ASSUME_SAFE_SIZE
-              if (unlikely((__pyx_temp < 0))) __PYX_ERR(0, 1176, __pyx_L4_error)
+              if (unlikely((__pyx_temp < 0))) __PYX_ERR(0, 1430, __pyx_L4_error)
               #endif
               if (__pyx_t_2 >= __pyx_temp) break;
             }
@@ -14832,24 +16192,24 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             #endif
             ++__pyx_t_2;
           }
-          if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1176, __pyx_L4_error)
+          if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1430, __pyx_L4_error)
         } else {
           __pyx_t_4 = __pyx_t_3(__pyx_t_1);
           if (unlikely(!__pyx_t_4)) {
             PyObject* exc_type = PyErr_Occurred();
             if (exc_type) {
-              if (unlikely(!__Pyx_PyErr_GivenExceptionMatches(exc_type, PyExc_StopIteration))) __PYX_ERR(0, 1176, __pyx_L4_error)
+              if (unlikely(!__Pyx_PyErr_GivenExceptionMatches(exc_type, PyExc_StopIteration))) __PYX_ERR(0, 1430, __pyx_L4_error)
               PyErr_Clear();
             }
             break;
           }
         }
         __Pyx_GOTREF(__pyx_t_4);
-        __pyx_t_5 = __Pyx_PyLong_As_int(__pyx_t_4); if (unlikely((__pyx_t_5 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 1176, __pyx_L4_error)
+        __pyx_t_5 = __Pyx_PyLong_As_int(__pyx_t_4); if (unlikely((__pyx_t_5 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 1430, __pyx_L4_error)
         __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
         __pyx_v_planet = __pyx_t_5;
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1177
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1431
  * 			slice_end = min(jd_end, slice_start + _MAX_NATIVE_LOCK_SPAN_DAYS)
  * 			for planet in planets:
  * 				base_step = float(default_step_days_for_planet(planet) if step_days is None else step_days)             # <<<<<<<<<<<<<<
@@ -14859,9 +16219,9 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
         __pyx_t_6 = (__pyx_v_step_days == Py_None);
         if (__pyx_t_6) {
           __pyx_t_9 = NULL;
-          __Pyx_GetModuleGlobalName(__pyx_t_10, __pyx_mstate_global->__pyx_n_u_default_step_days_for_planet); if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 1177, __pyx_L4_error)
+          __Pyx_GetModuleGlobalName(__pyx_t_10, __pyx_mstate_global->__pyx_n_u_default_step_days_for_planet); if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 1431, __pyx_L4_error)
           __Pyx_GOTREF(__pyx_t_10);
-          __pyx_t_8 = __Pyx_PyLong_From_int(__pyx_v_planet); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 1177, __pyx_L4_error)
+          __pyx_t_8 = __Pyx_PyLong_From_int(__pyx_v_planet); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 1431, __pyx_L4_error)
           __Pyx_GOTREF(__pyx_t_8);
           __pyx_t_11 = 1;
           #if CYTHON_UNPACK_METHODS
@@ -14881,7 +16241,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             __Pyx_XDECREF(__pyx_t_9); __pyx_t_9 = 0;
             __Pyx_DECREF(__pyx_t_8); __pyx_t_8 = 0;
             __Pyx_DECREF(__pyx_t_10); __pyx_t_10 = 0;
-            if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 1177, __pyx_L4_error)
+            if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 1431, __pyx_L4_error)
             __Pyx_GOTREF(__pyx_t_7);
           }
           __pyx_t_4 = __pyx_t_7;
@@ -14890,11 +16250,11 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
           __Pyx_INCREF(__pyx_v_step_days);
           __pyx_t_4 = __pyx_v_step_days;
         }
-        __pyx_t_16 = __Pyx_PyObject_AsDouble(__pyx_t_4); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_16, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 1177, __pyx_L4_error)
+        __pyx_t_16 = __Pyx_PyObject_AsDouble(__pyx_t_4); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_16, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 1431, __pyx_L4_error)
         __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
         __pyx_v_base_step = __pyx_t_16;
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1178
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1432
  * 			for planet in planets:
  * 				base_step = float(default_step_days_for_planet(planet) if step_days is None else step_days)
  * 				with nogil:             # <<<<<<<<<<<<<<
@@ -14907,7 +16267,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             __Pyx_FastGIL_Remember();
             /*try:*/ {
 
-              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1179
+              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1433
  * 				base_step = float(default_step_days_for_planet(planet) if step_days is None else step_days)
  * 				with nogil:
  * 					_acquire_native_swe_lock()             # <<<<<<<<<<<<<<
@@ -14917,7 +16277,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
               __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__acquire_native_swe_lock();
             }
 
-            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1178
+            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1432
  * 			for planet in planets:
  * 				base_step = float(default_step_days_for_planet(planet) if step_days is None else step_days)
  * 				with nogil:             # <<<<<<<<<<<<<<
@@ -14934,7 +16294,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             }
         }
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1180
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1434
  * 				with nogil:
  * 					_acquire_native_swe_lock()
  * 				lock_held = True             # <<<<<<<<<<<<<<
@@ -14943,16 +16303,16 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         __pyx_v_lock_held = 1;
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1181
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1435
  * 					_acquire_native_swe_lock()
  * 				lock_held = True
  * 				_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position)             # <<<<<<<<<<<<<<
  * 				with nogil:
  * 					_search_longitude_transits_prepared_into_c(int(planet), slice_start, slice_end, unique_targets, target_count, flags, base_step, eps_deg, eps_days, &hits, &count, &capacity)
 */
-        __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configure_ephemeris_context(__pyx_v_ephe_path, __pyx_v_flags, __pyx_v_sidereal_mode, __pyx_v_topocentric_position); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1181, __pyx_L4_error)
+        __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configure_ephemeris_context(__pyx_v_ephe_path, __pyx_v_flags, __pyx_v_sidereal_mode, __pyx_v_topocentric_position); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1435, __pyx_L4_error)
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1182
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1436
  * 				lock_held = True
  * 				_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position)
  * 				with nogil:             # <<<<<<<<<<<<<<
@@ -14965,16 +16325,16 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             __Pyx_FastGIL_Remember();
             /*try:*/ {
 
-              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1183
+              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1437
  * 				_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position)
  * 				with nogil:
  * 					_search_longitude_transits_prepared_into_c(int(planet), slice_start, slice_end, unique_targets, target_count, flags, base_step, eps_deg, eps_days, &hits, &count, &capacity)             # <<<<<<<<<<<<<<
  * 					_release_native_swe_lock()
  * 				lock_held = False
 */
-              __pyx_t_5 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_longitude_transits_prepared_into_c(__pyx_v_planet, __pyx_v_slice_start, __pyx_v_slice_end, __pyx_v_unique_targets, __pyx_v_target_count, __pyx_v_flags, __pyx_v_base_step, __pyx_v_eps_deg, __pyx_v_eps_days, (&__pyx_v_hits), (&__pyx_v_count), (&__pyx_v_capacity)); if (unlikely(__pyx_t_5 == ((int)-1))) __PYX_ERR(0, 1183, __pyx_L24_error)
+              __pyx_t_5 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_longitude_transits_prepared_into_c(__pyx_v_planet, __pyx_v_slice_start, __pyx_v_slice_end, __pyx_v_unique_targets, __pyx_v_target_count, __pyx_v_flags, __pyx_v_base_step, __pyx_v_eps_deg, __pyx_v_eps_days, (&__pyx_v_hits), (&__pyx_v_count), (&__pyx_v_capacity)); if (unlikely(__pyx_t_5 == ((int)-1))) __PYX_ERR(0, 1437, __pyx_L24_error)
 
-              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1184
+              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1438
  * 				with nogil:
  * 					_search_longitude_transits_prepared_into_c(int(planet), slice_start, slice_end, unique_targets, target_count, flags, base_step, eps_deg, eps_days, &hits, &count, &capacity)
  * 					_release_native_swe_lock()             # <<<<<<<<<<<<<<
@@ -14984,7 +16344,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
               __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__release_native_swe_lock();
             }
 
-            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1182
+            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1436
  * 				lock_held = True
  * 				_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position)
  * 				with nogil:             # <<<<<<<<<<<<<<
@@ -15006,7 +16366,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             }
         }
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1185
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1439
  * 					_search_longitude_transits_prepared_into_c(int(planet), slice_start, slice_end, unique_targets, target_count, flags, base_step, eps_deg, eps_days, &hits, &count, &capacity)
  * 					_release_native_swe_lock()
  * 				lock_held = False             # <<<<<<<<<<<<<<
@@ -15015,7 +16375,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         __pyx_v_lock_held = 0;
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1176
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1430
  * 		while slice_start < jd_end:
  * 			slice_end = min(jd_end, slice_start + _MAX_NATIVE_LOCK_SPAN_DAYS)
  * 			for planet in planets:             # <<<<<<<<<<<<<<
@@ -15025,7 +16385,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       }
       __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1186
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1440
  * 					_release_native_swe_lock()
  * 				lock_held = False
  * 			slice_start = slice_end             # <<<<<<<<<<<<<<
@@ -15035,7 +16395,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_v_slice_start = __pyx_v_slice_end;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1187
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1441
  * 				lock_held = False
  * 			slice_start = slice_end
  * 		return _hits_to_python(hits, count)             # <<<<<<<<<<<<<<
@@ -15043,14 +16403,14 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
  * 		if lock_held:
 */
     __Pyx_XDECREF(__pyx_r);
-    __pyx_t_1 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__hits_to_python(__pyx_v_hits, __pyx_v_count); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1187, __pyx_L4_error)
+    __pyx_t_1 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__hits_to_python(__pyx_v_hits, __pyx_v_count); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1441, __pyx_L4_error)
     __Pyx_GOTREF(__pyx_t_1);
     __pyx_r = ((PyObject*)__pyx_t_1);
     __pyx_t_1 = 0;
     goto __pyx_L3_return;
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1189
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1443
  * 		return _hits_to_python(hits, count)
  * 	finally:
  * 		if lock_held:             # <<<<<<<<<<<<<<
@@ -15081,7 +16441,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       {
         if (__pyx_v_lock_held) {
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1190
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1444
  * 	finally:
  * 		if lock_held:
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -15094,7 +16454,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
               __Pyx_FastGIL_Remember();
               /*try:*/ {
 
-                /* "aries/astrology/transit_fast/_transit_kernel.pyx":1191
+                /* "aries/astrology/transit_fast/_transit_kernel.pyx":1445
  * 		if lock_held:
  * 			with nogil:
  * 				_release_native_swe_lock()             # <<<<<<<<<<<<<<
@@ -15104,7 +16464,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
                 __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__release_native_swe_lock();
               }
 
-              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1190
+              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1444
  * 	finally:
  * 		if lock_held:
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -15121,7 +16481,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
               }
           }
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1189
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1443
  * 		return _hits_to_python(hits, count)
  * 	finally:
  * 		if lock_held:             # <<<<<<<<<<<<<<
@@ -15130,7 +16490,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         }
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1192
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1446
  * 			with nogil:
  * 				_release_native_swe_lock()
  * 		if hits != NULL:             # <<<<<<<<<<<<<<
@@ -15140,7 +16500,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
         __pyx_t_6 = (__pyx_v_hits != NULL);
         if (__pyx_t_6) {
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1193
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1447
  * 				_release_native_swe_lock()
  * 		if hits != NULL:
  * 			free(hits)             # <<<<<<<<<<<<<<
@@ -15149,7 +16509,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
           free(__pyx_v_hits);
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1192
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1446
  * 			with nogil:
  * 				_release_native_swe_lock()
  * 		if hits != NULL:             # <<<<<<<<<<<<<<
@@ -15158,7 +16518,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         }
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1194
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1448
  * 		if hits != NULL:
  * 			free(hits)
  * 		if unique_targets != NULL:             # <<<<<<<<<<<<<<
@@ -15168,7 +16528,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
         __pyx_t_6 = (__pyx_v_unique_targets != NULL);
         if (__pyx_t_6) {
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1195
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1449
  * 			free(hits)
  * 		if unique_targets != NULL:
  * 			free(unique_targets)             # <<<<<<<<<<<<<<
@@ -15177,7 +16537,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
           free(__pyx_v_unique_targets);
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1194
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1448
  * 		if hits != NULL:
  * 			free(hits)
  * 		if unique_targets != NULL:             # <<<<<<<<<<<<<<
@@ -15202,7 +16562,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_25 = __pyx_r;
       __pyx_r = 0;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1189
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1443
  * 		return _hits_to_python(hits, count)
  * 	finally:
  * 		if lock_held:             # <<<<<<<<<<<<<<
@@ -15211,7 +16571,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
       if (__pyx_v_lock_held) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1190
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1444
  * 	finally:
  * 		if lock_held:
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -15224,7 +16584,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             __Pyx_FastGIL_Remember();
             /*try:*/ {
 
-              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1191
+              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1445
  * 		if lock_held:
  * 			with nogil:
  * 				_release_native_swe_lock()             # <<<<<<<<<<<<<<
@@ -15234,7 +16594,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
               __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__release_native_swe_lock();
             }
 
-            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1190
+            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1444
  * 	finally:
  * 		if lock_held:
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -15251,7 +16611,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             }
         }
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1189
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1443
  * 		return _hits_to_python(hits, count)
  * 	finally:
  * 		if lock_held:             # <<<<<<<<<<<<<<
@@ -15260,7 +16620,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1192
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1446
  * 			with nogil:
  * 				_release_native_swe_lock()
  * 		if hits != NULL:             # <<<<<<<<<<<<<<
@@ -15270,7 +16630,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_6 = (__pyx_v_hits != NULL);
       if (__pyx_t_6) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1193
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1447
  * 				_release_native_swe_lock()
  * 		if hits != NULL:
  * 			free(hits)             # <<<<<<<<<<<<<<
@@ -15279,7 +16639,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         free(__pyx_v_hits);
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1192
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1446
  * 			with nogil:
  * 				_release_native_swe_lock()
  * 		if hits != NULL:             # <<<<<<<<<<<<<<
@@ -15288,7 +16648,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1194
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1448
  * 		if hits != NULL:
  * 			free(hits)
  * 		if unique_targets != NULL:             # <<<<<<<<<<<<<<
@@ -15298,7 +16658,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_6 = (__pyx_v_unique_targets != NULL);
       if (__pyx_t_6) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1195
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1449
  * 			free(hits)
  * 		if unique_targets != NULL:
  * 			free(unique_targets)             # <<<<<<<<<<<<<<
@@ -15307,7 +16667,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         free(__pyx_v_unique_targets);
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1194
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1448
  * 		if hits != NULL:
  * 			free(hits)
  * 		if unique_targets != NULL:             # <<<<<<<<<<<<<<
@@ -15321,7 +16681,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
     }
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1139
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1393
  *
  *
  * cpdef list search_longitude_transits_batch_raw(             # <<<<<<<<<<<<<<
@@ -15395,60 +16755,60 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   {
     PyObject ** const __pyx_pyargnames[] = {&__pyx_mstate_global->__pyx_n_u_planets,&__pyx_mstate_global->__pyx_n_u_jd_start,&__pyx_mstate_global->__pyx_n_u_jd_end,&__pyx_mstate_global->__pyx_n_u_targets_deg,&__pyx_mstate_global->__pyx_n_u_ephe_path,&__pyx_mstate_global->__pyx_n_u_flags,&__pyx_mstate_global->__pyx_n_u_sidereal_mode,&__pyx_mstate_global->__pyx_n_u_topocentric_position,&__pyx_mstate_global->__pyx_n_u_step_days,&__pyx_mstate_global->__pyx_n_u_eps_deg,&__pyx_mstate_global->__pyx_n_u_eps_days,0};
     const Py_ssize_t __pyx_kwds_len = (__pyx_kwds) ? __Pyx_NumKwargs_FASTCALL(__pyx_kwds) : 0;
-    if (unlikely(__pyx_kwds_len) < 0) __PYX_ERR(0, 1139, __pyx_L3_error)
+    if (unlikely(__pyx_kwds_len) < 0) __PYX_ERR(0, 1393, __pyx_L3_error)
     if (__pyx_kwds_len > 0) {
       switch (__pyx_nargs) {
         case 11:
         values[10] = __Pyx_ArgRef_FASTCALL(__pyx_args, 10);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[10])) __PYX_ERR(0, 1139, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[10])) __PYX_ERR(0, 1393, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case 10:
         values[9] = __Pyx_ArgRef_FASTCALL(__pyx_args, 9);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[9])) __PYX_ERR(0, 1139, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[9])) __PYX_ERR(0, 1393, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  9:
         values[8] = __Pyx_ArgRef_FASTCALL(__pyx_args, 8);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[8])) __PYX_ERR(0, 1139, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[8])) __PYX_ERR(0, 1393, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  8:
         values[7] = __Pyx_ArgRef_FASTCALL(__pyx_args, 7);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[7])) __PYX_ERR(0, 1139, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[7])) __PYX_ERR(0, 1393, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  7:
         values[6] = __Pyx_ArgRef_FASTCALL(__pyx_args, 6);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[6])) __PYX_ERR(0, 1139, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[6])) __PYX_ERR(0, 1393, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  6:
         values[5] = __Pyx_ArgRef_FASTCALL(__pyx_args, 5);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[5])) __PYX_ERR(0, 1139, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[5])) __PYX_ERR(0, 1393, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  5:
         values[4] = __Pyx_ArgRef_FASTCALL(__pyx_args, 4);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[4])) __PYX_ERR(0, 1139, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[4])) __PYX_ERR(0, 1393, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  4:
         values[3] = __Pyx_ArgRef_FASTCALL(__pyx_args, 3);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[3])) __PYX_ERR(0, 1139, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[3])) __PYX_ERR(0, 1393, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  3:
         values[2] = __Pyx_ArgRef_FASTCALL(__pyx_args, 2);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[2])) __PYX_ERR(0, 1139, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[2])) __PYX_ERR(0, 1393, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  2:
         values[1] = __Pyx_ArgRef_FASTCALL(__pyx_args, 1);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[1])) __PYX_ERR(0, 1139, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[1])) __PYX_ERR(0, 1393, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  1:
         values[0] = __Pyx_ArgRef_FASTCALL(__pyx_args, 0);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 1139, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 1393, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  0: break;
         default: goto __pyx_L5_argtuple_error;
       }
       const Py_ssize_t kwd_pos_args = __pyx_nargs;
-      if (__Pyx_ParseKeywords(__pyx_kwds, __pyx_kwvalues, __pyx_pyargnames, 0, values, kwd_pos_args, __pyx_kwds_len, "search_longitude_transits_batch_raw", 0) < (0)) __PYX_ERR(0, 1139, __pyx_L3_error)
+      if (__Pyx_ParseKeywords(__pyx_kwds, __pyx_kwvalues, __pyx_pyargnames, 0, values, kwd_pos_args, __pyx_kwds_len, "search_longitude_transits_batch_raw", 0) < (0)) __PYX_ERR(0, 1393, __pyx_L3_error)
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1144
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1398
  * 	double jd_end,
  * 	object targets_deg,
  * 	object ephe_path=None,             # <<<<<<<<<<<<<<
@@ -15457,7 +16817,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[4]) values[4] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1146
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1400
  * 	object ephe_path=None,
  * 	int flags=0,
  * 	object sidereal_mode=None,             # <<<<<<<<<<<<<<
@@ -15466,7 +16826,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[6]) values[6] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1147
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1401
  * 	int flags=0,
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,             # <<<<<<<<<<<<<<
@@ -15475,7 +16835,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[7]) values[7] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1148
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1402
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,
  * 	object step_days=None,             # <<<<<<<<<<<<<<
@@ -15484,52 +16844,52 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[8]) values[8] = __Pyx_NewRef(((PyObject *)Py_None));
       for (Py_ssize_t i = __pyx_nargs; i < 4; i++) {
-        if (unlikely(!values[i])) { __Pyx_RaiseArgtupleInvalid("search_longitude_transits_batch_raw", 0, 4, 11, i); __PYX_ERR(0, 1139, __pyx_L3_error) }
+        if (unlikely(!values[i])) { __Pyx_RaiseArgtupleInvalid("search_longitude_transits_batch_raw", 0, 4, 11, i); __PYX_ERR(0, 1393, __pyx_L3_error) }
       }
     } else {
       switch (__pyx_nargs) {
         case 11:
         values[10] = __Pyx_ArgRef_FASTCALL(__pyx_args, 10);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[10])) __PYX_ERR(0, 1139, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[10])) __PYX_ERR(0, 1393, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case 10:
         values[9] = __Pyx_ArgRef_FASTCALL(__pyx_args, 9);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[9])) __PYX_ERR(0, 1139, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[9])) __PYX_ERR(0, 1393, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  9:
         values[8] = __Pyx_ArgRef_FASTCALL(__pyx_args, 8);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[8])) __PYX_ERR(0, 1139, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[8])) __PYX_ERR(0, 1393, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  8:
         values[7] = __Pyx_ArgRef_FASTCALL(__pyx_args, 7);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[7])) __PYX_ERR(0, 1139, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[7])) __PYX_ERR(0, 1393, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  7:
         values[6] = __Pyx_ArgRef_FASTCALL(__pyx_args, 6);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[6])) __PYX_ERR(0, 1139, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[6])) __PYX_ERR(0, 1393, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  6:
         values[5] = __Pyx_ArgRef_FASTCALL(__pyx_args, 5);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[5])) __PYX_ERR(0, 1139, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[5])) __PYX_ERR(0, 1393, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  5:
         values[4] = __Pyx_ArgRef_FASTCALL(__pyx_args, 4);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[4])) __PYX_ERR(0, 1139, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[4])) __PYX_ERR(0, 1393, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  4:
         values[3] = __Pyx_ArgRef_FASTCALL(__pyx_args, 3);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[3])) __PYX_ERR(0, 1139, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[3])) __PYX_ERR(0, 1393, __pyx_L3_error)
         values[2] = __Pyx_ArgRef_FASTCALL(__pyx_args, 2);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[2])) __PYX_ERR(0, 1139, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[2])) __PYX_ERR(0, 1393, __pyx_L3_error)
         values[1] = __Pyx_ArgRef_FASTCALL(__pyx_args, 1);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[1])) __PYX_ERR(0, 1139, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[1])) __PYX_ERR(0, 1393, __pyx_L3_error)
         values[0] = __Pyx_ArgRef_FASTCALL(__pyx_args, 0);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 1139, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 1393, __pyx_L3_error)
         break;
         default: goto __pyx_L5_argtuple_error;
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1144
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1398
  * 	double jd_end,
  * 	object targets_deg,
  * 	object ephe_path=None,             # <<<<<<<<<<<<<<
@@ -15538,7 +16898,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[4]) values[4] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1146
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1400
  * 	object ephe_path=None,
  * 	int flags=0,
  * 	object sidereal_mode=None,             # <<<<<<<<<<<<<<
@@ -15547,7 +16907,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[6]) values[6] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1147
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1401
  * 	int flags=0,
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,             # <<<<<<<<<<<<<<
@@ -15556,7 +16916,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[7]) values[7] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1148
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1402
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,
  * 	object step_days=None,             # <<<<<<<<<<<<<<
@@ -15566,12 +16926,12 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
       if (!values[8]) values[8] = __Pyx_NewRef(((PyObject *)Py_None));
     }
     __pyx_v_planets = values[0];
-    __pyx_v_jd_start = __Pyx_PyFloat_AsDouble(values[1]); if (unlikely((__pyx_v_jd_start == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1141, __pyx_L3_error)
-    __pyx_v_jd_end = __Pyx_PyFloat_AsDouble(values[2]); if (unlikely((__pyx_v_jd_end == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1142, __pyx_L3_error)
+    __pyx_v_jd_start = __Pyx_PyFloat_AsDouble(values[1]); if (unlikely((__pyx_v_jd_start == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1395, __pyx_L3_error)
+    __pyx_v_jd_end = __Pyx_PyFloat_AsDouble(values[2]); if (unlikely((__pyx_v_jd_end == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1396, __pyx_L3_error)
     __pyx_v_targets_deg = values[3];
     __pyx_v_ephe_path = values[4];
     if (values[5]) {
-      __pyx_v_flags = __Pyx_PyLong_As_int(values[5]); if (unlikely((__pyx_v_flags == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 1145, __pyx_L3_error)
+      __pyx_v_flags = __Pyx_PyLong_As_int(values[5]); if (unlikely((__pyx_v_flags == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 1399, __pyx_L3_error)
     } else {
       __pyx_v_flags = ((int)0);
     }
@@ -15579,19 +16939,19 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
     __pyx_v_topocentric_position = values[7];
     __pyx_v_step_days = values[8];
     if (values[9]) {
-      __pyx_v_eps_deg = __Pyx_PyFloat_AsDouble(values[9]); if (unlikely((__pyx_v_eps_deg == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1149, __pyx_L3_error)
+      __pyx_v_eps_deg = __Pyx_PyFloat_AsDouble(values[9]); if (unlikely((__pyx_v_eps_deg == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1403, __pyx_L3_error)
     } else {
       __pyx_v_eps_deg = __pyx_mstate_global->__pyx_k__8;
     }
     if (values[10]) {
-      __pyx_v_eps_days = __Pyx_PyFloat_AsDouble(values[10]); if (unlikely((__pyx_v_eps_days == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1150, __pyx_L3_error)
+      __pyx_v_eps_days = __Pyx_PyFloat_AsDouble(values[10]); if (unlikely((__pyx_v_eps_days == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1404, __pyx_L3_error)
     } else {
       __pyx_v_eps_days = __pyx_mstate_global->__pyx_k__9;
     }
   }
   goto __pyx_L6_skip;
   __pyx_L5_argtuple_error:;
-  __Pyx_RaiseArgtupleInvalid("search_longitude_transits_batch_raw", 0, 4, 11, __pyx_nargs); __PYX_ERR(0, 1139, __pyx_L3_error)
+  __Pyx_RaiseArgtupleInvalid("search_longitude_transits_batch_raw", 0, 4, 11, __pyx_nargs); __PYX_ERR(0, 1393, __pyx_L3_error)
   __pyx_L6_skip:;
   goto __pyx_L4_argument_unpacking_done;
   __pyx_L3_error:;
@@ -15604,7 +16964,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   __pyx_L4_argument_unpacking_done:;
   __pyx_r = __pyx_pf_5aries_9astrology_12transit_fast_15_transit_kernel_8search_longitude_transits_batch_raw(__pyx_self, __pyx_v_planets, __pyx_v_jd_start, __pyx_v_jd_end, __pyx_v_targets_deg, __pyx_v_ephe_path, __pyx_v_flags, __pyx_v_sidereal_mode, __pyx_v_topocentric_position, __pyx_v_step_days, __pyx_v_eps_deg, __pyx_v_eps_days);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1139
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1393
  *
  *
  * cpdef list search_longitude_transits_batch_raw(             # <<<<<<<<<<<<<<
@@ -15638,7 +16998,7 @@ static PyObject *__pyx_pf_5aries_9astrology_12transit_fast_15_transit_kernel_8se
   __pyx_t_2.step_days = __pyx_v_step_days;
   __pyx_t_2.eps_deg = __pyx_v_eps_deg;
   __pyx_t_2.eps_days = __pyx_v_eps_days;
-  __pyx_t_1 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_search_longitude_transits_batch_raw(__pyx_v_planets, __pyx_v_jd_start, __pyx_v_jd_end, __pyx_v_targets_deg, 1, &__pyx_t_2); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1139, __pyx_L1_error)
+  __pyx_t_1 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_search_longitude_transits_batch_raw(__pyx_v_planets, __pyx_v_jd_start, __pyx_v_jd_end, __pyx_v_targets_deg, 1, &__pyx_t_2); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1393, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
   __pyx_r = __pyx_t_1;
   __pyx_t_1 = 0;
@@ -15655,7 +17015,7 @@ static PyObject *__pyx_pf_5aries_9astrology_12transit_fast_15_transit_kernel_8se
   return __pyx_r;
 }
 
-/* "aries/astrology/transit_fast/_transit_kernel.pyx":1198
+/* "aries/astrology/transit_fast/_transit_kernel.pyx":1452
  *
  *
  * cpdef list search_relative_aspects_batch_raw(             # <<<<<<<<<<<<<<
@@ -15672,7 +17032,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 ); /*proto*/
 static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_search_relative_aspects_batch_raw(PyObject *__pyx_v_body_codes, double __pyx_v_jd_start, double __pyx_v_jd_end, PyObject *__pyx_v_specs, CYTHON_UNUSED int __pyx_skip_dispatch, struct __pyx_opt_args_5aries_9astrology_12transit_fast_15_transit_kernel_search_relative_aspects_batch_raw *__pyx_optional_args) {
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1203
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1457
  * 	double jd_end,
  * 	object specs,
  * 	object ephe_path=None,             # <<<<<<<<<<<<<<
@@ -15682,7 +17042,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
   PyObject *__pyx_v_ephe_path = ((PyObject *)Py_None);
   int __pyx_v_flags = ((int)0);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1205
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1459
  * 	object ephe_path=None,
  * 	int flags=0,
  * 	object sidereal_mode=None,             # <<<<<<<<<<<<<<
@@ -15691,7 +17051,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   PyObject *__pyx_v_sidereal_mode = ((PyObject *)Py_None);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1206
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1460
  * 	int flags=0,
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,             # <<<<<<<<<<<<<<
@@ -15700,7 +17060,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   PyObject *__pyx_v_topocentric_position = ((PyObject *)Py_None);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1207
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1461
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,
  * 	object step_days=None,             # <<<<<<<<<<<<<<
@@ -15719,14 +17079,25 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
   int *__pyx_v_body_code_arr;
   int *__pyx_v_prom_indices;
   int *__pyx_v_sig_indices;
+  int *__pyx_v_pair_slots;
+  int *__pyx_v_turn_status;
   double *__pyx_v_spec_offsets;
   double *__pyx_v_lon0;
   double *__pyx_v_lon1;
   double *__pyx_v_speed0;
   double *__pyx_v_speed1;
+  double *__pyx_v_turn_jd;
+  double *__pyx_v_turn_prom_lon;
+  double *__pyx_v_turn_prom_speed;
+  double *__pyx_v_turn_sig_lon;
+  double *__pyx_v_turn_sig_speed;
   Py_ssize_t __pyx_v_i;
+  Py_ssize_t __pyx_v_pair_count;
   int __pyx_v_prom_idx;
   int __pyx_v_sig_idx;
+  int __pyx_v_pair_slot;
+  PyObject *__pyx_v_pair_slot_by_indices = 0;
+  PyObject *__pyx_v_pair_key = 0;
   int __pyx_v_lock_held;
   double __pyx_v_slice_start;
   double __pyx_v_slice_end;
@@ -15783,7 +17154,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
     }
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1211
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1465
  * 	double eps_days=DEFAULT_EPS_DAYS,
  * ):
  * 	cdef CHit* hits = NULL             # <<<<<<<<<<<<<<
@@ -15792,7 +17163,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   __pyx_v_hits = NULL;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1212
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1466
  * ):
  * 	cdef CHit* hits = NULL
  * 	cdef size_t count = 0             # <<<<<<<<<<<<<<
@@ -15801,7 +17172,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   __pyx_v_count = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1213
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1467
  * 	cdef CHit* hits = NULL
  * 	cdef size_t count = 0
  * 	cdef size_t capacity = 0             # <<<<<<<<<<<<<<
@@ -15810,7 +17181,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   __pyx_v_capacity = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1214
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1468
  * 	cdef size_t count = 0
  * 	cdef size_t capacity = 0
  * 	cdef double base_step = float(default_relative_step_days_for_bodies(body_codes, specs) if step_days is None else step_days)             # <<<<<<<<<<<<<<
@@ -15820,7 +17191,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
   __pyx_t_2 = (__pyx_v_step_days == Py_None);
   if (__pyx_t_2) {
     __pyx_t_4 = NULL;
-    __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_default_relative_step_days_for_b); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1214, __pyx_L1_error)
+    __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_default_relative_step_days_for_b); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1468, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_5);
     __pyx_t_6 = 1;
     #if CYTHON_UNPACK_METHODS
@@ -15839,7 +17210,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_3 = __Pyx_PyObject_FastCall((PyObject*)__pyx_t_5, __pyx_callargs+__pyx_t_6, (3-__pyx_t_6) | (__pyx_t_6*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
       __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
       __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-      if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1214, __pyx_L1_error)
+      if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1468, __pyx_L1_error)
       __Pyx_GOTREF(__pyx_t_3);
     }
     __pyx_t_1 = __pyx_t_3;
@@ -15848,31 +17219,31 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
     __Pyx_INCREF(__pyx_v_step_days);
     __pyx_t_1 = __pyx_v_step_days;
   }
-  __pyx_t_7 = __Pyx_PyObject_AsDouble(__pyx_t_1); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_7, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 1214, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_PyObject_AsDouble(__pyx_t_1); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_7, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 1468, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
   __pyx_v_base_step = __pyx_t_7;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1215
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1469
  * 	cdef size_t capacity = 0
  * 	cdef double base_step = float(default_relative_step_days_for_bodies(body_codes, specs) if step_days is None else step_days)
  * 	cdef Py_ssize_t body_count = len(body_codes)             # <<<<<<<<<<<<<<
  * 	cdef Py_ssize_t spec_count = len(specs)
  * 	cdef int* body_code_arr = NULL
 */
-  __pyx_t_8 = PyObject_Length(__pyx_v_body_codes); if (unlikely(__pyx_t_8 == ((Py_ssize_t)-1))) __PYX_ERR(0, 1215, __pyx_L1_error)
+  __pyx_t_8 = PyObject_Length(__pyx_v_body_codes); if (unlikely(__pyx_t_8 == ((Py_ssize_t)-1))) __PYX_ERR(0, 1469, __pyx_L1_error)
   __pyx_v_body_count = __pyx_t_8;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1216
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1470
  * 	cdef double base_step = float(default_relative_step_days_for_bodies(body_codes, specs) if step_days is None else step_days)
  * 	cdef Py_ssize_t body_count = len(body_codes)
  * 	cdef Py_ssize_t spec_count = len(specs)             # <<<<<<<<<<<<<<
  * 	cdef int* body_code_arr = NULL
  * 	cdef int* prom_indices = NULL
 */
-  __pyx_t_8 = PyObject_Length(__pyx_v_specs); if (unlikely(__pyx_t_8 == ((Py_ssize_t)-1))) __PYX_ERR(0, 1216, __pyx_L1_error)
+  __pyx_t_8 = PyObject_Length(__pyx_v_specs); if (unlikely(__pyx_t_8 == ((Py_ssize_t)-1))) __PYX_ERR(0, 1470, __pyx_L1_error)
   __pyx_v_spec_count = __pyx_t_8;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1217
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1471
  * 	cdef Py_ssize_t body_count = len(body_codes)
  * 	cdef Py_ssize_t spec_count = len(specs)
  * 	cdef int* body_code_arr = NULL             # <<<<<<<<<<<<<<
@@ -15881,35 +17252,53 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   __pyx_v_body_code_arr = NULL;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1218
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1472
  * 	cdef Py_ssize_t spec_count = len(specs)
  * 	cdef int* body_code_arr = NULL
  * 	cdef int* prom_indices = NULL             # <<<<<<<<<<<<<<
  * 	cdef int* sig_indices = NULL
- * 	cdef double* spec_offsets = NULL
+ * 	cdef int* pair_slots = NULL
 */
   __pyx_v_prom_indices = NULL;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1219
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1473
  * 	cdef int* body_code_arr = NULL
  * 	cdef int* prom_indices = NULL
  * 	cdef int* sig_indices = NULL             # <<<<<<<<<<<<<<
- * 	cdef double* spec_offsets = NULL
- * 	cdef double* lon0 = NULL
+ * 	cdef int* pair_slots = NULL
+ * 	cdef int* turn_status = NULL
 */
   __pyx_v_sig_indices = NULL;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1220
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1474
  * 	cdef int* prom_indices = NULL
  * 	cdef int* sig_indices = NULL
+ * 	cdef int* pair_slots = NULL             # <<<<<<<<<<<<<<
+ * 	cdef int* turn_status = NULL
+ * 	cdef double* spec_offsets = NULL
+*/
+  __pyx_v_pair_slots = NULL;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1475
+ * 	cdef int* sig_indices = NULL
+ * 	cdef int* pair_slots = NULL
+ * 	cdef int* turn_status = NULL             # <<<<<<<<<<<<<<
+ * 	cdef double* spec_offsets = NULL
+ * 	cdef double* lon0 = NULL
+*/
+  __pyx_v_turn_status = NULL;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1476
+ * 	cdef int* pair_slots = NULL
+ * 	cdef int* turn_status = NULL
  * 	cdef double* spec_offsets = NULL             # <<<<<<<<<<<<<<
  * 	cdef double* lon0 = NULL
  * 	cdef double* lon1 = NULL
 */
   __pyx_v_spec_offsets = NULL;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1221
- * 	cdef int* sig_indices = NULL
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1477
+ * 	cdef int* turn_status = NULL
  * 	cdef double* spec_offsets = NULL
  * 	cdef double* lon0 = NULL             # <<<<<<<<<<<<<<
  * 	cdef double* lon1 = NULL
@@ -15917,7 +17306,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   __pyx_v_lon0 = NULL;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1222
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1478
  * 	cdef double* spec_offsets = NULL
  * 	cdef double* lon0 = NULL
  * 	cdef double* lon1 = NULL             # <<<<<<<<<<<<<<
@@ -15926,34 +17315,100 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   __pyx_v_lon1 = NULL;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1223
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1479
  * 	cdef double* lon0 = NULL
  * 	cdef double* lon1 = NULL
  * 	cdef double* speed0 = NULL             # <<<<<<<<<<<<<<
  * 	cdef double* speed1 = NULL
- * 	cdef Py_ssize_t i
+ * 	cdef double* turn_jd = NULL
 */
   __pyx_v_speed0 = NULL;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1224
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1480
  * 	cdef double* lon1 = NULL
  * 	cdef double* speed0 = NULL
  * 	cdef double* speed1 = NULL             # <<<<<<<<<<<<<<
- * 	cdef Py_ssize_t i
- * 	cdef int prom_idx
+ * 	cdef double* turn_jd = NULL
+ * 	cdef double* turn_prom_lon = NULL
 */
   __pyx_v_speed1 = NULL;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1228
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1481
+ * 	cdef double* speed0 = NULL
+ * 	cdef double* speed1 = NULL
+ * 	cdef double* turn_jd = NULL             # <<<<<<<<<<<<<<
+ * 	cdef double* turn_prom_lon = NULL
+ * 	cdef double* turn_prom_speed = NULL
+*/
+  __pyx_v_turn_jd = NULL;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1482
+ * 	cdef double* speed1 = NULL
+ * 	cdef double* turn_jd = NULL
+ * 	cdef double* turn_prom_lon = NULL             # <<<<<<<<<<<<<<
+ * 	cdef double* turn_prom_speed = NULL
+ * 	cdef double* turn_sig_lon = NULL
+*/
+  __pyx_v_turn_prom_lon = NULL;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1483
+ * 	cdef double* turn_jd = NULL
+ * 	cdef double* turn_prom_lon = NULL
+ * 	cdef double* turn_prom_speed = NULL             # <<<<<<<<<<<<<<
+ * 	cdef double* turn_sig_lon = NULL
+ * 	cdef double* turn_sig_speed = NULL
+*/
+  __pyx_v_turn_prom_speed = NULL;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1484
+ * 	cdef double* turn_prom_lon = NULL
+ * 	cdef double* turn_prom_speed = NULL
+ * 	cdef double* turn_sig_lon = NULL             # <<<<<<<<<<<<<<
+ * 	cdef double* turn_sig_speed = NULL
+ * 	cdef Py_ssize_t i
+*/
+  __pyx_v_turn_sig_lon = NULL;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1485
+ * 	cdef double* turn_prom_speed = NULL
+ * 	cdef double* turn_sig_lon = NULL
+ * 	cdef double* turn_sig_speed = NULL             # <<<<<<<<<<<<<<
+ * 	cdef Py_ssize_t i
+ * 	cdef Py_ssize_t pair_count = 0
+*/
+  __pyx_v_turn_sig_speed = NULL;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1487
+ * 	cdef double* turn_sig_speed = NULL
+ * 	cdef Py_ssize_t i
+ * 	cdef Py_ssize_t pair_count = 0             # <<<<<<<<<<<<<<
  * 	cdef int prom_idx
  * 	cdef int sig_idx
+*/
+  __pyx_v_pair_count = 0;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1491
+ * 	cdef int sig_idx
+ * 	cdef int pair_slot
+ * 	cdef dict pair_slot_by_indices = {}             # <<<<<<<<<<<<<<
+ * 	cdef object pair_key
+ * 	cdef bint lock_held = False
+*/
+  __pyx_t_1 = __Pyx_PyDict_NewPresized(0); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1491, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_1);
+  __pyx_v_pair_slot_by_indices = ((PyObject*)__pyx_t_1);
+  __pyx_t_1 = 0;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1493
+ * 	cdef dict pair_slot_by_indices = {}
+ * 	cdef object pair_key
  * 	cdef bint lock_held = False             # <<<<<<<<<<<<<<
  * 	cdef double slice_start
  * 	cdef double slice_end
 */
   __pyx_v_lock_held = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1231
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1496
  * 	cdef double slice_start
  * 	cdef double slice_end
  * 	try:             # <<<<<<<<<<<<<<
@@ -15962,43 +17417,43 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
   /*try:*/ {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1232
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1497
  * 	cdef double slice_end
  * 	try:
  * 		_validate_scan_bounds(jd_start, jd_end)             # <<<<<<<<<<<<<<
  * 		_validate_positive_double(base_step, "step_days")
  * 		_validate_positive_double(eps_deg, "eps_deg")
 */
-    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_scan_bounds(__pyx_v_jd_start, __pyx_v_jd_end); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1232, __pyx_L4_error)
+    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_scan_bounds(__pyx_v_jd_start, __pyx_v_jd_end); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1497, __pyx_L4_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1233
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1498
  * 	try:
  * 		_validate_scan_bounds(jd_start, jd_end)
  * 		_validate_positive_double(base_step, "step_days")             # <<<<<<<<<<<<<<
  * 		_validate_positive_double(eps_deg, "eps_deg")
  * 		_validate_positive_double(eps_days, "eps_days")
 */
-    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_base_step, __pyx_mstate_global->__pyx_n_u_step_days); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1233, __pyx_L4_error)
+    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_base_step, __pyx_mstate_global->__pyx_n_u_step_days); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1498, __pyx_L4_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1234
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1499
  * 		_validate_scan_bounds(jd_start, jd_end)
  * 		_validate_positive_double(base_step, "step_days")
  * 		_validate_positive_double(eps_deg, "eps_deg")             # <<<<<<<<<<<<<<
  * 		_validate_positive_double(eps_days, "eps_days")
  * 		if body_count == 0 or spec_count == 0:
 */
-    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_eps_deg, __pyx_mstate_global->__pyx_n_u_eps_deg); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1234, __pyx_L4_error)
+    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_eps_deg, __pyx_mstate_global->__pyx_n_u_eps_deg); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1499, __pyx_L4_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1235
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1500
  * 		_validate_positive_double(base_step, "step_days")
  * 		_validate_positive_double(eps_deg, "eps_deg")
  * 		_validate_positive_double(eps_days, "eps_days")             # <<<<<<<<<<<<<<
  * 		if body_count == 0 or spec_count == 0:
  * 			return []
 */
-    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_eps_days, __pyx_mstate_global->__pyx_n_u_eps_days); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1235, __pyx_L4_error)
+    __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__validate_positive_double(__pyx_v_eps_days, __pyx_mstate_global->__pyx_n_u_eps_days); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1500, __pyx_L4_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1236
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1501
  * 		_validate_positive_double(eps_deg, "eps_deg")
  * 		_validate_positive_double(eps_days, "eps_days")
  * 		if body_count == 0 or spec_count == 0:             # <<<<<<<<<<<<<<
@@ -16016,7 +17471,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
     __pyx_L7_bool_binop_done:;
     if (__pyx_t_2) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1237
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1502
  * 		_validate_positive_double(eps_days, "eps_days")
  * 		if body_count == 0 or spec_count == 0:
  * 			return []             # <<<<<<<<<<<<<<
@@ -16024,13 +17479,13 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
  * 		prom_indices = <int*>malloc(spec_count * cython.sizeof(int))
 */
       __Pyx_XDECREF(__pyx_r);
-      __pyx_t_1 = PyList_New(0); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1237, __pyx_L4_error)
+      __pyx_t_1 = PyList_New(0); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1502, __pyx_L4_error)
       __Pyx_GOTREF(__pyx_t_1);
       __pyx_r = ((PyObject*)__pyx_t_1);
       __pyx_t_1 = 0;
       goto __pyx_L3_return;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1236
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1501
  * 		_validate_positive_double(eps_deg, "eps_deg")
  * 		_validate_positive_double(eps_days, "eps_days")
  * 		if body_count == 0 or spec_count == 0:             # <<<<<<<<<<<<<<
@@ -16039,7 +17494,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1238
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1503
  * 		if body_count == 0 or spec_count == 0:
  * 			return []
  * 		body_code_arr = <int*>malloc(body_count * cython.sizeof(int))             # <<<<<<<<<<<<<<
@@ -16048,35 +17503,53 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
     __pyx_v_body_code_arr = ((int *)malloc((__pyx_v_body_count * (sizeof(int)))));
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1239
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1504
  * 			return []
  * 		body_code_arr = <int*>malloc(body_count * cython.sizeof(int))
  * 		prom_indices = <int*>malloc(spec_count * cython.sizeof(int))             # <<<<<<<<<<<<<<
  * 		sig_indices = <int*>malloc(spec_count * cython.sizeof(int))
- * 		spec_offsets = <double*>malloc(spec_count * cython.sizeof(double))
+ * 		pair_slots = <int*>malloc(spec_count * cython.sizeof(int))
 */
     __pyx_v_prom_indices = ((int *)malloc((__pyx_v_spec_count * (sizeof(int)))));
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1240
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1505
  * 		body_code_arr = <int*>malloc(body_count * cython.sizeof(int))
  * 		prom_indices = <int*>malloc(spec_count * cython.sizeof(int))
  * 		sig_indices = <int*>malloc(spec_count * cython.sizeof(int))             # <<<<<<<<<<<<<<
- * 		spec_offsets = <double*>malloc(spec_count * cython.sizeof(double))
- * 		lon0 = <double*>malloc(body_count * cython.sizeof(double))
+ * 		pair_slots = <int*>malloc(spec_count * cython.sizeof(int))
+ * 		turn_status = <int*>malloc(spec_count * cython.sizeof(int))
 */
     __pyx_v_sig_indices = ((int *)malloc((__pyx_v_spec_count * (sizeof(int)))));
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1241
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1506
  * 		prom_indices = <int*>malloc(spec_count * cython.sizeof(int))
  * 		sig_indices = <int*>malloc(spec_count * cython.sizeof(int))
+ * 		pair_slots = <int*>malloc(spec_count * cython.sizeof(int))             # <<<<<<<<<<<<<<
+ * 		turn_status = <int*>malloc(spec_count * cython.sizeof(int))
+ * 		spec_offsets = <double*>malloc(spec_count * cython.sizeof(double))
+*/
+    __pyx_v_pair_slots = ((int *)malloc((__pyx_v_spec_count * (sizeof(int)))));
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1507
+ * 		sig_indices = <int*>malloc(spec_count * cython.sizeof(int))
+ * 		pair_slots = <int*>malloc(spec_count * cython.sizeof(int))
+ * 		turn_status = <int*>malloc(spec_count * cython.sizeof(int))             # <<<<<<<<<<<<<<
+ * 		spec_offsets = <double*>malloc(spec_count * cython.sizeof(double))
+ * 		lon0 = <double*>malloc(body_count * cython.sizeof(double))
+*/
+    __pyx_v_turn_status = ((int *)malloc((__pyx_v_spec_count * (sizeof(int)))));
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1508
+ * 		pair_slots = <int*>malloc(spec_count * cython.sizeof(int))
+ * 		turn_status = <int*>malloc(spec_count * cython.sizeof(int))
  * 		spec_offsets = <double*>malloc(spec_count * cython.sizeof(double))             # <<<<<<<<<<<<<<
  * 		lon0 = <double*>malloc(body_count * cython.sizeof(double))
  * 		lon1 = <double*>malloc(body_count * cython.sizeof(double))
 */
     __pyx_v_spec_offsets = ((double *)malloc((__pyx_v_spec_count * (sizeof(double)))));
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1242
- * 		sig_indices = <int*>malloc(spec_count * cython.sizeof(int))
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1509
+ * 		turn_status = <int*>malloc(spec_count * cython.sizeof(int))
  * 		spec_offsets = <double*>malloc(spec_count * cython.sizeof(double))
  * 		lon0 = <double*>malloc(body_count * cython.sizeof(double))             # <<<<<<<<<<<<<<
  * 		lon1 = <double*>malloc(body_count * cython.sizeof(double))
@@ -16084,7 +17557,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
     __pyx_v_lon0 = ((double *)malloc((__pyx_v_body_count * (sizeof(double)))));
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1243
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1510
  * 		spec_offsets = <double*>malloc(spec_count * cython.sizeof(double))
  * 		lon0 = <double*>malloc(body_count * cython.sizeof(double))
  * 		lon1 = <double*>malloc(body_count * cython.sizeof(double))             # <<<<<<<<<<<<<<
@@ -16093,26 +17566,71 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
     __pyx_v_lon1 = ((double *)malloc((__pyx_v_body_count * (sizeof(double)))));
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1244
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1511
  * 		lon0 = <double*>malloc(body_count * cython.sizeof(double))
  * 		lon1 = <double*>malloc(body_count * cython.sizeof(double))
  * 		speed0 = <double*>malloc(body_count * cython.sizeof(double))             # <<<<<<<<<<<<<<
  * 		speed1 = <double*>malloc(body_count * cython.sizeof(double))
- * 		if (
+ * 		turn_jd = <double*>malloc(spec_count * cython.sizeof(double))
 */
     __pyx_v_speed0 = ((double *)malloc((__pyx_v_body_count * (sizeof(double)))));
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1245
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1512
  * 		lon1 = <double*>malloc(body_count * cython.sizeof(double))
  * 		speed0 = <double*>malloc(body_count * cython.sizeof(double))
  * 		speed1 = <double*>malloc(body_count * cython.sizeof(double))             # <<<<<<<<<<<<<<
- * 		if (
- * 			body_code_arr == NULL
+ * 		turn_jd = <double*>malloc(spec_count * cython.sizeof(double))
+ * 		turn_prom_lon = <double*>malloc(spec_count * cython.sizeof(double))
 */
     __pyx_v_speed1 = ((double *)malloc((__pyx_v_body_count * (sizeof(double)))));
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1247
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1513
+ * 		speed0 = <double*>malloc(body_count * cython.sizeof(double))
  * 		speed1 = <double*>malloc(body_count * cython.sizeof(double))
+ * 		turn_jd = <double*>malloc(spec_count * cython.sizeof(double))             # <<<<<<<<<<<<<<
+ * 		turn_prom_lon = <double*>malloc(spec_count * cython.sizeof(double))
+ * 		turn_prom_speed = <double*>malloc(spec_count * cython.sizeof(double))
+*/
+    __pyx_v_turn_jd = ((double *)malloc((__pyx_v_spec_count * (sizeof(double)))));
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1514
+ * 		speed1 = <double*>malloc(body_count * cython.sizeof(double))
+ * 		turn_jd = <double*>malloc(spec_count * cython.sizeof(double))
+ * 		turn_prom_lon = <double*>malloc(spec_count * cython.sizeof(double))             # <<<<<<<<<<<<<<
+ * 		turn_prom_speed = <double*>malloc(spec_count * cython.sizeof(double))
+ * 		turn_sig_lon = <double*>malloc(spec_count * cython.sizeof(double))
+*/
+    __pyx_v_turn_prom_lon = ((double *)malloc((__pyx_v_spec_count * (sizeof(double)))));
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1515
+ * 		turn_jd = <double*>malloc(spec_count * cython.sizeof(double))
+ * 		turn_prom_lon = <double*>malloc(spec_count * cython.sizeof(double))
+ * 		turn_prom_speed = <double*>malloc(spec_count * cython.sizeof(double))             # <<<<<<<<<<<<<<
+ * 		turn_sig_lon = <double*>malloc(spec_count * cython.sizeof(double))
+ * 		turn_sig_speed = <double*>malloc(spec_count * cython.sizeof(double))
+*/
+    __pyx_v_turn_prom_speed = ((double *)malloc((__pyx_v_spec_count * (sizeof(double)))));
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1516
+ * 		turn_prom_lon = <double*>malloc(spec_count * cython.sizeof(double))
+ * 		turn_prom_speed = <double*>malloc(spec_count * cython.sizeof(double))
+ * 		turn_sig_lon = <double*>malloc(spec_count * cython.sizeof(double))             # <<<<<<<<<<<<<<
+ * 		turn_sig_speed = <double*>malloc(spec_count * cython.sizeof(double))
+ * 		if (
+*/
+    __pyx_v_turn_sig_lon = ((double *)malloc((__pyx_v_spec_count * (sizeof(double)))));
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1517
+ * 		turn_prom_speed = <double*>malloc(spec_count * cython.sizeof(double))
+ * 		turn_sig_lon = <double*>malloc(spec_count * cython.sizeof(double))
+ * 		turn_sig_speed = <double*>malloc(spec_count * cython.sizeof(double))             # <<<<<<<<<<<<<<
+ * 		if (
+ * 			body_code_arr == NULL
+*/
+    __pyx_v_turn_sig_speed = ((double *)malloc((__pyx_v_spec_count * (sizeof(double)))));
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1519
+ * 		turn_sig_speed = <double*>malloc(spec_count * cython.sizeof(double))
  * 		if (
  * 			body_code_arr == NULL             # <<<<<<<<<<<<<<
  * 			or prom_indices == NULL
@@ -16125,12 +17643,12 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       goto __pyx_L10_bool_binop_done;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1248
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1520
  * 		if (
  * 			body_code_arr == NULL
  * 			or prom_indices == NULL             # <<<<<<<<<<<<<<
  * 			or sig_indices == NULL
- * 			or spec_offsets == NULL
+ * 			or pair_slots == NULL
 */
     __pyx_t_9 = (__pyx_v_prom_indices == NULL);
     if (!__pyx_t_9) {
@@ -16139,12 +17657,12 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       goto __pyx_L10_bool_binop_done;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1249
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1521
  * 			body_code_arr == NULL
  * 			or prom_indices == NULL
  * 			or sig_indices == NULL             # <<<<<<<<<<<<<<
- * 			or spec_offsets == NULL
- * 			or lon0 == NULL
+ * 			or pair_slots == NULL
+ * 			or turn_status == NULL
 */
     __pyx_t_9 = (__pyx_v_sig_indices == NULL);
     if (!__pyx_t_9) {
@@ -16153,9 +17671,37 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       goto __pyx_L10_bool_binop_done;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1250
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1522
  * 			or prom_indices == NULL
  * 			or sig_indices == NULL
+ * 			or pair_slots == NULL             # <<<<<<<<<<<<<<
+ * 			or turn_status == NULL
+ * 			or spec_offsets == NULL
+*/
+    __pyx_t_9 = (__pyx_v_pair_slots == NULL);
+    if (!__pyx_t_9) {
+    } else {
+      __pyx_t_2 = __pyx_t_9;
+      goto __pyx_L10_bool_binop_done;
+    }
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1523
+ * 			or sig_indices == NULL
+ * 			or pair_slots == NULL
+ * 			or turn_status == NULL             # <<<<<<<<<<<<<<
+ * 			or spec_offsets == NULL
+ * 			or lon0 == NULL
+*/
+    __pyx_t_9 = (__pyx_v_turn_status == NULL);
+    if (!__pyx_t_9) {
+    } else {
+      __pyx_t_2 = __pyx_t_9;
+      goto __pyx_L10_bool_binop_done;
+    }
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1524
+ * 			or pair_slots == NULL
+ * 			or turn_status == NULL
  * 			or spec_offsets == NULL             # <<<<<<<<<<<<<<
  * 			or lon0 == NULL
  * 			or lon1 == NULL
@@ -16167,8 +17713,8 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       goto __pyx_L10_bool_binop_done;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1251
- * 			or sig_indices == NULL
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1525
+ * 			or turn_status == NULL
  * 			or spec_offsets == NULL
  * 			or lon0 == NULL             # <<<<<<<<<<<<<<
  * 			or lon1 == NULL
@@ -16181,7 +17727,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       goto __pyx_L10_bool_binop_done;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1252
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1526
  * 			or spec_offsets == NULL
  * 			or lon0 == NULL
  * 			or lon1 == NULL             # <<<<<<<<<<<<<<
@@ -16195,12 +17741,12 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       goto __pyx_L10_bool_binop_done;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1253
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1527
  * 			or lon0 == NULL
  * 			or lon1 == NULL
  * 			or speed0 == NULL             # <<<<<<<<<<<<<<
  * 			or speed1 == NULL
- * 		):
+ * 			or turn_jd == NULL
 */
     __pyx_t_9 = (__pyx_v_speed0 == NULL);
     if (!__pyx_t_9) {
@@ -16209,58 +17755,128 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       goto __pyx_L10_bool_binop_done;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1254
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1528
  * 			or lon1 == NULL
  * 			or speed0 == NULL
  * 			or speed1 == NULL             # <<<<<<<<<<<<<<
- * 		):
- * 			raise MemoryError("Could not allocate weather state buffers")
+ * 			or turn_jd == NULL
+ * 			or turn_prom_lon == NULL
 */
     __pyx_t_9 = (__pyx_v_speed1 == NULL);
+    if (!__pyx_t_9) {
+    } else {
+      __pyx_t_2 = __pyx_t_9;
+      goto __pyx_L10_bool_binop_done;
+    }
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1529
+ * 			or speed0 == NULL
+ * 			or speed1 == NULL
+ * 			or turn_jd == NULL             # <<<<<<<<<<<<<<
+ * 			or turn_prom_lon == NULL
+ * 			or turn_prom_speed == NULL
+*/
+    __pyx_t_9 = (__pyx_v_turn_jd == NULL);
+    if (!__pyx_t_9) {
+    } else {
+      __pyx_t_2 = __pyx_t_9;
+      goto __pyx_L10_bool_binop_done;
+    }
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1530
+ * 			or speed1 == NULL
+ * 			or turn_jd == NULL
+ * 			or turn_prom_lon == NULL             # <<<<<<<<<<<<<<
+ * 			or turn_prom_speed == NULL
+ * 			or turn_sig_lon == NULL
+*/
+    __pyx_t_9 = (__pyx_v_turn_prom_lon == NULL);
+    if (!__pyx_t_9) {
+    } else {
+      __pyx_t_2 = __pyx_t_9;
+      goto __pyx_L10_bool_binop_done;
+    }
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1531
+ * 			or turn_jd == NULL
+ * 			or turn_prom_lon == NULL
+ * 			or turn_prom_speed == NULL             # <<<<<<<<<<<<<<
+ * 			or turn_sig_lon == NULL
+ * 			or turn_sig_speed == NULL
+*/
+    __pyx_t_9 = (__pyx_v_turn_prom_speed == NULL);
+    if (!__pyx_t_9) {
+    } else {
+      __pyx_t_2 = __pyx_t_9;
+      goto __pyx_L10_bool_binop_done;
+    }
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1532
+ * 			or turn_prom_lon == NULL
+ * 			or turn_prom_speed == NULL
+ * 			or turn_sig_lon == NULL             # <<<<<<<<<<<<<<
+ * 			or turn_sig_speed == NULL
+ * 		):
+*/
+    __pyx_t_9 = (__pyx_v_turn_sig_lon == NULL);
+    if (!__pyx_t_9) {
+    } else {
+      __pyx_t_2 = __pyx_t_9;
+      goto __pyx_L10_bool_binop_done;
+    }
+
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1533
+ * 			or turn_prom_speed == NULL
+ * 			or turn_sig_lon == NULL
+ * 			or turn_sig_speed == NULL             # <<<<<<<<<<<<<<
+ * 		):
+ * 			raise MemoryError("Could not allocate relative-aspect state buffers")
+*/
+    __pyx_t_9 = (__pyx_v_turn_sig_speed == NULL);
     __pyx_t_2 = __pyx_t_9;
     __pyx_L10_bool_binop_done:;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1246
- * 		speed0 = <double*>malloc(body_count * cython.sizeof(double))
- * 		speed1 = <double*>malloc(body_count * cython.sizeof(double))
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1518
+ * 		turn_sig_lon = <double*>malloc(spec_count * cython.sizeof(double))
+ * 		turn_sig_speed = <double*>malloc(spec_count * cython.sizeof(double))
  * 		if (             # <<<<<<<<<<<<<<
  * 			body_code_arr == NULL
  * 			or prom_indices == NULL
 */
     if (unlikely(__pyx_t_2)) {
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1256
- * 			or speed1 == NULL
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1535
+ * 			or turn_sig_speed == NULL
  * 		):
- * 			raise MemoryError("Could not allocate weather state buffers")             # <<<<<<<<<<<<<<
+ * 			raise MemoryError("Could not allocate relative-aspect state buffers")             # <<<<<<<<<<<<<<
  * 		for i in range(body_count):
  * 			body_code_arr[i] = int(body_codes[i])
 */
       __pyx_t_3 = NULL;
       __pyx_t_6 = 1;
       {
-        PyObject *__pyx_callargs[2] = {__pyx_t_3, __pyx_mstate_global->__pyx_kp_u_Could_not_allocate_weather_state};
+        PyObject *__pyx_callargs[2] = {__pyx_t_3, __pyx_mstate_global->__pyx_kp_u_Could_not_allocate_relative_aspe};
         __pyx_t_1 = __Pyx_PyObject_FastCall((PyObject*)(((PyTypeObject*)PyExc_MemoryError)), __pyx_callargs+__pyx_t_6, (2-__pyx_t_6) | (__pyx_t_6*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
         __Pyx_XDECREF(__pyx_t_3); __pyx_t_3 = 0;
-        if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1256, __pyx_L4_error)
+        if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1535, __pyx_L4_error)
         __Pyx_GOTREF(__pyx_t_1);
       }
       __Pyx_Raise(__pyx_t_1, 0, 0, 0);
       __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
-      __PYX_ERR(0, 1256, __pyx_L4_error)
+      __PYX_ERR(0, 1535, __pyx_L4_error)
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1246
- * 		speed0 = <double*>malloc(body_count * cython.sizeof(double))
- * 		speed1 = <double*>malloc(body_count * cython.sizeof(double))
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1518
+ * 		turn_sig_lon = <double*>malloc(spec_count * cython.sizeof(double))
+ * 		turn_sig_speed = <double*>malloc(spec_count * cython.sizeof(double))
  * 		if (             # <<<<<<<<<<<<<<
  * 			body_code_arr == NULL
  * 			or prom_indices == NULL
 */
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1257
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1536
  * 		):
- * 			raise MemoryError("Could not allocate weather state buffers")
+ * 			raise MemoryError("Could not allocate relative-aspect state buffers")
  * 		for i in range(body_count):             # <<<<<<<<<<<<<<
  * 			body_code_arr[i] = int(body_codes[i])
  * 		for i in range(spec_count):
@@ -16270,24 +17886,24 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
     for (__pyx_t_11 = 0; __pyx_t_11 < __pyx_t_10; __pyx_t_11+=1) {
       __pyx_v_i = __pyx_t_11;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1258
- * 			raise MemoryError("Could not allocate weather state buffers")
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1537
+ * 			raise MemoryError("Could not allocate relative-aspect state buffers")
  * 		for i in range(body_count):
  * 			body_code_arr[i] = int(body_codes[i])             # <<<<<<<<<<<<<<
  * 		for i in range(spec_count):
  * 			prom_idx = int(specs[i][0])
 */
-      __pyx_t_1 = __Pyx_GetItemInt(__pyx_v_body_codes, __pyx_v_i, Py_ssize_t, 1, PyLong_FromSsize_t, 0, 1, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1258, __pyx_L4_error)
+      __pyx_t_1 = __Pyx_GetItemInt(__pyx_v_body_codes, __pyx_v_i, Py_ssize_t, 1, PyLong_FromSsize_t, 0, 1, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1537, __pyx_L4_error)
       __Pyx_GOTREF(__pyx_t_1);
-      __pyx_t_3 = __Pyx_PyNumber_Int(__pyx_t_1); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1258, __pyx_L4_error)
+      __pyx_t_3 = __Pyx_PyNumber_Int(__pyx_t_1); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1537, __pyx_L4_error)
       __Pyx_GOTREF(__pyx_t_3);
       __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
-      __pyx_t_12 = __Pyx_PyLong_As_int(__pyx_t_3); if (unlikely((__pyx_t_12 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 1258, __pyx_L4_error)
+      __pyx_t_12 = __Pyx_PyLong_As_int(__pyx_t_3); if (unlikely((__pyx_t_12 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 1537, __pyx_L4_error)
       __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
       (__pyx_v_body_code_arr[__pyx_v_i]) = __pyx_t_12;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1259
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1538
  * 		for i in range(body_count):
  * 			body_code_arr[i] = int(body_codes[i])
  * 		for i in range(spec_count):             # <<<<<<<<<<<<<<
@@ -16299,45 +17915,45 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
     for (__pyx_t_11 = 0; __pyx_t_11 < __pyx_t_10; __pyx_t_11+=1) {
       __pyx_v_i = __pyx_t_11;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1260
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1539
  * 			body_code_arr[i] = int(body_codes[i])
  * 		for i in range(spec_count):
  * 			prom_idx = int(specs[i][0])             # <<<<<<<<<<<<<<
  * 			sig_idx = int(specs[i][1])
  * 			if prom_idx < 0 or prom_idx >= body_count:
 */
-      __pyx_t_3 = __Pyx_GetItemInt(__pyx_v_specs, __pyx_v_i, Py_ssize_t, 1, PyLong_FromSsize_t, 0, 1, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1260, __pyx_L4_error)
+      __pyx_t_3 = __Pyx_GetItemInt(__pyx_v_specs, __pyx_v_i, Py_ssize_t, 1, PyLong_FromSsize_t, 0, 1, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1539, __pyx_L4_error)
       __Pyx_GOTREF(__pyx_t_3);
-      __pyx_t_1 = __Pyx_GetItemInt(__pyx_t_3, 0, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_OwnStrongReference); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1260, __pyx_L4_error)
+      __pyx_t_1 = __Pyx_GetItemInt(__pyx_t_3, 0, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_OwnStrongReference); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1539, __pyx_L4_error)
       __Pyx_GOTREF(__pyx_t_1);
       __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
-      __pyx_t_3 = __Pyx_PyNumber_Int(__pyx_t_1); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1260, __pyx_L4_error)
+      __pyx_t_3 = __Pyx_PyNumber_Int(__pyx_t_1); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1539, __pyx_L4_error)
       __Pyx_GOTREF(__pyx_t_3);
       __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
-      __pyx_t_12 = __Pyx_PyLong_As_int(__pyx_t_3); if (unlikely((__pyx_t_12 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 1260, __pyx_L4_error)
+      __pyx_t_12 = __Pyx_PyLong_As_int(__pyx_t_3); if (unlikely((__pyx_t_12 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 1539, __pyx_L4_error)
       __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
       __pyx_v_prom_idx = __pyx_t_12;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1261
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1540
  * 		for i in range(spec_count):
  * 			prom_idx = int(specs[i][0])
  * 			sig_idx = int(specs[i][1])             # <<<<<<<<<<<<<<
  * 			if prom_idx < 0 or prom_idx >= body_count:
  * 				raise ValueError("relative-aspect promittor index is out of range")
 */
-      __pyx_t_3 = __Pyx_GetItemInt(__pyx_v_specs, __pyx_v_i, Py_ssize_t, 1, PyLong_FromSsize_t, 0, 1, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1261, __pyx_L4_error)
+      __pyx_t_3 = __Pyx_GetItemInt(__pyx_v_specs, __pyx_v_i, Py_ssize_t, 1, PyLong_FromSsize_t, 0, 1, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1540, __pyx_L4_error)
       __Pyx_GOTREF(__pyx_t_3);
-      __pyx_t_1 = __Pyx_GetItemInt(__pyx_t_3, 1, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_OwnStrongReference); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1261, __pyx_L4_error)
+      __pyx_t_1 = __Pyx_GetItemInt(__pyx_t_3, 1, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_OwnStrongReference); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1540, __pyx_L4_error)
       __Pyx_GOTREF(__pyx_t_1);
       __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
-      __pyx_t_3 = __Pyx_PyNumber_Int(__pyx_t_1); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1261, __pyx_L4_error)
+      __pyx_t_3 = __Pyx_PyNumber_Int(__pyx_t_1); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1540, __pyx_L4_error)
       __Pyx_GOTREF(__pyx_t_3);
       __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
-      __pyx_t_12 = __Pyx_PyLong_As_int(__pyx_t_3); if (unlikely((__pyx_t_12 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 1261, __pyx_L4_error)
+      __pyx_t_12 = __Pyx_PyLong_As_int(__pyx_t_3); if (unlikely((__pyx_t_12 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 1540, __pyx_L4_error)
       __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
       __pyx_v_sig_idx = __pyx_t_12;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1262
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1541
  * 			prom_idx = int(specs[i][0])
  * 			sig_idx = int(specs[i][1])
  * 			if prom_idx < 0 or prom_idx >= body_count:             # <<<<<<<<<<<<<<
@@ -16348,14 +17964,14 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       if (!__pyx_t_9) {
       } else {
         __pyx_t_2 = __pyx_t_9;
-        goto __pyx_L23_bool_binop_done;
+        goto __pyx_L30_bool_binop_done;
       }
       __pyx_t_9 = (__pyx_v_prom_idx >= __pyx_v_body_count);
       __pyx_t_2 = __pyx_t_9;
-      __pyx_L23_bool_binop_done:;
+      __pyx_L30_bool_binop_done:;
       if (unlikely(__pyx_t_2)) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1263
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1542
  * 			sig_idx = int(specs[i][1])
  * 			if prom_idx < 0 or prom_idx >= body_count:
  * 				raise ValueError("relative-aspect promittor index is out of range")             # <<<<<<<<<<<<<<
@@ -16368,14 +17984,14 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
           PyObject *__pyx_callargs[2] = {__pyx_t_1, __pyx_mstate_global->__pyx_kp_u_relative_aspect_promittor_index};
           __pyx_t_3 = __Pyx_PyObject_FastCall((PyObject*)(((PyTypeObject*)PyExc_ValueError)), __pyx_callargs+__pyx_t_6, (2-__pyx_t_6) | (__pyx_t_6*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
           __Pyx_XDECREF(__pyx_t_1); __pyx_t_1 = 0;
-          if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1263, __pyx_L4_error)
+          if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1542, __pyx_L4_error)
           __Pyx_GOTREF(__pyx_t_3);
         }
         __Pyx_Raise(__pyx_t_3, 0, 0, 0);
         __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
-        __PYX_ERR(0, 1263, __pyx_L4_error)
+        __PYX_ERR(0, 1542, __pyx_L4_error)
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1262
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1541
  * 			prom_idx = int(specs[i][0])
  * 			sig_idx = int(specs[i][1])
  * 			if prom_idx < 0 or prom_idx >= body_count:             # <<<<<<<<<<<<<<
@@ -16384,7 +18000,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1264
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1543
  * 			if prom_idx < 0 or prom_idx >= body_count:
  * 				raise ValueError("relative-aspect promittor index is out of range")
  * 			if sig_idx < 0 or sig_idx >= body_count:             # <<<<<<<<<<<<<<
@@ -16395,14 +18011,14 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       if (!__pyx_t_9) {
       } else {
         __pyx_t_2 = __pyx_t_9;
-        goto __pyx_L26_bool_binop_done;
+        goto __pyx_L33_bool_binop_done;
       }
       __pyx_t_9 = (__pyx_v_sig_idx >= __pyx_v_body_count);
       __pyx_t_2 = __pyx_t_9;
-      __pyx_L26_bool_binop_done:;
+      __pyx_L33_bool_binop_done:;
       if (unlikely(__pyx_t_2)) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1265
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1544
  * 				raise ValueError("relative-aspect promittor index is out of range")
  * 			if sig_idx < 0 or sig_idx >= body_count:
  * 				raise ValueError("relative-aspect significator index is out of range")             # <<<<<<<<<<<<<<
@@ -16415,14 +18031,14 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
           PyObject *__pyx_callargs[2] = {__pyx_t_1, __pyx_mstate_global->__pyx_kp_u_relative_aspect_significator_ind};
           __pyx_t_3 = __Pyx_PyObject_FastCall((PyObject*)(((PyTypeObject*)PyExc_ValueError)), __pyx_callargs+__pyx_t_6, (2-__pyx_t_6) | (__pyx_t_6*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
           __Pyx_XDECREF(__pyx_t_1); __pyx_t_1 = 0;
-          if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1265, __pyx_L4_error)
+          if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1544, __pyx_L4_error)
           __Pyx_GOTREF(__pyx_t_3);
         }
         __Pyx_Raise(__pyx_t_3, 0, 0, 0);
         __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
-        __PYX_ERR(0, 1265, __pyx_L4_error)
+        __PYX_ERR(0, 1544, __pyx_L4_error)
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1264
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1543
  * 			if prom_idx < 0 or prom_idx >= body_count:
  * 				raise ValueError("relative-aspect promittor index is out of range")
  * 			if sig_idx < 0 or sig_idx >= body_count:             # <<<<<<<<<<<<<<
@@ -16431,42 +18047,138 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1266
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1545
  * 			if sig_idx < 0 or sig_idx >= body_count:
  * 				raise ValueError("relative-aspect significator index is out of range")
  * 			prom_indices[i] = prom_idx             # <<<<<<<<<<<<<<
  * 			sig_indices[i] = sig_idx
- * 			spec_offsets[i] = float(specs[i][2])
+ * 			pair_key = (prom_idx, sig_idx)
 */
       (__pyx_v_prom_indices[__pyx_v_i]) = __pyx_v_prom_idx;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1267
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1546
  * 				raise ValueError("relative-aspect significator index is out of range")
  * 			prom_indices[i] = prom_idx
  * 			sig_indices[i] = sig_idx             # <<<<<<<<<<<<<<
- * 			spec_offsets[i] = float(specs[i][2])
- * 			if not isfinite(spec_offsets[i]):
+ * 			pair_key = (prom_idx, sig_idx)
+ * 			pair_slot = int(pair_slot_by_indices.get(pair_key, -1))
 */
       (__pyx_v_sig_indices[__pyx_v_i]) = __pyx_v_sig_idx;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1268
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1547
  * 			prom_indices[i] = prom_idx
  * 			sig_indices[i] = sig_idx
+ * 			pair_key = (prom_idx, sig_idx)             # <<<<<<<<<<<<<<
+ * 			pair_slot = int(pair_slot_by_indices.get(pair_key, -1))
+ * 			if pair_slot < 0:
+*/
+      __pyx_t_3 = __Pyx_PyLong_From_int(__pyx_v_prom_idx); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1547, __pyx_L4_error)
+      __Pyx_GOTREF(__pyx_t_3);
+      __pyx_t_1 = __Pyx_PyLong_From_int(__pyx_v_sig_idx); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1547, __pyx_L4_error)
+      __Pyx_GOTREF(__pyx_t_1);
+      __pyx_t_5 = PyTuple_New(2); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1547, __pyx_L4_error)
+      __Pyx_GOTREF(__pyx_t_5);
+      __Pyx_GIVEREF(__pyx_t_3);
+      if (__Pyx_PyTuple_SET_ITEM(__pyx_t_5, 0, __pyx_t_3) != (0)) __PYX_ERR(0, 1547, __pyx_L4_error);
+      __Pyx_GIVEREF(__pyx_t_1);
+      if (__Pyx_PyTuple_SET_ITEM(__pyx_t_5, 1, __pyx_t_1) != (0)) __PYX_ERR(0, 1547, __pyx_L4_error);
+      __pyx_t_3 = 0;
+      __pyx_t_1 = 0;
+      __Pyx_XDECREF_SET(__pyx_v_pair_key, __pyx_t_5);
+      __pyx_t_5 = 0;
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1548
+ * 			sig_indices[i] = sig_idx
+ * 			pair_key = (prom_idx, sig_idx)
+ * 			pair_slot = int(pair_slot_by_indices.get(pair_key, -1))             # <<<<<<<<<<<<<<
+ * 			if pair_slot < 0:
+ * 				pair_slot = int(pair_count)
+*/
+      __pyx_t_5 = __Pyx_PyDict_GetItemDefault(__pyx_v_pair_slot_by_indices, __pyx_v_pair_key, __pyx_mstate_global->__pyx_int_neg_1); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1548, __pyx_L4_error)
+      __Pyx_GOTREF(__pyx_t_5);
+      __pyx_t_1 = __Pyx_PyNumber_Int(__pyx_t_5); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1548, __pyx_L4_error)
+      __Pyx_GOTREF(__pyx_t_1);
+      __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
+      __pyx_t_12 = __Pyx_PyLong_As_int(__pyx_t_1); if (unlikely((__pyx_t_12 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 1548, __pyx_L4_error)
+      __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
+      __pyx_v_pair_slot = __pyx_t_12;
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1549
+ * 			pair_key = (prom_idx, sig_idx)
+ * 			pair_slot = int(pair_slot_by_indices.get(pair_key, -1))
+ * 			if pair_slot < 0:             # <<<<<<<<<<<<<<
+ * 				pair_slot = int(pair_count)
+ * 				pair_slot_by_indices[pair_key] = pair_slot
+*/
+      __pyx_t_2 = (__pyx_v_pair_slot < 0);
+      if (__pyx_t_2) {
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1550
+ * 			pair_slot = int(pair_slot_by_indices.get(pair_key, -1))
+ * 			if pair_slot < 0:
+ * 				pair_slot = int(pair_count)             # <<<<<<<<<<<<<<
+ * 				pair_slot_by_indices[pair_key] = pair_slot
+ * 				pair_count += 1
+*/
+        __pyx_v_pair_slot = ((int)__pyx_v_pair_count);
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1551
+ * 			if pair_slot < 0:
+ * 				pair_slot = int(pair_count)
+ * 				pair_slot_by_indices[pair_key] = pair_slot             # <<<<<<<<<<<<<<
+ * 				pair_count += 1
+ * 			pair_slots[i] = pair_slot
+*/
+        __pyx_t_1 = __Pyx_PyLong_From_int(__pyx_v_pair_slot); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1551, __pyx_L4_error)
+        __Pyx_GOTREF(__pyx_t_1);
+        if (unlikely((PyDict_SetItem(__pyx_v_pair_slot_by_indices, __pyx_v_pair_key, __pyx_t_1) < 0))) __PYX_ERR(0, 1551, __pyx_L4_error)
+        __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1552
+ * 				pair_slot = int(pair_count)
+ * 				pair_slot_by_indices[pair_key] = pair_slot
+ * 				pair_count += 1             # <<<<<<<<<<<<<<
+ * 			pair_slots[i] = pair_slot
+ * 			spec_offsets[i] = float(specs[i][2])
+*/
+        __pyx_v_pair_count = (__pyx_v_pair_count + 1);
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1549
+ * 			pair_key = (prom_idx, sig_idx)
+ * 			pair_slot = int(pair_slot_by_indices.get(pair_key, -1))
+ * 			if pair_slot < 0:             # <<<<<<<<<<<<<<
+ * 				pair_slot = int(pair_count)
+ * 				pair_slot_by_indices[pair_key] = pair_slot
+*/
+      }
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1553
+ * 				pair_slot_by_indices[pair_key] = pair_slot
+ * 				pair_count += 1
+ * 			pair_slots[i] = pair_slot             # <<<<<<<<<<<<<<
+ * 			spec_offsets[i] = float(specs[i][2])
+ * 			if not isfinite(spec_offsets[i]):
+*/
+      (__pyx_v_pair_slots[__pyx_v_i]) = __pyx_v_pair_slot;
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1554
+ * 				pair_count += 1
+ * 			pair_slots[i] = pair_slot
  * 			spec_offsets[i] = float(specs[i][2])             # <<<<<<<<<<<<<<
  * 			if not isfinite(spec_offsets[i]):
  * 				raise ValueError("relative-aspect offsets must be finite")
 */
-      __pyx_t_3 = __Pyx_GetItemInt(__pyx_v_specs, __pyx_v_i, Py_ssize_t, 1, PyLong_FromSsize_t, 0, 1, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 1268, __pyx_L4_error)
-      __Pyx_GOTREF(__pyx_t_3);
-      __pyx_t_1 = __Pyx_GetItemInt(__pyx_t_3, 2, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_OwnStrongReference); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1268, __pyx_L4_error)
+      __pyx_t_1 = __Pyx_GetItemInt(__pyx_v_specs, __pyx_v_i, Py_ssize_t, 1, PyLong_FromSsize_t, 0, 1, 1, 1, __Pyx_ReferenceSharing_FunctionArgument); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1554, __pyx_L4_error)
       __Pyx_GOTREF(__pyx_t_1);
-      __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
-      __pyx_t_7 = __Pyx_PyObject_AsDouble(__pyx_t_1); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_7, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 1268, __pyx_L4_error)
+      __pyx_t_5 = __Pyx_GetItemInt(__pyx_t_1, 2, long, 1, __Pyx_PyLong_From_long, 0, 0, 1, 1, __Pyx_ReferenceSharing_OwnStrongReference); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1554, __pyx_L4_error)
+      __Pyx_GOTREF(__pyx_t_5);
       __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
+      __pyx_t_7 = __Pyx_PyObject_AsDouble(__pyx_t_5); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_7, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 1554, __pyx_L4_error)
+      __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
       (__pyx_v_spec_offsets[__pyx_v_i]) = __pyx_t_7;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1269
- * 			sig_indices[i] = sig_idx
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1555
+ * 			pair_slots[i] = pair_slot
  * 			spec_offsets[i] = float(specs[i][2])
  * 			if not isfinite(spec_offsets[i]):             # <<<<<<<<<<<<<<
  * 				raise ValueError("relative-aspect offsets must be finite")
@@ -16475,28 +18187,28 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_2 = (!isfinite((__pyx_v_spec_offsets[__pyx_v_i])));
       if (unlikely(__pyx_t_2)) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1270
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1556
  * 			spec_offsets[i] = float(specs[i][2])
  * 			if not isfinite(spec_offsets[i]):
  * 				raise ValueError("relative-aspect offsets must be finite")             # <<<<<<<<<<<<<<
  * 		slice_start = jd_start
  * 		while slice_start < jd_end:
 */
-        __pyx_t_3 = NULL;
+        __pyx_t_1 = NULL;
         __pyx_t_6 = 1;
         {
-          PyObject *__pyx_callargs[2] = {__pyx_t_3, __pyx_mstate_global->__pyx_kp_u_relative_aspect_offsets_must_be};
-          __pyx_t_1 = __Pyx_PyObject_FastCall((PyObject*)(((PyTypeObject*)PyExc_ValueError)), __pyx_callargs+__pyx_t_6, (2-__pyx_t_6) | (__pyx_t_6*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
-          __Pyx_XDECREF(__pyx_t_3); __pyx_t_3 = 0;
-          if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1270, __pyx_L4_error)
-          __Pyx_GOTREF(__pyx_t_1);
+          PyObject *__pyx_callargs[2] = {__pyx_t_1, __pyx_mstate_global->__pyx_kp_u_relative_aspect_offsets_must_be};
+          __pyx_t_5 = __Pyx_PyObject_FastCall((PyObject*)(((PyTypeObject*)PyExc_ValueError)), __pyx_callargs+__pyx_t_6, (2-__pyx_t_6) | (__pyx_t_6*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
+          __Pyx_XDECREF(__pyx_t_1); __pyx_t_1 = 0;
+          if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1556, __pyx_L4_error)
+          __Pyx_GOTREF(__pyx_t_5);
         }
-        __Pyx_Raise(__pyx_t_1, 0, 0, 0);
-        __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
-        __PYX_ERR(0, 1270, __pyx_L4_error)
+        __Pyx_Raise(__pyx_t_5, 0, 0, 0);
+        __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
+        __PYX_ERR(0, 1556, __pyx_L4_error)
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1269
- * 			sig_indices[i] = sig_idx
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1555
+ * 			pair_slots[i] = pair_slot
  * 			spec_offsets[i] = float(specs[i][2])
  * 			if not isfinite(spec_offsets[i]):             # <<<<<<<<<<<<<<
  * 				raise ValueError("relative-aspect offsets must be finite")
@@ -16505,7 +18217,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       }
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1271
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1557
  * 			if not isfinite(spec_offsets[i]):
  * 				raise ValueError("relative-aspect offsets must be finite")
  * 		slice_start = jd_start             # <<<<<<<<<<<<<<
@@ -16514,7 +18226,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
     __pyx_v_slice_start = __pyx_v_jd_start;
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1272
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1558
  * 				raise ValueError("relative-aspect offsets must be finite")
  * 		slice_start = jd_start
  * 		while slice_start < jd_end:             # <<<<<<<<<<<<<<
@@ -16525,7 +18237,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_2 = (__pyx_v_slice_start < __pyx_v_jd_end);
       if (!__pyx_t_2) break;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1273
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1559
  * 		slice_start = jd_start
  * 		while slice_start < jd_end:
  * 			slice_end = min(jd_end, slice_start + _MAX_NATIVE_LOCK_SPAN_DAYS)             # <<<<<<<<<<<<<<
@@ -16542,7 +18254,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       }
       __pyx_v_slice_end = __pyx_t_14;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1274
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1560
  * 		while slice_start < jd_end:
  * 			slice_end = min(jd_end, slice_start + _MAX_NATIVE_LOCK_SPAN_DAYS)
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -16555,7 +18267,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
           __Pyx_FastGIL_Remember();
           /*try:*/ {
 
-            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1275
+            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1561
  * 			slice_end = min(jd_end, slice_start + _MAX_NATIVE_LOCK_SPAN_DAYS)
  * 			with nogil:
  * 				_acquire_native_swe_lock()             # <<<<<<<<<<<<<<
@@ -16565,7 +18277,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__acquire_native_swe_lock();
           }
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1274
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1560
  * 		while slice_start < jd_end:
  * 			slice_end = min(jd_end, slice_start + _MAX_NATIVE_LOCK_SPAN_DAYS)
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -16576,13 +18288,13 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             /*normal exit:*/{
               __Pyx_FastGIL_Forget();
               PyEval_RestoreThread(_save);
-              goto __pyx_L35;
+              goto __pyx_L43;
             }
-            __pyx_L35:;
+            __pyx_L43:;
           }
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1276
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1562
  * 			with nogil:
  * 				_acquire_native_swe_lock()
  * 			lock_held = True             # <<<<<<<<<<<<<<
@@ -16591,16 +18303,16 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
       __pyx_v_lock_held = 1;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1277
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1563
  * 				_acquire_native_swe_lock()
  * 			lock_held = True
  * 			_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position)             # <<<<<<<<<<<<<<
  * 			with nogil:
  * 				_search_relative_aspects_into_c(
 */
-      __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configure_ephemeris_context(__pyx_v_ephe_path, __pyx_v_flags, __pyx_v_sidereal_mode, __pyx_v_topocentric_position); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1277, __pyx_L4_error)
+      __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__configure_ephemeris_context(__pyx_v_ephe_path, __pyx_v_flags, __pyx_v_sidereal_mode, __pyx_v_topocentric_position); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 1563, __pyx_L4_error)
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1278
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1564
  * 			lock_held = True
  * 			_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position)
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -16613,16 +18325,16 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
           __Pyx_FastGIL_Remember();
           /*try:*/ {
 
-            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1279
+            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1565
  * 			_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position)
  * 			with nogil:
  * 				_search_relative_aspects_into_c(             # <<<<<<<<<<<<<<
  * 					body_code_arr,
  * 					body_count,
 */
-            __pyx_t_12 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_relative_aspects_into_c(__pyx_v_body_code_arr, __pyx_v_body_count, __pyx_v_prom_indices, __pyx_v_sig_indices, __pyx_v_spec_offsets, __pyx_v_spec_count, __pyx_v_slice_start, __pyx_v_slice_end, __pyx_v_base_step, __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days, __pyx_v_lon0, __pyx_v_lon1, __pyx_v_speed0, __pyx_v_speed1, (&__pyx_v_hits), (&__pyx_v_count), (&__pyx_v_capacity)); if (unlikely(__pyx_t_12 == ((int)-1))) __PYX_ERR(0, 1279, __pyx_L39_error)
+            __pyx_t_12 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__search_relative_aspects_into_c(__pyx_v_body_code_arr, __pyx_v_body_count, __pyx_v_prom_indices, __pyx_v_sig_indices, __pyx_v_pair_slots, __pyx_v_pair_count, __pyx_v_spec_offsets, __pyx_v_spec_count, __pyx_v_slice_start, __pyx_v_slice_end, __pyx_v_base_step, __pyx_v_flags, __pyx_v_eps_deg, __pyx_v_eps_days, __pyx_v_lon0, __pyx_v_lon1, __pyx_v_speed0, __pyx_v_speed1, __pyx_v_turn_status, __pyx_v_turn_jd, __pyx_v_turn_prom_lon, __pyx_v_turn_prom_speed, __pyx_v_turn_sig_lon, __pyx_v_turn_sig_speed, (&__pyx_v_hits), (&__pyx_v_count), (&__pyx_v_capacity)); if (unlikely(__pyx_t_12 == ((int)-1))) __PYX_ERR(0, 1565, __pyx_L47_error)
 
-            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1300
+            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1594
  * 					&capacity,
  * 				)
  * 				_release_native_swe_lock()             # <<<<<<<<<<<<<<
@@ -16632,7 +18344,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__release_native_swe_lock();
           }
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1278
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1564
  * 			lock_held = True
  * 			_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position)
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -16643,18 +18355,18 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             /*normal exit:*/{
               __Pyx_FastGIL_Forget();
               PyEval_RestoreThread(_save);
-              goto __pyx_L40;
+              goto __pyx_L48;
             }
-            __pyx_L39_error: {
+            __pyx_L47_error: {
               __Pyx_FastGIL_Forget();
               PyEval_RestoreThread(_save);
               goto __pyx_L4_error;
             }
-            __pyx_L40:;
+            __pyx_L48:;
           }
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1301
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1595
  * 				)
  * 				_release_native_swe_lock()
  * 			lock_held = False             # <<<<<<<<<<<<<<
@@ -16663,7 +18375,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
       __pyx_v_lock_held = 0;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1302
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1596
  * 				_release_native_swe_lock()
  * 			lock_held = False
  * 			slice_start = slice_end             # <<<<<<<<<<<<<<
@@ -16673,7 +18385,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_v_slice_start = __pyx_v_slice_end;
     }
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1303
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":1597
  * 			lock_held = False
  * 			slice_start = slice_end
  * 		return _hits_to_python(hits, count)             # <<<<<<<<<<<<<<
@@ -16681,14 +18393,14 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
  * 		if lock_held:
 */
     __Pyx_XDECREF(__pyx_r);
-    __pyx_t_1 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__hits_to_python(__pyx_v_hits, __pyx_v_count); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1303, __pyx_L4_error)
-    __Pyx_GOTREF(__pyx_t_1);
-    __pyx_r = ((PyObject*)__pyx_t_1);
-    __pyx_t_1 = 0;
+    __pyx_t_5 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__hits_to_python(__pyx_v_hits, __pyx_v_count); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1597, __pyx_L4_error)
+    __Pyx_GOTREF(__pyx_t_5);
+    __pyx_r = ((PyObject*)__pyx_t_5);
+    __pyx_t_5 = 0;
     goto __pyx_L3_return;
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1305
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1599
  * 		return _hits_to_python(hits, count)
  * 	finally:
  * 		if lock_held:             # <<<<<<<<<<<<<<
@@ -16717,7 +18429,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       {
         if (__pyx_v_lock_held) {
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1306
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1600
  * 	finally:
  * 		if lock_held:
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -16730,7 +18442,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
               __Pyx_FastGIL_Remember();
               /*try:*/ {
 
-                /* "aries/astrology/transit_fast/_transit_kernel.pyx":1307
+                /* "aries/astrology/transit_fast/_transit_kernel.pyx":1601
  * 		if lock_held:
  * 			with nogil:
  * 				_release_native_swe_lock()             # <<<<<<<<<<<<<<
@@ -16740,7 +18452,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
                 __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__release_native_swe_lock();
               }
 
-              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1306
+              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1600
  * 	finally:
  * 		if lock_held:
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -16751,13 +18463,13 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
                 /*normal exit:*/{
                   __Pyx_FastGIL_Forget();
                   PyEval_RestoreThread(_save);
-                  goto __pyx_L46;
+                  goto __pyx_L54;
                 }
-                __pyx_L46:;
+                __pyx_L54:;
               }
           }
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1305
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1599
  * 		return _hits_to_python(hits, count)
  * 	finally:
  * 		if lock_held:             # <<<<<<<<<<<<<<
@@ -16766,7 +18478,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         }
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1308
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1602
  * 			with nogil:
  * 				_release_native_swe_lock()
  * 		if hits != NULL:             # <<<<<<<<<<<<<<
@@ -16776,7 +18488,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
         __pyx_t_2 = (__pyx_v_hits != NULL);
         if (__pyx_t_2) {
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1309
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1603
  * 				_release_native_swe_lock()
  * 		if hits != NULL:
  * 			free(hits)             # <<<<<<<<<<<<<<
@@ -16785,7 +18497,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
           free(__pyx_v_hits);
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1308
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1602
  * 			with nogil:
  * 				_release_native_swe_lock()
  * 		if hits != NULL:             # <<<<<<<<<<<<<<
@@ -16794,7 +18506,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         }
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1310
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1604
  * 		if hits != NULL:
  * 			free(hits)
  * 		if body_code_arr != NULL:             # <<<<<<<<<<<<<<
@@ -16804,7 +18516,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
         __pyx_t_2 = (__pyx_v_body_code_arr != NULL);
         if (__pyx_t_2) {
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1311
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1605
  * 			free(hits)
  * 		if body_code_arr != NULL:
  * 			free(body_code_arr)             # <<<<<<<<<<<<<<
@@ -16813,7 +18525,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
           free(__pyx_v_body_code_arr);
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1310
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1604
  * 		if hits != NULL:
  * 			free(hits)
  * 		if body_code_arr != NULL:             # <<<<<<<<<<<<<<
@@ -16822,7 +18534,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         }
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1312
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1606
  * 		if body_code_arr != NULL:
  * 			free(body_code_arr)
  * 		if prom_indices != NULL:             # <<<<<<<<<<<<<<
@@ -16832,7 +18544,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
         __pyx_t_2 = (__pyx_v_prom_indices != NULL);
         if (__pyx_t_2) {
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1313
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1607
  * 			free(body_code_arr)
  * 		if prom_indices != NULL:
  * 			free(prom_indices)             # <<<<<<<<<<<<<<
@@ -16841,7 +18553,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
           free(__pyx_v_prom_indices);
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1312
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1606
  * 		if body_code_arr != NULL:
  * 			free(body_code_arr)
  * 		if prom_indices != NULL:             # <<<<<<<<<<<<<<
@@ -16850,37 +18562,93 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         }
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1314
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1608
  * 		if prom_indices != NULL:
  * 			free(prom_indices)
  * 		if sig_indices != NULL:             # <<<<<<<<<<<<<<
  * 			free(sig_indices)
- * 		if spec_offsets != NULL:
+ * 		if pair_slots != NULL:
 */
         __pyx_t_2 = (__pyx_v_sig_indices != NULL);
         if (__pyx_t_2) {
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1315
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1609
  * 			free(prom_indices)
  * 		if sig_indices != NULL:
  * 			free(sig_indices)             # <<<<<<<<<<<<<<
- * 		if spec_offsets != NULL:
- * 			free(spec_offsets)
+ * 		if pair_slots != NULL:
+ * 			free(pair_slots)
 */
           free(__pyx_v_sig_indices);
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1314
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1608
  * 		if prom_indices != NULL:
  * 			free(prom_indices)
  * 		if sig_indices != NULL:             # <<<<<<<<<<<<<<
  * 			free(sig_indices)
+ * 		if pair_slots != NULL:
+*/
+        }
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1610
+ * 		if sig_indices != NULL:
+ * 			free(sig_indices)
+ * 		if pair_slots != NULL:             # <<<<<<<<<<<<<<
+ * 			free(pair_slots)
+ * 		if turn_status != NULL:
+*/
+        __pyx_t_2 = (__pyx_v_pair_slots != NULL);
+        if (__pyx_t_2) {
+
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1611
+ * 			free(sig_indices)
+ * 		if pair_slots != NULL:
+ * 			free(pair_slots)             # <<<<<<<<<<<<<<
+ * 		if turn_status != NULL:
+ * 			free(turn_status)
+*/
+          free(__pyx_v_pair_slots);
+
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1610
+ * 		if sig_indices != NULL:
+ * 			free(sig_indices)
+ * 		if pair_slots != NULL:             # <<<<<<<<<<<<<<
+ * 			free(pair_slots)
+ * 		if turn_status != NULL:
+*/
+        }
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1612
+ * 		if pair_slots != NULL:
+ * 			free(pair_slots)
+ * 		if turn_status != NULL:             # <<<<<<<<<<<<<<
+ * 			free(turn_status)
+ * 		if spec_offsets != NULL:
+*/
+        __pyx_t_2 = (__pyx_v_turn_status != NULL);
+        if (__pyx_t_2) {
+
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1613
+ * 			free(pair_slots)
+ * 		if turn_status != NULL:
+ * 			free(turn_status)             # <<<<<<<<<<<<<<
+ * 		if spec_offsets != NULL:
+ * 			free(spec_offsets)
+*/
+          free(__pyx_v_turn_status);
+
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1612
+ * 		if pair_slots != NULL:
+ * 			free(pair_slots)
+ * 		if turn_status != NULL:             # <<<<<<<<<<<<<<
+ * 			free(turn_status)
  * 		if spec_offsets != NULL:
 */
         }
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1316
- * 		if sig_indices != NULL:
- * 			free(sig_indices)
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1614
+ * 		if turn_status != NULL:
+ * 			free(turn_status)
  * 		if spec_offsets != NULL:             # <<<<<<<<<<<<<<
  * 			free(spec_offsets)
  * 		if lon0 != NULL:
@@ -16888,8 +18656,8 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
         __pyx_t_2 = (__pyx_v_spec_offsets != NULL);
         if (__pyx_t_2) {
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1317
- * 			free(sig_indices)
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1615
+ * 			free(turn_status)
  * 		if spec_offsets != NULL:
  * 			free(spec_offsets)             # <<<<<<<<<<<<<<
  * 		if lon0 != NULL:
@@ -16897,16 +18665,16 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
           free(__pyx_v_spec_offsets);
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1316
- * 		if sig_indices != NULL:
- * 			free(sig_indices)
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1614
+ * 		if turn_status != NULL:
+ * 			free(turn_status)
  * 		if spec_offsets != NULL:             # <<<<<<<<<<<<<<
  * 			free(spec_offsets)
  * 		if lon0 != NULL:
 */
         }
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1318
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1616
  * 		if spec_offsets != NULL:
  * 			free(spec_offsets)
  * 		if lon0 != NULL:             # <<<<<<<<<<<<<<
@@ -16916,7 +18684,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
         __pyx_t_2 = (__pyx_v_lon0 != NULL);
         if (__pyx_t_2) {
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1319
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1617
  * 			free(spec_offsets)
  * 		if lon0 != NULL:
  * 			free(lon0)             # <<<<<<<<<<<<<<
@@ -16925,7 +18693,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
           free(__pyx_v_lon0);
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1318
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1616
  * 		if spec_offsets != NULL:
  * 			free(spec_offsets)
  * 		if lon0 != NULL:             # <<<<<<<<<<<<<<
@@ -16934,7 +18702,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         }
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1320
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1618
  * 		if lon0 != NULL:
  * 			free(lon0)
  * 		if lon1 != NULL:             # <<<<<<<<<<<<<<
@@ -16944,7 +18712,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
         __pyx_t_2 = (__pyx_v_lon1 != NULL);
         if (__pyx_t_2) {
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1321
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1619
  * 			free(lon0)
  * 		if lon1 != NULL:
  * 			free(lon1)             # <<<<<<<<<<<<<<
@@ -16953,7 +18721,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
           free(__pyx_v_lon1);
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1320
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1618
  * 		if lon0 != NULL:
  * 			free(lon0)
  * 		if lon1 != NULL:             # <<<<<<<<<<<<<<
@@ -16962,7 +18730,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         }
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1322
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1620
  * 		if lon1 != NULL:
  * 			free(lon1)
  * 		if speed0 != NULL:             # <<<<<<<<<<<<<<
@@ -16972,7 +18740,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
         __pyx_t_2 = (__pyx_v_speed0 != NULL);
         if (__pyx_t_2) {
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1323
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1621
  * 			free(lon1)
  * 		if speed0 != NULL:
  * 			free(speed0)             # <<<<<<<<<<<<<<
@@ -16981,7 +18749,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
           free(__pyx_v_speed0);
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1322
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1620
  * 		if lon1 != NULL:
  * 			free(lon1)
  * 		if speed0 != NULL:             # <<<<<<<<<<<<<<
@@ -16990,27 +18758,167 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         }
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1324
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1622
  * 		if speed0 != NULL:
  * 			free(speed0)
  * 		if speed1 != NULL:             # <<<<<<<<<<<<<<
  * 			free(speed1)
+ * 		if turn_jd != NULL:
 */
         __pyx_t_2 = (__pyx_v_speed1 != NULL);
         if (__pyx_t_2) {
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1325
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1623
  * 			free(speed0)
  * 		if speed1 != NULL:
  * 			free(speed1)             # <<<<<<<<<<<<<<
+ * 		if turn_jd != NULL:
+ * 			free(turn_jd)
 */
           free(__pyx_v_speed1);
 
-          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1324
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1622
  * 		if speed0 != NULL:
  * 			free(speed0)
  * 		if speed1 != NULL:             # <<<<<<<<<<<<<<
  * 			free(speed1)
+ * 		if turn_jd != NULL:
+*/
+        }
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1624
+ * 		if speed1 != NULL:
+ * 			free(speed1)
+ * 		if turn_jd != NULL:             # <<<<<<<<<<<<<<
+ * 			free(turn_jd)
+ * 		if turn_prom_lon != NULL:
+*/
+        __pyx_t_2 = (__pyx_v_turn_jd != NULL);
+        if (__pyx_t_2) {
+
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1625
+ * 			free(speed1)
+ * 		if turn_jd != NULL:
+ * 			free(turn_jd)             # <<<<<<<<<<<<<<
+ * 		if turn_prom_lon != NULL:
+ * 			free(turn_prom_lon)
+*/
+          free(__pyx_v_turn_jd);
+
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1624
+ * 		if speed1 != NULL:
+ * 			free(speed1)
+ * 		if turn_jd != NULL:             # <<<<<<<<<<<<<<
+ * 			free(turn_jd)
+ * 		if turn_prom_lon != NULL:
+*/
+        }
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1626
+ * 		if turn_jd != NULL:
+ * 			free(turn_jd)
+ * 		if turn_prom_lon != NULL:             # <<<<<<<<<<<<<<
+ * 			free(turn_prom_lon)
+ * 		if turn_prom_speed != NULL:
+*/
+        __pyx_t_2 = (__pyx_v_turn_prom_lon != NULL);
+        if (__pyx_t_2) {
+
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1627
+ * 			free(turn_jd)
+ * 		if turn_prom_lon != NULL:
+ * 			free(turn_prom_lon)             # <<<<<<<<<<<<<<
+ * 		if turn_prom_speed != NULL:
+ * 			free(turn_prom_speed)
+*/
+          free(__pyx_v_turn_prom_lon);
+
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1626
+ * 		if turn_jd != NULL:
+ * 			free(turn_jd)
+ * 		if turn_prom_lon != NULL:             # <<<<<<<<<<<<<<
+ * 			free(turn_prom_lon)
+ * 		if turn_prom_speed != NULL:
+*/
+        }
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1628
+ * 		if turn_prom_lon != NULL:
+ * 			free(turn_prom_lon)
+ * 		if turn_prom_speed != NULL:             # <<<<<<<<<<<<<<
+ * 			free(turn_prom_speed)
+ * 		if turn_sig_lon != NULL:
+*/
+        __pyx_t_2 = (__pyx_v_turn_prom_speed != NULL);
+        if (__pyx_t_2) {
+
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1629
+ * 			free(turn_prom_lon)
+ * 		if turn_prom_speed != NULL:
+ * 			free(turn_prom_speed)             # <<<<<<<<<<<<<<
+ * 		if turn_sig_lon != NULL:
+ * 			free(turn_sig_lon)
+*/
+          free(__pyx_v_turn_prom_speed);
+
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1628
+ * 		if turn_prom_lon != NULL:
+ * 			free(turn_prom_lon)
+ * 		if turn_prom_speed != NULL:             # <<<<<<<<<<<<<<
+ * 			free(turn_prom_speed)
+ * 		if turn_sig_lon != NULL:
+*/
+        }
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1630
+ * 		if turn_prom_speed != NULL:
+ * 			free(turn_prom_speed)
+ * 		if turn_sig_lon != NULL:             # <<<<<<<<<<<<<<
+ * 			free(turn_sig_lon)
+ * 		if turn_sig_speed != NULL:
+*/
+        __pyx_t_2 = (__pyx_v_turn_sig_lon != NULL);
+        if (__pyx_t_2) {
+
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1631
+ * 			free(turn_prom_speed)
+ * 		if turn_sig_lon != NULL:
+ * 			free(turn_sig_lon)             # <<<<<<<<<<<<<<
+ * 		if turn_sig_speed != NULL:
+ * 			free(turn_sig_speed)
+*/
+          free(__pyx_v_turn_sig_lon);
+
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1630
+ * 		if turn_prom_speed != NULL:
+ * 			free(turn_prom_speed)
+ * 		if turn_sig_lon != NULL:             # <<<<<<<<<<<<<<
+ * 			free(turn_sig_lon)
+ * 		if turn_sig_speed != NULL:
+*/
+        }
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1632
+ * 		if turn_sig_lon != NULL:
+ * 			free(turn_sig_lon)
+ * 		if turn_sig_speed != NULL:             # <<<<<<<<<<<<<<
+ * 			free(turn_sig_speed)
+*/
+        __pyx_t_2 = (__pyx_v_turn_sig_speed != NULL);
+        if (__pyx_t_2) {
+
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1633
+ * 			free(turn_sig_lon)
+ * 		if turn_sig_speed != NULL:
+ * 			free(turn_sig_speed)             # <<<<<<<<<<<<<<
+*/
+          free(__pyx_v_turn_sig_speed);
+
+          /* "aries/astrology/transit_fast/_transit_kernel.pyx":1632
+ * 		if turn_sig_lon != NULL:
+ * 			free(turn_sig_lon)
+ * 		if turn_sig_speed != NULL:             # <<<<<<<<<<<<<<
+ * 			free(turn_sig_speed)
 */
         }
       }
@@ -17030,7 +18938,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_23 = __pyx_r;
       __pyx_r = 0;
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1305
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1599
  * 		return _hits_to_python(hits, count)
  * 	finally:
  * 		if lock_held:             # <<<<<<<<<<<<<<
@@ -17039,7 +18947,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
       if (__pyx_v_lock_held) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1306
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1600
  * 	finally:
  * 		if lock_held:
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -17052,7 +18960,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
             __Pyx_FastGIL_Remember();
             /*try:*/ {
 
-              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1307
+              /* "aries/astrology/transit_fast/_transit_kernel.pyx":1601
  * 		if lock_held:
  * 			with nogil:
  * 				_release_native_swe_lock()             # <<<<<<<<<<<<<<
@@ -17062,7 +18970,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
               __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel__release_native_swe_lock();
             }
 
-            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1306
+            /* "aries/astrology/transit_fast/_transit_kernel.pyx":1600
  * 	finally:
  * 		if lock_held:
  * 			with nogil:             # <<<<<<<<<<<<<<
@@ -17073,13 +18981,13 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
               /*normal exit:*/{
                 __Pyx_FastGIL_Forget();
                 PyEval_RestoreThread(_save);
-                goto __pyx_L59;
+                goto __pyx_L74;
               }
-              __pyx_L59:;
+              __pyx_L74:;
             }
         }
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1305
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1599
  * 		return _hits_to_python(hits, count)
  * 	finally:
  * 		if lock_held:             # <<<<<<<<<<<<<<
@@ -17088,7 +18996,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1308
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1602
  * 			with nogil:
  * 				_release_native_swe_lock()
  * 		if hits != NULL:             # <<<<<<<<<<<<<<
@@ -17098,7 +19006,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_2 = (__pyx_v_hits != NULL);
       if (__pyx_t_2) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1309
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1603
  * 				_release_native_swe_lock()
  * 		if hits != NULL:
  * 			free(hits)             # <<<<<<<<<<<<<<
@@ -17107,7 +19015,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         free(__pyx_v_hits);
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1308
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1602
  * 			with nogil:
  * 				_release_native_swe_lock()
  * 		if hits != NULL:             # <<<<<<<<<<<<<<
@@ -17116,7 +19024,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1310
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1604
  * 		if hits != NULL:
  * 			free(hits)
  * 		if body_code_arr != NULL:             # <<<<<<<<<<<<<<
@@ -17126,7 +19034,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_2 = (__pyx_v_body_code_arr != NULL);
       if (__pyx_t_2) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1311
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1605
  * 			free(hits)
  * 		if body_code_arr != NULL:
  * 			free(body_code_arr)             # <<<<<<<<<<<<<<
@@ -17135,7 +19043,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         free(__pyx_v_body_code_arr);
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1310
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1604
  * 		if hits != NULL:
  * 			free(hits)
  * 		if body_code_arr != NULL:             # <<<<<<<<<<<<<<
@@ -17144,7 +19052,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1312
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1606
  * 		if body_code_arr != NULL:
  * 			free(body_code_arr)
  * 		if prom_indices != NULL:             # <<<<<<<<<<<<<<
@@ -17154,7 +19062,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_2 = (__pyx_v_prom_indices != NULL);
       if (__pyx_t_2) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1313
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1607
  * 			free(body_code_arr)
  * 		if prom_indices != NULL:
  * 			free(prom_indices)             # <<<<<<<<<<<<<<
@@ -17163,7 +19071,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         free(__pyx_v_prom_indices);
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1312
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1606
  * 		if body_code_arr != NULL:
  * 			free(body_code_arr)
  * 		if prom_indices != NULL:             # <<<<<<<<<<<<<<
@@ -17172,37 +19080,93 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1314
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1608
  * 		if prom_indices != NULL:
  * 			free(prom_indices)
  * 		if sig_indices != NULL:             # <<<<<<<<<<<<<<
  * 			free(sig_indices)
- * 		if spec_offsets != NULL:
+ * 		if pair_slots != NULL:
 */
       __pyx_t_2 = (__pyx_v_sig_indices != NULL);
       if (__pyx_t_2) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1315
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1609
  * 			free(prom_indices)
  * 		if sig_indices != NULL:
  * 			free(sig_indices)             # <<<<<<<<<<<<<<
- * 		if spec_offsets != NULL:
- * 			free(spec_offsets)
+ * 		if pair_slots != NULL:
+ * 			free(pair_slots)
 */
         free(__pyx_v_sig_indices);
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1314
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1608
  * 		if prom_indices != NULL:
  * 			free(prom_indices)
  * 		if sig_indices != NULL:             # <<<<<<<<<<<<<<
  * 			free(sig_indices)
+ * 		if pair_slots != NULL:
+*/
+      }
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1610
+ * 		if sig_indices != NULL:
+ * 			free(sig_indices)
+ * 		if pair_slots != NULL:             # <<<<<<<<<<<<<<
+ * 			free(pair_slots)
+ * 		if turn_status != NULL:
+*/
+      __pyx_t_2 = (__pyx_v_pair_slots != NULL);
+      if (__pyx_t_2) {
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1611
+ * 			free(sig_indices)
+ * 		if pair_slots != NULL:
+ * 			free(pair_slots)             # <<<<<<<<<<<<<<
+ * 		if turn_status != NULL:
+ * 			free(turn_status)
+*/
+        free(__pyx_v_pair_slots);
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1610
+ * 		if sig_indices != NULL:
+ * 			free(sig_indices)
+ * 		if pair_slots != NULL:             # <<<<<<<<<<<<<<
+ * 			free(pair_slots)
+ * 		if turn_status != NULL:
+*/
+      }
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1612
+ * 		if pair_slots != NULL:
+ * 			free(pair_slots)
+ * 		if turn_status != NULL:             # <<<<<<<<<<<<<<
+ * 			free(turn_status)
+ * 		if spec_offsets != NULL:
+*/
+      __pyx_t_2 = (__pyx_v_turn_status != NULL);
+      if (__pyx_t_2) {
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1613
+ * 			free(pair_slots)
+ * 		if turn_status != NULL:
+ * 			free(turn_status)             # <<<<<<<<<<<<<<
+ * 		if spec_offsets != NULL:
+ * 			free(spec_offsets)
+*/
+        free(__pyx_v_turn_status);
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1612
+ * 		if pair_slots != NULL:
+ * 			free(pair_slots)
+ * 		if turn_status != NULL:             # <<<<<<<<<<<<<<
+ * 			free(turn_status)
  * 		if spec_offsets != NULL:
 */
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1316
- * 		if sig_indices != NULL:
- * 			free(sig_indices)
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1614
+ * 		if turn_status != NULL:
+ * 			free(turn_status)
  * 		if spec_offsets != NULL:             # <<<<<<<<<<<<<<
  * 			free(spec_offsets)
  * 		if lon0 != NULL:
@@ -17210,8 +19174,8 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_2 = (__pyx_v_spec_offsets != NULL);
       if (__pyx_t_2) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1317
- * 			free(sig_indices)
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1615
+ * 			free(turn_status)
  * 		if spec_offsets != NULL:
  * 			free(spec_offsets)             # <<<<<<<<<<<<<<
  * 		if lon0 != NULL:
@@ -17219,16 +19183,16 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         free(__pyx_v_spec_offsets);
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1316
- * 		if sig_indices != NULL:
- * 			free(sig_indices)
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1614
+ * 		if turn_status != NULL:
+ * 			free(turn_status)
  * 		if spec_offsets != NULL:             # <<<<<<<<<<<<<<
  * 			free(spec_offsets)
  * 		if lon0 != NULL:
 */
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1318
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1616
  * 		if spec_offsets != NULL:
  * 			free(spec_offsets)
  * 		if lon0 != NULL:             # <<<<<<<<<<<<<<
@@ -17238,7 +19202,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_2 = (__pyx_v_lon0 != NULL);
       if (__pyx_t_2) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1319
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1617
  * 			free(spec_offsets)
  * 		if lon0 != NULL:
  * 			free(lon0)             # <<<<<<<<<<<<<<
@@ -17247,7 +19211,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         free(__pyx_v_lon0);
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1318
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1616
  * 		if spec_offsets != NULL:
  * 			free(spec_offsets)
  * 		if lon0 != NULL:             # <<<<<<<<<<<<<<
@@ -17256,7 +19220,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1320
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1618
  * 		if lon0 != NULL:
  * 			free(lon0)
  * 		if lon1 != NULL:             # <<<<<<<<<<<<<<
@@ -17266,7 +19230,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_2 = (__pyx_v_lon1 != NULL);
       if (__pyx_t_2) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1321
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1619
  * 			free(lon0)
  * 		if lon1 != NULL:
  * 			free(lon1)             # <<<<<<<<<<<<<<
@@ -17275,7 +19239,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         free(__pyx_v_lon1);
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1320
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1618
  * 		if lon0 != NULL:
  * 			free(lon0)
  * 		if lon1 != NULL:             # <<<<<<<<<<<<<<
@@ -17284,7 +19248,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1322
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1620
  * 		if lon1 != NULL:
  * 			free(lon1)
  * 		if speed0 != NULL:             # <<<<<<<<<<<<<<
@@ -17294,7 +19258,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
       __pyx_t_2 = (__pyx_v_speed0 != NULL);
       if (__pyx_t_2) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1323
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1621
  * 			free(lon1)
  * 		if speed0 != NULL:
  * 			free(speed0)             # <<<<<<<<<<<<<<
@@ -17303,7 +19267,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
         free(__pyx_v_speed0);
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1322
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1620
  * 		if lon1 != NULL:
  * 			free(lon1)
  * 		if speed0 != NULL:             # <<<<<<<<<<<<<<
@@ -17312,27 +19276,167 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
 */
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1324
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1622
  * 		if speed0 != NULL:
  * 			free(speed0)
  * 		if speed1 != NULL:             # <<<<<<<<<<<<<<
  * 			free(speed1)
+ * 		if turn_jd != NULL:
 */
       __pyx_t_2 = (__pyx_v_speed1 != NULL);
       if (__pyx_t_2) {
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1325
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1623
  * 			free(speed0)
  * 		if speed1 != NULL:
  * 			free(speed1)             # <<<<<<<<<<<<<<
+ * 		if turn_jd != NULL:
+ * 			free(turn_jd)
 */
         free(__pyx_v_speed1);
 
-        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1324
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1622
  * 		if speed0 != NULL:
  * 			free(speed0)
  * 		if speed1 != NULL:             # <<<<<<<<<<<<<<
  * 			free(speed1)
+ * 		if turn_jd != NULL:
+*/
+      }
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1624
+ * 		if speed1 != NULL:
+ * 			free(speed1)
+ * 		if turn_jd != NULL:             # <<<<<<<<<<<<<<
+ * 			free(turn_jd)
+ * 		if turn_prom_lon != NULL:
+*/
+      __pyx_t_2 = (__pyx_v_turn_jd != NULL);
+      if (__pyx_t_2) {
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1625
+ * 			free(speed1)
+ * 		if turn_jd != NULL:
+ * 			free(turn_jd)             # <<<<<<<<<<<<<<
+ * 		if turn_prom_lon != NULL:
+ * 			free(turn_prom_lon)
+*/
+        free(__pyx_v_turn_jd);
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1624
+ * 		if speed1 != NULL:
+ * 			free(speed1)
+ * 		if turn_jd != NULL:             # <<<<<<<<<<<<<<
+ * 			free(turn_jd)
+ * 		if turn_prom_lon != NULL:
+*/
+      }
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1626
+ * 		if turn_jd != NULL:
+ * 			free(turn_jd)
+ * 		if turn_prom_lon != NULL:             # <<<<<<<<<<<<<<
+ * 			free(turn_prom_lon)
+ * 		if turn_prom_speed != NULL:
+*/
+      __pyx_t_2 = (__pyx_v_turn_prom_lon != NULL);
+      if (__pyx_t_2) {
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1627
+ * 			free(turn_jd)
+ * 		if turn_prom_lon != NULL:
+ * 			free(turn_prom_lon)             # <<<<<<<<<<<<<<
+ * 		if turn_prom_speed != NULL:
+ * 			free(turn_prom_speed)
+*/
+        free(__pyx_v_turn_prom_lon);
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1626
+ * 		if turn_jd != NULL:
+ * 			free(turn_jd)
+ * 		if turn_prom_lon != NULL:             # <<<<<<<<<<<<<<
+ * 			free(turn_prom_lon)
+ * 		if turn_prom_speed != NULL:
+*/
+      }
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1628
+ * 		if turn_prom_lon != NULL:
+ * 			free(turn_prom_lon)
+ * 		if turn_prom_speed != NULL:             # <<<<<<<<<<<<<<
+ * 			free(turn_prom_speed)
+ * 		if turn_sig_lon != NULL:
+*/
+      __pyx_t_2 = (__pyx_v_turn_prom_speed != NULL);
+      if (__pyx_t_2) {
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1629
+ * 			free(turn_prom_lon)
+ * 		if turn_prom_speed != NULL:
+ * 			free(turn_prom_speed)             # <<<<<<<<<<<<<<
+ * 		if turn_sig_lon != NULL:
+ * 			free(turn_sig_lon)
+*/
+        free(__pyx_v_turn_prom_speed);
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1628
+ * 		if turn_prom_lon != NULL:
+ * 			free(turn_prom_lon)
+ * 		if turn_prom_speed != NULL:             # <<<<<<<<<<<<<<
+ * 			free(turn_prom_speed)
+ * 		if turn_sig_lon != NULL:
+*/
+      }
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1630
+ * 		if turn_prom_speed != NULL:
+ * 			free(turn_prom_speed)
+ * 		if turn_sig_lon != NULL:             # <<<<<<<<<<<<<<
+ * 			free(turn_sig_lon)
+ * 		if turn_sig_speed != NULL:
+*/
+      __pyx_t_2 = (__pyx_v_turn_sig_lon != NULL);
+      if (__pyx_t_2) {
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1631
+ * 			free(turn_prom_speed)
+ * 		if turn_sig_lon != NULL:
+ * 			free(turn_sig_lon)             # <<<<<<<<<<<<<<
+ * 		if turn_sig_speed != NULL:
+ * 			free(turn_sig_speed)
+*/
+        free(__pyx_v_turn_sig_lon);
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1630
+ * 		if turn_prom_speed != NULL:
+ * 			free(turn_prom_speed)
+ * 		if turn_sig_lon != NULL:             # <<<<<<<<<<<<<<
+ * 			free(turn_sig_lon)
+ * 		if turn_sig_speed != NULL:
+*/
+      }
+
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1632
+ * 		if turn_sig_lon != NULL:
+ * 			free(turn_sig_lon)
+ * 		if turn_sig_speed != NULL:             # <<<<<<<<<<<<<<
+ * 			free(turn_sig_speed)
+*/
+      __pyx_t_2 = (__pyx_v_turn_sig_speed != NULL);
+      if (__pyx_t_2) {
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1633
+ * 			free(turn_sig_lon)
+ * 		if turn_sig_speed != NULL:
+ * 			free(turn_sig_speed)             # <<<<<<<<<<<<<<
+*/
+        free(__pyx_v_turn_sig_speed);
+
+        /* "aries/astrology/transit_fast/_transit_kernel.pyx":1632
+ * 		if turn_sig_lon != NULL:
+ * 			free(turn_sig_lon)
+ * 		if turn_sig_speed != NULL:             # <<<<<<<<<<<<<<
+ * 			free(turn_sig_speed)
 */
       }
       __pyx_r = __pyx_t_23;
@@ -17341,7 +19445,7 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
     }
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1198
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1452
  *
  *
  * cpdef list search_relative_aspects_batch_raw(             # <<<<<<<<<<<<<<
@@ -17358,6 +19462,8 @@ static PyObject *__pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_sear
   __Pyx_AddTraceback("aries.astrology.transit_fast._transit_kernel.search_relative_aspects_batch_raw", __pyx_clineno, __pyx_lineno, __pyx_filename);
   __pyx_r = 0;
   __pyx_L0:;
+  __Pyx_XDECREF(__pyx_v_pair_slot_by_indices);
+  __Pyx_XDECREF(__pyx_v_pair_key);
   __Pyx_XGIVEREF(__pyx_r);
   __Pyx_RefNannyFinishContext();
   return __pyx_r;
@@ -17412,60 +19518,60 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   {
     PyObject ** const __pyx_pyargnames[] = {&__pyx_mstate_global->__pyx_n_u_body_codes,&__pyx_mstate_global->__pyx_n_u_jd_start,&__pyx_mstate_global->__pyx_n_u_jd_end,&__pyx_mstate_global->__pyx_n_u_specs,&__pyx_mstate_global->__pyx_n_u_ephe_path,&__pyx_mstate_global->__pyx_n_u_flags,&__pyx_mstate_global->__pyx_n_u_sidereal_mode,&__pyx_mstate_global->__pyx_n_u_topocentric_position,&__pyx_mstate_global->__pyx_n_u_step_days,&__pyx_mstate_global->__pyx_n_u_eps_deg,&__pyx_mstate_global->__pyx_n_u_eps_days,0};
     const Py_ssize_t __pyx_kwds_len = (__pyx_kwds) ? __Pyx_NumKwargs_FASTCALL(__pyx_kwds) : 0;
-    if (unlikely(__pyx_kwds_len) < 0) __PYX_ERR(0, 1198, __pyx_L3_error)
+    if (unlikely(__pyx_kwds_len) < 0) __PYX_ERR(0, 1452, __pyx_L3_error)
     if (__pyx_kwds_len > 0) {
       switch (__pyx_nargs) {
         case 11:
         values[10] = __Pyx_ArgRef_FASTCALL(__pyx_args, 10);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[10])) __PYX_ERR(0, 1198, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[10])) __PYX_ERR(0, 1452, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case 10:
         values[9] = __Pyx_ArgRef_FASTCALL(__pyx_args, 9);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[9])) __PYX_ERR(0, 1198, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[9])) __PYX_ERR(0, 1452, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  9:
         values[8] = __Pyx_ArgRef_FASTCALL(__pyx_args, 8);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[8])) __PYX_ERR(0, 1198, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[8])) __PYX_ERR(0, 1452, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  8:
         values[7] = __Pyx_ArgRef_FASTCALL(__pyx_args, 7);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[7])) __PYX_ERR(0, 1198, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[7])) __PYX_ERR(0, 1452, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  7:
         values[6] = __Pyx_ArgRef_FASTCALL(__pyx_args, 6);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[6])) __PYX_ERR(0, 1198, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[6])) __PYX_ERR(0, 1452, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  6:
         values[5] = __Pyx_ArgRef_FASTCALL(__pyx_args, 5);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[5])) __PYX_ERR(0, 1198, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[5])) __PYX_ERR(0, 1452, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  5:
         values[4] = __Pyx_ArgRef_FASTCALL(__pyx_args, 4);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[4])) __PYX_ERR(0, 1198, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[4])) __PYX_ERR(0, 1452, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  4:
         values[3] = __Pyx_ArgRef_FASTCALL(__pyx_args, 3);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[3])) __PYX_ERR(0, 1198, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[3])) __PYX_ERR(0, 1452, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  3:
         values[2] = __Pyx_ArgRef_FASTCALL(__pyx_args, 2);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[2])) __PYX_ERR(0, 1198, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[2])) __PYX_ERR(0, 1452, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  2:
         values[1] = __Pyx_ArgRef_FASTCALL(__pyx_args, 1);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[1])) __PYX_ERR(0, 1198, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[1])) __PYX_ERR(0, 1452, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  1:
         values[0] = __Pyx_ArgRef_FASTCALL(__pyx_args, 0);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 1198, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 1452, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  0: break;
         default: goto __pyx_L5_argtuple_error;
       }
       const Py_ssize_t kwd_pos_args = __pyx_nargs;
-      if (__Pyx_ParseKeywords(__pyx_kwds, __pyx_kwvalues, __pyx_pyargnames, 0, values, kwd_pos_args, __pyx_kwds_len, "search_relative_aspects_batch_raw", 0) < (0)) __PYX_ERR(0, 1198, __pyx_L3_error)
+      if (__Pyx_ParseKeywords(__pyx_kwds, __pyx_kwvalues, __pyx_pyargnames, 0, values, kwd_pos_args, __pyx_kwds_len, "search_relative_aspects_batch_raw", 0) < (0)) __PYX_ERR(0, 1452, __pyx_L3_error)
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1203
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1457
  * 	double jd_end,
  * 	object specs,
  * 	object ephe_path=None,             # <<<<<<<<<<<<<<
@@ -17474,7 +19580,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[4]) values[4] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1205
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1459
  * 	object ephe_path=None,
  * 	int flags=0,
  * 	object sidereal_mode=None,             # <<<<<<<<<<<<<<
@@ -17483,7 +19589,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[6]) values[6] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1206
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1460
  * 	int flags=0,
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,             # <<<<<<<<<<<<<<
@@ -17492,7 +19598,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[7]) values[7] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1207
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1461
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,
  * 	object step_days=None,             # <<<<<<<<<<<<<<
@@ -17501,52 +19607,52 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[8]) values[8] = __Pyx_NewRef(((PyObject *)Py_None));
       for (Py_ssize_t i = __pyx_nargs; i < 4; i++) {
-        if (unlikely(!values[i])) { __Pyx_RaiseArgtupleInvalid("search_relative_aspects_batch_raw", 0, 4, 11, i); __PYX_ERR(0, 1198, __pyx_L3_error) }
+        if (unlikely(!values[i])) { __Pyx_RaiseArgtupleInvalid("search_relative_aspects_batch_raw", 0, 4, 11, i); __PYX_ERR(0, 1452, __pyx_L3_error) }
       }
     } else {
       switch (__pyx_nargs) {
         case 11:
         values[10] = __Pyx_ArgRef_FASTCALL(__pyx_args, 10);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[10])) __PYX_ERR(0, 1198, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[10])) __PYX_ERR(0, 1452, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case 10:
         values[9] = __Pyx_ArgRef_FASTCALL(__pyx_args, 9);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[9])) __PYX_ERR(0, 1198, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[9])) __PYX_ERR(0, 1452, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  9:
         values[8] = __Pyx_ArgRef_FASTCALL(__pyx_args, 8);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[8])) __PYX_ERR(0, 1198, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[8])) __PYX_ERR(0, 1452, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  8:
         values[7] = __Pyx_ArgRef_FASTCALL(__pyx_args, 7);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[7])) __PYX_ERR(0, 1198, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[7])) __PYX_ERR(0, 1452, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  7:
         values[6] = __Pyx_ArgRef_FASTCALL(__pyx_args, 6);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[6])) __PYX_ERR(0, 1198, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[6])) __PYX_ERR(0, 1452, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  6:
         values[5] = __Pyx_ArgRef_FASTCALL(__pyx_args, 5);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[5])) __PYX_ERR(0, 1198, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[5])) __PYX_ERR(0, 1452, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  5:
         values[4] = __Pyx_ArgRef_FASTCALL(__pyx_args, 4);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[4])) __PYX_ERR(0, 1198, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[4])) __PYX_ERR(0, 1452, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  4:
         values[3] = __Pyx_ArgRef_FASTCALL(__pyx_args, 3);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[3])) __PYX_ERR(0, 1198, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[3])) __PYX_ERR(0, 1452, __pyx_L3_error)
         values[2] = __Pyx_ArgRef_FASTCALL(__pyx_args, 2);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[2])) __PYX_ERR(0, 1198, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[2])) __PYX_ERR(0, 1452, __pyx_L3_error)
         values[1] = __Pyx_ArgRef_FASTCALL(__pyx_args, 1);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[1])) __PYX_ERR(0, 1198, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[1])) __PYX_ERR(0, 1452, __pyx_L3_error)
         values[0] = __Pyx_ArgRef_FASTCALL(__pyx_args, 0);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 1198, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 1452, __pyx_L3_error)
         break;
         default: goto __pyx_L5_argtuple_error;
       }
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1203
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1457
  * 	double jd_end,
  * 	object specs,
  * 	object ephe_path=None,             # <<<<<<<<<<<<<<
@@ -17555,7 +19661,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[4]) values[4] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1205
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1459
  * 	object ephe_path=None,
  * 	int flags=0,
  * 	object sidereal_mode=None,             # <<<<<<<<<<<<<<
@@ -17564,7 +19670,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[6]) values[6] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1206
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1460
  * 	int flags=0,
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,             # <<<<<<<<<<<<<<
@@ -17573,7 +19679,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
 */
       if (!values[7]) values[7] = __Pyx_NewRef(((PyObject *)Py_None));
 
-      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1207
+      /* "aries/astrology/transit_fast/_transit_kernel.pyx":1461
  * 	object sidereal_mode=None,
  * 	object topocentric_position=None,
  * 	object step_days=None,             # <<<<<<<<<<<<<<
@@ -17583,12 +19689,12 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
       if (!values[8]) values[8] = __Pyx_NewRef(((PyObject *)Py_None));
     }
     __pyx_v_body_codes = values[0];
-    __pyx_v_jd_start = __Pyx_PyFloat_AsDouble(values[1]); if (unlikely((__pyx_v_jd_start == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1200, __pyx_L3_error)
-    __pyx_v_jd_end = __Pyx_PyFloat_AsDouble(values[2]); if (unlikely((__pyx_v_jd_end == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1201, __pyx_L3_error)
+    __pyx_v_jd_start = __Pyx_PyFloat_AsDouble(values[1]); if (unlikely((__pyx_v_jd_start == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1454, __pyx_L3_error)
+    __pyx_v_jd_end = __Pyx_PyFloat_AsDouble(values[2]); if (unlikely((__pyx_v_jd_end == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1455, __pyx_L3_error)
     __pyx_v_specs = values[3];
     __pyx_v_ephe_path = values[4];
     if (values[5]) {
-      __pyx_v_flags = __Pyx_PyLong_As_int(values[5]); if (unlikely((__pyx_v_flags == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 1204, __pyx_L3_error)
+      __pyx_v_flags = __Pyx_PyLong_As_int(values[5]); if (unlikely((__pyx_v_flags == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 1458, __pyx_L3_error)
     } else {
       __pyx_v_flags = ((int)0);
     }
@@ -17596,19 +19702,19 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
     __pyx_v_topocentric_position = values[7];
     __pyx_v_step_days = values[8];
     if (values[9]) {
-      __pyx_v_eps_deg = __Pyx_PyFloat_AsDouble(values[9]); if (unlikely((__pyx_v_eps_deg == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1208, __pyx_L3_error)
+      __pyx_v_eps_deg = __Pyx_PyFloat_AsDouble(values[9]); if (unlikely((__pyx_v_eps_deg == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1462, __pyx_L3_error)
     } else {
       __pyx_v_eps_deg = __pyx_mstate_global->__pyx_k__10;
     }
     if (values[10]) {
-      __pyx_v_eps_days = __Pyx_PyFloat_AsDouble(values[10]); if (unlikely((__pyx_v_eps_days == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1209, __pyx_L3_error)
+      __pyx_v_eps_days = __Pyx_PyFloat_AsDouble(values[10]); if (unlikely((__pyx_v_eps_days == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1463, __pyx_L3_error)
     } else {
       __pyx_v_eps_days = __pyx_mstate_global->__pyx_k__11;
     }
   }
   goto __pyx_L6_skip;
   __pyx_L5_argtuple_error:;
-  __Pyx_RaiseArgtupleInvalid("search_relative_aspects_batch_raw", 0, 4, 11, __pyx_nargs); __PYX_ERR(0, 1198, __pyx_L3_error)
+  __Pyx_RaiseArgtupleInvalid("search_relative_aspects_batch_raw", 0, 4, 11, __pyx_nargs); __PYX_ERR(0, 1452, __pyx_L3_error)
   __pyx_L6_skip:;
   goto __pyx_L4_argument_unpacking_done;
   __pyx_L3_error:;
@@ -17621,7 +19727,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   __pyx_L4_argument_unpacking_done:;
   __pyx_r = __pyx_pf_5aries_9astrology_12transit_fast_15_transit_kernel_10search_relative_aspects_batch_raw(__pyx_self, __pyx_v_body_codes, __pyx_v_jd_start, __pyx_v_jd_end, __pyx_v_specs, __pyx_v_ephe_path, __pyx_v_flags, __pyx_v_sidereal_mode, __pyx_v_topocentric_position, __pyx_v_step_days, __pyx_v_eps_deg, __pyx_v_eps_days);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1198
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1452
  *
  *
  * cpdef list search_relative_aspects_batch_raw(             # <<<<<<<<<<<<<<
@@ -17655,7 +19761,7 @@ static PyObject *__pyx_pf_5aries_9astrology_12transit_fast_15_transit_kernel_10s
   __pyx_t_2.step_days = __pyx_v_step_days;
   __pyx_t_2.eps_deg = __pyx_v_eps_deg;
   __pyx_t_2.eps_days = __pyx_v_eps_days;
-  __pyx_t_1 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_search_relative_aspects_batch_raw(__pyx_v_body_codes, __pyx_v_jd_start, __pyx_v_jd_end, __pyx_v_specs, 1, &__pyx_t_2); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1198, __pyx_L1_error)
+  __pyx_t_1 = __pyx_f_5aries_9astrology_12transit_fast_15_transit_kernel_search_relative_aspects_batch_raw(__pyx_v_body_codes, __pyx_v_jd_start, __pyx_v_jd_end, __pyx_v_specs, 1, &__pyx_t_2); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 1452, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
   __pyx_r = __pyx_t_1;
   __pyx_t_1 = 0;
@@ -18058,20 +20164,20 @@ __Pyx_RefNannySetupContext("PyInit__transit_kernel", 0);
   (void)__Pyx_modinit_function_import_code(__pyx_mstate);
   /*--- Execution code ---*/
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":16
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":18
  * cimport cython
  *
  * import astrology as _astrology             # <<<<<<<<<<<<<<
  *
  * from .constants import (
 */
-  __pyx_t_1 = __Pyx_Import(__pyx_mstate_global->__pyx_n_u_astrology, 0, 0, NULL, 0); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 16, __pyx_L1_error)
+  __pyx_t_1 = __Pyx_Import(__pyx_mstate_global->__pyx_n_u_astrology, 0, 0, NULL, 0); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 18, __pyx_L1_error)
   __pyx_t_2 = __pyx_t_1;
   __Pyx_GOTREF(__pyx_t_2);
-  if (PyDict_SetItem(__pyx_mstate_global->__pyx_d, __pyx_mstate_global->__pyx_n_u_astrology_2, __pyx_t_2) < (0)) __PYX_ERR(0, 16, __pyx_L1_error)
+  if (PyDict_SetItem(__pyx_mstate_global->__pyx_d, __pyx_mstate_global->__pyx_n_u_astrology_2, __pyx_t_2) < (0)) __PYX_ERR(0, 18, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":18
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":20
  * import astrology as _astrology
  *
  * from .constants import (             # <<<<<<<<<<<<<<
@@ -18080,181 +20186,143 @@ __Pyx_RefNannySetupContext("PyInit__transit_kernel", 0);
 */
   {
     PyObject* const __pyx_imported_names[] = {__pyx_mstate_global->__pyx_n_u_BISECTION_MAX_ITERS,__pyx_mstate_global->__pyx_n_u_DEDUP_EPS_DAYS,__pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DAYS,__pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DEG,__pyx_mstate_global->__pyx_n_u_HIT_LONGITUDE,__pyx_mstate_global->__pyx_n_u_HIT_STATION,__pyx_mstate_global->__pyx_n_u_LOW_SPEED_WARN,__pyx_mstate_global->__pyx_n_u_NEWTON_MAX_ITERS,__pyx_mstate_global->__pyx_n_u_STATION_SPEED_EPS,__pyx_mstate_global->__pyx_n_u_default_relative_step_days_for_b,__pyx_mstate_global->__pyx_n_u_default_step_days_for_planet};
-    __pyx_t_1 = __Pyx_Import(__pyx_mstate_global->__pyx_n_u_constants, __pyx_imported_names, 11, __pyx_mstate_global->__pyx_kp_u_aries_astrology_transit_fast_con, 1); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 18, __pyx_L1_error)
+    __pyx_t_1 = __Pyx_Import(__pyx_mstate_global->__pyx_n_u_constants, __pyx_imported_names, 11, __pyx_mstate_global->__pyx_kp_u_aries_astrology_transit_fast_con, 1); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 20, __pyx_L1_error)
   }
   __pyx_t_2 = __pyx_t_1;
   __Pyx_GOTREF(__pyx_t_2);
   {
     PyObject* const __pyx_imported_names[] = {__pyx_mstate_global->__pyx_n_u_BISECTION_MAX_ITERS,__pyx_mstate_global->__pyx_n_u_DEDUP_EPS_DAYS,__pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DAYS,__pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DEG,__pyx_mstate_global->__pyx_n_u_HIT_LONGITUDE,__pyx_mstate_global->__pyx_n_u_HIT_STATION,__pyx_mstate_global->__pyx_n_u_LOW_SPEED_WARN,__pyx_mstate_global->__pyx_n_u_NEWTON_MAX_ITERS,__pyx_mstate_global->__pyx_n_u_STATION_SPEED_EPS,__pyx_mstate_global->__pyx_n_u_default_relative_step_days_for_b,__pyx_mstate_global->__pyx_n_u_default_step_days_for_planet};
     for (__pyx_t_3=0; __pyx_t_3 < 11; __pyx_t_3++) {
-      __pyx_t_4 = __Pyx_ImportFrom(__pyx_t_2, __pyx_imported_names[__pyx_t_3]); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 18, __pyx_L1_error)
+      __pyx_t_4 = __Pyx_ImportFrom(__pyx_t_2, __pyx_imported_names[__pyx_t_3]); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 20, __pyx_L1_error)
       __Pyx_GOTREF(__pyx_t_4);
-      if (PyDict_SetItem(__pyx_mstate_global->__pyx_d, __pyx_imported_names[__pyx_t_3], __pyx_t_4) < (0)) __PYX_ERR(0, 18, __pyx_L1_error)
+      if (PyDict_SetItem(__pyx_mstate_global->__pyx_d, __pyx_imported_names[__pyx_t_3], __pyx_t_4) < (0)) __PYX_ERR(0, 20, __pyx_L1_error)
       __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
     }
   }
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":37
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":39
  *
  * cdef int _DIRECT_UNSUPPORTED_FLAGS = int(
  * 	getattr(_astrology, "SEFLG_TOPOCTR", 0)             # <<<<<<<<<<<<<<
  * 	| getattr(_astrology, "SEFLG_HELCTR", 0)
  * 	| getattr(_astrology, "SEFLG_BARYCTR", 0)
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_2, __pyx_mstate_global->__pyx_n_u_astrology_2); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 37, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_2, __pyx_mstate_global->__pyx_n_u_astrology_2); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 39, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
-  __pyx_t_4 = __Pyx_GetAttr3(__pyx_t_2, __pyx_mstate_global->__pyx_n_u_SEFLG_TOPOCTR, __pyx_mstate_global->__pyx_int_0); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 37, __pyx_L1_error)
+  __pyx_t_4 = __Pyx_GetAttr3(__pyx_t_2, __pyx_mstate_global->__pyx_n_u_SEFLG_TOPOCTR, __pyx_mstate_global->__pyx_int_0); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 39, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":38
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":40
  * cdef int _DIRECT_UNSUPPORTED_FLAGS = int(
  * 	getattr(_astrology, "SEFLG_TOPOCTR", 0)
  * 	| getattr(_astrology, "SEFLG_HELCTR", 0)             # <<<<<<<<<<<<<<
  * 	| getattr(_astrology, "SEFLG_BARYCTR", 0)
  * 	| getattr(_astrology, "SEFLG_EQUATORIAL", 0)
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_2, __pyx_mstate_global->__pyx_n_u_astrology_2); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 38, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_2, __pyx_mstate_global->__pyx_n_u_astrology_2); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 40, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
-  __pyx_t_5 = __Pyx_GetAttr3(__pyx_t_2, __pyx_mstate_global->__pyx_n_u_SEFLG_HELCTR, __pyx_mstate_global->__pyx_int_0); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 38, __pyx_L1_error)
+  __pyx_t_5 = __Pyx_GetAttr3(__pyx_t_2, __pyx_mstate_global->__pyx_n_u_SEFLG_HELCTR, __pyx_mstate_global->__pyx_int_0); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 40, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
-  __pyx_t_2 = PyNumber_Or(__pyx_t_4, __pyx_t_5); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 38, __pyx_L1_error)
+  __pyx_t_2 = PyNumber_Or(__pyx_t_4, __pyx_t_5); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 40, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
   __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":39
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":41
  * 	getattr(_astrology, "SEFLG_TOPOCTR", 0)
  * 	| getattr(_astrology, "SEFLG_HELCTR", 0)
  * 	| getattr(_astrology, "SEFLG_BARYCTR", 0)             # <<<<<<<<<<<<<<
  * 	| getattr(_astrology, "SEFLG_EQUATORIAL", 0)
  * 	| getattr(_astrology, "SEFLG_XYZ", 0)
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_astrology_2); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 39, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_astrology_2); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 41, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
-  __pyx_t_4 = __Pyx_GetAttr3(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_SEFLG_BARYCTR, __pyx_mstate_global->__pyx_int_0); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 39, __pyx_L1_error)
+  __pyx_t_4 = __Pyx_GetAttr3(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_SEFLG_BARYCTR, __pyx_mstate_global->__pyx_int_0); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 41, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
   __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-  __pyx_t_5 = PyNumber_Or(__pyx_t_2, __pyx_t_4); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 39, __pyx_L1_error)
+  __pyx_t_5 = PyNumber_Or(__pyx_t_2, __pyx_t_4); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 41, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":40
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":42
  * 	| getattr(_astrology, "SEFLG_HELCTR", 0)
  * 	| getattr(_astrology, "SEFLG_BARYCTR", 0)
  * 	| getattr(_astrology, "SEFLG_EQUATORIAL", 0)             # <<<<<<<<<<<<<<
  * 	| getattr(_astrology, "SEFLG_XYZ", 0)
  * 	| getattr(_astrology, "SEFLG_RADIANS", 0)
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_astrology_2); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 40, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_astrology_2); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 42, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
-  __pyx_t_2 = __Pyx_GetAttr3(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_SEFLG_EQUATORIAL, __pyx_mstate_global->__pyx_int_0); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 40, __pyx_L1_error)
+  __pyx_t_2 = __Pyx_GetAttr3(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_SEFLG_EQUATORIAL, __pyx_mstate_global->__pyx_int_0); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 42, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-  __pyx_t_4 = PyNumber_Or(__pyx_t_5, __pyx_t_2); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 40, __pyx_L1_error)
+  __pyx_t_4 = PyNumber_Or(__pyx_t_5, __pyx_t_2); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 42, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
   __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":41
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":43
  * 	| getattr(_astrology, "SEFLG_BARYCTR", 0)
  * 	| getattr(_astrology, "SEFLG_EQUATORIAL", 0)
  * 	| getattr(_astrology, "SEFLG_XYZ", 0)             # <<<<<<<<<<<<<<
  * 	| getattr(_astrology, "SEFLG_RADIANS", 0)
  * )
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_2, __pyx_mstate_global->__pyx_n_u_astrology_2); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 41, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_2, __pyx_mstate_global->__pyx_n_u_astrology_2); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 43, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
-  __pyx_t_5 = __Pyx_GetAttr3(__pyx_t_2, __pyx_mstate_global->__pyx_n_u_SEFLG_XYZ, __pyx_mstate_global->__pyx_int_0); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 41, __pyx_L1_error)
+  __pyx_t_5 = __Pyx_GetAttr3(__pyx_t_2, __pyx_mstate_global->__pyx_n_u_SEFLG_XYZ, __pyx_mstate_global->__pyx_int_0); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 43, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
-  __pyx_t_2 = PyNumber_Or(__pyx_t_4, __pyx_t_5); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 41, __pyx_L1_error)
+  __pyx_t_2 = PyNumber_Or(__pyx_t_4, __pyx_t_5); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 43, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
   __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":42
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":44
  * 	| getattr(_astrology, "SEFLG_EQUATORIAL", 0)
  * 	| getattr(_astrology, "SEFLG_XYZ", 0)
  * 	| getattr(_astrology, "SEFLG_RADIANS", 0)             # <<<<<<<<<<<<<<
  * )
  * cdef int _SIDEREAL_FLAG = int(getattr(_astrology, "SEFLG_SIDEREAL", 0))
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_astrology_2); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 42, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_astrology_2); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 44, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
-  __pyx_t_4 = __Pyx_GetAttr3(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_SEFLG_RADIANS, __pyx_mstate_global->__pyx_int_0); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 42, __pyx_L1_error)
+  __pyx_t_4 = __Pyx_GetAttr3(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_SEFLG_RADIANS, __pyx_mstate_global->__pyx_int_0); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 44, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
   __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-  __pyx_t_5 = PyNumber_Or(__pyx_t_2, __pyx_t_4); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 42, __pyx_L1_error)
+  __pyx_t_5 = PyNumber_Or(__pyx_t_2, __pyx_t_4); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 44, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":36
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":38
  *
  *
  * cdef int _DIRECT_UNSUPPORTED_FLAGS = int(             # <<<<<<<<<<<<<<
  * 	getattr(_astrology, "SEFLG_TOPOCTR", 0)
  * 	| getattr(_astrology, "SEFLG_HELCTR", 0)
 */
-  __pyx_t_4 = __Pyx_PyNumber_Int(__pyx_t_5); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 36, __pyx_L1_error)
+  __pyx_t_4 = __Pyx_PyNumber_Int(__pyx_t_5); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 38, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
   __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-  __pyx_t_6 = __Pyx_PyLong_As_int(__pyx_t_4); if (unlikely((__pyx_t_6 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 36, __pyx_L1_error)
+  __pyx_t_6 = __Pyx_PyLong_As_int(__pyx_t_4); if (unlikely((__pyx_t_6 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 38, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
   __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__DIRECT_UNSUPPORTED_FLAGS = __pyx_t_6;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":44
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":46
  * 	| getattr(_astrology, "SEFLG_RADIANS", 0)
  * )
  * cdef int _SIDEREAL_FLAG = int(getattr(_astrology, "SEFLG_SIDEREAL", 0))             # <<<<<<<<<<<<<<
  * cdef int _TOPOCENTRIC_FLAG = int(getattr(_astrology, "SEFLG_TOPOCTR", 0))
  * cdef int _SWIEPH_FLAG = int(getattr(_astrology, "SEFLG_SWIEPH", 0))
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_astrology_2); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 44, __pyx_L1_error)
-  __Pyx_GOTREF(__pyx_t_4);
-  __pyx_t_5 = __Pyx_GetAttr3(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_SEFLG_SIDEREAL, __pyx_mstate_global->__pyx_int_0); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 44, __pyx_L1_error)
-  __Pyx_GOTREF(__pyx_t_5);
-  __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-  __pyx_t_4 = __Pyx_PyNumber_Int(__pyx_t_5); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 44, __pyx_L1_error)
-  __Pyx_GOTREF(__pyx_t_4);
-  __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-  __pyx_t_6 = __Pyx_PyLong_As_int(__pyx_t_4); if (unlikely((__pyx_t_6 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 44, __pyx_L1_error)
-  __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-  __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__SIDEREAL_FLAG = __pyx_t_6;
-
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":45
- * )
- * cdef int _SIDEREAL_FLAG = int(getattr(_astrology, "SEFLG_SIDEREAL", 0))
- * cdef int _TOPOCENTRIC_FLAG = int(getattr(_astrology, "SEFLG_TOPOCTR", 0))             # <<<<<<<<<<<<<<
- * cdef int _SWIEPH_FLAG = int(getattr(_astrology, "SEFLG_SWIEPH", 0))
- * cdef int _SPEED_FLAG = int(getattr(_astrology, "SEFLG_SPEED", 0))
-*/
-  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_astrology_2); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 45, __pyx_L1_error)
-  __Pyx_GOTREF(__pyx_t_4);
-  __pyx_t_5 = __Pyx_GetAttr3(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_SEFLG_TOPOCTR, __pyx_mstate_global->__pyx_int_0); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 45, __pyx_L1_error)
-  __Pyx_GOTREF(__pyx_t_5);
-  __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-  __pyx_t_4 = __Pyx_PyNumber_Int(__pyx_t_5); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 45, __pyx_L1_error)
-  __Pyx_GOTREF(__pyx_t_4);
-  __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-  __pyx_t_6 = __Pyx_PyLong_As_int(__pyx_t_4); if (unlikely((__pyx_t_6 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 45, __pyx_L1_error)
-  __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-  __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__TOPOCENTRIC_FLAG = __pyx_t_6;
-
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":46
- * cdef int _SIDEREAL_FLAG = int(getattr(_astrology, "SEFLG_SIDEREAL", 0))
- * cdef int _TOPOCENTRIC_FLAG = int(getattr(_astrology, "SEFLG_TOPOCTR", 0))
- * cdef int _SWIEPH_FLAG = int(getattr(_astrology, "SEFLG_SWIEPH", 0))             # <<<<<<<<<<<<<<
- * cdef int _SPEED_FLAG = int(getattr(_astrology, "SEFLG_SPEED", 0))
- * cdef int _SUN_ID = int(getattr(_astrology, "SE_SUN", 0))
-*/
   __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_astrology_2); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 46, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
-  __pyx_t_5 = __Pyx_GetAttr3(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_SEFLG_SWIEPH, __pyx_mstate_global->__pyx_int_0); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 46, __pyx_L1_error)
+  __pyx_t_5 = __Pyx_GetAttr3(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_SEFLG_SIDEREAL, __pyx_mstate_global->__pyx_int_0); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 46, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
   __pyx_t_4 = __Pyx_PyNumber_Int(__pyx_t_5); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 46, __pyx_L1_error)
@@ -18262,18 +20330,18 @@ __Pyx_RefNannySetupContext("PyInit__transit_kernel", 0);
   __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
   __pyx_t_6 = __Pyx_PyLong_As_int(__pyx_t_4); if (unlikely((__pyx_t_6 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 46, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-  __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__SWIEPH_FLAG = __pyx_t_6;
+  __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__SIDEREAL_FLAG = __pyx_t_6;
 
   /* "aries/astrology/transit_fast/_transit_kernel.pyx":47
- * cdef int _TOPOCENTRIC_FLAG = int(getattr(_astrology, "SEFLG_TOPOCTR", 0))
+ * )
+ * cdef int _SIDEREAL_FLAG = int(getattr(_astrology, "SEFLG_SIDEREAL", 0))
+ * cdef int _TOPOCENTRIC_FLAG = int(getattr(_astrology, "SEFLG_TOPOCTR", 0))             # <<<<<<<<<<<<<<
  * cdef int _SWIEPH_FLAG = int(getattr(_astrology, "SEFLG_SWIEPH", 0))
- * cdef int _SPEED_FLAG = int(getattr(_astrology, "SEFLG_SPEED", 0))             # <<<<<<<<<<<<<<
- * cdef int _SUN_ID = int(getattr(_astrology, "SE_SUN", 0))
- * cdef int _MOON_ID = int(getattr(_astrology, "SE_MOON", 1))
+ * cdef int _SPEED_FLAG = int(getattr(_astrology, "SEFLG_SPEED", 0))
 */
   __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_astrology_2); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 47, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
-  __pyx_t_5 = __Pyx_GetAttr3(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_SEFLG_SPEED, __pyx_mstate_global->__pyx_int_0); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 47, __pyx_L1_error)
+  __pyx_t_5 = __Pyx_GetAttr3(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_SEFLG_TOPOCTR, __pyx_mstate_global->__pyx_int_0); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 47, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
   __pyx_t_4 = __Pyx_PyNumber_Int(__pyx_t_5); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 47, __pyx_L1_error)
@@ -18281,18 +20349,18 @@ __Pyx_RefNannySetupContext("PyInit__transit_kernel", 0);
   __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
   __pyx_t_6 = __Pyx_PyLong_As_int(__pyx_t_4); if (unlikely((__pyx_t_6 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 47, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-  __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__SPEED_FLAG = __pyx_t_6;
+  __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__TOPOCENTRIC_FLAG = __pyx_t_6;
 
   /* "aries/astrology/transit_fast/_transit_kernel.pyx":48
- * cdef int _SWIEPH_FLAG = int(getattr(_astrology, "SEFLG_SWIEPH", 0))
+ * cdef int _SIDEREAL_FLAG = int(getattr(_astrology, "SEFLG_SIDEREAL", 0))
+ * cdef int _TOPOCENTRIC_FLAG = int(getattr(_astrology, "SEFLG_TOPOCTR", 0))
+ * cdef int _SWIEPH_FLAG = int(getattr(_astrology, "SEFLG_SWIEPH", 0))             # <<<<<<<<<<<<<<
  * cdef int _SPEED_FLAG = int(getattr(_astrology, "SEFLG_SPEED", 0))
- * cdef int _SUN_ID = int(getattr(_astrology, "SE_SUN", 0))             # <<<<<<<<<<<<<<
- * cdef int _MOON_ID = int(getattr(_astrology, "SE_MOON", 1))
- * cdef int _BISECTION_MAX_ITERS = int(BISECTION_MAX_ITERS)
+ * cdef int _SUN_ID = int(getattr(_astrology, "SE_SUN", 0))
 */
   __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_astrology_2); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 48, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
-  __pyx_t_5 = __Pyx_GetAttr3(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_SE_SUN, __pyx_mstate_global->__pyx_int_0); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 48, __pyx_L1_error)
+  __pyx_t_5 = __Pyx_GetAttr3(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_SEFLG_SWIEPH, __pyx_mstate_global->__pyx_int_0); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 48, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
   __pyx_t_4 = __Pyx_PyNumber_Int(__pyx_t_5); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 48, __pyx_L1_error)
@@ -18300,18 +20368,18 @@ __Pyx_RefNannySetupContext("PyInit__transit_kernel", 0);
   __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
   __pyx_t_6 = __Pyx_PyLong_As_int(__pyx_t_4); if (unlikely((__pyx_t_6 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 48, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-  __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__SUN_ID = __pyx_t_6;
+  __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__SWIEPH_FLAG = __pyx_t_6;
 
   /* "aries/astrology/transit_fast/_transit_kernel.pyx":49
- * cdef int _SPEED_FLAG = int(getattr(_astrology, "SEFLG_SPEED", 0))
+ * cdef int _TOPOCENTRIC_FLAG = int(getattr(_astrology, "SEFLG_TOPOCTR", 0))
+ * cdef int _SWIEPH_FLAG = int(getattr(_astrology, "SEFLG_SWIEPH", 0))
+ * cdef int _SPEED_FLAG = int(getattr(_astrology, "SEFLG_SPEED", 0))             # <<<<<<<<<<<<<<
  * cdef int _SUN_ID = int(getattr(_astrology, "SE_SUN", 0))
- * cdef int _MOON_ID = int(getattr(_astrology, "SE_MOON", 1))             # <<<<<<<<<<<<<<
- * cdef int _BISECTION_MAX_ITERS = int(BISECTION_MAX_ITERS)
- * cdef int _NEWTON_MAX_ITERS = int(NEWTON_MAX_ITERS)
+ * cdef int _MOON_ID = int(getattr(_astrology, "SE_MOON", 1))
 */
   __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_astrology_2); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 49, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
-  __pyx_t_5 = __Pyx_GetAttr3(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_SE_MOON, __pyx_mstate_global->__pyx_int_1); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 49, __pyx_L1_error)
+  __pyx_t_5 = __Pyx_GetAttr3(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_SEFLG_SPEED, __pyx_mstate_global->__pyx_int_0); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 49, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
   __pyx_t_4 = __Pyx_PyNumber_Int(__pyx_t_5); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 49, __pyx_L1_error)
@@ -18319,125 +20387,163 @@ __Pyx_RefNannySetupContext("PyInit__transit_kernel", 0);
   __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
   __pyx_t_6 = __Pyx_PyLong_As_int(__pyx_t_4); if (unlikely((__pyx_t_6 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 49, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-  __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__MOON_ID = __pyx_t_6;
+  __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__SPEED_FLAG = __pyx_t_6;
 
   /* "aries/astrology/transit_fast/_transit_kernel.pyx":50
+ * cdef int _SWIEPH_FLAG = int(getattr(_astrology, "SEFLG_SWIEPH", 0))
+ * cdef int _SPEED_FLAG = int(getattr(_astrology, "SEFLG_SPEED", 0))
+ * cdef int _SUN_ID = int(getattr(_astrology, "SE_SUN", 0))             # <<<<<<<<<<<<<<
+ * cdef int _MOON_ID = int(getattr(_astrology, "SE_MOON", 1))
+ * cdef int _BISECTION_MAX_ITERS = int(BISECTION_MAX_ITERS)
+*/
+  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_astrology_2); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 50, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_4);
+  __pyx_t_5 = __Pyx_GetAttr3(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_SE_SUN, __pyx_mstate_global->__pyx_int_0); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 50, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_5);
+  __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
+  __pyx_t_4 = __Pyx_PyNumber_Int(__pyx_t_5); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 50, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_4);
+  __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
+  __pyx_t_6 = __Pyx_PyLong_As_int(__pyx_t_4); if (unlikely((__pyx_t_6 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 50, __pyx_L1_error)
+  __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
+  __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__SUN_ID = __pyx_t_6;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":51
+ * cdef int _SPEED_FLAG = int(getattr(_astrology, "SEFLG_SPEED", 0))
+ * cdef int _SUN_ID = int(getattr(_astrology, "SE_SUN", 0))
+ * cdef int _MOON_ID = int(getattr(_astrology, "SE_MOON", 1))             # <<<<<<<<<<<<<<
+ * cdef int _BISECTION_MAX_ITERS = int(BISECTION_MAX_ITERS)
+ * cdef int _NEWTON_MAX_ITERS = int(NEWTON_MAX_ITERS)
+*/
+  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_astrology_2); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 51, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_4);
+  __pyx_t_5 = __Pyx_GetAttr3(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_SE_MOON, __pyx_mstate_global->__pyx_int_1); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 51, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_5);
+  __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
+  __pyx_t_4 = __Pyx_PyNumber_Int(__pyx_t_5); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 51, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_4);
+  __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
+  __pyx_t_6 = __Pyx_PyLong_As_int(__pyx_t_4); if (unlikely((__pyx_t_6 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 51, __pyx_L1_error)
+  __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
+  __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__MOON_ID = __pyx_t_6;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":52
  * cdef int _SUN_ID = int(getattr(_astrology, "SE_SUN", 0))
  * cdef int _MOON_ID = int(getattr(_astrology, "SE_MOON", 1))
  * cdef int _BISECTION_MAX_ITERS = int(BISECTION_MAX_ITERS)             # <<<<<<<<<<<<<<
  * cdef int _NEWTON_MAX_ITERS = int(NEWTON_MAX_ITERS)
  * cdef int _HIT_LONGITUDE = int(HIT_LONGITUDE)
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_BISECTION_MAX_ITERS); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 50, __pyx_L1_error)
-  __Pyx_GOTREF(__pyx_t_4);
-  __pyx_t_5 = __Pyx_PyNumber_Int(__pyx_t_4); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 50, __pyx_L1_error)
-  __Pyx_GOTREF(__pyx_t_5);
-  __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-  __pyx_t_6 = __Pyx_PyLong_As_int(__pyx_t_5); if (unlikely((__pyx_t_6 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 50, __pyx_L1_error)
-  __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-  __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__BISECTION_MAX_ITERS = __pyx_t_6;
-
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":51
- * cdef int _MOON_ID = int(getattr(_astrology, "SE_MOON", 1))
- * cdef int _BISECTION_MAX_ITERS = int(BISECTION_MAX_ITERS)
- * cdef int _NEWTON_MAX_ITERS = int(NEWTON_MAX_ITERS)             # <<<<<<<<<<<<<<
- * cdef int _HIT_LONGITUDE = int(HIT_LONGITUDE)
- * cdef int _HIT_STATION = int(HIT_STATION)
-*/
-  __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_NEWTON_MAX_ITERS); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 51, __pyx_L1_error)
-  __Pyx_GOTREF(__pyx_t_5);
-  __pyx_t_4 = __Pyx_PyNumber_Int(__pyx_t_5); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 51, __pyx_L1_error)
-  __Pyx_GOTREF(__pyx_t_4);
-  __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-  __pyx_t_6 = __Pyx_PyLong_As_int(__pyx_t_4); if (unlikely((__pyx_t_6 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 51, __pyx_L1_error)
-  __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-  __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__NEWTON_MAX_ITERS = __pyx_t_6;
-
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":52
- * cdef int _BISECTION_MAX_ITERS = int(BISECTION_MAX_ITERS)
- * cdef int _NEWTON_MAX_ITERS = int(NEWTON_MAX_ITERS)
- * cdef int _HIT_LONGITUDE = int(HIT_LONGITUDE)             # <<<<<<<<<<<<<<
- * cdef int _HIT_STATION = int(HIT_STATION)
- * cdef double _DEDUP_EPS_DAYS = float(DEDUP_EPS_DAYS)
-*/
-  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_HIT_LONGITUDE); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 52, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_BISECTION_MAX_ITERS); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 52, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
   __pyx_t_5 = __Pyx_PyNumber_Int(__pyx_t_4); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 52, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
   __pyx_t_6 = __Pyx_PyLong_As_int(__pyx_t_5); if (unlikely((__pyx_t_6 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 52, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-  __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__HIT_LONGITUDE = __pyx_t_6;
+  __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__BISECTION_MAX_ITERS = __pyx_t_6;
 
   /* "aries/astrology/transit_fast/_transit_kernel.pyx":53
- * cdef int _NEWTON_MAX_ITERS = int(NEWTON_MAX_ITERS)
+ * cdef int _MOON_ID = int(getattr(_astrology, "SE_MOON", 1))
+ * cdef int _BISECTION_MAX_ITERS = int(BISECTION_MAX_ITERS)
+ * cdef int _NEWTON_MAX_ITERS = int(NEWTON_MAX_ITERS)             # <<<<<<<<<<<<<<
  * cdef int _HIT_LONGITUDE = int(HIT_LONGITUDE)
- * cdef int _HIT_STATION = int(HIT_STATION)             # <<<<<<<<<<<<<<
- * cdef double _DEDUP_EPS_DAYS = float(DEDUP_EPS_DAYS)
- * cdef double _DEFAULT_EPS_DEG = float(DEFAULT_EPS_DEG)
+ * cdef int _HIT_STATION = int(HIT_STATION)
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_HIT_STATION); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 53, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_NEWTON_MAX_ITERS); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 53, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
   __pyx_t_4 = __Pyx_PyNumber_Int(__pyx_t_5); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 53, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
   __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
   __pyx_t_6 = __Pyx_PyLong_As_int(__pyx_t_4); if (unlikely((__pyx_t_6 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 53, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-  __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__HIT_STATION = __pyx_t_6;
+  __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__NEWTON_MAX_ITERS = __pyx_t_6;
 
   /* "aries/astrology/transit_fast/_transit_kernel.pyx":54
+ * cdef int _BISECTION_MAX_ITERS = int(BISECTION_MAX_ITERS)
+ * cdef int _NEWTON_MAX_ITERS = int(NEWTON_MAX_ITERS)
+ * cdef int _HIT_LONGITUDE = int(HIT_LONGITUDE)             # <<<<<<<<<<<<<<
+ * cdef int _HIT_STATION = int(HIT_STATION)
+ * cdef double _DEDUP_EPS_DAYS = float(DEDUP_EPS_DAYS)
+*/
+  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_HIT_LONGITUDE); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 54, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_4);
+  __pyx_t_5 = __Pyx_PyNumber_Int(__pyx_t_4); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 54, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_5);
+  __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
+  __pyx_t_6 = __Pyx_PyLong_As_int(__pyx_t_5); if (unlikely((__pyx_t_6 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 54, __pyx_L1_error)
+  __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
+  __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__HIT_LONGITUDE = __pyx_t_6;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":55
+ * cdef int _NEWTON_MAX_ITERS = int(NEWTON_MAX_ITERS)
+ * cdef int _HIT_LONGITUDE = int(HIT_LONGITUDE)
+ * cdef int _HIT_STATION = int(HIT_STATION)             # <<<<<<<<<<<<<<
+ * cdef double _DEDUP_EPS_DAYS = float(DEDUP_EPS_DAYS)
+ * cdef double _DEFAULT_EPS_DEG = float(DEFAULT_EPS_DEG)
+*/
+  __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_HIT_STATION); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 55, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_5);
+  __pyx_t_4 = __Pyx_PyNumber_Int(__pyx_t_5); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 55, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_4);
+  __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
+  __pyx_t_6 = __Pyx_PyLong_As_int(__pyx_t_4); if (unlikely((__pyx_t_6 == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 55, __pyx_L1_error)
+  __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
+  __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__HIT_STATION = __pyx_t_6;
+
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":56
  * cdef int _HIT_LONGITUDE = int(HIT_LONGITUDE)
  * cdef int _HIT_STATION = int(HIT_STATION)
  * cdef double _DEDUP_EPS_DAYS = float(DEDUP_EPS_DAYS)             # <<<<<<<<<<<<<<
  * cdef double _DEFAULT_EPS_DEG = float(DEFAULT_EPS_DEG)
  * cdef double _LOW_SPEED_WARN = float(LOW_SPEED_WARN)
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_DEDUP_EPS_DAYS); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 54, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_DEDUP_EPS_DAYS); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 56, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
-  __pyx_t_7 = __Pyx_PyObject_AsDouble(__pyx_t_4); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_7, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 54, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_PyObject_AsDouble(__pyx_t_4); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_7, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 56, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
   __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__DEDUP_EPS_DAYS = __pyx_t_7;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":55
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":57
  * cdef int _HIT_STATION = int(HIT_STATION)
  * cdef double _DEDUP_EPS_DAYS = float(DEDUP_EPS_DAYS)
  * cdef double _DEFAULT_EPS_DEG = float(DEFAULT_EPS_DEG)             # <<<<<<<<<<<<<<
  * cdef double _LOW_SPEED_WARN = float(LOW_SPEED_WARN)
  * cdef double _STATION_SPEED_EPS = float(STATION_SPEED_EPS)
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DEG); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 55, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DEG); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 57, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
-  __pyx_t_7 = __Pyx_PyObject_AsDouble(__pyx_t_4); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_7, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 55, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_PyObject_AsDouble(__pyx_t_4); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_7, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 57, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
   __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__DEFAULT_EPS_DEG = __pyx_t_7;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":56
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":58
  * cdef double _DEDUP_EPS_DAYS = float(DEDUP_EPS_DAYS)
  * cdef double _DEFAULT_EPS_DEG = float(DEFAULT_EPS_DEG)
  * cdef double _LOW_SPEED_WARN = float(LOW_SPEED_WARN)             # <<<<<<<<<<<<<<
  * cdef double _STATION_SPEED_EPS = float(STATION_SPEED_EPS)
  * cdef double _MAX_NATIVE_LOCK_SPAN_DAYS = 14.0
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_LOW_SPEED_WARN); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 56, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_LOW_SPEED_WARN); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 58, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
-  __pyx_t_7 = __Pyx_PyObject_AsDouble(__pyx_t_4); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_7, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 56, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_PyObject_AsDouble(__pyx_t_4); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_7, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 58, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
   __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__LOW_SPEED_WARN = __pyx_t_7;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":57
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":59
  * cdef double _DEFAULT_EPS_DEG = float(DEFAULT_EPS_DEG)
  * cdef double _LOW_SPEED_WARN = float(LOW_SPEED_WARN)
  * cdef double _STATION_SPEED_EPS = float(STATION_SPEED_EPS)             # <<<<<<<<<<<<<<
  * cdef double _MAX_NATIVE_LOCK_SPAN_DAYS = 14.0
  * cdef object _active_ephe_path = None
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_STATION_SPEED_EPS); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 57, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_STATION_SPEED_EPS); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 59, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
-  __pyx_t_7 = __Pyx_PyObject_AsDouble(__pyx_t_4); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_7, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 57, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_PyObject_AsDouble(__pyx_t_4); if (unlikely(__PYX_CHECK_FLOAT_EXCEPTION(__pyx_t_7, ((double)((double)-1))) && PyErr_Occurred())) __PYX_ERR(0, 59, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
   __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__STATION_SPEED_EPS = __pyx_t_7;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":58
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":60
  * cdef double _LOW_SPEED_WARN = float(LOW_SPEED_WARN)
  * cdef double _STATION_SPEED_EPS = float(STATION_SPEED_EPS)
  * cdef double _MAX_NATIVE_LOCK_SPAN_DAYS = 14.0             # <<<<<<<<<<<<<<
@@ -18446,7 +20552,7 @@ __Pyx_RefNannySetupContext("PyInit__transit_kernel", 0);
 */
   __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__MAX_NATIVE_LOCK_SPAN_DAYS = 14.0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":59
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":61
  * cdef double _STATION_SPEED_EPS = float(STATION_SPEED_EPS)
  * cdef double _MAX_NATIVE_LOCK_SPAN_DAYS = 14.0
  * cdef object _active_ephe_path = None             # <<<<<<<<<<<<<<
@@ -18458,7 +20564,7 @@ __Pyx_RefNannySetupContext("PyInit__transit_kernel", 0);
   __Pyx_DECREF_SET(__pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__active_ephe_path, Py_None);
   __Pyx_GIVEREF(Py_None);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":60
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":62
  * cdef double _MAX_NATIVE_LOCK_SPAN_DAYS = 14.0
  * cdef object _active_ephe_path = None
  * cdef object _active_sidereal_mode = None             # <<<<<<<<<<<<<<
@@ -18470,7 +20576,7 @@ __Pyx_RefNannySetupContext("PyInit__transit_kernel", 0);
   __Pyx_DECREF_SET(__pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__active_sidereal_mode, Py_None);
   __Pyx_GIVEREF(Py_None);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":61
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":63
  * cdef object _active_ephe_path = None
  * cdef object _active_sidereal_mode = None
  * cdef object _active_topocentric_position = None             # <<<<<<<<<<<<<<
@@ -18482,7 +20588,7 @@ __Pyx_RefNannySetupContext("PyInit__transit_kernel", 0);
   __Pyx_DECREF_SET(__pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__active_topocentric_position, Py_None);
   __Pyx_GIVEREF(Py_None);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":62
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":64
  * cdef object _active_sidereal_mode = None
  * cdef object _active_topocentric_position = None
  * cdef PyThread_type_lock _native_swe_lock = PyThread_allocate_lock()             # <<<<<<<<<<<<<<
@@ -18491,7 +20597,7 @@ __Pyx_RefNannySetupContext("PyInit__transit_kernel", 0);
 */
   __pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__native_swe_lock = PyThread_allocate_lock();
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":63
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":65
  * cdef object _active_topocentric_position = None
  * cdef PyThread_type_lock _native_swe_lock = PyThread_allocate_lock()
  * if _native_swe_lock == NULL:             # <<<<<<<<<<<<<<
@@ -18501,7 +20607,7 @@ __Pyx_RefNannySetupContext("PyInit__transit_kernel", 0);
   __pyx_t_8 = (__pyx_v_5aries_9astrology_12transit_fast_15_transit_kernel__native_swe_lock == NULL);
   if (unlikely(__pyx_t_8)) {
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":64
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":66
  * cdef PyThread_type_lock _native_swe_lock = PyThread_allocate_lock()
  * if _native_swe_lock == NULL:
  * 	raise MemoryError("Could not allocate native Swiss Ephemeris lock")             # <<<<<<<<<<<<<<
@@ -18514,14 +20620,14 @@ __Pyx_RefNannySetupContext("PyInit__transit_kernel", 0);
       PyObject *__pyx_callargs[2] = {__pyx_t_5, __pyx_mstate_global->__pyx_kp_u_Could_not_allocate_native_Swiss};
       __pyx_t_4 = __Pyx_PyObject_FastCall((PyObject*)(((PyTypeObject*)PyExc_MemoryError)), __pyx_callargs+__pyx_t_9, (2-__pyx_t_9) | (__pyx_t_9*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
       __Pyx_XDECREF(__pyx_t_5); __pyx_t_5 = 0;
-      if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 64, __pyx_L1_error)
+      if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 66, __pyx_L1_error)
       __Pyx_GOTREF(__pyx_t_4);
     }
     __Pyx_Raise(__pyx_t_4, 0, 0, 0);
     __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-    __PYX_ERR(0, 64, __pyx_L1_error)
+    __PYX_ERR(0, 66, __pyx_L1_error)
 
-    /* "aries/astrology/transit_fast/_transit_kernel.pyx":63
+    /* "aries/astrology/transit_fast/_transit_kernel.pyx":65
  * cdef object _active_topocentric_position = None
  * cdef PyThread_type_lock _native_swe_lock = PyThread_allocate_lock()
  * if _native_swe_lock == NULL:             # <<<<<<<<<<<<<<
@@ -18530,400 +20636,400 @@ __Pyx_RefNannySetupContext("PyInit__transit_kernel", 0);
 */
   }
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":751
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":959
  *
  *
  * def _sort_raw_hits_py(out):             # <<<<<<<<<<<<<<
  * 	out.sort(key=lambda item: (item[0], item[2], item[3], item[1], item[4]))
  * 	return out
 */
-  __pyx_t_4 = __Pyx_CyFunction_New(&__pyx_mdef_5aries_9astrology_12transit_fast_15_transit_kernel_1_sort_raw_hits_py, 0, __pyx_mstate_global->__pyx_n_u_sort_raw_hits_py, NULL, __pyx_mstate_global->__pyx_n_u_aries_astrology_transit_fast__tr, __pyx_mstate_global->__pyx_d, ((PyObject *)__pyx_mstate_global->__pyx_codeobj_tab[2])); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 751, __pyx_L1_error)
+  __pyx_t_4 = __Pyx_CyFunction_New(&__pyx_mdef_5aries_9astrology_12transit_fast_15_transit_kernel_1_sort_raw_hits_py, 0, __pyx_mstate_global->__pyx_n_u_sort_raw_hits_py, NULL, __pyx_mstate_global->__pyx_n_u_aries_astrology_transit_fast__tr, __pyx_mstate_global->__pyx_d, ((PyObject *)__pyx_mstate_global->__pyx_codeobj_tab[2])); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 959, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
   #if CYTHON_COMPILING_IN_CPYTHON && PY_VERSION_HEX >= 0x030E0000
   PyUnstable_Object_EnableDeferredRefcount(__pyx_t_4);
   #endif
-  if (PyDict_SetItem(__pyx_mstate_global->__pyx_d, __pyx_mstate_global->__pyx_n_u_sort_raw_hits_py, __pyx_t_4) < (0)) __PYX_ERR(0, 751, __pyx_L1_error)
+  if (PyDict_SetItem(__pyx_mstate_global->__pyx_d, __pyx_mstate_global->__pyx_n_u_sort_raw_hits_py, __pyx_t_4) < (0)) __PYX_ERR(0, 959, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":999
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1253
  * 	object topocentric_position=None,
  * 	object step_days=None,
  * 	double eps_speed=STATION_SPEED_EPS,             # <<<<<<<<<<<<<<
  * 	double eps_days=DEFAULT_EPS_DAYS,
  * ):
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_STATION_SPEED_EPS); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 999, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_STATION_SPEED_EPS); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1253, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
-  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_4); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 999, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_4); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1253, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
   __pyx_mstate_global->__pyx_k__2 = __pyx_t_7;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1000
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1254
  * 	object step_days=None,
  * 	double eps_speed=STATION_SPEED_EPS,
  * 	double eps_days=DEFAULT_EPS_DAYS,             # <<<<<<<<<<<<<<
  * ):
  * 	cdef CHit* hits = NULL
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DAYS); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1000, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DAYS); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1254, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
-  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_4); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1000, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_4); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1254, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
   __pyx_mstate_global->__pyx_k__3 = __pyx_t_7;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":999
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1253
  * 	object topocentric_position=None,
  * 	object step_days=None,
  * 	double eps_speed=STATION_SPEED_EPS,             # <<<<<<<<<<<<<<
  * 	double eps_days=DEFAULT_EPS_DAYS,
  * ):
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_STATION_SPEED_EPS); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 999, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_STATION_SPEED_EPS); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1253, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
-  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_4); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 999, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_4); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1253, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-  __pyx_t_4 = PyFloat_FromDouble(__pyx_t_7); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 999, __pyx_L1_error)
+  __pyx_t_4 = PyFloat_FromDouble(__pyx_t_7); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1253, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1000
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1254
  * 	object step_days=None,
  * 	double eps_speed=STATION_SPEED_EPS,
  * 	double eps_days=DEFAULT_EPS_DAYS,             # <<<<<<<<<<<<<<
  * ):
  * 	cdef CHit* hits = NULL
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DAYS); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1000, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DAYS); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1254, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
-  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_5); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1000, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_5); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1254, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-  __pyx_t_5 = PyFloat_FromDouble(__pyx_t_7); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1000, __pyx_L1_error)
+  __pyx_t_5 = PyFloat_FromDouble(__pyx_t_7); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1254, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":990
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1244
  *
  *
  * cpdef list search_station_times_raw(             # <<<<<<<<<<<<<<
  * 	int planet,
  * 	double jd_start,
 */
-  __pyx_t_2 = PyTuple_Pack(7, Py_None, __pyx_mstate_global->__pyx_int_0, Py_None, Py_None, Py_None, __pyx_t_4, __pyx_t_5); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 990, __pyx_L1_error)
+  __pyx_t_2 = PyTuple_Pack(7, Py_None, __pyx_mstate_global->__pyx_int_0, Py_None, Py_None, Py_None, __pyx_t_4, __pyx_t_5); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 1244, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
   __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-  __pyx_t_5 = __Pyx_CyFunction_New(&__pyx_mdef_5aries_9astrology_12transit_fast_15_transit_kernel_3search_station_times_raw, 0, __pyx_mstate_global->__pyx_n_u_search_station_times_raw, NULL, __pyx_mstate_global->__pyx_n_u_aries_astrology_transit_fast__tr, __pyx_mstate_global->__pyx_d, ((PyObject *)__pyx_mstate_global->__pyx_codeobj_tab[3])); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 990, __pyx_L1_error)
+  __pyx_t_5 = __Pyx_CyFunction_New(&__pyx_mdef_5aries_9astrology_12transit_fast_15_transit_kernel_3search_station_times_raw, 0, __pyx_mstate_global->__pyx_n_u_search_station_times_raw, NULL, __pyx_mstate_global->__pyx_n_u_aries_astrology_transit_fast__tr, __pyx_mstate_global->__pyx_d, ((PyObject *)__pyx_mstate_global->__pyx_codeobj_tab[3])); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1244, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
   #if CYTHON_COMPILING_IN_CPYTHON && PY_VERSION_HEX >= 0x030E0000
   PyUnstable_Object_EnableDeferredRefcount(__pyx_t_5);
   #endif
   __Pyx_CyFunction_SetDefaultsTuple(__pyx_t_5, __pyx_t_2);
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
-  if (PyDict_SetItem(__pyx_mstate_global->__pyx_d, __pyx_mstate_global->__pyx_n_u_search_station_times_raw, __pyx_t_5) < (0)) __PYX_ERR(0, 990, __pyx_L1_error)
+  if (PyDict_SetItem(__pyx_mstate_global->__pyx_d, __pyx_mstate_global->__pyx_n_u_search_station_times_raw, __pyx_t_5) < (0)) __PYX_ERR(0, 1244, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1044
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1298
  * 	object topocentric_position=None,
  * 	object step_days=None,
  * 	double eps_speed=STATION_SPEED_EPS,             # <<<<<<<<<<<<<<
  * 	double eps_days=DEFAULT_EPS_DAYS,
  * ):
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_STATION_SPEED_EPS); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1044, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_STATION_SPEED_EPS); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1298, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
-  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_5); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1044, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_5); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1298, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
   __pyx_mstate_global->__pyx_k__4 = __pyx_t_7;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1045
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1299
  * 	object step_days=None,
  * 	double eps_speed=STATION_SPEED_EPS,
  * 	double eps_days=DEFAULT_EPS_DAYS,             # <<<<<<<<<<<<<<
  * ):
  * 	cdef CHit* hits = NULL
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DAYS); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1045, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DAYS); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1299, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
-  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_5); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1045, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_5); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1299, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
   __pyx_mstate_global->__pyx_k__5 = __pyx_t_7;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1044
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1298
  * 	object topocentric_position=None,
  * 	object step_days=None,
  * 	double eps_speed=STATION_SPEED_EPS,             # <<<<<<<<<<<<<<
  * 	double eps_days=DEFAULT_EPS_DAYS,
  * ):
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_STATION_SPEED_EPS); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1044, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_STATION_SPEED_EPS); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1298, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
-  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_5); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1044, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_5); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1298, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-  __pyx_t_5 = PyFloat_FromDouble(__pyx_t_7); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1044, __pyx_L1_error)
+  __pyx_t_5 = PyFloat_FromDouble(__pyx_t_7); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1298, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1045
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1299
  * 	object step_days=None,
  * 	double eps_speed=STATION_SPEED_EPS,
  * 	double eps_days=DEFAULT_EPS_DAYS,             # <<<<<<<<<<<<<<
  * ):
  * 	cdef CHit* hits = NULL
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_2, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DAYS); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 1045, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_2, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DAYS); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 1299, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
-  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_2); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1045, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_2); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1299, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
-  __pyx_t_2 = PyFloat_FromDouble(__pyx_t_7); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 1045, __pyx_L1_error)
+  __pyx_t_2 = PyFloat_FromDouble(__pyx_t_7); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 1299, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1035
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1289
  *
  *
  * cpdef list search_station_times_batch_raw(             # <<<<<<<<<<<<<<
  * 	object planets,
  * 	double jd_start,
 */
-  __pyx_t_4 = PyTuple_Pack(7, Py_None, __pyx_mstate_global->__pyx_int_0, Py_None, Py_None, Py_None, __pyx_t_5, __pyx_t_2); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1035, __pyx_L1_error)
+  __pyx_t_4 = PyTuple_Pack(7, Py_None, __pyx_mstate_global->__pyx_int_0, Py_None, Py_None, Py_None, __pyx_t_5, __pyx_t_2); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1289, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
   __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
-  __pyx_t_2 = __Pyx_CyFunction_New(&__pyx_mdef_5aries_9astrology_12transit_fast_15_transit_kernel_5search_station_times_batch_raw, 0, __pyx_mstate_global->__pyx_n_u_search_station_times_batch_raw, NULL, __pyx_mstate_global->__pyx_n_u_aries_astrology_transit_fast__tr, __pyx_mstate_global->__pyx_d, ((PyObject *)__pyx_mstate_global->__pyx_codeobj_tab[4])); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 1035, __pyx_L1_error)
+  __pyx_t_2 = __Pyx_CyFunction_New(&__pyx_mdef_5aries_9astrology_12transit_fast_15_transit_kernel_5search_station_times_batch_raw, 0, __pyx_mstate_global->__pyx_n_u_search_station_times_batch_raw, NULL, __pyx_mstate_global->__pyx_n_u_aries_astrology_transit_fast__tr, __pyx_mstate_global->__pyx_d, ((PyObject *)__pyx_mstate_global->__pyx_codeobj_tab[4])); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 1289, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
   #if CYTHON_COMPILING_IN_CPYTHON && PY_VERSION_HEX >= 0x030E0000
   PyUnstable_Object_EnableDeferredRefcount(__pyx_t_2);
   #endif
   __Pyx_CyFunction_SetDefaultsTuple(__pyx_t_2, __pyx_t_4);
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-  if (PyDict_SetItem(__pyx_mstate_global->__pyx_d, __pyx_mstate_global->__pyx_n_u_search_station_times_batch_raw, __pyx_t_2) < (0)) __PYX_ERR(0, 1035, __pyx_L1_error)
+  if (PyDict_SetItem(__pyx_mstate_global->__pyx_d, __pyx_mstate_global->__pyx_n_u_search_station_times_batch_raw, __pyx_t_2) < (0)) __PYX_ERR(0, 1289, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1096
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1350
  * 	object topocentric_position=None,
  * 	object step_days=None,
  * 	double eps_deg=DEFAULT_EPS_DEG,             # <<<<<<<<<<<<<<
  * 	double eps_days=DEFAULT_EPS_DAYS,
  * ):
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_2, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DEG); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 1096, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_2, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DEG); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 1350, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
-  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_2); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1096, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_2); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1350, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
   __pyx_mstate_global->__pyx_k__6 = __pyx_t_7;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1097
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1351
  * 	object step_days=None,
  * 	double eps_deg=DEFAULT_EPS_DEG,
  * 	double eps_days=DEFAULT_EPS_DAYS,             # <<<<<<<<<<<<<<
  * ):
  * 	cdef CHit* hits = NULL
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_2, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DAYS); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 1097, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_2, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DAYS); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 1351, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
-  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_2); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1097, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_2); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1351, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
   __pyx_mstate_global->__pyx_k__7 = __pyx_t_7;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1096
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1350
  * 	object topocentric_position=None,
  * 	object step_days=None,
  * 	double eps_deg=DEFAULT_EPS_DEG,             # <<<<<<<<<<<<<<
  * 	double eps_days=DEFAULT_EPS_DAYS,
  * ):
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_2, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DEG); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 1096, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_2, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DEG); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 1350, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
-  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_2); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1096, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_2); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1350, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
-  __pyx_t_2 = PyFloat_FromDouble(__pyx_t_7); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 1096, __pyx_L1_error)
+  __pyx_t_2 = PyFloat_FromDouble(__pyx_t_7); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 1350, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1097
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1351
  * 	object step_days=None,
  * 	double eps_deg=DEFAULT_EPS_DEG,
  * 	double eps_days=DEFAULT_EPS_DAYS,             # <<<<<<<<<<<<<<
  * ):
  * 	cdef CHit* hits = NULL
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DAYS); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1097, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DAYS); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1351, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
-  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_4); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1097, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_4); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1351, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-  __pyx_t_4 = PyFloat_FromDouble(__pyx_t_7); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1097, __pyx_L1_error)
+  __pyx_t_4 = PyFloat_FromDouble(__pyx_t_7); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1351, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1086
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1340
  *
  *
  * cpdef list search_longitude_transits_raw(             # <<<<<<<<<<<<<<
  * 	int planet,
  * 	double jd_start,
 */
-  __pyx_t_5 = PyTuple_Pack(7, Py_None, __pyx_mstate_global->__pyx_int_0, Py_None, Py_None, Py_None, __pyx_t_2, __pyx_t_4); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1086, __pyx_L1_error)
+  __pyx_t_5 = PyTuple_Pack(7, Py_None, __pyx_mstate_global->__pyx_int_0, Py_None, Py_None, Py_None, __pyx_t_2, __pyx_t_4); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1340, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-  __pyx_t_4 = __Pyx_CyFunction_New(&__pyx_mdef_5aries_9astrology_12transit_fast_15_transit_kernel_7search_longitude_transits_raw, 0, __pyx_mstate_global->__pyx_n_u_search_longitude_transits_raw, NULL, __pyx_mstate_global->__pyx_n_u_aries_astrology_transit_fast__tr, __pyx_mstate_global->__pyx_d, ((PyObject *)__pyx_mstate_global->__pyx_codeobj_tab[5])); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1086, __pyx_L1_error)
+  __pyx_t_4 = __Pyx_CyFunction_New(&__pyx_mdef_5aries_9astrology_12transit_fast_15_transit_kernel_7search_longitude_transits_raw, 0, __pyx_mstate_global->__pyx_n_u_search_longitude_transits_raw, NULL, __pyx_mstate_global->__pyx_n_u_aries_astrology_transit_fast__tr, __pyx_mstate_global->__pyx_d, ((PyObject *)__pyx_mstate_global->__pyx_codeobj_tab[5])); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1340, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
   #if CYTHON_COMPILING_IN_CPYTHON && PY_VERSION_HEX >= 0x030E0000
   PyUnstable_Object_EnableDeferredRefcount(__pyx_t_4);
   #endif
   __Pyx_CyFunction_SetDefaultsTuple(__pyx_t_4, __pyx_t_5);
   __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-  if (PyDict_SetItem(__pyx_mstate_global->__pyx_d, __pyx_mstate_global->__pyx_n_u_search_longitude_transits_raw, __pyx_t_4) < (0)) __PYX_ERR(0, 1086, __pyx_L1_error)
+  if (PyDict_SetItem(__pyx_mstate_global->__pyx_d, __pyx_mstate_global->__pyx_n_u_search_longitude_transits_raw, __pyx_t_4) < (0)) __PYX_ERR(0, 1340, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1149
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1403
  * 	object topocentric_position=None,
  * 	object step_days=None,
  * 	double eps_deg=DEFAULT_EPS_DEG,             # <<<<<<<<<<<<<<
  * 	double eps_days=DEFAULT_EPS_DAYS,
  * ):
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DEG); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1149, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DEG); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1403, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
-  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_4); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1149, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_4); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1403, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
   __pyx_mstate_global->__pyx_k__8 = __pyx_t_7;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1150
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1404
  * 	object step_days=None,
  * 	double eps_deg=DEFAULT_EPS_DEG,
  * 	double eps_days=DEFAULT_EPS_DAYS,             # <<<<<<<<<<<<<<
  * ):
  * 	cdef CHit* hits = NULL
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DAYS); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1150, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DAYS); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1404, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
-  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_4); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1150, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_4); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1404, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
   __pyx_mstate_global->__pyx_k__9 = __pyx_t_7;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1149
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1403
  * 	object topocentric_position=None,
  * 	object step_days=None,
  * 	double eps_deg=DEFAULT_EPS_DEG,             # <<<<<<<<<<<<<<
  * 	double eps_days=DEFAULT_EPS_DAYS,
  * ):
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DEG); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1149, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DEG); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1403, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
-  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_4); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1149, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_4); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1403, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-  __pyx_t_4 = PyFloat_FromDouble(__pyx_t_7); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1149, __pyx_L1_error)
+  __pyx_t_4 = PyFloat_FromDouble(__pyx_t_7); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1403, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1150
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1404
  * 	object step_days=None,
  * 	double eps_deg=DEFAULT_EPS_DEG,
  * 	double eps_days=DEFAULT_EPS_DAYS,             # <<<<<<<<<<<<<<
  * ):
  * 	cdef CHit* hits = NULL
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DAYS); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1150, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DAYS); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1404, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
-  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_5); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1150, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_5); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1404, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-  __pyx_t_5 = PyFloat_FromDouble(__pyx_t_7); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1150, __pyx_L1_error)
+  __pyx_t_5 = PyFloat_FromDouble(__pyx_t_7); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1404, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1139
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1393
  *
  *
  * cpdef list search_longitude_transits_batch_raw(             # <<<<<<<<<<<<<<
  * 	object planets,
  * 	double jd_start,
 */
-  __pyx_t_2 = PyTuple_Pack(7, Py_None, __pyx_mstate_global->__pyx_int_0, Py_None, Py_None, Py_None, __pyx_t_4, __pyx_t_5); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 1139, __pyx_L1_error)
+  __pyx_t_2 = PyTuple_Pack(7, Py_None, __pyx_mstate_global->__pyx_int_0, Py_None, Py_None, Py_None, __pyx_t_4, __pyx_t_5); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 1393, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
   __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-  __pyx_t_5 = __Pyx_CyFunction_New(&__pyx_mdef_5aries_9astrology_12transit_fast_15_transit_kernel_9search_longitude_transits_batch_raw, 0, __pyx_mstate_global->__pyx_n_u_search_longitude_transits_batch, NULL, __pyx_mstate_global->__pyx_n_u_aries_astrology_transit_fast__tr, __pyx_mstate_global->__pyx_d, ((PyObject *)__pyx_mstate_global->__pyx_codeobj_tab[6])); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1139, __pyx_L1_error)
+  __pyx_t_5 = __Pyx_CyFunction_New(&__pyx_mdef_5aries_9astrology_12transit_fast_15_transit_kernel_9search_longitude_transits_batch_raw, 0, __pyx_mstate_global->__pyx_n_u_search_longitude_transits_batch, NULL, __pyx_mstate_global->__pyx_n_u_aries_astrology_transit_fast__tr, __pyx_mstate_global->__pyx_d, ((PyObject *)__pyx_mstate_global->__pyx_codeobj_tab[6])); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1393, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
   #if CYTHON_COMPILING_IN_CPYTHON && PY_VERSION_HEX >= 0x030E0000
   PyUnstable_Object_EnableDeferredRefcount(__pyx_t_5);
   #endif
   __Pyx_CyFunction_SetDefaultsTuple(__pyx_t_5, __pyx_t_2);
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
-  if (PyDict_SetItem(__pyx_mstate_global->__pyx_d, __pyx_mstate_global->__pyx_n_u_search_longitude_transits_batch, __pyx_t_5) < (0)) __PYX_ERR(0, 1139, __pyx_L1_error)
+  if (PyDict_SetItem(__pyx_mstate_global->__pyx_d, __pyx_mstate_global->__pyx_n_u_search_longitude_transits_batch, __pyx_t_5) < (0)) __PYX_ERR(0, 1393, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1208
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1462
  * 	object topocentric_position=None,
  * 	object step_days=None,
  * 	double eps_deg=DEFAULT_EPS_DEG,             # <<<<<<<<<<<<<<
  * 	double eps_days=DEFAULT_EPS_DAYS,
  * ):
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DEG); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1208, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DEG); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1462, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
-  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_5); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1208, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_5); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1462, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
   __pyx_mstate_global->__pyx_k__10 = __pyx_t_7;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1209
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1463
  * 	object step_days=None,
  * 	double eps_deg=DEFAULT_EPS_DEG,
  * 	double eps_days=DEFAULT_EPS_DAYS,             # <<<<<<<<<<<<<<
  * ):
  * 	cdef CHit* hits = NULL
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DAYS); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1209, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DAYS); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1463, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
-  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_5); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1209, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_5); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1463, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
   __pyx_mstate_global->__pyx_k__11 = __pyx_t_7;
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1208
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1462
  * 	object topocentric_position=None,
  * 	object step_days=None,
  * 	double eps_deg=DEFAULT_EPS_DEG,             # <<<<<<<<<<<<<<
  * 	double eps_days=DEFAULT_EPS_DAYS,
  * ):
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DEG); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1208, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_5, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DEG); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1462, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
-  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_5); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1208, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_5); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1462, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-  __pyx_t_5 = PyFloat_FromDouble(__pyx_t_7); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1208, __pyx_L1_error)
+  __pyx_t_5 = PyFloat_FromDouble(__pyx_t_7); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 1462, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1209
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1463
  * 	object step_days=None,
  * 	double eps_deg=DEFAULT_EPS_DEG,
  * 	double eps_days=DEFAULT_EPS_DAYS,             # <<<<<<<<<<<<<<
  * ):
  * 	cdef CHit* hits = NULL
 */
-  __Pyx_GetModuleGlobalName(__pyx_t_2, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DAYS); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 1209, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_2, __pyx_mstate_global->__pyx_n_u_DEFAULT_EPS_DAYS); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 1463, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
-  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_2); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1209, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_PyFloat_AsDouble(__pyx_t_2); if (unlikely((__pyx_t_7 == (double)-1) && PyErr_Occurred())) __PYX_ERR(0, 1463, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
-  __pyx_t_2 = PyFloat_FromDouble(__pyx_t_7); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 1209, __pyx_L1_error)
+  __pyx_t_2 = PyFloat_FromDouble(__pyx_t_7); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 1463, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
 
-  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1198
+  /* "aries/astrology/transit_fast/_transit_kernel.pyx":1452
  *
  *
  * cpdef list search_relative_aspects_batch_raw(             # <<<<<<<<<<<<<<
  * 	object body_codes,
  * 	double jd_start,
 */
-  __pyx_t_4 = PyTuple_Pack(7, Py_None, __pyx_mstate_global->__pyx_int_0, Py_None, Py_None, Py_None, __pyx_t_5, __pyx_t_2); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1198, __pyx_L1_error)
+  __pyx_t_4 = PyTuple_Pack(7, Py_None, __pyx_mstate_global->__pyx_int_0, Py_None, Py_None, Py_None, __pyx_t_5, __pyx_t_2); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 1452, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
   __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
-  __pyx_t_2 = __Pyx_CyFunction_New(&__pyx_mdef_5aries_9astrology_12transit_fast_15_transit_kernel_11search_relative_aspects_batch_raw, 0, __pyx_mstate_global->__pyx_n_u_search_relative_aspects_batch_ra, NULL, __pyx_mstate_global->__pyx_n_u_aries_astrology_transit_fast__tr, __pyx_mstate_global->__pyx_d, ((PyObject *)__pyx_mstate_global->__pyx_codeobj_tab[7])); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 1198, __pyx_L1_error)
+  __pyx_t_2 = __Pyx_CyFunction_New(&__pyx_mdef_5aries_9astrology_12transit_fast_15_transit_kernel_11search_relative_aspects_batch_raw, 0, __pyx_mstate_global->__pyx_n_u_search_relative_aspects_batch_ra, NULL, __pyx_mstate_global->__pyx_n_u_aries_astrology_transit_fast__tr, __pyx_mstate_global->__pyx_d, ((PyObject *)__pyx_mstate_global->__pyx_codeobj_tab[7])); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 1452, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
   #if CYTHON_COMPILING_IN_CPYTHON && PY_VERSION_HEX >= 0x030E0000
   PyUnstable_Object_EnableDeferredRefcount(__pyx_t_2);
   #endif
   __Pyx_CyFunction_SetDefaultsTuple(__pyx_t_2, __pyx_t_4);
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-  if (PyDict_SetItem(__pyx_mstate_global->__pyx_d, __pyx_mstate_global->__pyx_n_u_search_relative_aspects_batch_ra, __pyx_t_2) < (0)) __PYX_ERR(0, 1198, __pyx_L1_error)
+  if (PyDict_SetItem(__pyx_mstate_global->__pyx_d, __pyx_mstate_global->__pyx_n_u_search_relative_aspects_batch_ra, __pyx_t_2) < (0)) __PYX_ERR(0, 1452, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
 
   /* "aries/astrology/transit_fast/_transit_kernel.pyx":1
  * # cython: language_level=3             # <<<<<<<<<<<<<<
- *
- * from libc.math cimport fabs, isfinite
+ * # Copyright (C) 2026 Max Lange
+ * # SPDX-License-Identifier: AGPL-3.0-or-later
 */
   __pyx_t_2 = __Pyx_PyDict_NewPresized(0); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 1, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
@@ -18968,9 +21074,11 @@ __Pyx_RefNannySetupContext("PyInit__transit_kernel", 0);
 
 static int __Pyx_InitCachedBuiltins(__pyx_mstatetype *__pyx_mstate) {
   CYTHON_UNUSED_VAR(__pyx_mstate);
-  __pyx_builtin_round = __Pyx_GetBuiltinName(__pyx_mstate->__pyx_n_u_round); if (!__pyx_builtin_round) __PYX_ERR(0, 820, __pyx_L1_error)
+  __pyx_builtin_round = __Pyx_GetBuiltinName(__pyx_mstate->__pyx_n_u_round); if (!__pyx_builtin_round) __PYX_ERR(0, 1028, __pyx_L1_error)
 
   /* Cached unbound methods */
+  __pyx_mstate->__pyx_umethod_PyDict_Type_get.type = (PyObject*)&PyDict_Type;
+  __pyx_mstate->__pyx_umethod_PyDict_Type_get.method_name = &__pyx_mstate->__pyx_n_u_get;
   __pyx_mstate->__pyx_umethod_PyDict_Type_items.type = (PyObject*)&PyDict_Type;
   __pyx_mstate->__pyx_umethod_PyDict_Type_items.method_name = &__pyx_mstate->__pyx_n_u_items;
   __pyx_mstate->__pyx_umethod_PyDict_Type_pop.type = (PyObject*)&PyDict_Type;
@@ -18995,39 +21103,39 @@ static int __Pyx_InitCachedConstants(__pyx_mstatetype *__pyx_mstate) {
 static int __Pyx_InitConstants(__pyx_mstatetype *__pyx_mstate) {
   CYTHON_UNUSED_VAR(__pyx_mstate);
   {
-    const struct { const unsigned int length: 11; } index[] = {{2},{46},{33},{40},{33},{32},{4},{53},{54},{1},{1},{48},{38},{4},{36},{37},{53},{38},{47},{50},{48},{8},{33},{58},{5},{19},{14},{16},{15},{13},{11},{14},{16},{20},{13},{16},{12},{13},{14},{11},{12},{13},{9},{7},{6},{17},{3},{44},{9},{10},{18},{10},{18},{9},{37},{28},{6},{9},{8},{7},{9},{5},{8},{33},{13},{4},{5},{6},{8},{3},{8},{8},{10},{8},{3},{6},{7},{3},{12},{12},{5},{35},{29},{33},{30},{24},{12},{10},{13},{4},{17},{35},{5},{9},{11},{8},{20},{6},{1128},{894},{357},{415},{261},{309},{18},{32}};
-    #if (CYTHON_COMPRESS_STRINGS) == 3 && __PYX_LIMITED_VERSION_HEX >= 0x030e0000 /* compression: zstd (1930 bytes) */
-const char* const cstring = "(\265/\375`F\023\005<\000\372X\004\023:\000\231\033\374\377\367^\243N\375\225\276\327\357\375\353\370\032u|\275\246\"\307\316\210\355\2563c\226R\244TL\251\223\315\2462\301\205\311\206FF\205#\001\252\302\206\031'L\307V\236\t\001\026\001-\0018\261\233\354\306\245d\367\333T\355\352\252\315\316\376\224\233\352\252~\336\242\273\211\344\361S\373\231S\365i\336Fw$\272\317\356\267\331w=\345u\317#[\225\364\235|\342g\332IV\375\277\373Tv\375\334\357v*\371M\276\372]\202r\266\367\367\252\271\331\321\365\211\223lo\177\274g\262\233{\225\345Pg\272\311\317\222\351\356\375\2779\313;S\256\317\245\231s\211\364?\335\337\247\252ibb\362\004\\MP\316\244Ov\372\004\310SQ\225\375~\237x\336\331]c\302\317\366w^\252\2423\237\247\033]IV\335\221\373\357\223\344\245\335{\2255I\236\262\355\347,O\325\031\377=\355;\222\373\326G\3723mU\035\t\334gI\272;\332\362\364\036\371\273O7\373I'\225\345}O\262\274\3677w\362,\337\355Z\035\3719\217\335\237\211\364\235\345>\336[c\244\367\335\351F\362\246\376wJ\362\277M\025E7\371\325\224<\321V\305!a\002\252\331\262\337\223$\253\357\235\311\223?\355\034\325\265\352I\222\200\210,\351h@ \255\277\347_k\017\\\365gU\377\271\327\232\373\372\327N\233\375[\247\275>St\267\277\276nS?\351U]\275o\247\034m\323\276}\032\310\231\274\217\377\256}\3274\373\324\3716\215GeLR\265\367\201\253V\277\366\277\367\264\326f\332\356\264>9_=\217\373\225\247\234w\255=p\237z\345\337k\375\321v\357\370\311dn\0357\323\256Q\323\233\032x\252:\317\323\316\252\335L\201~\353\363\334\263\334mF\243\375\350\330\255\210h\210\006D\303\355\000\305dB1[\014&\273\335f\245\014V\332|b;>\245\314F\303\225\271Z\314\206\303!\262\2257Z\307''v\333q\333\177\3423\375\315\016{\002\002i\215\023\212\315f\266RH\303b1\240\233\026\242\371\224\270[\014\226\303\311tf4\037\215\223\355\350\304p>\2712\207\250\204\351\033PL\003\345`1\330\315\026\303\311\364P\371\243g4\031.\0167o\202[0\376`\231\367\365\202\270g\214\022;\260\344\312\267u\267\300\373s\031\304\370\006\017\215\257\316\355\211\270\007\001\036\356\016/\353\366\027\373n\205\326""\013\036=^\327k\272\013q\031\213\300.\330|#\032Z\263\353\025_\226\261|/\\\203\026\226\370\336\\\236\253\342\362\332\313\361\242\373Uy}U\003\255\271|\037^Wk\007{q\014\374\202s\336\027\027!\270\023_\300b\205k0\316\245p'x\021\213\361\007\\!\n\013\202Fp\t\357\336\201\267a\234]B\212 \023\\\203\233^\211\327%\004\tF\301\033\036\200?^\007\367\240\245\022#\300\2677\345m\275FU\002\343\274c\236Z,\373\305=\360x\000\217sk\004\030\240\030\001\n\262~\357D\r\316\020g\327\013\266\200/^\261+6a\rq\366\254\314\366\344\036\227\271\221lT\223\217\206\345\020\266!o8\002\256\020g\021\246\020\347\332\033!\316(\357\203\210\345\340\232]\r\363\203\303\254\2211OH\314\t\0103\304\003\300A\226X\005\000\000\020\202n\021R\263\240\350\024\224\027\315\242\275\376k\265a9\014\030\302\276p\345\014v\004]A\\\014\001\203SWt\013\304y\273\035\256\313\215U\005\2103\325\224<%%K5\311M\255\334\246rz\312'\221\314t\345$\025\354q-\346\210]\361\013\013\370$?9\311N\253\274\252\262\332\345~\223\021\256&\206L\302\214 E\301\2704\366>\366z\343\336\243\222\022\021\321H\243\21599b\024\224\227=\227yN\036\271B\262\222\265\204\277\340\311kX#\324!\005\346\003\2039('\303\\\265\256\226\254b\204/a\212\204\334\020\000\265\341\016\330\2776\021\2435\347p\262\310\225\037\026Y\215\010]B\224\010Y|\227`nBA\026\326\213\363\352y<G\323\034u\272\321\310h,*\032q\270\361v\033e\243l\264\001\000\310\242\372\362\367\311>-k\232\3343\224\022>\005w\320\244\024\242\010U8\344W\214\004\241\223\344$\234\214\253\311P\303\036+\024\253\030q\306q\205\216\220\222D\367WE\340r\270\271Z\225\300\210\365\203%6\\\257\013kW\r\010\314(1\307\360D\330\022D\330h\3150F\300lP0\273\202l,\003\273\004\2017\250!!\223\210\231\021\021\221$I!\303\030a\014\3028)\245\325\003\002\302\014f\030j\220!\206 cD\202\td\002\021\021\t\022\224&\3210\006.\204\022\363&D\207\303\231\251I\223j<\377\0329\225g4\005\3077\325N\242\217p\001\240[\322\005.C\376`-\363\337\332\332\343\314\373y\270\205v\3352S4\007h\253\\\000\260A,6\023\333\244]\\X\324|\343\340\250\213[8\245\312c\301\221=\253d\351\035x""\016-X\370\310\201\235!n\037\2526\201Y\243\315\317!\377b\024CO\317\206M\013\215[\216\035\031\304\022\031+\004\354 \342\331\315\262S{\032\027\304\326E\016K\217C\276\346|P\024\332\204q\340\021\200\310\360\354\014N\327\036U\343\240\241\016\316\3017\352\317\263\274\034\t\305k\300{L\234lI! \013\242\206\262\367u\371>\227)w\301\215\276nMk4\260\340m\336\2475e'\350\256\242\230D\007\321\247\224y\3173\317\261p\031lz*\024%!/\032\267e\321\030\000}\213\224\355)&7\002x\234\232R\372\310\r\216k\3062\371>\2021\021\320/\343\264\013\252\362\246%\351X\200F\344\257\024\201D\200A_\274[\360\217\347p\304\212\000\256\202\276\377x\330\005\3228\332\2717\232\320\t|lUD%\213\225\246\204\373AT\322k\254'B\353P\034S\251J-R4\274\226\347\307j\341Q\334\367:\036\374\215\0170\357\225\030oe\310\264/\360\347\264\335\022\256\351\233\272\226\342z\310)\251\366\203\232\005\350sM@\275\334WR\322n\\&\311\220\251s\360\200g\343<\237|\324\006\353\300\226\330\341\214\361]\004E`\251\235?\212\203\300HM\025\003\266W\250\276\310\222\036\033\363\314\251\253\204\346\265\004A\225* \214T\363\320X\266%$\222\310\025\364>)o6\3149$`\002\247M0\246\326\200e\263\324#H\2369\003]\300\277>J9\352F;\231?\203\33061%\224\307\352p\221\006\235C\354\0027\022\037Z$\210\346\266`\303\217\360\272\026\312\n\201\356\2169^\261\247\026\205\366\212\360Jf Q`D\267v\230\244\245\302\006/8rD`\005\325-\031q}\357\371^\204\205\261=\217\232\255\327\366\220\2453U\252\245\016\300k\004\232J22\271f\257\275%\000\006p\300\375\232\203A%\221\367\205\227\315\006\004\330\310o3#\030\215\261\213E\000=/>\231\036\033\006\230f{\341g\375L\261@\267B\250t\317@,m\272\262\304,\214\211\310q\035\217\301\020<\324";
-    PyObject *data = __Pyx_DecompressString(cstring, 1930, 3);
+    const struct { const unsigned int length: 11; } index[] = {{2},{46},{48},{33},{33},{32},{4},{53},{54},{1},{1},{48},{38},{4},{36},{37},{53},{38},{47},{50},{48},{8},{33},{58},{5},{19},{14},{16},{15},{13},{11},{14},{16},{20},{13},{16},{12},{13},{14},{11},{12},{13},{9},{7},{6},{17},{3},{44},{9},{10},{18},{10},{18},{9},{37},{28},{6},{9},{8},{7},{9},{5},{8},{3},{33},{13},{4},{5},{6},{8},{3},{8},{8},{10},{8},{3},{6},{7},{3},{12},{12},{5},{35},{29},{33},{30},{24},{12},{10},{13},{4},{17},{35},{5},{9},{11},{8},{20},{6},{1128},{1311},{357},{415},{261},{309},{18},{32}};
+    #if (CYTHON_COMPRESS_STRINGS) == 3 && __PYX_LIMITED_VERSION_HEX >= 0x030e0000 /* compression: zstd (2098 bytes) */
+const char* const cstring = "(\265/\375`\362\024EA\000\212^8\024G\360\320\270\001\314\300\312\024I\031\344NxPXC\nI\005,\023\316\302\207\325l>\372cg\304v\227\375\010m\247H\022\005\303\245bk\003&C\250\255h\326\207\262\365\273\177\236^:\t\212\365\177C\323\347W\347\221$Q\033\001)\0019\001*\274\324\213\252c\231\351D\027\005\343]\030\225\310\023\241N^jte:\026\227T\032\245V<\324(\005\210\014,n\212\243\036\311\373\351\222\213\371\033\311\221g3\3047\266\225\301\273K\200\343\353\266p\310\262!\006\365\306\237fi\261\245w\313\232\243\335\332\3062(j\316\365k,I\2367\2135\2728&o\376tH\306\262-\265\t\313\256\257\304y\217e\316\001ElyiE\354\342\266\314e\013\024\363\005kJ\2005vs\021\363-\216_JJJLF\246\204\331\346\252\260\256\212\2545\206c\3117V\331Y\227\370DJ\006M\256[\342\030\226\340Y\304!i\313\221e1\307\240m\211z\357\261\374l\026K\223\3472\213#)s-j\226\315\333|\331\r\212\346\270\2622\014f\020\261\016\315\025\332e\271\336\".\271\305\031\313\026\317\255\022\363]f\026\313\\\361m\371\227\311\2153\204\271\264\261[\227\371\225]\244g\367\3268(\233o4\307\242\315\034\177c\030b\313G\321\202\2419\256X\021\001\332\032\352$Z\317\010\267r\006V\222\221\365\201\203\025\201\311*@d=@\302\021rC\323\341\340\340\260\020b\024{;\204\256\206P\210\333\341\356\313\311\3613K\276-\006rkm\263-\027u\016W\346\010Z\014\025PjV%\031\314\275|g~\357\226\221\227\227\343\346y\337\233_\232_\034\\r\274\272\373\226!6a\232\304\337\215]r$\367\013\21394\357\305\257+\3136\373\225\271\276[_\023\030\\\275\260\211\035\222H\021G\027\227\221w\344ws\355\272<\267\356\375D\223u/\2303\271[y\223Y\314Y\337\273e\030\274d\346\373^\036\232\230\225A\233\017\257\362'\352\033~\373\2732p\\\355,\352r\324\237(\333\370\202 &\251P\244R\211\305\365P.fdJ0\245T\013\2147\212\361N\236h\204B\221\272\221\250;\275x-/\335\350TJu*\223wJ\255\314\234\272\024W\305\013\213\207b\345\023\217e\322\345\237\026\305d0\367\246b<\022\351\324\305\\\221\347\301\240nL\351\245K\241<\221*5RA*\275\334\324\250%#\035T\241\236O\323HG\003\337\0212P\003S]\322P\312Q\n$\037\3247\347s\272n\236\330\243\303\316""\002\032\212\3622[_\241\234!\035\333\353\221^\236\032Tv<\340\003\362\233\204N\000\355P\024_b@\353\035z\327\031\234\001>=\332\310\371\257\233||X_\351\"\327\277\323\245u\324\331:7\234\331\306\324Oz\210\373\206\376\322\371\370\254]'\351\334g\305\252+\035\201\202P\026\037\242\223\300\324X\352\202\206\320\026~\324\017\2502\351\005\017\336\302\350\024\200S\027:\302\203<K\017q\212\244-(\003\257)8\003lk\247\266\244\014P\r\235\340\025\300\322X\213~s\026\330VM\005Ii|\347Y\375\243\033\330VNM\220\332x\223\277\351&\235S+\2443<\366\037~B\0379C>\033P\021\217\352\032\372\247\323\350xl+FW\230\320\021\014u\361[\210\337\326\317\306\361q\243\007\204\236l\034 7z`\036\202\206Zm\305\260\216\300\344\035p \277\3003\000\241\034\372\371\007\332\272\313_\272\276+\377L\363iL\377\305\254\233\211 |\354K\274\002m\325|\002m5\365\222\246Y7\353\230\211\270\312\001L#\244\\\232B\017\210\274xj'\210\266\3423\302\311\235\236N\207\266\332\250\361k\320\3704n\376\215\371M\361\213\340\007g\276\r\017\016\215T\243&\364\004\345PP\217,\366c8\037\207\374\344\370G\375\265\353\273P_\204\007\301\314Fu\220&\000\331j6\2557\227k\303x\223!cff+\2256\026\026mF\316\376;\377\254\372\027x`\354\214>*,U\001\315N\250*\254\307\032\022`m\241\372\"x><5;#T\220\252\301\344s=\007\373\010~\367\223\326\340\263\252R\037\205g\317\\\354\\P95T\362\273njZ\027\235\002@n\364\254\033\270}\337\266Zm44\233\013\027[*\265\241P\333h\033m(88n\330\340\237\277\376\353\376[\372.3\0328M\351\324\220\272\341\344\203P\030\007n\214\037#\365S\246\2373s\331\t\355\214\320\326[\342\361e`\347\312\031\023z\001#\206v\302t\000\234'\247\312\244\343\261\365\300\274\t\004\256s=X\347\303c\r\241'3\025\365C*\002\3017\350X\003\200\254\\Z\242$<\210\236\242\0138A\266u\203y\022\035\324+\234`\201c\250\321(E\0213$\"\"\"I\222\2441a\010a\034\226R\362\001\022\332\214\205\024%\310\020C\020\"\"\201\0042\"\"\242\240\240$\005Mc.D\022\023\020\004\001\217\343\275\"\200\257\361\346\253\237\236<\250\201\244\271dv\332\365\010A\267u\213\24293\026^\374\033Y@V\016\37524\220*\266\037\024\025""\025\332f\234F[%\202\315\027\006\002\034W\0275\1778\2404Q\375\246\326\203\252\240\004\255\255\014\307w>\364\241\3028>\013og.a\272f\226\276v,\233\373\033\r'Ol\3549EKX'\241\217as\330&1KB\250\213\270h\266\342\3551}\213%\366\003\371^\374R\333\230\276\233R\315&\360\033d\212\364h}\333X\005A\373\tK\316\016m\264\000<\332\334\314\271\034\240\342\370.,_\220\030Q`L\"\003\300\363\037f\216\237\032 \262M+\333\223\253\301\345t\021\334\355)u\327\302\333\022\350\274*Nf\257\020p\273\n\202@\215\225_\247\233\2423\305\022\027\334\204\000%\247*g\232\270\301\035E\315\334\250)\336\256\351%\022\277\344\212\266\302uX\207\020\023&\000\3665\324C\320\255\364\222\237\211\234\3526\372`\347g\245>\232\360\212\352\000\302\001;\237\213\201(\310\376%\215`\207\003\2516\352\340\332\032N)\344\373\334\007\267Z:\301P\322`\201Z\"\341\242s\337\355W\035\374\351\225\367\027\020\032\024\264\000\372\3319r+\261\226lX\271%\266\034\007\315D\325:\206\326\3445\330\210\343w\003\335\303\241\023s\"\240~\350F\216\007'H\024\306NV\244\311.\201\317-*\022\235\305\n\262\364\024\007\201\216\236\t>1\032\017M\030\025\367\315\"M\303\327\376\004\236j\004\024\257\002H\033\345\321z\261\347\255\215\0160\362\3637\376\213\355\325\022b\312\377\t\030n\313\263\276D9\021\212\315\246S\354\001'\276\tHQ\353\306\313\250\010\3310\345F\262J\376\006K\333\242\330:j\341\"\370\337x,r\032\240\210\033\031\225\254\200.\215}\226\311\257P\202\351eO\377Gw9\"(\233\271\266\030i]\213\202K\336q\247\311\311Z\345\023\226\353\010O\001W0\317::\316p\323$\030dk\377\365\274 $\270\321\344\003}\005\177h\204{,\203\366\232y\206]l\222$d\263\300\360\272\006\360AL\377\006\211\360-\326Hsnp\326\237@\272\231\026l\013\177~\037\334}O\261\352\010\177\341\277\275\241\355\201V.]djH\323\007\023\310\000\r\242+hp\222\313\375:\314\036\262\225\254SNlN\022[0k\360j\n2\005\300c\300\031\222\251\023\177\226+\353e\007\002\363\300<v\301<\035\312\223\304\346d\035\304\0019\233\356\233f^\263\261\353\361\325\307\254\363\234u\200hE\016\266\026\232U\206\304q\332v\237\226G\201\374T\"I\022/\334M\346m""\023\347b\344\030\272\211\032";
+    PyObject *data = __Pyx_DecompressString(cstring, 2098, 3);
     if (unlikely(!data)) __PYX_ERR(0, 1, __pyx_L1_error)
     const char* const bytes = __Pyx_PyBytes_AsString(data);
     #if !CYTHON_ASSUME_SAFE_MACROS
     if (likely(bytes)); else { Py_DECREF(data); __PYX_ERR(0, 1, __pyx_L1_error) }
     #endif
-    #elif (CYTHON_COMPRESS_STRINGS) == 2 /* compression: bz2 (2244 bytes) */
-const char* const cstring = "BZh91AY&SY\207\276B\224\000\002Q\377\377\377\377\377\377\357\177\276\377\377\377\377\377\377\377\377\373\300@@@@@@@@@@@@\000@\000`\010\2774\001[\032B\200P\000\364\007\000Z\004\224\204S\020\r=F\215\223\021\264\246\365OF\246\323MM\033Q\243h\215\030L\324\001\215M\032z\2324\323bh\324\311\2656\246\322\017P\031$\032SOM<\246MOMG\246\223L\221\2654\000\001\241\240\r\000\032\032\000\320\320h\032\006M\000\000A\200&\023\002a0\232`\230\214\0010\004hd\300&\000\000\000F\002`\000\000\212~P\223P\000h\000\000\r\000\000h\000\0002\006A\220\000\000\000\000\001\006\000\230L\t\204\302i\202b0\004\300\021\241\223\000\230\000\000\001\030\t\200\000\001\024\202\004\032\021\240\320\230&F\241\030h\215\251\247\251\243G\251\350\206\206\203L\215\003@\000\000\014\236\206\211\345<H\027\334DFF\n\007d \037i\227\365\t\370O\022B\221\002\021\376\373\343\357\017\276\277\000\374\022h%\023\301\360\304\222\302\n\221b`\230`\220(\251\010<\236wG\263\235\332\317\357\217\037\207\313\243\243\352\322\216OG\255\255cZ\326\2066\263Z\326\306H6\020\200\033[\376\023\240h\255a\016\217\014\220h\251ht\275Oe\241\001\0044\340\240\004\320*\226)u\251\3110\221XN\225,f\3657\247\216\026\245\244\371\334fu\323\310K\321\265\212%\343\023J\320fcy{\233Q:,\246H!\322\371n\013z_e\376bt\246\322P\355-\205\236jx\213\026\303\027\"P\234\322\324\250\346\363\322sK\361\322L.\211U\031\\X\342L\324\246T\226\360a#\321L\356D\271\241\337S\311Oc\276\375W\373U\030\010O\004\022\367c\375TJ{\255\003\334\354\370\304\374\353\017x\271<\006l#-\222m\272\006l\313\211{\244\322L\357K\t\023\321<\361\206\373\304<!\263\241\342'\006\3718\222N9\016\002\213h\335Y\331\305P\227\256\224\246\244\372\340\023k\324e#\021\273T\021\"L\036JnH\327\320\tkB\010\202a\322\360\221\327\234\302\254r\301\r \313\230\035?\3431\017\007\273d9|LH)\353\227X\230%\205\334\017\265zU*\177~\022\323\356\030\032\177\000_T\333:cX\362\177lK\337\357\324ez~\003\2030\3377\013\221\\\253\316\270\330\332\\\325\010|\342pPv\233C34\371\233?\254\343\024@*\016iI&\366U\002\334\001\232\333\224`\256d\032\245A\302\002""\r8b!\312\006\253\342C\233s.\022E\200\213\262@\240C\250\363-\007\252q\243k/W7\252\212\266\004\306\347\001@\211\315\330\361\310\030\022\322-\207\013\230\3024y\345\027\267r\313fzV\222\246\261A\334\253\244\2147U\320\031\363\364g\017\332\365\332nd.\215\356^bP\262\202\030:H\202!\206ax\210\027\024\312\214\242\262`\2554\371\002\316\371\313)2\261\361\235\315\267\\\004DA\205Iy'\267\275\234\307<\2224F%\324L\206)\302\353\000\260\024(\332\234E\212\223@m\022\307\305\301Uv\251Xv\240\273V\255\372\036\346j\2258\373\004\347L7]R\346\200\312]c=F\234^\204\347N\201<j\274\266\233\3246\211\363\033\327\367r\332\327\216\333h_\0269!\364y\376\327{E}*\373\375\224\356\244$\373\321\336\333\356\244$\335\354\210v\267g<\204D0\235\302\320&g\310E\371\352\275\341\246S\212\231D\245\246m&C\275P\014\031\303\r\304\245\004C)\340\220^\230\272\374A`\340\272\271\001}J\322\367\021\301X8\243'\354/\337D\204Dd\316\265!\373\302\302\020P\3707\317\204\265\261\253\272r\312\211\225\0079v\000\022\r\3211\331\377w\222\247\250\330\367\000\330p{\211\236\275l\247:o\241\223C\240\244D\307Yz\3273\251\002\364\364<\256\327\320\206r\355\304\005&AI\3119\336^]\033Hr<)\316\247(\224\353\3203_\177&\270:\013\241\227\251'y5\214!\002YV\225\311Kz\336\234\245\233H8\2448C\216\326\263FB\246\300\374i\304\354\312r\342\032\261\332\201\215\243]]M\014\346yQ'\325\220I\0246p\366\373;\034\246\235I\"T\226\330\222e\204\370\2323\354\222\260nu\000A\344ss\357\251\003y\256Wz\020:\352\005\353\225\305\33422p\334\256\177\217s;\016\214\254\253\251\346_\212\303\206\356\026P\226\016\214'|\260\323:\221\230\225\"S%\230>\";\212\330\200g\357\351\020\311(\001\014\2062\365xA\252\201a\364\272\314\002\201\200!7Z\362\224\0220\023\023\261\327\330\213\240\341H%~wz\204]\324yz2d\311\315\213\265'\316\341h\006\346\271\342;zu\027\320\256\001D\356\233uGo\2017\334\366\220d\316\234\357&\031\210!]\006\276I\023J\220\304\371\027\0246qpY\277\243\347\341,zT\274\356\032\rK\232\344\361\375?W\213\\,'\013\337y\022`p\006\"A75\241a\306\352\347\0224\rK\2305NC\221\353\214[C\236|\267\245\305n""\033n\201\210K\260\255\264\303\314\311|^E\n\317\224\210X\252D\023^\264\302\341\315UJ\224[\231\223<\255\234\245\2331M\2669u\221\271\021\235\240\232\024\343\275IuQn(_\203\254MR7\302\303\211\260\303\020\320'\321\r\024\320A\227,\263]\265\255\232eKH\002gq\334\300\256\223\266\336\335B\2674\023-\024<\331\360\325\342Wa\322<\301\332\223#\260\222\244B\315$\027\005\241\0069\210T\312\201\240\003Sc\306u\244T-K\005\265\200(\362\020\263\023\202\\6\3440\241\267}\030\2711\317\2413\353k\243\206Y&FRD$\236\261\300Ji\t\021P\210!\222\nA>\205\021h\002\211@%\244bI\246$\222@2\216-'\235-\301\0338\322\"k y\256[s\247\241\2724\302\215\333\373\022\300.\300\317y\232\000\315`\223H\331\277\301\351\030of\000\312\231\334\211\215\2218\263\022\322dE\245\255\257$\222\261\274\226+[\215\221\030\226\032\016\251\t1l\266A\014\246\314\236\250\315iCj*4$9\022\302Hd\255\367Kn\267V\2259N\337\374J#\251\316\254[\227LDD\211\014\364\316`A\273\343l\370\267D\332M\245\274\3545j\034\236\376\343\307B\343\004\221\2149\272\031n\323J\025\343\337\310\205\260\333\350\262\013#\217\207p\342\020\200\257c\257m\235\r\235\320d;\224\227\025\201:\302\007>~\2439oc\247\034y>T\377\367\207\213\326u\301\354\373*\224\220\024\320\021\321\260\301\014F'\310\nk!/\214F\324P\330'\225\017j[q\312\2746N\353wU\211\303\005\206\303\0070\363\022\251\211\223\306\201\256\336\203d1\235\356Y\005\0144L\206\35584TD\374\257\350O}\\\177U\0252\317C\234B\261\252\253\236\"\334c\310\3205LSm-u$\033i\257+m69\200\266\220\324\326\354\360\201$\260\322\301\326\335\252\2161\372$4\304IzE\360<\224|}\303\211\355\036CN\211G\n\310\262{\030\205Cy\n\177\002*\306W\267\312w\031\273\263\021\021Q\223\033\"u\004\353\256\261F.\343\ni\014\316E\353]\254,\334h\216\216^VSu\321\211\374!\332DDe\255\351h\2532\007\346\002\256t\025)\344\212W\357i;\010\346z\262L\376yiA3\336\\\005\301\001\230\266\266u\257\207\324XZ/\334&u\024_\271E\313|\002\301\326Z\206t\262gL\327\2660\210\352\tq\246i\340\366\tE\222\356\352^\222\364\310\242a\222\2653w\r\274hOP\361\336`;\363\312\211\024\222\210\346\244y\363Ny""\024\254\346y\322\306\267\\H\206\tC\"\033\213\t$\311%\010E6XX\026\026h\332G\026\033\000\002\321\016\233i\266-Ea\200 @\020\252M\244\245\027\312qE\264\234XD]j}\262m/\213\202\323\364'\363\366$\025 \365\260!\\\336+=@\3010\037\021\224\364\323\333\n\021\037e\221\007\266\235\244\365SI\264\221\247\034U\363+\324Cb\177\361w$S\205\t\010{\344)@";
-    PyObject *data = __Pyx_DecompressString(cstring, 2244, 2);
+    #elif (CYTHON_COMPRESS_STRINGS) == 2 /* compression: bz2 (2406 bytes) */
+const char* const cstring = "BZh91AY&SY\215e\373/\000\002\243\177\377\377\377\377\377\357\377\277\377\377\377\377\377\377\377\377\373\300@@@@@@@@@@@@\000@\000`\t_(\001\255\215\354\336\232\245\025T\003\240<\001\353\207a$\242\247\350\223\021\346\243I\210\310\311\223\302\02356\204\323CM\03212h\331\021\352i\2434\206\023G\223I\351\006\023\032\203L\201% \215\014\231\030\223i\251\265\031\010\323@\310\000\320\320\000\0004\000\000\320\000\006M\006\200\001\244\246\3256\247\25014\365=L\215\001\223F\200h\003L\200h\364C \310h\003F\230\232\0004\031\000\007\250\032d\204)\014\231\001\246\217(24h\001\204\311\24020@\320\304\032\032\000\320\320`\230\0102\r\020d\300\t\200LL\2310\000&\004\300LL\023\000\000\000\000&F\002`C\010\001\024\202\00252\000\320\231\224\311\252~\211\r3(zF i\246\200\000\000\006\200\000\000\311\352z\r'\224\362 _q\021\030\260P:\302\001\373\354\277\260O\306y\022\024\210\210P\210b\017[\302>\300\373 {K\355I\224\024@\242x\274Q\022)\tR\t6\"\245\034\332\2242\001\016eK\316\321\320\322\367\352\033\032\337)\363\376t\242\021(\355\276\3747\337}\362\033\360\237\323\247N\350\211\275\000\206\343\305\343:F\202\025\204:|rQ\362@\325\026\340\216\246\235\267\255\241\t\004!S\222T\001\200\033\022\325/\2655\223\t\025\204\352R\306om\275<\240\265-'\320\350\233\322\236\355/Vqk\022K\326\t\245h3v\257/\014\373\204\312,\245)\221(d\355\276c\202\336\230\340[\207\232\235I\275\272\226X\035\325\223oy,,^\013M\016t\251\345\322\211zZ\272>\nmMsm\356\223K\310\225\310\312\362\300\333&\\\2453\244\314\203\t\007\242\233N){G\302\247\226\237o\302\375\007\373\325\030\010On%\036\t\177\272\211O\003@\377\235}\302~\376\303\330.Ol\317\204f\262M\267@\315\231q/\001Z$\302\364\231Rz'\226\032\235\276Q\343\r\\\235\246\222)\007\021H\222N\222\216r\\eV\200saZ[\330\260$l\373\tZ\357%\237D\002\215\275\262\374\211n\016\033\320D\206\223\014\224L\320K\2342\366s\321\014\242\373\244\256:\334\320\255\340\211cIFZ\342\024\227\371X\226DE\237\201%\3348\211\r>\271u\211\212X\\b\375\353\322\251R_\343\220\264\252\232U\017\351\005D\004D$5qr\240T\022\267<[M\277G\030\336""\3117\r\262\260U\201]$tm(V\010\307\\\007\004\302\1773H\213\213\237\310\312\322\270^\036\n\247%2K~\330\003\r\342,{\367kS\266\303E46\201\206{\365\320\335\323F\221\"\315\277\226\372D\245\206\236\231\005\004\032\016\330\240t\255\227%\233\030\321\254h\010-\023G\032\277\230\320+\026'X\262\351\220Ao\010\303\033S\354\234\021Z\311\257\177V\256>N{cTuH\247\241\320\2473\267t\006Yt\344\037\265\351i\277\2119\245]]H\"\314R\024\223&\200$\022\t-\000\036\301\205\023\325V\255\253\025\305\242)\247\324\0272\333\270\311\232\323\342\271\233z\3101\214ao\r:\311\357m\347\010\324\362I`\214\265\240\314\210\232m9\020J4]\327\254\032e[o*\022\212\220\302,B\273\324a<9Xi\354y$\271H\371\355T\251\317\326Nt\300\320\033\222:!3\227X\314\3346\364=I\320\235Bw*\354\26458\247\0107\rR\314\244D\250+\321D\341#/*3\0263\210\254U\311?\303\242\017\310\030\202\n\231T\375$\204\233\303\212\035\356\t\317\022\"\030O<\264\t\232LI\337\224\227\323\032\3469i\230JZg\322bzu\000\301\2340\334JPD2\236\t\005\351\265K2)\212\263\224\344\025&\232\365{\221\231LW\226\257\354dd1\217\225\324\235:$_w\342C\013\253\3631\342-lj\360\032\345D\314\203\221v\000\022\016\0016\265\177\336\024\251\352\005\217\240\005\302\177\232+\273C\346\"&AZ%\020\340\330\245*\000\354\n\312\002\2422\362|\337\201\014\343\342y\324\202 \255H\n\316I\320\317f\315;\250kyS\241M\202S\246\201\236\373\365\357\301\332.\206^\244\236$\337\030B\004\262\255+\215-\346\371R\226} \302\206\005V(I\010\310\253\016\223\207m\024)\337/\302\026a\215\202dd\256\253)\303#)Q'\333\304I\0245ry\335z\234\306\235\264\223*n\211\001<'\312\321\237Y+\006\347l\002\r\235\236\025!n7eo\303\201\335\250\027\001\213\223\274b\311\303z\271\375\355\315\207NfT\322\353_r\303\217\0166P\226\016\214'|\260\323:\220g%F4\330\324\005\"\272\331\3038_\356n\260\210%\300\001\212U\"v8\005]\2052\2231K\025\024\032JA%\272\327YA#\0014\035\256\2164]\007*D\257\314\361P\213\217tb\345X}\367\361\"R4\266T'\000\300\264\334B\226\314eG\007j\203\210\340\022\272\205-\324jr\264\203\034\223\274\354\3039\004+\240\336\331\"iR\030\236\305\332""\023\217\261\311d\321o\252\265\016:EE\271\",\245\003\310wU\255\343\335\225\2111\030+Ia\241\264\023\204\"A7+B\303\231\333\350\0224\215K\2306\211\310qzF-\241\331\236\273\322\346\267\r\267@\304%\330V\332a\346c|^E\n\317Y\020\261T\210&\275\211\205\303\236\252\225(\2673&g\353\325\254\267V\204\335c^\361\033\361\033M\004\322\2475\352K\267E\270\241~\016\370\233\2228\202\303\225\260\303h4\t\362CE4\020f\315-\314\257\335\337f\231\322\342\020\231\347\274\030\225\333;\355\355\324+sA3\321C\273>Z\271\nj;C\260<\251\004\211vc\251%@\250\025\0317\205\314\0322!S:\006\220\r\306\307\234\346\221m\201\t`\266\260\005\035d,\304\344\227-\270\230P\336\276\214\\\233YiL\267\332\350\345\2263#1\"\022MLn\302v\005\2011\000\220cV\340\357\302\002\000\227H\023[YP\225\212JR\224D\267\356\241\256\332]\031s o\020=\233\226\334\223\341p-0\243w\026\244\260\013\2602\274\317\000g\260I\244j\325\253\217\343\030\361d\001\2356\234\311\242\310\234Y\240\264\231\004ZZ\332\353\222V8\222\300+\013\027\034q\032\013\r'\\\204\230\266[ \206SfOr3\332Sv*4$8\245\204\204\306\267\335-\352\335ZT\330w\375d\242;nJ\305\271\264\304DH\220\317L\346\004\034:\366r{\234\"n\246\352\340u5j\033=\236\007]\013\214\022F\210r\347e\303M\261+^}X\241t>\213\001ds\362\360\035\201\010\n\360\235GM\326\366\233} d<\024\227b\300\235a\002\336\272A\022\031Q\0363\360\355p\235\344\345\351\313]\0063\363\320\224\340\025\000\024Tk\262\001\221+X\n\013\021-[GU\250k\231\206\312\2439&\212gmo\3231\035oM\216\331\2120\257\331^1\224y\313\352\002e0p\033\r\314\301\213A\217\0078\263C\216\022\314_3\334\203\303\213e\0230\034\231\220r\241\310\033\243\306\314\3644v\311SG\270Q\001\277\023\226\351\226<\rB\355\031\231\253L\203\334(\245\252\257\204\353\216;\2335\354}h\020H7\310\236\207(\370Ng\026\372\014\000e\177\251\007i\024\316\001`0\322\235d9&\3668\327\256) ]cR8o/`\216\\!r\215tq1\366E3Pd+\233\216\272J6\360\262$G\010\261\227\347\306\313\036\205\270\272\310\310\217\215\217\355R\006\221!\224r\313\216:Q{\345\271-\021\257\2350\343\273.\253\275mp3\326\226\2527oa\030<\207W\225\026\310""\343p\313\r\334\024e\341Xq\351X.\002\274+\377\264\246\235\210\224\250\025\267\222t\313\252\262\267w8j\250\026*\341\026\320\274\305\020h\014\371LT\323YucAC,\301\260\2658x\330\254}\004\243\245r)\220\226\231/\000\301\350\233\036\214{:\242Q!:U\314'^a\022\217\331ec\177\242\264.\347\021\211S\245\373\006_>\227\023\315\335\247\306\340\374o\251\357G!\201\270\340D\275\261\201j\370\2702w\021\200z\245)\304\341\301b\002,\020!\234H&\016\023\003\000\034IEFe\024\214\245\tp\230FE\311%22\223J&\021xE\031\203\302\004\220X\210*\024&\201,\244\n3I\340T\203<\202J`L\363\260\361\007hPh\001L\024\376\366\037o\"\005\244\035\274HT\317\344\263\347\206\t\210\374\3439\363\023\325\n\021\037i\221\007\252\235\324\226\210/\304fC?\n\022J\365\351\003\017@G\374]\311\024\341BB5\227\354\274";
+    PyObject *data = __Pyx_DecompressString(cstring, 2406, 2);
     if (unlikely(!data)) __PYX_ERR(0, 1, __pyx_L1_error)
     const char* const bytes = __Pyx_PyBytes_AsString(data);
     #if !CYTHON_ASSUME_SAFE_MACROS
     if (likely(bytes)); else { Py_DECREF(data); __PYX_ERR(0, 1, __pyx_L1_error) }
     #endif
-    #elif (CYTHON_COMPRESS_STRINGS) != 0 /* compression: zlib (1906 bytes) */
-const char* const cstring = "x\332\315V\335W\333V\022\267d\302\022\310\2661\371\3364\2158d{\262\264\201C\2629\3336I\273\0166\301\r\305\030\333K\010Mn\257\245k[ KBW\002\234\236\264<\352Q\217z\324\243\037\375\310#\217<\352Q\217\374\t\371\023:W\302\302\230\217$\364\354n9F3\243\231\2713\363\233\231k\177+Li\226\"\t\252f\nXQ4\021\233DP\261)\257\023\241\270!S*d\365:i\020C\246\002hW\217\2616\261Q#\246P\261\252Ub\320c\0146\0106\353\304\020\250\311\244#v5C\333\020L\003\253T6\205\272\3349\351\007K\221\261zO\302M\241\242Y\252D\205\206EAI\204\252\254\312&\231\323T\322\233\241AL\313P\t;W\020\r\215RY\255\t\0226\261P\325\014AW\260J\314'\2479)\232Z\223MK\"G\274\306\277\307\206L\350\004\246\246\241)Z\2559\261\2372\252\302\253\t\324\221V\t\234\245\214\353\315\315\320~<\266\037\357\266\037\0275\025\340PM*\254HOV$DT)\256\257f\000`\200\227Y\307*\250\021\030\032fO\365\002\006\207C\206o\210\241\3557\256\003&%\330\020\353\204\225\270f\311\006s\022\310\246\256\310\"(\t\000\200t\350\214A\224\320\355\036\246:\021MA\253V)1{\341\356\265\322\r\255!\233&\000$\253\022\331\024\000H\315b\316\002\004\257\0351\247rM\225\2532\314\303I\036T\226\300\013+BU\301\265\343S\356\230\240\206&u\346\356ID(\222HMX\307\212Ez375]\023\211j\032\262x\312\331]VH\327\000=YS-\263z\357\353\247\271bv\252\224\313\317\241\037\323/P\256\224](f\262\231\362<\312\316\027Q&\275\004\322t\272<[:^\316>\233\311\225\320l~\356Y\256T\316d\231P,\245\331q\263\371ET\234\317f3h1\27507\227],u\207@h\276\271\t\377\031Y4\321\034\3314\027H\265\230\235\236}\206\236\246\027\226\246J\013\221\220-\224\323\245\374B.=\033\3113\331\331X\267\220\316\344\322s\305H(\3462\331\205l\307,\214\273\317.\346\262\3633\021_\312\317\347c\367\027K/\213Y\364c>?\007\244X\236\333O{?g(\016K\322\251#\336\263\022\261\025\2129L\233\252(k\260\014\006L\202\254\022Z\321\244&\022\241\273TT@F\262\312N\021I\005\213\253\361\312H\244\212-\305D\235\031\203\005!:\202\213\202\"XX\004g@V\035\243\303\272h\231\211\312B\304\013@t\032Z\204\224\324\030\201\241%R8,\010U-UD\010\301\315D\221\251!\275i\3265u\3741\273\334""\024\372\0350\270Q\221\360wH\246(.\004\306\256\301\376i\264\332\235%^%\315\330\03450T\007\1770\314\226B\030\247\342\006P8!J3zR]\323\021D\335D\"\326ef\266fa%25\302\2131\334r\024_]\035\334)\252`\023\024\006\3368\331\344@\031\243\031m\354Qov}\303R Sn\220\367i\341=Bp\213\354\227\004\334~?\016\2550\325\014h\020{0\373\020`\275y\344\305Q\250Y\2024nl\327\005\200\220I\250\t\317c\2269\272\033\346\233\371\312\n\273\220\306\356\036\260_\t\222fU\024r@\273u\262j\nQ\003\350\252\014!e\252\263\332\277\202\3573\303\022;:M7\021$B\321\303p)\3207\007\363>y\277{/\320\344\303\236\315@\037\320Aa,\016\003\265\000~,\326?\022\177\346rN\036\250?V\314\377\254\200\023\006\376\375\331C\206\177\336\221:{\005\377'\340ON\370\003\366&\361\336aL\234\336\355\304\251H&N\312x\213{7\230\270t9\030\272\020\\\275\026\334\372<\030\276\024\\L\005\251\341=\356\2223\031pW\234B\300]w\271\200\273\341^q\261\177;\263\223\336\371\311/,\373\313\304'u\277n\370\006\r\270\317]\321Ky#]\314M\027\274\377\346\2160\307T\300\335r\013\373\207\205\217k\316Z\370x7\220\340\257\003\351O\360\311\200\207\027\356 8\363\340\354>\367\326\"&\347\025\"\346\007\017\007\374\271\255e'\351\334w\212\356\220\367\000^$\007mp\030v\276p\373]\354\376\322\272\333\0061\345\\u\326\335\202\273\332\272\336N\005\374E\247\337\251\272iw\2715\320\346\230\366\206\373\205\307y7[3\355t\300\237\267o\2007\347\336\364fZG\305!\373\033g\332\035q\037y\365\026>\"&\203d\312\271\344\244\203d\377V\303y\340`\306(\316(\324\330\375\206\330\017\354\303L\315.:\\\314\354%\317\3337\2354x\361\314\346\241\3039\251 y\021\310\025GtS\356\230\227\366\016\353>\261E'\345\374\035\000\343!\233\311 \371Wv\016\230c\307\000\207\021v\264l\033\3160\244 \273\024@\355\033\264\307\302\020\240\251\333\025\207\207,_\270E\217\353\322|j\2579\347\030\363\211\215m\213\225\025\275)C\214\207\200\330\2607\351\205\265J\366]g\304y\354\256u\273\003\316\200\356\200}\301y\312\312\036\006\213\257\335\307\236\321J\005\003\347\203\276\317\334\350\274 y\033\374\206Z\377jO\354D\232Qo28\327\377\261\237-|\360\330""\353:=\005\370@\027oC\017\257\272k{01\2058>\010e{\324\206\n\377\262\265fsL~\0355)\226_E\335\213\345\237\242\376\236\250\357=\257W^\264\247XV\307\312\037\276}\000Y\300\261\n\242\325\331_\306G\333\223\333\317w\336\370\205\222_z\355\277F\037\261G\227\241e\257\274\021\177\364A{\262\235\356*,\334\247\263vr\274\205[\233\355\267;\317\375<\362Q\303o\230\276\371\333\273D\342\337|\216\007\222\343\213\214\024\371\022#%\376%#/\371eF\226\371\n#\025^dD\344%>8{S\2213\345|,\310{\207AfWS/\226\207!\274`g\302e\204\275\\a\313\374)[\031\377\312d;\325\376r\373\345\016\335\035\363K\345 \371Yx\363p'A\276\340P\367\216\213\337\013<\024\363\006\202\365]d\033\352_\275\337\036i?\332^\331M\356~\353\227\377\023\234\037\014\316\261;\266\217\035\320'\204\267\333\263\366\367;#\241f\242\265\326NB\320\334\366\253\335/\3752\334\334\324\247o\000\346_\270i\206\3664\237g$\317/1\262\324\351\313\317\214\374\314cF0_g\244\316\313\214\310\374\n\337\025\360\017\266g\240\267=\3609f\007\316<\3711\023\266\355\254\263\315@\275\336\272\325^\335\271\266;\344\027!*|\375\311\276\254\371\232\356\353\033\376\306\246\277\331<\343\314~(\010{'M\346\341\022?v2\377;S7\002\277\004F\275\202'\267\336B\2576vW\375%\311\227T_\005\304,\337Z\367\327\337\372o\177\365\177\375\355\214\223\264\0053\321\267\225\265S\366\035\370R\345\006l\316V\335\014$q\331+\265R\255;-\t\262\375g\333\204Q\311\354\364\301\357\226\302\357\324\232\231q";
-    PyObject *data = __Pyx_DecompressString(cstring, 1906, 1);
+    #elif (CYTHON_COMPRESS_STRINGS) != 0 /* compression: zlib (2077 bytes) */
+const char* const cstring = "x\332\315V\313[\333V\026G20\0042M\014!\217\311K\376\310t\322\244!\237\223\311L\323$\3558\261I\334P\214\261\t\020\232\334^K\327\266\300\226l]\031p\372\245e\251\245\226Zj\251\245\227,Y\262\324RK\376\204\374\ts\256d\013c\036Ii;S>\243s\216\356\271\347\371;\307\376Zx\2466*\222\240\250\272\200+\025U\304:\021\024\254\313kD\310\255\313\224\n\251Z\231T\211&S\001NW\017\321\326H\305\327\277\203i\215\210\272@u\366\266\320(\026\211F\017\321\327\261V\"\372A\205\222\246\256\013\272\206\025*\353BY\356h|\327\250\310X\271#\341\246PP\033\212D\205j\203\302!\021\212\262\"\353dFUHo\244\032\321\033\232B\230]A\324TJe\245$HX\307BQ\325\204Z\005+D\177r\334\245\212\252\224d\275!\221\003\267&\277\305\232L\350]LuM\255\250\245\346\335v\310\250\010\257\356\242\216\264J\300Ve\262\326\334\360\365'C\375\311n\375IQU\240^\212N\205\025\351\311\212\204\210\"\205\371\2254\002\365\322\004\275\214\0258F\240\250\351=\331\013\030.\354S|G4\265\335\300N1)\301\232X&,\305zC\326\330%\201l\324*\262\010\207\004\n\200jX/\367\366Q-\026)\321{\313\335\253U\323\324\252\254\353P Y\221\310\206\000\205T\033\354\262\000\316K\007\324\251\\R\344\242\014@8\352\006\225%\270\205+B\261\202K\207\207\334QAUU\352\340\351I@(\222HIX\303\225\006\351\215\\Wk\252H\024]\223\305clwi\241\232\n\325\223U\245\241\027\357|\3654\235K=\313\24733\350\373\304\"J\347Ss\271d*9?\213R\2639\224L,\2014\225\230\237\316\037.\247\236\277H\347\321tf\346y:?\237L1!\227O0s\323\231\005\224\233M\245\222h!173\223Z\310w\273@h\266\271\001\377IY\324\321\014\331\320\347H1\227\232\232~\216\236&\346\226\236\345\347\002!\225\235O\3443s\351\304t \277HM\207gs\211d:1\223\013\204\\:\231\232Ku\324|\277mv!\235\232}\021\360\371\314l&\274\276\270\364:\227B\337g23@r\3633\355\260\3331CrX\222\216\205x\317H\204Z(\3440m*\242\254\3020h\200\004Y!\264\240JM$Bw\251X\001\031\311\n\263\"\222\002\026W\303\221\221H\0217*:\352`\014\006\204\324\020,\n\212``\021\330\200\250:J\373\317\202a&\ns\021\016\000\251Q_\303\247\244\304\010\200\226H>X\020*6\024\021!\300\030\202\345D\221\256\242ZS/\253\312""\344c\266\330*\364\033`p\265 \341o\220LQ\230\013 \257\312\376i0\335\2359^%\315P\035U1$\010\177\200\347F\2050N\301U\240`!\2104x\322\232ZC\340u\003\211\270&3\265z\003W\002U\315\337\215\376\240\243p{uJOQ\001\353p\240\341\365\243U\366\016\303\202\006C{\3606[\3610\027H\227\253\344c\247\360\036!X$\355\224\200k\267d\337\024SU\203\036\261\007\323\367\013\\k\036xq\260\324,@\032\366\266k\007 \244\023\252\303\363\220y\016\326\303l3SXa;\351\326\315=\366KAR\033\205\n\331\243\335g\262\242\013A\003\350\252\014.eZc\271\177\t\337yZC\354\234\2515\035A \024=\360\347\002=\334\203|\374^\367h\240\370\203\236\341@\237\320A\341V\350\006r\201\3721__\364\375\231\3239\032P\277-\231\377Y\002G\000\376\343\321C\204\177^H\235<\203\377S\341\217\016\370\023\346\246\357\243`\354;\276\333}\307V\262\357\250\2107\271\017\303}c\347\274\221\323\336\371\013\336\325k\336\350\230w6\352EGw\27113\356q\343f\326\343.Z\234\307]\262\306-\354^On'\266\177p\263\313\3562qI\331-k\256F=\356\232%\332Q;\326\305\\\266\340\366\337\254\030\273\030\rM\000w\325\312\266\315\372\217\013f\275\375\360U\256Y\330\343\004\233k\353]\267\352\273\354\335\207\241>~\302\216\3552\315\017\203}|\304\343\201\263\206\301\023\017\236\254\227v=`\322v6`\276\263\261\307\017l.\233\021\363\236\231\263F\354\373\360\"2l\300\205Q\363sk\320\302\326O\316\315\026\210Q\363\274\271fe\255U\347b+\352\361g\315A\263h%\254eg\250\305y\374\031c\315|\345{\330p\352\007N\243\346%\353s\233\263/;/Z\t\217?e\\\002\333\234u\331~\341\034\024G\214\207\346\224\025\263\036\331e\007\037\020O\033\351nG\243\346\027\326\277\240\224\267\235\305\026\244t\316L[\257\354\270\375\322\331h\325\017\370\0353\037ZSv\314~\344\224[`*\342E\242\346\230\231\360\"\203\233U\363\276\211\031S1'\240\336\300\254v\216\3027\241\0161\356\033\373\231\222\2213\271}L\331\020\315(c\024\363\031\264-2\350\016\2367E+\272\317\220\n%\347v#\247\214\313f\002|\360\314\342\003\223c\027\317\002\031g\027\254[v\302\336\177\366\031\263m\376\035:\313Ca\342^\344\257\314+\250cS\203\0131fZ64s\024\374\310\026\205\356\367""\017\033\267|\027~d\005\223\207\234\026\255\034\000h\357\344\214Q7\007\030\363\231\201\215\006\313\375\214\361\216\005|\306\240f\314\035\373\207\255;q\347e\213%\263\271\002&\300\354Y\300M\034T\373\001\225\326\025\010\263\177\024^C<Y\203\300\\\264m\316C\224\017\240\r\243\320\031\277\244\222q\323\214\231\217\255zw\000\000\032\200\312\220q\332|\312\252\003\206\314\257\254\307\266\346D\275\241S^\377\025\313\217\010\274\003\332\355\021\347\337\255\273\333\301\311\204\035\367\006\006\177\257\317&\336{\354vy\215B\345\001\252\327!\321\3630n04\3310.\020\346\215\t\003j\367\227\315\272\3011\371m\320\343P~\023\240(\224\177\010\340\025\312l\002\343\307\234\367\336\357\365\327+/\030\317X\324G\312\213\001P\217\212\327\035\030g\330<&\000\024\340\332\227?}=B\357<\216\225,Xf\355m\371h+\276\365r\373\235\233\315\273\371\267\356[\364+v\3279\300\316\033;\346N\334o\305[\211\256@\375\035vRHM:\0306\310\373\355\227n\006\271\250\352VuW\377\345C_\337\177\3704\017$\315\347\030\311\361yF\362\374kF^\363\313\214,\363\005F\n\274\310\210\310K\274wr\024\235\244\310\273\373\213\314\276\023zk\271\277\204\247\215\244\277Wx6\326\034\013\024\246\337\035\217\267\242\255\333[\257\267\351\316-7?\357E\256\370\373\234;\252\344s&\265nX\370\243\205\207d\336\2013X\035\260l\334\363\367Z\261\326\243\255\225\235\310\316\327\356\374+\357\324\2607\300\276\322\372\231\201~\301\337\335\317[\337n\307\374\223\273N\275\025\001\247\351\2557;\267\335y\370j\245.}\007e\376\211\233b\325\236\3423\214d\370%F\226:}\371\221\221\037y\314\010\346\313\214\224y\231\021\231_\341\273\034\376\306\366\014\365\266\007>\207\314\300\211\221\0372~\333N\212mV\324\213\316\325\326\352\366\205\235\0217\007^\341\367\211\354\312\252\253\326\334\332\272\273\276\341n4O\210\331O-\302\356Q\310\334\237\342\257E\346\037\203\272\030\374\276\230\260\263\266\354\274\207^\255\357\254\272K\222+)\256\002\025k\270\2155w\355\275\373\376g\367\347_N\210\244M\300D\377f\312\210\0327\340\327\0047dp\206b%!\210sv\336\211:7\034\t\242\375gK\007\250$\267\373\341\207e\366""\277\307\0347\360";
+    PyObject *data = __Pyx_DecompressString(cstring, 2077, 1);
     if (unlikely(!data)) __PYX_ERR(0, 1, __pyx_L1_error)
     const char* const bytes = __Pyx_PyBytes_AsString(data);
     #if !CYTHON_ASSUME_SAFE_MACROS
     if (likely(bytes)); else { Py_DECREF(data); __PYX_ERR(0, 1, __pyx_L1_error) }
     #endif
-    #else /* compression: none (5190 bytes) */
-const char* const bytes = ": Could not allocate native Swiss Ephemeris lockCould not allocate target buffersCould not allocate weather state buffersCould not grow transit hit bufferJulian-day bounds must be finiteNoneSwiss Ephemeris returned no crossing data for planet=Swiss Ephemeris returned no longitude data for planet=.?aries/astrology/transit_fast/_transit_kernel.pyxaries.astrology.transit_fast.constants jd=jd_end must be greater than jd_start must be finite and greater than zeronative transit searches require an explicit ephe_pathrelative-aspect offsets must be finiterelative-aspect promittor index is out of rangerelative-aspect significator index is out of rangesidereal flags require an explicit sidereal_mode target=targets_deg values must be finitetopocentric flags require an explicit topocentric_positionutf-8BISECTION_MAX_ITERSDEDUP_EPS_DAYSDEFAULT_EPS_DAYSDEFAULT_EPS_DEGHIT_LONGITUDEHIT_STATIONLOW_SPEED_WARNNEWTON_MAX_ITERS__Pyx_PyDict_NextRefSEFLG_BARYCTRSEFLG_EQUATORIALSEFLG_HELCTRSEFLG_RADIANSSEFLG_SIDEREALSEFLG_SPEEDSEFLG_SWIEPHSEFLG_TOPOCTRSEFLG_XYZSE_MOONSE_SUNSTATION_SPEED_EPSaddaries.astrology.transit_fast._transit_kernelastrology_astrologyasyncio.coroutinesbody_codescline_in_tracebackconstantsdefault_relative_step_days_for_bodiesdefault_step_days_for_planetencodeephe_patheps_dayseps_degeps_speedflags__func___hits_to_python.<locals>.<lambda>_is_coroutineitemitemsjd_endjd_startkey<lambda>__main____module____name__outplanetplanetspop__pyx_capi____qualname__roundsearch_longitude_transits_batch_rawsearch_longitude_transits_rawsearch_relative_aspects_batch_rawsearch_station_times_batch_rawsearch_station_times_raw__set_name__setdefaultsidereal_modesort_sort_raw_hits_py_sort_raw_hits_py.<locals>.<lambda>specsstep_daystargets_deg__test__topocentric_positionvaluesPyObject *(PyObject *, double, double, PyObject *, int __pyx_skip_dispatch, struct __pyx_opt_args_5aries_9astrology_12transit_fast_15_transit_kernel_search_longitude_transits_batch_raw *__pyx_optional_args)\000PyObject *(PyO""bject *, double, double, PyObject *, int __pyx_skip_dispatch, struct __pyx_opt_args_5aries_9astrology_12transit_fast_15_transit_kernel_search_relative_aspects_batch_raw *__pyx_optional_args)\000PyObject *(PyObject *, double, double, int __pyx_skip_dispatch, struct __pyx_opt_args_5aries_9astrology_12transit_fast_15_transit_kernel_search_station_times_batch_raw *__pyx_optional_args)\000PyObject *(int, double, double, PyObject *, int __pyx_skip_dispatch, struct __pyx_opt_args_5aries_9astrology_12transit_fast_15_transit_kernel_search_longitude_transits_raw *__pyx_optional_args)\000PyObject *(int, double, double, int __pyx_skip_dispatch, struct __pyx_opt_args_5aries_9astrology_12transit_fast_15_transit_kernel_search_station_times_raw *__pyx_optional_args)\000search_longitude_transits_batch_raw\000search_relative_aspects_batch_raw\000search_station_times_batch_raw\000search_longitude_transits_raw\000search_station_times_raw\200\001\360\n\000\023\024\330\013\014\330\026\027\330\035\036\330\022\023\330\020\021\330\021\022\340\001\023\2201\330\001\025\220Q\330\001\030\230\001\330\001\031\230\025\230a\320\037D\300A\300\\\320Q[\320[e\320eh\320hr\320rs\330\001\036\230c\240\021\240!\330\001\036\230c\240\021\240!\330\001\033\2301\330\001\032\230!\330\001\031\230\021\330\001\035\230Q\330\001\025\220Q\330\001\025\220Q\330\001\027\220q\330\001\027\220q\360\010\000\002\030\220q\360\006\000\002\003\330\002\027\220q\230\n\240!\330\002\033\2301\230K\240q\330\002\033\2301\230I\240Q\330\002\033\2301\230J\240a\330\002\005\200[\220\003\2202\220S\230\013\2403\240a\330\003\n\210!\330\002\022\220&\230\006\230a\230{\250(\260!\330\002\021\220\026\220v\230Q\230k\250\030\260\021\330\002\020\220\006\220f\230A\230[\250\010\260\001\330\002\021\220\031\230&\240\001\240\033\250H\260A\330\002\t\210\031\220&\230\001\230\033\240H\250A\330\002\t\210\031\220&\230\001\230\033\240H\250A\330\002\013\2109\220F\230!\230;\240h\250a\330\002\013\2109\220F\230!\230;\240h\250a\330\002\003\330\003\021\220\023\220A""\330\003\006\200m\2203\220a\330\003\006\200l\220#\220Q\330\003\006\200m\2203\220a\330\003\006\200e\2103\210a\330\003\006\200e\2103\210a\330\003\006\200g\210S\220\001\330\003\006\200g\210S\220\001\340\003\t\210\033\220A\220Q\330\002\006\200e\2105\220\001\220\021\330\003\020\220\001\220\025\220c\230\021\230*\240A\240Q\330\002\006\200e\2105\220\001\220\021\330\003\016\210c\220\021\220%\220q\230\002\230!\2301\330\003\r\210S\220\001\220\025\220a\220r\230\021\230!\330\003\006\200i\210r\220\022\2203\220i\230s\240!\330\004\n\210*\220A\220Q\330\003\006\200h\210b\220\002\220#\220X\230S\240\001\330\004\n\210*\220A\220Q\330\003\017\210q\220\005\220Q\330\003\016\210a\210u\220A\330\003\017\210q\220\005\220U\230!\2305\240\001\240\022\2401\240A\330\003\006\200d\210(\220!\220<\230q\240\001\330\004\n\210*\220A\220Q\330\002\020\220\001\330\002\010\210\014\220B\220a\330\003\022\220!\2208\230<\240r\250\021\330\010\t\330\004\034\230A\330\003\017\210q\330\003\037\230q\240\013\2507\260/\300\021\330\010\t\330\004#\2401\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006\200a\330\005\006\200a\330\005\006\200a\340\004\034\230A\330\003\017\210q\330\003\021\220\021\330\002\t\210\037\230\001\230\026\230q\340\002\005\200Q\330\010\t\330\004\034\230A\330\002\005\200U\210#\210Q\330\003\007\200q\210\001\330\002\005\200^\2203\220a\330\003\007\200q\210\001\330\002\005\200]\220#\220Q\330\003\007\200q\210\001\330\002\005\200\\\220\023\220A\330\003\007\200q\210\001\330\002\005\200]\220#\220Q\330\003\007\200q\210\001\330\002\005\200U\210#\210Q\330\003\007\200q\210\001\330\002\005\200U\210#\210Q\330\003\007\200q\210\001\330\002\005\200W\210C\210q\330\003\007\200q\210\001\330\002\005\200W\210C\210q\330\003\007\200q\210\001\200\001\360\n\000\023\024\330\013\014\330\026\027\330\035\036\330\022\023\330\020\021\330\021\022\340\001\023\2201\330\001\025\220Q\330""\001\030\230\001\330\001\037\230q\330\001\034\230A\330\001\027\220q\330\001\031\230\025\230a\320\037;\2701\270K\300z\320QT\320T^\320^_\360\006\000\002\003\330\002\027\220q\230\n\240!\330\002\033\2301\230K\240q\330\002\033\2301\230I\240Q\330\002\033\2301\230J\240a\330\002\024\220A\220]\240!\320#3\2601\260A\330\002\005\200]\220#\220Q\330\003\n\210!\330\002\020\220\001\330\002\010\210\014\220B\220a\330\003\022\220!\2208\230<\240r\250\021\330\010\t\330\004\034\230A\330\003\017\210q\330\003\037\230q\240\013\2507\260/\300\021\330\010\t\330\004.\250a\250x\260}\300K\320O_\320_m\320mt\320t\177\360\000\000@\002I\002\360\000\000I\002S\002\360\000\000S\002T\002\360\000\000T\002Z\002\360\000\000Z\002[\002\360\000\000[\002b\002\360\000\000b\002c\002\360\000\000c\002d\002\330\004\034\230A\330\003\017\210q\330\003\021\220\021\330\002\t\210\037\230\001\230\026\230q\340\002\005\200Q\330\010\t\330\004\034\230A\330\002\005\200U\210#\210Q\330\003\007\200q\210\001\330\002\005\200_\220C\220q\330\003\007\200q\210\001\200\001\360\n\000\023\024\330\013\014\330\026\027\330\035\036\330\022\023\330\020\021\330\021\022\340\001\023\2201\330\001\025\220Q\330\001\030\230\001\340\001\037\230q\330\001\034\230A\330\001\027\220q\360\010\000\002\003\330\002\027\220q\230\n\240!\330\002\033\2301\230I\240Q\330\002\033\2301\230J\240a\330\002\014\210D\220\001\220\021\330\002\006\200j\220\001\330\003\017\210u\220A\320\0251\260\021\260+\270Z\300s\310*\320TU\330\003\034\230A\230[\250\001\330\002\024\220A\220]\240!\320#3\2601\260A\330\002\005\200]\220#\220R\220s\230$\230a\330\003\n\210!\330\002\020\220\001\330\002\010\210\014\220B\220a\330\003\022\220!\2208\230<\240r\250\021\330\003\007\200z\220\021\330\004\020\220\005\220Q\320\0262\260!\260;\270j\310\003\310:\320UV\330\t\n\330\005\035\230Q\330\004\020\220\001\330\004 \240\001\240\033\250G\260?\300!\330\t\n\330\005/\250q\260\003\2601\260I\270]\310+\320Ue\320es\320sz\360\000\000{\001F\002\360\000\000F\002O\002\360\000\000O\002Y\002\360\000\000Y\002Z\002\360\000""\000Z\002`\002\360\000\000`\002a\002\360\000\000a\002h\002\360\000\000h\002i\002\360\000\000i\002j\002\330\005\035\230Q\330\004\020\220\001\330\003\021\220\021\330\002\t\210\037\230\001\230\026\230q\340\002\005\200Q\330\010\t\330\004\034\230A\330\002\005\200U\210#\210Q\330\003\007\200q\210\001\330\002\005\200_\220C\220q\330\003\007\200q\210\001\200\001\360\010\000\023\024\330\013\014\330\026\027\330\035\036\330\022\023\330\022\023\330\021\022\340\001\023\2201\330\001\025\220Q\330\001\030\230\001\330\001\027\220q\330\001\031\230\025\230a\320\037;\2701\270K\300z\320QT\320T^\320^_\360\006\000\002\003\330\002\027\220q\230\n\240!\330\002\033\2301\230K\240q\330\002\033\2301\230K\240q\330\002\033\2301\230J\240a\330\002\020\220\001\330\002\010\210\014\220B\220a\330\003\022\220!\2208\230<\240r\250\021\330\010\t\330\004\034\230A\330\003\017\210q\330\003\037\230q\240\013\2507\260/\300\021\330\010\t\330\004 \240\001\240\030\250\035\260k\300\027\310\013\320S^\320^h\320hi\320io\320op\320pw\320wx\320xy\330\004\034\230A\330\003\017\210q\330\003\021\220\021\330\002\t\210\037\230\001\230\026\230q\340\002\005\200Q\330\010\t\330\004\034\230A\330\002\005\200U\210#\210Q\330\003\007\200q\210\001\200\001\360\010\000\023\024\330\013\014\330\026\027\330\035\036\330\022\023\330\022\023\330\021\022\340\001\023\2201\330\001\025\220Q\330\001\030\230\001\340\001\027\220q\360\010\000\002\003\330\002\027\220q\230\n\240!\330\002\033\2301\230K\240q\330\002\033\2301\230J\240a\330\002\014\210D\220\001\220\021\330\002\006\200j\220\001\330\003\017\210u\220A\320\0251\260\021\260+\270Z\300s\310*\320TU\330\003\034\230A\230[\250\001\330\002\020\220\001\330\002\010\210\014\220B\220a\330\003\022\220!\2208\230<\240r\250\021\330\003\007\200z\220\021\330\004\020\220\005\220Q\320\0262\260!\260;\270j\310\003\310:\320UV\330\t\n\330\005\035\230Q\330\004\020\220\001\330\004 \240\001\240\033\250G\260?\300!\330\t\n\330\005!\240\021\240#\240Q\240i\250}\270K\300w\310k\320Yd\320dn\320no\320ou\320uv\320v}\320}~\320~\177""\330\005\035\230Q\330\004\020\220\001\330\003\021\220\021\330\002\t\210\037\230\001\230\026\230q\340\002\005\200Q\330\010\t\330\004\034\230A\330\002\005\200U\210#\210Q\330\003\007\200q\210\001\200\001\330\001\004\200E\210\021\210$\210a\330\001\010\210\001\210n\230D\240\001\240\024\240T\250\021\250$\250d\260!\2604\260t\2701\270D\300\004\300A\300Q";
+    #else /* compression: none (5618 bytes) */
+const char* const bytes = ": Could not allocate native Swiss Ephemeris lockCould not allocate relative-aspect state buffersCould not allocate target buffersCould not grow transit hit bufferJulian-day bounds must be finiteNoneSwiss Ephemeris returned no crossing data for planet=Swiss Ephemeris returned no longitude data for planet=.?aries/astrology/transit_fast/_transit_kernel.pyxaries.astrology.transit_fast.constants jd=jd_end must be greater than jd_start must be finite and greater than zeronative transit searches require an explicit ephe_pathrelative-aspect offsets must be finiterelative-aspect promittor index is out of rangerelative-aspect significator index is out of rangesidereal flags require an explicit sidereal_mode target=targets_deg values must be finitetopocentric flags require an explicit topocentric_positionutf-8BISECTION_MAX_ITERSDEDUP_EPS_DAYSDEFAULT_EPS_DAYSDEFAULT_EPS_DEGHIT_LONGITUDEHIT_STATIONLOW_SPEED_WARNNEWTON_MAX_ITERS__Pyx_PyDict_NextRefSEFLG_BARYCTRSEFLG_EQUATORIALSEFLG_HELCTRSEFLG_RADIANSSEFLG_SIDEREALSEFLG_SPEEDSEFLG_SWIEPHSEFLG_TOPOCTRSEFLG_XYZSE_MOONSE_SUNSTATION_SPEED_EPSaddaries.astrology.transit_fast._transit_kernelastrology_astrologyasyncio.coroutinesbody_codescline_in_tracebackconstantsdefault_relative_step_days_for_bodiesdefault_step_days_for_planetencodeephe_patheps_dayseps_degeps_speedflags__func__get_hits_to_python.<locals>.<lambda>_is_coroutineitemitemsjd_endjd_startkey<lambda>__main____module____name__outplanetplanetspop__pyx_capi____qualname__roundsearch_longitude_transits_batch_rawsearch_longitude_transits_rawsearch_relative_aspects_batch_rawsearch_station_times_batch_rawsearch_station_times_raw__set_name__setdefaultsidereal_modesort_sort_raw_hits_py_sort_raw_hits_py.<locals>.<lambda>specsstep_daystargets_deg__test__topocentric_positionvaluesPyObject *(PyObject *, double, double, PyObject *, int __pyx_skip_dispatch, struct __pyx_opt_args_5aries_9astrology_12transit_fast_15_transit_kernel_search_longitude_transits_batch_raw *__pyx_optional_args)\000PyO""bject *(PyObject *, double, double, PyObject *, int __pyx_skip_dispatch, struct __pyx_opt_args_5aries_9astrology_12transit_fast_15_transit_kernel_search_relative_aspects_batch_raw *__pyx_optional_args)\000PyObject *(PyObject *, double, double, int __pyx_skip_dispatch, struct __pyx_opt_args_5aries_9astrology_12transit_fast_15_transit_kernel_search_station_times_batch_raw *__pyx_optional_args)\000PyObject *(int, double, double, PyObject *, int __pyx_skip_dispatch, struct __pyx_opt_args_5aries_9astrology_12transit_fast_15_transit_kernel_search_longitude_transits_raw *__pyx_optional_args)\000PyObject *(int, double, double, int __pyx_skip_dispatch, struct __pyx_opt_args_5aries_9astrology_12transit_fast_15_transit_kernel_search_station_times_raw *__pyx_optional_args)\000search_longitude_transits_batch_raw\000search_relative_aspects_batch_raw\000search_station_times_batch_raw\000search_longitude_transits_raw\000search_station_times_raw\200\001\360\n\000\023\024\330\013\014\330\026\027\330\035\036\330\022\023\330\020\021\330\021\022\340\001\023\2201\330\001\025\220Q\330\001\030\230\001\330\001\031\230\025\230a\320\037D\300A\300\\\320Q[\320[e\320eh\320hr\320rs\330\001\036\230c\240\021\240!\330\001\036\230c\240\021\240!\330\001\033\2301\330\001\032\230!\330\001\031\230\021\330\001\030\230\001\330\001\031\230\021\330\001\035\230Q\330\001\025\220Q\330\001\025\220Q\330\001\027\220q\330\001\027\220q\330\001\030\230\001\330\001\036\230a\330\001 \240\001\330\001\035\230Q\330\001\037\230q\340\001\036\230a\360\010\000\002#\240!\340\001\027\220q\360\006\000\002\003\330\002\027\220q\230\n\240!\330\002\033\2301\230K\240q\330\002\033\2301\230I\240Q\330\002\033\2301\230J\240a\330\002\005\200[\220\003\2202\220S\230\013\2403\240a\330\003\n\210!\330\002\022\220&\230\006\230a\230{\250(\260!\330\002\021\220\026\220v\230Q\230k\250\030\260\021\330\002\020\220\006\220f\230A\230[\250\010\260\001\330\002\017\210v\220V\2301\230K\240x\250q\330\002\020\220\006\220f\230A\230[\250\010\260\001\330\002""\021\220\031\230&\240\001\240\033\250H\260A\330\002\t\210\031\220&\230\001\230\033\240H\250A\330\002\t\210\031\220&\230\001\230\033\240H\250A\330\002\013\2109\220F\230!\230;\240h\250a\330\002\013\2109\220F\230!\230;\240h\250a\330\002\014\210I\220V\2301\230K\240x\250q\330\002\022\220)\2306\240\021\240+\250X\260Q\330\002\024\220I\230V\2401\240K\250x\260q\330\002\021\220\031\230&\240\001\240\033\250H\260A\330\002\023\2209\230F\240!\240;\250h\260a\330\002\003\330\003\021\220\023\220A\330\003\006\200m\2203\220a\330\003\006\200l\220#\220Q\330\003\006\200k\220\023\220A\330\003\006\200l\220#\220Q\330\003\006\200m\2203\220a\330\003\006\200e\2103\210a\330\003\006\200e\2103\210a\330\003\006\200g\210S\220\001\330\003\006\200g\210S\220\001\330\003\006\200h\210c\220\021\330\003\006\200n\220C\220q\330\003\006\320\006\026\220c\230\021\330\003\006\200m\2203\220a\330\003\006\200o\220S\230\001\340\003\t\210\033\220A\220Q\330\002\006\200e\2105\220\001\220\021\330\003\020\220\001\220\025\220c\230\021\230*\240A\240Q\330\002\006\200e\2105\220\001\220\021\330\003\016\210c\220\021\220%\220q\230\002\230!\2301\330\003\r\210S\220\001\220\025\220a\220r\230\021\230!\330\003\006\200i\210r\220\022\2203\220i\230s\240!\330\004\n\210*\220A\220Q\330\003\006\200h\210b\220\002\220#\220X\230S\240\001\330\004\n\210*\220A\220Q\330\003\017\210q\220\005\220Q\330\003\016\210a\210u\220A\330\003\017\210z\230\021\330\003\017\210s\220!\320\023'\240t\2501\250K\260q\330\003\006\200j\220\002\220!\330\004\020\220\003\2201\220A\330\004\030\230\001\230\034\240Q\330\004\022\220!\330\003\r\210Q\210e\2201\330\003\017\210q\220\005\220U\230!\2305\240\001\240\022\2401\240A\330\003\006\200d\210(\220!\220<\230q\240\001\330\004\n\210*\220A\220Q\330\002\020\220\001\330\002\010\210\014\220B\220a\330\003\022\220!\2208\230<\240r\250\021\330\010\t\330\004\034\230A\330\003\017\210q\330\003\037\230q\240\013\2507\260/\300\021\330\010\t\330\004#\2401\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006""\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006\330\005\006\200a\330\005\006\200a\330\005\006\200a\340\004\034\230A\330\003\017\210q\330\003\021\220\021\330\002\t\210\037\230\001\230\026\230q\340\002\005\200Q\330\010\t\330\004\034\230A\330\002\005\200U\210#\210Q\330\003\007\200q\210\001\330\002\005\200^\2203\220a\330\003\007\200q\210\001\330\002\005\200]\220#\220Q\330\003\007\200q\210\001\330\002\005\200\\\220\023\220A\330\003\007\200q\210\001\330\002\005\200[\220\003\2201\330\003\007\200q\210\001\330\002\005\200\\\220\023\220A\330\003\007\200q\210\001\330\002\005\200]\220#\220Q\330\003\007\200q\210\001\330\002\005\200U\210#\210Q\330\003\007\200q\210\001\330\002\005\200U\210#\210Q\330\003\007\200q\210\001\330\002\005\200W\210C\210q\330\003\007\200q\210\001\330\002\005\200W\210C\210q\330\003\007\200q\210\001\330\002\005\200X\210S\220\001\330\003\007\200q\210\001\330\002\005\200^\2203\220a\330\003\007\200q\210\001\330\002\005\320\005\025\220S\230\001\330\003\007\200q\210\001\330\002\005\200]\220#\220Q\330\003\007\200q\210\001\330\002\005\200_\220C\220q\330\003\007\200q\210\001\200\001\360\n\000\023\024\330\013\014\330\026\027\330\035\036\330\022\023\330\020\021\330\021\022\340\001\023\2201\330\001\025\220Q\330\001\030\230\001\330\001\037\230q\330\001\034\230A\330\001\027\220q\330\001\031\230\025\230a\320\037;\2701\270K\300z\320QT\320T^\320^_\360\006\000\002\003\330\002\027\220q\230\n\240!\330\002\033\2301\230K\240q\330\002\033\2301\230I\240Q\330\002\033\2301\230J\240a\330\002\024\220A\220]\240!\320#3\2601\260A\330\002\005\200]\220#\220Q\330\003\n\210!\330\002\020\220\001\330\002\010\210\014\220B\220a\330\003\022\220!\2208\230<\240r\250\021\330\010\t\330\004\034\230A\330\003\017\210q\330\003\037\230q\240\013\2507\260/\300\021\330\010\t\330\004.\250a\250x\260}\300K\320O_\320_m\320mt\320t\177\360\000\000@\002I\002""\360\000\000I\002S\002\360\000\000S\002T\002\360\000\000T\002Z\002\360\000\000Z\002[\002\360\000\000[\002b\002\360\000\000b\002c\002\360\000\000c\002d\002\330\004\034\230A\330\003\017\210q\330\003\021\220\021\330\002\t\210\037\230\001\230\026\230q\340\002\005\200Q\330\010\t\330\004\034\230A\330\002\005\200U\210#\210Q\330\003\007\200q\210\001\330\002\005\200_\220C\220q\330\003\007\200q\210\001\200\001\360\n\000\023\024\330\013\014\330\026\027\330\035\036\330\022\023\330\020\021\330\021\022\340\001\023\2201\330\001\025\220Q\330\001\030\230\001\340\001\037\230q\330\001\034\230A\330\001\027\220q\360\010\000\002\003\330\002\027\220q\230\n\240!\330\002\033\2301\230I\240Q\330\002\033\2301\230J\240a\330\002\014\210D\220\001\220\021\330\002\006\200j\220\001\330\003\017\210u\220A\320\0251\260\021\260+\270Z\300s\310*\320TU\330\003\034\230A\230[\250\001\330\002\024\220A\220]\240!\320#3\2601\260A\330\002\005\200]\220#\220R\220s\230$\230a\330\003\n\210!\330\002\020\220\001\330\002\010\210\014\220B\220a\330\003\022\220!\2208\230<\240r\250\021\330\003\007\200z\220\021\330\004\020\220\005\220Q\320\0262\260!\260;\270j\310\003\310:\320UV\330\t\n\330\005\035\230Q\330\004\020\220\001\330\004 \240\001\240\033\250G\260?\300!\330\t\n\330\005/\250q\260\003\2601\260I\270]\310+\320Ue\320es\320sz\360\000\000{\001F\002\360\000\000F\002O\002\360\000\000O\002Y\002\360\000\000Y\002Z\002\360\000\000Z\002`\002\360\000\000`\002a\002\360\000\000a\002h\002\360\000\000h\002i\002\360\000\000i\002j\002\330\005\035\230Q\330\004\020\220\001\330\003\021\220\021\330\002\t\210\037\230\001\230\026\230q\340\002\005\200Q\330\010\t\330\004\034\230A\330\002\005\200U\210#\210Q\330\003\007\200q\210\001\330\002\005\200_\220C\220q\330\003\007\200q\210\001\200\001\360\010\000\023\024\330\013\014\330\026\027\330\035\036\330\022\023\330\022\023\330\021\022\340\001\023\2201\330\001\025\220Q\330\001\030\230\001\330\001\027\220q\330\001\031\230\025\230a\320\037;\2701\270K\300z\320QT\320T^\320^_\360\006\000\002\003\330\002""\027\220q\230\n\240!\330\002\033\2301\230K\240q\330\002\033\2301\230K\240q\330\002\033\2301\230J\240a\330\002\020\220\001\330\002\010\210\014\220B\220a\330\003\022\220!\2208\230<\240r\250\021\330\010\t\330\004\034\230A\330\003\017\210q\330\003\037\230q\240\013\2507\260/\300\021\330\010\t\330\004 \240\001\240\030\250\035\260k\300\027\310\013\320S^\320^h\320hi\320io\320op\320pw\320wx\320xy\330\004\034\230A\330\003\017\210q\330\003\021\220\021\330\002\t\210\037\230\001\230\026\230q\340\002\005\200Q\330\010\t\330\004\034\230A\330\002\005\200U\210#\210Q\330\003\007\200q\210\001\200\001\360\010\000\023\024\330\013\014\330\026\027\330\035\036\330\022\023\330\022\023\330\021\022\340\001\023\2201\330\001\025\220Q\330\001\030\230\001\340\001\027\220q\360\010\000\002\003\330\002\027\220q\230\n\240!\330\002\033\2301\230K\240q\330\002\033\2301\230J\240a\330\002\014\210D\220\001\220\021\330\002\006\200j\220\001\330\003\017\210u\220A\320\0251\260\021\260+\270Z\300s\310*\320TU\330\003\034\230A\230[\250\001\330\002\020\220\001\330\002\010\210\014\220B\220a\330\003\022\220!\2208\230<\240r\250\021\330\003\007\200z\220\021\330\004\020\220\005\220Q\320\0262\260!\260;\270j\310\003\310:\320UV\330\t\n\330\005\035\230Q\330\004\020\220\001\330\004 \240\001\240\033\250G\260?\300!\330\t\n\330\005!\240\021\240#\240Q\240i\250}\270K\300w\310k\320Yd\320dn\320no\320ou\320uv\320v}\320}~\320~\177\330\005\035\230Q\330\004\020\220\001\330\003\021\220\021\330\002\t\210\037\230\001\230\026\230q\340\002\005\200Q\330\010\t\330\004\034\230A\330\002\005\200U\210#\210Q\330\003\007\200q\210\001\200\001\330\001\004\200E\210\021\210$\210a\330\001\010\210\001\210n\230D\240\001\240\024\240T\250\021\250$\250d\260!\2604\260t\2701\270D\300\004\300A\300Q";
     PyObject *data = NULL;
     CYTHON_UNUSED_VAR(__Pyx_DecompressString);
     #endif
     PyObject **stringtab = __pyx_mstate->__pyx_string_tab;
     Py_ssize_t pos = 0;
-    for (int i = 0; i < 98; i++) {
+    for (int i = 0; i < 99; i++) {
       Py_ssize_t bytes_length = index[i].length;
       PyObject *string = PyUnicode_DecodeUTF8(bytes + pos, bytes_length, NULL);
       if (likely(string) && i >= 25) PyUnicode_InternInPlace(&string);
@@ -19038,7 +21146,7 @@ const char* const bytes = ": Could not allocate native Swiss Ephemeris lockCould
       stringtab[i] = string;
       pos += bytes_length;
     }
-    for (int i = 98; i < 106; i++) {
+    for (int i = 99; i < 107; i++) {
       Py_ssize_t bytes_length = index[i].length;
       PyObject *string = PyBytes_FromStringAndSize(bytes + pos, bytes_length);
       stringtab[i] = string;
@@ -19049,14 +21157,14 @@ const char* const bytes = ": Could not allocate native Swiss Ephemeris lockCould
       }
     }
     Py_XDECREF(data);
-    for (Py_ssize_t i = 0; i < 106; i++) {
+    for (Py_ssize_t i = 0; i < 107; i++) {
       if (unlikely(PyObject_Hash(stringtab[i]) == -1)) {
         __PYX_ERR(0, 1, __pyx_L1_error)
       }
     }
     #if CYTHON_IMMORTAL_CONSTANTS
     {
-      PyObject **table = stringtab + 98;
+      PyObject **table = stringtab + 99;
       for (Py_ssize_t i=0; i<8; ++i) {
         #if CYTHON_COMPILING_IN_CPYTHON_FREETHREADING
         #if PY_VERSION_HEX < 0x030E0000
@@ -19076,8 +21184,8 @@ const char* const bytes = ": Could not allocate native Swiss Ephemeris lockCould
   }
   {
     PyObject **numbertab = __pyx_mstate->__pyx_number_tab + 0;
-    int8_t const cint_constants_1[] = {0,1,12};
-    for (int i = 0; i < 3; i++) {
+    int8_t const cint_constants_1[] = {0,-1,1,12};
+    for (int i = 0; i < 4; i++) {
       numbertab[i] = PyLong_FromLong(cint_constants_1[i - 0]);
       if (unlikely(!numbertab[i])) __PYX_ERR(0, 1, __pyx_L1_error)
     }
@@ -19085,7 +21193,7 @@ const char* const bytes = ": Could not allocate native Swiss Ephemeris lockCould
   #if CYTHON_IMMORTAL_CONSTANTS
   {
     PyObject **table = __pyx_mstate->__pyx_number_tab;
-    for (Py_ssize_t i=0; i<3; ++i) {
+    for (Py_ssize_t i=0; i<4; ++i) {
       #if CYTHON_COMPILING_IN_CPYTHON_FREETHREADING
       #if PY_VERSION_HEX < 0x030E0000
       if (_Py_IsOwnedByCurrentThread(table[i]) && Py_REFCNT(table[i]) == 1)
@@ -19129,42 +21237,42 @@ static int __Pyx_CreateCodeObjects(__pyx_mstatetype *__pyx_mstate) {
   PyObject* tuple_dedup_map = PyDict_New();
   if (unlikely(!tuple_dedup_map)) return -1;
   {
-    const __Pyx_PyCode_New_function_description descr = {1, 0, 0, 1, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 747};
+    const __Pyx_PyCode_New_function_description descr = {1, 0, 0, 1, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 955};
     PyObject* const varnames[] = {__pyx_mstate->__pyx_n_u_item};
     __pyx_mstate_global->__pyx_codeobj_tab[0] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_aries_astrology_transit_fast__tr_2, __pyx_mstate->__pyx_n_u_lambda, __pyx_mstate->__pyx_kp_b_iso88591_nD_T_d_4t1D_AQ, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[0])) goto bad;
   }
   {
-    const __Pyx_PyCode_New_function_description descr = {1, 0, 0, 1, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 752};
+    const __Pyx_PyCode_New_function_description descr = {1, 0, 0, 1, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 960};
     PyObject* const varnames[] = {__pyx_mstate->__pyx_n_u_item};
     __pyx_mstate_global->__pyx_codeobj_tab[1] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_aries_astrology_transit_fast__tr_2, __pyx_mstate->__pyx_n_u_lambda, __pyx_mstate->__pyx_kp_b_iso88591_nD_T_d_4t1D_AQ, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[1])) goto bad;
   }
   {
-    const __Pyx_PyCode_New_function_description descr = {1, 0, 0, 1, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 751};
+    const __Pyx_PyCode_New_function_description descr = {1, 0, 0, 1, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 959};
     PyObject* const varnames[] = {__pyx_mstate->__pyx_n_u_out};
     __pyx_mstate_global->__pyx_codeobj_tab[2] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_aries_astrology_transit_fast__tr_2, __pyx_mstate->__pyx_n_u_sort_raw_hits_py, __pyx_mstate->__pyx_kp_b_iso88591_E_a, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[2])) goto bad;
   }
   {
-    const __Pyx_PyCode_New_function_description descr = {10, 0, 0, 10, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 990};
+    const __Pyx_PyCode_New_function_description descr = {10, 0, 0, 10, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 1244};
     PyObject* const varnames[] = {__pyx_mstate->__pyx_n_u_planet, __pyx_mstate->__pyx_n_u_jd_start, __pyx_mstate->__pyx_n_u_jd_end, __pyx_mstate->__pyx_n_u_ephe_path, __pyx_mstate->__pyx_n_u_flags, __pyx_mstate->__pyx_n_u_sidereal_mode, __pyx_mstate->__pyx_n_u_topocentric_position, __pyx_mstate->__pyx_n_u_step_days, __pyx_mstate->__pyx_n_u_eps_speed, __pyx_mstate->__pyx_n_u_eps_days};
     __pyx_mstate_global->__pyx_codeobj_tab[3] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_aries_astrology_transit_fast__tr_2, __pyx_mstate->__pyx_n_u_search_station_times_raw, __pyx_mstate->__pyx_kp_b_iso88591_1_Q_q_a_1KzQTT___q_1Kq_1Kq_1Ja, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[3])) goto bad;
   }
   {
-    const __Pyx_PyCode_New_function_description descr = {10, 0, 0, 10, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 1035};
+    const __Pyx_PyCode_New_function_description descr = {10, 0, 0, 10, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 1289};
     PyObject* const varnames[] = {__pyx_mstate->__pyx_n_u_planets, __pyx_mstate->__pyx_n_u_jd_start, __pyx_mstate->__pyx_n_u_jd_end, __pyx_mstate->__pyx_n_u_ephe_path, __pyx_mstate->__pyx_n_u_flags, __pyx_mstate->__pyx_n_u_sidereal_mode, __pyx_mstate->__pyx_n_u_topocentric_position, __pyx_mstate->__pyx_n_u_step_days, __pyx_mstate->__pyx_n_u_eps_speed, __pyx_mstate->__pyx_n_u_eps_days};
     __pyx_mstate_global->__pyx_codeobj_tab[4] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_aries_astrology_transit_fast__tr_2, __pyx_mstate->__pyx_n_u_search_station_times_batch_raw, __pyx_mstate->__pyx_kp_b_iso88591_1_Q_q_q_1Kq_1Ja_D_j_uA_1_Zs_TU, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[4])) goto bad;
   }
   {
-    const __Pyx_PyCode_New_function_description descr = {11, 0, 0, 11, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 1086};
+    const __Pyx_PyCode_New_function_description descr = {11, 0, 0, 11, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 1340};
     PyObject* const varnames[] = {__pyx_mstate->__pyx_n_u_planet, __pyx_mstate->__pyx_n_u_jd_start, __pyx_mstate->__pyx_n_u_jd_end, __pyx_mstate->__pyx_n_u_targets_deg, __pyx_mstate->__pyx_n_u_ephe_path, __pyx_mstate->__pyx_n_u_flags, __pyx_mstate->__pyx_n_u_sidereal_mode, __pyx_mstate->__pyx_n_u_topocentric_position, __pyx_mstate->__pyx_n_u_step_days, __pyx_mstate->__pyx_n_u_eps_deg, __pyx_mstate->__pyx_n_u_eps_days};
     __pyx_mstate_global->__pyx_codeobj_tab[5] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_aries_astrology_transit_fast__tr_2, __pyx_mstate->__pyx_n_u_search_longitude_transits_raw, __pyx_mstate->__pyx_kp_b_iso88591_1_Q_q_A_q_a_1KzQTT___q_1Kq_1IQ, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[5])) goto bad;
   }
   {
-    const __Pyx_PyCode_New_function_description descr = {11, 0, 0, 11, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 1139};
+    const __Pyx_PyCode_New_function_description descr = {11, 0, 0, 11, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 1393};
     PyObject* const varnames[] = {__pyx_mstate->__pyx_n_u_planets, __pyx_mstate->__pyx_n_u_jd_start, __pyx_mstate->__pyx_n_u_jd_end, __pyx_mstate->__pyx_n_u_targets_deg, __pyx_mstate->__pyx_n_u_ephe_path, __pyx_mstate->__pyx_n_u_flags, __pyx_mstate->__pyx_n_u_sidereal_mode, __pyx_mstate->__pyx_n_u_topocentric_position, __pyx_mstate->__pyx_n_u_step_days, __pyx_mstate->__pyx_n_u_eps_deg, __pyx_mstate->__pyx_n_u_eps_days};
     __pyx_mstate_global->__pyx_codeobj_tab[6] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_aries_astrology_transit_fast__tr_2, __pyx_mstate->__pyx_n_u_search_longitude_transits_batch, __pyx_mstate->__pyx_kp_b_iso88591_1_Q_q_A_q_q_1IQ_1Ja_D_j_uA_1_Zs, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[6])) goto bad;
   }
   {
-    const __Pyx_PyCode_New_function_description descr = {11, 0, 0, 11, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 1198};
+    const __Pyx_PyCode_New_function_description descr = {11, 0, 0, 11, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 1452};
     PyObject* const varnames[] = {__pyx_mstate->__pyx_n_u_body_codes, __pyx_mstate->__pyx_n_u_jd_start, __pyx_mstate->__pyx_n_u_jd_end, __pyx_mstate->__pyx_n_u_specs, __pyx_mstate->__pyx_n_u_ephe_path, __pyx_mstate->__pyx_n_u_flags, __pyx_mstate->__pyx_n_u_sidereal_mode, __pyx_mstate->__pyx_n_u_topocentric_position, __pyx_mstate->__pyx_n_u_step_days, __pyx_mstate->__pyx_n_u_eps_deg, __pyx_mstate->__pyx_n_u_eps_days};
     __pyx_mstate_global->__pyx_codeobj_tab[7] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_aries_astrology_transit_fast__tr_2, __pyx_mstate->__pyx_n_u_search_relative_aspects_batch_ra, __pyx_mstate->__pyx_kp_b_iso88591_1_Q_a_DA_Q_eehhrrs_c_c_1_Q_Q_Q, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[7])) goto bad;
   }
@@ -23165,6 +25273,95 @@ static CYTHON_INLINE void __Pyx__ExceptionReset(PyThreadState *tstate, PyObject 
   #endif
 }
 #endif
+
+/* PyObjectCall2Args (used by CallUnboundCMethod1) */
+static CYTHON_INLINE PyObject* __Pyx_PyObject_Call2Args(PyObject* function, PyObject* arg1, PyObject* arg2) {
+    PyObject *args[3] = {NULL, arg1, arg2};
+    return __Pyx_PyObject_FastCall(function, args+1, 2 | __Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET);
+}
+
+/* CallUnboundCMethod1 */
+#if CYTHON_COMPILING_IN_CPYTHON
+static CYTHON_INLINE PyObject* __Pyx_CallUnboundCMethod1(__Pyx_CachedCFunction* cfunc, PyObject* self, PyObject* arg) {
+    int was_initialized =  __Pyx_CachedCFunction_GetAndSetInitializing(cfunc);
+    if (likely(was_initialized == 2 && cfunc->func)) {
+        int flag = cfunc->flag;
+        if (flag == METH_O) {
+            return __Pyx_CallCFunction(cfunc, self, arg);
+        } else if (flag == METH_FASTCALL) {
+            return __Pyx_CallCFunctionFast(cfunc, self, &arg, 1);
+        } else if (flag == (METH_FASTCALL | METH_KEYWORDS)) {
+            return __Pyx_CallCFunctionFastWithKeywords(cfunc, self, &arg, 1, NULL);
+        }
+    }
+#if CYTHON_COMPILING_IN_CPYTHON_FREETHREADING
+    else if (unlikely(was_initialized == 1)) {
+        __Pyx_CachedCFunction tmp_cfunc = {
+#ifndef __cplusplus
+            0
+#endif
+        };
+        tmp_cfunc.type = cfunc->type;
+        tmp_cfunc.method_name = cfunc->method_name;
+        return __Pyx__CallUnboundCMethod1(&tmp_cfunc, self, arg);
+    }
+#endif
+    PyObject* result = __Pyx__CallUnboundCMethod1(cfunc, self, arg);
+    __Pyx_CachedCFunction_SetFinishedInitializing(cfunc);
+    return result;
+}
+#endif
+static PyObject* __Pyx__CallUnboundCMethod1(__Pyx_CachedCFunction* cfunc, PyObject* self, PyObject* arg){
+    PyObject *result = NULL;
+    if (unlikely(!cfunc->func && !cfunc->method) && unlikely(__Pyx_TryUnpackUnboundCMethod(cfunc) < 0)) return NULL;
+#if CYTHON_COMPILING_IN_CPYTHON
+    if (cfunc->func && (cfunc->flag & METH_VARARGS)) {
+        PyObject *args = PyTuple_New(1);
+        if (unlikely(!args)) return NULL;
+        Py_INCREF(arg);
+        PyTuple_SET_ITEM(args, 0, arg);
+        if (cfunc->flag & METH_KEYWORDS)
+            result = __Pyx_CallCFunctionWithKeywords(cfunc, self, args, NULL);
+        else
+            result = __Pyx_CallCFunction(cfunc, self, args);
+        Py_DECREF(args);
+    } else
+#endif
+    {
+        result = __Pyx_PyObject_Call2Args(cfunc->method, self, arg);
+    }
+    return result;
+}
+
+/* dict_getitem_default */
+static PyObject* __Pyx_PyDict_GetItemDefault(PyObject* d, PyObject* key, PyObject* default_value) {
+    PyObject* value;
+#if !CYTHON_COMPILING_IN_PYPY || PYPY_VERSION_NUM >= 0x07020000
+    value = PyDict_GetItemWithError(d, key);
+    if (unlikely(!value)) {
+        if (unlikely(PyErr_Occurred()))
+            return NULL;
+        value = default_value;
+    }
+    Py_INCREF(value);
+    if ((1));
+#else
+    if (PyBytes_CheckExact(key) || PyUnicode_CheckExact(key) || PyLong_CheckExact(key)) {
+        value = PyDict_GetItem(d, key);
+        if (unlikely(!value)) {
+            value = default_value;
+        }
+        Py_INCREF(value);
+    }
+#endif
+    else {
+        if (default_value == Py_None)
+            value = __Pyx_CallUnboundCMethod1(&__pyx_mstate_global->__pyx_umethod_PyDict_Type_get, d, key);
+        else
+            value = __Pyx_CallUnboundCMethod2(&__pyx_mstate_global->__pyx_umethod_PyDict_Type_get, d, key, default_value);
+    }
+    return value;
+}
 
 /* FunctionExport */
 static int __Pyx_ExportFunction(PyObject *api_dict, const char *name, void (*f)(void), const char *sig) {

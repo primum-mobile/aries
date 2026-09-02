@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 """Daemon-side Primary Directions list + directions-to-solar-revolution.
 
 Canonical owner: the engine PD pipeline ``primdirs.PrimDirs`` (and its
@@ -35,6 +40,7 @@ import astrology
 import arabicparts
 import chart
 import common
+import circumambulation
 import customerpd
 import dateformat
 import fixstars
@@ -43,6 +49,7 @@ import houses
 import mtexts
 import planets
 import primdirs
+import searchbackend
 import symbolic_time
 import util
 from primdirs import PrimDir, PrimDirs
@@ -62,6 +69,8 @@ from webapp.daemon.primdir_points import (
     primdir_house_cusp_label,
     primdir_planet_id,
     primdir_point_glyph,
+    primdir_semantic_point,
+    semantic_planet_point,
 )
 from webapp.daemon.supplementary_service import supplementary_service
 from webapp.frontend.scripts import export_chart_json
@@ -426,8 +435,8 @@ def _aspects() -> tuple:
     return (
         t['Conjunctio'], t['Semisextil'], t['Semiquadrat'], t['Sextil'], t['Quintile'],
         t['Quadrat'], t['Trigon'], t['Sesquiquadrat'], t['Biquintile'], t['Quinqunx'],
-        t['Oppositio'], t['Parallel'], t['Contraparallel'], t['RaptParallel'],
-        t['RaptParallel'], t['MidPoint'],
+        t['Oppositio'], t['Septile'], t['Parallel'], t['Contraparallel'],
+        t['RaptParallel'], t['RaptParallel'], t['MidPoint'],
     )
 
 
@@ -506,6 +515,13 @@ def _direction_event_session_label(prom: Any, aspect: Any, sig: Any) -> str:
 
 
 def _primary_direction_session_label(pd, prom_label: str, sig_label: str) -> str:
+    aspect_index = _primary_direction_aspect_index(pd)
+    aspects = _aspects()
+    aspect_label = aspects[aspect_index] if 0 <= aspect_index < len(aspects) else aspects[chart.Chart.CONJUNCTIO]
+    return _direction_event_session_label(prom_label, aspect_label, sig_label)
+
+
+def _primary_direction_aspect_index(pd) -> int:
     sig_aspect = int(pd.sigasp)
     if sig_aspect in {
         chart.Chart.PARALLEL,
@@ -518,9 +534,240 @@ def _primary_direction_session_label(pd, prom_label: str, sig_label: str) -> str
         aspect_index = int(pd.promasp)
     if aspect_index == chart.Chart.CONJUNCTIO and sig_aspect != chart.Chart.CONJUNCTIO:
         aspect_index = sig_aspect
-    aspects = _aspects()
-    aspect_label = aspects[aspect_index] if 0 <= aspect_index < len(aspects) else aspects[chart.Chart.CONJUNCTIO]
-    return _direction_event_session_label(prom_label, aspect_label, sig_label)
+    return aspect_index
+
+
+def _temporal_id_component(value: Any) -> str:
+    return str(value).replace("%", "%25").replace("|", "%7C")
+
+
+def _exact_temporal_window(jd_ut: Any) -> Optional[dict[str, Any]]:
+    try:
+        start = float(jd_ut)
+    except Exception:
+        return None
+    if not math.isfinite(start):
+        return None
+    return {
+        "startJdUt": start,
+        "endJdUt": math.nextafter(start, math.inf),
+        "endExclusive": True,
+    }
+
+
+def _temporal_coverage_payload(
+    start_jd_ut: Any,
+    end_jd_ut: Any,
+    *,
+    authoritative: bool = True,
+) -> Optional[dict[str, Any]]:
+    """Describe a completely scanned half-open range for comparison lanes."""
+    try:
+        start = float(start_jd_ut)
+        end = float(end_jd_ut)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(start) or not math.isfinite(end) or end <= start:
+        return None
+    return {
+        "startJdUt": start,
+        "endJdUt": end,
+        "authoritative": bool(authoritative),
+    }
+
+
+def _temporal_coverage_from_rows(rows: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
+    """Return the exact envelope of source-owned period/event evidence."""
+    start = math.inf
+    end = -math.inf
+    for row in rows:
+        temporal = row.get("temporal") if isinstance(row, dict) else None
+        if not isinstance(temporal, dict):
+            continue
+        for activation in temporal.get("activations") or ():
+            if not isinstance(activation, dict):
+                continue
+            for window in activation.get("windows") or ():
+                if not isinstance(window, dict):
+                    continue
+                try:
+                    window_start = float(window.get("startJdUt"))
+                    window_end = float(window.get("endJdUt"))
+                except (TypeError, ValueError):
+                    continue
+                if not math.isfinite(window_start) or not math.isfinite(window_end):
+                    continue
+                if window_end <= window_start:
+                    continue
+                start = min(start, window_start)
+                end = max(end, window_end)
+    return _temporal_coverage_payload(start, end)
+
+
+def _temporal_activation(
+    row_id: str,
+    point: Optional[dict[str, Any]],
+    *,
+    role: str,
+    basis: str,
+    windows: list[dict[str, Any]],
+    color_hex: Optional[str] = None,
+    color_role: Optional[str] = None,
+) -> Optional[dict[str, Any]]:
+    if not isinstance(point, dict):
+        return None
+    point_id = str(point.get("pointId") or "").strip()
+    if not point_id or not windows:
+        return None
+    planet_id = point.get("planetId")
+    try:
+        planet_id = int(planet_id) if planet_id is not None else None
+    except Exception:
+        planet_id = None
+    payload = {
+        "activationId": "|".join((
+            row_id,
+            _temporal_id_component(role),
+            _temporal_id_component(point_id),
+        )),
+        "pointId": point_id,
+        "planetId": planet_id,
+        "role": role,
+        "basis": basis,
+        "windows": [dict(window) for window in windows],
+    }
+    if color_hex:
+        payload["colorHex"] = color_hex
+    if color_role:
+        payload["colorRole"] = color_role
+    return payload
+
+
+def _temporal_point_palette(chrt, options, point: dict[str, Any]) -> tuple[str, Optional[str]]:
+    """Resolve a temporal activation through the same semantic display palette.
+
+    Dynamic PD bodies use their normalized semantic planet id here.  That is
+    important for Chiron, whose Swiss id collides with the PD ``IC`` id and
+    would otherwise inherit the structural-point/Fortune fallback.
+    """
+    point_id = str(point.get("pointId") or "")
+    try:
+        planet_id = int(point.get("planetId"))
+    except Exception:
+        planet_id = None
+    if planet_id is not None:
+        if planet_id == astrology.SE_CHIRON:
+            return _rgb_css(_chiron_color(options)), _chiron_color_role(options)
+        if point_id.startswith(("antiscion:", "contra-antiscion:")):
+            return (
+                _rgb_css(_antiscion_planet_color(chrt, options, planet_id)),
+                _antiscion_planet_color_role(chrt, options, planet_id),
+            )
+        return (
+            _rgb_css(_planet_color(chrt, options, planet_id)),
+            _planet_color_role(chrt, options, planet_id),
+        )
+    if point_id.endswith("point:lof"):
+        return _rgb_css(_lof_color(options)), _lof_color_role(options)
+    if point_id.endswith("point:vertex"):
+        return _rgb_css(_vertex_color(options)), _vertex_color_role(options)
+    return _rgb_css(_text_color(options)), _TEXT_COLOR_ROLE
+
+
+def _primary_direction_temporal(
+    pds,
+    pd,
+    signature,
+    natal_promissor=None,
+    *,
+    display_options=None,
+) -> Optional[dict[str, Any]]:
+    window = _exact_temporal_window(getattr(pd, "time", None))
+    if window is None or signature is None:
+        return None
+    row_id = "|".join((
+        "primary-direction",
+        *(_temporal_id_component(value) for value in signature),
+    ))
+
+    twin_promissor = (
+        int(pd.promasp) == chart.Chart.MIDPOINT
+        or int(pd.sigasp) in (chart.Chart.RAPTPAR, chart.Chart.RAPTCONTRAPAR)
+    )
+    actor_points = [
+        primdir_semantic_point(
+            pd.prom,
+            dynamic_key=getattr(pd, "promdyn", None),
+            dynamic_spec=natal_promissor,
+            reference_chart=getattr(pds, "chart", None),
+            body_context=twin_promissor,
+        )
+    ]
+    if twin_promissor or PrimDir.TERM <= int(pd.prom) < PrimDir.FIXSTAR:
+        actor_points.append(
+            primdir_semantic_point(
+                pd.prom2,
+                reference_chart=getattr(pds, "chart", None),
+                body_context=True,
+            )
+        )
+
+    sig_spec = None
+    if int(pd.sig) == PrimDir.CUSTOMERPD:
+        sig_spec = getattr(getattr(pds, "chart", None), "pd_context_significator_spec", None)
+    target_points = [
+        primdir_semantic_point(
+            pd.sig,
+            dynamic_key=getattr(pd, "sigdyn", None),
+            dynamic_spec=sig_spec,
+            reference_chart=getattr(pds, "chart", None),
+        )
+    ]
+
+    activations: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for role, points in (("actor", actor_points), ("target", target_points)):
+        for point in points:
+            if not isinstance(point, dict):
+                continue
+            point_id = str(point.get("pointId") or "")
+            identity = (role, point_id)
+            if not point_id or identity in seen:
+                continue
+            seen.add(identity)
+            color_hex, color_role = _temporal_point_palette(
+                getattr(pds, "chart", None),
+                display_options if display_options is not None else pds.options,
+                point,
+            )
+            activation = _temporal_activation(
+                row_id,
+                point,
+                role=role,
+                basis="exact",
+                windows=[window],
+                color_hex=color_hex,
+                color_role=color_role,
+            )
+            if activation is not None:
+                activations.append(activation)
+    if not activations:
+        return None
+
+    payload: dict[str, Any] = {
+        "rowId": row_id,
+        "rowAnchorJdUt": window["startJdUt"],
+        "activations": activations,
+    }
+    actor = next((item for item in activations if item["role"] == "actor"), None)
+    target = next((item for item in activations if item["role"] == "target"), None)
+    if actor is not None and target is not None:
+        payload["relationship"] = {
+            "aspect": _primary_direction_aspect_index(pd),
+            "actorPointId": actor["pointId"],
+            "targetPointId": target["pointId"],
+        }
+    return payload
 
 
 def _system_label(options) -> str:
@@ -649,6 +896,7 @@ def _row(
     reference_chart=None,
     *,
     display_options=None,
+    include_temporal: bool = False,
 ) -> dict:
     # pd.time is a UT Julian day; the displayed Date column must be LOCAL civil
     # (policy-chart-lifecycle display rule). wx shows the raw UT digits here
@@ -681,7 +929,8 @@ def _row(
     date_iso = "%04d-%02d-%02d" % (int(y), int(m), int(d))
     prom_label = _prom_label(pds, pd)
     sig_label = _sig_label(pds, pd)
-    return {
+    signature = symbolic_projection.pd_entry_signature(pd)
+    payload = {
         # Rendered text cells (MZ / Prom / DC / Sig / Arc / Date), the wx columns
         "mz": mtexts.txts['M'] if pd.mundane else mtexts.txts['Z'],
         "prom": prom_label,
@@ -695,12 +944,27 @@ def _row(
         # Raw engine fields so the React table can map ids -> Morinus glyphs.
         "fields": {
             "mundane": bool(pd.mundane),
+            "domain": getattr(
+                pd,
+                "domain",
+                "mundane" if bool(pd.mundane) else "zodiacal",
+            ),
+            "system": getattr(
+                pd,
+                "system",
+                getattr(getattr(pds, "options", None), "primarydir", None),
+            ),
+            "eventKind": getattr(pd, "event_kind", "direction"),
             "direct": bool(pd.direct),
             "prom": int(pd.prom),
             "prom2": int(pd.prom2),
+            "promDynamicKey": getattr(pd, "promdyn", None),
             "promasp": int(pd.promasp),
+            "promaspOffset": float(getattr(pd, "promasp_offset", 0.0)),
             "sigPoint": int(pd.sig),
+            "sigDynamicKey": getattr(pd, "sigdyn", None),
             "sigasp": int(pd.sigasp),
+            "sigaspOffset": float(getattr(pd, "sigasp_offset", 0.0)),
             "parallelaxis": int(pd.parallelaxis),
             # Keep calculation precision for row-open actions.  The top-level
             # value is rounded only for stable table display/serialization.
@@ -727,8 +991,19 @@ def _row(
             "promSourceMarker": prom_source_marker,
             "promSourceBodyId": prom_source_body_id,
         },
-        "signature": list(symbolic_projection.pd_entry_signature(pd) or []),
+        "signature": list(signature or []),
     }
+    if include_temporal:
+        temporal = _primary_direction_temporal(
+            pds,
+            pd,
+            signature,
+            natal_promissor=natal_promissor,
+            display_options=presentation,
+        )
+        if temporal is not None:
+            payload["temporal"] = temporal
+    return payload
 
 
 def _meta(options, range_mode: int, direction: int, chrt, title: str) -> dict:
@@ -1029,23 +1304,87 @@ def _aspect_glyph(aspect_id: Any) -> Optional[str]:
     return glyph or None
 
 
+def _glyph_export_identity(glyph: Any) -> tuple[str, str]:
+    """Return the localized alias and portable Unicode for a Morinus glyph."""
+    value = "" if glyph is None else str(glyph)
+    if not value:
+        return "", ""
+    candidate_ids = list(range(astrology.SE_SUN, astrology.SE_TRUE_NODE + 1))
+    candidate_ids.append(astrology.SE_CHIRON)
+    body_labels = _bodies()
+    for planet_id in candidate_ids:
+        if value != (_planet_glyph(planet_id) or ""):
+            continue
+        label = (
+            str(body_labels[planet_id])
+            if 0 <= planet_id < len(body_labels)
+            else str(common.common.get_planet_name(planet_id))
+        )
+        return label, common.planet_text_export_mark(planet_id)
+    if value == str(getattr(common.common, "fortune", "")):
+        return str(mtexts.txts.get("LoF", "Lot of Fortune")), common.FORTUNE_TEXT_EXPORT_MARK
+    for sign_index in range(chart.Chart.SIGN_NUM):
+        if value in {
+            str(common.common.Signs1[sign_index]),
+            str(common.common.Signs2[sign_index]),
+        }:
+            labels = _signs()
+            return str(labels[sign_index]), common.sign_text_export_mark(sign_index)
+    for aspect_index, aspect_glyph in enumerate(tuple(getattr(common.common, "Aspects", ()))):
+        if value == str(aspect_glyph):
+            labels = _aspects()
+            label = str(labels[aspect_index]) if aspect_index < len(labels) else value
+            return label, common.aspect_text_export_mark(aspect_index)
+    return "", ""
+
+
 def _display_part(
     text: Any,
     *,
     glyph: bool = False,
     color: Any = None,
     color_role: Optional[str] = None,
+    export_text: Optional[str] = None,
+    export_symbol_text: Optional[str] = None,
 ) -> dict[str, Any]:
-    return {
+    part = {
         "text": "" if text is None else str(text),
         "glyph": bool(glyph),
         "color": _rgb_css(color) if color is not None else None,
         "colorRole": color_role,
     }
+    if glyph and (export_text is None or export_symbol_text is None):
+        inferred_text, inferred_symbol = _glyph_export_identity(text)
+        if export_text is None:
+            export_text = inferred_text
+        if export_symbol_text is None:
+            export_symbol_text = inferred_symbol
+    if export_text:
+        part["exportText"] = str(export_text)
+    if export_symbol_text:
+        part["exportSymbolText"] = str(export_symbol_text)
+    return part
 
 
-def _aspect_glyph_for_degree(aspect_deg: Any) -> Optional[str]:
-    """Map a participating-hit aspect *degree value* to its Morinus glyph.
+def _aspect_display_part(options, aspect_id: Any) -> dict[str, Any]:
+    """Return one Morinus aspect run with both portable text identities."""
+    try:
+        index = int(aspect_id)
+    except (TypeError, ValueError):
+        index = -1
+    part = _display_part(
+        _aspect_glyph(index),
+        glyph=True,
+        color=_aspect_color(options, index),
+        color_role=_aspect_color_role(options, index),
+        export_text=(str(_aspects()[index]) if 0 <= index < len(_aspects()) else None),
+        export_symbol_text=common.aspect_text_export_mark(index),
+    )
+    return part
+
+
+def _aspect_index_for_degree(aspect_deg: Any) -> Optional[int]:
+    """Map a participating-hit aspect *degree value* to its aspect index.
 
     The circumambulation brain stores the aspect as a degree value
     (circumambulation.py:700 PD mode `chart.Chart.Aspects[ph.promasp]`;
@@ -1059,16 +1398,27 @@ def _aspect_glyph_for_degree(aspect_deg: Any) -> Optional[str]:
     except Exception:
         return None
     aspects = getattr(chart.Chart, "Aspects", None)
-    glyphs = getattr(export_chart_json.common.common, "Aspects", None)
-    if not aspects or not glyphs:
+    if not aspects:
         return None
     for idx, deg in enumerate(aspects):
         try:
-            if abs(float(deg) - av) < 1e-3 and 0 <= idx < len(glyphs):
-                return glyphs[idx] or None
+            if abs(float(deg) - av) < 1e-3:
+                return idx
         except Exception:
             continue
     return None
+
+
+def _aspect_glyph_for_degree(aspect_deg: Any) -> Optional[str]:
+    index = _aspect_index_for_degree(aspect_deg)
+    glyphs = getattr(export_chart_json.common.common, "Aspects", None)
+    if index is None or not glyphs or not (0 <= index < len(glyphs)):
+        return None
+    return glyphs[index] or None
+
+
+def _aspect_export_symbol_for_degree(aspect_deg: Any) -> str:
+    return common.aspect_text_export_mark(_aspect_index_for_degree(aspect_deg))
 
 
 def _aspect_label_for_degree(aspect_deg: Any) -> str:
@@ -1180,11 +1530,120 @@ def _participating_planet_id(label: Any) -> Optional[int]:
     return _CIRCUM_LABEL_TO_SE.get(_circum_label_key(label))
 
 
+def _is_circum_fortune_label(label: Any) -> bool:
+    if not isinstance(label, str):
+        return False
+    key = _circum_label_key(label)
+    aliases = {
+        _circum_label_key(name)
+        for name in (
+            "Fortuna",
+            "Fortune",
+            "Lot of Fortune",
+            "LoF",
+            mtexts.txts.get("LotOfFortune", "Fortuna"),
+            mtexts.txts.get("FortunaeF", "Fortune"),
+        )
+    }
+    return key in aliases
+
+
 def _participating_planet_glyph(label: Any) -> Optional[str]:
+    if _is_circum_fortune_label(label):
+        return common.common.fortune
     se_id = _participating_planet_id(label)
     if se_id is None:
         return None
     return _planet_glyph(se_id)
+
+
+def _circum_semantic_point(planet_id: Any, fallback_label: Any) -> Optional[dict[str, Any]]:
+    point = semantic_planet_point(planet_id)
+    if point is not None:
+        return point
+    fallback = _circum_label_key(str(fallback_label or ""))
+    if not fallback:
+        return None
+    if _is_circum_fortune_label(fallback_label):
+        return {"pointId": "circumambulation:point:lof", "planetId": None}
+    return {"pointId": f"circumambulation:point:{fallback}", "planetId": None}
+
+
+def _circum_term_temporal(row: dict, *, source_chart, opts) -> Optional[dict[str, Any]]:
+    try:
+        start_jd = float(row.get("jd_start"))
+        end_jd = float(row.get("jd_end"))
+    except Exception:
+        return None
+    if not math.isfinite(start_jd) or not math.isfinite(end_jd):
+        return None
+    ruler = row.get("term_ruler_pid")
+    point = _circum_semantic_point(ruler, ruler)
+    if point is None:
+        return None
+    color_hex, color_role = _temporal_point_palette(source_chart, opts, point)
+    row_id = "|".join((
+        "circumambulation-term",
+        format(start_jd, ".8f"),
+        format(end_jd, ".8f"),
+        _temporal_id_component(row.get("sign_idx")),
+        _temporal_id_component(ruler),
+    ))
+    activation = _temporal_activation(
+        row_id,
+        point,
+        role="term-ruler",
+        basis="period",
+        windows=[{
+            "startJdUt": start_jd,
+            "endJdUt": end_jd,
+            "endExclusive": True,
+        }],
+        color_hex=color_hex,
+        color_role=color_role,
+    )
+    if activation is None:
+        return None
+    return {"rowId": row_id, "activations": [activation]}
+
+
+def _circum_participant_temporal(
+    participant: dict,
+    *,
+    planet_id: Optional[int],
+    term_row_id: Optional[str],
+    source_chart,
+    opts,
+) -> Optional[dict[str, Any]]:
+    window = _exact_temporal_window(participant.get("jd"))
+    point = _circum_semantic_point(planet_id, participant.get("planet"))
+    if window is None or point is None:
+        return None
+    color_hex, color_role = _temporal_point_palette(source_chart, opts, point)
+    row_id = "|".join((
+        "circumambulation-participant",
+        format(window["startJdUt"], ".8f"),
+        _temporal_id_component(participant.get("source") or "return"),
+        _temporal_id_component(point["pointId"]),
+        _temporal_id_component(participant.get("aspect")),
+        _temporal_id_component(term_row_id or ""),
+    ))
+    activation = _temporal_activation(
+        row_id,
+        point,
+        role="participant",
+        basis="exact",
+        windows=[window],
+        color_hex=color_hex,
+        color_role=color_role,
+    )
+    if activation is None:
+        return None
+    return {
+        "rowId": row_id,
+        "rowAnchorJdUt": window["startJdUt"],
+        "activations": [activation],
+    }
 
 
 def _circum_age_offset_years(radix, source_chart) -> float:
@@ -1230,12 +1689,7 @@ def _primdir_prom_parts(pds, pd, *, display_options=None) -> list[dict[str, Any]
     if PrimDir.ANTISCION <= pd.prom < PrimDir.TERM:
         parts: list[dict[str, Any]] = []
         if pd.promasp != chart.Chart.CONJUNCTIO:
-            parts.append(_display_part(
-                _aspect_glyph(pd.promasp),
-                glyph=True,
-                color=_aspect_color(options, pd.promasp),
-                color_role=_aspect_color_role(options, pd.promasp),
-            ))
+            parts.append(_aspect_display_part(options, pd.promasp))
         parts.append(_display_part(
             mtexts.txts['ContraAntis'] if pd.prom >= PrimDir.CONTRAANT else mtexts.txts['Antis'],
             color=txt,
@@ -1320,12 +1774,7 @@ def _primdir_prom_parts(pds, pd, *, display_options=None) -> list[dict[str, Any]
     if (angle_label := primdir_angle_label(pd.prom)) is not None:
         parts = []
         if pd.promasp != chart.Chart.CONJUNCTIO:
-            parts.append(_display_part(
-                _aspect_glyph(pd.promasp),
-                glyph=True,
-                color=_aspect_color(options, pd.promasp),
-                color_role=_aspect_color_role(options, pd.promasp),
-            ))
+            parts.append(_aspect_display_part(options, pd.promasp))
         parts.append(_display_part(angle_label, color=txt, color_role=_TEXT_COLOR_ROLE))
         return [p for p in parts if p.get("text")]
 
@@ -1334,12 +1783,7 @@ def _primdir_prom_parts(pds, pd, *, display_options=None) -> list[dict[str, Any]
 
     parts = []
     if pd.promasp != chart.Chart.CONJUNCTIO:
-        parts.append(_display_part(
-            _aspect_glyph(pd.promasp),
-            glyph=True,
-            color=_aspect_color(options, pd.promasp),
-            color_role=_aspect_color_role(options, pd.promasp),
-        ))
+        parts.append(_aspect_display_part(options, pd.promasp))
     planet_id = primdir_planet_id(pd.prom)
     if planet_id is not None:
         parts.append(_display_part(
@@ -1415,14 +1859,13 @@ def _primdir_sig_parts(pds, pd, *, display_options=None) -> list[dict[str, Any]]
     txt = _text_color(options)
 
     if pd.sigasp in (chart.Chart.PARALLEL, chart.Chart.CONTRAPARALLEL):
-        partxt = 'Y' if pd.parallelaxis == 0 and pd.sigasp == chart.Chart.CONTRAPARALLEL else 'X'
+        effective_aspect = (
+            chart.Chart.CONTRAPARALLEL
+            if pd.parallelaxis == 0 and pd.sigasp == chart.Chart.CONTRAPARALLEL
+            else chart.Chart.PARALLEL
+        )
         parts = [
-            _display_part(
-                partxt,
-                glyph=True,
-                color=getattr(options, "clrperegrin", txt),
-                color_role=_PEREGRIN_COLOR_ROLE,
-            ),
+            _aspect_display_part(options, effective_aspect),
         ]
         sig_label = primdir_angle_label(pd.sig) or primdir_house_cusp_label(pd.sig)
         if sig_label is not None:
@@ -1456,12 +1899,7 @@ def _primdir_sig_parts(pds, pd, *, display_options=None) -> list[dict[str, Any]]
     if pd.sig == PrimDir.LOF:
         parts = []
         if pd.mundane:
-            parts.append(_display_part(
-                _aspect_glyph(pd.sigasp),
-                glyph=True,
-                color=_aspect_color(options, pd.sigasp),
-                color_role=_aspect_color_role(options, pd.sigasp),
-            ))
+            parts.append(_aspect_display_part(options, pd.sigasp))
         parts.append(_display_part(
             common.common.fortune,
             glyph=True,
@@ -1510,12 +1948,7 @@ def _primdir_sig_parts(pds, pd, *, display_options=None) -> list[dict[str, Any]]
 
     parts = []
     if pd.sigasp != chart.Chart.CONJUNCTIO:
-        parts.append(_display_part(
-            _aspect_glyph(pd.sigasp),
-            glyph=True,
-            color=_aspect_color(options, pd.sigasp),
-            color_role=_aspect_color_role(options, pd.sigasp),
-        ))
+        parts.append(_aspect_display_part(options, pd.sigasp))
     planet_id = primdir_planet_id(pd.sig)
     if planet_id is not None:
         parts.append(_display_part(
@@ -1538,6 +1971,49 @@ def _primary_options_for_age_window(options, start_age: Optional[float], end_age
     setattr(opts, "_pd_range_bounds_override", (start, end))
     setattr(opts, "_pd_max_age_limit_override", end)
     return opts, True
+
+
+def _primary_temporal_query_coverage(chrt, options, range_mode: int) -> Optional[dict[str, Any]]:
+    """Map the exact PD age bounds through PrimDirs' canonical time scale."""
+    if chrt is None or getattr(chrt, "time", None) is None:
+        return None
+    try:
+        bounds = getattr(options, "_pd_range_bounds_override", None)
+        if bounds is None:
+            bounds = PrimDirs.Ranges[int(range_mode)]
+        start_age, end_age = (float(bounds[0]), float(bounds[1]))
+        radix_jd = float(chrt.time.jd)
+    except (AttributeError, IndexError, TypeError, ValueError):
+        return None
+    # PrimDirs.calcTime is authoritative for radix PD event dates.
+    tropical_year_days = 365.2421904
+    return _temporal_coverage_payload(
+        radix_jd + start_age * tropical_year_days,
+        radix_jd + end_age * tropical_year_days,
+    )
+
+
+def _annual_temporal_query_coverage(chrt, options) -> Optional[dict[str, Any]]:
+    """Return the complete revolution interval used by calcTimeRev."""
+    if chrt is None or getattr(chrt, "time", None) is None:
+        return None
+    try:
+        start_jd = float(chrt.time.jd)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    tropical_year_days = 365.2421904
+    if getattr(chrt, "htype", None) == chart.Chart.SOLAR:
+        days = (
+            360.0
+            if getattr(options, "pdrevsunyearmode", PrimDirs.REVSOLAR_TROPICAL)
+            == PrimDirs.REVSOLAR_360
+            else tropical_year_days
+        )
+    elif getattr(chrt, "htype", None) == chart.Chart.LUNAR:
+        days = 0.0758333 * tropical_year_days
+    else:
+        return None
+    return _temporal_coverage_payload(start_jd, start_jd + days)
 
 
 def _display_tuple_from_datetime(value: datetime.datetime) -> tuple[int, int, int, int, int, int]:
@@ -1794,6 +2270,7 @@ class DirectionsService:
         seek: str = "exact",
         custom_significator: Optional[dict[str, Any]] = None,
         options_preview: Optional[dict[str, Any]] = None,
+        include_temporal: bool = False,
     ) -> dict:
         with self._lock:
             preview_options = self._preview_options(options_preview)
@@ -1822,6 +2299,7 @@ class DirectionsService:
                                 radix_jd,
                                 reference_chart=radix,
                                 display_options=display_options,
+                                include_temporal=include_temporal,
                             )
                             for pd in pds.pds
                         ]
@@ -1841,6 +2319,14 @@ class DirectionsService:
                         searched_windows += 1
             title = mtexts.txts.get("PrimaryDirections", "Primary Directions")
             meta = _meta(pd_opts, range_mode, direction, radix, title)
+            if include_temporal:
+                temporal_coverage = _primary_temporal_query_coverage(
+                    radix,
+                    pd_opts,
+                    range_mode,
+                )
+                if temporal_coverage is not None:
+                    meta["temporalCoverage"] = temporal_coverage
             if normalized_sig is not None:
                 meta["customSignificator"] = normalized_sig
             if windowed:
@@ -1869,8 +2355,7 @@ class DirectionsService:
         reference_datetime: Optional[str],
     ):
         """Resolve the solar/lunar revolution chart for the annual-directions
-        path. Shared by annual_directions (rows) and primary_directions_text
-        (export) so the PD-in-revolution projection has exactly one builder.
+        row path so the PD-in-revolution projection has exactly one builder.
         Returns (sr_chart, label, display_dt, target_year)."""
         return_kind = "lunar" if str(return_kind).lower() == "lunar" else "solar"
         live = self._live_return_chart(document_id, return_kind)
@@ -1910,73 +2395,6 @@ class DirectionsService:
                     raise RuntimeError(f"Could not build solar revolution for year {target_year}")
         return sr_chart, label, display_dt, target_year
 
-    def primary_directions_text(
-        self,
-        *,
-        source: Optional[str] = None,
-        name: str = "Morinus",
-        document_id: Optional[str] = None,
-        mode: str = "radix",
-        range_mode: int = PrimDirs.RANGEALL,
-        direction: int = PrimDirs.DIRECT,
-        start_age: Optional[float] = None,
-        end_age: Optional[float] = None,
-        year: Optional[int] = None,
-        return_kind: str = "solar",
-        reference_datetime: Optional[str] = None,
-        custom_significator: Optional[dict[str, Any]] = None,
-    ) -> dict:
-        """Save-As-Text payload for the Primary Directions list (radix) and the
-        PD-in-revolution list (annual/SR/LR). The file body is built by the
-        engine's PrimDirs.format2text (the primdirs.print2file extraction) — the
-        skin never assembles the text. Mirrors primdirslistwnd.onSaveAsText."""
-        with self._lock:
-            radix, opts, effective_document_id = self._load_radix_context(
-                source,
-                name,
-                document_id=document_id,
-            )
-            if custom_significator is None:
-                custom_significator = self._document_custom_significator(effective_document_id)
-            opts, normalized_sig = _options_for_custom_significator(opts, custom_significator)
-            aspect_label_for_index = (
-                common.aspect_text_export_mark
-                if bool(getattr(opts, "list_export_aspect_symbols", False))
-                else None
-            )
-            if mode == "radix":
-                pd_opts, _windowed = _primary_options_for_age_window(opts, start_age, end_age)
-                with _temporary_radix_direction_chart(radix):
-                    with _temporary_custom_significator(radix, normalized_sig):
-                        pds = _project(radix, pd_opts, range_mode, direction)
-                        text = pds.format2text(aspect_label_for_index)
-            else:
-                sr_chart, _label, _display_dt, _target_year = self._resolve_revolution_chart(
-                    radix,
-                    opts,
-                    document_id=effective_document_id,
-                    year=year,
-                    return_kind=return_kind,
-                    reference_datetime=reference_datetime,
-                )
-                rev_range = range_mode if range_mode != PrimDirs.RANGEALL else PrimDirs.RANGEREV
-                with _temporary_custom_significator(sr_chart, normalized_sig):
-                    pds = _project(sr_chart, opts, rev_range, direction)
-                    if getattr(opts, "pdrevshownatalpromissors", False):
-                        with _temporary_natal_radix_promissors(sr_chart, radix, pds.options):
-                            _append_natal_radix_promissor_directions(pds, radix)
-                            text = pds.format2text(aspect_label_for_index)
-                    else:
-                        text = pds.format2text(aspect_label_for_index)
-            base_name = getattr(radix, "name", name) or name
-            # wx default filename: chart.name + mtexts.txts['PD']
-            # (primdirslistwnd.onSaveAsText:1567/1579).
-            filename = "%s%s.txt" % (base_name, mtexts.txts.get("PD", " (Primary Directions)"))
-            return {
-                "text": text,
-                "filename": filename,
-            }
-
     def annual_directions(
         self,
         *,
@@ -1990,6 +2408,7 @@ class DirectionsService:
         direction: int = PrimDirs.DIRECT,
         custom_significator: Optional[dict[str, Any]] = None,
         options_preview: Optional[dict[str, Any]] = None,
+        include_temporal: bool = False,
     ) -> dict:
         with self._lock:
             preview_options = self._preview_options(options_preview)
@@ -2010,8 +2429,8 @@ class DirectionsService:
                 return_kind=return_kind,
                 reference_datetime=reference_datetime,
             )
-            # Return charts -> projection applies get_effective_revolution_options
-            # and every arc routes through calcTimeRev (primdirs.py:2198).
+            # Return charts use the ordinary PD configuration; every arc routes
+            # through calcTimeRev. The retired annual-only profile is ignored.
             radix_jd = float(radix.time.jd) if getattr(radix, "time", None) is not None else None
             with _temporary_custom_significator(sr_chart, normalized_sig):
                 pds = _project(sr_chart, opts, range_mode, direction)
@@ -2026,6 +2445,7 @@ class DirectionsService:
                                 radix_jd,
                                 reference_chart=sr_chart,
                                 display_options=display_options,
+                                include_temporal=include_temporal,
                             )
                             for pd in pds.pds
                         ]
@@ -2037,6 +2457,7 @@ class DirectionsService:
                             radix_jd,
                             reference_chart=sr_chart,
                             display_options=display_options,
+                            include_temporal=include_temporal,
                         )
                         for pd in pds.pds
                     ]
@@ -2044,6 +2465,10 @@ class DirectionsService:
                      if sr_chart.htype == chart.Chart.LUNAR
                      else mtexts.txts.get("AnnualDirections", "Annual Directions"))
             meta = _meta(opts, range_mode, direction, sr_chart, title)
+            if include_temporal:
+                temporal_coverage = _annual_temporal_query_coverage(sr_chart, opts)
+                if temporal_coverage is not None:
+                    meta["temporalCoverage"] = temporal_coverage
             if normalized_sig is not None:
                 meta["customSignificator"] = normalized_sig
             meta["returnKind"] = return_kind
@@ -2083,6 +2508,75 @@ _SECONDARY_FOCUS_WINDOW_YEARS = {
     posfordate.TERTIARY: 1.0,
     posfordate.MINOR: 0.25,
 }
+
+
+def _secondary_direct_temporal_coverage(
+    radix,
+    start_age: float,
+    end_age: float,
+) -> Optional[dict[str, Any]]:
+    """Mirror the exact civil-date range passed to Search for direct rows."""
+    try:
+        birth_date = _secdir._birth_date(radix)
+        start_date = birth_date + datetime.timedelta(
+            days=int(round(float(start_age) * 365.2425))
+        )
+        end_date = birth_date + datetime.timedelta(
+            days=int(round(float(end_age) * 365.2425))
+        )
+        start_jd = searchbackend._date_to_jd(start_date, radix)
+        end_jd = searchbackend._date_to_jd(
+            end_date + datetime.timedelta(days=1),
+            radix,
+        )
+    except (AttributeError, OverflowError, TypeError, ValueError):
+        return None
+    return _temporal_coverage_payload(start_jd, end_jd)
+
+
+def _secondary_converse_temporal_coverage(
+    radix,
+    start_age: float,
+    end_age: float,
+) -> Optional[dict[str, Any]]:
+    """Mirror the real-calendar age bounds sampled by converse rows."""
+    try:
+        start_info = _secdir._converse_real_event_info_for_age(radix, start_age)
+        end_info = _secdir._converse_real_event_info_for_age(radix, end_age)
+        if start_info is None or end_info is None:
+            return None
+        start_jd = float(start_info[0])
+        end_jd = math.nextafter(float(end_info[0]), math.inf)
+    except (AttributeError, IndexError, TypeError, ValueError):
+        return None
+    return _temporal_coverage_payload(start_jd, end_jd)
+
+
+def _secondary_temporal_query_coverage(
+    radix,
+    start_age: float,
+    end_age: float,
+    direction: str,
+    *,
+    authoritative: bool,
+) -> Optional[dict[str, Any]]:
+    normalized = _secdir.normalize_secondary_direction(direction)
+    direct = _secondary_direct_temporal_coverage(radix, start_age, end_age)
+    converse = _secondary_converse_temporal_coverage(radix, start_age, end_age)
+    if normalized == _secdir.SECONDARY_DIRECTION_DIRECT:
+        selected = direct
+    elif normalized == _secdir.SECONDARY_DIRECTION_CONVERSE:
+        selected = converse
+    elif direct is not None and converse is not None:
+        selected = _temporal_coverage_payload(
+            max(float(direct["startJdUt"]), float(converse["startJdUt"])),
+            min(float(direct["endJdUt"]), float(converse["endJdUt"])),
+        )
+    else:
+        selected = None
+    if selected is not None:
+        selected["authoritative"] = bool(authoritative)
+    return selected
 
 
 def _secondary_conversion_key_label(method: str) -> str:
@@ -2230,6 +2724,20 @@ def _apply_secondary_display_palette(
             display_options,
             sig_color,
         )
+        metadata = getattr(source, "metadata", None)
+        if isinstance(metadata, dict) and metadata.get("secondary_ingress"):
+            try:
+                sign_index = int(
+                    metadata.get("sign_change_event_sign")
+                ) % chart.Chart.SIGN_NUM
+                fields["sigColorRole"] = sign_color_role(
+                    display_options,
+                    sign_index,
+                    force_element=True,
+                    resolved_color=sig_color,
+                )
+            except (TypeError, ValueError):
+                pass
         try:
             aspect_index = int(fields.get("aspectIndex"))
             aspect_color = _rgb_css(display_options.clraspect[aspect_index])
@@ -2241,6 +2749,31 @@ def _apply_secondary_display_palette(
             )
         except Exception:
             pass
+
+
+def _apply_secondary_temporal_palette(serialized: list[dict[str, Any]]) -> None:
+    """Copy the already-resolved canonical row palette onto activations."""
+    for payload in serialized:
+        fields = payload.get("fields")
+        temporal = payload.get("temporal")
+        if not isinstance(fields, dict) or not isinstance(temporal, dict):
+            continue
+        activations = temporal.get("activations")
+        if not isinstance(activations, list):
+            continue
+        for activation in activations:
+            if not isinstance(activation, dict):
+                continue
+            if activation.get("role") == "actor":
+                color_hex = fields.get("promColor")
+                color_role = fields.get("promColorRole")
+            else:
+                color_hex = fields.get("sigColor")
+                color_role = fields.get("sigColorRole")
+            if color_hex:
+                activation["colorHex"] = color_hex
+            if color_role:
+                activation["colorRole"] = color_role
 
 
 def _focused_secondary_age_window(radix, reference_datetime: Optional[str], method: int) -> tuple[float, float, Optional[float]]:
@@ -2331,49 +2864,6 @@ class SecondaryDirectionsService:
             direction_mode,
         )
 
-    def secondary_directions_text(
-        self,
-        *,
-        source: Optional[str] = None,
-        name: str = "Morinus",
-        document_id: Optional[str] = None,
-        start_age: Optional[float] = None,
-        end_age: Optional[float] = None,
-        method: str = "secondary",
-        direction: str = _secdir.SECONDARY_DIRECTION_DIRECT,
-        reference_datetime: Optional[str] = None,
-        stations_only: bool = False,
-    ) -> dict:
-        """Save-As-Text payload (secdirframe.onSaveAsText:1237) — formatting is
-        the engine's build_secondary_rows_text, never the skin."""
-        with self._lock:
-            radix, opts, rows, _truncated, catalog, _start, _end, _ref, _dir = self._build_secondary_rows(
-                source=source,
-                name=name,
-                document_id=document_id,
-                start_age=start_age,
-                end_age=end_age,
-                method=method,
-                direction=direction,
-                reference_datetime=reference_datetime,
-            )
-            if stations_only:
-                rows = [row for row in rows if _secdir.is_secondary_station_row(row)]
-            aspect_label_for_index = (
-                common.aspect_text_export_mark
-                if bool(getattr(opts, "list_export_aspect_symbols", False))
-                else None
-            )
-            return {
-                "text": _secdir.build_secondary_rows_text(
-                    radix,
-                    rows,
-                    catalog,
-                    aspect_label_for_index,
-                ),
-                "filename": "secondary-directions.txt",
-            }
-
     def secondary_directions(
         self,
         *,
@@ -2385,6 +2875,7 @@ class SecondaryDirectionsService:
         method: str = "secondary",
         direction: str = _secdir.SECONDARY_DIRECTION_DIRECT,
         reference_datetime: Optional[str] = None,
+        include_temporal: bool = False,
     ) -> dict:
         with self._lock:
             radix, _opts, rows, truncated, catalog, start_age, end_age, reference_age, direction_mode = self._build_secondary_rows(
@@ -2401,7 +2892,13 @@ class SecondaryDirectionsService:
                 getattr(radix, "options", None) or chart_snapshot_service.options
             )
             display_options = effective_display_options(source_display_options)
-            serialized = _secdir.serialize_secondary_rows(radix, rows, catalog)
+            serialized = _secdir.serialize_secondary_rows(
+                radix,
+                rows,
+                catalog,
+                method=method,
+                include_temporal=include_temporal,
+            )
             _apply_secondary_display_palette(
                 serialized,
                 rows,
@@ -2409,6 +2906,8 @@ class SecondaryDirectionsService:
                 display_options,
                 source_display_options,
             )
+            if include_temporal:
+                _apply_secondary_temporal_palette(serialized)
             for row in serialized:
                 row["displayDate"] = _display_date_from_iso(row.get("date"), display_options)
                 row["sessionLabel"] = _direction_event_session_label(
@@ -2418,39 +2917,61 @@ class SecondaryDirectionsService:
                 "minor": mtexts.txts.get("MinorProgression", "Minor Progressions") + mtexts.txts.get("ToRadixSuffix", " to Radix"),
                 "tertiary": mtexts.txts.get("TertiaryProgression", "Tertiary Progressions") + mtexts.txts.get("ToRadixSuffix", " to Radix"),
             }.get(method, "Secondary Progressions to Radix")
+            filter_planets_by_id = {}
+            for object_id in catalog.promittor_ids:
+                obj = catalog.get(object_id)
+                if obj is None or obj.family != 'planet' or obj.planet_index is None:
+                    continue
+                filter_planets_by_id.setdefault(int(obj.planet_index), {
+                    "id": int(obj.planet_index),
+                    "label": str(obj.label),
+                    "glyph": _planet_glyph(obj.planet_index),
+                })
+            meta = {
+                "title": title,
+                "method": method,
+                "direction": direction_mode,
+                "directionModes": [
+                    _secdir.SECONDARY_DIRECTION_DIRECT,
+                    _secdir.SECONDARY_DIRECTION_CONVERSE,
+                    _secdir.SECONDARY_DIRECTION_BOTH,
+                ],
+                "conversionKey": _secondary_conversion_key_label(method),
+                "startAge": round(float(start_age), 4),
+                "endAge": round(float(end_age), 4),
+                "totalStartAge": 0,
+                "totalEndAge": None,
+                "referenceAge": round(reference_age, 4) if reference_age is not None else None,
+                "windowed": True,
+                "windowYears": round(float(end_age) - float(start_age), 4),
+                "hasPrevious": start_age > 0,
+                "hasNext": True,
+                "ranges": [list(r) for r in _secdir.SECONDARY_DIRECTION_RANGES],
+                "truncated": bool(truncated),
+                "columns": (
+                    [mtexts.txts.get("Age", "Age"), mtexts.txts.get("DirColumn", "Dir"),
+                     mtexts.txts.get("Prom", "Prom."), mtexts.txts.get("AspColumn", "Asp."),
+                     mtexts.txts.get("Sig", "Sig."), mtexts.txts.get("Date", "Date")]
+                    if direction_mode != _secdir.SECONDARY_DIRECTION_DIRECT
+                    else [mtexts.txts.get("Age", "Age"), mtexts.txts.get("Prom", "Prom."),
+                          mtexts.txts.get("AspColumn", "Asp."), mtexts.txts.get("Sig", "Sig."),
+                          mtexts.txts.get("Date", "Date")]
+                ),
+                "filterPlanets": list(filter_planets_by_id.values()),
+            }
+            if include_temporal:
+                temporal_coverage = _secondary_temporal_query_coverage(
+                    radix,
+                    start_age,
+                    end_age,
+                    direction_mode,
+                    authoritative=not truncated,
+                )
+                if temporal_coverage is not None:
+                    meta["temporalCoverage"] = temporal_coverage
             return {
                 "name": getattr(radix, "name", name),
-                "meta": {
-                    "title": title,
-                    "method": method,
-                    "direction": direction_mode,
-                    "directionModes": [
-                        _secdir.SECONDARY_DIRECTION_DIRECT,
-                        _secdir.SECONDARY_DIRECTION_CONVERSE,
-                        _secdir.SECONDARY_DIRECTION_BOTH,
-                    ],
-                    "conversionKey": _secondary_conversion_key_label(method),
-                    "startAge": round(float(start_age), 4),
-                    "endAge": round(float(end_age), 4),
-                    "totalStartAge": 0,
-                    "totalEndAge": None,
-                    "referenceAge": round(reference_age, 4) if reference_age is not None else None,
-                    "windowed": True,
-                    "windowYears": round(float(end_age) - float(start_age), 4),
-                    "hasPrevious": start_age > 0,
-                    "hasNext": True,
-                    "ranges": [list(r) for r in _secdir.SECONDARY_DIRECTION_RANGES],
-                    "truncated": bool(truncated),
-                    "columns": (
-                        [mtexts.txts.get("Age", "Age"), mtexts.txts.get("DirColumn", "Dir"),
-                         mtexts.txts.get("Prom", "Prom."), mtexts.txts.get("AspColumn", "Asp."),
-                         mtexts.txts.get("Sig", "Sig."), mtexts.txts.get("Date", "Date")]
-                        if direction_mode != _secdir.SECONDARY_DIRECTION_DIRECT
-                        else [mtexts.txts.get("Age", "Age"), mtexts.txts.get("Prom", "Prom."),
-                              mtexts.txts.get("AspColumn", "Asp."), mtexts.txts.get("Sig", "Sig."),
-                              mtexts.txts.get("Date", "Date")]
-                    ),
-                },
+                "meta": meta,
                 "directions": serialized,
             }
 
@@ -2655,6 +3176,8 @@ class CircumambulationService:
         return_kind: str = "solar",
         reference_datetime: Optional[str] = None,
         custom_significator: Optional[dict[str, Any]] = None,
+        promissor_profile: Optional[int] = None,
+        include_temporal: bool = False,
     ) -> dict:
         with self._lock:
             radix, opts, effective_document_id = directions_service._load_radix_context(
@@ -2698,9 +3221,14 @@ class CircumambulationService:
                 normalized_mode = "radix"
                 return_kind = "radix"
             age_offset = _circum_age_offset_years(radix, source_chart)
+            normalized_promissor_profile = circumambulation.normalize_promissor_profile(
+                promissor_profile
+                if promissor_profile is not None
+                else getattr(opts, "pdcircumprommode", primdirs.PrimDirs.CIRCUM_PROMISSORS_FOLLOW_PD)
+            )
             include_natal_promissors = (
                 normalized_mode in {"sr", "lr"}
-                and getattr(opts, "pdrevshownatalpromissors", False)
+                and bool(getattr(opts, "pdrevshownatalpromissors", False))
             )
             with (
                 _temporary_radix_direction_chart(source_chart)
@@ -2715,6 +3243,7 @@ class CircumambulationService:
                     default_max_age=int(max_age),
                     custom_significator=normalized_sig,
                     natal_participator_chart=radix if include_natal_promissors else None,
+                    promissor_profile=normalized_promissor_profile,
                 )
             rows = projection.get("content") or []
             display_options = effective_display_options(opts)
@@ -2730,34 +3259,47 @@ class CircumambulationService:
                         if isinstance(normalized_sig, dict)
                         else mtexts.txts.get("Asc", "Asc")
                     ),
+                    include_temporal=include_temporal,
                 )
                 for r in rows
             ]
-            title = mtexts.txts.get("CircumThroughBounds", "Circumambulations through the Bounds")
-            if normalized_mode == "sr":
-                title = mtexts.txts.get("AnnualCircumThroughBounds", "Annual Circumambulations through the Bounds")
-            elif normalized_mode == "lr":
-                title = mtexts.txts.get("MonthlyCircumThroughBounds", "Monthly Circumambulations through the Bounds")
+            title_key = {
+                "sr": "AnnualCircumambulations",
+                "lr": "MonthlyCircumambulations",
+            }.get(normalized_mode, "Circumambulations")
+            title = mtexts.txts.get(title_key, title_key)
+            meta = {
+                "title": title,
+                "useExactOa": bool(use_exact_oa),
+                "maxAge": int(max_age),
+                "mode": normalized_mode,
+                "returnKind": return_kind,
+                "returnDatetime": return_datetime,
+                "returnLabel": return_label,
+                "solarRevolutionYear": target_year,
+                "ageOffset": round(float(age_offset), 4),
+                "listGlyphColors": bool(getattr(opts, "pdlistglyphcolors", False)),
+                "showNatalPromissors": bool(include_natal_promissors),
+                "promissorProfile": normalized_promissor_profile,
+                "promissorProfileName": (
+                    "traditional"
+                    if normalized_promissor_profile == primdirs.PrimDirs.CIRCUM_PROMISSORS_TRADITIONAL
+                    else "follow_pd"
+                ),
+                "promissorCapabilities": dict(circumambulation.CIRCUMAMBULATION_PROMISSOR_CAPABILITIES),
+                "customSignificator": normalized_sig,
+                "significators": self._circumambulation_significator_items(source_chart),
+                "columns": [mtexts.txts.get("Degree", "Degree"), mtexts.txts.get("TermLord", "Term Lord"),
+                            mtexts.txts.get("Participator", "Participator"), mtexts.txts.get("Age", "Age"),
+                            mtexts.txts.get("Date", "Date")],
+            }
+            if include_temporal:
+                temporal_coverage = _temporal_coverage_from_rows(serialized)
+                if temporal_coverage is not None:
+                    meta["temporalCoverage"] = temporal_coverage
             return {
                 "name": getattr(radix, "name", name),
-                "meta": {
-                    "title": title,
-                    "useExactOa": bool(use_exact_oa),
-                    "maxAge": int(max_age),
-                    "mode": normalized_mode,
-                    "returnKind": return_kind,
-                    "returnDatetime": return_datetime,
-                    "returnLabel": return_label,
-                    "solarRevolutionYear": target_year,
-                    "ageOffset": round(float(age_offset), 4),
-                    "listGlyphColors": bool(getattr(opts, "pdlistglyphcolors", False)),
-                    "showNatalPromissors": bool(include_natal_promissors),
-                    "customSignificator": normalized_sig,
-                    "significators": self._circumambulation_significator_items(source_chart),
-                    "columns": [mtexts.txts.get("Degree", "Degree"), mtexts.txts.get("TermLord", "Term Lord"),
-                                mtexts.txts.get("Participator", "Participator"), mtexts.txts.get("Age", "Age"),
-                                mtexts.txts.get("Date", "Date")],
-                },
+                "meta": meta,
                 "directions": serialized,
             }
 
@@ -2769,6 +3311,7 @@ class CircumambulationService:
         opts,
         age_offset: float = 0.0,
         significator_label: str = "Asc",
+        include_temporal: bool = False,
     ) -> dict:
         """Project one circumambulation term row (circumambulation.py:714) into a
         flat JSON row. event_datetime drives the Timed-chart action (the term's
@@ -2790,10 +3333,19 @@ class CircumambulationService:
             date_iso = _date(value)
             return _display_date_from_iso(date_iso, opts)
 
+        term_temporal = (
+            _circum_term_temporal(row, source_chart=source_chart, opts=opts)
+            if include_temporal
+            else None
+        )
+        term_row_id = term_temporal.get("rowId") if term_temporal is not None else None
         participating = []
         term_ruler_label = _body_label(row.get("term_ruler_pid"))
         for p in row.get("participating") or []:
-            pid = _participating_planet_id(p.get("planet"))
+            try:
+                pid = int(p.get("planet_id"))
+            except (TypeError, ValueError):
+                pid = _participating_planet_id(p.get("planet"))
             part_age = None
             if p.get("years") is not None:
                 part_age = float(p["years"]) + float(age_offset)
@@ -2805,19 +3357,37 @@ class CircumambulationService:
                     part_sign_index = None
             planet_label = _body_label(pid) if pid is not None else str(p.get("planet") or "")
             aspect_label = _aspect_label_for_degree(p.get("aspect"))
-            participating.append({
+            is_fortune = _is_circum_fortune_label(p.get("planet"))
+            participant_payload = {
+                "planetId": pid,
                 "planet": p.get("planet"),
+                "planetExportSymbolText": (
+                    common.planet_text_export_mark(pid)
+                    if pid is not None
+                    else common.FORTUNE_TEXT_EXPORT_MARK if is_fortune else ""
+                ),
                 "source": p.get("source") or "return",
                 "sourceMarker": p.get("source_marker"),
                 "planetGlyph": _participating_planet_glyph(p.get("planet")),
-                "planetColor": _rgb_css(_planet_color(source_chart, opts, pid)) if pid is not None else None,
-                "planetColorRole": _planet_color_role(source_chart, opts, pid) if pid is not None else None,
+                "planetColor": _rgb_css(
+                    _planet_color(source_chart, opts, pid)
+                    if pid is not None
+                    else _lof_color(opts) if is_fortune else _text_color(opts)
+                ),
+                "planetColorRole": (
+                    _planet_color_role(source_chart, opts, pid)
+                    if pid is not None
+                    else _lof_color_role(opts) if is_fortune else _TEXT_COLOR_ROLE
+                ),
                 "degreeText": _circum_degree_text(p.get("lam")),
                 "degreeSignIndex": part_sign_index,
                 "degreeSignGlyph": _sign_glyph(opts, part_sign_index),
+                "degreeSignExportSymbolText": common.sign_text_export_mark(part_sign_index),
                 "degreeSignColor": _rgb_css(_sign_color(opts, part_sign_index)),
                 "degreeSignColorRole": _sign_color_role(opts, part_sign_index),
                 "aspectGlyph": _aspect_glyph_for_degree(p.get("aspect")),
+                "aspectExportText": aspect_label,
+                "aspectExportSymbolText": _aspect_export_symbol_for_degree(p.get("aspect")),
                 "aspectColor": _rgb_css(_aspect_color_for_degree(opts, p.get("aspect"))),
                 "aspectColorRole": _aspect_color_role_for_degree(opts, p.get("aspect")),
                 "aspectDegree": (
@@ -2832,7 +3402,18 @@ class CircumambulationService:
                     significator_label,
                 ),
                 "age": round(part_age, 3) if part_age is not None else None,
-            })
+            }
+            if include_temporal:
+                participant_temporal = _circum_participant_temporal(
+                    p,
+                    planet_id=pid,
+                    term_row_id=term_row_id,
+                    source_chart=source_chart,
+                    opts=opts,
+                )
+                if participant_temporal is not None:
+                    participant_payload["temporal"] = participant_temporal
+            participating.append(participant_payload)
         sign_index = row.get("sign_idx")
         age_start = None
         age_end = None
@@ -2840,14 +3421,16 @@ class CircumambulationService:
             age_start = float(row["age_start"]) + float(age_offset)
         if row.get("age_end") is not None:
             age_end = float(row["age_end"]) + float(age_offset)
-        return {
+        payload = {
             "signIndex": sign_index,
             "signGlyph": _sign_glyph(opts, sign_index),
+            "signExportSymbolText": common.sign_text_export_mark(sign_index),
             "signColor": _rgb_css(_sign_color(opts, sign_index)),
             "signColorRole": _sign_color_role(opts, sign_index),
             "degreeText": _circum_degree_text(row.get("lam_start")),
             "termRulerPid": row.get("term_ruler_pid"),
             "termRulerGlyph": _planet_glyph(row.get("term_ruler_pid")),
+            "termRulerExportSymbolText": common.planet_text_export_mark(row.get("term_ruler_pid")),
             "termRulerColor": _rgb_css(_planet_color(source_chart, opts, row.get("term_ruler_pid"))),
             "termRulerColorRole": _planet_color_role(source_chart, opts, row.get("term_ruler_pid")),
             "dateStart": _date(row.get("date_start")),
@@ -2865,6 +3448,9 @@ class CircumambulationService:
             ) if part),
             "participating": participating,
         }
+        if term_temporal is not None:
+            payload["temporal"] = term_temporal
+        return payload
 
 
 circumambulation_service = CircumambulationService()

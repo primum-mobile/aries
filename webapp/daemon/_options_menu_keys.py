@@ -120,6 +120,7 @@ OPTIONS_MENU_KEYS = {
     'House line routing': 'optmenu.angloDenseLabelLayout',
     'Straight house lines': 'optmenu.leaderColumns',
     'Routed house lines': 'optmenu.routedCuspLines',
+    'Broken lines, planets stay in sign': 'optmenu.signLockedCusps',
     'Sub charts as biwheels': 'optmenu.subChartsAsBiwheels',
     'Planetary hour': 'optmenu.planetaryHour',
     'Information': 'optmenu.information',

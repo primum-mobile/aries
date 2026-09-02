@@ -206,7 +206,37 @@ def _real_datetime_for_calendar_age(radix_chart, age_years):
 	)
 
 
-def secondary_direction_symbolic_info(radix_chart, directed_chart, method=posfordate.SECONDARY, day_type=None):
+def signified_datetime_for_progressed_jd(radix_chart, progressed_jd, method=posfordate.SECONDARY, day_type=posfordate.PROGRESSION_DAY_TYPE_Q2, converse=False):
+	"""Project a progressed ephemeris instant onto its signified civil timeline.
+
+	``progressed_jd`` is a symbolic date on the progression's ephemeris clock,
+	not a real-life cursor date.  The result is the real/signified datetime that
+	the normal progression builder accepts as its display cursor.
+	"""
+	if radix_chart is None or getattr(radix_chart, 'time', None) is None:
+		return None
+	try:
+		birth_jd = float(radix_chart.time.jd)
+		progressed_jd = float(progressed_jd)
+	except (TypeError, ValueError, AttributeError):
+		return None
+	if not math.isfinite(birth_jd) or not math.isfinite(progressed_jd):
+		return None
+	method = posfordate.progression_method(method)
+	day_type = _effective_progression_day_type(method, day_type)
+	scale = posfordate.progression_symbolic_scale(method)
+	age_years = (progressed_jd - birth_jd) / scale if scale != 0.0 else progressed_jd - birth_jd
+	if converse:
+		age_years = -age_years
+	if method in (posfordate.SECONDARY, posfordate.TERTIARY) and day_type == posfordate.PROGRESSION_DAY_TYPE_Q1:
+		age_years *= BIJA_RATIO
+	try:
+		return _real_datetime_for_calendar_age(radix_chart, age_years)
+	except (OverflowError, ValueError):
+		return None
+
+
+def secondary_direction_symbolic_info(radix_chart, directed_chart, method=posfordate.SECONDARY, day_type=None, converse=False):
 	if radix_chart is None or directed_chart is None:
 		return None
 
@@ -228,6 +258,8 @@ def secondary_direction_symbolic_info(radix_chart, directed_chart, method=posfor
 		pass
 	else:
 		delta_ephem_days = age_years * scale
+	if converse:
+		age_years = -age_years
 	if method in (posfordate.SECONDARY, posfordate.TERTIARY) and day_type == posfordate.PROGRESSION_DAY_TYPE_Q1:
 		age_years *= BIJA_RATIO
 	calflag = _calflag_from_chart(radix_chart)

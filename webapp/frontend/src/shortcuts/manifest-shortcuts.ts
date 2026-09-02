@@ -114,7 +114,7 @@ export function useManifestShortcutDispatch(
         const commandHeld = gesture.metaKey || gesture.ctrlKey;
         if (parsed.requireCommand !== commandHeld) continue;
         if (Boolean(parsed.requireAlt) !== gesture.altKey) continue;
-        if (parsed.requireShift && !gesture.shiftKey) continue;
+        if (Boolean(parsed.requireShift) !== gesture.shiftKey) continue;
         if (!parsed.requireCommand && (gesture.metaKey || gesture.ctrlKey || gesture.altKey)) {
           continue;
         }

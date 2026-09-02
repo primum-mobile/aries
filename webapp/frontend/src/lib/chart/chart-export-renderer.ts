@@ -3,6 +3,7 @@
 
 import { CanvasDraw } from "./canvas-draw";
 import { morinusTextFontFromTokens } from "./chart-fonts";
+import { radixOverlayTopLeftLines } from "./chart-overlay-lines";
 import { drawSnapshotLayer, type ClickAspectState } from "./draw-chart";
 import {
   applyProfileColorsToSnapshot,
@@ -256,6 +257,7 @@ function printChart(
     options: {
       ...chart.options,
       signColors: Array.from({ length: 12 }, () => PRINT_BLACK),
+      multiwheelSignColors: Array.from({ length: 12 }, () => PRINT_BLACK),
     },
   };
 }
@@ -443,7 +445,7 @@ function drawSurfaceOverlays(
   ) => resolveWheelTypographyPaint(style, profile, classId, maxRadius, defaults);
 
   if (corner.options.showInformation) {
-    const topLines = corner.meta.cornerLines?.topLeft ?? [corner.meta.dateDisplay, corner.meta.timeDisplay];
+    const topLines = radixOverlayTopLeftLines(corner, snapshot.radixChart);
     const topPaint = resolvePaint("chartOverlay.information.topLeft", {
       font: fontUi,
       size: overlay.infoFontSize,

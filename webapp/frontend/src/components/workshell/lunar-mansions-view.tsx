@@ -110,6 +110,7 @@ export function LunarMansionsView({ documentId, parentDocumentId, sourceName, on
       subtitle={modeLabel}
       closeLabel={t("manzilTable.close")}
       onClose={onClose}
+      closePosition="leading"
       closeAppearance="list"
       wrapHeader
       titleSize="large"

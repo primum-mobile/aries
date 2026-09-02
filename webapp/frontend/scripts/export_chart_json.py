@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Max Lange
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 import argparse
 import datetime as dt
@@ -22,8 +24,9 @@ import chart as chart_mod
 import chart_context_view
 import chartfile
 import dateformat
+import eclipses
 import note_storage
-from engine import chart_factory
+from engine import chart_factory, harmonic_chart
 import common
 import fixstars
 import fortune
@@ -187,7 +190,7 @@ KIND_MAP = {
 # values would freeze at the import-time language and never switch.
 _HSYSTEM_KEYS = {
     "P": "HSPlacidus", "K": "HSKoch", "R": "HSRegiomontanus", "C": "HSCampanus",
-    "E": "HSEqual", "W": "HSWholeSign", "X": "HSAxial", "Q": "HSTrueAscendant", "M": "HSMorinus",
+    "E": "HSEqual", "W": "HSWholeSign", "F": "HSFortuneWholeSign", "X": "HSAxial", "Q": "HSTrueAscendant", "M": "HSMorinus",
     "H": "HSHorizontal", "T": "HSPagePolich", "B": "HSAlcabitus", "O": "HSPorphyrius",
     "N": "HSNoHouses",
 }
@@ -405,6 +408,24 @@ def format_datetime_tuple(dt_tuple, bc=False, options=None):
     return date_txt, time_txt
 
 
+def format_numeric_date_tuple(dt_tuple, bc=False, options=None):
+    """Compact numeric date for dense chart metadata such as multi-wheel corners."""
+    yv, mv, dv = [int(v) for v in tuple(dt_tuple)[:3]]
+    return dateformat.date_text(yv, mv, dv, options, bc=bc)
+
+
+def compact_time_display(time_display):
+    """Drop seconds from a formatted clock while retaining its zone marker."""
+    clock, separator, suffix = str(time_display or "").partition(",")
+    parts = clock.strip().split(":")
+    compact_clock = ":".join(parts[:2]) if len(parts) >= 2 else clock.strip()
+    return (
+        f"{compact_clock}, {suffix.strip()}"
+        if separator and suffix.strip()
+        else compact_clock
+    )
+
+
 def display_tuple_iso(dt_tuple):
     try:
         yv, mv, dv, hv, miv, sv = [int(v) for v in tuple(dt_tuple)[:6]]
@@ -426,10 +447,13 @@ def apply_display_datetime_to_chart_payload(chart_payload, display_dt, bc=False,
         return
     try:
         date_display, time_display = format_datetime_tuple(display_dt, bc=bc, options=options)
+        numeric_date_display = format_numeric_date_tuple(display_dt, bc=bc, options=options)
     except Exception:
         return
     meta["dateDisplay"] = date_display
+    meta["numericDateDisplay"] = numeric_date_display
     meta["timeDisplay"] = time_display
+    meta["compactTimeDisplay"] = compact_time_display(time_display)
     meta["anchorDisplay"] = f"{date_display} {time_display}"
     iso = display_tuple_iso(display_dt)
     if iso is not None:
@@ -704,6 +728,53 @@ def export_syzygy(chrt):
     return entry
 
 
+def export_recent_eclipse(chrt):
+    """Export the most recent prenatal eclipse as a wheel point.
+
+    Ec has its own chart-layer toggle and remains distinct from Sy unless their
+    exact zodiacal longitudes coincide; the renderer then gives Ec visual
+    precedence without removing Sy from the semantic/aspect payload.
+    """
+    if not getattr(chrt.options, "showprenataleclipse", False):
+        return None
+    try:
+        event, exact_jd, lon = eclipses.selected_prenatal_eclipse_point(chrt)
+    except Exception:
+        return None
+    try:
+        house_idx = chrt.houses.getHousePos(
+            lon,
+            chrt.options,
+            useorbs=bool(getattr(chrt.options, "traditionalaspects", False)),
+        )
+        house_num = int(house_idx) + 1
+    except Exception:
+        house_num = None
+
+    syzygy_lon = _syzygy_lon(chrt)
+    coincides = False
+    if syzygy_lon is not None:
+        coincides = abs(((lon - syzygy_lon + 180.0) % 360.0) - 180.0) <= 1e-3
+    is_solar = bool(getattr(event, "is_solar", False))
+    label = eclipses.eclipse_event_label(event)
+    entry = {
+        "id": "eclipse",
+        "semanticId": "point:eclipse",
+        "searchObjectId": "point:eclipse",
+        "longitude": lon,
+        "house": house_num,
+        "label": str(label),
+        "glyph": "Ec",
+        "glyphFont": "text",
+        "color": css_rgb(chrt.options.clrsigns),
+        "eventJd": float(getattr(event, "jdut", exact_jd)),
+        "isSolar": is_solar,
+        "coincidesWithSyzygy": coincides,
+    }
+    entry.update(deg_min_payload(lon))
+    return entry
+
+
 def export_vertex_aspects(chrt):
     """Aspects from each visible body to the Vertex, gated by
     options.showvertex AND options.showaspectstovertex.
@@ -845,6 +916,33 @@ def export_aspects(chrt):
     return aspects
 
 
+def export_varga_drishti(chrt, display_options=None):
+    """Export the native Varga relationship layer, separate from aspects."""
+    opts = display_options or chrt.options
+    rows = harmonic_chart.varga_drishti_relations(
+        chrt,
+        getattr(opts, "varga_drishti_mode", harmonic_chart.DEFAULT_DRISHTI_MODE),
+        include_node_special=bool(
+            getattr(opts, "varga_node_special_drishti", False)
+        ),
+    )
+    payload = []
+    for row in rows:
+        actor_id = row.get("actor_id")
+        payload.append({
+            "id": str(row["id"]),
+            "method": str(row["method"]),
+            "actorKind": str(row["actor_kind"]),
+            "actorKey": PLANET_ID_MAP.get(actor_id) if actor_id is not None else None,
+            "actorSeId": int(actor_id) if actor_id is not None else None,
+            "actorSign": int(row["actor_sign"]),
+            "targetSign": int(row["target_sign"]),
+            "ordinal": int(row["ordinal"]) if row.get("ordinal") is not None else None,
+            "special": bool(row.get("special", False)),
+        })
+    return payload
+
+
 def _is_major_aspect_type(aspect_type):
     """Port of graphchart._is_major_aspect_type (graphchart.py:907-914)."""
     return aspect_type in (
@@ -937,15 +1035,17 @@ def _is_node_aspect_key(key):
 
 def _angle_longitudes(chrt):
     try:
-        asc = float(chrt.houses.ascmc[houses.Houses.ASC])
-        mc = float(chrt.houses.ascmc[houses.Houses.MC])
+        asc = float(chart_mod.semantic_angle_longitude(chrt, "asc"))
+        mc = float(chart_mod.semantic_angle_longitude(chrt, "mc"))
+        dc = float(chart_mod.semantic_angle_longitude(chrt, "dsc"))
+        ic = float(chart_mod.semantic_angle_longitude(chrt, "ic"))
     except Exception:
         return ()
     return (
         ("asc", asc),
         ("mc", mc),
-        ("dc", util.normalize(asc + 180.0)),
-        ("ic", util.normalize(mc + 180.0)),
+        ("dc", dc),
+        ("ic", ic),
     )
 
 
@@ -1012,7 +1112,7 @@ def export_body_aspects(chrt, click_point_items=None):
     hid (desktop semantics: graphchart.py:974-1018, :2300-2317).
 
     Keyed exactly like `export_aspects` endpoints — planet ids plus the four
-    chart angles (`asc`/`mc`/`dc`/`ic`), `fortune`/`vertex`, and active
+    chart angles (`asc`/`mc`/`dc`/`ic`), `fortune`/`vertex`/`syzygy`/`eclipse`, and active
     secondary-ring click points. Every non-NONE
     entry from the chart's aspect matrix (`get_planetary_aspect` /
     `get_ascmc_aspect` / angle dynamic aspects / `get_lof_aspect`) is listed
@@ -1096,6 +1196,17 @@ def export_body_aspects(chrt, click_point_items=None):
     has_syzygy = syzygy_lon is not None
     if has_syzygy:
         _ensure("syzygy")
+    try:
+        _eclipse_event, _eclipse_jd, eclipse_lon = (
+            eclipses.selected_prenatal_eclipse_point(chrt)
+            if getattr(chrt.options, "showprenataleclipse", False)
+            else (None, None, None)
+        )
+    except Exception:
+        eclipse_lon = None
+    has_eclipse = eclipse_lon is not None
+    if has_eclipse:
+        _ensure("eclipse")
     angle_entries = _angle_longitudes(chrt)
     for angle_key, _angle_lon in angle_entries:
         _ensure(angle_key)
@@ -1128,6 +1239,16 @@ def export_body_aspects(chrt, click_point_items=None):
                 _point_aspect(chrt, pid, syzygy_lon),
                 lon,
                 syzygy_lon,
+                allow_a=True,
+                allow_b=True,
+            )
+        if has_eclipse:
+            _push(
+                k,
+                "eclipse",
+                _point_aspect(chrt, pid, eclipse_lon),
+                lon,
+                eclipse_lon,
                 allow_a=True,
                 allow_b=True,
             )
@@ -1199,6 +1320,12 @@ def export_click_aspect_flags(chrt):
     desktop helpers graphchart.py:904-924, :982). Daemon owns the flags; the
     skin owns the click selection state and which lines to draw."""
     options = chrt.options
+    if getattr(chrt, "_varga_number", None) is not None:
+        return {
+            "exclusiveOnClick": False,
+            "showMinor": False,
+            "traditional": False,
+        }
     return {
         "exclusiveOnClick": bool(getattr(options, "exclusive_aspects_on_click", False)),
         # show_minor True → minors allowed; major-only filter is the negation
@@ -1356,7 +1483,7 @@ def export_overlay(chrt, overlay_render_mode="full", *, radix=None, display_date
     elif overlay_render_mode == "full":
         signal_rows = radixsignals.get_radix_overlay_display_rows(
             chrt,
-            phasis_mode=int(getattr(chrt.options, "phasismode", 0)),
+            phasis_mode=int(getattr(chrt.options, "phasismode", 2)),
             cazimi_mode=int(getattr(chrt.options, "cazimimode", 0)),
             options=chrt.options,
         )
@@ -1501,17 +1628,30 @@ def export_chart(
 
     render_options = display_options or chrt.options
     date_display, time_display = phase("format_datetime", lambda: format_chart_datetime(chrt))
+    numeric_date_display = phase(
+        "format_numeric_date",
+        lambda: format_numeric_date_tuple(
+            chart_datetime_tuple(chrt),
+            bc=bool(getattr(chrt.time, "bc", False)),
+            options=chrt.options,
+        ),
+    )
     lon_txt, lat_txt = phase("format_coords", lambda: format_coord_pair(chrt.place))
     runtime_txt, age_txt, view_label = phase("runtime_title", lambda: format_runtime_title_parts(chrt, chrt.options))
     build_stamp = BUILD_STAMP_LABEL
     house_system_lines = phase("house_system_lines", lambda: _export_house_system_lines(chrt))
     planets_payload = phase("planets", lambda: export_planets(chrt))
     aspects_payload = phase("aspects", lambda: export_aspects(chrt) + export_vertex_aspects(chrt))
+    drishti_payload = phase(
+        "drishti",
+        lambda: export_varga_drishti(chrt, render_options),
+    )
     click_aspect_flags = phase("click_aspect_flags", lambda: export_click_aspect_flags(chrt))
+    is_varga = getattr(chrt, "_varga_number", None) is not None
     body_aspects = (
         phase("body_aspects", lambda: export_body_aspects(chrt, click_point_items))
-        if include_body_aspects
-        else None
+        if include_body_aspects and not is_varga
+        else {}
     )
     show_houses = bool(
         getattr(render_options, "houses", getattr(chrt.options, "houses", False))
@@ -1524,7 +1664,11 @@ def export_chart(
         getattr(render_options, "anglo_dense_label_layout", "routed-cusps")
         or "leader-columns"
     )
-    if anglo_dense_label_layout not in ("leader-columns", "routed-cusps"):
+    if anglo_dense_label_layout not in (
+        "leader-columns",
+        "routed-cusps",
+        "sign-locked",
+    ):
         anglo_dense_label_layout = "routed-cusps"
     overlay_payload = phase(
         "overlay",
@@ -1571,6 +1715,7 @@ def export_chart(
         "showLoF": bool(getattr(chrt.options, "showlof", True)),
         "showVertex": bool(getattr(chrt.options, "showvertex", False)),
         "showPrenatalSyzygy": bool(getattr(chrt.options, "showprenatalsyzygy", False)),
+        "showPrenatalEclipse": bool(getattr(chrt.options, "showprenataleclipse", False)),
         "showAspectsToVertex": bool(getattr(chrt.options, "showaspectstovertex", False)),
         "showFixstarsToHcs": bool(getattr(chrt.options, "showfixstarshcs", False)),
         "showFixstarsToLoF": bool(getattr(chrt.options, "showfixstarslof", False)),
@@ -1580,9 +1725,15 @@ def export_chart(
         ),
         "showPositions": bool(getattr(chrt.options, "positions", False)),
         "showInformation": bool(getattr(chrt.options, "information", True)),
+        "showRadixNameInCanvas": bool(
+            getattr(chrt.options, "showradixnameincanvas", False)
+        ),
         "showHouseSystem": bool(getattr(chrt.options, "housesystem", False)),
         "showSymbols": bool(getattr(chrt.options, "symbols", False)),
-        "showAspects": bool(getattr(chrt.options, "aspects", False)),
+        "showAspects": bool(
+            getattr(chrt.options, "aspects", False)
+            and getattr(chrt, "_varga_number", None) is None
+        ),
         "showMinorAspects": (
             bool(getattr(chrt.options, "aspects", False))
             and not bool(getattr(chrt.options, "traditionalaspects", False))
@@ -1597,6 +1748,26 @@ def export_chart(
         "showTerms": bool(getattr(chrt.options, "showterms", False)),
         "showAngleArrowheads": bool(getattr(chrt.options, "showanglearrowheads", True)),
         "showCusplessAscMcLabels": bool(getattr(chrt.options, "showcusplessascmclabels", True)),
+        "multiwheelShowPositions": bool(
+            getattr(chrt.options, "multiwheel_show_positions", True)
+        ),
+        "multiwheelShowMinutes": bool(
+            getattr(chrt.options, "multiwheel_show_minutes", True)
+        ),
+        "multiwheelUseSignColors": bool(
+            getattr(chrt.options, "multiwheel_sign_colors", False)
+        ),
+        "multiwheelShowAngleLabels": bool(
+            getattr(chrt.options, "multiwheel_show_angle_labels", True)
+        ),
+        "multiwheelSignColors": [
+            css_rgb(common.get_sign_color(
+                chrt.options,
+                sign_index,
+                force_element=True,
+            ))
+            for sign_index in range(chart_mod.Chart.SIGN_NUM)
+        ],
         "selectedTermSet": int(getattr(chrt.options, "selterm", 0)),
         "terms": [
             _export_term_sign(sign_index, sign_terms)
@@ -1624,7 +1795,9 @@ def export_chart(
             "kind": KIND_MAP.get(chrt.htype, "radix"),
             "datetime": iso_datetime_with_offset(chrt),
             "dateDisplay": date_display,
+            "numericDateDisplay": numeric_date_display,
             "timeDisplay": time_display,
+            "compactTimeDisplay": compact_time_display(time_display),
             # Resolved anchor label the biwheel title consumes (skin no longer
             # formats an ISO string client-side).
             "anchorDisplay": f"{date_display} {time_display}",
@@ -1647,12 +1820,12 @@ def export_chart(
             "houseSystemLines": house_system_lines,
         },
         "angles": {
-            "asc": float(chrt.houses.ascmc[houses.Houses.ASC]),
-            "mc": float(chrt.houses.ascmc[houses.Houses.MC]),
+            "asc": float(chart_mod.semantic_angle_longitude(chrt, "asc")),
+            "mc": float(chart_mod.semantic_angle_longitude(chrt, "mc")),
             "armc": float(chrt.houses.ascmc[houses.Houses.ARMC]),
             "vertex": float(chrt.houses.ascmc[houses.Houses.VERTEX]),
-            "dsc": float((chrt.houses.ascmc[houses.Houses.ASC] + 180.0) % 360.0),
-            "ic": float((chrt.houses.ascmc[houses.Houses.MC] + 180.0) % 360.0),
+            "dsc": float(chart_mod.semantic_angle_longitude(chrt, "dsc")),
+            "ic": float(chart_mod.semantic_angle_longitude(chrt, "ic")),
             # Resolved deg/min-in-sign for the position labels the skin prints.
             "ascDegMin": deg_min_payload(chrt.houses.ascmc[houses.Houses.ASC]),
             "mcDegMin": deg_min_payload(chrt.houses.ascmc[houses.Houses.MC]),
@@ -1664,6 +1837,7 @@ def export_chart(
         },
         "planets": planets_payload,
         "aspects": aspects_payload,
+        "drishti": drishti_payload,
         # Additive click-to-toggle data: option flags (meaning, daemon-owned) +
         # full per-body engine aspect set (force-show source). The skin owns the
         # click selection state and which lines to draw.
@@ -1675,6 +1849,26 @@ def export_chart(
     if include_body_aspects:
         payload["bodyAspects"] = body_aspects
     corner_lines = phase("composite_corner_lines", lambda: composite_corner_lines(chrt))
+    harmonic_number = getattr(chrt, "_harmonic_number", None)
+    varga_number = getattr(chrt, "_varga_number", None)
+    if varga_number is not None:
+        number = harmonic_chart.normalize_varga_number(varga_number)
+        identity = mtexts.txts.get("VargaIdentityFmt", "Varga D%s · %s") % (
+            number,
+            mtexts.txts.get(
+                harmonic_chart.varga_name_key(number),
+                harmonic_chart.varga_name_key(number),
+            ),
+        )
+        if corner_lines is None:
+            corner_lines = {}
+        corner_lines["bottomLeft"] = [identity]
+    elif harmonic_number is not None:
+        number_text = harmonic_chart.format_harmonic_number(harmonic_number)
+        identity = mtexts.txts.get("HarmonicIdentityFmt", "Harmonic %s") % number_text
+        if corner_lines is None:
+            corner_lines = {}
+        corner_lines["bottomLeft"] = [identity]
     if corner_lines is not None:
         payload["meta"]["cornerLines"] = corner_lines
 
@@ -1694,6 +1888,10 @@ def export_chart(
     syzygy_payload = phase("syzygy", lambda: export_syzygy(chrt))
     if syzygy_payload is not None:
         payload["syzygy"] = syzygy_payload
+
+    eclipse_payload = phase("recent_eclipse", lambda: export_recent_eclipse(chrt))
+    if eclipse_payload is not None:
+        payload["eclipse"] = eclipse_payload
 
     surveil = phase("surveil_marks", lambda: export_surveil_marks(chrt))
     if surveil:
@@ -1834,26 +2032,19 @@ def _semantic_identity(*parts):
     return ":".join(str(part) for part in parts)
 
 
-# wx-free port of graphchart.isShowAsp(CONJUNCTIO, lon1, lon2)
-# (graphchart.py:5741-5770). Reproduces the boolean test only -- no drawing.
-_ARSIGNDIFF = (0, -1, -1, 2, -1, 3, 4, -1, -1, -1, 6)
-
-
-def _conjunction_is_shown(chrt, lon1, lon2):
-    options = chrt.options
+# Derived from graphchart.isShowAsp(CONJUNCTIO, lon1, lon2)
+# (graphchart.py:5840-5869), with one deliberate divergence: the
+# `traditionalaspects` whole-sign gate is NOT applied to fixed stars.
+#
+# A star conjunction is a bodily contact, not a sign-based aspect -- no
+# traditional source confines a star's influence to its own sign -- so the
+# desktop behaviour of dropping an in-orb but out-of-sign pairing (e.g. Mars
+# 29Leo36 / Regulus 0Vir13, 0.62 deg apart) hid real contacts. The global
+# conjunction toggle still applies.
+def _fixstar_conjunction_is_shown(chrt, lon1, lon2):
     typ = chart_mod.Chart.CONJUNCTIO
-    if typ == chart_mod.Chart.NONE or not options.aspect[typ]:
+    if typ == chart_mod.Chart.NONE or not chrt.options.aspect[typ]:
         return False
-    if getattr(options, "traditionalaspects", False):
-        lona1 = lon1
-        lona2 = lon2
-        sign1 = int(lona1 / chart_mod.Chart.SIGN_DEG)
-        sign2 = int(lona2 / chart_mod.Chart.SIGN_DEG)
-        signdiff = math.fabs(sign1 - sign2)
-        if signdiff > chart_mod.Chart.SIGN_NUM / 2:
-            signdiff = chart_mod.Chart.SIGN_NUM - signdiff
-        if _ARSIGNDIFF[typ] != signdiff:
-            return False
     return True
 
 
@@ -1882,18 +2073,21 @@ def shown_fixstar_indices(chrt):
             if body is None:
                 continue
             lon2 = body.data[planets.Planet.LONG]
-            if _conjunction_is_shown(chrt, lon1, lon2):
+            if _fixstar_conjunction_is_shown(chrt, lon1, lon2):
                 showfss.add(star_idx)
                 break
 
     # Conjunctions to Asc/Desc/MC/IC.
-    asc = chrt.houses.ascmc[houses.Houses.ASC]
-    mc = chrt.houses.ascmc[houses.Houses.MC]
-    ascmc = [asc, util.normalize(asc + 180.0), mc, util.normalize(mc + 180.0)]
+    ascmc = [
+        chart_mod.semantic_angle_longitude(chrt, "asc"),
+        chart_mod.semantic_angle_longitude(chrt, "dsc"),
+        chart_mod.semantic_angle_longitude(chrt, "mc"),
+        chart_mod.semantic_angle_longitude(chrt, "ic"),
+    ]
     for star_idx, angle_idxs in getattr(chrt, "fsaspmatrixangles", None) or ():
         lon1 = fsdata[star_idx][fixstars.FixStars.LON]
         for angle_idx in angle_idxs:
-            if _conjunction_is_shown(chrt, lon1, ascmc[angle_idx]):
+            if _fixstar_conjunction_is_shown(chrt, lon1, ascmc[angle_idx]):
                 showfss.add(star_idx)
                 break
 
@@ -1902,7 +2096,7 @@ def shown_fixstar_indices(chrt):
         for star_idx, cusp_idxs in getattr(chrt, "fsaspmatrixhcs", None) or ():
             lon1 = fsdata[star_idx][fixstars.FixStars.LON]
             for cusp_idx in cusp_idxs:
-                if _conjunction_is_shown(chrt, lon1, chrt.houses.cusps[cusp_idx + 1]):
+                if _fixstar_conjunction_is_shown(chrt, lon1, chrt.houses.cusps[cusp_idx + 1]):
                     showfss.add(star_idx)
                     break
 
@@ -1911,23 +2105,24 @@ def shown_fixstar_indices(chrt):
         lof = chrt.fortune.fortune[fortune.Fortune.LON]
         for star_idx in getattr(chrt, "fsaspmatrixlof", None) or ():
             lon1 = fsdata[star_idx][fixstars.FixStars.LON]
-            if _conjunction_is_shown(chrt, lon1, lof):
+            if _fixstar_conjunction_is_shown(chrt, lon1, lof):
                 showfss.add(star_idx)
 
     return showfss
 
 
-def export_fixstar_items(chrt):
+def export_fixstar_items(chrt, display_options=None):
     items = []
     fsdata = ensure_fixstars(chrt)
     shown = shown_fixstar_indices(chrt)
     configured_codes = list(getattr(chrt.options, "fixstars", {}).keys())
+    naming_options = display_options or chrt.options
     for idx, star in enumerate(fsdata):
         if idx not in shown:
             continue
         name = astrology.display_fixstar_name(
             star[fixstars.FixStars.NOMNAME],
-            chrt.options,
+            naming_options,
             star[fixstars.FixStars.NAME],
         )
         display_lon = float(star[fixstars.FixStars.LON])
@@ -2333,7 +2528,142 @@ def _morin_planet_projection_points(chrt, antis, kind, planet):
         yield branch, float(point["lon"]), direction_name(point.get("direction", 0))
 
 
+def _export_varga_overlay_family_items(chrt, kind, role):
+    """Export the radix-resolved projection factors retained by a Varga chart."""
+    if getattr(chrt, "_varga_number", None) is None:
+        return None
+    cache = getattr(chrt, "_varga_overlay_longitudes", None)
+    family = cache.get(kind) if isinstance(cache, dict) else None
+    if not isinstance(family, dict):
+        # Never reverse the documented operator order as a fallback. A Varga
+        # without resolved source factors omits this optional Western overlay.
+        return []
+
+    if kind == "antiscia":
+        suffix = "antiscia"
+    elif kind == "contra_antiscia":
+        suffix = "contra"
+    else:
+        suffix = "dodec"
+    morin_planet_mode = (
+        kind in ("antiscia", "contra_antiscia")
+        and bool(getattr(chrt.options, "morin_antiscia", False))
+    )
+    projection = (
+        "morin_antiscia" if kind == "antiscia" else "morin_contra_antiscia"
+    ) if morin_planet_mode else kind
+    direction_names = {1: "sinister", 2: "dexter"}
+    planets_by_id = family.get("planets") if isinstance(family.get("planets"), dict) else {}
+    items = []
+    for index, planet in enumerate(export_planets(chrt)):
+        se_id = int(planet["seId"])
+        points = planets_by_id.get(se_id, ()) or ()
+        branch_count = len(points)
+        for point in points:
+            try:
+                projected_lon = float(point["longitude"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            branch = str(point.get("branch") or "primary")
+            item_id = (
+                f"{suffix}-planet-{se_id}-{branch}"
+                if morin_planet_mode
+                else f"{suffix}-planet-{index}"
+            )
+            semantic_id = (
+                _semantic_identity(projection, "planet", se_id, branch)
+                if morin_planet_mode
+                else _semantic_identity(kind, "planet", se_id)
+            )
+            motion_ref = {
+                "kind": "projection",
+                "projection": projection,
+                "source": {"kind": "planet", "bodyId": se_id},
+            }
+            if morin_planet_mode:
+                motion_ref.update({
+                    "branch": branch,
+                    "branchCount": branch_count,
+                    "branchDirection": direction_names.get(
+                        int(point.get("direction", 0) or 0), "undirected"
+                    ),
+                })
+            items.append(
+                export_ring_item(
+                    item_id,
+                    kind,
+                    projected_lon,
+                    overlay_source_display_label(se_id, kind, chrt.options),
+                    role=role,
+                    segments=[{
+                        "text": common.common.get_planet_glyph(se_id),
+                        "kind": "planet",
+                        "seId": se_id,
+                    }],
+                    semantic_id=semantic_id,
+                    motion_ref=motion_ref,
+                )
+            )
+
+    fortune_point = family.get("fortune")
+    if (
+        isinstance(fortune_point, dict)
+        and getattr(chrt.options, "showlof", True)
+        and getattr(chrt, "fortune", None) is not None
+    ):
+        fortune_label = str(mtexts.txts.get("LotOfFortune", "Fortuna"))
+        item = export_ring_item(
+            f"{suffix}-fortune",
+            kind,
+            float(fortune_point["longitude"]),
+            fortune_label,
+            role=role,
+            segments=[{"text": common.common.fortune, "kind": "glyph"}],
+            semantic_id=_semantic_identity(kind, "fortune"),
+            motion_ref={
+                "kind": "projection",
+                "projection": kind,
+                "source": {"kind": "fortune"},
+            },
+        )
+        item["listLabel"] = overlay_list_display_label(fortune_label, kind)
+        items.append(item)
+
+    angle_points = family.get("angles") if isinstance(family.get("angles"), dict) else {}
+    for angle_key, label in (
+        ("asc", mtexts.txts.get("StripAsc", "A")),
+        ("mc", mtexts.txts.get("StripMC", "M")),
+    ):
+        point = angle_points.get(angle_key)
+        if not isinstance(point, dict):
+            continue
+        item = export_ring_item(
+            f"{suffix}-{angle_key}",
+            kind,
+            float(point["longitude"]),
+            label,
+            role=role,
+            segments=[{"text": label, "kind": "text"}],
+            semantic_id=_semantic_identity(kind, angle_key),
+            motion_ref={
+                "kind": "projection",
+                "projection": kind,
+                "source": {"kind": "angleSource", "angle": angle_key},
+            },
+        )
+        item["listLabel"] = overlay_list_display_label(
+            str(mtexts.txts.get("Asc" if angle_key == "asc" else "MC", angle_key)),
+            kind,
+        )
+        items.append(item)
+    items.sort(key=lambda item: item["longitude"])
+    return items
+
+
 def export_overlay_family_items(chrt, kind, role="primary"):
+    varga_items = _export_varga_overlay_family_items(chrt, kind, role)
+    if varga_items is not None:
+        return varga_items
     morin_planet_mode = (
         kind in ("antiscia", "contra_antiscia")
         and bool(getattr(chrt.options, "morin_antiscia", False))
@@ -2571,7 +2901,7 @@ def technique_aspect_endpoints(chrt, options=None):
 
     This is deliberately a calculation registry, not a wheel-visibility
     registry. Display gates (including nodes, trans-Saturnians, Chiron,
-    Fortune, Vertex, and prenatal Syzygy) never change membership. Active
+    Fortune, Vertex, prenatal Syzygy, and prenatal Eclipse) never change membership. Active
     outer-ring families are separate typed sources and are not included here.
     """
     technique_options = options if options is not None else chrt.options
@@ -2651,6 +2981,22 @@ def technique_aspect_endpoints(chrt, options=None):
                 "key": "syzygy",
                 "kind": "syzygy",
                 "lon": float(syzygy_lon),
+                "orbs": _zero_orbs(),
+            }
+        )
+
+    try:
+        _eclipse_event, _eclipse_jd, eclipse_lon = eclipses.selected_prenatal_eclipse_point(
+            chrt, technique_options
+        )
+    except Exception:
+        eclipse_lon = None
+    if eclipse_lon is not None:
+        endpoints.append(
+            {
+                "key": "eclipse",
+                "kind": "eclipse",
+                "lon": float(eclipse_lon),
                 "orbs": _zero_orbs(),
             }
         )
@@ -2742,6 +3088,19 @@ def _interchart_point_endpoints(chrt, options):
             )
         except Exception:
             pass
+    eclipse_payload = export_recent_eclipse(chrt)
+    if eclipse_payload is not None:
+        try:
+            endpoints.append(
+                {
+                    "key": "eclipse",
+                    "kind": "eclipse",
+                    "lon": float(eclipse_payload["longitude"]),
+                    "orbs": _zero_orbs(),
+                }
+            )
+        except Exception:
+            pass
     return endpoints
 
 
@@ -2764,7 +3123,7 @@ def _endpoint_selectable_for_pair(selected, other, options):
         return True
     if other_key == "vertex" and not getattr(options, "showaspectstovertex", False):
         return False
-    if selected_key == "syzygy" or other_key == "syzygy":
+    if selected_key in ("syzygy", "eclipse") or other_key in ("syzygy", "eclipse"):
         return True
     return True
 
@@ -2780,6 +3139,90 @@ def _interchart_selection_keys(inner_endpoint, outer_endpoint, options):
 
 def export_interchart_aspects(primary, comparison):
     return export_interchart_aspect_data(primary, comparison)["aspects"]
+
+
+MULTIWHEEL_CONJUNCTION_ORB_SCALE = 0.5
+
+
+def export_multiwheel_conjunctions(ring_charts, display_options):
+    """Compact cross-ring conjunction verdicts for multi-wheel foot paint.
+
+    This deliberately reuses the established inter-chart endpoint registry and
+    point-aspect engine, including angles and visible chart points. It does not
+    export an aspect web or click adjacency, and it never asks the renderer to
+    decide aspect meaning.
+    """
+    if len(ring_charts) < 3 or display_options is None:
+        return []
+    enabled_aspects = [False] * chart_mod.Chart.ASPECT_NUM
+    try:
+        enabled_aspects[chart_mod.Chart.CONJUNCTIO] = bool(
+            display_options.aspect[chart_mod.Chart.CONJUNCTIO]
+        )
+    except (AttributeError, IndexError, TypeError):
+        return []
+    if not enabled_aspects[chart_mod.Chart.CONJUNCTIO]:
+        return []
+
+    show_node_aspects = bool(getattr(display_options, "aspectstonodes", False))
+    endpoints_by_ring = [
+        _interchart_click_endpoints(chrt, display_options)
+        for chrt in ring_charts
+    ]
+    rows = []
+    for inner_ring in range(len(ring_charts) - 1):
+        for outer_ring in range(inner_ring + 1, len(ring_charts)):
+            inner_chart = ring_charts[inner_ring]
+            outer_chart = ring_charts[outer_ring]
+            inner_endpoints = endpoints_by_ring[inner_ring]
+            outer_endpoints = endpoints_by_ring[outer_ring]
+            for inner_endpoint in inner_endpoints:
+                for outer_endpoint in outer_endpoints:
+                    inner_key = inner_endpoint["key"]
+                    outer_key = outer_endpoint["key"]
+                    if _is_node_aspect_key(inner_key) and _is_node_aspect_key(outer_key):
+                        continue
+                    if not show_node_aspects and (
+                        _is_node_aspect_key(inner_key) or _is_node_aspect_key(outer_key)
+                    ):
+                        continue
+                    aspect = _interchart_point_aspect(
+                        inner_chart,
+                        outer_chart,
+                        float(inner_endpoint["lon"]),
+                        float(outer_endpoint["lon"]),
+                        inner_endpoint["orbs"],
+                        outer_endpoint["orbs"],
+                        display_options,
+                        enabled_aspects,
+                        False,
+                    )
+                    if aspect is None or int(getattr(aspect, "typ", -1)) != chart_mod.Chart.CONJUNCTIO:
+                        continue
+                    orb = float(getattr(aspect, "aspdif", 0.0))
+                    max_orb = (
+                        float(getattr(aspect, "max_orb", 0.0))
+                        * MULTIWHEEL_CONJUNCTION_ORB_SCALE
+                    )
+                    if max_orb <= 0.0 or orb > max_orb:
+                        continue
+                    rows.append({
+                        "innerRing": inner_ring,
+                        "outerRing": outer_ring,
+                        "inner": inner_key,
+                        "outer": outer_key,
+                        "orb": orb,
+                        "maxOrb": max_orb,
+                    })
+    return sorted(
+        rows,
+        key=lambda row: (
+            row["innerRing"],
+            row["outerRing"],
+            row["inner"],
+            row["outer"],
+        ),
+    )
 
 
 def export_interchart_aspect_data(primary, comparison):
@@ -2943,7 +3386,17 @@ def export_snapshot(
     overlay_display_datetime=None,
     overlay_cursor_jd=None,
     parallel_transit=None,
+    rings=None,
 ):
+    # ``rings`` is the ordered multi-wheel membership, innermost first, and is
+    # supplied only for three or more rings (webapp/daemon/chart_rings.py). The
+    # two-chart wheel passes nothing and keeps this function's established
+    # behaviour byte for byte. ``primaryChart``/``comparisonChart`` stay
+    # populated as ring 1 and ring N so every existing consumer — tables,
+    # inspector, corner labels — keeps working while the renderer is widened.
+    ring_charts = [chrt for chrt in (rings or []) if chrt is not None]
+    if len(ring_charts) < 3:
+        ring_charts = []
     export_options = _timed_export(
         perf,
         "resolve_options",
@@ -2974,7 +3427,7 @@ def export_snapshot(
         if include_all_outer_modes or active_outer_mode == mode:
             outer_ring_items[mode] = _timed_export(perf, f"outer.{mode}", builder)
 
-    include_outer("fixstars", lambda: export_fixstar_items(primary))
+    include_outer("fixstars", lambda: export_fixstar_items(primary, export_options))
     include_outer("asteroids", lambda: export_asteroid_items(primary))
     include_outer("midpoints", lambda: export_midpoint_ring_items(primary))
     include_outer("hybrid_hits", lambda: export_hybrid_items(primary))
@@ -3009,13 +3462,55 @@ def export_snapshot(
     comparison_whole_sign = bool(
         comparison is not None and _export_house_system_code(primary) == "N"
     )
-    interchart_aspect_data = _timed_export(
-        perf,
-        "interchart_aspect_data",
-        lambda: export_interchart_aspect_data(primary, comparison),
+    # Three or more rings draw no ambient cross-ring aspect web at all: the
+    # resting wheel shows ring 1's own figure, exactly like a single wheel, and
+    # cross-ring aspects are answered per click. Measured, the precomputed
+    # click adjacency is 85% of this call's cost (2.10 of 2.47 ms per pair, 441
+    # endpoint probes), so skipping it here is also what makes N rings cheap —
+    # one selected body against one other ring costs 0.091 ms on demand.
+    interchart_aspect_data = (
+        {"aspects": [], "bodyAspects": {}}
+        if ring_charts
+        else _timed_export(
+            perf,
+            "interchart_aspect_data",
+            lambda: export_interchart_aspect_data(primary, comparison),
+        )
     )
-    return {
-        "primaryChart": _timed_export(
+    multiwheel_conjunctions = _timed_export(
+        perf,
+        "multiwheel_conjunctions",
+        lambda: export_multiwheel_conjunctions(ring_charts, export_options),
+    ) if ring_charts else []
+    # A multi-wheel's primary and comparison charts are also its first and last
+    # rings. Export every distinct chart once, then reuse those payload objects
+    # for the compatibility slots below. JSON still exposes the established
+    # fields, while chart export/click-adjacency work no longer runs twice on
+    # every coordinated step.
+    ring_payloads = [
+        _timed_export(
+            perf,
+            "chart.ring%d" % (index + 1),
+            lambda chrt=ring_chart, index=index: export_chart(
+                chrt,
+                overlay_render_mode,
+                include_body_aspects=include_auxiliary_body_aspects,
+                perf=perf,
+                perf_prefix="chart.ring%d" % (index + 1),
+                overlay_radix=overlay_radix,
+                display_options=export_options,
+                comparison_whole_sign=comparison_whole_sign,
+            ),
+        )
+        for index, ring_chart in enumerate(ring_charts)
+    ]
+    ring_payload_by_identity = {
+        id(ring_chart): payload
+        for ring_chart, payload in zip(ring_charts, ring_payloads)
+    }
+    primary_payload = ring_payload_by_identity.get(id(primary))
+    if primary_payload is None:
+        primary_payload = _timed_export(
             perf,
             "chart.primary",
             lambda: export_chart(
@@ -3024,21 +3519,20 @@ def export_snapshot(
                 click_point_items=active_click_points,
                 perf=perf,
                 perf_prefix="chart.primary",
-				overlay_radix=overlay_radix,
+                overlay_radix=overlay_radix,
                 overlay_display_datetime=overlay_display_datetime if comparison is None else None,
                 overlay_cursor_jd=overlay_cursor_jd if comparison is None else None,
                 display_options=export_options,
                 comparison_whole_sign=comparison_whole_sign,
-			),
-        ),
-        # Click flags and adjacency already live on primaryChart, which is the
-        # object the renderer consumes. Do not serialize a second identical
-        # bodyAspects graph at snapshot root on every time step.
-        # A step frame does not consume auxiliary intra-chart adjacency:
-        # comparison clicks use interChartBodyAspects, while radix/anchor are
-        # semantic context only. Keep full/deferred payload compatibility, but
-        # leave this O(bodies x aspects) work off the input-to-paint path.
-        "comparisonChart": _timed_export(
+            ),
+        )
+    comparison_payload = (
+        ring_payload_by_identity.get(id(comparison))
+        if comparison is not None
+        else None
+    )
+    if comparison is not None and comparison_payload is None:
+        comparison_payload = _timed_export(
             perf,
             "chart.comparison",
             lambda: export_chart(
@@ -3047,13 +3541,23 @@ def export_snapshot(
                 include_body_aspects=include_auxiliary_body_aspects,
                 perf=perf,
                 perf_prefix="chart.comparison",
-				overlay_radix=overlay_radix,
-				overlay_display_datetime=overlay_display_datetime,
-				overlay_cursor_jd=overlay_cursor_jd,
+                overlay_radix=overlay_radix,
+                overlay_display_datetime=overlay_display_datetime,
+                overlay_cursor_jd=overlay_cursor_jd,
                 display_options=export_options,
                 comparison_whole_sign=comparison_whole_sign,
-			),
-        ) if comparison is not None else None,
+            ),
+        )
+    return {
+        "primaryChart": primary_payload,
+        # Click flags and adjacency already live on primaryChart, which is the
+        # object the renderer consumes. Do not serialize a second identical
+        # bodyAspects graph at snapshot root on every time step.
+        # A step frame does not consume auxiliary intra-chart adjacency:
+        # comparison clicks use interChartBodyAspects, while radix/anchor are
+        # semantic context only. Keep full/deferred payload compatibility, but
+        # leave this O(bodies x aspects) work off the input-to-paint path.
+        "comparisonChart": comparison_payload,
         # The root/session-primary chart already carries the radix geometry and
         # is passed separately above as overlay_radix for semantic calculations.
         # Serializing the same object again added a second complete chart export
@@ -3098,7 +3602,13 @@ def export_snapshot(
         "comparisonWholeSign": comparison_whole_sign,
         "interChartAspects": interchart_aspect_data["aspects"],
         "interChartBodyAspects": interchart_aspect_data["bodyAspects"],
+        "multiwheelConjunctions": multiwheel_conjunctions,
         "outerRingItems": outer_ring_items,
+        # Ordered ring bodies, innermost first, for three or more rings. Empty
+        # for the singleton and the biwheel, which the two slots above already
+        # describe completely.
+        "rings": ring_payloads,
+        "ringCount": len(ring_charts) if ring_charts else (2 if comparison is not None else 1),
     }
 
 

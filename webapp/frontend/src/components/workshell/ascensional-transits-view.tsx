@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import type { WorkspaceDocument } from "@/stores/workspace-store";
 import { PANE_CONTROL_CLASSES, PaneToolbarButton } from "./list-controls";
 import { MundaneChartView } from "./mundane-chart-view";
+import { STEP_SETTLE_REFRESH_MS } from "./step-refresh";
 
 type Props = {
   document: WorkspaceDocument;
@@ -75,6 +76,17 @@ export function AscensionalTransitsPane({
   const scrollerRef = React.useRef<HTMLDivElement | null>(null);
   const filterToActiveRef = React.useRef(filterToActive);
   const restoredScrollTopRef = React.useRef(cachedViewState?.scrollTop ?? null);
+  const [settledEventJd, setSettledEventJd] = React.useState(
+    ascensionalEventJd ?? null,
+  );
+  React.useEffect(() => {
+    const nextEventJd = ascensionalEventJd ?? null;
+    if (nextEventJd === settledEventJd) return;
+    const timer = window.setTimeout(() => {
+      setSettledEventJd(nextEventJd);
+    }, STEP_SETTLE_REFRESH_MS);
+    return () => window.clearTimeout(timer);
+  }, [ascensionalEventJd, settledEventJd]);
 
   React.useEffect(() => {
     filterToActiveRef.current = filterToActive;
@@ -96,7 +108,7 @@ export function AscensionalTransitsPane({
       {
         documentId,
         sourceName,
-        eventJd: ascensionalEventJd,
+        eventJd: settledEventJd,
         filterToActiveMoment: filterToActive,
         applyPrecession: true,
       },
@@ -114,7 +126,7 @@ export function AscensionalTransitsPane({
   }, [
     documentId,
     sourceName,
-    ascensionalEventJd,
+    settledEventJd,
     filterToActive,
   ]);
 
@@ -130,10 +142,7 @@ export function AscensionalTransitsPane({
   return (
     <div className="font-morinus-text flex h-full min-h-0 flex-col bg-[color:var(--aries-surface)]">
       <div className={PANE_CONTROL_CLASSES.stackedHeader}>
-        <div className="flex min-w-0 items-center justify-between gap-[var(--aries-pane-control-gap-y)]">
-          <div className="min-w-0 truncate font-medium text-[color:var(--aries-text-primary)]">
-            {t("asctransit.ascensionalTransits")}
-          </div>
+        <div className="flex min-w-0 items-center gap-[var(--aries-pane-control-gap-y)]">
           {onClose ? (
             <PaneToolbarButton
               type="button"
@@ -146,6 +155,9 @@ export function AscensionalTransitsPane({
               <X />
             </PaneToolbarButton>
           ) : null}
+          <div className="min-w-0 truncate font-medium text-[color:var(--aries-text-primary)]">
+            {t("asctransit.ascensionalTransits")}
+          </div>
         </div>
         <div className="text-[color:var(--aries-text-muted)]">
           {payload?.event.datetime.isoUtc ?? t("asctransit.loadingEvent")}

@@ -35,10 +35,37 @@ def parse_aaf(filepath: str) -> list[dict[str, Any]]:
     return parse_aaf_text(_read_text(path), source_name=str(path))
 
 
+def parse_aaf_best_effort(filepath: str) -> dict[str, Any]:
+    """Parse every usable record in an AAF file and report rejected records."""
+
+    path = Path(filepath)
+    return parse_aaf_text_best_effort(_read_text(path), source_name=str(path))
+
+
 def parse_aaf_text(text: str, *, source_name: str = "<AAF paste>") -> list[dict[str, Any]]:
-    """Parse AAF text into normalized raw record dictionaries."""
+    """Strict compatibility wrapper around the best-effort AAF parser."""
+
+    result = parse_aaf_text_best_effort(text, source_name=source_name)
+    errors = result["errors"]
+    if errors:
+        raise ValueError(str(errors[0]["message"]))
+    return result["records"]
+
+
+def parse_aaf_text_best_effort(
+    text: str,
+    *,
+    source_name: str = "<AAF paste>",
+) -> dict[str, Any]:
+    """Parse usable AAF records without allowing one bad record to abort the rest.
+
+    AAF records are naturally delimited by ``#A93`` rows. Collection happens
+    before field parsing so a malformed A or B row remains confined to that
+    record and the next ``#A93`` always starts a clean recovery boundary.
+    """
 
     records: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
     current: dict[str, Any] | None = None
 
     for lineno, raw_line in enumerate(text.splitlines(), 1):
@@ -47,13 +74,25 @@ def parse_aaf_text(text: str, *, source_name: str = "<AAF paste>") -> list[dict[
             continue
         if line.startswith("#A93:"):
             if current is not None:
-                records.append(_finalize_record(current))
-            current = {"line": lineno, "a": _parse_a93(line[5:], lineno), "notes": []}
+                _finish_best_effort_record(current, records, errors)
+            current = {
+                "line": lineno,
+                "a_payload": line[5:],
+                "b_rows": [],
+                "notes": [],
+                "tz_name": "",
+            }
             continue
         if line.startswith("#B93:"):
             if current is None:
-                raise ValueError(f"{source_name}:{lineno}: #B93 appears before #A93")
-            current["b"] = _parse_b93(line[5:], lineno)
+                errors.append(
+                    {
+                        "line": lineno,
+                        "message": f"line {lineno}: #B93 appears before #A93",
+                    }
+                )
+                continue
+            current["b_rows"].append((lineno, line[5:]))
             continue
         if line.startswith("#COM:") and current is not None:
             note = line[5:].strip()
@@ -65,11 +104,53 @@ def parse_aaf_text(text: str, *, source_name: str = "<AAF paste>") -> list[dict[
             if source:
                 current["notes"].append(f"Source: {source}")
             continue
+        if line.startswith("#VIA:") and current is not None:
+            via = line[5:].strip()
+            if via:
+                current["notes"].append(f"Via: {via}")
+            continue
+        if line.startswith("#ZNAM:") and current is not None:
+            current["tz_name"] = _clean_star(line[6:])
+            continue
         # Other AAF rows and comments are metadata not needed for chart import.
 
     if current is not None:
-        records.append(_finalize_record(current))
-    return records
+        _finish_best_effort_record(current, records, errors)
+    return {"records": records, "errors": errors, "source": source_name}
+
+
+def _finish_best_effort_record(
+    current: dict[str, Any],
+    records: list[dict[str, Any]],
+    errors: list[dict[str, Any]],
+) -> None:
+    try:
+        a = _parse_a93(str(current["a_payload"]), int(current["line"]))
+        b_rows = list(current.get("b_rows", []))
+        if not b_rows:
+            raise ValueError(f"line {current['line']}: #A93 record has no #B93 row")
+
+        b: dict[str, Any] | None = None
+        b_errors: list[ValueError] = []
+        for b_lineno, b_payload in b_rows:
+            try:
+                b = _parse_b93(str(b_payload), int(b_lineno))
+                break
+            except ValueError as exc:
+                b_errors.append(exc)
+        if b is None:
+            raise b_errors[0]
+
+        records.append(
+            {
+                **a,
+                **b,
+                "tz_name": str(current.get("tz_name") or b.get("tz_name", "")),
+                "notes": "\n".join(current.get("notes", [])),
+            }
+        )
+    except (TypeError, ValueError) as exc:
+        errors.append({"line": int(current["line"]), "message": str(exc)})
 
 
 def _read_text(path: Path) -> str:
@@ -98,7 +179,7 @@ def _parse_a93(payload: str, lineno: int) -> dict[str, Any]:
     name = _join_name(first, last)
     if not name:
         raise ValueError(f"line {lineno}: #A93 has no chart name")
-    year, month, day, bc = _parse_date(date_text, lineno)
+    year, month, day, bc, calendar = _parse_date(date_text, lineno)
     hour, minute, second, time_unknown = _parse_time(time_text, lineno)
     male = _parse_gender(kind)
     chart_type = _parse_chart_type(kind)
@@ -112,6 +193,7 @@ def _parse_a93(payload: str, lineno: int) -> dict[str, Any]:
         "month": month,
         "day": day,
         "bc": bc,
+        "cal": calendar,
         "hour": hour,
         "minute": minute,
         "second": second,
@@ -158,18 +240,6 @@ def _parse_b93(payload: str, lineno: int) -> dict[str, Any]:
     }
 
 
-def _finalize_record(record: dict[str, Any]) -> dict[str, Any]:
-    if "b" not in record:
-        raise ValueError(f"line {record['line']}: #A93 record has no #B93 row")
-    a = record["a"]
-    b = record["b"]
-    return {
-        **a,
-        **b,
-        "notes": "\n".join(record.get("notes", [])),
-    }
-
-
 def _clean_star(value: Any) -> str:
     text = str(value or "").strip()
     return "" if text == "*" else text
@@ -201,33 +271,67 @@ def _parse_chart_type(kind: str) -> str:
     return "radix"
 
 
-def _parse_date(text: str, lineno: int) -> tuple[int, int, int, bool]:
+def _parse_date(text: str, lineno: int) -> tuple[int, int, int, bool, str]:
     cleaned = _clean_star(text)
-    match = re.fullmatch(r"(-?\d{1,6})[./-](\d{1,2})[./-](-?\d{1,6})", cleaned)
+    match = re.fullmatch(
+        r"(\d{1,2})[./-](\d{1,2})[./-](-?\d{1,6})([gj]?)",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
     if not match:
         raise ValueError(f"line {lineno}: unsupported AAF date {text!r}")
     day = int(match.group(1))
     month = int(match.group(2))
-    year = int(match.group(3))
-    bc = year <= 0
-    try:
-        _datetime.date(abs(year), month, day)
-    except ValueError as exc:
-        raise ValueError(f"line {lineno}: invalid AAF date {text!r}") from exc
-    return abs(year), month, day, bc
+    astronomical_year = int(match.group(3))
+    calendar_marker = match.group(4).lower()
+    if calendar_marker == "g":
+        calendar = "gregorian"
+    elif calendar_marker == "j":
+        calendar = "julian"
+    else:
+        calendar = (
+            "gregorian"
+            if (astronomical_year, month, day) >= (1582, 10, 15)
+            else "julian"
+        )
+    if not _valid_calendar_date(astronomical_year, month, day, calendar):
+        raise ValueError(f"line {lineno}: invalid AAF date {text!r}")
+
+    bc = astronomical_year <= 0
+    # AAF uses astronomical numbering (0 == 1 BCE, -3 == 4 BCE), while
+    # chart.Time stores the positive civil BCE ordinal alongside ``bc=True``.
+    year = 1 - astronomical_year if bc else astronomical_year
+    return year, month, day, bc, calendar
+
+
+def _valid_calendar_date(year: int, month: int, day: int, calendar: str) -> bool:
+    if month < 1 or month > 12 or day < 1:
+        return False
+    month_days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    if calendar == "julian":
+        leap = year % 4 == 0
+    else:
+        leap = year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+    if leap:
+        month_days[1] = 29
+    return day <= month_days[month - 1]
 
 
 def _parse_time(text: str, lineno: int) -> tuple[int, int, int, bool]:
     cleaned = _clean_star(text)
     if not cleaned:
         return 12, 0, 0, True
-    parts = cleaned.split(":")
-    if len(parts) not in (2, 3):
+    match = re.fullmatch(
+        r"(\d{1,2})(?:h(\d{0,2})|:(\d{1,2}))?(?::(\d{1,2}(?:\.\d+)?))?",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    if not match:
         raise ValueError(f"line {lineno}: unsupported AAF time {text!r}")
     try:
-        hour = int(parts[0])
-        minute = int(parts[1])
-        second = int(float(parts[2])) if len(parts) == 3 else 0
+        hour = int(match.group(1))
+        minute = int(match.group(2) or match.group(3) or 0)
+        second = int(float(match.group(4) or 0))
         _datetime.time(hour, minute, second)
     except ValueError as exc:
         raise ValueError(f"line {lineno}: invalid AAF time {text!r}") from exc
@@ -241,6 +345,9 @@ def _parse_coordinate(text: str, *, expected: str, lineno: int) -> float:
         try:
             value = float(cleaned)
         except ValueError as exc:
+            neutral = re.fullmatch(r"0+(?::0+(?:\.0+)?)?", cleaned)
+            if neutral:
+                return 0.0
             raise ValueError(f"line {lineno}: invalid AAF coordinate {text!r}") from exc
         _validate_coordinate(value, expected, lineno, text)
         return value
@@ -277,15 +384,15 @@ def _parse_timezone(tz_text: str, dst_text: str, lineno: int) -> dict[str, str]:
     dst_marker = _clean_star(dst_text).lower()
     if dst_marker in {"l", "lmt"}:
         return {"tz": "Z", "tz_name": "LMT", "zt": "lmt"}
-    dst_hours = _dst_hours(dst_text)
+    dst_minutes = _dst_minutes(dst_text)
     if not cleaned or cleaned in {"l", "lmt", "lat"}:
         return {"tz": "Z", "tz_name": "LMT", "zt": "lmt"}
 
     signed_minutes = _timezone_minutes(cleaned, lineno)
     if signed_minutes is None:
         return {"tz": "Z", "tz_name": "LMT", "zt": "lmt"}
-    if dst_hours:
-        signed_minutes += 60 * dst_hours
+    if dst_minutes:
+        signed_minutes += dst_minutes
     return {"tz": _format_tz(signed_minutes), "tz_name": "", "zt": "zone"}
 
 
@@ -293,6 +400,8 @@ def _timezone_minutes(text: str, lineno: int) -> int | None:
     if text in {"*", "l", "lmt", "lat"}:
         return None
     if text in {"z", "ut", "utc", "gmt", "0"}:
+        return 0
+    if re.fullmatch(r"0+h", text):
         return 0
 
     match = re.fullmatch(r"([+-])?(\d{1,2})(?::?(\d{2}))?", text)
@@ -303,10 +412,10 @@ def _timezone_minutes(text: str, lineno: int) -> int | None:
         return sign * (hours * 60 + minutes)
 
     for pattern in (
-        r"(\d{1,2})h([ew])(\d{0,2})",
-        r"(\d{1,2})([ew])(\d{0,2})",
-        r"h(\d{1,2})([ew])(\d{0,2})",
-        r"([ew])(\d{1,2})h?(\d{0,2})",
+        r"(\d{1,2})h([ew])(\d{0,2})(?::(\d{1,2}))?",
+        r"(\d{1,2})([ew])(\d{0,2})(?::(\d{1,2}))?",
+        r"h(\d{1,2})([ew])(\d{0,2})(?::(\d{1,2}))?",
+        r"([ew])(\d{1,2})h?(\d{0,2})(?::(\d{1,2}))?",
     ):
         match = re.fullmatch(pattern, text)
         if match:
@@ -315,27 +424,34 @@ def _timezone_minutes(text: str, lineno: int) -> int | None:
                 hemi = groups[0]
                 hours = int(groups[1])
                 minutes = int(groups[2] or 0)
+                seconds = int(groups[3] or 0)
             else:
                 hours = int(groups[0])
                 hemi = groups[1]
                 minutes = int(groups[2] or 0)
+                seconds = int(groups[3] or 0)
+            if minutes >= 60 or seconds >= 60:
+                raise ValueError(f"line {lineno}: invalid AAF timezone {text!r}")
             sign = 1 if hemi == "e" else -1
-            return sign * (hours * 60 + minutes)
+            rounded_minutes = hours * 60 + minutes + (1 if seconds >= 30 else 0)
+            return sign * rounded_minutes
     raise ValueError(f"line {lineno}: unsupported AAF timezone {text!r}")
 
 
-def _dst_hours(text: str) -> int:
+def _dst_minutes(text: str) -> int:
     marker = _clean_star(text).lower()
-    if marker in {"", "0", "n", "no", "s", "st", "std"}:
+    if marker in {"", "0", "n", "no", "s", "st", "std", "m"}:
         return 0
     if marker in {"1", "d", "dst", "w", "war", "yes", "y"}:
-        return 1
+        return 60
     if marker in {"2", "dd", "double"}:
-        return 2
+        return 120
+    if marker in {"h", "half"}:
+        return 30
     if marker in {"l", "lmt"}:
         return 0
     try:
-        return int(float(marker))
+        return int(float(marker) * 60)
     except ValueError:
         return 0
 
@@ -368,7 +484,7 @@ def record_to_v1_dict(record: dict[str, Any]) -> dict[str, Any]:
         "tz_name": record.get("tz_name", ""),
         "tzid": "",
         "tzauto": False,
-        "cal": "gregorian",
+        "cal": record.get("cal", "gregorian"),
         "zt": record.get("zt", "zone"),
         "bc": bool(record.get("bc", False)),
         "dst": False,

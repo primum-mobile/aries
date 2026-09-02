@@ -138,7 +138,7 @@ test("static gradients layer beneath retained textures without DOM work", () => 
     [globalId("gradientAngle")]: 35,
   }).byClass.panel;
 
-  expect(compiled.backgroundImage).toContain("data:image/svg+xml");
+  expect(compiled.backgroundImage).toContain("data:image/png;base64");
   expect(compiled.backgroundImage).toContain("linear-gradient(35deg");
   expect(compiled.backgroundSize).toContain(", cover");
   expect(compiled.backgroundRepeat).toBe("repeat, no-repeat");
@@ -182,7 +182,7 @@ test("material background alpha remains a fourth recipe channel", () => {
   expect(resolved.panel.backgroundColor).toEqual([24, 36, 48, 0.42]);
 });
 
-test("compiler emits solid fallbacks, safe material variables, and accessibility fallbacks", () => {
+test("compiler emits decodable bitmap textures, safe material variables, and accessibility fallbacks", async ({ page }) => {
   const compiled = compileFlatAppMaterialOverrides({
     [globalId("pattern")]: "blueNoise",
     [globalId("backgroundColor")]: [249, 248, 242, 0.72],
@@ -203,8 +203,22 @@ test("compiler emits solid fallbacks, safe material variables, and accessibility
   expect(canvas.solidBackgroundColor).toBe("rgb(249 248 242 / 1)");
   expect(canvas.patternColor).toBe("rgb(23 30 38 / 0.098)");
   expect(canvas.backgroundImage).toMatch(
-    /^url\("data:image\/svg\+xml,/,
+    /^url\("data:image\/png;base64,/,
   );
+  const encoded = canvas.backgroundImage.match(
+    /^url\("data:image\/png;base64,([^"]+)"\)$/,
+  )?.[1];
+  expect(encoded).toBeTruthy();
+  expect(Array.from(Buffer.from(encoded ?? "", "base64").subarray(0, 8)))
+    .toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+  expect(canvas.backgroundImage.length).toBeLessThan(16_000);
+  const decodedSize = await page.evaluate(async (source) => {
+    const image = new Image();
+    image.src = source;
+    await image.decode();
+    return [image.naturalWidth, image.naturalHeight];
+  }, canvas.backgroundImage.slice(5, -2));
+  expect(decodedSize).toEqual([128, 128]);
   expect(canvas.backgroundSize).toBe("48px 48px");
   expect(canvas.backgroundBlendMode).toBe("multiply");
   expect(canvas.backdropFilter).toBe("blur(6px) saturate(118%)");

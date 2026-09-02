@@ -1,14 +1,16 @@
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 """Daemon-side inspector Zone B — source-text significations + pack alerts.
 
 Zone B is the inspector body zone below the hover/region card. Two pieces are
 engine-computed and daemon-portable:
 
-- **Significations** — the fixed Valens planet/sign source-text definition for
-  the hovered body, produced by ``engine.corpus_bridge`` (wx-free). This follows
-  the current wx inspector hover path (workspace_shell.py:7249-7255), which only
-  asks for ``planet_signification_preview`` / ``sign_signification_preview``.
-  The old broad ``passages_for_region`` card list was an early corpus browser
-  experiment and is intentionally not exposed in the inspector.
+- **Significations** — passive source-text definitions contributed by an active
+  inspector-content pack. Valens maps planet, sign, and house targets to the
+  existing parsed corpus without entering an interpretation discipline.
   No passage / citation / body text is fabricated here: every field is passed
   through exactly as ``CorpusDB`` yields it from ``corpus/parsed/valens.json``.
 
@@ -37,9 +39,12 @@ from webapp.daemon.inspector_service import inspector_service
 from webapp.daemon import corpus_text
 
 import elections_rules
+import corpus_predicates
 import engine.corpus_bridge as corpus_bridge
 import horary_rules
 import rule_engine
+
+from webapp.daemon.corpus_packs_service import corpus_packs_service
 
 # Lens-resolution constants, mirrored from the wx oracle (morin.py:8994-8999).
 _DISCIPLINE_ELECTIONS = "elections"
@@ -49,9 +54,8 @@ _DISCIPLINE_HORARY = "horary"
 def _section_to_passage(section: Optional[dict]) -> Optional[dict]:
     """Flatten a CorpusDB section dict into a JSON passage.
 
-    Pass-through ONLY — source label is the bridge's fixed
-    'Valens, Anthologies 0.7' (corpus_bridge.py:252); citation is the section's
-    book/chapter + Kroll/Pingree page anchors; body is section['text'] verbatim.
+    Pass-through ONLY — citation is the section's book/chapter plus
+    Kroll/Pingree page anchors; body is section['text'] verbatim.
     Never synthesise or alter prose (memory feedback_corpus_no_hallucination.md).
     """
     if not section:
@@ -67,7 +71,11 @@ def _section_to_passage(section: Optional[dict]) -> Optional[dict]:
         cite_bits.append(f"Pingree p.{section.get('pingree_page')}")
     display = corpus_text.structured_section(section)
     return {
-        "source": "Valens, Anthologies 0.7",
+        "source": (
+            f"Valens, Anthologies {book}.{chapter}"
+            if book is not None and chapter is not None
+            else "Valens, Anthologies"
+        ),
         "citation": ", ".join(cite_bits),
         "citation_label": display["citation"],
         "citation_runs": display["citation_runs"],
@@ -97,9 +105,18 @@ def _alert_to_dict(alert) -> dict:
         "status": getattr(alert, "status", None),
         "glyph": getattr(alert, "glyph", "") or "",
         "title": getattr(alert, "title", "") or "",
+        "titleKey": getattr(alert, "title_key", None),
         "body": getattr(alert, "body", "") or "",
+        "bodyKey": getattr(alert, "body_key", None),
         "cite": getattr(alert, "cite", "") or "",
         "pack": getattr(alert, "pack", None),
+        "kind": getattr(alert, "kind", "verdict") or "verdict",
+        "ruleId": getattr(alert, "rule_id", None),
+        "evidence": getattr(alert, "evidence", "") or "",
+        "technicalDetails": getattr(alert, "technical_details", "") or "",
+        "timingWitnesses": list(
+            getattr(alert, "timing_witnesses", ()) or ()
+        ),
     }
 
 
@@ -119,6 +136,8 @@ class InspectorZoneBService:
         source: Optional[str] = None,
         name: str = "Morinus",
         here_now: bool = False,
+        chart_role: str = "primary",
+        ring_index: Optional[int] = None,
         supplementary_kind: Optional[str] = None,
         comparison_name: Optional[str] = None,
         when_iso: Optional[str] = None,
@@ -126,11 +145,24 @@ class InspectorZoneBService:
         view_mode: Optional[int] = None,
         max_results: int = 4,
     ) -> dict:
-        """Return the fixed Valens planet/sign definition for the hovered region."""
+        """Return passive source text contributed by the active content pack."""
         with self._lock:
-            if kind not in ("planet", "sign"):
+            # The persisted global pack filter is authoritative even when this
+            # is the first corpus-related request after daemon startup.
+            corpus_packs_service.ensure_restored()
+            pack_id, selector = rule_engine.active_inspector_content(
+                kind, object_id,
+            )
+            if pack_id is None:
                 return {
                     "region": {"kind": kind, "object_id": object_id},
+                    "packId": None,
+                    "section": None,
+                }
+            if selector is None:
+                return {
+                    "region": {"kind": kind, "object_id": object_id},
+                    "packId": pack_id,
                     "section": None,
                 }
             opts, chrt, partner_chart = inspector_service.resolve_chart(
@@ -143,21 +175,23 @@ class InspectorZoneBService:
                 when_iso=when_iso,
                 binding_payload=binding_payload,
                 view_mode=view_mode,
+                ring_index=ring_index,
             )
-            region = inspector_service.build_region(chrt, partner_chart, opts, kind, object_id)
+            region = inspector_service.build_region(
+                chrt,
+                partner_chart,
+                opts,
+                kind,
+                object_id,
+                chart_role,
+            )
 
-            section = None
-            if kind == "planet":
-                raw = corpus_bridge.planet_signification_preview(region)
-            elif kind == "sign":
-                raw = corpus_bridge.sign_signification_preview(region)
-            else:
-                raw = None
-            if raw is not None:
-                section = _section_to_passage(raw.get("full_section") or raw.get("section"))
+            raw = corpus_bridge.inspector_section(selector)
+            section = _section_to_passage(raw)
 
             return {
                 "region": {"kind": kind, "object_id": region.get("object_id")},
+                "packId": pack_id,
                 "section": section,
             }
 
@@ -186,7 +220,10 @@ class InspectorZoneBService:
         """
         with self._lock:
             if not discipline or not theme:
-                return {"alerts": [], "discipline": None, "theme": None, "context": None}
+                return {
+                    "alerts": [], "discipline": None, "theme": None,
+                    "context": None, "recoveryTiming": None,
+                }
 
             # Chart source = wx _active_workspace_chart (morin.py:9044-9056):
             # the LIVE session chart (cs.chart — the stepped/derived chart),
@@ -195,11 +232,28 @@ class InspectorZoneBService:
             # froze the alert cards while the transit ring stepped. Forcing
             # view_mode=0 on the name-based fallback yields the same active
             # chart (the derived chart itself) for session-less identities.
+            fixing_chart = None
             if doc_id:
                 from webapp.daemon.workspace_service import workspace_service
                 opts, chrt = workspace_service.lens_chart(doc_id)
+                try:
+                    _opts, primary, comparison = (
+                        workspace_service.inspector_charts(doc_id)
+                    )
+                    # The live lens chart can be either ring.  The other
+                    # visibly paired chart is the only unambiguous fixing
+                    # supplied by the workspace; a single chart supplies none.
+                    fixing_chart = next(
+                        (
+                            candidate for candidate in (primary, comparison)
+                            if candidate is not None and candidate is not chrt
+                        ),
+                        None,
+                    )
+                except (AttributeError, RuntimeError, ValueError):
+                    fixing_chart = None
             else:
-                opts, chrt, _partner = inspector_service.resolve_chart(
+                opts, chrt, fixing_chart = inspector_service.resolve_chart(
                     source=source,
                     name=name,
                     here_now=here_now,
@@ -209,11 +263,21 @@ class InspectorZoneBService:
                     view_mode=0,
                 )
 
+            evaluation_context = dict(context or {})
+            if fixing_chart is not None:
+                # Runtime-only chart truth: never return or persist this
+                # object in the JSON lens context.
+                evaluation_context["fixing_chart"] = fixing_chart
+
             try:
                 if discipline == _DISCIPLINE_ELECTIONS:
-                    raw_alerts = elections_rules.evaluate(theme, chrt)
+                    raw_alerts = elections_rules.evaluate(
+                        theme, chrt, context=evaluation_context,
+                    )
                 elif discipline == _DISCIPLINE_HORARY:
-                    raw_alerts = horary_rules.evaluate(theme, chrt, context=context)
+                    raw_alerts = horary_rules.evaluate(
+                        theme, chrt, context=evaluation_context,
+                    )
                 else:
                     raw_alerts = []
             except Exception:
@@ -224,6 +288,19 @@ class InspectorZoneBService:
                 raw_alerts = []
 
             alerts = [_alert_to_dict(a) for a in (raw_alerts or []) if a is not None]
+            timing_witnesses = [
+                witness
+                for alert in (raw_alerts or []) if alert is not None
+                for witness in (
+                    getattr(alert, "timing_witnesses", ()) or ()
+                )
+            ]
+            recovery_timing = (
+                corpus_predicates.aggregate_lilly_recovery_timing(
+                    timing_witnesses, context=context,
+                )
+                if timing_witnesses else None
+            )
             # Pack-tag suppression input: wx tags a card with its pack id only
             # when MORE than one pack ships rules for the discipline
             # (workspace_shell.py:2660-2669). Ship the count so the skin can
@@ -238,6 +315,7 @@ class InspectorZoneBService:
                 "theme": theme,
                 "context": context,
                 "packCount": pack_count,
+                "recoveryTiming": recovery_timing,
             }
 
 

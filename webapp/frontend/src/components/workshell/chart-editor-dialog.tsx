@@ -1,3 +1,8 @@
+// SPDX-FileCopyrightText: Morinus contributors
+// SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Modified for Aries in 2026 by Max Lange.
+
 "use client";
 
 import * as React from "react";
@@ -12,6 +17,7 @@ import {
   fetchEditorMeta,
   fetchEditorRadixSeed,
   fetchEditorRecord,
+  fetchNotes,
   listCollections,
   resolvePlace,
   type ChartCollection,
@@ -267,7 +273,7 @@ function EditorLoader({
   // already shipped the seed fields in editTarget.cursorSeed, so there is no
   // record fetch — the form is ready as soon as meta loads.
   const cursorMode = Boolean(editTarget?.cursorDocId && editTarget?.cursorSeed?.usesSessionCursor);
-  const [recordLoaded, setRecordLoaded] = React.useState(!editTarget || cursorMode);
+  const [recordLoaded, setRecordLoaded] = React.useState(!editTarget);
 
   React.useEffect(() => {
     const ctrl = new AbortController();
@@ -281,16 +287,33 @@ function EditorLoader({
   }, []);
 
   React.useEffect(() => {
-    if (!editTarget || cursorMode) return;
+    if (!editTarget) return;
     const ctrl = new AbortController();
-    const load = editTarget.radixDocId
-      ? fetchEditorRadixSeed(editTarget.radixDocId, ctrl.signal)
-      : fetchEditorRecord(editTarget.name, editTarget.source, ctrl.signal);
-    load
+    const load = async () => {
+      const awaitFlush: Promise<unknown>[] = [];
+      window.dispatchEvent(new CustomEvent("aries://flush-notes", { detail: { awaitFlush } }));
+      if (awaitFlush.length > 0) await Promise.allSettled(awaitFlush);
+      if (cursorMode && editTarget.cursorSeed?.fields) {
+        const note = await fetchNotes(
+          editTarget.name,
+          { documentId: editTarget.cursorDocId },
+          ctrl.signal,
+        );
+        return {
+          fields: { ...editTarget.cursorSeed.fields, notes: note.content ?? "" },
+          collection: editTarget.source ?? "",
+        };
+      }
+      return editTarget.radixDocId
+        ? fetchEditorRadixSeed(editTarget.radixDocId, ctrl.signal)
+        : fetchEditorRecord(editTarget.name, editTarget.source, ctrl.signal);
+    };
+    void load()
       .then((res) => {
         setRecord(res.fields);
         setRecordCollection(res.collection);
         setRecordLoaded(true);
+        window.dispatchEvent(new CustomEvent("aries://notes-changed"));
       })
       .catch((err) => {
         if ((err as { name?: string }).name === "AbortError") return;
@@ -314,7 +337,7 @@ function EditorLoader({
   return (
     <EditorBody
       meta={meta}
-      seed={(cursorMode ? editTarget?.cursorSeed?.fields : record) ?? record ?? meta.defaults}
+      seed={record ?? (cursorMode ? editTarget?.cursorSeed?.fields : null) ?? meta.defaults}
       isEdit={Boolean(editTarget)}
       seedCollection={recordCollection}
       cursorDocId={cursorMode ? (editTarget?.cursorDocId ?? null) : null}
@@ -537,6 +560,7 @@ function EditorBody({
           // daemon broadcasts session.changed/documents.changed, so the open
           // child + its descendants repaint without a re-open dance.
           await editorApplyCursor(cursorDocId, toFields(s));
+          window.dispatchEvent(new CustomEvent("aries://notes-changed"));
           onOpenChange(false);
         } else if (radixDocId) {
           // Editing the OPEN radix (wx onData, morin.py:14869): apply in place +
@@ -545,12 +569,14 @@ function EditorBody({
           // repaints WITHOUT a close/reopen flash. No collection picker, no
           // separate save step.
           await editorApply(radixDocId, toFields(s));
+          window.dispatchEvent(new CustomEvent("aries://notes-changed"));
           onOpenChange(false);
         } else {
           const result = await editorSave({
             collection: collectionPath || null,
             record: toFields(s),
           });
+          window.dispatchEvent(new CustomEvent("aries://notes-changed"));
           onSaved(name, result.collection || collectionPath, result.recordIndex ?? null);
           onOpenChange(false);
         }
@@ -587,9 +613,9 @@ function EditorBody({
       ) : null}
 
       <div className="grid min-h-0 flex-1 grid-cols-[1fr_var(--aries-form-aside-width)] gap-0 overflow-y-auto">
-        {/* Left column — Name/Gender, Time, Place, Zone, Altitude */}
+        {/* Left column — Name/Lot formula, Time, Place, Zone, Altitude */}
         <div className="flex flex-col gap-[var(--aries-form-section-gap)] border-r border-border/40 px-[var(--aries-pane-wide-inset)] py-[var(--aries-dialog-padding)]">
-          {/* Group 1 — Name & Gender (personaldatadlg.py:60) */}
+          {/* Group 1 — Name & Lot formula (personaldatadlg.py:60) */}
           <Group title={t("editor.groupIdentity")}>
             <Row label={t("editor.name")}>
               <input
@@ -601,7 +627,7 @@ function EditorBody({
                 placeholder={t("editor.namePlaceholder")}
               />
             </Row>
-            <Row label={t("editor.gender")}>
+            <Row label={t("editor.lotsCalculatedAs")}>
               <RadioPair
                 value={s.male ? "m" : "f"}
                 options={[
@@ -804,7 +830,6 @@ function EditorBody({
             <textarea
               data-aries-control-appearance="local"
               value={s.notes}
-              maxLength={500}
               onChange={(e) => set("notes", e.target.value)}
               className={fieldCls("min-h-32 flex-1 resize-none leading-snug")}
               placeholder={t("editor.notesPlaceholder")}

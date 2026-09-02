@@ -1,4 +1,28 @@
-Aries
+ARIES COPYRIGHT AND LICENSE SCOPE
+
+Original Aries code and Aries modifications:
 Copyright © 2026 Max Lange
 
-See LICENSE and THIRD_PARTY_NOTICES.txt.
+Original Aries application code is licensed under the GNU Affero General
+Public License, version 3 or (at your option) any later version
+(AGPL-3.0-or-later). The complete license is in LICENSE.
+
+Aries incorporates and modifies code from the Morinus astrology project.
+Copyright in that code remains with Robert Nagy and the other Morinus
+contributors identified in README.md and THIRD_PARTY_NOTICES.txt. Morinus-
+derived files remain licensed under the GNU General Public License, version 3
+or (at your option) any later version (GPL-3.0-or-later). The complete GPL
+version 3 text is in COPYING-GPL-3.0.txt.
+
+GPLv3 section 13 and AGPLv3 section 13 permit the Morinus-covered portions and
+the AGPL-covered Aries portions to be combined and conveyed as one application.
+GPLv3 continues to apply to the Morinus-covered portions, and AGPLv3 section 13
+applies its network-source requirement to the combination as a whole. Nothing
+in this repository relicenses a third party's GPL-covered contribution.
+
+File-specific copyright and SPDX notices control when present. Files and data
+identified in THIRD_PARTY_NOTICES.txt or a nearer LICENSE file remain under
+their stated licenses. Private operational infrastructure that is not shipped,
+linked, or included in the Aries corresponding-source distribution is governed
+by its own file or directory notice, not by the application's license merely
+because it is maintained in the same private repository.

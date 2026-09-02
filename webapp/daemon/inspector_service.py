@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 """Daemon-side inspector payload — the FLAGSHIP faithful translation.
 
 The inspector's core content is built by
@@ -34,6 +39,7 @@ chart object the wx renderer registered in its hover region.
 """
 from __future__ import annotations
 
+import math
 import sys
 import threading
 from pathlib import Path
@@ -56,7 +62,8 @@ import astrology
 import chart
 import chartinspector
 import common
-from engine import lunar_cycle
+import eclipses
+from engine import harmonic_chart, lunar_cycle, pd_in_chart
 import fixedstar_natures
 import fixstars as fixstars_mod
 import fortune as fortune_mod
@@ -223,6 +230,71 @@ def _lunar_conditions_payload(region) -> Optional[dict]:
     }
 
 
+def _pd_event_region(context: dict, event_id: str) -> dict:
+    """Validate one live supported PD marker and build its dedicated region."""
+    state = context.get("state")
+    overlay = context.get("overlay")
+    binding = context.get("binding") or {}
+    requested = str(event_id or "")
+    if not requested or not isinstance(state, dict):
+        raise SystemExit("primary-direction event is unavailable")
+    if requested != str(state.get("eventId") or ""):
+        raise SystemExit("stale primary-direction event")
+    if str(binding.get("eventId") or "") != requested:
+        raise SystemExit("stale primary-direction event binding")
+    if (
+        not isinstance(overlay, dict)
+        or not bool(overlay.get("supported"))
+        or str(overlay.get("eventId") or "") != requested
+    ):
+        raise SystemExit("primary-direction event has no supported marker")
+    if overlay.get("eventKind") not in {
+        "body-aspect-to-angle",
+        "angle-to-body-aspect",
+    }:
+        raise SystemExit("unsupported primary-direction event marker family")
+    primitives = overlay.get("primitives")
+    expected_primitive_kinds = {"direction-ray", "directed-angle"}
+    if not isinstance(primitives, list) or not primitives:
+        raise SystemExit("primary-direction event marker has no geometry")
+    primitive_kinds = set()
+    for item in primitives:
+        if not isinstance(item, dict) or item.get("kind") not in expected_primitive_kinds:
+            raise SystemExit("unsupported primary-direction event marker primitive")
+        try:
+            longitude = float(item.get("longitude"))
+        except (TypeError, ValueError, OverflowError):
+            raise SystemExit("primary-direction event marker has no geometry")
+        if not math.isfinite(longitude):
+            raise SystemExit("primary-direction event marker has no geometry")
+        primitive_kinds.add(item["kind"])
+    if primitive_kinds != expected_primitive_kinds:
+        raise SystemExit("primary-direction event marker has incomplete geometry")
+    event = binding.get("directionEvent")
+    if not isinstance(event, dict):
+        raise SystemExit("primary-direction selected row is unavailable")
+    if pd_in_chart._selected_event_id(event) != requested:
+        raise SystemExit("stale primary-direction selected row")
+    event_datetime = (
+        binding.get("initialDisplayDatetime")
+        if bool(binding.get("hasEventDatetime"))
+        else None
+    )
+    return {
+        "kind": "pd_event",
+        "object_id": requested,
+        "chart_role": "primary",
+        "data": {
+            "direction_state": state,
+            "event_overlay": overlay,
+            "direction_event": event,
+            "event_datetime": event_datetime,
+            "prom_parts": list(event.get("promParts") or []),
+            "sig_parts": list(event.get("sigParts") or []),
+        },
+    }
+
+
 def _vertex_region(chrt, partner_chart, options, chart_role):
     """Reproduce graphchart's Vertex hover-region data (graphchart.py:2174-2196,
     body_id == common.CHART_OBJECT_VERTEX). The Vertex is drawn via
@@ -253,11 +325,12 @@ def _vertex_region(chrt, partner_chart, options, chart_role):
     return {"kind": "planet", "object_id": int(body_id), "chart_role": chart_role, "data": data}
 
 
-def _fortune_region(chrt, options, chart_role="primary"):
+def _fortune_region(chrt, options, chart_role="primary", partner_chart=None):
     lon = _body_lon(chrt, planets.Planets.PLANETS_NUM)
     display_lon = lon
     data = {
         "chart": chrt,
+        "partner_chart": partner_chart,
         "longitude": lon,
         "display_lon": display_lon,
         "house_index": _house_index(chrt, lon, options),
@@ -266,7 +339,7 @@ def _fortune_region(chrt, options, chart_role="primary"):
     return {"kind": "fortune", "object_id": "fortune", "chart_role": chart_role, "data": data}
 
 
-def _syzygy_region(chrt, options, chart_role="primary"):
+def _syzygy_region(chrt, options, chart_role="primary", partner_chart=None):
     syz = getattr(chrt, "syzygy", None)
     try:
         lon = float(syz.lon)
@@ -275,6 +348,7 @@ def _syzygy_region(chrt, options, chart_role="primary"):
     display_lon = lon
     data = {
         "chart": chrt,
+        "partner_chart": partner_chart,
         "longitude": lon,
         "display_lon": display_lon,
         "house_index": _house_index(chrt, lon, options),
@@ -284,20 +358,54 @@ def _syzygy_region(chrt, options, chart_role="primary"):
     return {"kind": "syzygy", "object_id": "syzygy", "chart_role": chart_role, "data": data}
 
 
+def _eclipse_region(chrt, options, chart_role="primary", partner_chart=None):
+    try:
+        event, _exact_jd, lon = eclipses.selected_prenatal_eclipse_point(chrt, options)
+    except Exception:
+        raise SystemExit("recent eclipse longitude unavailable")
+    if getattr(event, "saros", None) in (None, "", eclipses._SAROS_UNSET):
+        eclipses._assign_saros(event)
+    is_solar = bool(getattr(event, "is_solar", False))
+    eclipse_type = radixsignals._eclipse_kind_label(event)
+    eclipse_kind = mtexts.txts.get("Solar2" if is_solar else "Lunar2", "Solar" if is_solar else "Lunar")
+    title = mtexts.txts.get("EclipseLabelFormat", "{kind} {luminary} Eclipse").format(
+        kind=eclipse_type,
+        luminary=mtexts.txts.get(
+            "EclipseSolar" if is_solar else "EclipseLunar",
+            eclipse_kind,
+        ),
+    )
+    data = {
+        "chart": chrt,
+        "partner_chart": partner_chart,
+        "longitude": lon,
+        "display_lon": lon,
+        "house_index": _house_index(chrt, lon, options),
+        "colour": tuple(getattr(options, "clrsigns", ())),
+        "title": str(title),
+        "eclipse_kind": str(eclipse_kind),
+        "eclipse_type": str(eclipse_type),
+        "saros": str(getattr(event, "saros", eclipses._SAROS_UNSET) or eclipses._SAROS_UNSET),
+        "event_jd": float(getattr(event, "jdut", _exact_jd)),
+        "is_solar": is_solar,
+    }
+    return {"kind": "eclipse", "object_id": "eclipse", "chart_role": chart_role, "data": data}
+
+
 def _angle_region(chrt, partner_chart, options, angle_key, chart_role="primary"):
     object_id = _ANGLE_OBJECT_ID.get(angle_key, angle_key)
     ascmc = chrt.houses.ascmc
     if object_id == "asc":
-        lon = ascmc[houses.Houses.ASC]
+        lon = chart.semantic_angle_longitude(chrt, "asc")
         declination = chrt.houses.ascmc2[houses.Houses.ASC][houses.Houses.DECL]
     elif object_id == "mc":
-        lon = ascmc[houses.Houses.MC]
+        lon = chart.semantic_angle_longitude(chrt, "mc")
         declination = chrt.houses.ascmc2[houses.Houses.MC][houses.Houses.DECL]
     elif object_id == "desc":
-        lon = util.normalize(ascmc[houses.Houses.ASC] + 180.0)
+        lon = chart.semantic_angle_longitude(chrt, "dsc")
         declination = -chrt.houses.ascmc2[houses.Houses.ASC][houses.Houses.DECL]
     elif object_id == "ic":
-        lon = util.normalize(ascmc[houses.Houses.MC] + 180.0)
+        lon = chart.semantic_angle_longitude(chrt, "ic")
         declination = -chrt.houses.ascmc2[houses.Houses.MC][houses.Houses.DECL]
     else:
         raise SystemExit(f"unknown angle {angle_key}")
@@ -526,14 +634,8 @@ _PLANET_NAME_TO_SE = {name: se for se, name in export_chart_json.PLANET_ID_MAP.i
 
 def _aspect_angle_lon(chrt, key):
     try:
-        if key == "asc":
-            return float(chrt.houses.ascmc[houses.Houses.ASC])
-        if key == "mc":
-            return float(chrt.houses.ascmc[houses.Houses.MC])
-        if key in ("dc", "dsc", "desc"):
-            return util.normalize(float(chrt.houses.ascmc[houses.Houses.ASC]) + 180.0)
-        if key == "ic":
-            return util.normalize(float(chrt.houses.ascmc[houses.Houses.MC]) + 180.0)
+        if key in ("asc", "mc", "dc", "dsc", "desc", "ic"):
+            return float(chart.semantic_angle_longitude(chrt, key))
     except Exception:
         return None
     return None
@@ -867,6 +969,37 @@ def _aspect_region(chrt, options, object_id):
     return {"kind": "aspect", "object_id": int(aspect_type), "chart_role": "primary", "data": data}
 
 
+def _drishti_region(chrt, options, object_id):
+    relations = harmonic_chart.varga_drishti_relations(
+        chrt,
+        getattr(options, "varga_drishti_mode", harmonic_chart.DEFAULT_DRISHTI_MODE),
+        include_node_special=bool(
+            getattr(options, "varga_node_special_drishti", False)
+        ),
+    )
+    relation = next(
+        (row for row in relations if str(row.get("id")) == str(object_id)),
+        None,
+    )
+    if relation is None:
+        raise SystemExit(f"no dṛṣṭi relation for {object_id}")
+    actor_id = relation.get("actor_id")
+    if actor_id is None:
+        colour = tuple(common.get_sign_color(options, int(relation["actor_sign"])))
+    else:
+        colour = _body_colour(chrt, int(actor_id), options)
+    return {
+        "kind": "drishti",
+        "object_id": str(object_id),
+        "chart_role": "primary",
+        "data": {
+            "chart": chrt,
+            "colour": colour,
+            **relation,
+        },
+    }
+
+
 def _interchart_aspect_region(chrt, partner_chart, options, object_id):
     parts = str(object_id).split(":")
     if len(parts) != 4 or parts[0] != "interchart":
@@ -906,6 +1039,48 @@ def _interchart_aspect_region(chrt, partner_chart, options, object_id):
     return {"kind": "aspect", "object_id": int(aspect_type), "chart_role": "primary", "data": data}
 
 
+def _attach_multiwheel_ring_context(region: dict, context: Optional[dict]) -> None:
+    """Attach the visible ring identities consumed by inspector formatters."""
+    if not context:
+        return
+    data = region.setdefault("data", {})
+    data["multiwheel_ring_numeral"] = context.get("currentNumeral")
+    data["multiwheel_partner_numeral"] = context.get("partnerNumeral")
+    endpoints = [
+        data.get(endpoint_name)
+        for endpoint_name in ("actor", "target")
+    ]
+    for endpoint_name in ("actor", "target"):
+        endpoint = data.get(endpoint_name)
+        if not isinstance(endpoint, dict):
+            continue
+        role = endpoint.get("role")
+        if role not in ("primary", "outer"):
+            other = endpoints[1] if endpoint is endpoints[0] else endpoints[0]
+            other_role = other.get("role") if isinstance(other, dict) else None
+            role = "outer" if other_role == "primary" else (
+                "primary" if other_role == "outer" else None
+            )
+        if role == "outer":
+            endpoint["ring_numeral"] = context.get("comparisonNumeral")
+        elif role == "primary":
+            endpoint["ring_numeral"] = context.get("primaryNumeral")
+
+
+def _apply_multiwheel_payload_title(
+    payload: Optional[dict],
+    region: dict,
+    context: Optional[dict],
+) -> Optional[dict]:
+    if not payload or not context or region.get("kind") == "aspect":
+        return payload
+    title = str(payload.get("title") or "").strip()
+    numeral = str(context.get("currentNumeral") or "").strip()
+    if title and numeral:
+        payload["title"] = f"{numeral} {title}"
+    return payload
+
+
 class InspectorService:
     """Rebuilds the hovered chart and returns chartinspector.build_payload(...)."""
 
@@ -938,6 +1113,7 @@ class InspectorService:
         when_iso: Optional[str] = None,
         binding_payload: Optional[dict] = None,
         view_mode: Optional[int] = None,
+        ring_index: Optional[int] = None,
     ):
         """Rebuild the hovered chart and its optional biwheel partner.
 
@@ -955,7 +1131,10 @@ class InspectorService:
         with self._lock:
             if doc_id:
                 from webapp.daemon.workspace_service import workspace_service
-                return workspace_service.inspector_charts(doc_id)
+                return workspace_service.inspector_charts(
+                    doc_id,
+                    ring_index=ring_index,
+                )
             opts = chart_snapshot_service.options
             source_path = str(Path(source).expanduser()) if source else str(export_chart_json.DEFAULT_SOURCE)
             if here_now:
@@ -990,6 +1169,23 @@ class InspectorService:
                     partner_chart = derived
             return opts, chrt, partner_chart
 
+    @staticmethod
+    def _ring_context(
+        doc_id: Optional[str],
+        ring_index: Optional[int],
+    ) -> Optional[dict]:
+        if not doc_id or ring_index is None:
+            return None
+        from webapp.daemon.workspace_service import workspace_service
+        return workspace_service.inspector_ring_context(doc_id, ring_index)
+
+    @staticmethod
+    def _live_pd_context(doc_id: Optional[str]) -> Optional[dict]:
+        if not doc_id:
+            return None
+        from webapp.daemon.workspace_service import workspace_service
+        return workspace_service.inspector_pd_direction_context(str(doc_id))
+
     def build_region(self, chrt, partner_chart, options, kind: str, object_id: str, chart_role: str = "primary"):
         """Public alias for ``_build_region`` so sibling services can build the
         identical region dict Zone A hovers."""
@@ -1010,8 +1206,18 @@ class InspectorService:
         when_iso: Optional[str] = None,
         binding_payload: Optional[dict] = None,
         view_mode: Optional[int] = None,
+        ring_index: Optional[int] = None,
         defer_signals: bool = False,
     ) -> Optional[dict]:
+        pd_context = self._live_pd_context(doc_id)
+        if kind == "pd_event":
+            if pd_context is None:
+                raise SystemExit("primary-direction event requires a live PD-in-chart document")
+            opts = self._presentation_options(pd_context["options"])
+            return chartinspector.build_payload(
+                _pd_event_region(pd_context, object_id),
+                opts,
+            )
         # Resolve the chart the user is hovering (inner ring) + its biwheel
         # partner (outer ring), matching what the React hit-test hovers.
         opts, chrt, partner_chart = self.resolve_chart(
@@ -1024,13 +1230,21 @@ class InspectorService:
             when_iso=when_iso,
             binding_payload=binding_payload,
             view_mode=view_mode,
+            ring_index=ring_index,
         )
         opts = self._presentation_options(opts)
+        if pd_context is not None and kind == "aspect":
+            raise SystemExit("ordinary aspect phase is unavailable in a PD-in-chart document")
         region = self._build_region(chrt, partner_chart, opts, kind, object_id, chart_role)
+        ring_context = self._ring_context(doc_id, ring_index)
+        _attach_multiwheel_ring_context(region, ring_context)
+        if pd_context is not None:
+            region.setdefault("data", {})["pd_direction_context"] = True
         if defer_signals:
             payload = chartinspector.build_payload(region, opts, defer_signals=True)
         else:
             payload = chartinspector.build_payload(region, opts)
+        payload = _apply_multiwheel_payload_title(payload, region, ring_context)
         lunar_conditions = _lunar_conditions_payload(region)
         if lunar_conditions is not None:
             payload["lunar_conditions"] = lunar_conditions
@@ -1051,6 +1265,8 @@ class InspectorService:
         when_iso: Optional[str] = None,
         binding_payload: Optional[dict] = None,
         view_mode: Optional[int] = None,
+        ring_index: Optional[int] = None,
+        defer_signals: bool = False,
     ) -> Optional[dict]:
         """Compact on-chart hover-flag payload — the OTHER chartinspector entry
         point (chartinspector.build_flag_payload, chartinspector.py:1148). The wx
@@ -1059,6 +1275,15 @@ class InspectorService:
         is the builder. We reuse resolve_chart + _build_region verbatim so the
         chart identity / region dict is byte-for-byte what Zone A hovers, then
         call the real brain. No reimplementation — the daemon ships its JSON."""
+        pd_context = self._live_pd_context(doc_id)
+        if kind == "pd_event":
+            if pd_context is None:
+                raise SystemExit("primary-direction event requires a live PD-in-chart document")
+            opts = self._presentation_options(pd_context["options"])
+            return chartinspector.build_flag_payload(
+                _pd_event_region(pd_context, object_id),
+                opts,
+            )
         opts, chrt, partner_chart = self.resolve_chart(
             doc_id=doc_id,
             source=source,
@@ -1069,10 +1294,25 @@ class InspectorService:
             when_iso=when_iso,
             binding_payload=binding_payload,
             view_mode=view_mode,
+            ring_index=ring_index,
         )
         opts = self._presentation_options(opts)
+        if pd_context is not None and kind == "aspect":
+            raise SystemExit("ordinary aspect phase is unavailable in a PD-in-chart document")
         region = self._build_region(chrt, partner_chart, opts, kind, object_id, chart_role)
-        return chartinspector.build_flag_payload(region, opts)
+        ring_context = self._ring_context(doc_id, ring_index)
+        _attach_multiwheel_ring_context(region, ring_context)
+        if pd_context is not None:
+            region.setdefault("data", {})["pd_direction_context"] = True
+        if defer_signals:
+            payload = chartinspector.build_flag_payload(
+                region,
+                opts,
+                defer_signals=True,
+            )
+        else:
+            payload = chartinspector.build_flag_payload(region, opts)
+        return _apply_multiwheel_payload_title(payload, region, ring_context)
 
     def _build_region(self, chrt, partner_chart, options, kind: str, object_id: str, chart_role: str = "primary"):
         # OUTER-ring body → resolve against the comparison chart, with the radix
@@ -1081,7 +1321,7 @@ class InspectorService:
         # body kinds plus role-bearing secondary-ring labels can sit on the
         # outer ring; sign / house / aspect stay primary.
         if chart_role == "outer" and partner_chart is not None and kind in (
-            "planet", "vertex", "fortune", "syzygy", "angle", "secondary_ring",
+            "planet", "vertex", "fortune", "syzygy", "eclipse", "angle", "secondary_ring",
         ):
             chrt, partner_chart = partner_chart, chrt
         if kind == "planet":
@@ -1089,9 +1329,11 @@ class InspectorService:
         if kind == "vertex":
             return _vertex_region(chrt, partner_chart, options, chart_role)
         if kind == "fortune":
-            return _fortune_region(chrt, options, chart_role)
+            return _fortune_region(chrt, options, chart_role, partner_chart=partner_chart)
         if kind == "syzygy":
-            return _syzygy_region(chrt, options, chart_role)
+            return _syzygy_region(chrt, options, chart_role, partner_chart=partner_chart)
+        if kind == "eclipse":
+            return _eclipse_region(chrt, options, chart_role, partner_chart=partner_chart)
         if kind == "angle":
             return _angle_region(chrt, partner_chart, options, str(object_id), chart_role)
         if kind == "house":
@@ -1104,6 +1346,8 @@ class InspectorService:
             if str(object_id).startswith("interchart:"):
                 return _interchart_aspect_region(chrt, partner_chart, options, str(object_id))
             return _aspect_region(chrt, options, str(object_id))
+        if kind == "drishti":
+            return _drishti_region(chrt, options, str(object_id))
         # Unknown kind → build_payload returns the empty-state payload.
         return {"kind": kind, "object_id": object_id, "chart_role": "primary", "data": {}}
 

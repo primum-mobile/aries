@@ -6,24 +6,49 @@ import os
 
 PROFILE_DEFAULT = 'freesans'
 PROFILE_KOSUGI = 'kosugi'
+PROFILE_KOSUGI_ARIES = 'kosugi_aries'
+PROFILE_ARIES_UI = 'aries_ui'
 PROFILE_DOT_GOTHIC = 'dot_gothic16'
+PROFILE_SYSTEM = 'system'
 
 PROFILE_CHOICES = (
 	(PROFILE_DEFAULT, 'FreeSans (default)'),
+	(PROFILE_ARIES_UI, 'Aries UI'),
 	(PROFILE_KOSUGI, 'Kosugi'),
+	(PROFILE_KOSUGI_ARIES, 'Kosugi Aries'),
 	(PROFILE_DOT_GOTHIC, 'DotGothic16'),
 )
 
+# The Tauri app can persist the platform's native system-ui stack even though
+# the legacy wx picker cannot represent a CSS generic family. Keep persistence
+# broader than the legacy picker without adding a misleading wx-only choice.
+_PERSISTED_PROFILE_KEYS = {
+	*(key for key, _label in PROFILE_CHOICES),
+	PROFILE_SYSTEM,
+}
+
+# 'kosugi' keeps meaning upstream Kosugi so no saved setting is silently
+# swapped; 'kosugi_aries' is the respaced build from
+# scripts/fonts/build_kosugi_aries.py. Both stay selectable for comparison.
+# Persistence is by key string (options.py pickles coerce_profile), so the
+# ordering above is free to change.
+#
+# PROFILE_ARIES_UI is deliberately absent below. It is a composite split by
+# content rather than script - FreeSans letters with Kosugi figures and
+# measurement marks - declared with unicode-range in globals.css, and a
+# private-font registration can only take one file. With no entry here,
+# _display_profile returns None and wx falls through to its normal FreeSans
+# text bundle, which is the correct degradation.
 _DISPLAY_PROFILES = {
 	PROFILE_KOSUGI: ('FontTrials', 'Kosugi-Regular.ttf', 'Kosugi'),
+	PROFILE_KOSUGI_ARIES: ('FontTrials', 'KosugiAries-Regular.ttf', 'Kosugi Aries'),
 	PROFILE_DOT_GOTHIC: ('FontTrials', 'DotGothic16-Regular.ttf', 'DotGothic16'),
 }
 
 
 def coerce_profile(value):
-	for key, _label in PROFILE_CHOICES:
-		if value == key:
-			return key
+	if value in _PERSISTED_PROFILE_KEYS:
+		return value
 	return PROFILE_DEFAULT
 
 

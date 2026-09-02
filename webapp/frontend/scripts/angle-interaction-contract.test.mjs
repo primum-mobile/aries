@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Max Lange
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -31,14 +34,35 @@ async function loadDrawChart() {
       await readSource(new URL("../src/lib/chart/canvas-draw.ts", import.meta.url)),
     ).replaceAll('"./chart-fonts"', `"${chartFontsUrl}"`),
   );
+  const layoutModelUrl = dataUrl(
+    transpile(
+      await readSource(
+        new URL("../src/lib/chart/wheel-layout-model.ts", import.meta.url),
+      ),
+    ),
+  );
   const wheelStyleUrl = dataUrl(
     transpile(
       await readSource(
         new URL("../src/lib/chart/wheel-render-style.ts", import.meta.url),
       ),
-    ),
+    ).replaceAll('"./wheel-layout-model"', `"${layoutModelUrl}"`),
   );
   const wheelStyle = await import(wheelStyleUrl);
+  const pdRingPresentationUrl = dataUrl(
+    transpile(
+      await readSource(
+        new URL("../src/lib/chart/pd-ring-presentation.ts", import.meta.url),
+      ),
+    ),
+  );
+  const pdEventPresentationUrl = dataUrl(
+    transpile(
+      await readSource(
+        new URL("../src/lib/chart/pd-event-presentation.ts", import.meta.url),
+      ),
+    ),
+  );
   const glyphsUrl = dataUrl(
     transpile(
       await readSource(new URL("../src/lib/chart/glyphs.ts", import.meta.url)),
@@ -51,13 +75,24 @@ async function loadDrawChart() {
       ),
     ),
   );
+  const outerGlyphLaneUrl = dataUrl(
+    transpile(
+      await readSource(
+        new URL("../src/lib/chart/outer-glyph-lane.ts", import.meta.url),
+      ),
+    ),
+  );
   const drawChartJavascript = transpile(
     await readSource(new URL("../src/lib/chart/draw-chart.ts", import.meta.url)),
   )
     .replaceAll('"./canvas-draw"', `"${canvasDrawUrl}"`)
     .replaceAll('"./chart-fonts"', `"${chartFontsUrl}"`)
+    .replaceAll('"./wheel-layout-model"', `"${layoutModelUrl}"`)
     .replaceAll('"./wheel-render-style"', `"${wheelStyleUrl}"`)
+    .replaceAll('"./pd-ring-presentation"', `"${pdRingPresentationUrl}"`)
+    .replaceAll('"./pd-event-presentation"', `"${pdEventPresentationUrl}"`)
     .replaceAll('"./glyphs"', `"${glyphsUrl}"`)
+    .replaceAll('"./outer-glyph-lane"', `"${outerGlyphLaneUrl}"`)
     .replaceAll('"../render/dither-pattern"', `"${ditherPatternUrl}"`);
   return {
     ...(await import(dataUrl(drawChartJavascript))),

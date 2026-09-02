@@ -1,3 +1,16 @@
+ARIES DISTRIBUTION NOTE — 2026-07-31
+
+This is a historical Swiss Ephemeris license file from the 2008 source layout.
+It is preserved below verbatim for provenance. It does not describe the current
+license selected for Swiss Ephemeris 2.10.03 in Aries.
+
+The bundled 2.10.03 source headers and SWEP/Ephem/LICENSE state the current
+choice between GNU AGPL and the Swiss Ephemeris Professional License. Aries
+uses the GNU AGPL option. See THIRD_PARTY_NOTICES.txt and
+https://www.astro.com/swisseph/ for the current distribution notice.
+
+HISTORICAL UPSTREAM TEXT FOLLOWS UNCHANGED
+
 /* Copyright (C) 1997 - 2008 Astrodienst AG, Switzerland.  All rights reserved.
 
   License conditions
@@ -51,4 +64,3 @@
   The trademarks 'Swiss Ephemeris' and 'Swiss Ephemeris inside' may be used
   for promoting such software, products or services.
 */
-

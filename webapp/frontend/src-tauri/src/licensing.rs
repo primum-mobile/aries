@@ -3,8 +3,6 @@
 
 use std::fs;
 use std::path::PathBuf;
-#[cfg(target_os = "macos")]
-use std::process::Command;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -51,8 +49,6 @@ struct CredentialSecret {
 struct ActivationRequest {
     license_key: String,
     device_id: String,
-    device_name: String,
-    app_version: String,
     platform: String,
     arch: String,
 }
@@ -119,11 +115,9 @@ pub struct LicenseStatus {
 #[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
 pub struct LicenseDevice {
     activation_id: String,
-    device_name: String,
     platform: String,
     arch: String,
     activated_at: String,
-    last_seen_at: String,
     current: bool,
 }
 
@@ -399,7 +393,7 @@ fn verify_lease_with_key(
 fn http_agent() -> ureq::Agent {
     ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(12))
-        .user_agent(&format!("Aries/{}", app_version()))
+        .user_agent("Aries-License")
         .build()
 }
 
@@ -499,43 +493,6 @@ fn arch() -> &'static str {
     }
 }
 
-fn app_version() -> &'static str {
-    option_env!("ARIES_RELEASE_VERSION")
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or(env!("CARGO_PKG_VERSION"))
-}
-
-fn resolved_device_name(requested: Option<String>) -> String {
-    if let Some(name) = requested.map(|value| value.trim().to_string()) {
-        if !name.is_empty() {
-            return name;
-        }
-    }
-    #[cfg(target_os = "macos")]
-    if let Ok(output) = Command::new("/usr/sbin/scutil")
-        .args(["--get", "ComputerName"])
-        .output()
-    {
-        if output.status.success() {
-            if let Ok(name) = String::from_utf8(output.stdout) {
-                let name = name.trim();
-                if !name.is_empty() {
-                    return name.to_string();
-                }
-            }
-        }
-    }
-    for key in ["COMPUTERNAME", "HOSTNAME"] {
-        if let Ok(name) = std::env::var(key) {
-            let name = name.trim();
-            if !name.is_empty() {
-                return name.to_string();
-            }
-        }
-    }
-    "Aries".to_string()
-}
-
 #[cfg(test)]
 fn normalize_update_version(version: &str) -> String {
     if let Some((base, beta)) = version.rsplit_once('b') {
@@ -602,17 +559,11 @@ fn rollback_remote_activation(activation_token: &str, device_id: &str) {
         });
 }
 
-fn activate_blocking(
-    app: AppHandle<Wry>,
-    license_key: String,
-    device_name: Option<String>,
-) -> Result<LicenseStatus, String> {
+fn activate_blocking(app: AppHandle<Wry>, license_key: String) -> Result<LicenseStatus, String> {
     let state = ensure_device_id(&app)?;
     let request = ActivationRequest {
         license_key: license_key.trim().to_string(),
         device_id: state.device_id.clone(),
-        device_name: resolved_device_name(device_name),
-        app_version: app_version().to_string(),
         platform: platform().to_string(),
         arch: arch().to_string(),
     };
@@ -625,17 +576,12 @@ fn activate_blocking(
     apply_activation(&app, state, request.license_key, response)
 }
 
-fn refresh_blocking(
-    app: AppHandle<Wry>,
-    device_name: Option<String>,
-) -> Result<LicenseStatus, String> {
+fn refresh_blocking(app: AppHandle<Wry>) -> Result<LicenseStatus, String> {
     let mut state = ensure_device_id(&app)?;
     let secret = read_credentials()?.ok_or_else(|| "activation_required".to_string())?;
     let request = ActivationRequest {
         license_key: secret.license_key,
         device_id: state.device_id.clone(),
-        device_name: resolved_device_name(device_name),
-        app_version: app_version().to_string(),
         platform: platform().to_string(),
         arch: arch().to_string(),
     };
@@ -682,11 +628,10 @@ pub fn license_status(app: AppHandle<Wry>) -> Result<LicenseStatus, String> {
 pub async fn license_activate(
     app: AppHandle<Wry>,
     license_key: String,
-    device_name: Option<String>,
 ) -> Result<LicenseStatus, String> {
     let worker_app = app.clone();
     let result = match tauri::async_runtime::spawn_blocking(move || {
-        activate_blocking(worker_app, license_key, device_name)
+        activate_blocking(worker_app, license_key)
     })
     .await
     {
@@ -698,19 +643,13 @@ pub async fn license_activate(
 }
 
 #[tauri::command]
-pub async fn license_refresh(
-    app: AppHandle<Wry>,
-    device_name: Option<String>,
-) -> Result<LicenseStatus, String> {
+pub async fn license_refresh(app: AppHandle<Wry>) -> Result<LicenseStatus, String> {
     let worker_app = app.clone();
-    let result = match tauri::async_runtime::spawn_blocking(move || {
-        refresh_blocking(worker_app, device_name)
-    })
-    .await
-    {
-        Ok(result) => result,
-        Err(error) => Err(error.to_string()),
-    };
+    let result =
+        match tauri::async_runtime::spawn_blocking(move || refresh_blocking(worker_app)).await {
+            Ok(result) => result,
+            Err(error) => Err(error.to_string()),
+        };
     crate::reconcile_daemon_license_gate(&app);
     result
 }

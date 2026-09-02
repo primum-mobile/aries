@@ -33,6 +33,18 @@ const appThemeControls = readFileSync(
   resolve(frontendRoot, "src/components/workshell/app-theme-controls.tsx"),
   "utf8",
 );
+const cssTokenValue = readFileSync(
+  resolve(frontendRoot, "src/lib/css-token-value.ts"),
+  "utf8",
+);
+const tokenMetadata = readFileSync(
+  resolve(frontendRoot, "src/lib/style-lab/token-metadata.ts"),
+  "utf8",
+);
+const editorStore = readFileSync(
+  resolve(frontendRoot, "src/stores/chart-style-editor-store.ts"),
+  "utf8",
+);
 const styleLabColorPicker = readFileSync(
   resolve(frontendRoot, "src/components/workshell/style-lab-color-picker.tsx"),
   "utf8",
@@ -59,6 +71,14 @@ const workspaceFrame = readFileSync(
 );
 const titlebarOptionsMenu = readFileSync(
   resolve(frontendRoot, "src/components/workshell/titlebar-options-menu.tsx"),
+  "utf8",
+);
+const homeClient = readFileSync(
+  resolve(frontendRoot, "src/components/workshell/home-client.tsx"),
+  "utf8",
+);
+const manifestShortcuts = readFileSync(
+  resolve(frontendRoot, "src/shortcuts/manifest-shortcuts.ts"),
   "utf8",
 );
 const settingsDialog = readFileSync(
@@ -148,6 +168,21 @@ test("native chart fonts and draft compositor effects survive the live handoff",
   assert.match(chartCanvas, /styleEditorCanvasStyle/);
   assert.match(chartCanvas, /Object\.entries\(styleCssOverrides\).*wheel-effect-/s);
   assert.match(chartCanvas, /style=\{styleEditorCanvasStyle\}/);
+});
+
+test("inherited color tokens resolve through the active theme instead of neutral gray", () => {
+  assert.equal(
+    catalog.tokens["renderer.astrolabe.color.horizon"].default,
+    "var(--morinus-angles)",
+  );
+  assert.match(tokenMetadata, /defaultReference:/);
+  assert.match(tokenMetadata, /tokenByCssVar\.get\(cssVar\)\?\.semanticId/);
+  assert.match(editorStore, /function createChartStyleTokenBaseReader\(/);
+  assert.match(editorStore, /token\.defaultReference/);
+  assert.match(editorStore, /createChartStyleTokenBaseReader\(metadata, baseTheme\)/);
+  assert.match(cssTokenValue, /function resolveCssCustomPropertyValue\(/);
+  assert.match(cssTokenValue, /while \(!seen\.has\(current\)\)/);
+  assert.match(chartStylePanel, /createChartStyleTokenBaseReader\(tokenMetadata, baseTheme\)/);
 });
 
 test("live Style Lab edits invalidate every retained chart layer immediately", () => {
@@ -370,6 +405,8 @@ test("the sidecar remains independent while titlebar options opens the workspace
   assert.match(titlebarOptionsMenu, /t\("styleLab\.title"\)/);
   assert.match(titlebarOptionsMenu, /onOpenStyleLab/);
   assert.match(workspaceFrame, /onOpenStyleLab/);
+  assert.match(homeClient, /command === "open-style-lab"/);
+  assert.match(manifestShortcuts, /Boolean\(parsed\.requireShift\) !== gesture\.shiftKey/);
   assert.match(workspaceContent, /styleEditorOpen/);
   assert.match(workspaceContent, /<ChartStylePanel[\s\S]*onClose=/);
   assert.doesNotMatch(settingsDialog, /value === "stylelab"/);
@@ -413,6 +450,13 @@ test("the editor authors one portable full-app theme across semantic materials",
   assert.match(appThemePreview, /\.\.\.baseTheme\.appAuthoring/);
   assert.match(appThemeControls, /deriveLinkedPalette/);
   assert.match(appThemeControls, /UI_TYPEFACE_TOKEN\s*=\s*"app\.type\.familyUi"/);
+  assert.match(appThemeControls, /"'FreeSans', ui-sans-serif, system-ui, sans-serif"/);
+  assert.match(appThemeControls, /"'Kosugi Aries', 'FreeSans', ui-sans-serif, system-ui, sans-serif"/);
+  assert.match(appThemeControls, /"'DotGothic16', 'FreeSans', ui-sans-serif, system-ui, sans-serif"/);
+  assert.match(appThemeControls, /"system-ui, sans-serif"/);
+  assert.doesNotMatch(appThemeControls, /"'Aries UI', 'FreeSans'/);
+  assert.doesNotMatch(appThemeControls, /"'Kosugi', 'FreeSans'/);
+  assert.doesNotMatch(appThemeControls, /Helvetica, "Helvetica Neue"/);
   assert.match(appThemeControls, /setOverride\(UI_TYPEFACE_TOKEN/);
   assert.match(appThemeControls, /resetProperty\(UI_TYPEFACE_TOKEN\)/);
   assert.match(
@@ -497,6 +541,7 @@ test("app materials paint visible document and retained-pane surfaces", () => {
     /data-right-pane-module="astrocart-controls"[\s\S]*\[&>\*\]:bg-transparent/,
   );
   assert.match(notesPanel, /data-aries-surface="panel"/);
+  assert.match(transitSearchView, /data-aries-surface="panel"/);
 });
 
 test("retained floating chrome reaches the active overlay and popover material profiles", () => {
@@ -504,7 +549,6 @@ test("retained floating chrome reaches the active overlay and popover material p
     ["dialog", dialogPrimitive],
     ["sheet", sheetPrimitive],
     ["settings confirmation", settingsDialog],
-    ["transit filter drawer", transitSearchView],
     ["chart picker modals", systemChartPicker],
   ]) {
     assert.match(
@@ -547,8 +591,8 @@ test("revert restores the saved draft baseline and exchange files import as them
 test("ordinary save updates the selected theme while system revert restores factory paint", () => {
   assert.match(chartStylePanel, /commitCurrentStyleLabDraft/);
   assert.match(chartStylePanel, /candidate\.name === draft\.sourceThemeName/);
-  assert.match(chartStylePanel, /source\?\.system === true/);
-  assert.match(chartStylePanel, /source\.factoryModified === true/);
+  assert.match(chartStylePanel, /selectedThemeSource\?\.system === true/);
+  assert.match(chartStylePanel, /selectedThemeSource\.factoryModified === true/);
   assert.match(chartStylePanel, /factoryDefault/);
   assert.match(styleLabClient, /factoryDefault\?: boolean/);
 });

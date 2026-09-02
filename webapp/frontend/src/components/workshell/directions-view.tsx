@@ -57,9 +57,7 @@ import {
   fetchCircumambulations,
   fetchDirections,
   fetchOptions,
-  fetchPrimaryDirectionsText,
   fetchSecondaryDirections,
-  fetchSecondaryDirectionsText,
   openDirectionsTimedChart,
   openDirectionsSecondaryChart,
   openDirectionsPdInChart,
@@ -81,9 +79,10 @@ import {
   type SecondaryDirectionRow,
   type SecondaryDirectionsPayload,
   type TimedChartAction,
+  type TemporalRowMeta,
 } from "@/lib/daemon/client";
 import { cn } from "@/lib/utils";
-import { useT, useTFallback } from "@/lib/i18n/i18n";
+import { useT, useTFallback, type TFunc } from "@/lib/i18n/i18n";
 import { type ListFollowPolicy } from "@/lib/list-follow-policy";
 import {
   resolvedSemanticChartColor,
@@ -101,7 +100,6 @@ import {
   spanContainsAge,
   stitchRows,
   useEdgeExtend,
-  visiblePrependedRowCount,
   type AgeSpan,
   type StitchedRows,
 } from "./stitched-list-harness";
@@ -112,23 +110,39 @@ import {
 } from "./list-column-layout";
 import { ColumnResizeHandle, useResizableTableColumns } from "./resizable-table-columns";
 import {
+  temporalCoverageFromRows,
+  useTemporalConfluenceLensReporter,
+  useTemporalConfluenceRows,
+  useTemporalPinnedRowId,
+  useTemporalRowHighlight,
+  type TemporalCoverage,
+} from "./temporal-confluence-context";
+import {
   useStepSettledValue,
 } from "./step-refresh";
-import { exportTextContent } from "./text-export";
-import { exportAdHocTablePdf } from "./table-pdf-export";
+import { buildAdHocTableExportDocument } from "./table-pdf-export";
+import { TextExportActions } from "./text-export-actions";
 import type { GenericTableCell } from "@/lib/daemon/client";
 
-function directionPartsPdfCell(
+function directionPartsTextCell(
   parts: DirectionCellPart[] | null | undefined,
   fallbackGlyph: string | null | undefined,
   fallbackText: string,
   colorize: boolean,
 ): GenericTableCell {
   if (parts?.length && parts.some((part) => part.glyph)) {
+    const exportSymbolText = parts.reduce((value, part) => {
+      if (!part.exportText || !part.exportSymbolText) return value;
+      return value.replace(part.exportText, part.exportSymbolText);
+    }, fallbackText);
     return {
+      exportText: fallbackText,
+      exportSymbolText,
       runs: parts.map((part) => ({
         text: part.text,
         glyph: part.glyph,
+        exportText: part.exportText,
+        exportSymbolText: part.exportSymbolText,
         color: colorize
           ? resolvedSemanticChartColor(part.colorRole, part.color)
           : undefined,
@@ -136,23 +150,32 @@ function directionPartsPdfCell(
     };
   }
   if (fallbackGlyph) {
-    return { runs: [{ text: fallbackGlyph, glyph: true }] };
+    return {
+      exportText: fallbackText,
+      exportSymbolText: fallbackText,
+      runs: [{ text: fallbackGlyph, glyph: true }],
+    };
   }
   return { text: fallbackText };
 }
 
-function directionGlyphPdfCell(
+function directionGlyphTextCell(
   text: string,
   glyph: string | null | undefined,
   color: string | null | undefined,
   colorRole: string | null | undefined,
   colorize: boolean,
+  exportSymbolText?: string,
 ): GenericTableCell {
   if (!glyph) return { text };
   return {
+    exportText: text,
+    exportSymbolText: exportSymbolText || text,
     runs: [{
       text: glyph,
       glyph: true,
+      exportText: text,
+      exportSymbolText: exportSymbolText || undefined,
       color: colorize ? resolvedSemanticChartColor(colorRole, color) : undefined,
     }],
   };
@@ -167,6 +190,35 @@ type SecondaryDirectionColumnKey = typeof SECONDARY_DIRECTION_COLUMN_KEYS[number
 const CIRCUM_COLUMN_KEYS = ["degree", "bound", "participator", "age", "date"] as const;
 type CircumColumnKey = typeof CIRCUM_COLUMN_KEYS[number];
 type DirectionHeadAlign = "left" | "center" | "right";
+
+const DIRECTION_PLANET_LABEL_KEYS = [
+  "primdir.planetSun",
+  "primdir.planetMoon",
+  "primdir.planetMercury",
+  "primdir.planetVenus",
+  "primdir.planetMars",
+  "primdir.planetJupiter",
+  "primdir.planetSaturn",
+  "primdir.planetUranus",
+  "primdir.planetNeptune",
+  "primdir.planetPluto",
+  "primdir.planetAscNode",
+  "primdir.planetDscNode",
+] as const;
+
+function directionPlanetLabel(planetId: number | null | undefined, t: TFunc): string {
+  const key = planetId == null ? undefined : DIRECTION_PLANET_LABEL_KEYS[planetId];
+  return key ? t(key) : planetId == null ? "" : String(planetId);
+}
+
+function directionPointExportSymbol(
+  symbol: string | null | undefined,
+  fallbackText: string,
+): string {
+  if (!symbol) return fallbackText;
+  const motionSuffix = fallbackText.match(/\s+\([^)]*\)$/u)?.[0] ?? "";
+  return `${symbol}${motionSuffix}`;
+}
 
 function DirectionHeadLabel({
   children,
@@ -617,6 +669,29 @@ function ControlTooltip({
   );
 }
 
+function NatalParticipatorsToggle({
+  active,
+  onToggle,
+}: {
+  active: boolean;
+  onToggle: () => void;
+}) {
+  const t = useT();
+  return (
+    <ControlTooltip label={t("dirview.natalParticipators")}>
+      <Button
+        type="button"
+        size="xs"
+        variant={active ? "default" : "outline"}
+        aria-pressed={active}
+        onClick={onToggle}
+      >
+        {t("dirview.natalParticipators")}
+      </Button>
+    </ControlTooltip>
+  );
+}
+
 function AgeRangePager({
   ranges,
   value,
@@ -801,7 +876,7 @@ function useDirectionsRadixRefreshSeq(
 
 function useDirectionsOptionsSeq(): number {
   const lastOptionsChange = useDaemonWorkspaceStore((s) => s.lastRetainedDataOptionsChange);
-  const [seq, setSeq] = React.useState(0);
+  const [seq, setSeq] = React.useState(() => lastOptionsChange?.seq ?? 0);
 
   React.useEffect(() => {
     if (!lastOptionsChange) return;
@@ -909,12 +984,51 @@ const SECONDARY_STITCH_MAX_AGE = 150;
 const SECONDARY_STITCHED_CACHE = "directions:secondary-stitched";
 const SECONDARY_STITCH_CACHE_MAX_ROWS = 25000;
 const SECONDARY_STATION_FILTER_IDS: readonly boolean[] = Object.freeze([true]);
+const SECONDARY_DEFAULT_ASPECT_FILTER_IDS = Object.freeze(
+  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+);
+const SECONDARY_MAJOR_ASPECT_FILTER_IDS = Object.freeze([0, 3, 5, 6, 10]);
 
 type SecondaryStitchStore = StitchedRows<SecondaryDirectionRow> & {
   /** Frozen initial-chunk meta — title/columns/referenceAge are identical for
    * every chunk of one stitched world; coverage lives on the store itself. */
   meta: SecondaryDirectionsPayload["meta"];
+  /** False once any resident chunk hit the daemon row cap. */
+  coverageAuthoritative: boolean;
+  /** Exact daemon-owned JD coverage for the contiguous stitched age range. */
+  temporalCoverage: TemporalCoverage | null;
 };
+
+function authoritativeTemporalCoverage(
+  coverage: TemporalCoverage | null | undefined,
+): TemporalCoverage | null {
+  if (
+    !coverage?.authoritative
+    || !Number.isFinite(coverage.startJdUt)
+    || !Number.isFinite(coverage.endJdUt)
+    || coverage.endJdUt <= coverage.startJdUt
+  ) return null;
+  return coverage;
+}
+
+function mergeContiguousTemporalCoverage(
+  left: TemporalCoverage | null,
+  right: TemporalCoverage | null | undefined,
+): TemporalCoverage | null {
+  const next = authoritativeTemporalCoverage(right);
+  if (!left) return next;
+  if (!next) return left;
+  const epsilonDays = 1 / 86_400;
+  if (
+    next.startJdUt > left.endJdUt + epsilonDays
+    || left.startJdUt > next.endJdUt + epsilonDays
+  ) return null;
+  return {
+    startJdUt: Math.min(left.startJdUt, next.startJdUt),
+    endJdUt: Math.max(left.endJdUt, next.endJdUt),
+    authoritative: true,
+  };
+}
 
 /** Display identity of a row — the stitch dedupe/React key. Never jd or time:
  * refined instants jitter by seconds between fit windows (parity-checked
@@ -2083,21 +2197,6 @@ function PdInChartMenuItem({
   );
 }
 
-async function saveTextFile(
-  filename: string,
-  content: string,
-  dialogTitle: string,
-  filterName: string,
-) {
-  await exportTextContent({
-    filename,
-    extension: "txt",
-    text: content,
-    title: dialogTitle,
-    filters: [{ name: filterName, extensions: ["txt"] }],
-  });
-}
-
 async function copyText(text: string): Promise<void> {
   try {
     if (navigator.clipboard?.writeText) {
@@ -2137,6 +2236,8 @@ export function DirectionsView({
   initialPrimaryDirection,
   secondaryMethod = "secondary",
   customSignificator,
+  lockTechnique = false,
+  includeTemporal = false,
   onClose,
 }: {
   sourceName: string;
@@ -2153,6 +2254,8 @@ export function DirectionsView({
   initialPrimaryDirection?: number;
   secondaryMethod?: SecondaryMethod;
   customSignificator?: DirectionCustomSignificator | null;
+  lockTechnique?: boolean;
+  includeTemporal?: boolean;
   onClose?: () => void;
 }) {
   const t = useT();
@@ -2202,26 +2305,28 @@ export function DirectionsView({
   return (
     <Tabs
       value={tab}
-      onValueChange={(value) => setTab(value as DirectionsTopTab)}
+      onValueChange={lockTechnique ? undefined : (value) => setTab(value as DirectionsTopTab)}
       className="font-morinus-text flex h-full min-h-0 w-full flex-col gap-0 bg-background"
     >
-      <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
-        {onClose ? (
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="ghost"
-            onClick={onClose}
-            aria-label={t("dirview.closeDirections")}
-          >
-            <X className="size-3.5" />
-          </Button>
-        ) : null}
-        <TabsList className="self-start">
-          <TabsTrigger value="primary">{t("dirview.primary")}</TabsTrigger>
-          <TabsTrigger value="secondary">{t("dirview.secondary")}</TabsTrigger>
-        </TabsList>
-      </div>
+      {!lockTechnique ? (
+        <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
+          {onClose ? (
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              onClick={onClose}
+              aria-label={t("dirview.closeDirections")}
+            >
+              <X className="size-3.5" />
+            </Button>
+          ) : null}
+          <TabsList className="self-start">
+            <TabsTrigger value="primary">{t("dirview.primary")}</TabsTrigger>
+            <TabsTrigger value="secondary">{t("dirview.secondary")}</TabsTrigger>
+          </TabsList>
+        </div>
+      ) : null}
       <TabsContent value="primary" className="flex flex-1 min-h-0 flex-col">
         {primarySurface === "circumambulation" ? (
           <CircumambulationPanel
@@ -2233,12 +2338,16 @@ export function DirectionsView({
             openSeq={openSeq}
             initialMode={initialPrimaryMode}
             customSignificator={customSignificator}
+            includeTemporal={includeTemporal}
+            lockMode={lockTechnique}
             radixRefreshSeq={directionRadixRefreshSeq}
             active={tab === "primary"}
             onRectificationStepStart={handleRectificationStepStart}
             onRectificationCommitted={handleRectificationCommitted}
             onRectificationSettled={handleRectificationSettled}
-            onShowPrimaryDirections={() => setPrimarySurface("directions")}
+            onShowPrimaryDirections={
+              lockTechnique ? undefined : () => setPrimarySurface("directions")
+            }
             rowHeight={rowHeight}
           />
         ) : (
@@ -2252,12 +2361,16 @@ export function DirectionsView({
             initialMode={initialPrimaryMode}
             initialDirection={initialPrimaryDirection}
             customSignificator={customSignificator}
+            includeTemporal={includeTemporal}
+            lockMode={lockTechnique}
             radixRefreshSeq={directionRadixRefreshSeq}
             active={tab === "primary"}
             onRectificationStepStart={handleRectificationStepStart}
             onRectificationCommitted={handleRectificationCommitted}
             onRectificationSettled={handleRectificationSettled}
-            onShowCircumambulations={() => setPrimarySurface("circumambulation")}
+            onShowCircumambulations={
+              lockTechnique ? undefined : () => setPrimarySurface("circumambulation")
+            }
             rowHeight={rowHeight}
           />
         )}
@@ -2270,6 +2383,8 @@ export function DirectionsView({
           cursorDocumentId={cursorDocumentId ?? documentId}
           focusDatetime={renderedFocusDatetime ?? undefined}
           initialMethod={secondaryMethod}
+          includeTemporal={includeTemporal}
+          lockMethod={lockTechnique}
           radixRefreshSeq={directionRadixRefreshSeq}
           active={tab === "secondary"}
           onRectificationStepStart={handleRectificationStepStart}
@@ -2292,6 +2407,8 @@ function PrimaryDirectionsPanel({
   initialMode,
   initialDirection,
   customSignificator,
+  includeTemporal,
+  lockMode,
   radixRefreshSeq,
   active,
   onRectificationStepStart,
@@ -2309,16 +2426,17 @@ function PrimaryDirectionsPanel({
   initialMode: Mode;
   initialDirection?: number;
   customSignificator?: DirectionCustomSignificator | null;
+  includeTemporal: boolean;
+  lockMode: boolean;
   radixRefreshSeq: number;
   active: boolean;
   onRectificationStepStart: () => void;
   onRectificationCommitted: () => void;
   onRectificationSettled: () => void;
-  onShowCircumambulations: () => void;
+  onShowCircumambulations?: () => void;
   rowHeight: number;
 }) {
   const t = useT();
-  const tf = useTFallback();
   const rowHeightRef = React.useRef(rowHeight);
   React.useLayoutEffect(() => {
     rowHeightRef.current = rowHeight;
@@ -2355,6 +2473,7 @@ function PrimaryDirectionsPanel({
         ageSeek: "exact",
         referenceDatetime: initialReferenceDatetime,
         customSignificator: customSignificatorKey,
+        includeTemporal,
       });
   const [selectedDirection, setSelectedDirection] = React.useState<number | null>(
     () => initialDirectionValue,
@@ -2397,6 +2516,19 @@ function PrimaryDirectionsPanel({
   const direction =
     selectedDirection ?? settingsDefaultDirection ?? PRIMARY_DIRECTION_DIRECT;
   const primaryRequestReady = selectedDirection != null || settings != null;
+  const reportTemporalLens = useTemporalConfluenceLensReporter();
+  React.useEffect(() => {
+    if (!primaryRequestReady) return;
+    reportTemporalLens({
+      direction:
+        direction === PRIMARY_DIRECTION_CONVERSE
+          ? "converse"
+          : direction === PRIMARY_DIRECTION_BOTH
+            ? "both"
+            : "direct",
+      mode,
+    });
+  }, [direction, mode, primaryRequestReady, reportTemporalLens]);
   const payloadReferenceDatetime =
     mode === "radix" || (mode === "sr" && year != null) ? null : focusDatetime ?? null;
   const payloadCacheKey = React.useMemo(
@@ -2414,8 +2546,9 @@ function PrimaryDirectionsPanel({
         referenceDatetime: payloadReferenceDatetime,
         radixRefreshSeq,
         customSignificator: customSignificatorKey,
+        includeTemporal,
       }),
-    [ageSeek, ageWindow, customSignificatorKey, direction, documentId, mode, optionsPreviewKey, payloadReferenceDatetime, radixRefreshSeq, source, sourceName, year],
+    [ageSeek, ageWindow, customSignificatorKey, direction, documentId, includeTemporal, mode, optionsPreviewKey, payloadReferenceDatetime, radixRefreshSeq, source, sourceName, year],
   );
   React.useEffect(() => {
     const controller = new AbortController();
@@ -2483,6 +2616,7 @@ function PrimaryDirectionsPanel({
               documentId,
               customSignificator,
               optionsPreview,
+              includeTemporal,
             },
             controller.signal,
           )
@@ -2498,6 +2632,7 @@ function PrimaryDirectionsPanel({
                 : {}),
               customSignificator,
               optionsPreview,
+              includeTemporal,
             },
             controller.signal,
           );
@@ -2545,7 +2680,7 @@ function PrimaryDirectionsPanel({
         }
       });
     return () => controller.abort();
-  }, [sourceName, source, documentId, direction, mode, year, ageWindow, ageSeek, payloadReferenceDatetime, optionsPreview, radixRefreshSeq, customSignificator, payloadCacheKey, primaryRequestReady]);
+  }, [sourceName, source, documentId, direction, mode, year, ageWindow, ageSeek, payloadReferenceDatetime, optionsPreview, radixRefreshSeq, customSignificator, includeTemporal, payloadCacheKey, primaryRequestReady]);
 
   const commitPrimarySettingsPatch = useQueuedPrimaryDirectionSettingsPatch({
     setSettings,
@@ -2602,17 +2737,32 @@ function PrimaryDirectionsPanel({
     [columns],
   );
   const rows = React.useMemo(() => payload?.directions ?? [], [payload]);
+  const temporalCoverage = React.useMemo(
+    () =>
+      authoritativeTemporalCoverage(payload?.meta.temporalCoverage)
+      ?? temporalCoverageFromRows(rows),
+    [payload?.meta.temporalCoverage, rows],
+  );
+  useTemporalConfluenceRows(rows, temporalCoverage);
   const glyphColorRows = settings?.pdlistglyphcolors ?? payload?.meta.listGlyphColors ?? false;
   const isReturnMode = mode !== "radix";
+  const showNatalPromissors = settings?.pdrevshownatalpromissors ?? payload?.meta.showNatalPromissors ?? false;
   const returnLabel = payload?.meta.returnLabel ?? payload?.meta.solarRevolutionLabel;
   const ageRanges = React.useMemo(() => ageRangesForPage(ageRangePageStart), [ageRangePageStart]);
   const focusTargetMs = React.useMemo(
     () => directionFocusTargetMs(rows, focusDatetime, (row) => row.date),
     [focusDatetime, rows],
   );
-  const focusIndex = targetAgeRange
-    ? ageRangeTargetIndex(rows, targetAgeRange, (row) => row.age, targetAgeSeek)
-    : nearestDateIndex(rows, focusTargetMs, (row) => row.date);
+  const pinnedTemporalRowId = useTemporalPinnedRowId();
+  const pinnedTemporalIndex = pinnedTemporalRowId
+    ? rows.findIndex((row) => row.temporal?.rowId === pinnedTemporalRowId)
+    : -1;
+  const focusIndex =
+    pinnedTemporalIndex >= 0
+      ? pinnedTemporalIndex
+      : targetAgeRange
+        ? ageRangeTargetIndex(rows, targetAgeRange, (row) => row.age, targetAgeSeek)
+        : nearestDateIndex(rows, focusTargetMs, (row) => row.date);
   useFixedRowHeightAnchor(scrollerRef, rows.length, rowHeight, {
     enabled: active,
     syncEvent: VIRTUAL_SCROLL_SYNC_EVENT,
@@ -2766,96 +2916,57 @@ function PrimaryDirectionsPanel({
     [ageRanges, direction, directionOptions, isReturnMode, jumpToAgeAnchor, scrollToFraction, t, visibleAgeAnchorIdx],
   );
 
-  const primarySaveMenu = React.useCallback(
-    () => (
-      <>
-        <ContextMenuSub>
-          <ContextMenuSubTrigger>{t("dirview.save")}</ContextMenuSubTrigger>
-          <ContextMenuSubContent>
-            <ContextMenuItem
-              disabled={!rows.length}
-              onClick={() => {
-                // Rendered PDF of the visible PD list (wx commonwnd SaveAsBitmap
-                // parity, primdirslistwnd onSaveAsBitmap). Columns mirror the
-                // on-screen table; Prom./Sig. cells carry the daemon-resolved
-                // glyph char + text so the Morinus glyph renders in the PDF.
-                void exportAdHocTablePdf({
-                  title: payload?.meta.title ?? t("dirview.primaryDirections"),
-                  fileStem: "primary-directions",
-                  columns: [
-                    { label: columns[0], align: "center", width: 1 },
-                    { label: columns[1], align: "left", width: 2.5 },
-                    { label: columns[2], align: "center", width: 1 },
-                    { label: columns[3], align: "left", width: 2.5 },
-                    { label: columns[4], align: "right", width: 1.5 },
-                    { label: columns[5], align: "center", width: 1.5 },
-                  ],
-                  rows: rows.map((row): GenericTableCell[] => [
-                    { text: row.mz },
-                    directionPartsPdfCell(
-                      primaryPromDisplayParts(row.fields),
-                      row.fields.promGlyph,
-                      row.prom,
-                      glyphColorRows,
-                    ),
-                    { text: row.dc },
-                    directionPartsPdfCell(
-                      primarySigDisplayParts(row.fields),
-                      row.fields.sigGlyph,
-                      row.sig,
-                      glyphColorRows,
-                    ),
-                    { text: `${row.arc.toFixed(4)}°` },
-                    { text: primaryRowDateLabel(row) },
-                  ]),
-                }).catch(() => {});
-              }}
-            >
-              {t("dirview.saveAsPdf")}
-            </ContextMenuItem>
-            <ContextMenuItem
-              disabled={!rows.length}
-              onClick={() => {
-                // wx onSaveAsText (primdirslistwnd.py:1573) — the file body is
-                // built by the engine's PrimDirs.format2text via the daemon,
-                // never assembled in the skin. Radix vs PD-in-revolution list
-                // are the same endpoint, dispatched by mode.
-                void fetchPrimaryDirectionsText(sourceName, {
-                  mode: mode === "radix" ? "radix" : "revolution",
-                  range: 4,
-                  direction,
-                  source,
-                  documentId,
-                  customSignificator,
-                  ...(mode === "radix" && ageWindow
-                    ? { startAge: ageWindow.start, endAge: ageWindow.end }
-                    : {}),
-                  ...(mode !== "radix"
-                    ? {
-                        returnKind: mode === "lr" ? "lunar" : "solar",
-                        referenceDatetime: payloadReferenceDatetime ?? undefined,
-                        ...(mode === "sr" && year != null ? { year } : {}),
-                      }
-                    : {}),
-                })
-                  .then((result) =>
-                    saveTextFile(
-                      result.filename || "primary-directions.txt",
-                      result.text,
-                      tf("dirview.exportTextDialogTitle", "Export Text..."),
-                      tf("dirview.textFilesFilter", "Text Files"),
-                    ),
-                  )
-                  .catch(() => {});
-              }}
-            >
-              {t("dirview.saveAsText")}
-            </ContextMenuItem>
-          </ContextMenuSubContent>
-        </ContextMenuSub>
-      </>
-    ),
-    [rows, columns, payload, mode, direction, source, documentId, ageWindow, payloadReferenceDatetime, year, sourceName, customSignificator, glyphColorRows, t, tf],
+  const primaryExportDocument = React.useCallback(
+    () => buildAdHocTableExportDocument({
+      title: payload?.meta.title ?? t("dirview.primaryDirections"),
+      fileStem: "primary-directions",
+      pdfProfile: "directions",
+      sourceName,
+      columns: primaryColumnOrder.map((columnKey) => ({
+        label: primaryColumnLabels[columnKey],
+        align:
+          columnKey === "arc"
+            ? "right" as const
+            : columnKey === "prom" || columnKey === "sig"
+              ? "left" as const
+              : "center" as const,
+        widthFactor:
+          columnKey === "prom" || columnKey === "sig"
+            ? 2.5
+            : columnKey === "arc" || columnKey === "date"
+              ? 1.5
+              : 1,
+      })),
+      rows: rows.map((row): GenericTableCell[] =>
+        primaryColumnOrder.map((columnKey): GenericTableCell => {
+          switch (columnKey) {
+            case "mz":
+              return { text: row.mz };
+            case "prom":
+              return directionPartsTextCell(
+                primaryPromDisplayParts(row.fields),
+                row.fields.promGlyph,
+                row.prom,
+                glyphColorRows,
+              );
+            case "dc":
+              return { text: row.dc };
+            case "sig":
+              return directionPartsTextCell(
+                primarySigDisplayParts(row.fields),
+                row.fields.sigGlyph,
+                row.sig,
+                glyphColorRows,
+              );
+            case "arc":
+              return { text: `${row.arc.toFixed(4)}°` };
+            case "date":
+              return { text: primaryRowDateLabel(row) };
+          }
+        }),
+      ),
+    }),
+    [glyphColorRows, payload, primaryColumnLabels, primaryColumnOrder, rows, sourceName, t],
   );
 
   React.useLayoutEffect(() => {
@@ -2917,14 +3028,16 @@ function PrimaryDirectionsPanel({
             <LiveHoverSummary
               value={hoverSummary ?? (loading ? t("dirview.computing") : "")}
             />
-            <Button
-              type="button"
-              size="xs"
-              variant="outline"
-              onClick={onShowCircumambulations}
-            >
-              {t("dirview.circum")}
-            </Button>
+            {onShowCircumambulations ? (
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                onClick={onShowCircumambulations}
+              >
+                {t("dirview.circum")}
+              </Button>
+            ) : null}
             <PrimDirSettingsSheet
               settings={settings}
               planetGlyphs={settingsPlanetGlyphs}
@@ -2933,22 +3046,28 @@ function PrimaryDirectionsPanel({
               }
               onPatch={onPatchSettings}
             />
+            <TextExportActions
+              disabled={!rows.length}
+              buildDocument={primaryExportDocument}
+            />
           </div>
         </div>
         <div className={LIST_PANE_CLASSES.controlRow}>
-          <ListSegmentedControl
-            label={t("dirview.mode")}
-            options={primaryModeOptions}
-            value={mode}
-            onChange={(v) => {
-              setMode(v);
-              setAgeWindow(null);
-              setTargetAgeRange(null);
-              setTargetAgeSeek("exact");
-              setAgeSeek("exact");
-              setYear(null);
-            }}
-          />
+          {!lockMode ? (
+            <ListSegmentedControl
+              label={t("dirview.mode")}
+              options={primaryModeOptions}
+              value={mode}
+              onChange={(v) => {
+                setMode(v);
+                setAgeWindow(null);
+                setTargetAgeRange(null);
+                setTargetAgeSeek("exact");
+                setAgeSeek("exact");
+                setYear(null);
+              }}
+            />
+          ) : null}
           <ListSegmentedControl
             label={t("dirview.direction")}
             options={directionOptions}
@@ -2968,6 +3087,12 @@ function PrimaryDirectionsPanel({
             <YearStepper
               year={year ?? payload?.meta.solarRevolutionYear ?? null}
               onChange={(y) => setYear(y)}
+            />
+          ) : null}
+          {isReturnMode ? (
+            <NatalParticipatorsToggle
+              active={showNatalPromissors}
+              onToggle={() => onPatchSettings({ pdrevshownatalpromissors: !showNatalPromissors })}
             />
           ) : null}
           <RectificationStepper
@@ -3030,7 +3155,6 @@ function PrimaryDirectionsPanel({
                     initialFocus={i === focusIndex}
                     rowIndex={i}
                     menuExtras={primaryMenuExtras}
-                    saveMenu={primarySaveMenu}
                     pdInChartEnabled={mode === "radix"}
                     glyphColorRows={glyphColorRows}
                     columnOrder={primaryColumnOrder}
@@ -3084,13 +3208,34 @@ function YearStepper({
   );
 }
 
+function TemporalHighlightedTableRow({
+  temporal,
+  style,
+  onClick,
+  ...props
+}: React.ComponentProps<typeof TableRow> & {
+  temporal?: TemporalRowMeta | null;
+}) {
+  const temporalHighlight = useTemporalRowHighlight(temporal);
+  return (
+    <TableRow
+      {...props}
+      {...temporalHighlight.dataAttributes}
+      style={{ ...style, ...temporalHighlight.style }}
+      onClick={(event) => {
+        onClick?.(event);
+        temporalHighlight.onClick?.(event);
+      }}
+    />
+  );
+}
+
 function PrimaryRowCells({
   row,
   documentId,
   initialFocus,
   rowIndex,
   menuExtras,
-  saveMenu,
   pdInChartEnabled,
   glyphColorRows,
   columnOrder,
@@ -3102,7 +3247,6 @@ function PrimaryRowCells({
   initialFocus: boolean;
   rowIndex: number;
   menuExtras: () => React.ReactNode;
-  saveMenu: () => React.ReactNode;
   pdInChartEnabled: boolean;
   glyphColorRows: boolean;
   columnOrder: readonly PrimaryDirectionColumnKey[];
@@ -3208,9 +3352,9 @@ function PrimaryRowCells({
           {menuExtras()}
         </>
       }
-      afterTimedItems={saveMenu()}
     >
-      <TableRow
+      <TemporalHighlightedTableRow
+        temporal={row.temporal}
         className={DIRECTION_ROW_CLASS}
         data-initial-focus={initialFocus || undefined}
         data-row-index={rowIndex}
@@ -3221,7 +3365,7 @@ function PrimaryRowCells({
         {columnOrder.map((columnKey) => (
           <React.Fragment key={columnKey}>{renderCell(columnKey)}</React.Fragment>
         ))}
-      </TableRow>
+      </TemporalHighlightedTableRow>
     </TimedChartContextMenu>
   );
 }
@@ -3299,8 +3443,12 @@ type SecondaryDirectionsViewState = {
 
 const secondaryDirectionsViewStateCache = new Map<string, SecondaryDirectionsViewState>();
 
-function secondaryDirectionsViewStateKey(documentId: string, initialMethod: SecondaryMethod): string {
-  return `${documentId}:${initialMethod}`;
+function secondaryDirectionsViewStateKey(
+  documentId: string,
+  initialMethod: SecondaryMethod,
+  includeTemporal: boolean,
+): string {
+  return `${documentId}:${initialMethod}:temporal-${includeTemporal ? "yes" : "no"}`;
 }
 
 function SecondaryDirectionsPanel({
@@ -3310,6 +3458,8 @@ function SecondaryDirectionsPanel({
   cursorDocumentId,
   focusDatetime,
   initialMethod,
+  includeTemporal,
+  lockMethod,
   radixRefreshSeq,
   active,
   onRectificationStepStart,
@@ -3323,6 +3473,8 @@ function SecondaryDirectionsPanel({
   cursorDocumentId?: string;
   focusDatetime?: string;
   initialMethod: SecondaryMethod;
+  includeTemporal: boolean;
+  lockMethod: boolean;
   radixRefreshSeq: number;
   active: boolean;
   onRectificationStepStart: () => void;
@@ -3331,7 +3483,6 @@ function SecondaryDirectionsPanel({
   rowHeight: number;
 }) {
   const t = useT();
-  const tf = useTFallback();
   const rowHeightRef = React.useRef(rowHeight);
   React.useLayoutEffect(() => {
     rowHeightRef.current = rowHeight;
@@ -3355,8 +3506,8 @@ function SecondaryDirectionsPanel({
   const [fallbackFocusDatetime] = React.useState(localWallclockIso);
   const effectiveFocusDatetime = focusDatetime ?? fallbackFocusDatetime;
   const viewStateKey = React.useMemo(
-    () => secondaryDirectionsViewStateKey(documentId, initialMethod),
-    [documentId, initialMethod],
+    () => secondaryDirectionsViewStateKey(documentId, initialMethod, includeTemporal),
+    [documentId, includeTemporal, initialMethod],
   );
   const cachedViewState = React.useMemo(
     () => secondaryDirectionsViewStateCache.get(viewStateKey) ?? null,
@@ -3376,6 +3527,44 @@ function SecondaryDirectionsPanel({
   const [stationsOnly, setStationsOnly] = React.useState(
     cachedViewState?.stationsOnly ?? false,
   );
+  const secondaryPreferences = useWorkspaceStore((s) =>
+    s.secondaryProgressionsPreferencesByDocument[documentId] ??
+    s.sidebarListPreferenceDefaults?.secondaryProgressions ?? null,
+  );
+  const persistSecondaryPreferences = useWorkspaceStore(
+    (s) => s.setSecondaryProgressionsPreferences,
+  );
+  const selectedPlanetIds = secondaryPreferences?.planetIds ?? null;
+  const selectedAspectIds = secondaryPreferences?.aspectIds ??
+    SECONDARY_DEFAULT_ASPECT_FILTER_IDS;
+  const filterDrawerOpen = secondaryPreferences?.filterDrawerOpen ?? false;
+  const fallbackPlanetFilterItems = React.useMemo(() => {
+    const keys = [
+      "primdir.planetSun", "primdir.planetMoon", "primdir.planetMercury",
+      "primdir.planetVenus", "primdir.planetMars", "primdir.planetJupiter",
+      "primdir.planetSaturn", "primdir.planetUranus", "primdir.planetNeptune",
+      "primdir.planetPluto", "primdir.planetAscNode", "primdir.planetDscNode",
+    ];
+    return keys.map((key, id) => ({ id, label: t(key), glyph: PLANET_GLYPH_SEQUENCE[id] }));
+  }, [t]);
+  const fallbackAspectFilterItems = React.useMemo(() => {
+    const keys = [
+      "primdir.aspectConjunction", "primdir.aspectSemisextile",
+      "primdir.aspectSemisquare", "primdir.aspectSextile",
+      "primdir.aspectQuintile", "primdir.aspectSquare", "primdir.aspectTrine",
+      "primdir.aspectSesquisquare", "primdir.aspectBiquintile",
+      "primdir.aspectQuincunx", "primdir.aspectOpposition", "primdir.aspectSeptile",
+    ];
+    return keys.map((key, id) => ({ id, label: t(key), glyph: ASPECT_GLYPHS[id] }));
+  }, [t]);
+  const reportTemporalLens = useTemporalConfluenceLensReporter();
+  React.useEffect(() => {
+    reportTemporalLens({
+      method,
+      direction: directionMode,
+      stationsOnly,
+    });
+  }, [directionMode, method, reportTemporalLens, stationsOnly]);
   const [requestFocusDatetime, setRequestFocusDatetime] = React.useState(initialRequestFocusDatetime);
   const [targetAgeRange, setTargetAgeRange] = React.useState<AgeRange | null>(
     cachedViewState?.targetAgeRange ?? null,
@@ -3423,8 +3612,9 @@ function SecondaryDirectionsPanel({
         directionMode,
         optionsRefreshKey,
         radixRefreshSeq,
+        includeTemporal,
       }),
-    [directionMode, documentId, method, optionsRefreshKey, radixRefreshSeq, source, sourceName],
+    [directionMode, documentId, includeTemporal, method, optionsRefreshKey, radixRefreshSeq, source, sourceName],
   );
   const [store, setStore] = React.useState<SecondaryStitchStore | null>(() => {
     const cached = getCachedListPayload<SecondaryStitchStore>(SECONDARY_STITCHED_CACHE, stitchKey);
@@ -3444,6 +3634,8 @@ function SecondaryDirectionsPanel({
   const methodRef = React.useRef(method);
   const directionModeRef = React.useRef(directionMode);
   const stationsOnlyRef = React.useRef(stationsOnly);
+  const selectedPlanetIdsRef = React.useRef(selectedPlanetIds);
+  const selectedAspectIdsRef = React.useRef(selectedAspectIds);
   const requestFocusDatetimeRef = React.useRef(requestFocusDatetime);
   const targetAgeRangeRef = React.useRef(targetAgeRange);
   const targetAgeSeekRef = React.useRef(targetAgeSeek);
@@ -3464,6 +3656,12 @@ function SecondaryDirectionsPanel({
   React.useEffect(() => {
     stationsOnlyRef.current = stationsOnly;
   }, [stationsOnly]);
+  React.useEffect(() => {
+    selectedPlanetIdsRef.current = selectedPlanetIds;
+  }, [selectedPlanetIds]);
+  React.useEffect(() => {
+    selectedAspectIdsRef.current = selectedAspectIds;
+  }, [selectedAspectIds]);
   React.useEffect(() => {
     requestFocusDatetimeRef.current = requestFocusDatetime;
   }, [requestFocusDatetime]);
@@ -3572,6 +3770,7 @@ function SecondaryDirectionsPanel({
         ...(island.window
           ? { startAge: island.window.start, endAge: island.window.end }
           : { referenceDatetime: requestFocusDatetime }),
+        includeTemporal,
       },
       controller.signal,
     )
@@ -3605,6 +3804,8 @@ function SecondaryDirectionsPanel({
           coverage,
           islandNonce: island.nonce,
           meta: data.meta,
+          coverageAuthoritative: !data.meta.truncated,
+          temporalCoverage: authoritativeTemporalCoverage(data.meta.temporalCoverage),
         };
         React.startTransition(() => {
           setStore(next);
@@ -3632,7 +3833,7 @@ function SecondaryDirectionsPanel({
         initialInFlightRef.current = false;
       }
     };
-  }, [stitchKey, island, sourceName, source, documentId, method, directionMode, requestFocusDatetime]);
+  }, [stitchKey, island, sourceName, source, documentId, method, directionMode, requestFocusDatetime, includeTemporal]);
 
   // Grow coverage by one adjacent chunk. Append never moves the viewport;
   // prepend schedules a scroll compensation consumed before paint.
@@ -3665,6 +3866,7 @@ function SecondaryDirectionsPanel({
         documentId,
         startAge: span.start,
         endAge: span.end,
+        includeTemporal,
       })
         .then((data) => {
           if (worldSeqRef.current !== worldSeq) return;
@@ -3689,14 +3891,26 @@ function SecondaryDirectionsPanel({
           const nextStore: SecondaryStitchStore = {
             ...next,
             meta: base.meta,
+            coverageAuthoritative: base.coverageAuthoritative && !data.meta.truncated,
+            temporalCoverage: data.meta.truncated
+              ? base.temporalCoverage
+              : mergeContiguousTemporalCoverage(
+                  base.temporalCoverage,
+                  data.meta.temporalCoverage,
+                ),
           };
           if (prependedCount > 0) {
-            const visibleCount = visiblePrependedRowCount(
-              nextStore.rows,
-              prependedCount,
-              stationsOnlyRef.current ? SECONDARY_STATION_FILTER_IDS : null,
-              secondaryStationFilterKey,
-            );
+            const selectedPlanets = selectedPlanetIdsRef.current;
+            const planets = new Set(selectedPlanets ?? []);
+            const aspects = new Set(selectedAspectIdsRef.current);
+            const visibleCount = nextStore.rows.slice(0, prependedCount).filter((row) => {
+              if (
+                stationsOnlyRef.current &&
+                !SECONDARY_STATION_FILTER_IDS.includes(secondaryStationFilterKey(row))
+              ) return false;
+              return (row.fields.promPlanet == null || selectedPlanets == null || planets.has(row.fields.promPlanet)) &&
+                (row.fields.aspectIndex == null || aspects.has(row.fields.aspectIndex));
+            }).length;
             scrollPlanRef.current =
               visibleCount > 0 ? { kind: "prepend", count: visibleCount } : null;
           }
@@ -3713,7 +3927,7 @@ function SecondaryDirectionsPanel({
           extendInFlightRef.current = false;
         });
     },
-    [directionMode, documentId, method, source, sourceName],
+    [directionMode, documentId, includeTemporal, method, source, sourceName],
   );
 
   // Idle prefetch until the island's neighbourhood is covered: secondary is
@@ -3740,15 +3954,38 @@ function SecondaryDirectionsPanel({
   }, [store, method, extendCoverage]);
 
   const sourceRows = React.useMemo(() => store?.rows ?? [], [store]);
+  const planetFilterItems: Array<{ id: number; label: string; glyph?: string }> =
+    (store?.meta.filterPlanets ?? fallbackPlanetFilterItems).map((item) => ({
+      ...item,
+      glyph: item.glyph ?? undefined,
+    }));
+  const aspectFilterItems = fallbackAspectFilterItems;
   const rows = React.useMemo(
-    () =>
-      filterRetainedRows(
+    () => {
+      const stationRows = filterRetainedRows(
         sourceRows,
         stationsOnly ? SECONDARY_STATION_FILTER_IDS : null,
         secondaryStationFilterKey,
-      ),
-    [sourceRows, stationsOnly],
+      );
+      const planets = new Set(selectedPlanetIds ?? []);
+      const aspects = new Set(selectedAspectIds);
+      return stationRows.filter((row) => {
+        const prom = row.fields.promPlanet;
+        const aspect = row.fields.aspectIndex;
+        return (prom == null || selectedPlanetIds == null || planets.has(prom)) &&
+          (aspect == null || aspects.has(aspect));
+      });
+    },
+    [selectedAspectIds, selectedPlanetIds, sourceRows, stationsOnly],
   );
+  const temporalCoverage = React.useMemo(
+    () =>
+      store?.temporalCoverage
+      ?? authoritativeTemporalCoverage(store?.meta.temporalCoverage)
+      ?? temporalCoverageFromRows(sourceRows, store?.coverageAuthoritative === true),
+    [sourceRows, store?.coverageAuthoritative, store?.meta, store?.temporalCoverage],
+  );
+  useTemporalConfluenceRows(rows, temporalCoverage);
   const rowKeys = React.useMemo(() => buildStableRowKeys(rows, secondaryStitchRowKey), [rows]);
   const secondaryDefaultColumns = React.useMemo(
     () => [
@@ -3808,12 +4045,20 @@ function SecondaryDirectionsPanel({
     () => directionFocusTargetMs(rows, effectiveFocusDatetime, (row) => row.eventDatetime ?? row.date),
     [effectiveFocusDatetime, rows],
   );
+  const pinnedTemporalRowId = useTemporalPinnedRowId();
   const focusIndex = React.useMemo(
-    () =>
-      targetAgeRange
+    () => {
+      if (pinnedTemporalRowId) {
+        const pinnedIndex = rows.findIndex(
+          (row) => row.temporal?.rowId === pinnedTemporalRowId,
+        );
+        if (pinnedIndex >= 0) return pinnedIndex;
+      }
+      return targetAgeRange
         ? ageRangeTargetIndex(rows, targetAgeRange, (row) => row.age, targetAgeSeek)
-        : nearestDateIndex(rows, focusTargetMs, (row) => row.eventDatetime ?? row.date),
-    [focusTargetMs, rows, targetAgeRange, targetAgeSeek],
+        : nearestDateIndex(rows, focusTargetMs, (row) => row.eventDatetime ?? row.date);
+    },
+    [focusTargetMs, pinnedTemporalRowId, rows, targetAgeRange, targetAgeSeek],
   );
   useFixedRowHeightAnchor(scrollerRef, rows.length, rowHeight, {
     enabled: active,
@@ -3884,6 +4129,23 @@ function SecondaryDirectionsPanel({
     stationsOnlyRef.current = next;
     setStationsOnly(next);
   }, [rows]);
+  const setSecondaryPreferences = React.useCallback((patch: {
+    planetIds?: number[] | null;
+    aspectIds?: number[];
+    filterDrawerOpen?: boolean;
+  }) => {
+    const anchorIndex = scrollAnchorRowIndex(
+      scrollerRef.current,
+      rows.length,
+      SECONDARY_FOCUS_ANCHOR,
+      rowHeightRef.current,
+    );
+    const anchorRow = anchorIndex >= 0 ? rows[anchorIndex] : null;
+    stationFilterAnchorMsRef.current = anchorRow
+      ? parseDateMs(anchorRow.eventDatetime ?? anchorRow.date)
+      : null;
+    persistSecondaryPreferences(documentId, patch);
+  }, [documentId, persistSecondaryPreferences, rows]);
   useEdgeExtend({
     scrollerRef,
     rowCount: rows.length,
@@ -3917,9 +4179,11 @@ function SecondaryDirectionsPanel({
 
   // Focus anchoring fires only when the focus TARGET changes (live follow,
   // pager jump, island swap, tab activation) — never because coverage grew.
-  const focusSignature = targetAgeRange
-    ? `age:${targetAgeRange.start}:${targetAgeRange.end}:${targetAgeSeek}`
-    : `ms:${focusTargetMs}`;
+  const focusSignature = pinnedTemporalRowId
+    ? `temporal:${pinnedTemporalRowId}`
+    : targetAgeRange
+      ? `age:${targetAgeRange.start}:${targetAgeRange.end}:${targetAgeSeek}`
+      : `ms:${focusTargetMs}`;
   const islandSignature = store ? `${store.islandNonce}` : "empty";
   React.useLayoutEffect(() => {
     if (!active || rowCountRef.current === 0) return undefined;
@@ -3963,7 +4227,7 @@ function SecondaryDirectionsPanel({
       SECONDARY_FOCUS_ANCHOR,
       rowHeightRef.current,
     );
-  }, [active, rows, stationsOnly]);
+  }, [active, rows, selectedAspectIds, selectedPlanetIds, stationsOnly]);
 
   const secondaryMenuBefore = React.useCallback(
     (eventDatetime: string | null, sessionLabel: string) => (
@@ -4001,7 +4265,7 @@ function SecondaryDirectionsPanel({
     [ageRanges, applyTimedChartOpenResult, documentId, jumpToAgeAnchor, t, visibleAgeAnchorIdx],
   );
 
-  const secondaryMenuAfter = React.useCallback(
+  const secondaryRowMenu = React.useCallback(
     (row: SecondaryDirectionsPayload["directions"][number]) => {
       // wx onCopyTime (secdirframe.py:1218) copies 'YYYY-MM-DD HH:MM:SS' from
       // the refined display tuple — the daemon serializes date/time from that
@@ -4020,97 +4284,63 @@ function SecondaryDirectionsPanel({
           >
             {t("dirview.copyTimeDate")}
           </ContextMenuItem>
-          <ContextMenuItem
-            disabled={!rows.length}
-            onClick={() => {
-              // Rendered PDF of the visible secondary list (wx commonwnd
-              // SaveAsBitmap parity; secdirframe subclasses CommonWnd). Columns
-              // mirror the on-screen table — Age, optional Dir, Prom., Asp.,
-              // Sig., Date.
-              void exportAdHocTablePdf({
-                title: store?.meta.title ?? t("dirview.secondaryDirections"),
-                fileStem: "secondary-directions",
-                columns: secondaryColumnOrder.map((columnKey) => ({
-                  label: secondaryColumnLabels[columnKey],
-                  align: columnKey === "age" ? "right" : columnKey === "date" ? "center" : "left",
-                  width: columnKey === "direction" ? 0.8 : columnKey === "aspect" ? 1.1 : columnKey === "date" ? 1.8 : 1.4,
-                })),
-                rows: rows.map((row): GenericTableCell[] =>
-                  secondaryColumnOrder.map((columnKey): GenericTableCell => {
-                    switch (columnKey) {
-                      case "age":
-                        return { text: row.age != null ? String(row.age) : "" };
-                      case "direction":
-                        return { text: row.motionCode ?? "" };
-                      case "prom":
-                        return directionGlyphPdfCell(
-                          row.prom,
-                          row.fields.promGlyph,
-                          row.fields.promColor,
-                          row.fields.promColorRole,
-                          glyphColorRows,
-                        );
-                      case "aspect":
-                        return directionGlyphPdfCell(
-                          row.aspect,
-                          row.fields.aspectGlyph,
-                          row.fields.aspectColor,
-                          row.fields.aspectColorRole,
-                          glyphColorRows,
-                        );
-                      case "sig":
-                        return directionGlyphPdfCell(
-                          row.sig,
-                          row.fields.sigGlyph,
-                          row.fields.sigColor,
-                          row.fields.sigColorRole,
-                          glyphColorRows,
-                        );
-                      case "date":
-                        return { text: secondaryRowDateLabel(row) };
-                    }
-                  }),
-                ),
-              }).catch(() => {});
-            }}
-          >
-            {t("dirview.saveAsPdf")}
-          </ContextMenuItem>
-          <ContextMenuItem
-            disabled={!rows.length}
-            onClick={() => {
-              // wx onSaveAsText (secdirframe.py:1237) — the file body is built
-              // by the daemon/engine, never assembled in the skin.
-              void fetchSecondaryDirectionsText(sourceName, {
-                method,
-                direction: directionMode,
-                source,
-                documentId,
-                ...(storeRef.current
-                  ? {
-                      startAge: storeRef.current.coverage.start,
-                      endAge: storeRef.current.coverage.end,
-                    }
-                  : { referenceDatetime: requestFocusDatetime }),
-                stationsOnly,
-              })
-                .then((result) =>
-                  saveTextFile(
-                    result.filename || "secondary-directions.txt",
-                    result.text,
-                    tf("dirview.exportTextDialogTitle", "Export Text..."),
-                    tf("dirview.textFilesFilter", "Text Files"),
-                  ),
-                )
-                .catch(() => {});
-            }}
-          >
-            {t("dirview.saveAsText")}
-          </ContextMenuItem>
         </>
       );
     },
-    [directionMode, documentId, glyphColorRows, method, requestFocusDatetime, rows, secondaryColumnLabels, secondaryColumnOrder, source, sourceName, stationsOnly, store, t, tf],
+    [t],
+  );
+
+  const secondaryExportDocument = React.useCallback(
+    () => buildAdHocTableExportDocument({
+      title: store?.meta.title ?? t("dirview.secondaryDirections"),
+      fileStem: "secondary-directions",
+      pdfProfile: "directions",
+      sourceName,
+      columns: secondaryColumnOrder.map((columnKey) => ({
+        label: secondaryColumnLabels[columnKey],
+        align: columnKey === "age" ? "right" as const : columnKey === "date" ? "center" as const : "left" as const,
+      })),
+      rows: rows.map((row): GenericTableCell[] =>
+        secondaryColumnOrder.map((columnKey): GenericTableCell => {
+          switch (columnKey) {
+            case "age":
+              return { text: row.age != null ? String(row.age) : "" };
+            case "direction":
+              return { text: row.motionCode ?? "" };
+            case "prom":
+              return directionGlyphTextCell(
+                row.prom,
+                row.fields.promGlyph,
+                row.fields.promColor,
+                row.fields.promColorRole,
+                glyphColorRows,
+                directionPointExportSymbol(row.fields.promExportSymbolText, row.prom),
+              );
+            case "aspect":
+              return directionGlyphTextCell(
+                row.aspect,
+                row.fields.aspectGlyph,
+                row.fields.aspectColor,
+                row.fields.aspectColorRole,
+                glyphColorRows,
+                row.fields.aspectExportSymbolText ?? undefined,
+              );
+            case "sig":
+              return directionGlyphTextCell(
+                row.sig,
+                row.fields.sigGlyph,
+                row.fields.sigColor,
+                row.fields.sigColorRole,
+                glyphColorRows,
+                directionPointExportSymbol(row.fields.sigExportSymbolText, row.sig),
+              );
+            case "date":
+              return { text: secondaryRowDateLabel(row) };
+          }
+        }),
+      ),
+    }),
+    [glyphColorRows, rows, secondaryColumnLabels, secondaryColumnOrder, sourceName, store, t],
   );
 
   const renderSecondaryCell = React.useCallback(
@@ -4196,26 +4426,34 @@ function SecondaryDirectionsPanel({
               </span>
             ) : null}
           </div>
-          <LiveHoverSummary
-            value={hoverSummary ?? (loading
-              ? t("dirview.computing")
-              : "")}
-          />
+          <div className="flex min-w-0 items-center gap-2">
+            <LiveHoverSummary
+              value={hoverSummary ?? (loading
+                ? t("dirview.computing")
+                : "")}
+            />
+            <TextExportActions
+              disabled={!rows.length}
+              buildDocument={secondaryExportDocument}
+            />
+          </div>
         </div>
         <div className={LIST_PANE_CLASSES.controlRow}>
-          <ListSegmentedControl
-            label={t("dirview.method")}
-            options={secondaryMethodOptions}
-            value={method}
-            onChange={(v) => {
-              setMethod(v);
-              setRequestFocusDatetime(effectiveFocusDatetime);
-              setTargetAgeRange(null);
-              setTargetAgeSeek("exact");
-              setAgeRangePageStart(0);
-              setIsland((prev) => ({ nonce: prev.nonce + 1, window: null }));
-            }}
-          />
+          {!lockMethod ? (
+            <ListSegmentedControl
+              label={t("dirview.method")}
+              options={secondaryMethodOptions}
+              value={method}
+              onChange={(v) => {
+                setMethod(v);
+                setRequestFocusDatetime(effectiveFocusDatetime);
+                setTargetAgeRange(null);
+                setTargetAgeSeek("exact");
+                setAgeRangePageStart(0);
+                setIsland((prev) => ({ nonce: prev.nonce + 1, window: null }));
+              }}
+            />
+          ) : null}
           <ListSegmentedControl
             label={t("dirview.direction")}
             options={secondaryDirectionModes}
@@ -4238,6 +4476,17 @@ function SecondaryDirectionsPanel({
           >
             {t("dirview.stationsOnly")}
           </Button>
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            aria-expanded={filterDrawerOpen}
+            onClick={() => setSecondaryPreferences({
+              filterDrawerOpen: !filterDrawerOpen,
+            })}
+          >
+            {t("search.filter")}
+          </Button>
           <AgeRangePager
             ranges={ageRanges}
             value={visibleAgeAnchorIdx}
@@ -4255,6 +4504,124 @@ function SecondaryDirectionsPanel({
           />
           <ListLayoutPresetControl />
         </div>
+        {filterDrawerOpen ? (
+          <div className="border-t border-border/70 pt-2">
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-2">
+                <div className="flex min-w-0 items-center justify-between gap-[var(--aries-control-gap)]">
+                  <span className="min-w-14 text-[length:var(--aries-font-size-section)] text-muted-foreground">
+                    {t("tlview.planets")}
+                  </span>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant="ghost"
+                      className="px-[var(--aries-control-gap)]"
+                      disabled={Array.isArray(selectedPlanetIds) && selectedPlanetIds.length === 0}
+                      onClick={() => setSecondaryPreferences({ planetIds: [] })}
+                    >
+                      {t("listFilters.deselectAll")}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant="ghost"
+                      className="px-[var(--aries-control-gap)]"
+                      disabled={selectedPlanetIds == null}
+                      onClick={() => setSecondaryPreferences({ planetIds: null })}
+                    >
+                      {t("listFilters.selectAll")}
+                    </Button>
+                  </div>
+                </div>
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                  {planetFilterItems.map((item) => {
+                    const selected = selectedPlanetIds == null || selectedPlanetIds.includes(item.id);
+                    return (
+                      <Button
+                        key={item.id}
+                        type="button"
+                        size="xs"
+                        variant={selected ? "default" : "outline"}
+                        aria-pressed={selected}
+                        onClick={() => setSecondaryPreferences({
+                          planetIds: selected
+                            ? (selectedPlanetIds ?? planetFilterItems.map((choice) => choice.id))
+                                .filter((id) => id !== item.id)
+                            : [...(selectedPlanetIds ?? []), item.id],
+                        })}
+                        className="h-6 max-w-44 justify-start gap-1 px-2 text-[length:var(--aries-font-size-small)]"
+                      >
+                        {item.glyph ? <Glyph ch={item.glyph} /> : null}
+                        <span className="truncate">{item.label}</span>
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+              <section className="grid gap-[var(--aries-control-gap)]">
+                <div className="flex flex-wrap items-center justify-between gap-[var(--aries-control-gap)]">
+                  <span className="mr-1 min-w-14 text-[length:var(--aries-font-size-section)] text-muted-foreground">
+                    {t("search.aspects")}
+                  </span>
+                  <div className="flex flex-wrap items-center justify-end gap-[var(--aries-control-gap-compact)]">
+                    <Button type="button" size="xs" variant="ghost" className="px-[var(--aries-control-gap)]" onClick={() => setSecondaryPreferences({
+                      aspectIds: aspectFilterItems.map((item) => item.id),
+                    })}>
+                      {t("search.all")}
+                    </Button>
+                    <Button type="button" size="xs" variant="ghost" className="px-[var(--aries-control-gap)]" onClick={() => setSecondaryPreferences({
+                      aspectIds: [...SECONDARY_MAJOR_ASPECT_FILTER_IDS],
+                    })}>
+                      {t("search.major")}
+                    </Button>
+                    <Button type="button" size="xs" variant="ghost" className="px-[var(--aries-control-gap)]" onClick={() => setSecondaryPreferences({ aspectIds: [] })}>
+                      {t("search.clear")}
+                    </Button>
+                  </div>
+                </div>
+                <div
+                  className="grid w-full overflow-hidden rounded-md border border-border"
+                  style={{
+                    gridTemplateColumns: `repeat(${aspectFilterItems.length}, minmax(0, 1fr))`,
+                  }}
+                >
+                  {aspectFilterItems.map((aspect, index) => {
+                    const selected = selectedAspectIds.includes(aspect.id);
+                    return (
+                      <Tooltip key={aspect.id}>
+                        <TooltipTrigger
+                          render={
+                            <button
+                              type="button"
+                              aria-label={aspect.label}
+                              aria-pressed={selected}
+                              onClick={() => setSecondaryPreferences({
+                                aspectIds: selected
+                                  ? selectedAspectIds.filter((id) => id !== aspect.id)
+                                  : [...selectedAspectIds, aspect.id],
+                              })}
+                              className={cn(
+                                "flex h-6 items-center justify-center text-[length:var(--aries-font-size-control)]",
+                                LIST_ROW_CLASSES.hover,
+                                index !== aspectFilterItems.length - 1 && "border-r border-border",
+                                selected && "bg-primary/20 text-primary",
+                              )}
+                            />
+                          }
+                        >
+                          <Glyph ch={aspect.glyph} />
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">{aspect.label}</TooltipContent>
+                      </Tooltip>
+                    );
+                  })}
+                </div>
+              </section>
+            </div>
+          </div>
+        ) : null}
       </div>
       <div ref={scrollerRef} className="flex-1 min-h-0 overflow-auto">
         {error ? (
@@ -4299,9 +4666,10 @@ function SecondaryDirectionsPanel({
                     eventDatetime={row.eventDatetime}
                     sessionLabel={row.sessionLabel}
                     beforeTimedItems={secondaryMenuBefore(row.eventDatetime, row.sessionLabel)}
-                    afterTimedItems={secondaryMenuAfter(row)}
+                    afterTimedItems={secondaryRowMenu(row)}
                   >
-                    <TableRow
+                    <TemporalHighlightedTableRow
+                      temporal={row.temporal}
                       className={DIRECTION_ROW_CLASS}
                       data-initial-focus={i === focusIndex || undefined}
                       data-row-index={i}
@@ -4314,7 +4682,7 @@ function SecondaryDirectionsPanel({
                           {renderSecondaryCell(row, columnKey)}
                         </React.Fragment>
                       ))}
-                    </TableRow>
+                    </TemporalHighlightedTableRow>
                   </TimedChartContextMenu>
               )}
             />
@@ -4362,6 +4730,8 @@ function CircumambulationPanel({
   openSeq,
   initialMode,
   customSignificator,
+  includeTemporal,
+  lockMode,
   radixRefreshSeq,
   active,
   onRectificationStepStart,
@@ -4378,12 +4748,14 @@ function CircumambulationPanel({
   openSeq?: number;
   initialMode: Mode;
   customSignificator?: DirectionCustomSignificator | null;
+  includeTemporal: boolean;
+  lockMode: boolean;
   radixRefreshSeq: number;
   active: boolean;
   onRectificationStepStart: () => void;
   onRectificationCommitted: () => void;
   onRectificationSettled: () => void;
-  onShowPrimaryDirections: () => void;
+  onShowPrimaryDirections?: () => void;
   rowHeight: number;
 }) {
   const t = useT();
@@ -4406,19 +4778,29 @@ function CircumambulationPanel({
     ],
     [t],
   );
+  const circumPromissorOptions = React.useMemo(
+    () => [
+      { value: 0, label: t("dirview.followPd") },
+      { value: 1, label: t("dirview.traditional") },
+    ],
+    [t],
+  );
   const initialCustomSignificatorKey = customSignificatorCacheKey(customSignificator);
   const initialPayloadCacheKey = listCacheKey({
     documentId,
     sourceName,
     source,
     useExactOa: 0,
+    promissorProfile: 0,
     maxAge: 150,
     mode: initialMode,
     year: null,
     focusDatetime,
     customSignificator: initialCustomSignificatorKey,
+    includeTemporal,
   });
   const [useExactOa, setUseExactOa] = React.useState<number>(0); // 0=ascensional,1=use PD
+  const [promissorProfile, setPromissorProfile] = React.useState<number>(0); // 0=follow PD,1=traditional
   const [mode, setMode] = React.useState<Mode>(initialMode);
   const [year, setYear] = React.useState<number | null>(null);
   const [maxAge, setMaxAge] = React.useState(150);
@@ -4440,6 +4822,15 @@ function CircumambulationPanel({
   const [selectedSignificator, setSelectedSignificator] = React.useState<DirectionCustomSignificator | null>(
     () => customSignificator ?? null,
   );
+  const reportTemporalLens = useTemporalConfluenceLensReporter();
+  React.useEffect(() => {
+    if (!settings) return;
+    reportTemporalLens({
+      useExactOa: useExactOa === 1,
+      mode,
+      ...(selectedSignificator ? { customSignificator: selectedSignificator } : {}),
+    });
+  }, [mode, reportTemporalLens, selectedSignificator, settings, useExactOa]);
   const [significatorDrawerOpen, setSignificatorDrawerOpen] = React.useState(false);
   const [hoverSummary, setHoverSummary] = React.useState<string | null>(null);
   const scrollerRef = React.useRef<HTMLDivElement | null>(null);
@@ -4460,6 +4851,7 @@ function CircumambulationPanel({
         sourceName,
         source,
         useExactOa,
+        promissorProfile,
         maxAge,
         mode,
         year,
@@ -4467,8 +4859,9 @@ function CircumambulationPanel({
         optionsRefreshKey,
         radixRefreshSeq,
         customSignificator: selectedSignificatorKey,
+        includeTemporal,
       }),
-    [documentId, focusDatetime, maxAge, mode, optionsRefreshKey, radixRefreshSeq, selectedSignificatorKey, source, sourceName, useExactOa, year],
+    [documentId, focusDatetime, includeTemporal, maxAge, mode, optionsRefreshKey, promissorProfile, radixRefreshSeq, selectedSignificatorKey, source, sourceName, useExactOa, year],
   );
 
   React.useEffect(() => {
@@ -4499,6 +4892,7 @@ function CircumambulationPanel({
         setSettingsMeanNode(o.planetsPoints.meannode);
         setSettingsPlanetGlyphs(primarySettingsPlanetGlyphs(o.catalog));
         setUseExactOa(o.primaryDirections.pdcircumoa === 1 ? 1 : 0);
+        setPromissorProfile(o.primaryDirections.pdcircumprommode === 1 ? 1 : 0);
         setGlyphColorRows(!!o.primaryDirections.pdlistglyphcolors);
         setCircumSignColors(signElementColors(o.colors));
       })
@@ -4511,6 +4905,7 @@ function CircumambulationPanel({
     setSettingsMeanNode,
     onCommitted: React.useCallback((o: OptionsPatchPayload) => {
       setUseExactOa(o.primaryDirections.pdcircumoa === 1 ? 1 : 0);
+      setPromissorProfile(o.primaryDirections.pdcircumprommode === 1 ? 1 : 0);
       setGlyphColorRows(!!o.primaryDirections.pdlistglyphcolors);
       setCircumSignColors(signElementColors(o.colors));
     }, []),
@@ -4519,6 +4914,10 @@ function CircumambulationPanel({
     const nextCircumMethod = patch.pdcircumoa ?? optionsPatch?.primaryDirections?.pdcircumoa;
     if (nextCircumMethod != null) {
       setUseExactOa(nextCircumMethod === 1 ? 1 : 0);
+    }
+    const nextPromissorProfile = patch.pdcircumprommode ?? optionsPatch?.primaryDirections?.pdcircumprommode;
+    if (nextPromissorProfile != null) {
+      setPromissorProfile(nextPromissorProfile === 1 ? 1 : 0);
     }
     if (patch.pdlistglyphcolors != null || optionsPatch?.primaryDirections?.pdlistglyphcolors != null) {
       setGlyphColorRows(!!(patch.pdlistglyphcolors ?? optionsPatch?.primaryDirections?.pdlistglyphcolors));
@@ -4530,6 +4929,12 @@ function CircumambulationPanel({
     const normalized = value === 1 ? 1 : 0;
     setUseExactOa(normalized);
     void patchOptions({ primaryDirections: { pdcircumoa: normalized } }).catch(() => {});
+  }, []);
+
+  const setCircumPromissorProfile = React.useCallback((value: number) => {
+    const normalized = value === 1 ? 1 : 0;
+    setPromissorProfile(normalized);
+    void patchOptions({ primaryDirections: { pdcircumprommode: normalized } }).catch(() => {});
   }, []);
 
   const captureRectificationViewport = React.useCallback(() => {
@@ -4554,6 +4959,7 @@ function CircumambulationPanel({
       sourceName,
       {
         useExactOa: useExactOa === 1,
+        promissorProfile,
         maxAge,
         source,
         documentId,
@@ -4561,6 +4967,7 @@ function CircumambulationPanel({
         returnKind: mode === "lr" ? "lunar" : "solar",
         referenceDatetime: focusDatetime,
         customSignificator: selectedSignificator,
+        includeTemporal,
         ...(mode === "sr" && year != null ? { year } : {}),
       },
       controller.signal,
@@ -4583,10 +4990,11 @@ function CircumambulationPanel({
         }
       });
     return () => controller.abort();
-  }, [sourceName, source, documentId, useExactOa, maxAge, mode, year, focusDatetime, optionsRefreshKey, radixRefreshSeq, selectedSignificator, payloadCacheKey]);
+  }, [sourceName, source, documentId, useExactOa, promissorProfile, maxAge, mode, year, focusDatetime, optionsRefreshKey, radixRefreshSeq, selectedSignificator, includeTemporal, payloadCacheKey]);
 
   const rows = React.useMemo(() => payload?.directions ?? [], [payload]);
   const isReturnMode = mode !== "radix";
+  const showNatalPromissors = settings?.pdrevshownatalpromissors ?? payload?.meta.showNatalPromissors ?? false;
   // Flatten each term into a term-row followed by one sub-row per participating
   // planet hit, matching wx CircumWnd.set_data (circumambulationframe.py:733-776:
   // the Term-Lord row, then each Participator as its own row). Focus/age-range
@@ -4604,6 +5012,22 @@ function CircumambulationPanel({
     });
     return { displayRows: out, termFocusToDisplay: map };
   }, [rows]);
+  const temporalRows = React.useMemo(
+    () =>
+      rows.flatMap((term) =>
+        [term.temporal, ...(term.participating ?? []).map((part) => part.temporal)].filter(
+          (temporal): temporal is TemporalRowMeta => Boolean(temporal),
+        ),
+      ),
+    [rows],
+  );
+  const temporalCoverage = React.useMemo(
+    () =>
+      authoritativeTemporalCoverage(payload?.meta.temporalCoverage)
+      ?? temporalCoverageFromRows(temporalRows),
+    [payload?.meta.temporalCoverage, temporalRows],
+  );
+  useTemporalConfluenceRows(temporalRows, temporalCoverage);
   const circumDefaultColumns = React.useMemo(
     () => [
       t("dirview.degree"),
@@ -4658,155 +5082,168 @@ function CircumambulationPanel({
     [columns],
   );
   const returnLabel = payload?.meta.returnLabel;
-  const exportCircumPdf = React.useCallback(() => {
-    // Rendered PDF of the visible circumambulations list (wx commonwnd
-    // SaveAsBitmap parity; circumambulationframe subclasses CommonWnd). The
-    // flattened term/participator rows share the visible column layout, so we
-    // export it column-for-column with the daemon-resolved glyph chars.
-    const pdfRun = (
-      text: string,
-      glyph: boolean,
-      color: string | null | undefined,
-      colorRole: string | null | undefined,
-    ) => ({
-      text,
-      glyph,
-      color: glyphColorRows ? resolvedSemanticChartColor(colorRole, color) : undefined,
-    });
-    const pdfCell = (dr: CircumDisplayRow, columnKey: CircumColumnKey): GenericTableCell => {
-      switch (columnKey) {
-        case "degree":
-          if (dr.kind === "term") {
+  const circumExportDocument = React.useCallback(
+    () => {
+      const exportCell = (dr: CircumDisplayRow, columnKey: CircumColumnKey): GenericTableCell => {
+        switch (columnKey) {
+          case "degree": {
+            const signIndex = dr.kind === "term" ? dr.term.signIndex : dr.part.degreeSignIndex;
+            const degree = dr.kind === "term" ? dr.term.degreeText : dr.part.degreeText;
+            const signGlyph = dr.kind === "term" ? dr.term.signGlyph : dr.part.degreeSignGlyph;
+            const signExportSymbol = dr.kind === "term"
+              ? dr.term.signExportSymbolText
+              : dr.part.degreeSignExportSymbolText;
+            const signColor = dr.kind === "term"
+              ? listSignColor(dr.term.signColor, dr.term.signIndex, circumSignColors)
+              : listSignColor(dr.part.degreeSignColor, dr.part.degreeSignIndex, circumSignColors);
+            const semantic = [SIGN_NAMES[signIndex ?? -1] ?? "", degree ?? ""].filter(Boolean).join(" ");
+            if (!signGlyph) return { text: semantic };
+            const symbolic = [signExportSymbol ?? "", degree ?? ""]
+              .filter(Boolean)
+              .join(" ");
             return {
+              exportText: semantic,
+              exportSymbolText: symbolic || semantic,
               runs: [
-                ...(dr.term.signGlyph
-                  ? [pdfRun(
-                      dr.term.signGlyph,
-                      true,
-                      listSignColor(dr.term.signColor, dr.term.signIndex, circumSignColors),
-                      dr.term.signColorRole,
-                    )]
-                  : []),
-                ...(dr.term.degreeText ? [{ text: dr.term.signGlyph ? ` ${dr.term.degreeText}` : dr.term.degreeText }] : []),
+                {
+                  text: signGlyph,
+                  glyph: true,
+                  exportText: SIGN_NAMES[signIndex ?? -1] ?? "",
+                  exportSymbolText: signExportSymbol ?? undefined,
+                  color: glyphColorRows ? signColor ?? undefined : undefined,
+                },
+                { text: degree ? ` ${degree}` : "" },
               ],
             };
           }
-          return {
-            runs: [
-              ...(dr.part.degreeSignGlyph
-                ? [pdfRun(
-                    dr.part.degreeSignGlyph,
-                    true,
-                    listSignColor(dr.part.degreeSignColor, dr.part.degreeSignIndex, circumSignColors),
-                    dr.part.degreeSignColorRole,
-                  )]
-                : []),
-              ...(dr.part.degreeText ? [{ text: dr.part.degreeSignGlyph ? ` ${dr.part.degreeText}` : dr.part.degreeText }] : []),
-            ],
-          };
-        case "bound":
-          return dr.kind === "term"
-            ? {
-                runs: [
-                  ...(dr.term.signGlyph
-                    ? [pdfRun(
-                        dr.term.signGlyph,
-                        true,
-                        listSignColor(dr.term.signColor, dr.term.signIndex, circumSignColors),
-                        dr.term.signColorRole,
-                      )]
-                    : []),
-                  ...(dr.term.termRulerGlyph
-                    ? [
-                        { text: " " },
-                        pdfRun(
-                          dr.term.termRulerGlyph,
-                          true,
-                          dr.term.termRulerColor,
-                          dr.term.termRulerColorRole,
-                        ),
-                      ]
-                    : []),
-                  ...(!dr.term.signGlyph && !dr.term.termRulerGlyph
-                    ? [{ text: SIGN_NAMES[dr.term.signIndex ?? -1] ?? "" }]
-                    : []),
-                ],
-              }
-            : { text: "" };
-        case "participator":
-          return dr.kind === "participator"
-            ? {
-                runs: [
-                  ...(dr.part.sourceMarker
-                    ? [pdfRun(
-                        dr.part.sourceMarker,
-                        false,
-                        dr.part.planetColor,
-                        dr.part.planetColorRole,
-                      )]
-                    : []),
-                  ...(dr.part.sourceMarker && (dr.part.aspectGlyph || dr.part.planetGlyph) ? [{ text: " " }] : []),
-                  ...(dr.part.aspectGlyph
-                    ? [pdfRun(
-                        dr.part.aspectGlyph,
-                        true,
-                        dr.part.aspectColor,
-                        dr.part.aspectColorRole,
-                      )]
-                    : []),
-                  ...(dr.part.planetGlyph
-                    ? [
-                        { text: dr.part.aspectGlyph ? " " : "" },
-                        pdfRun(
-                          dr.part.planetGlyph,
-                          true,
-                          dr.part.planetColor,
-                          dr.part.planetColorRole,
-                        ),
-                      ]
-                    : [{ text: dr.part.planet != null ? String(dr.part.planet) : "" }]),
-                ],
-              }
-            : { text: "" };
-        case "age":
-          return {
-            text:
-              dr.kind === "term"
-                ? dr.term.ageStart != null ? dr.term.ageStart.toFixed(1) : ""
-                : dr.part.age != null ? dr.part.age.toFixed(1) : "",
-          };
-        case "date":
-          return { text: dr.kind === "term" ? circumTermDateLabel(dr.term) : circumParticipatorDateLabel(dr.part) };
-      }
-    };
-    void exportAdHocTablePdf({
-      title: payload?.meta.title ?? t("dirview.circumambulations"),
-      fileStem: "circumambulations",
-      columns: circumColumnOrder.map((columnKey) => ({
-        label: circumColumnLabels[columnKey],
-        align: columnKey === "age" ? "right" : "center",
-        width:
-          columnKey === "degree" ? 1.45 :
-          columnKey === "bound" ? 1.1 :
-          columnKey === "participator" ? 1.2 :
-          columnKey === "date" ? 1.55 :
-          0.8,
-      })),
-      rows: displayRows.map((dr): GenericTableCell[] =>
-        circumColumnOrder.map((columnKey) => pdfCell(dr, columnKey)),
-      ),
-    }).catch(() => {});
-  }, [circumColumnLabels, circumColumnOrder, circumSignColors, displayRows, glyphColorRows, payload, t]);
+          case "bound":
+            if (dr.kind !== "term") return { text: "" };
+            {
+              const semantic = [
+                SIGN_NAMES[dr.term.signIndex ?? -1] ?? "",
+                directionPlanetLabel(dr.term.termRulerPid, t),
+              ].filter(Boolean).join(" ");
+              const symbolic = [
+                dr.term.signExportSymbolText ?? "",
+                directionPointExportSymbol(
+                  dr.term.termRulerExportSymbolText,
+                  directionPlanetLabel(dr.term.termRulerPid, t),
+                ),
+              ].filter(Boolean).join(" ");
+              const runs = [
+                dr.term.signGlyph ? {
+                  text: dr.term.signGlyph,
+                  glyph: true,
+                  color: glyphColorRows
+                    ? listSignColor(dr.term.signColor, dr.term.signIndex, circumSignColors) ?? undefined
+                    : undefined,
+                } : null,
+                dr.term.termRulerGlyph ? {
+                  text: `${dr.term.signGlyph ? " " : ""}${dr.term.termRulerGlyph}`,
+                  glyph: true,
+                  color: glyphColorRows
+                    ? resolvedSemanticChartColor(dr.term.termRulerColorRole, dr.term.termRulerColor) ?? undefined
+                    : undefined,
+                } : null,
+              ].filter((run): run is NonNullable<typeof run> => Boolean(run));
+              return runs.length
+                ? { exportText: semantic, exportSymbolText: symbolic || semantic, runs }
+                : { text: semantic };
+            }
+          case "participator":
+            if (dr.kind !== "participator") return { text: "" };
+            {
+              const planetAlias = dr.part.planet ?? directionPlanetLabel(dr.part.planetId, t);
+              const semantic = [
+                dr.part.sourceMarker ?? "",
+                dr.part.aspectExportText ?? "",
+                planetAlias,
+              ].filter(Boolean).join(" ");
+              const symbolic = [
+                dr.part.sourceMarker ?? "",
+                dr.part.aspectExportSymbolText ?? "",
+                directionPointExportSymbol(dr.part.planetExportSymbolText, planetAlias),
+              ].filter(Boolean).join(" ");
+              const runs = [
+                dr.part.sourceMarker ? {
+                  text: `${dr.part.sourceMarker} `,
+                  color: glyphColorRows
+                    ? resolvedSemanticChartColor(dr.part.planetColorRole, dr.part.planetColor) ?? undefined
+                    : undefined,
+                } : null,
+                dr.part.aspectGlyph ? {
+                  text: dr.part.aspectGlyph,
+                  glyph: true,
+                  color: glyphColorRows
+                    ? resolvedSemanticChartColor(dr.part.aspectColorRole, dr.part.aspectColor) ?? undefined
+                    : undefined,
+                } : null,
+                dr.part.planetGlyph ? {
+                  text: `${dr.part.aspectGlyph ? " " : ""}${dr.part.planetGlyph}`,
+                  glyph: true,
+                  color: glyphColorRows
+                    ? resolvedSemanticChartColor(dr.part.planetColorRole, dr.part.planetColor) ?? undefined
+                    : undefined,
+                } : null,
+              ].filter((run): run is NonNullable<typeof run> => Boolean(run));
+              return runs.length
+                ? { exportText: semantic, exportSymbolText: symbolic || semantic, runs }
+                : { text: semantic };
+            }
+          case "age":
+            return {
+              text:
+                dr.kind === "term"
+                  ? dr.term.ageStart != null ? dr.term.ageStart.toFixed(1) : ""
+                  : dr.part.age != null ? dr.part.age.toFixed(1) : "",
+            };
+          case "date":
+            return { text: dr.kind === "term" ? circumTermDateLabel(dr.term) : circumParticipatorDateLabel(dr.part) };
+        }
+      };
+      return buildAdHocTableExportDocument({
+        title: payload?.meta.title ?? t("dirview.circumambulations"),
+        fileStem: "circumambulations",
+        pdfProfile: "circumambulation",
+        sourceName,
+        columns: circumColumnOrder.map((columnKey) => ({
+          label: circumColumnLabels[columnKey],
+          align: columnKey === "age" ? "right" as const : "center" as const,
+        })),
+        rows: displayRows.map((dr): GenericTableCell[] =>
+          circumColumnOrder.map((columnKey) => exportCell(dr, columnKey)),
+        ),
+        pdfRows: displayRows.map((dr) => ({
+          kind: dr.kind === "term" ? "group" : "subordinate",
+          emphasis: dr.kind === "term" ? "strong" : undefined,
+          level: dr.kind === "term" ? 0 : 1,
+          cells: circumColumnOrder.map((columnKey) => exportCell(dr, columnKey)),
+        })),
+      });
+    },
+    [circumColumnLabels, circumColumnOrder, circumSignColors, displayRows, glyphColorRows, payload, sourceName, t],
+  );
   const ageRanges = React.useMemo(() => ageRangesForPage(ageRangePageStart), [ageRangePageStart]);
   const focusTargetMs = React.useMemo(
     () => directionFocusTargetMs(rows, focusDatetime, (row) => row.dateStart),
     [focusDatetime, rows],
   );
+  const pinnedTemporalRowId = useTemporalPinnedRowId();
+  const pinnedDisplayIndex = pinnedTemporalRowId
+    ? displayRows.findIndex((row) =>
+        (row.kind === "participator" ? row.part.temporal : row.term.temporal)?.rowId ===
+        pinnedTemporalRowId,
+      )
+    : -1;
   const termFocusIndex = targetAgeRange
     ? ageRangeTargetIndex(rows, targetAgeRange, (row) => row.ageStart, targetAgeSeek)
     : circumambulationFocusIndex(rows, focusTargetMs);
   const focusIndex =
-    termFocusIndex >= 0 ? termFocusToDisplay[termFocusIndex] ?? termFocusIndex : termFocusIndex;
+    pinnedDisplayIndex >= 0
+      ? pinnedDisplayIndex
+      : termFocusIndex >= 0
+        ? termFocusToDisplay[termFocusIndex] ?? termFocusIndex
+        : termFocusIndex;
   const focusAge = termFocusIndex >= 0 ? rows[termFocusIndex]?.ageStart : null;
   useFixedRowHeightAnchor(scrollerRef, displayRows.length, rowHeight, {
     enabled: active,
@@ -4989,7 +5426,7 @@ function CircumambulationPanel({
                       colorRole={glyphColorRows ? dr.part.planetColorRole : null}
                     />
                   ) : null}
-                  {!dr.part.aspectGlyph && !dr.part.planetGlyph ? dr.part.planet ?? "" : null}
+                  {!dr.part.planetGlyph ? dr.part.planet ?? "" : null}
                 </span>
               ) : (
                 CIRCUM_EMPTY
@@ -5040,14 +5477,16 @@ function CircumambulationPanel({
           </h2>
           <div className="flex min-w-0 items-center gap-2">
             <LiveHoverSummary value={hoverSummary ?? (loading ? t("dirview.computing") : "")} />
-            <Button
-              type="button"
-              size="xs"
-              variant="outline"
-              onClick={onShowPrimaryDirections}
-            >
-              {t("dirview.pdList")}
-            </Button>
+            {onShowPrimaryDirections ? (
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                onClick={onShowPrimaryDirections}
+              >
+                {t("dirview.pdList")}
+              </Button>
+            ) : null}
             <PrimDirSettingsSheet
               settings={settings}
               planetGlyphs={settingsPlanetGlyphs}
@@ -5056,21 +5495,27 @@ function CircumambulationPanel({
               }
               onPatch={onPatchSettings}
             />
+            <TextExportActions
+              disabled={!displayRows.length}
+              buildDocument={circumExportDocument}
+            />
           </div>
         </div>
         <div className={LIST_PANE_CLASSES.controlRow}>
-          <ListSegmentedControl
-            label={t("dirview.mode")}
-            options={primaryModeOptions}
-            value={mode}
-            onChange={(v) => {
-              setMode(v);
-              setTargetAgeRange(null);
-              setTargetAgeSeek("exact");
-              setAgeRangePageStart(0);
-              setYear(null);
-            }}
-          />
+          {!lockMode ? (
+            <ListSegmentedControl
+              label={t("dirview.mode")}
+              options={primaryModeOptions}
+              value={mode}
+              onChange={(v) => {
+                setMode(v);
+                setTargetAgeRange(null);
+                setTargetAgeSeek("exact");
+                setAgeRangePageStart(0);
+                setYear(null);
+              }}
+            />
+          ) : null}
           <ListSegmentedControl
             label={t("dirview.method")}
             options={circumMethodOptions}
@@ -5081,6 +5526,17 @@ function CircumambulationPanel({
               setAgeRangePageStart(0);
               setMaxAge(150);
               setCircumMethod(v);
+            }}
+          />
+          <ListSegmentedControl
+            label={t("primdir.promissors")}
+            options={circumPromissorOptions}
+            value={promissorProfile}
+            onChange={(v) => {
+              setTargetAgeRange(null);
+              setTargetAgeSeek("exact");
+              setAgeRangePageStart(0);
+              setCircumPromissorProfile(v);
             }}
           />
           <Button
@@ -5107,6 +5563,12 @@ function CircumambulationPanel({
               onChange={(y) => setYear(y)}
             />
           ) : null}
+          {isReturnMode ? (
+            <NatalParticipatorsToggle
+              active={showNatalPromissors}
+              onToggle={() => onPatchSettings({ pdrevshownatalpromissors: !showNatalPromissors })}
+            />
+          ) : null}
           <RectificationStepper
             docId={rectificationDocumentId}
             onStepStart={captureRectificationViewport}
@@ -5120,10 +5582,7 @@ function CircumambulationPanel({
           <CircumSignificatorDrawer
             items={significatorItems}
             activeId={activeSignificatorId}
-            onSelect={(sig) => {
-              selectCircumSignificator(sig);
-              setSignificatorDrawerOpen(false);
-            }}
+            onSelect={selectCircumSignificator}
           />
         ) : null}
         {isReturnMode && returnLabel ? (
@@ -5187,16 +5646,11 @@ function CircumambulationPanel({
                     eventDatetime={eventDatetime}
                     sessionLabel={sessionLabel}
                     beforeTimedItems={circumMenuExtras()}
-                    afterTimedItems={
-                      <>
-                        <ContextMenuSeparator />
-                        <ContextMenuItem disabled={!displayRows.length} onClick={exportCircumPdf}>
-                          {t("dirview.saveAsPdf")}
-                        </ContextMenuItem>
-                      </>
-                    }
                   >
-                    <TableRow
+                    <TemporalHighlightedTableRow
+                      temporal={
+                        dr.kind === "participator" ? dr.part.temporal : dr.term.temporal
+                      }
                       className={DIRECTION_ROW_CLASS}
                       data-initial-focus={i === focusIndex || undefined}
                       data-row-index={i}
@@ -5209,7 +5663,7 @@ function CircumambulationPanel({
                           {renderCircumCell(dr, columnKey)}
                         </React.Fragment>
                       ))}
-                    </TableRow>
+                    </TemporalHighlightedTableRow>
                   </TimedChartContextMenu>
                 );
               }}

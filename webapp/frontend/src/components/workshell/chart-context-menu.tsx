@@ -201,14 +201,18 @@ export function ChartContextMenu({ chart, children }: ChartContextMenuProps) {
             : activeDocumentId;
         if (documentId) {
           const result = await executeWorkspaceContextMenuAction(actionId, payload);
+          const resultDocumentId =
+            typeof result.documentId === "string" && result.documentId
+              ? result.documentId
+              : documentId;
           const returnedSnapshot = isPlainRecord(result.snapshot)
             ? (result.snapshot as unknown as ChartRenderSnapshot)
             : null;
           if (returnedSnapshot) {
-            pushCommandSnapshot(documentId, returnedSnapshot);
+            pushCommandSnapshot(resultDocumentId, returnedSnapshot);
           } else {
-            const snapshot = await fetchDocumentSnapshot(documentId);
-            pushSteppedSnapshot(documentId, snapshot);
+            const snapshot = await fetchDocumentSnapshot(resultDocumentId);
+            pushSteppedSnapshot(resultDocumentId, snapshot);
           }
         } else {
           await executeWorkspaceContextMenuAction(actionId, payload);
@@ -386,7 +390,10 @@ function MenuNode({
         value={item.value}
         onValueChange={(value) => {
           const selected = byValue.get(value);
-          if (selected) onAction(selected.actionId, selected.payload);
+          // A greyed radio must not act. base-ui blocks the item's own click,
+          // but the group's change handler still fires for it, which let a
+          // disabled choice be stored and then reported back as selected.
+          if (selected && !selected.disabled) onAction(selected.actionId, selected.payload);
         }}
       >
         {radios.map((radio) => (
@@ -407,6 +414,10 @@ function MenuNode({
       <ContextMenuCheckboxItem
         checked={item.checked}
         disabled={item.disabled}
+        inset={item.inset}
+        style={item.inset ? {
+          paddingInlineStart: "calc(var(--aries-menu-item-padding-x) + 14px)",
+        } : undefined}
         closeOnClick={false}
         onCheckedChange={() => onAction(item.actionId, item.payload)}
       >

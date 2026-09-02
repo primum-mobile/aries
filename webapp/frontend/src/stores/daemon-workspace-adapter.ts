@@ -1,3 +1,8 @@
+// SPDX-FileCopyrightText: Morinus contributors
+// SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Modified for Aries in 2026 by Max Lange.
+
 "use client";
 
 import { useCallback, useEffect, useMemo } from "react";
@@ -26,7 +31,10 @@ import {
   type WorkspaceOpenResult,
   type WorkspaceStatePayload,
 } from "@/lib/daemon/client";
-import { rememberDocumentSnapshot } from "@/lib/chart/document-snapshot-cache";
+import {
+  invalidateDocumentSnapshots,
+  rememberDocumentSnapshot,
+} from "@/lib/chart/document-snapshot-cache";
 import { recordChartPerf } from "@/lib/chart/perf";
 import {
   acquireDaemonWorkspace,
@@ -71,6 +79,7 @@ const FEATURE_TO_PUBLIC: Record<string, SupplementaryKind> = {
   minor: "minor-progression",
   solar_arc: "solar-arc",
   solar_average: "solar-average",
+  harmonic: "harmonic",
   profections: "profections",
 };
 
@@ -270,7 +279,9 @@ function buildDocumentFromSummary(summary: DaemonDocumentSummary): WorkspaceDocu
       compositeVariant: summary.compositeVariant ?? null,
       displayDatetime: summary.displayDatetime ?? undefined,
       tabSuffix: summary.tabSuffix ?? undefined,
-      titleKey: summary.titleKey ?? "supplementary.synastry",
+      titleKey:
+        summary.titleKey ??
+        (summary.compoundKind === "synastry" ? "supplementary.synastry" : null),
       title: daemonTitle || SUPPLEMENTARY_KIND_LABELS.synastry,
       dirty: summary.dirty,
       fpath: summary.fpath,
@@ -325,14 +336,18 @@ function projectDocuments(summaries: DaemonDocumentSummary[]): WorkspaceDocument
   return summaries.map(summaryToDocument);
 }
 
-type SnapshotCommandResult = (WorkspaceOpenResult | WorkspaceStatePayload) & {
+type SnapshotCommandResult = (WorkspaceOpenResult | WorkspaceStatePayload | WorkspaceCloseResult) & {
   documentId?: string | null;
+  snapshotInvalidatedIds?: string[];
 };
 
 function applyImmediateWorkspaceResult(
   result: SnapshotCommandResult,
   fallbackDocumentId?: string | null,
 ): void {
+  if (result.snapshotInvalidatedIds?.length) {
+    invalidateDocumentSnapshots(result.snapshotInvalidatedIds);
+  }
   const activeDocumentId =
     result.activeDocumentId ?? result.documentId ?? fallbackDocumentId ?? null;
   if (activeDocumentId && result.snapshot) {
@@ -493,9 +508,11 @@ export function useDaemonWorkspaceActions() {
 
   const closeDocument = useCallback(
     async (id: string): Promise<WorkspaceCloseResult | null> => {
-      // Daemon close — returns promptWorthyIds for the discard modal (step C).
+      // Close may change a branch-owned multi-wheel without changing the active
+      // document id, so consume its replacement snapshot like every other
+      // immediate workspace command.
       try {
-        return await workspaceClose(id, true);
+        return await runImmediateWorkspaceCommand(workspaceClose(id, true), id);
       } catch (e) {
         console.error("[ws-close]", e);
         return null;
@@ -567,7 +584,11 @@ export type ChartLaunchers = {
   /** Open the transit search engine as a view-only child under `parentRadixId`. */
   openTransitSearchChild: (parentRadixId: string) => void;
   /** Open a generic embedded table as a view-only child under `parentRadixId`. */
-  openTableChild: (parentRadixId: string, tableId: string) => void;
+  openTableChild: (
+    parentRadixId: string,
+    tableId: string,
+    binding?: Record<string, unknown> | null,
+  ) => void;
   /** Open or recall Ascensional Transits under `parentRadixId`. */
   openAscensionalTransitsChild: (parentRadixId: string, sourceDocumentId?: string | null) => void;
 };
@@ -655,8 +676,12 @@ export function useChartLaunchers(): ChartLaunchers {
       .catch((err) => console.error("[ws-open-transit-search]", err));
   }, []);
 
-  const openTableChild = useCallback((parentRadixId: string, tableId: string) => {
-    void workspaceOpenTable(parentRadixId, tableId)
+  const openTableChild = useCallback((
+    parentRadixId: string,
+    tableId: string,
+    binding?: Record<string, unknown> | null,
+  ) => {
+    void workspaceOpenTable(parentRadixId, tableId, binding)
       .then((res) => {
         if (res.documentId) void workspaceActivate(res.documentId);
       })

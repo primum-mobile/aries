@@ -40,7 +40,7 @@ import {
   type WorkspaceDocument,
 } from "@/stores/workspace-store";
 import { applyImmediateWorkspaceCommandResult } from "@/stores/daemon-workspace-adapter";
-import { findChartLaunchParent } from "@/components/workshell/chart-launch-parent";
+import { findRadixSiblingLaunchParent } from "@/components/workshell/chart-launch-parent";
 import { useFrameLayoutStore } from "@/stores/frame-layout-store";
 import { useT, useTFallback, type TFunc } from "@/lib/i18n/i18n";
 import type {
@@ -75,6 +75,7 @@ type Props = {
   onCloseDocument: (id: string) => void;
   onReorder: (docId: string, beforeId: string | null) => void;
   onSolarAverageWindowSelect: (maxBirthday: number, returnKind: ReturnAverageKind) => void;
+  harmonicChartMode: "harmonic" | "varga";
 };
 
 export type ReturnAverageKind = "solar" | "lunar";
@@ -115,6 +116,7 @@ function AppSidebarComponent({
   onCloseDocument,
   onReorder,
   onSolarAverageWindowSelect,
+  harmonicChartMode,
 }: Props) {
   const dragReady = useHydrated();
   const openEclipsesPane = useWorkspaceStore((s) => s.openEclipsesPane);
@@ -123,7 +125,7 @@ function AppSidebarComponent({
   const handleSelect = React.useCallback(
     (id: string) => {
       if (id === "table:eclipses") {
-        const launchParent = findChartLaunchParent(documents, activeDocumentId);
+        const launchParent = findRadixSiblingLaunchParent(documents, activeDocumentId);
         if (launchParent) {
           openEclipsesPane({
             documentId: launchParent.id,
@@ -175,6 +177,7 @@ function AppSidebarComponent({
             dragReady={dragReady}
             onSelect={handleSelect}
             onSolarAverageWindowSelect={onSolarAverageWindowSelect}
+            harmonicChartMode={harmonicChartMode}
           />
         ))}
       </SidebarContent>
@@ -507,6 +510,10 @@ function DocumentMenuNode({
       <ContextMenuCheckboxItem
         checked={item.checked}
         disabled={item.disabled}
+        inset={item.inset}
+        style={item.inset ? {
+          paddingInlineStart: "calc(var(--aries-menu-item-padding-x) + 14px)",
+        } : undefined}
         closeOnClick={false}
         onCheckedChange={() => onAction(item.actionId, item.payload)}
       >
@@ -536,6 +543,7 @@ function ActionsGroup({
   dragReady,
   onSelect,
   onSolarAverageWindowSelect,
+  harmonicChartMode,
 }: {
   groupId: string;
   label: string;
@@ -545,6 +553,7 @@ function ActionsGroup({
   dragReady: boolean;
   onSelect: (id: string) => void;
   onSolarAverageWindowSelect: (maxBirthday: number, returnKind: ReturnAverageKind) => void;
+  harmonicChartMode: "harmonic" | "varga";
 }) {
   const tLabel = useTFallback();
   const [isCollapsed, setIsCollapsed] = React.useState(collapsed);
@@ -592,6 +601,7 @@ function ActionsGroup({
                   activeDocumentId={activeDocumentId}
                   onSelect={onSelect}
                   onSolarAverageWindowSelect={onSolarAverageWindowSelect}
+                  harmonicChartMode={harmonicChartMode}
                 />
               }
             >
@@ -604,6 +614,7 @@ function ActionsGroup({
                 activeDocumentId={activeDocumentId}
                 onSelect={onSelect}
                 onSolarAverageWindowSelect={onSolarAverageWindowSelect}
+                harmonicChartMode={harmonicChartMode}
               />
             </React.Suspense>
           ) : (
@@ -612,6 +623,7 @@ function ActionsGroup({
               activeDocumentId={activeDocumentId}
               onSelect={onSelect}
               onSolarAverageWindowSelect={onSolarAverageWindowSelect}
+              harmonicChartMode={harmonicChartMode}
             />
           )}
         </SidebarGroupContent>
@@ -625,11 +637,13 @@ function StaticActionsContent({
   activeDocumentId,
   onSelect,
   onSolarAverageWindowSelect,
+  harmonicChartMode,
 }: {
   orderedActions: SidebarAction[];
   activeDocumentId: string | null;
   onSelect: (id: string) => void;
   onSolarAverageWindowSelect: (maxBirthday: number, returnKind: ReturnAverageKind) => void;
+  harmonicChartMode: "harmonic" | "varga";
 }) {
   const tLabel = useTFallback();
   return (
@@ -651,6 +665,13 @@ function StaticActionsContent({
               <SolarAverageLauncherContextMenu onSelectWindow={onSolarAverageWindowSelect}>
                 {row}
               </SolarAverageLauncherContextMenu>
+            ) : action.id === "harmonic" && action.enabled ? (
+              <HarmonicLauncherContextMenu
+                initialMode={harmonicChartMode}
+                onSelectNumber={(mode, number) => onSelect(`harmonic:${mode}:${number}`)}
+              >
+                {row}
+              </HarmonicLauncherContextMenu>
             ) : (
               row
             )}
@@ -719,6 +740,58 @@ export function SolarAverageLauncherContextMenu({
   );
 }
 
+export function HarmonicLauncherContextMenu({
+  children,
+  initialMode,
+  onSelectNumber,
+}: {
+  children: React.ReactElement;
+  initialMode: "harmonic" | "varga";
+  onSelectNumber: (mode: "harmonic" | "varga", number: number) => void;
+}) {
+  const t = useT();
+  const [modeChoice, setModeChoice] = React.useState<{
+    initialMode: "harmonic" | "varga";
+    mode: "harmonic" | "varga";
+  } | null>(null);
+  const mode = modeChoice?.initialMode === initialMode
+    ? modeChoice.mode
+    : initialMode;
+  const numbers = mode === "varga"
+    ? [1, 2, 3, 4, 7, 9, 10, 12, 16, 20, 24, 27, 30, 40, 45, 60]
+    : [2, 3, 4, 5, 6, 7, 8, 9, 12];
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger className="block w-full">{children}</ContextMenuTrigger>
+      <ContextMenuContent align="start" className="min-w-36">
+        <ContextMenuRadioGroup
+          value={mode}
+          onValueChange={(value) => setModeChoice({
+            initialMode,
+            mode: value as "harmonic" | "varga",
+          })}
+        >
+          <ContextMenuRadioItem value="harmonic" closeOnClick={false}>
+            {t("chartmenu.harmonicChart")}
+          </ContextMenuRadioItem>
+          <ContextMenuRadioItem value="varga" closeOnClick={false}>
+            {t("chartmenu.vargas")}
+          </ContextMenuRadioItem>
+        </ContextMenuRadioGroup>
+        <ContextMenuSeparator />
+        {numbers.map((number) => (
+          <ContextMenuItem
+            key={number}
+            onClick={() => onSelectNumber(mode, number)}
+          >
+            {number}
+          </ContextMenuItem>
+        ))}
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
 type NavRowProps = {
   label: string;
   actionId?: string;
@@ -761,14 +834,17 @@ export function NavRow({
   const shortcutChords = shortcutHint ? shortcutDisplayChords(shortcutHint) : [];
   const shortcutDisplay = shortcutChords.map((chord) => chord.join("")).join("/");
   const showShortcutHint = shortcutChords.length > 0 && !disabled && !onClose;
-  const shortcutSlotWidth = showShortcutHint
+  const shortcutOverlayWidth = showShortcutHint
     ? shortcutDisplayWidth(shortcutChords)
     : null;
-  const trailingSlotWidth = showShortcutHint
-    ? shortcutSlotWidth
-    : onClose
-      ? "var(--aries-sidebar-close-action-size)"
-      : null;
+  const shortcutMaskImage = shortcutOverlayWidth
+    ? shortcutFadeMask(shortcutOverlayWidth)
+    : undefined;
+  const ariaKeyShortcuts = disabled ? undefined : normalizeAriaKeyShortcuts(shortcut);
+  // The shortcut is hover/focus information, not a permanent layout column.
+  // Give the idle label the full row; CSS fades only the part beneath the
+  // overlaid hint while it is visible. Document close buttons remain reserved.
+  const trailingSlotWidth = onClose ? "var(--aries-sidebar-close-action-size)" : null;
   const pointerActivatedRef = React.useRef(false);
   const clearPointerActivated = React.useCallback(() => {
     window.setTimeout(() => {
@@ -796,13 +872,19 @@ export function NavRow({
   );
 
   return (
-    <div className="group/navrow relative">
+    <div
+      className={cn(
+        "group/navrow relative",
+        showShortcutHint && "aries-sidebar-navrow--shortcut",
+      )}
+    >
       <SidebarMenuButton
         data-aries-sidebar-action-id={actionId}
         isActive={isActive}
         onClick={handleClick}
         onMouseDown={handleMouseDown}
         aria-disabled={disabled || undefined}
+        aria-keyshortcuts={ariaKeyShortcuts}
         {...dragAttributes}
         {...dragListeners}
         className={cn(
@@ -824,8 +906,22 @@ export function NavRow({
             : "var(--morinus-row-pad-x)",
         }}
       >
-        <span className="block h-[var(--aries-sidebar-row-line-box)] min-w-0 flex-1 truncate leading-[var(--aries-sidebar-row-line-box)]">
-          {label}
+        <span className="relative block h-[var(--aries-sidebar-row-line-box)] min-w-0 flex-1 leading-[var(--aries-sidebar-row-line-box)]">
+          <span className="aries-sidebar-navrow-label block h-full truncate leading-[var(--aries-sidebar-row-line-box)]">
+            {label}
+          </span>
+          {showShortcutHint ? (
+            <span
+              aria-hidden="true"
+              className="aries-sidebar-navrow-label-faded pointer-events-none absolute inset-0 block h-full overflow-hidden whitespace-nowrap [text-overflow:clip] opacity-0 leading-[var(--aries-sidebar-row-line-box)]"
+              style={{
+                WebkitMaskImage: shortcutMaskImage,
+                maskImage: shortcutMaskImage,
+              }}
+            >
+              {label}
+            </span>
+          ) : null}
         </span>
       </SidebarMenuButton>
       {dropIndicator ? (
@@ -845,8 +941,8 @@ export function NavRow({
       {showShortcutHint ? (
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute right-[var(--aries-sidebar-trailing-inset)] top-1/2 h-[var(--aries-sidebar-row-line-box)] -translate-y-1/2 whitespace-nowrap text-right text-[length:var(--aries-font-size-nav)] leading-[var(--aries-sidebar-row-line-box)] text-sidebar-foreground/38 opacity-0 transition-opacity group-focus-within/navrow:opacity-100 group-hover/navrow:opacity-100"
-          style={{ width: trailingSlotWidth ?? undefined }}
+          className="aries-sidebar-shortcut-hint pointer-events-none absolute right-[var(--aries-sidebar-trailing-inset)] top-1/2 h-[var(--aries-sidebar-row-line-box)] -translate-y-1/2 whitespace-nowrap text-right text-[length:var(--aries-font-size-nav)] leading-[var(--aries-sidebar-row-line-box)] text-sidebar-foreground/38 opacity-0 transition-opacity duration-75"
+          style={{ width: shortcutOverlayWidth ?? undefined }}
         >
           {shortcutDisplay}
         </span>
@@ -875,32 +971,23 @@ export function NavRow({
         </button>
       ) : null}
       {preview ? (
-        preview.kind === "attach" ? (
-          // wx _draw_attach_preview — accent border on the nest target.
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 rounded-[var(--morinus-row-radius)] bg-[color:var(--aries-sidebar-row-soft)] ring-2 ring-inset ring-[color:var(--aries-accent)]"
-          />
-        ) : (
-          // wx _draw_synastry_preview / _draw_transit_preview — bisected
-          // two-name cell: left = target, right = source (synastry) or
-          // literal "Transit" (transit), split by a divider.
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 flex overflow-hidden rounded-[var(--morinus-row-radius)] border border-sidebar-foreground/40 bg-sidebar text-[length:var(--aries-font-size-nav)] leading-[var(--aries-sidebar-row-line-box)]"
-          >
-            <span className="flex flex-1 items-center truncate bg-[color:var(--aries-sidebar-row-hover)] px-[var(--morinus-row-pad-x)] text-sidebar-foreground">
-              <span className="block h-[var(--aries-sidebar-row-line-box)] min-w-0 truncate leading-[var(--aries-sidebar-row-line-box)]">
-                {previewTargetLabel ?? label}
-              </span>
-            </span>
-            <span className="flex flex-1 items-center truncate border-l border-sidebar-foreground/40 bg-[color:var(--aries-sidebar-row-strong)] px-[var(--morinus-row-pad-x)] text-sidebar-foreground">
-              <span className="block h-[var(--aries-sidebar-row-line-box)] min-w-0 truncate leading-[var(--aries-sidebar-row-line-box)]">
-                {preview.kind === "transit" ? tf("sidebar.transitPreview", "Transit") : preview.sourceLabel}
-              </span>
+        // Every chart-on-chart preview keeps the receiving parent visible:
+        // left = target, right = source (or the literal Transit conversion).
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 flex overflow-hidden rounded-[var(--morinus-row-radius)] border border-sidebar-foreground/40 bg-sidebar text-[length:var(--aries-font-size-nav)] leading-[var(--aries-sidebar-row-line-box)]"
+        >
+          <span className="flex flex-1 items-center truncate bg-[color:var(--aries-sidebar-row-hover)] px-[var(--morinus-row-pad-x)] text-sidebar-foreground">
+            <span className="block h-[var(--aries-sidebar-row-line-box)] min-w-0 truncate leading-[var(--aries-sidebar-row-line-box)]">
+              {previewTargetLabel ?? label}
             </span>
           </span>
-        )
+          <span className="flex flex-1 items-center truncate border-l border-sidebar-foreground/40 bg-[color:var(--aries-sidebar-row-strong)] px-[var(--morinus-row-pad-x)] text-sidebar-foreground">
+            <span className="block h-[var(--aries-sidebar-row-line-box)] min-w-0 truncate leading-[var(--aries-sidebar-row-line-box)]">
+              {preview.kind === "transit" ? tf("sidebar.transitPreview", "Transit") : preview.sourceLabel}
+            </span>
+          </span>
+        </span>
       ) : null}
     </div>
   );
@@ -931,7 +1018,9 @@ function shortcutDisplayChord(chord: string): string[] {
   const primaryKey = rawParts[rawParts.length - 1] ?? "";
   const ctrlIsMacCommand = isCommandStyleShortcut(primaryKey);
   return rawParts
-    .map((part, index) => shortcutDisplayKey(part, index < rawParts.length - 1, ctrlIsMacCommand))
+    .map((part, index) =>
+      shortcutDisplayKey(part, index < rawParts.length - 1, ctrlIsMacCommand),
+    )
     .filter(Boolean);
 }
 
@@ -985,8 +1074,70 @@ function isCommandStyleShortcut(primaryKey: string): boolean {
 }
 
 function shortcutDisplayWidth(chords: string[][]): string {
-  const widest = Math.max(
-    ...chords.map((chord) => chord.join("").length),
-  );
+  const widest = Math.max(...chords.map((chord) => chord.join("").length));
   return `${Math.min(3.4, Math.max(1.75, widest * 0.52 + 0.5)).toFixed(2)}rem`;
+}
+
+function shortcutFadeMask(shortcutWidth: string): string {
+  return `linear-gradient(to right, #000 0, #000 calc(100% - ${shortcutWidth} - var(--aries-control-gap-compact)), transparent calc(100% - ${shortcutWidth} + var(--aries-control-gap-compact)))`;
+}
+
+function normalizeAriaKeyShortcuts(shortcut?: string | null): string | undefined {
+  const normalized = shortcut
+    ?.trim()
+    .split("/")
+    .map((chord) => chord.trim())
+    .filter(Boolean)
+    .map((chord) =>
+      chord
+        .split("+")
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .map(normalizeAriaShortcutKey)
+        .join("+"),
+    )
+    .filter(Boolean)
+    .join(" ");
+  return normalized || undefined;
+}
+
+function normalizeAriaShortcutKey(rawKey: string): string {
+  const normalized = rawKey.toLowerCase();
+  if (
+    normalized === "cmd" ||
+    normalized === "command" ||
+    normalized === "meta" ||
+    normalized === "cmdorctrl" ||
+    normalized === "ctrlorcmd"
+  ) {
+    return "Meta";
+  }
+  if (normalized === "ctrl" || normalized === "control") {
+    return "Control";
+  }
+  if (normalized === "alt" || normalized === "option" || normalized === "opt") {
+    return "Alt";
+  }
+  if (normalized === "shift") {
+    return "Shift";
+  }
+  if (normalized === "esc" || normalized === "escape") {
+    return "Escape";
+  }
+  if (normalized === "space" || normalized === "spacebar") {
+    return "Space";
+  }
+  if (normalized === "comma") {
+    return ",";
+  }
+  if (normalized === "period") {
+    return ".";
+  }
+  if (normalized === "plus") {
+    return "+";
+  }
+  if (normalized === "minus") {
+    return "-";
+  }
+  return rawKey.length === 1 ? rawKey.toUpperCase() : rawKey;
 }

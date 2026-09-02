@@ -163,9 +163,24 @@ def _merge_text_into_sidecar(path: Path, content: str) -> bool:
     existing = path.read_text(encoding="utf-8")
     if existing == text:
         return False
+    # A legacy chart record can remain open in memory after its embedded note
+    # has already been lifted.  Do not append the same legacy block again when
+    # another editor seed is requested before that chart record is rewritten.
+    if text in existing.split("\n\n---\n\n"):
+        return False
     prefix = "" if existing.endswith("\n") or not existing else "\n"
     with path.open("a", encoding="utf-8") as handle:
         handle.write(prefix + "\n---\n\n" + text)
+    return True
+
+
+def _seed_sidecar_from_legacy(path: Path, content: str) -> bool:
+    """Promote old embedded text only when no Markdown authority exists."""
+    text = content or ""
+    if not text.strip() or path.exists():
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
     return True
 
 
@@ -186,9 +201,32 @@ def lift_legacy_record_notes(record: dict) -> dict:
         path = _notes_path(str(record.get("name") or "")) or _record_notes_path(record_id)
         if path is None:
             raise OSError("cannot resolve a sidecar note path for imported record")
-        _merge_text_into_sidecar(path, legacy)
+        _seed_sidecar_from_legacy(path, legacy)
     record["notes"] = ""
     return record
+
+
+def merge_legacy_note_state(
+    radix: str,
+    content: str,
+    *,
+    record_id: str | None = None,
+    document_id: str | None = None,
+    scratch: bool = False,
+) -> bool:
+    """Lift embedded chart text into the canonical Markdown target once."""
+    text = str(content or "")
+    if not text.strip():
+        return False
+    path, _is_scratch = _target_path(
+        radix,
+        record_id=record_id,
+        document_id=document_id,
+        scratch=scratch,
+    )
+    if path is None:
+        raise OSError(f"cannot resolve a note file for radix {radix!r}")
+    return _seed_sidecar_from_legacy(path, text)
 
 
 def read_note_state(

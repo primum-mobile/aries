@@ -1,7 +1,13 @@
 # -*- coding: utf-8 -*-
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 from __future__ import division
 import datetime
 import math
+from collections import OrderedDict
 import astrology  # sweastrology 래퍼
 import geonames
 import util       # decToDeg 등
@@ -21,6 +27,11 @@ _SAROS_UNSET = u'—'
 SAROS_PERIOD_DAYS = 6585.3211
 ECLIPSE_CHART_MOMENT_EXACT = 'exact_conjunction'
 ECLIPSE_CHART_MOMENT_MAXIMUM = 'eclipse_maximum'
+
+_RECENT_ECLIPSE_CHUNK_DAYS = 45.0
+_RECENT_ECLIPSE_LOOKBACK_DAYS = 400.0
+_RECENT_ECLIPSE_CACHE_MAX = 48
+_RECENT_ECLIPSE_CACHE = OrderedDict()
 
 
 class EclipseEvent(object):
@@ -191,6 +202,85 @@ def chart_moment_jdut_for_event(event, mode=ECLIPSE_CHART_MOMENT_EXACT):
         return float(getattr(event, 'jdut', 0.0))
     return syzygy_jdut_for_event(event)
 
+
+def eclipse_zodiac_longitude(event):
+    """Return the eclipsed Moon's tropical longitude at exact syzygy."""
+    exact_jd = syzygy_jdut_for_event(event)
+    if exact_jd is None:
+        return None
+    moon_lon, _sun_lon = _moon_sun_lon(float(exact_jd))
+    return _normalize_deg(moon_lon)
+
+
+def selected_prenatal_eclipse_point(chart, options=None):
+    """Return the configured prenatal eclipse and its chart-zodiac longitude.
+
+    This is the canonical semantic-point resolver shared by chart export,
+    Search, Aspect List, Astrocartography, and inspectors.  Wheel visibility is
+    intentionally not consulted here.
+    """
+    opts = options if options is not None else getattr(chart, 'options', None)
+    mode = str(getattr(opts, 'prenatal_eclipse_mode', 'solar_and_lunar'))
+    solar_only = mode == 'solar_only'
+    ayanamsha = int(getattr(opts, 'ayanamsha', 0) or 0)
+    try:
+        anchor_jd = round(float(chart.time.jd), 9)
+    except Exception:
+        anchor_jd = None
+    cache_key = (anchor_jd, mode, ayanamsha)
+    cached = getattr(chart, 'selectedPrenatalEclipsePointCache', None)
+    if isinstance(cached, tuple) and len(cached) == 2 and cached[0] == cache_key:
+        return cached[1]
+    event = most_recent_eclipse(chart, solar_only=solar_only)
+    if event is None:
+        return None
+    exact_jd = float(syzygy_jdut_for_event(event))
+    longitude = float(eclipse_zodiac_longitude(event))
+    if ayanamsha:
+        longitude = util.normalize(
+            longitude - astrology.effective_ayanamsha_ut(exact_jd, ayanamsha)
+        )
+    result = (event, exact_jd, util.normalize(longitude))
+    try:
+        chart.selectedPrenatalEclipsePointCache = (cache_key, result)
+    except Exception:
+        pass
+    return result
+
+
+def eclipse_kind_label(event):
+    try:
+        if bool(getattr(event, 'is_solar', False)):
+            token, _major, _priority = _classify_solar_from_retflag(
+                int(getattr(event, 'retflag', 0))
+            )
+        else:
+            token, _major, _priority = _classify_lunar_from_retflag(
+                int(getattr(event, 'retflag', 0))
+            )
+    except Exception:
+        token = 'UNKNOWN'
+    key, fallback = {
+        'TOTAL': ('EclipseTotal', u'Total'),
+        'ANNULAR': ('EclipseAnnular', u'Annular'),
+        'HYBRID': ('EclipseHybrid', u'Hybrid'),
+        'PARTIAL': ('EclipsePartial', u'Partial'),
+        'PENUMBRAL': ('EclipsePenumbral', u'Penumbral'),
+        'UNKNOWN': ('EclipseUnknown', u'Unknown'),
+        'NONE': ('EclipseUnknown', u'Unknown'),
+    }.get(str(token), ('EclipseUnknown', u'Unknown'))
+    return str(mtexts.txts.get(key, fallback))
+
+
+def eclipse_event_label(event):
+    luminary = mtexts.txts.get(
+        'EclipseSolar' if bool(getattr(event, 'is_solar', False)) else 'EclipseLunar',
+        u'Solar' if bool(getattr(event, 'is_solar', False)) else u'Lunar',
+    )
+    return str(mtexts.txts.get(
+        'EclipseLabelFormat', u'{kind} {luminary} Eclipse'
+    ).format(kind=eclipse_kind_label(event), luminary=luminary))
+
 def _find_new_moons(jd_from, jd_to):
     """일 단위로 부호 변화를 잡아 합삭(신월)을 이분법으로 정밀화."""
     t = jd_from - 2.0
@@ -332,6 +422,59 @@ def first_saros_event(event, search_days=80.0):
             best = candidate
             best_delta = delta
     return best
+
+
+def saros_series_events(event, search_days=80.0, max_members=100):
+    """Return every Swiss-Ephemeris member of ``event``'s Saros series.
+
+    Solar and lunar Saros numbers overlap, so the event's kind remains part of
+    the identity.  Each member is resolved in a small window around the
+    canonical Saros-period estimate; this reuses the normal Swiss eclipse
+    builders without scanning the intervening fourteen centuries.
+    """
+    parsed = saros_series_member(getattr(event, 'saros', None))
+    if parsed is None:
+        return []
+    series, _member = parsed
+    first = first_saros_event(event, search_days=search_days)
+    if first is None:
+        return []
+    is_solar = bool(getattr(event, 'is_solar', False))
+    if (
+        bool(getattr(first, 'is_solar', False)) != is_solar or
+        saros_series_member(getattr(first, 'saros', None)) != (series, 1)
+    ):
+        return []
+
+    out = [first]
+    first_jd = float(getattr(first, 'jdut', 0.0))
+    member_limit = max(1, min(200, int(max_members)))
+    for member in range(2, member_limit + 1):
+        approx_jd = first_jd + float(member - 1) * SAROS_PERIOD_DAYS
+        if is_solar:
+            retflag, tret = _sol_when_glob(approx_jd - 10.0)
+        else:
+            retflag, tret = _lun_when(approx_jd - 10.0)
+        try:
+            event_jd = float(tret[0])
+        except (TypeError, ValueError, IndexError):
+            break
+        if not math.isfinite(event_jd) or abs(event_jd - approx_jd) > abs(float(search_days)):
+            break
+        if is_solar:
+            _where_retflag, attr = _sol_where_try(event_jd)
+        else:
+            try:
+                attr = _swe_attr_from_result(
+                    astrology.swe_lun_eclipse_how(event_jd, SEFLG, 0.0, 0.0, 0.0)
+                )
+            except Exception:
+                attr = None
+        candidate = _eclipse_event_from_swe(event_jd, is_solar, retflag, attr)
+        if saros_series_member(getattr(candidate, 'saros', None)) != (series, member):
+            break
+        out.append(candidate)
+    return out
 
 
 def _utc_tuple_from_jdut(jdut):
@@ -659,6 +802,10 @@ def _sol_where_unify(res):
         if isinstance(item, (int, float)) and rf is None:
             rf = int(item)
         elif isinstance(item, (list, tuple)):
+            if (rf is None and len(item) == 1
+                    and isinstance(item[0], (int, float))):
+                rf = int(item[0])
+                continue
             # attr 후보: 수치가 많이 들어있는 배열(보통 길이 10~20)
             if attr is None and len(item) >= 5 and isinstance(item[0], (int, float)):
                 attr = item
@@ -720,6 +867,96 @@ def _classify_lunar_from_retflag(rf):
     if rf & getattr(astrology, 'SE_ECL_PARTIAL', 0):       return u"PARTIAL", False, 1
     if PEN and (rf & PEN):                                 return u"PENUMBRAL", False, 0
     return u"UNKNOWN", False, -1
+
+
+def eclipse_state_at_jdut(jdut):
+    """Return the Swiss-Ephemeris eclipse state active at one UT instant.
+
+    This is an event-state query, not a Sun-Moon aspect admission test.  The
+    Swiss Ephemeris retflag decides whether an eclipse is physically active at
+    ``jdut``; the phase branch only prevents the solar ``where`` routine from
+    classifying the nodal geometry of an actual lunar eclipse as a solar one.
+    Consequently callers do not need (and must not add) a degree orb or a
+    made-up number of hours around syzygy.
+    """
+    try:
+        anchor = float(jdut)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(anchor):
+        return None
+
+    new_moon_residual = abs(_phase_error(anchor, 0.0))
+    full_moon_residual = abs(_phase_error(anchor, 180.0))
+    lunar_mask = (
+        getattr(astrology, 'SE_ECL_TOTAL', 0)
+        | getattr(astrology, 'SE_ECL_PARTIAL', 0)
+        | getattr(astrology, 'SE_ECL_PENUMBRAL', 0)
+    )
+    lunar_retflag = 0
+    lunar_attr = None
+    try:
+        lunar_result = astrology.swe_lun_eclipse_how(
+            anchor, SEFLG, 0.0, 0.0, 0.0,
+        )
+        if isinstance(lunar_result, tuple) and lunar_result:
+            lunar_retflag = _flag_int(lunar_result[0])
+            lunar_attr = _swe_attr_from_result(lunar_result)
+    except Exception:
+        lunar_retflag = 0
+        lunar_attr = None
+
+    # A lunar eclipse is the Full-Moon branch.  This is a categorical
+    # syzygy distinction, not an allowance around 180 degrees.
+    if (lunar_retflag & lunar_mask
+            and full_moon_residual <= new_moon_residual):
+        classification, _bold, _rank = _classify_lunar_from_retflag(
+            lunar_retflag,
+        )
+        magnitude = None
+        try:
+            magnitude = float(lunar_attr[0]) if lunar_attr else None
+        except (TypeError, ValueError, IndexError):
+            magnitude = None
+        return {
+            'kind': 'lunar_eclipse',
+            'is_solar': False,
+            'classification': str(classification).lower(),
+            'retflag': int(lunar_retflag),
+            'jd_ut': anchor,
+            'phase_residual_deg': float(full_moon_residual),
+            'moon_latitude_deg': float(_moon_lat(anchor)),
+            'magnitude': magnitude,
+            'event_source': 'swiss_ephemeris_instant_state',
+        }
+
+    solar_retflag, solar_attr = _sol_where_try(anchor)
+    solar_retflag = _flag_int(solar_retflag)
+    # The global solar-eclipse state is meaningful only on the New-Moon
+    # branch.  In particular, ``swe_sol_eclipse_where`` can report the nodal
+    # overlap geometry at the instant of a lunar eclipse.
+    if (solar_retflag & ANY_SOLAR_FLAGS
+            and new_moon_residual < full_moon_residual):
+        classification, _bold, _rank = _classify_solar_from_retflag(
+            solar_retflag,
+        )
+        magnitude = None
+        try:
+            magnitude = float(solar_attr[0]) if solar_attr else None
+        except (TypeError, ValueError, IndexError):
+            magnitude = None
+        return {
+            'kind': 'solar_eclipse',
+            'is_solar': True,
+            'classification': str(classification).lower(),
+            'retflag': int(solar_retflag),
+            'jd_ut': anchor,
+            'phase_residual_deg': float(new_moon_residual),
+            'moon_latitude_deg': float(_moon_lat(anchor)),
+            'magnitude': magnitude,
+            'event_source': 'swiss_ephemeris_instant_state',
+        }
+    return None
 
 # 이벤트 우선순위(중복 제거용)
 def _rank_event(ev):
@@ -949,6 +1186,55 @@ def find_eclipses_in_range(chart, jd_from, jd_to):
         if getattr(ev, 'saros', _SAROS_UNSET) == _SAROS_UNSET:
             _assign_saros(ev)
     return dedup
+
+
+def most_recent_eclipse(chart, jd_ut=None, *, solar_only=False):
+    """Return the latest physical solar or lunar eclipse at/before ``jd_ut``.
+
+    Wheel snapshots may be exported repeatedly while a cursor is stepped. A
+    bounded 45-day event cache keeps the Swiss-Ephemeris search out of every
+    paint while still letting the selected event change at the exact eclipse.
+    """
+    if jd_ut is None:
+        try:
+            jd_ut = chart.time.jd
+        except Exception:
+            return None
+    try:
+        anchor = float(jd_ut)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(anchor):
+        return None
+
+    chunk = int(math.floor(anchor / _RECENT_ECLIPSE_CHUNK_DAYS))
+    cached = _RECENT_ECLIPSE_CACHE.get(chunk)
+    if cached is None:
+        chunk_start = chunk * _RECENT_ECLIPSE_CHUNK_DAYS
+        events = _dedup_eclipse_events(
+            chart,
+            chunk_start - _RECENT_ECLIPSE_LOOKBACK_DAYS,
+            chunk_start + _RECENT_ECLIPSE_CHUNK_DAYS,
+        )
+        cached = tuple(events)
+        _RECENT_ECLIPSE_CACHE[chunk] = cached
+        if len(_RECENT_ECLIPSE_CACHE) > _RECENT_ECLIPSE_CACHE_MAX:
+            _RECENT_ECLIPSE_CACHE.popitem(last=False)
+    else:
+        _RECENT_ECLIPSE_CACHE.move_to_end(chunk)
+
+    candidates = [
+        event
+        for event in cached
+        if float(getattr(event, 'jdut', anchor + 1.0)) <= anchor
+        and (not solar_only or bool(getattr(event, 'is_solar', False)))
+    ]
+    if not candidates:
+        return None
+    return max(
+        candidates,
+        key=lambda event: float(getattr(event, 'jdut', float('-inf'))),
+    )
 
 
 def find_eclipses_around(chart):

@@ -244,6 +244,28 @@ export type ChartStyleFontRef = Readonly<{
 
 export type ChartStyleClassProperties = Readonly<{
   radius?: ChartStyleDimension;
+  /**
+   * Unitless multiplier on the whole wheel, authored only by `canvas.chart`.
+   *
+   * Deliberately not a dimension: it is a ratio, so it must survive projection
+   * into any target radius unchanged. Every other size here is reference-space
+   * px and is scaled by this one.
+   */
+  scale?: number;
+  /** A band span's inner edge, in reference-space px. */
+  spanInner?: ChartStyleDimension;
+  /** How much a band span scales its run, about the run's outer anchor. */
+  spanScale?: number;
+  /**
+   * A degree ruler's depth, as a share of the band that hosts it.
+   *
+   * A ratio rather than a dimension: the ruler is sized against its band, not
+   * against the wheel, which is what lets ticks follow a resized band without
+   * being coupled to glyph size.
+   */
+  rulerDepth?: number;
+  /** One tick group's length, as a share of its ruler band. */
+  tickLength?: number;
   strokeWidth?: ChartStyleDimension;
   strokeStyle?: ChartStyleStrokeStyle;
   dashLength?: ChartStyleDimension;

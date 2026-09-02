@@ -1,3 +1,8 @@
+// SPDX-FileCopyrightText: Morinus contributors
+// SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Modified for Aries in 2026 by Max Lange.
+
 "use client";
 
 import * as React from "react";
@@ -6,11 +11,14 @@ import { ArrowDownRight, ArrowUpRight, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   corpusDisciplinesCached,
-  invalidateCorpusDisciplines,
   fetchAlerts,
-  type CorpusDiscipline,
+  fetchGenericTablePayload,
   fetchInspectorPayload,
   fetchPassages,
+  invalidateCorpusDisciplines,
+  type CorpusDiscipline,
+  type GenericTableCell,
+  type GenericTablePayload,
   type InspectorAlert,
   type InspectorAlertsPayload,
   type InspectorAspectItem,
@@ -22,10 +30,16 @@ import {
   type InspectorPassageRun,
   type InspectorPassageSection,
   type InspectorPayload,
+  type InspectorLensPayload,
   type RGB,
   workspaceMirrorLens,
 } from "@/lib/daemon/client";
 import type { ChartRenderSnapshot } from "@/lib/chart/types";
+import { isAbortError } from "@/lib/abort-error";
+import {
+  getCachedGenericTablePayload,
+  rememberGenericTablePayload,
+} from "@/lib/table/payload-cache";
 import {
   useWorkspaceStore,
   type HoverRegion,
@@ -44,30 +58,34 @@ import {
   type WorkspaceSessionChange,
 } from "./step-refresh";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
-import { useLocale, useT } from "@/lib/i18n/i18n";
+import { useLocale, useT, useTFallback } from "@/lib/i18n/i18n";
 import { semanticChartColor } from "@/lib/theme/semantic-color";
+import { CellView } from "./generic-table-view";
+import { tableCellText } from "./table-text-export";
+
 const INSPECTOR_PAYLOAD_KINDS = new Set([
   "planet",
   "vertex",
   "fortune",
   "syzygy",
+  "eclipse",
   "angle",
   "house",
   "sign",
   "secondary_ring",
   "aspect",
+  "drishti",
+  "pd_event",
 ]);
 
 const TEXT_BASE = "text-[length:var(--aries-font-size-base)]";
 const TEXT_READING = "text-[length:var(--aries-font-size-reading)]";
 const TEXT_SMALL = "text-[length:var(--aries-font-size-small)]";
 const TEXT_SECTION = "text-[length:var(--aries-font-size-section)]";
-const TEXT_HEADER = "text-[length:var(--aries-font-size-header)]";
 const TEXT_ARABIC = "text-[length:var(--aries-font-size-arabic)]";
 const INSPECTOR_TITLE_TEXT = "text-[length:var(--aries-inspector-title-size)]";
 const INSPECTOR_GLYPH_TEXT = "text-[length:var(--aries-inspector-glyph-size)]";
 const INSPECTOR_ALERT_GLYPH_TEXT = "text-[length:var(--aries-inspector-alert-glyph-size)]";
-const INSPECTOR_PACK_TAG_TEXT = "text-[length:var(--aries-inspector-pack-tag-size)]";
 const INSPECTOR_TITLE_COLOR = "text-[color:var(--aries-inspector-title-color)]";
 const INSPECTOR_STRONG_COLOR = "text-[color:var(--aries-inspector-strong-color)]";
 const INSPECTOR_VALUE_COLOR = "text-[color:var(--aries-inspector-value-color)]";
@@ -86,6 +104,205 @@ const INSPECTOR_WRAP_STYLE: React.CSSProperties = {
 
 function isDaemonStatusError(err: unknown, prefix: string, status: number): boolean {
   return err instanceof Error && err.message.startsWith(`${prefix}: ${status}`);
+}
+
+type HoraryLensMirrorQueue = {
+  enqueue: (documentId: string, lens: InspectorLensPayload | null) => Promise<void>;
+  flush: (documentId: string) => Promise<void>;
+};
+
+export type LatestWinsWriteResult<Input, Output> =
+  | { committed: true; input: Input; output: Output; revision: number }
+  | { committed: false; input: Input; revision: number };
+
+export type LatestWinsWriteQueue<Input, Output> = {
+  enqueue: (input: Input) => Promise<LatestWinsWriteResult<Input, Output>>;
+  isIdle: () => boolean;
+  revision: () => number;
+};
+
+function lensSemanticKey(lens: InspectorLensPayload | null): string {
+  const normalize = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(normalize);
+    if (value && typeof value === "object") {
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>)
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([key, item]) => [key, normalize(item)]),
+      );
+    }
+    return value;
+  };
+  return JSON.stringify(normalize(lens));
+}
+
+/**
+ * Marks a store mutation as document adoption so the lens-keyed mirror effect
+ * can consume it without writing it back. Adoption is navigation, not an edit;
+ * the guard intentionally follows the adopted value even if a rapid tab switch
+ * changes the active document before React performs the follow-up render.
+ */
+export function createHoraryLensAdoptionGuard() {
+  let pendingLensKey: string | null = null;
+  return {
+    mark(lens: InspectorLensPayload): void {
+      pendingLensKey = lensSemanticKey(lens);
+    },
+    consumeIfAdopted(lens: InspectorLensPayload | null): boolean {
+      if (pendingLensKey === null) return false;
+      const adopted = pendingLensKey === lensSemanticKey(lens);
+      pendingLensKey = null;
+      return adopted;
+    },
+  };
+}
+
+/**
+ * Serialize a replaceable setting write while retaining only the newest
+ * waiting choice. A completion is canonical only when no newer choice arrived
+ * while it was in flight; callers therefore cannot publish stale response
+ * state or trigger consumers from an obsolete selection.
+ */
+export function createLatestWinsWriteQueue<Input, Output>(
+  write: (input: Input) => Promise<Output>,
+): LatestWinsWriteQueue<Input, Output> {
+  type Pending = {
+    input: Input;
+    revision: number;
+    resolve: (result: LatestWinsWriteResult<Input, Output>) => void;
+    reject: (reason: unknown) => void;
+  };
+
+  let pending: Pending | null = null;
+  let running = false;
+  let requestedRevision = 0;
+
+  const pump = async () => {
+    if (running) return;
+    running = true;
+    while (pending) {
+      const current = pending;
+      pending = null;
+      try {
+        const output = await write(current.input);
+        if (pending) {
+          current.resolve({
+            committed: false,
+            input: current.input,
+            revision: current.revision,
+          });
+        } else {
+          current.resolve({
+            committed: true,
+            input: current.input,
+            output,
+            revision: current.revision,
+          });
+        }
+      } catch (err) {
+        if (pending) {
+          current.resolve({
+            committed: false,
+            input: current.input,
+            revision: current.revision,
+          });
+        } else {
+          current.reject(err);
+        }
+      }
+    }
+    running = false;
+  };
+
+  return {
+    enqueue: (input) => {
+      requestedRevision += 1;
+      return new Promise((resolve, reject) => {
+        if (pending) {
+          pending.resolve({
+            committed: false,
+            input: pending.input,
+            revision: pending.revision,
+          });
+        }
+        pending = { input, revision: requestedRevision, resolve, reject };
+        void pump();
+      });
+    },
+    isIdle: () => !running && pending === null,
+    revision: () => requestedRevision,
+  };
+}
+
+/**
+ * Keep lens persistence ordered per horary chart. Fetch completion order is not
+ * mutation order: without this queue, a slow earlier context POST can land
+ * after a newer one and put stale interpretation state back on the daemon
+ * chart. A rejected write is absorbed only by the sequencing tail so the next
+ * mutation still runs; the caller still receives and reports that rejection.
+ */
+export function createHoraryLensMirrorQueue(
+  write: (
+    documentId: string,
+    lens: InspectorLensPayload | null,
+  ) => Promise<unknown>,
+): HoraryLensMirrorQueue {
+  const sequencingTails = new Map<string, Promise<void>>();
+  const latestWrites = new Map<string, Promise<void>>();
+  const failedLenses = new Map<string, InspectorLensPayload | null>();
+
+  const enqueue = (
+    documentId: string,
+    lens: InspectorLensPayload | null,
+  ): Promise<void> => {
+    const previous = sequencingTails.get(documentId) ?? Promise.resolve();
+    const writePromise = previous.then(() => write(documentId, lens).then(() => undefined));
+    const settledTail = writePromise.catch(() => undefined);
+    failedLenses.delete(documentId);
+    sequencingTails.set(documentId, settledTail);
+    latestWrites.set(documentId, writePromise);
+    void settledTail.then(() => {
+      if (sequencingTails.get(documentId) === settledTail) {
+        sequencingTails.delete(documentId);
+      }
+    });
+    void writePromise.then(
+      () => {
+        if (latestWrites.get(documentId) === writePromise) {
+          latestWrites.delete(documentId);
+          failedLenses.delete(documentId);
+        }
+      },
+      () => {
+        if (latestWrites.get(documentId) === writePromise) {
+          latestWrites.delete(documentId);
+          failedLenses.set(documentId, lens);
+        }
+      },
+    );
+    return writePromise;
+  };
+
+  return {
+    enqueue,
+    flush: (documentId) => {
+      const pending = latestWrites.get(documentId);
+      if (pending) return pending;
+      if (failedLenses.has(documentId)) {
+        return enqueue(documentId, failedLenses.get(documentId) ?? null);
+      }
+      return Promise.resolve();
+    },
+  };
+}
+
+const horaryLensMirrorQueue = createHoraryLensMirrorQueue(
+  (documentId, lens) => workspaceMirrorLens(documentId, lens),
+);
+
+/** Await the canonical daemon mirror before a persistence boundary such as Save. */
+export function flushHoraryLensMirror(documentId: string): Promise<void> {
+  return horaryLensMirrorQueue.flush(documentId);
 }
 
 function snapshotDisplayDatetime(
@@ -128,6 +345,10 @@ export function InspectorPanel({ chart }: { chart: ChartRenderSnapshot | null })
   // clicking another target or empty chart space still replaces/clears it.
   const region = pinned ?? hovered;
   const radixBranchId = findDaemonRadixAncestor(documents, activeDoc?.id ?? null)?.id ?? null;
+  const snapshotDocumentId = chart?.document?.documentId ?? null;
+  const speculumDocument = snapshotDocumentId
+    ? documents.find((document) => document.id === snapshotDocumentId) ?? null
+    : activeDoc;
 
   const payload = useInspectorPayload(
     region,
@@ -139,7 +360,6 @@ export function InspectorPanel({ chart }: { chart: ChartRenderSnapshot | null })
   );
   const passages = usePassages(region, activeDoc, chart, radixBranchId);
   const alerts = useAlerts(activeDoc, chart, lastSessionChange);
-  useHoraryLensPersistence(activeDoc);
 
   const closeInspector = React.useCallback(() => {
     useWorkspaceStore.getState().setInspectorActiveRegion(null);
@@ -166,10 +386,19 @@ export function InspectorPanel({ chart }: { chart: ChartRenderSnapshot | null })
       ) : (
         <ChartSummary chart={chart} />
       )}
+      {chart && speculumDocument ? (
+        <InspectorSpeculum
+          visible={!region}
+          documentId={speculumDocument.id}
+          parentDocumentId={speculumDocument.parentDocumentId}
+          lastSessionChange={lastSessionChange}
+          lastOptionsChange={lastOptionsChange}
+        />
+      ) : null}
       {/* Zone B — source-text passages (keyed to the active region) + pack
           alerts (keyed to the active chart's lens). Rendered verbatim. */}
       {region ? <PassagesZone passages={passages} /> : null}
-      <LensPickerSection />
+      <InterpretationSelector />
       <AlertsZone alerts={alerts} />
     </aside>
   );
@@ -213,6 +442,7 @@ function useInspectorPayload(
     : null;
   const docId = activeDoc?.id ?? undefined;
   const chartRole = region && "chartRole" in region ? region.chartRole : undefined;
+  const ringIndex = region && "ringIndex" in region ? region.ringIndex : undefined;
   const refreshSeq = useSettledWorkspaceRefreshSeq({
     documentId: docId ?? "",
     lastSessionChange,
@@ -225,7 +455,10 @@ function useInspectorPayload(
   );
   const primaryChartIdentity = stableRenderChartIdentity(chart?.primaryChart);
   const partnerSensitive =
-    chartRole === "outer" || (region?.kind === "aspect" && region.scope === "interchart");
+    chartRole === "outer"
+    || ringIndex != null
+    || region?.kind === "pd_event"
+    || (region?.kind === "aspect" && region.scope === "interchart");
   // Sibling biwheels share their inner chart, so only outer/interchart regions
   // need the changing child document in their retained-content identity.
   const inspectedChartIdentity = partnerSensitive
@@ -237,6 +470,7 @@ function useInspectorPayload(
         kind,
         objectId,
         chartRole ?? null,
+        ringIndex ?? null,
         locale,
       ])
     : null;
@@ -251,6 +485,7 @@ function useInspectorPayload(
         objectId,
         docId,
         chartRole,
+        ringIndex,
         name: sourceName,
         hereNow,
         // Synastry passes a comparison ring; transit/SR/etc pass the feature
@@ -291,7 +526,7 @@ function useInspectorPayload(
     // This is retained inspector chrome, so an identity change must not expose
     // the empty hint or collapse the pane between the click and response.
     return () => controller.abort();
-  }, [canFetch, payloadIdentity, kind, objectId, docId, chartRole, sourceName, hereNow, supplementaryKind, comparisonName, viewMode, when, bindingJson, deferSignals, refreshSeq]);
+  }, [canFetch, payloadIdentity, kind, objectId, docId, chartRole, ringIndex, sourceName, hereNow, supplementaryKind, comparisonName, viewMode, when, bindingJson, deferSignals, refreshSeq]);
 
   return canFetch ? payloadState?.payload ?? null : null;
 }
@@ -304,16 +539,25 @@ function retainDeferredInspectorSlots(
   current: InspectorPayload | null,
   next: InspectorPayload,
 ): InspectorPayload {
-  if (!next.deferred_slots?.includes("phasis") || !current?.phasis_row) {
-    return next;
+  let retained = next;
+  if (next.deferred_slots?.includes("phasis") && current?.phasis_row) {
+    const phasisRow = current.phasis_row;
+    retained = {
+      ...retained,
+      phasis_row: phasisRow,
+      smart_rows: [...retained.smart_rows, phasisRow],
+      rows: [...(retained.rows ?? retained.smart_rows), phasisRow],
+    };
   }
-  const phasisRow = current.phasis_row;
-  return {
-    ...next,
-    phasis_row: phasisRow,
-    smart_rows: [...next.smart_rows, phasisRow],
-    rows: [...(next.rows ?? next.smart_rows), phasisRow],
-  };
+  if (next.deferred_slots?.includes("stations") && current?.station_rows?.length) {
+    const stationRows = current.station_rows;
+    retained = {
+      ...retained,
+      station_rows: stationRows,
+      detail_rows: [...(retained.detail_rows ?? []), ...stationRows],
+    };
+  }
+  return retained;
 }
 
 /**
@@ -335,6 +579,7 @@ function regionObjectId(region: HoverRegion): string | null {
   if (region.kind === "vertex") return "vertex";
   if (region.kind === "fortune") return "fortune";
   if (region.kind === "syzygy") return "syzygy";
+  if (region.kind === "eclipse") return "eclipse";
   if (region.kind === "angle") return region.angleId;
   if (region.kind === "house") return String(region.houseIndex);
   if (region.kind === "sign") return String(region.signIndex);
@@ -350,6 +595,8 @@ function regionObjectId(region: HoverRegion): string | null {
     }
     return `${region.p1}:${region.p2}:${region.aspectType}`;
   }
+  if (region.kind === "drishti") return region.relationId;
+  if (region.kind === "pd_event") return region.eventId;
   return null;
 }
 
@@ -365,6 +612,7 @@ function usePassages(
   radixBranchId: string | null,
 ): InspectorPassagesPayload | null {
   const locale = useLocale();
+  const packsVersion = useWorkspaceStore((state) => state.packsVersion);
   const [passagesState, setPassagesState] = React.useState<{
     identity: string;
     passages: InspectorPassagesPayload;
@@ -381,15 +629,23 @@ function usePassages(
     ? JSON.stringify(activeDoc.supplementaryBinding)
     : null;
   const docId = activeDoc?.id ?? undefined;
-  // Planet/sign source text is standing content. A live document id already
+  const chartRole = region && "chartRole" in region ? region.chartRole : undefined;
+  const ringIndex = region && "ringIndex" in region ? region.ringIndex : undefined;
+  // Inspector source text is standing content. A live document id already
   // resolves the current session chart, so its changing cursor must not refetch
   // and rerender the passage on every step. The fallback loader still needs a
   // datetime when no live document exists.
   const when = docId ? undefined : snapshotDisplayDatetime(chart, activeDoc);
 
-  const canFetch = Boolean(region && kind && objectId != null && sourceName);
+  const canFetch = Boolean(
+    region
+    && region.kind !== "pd_event"
+    && kind
+    && objectId != null
+    && sourceName,
+  );
   const passagesIdentity = canFetch
-    ? JSON.stringify([radixBranchId, kind, objectId, locale])
+    ? JSON.stringify([radixBranchId, kind, objectId, chartRole, ringIndex, locale, packsVersion])
     : null;
 
   React.useEffect(() => {
@@ -401,6 +657,8 @@ function usePassages(
         kind,
         objectId,
         docId,
+        chartRole,
+        ringIndex,
         name: sourceName,
         hereNow,
         supplementaryKind:
@@ -427,7 +685,7 @@ function usePassages(
         console.error("[inspector:passages]", err);
       });
     return () => controller.abort();
-  }, [canFetch, passagesIdentity, kind, objectId, docId, sourceName, hereNow, supplementaryKind, comparisonName, viewMode, when, bindingJson]);
+  }, [canFetch, passagesIdentity, kind, objectId, docId, chartRole, ringIndex, sourceName, hereNow, supplementaryKind, comparisonName, viewMode, when, bindingJson]);
 
   // Keep the standing source section mounted across a planet-to-planet swap;
   // the matching replacement arrives with the Zone A payload instead of the
@@ -451,6 +709,9 @@ function useAlerts(
   // wx re-fires the interpretation callback in _on_pack_toggled
   // (workspace_shell.py:2566-2569) for the same reason.
   const packsVersion = useWorkspaceStore((s) => s.packsVersion);
+  const semanticProfileVersion = useWorkspaceStore(
+    (s) => s.semanticProfileVersion,
+  );
   const [alertsState, setAlertsState] = React.useState<{
     identity: string;
     alerts: InspectorAlertsPayload;
@@ -526,7 +787,7 @@ function useAlerts(
     // Preserve the current cards during same-chart refreshes. Removing them in
     // cleanup collapsed the lower inspector and made the whole pane jump.
     return () => controller.abort();
-  }, [canFetch, alertsIdentity, discipline, theme, context, docId, sourceName, hereNow, supplementaryKind, viewMode, when, bindingJson, packsVersion, refreshSeq]);
+  }, [canFetch, alertsIdentity, discipline, theme, context, docId, sourceName, hereNow, supplementaryKind, viewMode, when, bindingJson, packsVersion, semanticProfileVersion, refreshSeq]);
 
   return canFetch && alertsState?.identity === alertsIdentity
     ? alertsState.alerts
@@ -542,21 +803,106 @@ function useAlerts(
  * collapse-to-all semantics and persists (morin.py:9005). When a lens
  * discipline is selected the list is scoped to it (packs_for_discipline,
  * workspace_shell.py:2472); with no lens all packs are shown so the surface
- * stays reachable (the web skin has no discipline picker yet).
+ * stays reachable through the compact interpretation selector below.
  */
 /**
- * Interpretation lens picker — web twin of the wx inspector control strip's
- * Discipline / Theme inline pickers (workspace_shell.py:2441-2454, built
- * :1519-1602). Items come from GET /api/corpus/disciplines
- * (rule_engine.registered_disciplines / theme_labels_for); the em-dash row
- * clears the selection, exactly like the wx pickers. Committing a lens follows
- * morin._on_inspector_interpretation_change (morin.py:9026-9042): the lens is
- * set only when BOTH discipline and theme are chosen; horary themes seed the
- * default significator context shipped by the catalog. The lens may also be
- * set externally (Charts > Elections / Horary native menu) — the pickers
- * follow it, mirroring wx set_pack_alerts syncing the strip
- * (workspace_shell.py:2594-2596).
+ * Keep only the quick discipline/theme selector in the inspector. Semantic
+ * profile definitions and question-specific context controls belong to
+ * Settings > Interpretation; both surfaces mutate the same canonical lens.
  */
+const InterpretationSelector = React.memo(function InterpretationSelector() {
+  const t = useT();
+  const lens = useWorkspaceStore((state) => state.inspectorLens);
+  const packsVersion = useWorkspaceStore((state) => state.packsVersion);
+  const [catalog, setCatalog] = React.useState<CorpusDiscipline[] | null>(null);
+  const [pickedDiscipline, setPickedDiscipline] = React.useState("");
+  const [previousLensDiscipline, setPreviousLensDiscipline] = React.useState<string | null>(null);
+  const lensDiscipline = lens?.discipline ?? null;
+
+  if (lensDiscipline !== previousLensDiscipline) {
+    setPreviousLensDiscipline(lensDiscipline);
+    if (lensDiscipline) setPickedDiscipline(lensDiscipline);
+  }
+
+  React.useEffect(() => {
+    let cancelled = false;
+    if (packsVersion > 0) invalidateCorpusDisciplines();
+    corpusDisciplinesCached()
+      .then((payload) => {
+        if (!cancelled) setCatalog(payload.disciplines);
+      })
+      .catch((error) => console.error("[inspector:disciplines]", error));
+    return () => {
+      cancelled = true;
+    };
+  }, [packsVersion]);
+
+  if (!catalog?.length) return null;
+
+  const discipline = pickedDiscipline;
+  const themes = catalog.find((item) => item.slug === discipline)?.themes ?? [];
+  const activeTheme = themes.find(
+    (theme) => theme.label === lens?.theme || theme.aliases.includes(lens?.theme ?? ""),
+  );
+  const selectClass = cn(
+    "h-[var(--aries-control-height-compact)] min-w-0 flex-1 rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] bg-transparent px-[var(--aries-control-gap)] outline-none",
+    INSPECTOR_VALUE_COLOR,
+    TEXT_SMALL,
+  );
+
+  const selectDiscipline = (slug: string) => {
+    setPickedDiscipline(slug);
+    useWorkspaceStore.getState().setInspectorLens(null);
+  };
+  const selectTheme = (label: string) => {
+    if (!discipline || !label) {
+      useWorkspaceStore.getState().setInspectorLens(null);
+      return;
+    }
+    const theme = themes.find((item) => item.label === label);
+    useWorkspaceStore.getState().setInspectorLens({
+      discipline,
+      theme: label,
+      context: theme?.defaultContext ?? undefined,
+    });
+  };
+
+  return (
+    <div className={INSPECTOR_SECTION_BOX}>
+      <SectionLabel>{t("inspector.interpretation")}</SectionLabel>
+      <div className="flex items-center gap-[var(--aries-inspector-heading-gap)]">
+        <select
+          data-aries-control-appearance="local"
+          aria-label={t("inspector.discipline")}
+          className={selectClass}
+          value={discipline}
+          onChange={(event) => selectDiscipline(event.target.value)}
+        >
+          <option value="">—</option>
+          {catalog.map((item) => (
+            <option key={item.slug} value={item.slug}>{item.displayName}</option>
+          ))}
+        </select>
+        <select
+          data-aries-control-appearance="local"
+          aria-label={t("inspector.theme")}
+          className={selectClass}
+          value={lens?.discipline === discipline ? activeTheme?.label ?? "" : ""}
+          disabled={!discipline}
+          onChange={(event) => selectTheme(event.target.value)}
+        >
+          <option value="">—</option>
+          {themes.map((theme) => (
+            <option key={theme.label} value={theme.label} title={theme.tooltip || undefined}>
+              {theme.label}
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+});
+
 /**
  * Horary lens persistence — the interpretation round-trip (slice 4).
  *
@@ -573,205 +919,53 @@ function useAlerts(
  * never on tab switch — so the effect keys on the lens value alone and reads
  * the active doc through a ref.
  */
-function useHoraryLensPersistence(activeDoc: WorkspaceDocument | null) {
+export function useHoraryLensPersistence(activeDoc: WorkspaceDocument | null) {
   const lens = useWorkspaceStore((s) => s.inspectorLens);
   const docRef = React.useRef(activeDoc);
+  const [adoptionGuard] = React.useState(createHoraryLensAdoptionGuard);
   const docId = activeDoc?.id ?? null;
   // Keep the latest active doc readable from the lens-keyed mirror effect
   // without making it a dependency (wx never mirrors on tab switch). Declared
   // FIRST so it runs before the adoption/mirror effects below.
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     docRef.current = activeDoc;
   });
 
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     const doc = docRef.current;
     if (!doc || doc.id !== docId) return;
     if (doc.isHorary && doc.interpretation) {
-      useWorkspaceStore.getState().setInspectorLens({
+      const adoptedLens = {
         discipline: doc.interpretation.discipline,
         theme: doc.interpretation.theme,
         context: doc.interpretation.context ?? undefined,
-      });
+      };
+      const currentLens = useWorkspaceStore.getState().inspectorLens;
+      if (lensSemanticKey(currentLens) === lensSemanticKey(adoptedLens)) return;
+      adoptionGuard.mark(adoptedLens);
+      useWorkspaceStore.getState().setInspectorLens(adoptedLens);
     }
-  }, [docId]);
+  }, [adoptionGuard, docId]);
 
   // Skip the mount run: mirroring the initial (possibly null) lens would
   // wrongly clear a saved question before adoption lands.
   const mirrorReady = React.useRef(false);
-  React.useEffect(() => {
+  // Register the pending mirror in the same commit as the picker change. Save
+  // may be the very next native command, so a passive effect is too late to be
+  // a reliable persistence boundary.
+  React.useLayoutEffect(() => {
     if (!mirrorReady.current) {
       mirrorReady.current = true;
       return;
     }
     const doc = docRef.current;
     if (!doc?.isHorary) return;
-    workspaceMirrorLens(doc.id, lens ?? null).catch((err) =>
+    if (adoptionGuard.consumeIfAdopted(lens ?? null)) return;
+    horaryLensMirrorQueue.enqueue(doc.id, lens ?? null).catch((err) =>
       console.error("[inspector:lens-mirror]", err),
     );
-  }, [lens]);
+  }, [adoptionGuard, lens]);
 }
-
-const LensPickerSection = React.memo(function LensPickerSection() {
-  const t = useT();
-  const lens = useWorkspaceStore((s) => s.inspectorLens);
-  const [catalog, setCatalog] = React.useState<CorpusDiscipline[] | null>(null);
-  // Local picker state: a discipline can be picked before a theme; the lens
-  // stays null until the theme lands (morin.py:9031-9032). When the lens is
-  // set EXTERNALLY (Charts menu dispatch) the picker adopts its discipline via
-  // the render-time state-adjust pattern (React 19: no setState in effects).
-  const [picked, setPicked] = React.useState<string>("");
-  const [prevLensDiscipline, setPrevLensDiscipline] = React.useState<string | null>(null);
-  const lensDiscipline = lens?.discipline ?? null;
-  if (lensDiscipline !== prevLensDiscipline) {
-    setPrevLensDiscipline(lensDiscipline);
-    if (lensDiscipline) setPicked(lensDiscipline);
-  }
-  const discipline = picked;
-
-  // The discipline/theme catalog is gated by the active Corpus Packs filter, so
-  // it must re-pull whenever a pack is toggled (packsVersion bumps). Invalidate
-  // the shared cache first so we get the freshly-filtered catalog, not the stale
-  // one. UNISON with the title-bar Corpus Packs menu.
-  const packsVersion = useWorkspaceStore((s) => s.packsVersion);
-  React.useEffect(() => {
-    let cancelled = false;
-    if (packsVersion > 0) invalidateCorpusDisciplines();
-    corpusDisciplinesCached()
-      .then((payload) => {
-        if (!cancelled) setCatalog(payload.disciplines);
-      })
-      .catch((err) => console.error("[inspector:disciplines]", err));
-    return () => {
-      cancelled = true;
-    };
-  }, [packsVersion]);
-
-  if (!catalog || catalog.length === 0) return null;
-  const themes = catalog.find((d) => d.slug === discipline)?.themes ?? [];
-
-  const onDiscipline = (slug: string) => {
-    setPicked(slug);
-    // Theme resets on discipline change; no lens until a theme is picked.
-    useWorkspaceStore.getState().setInspectorLens(null);
-  };
-  const onTheme = (label: string) => {
-    const store = useWorkspaceStore.getState();
-    if (!discipline || !label) {
-      store.setInspectorLens(null);
-      return;
-    }
-    const theme = themes.find((t) => t.label === label);
-    store.setInspectorLens({
-      discipline,
-      theme: label,
-      context: theme?.defaultContext ?? undefined,
-    });
-  };
-
-  // Horary per-question context — quesited/querent house pickers (slice 3).
-  // wx twin: workspace_shell.py:1560-1602 (build, 1-12 choices, quesited
-  // first), :2526 _on_context_choice firing morin._on_inspector_context_change
-  // (morin.py:9013-9024 — merge into the lens context, then alerts refetch).
-  // Shown only while the active lens is horary (workspace_shell.py:2598-2602).
-  const onContextHouse = (key: "quesited_house" | "querent_house", value: string) => {
-    const store = useWorkspaceStore.getState();
-    const current = store.inspectorLens;
-    if (!current) return;
-    const house = parseInt(value, 10);
-    if (!Number.isFinite(house)) return;
-    store.setInspectorLens({
-      ...current,
-      context: { ...(current.context ?? {}), [key]: house },
-    });
-  };
-  const contextHouse = (key: "quesited_house" | "querent_house"): string => {
-    const value = lens?.context?.[key];
-    return typeof value === "number" && value >= 1 && value <= 12 ? String(value) : "";
-  };
-  const houseLabels = Array.from({ length: 12 }, (_, i) => String(i + 1));
-
-  const selectClass = cn(
-    "h-[var(--aries-inspector-control-height)] min-w-0 flex-1 rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] bg-[var(--aries-inspector-background)] px-[var(--aries-inspector-control-padding-x)]",
-    INSPECTOR_VALUE_COLOR,
-    TEXT_SMALL,
-  );
-
-  return (
-    <div className={cn(INSPECTOR_SECTION_BOX, "pb-[var(--aries-inspector-control-section-padding-bottom)]")}>
-      <SectionLabel>{t("inspector.interpretation")}</SectionLabel>
-      <div className="flex items-center gap-[var(--aries-inspector-heading-gap)]">
-        <select
-          data-aries-control-appearance="local"
-          aria-label={t("inspector.discipline")}
-          className={selectClass}
-          value={discipline}
-          onChange={(e) => onDiscipline(e.target.value)}
-        >
-          <option value="">{"—"}</option>
-          {catalog.map((d) => (
-            <option key={d.slug} value={d.slug}>
-              {d.displayName}
-            </option>
-          ))}
-        </select>
-        <select
-          data-aries-control-appearance="local"
-          aria-label={t("inspector.theme")}
-          className={selectClass}
-          value={lens?.discipline === discipline ? lens?.theme ?? "" : ""}
-          onChange={(e) => onTheme(e.target.value)}
-          disabled={!discipline}
-        >
-          <option value="">{"—"}</option>
-          {themes.map((th) => (
-            <option key={th.label} value={th.label} title={th.tooltip || undefined}>
-              {th.label}
-            </option>
-          ))}
-        </select>
-      </div>
-      {lens?.discipline === "horary" ? (
-        <div className="mt-[var(--aries-inspector-section-gap)] flex items-center gap-[var(--aries-inspector-heading-gap)]">
-          <label className={cn("flex min-w-0 flex-1 items-center gap-[var(--aries-control-gap-compact)]", INSPECTOR_MUTED_COLOR, TEXT_SMALL)}>
-            {t("inspector.quesited")}:
-            <select
-              data-aries-control-appearance="local"
-              aria-label={t("inspector.quesitedHouse")}
-              className={selectClass}
-              value={contextHouse("quesited_house")}
-              onChange={(e) => onContextHouse("quesited_house", e.target.value)}
-            >
-              <option value="" disabled hidden />
-              {houseLabels.map((h) => (
-                <option key={h} value={h}>
-                  {h}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className={cn("flex min-w-0 flex-1 items-center gap-[var(--aries-control-gap-compact)]", INSPECTOR_MUTED_COLOR, TEXT_SMALL)}>
-            {t("inspector.querent")}:
-            <select
-              data-aries-control-appearance="local"
-              aria-label={t("inspector.querentHouse")}
-              className={selectClass}
-              value={contextHouse("querent_house")}
-              onChange={(e) => onContextHouse("querent_house", e.target.value)}
-            >
-              <option value="" disabled hidden />
-              {houseLabels.map((h) => (
-                <option key={h} value={h}>
-                  {h}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      ) : null}
-    </div>
-  );
-});
 
 function RegionPayload({ payload }: { payload: InspectorPayload | null }) {
   const t = useT();
@@ -1035,6 +1229,29 @@ function ManzilSummary({ manzil }: { manzil: InspectorManzil }) {
 
 /** A dignity item: labelled value (coloured) or a mutual-reception glyph pair. */
 function DignityRow({ item }: { item: InspectorDignityItem }) {
+  if (item.kind === "triplicity_lords") {
+    return (
+      <div className={cn("flex min-w-0 items-center gap-[var(--aries-inspector-heading-gap)]", TEXT_BASE)}>
+        <span className={cn("w-[var(--aries-inspector-label-width)] shrink-0", INSPECTOR_LABEL_COLOR)}>{item.label}</span>
+        <span className="flex min-w-0 items-center gap-[var(--aries-control-gap)]" aria-label={item.value_text}>
+          {item.lords.map((lord, index) => (
+            <span
+              key={`${lord.planet_id}-${index}`}
+              title={lord.name}
+              className={cn("leading-none", lord.current && "font-semibold")}
+              style={{
+                fontFamily: "'AriesMorinus'",
+                color: semanticChartColor(lord.colour_role, rgb(lord.colour)) ?? undefined,
+              }}
+              aria-hidden
+            >
+              {lord.glyph}
+            </span>
+          ))}
+        </span>
+      </div>
+    );
+  }
   if (item.kind === "mutual_reception") {
     return (
       <div className={cn("flex items-center gap-[var(--aries-control-gap-compact)]", TEXT_BASE)}>
@@ -1095,8 +1312,8 @@ function DetailRow({
   const label = text.slice(0, idx + 1);
   const value = text.slice(idx + 1).trim();
   return (
-    <div className={cn("flex min-w-0 items-baseline gap-[var(--aries-control-gap)]", TEXT_SMALL)}>
-      <span className={INSPECTOR_LABEL_COLOR}>{label}</span>
+    <div className={cn("flex min-w-0 items-baseline gap-[var(--aries-inspector-heading-gap)]", TEXT_SMALL)}>
+      <span className={cn("w-[var(--aries-inspector-label-width)] shrink-0", INSPECTOR_LABEL_COLOR)}>{label}</span>
       <span className={cn("min-w-0 tabular-nums", INSPECTOR_VALUE_COLOR)} style={INSPECTOR_WRAP_STYLE}>{value}</span>
       {status ? (
         <>
@@ -1156,13 +1373,12 @@ function AspectRow({ item }: { item: InspectorAspectItem }) {
 }
 
 /**
- * Zone B — fixed Valens planet/sign definitions. This mirrors the current wx
- * inspector hover path: one standing planet/sign section, no legacy corpus
- * browser cards and no pin controls.
+ * Zone B — passive source text from the active inspector-content pack. It is
+ * independent of interpretation disciplines and contributes no alert cards.
  */
 const PassagesZone = React.memo(function PassagesZone({ passages }: { passages: InspectorPassagesPayload | null }) {
   const t = useT();
-  if (!passages) return null;
+  if (!passages?.packId) return null;
   const section = passages.section;
 
   if (!section) {
@@ -1286,31 +1502,113 @@ function PassageRunSpan({ run }: { run: InspectorPassageRun }) {
   }
 }
 
+const DEFAULT_READING_KINDS = new Set([
+  "verdict",
+  "predicate_verdict",
+  "moon_sign_lookup",
+  "finding",
+  "predicate_finding",
+  "axis_assignment",
+]);
+
+export function isDefaultReadingAlert(
+  alert: Pick<InspectorAlert, "kind">,
+): boolean {
+  return DEFAULT_READING_KINDS.has(alert.kind || "verdict");
+}
+
+export function defaultReadingAlerts<T extends Pick<InspectorAlert, "kind">>(
+  alerts: readonly T[],
+  limit = 12,
+): T[] {
+  return alerts.filter(isDefaultReadingAlert).slice(0, limit);
+}
+
+export function detailAlerts<T extends Pick<InspectorAlert, "evidence" | "technicalDetails">>(
+  alerts: readonly T[],
+  visibleReadings: readonly T[],
+): T[] {
+  const visibleReadingSet = new Set(visibleReadings);
+  return alerts.filter((alert) => (
+    !visibleReadingSet.has(alert)
+    || Boolean(alert.technicalDetails?.trim())
+    || Boolean(alert.evidence?.trim())
+  ));
+}
+
 /**
- * Zone B — pack alerts. Renders the active-lens rule-engine verdicts as one
- * card per alert: a status dot + Morinus glyph + bold title + prose body +
- * citation, all verbatim from the daemon. Empty / no-lens → nothing rendered
- * (matches the wx oracle hiding the whole section, workspace_shell.py:2618).
+ * Zone B — pack readings. Complete verdicts, source findings, and literal axis
+ * assignments remain ordinary cards. Constituent conditions, source notes,
+ * unknown kinds, and all engine diagnostics stay in one closed disclosure.
  */
 const AlertsZone = React.memo(function AlertsZone({ alerts }: { alerts: InspectorAlertsPayload | null }) {
   const t = useT();
+  const tf = useTFallback();
   if (!alerts || alerts.alerts.length === 0) return null;
   const heading = [alerts.discipline, alerts.theme]
     .filter(Boolean)
     .map((s) => (s ? s[0].toUpperCase() + s.slice(1) : s))
     .join(" · ");
+  const visibleReadings = defaultReadingAlerts(alerts.alerts);
+  const visibleReadingSet = new Set(visibleReadings);
+  const auditAlerts = detailAlerts(alerts.alerts, visibleReadings);
 
   return (
     <div className={INSPECTOR_SECTION_BOX}>
       <SectionLabel>{heading || t("inspector.packAlerts")}</SectionLabel>
       <div className="flex flex-col gap-[var(--aries-inspector-card-gap)]">
         {/* wx caps the visible cards at 12 (workspace_shell.py:2635). */}
-        {/* Pack tag only when >1 pack ships rules for the discipline — the
-            cite alone attributes single-pack rules (workspace_shell.py:2660-2669). */}
-        {alerts.alerts.slice(0, 12).map((alert, i) => (
-          <AlertCard key={`alert-${i}`} alert={alert} showPackTag={(alerts.packCount ?? 0) > 1} />
+        {visibleReadings.map((alert, i) => (
+          <AlertCard
+            key={`${alert.pack ?? "inline"}:${alert.ruleId ?? i}`}
+            alert={alert}
+          />
         ))}
       </div>
+      {auditAlerts.length > 0 ? (
+        <details className={cn("mt-[var(--aries-inspector-card-gap)]", INSPECTOR_TERTIARY_COLOR, TEXT_SECTION)}>
+          <summary className="w-fit cursor-pointer select-none">
+            {t("inspector.technicalDetails")}
+          </summary>
+          <div className="mt-[var(--aries-control-gap-compact)] space-y-[var(--aries-inspector-card-gap)]">
+            {auditAlerts.map((alert, i) => {
+              const title = alert.titleKey ? tf(alert.titleKey, alert.title) : alert.title;
+              const body = alert.bodyKey ? tf(alert.bodyKey, alert.body) : alert.body;
+              const hiddenFromReadings = !visibleReadingSet.has(alert);
+              const kindLabel = alert.kind === "source_note"
+                ? t("inspector.sourceNote")
+                : alert.kind === "condition" || alert.kind === "predicate_condition"
+                  ? t("inspector.condition")
+                  : alert.kind === "finding" || alert.kind === "predicate_finding"
+                    ? t("inspector.finding")
+                    : hiddenFromReadings ? alert.kind : "";
+              const auditId = [alert.pack, alert.ruleId].filter(Boolean).join(":");
+              return (
+                <div key={`${alert.pack ?? "inline"}:${alert.ruleId ?? i}`}>
+                  <div className={cn("font-semibold", INSPECTOR_READING_COLOR)}>{title}</div>
+                  {kindLabel || auditId ? (
+                    <div className="font-mono">
+                      {[kindLabel, auditId ? `[${auditId}]` : ""].filter(Boolean).join(" · ")}
+                    </div>
+                  ) : null}
+                  {hiddenFromReadings && body ? (
+                    <div className={cn("whitespace-pre-line", INSPECTOR_READING_COLOR)}>{body}</div>
+                  ) : null}
+                  {hiddenFromReadings && alert.cite ? (
+                    <div className={cn("italic", INSPECTOR_LABEL_COLOR)}>{alert.cite}</div>
+                  ) : null}
+                  {alert.technicalDetails ? (
+                    <div className="whitespace-pre-line">{alert.technicalDetails}</div>
+                  ) : null}
+                  {alert.evidence ? (
+                    <div className="whitespace-pre-line font-mono">{alert.evidence}</div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </details>
+      ) : null}
     </div>
   );
 });
@@ -1323,10 +1621,13 @@ const ALERT_STATUS_COLOUR: Record<string, string> = {
   avoid: "var(--aries-status-avoid)",
 };
 
-/** A single pack-alert card — status dot + Morinus glyph + title + body + cite,
- * plus the authoring pack tag. Rendered verbatim. */
-function AlertCard({ alert, showPackTag }: { alert: InspectorAlert; showPackTag?: boolean }) {
+/** A single source-reading card. Authored title/body/citation stay primary;
+ * engine provenance is collected once in the zone-level audit disclosure. */
+function AlertCard({ alert }: { alert: InspectorAlert }) {
+  const tf = useTFallback();
   const dot = (alert.status && ALERT_STATUS_COLOUR[alert.status]) || "var(--aries-status-neutral)";
+  const title = alert.titleKey ? tf(alert.titleKey, alert.title) : alert.title;
+  const body = alert.bodyKey ? tf(alert.bodyKey, alert.body) : alert.body;
   return (
     <div className="rounded-[var(--aries-radius-md)] border border-[color:var(--aries-inspector-card-border-color)] bg-[var(--aries-inspector-card-background)] px-[var(--aries-inspector-card-padding-x)] py-[var(--aries-inspector-card-padding-y)]">
       <div className="flex items-center gap-[var(--aries-inspector-heading-gap)]">
@@ -1341,20 +1642,236 @@ function AlertCard({ alert, showPackTag }: { alert: InspectorAlert; showPackTag?
           </span>
         ) : null}
         <span className={cn("min-w-0 flex-1 font-semibold tracking-tight", INSPECTOR_STRONG_COLOR, TEXT_SMALL)}>
-          {alert.title}
+          {title}
         </span>
-        {alert.pack && showPackTag ? (
-          <span className={cn("shrink-0", INSPECTOR_TERTIARY_COLOR, INSPECTOR_PACK_TAG_TEXT)}>
-            {alert.pack}
-          </span>
-        ) : null}
       </div>
-      {alert.body ? (
-        <p className={cn("mt-[var(--aries-control-gap-compact)] leading-relaxed whitespace-pre-line", INSPECTOR_READING_COLOR, TEXT_SMALL)}>{alert.body}</p>
+      {body ? (
+        <p className={cn("mt-[var(--aries-control-gap-compact)] leading-relaxed whitespace-pre-line", INSPECTOR_READING_COLOR, TEXT_SMALL)}>{body}</p>
       ) : null}
       {alert.cite ? (
         <div className={cn("mt-[var(--aries-control-gap-compact)] italic", INSPECTOR_LABEL_COLOR, TEXT_SECTION)}>{alert.cite}</div>
       ) : null}
+    </div>
+  );
+}
+
+type InspectorSpeculumRow = {
+  id: string;
+  label: string;
+  bodyGlyphCell?: GenericTableCell;
+  longitudeCell: GenericTableCell;
+  longitudeText: string;
+  latitudeCell?: GenericTableCell;
+  latitudeText: string;
+  declinationCell?: GenericTableCell;
+  declinationText: string;
+  declinationOutOfBounds: boolean;
+  speedCell?: GenericTableCell;
+  speedText: string;
+  houseCell?: GenericTableCell;
+  houseText: string;
+};
+
+const inspectorSpeculumRefreshSeqByDocument = new Map<string, number>();
+
+function speculumBodyGlyphCell(cell: GenericTableCell): GenericTableCell | undefined {
+  if (cell.glyph) return { ...cell, text: undefined };
+  const glyphRuns = cell.runs?.filter((run) => run.glyph);
+  return glyphRuns?.length ? { ...cell, text: undefined, runs: glyphRuns } : undefined;
+}
+
+function inspectorSpeculumRows(payload: GenericTablePayload): InspectorSpeculumRow[] {
+  return (payload.sections ?? [])
+    .filter((section) => section.id === "ascmc" || section.id === "planets")
+    .flatMap((section) => {
+      const bodyIndex = section.columns.findIndex((column) => column.id === "body");
+      const longitudeIndex = section.columns.findIndex((column) => column.id === "lon");
+      const latitudeIndex = section.columns.findIndex((column) => column.id === "lat");
+      const declinationIndex = section.columns.findIndex((column) => column.id === "decl");
+      const speedIndex = section.columns.findIndex((column) => column.id === "speed");
+      const houseIndex = section.columns.findIndex((column) => column.id === "house");
+      if (bodyIndex < 0 || longitudeIndex < 0) return [];
+      return section.rows.flatMap((row) => {
+        const bodyCell = row.cells[bodyIndex];
+        const longitudeCell = row.cells[longitudeIndex];
+        const latitudeCell = latitudeIndex >= 0 ? row.cells[latitudeIndex] : undefined;
+        const declinationCell = declinationIndex >= 0 ? row.cells[declinationIndex] : undefined;
+        const speedCell = speedIndex >= 0 ? row.cells[speedIndex] : undefined;
+        const houseCell = houseIndex >= 0 ? row.cells[houseIndex] : undefined;
+        const label = tableCellText(bodyCell).trim();
+        if (!bodyCell || !longitudeCell || !label) return [];
+        return [{
+          id: `${section.id}:${row.id}`,
+          label,
+          bodyGlyphCell: speculumBodyGlyphCell(bodyCell),
+          longitudeCell,
+          longitudeText: tableCellText(longitudeCell),
+          latitudeCell,
+          latitudeText: tableCellText(latitudeCell),
+          declinationCell,
+          declinationText: tableCellText(declinationCell),
+          declinationOutOfBounds: row.meta?.declinationOutOfBounds === true,
+          speedCell,
+          speedText: tableCellText(speedCell),
+          houseCell,
+          houseText: tableCellText(houseCell),
+        }];
+      });
+    });
+}
+
+function InspectorSpeculum({
+  visible,
+  documentId,
+  parentDocumentId,
+  lastSessionChange,
+  lastOptionsChange,
+}: {
+  visible: boolean;
+  documentId: string;
+  parentDocumentId?: string | null;
+  lastSessionChange: WorkspaceSessionChange | null;
+  lastOptionsChange: WorkspaceOptionsChange | null;
+}) {
+  const t = useT();
+  const [payloadState, setPayloadState] = React.useState<{
+    documentId: string;
+    payload: GenericTablePayload;
+  } | null>(() => {
+    const payload = getCachedGenericTablePayload("positions", documentId);
+    return payload ? { documentId, payload } : null;
+  });
+  const requestSeqRef = React.useRef(0);
+  const refreshSeq = useSettledWorkspaceRefreshSeq({
+    documentId,
+    parentDocumentId,
+    lastSessionChange,
+    lastOptionsChange,
+    refreshOnInspectorDataChange: true,
+  });
+
+  React.useEffect(() => {
+    if (!visible) return;
+    const cachedPayload = getCachedGenericTablePayload("positions", documentId);
+    if (
+      cachedPayload &&
+      inspectorSpeculumRefreshSeqByDocument.get(documentId) === refreshSeq
+    ) {
+      return;
+    }
+    const controller = new AbortController();
+    const requestSeq = requestSeqRef.current + 1;
+    requestSeqRef.current = requestSeq;
+    fetchGenericTablePayload("positions", documentId, controller.signal)
+      .then((payload) => {
+        if (controller.signal.aborted || requestSeq !== requestSeqRef.current) return;
+        rememberGenericTablePayload("positions", documentId, payload);
+        inspectorSpeculumRefreshSeqByDocument.set(documentId, refreshSeq);
+        setPayloadState({ documentId, payload });
+      })
+      .catch((err) => {
+        if (isAbortError(err, controller.signal)) return;
+        console.error("[inspector:positions]", err);
+      });
+    return () => controller.abort();
+  }, [documentId, refreshSeq, visible]);
+
+  const payload = payloadState?.documentId === documentId
+    ? payloadState.payload
+    : getCachedGenericTablePayload("positions", documentId);
+  const rows = React.useMemo(
+    () => payload ? inspectorSpeculumRows(payload) : [],
+    [payload],
+  );
+  if (!visible || !rows.length) return null;
+  const columns = payload?.sections?.find(
+    (section) => section.id === "ascmc" || section.id === "planets",
+  )?.columns ?? payload?.columns ?? [];
+  const columnLabel = (id: string) => {
+    const column = columns.find((candidate) => candidate.id === id);
+    return column?.exportLabel ?? column?.label ?? "";
+  };
+
+  return (
+    <div className={INSPECTOR_SECTION_BOX}>
+      <table
+        aria-label={t("table.positions")}
+        className={cn(
+          "w-full table-auto border-collapse leading-snug",
+          TEXT_BASE,
+        )}
+      >
+        <thead className={cn(INSPECTOR_MUTED_COLOR, TEXT_SMALL)}>
+          <tr>
+            {(["body", "lon", "lat", "decl", "speed", "house"] as const).map((columnId) => {
+              const label = columnLabel(columnId);
+              return (
+                <th
+                  key={columnId}
+                  scope="col"
+                  title={label}
+                  className={cn(
+                    "pr-[var(--aries-control-gap-compact)] pb-[var(--aries-inspector-row-gap)] font-normal whitespace-nowrap last:pr-0",
+                    columnId === "body" ? "text-left" : "text-right",
+                  )}
+                >
+                  {label}
+                </th>
+              );
+            })}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.id}>
+              <td
+                title={row.label}
+                className="pr-[var(--aries-control-gap-compact)] align-baseline whitespace-nowrap last:pr-0"
+              >
+                <span className="inline-flex items-baseline gap-[var(--aries-control-gap-compact)]">
+                  <span className="inline-flex w-[1.25em] shrink-0 justify-center leading-none" aria-hidden>
+                    <CellView cell={row.bodyGlyphCell} />
+                  </span>
+                  <span className={INSPECTOR_VALUE_COLOR}>{row.label}</span>
+                </span>
+              </td>
+              <td
+                aria-label={row.longitudeText}
+                className={cn("pr-[var(--aries-control-gap-compact)] whitespace-nowrap text-right tabular-nums last:pr-0", INSPECTOR_VALUE_COLOR)}
+              >
+                <span aria-hidden><CellView cell={row.longitudeCell} /></span>
+              </td>
+              <td
+                aria-label={row.latitudeText || undefined}
+                className={cn("pr-[var(--aries-control-gap-compact)] whitespace-nowrap text-right tabular-nums last:pr-0", INSPECTOR_VALUE_COLOR)}
+              >
+                <span aria-hidden><CellView cell={row.latitudeCell} /></span>
+              </td>
+              <td
+                aria-label={row.declinationText || undefined}
+                className={cn(
+                  "pr-[var(--aries-control-gap-compact)] whitespace-nowrap text-right tabular-nums last:pr-0",
+                  row.declinationOutOfBounds ? "text-destructive" : INSPECTOR_VALUE_COLOR,
+                )}
+              >
+                <span aria-hidden><CellView cell={row.declinationCell} /></span>
+              </td>
+              <td
+                aria-label={row.speedText || undefined}
+                className={cn("pr-[var(--aries-control-gap-compact)] whitespace-nowrap text-right tabular-nums last:pr-0", INSPECTOR_VALUE_COLOR)}
+              >
+                <span aria-hidden><CellView cell={row.speedCell} /></span>
+              </td>
+              <td
+                aria-label={row.houseText || undefined}
+                className={cn("whitespace-nowrap text-right tabular-nums", INSPECTOR_VALUE_COLOR)}
+              >
+                <span aria-hidden><CellView cell={row.houseCell} /></span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -1365,25 +1882,31 @@ function ChartSummary({ chart }: { chart: ChartRenderSnapshot | null }) {
     return <div className={cn("px-[var(--aries-inspector-padding-x)] pb-[var(--aries-inspector-padding-bottom)]", INSPECTOR_MUTED_COLOR)}>{t("inspector.noChart")}</div>;
   }
   const meta = chart.primaryChart.meta;
-  return (
-    <div className="flex flex-col gap-[var(--aries-inspector-section-gap)] px-[var(--aries-inspector-padding-x)] pb-[var(--aries-inspector-padding-bottom)] pr-[var(--aries-inspector-summary-close-reserve)] pt-[var(--aries-inspector-padding-top)]">
-      <div className={cn("font-medium tracking-tight", INSPECTOR_TITLE_COLOR, TEXT_HEADER)}>{meta.name}</div>
-      <SummaryRow label={t("inspector.date")} value={meta.dateDisplay} />
-      <SummaryRow label={t("inspector.time")} value={meta.timeDisplay} />
-      <SummaryRow label={t("inspector.place")} value={meta.place} />
-      <SummaryRow label={t("inspector.coords")} value={meta.placeCoords} />
-      <SummaryRow label={t("inspector.age")} value={meta.age} />
-      <div className={cn("pt-[var(--aries-inspector-padding-top)]", INSPECTOR_LABEL_COLOR, TEXT_SMALL)}>{t("inspector.hover")}</div>
-    </div>
-  );
-}
+  const summaryLines = [
+    meta.dateDisplay,
+    meta.timeDisplay,
+    meta.place,
+    meta.placeCoords,
+    meta.age,
+  ].filter((value): value is string => Boolean(value));
 
-function SummaryRow({ label, value }: { label: string; value: string | null | undefined }) {
-  if (value == null || value === "") return null;
   return (
-    <div className="flex items-baseline justify-between gap-[var(--aries-inspector-padding-top)]">
-      <span className={cn(INSPECTOR_LABEL_COLOR, TEXT_SECTION)}>{label}</span>
-      <span className="text-right tabular-nums">{value}</span>
+    <div className="flex flex-col gap-0 px-[var(--aries-inspector-padding-x)] pb-[var(--aries-inspector-padding-bottom)] pr-[var(--aries-inspector-summary-close-reserve)] pt-[var(--aries-inspector-padding-top)]">
+      <div className={cn("font-semibold tracking-tight", INSPECTOR_TITLE_COLOR, INSPECTOR_TITLE_TEXT)}>{meta.name}</div>
+      {summaryLines.length ? (
+        <div className="mt-[var(--aries-inspector-section-gap)] flex flex-col gap-[var(--aries-inspector-row-gap)]">
+          {summaryLines.map((line, index) => (
+            <div
+              key={`chart-summary-${index}`}
+              className={cn("text-left tabular-nums leading-snug", INSPECTOR_VALUE_COLOR, TEXT_BASE)}
+              style={INSPECTOR_WRAP_STYLE}
+            >
+              {line}
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <div className={cn("mt-[var(--aries-inspector-section-gap)]", INSPECTOR_LABEL_COLOR, TEXT_SMALL)}>{t("inspector.hover")}</div>
     </div>
   );
 }

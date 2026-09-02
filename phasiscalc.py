@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
 
 # -*- coding: utf-8 -*-
 from __future__ import division
@@ -157,8 +161,11 @@ ALTITUDE_BIAS = 'full'
 PHASIS_MODE_ASTRONOMICAL = 0
 PHASIS_MODE_HELLENISTIC = 1
 PHASIS_MODE_SIMPLE_SWEP = 2
+PHASIS_MODE_ARCUS_VISIONIS = 3
 PHASIS_CLASSICAL_ELONGATION_DEG = 15.0
-HELIACAL_METHOD_ASTRONOMICAL_SWISS = 'astronomical_swiss_ephemeris'
+HELIACAL_METHOD_ASTRONOMICAL = 'aries_observational'
+# Compatibility alias for callers that imported the former, misleading name.
+HELIACAL_METHOD_ASTRONOMICAL_SWISS = HELIACAL_METHOD_ASTRONOMICAL
 HELIACAL_METHOD_HELLENISTIC = 'hellenistic_15_deg'
 HELIACAL_METHOD_SWISS = 'swiss_ephemeris'
 HELIACAL_METHOD_ARCUS_VISIONIS = 'arcus_visionis'
@@ -577,6 +584,8 @@ def phasis_mode_label(mode):
         return mtexts.txts.get('Hellenistic', 'Hellenistic')
     if mode == PHASIS_MODE_SIMPLE_SWEP:
         return mtexts.txts.get('Swiss Ephemeris', 'Swiss Ephemeris')
+    if mode == PHASIS_MODE_ARCUS_VISIONIS:
+        return mtexts.txts.get('Arcus visionis', 'Arcus visionis')
     return mtexts.txts.get('Astronomical', 'Astronomical')
 
 
@@ -1904,6 +1913,8 @@ def _normalize_phasis_mode(mode):
         return PHASIS_MODE_HELLENISTIC
     if mode in (PHASIS_MODE_SIMPLE_SWEP, 'simple_swe', 'simple_swep', 'simple swe', 'swe', 'SWEP', 'Simple SWEP', 'Swiss Ephemeris', 'Call Swiss Ephemeris'):
         return PHASIS_MODE_SIMPLE_SWEP
+    if mode in (PHASIS_MODE_ARCUS_VISIONIS, 'arcus', 'Arcus visionis'):
+        return PHASIS_MODE_ARCUS_VISIONIS
     return PHASIS_MODE_ASTRONOMICAL
 
 def _first_last_from_flags(flags):
@@ -2029,7 +2040,7 @@ def _bisect_signed_elongation_threshold(ipl, left_jd, right_jd, threshold):
     return 0.5 * (lo + hi)
 
 
-def iter_arcus_visionis_heliacal_events(
+def iter_elongation_threshold_heliacal_events(
     chrt,
     ipl,
     start_jd,
@@ -2040,7 +2051,7 @@ def iter_arcus_visionis_heliacal_events(
     method_label='Arcus visionis',
     mode=None,
 ):
-    """Yield signed-elongation threshold heliacal events for one planet."""
+    """Yield schematic signed-elongation threshold events for one planet."""
     try:
         ipl = int(ipl)
         start_jd = float(start_jd)
@@ -2120,11 +2131,229 @@ def iter_arcus_visionis_heliacal_events(
             break
 
 
+SCHOCH_1927_PLANETARY_ARCUS_VISIONIS_DEG = {
+    astrology.SE_SATURN: {'MF': 13.0, 'EL': 10.3},
+    astrology.SE_JUPITER: {'MF': 9.0, 'EL': 7.5},
+    astrology.SE_MARS: {'MF': 14.5, 'EL': 13.2},
+    astrology.SE_VENUS: {'MF': 5.8, 'ML': 5.5, 'EF': 5.8, 'EL': 5.2},
+    astrology.SE_MERCURY: {'MF': 13.0, 'ML': 9.5, 'EF': 10.2, 'EL': 11.0},
+}
+HELIACAL_REFINEMENT_DAYS = 16
+
+
+def _local_day_anchors(chrt, center_jd, padding_days):
+    y0, m0, d0, calflag = _local_date_tuple(chrt, float(center_jd))
+    for offset in range(-int(padding_days), int(padding_days) + 1):
+        y, m, d = _ymd_plus_days_local(y0, m0, d0, offset, calflag)
+        yield _jd_ut_from_local_noon(chrt, y, m, d, calflag)
+
+
+def _horizon_event_on_local_day(chrt, jd_anchor_ut, ipl, event):
+    """Return the geometric body rise/set belonging to one local civil day."""
+    lon = float(getattr(chrt.place, 'lon', 0.0))
+    lat = float(getattr(chrt.place, 'lat', 0.0))
+    alt_m = float(getattr(chrt.place, 'altitude', 0.0))
+    y0, m0, d0, calflag = _local_date_tuple(chrt, float(jd_anchor_ut))
+    rsmi = astrology.SE_CALC_RISE if event == 'rise' else astrology.SE_CALC_SET
+    rsmi |= astrology.SE_BIT_DISC_CENTER | astrology.SE_BIT_NO_REFRACTION
+    search_jd = float(jd_anchor_ut) - 1.25
+    for _ in range(4):
+        try:
+            rflag, jdev, _serr = astrology.swe_rise_trans(
+                search_jd, int(ipl), '',
+                int(astrology.SEFLG_SWIEPH | astrology.SEFLG_TOPOCTR), int(rsmi),
+                lon, lat, alt_m, 0.0, 0.0,
+            )
+        except Exception:
+            return None
+        if int(rflag) < 0:
+            return None
+        event_jd = float(jdev)
+        y, m, d, _ = _local_date_tuple(chrt, event_jd)
+        if (y, m, d) == (y0, m0, d0):
+            return event_jd
+        if event_jd > float(jd_anchor_ut) + 1.25:
+            break
+        search_jd = event_jd + 1.0 / 1440.0
+    return None
+
+
+@lru_cache(maxsize=262144)
+def _topocentric_true_altitude(jd_ut, ipl, lon, lat, alt_m):
+    astrology.swe_set_topo(float(lon), float(lat), float(alt_m))
+    _ret, equ, _serr = astrology.swe_calc_ut_ex(
+        float(jd_ut),
+        int(ipl),
+        int(astrology.SEFLG_SWIEPH | astrology.SEFLG_EQUATORIAL | astrology.SEFLG_TOPOCTR),
+    )
+    xaz = astrology.swe_azalt(
+        float(jd_ut), astrology.SE_EQU2HOR,
+        float(lon), float(lat), float(alt_m),
+        0.0, 0.0,
+        float(equ[0]), float(equ[1]), 1.0,
+    )
+    return float(xaz[1])
+
+
+def _transition_sample(samples, code):
+    first_visibility = code in ('MF', 'EF')
+    previous = None
+    for current in samples:
+        if current is None:
+            previous = None
+            continue
+        if previous is not None:
+            if first_visibility and not previous['visible'] and current['visible']:
+                return current
+            if not first_visibility and previous['visible'] and not current['visible']:
+                return previous
+        previous = current
+    return None
+
+
+def _elongation_seed_events(chrt, ipl, start_jd, end_jd, code, threshold_deg):
+    return iter_elongation_threshold_heliacal_events(
+        chrt,
+        ipl,
+        float(start_jd) - HELIACAL_REFINEMENT_DAYS,
+        float(end_jd) + HELIACAL_REFINEMENT_DAYS,
+        codes=(code,),
+        threshold_deg=float(threshold_deg),
+    )
+
+
+def iter_arcus_visionis_heliacal_events(chrt, ipl, start_jd, end_jd, codes=None):
+    """Yield Schoch-1927 planetary arcus-visionis events for the chart place.
+
+    Arcus visionis is the Sun's geometric depression when the planet is on its
+    geometric horizon. It is deliberately distinct from ecliptic elongation.
+    """
+    try:
+        ipl = int(ipl)
+        start_jd = float(start_jd)
+        end_jd = float(end_jd)
+    except Exception:
+        return
+    thresholds = SCHOCH_1927_PLANETARY_ARCUS_VISIONIS_DEG.get(ipl)
+    if end_jd < start_jd or not thresholds:
+        return
+    allowed = set(swe_heliacal_event_codes_for_planet(ipl))
+    event_codes = tuple(thresholds) if codes is None else tuple(code for code in codes if code in thresholds)
+    event_codes = tuple(code for code in event_codes if code in allowed)
+    lon = float(getattr(chrt.place, 'lon', 0.0))
+    lat = float(getattr(chrt.place, 'lat', 0.0))
+    alt_m = float(getattr(chrt.place, 'altitude', 0.0))
+    seen = set()
+
+    for code in event_codes:
+        threshold = float(thresholds[code])
+        horizon_event = 'rise' if code in ('MF', 'ML') else 'set'
+        for seed in _elongation_seed_events(chrt, ipl, start_jd, end_jd, code, threshold):
+            samples = []
+            for anchor_jd in _local_day_anchors(chrt, seed['event_jd'], HELIACAL_REFINEMENT_DAYS):
+                event_jd = _horizon_event_on_local_day(chrt, anchor_jd, ipl, horizon_event)
+                if event_jd is None:
+                    samples.append(None)
+                    continue
+                signed_elongation = _signed_elongation_deg(event_jd, ipl)
+                correct_side = signed_elongation < 0.0 if horizon_event == 'rise' else signed_elongation > 0.0
+                sun_altitude = _topocentric_true_altitude(
+                    event_jd, astrology.SE_SUN, lon, lat, alt_m,
+                )
+                arcus = -sun_altitude
+                samples.append({
+                    'event_jd': event_jd,
+                    'visible': bool(correct_side and sun_altitude < 0.0 and arcus >= threshold),
+                    'arcus': arcus,
+                    'signed_elongation': signed_elongation,
+                })
+            hit = _transition_sample(samples, code)
+            if hit is None or hit['event_jd'] < start_jd - 1e-9 or hit['event_jd'] > end_jd + 1e-9:
+                continue
+            key = (code, int(round(hit['event_jd'] * 86400.0)))
+            if key in seen:
+                continue
+            seen.add(key)
+            yield {
+                'planet': ipl,
+                'code': code,
+                'event_type': int(SWEP_HELIOCAL_EVENT_TYPES.get(code, 0)),
+                'event_jd': float(hit['event_jd']),
+                'optimum_jd': None,
+                'end_jd': None,
+                'duration_minutes': None,
+                'retflag': 0,
+                'serr': '',
+                'atmospheric_extinction': None,
+                'signed_elongation': float(hit['signed_elongation']),
+                'heliacal_arcus_visionis_deg': float(hit['arcus']),
+                'heliacal_threshold_deg': threshold,
+                'heliacal_arcus_source': 'schoch_1927',
+                'heliacal_method': HELIACAL_METHOD_ARCUS_VISIONIS,
+                'heliacal_method_label': mtexts.txts.get('Arcus visionis', 'Arcus visionis'),
+                'phasis_mode': PHASIS_MODE_ARCUS_VISIONIS,
+                'phasis_mode_label': phasis_mode_label(PHASIS_MODE_ARCUS_VISIONIS),
+            }
+
+
+def iter_observational_heliacal_events(chrt, ipl, start_jd, end_jd, codes=None):
+    """Yield date-level transitions from Aries's physical visibility model."""
+    try:
+        ipl = int(ipl)
+        start_jd = float(start_jd)
+        end_jd = float(end_jd)
+    except Exception:
+        return
+    if end_jd < start_jd or ipl not in PLANET_IDS:
+        return
+    allowed = swe_heliacal_event_codes_for_planet(ipl)
+    event_codes = allowed if codes is None else tuple(code for code in codes if code in allowed)
+    lon = float(getattr(chrt.place, 'lon', 0.0))
+    lat = float(getattr(chrt.place, 'lat', 0.0))
+    alt_m = float(getattr(chrt.place, 'altitude', 0.0))
+    seed_threshold = float(SYMBOLIC_HELIACAL_EPS.get(ipl, 10.0))
+    seen = set()
+
+    for code in event_codes:
+        is_evening = code in ('EF', 'EL')
+        for seed in _elongation_seed_events(chrt, ipl, start_jd, end_jd, code, seed_threshold):
+            samples = []
+            for anchor_jd in _local_day_anchors(chrt, seed['event_jd'], HELIACAL_REFINEMENT_DAYS):
+                _visible, _eps, _near, qualifies = visible_window_for_day(
+                    chrt, anchor_jd, lon, lat, alt_m, ipl, is_evening=is_evening,
+                )
+                samples.append({'event_jd': float(anchor_jd), 'visible': bool(qualifies)})
+            hit = _transition_sample(samples, code)
+            if hit is None or hit['event_jd'] < start_jd - 1e-9 or hit['event_jd'] > end_jd + 1e-9:
+                continue
+            key = (code, int(round(hit['event_jd'])))
+            if key in seen:
+                continue
+            seen.add(key)
+            yield {
+                'planet': ipl,
+                'code': code,
+                'event_type': int(SWEP_HELIOCAL_EVENT_TYPES.get(code, 0)),
+                'event_jd': float(hit['event_jd']),
+                'optimum_jd': None,
+                'end_jd': None,
+                'duration_minutes': None,
+                'retflag': 0,
+                'serr': '',
+                'atmospheric_extinction': kV_from_altitude(alt_m),
+                'date_only': True,
+                'heliacal_method': HELIACAL_METHOD_ASTRONOMICAL,
+                'heliacal_method_label': mtexts.txts.get('Astronomical', 'Astronomical'),
+                'phasis_mode': PHASIS_MODE_ASTRONOMICAL,
+                'phasis_mode_label': phasis_mode_label(PHASIS_MODE_ASTRONOMICAL),
+            }
+
+
 def iter_heliacal_planet_events(chrt, ipl, start_jd, end_jd, codes=None, mode=PHASIS_MODE_ASTRONOMICAL):
     """Yield heliacal planet events using the chart's global phasis mode."""
     mode = _normalize_phasis_mode(mode)
     if mode == PHASIS_MODE_HELLENISTIC:
-        yield from iter_arcus_visionis_heliacal_events(
+        yield from iter_elongation_threshold_heliacal_events(
             chrt,
             ipl,
             start_jd,
@@ -2136,10 +2365,14 @@ def iter_heliacal_planet_events(chrt, ipl, start_jd, end_jd, codes=None, mode=PH
             mode=mode,
         )
         return
-    label = 'Astronomical / Swiss Ephemeris' if mode == PHASIS_MODE_ASTRONOMICAL else 'Swiss Ephemeris'
-    method = HELIACAL_METHOD_ASTRONOMICAL_SWISS if mode == PHASIS_MODE_ASTRONOMICAL else HELIACAL_METHOD_SWISS
+    if mode == PHASIS_MODE_ARCUS_VISIONIS:
+        yield from iter_arcus_visionis_heliacal_events(chrt, ipl, start_jd, end_jd, codes=codes)
+        return
+    if mode == PHASIS_MODE_ASTRONOMICAL:
+        yield from iter_observational_heliacal_events(chrt, ipl, start_jd, end_jd, codes=codes)
+        return
     for event in iter_swe_heliacal_events(chrt, ipl, start_jd, end_jd, codes=codes):
-        yield _with_heliacal_method(event, method, label, mode=mode)
+        yield _with_heliacal_method(event, HELIACAL_METHOD_SWISS, 'Swiss Ephemeris', mode=mode)
 
 def _visibility_flags_around_classical(chart, days_window=7):
     jd0 = chart.time.jd
@@ -2432,10 +2665,65 @@ def _visibility_flags_around_hybrid(chart, days_window=7):
         out[ipl] = row
     return out
 
+
+def _visibility_flags_around_arcus_visionis(chart, days_window=7):
+    jd0 = float(chart.time.jd)
+    lon = float(getattr(chart.place, 'lon', 0.0))
+    lat = float(getattr(chart.place, 'lat', 0.0))
+    alt_m = float(getattr(chart.place, 'altitude', 0.0))
+    y0, m0, d0, calflag = _local_date_tuple(chart, jd0)
+    offsets = list(range(-int(days_window), int(days_window) + 1))
+    out = {}
+    for ipl in PLANET_IDS:
+        thresholds = SCHOCH_1927_PLANETARY_ARCUS_VISIONIS_DEG[ipl]
+        qual_e, qual_m = {}, {}
+        eps_e, eps_m = {}, {}
+        near_e, near_m = {}, {}
+        for dd in offsets:
+            y, m, d = _ymd_plus_days_local(y0, m0, d0, dd, calflag)
+            anchor = _jd_ut_from_local_noon(chart, y, m, d, calflag)
+            signed = _signed_elongation_deg(anchor, ipl)
+            before = _signed_elongation_deg(anchor - 0.5, ipl)
+            after = _signed_elongation_deg(anchor + 0.5, ipl)
+            daily_motion = ((after - before + 180.0) % 360.0) - 180.0
+
+            rise_jd = _horizon_event_on_local_day(chart, anchor, ipl, 'rise')
+            set_jd = _horizon_event_on_local_day(chart, anchor, ipl, 'set')
+            morning_code = 'MF' if is_outer(ipl) or daily_motion < 0.0 else 'ML'
+            evening_code = 'EL' if is_outer(ipl) or daily_motion < 0.0 else 'EF'
+
+            morning_arcus = -_topocentric_true_altitude(
+                rise_jd, astrology.SE_SUN, lon, lat, alt_m,
+            ) if rise_jd is not None else None
+            evening_arcus = -_topocentric_true_altitude(
+                set_jd, astrology.SE_SUN, lon, lat, alt_m,
+            ) if set_jd is not None else None
+            qual_m[dd] = bool(
+                rise_jd is not None and signed < 0.0 and morning_arcus is not None
+                and morning_arcus >= float(thresholds[morning_code])
+            )
+            qual_e[dd] = bool(
+                set_jd is not None and signed > 0.0 and evening_arcus is not None
+                and evening_arcus >= float(thresholds[evening_code])
+            )
+            eps_m[dd] = abs(signed)
+            eps_e[dd] = abs(signed)
+            # Arcus has its own phase-specific thresholds; disable the generic
+            # elongation fallback in the shared row builder.
+            near_m[dd] = False
+            near_e[dd] = False
+        out[ipl] = _build_phasis_row_from_sequences(
+            ipl, qual_e, qual_m, near_e, near_m, eps_e, eps_m, alt_m,
+        )
+    return out
+
+
 def visibility_flags_around(chart, days_window=7, mode=PHASIS_MODE_ASTRONOMICAL):
     mode = _normalize_phasis_mode(mode)
     if mode == PHASIS_MODE_HELLENISTIC:
         return _visibility_flags_around_classical(chart, days_window=days_window)
+    if mode == PHASIS_MODE_ARCUS_VISIONIS:
+        return _visibility_flags_around_arcus_visionis(chart, days_window=days_window)
     if mode == PHASIS_MODE_SIMPLE_SWEP:
         try:
             return _visibility_flags_around_swe(chart, days_window=days_window)

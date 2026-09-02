@@ -31,7 +31,7 @@ export function AppThemePreview({
   const t = useT();
   const baseTheme = useChartStyleEditorStore((state) => state.styleLabBaseTheme);
   const semanticOverrides = useChartStyleEditorStore(
-    (state) => state.semanticOverrides,
+    (state) => state.resolvedOverrides,
   );
   const cssOverrides = useChartStyleEditorStore((state) => state.cssOverrides);
   const styleEditorRevision = useChartStyleEditorStore((state) => state.revision);

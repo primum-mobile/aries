@@ -7,7 +7,11 @@ import * as React from "react";
 
 import type { DaemonWorkspaceState } from "@/stores/daemon-workspace-store";
 
-export const STEP_SETTLE_REFRESH_MS = 220;
+// Retained data is deliberately lower priority than the chart's visible step
+// lane.  This window is outside ordinary native key-repeat cadence; resident
+// lists still follow by viewport on every frame and only daemon recalculation
+// waits for quiet.
+export const STEP_SETTLE_REFRESH_MS = 320;
 
 export type WorkspaceSessionChange = NonNullable<DaemonWorkspaceState["lastSessionChange"]>;
 export type WorkspaceOptionsChange = NonNullable<DaemonWorkspaceState["lastOptionsChange"]>;

@@ -66,6 +66,7 @@ _PREVIEW_BOOLEAN_ATTRIBUTES = {
     "showVertex": "showvertex",
     "aspectsToVertex": "showaspectstovertex",
     "showPrenatalSyzygy": "showprenatalsyzygy",
+    "showPrenatalEclipse": "showprenataleclipse",
     "angleArrowheads": "showanglearrowheads",
     "cusplessAscMcLabels": "showcusplessascmclabels",
     "information": "information",
@@ -87,7 +88,7 @@ _PREVIEW_BOOLEAN_ATTRIBUTES = {
 _PREVIEW_INTEGER_ATTRIBUTES = {
     "termSystem": ("selterm", (0, 1)),
     "decanSystem": ("seldecan", (0, 1)),
-    "phasisMode": ("phasismode", (0, 1, 2)),
+    "phasisMode": ("phasismode", (0, 1, 2, 3)),
     "cazimiMode": ("cazimimode", (0, 1, 2)),
     "plutoGlyph": ("pluto", (0, 1, 2, 3)),
 }
@@ -136,6 +137,7 @@ _PREVIEW_FIELD_DEFINITIONS = (
     {"id": "showVertex", "group": "points", "labelKey": "quickopt.vertex", "label": "Vertex"},
     {"id": "aspectsToVertex", "group": "points", "labelKey": "quickopt.aspectsToVertex", "label": "Aspects to Vertex"},
     {"id": "showPrenatalSyzygy", "group": "points", "labelKey": "quickopt.prenatalSyzygy", "label": "Prenatal Syzygy"},
+    {"id": "showPrenatalEclipse", "group": "points", "labelKey": "settings.prenatalEclipseMarker", "label": "Prenatal eclipse marker"},
     {"id": "angleArrowheads", "group": "content", "labelKey": "settings.angleArrowheads", "label": "Angle arrowheads"},
     {"id": "cusplessAscMcLabels", "group": "content", "labelKey": "settings.cusplessAscMcLabels", "label": "AC/MC labels in cuspless charts"},
     {"id": "information", "group": "overlays", "labelKey": "quickopt.information", "label": "Information"},
@@ -261,6 +263,7 @@ def style_lab_preview_manifest(base_options) -> dict[str, object]:
                     ("P", "Placidus"), ("K", "Koch"), ("R", "Regiomontanus"),
                     ("C", "Campanus"), ("E", _txt("Equal", "Equal")),
                     ("W", _txt("WholeSign", "Whole Sign")),
+                    ("F", _txt("FortuneWholeSign", "Fortune Houses")),
                     ("X", _txt("AxialRotation", "Axial Rotation")),
                     ("Q", _txt("TrueAscendant", "True Ascendant")),
                     ("M", "Morinus"), ("H", _txt("Horizon", "Horizon")),
@@ -332,11 +335,12 @@ def style_lab_preview_manifest(base_options) -> dict[str, object]:
             group="overlays",
             label="Phasis mode",
             labelKey="quickopt.phasisMode",
-            default_value=int(getattr(base_options, "phasismode", 0) or 0),
+            default_value=int(getattr(base_options, "phasismode", 2)),
             choices=[
                 _preview_choice(0, _txt("Astronomical", "Astronomical")),
                 _preview_choice(1, _txt("Hellenistic", "Hellenistic")),
                 _preview_choice(2, _txt("SwissEphemeris", "Swiss Ephemeris")),
+                _preview_choice(3, _txt("Arcus visionis", "Arcus visionis")),
             ],
         ),
         _preview_field(
@@ -479,7 +483,7 @@ def copied_preview_options(base_options, preview: Mapping[str, object]):
 
     house_system = preview.get("houseSystem")
     if house_system is not None:
-        available_house_systems = {"P", "K", "R", "C", "E", "W", "X", "Q", "M", "H", "T", "B", "O", "N"}
+        available_house_systems = {"P", "K", "R", "C", "E", "W", "F", "X", "Q", "M", "H", "T", "B", "O", "N"}
         if not isinstance(house_system, str) or house_system not in available_house_systems:
             raise ValueError(f"unsupported chart preview houseSystem: {house_system}")
         resolved.hsys = house_system

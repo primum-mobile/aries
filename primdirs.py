@@ -1,4 +1,8 @@
 # -*- coding: utf-8 -*-
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
 
 import copy
 import math
@@ -17,6 +21,81 @@ import customerpd
 import mtexts
 import util
 from engine import morin_aspects as _morin_aspects
+
+
+def placidian_sa_ecliptic_foot_arc(radix, promissor_lon, significator_lon):
+	"""Return the raw signed Placidian-SA arc between two ecliptic feet.
+
+	This is the zero-latitude equation used by ``PlacidianSAPD.toPlanet`` before
+	``create`` turns its sign into the row's Direct/Converse flag.  Keeping the
+	evaluator in the canonical primary-direction engine lets PD-in-chart and
+	future visualizations follow the selected row without reimplementing its
+	geometry in a renderer.
+	"""
+	r_amc = radix.houses.ascmc2[houses.Houses.MC][houses.Houses.RA]
+	r_aic = util.normalize(r_amc + 180.0)
+	place_tan = math.tan(math.radians(radix.place.lat))
+	ayanamsha_offset = getattr(radix, 'ayanamsha_offset', 0.0)
+
+	ra_prom, decl_prom, _dist = astrology.swe_cotrans(
+		util.to_tropical_lon(util.normalize(float(promissor_lon)), ayanamsha_offset),
+		0.0,
+		1.0,
+		-radix.obl[0],
+	)
+	prom_ad_value = place_tan * math.tan(math.radians(decl_prom))
+	if math.fabs(prom_ad_value) > 1.0:
+		return None
+	prom_ad = math.degrees(math.asin(prom_ad_value))
+
+	ra_sig, decl_sig, _dist = astrology.swe_cotrans(
+		util.to_tropical_lon(util.normalize(float(significator_lon)), ayanamsha_offset),
+		0.0,
+		1.0,
+		-radix.obl[0],
+	)
+	eastern = True
+	if r_amc > r_aic:
+		if r_aic < ra_sig < r_amc:
+			eastern = False
+	else:
+		if (r_aic < ra_sig < 360.0) or (0.0 < ra_sig < r_amc):
+			eastern = False
+
+	meridian_distance = math.fabs(r_amc - ra_sig)
+	if meridian_distance > 180.0:
+		meridian_distance = 360.0 - meridian_distance
+	ic_distance = math.fabs(r_aic - ra_sig)
+	if ic_distance > 180.0:
+		ic_distance = 360.0 - ic_distance
+
+	sig_ad_value = place_tan * math.tan(math.radians(decl_sig))
+	if math.fabs(sig_ad_value) > 1.0:
+		return None
+	sig_ad = math.degrees(math.asin(sig_ad_value))
+	diurnal_sa = 90.0 + sig_ad
+	nocturnal_sa = 90.0 - sig_ad
+	above_horizon = meridian_distance <= diurnal_sa
+	semiarc = diurnal_sa if above_horizon else nocturnal_sa
+	if not above_horizon:
+		meridian_distance = ic_distance
+
+	t = -1.0
+	if (eastern and not above_horizon) or (not eastern and above_horizon):
+		t = 1.0
+	v = 1.0 if above_horizon else -1.0
+	reference_ra = r_amc if above_horizon else r_aic
+	ra_difference = ra_prom - reference_ra
+	difference_direct = True
+	if ra_difference < 0.0:
+		ra_difference *= -1.0
+		difference_direct = False
+	if ra_difference > 180.0:
+		ra_difference = 360.0 - ra_difference
+		difference_direct = not difference_direct
+	if not difference_direct:
+		ra_difference *= -1.0
+	return ra_difference + t * (90.0 + v * prom_ad) * meridian_distance / semiarc
 
 
 class AbortPD:
@@ -78,6 +157,17 @@ class PrimDir:
 		self.sigdyn = None
 		self.promasp = PrimDir.NONE
 		self.sigasp = PrimDir.NONE
+		# The aspect id records its magnitude but not which ray was actually
+		# directed.  Preserve the signed ecliptic offsets on the canonical row so
+		# chart projections and other consumers never have to infer dexter/sinister
+		# from the Direct/Converse flag.
+		self.promasp_offset = 0.0
+		self.sigasp_offset = 0.0
+		# Stable row provenance for consumers which must reproduce the exact
+		# calculation event without guessing from labels or the D/C flag.
+		self.system = None
+		self.domain = 'mundane'
+		self.event_kind = 'direction'
 		self.arc = 0.0
 		self.direct = True
 		self.parallelaxis = 0
@@ -223,6 +313,8 @@ class PrimDirs:
 	#circumambulation OA method
 	CIRCUM_OA_ASCENSIONAL_TIMES = 0
 	CIRCUM_OA_USE_PD = 1
+	CIRCUM_PROMISSORS_FOLLOW_PD = 0
+	CIRCUM_PROMISSORS_TRADITIONAL = 1
 
 	#zodical options
 	ASPSPROMSTOSIGS = 0
@@ -298,59 +390,10 @@ class PrimDirs:
 
 	@staticmethod
 	def get_effective_revolution_options(chrt, options):
-		if chrt is None or options is None:
-			return options
-		if getattr(chrt, 'htype', None) != chart.Chart.SOLAR:
-			return options
-		if getattr(options, 'pdrevannualmode', PrimDirs.REVANNUAL_USE_PRIMARY) != PrimDirs.REVANNUAL_TRADITIONAL:
-			return options
-
-		eff = copy.copy(options)
-		try:
-			eff.sigplanets = [False] * len(options.sigplanets)
-		except Exception:
-			pass
-		try:
-			eff.sigangles = [True, False, False, False]
-		except Exception:
-			pass
-		try:
-			eff.sigascmc = [True, False]
-		except Exception:
-			pass
-		try:
-			eff.sighouses = False
-		except Exception:
-			pass
-		try:
-			eff.pdterms = True
-		except Exception:
-			pass
-		try:
-			eff.pdlof = [options.pdlof[0], False]
-		except Exception:
-			pass
-		try:
-			eff.pdsyzygy = False
-		except Exception:
-			pass
-		try:
-			eff.pdcustomer2 = False
-		except Exception:
-			pass
-		try:
-			eff.pdsigchiron = False
-		except Exception:
-			pass
-		try:
-			eff.pdsigvertex = False
-		except Exception:
-			pass
-		try:
-			eff.pdsigarabicparts = False
-		except Exception:
-			pass
-		return eff
+		# Annual directions use the ordinary Primary Directions configuration.
+		# The former annual-only profile silently replaced the user's selected
+		# significators and is retained only as a legacy persistence field.
+		return options
 
 
 	def _refresh_chart_pd_dependencies(self):
@@ -539,6 +582,15 @@ class PrimDirs:
 				pass
 		return PrimDirs.Ranges[self.pdrange]
 
+	def _uses_revolution_time(self):
+		'''True only for return charts, whose directions are timed by the
+		return period (calcTimeRev). Every other chart type — radix, horary,
+		event, election — must be timed by the natal arc->time key (calcTime).
+		Testing "!= RADIX" here silently gave horary/event charts the lunar
+		return key, running 360 deg of direction in 27.7 days.'''
+		return self.chart.htype in (
+			chart.Chart.SOLAR, chart.Chart.LUNAR, chart.Chart.REVOLUTION)
+
 	def _max_age_limit(self):
 		if self._max_age_limit_override is not None:
 			try:
@@ -591,6 +643,8 @@ class PrimDirs:
 		parallelaxis,
 		time,
 		age,
+		promasp_offset=0.0,
+		sigasp_offset=0.0,
 	):
 		if PrimDirs.is_angle_antiscion_promissor(prom):
 			return
@@ -609,6 +663,9 @@ class PrimDirs:
 				pd.sigdyn = self._get_active_dynamic_sig_key()
 		pd.promasp = promasp
 		pd.sigasp = sigasp
+		pd.promasp_offset = float(promasp_offset)
+		pd.sigasp_offset = float(sigasp_offset)
+		self._set_pd_provenance(pd)
 		pd.arc = arc
 		pd.direct = direct
 		pd.parallelaxis = parallelaxis
@@ -616,6 +673,36 @@ class PrimDirs:
 		pd.age = age
 
 		self.pds.append(pd)
+
+	def _set_pd_provenance(self, pd):
+		"""Stamp conservative engine/domain/event identity on a PD row."""
+		try:
+			pd.system = int(getattr(self.options, 'primarydir'))
+		except (AttributeError, TypeError, ValueError):
+			pd.system = None
+		pd.domain = 'mundane' if bool(pd.mundane) else 'zodiacal'
+		aspects = (int(pd.promasp), int(pd.sigasp))
+		if chart.Chart.MIDPOINT in aspects:
+			pd.event_kind = 'midpoint'
+		elif any(
+			aspect in (chart.Chart.RAPTPAR, chart.Chart.RAPTCONTRAPAR)
+			for aspect in aspects
+		):
+			pd.event_kind = 'rapt-parallel'
+		elif any(
+			aspect in (chart.Chart.PARALLEL, chart.Chart.CONTRAPARALLEL)
+			for aspect in aspects
+		):
+			pd.event_kind = 'parallel'
+		elif aspects == (chart.Chart.CONJUNCTIO, chart.Chart.CONJUNCTIO):
+			pd.event_kind = 'conjunction'
+		elif any(
+			chart.Chart.CONJUNCTIO < aspect <= chart.Chart.SEPTILE
+			for aspect in aspects
+		):
+			pd.event_kind = 'aspect'
+		else:
+			pd.event_kind = 'direction'
 
 	def _direction_allowed(self, direct):
 		return (
@@ -635,6 +722,8 @@ class PrimDirs:
 		arc,
 		direct,
 		parallelaxis,
+		promasp_offset=0.0,
+		sigasp_offset=0.0,
 	):
 		if not self._direction_allowed(direct):
 			return
@@ -662,6 +751,8 @@ class PrimDirs:
 					parallelaxis,
 					time + cycle * cycle_time,
 					projected_age,
+					promasp_offset,
+					sigasp_offset,
 				)
 			cycle += 1
 
@@ -1484,8 +1575,14 @@ class PrimDirs:
 			if not self.options.zodpromsigasps[PrimDirs.ASPSPROMSTOSIGS] and j > chart.Chart.CONJUNCTIO:
 				continue
 
-			#We don't need the aspects of the nodes
-			if i > astrology.SE_PLUTO and j > chart.Chart.CONJUNCTIO:
+			# Preserve the ordinary PD restriction for nodes and point-like
+			# promissors. Circumambulation explicitly opts its normalized dynamic
+			# entries into the selected aspect vector.
+			allow_circum_dynamic_aspects = (
+				i == PrimDir.CUSTOMERPD
+				and getattr(self, 'circumDynamicPromissorAspects', False)
+			)
+			if i > astrology.SE_PLUTO and j > chart.Chart.CONJUNCTIO and not allow_circum_dynamic_aspects:
 				break
 
 			if self.abort.abort:
@@ -1547,7 +1644,7 @@ class PrimDirs:
 						for itera in range(self.options.pdsecmotioniter+1):
 							ok, rapl, adlat = self.calcZodSM(i, j, aspectus, rapl-self.ramc)
 					if ok:
-						self.create(False, i+ioffs, PrimDir.NONE, PrimDir.MC, j, chart.Chart.CONJUNCTIO, rapl-self.ramc)
+						self.create(False, i+ioffs, PrimDir.NONE, PrimDir.MC, j, chart.Chart.CONJUNCTIO, rapl-self.ramc, promasp_offset=aspectus)
 
 				# IC
 				rapl=rapl2; adlat=adlat2
@@ -1557,7 +1654,7 @@ class PrimDirs:
 						for itera in range(self.options.pdsecmotioniter+1):
 							ok, rapl, adlat = self.calcZodSM(i, j, aspectus, rapl-self.raic)
 					if ok:
-						self.create(False, i+ioffs, PrimDir.NONE, PrimDir.IC, j, chart.Chart.CONJUNCTIO, rapl-self.raic)
+						self.create(False, i+ioffs, PrimDir.NONE, PrimDir.IC, j, chart.Chart.CONJUNCTIO, rapl-self.raic, promasp_offset=aspectus)
 
 				# Asc
 				rapl=rapl2; adlat=adlat2
@@ -1569,7 +1666,7 @@ class PrimDirs:
 							ok, rapl, adlat = self.calcZodSM(i, j, aspectus, aopl-self.aoasc)
 							aopl = rapl-adlat
 					if ok:
-						self.create(False, i+ioffs, PrimDir.NONE, PrimDir.ASC, j, chart.Chart.CONJUNCTIO, aopl-self.aoasc)
+						self.create(False, i+ioffs, PrimDir.NONE, PrimDir.ASC, j, chart.Chart.CONJUNCTIO, aopl-self.aoasc, promasp_offset=aspectus)
 
 				# Dsc
 				rapl=rapl2; adlat=adlat2
@@ -1581,7 +1678,7 @@ class PrimDirs:
 							ok, rapl, adlat = self.calcZodSM(i, j, aspectus, dopl-self.dodesc)
 							dopl = rapl+adlat
 					if ok:
-						self.create(False, i+ioffs, PrimDir.NONE, PrimDir.DESC, j, chart.Chart.CONJUNCTIO, dopl-self.dodesc)
+						self.create(False, i+ioffs, PrimDir.NONE, PrimDir.DESC, j, chart.Chart.CONJUNCTIO, dopl-self.dodesc, promasp_offset=aspectus)
 
 
 	def calcZodSM(self, idp, j, aspect, arc):
@@ -2309,13 +2406,25 @@ class PrimDirs:
 		return util.normalize(lon_p + asp_signed_deg + dlon), lat_a
 
 
-	def create(self, mundane, prom, prom2, sig, promasp, sigasp, arc, parallelaxis = 0):
+	def create(
+		self,
+		mundane,
+		prom,
+		prom2,
+		sig,
+		promasp,
+		sigasp,
+		arc,
+		parallelaxis=0,
+		promasp_offset=0.0,
+		sigasp_offset=0.0,
+	):
 		'''Creates a direction and pushes it into the list of directions'''
 
 		if PrimDirs.is_angle_antiscion_promissor(prom):
 			return
 
-		if self.chart.htype == chart.Chart.RADIX:
+		if not self._uses_revolution_time():
 			#Just for safety
 			if arc <= -360.0:
 				arc += 360.0
@@ -2367,6 +2476,9 @@ class PrimDirs:
 						pd.sigdyn = self._get_active_dynamic_sig_key()
 				pd.promasp = promasp
 				pd.sigasp = sigasp
+				pd.promasp_offset = float(promasp_offset)
+				pd.sigasp_offset = float(sigasp_offset)
+				self._set_pd_provenance(pd)
 				pd.arc = arc
 				pd.direct = direct
 				pd.parallelaxis = parallelaxis
@@ -2378,7 +2490,7 @@ class PrimDirs:
 			arc = 360.0-arc 
 			direct = not direct
 
-		if self.chart.htype == chart.Chart.RADIX and self._range_bounds_override is not None:
+		if not self._uses_revolution_time() and self._range_bounds_override is not None:
 			self._append_windowed_radix_pd(
 				mundane,
 				prom,
@@ -2389,6 +2501,8 @@ class PrimDirs:
 				arc,
 				direct,
 				parallelaxis,
+				promasp_offset,
+				sigasp_offset,
 			)
 			complement_arc = 360.0 - arc
 			if arc > 0.0 and math.fabs(complement_arc - arc) > 1e-9:
@@ -2402,6 +2516,8 @@ class PrimDirs:
 					complement_arc,
 					not direct,
 					parallelaxis,
+					promasp_offset,
+					sigasp_offset,
 				)
 			return
 
@@ -2410,12 +2526,12 @@ class PrimDirs:
 		):
 			return
 
-		if self.chart.htype == chart.Chart.RADIX:
+		if not self._uses_revolution_time():
 			time, age = self.calcTime(arc, direct)
 		else:
 			time, age = self.calcTimeRev(arc)
 
-		if self.chart.htype == chart.Chart.RADIX:
+		if not self._uses_revolution_time():
 			lo, hi = self._range_bounds()
 			if age < lo or age >= hi:
 				return
@@ -2432,6 +2548,8 @@ class PrimDirs:
 			parallelaxis,
 			time,
 			age,
+			promasp_offset,
+			sigasp_offset,
 		)
 
 

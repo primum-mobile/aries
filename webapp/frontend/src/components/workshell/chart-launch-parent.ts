@@ -23,8 +23,27 @@ export function findChartLaunchParent(
   while (current) {
     if (isChartLaunchParent(current)) return current;
     if (!current.parentDocumentId) return null;
-    const parentId = current.parentDocumentId;
+    const parentId: string = current.parentDocumentId;
     current = documents.find((doc) => doc.id === parentId) ?? null;
   }
   return null;
+}
+
+/** Resolve launchers whose results always belong beside the branch radix. */
+export function findRadixSiblingLaunchParent(
+  documents: WorkspaceDocument[],
+  id: string | null,
+): WorkspaceDocument | null {
+  const launchParent = findChartLaunchParent(documents, id);
+  if (!launchParent || launchParent.compoundKind === "composite_from_synastry") {
+    return launchParent;
+  }
+  let current: WorkspaceDocument | null = launchParent;
+  while (current) {
+    if (current.kind === "radix") return current;
+    if (!current.parentDocumentId) break;
+    const parentId: string = current.parentDocumentId;
+    current = documents.find((doc) => doc.id === parentId) ?? null;
+  }
+  return launchParent;
 }

@@ -66,6 +66,18 @@ export type StyleSceneEditability = Readonly<{
 export type StyleSceneTokenProperty =
   | "color"
   | "radius"
+  // A unitless ratio, deliberately distinct from "radius": it is not a length
+  // in reference space and must never be projected like one.
+  | "scale"
+  // A band span's inner edge. A reference-space radius like "radius", kept
+  // apart so a span edge and a painted ring's own radius cannot be confused.
+  | "spanInner"
+  // How much a band span scales its run, about the run's outer anchor.
+  | "spanScale"
+  // A degree ruler's depth as a share of its host band. Unitless like "scale",
+  // but measured against one band rather than the whole wheel.
+  | "rulerDepth"
+  | "tickLength"
   | "offset"
   | "spacing"
   | "stroke-width"
@@ -76,6 +88,16 @@ export type StyleSceneTokenProperty =
   | "font-weight"
   | "effect";
 
+/**
+ * The manifest class an element authors, falling back to its own id.
+ *
+ * Shared so the canvas and the inspector agree on what was clicked; they used
+ * to answer this question separately.
+ */
+export function styleSceneClassId(element: StyleSceneElement): string {
+  return (element as { classId?: string }).classId?.trim() || element.id;
+}
+
 export interface StyleSceneTokenBinding {
   readonly semanticId: string;
   readonly cssVar: string;
@@ -85,6 +107,14 @@ export interface StyleSceneTokenBinding {
 
 /** Exact conventional values exposed by the profile-v2 inspector. */
 export type StyleSceneAuthoringDefaults = Readonly<{
+  /**
+   * Whether the colour and font were authored on this class, as opposed to
+   * resolved from the shared palette/font role it inherits. Both are always
+   * populated so the renderer can paint, so presence cannot answer this and
+   * the inspector would otherwise always edit a per-class override.
+   */
+  colorAuthored?: boolean;
+  fontRefAuthored?: boolean;
   fontRef?: ChartStyleFontRef;
   fontSizePx?: number;
   trackingPx?: number;
@@ -150,6 +180,17 @@ export type StyleSceneAuthoringDefaults = Readonly<{
   seed?: number;
   radiusPx?: number;
   diameterPx?: number;
+  /** Reference-space radius of a band span's inner edge. */
+  spanInnerPx?: number;
+  spanScalePercent?: number;
+  rulerDepthPercent?: number;
+  tickLengthPercent?: number;
+  /**
+   * Largest font size this run may be given before it leaves the band that
+   * holds it. Present only for seated text; rim labels are governed by angular
+   * spacing rather than by a band thickness and report none.
+   */
+  fontSizeCeilingPx?: number;
 }>;
 
 interface StyleSceneHandleBase {
@@ -164,6 +205,13 @@ interface StyleSceneHandleBase {
   readonly binding?: StyleSceneTokenBinding & {
     readonly value: number;
     readonly valuePerPixel: number;
+    /**
+     * Neighbour-aware wall for this specific handle, in token units. Static
+     * per-token bounds cannot express it: a ring's legal range depends on
+     * where every other authored ring currently sits.
+     */
+    readonly min?: number;
+    readonly max?: number;
   };
 }
 
@@ -368,8 +416,12 @@ export function resolveStyleSceneHandleDrag(
 
   const metadata = resolveMetadata(handle.binding.semanticId) ?? {};
   let value = handle.binding.value + deltaPixels * handle.binding.valuePerPixel;
-  if (metadata.min != null) value = Math.max(metadata.min, value);
-  if (metadata.max != null) value = Math.min(metadata.max, value);
+  // Handle-specific walls are intersected with the static token bounds, so a
+  // drag stops at whichever is tighter and never authors an illegal wheel.
+  const minimum = Math.max(metadata.min ?? -Infinity, handle.binding.min ?? -Infinity);
+  const maximum = Math.min(metadata.max ?? Infinity, handle.binding.max ?? Infinity);
+  if (Number.isFinite(minimum)) value = Math.max(minimum, value);
+  if (Number.isFinite(maximum)) value = Math.min(maximum, value);
   if (metadata.step && metadata.step > 0) {
     const origin = metadata.min ?? 0;
     value = origin + Math.round((value - origin) / metadata.step) * metadata.step;

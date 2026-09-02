@@ -1,8 +1,11 @@
+// Copyright (C) 2026 Max Lange
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { defineConfig } from 'vite';
 
-const assetVersion = '20260722-desktop-webview-guard';
+const assetVersion = '20260809-native-edit-context-menu';
 const nodeModulesMarker = '/node_modules/';
 
 function packageRootForModule(moduleId) {

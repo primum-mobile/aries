@@ -6,11 +6,22 @@ import {
   WHEEL_AUTHORING_FILL_CLASSES,
   WHEEL_AUTHORING_LINE_CLASSES,
   WHEEL_AUTHORING_TYPOGRAPHY_CLASSES,
+  WHEEL_BAND_SPANS,
+  WHEEL_BAND_SPAN_SCALE_RANGE,
+  WHEEL_RULER_DEPTH_RANGE,
+  WHEEL_RULER_IDS,
+  WHEEL_SCALE_RANGE,
+  WHEEL_TICK_LENGTH_RANGE,
   projectWheelAuthoringStyle,
   resolveWheelTypographyPaint,
   resolveWheelFillPaint,
   resolveWheelLinePaint,
+  resolveWheelBandSpanFields,
+  resolveWheelBandSpanScale,
   resolveWheelPaintedRingRadius,
+  resolveCanonicalWheelRingSet,
+  resolveWheelRingSet,
+  resolveWheelTickLength,
   resolveScaledWheelStroke,
   resolveWheelStrokeMetrics,
   resolveWheelTypographyMetrics,
@@ -29,6 +40,7 @@ import {
   type WheelLinePaintRole,
   type WheelPaintedRingRole,
   type WheelRenderStyle,
+  type WheelRulerId,
   type WheelTypographyProfile,
 } from "../chart/wheel-render-style";
 import {
@@ -86,7 +98,12 @@ export type WheelAuthoringFlatProperty =
   | "opacity"
   | "lineCap"
   | "lineJoin"
-  | "radius";
+  | "radius"
+  | "scale"
+  | "spanInner"
+  | "spanScale"
+  | "rulerDepth"
+  | "tickLength";
 
 export function wheelAuthoringOverrideId(
   profile: WheelAuthoringEditScope,
@@ -94,6 +111,63 @@ export function wheelAuthoringOverrideId(
   property: WheelAuthoringFlatProperty,
 ): string {
   return `${WHEEL_AUTHORING_OVERRIDE_PREFIX}${profile}.${classId}.${property}`;
+}
+
+/**
+ * The class an authoring override addresses, or null when the id is not one.
+ *
+ * The inverse of `wheelAuthoringOverrideId`, for the cases that must go from a
+ * write back to the thing written to — telling a family's members apart, for
+ * one. The scope and property segments never contain a dot, so the class id is
+ * everything between them however deep its own path runs.
+ */
+export function wheelAuthoringOverrideClassId(semanticId: string): string | null {
+  if (!semanticId.startsWith(WHEEL_AUTHORING_OVERRIDE_PREFIX)) return null;
+  const body = semanticId.slice(WHEEL_AUTHORING_OVERRIDE_PREFIX.length);
+  const scopeCut = body.indexOf(".");
+  const propertyCut = body.lastIndexOf(".");
+  if (scopeCut <= 0 || propertyCut <= scopeCut) return null;
+  return body.slice(scopeCut + 1, propertyCut);
+}
+
+/**
+ * The authoring ids one wheel variant holds in its own right.
+ *
+ * Base is folded into all three profiles before anything paints, so compiled
+ * overrides cannot tell a shared default from a variant's own value. The
+ * authored map still can, and two callers need the distinction: a handle
+ * deciding which scope its drag should move, and the inspector deciding
+ * whether the base row it is showing is the one the wheel actually reads.
+ */
+export function variantAuthoredOverrideIds(
+  overrides: Readonly<Record<string, unknown>>,
+  profile: WheelTypographyProfile,
+): ReadonlySet<string> {
+  const prefix = `${WHEEL_AUTHORING_OVERRIDE_PREFIX}${profile}.`;
+  const ids = new Set<string>();
+  for (const semanticId of Object.keys(overrides)) {
+    if (semanticId.startsWith(prefix)) ids.add(semanticId);
+  }
+  return ids;
+}
+
+/**
+ * The variant id that masks a base authoring id, or null when none does.
+ *
+ * A base row is only masked when the wheel on screen has its own value for the
+ * same class and property; anything that is not a base authoring id, or that
+ * the variant leaves alone, is governing exactly as it appears.
+ */
+export function maskingVariantOverrideId(
+  semanticId: string,
+  profile: WheelTypographyProfile,
+  variantAuthored: ReadonlySet<string>,
+): string | null {
+  const basePrefix = `${WHEEL_AUTHORING_OVERRIDE_PREFIX}base.`;
+  if (!semanticId.startsWith(basePrefix)) return null;
+  const variantId =
+    `${WHEEL_AUTHORING_OVERRIDE_PREFIX}${profile}.${semanticId.slice(basePrefix.length)}`;
+  return variantAuthored.has(variantId) ? variantId : null;
 }
 
 const FLAT_PROPERTY_NAMES: readonly WheelAuthoringFlatProperty[] = [
@@ -131,6 +205,11 @@ const FLAT_PROPERTY_NAMES: readonly WheelAuthoringFlatProperty[] = [
   "lineCap",
   "lineJoin",
   "radius",
+  "scale",
+  "spanInner",
+  "spanScale",
+  "rulerDepth",
+  "tickLength",
 ];
 
 /**
@@ -197,6 +276,55 @@ function flatWheelAuthoringClassMaps(
       patch = { ...current, shadowBlur: chartPx(numericValue) };
     } else if (property === "radius" && numericValue != null) {
       patch = { ...current, radius: chartPx(numericValue) };
+    } else if (property === "spanInner" && numericValue != null) {
+      // A reference-space radius like `radius`, but addressed to a span rather
+      // than a painted ring, so the two can never be confused.
+      patch = { ...current, spanInner: chartPx(numericValue) };
+    } else if (property === "spanScale" && numericValue != null) {
+      // A factor carried as a percentage, like the other share-of-something
+      // values in this channel, and divided back at compile.
+      patch = {
+        ...current,
+        spanScale: Math.min(
+          WHEEL_BAND_SPAN_SCALE_RANGE.max * 100,
+          Math.max(WHEEL_BAND_SPAN_SCALE_RANGE.min * 100, numericValue),
+        ) / 100,
+      };
+    } else if (property === "rulerDepth" && numericValue != null) {
+      // A share of the ruler's host band, so a ratio rather than a
+      // reference-space dimension like `radius` — projecting it would measure
+      // it against the wheel, which is the coupling this replaces.
+      //
+      // Carried through the flat channel as a percentage and divided here, the
+      // same way `opacity` is: the flat channel holds the editor's conventional
+      // values, and "32% of its band" is what the inspector shows.
+      patch = {
+        ...current,
+        rulerDepth: Math.min(
+          WHEEL_RULER_DEPTH_RANGE.max * 100,
+          Math.max(WHEEL_RULER_DEPTH_RANGE.min * 100, numericValue),
+        ) / 100,
+      };
+    } else if (property === "tickLength" && numericValue != null) {
+      // A share of the tick's ruler band, carried as a percentage like
+      // `rulerDepth` and divided at compile.
+      patch = {
+        ...current,
+        tickLength: Math.min(
+          WHEEL_TICK_LENGTH_RANGE.max * 100,
+          Math.max(WHEEL_TICK_LENGTH_RANGE.min * 100, numericValue),
+        ) / 100,
+      };
+    } else if (property === "scale" && numericValue != null) {
+      // A ratio, not a chart-px dimension: it multiplies the wheel the other
+      // sizes are measured against, so projecting it would apply it twice.
+      patch = {
+        ...current,
+        scale: Math.min(
+          WHEEL_SCALE_RANGE.max,
+          Math.max(WHEEL_SCALE_RANGE.min, numericValue),
+        ),
+      };
     } else if (property === "density" && numericValue != null) {
       patch = { ...current, density: Math.min(100, Math.max(0, numericValue)) };
     } else if (property === "angle" && numericValue != null) {
@@ -388,6 +516,54 @@ export function createChartStyleProfileV2FromFlatOverrides(
   });
 }
 
+/**
+ * The class that carries chart-wide geometry rather than one painted element.
+ *
+ * Scale lives here, not on a ring, because it is declared rather than inferred:
+ * grabbing a ring must always mean "resize this band". Inferring scale from
+ * which ring was grabbed also has no answer in the layouts where no painted
+ * ring is outermost — a classic biwheel with houses hidden, or anglo synastry.
+ */
+export const WHEEL_CHART_CLASS_ID = "canvas.chart" as const;
+
+/** The class carrying the inner edge of one band span. */
+export function wheelBandSpanClassId(spanId: string): string {
+  return `canvas.span.${spanId}`;
+}
+
+/**
+ * The class that authors one degree ruler.
+ *
+ * A ruler is named as the parent of its own ticks rather than after the circle
+ * it ends at. The circle is where the ruler stops, which is a consequence of
+ * its depth, not the thing being authored — and naming it as the tick parent is
+ * what makes the ruler own its ticks in the element list.
+ */
+const WHEEL_RULER_CLASS_IDS: Readonly<Record<WheelRulerId, string>> = Object.freeze({
+  zodiacOuter: "zodiac.tick.outer",
+  zodiacInner: "zodiac.tick.inner",
+});
+
+export function wheelRulerClassId(rulerId: WheelRulerId): string {
+  return WHEEL_RULER_CLASS_IDS[rulerId];
+}
+
+/** The ruler a class authors, or null when the class is not a ruler. */
+export function wheelRulerIdForClass(classId: string): WheelRulerId | null {
+  for (const rulerId of WHEEL_RULER_IDS) {
+    if (WHEEL_RULER_CLASS_IDS[rulerId] === classId) return rulerId;
+  }
+  return null;
+}
+
+/** The span a `canvas.span.*` class addresses, or null for any other class. */
+export function wheelBandSpanIdForClass(classId: string): string | null {
+  const spanId = classId.startsWith("canvas.span.")
+    ? classId.slice("canvas.span.".length)
+    : null;
+  return spanId && Object.hasOwn(WHEEL_BAND_SPANS, spanId) ? spanId : null;
+}
+
 const RING_CLASS_TO_ROLE: Readonly<
   Record<string, WheelPaintedRingRole>
 > = Object.freeze({
@@ -404,6 +580,22 @@ const RING_CLASS_TO_ROLE: Readonly<
   "rings.houseBoundary": "houseBoundaryRing",
   "rings.base": "baseRing",
 });
+
+/**
+ * The painted ring a ring class authors, if any. Exposed so a live drag can
+ * find which boundary it is moving and push the rest of the stack with it.
+ */
+/** Every class whose radius authors a painted ring, in stack order. */
+export const WHEEL_RING_CLASS_IDS: readonly string[] = Object.freeze(
+  Object.keys(RING_CLASS_TO_ROLE),
+);
+
+export function wheelRingRoleForClass(
+  classId: string,
+): WheelPaintedRingRole | undefined {
+  return RING_CLASS_TO_ROLE[classId];
+}
+
 
 const LINE_CLASS_TO_LEGACY_ROLE: Readonly<
   Partial<Record<WheelAuthoringLineClass, WheelLinePaintRole>>
@@ -448,7 +640,6 @@ const LINE_CLASS_TO_LEGACY_ROLE: Readonly<
   "secondaryRing.fixedStar.leader": "outerLeader",
   "secondaryRing.asteroid.leader": "outerLeader",
   "secondaryRing.midpoint.leader": "outerLeader",
-  "secondaryRing.hybridHit.leader": "outerLeader",
   "secondaryRing.antiscia.leader": "outerLeader",
   "secondaryRing.contraAntiscia.leader": "outerLeader",
   "secondaryRing.dodecatemoria.leader": "outerLeader",
@@ -610,12 +801,50 @@ export function compileWheelAuthoringClassMaps(
   const linePaint: Record<string, Record<string, WheelAuthoringLinePaintOverride>> = {};
   const fillPaint: Record<string, Record<string, WheelAuthoringFillPaintOverride>> = {};
   const ringRadii: Record<string, Record<string, number>> = {};
+  const wheelScale: Record<string, number> = {};
+  const bandSpanInner: Record<string, Record<string, number>> = {};
+  const bandSpanScale: Record<string, Record<string, number>> = {};
+  const rulerDepth: Record<string, Record<string, number>> = {};
+  const tickLength: Record<string, Record<string, number>> = {};
   for (const profile of ["classic", "compact", "anglo"] as const) {
     const classes = classMaps[profile];
+    const authoredScale = classes[WHEEL_CHART_CLASS_ID]?.scale;
+    if (authoredScale != null && Number.isFinite(authoredScale)) {
+      wheelScale[profile] = Math.min(
+        WHEEL_SCALE_RANGE.max,
+        Math.max(WHEEL_SCALE_RANGE.min, authoredScale),
+      );
+    }
     const profileTypography: Record<string, WheelAuthoringTypographyOverride> = {};
     const profileLines: Record<string, WheelAuthoringLinePaintOverride> = {};
     const profileFills: Record<string, WheelAuthoringFillPaintOverride> = {};
     const profileRadii: Record<string, number> = {};
+    const spanInners: Record<string, number> = {};
+    for (const spanId of Object.keys(WHEEL_BAND_SPANS)) {
+      const authored = classes[wheelBandSpanClassId(spanId)]?.spanInner;
+      if (authored?.value != null && Number.isFinite(authored.value)) {
+        spanInners[spanId] = authored.value;
+      }
+    }
+    if (Object.keys(spanInners).length) bandSpanInner[profile] = spanInners;
+    const spanScales: Record<string, number> = {};
+    for (const spanId of Object.keys(WHEEL_BAND_SPANS)) {
+      const authored = classes[wheelBandSpanClassId(spanId)]?.spanScale;
+      if (authored != null && Number.isFinite(authored)) spanScales[spanId] = authored;
+    }
+    if (Object.keys(spanScales).length) bandSpanScale[profile] = spanScales;
+    const rulerDepths: Record<string, number> = {};
+    for (const rulerId of WHEEL_RULER_IDS) {
+      const authored = classes[wheelRulerClassId(rulerId)]?.rulerDepth;
+      if (authored != null && Number.isFinite(authored)) rulerDepths[rulerId] = authored;
+    }
+    if (Object.keys(rulerDepths).length) rulerDepth[profile] = rulerDepths;
+    const tickLengths: Record<string, number> = {};
+    for (const [classId, properties] of Object.entries(classes)) {
+      const authored = properties.tickLength;
+      if (authored != null && Number.isFinite(authored)) tickLengths[classId] = authored;
+    }
+    if (Object.keys(tickLengths).length) tickLength[profile] = tickLengths;
     for (const [classId, properties] of Object.entries(classes)) {
       if (isTypographyClass(classId)) {
         const directTypography = typographyOverride(properties);
@@ -647,6 +876,11 @@ export function compileWheelAuthoringClassMaps(
     linePaint: Object.freeze(linePaint),
     fillPaint: Object.freeze(fillPaint),
     ringRadii: Object.freeze(ringRadii),
+    wheelScale: Object.freeze(wheelScale),
+    bandSpanInner: Object.freeze(bandSpanInner),
+    bandSpanScale: Object.freeze(bandSpanScale),
+    rulerDepth: Object.freeze(rulerDepth),
+    tickLength: Object.freeze(tickLength),
   }) as WheelAuthoringOverrides;
 }
 
@@ -673,6 +907,18 @@ export function compileWheelAuthoringOverrides(
 }
 
 export type WheelAuthoringClassDefaults = Readonly<{
+  /**
+   * Whether the class's colour and font were actually authored on this class,
+   * as opposed to resolved from the shared palette/font role it inherits.
+   *
+   * Both values are always populated so the renderer has something concrete to
+   * paint, which means presence alone cannot tell the inspector whether the
+   * user ever set them. Without this distinction the inspector always edited a
+   * per-class override and the shared role was unreachable — the reason the
+   * Style Lab and the Appearance menu behaved as two disjoint systems.
+   */
+  colorAuthored?: boolean;
+  fontRefAuthored?: boolean;
   fontRef?: WheelAuthoringFontRef;
   fontSizePx?: number;
   trackingPx?: number;
@@ -708,6 +954,11 @@ export type WheelAuthoringClassDefaults = Readonly<{
   lineJoin?: CanvasLineJoin;
   radiusPx?: number;
   diameterPx?: number;
+  /** Reference-space radius of a band span's inner edge. */
+  spanInnerPx?: number;
+  spanScalePercent?: number;
+  rulerDepthPercent?: number;
+  tickLengthPercent?: number;
 }>;
 
 export type WheelAuthoringClassDefaultContext = Readonly<{
@@ -777,7 +1028,10 @@ function typographyColorFallback(
   profile: WheelTypographyProfile,
   classId: WheelAuthoringTypographyClass,
 ): string {
-  if (classId === "zodiac.signGlyph" || classId.endsWith(".position.sign")) {
+  // The zodiac ring's own glyphs are the signs role. A sign inside a position
+  // readout is part of that reading and takes the positions role with its
+  // degree and minute, matching what the renderer paints.
+  if (classId === "zodiac.signGlyph") {
     return style.palette.signs;
   }
   if (classId === "subdivisions.term.glyph") return style.elementColors.termGlyph;
@@ -1031,6 +1285,8 @@ export function readWheelAuthoringClassDefaults(
       },
     );
     const direct = style.authoringOverrides.typography[profile]?.[classId];
+    output.colorAuthored = direct?.color != null;
+    output.fontRefAuthored = direct?.fontRef != null;
     output.fontRef = direct?.fontRef
       ?? portableFontRef(
         context.runtimeFontRole ?? typographyFontRole(classId),
@@ -1119,6 +1375,83 @@ export function readWheelAuthoringClassDefaults(
     });
     output.radiusPx = radiusPx;
     output.diameterPx = radiusPx * 2;
+  }
+  const spanId = wheelBandSpanIdForClass(classId);
+  if (spanId && context.geometry) {
+    // The span's inner edge is a resolved radius like a ring's, so the
+    // inspector can show and type the same reference-space number the diamond
+    // on the wheel drags. Without this the class had a handle and no row.
+    const fields = resolveWheelBandSpanFields(context.geometry, spanId);
+    const inner = fields
+      ? resolveWheelRingSet(style, context.geometry)[fields.innerField]
+      : undefined;
+    if (typeof inner === "number" && Number.isFinite(inner) && inner > 0) {
+      output.spanInnerPx = unprojectChartPx(inner, {
+        wheelRadius: context.geometry.maxRadius,
+        referenceRadius,
+      });
+      const outerField = fields?.outerField ?? null;
+      const anchor = outerField === null
+        ? context.geometry.maxRadius
+        : resolveWheelRingSet(style, context.geometry)[outerField];
+      if (typeof anchor === "number" && anchor - inner > 1e-9) {
+        output.spanScalePercent = (resolveWheelBandSpanScale(
+          style,
+          context.geometry.profile,
+          spanId,
+          anchor,
+          inner,
+          context.geometry.maxRadius,
+        ) ?? 1) * 100;
+      }
+    }
+  }
+  if (classId.startsWith("zodiac.tick.angloCuspRuler.") && context.geometry) {
+    // The cusp ruler is the only degree ruler an ordinary anglo wheel draws, so
+    // this is the tick length that matters there. Reported whether authored or
+    // not, so the row shows the share the tick actually occupies.
+    const rings = resolveWheelRingSet(style, context.geometry);
+    const canonicalRings = resolveCanonicalWheelRingSet(style, context.geometry);
+    const band = (rings.rCuspOuter ?? 0) - (rings.rCuspLabelOuter ?? 0);
+    const canonicalBand =
+      (canonicalRings.rCuspOuter ?? 0) - (canonicalRings.rCuspLabelOuter ?? 0);
+    const ticks = style.geometry.anglo.cuspRulerTicks;
+    const canonical = (rings.r30 ?? 0) * (
+      classId.endsWith("10deg") ? ticks.long
+        : classId.endsWith("5deg") ? ticks.medium
+          : ticks.short
+    );
+    if (band > 0) {
+      output.tickLengthPercent = (resolveWheelTickLength(
+        style,
+        "anglo",
+        classId,
+        band,
+        canonicalBand,
+        canonical,
+      ) / band) * 100;
+    }
+  }
+  const rulerId = wheelRulerIdForClass(classId);
+  if (rulerId && context.geometry) {
+    // Reported whether or not the ruler has been authored, so the row shows the
+    // share it actually occupies instead of sitting blank until first touched.
+    // Absent for a ruler with no host band — anglo's outer ruler on an outer
+    // ring — which has no share of anything to report.
+    const rings = resolveWheelRingSet(style, context.geometry);
+    const terminal = rulerId === "zodiacOuter" ? rings.rOuter10 : rings.r10;
+    const base = rulerId === "zodiacOuter" ? rings.rOuter0 : rings.r0;
+    // A ruler that stands outside the zodiac band is hosted by the margin it
+    // stands in — anglo's outer ruler, the only degree ruler anglo draws.
+    const outsideZodiac = rulerId === "zodiacOuter"
+      && typeof base === "number" && typeof rings.r30 === "number"
+      && base > rings.r30;
+    const band = outsideZodiac
+      ? context.geometry.maxRadius - (rings.r30 ?? 0)
+      : (rings.r30 ?? 0) - (rings.r0 ?? 0);
+    if (band > 0 && typeof terminal === "number" && typeof base === "number") {
+      output.rulerDepthPercent = (Math.abs(terminal - base) / band) * 100;
+    }
   }
   return Object.freeze(output) as WheelAuthoringClassDefaults;
 }

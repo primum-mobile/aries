@@ -33,6 +33,10 @@ _NASA_ATLAS_REPLACEABLE_CONTENT_HASHES = frozenset({
     # Full-app blue-noise material, before linked-palette accent foreground
     # roles were explicit in the bundled preset.
     "cb4c978e3229249c",
+    # Linked-palette foreground roles, before the low-opacity print grain
+    # stopped forcing WebKit's background-blend compositor on every retained
+    # application surface.
+    "252ce50f8f08a757",
 })
 
 
@@ -299,7 +303,11 @@ _NASA_ATLAS_APP_AUTHORING_OVERRIDES = {
     "authoring.app.materials.global.dotSize": 0.45,
     "authoring.app.materials.global.density": 27,
     "authoring.app.materials.global.seed": 2230,
-    "authoring.app.materials.global.blendMode": "multiply",
+    # Low-opacity dark ink over this preset's opaque daylight surfaces already
+    # reads as the intended print grain with ordinary alpha composition.
+    # Keeping it in the normal paint path avoids an offscreen blend layer on
+    # every retained surface while charts and lists are updating.
+    "authoring.app.materials.global.blendMode": "normal",
     "authoring.app.surfaces.canvas.opacity": 5,
     "authoring.app.sidebar.opacity": 7,
     "authoring.app.titlebar.opacity": 4,

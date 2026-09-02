@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Max Lange
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 import argparse
 import os
 import sys

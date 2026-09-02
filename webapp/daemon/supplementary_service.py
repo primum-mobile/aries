@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 """Daemon-side supplementary chart computation.
 
 This service intentionally routes every derived chart through
@@ -19,9 +24,11 @@ if str(REPO_ROOT) not in sys.path:
 
 import phasiscalc
 import moonphasejump
+import mtexts
 from engine import (
     converse_transits,
     cursor_steppers,
+    harmonic_chart,
     solilunar,
     supplementary_adapter,
     synodic_cycle,
@@ -50,6 +57,7 @@ PUBLIC_TO_FEATURE_KIND = {
     # (supplementary_headless_driver._rebuild_workspace_solar_average_child) so
     # the daemon can build it like any other supplementary child.
     "solar-average": "solar_average",
+    "harmonic": "harmonic",
 }
 
 FEATURE_TO_PUBLIC_KIND = {value: key for key, value in PUBLIC_TO_FEATURE_KIND.items()}
@@ -72,6 +80,7 @@ FEATURE_KIND_DISPLAY_LABELS = {
     "solar_arc": "Solar Arc",
     "profections": "Profections",
     "solar_average": "Solar Average",
+    "harmonic": mtexts.txts.get("HarmonicChart", "Harmonic Chart"),
 }
 
 # revolutions.Revolutions planet types -> body names (revolutions.py:91-98).
@@ -324,6 +333,31 @@ class SupplementaryService:
             keycode = cursor_steppers.KEY_RIGHT if direction >= 0 else cursor_steppers.KEY_LEFT
         retained = dict(binding.retained_state or {})
 
+        if feature_kind == "harmonic":
+            if shift or alt or keycode not in (cursor_steppers.KEY_LEFT, cursor_steppers.KEY_RIGHT):
+                binding.retained_state = retained
+                return when, binding.to_payload()
+            mode = harmonic_chart.normalize_projection_mode(
+                retained.get("projection_mode"),
+                default=harmonic_chart.normalize_projection_mode(
+                    getattr(radix.options, "harmonic_chart_mode", harmonic_chart.PROJECTION_MODE_HARMONIC)
+                ),
+            )
+            retained["projection_mode"] = mode
+            if mode == harmonic_chart.PROJECTION_MODE_VARGA:
+                retained["varga_number"] = harmonic_chart.step_varga_number(
+                    retained.get("varga_number", harmonic_chart.DEFAULT_VARGA), direction
+                )
+            else:
+                current = harmonic_chart.normalize_harmonic_number(
+                    retained.get("harmonic_number", harmonic_chart.DEFAULT_HARMONIC)
+                )
+                retained["harmonic_number"] = harmonic_chart.normalize_harmonic_number(
+                    current + direction
+                )
+            binding.retained_state = retained
+            return when, binding.to_payload()
+
         solar_return_snap = bool(getattr(radix.options, "profections_solar_return_snap", False))
         plan = cursor_steppers.plan_for_feature_kind(
             feature_kind,
@@ -396,7 +430,7 @@ class SupplementaryService:
                 anchor_dt,
                 plan.delta,
                 getattr(getattr(radix, "options", None), "synodicmode", synodic_cycle.SYNODIC_MODE_ALL),
-                getattr(getattr(radix, "options", None), "phasismode", phasiscalc.PHASIS_MODE_ASTRONOMICAL),
+                getattr(getattr(radix, "options", None), "phasismode", phasiscalc.PHASIS_MODE_SIMPLE_SWEP),
             )
             if event is None:
                 binding.retained_state = retained

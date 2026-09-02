@@ -36,7 +36,7 @@ GEONAMES_COLUMNS = [
     'modification_date',
 ]
 
-_SCHEMA_VERSION = '3'
+_SCHEMA_VERSION = '4'
 _STATE_LOCK = threading.Lock()
 _HAS_FTS = False
 _THREAD_LOCAL = threading.local()
@@ -234,6 +234,7 @@ def _create_schema(conn):
     cur.executescript(
         """
         DROP TABLE IF EXISTS places_rtree;
+        DROP TABLE IF EXISTS place_aliases;
         DROP TABLE IF EXISTS places;
         DROP TABLE IF EXISTS countries;
         DROP TABLE IF EXISTS admin1;
@@ -261,6 +262,11 @@ def _create_schema(conn):
             max_lon,
             min_lat,
             max_lat
+        );
+
+        CREATE TABLE place_aliases (
+            alias TEXT NOT NULL,
+            geonameid INTEGER NOT NULL
         );
 
         CREATE TABLE countries (
@@ -322,6 +328,7 @@ def _build_database(db_file, source_file, source_signature):
             ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         )
         count = 0
+        alias_count = 0
         for row in _iter_geonames_rows(source_file):
             if row['feature_class'] != 'P':
                 continue
@@ -332,6 +339,8 @@ def _build_database(db_file, source_file, source_signature):
                 continue
             name = (row['name'] or '').strip()
             asciiname = (row['asciiname'] or '').strip()
+            search_name = normalize_text(name)
+            search_ascii = normalize_text(asciiname) if asciiname else None
             country_code = (row['country_code'] or '').strip() or None
             admin1_code = (row['admin1_code'] or '').strip() or None
             elevation = parse_int(row['elevation'])
@@ -343,8 +352,8 @@ def _build_database(db_file, source_file, source_signature):
                     geonameid,
                     name,
                     asciiname or None,
-                    normalize_text(name),
-                    normalize_text(asciiname) if asciiname else None,
+                    search_name,
+                    search_ascii,
                     latitude,
                     longitude,
                     admin_priority((row['feature_code'] or '').strip()),
@@ -355,6 +364,20 @@ def _build_database(db_file, source_file, source_signature):
                     (row['timezone'] or '').strip() or None,
                 ),
             )
+            aliases = {
+                normalize_text(alias)
+                for alias in (row['alternatenames'] or '').split(',')
+            }
+            aliases.discard('')
+            aliases.discard(search_name)
+            if search_ascii:
+                aliases.discard(search_ascii)
+            if aliases:
+                cur.executemany(
+                    'INSERT INTO place_aliases (alias, geonameid) VALUES (?, ?)',
+                    ((alias, geonameid) for alias in sorted(aliases)),
+                )
+                alias_count += len(aliases)
             count += 1
             if count % 5000 == 0:
                 conn.commit()
@@ -362,9 +385,11 @@ def _build_database(db_file, source_file, source_signature):
             'INSERT INTO places_rtree '
             'SELECT geonameid, longitude, longitude, latitude, latitude FROM places'
         )
+        cur.execute('CREATE INDEX idx_place_aliases_alias ON place_aliases(alias)')
         cur.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)", (_SCHEMA_VERSION,))
         cur.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('source_signature', ?)", (source_signature,))
         cur.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('row_count', ?)", (str(count),))
+        cur.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('alias_count', ?)", (str(alias_count),))
         conn.commit()
         conn.execute('VACUUM')
         conn.commit()
@@ -471,6 +496,7 @@ def search(query, maxnum=10):
     if not q:
         return []
     prefix = q + '%'
+    prefix_end = q + '\U0010ffff'
     contains = '%' + q + '%'
     limit = max(25, maxnum * 4)
     results = []
@@ -479,33 +505,55 @@ def search(query, maxnum=10):
 
     rows = conn.execute(
         """
+        WITH matches AS (
+            SELECT p.geonameid,
+                   CASE
+                       WHEN p.search_name = ? THEN 0
+                       WHEN p.search_ascii = ? THEN 0
+                       WHEN p.search_name >= ? AND p.search_name < ? THEN 1
+                       ELSE 1
+                   END AS match_priority
+            FROM places p
+            WHERE p.search_name = ?
+               OR p.search_ascii = ?
+               OR (p.search_name >= ? AND p.search_name < ?)
+               OR (p.search_ascii >= ? AND p.search_ascii < ?)
+            UNION ALL
+            SELECT pa.geonameid,
+                   CASE WHEN pa.alias = ? THEN 0 ELSE 1 END AS match_priority
+            FROM place_aliases pa
+            WHERE pa.alias = ?
+               OR (pa.alias >= ? AND pa.alias < ?)
+        ), ranked_matches AS (
+            SELECT geonameid, MIN(match_priority) AS match_priority
+            FROM matches
+            GROUP BY geonameid
+        )
         SELECT p.geonameid, p.name, p.longitude, p.latitude, p.country_code,
                p.admin1_code,
                c.name AS country_name, a.name AS admin1_name,
-               p.elevation, p.timezone, p.population, p.admin_priority
-        FROM places p
+               p.elevation, p.timezone, p.population, p.admin_priority,
+               m.match_priority
+        FROM ranked_matches m
+        JOIN places p ON p.geonameid = m.geonameid
         LEFT JOIN countries c ON c.code = p.country_code
         LEFT JOIN admin1 a ON a.code = CASE
             WHEN p.country_code IS NOT NULL AND p.admin1_code IS NOT NULL THEN p.country_code || '.' || p.admin1_code
             ELSE NULL
         END
-        WHERE p.search_name = ?
-           OR p.search_ascii = ?
-           OR p.search_name LIKE ?
-           OR p.search_ascii LIKE ?
         ORDER BY
-            CASE
-                WHEN p.search_name = ? THEN 0
-                WHEN p.search_ascii = ? THEN 1
-                WHEN p.search_name LIKE ? THEN 2
-                ELSE 3
-            END,
+            m.match_priority,
             p.admin_priority ASC,
             p.population DESC,
             p.name ASC
         LIMIT ?
         """,
-        (q, q, prefix, prefix, q, q, prefix, limit),
+        (
+            q, q, q, prefix_end,
+            q, q, q, prefix_end, q, prefix_end,
+            q, q, q, prefix_end,
+            limit,
+        ),
     ).fetchall()
     for row in rows:
         rows_by_id[row['geonameid']] = row

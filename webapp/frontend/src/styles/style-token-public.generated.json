@@ -1,12 +1,12 @@
 {
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "generatedFrom": {
     "contract": "src/styles/style-token-contract.json",
     "inventory": "src/styles/style-token-inventory.generated.json"
   },
   "counts": {
-    "public": 1110,
-    "editable": 1110,
+    "public": 1106,
+    "editable": 1106,
     "blockedByCoupling": 0,
     "supportingDerived": 11
   },
@@ -6909,7 +6909,7 @@
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "rgba(120, 150, 190, 0.30)",
+      "default": "var(--morinus-houses)",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.color.almucantar; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -6919,7 +6919,36 @@
       "handoffStatus": "editable",
       "safetyNotes": [
         "Review Astrolabe foreground/background contrast after changing this role."
+      ],
+      "dependencies": [
+        "--morinus-houses"
       ]
+    },
+    {
+      "semanticId": "renderer.astrolabe.metric.atmosphericFillOpacity",
+      "cssVar": "--aries-astrolabe-atmospheric-fill-opacity",
+      "label": "Astrolabe atmospheric fill opacity",
+      "description": "Astrolabe atmospheric fill opacity design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.32",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.atmosphericFillOpacity; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      }
     },
     {
       "semanticId": "renderer.astrolabe.color.azimuth",
@@ -6930,7 +6959,7 @@
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "rgba(120, 150, 190, 0.24)",
+      "default": "var(--morinus-houses)",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.color.azimuth; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -6940,6 +6969,9 @@
       "handoffStatus": "editable",
       "safetyNotes": [
         "Review Astrolabe foreground/background contrast after changing this role."
+      ],
+      "dependencies": [
+        "--morinus-houses"
       ]
     },
     {
@@ -6951,7 +6983,7 @@
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "#23242a",
+      "default": "var(--morinus-background)",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.color.background; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -6961,6 +6993,9 @@
       "handoffStatus": "editable",
       "safetyNotes": [
         "Review Astrolabe foreground/background contrast after changing this role."
+      ],
+      "dependencies": [
+        "--morinus-background"
       ]
     },
     {
@@ -6972,7 +7007,7 @@
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "0.15",
+      "default": "0.12",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.metric.bandWidthScale; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -6984,7 +7019,7 @@
         "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
       ],
       "bounds": {
-        "min": 0.0375,
+        "min": 0.03,
         "max": 1,
         "step": 0.01
       }
@@ -6998,7 +7033,7 @@
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "0.02",
+      "default": "0.018",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.metric.bodyLabelPadScale; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -7010,7 +7045,7 @@
         "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
       ],
       "bounds": {
-        "min": 0.005,
+        "min": 0.0045,
         "max": 1,
         "step": 0.01
       }
@@ -7024,7 +7059,7 @@
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "rgba(150, 150, 152, 0.55)",
+      "default": "var(--morinus-frame)",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.color.capricorn; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -7034,6 +7069,9 @@
       "handoffStatus": "editable",
       "safetyNotes": [
         "Review Astrolabe foreground/background contrast after changing this role."
+      ],
+      "dependencies": [
+        "--morinus-frame"
       ]
     },
     {
@@ -7045,7 +7083,7 @@
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "3px",
+      "default": "2px",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.metric.capricornDashOff; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -7058,7 +7096,7 @@
       ],
       "bounds": {
         "min": 0.25,
-        "max": 12,
+        "max": 8,
         "step": 0.25
       }
     },
@@ -7071,7 +7109,7 @@
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "2px",
+      "default": "1px",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.metric.capricornDashOn; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -7123,7 +7161,7 @@
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "rgba(160, 160, 162, 0.9)",
+      "default": "var(--morinus-angles)",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.color.cardinal; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -7133,6 +7171,9 @@
       "handoffStatus": "editable",
       "safetyNotes": [
         "Review Astrolabe foreground/background contrast after changing this role."
+      ],
+      "dependencies": [
+        "--morinus-angles"
       ]
     },
     {
@@ -7144,7 +7185,7 @@
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "22",
+      "default": "24",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.metric.cardinalFontDivisor; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -7156,8 +7197,8 @@
         "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
       ],
       "bounds": {
-        "min": 11,
-        "max": 44,
+        "min": 12,
+        "max": 48,
         "step": 1
       }
     },
@@ -7170,7 +7211,7 @@
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "0.06",
+      "default": "0.04",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.metric.cardinalPadScale; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -7182,7 +7223,7 @@
         "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
       ],
       "bounds": {
-        "min": 0.015,
+        "min": 0.01,
         "max": 1,
         "step": 0.01
       }
@@ -7300,7 +7341,7 @@
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "2px",
+      "default": "1px",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.metric.connectorDashOn; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -7326,7 +7367,7 @@
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "0.55",
+      "default": "0.42",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.metric.connectorOpacity; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -7352,7 +7393,7 @@
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "#c68a22",
+      "default": "var(--morinus-frame)",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.color.ecliptic; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -7362,6 +7403,9 @@
       "handoffStatus": "editable",
       "safetyNotes": [
         "Review Astrolabe foreground/background contrast after changing this role."
+      ],
+      "dependencies": [
+        "--morinus-frame"
       ]
     },
     {
@@ -7373,7 +7417,7 @@
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "#78828f",
+      "default": "var(--morinus-houses)",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.color.equator; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -7383,6 +7427,9 @@
       "handoffStatus": "editable",
       "safetyNotes": [
         "Review Astrolabe foreground/background contrast after changing this role."
+      ],
+      "dependencies": [
+        "--morinus-houses"
       ]
     },
     {
@@ -7394,7 +7441,7 @@
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "4px",
+      "default": "3px",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.metric.equatorDashOff; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -7407,7 +7454,7 @@
       ],
       "bounds": {
         "min": 0.25,
-        "max": 16,
+        "max": 12,
         "step": 0.25
       }
     },
@@ -7420,7 +7467,7 @@
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "5px",
+      "default": "1px",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.metric.equatorDashOn; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -7433,7 +7480,7 @@
       ],
       "bounds": {
         "min": 0.25,
-        "max": 20,
+        "max": 8,
         "step": 0.25
       }
     },
@@ -7446,7 +7493,7 @@
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "#788291",
+      "default": "var(--morinus-houses)",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.color.equatorLabel; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -7456,6 +7503,9 @@
       "handoffStatus": "editable",
       "safetyNotes": [
         "Review Astrolabe foreground/background contrast after changing this role."
+      ],
+      "dependencies": [
+        "--morinus-houses"
       ]
     },
     {
@@ -7467,7 +7517,7 @@
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "360",
+      "default": "960",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.metric.fineStrokeDivisor; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -7479,8 +7529,8 @@
         "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
       ],
       "bounds": {
-        "min": 180,
-        "max": 720,
+        "min": 480,
+        "max": 1920,
         "step": 1
       }
     },
@@ -7493,7 +7543,7 @@
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "1px",
+      "default": "0.75px",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.metric.fineStrokeMin; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -7519,7 +7569,7 @@
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "#3e82c4",
+      "default": "var(--morinus-angles)",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.color.horizon; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -7529,6 +7579,9 @@
       "handoffStatus": "editable",
       "safetyNotes": [
         "Review Astrolabe foreground/background contrast after changing this role."
+      ],
+      "dependencies": [
+        "--morinus-angles"
       ]
     },
     {
@@ -7540,7 +7593,7 @@
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "rgba(170, 150, 110, 0.30)",
+      "default": "var(--morinus-angles)",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.color.hour; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -7550,6 +7603,9 @@
       "handoffStatus": "editable",
       "safetyNotes": [
         "Review Astrolabe foreground/background contrast after changing this role."
+      ],
+      "dependencies": [
+        "--morinus-angles"
       ]
     },
     {
@@ -7561,7 +7617,7 @@
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "#dcdcdc",
+      "default": "var(--morinus-text-bright)",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.color.infoAtmospheric; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -7571,6 +7627,9 @@
       "handoffStatus": "editable",
       "safetyNotes": [
         "Review Astrolabe foreground/background contrast after changing this role."
+      ],
+      "dependencies": [
+        "--morinus-text-bright"
       ]
     },
     {
@@ -7686,7 +7745,7 @@
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "#c8c8c8",
+      "default": "var(--morinus-text-bright)",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.color.infoSchematic; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -7696,6 +7755,9 @@
       "handoffStatus": "editable",
       "safetyNotes": [
         "Review Astrolabe foreground/background contrast after changing this role."
+      ],
+      "dependencies": [
+        "--morinus-text-bright"
       ]
     },
     {
@@ -7707,7 +7769,7 @@
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "220",
+      "default": "720",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.metric.mainStrokeDivisor; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -7719,8 +7781,8 @@
         "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
       ],
       "bounds": {
-        "min": 110,
-        "max": 440,
+        "min": 360,
+        "max": 1440,
         "step": 1
       }
     },
@@ -7733,7 +7795,7 @@
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "2px",
+      "default": "1.5px",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.metric.mainStrokeMin; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -7759,7 +7821,7 @@
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "280",
+      "default": "720",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.metric.mediumStrokeDivisor; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -7771,8 +7833,8 @@
         "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
       ],
       "bounds": {
-        "min": 140,
-        "max": 560,
+        "min": 360,
+        "max": 1440,
         "step": 1
       }
     },
@@ -7811,7 +7873,7 @@
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "rgba(170, 178, 196, 0.55)",
+      "default": "var(--morinus-angles)",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.color.meridian; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -7821,6 +7883,9 @@
       "handoffStatus": "editable",
       "safetyNotes": [
         "Review Astrolabe foreground/background contrast after changing this role."
+      ],
+      "dependencies": [
+        "--morinus-angles"
       ]
     },
     {
@@ -7962,7 +8027,7 @@
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "16",
+      "default": "18",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.metric.planetFontDivisor; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -7974,8 +8039,8 @@
         "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
       ],
       "bounds": {
-        "min": 8,
-        "max": 32,
+        "min": 9,
+        "max": 36,
         "step": 1
       }
     },
@@ -7988,7 +8053,7 @@
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "rgba(150, 165, 185, 0.42)",
+      "default": "var(--morinus-houses)",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.color.regio; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -7998,6 +8063,9 @@
       "handoffStatus": "editable",
       "safetyNotes": [
         "Review Astrolabe foreground/background contrast after changing this role."
+      ],
+      "dependencies": [
+        "--morinus-houses"
       ]
     },
     {
@@ -8035,7 +8103,7 @@
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "4px",
+      "default": "1px",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.metric.regioDashOn; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -8048,7 +8116,7 @@
       ],
       "bounds": {
         "min": 0.25,
-        "max": 16,
+        "max": 8,
         "step": 0.25
       }
     },
@@ -8061,7 +8129,7 @@
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "22",
+      "default": "24",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.metric.signFontDivisor; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -8073,8 +8141,8 @@
         "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
       ],
       "bounds": {
-        "min": 11,
-        "max": 44,
+        "min": 12,
+        "max": 48,
         "step": 1
       }
     },
@@ -8087,7 +8155,7 @@
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "1px",
+      "default": "0.75px",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.metric.sphereOutlineWidth; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -8113,7 +8181,7 @@
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "160",
+      "default": "190",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.metric.sphereRadiusDivisor; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -8125,8 +8193,8 @@
         "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
       ],
       "bounds": {
-        "min": 80,
-        "max": 320,
+        "min": 95,
+        "max": 380,
         "step": 1
       }
     },
@@ -8139,7 +8207,7 @@
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "2px",
+      "default": "1.5px",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.metric.sphereRadiusMin; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -8165,7 +8233,7 @@
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "rgba(220, 222, 230, 0.85)",
+      "default": "var(--morinus-positions)",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.color.star; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -8175,6 +8243,9 @@
       "handoffStatus": "editable",
       "safetyNotes": [
         "Review Astrolabe foreground/background contrast after changing this role."
+      ],
+      "dependencies": [
+        "--morinus-positions"
       ]
     },
     {
@@ -8186,7 +8257,7 @@
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "320",
+      "default": "360",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.metric.starRadiusDivisor; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -8198,8 +8269,8 @@
         "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
       ],
       "bounds": {
-        "min": 160,
-        "max": 640,
+        "min": 180,
+        "max": 720,
         "step": 1
       }
     },
@@ -8212,7 +8283,7 @@
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "1.5px",
+      "default": "1px",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.metric.starRadiusMin; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -8238,7 +8309,7 @@
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "#ffe066",
+      "default": "var(--morinus-body-sun)",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.color.sunFill; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -8248,6 +8319,9 @@
       "handoffStatus": "editable",
       "safetyNotes": [
         "Review Astrolabe foreground/background contrast after changing this role."
+      ],
+      "dependencies": [
+        "--morinus-body-sun"
       ]
     },
     {
@@ -8285,7 +8359,7 @@
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "0.01",
+      "default": "0.008",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.metric.tickStepScale; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -8297,7 +8371,7 @@
         "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
       ],
       "bounds": {
-        "min": 0.0025,
+        "min": 0.002,
         "max": 1,
         "step": 0.01
       }
@@ -8311,7 +8385,7 @@
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "rgba(200, 210, 220, 0.45)",
+      "default": "var(--morinus-houses)",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.color.tropic; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -8321,6 +8395,9 @@
       "handoffStatus": "editable",
       "safetyNotes": [
         "Review Astrolabe foreground/background contrast after changing this role."
+      ],
+      "dependencies": [
+        "--morinus-houses"
       ]
     },
     {
@@ -8332,7 +8409,7 @@
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "4px",
+      "default": "3px",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.metric.tropicDashOff; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -8345,7 +8422,7 @@
       ],
       "bounds": {
         "min": 0.25,
-        "max": 16,
+        "max": 12,
         "step": 0.25
       }
     },
@@ -8358,7 +8435,7 @@
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "4px",
+      "default": "1px",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.metric.tropicDashOn; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
@@ -8371,7 +8448,7 @@
       ],
       "bounds": {
         "min": 0.25,
-        "max": 16,
+        "max": 8,
         "step": 0.25
       }
     },
@@ -10958,84 +11035,6 @@
       }
     },
     {
-      "semanticId": "app.inspector.controlHeight",
-      "cssVar": "--aries-inspector-control-height",
-      "label": "Inspector control height",
-      "description": "Height of compact controls embedded in inspector sections.",
-      "tier": "component",
-      "scope": "app",
-      "type": "number",
-      "unit": "px",
-      "default": "24px",
-      "effectiveAuthority": "css-root",
-      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-inspector-control-height",
-      "affectedSurfaces": [
-        "inspector section controls"
-      ],
-      "inheritanceMode": "concrete-css-default",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep text vertically centered and the pointer target usable."
-      ],
-      "bounds": {
-        "min": 18,
-        "max": 44,
-        "step": 1
-      }
-    },
-    {
-      "semanticId": "app.inspector.controlPaddingInline",
-      "cssVar": "--aries-inspector-control-padding-x",
-      "label": "Inspector control horizontal padding",
-      "description": "Horizontal inset inside compact inspector controls.",
-      "tier": "component",
-      "scope": "app",
-      "type": "number",
-      "unit": "px",
-      "default": "4px",
-      "effectiveAuthority": "css-root",
-      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-inspector-control-padding-x",
-      "affectedSurfaces": [
-        "inspector section controls"
-      ],
-      "inheritanceMode": "concrete-css-default",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep selected values readable in the narrow inspector pane."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 20,
-        "step": 1
-      }
-    },
-    {
-      "semanticId": "app.inspector.controlSectionPaddingBottom",
-      "cssVar": "--aries-inspector-control-section-padding-bottom",
-      "label": "Inspector control section bottom padding",
-      "description": "Bottom inset retained below inspector sections that contain controls.",
-      "tier": "component",
-      "scope": "app",
-      "type": "number",
-      "unit": "px",
-      "default": "12px",
-      "effectiveAuthority": "css-root",
-      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-inspector-control-section-padding-bottom",
-      "affectedSurfaces": [
-        "inspector section controls"
-      ],
-      "inheritanceMode": "concrete-css-default",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Preserve separation from the following inspector section."
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 32,
-        "step": 1
-      }
-    },
-    {
       "semanticId": "app.inspector.color.divider",
       "cssVar": "--aries-inspector-divider-color",
       "label": "Inspector divider color",
@@ -11405,7 +11404,7 @@
       "scope": "app",
       "type": "number",
       "unit": "px",
-      "default": "52px",
+      "default": "88px",
       "effectiveAuthority": "css-root",
       "editTarget": "webapp/frontend/src/app/globals.css :root --aries-inspector-label-width",
       "affectedSurfaces": [
@@ -11446,32 +11445,6 @@
         "--aries-background",
         "--aries-inspector-text"
       ]
-    },
-    {
-      "semanticId": "app.inspector.type.packTagSize",
-      "cssVar": "--aries-inspector-pack-tag-size",
-      "label": "Inspector pack-tag size",
-      "description": "Text size for inspector rule-pack attribution tags.",
-      "tier": "component",
-      "scope": "app",
-      "type": "number",
-      "unit": "px",
-      "default": "9px",
-      "effectiveAuthority": "css-root",
-      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-inspector-pack-tag-size",
-      "affectedSurfaces": [
-        "inspector alert cards"
-      ],
-      "inheritanceMode": "concrete-css-default",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Verify dense inspector content and both light and dark palettes after changing this role."
-      ],
-      "bounds": {
-        "min": 8,
-        "max": 13,
-        "step": 1
-      }
     },
     {
       "semanticId": "app.inspector.layout.paddingBlockEnd",
@@ -14345,32 +14318,6 @@
       ],
       "bounds": {
         "min": 96,
-        "max": 480,
-        "step": 4
-      }
-    },
-    {
-      "semanticId": "app.pane.drawer.width",
-      "cssVar": "--aries-pane-drawer-width",
-      "label": "Pane drawer width",
-      "description": "Width of retained filter and configuration drawers layered over pane content.",
-      "tier": "component",
-      "scope": "app",
-      "type": "number",
-      "unit": "px",
-      "default": "272px",
-      "effectiveAuthority": "css-root",
-      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-pane-drawer-width",
-      "affectedSurfaces": [
-        "transit search filter drawer"
-      ],
-      "inheritanceMode": "concrete-css-default",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep enough result-table width visible behind retained drawers."
-      ],
-      "bounds": {
-        "min": 192,
         "max": 480,
         "step": 4
       }

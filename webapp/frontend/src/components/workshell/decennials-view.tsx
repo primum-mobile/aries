@@ -4,7 +4,7 @@
 "use client";
 
 import * as React from "react";
-import { Copy, Download, X } from "lucide-react";
+import { X } from "lucide-react";
 
 import {
   fetchGenericTablePayload,
@@ -24,9 +24,8 @@ import { useT } from "@/lib/i18n/i18n";
 import { semanticChartColor } from "@/lib/theme/semantic-color";
 
 import { TimedChartContextMenu } from "./directions-view";
-import { downloadText, tableToConfiguredTsv } from "./generic-table-view";
-import { exportTablePayloadPdf } from "./table-pdf-export";
-import { exportTextContent } from "./text-export";
+import { buildTableExportDocument } from "./table-pdf-export";
+import { TextExportActions } from "./text-export-actions";
 import { ColumnResizeHandle, useResizableTableColumns } from "./resizable-table-columns";
 import { RetainedPaneShell } from "./retained-pane-shell";
 import {
@@ -34,7 +33,6 @@ import {
   PaneControlBar,
   PaneInfoBar,
   PaneSelect,
-  PaneToolbarButton,
 } from "./list-controls";
 import { useSettledWorkspaceRefreshSeq } from "./step-refresh";
 
@@ -126,7 +124,7 @@ export function DecennialsView({ documentId, parentDocumentId, sourceName, onClo
   const header = (asRecord(capabilities.decennials) as DecennialsHeader) ?? {};
   const startToken = String(bindings.start_token ?? "sect");
   const tableColumnIds = React.useMemo(
-    () => payload?.columns.map((column) => column.id) ?? ["ruler", "start", "age", "length"],
+    () => payload?.columns.map((column) => column.id) ?? ["age", "planet", "date", "length"],
     [payload?.columns],
   );
   const tableResize = useResizableTableColumns({ storageKey: TABLE_ID, columnIds: tableColumnIds });
@@ -257,52 +255,14 @@ export function DecennialsView({ documentId, parentDocumentId, sourceName, onClo
       closeLabel={t("decview.closeDecennials")}
       onClose={onClose}
       toolbar={
-        <>
-          <PaneToolbarButton
-            type="button"
-            onClick={() => {
-              void tableToConfiguredTsv(payload, payload.rows).then((text) =>
-                navigator.clipboard?.writeText(text).catch(() => {
-                  downloadText("decennials.tsv", text, "text/tab-separated-values");
-                })
-              );
-            }}
-            title={t("decview.copyRows")}
-          >
-            <Copy />
-          </PaneToolbarButton>
-          <PaneToolbarButton
-            type="button"
-            onClick={() => {
-              void tableToConfiguredTsv(payload, payload.rows).then((text) =>
-                exportTextContent({
-                filename: "decennials",
-                extension: "tsv",
-                mimeType: "text/tab-separated-values;charset=utf-8",
-                text,
-                title: t("decview.exportTsvTitle"),
-                filters: [{ name: t("decview.tsvFiles"), extensions: ["tsv"] }],
-                })
-              ).catch(() => {});
-            }}
-            title={t("decview.exportTsv")}
-          >
-            <Download />
-          </PaneToolbarButton>
-          <PaneToolbarButton
-            type="button"
-            onClick={() =>
-              void exportTablePayloadPdf(payload, payload.rows, {
-                fileStem: "decennials",
-                title: payload.title ?? t("decview.decennials"),
-              }).catch(() => {})
-            }
-            title={t("decview.exportPdf")}
-          >
-            <Download />
-            PDF
-          </PaneToolbarButton>
-        </>
+        <TextExportActions
+          buildDocument={() =>
+            buildTableExportDocument(payload, payload.rows, {
+              fileStem: "decennials",
+              title: payload.title ?? t("decview.decennials"),
+            })
+          }
+        />
       }
     >
       {/* Start selector — the wx context-menu radio submenu
@@ -376,6 +336,7 @@ export function DecennialsView({ documentId, parentDocumentId, sourceName, onClo
         <div className="flex max-h-[45%] min-h-0 shrink-0 flex-col border-t border-[color:var(--aries-border-subtle)]">
           <PaneInfoBar className="border-b-0">
             <span className="text-[color:var(--aries-text-muted)]">L2:</span>
+            <span className="text-[color:var(--aries-text-muted)]">{drilledL2.cells[0]?.text ?? ""}</span>
             <span
               style={{
                 fontFamily: "'AriesMorinus'",
@@ -385,9 +346,9 @@ export function DecennialsView({ documentId, parentDocumentId, sourceName, onClo
                 ),
               }}
             >
-              {drilledL2.cells[0]?.glyph ?? ""}
+              {drilledL2.cells[1]?.glyph ?? ""}
             </span>
-            <span>{drilledL2.cells[1]?.text ?? ""}</span>
+            <span>{drilledL2.cells[2]?.text ?? ""}</span>
             <span className="text-[color:var(--aries-text-muted)]">{drilledL2.cells[3]?.text ?? ""}</span>
             <button
               type="button"
@@ -417,7 +378,7 @@ export function DecennialsView({ documentId, parentDocumentId, sourceName, onClo
   );
 }
 
-// Compact list table: planet glyph | start | age | length. Level is row structure.
+// Compact list table: age | ruler | date | length. Level is row structure.
 function DecHeaderRow({
   columns,
   columnIds,
@@ -431,17 +392,17 @@ function DecHeaderRow({
   return (
     <thead className="sticky top-0 z-10 bg-background text-[color:var(--aries-text-muted)]">
       <tr>
-        <th className="aries-list-head-cell relative border-b font-medium text-center">
-          {columns[0] ?? t("decview.ruler")}
-          <ColumnResizeHandle columnId={columnIds[0] ?? "ruler"} getResizeHandleProps={tableResize.getResizeHandleProps} />
-        </th>
-        <th className="aries-list-head-cell relative border-b font-medium text-center">
-          {columns[1] ?? t("decview.start")}
-          <ColumnResizeHandle columnId={columnIds[1] ?? "start"} getResizeHandleProps={tableResize.getResizeHandleProps} />
-        </th>
         <th className="aries-list-head-cell relative border-b font-medium text-right">
-          {columns[2] ?? t("decview.age")}
-          <ColumnResizeHandle columnId={columnIds[2] ?? "age"} getResizeHandleProps={tableResize.getResizeHandleProps} />
+          {columns[0] ?? t("decview.age")}
+          <ColumnResizeHandle columnId={columnIds[0] ?? "age"} getResizeHandleProps={tableResize.getResizeHandleProps} />
+        </th>
+        <th className="aries-list-head-cell relative border-b font-medium text-center">
+          {columns[1] ?? t("decview.ruler")}
+          <ColumnResizeHandle columnId={columnIds[1] ?? "planet"} getResizeHandleProps={tableResize.getResizeHandleProps} />
+        </th>
+        <th className="aries-list-head-cell relative border-b font-medium text-center">
+          {columns[2] ?? t("decview.start")}
+          <ColumnResizeHandle columnId={columnIds[2] ?? "date"} getResizeHandleProps={tableResize.getResizeHandleProps} />
         </th>
         <th className="aries-list-head-cell relative border-b font-medium text-right">
           {columns[3] ?? t("decview.length")}
@@ -485,6 +446,8 @@ function DecRow({
         )}
         onClick={onClick}
       >
+        {/* Age at period start. */}
+        <td className="aries-list-cell whitespace-nowrap text-right">{row.cells[0]?.text ?? ""}</td>
         {/* Ruler glyph — Morinus font, wx colour from the daemon
             (clrindividual / dignity, decennialswnd.py:452-463). */}
         <td
@@ -495,12 +458,10 @@ function DecRow({
             paddingLeft: `${Math.max(0, level - (level >= 3 ? 3 : 1)) * 6}px`,
           }}
         >
-          {row.cells[0]?.glyph ?? ""}
+          {row.cells[1]?.glyph ?? ""}
         </td>
-        {/* Start date (fmt_date + year-zero strip, daemon-built). */}
-        <td className="aries-list-cell whitespace-nowrap text-center">{row.cells[1]?.text ?? ""}</td>
-        {/* Age at period start. */}
-        <td className="aries-list-cell whitespace-nowrap text-right">{row.cells[2]?.text ?? ""}</td>
+        {/* Date (fmt_date + year-zero strip, daemon-built). */}
+        <td className="aries-list-cell whitespace-nowrap text-center">{row.cells[2]?.text ?? ""}</td>
         {/* Length (fmt_length: Years / Months / Days per level). */}
         <td className="aries-list-cell whitespace-nowrap text-right">{row.cells[3]?.text ?? ""}</td>
       </tr>

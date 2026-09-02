@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Max Lange
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { Editor, defaultValueCtx, editorViewCtx, editorViewOptionsCtx, rootCtx } from '@milkdown/kit/core';
 import { commonmark } from '@milkdown/kit/preset/commonmark';
 import {
@@ -14,6 +17,7 @@ import {
   wrapInOrderedListCommand,
 } from '@milkdown/kit/preset/commonmark';
 import { gfm, toggleStrikethroughCommand } from '@milkdown/kit/preset/gfm';
+import { clipboard } from '@milkdown/kit/plugin/clipboard';
 import { history, redoCommand, undoCommand } from '@milkdown/kit/plugin/history';
 import { indent } from '@milkdown/kit/plugin/indent';
 import { listener, listenerCtx } from '@milkdown/kit/plugin/listener';
@@ -349,10 +353,6 @@ function bindToolbar() {
 }
 
 function bindEditorShortcuts() {
-  // Notes keep normal text editing, but the containing WKWebView must never
-  // expose browser navigation/reload/inspection chrome.
-  document.addEventListener('contextmenu', (event) => event.preventDefault(), true);
-
   const postAmbientKey = (event, eventType) => {
     if (event.key !== 'Shift' && !event.shiftKey) return;
     post({
@@ -416,6 +416,7 @@ async function createEditor() {
     })
     .use(commonmark)
     .use(gfm)
+    .use(clipboard)
     .use(listener)
     .use(indent)
     .use(history)

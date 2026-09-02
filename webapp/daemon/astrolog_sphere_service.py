@@ -51,6 +51,7 @@ _HOUSE_SYSTEM_LABELS = {
     "C": "Campanus",
     "E": "Equal",
     "W": "Whole Sign",
+    "F": "Fortune Houses",
     "X": "Axial",
     "Q": "True Ascendant",
     "M": "Morinus",
@@ -66,6 +67,7 @@ _HOUSE_SYSTEM_LABELS = {
 _HOUSE_SYSTEM_LABEL_KEYS = {
     "E": "HSEqual",
     "W": "HSWholeSign",
+    "F": "HSFortuneWholeSign",
     "N": "HSWholeSign",
     "Q": "HSTrueAscendant",
 }

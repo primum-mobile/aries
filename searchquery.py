@@ -11,6 +11,8 @@ class SearchQuery(object):
 	TECHNIQUE_PRIMARY_DIRECTIONS = 'primary_directions'
 	TECHNIQUE_MUNDANE_WEATHER = 'mundane_weather'
 	TECHNIQUE_HELIACAL_PHASES = 'heliacal_phases'
+	TECHNIQUE_LUNATIONS = 'lunations'
+	TECHNIQUE_ECLIPSES = 'eclipses'
 	TECHNIQUE_INGRESS_SYNODIC = 'sign_changes'
 	ASPECT_TECHNIQUES = (
 		TECHNIQUE_TRANSITS,
@@ -22,11 +24,17 @@ class SearchQuery(object):
 	)
 
 	ASPECT_CONJUNCTION = 'conjunction'
+	ASPECT_SEMISEXTILE = 'semisextile'
+	ASPECT_SEMISQUARE = 'semisquare'
 	ASPECT_SEXTILE = 'sextile'
+	ASPECT_QUINTILE = 'quintile'
 	ASPECT_SQUARE = 'square'
 	ASPECT_TRINE = 'trine'
+	ASPECT_SESQUISQUARE = 'sesquisquare'
+	ASPECT_BIQUINTILE = 'biquintile'
 	ASPECT_QUINCUNX = 'quincunx'
 	ASPECT_OPPOSITION = 'opposition'
+	ASPECT_SEPTILE = 'septile'
 	ASPECT_SIGN_CHANGE = 'sign_change'
 	ASPECT_CAZIMI = 'cazimi'
 	ASPECT_STATION_RETROGRADE = 'station_retrograde'
@@ -39,6 +47,9 @@ class SearchQuery(object):
 
 	MOTION_RX = 'rx'
 	MOTION_DIRECT = 'd'
+	MOON_PHASE_WAXING = 'waxing'
+	MOON_PHASE_WANING = 'waning'
+	MOON_PHASE_FILTERS = (MOON_PHASE_WAXING, MOON_PHASE_WANING)
 
 	# Progression-method selector for SECONDARY_DIRECTIONS-style searches. Values
 	# match posfordate.SECONDARY (0), posfordate.MINOR (2), posfordate.TERTIARY (3).
@@ -54,7 +65,11 @@ class SearchQuery(object):
 		self.aspects = []
 		self.include_sign_changes = False
 		self.object_motion_filters = {}
+		self.promittor_motion_filter = ''
+		self.significator_motion_filter = ''
+		self.moon_phase_filter = ''
 		self.progression_method = self.PROGRESSION_METHOD_SECONDARY
+		self.lunation_orb = 3.0
 
 
 	def set_progression_method(self, method):
@@ -87,6 +102,19 @@ class SearchQuery(object):
 		self.aspects = list(aspects)
 
 
+	def set_lunation_orb(self, orb):
+		try:
+			value = float(orb)
+		except Exception:
+			value = 3.0
+		self.lunation_orb = max(0.0, min(15.0, value))
+
+
+	def set_moon_phase_filter(self, phase):
+		selected = str(phase or '').strip().lower()
+		self.moon_phase_filter = selected if selected in self.MOON_PHASE_FILTERS else ''
+
+
 	def set_include_sign_changes(self, enabled):
 		self.include_sign_changes = bool(enabled)
 
@@ -110,22 +138,44 @@ class SearchQuery(object):
 		return len(self.object_motion_filters) != 0
 
 
-	def get_combination_count(self):
-		if len(self.promittor_ids) == 0:
-			return 0
+	def set_promittor_motion_filter(self, motion):
+		self.promittor_motion_filter = motion if motion in (self.MOTION_RX, self.MOTION_DIRECT) else ''
 
+
+	def set_significator_motion_filter(self, motion):
+		self.significator_motion_filter = motion if motion in (self.MOTION_RX, self.MOTION_DIRECT) else ''
+
+
+	def has_motion_filters(self):
+		return bool(
+			self.object_motion_filters or
+			self.promittor_motion_filter or
+			self.significator_motion_filter
+		)
+
+
+	def get_combination_count(self):
 		count = 0
 		aspect_techniques = [
 			technique
 			for technique in self.techniques
 			if technique in self.ASPECT_TECHNIQUES
 		]
-		if len(aspect_techniques) != 0 and len(self.aspects) != 0 and len(self.significator_ids) != 0:
+		if len(self.promittor_ids) != 0 and len(aspect_techniques) != 0 and len(self.aspects) != 0 and len(self.significator_ids) != 0:
 			count += len(self.promittor_ids)*len(self.significator_ids)*len(aspect_techniques)*len(self.aspects)
-		if self.include_sign_changes:
+		if self.include_sign_changes and len(self.promittor_ids) != 0:
 			count += len(self.promittor_ids)
-		if self.TECHNIQUE_HELIACAL_PHASES in self.techniques:
+		if self.TECHNIQUE_HELIACAL_PHASES in self.techniques and len(self.promittor_ids) != 0:
 			count += len(self.promittor_ids)
+		if (
+			(
+				self.TECHNIQUE_LUNATIONS in self.techniques
+				or self.TECHNIQUE_ECLIPSES in self.techniques
+			)
+			and len(self.aspects) != 0
+			and len(self.significator_ids) != 0
+		):
+			count += len(self.significator_ids)*len(self.aspects)
 		return count
 
 

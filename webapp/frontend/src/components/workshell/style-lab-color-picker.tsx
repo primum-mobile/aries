@@ -13,13 +13,20 @@ import {
   type PointerEvent,
 } from "react";
 
-import { useT } from "@/lib/i18n/i18n";
+import { useT, useTFallback } from "@/lib/i18n/i18n";
 import { rootCssPixelOffset } from "@/lib/css-token-value";
+import {
+  CHART_COLOR_ROLE_GROUP_LABEL_KEYS,
+  CHART_COLOR_ROLE_GROUP_ORDER,
+  chartColorRolesInGroup,
+  type ChartColorRole,
+} from "@/lib/style-lab/chart-color-roles";
 import {
   sampleScreenColor,
   supportsScreenColorSampling,
 } from "@/lib/shell-host";
 import { cn } from "@/lib/utils";
+import { useChartStyleEditorStore } from "@/stores/chart-style-editor-store";
 
 type Hsv = Readonly<{ h: number; s: number; v: number }>;
 
@@ -86,6 +93,9 @@ export function StyleLabColorPicker({
   onGestureStart,
   onGestureEnd,
   className,
+  roles,
+  followedRoleId,
+  onSelectRole,
 }: {
   value: string;
   label: string;
@@ -93,23 +103,60 @@ export function StyleLabColorPicker({
   onGestureStart?: () => void;
   onGestureEnd?: () => void;
   className?: string;
+  /**
+   * The chart's named colour roles, offered as swatches. Values must already
+   * be `#rrggbb`, which the picker's own field understands and can compare
+   * against the current colour without a parser.
+   */
+  roles?: readonly ChartColorRole[];
+  /**
+   * The role this control follows, if it follows one.
+   *
+   * Following is a stronger fact than matching, and it decides the selection on
+   * its own: several roles can share a colour, and lighting all of them up
+   * would say the control matched each when it is tied to exactly one.
+   */
+  followedRoleId?: string | null;
+  /**
+   * Called instead of `onChange` when a role swatch is picked, so a caller that
+   * can record the reference does, and one that cannot still gets the colour.
+   */
+  onSelectRole?: (role: ChartColorRole) => void;
 }) {
   const t = useT();
-  const initialHsv = rgbToHsv(parseHex(value));
-  const [hueAnchor, setHueAnchor] = useState(initialHsv.h);
-  const incomingHsv = rgbToHsv(parseHex(value));
-  const hsv = {
-    ...incomingHsv,
-    h: incomingHsv.s < 0.0001 ? hueAnchor : incomingHsv.h,
-  };
+  const tf = useTFallback();
+  const recentColors = useChartStyleEditorStore((state) => state.recentColors);
+  const rememberRecentColor = useChartStyleEditorStore(
+    (state) => state.rememberRecentColor,
+  );
+  const [hsv, setHsv] = useState<Hsv>(() => rgbToHsv(parseHex(value)));
+  const [syncedValue, setSyncedValue] = useState(value);
+  const [samplingScreen, setSamplingScreen] = useState(false);
+  const gestureActive = useRef(false);
+  const fieldRef = useRef<HTMLDivElement | null>(null);
+
+  // Screen sampling availability is a platform fact that never changes after
+  // load, so it is read as an external snapshot rather than synchronised into
+  // state by an effect. The server snapshot is false because neither the
+  // native sampler nor EyeDropper exists during prerender.
   const canSampleScreen = useSyncExternalStore(
     subscribeToScreenColorSampling,
     supportsScreenColorSampling,
     noScreenColorSampling,
   );
-  const [samplingScreen, setSamplingScreen] = useState(false);
-  const gestureActive = useRef(false);
-  const fieldRef = useRef<HTMLDivElement | null>(null);
+
+  // Adopt an externally changed colour during render instead of in an effect,
+  // which avoids the extra commit an effect-driven sync would cause. Hue is
+  // preserved when the incoming colour is achromatic, because grey carries no
+  // hue of its own and resetting it would make the picker jump.
+  if (value !== syncedValue) {
+    setSyncedValue(value);
+    const incoming = rgbToHsv(parseHex(value));
+    setHsv((current) => ({
+      ...incoming,
+      h: incoming.s < 0.0001 ? current.h : incoming.h,
+    }));
+  }
 
   const begin = () => {
     if (gestureActive.current) return;
@@ -119,6 +166,7 @@ export function StyleLabColorPicker({
   const end = () => {
     if (!gestureActive.current) return;
     gestureActive.current = false;
+    rememberRecentColor(value);
     onGestureEnd?.();
   };
   const update = (next: Hsv) => {
@@ -127,7 +175,7 @@ export function StyleLabColorPicker({
       s: clamp01(next.s),
       v: clamp01(next.v),
     };
-    setHueAnchor(normalized.h);
+    setHsv(normalized);
     onChange(hsvToHex(normalized));
   };
   const updateFromPointer = (event: PointerEvent<HTMLDivElement>) => {
@@ -259,6 +307,94 @@ export function StyleLabColorPicker({
                 className="h-3 w-full cursor-pointer appearance-none rounded-full border border-[color:var(--aries-inspector-divider-color)] bg-[linear-gradient(to_right,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)] [&::-webkit-slider-thumb]:size-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:bg-transparent [&::-webkit-slider-thumb]:shadow-[0_0_0_1px_rgb(0_0_0/0.65)]"
               />
             </label>
+            {recentColors.length > 0 ? (
+              <div
+                role="listbox"
+                aria-label={t("styleLab.control.recentColors")}
+                aria-orientation="horizontal"
+                className="mt-3 flex flex-wrap items-center gap-1"
+              >
+                {recentColors.map((recent) => (
+                  <button
+                    key={recent}
+                    type="button"
+                    role="option"
+                    aria-selected={recent === value.toLowerCase()}
+                    // The hex is the accessible name. A colour has no better
+                    // one, and inventing names for arbitrary user colours would
+                    // be guesswork a screen reader could not verify.
+                    aria-label={recent.toUpperCase()}
+                    title={recent.toUpperCase()}
+                    onClick={() => {
+                      setHsv(rgbToHsv(parseHex(recent)));
+                      onChange(recent);
+                      rememberRecentColor(recent);
+                    }}
+                    style={{ backgroundColor: recent }}
+                    className={cn(
+                      "size-5 shrink-0 rounded-[var(--aries-radius-control-compact)] border transition-shadow focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--aries-inspector-interactive-color)]",
+                      recent === value.toLowerCase()
+                        ? "border-[color:var(--aries-inspector-interactive-color)] ring-1 ring-[color:var(--aries-inspector-interactive-color)]"
+                        : "border-[color:var(--aries-inspector-divider-color)]",
+                    )}
+                  />
+                ))}
+              </div>
+            ) : null}
+            {roles && roles.length > 0 ? (
+              <div className="mt-3 max-h-40 overflow-y-auto">
+                {CHART_COLOR_ROLE_GROUP_ORDER.map((group) => {
+                  const groupRoles = chartColorRolesInGroup(roles, group);
+                  if (groupRoles.length === 0) return null;
+                  const groupLabel = t(CHART_COLOR_ROLE_GROUP_LABEL_KEYS[group]);
+                  return (
+                    <div key={group} className="mb-2 last:mb-0">
+                      <div className="mb-1 text-[length:var(--aries-font-size-micro)] opacity-60">
+                        {groupLabel}
+                      </div>
+                      <div
+                        role="listbox"
+                        aria-label={groupLabel}
+                        aria-orientation="horizontal"
+                        className="flex flex-wrap items-center gap-1"
+                      >
+                        {groupRoles.map((role) => {
+                          // A role is named, so unlike a recent colour it has a
+                          // real accessible name and does not need its hex read
+                          // out as one.
+                          const roleLabel = tf(role.labelKey, role.fallbackLabel);
+                          const selected = followedRoleId != null
+                            ? role.semanticId === followedRoleId
+                            : role.value.toLowerCase() === value.toLowerCase();
+                          return (
+                            <button
+                              key={role.semanticId}
+                              type="button"
+                              role="option"
+                              aria-selected={selected}
+                              aria-label={roleLabel}
+                              title={roleLabel}
+                              onClick={() => {
+                                setHsv(rgbToHsv(parseHex(role.value)));
+                                if (onSelectRole) onSelectRole(role);
+                                else onChange(role.value);
+                              }}
+                              style={{ backgroundColor: role.value }}
+                              className={cn(
+                                "size-5 shrink-0 rounded-[var(--aries-radius-control-compact)] border transition-shadow focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--aries-inspector-interactive-color)]",
+                                selected
+                                  ? "border-[color:var(--aries-inspector-interactive-color)] ring-1 ring-[color:var(--aries-inspector-interactive-color)]"
+                                  : "border-[color:var(--aries-inspector-divider-color)]",
+                              )}
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
             <div className="mt-3 flex items-center gap-2">
               <span
                 aria-hidden="true"

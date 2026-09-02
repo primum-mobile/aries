@@ -52,7 +52,7 @@ DEFAULT_SIGNIFICATORS = {
 }
 
 
-rule_engine.register_discipline('synastry', 'Synastry', list(_THEME_SLUGS))
+rule_engine.register_discipline('synastry', 'Synastry', _THEME_SLUGS)
 
 
 def _pack_theme_lookup():
@@ -77,17 +77,17 @@ def evaluate(theme, chart_a, chart_b, context=None):
     can read it. Returns the alert list (the primary chart drives house
     resolution for any single-chart fields).
     """
-    theme_slug = _THEME_SLUGS.get(theme)
+    theme_slug = rule_engine.theme_slug_for('synastry', theme)
     if theme_slug is None:
-        pack_slugs, _pack_ctx = _pack_theme_lookup()
-        theme_slug = pack_slugs.get(theme)
-        if theme_slug is None:
-            return []
+        return []
     if context is None:
-        context = DEFAULT_SIGNIFICATORS.get(theme)
+        canonical = rule_engine.canonical_theme_label_for(
+            'synastry', theme_slug,
+        ) or theme
+        context = DEFAULT_SIGNIFICATORS.get(canonical)
         if context is None:
             _slugs, pack_ctx = _pack_theme_lookup()
-            context = pack_ctx.get(theme)
+            context = pack_ctx.get(theme) or pack_ctx.get(canonical)
     # Inject the partner chart so synastry_* predicates can read it.
     ctx = dict(context or {})
     ctx['partner_chart'] = chart_b

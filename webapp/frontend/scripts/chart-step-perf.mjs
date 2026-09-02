@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Copyright (C) 2026 Max Lange
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
@@ -35,6 +38,7 @@ const burstIntervalMs = positiveInt("CHART_STEP_BURST_INTERVAL_MS", 8);
 const timeoutMs = positiveInt("CHART_STEP_TIMEOUT_MS", 15_000);
 const key = process.env.CHART_STEP_KEY ?? "ArrowRight";
 const filter = process.env.CHART_STEP_FILTER ?? "";
+const requestedTheme = process.env.CHART_STEP_THEME?.trim() ?? "";
 const headless = process.env.HEADLESS !== "0";
 const traceEnabled = process.env.CHART_STEP_TRACE === "1";
 const perfDir = process.env.ARIES_PERF_OUTPUT_DIR
@@ -100,12 +104,98 @@ function summarizeMetric(values, budgetMs = null) {
     averageMs: rounded(
       values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null,
     ),
+    minimumMs: rounded(values.length ? Math.min(...values) : null),
+    p05Ms: rounded(percentile(values, 0.05)),
     p50Ms: rounded(percentile(values, 0.5)),
     p95Ms: rounded(p95Ms),
     maxMs: rounded(values.length ? Math.max(...values) : null),
     budgetMs,
     breached: budgetMs != null && (p95Ms == null || p95Ms > budgetMs),
   };
+}
+
+function integerEventIds(event, key) {
+  const values = event?.detail?.[key];
+  if (
+    !Array.isArray(values) ||
+    !values.every((value) => Number.isSafeInteger(value) && value > 0)
+  ) {
+    return [];
+  }
+  return values;
+}
+
+function duplicateCount(values) {
+  return values.length - new Set(values).size;
+}
+
+function sameIdSet(left, right) {
+  if (left.size !== right.size) return false;
+  return [...left].every((value) => right.has(value));
+}
+
+function sameIdSequence(left, right) {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function completeRenderBoundary(event) {
+  const detail = event?.detail;
+  if (!detail || detail.timedOut !== false) return false;
+  const ids = integerEventIds(event, "inputIds");
+  if (ids.length === 0 || duplicateCount(ids) !== 0) return false;
+  const finiteFields = [
+    "appliedInputs",
+    "canvasAt",
+    "intentAt",
+    "nextFrameAt",
+    "postRenderAt",
+    "secondFrameAt",
+    "nextFrameTimestamp",
+    "secondFrameTimestamp",
+  ].every((key) => Number.isFinite(detail[key]));
+  const callbackOrders = [detail.postRenderOrder, detail.secondFrameOrder];
+  const postRenderTaskLate = detail.postRenderOrder > detail.secondFrameOrder;
+  return (
+    finiteFields &&
+    Number.isInteger(detail.appliedInputs) &&
+    detail.appliedInputs === ids.length &&
+    callbackOrders.every((value) => value === 2 || value === 3) &&
+    new Set(callbackOrders).size === callbackOrders.length &&
+    typeof detail.postRenderTaskLate === "boolean" &&
+    detail.postRenderTaskLate === postRenderTaskLate &&
+    detail.intentAt <= detail.canvasAt &&
+    detail.nextFrameAt >= detail.canvasAt &&
+    detail.postRenderAt >= detail.nextFrameAt &&
+    detail.secondFrameAt >= detail.nextFrameAt &&
+    (postRenderTaskLate
+      ? detail.postRenderAt >= detail.secondFrameAt
+      : detail.postRenderAt <= detail.secondFrameAt) &&
+    detail.secondFrameTimestamp > detail.nextFrameTimestamp
+  );
+}
+
+function timestampCollisionSummary(events, key) {
+  const counts = new Map();
+  for (const event of events) {
+    const timestamp = event.detail?.[key];
+    if (!Number.isFinite(timestamp)) continue;
+    counts.set(timestamp, (counts.get(timestamp) ?? 0) + 1);
+  }
+  const values = [...counts.values()];
+  return {
+    unique: counts.size,
+    groups: values.filter((count) => count > 1).length,
+    excess: values.reduce((total, count) => total + Math.max(0, count - 1), 0),
+    maximum: values.length > 0 ? Math.max(...values) : 0,
+  };
+}
+
+function postRenderTaskComparable(event) {
+  return (
+    Number.isInteger(event?.detail?.postRenderOrder) &&
+    Number.isInteger(event?.detail?.secondFrameOrder) &&
+    event.detail.postRenderOrder < event.detail.secondFrameOrder
+  );
 }
 
 function budgetValue(metricName) {
@@ -272,6 +362,9 @@ async function openChart(page, context) {
     timeout: timeoutMs,
   });
   await page.waitForLoadState("networkidle", { timeout: 5_000 }).catch(() => {});
+  if (requestedTheme) {
+    await daemonCommand(page, "/api/options/theme", { name: requestedTheme });
+  }
   const picker = await context.newPage();
   await picker.goto(`${frontendUrl}/chart-picker?mode=open-radix&chartPerf=1`, {
     waitUntil: "domcontentloaded",
@@ -1437,6 +1530,96 @@ try {
       event.detail?.docId === docId &&
       event.detail?.mode === "step_fast",
   );
+  const rawStepInputs = events.filter(
+    (event) =>
+      event.name === "chart-step-input" &&
+      event.detail?.docId === docId &&
+      event.detail?.paintsSnapshot === true,
+  );
+  const renderBoundaryCallbacks = events.filter(
+    (event) =>
+      event.name === "chart-step-render-boundary" &&
+      event.detail?.docId === docId,
+  );
+  const completeBoundaryCallbacks = renderBoundaryCallbacks.filter(completeRenderBoundary);
+  const boundaryTimeouts = renderBoundaryCallbacks.filter(
+    (event) => event.detail?.timedOut === true,
+  ).length;
+  const rawInputIds = rawStepInputs
+    .map((event) => event.detail?.inputId)
+    .filter((value) => Number.isSafeInteger(value) && value > 0);
+  const rawInputById = new Map(
+    rawStepInputs.flatMap((event) =>
+      Number.isSafeInteger(event.detail?.inputId) &&
+      event.detail.inputId > 0 &&
+      Number.isFinite(event.detail?.intentAt)
+        ? [[event.detail.inputId, event]]
+        : []),
+  );
+  const paintInputIds = paints.flatMap((event) => integerEventIds(event, "stepInputIds"));
+  const boundaryInputIds = completeBoundaryCallbacks.flatMap(
+    (event) => integerEventIds(event, "inputIds"),
+  );
+  const rawInputIdSet = new Set(rawInputIds);
+  const paintInputIdSet = new Set(paintInputIds);
+  const boundaryInputIdSet = new Set(boundaryInputIds);
+  const paintByInputId = new Map(
+    paints.flatMap((event) => {
+      const ids = integerEventIds(event, "stepInputIds");
+      return ids.length === 1 ? [[ids[0], event]] : [];
+    }),
+  );
+  const completeBoundaryMatchesPaint = completeBoundaryCallbacks.every((event) => {
+    const ids = integerEventIds(event, "inputIds");
+    if (ids.length !== 1) return false;
+    const input = rawInputById.get(ids[0]);
+    const paint = paintByInputId.get(ids[0]);
+    return (
+      input != null &&
+      paint != null &&
+      event.detail.appliedInputs === 1 &&
+      event.detail.intentAt === input.detail.intentAt &&
+      event.detail.canvasAt === paint.at
+    );
+  });
+  const completePaintMatchesInput = paints.every((event) => {
+    const ids = integerEventIds(event, "stepInputIds");
+    if (ids.length !== 1) return false;
+    const input = rawInputById.get(ids[0]);
+    return (
+      input != null &&
+      event.detail?.stepAppliedInputs === 1 &&
+      event.detail?.stepIntentAt === input.detail.intentAt
+    );
+  });
+  const exactInputIdEquivalence =
+    rawInputIds.length === rawStepInputs.length &&
+    duplicateCount(rawInputIds) === 0 &&
+    duplicateCount(paintInputIds) === 0 &&
+    duplicateCount(boundaryInputIds) === 0 &&
+    paints.every((event) => integerEventIds(event, "stepInputIds").length === 1) &&
+    completeBoundaryCallbacks.every(
+      (event) => integerEventIds(event, "inputIds").length === 1,
+    ) &&
+    sameIdSet(rawInputIdSet, paintInputIdSet) &&
+    sameIdSet(rawInputIdSet, boundaryInputIdSet) &&
+    sameIdSequence(rawInputIds, paintInputIds) &&
+    sameIdSequence(rawInputIds, boundaryInputIds) &&
+    completePaintMatchesInput &&
+    completeBoundaryMatchesPaint;
+  const nextRafTimestampSummary = timestampCollisionSummary(
+    completeBoundaryCallbacks,
+    "nextFrameTimestamp",
+  );
+  const secondRafTimestampSummary = timestampCollisionSummary(
+    completeBoundaryCallbacks,
+    "secondFrameTimestamp",
+  );
+  const comparablePostRenderCallbacks = completeBoundaryCallbacks.filter(
+    postRenderTaskComparable,
+  );
+  const latePostRenderTasks =
+    completeBoundaryCallbacks.length - comparablePostRenderCallbacks.length;
   const firstPaintValues = paints
     .map((event) => event.detail?.stepIntentToPaintMs)
     .filter((value) => typeof value === "number" && Number.isFinite(value));
@@ -1458,7 +1641,7 @@ try {
     .filter((value) => typeof value === "number" && Number.isFinite(value));
   const appliedStepInputs = appliedInputsPerPaint.reduce((total, value) => total + value, 0);
   const expectedStepInputs = burstSize > 0 ? burstSize : measuredSteps;
-  const stepIntentTimes = stepIntentEvents
+  const stepIntentTimes = rawStepInputs
     .map((event) => event.detail?.intentAt)
     .filter((value) => typeof value === "number" && Number.isFinite(value));
   const firstStepIntentAt = stepIntentTimes.reduce(
@@ -1468,9 +1651,90 @@ try {
   const inputGapValues = stepIntentTimes
     .slice(1)
     .map((intentAt, index) => intentAt - stepIntentTimes[index]);
-  const paintGapOverInputValues = paintGapValues
-    .slice(0, inputGapValues.length)
-    .map((paintGap, index) => Math.max(0, paintGap - inputGapValues[index]));
+  const correlatedPaintCadence = paints.flatMap((event) => {
+    const ids = integerEventIds(event, "stepInputIds");
+    const input = ids.length === 1 ? rawInputById.get(ids[0]) : null;
+    return input && Number.isFinite(input.detail?.intentAt)
+      ? [{ inputId: ids[0], inputAt: input.detail.intentAt, paintAt: event.at }]
+      : [];
+  });
+  const paintGapOverInputValues = correlatedPaintCadence
+    .slice(1)
+    .flatMap((current, index) => {
+      const previous = correlatedPaintCadence[index];
+      const paintGap = current.paintAt - previous.paintAt;
+      const inputGap = current.inputAt - previous.inputAt;
+      return paintGap >= 0 && inputGap >= 0
+        ? [Math.max(0, paintGap - inputGap)]
+        : [];
+    });
+  const correlatedBoundaryCadence = completeBoundaryCallbacks.flatMap((event) => {
+    const ids = integerEventIds(event, "inputIds");
+    const input = ids.length === 1 ? rawInputById.get(ids[0]) : null;
+    return input
+      ? [{
+          inputId: ids[0],
+          inputAt: input.detail.intentAt,
+          nextFrameAt: event.detail.nextFrameAt,
+          nextFrameTimestamp: event.detail.nextFrameTimestamp,
+          postRenderAt: event.detail.postRenderAt,
+          postRenderComparable: postRenderTaskComparable(event),
+        }]
+      : [];
+  });
+  const nextRafOpportunityGapValues = [];
+  let previousNextRafTimestamp = null;
+  for (const boundary of correlatedBoundaryCadence) {
+    if (
+      previousNextRafTimestamp != null &&
+      boundary.nextFrameTimestamp > previousNextRafTimestamp
+    ) {
+      nextRafOpportunityGapValues.push(
+        boundary.nextFrameTimestamp - previousNextRafTimestamp,
+      );
+    }
+    if (
+      previousNextRafTimestamp == null ||
+      boundary.nextFrameTimestamp > previousNextRafTimestamp
+    ) {
+      previousNextRafTimestamp = boundary.nextFrameTimestamp;
+    }
+  }
+  const postRenderTaskGapValues = correlatedBoundaryCadence
+    .slice(1)
+    .flatMap((current, index) => {
+      const previous = correlatedBoundaryCadence[index];
+      const gap = current.postRenderAt - previous.postRenderAt;
+      return current.postRenderComparable && previous.postRenderComparable && gap >= 0
+        ? [gap]
+        : [];
+    });
+  const postRenderGapOverInputValues = correlatedBoundaryCadence
+    .slice(1)
+    .flatMap((current, index) => {
+      const previous = correlatedBoundaryCadence[index];
+      const taskGap = current.postRenderAt - previous.postRenderAt;
+      const inputGap = current.inputAt - previous.inputAt;
+      return current.postRenderComparable &&
+        previous.postRenderComparable &&
+        taskGap >= 0 &&
+        inputGap >= 0
+        ? [Math.max(0, taskGap - inputGap)]
+        : [];
+    });
+  const postRenderGapDeltaValues = correlatedBoundaryCadence
+    .slice(1)
+    .flatMap((current, index) => {
+      const previous = correlatedBoundaryCadence[index];
+      const taskGap = current.postRenderAt - previous.postRenderAt;
+      const inputGap = current.inputAt - previous.inputAt;
+      return current.postRenderComparable &&
+        previous.postRenderComparable &&
+        taskGap >= 0 &&
+        inputGap >= 0
+        ? [Math.abs(taskGap - inputGap)]
+        : [];
+    });
   const lastStepPaintAt = paints.at(-1)?.at ?? Number.NEGATIVE_INFINITY;
   const settleStartEvents = events.filter(
     (event) => event.name === "chart-step-settle-start" && event.detail?.docId === docId,
@@ -1487,6 +1751,22 @@ try {
     appliedInputs: appliedStepInputs,
     navigateCommands: navigateCommands.length,
     stepFastPaints: paints.length,
+    rawInputs: rawStepInputs.length,
+    renderBoundaryCallbacks: renderBoundaryCallbacks.length,
+    completeBoundaryCallbacks: completeBoundaryCallbacks.length,
+    boundaryTimeouts,
+    incompleteBoundaryCallbacks:
+      renderBoundaryCallbacks.length - completeBoundaryCallbacks.length,
+    completedBoundaryProbes: completeBoundaryCallbacks.length,
+    uniqueNextRafOpportunities: nextRafTimestampSummary.unique,
+    rafCollisionGroups: nextRafTimestampSummary.groups,
+    rafCollisionExcess: nextRafTimestampSummary.excess,
+    maxCanvasesPerNextRaf: nextRafTimestampSummary.maximum,
+    latePostRenderTasks,
+    uniqueNextRafTimestamps: nextRafTimestampSummary.unique,
+    nextRafTimestampCollisions: nextRafTimestampSummary.excess,
+    uniqueSecondRafTimestamps: secondRafTimestampSummary.unique,
+    secondRafTimestampCollisions: secondRafTimestampSummary.excess,
     maxAppliedInputsPerPaint: appliedInputsPerPaint.length > 0
       ? Math.max(...appliedInputsPerPaint)
       : null,
@@ -1496,6 +1776,14 @@ try {
       appliedInputsPerPaint.length === paints.length &&
       appliedInputsPerPaint.every((value) => value === 1),
     onePaintPerInput: paints.length === expectedStepInputs,
+    oneRawInputPerExpectedInput: rawStepInputs.length === expectedStepInputs,
+    oneCompleteBoundaryCallbackPerPaint:
+      completeBoundaryCallbacks.length === paints.length,
+    allBoundaryCallbacksComplete:
+      completeBoundaryCallbacks.length === renderBoundaryCallbacks.length,
+    exactInputIdEquivalence,
+    noBoundaryTimeouts: boundaryTimeouts === 0,
+    noNextRafTimestampCollisions: nextRafTimestampSummary.excess === 0,
     settleStartsDuringBurst,
     settleStartsAfterBurst,
     noSettleContention: settleStartsDuringBurst === 0,
@@ -1507,6 +1795,12 @@ try {
     visualCadence.oneCommandPerInput &&
     visualCadence.oneInputPerPaint &&
     visualCadence.onePaintPerInput &&
+    visualCadence.oneRawInputPerExpectedInput &&
+    visualCadence.oneCompleteBoundaryCallbackPerPaint &&
+    visualCadence.allBoundaryCallbacksComplete &&
+    visualCadence.exactInputIdEquivalence &&
+    visualCadence.noBoundaryTimeouts &&
+    visualCadence.noNextRafTimestampCollisions &&
     visualCadence.noSettleContention &&
     visualCadence.oneSettleAfterBurst;
   const lastStepPaint = paints.at(-1) ?? null;
@@ -1664,6 +1958,45 @@ try {
     "browser.long-task": summarizeMetric(
       numericEventDetails(longTasks, "browser-long-task", "durationMs"),
     ),
+    "time-step.canvas-to-next-frame": summarizeMetric(
+      completeBoundaryCallbacks
+        .map((event) => event.detail?.nextFrameAt - event.detail?.canvasAt)
+        .filter((value) => Number.isFinite(value) && value >= 0),
+    ),
+    "time-step.intent-to-next-frame": summarizeMetric(
+      completeBoundaryCallbacks
+        .map((event) => event.detail?.nextFrameAt - event.detail?.intentAt)
+        .filter((value) => Number.isFinite(value) && value >= 0),
+    ),
+    "time-step.canvas-to-post-render-task": summarizeMetric(
+      comparablePostRenderCallbacks
+        .map((event) => event.detail?.postRenderAt - event.detail?.canvasAt)
+        .filter((value) => Number.isFinite(value) && value >= 0),
+    ),
+    "time-step.intent-to-post-render-task": summarizeMetric(
+      comparablePostRenderCallbacks
+        .map((event) => event.detail?.postRenderAt - event.detail?.intentAt)
+        .filter((value) => Number.isFinite(value) && value >= 0),
+    ),
+    "time-step.raf-to-post-render-task": summarizeMetric(
+      comparablePostRenderCallbacks
+        .map((event) => event.detail?.postRenderAt - event.detail?.nextFrameAt)
+        .filter((value) => Number.isFinite(value) && value >= 0),
+    ),
+    "time-step.next-frame-interval": summarizeMetric(
+      completeBoundaryCallbacks
+        .map((event) =>
+          event.detail?.secondFrameTimestamp - event.detail?.nextFrameTimestamp)
+        .filter((value) => Number.isFinite(value) && value >= 0),
+    ),
+    "time-step.next-raf-opportunity-gap": summarizeMetric(
+      nextRafOpportunityGapValues,
+    ),
+    "time-step.post-render-task-gap": summarizeMetric(postRenderTaskGapValues),
+    "time-step.post-render-gap-over-input": summarizeMetric(
+      postRenderGapOverInputValues,
+    ),
+    "time-step.post-render-gap-delta": summarizeMetric(postRenderGapDeltaValues),
     "chart.canvas.geometry": summarizeMetric(
       numericEventDetails(paints, "chart-canvas-paint", "geometryMs"),
     ),
@@ -1735,6 +2068,7 @@ try {
     browserVersion: browser.version(),
     frontendUrl,
     key,
+    requestedTheme: requestedTheme || null,
     warmupSteps,
     measuredSteps,
     burst: burstSize > 0
@@ -1833,7 +2167,7 @@ try {
       burstContractBreached
         ? `Aries time-step burst lost inputs (${appliedStepInputs}/${burstSize} applied).`
         : !visualCadence.passed
-          ? `Aries time-step cadence merged or skipped a presented input: ${JSON.stringify(visualCadence)}.`
+          ? `Aries time-step Canvas/boundary-callback cadence lost, merged, duplicated, or incompletely paired an input: ${JSON.stringify(visualCadence)}.`
         : !overlayContinuity.passed
           ? `Aries time-step overlay blanked or settled incoherently: ${JSON.stringify(overlayContinuity)}.`
         : !visualContinuity.passed

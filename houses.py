@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 import math
 import astrology
 import util
@@ -14,7 +19,8 @@ class Houses:
 	"""
 
 	HOUSE_NUM = 12
-	hsystems = ('P', 'K', 'R', 'C', 'E', 'W', 'X', 'Q', 'M', 'H', 'T', 'B', 'O', 'N')
+	hsystems = ('P', 'K', 'R', 'C', 'E', 'W', 'F', 'X', 'Q', 'M', 'H', 'T', 'B', 'O', 'N')
+	FORTUNE_WHOLE_SIGN = 'F'
 	TRUE_ASCENDANT = 'Q'
 
 	# Angular point indices into ascmc2[] (returned by swe_houses_ex)
@@ -55,14 +61,22 @@ class Houses:
 			astrology.swe_set_sid_mode(astrology.ayanamsha_swe_mode(ayanopt), 0, 0)
 			flag |= astrology.SEFLG_SIDEREAL
 
-		engine_hsys = 'X' if self.hsys == Houses.TRUE_ASCENDANT else self.hsys
+		if self.hsys == Houses.TRUE_ASCENDANT:
+			engine_hsys = 'X'
+		elif self.hsys == Houses.FORTUNE_WHOLE_SIGN:
+			# Swiss Ephemeris does not know Valens' derived places.  Start with
+			# ordinary whole-sign geometry so the true angles remain available;
+			# Chart rebases the cusps once its Lot of Fortune has been calculated.
+			engine_hsys = 'W'
+		else:
+			engine_hsys = self.hsys
 		res, self.cusps, self.ascmc = astrology.swe_houses_ex(tjd_ut, flag, geolat, geolon, ord(engine_hsys))
 
 		if self.hsys == Houses.TRUE_ASCENDANT:
 			self._apply_true_ascendant_geometry(geolat)
 
 		##################
-		if ayanopt != 0 and self.hsys == 'W':
+		if ayanopt != 0 and self.hsys in ('W', Houses.FORTUNE_WHOLE_SIGN):
 			del self.cusps
 			cusps = [0.0]
 			# swe_houses_ex already returned ASC in the selected sidereal
@@ -114,6 +128,23 @@ class Houses:
 			self.cuspstmp[i][0], self.cuspstmp[i][1], dist = astrology.swe_cotrans(util.to_tropical_lon(self.cusps[i+1], ayan_offset), 0.0, dist, -obl)
 			
 		self.cusps2 = ((self.cuspstmp[0][0], self.cuspstmp[0][1]), (self.cuspstmp[1][0], self.cuspstmp[1][1]), (self.cuspstmp[2][0], self.cuspstmp[2][1]), (self.cuspstmp[3][0], self.cuspstmp[3][1]), (self.cuspstmp[4][0], self.cuspstmp[4][1]), (self.cuspstmp[5][0], self.cuspstmp[5][1]), (self.cuspstmp[6][0], self.cuspstmp[6][1]), (self.cuspstmp[7][0], self.cuspstmp[7][1]), (self.cuspstmp[8][0], self.cuspstmp[8][1]), (self.cuspstmp[9][0], self.cuspstmp[9][1]), (self.cuspstmp[10][0], self.cuspstmp[10][1]), (self.cuspstmp[11][0], self.cuspstmp[11][1]))
+
+	def set_fortune_whole_sign_cusps(self, fortune_lon):
+		"""Make Fortune's zodiacal sign the first of Valens' twelve places."""
+		if self.ui_hsys != Houses.FORTUNE_WHOLE_SIGN:
+			return
+		cusp1 = (int(util.normalize(fortune_lon)) // 30) * 30.0
+		self.cusps = tuple(
+			[0.0] + [util.normalize(cusp1 + i * 30.0) for i in range(Houses.HOUSE_NUM)]
+		)
+		cuspstmp = []
+		for cusp in self.cusps[1:]:
+			ra, decl, _dist = astrology.swe_cotrans(
+				util.to_tropical_lon(cusp, self.ayanamsha_offset), 0.0, 1.0, -self.obl
+			)
+			cuspstmp.append((ra, decl))
+		self.cuspstmp = [list(coords) for coords in cuspstmp]
+		self.cusps2 = tuple(cuspstmp)
 
 	@staticmethod
 	def _signed_arc(start, end):

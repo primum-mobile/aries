@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 """Daemon-side options + appearance backend.
 
 Exposes the canonical ``options.py`` settings (the single source of truth) so the
@@ -46,7 +51,12 @@ import houses  # canonical house-system code list (houses.Houses.hsystems)
 import mtexts  # canonical ayanamsha label list (mtexts.ayanamshalist)
 import posfordate  # progression angle-method / day-type enums + labels
 import revolutions  # Revolution option cache invalidation
-from engine import solilunar
+from engine import harmonic_chart, solilunar
+from webapp.daemon.speculum_speed import (
+    SPEED_DISPLAY_DAILY,
+    SPEED_DISPLAY_MODES,
+    normalize_speed_display_mode,
+)
 
 from webapp.daemon.chart_service import chart_snapshot_service
 from webapp.daemon import settings_registry
@@ -63,6 +73,13 @@ from webapp.daemon.event_time import (
     EVENT_TABLE_TIME_UT,
     event_table_time_basis,
 )
+from webapp.daemon.chart_rings import (
+    CHART_RING_COUNT_MAX,
+    CHART_RING_COUNT_MIN,
+    CHART_RING_ZODIAC_VALUES,
+    chart_ring_count,
+    chart_ring_zodiac,
+)
 from webapp.daemon.style_profile_service import (
     PROFILE_KIND,
     PROFILE_SCHEMA_VERSION,
@@ -73,6 +90,8 @@ from webapp.daemon.style_profile_service import (
 )
 from webapp.daemon.style_authoring_service import build_chart_style_profile_v2
 from webapp.daemon.style_profile_catalog_generated import TOKEN_SCHEMA_VERSION
+from webapp.daemon.style_authoring_service import authoring_color_alias_target
+from webapp.daemon.style_profile_service import color_alias_target
 
 
 logger = logging.getLogger(__name__)
@@ -306,10 +325,36 @@ _PALETTE_ATTR_NAMES = (
 
 _PD_IN_CHART_FIELDS = {
     'pdincharttyp',
+    # Accepted only to retire old clients/saved state without changing the
+    # historical pickle slot. It is no longer emitted as a public option.
     'pdinchartsecmotion',
     'pdinchartterrsecmotion',
     'pdinchartreverse',
 }
+
+_PD_RETAINED_LIST_FIELDS = {
+    'pdcircumoa',
+    'pdcircumprommode',
+    'pdrevshownatalpromissors',
+}
+
+
+def _normalize_pd_in_chart_projection(opts, value: Any) -> int:
+    normalizer = getattr(opts, 'normalize_pdincharttyp', None)
+    if callable(normalizer):
+        return int(normalizer(value))
+    try:
+        projection = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+    if (
+        isinstance(value, bool)
+        or (isinstance(value, float) and not value.is_integer())
+        or projection not in (0, 1)
+    ):
+        return 0
+    return projection
+
 
 _DARK_THEME_ASPECTS = [
     (246, 0, 206), (40, 232, 232), (246, 0, 206), (34, 255, 154),
@@ -719,8 +764,9 @@ _DISPLAY_BOOL_FIELDS = (
 	# Body show-toggles (appearance1dlg.py:855-871).
 	'showchiron', 'shownodes', 'aspectstonodes',
 	'showlof', 'showaspectstolof', 'showlofouterring', 'showprenatalsyzygy',
+	'showprenataleclipse',
     # Header (appearance1dlg.py:845-848).
-    'planetarydayhour', 'information', 'showseconds',
+    'planetarydayhour', 'information', 'showradixnameincanvas', 'showseconds',
     # Aesthetic / chrome (appearance1dlg.py:849-850, options.py:118).
     'show_help_chip',
     # Hidden Tauri-only presentation cursor. It is intentionally absent from
@@ -733,6 +779,10 @@ _DISPLAY_BOOL_FIELDS = (
     # Dignity ring display lives on this dialog too (appearance1dlg.py:879-880).
     'showterms', 'showdecans',
     'showanglearrowheads', 'showcusplessascmclabels',
+    # Independent multi-wheel presentation controls. These are renderer-only
+    # and intentionally do not change ordinary wheel appearance.
+    'multiwheel_show_positions', 'multiwheel_show_minutes',
+    'multiwheel_sign_colors', 'multiwheel_show_angle_labels',
     # --- Appearance-menu parity adds (appearance1dlg.py control delta) ---
     # Modern Planets / extended station radices (appearance1dlg.py:332-333 build,
     # :889 fill, :1126-1128 check) -> options.py:144.
@@ -776,12 +826,19 @@ _DISPLAY_BOOL_FIELDS = (
 # separately (their per-index labels come from the catalog). theme is the wheel
 # LAYOUT choice (Classic/Compact/Anglo Wheel, int 0/1/2 — DISTINCT from color themes;
 # appearance1dlg.py:41-44/271/825-828/989-991 -> options.py:119). phasismode is
-# the 3-way Phasis enum (PHASIS_MODE_* 0/1/2; appearance1dlg.py:326-331/882-888/
-# 1117-1124 -> options.py:81-83/160). cazimimode is the radix overlay Cazimi
+# the Phasis enum (PHASIS_MODE_* 0/1/2/3). cazimimode is the radix overlay Cazimi
 # enum: Hellenistic 1 deg, Abu Ma'shar 16' longitude, al-Qabisi 16' longitude
 # plus latitude. synodicmode controls planetary-return Shift+Arrow event
-# filtering: Station+Cazimi vs full Sun-planet cycle.
-_DISPLAY_INT_FIELDS = ('showfixstars', 'theme', 'phasismode', 'cazimimode', 'synodicmode')
+# filtering: Station+Cazimi vs full Sun-planet cycle. solarconditionmode is a
+# separate source profile for inspector/hover solar-condition semantics.
+_DISPLAY_INT_FIELDS = (
+    'showfixstars',
+    'theme',
+    'phasismode',
+    'cazimimode',
+    'synodicmode',
+    'solarconditionmode',
+)
 _DISPLAY_BOOL_VECTOR_FIELDS = ('transcendental', 'aspect')  # list[bool]
 # Non-Ptolemaic aspect draw toggles in chart.Chart aspect-index order
 # (chart.py:458-469; appearance1dlg.py:806-817).
@@ -800,6 +857,7 @@ _DISPLAY_OVERLAY_ONLY_FIELDS = {
     'showlof',
     'showvertex',
     'showprenatalsyzygy',
+    'showprenataleclipse',
     'aspectstonodes',
     'showaspectstolof',
     'showaspectstovertex',
@@ -827,6 +885,7 @@ _DISPLAY_OVERLAY_ONLY_FIELDS = {
     'showdecans',
     'planetarydayhour',
     'information',
+    'showradixnameincanvas',
     'showseconds',
     'positions',
     'intables',
@@ -840,6 +899,10 @@ _DISPLAY_OVERLAY_ONLY_FIELDS = {
     'chartringthickness',
     'showanglearrowheads',
     'showcusplessascmclabels',
+    'multiwheel_show_positions',
+    'multiwheel_show_minutes',
+    'multiwheel_sign_colors',
+    'multiwheel_show_angle_labels',
     'astrocart_show_ecliptic',
     'astrocart_show_equator',
     'astrocart_show_asc_circle',
@@ -848,6 +911,7 @@ _DISPLAY_OVERLAY_ONLY_FIELDS = {
     'astrocart_show_zodiac_lines',
     'astrocart_show_country_labels',
     'synodicmode',
+    'solarconditionmode',
 }
 _DISPLAY_TEXT_ONLY_FIELDS = {'dateconvention'}
 _DISPLAY_UI_STYLE_ONLY_FIELDS = {'presentation_cursor'}
@@ -929,11 +993,10 @@ _DIGNITY_INT_FIELDS = ('selterm',)
 _DIGNITY_LIST_FIELDS = ('dignityscores',)
 _DIGNITY_TABLE_FIELDS = ('dignities', 'terms')
 
-# Glyph-variant settings (symbolsdlg.SymbolsDlg). uranus is a bool (which Uranus
-# glyph), pluto an int 0..3 (which Pluto glyph), signs a bool (which sign-glyph
-# set). They feed common.common.update -> common.Planets[7]/[9] and the sign
-# table, which the chart snapshot reads (export_chart_json.py:139/746/910).
-_SYMBOL_BOOL_FIELDS = ('uranus', 'signs')
+# Glyph-variant settings. Uranus retains its two astrology glyphs and Pluto
+# retains the two standard glyphs at the canonical common.Pluto indices 2/3.
+# Zodiac signs always use the Aries Morinus sign set.
+_SYMBOL_BOOL_FIELDS = ('uranus',)
 _SYMBOL_INT_FIELDS = ('pluto',)
 
 # Default Location (defaultlocdlg.py / options.py:543-556). The saved
@@ -1077,12 +1140,12 @@ def _fixstars_mode_catalog() -> list:
     ]
 
 # Phasis (heliacal) mode selector. Values are the engine's options.Options
-# PHASIS_MODE_* integer enum (options.py:81-83) — NOT a list index. Labels are
-# verbatim from appearance1dlg.py:326-330 (the radio-button captions).
+# PHASIS_MODE_* integer enum — NOT a list index.
 _PHASIS_MODE_CATALOG = (
     {'value': 0, 'label': 'Astronomical', 'labelKey': 'Astronomical'},      # PHASIS_MODE_ASTRONOMICAL
     {'value': 1, 'label': 'Hellenistic', 'labelKey': 'Hellenistic'},       # PHASIS_MODE_HELLENISTIC
     {'value': 2, 'label': 'Swiss Ephemeris', 'labelKey': 'SwissEphemeris'},   # PHASIS_MODE_SIMPLE_SWEP
+    {'value': 3, 'label': 'Arcus visionis', 'labelKey': 'Arcus visionis'}, # PHASIS_MODE_ARCUS_VISIONIS
 )
 
 _CAZIMI_MODE_CATALOG = (
@@ -1090,6 +1153,43 @@ _CAZIMI_MODE_CATALOG = (
     {'value': 2, 'label': "Abu Maʿshar · 16′", 'labelKey': 'CazimiAbuMashar'},
     {'value': 1, 'label': "al-Qabisi · 16′ + latitude", 'labelKey': 'CazimiAlQabisi'},
 )
+
+_SOLAR_CONDITION_MODE_CATALOG = (
+    {
+        'value': 0,
+        'label': 'Rhetorius (late Hellenistic)',
+        'labelKey': 'settings.solarConditionLateHellenistic',
+        'descriptionKey': 'settings.combustionRhetoriusDescription',
+    },
+    {
+        'value': 1,
+        'label': 'al-Qabisi + Sahl',
+        'labelKey': 'settings.solarConditionAlQabisi',
+        'descriptionKey': 'settings.combustionAlQabisiDescription',
+    },
+    {
+        'value': 2,
+        'label': 'Ibn Ezra',
+        'labelKey': 'settings.solarConditionIbnEzra',
+        'descriptionKey': 'settings.combustionIbnEzraDescription',
+    },
+    {
+        'value': 3,
+        'label': 'William Lilly (1647)',
+        'labelKey': 'settings.solarConditionWilliamLilly',
+        'descriptionKey': 'settings.combustionWilliamLillyDescription',
+    },
+    {
+        'value': 4,
+        'label': 'Morin (1661)',
+        'labelKey': 'settings.solarConditionMorin',
+        'descriptionKey': 'settings.combustionMorinDescription',
+    },
+)
+_SOLAR_CONDITION_MODE_VALUES = frozenset(
+    int(item['value']) for item in _SOLAR_CONDITION_MODE_CATALOG
+)
+_SOLAR_CONDITION_MODE_DEFAULT = 4
 
 _SYNODIC_MODE_CATALOG = (
     {'value': 0, 'label': 'Station+Cazimi', 'labelKey': 'StationCazimi'},
@@ -1129,6 +1229,7 @@ _THEME_LAYOUT_CATALOG = (
 _ANGLO_DENSE_LABEL_LAYOUT_CATALOG = (
     {'value': 'leader-columns', 'label': 'Straight house lines'},
     {'value': 'routed-cusps', 'label': 'Routed house lines'},
+    {'value': 'sign-locked', 'label': 'Broken lines, planets stay in sign'},
 )
 _ANGLO_DENSE_LABEL_LAYOUT_VALUES = {
     item['value'] for item in _ANGLO_DENSE_LABEL_LAYOUT_CATALOG
@@ -1195,6 +1296,23 @@ _SPECULUM_REGIOMONTAN_COLS = (
 # siblings just for two ints.
 _SPECULUM_PLACIDIAN = 0
 _SPECULUM_REGIOMONTAN = 1
+_SPECULUM_SPEED_MODE_CATALOG = (
+    {
+        'value': 'words',
+        'label': 'Motion words',
+        'labelKey': 'SpeculumSpeedWords',
+    },
+    {
+        'value': 'percent',
+        'label': 'Relative percentage',
+        'labelKey': 'SpeculumSpeedPercent',
+    },
+    {
+        'value': SPEED_DISPLAY_DAILY,
+        'label': 'Degrees per day',
+        'labelKey': 'SpeculumSpeedDaily',
+    },
+)
 
 # Orb target rows (orbisdlg) — 0..10 planets/Nodes, then Houses pseudo-target.
 _ORB_TARGET_CATALOG = (
@@ -1240,11 +1358,9 @@ _DIGNITY_TYPE_KEYS = ('Domicil', 'Exal')
 _TERM_PLANET_OFFS = 2
 _TERM_PLANET_KEYS = ('Mercury', 'Venus', 'Mars', 'Jupiter', 'Saturn')
 
-# Glyph-variant selector choices (symbolsdlg.SymbolsDlg). Each option chooses one
-# Morinus.ttf glyph variant; the glyph chars are mirrored verbatim from common.py
-# (common.Uranus/common.Pluto, common.py:372-373; sign tables :370-371). uranus
-# True -> Uranus[0]='H' (default), False -> Uranus[1]='6'. pluto 0..3 indexes
-# Pluto=('J','7','8','9'). signs True -> Signs1 (default, 'a'..), False -> Signs2.
+# Glyph-variant selector choices. Glyph chars are mirrored verbatim from
+# common.py (common.Uranus/common.Pluto, common.py:372-373). Pluto indices 0/1
+# and the alternate sign set are retired from the Tauri product.
 _SYMBOL_URANUS_GLYPHS = ('H', '6')
 _SYMBOL_PLUTO_GLYPHS = ('J', '7', '8', '9')
 _SYMBOL_URANUS_CATALOG = (
@@ -1252,11 +1368,7 @@ _SYMBOL_URANUS_CATALOG = (
     {'value': False, 'glyph': _SYMBOL_URANUS_GLYPHS[1]},  # common.Uranus[1]
 )
 _SYMBOL_PLUTO_CATALOG = tuple(
-    {'value': i, 'glyph': glyph} for i, glyph in enumerate(_SYMBOL_PLUTO_GLYPHS)
-)
-_SYMBOL_SIGNS_CATALOG = (
-    {'value': True, 'glyph': 'a'},   # common.Signs1[0] (Aries)
-    {'value': False, 'glyph': 'm'},  # common.Signs2[0] (Aries, alt set)
+    {'value': i, 'glyph': _SYMBOL_PLUTO_GLYPHS[i]} for i in (2, 3)
 )
 
 # Step alert bodies in the same order as common.STEP_ALERT_BODY_IDS and
@@ -1310,19 +1422,26 @@ def _slider_catalog() -> list:
 # Key-prompt presentation style enum (options.py:136/1384 accepted values).
 _KEYPROMPT_STYLE_CATALOG = ('overlay', 'native', 'strip', 'off')
 
-# Font-family profiles (fontprofiles.PROFILE_CHOICES) — wx-free module.
-try:
-    import fontprofiles as _fontprofiles
-    _FONT_PROFILE_CATALOG = tuple(
-        {'value': key, 'label': label} for key, label in _fontprofiles.PROFILE_CHOICES
-    )
-except Exception:  # pragma: no cover - fontprofiles is import-safe today
-    _fontprofiles = None
-    _FONT_PROFILE_CATALOG = ()
+# Tauri application typefaces. Keep this catalog narrower than the legacy wx
+# font comparison picker: these are the four supported app-wide UI choices.
+def _font_profile_catalog() -> list[dict]:
+    return [
+        {'value': 'freesans', 'label': 'FreeSans'},
+        {
+            'value': 'kosugi_aries',
+            'label': _txt('TypefaceKosugiAries', 'Kosugi Aries'),
+        },
+        {'value': 'dot_gothic16', 'label': 'DotGothic16'},
+        {
+            'value': 'system',
+            'label': _txt('TypefaceSystemFont', 'System font'),
+            'labelKey': 'settings.systemFont',
+        },
+    ]
 
 _WEB_FONT_PROFILE_FAMILIES = {
     'freesans': 'FreeSans',
-    'kosugi': 'Kosugi',
+    'kosugi_aries': 'Kosugi Aries',
     'dot_gothic16': 'DotGothic16',
 }
 _WEB_FONT_LANGUAGE_FAMILIES = {
@@ -1333,14 +1452,18 @@ _WEB_FONT_LANGUAGE_FAMILIES = {
 
 
 def _coerce_font_profile(value: Any) -> str:
-    if _fontprofiles is not None:
-        return _fontprofiles.coerce_profile(value)
-    return value if value in _WEB_FONT_PROFILE_FAMILIES else 'freesans'
+    profile = str(value or '')
+    if profile == 'system' or profile in _WEB_FONT_PROFILE_FAMILIES:
+        return profile
+    return 'freesans'
 
 
 def _web_text_font_family(opts) -> str:
-    # Mirrors fontprofiles.apply_to_common: CJK language bundles override the
-    # display profile; Kosugi/DotGothic only apply for non-CJK languages.
+    # CJK language bundles override bundled display profiles. The native
+    # system profile is locale-independent and remains system-ui.
+    profile = _coerce_font_profile(getattr(opts, 'fontfamily', 'freesans'))
+    if profile == 'system':
+        return 'system-ui'
     try:
         langid = int(getattr(opts, 'langid', 0) or 0)
     except Exception:
@@ -1348,12 +1471,13 @@ def _web_text_font_family(opts) -> str:
     family = _WEB_FONT_LANGUAGE_FAMILIES.get(langid)
     if family:
         return family
-    profile = _coerce_font_profile(getattr(opts, 'fontfamily', 'freesans'))
     return _WEB_FONT_PROFILE_FAMILIES.get(profile, 'FreeSans')
 
 
 def _web_text_font_stack(opts) -> str:
     family = _web_text_font_family(opts)
+    if family == 'system-ui':
+        return 'system-ui, sans-serif'
     if family == 'FreeSans':
         return "'FreeSans', ui-sans-serif, system-ui, sans-serif"
     return f"'{family}', 'FreeSans', ui-sans-serif, system-ui, sans-serif"
@@ -1600,6 +1724,66 @@ def _profile_base_app_semantic_overrides(opts, profile: Optional[dict]) -> dict[
     return result
 
 
+def _profile_color_beneath(semantic_id: str, beneath) -> Optional[tuple]:
+    """The colour a token carries underneath the profile's own overrides.
+
+    A reference may name a token the profile does not override, in which case
+    the colour it lands on is whatever the options and the chart base already
+    say. Reading it here is what makes "same as the planet glyphs" keep meaning
+    the planet glyphs rather than only the ones the profile happens to repaint.
+    """
+    attr = _PROFILE_CHART_BASE_ATTRS.get(semantic_id)
+    if attr is not None:
+        return _coerce_rgb(getattr(beneath, attr, None))
+    for role_id, _css_var, index in _PROFILE_BODY_COLOR_ROLES:
+        if role_id == semantic_id:
+            return _effective_body_color_list(beneath)[index]
+    for role_id, _css_var, index in _PROFILE_ASPECT_COLOR_ROLES:
+        if role_id == semantic_id:
+            return _effective_aspect_color_list(beneath)[index]
+    for role_id, _css_var, element_attr in _PROFILE_ELEMENT_COLOR_ROLES:
+        if role_id == semantic_id:
+            return _coerce_rgb(getattr(beneath, element_attr, None))
+    return None
+
+
+def _resolved_alias_rgb(semantic_id: str, explicit: dict, beneath) -> Optional[tuple]:
+    seen = {semantic_id}
+    current = explicit.get(semantic_id)
+    while True:
+        target = color_alias_target(current)
+        if target is None:
+            return _coerce_rgb(current)
+        if target in seen:
+            return None
+        seen.add(target)
+        if target in explicit:
+            current = explicit[target]
+            continue
+        return _profile_color_beneath(target, beneath)
+
+
+def _flatten_profile_color_aliases(explicit: dict, beneath) -> dict:
+    """Replace every colour reference with the colour it lands on.
+
+    Done once, at the door into the retained Python renderers, so nothing
+    downstream has to know references exist. A reference that resolves to
+    nothing is dropped rather than passed on: leaving it in would hand a brace
+    string to a painter, and dropping it lands the token on the value it would
+    have had anyway.
+    """
+    resolved = dict(explicit)
+    for semantic_id, value in explicit.items():
+        if color_alias_target(value) is None:
+            continue
+        rgb = _resolved_alias_rgb(semantic_id, explicit, beneath)
+        if rgb is None:
+            resolved.pop(semantic_id, None)
+        else:
+            resolved[semantic_id] = list(rgb)
+    return resolved
+
+
 def _effective_style_chart_options(opts, profile: Optional[dict]):
     """Copy chart color state through the active profile without persistence.
 
@@ -1611,6 +1795,15 @@ def _effective_style_chart_options(opts, profile: Optional[dict]):
     base_values, _, use_chart_base = _style_profile_base_values(opts, profile)
     typed_overrides = (profile or {}).get('overrides')
     explicit = typed_overrides if isinstance(typed_overrides, dict) else {}
+    if any(color_alias_target(value) is not None for value in explicit.values()):
+        # References resolve against the layer beneath this profile, so the
+        # chart base is applied before they are followed and never after.
+        beneath = copy.copy(opts)
+        if use_chart_base:
+            for attr in (*_PROFILE_CHART_BASE_ATTRS.values(), *_PROFILE_CHART_BASE_EXTRA_ATTRS):
+                if attr in base_values:
+                    setattr(beneath, attr, copy.deepcopy(base_values[attr]))
+        explicit = _flatten_profile_color_aliases(explicit, beneath)
     semantic_overrides = {
         attr: explicit[semantic_id]
         for semantic_id, attr in _PROFILE_CHART_BASE_ATTRS.items()
@@ -1879,14 +2072,78 @@ def _theme_state_payload(opts, active_profile: Optional[dict] = None) -> dict:
             'appTokens': profile_app_tokens,
             'chartPalette': profile_chart_tokens,
             'chartData': _profile_chart_data_overrides(opts, active_profile),
-            'wheelAuthoring': copy.deepcopy(
-                (active_profile or {}).get('authoringOverrides') or {}
+            'wheelAuthoring': _resolved_authoring_color_aliases(
+                copy.deepcopy((active_profile or {}).get('authoringOverrides') or {}),
+                chart_palette,
             ),
             'appAuthoring': copy.deepcopy(
                 (active_profile or {}).get('appAuthoringOverrides') or {}
             ),
         },
     }
+
+
+def _profile_color_role_css_vars() -> dict:
+    """Which chart CSS token each colour role publishes itself as.
+
+    Built on first use rather than at import: the structural half is derived
+    from the reverse map defined further down this module, and deriving it
+    keeps one direction authoritative instead of two lists that can drift.
+    """
+    global _PROFILE_COLOR_ROLE_CSS_VARS_CACHE
+    if _PROFILE_COLOR_ROLE_CSS_VARS_CACHE is None:
+        attr_to_css = {
+            attr: css_var
+            for css_var, attr in _CHART_TOKEN_TO_PALETTE_ATTR.items()
+        }
+        mapping = {
+            semantic_id: css_var
+            for semantic_id, css_var, _index in _PROFILE_BODY_COLOR_ROLES
+        }
+        mapping.update({
+            semantic_id: css_var
+            for semantic_id, css_var, _index in _PROFILE_ASPECT_COLOR_ROLES
+        })
+        mapping.update({
+            semantic_id: css_var
+            for semantic_id, css_var, _attr in _PROFILE_ELEMENT_COLOR_ROLES
+        })
+        for semantic_id, attr in _PROFILE_CHART_BASE_ATTRS.items():
+            css_var = attr_to_css.get(attr)
+            if css_var is not None:
+                mapping.setdefault(semantic_id, css_var)
+        mapping.setdefault('chart.color.textBright', '--morinus-text-bright')
+        _PROFILE_COLOR_ROLE_CSS_VARS_CACHE = mapping
+    return _PROFILE_COLOR_ROLE_CSS_VARS_CACHE
+
+
+_PROFILE_COLOR_ROLE_CSS_VARS_CACHE = None
+
+
+def _resolved_authoring_color_aliases(authoring: dict, chart_palette: dict) -> dict:
+    """Replace each class colour that follows a role with the role's colour.
+
+    A saved profile reaches the wheel through this payload with the editor
+    closed, so a reference has to be gone by the time it arrives: the renderer
+    receives colours, and only the profile on disk remembers that one of them is
+    tied to a role. `chart_palette` is the finished palette, base and explicit
+    overrides already applied, so a class lands on the colour the role really
+    carries in this theme.
+    """
+    css_vars = _profile_color_role_css_vars()
+    resolved = {}
+    for semantic_id, value in authoring.items():
+        alias = authoring_color_alias_target(value)
+        if alias is None:
+            resolved[semantic_id] = value
+            continue
+        css_var = css_vars.get(alias)
+        rgb = _rgb_from_css_token(chart_palette.get(css_var)) if css_var else None
+        # A role with no colour in this theme leaves the class unauthored,
+        # which paints it the way it would paint with no override at all.
+        if rgb is not None:
+            resolved[semantic_id] = list(rgb)
+    return resolved
 
 
 def _theme_payload_hash(payload: dict) -> str:
@@ -2044,6 +2301,92 @@ def _set_color_list_attr(opts, attr: str, values: Any) -> bool:
     return True
 
 
+# Reverse of the ``chart_palette`` construction above: which saved colour
+# option each chart CSS token corresponds to. A Style Lab theme carries its
+# palette as CSS tokens, and Settings stores RGB option attributes, so applying
+# such a theme needs this direction to write Settings the way a built-in preset
+# does.
+_CHART_TOKEN_TO_PALETTE_ATTR = {
+    '--morinus-background': 'clrbackground',
+    '--morinus-frame': 'clrframe',
+    '--morinus-signs': 'clrsigns',
+    '--morinus-angles': 'clrAscMC',
+    '--morinus-houses': 'clrhouses',
+    '--morinus-housenums': 'clrhousenumbers',
+    '--morinus-peregrin': 'clrperegrin',
+    '--morinus-positions': 'clrpositions',
+    '--morinus-table': 'clrtable',
+    '--morinus-dignity-domicil': 'clrdomicil',
+    '--morinus-dignity-exil': 'clrexil',
+    '--morinus-dignity-exal': 'clrexal',
+    '--morinus-dignity-casus': 'clrcasus',
+    **{css_var: attr for _sid, css_var, attr in _PROFILE_ELEMENT_COLOR_ROLES},
+}
+
+
+def _rgb_from_css_token(value: Any) -> Optional[tuple]:
+    """Parse a chart palette CSS token back into an RGB triple.
+
+    ``_css_rgb`` emits ``rgb(R G B)`` with spaces, which ``_coerce_rgb`` does
+    not read, so the value has to be parsed rather than coerced. Comma form is
+    accepted too because hand-authored profiles use it.
+    """
+    if isinstance(value, (list, tuple)):
+        return _coerce_rgb(value)
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if text.startswith('rgb'):
+        inner = text[text.find('(') + 1:text.rfind(')')]
+        parts = [part for part in inner.replace(',', ' ').replace('/', ' ').split() if part]
+        if len(parts) >= 3:
+            try:
+                channels = tuple(int(round(float(part))) for part in parts[:3])
+            except ValueError:
+                return None
+            if all(0 <= channel <= 255 for channel in channels):
+                return channels
+        return None
+    if text.startswith('#') and len(text) in (4, 7):
+        digits = text[1:]
+        if len(digits) == 3:
+            digits = ''.join(ch * 2 for ch in digits)
+        try:
+            return tuple(int(digits[i:i + 2], 16) for i in (0, 2, 4))
+        except ValueError:
+            return None
+    return _coerce_rgb(value)
+
+
+def _palette_values_from_chart_tokens(tokens: dict) -> dict:
+    """Translate a theme's chart CSS tokens into saved palette option values.
+
+    A Style Lab theme is two layers: colours and toggles that Settings owns,
+    and the CSS/geometry layer Settings has no vocabulary for. Only the first
+    layer belongs here; the second stays in the style profile.
+    """
+    values: dict = {}
+    for css_var, attr in _CHART_TOKEN_TO_PALETTE_ATTR.items():
+        rgb = _rgb_from_css_token(tokens.get(css_var))
+        if rgb is not None:
+            values[attr] = rgb
+    body = [None] * len(_PROFILE_BODY_COLOR_ROLES)
+    for _sid, css_var, index in _PROFILE_BODY_COLOR_ROLES:
+        rgb = _rgb_from_css_token(tokens.get(css_var))
+        if rgb is not None and index < len(body):
+            body[index] = rgb
+    if body and all(entry is not None for entry in body):
+        values['clrindividual'] = body
+    aspects = [None] * len(_PROFILE_ASPECT_COLOR_ROLES)
+    for _sid, css_var, index in _PROFILE_ASPECT_COLOR_ROLES:
+        rgb = _rgb_from_css_token(tokens.get(css_var))
+        if rgb is not None and index < len(aspects):
+            aspects[index] = rgb
+    if aspects and all(entry is not None for entry in aspects):
+        values['clraspect'] = aspects
+    return values
+
+
 def _apply_palette_values(opts, name: str, values: dict) -> bool:
     changed = False
     follow = (name == _SYSTEM_AUTO_NAME)
@@ -2096,8 +2439,12 @@ def _maybe_update_custom_palette(opts) -> bool:
 # Fixed-star SE-catalog reader — wx-free port of fixstarsdlg.FixStarCatalog
 # (fixstarsdlg.py:26-114). The wx module imports wx so it can't be imported
 # here; the catalog logic itself only uses astrology/chart/util (wx-free) and is
-# transcribed verbatim. The full Swiss-Ephemeris fixed-star catalog (~1362 rows)
-# is enumerated once and cached, since each row is a swe_fixstar_ut call.
+# transcribed from the catalog reader. Swiss Ephemeris includes cultural and
+# spelling aliases as separate rows that share one nomenclature code. Aries
+# exposes one selectable row per physical star/code; the first catalog record
+# is the canonical fallback name and the preferred-name map may override it.
+# The source catalog is enumerated once and cached, since each row is a
+# swe_fixstar_ut call.
 # ---------------------------------------------------------------------------
 
 _FIXSTAR_EPHE_PATH = str(REPO_ROOT / 'SWEP' / 'Ephem')  # common.py:313 derives this
@@ -2198,12 +2545,21 @@ def _read_fixstar_catalog() -> list:
         return _fixstar_catalog_cache
 
     rows = []
+    seen_codes: set[str] = set()
     for index in range(1, count + 1):
         try:
             ret, raw_name, dat, _serr = _astrology.swe_fixstar_ut(str(index), jd, 0)
         except Exception:
             continue
         name, code = _fixstar_split_name(raw_name)
+        # The catalog repeats codes for aliases, for example Algorab/Hasta
+        # (deCrv), Regulus/Magha (alLeo), and Algol twice (bePer). Selection and
+        # chart identity are code-based, so duplicate rows make one checkbox
+        # toggle several visible rows and let the final alias overwrite the
+        # preferred name. Preserve the first canonical record only.
+        if not code or code in seen_codes:
+            continue
+        seen_codes.add(code)
         rows.append({
             'index': index - 1,
             'name': name,
@@ -2238,15 +2594,6 @@ def _read_fixstar_alias_map(opts) -> dict:
     return alias
 
 
-def _write_fixstar_alias_map(alias: dict) -> None:
-    # fixstarsdlg.FixStarsDlg.check alias persistence (fixstarsdlg.py:529-534).
-    try:
-        with open(_FIXSTAR_ALIAS_JSON, 'w', encoding='utf-8') as handle:
-            json.dump(alias, handle, ensure_ascii=False, indent=2, sort_keys=True)
-    except Exception:
-        pass
-
-
 class OptionsService:
     """Read/patch the live canonical options object and drive a re-render."""
 
@@ -2274,6 +2621,11 @@ class OptionsService:
     def get_options(self) -> dict:
         with self._lock:
             opts = self.options
+            if self._normalize_symbol_variants(opts):
+                try:
+                    opts.saveSymbols()
+                except Exception:
+                    pass
             active_style_profile = self._style_profiles().active_profile()
             # Heal historical Auto-TZ records whose name/coordinates were
             # changed while an older city's tzid remained saved.  Frontend
@@ -2347,6 +2699,13 @@ class OptionsService:
                     if key != 'showterms'
                 }
                 continue
+            if group == 'eclipses' and isinstance(value, Mapping):
+                semantic[group] = {
+                    key: item
+                    for key, item in value.items()
+                    if key != 'prenatal_eclipse_mode'
+                }
+                continue
             semantic[group] = value
         encoded = json.dumps(
             semantic,
@@ -2384,6 +2743,8 @@ class OptionsService:
             hidden.append('point:vertex')
         if not bool(getattr(opts, 'showprenatalsyzygy', False)):
             hidden.append('point:syzygy')
+        if not bool(getattr(opts, 'showprenataleclipse', False)):
+            hidden.append('point:eclipse')
         return {'hiddenObjectIds': hidden}
 
     def get_retained_list_display(self) -> dict:
@@ -2414,7 +2775,7 @@ class OptionsService:
                 getattr(opts, 'sidebar_list_preferences', None)
             )
             candidate = copy.deepcopy(current)
-            for group in ('aspectList', 'transitList'):
+            for group in ('aspectList', 'transitList', 'synodicList', 'secondaryProgressions', 'vimshottari'):
                 fields = patch.get(group)
                 if not isinstance(fields, dict):
                     continue
@@ -2817,6 +3178,21 @@ class OptionsService:
         return out
 
     @staticmethod
+    def _normalize_pd_in_chart_options(opts) -> bool:
+        """Retire pseudo mode while preserving the old option object's slots."""
+        projection = _normalize_pd_in_chart_projection(
+            opts,
+            getattr(opts, 'pdincharttyp', 0),
+        )
+        changed = getattr(opts, 'pdincharttyp', 0) != projection
+        if changed:
+            opts.pdincharttyp = projection
+        if bool(getattr(opts, 'pdinchartsecmotion', False)):
+            opts.pdinchartsecmotion = False
+            changed = True
+        return changed
+
+    @staticmethod
     def _pd_fixstar_catalog(opts) -> list:
         """The candidate fixed stars for the PD selection picker.
 
@@ -2826,7 +3202,6 @@ class OptionsService:
         case and the user alias map. Each entry's ``ordinal`` is its index in
         options.fixstars, matching the pdfixstarssel index contract."""
         fixstars_map = getattr(opts, 'fixstars', None) or {}
-        alias_map = getattr(opts, 'fixstarAliasMap', None) or {}
         jd = astrology.swe_julday(1950, 1, 1, 0.0, astrology.SE_GREG_CAL)
         catalog = []
         for ordinal, code in enumerate(fixstars_map.keys()):
@@ -2844,8 +3219,7 @@ class OptionsService:
                 display = star_name or code
             except Exception:
                 display = code
-            if alias_map.get(code):
-                display = alias_map[code]
+            display = astrology.display_fixstar_name(code, opts, display)
             catalog.append({'ordinal': ordinal, 'code': code, 'name': display})
         return catalog
 
@@ -2862,6 +3236,7 @@ class OptionsService:
         it as a display-only field so the React Keys block can show it without
         recomputing anything in TS."""
         import primdirs as _primdirs
+        self._normalize_pd_in_chart_options(opts)
         pdkeys = int(getattr(opts, 'pdkeys', 0))
         pdkeydeg = int(getattr(opts, 'pdkeydeg', 0))
         pdkeymin = int(getattr(opts, 'pdkeymin', 0))
@@ -2932,17 +3307,18 @@ class OptionsService:
             'pdsigarabicpartname': str(getattr(opts, 'pdsigarabicpartname', '')),
             # Circumambulation method
             'pdcircumoa': int(getattr(opts, 'pdcircumoa', 0)),
+            'pdcircumprommode': int(getattr(opts, 'pdcircumprommode', 0)),
             # Revolutions / annual / list view
             'pdrevsunyearmode': int(getattr(opts, 'pdrevsunyearmode', 0)),
             'pdrevannualmode': int(getattr(opts, 'pdrevannualmode', 0)),
             'pdrevshownatalpromissors': bool(getattr(opts, 'pdrevshownatalpromissors', False)),
             'pdlistmode': int(getattr(opts, 'pdlistmode', 1)),
             'pdlistglyphcolors': bool(getattr(opts, 'pdlistglyphcolors', False)),
-            # PDs-in-Chart options (pdsinchartdlgopts.py and
-            # pdsinchartterrdlgopts.py). These live beside the main PD settings
-            # in React but retain their separate legacy persistence file.
+            # PDs-in-Chart options. These live beside the main PD settings in
+            # React but retain their separate persistence file. The historical
+            # ``pdinchartreverse`` Boolean now selects the converse reference
+            # frame: true=fixed radix, false=traditional converse overlay.
             'pdincharttyp': int(getattr(opts, 'pdincharttyp', 0)),
-            'pdinchartsecmotion': bool(getattr(opts, 'pdinchartsecmotion', False)),
             'pdinchartterrsecmotion': bool(getattr(opts, 'pdinchartterrsecmotion', False)),
             'pdinchartreverse': bool(getattr(opts, 'pdinchartreverse', True)),
             # Keys block
@@ -3194,7 +3570,19 @@ class OptionsService:
         if mode not in (_options.Options.ECLIPSE_CHART_MOMENT_EXACT,
                         _options.Options.ECLIPSE_CHART_MOMENT_MAXIMUM):
             mode = _options.Options.ECLIPSE_CHART_MOMENT_EXACT
-        return {'eclipse_chart_moment': mode}
+        prenatal_mode = str(getattr(
+            opts,
+            'prenatal_eclipse_mode',
+            _options.Options.PRENATAL_ECLIPSE_SOLAR_AND_LUNAR,
+        ))
+        if prenatal_mode not in (
+                _options.Options.PRENATAL_ECLIPSE_SOLAR_ONLY,
+                _options.Options.PRENATAL_ECLIPSE_SOLAR_AND_LUNAR):
+            prenatal_mode = _options.Options.PRENATAL_ECLIPSE_SOLAR_AND_LUNAR
+        return {
+            'eclipse_chart_moment': mode,
+            'prenatal_eclipse_mode': prenatal_mode,
+        }
 
     def _apply_eclipses(self, opts, fields: dict) -> bool:
         import options as _options
@@ -3208,6 +3596,18 @@ class OptionsService:
                        _options.Options.ECLIPSE_CHART_MOMENT_EXACT) != value:
                 opts.eclipse_chart_moment = value
                 changed = True
+        if 'prenatal_eclipse_mode' in fields:
+            value = str(fields['prenatal_eclipse_mode'])
+            if value not in (
+                    _options.Options.PRENATAL_ECLIPSE_SOLAR_ONLY,
+                    _options.Options.PRENATAL_ECLIPSE_SOLAR_AND_LUNAR):
+                value = _options.Options.PRENATAL_ECLIPSE_SOLAR_AND_LUNAR
+            if getattr(
+                    opts,
+                    'prenatal_eclipse_mode',
+                    _options.Options.PRENATAL_ECLIPSE_SOLAR_AND_LUNAR) != value:
+                opts.prenatal_eclipse_mode = value
+                changed = True
         return changed
 
     def _read_fixed_stars(self, opts) -> dict:
@@ -3216,22 +3616,33 @@ class OptionsService:
         ``options.fixstars`` is a {code: orb} dict (options.py:525); its KEYS are
         the active stars. The Orbs tab already edits the per-star orbs; this group
         exposes the full SE catalog so the skin can choose the active set. The
-        alias map carries the user-facing display name per code
-        (fixstarsdlg.py:340-354)."""
+        alias map carries the standard display name per code
+        (fixstarsdlg.py:340-354). The catalog itself is identity-deduplicated
+        and uses the shared naming resolver so the picker, tables, and wheel
+        agree. Indian catalog aliases are opt-in and off by default."""
         catalog = _read_fixstar_catalog()
         alias_map = _read_fixstar_alias_map(opts)
         selected = list((getattr(opts, 'fixstars', None) or {}).keys())
         defaults = list((getattr(opts, 'def_fixstars', None) or {}).keys())
         return {
-            'catalog': [dict(row) for row in catalog],
+            'catalog': [
+                {
+                    **row,
+                    'name': str(astrology.display_fixstar_name(
+                        str(row['code']), opts, row['name'])),
+                }
+                for row in catalog
+            ],
             'selectedCodes': [str(c) for c in selected],
             'aliasMap': {str(k): str(v) for k, v in alias_map.items()},
+            'useIndianFixstarNames': bool(
+                getattr(opts, 'useIndianFixstarNames', False)),
             # FixStarSelectionModel.MAX_SELECTED (fixstarsdlg.py:118).
             'maxSelected': 200,
             'defaultCodes': [str(c) for c in defaults],
         }
 
-    def _apply_fixed_stars(self, opts, fields: dict) -> bool:
+    def _apply_fixed_stars(self, opts, fields: dict) -> tuple[bool, bool]:
         """Apply the which-stars selection (fixstarsdlg.FixStarsDlg.check,
         fixstarsdlg.py:501-549).
 
@@ -3239,13 +3650,21 @@ class OptionsService:
         ``def_fixstars`` (fixstarsdlg.py:507-508). The resulting ``options.fixstars``
         keeps each retained code's existing orb and assigns ``def_fixstarsorb``
         (chart.py:501 = 1.5) to newly added codes (fixstarsdlg.py:536-544). The
-        alias map is pruned to the selection and persisted. Returns True when the
-        active key set actually changed."""
+        preferred-name map is independent of selection and is never rewritten
+        by a checkbox click. Returns ``(selection_changed, naming_changed)`` so
+        a naming-only change never rebuilds or recalculates chart objects."""
+        naming_changed = False
+        if 'useIndianFixstarNames' in fields:
+            value = bool(fields.get('useIndianFixstarNames'))
+            if bool(getattr(opts, 'useIndianFixstarNames', False)) != value:
+                opts.useIndianFixstarNames = value
+                naming_changed = True
+
         if 'selectedCodes' not in fields:
-            return False
+            return False, naming_changed
         raw = fields.get('selectedCodes')
         if not isinstance(raw, (list, tuple)):
-            return False
+            return False, naming_changed
 
         import chart as _chart
 
@@ -3274,7 +3693,7 @@ class OptionsService:
         # Did the active key set change? (order-insensitive, matching check()).
         changed = set(selected) != set(current.keys())
         if not changed:
-            return False
+            return False, naming_changed
 
         new_fixstars: dict = {}
         for code in selected:
@@ -3284,26 +3703,6 @@ class OptionsService:
                 new_fixstars[code] = _chart.Chart.def_fixstarsorb
         opts.fixstars = new_fixstars
 
-        # Prune + rewrite the alias map to the selection, then persist it
-        # (fixstarsdlg.py:518-534). Display names come from the catalog rows.
-        alias = _read_fixstar_alias_map(opts)
-        name_by_code = {
-            str(row['code']): (str(row['name']).strip() or str(row['code']))
-            for row in _read_fixstar_catalog() if row['code']
-        }
-        for code in list(alias.keys()):
-            if code not in new_fixstars:
-                del alias[code]
-        for code in new_fixstars:
-            display = name_by_code.get(code)
-            if display:
-                alias[code] = display
-        try:
-            opts.fixstarAliasMap = alias
-        except Exception:
-            pass
-        _write_fixstar_alias_map(alias)
-
         # morin.onFixStarsOpt clears the PD fixed-star selection vector after a
         # key-set change (morin.py:20073; options.clearPDFSSel options.py:2901).
         try:
@@ -3311,7 +3710,7 @@ class OptionsService:
         except Exception:
             pass
 
-        return True
+        return True, naming_changed
 
     def _rebuild_fixstars_on_open_charts(self) -> None:
         """Rebuild the in-memory fixstars set on every open chart object.
@@ -3363,6 +3762,86 @@ class OptionsService:
                         rebuild()
                     except Exception:
                         pass
+
+    def _open_chart_objects(self):
+        """Every chart object the open sessions own, deduplicated.
+
+        Same walk as ``_rebuild_fixstars_on_open_charts`` plus the cached
+        synastry composite variants, which are live render sources even when
+        they are not the session's current chart.
+        """
+        controller = self._controller
+        if controller is None:
+            return []
+        seen: set[int] = set()
+        charts: list = []
+        try:
+            documents = list(controller.documents())
+        except Exception:
+            return []
+        for document in documents:
+            document_id = getattr(document, 'document_id', None)
+            if not document_id:
+                continue
+            try:
+                session = controller.session(document_id)
+            except Exception:
+                session = None
+            if not session:
+                continue
+            cs = session.get('chart_session')
+            variants = session.get('composite_variants')
+            candidates = [
+                session.get('chart'),
+                session.get('comparison_chart'),
+                getattr(cs, 'chart', None) if cs is not None else None,
+                getattr(cs, 'radix', None) if cs is not None else None,
+                getattr(cs, '_initial_chart', None) if cs is not None else None,
+                getattr(cs, 'display_anchor_chart', None) if cs is not None else None,
+            ]
+            if isinstance(variants, dict):
+                candidates.extend(variants.values())
+            for obj in candidates:
+                if obj is None:
+                    continue
+                key = id(obj)
+                if key in seen:
+                    continue
+                seen.add(key)
+                charts.append(obj)
+        return charts
+
+    def _sync_detached_chart_options(self, patch: dict) -> None:
+        """Mirror a just-applied options patch onto charts that own a private
+        options copy.
+
+        Symbolic relationship charts (midpoint composite / Davison) are built
+        with ``copy.deepcopy(options)`` so construction can never mutate the
+        global object (compositechart.py:584,683). That copy then never sees a
+        later option change, and because those charts cannot be rebuilt by the
+        generic ``Chart.recalc`` fan-out, presentation-only toggles like
+        Planetary hour / Chart information / House system label appeared dead
+        inside a composite. Copy the changed attributes across by name so a
+        detached chart renders with the same switches as every other chart.
+        """
+        live = self.options
+        attrs = {
+            attr
+            for fields in patch.values() if isinstance(fields, dict)
+            for attr in fields
+            if hasattr(live, attr)
+        }
+        if not attrs:
+            return
+        for chrt in self._open_chart_objects():
+            chart_opts = getattr(chrt, 'options', None)
+            if chart_opts is None or chart_opts is live:
+                continue
+            for attr in attrs:
+                try:
+                    setattr(chart_opts, attr, copy.deepcopy(getattr(live, attr)))
+                except Exception:
+                    pass
 
     def _read_relationship_charts(self, opts) -> dict:
         """Relationship-chart settings (morin.onRelChartsCompositeMethod +
@@ -3509,12 +3988,24 @@ class OptionsService:
             'event_table_time_basis': event_table_time_basis(opts),
             'subcharts_open_compound_default': bool(
                 getattr(opts, 'subcharts_open_compound_default', False)),
+            'multiwheel_open_at_three': bool(
+                getattr(opts, 'multiwheel_open_at_three', False)),
+            'chart_ring_count': chart_ring_count(opts),
+            'chart_ring_zodiac': chart_ring_zodiac(opts),
             'secondary_progression_launch_mode': int(getattr(opts, 'secondary_progression_launch_mode', 0) or 0),
+            'aspectlist_prebirth_secondary_converse': bool(
+                getattr(opts, 'aspectlist_prebirth_secondary_converse', True)),
             'at_reclick_behavior': str(getattr(opts, 'at_reclick_behavior', 'focus_only') or 'focus_only'),
             'progressed_angle_method': posfordate.progression_angle_method(
                 getattr(opts, 'progressed_angle_method', posfordate.TRUE_SOLAR_ARC_LON)),
             'progression_day_type': posfordate.progression_day_type(
                 getattr(opts, 'progression_day_type', posfordate.PROGRESSION_DAY_TYPE_Q2)),
+            'harmonic_chart_mode': harmonic_chart.normalize_projection_mode(
+                getattr(opts, 'harmonic_chart_mode', harmonic_chart.PROJECTION_MODE_HARMONIC)),
+            'varga_drishti_mode': harmonic_chart.normalize_drishti_mode(
+                getattr(opts, 'varga_drishti_mode', harmonic_chart.DEFAULT_DRISHTI_MODE)),
+            'varga_node_special_drishti': bool(
+                getattr(opts, 'varga_node_special_drishti', False)),
         }
 
     def _apply_quick_charts(self, opts, fields: dict) -> tuple[bool, bool]:
@@ -3561,6 +4052,28 @@ class OptionsService:
                 opts.subcharts_open_compound_default = value
                 changed = True
 
+        if 'multiwheel_open_at_three' in fields:
+            value = bool(fields['multiwheel_open_at_three'])
+            if bool(getattr(opts, 'multiwheel_open_at_three', False)) != value:
+                opts.multiwheel_open_at_three = value
+                changed = True
+
+        if 'chart_ring_count' in fields:
+            try:
+                value = int(fields['chart_ring_count'])
+            except (TypeError, ValueError):
+                value = None
+            if value is not None and CHART_RING_COUNT_MIN <= value <= CHART_RING_COUNT_MAX:
+                if chart_ring_count(opts) != value:
+                    opts.chart_ring_count = value
+                    changed = True
+
+        if 'chart_ring_zodiac' in fields:
+            value = str(fields['chart_ring_zodiac'] or '')
+            if value in CHART_RING_ZODIAC_VALUES and chart_ring_zodiac(opts) != value:
+                opts.chart_ring_zodiac = value
+                changed = True
+
         if 'secondary_progression_launch_mode' in fields:
             try:
                 value = int(fields['secondary_progression_launch_mode'])
@@ -3570,6 +4083,12 @@ class OptionsService:
                 value = None
             if value is not None and int(getattr(opts, 'secondary_progression_launch_mode', 0) or 0) != value:
                 opts.secondary_progression_launch_mode = value
+                changed = True
+
+        if 'aspectlist_prebirth_secondary_converse' in fields:
+            value = bool(fields['aspectlist_prebirth_secondary_converse'])
+            if bool(getattr(opts, 'aspectlist_prebirth_secondary_converse', True)) != value:
+                opts.aspectlist_prebirth_secondary_converse = value
                 changed = True
 
         if 'at_reclick_behavior' in fields:
@@ -3595,6 +4114,26 @@ class OptionsService:
                 changed = True
                 calc_changed = True
 
+        if 'harmonic_chart_mode' in fields:
+            value = harmonic_chart.normalize_projection_mode(fields['harmonic_chart_mode'])
+            if harmonic_chart.normalize_projection_mode(
+                    getattr(opts, 'harmonic_chart_mode', harmonic_chart.PROJECTION_MODE_HARMONIC)) != value:
+                opts.harmonic_chart_mode = value
+                changed = True
+
+        if 'varga_drishti_mode' in fields:
+            value = harmonic_chart.normalize_drishti_mode(fields['varga_drishti_mode'])
+            if harmonic_chart.normalize_drishti_mode(
+                    getattr(opts, 'varga_drishti_mode', harmonic_chart.DEFAULT_DRISHTI_MODE)) != value:
+                opts.varga_drishti_mode = value
+                changed = True
+
+        if 'varga_node_special_drishti' in fields:
+            value = bool(fields['varga_node_special_drishti'])
+            if bool(getattr(opts, 'varga_node_special_drishti', False)) != value:
+                opts.varga_node_special_drishti = value
+                changed = True
+
         return changed, calc_changed
 
     def _apply_primary_directions(self, opts, fields: dict) -> bool:
@@ -3604,14 +4143,13 @@ class OptionsService:
         2-vector split across promlof/siglof to match the wx promissor/
         significator placement. sigascmc is kept in sync from sigangles exactly
         as check() does (:1559-1563)."""
-        changed = False
+        changed = self._normalize_pd_in_chart_options(opts)
 
         # -- scalar ints -----------------------------------------------------
         for attr in (
             'primarydir', 'subprimarydir', 'subzodiacal',
-            'pdsecmotioniter', 'pdcircumoa', 'pdrevsunyearmode',
+            'pdsecmotioniter', 'pdcircumoa', 'pdcircumprommode', 'pdrevsunyearmode',
             'pdrevannualmode', 'pdlistmode',
-            'pdincharttyp',
             'pdkeyd', 'pdkeys', 'pdkeydeg', 'pdkeymin', 'pdkeysec',
         ):
             if attr in fields:
@@ -3630,10 +4168,19 @@ class OptionsService:
             'sighouses', 'pdsyzygy', 'pdsigchiron', 'pdsigvertex',
             'pdcustomer2', 'pdcustomer2southern', 'pdsigarabicparts',
             'pdkeydyn', 'pdlistglyphcolors', 'pdrevshownatalpromissors', 'useregressive',
-            'pdinchartsecmotion', 'pdinchartterrsecmotion', 'pdinchartreverse',
+            'pdinchartterrsecmotion', 'pdinchartreverse',
         ):
             if attr in fields:
                 setattr(opts, attr, bool(fields[attr]))
+                changed = True
+
+        if 'pdincharttyp' in fields:
+            projection = _normalize_pd_in_chart_projection(
+                opts,
+                fields['pdincharttyp'],
+            )
+            if getattr(opts, 'pdincharttyp', 0) != projection:
+                opts.pdincharttyp = projection
                 changed = True
 
         if 'pdpromarabicpartname' in fields:
@@ -3779,6 +4326,7 @@ class OptionsService:
             'fixstarsModes': _fixstars_mode_catalog(),
             'phasisModes': _localized(_PHASIS_MODE_CATALOG),
             'cazimiModes': _localized(_CAZIMI_MODE_CATALOG),
+            'solarConditionModes': [dict(item) for item in _SOLAR_CONDITION_MODE_CATALOG],
             'synodicModes': _localized(_SYNODIC_MODE_CATALOG),
             'eventTableTimeModes': _localized(_EVENT_TABLE_TIME_BASIS_CATALOG),
             'themeLayouts': _localized(_THEME_LAYOUT_CATALOG),
@@ -3786,6 +4334,7 @@ class OptionsService:
             'mansionZodiacModes': _localized(_MANSION_ZODIAC_CATALOG),
             'speculumPlacidianCols': _localized(_SPECULUM_PLACIDIAN_COLS),
             'speculumRegiomontanCols': _localized(_SPECULUM_REGIOMONTAN_COLS),
+            'speculumSpeedModes': _localized(_SPECULUM_SPEED_MODE_CATALOG),
             'orbTargets': [
                 {'value': i, 'label': _txt(lbl, lbl)}
                 for i, lbl in enumerate(_ORB_TARGET_CATALOG)
@@ -3805,7 +4354,6 @@ class OptionsService:
             ],
             'symbolUranus': [dict(f) for f in _SYMBOL_URANUS_CATALOG],
             'symbolPluto': [dict(f) for f in _SYMBOL_PLUTO_CATALOG],
-            'symbolSigns': [dict(f) for f in _SYMBOL_SIGNS_CATALOG],
             'defaultLocationFields': _localized(_DEFLOC_FIELD_CATALOG),
             'transcendentalLabels': self._read_transcendental_label_catalog(opts),
             'stepAlertBodies': self._read_step_alert_body_catalog(opts),
@@ -3813,7 +4361,7 @@ class OptionsService:
             'sliders': _slider_catalog(),
             'keypromptStyles': list(_KEYPROMPT_STYLE_CATALOG),
             'dateConventions': [dict(f) for f in _DATE_CONVENTION_CATALOG],
-            'fontProfiles': [dict(f) for f in _FONT_PROFILE_CATALOG],
+            'fontProfiles': _font_profile_catalog(),
             # QuickChartsOptDlg choice catalogs — values/labels verbatim from
             # the wx surface (quickchartsoptdlg.py:17-65; posfordate.py:39-59).
             'progressionAngleMethods': [
@@ -3951,7 +4499,9 @@ class OptionsService:
         for attr in _DISPLAY_BOOL_FIELDS:
             out[attr] = bool(getattr(opts, attr, False))
         for attr in _DISPLAY_INT_FIELDS:
-            out[attr] = int(getattr(opts, attr, 0) or 0)
+            default = _SOLAR_CONDITION_MODE_DEFAULT if attr == 'solarconditionmode' else 0
+            value = getattr(opts, attr, default)
+            out[attr] = int(value if value is not None else default)
         for attr in _DISPLAY_BOOL_VECTOR_FIELDS:
             out[attr] = [bool(v) for v in (getattr(opts, attr, None) or [])]
         for attr in _DISPLAY_INT_SLIDER_FIELDS:
@@ -3966,8 +4516,7 @@ class OptionsService:
                 out[attr] = value if value in _ANGLO_DENSE_LABEL_LAYOUT_VALUES else 'routed-cusps'
             else:
                 out[attr] = str(getattr(opts, attr, '') or '')
-        # fontfamily — coerce through fontprofiles so an unknown stored value
-        # round-trips to the default profile (fontprofiles.coerce_profile).
+        # fontfamily — coerce unknown stored values to the default profile.
         ff = getattr(opts, 'fontfamily', None)
         out['fontfamily'] = _coerce_font_profile(ff)
         return out
@@ -3978,6 +4527,12 @@ class OptionsService:
         return {
             'showAspectsForDerivedPoints': bool(
                 getattr(opts, 'showaspectsforderivedpoints', False)
+            ),
+            'perfectionLinkMode': (
+                str(getattr(opts, 'aspectlist_perfection_link_mode', 'transits'))
+                if str(getattr(opts, 'aspectlist_perfection_link_mode', 'transits'))
+                in ('transits', 'secondary')
+                else 'transits'
             ),
         }
 
@@ -4013,6 +4568,7 @@ class OptionsService:
         labels = {
             'P': 'Placidus', 'K': 'Koch', 'R': 'Regiomontanus', 'C': 'Campanus',
             'E': _txt('Equal', 'Equal'), 'W': _txt('WholeSign', 'Whole Sign'),
+            'F': _txt('FortuneWholeSign', 'Fortune Houses'),
             'X': _txt('AxialRotation', 'Axial Rotation'),
             'Q': _txt('TrueAscendant', 'True Ascendant'), 'M': 'Morinus',
             'H': _txt('Horizon', 'Horizon'), 'T': 'Polich-Page (Topocentric)', 'B': 'Alcabitius',
@@ -4021,7 +4577,14 @@ class OptionsService:
         return {
             'hsys': str(getattr(opts, 'hsys', 'P')),
             'housesystem': bool(getattr(opts, 'housesystem', False)),
-            'available': [{'code': c, 'label': labels.get(c, c)} for c in codes],
+            'available': [
+                {
+                    'code': c,
+                    'label': labels.get(c, c),
+                    **({'labelKey': 'chartmenu.hsFortuneWholeSign'} if c == 'F' else {}),
+                }
+                for c in codes
+            ],
         }
 
     def _read_ayanamsha(self, opts) -> dict:
@@ -4080,14 +4643,31 @@ class OptionsService:
         return out
 
     def _read_symbols(self, opts) -> dict:
-        """Glyph-variant settings (symbolsdlg.SymbolsDlg). uranus/signs are bool,
-        pluto is an int 0..3 (options.py:186-188)."""
+        """Supported Uranus and Pluto glyph variants."""
         out: dict[str, Any] = {}
         for attr in _SYMBOL_BOOL_FIELDS:
             out[attr] = bool(getattr(opts, attr, True))
         for attr in _SYMBOL_INT_FIELDS:
             out[attr] = int(getattr(opts, attr, 0) or 0)
         return out
+
+    @staticmethod
+    def _normalize_symbol_variants(opts) -> bool:
+        """Retire non-Aries signs and the two nonstandard Pluto variants."""
+        changed = False
+        if not bool(getattr(opts, 'signs', True)):
+            opts.signs = True
+            changed = True
+        if int(getattr(opts, 'pluto', 3) or 0) not in (2, 3):
+            opts.pluto = 3
+            changed = True
+        if changed:
+            try:
+                from webapp.frontend.scripts import export_chart_json
+                export_chart_json.common.common.update(opts)
+            except Exception:
+                pass
+        return changed
 
     def _read_lunar_mansions(self, opts) -> dict:
         """Lunar Mansions (manazil) zodiac mode (mansionsdlg.MansionsDlg.fill,
@@ -4123,6 +4703,8 @@ class OptionsService:
             'placidianDodec': bool(dodecat[_SPECULUM_PLACIDIAN]) if len(dodecat) > _SPECULUM_PLACIDIAN else False,
             'regiomontanDodec': bool(dodecat[_SPECULUM_REGIOMONTAN]) if len(dodecat) > _SPECULUM_REGIOMONTAN else False,
             'intime': bool(getattr(opts, 'intime', False)),
+            'speedMode': normalize_speed_display_mode(
+                getattr(opts, 'speculum_speed_mode', SPEED_DISPLAY_DAILY)),
         }
 
     def _read_defloc(self, opts, *, when: Optional[datetime.datetime] = None) -> dict:
@@ -4684,6 +5266,8 @@ class OptionsService:
         rebuilding symbolic relationship charts.
         """
         keys = set(fields.keys())
+        if keys and keys.issubset({'solarconditionmode'}):
+            return 'inspector-data'
         if keys.issubset(_DISPLAY_UI_STYLE_ONLY_FIELDS):
             return 'ui-style'
         if keys.issubset(_DISPLAY_TEXT_ONLY_FIELDS):
@@ -4702,6 +5286,9 @@ class OptionsService:
                 continue
             if group == 'display' and set(fields).issubset(_LIST_NEUTRAL_DISPLAY_FIELDS):
                 continue
+            if group == 'quickCharts' and set(fields).issubset({
+                    'multiwheel_open_at_three', 'chart_ring_count', 'chart_ring_zodiac'}):
+                continue
             # The same stored flag is mirrored through Appearance and
             # Dignities. Showing the terms ring does not alter any list row.
             if group == 'dignities' and set(fields).issubset({'showterms'}):
@@ -4711,8 +5298,29 @@ class OptionsService:
             # houseSystem group rather than the display group.
             if group == 'houseSystem' and set(fields).issubset({'housesystem'}):
                 continue
+            if group == 'speculum' and set(fields).issubset({'speedMode'}):
+                continue
+            if group == 'aspectList' and set(fields).issubset({'perfectionLinkMode'}):
+                continue
+            if group == 'eclipses' and set(fields).issubset({'prenatal_eclipse_mode'}):
+                continue
             return True
         return False
+
+    @staticmethod
+    def _patch_retained_list_target(patch: dict) -> Optional[str]:
+        """Narrow list invalidation when a patch has one known consumer."""
+        if set(patch) == {'display'}:
+            fields = patch.get('display')
+            if (
+                isinstance(fields, dict) and
+                bool(fields) and
+                set(fields).issubset({
+                    'showfixstars', 'aspects', 'aspect', 'traditionalaspects'
+                })
+            ):
+                return 'aspect-list'
+        return None
 
     def set_options(self, patch: dict) -> dict:
         """Apply a partial, grouped update to the live options object, coercing
@@ -4729,11 +5337,19 @@ class OptionsService:
             opts = self.options
             changed = False
             refresh_mode: Optional[str] = None
+            inspector_data_changed = False
 
             def request_refresh(mode: str) -> None:
                 nonlocal refresh_mode
                 # A full chart recompute subsumes a house-only geometry refresh.
-                if mode == 'recalc' or refresh_mode is None or refresh_mode == 'ui-style':
+                # Inspector-only invalidation is the cheapest mode and must
+                # never suppress a chart repaint requested by another group in
+                # the same atomic options patch.
+                if (
+                    mode == 'recalc'
+                    or refresh_mode is None
+                    or refresh_mode in {'ui-style', 'inspector-data'}
+                ):
                     refresh_mode = mode
 
             for group, fields in patch.items():
@@ -4746,7 +5362,21 @@ class OptionsService:
                         request_refresh('display-overlay')
                     self._autosave_group(opts, group, fields, group_changed)
                 elif group == 'display':
+                    previous_solar_condition_mode = getattr(
+                        opts,
+                        'solarconditionmode',
+                        _SOLAR_CONDITION_MODE_DEFAULT,
+                    )
                     group_changed = self._apply_display(opts, fields)
+                    if 'solarconditionmode' in fields:
+                        inspector_data_changed |= (
+                            getattr(
+                                opts,
+                                'solarconditionmode',
+                                _SOLAR_CONDITION_MODE_DEFAULT,
+                            )
+                            != previous_solar_condition_mode
+                        )
                     if group_changed and 'fontfamily' in fields:
                         self._update_active_profile_ui_typeface(opts)
                     changed |= group_changed
@@ -4756,7 +5386,9 @@ class OptionsService:
                 elif group == 'aspectList':
                     group_changed = self._apply_aspect_list(opts, fields)
                     changed |= group_changed
-                    if group_changed:
+                    if group_changed and any(
+                        key != 'perfectionLinkMode' for key in fields
+                    ):
                         request_refresh('retained-data')
                     self._autosave_group(opts, group, fields, group_changed)
                 elif group == 'houseSystem':
@@ -4804,10 +5436,23 @@ class OptionsService:
                         request_refresh('display-overlay')
                     self._autosave_group(opts, group, fields, group_changed)
                 elif group == 'speculum':
+                    previous_speed_mode = normalize_speed_display_mode(
+                        getattr(opts, 'speculum_speed_mode', SPEED_DISPLAY_DAILY))
                     group_changed = self._apply_speculum(opts, fields)
+                    speed_mode_changed = (
+                        'speedMode' in fields
+                        and normalize_speed_display_mode(
+                            getattr(opts, 'speculum_speed_mode', SPEED_DISPLAY_DAILY))
+                        != previous_speed_mode
+                    )
+                    inspector_data_changed |= speed_mode_changed
                     changed |= group_changed
                     if group_changed:
-                        request_refresh('recalc')
+                        request_refresh(
+                            'inspector-data'
+                            if set(fields).issubset({'speedMode'})
+                            else 'recalc'
+                        )
                     self._autosave_group(opts, group, fields, group_changed)
                 elif group == 'defaultLocation':
                     group_changed = self._apply_defloc(opts, fields)
@@ -4822,7 +5467,12 @@ class OptionsService:
                     pd_changed = self._apply_primary_directions(opts, fields)
                     changed |= pd_changed
                     if pd_changed:
-                        if any(key not in _PD_IN_CHART_FIELDS for key in fields):
+                        if set(fields).issubset(_PD_RETAINED_LIST_FIELDS):
+                            # These controls replace only the retained
+                            # circumambulation row world. The visible chart and
+                            # every other retained surface stay untouched.
+                            request_refresh('retained-data')
+                        elif any(key not in _PD_IN_CHART_FIELDS for key in fields):
                             request_refresh('recalc')
                         else:
                             # Projection-only controls rebuild only open PD chart
@@ -4847,6 +5497,13 @@ class OptionsService:
                     changed |= qc_changed
                     if qc_changed and 'event_table_time_basis' in fields:
                         request_refresh('display-text')
+                    if qc_changed and any(key in fields for key in (
+                            'varga_drishti_mode', 'varga_node_special_drishti')):
+                        request_refresh('display-overlay')
+                    if qc_changed and any(key in fields for key in (
+                            'multiwheel_open_at_three', 'chart_ring_count',
+                            'chart_ring_zodiac')):
+                        request_refresh('display-overlay')
                     if qc_calc_changed:
                         # Push the new progression calc values into open
                         # progression bindings BEFORE the recalc fan-out, so the
@@ -4889,18 +5546,27 @@ class OptionsService:
                     ecl_changed = self._apply_eclipses(opts, fields)
                     changed |= ecl_changed
                     if ecl_changed:
-                        request_refresh('recalc')
+                        if set(fields) <= {'prenatal_eclipse_mode'}:
+                            request_refresh('display-overlay')
+                        else:
+                            request_refresh('recalc')
                     self._autosave_group(opts, group, fields, ecl_changed)
                 elif group == 'fixedStars':
-                    fs_changed = self._apply_fixed_stars(opts, fields)
+                    fs_selection_changed, fs_naming_changed = self._apply_fixed_stars(
+                        opts, fields)
+                    fs_changed = fs_selection_changed or fs_naming_changed
                     changed |= fs_changed
-                    if fs_changed:
+                    if fs_selection_changed:
                         # Mirror morin.onFixStarsOpt: rebuild the in-memory
                         # fixstars set on every open chart object BEFORE the
                         # recalc fan-out, since Chart.recalc alone keeps the stale
                         # star set (morin.py:20080; chart.py:616,1883).
                         self._rebuild_fixstars_on_open_charts()
                         request_refresh('recalc')
+                    elif fs_naming_changed:
+                        # Names are payload/render text.  Refresh snapshots and
+                        # retained rows without rebuilding chart semantics.
+                        request_refresh('display-text')
                     self._autosave_group(opts, group, fields, fs_changed)
                 elif group == 'relationshipCharts':
                     rel_changed = self._apply_relationship_charts(opts, fields)
@@ -4929,16 +5595,22 @@ class OptionsService:
                         # daemon's Chart.recalc fan-out subsumes all of them.
                         request_refresh('recalc')
                     self._autosave_group(opts, group, fields, pp_changed)
+            if changed:
+                self._sync_detached_chart_options(patch)
             resolved_refresh_mode = refresh_mode or 'recalc'
             refreshed = (
                 []
-                if resolved_refresh_mode in {'ui-style', 'retained-data'}
+                if resolved_refresh_mode in {
+                    'ui-style', 'retained-data', 'inspector-data',
+                }
                 else self._refresh_all(resolved_refresh_mode) if refresh_mode else []
             )
         result = self.get_options()
         result['refreshedDocumentIds'] = refreshed
         result['refreshMode'] = resolved_refresh_mode if refresh_mode else None
         result['listDataChanged'] = self._patch_affects_list_data(patch)
+        result['retainedListTarget'] = self._patch_retained_list_target(patch)
+        result['inspectorDataChanged'] = inspector_data_changed
         return result
 
     def _update_active_profile_ui_typeface(self, opts) -> bool:
@@ -5139,11 +5811,18 @@ class OptionsService:
         for attr in _DISPLAY_INT_FIELDS:
             if attr in fields:
                 try:
+                    if attr == 'solarconditionmode' and isinstance(fields[attr], bool):
+                        continue
                     value = int(fields[attr])
                     if attr == 'synodicmode' and value not in (0, 1):
                         continue
                     if attr == 'theme' and value not in (0, 1, 2):
                         continue
+                    if attr == 'solarconditionmode':
+                        if value not in _SOLAR_CONDITION_MODE_VALUES:
+                            continue
+                        if int(getattr(opts, attr, _SOLAR_CONDITION_MODE_DEFAULT)) == value:
+                            continue
                     setattr(opts, attr, value)
                     changed = True
                 except (TypeError, ValueError):
@@ -5201,13 +5880,19 @@ class OptionsService:
 
     @staticmethod
     def _apply_aspect_list(opts, fields: dict) -> bool:
-        if 'showAspectsForDerivedPoints' not in fields:
-            return False
-        value = bool(fields['showAspectsForDerivedPoints'])
-        if bool(getattr(opts, 'showaspectsforderivedpoints', False)) == value:
-            return False
-        opts.showaspectsforderivedpoints = value
-        return True
+        changed = False
+        if 'showAspectsForDerivedPoints' in fields:
+            value = bool(fields['showAspectsForDerivedPoints'])
+            if bool(getattr(opts, 'showaspectsforderivedpoints', False)) != value:
+                opts.showaspectsforderivedpoints = value
+                changed = True
+        if 'perfectionLinkMode' in fields:
+            value = str(fields['perfectionLinkMode'])
+            if value in ('transits', 'secondary') and str(getattr(
+                    opts, 'aspectlist_perfection_link_mode', 'transits')) != value:
+                opts.aspectlist_perfection_link_mode = value
+                changed = True
+        return changed
 
     def _apply_export(self, opts, fields: dict) -> bool:
         changed = False
@@ -5252,14 +5937,13 @@ class OptionsService:
             code = str(fields['hsys'])
             if code in houses.Houses.hsystems:
                 opts.hsys = code
-                # Mirror onHouseSystem side-effects (morin.py:19819/19837/19840).
-                if code == 'N':
-                    opts.housesystem = False
-                else:
-                    if not bool(getattr(opts, 'houses', False)):
-                        opts.houses = True
-                    if code == 'W':
-                        opts.housesystem = True
+                # The label overlay is an independent display preference.
+                # Choosing Angles only used to disable it, leaving later house
+                # systems unlabeled; Whole Sign likewise forced it on.  A
+                # system selection may restore house geometry, but must not
+                # rewrite the user's overlay toggle.
+                if code != 'N' and not bool(getattr(opts, 'houses', False)):
+                    opts.houses = True
                 changed = True
             else:
                 raise ValueError(f'unknown house system code: {code!r}')
@@ -5372,8 +6056,8 @@ class OptionsService:
         (the Uranus/Pluto glyph chars come from there — common.py:388-393). The
         chart snapshot only re-runs ``update`` at process init
         (export_chart_json.py:139), so a runtime variant change would not take
-        effect on re-render unless we resync here. ``pluto`` is clamped to the
-        0..3 range the dialog offers (symbolsdlg.py:212-219)."""
+        effect on re-render unless we resync here. Pluto accepts only the
+        supported standard choices 2/3."""
         changed = False
         for attr in _SYMBOL_BOOL_FIELDS:
             if attr in fields:
@@ -5385,8 +6069,8 @@ class OptionsService:
                     val = int(fields[attr])
                 except (TypeError, ValueError):
                     continue
-                if attr == 'pluto':
-                    val = max(0, min(3, val))
+                if attr == 'pluto' and val not in (2, 3):
+                    continue
                 setattr(opts, attr, val)
                 changed = True
         if changed:
@@ -5462,6 +6146,15 @@ class OptionsService:
             new = bool(fields['intime'])
             if bool(getattr(opts, 'intime', False)) != new:
                 opts.intime = new
+                changed = True
+        if 'speedMode' in fields:
+            new = str(fields['speedMode'])
+            if (
+                new in SPEED_DISPLAY_MODES
+                and normalize_speed_display_mode(
+                    getattr(opts, 'speculum_speed_mode', SPEED_DISPLAY_DAILY)) != new
+            ):
+                opts.speculum_speed_mode = new
                 changed = True
         return changed
 
@@ -5564,6 +6257,38 @@ class OptionsService:
 
     # -- THEME -------------------------------------------------------------
 
+    def _write_profile_palette_to_options(self, opts, profile: dict, name: str) -> bool:
+        """Write an activated style theme's colours into the saved options.
+
+        A style theme and a built-in preset share one selector, so they must
+        leave the app in comparable states. Only the preset branch used to
+        write Settings, so a style theme's palette was applied at render time
+        while Settings kept whatever the last preset had written.
+
+        The colours are resolved through the profile's own base preset, not
+        from the live options. Resolving against the live options made a theme
+        relative to whatever was selected before it: choosing Sirius and then
+        Noisy2 wrote Sirius's colours back out under Noisy2's name, because a
+        theme storing few explicit chart tokens inherits the rest from
+        whatever is already there. A theme has to mean the same thing however
+        you arrived at it.
+
+        Only the colour layer is written. The CSS and geometry layer has no
+        representation in Settings and stays in the profile, which is what
+        lets one theme carry both.
+        """
+        try:
+            effective = _effective_style_chart_options(opts, profile)
+        except Exception:
+            return False
+        if effective is None:
+            return False
+        values = _capture_palette_state(effective)
+        values.pop('follow_os_theme', None)
+        if not values:
+            return False
+        return _apply_palette_values(opts, name, values)
+
     def apply_theme_preset(self, name: str) -> dict:
         """Apply a complete built-in or saved theme, then redraw charts."""
         profile_id = _style_profile_id_from_theme_name(name)
@@ -5578,10 +6303,12 @@ class OptionsService:
                 profile = store.profile(profile_id)
                 self._validate_style_profile_base(profile)
                 store.activate(profile_id)
+                palette_changed = self._write_profile_palette_to_options(opts, profile, name)
             elif name in BUILTIN_STYLE_PRESET_NAMES:
                 profile = self._style_lab_theme_profile(name)
                 self._validate_style_profile_base(profile)
                 store.upsert(profile, activate=True)
+                palette_changed = self._write_profile_palette_to_options(opts, profile, name)
             else:
                 try:
                     profile = store.profile(_style_lab_system_profile_id(name))
@@ -5600,7 +6327,7 @@ class OptionsService:
                     )
                     if name != _SYSTEM_AUTO_NAME and palette_changed:
                         _maybe_update_custom_palette(opts)
-                    self._autosave_group(opts, 'colors', {}, palette_changed)
+            self._autosave_group(opts, 'colors', {}, palette_changed)
             after_profile = store.active_profile()
             changed = (
                 palette_changed
@@ -5732,6 +6459,7 @@ class OptionsService:
         result['refreshedDocumentIds'] = refreshed
         result['refreshMode'] = refresh_mode
         result['listDataChanged'] = True
+        result['retainedListTarget'] = 'aspect-list'
         return result
 
     def toggle_houses(self) -> dict:
@@ -5777,6 +6505,7 @@ class OptionsService:
         result['refreshedDocumentIds'] = refreshed
         result['refreshMode'] = refresh_mode
         result['listDataChanged'] = True
+        result['retainedListTarget'] = 'aspect-list'
         return result
 
     def toggle_minor_aspects(self) -> dict:
@@ -5829,6 +6558,7 @@ class OptionsService:
         result['refreshedDocumentIds'] = refreshed
         result['refreshMode'] = refresh_mode if changed else None
         result['listDataChanged'] = changed
+        result['retainedListTarget'] = 'aspect-list'
         return result
 
     # -- RE-RENDER ---------------------------------------------------------

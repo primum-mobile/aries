@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 """Daemon-side Square Chart (medieval square diagram) data.
 
 Canonical brain: ``squarechart.SquareChart`` (the wx-fused renderer the desktop
@@ -57,7 +62,7 @@ from webapp.frontend.scripts import export_chart_json
 # (squarechart.py:63). Lifted inline (the wx module is not importable here).
 _HSYSTEM = {
     'P': 'Placidus', 'K': 'Koch', 'R': 'Regiomontanus', 'C': 'Campanus',
-    'E': 'Equal', 'W': 'Whole Sign', 'X': 'Axial', 'Q': 'True Ascendant', 'M': 'Morinus',
+    'E': 'Equal', 'W': 'Whole Sign', 'F': 'Fortune Houses', 'X': 'Axial', 'Q': 'True Ascendant', 'M': 'Morinus',
     'H': 'Horizontal', 'T': 'Page/Polich', 'B': 'Alcabitus',
     'O': 'Porphyrius', 'N': 'Angles only',
 }

@@ -13,6 +13,7 @@ import chart
 import geonames
 from engine import chart_factory
 from engine import converse_transits
+from engine import harmonic_chart
 from engine import moment
 import planets
 import posfordate
@@ -198,6 +199,37 @@ def _chart_time_context_payload(time_obj):
 		'daylight': bool(getattr(time_obj, 'daylightsaving', False)),
 		'tzid': str(getattr(time_obj, 'tzid', '') or ''),
 		'tzauto': bool(getattr(time_obj, 'tzauto', False)),
+	}
+
+
+def _return_clock_context(base_chart, place, retained):
+	"""Resolve the selected return place's persisted civil clock."""
+	state = dict(retained or {})
+	base_time = getattr(base_chart, 'time', None)
+	tzid = str(state.get('tzid') or '')
+	if not tzid and place is not None:
+		try:
+			tzid = str(geonames.Geonames.get_timezone_name(place.lon, place.lat) or '')
+		except Exception:
+			tzid = ''
+	base_place = getattr(base_chart, 'place', None)
+	if not tzid and place is not None and base_place is not None:
+		try:
+			same_place = (
+				abs(float(place.lon) - float(base_place.lon)) < 1e-7
+				and abs(float(place.lat) - float(base_place.lat)) < 1e-7
+			)
+		except (AttributeError, TypeError, ValueError):
+			same_place = False
+		if same_place:
+			tzid = str(getattr(base_time, 'tzid', '') or '')
+	return {
+		'plus': bool(state.get('plus', getattr(base_time, 'plus', True))),
+		'zh': int(state.get('zh', getattr(base_time, 'zh', 0) or 0) or 0),
+		'zm': int(state.get('zm', getattr(base_time, 'zm', 0) or 0) or 0),
+		'daylight': bool(state.get('daylight', getattr(base_time, 'daylightsaving', False))),
+		'tzid': tzid,
+		'tzauto': bool(state.get('tzauto', bool(tzid))),
 	}
 
 
@@ -501,8 +533,63 @@ class LegacySupplementaryAdapter(BaseSupplementaryAdapter):
 		return SupplementaryBuildResult(chart_obj, display_dt, binding)
 
 
+class HarmonicSupplementaryAdapter(BaseSupplementaryAdapter):
+	"""One retained document for Western harmonics or Parashari Vargas."""
+	feature_kinds = ('harmonic',)
+
+	def build(self, frame, driver_state, binding, current_chart=None, session=None):
+		retained = dict(binding.retained_state or {})
+		default_mode = harmonic_chart.normalize_projection_mode(
+			getattr(frame.options, 'harmonic_chart_mode', harmonic_chart.PROJECTION_MODE_HARMONIC)
+		)
+		projection_mode = harmonic_chart.normalize_projection_mode(
+			retained.get('projection_mode'), default=default_mode
+		)
+		retained['projection_mode'] = projection_mode
+		if projection_mode == harmonic_chart.PROJECTION_MODE_VARGA:
+			division_number = harmonic_chart.normalize_varga_number(
+				retained.get('varga_number', harmonic_chart.DEFAULT_VARGA)
+			)
+			retained['varga_number'] = division_number
+		else:
+			division_number = harmonic_chart.normalize_harmonic_number(
+				retained.get('harmonic_number', harmonic_chart.DEFAULT_HARMONIC)
+			)
+			retained['harmonic_number'] = division_number
+		binding.retained_state = retained
+		# The projection changes radix longitudes, never its event time.  Keep
+		# the chart identity anchored to the radix birth data even when launched
+		# from a transit/current-date document.
+		source_time = getattr(driver_state.base_chart, 'time', None)
+		try:
+			display_dt = (
+				int(getattr(source_time, 'origyear', None) or getattr(source_time, 'year')),
+				int(getattr(source_time, 'origmonth', None) or getattr(source_time, 'month')),
+				int(getattr(source_time, 'origday', None) or getattr(source_time, 'day')),
+				int(getattr(source_time, 'hour')),
+				int(getattr(source_time, 'minute')),
+				int(getattr(source_time, 'second')),
+			)
+		except (AttributeError, TypeError, ValueError):
+			display_dt = None
+		chart_obj = (
+			harmonic_chart.build_varga_chart(driver_state.base_chart, division_number)
+			if projection_mode == harmonic_chart.PROJECTION_MODE_VARGA
+			else harmonic_chart.build_harmonic_chart(driver_state.base_chart, division_number)
+		)
+		return SupplementaryBuildResult(
+			chart_obj,
+			display_dt,
+			binding,
+		)
+
+
 class SecondarySupplementaryAdapter(BaseSupplementaryAdapter):
 	feature_kinds = ('secondary', 'minor', 'tertiary')
+
+	@staticmethod
+	def _direction(retained):
+		return 'converse' if (retained or {}).get('progression_direction') == 'converse' else 'direct'
 
 	def _method_for_feature_kind(self, feature_kind):
 		return progression_method_for_feature_kind(feature_kind)
@@ -547,6 +634,7 @@ class SecondarySupplementaryAdapter(BaseSupplementaryAdapter):
 				state['day_type'] = frame._progression_day_type_for_chart(current_chart)
 			else:
 				state['day_type'] = self._default_day_type(frame)
+		state['progression_direction'] = self._direction(state)
 		return state
 
 	def symbolic_age_for_display_datetime(self, frame, base_chart, display_datetime, retained=None, feature_kind=None):
@@ -554,12 +642,13 @@ class SecondarySupplementaryAdapter(BaseSupplementaryAdapter):
 			return None
 		resolved_feature_kind = feature_kind or self.feature_kinds[0]
 		state = self.normalize_retained_state(frame, retained, feature_kind=resolved_feature_kind)
-		return symbolic_time.symbolic_age_for_real_datetime(
+		age = symbolic_time.symbolic_age_for_real_datetime(
 			base_chart,
 			display_datetime,
 			method=self._method_for_feature_kind(resolved_feature_kind),
 			day_type=state.get('day_type', self._default_day_type(frame)),
 		)
+		return -age if self._direction(state) == 'converse' else age
 
 	def capture_binding(self, frame, session=None, current_chart=None, feature_kind=None):
 		binding = BaseSupplementaryAdapter.capture_binding(self, frame, session=session, current_chart=current_chart, feature_kind=feature_kind)
@@ -589,6 +678,8 @@ class SecondarySupplementaryAdapter(BaseSupplementaryAdapter):
 			method=method,
 			day_type=day_type,
 		)
+		if self._direction(retained) == 'converse':
+			age = -age
 		_age_int, _age_years, _progressed_tuple, progression_chart = posfordate.make_progressed_chart_by_symbolic_age(
 			driver_state.base_chart,
 			frame.options,
@@ -723,10 +814,13 @@ class SolarReturnSupplementaryAdapter(BaseSupplementaryAdapter):
 		target_source_dt = driver_state.source_datetime
 		retained = dict(binding.retained_state or {})
 		place = payload_to_place(retained.get('place_payload'), fallback=(getattr(current_chart, 'place', None) if current_chart is not None else base_chart.place))
-		plus = bool(retained.get('plus', True))
-		zh = int(retained.get('zh', getattr(base_chart.time, 'zh', 0) or 0))
-		zm = int(retained.get('zm', getattr(base_chart.time, 'zm', 0) or 0))
-		daylight = bool(retained.get('daylight', getattr(base_chart.time, 'daylightsaving', False)))
+		clock = _return_clock_context(base_chart, place, retained)
+		plus = clock['plus']
+		zh = clock['zh']
+		zm = clock['zm']
+		daylight = clock['daylight']
+		tzid = clock['tzid']
+		tzauto = clock['tzauto']
 		year_offset = int(retained.get('solar_year_offset', 0) or 0)
 		degree_offset = int(retained.get('solar_degree_offset', 0) or 0)
 		year_mode = retained.get('solar_year_mode') or retained.get('year_mode') or 'configured'
@@ -779,6 +873,8 @@ class SolarReturnSupplementaryAdapter(BaseSupplementaryAdapter):
 			zh=zh,
 			zm=zm,
 			daylight=daylight,
+			tzid=tzid,
+			tzauto=tzauto,
 			degree_offset=degree_offset,
 		)
 		if revolution is None or display_dt is None:
@@ -800,13 +896,14 @@ class SolarReturnSupplementaryAdapter(BaseSupplementaryAdapter):
 				t1, t2, t3, t4, t5, t6,
 				False, base_chart.time.cal, chart.Time.GREENWICH,
 				plus, 0, 0, False, place, False,
+				tzid=tzid, tzauto=tzauto,
 			)
 			revolution = chart_factory.build_chart(
 				base_chart.name, base_chart.male, time_obj, place,
 				chart.Chart.SOLAR, '', frame.options, False,
 			)
 			display_dt = frame._revolution_display_datetime(
-				base_chart, t1, t2, t3, t4, t5, t6,
+				revolution, t1, t2, t3, t4, t5, t6,
 				plus=plus, zh=zh, zm=zm, daylight=daylight,
 			)
 			retained['tithi_pravesha_solar_datetime'] = (
@@ -823,6 +920,8 @@ class SolarReturnSupplementaryAdapter(BaseSupplementaryAdapter):
 			'zh': zh,
 			'zm': zm,
 			'daylight': daylight,
+			'tzid': tzid,
+			'tzauto': tzauto,
 			'solar_year_offset': year_offset,
 			'solar_degree_offset': degree_offset,
 			'solar_year_mode': year_mode,
@@ -896,10 +995,13 @@ class LunarReturnSupplementaryAdapter(BaseSupplementaryAdapter):
 		radix_chart = runtime_radix if runtime_radix is not None else calc_chart
 		retained = dict(binding.retained_state or {})
 		place = payload_to_place(retained.get('place_payload'), fallback=base_chart.place)
-		plus = bool(retained.get('plus', getattr(base_chart.time, 'plus', True)))
-		zh = int(retained.get('zh', getattr(base_chart.time, 'zh', 0) or 0))
-		zm = int(retained.get('zm', getattr(base_chart.time, 'zm', 0) or 0))
-		daylight = bool(retained.get('daylight', getattr(base_chart.time, 'daylightsaving', False)))
+		clock = _return_clock_context(base_chart, place, retained)
+		plus = clock['plus']
+		zh = clock['zh']
+		zm = clock['zm']
+		daylight = clock['daylight']
+		tzid = clock['tzid']
+		tzauto = clock['tzauto']
 		cycle_offset = int(retained.get('lunar_cycle_offset', 0) or 0)
 		# Per-document Marr sidereal flag (binding-scoped, no global write).
 		marr = resolve_marr_retained(frame.options, retained, 'lunar_return')
@@ -1011,9 +1113,13 @@ class LunarReturnSupplementaryAdapter(BaseSupplementaryAdapter):
 					anchor_dt = datetime.datetime(*tuple(int(v) for v in event.datetime[:6]))
 			t1, t2, t3, t4, t5, t6 = event.datetime
 		raw_dt = tuple(int(v) for v in (t1, t2, t3, t4, t5, t6))
-		time_obj = chart.Time(t1, t2, t3, t4, t5, t6, False, base_chart.time.cal, chart.Time.GREENWICH, plus, 0, 0, False, place, False)
+		time_obj = chart.Time(
+			t1, t2, t3, t4, t5, t6, False, base_chart.time.cal,
+			chart.Time.GREENWICH, plus, 0, 0, False, place, False,
+			tzid=tzid, tzauto=tzauto,
+		)
 		revolution = chart_factory.build_chart(radix_chart.name, radix_chart.male, time_obj, place, chart.Chart.LUNAR, '', frame.options, False)
-		display_dt = frame._revolution_display_datetime(base_chart, t1, t2, t3, t4, t5, t6, plus=plus, zh=zh, zm=zm, daylight=daylight)
+		display_dt = frame._revolution_display_datetime(revolution, t1, t2, t3, t4, t5, t6, plus=plus, zh=zh, zm=zm, daylight=daylight)
 		retained.pop('jonas_arc_anchor_branch', None)
 		if return_mode == solilunar.RETURN_MODE_JONAS_ARC and event is not None:
 			retained['jonas_arc_branch'] = getattr(event, 'branch', solilunar.RETURN_BRANCH_ANY)
@@ -1027,6 +1133,8 @@ class LunarReturnSupplementaryAdapter(BaseSupplementaryAdapter):
 			'zh': zh,
 			'zm': zm,
 			'daylight': daylight,
+			'tzid': tzid,
+			'tzauto': tzauto,
 			'lunar_cycle_offset': cycle_offset,
 			'lunar_return_mode': return_mode,
 			'marr_sidereal': bool(marr),
@@ -1164,18 +1272,25 @@ class PlanetaryReturnSupplementaryAdapter(BaseSupplementaryAdapter):
 			t1, t2, t3, t4, t5, t6 = revs.t[0], revs.t[1], revs.t[2], revs.t[3], revs.t[4], revs.t[5]
 			raw_dt = tuple(int(v) for v in (t1, t2, t3, t4, t5, t6))
 		place = payload_to_place(retained.get('place_payload'), fallback=(getattr(current_chart, 'place', None) if current_chart is not None else getattr(base_chart, 'place', None)))
-		plus = bool(retained.get('plus', True))
-		zh = int(retained.get('zh', getattr(base_chart.time, 'zh', 0) or 0))
-		zm = int(retained.get('zm', getattr(base_chart.time, 'zm', 0) or 0))
-		daylight = bool(retained.get('daylight', getattr(base_chart.time, 'daylightsaving', False)))
+		clock = _return_clock_context(base_chart, place, retained)
+		plus = clock['plus']
+		zh = clock['zh']
+		zm = clock['zm']
+		daylight = clock['daylight']
+		tzid = clock['tzid']
+		tzauto = clock['tzauto']
 		if synodic_dt is None and getattr(frame.options, 'ayanamsha', 0) != 0:
 			try:
 				t1, t2, t3, t4, t5, t6 = frame.calcPrecNutCorrectedRevolution(revs, pid, topo_place=place, seed=(t1, t2, t3, t4, t5, t6))
 			except Exception:
 				pass
-		time_obj = chart.Time(t1, t2, t3, t4, t5, t6, False, base_chart.time.cal, chart.Time.GREENWICH, plus, 0, 0, False, place, False)
+		time_obj = chart.Time(
+			t1, t2, t3, t4, t5, t6, False, base_chart.time.cal,
+			chart.Time.GREENWICH, plus, 0, 0, False, place, False,
+			tzid=tzid, tzauto=tzauto,
+		)
 		revolution = chart_factory.build_chart(base_chart.name, base_chart.male, time_obj, place, chart.Chart.REVOLUTION, '', frame.options, False)
-		display_dt = frame._revolution_display_datetime(base_chart, t1, t2, t3, t4, t5, t6, plus=plus, zh=zh, zm=zm, daylight=daylight)
+		display_dt = frame._revolution_display_datetime(revolution, t1, t2, t3, t4, t5, t6, plus=plus, zh=zh, zm=zm, daylight=daylight)
 		retained.update({
 			'planet_type': planet_type,
 			'place_payload': place_to_payload(place),
@@ -1183,6 +1298,8 @@ class PlanetaryReturnSupplementaryAdapter(BaseSupplementaryAdapter):
 			'zh': zh,
 			'zm': zm,
 			'daylight': daylight,
+			'tzid': tzid,
+			'tzauto': tzauto,
 			'cycle_offset': cycle_offset,
 			'marr_sidereal': bool(marr),
 			'raw_return_datetime': raw_dt,
@@ -1541,6 +1658,7 @@ class SupplementaryAdapterRegistry(object):
 		transits = TransitSupplementaryAdapter()
 		converse_transits = ConverseTransitSupplementaryAdapter()
 		planetary_return = PlanetaryReturnSupplementaryAdapter()
+		harmonic = HarmonicSupplementaryAdapter()
 		self._adapters = {
 			'secondary': secondary,
 			'solar_arc': solar_arc,
@@ -1556,6 +1674,7 @@ class SupplementaryAdapterRegistry(object):
 			'profections': profections,
 			'transits': transits,
 			'converse_transits': converse_transits,
+			'harmonic': harmonic,
 		}
 
 	def adapter_for_feature_kind(self, feature_kind):

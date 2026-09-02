@@ -16,35 +16,25 @@ if str(REPO_ROOT) not in sys.path:
 
 
 class TableExportService:
-    """Daemon-owned rendered-table/list/pane export backend.
+    """Daemon-owned selectable table/list/pane PDF backend.
 
-    Source oracle: commonwnd.py:163-179 (the shared SaveAsBitmap menu item),
-    exportutil.save_bitmap_or_pdf, pdfexport.export_table_document (the wx
-    Platypus LongTable table-PDF renderer). The wx app exports the visible
-    table/list as a rendered PDF; the webapp already holds the identical
-    structured table truth (GenericTablePayload columns + rows, built by the
-    daemon table builders), so we render exactly that payload to PDF.
-
-    PDF rendering runs in an isolated helper subprocess: pdfexport imports wx at
-    module scope, so keeping it out of the serving daemon avoids wx/AppKit
-    process crashes. The Tauri shell owns native destination paths; browser
-    fallback receives bytes from a daemon temporary file and downloads them as a
-    Blob.
+    The frontend supplies a structured PDF document that preserves the mounted
+    table's hierarchy and glyph runs. Clipboard/TXT never pass through this
+    service. Rendering stays in an isolated subprocess so a long document can
+    paginate without blocking the serving daemon.
     """
     def export_table(
         self,
         *,
         path: str,
         title: str,
-        columns: list[dict[str, Any]],
-        rows: list[list[Any]],
-        header_lines: list[str] | None = None,
+        document: dict[str, Any],
     ) -> dict[str, Any]:
         raw_path = str(path or "").strip()
         if not raw_path:
             raise ValueError("no export path selected")
-        if not columns:
-            raise ValueError("cannot export a table with no columns")
+        if not document:
+            raise ValueError("cannot export an empty table")
         destination = Path(raw_path).expanduser()
         if destination.suffix.lower() != ".pdf":
             destination = destination.with_suffix(".pdf")
@@ -53,9 +43,7 @@ class TableExportService:
         payload = {
             "path": str(destination),
             "title": str(title or "Table"),
-            "header_lines": [str(line) for line in (header_lines or []) if line],
-            "columns": columns,
-            "rows": rows,
+            "document": document,
         }
         with tempfile.NamedTemporaryFile(
             prefix="aries-table-export-", suffix=".json", delete=False, mode="w", encoding="utf-8"
@@ -103,10 +91,8 @@ class TableExportService:
         self,
         *,
         title: str,
-        columns: list[dict[str, Any]],
-        rows: list[list[Any]],
-        header_lines: list[str] | None = None,
         filename: str | None = None,
+        document: dict[str, Any],
     ) -> dict[str, Any]:
         """Render a table PDF to bytes for browser downloads."""
         with tempfile.TemporaryDirectory(prefix="aries-table-export-") as dirname:
@@ -114,9 +100,7 @@ class TableExportService:
             summary = self.export_table(
                 path=str(temp_path),
                 title=title,
-                columns=columns,
-                rows=rows,
-                header_lines=header_lines,
+                document=document,
             )
             data = Path(str(summary["path"])).read_bytes()
         return {

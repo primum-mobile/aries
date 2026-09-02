@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 import datetime
+import os
 import re
+import tempfile
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +42,9 @@ class ChartPickerService:
         "Modified",
         "Last Opened",
     ]
+
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
 
     def rows(self) -> dict[str, Any]:
         rows, _infos = self._rows_and_infos()
@@ -210,6 +216,241 @@ class ChartPickerService:
             else:
                 path.unlink(missing_ok=True)
         return {"ok": True, "deleted": deleted, "rows": self.rows()["rows"]}
+
+    def move(self, selections: list[dict[str, Any]], destination: str) -> dict[str, Any]:
+        """Move selected records between collections without changing identity.
+
+        The destination is atomically replaced before any source collection is
+        changed. A write failure can therefore leave a duplicate, but can never
+        lose the only copy of a selected chart.
+        """
+
+        with self._lock:
+            destination_path = self._safe_collection_path(destination)
+            records_by_path: dict[Path, list[dict[str, Any]]] = {}
+            selected: list[tuple[Path, int, dict[str, Any]]] = []
+            seen: set[tuple[Path, int]] = set()
+
+            for selection in selections:
+                source = str(selection.get("source", "") or "")
+                try:
+                    record_index = int(selection.get("recordIndex"))
+                except (TypeError, ValueError) as exc:
+                    raise ValueError("invalid chart record selection") from exc
+                source_path = self._safe_collection_path(source)
+                selection_key = (source_path, record_index)
+                if selection_key in seen:
+                    continue
+                seen.add(selection_key)
+                source_records = records_by_path.get(source_path)
+                if source_records is None:
+                    source_records = chartfile.read_jsonl(str(source_path))
+                    records_by_path[source_path] = source_records
+                if not 0 <= record_index < len(source_records):
+                    raise ValueError("record index out of range")
+                if source_path != destination_path:
+                    selected.append((source_path, record_index, source_records[record_index]))
+
+            if not seen:
+                raise ValueError("no movable chart records selected")
+            if not selected:
+                return {"ok": True, "moved": 0, "rows": self.rows()["rows"], "_moves": []}
+
+            destination_records = list(
+                records_by_path.get(destination_path)
+                or chartfile.read_jsonl(str(destination_path))
+            )
+            destination_id_indices = {
+                str(record.get("id", "") or ""): index
+                for index, record in enumerate(destination_records)
+                if str(record.get("id", "") or "")
+            }
+            source_indices: dict[Path, set[int]] = {}
+            moves: list[dict[str, Any]] = []
+            for source_path, record_index, record in selected:
+                source_indices.setdefault(source_path, set()).add(record_index)
+                record_id = str(record.get("id", "") or "")
+                existing_index = destination_id_indices.get(record_id) if record_id else None
+                if existing_index is None:
+                    destination_records.append(record)
+                    if record_id:
+                        destination_id_indices[record_id] = len(destination_records) - 1
+                else:
+                    destination_records[existing_index] = record
+                moves.append(
+                    {
+                        "source": str(source_path),
+                        "destination": str(destination_path),
+                        "chartId": record_id,
+                        "name": str(record.get("name", "") or ""),
+                        "date": str(record.get("date", "") or ""),
+                        "time": str(record.get("time", "") or ""),
+                        "place": str(record.get("place", "") or ""),
+                    }
+                )
+
+            self._write_collection_atomic(destination_path, destination_records)
+            for source_path, indices in source_indices.items():
+                remaining = [
+                    record
+                    for index, record in enumerate(records_by_path[source_path])
+                    if index not in indices
+                ]
+                self._write_collection_atomic(source_path, remaining)
+                for move in moves:
+                    if move["source"] == str(source_path):
+                        move["sourceRemainingCount"] = len(remaining)
+
+            return {
+                "ok": True,
+                "moved": len(moves),
+                "rows": self.rows()["rows"],
+                "_moves": moves,
+            }
+
+    def move_to_new_collection(
+        self,
+        selections: list[dict[str, Any]],
+        name: str,
+    ) -> dict[str, Any]:
+        """Create a collection and move the selected records into it."""
+
+        with self._lock:
+            destination_path = self._new_collection_path(name)
+            self._write_collection_atomic(destination_path, [])
+            try:
+                result = self.move(selections, str(destination_path))
+            except Exception:
+                try:
+                    if destination_path.exists() and not chartfile.read_jsonl(
+                        str(destination_path)
+                    ):
+                        destination_path.unlink()
+                except Exception:
+                    pass
+                raise
+            result["collection"] = self._collection_payload(destination_path)
+            return result
+
+    def create_collection(self, name: str) -> dict[str, Any]:
+        """Create an empty named collection for picker-side management."""
+
+        with self._lock:
+            path = self._new_collection_path(name)
+            self._write_collection_atomic(path, [])
+            return {
+                "ok": True,
+                "collection": self._collection_payload(path),
+                "rows": self.rows()["rows"],
+            }
+
+    def rename_collection(self, *, source: str, name: str) -> dict[str, Any]:
+        """Rename a non-default collection while preserving every chart id."""
+
+        with self._lock:
+            source_path = self._safe_collection_path(source)
+            default_path = Path(export_chart_json.DEFAULT_SOURCE).expanduser().resolve()
+            renaming_default = source_path == default_path
+
+            destination_path = self._new_collection_path(name, current=source_path)
+            if destination_path == source_path:
+                return {
+                    "ok": True,
+                    "source": str(source_path),
+                    "destination": str(source_path),
+                    "collection": self._collection_payload(source_path),
+                    "rows": self.rows()["rows"],
+                    "_moves": [],
+                }
+
+            records = chartfile.read_jsonl(str(source_path))
+            os.replace(source_path, destination_path)
+            if renaming_default:
+                # Aries always keeps a canonical save target. Renaming the
+                # default extracts its charts into the requested collection
+                # and leaves a valid empty default slot instead of allowing the
+                # factory seed to be recreated implicitly on the next listing.
+                self._write_collection_atomic(source_path, [])
+            moves = [
+                {
+                    "source": str(source_path),
+                    "destination": str(destination_path),
+                    "chartId": str(record.get("id", "") or ""),
+                    "name": str(record.get("name", "") or ""),
+                    "date": str(record.get("date", "") or ""),
+                    "time": str(record.get("time", "") or ""),
+                    "place": str(record.get("place", "") or ""),
+                    "sourceRemainingCount": 0,
+                }
+                for record in records
+            ]
+            return {
+                "ok": True,
+                "source": str(source_path),
+                "destination": str(destination_path),
+                "collection": self._collection_payload(destination_path),
+                "rows": self.rows()["rows"],
+                "_moves": moves,
+            }
+
+    def _new_collection_path(self, name: str, *, current: Path | None = None) -> Path:
+        clean_name = str(name or "").strip()
+        if clean_name.lower().endswith(".jsonl"):
+            clean_name = clean_name[:-6].rstrip()
+        if not clean_name:
+            raise ValueError("collection name is required")
+        if clean_name in {".", ".."} or clean_name.startswith("."):
+            raise ValueError("collection name is invalid")
+        if re.search(r"[/\\:\x00-\x1f]", clean_name):
+            raise ValueError("collection name contains unsupported characters")
+
+        hors_dir = self._hors_dir().resolve()
+        candidate = hors_dir / f"{clean_name}.jsonl"
+        current_path = current.resolve() if current is not None else None
+        for existing in hors_dir.glob("*.jsonl") if hors_dir.exists() else ():
+            if existing.name.casefold() != candidate.name.casefold():
+                continue
+            if current_path is not None and existing.resolve() == current_path:
+                break
+            raise ValueError("a chart collection with that name already exists")
+        if candidate.exists() and (
+            current_path is None or candidate.resolve() != current_path
+        ):
+            raise ValueError("a chart collection with that name already exists")
+        return candidate
+
+    @staticmethod
+    def _collection_payload(path: Path) -> dict[str, Any]:
+        try:
+            count = len(chartfile.read_jsonl_summaries(str(path)))
+        except Exception:
+            count = 0
+        default = Path(export_chart_json.DEFAULT_SOURCE).expanduser().resolve()
+        return {
+            "path": str(path),
+            "name": path.stem,
+            "count": count,
+            "isDefault": path.resolve() == default,
+        }
+
+    @staticmethod
+    def _write_collection_atomic(path: Path, records: list[dict[str, Any]]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                prefix=f".{path.name}.",
+                suffix=".tmp",
+                dir=str(path.parent),
+                delete=False,
+            ) as temp_file:
+                temp_path = Path(temp_file.name)
+            chartfile.write_jsonl(records, str(temp_path))
+            os.replace(temp_path, path)
+            temp_path = None
+        finally:
+            if temp_path is not None:
+                temp_path.unlink(missing_ok=True)
 
     def _collection_paths(self) -> list[Path]:
         hors_dir = self._hors_dir()

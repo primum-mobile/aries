@@ -22,11 +22,7 @@ _PRIMARY_CONTACT = 'contact@maxlange.cc'
 _COPYRIGHT_YEAR = 2026
 
 _WEBSITE_URL = 'https://aries.sh/'
-_SOURCE_URL = 'https://github.com/primum-mobile/aries'
-_LICENSE_URL = 'https://github.com/primum-mobile/aries/blob/main/LICENSE'
-_NOTICES_URL = (
-    'https://github.com/primum-mobile/aries/blob/main/THIRD_PARTY_NOTICES.txt'
-)
+_SOURCE_REPOSITORY = 'https://github.com/primum-mobile/aries'
 
 _LEGACY_CONTRIBUTORS = (
     {
@@ -93,6 +89,28 @@ def _build_stamp() -> Optional[str]:
     return stamp or None
 
 
+def _public_source_commit() -> Optional[str]:
+    commit = (getattr(build_info, 'PUBLIC_SOURCE_COMMIT', '') or '').strip()
+    if len(commit) == 40 and all(char in '0123456789abcdef' for char in commit):
+        return commit
+    return None
+
+
+def _source_links() -> tuple[str, str, str]:
+    revision = _public_source_commit()
+    if revision:
+        return (
+            f'{_SOURCE_REPOSITORY}/tree/{revision}',
+            f'{_SOURCE_REPOSITORY}/blob/{revision}/COPYRIGHT.txt',
+            f'{_SOURCE_REPOSITORY}/blob/{revision}/THIRD_PARTY_NOTICES.txt',
+        )
+    return (
+        _SOURCE_REPOSITORY,
+        f'{_SOURCE_REPOSITORY}/blob/main/COPYRIGHT.txt',
+        f'{_SOURCE_REPOSITORY}/blob/main/THIRD_PARTY_NOTICES.txt',
+    )
+
+
 def _swiss_ephemeris_version() -> str:
     try:
         return str(astrology.swe_version())
@@ -104,6 +122,7 @@ class AboutService:
     """Stateless product and attribution payload builder."""
 
     def get_about(self) -> dict:
+        source_url, license_url, notices_url = _source_links()
         return {
             'brand': _BRAND,
             'version': _release_version(),
@@ -116,9 +135,9 @@ class AboutService:
             'swissEphemerisKey': 'about.swissEphemerisVersion',
             'swissEphemerisVersion': _swiss_ephemeris_version(),
             'websiteUrl': _WEBSITE_URL,
-            'sourceUrl': _SOURCE_URL,
-            'licenseUrl': _LICENSE_URL,
-            'noticesUrl': _NOTICES_URL,
+            'sourceUrl': source_url,
+            'licenseUrl': license_url,
+            'noticesUrl': notices_url,
             'creditsHeadingKey': 'about.creditsHeading',
             'licenseNameKey': 'about.licenseName',
             'contributorsHeadingKey': 'about.contributorsHeading',

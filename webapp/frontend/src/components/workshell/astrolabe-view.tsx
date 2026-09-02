@@ -1,7 +1,21 @@
+// SPDX-FileCopyrightText: Morinus contributors
+// SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Modified for Aries in 2026 by Max Lange.
+
 "use client";
 
 import * as React from "react";
 
+import {
+  ContextMenu,
+  ContextMenuCheckboxItem,
+  ContextMenuContent,
+  ContextMenuGroup,
+  ContextMenuLabel,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { CanvasDraw } from "@/lib/chart/canvas-draw";
 import {
   registerChartExportRenderer,
@@ -14,16 +28,21 @@ import {
 } from "@/lib/chart/astrolabe-render-style";
 import { morinusTextFontFromTokens } from "@/lib/chart/chart-fonts";
 import { awaitFonts } from "@/lib/chart/draw-chart";
+import { resolveChartPaintTarget } from "@/lib/chart/outer-glyph-lane";
 import { useStyleRevision } from "@/hooks/use-style-revision";
 import { ASPECT_GLYPHS, ASP_CONJUNCTION } from "@/lib/chart/glyphs";
 import {
   fetchAstrolabe,
+  fetchAstrolabeViewState,
+  storeAstrolabeViewState,
   type AstrolabeCircle,
   type AstrolabeGeometry,
   type AstrolabeLine,
   type AstrolabePdEvent,
+  type AstrolabeViewState,
 } from "@/lib/daemon/client";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
+import { useChartStyleEditorStore } from "@/stores/chart-style-editor-store";
 import { useThemeStore } from "@/stores/theme-store";
 import { useT } from "@/lib/i18n/i18n";
 import { createResolvedSemanticChartColorResolver } from "@/lib/theme/semantic-color";
@@ -54,6 +73,8 @@ import { createResolvedSemanticChartColorResolver } from "@/lib/theme/semantic-c
 
 type LayerToggles = {
   atmospheric: boolean;
+  regioHouses: boolean;
+  zodiacWheel: boolean;
   almucantars: boolean;
   azimuths: boolean;
   hourLines: boolean;
@@ -62,10 +83,17 @@ type LayerToggles = {
 
 const DEFAULT_TOGGLES: LayerToggles = {
   atmospheric: true, // desktop default (astrolabe_atmospheric=True, morin.py:19259)
+  regioHouses: true,
+  zodiacWheel: true,
   almucantars: false, // webapp-only lattice — OFF by default
   azimuths: false, // webapp-only lattice — OFF by default
   hourLines: false, // webapp-only synthesis (no wx equivalent) — OFF by default
   stars: false, // bright-star pointers — OFF by default
+};
+
+const DEFAULT_VIEW_STATE: AstrolabeViewState = {
+  deltaDeg: 0,
+  ...DEFAULT_TOGGLES,
 };
 
 type Layout = {
@@ -79,6 +107,28 @@ function mapPoint(layout: Layout, x: number, y: number): [number, number] {
   return [layout.cx + x * layout.scale, layout.cy + y * layout.scale];
 }
 
+function astrolabeTitlebarTopBoundary(hostRect: DOMRect): number {
+  const titlebar = document.querySelector<HTMLElement>(
+    "[data-aries-titlebar-backplate]",
+  );
+  if (!titlebar) return 0;
+  const titlebarRect = titlebar.getBoundingClientRect();
+  if (
+    titlebarRect.width <= 0
+    || titlebarRect.height <= 0
+    || titlebarRect.left >= hostRect.right
+    || titlebarRect.right <= hostRect.left
+    || titlebarRect.bottom <= hostRect.top
+    || titlebarRect.top >= hostRect.bottom
+  ) {
+    return 0;
+  }
+  return Math.min(
+    hostRect.height,
+    Math.max(0, titlebarRect.bottom - hostRect.top),
+  );
+}
+
 function drawCircle(
   draw: CanvasDraw,
   layout: Layout,
@@ -90,9 +140,10 @@ function drawCircle(
   const [sx, sy] = mapPoint(layout, c.cx, c.cy);
   const r = c.r * layout.scale;
   if (!Number.isFinite(r) || r <= 0 || r > 1e5) return;
-  if (dash) draw.ctx.setLineDash(dash);
+  const activeDash = dash?.some((value) => value > 0) ? dash : undefined;
+  if (activeDash) draw.ctx.setLineDash(activeDash);
   draw.circle([sx, sy], r, { outline: color, width });
-  if (dash) draw.ctx.setLineDash([]);
+  if (activeDash) draw.ctx.setLineDash([]);
 }
 
 function drawLine(
@@ -103,17 +154,19 @@ function drawLine(
   width: number,
   dash?: number[],
 ) {
+  const activeDash = dash?.some((value) => value > 0) ? dash : undefined;
   draw.line([mapPoint(layout, ln.x1, ln.y1), mapPoint(layout, ln.x2, ln.y2)], {
     fill: color,
     width,
-    dash,
+    dash: activeDash,
   });
 }
 
 /** Atmospheric plate fill: ground over the whole Capricorn disk, sky over the
  * intersection of the horizon circle and the Capricorn disk (the visible sky).
- * Port of AstrolabeChart._atmo_draw_plate_disk (astrolabechart.py:390-456) —
- * the daemon ships the sky/ground colours; this only paints the lens. */
+ * The daemon owns the projected horizon and the sun-altitude colour ramp; the
+ * renderer preserves those atmospheric colours instead of theme-tokenizing
+ * physical daylight. */
 function drawAtmosphericPlate(
   draw: CanvasDraw,
   layout: Layout,
@@ -126,17 +179,18 @@ function drawAtmosphericPlate(
   const [hcx, hcy] = mapPoint(layout, geo.tympan.horizon.cx, geo.tympan.horizon.cy);
   const hRad = geo.tympan.horizon.r * layout.scale;
 
-  // Ground = darkened sky, fills the whole plate.
+  // Ground = the daemon's darkened sky, filling the whole plate.
   ctx.save();
+  ctx.globalAlpha = style.effects.atmosphericFillOpacity;
   ctx.beginPath();
   ctx.arc(cx, cy, rCap, 0, Math.PI * 2);
-  ctx.fillStyle = style.data.atmospheric.ground;
+  ctx.fillStyle = geo.atmospheric.ground;
   ctx.fill();
   ctx.restore();
 
-  // Sky = intersection of the horizon disk and the Capricorn disk. Clip to the
-  // Capricorn disk, then fill the horizon disk with the sky colour.
+  // Sky = intersection of the horizon disk and the Capricorn disk.
   ctx.save();
+  ctx.globalAlpha = style.effects.atmosphericFillOpacity;
   ctx.beginPath();
   ctx.arc(cx, cy, rCap, 0, Math.PI * 2);
   ctx.clip();
@@ -144,9 +198,55 @@ function drawAtmosphericPlate(
   if (Number.isFinite(hRad) && hRad < 1e6) {
     ctx.arc(hcx, hcy, hRad, 0, Math.PI * 2);
   }
-  ctx.fillStyle = style.data.atmospheric.sky;
+  ctx.fillStyle = geo.atmospheric.sky;
   ctx.fill();
   ctx.restore();
+}
+
+/** The mater's raised limb: the Capricorn plate is the inner rule and its 360°
+ * scale projects outward to a separate rim. This keeps the usable plate clear
+ * for projected bodies. Batched paths keep the decorative precision cheap. */
+function drawGraduatedLimb(
+  draw: CanvasDraw,
+  cx: number,
+  cy: number,
+  plateR: number,
+  tickStep: number,
+  color: string,
+  fineWidth: number,
+  mediumWidth: number,
+  mainWidth: number,
+  innerDash?: readonly number[],
+) {
+  const outerR = plateR + tickStep * 3;
+  draw.circle([cx, cy], outerR, { outline: color, width: fineWidth });
+  const dash = innerDash?.some((value) => value > 0) ? [...innerDash] : undefined;
+  if (dash) draw.ctx.setLineDash(dash);
+  draw.circle([cx, cy], plateR, { outline: color, width: mainWidth });
+  if (dash) draw.ctx.setLineDash([]);
+
+  const ctx = draw.ctx;
+  const paintTicks = (modulo: number, length: number, width: number) => {
+    ctx.save();
+    ctx.beginPath();
+    for (let degree = 0; degree < 360; degree++) {
+      if (degree % modulo !== 0) continue;
+      if (modulo === 1 && degree % 5 === 0) continue;
+      if (modulo === 5 && degree % 10 === 0) continue;
+      const angle = (degree - 90) * Math.PI / 180;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      ctx.moveTo(cx + cos * plateR, cy + sin * plateR);
+      ctx.lineTo(cx + cos * (plateR + length), cy + sin * (plateR + length));
+    }
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.stroke();
+    ctx.restore();
+  };
+  paintTicks(1, tickStep, fineWidth);
+  paintTicks(5, tickStep * 2, fineWidth);
+  paintTicks(10, tickStep * 3, mediumWidth);
 }
 
 function pdAspectGlyph(aspId: number): string | null {
@@ -162,6 +262,7 @@ function render(
   cssH: number,
   style: AstrolabeRenderStyle,
   t: ReturnType<typeof useT>,
+  paintTopBoundary = 0,
 ) {
   const resolveColor = createResolvedSemanticChartColorResolver();
   const draw = new CanvasDraw(canvas);
@@ -171,7 +272,11 @@ function render(
   const colors = style.palette;
   const dashes = style.strokes.dashes;
 
-  const size = Math.min(cssW, cssH);
+  // Use the same permanent-centre/available-frame target as the main wheel.
+  // The full Astrolabe envelope stays clear of the titlebar while app panes
+  // resize around it, rather than deriving a second positioning convention.
+  const target = resolveChartPaintTarget(cssW, cssH, 1, paintTopBoundary, true);
+  const size = target.side;
   if (size <= 0) return;
 
   // Fit the Capricorn disk (the outer plate boundary) into the viewport with
@@ -184,9 +289,12 @@ function render(
   const maxRadiusPx = size / 2; // wx self.maxradius
   const chartRpx = style.layout.capricornFill * maxRadiusPx; // wx self._chart_r (= r_capricorn, px)
   const scale = chartRpx / rCap;
-  const layout: Layout = { cx: cssW / 2, cy: cssH / 2, scale };
+  const layout: Layout = { cx: cssW / 2, cy: target.centerY, scale };
 
   const { fine: w1, medium: w2, main: wMain } = resolveAstrolabeStrokeWidths(style, size);
+  const schematicDash = <T extends readonly number[]>(dash: T): number[] | undefined => (
+    toggles.atmospheric ? undefined : [...dash]
+  );
 
   // === ATMOSPHERIC PLATE FILL (default) ===
   if (toggles.atmospheric) drawAtmosphericPlate(draw, layout, geo, style);
@@ -199,28 +307,34 @@ function render(
   draw.ctx.clip();
 
   // === TYMPAN (fixed plate) ===
-  drawCircle(draw, layout, geo.tympan.tropicCancer, colors.tropic, w1, [...dashes.tropic]);
-  drawCircle(draw, layout, geo.tympan.equator, colors.equator, w1, [...dashes.equator]);
+  drawCircle(draw, layout, geo.tympan.tropicCancer, colors.tropic, w1, schematicDash(dashes.tropic));
+  drawCircle(draw, layout, geo.tympan.equator, colors.equator, w1, schematicDash(dashes.equator));
 
   // Optional lattice layers — driven live from the daemon, off by default.
   if (toggles.almucantars) {
-    for (const a of geo.tympan.almucantars) drawCircle(draw, layout, a, colors.almucantar, w1);
+    for (const a of geo.tympan.almucantars) {
+      drawCircle(draw, layout, a, colors.almucantar, a.alt % 20 === 0 ? w2 : w1);
+    }
   }
   if (toggles.azimuths) {
-    for (const az of geo.tympan.azimuths) drawCircle(draw, layout, az, colors.azimuth, w1);
+    for (const az of geo.tympan.azimuths) {
+      drawCircle(draw, layout, az, colors.azimuth, Math.abs(az.az) % 60 === 0 ? w2 : w1);
+    }
   }
   if (toggles.hourLines) {
     for (const hl of geo.tympan.hourLines) drawCircle(draw, layout, hl, colors.hour, w1);
   }
 
   // Regiomontanus intermediate house circles.
-  for (const rh of geo.tympan.regioHouses) {
-    drawCircle(draw, layout, rh, colors.regio, w1, [...dashes.regio]);
+  if (toggles.regioHouses) {
+    for (const rh of geo.tympan.regioHouses) {
+      drawCircle(draw, layout, rh, colors.regio, w1, schematicDash(dashes.regio));
+    }
   }
 
   // Meridian + Asc/Dsc axis (through NCP and horizon centre).
-  drawLine(draw, layout, geo.tympan.meridian, colors.meridian, w1, [...dashes.meridian]);
-  drawLine(draw, layout, geo.tympan.horizonAxis, colors.meridian, w1, [...dashes.meridian]);
+  drawLine(draw, layout, geo.tympan.meridian, colors.meridian, w1, schematicDash(dashes.meridian));
+  drawLine(draw, layout, geo.tympan.horizonAxis, colors.meridian, w1, schematicDash(dashes.meridian));
 
   // Horizon — the prominent blue circle.
   drawCircle(draw, layout, geo.tympan.horizon, colors.horizon, wMain);
@@ -242,21 +356,23 @@ function render(
   const r5 = Math.max(innerR, outerR - tickStep * 2);
   const r10 = Math.max(innerR, outerR - tickStep * 3);
   const r1 = Math.max(innerR, outerR - tickStep);
-  draw.circle([eclScrX, eclScrY], innerR, { outline: colors.ecliptic, width: w1 });
-  for (const t of geo.zodiacBand.ticks) {
-    const [tx, ty] = mapPoint(layout, t.x, t.y);
-    let dx = tx - eclScrX;
-    let dy = ty - eclScrY;
-    const d = Math.hypot(dx, dy);
-    if (d < 1e-6) continue;
-    dx /= d;
-    dy /= d;
-    const target = t.level === 30 ? innerR : t.level === 10 ? r10 : t.level === 5 ? r5 : r1;
-    const ww = t.level === 30 ? w2 : w1;
-    draw.line([[tx, ty], [eclScrX + dx * target, eclScrY + dy * target]], {
-      fill: colors.ecliptic,
-      width: ww,
-    });
+  if (toggles.zodiacWheel) {
+    draw.circle([eclScrX, eclScrY], innerR, { outline: colors.ecliptic, width: w1 });
+    for (const t of geo.zodiacBand.ticks) {
+      const [tx, ty] = mapPoint(layout, t.x, t.y);
+      let dx = tx - eclScrX;
+      let dy = ty - eclScrY;
+      const d = Math.hypot(dx, dy);
+      if (d < 1e-6) continue;
+      dx /= d;
+      dy /= d;
+      const target = t.level === 30 ? innerR : t.level === 10 ? r10 : t.level === 5 ? r5 : r1;
+      const ww = t.level === 30 ? w2 : w1;
+      draw.line([[tx, ty], [eclScrX + dx * target, eclScrY + dy * target]], {
+        fill: colors.ecliptic,
+        width: ww,
+      });
+    }
   }
 
   // Bright-star pointers (optional) — small dots on the rete.
@@ -275,22 +391,24 @@ function render(
   const signGlyphSize = chartRpx / style.typography.signFontDivisor;
   const signCull = chartRpx * style.layout.signCullScale; // wx margin (astrolabechart.py:667,676)
   const glyphR = outerR - bandWidth / 2;
-  for (const g of geo.zodiacBand.glyphs) {
-    const [mx, my] = mapPoint(layout, g.x, g.y);
-    const dx = mx - eclScrX;
-    const dy = my - eclScrY;
-    const d = Math.hypot(dx, dy);
-    if (d < 1e-6) continue;
-    const gx = eclScrX + (dx / d) * glyphR;
-    const gy = eclScrY + (dy / d) * glyphR;
-    if (Math.hypot(gx - layout.cx, gy - layout.cy) > chartRpx + signCull) continue;
-    draw.text([gx, gy], g.glyph, {
-      font: style.typography.fontSymbols,
-      size: signGlyphSize,
-      fill: resolveColor(g.colorRole, g.color) ?? g.color,
-      align: "center",
-      baseline: "middle",
-    });
+  if (toggles.zodiacWheel) {
+    for (const g of geo.zodiacBand.glyphs) {
+      const [mx, my] = mapPoint(layout, g.x, g.y);
+      const dx = mx - eclScrX;
+      const dy = my - eclScrY;
+      const d = Math.hypot(dx, dy);
+      if (d < 1e-6) continue;
+      const gx = eclScrX + (dx / d) * glyphR;
+      const gy = eclScrY + (dy / d) * glyphR;
+      if (Math.hypot(gx - layout.cx, gy - layout.cy) > chartRpx + signCull) continue;
+      draw.text([gx, gy], g.glyph, {
+        font: style.typography.fontSymbols,
+        size: signGlyphSize,
+        fill: resolveColor(g.colorRole, g.color) ?? g.color,
+        align: "center",
+        baseline: "middle",
+      });
+    }
   }
 
   // === BODIES — sphere at true RA/Dec, dotted connector to ecliptic foot,
@@ -303,10 +421,39 @@ function render(
   );
   const glyphSize = chartRpx / style.typography.planetFontDivisor;
   const labelPad = sphereR + chartRpx * style.layout.bodyLabelPadScale;
+  const viewportClearance = Math.max(wMain * 2, glyphSize * 0.45);
+  const limbClearance = Math.max(wMain * 2, glyphSize * 0.12);
+  const bodyLabelTop = Math.max(paintTopBoundary, 0) + viewportClearance;
+  const bodyLabelBottom = Math.max(bodyLabelTop, cssH - viewportClearance);
 
   type Item = {
     gx: number; gy: number; sx: number; sy: number; ex: number; ey: number;
     glyph: string; color: string; tw: number; th: number; above: boolean; isSun: boolean;
+  };
+  const clampBodyLabel = (item: Item) => {
+    const minX = viewportClearance;
+    const maxX = Math.max(minX, cssW - viewportClearance - item.tw);
+    const minY = bodyLabelTop;
+    const maxY = Math.max(minY, bodyLabelBottom - item.th);
+    item.gx = Math.min(maxX, Math.max(minX, item.gx));
+    item.gy = Math.min(maxY, Math.max(minY, item.gy));
+
+    // Keep the complete glyph rectangle inside the Capricorn plate. The limb
+    // now owns the exterior annulus, so collision pushes cannot send labels
+    // back through the engraved ruler or into the titlebar above it.
+    const labelCx = item.gx + item.tw / 2;
+    const labelCy = item.gy + item.th / 2;
+    const fromCentreX = labelCx - layout.cx;
+    const fromCentreY = labelCy - layout.cy;
+    const centreDistance = Math.hypot(fromCentreX, fromCentreY);
+    const maxCentreDistance = Math.max(
+      0,
+      chartRpx - limbClearance - Math.hypot(item.tw, item.th) / 2,
+    );
+    if (centreDistance > maxCentreDistance && centreDistance > 1e-6) {
+      item.gx = layout.cx + fromCentreX / centreDistance * maxCentreDistance - item.tw / 2;
+      item.gy = layout.cy + fromCentreY / centreDistance * maxCentreDistance - item.th / 2;
+    }
   };
   const items: Item[] = [];
   for (const b of geo.bodies) {
@@ -315,15 +462,29 @@ function render(
     const [ex, ey] = mapPoint(layout, b.ecliptic.x, b.ecliptic.y);
     const [tw] = draw.textsize(b.glyph, { font: style.typography.fontSymbols, size: glyphSize });
     const th = glyphSize;
-    items.push({
-      gx: sx + labelPad, gy: sy - th / 2, sx, sy, ex, ey,
+    const radialDistance = Math.hypot(sx - layout.cx, sy - layout.cy);
+    const ux = radialDistance > 1e-6 ? (sx - layout.cx) / radialDistance : 1;
+    const uy = radialDistance > 1e-6 ? (sy - layout.cy) / radialDistance : 0;
+    const labelDistance = labelPad + Math.max(tw, th) * 0.45;
+    const labelHalfDiagonal = Math.hypot(tw, th) / 2;
+    const outwardCrossesLimb = (
+      radialDistance + labelDistance + labelHalfDiagonal
+      > chartRpx - limbClearance
+    );
+    const labelDirection = outwardCrossesLimb ? -1 : 1;
+    const labelCx = sx + ux * labelDistance * labelDirection;
+    const labelCy = sy + uy * labelDistance * labelDirection;
+    const item: Item = {
+      gx: labelCx - tw / 2, gy: labelCy - th / 2, sx, sy, ex, ey,
       glyph: b.glyph,
       color: resolveColor(b.colorRole, b.color) ?? b.color,
       tw,
       th,
       above: b.above,
       isSun: b.isSun,
-    });
+    };
+    clampBodyLabel(item);
+    items.push(item);
   }
   const pushMargin = items.length ? items[0].th * style.collision.marginScale : 0;
   for (let iter = 0; iter < style.collision.iterations; iter++) {
@@ -345,6 +506,8 @@ function render(
             si.gy += push * style.collision.moveScale;
             sj.gy -= push * style.collision.moveScale;
           }
+          clampBodyLabel(si);
+          clampBodyLabel(sj);
           moved = true;
         }
       }
@@ -417,12 +580,13 @@ function render(
   const ncx = layout.cx;
   const ncy = layout.cy;
   const capPad = chartRpx * style.layout.cardinalPadScale;
+  const limbOuterR = chartRpx + tickStep * 3;
   const cardinalSize = chartRpx / style.typography.cardinalFontDivisor;
   const cardinals: Array<[string, number, number]> = [
-    [t("astrolabe.cardinalS"), ncx, ncy - chartRpx - capPad],
-    [t("astrolabe.cardinalN"), ncx, ncy + chartRpx + capPad],
-    [t("astrolabe.cardinalE"), ncx - chartRpx - capPad, ncy],
-    [t("astrolabe.cardinalW"), ncx + chartRpx + capPad, ncy],
+    [t("astrolabe.cardinalS"), ncx, ncy - limbOuterR - capPad],
+    [t("astrolabe.cardinalN"), ncx, ncy + limbOuterR + capPad],
+    [t("astrolabe.cardinalE"), ncx - limbOuterR - capPad, ncy],
+    [t("astrolabe.cardinalW"), ncx + limbOuterR + capPad, ncy],
   ];
   for (const [lbl, x, y] of cardinals) {
     draw.text([x, y], lbl, {
@@ -433,15 +597,26 @@ function render(
     });
   }
 
-  // Capricorn boundary on top of everything (the outermost plate frame).
-  drawCircle(
+  // The mater/limb is the visual frame: a solid boundary, inner rule, and
+  // fixed one-degree scale. Schematic mode retains its dotted construction
+  // treatment; the default atmospheric presentation reads as engraved metal.
+  drawGraduatedLimb(
     draw,
-    layout,
-    geo.tympan.tropicCapricorn,
+    layout.cx,
+    layout.cy,
+    chartRpx,
+    tickStep,
     colors.capricorn,
     w1,
-    [...dashes.capricorn],
+    w2,
+    wMain,
+    schematicDash(dashes.capricorn),
   );
+  draw.circle([layout.cx, layout.cy], Math.max(style.markers.sphereRadiusMin, wMain * 1.5), {
+    fill: colors.background,
+    outline: colors.capricorn,
+    width: w1,
+  });
 
   // === INFO LABEL (top-left): Arc d°m's" + Age N yrs (daemon strings) ===
   // wx fntBigText = (maxradius/16)*0.75 (astrolabechart.py:183).
@@ -529,12 +704,19 @@ export function AstrolabeView({
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const [geo, setGeo] = React.useState<AstrolabeGeometry | null>(null);
   const [error, setError] = React.useState<string | null>(null);
-  const [delta, setDelta] = React.useState(0);
+  const [delta, setDelta] = React.useState(DEFAULT_VIEW_STATE.deltaDeg);
   const [fontsReadyFor, setFontsReadyFor] = React.useState<string | null>(null);
   const [toggles, setToggles] = React.useState<LayerToggles>(DEFAULT_TOGGLES);
+  const deltaRef = React.useRef(DEFAULT_VIEW_STATE.deltaDeg);
+  const togglesRef = React.useRef<LayerToggles>(DEFAULT_TOGGLES);
+  const persistQueueRef = React.useRef<Promise<void>>(Promise.resolve());
   const t = useT();
   const theme = useThemeStore((s) => s.theme);
   const styleRevision = useStyleRevision();
+  const liveStylePreviewRevision = useChartStyleEditorStore((state) => (
+    state.liveAppThemePreview ? `live:${state.revision}` : "live:off"
+  ));
+  const paintRevision = `${styleRevision}:${liveStylePreviewRevision}`;
   const sessionRefreshSeq = useDaemonWorkspaceStore((state) => {
     const change = state.lastSessionChange;
     if (!documentId || !change) return 0;
@@ -558,6 +740,51 @@ export function AstrolabeView({
       cancelled = true;
     };
   }, [chartFontKey, chartSymbolFont, chartTextFont]);
+
+  // View state belongs to the radix in the daemon. Restore it without blanking
+  // the retained plate; display gestures still paint locally before the quiet
+  // persistence request completes.
+  React.useEffect(() => {
+    if (!documentId) return;
+    const controller = new AbortController();
+    void fetchAstrolabeViewState(documentId, controller.signal)
+      .then((state) => {
+        if (controller.signal.aborted) return;
+        const nextToggles: LayerToggles = {
+          atmospheric: state.atmospheric,
+          regioHouses: state.regioHouses,
+          zodiacWheel: state.zodiacWheel,
+          almucantars: state.almucantars,
+          azimuths: state.azimuths,
+          hourLines: state.hourLines,
+          stars: state.stars,
+        };
+        const nextDelta = Math.max(0, state.deltaDeg);
+        togglesRef.current = nextToggles;
+        deltaRef.current = nextDelta;
+        setToggles(nextToggles);
+        setDelta(nextDelta);
+      })
+      .catch((err) => {
+        if ((err as { name?: string }).name === "AbortError") return;
+        console.error("[astrolabe-view-state]", err);
+      });
+    return () => controller.abort();
+  }, [documentId]);
+
+  const persistViewState = React.useCallback((
+    nextToggles: LayerToggles = togglesRef.current,
+    nextDelta: number = deltaRef.current,
+  ) => {
+    if (!documentId) return;
+    const state: AstrolabeViewState = { deltaDeg: nextDelta, ...nextToggles };
+    persistQueueRef.current = persistQueueRef.current
+      .catch(() => undefined)
+      .then(() => storeAstrolabeViewState(documentId, state))
+      .catch((err) => {
+        console.error("[astrolabe-view-state]", err);
+      });
+  }, [documentId]);
 
   // Geometry fetch — COALESCING, mirroring the desktop drag model
   // (_on_drag → apply_delta → drawBkg, morin.py:19414-19431) where wx natively
@@ -624,28 +851,34 @@ export function AstrolabeView({
       const rect = wrap.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0) return;
       const renderStyle = resolveAstrolabeRenderStyle(wrap, {
-        revision: styleRevision,
+        revision: paintRevision,
         fontUi: chartTextFont,
         fontSymbols: chartSymbolFont,
-        payloadColors: {
-          atmospheric: {
-            sky: geo.atmospheric.sky,
-            ground: geo.atmospheric.ground,
-          },
-          circleLabels: {
-            equator: geo.circleLabels.equator.color,
-            horizon: geo.circleLabels.horizon.color,
-            ecliptic: geo.circleLabels.ecliptic.color,
-          },
-        },
       });
-      render(canvas, geo, toggles, rect.width, rect.height, renderStyle, t);
+      render(
+        canvas,
+        geo,
+        toggles,
+        rect.width,
+        rect.height,
+        renderStyle,
+        t,
+        astrolabeTitlebarTopBoundary(rect),
+      );
+    };
+    let resizeFrame = 0;
+    const schedulePaint = () => {
+      window.cancelAnimationFrame(resizeFrame);
+      resizeFrame = window.requestAnimationFrame(paint);
     };
     paint();
-    const ro = new ResizeObserver(paint);
+    const ro = new ResizeObserver(schedulePaint);
     ro.observe(wrap);
-    return () => ro.disconnect();
-  }, [chartSymbolFont, chartTextFont, geo, fontsReady, toggles, t, styleRevision]);
+    return () => {
+      window.cancelAnimationFrame(resizeFrame);
+      ro.disconnect();
+    };
+  }, [chartSymbolFont, chartTextFont, geo, fontsReady, toggles, t, paintRevision]);
 
   React.useEffect(() => {
     if (!documentId || !geo || !canvasRef.current) return;
@@ -657,8 +890,12 @@ export function AstrolabeView({
   }, [documentId, geo]);
 
   const toggle = React.useCallback((key: keyof LayerToggles) => {
-    setToggles((t) => ({ ...t, [key]: !t[key] }));
-  }, []);
+    const current = togglesRef.current;
+    const next = { ...current, [key]: !current[key] };
+    togglesRef.current = next;
+    setToggles(next);
+    persistViewState(next);
+  }, [persistViewState]);
 
   // === RETE ROTATION — drag the canvas, matching the wx _install_astrolabe_drag
   // model (morin.py:19406-19431): full viewport width = 360°, forward-only
@@ -667,6 +904,7 @@ export function AstrolabeView({
 
   const onPointerDown = React.useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
+      if (e.button !== 0) return;
       const canvas = canvasRef.current;
       if (!canvas) return;
       try {
@@ -674,9 +912,13 @@ export function AstrolabeView({
       } catch {
         /* capture is best-effort */
       }
-      dragRef.current = { startX: e.clientX, startDelta: delta, w: canvas.clientWidth || 1 };
+      dragRef.current = {
+        startX: e.clientX,
+        startDelta: deltaRef.current,
+        w: canvas.clientWidth || 1,
+      };
     },
-    [delta],
+    [],
   );
 
   const onPointerMove = React.useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -685,14 +927,17 @@ export function AstrolabeView({
     const degPerPx = 360 / (ds.w || 1);
     const next = ds.startDelta + (e.clientX - ds.startX) * degPerPx;
     // Quantise to 0.25° to bound the daemon refetch rate; clamp forward-only.
-    setDelta(Math.max(0, Math.round(next * 4) / 4));
+    const clamped = Math.max(0, Math.round(next * 4) / 4);
+    deltaRef.current = clamped;
+    setDelta(clamped);
   }, []);
 
   const endDrag = React.useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (canvas?.hasPointerCapture?.(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+    if (dragRef.current) persistViewState(togglesRef.current, deltaRef.current);
     dragRef.current = null;
-  }, []);
+  }, [persistViewState]);
 
   // === KEYBOARD STEPPING — mirrors _AstrolabeStepper.handle_navigation_key
   // (morin.py:19335-19394): ←/→ step time (1yr / Shift 1mo / Alt 1wk) via the
@@ -702,67 +947,85 @@ export function AstrolabeView({
       if (!geo) return;
       const ypd = geo.yearsPerDegree > 0 ? geo.yearsPerDegree : 1;
       const snap = geo.pd.snapArcs;
+      let next = deltaRef.current;
       if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
         let yrs = e.altKey ? 7 / 365.2425 : e.shiftKey ? 1 / 12 : 1;
         if (e.key === "ArrowLeft") yrs = -yrs;
         const step = yrs / ypd;
-        setDelta((d) => Math.max(0, d + step));
+        next = Math.max(0, next + step);
       } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
         const forward = e.key === "ArrowUp";
-        setDelta((d) => {
-          if (forward) {
-            for (const a of snap) if (a > d + 0.001) return a;
-            return d;
+        if (forward) {
+          for (const arc of snap) {
+            if (arc > next + 0.001) {
+              next = arc;
+              break;
+            }
           }
-          for (let i = snap.length - 1; i >= 0; i--) if (snap[i] < d - 0.001) return snap[i];
-          return 0;
-        });
+        } else {
+          next = 0;
+          for (let i = snap.length - 1; i >= 0; i--) {
+            if (snap[i] < deltaRef.current - 0.001) {
+              next = snap[i];
+              break;
+            }
+          }
+        }
       } else if (e.key === " " || e.code === "Space") {
-        setDelta(0);
+        next = 0;
       } else {
         return;
       }
+      deltaRef.current = next;
+      setDelta(next);
+      persistViewState(togglesRef.current, next);
       e.preventDefault();
       e.stopPropagation();
     },
-    [geo],
+    [geo, persistViewState],
   );
 
   return (
-    <div className="font-morinus-text relative flex flex-1 min-h-0 flex-col bg-background">
-      <LayerBar toggles={toggles} onToggle={toggle} />
-      <div
-        ref={wrapRef}
-        tabIndex={0}
-        onKeyDown={onKeyDown}
-        className="relative flex-1 min-h-0 overflow-hidden outline-none"
-      >
-        <canvas
-          ref={canvasRef}
-          onPointerDown={(e) => {
-            wrapRef.current?.focus();
-            onPointerDown(e);
-          }}
-          onPointerMove={onPointerMove}
-          onPointerUp={endDrag}
-          onPointerCancel={endDrag}
-          className="block h-full w-full cursor-grab touch-none active:cursor-grabbing"
+    <div className="font-morinus-text relative flex h-full w-full min-w-0 flex-1 min-h-0 flex-col overflow-hidden bg-background">
+      <ContextMenu>
+        <ContextMenuTrigger
+          render={(
+            <div
+              ref={wrapRef}
+              tabIndex={0}
+              onKeyDown={onKeyDown}
+              className="relative h-full w-full min-w-0 flex-1 min-h-0 overflow-hidden outline-none"
+            >
+              <canvas
+                ref={canvasRef}
+                onPointerDown={(e) => {
+                  wrapRef.current?.focus();
+                  onPointerDown(e);
+                }}
+                onPointerMove={onPointerMove}
+                onPointerUp={endDrag}
+                onPointerCancel={endDrag}
+                className="block h-full w-full cursor-grab touch-none active:cursor-grabbing"
+              />
+              {error ? (
+                <div className="absolute inset-0 flex items-center justify-center text-[length:var(--aries-font-size-base)] text-destructive">
+                  {t("astrolabe.failed", { error })}
+                </div>
+              ) : !geo ? (
+                <div className="absolute inset-0 flex items-center justify-center text-[length:var(--aries-font-size-base)] text-muted-foreground">
+                  {t("astrolabe.loading")}
+                </div>
+              ) : null}
+            </div>
+          )}
         />
-        {error ? (
-          <div className="absolute inset-0 flex items-center justify-center text-[length:var(--aries-font-size-base)] text-destructive">
-            {t("astrolabe.failed", { error })}
-          </div>
-        ) : !geo ? (
-          <div className="absolute inset-0 flex items-center justify-center text-[length:var(--aries-font-size-base)] text-muted-foreground">
-            {t("astrolabe.loading")}
-          </div>
-        ) : null}
-      </div>
+        <AstrolabeViewMenu toggles={toggles} onToggle={toggle} />
+      </ContextMenu>
     </div>
   );
 }
 
-function LayerBar({
+function AstrolabeViewMenu({
   toggles,
   onToggle,
 }: {
@@ -770,44 +1033,45 @@ function LayerBar({
   onToggle: (key: keyof LayerToggles) => void;
 }) {
   const t = useT();
-  const items: Array<[keyof LayerToggles, string]> = [
+  const primaryItems: Array<[keyof LayerToggles, string]> = [
     ["atmospheric", t("astrolabe.atmospheric")],
+    ["regioHouses", t("astrolabe.regioHouses")],
+    ["zodiacWheel", t("astrolabe.zodiacWheel")],
+  ];
+  const detailItems: Array<[keyof LayerToggles, string]> = [
     ["almucantars", t("astrolabe.almucantars")],
     ["azimuths", t("astrolabe.azimuths")],
     ["hourLines", t("astrolabe.hourLines")],
     ["stars", t("astrolabe.stars")],
   ];
   return (
-    <div
-      className="flex shrink-0 flex-wrap items-center gap-[var(--aries-control-gap)] border-b px-[var(--aries-pane-header-compact-padding-x)] py-[var(--aries-pane-header-compact-padding-y)] text-[length:var(--aries-font-size-small)]"
-      style={{
-        borderColor: "color-mix(in srgb, var(--aries-border-subtle) 60%, transparent)",
-        backgroundColor: "color-mix(in srgb, var(--aries-surface) 90%, transparent)",
-      }}
-    >
-      {items.map(([key, label]) => (
-        <button
-          key={key}
-          type="button"
-          onClick={() => onToggle(key)}
-          className={
-            "rounded-[var(--aries-radius-control-compact)] border px-[var(--aries-control-padding-x-compact)] py-[var(--aries-segmented-control-padding)] transition-colors "
-            + (toggles[key] ? "" : "hover:bg-[color:var(--aries-accent)]")
-          }
-          style={toggles[key]
-            ? {
-                borderColor: "var(--aries-text-primary)",
-                backgroundColor: "color-mix(in srgb, var(--aries-text-primary) 15%, transparent)",
-                color: "var(--aries-text-primary)",
-              }
-            : {
-                borderColor: "color-mix(in srgb, var(--aries-border-subtle) 60%, transparent)",
-                color: "var(--aries-text-muted)",
-              }}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
+    <ContextMenuContent className="min-w-[var(--aries-menu-context-min-width)]">
+      <ContextMenuGroup>
+        <ContextMenuLabel>{t("astrolabe.viewSettings")}</ContextMenuLabel>
+        {primaryItems.map(([key, label]) => (
+          <ContextMenuCheckboxItem
+            key={key}
+            checked={toggles[key]}
+            closeOnClick={false}
+            onCheckedChange={() => onToggle(key)}
+          >
+            {label}
+          </ContextMenuCheckboxItem>
+        ))}
+      </ContextMenuGroup>
+      <ContextMenuSeparator />
+      <ContextMenuGroup>
+        {detailItems.map(([key, label]) => (
+          <ContextMenuCheckboxItem
+            key={key}
+            checked={toggles[key]}
+            closeOnClick={false}
+            onCheckedChange={() => onToggle(key)}
+          >
+            {label}
+          </ContextMenuCheckboxItem>
+        ))}
+      </ContextMenuGroup>
+    </ContextMenuContent>
   );
 }

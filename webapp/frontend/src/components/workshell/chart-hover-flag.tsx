@@ -1,3 +1,8 @@
+// SPDX-FileCopyrightText: Morinus contributors
+// SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Modified for Aries in 2026 by Max Lange.
+
 "use client";
 
 import * as React from "react";
@@ -48,6 +53,7 @@ function regionObjectId(region: HoverRegion): string | null {
   if (region.kind === "vertex") return "vertex";
   if (region.kind === "fortune") return "fortune";
   if (region.kind === "syzygy") return "syzygy";
+  if (region.kind === "eclipse") return "eclipse";
   if (region.kind === "angle") return region.angleId;
   if (region.kind === "house") return String(region.houseIndex);
   if (region.kind === "sign") return String(region.signIndex);
@@ -60,6 +66,8 @@ function regionObjectId(region: HoverRegion): string | null {
     }
     return `${region.p1}:${region.p2}:${region.aspectType}`;
   }
+  if (region.kind === "drishti") return region.relationId;
+  if (region.kind === "pd_event") return region.eventId;
   return null;
 }
 
@@ -89,6 +97,7 @@ function flagIdentityKey(parts: {
   token: number;
   docId?: string;
   chartRole?: string;
+  ringIndex?: number;
   sourceName: string;
   hereNow: boolean;
   supplementaryKind?: string;
@@ -102,6 +111,7 @@ function flagIdentityKey(parts: {
     parts.token,
     parts.docId ?? "",
     parts.chartRole ?? "",
+    parts.ringIndex ?? "",
     parts.sourceName,
     parts.hereNow,
     parts.supplementaryKind ?? "",
@@ -110,20 +120,30 @@ function flagIdentityKey(parts: {
   ]);
 }
 
+function optionsChangeRefreshesHoverInspector(
+  change: {
+    styleOnly: boolean;
+    listDataChanged: boolean;
+    inspectorDataChanged: boolean;
+  } | null,
+): boolean {
+  return Boolean(
+    change &&
+      (change.inspectorDataChanged === true ||
+        (!change.styleOnly && change.listDataChanged !== false)),
+  );
+}
+
 function useHoverSemanticOptionsSeq(): number {
   const lastOptionsChange = useDaemonWorkspaceStore((state) => state.lastOptionsChange);
   const [seq, setSeq] = React.useState(() =>
-    lastOptionsChange?.styleOnly || lastOptionsChange?.listDataChanged === false
-      ? 0
-      : (lastOptionsChange?.seq ?? 0),
+    optionsChangeRefreshesHoverInspector(lastOptionsChange)
+      ? (lastOptionsChange?.seq ?? 0)
+      : 0,
   );
 
   React.useEffect(() => {
-    if (
-      !lastOptionsChange ||
-      lastOptionsChange.styleOnly ||
-      lastOptionsChange.listDataChanged === false
-    ) {
+    if (!lastOptionsChange || !optionsChangeRefreshesHoverInspector(lastOptionsChange)) {
       return;
     }
     let cancelled = false;
@@ -136,6 +156,20 @@ function useHoverSemanticOptionsSeq(): number {
   }, [lastOptionsChange]);
 
   return seq;
+}
+
+function retainDeferredFlagSlots(
+  current: InspectorFlagPayload | null,
+  next: InspectorFlagPayload,
+): InspectorFlagPayload {
+  if (!next.deferredSlots?.includes("stations") || !current?.nextStationRow) {
+    return next;
+  }
+  return {
+    ...next,
+    nextStationRow: current.nextStationRow,
+    rows: [...next.rows, current.nextStationRow],
+  };
 }
 
 /**
@@ -199,6 +233,7 @@ export function ChartHoverFlag({
   const objectId = region ? regionObjectId(region) : null;
   const kind = region?.kind ?? null;
   const chartRole = region && "chartRole" in region ? region.chartRole : undefined;
+  const ringIndex = region && "ringIndex" in region ? region.ringIndex : undefined;
   const snapshotDoc = chart.document ?? null;
   const docId = snapshotDoc?.documentId ?? activeDoc?.id ?? undefined;
   const sourceName = activeDoc && activeDoc.id === docId
@@ -208,6 +243,7 @@ export function ChartHoverFlag({
   const supplementaryKind = snapshotDoc ? undefined : activeDoc?.supplementaryFeatureKind;
   const comparisonName = snapshotDoc?.comparisonName ?? activeDoc?.comparisonSourceName;
   const viewMode = snapshotDoc?.viewMode ?? chart.document?.viewMode;
+  const deferSignals = chart.overlayRenderMode === "step_fast";
   const when = snapshotDoc?.displayDatetime ?? activeDoc?.displayDatetime ?? null;
   const binding = (snapshotDoc?.binding ?? activeDoc?.supplementaryBinding) as
     | SupplementaryBindingPayload
@@ -219,6 +255,7 @@ export function ChartHoverFlag({
     token: anchor?.token ?? 0,
     docId,
     chartRole,
+    ringIndex,
     sourceName,
     hereNow,
     supplementaryKind,
@@ -250,6 +287,7 @@ export function ChartHoverFlag({
       // 'outer' for a biwheel outer-ring body → daemon resolves it against the
       // comparison chart (graphchart region.chart_role, graphchart.py:2151).
       chartRole,
+      ringIndex,
       name: sourceName,
       hereNow,
       supplementaryKind:
@@ -258,6 +296,7 @@ export function ChartHoverFlag({
       viewMode,
       when: when ?? undefined,
       binding,
+      deferSignals,
     };
     const retryCount = retryCountsRef.current.get(identityKey) ?? 0;
     const delay = payloadRef.current ? 0 : retryCount > 0 ? 0 : SHOW_DELAY_MS;
@@ -265,7 +304,13 @@ export function ChartHoverFlag({
       fetchInspectorFlagPayload(query, controller.signal)
         .then((nextPayload) => {
           retryCountsRef.current.delete(identityKey);
-          setPayloadState({ identityKey, payload: nextPayload });
+          setPayloadState((current) => ({
+            identityKey,
+            payload: retainDeferredFlagSlots(
+              current?.identityKey === identityKey ? current.payload : null,
+              nextPayload,
+            ),
+          }));
         })
         .catch((err) => {
           if ((err as { name?: string }).name === "AbortError") return;
@@ -284,7 +329,13 @@ export function ChartHoverFlag({
               }, retryDelay);
               return;
             }
-            if (message.startsWith("inspector flag request failed: 404")) return;
+            if (message.startsWith("inspector flag request failed: 404")) {
+              retryCountsRef.current.delete(identityKey);
+              setPayloadState((current) =>
+                current?.identityKey === identityKey ? null : current,
+              );
+              return;
+            }
           }
           console.error("[inspector:flag]", err);
         });
@@ -294,7 +345,7 @@ export function ChartHoverFlag({
       if (retryTimer != null) window.clearTimeout(retryTimer);
       controller.abort();
     };
-  }, [canFetch, kind, objectId, docId, chartRole, sourceName, hereNow, supplementaryKind, comparisonName, viewMode, when, binding, bindingKey, identityKey, retryTick, semanticOptionsSeq]);
+  }, [canFetch, kind, objectId, docId, chartRole, ringIndex, sourceName, hereNow, supplementaryKind, comparisonName, viewMode, when, binding, bindingKey, deferSignals, identityKey, retryTick, semanticOptionsSeq]);
 
   React.useEffect(() => {
     const updateViewport = () => {

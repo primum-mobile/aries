@@ -1,4 +1,9 @@
 # -*- coding: utf-8 -*-
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 from contextlib import contextmanager
 from functools import lru_cache
 import os
@@ -604,6 +609,72 @@ SE_STARFILE_FALLBACKS = ("sefstars.txt", "fixstars.cat", "fixedstars.cat")
 SE_ASTNAMFILE   = "seasnam.txt"
 SE_FICTFILE     = "seorbel.txt"
 # ---- Preferred alias (display name) resolver for fixed stars -----------------
+# Swiss Ephemeris stores cultural aliases as additional catalog rows with the
+# same nomenclature code.  Keep that identity stable and select the Indian
+# display vocabulary explicitly.  Values are taken from the bundled
+# ``sefstars.txt`` catalog; the first value is the preferred spelling shown by
+# Aries when the option is enabled, while the remaining values are recognised
+# so they cannot leak through a stale alias/fallback when it is disabled.
+FIXSTAR_INDIAN_ALIASES_BY_CODE = {
+    'alTau': ('Rohini',),
+    'alAql': ('Shravana',),
+    'laAqr': ('Shatabhishaj', 'Shatabhishak'),
+    'beAri': ('Ashvini',),
+    '41Ari': ('Bharani',),
+    'alAur': ('Brahmahridaya',),
+    'thAur': ('Mahasim',),
+    'alBoo': ('Svati',),
+    'alCar': ('Agastya',),
+    'alCMa': ('Lubdhaka',),
+    'alCnc': ('Ashlesha (Colebrook)',),
+    'deCnc': ('Pushya',),
+    'deCrv': ('Hasta',),
+    'beDel': ('Dhanishtha', 'Shravishtha'),
+    'alDra': ('Dhruva',),
+    'beGem': ('Punarvasu',),
+    'epHya': ('Ashlesha',),
+    'alLeo': ('Magha',),
+    'beLeo': ('Uttaraphalguni',),
+    'deLeo': ('Purvaphalguni',),
+    'io-1Lib': ('Vishakha',),
+    'alLyr': ('Abhijit',),
+    'alOri': ('Ardra',),
+    'gaOri': ('Durga',),
+    'deOri': ('Kumara',),
+    'epOri': ('Ganesha',),
+    'zeOri': ('Iyappa',),
+    'ioOri': ('Hatsya',),
+    'laOri': ('Mrgashirsha', 'Mrigashirsha'),
+    'alPeg': ('Purvabhadra',),
+    'gaPeg': ('Uttarabhadra',),
+    'zePscA': ('Revati',),
+    'zePsc': ('Revati',),
+    'alSco': ('Jyeshtha',),
+    'deSco': ('Anuradha',),
+    'laSco': ('Mula',),
+    'deSgr': ('Purvashadha',),
+    'siSgr': ('Uttarashadha',),
+    'etTau': ('Krttika',),
+    'alUMa': ('Kratu',),
+    'beUMa': ('Pulaha',),
+    'gaUMa': ('Pulastya',),
+    'deUMa': ('Atri',),
+    'epUMa': ('Angiras',),
+    'zeUMa': ('Vasishtha',),
+    'etUMa': ('Marichi',),
+    '80UMa': ('Arundhati',),
+    'alVir': ('Citra',),
+}
+
+
+def _is_indian_fixstar_alias(code, name):
+    value = str(name or '').strip().casefold()
+    return bool(value) and any(
+        value == candidate.casefold()
+        for candidate in FIXSTAR_INDIAN_ALIASES_BY_CODE.get(str(code), ())
+    )
+
+
 def ensure_fixstar_alias_loaded(options):
     """
     options.fixstarAliasMap 이 비어 있으면 ephepath의 JSON에서 한 번만 복구한다.
@@ -636,21 +707,27 @@ def display_fixstar_name(code, options, fallback_name=None):
     """
     고정별 '표시용 이름'을 결정한다.
       - 식별은 항상 code(nomname).
-      - 1순위: options.fixstarAliasMap[code] (사용자 선호 별칭)
-      - 2순위: fallback_name (호출자가 카탈로그명/Swiss명 등 전달하면 사용)
-      - 3순위: code 그대로
+      - Indian-name option: bundled Indian catalog alias for the same code.
+      - Otherwise: options.fixstarAliasMap[code] (standard preferred alias).
+      - Then: a non-Indian fallback_name supplied by the caller.
+      - Finally: the nomenclature code itself.
     이 함수는 쓰기(저장)를 절대 하지 않으며, 비어 있을 때만 JSON을 게으르게 로드한다.
     """
     try:
         ensure_fixstar_alias_loaded(options)
+        if bool(getattr(options, 'useIndianFixstarNames', False)):
+            indian_names = FIXSTAR_INDIAN_ALIASES_BY_CODE.get(str(code), ())
+            if indian_names:
+                return indian_names[0]
         if options and hasattr(options, 'fixstarAliasMap') and isinstance(options.fixstarAliasMap, dict):
             disp = options.fixstarAliasMap.get(code)
-            if disp:
+            if disp and not _is_indian_fixstar_alias(code, disp):
                 return disp
     except Exception:
         pass
-    # 호출자가 제공한 카탈로그 기본명 우선 사용
-    if fallback_name:
+    # A raw catalog fallback can itself be an Indian-only row.  Keep those
+    # names behind the explicit option even when no standard alias is known.
+    if fallback_name and not _is_indian_fixstar_alias(code, fallback_name):
         return fallback_name
     # 마지막 폴백은 code
     return code
@@ -687,10 +764,16 @@ SE_HELFLAG_LONG_SEARCH = 128
 SE_HELFLAG_HIGH_PRECISION =	256
 SE_HELFLAG_OPTICAL_PARAMS =	512
 SE_HELFLAG_NO_DETAILS =	1024
-SE_HELFLAG_AVKIND_VR = 2048
-SE_HELFLAG_AVKIND_PTO =	4096
-SE_HELFLAG_AVKIND_MIN7 = 8192
-SE_HELFLAG_AVKIND_MIN9 = 16384
+SE_HELFLAG_SEARCH_1_PERIOD = 2048
+SE_HELFLAG_VISLIM_DARK = 4096
+SE_HELFLAG_VISLIM_NOMOON = 8192
+SE_HELFLAG_VISLIM_PHOTOPIC = 16384
+SE_HELFLAG_VISLIM_SCOTOPIC = 32768
+SE_HELFLAG_AV = 65536
+SE_HELFLAG_AVKIND_VR = 65536
+SE_HELFLAG_AVKIND_PTO = 131072
+SE_HELFLAG_AVKIND_MIN7 = 262144
+SE_HELFLAG_AVKIND_MIN9 = 524288
 SE_HELFLAG_AVKIND = (SE_HELFLAG_AVKIND_VR|SE_HELFLAG_AVKIND_PTO|SE_HELFLAG_AVKIND_MIN7|SE_HELFLAG_AVKIND_MIN9)
 TJD_INVALID	= 99999999.0
 SIMULATE_VICTORVB = 1

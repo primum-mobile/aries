@@ -11,6 +11,7 @@ export type EphemerisRenderPalette = Readonly<{
   texts: string;
   grid: string;
   signs: string;
+  outOfBounds: string;
 }>;
 
 export type EphemerisChartProfileOverrides = Readonly<Record<string, string>>;
@@ -23,6 +24,7 @@ export const EPHEMERIS_RENDER_BASE_PALETTE_ROLES: Readonly<
   texts: "--morinus-text-bright",
   grid: "--morinus-houses",
   signs: "--morinus-signs",
+  outOfBounds: "--aries-destructive",
 });
 
 export type EphemerisRenderTokens = {
@@ -140,12 +142,13 @@ export const DEFAULT_EPHEMERIS_RENDER_PALETTE: EphemerisRenderPalette = Object.f
   texts: "#000000",
   grid: "#808080",
   signs: "#000000",
+  outOfBounds: "#ff554b",
 });
 
 /** Overlay only the active chart-profile layer onto the retained daemon
  * palette. The daemon payload remains exact when no profile is active. */
 export function resolveEphemerisRenderPalette(
-  retained: EphemerisRenderPalette = DEFAULT_EPHEMERIS_RENDER_PALETTE,
+  retained: Partial<EphemerisRenderPalette> = DEFAULT_EPHEMERIS_RENDER_PALETTE,
   profileOverrides: EphemerisChartProfileOverrides = {},
 ): EphemerisRenderPalette {
   const palette = {} as Record<keyof EphemerisRenderPalette, string>;
@@ -153,7 +156,7 @@ export function resolveEphemerisRenderPalette(
     EPHEMERIS_RENDER_BASE_PALETTE_ROLES,
   ) as Array<keyof EphemerisRenderPalette>) {
     const profileValue = profileOverrides[EPHEMERIS_RENDER_BASE_PALETTE_ROLES[key]]?.trim();
-    palette[key] = profileValue || retained[key];
+    palette[key] = profileValue || retained[key] || DEFAULT_EPHEMERIS_RENDER_PALETTE[key];
   }
   return Object.freeze(palette) as EphemerisRenderPalette;
 }

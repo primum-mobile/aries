@@ -1,7 +1,11 @@
+// SPDX-FileCopyrightText: Morinus contributors
+// SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Modified for Aries in 2026 by Max Lange.
+
 "use client";
 
 import * as React from "react";
-import { Copy, Download } from "lucide-react";
 
 import {
   fetchGenericTablePayload,
@@ -21,15 +25,13 @@ import { useT } from "@/lib/i18n/i18n";
 import { semanticChartColor } from "@/lib/theme/semantic-color";
 
 import { TimedChartContextMenu } from "./directions-view";
-import { downloadText, tableToConfiguredTsv } from "./generic-table-view";
-import { exportTablePayloadPdf } from "./table-pdf-export";
-import { exportTextContent } from "./text-export";
+import { buildTableExportDocument } from "./table-pdf-export";
+import { TextExportActions } from "./text-export-actions";
 import { ColumnResizeHandle, useResizableTableColumns } from "./resizable-table-columns";
 import { RetainedPaneShell } from "./retained-pane-shell";
 import {
   ListSegmentedControl,
   PaneControlBar,
-  PaneToolbarButton,
 } from "./list-controls";
 import { useSettledWorkspaceRefreshSeq } from "./step-refresh";
 
@@ -107,7 +109,7 @@ export function FirdariaView({ documentId, parentDocumentId, sourceName, onClose
   const header = (asRecord(capabilities.firdaria) as FirdariaHeader) ?? {};
   const isFirBonatti = Boolean(bindings.isfirbonatti);
   const tableColumnIds = React.useMemo(
-    () => payload?.columns.map((column) => column.id) ?? ["ruler", "start", "age"],
+    () => payload?.columns.map((column) => column.id) ?? ["age", "body", "date", "length"],
     [payload?.columns],
   );
   const tableResize = useResizableTableColumns({ storageKey: TABLE_ID, columnIds: tableColumnIds });
@@ -205,52 +207,14 @@ export function FirdariaView({ documentId, parentDocumentId, sourceName, onClose
       closeLabel={t("firdview.closeFirdaria")}
       onClose={onClose}
       toolbar={
-        <>
-          <PaneToolbarButton
-            type="button"
-            onClick={() => {
-              void tableToConfiguredTsv(payload, payload.rows).then((text) =>
-                navigator.clipboard?.writeText(text).catch(() => {
-                  downloadText("firdaria.tsv", text, "text/tab-separated-values");
-                })
-              );
-            }}
-            title={t("firdview.copyRows")}
-          >
-            <Copy />
-          </PaneToolbarButton>
-          <PaneToolbarButton
-            type="button"
-            onClick={() => {
-              void tableToConfiguredTsv(payload, payload.rows).then((text) =>
-                exportTextContent({
-                filename: "firdaria",
-                extension: "tsv",
-                mimeType: "text/tab-separated-values;charset=utf-8",
-                text,
-                title: t("firdview.exportTsvTitle"),
-                filters: [{ name: t("firdview.tsvFiles"), extensions: ["tsv"] }],
-                })
-              ).catch(() => {});
-            }}
-            title={t("firdview.exportTsv")}
-          >
-            <Download />
-          </PaneToolbarButton>
-          <PaneToolbarButton
-            type="button"
-            onClick={() =>
-              void exportTablePayloadPdf(payload, payload.rows, {
-                fileStem: "firdaria",
-                title: header.titleText ?? t("firdview.firdaria"),
-              }).catch(() => {})
-            }
-            title={t("firdview.exportPdf")}
-          >
-            <Download />
-            PDF
-          </PaneToolbarButton>
-        </>
+        <TextExportActions
+          buildDocument={() =>
+            buildTableExportDocument(payload, payload.rows, {
+              fileStem: "firdaria",
+              title: header.titleText ?? t("firdview.firdaria"),
+            })
+          }
+        />
       }
     >
       {/* Compact control band — same visual language as the directions list
@@ -303,7 +267,7 @@ export function FirdariaView({ documentId, parentDocumentId, sourceName, onClose
   );
 }
 
-// Row table: glyph | period start | age. Sub rows indent the glyph column —
+// Row table: age | ruler | date | length. Sub rows indent the ruler column —
 // the wx nested-cell layout (mains at col 0, subs shifted one small cell,
 // firdariawnd.py:528-540 vs 601-611).
 const FIRDARIA_CELL_NOWRAP = "whitespace-nowrap";
@@ -321,17 +285,21 @@ function FirdariaHeaderRow({
   return (
     <thead className="sticky top-0 z-10 bg-background text-[color:var(--aries-text-muted)]">
       <tr>
-        <th className="aries-list-head-cell relative border-b font-medium text-center">
-          {columns[0] ?? t("firdview.ruler")}
-          <ColumnResizeHandle columnId={columnIds[0] ?? "ruler"} getResizeHandleProps={tableResize.getResizeHandleProps} />
+        <th className="aries-list-head-cell relative border-b font-medium text-right">
+          {columns[0] ?? t("firdview.age")}
+          <ColumnResizeHandle columnId={columnIds[0] ?? "age"} getResizeHandleProps={tableResize.getResizeHandleProps} />
         </th>
         <th className="aries-list-head-cell relative border-b font-medium text-center">
-          {columns[1] ?? t("firdview.start")}
-          <ColumnResizeHandle columnId={columnIds[1] ?? "start"} getResizeHandleProps={tableResize.getResizeHandleProps} />
+          {columns[1] ?? t("firdview.ruler")}
+          <ColumnResizeHandle columnId={columnIds[1] ?? "body"} getResizeHandleProps={tableResize.getResizeHandleProps} />
+        </th>
+        <th className="aries-list-head-cell relative border-b font-medium text-center">
+          {columns[2] ?? t("firdview.start")}
+          <ColumnResizeHandle columnId={columnIds[2] ?? "date"} getResizeHandleProps={tableResize.getResizeHandleProps} />
         </th>
         <th className="aries-list-head-cell relative border-b font-medium text-right">
-          {columns[2] ?? t("firdview.age")}
-          <ColumnResizeHandle columnId={columnIds[2] ?? "age"} getResizeHandleProps={tableResize.getResizeHandleProps} />
+          {columns[3]}
+          <ColumnResizeHandle columnId={columnIds[3] ?? "length"} getResizeHandleProps={tableResize.getResizeHandleProps} />
         </th>
       </tr>
     </thead>
@@ -356,6 +324,10 @@ function FirdariaRow({ row, documentId }: { row: GenericTableRow; documentId: st
           isMain && "font-semibold",
         )}
       >
+        {/* Age at period start. Current row is highlighted without a text label. */}
+        <td className={cn("aries-list-cell", FIRDARIA_CELL_NOWRAP, "text-right", isCurrent && "font-semibold")}>
+          {row.cells[0]?.text ?? ""}
+        </td>
         {/* Ruler glyph — Morinus font, wx colour from the daemon
             (clrindividual / dignity, firdariawnd.py:403-411). */}
         <td
@@ -366,14 +338,11 @@ function FirdariaRow({ row, documentId }: { row: GenericTableRow; documentId: st
             paddingLeft: isMain ? 0 : "0.9rem",
           }}
         >
-          {row.cells[0]?.glyph ?? ""}
+          {row.cells[1]?.glyph ?? ""}
         </td>
-        {/* Start date (daemon-built, wx formatting verbatim). */}
-        <td className={cn("aries-list-cell", FIRDARIA_CELL_NOWRAP, "text-center")}>{row.cells[1]?.text ?? ""}</td>
-        {/* Age at period start. Current row is highlighted without a text label. */}
-        <td className={cn("aries-list-cell", FIRDARIA_CELL_NOWRAP, "text-right", isCurrent && "font-semibold")}>
-          {row.cells[2]?.text ?? ""}
-        </td>
+        {/* Date and daemon-owned period length. */}
+        <td className={cn("aries-list-cell", FIRDARIA_CELL_NOWRAP, "text-center")}>{row.cells[2]?.text ?? ""}</td>
+        <td className={cn("aries-list-cell", FIRDARIA_CELL_NOWRAP, "text-right")}>{row.cells[3]?.text ?? ""}</td>
       </tr>
     </TimedChartContextMenu>
   );

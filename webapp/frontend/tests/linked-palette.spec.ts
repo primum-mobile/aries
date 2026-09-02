@@ -1,10 +1,16 @@
 // Copyright (C) 2026 Max Lange
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import Color from "colorjs.io";
 import { expect, test } from "@playwright/test";
 
 import {
+  chartKeyColor,
+  CHART_KEY_COLOR_SOURCES,
+} from "../src/lib/theme/chart-key-color";
+import {
   deriveLinkedPalette,
+  harmonizeToward,
   LINKED_PALETTE_SURFACE_ROLES,
   meetsWcagContrast,
   wcagContrastRatio,
@@ -157,4 +163,51 @@ test("contrast helpers account for translucent foregrounds", () => {
     .toBeCloseTo(3.98, 1);
   expect(meetsWcagContrast("#000000", "#ffffff", 7)).toBe(true);
   expect(meetsWcagContrast("#777777", "#ffffff", 4.5)).toBe(false);
+});
+
+test("the chart key colour is the most chromatic structural colour", () => {
+  // Grey ground, deep red frame: the frame is what the chart looks like.
+  expect(chartKeyColor(["#232428", "#7a1f1f", "#d7d7d9"]))
+    .toBe("#7a1f1f");
+  // Position never beats chroma: the lurid green house lines win even last.
+  expect(chartKeyColor(["#7a1f1f", "#1f7a1f"])).toBe("#1f7a1f");
+  // A tie goes to the earlier, more representative candidate.
+  expect(chartKeyColor(["#7a1f1f", "#7a1f1f"])).toBe("#7a1f1f");
+  // A monochrome chart has no hue to carry anywhere, and says so.
+  expect(chartKeyColor(["#f4f2ed", "#232428", "#d7d7d9"])).toBeNull();
+  expect(chartKeyColor([null, undefined, "not-a-color"])).toBeNull();
+  expect(chartKeyColor([])).toBeNull();
+  // Every source names both the token an edit writes and the variable the
+  // wheel is painted from, so the key resolves before a theme is loaded.
+  for (const source of CHART_KEY_COLOR_SOURCES) {
+    expect(source.semanticId.startsWith("chart.color.")).toBe(true);
+    expect(source.cssVar.startsWith("--morinus-")).toBe(true);
+  }
+});
+
+test("harmonising the anchors keeps every contrast contract", () => {
+  const chartKey = "#7a1f1f";
+  for (const amount of [0.15, 0.5, 1]) {
+    const palette = deriveLinkedPalette({
+      canvas: harmonizeToward("#f4f2ed", chartKey, amount),
+      accent: harmonizeToward("#2f6feb", chartKey, amount),
+      contrastTarget: "aaa",
+      mode: "light",
+    });
+    expectContrastContract(palette);
+    for (const color of paletteColors(palette)) expectSrgbColor(color);
+  }
+});
+
+test("harmonisation moves hue alone, and fails soft", () => {
+  const before = new Color("#2f6feb").to("oklch");
+  const after = new Color(harmonizeToward("#2f6feb", "#7a1f1f", 0.15)).to("oklch");
+  expect(Number(after.coords[0])).toBeCloseTo(Number(before.coords[0]), 2);
+  expect(Number(after.coords[1])).toBeCloseTo(Number(before.coords[1]), 2);
+  expect(Number(after.coords[2])).toBeGreaterThan(Number(before.coords[2]));
+  // A colour with no hue to travel toward, and an unreadable one, are returned
+  // untouched: a theme is better unharmonised than wrong.
+  expect(harmonizeToward("#2f6feb", "#808080", 0.15)).toBe("#2f6feb");
+  expect(harmonizeToward("not-a-color", "#7a1f1f", 0.15)).toBe("not-a-color");
+  expect(harmonizeToward("#2f6feb", "#7a1f1f", 0)).toBe("#2f6feb");
 });

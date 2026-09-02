@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Max Lange
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -14,19 +17,27 @@ test("the checked-in style contract resolves one provider graph", () => {
   const result = buildStyleTokenInventory(frontendRoot);
   assert.deepEqual(result.errors, []);
   assert.deepEqual(result.inventory.counts, {
-    tokens: 1482,
-    cssTokens: 1471,
-    cssDeclarations: 1539,
+    tokens: 1478,
+    cssTokens: 1467,
+    cssDeclarations: 1552,
     runtimeOnlyTokens: 7,
     externalTokens: 4,
-    public: 1110,
+    public: 1106,
     derived: 198,
     runtime: 174,
   });
   assert.deepEqual(
     result.inventory.tokens.filter((token) => token.runtimeProviderFiles).map((token) => token.name),
     [
+      "--aries-destructive",
       "--aries-navbar-scale",
+      "--morinus-angles",
+      "--morinus-background",
+      "--morinus-body-sun",
+      "--morinus-frame",
+      "--morinus-houses",
+      "--morinus-positions",
+      "--morinus-text-bright",
       "--right-pane-min-content-width",
       "--right-pane-preferred-width",
       "--right-pane-width",
@@ -36,8 +47,8 @@ test("the checked-in style contract resolves one provider graph", () => {
     ],
   );
   assert.deepEqual(result.publicManifest.counts, {
-    public: 1110,
-    editable: 1110,
+    public: 1106,
+    editable: 1106,
     blockedByCoupling: 0,
     supportingDerived: 11,
   });
@@ -117,6 +128,11 @@ test("the checked-in style contract resolves one provider graph", () => {
   assert.ok(
     sectionGap?.consumerFiles.includes("src/components/workshell/settings-dialog.tsx"),
     "the public panel section gap must reach the reusable Settings section stack",
+  );
+  const headerSize = result.inventory.tokens.find(({ name }) => name === "--aries-font-size-header");
+  assert.ok(
+    headerSize?.consumerFiles.includes("src/components/workshell/appearance-panel.tsx"),
+    "direct token uses inside the legacy editor must still count as live consumers",
   );
   for (const dependent of [
     "--aries-form-section-gap",

@@ -4,7 +4,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, ChevronRight, Copy, Download } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 
 import {
   fetchGenericTablePayload,
@@ -21,12 +21,13 @@ import {
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 import { useT } from "@/lib/i18n/i18n";
 import { semanticChartColor } from "@/lib/theme/semantic-color";
+import { LIST_ROLE_CLASSES, LIST_ROW_CLASSES } from "@/lib/list-tokens";
 import { cn } from "@/lib/utils";
 
 import { TimedChartContextMenu } from "./directions-view";
-import { CellView, downloadText, tableToConfiguredTsv } from "./generic-table-view";
-import { exportTablePayloadPdf } from "./table-pdf-export";
-import { exportTextContent } from "./text-export";
+import { CellView } from "./generic-table-view";
+import { buildTableExportDocument } from "./table-pdf-export";
+import { TextExportActions } from "./text-export-actions";
 import { useSettledWorkspaceRefreshSeq } from "./step-refresh";
 import { ColumnResizeHandle, useResizableTableColumns } from "./resizable-table-columns";
 import { RetainedPaneShell } from "./retained-pane-shell";
@@ -34,7 +35,6 @@ import {
   PANE_CONTROL_CLASSES,
   PaneControlBar,
   PaneSelect,
-  PaneToolbarButton,
 } from "./list-controls";
 
 // ---------------------------------------------------------------------------
@@ -305,52 +305,14 @@ export function ProfectionsView({ documentId, parentDocumentId, sourceName, onCl
       onClose={onClose}
       headerSurface="surface"
       toolbar={
-        <>
-          <PaneToolbarButton
-            type="button"
-            onClick={() => {
-              void tableToConfiguredTsv(payload, payload.rows).then((text) =>
-                navigator.clipboard?.writeText(text).catch(() => {
-                  downloadText("profections.tsv", text, "text/tab-separated-values");
-                })
-              );
-            }}
-            title={t("profview.copyRows")}
-          >
-            <Copy />
-          </PaneToolbarButton>
-          <PaneToolbarButton
-            type="button"
-            onClick={() => {
-              void tableToConfiguredTsv(payload, payload.rows).then((text) =>
-                exportTextContent({
-                filename: "profections",
-                extension: "tsv",
-                mimeType: "text/tab-separated-values;charset=utf-8",
-                text,
-                title: t("profview.exportTsvDialog"),
-                filters: [{ name: t("profview.tsvFiles"), extensions: ["tsv"] }],
-                })
-              ).catch(() => {});
-            }}
-            title={t("profview.exportTsv")}
-          >
-            <Download />
-          </PaneToolbarButton>
-          <PaneToolbarButton
-            type="button"
-            onClick={() =>
-              void exportTablePayloadPdf(payload, payload.rows, {
-                fileStem: "profections",
-                title: payload.title ?? t("profview.profections"),
-              }).catch(() => {})
-            }
-            title={t("profview.exportPdf")}
-          >
-            <Download />
-            PDF
-          </PaneToolbarButton>
-        </>
+        <TextExportActions
+          buildDocument={() =>
+            buildTableExportDocument(payload, payload.rows, {
+              fileStem: "profections",
+              title: payload.title ?? t("profview.profections"),
+            })
+          }
+        />
       }
     >
       {/* Controls — the wx Profections context submenu, flattened to native
@@ -454,18 +416,19 @@ export function ProfectionsView({ documentId, parentDocumentId, sourceName, onCl
       <div ref={listRef} className="min-h-0 flex-1 overflow-auto">
         <table
           className={cn(
-            "border-collapse text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-primary)]",
+            LIST_ROLE_CLASSES.symbolic,
+            "aries-list--frameless border-collapse",
             tableResize.tableClassName,
           )}
           style={tableResize.tableStyle}
         >
           {tableResize.colGroup}
-          <thead className="sticky top-0 z-10 bg-[color:var(--aries-surface)]">
+          <thead className="sticky top-0 z-10 bg-background">
             <tr>
               {payload.columns.map((column) => (
                 <th
                   key={column.id}
-                  className="relative border border-[color:var(--aries-border-subtle)] px-1.5 py-1.5 text-center font-medium"
+                  className="aries-list-head-cell relative border-b text-center font-medium"
                   style={{
                     fontFamily: column.headerGlyph ? "'AriesMorinus'" : undefined,
                     fontWeight: column.headerGlyph ? 400 : undefined,
@@ -510,7 +473,6 @@ function ProfRow({
   onToggle?: () => void;
 }) {
   const meta = row.meta ?? {};
-  const level = asNumber(meta.level, 1);
   const isCurrent = Boolean(row.current || meta.current);
   const eventDate = typeof meta.eventDate === "string" ? meta.eventDate : null;
   return (
@@ -518,16 +480,16 @@ function ProfRow({
       <tr
         data-prof-row={row.id}
         className={cn(
-          level === 2 && "bg-[color:var(--aries-surface-subtle)]",
-          isCurrent && "bg-accent text-accent-foreground",
-          onToggle && "cursor-pointer hover:bg-primary/10",
+          "aries-list-row border-b border-x-0 border-t-0",
+          isCurrent && LIST_ROW_CLASSES.current,
+          onToggle && cn(LIST_ROW_CLASSES.hover, "cursor-pointer"),
         )}
         onClick={onToggle}
       >
         {row.cells.map((cell, index) => (
           <td
             key={index}
-            className="whitespace-nowrap border border-[color:var(--aries-border-subtle)] px-1.5 py-0.5 text-center"
+            className="aries-list-cell whitespace-nowrap text-center"
           >
             {index === 0 && onToggle ? (
               <span className="inline-flex items-center gap-0.5">

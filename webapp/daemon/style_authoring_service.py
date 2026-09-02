@@ -10,8 +10,11 @@ style profile without becoming active application options.
 from __future__ import annotations
 
 import math
+import re
 from copy import deepcopy
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
+
+from webapp.daemon.style_profile_catalog_generated import STYLE_PROFILE_TOKENS
 
 
 AUTHORING_OVERRIDE_PREFIX = "authoring.wheel."
@@ -58,7 +61,6 @@ TYPOGRAPHY_CLASSES = frozenset({
     "secondaryRing.asteroid.label",
     "secondaryRing.midpoint.glyph",
     "secondaryRing.midpoint.text",
-    "secondaryRing.hybridHit.label",
     "secondaryRing.antiscia.glyph",
     "secondaryRing.antiscia.text",
     "secondaryRing.contraAntiscia.glyph",
@@ -83,12 +85,6 @@ TYPOGRAPHY_CLASSES = frozenset({
     "chartOverlay.events.signal.label",
     "chartOverlay.events.signal.glyph",
     "chartOverlay.events.signal.trailing",
-})
-
-COLOR_ONLY_CLASSES = frozenset({
-    "bodies.fortune",
-    "bodies.vertex",
-    "bodies.prenatalSyzygy",
 })
 
 LINE_CLASSES = frozenset({
@@ -132,7 +128,6 @@ LINE_CLASSES = frozenset({
     "secondaryRing.fixedStar.leader",
     "secondaryRing.asteroid.leader",
     "secondaryRing.midpoint.leader",
-    "secondaryRing.hybridHit.leader",
     "secondaryRing.antiscia.leader",
     "secondaryRing.contraAntiscia.leader",
     "secondaryRing.dodecatemoria.leader",
@@ -179,12 +174,23 @@ DIMENSION_PROPERTIES = frozenset({
     "cellSize", "dotSize", "shadowX", "shadowY", "shadowBlur",
 })
 FONT_REF_PROPERTIES = frozenset({"fontRef"})
+# Chart-wide geometry, which belongs to no painted element. `scale` is a
+# unitless ratio and deliberately not a DIMENSION_PROPERTY: dimensions are
+# reference-space px that get projected onto the real wheel, and projecting a
+# ratio would apply it twice.
+CHART_CLASSES = frozenset({"canvas.chart"})
+# One class per band span; mirrors WHEEL_BAND_SPANS in the frontend.
+BAND_SPAN_CLASSES = frozenset({"canvas.span.chartRing"})
+BAND_SPAN_PROPERTIES = frozenset({"spanInner"})
+CHART_PROPERTIES = frozenset({"scale"})
 ALL_PROPERTIES = frozenset((
     *DIMENSION_PROPERTIES,
     *COLOR_PROPERTIES,
     *FONT_REF_PROPERTIES,
     *MASK_FILL_PROPERTIES,
     *SHADOW_FILL_PROPERTIES,
+    *CHART_PROPERTIES,
+    *BAND_SPAN_PROPERTIES,
     "strokeStyle", "fillPattern", "shadowPattern", "gradientType", "gradientDirection",
     "gradientAngle", "opacity", "density", "angle", "seed",
     "lineCap", "lineJoin",
@@ -209,6 +215,12 @@ NUMERIC_BOUNDS = {
     "maskAmount": (0.0, 100.0),
     "seed": (0.0, 65535.0),
     "radius": (0.0, 400.0),
+    # Matches WHEEL_SCALE_RANGE in the frontend's wheel-render-style.ts. At 1 the
+    # wheel already fills the pane; below 0.3 its own scale handle would be out
+    # of reach and the chart could not be dragged back.
+    "scale": (0.3, 1.0),
+    # A span edge is a reference-space radius, same space as "radius".
+    "spanInner": (0.0, 400.0),
 }
 
 SYMBOL_TYPOGRAPHY_CLASSES = frozenset({
@@ -258,8 +270,6 @@ def class_properties(class_id: str) -> frozenset[str]:
     properties: set[str] = set()
     if class_id in TYPOGRAPHY_CLASSES:
         properties.update(TYPOGRAPHY_PROPERTIES)
-    if class_id in COLOR_ONLY_CLASSES:
-        properties.add("color")
     if class_id in LINE_CLASSES:
         properties.update(LINE_PROPERTIES)
     if class_id in FILL_CLASSES:
@@ -269,6 +279,10 @@ def class_properties(class_id: str) -> frozenset[str]:
         properties.update(SHADOW_FILL_PROPERTIES)
     if class_id in RING_CLASSES:
         properties.add("radius")
+    if class_id in CHART_CLASSES:
+        properties.update(CHART_PROPERTIES)
+    if class_id in BAND_SPAN_CLASSES:
+        properties.update(BAND_SPAN_PROPERTIES)
     return frozenset(properties)
 
 
@@ -417,6 +431,23 @@ def _validated_font_ref(
     return normalized
 
 
+_AUTHORING_ALIAS_RE = re.compile(r"^\{([A-Za-z0-9][A-Za-z0-9_.-]*)\}$")
+
+
+def authoring_color_alias_target(value: Any) -> Optional[str]:
+    """The palette role an authoring colour follows, or None for a literal.
+
+    A class colour may name one of the chart's colour roles instead of carrying
+    its own, in the same brace form the profile's own colour tokens use. Only a
+    role may be followed: a class following another class would make the wheel's
+    paint a graph over itself, with no fixed point the theme could be read from.
+    """
+    if not isinstance(value, str):
+        return None
+    match = _AUTHORING_ALIAS_RE.match(value.strip())
+    return match.group(1) if match else None
+
+
 def _validated_value(
     semantic_id: str,
     class_id: str,
@@ -440,6 +471,14 @@ def _validated_value(
             )
         return value
     if property_name in COLOR_PROPERTIES:
+        alias = authoring_color_alias_target(value)
+        if alias is not None:
+            target = STYLE_PROFILE_TOKENS.get(alias)
+            if target is None or target.get("type") != "color":
+                raise StyleAuthoringError(
+                    f"{semantic_id} may only follow a chart color token"
+                )
+            return f"{{{alias}}}"
         if not isinstance(value, (list, tuple)) or len(value) not in (3, 4):
             raise StyleAuthoringError(f"{semantic_id} must be an RGB or RGBA array")
         color = []
@@ -710,7 +749,7 @@ def build_chart_style_profile_v2_unchecked(
 
 def authoring_schema() -> dict[str, Any]:
     classes = sorted(
-        LINE_CLASSES | TYPOGRAPHY_CLASSES | COLOR_ONLY_CLASSES | FILL_CLASSES
+        LINE_CLASSES | TYPOGRAPHY_CLASSES | FILL_CLASSES
     )
     return {
         "profileSchemaVersion": CHART_STYLE_PROFILE_SCHEMA_VERSION,
@@ -731,6 +770,8 @@ def authoring_schema() -> dict[str, Any]:
                         "maskAngle": "deg",
                         "maskAmount": "%",
                         "seed": "",
+                        # A ratio, not a length — the default below is px.
+                        "scale": "",
                     }.get(property_name, "px"),
                     "min": bounds[0],
                     "max": bounds[1],

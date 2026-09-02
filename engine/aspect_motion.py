@@ -23,6 +23,7 @@ import arabicparts
 import astrology
 import chart
 import common
+import eclipses
 import fortune
 import houses
 import options as options_mod
@@ -90,6 +91,7 @@ class ChartMotionEvaluator:
         self._fortune_cache: dict[float, dict[str, Any]] = {}
         self._parts_cache: dict[float, dict[str, Any]] = {}
         self._syzygy_windows: list[tuple[float, float, dict[str, Any]]] = []
+        self._eclipse_cache: dict[tuple[float, str], dict[str, Any] | None] = {}
         self._activate_swiss_context()
 
     def _activate_swiss_context(self) -> None:
@@ -466,6 +468,41 @@ class ChartMotionEvaluator:
             "canAct": False,
         }
 
+    def eclipse(self, jd: float) -> dict[str, Any] | None:
+        """Sample the configured prenatal eclipse as a piecewise-fixed target."""
+        mode = str(getattr(self.chart.options, "prenatal_eclipse_mode", "solar_and_lunar"))
+        key = (self._jd_key(jd), mode)
+        if key in self._eclipse_cache:
+            return self._eclipse_cache[key]
+        try:
+            event = eclipses.most_recent_eclipse(
+                self.chart,
+                jd_ut=float(jd),
+                solar_only=mode == "solar_only",
+            )
+            exact_jd = float(eclipses.syzygy_jdut_for_event(event))
+            longitude = float(eclipses.eclipse_zodiac_longitude(event))
+            ayanamsha = int(getattr(self.chart.options, "ayanamsha", 0) or 0)
+            if ayanamsha:
+                longitude = util.normalize(
+                    longitude - astrology.effective_ayanamsha_ut(exact_jd, ayanamsha)
+                )
+            result = {
+                "longitude": util.normalize(longitude),
+                "regime": (
+                    "eclipse",
+                    round(float(getattr(event, "jdut", exact_jd)), 7),
+                    "solar" if bool(getattr(event, "is_solar", False)) else "lunar",
+                    mode,
+                ),
+                "canAct": False,
+                "valid": True,
+            }
+        except Exception:
+            result = None
+        self._eclipse_cache[key] = result
+        return result
+
     def _arabic_parts(self, jd: float) -> dict[str, Any] | None:
         key = self._jd_key(jd)
         if key in self._parts_cache:
@@ -645,6 +682,8 @@ class ChartMotionEvaluator:
             return self.fortune(jd)
         if kind == "syzygy":
             return self.syzygy(jd)
+        if kind == "eclipse":
+            return self.eclipse(jd)
         if kind == "midpoint":
             return self.midpoint(int(ref["p1"]), int(ref["p2"]), jd)
         if kind == "projection":

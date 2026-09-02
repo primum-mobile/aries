@@ -1,0 +1,15 @@
+[pack]
+id = "valens"
+name = "Vettius Valens — Anthologies"
+era = "hellenistic"
+author_primary = "Vettius Valens (Anthologies, 2nd c. CE)"
+translator = "Mark T. Riley"
+license = "GPL-2.0-only; separately licensed third-party corpus resource"
+version = "0.1.0"
+short_label = "Valens"
+disciplines = []
+capabilities = ["inspector_content"]
+
+[content.inspector]
+source = "valens"
+mapping = "content/inspector.toml"

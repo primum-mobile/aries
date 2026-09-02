@@ -1,4 +1,8 @@
 # -*- coding: utf-8 -*-
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
 
 import math
 import datetime
@@ -29,6 +33,26 @@ import mtexts
 import geonames
 import common
 from aries.astrology.ephemeris_context import EphemerisContext
+
+
+def semantic_angle_longitude(chrt, angle_key):
+	"""Resolve one of ASC/DSC/MC/IC, including symbolic-chart overrides."""
+	key = 'dsc' if str(angle_key).lower() in ('dc', 'desc', 'dsc') else str(angle_key).lower()
+	try:
+		explicit = chrt._semantic_angle_longitudes
+	except AttributeError:
+		explicit = None
+	if explicit is not None and key in explicit:
+		return util.normalize(float(explicit[key]))
+	if key == 'asc':
+		return float(chrt.houses.ascmc[houses.Houses.ASC])
+	if key == 'mc':
+		return float(chrt.houses.ascmc[houses.Houses.MC])
+	if key == 'dsc':
+		return util.normalize(float(chrt.houses.ascmc[houses.Houses.ASC]) + 180.0)
+	if key == 'ic':
+		return util.normalize(float(chrt.houses.ascmc[houses.Houses.MC]) + 180.0)
+	raise ValueError('Unsupported chart angle: %s' % angle_key)
 
 
 # if long is 'E' or/and lat is 'S' -> negate value
@@ -553,6 +577,7 @@ class Chart:
 			abovehor = self.abovehorizonwithorb
 
 		self.fortune = fortune.Fortune(self.options.lotoffortune, self.houses.ascmc2, self.raequasc, self.planets, self.obl[0], self.place.lat, abovehor, self.ayanamsha_offset)
+		self.houses.set_fortune_whole_sign_cusps(self.fortune.fortune[fortune.Fortune.LON])
 
 # ###########################################
 # Roberto change  V 7.3.0		
@@ -885,6 +910,7 @@ class Chart:
 			abovehor = self.abovehorizonwithorb
 
 		self.fortune = fortune.Fortune(self.options.lotoffortune, self.houses.ascmc2, self.raequasc, self.planets, self.obl[0], self.place.lat, abovehor, getattr(self, 'ayanamsha_offset', 0.0))
+		self.houses.set_fortune_whole_sign_cusps(self.fortune.fortune[fortune.Fortune.LON])
 		self.calcLoFAspMatrix()
 
 
@@ -947,6 +973,12 @@ class Chart:
 
 	def _get_desc_node_body(self):
 		try:
+			explicit_body = self._semantic_desc_node_body
+		except AttributeError:
+			explicit_body = None
+		if explicit_body is not None:
+			return explicit_body
+		try:
 			node = self.planets.planets[astrology.SE_MEAN_NODE]
 		except Exception:
 			return None
@@ -961,6 +993,17 @@ class Chart:
 			return BodyProxy(data, dataEqu)
 		except Exception:
 			return None
+
+	def get_angle_longitude(self, angle_key):
+		"""Return one of the four semantic chart-angle longitudes.
+
+		Physical charts can derive DSC/IC as the antipodes of ASC/MC.  Symbolic
+		longitude transforms cannot always do that after projection: an even
+		harmonic maps both ends of an antipodal pair to the same longitude.
+		Such charts provide all four resolved values in
+		``_semantic_angle_longitudes``.
+		"""
+		return semantic_angle_longitude(self, angle_key)
 
 	def get_planet_body(self, planet_idx):
 		if planet_idx == astrology.SE_CHIRON:
@@ -1765,9 +1808,14 @@ class Chart:
 			triplicity_group = triplicity_groups[sign]
 			score_slot = 0 if daytime else 1
 			secondary_slot = 1 if daytime else 0
+			ordered_slots = (score_slot, secondary_slot, 2)
 			triplicity_rulers = []
 			triplicity_slots = []
-			for slot, candidate in enumerate(self.options.trips[self.options.seltrip][triplicity_group]):
+			raw_triplicity_rulers = self.options.trips[self.options.seltrip][triplicity_group]
+			for slot in ordered_slots:
+				if slot >= len(raw_triplicity_rulers):
+					continue
+				candidate = raw_triplicity_rulers[slot]
 				candidate = int(candidate)
 				if candidate < astrology.SE_SUN or candidate > astrology.SE_SATURN:
 					continue
@@ -1867,10 +1915,10 @@ class Chart:
 				self.fsaspmatrix.append(fsar)
 
 		# AscDescMCIC
-		ASC = self.houses.ascmc[houses.Houses.ASC]
-		DESC = util.normalize(self.houses.ascmc[houses.Houses.ASC]+180.0)
-		MC = self.houses.ascmc[houses.Houses.MC]
-		IC = util.normalize(self.houses.ascmc[houses.Houses.MC]+180.0)
+		ASC = self.get_angle_longitude('asc')
+		DESC = self.get_angle_longitude('dsc')
+		MC = self.get_angle_longitude('mc')
+		IC = self.get_angle_longitude('ic')
 		ascmc = [ASC, DESC, MC, IC]
 
 		for i in range(num):

@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// Copyright (C) 2026 Max Lange
+// SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";

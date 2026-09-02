@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import datetime
+import math
 from typing import Any, Iterable
 
 import astrology
@@ -40,6 +41,7 @@ INGRESS_PLANET_SPECS: tuple[tuple[int, str], ...] = (
     (astrology.SE_URANUS, "uranus"),
     (astrology.SE_NEPTUNE, "neptune"),
     (astrology.SE_PLUTO, "pluto"),
+    (astrology.SE_CHIRON, "chiron"),
     (LOGICAL_NORTH_NODE_ID, "asc_node"),
 )
 SYNODIC_PLANET_IDS = (
@@ -51,6 +53,7 @@ SYNODIC_PLANET_IDS = (
     astrology.SE_URANUS,
     astrology.SE_NEPTUNE,
     astrology.SE_PLUTO,
+    astrology.SE_CHIRON,
 )
 SYNODIC_FILTER_PLANET_IDS = frozenset((
     astrology.SE_MOON,
@@ -66,11 +69,122 @@ EVENT_ORDER = {
     "lunation": 1,
     "draconic": 2,
     "anomalistic": 3,
-    "station": 4,
-    "cazimi": 5,
-    "ingress": 6,
+    "heliacal": 4,
+    "station": 5,
+    "cazimi": 6,
+    "ingress": 7,
 }
 LUNATION_ECLIPSE_DEDUPE_DAYS = 1.0 / 24.0
+
+
+def _temporal_identity_part(value: Any) -> str:
+    return str(value if value is not None else "").replace("%", "%25").replace("|", "%7C")
+
+
+def _temporal_planet_id(catalog: searchcatalog.SearchCatalog, point_id: str) -> int | None:
+    obj = catalog.get(point_id)
+    planet_id = getattr(obj, "planet_index", None) if obj is not None else None
+    try:
+        return int(planet_id) if planet_id is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _temporal_row_discriminator(row: searchquery.SearchResult) -> str:
+    return ",".join(
+        _temporal_identity_part(value)
+        for value in (
+            row.metadata.get("station_code"),
+            row.metadata.get("heliacal_code"),
+            row.metadata.get("sign_change_event_sign"),
+            row.metadata.get("lunar_cycle_code"),
+            row.metadata.get("eclipse_kind"),
+            row.metadata.get("lunation_kind"),
+        )
+        if value is not None
+    )
+
+
+def _temporal_row_payload(
+    row: searchquery.SearchResult,
+    catalog: searchcatalog.SearchCatalog,
+    event_type: str,
+    event_tuple: tuple[int, int, int, int, int, int],
+    activation_colors: dict[str, dict[str, str]] | None = None,
+) -> dict[str, Any] | None:
+    """Return exact-event correlation metadata without changing list fields.
+
+    Exact evidence is represented by the smallest possible IEEE-754 half-open
+    interval ``[event_jd, nextafter(event_jd, +inf))``.  Period and orb-aware
+    evidence can therefore use the same window shape without widening an exact
+    synodic event.
+    """
+    try:
+        exact_event_jd = row.metadata.get("exact_event_jd")
+        event_jd = float(row.event_jd if exact_event_jd is None else exact_event_jd)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(event_jd):
+        return None
+
+    event_identity = (
+        f"{event_tuple[0]:04d}-{event_tuple[1]:02d}-{event_tuple[2]:02d}T"
+        f"{event_tuple[3]:02d}:{event_tuple[4]:02d}:{event_tuple[5]:02d}Z"
+    )
+    row_id = "|".join(
+        _temporal_identity_part(value)
+        for value in (
+            "synodic",
+            event_type,
+            row.aspect,
+            row.promittor_id,
+            row.significator_id,
+            event_identity,
+            _temporal_row_discriminator(row),
+        )
+    )
+    end_jd = math.nextafter(event_jd, math.inf)
+
+    activations: list[dict[str, Any]] = []
+    for role, point_id in (
+        ("actor", str(row.promittor_id or "")),
+        ("target", str(row.significator_id or "")),
+    ):
+        if not point_id:
+            continue
+        activation = {
+            "activationId": "%s|%s|%s" % (
+                row_id,
+                role,
+                _temporal_identity_part(point_id),
+            ),
+            "pointId": point_id,
+            "planetId": _temporal_planet_id(catalog, point_id),
+            "role": role,
+            "basis": "exact",
+            "windows": [
+                {
+                    "startJdUt": event_jd,
+                    "endJdUt": end_jd,
+                    "endExclusive": True,
+                }
+            ],
+        }
+        activation.update((activation_colors or {}).get(role, {}))
+        activations.append(activation)
+
+    payload: dict[str, Any] = {
+        "rowId": row_id,
+        "rowAnchorJdUt": event_jd,
+        "activations": activations,
+    }
+    if row.promittor_id and row.significator_id:
+        payload["relationship"] = {
+            "aspect": str(row.aspect or ""),
+            "actorPointId": str(row.promittor_id),
+            "targetPointId": str(row.significator_id),
+        }
+    return payload
 
 
 class SynodicService:
@@ -81,9 +195,16 @@ class SynodicService:
         from_date: str | None = None,
         to_date: str | None = None,
         planet_ids: str | None = None,
+        ingress_planet_ids: str | None = None,
+        synodic_planet_ids: str | None = None,
+        lunar_cycle_ids: str | None = None,
         include_stations: bool = True,
         include_cazimis: bool = True,
         include_ingresses: bool = True,
+        include_temporal: bool = False,
+        cursor_direction: str | None = None,
+        cursor_row_budget: int | None = None,
+        cursor_anchor_date: str | None = None,
     ) -> dict[str, Any]:
         chrt = context["chart"]
         focus_dt = _coerce_datetime(context.get("current_datetime"))
@@ -92,67 +213,107 @@ class SynodicService:
         start, end = _resolve_date_range(focus_dt, from_date, to_date)
         active_planets = _parse_planet_ids(planet_ids)
         catalog = searchcatalog.SearchCatalog(chrt)
-        ingress_promittor_ids = [
-            PLANET_OBJECT_IDS[pid]
-            for pid in PLANET_IDS
-            if pid in active_planets and catalog.get(PLANET_OBJECT_IDS[pid]) is not None
-        ]
-        synodic_promittor_ids = [
-            PLANET_OBJECT_IDS[pid]
-            for pid in SYNODIC_PLANET_IDS
-            if pid in active_planets and catalog.get(PLANET_OBJECT_IDS[pid]) is not None
-        ]
-
-        rows = []
-        start_jd = searchbackend._date_to_jd(start, chrt)
-        end_jd = searchbackend._date_to_jd(end + datetime.timedelta(days=1), chrt)
-        technique = searchquery.SearchQuery.TECHNIQUE_TRANSITS
         runtime = searchbackend._SearchRuntime()
-        if ingress_promittor_ids:
-            if include_ingresses:
-                ingress_rows = searchbackend._search_sign_change_rows(catalog, chrt, ingress_promittor_ids, start_jd, end_jd, technique)
-                for row in ingress_rows:
-                    searchbackend._apply_sign_change_row_display_payloads(row, catalog, chrt, runtime)
-                rows.extend(ingress_rows)
-        if synodic_promittor_ids:
-            if include_stations:
-                rows.extend(searchbackend._search_station_rows(catalog, chrt, synodic_promittor_ids, start_jd, end_jd, technique, runtime))
-            if include_cazimis:
-                rows.extend(searchbackend._search_cazimi_rows(catalog, chrt, synodic_promittor_ids, start_jd, end_jd, technique, runtime))
-        if LOGICAL_NORTH_NODE_ID in active_planets and include_stations:
-            rows.extend(
-                _search_true_node_station_rows(
+        active_ingress_planets = _parse_group_ids(
+            ingress_planet_ids,
+            PLANET_IDS,
+            active_planets,
+        )
+        active_synodic_planets = _parse_group_ids(
+            synodic_planet_ids,
+            SYNODIC_FILTER_PLANET_IDS,
+            active_planets,
+        )
+        active_lunar_cycles = _parse_group_ids(
+            lunar_cycle_ids,
+            LUNAR_CYCLE_IDS,
+            LUNAR_CYCLE_IDS if astrology.SE_MOON in active_planets else (),
+        )
+
+        def rows_for_span(
+            span_start: datetime.date,
+            span_end: datetime.date,
+        ) -> tuple[list[searchquery.SearchResult], bool, int]:
+            span_start_jd, span_end_jd = searchbackend._date_range_to_half_open_jd(
+                span_start,
+                span_end,
+                chrt,
+            )
+            return (
+                _rows_for_range(
                     catalog,
                     chrt,
-                    start_jd,
-                    end_jd,
-                    technique,
-                )
+                    span_start_jd,
+                    span_end_jd,
+                    active_ingress_planets=active_ingress_planets,
+                    active_synodic_planets=active_synodic_planets,
+                    active_lunar_cycles=active_lunar_cycles,
+                    include_stations=include_stations,
+                    include_cazimis=include_cazimis,
+                    include_ingresses=include_ingresses,
+                    runtime=runtime,
+                ),
+                False,
+                1,
             )
-        if astrology.SE_MOON in active_planets:
-            rows.extend(
-                _search_lunation_eclipse_draconic_rows(
-                    catalog,
-                    chrt,
-                    start_jd,
-                    end_jd,
-                    technique,
-                    runtime,
-                )
+
+        cursor = None
+        regular_synodic_planets = set(active_synodic_planets).intersection(
+            SYNODIC_PLANET_IDS
+        )
+        has_active_heliacal_source = bool(searchbackend._heliacal_promittors(
+            catalog,
+            [
+                PLANET_OBJECT_IDS[pid]
+                for pid in SYNODIC_PLANET_IDS
+                if pid in regular_synodic_planets
+            ],
+        ))
+        has_active_sources = bool(
+            (include_ingresses and active_ingress_planets)
+            or (
+                regular_synodic_planets
+                and (include_stations or include_cazimis)
             )
-            rows.extend(
-                _search_anomalistic_rows(
-                    catalog,
-                    chrt,
-                    start_jd,
-                    end_jd,
-                    technique,
-                    runtime,
-                )
+            or has_active_heliacal_source
+            or (
+                LOGICAL_NORTH_NODE_ID in active_synodic_planets
+                and include_stations
             )
+            or astrology.SE_MOON in active_synodic_planets
+            or active_lunar_cycles
+        )
+        if cursor_direction and cursor_row_budget and has_active_sources:
+            anchor_date = (
+                _parse_date(cursor_anchor_date)
+                if cursor_anchor_date
+                else start + datetime.timedelta(days=(end - start).days // 2)
+            )
+            rows: list[searchquery.SearchResult] = []
+            for rows, _truncated, cursor in searchbackend.row_cursor_progress(
+                chrt,
+                start,
+                end,
+                cursor_row_budget,
+                direction=cursor_direction,
+                anchor_date=anchor_date,
+                search_span=rows_for_span,
+                # These sources use Search's range-sensitive motion/sign and
+                # per-target paths, whose own cursor contract is month-sized.
+                max_window_months=1,
+                dedupe_rows=_dedupe_rows,
+                row_sort_key=_row_sort_key,
+            ):
+                pass
+            if cursor is not None:
+                start = _parse_date(cursor["coverageFrom"])
+                end = _parse_date(cursor["coverageTo"])
+        else:
+            rows, _truncated, _leaf_count = rows_for_span(start, end)
 
         rows = _dedupe_rows(rows)
         rows.sort(key=_row_sort_key)
+        start_jd, end_jd = searchbackend._date_range_to_half_open_jd(start, end, chrt)
         display_clock = table_event_clock(getattr(chrt, "options", None))
         display_options = effective_display_options(getattr(chrt, "options", None))
         payload_rows = [
@@ -163,6 +324,7 @@ class SynodicService:
                 chrt=chrt,
                 display_clock=display_clock,
                 display_options=display_options,
+                include_temporal=include_temporal,
             )
             for index, row in enumerate(rows)
         ]
@@ -180,6 +342,8 @@ class SynodicService:
                 "title": mtexts.txts.get("SynodicCycles", "Synodic Cycles"),
                 "fromDate": start.isoformat(),
                 "toDate": end.isoformat(),
+                "coverageStartJdUt": start_jd,
+                "coverageEndJdUt": end_jd,
                 "focusDatetime": _datetime_iso(focus_dt),
                 "currentDatetime": _datetime_iso(current_dt),
                 "birthDatetime": _datetime_iso(birth_dt),
@@ -192,11 +356,18 @@ class SynodicService:
                 ],
                 "timeDisplay": time_display,
                 "planetItems": _planet_items(
-                    catalog, chrt, active_planets, display_options=display_options
+                    catalog,
+                    chrt,
+                    set(active_ingress_planets) | set(active_synodic_planets),
+                    display_options=display_options,
                 ),
                 "lunarItems": _lunar_items(chrt),
-                "activePlanetIds": list(active_planets),
-                "activeLunarCycleIds": list(LUNAR_CYCLE_IDS),
+                "activePlanetIds": list(dict.fromkeys(
+                    (*active_ingress_planets, *active_synodic_planets)
+                )),
+                "activeIngressPlanetIds": list(active_ingress_planets),
+                "activeSynodicPlanetIds": list(active_synodic_planets),
+                "activeLunarCycleIds": list(active_lunar_cycles),
                 "eventTypes": {
                     "station": bool(include_stations),
                     "cazimi": bool(include_cazimis),
@@ -206,6 +377,7 @@ class SynodicService:
             "rows": payload_rows,
             "summary": _summary_text(len(payload_rows)),
             "truncated": False,
+            **({"cursor": cursor} if cursor is not None else {}),
         }
 
 
@@ -292,6 +464,150 @@ def _parse_planet_ids(value: str | None) -> tuple[int, ...]:
         if pid in PLANET_IDS and pid not in active:
             active.append(pid)
     return tuple(active)
+
+
+def _parse_group_ids(
+    value: str | None,
+    allowed_values: Iterable[Any],
+    default_values: Iterable[Any],
+) -> tuple[Any, ...]:
+    allowed = tuple(allowed_values)
+    if value is None or str(value).strip() == "":
+        return tuple(item for item in default_values if item in allowed)
+    selected: list[Any] = []
+    for raw in str(value).split(","):
+        part = raw.strip()
+        for candidate in allowed:
+            if part != str(candidate) or candidate in selected:
+                continue
+            selected.append(candidate)
+            break
+    return tuple(selected)
+
+
+def _rows_for_range(
+    catalog: searchcatalog.SearchCatalog,
+    chrt,
+    start_jd: float,
+    end_jd: float,
+    *,
+    active_ingress_planets: Iterable[int],
+    active_synodic_planets: Iterable[int],
+    active_lunar_cycles: Iterable[str],
+    include_stations: bool,
+    include_cazimis: bool,
+    include_ingresses: bool,
+    runtime,
+) -> list[searchquery.SearchResult]:
+    ingress_planets = set(active_ingress_planets)
+    synodic_planets = set(active_synodic_planets)
+    lunar_cycles = set(active_lunar_cycles)
+    ingress_promittor_ids = [
+        PLANET_OBJECT_IDS[pid]
+        for pid in PLANET_IDS
+        if pid in ingress_planets
+        and catalog.get(PLANET_OBJECT_IDS[pid]) is not None
+    ]
+    synodic_promittor_ids = [
+        PLANET_OBJECT_IDS[pid]
+        for pid in SYNODIC_PLANET_IDS
+        if pid in synodic_planets
+        and catalog.get(PLANET_OBJECT_IDS[pid]) is not None
+    ]
+    technique = searchquery.SearchQuery.TECHNIQUE_TRANSITS
+    rows: list[searchquery.SearchResult] = []
+    if include_ingresses and ingress_promittor_ids:
+        ingress_rows = searchbackend._search_sign_change_rows(
+            catalog,
+            chrt,
+            ingress_promittor_ids,
+            start_jd,
+            end_jd,
+            technique,
+        )
+        for row in ingress_rows:
+            searchbackend._apply_sign_change_row_display_payloads(
+                row,
+                catalog,
+                chrt,
+                runtime,
+            )
+        rows.extend(ingress_rows)
+    if synodic_promittor_ids:
+        heliacal_rows = searchbackend._search_heliacal_phases(
+            catalog,
+            chrt,
+            synodic_promittor_ids,
+            start_jd,
+            end_jd,
+            runtime,
+        )
+        for row in heliacal_rows:
+            row.metadata["synodic_event_type"] = "heliacal"
+            row.metadata["synodic_filter_group"] = "synodic"
+            row.metadata["synodic_filter_id"] = OBJECT_PLANET_IDS.get(
+                row.promittor_id
+            )
+        rows.extend(heliacal_rows)
+        if include_stations:
+            rows.extend(searchbackend._search_station_rows(
+                catalog,
+                chrt,
+                synodic_promittor_ids,
+                start_jd,
+                end_jd,
+                technique,
+                runtime,
+            ))
+        if include_cazimis:
+            rows.extend(searchbackend._search_cazimi_rows(
+                catalog,
+                chrt,
+                synodic_promittor_ids,
+                start_jd,
+                end_jd,
+                technique,
+                runtime,
+                # A synodic cycle contains both exact Sun conjunctions. The
+                # configured solar-condition geometry still governs Search,
+                # but must not discard inferior (retrograde) cycle events.
+                respect_mode=False,
+            ))
+    if LOGICAL_NORTH_NODE_ID in synodic_planets and include_stations:
+        rows.extend(_search_true_node_station_rows(
+            catalog,
+            chrt,
+            start_jd,
+            end_jd,
+            technique,
+        ))
+
+    include_lunations = astrology.SE_MOON in synodic_planets
+    include_draconic = "draconic" in lunar_cycles
+    if include_lunations or include_draconic:
+        rows.extend(
+            row
+            for row in _search_lunation_eclipse_draconic_rows(
+                catalog,
+                chrt,
+                start_jd,
+                end_jd,
+                technique,
+                runtime,
+                include_lunations=include_lunations,
+                include_draconic=include_draconic,
+            )
+        )
+    if "anomalistic" in lunar_cycles:
+        rows.extend(_search_anomalistic_rows(
+            catalog,
+            chrt,
+            start_jd,
+            end_jd,
+            technique,
+            runtime,
+        ))
+    return _dedupe_rows(rows)
 
 
 def _planet_items(
@@ -432,42 +748,59 @@ def _search_lunation_eclipse_draconic_rows(
     end_jd: float,
     technique: str,
     runtime,
+    *,
+    include_lunations: bool = True,
+    include_draconic: bool = True,
 ) -> list[searchquery.SearchResult]:
     moon_id = PLANET_OBJECT_IDS[astrology.SE_MOON]
     sun_id = PLANET_OBJECT_IDS[astrology.SE_SUN]
     node_id = NORTH_NODE_OBJECT_ID
-    if (
-        catalog.get(moon_id) is None
-        or catalog.get(sun_id) is None
-        or catalog.get(node_id) is None
-    ):
+    if catalog.get(moon_id) is None:
+        return []
+    if include_lunations and catalog.get(sun_id) is None:
+        return []
+    if include_draconic and catalog.get(node_id) is None:
         return []
 
-    query = searchquery.SearchQuery()
-    query.set_promittor_ids([moon_id])
-    query.set_significator_ids([sun_id, node_id])
-    query.set_techniques([searchquery.SearchQuery.TECHNIQUE_MUNDANE_WEATHER])
-    query.set_aspects([
-        searchquery.SearchQuery.ASPECT_CONJUNCTION,
-        searchquery.SearchQuery.ASPECT_SQUARE,
-        searchquery.SearchQuery.ASPECT_OPPOSITION,
-    ])
-    cycle_rows = searchbackend._search_mundane_weather(
-        catalog,
-        chrt,
-        query,
-        start_jd,
-        end_jd,
-        runtime,
-        searchbackend._CompiledQuery(catalog, query),
-    )
+    cycle_rows: list[searchquery.SearchResult] = []
+    for significator_ids, aspects in (
+        (
+            [sun_id],
+            [
+                searchquery.SearchQuery.ASPECT_CONJUNCTION,
+                searchquery.SearchQuery.ASPECT_OPPOSITION,
+            ],
+        ) if include_lunations else ([], []),
+        (
+            [node_id],
+            [
+                searchquery.SearchQuery.ASPECT_CONJUNCTION,
+                searchquery.SearchQuery.ASPECT_SQUARE,
+                searchquery.SearchQuery.ASPECT_OPPOSITION,
+            ],
+        ) if include_draconic else ([], []),
+    ):
+        if not significator_ids:
+            continue
+        query = searchquery.SearchQuery()
+        query.set_promittor_ids([moon_id])
+        query.set_significator_ids(significator_ids)
+        query.set_techniques([searchquery.SearchQuery.TECHNIQUE_MUNDANE_WEATHER])
+        query.set_aspects(aspects)
+        cycle_rows.extend(searchbackend._search_mundane_weather(
+            catalog,
+            chrt,
+            query,
+            start_jd,
+            end_jd,
+            runtime,
+            searchbackend._CompiledQuery(catalog, query),
+        ))
     lunation_rows: list[searchquery.SearchResult] = []
     draconic_rows: list[searchquery.SearchResult] = []
     for row in cycle_rows:
         pair = {row.promittor_id, row.significator_id}
         if pair == {moon_id, sun_id}:
-            if row.aspect == searchquery.SearchQuery.ASPECT_SQUARE:
-                continue
             row.technique = technique
             # The generic weather query canonically orders Sun before Moon. A
             # lunation is carried by the moving Moon, so its selector/glyph and
@@ -510,9 +843,12 @@ def _search_lunation_eclipse_draconic_rows(
 
     eclipse_rows: list[searchquery.SearchResult] = []
     eclipse_jds: list[float] = []
-    try:
-        eclipse_events = eclipses.find_eclipses_in_range(chrt, start_jd, end_jd)
-    except Exception:
+    if include_lunations:
+        try:
+            eclipse_events = eclipses.find_eclipses_in_range(chrt, start_jd, end_jd)
+        except Exception:
+            eclipse_events = []
+    else:
         eclipse_events = []
     calflag = searchbackend._calendar_flag(chrt)
     for event in eclipse_events:
@@ -650,6 +986,7 @@ def _dedupe_rows(rows: Iterable[searchquery.SearchResult]) -> list[searchquery.S
             row.promittor_id,
             event_type,
             row.metadata.get("station_code"),
+            row.metadata.get("heliacal_code"),
             row.metadata.get("sign_change_event_sign"),
             row.metadata.get("lunar_cycle_code"),
         )
@@ -682,6 +1019,7 @@ def _serialize_row(
     chrt,
     display_clock: DefaultLocationClock,
     display_options=None,
+    include_temporal: bool = False,
 ) -> dict[str, Any]:
     display_options = display_options or effective_display_options(
         getattr(chrt, "options", None)
@@ -694,6 +1032,9 @@ def _serialize_row(
     display_tuple = display.values
     open_tuple = _display_datetime_for_chart_instant(chrt, event_tuple)
     event_type = _event_type(row)
+    moon_phase_kind = str(row.metadata.get("lunation_kind") or "")
+    if not moon_phase_kind and event_type == "eclipse":
+        moon_phase_kind = "new" if row.metadata.get("eclipse_kind") == "solar" else "full"
     prom_display = _decorate_display_payload(
         row.metadata.get("prom_display", {}),
         chrt,
@@ -732,6 +1073,7 @@ def _serialize_row(
         row.promittor_id,
         event_type,
         row.metadata.get("station_code")
+        or row.metadata.get("heliacal_code")
         or row.metadata.get("sign_change_event_sign")
         or row.metadata.get("lunar_cycle_code")
         or "",
@@ -743,10 +1085,12 @@ def _serialize_row(
     filter_id = row.metadata.get("synodic_filter_id")
     if filter_id is None:
         filter_id = pid
-    return {
+    payload = {
         "key": key,
         "eventType": event_type,
         "eventLabel": event_label,
+        "eventGlyph": common.get_moon_phase_glyph(moon_phase_kind),
+        "eventGlyphFont": "morinus",
         "detailLabel": detail,
         "sessionLabel": session_label,
         "planetId": pid,
@@ -766,7 +1110,12 @@ def _serialize_row(
         "eventTime": row.event_time,
         "displayDatetime": display.iso,
         "displayDate": dateformat.date_text(display_tuple[0], display_tuple[1], display_tuple[2], getattr(chrt, "options", None)),
-        "displayTime": "%02d:%02d:%02d" % (display_tuple[3], display_tuple[4], display_tuple[5]),
+        "displayTime": (
+            ""
+            if row.metadata.get("date_only")
+            else "%02d:%02d:%02d"
+            % (display_tuple[3], display_tuple[4], display_tuple[5])
+        ),
         "displayUtcOffsetMinutes": display.utc_offset_minutes,
         "openDatetime": "%04d-%02d-%02dT%02d:%02d:%02d" % open_tuple,
         "eventJd": row.event_jd,
@@ -776,6 +1125,20 @@ def _serialize_row(
         "motionMarker": str(prom_display.get("motion_marker") or ""),
         "metadata": _json_clean({
             "stationCode": row.metadata.get("station_code"),
+            "heliacalCode": row.metadata.get("heliacal_code"),
+            "heliacalMethod": row.metadata.get("heliacal_method"),
+            "heliacalMethodLabel": row.metadata.get("heliacal_method_label"),
+            "phasisMode": row.metadata.get("phasis_mode"),
+            "phasisModeLabel": row.metadata.get("phasis_mode_label"),
+            "heliacalThresholdDeg": row.metadata.get("heliacal_threshold_deg"),
+            "heliacalArcusVisionisDeg": row.metadata.get(
+                "heliacal_arcus_visionis_deg"
+            ),
+            "heliacalArcusSource": row.metadata.get("heliacal_arcus_source"),
+            "heliacalCalculationPlace": row.metadata.get(
+                "heliacal_calculation_place"
+            ),
+            "dateOnly": True if row.metadata.get("date_only") else None,
             "cazimiMode": row.metadata.get("cazimi_mode"),
             "signChangeDirection": (
                 "retrograde" if row.metadata.get("sign_change_retrograde") else "direct"
@@ -790,6 +1153,72 @@ def _serialize_row(
             "promDisplay": prom_display,
         }),
     }
+    if include_temporal:
+        activation_colors: dict[str, dict[str, str]] = {}
+        actor_color = _temporal_activation_color(
+            payload.get("planetColorRole"),
+            payload.get("planetColor"),
+        )
+        if actor_color:
+            activation_colors["actor"] = actor_color
+
+        sig = catalog.get(row.significator_id)
+        if row.significator_id == row.promittor_id:
+            target_color = actor_color
+        else:
+            sig_display = _decorate_display_payload(
+                row.metadata.get("sig_display", {}),
+                chrt,
+                display_options=display_options,
+                obj=sig,
+            )
+            sig_pid = getattr(sig, "planet_index", None)
+            sig_color = sig_display.get("glyph_color_css")
+            if not sig_color and sig_pid is not None:
+                sig_color = _planet_color(
+                    chrt,
+                    int(sig_pid),
+                    display_options=display_options,
+                )
+            try:
+                sig_dignity = (
+                    sig_display.get("dignity_code")
+                    if sig_display.get("dignity_code") is not None
+                    else chrt.dignity(int(sig_pid))
+                ) if sig_pid is not None else None
+            except Exception:
+                sig_dignity = None
+            sig_color_role = sig_display.get("glyph_color_role")
+            if not sig_color_role and sig_color:
+                sig_color_role = object_glyph_color_role(
+                    display_options,
+                    sig,
+                    sig_dignity,
+                    resolved_color=sig_color,
+                )
+            target_color = _temporal_activation_color(sig_color_role, sig_color)
+        if target_color:
+            activation_colors["target"] = target_color
+
+        temporal = _temporal_row_payload(
+            row,
+            catalog,
+            event_type,
+            event_tuple,
+            activation_colors,
+        )
+        if temporal is not None:
+            payload["temporal"] = temporal
+    return payload
+
+
+def _temporal_activation_color(color_role: Any, color_hex: Any) -> dict[str, str]:
+    color: dict[str, str] = {}
+    if color_role:
+        color["colorRole"] = str(color_role)
+    if color_hex:
+        color["colorHex"] = str(color_hex)
+    return color
 
 
 def _event_type(row: searchquery.SearchResult) -> str:
@@ -815,6 +1244,8 @@ def _event_label(
     prom_display: dict[str, Any],
 ) -> str:
     if event_type in {"lunation", "eclipse", "draconic", "anomalistic"}:
+        return row.event_label or row.notes
+    if event_type == "heliacal":
         return row.event_label or row.notes
     if event_type == "station":
         code = str(row.metadata.get("station_code") or "").upper()
@@ -852,6 +1283,7 @@ def _detail_label(row: searchquery.SearchResult, event_type: str) -> str:
         "eclipse",
         "draconic",
         "anomalistic",
+        "heliacal",
     }:
         return ""
     return row.event_label or row.notes or ""

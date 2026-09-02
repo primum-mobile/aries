@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 """Daemon-side chart editor — construct / preview / save a chart and manage
 JSONL collections, all on the canonical Python path.
 
@@ -413,7 +418,20 @@ class EditorService:
         if match is None:
             ref = record_id or name or "<unspecified>"
             raise ValueError(f'Chart "{ref}" not found in {path}')
-        return {"fields": record_to_editor_fields(match), "collection": str(path)}
+        # Embedded JSONL/HOR notes are migration input only.  Lift them once,
+        # scrub the stored record, then seed the editor from the canonical
+        # Markdown sidecar used by NotesPanel.
+        legacy_notes = str(match.get("notes") or "")
+        notes_service.lift_legacy_record_notes(match)
+        if legacy_notes:
+            with self._lock:
+                chartfile.update_jsonl(match, str(path))
+        fields = record_to_editor_fields(match)
+        fields["notes"] = str(notes_service.read_note_state(
+            str(match.get("name") or ""),
+            record_id=str(match.get("id") or "").strip() or None,
+        ).get("content") or "")
+        return {"fields": fields, "collection": str(path)}
 
     # -- place resolution -------------------------------------------------
     def resolve_place(self, query: str, max_rows: int = 10) -> list[dict]:
@@ -612,13 +630,19 @@ class EditorService:
             record = editor_fields_to_record(
                 self._new_chart_fields_with_default_location(record_or_fields),
             )
-        notes_service.lift_legacy_record_notes(record)
+        markdown = str(record.get("notes") or "")
+        record["notes"] = ""
         path = self._resolve_collection_path(collection)
         path.parent.mkdir(parents=True, exist_ok=True)
         with self._lock:
             self._reject_duplicate_name(path, record)
             chartfile.update_jsonl(record, str(path))
             record_index = self._record_index_by_id(path, str(record.get("id", "") or ""))
+        notes_service.write_note_state(
+            str(record.get("name") or ""),
+            markdown,
+            record_id=str(record.get("id") or "").strip() or None,
+        )
         return {
             "ok": True,
             "id": record["id"],

@@ -79,21 +79,26 @@ _THEME_SLUGS = {
 
 # Register this discipline with the engine so the inspector's Discipline
 # dropdown knows about it without importing this module directly.
-rule_engine.register_discipline('elections', 'Elections', list(_THEME_SLUGS))
+rule_engine.register_discipline('elections', 'Elections', _THEME_SLUGS)
 
 
-def evaluate(theme, chrt):
+def evaluate(theme, chrt, context=None):
     """UI-label entry point. Delegates to rule_engine.evaluate().
 
     The inline evaluator for the given theme is passed as the fallback
     so a theme that no pack has covered still produces alerts.
     """
-    theme_slug = _THEME_SLUGS.get(theme)
+    theme_slug = rule_engine.theme_slug_for('elections', theme)
     if theme_slug is None:
         return []
-    inline = _THEME_EVALUATORS.get(theme)
+    inline_label = next(
+        (label for label, slug in _THEME_SLUGS.items()
+         if slug == theme_slug),
+        None,
+    )
+    inline = _THEME_EVALUATORS.get(inline_label)
     return rule_engine.evaluate('elections', theme_slug, chrt,
-                                inline_fallback=inline)
+                                inline_fallback=inline, context=context)
 
 
 # ─────────────────────────────────────────────────────────────

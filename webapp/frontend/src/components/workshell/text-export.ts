@@ -54,3 +54,36 @@ export async function exportTextContent({
   await daemonExportTextFile({ path: selectedPath, text, extension });
   return true;
 }
+
+export async function copyTextToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Tauri/Chromium can reject a focused toolbar write. The DOM path keeps
+    // the same user gesture and works in that focus edge case.
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  if (!copied) throw new Error("Clipboard write was blocked");
+  return true;
+}
+
+export function downloadTextContent(filename: string, text: string, mimeType: string): void {
+  const blob = new Blob([text], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}

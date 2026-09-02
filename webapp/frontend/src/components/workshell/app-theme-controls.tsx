@@ -8,6 +8,7 @@ import { ChevronDown, RotateCcw, Shuffle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useT, type TFunc } from "@/lib/i18n/i18n";
+import { readRootCssColorToken } from "@/lib/css-token-value";
 import {
   Collapsible,
   CollapsibleContent,
@@ -32,7 +33,12 @@ import {
 } from "@/lib/theme/app-material";
 import { resolveSimpleCssValue } from "@/lib/theme/app-material-runtime";
 import {
+  CHART_KEY_COLOR_SOURCES,
+  chartKeyColor,
+} from "@/lib/theme/chart-key-color";
+import {
   deriveLinkedPalette,
+  harmonizeToward,
   type LinkedPaletteContrastTarget,
   type LinkedPaletteHarmony,
   type LinkedPaletteSurfaceRole,
@@ -152,31 +158,42 @@ const CORE_PALETTE_TOKEN = {
 } as const;
 
 const UI_TYPEFACE_TOKEN = "app.type.familyUi";
-const UI_TYPEFACE_OPTIONS = [
+const UI_TYPEFACE_OPTIONS: readonly {
+  value: string;
+  label: string;
+  labelKey?: string;
+}[] = [
   {
     value: "'FreeSans', ui-sans-serif, system-ui, sans-serif",
     label: "FreeSans",
   },
   {
-    value: "'Kosugi', 'FreeSans', ui-sans-serif, system-ui, sans-serif",
-    label: "Kosugi",
+    value: "'Kosugi Aries', 'FreeSans', ui-sans-serif, system-ui, sans-serif",
+    label: "Kosugi Aries",
   },
   {
     value: "'DotGothic16', 'FreeSans', ui-sans-serif, system-ui, sans-serif",
     label: "DotGothic16",
   },
   {
-    value: 'Helvetica, "Helvetica Neue", Arial, sans-serif',
-    label: "Helvetica",
-  },
-  {
     value: "system-ui, sans-serif",
-    label: "system-ui",
+    label: "System font",
+    labelKey: "settings.systemFont",
   },
 ] as const;
 const CHART_BACKGROUND_TOKEN = "chart.color.background";
 const SIDEBAR_ACCENT_FOREGROUND_TOKEN =
   "app.sidebar.accentForeground";
+
+/**
+ * How far the palette anchors travel toward the chart's key colour by default.
+ *
+ * Material harmonises at 0.15 so a colour stays recognisably itself, and the
+ * same restraint is what makes this feature safe to leave switched on: the
+ * interface agrees with the chart instead of being repainted by it. Zero turns
+ * the link off without removing the control.
+ */
+const DEFAULT_CHART_MATCH_PERCENT = 15;
 
 function materialOverrideId(
   surface: AppSurfaceId,
@@ -487,8 +504,10 @@ function NumberRow({
   overridden: boolean;
   onChange: (value: number) => void;
   onReset: () => void;
-  onGestureStart: () => void;
-  onGestureEnd: () => void;
+  // Optional because not every number here is an authored token: the linked
+  // palette's own settings are local to this panel and outside undo.
+  onGestureStart?: () => void;
+  onGestureEnd?: () => void;
 }) {
   return (
     <ControlRow
@@ -541,6 +560,8 @@ function NumberRow({
   );
 }
 
+const APP_THEME_GESTURE_OWNER = "app-theme" as const;
+
 export function AppThemeControls() {
   const t = useT();
   const semanticOverrides = useChartStyleEditorStore((state) => state.semanticOverrides);
@@ -557,6 +578,9 @@ export function AppThemeControls() {
   const [harmony, setHarmony] = useState<LinkedPaletteHarmony>("source");
   const [contrastTarget, setContrastTarget] =
     useState<LinkedPaletteContrastTarget>("aa");
+  const [chartMatchPercent, setChartMatchPercent] = useState(
+    DEFAULT_CHART_MATCH_PERCENT,
+  );
   const liveAppTokens = useMemo(
     () => ({
       ...baseTheme.appTokens,
@@ -657,15 +681,45 @@ export function AppThemeControls() {
     setStoredPaletteAnchors({ ...paletteAnchors, accent });
   };
 
-  const linkedPalette = useMemo(
-    () => deriveLinkedPalette({
-      canvas: canvasAnchor,
-      accent: accentAnchor,
-      harmony,
-      contrastTarget,
-      mode: baseTheme.mode,
+  // The one colour that stands for how the chart looks. An unsaved edit counts
+  // first, then the document falls back to what the wheel is actually painted
+  // with — a theme carries chart colours through the applied stylesheet whether
+  // or not this editor has loaded its source.
+  const chartKey = chartKeyColor(
+    CHART_KEY_COLOR_SOURCES.map(({ semanticId, cssVar }) => {
+      const authored = resolvedColorTokenValue(semanticId);
+      return authored == null ? readRootCssColorToken(cssVar) : colorHex(authored);
     }),
-    [accentAnchor, baseTheme.mode, canvasAnchor, contrastTarget, harmony],
+  );
+  const matchAmount = chartKey ? chartMatchPercent / 100 : 0;
+
+  // Harmonisation moves the *anchors*, not the derived palette: hue is the only
+  // thing it touches, and deriveLinkedPalette then re-enforces every contrast
+  // contract on the result, so agreeing with the chart can never cost legibility.
+  const linkedPalette = useMemo(
+    () => {
+      const source = chartKey && matchAmount > 0 ? chartKey : null;
+      return deriveLinkedPalette({
+        canvas: source
+          ? harmonizeToward(canvasAnchor, source, matchAmount)
+          : canvasAnchor,
+        accent: source
+          ? harmonizeToward(accentAnchor, source, matchAmount)
+          : accentAnchor,
+        harmony,
+        contrastTarget,
+        mode: baseTheme.mode,
+      });
+    },
+    [
+      accentAnchor,
+      baseTheme.mode,
+      canvasAnchor,
+      chartKey,
+      contrastTarget,
+      harmony,
+      matchAmount,
+    ],
   );
 
   const inheritedMaterialValue = (
@@ -707,9 +761,9 @@ export function AppThemeControls() {
     property: AppMaterialProperty,
     value: StyleLabTokenValue,
   ) => {
-    beginGesture();
+    beginGesture(APP_THEME_GESTURE_OWNER);
     updateMaterial(property, value);
-    endGesture();
+    endGesture(APP_THEME_GESTURE_OWNER);
   };
 
   const resetSurfaceBackground = () => {
@@ -721,7 +775,7 @@ export function AppThemeControls() {
   };
 
   const applyLinkedPalette = () => {
-    beginGesture();
+    beginGesture(APP_THEME_GESTURE_OWNER);
     setOverride(
       CHART_BACKGROUND_TOKEN,
       rgbArrayFromHex(colorHex(linkedPalette.background)),
@@ -764,7 +818,7 @@ export function AppThemeControls() {
         )),
       );
     }
-    endGesture();
+    endGesture(APP_THEME_GESTURE_OWNER);
   };
 
   const backgroundValue = inheritedMaterialValue(surface, "backgroundColor");
@@ -815,7 +869,7 @@ export function AppThemeControls() {
   const shadowYValue = Number(inheritedMaterialValue(surface, "shadowY"));
   const shadowBlurValue = Number(inheritedMaterialValue(surface, "shadowBlur"));
   const setShadowEnabled = (next: boolean) => {
-    beginGesture();
+    beginGesture(APP_THEME_GESTURE_OWNER);
     const nextColor = withColorAlpha(
       shadowColorValue,
       next ? (rememberedShadowAlpha.current[surface] ?? 0.22) : 0,
@@ -830,7 +884,7 @@ export function AppThemeControls() {
       setOverride(materialOverrideId(surface, "shadowY"), 4);
       setOverride(materialOverrideId(surface, "shadowBlur"), 12);
     }
-    endGesture();
+    endGesture(APP_THEME_GESTURE_OWNER);
   };
   const backgroundOverrideIds = [
     materialOverrideId(surface, "backgroundColor"),
@@ -854,15 +908,15 @@ export function AppThemeControls() {
             aria-label={t("styleLab.control.fontFamily")}
             style={{ fontFamily: currentTypeface }}
             onChange={(event) => {
-              beginGesture();
+              beginGesture(APP_THEME_GESTURE_OWNER);
               setOverride(UI_TYPEFACE_TOKEN, event.currentTarget.value);
-              endGesture();
+              endGesture(APP_THEME_GESTURE_OWNER);
             }}
             className="h-[var(--aries-control-height-small)] w-full rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] bg-[var(--aries-inspector-background)] px-[var(--aries-control-gap-compact)] outline-none"
           >
             {typefaceOptions.map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label}
+                {option.labelKey ? t(option.labelKey) : option.label}
               </option>
             ))}
           </select>
@@ -890,6 +944,39 @@ export function AppThemeControls() {
             className="size-7"
           />
         </ControlRow>
+        <ControlRow label={t("styleLab.app.linkedPalette.chartKey")}>
+          <div className="flex min-w-0 items-center gap-1">
+            <span
+              aria-hidden="true"
+              className="size-6 shrink-0 rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)]"
+              style={chartKey ? { background: chartKey } : undefined}
+            />
+            <span
+              className={cn(
+                "min-w-0 flex-1 truncate text-[length:var(--aries-font-size-micro)]",
+                chartKey
+                  ? "font-mono"
+                  : "text-[color:var(--aries-inspector-muted-color)]",
+              )}
+            >
+              {chartKey
+                ? chartKey.toUpperCase()
+                : t("styleLab.app.linkedPalette.chartKeyNone")}
+            </span>
+          </div>
+        </ControlRow>
+        <NumberRow
+          label={t("styleLab.app.linkedPalette.matchToChart")}
+          value={chartMatchPercent}
+          min={0}
+          max={100}
+          step={1}
+          unit="%"
+          disabled={!chartKey}
+          overridden={chartMatchPercent !== DEFAULT_CHART_MATCH_PERCENT}
+          onChange={setChartMatchPercent}
+          onReset={() => setChartMatchPercent(DEFAULT_CHART_MATCH_PERCENT)}
+        />
         <ControlRow label={t("styleLab.app.linkedPalette.harmony")}>
           <select
             data-aries-control-appearance="local"
@@ -981,9 +1068,9 @@ export function AppThemeControls() {
             onReset={resetSurfaceBackground}
             preserveAlpha
             onChange={(value) => updateMaterial("backgroundColor", value)}
-            onGestureStart={beginGesture}
-            onGestureEnd={endGesture}
-            onGestureCancel={cancelGesture}
+            onGestureStart={() => beginGesture(APP_THEME_GESTURE_OWNER)}
+            onGestureEnd={() => endGesture(APP_THEME_GESTURE_OWNER)}
+            onGestureCancel={() => cancelGesture(APP_THEME_GESTURE_OWNER)}
           />
           <NumberRow
             label={t("styleLab.app.material.backgroundAlpha")}
@@ -1000,8 +1087,8 @@ export function AppThemeControls() {
               if (next) updateMaterial("backgroundColor", next);
             }}
             onReset={resetSurfaceBackground}
-            onGestureStart={beginGesture}
-            onGestureEnd={endGesture}
+            onGestureStart={() => beginGesture(APP_THEME_GESTURE_OWNER)}
+            onGestureEnd={() => endGesture(APP_THEME_GESTURE_OWNER)}
           />
           {foregroundId && foregroundValue ? (
             <AppColorRow
@@ -1010,9 +1097,9 @@ export function AppThemeControls() {
               overridden={Object.hasOwn(semanticOverrides, foregroundId)}
               onReset={() => resetProperty(foregroundId)}
               onChange={(value) => setOverride(foregroundId, value)}
-              onGestureStart={beginGesture}
-              onGestureEnd={endGesture}
-              onGestureCancel={cancelGesture}
+              onGestureStart={() => beginGesture(APP_THEME_GESTURE_OWNER)}
+              onGestureEnd={() => endGesture(APP_THEME_GESTURE_OWNER)}
+              onGestureCancel={() => cancelGesture(APP_THEME_GESTURE_OWNER)}
             />
           ) : null}
           <ControlRow
@@ -1047,9 +1134,9 @@ export function AppThemeControls() {
                 onReset={() => resetProperty(materialOverrideId(surface, "gradientStartColor"))}
                 preserveAlpha
                 onChange={(value) => updateMaterial("gradientStartColor", value)}
-                onGestureStart={beginGesture}
-                onGestureEnd={endGesture}
-                onGestureCancel={cancelGesture}
+                onGestureStart={() => beginGesture(APP_THEME_GESTURE_OWNER)}
+                onGestureEnd={() => endGesture(APP_THEME_GESTURE_OWNER)}
+                onGestureCancel={() => cancelGesture(APP_THEME_GESTURE_OWNER)}
               />
               <AppColorRow
                 label={t("styleLab.app.material.gradientEndColor")}
@@ -1061,9 +1148,9 @@ export function AppThemeControls() {
                 onReset={() => resetProperty(materialOverrideId(surface, "gradientEndColor"))}
                 preserveAlpha
                 onChange={(value) => updateMaterial("gradientEndColor", value)}
-                onGestureStart={beginGesture}
-                onGestureEnd={endGesture}
-                onGestureCancel={cancelGesture}
+                onGestureStart={() => beginGesture(APP_THEME_GESTURE_OWNER)}
+                onGestureEnd={() => endGesture(APP_THEME_GESTURE_OWNER)}
+                onGestureCancel={() => cancelGesture(APP_THEME_GESTURE_OWNER)}
               />
               <NumberRow
                 label={t("styleLab.app.material.gradientAngle")}
@@ -1080,8 +1167,8 @@ export function AppThemeControls() {
                   setOverride(materialOverrideId(surface, "gradientAngle"), value)
                 }
                 onReset={() => resetProperty(materialOverrideId(surface, "gradientAngle"))}
-                onGestureStart={beginGesture}
-                onGestureEnd={endGesture}
+                onGestureStart={() => beginGesture(APP_THEME_GESTURE_OWNER)}
+                onGestureEnd={() => endGesture(APP_THEME_GESTURE_OWNER)}
               />
             </>
           ) : null}
@@ -1123,9 +1210,9 @@ export function AppThemeControls() {
                 onReset={() => resetProperty(materialOverrideId(surface, "patternColor"))}
                 preserveAlpha
                 onChange={(value) => updateMaterial("patternColor", value)}
-                onGestureStart={beginGesture}
-                onGestureEnd={endGesture}
-                onGestureCancel={cancelGesture}
+                onGestureStart={() => beginGesture(APP_THEME_GESTURE_OWNER)}
+                onGestureEnd={() => endGesture(APP_THEME_GESTURE_OWNER)}
+                onGestureCancel={() => cancelGesture(APP_THEME_GESTURE_OWNER)}
               />
               <NumberRow
                 label={t("styleLab.app.material.opacity")}
@@ -1142,8 +1229,8 @@ export function AppThemeControls() {
                   setOverride(materialOverrideId(surface, "opacity"), value)
                 }
                 onReset={() => resetProperty(materialOverrideId(surface, "opacity"))}
-                onGestureStart={beginGesture}
-                onGestureEnd={endGesture}
+                onGestureStart={() => beginGesture(APP_THEME_GESTURE_OWNER)}
+                onGestureEnd={() => endGesture(APP_THEME_GESTURE_OWNER)}
               />
             </>
           ) : null}
@@ -1159,8 +1246,8 @@ export function AppThemeControls() {
                 overridden={Object.hasOwn(semanticOverrides, materialOverrideId(surface, "density"))}
                 onChange={(value) => setOverride(materialOverrideId(surface, "density"), value)}
                 onReset={() => resetProperty(materialOverrideId(surface, "density"))}
-                onGestureStart={beginGesture}
-                onGestureEnd={endGesture}
+                onGestureStart={() => beginGesture(APP_THEME_GESTURE_OWNER)}
+                onGestureEnd={() => endGesture(APP_THEME_GESTURE_OWNER)}
               />
               <NumberRow
                 label={t("styleLab.app.material.cellSize")}
@@ -1172,8 +1259,8 @@ export function AppThemeControls() {
                 overridden={Object.hasOwn(semanticOverrides, materialOverrideId(surface, "cellSize"))}
                 onChange={(value) => setOverride(materialOverrideId(surface, "cellSize"), value)}
                 onReset={() => resetProperty(materialOverrideId(surface, "cellSize"))}
-                onGestureStart={beginGesture}
-                onGestureEnd={endGesture}
+                onGestureStart={() => beginGesture(APP_THEME_GESTURE_OWNER)}
+                onGestureEnd={() => endGesture(APP_THEME_GESTURE_OWNER)}
               />
               <NumberRow
                 label={t("styleLab.app.material.dotSize")}
@@ -1185,8 +1272,8 @@ export function AppThemeControls() {
                 overridden={Object.hasOwn(semanticOverrides, materialOverrideId(surface, "dotSize"))}
                 onChange={(value) => setOverride(materialOverrideId(surface, "dotSize"), value)}
                 onReset={() => resetProperty(materialOverrideId(surface, "dotSize"))}
-                onGestureStart={beginGesture}
-                onGestureEnd={endGesture}
+                onGestureStart={() => beginGesture(APP_THEME_GESTURE_OWNER)}
+                onGestureEnd={() => endGesture(APP_THEME_GESTURE_OWNER)}
               />
               {angleEnabled ? (
                 <NumberRow
@@ -1199,8 +1286,8 @@ export function AppThemeControls() {
                   overridden={Object.hasOwn(semanticOverrides, materialOverrideId(surface, "angle"))}
                   onChange={(value) => setOverride(materialOverrideId(surface, "angle"), value)}
                   onReset={() => resetProperty(materialOverrideId(surface, "angle"))}
-                  onGestureStart={beginGesture}
-                  onGestureEnd={endGesture}
+                  onGestureStart={() => beginGesture(APP_THEME_GESTURE_OWNER)}
+                  onGestureEnd={() => endGesture(APP_THEME_GESTURE_OWNER)}
                 />
               ) : null}
               {textureSeedVisible ? (
@@ -1216,8 +1303,8 @@ export function AppThemeControls() {
                     setOverride(materialOverrideId(surface, "seed"), Math.round(value))
                   }
                   onReset={() => resetProperty(materialOverrideId(surface, "seed"))}
-                  onGestureStart={beginGesture}
-                  onGestureEnd={endGesture}
+                  onGestureStart={() => beginGesture(APP_THEME_GESTURE_OWNER)}
+                  onGestureEnd={() => endGesture(APP_THEME_GESTURE_OWNER)}
                 />
               ) : null}
             </>
@@ -1263,8 +1350,8 @@ export function AppThemeControls() {
               setOverride(materialOverrideId(surface, "backdropBlur"), value)
             }
             onReset={() => resetProperty(materialOverrideId(surface, "backdropBlur"))}
-            onGestureStart={beginGesture}
-            onGestureEnd={endGesture}
+            onGestureStart={() => beginGesture(APP_THEME_GESTURE_OWNER)}
+            onGestureEnd={() => endGesture(APP_THEME_GESTURE_OWNER)}
           />
           <NumberRow
             label={t("styleLab.app.material.backdropSaturation")}
@@ -1282,8 +1369,8 @@ export function AppThemeControls() {
               value,
             )}
             onReset={() => resetProperty(materialOverrideId(surface, "backdropSaturation"))}
-            onGestureStart={beginGesture}
-            onGestureEnd={endGesture}
+            onGestureStart={() => beginGesture(APP_THEME_GESTURE_OWNER)}
+            onGestureEnd={() => endGesture(APP_THEME_GESTURE_OWNER)}
           />
         </MaterialGroup>
         <MaterialGroup
@@ -1308,9 +1395,9 @@ export function AppThemeControls() {
                 onReset={() => resetProperty(materialOverrideId(surface, "shadowColor"))}
                 preserveAlpha
                 onChange={(value) => updateMaterial("shadowColor", value)}
-                onGestureStart={beginGesture}
-                onGestureEnd={endGesture}
-                onGestureCancel={cancelGesture}
+                onGestureStart={() => beginGesture(APP_THEME_GESTURE_OWNER)}
+                onGestureEnd={() => endGesture(APP_THEME_GESTURE_OWNER)}
+                onGestureCancel={() => cancelGesture(APP_THEME_GESTURE_OWNER)}
               />
               <NumberRow
                 label={t("styleLab.group.shadowOpacity")}
@@ -1328,8 +1415,8 @@ export function AppThemeControls() {
                   if (next) updateMaterial("shadowColor", next);
                 }}
                 onReset={() => resetProperty(materialOverrideId(surface, "shadowColor"))}
-                onGestureStart={beginGesture}
-                onGestureEnd={endGesture}
+                onGestureStart={() => beginGesture(APP_THEME_GESTURE_OWNER)}
+                onGestureEnd={() => endGesture(APP_THEME_GESTURE_OWNER)}
               />
               <NumberRow
                 label={t("styleLab.control.shadowOffsetX")}
@@ -1344,8 +1431,8 @@ export function AppThemeControls() {
                 )}
                 onChange={(value) => setOverride(materialOverrideId(surface, "shadowX"), value)}
                 onReset={() => resetProperty(materialOverrideId(surface, "shadowX"))}
-                onGestureStart={beginGesture}
-                onGestureEnd={endGesture}
+                onGestureStart={() => beginGesture(APP_THEME_GESTURE_OWNER)}
+                onGestureEnd={() => endGesture(APP_THEME_GESTURE_OWNER)}
               />
               <NumberRow
                 label={t("styleLab.control.shadowOffsetY")}
@@ -1360,8 +1447,8 @@ export function AppThemeControls() {
                 )}
                 onChange={(value) => setOverride(materialOverrideId(surface, "shadowY"), value)}
                 onReset={() => resetProperty(materialOverrideId(surface, "shadowY"))}
-                onGestureStart={beginGesture}
-                onGestureEnd={endGesture}
+                onGestureStart={() => beginGesture(APP_THEME_GESTURE_OWNER)}
+                onGestureEnd={() => endGesture(APP_THEME_GESTURE_OWNER)}
               />
               <NumberRow
                 label={t("styleLab.control.shadowBlur")}
@@ -1376,8 +1463,8 @@ export function AppThemeControls() {
                 )}
                 onChange={(value) => setOverride(materialOverrideId(surface, "shadowBlur"), value)}
                 onReset={() => resetProperty(materialOverrideId(surface, "shadowBlur"))}
-                onGestureStart={beginGesture}
-                onGestureEnd={endGesture}
+                onGestureStart={() => beginGesture(APP_THEME_GESTURE_OWNER)}
+                onGestureEnd={() => endGesture(APP_THEME_GESTURE_OWNER)}
               />
             </>
           ) : null}

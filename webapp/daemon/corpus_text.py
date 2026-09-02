@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 """Pure-Python corpus source-text normalization for the webapp inspector.
 
 The wx desktop renders Valens passages through ``corpuspane.py`` (a wx widget),

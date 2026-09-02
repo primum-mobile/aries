@@ -11,14 +11,18 @@ import {
   ASPECT_LIST_PERFECTION_BATCH_SIZE,
   ASPECT_LIST_PERFECTION_CONCURRENCY,
   advanceAspectListCursorTracker,
+  aspectListDefaultMode,
+  aspectListPerfectionLedgerKey,
   aspectListQueryIdentity,
   aspectListRequestedMode,
   aspectListRetainedWorldIdentity,
   aspectListVirtualWindow,
   isAspectListPayloadCurrent,
   nextAspectListPerfectionBatches,
+  retainAspectListPerfectionsFromLedger,
   retainMatchingAspectListPerfections,
   selectRetainedAspectListPayloadState,
+  shouldDeferAspectListRefresh,
 } from "../src/lib/aspect-list-live-state.mjs";
 
 const stepRefreshSource = await readFile(
@@ -153,6 +157,17 @@ test("a renderer-only replacement cannot cancel a pending step settle", () => {
     settledStepSeq: neutralReplacement.pendingStepSeq,
   });
   assert.equal(workspaceSemanticRefreshSeq(settled), 8);
+});
+
+test("raw cursor changes cannot load Aspect List while a step is unsettled", () => {
+  assert.equal(
+    shouldDeferAspectListRefresh({ pendingStepSeq: 8, settledStepSeq: 7 }),
+    true,
+  );
+  assert.equal(
+    shouldDeferAspectListRefresh({ pendingStepSeq: 8, settledStepSeq: 8 }),
+    false,
+  );
 });
 
 test("semantic refresh cursors and pending steps are scoped to the query owner", () => {
@@ -315,6 +330,12 @@ test("TAB preserves the chosen comparison world while presenting singleton prima
   );
   assert.equal(aspectListRequestedMode(null, false), "primary");
   assert.equal(aspectListRequestedMode(null, undefined), null);
+});
+
+test("wheel shape owns the normal Aspect List mode on every entry path", () => {
+  assert.equal(aspectListDefaultMode(true), "outerToPrimary");
+  assert.equal(aspectListDefaultMode(false), "primary");
+  assert.equal(aspectListDefaultMode(undefined), null);
 });
 
 test("retained list cache keeps singleton and comparison worlds independently", () => {
@@ -495,31 +516,71 @@ test("perfection planning prioritizes the viewport and never exceeds daemon boun
     "visible-5",
     "visible-6",
   ]);
-  assert.equal(batches.flat().some((rowId) => rowId.startsWith("background-")), true);
+  assert.equal(batches.flat().some((rowId) => rowId.startsWith("background-")), false);
   assert.equal(new Set(batches.flat()).size, batches.flat().length);
 });
 
-test("patch refresh retains only exact dates with the same row trajectory", () => {
+test("live refresh retains and re-sorts exact dates with the same row trajectory", () => {
   const retained = retainMatchingAspectListPerfections({
     previousRows: [
-      { id: "planet", trajectoryKey: "same" },
-      { id: "lot", trajectoryKey: "old-house-model" },
-      { id: "removed", trajectoryKey: "gone" },
+      { id: "planet", trajectoryKey: "same", phase: "applying" },
+      { id: "lot", trajectoryKey: "old-house-model", phase: "applying" },
+      { id: "removed", trajectoryKey: "gone", phase: "applying" },
     ],
     nextRows: [
-      { id: "planet", trajectoryKey: "same" },
-      { id: "lot", trajectoryKey: "new-house-model" },
-      { id: "new", trajectoryKey: "new" },
+      { id: "planet", trajectoryKey: "same", phase: "separating" },
+      { id: "lot", trajectoryKey: "new-house-model", phase: "applying" },
+      { id: "new", trajectoryKey: "new", phase: "applying" },
     ],
     previousByRow: new Map([
-      ["planet", { rowId: "planet", exactJd: 1 }],
-      ["lot", { rowId: "lot", exactJd: 2 }],
-      ["removed", { rowId: "removed", exactJd: 3 }],
+      ["planet", { rowId: "planet", status: "ready", exactJd: 10 }],
+      ["lot", { rowId: "lot", status: "ready", exactJd: 12 }],
+      ["removed", { rowId: "removed", status: "ready", exactJd: 13 }],
     ]),
+    nextAnchorJd: 11,
   });
 
   assert.deepEqual([...retained.keys()], ["planet"]);
-  assert.equal(retained.get("planet").exactJd, 1);
+  assert.equal(retained.get("planet").exactJd, 10);
+});
+
+test("a changed motion branch invalidates a retained perfection", () => {
+  const retained = retainMatchingAspectListPerfections({
+    previousRows: [{ id: "loop", trajectoryKey: "same", phase: "applying" }],
+    nextRows: [{ id: "loop", trajectoryKey: "same", phase: "applying" }],
+    previousByRow: new Map([
+      ["loop", { rowId: "loop", status: "ready", exactJd: 10 }],
+    ]),
+    nextAnchorJd: 11,
+  });
+
+  assert.equal(retained.has("loop"), false);
+});
+
+test("trajectory ledger restores solved dates under a new context token", () => {
+  const row = { id: "sun-moon", trajectoryKey: "stable-path", phase: "applying" };
+  const result = { status: "ready", exactJd: 120, exactDate: "date" };
+  const ledger = new Map([
+    [aspectListPerfectionLedgerKey("chart-a", "primary", row), result],
+  ]);
+  const retained = retainAspectListPerfectionsFromLedger({
+    documentId: "chart-a",
+    mode: "primary",
+    rows: [row],
+    ledger,
+    nextAnchorJd: 110,
+  });
+  assert.strictEqual(retained.get(row.id), result);
+  assert.equal(
+    retainAspectListPerfectionsFromLedger({
+      documentId: "chart-a",
+      mode: "primary",
+      rows: [{ ...row, trajectoryKey: "changed-path" }],
+      ledger,
+      nextAnchorJd: 110,
+    }).size,
+    0,
+  );
 });
 
 test("normal list planning requests only missing viewport rows", () => {
@@ -545,7 +606,10 @@ test("exact-sort background work progresses in bounded waves", () => {
     availableSlots: 2,
   });
   assert.deepEqual(first[0].slice(0, 4), rowIds.slice(32, 36));
-  assert.equal(first.flat().length, 16);
+  assert.equal(
+    first.flat().length,
+    ASPECT_LIST_PERFECTION_BATCH_SIZE * ASPECT_LIST_PERFECTION_CONCURRENCY,
+  );
 
   const second = nextAspectListPerfectionBatches({
     priorityRowIds: rowIds.slice(32, 36),
@@ -555,6 +619,9 @@ test("exact-sort background work progresses in bounded waves", () => {
     failedRowIds: new Set(),
     availableSlots: 2,
   });
-  assert.equal(second.flat().length, 16);
-  assert.ok(second.every((batch) => batch.length <= 16));
+  assert.equal(
+    second.flat().length,
+    ASPECT_LIST_PERFECTION_BATCH_SIZE * ASPECT_LIST_PERFECTION_CONCURRENCY,
+  );
+  assert.ok(second.every((batch) => batch.length <= ASPECT_LIST_PERFECTION_BATCH_SIZE));
 });

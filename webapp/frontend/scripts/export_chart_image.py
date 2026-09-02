@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Max Lange
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Render a chart export payload using the existing wx GraphChart renderer.
 
 This helper intentionally lives outside ``webapp/daemon``: the daemon must stay

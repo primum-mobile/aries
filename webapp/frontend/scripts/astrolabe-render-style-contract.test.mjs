@@ -32,37 +32,38 @@ const {
 
 const EXPECTED_DEFAULTS = {
   capricornFill: 0.83,
-  fineStrokeMin: 1,
-  fineStrokeDivisor: 360,
+  fineStrokeMin: 0.75,
+  fineStrokeDivisor: 960,
   mediumStrokeMin: 1,
-  mediumStrokeDivisor: 280,
-  mainStrokeMin: 2,
-  mainStrokeDivisor: 220,
-  tropicDashOn: 4,
-  tropicDashOff: 4,
-  equatorDashOn: 5,
-  equatorDashOff: 4,
-  regioDashOn: 4,
+  mediumStrokeDivisor: 720,
+  mainStrokeMin: 1.5,
+  mainStrokeDivisor: 720,
+  tropicDashOn: 1,
+  tropicDashOff: 3,
+  equatorDashOn: 1,
+  equatorDashOff: 3,
+  regioDashOn: 1,
   regioDashOff: 4,
   meridianDashOn: 2,
   meridianDashOff: 4,
-  capricornDashOn: 2,
-  capricornDashOff: 3,
-  connectorDashOn: 2,
+  capricornDashOn: 1,
+  capricornDashOff: 2,
+  connectorDashOn: 1,
   connectorDashOff: 3,
-  connectorOpacity: 0.55,
-  sphereOutlineWidth: 1,
-  bandWidthScale: 0.15,
-  tickStepScale: 0.01,
+  connectorOpacity: 0.42,
+  atmosphericFillOpacity: 0.32,
+  sphereOutlineWidth: 0.75,
+  bandWidthScale: 0.12,
+  tickStepScale: 0.008,
   innerRadiusMin: 1,
-  starRadiusMin: 1.5,
-  starRadiusDivisor: 320,
-  signFontDivisor: 22,
+  starRadiusMin: 1,
+  starRadiusDivisor: 360,
+  signFontDivisor: 24,
   signCullScale: 0.03,
-  sphereRadiusMin: 2,
-  sphereRadiusDivisor: 160,
-  planetFontDivisor: 16,
-  bodyLabelPadScale: 0.02,
+  sphereRadiusMin: 1.5,
+  sphereRadiusDivisor: 190,
+  planetFontDivisor: 18,
+  bodyLabelPadScale: 0.018,
   bodyCullScale: 1.1,
   collisionMarginScale: 0.15,
   collisionIterations: 40,
@@ -74,8 +75,8 @@ const EXPECTED_DEFAULTS = {
   circleLabelFontDivisor: 36,
   circleLabelOffsetX: 4,
   circleLabelOffsetY: 2,
-  cardinalPadScale: 0.06,
-  cardinalFontDivisor: 22,
+  cardinalPadScale: 0.04,
+  cardinalFontDivisor: 24,
   infoFontDivisor: 16,
   infoFontScale: 0.75,
   infoInsetDivisor: 25,
@@ -86,32 +87,23 @@ const EXPECTED_DEFAULTS = {
 };
 
 const EXPECTED_PALETTE = {
-  background: "#23242a",
-  horizon: "#3e82c4",
-  ecliptic: "#c68a22",
-  equator: "#78828f",
-  equatorLabel: "#788291",
-  tropic: "rgba(200, 210, 220, 0.45)",
-  meridian: "rgba(170, 178, 196, 0.55)",
-  regio: "rgba(150, 165, 185, 0.42)",
-  almucantar: "rgba(120, 150, 190, 0.30)",
-  azimuth: "rgba(120, 150, 190, 0.24)",
-  hour: "rgba(170, 150, 110, 0.30)",
-  capricorn: "rgba(150, 150, 152, 0.55)",
-  star: "rgba(220, 222, 230, 0.85)",
-  cardinal: "rgba(160, 160, 162, 0.9)",
-  sunFill: "#ffe066",
-  infoAtmospheric: "#dcdcdc",
-  infoSchematic: "#c8c8c8",
-};
-
-const PAYLOAD_COLORS = {
-  atmospheric: { sky: "payload-sky", ground: "payload-ground" },
-  circleLabels: {
-    equator: "payload-equator",
-    horizon: "payload-horizon",
-    ecliptic: "payload-ecliptic",
-  },
+  background: "rgb(35 36 40)",
+  horizon: "rgb(205 205 209 / 86%)",
+  ecliptic: "rgb(220 220 221)",
+  equator: "rgb(138 139 141 / 78%)",
+  equatorLabel: "rgb(138 139 141)",
+  tropic: "rgb(138 139 141 / 58%)",
+  meridian: "rgb(205 205 209 / 62%)",
+  regio: "rgb(138 139 141 / 46%)",
+  almucantar: "rgb(138 139 141 / 34%)",
+  azimuth: "rgb(138 139 141 / 28%)",
+  hour: "rgb(205 205 209 / 25%)",
+  capricorn: "rgb(220 220 221)",
+  star: "rgb(255 255 255 / 88%)",
+  cardinal: "rgb(205 205 209)",
+  sunFill: "rgb(255 215 0)",
+  infoAtmospheric: "rgb(255 255 255)",
+  infoSchematic: "rgb(255 255 255)",
 };
 
 function assertDeepFrozen(value) {
@@ -143,6 +135,7 @@ function flattenStyle(style) {
     connectorDashOn: style.strokes.dashes.connector[0],
     connectorDashOff: style.strokes.dashes.connector[1],
     connectorOpacity: style.strokes.connectorOpacity,
+    atmosphericFillOpacity: style.effects.atmosphericFillOpacity,
     sphereOutlineWidth: style.strokes.sphereOutlineWidth,
     bandWidthScale: style.layout.bandWidthScale,
     tickStepScale: style.layout.tickStepScale,
@@ -178,18 +171,21 @@ function flattenStyle(style) {
   };
 }
 
-test("schema v1 preserves every established Astrolabe paint value", () => {
-  assert.equal(Object.keys(ASTROLABE_RENDER_TOKEN_SPECS).length, 52);
-  assert.equal(new Set(Object.values(ASTROLABE_RENDER_TOKEN_SPECS).map(([name]) => name)).size, 52);
+test("schema v3 preserves the refined Astrolabe paint hierarchy", () => {
+  assert.equal(Object.keys(ASTROLABE_RENDER_TOKEN_SPECS).length, 53);
+  assert.equal(new Set(Object.values(ASTROLABE_RENDER_TOKEN_SPECS).map(([name]) => name)).size, 53);
   assert.equal(Object.keys(ASTROLABE_RENDER_PALETTE_SPECS).length, 17);
   assert.deepEqual(DEFAULT_ASTROLABE_RENDER_TOKENS, EXPECTED_DEFAULTS);
   assert.deepEqual(DEFAULT_ASTROLABE_RENDER_PALETTE, EXPECTED_PALETTE);
 
-  const style = createAstrolabeRenderStyle({ payloadColors: PAYLOAD_COLORS });
-  assert.equal(style.schemaVersion, 1);
+  assert.ok(Object.values(ASTROLABE_RENDER_PALETTE_SPECS).every(([, fallback]) => (
+    fallback.startsWith("var(--morinus-")
+  )));
+
+  const style = createAstrolabeRenderStyle();
+  assert.equal(style.schemaVersion, 3);
   assert.deepEqual(flattenStyle(style), EXPECTED_DEFAULTS);
   assert.deepEqual(style.palette, EXPECTED_PALETTE);
-  assert.deepEqual(style.data.atmospheric, PAYLOAD_COLORS.atmospheric);
   assertDeepFrozen(style);
   assertDeepFrozen(ASTROLABE_RENDER_TOKEN_SPECS);
   assertDeepFrozen(ASTROLABE_RENDER_PALETTE_SPECS);
@@ -212,32 +208,45 @@ test("CSS validation preserves parseFloat, safe zero, bounds, and integer iterat
   assertDeepFrozen(tokens);
 });
 
-test("CSS semantic colors override stale label payload while dynamic atmosphere remains data", () => {
-  const noCss = resolveAstrolabeRenderPalette(() => "", PAYLOAD_COLORS);
-  assert.equal(noCss.horizon, "payload-horizon");
-  assert.equal(noCss.ecliptic, "payload-ecliptic");
-  assert.equal(noCss.equatorLabel, "payload-equator");
-  assert.equal(noCss.background, EXPECTED_PALETTE.background);
-
-  const values = new Map([
-    ["--aries-astrolabe-horizon", "css-horizon"],
-    ["--aries-astrolabe-ecliptic", "css-ecliptic"],
-    ["--aries-astrolabe-equator-label", "css-equator"],
+test("canonical chart roles drive theme switching while Astrolabe overrides still win", () => {
+  const darkTheme = new Map([
+    ["--morinus-background", "#101820"],
+    ["--morinus-frame", "#dfe7ef"],
+    ["--morinus-angles", "#a0b0c0"],
+    ["--morinus-houses", "rgb(90 100 110)"],
+    ["--morinus-positions", "#f0f4f8"],
+    ["--morinus-body-sun", "#ffd700"],
+    ["--morinus-text-bright", "#ffffff"],
   ]);
-  const palette = resolveAstrolabeRenderPalette((name) => values.get(name) ?? "", PAYLOAD_COLORS);
-  assert.equal(palette.horizon, "css-horizon");
-  assert.equal(palette.ecliptic, "css-ecliptic");
-  assert.equal(palette.equatorLabel, "css-equator");
+  const lightTheme = new Map([
+    ["--morinus-background", "#f4f0e8"],
+    ["--morinus-frame", "#302820"],
+    ["--morinus-angles", "#123456"],
+    ["--morinus-houses", "rgb(70 80 90)"],
+    ["--morinus-positions", "#654321"],
+    ["--morinus-body-sun", "#abcdef"],
+    ["--morinus-text-bright", "#17130f"],
+  ]);
+  const darkPalette = resolveAstrolabeRenderPalette((name) => darkTheme.get(name) ?? "");
+  const lightPalette = resolveAstrolabeRenderPalette((name) => lightTheme.get(name) ?? "");
+  assert.notDeepEqual(lightPalette, darkPalette);
+  assert.equal(lightPalette.background, "#f4f0e8");
+  assert.equal(lightPalette.horizon, "rgb(18 52 86 / 86%)");
+  assert.equal(lightPalette.equator, "rgb(70 80 90 / 78%)");
+  assert.equal(lightPalette.star, "rgb(101 67 33 / 88%)");
+  assert.equal(lightPalette.sunFill, "#abcdef");
 
-  const style = createAstrolabeRenderStyle({ palette, payloadColors: PAYLOAD_COLORS });
-  assert.deepEqual(style.data.atmospheric, PAYLOAD_COLORS.atmospheric);
-  assertDeepFrozen(style);
+  lightTheme.set("--aries-astrolabe-horizon", "rgb(1 2 3 / 40%)");
+  const overridden = resolveAstrolabeRenderPalette((name) => lightTheme.get(name) ?? "");
+  assert.equal(overridden.horizon, "rgb(1 2 3 / 40%)");
+  assertDeepFrozen(overridden);
 });
 
-test("stroke helper preserves exact min and rounded viewport formulas", () => {
+test("stroke helper preserves the smooth fine/medium/main hierarchy", () => {
   const style = createAstrolabeRenderStyle();
-  assert.deepEqual(resolveAstrolabeStrokeWidths(style, 200), { fine: 1, medium: 1, main: 2 });
-  assert.deepEqual(resolveAstrolabeStrokeWidths(style, 720), { fine: 2, medium: 3, main: 3 });
+  assert.deepEqual(resolveAstrolabeStrokeWidths(style, 200), { fine: 0.75, medium: 1, main: 1.5 });
+  assert.deepEqual(resolveAstrolabeStrokeWidths(style, 720), { fine: 0.75, medium: 1, main: 1.5 });
+  assert.deepEqual(resolveAstrolabeStrokeWidths(style, 1440), { fine: 1.5, medium: 2, main: 2 });
 });
 
 test("host resolution reads computed style once and returns one immutable paint snapshot", () => {
@@ -256,7 +265,6 @@ test("host resolution reads computed style once and returns one immutable paint 
   try {
     const style = resolveAstrolabeRenderStyle({}, {
       revision: 13,
-      payloadColors: PAYLOAD_COLORS,
       fontUi: "UI",
       fontSymbols: "Symbols",
     });
@@ -273,17 +281,18 @@ test("host resolution reads computed style once and returns one immutable paint 
   }
 });
 
-test("one style feeds Astrolabe paint while payload colors and interaction mechanics stay intact", async () => {
+test("one style feeds retained Astrolabe paint while interaction mechanics stay intact", async () => {
   const source = await readFile(
     new URL("../src/components/workshell/astrolabe-view.tsx", import.meta.url),
     "utf8",
   );
   assert.equal((source.match(/resolveAstrolabeRenderStyle\(/g) ?? []).length, 1);
   assert.match(source, /const renderStyle = resolveAstrolabeRenderStyle\(wrap,/);
-  assert.match(source, /render\(canvas, geo, toggles, rect\.width, rect\.height, renderStyle, t\)/);
+  assert.match(source, /astrolabeTitlebarTopBoundary\(rect\)/);
   assert.match(source, /resolveAstrolabeStrokeWidths\(style, size\)/);
-  assert.match(source, /style\.data\.atmospheric\.ground/);
-  assert.match(source, /style\.data\.atmospheric\.sky/);
+  assert.match(source, /ctx\.fillStyle = geo\.atmospheric\.ground/);
+  assert.match(source, /ctx\.fillStyle = geo\.atmospheric\.sky/);
+  assert.doesNotMatch(source, /payloadColors/);
   assert.match(source, /createResolvedSemanticChartColorResolver\(\)/);
   assert.match(source, /fill: resolveColor\(g\.colorRole, g\.color\) \?\? g\.color/);
   assert.match(source, /color: resolveColor\(b\.colorRole, b\.color\) \?\? b\.color/);
@@ -292,7 +301,28 @@ test("one style feeds Astrolabe paint while payload colors and interaction mecha
   assert.match(source, /const degPerPx = 360 \/ \(ds\.w \|\| 1\)/);
   assert.match(source, /Math\.max\(0, Math\.round\(next \* 4\) \/ 4\)/);
   assert.match(source, /const snap = geo\.pd\.snapArcs/);
-  assert.match(source, /if \(a > d \+ 0\.001\) return a/);
+  assert.match(source, /if \(arc > next \+ 0\.001\)/);
+  assert.match(source, /drawGraduatedLimb\(/);
+  assert.match(source, /const outerR = plateR \+ tickStep \* 3/);
+  assert.match(source, /ctx\.moveTo\(cx \+ cos \* plateR, cy \+ sin \* plateR\)/);
+  assert.match(source, /ctx\.lineTo\(cx \+ cos \* \(plateR \+ length\), cy \+ sin \* \(plateR \+ length\)\)/);
+  assert.match(source, /const limbOuterR = chartRpx \+ tickStep \* 3/);
+  assert.match(
+    source,
+    /resolveChartPaintTarget\(cssW, cssH, 1, paintTopBoundary, true\)/,
+  );
+  assert.match(source, /cy: target\.centerY/);
+  assert.match(source, /const bodyLabelTop = Math\.max\(paintTopBoundary, 0\) \+ viewportClearance/);
+  assert.match(source, /const labelDirection = outwardCrossesLimb \? -1 : 1/);
+  assert.match(source, /chartRpx - limbClearance - Math\.hypot\(item\.tw, item\.th\) \/ 2/);
+  assert.match(source, /clampBodyLabel\(si\);\s*clampBodyLabel\(sj\);/);
+  assert.match(source, /fetchAstrolabeViewState\(documentId/);
+  assert.match(source, /storeAstrolabeViewState\(documentId, state\)/);
+  assert.match(
+    source,
+    /<ContextMenuGroup>\s*<ContextMenuLabel>\{t\("astrolabe\.viewSettings"\)\}<\/ContextMenuLabel>/,
+  );
+  assert.doesNotMatch(source, /function LayerBar/);
 
   const fetchBlock = source.slice(
     source.indexOf("// Geometry fetch"),
@@ -302,14 +332,19 @@ test("one style feeds Astrolabe paint while payload colors and interaction mecha
   assert.match(fetchBlock, /\}, \[sourceName, source, documentId\]\);/);
   assert.match(fetchBlock, /\}, \[delta, geometryRevision, pumpFetch\]\);/);
   assert.doesNotMatch(fetchBlock, /\bstyleRevision\b/);
+  assert.doesNotMatch(fetchBlock, /\bpaintRevision\b/);
+  assert.doesNotMatch(fetchBlock, /\bliveStylePreviewRevision\b/);
 
   const paintBlock = source.slice(
     source.indexOf("// Draw on geometry"),
     source.indexOf("const toggle", source.indexOf("// Draw on geometry")),
   );
-  assert.match(paintBlock, /revision: styleRevision/);
+  assert.match(paintBlock, /revision: paintRevision/);
   assert.match(
     paintBlock,
-    /\}, \[chartSymbolFont, chartTextFont, geo, fontsReady, toggles, t, styleRevision\]\);/,
+    /\}, \[chartSymbolFont, chartTextFont, geo, fontsReady, toggles, t, paintRevision\]\);/,
   );
+  assert.match(source, /state\.liveAppThemePreview \? `live:\$\{state\.revision\}` : "live:off"/);
+  assert.match(source, /const ro = new ResizeObserver\(schedulePaint\)/);
+  assert.match(source, /window\.requestAnimationFrame\(paint\)/);
 });

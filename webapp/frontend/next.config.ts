@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Max Lange
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import type { NextConfig } from "next";
 
 const isolatedDistDir = process.env.ARIES_NEXT_DIST_DIR?.trim();

@@ -41,10 +41,12 @@ LEGAL_SOURCE_FILES = (
     "LICENSE",
     "COPYING-GPL-3.0.txt",
     "COPYING-GPL-2.0.txt",
+    "COPYRIGHT.txt",
     "THIRD_PARTY_NOTICES.txt",
 )
 REQUIRED_LEGAL_ARTIFACTS = (
     *LEGAL_SOURCE_FILES,
+    "SOURCE.txt",
     "DEPENDENCY_NOTICES.txt",
     "DEPENDENCY_LICENSES.txt",
     "ARIES-SBOM.cdx.json",
@@ -56,6 +58,8 @@ VALENS_SOURCE_CHECKOUT = "valens"
 VALENS_SOURCE_REPOSITORY = "https://github.com/janegca/latex-valens"
 VALENS_SOURCE_COMMIT = "2d4a8b9890cd5cb7714abd52f6bd938272ba8237"
 VALENS_SOURCE_EXPORT_DIR = "third_party/latex-valens-source"
+ARIES_SOURCE_REPOSITORY = "https://github.com/primum-mobile/aries"
+PUBLIC_SOURCE_COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
 VALENS_LOCAL_PATCH_PATH = "book01/01-stars.tex"
 VALENS_LOCAL_PATCH_BEFORE = b"\\textbf{Of the limbs of the body:}, it rules "
 VALENS_LOCAL_PATCH_AFTER = b"\\textbf{Of the limbs of the body:} it rules "
@@ -598,6 +602,42 @@ def _aries_version() -> str:
     return match.group(1)
 
 
+def _write_aries_source_notice(destination: Path) -> None:
+    """Record immutable corresponding source for an official release build."""
+
+    commit = os.environ.get("ARIES_PUBLIC_SOURCE_COMMIT", "").strip()
+    require_binding = os.environ.get("ARIES_REQUIRE_PUBLIC_SOURCE_BINDING", "") == "1"
+    if commit and not PUBLIC_SOURCE_COMMIT_PATTERN.fullmatch(commit):
+        raise RuntimeError("ARIES_PUBLIC_SOURCE_COMMIT must be a full lowercase Git SHA-1")
+    if require_binding and not commit:
+        raise RuntimeError("official distribution requires ARIES_PUBLIC_SOURCE_COMMIT")
+
+    if commit:
+        source_url = f"{ARIES_SOURCE_REPOSITORY}/tree/{commit}"
+        commit_line = commit
+    else:
+        source_url = ARIES_SOURCE_REPOSITORY
+        commit_line = "not stamped (development or source build)"
+
+    (destination / "SOURCE.txt").write_text(
+        "\n".join(
+            [
+                "ARIES CORRESPONDING SOURCE",
+                "",
+                f"Repository: {ARIES_SOURCE_REPOSITORY}",
+                f"Commit: {commit_line}",
+                f"Source URL: {source_url}",
+                "",
+                "The source identified above is the preferred form for modifying the",
+                "Aries desktop application. See COPYRIGHT.txt for the GPL/AGPL component",
+                "boundary and THIRD_PARTY_NOTICES.txt for separately licensed material.",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
 def _component_license_name(component: dict[str, Any]) -> str:
     return str(component["licenses"][0]["license"]["name"])
 
@@ -1046,6 +1086,7 @@ def stage_legal_artifacts(web_python: Path, destination: Path) -> tuple[int, int
             if not source.is_file():
                 raise FileNotFoundError(f"missing legal source: {source}")
             shutil.copy2(source, temporary / filename)
+        _write_aries_source_notice(temporary)
         _stage_valens_corresponding_source(temporary)
         pip_report = _pip_inspect(web_python)
         dependencies = _deduplicated_dependencies(

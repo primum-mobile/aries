@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 """Graphic Ephemeris daemon service.
 
 Brain: ``ephemcalc.EphemCalc`` (ephemcalc.py:8-87) runs AS-IS — one sample per
@@ -17,7 +22,10 @@ mirrors morin.ephemeris_state_for_radix/_radix_view_state_key
 from __future__ import annotations
 
 import calendar
+import hashlib
+import json
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Optional
 
@@ -34,6 +42,7 @@ import planets
 import util
 from aries.astrology.ephemeris_context import EphemerisContext
 from aries.astrology.transit_fast import search_longitude_transits_batch, search_station_times_batch
+from engine import planetary_state
 
 from webapp.daemon.chart_service import chart_snapshot_service
 
@@ -574,23 +583,37 @@ class EphemerisService:
         # morin._radix_view_state[('ephemeris', key)] twin (morin.py:5396-5426).
         self._view_state: dict[tuple, dict] = {}
 
-    # graphephemframe._series_cache_key (graphephemframe.py:338-345).
-    def _data_key(self, year: int, month: int) -> tuple:
+    def _data_options_key(self) -> tuple:
+        """Options that change the calculated daily series."""
         options = chart_snapshot_service.options
         return (
-            int(year),
-            int(month),
             int(getattr(options, 'ayanamsha', 0)),
             tuple(bool(v) for v in getattr(options, 'transcendental', ())),
             bool(getattr(options, 'showchiron', True)),
         )
 
-    def _payload_key(self, year: int, month: int) -> tuple:
-        options = chart_snapshot_service.options
+    # graphephemframe._series_cache_key (graphephemframe.py:338-345).
+    def _data_key(self, year: int, month: int) -> tuple:
         return (
-            *self._data_key(year, month),
-            bool(getattr(options, 'signs', True)),
-            bool(getattr(options, 'bw', False)),
+            int(year),
+            int(month),
+            *self._data_options_key(),
+        )
+
+    @staticmethod
+    def _language_key(options) -> int:
+        return int(getattr(options, 'langid', 0) or 0)
+
+    def _payload_options_key(self) -> tuple:
+        """Exact option identity for the complete drawable base payload.
+
+        Keep this separate from ``_data_options_key``: language, glyph variants,
+        and colours must invalidate labels/paint data without forcing the daily
+        Swiss Ephemeris series to be recalculated.
+        """
+        options = chart_snapshot_service.options
+        bw = bool(getattr(options, 'bw', False))
+        color_key = () if bw else (
             _rgb_key(getattr(options, 'clrbackground', None)),
             _rgb_key(getattr(options, 'clrframe', None)),
             _rgb_key(getattr(options, 'clrtexts', None)),
@@ -598,6 +621,32 @@ class EphemerisService:
             _rgb_key(getattr(options, 'clrhouses', None)),
             _rgb_list_key(getattr(options, 'clrindividual', None)),
         )
+        return (
+            *self._data_options_key(),
+            bool(getattr(options, 'signs', True)),
+            bool(getattr(options, 'uranus', True)),
+            int(getattr(options, 'pluto', 0) or 0),
+            self._language_key(options),
+            bw,
+            *color_key,
+        )
+
+    def _payload_key(self, year: int, month: int) -> tuple:
+        return (int(year), int(month), *self._payload_options_key())
+
+    def _marker_key(self, year: int, month: int) -> tuple:
+        """Calculated-series identity plus marker presentation language."""
+        options = chart_snapshot_service.options
+        return (*self._data_key(year, month), self._language_key(options))
+
+    def payload_revision_key(self) -> str:
+        """Deterministic identity for every non-anchor base-payload dependency."""
+        encoded = json.dumps(
+            self._payload_options_key(),
+            ensure_ascii=True,
+            separators=(',', ':'),
+        ).encode('utf-8')
+        return 'ephemeris-v2:' + hashlib.sha256(encoded).hexdigest()
 
     def _series_for(self, year: int, start_month: int):
         data_key = self._data_key(year, start_month)
@@ -615,8 +664,8 @@ class EphemerisService:
         return series
 
     def _stations_for(self, year: int, start_month: int, series, planet_ids, start_jd, days) -> dict:
-        data_key = self._data_key(year, start_month)
-        cached = self._station_cache.get(data_key)
+        marker_key = self._marker_key(year, start_month)
+        cached = self._station_cache.get(marker_key)
         if cached is not None:
             return cached
         stations = {"longitude": [], "declination": []}
@@ -625,19 +674,19 @@ class EphemerisService:
             stations["longitude"] = _longitude_stations(
                 options, series, planet_ids, start_jd, days)
             stations["declination"] = _declination_stations(series, planet_ids, start_jd)
-        self._station_cache[data_key] = stations
+        self._station_cache[marker_key] = stations
         if len(self._station_cache) > 36:
             self._station_cache.pop(next(iter(self._station_cache)))
         return stations
 
     def _sign_events_for(self, year: int, start_month: int, planet_ids, start_jd, days) -> list[dict]:
-        data_key = self._data_key(year, start_month)
-        cached = self._sign_event_cache.get(data_key)
+        marker_key = self._marker_key(year, start_month)
+        cached = self._sign_event_cache.get(marker_key)
         if cached is not None:
             return cached
         options = chart_snapshot_service.options
         events = _longitude_sign_events(options, year, planet_ids, start_jd, days)
-        self._sign_event_cache[data_key] = events
+        self._sign_event_cache[marker_key] = events
         if len(self._sign_event_cache) > 36:
             self._sign_event_cache.pop(next(iter(self._sign_event_cache)))
         return events
@@ -705,6 +754,14 @@ class EphemerisService:
             "signNames": [mtexts.txts.get(k, k) for k in SIGN_NAME_KEYS],
             "colors": _ephemeris_colors(options, bw),
             "planets": planets_payload,
+            "outOfBounds": [
+                {
+                    "planet": excursion.body_id,
+                    "dayOffset": float(excursion.sample_index),
+                    "value": excursion.declination_deg,
+                }
+                for excursion in planetary_state.out_of_bounds_excursions(series, planet_ids)
+            ],
             "stations": {"longitude": [], "declination": []},
             "signEvents": [],
         }
@@ -771,13 +828,98 @@ class EphemerisService:
         key = self._radix_key(radix)
         if key is None:
             return {}
-        return dict(self._view_state.get(key, {}))
+        state = self._normalize_view_state(self._view_state.get(key, {}))
+        if state:
+            self._view_state[key] = state
+        else:
+            self._view_state.pop(key, None)
+        return state
 
     def store_state_for_radix(self, radix, state: Optional[dict[str, Any]]) -> None:
         key = self._radix_key(radix)
         if key is None:
             return
-        self._view_state[key] = dict(state or {})
+        normalized = self._normalize_view_state(state)
+        if normalized:
+            self._view_state[key] = normalized
+        else:
+            self._view_state.pop(key, None)
+
+    @staticmethod
+    def _canonical_int(value) -> Optional[int]:
+        if isinstance(value, bool) or value is None:
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value) if value.is_integer() else None
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                return None
+            try:
+                return int(value, 10)
+            except ValueError:
+                return None
+        return None
+
+    @staticmethod
+    def _canonical_bool(value) -> Optional[bool]:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)) and value in (0, 1):
+            return bool(value)
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {'true', '1', 'yes', 'on'}:
+                return True
+            if normalized in {'false', '0', 'no', 'off'}:
+                return False
+        return None
+
+    @classmethod
+    def _normalize_view_state(cls, state) -> dict:
+        """Canonical, JSON-stable Graphic Ephemeris view-state schema."""
+        if not isinstance(state, Mapping):
+            return {}
+
+        normalized: dict[str, Any] = {}
+        if 'year' in state:
+            year = cls._canonical_int(state.get('year'))
+            if year is not None:
+                normalized['year'] = year
+        if 'start_month' in state:
+            month = cls._canonical_int(state.get('start_month'))
+            if month is not None:
+                normalized['start_month'] = min(12, max(1, month))
+
+        mode = state.get('display_mode')
+        if mode in {'longitude', 'declination'}:
+            normalized['display_mode'] = mode
+
+        for field in ('show_grid', 'show_event_glyphs'):
+            if field not in state:
+                continue
+            value = cls._canonical_bool(state.get(field))
+            if value is not None:
+                normalized[field] = value
+
+        visible = state.get('visible_planets')
+        if isinstance(visible, Mapping):
+            by_planet: dict[int, bool] = {}
+            valid_ids = set(PLANET_ORDER)
+            for raw_planet_id, raw_visible in visible.items():
+                planet_id = cls._canonical_int(raw_planet_id)
+                visibility = cls._canonical_bool(raw_visible)
+                if planet_id in valid_ids and visibility is not None:
+                    by_planet[int(planet_id)] = visibility
+            normalized['visible_planets'] = {
+                str(planet_id): by_planet[planet_id]
+                for planet_id in PLANET_ORDER
+                if planet_id in by_planet
+            }
+
+        return normalized
 
 
 ephemeris_service = EphemerisService()

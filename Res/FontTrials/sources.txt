@@ -1,6 +1,21 @@
 Kosugi-Regular.ttf
 Source: https://github.com/google/fonts/tree/main/apache/kosugi
 License: Apache 2.0, see LICENSE-kosugi.txt
+Note: also the build input for KosugiAries-Regular.ttf. Kept selectable in its
+own right (profile key 'kosugi') so the unmodified face stays available for
+comparison.
+
+KosugiAries-Regular.ttf
+Source: derived from Kosugi-Regular.ttf above.
+License: Apache 2.0 (same as upstream), see LICENSE-kosugi.txt
+Modifications: Latin/Greek/Cyrillic/punctuation respaced from monospaced
+half-width and full-width to proportional; accented Latin composites, inverted
+punctuation and guillemets added; kern feature added; Japanese glyphs
+unchanged. See THIRD_PARTY_NOTICES.txt.
+Rebuild:
+  python3 scripts/fonts/build_kosugi_aries.py \
+      Res/FontTrials/Kosugi-Regular.ttf Res/FontTrials/KosugiAries-Regular.ttf
+  cp Res/FontTrials/KosugiAries-Regular.ttf webapp/frontend/public/fonts/
 
 DotGothic16-Regular.ttf
 Source: https://github.com/google/fonts/tree/main/ofl/dotgothic16

@@ -8,8 +8,10 @@ use std::io::Write as IoWrite;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+#[cfg(unix)]
+use std::sync::atomic::AtomicU64;
 use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
+    atomic::{AtomicBool, Ordering},
     Mutex,
 };
 use std::thread;
@@ -72,11 +74,17 @@ impl DaemonProcess {
     }
 }
 
+#[cfg(unix)]
 const NATIVE_REQUEST_MAGIC: &[u8; 4] = b"ARQ1";
+#[cfg(unix)]
 const NATIVE_RESPONSE_MAGIC: &[u8; 4] = b"ARS1";
+#[cfg(unix)]
 const NATIVE_RESPONSE_HEADER_BYTES: usize = 10;
+#[cfg(unix)]
 const NATIVE_MAX_PATH_BYTES: usize = 8 * 1024;
+#[cfg(unix)]
 const NATIVE_MAX_BODY_BYTES: usize = 32 * 1024 * 1024;
+#[cfg(unix)]
 const NATIVE_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[cfg(unix)]
@@ -96,6 +104,7 @@ struct NativeDaemonTransport {
 
 enum NativeTransportError {
     Unavailable(String),
+    #[cfg(unix)]
     Failed(String),
 }
 
@@ -799,10 +808,10 @@ fn bundled_resource_dir(handle: &tauri::AppHandle) -> std::io::Result<PathBuf> {
     }
 }
 
-fn legal_document_filename(document: &str) -> Option<&'static str> {
+fn legal_document_filenames(document: &str) -> Option<&'static [&'static str]> {
     match document {
-        "license" => Some("LICENSE"),
-        "notices" => Some("THIRD_PARTY_NOTICES.txt"),
+        "license" => Some(&["COPYRIGHT.txt", "LICENSE", "COPYING-GPL-3.0.txt"]),
+        "notices" => Some(&["THIRD_PARTY_NOTICES.txt"]),
         _ => None,
     }
 }
@@ -816,17 +825,20 @@ fn valid_native_daemon_path(path: &str) -> bool {
 
 #[cfg(test)]
 mod legal_document_tests {
-    use super::{legal_document_filename, valid_native_daemon_path};
+    use super::{legal_document_filenames, valid_native_daemon_path};
 
     #[test]
     fn legal_document_names_are_allowlisted() {
-        assert_eq!(legal_document_filename("license"), Some("LICENSE"));
         assert_eq!(
-            legal_document_filename("notices"),
-            Some("THIRD_PARTY_NOTICES.txt")
+            legal_document_filenames("license"),
+            Some(["COPYRIGHT.txt", "LICENSE", "COPYING-GPL-3.0.txt"].as_slice())
         );
-        assert_eq!(legal_document_filename("../LICENSE"), None);
-        assert_eq!(legal_document_filename("DEPENDENCY_LICENSES.txt"), None);
+        assert_eq!(
+            legal_document_filenames("notices"),
+            Some(["THIRD_PARTY_NOTICES.txt"].as_slice())
+        );
+        assert_eq!(legal_document_filenames("../LICENSE"), None);
+        assert_eq!(legal_document_filenames("DEPENDENCY_LICENSES.txt"), None);
     }
 
     #[test]
@@ -845,8 +857,8 @@ mod legal_document_tests {
 
 #[tauri::command]
 fn read_legal_document(app: tauri::AppHandle, document: String) -> Result<String, String> {
-    let filename =
-        legal_document_filename(&document).ok_or_else(|| "unknown legal document".to_string())?;
+    let filenames =
+        legal_document_filenames(&document).ok_or_else(|| "unknown legal document".to_string())?;
     let legal_dir = if cfg!(debug_assertions) {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("..")
@@ -857,8 +869,13 @@ fn read_legal_document(app: tauri::AppHandle, document: String) -> Result<String
             .map_err(|error| format!("legal resources are unavailable: {error}"))?
             .join("legal")
     };
-    fs::read_to_string(legal_dir.join(filename))
-        .map_err(|error| format!("could not read bundled {filename}: {error}"))
+    let mut sections = Vec::with_capacity(filenames.len());
+    for filename in filenames {
+        let text = fs::read_to_string(legal_dir.join(filename))
+            .map_err(|error| format!("could not read bundled {filename}: {error}"))?;
+        sections.push(text.trim_end().to_string());
+    }
+    Ok(sections.join("\n\n"))
 }
 
 fn send_native_daemon_request(
@@ -923,6 +940,7 @@ async fn native_daemon_request(
     }
     match state.native_transport.request(&request).await {
         Ok(response) => Ok(response),
+        #[cfg(unix)]
         Err(NativeTransportError::Failed(error)) => Err(error),
         Err(NativeTransportError::Unavailable(error)) => {
             log::warn!("{error}; using local HTTP compatibility transport");

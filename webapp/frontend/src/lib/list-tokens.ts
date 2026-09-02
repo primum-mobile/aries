@@ -154,7 +154,6 @@ export const LIST_PANE_CLASSES = {
 export const LIST_ROW_CLASSES = {
   hover: "aries-list-row--hover",
   selected: "aries-list-row--selected",
-  striped: "aries-list-row--striped",
   current: "aries-list-row--current",
   flagged: "aries-list-row--flagged",
 } as const;

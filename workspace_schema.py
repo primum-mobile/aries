@@ -84,6 +84,13 @@ class RetainedStateTransits(TypedDict, total=False):
     display_datetime: tuple      # (year, month, day, hour, minute, second)
 
 
+class RetainedStateHarmonic(TypedDict, total=False):
+    """One division-chart binding; mode switches do not replace the document."""
+    projection_mode: str         # 'harmonic' or 'varga'
+    harmonic_number: float       # last Western harmonic (1..360; decimals allowed)
+    varga_number: int            # last supported Parashari Shodashavarga division
+
+
 class WorkspaceSessionChart(TypedDict, total=False):
     """Core chart and session management."""
 

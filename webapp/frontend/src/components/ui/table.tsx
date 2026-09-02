@@ -4,17 +4,27 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+function Table({
+  className,
+  wrapperless = false,
+  ...props
+}: React.ComponentProps<"table"> & { wrapperless?: boolean }) {
+  const table = (
+    <table
+      data-slot="table"
+      className={cn("aries-list caption-bottom", className)}
+      {...props}
+    />
+  )
+
+  if (wrapperless) return table
+
   return (
     <div
       data-slot="table-container"
       className="relative w-full overflow-x-auto"
     >
-      <table
-        data-slot="table"
-        className={cn("aries-list caption-bottom", className)}
-        {...props}
-      />
+      {table}
     </div>
   )
 }

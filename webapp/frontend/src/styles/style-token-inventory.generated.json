@@ -1,17 +1,17 @@
 {
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "generatedFrom": {
     "contract": "src/styles/style-token-contract.json",
     "css": "src/app/globals.css",
     "legacyOverlay": "src/styles/style-tokens.ts"
   },
   "counts": {
-    "tokens": 1482,
-    "cssTokens": 1471,
-    "cssDeclarations": 1539,
+    "tokens": 1478,
+    "cssTokens": 1467,
+    "cssDeclarations": 1552,
     "runtimeOnlyTokens": 7,
     "externalTokens": 4,
-    "public": 1110,
+    "public": 1106,
     "derived": 198,
     "runtime": 174
   },
@@ -243,7 +243,7 @@
     },
     {
       "id": "app.inspector",
-      "tokenCount": 48
+      "tokenCount": 44
     },
     {
       "id": "app.style-lab",
@@ -251,7 +251,7 @@
     },
     {
       "id": "app.pane",
-      "tokenCount": 15
+      "tokenCount": 14
     },
     {
       "id": "app.notes",
@@ -371,7 +371,7 @@
     },
     {
       "id": "renderer.astrolabe",
-      "tokenCount": 69
+      "tokenCount": 70
     },
     {
       "id": "renderer.mundane",
@@ -412,9 +412,14 @@
       ],
       "selectors": [
         ":root",
+        ".aries-calendar-prototype",
         ".day"
       ],
       "declarations": [
+        {
+          "selector": ".aries-calendar-prototype",
+          "value": "var(--aries-accent)"
+        },
         {
           "selector": ":root",
           "value": "var(--aries-accent)"
@@ -445,9 +450,14 @@
       ],
       "selectors": [
         ":root",
+        ".aries-calendar-prototype",
         ".day"
       ],
       "declarations": [
+        {
+          "selector": ".aries-calendar-prototype",
+          "value": "var(--aries-accent-foreground)"
+        },
         {
           "selector": ":root",
           "value": "var(--aries-accent-foreground)"
@@ -510,10 +520,9 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
-        "src/components/workshell/app-sidebar.tsx",
         "src/components/workshell/app-theme-preview.tsx",
         "src/components/workshell/astrocart-controls.tsx",
-        "src/components/workshell/astrolabe-view.tsx",
+        "src/components/workshell/calendar-prototype-view.tsx",
         "src/components/workshell/chart-style-panel.tsx"
       ],
       "legacyId": "accent",
@@ -7649,7 +7658,35 @@
       "scope": "renderer",
       "type": "color",
       "unit": "",
-      "default": "rgba(120, 150, 190, 0.30)",
+      "default": "var(--morinus-houses)",
+      "dependencies": [
+        "--morinus-houses"
+      ],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "var(--morinus-houses)"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/astrolabe-render-style.ts"
+      ]
+    },
+    {
+      "id": "--aries-astrolabe-atmospheric-fill-opacity",
+      "name": "--aries-astrolabe-atmospheric-fill-opacity",
+      "family": "renderer.astrolabe",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "astrolabe-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0.32",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -7657,12 +7694,17 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "rgba(120, 150, 190, 0.30)"
+          "value": "0.32"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/astrolabe-render-style.ts"
-      ]
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      }
     },
     {
       "id": "--aries-astrolabe-azimuth",
@@ -7675,15 +7717,17 @@
       "scope": "renderer",
       "type": "color",
       "unit": "",
-      "default": "rgba(120, 150, 190, 0.24)",
-      "dependencies": [],
+      "default": "var(--morinus-houses)",
+      "dependencies": [
+        "--morinus-houses"
+      ],
       "selectors": [
         ":root"
       ],
       "declarations": [
         {
           "selector": ":root",
-          "value": "rgba(120, 150, 190, 0.24)"
+          "value": "var(--morinus-houses)"
         }
       ],
       "consumerFiles": [
@@ -7701,15 +7745,17 @@
       "scope": "renderer",
       "type": "color",
       "unit": "",
-      "default": "#23242a",
-      "dependencies": [],
+      "default": "var(--morinus-background)",
+      "dependencies": [
+        "--morinus-background"
+      ],
       "selectors": [
         ":root"
       ],
       "declarations": [
         {
           "selector": ":root",
-          "value": "#23242a"
+          "value": "var(--morinus-background)"
         }
       ],
       "consumerFiles": [
@@ -7727,7 +7773,7 @@
       "scope": "renderer",
       "type": "number",
       "unit": "",
-      "default": "0.15",
+      "default": "0.12",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -7735,14 +7781,14 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.15"
+          "value": "0.12"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/astrolabe-render-style.ts"
       ],
       "bounds": {
-        "min": 0.0375,
+        "min": 0.03,
         "max": 1,
         "step": 0.01
       }
@@ -7784,7 +7830,7 @@
       "scope": "renderer",
       "type": "number",
       "unit": "",
-      "default": "0.02",
+      "default": "0.018",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -7792,14 +7838,14 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.02"
+          "value": "0.018"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/astrolabe-render-style.ts"
       ],
       "bounds": {
-        "min": 0.005,
+        "min": 0.0045,
         "max": 1,
         "step": 0.01
       }
@@ -7815,15 +7861,17 @@
       "scope": "renderer",
       "type": "color",
       "unit": "",
-      "default": "rgba(150, 150, 152, 0.55)",
-      "dependencies": [],
+      "default": "var(--morinus-frame)",
+      "dependencies": [
+        "--morinus-frame"
+      ],
       "selectors": [
         ":root"
       ],
       "declarations": [
         {
           "selector": ":root",
-          "value": "rgba(150, 150, 152, 0.55)"
+          "value": "var(--morinus-frame)"
         }
       ],
       "consumerFiles": [
@@ -7841,7 +7889,7 @@
       "scope": "renderer",
       "type": "number",
       "unit": "px",
-      "default": "3px",
+      "default": "2px",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -7849,7 +7897,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "3px"
+          "value": "2px"
         }
       ],
       "consumerFiles": [
@@ -7857,7 +7905,7 @@
       ],
       "bounds": {
         "min": 0.25,
-        "max": 12,
+        "max": 8,
         "step": 0.25
       }
     },
@@ -7872,7 +7920,7 @@
       "scope": "renderer",
       "type": "number",
       "unit": "px",
-      "default": "2px",
+      "default": "1px",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -7880,7 +7928,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "2px"
+          "value": "1px"
         }
       ],
       "consumerFiles": [
@@ -7934,15 +7982,17 @@
       "scope": "renderer",
       "type": "color",
       "unit": "",
-      "default": "rgba(160, 160, 162, 0.9)",
-      "dependencies": [],
+      "default": "var(--morinus-angles)",
+      "dependencies": [
+        "--morinus-angles"
+      ],
       "selectors": [
         ":root"
       ],
       "declarations": [
         {
           "selector": ":root",
-          "value": "rgba(160, 160, 162, 0.9)"
+          "value": "var(--morinus-angles)"
         }
       ],
       "consumerFiles": [
@@ -7960,7 +8010,7 @@
       "scope": "renderer",
       "type": "number",
       "unit": "",
-      "default": "22",
+      "default": "24",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -7968,15 +8018,15 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "22"
+          "value": "24"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/astrolabe-render-style.ts"
       ],
       "bounds": {
-        "min": 11,
-        "max": 44,
+        "min": 12,
+        "max": 48,
         "step": 1
       }
     },
@@ -7991,7 +8041,7 @@
       "scope": "renderer",
       "type": "number",
       "unit": "",
-      "default": "0.06",
+      "default": "0.04",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -7999,14 +8049,14 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.06"
+          "value": "0.04"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/astrolabe-render-style.ts"
       ],
       "bounds": {
-        "min": 0.015,
+        "min": 0.01,
         "max": 1,
         "step": 0.01
       }
@@ -8302,7 +8352,7 @@
       "scope": "renderer",
       "type": "number",
       "unit": "px",
-      "default": "2px",
+      "default": "1px",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -8310,7 +8360,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "2px"
+          "value": "1px"
         }
       ],
       "consumerFiles": [
@@ -8333,7 +8383,7 @@
       "scope": "renderer",
       "type": "number",
       "unit": "",
-      "default": "0.55",
+      "default": "0.42",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -8341,7 +8391,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.55"
+          "value": "0.42"
         }
       ],
       "consumerFiles": [
@@ -8364,15 +8414,17 @@
       "scope": "renderer",
       "type": "color",
       "unit": "",
-      "default": "#c68a22",
-      "dependencies": [],
+      "default": "var(--morinus-frame)",
+      "dependencies": [
+        "--morinus-frame"
+      ],
       "selectors": [
         ":root"
       ],
       "declarations": [
         {
           "selector": ":root",
-          "value": "#c68a22"
+          "value": "var(--morinus-frame)"
         }
       ],
       "consumerFiles": [
@@ -8390,15 +8442,17 @@
       "scope": "renderer",
       "type": "color",
       "unit": "",
-      "default": "#78828f",
-      "dependencies": [],
+      "default": "var(--morinus-houses)",
+      "dependencies": [
+        "--morinus-houses"
+      ],
       "selectors": [
         ":root"
       ],
       "declarations": [
         {
           "selector": ":root",
-          "value": "#78828f"
+          "value": "var(--morinus-houses)"
         }
       ],
       "consumerFiles": [
@@ -8416,7 +8470,7 @@
       "scope": "renderer",
       "type": "number",
       "unit": "px",
-      "default": "4px",
+      "default": "3px",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -8424,7 +8478,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "4px"
+          "value": "3px"
         }
       ],
       "consumerFiles": [
@@ -8432,101 +8486,13 @@
       ],
       "bounds": {
         "min": 0.25,
-        "max": 16,
+        "max": 12,
         "step": 0.25
       }
     },
     {
       "id": "--aries-astrolabe-equator-dash-on",
       "name": "--aries-astrolabe-equator-dash-on",
-      "family": "renderer.astrolabe",
-      "class": "public",
-      "role": "renderer-style",
-      "owner": "astrolabe-renderer",
-      "provider": "css-declaration",
-      "scope": "renderer",
-      "type": "number",
-      "unit": "px",
-      "default": "5px",
-      "dependencies": [],
-      "selectors": [
-        ":root"
-      ],
-      "declarations": [
-        {
-          "selector": ":root",
-          "value": "5px"
-        }
-      ],
-      "consumerFiles": [
-        "src/lib/chart/astrolabe-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0.25,
-        "max": 20,
-        "step": 0.25
-      }
-    },
-    {
-      "id": "--aries-astrolabe-equator-label",
-      "name": "--aries-astrolabe-equator-label",
-      "family": "renderer.astrolabe",
-      "class": "public",
-      "role": "renderer-style",
-      "owner": "astrolabe-renderer",
-      "provider": "css-declaration",
-      "scope": "renderer",
-      "type": "color",
-      "unit": "",
-      "default": "#788291",
-      "dependencies": [],
-      "selectors": [
-        ":root"
-      ],
-      "declarations": [
-        {
-          "selector": ":root",
-          "value": "#788291"
-        }
-      ],
-      "consumerFiles": [
-        "src/lib/chart/astrolabe-render-style.ts"
-      ]
-    },
-    {
-      "id": "--aries-astrolabe-fine-stroke-divisor",
-      "name": "--aries-astrolabe-fine-stroke-divisor",
-      "family": "renderer.astrolabe",
-      "class": "public",
-      "role": "renderer-style",
-      "owner": "astrolabe-renderer",
-      "provider": "css-declaration",
-      "scope": "renderer",
-      "type": "number",
-      "unit": "",
-      "default": "360",
-      "dependencies": [],
-      "selectors": [
-        ":root"
-      ],
-      "declarations": [
-        {
-          "selector": ":root",
-          "value": "360"
-        }
-      ],
-      "consumerFiles": [
-        "src/lib/chart/astrolabe-render-style.ts"
-      ],
-      "bounds": {
-        "min": 180,
-        "max": 720,
-        "step": 1
-      }
-    },
-    {
-      "id": "--aries-astrolabe-fine-stroke-min",
-      "name": "--aries-astrolabe-fine-stroke-min",
       "family": "renderer.astrolabe",
       "class": "public",
       "role": "renderer-style",
@@ -8556,6 +8522,96 @@
       }
     },
     {
+      "id": "--aries-astrolabe-equator-label",
+      "name": "--aries-astrolabe-equator-label",
+      "family": "renderer.astrolabe",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "astrolabe-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "color",
+      "unit": "",
+      "default": "var(--morinus-houses)",
+      "dependencies": [
+        "--morinus-houses"
+      ],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "var(--morinus-houses)"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/astrolabe-render-style.ts"
+      ]
+    },
+    {
+      "id": "--aries-astrolabe-fine-stroke-divisor",
+      "name": "--aries-astrolabe-fine-stroke-divisor",
+      "family": "renderer.astrolabe",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "astrolabe-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "960",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "960"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/astrolabe-render-style.ts"
+      ],
+      "bounds": {
+        "min": 480,
+        "max": 1920,
+        "step": 1
+      }
+    },
+    {
+      "id": "--aries-astrolabe-fine-stroke-min",
+      "name": "--aries-astrolabe-fine-stroke-min",
+      "family": "renderer.astrolabe",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "astrolabe-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "px",
+      "default": "0.75px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0.75px"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/astrolabe-render-style.ts"
+      ],
+      "bounds": {
+        "min": 0.25,
+        "max": 8,
+        "step": 0.25
+      }
+    },
+    {
       "id": "--aries-astrolabe-horizon",
       "name": "--aries-astrolabe-horizon",
       "family": "renderer.astrolabe",
@@ -8566,15 +8622,17 @@
       "scope": "renderer",
       "type": "color",
       "unit": "",
-      "default": "#3e82c4",
-      "dependencies": [],
+      "default": "var(--morinus-angles)",
+      "dependencies": [
+        "--morinus-angles"
+      ],
       "selectors": [
         ":root"
       ],
       "declarations": [
         {
           "selector": ":root",
-          "value": "#3e82c4"
+          "value": "var(--morinus-angles)"
         }
       ],
       "consumerFiles": [
@@ -8592,15 +8650,17 @@
       "scope": "renderer",
       "type": "color",
       "unit": "",
-      "default": "rgba(170, 150, 110, 0.30)",
-      "dependencies": [],
+      "default": "var(--morinus-angles)",
+      "dependencies": [
+        "--morinus-angles"
+      ],
       "selectors": [
         ":root"
       ],
       "declarations": [
         {
           "selector": ":root",
-          "value": "rgba(170, 150, 110, 0.30)"
+          "value": "var(--morinus-angles)"
         }
       ],
       "consumerFiles": [
@@ -8618,15 +8678,17 @@
       "scope": "renderer",
       "type": "color",
       "unit": "",
-      "default": "#dcdcdc",
-      "dependencies": [],
+      "default": "var(--morinus-text-bright)",
+      "dependencies": [
+        "--morinus-text-bright"
+      ],
       "selectors": [
         ":root"
       ],
       "declarations": [
         {
           "selector": ":root",
-          "value": "#dcdcdc"
+          "value": "var(--morinus-text-bright)"
         }
       ],
       "consumerFiles": [
@@ -8768,15 +8830,17 @@
       "scope": "renderer",
       "type": "color",
       "unit": "",
-      "default": "#c8c8c8",
-      "dependencies": [],
+      "default": "var(--morinus-text-bright)",
+      "dependencies": [
+        "--morinus-text-bright"
+      ],
       "selectors": [
         ":root"
       ],
       "declarations": [
         {
           "selector": ":root",
-          "value": "#c8c8c8"
+          "value": "var(--morinus-text-bright)"
         }
       ],
       "consumerFiles": [
@@ -8820,7 +8884,7 @@
       "scope": "renderer",
       "type": "number",
       "unit": "",
-      "default": "220",
+      "default": "720",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -8828,15 +8892,15 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "220"
+          "value": "720"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/astrolabe-render-style.ts"
       ],
       "bounds": {
-        "min": 110,
-        "max": 440,
+        "min": 360,
+        "max": 1440,
         "step": 1
       }
     },
@@ -8851,7 +8915,7 @@
       "scope": "renderer",
       "type": "number",
       "unit": "px",
-      "default": "2px",
+      "default": "1.5px",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -8859,7 +8923,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "2px"
+          "value": "1.5px"
         }
       ],
       "consumerFiles": [
@@ -8882,7 +8946,7 @@
       "scope": "renderer",
       "type": "number",
       "unit": "",
-      "default": "280",
+      "default": "720",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -8890,15 +8954,15 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "280"
+          "value": "720"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/astrolabe-render-style.ts"
       ],
       "bounds": {
-        "min": 140,
-        "max": 560,
+        "min": 360,
+        "max": 1440,
         "step": 1
       }
     },
@@ -8944,15 +9008,17 @@
       "scope": "renderer",
       "type": "color",
       "unit": "",
-      "default": "rgba(170, 178, 196, 0.55)",
-      "dependencies": [],
+      "default": "var(--morinus-angles)",
+      "dependencies": [
+        "--morinus-angles"
+      ],
       "selectors": [
         ":root"
       ],
       "declarations": [
         {
           "selector": ":root",
-          "value": "rgba(170, 178, 196, 0.55)"
+          "value": "var(--morinus-angles)"
         }
       ],
       "consumerFiles": [
@@ -9125,7 +9191,7 @@
       "scope": "renderer",
       "type": "number",
       "unit": "",
-      "default": "16",
+      "default": "18",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -9133,15 +9199,15 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "16"
+          "value": "18"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/astrolabe-render-style.ts"
       ],
       "bounds": {
-        "min": 8,
-        "max": 32,
+        "min": 9,
+        "max": 36,
         "step": 1
       }
     },
@@ -9156,15 +9222,17 @@
       "scope": "renderer",
       "type": "color",
       "unit": "",
-      "default": "rgba(150, 165, 185, 0.42)",
-      "dependencies": [],
+      "default": "var(--morinus-houses)",
+      "dependencies": [
+        "--morinus-houses"
+      ],
       "selectors": [
         ":root"
       ],
       "declarations": [
         {
           "selector": ":root",
-          "value": "rgba(150, 165, 185, 0.42)"
+          "value": "var(--morinus-houses)"
         }
       ],
       "consumerFiles": [
@@ -9213,7 +9281,7 @@
       "scope": "renderer",
       "type": "number",
       "unit": "px",
-      "default": "4px",
+      "default": "1px",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -9221,7 +9289,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "4px"
+          "value": "1px"
         }
       ],
       "consumerFiles": [
@@ -9229,7 +9297,7 @@
       ],
       "bounds": {
         "min": 0.25,
-        "max": 16,
+        "max": 8,
         "step": 0.25
       }
     },
@@ -9270,7 +9338,7 @@
       "scope": "renderer",
       "type": "number",
       "unit": "",
-      "default": "22",
+      "default": "24",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -9278,15 +9346,15 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "22"
+          "value": "24"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/astrolabe-render-style.ts"
       ],
       "bounds": {
-        "min": 11,
-        "max": 44,
+        "min": 12,
+        "max": 48,
         "step": 1
       }
     },
@@ -9301,7 +9369,7 @@
       "scope": "renderer",
       "type": "number",
       "unit": "px",
-      "default": "1px",
+      "default": "0.75px",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -9309,7 +9377,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "1px"
+          "value": "0.75px"
         }
       ],
       "consumerFiles": [
@@ -9332,7 +9400,7 @@
       "scope": "renderer",
       "type": "number",
       "unit": "",
-      "default": "160",
+      "default": "190",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -9340,109 +9408,21 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "160"
+          "value": "190"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/astrolabe-render-style.ts"
       ],
       "bounds": {
-        "min": 80,
-        "max": 320,
+        "min": 95,
+        "max": 380,
         "step": 1
       }
     },
     {
       "id": "--aries-astrolabe-sphere-radius-min",
       "name": "--aries-astrolabe-sphere-radius-min",
-      "family": "renderer.astrolabe",
-      "class": "public",
-      "role": "renderer-style",
-      "owner": "astrolabe-renderer",
-      "provider": "css-declaration",
-      "scope": "renderer",
-      "type": "number",
-      "unit": "px",
-      "default": "2px",
-      "dependencies": [],
-      "selectors": [
-        ":root"
-      ],
-      "declarations": [
-        {
-          "selector": ":root",
-          "value": "2px"
-        }
-      ],
-      "consumerFiles": [
-        "src/lib/chart/astrolabe-render-style.ts"
-      ],
-      "bounds": {
-        "min": 0.5,
-        "max": 8,
-        "step": 0.5
-      }
-    },
-    {
-      "id": "--aries-astrolabe-star",
-      "name": "--aries-astrolabe-star",
-      "family": "renderer.astrolabe",
-      "class": "public",
-      "role": "renderer-style",
-      "owner": "astrolabe-renderer",
-      "provider": "css-declaration",
-      "scope": "renderer",
-      "type": "color",
-      "unit": "",
-      "default": "rgba(220, 222, 230, 0.85)",
-      "dependencies": [],
-      "selectors": [
-        ":root"
-      ],
-      "declarations": [
-        {
-          "selector": ":root",
-          "value": "rgba(220, 222, 230, 0.85)"
-        }
-      ],
-      "consumerFiles": [
-        "src/lib/chart/astrolabe-render-style.ts"
-      ]
-    },
-    {
-      "id": "--aries-astrolabe-star-radius-divisor",
-      "name": "--aries-astrolabe-star-radius-divisor",
-      "family": "renderer.astrolabe",
-      "class": "public",
-      "role": "renderer-style",
-      "owner": "astrolabe-renderer",
-      "provider": "css-declaration",
-      "scope": "renderer",
-      "type": "number",
-      "unit": "",
-      "default": "320",
-      "dependencies": [],
-      "selectors": [
-        ":root"
-      ],
-      "declarations": [
-        {
-          "selector": ":root",
-          "value": "320"
-        }
-      ],
-      "consumerFiles": [
-        "src/lib/chart/astrolabe-render-style.ts"
-      ],
-      "bounds": {
-        "min": 160,
-        "max": 640,
-        "step": 1
-      }
-    },
-    {
-      "id": "--aries-astrolabe-star-radius-min",
-      "name": "--aries-astrolabe-star-radius-min",
       "family": "renderer.astrolabe",
       "class": "public",
       "role": "renderer-style",
@@ -9472,6 +9452,96 @@
       }
     },
     {
+      "id": "--aries-astrolabe-star",
+      "name": "--aries-astrolabe-star",
+      "family": "renderer.astrolabe",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "astrolabe-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "color",
+      "unit": "",
+      "default": "var(--morinus-positions)",
+      "dependencies": [
+        "--morinus-positions"
+      ],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "var(--morinus-positions)"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/astrolabe-render-style.ts"
+      ]
+    },
+    {
+      "id": "--aries-astrolabe-star-radius-divisor",
+      "name": "--aries-astrolabe-star-radius-divisor",
+      "family": "renderer.astrolabe",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "astrolabe-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "360",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "360"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/astrolabe-render-style.ts"
+      ],
+      "bounds": {
+        "min": 180,
+        "max": 720,
+        "step": 1
+      }
+    },
+    {
+      "id": "--aries-astrolabe-star-radius-min",
+      "name": "--aries-astrolabe-star-radius-min",
+      "family": "renderer.astrolabe",
+      "class": "public",
+      "role": "renderer-style",
+      "owner": "astrolabe-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "px",
+      "default": "1px",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "1px"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/astrolabe-render-style.ts"
+      ],
+      "bounds": {
+        "min": 0.5,
+        "max": 8,
+        "step": 0.5
+      }
+    },
+    {
       "id": "--aries-astrolabe-sun-fill",
       "name": "--aries-astrolabe-sun-fill",
       "family": "renderer.astrolabe",
@@ -9482,15 +9552,17 @@
       "scope": "renderer",
       "type": "color",
       "unit": "",
-      "default": "#ffe066",
-      "dependencies": [],
+      "default": "var(--morinus-body-sun)",
+      "dependencies": [
+        "--morinus-body-sun"
+      ],
       "selectors": [
         ":root"
       ],
       "declarations": [
         {
           "selector": ":root",
-          "value": "#ffe066"
+          "value": "var(--morinus-body-sun)"
         }
       ],
       "consumerFiles": [
@@ -9539,7 +9611,7 @@
       "scope": "renderer",
       "type": "number",
       "unit": "",
-      "default": "0.01",
+      "default": "0.008",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -9547,14 +9619,14 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "0.01"
+          "value": "0.008"
         }
       ],
       "consumerFiles": [
         "src/lib/chart/astrolabe-render-style.ts"
       ],
       "bounds": {
-        "min": 0.0025,
+        "min": 0.002,
         "max": 1,
         "step": 0.01
       }
@@ -9570,15 +9642,17 @@
       "scope": "renderer",
       "type": "color",
       "unit": "",
-      "default": "rgba(200, 210, 220, 0.45)",
-      "dependencies": [],
+      "default": "var(--morinus-houses)",
+      "dependencies": [
+        "--morinus-houses"
+      ],
       "selectors": [
         ":root"
       ],
       "declarations": [
         {
           "selector": ":root",
-          "value": "rgba(200, 210, 220, 0.45)"
+          "value": "var(--morinus-houses)"
         }
       ],
       "consumerFiles": [
@@ -9596,7 +9670,7 @@
       "scope": "renderer",
       "type": "number",
       "unit": "px",
-      "default": "4px",
+      "default": "3px",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -9604,7 +9678,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "4px"
+          "value": "3px"
         }
       ],
       "consumerFiles": [
@@ -9612,7 +9686,7 @@
       ],
       "bounds": {
         "min": 0.25,
-        "max": 16,
+        "max": 12,
         "step": 0.25
       }
     },
@@ -9627,7 +9701,7 @@
       "scope": "renderer",
       "type": "number",
       "unit": "px",
-      "default": "4px",
+      "default": "1px",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -9635,7 +9709,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "4px"
+          "value": "1px"
         }
       ],
       "consumerFiles": [
@@ -9643,7 +9717,7 @@
       ],
       "bounds": {
         "min": 0.25,
-        "max": 16,
+        "max": 8,
         "step": 0.25
       }
     },
@@ -9754,7 +9828,7 @@
         "src/app/globals.css",
         "src/components/workshell/app-theme-preview.tsx",
         "src/components/workshell/aspect-list-panel.tsx",
-        "src/components/workshell/astrolabe-view.tsx",
+        "src/components/workshell/calendar-prototype-view.tsx",
         "src/components/workshell/decennials-view.tsx",
         "src/components/workshell/eclipses-view.tsx",
         "src/components/workshell/generic-table-view.tsx",
@@ -9762,13 +9836,13 @@
         "src/components/workshell/list-column-layout.tsx",
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/notes-panel.tsx",
-        "src/components/workshell/profections-view.tsx",
         "src/components/workshell/resizable-table-columns.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
         "src/components/workshell/save-to-collection-dialog.tsx",
         "src/components/workshell/sectioned-table-view.tsx",
         "src/components/workshell/strip-view.tsx",
         "src/components/workshell/surveil-studies-dialog.tsx",
+        "src/components/workshell/temporal-confluence-view.tsx",
         "src/components/workshell/time-lord-table-view.tsx",
         "src/components/workshell/zodiacal-releasing-view.tsx",
         "src/lib/chart/strip-render-style.ts"
@@ -9839,9 +9913,11 @@
         "src/components/workshell/about-dialog.tsx",
         "src/components/workshell/ambient-spotlight.tsx",
         "src/components/workshell/app-theme-controls.tsx",
-        "src/components/workshell/astrolabe-view.tsx",
+        "src/components/workshell/calendar-prototype-view.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
         "src/components/workshell/chart-hover-flag.tsx",
+        "src/components/workshell/directions-view.tsx",
+        "src/components/workshell/eclipses-view.tsx",
         "src/components/workshell/feature-catalog-view.tsx",
         "src/components/workshell/help-dialog.tsx",
         "src/components/workshell/home-client.tsx",
@@ -9849,10 +9925,12 @@
         "src/components/workshell/license-management-panel.tsx",
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/mundane-chart-view.tsx",
+        "src/components/workshell/retained-pane-shell.tsx",
         "src/components/workshell/save-to-collection-dialog.tsx",
         "src/components/workshell/settings-dialog.tsx",
         "src/components/workshell/surveil-studies-dialog.tsx",
         "src/components/workshell/system-chart-picker.tsx",
+        "src/components/workshell/temporal-confluence-view.tsx",
         "src/components/workshell/transit-search-view.tsx",
         "src/components/workshell/workspace-content.tsx",
         "src/lib/list-tokens.ts"
@@ -9898,8 +9976,10 @@
         "src/components/workshell/app-theme-controls.tsx",
         "src/components/workshell/aspect-list-panel.tsx",
         "src/components/workshell/aspect-matrix-view.tsx",
+        "src/components/workshell/calendar-prototype-view.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
         "src/components/workshell/chart-hover-flag.tsx",
+        "src/components/workshell/directions-view.tsx",
         "src/components/workshell/generic-table-view.tsx",
         "src/components/workshell/inspector-panel.tsx",
         "src/components/workshell/license-management-panel.tsx",
@@ -9913,6 +9993,7 @@
         "src/components/workshell/sidebar-list-table.tsx",
         "src/components/workshell/surveil-studies-dialog.tsx",
         "src/components/workshell/system-chart-picker.tsx",
+        "src/components/workshell/text-export-actions.tsx",
         "src/components/workshell/time-lord-table-view.tsx",
         "src/components/workshell/transit-search-view.tsx",
         "src/components/workshell/zodiacal-releasing-view.tsx"
@@ -9947,6 +10028,7 @@
         "src/components/ui/input-group.tsx",
         "src/components/ui/input.tsx",
         "src/components/workshell/app-theme-controls.tsx",
+        "src/components/workshell/appearance-panel.tsx",
         "src/components/workshell/astrocart-controls.tsx",
         "src/components/workshell/settings-dialog.tsx",
         "src/components/workshell/system-chart-picker.tsx",
@@ -9987,6 +10069,7 @@
         "src/components/ui/button.tsx",
         "src/components/ui/input-group.tsx",
         "src/components/ui/input.tsx",
+        "src/components/workshell/inspector-panel.tsx",
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/primdir-settings.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
@@ -10085,7 +10168,6 @@
         "src/components/workshell/astrocart-controls.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
         "src/components/workshell/eclipses-view.tsx",
-        "src/components/workshell/generic-table-view.tsx",
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
         "src/components/workshell/sectioned-table-view.tsx",
@@ -10180,11 +10262,11 @@
         "src/components/ui/input-group.tsx",
         "src/components/workshell/aspect-list-panel.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
-        "src/components/workshell/generic-table-view.tsx",
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
         "src/components/workshell/synodic-cycle-list-view.tsx",
         "src/components/workshell/system-chart-picker.tsx",
+        "src/components/workshell/text-export-actions.tsx",
         "src/components/workshell/transit-search-view.tsx",
         "src/components/workshell/workspace-content.tsx"
       ],
@@ -10222,6 +10304,7 @@
         "src/components/ui/button.tsx",
         "src/components/ui/input-group.tsx",
         "src/components/ui/tabs.tsx",
+        "src/components/workshell/calendar-prototype-view.tsx",
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
         "src/components/workshell/settings-dialog.tsx"
@@ -10481,12 +10564,12 @@
         "src/components/ui/command.tsx",
         "src/components/ui/input-group.tsx",
         "src/components/workshell/app-theme-controls.tsx",
+        "src/components/workshell/appearance-panel.tsx",
         "src/components/workshell/aspect-matrix-view.tsx",
         "src/components/workshell/astrocart-controls.tsx",
-        "src/components/workshell/astrolabe-view.tsx",
+        "src/components/workshell/calendar-prototype-view.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
         "src/components/workshell/eclipses-view.tsx",
-        "src/components/workshell/generic-table-view.tsx",
         "src/components/workshell/home-client.tsx",
         "src/components/workshell/license-management-panel.tsx",
         "src/components/workshell/list-controls.tsx",
@@ -10827,7 +10910,12 @@
         }
       ],
       "consumerFiles": [
-        "src/app/globals.css"
+        "src/app/globals.css",
+        "src/components/workshell/graph-ephemeris-view.tsx",
+        "src/lib/chart/ephemeris-render-style.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/components/workshell/graph-ephemeris-view.tsx"
       ]
     },
     {
@@ -10951,6 +11039,7 @@
       "consumerFiles": [
         "src/components/ui/dialog.tsx",
         "src/components/workshell/about-dialog.tsx",
+        "src/components/workshell/calendar-prototype-view.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
         "src/components/workshell/chart-style-panel.tsx",
         "src/components/workshell/settings-dialog.tsx",
@@ -13184,6 +13273,8 @@
         }
       ],
       "consumerFiles": [
+        "src/app/globals.css",
+        "src/components/workshell/calendar-prototype-view.tsx",
         "src/components/workshell/home-client.tsx",
         "src/components/workshell/save-to-collection-dialog.tsx",
         "src/components/workshell/surveil-studies-dialog.tsx"
@@ -13339,6 +13430,7 @@
         "src/components/ui/context-menu.tsx",
         "src/components/ui/dropdown-menu.tsx",
         "src/components/workshell/app-theme-preview.tsx",
+        "src/components/workshell/appearance-panel.tsx",
         "src/components/workshell/aspect-matrix-view.tsx",
         "src/components/workshell/astrolabe-view.tsx",
         "src/components/workshell/astrolog-sphere-view.tsx",
@@ -13409,7 +13501,8 @@
         "src/components/ui/input.tsx",
         "src/components/ui/sheet.tsx",
         "src/components/ui/tabs.tsx",
-        "src/components/ui/textarea.tsx"
+        "src/components/ui/textarea.tsx",
+        "src/components/workshell/directions-view.tsx"
       ],
       "bounds": {
         "min": 11,
@@ -13476,7 +13569,7 @@
         }
       ],
       "consumerFiles": [
-        "src/components/workshell/inspector-panel.tsx"
+        "src/components/workshell/appearance-panel.tsx"
       ],
       "legacyId": "fontSizeHeader",
       "migrationAuthority": "legacy-preview-v1",
@@ -13556,6 +13649,7 @@
         "src/components/workshell/app-theme-controls.tsx",
         "src/components/workshell/app-theme-preview.tsx",
         "src/components/workshell/astrocart-controls.tsx",
+        "src/components/workshell/calendar-prototype-view.tsx",
         "src/components/workshell/chart-style-panel.tsx",
         "src/components/workshell/license-management-panel.tsx",
         "src/components/workshell/style-lab-color-picker.tsx",
@@ -13700,6 +13794,7 @@
         }
       ],
       "consumerFiles": [
+        "src/components/workshell/appearance-panel.tsx",
         "src/components/workshell/ascensional-transits-view.tsx",
         "src/components/workshell/aspect-list-panel.tsx",
         "src/components/workshell/aspect-matrix-view.tsx",
@@ -13761,12 +13856,13 @@
         "src/components/ui/tooltip.tsx",
         "src/components/workshell/app-theme-controls.tsx",
         "src/components/workshell/app-theme-preview.tsx",
+        "src/components/workshell/appearance-panel.tsx",
         "src/components/workshell/ascensional-transits-view.tsx",
         "src/components/workshell/aspect-list-panel.tsx",
         "src/components/workshell/aspect-matrix-view.tsx",
         "src/components/workshell/astrocart-controls.tsx",
-        "src/components/workshell/astrolabe-view.tsx",
         "src/components/workshell/astrolog-sphere-view.tsx",
+        "src/components/workshell/calendar-prototype-view.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
         "src/components/workshell/chart-hover-flag.tsx",
         "src/components/workshell/chart-style-panel.tsx",
@@ -13907,6 +14003,7 @@
         "src/components/workshell/chart-style-panel.tsx",
         "src/components/workshell/graph-ephemeris-view.tsx",
         "src/components/workshell/inspector-panel.tsx",
+        "src/components/workshell/multiwheel-chart-canvas.tsx",
         "src/components/workshell/mundane-chart-view.tsx",
         "src/components/workshell/square-chart-view.tsx",
         "src/components/workshell/strip-view.tsx",
@@ -14258,6 +14355,7 @@
       "consumerFiles": [
         "src/app/globals.css",
         "src/components/workshell/app-theme-controls.tsx",
+        "src/components/workshell/chart-canvas.tsx",
         "src/components/workshell/chart-style-panel.tsx",
         "src/components/workshell/inspector-panel.tsx",
         "src/lib/theme/app-material-runtime.ts"
@@ -14564,99 +14662,6 @@
       ],
       "bounds": {
         "min": 6,
-        "max": 32,
-        "step": 1
-      }
-    },
-    {
-      "id": "--aries-inspector-control-height",
-      "name": "--aries-inspector-control-height",
-      "family": "app.inspector",
-      "class": "public",
-      "role": "inspector",
-      "owner": "inspector",
-      "provider": "css-declaration",
-      "scope": "component",
-      "type": "number",
-      "unit": "px",
-      "default": "24px",
-      "dependencies": [],
-      "selectors": [
-        ":root"
-      ],
-      "declarations": [
-        {
-          "selector": ":root",
-          "value": "24px"
-        }
-      ],
-      "consumerFiles": [
-        "src/components/workshell/inspector-panel.tsx"
-      ],
-      "bounds": {
-        "min": 18,
-        "max": 44,
-        "step": 1
-      }
-    },
-    {
-      "id": "--aries-inspector-control-padding-x",
-      "name": "--aries-inspector-control-padding-x",
-      "family": "app.inspector",
-      "class": "public",
-      "role": "inspector",
-      "owner": "inspector",
-      "provider": "css-declaration",
-      "scope": "component",
-      "type": "number",
-      "unit": "px",
-      "default": "4px",
-      "dependencies": [],
-      "selectors": [
-        ":root"
-      ],
-      "declarations": [
-        {
-          "selector": ":root",
-          "value": "4px"
-        }
-      ],
-      "consumerFiles": [
-        "src/components/workshell/inspector-panel.tsx"
-      ],
-      "bounds": {
-        "min": 0,
-        "max": 20,
-        "step": 1
-      }
-    },
-    {
-      "id": "--aries-inspector-control-section-padding-bottom",
-      "name": "--aries-inspector-control-section-padding-bottom",
-      "family": "app.inspector",
-      "class": "public",
-      "role": "inspector",
-      "owner": "inspector",
-      "provider": "css-declaration",
-      "scope": "component",
-      "type": "number",
-      "unit": "px",
-      "default": "12px",
-      "dependencies": [],
-      "selectors": [
-        ":root"
-      ],
-      "declarations": [
-        {
-          "selector": ":root",
-          "value": "12px"
-        }
-      ],
-      "consumerFiles": [
-        "src/components/workshell/inspector-panel.tsx"
-      ],
-      "bounds": {
-        "min": 0,
         "max": 32,
         "step": 1
       }
@@ -15177,7 +15182,7 @@
       "scope": "component",
       "type": "number",
       "unit": "px",
-      "default": "52px",
+      "default": "88px",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -15185,7 +15190,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "52px"
+          "value": "88px"
         }
       ],
       "consumerFiles": [
@@ -15227,37 +15232,6 @@
         "src/components/workshell/chart-style-panel.tsx",
         "src/components/workshell/inspector-panel.tsx"
       ]
-    },
-    {
-      "id": "--aries-inspector-pack-tag-size",
-      "name": "--aries-inspector-pack-tag-size",
-      "family": "app.inspector",
-      "class": "public",
-      "role": "inspector",
-      "owner": "inspector",
-      "provider": "css-declaration",
-      "scope": "component",
-      "type": "number",
-      "unit": "px",
-      "default": "9px",
-      "dependencies": [],
-      "selectors": [
-        ":root"
-      ],
-      "declarations": [
-        {
-          "selector": ":root",
-          "value": "9px"
-        }
-      ],
-      "consumerFiles": [
-        "src/components/workshell/inspector-panel.tsx"
-      ],
-      "bounds": {
-        "min": 8,
-        "max": 13,
-        "step": 1
-      }
     },
     {
       "id": "--aries-inspector-padding-bottom",
@@ -16657,9 +16631,7 @@
           "value": "var(--aries-surface-subtle)"
         }
       ],
-      "consumerFiles": [
-        "src/app/globals.css"
-      ]
+      "consumerFiles": []
     },
     {
       "id": "--aries-material-background",
@@ -16798,6 +16770,7 @@
         }
       ],
       "consumerFiles": [
+        "src/components/workshell/astrolabe-view.tsx",
         "src/components/workshell/chart-context-menu.tsx"
       ],
       "bounds": {
@@ -16922,7 +16895,8 @@
         }
       ],
       "consumerFiles": [
-        "src/components/ui/dropdown-menu.tsx"
+        "src/components/ui/dropdown-menu.tsx",
+        "src/components/workshell/text-export-actions.tsx"
       ],
       "bounds": {
         "min": 80,
@@ -17113,7 +17087,9 @@
       "consumerFiles": [
         "src/components/ui/command.tsx",
         "src/components/ui/context-menu.tsx",
-        "src/components/ui/dropdown-menu.tsx"
+        "src/components/ui/dropdown-menu.tsx",
+        "src/components/workshell/app-sidebar.tsx",
+        "src/components/workshell/chart-context-menu.tsx"
       ]
     },
     {
@@ -17788,6 +17764,7 @@
         "src/app/globals.css",
         "src/components/workshell/chart-copy-control.tsx",
         "src/components/workshell/sidebar-sash.tsx",
+        "src/components/workshell/text-export-actions.tsx",
         "src/components/workshell/titlebar-options-menu.tsx",
         "src/components/workshell/workspace-content.tsx"
       ]
@@ -17818,6 +17795,7 @@
         "src/app/globals.css",
         "src/components/workshell/chart-copy-control.tsx",
         "src/components/workshell/sidebar-sash.tsx",
+        "src/components/workshell/text-export-actions.tsx",
         "src/components/workshell/titlebar-options-menu.tsx",
         "src/components/workshell/workspace-content.tsx"
       ]
@@ -20909,6 +20887,7 @@
       "consumerFiles": [
         "src/components/workshell/ascensional-transits-view.tsx",
         "src/components/workshell/astrocart-controls.tsx",
+        "src/components/workshell/calendar-prototype-view.tsx",
         "src/components/workshell/generic-table-view.tsx",
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
@@ -20985,37 +20964,6 @@
       }
     },
     {
-      "id": "--aries-pane-drawer-width",
-      "name": "--aries-pane-drawer-width",
-      "family": "app.pane",
-      "class": "public",
-      "role": "pane-layout",
-      "owner": "retained-panes",
-      "provider": "css-declaration",
-      "scope": "component",
-      "type": "number",
-      "unit": "px",
-      "default": "272px",
-      "dependencies": [],
-      "selectors": [
-        ":root"
-      ],
-      "declarations": [
-        {
-          "selector": ":root",
-          "value": "272px"
-        }
-      ],
-      "consumerFiles": [
-        "src/components/workshell/transit-search-view.tsx"
-      ],
-      "bounds": {
-        "min": 192,
-        "max": 480,
-        "step": 4
-      }
-    },
-    {
       "id": "--aries-pane-header-compact-padding-x",
       "name": "--aries-pane-header-compact-padding-x",
       "family": "app.pane",
@@ -21039,12 +20987,13 @@
       ],
       "consumerFiles": [
         "src/components/workshell/astrocart-controls.tsx",
-        "src/components/workshell/astrolabe-view.tsx",
+        "src/components/workshell/calendar-prototype-view.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
         "src/components/workshell/generic-table-view.tsx",
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
         "src/components/workshell/sectioned-table-view.tsx",
+        "src/components/workshell/temporal-confluence-view.tsx",
         "src/components/workshell/transit-search-view.tsx",
         "src/lib/list-tokens.ts"
       ],
@@ -21078,7 +21027,7 @@
       ],
       "consumerFiles": [
         "src/components/workshell/astrocart-controls.tsx",
-        "src/components/workshell/astrolabe-view.tsx",
+        "src/components/workshell/calendar-prototype-view.tsx",
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
         "src/lib/list-tokens.ts"
@@ -21147,6 +21096,7 @@
       "consumerFiles": [
         "src/components/workshell/ambient-spotlight.tsx",
         "src/components/workshell/astrocart-controls.tsx",
+        "src/components/workshell/calendar-prototype-view.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
         "src/components/workshell/generic-table-view.tsx",
         "src/components/workshell/list-controls.tsx",
@@ -21154,6 +21104,7 @@
         "src/components/workshell/sectioned-table-view.tsx",
         "src/components/workshell/settings-dialog.tsx",
         "src/components/workshell/system-chart-picker.tsx",
+        "src/components/workshell/temporal-confluence-view.tsx",
         "src/components/workshell/transit-search-view.tsx",
         "src/lib/list-tokens.ts"
       ],
@@ -21354,6 +21305,7 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
+        "src/components/workshell/appearance-panel.tsx",
         "src/components/workshell/feature-catalog-view.tsx",
         "src/components/workshell/legal-document-view.tsx",
         "src/components/workshell/settings-dialog.tsx",
@@ -21395,6 +21347,7 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
+        "src/components/workshell/appearance-panel.tsx",
         "src/components/workshell/feature-catalog-view.tsx",
         "src/components/workshell/help-dialog.tsx",
         "src/components/workshell/legal-document-view.tsx",
@@ -21438,6 +21391,7 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
+        "src/components/workshell/calendar-prototype-view.tsx",
         "src/components/workshell/workspace-content.tsx",
         "src/lib/theme/app-material-runtime.ts"
       ]
@@ -21599,10 +21553,9 @@
         "src/components/workshell/app-sidebar.tsx",
         "src/components/workshell/app-theme-controls.tsx",
         "src/components/workshell/app-theme-preview.tsx",
-        "src/components/workshell/astrolabe-view.tsx",
+        "src/components/workshell/calendar-prototype-view.tsx",
         "src/components/workshell/chart-style-panel.tsx",
         "src/components/workshell/eclipses-view.tsx",
-        "src/components/workshell/generic-table-view.tsx",
         "src/components/workshell/home-client.tsx",
         "src/components/workshell/inspector-panel.tsx",
         "src/components/workshell/list-controls.tsx",
@@ -21893,6 +21846,7 @@
       ],
       "consumerFiles": [
         "src/components/ui/button.tsx",
+        "src/components/workshell/appearance-panel.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
         "src/components/workshell/license-management-panel.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
@@ -22393,6 +22347,7 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
+        "src/components/workshell/appearance-panel.tsx",
         "src/components/workshell/help-dialog.tsx",
         "src/components/workshell/settings-dialog.tsx"
       ],
@@ -22497,7 +22452,6 @@
       "consumerFiles": [
         "src/components/ui/input-group.tsx",
         "src/components/ui/tooltip.tsx",
-        "src/components/workshell/astrolabe-view.tsx",
         "src/components/workshell/settings-dialog.tsx",
         "src/lib/list-tokens.ts"
       ],
@@ -27312,13 +27266,11 @@
       "consumerFiles": [
         "src/app/globals.css",
         "src/components/workshell/ascensional-transits-view.tsx",
-        "src/components/workshell/astrolabe-view.tsx",
-        "src/components/workshell/generic-table-view.tsx",
+        "src/components/workshell/calendar-prototype-view.tsx",
         "src/components/workshell/home-client.tsx",
         "src/components/workshell/list-column-layout.tsx",
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/notes-panel.tsx",
-        "src/components/workshell/profections-view.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
         "src/components/workshell/save-to-collection-dialog.tsx",
         "src/components/workshell/sectioned-table-view.tsx",
@@ -27362,12 +27314,9 @@
       "consumerFiles": [
         "src/app/globals.css",
         "src/components/workshell/astrocart-controls.tsx",
-        "src/components/workshell/generic-table-view.tsx",
         "src/components/workshell/list-column-layout.tsx",
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/notes-panel.tsx",
-        "src/components/workshell/profections-view.tsx",
-        "src/components/workshell/sectioned-table-view.tsx",
         "src/lib/theme/app-material-runtime.ts"
       ],
       "legacyId": "surfaceSubtle",
@@ -28437,6 +28386,7 @@
       "consumerFiles": [
         "src/app/globals.css",
         "src/components/workshell/app-sidebar.tsx",
+        "src/components/workshell/appearance-panel.tsx",
         "src/components/workshell/notes-panel.tsx"
       ],
       "legacyId": "textDim",
@@ -28476,10 +28426,11 @@
       "consumerFiles": [
         "src/app/globals.css",
         "src/components/workshell/app-theme-preview.tsx",
+        "src/components/workshell/appearance-panel.tsx",
         "src/components/workshell/ascensional-transits-view.tsx",
         "src/components/workshell/aspect-list-panel.tsx",
         "src/components/workshell/aspect-matrix-view.tsx",
-        "src/components/workshell/astrolabe-view.tsx",
+        "src/components/workshell/calendar-prototype-view.tsx",
         "src/components/workshell/decennials-view.tsx",
         "src/components/workshell/eclipses-view.tsx",
         "src/components/workshell/firdaria-view.tsx",
@@ -28496,6 +28447,9 @@
         "src/components/workshell/strip-view.tsx",
         "src/components/workshell/surveil-studies-dialog.tsx",
         "src/components/workshell/system-chart-picker.tsx",
+        "src/components/workshell/temporal-chronomap.tsx",
+        "src/components/workshell/temporal-confluence-context.tsx",
+        "src/components/workshell/temporal-confluence-view.tsx",
         "src/components/workshell/time-lord-pane-view.tsx",
         "src/components/workshell/time-lord-table-view.tsx",
         "src/components/workshell/workspace-content.tsx",
@@ -28539,12 +28493,12 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
+        "src/components/workshell/appearance-panel.tsx",
         "src/components/workshell/ascensional-transits-view.tsx",
         "src/components/workshell/aspect-matrix-view.tsx",
-        "src/components/workshell/astrolabe-view.tsx",
+        "src/components/workshell/calendar-prototype-view.tsx",
         "src/components/workshell/decennials-view.tsx",
         "src/components/workshell/firdaria-view.tsx",
-        "src/components/workshell/generic-table-view.tsx",
         "src/components/workshell/home-client.tsx",
         "src/components/workshell/list-column-layout.tsx",
         "src/components/workshell/list-controls.tsx",
@@ -41242,13 +41196,19 @@
       "unit": "",
       "default": "var(--aries-background)",
       "dependencies": [
-        "--aries-background"
+        "--aries-background",
+        "--aries-surface"
       ],
       "selectors": [
         ":root",
+        ".aries-calendar-prototype",
         ".day"
       ],
       "declarations": [
+        {
+          "selector": ".aries-calendar-prototype",
+          "value": "var(--aries-surface)"
+        },
         {
           "selector": ":root",
           "value": "var(--aries-background)"
@@ -41283,9 +41243,14 @@
       ],
       "selectors": [
         ":root",
+        ".aries-calendar-prototype",
         ".day"
       ],
       "declarations": [
+        {
+          "selector": ".aries-calendar-prototype",
+          "value": "var(--aries-border-subtle)"
+        },
         {
           "selector": ":root",
           "value": "var(--aries-border-subtle)"
@@ -41319,9 +41284,14 @@
       ],
       "selectors": [
         ":root",
+        ".aries-calendar-prototype",
         ".day"
       ],
       "declarations": [
+        {
+          "selector": ".aries-calendar-prototype",
+          "value": "var(--aries-panel-background)"
+        },
         {
           "selector": ":root",
           "value": "var(--aries-panel-background)"
@@ -41353,9 +41323,14 @@
       ],
       "selectors": [
         ":root",
+        ".aries-calendar-prototype",
         ".day"
       ],
       "declarations": [
+        {
+          "selector": ".aries-calendar-prototype",
+          "value": "var(--aries-panel-text)"
+        },
         {
           "selector": ":root",
           "value": "var(--aries-panel-text)"
@@ -42402,13 +42377,19 @@
       "unit": "",
       "default": "var(--aries-text-primary)",
       "dependencies": [
+        "--aries-panel-text",
         "--aries-text-primary"
       ],
       "selectors": [
         ":root",
+        ".aries-calendar-prototype",
         ".day"
       ],
       "declarations": [
+        {
+          "selector": ".aries-calendar-prototype",
+          "value": "var(--aries-panel-text)"
+        },
         {
           "selector": ":root",
           "value": "var(--aries-text-primary)"
@@ -42440,9 +42421,14 @@
       ],
       "selectors": [
         ":root",
+        ".aries-calendar-prototype",
         ".day"
       ],
       "declarations": [
+        {
+          "selector": ".aries-calendar-prototype",
+          "value": "var(--aries-border-subtle)"
+        },
         {
           "selector": ":root",
           "value": "var(--aries-border-subtle)"
@@ -42486,9 +42472,14 @@
       "consumerFiles": [
         "src/app/globals.css",
         "src/components/workshell/notes-panel.tsx",
+        "src/lib/chart/astrolabe-render-style.ts",
         "src/lib/chart/palette.ts",
         "src/lib/chart/wheel-render-style.ts",
-        "src/lib/style-lab/wheel-style-scene.ts"
+        "src/lib/style-lab/wheel-style-scene.ts",
+        "src/lib/theme/chart-key-color.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/chart/astrolabe-render-style.ts"
       ]
     },
     {
@@ -42891,10 +42882,15 @@
       "consumerFiles": [
         "src/app/globals.css",
         "src/components/workshell/square-chart-view.tsx",
+        "src/lib/chart/astrolabe-render-style.ts",
         "src/lib/chart/ephemeris-render-style.ts",
         "src/lib/chart/palette.ts",
         "src/lib/chart/strip-render-style.ts",
-        "src/lib/style-lab/wheel-style-scene.ts"
+        "src/lib/style-lab/wheel-style-scene.ts",
+        "src/lib/theme/chart-key-color.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/chart/astrolabe-render-style.ts"
       ]
     },
     {
@@ -42920,6 +42916,7 @@
         }
       ],
       "consumerFiles": [
+        "src/components/workshell/temporal-confluence-context.tsx",
         "src/lib/chart/palette.ts"
       ]
     },
@@ -42973,6 +42970,7 @@
         }
       ],
       "consumerFiles": [
+        "src/components/workshell/temporal-confluence-context.tsx",
         "src/lib/chart/palette.ts"
       ]
     },
@@ -42999,6 +42997,7 @@
         }
       ],
       "consumerFiles": [
+        "src/components/workshell/temporal-confluence-context.tsx",
         "src/lib/chart/palette.ts"
       ]
     },
@@ -43025,6 +43024,7 @@
         }
       ],
       "consumerFiles": [
+        "src/components/workshell/temporal-confluence-context.tsx",
         "src/lib/chart/palette.ts"
       ]
     },
@@ -43051,6 +43051,7 @@
         }
       ],
       "consumerFiles": [
+        "src/components/workshell/temporal-confluence-context.tsx",
         "src/lib/chart/palette.ts"
       ]
     },
@@ -43077,6 +43078,7 @@
         }
       ],
       "consumerFiles": [
+        "src/components/workshell/temporal-confluence-context.tsx",
         "src/lib/chart/palette.ts"
       ]
     },
@@ -43103,6 +43105,7 @@
         }
       ],
       "consumerFiles": [
+        "src/components/workshell/temporal-confluence-context.tsx",
         "src/lib/chart/palette.ts",
         "src/lib/style-lab/wheel-style-scene.ts"
       ]
@@ -43130,6 +43133,7 @@
         }
       ],
       "consumerFiles": [
+        "src/components/workshell/temporal-confluence-context.tsx",
         "src/lib/chart/palette.ts"
       ]
     },
@@ -43156,6 +43160,7 @@
         }
       ],
       "consumerFiles": [
+        "src/components/workshell/temporal-confluence-context.tsx",
         "src/lib/chart/palette.ts"
       ]
     },
@@ -43182,7 +43187,13 @@
         }
       ],
       "consumerFiles": [
+        "src/app/globals.css",
+        "src/components/workshell/temporal-confluence-context.tsx",
+        "src/lib/chart/astrolabe-render-style.ts",
         "src/lib/chart/palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/chart/astrolabe-render-style.ts"
       ]
     },
     {
@@ -43208,6 +43219,7 @@
         }
       ],
       "consumerFiles": [
+        "src/components/workshell/temporal-confluence-context.tsx",
         "src/lib/chart/palette.ts"
       ]
     },
@@ -43234,6 +43246,7 @@
         }
       ],
       "consumerFiles": [
+        "src/components/workshell/temporal-confluence-context.tsx",
         "src/lib/chart/palette.ts"
       ]
     },
@@ -43513,11 +43526,16 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
+        "src/lib/chart/astrolabe-render-style.ts",
         "src/lib/chart/ephemeris-render-style.ts",
         "src/lib/chart/palette.ts",
         "src/lib/chart/strip-render-style.ts",
         "src/lib/chart/wheel-render-style.ts",
-        "src/lib/style-lab/wheel-style-scene.ts"
+        "src/lib/style-lab/wheel-style-scene.ts",
+        "src/lib/theme/chart-key-color.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/chart/astrolabe-render-style.ts"
       ]
     },
     {
@@ -43725,10 +43743,15 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
+        "src/lib/chart/astrolabe-render-style.ts",
         "src/lib/chart/ephemeris-render-style.ts",
         "src/lib/chart/palette.ts",
         "src/lib/chart/wheel-render-style.ts",
-        "src/lib/style-lab/wheel-style-scene.ts"
+        "src/lib/style-lab/wheel-style-scene.ts",
+        "src/lib/theme/chart-key-color.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/chart/astrolabe-render-style.ts"
       ]
     },
     {
@@ -43784,6 +43807,7 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
+        "src/components/workshell/table-pdf-export.ts",
         "src/lib/chart/palette.ts",
         "src/lib/style-lab/wheel-style-scene.ts"
       ]
@@ -43812,8 +43836,13 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
+        "src/lib/chart/astrolabe-render-style.ts",
         "src/lib/chart/palette.ts",
-        "src/lib/style-lab/wheel-style-scene.ts"
+        "src/lib/style-lab/wheel-style-scene.ts",
+        "src/lib/theme/chart-key-color.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/chart/astrolabe-render-style.ts"
       ]
     },
     {
@@ -44079,10 +44108,12 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
+        "src/components/workshell/table-pdf-export.ts",
         "src/lib/chart/ephemeris-render-style.ts",
         "src/lib/chart/palette.ts",
         "src/lib/chart/wheel-render-style.ts",
-        "src/lib/style-lab/wheel-style-scene.ts"
+        "src/lib/style-lab/wheel-style-scene.ts",
+        "src/lib/theme/chart-key-color.ts"
       ]
     },
     {
@@ -44168,10 +44199,15 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
+        "src/components/workshell/table-pdf-export.ts",
+        "src/lib/chart/astrolabe-render-style.ts",
         "src/lib/chart/ephemeris-render-style.ts",
         "src/lib/chart/palette.ts",
         "src/lib/chart/strip-render-style.ts",
         "src/lib/style-lab/wheel-style-scene.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/chart/astrolabe-render-style.ts"
       ]
     },
     {
@@ -44229,9 +44265,14 @@
       ],
       "selectors": [
         ":root",
+        ".aries-calendar-prototype",
         ".day"
       ],
       "declarations": [
+        {
+          "selector": ".aries-calendar-prototype",
+          "value": "var(--aries-surface-subtle)"
+        },
         {
           "selector": ":root",
           "value": "var(--aries-surface-subtle)"
@@ -44264,9 +44305,14 @@
       ],
       "selectors": [
         ":root",
+        ".aries-calendar-prototype",
         ".day"
       ],
       "declarations": [
+        {
+          "selector": ".aries-calendar-prototype",
+          "value": "var(--aries-text-dim)"
+        },
         {
           "selector": ":root",
           "value": "var(--aries-text-dim)"
@@ -44298,9 +44344,14 @@
       ],
       "selectors": [
         ":root",
+        ".aries-calendar-prototype",
         ".day"
       ],
       "declarations": [
+        {
+          "selector": ".aries-calendar-prototype",
+          "value": "var(--aries-popover-background)"
+        },
         {
           "selector": ":root",
           "value": "var(--aries-popover-background)"
@@ -44331,9 +44382,14 @@
       ],
       "selectors": [
         ":root",
+        ".aries-calendar-prototype",
         ".day"
       ],
       "declarations": [
+        {
+          "selector": ".aries-calendar-prototype",
+          "value": "var(--aries-popover-text)"
+        },
         {
           "selector": ":root",
           "value": "var(--aries-popover-text)"
@@ -44364,9 +44420,14 @@
       ],
       "selectors": [
         ":root",
+        ".aries-calendar-prototype",
         ".day"
       ],
       "declarations": [
+        {
+          "selector": ".aries-calendar-prototype",
+          "value": "var(--aries-text-primary)"
+        },
         {
           "selector": ":root",
           "value": "var(--aries-text-primary)"
@@ -44398,9 +44459,14 @@
       ],
       "selectors": [
         ":root",
+        ".aries-calendar-prototype",
         ".day"
       ],
       "declarations": [
+        {
+          "selector": ".aries-calendar-prototype",
+          "value": "var(--aries-surface)"
+        },
         {
           "selector": ":root",
           "value": "var(--aries-surface)"
@@ -44649,13 +44715,19 @@
       "unit": "",
       "default": "var(--aries-text-muted)",
       "dependencies": [
+        "--aries-focus-ring",
         "--aries-text-muted"
       ],
       "selectors": [
         ":root",
+        ".aries-calendar-prototype",
         ".day"
       ],
       "declarations": [
+        {
+          "selector": ".aries-calendar-prototype",
+          "value": "var(--aries-focus-ring)"
+        },
         {
           "selector": ":root",
           "value": "var(--aries-text-muted)"
@@ -44686,9 +44758,14 @@
       ],
       "selectors": [
         ":root",
+        ".aries-calendar-prototype",
         ".day"
       ],
       "declarations": [
+        {
+          "selector": ".aries-calendar-prototype",
+          "value": "var(--aries-accent)"
+        },
         {
           "selector": ":root",
           "value": "var(--aries-accent)"
@@ -44720,9 +44797,14 @@
       ],
       "selectors": [
         ":root",
+        ".aries-calendar-prototype",
         ".day"
       ],
       "declarations": [
+        {
+          "selector": ".aries-calendar-prototype",
+          "value": "var(--aries-accent-foreground)"
+        },
         {
           "selector": ":root",
           "value": "var(--aries-accent-foreground)"
@@ -45146,6 +45228,7 @@
       "consumerFiles": [
         "src/app/globals.css",
         "src/components/workshell/browser-menu-bar.tsx",
+        "src/components/workshell/temporal-confluence-view.tsx",
         "src/components/workshell/workspace-content.tsx"
       ]
     },

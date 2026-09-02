@@ -298,6 +298,7 @@ const PRIMARY_ENGINE_PRESET_BASE: Patch = {
   pdcustomer2: false,
   pdcustomer2southern: false,
   pdcircumoa: 1,
+  pdcircumprommode: 0,
   pdrevsunyearmode: 0,
   pdrevannualmode: 0,
   pdkeydyn: false,
@@ -1317,6 +1318,17 @@ export function PrimDirSettingsBody({
           value={s.pdcircumoa}
           onChange={(v) => onPatch({ pdcircumoa: v })}
         />
+        <div className="mt-1 text-[length:var(--aries-font-size-section)] font-medium text-muted-foreground">
+          {t("primdir.promissors")}
+        </div>
+        <RadioRow
+          options={[
+            { value: 0, label: t("dirview.followPd") },
+            { value: 1, label: t("dirview.traditional") },
+          ] as const}
+          value={s.pdcircumprommode}
+          onChange={(v) => onPatch({ pdcircumprommode: v })}
+        />
       </div>
 
       <Separator />
@@ -1331,37 +1343,29 @@ export function PrimDirSettingsBody({
           options={[
             { value: 0, label: t("primdir.fromMundanePositions") },
             { value: 1, label: t("primdir.fromZodiacalPositions") },
-            { value: 2, label: t("primdir.pseudoAstronomical") },
           ] as const}
           value={s.pdincharttyp}
           onChange={(v) => onPatch({ pdincharttyp: v })}
         />
-        <div className="ml-4">
-          <PlainCheck
-            label={t("primdir.secMotion")}
-            checked={s.pdinchartsecmotion}
-            onToggle={() => onPatch({
-              pdincharttyp: 2,
-              pdinchartsecmotion: s.pdincharttyp === 2 ? !s.pdinchartsecmotion : true,
-            })}
-          />
-        </div>
         <p className="mt-1 text-[length:var(--aries-font-size-small)] leading-snug text-muted-foreground">
           {t("primdir.celestialProjectionExplanation")}
         </p>
         <label className="mt-2 block">
           <span className="text-[length:var(--aries-font-size-section)] font-medium text-muted-foreground">
-            {t("primdir.celestialRingRoles")}
+            {t("primdir.converseView")}
           </span>
           <select
             data-aries-control-appearance="local"
-            value={s.pdinchartreverse ? "outer-promissor" : "outer-significator"}
-            onChange={(e) => onPatch({ pdinchartreverse: e.target.value === "outer-promissor" })}
+            value={s.pdinchartreverse ? "fixed-radix" : "traditional-converse"}
+            onChange={(e) => onPatch({ pdinchartreverse: e.target.value === "fixed-radix" })}
             className="mt-1 h-[var(--aries-control-height-compact)] w-full rounded-[var(--aries-radius-control-compact)] border bg-background px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-small)]"
           >
-            <option value="outer-promissor">{t("primdir.outerPromissorRadixSignificator")}</option>
-            <option value="outer-significator">{t("primdir.outerSignificatorRadixPromissorMorinus")}</option>
+            <option value="fixed-radix">{t("primdir.fixedRadixPromissorsMoveOutside")}</option>
+            <option value="traditional-converse">{t("primdir.traditionalConverseSignificatorsMoveInside")}</option>
           </select>
+          <p className="mt-1 text-[length:var(--aries-font-size-small)] leading-snug text-muted-foreground">
+            {t("primdir.converseViewExplanation")}
+          </p>
         </label>
         <div className="mt-2 text-[length:var(--aries-font-size-section)] font-medium text-muted-foreground">
           {t("primdir.terrestrialChartProjection")}
@@ -1390,19 +1394,6 @@ export function PrimDirSettingsBody({
           onChange={(v) => onPatch({ pdrevsunyearmode: v })}
         />
         <div className="mt-1 text-[length:var(--aries-font-size-section)] font-medium text-muted-foreground">{t("primdir.annualDirectionsSr")}</div>
-        <RadioRow
-          options={[
-            { value: 0, label: t("primdir.usePrimarySettings") },
-            { value: 1, label: t("primdir.traditionalAnnualDirections") },
-          ] as const}
-          value={s.pdrevannualmode}
-          onChange={(v) => onPatch({ pdrevannualmode: v })}
-        />
-        <PlainCheck
-          label={t("primdir.natalRadixProms")}
-          checked={s.pdrevshownatalpromissors}
-          onToggle={() => onPatch({ pdrevshownatalpromissors: !s.pdrevshownatalpromissors })}
-        />
       </div>
 
       {/* List View */}

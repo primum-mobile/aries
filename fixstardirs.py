@@ -1,4 +1,9 @@
 # -*- coding: utf-8 -*-
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 import math
 import datetime
 import sweastrology as swe
@@ -884,22 +889,7 @@ def compute_fixedstar_angle_rows(horoscope, options, age_range=None, direction=N
         if not isinstance(dispname, unicode):
             try: dispname = unicode(dispname)
             except: pass
-        # 옵션이 비어있으면 JSON에서 복구
-        if (not hasattr(options, 'fixstarAliasMap')) or (not isinstance(options.fixstarAliasMap, dict)) or (not options.fixstarAliasMap):
-            import common, os, json
-            alias_json = os.path.join(common.common.ephepath, 'fixstar_aliases.json')
-            if os.path.isfile(alias_json):
-                with open(alias_json, 'r') as _f:
-                    _data = json.load(_f)
-                if isinstance(_data, dict):
-                    options.fixstarAliasMap = dict(_data)
-
-        # [ADD] FixStarsDlg에서 사용자가 고른 표기(코드→표시명 맵)가 있으면 그것을 우선
-        try:
-            if hasattr(options, 'fixstarAliasMap') and code in options.fixstarAliasMap:
-                dispname = options.fixstarAliasMap[code]
-        except Exception:
-            pass
+        dispname = astrology.display_fixstar_name(code, options, dispname)
 
         # 출생 RAMC 세트 (MC, IC, AOASC, DODESC)
         ramc, raic, aoasc, dodesc = _ramc_pack(horoscope)

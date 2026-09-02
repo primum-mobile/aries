@@ -5,12 +5,18 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const source = await readFile(
-  new URL(
-    "../src/components/workshell/workspace-content.tsx",
-    import.meta.url,
+function normalizeSourceText(value) {
+  return value.replace(/\r\n?/g, "\n");
+}
+
+const source = normalizeSourceText(
+  await readFile(
+    new URL(
+      "../src/components/workshell/workspace-content.tsx",
+      import.meta.url,
+    ),
+    "utf8",
   ),
-  "utf8",
 );
 
 function sourceBetween(start, end) {
@@ -20,6 +26,10 @@ function sourceBetween(start, end) {
   assert.notEqual(endIndex, -1, `missing source marker: ${end}`);
   return source.slice(startIndex, endIndex);
 }
+
+test("source markers are platform-neutral", () => {
+  assert.equal(normalizeSourceText("first\r\nsecond\rthird"), "first\nsecond\nthird");
+});
 
 test("retained map geometry terminates at interactive precision", () => {
   assert.match(

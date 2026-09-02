@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Max Lange
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Daemon-owned semantic contracts for advanced astrocartography.
 
 This module deliberately contains no route, renderer, or map-state code.  It
@@ -28,6 +31,7 @@ from typing import Any
 import arabicparts
 import astrology
 import astrocart
+import eclipses
 import fixstars
 import fortune
 import houses
@@ -110,6 +114,7 @@ FAMILY_ANGLE = "angle"
 FAMILY_FORTUNE = "fortune"
 FAMILY_VERTEX = "vertex"
 FAMILY_PRENATAL_SYZYGY = "prenatal_syzygy"
+FAMILY_PRENATAL_ECLIPSE = "prenatal_eclipse"
 FAMILY_CONFIGURED_LOT = "configured_lot"
 FAMILY_OUTER_MIDPOINT = "outer_midpoint"
 FAMILY_OUTER_ANTISCION = "outer_antiscion"
@@ -127,6 +132,7 @@ ALL_POINT_FAMILIES = (
     FAMILY_FORTUNE,
     FAMILY_VERTEX,
     FAMILY_PRENATAL_SYZYGY,
+    FAMILY_PRENATAL_ECLIPSE,
     FAMILY_CONFIGURED_LOT,
     FAMILY_OUTER_MIDPOINT,
     FAMILY_OUTER_ANTISCION,
@@ -922,6 +928,7 @@ def _family_capabilities(family: str) -> tuple[CapabilityCell, ...]:
         FAMILY_FORTUNE,
         FAMILY_VERTEX,
         FAMILY_PRENATAL_SYZYGY,
+        FAMILY_PRENATAL_ECLIPSE,
         FAMILY_CONFIGURED_LOT,
     ):
         unsupported_reason = "no_dynamic_transform"
@@ -1288,14 +1295,14 @@ def _fixed_star_labels(chart_obj: Any, options_obj: Any) -> dict[str, str]:
             code = configured_codes[original_index]
         except (IndexError, TypeError, ValueError):
             pass
-        if code and catalog_name:
-            labels[code] = catalog_name
-
-    aliases = getattr(options_obj, "fixstarAliasMap", None)
-    if isinstance(aliases, Mapping):
-        for code, label in aliases.items():
-            if str(label).strip():
-                labels[str(code)] = str(label).strip()
+        if code:
+            labels[code] = astrology.display_fixstar_name(
+                code, options_obj, catalog_name)
+    for code in configured_codes:
+        labels.setdefault(
+            code,
+            astrology.display_fixstar_name(code, options_obj, None),
+        )
     return labels
 
 
@@ -2206,6 +2213,25 @@ def build_point_catalog(
             )
         )
 
+    try:
+        eclipse_event, _eclipse_jd, eclipse_lon = eclipses.selected_prenatal_eclipse_point(
+            chart_obj, options_obj
+        )
+    except Exception:
+        eclipse_event = None
+        eclipse_lon = None
+    if eclipse_lon is not None:
+        records.append(
+            _point_record(
+                "point:eclipse",
+                FAMILY_PRENATAL_ECLIPSE,
+                eclipses.eclipse_event_label(eclipse_event),
+                ecliptic=_tropical_ecliptic(chart_obj, eclipse_lon),
+                default_selected=False,
+                motion_reference={"kind": "eclipse"},
+            )
+        )
+
     lot_records, lot_reason = _configured_lot_records(chart_obj, options_obj)
     records.extend(lot_records)
 
@@ -2234,6 +2260,7 @@ def build_point_catalog(
         FAMILY_FORTUNE: "no_fortune",
         FAMILY_VERTEX: "no_vertex",
         FAMILY_PRENATAL_SYZYGY: "no_prenatal_syzygy",
+        FAMILY_PRENATAL_ECLIPSE: "no_prenatal_eclipse",
         FAMILY_CONFIGURED_LOT: lot_reason or "no_activated_lots",
         FAMILY_OUTER_MIDPOINT: "no_midpoint_resolver",
         FAMILY_OUTER_ANTISCION: "no_antiscion_resolver",

@@ -16,6 +16,7 @@ import { LIST_ROLE_CLASSES, useListRowHeight } from "@/lib/list-tokens";
 import { useT, type TFunc } from "@/lib/i18n/i18n";
 import { semanticChartColor } from "@/lib/theme/semantic-color";
 import { cn } from "@/lib/utils";
+import type { VimshottariPreferences } from "@/stores/workspace-store";
 import { DateTransitLink, TimedChartContextMenu } from "./directions-view";
 import {
   PANE_CONTROL_CLASSES,
@@ -24,12 +25,21 @@ import {
   PaneSelect,
 } from "./list-controls";
 import { ColumnResizeHandle, useResizableTableColumns } from "./resizable-table-columns";
+import {
+  temporalCoverageFromRows,
+  useTemporalConfluenceRows,
+  useTemporalPinnedRowId,
+  useTemporalRowHighlight,
+} from "./temporal-confluence-context";
 
 type Props = {
   documentId: string;
   payload: GenericTablePayload;
   onBindingChange: (binding: Record<string, unknown>) => Promise<void>;
   onOptionsChange?: (patch: OptionsPatch) => Promise<void>;
+  onVimshottariPreferencesChange?: (
+    patch: Partial<VimshottariPreferences>,
+  ) => Promise<void>;
 };
 
 type BindingOption = {
@@ -54,6 +64,7 @@ export function TimeLordTableView({
   payload,
   onBindingChange,
   onOptionsChange,
+  onVimshottariPreferencesChange,
 }: Props) {
   const rowHeight = useListRowHeight("symbolic");
   const payloadKey = React.useMemo(() => expansionKey(payload), [payload]);
@@ -62,6 +73,7 @@ export function TimeLordTableView({
   const system = String((payload.capabilities ?? {}).timeLordSystem ?? payload.tableId);
   const isZodiacalReleasing = system === "zodiacal_releasing";
   const isTriplicityDirections = system === "triplicity_directions";
+  const isVimshottari = system === "vimshottari";
   const preservesExpandedAcrossBinding = isZodiacalReleasing || isTriplicityDirections;
   const [expandedState, setExpandedState] = React.useState<{
     documentId: string;
@@ -96,16 +108,31 @@ export function TimeLordTableView({
     columnIds: tableColumnIds,
   });
   const visibleRows = React.useMemo(() => visibleTreeRows(payload.rows, expanded), [payload.rows, expanded]);
+  const temporalCoverage = React.useMemo(
+    () => temporalCoverageFromRows(payload.rows),
+    [payload.rows],
+  );
+  useTemporalConfluenceRows(visibleRows, temporalCoverage);
   const currentRowId = React.useMemo(() => {
     const ids = asArray((payload.capabilities ?? {}).currentRowIds).filter(
       (id): id is string => typeof id === "string",
     );
     return ids.length ? ids[ids.length - 1] : null;
   }, [payload.capabilities]);
+  const pinnedTemporalRowId = useTemporalPinnedRowId();
   const focusIndex = React.useMemo(
-    () => (currentRowId ? visibleRows.findIndex((row) => row.id === currentRowId) : -1),
-    [currentRowId, visibleRows],
+    () => {
+      if (pinnedTemporalRowId) {
+        const pinnedIndex = visibleRows.findIndex(
+          (row) => row.temporal?.rowId === pinnedTemporalRowId,
+        );
+        if (pinnedIndex >= 0) return pinnedIndex;
+      }
+      return currentRowId ? visibleRows.findIndex((row) => row.id === currentRowId) : -1;
+    },
+    [currentRowId, pinnedTemporalRowId, visibleRows],
   );
+  const effectiveFocusKey = `${focusKey}|temporal:${pinnedTemporalRowId ?? ""}`;
   const scrollerRef = React.useRef<HTMLDivElement | null>(null);
   const focusedForKeyRef = React.useRef<string | null>(null);
 
@@ -159,8 +186,8 @@ export function TimeLordTableView({
 
   React.useLayoutEffect(() => {
     if (focusIndex < 0) return undefined;
-    if (isZodiacalReleasing && manualViewportRef.current) return undefined;
-    if (focusedForKeyRef.current === focusKey) return undefined;
+    if (isZodiacalReleasing && manualViewportRef.current && !pinnedTemporalRowId) return undefined;
+    if (focusedForKeyRef.current === effectiveFocusKey) return undefined;
     let frame = 0;
     let cancelled = false;
     const scroll = () => {
@@ -172,14 +199,14 @@ export function TimeLordTableView({
         focusIndex * previousRowHeightRef.current - scroller.clientHeight * 0.35,
       );
       setProgrammaticScrollTop(scroller, target);
-      focusedForKeyRef.current = focusKey;
+      focusedForKeyRef.current = effectiveFocusKey;
     };
     frame = requestAnimationFrame(scroll);
     return () => {
       cancelled = true;
       cancelAnimationFrame(frame);
     };
-  }, [focusIndex, focusKey, isZodiacalReleasing, setProgrammaticScrollTop]);
+  }, [effectiveFocusKey, focusIndex, isZodiacalReleasing, pinnedTemporalRowId, setProgrammaticScrollTop]);
 
   React.useLayoutEffect(() => {
     if (!isZodiacalReleasing || !manualViewportRef.current) return undefined;
@@ -248,12 +275,26 @@ export function TimeLordTableView({
       }
       setPending(true);
       try {
+        if (isVimshottari && onVimshottariPreferencesChange) {
+          const preferencePatch = vimshottariPreferenceDelta(payload, next);
+          if (Object.keys(preferencePatch).length > 0) {
+            await onVimshottariPreferencesChange(preferencePatch);
+          }
+        }
         await onBindingChange(next);
       } finally {
         setPending(false);
       }
     },
-    [captureViewportAnchor, isZodiacalReleasing, onBindingChange, payloadKey],
+    [
+      captureViewportAnchor,
+      isVimshottari,
+      isZodiacalReleasing,
+      onBindingChange,
+      onVimshottariPreferencesChange,
+      payload,
+      payloadKey,
+    ],
   );
 
   const updateOptions = React.useCallback(
@@ -276,7 +317,7 @@ export function TimeLordTableView({
       setExpandedState((current) => {
         const canReuseCurrent =
           current.documentId === documentId &&
-          (current.key === payloadKey || (isZodiacalReleasing && current.preserve));
+          (current.key === payloadKey || (preservesExpandedAcrossBinding && current.preserve));
         const next = new Set(canReuseCurrent ? current.ids : initialIds);
         if (next.has(rowId)) next.delete(rowId);
         else next.add(rowId);
@@ -301,6 +342,20 @@ export function TimeLordTableView({
           void updateBinding(triplicityBindingPayload(payload, {
             expanded_row_ids: nextRows,
             drill_row_id: nextRows[nextRows.length - 1] ?? null,
+          }), false);
+        }
+        return;
+      }
+      if (isVimshottari && asNumber(row.meta?.level, 0) === 2) {
+        const expandedRows = expandedVimshottariRows(payload);
+        const isExplicit = expandedRows.includes(rowId);
+        if (isOpening && !isExplicit && (childCountByParent.get(rowId) ?? 0) === 0) {
+          void updateBinding(vimshottariBindingPayload(payload, {
+            expanded_row_ids: [...expandedRows, rowId],
+          }), false);
+        } else if (!isOpening && isExplicit) {
+          void updateBinding(vimshottariBindingPayload(payload, {
+            expanded_row_ids: expandedRows.filter((item) => item !== rowId),
           }), false);
         }
         return;
@@ -334,7 +389,7 @@ export function TimeLordTableView({
       expanded,
       initialIds,
       isTriplicityDirections,
-      isZodiacalReleasing,
+      isVimshottari,
       payload,
       payloadKey,
       preservesExpandedAcrossBinding,
@@ -438,9 +493,30 @@ function headerTitle(payload: GenericTablePayload, system: string, t: TFunc): Re
     const header = asRecord(capabilities.firdaria);
     return <span>{String(header.titleText ?? payload.title)}</span>;
   }
+  if (system === "vimshottari") {
+    const header = asRecord(capabilities.vimshottari);
+    const birthNakshatraKey = String(header.birthNakshatraKey ?? "");
+    const startNakshatraKey = String(header.startNakshatraKey ?? "");
+    const birthNakshatra = birthNakshatraKey ? t(birthNakshatraKey) : "";
+    const startNakshatra = startNakshatraKey ? t(startNakshatraKey) : "";
+    const balanceYears = asNumber(header.balanceYears, 0).toFixed(3);
+    return (
+      <>
+        <span>{t("timelord.birthNakshatra")}: {birthNakshatra}</span>
+        {startNakshatra && startNakshatra !== birthNakshatra ? (
+          <span>{t("timelord.startNakshatra")}: {startNakshatra}</span>
+        ) : null}
+        <span>{t("timelord.balanceYears", { years: balanceYears })}</span>
+        <span className="text-[color:var(--aries-text-muted)]">
+          {String(header.ayanamshaLabel ?? "")}
+        </span>
+      </>
+    );
+  }
   if (system === "decennials") {
     const header = asRecord(capabilities.decennials);
     const startIsPlanet = Boolean(header.startIsPlanet);
+    const firstRulerVisible = Boolean(header.firstRulerVisible);
     return (
       <>
         <span className="text-[color:var(--aries-text-muted)]">{String(header.startLabel ?? t("timelord.start"))}:</span>
@@ -459,6 +535,28 @@ function headerTitle(payload: GenericTablePayload, system: string, t: TFunc): Re
         ) : (
           <span>{String(header.startText ?? "")}</span>
         )}
+        {firstRulerVisible ? (
+          <>
+            <span className="text-[color:var(--aries-text-muted)]">{String(header.firstRulerLabel ?? "")}:</span>
+            <span
+              style={{
+                fontFamily: "'AriesMorinus'",
+                color: semanticChartColor(
+                  stringOrUndefined(header.firstRulerColorRole),
+                  stringOrUndefined(header.firstRulerColorHex),
+                ),
+              }}
+            >
+              {String(header.firstRulerGlyph ?? "")}
+            </span>
+          </>
+        ) : null}
+        {header.housesText ? (
+          <span className="text-[color:var(--aries-text-muted)]">{String(header.housesText)}</span>
+        ) : null}
+        {header.ruleText ? (
+          <span className="text-[color:var(--aries-text-muted)]">{String(header.ruleText)}</span>
+        ) : null}
       </>
     );
   }
@@ -530,6 +628,75 @@ function BindingControls({
   const capabilities = payload.capabilities ?? {};
   const bindings = asRecord(capabilities.bindings);
   const options = asRecord(capabilities.bindingOptions);
+  if (capabilities.timeLordSystem === "vimshottari") {
+    const ayanamshaOptions = asOptions(options.ayanamsha);
+    const ayanamshaSelection = vimshottariAyanamshaBinding(bindings.ayanamsha);
+    const nextBinding = (patch: Record<string, unknown>) =>
+      vimshottariBindingPayload(payload, patch);
+    return (
+      <PaneControlBar density="compact">
+        <label className="text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]" htmlFor="vimshottari-anchor">
+          {t("timelord.anchor")}
+        </label>
+        <PaneSelect
+          id="vimshottari-anchor"
+          value={String(bindings.anchor ?? "moon")}
+          disabled={pending}
+          onChange={(event) => void onBindingChange(nextBinding({ anchor: event.target.value }))}
+        >
+          <option value="moon">{t("notes.planetMoon")}</option>
+          <option value="ascendant">{t("notes.ascendant")}</option>
+        </PaneSelect>
+        <label className="text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]" htmlFor="vimshottari-start-star">
+          {t("timelord.tara")}
+        </label>
+        <PaneSelect
+          id="vimshottari-start-star"
+          value={String(bindings.start_star ?? "janma")}
+          disabled={pending}
+          onChange={(event) => void onBindingChange(nextBinding({ start_star: event.target.value }))}
+        >
+          <option value="janma">{t("timelord.startJanma")}</option>
+          <option value="kshema">{t("timelord.startKshema")}</option>
+          <option value="utpanna">{t("timelord.startUtpanna")}</option>
+          <option value="adhana">{t("timelord.startAdhana")}</option>
+        </PaneSelect>
+        <label className="text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]" htmlFor="vimshottari-year">
+          {t("timelord.yearLength")}
+        </label>
+        <PaneSelect
+          id="vimshottari-year"
+          value={String(asNumber(bindings.year_days, 365.25))}
+          disabled={pending}
+          onChange={(event) => void onBindingChange(nextBinding({ year_days: Number(event.target.value) }))}
+        >
+          <option value="365.25">{t("timelord.yearJulian")}</option>
+          <option value="360">{t("timelord.yearSavana")}</option>
+        </PaneSelect>
+        <label className="text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]" htmlFor="vimshottari-ayanamsha">
+          {t("settings.ayanamsha")}
+        </label>
+        <PaneSelect
+          id="vimshottari-ayanamsha"
+          value={String(ayanamshaSelection)}
+          disabled={pending}
+          onChange={(event) => {
+            const value = event.target.value;
+            void onBindingChange(nextBinding({
+              ayanamsha: value === "follow_chart" ? value : Number(value),
+            }));
+          }}
+        >
+          <option value="follow_chart">{t("timelord.followChart")}</option>
+          {ayanamshaOptions.map((option) => (
+            <option key={String(option.value)} value={String(option.value)}>
+              {option.label ?? String(option.value)}
+            </option>
+          ))}
+        </PaneSelect>
+      </PaneControlBar>
+    );
+  }
   if (capabilities.timeLordSystem === "firdaria") {
     const header = asRecord(capabilities.firdaria);
     const isFirBonatti = Boolean(bindings.isfirbonatti);
@@ -548,19 +715,84 @@ function BindingControls({
     );
   }
   if (capabilities.timeLordSystem === "decennials") {
+    const header = asRecord(capabilities.decennials);
     const startOptions = asOptions(options.startToken);
+    const aphetaHouseSystemOptions = asOptions(options.aphetaHouseSystem);
+    const overlapResolutionOptions = asOptions(options.overlapResolution);
+    const lowerLevelOptions = asOptions(options.lowerLevelMethod);
+    const nextBinding = (patch: Record<string, unknown>) => ({
+      start_token: String(bindings.start_token ?? "valens_apheta"),
+      apheta_house_system: String(bindings.apheta_house_system ?? "whole_sign"),
+      overlap_resolution: String(bindings.overlap_resolution ?? "table"),
+      lower_level_method: String(bindings.lower_level_method ?? "proportional"),
+      ...patch,
+    });
+    const valensAphetaSelected = String(bindings.start_token ?? "valens_apheta") === "valens_apheta";
     return (
-      <PaneControlBar wrap={false}>
+      <PaneControlBar density="compact">
         <label className="text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]" htmlFor="decennial-start">
           {t("timelord.start")}
         </label>
         <PaneSelect
           id="decennial-start"
-          value={String(bindings.start_token ?? "sect")}
+          value={String(bindings.start_token ?? "valens_apheta")}
           disabled={pending}
-          onChange={(event) => void onBindingChange({ start_token: event.target.value })}
+          onChange={(event) => void onBindingChange(nextBinding({ start_token: event.target.value }))}
         >
           {startOptions.map((option) => (
+            <option key={String(option.value)} value={String(option.value)}>
+              {option.label ?? String(option.value)}
+            </option>
+          ))}
+        </PaneSelect>
+        {valensAphetaSelected ? (
+          <>
+            <label className="text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]" htmlFor="decennial-apheta-houses">
+              {String(header.houseSystemLabel ?? "")}
+            </label>
+            <PaneSelect
+              id="decennial-apheta-houses"
+              value={String(bindings.apheta_house_system ?? "whole_sign")}
+              disabled={pending}
+              onChange={(event) => void onBindingChange(nextBinding({ apheta_house_system: event.target.value }))}
+            >
+              {aphetaHouseSystemOptions.map((option) => (
+                <option key={String(option.value)} value={String(option.value)}>
+                  {option.label ?? String(option.value)}
+                </option>
+              ))}
+            </PaneSelect>
+          </>
+        ) : null}
+        {valensAphetaSelected && Boolean(header.overlapApplicable) ? (
+          <>
+            <label className="text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]" htmlFor="decennial-overlap-resolution">
+              {String(header.overlapLabel ?? "")}
+            </label>
+            <PaneSelect
+              id="decennial-overlap-resolution"
+              value={String(bindings.overlap_resolution ?? "table")}
+              disabled={pending}
+              onChange={(event) => void onBindingChange(nextBinding({ overlap_resolution: event.target.value }))}
+            >
+              {overlapResolutionOptions.map((option) => (
+                <option key={String(option.value)} value={String(option.value)}>
+                  {option.label ?? String(option.value)}
+                </option>
+              ))}
+            </PaneSelect>
+          </>
+        ) : null}
+        <label className="text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]" htmlFor="decennial-lower-level-method">
+          {String(header.lowerLevelsLabel ?? "")}
+        </label>
+        <PaneSelect
+          id="decennial-lower-level-method"
+          value={String(bindings.lower_level_method ?? "proportional")}
+          disabled={pending}
+          onChange={(event) => void onBindingChange(nextBinding({ lower_level_method: event.target.value }))}
+        >
+          {lowerLevelOptions.map((option) => (
             <option key={String(option.value)} value={String(option.value)}>
               {option.label ?? String(option.value)}
             </option>
@@ -835,10 +1067,18 @@ function TimeLordRow({
   const colorRole = stringOrUndefined(meta.colorRole);
   const eventDatetime = timedChartEventDatetime(meta);
   const rowTitle = rowHoverTitle(row);
+  const temporalHighlight = useTemporalRowHighlight(row.temporal);
   const system = String((payload.capabilities ?? {}).timeLordSystem ?? payload.tableId);
+  const hierarchyColumnIndex = Math.max(
+    0,
+    payload.columns.findIndex((column) =>
+      ["body", "planet", "ruler", "sign"].includes(column.id.toLowerCase())
+    ),
+  );
   const rowElement = (
     <tr
       data-time-lord-row={row.id}
+      {...temporalHighlight.dataAttributes}
       title={rowTitle}
       className={cn(
         "aries-list-row aries-list-row--flagged cursor-context-menu",
@@ -846,9 +1086,14 @@ function TimeLordRow({
         isStrong && "font-semibold",
         isCurrent && "text-accent-foreground",
       )}
-      style={{ height: rowHeight }}
-      onClick={() => {
-        if (hasChildren) onToggle(row);
+      style={{ height: rowHeight, ...temporalHighlight.style }}
+      onClick={(event) => {
+        temporalHighlight.onClick?.(event);
+        // In the comparison table, the row body owns concurrence pinning.
+        // Keep hierarchy expansion on its explicit chevron so one click never
+        // performs both actions. Standalone Time Lord tables retain their
+        // existing whole-row expand/collapse behavior.
+        if (!temporalHighlight.matched && hasChildren) onToggle(row);
       }}
     >
       {payload.columns.map((column, index) => {
@@ -879,7 +1124,7 @@ function TimeLordRow({
                 : undefined
             }
           >
-            {index === 0 ? (
+            {index === hierarchyColumnIndex ? (
               <div className="flex items-center gap-1" style={{ paddingLeft: `${Math.max(0, level - 1) * 14}px` }}>
                 {hasChildren ? (
                   <button
@@ -957,6 +1202,19 @@ function expandedTriplicityRows(payload: GenericTablePayload): string[] {
   ));
 }
 
+function expandedVimshottariRows(payload: GenericTablePayload): string[] {
+  const bindings = asRecord((payload.capabilities ?? {}).bindings);
+  return Array.from(new Set(
+    asArray(bindings.expanded_row_ids).filter((item): item is string => typeof item === "string" && item.length > 0),
+  ));
+}
+
+function vimshottariAyanamshaBinding(value: unknown): "follow_chart" | number {
+  if (value === "follow_chart") return value;
+  const index = Number(value);
+  return Number.isInteger(index) && index >= 0 ? index : "follow_chart";
+}
+
 function triplicityBindingPayload(
   payload: GenericTablePayload,
   patch: Record<string, unknown>,
@@ -969,6 +1227,51 @@ function triplicityBindingPayload(
     drill_row_id: typeof bindings.drill_row_id === "string" ? bindings.drill_row_id : null,
     ...patch,
   };
+}
+
+function vimshottariBindingPayload(
+  payload: GenericTablePayload,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const bindings = asRecord((payload.capabilities ?? {}).bindings);
+  const resetsPeriodTree = (
+    "anchor" in patch ||
+    "start_star" in patch ||
+    "year_days" in patch ||
+    "ayanamsha" in patch
+  );
+  return {
+    anchor: String(bindings.anchor ?? "moon"),
+    start_star: String(bindings.start_star ?? "janma"),
+    year_days: asNumber(bindings.year_days, 365.25),
+    ayanamsha: vimshottariAyanamshaBinding(bindings.ayanamsha),
+    expanded_row_ids: resetsPeriodTree ? [] : expandedVimshottariRows(payload),
+    ...patch,
+  };
+}
+
+function vimshottariPreferenceDelta(
+  payload: GenericTablePayload,
+  next: Record<string, unknown>,
+): Partial<VimshottariPreferences> {
+  const current = asRecord((payload.capabilities ?? {}).bindings);
+  const patch: Partial<VimshottariPreferences> = {};
+  const anchor = String(next.anchor ?? "moon") === "ascendant" ? "ascendant" : "moon";
+  if (anchor !== String(current.anchor ?? "moon")) patch.anchor = anchor;
+  const startStarValue = String(next.start_star ?? "janma");
+  const startStar = (
+    startStarValue === "kshema" ||
+    startStarValue === "utpanna" ||
+    startStarValue === "adhana"
+  ) ? startStarValue : "janma";
+  if (startStar !== String(current.start_star ?? "janma")) patch.startStar = startStar;
+  const yearDays = asNumber(next.year_days, 365.25) === 360 ? 360 : 365.25;
+  if (yearDays !== asNumber(current.year_days, 365.25)) patch.yearDays = yearDays;
+  const ayanamsha = vimshottariAyanamshaBinding(next.ayanamsha);
+  if (ayanamsha !== vimshottariAyanamshaBinding(current.ayanamsha)) {
+    patch.ayanamsha = ayanamsha;
+  }
+  return patch;
 }
 
 function zrBindingPayload(
@@ -1008,7 +1311,7 @@ function currentFocusKey(documentId: string, payload: GenericTablePayload): stri
 
 function focusBindings(system: string, value: unknown): Record<string, unknown> | unknown {
   const bindings = asRecord(value);
-  if (system !== "zodiacal_releasing" && system !== "triplicity_directions") return value ?? null;
+  if (system !== "zodiacal_releasing" && system !== "triplicity_directions" && system !== "vimshottari") return value ?? null;
   const stableBindings = { ...bindings };
   delete stableBindings.drill_l2_start;
   delete stableBindings.expanded_l2_starts;
@@ -1095,11 +1398,17 @@ function isQuietTimeLordCell(
   parentRow: GenericTableRow | null,
 ): boolean {
   if (isRepeatedDateCell(columnId, index, cell, row, parentRow)) return true;
-  if (system !== "zodiacal_releasing") return false;
+  if (!CONTINUOUS_AGE_SYSTEMS.has(system)) return false;
   if (columnId.toLowerCase() !== "age") return false;
   if (asNumber(row.meta?.level, 1) <= 1) return false;
   return cellText(cell) !== "";
 }
+
+const CONTINUOUS_AGE_SYSTEMS = new Set([
+  "decennials",
+  "firdaria",
+  "zodiacal_releasing",
+]);
 
 function rowHoverTitle(row: GenericTableRow): string {
   const meta = row.meta ?? {};

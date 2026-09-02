@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Max Lange
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Stage one explicit corpus resource tree for packaging.
 
 This module never discovers interpretation packs.  Pack authoring trees and

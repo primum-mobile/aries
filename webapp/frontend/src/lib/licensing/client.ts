@@ -34,11 +34,9 @@ export type UpdateInstallEvent =
 
 export type LicenseDevice = {
   activationId: string;
-  deviceName: string;
   platform: string;
   arch: string;
   activatedAt: string;
-  lastSeenAt: string;
   current: boolean;
 };
 
@@ -58,11 +56,11 @@ export function fetchLicenseStatus(): Promise<LicenseStatus> {
 }
 
 export function activateLicense(licenseKey: string): Promise<LicenseStatus> {
-  return nativeInvoke<LicenseStatus>("license_activate", { licenseKey, deviceName: null });
+  return nativeInvoke<LicenseStatus>("license_activate", { licenseKey });
 }
 
 export function refreshLicense(): Promise<LicenseStatus> {
-  return nativeInvoke<LicenseStatus>("license_refresh", { deviceName: null });
+  return nativeInvoke<LicenseStatus>("license_refresh");
 }
 
 export function deactivateLicense(): Promise<LicenseStatus> {

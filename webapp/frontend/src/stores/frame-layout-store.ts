@@ -11,7 +11,6 @@ export const SIDEBAR_MAX_WIDTH = 520;
 export const SIDEBAR_STARTUP_WIDTH = 272;
 export const SIDEBAR_COLLAPSE_THRESHOLD = 96;
 export const RIGHT_PANE_MIN_WIDTH = 300;
-export const RIGHT_PANE_MAX_WIDTH = 760;
 export const RIGHT_PANE_STARTUP_WIDTH = 360;
 export const RIGHT_PANE_COLLAPSE_THRESHOLD = SIDEBAR_COLLAPSE_THRESHOLD;
 const RIGHT_PANE_COMPACT_LIST_MIN_WIDTH = 360;
@@ -37,6 +36,7 @@ export type RightPaneModuleKind =
   | "lunar-mansions"
   | "aspect-list"
   | "ascensional-transits"
+  | "calendar"
   | "astrocart-controls"
   | "feature-catalog";
 
@@ -47,6 +47,7 @@ export type RightPaneModuleRole =
   | "symbolic-directions-list"
   | "standard-inspector-table"
   | "time-lord-table"
+  | "calendar"
   | "configuration-pane";
 
 export type RightPaneWidthPolicy = {
@@ -54,9 +55,10 @@ export type RightPaneWidthPolicy = {
   role: RightPaneModuleRole;
   minContentWidth: number;
   preferredWidth: number;
-  maxWidth: number;
   reclaimSidebar: boolean;
 };
+
+export type SearchFiltersDock = "right" | "bottom";
 
 const RIGHT_PANE_WIDTH_POLICIES: Record<RightPaneModuleKind, RightPaneWidthPolicy> = {
   "hover-inspector": {
@@ -64,7 +66,6 @@ const RIGHT_PANE_WIDTH_POLICIES: Record<RightPaneModuleKind, RightPaneWidthPolic
     role: "hover-inspector",
     minContentWidth: 360,
     preferredWidth: 390,
-    maxWidth: 560,
     reclaimSidebar: true,
   },
   "chart-style": {
@@ -72,7 +73,6 @@ const RIGHT_PANE_WIDTH_POLICIES: Record<RightPaneModuleKind, RightPaneWidthPolic
     role: "hover-inspector",
     minContentWidth: 360,
     preferredWidth: 390,
-    maxWidth: 560,
     reclaimSidebar: true,
   },
   notes: {
@@ -80,7 +80,6 @@ const RIGHT_PANE_WIDTH_POLICIES: Record<RightPaneModuleKind, RightPaneWidthPolic
     role: "text-pane",
     minContentWidth: 360,
     preferredWidth: 420,
-    maxWidth: 620,
     reclaimSidebar: true,
   },
   "inspector-notes": {
@@ -88,7 +87,6 @@ const RIGHT_PANE_WIDTH_POLICIES: Record<RightPaneModuleKind, RightPaneWidthPolic
     role: "text-pane",
     minContentWidth: 420,
     preferredWidth: 460,
-    maxWidth: 640,
     reclaimSidebar: true,
   },
   "transit-search": {
@@ -96,7 +94,6 @@ const RIGHT_PANE_WIDTH_POLICIES: Record<RightPaneModuleKind, RightPaneWidthPolic
     role: "dense-event-list",
     minContentWidth: RIGHT_PANE_DENSE_LIST_MIN_WIDTH,
     preferredWidth: 640,
-    maxWidth: 760,
     reclaimSidebar: true,
   },
   directions: {
@@ -104,7 +101,6 @@ const RIGHT_PANE_WIDTH_POLICIES: Record<RightPaneModuleKind, RightPaneWidthPolic
     role: "symbolic-directions-list",
     minContentWidth: RIGHT_PANE_DIRECTIONS_MIN_WIDTH,
     preferredWidth: 600,
-    maxWidth: 760,
     reclaimSidebar: true,
   },
   "synodic-cycles": {
@@ -112,7 +108,6 @@ const RIGHT_PANE_WIDTH_POLICIES: Record<RightPaneModuleKind, RightPaneWidthPolic
     role: "symbolic-directions-list",
     minContentWidth: RIGHT_PANE_SYNODIC_MIN_WIDTH,
     preferredWidth: 600,
-    maxWidth: 760,
     reclaimSidebar: true,
   },
   "zodiacal-releasing": {
@@ -120,7 +115,6 @@ const RIGHT_PANE_WIDTH_POLICIES: Record<RightPaneModuleKind, RightPaneWidthPolic
     role: "time-lord-table",
     minContentWidth: RIGHT_PANE_TIME_LORD_LIST_MIN_WIDTH,
     preferredWidth: 560,
-    maxWidth: 720,
     reclaimSidebar: true,
   },
   firdaria: {
@@ -128,7 +122,6 @@ const RIGHT_PANE_WIDTH_POLICIES: Record<RightPaneModuleKind, RightPaneWidthPolic
     role: "time-lord-table",
     minContentWidth: RIGHT_PANE_TIME_LORD_LIST_MIN_WIDTH,
     preferredWidth: 520,
-    maxWidth: 680,
     reclaimSidebar: true,
   },
   decennials: {
@@ -136,7 +129,6 @@ const RIGHT_PANE_WIDTH_POLICIES: Record<RightPaneModuleKind, RightPaneWidthPolic
     role: "time-lord-table",
     minContentWidth: RIGHT_PANE_TIME_LORD_LIST_MIN_WIDTH,
     preferredWidth: 540,
-    maxWidth: 700,
     reclaimSidebar: true,
   },
   profections: {
@@ -144,7 +136,6 @@ const RIGHT_PANE_WIDTH_POLICIES: Record<RightPaneModuleKind, RightPaneWidthPolic
     role: "time-lord-table",
     minContentWidth: RIGHT_PANE_TIME_LORD_LIST_MIN_WIDTH,
     preferredWidth: 540,
-    maxWidth: 700,
     reclaimSidebar: true,
   },
   eclipses: {
@@ -152,7 +143,6 @@ const RIGHT_PANE_WIDTH_POLICIES: Record<RightPaneModuleKind, RightPaneWidthPolic
     role: "standard-inspector-table",
     minContentWidth: RIGHT_PANE_STANDARD_TABLE_MIN_WIDTH,
     preferredWidth: 640,
-    maxWidth: 760,
     reclaimSidebar: true,
   },
   "lunar-mansions": {
@@ -160,7 +150,6 @@ const RIGHT_PANE_WIDTH_POLICIES: Record<RightPaneModuleKind, RightPaneWidthPolic
     role: "standard-inspector-table",
     minContentWidth: RIGHT_PANE_STANDARD_TABLE_MIN_WIDTH,
     preferredWidth: 640,
-    maxWidth: 760,
     reclaimSidebar: true,
   },
   "aspect-list": {
@@ -168,7 +157,6 @@ const RIGHT_PANE_WIDTH_POLICIES: Record<RightPaneModuleKind, RightPaneWidthPolic
     role: "standard-inspector-table",
     minContentWidth: RIGHT_PANE_STANDARD_TABLE_MIN_WIDTH,
     preferredWidth: 520,
-    maxWidth: 700,
     reclaimSidebar: true,
   },
   "ascensional-transits": {
@@ -176,7 +164,13 @@ const RIGHT_PANE_WIDTH_POLICIES: Record<RightPaneModuleKind, RightPaneWidthPolic
     role: "dense-event-list",
     minContentWidth: RIGHT_PANE_DENSE_LIST_MIN_WIDTH,
     preferredWidth: 520,
-    maxWidth: 760,
+    reclaimSidebar: true,
+  },
+  calendar: {
+    kind: "calendar",
+    role: "calendar",
+    minContentWidth: 420,
+    preferredWidth: 680,
     reclaimSidebar: true,
   },
   "astrocart-controls": {
@@ -184,7 +178,6 @@ const RIGHT_PANE_WIDTH_POLICIES: Record<RightPaneModuleKind, RightPaneWidthPolic
     role: "configuration-pane",
     minContentWidth: 360,
     preferredWidth: 390,
-    maxWidth: 560,
     reclaimSidebar: true,
   },
   "feature-catalog": {
@@ -192,7 +185,6 @@ const RIGHT_PANE_WIDTH_POLICIES: Record<RightPaneModuleKind, RightPaneWidthPolic
     role: "text-pane",
     minContentWidth: 340,
     preferredWidth: 420,
-    maxWidth: 620,
     reclaimSidebar: true,
   },
 };
@@ -208,12 +200,11 @@ export function rightPaneWidthPolicy(kind: RightPaneModuleKind | null): RightPan
 
 export function clampRightPaneWidth(
   width: number,
-  policy?: Pick<RightPaneWidthPolicy, "minContentWidth" | "maxWidth">,
+  policy?: Pick<RightPaneWidthPolicy, "minContentWidth">,
 ): number {
   if (!Number.isFinite(width)) return RIGHT_PANE_STARTUP_WIDTH;
   const minWidth = policy?.minContentWidth ?? RIGHT_PANE_MIN_WIDTH;
-  const maxWidth = policy?.maxWidth ?? RIGHT_PANE_MAX_WIDTH;
-  return Math.max(minWidth, Math.min(maxWidth, width));
+  return Math.max(minWidth, width);
 }
 
 export function rightPanePriorityLayout(
@@ -253,6 +244,7 @@ type FrameLayoutState = {
   inspectorOpen: boolean;
   notesPaneOpen: boolean;
   styleEditorOpen: boolean;
+  searchFiltersDock: SearchFiltersDock;
 
   setSidebarOpen: (open: boolean) => void;
   toggleSidebar: () => void;
@@ -268,6 +260,7 @@ type FrameLayoutState = {
   toggleNotesPane: () => void;
   setStyleEditorOpen: (open: boolean) => void;
   toggleStyleEditor: () => void;
+  setSearchFiltersDock: (dock: SearchFiltersDock) => void;
 };
 
 function persistedBool(value: unknown, fallback: boolean): boolean {
@@ -276,6 +269,10 @@ function persistedBool(value: unknown, fallback: boolean): boolean {
 
 function persistedNumber(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function persistedSearchFiltersDock(value: unknown, fallback: SearchFiltersDock): SearchFiltersDock {
+  return value === "right" || value === "bottom" ? value : fallback;
 }
 
 export const useFrameLayoutStore = create<FrameLayoutState>()(
@@ -289,6 +286,7 @@ export const useFrameLayoutStore = create<FrameLayoutState>()(
       inspectorOpen: false,
       notesPaneOpen: false,
       styleEditorOpen: false,
+      searchFiltersDock: "bottom",
 
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
@@ -309,6 +307,7 @@ export const useFrameLayoutStore = create<FrameLayoutState>()(
       setStyleEditorOpen: (open) => set({ styleEditorOpen: open }),
       toggleStyleEditor: () =>
         set((state) => ({ styleEditorOpen: !state.styleEditorOpen })),
+      setSearchFiltersDock: (dock) => set({ searchFiltersDock: dock }),
     }),
     {
       name: "aries.frame-layout",
@@ -318,6 +317,7 @@ export const useFrameLayoutStore = create<FrameLayoutState>()(
         rightPaneWidth: state.rightPaneWidth,
         inspectorOpen: state.inspectorOpen,
         notesPaneOpen: state.notesPaneOpen,
+        searchFiltersDock: state.searchFiltersDock,
       }),
       merge: (persisted, current) => {
         const saved = (persisted ?? {}) as Partial<FrameLayoutState>;
@@ -332,6 +332,10 @@ export const useFrameLayoutStore = create<FrameLayoutState>()(
           ),
           inspectorOpen: persistedBool(saved.inspectorOpen, current.inspectorOpen),
           notesPaneOpen: persistedBool(saved.notesPaneOpen, current.notesPaneOpen),
+          searchFiltersDock: persistedSearchFiltersDock(
+            saved.searchFiltersDock,
+            current.searchFiltersDock,
+          ),
         };
       },
     },

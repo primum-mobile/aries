@@ -1,4 +1,6 @@
 # cython: language_level=3
+# Copyright (C) 2026 Max Lange
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 from libc.math cimport fabs, isfinite
 from libc.stdlib cimport free, malloc, realloc
@@ -424,6 +426,7 @@ cdef int _refine_longitude_root_seeded_c(
 	double eps_days,
 	double* result_jd,
 	double* result_speed,
+	double* result_residual,
 ) except -1 nogil:
 	cdef double lo = jd_lo
 	cdef double hi = jd_hi
@@ -461,10 +464,13 @@ cdef int _refine_longitude_root_seeded_c(
 			best_jd = x
 			best_err = f_x
 			best_speed = speed_x
-		if fabs(f_x) <= eps_deg or (hi - lo) <= eps_days:
+		if fabs(f_x) <= eps_deg:
 			result_jd[0] = x
 			result_speed[0] = speed_x
+			result_residual[0] = f_x
 			return 0
+		if (hi - lo) <= eps_days:
+			break
 		if _crossed_zero_c(f_lo, f_x):
 			hi = x
 			f_hi = f_x
@@ -488,6 +494,7 @@ cdef int _refine_longitude_root_seeded_c(
 
 	result_jd[0] = best_jd
 	result_speed[0] = best_speed
+	result_residual[0] = best_err
 	return 0
 
 
@@ -510,6 +517,7 @@ cdef int _refine_relative_root_c(
 	double eps_days,
 	double* result_jd,
 	double* result_speed,
+	double* result_residual,
 ) except -1 nogil:
 	cdef double lo = jd_lo
 	cdef double hi = jd_hi
@@ -556,10 +564,13 @@ cdef int _refine_relative_root_c(
 			best_jd = x
 			best_err = f_x
 			best_speed = speed_x
-		if fabs(f_x) <= eps_deg or (hi - lo) <= eps_days:
+		if fabs(f_x) <= eps_deg:
 			result_jd[0] = x
 			result_speed[0] = speed_x
+			result_residual[0] = f_x
 			return 0
+		if (hi - lo) <= eps_days:
+			break
 		if _crossed_zero_c(f_lo, f_x):
 			hi = x
 			f_hi = f_x
@@ -582,7 +593,201 @@ cdef int _refine_relative_root_c(
 
 	result_jd[0] = best_jd
 	result_speed[0] = best_speed
+	result_residual[0] = best_err
 	return 0
+
+
+cdef int _refine_relative_speed_turn_c(
+	int prom_code,
+	int sig_code,
+	double jd_lo,
+	double jd_hi,
+	double prom_lon_lo,
+	double prom_speed_lo,
+	double sig_lon_lo,
+	double sig_speed_lo,
+	double prom_lon_hi,
+	double prom_speed_hi,
+	double sig_lon_hi,
+	double sig_speed_hi,
+	int flags,
+	double eps_days,
+	double* result_jd,
+	double* result_prom_lon,
+	double* result_prom_speed,
+	double* result_sig_lon,
+	double* result_sig_speed,
+) except -1 nogil:
+	cdef double lo = jd_lo
+	cdef double hi = jd_hi
+	cdef double rel_speed_lo = prom_speed_lo - sig_speed_lo
+	cdef double rel_speed_hi = prom_speed_hi - sig_speed_hi
+	cdef double rel_speed_x
+	cdef double den
+	cdef double bracket_den
+	cdef double x
+	cdef double x_next
+	cdef double previous_x
+	cdef double previous_speed
+	cdef double prom_lon_x
+	cdef double prom_speed_x
+	cdef double sig_lon_x
+	cdef double sig_speed_x
+	cdef int i
+	if rel_speed_lo == 0.0:
+		result_jd[0] = lo
+		result_prom_lon[0] = prom_lon_lo
+		result_prom_speed[0] = prom_speed_lo
+		result_sig_lon[0] = sig_lon_lo
+		result_sig_speed[0] = sig_speed_lo
+		return 0
+	if rel_speed_hi == 0.0:
+		result_jd[0] = hi
+		result_prom_lon[0] = prom_lon_hi
+		result_prom_speed[0] = prom_speed_hi
+		result_sig_lon[0] = sig_lon_hi
+		result_sig_speed[0] = sig_speed_hi
+		return 0
+	den = rel_speed_hi - rel_speed_lo
+	x = (lo + hi) * 0.5 if den == 0.0 else hi - rel_speed_hi * (hi - lo) / den
+	if x <= lo or x >= hi:
+		x = (lo + hi) * 0.5
+	previous_x = lo
+	previous_speed = rel_speed_lo
+	for i in range(_BISECTION_MAX_ITERS):
+		if (hi - lo) <= eps_days:
+			break
+		_eval_body_lon_speed(x, prom_code, flags, &prom_lon_x, &prom_speed_x)
+		_eval_body_lon_speed(x, sig_code, flags, &sig_lon_x, &sig_speed_x)
+		rel_speed_x = prom_speed_x - sig_speed_x
+		if rel_speed_x == 0.0 or fabs(x - previous_x) <= eps_days:
+			result_jd[0] = x
+			result_prom_lon[0] = prom_lon_x
+			result_prom_speed[0] = prom_speed_x
+			result_sig_lon[0] = sig_lon_x
+			result_sig_speed[0] = sig_speed_x
+			return 0
+		if _crossed_zero_c(rel_speed_lo, rel_speed_x):
+			hi = x
+			rel_speed_hi = rel_speed_x
+		else:
+			lo = x
+			rel_speed_lo = rel_speed_x
+		den = rel_speed_x - previous_speed
+		x_next = x - rel_speed_x * (x - previous_x) / den if den != 0.0 else (lo + hi) * 0.5
+		if x_next <= lo or x_next >= hi:
+			bracket_den = rel_speed_hi - rel_speed_lo
+			x_next = (lo + hi) * 0.5 if bracket_den == 0.0 else hi - rel_speed_hi * (hi - lo) / bracket_den
+			if x_next <= lo or x_next >= hi:
+				x_next = (lo + hi) * 0.5
+		previous_x = x
+		previous_speed = rel_speed_x
+		x = x_next
+	x = (lo + hi) * 0.5
+	_eval_body_lon_speed(x, prom_code, flags, &prom_lon_x, &prom_speed_x)
+	_eval_body_lon_speed(x, sig_code, flags, &sig_lon_x, &sig_speed_x)
+	result_jd[0] = x
+	result_prom_lon[0] = prom_lon_x
+	result_prom_speed[0] = prom_speed_x
+	result_sig_lon[0] = sig_lon_x
+	result_sig_speed[0] = sig_speed_x
+	return 0
+
+
+cdef inline int _append_relative_segment_c(
+	CHit** hits_ptr,
+	size_t* count_ptr,
+	size_t* capacity_ptr,
+	int spec_idx,
+	int prom_code,
+	int sig_code,
+	double offset,
+	double jd_lo,
+	double jd_hi,
+	double prom_lon_lo,
+	double prom_speed_lo,
+	double sig_lon_lo,
+	double sig_speed_lo,
+	double prom_lon_hi,
+	double prom_speed_hi,
+	double sig_lon_hi,
+	double sig_speed_hi,
+	int flags,
+	double eps_deg,
+	double eps_days,
+) except -1 nogil:
+	cdef double delta_lo
+	cdef double delta_hi
+	cdef double hit_jd
+	cdef double hit_speed
+	cdef double hit_residual
+	if jd_hi <= jd_lo:
+		return 0
+	delta_lo = _relative_delta_c(prom_lon_lo, sig_lon_lo, offset)
+	delta_hi = _relative_delta_c(prom_lon_hi, sig_lon_hi, offset)
+	if fabs(delta_lo) <= eps_deg:
+		return _append_unique_c(
+			hits_ptr,
+			count_ptr,
+			capacity_ptr,
+			jd_lo,
+			spec_idx,
+			0.0,
+			0.0,
+			_HIT_LONGITUDE,
+			prom_speed_lo - sig_speed_lo,
+			1 if prom_speed_lo - sig_speed_lo < 0.0 else 0,
+		)
+	if fabs(delta_hi) <= eps_deg:
+		return _append_unique_c(
+			hits_ptr,
+			count_ptr,
+			capacity_ptr,
+			jd_hi,
+			spec_idx,
+			0.0,
+			0.0,
+			_HIT_LONGITUDE,
+			prom_speed_hi - sig_speed_hi,
+			1 if prom_speed_hi - sig_speed_hi < 0.0 else 0,
+		)
+	if not _is_relative_zero_crossing_c(delta_lo, delta_hi, eps_deg):
+		return 0
+	_refine_relative_root_c(
+		prom_code,
+		sig_code,
+		offset,
+		jd_lo,
+		jd_hi,
+		prom_lon_lo,
+		prom_speed_lo,
+		sig_lon_lo,
+		sig_speed_lo,
+		prom_lon_hi,
+		prom_speed_hi,
+		sig_lon_hi,
+		sig_speed_hi,
+		flags,
+		eps_deg,
+		eps_days,
+		&hit_jd,
+		&hit_speed,
+		&hit_residual,
+	)
+	if fabs(hit_residual) > eps_deg:
+		return 0
+	return _append_unique_c(
+		hits_ptr,
+		count_ptr,
+		capacity_ptr,
+		hit_jd,
+		spec_idx,
+		0.0,
+		0.0,
+		_HIT_LONGITUDE,
+		hit_speed,
+		1 if hit_speed < 0.0 else 0,
+	)
 
 
 cdef inline int _append_arc_hits_range_c(
@@ -609,6 +814,7 @@ cdef inline int _append_arc_hits_range_c(
 	cdef double f_hi
 	cdef double hit_jd
 	cdef double hit_speed
+	cdef double hit_residual
 	for idx in range(idx_lo, idx_hi):
 		target_deg = targets[idx]
 		f_lo = _wrap180_c(lon_lo - target_deg)
@@ -632,8 +838,10 @@ cdef inline int _append_arc_hits_range_c(
 				eps_days,
 				&hit_jd,
 				&hit_speed,
+				&hit_residual,
 			)
-			_append_unique_c(hits_ptr, count_ptr, capacity_ptr, hit_jd, planet, target_deg, 0.0, _HIT_LONGITUDE, hit_speed, 1 if hit_speed < 0.0 else 0)
+			if fabs(hit_residual) <= eps_deg:
+				_append_unique_c(hits_ptr, count_ptr, capacity_ptr, hit_jd, planet, target_deg, 0.0, _HIT_LONGITUDE, hit_speed, 1 if hit_speed < 0.0 else 0)
 	return 0
 
 
@@ -857,6 +1065,7 @@ cdef int _search_longitude_transits_prepared_into_c(
 	cdef double lon1
 	cdef double speed0
 	cdef double speed1
+	cdef double station_eps
 	cdef bint have_station
 	if target_count == 0:
 		return 0
@@ -871,6 +1080,7 @@ cdef int _search_longitude_transits_prepared_into_c(
 		_eval_lon_speed(jd_next, planet, flags, &lon1, &speed1)
 		have_station = _crossed_zero_c(speed0, speed1) or fabs(speed0) <= _LOW_SPEED_WARN or fabs(speed1) <= _LOW_SPEED_WARN
 		if have_station:
+			station_eps = 0.0 if _crossed_zero_c(speed0, speed1) else _STATION_SPEED_EPS
 			_refine_station_root_seeded_c(
 				jd,
 				speed0,
@@ -878,7 +1088,7 @@ cdef int _search_longitude_transits_prepared_into_c(
 				speed1,
 				planet,
 				flags,
-				_STATION_SPEED_EPS,
+				station_eps,
 				eps_days,
 				&station_jd,
 				&station_speed,
@@ -902,6 +1112,8 @@ cdef int _search_relative_aspects_into_c(
 	Py_ssize_t body_count,
 	int* prom_indices,
 	int* sig_indices,
+	int* pair_slots,
+	Py_ssize_t pair_count,
 	double* spec_offsets,
 	Py_ssize_t spec_count,
 	double jd_start,
@@ -914,6 +1126,12 @@ cdef int _search_relative_aspects_into_c(
 	double* lon1,
 	double* speed0,
 	double* speed1,
+	int* turn_status,
+	double* turn_jd,
+	double* turn_prom_lon,
+	double* turn_prom_speed,
+	double* turn_sig_lon,
+	double* turn_sig_speed,
 	CHit** hits_ptr,
 	size_t* count_ptr,
 	size_t* capacity_ptr,
@@ -923,12 +1141,13 @@ cdef int _search_relative_aspects_into_c(
 	cdef Py_ssize_t i
 	cdef int prom_idx
 	cdef int sig_idx
+	cdef int pair_slot
 	cdef int prom_code
 	cdef int sig_code
 	cdef double offset
-	cdef double delta0
-	cdef double delta1
-	cdef double hit_jd
+	cdef double rel_speed0
+	cdef double rel_speed1
+	cdef double turn_residual
 	cdef double hit_speed
 	for i in range(body_count):
 		_eval_body_lon_speed(jd, body_code_arr[i], flags, &lon0[i], &speed0[i])
@@ -938,47 +1157,82 @@ cdef int _search_relative_aspects_into_c(
 			jd_next = jd_end
 		for i in range(body_count):
 			_eval_body_lon_speed(jd_next, body_code_arr[i], flags, &lon1[i], &speed1[i])
+		for i in range(pair_count):
+			turn_status[i] = -1
 		for i in range(spec_count):
 			prom_idx = prom_indices[i]
 			sig_idx = sig_indices[i]
+			pair_slot = pair_slots[i]
 			offset = spec_offsets[i]
-			delta0 = _relative_delta_c(lon0[prom_idx], lon0[sig_idx], offset)
-			delta1 = _relative_delta_c(lon1[prom_idx], lon1[sig_idx], offset)
-			if not _is_relative_zero_crossing_c(delta0, delta1, eps_deg) and fabs(delta0) > eps_deg and fabs(delta1) > eps_deg:
-				continue
 			prom_code = body_code_arr[prom_idx]
 			sig_code = body_code_arr[sig_idx]
-			_refine_relative_root_c(
-				prom_code,
-				sig_code,
-				offset,
-				jd,
-				jd_next,
-				lon0[prom_idx],
-				speed0[prom_idx],
-				lon0[sig_idx],
-				speed0[sig_idx],
-				lon1[prom_idx],
-				speed1[prom_idx],
-				lon1[sig_idx],
-				speed1[sig_idx],
-				flags,
-				eps_deg,
-				eps_days,
-				&hit_jd,
-				&hit_speed,
-			)
-			_append_unique_c(
-				hits_ptr,
-				count_ptr,
-				capacity_ptr,
-				hit_jd,
-				int(i),
-				0.0,
-				0.0,
-				_HIT_LONGITUDE,
-				hit_speed,
-				1 if hit_speed < 0.0 else 0,
+			if turn_status[pair_slot] < 0:
+				rel_speed0 = speed0[prom_idx] - speed0[sig_idx]
+				rel_speed1 = speed1[prom_idx] - speed1[sig_idx]
+				if (rel_speed0 < 0.0 < rel_speed1) or (rel_speed1 < 0.0 < rel_speed0):
+					_refine_relative_speed_turn_c(
+						prom_code,
+						sig_code,
+						jd,
+						jd_next,
+						lon0[prom_idx],
+						speed0[prom_idx],
+						lon0[sig_idx],
+						speed0[sig_idx],
+						lon1[prom_idx],
+						speed1[prom_idx],
+						lon1[sig_idx],
+						speed1[sig_idx],
+						flags,
+						eps_days,
+						&turn_jd[pair_slot],
+						&turn_prom_lon[pair_slot],
+						&turn_prom_speed[pair_slot],
+						&turn_sig_lon[pair_slot],
+						&turn_sig_speed[pair_slot],
+					)
+					turn_status[pair_slot] = 1
+				else:
+					turn_status[pair_slot] = 0
+			if turn_status[pair_slot] == 1:
+				turn_residual = _relative_delta_c(turn_prom_lon[pair_slot], turn_sig_lon[pair_slot], offset)
+				if fabs(turn_residual) <= eps_deg:
+					hit_speed = turn_prom_speed[pair_slot] - turn_sig_speed[pair_slot]
+					_append_unique_c(
+						hits_ptr,
+						count_ptr,
+						capacity_ptr,
+						turn_jd[pair_slot],
+						int(i),
+						0.0,
+						0.0,
+						_HIT_LONGITUDE,
+						hit_speed,
+						1 if hit_speed < 0.0 else 0,
+					)
+					continue
+				if jd < turn_jd[pair_slot] < jd_next:
+					_append_relative_segment_c(
+						hits_ptr, count_ptr, capacity_ptr, int(i), prom_code, sig_code, offset,
+						jd, turn_jd[pair_slot],
+						lon0[prom_idx], speed0[prom_idx], lon0[sig_idx], speed0[sig_idx],
+						turn_prom_lon[pair_slot], turn_prom_speed[pair_slot], turn_sig_lon[pair_slot], turn_sig_speed[pair_slot],
+						flags, eps_deg, eps_days,
+					)
+					_append_relative_segment_c(
+						hits_ptr, count_ptr, capacity_ptr, int(i), prom_code, sig_code, offset,
+						turn_jd[pair_slot], jd_next,
+						turn_prom_lon[pair_slot], turn_prom_speed[pair_slot], turn_sig_lon[pair_slot], turn_sig_speed[pair_slot],
+						lon1[prom_idx], speed1[prom_idx], lon1[sig_idx], speed1[sig_idx],
+						flags, eps_deg, eps_days,
+					)
+					continue
+			_append_relative_segment_c(
+				hits_ptr, count_ptr, capacity_ptr, int(i), prom_code, sig_code, offset,
+				jd, jd_next,
+				lon0[prom_idx], speed0[prom_idx], lon0[sig_idx], speed0[sig_idx],
+				lon1[prom_idx], speed1[prom_idx], lon1[sig_idx], speed1[sig_idx],
+				flags, eps_deg, eps_days,
 			)
 		for i in range(body_count):
 			lon0[i] = lon1[i]
@@ -1217,14 +1471,25 @@ cpdef list search_relative_aspects_batch_raw(
 	cdef int* body_code_arr = NULL
 	cdef int* prom_indices = NULL
 	cdef int* sig_indices = NULL
+	cdef int* pair_slots = NULL
+	cdef int* turn_status = NULL
 	cdef double* spec_offsets = NULL
 	cdef double* lon0 = NULL
 	cdef double* lon1 = NULL
 	cdef double* speed0 = NULL
 	cdef double* speed1 = NULL
+	cdef double* turn_jd = NULL
+	cdef double* turn_prom_lon = NULL
+	cdef double* turn_prom_speed = NULL
+	cdef double* turn_sig_lon = NULL
+	cdef double* turn_sig_speed = NULL
 	cdef Py_ssize_t i
+	cdef Py_ssize_t pair_count = 0
 	cdef int prom_idx
 	cdef int sig_idx
+	cdef int pair_slot
+	cdef dict pair_slot_by_indices = {}
+	cdef object pair_key
 	cdef bint lock_held = False
 	cdef double slice_start
 	cdef double slice_end
@@ -1238,22 +1503,36 @@ cpdef list search_relative_aspects_batch_raw(
 		body_code_arr = <int*>malloc(body_count * cython.sizeof(int))
 		prom_indices = <int*>malloc(spec_count * cython.sizeof(int))
 		sig_indices = <int*>malloc(spec_count * cython.sizeof(int))
+		pair_slots = <int*>malloc(spec_count * cython.sizeof(int))
+		turn_status = <int*>malloc(spec_count * cython.sizeof(int))
 		spec_offsets = <double*>malloc(spec_count * cython.sizeof(double))
 		lon0 = <double*>malloc(body_count * cython.sizeof(double))
 		lon1 = <double*>malloc(body_count * cython.sizeof(double))
 		speed0 = <double*>malloc(body_count * cython.sizeof(double))
 		speed1 = <double*>malloc(body_count * cython.sizeof(double))
+		turn_jd = <double*>malloc(spec_count * cython.sizeof(double))
+		turn_prom_lon = <double*>malloc(spec_count * cython.sizeof(double))
+		turn_prom_speed = <double*>malloc(spec_count * cython.sizeof(double))
+		turn_sig_lon = <double*>malloc(spec_count * cython.sizeof(double))
+		turn_sig_speed = <double*>malloc(spec_count * cython.sizeof(double))
 		if (
 			body_code_arr == NULL
 			or prom_indices == NULL
 			or sig_indices == NULL
+			or pair_slots == NULL
+			or turn_status == NULL
 			or spec_offsets == NULL
 			or lon0 == NULL
 			or lon1 == NULL
 			or speed0 == NULL
 			or speed1 == NULL
+			or turn_jd == NULL
+			or turn_prom_lon == NULL
+			or turn_prom_speed == NULL
+			or turn_sig_lon == NULL
+			or turn_sig_speed == NULL
 		):
-			raise MemoryError("Could not allocate weather state buffers")
+			raise MemoryError("Could not allocate relative-aspect state buffers")
 		for i in range(body_count):
 			body_code_arr[i] = int(body_codes[i])
 		for i in range(spec_count):
@@ -1265,6 +1544,13 @@ cpdef list search_relative_aspects_batch_raw(
 				raise ValueError("relative-aspect significator index is out of range")
 			prom_indices[i] = prom_idx
 			sig_indices[i] = sig_idx
+			pair_key = (prom_idx, sig_idx)
+			pair_slot = int(pair_slot_by_indices.get(pair_key, -1))
+			if pair_slot < 0:
+				pair_slot = int(pair_count)
+				pair_slot_by_indices[pair_key] = pair_slot
+				pair_count += 1
+			pair_slots[i] = pair_slot
 			spec_offsets[i] = float(specs[i][2])
 			if not isfinite(spec_offsets[i]):
 				raise ValueError("relative-aspect offsets must be finite")
@@ -1281,6 +1567,8 @@ cpdef list search_relative_aspects_batch_raw(
 					body_count,
 					prom_indices,
 					sig_indices,
+					pair_slots,
+					pair_count,
 					spec_offsets,
 					spec_count,
 					slice_start,
@@ -1293,6 +1581,12 @@ cpdef list search_relative_aspects_batch_raw(
 					lon1,
 					speed0,
 					speed1,
+					turn_status,
+					turn_jd,
+					turn_prom_lon,
+					turn_prom_speed,
+					turn_sig_lon,
+					turn_sig_speed,
 					&hits,
 					&count,
 					&capacity,
@@ -1313,6 +1607,10 @@ cpdef list search_relative_aspects_batch_raw(
 			free(prom_indices)
 		if sig_indices != NULL:
 			free(sig_indices)
+		if pair_slots != NULL:
+			free(pair_slots)
+		if turn_status != NULL:
+			free(turn_status)
 		if spec_offsets != NULL:
 			free(spec_offsets)
 		if lon0 != NULL:
@@ -1323,3 +1621,13 @@ cpdef list search_relative_aspects_batch_raw(
 			free(speed0)
 		if speed1 != NULL:
 			free(speed1)
+		if turn_jd != NULL:
+			free(turn_jd)
+		if turn_prom_lon != NULL:
+			free(turn_prom_lon)
+		if turn_prom_speed != NULL:
+			free(turn_prom_speed)
+		if turn_sig_lon != NULL:
+			free(turn_sig_lon)
+		if turn_sig_speed != NULL:
+			free(turn_sig_speed)

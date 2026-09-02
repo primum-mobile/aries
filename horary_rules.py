@@ -80,18 +80,41 @@ DEFAULT_SIGNIFICATORS = {
     # (different significator framework: theft = L7 the thief; beast = L6
     # the cattle).
     'Lost Object':       {'querent_house': 1, 'quesited_house': 2},
-    'Theft':             {'querent_house': 1, 'quesited_house': 7},
+    'Theft': {
+        'querent_house': 1, 'quesited_house': 7,
+        # Lilly limits his L7-in-Asc querent judgment to questions where
+        # there is already just cause to suspect the querent's fidelity.
+        # Missing question context must never manufacture that accusation.
+        'querent_fidelity_suspicion': 'unspecified',
+    },
     'Strayed Beast':     {'querent_house': 1, 'quesited_house': 6},
-    'Marriage Question': {'querent_house': 1, 'quesited_house': 7},
+    'Marriage Question': {
+        'querent_house': 1, 'quesited_house': 7,
+        'querent_sex': 'unspecified',
+    },
     'Sickness':          {'querent_house': 1, 'quesited_house': 6},
-    'Absent Person':     {'querent_house': 1, 'quesited_house': 7},
-    'Battle / War':      {'querent_house': 1, 'quesited_house': 7},
+    'Absent Person': {
+        # Lilly assigns H1 to an unrelated/general absent person.  The user
+        # can change this to the turned house of a wife, child, servant, etc.
+        'querent_house': 1, 'quesited_house': 1,
+        'journey_length': 'unspecified',
+    },
+    'Battle / War': {
+        'querent_house': 1, 'quesited_house': 7,
+        'contest_mode': 'unspecified',
+    },
     'Short Journey':     {'querent_house': 1, 'quesited_house': 3},
     # Long journey / sea voyage / pilgrimage — Lilly CA II Ch. LXXIV.
     # Significator of the journey = 9th house and its lord, with 8th for
     # gain (8th from 9th is the 4th — but Lilly explicitly uses 10th as
     # "substance of the Journey, because it is the 2nd from the 9th").
-    'Long Journey / Voyage': {'querent_house': 1, 'quesited_house': 9},
+    'Long Journey / Voyage': {
+        'querent_house': 1, 'quesited_house': 9,
+        'journey_question_type': 'unspecified',
+        # L9 always signifies the voyage.  Return-of-an-absent clauses need a
+        # separate turned-house actor rather than overloading the journey role.
+        'absent_house': '1',
+    },
     # Pregnancy / children — Lilly CA II "If a Woman aske, whether she
     # may conceive?", "Whether the Querent shall have Children". 5th =
     # the child, 7th = the partner (carries the sex-of-child reading via
@@ -109,7 +132,11 @@ DEFAULT_SIGNIFICATORS = {
     # Treasure / things hid — Lilly CA II "To Find A Thing hid or
     # mislaid" + "Of Treasure lying hid in the Ground". 4th = the
     # ground / place; lord of 7 names the thing's nature.
-    'Treasure / Things Hid': {'querent_house': 1, 'quesited_house': 4},
+    'Treasure / Things Hid': {
+        'querent_house': 1, 'quesited_house': 4,
+        'treasure_question_type': 'unspecified',
+        'treasure_significator': 'unspecified',
+    },
     # Rumour / news — Lilly CA II "If Rumors be True or False, According
     # to the Ancients". 3rd governs news, letters, short reports.
     'Rumour True or False': {'querent_house': 1, 'quesited_house': 3},
@@ -139,9 +166,117 @@ DEFAULT_SIGNIFICATORS = {
 }
 
 
+# Chart-independent facts used by literal source clauses.  The daemon sends
+# this schema to the inspector; React only renders it and forwards the chosen
+# stable value in the canonical lens context.  Missing/unspecified choices make
+# dependent corpus predicates fail closed.
+CONTEXT_OPTIONS = {
+    'Theft': ({
+        'key': 'querent_fidelity_suspicion',
+        'scope': 'question_fact',
+        'label_key': 'inspector.querentFidelitySuspicion',
+        'options': (
+            ('unspecified', 'inspector.contextUnspecified'),
+            ('no', 'inspector.suspicionNotJustified'),
+            ('justified', 'inspector.suspicionJustified'),
+        ),
+    },),
+    'Battle / War': ({
+        'key': 'contest_mode',
+        'scope': 'question_fact',
+        'label_key': 'inspector.contestMode',
+        'options': (
+            ('unspecified', 'inspector.contextUnspecified'),
+            ('lawsuit', 'inspector.contestLawsuit'),
+            ('war', 'inspector.contestWar'),
+        ),
+    },),
+    'Long Journey / Voyage': ({
+        'key': 'journey_question_type',
+        'scope': 'question_fact',
+        'label_key': 'inspector.journeyQuestionType',
+        'options': (
+            ('unspecified', 'inspector.contextUnspecified'),
+            ('voyage', 'inspector.journeyVoyage'),
+            ('return_speed', 'inspector.journeyReturnSpeed'),
+            ('absent_return', 'inspector.journeyAbsentReturn'),
+            ('journey_cause', 'inspector.journeyCause'),
+        ),
+    }, {
+        'key': 'absent_house',
+        'scope': 'question_fact',
+        'label_key': 'inspector.absentHouse',
+        # Numerals are locale-neutral option labels; the field label itself is
+        # localized in every shipped catalog.
+        'options': tuple(
+            (str(house), str(house)) for house in range(1, 13)
+        ),
+    }),
+    'Absent Person': ({
+        'key': 'journey_length',
+        'scope': 'question_fact',
+        'label_key': 'inspector.journeyLength',
+        'options': (
+            ('unspecified', 'inspector.contextUnspecified'),
+            ('short', 'inspector.journeyShort'),
+            ('moderate', 'inspector.journeyModerate'),
+            ('long', 'inspector.journeyLong'),
+            ('very_long', 'inspector.journeyVeryLong'),
+        ),
+    },),
+    'Marriage Question': ({
+        'key': 'querent_sex',
+        'scope': 'question_fact',
+        'label_key': 'inspector.querentSex',
+        'options': (
+            ('unspecified', 'inspector.contextUnspecified'),
+            ('man', 'inspector.sexMan'),
+            ('woman', 'inspector.sexWoman'),
+        ),
+    },),
+    'Treasure / Things Hid': ({
+        'key': 'treasure_question_type',
+        'scope': 'question_fact',
+        'label_key': 'inspector.treasureQuestionType',
+        'options': (
+            ('unspecified', 'inspector.contextUnspecified'),
+            ('own_hidden_goods', 'inspector.treasureOwnHiddenGoods'),
+            ('absolute_treasure', 'inspector.treasureAbsolute'),
+            ('acquisition', 'inspector.treasureAcquisition'),
+        ),
+    }, {
+        'key': 'treasure_significator',
+        'scope': 'question_fact',
+        'label_key': 'inspector.treasureSignificator',
+        'options': (
+            ('unspecified', 'inspector.contextUnspecified'),
+            ('lord_4', 'inspector.treasureLord4'),
+            ('sun', 'astrocart.point.sun'),
+            ('moon', 'astrocart.point.moon'),
+            ('mercury', 'astrocart.point.mercury'),
+            ('venus', 'astrocart.point.venus'),
+            ('mars', 'astrocart.point.mars'),
+            ('jupiter', 'astrocart.point.jupiter'),
+            ('saturn', 'astrocart.point.saturn'),
+        ),
+    },),
+}
+
+
 # Register this discipline with the engine so the inspector's Discipline
 # dropdown knows about it without importing this module directly.
-rule_engine.register_discipline('horary', 'Horary', list(_THEME_SLUGS))
+rule_engine.register_discipline('horary', 'Horary', _THEME_SLUGS)
+for _context_label, _context_defaults in DEFAULT_SIGNIFICATORS.items():
+    _context_slug = _THEME_SLUGS.get(_context_label)
+    if _context_slug is None:
+        continue
+    rule_engine.register_question_context_fields(
+        'horary', _context_slug,
+        set(_context_defaults) | {
+            field['key']
+            for field in CONTEXT_OPTIONS.get(_context_label, ())
+        },
+    )
 
 
 def _pack_theme_lookup():
@@ -172,16 +307,22 @@ def evaluate(theme, chrt, context=None):
     `context` should be a dict carrying at minimum `querent_house` and
     `quesited_house`. When None, `DEFAULT_SIGNIFICATORS[theme]` is used.
     """
-    theme_slug = _THEME_SLUGS.get(theme)
+    theme_slug = rule_engine.theme_slug_for('horary', theme)
     if theme_slug is None:
-        # Pack-registered theme? Look in the merged manifest themes.
-        pack_slugs, _pack_ctx = _pack_theme_lookup()
-        theme_slug = pack_slugs.get(theme)
-        if theme_slug is None:
-            return []
+        return []
     if context is None:
-        context = DEFAULT_SIGNIFICATORS.get(theme)
-        if context is None:
+        canonical = rule_engine.canonical_theme_label_for(
+            'horary', theme_slug,
+        ) or theme
+        fallback_context = DEFAULT_SIGNIFICATORS.get(canonical)
+        if fallback_context is None:
             _slugs, pack_ctx = _pack_theme_lookup()
-            context = pack_ctx.get(theme)
+            fallback_context = pack_ctx.get(theme) or pack_ctx.get(canonical)
+        # Core values are fallbacks, not an authored user answer.  Mark their
+        # origin so each owning pack's explicit non-house question default can
+        # win while core house roles and compatibility-only facts still fill
+        # genuinely absent fields.
+        context = {
+            '_corpus_core_question_defaults': dict(fallback_context or {}),
+        }
     return rule_engine.evaluate('horary', theme_slug, chrt, context=context)

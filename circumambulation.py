@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 # circumambulation.py
 # -*- coding: utf-8 -*-
 
@@ -7,17 +12,250 @@ import io
 import types
 from contextlib import contextmanager
 import astrology, chart, houses, mtexts
-import mtexts
+import fixstars
+import fortune
+import planets
 import primdirs
 import customerpd
 import util
 
-ASPECTS = (0, 60, 90, 120, 180)
+TRADITIONAL_ASPECT_INDICES = (
+    chart.Chart.CONJUNCTIO,
+    chart.Chart.SEXTIL,
+    chart.Chart.QUADRAT,
+    chart.Chart.TRIGON,
+    chart.Chart.OPPOSITIO,
+)
 DEFAULT_KEY_Y_PER_DEG = 1.0  # years per equatorial degree (OA)
 DAYS_PER_YEAR = 365.2421897
 _CIRCUM_SIG_KEY = "circum_sig"
 _NATAL_PARTICIPATOR_SOURCE = "natal_radix"
 _NATAL_PARTICIPATOR_MARKER = "n"
+
+CIRCUMAMBULATION_PROMISSOR_CAPABILITIES = {
+    "planets": "supported",
+    "nodes": "supported-follow-pd",
+    "chiron": "supported-follow-pd",
+    "fortune": "supported-follow-pd",
+    "customer-point": "supported-follow-pd",
+    "arabic-part": "supported-follow-pd",
+    "fixed-stars": "supported-follow-pd",
+    "antiscia": "supported-follow-pd",
+    "midpoints": "supported-follow-pd",
+    "angles": "supported-follow-pd",
+    "house-cusps": "supported-follow-pd",
+    "bounds": "structural-period-boundaries",
+    "parallels": "unsupported-declination-contact-not-an-ecliptic-circumambulation-aspect",
+    "syzygy": "unsupported-no-primary-directions-promissor-selection",
+    "vertex": "unsupported-no-primary-directions-promissor-selection",
+}
+
+
+def normalize_promissor_profile(value):
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        value = primdirs.PrimDirs.CIRCUM_PROMISSORS_FOLLOW_PD
+    if value == primdirs.PrimDirs.CIRCUM_PROMISSORS_TRADITIONAL:
+        return value
+    return primdirs.PrimDirs.CIRCUM_PROMISSORS_FOLLOW_PD
+
+
+def promissor_profile_from_options(options):
+    return normalize_promissor_profile(getattr(
+        options,
+        "pdcircumprommode",
+        primdirs.PrimDirs.CIRCUM_PROMISSORS_FOLLOW_PD,
+    ))
+
+
+def _participating_aspect_indices(options, promissor_profile):
+    if normalize_promissor_profile(promissor_profile) == primdirs.PrimDirs.CIRCUM_PROMISSORS_TRADITIONAL:
+        return TRADITIONAL_ASPECT_INDICES
+    selected = list(getattr(options, "pdaspects", []) or [])
+    return tuple(
+        idx for idx in range(min(len(selected), len(chart.Chart.Aspects)))
+        if selected[idx]
+    )
+
+
+def _participating_aspect_degrees(options, promissor_profile):
+    return tuple(chart.Chart.Aspects[idx] for idx in _participating_aspect_indices(options, promissor_profile))
+
+
+def _body_label(body_id):
+    labels = (
+        "Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn",
+        "Uranus", "Neptune", "Pluto", "AscNode", "DescNode",
+    )
+    try:
+        key = labels[int(body_id)]
+    except (IndexError, TypeError, ValueError):
+        return str(body_id)
+    return mtexts.txts.get(key, key)
+
+
+def _participating_longitude_entries(chart_obj, options, promissor_profile, *, natal=False):
+    """Resolve the PD-selected promissor universe for circumambulation.
+
+    Bounds remain the structural period stream. Every selected ecliptic
+    promissor family is converted to a stable longitude entry before either
+    calculation method narrows it to contacts.
+    """
+    profile = normalize_promissor_profile(promissor_profile)
+    source = _NATAL_PARTICIPATOR_SOURCE if natal else "return"
+    marker = _NATAL_PARTICIPATOR_MARKER if natal else None
+    prefix = "natal" if natal else "source"
+    entries = []
+    seen = set()
+
+    def add(family, identity, label, lon, lat=0.0, planet_id=None):
+        try:
+            lon = util.normalize(float(lon))
+            lat = float(lat or 0.0)
+        except (TypeError, ValueError):
+            return
+        key = "%s:%s:%s" % (prefix, family, identity)
+        if key in seen:
+            return
+        seen.add(key)
+        entries.append({
+            "key": key,
+            "family": family,
+            "label": str(label or identity),
+            "lon": lon,
+            "lat": lat,
+            "source": source,
+            "source_marker": marker,
+            "planet_id": planet_id,
+        })
+
+    selected_bodies = list(getattr(options, "promplanets", []) or [])
+    body_ids = range(7) if profile == primdirs.PrimDirs.CIRCUM_PROMISSORS_TRADITIONAL else range(len(selected_bodies))
+    for body_id in body_ids:
+        if profile != primdirs.PrimDirs.CIRCUM_PROMISSORS_TRADITIONAL and not selected_bodies[body_id]:
+            continue
+        try:
+            body = chart_obj.planets.planets[body_id]
+            add("body", body_id, _body_label(body_id), body.data[planets.Planet.LONG], body.data[planets.Planet.LAT], body_id)
+        except Exception:
+            continue
+
+    if profile == primdirs.PrimDirs.CIRCUM_PROMISSORS_TRADITIONAL:
+        return entries
+
+    if getattr(options, "pdpromchiron", False):
+        try:
+            body = chart_obj.chiron
+            add("body", astrology.SE_CHIRON, mtexts.txts.get("Chiron", "Chiron"), body.data[planets.Planet.LONG], body.data[planets.Planet.LAT], astrology.SE_CHIRON)
+        except Exception:
+            pass
+
+    if bool((getattr(options, "pdlof", [False]) or [False])[0]):
+        try:
+            add("fortune", "lof", mtexts.txts.get("LoF", "LoF"), chart_obj.fortune.fortune[fortune.Fortune.LON])
+        except Exception:
+            pass
+
+    if getattr(options, "pdcustomer", False):
+        try:
+            point = chart_obj._ensure_pd_customer_point(False)
+            if point is not None:
+                add("customer", "user-promissor", mtexts.txts.get("User2", "User"), point.lon, point.lat)
+        except Exception:
+            pass
+
+    if getattr(options, "pdpromarabicparts", False):
+        try:
+            point = chart_obj._get_pd_arabic_part_promissor_point()
+            label = chart_obj._get_pd_active_arabic_part_name(True)
+            if point is not None and label:
+                add("arabic-part", label, label, point.lon, point.lat)
+        except Exception:
+            pass
+
+    if getattr(options, "pdfixstars", False):
+        selections = list(getattr(options, "pdfixstarssel", []) or [])
+        try:
+            mixed = list(getattr(chart_obj.fixstars, "mixed", []) or [])
+            for sorted_idx, star in enumerate(chart_obj.fixstars.data):
+                ordinal = mixed[sorted_idx] if sorted_idx < len(mixed) else sorted_idx
+                if ordinal < 0 or ordinal >= len(selections) or not selections[ordinal]:
+                    continue
+                code = star[fixstars.FixStars.NOMNAME]
+                label = code or star[fixstars.FixStars.NAME]
+                add("fixed-star", ordinal, label, star[fixstars.FixStars.LON])
+        except Exception:
+            pass
+
+    if getattr(options, "pdantiscia", False):
+        for family, collection in (
+            ("antiscion", getattr(getattr(chart_obj, "antiscia", None), "plantiscia", [])),
+            ("contra-antiscion", getattr(getattr(chart_obj, "antiscia", None), "plcontraant", [])),
+        ):
+            for body_id, point in enumerate(collection or []):
+                if body_id >= len(selected_bodies) or not selected_bodies[body_id] or not getattr(point, "valid", True):
+                    continue
+                label = "%s %s" % (
+                    mtexts.txts.get("Antiscion", "Antiscion") if family == "antiscion" else mtexts.txts.get("Contraantiscion", "Contra-antiscion"),
+                    _body_label(body_id),
+                )
+                add(family, body_id, label, point.lon, point.lat)
+
+        if bool((getattr(options, "pdlof", [False]) or [False])[0]):
+            for family, point in (
+                ("antiscion-fortune", getattr(getattr(chart_obj, "antiscia", None), "lofant", None)),
+                ("contra-antiscion-fortune", getattr(getattr(chart_obj, "antiscia", None), "lofcontraant", None)),
+            ):
+                if point is not None and getattr(point, "valid", True):
+                    prefix_label = (
+                        mtexts.txts.get("Antiscion", "Antiscion")
+                        if family == "antiscion-fortune"
+                        else mtexts.txts.get("Contraantiscion", "Contra-antiscion")
+                    )
+                    add(family, "lof", "%s %s" % (prefix_label, mtexts.txts.get("LoF", "LoF")), point.lon, point.lat)
+
+        for family, collection in (
+            ("antiscion-angle", getattr(getattr(chart_obj, "antiscia", None), "ascmcant", [])),
+            ("contra-antiscion-angle", getattr(getattr(chart_obj, "antiscia", None), "ascmccontraant", [])),
+        ):
+            for angle_idx, point in enumerate(collection or []):
+                if angle_idx >= 2 or not getattr(point, "valid", True):
+                    continue
+                angle_label = mtexts.txts.get("Asc", "Asc") if angle_idx == 0 else mtexts.txts.get("MC", "MC")
+                prefix_label = (
+                    mtexts.txts.get("Antiscion", "Antiscion")
+                    if family == "antiscion-angle"
+                    else mtexts.txts.get("Contraantiscion", "Contra-antiscion")
+                )
+                add(family, angle_idx, "%s %s" % (prefix_label, angle_label), point.lon, point.lat)
+
+    if getattr(options, "pdmidpoints", False):
+        mids = getattr(getattr(chart_obj, "midpoints", None), "mids", []) or []
+        for idx, midpoint in enumerate(mids):
+            try:
+                if not selected_bodies[midpoint.p1] or not selected_bodies[midpoint.p2]:
+                    continue
+                label = "%s / %s" % (_body_label(midpoint.p1), _body_label(midpoint.p2))
+                add("midpoint", idx, label, midpoint.m, midpoint.lat)
+            except Exception:
+                continue
+
+    if getattr(options, "ascmchcsasproms", False):
+        try:
+            add("angle", "asc", mtexts.txts.get("Asc", "Asc"), chart_obj.houses.ascmc[houses.Houses.ASC])
+            add("angle", "mc", mtexts.txts.get("MC", "MC"), chart_obj.houses.ascmc[houses.Houses.MC])
+        except Exception:
+            pass
+
+    if getattr(options, "pdcusppromissors", False):
+        for cusp in (2, 3, 5, 6, 8, 9, 11, 12):
+            try:
+                add("house-cusp", cusp, mtexts.txts.get("HC%d" % cusp, "HC%d" % cusp), chart_obj.houses.cusps[cusp])
+            except Exception:
+                continue
+
+    return entries
 
 
 def years_per_degree_from_options(options):
@@ -550,66 +788,6 @@ def _solve_segment_time(rt12, lam1_sid, lam2_sid, jd_start, key, calflag, option
 
     return delta_oa, delta_years, jd_end, ay
 
-def _participating_planet_map(options):
-    pmap = [
-        (astrology.SE_SUN,  mtexts.txts.get('Sun','Sun')),
-        (astrology.SE_MOON, mtexts.txts.get('Moon','Moon')),
-        (astrology.SE_MERCURY, mtexts.txts.get('Mercury','Mercury')),
-        (astrology.SE_VENUS,   mtexts.txts.get('Venus','Venus')),
-        (astrology.SE_MARS,    mtexts.txts.get('Mars','Mars')),
-        (astrology.SE_JUPITER, mtexts.txts.get('Jupiter','Jupiter')),
-        (astrology.SE_SATURN,  mtexts.txts.get('Saturn','Saturn')),
-    ]
-    if options.transcendental[chart.Chart.TRANSURANUS]:
-        pmap.append((astrology.SE_URANUS, mtexts.txts.get('Uranus','Uranus')))
-    if options.transcendental[chart.Chart.TRANSNEPTUNE]:
-        pmap.append((astrology.SE_NEPTUNE, mtexts.txts.get('Neptune','Neptune')))
-    if options.transcendental[chart.Chart.TRANSPLUTO]:
-        pmap.append((astrology.SE_PLUTO, mtexts.txts.get('Pluto','Pluto')))
-    return pmap
-
-def _planet_longitudes(chart_obj, options):
-    """Return participating planets in the chart's chosen zodiac.
-
-    ``Chart._zodiac_flags()`` already asks Swiss Ephemeris for sidereal
-    longitudes when an ayanamsha is selected. Subtracting
-    ``ayanamsha_offset`` here would apply the offset a second time.
-    """
-    pls = {}
-    for pid, label in _participating_planet_map(options):
-        pls[label] = util.normalize(float(chart_obj.planets.planets[pid].data[0]))
-    return pls
-
-def _planet_display_longitudes(chart_obj, options):
-    pls = {}
-    for pid, label in _participating_planet_map(options):
-        try:
-            pls[label] = util.normalize(float(chart_obj.planets.planets[pid].data[0]))
-        except Exception:
-            continue
-    return pls
-
-def _participating_longitude_entries(chart_obj, options, natal_participator_chart=None):
-    entries = []
-    for label, lon in _planet_longitudes(chart_obj, options).items():
-        entries.append({
-            'key': 'return:%s' % label,
-            'label': label,
-            'lon': lon,
-            'source': 'return',
-            'source_marker': None,
-        })
-    if natal_participator_chart is not None:
-        for label, lon in _planet_display_longitudes(natal_participator_chart, options).items():
-            entries.append({
-                'key': 'natal:%s' % label,
-                'label': label,
-                'lon': lon,
-                'source': _NATAL_PARTICIPATOR_SOURCE,
-                'source_marker': _NATAL_PARTICIPATOR_MARKER,
-            })
-    return entries
-
 def _exact_aspect_hits(lam_start_abs, lam_end_abs, planet_lams, aspects=(0,60,90,120,180)):
     """
     lam_start_abs, lam_end_abs : 절대 경도(증가 단조)
@@ -639,10 +817,12 @@ def _exact_aspect_hits(lam_start_abs, lam_end_abs, planet_lams, aspects=(0,60,90
             lp = entry.get('lon')
             source = entry.get('source')
             source_marker = entry.get('source_marker')
+            planet_id = entry.get('planet_id')
         else:
             label, lp = entry
             source = 'return'
             source_marker = None
+            planet_id = None
         lp = lp % 360.0
         for A in aspects:
             bases = [(lp - A) % 360.0]
@@ -654,7 +834,7 @@ def _exact_aspect_hits(lam_start_abs, lam_end_abs, planet_lams, aspects=(0,60,90
                 for k in range(k_min, k_max + 1):
                     L = base + 360.0 * k
                     if lam_start_abs + 1e-9 < L < lam_end_abs - 1e-9:  # 경계 제외
-                        hits.append((L, label, A, source, source_marker))
+                        hits.append((L, label, A, source, source_marker, planet_id))
     hits.sort(key=lambda x: x[0])
     return hits
 
@@ -666,7 +846,11 @@ def _years_since_birth(jd, jd_birth):
     return 0.0 if yrs < 0 else yrs
 
 def _is_revolution_chart(chrt):
-    return getattr(chrt, 'htype', None) in (chart.Chart.SOLAR, chart.Chart.LUNAR)
+    # Must stay in step with PrimDirs._uses_revolution_time(): the PD engine
+    # decides the arc->time key, and the age limit computed here has to be
+    # measured on the same clock.
+    return getattr(chrt, 'htype', None) in (
+        chart.Chart.SOLAR, chart.Chart.LUNAR, chart.Chart.REVOLUTION)
 
 def _revolution_years_for_arc(chrt, options, arc):
     arc = float(arc)
@@ -676,9 +860,9 @@ def _revolution_years_for_arc(chrt, options, arc):
         else:
             days = arc * (DAYS_PER_YEAR / 360.0)
         return days / DAYS_PER_YEAR
-    if getattr(chrt, 'htype', None) == chart.Chart.LUNAR:
-        return arc * 0.0758333 / 360.0
-    return arc * DEFAULT_KEY_Y_PER_DEG
+    # Mirrors PrimDirs.calcTimeRev(): every non-solar return uses the lunar
+    # period coefficient.
+    return arc * 0.0758333 / 360.0
 
 def _max_age_years_for_chart(chrt, options, max_age_years):
     limit = float(max_age_years)
@@ -713,24 +897,28 @@ def _mean_obliquity_deg(jd):
 def compute_distributions(chrt, options, start_lambda=None, key=DEFAULT_KEY_Y_PER_DEG,
                           max_rows=200, include_participating=True, max_age_years=150,
                           use_exact_oa=False, custom_significator=None,
-                          natal_participator_chart=None):
+                          natal_participator_chart=None, promissor_profile=None):
     """Route to the correct back-end depending on the OA method setting.
 
     use_exact_oa=True  (CIRCUM_OA_USE_PD):
         Delegates entirely to the Morinus PD engine (PlacidianSAPD).
-        Circumambulations are simply: Significator=ASC, Promittors=Terms+Planets,
-        all governed by the same PD settings already configured in the app.
+        Circumambulations use the selected significator, the bounds stream, and
+        the selected Follow PD or Traditional promissor/aspect profile.
 
     use_exact_oa=False (CIRCUM_OA_ASCENSIONAL_TIMES):
         Uses the traditional Hellenistic rising-times table (rt_0p5.txt).
         Original table-based implementation preserved below as
         _compute_distributions_ascensional_times().
     """
+    profile = normalize_promissor_profile(
+        promissor_profile if promissor_profile is not None else promissor_profile_from_options(options)
+    )
     if use_exact_oa:
         return _compute_distributions_pd(
             chrt, options, max_rows=max_rows, max_age_years=max_age_years,
             custom_significator=custom_significator,
-            natal_participator_chart=natal_participator_chart)
+            natal_participator_chart=natal_participator_chart,
+            promissor_profile=profile)
     else:
         normalized_sig = normalize_custom_significator(custom_significator)
         if normalized_sig is not None and start_lambda is None:
@@ -739,17 +927,8 @@ def compute_distributions(chrt, options, start_lambda=None, key=DEFAULT_KEY_Y_PE
             chrt, options, start_lambda=start_lambda, key=key,
             max_rows=max_rows, include_participating=include_participating,
             max_age_years=max_age_years,
-            natal_participator_chart=natal_participator_chart)
-
-
-def _natal_participator_key(label):
-    return 'natal_radix:%s' % label
-
-
-def _natal_participator_label(key):
-    if isinstance(key, str) and key.startswith('natal_radix:'):
-        return key.split(':', 1)[1]
-    return None
+            natal_participator_chart=natal_participator_chart,
+            promissor_profile=profile)
 
 
 def _aspect_display_longitude(base_lon, aspect_deg, seg_start, seg_end, fallback_lon=None):
@@ -786,25 +965,16 @@ def _aspect_display_longitude(base_lon, aspect_deg, seg_start, seg_end, fallback
     return candidates[0] if fallback_lon is None else fallback_lon
 
 
-def _participator_display_longitude(chrt, options, pd, seg_start, seg_end, fallback_lon=None, natal_lons=None):
-    natal_label = _natal_participator_label(getattr(pd, 'promdyn', None))
-    base_lon = None
-    if natal_label is not None:
-        base_lon = (natal_lons or {}).get(natal_label)
-    elif 0 <= getattr(pd, 'prom', -1) < len(getattr(chrt.planets, 'planets', [])):
-        try:
-            base_lon = float(chrt.planets.planets[pd.prom].data[0])
-        except Exception:
-            base_lon = None
-    if base_lon is None:
-        return fallback_lon
-    aspect_deg = chart.Chart.Aspects[pd.promasp] if 0 <= pd.promasp < len(chart.Chart.Aspects) else 0.0
-    return _aspect_display_longitude(base_lon, aspect_deg, seg_start, seg_end, fallback_lon=fallback_lon)
-
-
-def _append_natal_participator_pd_hits(pd_engine, target_chart, options, natal_chart):
-    for label, lon in _planet_display_longitudes(natal_chart, options).items():
-        if not label:
+def _append_participator_pd_hits(pd_engine, target_chart, options, entries, custom_significator=None):
+    custom_target = normalize_custom_significator(custom_significator) is not None
+    aspect_indices = tuple(
+        idx for idx, enabled in enumerate(getattr(pd_engine.options, "pdaspects", []) or [])
+        if enabled and idx < len(chart.Chart.Aspects)
+    )
+    for entry in entries:
+        label = str(entry.get("label") or "")
+        lon = entry.get("lon")
+        if not label or lon is None:
             continue
         try:
             point = customerpd.CustomerPD.from_ecliptic_longitude(
@@ -813,17 +983,52 @@ def _append_natal_participator_pd_hits(pd_engine, target_chart, options, natal_c
                 target_chart.houses.ascmc2,
                 target_chart.obl[0],
                 target_chart.raequasc,
-                0.0,
+                float(entry.get("lat", 0.0) or 0.0),
                 _sidereal_offset_deg(target_chart, options),
             )
         except Exception:
             continue
-        pd_engine._active_dynamic_prom_key = _natal_participator_key(label)
+        pd_engine._active_dynamic_prom_key = str(entry.get("key") or label)
         pd_engine._active_dynamic_prom_point = point
         try:
-            # toZodAscMC accepts chart-frame longitude and performs its own
-            # tropical recovery before the cotransformation.
-            pd_engine.toZodAscMC(lon, 0.0, primdirs.PrimDir.CUSTOMERPD, 0)
+            if not custom_target:
+                # toZodAscMC accepts chart-frame longitude and performs its own
+                # tropical recovery before the cotransformation.
+                pd_engine.circumDynamicPromissorAspects = True
+                try:
+                    pd_engine.toZodAscMC(lon, float(entry.get("lat", 0.0) or 0.0), primdirs.PrimDir.CUSTOMERPD, 0)
+                finally:
+                    pd_engine.circumDynamicPromissorAspects = False
+                continue
+
+            for aspect_idx in aspect_indices:
+                aspect_deg = float(chart.Chart.Aspects[aspect_idx])
+                signed_aspects = (aspect_deg,)
+                if aspect_idx not in (chart.Chart.CONJUNCTIO, chart.Chart.OPPOSITIO):
+                    signed_aspects = (aspect_deg, -aspect_deg)
+                for signed_aspect in signed_aspects:
+                    try:
+                        aspect_point = customerpd.CustomerPD.from_ecliptic_longitude(
+                            util.normalize(float(lon) + signed_aspect),
+                            target_chart.place.lat,
+                            target_chart.houses.ascmc2,
+                            target_chart.obl[0],
+                            target_chart.raequasc,
+                            float(entry.get("lat", 0.0) or 0.0) if aspect_idx == chart.Chart.CONJUNCTIO else 0.0,
+                            _sidereal_offset_deg(target_chart, options),
+                        )
+                    except Exception:
+                        continue
+                    pd_engine.toCustomer2(
+                        False,
+                        primdirs.PrimDir.CUSTOMERPD,
+                        primdirs.PrimDir.NONE,
+                        aspect_point.speculums[primdirs.PrimDirs.PLACSPECULUM][customerpd.CustomerPD.RA],
+                        aspect_point.speculums[primdirs.PrimDirs.PLACSPECULUM][customerpd.CustomerPD.ADLAT],
+                        aspect_idx,
+                        signed_aspect,
+                        False,
+                    )
         finally:
             pd_engine._active_dynamic_prom_key = None
             pd_engine._active_dynamic_prom_point = None
@@ -832,10 +1037,12 @@ def _append_natal_participator_pd_hits(pd_engine, target_chart, options, natal_c
 
 def _compute_distributions_pd(chrt, options, max_rows=200, max_age_years=150,
                               custom_significator=None,
-                              natal_participator_chart=None):
+                              natal_participator_chart=None,
+                              promissor_profile=primdirs.PrimDirs.CIRCUM_PROMISSORS_FOLLOW_PD):
     """Compute circumambulation table by delegating to the Morinus PD engine.
 
-    Circumambulations = PD with Significator:ASC, Promittors:Terms+Planets (zodiacal).
+    Circumambulations = PD with the selected significator, bounds, and the
+    selected promissor/aspect profile (zodiacal).
     Arc→years conversion uses the same key (Naibod/Cardan/Ptolemy/Custom) and
     ayanamsha already set in options, so results align exactly with the PD table.
     """
@@ -843,6 +1050,14 @@ def _compute_distributions_pd(chrt, options, max_rows=200, max_age_years=150,
     import placidiansapd
 
     normalized_sig = normalize_custom_significator(custom_significator)
+    participant_entries = _participating_longitude_entries(
+        chrt, options, promissor_profile, natal=False,
+    )
+    if natal_participator_chart is not None and natal_participator_chart is not chrt:
+        participant_entries.extend(_participating_longitude_entries(
+            natal_participator_chart, options, promissor_profile, natal=True,
+        ))
+    participant_by_key = {entry["key"]: entry for entry in participant_entries}
 
     # Build effective options: ASC-only by default, or one dynamic custom
     # significator when the list was launched from a chart point.
@@ -864,6 +1079,8 @@ def _compute_distributions_pd(chrt, options, max_rows=200, max_age_years=150,
     eff.pdsigarabicparts = False
     eff.pdcustomer2 = normalized_sig is not None
     eff.subzodiacal = primdirs.PrimDirs.SZNEITHER
+    eff.subprimarydir = primdirs.PrimDirs.ZODIACAL
+    eff.zodpromsigasps = [True, False]
     eff.bianchini = False
     eff.morin_excentric = False
     # Dynamic keys (True/Birthday Solar Arc) iterate ephemeris day-by-day per PD event
@@ -871,20 +1088,25 @@ def _compute_distributions_pd(chrt, options, max_rows=200, max_age_years=150,
     # whichever static key (pdkeys) the user last had selected — Naibod/Cardan/Ptolemy/
     # Customer — so the display respects their choice without running the slow path.
     eff.pdkeydyn = False
+    eff.promplanets = [False] * len(getattr(options, "promplanets", []) or [])
+    eff.pdantiscia = False
+    eff.pdmidpoints = False
+    eff.pdfixstars = False
+    eff.pdcustomer = False
+    eff.pdpromchiron = False
+    eff.pdpromarabicparts = False
+    eff.ascmchcsasproms = False
+    eff.pdcusppromissors = False
+    eff._range_bounds_override = (0.0, float(max_age_years))
+    eff._max_age_limit_override = float(max_age_years)
     if hasattr(eff, 'pdparallels'):
         eff.pdparallels = [False, False]
 
-    classical_asps = {
-        chart.Chart.CONJUNCTIO,
-        chart.Chart.SEXTIL,
-        chart.Chart.QUADRAT,
-        chart.Chart.TRIGON,
-        chart.Chart.OPPOSITIO,
-    }
+    enabled_asps = set(_participating_aspect_indices(options, promissor_profile))
     if hasattr(eff, 'pdaspects'):
         try:
             pdaspects = [False] * len(eff.pdaspects)
-            for idx in classical_asps:
+            for idx in enabled_asps:
                 if 0 <= idx < len(pdaspects):
                     pdaspects[idx] = True
             eff.pdaspects = pdaspects
@@ -896,14 +1118,13 @@ def _compute_distributions_pd(chrt, options, max_rows=200, max_age_years=150,
         with _temporary_custom_significator(chrt, normalized_sig):
             pd_engine = placidiansapd.PlacidianSAPD(
                 chrt, eff, primdirs.PrimDirs.RANGEALL, primdirs.PrimDirs.DIRECT, abort)
-            if normalized_sig is None:
-                pd_engine.calcZodAscMC()
-            else:
-                pd_engine.calcPlanetary2Customer2(False)
-                pd_engine.calcZodPromAspsInterPlanetary2Customer2()
-                pd_engine.calcZodTerms()
-            if natal_participator_chart is not None:
-                _append_natal_participator_pd_hits(pd_engine, chrt, options, natal_participator_chart)
+            _append_participator_pd_hits(
+                pd_engine,
+                chrt,
+                options,
+                participant_entries,
+                custom_significator=normalized_sig,
+            )
     except Exception as e:
         raise ValueError("PD engine error in circumambulation: %s" % e)
 
@@ -952,13 +1173,13 @@ def _compute_distributions_pd(chrt, options, max_rows=200, max_age_years=150,
         lambda pd: (int(pd.prom), int(pd.prom2), round(float(pd.arc), 10), round(float(pd.time), 8))
     )
 
-    planet_count = len(chrt.planets.planets)
     planet_hits_raw = []
     for pd in sig_pds:
-        natal_label = _natal_participator_label(getattr(pd, 'promdyn', None))
+        participant = participant_by_key.get(getattr(pd, "promdyn", None))
         if (
-            (0 <= pd.prom < planet_count or natal_label is not None)
-            and int(pd.promasp) in classical_asps
+            pd.prom == primdirs.PrimDir.CUSTOMERPD
+            and participant is not None
+            and int(pd.promasp) in enabled_asps
         ):
             planet_hits_raw.append(pd)
     planet_hits = _unique_by(
@@ -997,12 +1218,6 @@ def _compute_distributions_pd(chrt, options, max_rows=200, max_age_years=150,
     prev_jd  = jd0
     prev_age = 0.0
     ph_ptr   = 0   # pointer into planet_hits list
-    natal_display_lons = (
-        _planet_display_longitudes(natal_participator_chart, options)
-        if natal_participator_chart is not None
-        else {}
-    )
-
     for k, th in enumerate(term_hits):
         if len(rows) >= max_rows:
             break
@@ -1041,23 +1256,22 @@ def _compute_distributions_pd(chrt, options, max_rows=200, max_age_years=150,
                 else:
                     frac = 0.0
                 aspect_deg  = chart.Chart.Aspects[ph.promasp] if 0 <= ph.promasp < len(chart.Chart.Aspects) else 0.0
-                natal_label = _natal_participator_label(getattr(ph, 'promdyn', None))
+                participant = participant_by_key.get(getattr(ph, "promdyn", None), {})
                 fallback_lon = (a + seg_lon * frac) % 360.0
-                lam_part = _participator_display_longitude(
-                    chrt,
-                    options,
-                    ph,
+                lam_part = _aspect_display_longitude(
+                    participant.get("lon"),
+                    aspect_deg,
                     a,
                     b,
                     fallback_lon=fallback_lon,
-                    natal_lons=natal_display_lons,
                 )
                 participating.append({
                     'lam':     lam_part,
                     'lam_abs': ph.arc,
-                    'planet':  natal_label or planet_label(ph.prom),
-                    'source':  _NATAL_PARTICIPATOR_SOURCE if natal_label is not None else 'return',
-                    'source_marker': _NATAL_PARTICIPATOR_MARKER if natal_label is not None else None,
+                    'planet':  participant.get("label") or planet_label(ph.prom),
+                    'planet_id': participant.get("planet_id"),
+                    'source':  participant.get("source") or "return",
+                    'source_marker': participant.get("source_marker"),
                     'aspect':  aspect_deg,
                     'doa':     ph.arc,
                     'years':   ph.age,
@@ -1093,14 +1307,14 @@ def _compute_distributions_pd(chrt, options, max_rows=200, max_age_years=150,
 
 
 # ---------------------------------------------------------------------------
-# Legacy: Ascensional Times (rt_0p5.txt table) implementation
+# Ascensional Times (rt_0p5.txt table) implementation
 #
 # NOTE: The following function was the original implementation written to
 # compute circumambulation periods using a rising-times table read from an
 # external file (rt_0p5.txt).  It is kept here as a reference and as the
 # back-end for the "Ascensional Times" mode (CIRCUM_OA_ASCENSIONAL_TIMES).
 #
-# For the preferred "Use PD Settings" mode the code above (_compute_distributions_pd)
+# For the PD calculation method the code above (_compute_distributions_pd)
 # delegates directly to the Morinus PD engine, which uses the exact same spherical
 # trigonometry already trusted for all other primary directions in the application.
 # ---------------------------------------------------------------------------
@@ -1108,7 +1322,8 @@ def _compute_distributions_pd(chrt, options, max_rows=200, max_age_years=150,
 def _compute_distributions_ascensional_times(
         chrt, options, start_lambda=None, key=DEFAULT_KEY_Y_PER_DEG,
         max_rows=200, include_participating=True, max_age_years=150,
-        natal_participator_chart=None):
+        natal_participator_chart=None,
+        promissor_profile=primdirs.PrimDirs.CIRCUM_PROMISSORS_FOLLOW_PD):
     """
     Returns list of rows:
       - 'lam_start','lam_end','sign_idx','term_ruler_pid'
@@ -1142,11 +1357,16 @@ def _compute_distributions_ascensional_times(
     jd_limit = jd0 + effective_max_age_years * DAYS_PER_YEAR
 
     rows = []
-    planet_lams = (
-        _participating_longitude_entries(chrt, options, natal_participator_chart)
-        if include_participating
-        else []
-    )
+    planet_lams = []
+    if include_participating:
+        planet_lams = _participating_longitude_entries(
+            chrt, options, promissor_profile, natal=False,
+        )
+        if natal_participator_chart is not None and natal_participator_chart is not chrt:
+            planet_lams.extend(_participating_longitude_entries(
+                natal_participator_chart, options, promissor_profile, natal=True,
+            ))
+    aspect_degrees = _participating_aspect_degrees(options, promissor_profile)
 
     # 텀 경계 생성 + 정렬(시데리얼 경계는 -ayan 만큼 평행이동되어 있음)
     edges1 = sorted(edges, key=lambda t: t[0])  # edges는 위에서 _term_edges_deg(options, ayan)
@@ -1237,8 +1457,8 @@ def _compute_distributions_ascensional_times(
 
         participants = []
         if include_participating and planet_lams:
-            hits = _exact_aspect_hits(seg_start, seg_end, planet_lams)
-            for L, label, A, source, source_marker in hits:
+            hits = _exact_aspect_hits(seg_start, seg_end, planet_lams, aspects=aspect_degrees)
+            for L, label, A, source, source_marker, planet_id in hits:
                 doa, yrs, jd, _ay_hit = _solve_segment_time(
                     rt12, seg_start, L, jd_cursor, key, calflag, options,
                     phi_deg=phi, use_exact_oa=False, chart_obj=chrt
@@ -1251,6 +1471,7 @@ def _compute_distributions_ascensional_times(
                     'lam':   L % 360.0,            # 표시용: 시데리얼 그대로
                     'lam_abs': L,
                     'planet': label,
+                    'planet_id': planet_id,
                     'source': source,
                     'source_marker': source_marker,
                     'aspect': A,

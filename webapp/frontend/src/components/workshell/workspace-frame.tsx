@@ -34,6 +34,7 @@ type WorkspaceFrameProps = {
   onCloseDocument: (id: string) => void;
   onReorder: (docId: string, beforeId: string | null) => void;
   onSolarAverageWindowSelect: (maxBirthday: number, returnKind: "solar" | "lunar") => void;
+  harmonicChartMode: "harmonic" | "varga";
   onOpenSettings: (tab?: SettingsTabId) => void;
   onOpenStyleLab: () => void;
   onMenuCommand: (command: string) => void | Promise<boolean>;
@@ -51,6 +52,7 @@ export function WorkspaceFrame({
   onCloseDocument,
   onReorder,
   onSolarAverageWindowSelect,
+  harmonicChartMode,
   onOpenSettings,
   onOpenStyleLab,
   onMenuCommand,
@@ -115,6 +117,7 @@ export function WorkspaceFrame({
   const synodicCyclesPane = useWorkspaceStore((s) => s.synodicCyclesPane);
   const aspectListPane = useWorkspaceStore((s) => s.aspectListPane);
   const ascensionalTransitsPane = useWorkspaceStore((s) => s.ascensionalTransitsPane);
+  const calendarPane = useWorkspaceStore((s) => s.calendarPane);
   const astrocartControlsPane = useWorkspaceStore((s) => s.astrocartControlsPane);
   const featureCatalogPane = useWorkspaceStore((s) => s.featureCatalogPane);
   const fullBleed = activeDocument?.kind === "astrocart";
@@ -147,6 +150,7 @@ export function WorkspaceFrame({
     synodicCyclesPane,
     aspectListPane,
     ascensionalTransitsPane,
+    calendarPane,
     astrocartControlsPane,
     activeAstrocartDocumentId,
     featureCatalogPane,
@@ -254,6 +258,7 @@ export function WorkspaceFrame({
           onCloseDocument={onCloseDocument}
           onReorder={onReorder}
           onSolarAverageWindowSelect={onSolarAverageWindowSelect}
+          harmonicChartMode={harmonicChartMode}
         />
         <SidebarSash activeAstrocartDocumentId={activeAstrocartDocumentId} />
         <SidebarInset className="flex min-w-0 flex-col bg-[var(--aries-background)]">

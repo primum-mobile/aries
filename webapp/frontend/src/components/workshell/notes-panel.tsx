@@ -27,7 +27,7 @@ type Props = {
   className?: string;
 };
 
-const NOTES_EDITOR_ASSET_VERSION = "20260722-desktop-webview-guard";
+const NOTES_EDITOR_ASSET_VERSION = "20260809-native-edit-context-menu";
 
 /**
  * Per-radix notes — file-backed via the daemon. Saved charts write the
@@ -69,6 +69,8 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
   const focusedRef = React.useRef(false);
   const lastSyncedRef = React.useRef("");
   const editorReadyRef = React.useRef(false);
+  const mountedRef = React.useRef(true);
+  const saveQueueRef = React.useRef<Promise<void>>(Promise.resolve());
   const noteTarget = React.useMemo(
     () => ({ documentId, scratch }),
     [documentId, scratch],
@@ -91,7 +93,14 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
   const markClean = React.useCallback((text: string) => {
     lastSyncedRef.current = text;
     dirtyRef.current = false;
-    setDirty(false);
+    if (mountedRef.current) setDirty(false);
+  }, []);
+
+  React.useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   const sendEditorMessage = React.useCallback(
@@ -144,17 +153,38 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
     setDirty(nextDirty);
   }, []);
 
-  const saveCurrent = React.useCallback(
-    async (signal?: AbortSignal) => {
-      const text = contentRef.current;
-      if (text === lastSyncedRef.current && !dirtyRef.current) return;
-      await saveNotes(sourceName, text, noteTarget, signal);
-      markClean(text);
-      setSavedAt(new Date());
-      setError(null);
-    },
-      [markClean, noteTarget, sourceName],
-  );
+  const saveCurrent = React.useCallback(() => {
+    const flushLatest = async () => {
+      let wrote = false;
+      while (dirtyRef.current || contentRef.current !== lastSyncedRef.current) {
+        const text = contentRef.current;
+        if (text === lastSyncedRef.current) {
+          dirtyRef.current = false;
+          if (mountedRef.current) setDirty(false);
+          break;
+        }
+
+        await saveNotes(sourceName, text, noteTarget);
+        lastSyncedRef.current = text;
+        wrote = true;
+
+        const hasNewerText = contentRef.current !== text;
+        dirtyRef.current = hasNewerText;
+        if (mountedRef.current) setDirty(hasNewerText);
+      }
+
+      if (wrote && mountedRef.current) {
+        setSavedAt(new Date());
+        setError(null);
+      }
+    };
+
+    const queued = saveQueueRef.current
+      .catch(() => undefined)
+      .then(flushLatest);
+    saveQueueRef.current = queued;
+    return queued;
+  }, [noteTarget, sourceName]);
 
   const handleIframeLoad = React.useCallback(() => {
     editorReadyRef.current = false;
@@ -186,10 +216,10 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
   React.useEffect(() => {
     return () => {
       if (dirtyRef.current) {
-        void saveNotes(sourceName, contentRef.current, noteTarget).catch(() => undefined);
+        void saveCurrent().catch(() => undefined);
       }
     };
-  }, [noteTarget, sourceName]);
+  }, [saveCurrent]);
 
   // App-quit notes flush (DEF-003; wx onExit/_flush_notes_if_dirty,
   // morin.py:15638-15645, 11897-11903). The debounce timer can leave the last
@@ -201,15 +231,13 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
   React.useEffect(() => {
     const onFlush = (event: Event) => {
       if (!dirtyRef.current) return;
-      const writePromise = saveNotes(sourceName, contentRef.current, noteTarget)
-        .then(() => markClean(contentRef.current))
-        .catch(() => undefined);
+      const writePromise = saveCurrent().catch(() => undefined);
       const detail = (event as CustomEvent<{ awaitFlush?: Promise<unknown>[] }>).detail;
       detail?.awaitFlush?.push(writePromise);
     };
     window.addEventListener("aries://flush-notes", onFlush as EventListener);
     return () => window.removeEventListener("aries://flush-notes", onFlush as EventListener);
-  }, [markClean, noteTarget, sourceName]);
+  }, [saveCurrent]);
 
   React.useEffect(() => {
     const reloadIfClean = () => {
@@ -222,6 +250,14 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
       window.removeEventListener("focus", reloadIfClean);
       document.removeEventListener("visibilitychange", reloadIfClean);
     };
+  }, [loadNote]);
+
+  React.useEffect(() => {
+    const reloadCanonicalMarkdown = () => {
+      void loadNote(undefined, true).catch((err) => setError(String(err)));
+    };
+    window.addEventListener("aries://notes-changed", reloadCanonicalMarkdown);
+    return () => window.removeEventListener("aries://notes-changed", reloadCanonicalMarkdown);
   }, [loadNote]);
 
   const handleBlur = React.useCallback(() => {

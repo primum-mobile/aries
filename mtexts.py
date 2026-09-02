@@ -1,4 +1,8 @@
 # -*- coding: utf-8 -*-
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
 
 
 menutxtseng = {'MHoroscope':'&Horoscope', 
@@ -227,7 +231,7 @@ txtseng = {'SectLight':'Sect Light',
 'PersonalData':'Personal Data', 'OpenHor':'Open Horoscope', 'Error':'Error', 'SaveHor':'Save Horoscope', 'Message':'Message', 'Horoscope':'Horoscope',
 'Appearance1':'Appearance', 'Appearance2':'Speculum', 
 'Symbols':'Symbols', 'Colors':'Colours', 'Orbis':'Orbis', 
-'Score':'Score', 'Scores':'Scores', 'Morinus':'Morinus', 'FreeSoft':'Open Source Software', 'License':'AGPLv3', 
+'Score':'Score', 'Scores':'Scores', 'Morinus':'Morinus', 'FreeSoft':'Open Source Software', 'License':u'AGPLv3 + GPLv3',
 'January':'January', 'February':'February', 'March':'March', 'April':'April', 'May':'May', 'June':'June', 'July':'July',
 'August':'August', 'September':'September', 'October':'October', 'November':'November',
 'December':'December', 'Long':'Longitude', 'Lat':'Latitude', 'Untitled':'Untitled', 'InChart':'In Chart', 'Aspects':'Aspects', 'Conjunctio':'Conjunction',
@@ -332,7 +336,7 @@ txtseng = {'SectLight':'Sect Light',
 'Synastry':'Synastry', 'Themes':'Themes', 'theme1':'Theme 1', 'theme2':'Theme 2', 'AscMCWidth':'Asc, MC Width', 
 'Individual':'Individual', 'UseIndividual':'Use Individual', 
 'Housesystem':'Housesystem', 'HSPlacidus':'Placidus', 'HSKoch':'Koch', 'HSRegiomontanus':'Regiomontanus', 'HSCampanus':'Campanus', 
-'HSEqual':'Equal', 'HSWholeSign':'Whole sign', 'HSAxial':'Axial', 'HSMorinus':'Morinus', 'HSHorizontal':'Horizontal', 'HSPagePolich':'Page-Polich', 
+'HSEqual':'Equal', 'HSWholeSign':'Whole sign', 'HSFortuneWholeSign':'Fortune Houses', 'HSAxial':'Axial', 'HSMorinus':'Morinus', 'HSHorizontal':'Horizontal', 'HSPagePolich':'Page-Polich',
 'HSAlcabitus':'Alcabitus', 'HSPorphyrius':'Porphyrius', 'AlmutenOfTheChart':'Almuten of the chart', 'Essential':'Essential', 'Accidental':'Accidental', 
 'OneRuler':'One Ruler (Day/Night)', 'AllThree':'All Three', 'UseDayNightOrbAlmutens':'Use Day/Night Orb', 'Term':'Term', 'Decan':'Decan', 
 'HC1':'I', 'HC2':'II', 'HC3':'III', 'HC4':'IV', 'HC5':'V', 'HC6':'VI', 'HC7':'VII', 'HC8':'VIII', 'HC9':'IX', 'HC10':'X', 'HC11':'XI', 'HC12':'XII', 
@@ -614,7 +618,7 @@ txtshun = {'HelpDegree':u'0 és 29 között kell lennie',
 'PersonalData':u'Személyi adatok', 'OpenHor':u'Horoszkóp megnyitása', 'Error':u'Hiba', 'SaveHor':u'Horoszkóp mentése', 'Message':u'Üzenet', 
 'Horoscope':u'Horoszkóp', 'Appearance1':u'Megjelenítés I', 'Appearance2':u'Megjelenítés II', 'Symbols':u'Szimbólumok', 
 'Colors':u'Színek', 'Orbis':u'Orbiszok', 'Score':u'Pont', 'Scores':u'Pontok', 'Morinus':u'Morinus', 
-'FreeSoft':u'Ingyenes Software', 'License':u'AGPLv3', 'January':u'január', 'February':u'február', 'March':u'március', 'April':u'április', 
+'FreeSoft':u'Ingyenes Software', 'License':u'AGPLv3 + GPLv3', 'January':u'január', 'February':u'február', 'March':u'március', 'April':u'április',
 'May':u'május', 'June':u'június', 'July':u'július', 'August':u'augusztus', 'September':u'szeptember', 'October':u'október', 'November':u'november', 
 'December':u'december', 'Long':u'Hosszúság', 'Lat':u'Szélesség', 'Untitled':u'Névtelen', 'InChart':u'A horoszkópon', 'Aspects':u'Fényszögek', 
 'Conjunctio':u'Conjunction', 'Semisextil':u'Semisextile', 'Semiquadrat':u'Semisquare', 'Sextil':u'Sextile', 'Quintile':u'Quintile', 'Quadrat':u'Square', 
@@ -720,7 +724,7 @@ txtshun = {'HelpDegree':u'0 és 29 között kell lennie',
 'Themes':u'Témák', 'theme1':u'téma1', 'theme2':u'téma2', 'AscMCWidth':u'Asc-MC Szélesség', 
 'Individual':u'Egyéni', 'UseIndividual':u'Haszn. egyénit', 
 'Housesystem':u'Házrendszer', 'HSPlacidus':u'Placidus', 'HSKoch':u'Koch', 'HSRegiomontanus':u'Regiomontanus', 
-'HSCampanus':u'Campanus', 'HSEqual':u'Egyenlő', 'HSWholeSign':u'Egész jegyes', 'HSAxial':u'Axialis', 'HSMorinus':u'Morinus', 
+'HSCampanus':u'Campanus', 'HSEqual':u'Egyenlő', 'HSWholeSign':u'Egész jegyes', 'HSFortuneWholeSign':u'Fortuna-házak', 'HSAxial':u'Axialis', 'HSMorinus':u'Morinus',
 'HSHorizontal':u'Horizontalis', 'HSPagePolich':u'Page-Polich', 'HSAlcabitus':u'Alcabitus', 'HSPorphyrius':u'Porphyrius',
 'AlmutenOfTheChart':u'Horoszkóp Almutenje', 'Essential':u'Esszenciális', 'Accidental':u'Akcidentális', 
 'OneRuler':u'Egy úr(Nap./Éj.)', 'AllThree':u'Mindhárom', 'UseDayNightOrbAlmutens':u'Haszn. nap./éj. orb', 'Term':u'Term', 'Decan':u'Decan',
@@ -983,7 +987,7 @@ txtsrus = {'HelpDegree':u'Значение должно быть в интерв
 'SavePDs':u'Сохранить ПД как текст', 'InvalidDate':u'Неверная дата!', 'NoPDsWithSettings':u'Дирекций не найдено. Проверьте настройки.', 
 'PersonalData':u'Личные данные', 'OpenHor':u'Открыть гороскоп', 'Error':u'Ошибка', 'SaveHor':u'Сохранить гороскоп', 'Message':u'Сообщение', 'Horoscope':u'Гороскоп', 
 'Appearance1':u'Внешний вид №1', 'Appearance2':u'Внешний вид №2', 'Symbols':u'Символы', 'Colors':u'Цвета', 'Orbis':u'Орбы', 
-'Score':u'Баллы', 'Scores':u'Баллы', 'Morinus':u'Моринус', 'FreeSoft':u'Свободно распространяемая программа', 'License':u'AGPLv3', 
+'Score':u'Баллы', 'Scores':u'Баллы', 'Morinus':u'Моринус', 'FreeSoft':u'Свободно распространяемая программа', 'License':u'AGPLv3 + GPLv3',
 'January':u'Январь', 'February':u'Февраль', 'March':u'Март', 'April':u'Апрель', 'May':u'Май', 'June':u'Июнь', 'July':u'Июль', 
 'August':u'Август', 'September':u'Сентябрь', 'October':u'Октябрь', 'November':u'Ноябрь', 
 'December':u'Декабрь', 'Long':u'Долгота', 'Lat':u'Широта', 'Untitled':u'Без названия', 'InChart':u'В карте', 'Aspects':u'Аспекты', 'Conjunctio':u'Соединение', 
@@ -1084,7 +1088,7 @@ txtsrus = {'HelpDegree':u'Значение должно быть в интерв
 'Themes':u'Виды карты', 'theme1':u'Вид1', 'theme2':u'Вид2', 'AscMCWidth':u'Ширина АС-МС', 
 'Individual':u'Individual', 'UseIndividual':u'Use individual', 
 'Housesystem':u'Housesystem', 'HSPlacidus':u'Плацид', 'HSKoch':u'Кох', 'HSRegiomontanus':u'Региомонтан', 'HSCampanus':u'Кампано', 
-'HSEqual':u'Равные', 'HSWholeSign':u'Whole sign', 'HSAxial':u'Осевая', 'HSMorinus':u'Morinus', 'HSHorizontal':u'Horizontal', 
+'HSEqual':u'Равные', 'HSWholeSign':u'Whole sign', 'HSFortuneWholeSign':u'Дома Фортуны', 'HSAxial':u'Осевая', 'HSMorinus':u'Morinus', 'HSHorizontal':u'Horizontal',
 'HSPagePolich':u'Page-Polich', 'HSAlcabitus':u'Ал-Кабиций', 'HSPorphyrius':u'Порфирий',
 'AlmutenOfTheChart':u'Господин гороскопа', 'Essential':u'Эссенция', 'Accidental':u'Акциденция', 'OneRuler':u'Один управитель(Дневной/Ночной)', 
 'AllThree':u'Все три', 'UseDayNightOrbAlmutens':u'Использовать Орб дня', 'Term':u'Терм', 'Decan':u'Декан',
@@ -1348,7 +1352,7 @@ txtsesp = {'HelpDegree':u'Debe ser entre 0 y 29',
 'SavePDs':u'Guardar PDs como Texto', 'InvalidDate':u'Datos inválidos!', 'NoPDsWithSettings':u'No existen Direcciones Primarias con estas configuraciones!', 
 'PersonalData':u'Datos Personales', 'OpenHor':u'Abrir HorÃ³scopo', 'Error':u'Error', 'SaveHor':u'Guardar Horóscopo', 'Message':u'Mensaje', 'Horoscope':u'Horóscopo', 
 'Appearance1':u'Apariencia I', 'Appearance2':u'Speculum', 'Symbols':u'Sí­mbolos', 'Colors':u'Colores', 'Orbis':u'Orbes', 
-'Score':u'Score', 'Scores':u'Resultados', 'Morinus':u'Morinus', 'FreeSoft':u'Software Libre', 'License':u'AGPLv3', 
+'Score':u'Score', 'Scores':u'Resultados', 'Morinus':u'Morinus', 'FreeSoft':u'Software Libre', 'License':u'AGPLv3 + GPLv3',
 'January':u'enero', 'February':u'febrero', 'March':u'marzo', 'April':u'abril', 'May':u'mayo', 'June':u'junio', 'July':u'julio', 
 'August':u'agosto', 'September':u'septiembre', 'October':u'octubre', 'November':u'noviembre', 
 'December':u'diciembre', 'Untitled':u'Intitulado', 'InChart':u'En Carta', 'Aspects':u'Aspectos', 'Conjunctio':u'Conjunción', 
@@ -1449,7 +1453,7 @@ txtsesp = {'HelpDegree':u'Debe ser entre 0 y 29',
 'HelpDayNightOrbDeg':u'Debe ser entre 0 y 6', 'SyzMoon':u'Luna', 'SyzAbove':u'Sobre el horizonte', 'SyzAboveNatal':u'Sobre el horizonte(radix)', 
 'Synastry':u'Synastry', 'Themes':u'Temas', 'theme1':u'tema1', 'theme2':u'tema2', 'AscMCWidth':u'Ancho Asc-MC', 'Individual':u'Individual', 
 'UseIndividual':u'Uso individual', 'Housesystem':u'Sistema de casas', 'HSPlacidus':u'Placidus', 'HSKoch':u'Koch', 'HSRegiomontanus':u'Regiomontanus', 
-'HSCampanus':u'Campanus', 'HSEqual':u'Equal', 'HSWholeSign':u'Signo completo', 'HSAxial':u'Axial', 'HSMorinus':u'Morinus', 'HSHorizontal':u'Horizontal', 
+'HSCampanus':u'Campanus', 'HSEqual':u'Equal', 'HSWholeSign':u'Signo completo', 'HSFortuneWholeSign':u'Casas de la Fortuna', 'HSAxial':u'Axial', 'HSMorinus':u'Morinus', 'HSHorizontal':u'Horizontal',
 'HSPagePolich':u'Page-Polich', 'HSAlcabitus':u'Alcabitus', 'HSPorphyrius':u'Porphyrius',
 'AlmutenOfTheChart':u'Almuten de la carta', 'Essential':u'Esencial', 'Accidental':u'Accidental', 'OneRuler':u'1 regente (DÃ­a/Noche)', 
 'AllThree':u'Todos tres', 'UseDayNightOrbAlmutens':u'Usar orbe dÃ­a/noche', 'Term':u'Término', 'Decan':u'Decanato',
@@ -1717,7 +1721,7 @@ txtsita = {'HelpDegree':u'Valore tra 0 e 29',
 'PersonalData':u'Dati Personali', 'OpenHor':u'Apri Oroscopo', 'Error':u'Errore', 'SaveHor':u'Salva oroscopo', 'Message':u'Messaggio', 'Horoscope':u'Oroscopo',
 'Appearance1':u'Aspetto', 'Appearance2':u'Speculum', 
 'Symbols':u'Simboli', 'Colors':u'Colori', 'Orbis':u'Orbite',
-'Score':u'Punteggio', 'Scores':u'Punteggi', 'Morinus':u'Morinus', 'FreeSoft':u'Software Gratuito', 'License':u'AGPLv3',
+'Score':u'Punteggio', 'Scores':u'Punteggi', 'Morinus':u'Morinus', 'FreeSoft':u'Software Gratuito', 'License':u'AGPLv3 + GPLv3',
 'January':u'gennaio', 'February':u'febbraio', 'March':u'marzo', 'April':u'aprile', 'May':u'maggio', 'June':u'giugno', 'July':u'luglio',
 'August':u'agosto', 'September':u'settembre', 'October':u'ottobre', 'November':u'novembre',
 'December':u'dicembre', 'Untitled':u'Senza titolo', 'InChart':u'Nella carta', 'Aspects':u'Aspetti', 'Conjunctio':u'Congiunzione',
@@ -1821,7 +1825,7 @@ txtsita = {'HelpDegree':u'Valore tra 0 e 29',
 'Synastry':u'Sinastria', 'Themes':u'Temi', 'theme1':u'tema1', 'theme2':u'tema2', 'AscMCWidth':u'Ampiezza Asc-MC',
 'Individual':u'Individuali', 'UseIndividual':u'Usa individuali',
 'Housesystem':u'Domificazione', 'HSPlacidus':u'Placido', 'HSKoch':u'Koch', 'HSRegiomontanus':u'Regiomontano', 'HSCampanus':u'Campano',
-'HSEqual':u'Uguali', 'HSWholeSign':u'Segno intero', 'HSAxial':u'Assiale', 'HSMorinus':u'Morin', 'HSHorizontal':u'Orizzontale', 'HSPagePolich':u'Page-Polich',
+'HSEqual':u'Uguali', 'HSWholeSign':u'Segno intero', 'HSFortuneWholeSign':u'Case della Fortuna', 'HSAxial':u'Assiale', 'HSMorinus':u'Morin', 'HSHorizontal':u'Orizzontale', 'HSPagePolich':u'Page-Polich',
 'HSAlcabitus':u'Alcabizio', 'HSPorphyrius':u'Porfirio', 'AlmutenOfTheChart':u'Almuten della carta', 'Essential':u'Essenziale', 'Accidental':u'Accidentale',
 'OneRuler':u'Un governatore(Giorno/Notte)', 'AllThree':u'Tutti e tre', 'UseDayNightOrbAlmutens':u'Usa orbita giorno/notte', 'Term':u'Termine', 'Decan':u'Decano',
 'HC1':u'I', 'HC2':u'2', 'HC3':u'3', 'HC4':u'IV', 'HC5':u'5', 'HC6':u'6', 'HC7':u'VII', 'HC8':u'8', 'HC9':u'9', 'HC10':u'X', 'HC11':u'11', 'HC12':u'12',
@@ -2083,7 +2087,7 @@ txtsfre = {'HelpDegree':u'Compris entre 0 et 29',
 'SavePDs':u'Enregistrer Dir.Prim. au format texte', 'InvalidDate':u'Date invalide!', 'NoPDsWithSettings':u"Il n'y a pas de Directions Primaires avec les paramètres demandés!", 
 'PersonalData':u'Données Personnelles', 'OpenHor':u'Ouvrir Thème', 'Error':u'Erreur', 'SaveHor':u'Enregistrer Thème', 'Message':u'Message', 'Horoscope':u'Thème', 
 'Appearance1':u'Apparence', 'Appearance2':u'Données astronomiques', 'Symbols':u'Symboles', 'Colors':u'Couleurs', 'Orbis':u'Orbes', 
-'Score':u'Score', 'Scores':u'Scores', 'Morinus':u'Morinus', 'FreeSoft':u'Logiciel libre', 'License':u'AGPLv3', 
+'Score':u'Score', 'Scores':u'Scores', 'Morinus':u'Morinus', 'FreeSoft':u'Logiciel libre', 'License':u'AGPLv3 + GPLv3',
 'January':u'janvier', 'February':u'février', 'March':u'mars', 'April':u'avril', 'May':u'mai', 'June':u'juin', 'July':u'juillet', 
 'August':u'août', 'September':u'septembre', 'October':u'octobre', 'November':u'novembre', 
 'December':u'décembre', 'Untitled':u'Sans titre', 'InChart':u'Dans le Thème', 'Aspects':u'Aspects', 'Conjunctio':u'Conjonction', 
@@ -2185,7 +2189,7 @@ txtsfre = {'HelpDegree':u'Compris entre 0 et 29',
 'Synastry':u'Synastrie', 'Themes':u'Thèmes', 'theme1':u'thème1', 'theme2':u'thème2', 'AscMCWidth':u'Asc-MC largeur', 
 'Individual':u'Particularisation', 'UseIndividual':u'Particularisation Utilisateur', 
 'Housesystem':u'Domification', 'HSPlacidus':u'Placidus', 'HSKoch':u'Koch', 'HSRegiomontanus':u'Regiomontanus', 'HSCampanus':u'Campanus', 
-'HSEqual':u'Egales', 'HSWholeSign':u'Signes entiers', 'HSAxial':u'Axial', 'HSMorinus':u'Morinus', 'HSHorizontal':u'Horizontale', 'HSPagePolich':u'Page-Polich', 
+'HSEqual':u'Egales', 'HSWholeSign':u'Signes entiers', 'HSFortuneWholeSign':u'Maisons de Fortune', 'HSAxial':u'Axial', 'HSMorinus':u'Morinus', 'HSHorizontal':u'Horizontale', 'HSPagePolich':u'Page-Polich',
 'HSAlcabitus':u'Alcabitus', 'HSPorphyrius':u'Porphyrius', 'AlmutenOfTheChart':u'Almuten du Thème', 'Essential':u'Essentiel', 'Accidental':u'Accidentel', 
 'OneRuler':u'Un maître (Diurne/Nocturne)', 'AllThree':u'Tous les trois', 'UseDayNightOrbAlmutens':u'Utiliser orbe jour/nuit', 'Term':u'Terme', 'Decan':u'Décan', 
 'HC1':u'I', 'HC2':u'2', 'HC3':u'3', 'HC4':u'IV', 'HC5':u'5', 'HC6':u'6', 'HC7':u'VII', 'HC8':u'8', 'HC9':u'9', 'HC10':u'X', 'HC11':u'11', 'HC12':u'12', 
@@ -2551,7 +2555,7 @@ txtschs = {'HelpDegree':u'必须在 0 和 29 之间',
 'PersonalData':u'个人数据', 'OpenHor':u'打开星盘', 'Error':u'错误', 'SaveHor':u'保存星盘', 'Message':u'信息', 'Horoscope':u'星盘',
 'Appearance1':u'外观', 'Appearance2':u'放大镜',
 'Symbols':u'符号', 'Colors':u'色彩', 'Orbis':u'范围',
-'Score':u'得分', 'Scores':u'得分', 'Morinus':u'Morinus', 'FreeSoft':u'免费软件', 'License':u'AGPLv3',
+'Score':u'得分', 'Scores':u'得分', 'Morinus':u'Morinus', 'FreeSoft':u'免费软件', 'License':u'AGPLv3 + GPLv3',
 'January':u'1', 'February':u'2', 'March':u'3', 'April':u'4', 'May':u'5', 'June':u'6', 'July':u'7',
 'August':u'8', 'September':u'9', 'October':u'10', 'November':u'11',
 'December':u'12', 'Long':u'经度', 'Lat':u'纬度', 'Untitled':u'未命名', 'InChart':u'在星盘中', 'Aspects':u'相位', 'Conjunctio':u'合',
@@ -2655,7 +2659,7 @@ txtschs = {'HelpDegree':u'必须在 0 和 29 之间',
 'Synastry':u'Synastry', 'Themes':u'显示方案', 'theme1':u'显示方案1', 'theme2':u'显示方案2', 'AscMCWidth':u'上升点-天顶(Asc-MC) 宽度',
 'Individual':u'单个', 'UseIndividual':u'使用单个',
 'Housesystem':u'分宫制', 'HSPlacidus':u'Placidus', 'HSKoch':u'Koch', 'HSRegiomontanus':u'Regiomontanus', 'HSCampanus':u'Campanus',
-'HSEqual':u'Equal', 'HSWholeSign':u'Whole sign', 'HSAxial':u'Axial', 'HSMorinus':u'Morinus', 'HSHorizontal':u'Horizontal', 'HSPagePolich':u'Page-Polich',
+'HSEqual':u'Equal', 'HSWholeSign':u'Whole sign', 'HSFortuneWholeSign':u'福点宫位', 'HSAxial':u'Axial', 'HSMorinus':u'Morinus', 'HSHorizontal':u'Horizontal', 'HSPagePolich':u'Page-Polich',
 'HSAlcabitus':u'Alcabitus', 'HSPorphyrius':u'Porphyrius', 'AlmutenOfTheChart':u'星盘的征象星', 'Essential':u'得地(Essential)', 'Accidental':u'得位(Accidental)',
 'OneRuler':u'一个主宰(昼/夜)', 'AllThree':u'所有三个', 'UseDayNightOrbAlmutens':u'使用昼/夜容许度', 'Term':u'界', 'Decan':u'面',
 'HC1':u'I', 'HC2':u'2', 'HC3':u'3', 'HC4':u'IV', 'HC5':u'5', 'HC6':u'6', 'HC7':u'VII', 'HC8':u'8', 'HC9':u'9', 'HC10':u'X', 'HC11':u'11', 'HC12':u'12',
@@ -2805,7 +2809,7 @@ txtscht = {'HelpDegree':u'必須在 0 和 29 之間',
 'PersonalData':u'個人數據', 'OpenHor':u'打開星盤', 'Error':u'錯誤', 'SaveHor':u'保存星盤', 'Message':u'信息', 'Horoscope':u'星盤',
 'Appearance1':u'外觀', 'Appearance2':u'放大鏡',
 'Symbols':u'符號', 'Colors':u'色彩', 'Orbis':u'範圍',
-'Score':u'得分', 'Scores':u'得分', 'Morinus':u'Morinus', 'FreeSoft':u'免費軟件', 'License':u'AGPLv3',
+'Score':u'得分', 'Scores':u'得分', 'Morinus':u'Morinus', 'FreeSoft':u'免費軟件', 'License':u'AGPLv3 + GPLv3',
 'January':u'1', 'February':u'2', 'March':u'3', 'April':u'4', 'May':u'5', 'June':u'6', 'July':u'7',
 'August':u'8', 'September':u'9', 'October':u'10', 'November':u'11',
 'December':u'12', 'Long':u'經度', 'Lat':u'緯度', 'Untitled':u'未命名', 'InChart':u'在星盤中', 'Aspects':u'相位', 'Conjunctio':u'合',
@@ -2909,7 +2913,7 @@ txtscht = {'HelpDegree':u'必須在 0 和 29 之間',
 'Synastry':u'Synastry', 'Themes':u'显示方案', 'theme1':u'显示方案1', 'theme2':u'显示方案2', 'AscMCWidth':u'上升點-天頂(Asc-MC) 寬度',
 'Individual':u'單個', 'UseIndividual':u'使用單個',
 'Housesystem':u'分宮制', 'HSPlacidus':u'Placidus', 'HSKoch':u'Koch', 'HSRegiomontanus':u'Regiomontanus', 'HSCampanus':u'Campanus',
-'HSEqual':u'Equal', 'HSWholeSign':u'Whole sign', 'HSAxial':u'Axial', 'HSMorinus':u'Morinus', 'HSHorizontal':u'Horizontal', 'HSPagePolich':u'Page-Polich',
+'HSEqual':u'Equal', 'HSWholeSign':u'Whole sign', 'HSFortuneWholeSign':u'福點宮位', 'HSAxial':u'Axial', 'HSMorinus':u'Morinus', 'HSHorizontal':u'Horizontal', 'HSPagePolich':u'Page-Polich',
 'HSAlcabitus':u'Alcabitus', 'HSPorphyrius':u'Porphyrius', 'AlmutenOfTheChart':u'星盤的征像星', 'Essential':u'得地(Essential)', 'Accidental':u'得位(Accidental)',
 'OneRuler':u'一個主宰(晝/夜)', 'AllThree':u'所有三個', 'UseDayNightOrbAlmutens':u'使用晝/夜容許度', 'Term':u'界', 'Decan':u'面',
 'HC1':u'I', 'HC2':u'2', 'HC3':u'3', 'HC4':u'IV', 'HC5':u'5', 'HC6':u'6', 'HC7':u'VII', 'HC8':u'8', 'HC9':u'9', 'HC10':u'X', 'HC11':u'11', 'HC12':u'12',
@@ -3218,7 +3222,7 @@ txtsko = {'HelpDegree':u'0에서 29 사이여야 합니다.',
 'SaveHor':u'천궁도 저장하기',
 'Message':u'메시지',
 'Horoscope':u'천궁도', 'Appearance1':u'보기', 'Appearance2':u'위치', 'Symbols':u'기호', 'Colors':u'색깔', 'Orbis':u'오브',
-'Score':u'점수', 'Scores':u'점수', 'Morinus':u'모리누스', 'FreeSoft':u'무료 소프트웨어', 'License':'AGPLv3',
+'Score':u'점수', 'Scores':u'점수', 'Morinus':u'모리누스', 'FreeSoft':u'무료 소프트웨어', 'License':u'AGPLv3 + GPLv3',
 'January':u'01', 'February':u'02', 'March':u'03', 'April':u'04', 'May':u'05', 'June':u'06', 'July':u'07',
 'August':u'08', 'September':u'09', 'October':u'10', 'November':u'11',
 'December':u'12', 'Long':u'경도', 'Lat':u'위도', 'Untitled':u'제목 없음', 'InChart':u'차트에 표시', 'Aspects':u'각', 'Conjunctio':u'회합',
@@ -3334,7 +3338,7 @@ txtsko = {'HelpDegree':u'0에서 29 사이여야 합니다.',
 'Synastry':u'시너스트리', 'Themes':u'테마', 'theme1':u'테마 1', 'theme2':u'테마 2', 'AscMCWidth':u'상승점-중천점 너비',
 'Individual':u'개별', 'UseIndividual':u'개별 설정 사용',
 'Housesystem':u'하우스 시스템', 'HSPlacidus':u'플라시두스', 'HSKoch':u'코흐', 'HSRegiomontanus':u'레기오몬타누스', 'HSCampanus':u'캄파누스',
-'HSEqual':u'균등 분배', 'HSWholeSign':u'홀 사인', 'HSAxial':u'축', 'HSMorinus':u'모리누스', 'HSHorizontal':u'수평선', 'HSPagePolich':u'페이지-폴리치',
+'HSEqual':u'균등 분배', 'HSWholeSign':u'홀 사인', 'HSFortuneWholeSign':u'포르투나 하우스', 'HSAxial':u'축', 'HSMorinus':u'모리누스', 'HSHorizontal':u'수평선', 'HSPagePolich':u'페이지-폴리치',
 'HSAlcabitus':u'알카비투스', 'HSPorphyrius':u'포피리우스', 'AlmutenOfTheChart':u'차트의 알무텐', 'Essential':u'본질적', 'Accidental':u'우발적',
 'OneRuler':u'단일 룰러(주/야)', 'AllThree':u'세 가지 모두', 'UseDayNightOrbAlmutens':u'주/야 오브 사용', 'Term':u'텀', 'Decan':u'데칸',
 'HC1':u'I', 'HC2':u'2', 'HC3':u'3', 'HC4':u'IV', 'HC5':u'5', 'HC6':u'6', 'HC7':u'VII', 'HC8':u'8', 'HC9':u'9', 'HC10':u'X', 'HC11':u'11', 'HC12':u'12',
@@ -3471,175 +3475,173 @@ txtsko.setdefault('Minutes', u'분')
 txtsko.setdefault('MagAbbr', u'광도')
 
 
-licensetxteng = 'Aries, Astrology program\n\
-Copyright (C) 2026 Max Lange (contact@maxlange.cc)\n\
-Forked from Morinus, Copyright (C) 2008-2012 Robert Nagy (robert.pluto@gmail.com)\n\n\
-Morinus version history:\n\
-Versions up to 6.2 - Robert Nagy\n\
-Version 7.X.X - 2013 - Roberto Luporini\n\
-Version 8.X.X - 2013 - Elías D. Molins\n\
-Version 9.X.X - 2025 - Shin Ji-Hyeon / James Ren\n\
-Version 10.X.X - 2026 - Max Lange (Aries fork)\n\n\
-Licensed under the GNU Affero General Public License, version 3 (AGPLv3).\n\
-You may redistribute and/or modify this program under the terms of the AGPLv3\n\
-as published by the Free Software Foundation, either version 3 of the License,\n\
-or (at your option) any later version.\n\n\
-This program is distributed WITHOUT ANY WARRANTY; without even the implied\n\
-warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the\n\
-GNU Affero General Public License for more details.\n\n\
-A copy of the AGPLv3 is available at https://www.gnu.org/licenses/agpl-3.0.html.'
+licensetxteng = (
+	u'Aries, astrology software\n'
+	u'Copyright (C) 2026 Max Lange (contact@maxlange.cc)\n'
+	u'Derived in part from Morinus, Copyright (C) 2008-2012 Robert Nagy '
+	u'(robert.pluto@gmail.com), with later contributions by Roberto Luporini, '
+	u'Elías D. Molins, Shin Ji-Hyeon, and James Ren.\n\n'
+	u'Original Aries code is licensed under AGPL-3.0-or-later. Portions derived '
+	u'from Morinus are licensed under GPL-3.0-or-later. GPLv3 section 13 and '
+	u'AGPLv3 section 13 permit this combination: the GPL terms continue to apply '
+	u'to the GPL-covered portions, and the AGPL network-source requirement '
+	u'applies to the combined work.\n\n'
+	u'You may redistribute and/or modify the program under the applicable '
+	u'licenses. It is provided WITHOUT ANY WARRANTY. See LICENSE, '
+	u'COPYING-GPL-3.0.txt, COPYRIGHT.txt, and THIRD_PARTY_NOTICES.txt.'
+)
 
 
-licensetxthun = u'Morinus, Asztrológiai program\n\
-Copyright (C) 2008-2012 Nagy Róbert (robert.pluto@gmail.com)\n\
-Versions up to 6.2 edited by Robert Nagy\n\
-\n\
-Version 7.X.X - 2013 - edited by Roberto Luporini\n\
-Version 8.X.X - 2013 - edited by Elías D. Molins\n\
-Version 9.X.X - 2025 - edited by Shin Ji-Hyeon / James Ren\n\
-Version 10.X.X - 2026 - edited by Max Lange\n\n\
-Ez a program szabad szoftver; terjeszthetõ illetve módosítható a\n\
-Free Software Foundation által kiadott GNU Affero General Public License\n\
-dokumentumában leírtak; akár a licenc 3-as, akár (tetszõleges) késõbbi\n\
-változata szerint.\n\n\
-Ez a program abban a reményben kerül közreadásra, hogy hasznos lesz,\n\
-de minden egyéb GARANCIA NÉLKÜL, az ELADHATÓSÁGRA vagy VALAMELY CÉLRA\n\
-VALÓ ALKALMAZHATÓSÁGRA való származtatott garanciát is beleértve.\n\
-További részleteket a GNU Affero General Public License tartalmaz.\n\n\
-A felhasználónak a programmal együtt meg kell kapnia a GNU Affero General\n\
-Public License egy példányát; ha mégsem kapta meg, akkor\n\
-tekintse meg a https://www.gnu.org/licenses/agpl-3.0.html oldalon.'
+licensetxthun = (
+	u'Aries, asztrológiai szoftver\n'
+	u'Copyright (C) 2026 Max Lange (contact@maxlange.cc)\n'
+	u'Részben a Morinus programból származik: Copyright (C) 2008-2012 Robert '
+	u'Nagy (robert.pluto@gmail.com), későbbi közreműködők: Roberto Luporini, '
+	u'Elías D. Molins, Shin Ji-Hyeon és James Ren.\n\n'
+	u'Az eredeti Aries-kód licence AGPL-3.0-or-later. A Morinusból származó '
+	u'részek licence GPL-3.0-or-later. A GPLv3 13. szakasza és az AGPLv3 13. '
+	u'szakasza megengedi ezt a kombinációt: a GPL feltételei továbbra is a '
+	u'GPL-lel védett részekre vonatkoznak, az AGPL hálózati forráskódra '
+	u'vonatkozó követelménye pedig a kombinált műre.\n\n'
+	u'A program a vonatkozó licencek szerint továbbadható és módosítható. '
+	u'MINDEN GARANCIA NÉLKÜL kerül átadásra. Lásd: LICENSE, '
+	u'COPYING-GPL-3.0.txt, COPYRIGHT.txt és THIRD_PARTY_NOTICES.txt.'
+)
 
 
-licensetxtrus = 'Morinus, Astrology program\n\
-Copyright (C) 2008-2012 Robert Nagy (robert.pluto@gmail.com)\n\
-Versions up to 6.2 edited by Robert Nagy\n\
-\n\
-Version 7.X.X - 2013 - edited by Roberto Luporini\n\
-Version 8.X.X - 2013 - edited by Elías D. Molins\n\
-Version 9.X.X - 2025 - edited by Shin Ji-Hyeon / James Ren\n\
-Version 10.X.X - 2026 - edited by Max Lange\n\n\
-This program is free software: you can redistribute it and/or modify\n\
-it under the terms of the GNU Affero General Public License as published by\n\
-the Free Software Foundation, either version 3 of the License, or\n\
-(at your option) any later version.\n\n\
-This program is distributed in the hope that it will be useful,\n\
-but WITHOUT ANY WARRANTY; without even the implied warranty of\n\
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n\
-GNU Affero General Public License for more details.\n\n\
-You should have received a copy of the GNU Affero General Public License\n\
-along with this program.  If not, see https://www.gnu.org/licenses/agpl-3.0.html.'
+licensetxtrus = (
+	u'Aries, астрологическая программа\n'
+	u'Copyright (C) 2026 Max Lange (contact@maxlange.cc)\n'
+	u'Частично основана на Morinus: Copyright (C) 2008-2012 Robert Nagy '
+	u'(robert.pluto@gmail.com); последующие участники: Roberto Luporini, '
+	u'Elías D. Molins, Shin Ji-Hyeon и James Ren.\n\n'
+	u'Оригинальный код Aries лицензирован по AGPL-3.0-or-later. Части, '
+	u'производные от Morinus, лицензированы по GPL-3.0-or-later. Раздел 13 '
+	u'GPLv3 и раздел 13 AGPLv3 разрешают такое объединение: условия GPL '
+	u'продолжают действовать для частей под GPL, а требование AGPL о доступе '
+	u'к исходному коду по сети применяется ко всему объединённому произведению.\n\n'
+	u'Программу можно распространять и изменять по условиям соответствующих '
+	u'лицензий. Она предоставляется БЕЗ КАКИХ-ЛИБО ГАРАНТИЙ. См. LICENSE, '
+	u'COPYING-GPL-3.0.txt, COPYRIGHT.txt и THIRD_PARTY_NOTICES.txt.'
+)
 
 
-licensetxtesp = 'Morinus, Astrology program\n\
-Copyright (C) 2008-2012 Robert Nagy (robert.pluto@gmail.com)\n\
-Versions up to 6.2 edited by Robert Nagy\n\
-\n\
-Version 7.X.X - 2013 - editada por Roberto Luporini\n\
-Version 8.X.X - 2013 - editada por Elías D. Molins\n\
-Version 9.X.X - 2025 - editada por Shin Ji-Hyeon / James Ren\n\
-Version 10.X.X - 2026 - editada por Max Lange\n\n\
-This program is free software: you can redistribute it and/or modify\n\
-it under the terms of the GNU Affero General Public License as published by\n\
-the Free Software Foundation, either version 3 of the License, or\n\
-(at your option) any later version.\n\n\
-This program is distributed in the hope that it will be useful,\n\
-but WITHOUT ANY WARRANTY; without even the implied warranty of\n\
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n\
-GNU Affero General Public License for more details.\n\n\
-You should have received a copy of the GNU Affero General Public License\n\
-along with this program.  If not, see https://www.gnu.org/licenses/agpl-3.0.html.'
+licensetxtesp = (
+	u'Aries, programa de astrología\n'
+	u'Copyright (C) 2026 Max Lange (contact@maxlange.cc)\n'
+	u'Derivado en parte de Morinus: Copyright (C) 2008-2012 Robert Nagy '
+	u'(robert.pluto@gmail.com), con contribuciones posteriores de Roberto '
+	u'Luporini, Elías D. Molins, Shin Ji-Hyeon y James Ren.\n\n'
+	u'El código original de Aries se licencia bajo AGPL-3.0-or-later. Las partes '
+	u'derivadas de Morinus se licencian bajo GPL-3.0-or-later. La sección 13 de '
+	u'GPLv3 y la sección 13 de AGPLv3 permiten esta combinación: las condiciones '
+	u'de la GPL siguen aplicándose a las partes cubiertas por la GPL y el '
+	u'requisito de código fuente por red de la AGPL se aplica a la obra combinada.\n\n'
+	u'Puede redistribuir y modificar el programa conforme a las licencias '
+	u'aplicables. Se proporciona SIN GARANTÍA ALGUNA. Consulte LICENSE, '
+	u'COPYING-GPL-3.0.txt, COPYRIGHT.txt y THIRD_PARTY_NOTICES.txt.'
+)
 
 
-licensetxtita = "Morinus, programma astrologico\n\
-Copyright (C) 2008-2012 Robert Nagy (robert.pluto@gmail.com)\n\
-Versioni fino alla 6.2 a cura di Robert Nagy\n\
-\n\
-Versione 7.X.X - 2013 - a cura di Roberto Luporini\n\
-Versione 8.X.X - 2013 - a cura di Elías D. Molins\n\
-Versione 9.X.X - 2025 - a cura di Shin Ji-Hyeon / James Ren\n\
-Versione 10.X.X - 2026 - a cura di Max Lange\n\n\
-Questo è un software gratuito: si può ridistribuire e/o modificare.\n\
-E'sotto le condizioni della Licenza Affero Generale Pubblica GNU come pubblicata\n\
-dalla Free Software Foundation, sia la versione 3 della Licenza sia\n\
-ogni altra versione.\n\n\
-Questo programma è distribuito nella speranza che possa essere utile,\n\
-ma SENZA ALCUNA GARANZIA, senza neanche la implicita garanzia di\n\
-ESSERE ADATTO AD UNO SCOPO PARTICOLARE. Si veda\n\
-GNU Affero General Public License per i dettagli.\n\n\
-Una copia della GNU Affero General Public License, deve essere distribuita\n\
-assieme a questo programma, oppure consultare https://www.gnu.org/licenses/agpl-3.0.html."
+licensetxtita = (
+	u'Aries, software astrologico\n'
+	u'Copyright (C) 2026 Max Lange (contact@maxlange.cc)\n'
+	u'Derivato in parte da Morinus: Copyright (C) 2008-2012 Robert Nagy '
+	u'(robert.pluto@gmail.com), con contributi successivi di Roberto Luporini, '
+	u'Elías D. Molins, Shin Ji-Hyeon e James Ren.\n\n'
+	u'Il codice originale di Aries è concesso in licenza AGPL-3.0-or-later. Le '
+	u'parti derivate da Morinus sono concesse in licenza GPL-3.0-or-later. La '
+	u'sezione 13 della GPLv3 e la sezione 13 della AGPLv3 consentono questa '
+	u'combinazione: le condizioni GPL continuano ad applicarsi alle parti coperte '
+	u'dalla GPL e il requisito AGPL sul codice sorgente via rete si applica '
+	u'all’opera combinata.\n\n'
+	u'Il programma può essere ridistribuito e modificato secondo le licenze '
+	u'applicabili. È fornito SENZA ALCUNA GARANZIA. Vedere LICENSE, '
+	u'COPYING-GPL-3.0.txt, COPYRIGHT.txt e THIRD_PARTY_NOTICES.txt.'
+)
 
 
-licensetxtfre = "Morinus, programme d'astrologie\n\
-Copyright (C) 2008-2012  Robert Nagy (robert.pluto@gmail.com)\n\
-Jusqu'à la version 6.2 réalisation Robert Nagy\n\
-\n\
-Versions 7.X.X - 2013 - réalisation Roberto Luporini\n\
-Versions 8.X.X - 2013 - réalisation Elías D. Molins\n\
-Versions 9.X.X - 2025 - réalisation Shin Ji-Hyeon / James Ren\n\
-Versions 10.X.X - 2026 - réalisation Max Lange\n\n\
-Ce programme est un logiciel libre: vous pouvez le redistribuer et/ou le modifier\n\
-selon les termes de la Licence Publique Générale Affero GNU publiée par\n\
-la Free Software Foundation, soit la version 3 de cette licence, ou\n\
-(à votre choix) toute version ultérieure.\n\n\
-Ce programme est distribué en espérant qu'il sera utile, \n\
-mais SANS AUCUNE GARANTIE; sans même la garantie implicite de \n\
-COMMERCIALISATION ou D'ADAPTATION A UN OBJET PARTICULIER.  Voir la\n\
-licence GNU Affero General Public License pour plus de détails.\n\n\
-Vous trouverez un exemplaire de la licence GNU Affero General Public License\n\
-avec ce programme.  Si non, voyez https://www.gnu.org/licenses/agpl-3.0.html."
+licensetxtfre = (
+	u'Aries, logiciel d’astrologie\n'
+	u'Copyright (C) 2026 Max Lange (contact@maxlange.cc)\n'
+	u'Dérivé en partie de Morinus : Copyright (C) 2008-2012 Robert Nagy '
+	u'(robert.pluto@gmail.com), avec des contributions ultérieures de Roberto '
+	u'Luporini, Elías D. Molins, Shin Ji-Hyeon et James Ren.\n\n'
+	u'Le code original d’Aries est sous licence AGPL-3.0-or-later. Les parties '
+	u'dérivées de Morinus sont sous licence GPL-3.0-or-later. L’article 13 de la '
+	u'GPLv3 et l’article 13 de l’AGPLv3 autorisent cette combinaison : les termes '
+	u'de la GPL continuent de s’appliquer aux parties couvertes par la GPL et '
+	u'l’exigence AGPL de mise à disposition du code source par le réseau '
+	u's’applique à l’œuvre combinée.\n\n'
+	u'Le programme peut être redistribué et modifié selon les licences '
+	u'applicables. Il est fourni SANS AUCUNE GARANTIE. Voir LICENSE, '
+	u'COPYING-GPL-3.0.txt, COPYRIGHT.txt et THIRD_PARTY_NOTICES.txt.'
+)
 
-licensetxtchs = 'Morinus, 占星程序\n\
-Copyright (C) 2008-2012 罗伯特·纳吉 (robert.pluto@gmail.com)\n\
-罗伯特·纳吉编辑版本到 6.2\n\
-\n\
-版本 7.X.X - 2013 - 由罗伯托·卢波里尼编辑\n\
-版本 8.X.X - 2013 - 由埃利亚斯·D·莫林斯编辑\n\
-版本 9.X.X - 2025 - 由申知玹 / James Ren编辑\n\
-版本 10.X.X - 2026 - 由Max Lange编辑\n\n\
-本程序是自由软件:您可以根据自由软件基金会发布的GNU Affero\n\
-通用公共许可证的条款对其进行重新分发和/或修改，可以是许可证\n\
-的第3版，也可以是(根据您的选择)任何更高版本。                  \n\n\
-本程序的分发是希望它将是有用的，但没有任何保证；甚至没有特\n\
-定用途的适销性或适用性的默示保证。有关详细信息，请参阅GNU\n\
-Affero通用公共许可证。                                          \n\
-您应该已收到GNU Affero通用公共许可证的副本以及此程序。如果\n\
-没有,请参阅 https://www.gnu.org/licenses/agpl-3.0.html。       '
 
-licensetxtcht = 'Morinus, 占星程序\n\
-Copyright (C) 2008-2012 羅伯特·納吉 (robert.pluto@gmail.com)\n\
-羅伯特·納吉編輯版本到 6.2\n\
-\n\
-版本 7.X.X - 2013 - 由羅伯托·盧波裡尼編輯\n\
-版本 8.X.X - 2013 - 由埃利亞斯·D·莫林斯編輯\n\
-版本 9.X.X - 2025 - 由申知玹 / James Ren編輯\n\
-版本 10.X.X - 2026 - 由Max Lange編輯\n\n\
-本程序是自由軟件:您可以根據自由軟件基金會發布的GNU Affero\n\
-通用公共許可證的條款對其進行重新分發和/或修改，可以是許可證\n\
-的第3版，也可以是(根據您的選擇)任何更高版本。                  \n\n\
-本程序的分發是希望它將是有用的，但沒有任何保證；甚至沒有特\n\
-定用途的適銷性或適用性的默示保證。有關詳細信息，請參閱GNU\n\
-Affero通用公共許可證。                                          \n\
-您應該已收到GNU Affero通用公共許可證的副本以及此程序。如果\n\
-沒有,請參閱 https://www.gnu.org/licenses/agpl-3.0.html。       '
+licensetxtchs = (
+	u'Aries，占星软件\n'
+	u'Copyright (C) 2026 Max Lange (contact@maxlange.cc)\n'
+	u'部分源自 Morinus：Copyright (C) 2008-2012 Robert Nagy '
+	u'(robert.pluto@gmail.com)；后续贡献者包括 Roberto Luporini、Elías D. '
+	u'Molins、Shin Ji-Hyeon 和 James Ren。\n\n'
+	u'Aries 原创代码采用 AGPL-3.0-or-later 许可证。源自 Morinus 的部分采用 '
+	u'GPL-3.0-or-later 许可证。GPLv3 第 13 条和 AGPLv3 第 13 条允许这种组合：'
+	u'GPL 条款继续适用于受 GPL 保护的部分，AGPL 的网络源代码要求适用于组合后的作品。\n\n'
+	u'您可依据相应许可证重新分发或修改本程序。本程序不提供任何保证。请参阅 '
+	u'LICENSE、COPYING-GPL-3.0.txt、COPYRIGHT.txt 和 '
+	u'THIRD_PARTY_NOTICES.txt。'
+)
 
-licensetxtko = u'모리누스, 점성술 프로그램\n\
-Copyright (C) 2008-2012 로베르트 너지 (robert.pluto@gmail.com)\n\
-6.2 버전까지 편집: 로베르트 너지\n\
-\n\
-버전 7.X.X - 2013 - 편집: 로베르토 루포리니\n\
-버전 8.X.X - 2013 - 편집: 엘리아스 D. 몰린스\n\
-버전 9.X.X - 2025 - 편집: 신지현 / 제임스 런\n\
-버전 10.X.X - 2026 - 편집: 맥스 랑게\n\n\
-이 프로그램은 무료 소프트웨어입니다. 귀하는 이를 재배포하거나 수정할 수 있으며,\n\
-그 경우 무료 소프트웨어 재단(Free Software Foundation)이 공표한 GNU Affero 일반 공중 사용 허가서(AGPL)\n\
-3판 또는 (귀하의 선택에 따라) 그 이후 판의 조항을 따릅니다.\n\n\
-이 프로그램은 유용할 것이라는 희망에서 배포되지만,\n\
-어떠한 보증도 제공하지 않습니다. 상업성 또는 특정 목적에의 적합성에 대한\n\
-묵시적 보증을 포함하여 일체의 보증이 없습니다. 자세한 내용은 GNU Affero 일반 공중 사용 허가서를 참조하십시오.\n\n\
-귀하는 이 프로그램과 함께 GNU Affero 일반 공중 사용 허가서 사본을 받았을 것입니다.\n\
-받지 못하셨다면 https://www.gnu.org/licenses/agpl-3.0.html 를 참조하십시오.'
+
+licensetxtcht = (
+	u'Aries，占星軟體\n'
+	u'Copyright (C) 2026 Max Lange (contact@maxlange.cc)\n'
+	u'部分源自 Morinus：Copyright (C) 2008-2012 Robert Nagy '
+	u'(robert.pluto@gmail.com)；後續貢獻者包括 Roberto Luporini、Elías D. '
+	u'Molins、Shin Ji-Hyeon 和 James Ren。\n\n'
+	u'Aries 原創程式碼採用 AGPL-3.0-or-later 授權。源自 Morinus 的部分採用 '
+	u'GPL-3.0-or-later 授權。GPLv3 第 13 條和 AGPLv3 第 13 條允許這種組合：'
+	u'GPL 條款繼續適用於受 GPL 保護的部分，AGPL 的網路原始碼要求適用於組合後的作品。\n\n'
+	u'您可依據相應授權重新散布或修改本程式。本程式不提供任何保證。請參閱 '
+	u'LICENSE、COPYING-GPL-3.0.txt、COPYRIGHT.txt 和 '
+	u'THIRD_PARTY_NOTICES.txt。'
+)
+
+
+licensetxtko = (
+	u'Aries, 점성술 소프트웨어\n'
+	u'Copyright (C) 2026 Max Lange (contact@maxlange.cc)\n'
+	u'Morinus에서 일부 파생됨: Copyright (C) 2008-2012 Robert Nagy '
+	u'(robert.pluto@gmail.com). 이후 기여자: Roberto Luporini, Elías D. '
+	u'Molins, Shin Ji-Hyeon, James Ren.\n\n'
+	u'Aries의 독자 코드는 AGPL-3.0-or-later로 사용 허가됩니다. Morinus에서 '
+	u'파생된 부분은 GPL-3.0-or-later로 사용 허가됩니다. GPLv3 제13조와 '
+	u'AGPLv3 제13조는 이 결합을 허용합니다. GPL 조건은 GPL 적용 부분에 계속 '
+	u'적용되며, AGPL의 네트워크 소스 코드 제공 요건은 결합 저작물에 적용됩니다.\n\n'
+	u'해당 라이선스에 따라 프로그램을 재배포하거나 수정할 수 있습니다. 이 '
+	u'프로그램에는 어떠한 보증도 없습니다. LICENSE, '
+	u'COPYING-GPL-3.0.txt, COPYRIGHT.txt 및 '
+	u'THIRD_PARTY_NOTICES.txt를 참조하십시오.'
+)
+
+
+licensetxtdeu = (
+	u'Aries, Astrologie-Software\n'
+	u'Copyright (C) 2026 Max Lange (contact@maxlange.cc)\n'
+	u'Teilweise von Morinus abgeleitet: Copyright (C) 2008-2012 Robert Nagy '
+	u'(robert.pluto@gmail.com), mit späteren Beiträgen von Roberto Luporini, '
+	u'Elías D. Molins, Shin Ji-Hyeon und James Ren.\n\n'
+	u'Originärer Aries-Code steht unter AGPL-3.0-or-later. Von Morinus '
+	u'abgeleitete Teile stehen unter GPL-3.0-or-later. GPLv3 Abschnitt 13 und '
+	u'AGPLv3 Abschnitt 13 erlauben diese Verbindung: Die GPL-Bedingungen gelten '
+	u'weiterhin für die GPL-geschützten Teile; die AGPL-Anforderung zur '
+	u'Bereitstellung des Quellcodes über ein Netzwerk gilt für das verbundene Werk.\n\n'
+	u'Das Programm darf nach den jeweils geltenden Lizenzen weitergegeben und '
+	u'verändert werden. Es wird OHNE JEDE GEWÄHRLEISTUNG bereitgestellt. Siehe '
+	u'LICENSE, COPYING-GPL-3.0.txt, COPYRIGHT.txt und '
+	u'THIRD_PARTY_NOTICES.txt.'
+)
 
 
 
@@ -3655,7 +3657,7 @@ langtexts = ('English', 'Magyar (Hungarian)', 'Italiano (Italian)', 'Français (
 # labels and compatibility fallback remains only a final safety net.
 menutxtsdeu = {}
 txtsdeu = {}
-langs = {0:(menutxtseng, txtseng, licensetxteng), 1:(menutxtshun, txtshun, licensetxthun), 2:(menutxtsita, txtsita, licensetxtita), 3:(menutxtsfre, txtsfre, licensetxtfre), 4:(menutxtsrus, txtsrus, licensetxtrus), 5:(menutxtsesp, txtsesp, licensetxtesp), 6:(menutxtschs, txtschs, licensetxtchs), 7:(menutxtscht, txtscht, licensetxtcht), 8:(menutxtsko, txtsko, licensetxtko), 9:(menutxtsdeu, txtsdeu, licensetxteng)}
+langs = {0:(menutxtseng, txtseng, licensetxteng), 1:(menutxtshun, txtshun, licensetxthun), 2:(menutxtsita, txtsita, licensetxtita), 3:(menutxtsfre, txtsfre, licensetxtfre), 4:(menutxtsrus, txtsrus, licensetxtrus), 5:(menutxtsesp, txtsesp, licensetxtesp), 6:(menutxtschs, txtschs, licensetxtchs), 7:(menutxtscht, txtscht, licensetxtcht), 8:(menutxtsko, txtsko, licensetxtko), 9:(menutxtsdeu, txtsdeu, licensetxtdeu)}
 
 def _install_export_texts():
 	for menudict, txtdict, _license in langs.values():
@@ -3756,6 +3758,7 @@ def _install_signal_overlay_texts():
 		'MorningRise': u'Morning rise', 'MorningSet': u'Morning set',
 		'EveningRise': u'Evening rise', 'EveningSet': u'Evening set',
 		'RetroStation': u'Retro station', 'DirectStation': u'Direct station',
+		'LastStation': u'Last station', 'NextStation': u'Next station',
 		'Cazimi': u'Cazimi', 'LordOfYear': u'Lord of the year',
 		'PrenatalSyzygy': u'Prenatal Syzygy',
 		'EclipseSolar': u'Solar', 'EclipseLunar': u'Lunar',
@@ -3764,6 +3767,8 @@ def _install_signal_overlay_texts():
 		'EclipseLabelFormat': u'{kind} {luminary} Eclipse',
 		'PrimaryDirections': u'Primary Directions', 'SecondaryDirections': u'Secondary Directions',
 		'SecondaryProgressions': u'Secondary Progressions', 'Circumambulations': u'Circumambulations',
+		'AnnualCircumambulations': u'Annual Circumambulations',
+		'MonthlyCircumambulations': u'Monthly Circumambulations',
 		# Derived-chart display-title roots served by supplementary/workspace_service
 		# (FEATURE_KIND_DISPLAY_LABELS). Self-keyed English floor; the pipeline fills
 		# translations. Resolved at serve time via mtexts.txts.get(label, label).
@@ -3788,6 +3793,8 @@ def _install_signal_overlay_texts():
 		'EclipseLabelFormat': u'Éclipse {luminary} {kind}',
 		'PrimaryDirections': u'Directions primaires', 'SecondaryDirections': u'Directions secondaires',
 		'SecondaryProgressions': u'Progressions secondaires', 'Circumambulations': u'Circumambulations',
+		'AnnualCircumambulations': u'Circumambulations annuelles',
+		'MonthlyCircumambulations': u'Circumambulations mensuelles',
 	})
 
 	# Superset: apply every language from the pipeline-owned JSON when available.

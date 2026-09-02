@@ -270,6 +270,14 @@ type ListToggleDrawerItem = {
   marker?: string;
 };
 
+type ListToggleDrawerAction = {
+  id: string | number;
+  label: string;
+  icon?: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+};
+
 export function ListToggleDrawer<T extends ListToggleDrawerItem>({
   label,
   items,
@@ -279,6 +287,7 @@ export function ListToggleDrawer<T extends ListToggleDrawerItem>({
   selectAllLabel,
   onDeselectAll,
   onSelectAll,
+  actions = [],
 }: {
   label: string;
   items: readonly T[];
@@ -288,6 +297,7 @@ export function ListToggleDrawer<T extends ListToggleDrawerItem>({
   selectAllLabel?: string;
   onDeselectAll?: () => void;
   onSelectAll?: () => void;
+  actions?: readonly ListToggleDrawerAction[];
 }) {
   const activeCount = items.reduce(
     (count, item) => count + (isActive(item) ? 1 : 0),
@@ -351,6 +361,20 @@ export function ListToggleDrawer<T extends ListToggleDrawerItem>({
             </Button>
           );
         })}
+        {actions.map((action) => (
+          <Button
+            key={action.id}
+            type="button"
+            size="xs"
+            variant="outline"
+            disabled={action.disabled}
+            onClick={action.onClick}
+            className="h-[var(--aries-control-height-compact)] max-w-44 justify-start gap-[var(--aries-control-gap-compact)] px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-small)]"
+          >
+            {action.icon}
+            <span className="truncate">{action.label}</span>
+          </Button>
+        ))}
       </div>
     </div>
   );

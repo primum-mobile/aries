@@ -4,6 +4,7 @@
     "src/lib/chart/astrocart-style.ts",
     "src/lib/chart/astrolabe-render-style.ts",
     "src/lib/chart/ephemeris-render-style.ts",
+    "src/lib/chart/multiwheel-render-style.ts",
     "src/lib/chart/mundane-render-style.ts",
     "src/lib/chart/sphere-render-style.ts",
     "src/lib/chart/square-render-style.ts",
@@ -352,6 +353,7 @@
     {
       "match": [
         "--aries-astrolabe-almucantar",
+        "--aries-astrolabe-atmospheric-fill-opacity",
         "--aries-astrolabe-azimuth",
         "--aries-astrolabe-background",
         "--aries-astrolabe-band-width-scale",
@@ -5460,6 +5462,28 @@
         "Review Astrolabe foreground/background contrast after changing this role."
       ]
     },
+    "--aries-astrolabe-atmospheric-fill-opacity": {
+      "semanticId": "renderer.astrolabe.metric.atmosphericFillOpacity",
+      "label": "Astrolabe atmospheric fill opacity",
+      "description": "Astrolabe atmospheric fill opacity design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.atmosphericFillOpacity; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      }
+    },
     "--aries-astrolabe-azimuth": {
       "semanticId": "renderer.astrolabe.color.azimuth",
       "label": "Astrolabe azimuth",
@@ -5511,7 +5535,7 @@
         "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
       ],
       "bounds": {
-        "min": 0.0375,
+        "min": 0.03,
         "max": 1,
         "step": 0.01
       }
@@ -5533,7 +5557,7 @@
         "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
       ],
       "bounds": {
-        "min": 0.005,
+        "min": 0.0045,
         "max": 1,
         "step": 0.01
       }
@@ -5573,7 +5597,7 @@
       ],
       "bounds": {
         "min": 0.25,
-        "max": 12,
+        "max": 8,
         "step": 0.25
       }
     },
@@ -5655,8 +5679,8 @@
         "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
       ],
       "bounds": {
-        "min": 11,
-        "max": 44,
+        "min": 12,
+        "max": 48,
         "step": 1
       }
     },
@@ -5677,7 +5701,7 @@
         "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
       ],
       "bounds": {
-        "min": 0.015,
+        "min": 0.01,
         "max": 1,
         "step": 0.01
       }
@@ -5866,7 +5890,7 @@
       ],
       "bounds": {
         "min": 0.25,
-        "max": 16,
+        "max": 12,
         "step": 0.25
       }
     },
@@ -5888,7 +5912,7 @@
       ],
       "bounds": {
         "min": 0.25,
-        "max": 20,
+        "max": 8,
         "step": 0.25
       }
     },
@@ -5926,8 +5950,8 @@
         "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
       ],
       "bounds": {
-        "min": 180,
-        "max": 720,
+        "min": 480,
+        "max": 1920,
         "step": 1
       }
     },
@@ -6126,8 +6150,8 @@
         "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
       ],
       "bounds": {
-        "min": 110,
-        "max": 440,
+        "min": 360,
+        "max": 1440,
         "step": 1
       }
     },
@@ -6170,8 +6194,8 @@
         "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
       ],
       "bounds": {
-        "min": 140,
-        "max": 560,
+        "min": 360,
+        "max": 1440,
         "step": 1
       }
     },
@@ -6341,8 +6365,8 @@
         "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
       ],
       "bounds": {
-        "min": 8,
-        "max": 32,
+        "min": 9,
+        "max": 36,
         "step": 1
       }
     },
@@ -6403,7 +6427,7 @@
       ],
       "bounds": {
         "min": 0.25,
-        "max": 16,
+        "max": 8,
         "step": 0.25
       }
     },
@@ -6424,8 +6448,8 @@
         "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
       ],
       "bounds": {
-        "min": 11,
-        "max": 44,
+        "min": 12,
+        "max": 48,
         "step": 1
       }
     },
@@ -6468,8 +6492,8 @@
         "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
       ],
       "bounds": {
-        "min": 80,
-        "max": 320,
+        "min": 95,
+        "max": 380,
         "step": 1
       }
     },
@@ -6529,8 +6553,8 @@
         "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
       ],
       "bounds": {
-        "min": 160,
-        "max": 640,
+        "min": 180,
+        "max": 720,
         "step": 1
       }
     },
@@ -6612,7 +6636,7 @@
         "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
       ],
       "bounds": {
-        "min": 0.0025,
+        "min": 0.002,
         "max": 1,
         "step": 0.01
       }
@@ -6652,7 +6676,7 @@
       ],
       "bounds": {
         "min": 0.25,
-        "max": 16,
+        "max": 12,
         "step": 0.25
       }
     },
@@ -6674,7 +6698,7 @@
       ],
       "bounds": {
         "min": 0.25,
-        "max": 16,
+        "max": 8,
         "step": 0.25
       }
     },

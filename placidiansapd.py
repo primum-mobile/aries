@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 import math
 import astrology
 import primdirs
@@ -2629,7 +2634,17 @@ class PlacidianSAPD(placidiancommonpd.PlacidianCommonPD):
 							break
 
 			if ok:
-				self.create(mundane, idprom, idprom2, sig, promasp, sigasp, arc)
+				self.create(
+					mundane,
+					idprom,
+					idprom2,
+					sig,
+					promasp,
+					sigasp,
+					arc,
+					promasp_offset=(0.0 if paspect == chart.Chart.NONE else paspect),
+					sigasp_offset=aspect,
+				)
 
 
 	def toLoF(self, idprom, idprom2, raprom, adprom, promasp, aspect = 0.0, calcsecmotion = False):
@@ -2649,7 +2664,16 @@ class PlacidianSAPD(placidiancommonpd.PlacidianCommonPD):
 					break
 
 		if ok:
-			self.create(False, idprom, idprom2, primdirs.PrimDir.LOF, promasp, chart.Chart.CONJUNCTIO, arc)
+			self.create(
+				False,
+				idprom,
+				idprom2,
+				primdirs.PrimDir.LOF,
+				promasp,
+				chart.Chart.CONJUNCTIO,
+				arc,
+				promasp_offset=aspect,
+			)
 
 
 	def toCustomer2(self, mundane, idprom, idprom2, raprom, adprom, promasp, aspect = 0.0, calcsecmotion = False):
@@ -2687,7 +2711,16 @@ class PlacidianSAPD(placidiancommonpd.PlacidianCommonPD):
 					break
 
 		if ok:
-			self.create(mundane, idprom, idprom2, primdirs.PrimDir.CUSTOMERPD, promasp, chart.Chart.CONJUNCTIO, arc)
+			self.create(
+				mundane,
+				idprom,
+				idprom2,
+				primdirs.PrimDir.CUSTOMERPD,
+				promasp,
+				chart.Chart.CONJUNCTIO,
+				arc,
+				promasp_offset=aspect,
+			)
 
 
 	def toSyzygy(self, idprom, idprom2, raprom, adprom, promasp, aspect = 0.0, calcsecmotion = False):
@@ -2707,7 +2740,16 @@ class PlacidianSAPD(placidiancommonpd.PlacidianCommonPD):
 					break
 
 		if ok:
-			self.create(False, idprom, idprom2, primdirs.PrimDir.SYZ, promasp, chart.Chart.CONJUNCTIO, arc)
+			self.create(
+				False,
+				idprom,
+				idprom2,
+				primdirs.PrimDir.SYZ,
+				promasp,
+				chart.Chart.CONJUNCTIO,
+				arc,
+				promasp_offset=aspect,
+			)
 
 
 	def toMundaneLoF(self, idprom, idprom2, raprom, adprom, calcsecmotion=True):

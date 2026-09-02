@@ -21,6 +21,7 @@ export const FALLBACK_WORKSPACE_MANIFEST = {
         { id: "tertiary-progression", label: "Tertiary Progression", enabled: true },
         { id: "minor-progression", label: "Minor Progression", enabled: true },
         { id: "profections", label: "Profections", enabled: true, shortcut: "P" },
+        { id: "harmonic", label: "Harmonic chart", enabled: true },
         { id: "solar-revolution", label: "Solar Revolution", enabled: true, shortcut: "R" },
         { id: "lunar-revolution", label: "Lunar Revolution", enabled: true, shortcut: "L" },
         { id: "transits", label: "Transits", enabled: true, shortcut: "T" },
@@ -85,6 +86,7 @@ export const FALLBACK_WORKSPACE_MANIFEST = {
       label: "Time Lords",
       collapsed: false,
       actions: [
+        { id: "table:vimshottari", label: "Vimshottari Dasha", enabled: true },
         { id: "directions:circumambulation", label: "Circumambulations", enabled: true, shortcut: "C" },
         { id: "table:zodiacal_releasing", label: "Zodiacal Releasing", enabled: true, shortcut: "Z" },
         { id: "table:decennials", label: "Decennials", enabled: true, shortcut: "Ctrl+7" },
@@ -117,6 +119,7 @@ export const FALLBACK_WORKSPACE_MANIFEST = {
     { keys: "⌘ S", label: "Save Horoscope", group: "WORKSPACE", labelKey: "home.save", bound: true },
     { keys: "⌘ ⇧ S", label: "Save As...", group: "WORKSPACE", labelKey: "nativeMenu.saveAs", bound: true },
     { keys: "⌘ ⇧ A", label: "Appearance", group: "WORKSPACE", labelKey: "appearance.title", bound: true },
+    { keys: "⌘ ⇧ E", label: "Chart Style Lab", group: "WORKSPACE", labelKey: "styleLab.title", commandId: "open-style-lab", bound: true },
     { keys: "⌘ G", label: "Cycle secondary view", group: "WORKSPACE", labelKey: "nativeMenu.cycleSecondaryView", bound: true },
     { keys: "⌘ B", label: "Toggle sidebar", group: "WORKSPACE", labelKey: "toolbar.toggleSidebar", bound: true },
     { keys: "T", label: "Transits", group: "CHART MODES", commandId: "transits", bound: true },

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Max Lange
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Canonical dynamic (cyclocartography) layers for Astrocart.
 
 The moving set in this module is intentionally independent from the natal

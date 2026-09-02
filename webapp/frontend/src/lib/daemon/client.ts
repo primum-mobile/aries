@@ -1,7 +1,13 @@
+// SPDX-FileCopyrightText: Morinus contributors
+// SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Modified for Aries in 2026 by Max Lange.
+
 import type {
   ChartRenderSnapshot,
   OuterRingMode,
   OverlayRenderMode,
+  PdDirectionState,
   RenderVariant,
   SymbolicTimeReadout,
 } from "@/lib/chart/types";
@@ -341,6 +347,270 @@ export class DocumentSnapshotError extends Error {
   }
 }
 
+export type TemporalMapCalendar = "gregorian" | "julian";
+
+export type TemporalMapInstant = {
+  jdUt: number;
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+  civilDate: string;
+  civilDatetime: string;
+  /** Gregorian-safe month/range loader anchor; `jdUt` remains authoritative. */
+  canonicalQueryDatetime: string;
+  dateLabel: string;
+  datetimeLabel: string;
+  ageYears: number;
+  ageYearsInt: number;
+  ageLabel: string;
+};
+
+export type TemporalMapContext = {
+  documentId: string;
+  birthJdUt: number;
+  lifeEndJdUt: number;
+  focusJdUt: number;
+  lifeYears: number;
+  tropicalYearDays: number;
+  calendar: TemporalMapCalendar;
+  timeBasis: "ut";
+  birth: TemporalMapInstant;
+  focus: TemporalMapInstant;
+  lifeEnd: TemporalMapInstant;
+};
+
+export type TemporalMapFormatResult = {
+  documentId: string;
+  birthJdUt: number;
+  calendar: TemporalMapCalendar;
+  timeBasis: "ut";
+  instants: TemporalMapInstant[];
+};
+
+export async function fetchTemporalMapContext(
+  documentId: string,
+  signal?: AbortSignal,
+): Promise<TemporalMapContext> {
+  const response = await daemonFetch(
+    `${daemonBaseUrl()}/api/workspace/document/${encodeURIComponent(documentId)}/temporal-map/context`,
+    { cache: "no-store", signal },
+  );
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`temporal map context failed: ${response.status} ${detail}`);
+  }
+  return (await response.json()) as TemporalMapContext;
+}
+
+export async function formatTemporalMapJds(
+  documentId: string,
+  jds: number[],
+  signal?: AbortSignal,
+): Promise<TemporalMapFormatResult> {
+  return workspacePost<TemporalMapFormatResult>(
+    `/api/workspace/document/${encodeURIComponent(documentId)}/temporal-map/format`,
+    { jds },
+    signal,
+  );
+}
+
+export type TemporalMapLaneSpec = {
+  laneId: string;
+  sourceId: string;
+  spec?: Record<string, unknown>;
+};
+
+export type TemporalMapCoverageSpan = {
+  startJdUt: number;
+  endJdUt: number;
+};
+
+export type TemporalMapCoverageSet = {
+  spans: TemporalMapCoverageSpan[];
+  complete: boolean;
+  authoritative: boolean;
+};
+
+export type TemporalMapLaneSnapshot = {
+  laneId: string;
+  sourceId: string;
+  status: "unknown" | "queued" | "building" | "partial" | "ready" | "unsupported" | "error";
+  complete: boolean;
+  evidenceCount: number;
+  truncated: boolean;
+  error: string | null;
+  unsupportedReason: string | null;
+  evidenceCoverage: TemporalMapCoverageSet;
+  concurrenceCoverage: TemporalMapCoverageSet;
+  provisionalCoverage: TemporalMapCoverageSet;
+};
+
+export type TemporalMapSnapshot = {
+  token: string;
+  worldToken: string;
+  generation: number;
+  revision: number;
+  documentId: string;
+  minimumLanes: number;
+  horizon: {
+    startJdUt: number;
+    endJdUt: number;
+    lifeYears: number;
+    timeBasis: "ut";
+  };
+  focusJdUt: number;
+  calendar: TemporalMapCalendar;
+  levels: Array<{ level: number; binDays: number }>;
+  lanes: TemporalMapLaneSnapshot[];
+  build: {
+    running: boolean;
+    pendingTasks: number;
+    settled: boolean;
+    cancelled: boolean;
+  };
+  complete: boolean;
+  cancelled: boolean;
+};
+
+export type TemporalMapTileLane = {
+  laneId: string;
+  bins: Array<{
+    index: number;
+    count: number;
+    planetIds: number[];
+  }>;
+};
+
+export type TemporalMapTilePlanetSummary = {
+  planetId: number;
+  laneMask: number;
+  groupCount: number;
+  maxLaneCount: number;
+};
+
+export type TemporalMapTileBin = {
+  index: number;
+  startJdUt: number;
+  endJdUt: number;
+  groupCount: number;
+  maxLaneCount: number;
+  /** Aggregate union for compatibility; it is not one mixed-planet concurrence. */
+  laneMask: number;
+  planetIds: number[];
+  planetSummaries: TemporalMapTilePlanetSummary[];
+};
+
+export type TemporalMapTilesResult = {
+  token: string;
+  generation: number;
+  revision: number;
+  startJdUt: number;
+  endJdUt: number;
+  level: number;
+  binCount: number;
+  binDays: number;
+  lanes: TemporalMapTileLane[];
+  bins: TemporalMapTileBin[];
+  coverage: TemporalMapLaneSnapshot[];
+  complete: boolean;
+};
+
+export type TemporalMapGroupsResult = {
+  token: string;
+  generation: number;
+  revision: number;
+  startJdUt: number;
+  endJdUt: number;
+  minimumLanes: number;
+  groups: TemporalConcurrenceGroup[];
+  total: number;
+  offset: number;
+  nextOffset: number | null;
+  coverage: TemporalMapLaneSnapshot[];
+  complete: boolean;
+};
+
+export type TemporalMapOpenResult = TemporalMapSnapshot & {
+  groups: TemporalConcurrenceGroup[];
+  initialTiles: {
+    startJdUt: number;
+    endJdUt: number;
+    binCount: number;
+    bins: TemporalMapTileBin[];
+    complete: boolean;
+  };
+};
+
+export async function openTemporalMap(
+  payload: {
+    documentId: string;
+    lanes: TemporalMapLaneSpec[];
+    minimumLanes?: number;
+    viewportStartJdUt?: number;
+    viewportEndJdUt?: number;
+  },
+  signal?: AbortSignal,
+): Promise<TemporalMapOpenResult> {
+  return workspacePost<TemporalMapOpenResult>("/api/temporal-map/open", payload, signal);
+}
+
+export async function fetchTemporalMapTiles(
+  payload: {
+    token: string;
+    startJdUt: number;
+    endJdUt: number;
+    binCount?: number;
+    level?: number;
+  },
+  signal?: AbortSignal,
+): Promise<TemporalMapTilesResult> {
+  return workspacePost<TemporalMapTilesResult>("/api/temporal-map/tiles", payload, signal);
+}
+
+export async function fetchTemporalMapGroups(
+  payload: {
+    token: string;
+    startJdUt: number;
+    endJdUt: number;
+    minimumLanes?: number;
+    offset?: number;
+    limit?: number;
+  },
+  signal?: AbortSignal,
+): Promise<TemporalMapGroupsResult> {
+  return workspacePost<TemporalMapGroupsResult>("/api/temporal-map/groups", payload, signal);
+}
+
+export async function fetchTemporalMapProgress(
+  token: string,
+  signal?: AbortSignal,
+): Promise<TemporalMapSnapshot> {
+  const search = new URLSearchParams({ token });
+  const response = await daemonFetch(
+    `${daemonBaseUrl()}/api/temporal-map/progress?${search.toString()}`,
+    { cache: "no-store", signal },
+  );
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`temporal map progress failed: ${response.status} ${detail}`);
+  }
+  return (await response.json()) as TemporalMapSnapshot;
+}
+
+export async function cancelTemporalMap(
+  token: string,
+  signal?: AbortSignal,
+): Promise<{ token?: string; cancelled: boolean }> {
+  return workspacePost<{ token?: string; cancelled: boolean }>(
+    "/api/temporal-map/cancel",
+    { token },
+    signal,
+  );
+}
+
 export function isUnknownDocumentSnapshotError(error: unknown): error is DocumentSnapshotError {
   return error instanceof DocumentSnapshotError && error.status === 404;
 }
@@ -396,6 +666,20 @@ export type InspectorDignityItem =
       colour?: RGB | null;
       colour_role?: string | null;
       bold?: boolean;
+    }
+  | {
+      kind: "triplicity_lords";
+      label: string;
+      flag_label?: string;
+      value_text?: string;
+      lords: Array<{
+        planet_id: number;
+        glyph: string;
+        name: string;
+        colour?: RGB | null;
+        colour_role?: string | null;
+        current?: boolean;
+      }>;
     }
   | {
       kind: "mutual_reception";
@@ -461,6 +745,7 @@ export type InspectorPayload = {
   dignity_rows?: string[];
   dignity_items?: InspectorDignityItem[];
   detail_rows?: string[];
+  station_rows?: string[];
   aspect_rows?: string[];
   aspect_items?: InspectorAspectItem[];
   manzil?: InspectorManzil | null;
@@ -469,16 +754,21 @@ export type InspectorPayload = {
   deferred_slots?: string[];
   rows?: string[];
   footer?: string;
+  /** Daemon-owned primary-direction event state for kind=pd_event. */
+  directionEvent?: PdDirectionState | null;
 };
 
 export type InspectorRegionQuery = {
-  kind: string; // planet|vertex|fortune|angle|house|sign|secondary_ring|aspect
+  kind: string; // planet|vertex|fortune|syzygy|eclipse|angle|house|sign|secondary_ring|aspect|drishti|pd_event
   // planet SE id | "vertex" | angle key | house/sign index |
-  // secondary_ring "family|longitude|label" | aspect "p1:p2:type"
+  // secondary_ring "family|longitude|label" | aspect "p1:p2:type" |
+  // dṛṣṭi relation id | selected primary-direction event id
   objectId: string;
   // 'outer' for a biwheel/synastry/transit outer-ring body → resolved against
   // the comparison chart (graphchart region.chart_role, graphchart.py:2151).
   chartRole?: "primary" | "outer";
+  /** Zero-based chart index for a multi-wheel body. */
+  ringIndex?: number;
   // Live session document id. When set, the daemon resolves the chart from
   // session truth (the live, possibly unsaved/derived chart the wheel is
   // drawing) instead of reloading by name+source — the only path that works for
@@ -502,6 +792,7 @@ export async function fetchInspectorPayload(
   if (query.docId) search.set("docId", query.docId);
   if (query.hereNow) search.set("hereNow", "true");
   if (query.chartRole) search.set("chartRole", query.chartRole);
+  if (query.ringIndex != null) search.set("ringIndex", String(query.ringIndex));
   if (query.supplementaryKind) search.set("supplementaryKind", query.supplementaryKind);
   if (query.comparisonName) search.set("comparisonName", query.comparisonName);
   if (query.viewMode != null) search.set("viewMode", String(query.viewMode));
@@ -557,7 +848,11 @@ export type InspectorFlagPayload = {
   accent: RGB | null;
   accentRole?: string | null;
   rows: InspectorFlagRow[];
+  nextStationRow?: InspectorFlagRow | null;
+  deferredSlots?: string[];
   compact?: boolean; // aspect flags set this (smaller card, accent border)
+  /** Daemon-owned primary-direction event state for kind=pd_event. */
+  directionEvent?: PdDirectionState | null;
 };
 
 export async function fetchInspectorFlagPayload(
@@ -568,11 +863,13 @@ export async function fetchInspectorFlagPayload(
   if (query.docId) search.set("docId", query.docId);
   if (query.hereNow) search.set("hereNow", "true");
   if (query.chartRole) search.set("chartRole", query.chartRole);
+  if (query.ringIndex != null) search.set("ringIndex", String(query.ringIndex));
   if (query.supplementaryKind) search.set("supplementaryKind", query.supplementaryKind);
   if (query.comparisonName) search.set("comparisonName", query.comparisonName);
   if (query.viewMode != null) search.set("viewMode", String(query.viewMode));
   if (query.when) search.set("when", query.when);
   if (query.binding) search.set("binding", JSON.stringify(query.binding));
+  if (query.deferSignals) search.set("deferSignals", "true");
   const response = await daemonFetch(`${daemonBaseUrl()}/api/inspector/flag?${search.toString()}`, {
     cache: "no-store",
     signal,
@@ -638,12 +935,136 @@ export type InspectorPassageRun = {
   text: string;
 };
 
-/** GET /api/inspector/passages payload. `section` is the fixed Valens
- * planet/sign definition used by the wx inspector; null for unsupported
- * bodies/regions. The old broad card list is intentionally not exposed. */
+/** GET /api/inspector/passages payload. `packId` is null when passive source
+ * content is disabled; `section` is null when the active pack has no passage
+ * for this target. */
 export type InspectorPassagesPayload = {
   region: { kind: string; object_id: string | number | null };
+  packId: string | null;
   section: InspectorPassageSection | null;
+};
+
+export type LillyRecoveryPlace = {
+  role?: string;
+  pid?: number;
+  name?: string;
+  longitude: number;
+  sign: number;
+  modality: "movable" | "fixed" | "common" | "unresolved";
+  house: number | null;
+  house_class: "angular" | "succedent" | "cadent" | "unresolved";
+  speed?: number | null;
+  projection_method?: string;
+};
+
+export type LillyRecoveryTimingSource = {
+  rule_id?: string;
+  pack?: string | null;
+  cite?: string;
+  grade?: "recovery" | "hope" | string;
+  mode?: "body_pair" | "fixed_point" | "translation_final_leg" | string;
+};
+
+export type LillyRecoveryTimingUnit =
+  | "hours" | "days" | "weeks" | "months" | "years";
+
+export type LillyRecoveryTimingPlaceBasis =
+  | "both_candidates" | "current_place" | "perfection_place";
+
+export type LillyRecoveryTimingWitness = {
+  schema: "lilly.recovery-perfection.v2" | string;
+  status: "timed";
+  grade: "recovery" | "hope" | string;
+  event_kind: string;
+  exact_jd: number;
+  days: number;
+  arc: number;
+  angle: number;
+  actor_pid: number | null;
+  target_pid: number | null;
+  party_pids: number[];
+  applicator_pids: number[];
+  actor_basis: string;
+  boundary: string;
+  method: string;
+  participants: Array<{
+    pid: number;
+    name: string;
+    role: string;
+    is_applicator: boolean;
+    closing_contribution: number;
+    current: LillyRecoveryPlace;
+    perfection: LillyRecoveryPlace;
+    motion: Record<string, unknown>;
+  }>;
+  endpoint: (LillyRecoveryPlace & {
+    kind: string;
+    label?: string | null;
+    fixed: true;
+  }) | null;
+  current_places: Record<string, LillyRecoveryPlace>;
+  perfection_places: Record<string, LillyRecoveryPlace>;
+  house_frame: string;
+  unit_candidates: LillyRecoveryTimingUnit[];
+  all_unit_candidates: LillyRecoveryTimingUnit[];
+  unit_candidates_by_basis: Record<string, unknown>;
+  unit_candidates_by_place_basis: Record<
+    LillyRecoveryTimingPlaceBasis,
+    LillyRecoveryTimingUnit[]
+  >;
+  modifiers: string[];
+  symbolic: {
+    arc_degrees: number;
+    unit_candidates: LillyRecoveryTimingUnit[];
+    all_unit_candidates: LillyRecoveryTimingUnit[];
+    unit_candidates_by_basis: Record<string, unknown>;
+    unit_candidates_by_place_basis: Record<
+      LillyRecoveryTimingPlaceBasis,
+      LillyRecoveryTimingUnit[]
+    >;
+    modifiers: string[];
+    place_basis: LillyRecoveryTimingPlaceBasis;
+    requested_place_basis: string;
+    place_basis_origin: "default" | "saved_context" | "invalid_context_fallback";
+    requested_unit: "unselected" | LillyRecoveryTimingUnit | string;
+    unit_origin: "default" | "saved_context" | "invalid_context_fallback";
+    selection: "selected" | "unselected";
+    selection_reason:
+      | "unit_not_selected"
+      | "invalid_requested_unit"
+      | "requested_unit_not_supported_by_selected_place_basis"
+      | "selected_from_source_candidates"
+      | string;
+    selected_unit: LillyRecoveryTimingUnit | null;
+    amount: number | null;
+  };
+  provenance: {
+    doctrine: string;
+    bound_event: "current_exact" | "future_perfection" | string;
+    sources?: LillyRecoveryTimingSource[];
+  };
+  source_rule_ids?: string[];
+};
+
+export type LillyRecoveryTimingAggregate = {
+  schema: "lilly.recovery-aggregate.v2" | string;
+  state: "none" | "all_witnesses" | "unique" | "co_earliest";
+  strongest_grade: "recovery" | "hope" | string | null;
+  earliest_physical_exact_jd: number | null;
+  selected_exact_jd: number | null;
+  selected_witnesses: LillyRecoveryTimingWitness[];
+  alternates: LillyRecoveryTimingWitness[];
+  witnesses: LillyRecoveryTimingWitness[];
+  selection_policy:
+    | "all_witnesses"
+    | "earliest_physical"
+    | "recovery_before_hope_then_earliest"
+    | string;
+  requested_selection_policy: string;
+  selection_policy_origin:
+    | "default" | "saved_context" | "invalid_context_fallback"
+    | "legacy_api_alias";
+  selection_authority: "source_neutral" | "editorial";
 };
 
 /** One pack alert — rule_engine.Alert flattened (inspector_zone_b_service.py:83-92).
@@ -653,9 +1074,22 @@ export type InspectorAlert = {
   status: "good" | "caution" | "avoid" | string | null;
   glyph: string; // Morinus glyph char (or "")
   title: string;
+  /** Stable localization key; `title` remains the authored fallback. */
+  titleKey?: string | null;
   body: string;
+  /** Stable localization key; `body` remains the authored fallback. */
+  bodyKey?: string | null;
   cite: string;
   pack: string | null;
+  /** Verdict, non-voting condition/finding, source note, or another authored record kind. */
+  kind: string;
+  ruleId: string | null;
+  /** Compact recomputable proof token supplied by the semantic engine. */
+  evidence: string;
+  /** Computed method/timing explanation kept separate from source-facing prose. */
+  technicalDetails?: string;
+  /** Physical perfection clocks supplied by this exact authored rule. */
+  timingWitnesses: LillyRecoveryTimingWitness[];
 };
 
 /** GET /api/inspector/alerts payload (inspector_zone_b_service.py:214-219).
@@ -665,6 +1099,8 @@ export type InspectorAlertsPayload = {
   discipline: string | null;
   theme: string | null;
   context: Record<string, unknown> | null;
+  /** Deduplicated physical clocks plus the bounded saved symbolic reading. */
+  recoveryTiming: LillyRecoveryTimingAggregate | null;
   /** Packs shipping rules for the discipline — the wx pack-tag gate shows a
    * card's pack id only when this is > 1 (workspace_shell.py:2660-2669). */
   packCount?: number;
@@ -676,7 +1112,7 @@ export type InspectorPassagesQuery = InspectorRegionQuery & {
   maxResults?: number;
 };
 
-/** Fetch the Valens passages for a hovered region (Zone B B1/B2). */
+/** Fetch passive corpus-pack content for a hovered region (Zone B B1/B2). */
 export async function fetchPassages(
   query: InspectorPassagesQuery,
   signal?: AbortSignal,
@@ -685,6 +1121,7 @@ export async function fetchPassages(
   if (query.docId) search.set("docId", query.docId);
   if (query.hereNow) search.set("hereNow", "true");
   if (query.chartRole) search.set("chartRole", query.chartRole);
+  if (query.ringIndex != null) search.set("ringIndex", String(query.ringIndex));
   if (query.supplementaryKind) search.set("supplementaryKind", query.supplementaryKind);
   if (query.comparisonName) search.set("comparisonName", query.comparisonName);
   if (query.viewMode != null) search.set("viewMode", String(query.viewMode));
@@ -753,13 +1190,23 @@ export async function fetchAlerts(
 }
 
 /** One theme of an interpretation discipline (GET /api/corpus/disciplines).
- * `defaultContext` is horary's per-question default significator houses
- * (horary_rules.DEFAULT_SIGNIFICATORS) — forwarded into the lens verbatim,
- * never computed client-side (morin.py:9034). */
+ * `defaultContext` contains chart/question facts only and is forwarded into
+ * the lens verbatim. Scoped global-doctrine fields remain in `contextOptions`
+ * solely so Settings can show the choices relevant to this theme; their values
+ * live in the daemon doctrine store and never enter the lens context. */
 export type CorpusDisciplineTheme = {
   label: string;
+  aliases: string[];
   tooltip: string;
   defaultContext: Record<string, unknown> | null;
+  contextOptions: Array<{
+    key: string;
+    contextKey: string;
+    scope: "global_doctrine" | "question_fact";
+    preferenceKey?: string;
+    labelKey: string;
+    options: Array<{ value: string; labelKey: string }>;
+  }>;
 };
 
 /** One registered interpretation discipline (rule_engine.registered_disciplines). */
@@ -824,6 +1271,132 @@ export type CorpusPacksPayload = {
   packs: CorpusPack[];
   active_pack_ids: string[] | null;
 };
+
+export type CorpusSemanticProfileSemantics = Partial<{
+  house_frame: string;
+  aspect_frame: string;
+  point_frame: string;
+  orb_policy: string;
+  point_orb_policy: string;
+  dignity_frame: string;
+  solar_condition_profile: string;
+}>;
+
+export type CorpusSemanticProfile = {
+  id: string;
+  name: string | null;
+  custom: boolean;
+  active: boolean;
+  semantics: CorpusSemanticProfileSemantics;
+};
+
+export type CorpusDoctrineOptionDefinition = {
+  key: string;
+  contextKey: string;
+  labelKey: string;
+  options: Array<{ value: string; labelKey: string }>;
+  occurrences: Array<{
+    discipline: string;
+    theme: string;
+    contextKey: string;
+    defaultValue?: unknown;
+  }>;
+  value?: string | null;
+};
+
+export type CorpusDoctrinePreferences = {
+  preferences: Record<string, string>;
+  options: CorpusDoctrineOptionDefinition[];
+};
+
+export type CorpusSemanticProfilesPayload = {
+  profiles: CorpusSemanticProfile[];
+  active_profile_id: string;
+  doctrine: CorpusDoctrinePreferences;
+};
+
+export async function fetchCorpusSemanticProfiles(
+  signal?: AbortSignal,
+): Promise<CorpusSemanticProfilesPayload> {
+  const response = await daemonFetch(`${daemonBaseUrl()}/api/corpus/semantics`, {
+    cache: "no-store",
+    signal,
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`corpus semantics request failed: ${response.status} ${detail}`);
+  }
+  return (await response.json()) as CorpusSemanticProfilesPayload;
+}
+
+export async function setCorpusSemanticProfile(
+  profileId: string,
+): Promise<CorpusSemanticProfilesPayload> {
+  const response = await daemonFetch(`${daemonBaseUrl()}/api/corpus/semantics/active`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ profile_id: profileId }),
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`corpus semantics update failed: ${response.status} ${detail}`);
+  }
+  return (await response.json()) as CorpusSemanticProfilesPayload;
+}
+
+/** Persist global corpus doctrine overrides. A null value clears the override
+ * and restores each source/theme's authored default for that doctrine key. */
+export async function patchCorpusDoctrinePreferences(
+  preferences: Record<string, string | null>,
+): Promise<CorpusSemanticProfilesPayload> {
+  const response = await daemonFetch(`${daemonBaseUrl()}/api/corpus/semantics/doctrine`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ preferences }),
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`corpus doctrine update failed: ${response.status} ${detail}`);
+  }
+  return (await response.json()) as CorpusSemanticProfilesPayload;
+}
+
+export async function upsertCustomCorpusSemanticProfile(definition: {
+  profileId: string;
+  name?: string | null;
+  semantics: CorpusSemanticProfileSemantics;
+  activate?: boolean;
+}): Promise<CorpusSemanticProfilesPayload> {
+  const response = await daemonFetch(`${daemonBaseUrl()}/api/corpus/semantics/custom`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      profile_id: definition.profileId,
+      name: definition.name ?? null,
+      semantics: definition.semantics,
+      activate: definition.activate ?? false,
+    }),
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`custom corpus semantics update failed: ${response.status} ${detail}`);
+  }
+  return (await response.json()) as CorpusSemanticProfilesPayload;
+}
+
+export async function deleteCustomCorpusSemanticProfile(
+  profileId: string,
+): Promise<CorpusSemanticProfilesPayload> {
+  const response = await daemonFetch(
+    `${daemonBaseUrl()}/api/corpus/semantics/custom/${encodeURIComponent(profileId)}`,
+    { method: "DELETE" },
+  );
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`custom corpus semantics delete failed: ${response.status} ${detail}`);
+  }
+  return (await response.json()) as CorpusSemanticProfilesPayload;
+}
 
 /** List corpus rule packs (optionally scoped to a discipline, matching the wx
  * toggle strip's packs_for_discipline scope, workspace_shell.py:2472). */
@@ -1469,6 +2042,68 @@ export async function deleteChartPickerRows(
   );
 }
 
+export async function moveChartPickerRows(
+  rows: Pick<ChartPickerRow, "source" | "recordIndex">[],
+  destination: string,
+  signal?: AbortSignal,
+): Promise<{ ok: boolean; moved: number; rows: ChartPickerRow[] }> {
+  return workspacePost<{ ok: boolean; moved: number; rows: ChartPickerRow[] }>(
+    "/api/chart-picker/move",
+    { rows, destination },
+    signal,
+  );
+}
+
+export async function moveChartPickerRowsToNewCollection(
+  rows: Pick<ChartPickerRow, "source" | "recordIndex">[],
+  name: string,
+  signal?: AbortSignal,
+): Promise<{
+  ok: boolean;
+  moved: number;
+  rows: ChartPickerRow[];
+  collection: ChartCollection;
+}> {
+  return workspacePost(
+    "/api/chart-picker/collections/move-to-new",
+    { rows, name },
+    signal,
+  );
+}
+
+export async function createChartPickerCollection(
+  name: string,
+  signal?: AbortSignal,
+): Promise<{
+  ok: boolean;
+  rows: ChartPickerRow[];
+  collection: ChartCollection;
+}> {
+  return workspacePost(
+    "/api/chart-picker/collections/create",
+    { name },
+    signal,
+  );
+}
+
+export async function renameChartPickerCollection(
+  source: string,
+  name: string,
+  signal?: AbortSignal,
+): Promise<{
+  ok: boolean;
+  source: string;
+  destination: string;
+  rows: ChartPickerRow[];
+  collection: ChartCollection;
+}> {
+  return workspacePost(
+    "/api/chart-picker/collections/rename",
+    { source, name },
+    signal,
+  );
+}
+
 export type UploadedImportFile = {
   name: string;
   dataBase64: string;
@@ -1561,17 +2196,48 @@ export type TableExportSummary = {
   bytes: number;
 };
 
-/** Rendered table/list/pane PDF export (wx commonwnd SaveAsBitmap parity). The
- * view forwards the structured table payload it already holds (columns + rows of
- * cell dicts) plus a Tauri-resolved destination path; the daemon renders that
- * exact payload to PDF via the wx-free Platypus helper. */
+export type TablePdfColumn = {
+  /** Stable semantic column identity, used for hierarchy-aware layouts. */
+  id?: string;
+  label: string;
+  align?: string;
+  width?: number;
+  glyph?: boolean;
+  color?: string | null;
+};
+
+export type TablePdfRow = {
+  cells: GenericTableCell[];
+  emphasis?: string;
+  current?: boolean;
+  level?: number;
+  kind?: "body" | "group" | "subordinate" | string;
+};
+
+export type TablePdfSection = {
+  title?: string;
+  columns: TablePdfColumn[];
+  rows: TablePdfRow[];
+};
+
+/** Structured PDF-only representation. Clipboard/TXT never pass through this
+ * renderer; they use the independent plain-text snapshot. */
+export type TablePdfDocument = {
+  profile?: "standard" | "symbolic" | "time-lord" | "directions" | "circumambulation" | "matrix" | "strip" | string;
+  headerLines?: string[];
+  columns?: TablePdfColumn[];
+  rows?: TablePdfRow[];
+  sections?: TablePdfSection[];
+  matrix?: AspectMatrixPayload;
+  strip?: StripPayload;
+};
+
+/** Render the structured table snapshot as a clean, selectable PDF. */
 export async function exportTablePdf(
   params: {
     path: string;
     title: string;
-    columns: { label: string; align?: string; width?: number; glyph?: boolean }[];
-    rows: GenericTableCell[][];
-    headerLines?: string[];
+    document: TablePdfDocument;
   },
   signal?: AbortSignal,
 ): Promise<TableExportSummary> {
@@ -1601,9 +2267,7 @@ export async function exportTablePdfBytes(
   params: {
     filename?: string;
     title: string;
-    columns: { label: string; align?: string; width?: number; glyph?: boolean }[];
-    rows: GenericTableCell[][];
-    headerLines?: string[];
+    document: TablePdfDocument;
   },
   signal?: AbortSignal,
 ): Promise<TableExportBytesSummary> {
@@ -1803,14 +2467,91 @@ export async function listCollections(signal?: AbortSignal): Promise<ChartCollec
 /** Raw engine point/aspect ids for one direction — the PrimDir id namespace
  * (primdirs.py:33-69). 0-11 = planets, 12-15 = ASC/DESC/MC/IC, then HC/LoF/etc.
  * Planet/LoF glyphs are resolved daemon-side from live symbol settings. */
+export type TemporalActivationWindow = {
+  startJdUt: number;
+  endJdUt: number;
+  endExclusive: true;
+};
+
+export type TemporalActivation = {
+  activationId: string;
+  pointId: string;
+  planetId: number | null;
+  role: string;
+  basis: "exact" | "period" | "station-state" | "orb" | string;
+  windows: TemporalActivationWindow[];
+  colorHex?: string;
+  colorRole?: string;
+};
+
+/** Additive evidence carried by a canonical row; never a replacement row. */
+export type TemporalRowMeta = {
+  rowId: string;
+  /** Canonical row instant used to materialize this row when its activation
+   * window (for example an aspect orb) is focused elsewhere in time. */
+  rowAnchorJdUt?: number;
+  activations: TemporalActivation[];
+  relationship?: Record<string, unknown>;
+  unsupportedReason?: string;
+};
+
+export type TemporalConcurrenceParticipant = {
+  laneId: string;
+  sourceId: string;
+  rowId: string;
+  activationId: string;
+  pointId: string;
+  planetId: number;
+  role: string;
+  basis: string;
+  rowAnchorJdUt?: number;
+  rowAnchorDatetime?: string | null;
+};
+
+export type TemporalConcurrenceGroup = {
+  groupId: string;
+  planetId: number;
+  colorHex?: string;
+  colorRole?: string;
+  startJdUt: number;
+  endJdUt: number;
+  focusJdUt: number;
+  focusDatetime: string | null;
+  laneCount: number;
+  participants: TemporalConcurrenceParticipant[];
+};
+
+export type TemporalConcurrenceResult = {
+  groups: TemporalConcurrenceGroup[];
+  minimumLanes: number;
+  laneCount: number;
+};
+
+export async function resolveTemporalConcurrence(
+  lanes: Array<{
+    laneId: string;
+    sourceId: string;
+    rows: TemporalRowMeta[];
+  }>,
+  signal?: AbortSignal,
+): Promise<TemporalConcurrenceResult> {
+  return workspacePost<TemporalConcurrenceResult>(
+    "/api/temporal-concurrence/resolve",
+    { lanes, minimumLanes: 2 },
+    signal,
+  );
+}
+
 export type DirectionRowFields = {
   mundane: boolean;
   direct: boolean;
   prom: number;
   prom2: number;
   promasp: number;
+  promaspOffset?: number;
   sigPoint: number;
   sigasp: number;
+  sigaspOffset?: number;
   parallelaxis: number;
   arc: number;
   jd: number;
@@ -1839,6 +2580,8 @@ export type DirectionRowFields = {
 export type DirectionCellPart = {
   text: string;
   glyph?: boolean;
+  exportText?: string;
+  exportSymbolText?: string;
   color?: string | null;
   colorRole?: string | null;
   marker?: "natal" | string;
@@ -1857,6 +2600,7 @@ export type DirectionRow = {
   age: number | null;
   fields: DirectionRowFields;
   signature: (number | boolean)[];
+  temporal?: TemporalRowMeta;
 };
 
 export type DirectionCustomSignificator = {
@@ -1901,6 +2645,11 @@ export type DirectionsMeta = {
   listGlyphColors?: boolean;
   showNatalPromissors?: boolean;
   customSignificator?: DirectionCustomSignificator | null;
+  temporalCoverage?: {
+    startJdUt: number;
+    endJdUt: number;
+    authoritative: boolean;
+  };
 };
 
 export type DirectionsAgeSeek = "exact" | "next" | "previous";
@@ -1941,6 +2690,7 @@ export async function fetchDirections(
     seek?: DirectionsAgeSeek;
     customSignificator?: DirectionCustomSignificator | null;
     optionsPreview?: OptionsPatch | null;
+    includeTemporal?: boolean;
   } = {},
   signal?: AbortSignal,
 ): Promise<DirectionsPayload> {
@@ -1952,6 +2702,7 @@ export async function fetchDirections(
   if (params.seek) search.set("seek", params.seek);
   if (params.source) search.set("source", params.source);
   if (params.documentId) search.set("documentId", params.documentId);
+  if (params.includeTemporal) search.set("includeTemporal", "true");
   appendCustomSignificatorQuery(search, params.customSignificator);
   appendOptionsPreviewQuery(search, params.optionsPreview);
   const response = await daemonFetch(`${daemonBaseUrl()}/api/directions?${search.toString()}`, {
@@ -1980,6 +2731,7 @@ export async function fetchAnnualDirections(
     documentId?: string;
     customSignificator?: DirectionCustomSignificator | null;
     optionsPreview?: OptionsPatch | null;
+    includeTemporal?: boolean;
   } = {},
   signal?: AbortSignal,
 ): Promise<DirectionsPayload> {
@@ -1991,6 +2743,7 @@ export async function fetchAnnualDirections(
   if (params.direction != null) search.set("direction", String(params.direction));
   if (params.source) search.set("source", params.source);
   if (params.documentId) search.set("documentId", params.documentId);
+  if (params.includeTemporal) search.set("includeTemporal", "true");
   appendCustomSignificatorQuery(search, params.customSignificator);
   appendOptionsPreviewQuery(search, params.optionsPreview);
   const response = await daemonFetch(`${daemonBaseUrl()}/api/directions/annual?${search.toString()}`, {
@@ -2002,50 +2755,6 @@ export async function fetchAnnualDirections(
     throw new Error(`annual directions request failed: ${response.status} ${detail}`);
   }
   return (await response.json()) as DirectionsPayload;
-}
-
-/** Save-As-Text export for the Primary Directions list (radix) and the
- * PD-in-revolution list (annual/SR/LR). GET /api/directions/export-text — the
- * daemon formats the wx file body via the engine's PrimDirs.format2text
- * (primdirslistwnd.onSaveAsText:1573 transcription); never assembled in TS. */
-export async function fetchPrimaryDirectionsText(
-  name: string,
-  params: {
-    mode?: "radix" | "revolution";
-    range?: number;
-    direction?: number;
-    startAge?: number;
-    endAge?: number;
-    year?: number;
-    returnKind?: "solar" | "lunar";
-    referenceDatetime?: string;
-    source?: string;
-    documentId?: string;
-    customSignificator?: DirectionCustomSignificator | null;
-  } = {},
-  signal?: AbortSignal,
-): Promise<{ text: string; filename: string }> {
-  const search = new URLSearchParams({ name });
-  if (params.mode) search.set("mode", params.mode);
-  if (params.range != null) search.set("range", String(params.range));
-  if (params.direction != null) search.set("direction", String(params.direction));
-  if (params.startAge != null) search.set("startAge", String(params.startAge));
-  if (params.endAge != null) search.set("endAge", String(params.endAge));
-  if (params.year != null) search.set("year", String(params.year));
-  if (params.returnKind) search.set("kind", params.returnKind);
-  if (params.referenceDatetime) search.set("referenceDatetime", params.referenceDatetime);
-  if (params.source) search.set("source", params.source);
-  if (params.documentId) search.set("documentId", params.documentId);
-  appendCustomSignificatorQuery(search, params.customSignificator);
-  const response = await daemonFetch(
-    `${daemonBaseUrl()}/api/directions/export-text?${search.toString()}`,
-    { cache: "no-store", signal },
-  );
-  if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    throw new Error(`primary directions export failed: ${response.status} ${detail}`);
-  }
-  return (await response.json()) as { text: string; filename: string };
 }
 
 // ---------------------------------------------------------------------------
@@ -2061,6 +2770,7 @@ export type SecondaryDirectionRow = {
   time: string;
   motionCode?: string | null;
   isStation?: boolean;
+  isIngress?: boolean;
   stationCode?: string | null;
   prom: string;
   sig: string;
@@ -2073,6 +2783,9 @@ export type SecondaryDirectionRow = {
     promGlyph?: string | null;
     sigGlyph?: string | null;
     aspectGlyph?: string | null;
+    promExportSymbolText?: string | null;
+    sigExportSymbolText?: string | null;
+    aspectExportSymbolText?: string | null;
     promColor?: string | null;
     sigColor?: string | null;
     aspectColor?: string | null;
@@ -2082,6 +2795,7 @@ export type SecondaryDirectionRow = {
   };
   eventDatetime: string | null;
   jd: number | null;
+  temporal?: TemporalRowMeta;
 };
 
 export type SecondaryDirectionsPayload = {
@@ -2104,6 +2818,12 @@ export type SecondaryDirectionsPayload = {
     ranges: number[][];
     truncated: boolean;
     columns: string[];
+    filterPlanets?: Array<{ id: number; label: string; glyph?: string | null }>;
+    temporalCoverage?: {
+      startJdUt: number;
+      endJdUt: number;
+      authoritative: boolean;
+    };
   };
   directions: SecondaryDirectionRow[];
 };
@@ -2118,6 +2838,7 @@ export async function fetchSecondaryDirections(
     source?: string;
     documentId?: string;
     referenceDatetime?: string;
+    includeTemporal?: boolean;
   } = {},
   signal?: AbortSignal,
 ): Promise<SecondaryDirectionsPayload> {
@@ -2129,6 +2850,7 @@ export async function fetchSecondaryDirections(
   if (params.source) search.set("source", params.source);
   if (params.documentId) search.set("documentId", params.documentId);
   if (params.referenceDatetime) search.set("referenceDatetime", params.referenceDatetime);
+  if (params.includeTemporal) search.set("includeTemporal", "true");
   const response = await daemonFetch(`${daemonBaseUrl()}/api/directions/secondary?${search.toString()}`, {
     cache: "no-store",
     signal,
@@ -2140,44 +2862,6 @@ export async function fetchSecondaryDirections(
   return (await response.json()) as SecondaryDirectionsPayload;
 }
 
-/** Save-As-Text export for the secondary/minor/tertiary list. GET
- * /api/directions/secondary/export-text — same params (and so the same row
- * window) as fetchSecondaryDirections; the daemon formats the wx file body
- * (secdirframe.onSaveAsText:1237 transcription in engine.secondary_directions). */
-export async function fetchSecondaryDirectionsText(
-  name: string,
-  params: {
-    startAge?: number;
-    endAge?: number;
-    method?: string;
-    direction?: string;
-    source?: string;
-    documentId?: string;
-    referenceDatetime?: string;
-    stationsOnly?: boolean;
-  } = {},
-  signal?: AbortSignal,
-): Promise<{ text: string; filename: string }> {
-  const search = new URLSearchParams({ name });
-  if (params.startAge != null) search.set("startAge", String(params.startAge));
-  if (params.endAge != null) search.set("endAge", String(params.endAge));
-  if (params.method) search.set("method", params.method);
-  if (params.direction) search.set("direction", params.direction);
-  if (params.source) search.set("source", params.source);
-  if (params.documentId) search.set("documentId", params.documentId);
-  if (params.referenceDatetime) search.set("referenceDatetime", params.referenceDatetime);
-  if (params.stationsOnly) search.set("stationsOnly", "true");
-  const response = await daemonFetch(
-    `${daemonBaseUrl()}/api/directions/secondary/export-text?${search.toString()}`,
-    { cache: "no-store", signal },
-  );
-  if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    throw new Error(`secondary directions export failed: ${response.status} ${detail}`);
-  }
-  return (await response.json()) as { text: string; filename: string };
-}
-
 // ---------------------------------------------------------------------------
 // Circumambulations through the bounds (circumambulationframe.py popup).
 // GET /api/directions/circumambulation?name&useExactOa&maxAge.
@@ -2185,11 +2869,13 @@ export async function fetchSecondaryDirectionsText(
 export type CircumambulationRow = {
   signIndex: number | null;
   signGlyph?: string | null;
+  signExportSymbolText?: string | null;
   signColor?: string | null;
   signColorRole?: string | null;
   degreeText?: string | null;
   termRulerPid: number | null;
   termRulerGlyph?: string | null;
+  termRulerExportSymbolText?: string | null;
   termRulerColor?: string | null;
   termRulerColorRole?: string | null;
   dateStart: string | null;
@@ -2202,13 +2888,16 @@ export type CircumambulationRow = {
   eventDatetime: string | null;
   sessionLabel: string;
   participating: CircumambulationParticipator[];
+  temporal?: TemporalRowMeta;
 };
 
 // One participating-planet hit inside a term period. The wx CircumWnd.set_data
 // (circumambulationframe.py:746-774) emits each of these as its own table row,
 // with the Participator cell = aspect glyph + planet glyph and its own date/age.
 export type CircumambulationParticipator = {
+  planetId?: number | null;
   planet: string | null;
+  planetExportSymbolText?: string | null;
   source?: "return" | "natal_radix" | string | null;
   sourceMarker?: string | null;
   planetGlyph?: string | null;
@@ -2217,9 +2906,12 @@ export type CircumambulationParticipator = {
   degreeText?: string | null;
   degreeSignIndex?: number | null;
   degreeSignGlyph?: string | null;
+  degreeSignExportSymbolText?: string | null;
   degreeSignColor?: string | null;
   degreeSignColorRole?: string | null;
   aspectGlyph?: string | null;
+  aspectExportText?: string | null;
+  aspectExportSymbolText?: string | null;
   aspectColor?: string | null;
   aspectColorRole?: string | null;
   aspectDegree?: number | null;
@@ -2228,6 +2920,7 @@ export type CircumambulationParticipator = {
   eventDatetime?: string | null;
   sessionLabel: string;
   age: number | null;
+  temporal?: TemporalRowMeta;
 };
 
 export type CircumambulationPayload = {
@@ -2245,8 +2938,16 @@ export type CircumambulationPayload = {
     ageOffset?: number;
     listGlyphColors?: boolean;
     showNatalPromissors?: boolean;
+    promissorProfile?: number;
+    promissorProfileName?: "follow_pd" | "traditional" | string;
+    promissorCapabilities?: Record<string, string>;
     customSignificator?: DirectionCustomSignificator | null;
     significators?: CircumambulationSignificatorItem[];
+    temporalCoverage?: {
+      startJdUt: number;
+      endJdUt: number;
+      authoritative: boolean;
+    };
   };
   directions: CircumambulationRow[];
 };
@@ -2263,6 +2964,8 @@ export async function fetchCircumambulations(
     returnKind?: "solar" | "lunar";
     referenceDatetime?: string;
     customSignificator?: DirectionCustomSignificator | null;
+    promissorProfile?: number;
+    includeTemporal?: boolean;
   } = {},
   signal?: AbortSignal,
 ): Promise<CircumambulationPayload> {
@@ -2275,6 +2978,8 @@ export async function fetchCircumambulations(
   if (params.referenceDatetime) search.set("referenceDatetime", params.referenceDatetime);
   if (params.source) search.set("source", params.source);
   if (params.documentId) search.set("documentId", params.documentId);
+  if (params.includeTemporal) search.set("includeTemporal", "true");
+  if (params.promissorProfile != null) search.set("promissorProfile", String(params.promissorProfile));
   appendCustomSignificatorQuery(search, params.customSignificator);
   const response = await daemonFetch(`${daemonBaseUrl()}/api/directions/circumambulation?${search.toString()}`, {
     cache: "no-store",
@@ -2421,6 +3126,7 @@ export type TransitSearchObject = {
   canPromittor: boolean;
   canSignificator: boolean;
   glyph: string;
+  glyphFont: "morinus" | "text";
   displayMarker: string;
   displaySegments: TransitSearchObjectSegment[];
   fixedstarCode?: string | null;
@@ -2448,8 +3154,12 @@ export type TransitSearchTechnique = {
 export type TransitSearchPresets = {
   aspects: {
     all: string[];
+    standard: string[];
     major: string[];
     clear: string[];
+  };
+  techniques: {
+    standard: string[];
   };
   promittors: {
     all: string[];
@@ -2462,6 +3172,7 @@ export type TransitSearchPresets = {
     standard: string[];
     builtins: string[];
     planets: string[];
+    fixedStars: string[];
     clear: string[];
   };
 };
@@ -2469,18 +3180,27 @@ export type TransitSearchPresets = {
 export type TransitSearchDefaults = {
   fromDate: string;
   toDate: string;
+  workbenchFromDate: string | null;
+  workbenchToDate: string | null;
   techniques: string[];
   promittorIds: string[];
   significatorIds: string[];
   aspects: string[];
   includeSignChanges: boolean;
+  promittorMotion: TransitSearchMotionFilter;
+  significatorMotion: TransitSearchMotionFilter;
+  moonPhase: MoonPhaseFilter;
+  lunationOrb: number;
   partFilter: string;
   defaultOffsetMonths: number;
   defaultRangeMonths: number;
+  lifetimeYears: number;
   limit: number;
   hasSavedState: boolean;
 };
 
+export type TransitSearchMotionFilter = "" | "rx" | "d";
+export type MoonPhaseFilter = "" | "waxing" | "waning";
 export type EventTimeDisplayMeta = {
   basis: "default_location" | string;
   zoneId: string;
@@ -2491,11 +3211,14 @@ export type EventTimeDisplayMeta = {
 export type TransitSearchCatalog = {
   title: string;
   sourceName: string;
+  lifetimeFrom?: string | null;
+  lifetimeTo?: string | null;
   dateConvention: string;
   meanNode: boolean;
   initialSignificatorId: string | null;
   initialSignificatorLabel: string;
   initialSignificatorGlyph: string;
+  initialSignificatorGlyphFont: "morinus" | "text";
   objects: TransitSearchObject[];
   techniques: TransitSearchTechnique[];
   promittorIds: string[];
@@ -2527,14 +3250,18 @@ export type TransitSearchRow = {
   aspect: string;
   aspectLabel: string;
   aspectGlyph: string;
+  eventGlyph: string;
+  eventGlyphFont: "morinus" | "text";
   promittorId: string;
   promittorLabel: string;
   promittorGlyph: string;
+  promittorGlyphFont: "morinus" | "text";
   promittorMarker: string;
   promittorSegments: TransitSearchObjectSegment[];
   significatorId: string;
   significatorLabel: string;
   significatorGlyph: string;
+  significatorGlyphFont: "morinus" | "text";
   significatorMarker: string;
   significatorSegments: TransitSearchObjectSegment[];
   eventDate: string;
@@ -2558,6 +3285,7 @@ export type TransitSearchRow = {
   promDisplay: TransitSearchDisplay;
   sigDisplay: TransitSearchDisplay;
   isSignChange: boolean;
+  temporal?: TemporalRowMeta;
 };
 
 export type TransitSearchRequest = {
@@ -2569,9 +3297,15 @@ export type TransitSearchRequest = {
   significatorIds: string[];
   aspects: string[];
   includeSignChanges: boolean;
+  includeTemporal?: boolean;
+  includeOrbTemporal?: boolean;
   partFilter?: string;
   progressionMethod?: number | null;
   objectMotionFilters?: Record<string, string>;
+  promittorMotion?: TransitSearchMotionFilter;
+  significatorMotion?: TransitSearchMotionFilter;
+  moonPhase?: MoonPhaseFilter;
+  lunationOrb?: number;
   limit?: number;
   persistSettings?: boolean;
   ownerScope?: string;
@@ -2579,6 +3313,8 @@ export type TransitSearchRequest = {
   cursorDirection?: "around" | "previous" | "next" | null;
   cursorRowBudget?: number | null;
   cursorAnchorDate?: string | null;
+  cursorRangeFrom?: string | null;
+  cursorRangeTo?: string | null;
 };
 
 export type TransitSearchContextRequest = TransitSearchRequest & {
@@ -2606,8 +3342,12 @@ export type TransitSearchCursorState = {
   seedFrom: string;
   seedTo: string;
   anchorDate: string;
+  rangeFrom: string;
+  rangeTo: string;
   coverageFrom: string;
   coverageTo: string;
+  coverageStartJdUt: number;
+  coverageEndJdUt: number;
   windowsScanned: number;
   leafWindowsScanned: number;
   exhaustedPrevious: boolean;
@@ -2658,9 +3398,15 @@ export async function runTransitSearch(
       significatorIds: params.significatorIds,
       aspects: params.aspects,
       includeSignChanges: params.includeSignChanges,
+      includeTemporal: (params.includeTemporal ?? false) || (params.includeOrbTemporal ?? false),
+      includeOrbTemporal: params.includeOrbTemporal ?? false,
       partFilter: params.partFilter ?? "",
       progressionMethod: params.progressionMethod ?? null,
       objectMotionFilters: params.objectMotionFilters ?? {},
+      promittorMotion: params.promittorMotion ?? "",
+      significatorMotion: params.significatorMotion ?? "",
+      moonPhase: params.moonPhase ?? "",
+      lunationOrb: params.lunationOrb ?? 3,
       limit: params.limit ?? 500,
       persistSettings: params.persistSettings ?? true,
     },
@@ -2780,19 +3526,59 @@ export async function exportSearchRows(
 }
 
 export async function updateSearchDefaultRange(
-  params: { offsetMonths: number; rangeMonths: number },
+  params: { documentId: string; offsetMonths: number; rangeMonths: number; lifetimeYears: number },
   signal?: AbortSignal,
 ): Promise<{
   defaultOffsetMonths: number;
   defaultRangeMonths: number;
+  lifetimeYears: number;
   fromDate: string;
   toDate: string;
+  lifetimeFrom: string | null;
+  lifetimeTo: string | null;
 }> {
   return workspacePost(
     "/api/search/default-range",
     {
+      documentId: params.documentId,
       offsetMonths: params.offsetMonths,
       rangeMonths: params.rangeMonths,
+      lifetimeYears: params.lifetimeYears,
+    },
+    signal,
+  );
+}
+
+export async function updateSearchContextDefaultRange(
+  params: {
+    documentId: string;
+    significatorId?: string | null;
+    chartRole?: "primary" | "outer" | null;
+    customPoints?: Record<string, unknown>[];
+    offsetMonths: number;
+    rangeMonths: number;
+    lifetimeYears: number;
+  },
+  signal?: AbortSignal,
+): Promise<{
+  defaultOffsetMonths: number;
+  defaultRangeMonths: number;
+  lifetimeYears: number;
+  fromDate: string;
+  toDate: string;
+  lifetimeFrom: string | null;
+  lifetimeTo: string | null;
+}> {
+  return workspacePost(
+    "/api/search/context/default-range",
+    {
+      documentId: params.documentId,
+      significatorId: params.significatorId ?? null,
+      chartRole: params.chartRole ?? null,
+      customPoints: params.customPoints ?? [],
+      offsetMonths: params.offsetMonths,
+      rangeMonths: params.rangeMonths,
+      lifetimeYears: params.lifetimeYears,
     },
     signal,
   );
@@ -2861,15 +3647,23 @@ function transitSearchRequestBody(params: TransitSearchRequest) {
     significatorIds: params.significatorIds,
     aspects: params.aspects,
     includeSignChanges: params.includeSignChanges,
+    includeTemporal: (params.includeTemporal ?? false) || (params.includeOrbTemporal ?? false),
+    includeOrbTemporal: params.includeOrbTemporal ?? false,
     partFilter: params.partFilter ?? "",
     progressionMethod: params.progressionMethod ?? null,
     objectMotionFilters: params.objectMotionFilters ?? {},
+    promittorMotion: params.promittorMotion ?? "",
+    significatorMotion: params.significatorMotion ?? "",
+    moonPhase: params.moonPhase ?? "",
+    lunationOrb: params.lunationOrb ?? 3,
     limit: params.limit ?? 500,
     persistSettings: params.persistSettings ?? true,
     ownerScope: params.ownerScope ?? "search",
     cursorDirection: params.cursorDirection ?? null,
     cursorRowBudget: params.cursorRowBudget ?? null,
     cursorAnchorDate: params.cursorAnchorDate ?? null,
+    cursorRangeFrom: params.cursorRangeFrom ?? null,
+    cursorRangeTo: params.cursorRangeTo ?? null,
   };
 }
 
@@ -2985,6 +3779,17 @@ export type AstrolabeGeometry = {
   pd: { snapArcs: number[]; nearbyEvents: AstrolabePdEvent[] };
 };
 
+export type AstrolabeViewState = {
+  deltaDeg: number;
+  atmospheric: boolean;
+  regioHouses: boolean;
+  zodiacWheel: boolean;
+  almucantars: boolean;
+  azimuths: boolean;
+  hourLines: boolean;
+  stars: boolean;
+};
+
 /** Planispheric astrolabe geometry for a radix. `delta` rotates the rete (the
  * primary-directions arc, degrees of RA); defaults to 0 (the radix moment). */
 export async function fetchAstrolabe(
@@ -3005,6 +3810,33 @@ export async function fetchAstrolabe(
     throw new Error(`astrolabe request failed: ${response.status} ${detail}`);
   }
   return (await response.json()) as AstrolabeGeometry;
+}
+
+export async function fetchAstrolabeViewState(
+  documentId: string,
+  signal?: AbortSignal,
+): Promise<AstrolabeViewState> {
+  const response = await daemonFetch(
+    `${daemonBaseUrl()}/api/workspace/document/${encodeURIComponent(documentId)}/astrolabe/view-state`,
+    { cache: "no-store", signal },
+  );
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`astrolabe view state failed: ${response.status} ${detail}`);
+  }
+  return ((await response.json()) as { state: AstrolabeViewState }).state;
+}
+
+export async function storeAstrolabeViewState(
+  documentId: string,
+  state: AstrolabeViewState,
+  signal?: AbortSignal,
+): Promise<void> {
+  await workspacePost<{ ok: boolean }>(
+    `/api/workspace/document/${encodeURIComponent(documentId)}/astrolabe/view-state`,
+    { state },
+    signal,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -3389,9 +4221,11 @@ export type OptionsDisplay = {
   showaspectstolof: boolean;
   showlofouterring: boolean;
   showprenatalsyzygy: boolean;
+  showprenataleclipse: boolean;
   // Header.
   planetarydayhour: boolean;
   information: boolean;
+  showradixnameincanvas: boolean;
   showseconds: boolean;
   dateconvention: string;
   // Aesthetic / chrome.
@@ -3404,6 +4238,10 @@ export type OptionsDisplay = {
   showdecans: boolean;
   showanglearrowheads: boolean;
   showcusplessascmclabels: boolean;
+  multiwheel_show_positions: boolean;
+  multiwheel_show_minutes: boolean;
+  multiwheel_sign_colors: boolean;
+  multiwheel_show_angle_labels: boolean;
   showfixstars: number;
   // --- Appearance-menu parity adds (appearance1dlg control delta) ---
   extendedradixstations: boolean; // "Modern Planets" (options.py:144)
@@ -3420,8 +4258,9 @@ export type OptionsDisplay = {
   intables: boolean; // show in tables (options.py:117)
   usetradfixstarnamespdlist: boolean; // trad fixstar names in PD list (options.py:168)
   theme: number; // wheel LAYOUT 0/1/2 (catalog.themeLayouts — DISTINCT from colour theme)
-  anglo_dense_label_layout: "leader-columns" | "routed-cusps";
-  phasismode: number; // Phasis enum 0/1/2 (catalog.phasisModes)
+  anglo_dense_label_layout: "leader-columns" | "routed-cusps" | "sign-locked";
+  phasismode: number; // Phasis enum 0/1/2/3 (catalog.phasisModes)
+  solarconditionmode: number; // solar-condition doctrine/profile (catalog.solarConditionModes)
   showcazimi: boolean; // show Cazimi rows in radix overlay
   cazimimode: number; // Cazimi enum 0/1/2 (catalog.cazimiModes)
   synodicmode: number; // planetary-return Shift+Arrow event filter (catalog.synodicModes)
@@ -3460,7 +4299,7 @@ export type OptionsExport = {
   pdfChartRasterPresetChoices: { value: PdfChartRasterPreset; labelKey: string }[];
 };
 
-export type HouseSystemEntry = { code: string; label: string };
+export type HouseSystemEntry = { code: string; label: string; labelKey?: string };
 export type OptionsHouseSystem = {
   hsys: string;
   housesystem: boolean;
@@ -3504,13 +4343,10 @@ export type OptionsDignities = {
   terms: TermsGrid;
 };
 
-// Glyph-variant settings (symbolsdlg.SymbolsDlg). uranus/signs are bool, pluto
-// an int 0..3. These pick which Morinus.ttf glyph the chart snapshot ships for
-// Uranus/Pluto and which sign-glyph set is used (common.py:372-373 / :370-371).
+// Supported astrology glyph variants for Uranus and Pluto.
 export type OptionsSymbols = {
   uranus: boolean;
   pluto: number;
-  signs: boolean;
 };
 
 export type ThemePreset = {
@@ -3605,12 +4441,15 @@ export type OptionsLunarMansions = {
 // speculum rows are bool maps keyed by the planets.Planet column index (as a
 // string), plus the per-row dodecatemorion flags and the global In-Time toggle.
 // The column index→label oracle is catalog.speculumPlacidianCols / RegiomontanCols.
+export type SpeculumSpeedDisplayMode = "words" | "percent" | "daily";
+
 export type OptionsSpeculum = {
   placidian: Record<string, boolean>;
   regiomontan: Record<string, boolean>;
   placidianDodec: boolean;
   regiomontanDodec: boolean;
   intime: boolean;
+  speedMode: SpeculumSpeedDisplayMode;
 };
 
 // Default Location — the saved "Here-and-Now" place. Keys are the options.py
@@ -3677,7 +4516,10 @@ export type OptionsFirdaria = { isfirbonatti: boolean };
 
 // Eclipse chart-moment radio (morin._set_eclipse_chart_moment_mode). One of the
 // ECLIPSE_CHART_MOMENT_* string enums.
-export type OptionsEclipses = { eclipse_chart_moment: string };
+export type OptionsEclipses = {
+  eclipse_chart_moment: string;
+  prenatal_eclipse_mode: "solar_only" | "solar_and_lunar";
+};
 
 // One Swiss-Ephemeris fixed-star catalog row (fixstarsdlg.FixStarCatalog,
 // fixstarsdlg.py:16-114). `code` is the catalog nomenclature (the
@@ -3701,6 +4543,7 @@ export type OptionsFixedStars = {
   catalog: FixedStarCatalogRow[];
   selectedCodes: string[];
   aliasMap: Record<string, string>;
+  useIndianFixstarNames: boolean;
   maxSelected: number;
   defaultCodes: string[];
 };
@@ -3731,10 +4574,19 @@ export type OptionsQuickCharts = {
   timed_chart_show_radix_default: boolean;
   event_table_time_basis: "default_location" | "ut" | string;
   subcharts_open_compound_default: boolean;
+  multiwheel_open_at_three: boolean;
+  /** Concentric chart rings, 2..4. See webapp/daemon/chart_rings.py. */
+  chart_ring_count: number;
+  /** Zodiac band placement once rings stack. Ignored below three rings. */
+  chart_ring_zodiac: "rim" | "centre";
   secondary_progression_launch_mode: number; // progression/transit launcher: 0=Chart, 1=Table, 2=Both
+  aspectlist_prebirth_secondary_converse: boolean;
   at_reclick_behavior: string; // focus_only | focus_and_snap_now | new_tab
   progressed_angle_method: number; // posfordate.ANGLE_METHOD_NAMES key
   progression_day_type: number; // posfordate.PROGRESSION_DAY_TYPE_NAMES key
+  harmonic_chart_mode: "harmonic" | "varga"; // default for newly opened division charts
+  varga_drishti_mode: "off" | "parashari" | "jaimini";
+  varga_node_special_drishti: boolean;
 };
 
 export type OptionsRevolutions = {
@@ -3825,6 +4677,10 @@ export type ColorFieldMeta = {
 };
 export type IndividualColorMeta = { index: number; label: string; glyph: string };
 export type EnumChoice = { value: number; label: string };
+export type LocalizedEnumChoice = EnumChoice & { labelKey: string };
+export type LocalizedDescribedEnumChoice = LocalizedEnumChoice & {
+  descriptionKey: string;
+};
 export type StringEnumChoice = { value: string; label: string };
 export type BoolEnumChoice = { value: boolean; label: string };
 // A speculum column's metadata (options_service _SPECULUM_*_COLS): `idx` is the
@@ -3860,7 +4716,11 @@ export type SliderFieldMeta = {
   kind: "int" | "float";
 };
 
-export type FontProfileMeta = { value: string; label: string };
+export type FontProfileMeta = {
+  value: string;
+  label: string;
+  labelKey?: string;
+};
 
 /** A glyph-variant choice (symbolsdlg). `value` is the options.py value the
  * patch stores (bool for uranus/signs, int 0..3 for pluto); `glyph` is the
@@ -3874,6 +4734,7 @@ export type OptionsCatalog = {
   aspectGlyphs: string[]; // 12, Morinus chars aligned to aspectLabels
   fixstarsModes: EnumChoice[]; // showfixstars enum
   phasisModes: EnumChoice[]; // Phasis enum (options.Options.PHASIS_MODE_*)
+  solarConditionModes: LocalizedDescribedEnumChoice[]; // combustion doctrine/profile choices
   cazimiModes: EnumChoice[]; // Cazimi enum (options.Options.CAZIMI_MODE_*)
   synodicModes: EnumChoice[]; // Synodic cycle event filter
   themeLayouts: EnumChoice[]; // wheel layout choice (theme 0/1/2)
@@ -3881,6 +4742,7 @@ export type OptionsCatalog = {
   mansionZodiacModes: StringEnumChoice[]; // manazil_zodiac choices (str values)
   speculumPlacidianCols: SpeculumColMeta[]; // Placidian speculum column oracle
   speculumRegiomontanCols: SpeculumColMeta[]; // Regiomontan speculum column oracle
+  speculumSpeedModes: StringEnumChoice[]; // compact Inspector Speed display
   orbTargets: EnumChoice[]; // 0..10 planets/Nodes (Houses appended by skin)
   dignityScoreLabels: string[]; // 5, dignityscores order
   termSets: EnumChoice[]; // selterm choices (Egyptian/Ptolemaic)
@@ -3888,8 +4750,7 @@ export type OptionsCatalog = {
   dignityTypes: string[]; // 2 dignity-type columns (Domicile/Exaltation)
   termPlanets: EnumChoice[]; // term-ruler combo choices (Mercury=2..Saturn=6)
   symbolUranus: SymbolVariantMeta[]; // uranus glyph variants
-  symbolPluto: SymbolVariantMeta[]; // pluto glyph variants (0..3)
-  symbolSigns: SymbolVariantMeta[]; // sign-glyph set variants
+  symbolPluto: SymbolVariantMeta[]; // standard Pluto glyph variants (2/3)
   defaultLocationFields: DefaultLocationFieldMeta[]; // saved-location field oracle
   transcendentalLabels: GlyphLabelMeta[]; // 3: U/N/P, aligned to display.transcendental
   stepAlertBodies: StepAlertBodyMeta[]; // aligned to stepAlerts body vectors
@@ -3977,17 +4838,17 @@ export type OptionsPrimaryDirections = {
   pdsigarabicpartname: string;
   // Circumambulation method
   pdcircumoa: number; // 0=Ascensional Times, 1=Use PD Settings
+  pdcircumprommode: number; // 0=Follow PD promissors/aspects, 1=Traditional classical set
   // Revolutions / annual / list view
   pdrevsunyearmode: number; // 0=365.242, 1=360
-  pdrevannualmode: number; // 0=Use Primary, 1=Traditional
-  pdrevshownatalpromissors: boolean; // include natal radix planets in return directions/circumambulations
+  pdrevannualmode: number; // legacy persisted field; annual PD now always uses Primary settings
+  pdrevshownatalpromissors: boolean; // include natal radix promissors in return Directions/Circumambulations lists
   pdlistmode: number; // 0=Paged, 1=Continuous
   pdlistglyphcolors: boolean; // colored Morinus glyph rows in direction lists
   // PDs-in-Chart (pdsinchartdlgopts / pdsinchartterrdlgopts)
-  pdincharttyp: number; // 0=from mundane positions, 1=ecliptic feet, 2=full pseudo-astronomic
-  pdinchartsecmotion: boolean; // celestial full pseudo-astronomic secondary motion
+  pdincharttyp: 0 | 1; // 0=From the Planets, 1=Ecliptic Feet
   pdinchartterrsecmotion: boolean; // terrestrial chart secondary motion
-  pdinchartreverse: boolean; // true: outer promissor -> radix significator; false: legacy Morinus reversed rings
+  pdinchartreverse: boolean; // converse frame: true=fixed radix/outer promissors move; false=outer promissors fixed/inner significators move
   // Keys block
   pdkeydyn: boolean; // true=Dynamic, false=Static
   pdkeyd: number; // dynamic preset index (typeListDyn)
@@ -4035,15 +4896,22 @@ export type MirroredSettingsSection = {
   settings: MirroredSettingDefinition[];
 };
 
+export type CorpusSemanticFieldDefinition = {
+  key: keyof CorpusSemanticProfileSemantics;
+  labelKey: string;
+  options: Array<{ value: string; labelKey: string }>;
+};
+
 export type SettingsRegistry = {
   version: number;
   tabs: SettingsRegistryTab[];
   mirroredSections: MirroredSettingsSection[];
   themePresets: Array<{ name: string; mtextKey?: string }>;
+  corpusSemanticFields: CorpusSemanticFieldDefinition[];
 };
 
 export type SidebarListPreferencesPayload = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   aspectList: {
     mode: "primary" | "outer" | "outerToPrimary" | "primaryToOuter" | null;
     maxOrb: number;
@@ -4060,11 +4928,33 @@ export type SidebarListPreferencesPayload = {
     promittorDrawerOpen: boolean;
     direction: "direct" | "converse" | "both";
   };
+  synodicList: {
+    ingressPlanetIds: number[];
+    synodicPlanetIds: number[];
+    lunarCycleIds: string[];
+    ingressDrawerOpen: boolean;
+    synodicDrawerOpen: boolean;
+    lunarDrawerOpen: boolean;
+  };
+  secondaryProgressions: {
+    planetIds: number[] | null;
+    aspectIds: number[];
+    filterDrawerOpen: boolean;
+  };
+  vimshottari: {
+    anchor: "moon" | "ascendant";
+    startStar: "janma" | "kshema" | "utpanna" | "adhana";
+    yearDays: 365.25 | 360;
+    ayanamsha: "follow_chart" | number;
+  };
 };
 
 export type SidebarListPreferencesPatch = {
   aspectList?: Partial<SidebarListPreferencesPayload["aspectList"]>;
   transitList?: Partial<SidebarListPreferencesPayload["transitList"]>;
+  synodicList?: Partial<SidebarListPreferencesPayload["synodicList"]>;
+  secondaryProgressions?: Partial<SidebarListPreferencesPayload["secondaryProgressions"]>;
+  vimshottari?: Partial<SidebarListPreferencesPayload["vimshottari"]>;
 };
 
 export type RetainedListDisplay = {
@@ -4075,6 +4965,8 @@ export type RetainedListDisplay = {
 export type OptionsAspectList = {
   /** False keeps derived/non-body outer points conjunction-only in Aspect List. */
   showAspectsForDerivedPoints: boolean;
+  /** Destination used by the primary perfected-aspect date link. */
+  perfectionLinkMode: "transits" | "secondary";
 };
 
 export type OptionsPayload = {
@@ -4150,11 +5042,14 @@ export type OptionsPatch = {
    * morin._set_eclipse_chart_moment_mode, morin.py:958-976). */
   eclipses?: Partial<OptionsEclipses>;
   /** Fixed-stars which-stars picker (options_service._apply_fixed_stars —
-   * fixstarsdlg.FixStarsDlg.check, fixstarsdlg.py:501-549). Only the active set
-   * is writable: selectedCodes becomes the options.fixstars key set (retained
-   * codes keep their orb, new codes get def_fixstarsorb), the alias map is
-   * pruned + persisted, and rebuildFixStars re-fires on every open chart. */
-  fixedStars?: { selectedCodes?: string[] };
+   * fixstarsdlg.FixStarsDlg.check, fixstarsdlg.py:501-549). selectedCodes
+   * becomes the options.fixstars key set (retained codes keep their orb, new
+   * codes get def_fixstarsorb). useIndianFixstarNames changes only display
+   * vocabulary; it never changes star identity or rebuilds charts. */
+  fixedStars?: {
+    selectedCodes?: string[];
+    useIndianFixstarNames?: boolean;
+  };
   /** Relationship-chart settings (options_service._apply_relationship_charts —
    * compositeoptsdlg + onRelChartsLauncherToggle, morin.py:20167-20228). */
   relationshipCharts?: Partial<OptionsRelationshipCharts>;
@@ -4864,6 +5759,7 @@ export type WorkspaceContextMenuNode =
       label: string;
       labelKey?: string;
       checked: boolean;
+      inset?: boolean;
       disabled?: boolean;
       actionId?: string;
       payload?: Record<string, unknown>;
@@ -5129,7 +6025,10 @@ export type WorkspaceCloseResult = {
    * the close finalizes (morin.py:11529-11551 predicate, computed daemon-side). */
   promptWorthyIds: string[];
   nextActiveId: string | null;
+  activeDocumentId?: string | null;
+  snapshotInvalidatedIds?: string[];
   documents: DaemonDocumentSummary[];
+  snapshot?: ChartRenderSnapshot;
 };
 
 export type WorkspaceNavigateResult = {
@@ -5149,7 +6048,7 @@ export type WorkspaceNavigateResult = {
 export type GenericTableCellRun = {
   text: string;
   glyph?: boolean;
-  /** Localized semantic text for plain TXT/TSV export. Morinus glyph bytes
+  /** Localized semantic text for the canonical plain-text export. Morinus glyph bytes
    * remain presentation-only and must never leak into a text file. */
   exportText?: string;
   /** Unicode aspect mark or compact fallback for symbolic list exports. */
@@ -5167,7 +6066,7 @@ export type GenericTableCell = {
   text?: string;
   glyph?: string;
   runs?: GenericTableCellRun[];
-  /** Localized semantic text for plain TXT/TSV export. */
+  /** Localized semantic text for the canonical plain-text export. */
   exportText?: string;
   /** Unicode aspect mark or compact fallback for symbolic list exports. */
   exportSymbolText?: string;
@@ -5215,6 +6114,7 @@ export type GenericTableRow = {
   meta?: Record<string, unknown>;
   /** "strong" renders the whole row bold (wx bold-row predicates). */
   emphasis?: string;
+  temporal?: TemporalRowMeta;
 };
 
 /** Axis entry for matrix-shaped tables (aspectswnd.py planet/angle/house headers). */
@@ -5335,6 +6235,8 @@ export type AspectListPayload = {
     filterIds: string[];
   } | null;
   contextKey: string;
+  /** Motion-timeline cursor used to validate retained exact roots. */
+  perfectionAnchorJd: number;
   retainedListDataKey: string;
 };
 
@@ -5356,7 +6258,7 @@ export type AspectListPerfectionsPayload = {
   batchLimit?: number;
 };
 
-export type AspectListPerfectionAction = "exact" | TimedChartAction;
+export type AspectListPerfectionAction = "exact" | "secondary" | TimedChartAction;
 
 /** One stacked panel of a multi-section table (channel 4 of the custom-table
  * contract: midpoints, almutens, positions, misc, munpos, phasis). Same
@@ -5376,14 +6278,14 @@ export type GenericTablePayload = {
   rows: GenericTableRow[];
   notes?: string[];
   capabilities?: Record<string, unknown>;
-  deferrals?: string[];
   source?: string;
   cellEncoding?: string;
   unavailable?: boolean;
   /** Structured matrix layout when capabilities.matrix is true. */
   matrix?: AspectMatrixPayload;
   /** Stacked panel layout when capabilities.sections is true; flat
-   * columns/rows remain the concatenation for TSV/copy/export. */
+   * columns/rows remain a compatibility projection, while copy/TXT and PDF
+   * export preserve the section boundaries. */
   sections?: GenericTableSection[];
   /** Graphical 0-30 longitude-strip layout when capabilities.strip is true
    * (wx StripWnd, stripwnd.py:78-646). The daemon emits semantic data only —
@@ -5439,6 +6341,8 @@ export type SynodicCycleRow = {
   key: string;
   eventType: SynodicEventType;
   eventLabel: string;
+  eventGlyph?: string;
+  eventGlyphFont?: "morinus" | "text";
   detailLabel: string;
   sessionLabel: string;
   planetId: number;
@@ -5462,6 +6366,7 @@ export type SynodicCycleRow = {
   longitudeText?: string;
   motionMarker?: string;
   metadata?: Record<string, unknown>;
+  temporal?: TemporalRowMeta;
 };
 
 export type SynodicCyclePayload = {
@@ -5471,6 +6376,8 @@ export type SynodicCyclePayload = {
     title: string;
     fromDate: string;
     toDate: string;
+    coverageStartJdUt: number;
+    coverageEndJdUt: number;
     focusDatetime: string;
     currentDatetime: string;
     birthDatetime: string;
@@ -5478,6 +6385,8 @@ export type SynodicCyclePayload = {
     planetItems: SynodicPlanetItem[];
     lunarItems: SynodicLunarItem[];
     activePlanetIds: number[];
+    activeIngressPlanetIds: number[];
+    activeSynodicPlanetIds: number[];
     activeLunarCycleIds: string[];
     eventTypes: Record<string, boolean>;
     timeDisplay: EventTimeDisplayMeta;
@@ -5485,6 +6394,7 @@ export type SynodicCyclePayload = {
   rows: SynodicCycleRow[];
   summary: string;
   truncated: boolean;
+  cursor?: TransitSearchCursorState;
 };
 
 export type StripBody = {
@@ -5710,6 +6620,30 @@ export async function workspaceOpenSynastry(
     "/api/workspace/open-synastry",
     {
       parentRadixId,
+      comparisonName,
+      comparisonSource: comparisonSource ?? null,
+      comparisonRecordIndex: comparisonRecordIndex ?? null,
+    },
+    signal,
+  );
+}
+
+/** Open two stored charts atomically as one root-level synastry document. */
+export async function workspaceOpenSynastryPair(
+  centerName: string,
+  comparisonName: string,
+  centerSource?: string | null,
+  centerRecordIndex?: number | null,
+  comparisonSource?: string | null,
+  comparisonRecordIndex?: number | null,
+  signal?: AbortSignal,
+): Promise<WorkspaceOpenResult> {
+  return workspacePost<WorkspaceOpenResult>(
+    "/api/workspace/open-synastry-pair",
+    {
+      centerName,
+      centerSource: centerSource ?? null,
+      centerRecordIndex: centerRecordIndex ?? null,
       comparisonName,
       comparisonSource: comparisonSource ?? null,
       comparisonRecordIndex: comparisonRecordIndex ?? null,
@@ -6246,6 +7180,12 @@ export type EphemerisSignEvent = {
   date: string;
 };
 
+export type EphemerisOutOfBoundsMarker = {
+  planet: number;
+  dayOffset: number;
+  value: number;
+};
+
 export type EphemerisPlanetSeries = {
   id: number;
   /** Morinus glyph char for the planet (render in font-family "AriesMorinus"). */
@@ -6278,6 +7218,8 @@ export type EphemerisPayload = {
   signNames: string[];
   colors: EphemerisColors;
   planets: EphemerisPlanetSeries[];
+  /** One glyph anchor at the furthest declination of each OOB excursion. */
+  outOfBounds: EphemerisOutOfBoundsMarker[];
   stations: { longitude: EphemerisStation[]; declination: EphemerisStation[] };
   signEvents: EphemerisSignEvent[];
 };
@@ -6473,8 +7415,12 @@ export async function fetchGenericTablePayload(
   tableId: string,
   documentId: string,
   signal?: AbortSignal,
+  focusDatetime?: string | null,
+  includeTemporal = false,
 ): Promise<GenericTablePayload> {
   const search = new URLSearchParams({ documentId });
+  if (focusDatetime) search.set("focusDatetime", focusDatetime);
+  if (includeTemporal) search.set("includeTemporal", "true");
   const response = await daemonFetch(
     `${daemonBaseUrl()}/api/tables/${encodeURIComponent(tableId)}?${search.toString()}`,
     { cache: "no-store", signal },
@@ -6547,9 +7493,27 @@ export async function fetchAspectListPerfections(
   );
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
-    throw new Error(`aspect perfection list failed: ${response.status} ${detail}`);
+    throw new AspectListPerfectionRequestError(response.status, detail);
   }
   return (await response.json()) as AspectListPerfectionsPayload;
+}
+
+export class AspectListPerfectionRequestError extends Error {
+  readonly status: number;
+  readonly detail: string;
+
+  constructor(status: number, detail: string) {
+    super(`aspect perfection list failed: ${status} ${detail}`);
+    this.name = "AspectListPerfectionRequestError";
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
+export function isAspectListPerfectionContextChangedError(
+  error: unknown,
+): error is AspectListPerfectionRequestError {
+  return error instanceof AspectListPerfectionRequestError && error.status === 409;
 }
 
 export async function openAspectListPerfection(
@@ -6585,9 +7549,16 @@ export async function fetchSynodicCycles(
     fromDate?: string;
     toDate?: string;
     planetIds?: number[];
+    ingressPlanetIds?: number[];
+    synodicPlanetIds?: number[];
+    lunarCycleIds?: string[];
     includeStations?: boolean;
     includeCazimis?: boolean;
     includeIngresses?: boolean;
+    includeTemporal?: boolean;
+    cursorDirection?: "around" | "previous" | "next";
+    cursorRowBudget?: number;
+    cursorAnchorDate?: string;
   },
   signal?: AbortSignal,
 ): Promise<SynodicCyclePayload> {
@@ -6595,9 +7566,16 @@ export async function fetchSynodicCycles(
   if (params.fromDate) search.set("fromDate", params.fromDate);
   if (params.toDate) search.set("toDate", params.toDate);
   if (params.planetIds) search.set("planetIds", params.planetIds.length ? params.planetIds.join(",") : "__none__");
+  if (params.ingressPlanetIds) search.set("ingressPlanetIds", params.ingressPlanetIds.length ? params.ingressPlanetIds.join(",") : "__none__");
+  if (params.synodicPlanetIds) search.set("synodicPlanetIds", params.synodicPlanetIds.length ? params.synodicPlanetIds.join(",") : "__none__");
+  if (params.lunarCycleIds) search.set("lunarCycleIds", params.lunarCycleIds.length ? params.lunarCycleIds.join(",") : "__none__");
   if (params.includeStations === false) search.set("includeStations", "false");
   if (params.includeCazimis === false) search.set("includeCazimis", "false");
   if (params.includeIngresses === false) search.set("includeIngresses", "false");
+  if (params.includeTemporal === true) search.set("includeTemporal", "true");
+  if (params.cursorDirection) search.set("cursorDirection", params.cursorDirection);
+  if (params.cursorRowBudget) search.set("cursorRowBudget", String(params.cursorRowBudget));
+  if (params.cursorAnchorDate) search.set("cursorAnchorDate", params.cursorAnchorDate);
   const response = await daemonFetch(
     `${daemonBaseUrl()}/api/synodic/list?${search.toString()}`,
     { cache: "no-store", signal },
@@ -6857,6 +7835,8 @@ export type WorkspaceMoveResult = {
   moved: boolean;
   activeDocumentId: string | null;
   documents: DaemonDocumentSummary[];
+  snapshotInvalidatedIds?: string[];
+  snapshot?: ChartRenderSnapshot;
 };
 
 export type WorkspaceMoveIntent = {
@@ -6892,6 +7872,8 @@ export type WorkspaceApplyMoveIntentResult = {
   affectedDocumentIds: string[];
   activeDocumentId: string | null;
   documents: DaemonDocumentSummary[];
+  snapshotInvalidatedIds?: string[];
+  snapshot?: ChartRenderSnapshot;
 };
 
 export type WorkspaceDragConversionAction = "synastry" | "transit";
@@ -7122,7 +8104,9 @@ export type DaemonEvent =
       refreshMode?: string | null;
       styleOnly?: boolean;
       listDataChanged?: boolean;
+      retainedListTarget?: "aspect-list" | null;
       retainedListDataKey?: string;
+      ephemerisDataKey?: string;
       retainedListDisplay?: RetainedListDisplay;
       inspectorDataChanged?: boolean;
       langid?: number;

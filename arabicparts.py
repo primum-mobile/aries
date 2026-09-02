@@ -1,4 +1,9 @@
 # -*- coding: utf-8 -*-
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 import json
 
 import astrology
@@ -311,9 +316,13 @@ class ArabicParts:
             self.tripls = [0, 3, 1, 2, 0, 3, 1, 2, 0, 3, 1, 2]
 
             asc = hs.ascmc[houses.Houses.ASC]
-            desc = util.normalize(hs.ascmc[houses.Houses.ASC]+180.0)
             mc = hs.ascmc[houses.Houses.MC]
-            ic = util.normalize(hs.ascmc[houses.Houses.MC]+180.0)
+            try:
+                semantic_angles = hs._semantic_angle_longitudes or {}
+            except AttributeError:
+                semantic_angles = {}
+            desc = util.normalize(semantic_angles.get('dsc', hs.ascmc[houses.Houses.ASC]+180.0))
+            ic = util.normalize(semantic_angles.get('ic', hs.ascmc[houses.Houses.MC]+180.0))
 
             cps = (asc, cusps[2], cusps[3], ic, cusps[5], cusps[6], desc, cusps[8], cusps[9], mc, cusps[11], cusps[12])
             # --- FORWARD RE SUPPORT: enable forward references (R{future}) ---

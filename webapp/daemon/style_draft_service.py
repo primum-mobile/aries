@@ -1,25 +1,33 @@
 # Copyright (C) 2026 Max Lange
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""Ephemeral, revisioned style-profile drafts for the browser Style Lab.
+"""Revisioned style-profile drafts for the browser Style Lab.
 
 Drafts deliberately sit beside, rather than inside, ``StyleProfileStore``.
 Pointer moves can therefore publish paint-only previews without writing the
-options directory.  Every candidate state is still normalized by the same
-profile validator used for imports and persisted profiles.
+options directory. Dirty working copies are journaled after the interaction
+settles, on a background timer, so they survive an Aries restart without
+placing file I/O on a gesture or response path. Every candidate state is still
+normalized by the same profile validator used for imports and persisted
+profiles.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import tempfile
 import threading
 import time
 import unicodedata
 import uuid
 from copy import deepcopy
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable, Mapping, Optional
+
+from webapp.daemon.file_transaction import exclusive_file_transaction
 
 from webapp.daemon.style_profile_catalog_generated import (
     STYLE_PROFILE_RELATIONS,
@@ -45,6 +53,10 @@ from webapp.daemon.style_authoring_service import (
 DRAFT_KIND = "aries.style-draft"
 DRAFT_SCHEMA_VERSION = 2
 MAX_OPEN_DRAFTS = 64
+DRAFT_STORE_KIND = "aries.style-draft-store"
+DRAFT_STORE_SCHEMA_VERSION = 1
+DRAFT_STORE_FILENAME = "style-drafts.json"
+DRAFT_PERSIST_DELAY_SECONDS = 0.45
 
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 
@@ -115,12 +127,196 @@ def _new_profile_id(name: str) -> str:
 
 
 class StyleDraftService:
-    """Thread-safe in-memory drafts with compare-and-swap mutations."""
+    """Thread-safe drafts with CAS mutations and an idle-time recovery journal."""
 
-    def __init__(self) -> None:
+    def __init__(self, directory: str | os.PathLike[str] | None = None) -> None:
         self._lock = threading.RLock()
         self._drafts: dict[str, dict[str, Any]] = {}
         self._current_id: Optional[str] = None
+        self._store_path: Optional[Path] = None
+        self._persist_timer: Optional[threading.Timer] = None
+        self._pending_persist_keys: set[str] = set()
+        if directory is not None:
+            self.configure_directory(directory)
+
+    @staticmethod
+    def _record_key(record: Mapping[str, Any]) -> str:
+        source = str(record.get("sourceThemeName") or "").strip()
+        return f"source:{source}" if source else f"draft:{record.get('draftId')}"
+
+    @staticmethod
+    def _record_is_dirty(record: Mapping[str, Any]) -> bool:
+        profile = record.get("profile") or {}
+        baseline = record.get("baselineProfile") or profile
+        return profile.get("contentHash") != baseline.get("contentHash")
+
+    @staticmethod
+    def _stored_record(record: Mapping[str, Any]) -> dict[str, Any]:
+        return {
+            "draftId": str(record["draftId"]),
+            "revision": int(record["revision"]),
+            "profile": deepcopy(record["profile"]),
+            "baselineProfile": deepcopy(record.get("baselineProfile") or record["profile"]),
+            "sourceThemeName": record.get("sourceThemeName"),
+            "createdAt": float(record["createdAt"]),
+            "updatedAt": float(record["updatedAt"]),
+        }
+
+    @staticmethod
+    def _validated_stored_record(payload: Any) -> dict[str, Any]:
+        if not isinstance(payload, Mapping):
+            raise StyleDraftError("stored style draft must be an object")
+        draft_id = str(payload.get("draftId") or "")
+        if not _ID_RE.fullmatch(draft_id) or draft_id == "current":
+            raise StyleDraftError("stored style draft id is invalid")
+        profile = validate_style_profile(payload.get("profile"))
+        baseline = validate_style_profile(payload.get("baselineProfile") or profile)
+        if baseline["id"] != profile["id"]:
+            raise StyleDraftError("stored style draft baseline identity does not match")
+        revision = int(payload.get("revision") or 0)
+        if revision < 1:
+            raise StyleDraftError("stored style draft revision is invalid")
+        source = payload.get("sourceThemeName")
+        if source is not None:
+            source = str(source).strip()
+            if not source:
+                source = None
+        now = time.time()
+        return {
+            "draftId": draft_id,
+            "revision": revision,
+            "profile": profile,
+            "baselineProfile": baseline,
+            "sourceThemeName": source,
+            "createdAt": float(payload.get("createdAt") or now),
+            "updatedAt": float(payload.get("updatedAt") or now),
+        }
+
+    @classmethod
+    def _read_store_file(cls, path: Path) -> tuple[dict[str, dict[str, Any]], Optional[str]]:
+        if not path.is_file():
+            return {}, None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}, None
+        if not isinstance(payload, Mapping):
+            return {}, None
+        if (
+            payload.get("kind") != DRAFT_STORE_KIND
+            or payload.get("storeSchemaVersion") != DRAFT_STORE_SCHEMA_VERSION
+        ):
+            return {}, None
+        records: dict[str, dict[str, Any]] = {}
+        for raw in payload.get("drafts") or []:
+            try:
+                record = cls._validated_stored_record(raw)
+            except (StyleDraftError, StyleProfileError, TypeError, ValueError):
+                continue
+            if not cls._record_is_dirty(record):
+                continue
+            key = cls._record_key(record)
+            previous = records.get(key)
+            if previous is None or float(record["updatedAt"]) > float(previous["updatedAt"]):
+                records[key] = record
+        current_id = str(payload.get("currentDraftId") or "") or None
+        return records, current_id
+
+    def configure_directory(self, directory: str | os.PathLike[str]) -> None:
+        """Attach the durable recovery journal and load it once.
+
+        The daemon calls this lazily after options are available. Tests may
+        continue to use a purely in-memory service by omitting ``directory``.
+        """
+        path = Path(directory) / DRAFT_STORE_FILENAME
+        with self._lock:
+            if self._store_path == path:
+                return
+            self._store_path = path
+            stored, current_id = self._read_store_file(path)
+            for record in stored.values():
+                if len(self._drafts) >= MAX_OPEN_DRAFTS:
+                    break
+                self._drafts.setdefault(str(record["draftId"]), record)
+            if current_id in self._drafts:
+                self._current_id = current_id
+            elif stored:
+                newest = max(stored.values(), key=lambda item: float(item["updatedAt"]))
+                self._current_id = str(newest["draftId"])
+
+    def _schedule_persist_locked(self, *records: Mapping[str, Any]) -> None:
+        if self._store_path is None:
+            return
+        self._pending_persist_keys.update(self._record_key(record) for record in records)
+        if not self._pending_persist_keys:
+            return
+        if self._persist_timer is not None:
+            self._persist_timer.cancel()
+        timer = threading.Timer(DRAFT_PERSIST_DELAY_SECONDS, self.flush_persistence)
+        timer.daemon = True
+        self._persist_timer = timer
+        timer.start()
+
+    def flush_persistence(self) -> None:
+        """Flush settled dirty drafts; never called inline by a draft mutation."""
+        with self._lock:
+            path = self._store_path
+            keys = set(self._pending_persist_keys)
+            if path is None or not keys:
+                return
+            local_by_key = {
+                self._record_key(record): self._stored_record(record)
+                for record in self._drafts.values()
+                if self._record_is_dirty(record)
+            }
+            current_id = self._current_id
+            self._pending_persist_keys.difference_update(keys)
+            self._persist_timer = None
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with exclusive_file_transaction(path):
+                stored, stored_current_id = self._read_store_file(path)
+                for key in keys:
+                    stored.pop(key, None)
+                    local = local_by_key.get(key)
+                    if local is not None:
+                        stored[key] = local
+                stored_ids = {str(record["draftId"]) for record in stored.values()}
+                persisted_current_id = (
+                    current_id if current_id in stored_ids
+                    else stored_current_id if stored_current_id in stored_ids
+                    else None
+                )
+                rendered = json.dumps({
+                    "kind": DRAFT_STORE_KIND,
+                    "storeSchemaVersion": DRAFT_STORE_SCHEMA_VERSION,
+                    "currentDraftId": persisted_current_id,
+                    "drafts": sorted(
+                        (self._stored_record(record) for record in stored.values()),
+                        key=lambda item: float(item["updatedAt"]),
+                        reverse=True,
+                    )[:MAX_OPEN_DRAFTS],
+                }, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
+                descriptor, temp_name = tempfile.mkstemp(
+                    prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent)
+                )
+                try:
+                    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                        handle.write(rendered)
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                    os.replace(temp_name, path)
+                except Exception:
+                    try:
+                        os.unlink(temp_name)
+                    except OSError:
+                        pass
+                    raise
+        except Exception:
+            # Recovery persistence is best-effort and must never destabilize
+            # the live editor. Retry quietly after the next settled mutation.
+            with self._lock:
+                self._pending_persist_keys.update(keys)
 
     def _resolve_id(self, draft_id: str) -> str:
         if draft_id == "current":
@@ -194,6 +390,7 @@ class StyleDraftService:
             "overrideCount": len(draft["overrides"]),
             "authoringOverrideCount": len(draft["authoringOverrides"]),
             "appAuthoringOverrideCount": len(draft["appAuthoringOverrides"]),
+            "modifiedFromBaseline": draft["modifiedFromBaseline"],
             "current": current,
             "createdAt": draft["createdAt"],
             "updatedAt": draft["updatedAt"],
@@ -270,6 +467,8 @@ class StyleDraftService:
                 for record in self._drafts.values():
                     if record.get("sourceThemeName") == source_theme_name:
                         self._current_id = str(record["draftId"])
+                        if self._record_is_dirty(record):
+                            self._schedule_persist_locked(record)
                         return self._public(record)
             if len(self._drafts) >= MAX_OPEN_DRAFTS:
                 raise StyleDraftError(f"at most {MAX_OPEN_DRAFTS} style drafts may be open")
@@ -321,6 +520,22 @@ class StyleDraftService:
             self._drafts[resolved_id] = record
             self._current_id = resolved_id
             return self._public(record)
+
+    def get_draft_for_source(self, source_theme_name: str) -> dict:
+        """Return a parked dirty draft without changing the current selection."""
+        source = str(source_theme_name or "").strip()
+        if not source:
+            raise StyleDraftNotFoundError("style draft source theme is required")
+        with self._lock:
+            candidates = [
+                record
+                for record in self._drafts.values()
+                if record.get("sourceThemeName") == source
+                and self._record_is_dirty(record)
+            ]
+            if not candidates:
+                raise StyleDraftNotFoundError(f"no modified style draft for theme: {source}")
+            return self._public(max(candidates, key=lambda item: float(item["updatedAt"])))
 
     def get_draft(self, draft_id: str) -> dict:
         with self._lock:
@@ -447,6 +662,7 @@ class StyleDraftService:
                 record["profile"] = candidate
                 record["revision"] = int(record["revision"]) + 1
                 record["updatedAt"] = time.time()
+                self._schedule_persist_locked(record)
             draft = self._public(record)
             return {
                 **draft,
@@ -521,6 +737,7 @@ class StyleDraftService:
             del self._drafts[str(record["draftId"])]
             if self._current_id == record["draftId"]:
                 self._current_id = None
+            self._schedule_persist_locked(record)
             return {
                 "discarded": True,
                 "discardedDraftId": record["draftId"],
@@ -542,6 +759,7 @@ class StyleDraftService:
                 record["profile"] = baseline
                 record["revision"] = int(record["revision"]) + 1
                 record["updatedAt"] = time.time()
+                self._schedule_persist_locked(record)
             draft = self._public(record)
             return {
                 **draft,
@@ -573,6 +791,7 @@ class StyleDraftService:
                 record["baselineProfile"] = deepcopy(restored)
                 record["revision"] = int(record["revision"]) + 1
                 record["updatedAt"] = time.time()
+                self._schedule_persist_locked(record)
             draft = self._public(record)
             return {
                 **draft,
@@ -605,11 +824,13 @@ class StyleDraftService:
             persistence = persist(deepcopy(profile))
             if not discard:
                 record["baselineProfile"] = deepcopy(profile)
+                self._schedule_persist_locked(record)
             draft = self._public(record)
             if discard:
                 del self._drafts[str(record["draftId"])]
                 if self._current_id == record["draftId"]:
                     self._current_id = None
+                self._schedule_persist_locked(record)
             return {
                 **({} if discard else draft),
                 "committed": True,
@@ -632,12 +853,14 @@ class StyleDraftService:
         authoring_overrides: Optional[Mapping[str, Any]] = None,
         app_authoring_overrides: Optional[Mapping[str, Any]] = None,
         persist: Callable[[dict], Any],
+        clear_source: bool = False,
     ) -> dict:
         """Fork and persist the checked revision plus a pending editor patch.
 
-        The source draft remains open and untouched. The fork becomes current
-        so later ordinary saves update the new user theme. Persistence happens
-        before publication, under the same CAS lock as a normal commit.
+        The source draft remains open and untouched unless an in-app promotion
+        explicitly clears it. The fork becomes current so later ordinary saves
+        update the new user theme. Persistence happens before publication,
+        under the same CAS lock as a normal commit.
         """
         clean_name = str(name or "").strip()
         if not clean_name or len(clean_name) > 80:
@@ -673,6 +896,9 @@ class StyleDraftService:
             }
             self._drafts[new_draft_id] = new_record
             self._current_id = new_draft_id
+            if clear_source:
+                del self._drafts[str(source_record["draftId"])]
+                self._schedule_persist_locked(source_record)
             draft = self._public(new_record)
             return {
                 **draft,
@@ -772,8 +998,12 @@ class StyleDraftService:
     def clear(self) -> None:
         """Reset ephemeral state; intended for deterministic daemon tests."""
         with self._lock:
+            if self._persist_timer is not None:
+                self._persist_timer.cancel()
+                self._persist_timer = None
             self._drafts.clear()
             self._current_id = None
+            self._pending_persist_keys.clear()
 
 
 style_draft_service = StyleDraftService()

@@ -10,6 +10,7 @@ import fortune
 import arabicparts
 import mtexts
 import util
+import eclipses
 
 
 SIGNS = (
@@ -34,6 +35,7 @@ class SearchObject(object):
 	FAMILY_ANGLE = 'angle'
 	FAMILY_FORTUNE = 'fortune'
 	FAMILY_SYZYGY = 'syzygy'
+	FAMILY_ECLIPSE = 'eclipse'
 	FAMILY_FIXED_STAR = 'fixed_star'
 	FAMILY_PART = 'part'
 	FAMILY_CUSTOM_POINT = 'custom_point'
@@ -42,6 +44,7 @@ class SearchObject(object):
 	SOURCE_ANGLE = 'angle'
 	SOURCE_FORTUNE = 'fortune'
 	SOURCE_SYZYGY = 'syzygy'
+	SOURCE_ECLIPSE = 'eclipse'
 	SOURCE_FIXED_STAR = 'fixed_star'
 	SOURCE_ARABIC_PART = 'arabic_part'
 	SOURCE_CUSTOM_POINT = 'custom_point'
@@ -57,6 +60,7 @@ class SearchObject(object):
 		can_promittor=False,
 		can_significator=False,
 		display_glyph='',
+		display_glyph_font='morinus',
 		display_marker='',
 		display_segments=None,
 		fixedstar_code=None,
@@ -70,6 +74,7 @@ class SearchObject(object):
 		self.can_promittor = can_promittor
 		self.can_significator = can_significator
 		self.display_glyph = display_glyph
+		self.display_glyph_font = display_glyph_font
 		self.display_marker = display_marker
 		self.display_segments = list(display_segments or [])
 		self.fixedstar_code = fixedstar_code
@@ -199,6 +204,12 @@ class SearchCatalog(object):
 		except Exception:
 			syzygy_lon = None
 
+		try:
+			eclipse_event, _eclipse_jd, eclipse_lon = eclipses.selected_prenatal_eclipse_point(self.chart)
+		except Exception:
+			eclipse_event = None
+			eclipse_lon = None
+
 		if asc_lon is not None:
 			self._add_object(
 				SearchObject(
@@ -251,6 +262,21 @@ class SearchCatalog(object):
 				)
 			)
 
+		if eclipse_lon is not None:
+			self._add_object(
+				SearchObject(
+					'point:eclipse',
+					eclipses.eclipse_event_label(eclipse_event),
+					SearchObject.FAMILY_ECLIPSE,
+					SearchObject.SOURCE_ECLIPSE,
+					eclipse_lon,
+					can_promittor=False,
+					can_significator=True,
+					display_glyph='Ec',
+					display_glyph_font='text',
+				)
+			)
+
 
 	def _add_fixed_stars(self):
 		for idx, star in enumerate(getattr(getattr(self.chart, 'fixstars', None), 'data', ()) or ()):
@@ -270,7 +296,7 @@ class SearchCatalog(object):
 					SearchObject.SOURCE_FIXED_STAR,
 					lon,
 					can_promittor=True,
-					can_significator=False,
+					can_significator=True,
 					fixedstar_code=code,
 				)
 			)

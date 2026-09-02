@@ -5,6 +5,7 @@
 .PHONY: perf-check perf-report speedlog
 .PHONY: worktree-check worktree-bootstrap
 .PHONY: web-frontend web-hosted-build web-notes web-corpus web-runtime-resources web-legal web-venv web-build-deps web-check-deps
+.PHONY: web-frontend-preflight web-tauri-before-build
 .PHONY: web-daemon-current web-daemon-binary web-verify-parity style-check style-token-check
 
 # POSIX-oriented helper targets.
@@ -16,7 +17,12 @@ WEB_DAEMON_PORT ?= 8765
 WEB_PYTHON ?= webapp/.venv/bin/python
 ARCH ?= arm64
 ARIES_VERSION ?=
-ARIES_PACK_SEED_SOURCES ?=
+# Private/development builds stage every authored corpus pack that exists in the
+# checkout. Valens is passive public inspector content; the other packs provide
+# interpretation rules and remain subject to the release distribution boundary.
+ARIES_PACK_SEED_SOURCES ?= $(wildcard corpus/valens corpus/hephaistion corpus/dorotheus corpus/lilly)
+PUBLIC_MACOS_ICON := Res/OpenAries.icns
+PUBLIC_TAURI_ICON_CONFIG := {"bundle":{"icon":["../../../$(PUBLIC_MACOS_ICON)","icons/32x32.png","icons/128x128.png","icons/128x128@2x.png","icons/icon.ico"]}}
 export ARIES_VERSION
 
 DAEMON_BUILD_STAMP := webapp/frontend/.tmp/daemon-build.stamp
@@ -38,7 +44,7 @@ help:
 		$(MAKE) --no-print-directory owner-help; \
 	fi
 
-run: worktree-check web-daemon-current
+run: worktree-check web-corpus web-daemon-current
 	@if [ ! -x webapp/frontend/src-tauri/binaries/aries-daemon/aries-daemon ]; then \
 		$(MAKE) web-daemon-binary; \
 	fi
@@ -119,6 +125,17 @@ web-frontend: web-notes
 
 web-hosted-build: web-notes
 	cd webapp/frontend && NEXT_PUBLIC_ARIES_DAEMON_URL=same-origin npm run build
+
+# Fail on frontend contract drift before spending time rebuilding the native
+# daemon and staging package resources. Tauri invokes the complete ordered
+# producer below for both direct and Makefile-driven package builds.
+web-frontend-preflight:
+	cd webapp/frontend && npm run prebuild
+
+web-tauri-before-build: web-frontend-preflight
+	$(MAKE) --no-print-directory web-corpus web-notes web-daemon-binary web-legal
+	$(PYTHON) scripts/stage_tauri_runtime_resources.py
+	cd webapp/frontend && npm run build:next
 
 web-dev: web-venv web-notes
 	@set -e; \
@@ -207,8 +224,11 @@ web-verify-parity: web-venv
 	sleep 2; \
 	$(WEB_PYTHON) webapp/daemon/verify_parity.py
 
-package: web-notes web-corpus web-daemon-binary web-legal
-	cd webapp/frontend && ARIES_LICENSE_REQUIRED=0 npx tauri build
+# The unlocked source build has its own public identity. Owner-only signed
+# builds do not use this target and continue to package Res/Aries.icns.
+package:
+	@test -f "$(PUBLIC_MACOS_ICON)" || { echo "Missing public app icon: $(PUBLIC_MACOS_ICON)" >&2; exit 1; }
+	cd webapp/frontend && ARIES_LICENSE_REQUIRED=0 npx tauri build --config '$(PUBLIC_TAURI_ICON_CONFIG)'
 
 web: package
 

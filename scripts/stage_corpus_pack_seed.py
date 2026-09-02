@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Max Lange
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Stage explicitly named corpus packs as first-launch installation seeds."""
 
 from __future__ import annotations

@@ -59,6 +59,16 @@ import { beginWorkspaceSnapshotCommand } from "@/stores/workspace-command-snapsh
 
 import { ListCalendarStepper, ListSegmentedControl } from "./list-controls";
 import {
+  mergeTemporalCoverageBounds,
+  temporalCoverageBounds,
+  temporalCoverageFromJdBounds,
+  type TemporalCoverageBounds,
+  useTemporalConfluenceLensReporter,
+  useTemporalConfluenceRows,
+  useTemporalPinnedRowId,
+  useTemporalRowHighlight,
+} from "./temporal-confluence-context";
+import {
   buildStableRowKeys,
   useEdgeExtend,
   type AgeSpan,
@@ -80,6 +90,7 @@ type TransitPromittorItem = {
 type TransitMonthStore = {
   rows: TransitSearchRow[];
   coverage: TransitSpan;
+  coverageJdUt: TemporalCoverageBounds | null;
   islandNonce: number;
   streamKey: string;
   summary: string;
@@ -142,14 +153,22 @@ function listCacheKey(parts: Record<string, unknown>): string {
 export function TransitListView({
   documentId,
   focusDatetime,
+  embedded = false,
+  includeTemporal = false,
+  includeOrbTemporal = false,
   onClose,
 }: {
   documentId: string;
   sourceName?: string;
   focusDatetime?: string | null;
+  embedded?: boolean;
+  includeTemporal?: boolean;
+  includeOrbTemporal?: boolean;
   onClose?: () => void;
 }) {
   const t = useT();
+  const temporalRequested = includeTemporal || includeOrbTemporal;
+  const viewStateKey = temporalRequested ? `${documentId}:temporal-confluence` : documentId;
   const rowHeight = useListRowHeight("symbolic");
   const rowHeightRef = React.useRef(rowHeight);
   React.useLayoutEffect(() => {
@@ -167,8 +186,8 @@ export function TransitListView({
     [t],
   );
   const cachedViewState = React.useMemo(
-    () => transitListViewStateCache.get(documentId) ?? null,
-    [documentId],
+    () => transitListViewStateCache.get(viewStateKey) ?? null,
+    [viewStateKey],
   );
   const transitListPreferences = useWorkspaceStore(
     (state) =>
@@ -257,6 +276,14 @@ export function TransitListView({
   const frameFocusEffectMountedRef = React.useRef(false);
   const activePromittorIdsRef = React.useRef<readonly string[] | null>(activePromittorIds);
   const optionsSeq = useTransitOptionsSeq();
+  const reportTemporalLens = useTemporalConfluenceLensReporter();
+  React.useEffect(() => {
+    if (!catalog) return;
+    reportTemporalLens({
+      direction,
+      ...(activePromittorIds ? { promittorIds: [...activePromittorIds] } : {}),
+    });
+  }, [activePromittorIds, catalog, direction, reportTemporalLens]);
   const directionRef = React.useRef(direction);
   const rowsRef = React.useRef<TransitSearchRow[]>([]);
   const visibleMonthIndexRef = React.useRef(visibleMonthIndex);
@@ -324,14 +351,24 @@ export function TransitListView({
         documentId,
         direction,
         promittorScope: activePromittorKey,
+        includeTemporal: temporalRequested,
+        includeOrbTemporal,
         optionsSeq,
         catalogOptionsSeq,
       }),
-    [activePromittorKey, catalogOptionsSeq, direction, documentId, optionsSeq],
+    [
+      activePromittorKey,
+      catalogOptionsSeq,
+      direction,
+      documentId,
+      includeOrbTemporal,
+      optionsSeq,
+      temporalRequested,
+    ],
   );
   const viewportKey = React.useMemo(
-    () => transitViewportKey(documentId, direction, activePromittorKey),
-    [activePromittorKey, direction, documentId],
+    () => transitViewportKey(viewStateKey, direction, activePromittorKey),
+    [activePromittorKey, direction, viewStateKey],
   );
   const viewportKeyRef = React.useRef(viewportKey);
   React.useEffect(() => {
@@ -451,6 +488,8 @@ export function TransitListView({
       catalog,
       documentId,
       direction,
+      includeTemporal: temporalRequested,
+      includeOrbTemporal,
       promittorIds: activePromittorIds,
       span: island.window,
       loadDirection: "around",
@@ -482,10 +521,12 @@ export function TransitListView({
     catalogOptionsSeq,
     direction,
     documentId,
+    includeOrbTemporal,
     island,
     optionsSeq,
     stitchKey,
     t,
+    temporalRequested,
   ]);
 
   const extendCoverage = React.useCallback(
@@ -553,6 +594,13 @@ export function TransitListView({
             start: Math.min(base.coverage.start, chunkSpan.start),
             end: Math.max(base.coverage.end, chunkSpan.end),
           },
+          coverageJdUt: mergeTemporalCoverageBounds(
+            base.coverageJdUt,
+            temporalCoverageBounds(
+              payload.cursor.coverageStartJdUt,
+              payload.cursor.coverageEndJdUt,
+            ),
+          ),
           summary: payload.summary,
           truncated: base.truncated || payload.truncated,
           exhaustedPrevious:
@@ -579,6 +627,8 @@ export function TransitListView({
         catalog,
         documentId,
         direction,
+        includeTemporal: temporalRequested,
+        includeOrbTemporal,
         promittorIds: activePromittorIdsRef.current,
         span,
         loadDirection,
@@ -647,7 +697,16 @@ export function TransitListView({
         });
       return true;
     },
-    [catalog, direction, documentId, island.nonce, queueFrameFocusSettle, t],
+    [
+      catalog,
+      direction,
+      documentId,
+      includeOrbTemporal,
+      island.nonce,
+      queueFrameFocusSettle,
+      t,
+      temporalRequested,
+    ],
   );
   React.useLayoutEffect(() => {
     extendCoverageRef.current = extendCoverage;
@@ -800,6 +859,15 @@ export function TransitListView({
         : bootstrapTransitRows(sourceRows, activePromittorIds),
     [activePromittorIds, authoritativeStream, sourceRows],
   );
+  const temporalCoverage = React.useMemo(
+    () =>
+      temporalCoverageFromJdBounds(
+        authoritativeStream ? store?.coverageJdUt : null,
+        authoritativeStream && store?.truncated === false,
+      ),
+    [authoritativeStream, store?.coverageJdUt, store?.truncated],
+  );
+  useTemporalConfluenceRows(rows, temporalCoverage);
   const authoritativeRowTimestamps = React.useMemo(
     () => transitRowsTimestamps(sourceRows),
     [sourceRows],
@@ -825,27 +893,39 @@ export function TransitListView({
         visibleMonthIndex: monthIndexForDate(viewportFocus),
       };
       transitStreamViewportCache.set(viewportKeyRef.current, viewState);
-      transitListViewStateCache.set(documentId, {
+      transitListViewStateCache.set(viewStateKey, {
         direction: directionRef.current,
         ...viewState,
       });
     };
-  }, [documentId]);
+  }, [viewStateKey]);
 
   const rowKeys = React.useMemo(() => buildStableRowKeys(rows, transitStitchRowKey), [rows]);
   const focusTargetMs = resolveDateMs(frameFocusDatetime);
-  const focusIndex = nearestTransitTimestampIndex(residentRowTimestamps, focusTargetMs);
+  const pinnedTemporalRowId = useTemporalPinnedRowId();
+  const pinnedTemporalIndex = React.useMemo(
+    () =>
+      pinnedTemporalRowId
+        ? rows.findIndex((row) => row.temporal?.rowId === pinnedTemporalRowId)
+        : -1,
+    [pinnedTemporalRowId, rows],
+  );
+  const focusIndex =
+    pinnedTemporalIndex >= 0
+      ? pinnedTemporalIndex
+      : nearestTransitTimestampIndex(residentRowTimestamps, focusTargetMs);
   const focusIsResident =
-    authoritativeIsland
-    && rows.length > 0
-    && Number.isFinite(focusTargetMs)
-    && monthSpanContainsMonth(store?.coverage, monthIndexForDate(frameFocusDatetime))
-    && transitFocusInsideResidentRows(
-      residentRowTimestamps,
-      focusTargetMs,
-      store?.exhaustedPrevious,
-      store?.exhaustedNext,
-    );
+    pinnedTemporalIndex >= 0 ||
+    (authoritativeIsland
+      && rows.length > 0
+      && Number.isFinite(focusTargetMs)
+      && monthSpanContainsMonth(store?.coverage, monthIndexForDate(frameFocusDatetime))
+      && transitFocusInsideResidentRows(
+        residentRowTimestamps,
+        focusTargetMs,
+        store?.exhaustedPrevious,
+        store?.exhaustedNext,
+      ));
   useFixedRowHeightAnchor(scrollerRef, rows.length, rowHeight, {
     syncEvent: VIRTUAL_SCROLL_SYNC_EVENT,
   });
@@ -968,9 +1048,9 @@ export function TransitListView({
       visibleMonthIndex: monthIndexForDate(nextFocus),
     };
     transitStreamViewportCache.set(viewportKey, viewState);
-    transitListViewStateCache.set(documentId, { direction, ...viewState });
+    transitListViewStateCache.set(viewStateKey, { direction, ...viewState });
     return viewState;
-  }, [direction, documentId, rowHeight, rows, viewportKey, visibleMonthIndex]);
+  }, [direction, rowHeight, rows, viewStateKey, viewportKey, visibleMonthIndex]);
   const activateStreamViewport = React.useCallback(
     (
       nextViewportKey: string,
@@ -1009,7 +1089,7 @@ export function TransitListView({
       }
       const currentView = captureCurrentViewport();
       activateStreamViewport(
-        transitViewportKey(documentId, direction, nextPromittorKey),
+        transitViewportKey(viewStateKey, direction, nextPromittorKey),
         currentView,
       );
       setTransitListPreferences(documentId, {
@@ -1024,6 +1104,7 @@ export function TransitListView({
       direction,
       documentId,
       setTransitListPreferences,
+      viewStateKey,
     ],
   );
   const jumpByMonths = React.useCallback((delta: number) => {
@@ -1063,7 +1144,7 @@ export function TransitListView({
       if (nextDirection === direction) return;
       const currentView = captureCurrentViewport();
       activateStreamViewport(
-        transitViewportKey(documentId, nextDirection, activePromittorKey),
+        transitViewportKey(viewStateKey, nextDirection, activePromittorKey),
         currentView,
       );
       setDirection(nextDirection);
@@ -1077,6 +1158,7 @@ export function TransitListView({
       documentId,
       setDirection,
       setTransitListPreferences,
+      viewStateKey,
     ],
   );
   React.useEffect(() => {
@@ -1103,21 +1185,23 @@ export function TransitListView({
   return (
     <div className={LIST_PANE_CLASSES.root}>
       <div className={LIST_PANE_CLASSES.standardHeader}>
-        <div className={LIST_PANE_CLASSES.titleRow}>
-          <div className={LIST_PANE_CLASSES.titleLeading}>
-            {onClose ? (
-              <Button
-                type="button"
-                {...LIST_BUTTON_PROPS.icon}
-                onClick={onClose}
-                aria-label={t("tlview.closeTransits")}
-              >
-                <X className="size-3.5" />
-              </Button>
-            ) : null}
-            <h2 className={LIST_PANE_CLASSES.title}>{t("sidebar.action.transits")}</h2>
+        {!embedded ? (
+          <div className={LIST_PANE_CLASSES.titleRow}>
+            <div className={LIST_PANE_CLASSES.titleLeading}>
+              {onClose ? (
+                <Button
+                  type="button"
+                  {...LIST_BUTTON_PROPS.icon}
+                  onClick={onClose}
+                  aria-label={t("tlview.closeTransits")}
+                >
+                  <X className="size-3.5" />
+                </Button>
+              ) : null}
+              <h2 className={LIST_PANE_CLASSES.title}>{t("sidebar.action.transits")}</h2>
+            </div>
           </div>
-        </div>
+        ) : null}
         <div className={LIST_PANE_CLASSES.controlRow}>
           <ListSegmentedControl
             label={t("tlview.direction")}
@@ -1216,12 +1300,15 @@ function TransitRow({
   rowHeight: number;
 }) {
   const dc = row.technique === "converse_transits" ? "C" : "D";
+  const temporalHighlight = useTemporalRowHighlight(row.temporal);
   return (
     <TransitRowContextMenu row={row} documentId={documentId}>
       <TableRow
         className={TRANSIT_ROW_CLASS}
         data-initial-focus={focused || undefined}
-        style={{ height: rowHeight }}
+        {...temporalHighlight.dataAttributes}
+        style={{ height: rowHeight, ...temporalHighlight.style }}
+        onClick={temporalHighlight.onClick}
       >
         <TableCell className="text-center">
           <TransitObjectCell
@@ -1742,6 +1829,8 @@ async function fetchTransitCursor({
   catalog,
   documentId,
   direction,
+  includeTemporal,
+  includeOrbTemporal,
   promittorIds,
   span,
   loadDirection,
@@ -1754,6 +1843,8 @@ async function fetchTransitCursor({
   catalog: TransitSearchCatalog;
   documentId: string;
   direction: TransitDirectionMode;
+  includeTemporal: boolean;
+  includeOrbTemporal: boolean;
   promittorIds: readonly string[] | null;
   span: TransitSpan;
   loadDirection: "around" | "previous" | "next";
@@ -1779,10 +1870,15 @@ async function fetchTransitCursor({
     significatorIds: transitListSignificatorIds(catalog),
     aspects: transitListAspectIds(catalog),
     includeSignChanges: false,
+    includeTemporal,
+    includeOrbTemporal,
     partFilter: "",
     limit: catalog.defaults.limit,
     persistSettings: false,
-    ownerScope: "transit-list",
+    ownerScope:
+      includeTemporal || includeOrbTemporal
+        ? "transit-list:temporal-confluence"
+        : "transit-list",
     cursorDirection: loadDirection,
     cursorRowBudget: rowBudget,
     cursorAnchorDate: cursorAnchorDateForSpan(anchorDatetime, span),
@@ -1887,6 +1983,7 @@ function transitStoreFromCursorPayload(
     return {
       rows: [],
       coverage: island.window,
+      coverageJdUt: null,
       islandNonce: island.nonce,
       streamKey,
       summary: payload.summary,
@@ -1899,6 +1996,10 @@ function transitStoreFromCursorPayload(
   return {
     rows: payload.rows,
     coverage: transitSpanForCursor(payload.cursor),
+    coverageJdUt: temporalCoverageBounds(
+      payload.cursor.coverageStartJdUt,
+      payload.cursor.coverageEndJdUt,
+    ),
     islandNonce: island.nonce,
     streamKey,
     summary: payload.summary,

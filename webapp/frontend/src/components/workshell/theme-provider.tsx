@@ -10,7 +10,11 @@ import {
   loadStoredStyleLabFonts,
   STYLE_FONT_ASSETS_READY_EVENT,
 } from "@/lib/style-lab/fonts";
-import { APP_AUTHORING_OVERRIDE_PREFIX } from "@/lib/style-lab/client";
+import {
+  APP_AUTHORING_OVERRIDE_PREFIX,
+  fetchWorkingStyleLabDraft,
+  StyleLabApiError,
+} from "@/lib/style-lab/client";
 import {
   LEGACY_STYLE_TOKEN_MIGRATION_ACK_KEY,
   LEGACY_STYLE_TOKEN_STORAGE_KEY,
@@ -115,7 +119,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     (state) => state.cssOverrides,
   );
   const styleLabSemanticOverrides = useChartStyleEditorStore(
-    (state) => state.semanticOverrides,
+    (state) => state.resolvedOverrides,
   );
   const styleLabRevision = useChartStyleEditorStore((state) => state.revision);
 
@@ -129,6 +133,42 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (connection !== "open") return;
     const controller = new AbortController();
+    const restoreWorkingTheme = async (next: ThemeState | null) => {
+      if (!next?.activePreset || controller.signal.aborted) return;
+      try {
+        const draft = await fetchWorkingStyleLabDraft(
+          next.activePreset,
+          controller.signal,
+        );
+        if (controller.signal.aborted || !draft.modifiedFromBaseline) return;
+        // Keep the sizeable editor catalog and colour parser out of ordinary
+        // app startup. They are needed only when recovery actually found a
+        // working draft to resolve.
+        const { STYLE_LAB_TOKEN_METADATA } = await import(
+          "@/lib/style-lab/token-metadata"
+        );
+        if (controller.signal.aborted) return;
+        const editor = useChartStyleEditorStore.getState();
+        editor.setTokenMetadata(STYLE_LAB_TOKEN_METADATA);
+        editor.setStyleLabBaseTheme({
+          sourceThemeName: next.activePreset,
+          mode: next.mode,
+          appTokens: next.appTokens,
+          chartPalette: next.chartPalette,
+          appAuthoring: next.profileOverrides.appAuthoring,
+        });
+        editor.acceptRemoteDraft(draft, { clearHistory: true });
+        editor.setLiveAppThemePreview(true);
+      } catch (error) {
+        if (
+          controller.signal.aborted
+          || (error instanceof StyleLabApiError && error.status === 404)
+        ) return;
+        // Recovery is a convenience layer; the saved daemon theme remains the
+        // safe paint if its small journal is temporarily unavailable.
+        console.error("[style-draft-recovery]", error);
+      }
+    };
     const syncDaemonStyle = async () => {
       const legacy = pendingLegacyStyleMigration();
       if (legacy) {
@@ -139,13 +179,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           // Preserve the source payload exactly; the separate acknowledgement
           // only prevents repeated idempotent POSTs after daemon confirmation.
           window.localStorage.setItem(LEGACY_STYLE_TOKEN_MIGRATION_ACK_KEY, legacy.raw);
+          await restoreWorkingTheme(migrated.themeState);
           return;
         } catch (err) {
           if (controller.signal.aborted) return;
           console.error("[style-profile-migration]", err);
         }
       }
-      await fetchThemeState(controller.signal);
+      await restoreWorkingTheme(await fetchThemeState(controller.signal));
     };
     void syncDaemonStyle();
     return () => controller.abort();
@@ -156,7 +197,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     let fetchController: AbortController | null = null;
 
     const syncOrFetch = () => {
-      if (syncThemeStateFromStorage()) return;
+      // The cache is a paint optimisation, not authority. Repaint from it at
+      // once so there is no flash, then always reconcile against the daemon:
+      // returning early here left these listeners unable to see any theme
+      // change this client did not itself write, which is what they exist for.
+      // applyThemeState no-ops when styleRevision and styleHash already match,
+      // so an unchanged theme costs one request and no repaint.
+      syncThemeStateFromStorage();
       fetchController?.abort();
       fetchController = new AbortController();
       void fetchThemeState(fetchController.signal);

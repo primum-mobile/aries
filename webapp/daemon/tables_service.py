@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 """Wx-free generic embedded table payloads for workspace-hosted tables.
 
 Packet 05A migrates the row payload contract for the simple Morinus table
@@ -33,13 +38,16 @@ import profections
 import profectionsmonthly
 import profectiontable
 import primdirs
+import radixsignals
 import triplicitydirections
 import transits
 import util
+import vimshottari
 import zodiacalreleasing
 from angleatbirth import compute_contacts
 from engine import chart_factory
 from engine import paranatellonta
+from engine import planetary_state
 from webapp.daemon.chart_service import chart_snapshot_service
 from webapp.daemon.display_palette import (
     aspect_color_role,
@@ -48,6 +56,16 @@ from webapp.daemon.display_palette import (
     sign_color_role,
 )
 from webapp.daemon.event_time import DefaultLocationClock, table_event_clock
+from webapp.daemon.primdir_points import semantic_planet_point
+from webapp.daemon.speculum_speed import (
+    SPEED_DISPLAY_DAILY,
+    SPEED_DISPLAY_PERCENT,
+    SPEED_DISPLAY_WORDS,
+    STATIONARY_MAX_PERCENT,
+    motion_word,
+    normalize_speed_display_mode,
+    relative_speed_percent,
+)
 from webapp.daemon.table_catalog import TABLE_CATALOG
 
 
@@ -99,6 +117,7 @@ def _glyph(
     *,
     text: str = "",
     export_text: str | None = None,
+    export_symbol_text: str | None = None,
     align: str | None = "center",
     emphasis: str | None = None,
 ) -> Cell:
@@ -107,6 +126,8 @@ def _glyph(
         cell["text"] = text
     if export_text:
         cell["exportText"] = str(export_text)
+    if export_symbol_text:
+        cell["exportSymbolText"] = str(export_symbol_text)
     if align:
         cell["align"] = align
     if emphasis:
@@ -131,11 +152,19 @@ def _runs(*runs: tuple[str, str | bool]) -> Cell:
     return cell
 
 
-def _row(row_id: str, cells: list[Cell], *, meta: dict[str, Any] | None = None,
-         emphasis: str | None = None) -> Row:
+def _row(
+    row_id: str,
+    cells: list[Cell],
+    *,
+    meta: dict[str, Any] | None = None,
+    temporal: dict[str, Any] | None = None,
+    emphasis: str | None = None,
+) -> Row:
     result: Row = {"id": row_id, "cells": cells}
     if meta:
         result["meta"] = meta
+    if temporal:
+        result["temporal"] = temporal
     if emphasis:
         result["emphasis"] = emphasis
     return result
@@ -221,6 +250,7 @@ def _planet_cell(planet_id: int, chrt, options, *, align: str | None = "center",
     cell = _glyph(
         _planet_glyph(planet_id),
         export_text=_planet_export_name(planet_id),
+        export_symbol_text=common.planet_text_export_mark(planet_id),
         align=align,
         emphasis=emphasis,
     )
@@ -240,6 +270,9 @@ def _planet_run(planet_id: int, chrt, options) -> dict[str, Any]:
         "planet": int(planet_id),
         "exportText": _planet_export_name(planet_id),
     }
+    export_symbol = common.planet_text_export_mark(planet_id)
+    if export_symbol:
+        run["exportSymbolText"] = export_symbol
     color = _planet_color(planet_id, chrt, options)
     _set_semantic_color(run, color, _planet_color_role(planet_id, chrt, options, color))
     return run
@@ -283,6 +316,7 @@ def _sign_run(options, sign_index: int, sign: str | None = None) -> dict[str, An
         "text": sign,
         "glyph": True,
         "exportText": _sign_export_name(sign_index),
+        "exportSymbolText": common.sign_text_export_mark(sign_index),
     }
     color = _sign_color_hex(options, sign_index)
     _set_semantic_color(
@@ -296,7 +330,12 @@ def _sign_run(options, sign_index: int, sign: str | None = None) -> dict[str, An
 def _sign_cell(options, sign_index: int, *, align: str = "center") -> Cell:
     signs = _signs(options)
     sign = signs[sign_index] if 0 <= sign_index < len(signs) else ""
-    cell = _glyph(sign, export_text=_sign_export_name(sign_index), align=align)
+    cell = _glyph(
+        sign,
+        export_text=_sign_export_name(sign_index),
+        export_symbol_text=common.sign_text_export_mark(sign_index),
+        align=align,
+    )
     color = _sign_color_hex(options, sign_index)
     _set_semantic_color(
         cell,
@@ -394,6 +433,20 @@ def _glyph_export_symbol_text(value: Any) -> str:
     glyph = "" if value is None else str(value)
     if not glyph:
         return ""
+    candidate_ids = list(range(astrology.SE_SUN, astrology.SE_TRUE_NODE + 1))
+    candidate_ids.append(astrology.SE_CHIRON)
+    for planet_id in candidate_ids:
+        if glyph == _planet_glyph(planet_id):
+            return common.planet_text_export_mark(planet_id)
+    if glyph == str(getattr(common.common, "fortune", "")):
+        return common.FORTUNE_TEXT_EXPORT_MARK
+    try:
+        sign_glyphs = tuple(common.common.Signs1) + tuple(common.common.Signs2)
+    except (AttributeError, TypeError):
+        sign_glyphs = ()
+    for index, sign_glyph in enumerate(sign_glyphs):
+        if glyph == str(sign_glyph):
+            return common.sign_text_export_mark(index % 12)
     for index, aspect_glyph in enumerate(tuple(getattr(common.common, "Aspects", ()))):
         if glyph == str(aspect_glyph):
             return _aspect_export_mark(index)
@@ -440,8 +493,6 @@ def _ensure_plain_text_export_contract(columns: list[dict], rows: list[Row]) -> 
         for cell in row.get("cells", []):
             text = str(cell.get("text") or "")
             runs = cell.get("runs")
-            if text and not runs:
-                continue
             if isinstance(runs, list) and runs:
                 for run in runs:
                     if run.get("glyph") and run.get("exportText") is None:
@@ -469,11 +520,14 @@ def _ensure_plain_text_export_contract(columns: list[dict], rows: list[Row]) -> 
                     cell["exportText"] = (
                         _planet_export_name(planet_id)
                         if planet_id is not None
-                        else _glyph_export_text(cell.get("glyph"))
+                        else text or _glyph_export_text(cell.get("glyph"))
                     )
                 export_symbol = _glyph_export_symbol_text(cell.get("glyph"))
                 if export_symbol:
                     cell["exportSymbolText"] = export_symbol
+                continue
+            if text:
+                continue
 
 
 def _body_ids(chrt, options, *, aspects: bool = False) -> list[int]:
@@ -506,6 +560,62 @@ def _dms(value: float, *, signed: bool = False, sec: bool = False) -> str:
     if sec:
         return "%s%s°%02d'%02d\"" % (sign, str(d).rjust(2), m, s)
     return "%s%s°%02d'" % (sign, str(d).rjust(2), m)
+
+
+def _longitude_speed_cell(value: float) -> Cell:
+    """Compact degrees-per-day cell matching the existing Inspector format."""
+    try:
+        speed = float(value)
+    except (TypeError, ValueError):
+        return _text("", align="right")
+    d, m, s = util.decToDeg(abs(speed))
+    sign = "-" if speed < 0.0 else ""
+    return _text(
+        f"{sign}{d:02d}°{m:02d}'{s:02d}\"/d",
+        align="right",
+        sort_value=speed,
+    )
+
+
+def _position_speed_cell(body_id: int, value: float, options, chrt=None) -> Cell:
+    """Format one Positions/Inspector speed from the selected Speculum mode."""
+    try:
+        speed = float(value)
+    except (TypeError, ValueError):
+        return _text("", align="right")
+    mode = normalize_speed_display_mode(
+        getattr(options, "speculum_speed_mode", SPEED_DISPLAY_DAILY))
+    if mode == SPEED_DISPLAY_PERCENT:
+        percent = relative_speed_percent(body_id, speed)
+        if percent is not None:
+            if abs(percent) < 0.5:
+                percent = 0.0
+            return _text(f"{percent:.0f}%", align="right", sort_value=speed)
+    elif mode == SPEED_DISPLAY_WORDS:
+        station_marker = None
+        percent = relative_speed_percent(body_id, speed)
+        if (
+            chrt is not None
+            and percent is not None
+            and abs(percent) <= STATIONARY_MAX_PERCENT
+        ):
+            try:
+                station_marker = radixsignals.get_station_marker(
+                    chrt,
+                    body_id,
+                    within_days=1.0,
+                    options=options,
+                )
+            except Exception:
+                station_marker = None
+        word = motion_word(body_id, speed, station_marker)
+        if word is not None:
+            label_key, suffix_key = word
+            text = _txt(label_key, label_key)
+            if suffix_key:
+                text += f" {_txt(suffix_key, suffix_key)}"
+            return _text(text, align="right", sort_value=speed)
+    return _longitude_speed_cell(speed)
 
 
 def _ra(value: float, options) -> str:
@@ -636,15 +746,11 @@ def _base_payload(table_id: str, chrt, options, columns: list[dict], rows: list[
         "capabilities": {
             "sorting": True,
             "copy": True,
-            "export": ["tsv", "json"],
+            "export": ["pdf", "txt"],
             "currentRow": any(bool(row.get("current")) for row in rows),
             "rowActions": [],
             "dateConvention": dateformat.date_convention_from_options(options),
         },
-        "deferrals": [
-            "Rendered bitmap/PDF export remains deferred from commonwnd.py:163; Packet 05A exports daemon table payloads as TSV/JSON.",
-            "Row context actions/current-row markers are not present for these generic simple-table rows unless a daemon row carries current=true; timed-row action tables stay in their owning packets.",
-        ],
         "source": source,
         "cellEncoding": "text-glyph-runs",
         "unavailable": False,
@@ -714,6 +820,8 @@ _ECLIPSE_CHUNK_CACHE_MAX = 256
 _ECLIPSE_CHUNK_CACHE: OrderedDict[tuple[float, float], list] = OrderedDict()
 _ECLIPSE_SAROS_FIRST_CACHE_MAX = 512
 _ECLIPSE_SAROS_FIRST_CACHE: OrderedDict[tuple[bool, int], float | None] = OrderedDict()
+_ECLIPSE_SAROS_SERIES_CACHE_MAX = 64
+_ECLIPSE_SAROS_SERIES_CACHE: OrderedDict[tuple[bool, int], list] = OrderedDict()
 
 
 def _eclipse_date_values_from_datetime(chrt, current_datetime: Any = None) -> tuple[int, int, int, int, int, int]:
@@ -879,6 +987,25 @@ def _cached_eclipse_saros_first_jd(event) -> float | None:
     return first_jd
 
 
+def _cached_eclipse_saros_series_events(
+    *, is_solar: bool, series: int, member: int, event_jd: float,
+) -> list:
+    key = (bool(is_solar), int(series))
+    cached = _ECLIPSE_SAROS_SERIES_CACHE.get(key)
+    if cached is not None:
+        _ECLIPSE_SAROS_SERIES_CACHE.move_to_end(key)
+        return list(cached)
+    seed = eclipses.EclipseEvent()
+    seed.jdut = float(event_jd)
+    seed.is_solar = bool(is_solar)
+    seed.saros = "%d/%d" % (int(series), int(member))
+    events = eclipses.saros_series_events(seed)
+    _ECLIPSE_SAROS_SERIES_CACHE[key] = list(events)
+    if len(_ECLIPSE_SAROS_SERIES_CACHE) > _ECLIPSE_SAROS_SERIES_CACHE_MAX:
+        _ECLIPSE_SAROS_SERIES_CACHE.popitem(last=False)
+    return list(events)
+
+
 def _eclipse_type_label(event) -> str:
     try:
         if bool(getattr(event, "is_solar", False)):
@@ -954,7 +1081,31 @@ def _eclipses(chrt, options, *, binding: dict[str, Any] | None = None,
         getattr(eclipses, "ECLIPSE_CHART_MOMENT_MAXIMUM", "eclipse_maximum"),
     }:
         mode = getattr(eclipses, "ECLIPSE_CHART_MOMENT_EXACT", "exact_conjunction")
-    events = _eclipse_events_for_range(chrt, from_values, to_values)
+    cleaned_binding = binding or {}
+    saros_kind = str(cleaned_binding.get("saros_kind") or "").strip().lower()
+    try:
+        selected_saros_series = int(cleaned_binding.get("saros_series"))
+        selected_saros_member = int(cleaned_binding.get("saros_member"))
+        saros_event_jd = float(cleaned_binding.get("saros_event_jd"))
+    except (TypeError, ValueError):
+        selected_saros_series = selected_saros_member = None
+        saros_event_jd = None
+    series_mode = (
+        saros_kind in {"solar", "lunar"}
+        and selected_saros_series is not None and selected_saros_series > 0
+        and selected_saros_member is not None and selected_saros_member > 0
+        and saros_event_jd is not None and math.isfinite(saros_event_jd)
+    )
+    if series_mode:
+        events = _cached_eclipse_saros_series_events(
+            is_solar=saros_kind == "solar",
+            series=selected_saros_series,
+            member=selected_saros_member,
+            event_jd=saros_event_jd,
+        )
+        focus_jd = saros_event_jd
+    else:
+        events = _eclipse_events_for_range(chrt, from_values, to_values)
     display_clock = table_event_clock(options)
     columns = [
         _column("date", _txt("Date", "Date"), align="center"),
@@ -1008,6 +1159,8 @@ def _eclipses(chrt, options, *, binding: dict[str, Any] | None = None,
             "open_chart_for_date",
             "show_eclipse_path_on_map",
         ]
+        if saros_series is not None and saros_member is not None:
+            row_actions.append("show_saros_series")
         if saros_first_date is not None and (saros_member or 0) > 1:
             row_actions.append("go_to_first_saros_eclipse")
         meta = {
@@ -1094,7 +1247,7 @@ def _eclipses(chrt, options, *, binding: dict[str, Any] | None = None,
         **payload.get("capabilities", {}),
         "sorting": False,
         "copy": True,
-        "export": ["tsv", "json"],
+        "export": ["pdf", "txt"],
         "timeDisplay": time_display,
         "currentRow": focus_row_id is not None,
         "currentRowIds": [focus_row_id] if focus_row_id is not None else [],
@@ -1102,6 +1255,7 @@ def _eclipses(chrt, options, *, binding: dict[str, Any] | None = None,
             {"id": "open_containing_solar_revolution", "deferred": False},
             {"id": "open_transit_for_date", "deferred": False},
             {"id": "open_chart_for_date", "deferred": False},
+            {"id": "show_saros_series", "deferred": False},
             {
                 "id": "show_eclipse_path_on_map",
                 "deferred": False,
@@ -1114,6 +1268,12 @@ def _eclipses(chrt, options, *, binding: dict[str, Any] | None = None,
             },
         ],
         "eclipses": {
+            "seriesMode": series_mode,
+            "sarosKind": saros_kind if series_mode else None,
+            "sarosKindLabel": (
+                _txt("Solar2", "Solar") if saros_kind == "solar" else _txt("Lunar2", "Lunar")
+            ) if series_mode else None,
+            "sarosSeries": selected_saros_series if series_mode else None,
             "rangeYears": _ECLIPSE_RANGE_YEARS,
             "chunkYears": _ECLIPSE_CACHE_CHUNK_YEARS,
             "edgeTriggerRows": _ECLIPSE_EDGE_TRIGGER_ROWS,
@@ -1144,7 +1304,6 @@ def _eclipses(chrt, options, *, binding: dict[str, Any] | None = None,
         },
     }
     payload["source"] = source
-    payload["deferrals"] = []
     return payload
 
 
@@ -1173,13 +1332,141 @@ def _period_meta(
     return meta
 
 
+def _period_bound_jd_ut(chrt, value: Any) -> float | None:
+    """Project a daemon-owned period bound onto the shared Julian-day axis.
+
+    Time-lord engines produce naive civil datetimes. Their existing table rows
+    and containment logic treat those values as the authoritative period
+    instants, so this projection deliberately preserves the same clock fields
+    instead of applying a second location/timezone conversion.
+    """
+    dt = _parse_datetime(value)
+    if dt is None:
+        return None
+    if dt.tzinfo is not None and dt.utcoffset() is not None:
+        dt = dt.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+    hour = (
+        int(dt.hour)
+        + int(dt.minute) / 60.0
+        + int(dt.second) / 3600.0
+        + int(dt.microsecond) / 3_600_000_000.0
+    )
+    calflag = (
+        astrology.SE_JUL_CAL
+        if getattr(getattr(chrt, "time", None), "cal", chart.Time.GREGORIAN) == chart.Time.JULIAN
+        else astrology.SE_GREG_CAL
+    )
+    try:
+        return float(astrology.swe_julday(int(dt.year), int(dt.month), int(dt.day), hour, calflag))
+    except Exception:
+        return None
+
+
+def _period_temporal(
+    chrt,
+    options,
+    *,
+    source_id: str,
+    row_id: str,
+    meta: dict[str, Any],
+    activations: list[tuple[int, str]] | tuple[tuple[int, str], ...],
+) -> dict[str, Any] | None:
+    """Build synchronized-list evidence without changing the canonical row.
+
+    Every activation owns its own window so a future canonical row can expose
+    several independent period/instant facts without manufacturing one broad
+    row-level tolerance. The half-open bounds exactly mirror `_period_meta`.
+    """
+    start_jd = _period_bound_jd_ut(chrt, meta.get("periodStart"))
+    end_jd = _period_bound_jd_ut(chrt, meta.get("periodEndExclusive"))
+    if start_jd is None or end_jd is None or end_jd <= start_jd:
+        return None
+
+    activation_rows: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for raw_planet_id, raw_role in activations:
+        try:
+            planet_id = int(raw_planet_id)
+        except (TypeError, ValueError):
+            continue
+        point = semantic_planet_point(planet_id)
+        point_id = str(point.get("pointId") or "") if point else ""
+        role = str(raw_role or "").strip()
+        identity = (point_id or "", role)
+        if not point_id or not role or identity in seen:
+            continue
+        seen.add(identity)
+        activation = {
+            "activationId": f"{source_id}:{row_id}:{role}:{point_id}",
+            "pointId": point_id,
+            "planetId": planet_id,
+            "role": role,
+            "basis": "period",
+            "windows": [{
+                "startJdUt": start_jd,
+                "endJdUt": end_jd,
+                "endExclusive": True,
+            }],
+        }
+        color_hex = _planet_color(planet_id, chrt, options)
+        color_role = _planet_color_role(planet_id, chrt, options, color_hex)
+        if color_hex:
+            activation["colorHex"] = color_hex
+        if color_role:
+            activation["colorRole"] = color_role
+        activation_rows.append(activation)
+    if not activation_rows:
+        return None
+    return {"rowId": row_id, "activations": activation_rows}
+
+
+def _period_row(
+    row_id: str,
+    cells: list[Cell],
+    *,
+    chrt,
+    options,
+    source_id: str,
+    source_row: dict[str, Any],
+    parent_id: str | None,
+    current: bool,
+    has_children: bool,
+    temporal_activations: list[tuple[int, str]] | tuple[tuple[int, str], ...],
+    extra: dict[str, Any] | None = None,
+) -> Row:
+    meta = _period_meta(
+        source_row,
+        row_id=row_id,
+        parent_id=parent_id,
+        current=current,
+        has_children=has_children,
+        extra=extra,
+    )
+    return _row(
+        row_id,
+        cells,
+        meta=meta,
+        temporal=_period_temporal(
+            chrt,
+            options,
+            source_id=source_id,
+            row_id=row_id,
+            meta=meta,
+            activations=temporal_activations,
+        ),
+    )
+
+
 # Start-selector tokens + labels in the wx radio-submenu order
 # (DecWnd._start_selector_labels, decennialswnd.py:82-94).
 _DECENNIAL_START_OPTIONS = (
+    ("valens_apheta", _txt("DecennialValensApheta", "Valens apheta")),
     ("sect", _txt("SectLight", "Sect Light")),
     ("sun", _txt("Sun", "Sun")),
     ("moon", _txt("Moon", "Moon")),
-    ("asc", _txt("Ascendant", "Ascendant")),
+    ("asc", _txt("DecennialFirstAfterAscendant", "First planet after Ascendant")),
+    ("mc", _txt("DecennialFirstAfterMidheaven", "First planet after Midheaven")),
+    ("prenatal_new_moon", _txt("DecennialFirstAfterPrenatalNewMoon", "First planet after prenatal New Moon")),
     ("fortune", _txt("LotOfFortune", "Lot of Fortune")),
     ("saturn", _txt("Saturn", "Saturn")),
     ("jupiter", _txt("Jupiter", "Jupiter")),
@@ -1188,13 +1475,45 @@ _DECENNIAL_START_OPTIONS = (
     ("mercury", _txt("Mercury", "Mercury")),
 )
 
-# token -> SE index for the planet start tokens (DecWnd._drawDC pmap,
-# decennialswnd.py:355-360; same map in decennials._resolve_start_planet:104-109).
-_DECENNIAL_PLANET_TOKENS = {
-    "sun": astrology.SE_SUN, "moon": astrology.SE_MOON,
-    "mercury": astrology.SE_MERCURY, "venus": astrology.SE_VENUS,
-    "mars": astrology.SE_MARS, "jupiter": astrology.SE_JUPITER,
-    "saturn": astrology.SE_SATURN,
+_DECENNIAL_HOUSE_SYSTEM_OPTIONS = (
+    ("whole_sign", _txt("DecennialWholeSignHouses", "Whole-sign houses")),
+    ("porphyry", _txt("DecennialPorphyryHouses", "Porphyry houses")),
+)
+
+_DECENNIAL_OVERLAP_OPTIONS = (
+    ("table", _txt("DecennialOverlapDirectTable", "Direct predomination table")),
+    ("sun_ray", _txt("DecennialOverlapSunRay", "Sun brings the first ray")),
+    ("moon_ray", _txt("DecennialOverlapMoonRay", "Moon brings the first ray")),
+)
+
+_DECENNIAL_LOWER_LEVEL_METHOD_OPTIONS = (
+    ("proportional", _txt("DecennialMethodProportional", "Proportional subdivisions")),
+    ("repeating_cycles", _txt("DecennialMethodRepeatedCycles", "129-day/hour cycles")),
+)
+
+_DECENNIAL_APHETA_POINT_LABELS = {
+    "ascendant": _txt("Ascendant", "Ascendant"),
+    "midheaven": _txt("Midheaven", "Midheaven"),
+    "prenatal_new_moon": _txt("DecennialPrenatalNewMoon", "Prenatal New Moon"),
+    "fortune": _txt("LotOfFortune", "Lot of Fortune"),
+}
+
+_DECENNIAL_RULE_LABELS = {
+    "both_lights_angular_new_moon": _txt("DecennialRuleAngularNewMoon", "Both lights in one angle: prenatal New Moon"),
+    "both_lights_ninth_ascendant": _txt("DecennialRuleNinthAscendant", "Both lights in the ninth: Ascendant"),
+    "both_lights_cadent_midheaven": _txt("DecennialRuleCadentMidheaven", "Both lights in the third or twelfth: Midheaven"),
+    "table_sun": _txt("DecennialRuleTableSun", "Valens table: Sun predominates"),
+    "table_moon": _txt("DecennialRuleTableMoon", "Valens table: Moon predominates"),
+    "overlap_sun_ray": _txt("DecennialRuleSunRay", "Overlapping rule: Sun ray selected"),
+    "overlap_moon_ray": _txt("DecennialRuleMoonRay", "Overlapping rule: Moon ray selected"),
+    "general_house_sun": _txt("DecennialRuleGeneralHouse", "General house hierarchy"),
+    "general_house_moon": _txt("DecennialRuleGeneralHouse", "General house hierarchy"),
+    "general_sect_hierarchy": _txt("DecennialRuleGeneralSect", "General sect hierarchy"),
+    "general_cadent_ascendant": _txt("DecennialRuleGeneralCadent", "Cadent fallback"),
+    "general_cadent_midheaven": _txt("DecennialRuleGeneralCadent", "Cadent fallback"),
+    "manual_sect_light": _txt("DecennialRuleManual", "Manual start"),
+    "manual_planet": _txt("DecennialRuleManual", "Manual start"),
+    "manual_point": _txt("DecennialRuleManual", "Manual start"),
 }
 
 
@@ -1237,7 +1556,7 @@ def _dec_planet_color(chrt, options, planet_id: int) -> str:
 
 
 def _decennials(chrt, options, binding: dict[str, Any] | None = None, *, current_datetime: Any = None) -> dict[str, Any]:
-    source = "morin.py:16014-16031,17164-17181,17699-17729,4079-4117; decennials.py:1-223; decennialswnd.py:31-125,190-210; decennials_popup.py:126-160; time_lord_popup.py:511-672"
+    source = "Vettius Valens, Anthology III.1 and VI.6-VI.8; Fifth-Century Addition II.10.3; Demetra George, Ancient Astrology in Theory and Practice II, chapter 92, table 85, pp. 1052-1055; decennials.py"
     if getattr(getattr(chrt, "time", None), "bc", False):
         return _unavailable(
             "decennials",
@@ -1248,17 +1567,45 @@ def _decennials(chrt, options, binding: dict[str, Any] | None = None, *, current
         )
     binding = dict(binding or {})
     allowed = {token for token, _label in _DECENNIAL_START_OPTIONS}
-    start_token = str(binding.get("start_token") or "sect").strip().lower()
+    start_token = str(binding.get("start_token") or "valens_apheta").strip().lower()
     if start_token not in allowed:
-        start_token = "sect"
+        start_token = "valens_apheta"
+    apheta_house_system = str(binding.get("apheta_house_system") or "whole_sign").strip().lower()
+    if apheta_house_system not in {token for token, _label in _DECENNIAL_HOUSE_SYSTEM_OPTIONS}:
+        apheta_house_system = "whole_sign"
+    overlap_resolution = str(binding.get("overlap_resolution") or "table").strip().lower()
+    if overlap_resolution not in {token for token, _label in _DECENNIAL_OVERLAP_OPTIONS}:
+        overlap_resolution = "table"
+    lower_level_method = str(binding.get("lower_level_method") or "proportional").strip().lower()
+    if lower_level_method not in {token for token, _label in _DECENNIAL_LOWER_LEVEL_METHOD_OPTIONS}:
+        lower_level_method = "proportional"
+    lower_level_builder = (
+        decennials.build_children_repeating_cycles
+        if lower_level_method == "repeating_cycles"
+        else decennials.build_children_valens
+    )
     now = _parse_datetime(current_datetime)
-    main_rows = decennials.build_main(chrt, options, cycles=2, start_selector=start_token)
+    start_info = decennials.resolve_start_info(
+        chrt,
+        options,
+        start_token,
+        apheta_house_system,
+        overlap_resolution,
+    )
+    main_rows = decennials.build_main(
+        chrt,
+        options,
+        cycles=2,
+        start_selector=start_token,
+        apheta_house_system=apheta_house_system,
+        overlap_resolution=overlap_resolution,
+    )
     # Visible list columns. The level remains row structure/indent metadata in
     # the webapp, not a boxed data column.
     columns = [
-        {**_column("planet", _txt("Ruler", "Ruler"), align="center", kind="glyph"), "widthFactor": 2},
-        {**_column("start", _txt("Start", "Start"), align="center"), "widthFactor": 5},
         {**_column("age", _txt("Age", "Age"), align="right"), "widthFactor": 2},
+        {**_column("planet", _txt("Ruler", "Ruler"), align="center", kind="glyph"), "widthFactor": 2},
+        {**_column("date", _txt("Date", "Date"), align="center"), "widthFactor": 5},
         {**_column("length", _txt("Length", "Length"), align="right"), "widthFactor": 3},
     ]
     rows: list[Row] = []
@@ -1302,32 +1649,33 @@ def _decennials(chrt, options, binding: dict[str, Any] | None = None, *, current
         )
         planet_cell["planet"] = planet_id
         _set_semantic_color(planet_cell, planet_color, planet_role)
-        rows.append(_row(
+        rows.append(_period_row(
             row_id,
             [
+                _text(_period_age_text(chrt, source_row.get("start")), align="right"),
                 planet_cell,
                 # Start text = fmt_date + year-zero strip (decennialswnd.py:449,666).
                 _text(_dec_strip_year_zeros(decennials.fmt_date(source_row.get("start"))), align="center"),
-                _text(_period_age_text(chrt, source_row.get("start")) if level == 1 else "", align="right"),
                 _text(decennials.fmt_length(source_row), align="right"),
             ],
-            meta=_period_meta(
-                source_row,
-                row_id=row_id,
-                parent_id=parent_id,
-                current=is_current,
-                has_children=has_children,
-                extra={
-                    "planet": planet_id,
-                    "colorHex": planet_color,
-                    "colorRole": planet_role,
-                },
-            ),
+            chrt=chrt,
+            options=options,
+            source_id="decennials",
+            source_row=source_row,
+            parent_id=parent_id,
+            current=is_current,
+            has_children=has_children,
+            temporal_activations=[(planet_id, "period-ruler")],
+            extra={
+                "planet": planet_id,
+                "colorHex": planet_color,
+                "colorRole": planet_role,
+            },
         ))
         if is_current:
             rows[-1]["current"] = True
         if level == 2:
-            l3_rows = decennials.build_children_valens(chrt, options, source_row, level=3)
+            l3_rows = lower_level_builder(chrt, options, source_row, level=3)
             for l3_index, l3 in enumerate(l3_rows):
                 l3_id = f"{row_id}:l3:{l3_index}"
                 is_l3_current = _row_contains(l3, now)
@@ -1344,30 +1692,31 @@ def _decennials(chrt, options, binding: dict[str, Any] | None = None, *, current
                 )
                 l3_cell["planet"] = l3_planet
                 _set_semantic_color(l3_cell, l3_color, l3_role)
-                rows.append(_row(
+                rows.append(_period_row(
                     l3_id,
                     [
+                        _text(_period_age_text(chrt, l3.get("start")), align="right"),
                         l3_cell,
                         _text(_dec_strip_year_zeros(decennials.fmt_date(l3.get("start"))), align="center"),
-                        _text("", align="right"),
                         _text(decennials.fmt_length(l3), align="right"),
                     ],
-                    meta=_period_meta(
-                        l3,
-                        row_id=l3_id,
-                        parent_id=row_id,
-                        current=is_l3_current,
-                        has_children=True,
-                        extra={
-                            "planet": l3_planet,
-                            "colorHex": l3_color,
-                            "colorRole": l3_role,
-                        },
-                    ),
+                    chrt=chrt,
+                    options=options,
+                    source_id="decennials",
+                    source_row=l3,
+                    parent_id=row_id,
+                    current=is_l3_current,
+                    has_children=True,
+                    temporal_activations=[(l3_planet, "period-ruler")],
+                    extra={
+                        "planet": l3_planet,
+                        "colorHex": l3_color,
+                        "colorRole": l3_role,
+                    },
                 ))
                 if is_l3_current:
                     rows[-1]["current"] = True
-                l4_rows = decennials.build_children_valens(chrt, options, l3, level=4)
+                l4_rows = lower_level_builder(chrt, options, l3, level=4)
                 for l4_index, l4 in enumerate(l4_rows):
                     l4_id = f"{l3_id}:l4:{l4_index}"
                     is_l4_current = _row_contains(l4, now)
@@ -1382,26 +1731,27 @@ def _decennials(chrt, options, binding: dict[str, Any] | None = None, *, current
                     )
                     l4_cell["planet"] = l4_planet
                     _set_semantic_color(l4_cell, l4_color, l4_role)
-                    rows.append(_row(
+                    rows.append(_period_row(
                         l4_id,
                         [
+                            _text(_period_age_text(chrt, l4.get("start")), align="right"),
                             l4_cell,
                             _text(_dec_strip_year_zeros(decennials.fmt_date(l4.get("start"))), align="center"),
-                            _text("", align="right"),
                             _text(decennials.fmt_length(l4), align="right"),
                         ],
-                        meta=_period_meta(
-                            l4,
-                            row_id=l4_id,
-                            parent_id=l3_id,
-                            current=is_l4_current,
-                            has_children=False,
-                            extra={
-                                "planet": l4_planet,
-                                "colorHex": l4_color,
-                                "colorRole": l4_role,
-                            },
-                        ),
+                        chrt=chrt,
+                        options=options,
+                        source_id="decennials",
+                        source_row=l4,
+                        parent_id=l3_id,
+                        current=is_l4_current,
+                        has_children=False,
+                        temporal_activations=[(l4_planet, "period-ruler")],
+                        extra={
+                            "planet": l4_planet,
+                            "colorHex": l4_color,
+                            "colorRole": l4_role,
+                        },
                     ))
                     if is_l4_current:
                         rows[-1]["current"] = True
@@ -1416,35 +1766,76 @@ def _decennials(chrt, options, binding: dict[str, Any] | None = None, *, current
         source=source,
         notes=[_txt("DecennialStartNote", "Start: %s") % dict(_DECENNIAL_START_OPTIONS).get(start_token, start_token)],
     )
-    # Info row "Start: <glyph|text>" — DecWnd._drawDC [A] block
-    # (decennialswnd.py:348-413): planet tokens render the Morinus glyph in the
-    # wx colour rule; sect/asc/fortune render the mtexts label.
-    start_is_planet = start_token in _DECENNIAL_PLANET_TOKENS
-    start_planet = _DECENNIAL_PLANET_TOKENS.get(start_token)
-    start_color = _dec_planet_color(chrt, options, start_planet) if start_is_planet else None
+    # Keep the resolved apheta distinct from the first planetary distributor:
+    # a nonplanet apheta still starts the Decennial sequence with the first
+    # planet following the Ascendant (Valens V.1 and VI.10).
+    apheta_planet = start_info.get("apheta_planet")
+    apheta_is_planet = apheta_planet is not None
+    apheta_color = _dec_planet_color(chrt, options, apheta_planet) if apheta_is_planet else None
+    first_ruler = int(start_info.get("start_planet", astrology.SE_SUN))
+    first_ruler_color = _dec_planet_color(chrt, options, first_ruler)
+    sun_house = start_info.get("sun_house")
+    moon_house = start_info.get("moon_house")
+    houses_text = ""
+    if isinstance(sun_house, int) and isinstance(moon_house, int):
+        houses_text = "%s %d · %s %d" % (
+            _txt("Sun", "Sun"), sun_house, _txt("Moon", "Moon"), moon_house,
+        )
     header = {
-        "startLabel": _txt("Start", "Start"),
+        "startLabel": _txt("DecennialApheta", "Apheta"),
         "startToken": start_token,
-        "startIsPlanet": start_is_planet,
-        "startGlyph": _planet_glyph(start_planet) if start_is_planet else "",
-        "startText": "" if start_is_planet else dict(_DECENNIAL_START_OPTIONS).get(start_token, start_token),
-        "startColorHex": start_color,
-        "startColorRole": _planet_color_role(start_planet, chrt, options, start_color) if start_is_planet else None,
+        "startIsPlanet": apheta_is_planet,
+        "startGlyph": _planet_glyph(apheta_planet) if apheta_is_planet else "",
+        "startText": "" if apheta_is_planet else _DECENNIAL_APHETA_POINT_LABELS.get(
+            str(start_info.get("apheta_kind")),
+            dict(_DECENNIAL_START_OPTIONS).get(start_token, start_token),
+        ),
+        "startColorHex": apheta_color,
+        "startColorRole": _planet_color_role(apheta_planet, chrt, options, apheta_color) if apheta_is_planet else None,
+        "firstRulerLabel": _txt("DecennialFirstRuler", "First ruler"),
+        "firstRulerVisible": not apheta_is_planet,
+        "firstRulerGlyph": _planet_glyph(first_ruler),
+        "firstRulerColorHex": first_ruler_color,
+        "firstRulerColorRole": _planet_color_role(first_ruler, chrt, options, first_ruler_color),
+        "housesText": houses_text,
+        "ruleText": _DECENNIAL_RULE_LABELS.get(str(start_info.get("rule")), ""),
+        "ambiguous": bool(start_info.get("ambiguous")),
+        "overlapApplicable": bool(start_info.get("overlap_applicable")),
+        "houseSystemLabel": _txt("DecennialAphetaHouses", "Apheta houses"),
+        "overlapLabel": _txt("DecennialOverlappingRule", "Overlapping rule"),
+        "lowerLevelsLabel": _txt("DecennialLowerLevels", "Lower levels"),
     }
     payload["capabilities"] = {
         **payload.get("capabilities", {}),
         "sorting": False,
         "copy": True,
-        "export": ["tsv", "json"],
+        "export": ["pdf", "txt"],
         "timeLord": True,
         "timeLordSystem": "decennials",
         "tree": True,
         "currentRow": bool(current_ids),
         "currentRowIds": current_ids,
         "initialExpandedRowIds": sorted(expanded_ids),
-        "bindings": {"start_token": start_token},
+        "bindings": {
+            "start_token": start_token,
+            "apheta_house_system": apheta_house_system,
+            "overlap_resolution": overlap_resolution,
+            "lower_level_method": lower_level_method,
+        },
         "bindingOptions": {
             "startToken": [{"value": token, "label": label} for token, label in _DECENNIAL_START_OPTIONS],
+            "aphetaHouseSystem": [
+                {"value": token, "label": label}
+                for token, label in _DECENNIAL_HOUSE_SYSTEM_OPTIONS
+            ],
+            "overlapResolution": [
+                {"value": token, "label": label}
+                for token, label in _DECENNIAL_OVERLAP_OPTIONS
+            ],
+            "lowerLevelMethod": [
+                {"value": token, "label": label}
+                for token, label in _DECENNIAL_LOWER_LEVEL_METHOD_OPTIONS
+            ],
         },
         "decennials": header,
         "rowActions": [
@@ -1453,9 +1844,6 @@ def _decennials(chrt, options, binding: dict[str, Any] | None = None, *, current
             {"id": "open_chart_for_date", "deferred": False},
         ],
     }
-    payload["deferrals"] = [
-        "Rendered bitmap/PDF export remains deferred from commonwnd.py:102/163 and DecWnd.pdf_export_spec (decennialswnd.py:279-336); the web surface exports daemon row payloads as TSV/JSON.",
-    ]
     return payload
 
 
@@ -1542,12 +1930,23 @@ def _triplicity_directions(chrt, options, binding: dict[str, Any] | None = None,
             current_ids.append(row_id)
         planet_id = int(source_row.get("planet", astrology.SE_SUN))
         planet_color = _planet_color(planet_id, chrt, options) or "#888888"
-        meta = _period_meta(
-            source_row,
-            row_id=row_id,
+        rows.append(_period_row(
+            row_id,
+            [
+                _planet_cell(planet_id, chrt, options),
+                _text(dateformat.date_text(source_row["start"].year, source_row["start"].month, source_row["start"].day, options), align="center"),
+                _text(_period_age_text(chrt, source_row.get("start")), align="right"),
+                _text(triplicitydirections.fmt_length(source_row), align="right"),
+                _text(str(source_row.get("group_label") or ""), align="left"),
+            ],
+            chrt=chrt,
+            options=options,
+            source_id="triplicity_directions",
+            source_row=source_row,
             parent_id=parent_id,
             current=is_current,
             has_children=int(source_row.get("level", 1)) < max_level,
+            temporal_activations=[(planet_id, "period-ruler")],
             extra={
                 "planet": planet_id,
                 "colorHex": planet_color,
@@ -1558,17 +1957,6 @@ def _triplicity_directions(chrt, options, binding: dict[str, Any] | None = None,
                 "parentSign": source_row.get("parent_sign"),
                 "eventDatetime": _date_iso(source_row.get("start")),
             },
-        )
-        rows.append(_row(
-            row_id,
-            [
-                _planet_cell(planet_id, chrt, options),
-                _text(dateformat.date_text(source_row["start"].year, source_row["start"].month, source_row["start"].day, options), align="center"),
-                _text(_period_age_text(chrt, source_row.get("start")), align="right"),
-                _text(triplicitydirections.fmt_length(source_row), align="right"),
-                _text(str(source_row.get("group_label") or ""), align="left"),
-            ],
-            meta=meta,
         ))
         if is_current:
             rows[-1]["current"] = True
@@ -1595,7 +1983,7 @@ def _triplicity_directions(chrt, options, binding: dict[str, Any] | None = None,
         **payload.get("capabilities", {}),
         "sorting": False,
         "copy": True,
-        "export": ["tsv", "json"],
+        "export": ["pdf", "txt"],
         "timeLord": True,
         "timeLordSystem": "triplicity_directions",
         "tree": True,
@@ -1640,9 +2028,6 @@ def _triplicity_directions(chrt, options, binding: dict[str, Any] | None = None,
             {"id": "open_chart_for_date", "deferred": False},
         ],
     }
-    payload["deferrals"] = [
-        "New research feature; no wx parity source exists. The daemon owns the timing rule and the React pane renders the generic time-lord table payload.",
-    ]
     return payload
 
 
@@ -1706,6 +2091,22 @@ def _zr_degree_text(chrt, releaser: str, resolved_sign: int) -> str:
         d += 1
         m = 0
     return "%d°%02d'" % (d, m)
+
+
+def _zr_is_eros_releaser(releaser: str) -> bool:
+    """Recognize the configured Lot of Eros without guessing from a formula.
+
+    Arabic Parts are user-authored and their formula terms do not declare a
+    general planetary affinity. The selected releaser name is the one existing
+    semantic declaration we can safely use; parenthetical school/source labels
+    such as ``Eros (Valens)`` do not change that identity.
+    """
+    name = zodiacalreleasing.arabic_part_name_from_releaser(releaser)
+    if not name:
+        return False
+    normalized = re.sub(r"\s*\([^)]*\)\s*$", "", name).strip().casefold()
+    normalized = re.sub(r"^lot\s+of\s+", "", normalized).strip()
+    return normalized == "eros"
 
 
 def _zodiacal_releasing(chrt, options, binding: dict[str, Any] | None = None, *, current_datetime: Any = None) -> dict[str, Any]:
@@ -1789,6 +2190,7 @@ def _zodiacal_releasing(chrt, options, binding: dict[str, Any] | None = None, *,
     expanded_ids: set[str] = set()
     current_l1_id: str | None = None
     current_l2_id: str | None = None
+    eros_releaser = _zr_is_eros_releaser(releaser)
 
     def append_zr_row(row_id: str, source_row: dict[str, Any], parent_id: str | None, *, has_children: bool) -> None:
         sign_idx = int(source_row.get("sign", 0)) % 12
@@ -1811,7 +2213,14 @@ def _zodiacal_releasing(chrt, options, binding: dict[str, Any] | None = None, *,
             flags.append(_txt("ZRCulmination", "Culm"))
         if source_row.get("is_completion"):
             flags.append(_txt("ZRCompletion", "Comp"))
-        rows.append(_row(
+        temporal_activations = [(ruler, "period-ruler")]
+        # Eros is Venusian by the selected releaser's declared identity, but
+        # emitting that affinity for every Eros period would make Venus appear
+        # permanently active. Restrict it to the engine's exceptional peak
+        # rows; all other rows retain only their direct sign ruler.
+        if eros_releaser and bool(source_row.get("is_peak")):
+            temporal_activations.append((astrology.SE_VENUS, "releaser-affinity"))
+        rows.append(_period_row(
             row_id,
             [
                 _sign_cell(options, sign_idx),
@@ -1821,27 +2230,28 @@ def _zodiacal_releasing(chrt, options, binding: dict[str, Any] | None = None, *,
                 ruler_cell,
                 _text("·".join(flags)),
             ],
-            meta=_period_meta(
-                source_row,
-                row_id=row_id,
-                parent_id=parent_id,
-                current=is_current,
-                has_children=has_children,
-                extra={
-                    "sign": sign_idx,
-                    "ruler": ruler,
-                    "isPeak": bool(source_row.get("is_peak")),
-                    "peakKind": source_row.get("peak_kind"),
-                    "peakReferenceSign": source_row.get("peak_sign"),
-                    "isCulmination": bool(source_row.get("is_culmination")),
-                    "isCompletion": bool(source_row.get("is_completion")),
-                    "isLob": bool(source_row.get("is_lob")),
-                    # Chain identity for the left ribbon + the repeats-parent
-                    # sign/ruler hiding (zodiacalreleasingwnd.py:617-686).
-                    "parentSign": (int(parent_sign) % 12) if parent_sign is not None else None,
-                    "repeatsParent": bool(parent_sign is not None and sign_idx == int(parent_sign) % 12),
-                },
-            ),
+            chrt=chrt,
+            options=options,
+            source_id="zodiacal_releasing",
+            source_row=source_row,
+            parent_id=parent_id,
+            current=is_current,
+            has_children=has_children,
+            temporal_activations=temporal_activations,
+            extra={
+                "sign": sign_idx,
+                "ruler": ruler,
+                "isPeak": bool(source_row.get("is_peak")),
+                "peakKind": source_row.get("peak_kind"),
+                "peakReferenceSign": source_row.get("peak_sign"),
+                "isCulmination": bool(source_row.get("is_culmination")),
+                "isCompletion": bool(source_row.get("is_completion")),
+                "isLob": bool(source_row.get("is_lob")),
+                # Chain identity for the left ribbon + the repeats-parent
+                # sign/ruler hiding (zodiacalreleasingwnd.py:617-686).
+                "parentSign": (int(parent_sign) % 12) if parent_sign is not None else None,
+                "repeatsParent": bool(parent_sign is not None and sign_idx == int(parent_sign) % 12),
+            },
         ))
         if is_current:
             rows[-1]["current"] = True
@@ -1997,9 +2407,6 @@ def _zodiacal_releasing(chrt, options, binding: dict[str, Any] | None = None, *,
             {"id": "open_chart_for_date", "deferred": False},
         ],
     }
-    payload["deferrals"] = [
-        "Rendered bitmap/PDF export remains deferred from commonwnd.py:102/163 and ZRWnd.pdf_export_spec (zodiacalreleasingwnd.py:433-494); the web surface exports daemon row payloads as TSV/JSON.",
-    ]
     return payload
 
 
@@ -2303,6 +2710,11 @@ def _profections_table(chrt, options, binding: dict[str, Any] | None = None, *, 
                     "annualIndex": annual_index,
                     "age": row_age,
                 },
+                temporal={
+                    "rowId": row_id,
+                    "activations": [],
+                    "unsupportedReason": "no-single-activated-planet",
+                },
             ),
             current=annual_current,
         )
@@ -2346,6 +2758,11 @@ def _profections_table(chrt, options, binding: dict[str, Any] | None = None, *, 
                         "annualIndex": annual_index,
                         "monthIndex": month_index,
                         "age": row_age,
+                    },
+                    temporal={
+                        "rowId": month_id,
+                        "activations": [],
+                        "unsupportedReason": "no-single-activated-planet",
                     },
                 ),
                 current=month_current,
@@ -2418,9 +2835,6 @@ def _profections_table(chrt, options, binding: dict[str, Any] | None = None, *, 
             {"id": "open_chart_for_date", "deferred": False},
         ],
     }
-    payload["deferrals"] = [
-        "Rendered bitmap/PDF export remains deferred from commonwnd.py:102/163 and the pdf_export_spec twins (profectionswnd.py:485-552, profectionsmonwnd.py:192-245); the web surface exports daemon row payloads as TSV/JSON.",
-    ]
     return payload
 
 
@@ -2435,11 +2849,10 @@ def _unavailable(table_id: str, chrt, *, title: str, source: str, reason: str) -
         "capabilities": {
             "sorting": True,
             "copy": True,
-            "export": ["tsv", "json"],
+            "export": ["pdf", "txt"],
             "currentRow": False,
             "rowActions": [],
         },
-        "deferrals": [reason],
         "source": source,
         "cellEncoding": "text-glyph-runs",
         "unavailable": True,
@@ -2480,6 +2893,7 @@ def _positions(chrt, options) -> dict[str, Any]:
         _column("lat", _txt("Latitude", "Latitude"), align="center"),
         _column("ra", _txt("Rectascension", "RA"), align="center"),
         _column("decl", _txt("Declination", "Declination"), align="center"),
+        _column("speed", _txt("Speed", "Speed"), align="right"),
         _column("house", _txt("House", "House"), align="right"),
     ]
 
@@ -2491,6 +2905,7 @@ def _positions(chrt, options) -> dict[str, Any]:
             _text(_dms(lat, signed=True)),
             _text(_ra(ra, options)),
             _text(_dms(decl, signed=True)),
+            _text("", align="right"),
             _text(""),
         ]
         return _row(row_id, cells)
@@ -2525,9 +2940,15 @@ def _positions(chrt, options) -> dict[str, Any]:
             _text(_dms(body.data[planets.Planet.LAT], signed=True)),
             _text(_ra(body.dataEqu[planets.Planet.RAEQU], options)),
             _text(_dms(body.dataEqu[planets.Planet.DECLEQU], signed=True)),
+            _position_speed_cell(pid, body.data[planets.Planet.SPLON], options, chrt),
             _text(house, align="right"),
         ]
-        planet_rows.append(_row(f"planet:{pid}", cells))
+        out_of_bounds = planetary_state.classify_chart_body(chrt, pid).active
+        planet_rows.append(_row(
+            f"planet:{pid}",
+            cells,
+            meta={"declinationOutOfBounds": True} if out_of_bounds else None,
+        ))
     try:
         fort = chrt.fortune.fortune
         fcells: list[Cell] = [_glyph(common.common.fortune), _lon_cell(fort[0], chrt, options)]
@@ -2537,6 +2958,7 @@ def _positions(chrt, options) -> dict[str, Any]:
             _text(_dms(fort[1], signed=True)),
             _text(_ra(fort[2], options)),
             _text(_dms(fort[3], signed=True)),
+            _text("", align="right"),
             _text(""),
         ]
         planet_rows.append(_row("fortune", fcells))
@@ -2563,6 +2985,7 @@ def _positions(chrt, options) -> dict[str, Any]:
                 _text(_dms(0.0, signed=True)),
                 _text(_ra(ra_val, options)),
                 _text(_dms(decl_val, signed=True)),
+                _text("", align="right"),
                 _text(""),
             ]
             house_rows.append(_row(f"house:{h}", cells))
@@ -2862,7 +3285,15 @@ _ARABIC_SIGN_ABBR = ("Ari", "Tau", "Gem", "Can", "Leo", "Vir",
                      "Lib", "Sco", "Sag", "Cap", "Aqu", "Pis")
 
 
-def _arabic_token_runs(code: int, ref_index: int, ref_triplet, chrt, options) -> list[dict[str, Any]]:
+def _arabic_token_runs(
+    code: int,
+    ref_index: int,
+    ref_triplet,
+    chrt,
+    options,
+    *,
+    ref_names=None,
+) -> list[dict[str, Any]]:
     # Port of arabicpartswnd._draw_formula_for_part token resolution
     # (arabicpartswnd.py:266-318) + _token_segments_for_formula
     # (arabicpartswnd.py:125-189), emitting text/glyph runs instead of pixel
@@ -2897,7 +3328,37 @@ def _arabic_token_runs(code: int, ref_index: int, ref_triplet, chrt, options) ->
         runs.append({"text": "%d°" % dg, "glyph": False})
         runs.append(_sign_run(options, si))
     elif lbl == mtexts.txts.get("RE", "RE"):
-        runs.append({"text": "#%d" % (int(ref_val) + 1), "glyph": False})
+        ref_name = None
+        if callable(ref_names):
+            try:
+                ref_name = ref_names(ref_val)
+            except Exception:
+                ref_name = None
+        if ref_name:
+            runs.append({"text": str(ref_name), "glyph": False})
+        elif isinstance(ref_val, (list, tuple)) and len(ref_val) >= 3:
+            sub_refs = ref_val[3] if len(ref_val) > 3 else (0, 0, 0)
+            runs.append({"text": "(", "glyph": False})
+            runs.extend(_arabic_token_runs(
+                ref_val[0], 0, sub_refs, chrt, options, ref_names=ref_names
+            ))
+            runs.append({"text": " + ", "glyph": False})
+            runs.extend(_arabic_token_runs(
+                ref_val[1], 1, sub_refs, chrt, options, ref_names=ref_names
+            ))
+            runs.append({"text": " - ", "glyph": False})
+            runs.extend(_arabic_token_runs(
+                ref_val[2], 2, sub_refs, chrt, options, ref_names=ref_names
+            ))
+            runs.append({"text": ")", "glyph": False})
+        elif isinstance(ref_val, str):
+            runs.append({"text": ref_val, "glyph": False})
+        else:
+            try:
+                label = "#%d" % (int(ref_val) + 1)
+            except Exception:
+                label = "#?"
+            runs.append({"text": label, "glyph": False})
     else:
         # Resolve localized label back to canonical abbreviation
         # (arabicpartswnd._resolve_token_to_canonical:224-237).
@@ -2937,11 +3398,15 @@ def _arabic_formula_cell(src, chrt, options) -> Cell:
         (f1, f2, f3), refs = arabicparts.ArabicParts.get_active_formula_triplet(src, above, male)
     except Exception:
         return _text("")
-    runs = (_arabic_token_runs(f1, 0, refs, chrt, options)
+    ref_names = arabicparts.make_ref_name_resolver(
+        getattr(options, "arabicparts", None) or [],
+        lof_name=_txt("LotOfFortune", "Fortuna"),
+    )
+    runs = (_arabic_token_runs(f1, 0, refs, chrt, options, ref_names=ref_names)
             + [{"text": " + ", "glyph": False}]
-            + _arabic_token_runs(f2, 1, refs, chrt, options)
+            + _arabic_token_runs(f2, 1, refs, chrt, options, ref_names=ref_names)
             + [{"text": " - ", "glyph": False}]
-            + _arabic_token_runs(f3, 2, refs, chrt, options))
+            + _arabic_token_runs(f3, 2, refs, chrt, options, ref_names=ref_names))
     return {"runs": runs, "align": "center"}
 
 
@@ -4279,7 +4744,7 @@ def _phasis(chrt, options) -> dict[str, Any]:
         return _unavailable("phasis", chrt, title="Phasis", source="morin.py:17181-17183; phasiswnd.py:185-467", reason=str(exc))
     cols = [_column("body", _txt("TopicalPlanet", "Planet"), align="center", kind="glyph"), _column("phasis", _txt("Phasis", "Phasis")), _column("time", _txt("TimeDays", "Time"))]
     labels = {"MF": _txt("MorningFirst", "Morning first"), "ML": _txt("MorningLast", "Morning last"), "EF": _txt("EveningFirst", "Evening first"), "EL": _txt("EveningLast", "Evening last")}
-    mode = int(getattr(options, "phasismode", getattr(options, "PHASIS_MODE_ASTRONOMICAL", 0)))
+    mode = int(getattr(options, "phasismode", getattr(options, "PHASIS_MODE_SIMPLE_SWEP", 2)))
     try:
         vis = visibility_flags_around(chrt, days_window=7, mode=mode)
     except Exception:
@@ -4387,6 +4852,19 @@ def _paranatellonta(chrt, options) -> dict[str, Any]:
                          title=_txt("Paranatellonta", "Paranatellonta"), source=source)
 
 
+def _firdaria_length_text(start: datetime.datetime, end: datetime.datetime) -> str:
+    years = max(0.0, (end - start).total_seconds() / (365.2425 * 86400.0))
+    rounded = round(years)
+    if abs(years - rounded) < 0.05:
+        value = str(int(rounded))
+        singular = rounded == 1
+    else:
+        value = "%.1f" % years
+        singular = abs(years - 1.0) < 0.05
+    unit = _txt("Year", "Year") if singular else _txt("Years", "Years")
+    return "%s %s" % (value, unit)
+
+
 def _firdaria(chrt, options, binding: dict[str, Any] | None = None, *, current_datetime: Any = None) -> dict[str, Any]:
     source = "morin.py:15883-15888,16017-16020,16764-16769,17566-17570; firdaria.py:1-99; firdariaframe.py:6-15; firdariawnd.py:21-615; commonwnd.py:63-85"
     if getattr(getattr(chrt, "time", None), "bc", False):
@@ -4479,9 +4957,10 @@ def _firdaria(chrt, options, binding: dict[str, Any] | None = None, *, current_d
 
     now = _parse_datetime(current_datetime)
     columns = [
-        {**_column("body", _txt("Ruler", "Ruler"), align="center", kind="glyph"), "widthFactor": 2},
-        {**_column("period", _txt("Start", "Start"), align="center"), "widthFactor": 5},
         {**_column("age", _txt("Age", "Age"), align="right"), "widthFactor": 2},
+        {**_column("body", _txt("Ruler", "Ruler"), align="center", kind="glyph"), "widthFactor": 2},
+        {**_column("date", _txt("Date", "Date"), align="center"), "widthFactor": 5},
+        {**_column("length", _txt("Length", "Length"), align="right"), "widthFactor": 3},
     ]
     rows: list[Row] = []
     current_ids: list[str] = []
@@ -4501,25 +4980,28 @@ def _firdaria(chrt, options, binding: dict[str, Any] | None = None, *, current_d
         )
         if is_current:
             current_ids.append(row_id)
-        rows.append(_row(
+        main_planet_id = int(firdaria_body_ids[int(planet)])
+        rows.append(_period_row(
             row_id,
             [
+                _text(_period_age_text(chrt, starting), align="right"),
                 planet_cell(planet),
                 _text(period_text, align="center"),
-                _text(_period_age_text(chrt, starting), align="right"),
+                _text(_firdaria_length_text(starting, ending), align="right"),
             ],
-            meta={
-                "level": 1,
-                "planet": int(firdaria_body_ids[int(planet)]),
+            chrt=chrt,
+            options=options,
+            source_id="firdaria",
+            source_row={"level": 1, "start": starting, "end": ending},
+            parent_id=None,
+            current=is_current,
+            has_children=not fird.isNode(aindex),
+            temporal_activations=[(main_planet_id, "period-ruler")],
+            extra={
+                "planet": main_planet_id,
                 "firdariaPlanet": int(planet),
                 "colorHex": main_color,
                 "colorRole": main_role,
-                "hasChildren": not fird.isNode(aindex),
-                "periodStart": _date_iso(starting),
-                "periodEndExclusive": _date_iso(ending),
-                "eventDate": _date_iso(starting),
-                "current": is_current,
-                "rowActions": ["open_containing_solar_revolution", "open_transit_for_date", "open_chart_for_date"],
             },
         ))
         if is_current:
@@ -4544,27 +5026,29 @@ def _firdaria(chrt, options, binding: dict[str, Any] | None = None, *, current_d
                 )
                 if sub_current:
                     current_ids.append(sub_id)
-                rows.append(_row(
+                sub_planet_id = int(firdaria_body_ids[int(subplanet)])
+                rows.append(_period_row(
                     sub_id,
                     [
+                        _text(_period_age_text(chrt, subperiodstart), align="right"),
                         planet_cell(subplanet),
                         # Sub rows show only the start date (firdariawnd.py:609).
                         _text(dateformat.date_text(subperiodstart.year, subperiodstart.month, subperiodstart.day, options), align="center"),
-                        _text("", align="right"),
+                        _text(_firdaria_length_text(subperiodstart, subperiodend), align="right"),
                     ],
-                    meta={
-                        "level": 2,
-                        "planet": int(firdaria_body_ids[int(subplanet)]),
+                    chrt=chrt,
+                    options=options,
+                    source_id="firdaria",
+                    source_row={"level": 2, "start": subperiodstart, "end": subperiodend},
+                    parent_id=row_id,
+                    current=sub_current,
+                    has_children=False,
+                    temporal_activations=[(sub_planet_id, "period-ruler")],
+                    extra={
+                        "planet": sub_planet_id,
                         "firdariaPlanet": int(subplanet),
                         "colorHex": sub_color,
                         "colorRole": sub_role,
-                        "periodStart": _date_iso(subperiodstart),
-                        "periodEndExclusive": _date_iso(subperiodend),
-                        "eventDate": _date_iso(subperiodstart),
-                        "parentId": row_id,
-                        "hasChildren": False,
-                        "current": sub_current,
-                        "rowActions": ["open_containing_solar_revolution", "open_transit_for_date", "open_chart_for_date"],
                     },
                 ))
                 if sub_current:
@@ -4587,7 +5071,7 @@ def _firdaria(chrt, options, binding: dict[str, Any] | None = None, *, current_d
         **payload.get("capabilities", {}),
         "sorting": False,
         "copy": True,
-        "export": ["tsv", "json"],
+        "export": ["pdf", "txt"],
         "timeLord": True,
         "timeLordSystem": "firdaria",
         "tree": True,
@@ -4612,10 +5096,218 @@ def _firdaria(chrt, options, binding: dict[str, Any] | None = None, *, current_d
             {"id": "open_chart_for_date", "deferred": False},
         ],
     }
-    payload["deferrals"] = [
-        "Rendered bitmap/PDF export remains deferred from commonwnd.py:102/163 and FirdariaWnd.pdf_export_spec (firdariawnd.py:250-346); the web surface exports daemon row payloads as TSV/JSON.",
-    ]
     payload["source"] = source
+    return payload
+
+
+def _vimshottari_effective_binding(options, binding: dict[str, Any] | None) -> dict[str, Any]:
+    """Overlay durable technique choices without globalizing tree disclosure."""
+    effective = dict(binding or {})
+    preferences = getattr(options, "sidebar_list_preferences", None)
+    if not isinstance(preferences, dict):
+        return effective
+    saved = preferences.get("vimshottari")
+    if not isinstance(saved, dict):
+        return effective
+    effective.update({
+        "anchor": saved.get("anchor", effective.get("anchor")),
+        "start_star": saved.get("startStar", effective.get("start_star")),
+        "year_days": saved.get("yearDays", effective.get("year_days")),
+        "ayanamsha": saved.get("ayanamsha", effective.get("ayanamsha")),
+    })
+    return effective
+
+
+def _vimshottari(chrt, options, binding: dict[str, Any] | None = None, *, current_datetime: Any = None) -> dict[str, Any]:
+    """Build the retained Vimshottari period tree from the radix chart.
+
+    Nakshatras follow the chart's zodiac by default.  An explicit ayanamsha is
+    a persisted Vimshottari binding and never mutates the chart/global option.
+    """
+    source = (
+        "vimshottari.py; doc/vimshottari.md; P.V.R. Narasimha Rao, Vedic Astrology: An Integrated "
+        "Approach; Sanatan Veda, Calculation of Vimshottari Dasha; "
+        "Shyamasundara Dasa, 360 vs. 365 Days"
+    )
+    if getattr(getattr(chrt, "time", None), "bc", False):
+        return _unavailable(
+            "vimshottari",
+            chrt,
+            title=_txt("VimshottariDasha", "Vimshottari Dasha"),
+            source=source,
+            reason=_txt("NotAvailable", "Not available for BC charts."),
+        )
+
+    binding = _vimshottari_effective_binding(options, binding)
+    anchor = vimshottari.normalize_anchor(binding.get("anchor"))
+    start_star = vimshottari.normalize_start_star(binding.get("start_star"))
+    year_days = vimshottari.normalize_year_days(binding.get("year_days"))
+    depth = 3
+    ayanamsha_choice = vimshottari.normalize_ayanamsha(binding.get("ayanamsha"))
+    chart_ayanamsha_index = int(getattr(options, "ayanamsha", 0) or 0)
+    resolved_ayanamsha_index = (
+        chart_ayanamsha_index
+        if ayanamsha_choice == vimshottari.AYANAMSHA_FOLLOW_CHART
+        else int(ayanamsha_choice)
+    )
+    timeline = vimshottari.build_for_chart(
+        chrt,
+        anchor=anchor,
+        start_star=start_star,
+        year_days=year_days,
+        depth=depth,
+        ayanamsha=resolved_ayanamsha_index,
+    )
+    now = _parse_datetime(current_datetime)
+    all_current_ids = vimshottari.current_row_ids(timeline.rows, now)
+    row_by_id = {str(row["id"]): row for row in timeline.rows}
+    raw_expanded = binding.get("expanded_row_ids")
+    if isinstance(raw_expanded, str):
+        raw_expanded = [raw_expanded]
+    requested_expanded = {
+        str(row_id)
+        for row_id in (raw_expanded if isinstance(raw_expanded, (list, tuple)) else ())
+        if isinstance(row_id, str)
+    }
+    level_two_ids = {
+        str(row["id"])
+        for row in timeline.rows
+        if int(row.get("level", 0)) == 2
+    }
+    explicit_expanded = requested_expanded & level_two_ids
+    current_level_two_ids = {
+        row_id
+        for row_id in all_current_ids
+        if int(row_by_id.get(row_id, {}).get("level", 0)) == 2
+    }
+    materialized_level_two_ids = explicit_expanded | current_level_two_ids
+    source_rows = tuple(
+        row
+        for row in timeline.rows
+        if int(row.get("level", 0)) <= 2
+        or str(row.get("parent_id") or "") in materialized_level_two_ids
+    )
+    materialized_ids = {str(row["id"]) for row in source_rows}
+    current_ids = [row_id for row_id in all_current_ids if row_id in materialized_ids]
+    current_id_set = set(current_ids)
+
+    columns = [
+        {**_column("planet", _txt("Ruler", "Ruler"), align="center", kind="glyph"), "widthFactor": 2},
+        {**_column("start", _txt("Start", "Start"), align="center"), "widthFactor": 5},
+        {**_column("age", _txt("Age", "Age"), align="right"), "widthFactor": 2},
+        {**_column("end", _txt("End", "End"), align="center"), "widthFactor": 5},
+    ]
+    rows: list[Row] = []
+    for source_row in source_rows:
+        row_id = str(source_row["id"])
+        parent_id = source_row.get("parent_id")
+        planet_id = int(source_row["planet"])
+        lord_name = str(source_row["lord_name"])
+        color = _planet_color(planet_id, chrt, options)
+        color_role = _planet_color_role(planet_id, chrt, options, color)
+        ruler_cell = _glyph(_planet_glyph(planet_id), export_text=lord_name)
+        ruler_cell["planet"] = planet_id
+        _set_semantic_color(ruler_cell, color, color_role)
+        is_current = row_id in current_id_set
+        row = _row(
+            row_id,
+            [
+                ruler_cell,
+                _text(_date_ymd(source_row["start"]), align="center"),
+                _text(_period_age_text(chrt, source_row["start"]), align="right"),
+                _text(_date_ymd(source_row["end"]), align="center"),
+            ],
+            meta=_period_meta(
+                source_row,
+                row_id=row_id,
+                parent_id=str(parent_id) if parent_id is not None else None,
+                current=is_current,
+                has_children=bool(source_row.get("has_children")),
+                extra={
+                    "planet": planet_id,
+                    "colorHex": color,
+                    "colorRole": color_role,
+                },
+            ),
+        )
+        if is_current:
+            row["current"] = True
+        rows.append(row)
+
+    ayanamsha_index = resolved_ayanamsha_index
+    try:
+        ayanamsha_entries = list(mtexts.ayanamsha_display_entries())
+    except Exception:
+        ayanamsha_entries = []
+    ayanamsha_options = [
+        {"value": int(index), "label": str(label)}
+        for index, label in ayanamsha_entries
+    ]
+    ayanamsha_label = next(
+        (str(entry["label"]) for entry in ayanamsha_options if int(entry["value"]) == ayanamsha_index),
+        str(ayanamsha_index),
+    )
+    parent_row_ids = {
+        str(row["id"])
+        for row in source_rows
+        if bool(row.get("has_children"))
+    }
+    initial_expanded_set = {
+        row_id for row_id in current_ids if row_id in parent_row_ids
+    } | materialized_level_two_ids
+    for row_id in tuple(materialized_level_two_ids):
+        parent_id = row_by_id.get(row_id, {}).get("parent_id")
+        if parent_id is not None:
+            initial_expanded_set.add(str(parent_id))
+    initial_expanded = sorted(initial_expanded_set)
+    payload = _base_payload(
+        "vimshottari",
+        chrt,
+        options,
+        columns,
+        rows,
+        title=_txt("VimshottariDasha", "Vimshottari Dasha"),
+        source=source,
+    )
+    payload["capabilities"] = {
+        **payload.get("capabilities", {}),
+        "sorting": False,
+        "timeLord": True,
+        "timeLordSystem": "vimshottari",
+        "tree": True,
+        "currentRow": bool(current_ids),
+        "currentRowIds": current_ids,
+        "initialExpandedRowIds": initial_expanded,
+        "bindings": {
+            "anchor": anchor,
+            "start_star": start_star,
+            "year_days": year_days,
+            "ayanamsha": ayanamsha_choice,
+            "expanded_row_ids": sorted(explicit_expanded),
+        },
+        "bindingOptions": {
+            "ayanamsha": ayanamsha_options,
+        },
+        "rowActions": [
+            {"id": "open_containing_solar_revolution", "deferred": False},
+            {"id": "open_transit_for_date", "deferred": False},
+            {"id": "open_chart_for_date", "deferred": False},
+        ],
+        "vimshottari": {
+            "anchorLongitude": timeline.anchor_longitude,
+            "birthNakshatraKey": f"nakshatra.{timeline.birth_nakshatra_key}",
+            "startNakshatraKey": f"nakshatra.{timeline.start_nakshatra_key}",
+            "balanceYears": timeline.balance_years,
+            "yearDays": timeline.year_days,
+            "depth": timeline.depth,
+            "totalRowCount": len(timeline.rows),
+            "materializedRowCount": len(source_rows),
+            "ayanamsha": ayanamsha_index,
+            "ayanamshaLabel": ayanamsha_label,
+            "ayanamshaSelection": ayanamsha_choice,
+            "followsChartAyanamsha": ayanamsha_choice == vimshottari.AYANAMSHA_FOLLOW_CHART,
+        },
+    }
     return payload
 
 
@@ -5100,6 +5792,7 @@ def _transit_cell(tr, chrt, options) -> Cell:
         "glyph": True,
         "planet": plt,
         "exportText": _planet_export_name(plt),
+        "exportSymbolText": common.planet_text_export_mark(plt),
     }
     c = _transit_planet_color(plt, chrt, options, target=False)
     _set_semantic_color(plt_run, c, _planet_color_role(plt, chrt, options, c))
@@ -5129,6 +5822,7 @@ def _transit_cell(tr, chrt, options) -> Cell:
             "glyph": True,
             "planet": int(target_id),
             "exportText": _planet_export_name(target_id),
+            "exportSymbolText": common.planet_text_export_mark(target_id),
         }
         col = _transit_planet_color(int(target_id), chrt, options, target=True)
         _set_semantic_color(
@@ -5178,6 +5872,7 @@ def _transit_cell(tr, chrt, options) -> Cell:
             "text": common.common.fortune,
             "glyph": True,
             "exportText": _txt("LoF", "Lot of Fortune"),
+            "exportSymbolText": common.FORTUNE_TEXT_EXPORT_MARK,
         }
         lof_color = None
         try:
@@ -5560,6 +6255,7 @@ _TABLE_BUILDERS = {
     "rise_set": _rise_set,
     "planetary_hours": _planetary_hours,
     "firdaria": _firdaria,
+    "vimshottari": _vimshottari,
     "decennials": _decennials,
     "triplicity_directions": _triplicity_directions,
     "zodiacal_releasing": _zodiacal_releasing,
@@ -5609,6 +6305,7 @@ class TablesService:
         binding: dict[str, Any] | None = None,
         current_datetime: Any = None,
         chart_anchor_datetime: Any = None,
+        include_temporal: bool = False,
     ) -> dict[str, Any]:
         spec = TABLES.get(str(table_id or ""))
         if spec is None:
@@ -5621,6 +6318,8 @@ class TablesService:
                 payload = _angle_at_birth(chrt, options, binding=binding)
             elif spec.table_id == "firdaria":
                 payload = _firdaria(chrt, options, binding=binding, current_datetime=current_datetime)
+            elif spec.table_id == "vimshottari":
+                payload = _vimshottari(chrt, options, binding=binding, current_datetime=current_datetime)
             elif spec.table_id == "decennials":
                 payload = _decennials(chrt, options, binding=binding, current_datetime=current_datetime)
             elif spec.table_id == "triplicity_directions":
@@ -5647,6 +6346,10 @@ class TablesService:
                 payload = spec.builder(chrt, options)
         except Exception as exc:
             payload = _unavailable(spec.table_id, chrt, title=spec.title, source=spec.source, reason=f"{spec.title} unavailable: {exc}")
+        if not include_temporal:
+            for row in payload.get("rows", ()):
+                if isinstance(row, dict):
+                    row.pop("temporal", None)
         payload.setdefault("tableId", spec.table_id)
         payload.setdefault("title", spec.title)
         # Stable i18n key for the catalog title; the frontend renders it from the

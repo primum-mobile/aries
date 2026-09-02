@@ -1,3 +1,8 @@
+// SPDX-FileCopyrightText: Morinus contributors
+// SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Modified for Aries in 2026 by Max Lange.
+
 "use client";
 
 import * as React from "react";
@@ -10,19 +15,29 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createAstrocartStyleMessage } from "@/lib/chart/astrocart-style";
 import {
   applyThemePreset,
+  corpusDisciplinesCached,
   daemonBaseUrl,
+  deleteCustomCorpusSemanticProfile,
   daemonFetch,
   exportArabicParts,
+  fetchCorpusSemanticProfiles,
   fetchOptions,
   importArabicParts,
+  invalidateCorpusDisciplines,
+  patchCorpusDoctrinePreferences,
   patchOptions,
   previewArabicPart,
   resolvePlace,
   setDefaultLocationFromMap,
+  upsertCustomCorpusSemanticProfile,
   type ArabicPartMeta,
   type ArabicPartSpec,
   type ArabicRefSlot,
   type ColorFieldMeta,
+  type CorpusDiscipline,
+  type CorpusSemanticProfile,
+  type CorpusSemanticProfileSemantics,
+  type CorpusSemanticProfilesPayload,
   type DefaultLocationFieldMeta,
   type FixedStarCatalogRow,
   type OptionsAlmutens,
@@ -39,8 +54,10 @@ import {
 } from "@/lib/daemon/client";
 import { PrimDirSettingsBody, PD_PLANET_GLYPHS } from "./primdir-settings";
 import { useAstrocartMapUrl } from "@/hooks/use-astrocart-map-url";
-import { downloadText } from "./generic-table-view";
+import { downloadTextContent } from "./text-export";
 import { useThemeStore } from "@/stores/theme-store";
+import { useChartStyleEditorStore } from "@/stores/chart-style-editor-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSyncLocale, useT } from "@/lib/i18n/i18n";
 import { useFixedRowHeightAnchor, useListRowHeight } from "@/lib/list-tokens";
 
@@ -56,6 +73,13 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   initialTab?: SettingsTabId;
   onOptionsPatched?: (next?: OptionsPayload) => void;
+  onSemanticProfileSelect: (
+    profileId: string,
+  ) => Promise<CorpusSemanticProfilesPayload | null>;
+  onSemanticProfilesCommitted: (
+    payload: CorpusSemanticProfilesPayload,
+  ) => void;
+  getSemanticProfileRevision: () => number;
 };
 
 export function SettingsDialog({
@@ -63,6 +87,9 @@ export function SettingsDialog({
   onOpenChange,
   initialTab = "colors",
   onOptionsPatched,
+  onSemanticProfileSelect,
+  onSemanticProfilesCommitted,
+  getSemanticProfileRevision,
 }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -72,6 +99,9 @@ export function SettingsDialog({
             key={initialTab}
             initialTab={initialTab}
             onOptionsPatched={onOptionsPatched}
+            onSemanticProfileSelect={onSemanticProfileSelect}
+            onSemanticProfilesCommitted={onSemanticProfilesCommitted}
+            getSemanticProfileRevision={getSemanticProfileRevision}
           />
         ) : null}
       </DialogContent>
@@ -80,8 +110,8 @@ export function SettingsDialog({
 }
 
 const SUPPORTED_SETTINGS_TAB_IDS = [
-  "appearance", "astrocartography", "colors", "export", "houses", "ayanamsha",
-  "location", "planets", "symbols", "orbs", "dignities", "speculum", "fixstars",
+  "appearance", "interpretation", "astrocartography", "colors", "export", "houses", "ayanamsha",
+  "location", "planets", "orbs", "dignities", "speculum", "fixstars",
   "mansions", "almutens", "primarydirections", "revolutions", "supplementary",
   "timelords", "eclipses", "relationship", "stepalerts", "languages",
 ] as const;
@@ -97,9 +127,19 @@ export function isSettingsTabId(value: string): value is SettingsTabId {
 function SettingsBody({
   initialTab,
   onOptionsPatched,
+  onSemanticProfileSelect,
+  onSemanticProfilesCommitted,
+  getSemanticProfileRevision,
 }: {
   initialTab: SettingsTabId;
   onOptionsPatched?: (next?: OptionsPayload) => void;
+  onSemanticProfileSelect: (
+    profileId: string,
+  ) => Promise<CorpusSemanticProfilesPayload | null>;
+  onSemanticProfilesCommitted: (
+    payload: CorpusSemanticProfilesPayload,
+  ) => void;
+  getSemanticProfileRevision: () => number;
 }) {
   const t = useT();
   const [opts, setOpts] = React.useState<OptionsPayload | null>(null);
@@ -129,6 +169,11 @@ function SettingsBody({
   // Optimistic grouped patch: apply locally, fire the POST, reconcile from the
   // server result (or roll back on failure). The daemon re-renders open charts.
   const sendPatch = React.useCallback((patch: OptionsPatch, optimistic: OptionsPayload) => {
+    if (Object.prototype.hasOwnProperty.call(patch, "colors")) {
+      // Appearance changes made outside Style Lab intentionally switch away
+      // from its parked working preview without discarding that draft.
+      useChartStyleEditorStore.getState().setLiveAppThemePreview(false);
+    }
     setOpts(optimistic);
     patchOptions(patch)
       .then((next) => {
@@ -143,6 +188,7 @@ function SettingsBody({
   }, [applyOptionsPayload, onOptionsPatched]);
 
   const applyPreset = React.useCallback((name: string) => {
+    useChartStyleEditorStore.getState().setLiveAppThemePreview(false);
     applyThemePreset(name)
       .then((next) => {
         applyOptionsPayload(next);
@@ -193,6 +239,14 @@ function SettingsBody({
             <TabsContent value="appearance" className="m-0 p-[var(--aries-dialog-padding)]">
               <AppearanceTab opts={opts} sendPatch={sendPatch} />
             </TabsContent>
+            <TabsContent value="interpretation" className="m-0 p-[var(--aries-dialog-padding)]">
+              <InterpretationTab
+                opts={opts}
+                onSemanticProfileSelect={onSemanticProfileSelect}
+                onSemanticProfilesCommitted={onSemanticProfilesCommitted}
+                getSemanticProfileRevision={getSemanticProfileRevision}
+              />
+            </TabsContent>
             <TabsContent value="astrocartography" className="m-0 p-[var(--aries-dialog-padding)]">
               <MirroredSettingsTab tabId="astrocartography" opts={opts} sendPatch={sendPatch} />
             </TabsContent>
@@ -216,9 +270,6 @@ function SettingsBody({
             </TabsContent>
             <TabsContent value="dignities" className="m-0 p-[var(--aries-dialog-padding)]">
               <DignitiesTab opts={opts} sendPatch={sendPatch} />
-            </TabsContent>
-            <TabsContent value="symbols" className="m-0 p-[var(--aries-dialog-padding)]">
-              <SymbolsTab opts={opts} sendPatch={sendPatch} />
             </TabsContent>
             <TabsContent value="planets" className="m-0 p-[var(--aries-dialog-padding)]">
               <PlanetsPointsTab opts={opts} sendPatch={sendPatch} />
@@ -418,19 +469,22 @@ function Select({
   onChange,
   children,
   width = 180,
+  disabled = false,
 }: {
   value: string | number;
   onChange: (v: string) => void;
   children: React.ReactNode;
   width?: number;
+  disabled?: boolean;
 }) {
   return (
     <select
       data-aries-control-appearance="local"
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      disabled={disabled}
       style={{ width }}
-      className="h-[var(--aries-control-height-compact)] rounded-[var(--aries-radius-control-compact)] border border-border/60 bg-transparent px-[var(--aries-control-gap)] text-[length:var(--aries-font-size-base)] outline-none focus:border-border"
+      className="h-[var(--aries-control-height-compact)] rounded-[var(--aries-radius-control-compact)] border border-border/60 bg-transparent px-[var(--aries-control-gap)] text-[length:var(--aries-font-size-base)] outline-none focus:border-border disabled:cursor-not-allowed disabled:opacity-50"
     >
       {children}
     </select>
@@ -524,6 +578,559 @@ function MirroredSettingsTab({
   );
 }
 
+function semanticProfileLabel(
+  profile: CorpusSemanticProfile,
+  t: ReturnType<typeof useT>,
+): string {
+  if (profile.id === "source-native") {
+    return t("settings.semanticProfileSourceNative");
+  }
+  if (profile.id === "quadrant") {
+    return t("settings.semanticProfileQuadrant");
+  }
+  if (profile.id === "hellenistic") {
+    return t("settings.semanticProfileHellenistic");
+  }
+  return profile.name?.trim() || profile.id;
+}
+
+type SemanticProfileDraft = {
+  id: string;
+  name: string;
+  existing: boolean;
+  semantics: CorpusSemanticProfileSemantics;
+};
+
+/** Corpus configuration belongs in Settings. Paradigm and doctrine are global
+ * daemon state; discipline, theme, and question facts remain the chart lens. */
+function InterpretationTab({
+  opts,
+  onSemanticProfileSelect,
+  onSemanticProfilesCommitted,
+  getSemanticProfileRevision,
+}: {
+  opts: OptionsPayload;
+  onSemanticProfileSelect: (
+    profileId: string,
+  ) => Promise<CorpusSemanticProfilesPayload | null>;
+  onSemanticProfilesCommitted: (
+    payload: CorpusSemanticProfilesPayload,
+  ) => void;
+  getSemanticProfileRevision: () => number;
+}) {
+  const t = useT();
+  const lens = useWorkspaceStore((state) => state.inspectorLens);
+  const packsVersion = useWorkspaceStore((state) => state.packsVersion);
+  const semanticProfileVersion = useWorkspaceStore((state) => state.semanticProfileVersion);
+  const [catalog, setCatalog] = React.useState<CorpusDiscipline[] | null>(null);
+  const [profiles, setProfiles] = React.useState<CorpusSemanticProfilesPayload | null>(null);
+  const [pendingProfileId, setPendingProfileId] = React.useState<string | null>(null);
+  const [draft, setDraft] = React.useState<SemanticProfileDraft | null>(null);
+  const [savingDraft, setSavingDraft] = React.useState(false);
+  const [profileErrorKey, setProfileErrorKey] = React.useState<string | null>(null);
+  const profileRevision = React.useRef(0);
+  const doctrineRevisions = React.useRef<Record<string, number>>({});
+  const doctrineWriteChain = React.useRef<Promise<void>>(Promise.resolve());
+  const [pendingDoctrineValues, setPendingDoctrineValues] = React.useState<
+    Record<string, string>
+  >({});
+
+  // A discipline can be chosen before its theme. The canonical lens remains
+  // null until a theme is selected, exactly as it did in the inspector strip.
+  const [pickedDiscipline, setPickedDiscipline] = React.useState("");
+  const [previousLensDiscipline, setPreviousLensDiscipline] = React.useState<string | null>(null);
+  const lensDiscipline = lens?.discipline ?? null;
+  if (lensDiscipline !== previousLensDiscipline) {
+    setPreviousLensDiscipline(lensDiscipline);
+    if (lensDiscipline) setPickedDiscipline(lensDiscipline);
+  }
+
+  React.useEffect(() => {
+    let cancelled = false;
+    if (packsVersion > 0) invalidateCorpusDisciplines();
+    corpusDisciplinesCached()
+      .then((payload) => {
+        if (!cancelled) {
+          setCatalog(payload.disciplines);
+          setProfileErrorKey((current) => (
+            current === "settings.interpretationLoadFailed" ? null : current
+          ));
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) setProfileErrorKey("settings.interpretationLoadFailed");
+        console.error("[settings:interpretation-catalog]", error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [packsVersion]);
+
+  React.useEffect(() => {
+    const controller = new AbortController();
+    fetchCorpusSemanticProfiles(controller.signal)
+      .then((payload) => {
+        setProfiles(payload);
+        setProfileErrorKey((current) => (
+          current === "settings.semanticProfilesLoadFailed" ? null : current
+        ));
+      })
+      .catch((error) => {
+        if ((error as { name?: string }).name === "AbortError") return;
+        setProfileErrorKey("settings.semanticProfilesLoadFailed");
+        console.error("[settings:semantic-profiles]", error);
+      });
+    return () => controller.abort();
+  }, [semanticProfileVersion]);
+
+  const discipline = pickedDiscipline;
+  const themes = catalog?.find((item) => item.slug === discipline)?.themes ?? [];
+  const activeTheme = themes.find(
+    (theme) => theme.label === lens?.theme || theme.aliases.includes(lens?.theme ?? ""),
+  );
+  const activeContextOptions = activeTheme?.contextOptions ?? [];
+  const doctrineFields = activeContextOptions.filter(
+    (field) => field.scope === "global_doctrine",
+  );
+  const questionFields = activeContextOptions.filter(
+    (field) => field.scope === "question_fact",
+  );
+
+  const selectProfile = (profileId: string) => {
+    if (savingDraft || pendingProfileId !== null) return;
+    setDraft(null);
+    setProfileErrorKey(null);
+    profileRevision.current += 1;
+    const revision = profileRevision.current;
+    setPendingProfileId(profileId);
+    void onSemanticProfileSelect(profileId)
+      .then((payload) => {
+        if (profileRevision.current !== revision) return;
+        if (payload) setProfiles(payload);
+        setPendingProfileId(null);
+      })
+      .catch((error) => {
+        if (profileRevision.current === revision) {
+          setPendingProfileId(null);
+          setProfileErrorKey("settings.semanticProfileChangeFailed");
+        }
+        console.error("[settings:semantic-profile-select]", error);
+      });
+  };
+
+  const activeProfile = profiles?.profiles.find(
+    (profile) => profile.id === profiles.active_profile_id,
+  ) ?? null;
+  const editProfile = () => {
+    if (!activeProfile) return;
+    setDraft({
+      id: activeProfile.custom ? activeProfile.id : "",
+      name: activeProfile.custom ? activeProfile.name ?? "" : "",
+      existing: activeProfile.custom,
+      semantics: { ...activeProfile.semantics },
+    });
+  };
+  const updateDraftSemantic = (
+    key: keyof CorpusSemanticProfileSemantics,
+    value: string,
+  ) => {
+    setDraft((current) => {
+      if (!current) return current;
+      const semantics = { ...current.semantics };
+      if (value) semantics[key] = value;
+      else delete semantics[key];
+      return { ...current, semantics };
+    });
+  };
+  const saveDraft = () => {
+    if (!draft || savingDraft) return;
+    const savedDraft = draft;
+    const revision = profileRevision.current + 1;
+    profileRevision.current = revision;
+    const selectionRevision = getSemanticProfileRevision();
+    setSavingDraft(true);
+    setProfileErrorKey(null);
+    void (async () => {
+      try {
+        const payload = await upsertCustomCorpusSemanticProfile({
+          profileId: savedDraft.id,
+          name: savedDraft.name.trim() || null,
+          semantics: savedDraft.semantics,
+          activate: true,
+        });
+        if (
+          profileRevision.current !== revision
+          || getSemanticProfileRevision() !== selectionRevision
+        ) {
+          setDraft(null);
+          return;
+        }
+        setProfiles(payload);
+        onSemanticProfilesCommitted(payload);
+        setDraft(null);
+      } catch (error) {
+        if (profileRevision.current === revision) {
+          setProfileErrorKey("settings.customProfileSaveFailed");
+        }
+        console.error("[settings:semantic-profile-save]", error);
+      } finally {
+        setSavingDraft(false);
+      }
+    })();
+  };
+  const deleteDraft = () => {
+    if (!draft?.existing || savingDraft) return;
+    const deletedProfileId = draft.id;
+    const revision = profileRevision.current + 1;
+    profileRevision.current = revision;
+    const selectionRevision = getSemanticProfileRevision();
+    setSavingDraft(true);
+    setProfileErrorKey(null);
+    void (async () => {
+      try {
+        const payload = await deleteCustomCorpusSemanticProfile(deletedProfileId);
+        if (
+          profileRevision.current !== revision
+          || getSemanticProfileRevision() !== selectionRevision
+        ) {
+          setDraft(null);
+          return;
+        }
+        setProfiles(payload);
+        onSemanticProfilesCommitted(payload);
+        setDraft(null);
+      } catch (error) {
+        if (profileRevision.current === revision) {
+          setProfileErrorKey("settings.customProfileDeleteFailed");
+        }
+        console.error("[settings:semantic-profile-delete]", error);
+      } finally {
+        setSavingDraft(false);
+      }
+    })();
+  };
+
+  const doctrinePreferenceKey = (field: (typeof doctrineFields)[number]) => (
+    field.preferenceKey || field.key
+  );
+  const doctrineValue = (field: (typeof doctrineFields)[number]): string => {
+    const key = doctrinePreferenceKey(field);
+    if (Object.prototype.hasOwnProperty.call(pendingDoctrineValues, key)) {
+      return pendingDoctrineValues[key];
+    }
+    return profiles?.doctrine?.preferences[key] ?? "";
+  };
+  const setDoctrineValue = (
+    field: (typeof doctrineFields)[number],
+    value: string,
+  ) => {
+    const key = doctrinePreferenceKey(field);
+    const revision = (doctrineRevisions.current[key] ?? 0) + 1;
+    doctrineRevisions.current[key] = revision;
+    setPendingDoctrineValues((current) => ({ ...current, [key]: value }));
+    setProfileErrorKey(null);
+
+    const request = doctrineWriteChain.current.then(() => (
+      patchCorpusDoctrinePreferences({ [key]: value || null })
+    ));
+    doctrineWriteChain.current = request.then(() => undefined, () => undefined);
+    void request
+      .then((payload) => {
+        if (doctrineRevisions.current[key] !== revision) return;
+        setProfiles(payload);
+        setPendingDoctrineValues((current) => {
+          const next = { ...current };
+          delete next[key];
+          return next;
+        });
+        setProfileErrorKey((current) => (
+          current === "settings.doctrineChangeFailed" ? null : current
+        ));
+        onSemanticProfilesCommitted(payload);
+      })
+      .catch((error) => {
+        if (doctrineRevisions.current[key] === revision) {
+          setPendingDoctrineValues((current) => {
+            const next = { ...current };
+            delete next[key];
+            return next;
+          });
+          setProfileErrorKey("settings.doctrineChangeFailed");
+        }
+        console.error("[settings:doctrine-preference]", error);
+      });
+  };
+
+  const selectDiscipline = (slug: string) => {
+    setPickedDiscipline(slug);
+    useWorkspaceStore.getState().setInspectorLens(null);
+  };
+  const selectTheme = (label: string) => {
+    if (!discipline || !label) {
+      useWorkspaceStore.getState().setInspectorLens(null);
+      return;
+    }
+    const theme = themes.find((item) => item.label === label);
+    useWorkspaceStore.getState().setInspectorLens({
+      discipline,
+      theme: label,
+      context: theme?.defaultContext ?? undefined,
+    });
+  };
+  const setContextHouse = (
+    key: "quesited_house" | "querent_house",
+    value: string,
+  ) => {
+    const current = useWorkspaceStore.getState().inspectorLens;
+    const house = Number.parseInt(value, 10);
+    if (!current || !Number.isFinite(house)) return;
+    useWorkspaceStore.getState().setInspectorLens({
+      ...current,
+      context: { ...(current.context ?? {}), [key]: house },
+    });
+  };
+  const contextHouse = (key: "quesited_house" | "querent_house"): string => {
+    const value = lens?.context?.[key];
+    return typeof value === "number" && value >= 1 && value <= 12 ? String(value) : "";
+  };
+  const setContextValue = (key: string, value: string) => {
+    const current = useWorkspaceStore.getState().inspectorLens;
+    if (!current) return;
+    useWorkspaceStore.getState().setInspectorLens({
+      ...current,
+      context: { ...(current.context ?? {}), [key]: value },
+    });
+  };
+  const contextValue = (key: string): string => {
+    const value = lens?.context?.[key] ?? activeTheme?.defaultContext?.[key];
+    if (typeof value === "string") return value;
+    return activeTheme?.contextOptions
+      .find((field) => field.contextKey === key)
+      ?.options.at(0)?.value ?? "";
+  };
+  const houseLabels = Array.from({ length: 12 }, (_, index) => String(index + 1));
+
+  return (
+    <div className="flex flex-col gap-0">
+      <SectionLabel>{t("settings.semanticProfile")}</SectionLabel>
+      <Row label={t("settings.semanticProfile")}>
+        <Select
+          value={pendingProfileId ?? profiles?.active_profile_id ?? ""}
+          width={220}
+          disabled={savingDraft || pendingProfileId !== null}
+          onChange={selectProfile}
+        >
+          {!profiles ? <option value="">—</option> : null}
+          {profiles?.profiles.map((profile) => (
+            <option key={profile.id} value={profile.id}>
+              {semanticProfileLabel(profile, t)}
+            </option>
+          ))}
+        </Select>
+      </Row>
+      {activeProfile && !draft ? (
+        <Row label={t("settings.customProfile")}>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={savingDraft || pendingProfileId !== null}
+            onClick={editProfile}
+          >
+            {t(activeProfile.custom
+              ? "settings.editCustomProfile"
+              : "settings.customizeProfile")}
+          </Button>
+        </Row>
+      ) : null}
+      {profileErrorKey ? (
+        <p
+          role="alert"
+          className="mt-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-small)] text-destructive"
+        >
+          {t(profileErrorKey)}
+        </p>
+      ) : null}
+      {draft ? (
+        <div className="mt-[var(--aries-control-gap)] rounded-[var(--aries-radius-md)] border border-border/50 px-[var(--aries-panel-padding-x)] pb-[var(--aries-control-gap)]">
+          <SectionLabel>{t("settings.customProfile")}</SectionLabel>
+          <Row label={t("settings.profileId")}>
+            <input
+              data-aries-control-appearance="local"
+              type="text"
+              value={draft.id}
+              disabled={draft.existing || savingDraft}
+              onChange={(event) => setDraft((current) => (
+                current ? { ...current, id: event.target.value } : current
+              ))}
+              className="h-[var(--aries-control-height-compact)] w-[220px] rounded-[var(--aries-radius-control-compact)] border border-border/60 bg-transparent px-[var(--aries-control-gap)] text-[length:var(--aries-font-size-base)] outline-none focus:border-border disabled:opacity-50"
+            />
+          </Row>
+          <Row label={t("settings.profileName")}>
+            <input
+              data-aries-control-appearance="local"
+              type="text"
+              value={draft.name}
+              disabled={savingDraft}
+              onChange={(event) => setDraft((current) => (
+                current ? { ...current, name: event.target.value } : current
+              ))}
+              className="h-[var(--aries-control-height-compact)] w-[220px] rounded-[var(--aries-radius-control-compact)] border border-border/60 bg-transparent px-[var(--aries-control-gap)] text-[length:var(--aries-font-size-base)] outline-none focus:border-border"
+            />
+          </Row>
+          {opts.settingsRegistry.corpusSemanticFields.map((field) => (
+            <Row key={field.key} label={t(field.labelKey)}>
+              <Select
+                value={draft.semantics[field.key] ?? ""}
+                width={220}
+                disabled={savingDraft}
+                onChange={(value) => updateDraftSemantic(field.key, value)}
+              >
+                {field.options.map((option) => (
+                  <option key={option.value || "source"} value={option.value}>
+                    {t(option.labelKey)}
+                  </option>
+                ))}
+              </Select>
+            </Row>
+          ))}
+          <div className="mt-[var(--aries-control-gap)] flex justify-end gap-[var(--aries-control-gap)]">
+            {draft.existing ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={savingDraft}
+                onClick={deleteDraft}
+              >
+                {t("settings.deleteProfile")}
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={savingDraft}
+              onClick={() => setDraft(null)}
+            >
+              {t("settings.cancel")}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={
+                savingDraft ||
+                !/^[a-z][a-z0-9_-]{0,63}$/.test(draft.id) ||
+                Object.keys(draft.semantics).length === 0
+              }
+              onClick={saveDraft}
+            >
+              {t("settings.saveAndUseProfile")}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      <SectionLabel>{t("inspector.interpretation")}</SectionLabel>
+      <Row label={t("inspector.discipline")}>
+        <Select value={discipline} width={220} onChange={selectDiscipline}>
+          <option value="">—</option>
+          {catalog?.map((item) => (
+            <option key={item.slug} value={item.slug}>
+              {item.displayName}
+            </option>
+          ))}
+        </Select>
+      </Row>
+      <Row label={t("inspector.theme")}>
+        <Select
+          value={lens?.discipline === discipline ? activeTheme?.label ?? "" : ""}
+          width={220}
+          onChange={selectTheme}
+        >
+          <option value="">—</option>
+          {themes.map((theme) => (
+            <option key={theme.label} value={theme.label} title={theme.tooltip || undefined}>
+              {theme.label}
+            </option>
+          ))}
+        </Select>
+      </Row>
+
+      {doctrineFields.length > 0 ? (
+        <>
+          <SectionLabel>{t("settings.globalDoctrine")}</SectionLabel>
+          {doctrineFields.map((field) => (
+            <Row key={doctrinePreferenceKey(field)} label={t(field.labelKey)}>
+              <Select
+                value={doctrineValue(field)}
+                width={220}
+                onChange={(value) => setDoctrineValue(field, value)}
+              >
+                <option value="">{t("settings.semanticUseSourceDefinition")}</option>
+                {field.options.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {t(option.labelKey)}
+                  </option>
+                ))}
+              </Select>
+            </Row>
+          ))}
+        </>
+      ) : null}
+
+      {lens?.discipline === "horary" || questionFields.length > 0 ? (
+        <>
+          <SectionLabel>{t("settings.questionContext")}</SectionLabel>
+          {lens?.discipline === "horary" ? (
+            <>
+              <Row label={t("inspector.quesitedHouse")}>
+                <Select
+                  value={contextHouse("quesited_house")}
+                  width={100}
+                  onChange={(value) => setContextHouse("quesited_house", value)}
+                >
+                  <option value="" disabled hidden />
+                  {houseLabels.map((house) => (
+                    <option key={house} value={house}>{house}</option>
+                  ))}
+                </Select>
+              </Row>
+              <Row label={t("inspector.querentHouse")}>
+                <Select
+                  value={contextHouse("querent_house")}
+                  width={100}
+                  onChange={(value) => setContextHouse("querent_house", value)}
+                >
+                  <option value="" disabled hidden />
+                  {houseLabels.map((house) => (
+                    <option key={house} value={house}>{house}</option>
+                  ))}
+                </Select>
+              </Row>
+            </>
+          ) : null}
+          {questionFields.map((field) => (
+            <Row key={field.key} label={t(field.labelKey)}>
+              <Select
+                value={contextValue(field.contextKey)}
+                width={220}
+                onChange={(value) => setContextValue(field.contextKey, value)}
+              >
+                {field.options.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {t(option.labelKey)}
+                  </option>
+                ))}
+              </Select>
+            </Row>
+          ))}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 function ExportTab({ opts, sendPatch }: TabProps) {
   const t = useT();
   const e = opts.export;
@@ -586,11 +1193,15 @@ function ExportTab({ opts, sendPatch }: TabProps) {
         <Toggle checked={e.pdfIncludeOverlays} onChange={(value) => setPatch({ pdfIncludeOverlays: value })} />
       </Row>
       <SectionLabel>{t("settings.listExports")}</SectionLabel>
-      <Row label={t("settings.showAspectSymbolsInListExports")}>
-        <Toggle
-          checked={e.listExportAspectSymbols}
-          onChange={(value) => setPatch({ listExportAspectSymbols: value })}
-        />
+      <Row label={t("textExport.textAndClipboard")}>
+        <Select
+          value={e.listExportAspectSymbols ? "glyphs" : "aliases"}
+          width={190}
+          onChange={(value) => setPatch({ listExportAspectSymbols: value === "glyphs" })}
+        >
+          <option value="aliases">{t("textExport.aliasNames")}</option>
+          <option value="glyphs">{t("textExport.astrologicalGlyphs")}</option>
+        </Select>
       </Row>
     </div>
   );
@@ -786,6 +1397,9 @@ function AppearanceTab({ opts, sendPatch }: TabProps) {
   const aspectList = opts.aspectList;
   const q = opts.quickCharts;
   const cat = opts.catalog;
+  const solarConditionMode = cat.solarConditionModes.find(
+    (mode) => mode.value === d.solarconditionmode,
+  );
   type DisplayPatch = Partial<OptionsPayload["display"]>;
   type QuickChartsPatch = Partial<OptionsQuickCharts>;
   const setDisplayPatch = (patch: DisplayPatch) => {
@@ -881,6 +1495,8 @@ function AppearanceTab({ opts, sendPatch }: TabProps) {
 
   return (
     <div className="flex flex-col gap-0">
+      <SymbolsSection opts={opts} sendPatch={sendPatch} />
+
       <SectionLabel>{t("settings.aspects")}</SectionLabel>
       <Row label={t("settings.aspects")}>
         <Toggle checked={d.aspects} onChange={setAspects} />
@@ -1072,6 +1688,9 @@ function AppearanceTab({ opts, sendPatch }: TabProps) {
       <Row label={t("settings.prenatalSyzygy")}>
         <Toggle checked={d.showprenatalsyzygy} onChange={(v) => setBool("showprenatalsyzygy", v)} />
       </Row>
+      <Row label={t("settings.prenatalEclipseMarker")}>
+        <Toggle checked={d.showprenataleclipse} onChange={(v) => setBool("showprenataleclipse", v)} />
+      </Row>
       <Row label={t("settings.houses")}>
         <Toggle checked={d.houses} onChange={(v) => setBool("houses", v)} />
       </Row>
@@ -1157,6 +1776,12 @@ function AppearanceTab({ opts, sendPatch }: TabProps) {
           onChange={(v) => setQuickChartsPatch({ subcharts_open_compound_default: v })}
         />
       </Row>
+      <Row label={t("settings.multiwheelOpenAtThree")}>
+        <Toggle
+          checked={q.multiwheel_open_at_three}
+          onChange={(v) => setQuickChartsPatch({ multiwheel_open_at_three: v })}
+        />
+      </Row>
       <Row label={t("settings.wheelLayout")}>
         <Select
           value={d.theme}
@@ -1181,6 +1806,8 @@ function AppearanceTab({ opts, sendPatch }: TabProps) {
               <option key={layout.value} value={layout.value}>
                 {layout.value === "routed-cusps"
                   ? t("settings.routedCuspLines")
+                  : layout.value === "sign-locked"
+                  ? t("settings.signLockedCusps")
                   : t("settings.leaderColumns")}
               </option>
             ))}
@@ -1197,6 +1824,43 @@ function AppearanceTab({ opts, sendPatch }: TabProps) {
         <Toggle
           checked={d.showcusplessascmclabels}
           onChange={(v) => setBool("showcusplessascmclabels", v)}
+        />
+      </Row>
+
+      <SectionLabel>{t("settings.multiwheel")}</SectionLabel>
+      <Row label={t("settings.chartRingZodiac")}>
+        <Select
+          value={q.chart_ring_zodiac}
+          width={150}
+          onChange={(v) => setQuickChartsPatch({ chart_ring_zodiac: v === "centre" ? "centre" : "rim" })}
+        >
+          <option value="rim">{t("chartmenu.zodiacOutermost")}</option>
+          <option value="centre">{t("chartmenu.zodiacInnermost")}</option>
+        </Select>
+      </Row>
+      <Row label={t("settings.multiwheelShowPositions")}>
+        <Toggle
+          checked={d.multiwheel_show_positions}
+          onChange={(v) => setBool("multiwheel_show_positions", v)}
+        />
+      </Row>
+      <Row label={<SubLabel>{t("settings.multiwheelShowMinutes")}</SubLabel>}>
+        <Toggle
+          checked={d.multiwheel_show_positions && d.multiwheel_show_minutes}
+          disabled={!d.multiwheel_show_positions}
+          onChange={(v) => setBool("multiwheel_show_minutes", v)}
+        />
+      </Row>
+      <Row label={t("settings.multiwheelSignColors")}>
+        <Toggle
+          checked={d.multiwheel_sign_colors}
+          onChange={(v) => setBool("multiwheel_sign_colors", v)}
+        />
+      </Row>
+      <Row label={t("settings.multiwheelAngleLabels")}>
+        <Toggle
+          checked={d.multiwheel_show_angle_labels}
+          onChange={(v) => setBool("multiwheel_show_angle_labels", v)}
         />
       </Row>
 
@@ -1225,6 +1889,12 @@ function AppearanceTab({ opts, sendPatch }: TabProps) {
       <Row label={t("settings.information")}>
         <Toggle checked={d.information} onChange={(v) => setBool("information", v)} />
       </Row>
+      <Row label={t("settings.radixNameInCanvas")}>
+        <Toggle
+          checked={d.showradixnameincanvas}
+          onChange={(v) => setBool("showradixnameincanvas", v)}
+        />
+      </Row>
       <Row label={t("settings.showSecondsInHeader")}>
         <Toggle checked={d.showseconds} onChange={(v) => setBool("showseconds", v)} />
       </Row>
@@ -1241,6 +1911,29 @@ function AppearanceTab({ opts, sendPatch }: TabProps) {
           ))}
         </Select>
       </Row>
+
+      <SectionLabel>{t("settings.combustion")}</SectionLabel>
+      <Row label={t("settings.doctrine")}>
+        <Select
+          value={d.solarconditionmode}
+          width={180}
+          onChange={(v) => setNum("solarconditionmode", Number(v))}
+        >
+          {cat.solarConditionModes.map((mode) => (
+            <option key={mode.value} value={mode.value}>
+              {t(mode.labelKey)}
+            </option>
+          ))}
+        </Select>
+      </Row>
+      {solarConditionMode ? (
+        <p
+          aria-live="polite"
+          className="border-b border-border/40 py-[var(--aries-control-gap)] text-[length:var(--aries-font-size-small)] leading-relaxed text-foreground/60"
+        >
+          {t(solarConditionMode.descriptionKey)}
+        </p>
+      ) : null}
 
       <SectionLabel>{t("settings.phasisHeliacal")}</SectionLabel>
       <Row label={t("settings.mode")}>
@@ -1308,7 +2001,7 @@ function AppearanceTab({ opts, sendPatch }: TabProps) {
           >
             {cat.fontProfiles.map((p) => (
               <option key={p.value} value={p.value}>
-                {p.label}
+                {p.labelKey ? t(p.labelKey) : p.label}
               </option>
             ))}
           </Select>
@@ -1330,6 +2023,20 @@ function AppearanceTab({ opts, sendPatch }: TabProps) {
           checked={aspectList.showAspectsForDerivedPoints}
           onChange={(v) => setAspectListPatch({ showAspectsForDerivedPoints: v })}
         />
+      </Row>
+      <Row label={t("settings.aspectListPerfectionLinkDefault")}>
+        <Select
+          value={aspectList.perfectionLinkMode}
+          width={200}
+          onChange={(value) =>
+            setAspectListPatch({
+              perfectionLinkMode: value as OptionsPayload["aspectList"]["perfectionLinkMode"],
+            })
+          }
+        >
+          <option value="transits">{t("dirview.openAsTransit")}</option>
+          <option value="secondary">{t("aspectList.openAsSecondaryProgression")}</option>
+        </Select>
       </Row>
     </div>
   );
@@ -1378,11 +2085,9 @@ function LunarMansionsTab({ opts, sendPatch }: TabProps) {
 
 // ---------------------------------------------------------------------------
 // Speculum  (appearance2dlg.Appearance2Dlg) — Placidian + Regiomontanus speculum
-// column-visibility toggles + the In-Time control. The daemon owns WHICH columns
+// column-visibility toggles, compact Inspector speed display, and In-Time. The daemon owns WHICH columns
 // exist + their labels (catalog.speculum*Cols, keyed by the planets.Planet column
-// index); this tab renders one toggle per column and patches the bool map. NOTE:
-// the speculum TABLE WINDOW these flags drive is not yet ported to the webapp —
-// this is the settings surface only (see settings.md / appearance-menu.md §7.2).
+// index); this tab renders one toggle per column and patches the bool map.
 // ---------------------------------------------------------------------------
 
 function SpeculumTab({ opts, sendPatch }: TabProps) {
@@ -1400,9 +2105,28 @@ function SpeculumTab({ opts, sendPatch }: TabProps) {
   const setFlag = (attr: "placidianDodec" | "regiomontanDodec" | "intime", v: boolean) => {
     sendPatch({ speculum: { [attr]: v } }, { ...opts, speculum: { ...s, [attr]: v } });
   };
+  const setSpeedMode = (speedMode: OptionsPayload["speculum"]["speedMode"]) => {
+    sendPatch(
+      { speculum: { speedMode } },
+      { ...opts, speculum: { ...s, speedMode } },
+    );
+  };
 
   return (
     <div className="flex flex-col gap-0">
+      <SectionLabel>{t("settings.display")}</SectionLabel>
+      <Row label={t("settings.speculumSpeedDisplay")}>
+        <Select
+          value={s.speedMode}
+          width={180}
+          onChange={(value) => setSpeedMode(value as OptionsPayload["speculum"]["speedMode"])}
+        >
+          {cat.speculumSpeedModes.map((mode) => (
+            <option key={mode.value} value={mode.value}>{mode.label}</option>
+          ))}
+        </Select>
+      </Row>
+
       <SectionLabel>{t("settings.placidianColumns")}</SectionLabel>
       {cat.speculumPlacidianCols.map((c) => (
         <Row key={c.idx} label={c.label}>
@@ -1460,7 +2184,9 @@ function HouseSystemTab({ opts, sendPatch }: TabProps) {
           onClick={() => pick(entry.code)}
           className="flex h-[var(--aries-control-height-small)] items-center justify-between border-b border-border/40 text-left last:border-b-0"
         >
-          <span className="text-[length:var(--aries-font-size-base)] text-foreground/85">{entry.label}</span>
+          <span className="text-[length:var(--aries-font-size-base)] text-foreground/85">
+            {entry.labelKey ? t(entry.labelKey) : entry.label}
+          </span>
           <span
             className={
               "flex h-3.5 w-3.5 items-center justify-center rounded-full border " +
@@ -1939,9 +2665,9 @@ function TermDegInput({ value, onCommit }: { value: number; onCommit: (n: number
 }
 
 // ---------------------------------------------------------------------------
-// Symbols  (symbolsdlg.SymbolsDlg) — glyph-variant choices. The daemon owns
+// Symbols  (symbolsdlg.SymbolsDlg) — appearance glyph-variant choices. The daemon owns
 // WHICH variants exist and the Morinus glyph char for each (catalog.symbol*);
-// this tab renders a radio row per option and patches the chosen value. The
+// this section renders a radio row per option and patches the chosen value. The
 // chart snapshot already resolves the picked glyph (common.common.update is
 // re-run daemon-side on apply), so the wheel reflects the choice on re-render.
 // ---------------------------------------------------------------------------
@@ -1978,7 +2704,7 @@ function GlyphChoiceRow<V extends boolean | number>({
   );
 }
 
-function SymbolsTab({ opts, sendPatch }: TabProps) {
+function SymbolsSection({ opts, sendPatch }: TabProps) {
   const t = useT();
   const s = opts.symbols;
   const cat = opts.catalog;
@@ -2001,13 +2727,6 @@ function SymbolsTab({ opts, sendPatch }: TabProps) {
           choices={cat.symbolPluto as { value: number; glyph: string }[]}
           current={s.pluto}
           onPick={(v) => setSymbol("pluto", v)}
-        />
-      </Row>
-      <Row label={t("settings.signs")}>
-        <GlyphChoiceRow
-          choices={cat.symbolSigns as { value: boolean; glyph: string }[]}
-          current={s.signs}
-          onPick={(v) => setSymbol("signs", v)}
         />
       </Row>
     </div>
@@ -2676,6 +3395,42 @@ function ProgressionsTab({ opts, sendPatch }: TabProps) {
           ))}
         </Select>
       </Row>
+      <Row label={t("settings.prebirthPerfectionsConverse")}>
+        <Toggle
+          checked={q.aspectlist_prebirth_secondary_converse}
+          onChange={(v) => patch({ aspectlist_prebirth_secondary_converse: v })}
+        />
+      </Row>
+
+      <SectionLabel>{t("settings.harmonicCharts")}</SectionLabel>
+      <Row label={t("settings.defaultDivisionMethod")}>
+        <Select
+          value={q.harmonic_chart_mode}
+          width={200}
+          onChange={(v) => patch({ harmonic_chart_mode: v as "harmonic" | "varga" })}
+        >
+          <option value="harmonic">{t("chartmenu.harmonicChart")}</option>
+          <option value="varga">{t("chartmenu.vargas")}</option>
+        </Select>
+      </Row>
+      <Row label={t("settings.vargaDrishti")}>
+        <Select
+          value={q.varga_drishti_mode}
+          width={200}
+          onChange={(v) => patch({ varga_drishti_mode: v as "off" | "parashari" | "jaimini" })}
+        >
+          <option value="off">{t("settings.vargaDrishtiOff")}</option>
+          <option value="parashari">{t("settings.vargaDrishtiParashari")}</option>
+          <option value="jaimini">{t("settings.vargaDrishtiJaimini")}</option>
+        </Select>
+      </Row>
+      <Row label={t("settings.vargaNodeDrishti")}>
+        <Toggle
+          checked={q.varga_node_special_drishti}
+          disabled={q.varga_drishti_mode !== "parashari"}
+          onChange={(v) => patch({ varga_node_special_drishti: v })}
+        />
+      </Row>
 
       <SectionLabel>{t("settings.launcher")}</SectionLabel>
       <Row label={t("settings.progressionsTransits")}>
@@ -2910,7 +3665,7 @@ function PlanetsPointsTab({ opts, sendPatch }: TabProps) {
 
   const exportParts = () => {
     exportArabicParts()
-      .then((text) => downloadText("arabic_parts.json", text, "application/json"))
+      .then((text) => downloadTextContent("arabic_parts.json", text, "application/json"))
       .catch((err) => setImportStatus(`${t("settings.exportFailed")}: ${String(err)}`));
   };
 
@@ -3830,13 +4585,28 @@ function EclipsesTab({ opts, sendPatch }: TabProps) {
           onChange={(v) =>
             sendPatch(
               { eclipses: { eclipse_chart_moment: v } },
-              { ...opts, eclipses: { eclipse_chart_moment: v } },
+              { ...opts, eclipses: { ...e, eclipse_chart_moment: v } },
             )
           }
         >
           {cat.eclipseModes.map((m) => (
             <option key={m.value} value={m.value}>{m.label}</option>
           ))}
+        </Select>
+      </Row>
+      <Row label={t("settings.prenatalEclipseMarker")}>
+        <Select
+          value={e.prenatal_eclipse_mode}
+          width={200}
+          onChange={(v) =>
+            sendPatch(
+              { eclipses: { prenatal_eclipse_mode: v as typeof e.prenatal_eclipse_mode } },
+              { ...opts, eclipses: { ...e, prenatal_eclipse_mode: v as typeof e.prenatal_eclipse_mode } },
+            )
+          }
+        >
+          <option value="solar_only">{t("settings.prenatalEclipseSolarOnly")}</option>
+          <option value="solar_and_lunar">{t("settings.prenatalEclipseSolarAndLunar")}</option>
         </Select>
       </Row>
     </div>
@@ -3902,6 +4672,16 @@ function FixedStarsTab({ opts, sendPatch }: TabProps) {
     );
   };
 
+  const setUseIndianNames = (value: boolean) => {
+    sendPatch(
+      { fixedStars: { useIndianFixstarNames: value } },
+      {
+        ...opts,
+        fixedStars: { ...fs, useIndianFixstarNames: value },
+      },
+    );
+  };
+
   const toggle = (code: string) => {
     if (!code) return;
     if (selected.has(code)) {
@@ -3934,6 +4714,12 @@ function FixedStarsTab({ opts, sendPatch }: TabProps) {
 
   return (
     <div className="flex flex-col gap-0">
+      <Row label={t("settings.useIndianFixedStarNames")}>
+        <Toggle
+          checked={fs.useIndianFixstarNames}
+          onChange={setUseIndianNames}
+        />
+      </Row>
       <SectionLabel>{t("settings.whichFixedStarsActive")}</SectionLabel>
       {fs.catalog.length === 0 ? (
         <div className="py-[var(--aries-form-field-gap)] text-[length:var(--aries-font-size-small)] text-foreground/45">

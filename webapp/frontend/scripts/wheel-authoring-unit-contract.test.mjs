@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Max Lange
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -25,9 +28,13 @@ let schemaJavascript = await transpile(
 );
 schemaJavascript = schemaJavascript.replaceAll('"./unit-projection"', `"${projectionUrl}"`);
 const schemaUrl = dataUrl(schemaJavascript);
-const wheelUrl = dataUrl(await transpile(
-  new URL("../src/lib/chart/wheel-render-style.ts", import.meta.url),
+const layoutModelUrl = dataUrl(await transpile(
+  new URL("../src/lib/chart/wheel-layout-model.ts", import.meta.url),
 ));
+const wheelUrl = dataUrl(
+  (await transpile(new URL("../src/lib/chart/wheel-render-style.ts", import.meta.url)))
+    .replaceAll('"./wheel-layout-model"', `"${layoutModelUrl}"`),
+);
 let adapterJavascript = await transpile(
   new URL("../src/lib/style-lab/wheel-authoring-adapter.ts", import.meta.url),
 );
@@ -166,6 +173,17 @@ test("every advertised text and line class has a frontend Profile V2 compiler ta
   const typography = new Set(wheel.WHEEL_AUTHORING_TYPOGRAPHY_CLASSES);
   const lines = new Set(wheel.WHEEL_AUTHORING_LINE_CLASSES);
   for (const definition of manifest.WHEEL_SEMANTIC_CLASS_MANIFEST) {
+    // A class only needs a paint compiler target if it advertises paint. The
+    // geometry lanes are circles that nothing is drawn on, and `canvas.chart`
+    // and the band spans are circles that carry a ratio and a radius rather
+    // than a stroke; none of them has a colour or a stroke width to compile.
+    const paints = definition.capabilities.includes("color")
+      || definition.capabilities.includes("strokeWidth");
+    if (!paints) {
+      assert.equal(lines.has(definition.id), false, definition.id);
+      assert.equal(typography.has(definition.id), false, definition.id);
+      continue;
+    }
     if (definition.primitive === "text") {
       assert.equal(typography.has(definition.id), true, definition.id);
     }
@@ -676,6 +694,10 @@ test("inspector defaults expose reference px, percent, and linked diameter", () 
       "bodies.inner.glyph",
     ),
     {
+      // This profile authors both a colour and a font on the class, so the
+      // inspector shows per-class overrides rather than the shared roles.
+      colorAuthored: true,
+      fontRefAuthored: true,
       fontRef: {
         role: "symbols",
         source: "asset",
@@ -768,4 +790,58 @@ test("unset Anglo inspector widths mirror the production draw fallbacks", () => 
       classId,
     );
   }
+});
+
+// Role-first colour and font: a class inherits its shared palette/font role
+// until the user authors an override on the class itself. Both values are
+// always resolved so the renderer can paint, so the inspector cannot use
+// presence to decide — it needs the authored flags. Without them it always
+// edited a per-class override and the shared role was unreachable, which is
+// why the Style Lab and the Appearance menu behaved as two disjoint systems.
+test("colour and font report whether they were authored or inherited", () => {
+  const plain = wheel.DEFAULT_WHEEL_RENDER_STYLE;
+  const classId = "bodies.inner.position.degree";
+  const inherited = adapter.readWheelAuthoringClassDefaults(plain, "classic", classId);
+  assert.equal(inherited.colorAuthored, false);
+  assert.equal(inherited.fontRefAuthored, false);
+  // Still resolved, because the renderer must always have something to paint.
+  assert.ok(inherited.color);
+  assert.ok(inherited.fontRef);
+
+  const authored = wheel.createTokenizedWheelRenderStyle({
+    authoringOverrides: {
+      ...plain.authoringOverrides,
+      typography: { classic: { [classId]: { color: "rgb(255,0,0)" } } },
+    },
+  });
+  const overridden = adapter.readWheelAuthoringClassDefaults(authored, "classic", classId);
+  assert.equal(overridden.colorAuthored, true);
+  assert.equal(overridden.color, "rgb(255,0,0)");
+  // Authoring a colour must not silently claim the font as authored too.
+  assert.equal(overridden.fontRefAuthored, false);
+});
+
+// The editor must not claim a colour the renderer does not paint. The scene
+// declared the positions role for a readout's sign while draw-chart still
+// filled it from palette.signs, so editing that role would have moved nothing
+// on screen — the "I edit this and the wrong thing happens" failure shape.
+test("a position readout's three components resolve to one colour role", () => {
+  const style = wheel.DEFAULT_WHEEL_RENDER_STYLE;
+  const parts = ["degree", "sign", "minute"].map((component) =>
+    adapter.readWheelAuthoringClassDefaults(
+      style,
+      "classic",
+      `bodies.inner.position.${component}`,
+    ).color,
+  );
+  assert.equal(new Set(parts).size, 1, `components disagree: ${parts}`);
+  assert.equal(parts[0], style.palette.positions);
+  // The zodiac ring's own glyphs stay the signs role.
+  const ring = adapter.readWheelAuthoringClassDefaults(
+    style,
+    "classic",
+    "zodiac.signGlyph",
+  ).color;
+  assert.equal(ring, style.palette.signs);
+  assert.notEqual(ring, parts[0]);
 });

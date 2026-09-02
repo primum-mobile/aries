@@ -14,7 +14,11 @@ const manifestPath = resolve(frontendRoot, "src/styles/style-token-public.genera
 const outputPath = resolve(repoRoot, "webapp/daemon/style_profile_catalog_generated.py");
 const check = process.argv.includes("--check");
 
-const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+function readNormalizedText(path) {
+  return readFileSync(path, "utf8").replace(/\r\n?/g, "\n");
+}
+
+const manifest = JSON.parse(readNormalizedText(manifestPath));
 const editable = manifest.tokens.filter((token) => token.handoffStatus === "editable");
 const cssToSemantic = new Map(editable.map((token) => [token.cssVar, token.semanticId]));
 
@@ -458,7 +462,7 @@ const rendered = `# Copyright (C) 2026 Max Lange\n` +
 if (check) {
   let current = null;
   try {
-    current = readFileSync(outputPath, "utf8");
+    current = readNormalizedText(outputPath);
   } catch {
     // Report the same actionable drift error for a missing artifact.
   }

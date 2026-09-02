@@ -1,0 +1,400 @@
+.root {
+  --temporal-axis-width: clamp(4.25rem, 12%, 7rem);
+  box-sizing: border-box;
+  min-inline-size: 0;
+  overflow: hidden;
+  color: var(--aries-text-primary);
+  background-color: var(--aries-background);
+  border-block: 1px solid var(--aries-border-subtle);
+}
+
+.toolbar {
+  display: flex;
+  min-inline-size: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--aries-control-gap);
+  padding: var(--aries-control-padding-y) var(--aries-control-padding-x-compact);
+  border-block-end: 1px solid var(--aries-border-subtle);
+  background-color: var(--aries-background);
+}
+
+.presets {
+  display: flex;
+  min-inline-size: 0;
+  align-items: stretch;
+  border: 1px solid var(--aries-border-subtle);
+}
+
+.preset,
+.presetActive {
+  min-inline-size: 0;
+  block-size: var(--aries-control-height-micro);
+  overflow: hidden;
+  padding-inline: var(--aries-control-gap);
+  color: var(--aries-text-muted);
+  background-color: var(--aries-background);
+  border: 0;
+  border-inline-end: 1px solid var(--aries-border-subtle);
+  border-radius: 0;
+  font: inherit;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.preset:last-child,
+.presetActive:last-child {
+  border-inline-end: 0;
+}
+
+.preset:hover,
+.preset:focus-visible,
+.presetActive:focus-visible {
+  color: var(--aries-text-primary);
+  outline: 1px solid var(--aries-border-strong);
+  outline-offset: -1px;
+}
+
+.presetActive {
+  color: var(--aries-text-primary);
+  background-color: var(--aries-accent);
+}
+
+.coverageLegend {
+  display: flex;
+  min-inline-size: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--aries-control-gap);
+  overflow: hidden;
+  color: var(--aries-text-dim);
+  white-space: nowrap;
+}
+
+.legendItem {
+  display: inline-flex;
+  min-inline-size: 0;
+  align-items: center;
+  gap: var(--aries-control-gap-compact);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pendingSwatch,
+.unknownSwatch {
+  display: inline-block;
+  inline-size: var(--aries-control-gap);
+  block-size: var(--aries-control-gap);
+  flex: 0 0 auto;
+  border: 1px solid var(--aries-border-subtle);
+  background-color: var(--aries-background);
+}
+
+.pendingSwatch {
+  border-inline-start-color: var(--aries-text-muted);
+  border-block-end-color: var(--aries-text-muted);
+}
+
+.unknownSwatch {
+  border-color: var(--aries-text-dim);
+}
+
+.columnHeaders,
+.mapGrid {
+  display: grid;
+  grid-template-columns: var(--temporal-axis-width) repeat(4, minmax(0, 1fr));
+  min-inline-size: 0;
+}
+
+.columnHeaders {
+  border-block-end: 1px solid var(--aries-border-subtle);
+}
+
+.axisHeader,
+.laneHeader {
+  box-sizing: border-box;
+  min-inline-size: 0;
+  overflow: hidden;
+  padding: var(--aries-control-padding-y) var(--aries-control-gap);
+  color: var(--aries-text-muted);
+  background-color: var(--aries-background);
+  border-inline-end: 1px solid var(--aries-border-subtle);
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.laneHeader:last-child {
+  border-inline-end: 0;
+}
+
+.axisHeader {
+  color: var(--aries-text-dim);
+  text-align: end;
+}
+
+.mapBody {
+  position: relative;
+  box-sizing: border-box;
+  block-size: clamp(14rem, 34vh, 24rem);
+  min-inline-size: 0;
+  overflow: hidden;
+  background-color: var(--aries-background);
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
+}
+
+.mapBody:active {
+  cursor: grabbing;
+}
+
+.mapBody:focus-visible,
+.axis:focus-visible {
+  outline: 1px solid var(--aries-border-strong);
+  outline-offset: -1px;
+}
+
+.mapGrid {
+  position: absolute;
+  inset: 0;
+}
+
+.axis,
+.lane {
+  position: relative;
+  min-inline-size: 0;
+  overflow: hidden;
+  background-color: var(--aries-background);
+  border-inline-end: 1px solid var(--aries-border-subtle);
+}
+
+.axis {
+  z-index: 5;
+  color: var(--aries-text-dim);
+  cursor: crosshair;
+}
+
+.lane:last-child {
+  border-inline-end: 0;
+}
+
+.tickLabel {
+  position: absolute;
+  inset-inline: var(--aries-control-gap-compact) var(--aries-control-gap);
+  overflow: hidden;
+  transform: translateY(-50%);
+  color: var(--aries-text-dim);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tickLabel[data-tick-major="true"] {
+  color: var(--aries-text-muted);
+}
+
+.tickLabel[data-tick-edge="start"] {
+  transform: none;
+}
+
+.tickLabel[data-tick-edge="end"] {
+  transform: translateY(-100%);
+}
+
+.coverageComplete,
+.coveragePending,
+.coverageUnknown {
+  position: absolute;
+  z-index: 0;
+  inset-inline: 0;
+  overflow: hidden;
+  background-color: var(--aries-background);
+}
+
+.coveragePending {
+  color: var(--aries-text-muted);
+}
+
+.coverageUnknown {
+  color: var(--aries-text-dim);
+}
+
+.hatch {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  opacity: 0.42;
+  stroke: currentColor;
+  stroke-width: 1;
+  fill: none;
+}
+
+.band {
+  position: absolute;
+  z-index: 2;
+  box-sizing: border-box;
+  min-block-size: 2px;
+  min-inline-size: 0;
+  overflow: hidden;
+  padding: 1px var(--aries-control-gap-compact);
+  background-color: var(--aries-background);
+  border: 1px solid currentColor;
+  border-inline-start-width: 3px;
+  border-radius: 0;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.bandFill {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  pointer-events: none;
+}
+
+.bandFill > span {
+  min-inline-size: 0;
+  flex: 1 1 0;
+}
+
+.bandLabel {
+  position: relative;
+  display: block;
+  min-inline-size: 0;
+  overflow: hidden;
+  color: var(--aries-text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.band:hover,
+.band:focus-visible {
+  outline: 1px solid var(--aries-border-strong);
+  outline-offset: -1px;
+}
+
+.ruleOverlay,
+.concurrenceOverlay {
+  position: absolute;
+  inset-block: 0;
+  inset-inline: var(--temporal-axis-width) 0;
+  min-inline-size: 0;
+  pointer-events: none;
+}
+
+.ruleOverlay {
+  z-index: 1;
+}
+
+.minorRule,
+.majorRule {
+  position: absolute;
+  inset-inline: 0;
+  border-block-start: 1px solid var(--aries-border-subtle);
+}
+
+.minorRule {
+  opacity: 0.45;
+}
+
+.majorRule {
+  opacity: 0.85;
+}
+
+.concurrenceOverlay {
+  z-index: 4;
+}
+
+.horizon,
+.horizonSelected,
+.horizonAggregate {
+  position: absolute;
+  block-size: 12px;
+  overflow: visible;
+  padding: 0;
+  transform: translateY(-50%);
+  background-color: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.horizon,
+.horizonSelected {
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.horizonAggregate {
+  pointer-events: none;
+}
+
+.horizonLine {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline: 0;
+  display: flex;
+  block-size: 1px;
+  overflow: hidden;
+}
+
+.horizonLine > span {
+  min-inline-size: 0;
+  flex: 1 1 0;
+}
+
+.horizonNode {
+  position: absolute;
+  inset-block-start: 50%;
+  inline-size: 4px;
+  block-size: 4px;
+  transform: translate(-50%, -50%);
+  background-color: currentColor;
+  border: 1px solid var(--aries-background);
+}
+
+.horizonSelected .horizonLine {
+  block-size: 2px;
+}
+
+.horizonSelected .horizonNode {
+  inline-size: 6px;
+  block-size: 6px;
+}
+
+.horizon:focus-visible,
+.horizonSelected:focus-visible {
+  outline: 1px solid var(--aries-border-strong);
+  outline-offset: -1px;
+}
+
+.focusLine {
+  position: absolute;
+  z-index: 6;
+  inset-inline: 0;
+  border-block-start: 1px solid var(--aries-text-primary);
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+@media (max-width: 760px) {
+  .coverageLegend {
+    display: none;
+  }
+
+  .preset,
+  .presetActive {
+    padding-inline: var(--aries-control-gap-compact);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root,
+  .root * {
+    scroll-behavior: auto;
+  }
+}

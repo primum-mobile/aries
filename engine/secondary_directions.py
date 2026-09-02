@@ -1,4 +1,9 @@
 # -*- coding: utf-8 -*-
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 """wx-free secondary/minor/tertiary direction row builder.
 
 EXTRACTED verbatim from ``secdirframe.py`` (which imports wx and so cannot run in
@@ -18,6 +23,7 @@ posfordate, astrology, symbolic_time, datetime.
 from __future__ import annotations
 
 import datetime
+import math
 
 import astrology
 import chart
@@ -185,8 +191,19 @@ def _build_direct_secondary_direction_rows(radix, start_age=0, end_age=25, limit
         promittor_ids=query.promittor_ids,
         method=posfordate.progression_method(method),
     )
-    if station_rows:
-        rows = searchbackend._dedupe_rows(list(rows) + list(station_rows))
+    ingress_rows = searchbackend.build_secondary_ingress_rows(
+        catalog,
+        radix,
+        start_date,
+        end_date,
+        promittor_ids=query.promittor_ids,
+        method=posfordate.progression_method(method),
+        direction=SECONDARY_DIRECTION_DIRECT,
+    )
+    if station_rows or ingress_rows:
+        rows = searchbackend._dedupe_rows(
+            list(rows) + list(station_rows) + list(ingress_rows)
+        )
         rows.sort(key=lambda row: (
             row.event_jd if row.event_jd is not None else float('inf'),
             row.technique,
@@ -216,6 +233,24 @@ def build_converse_secondary_direction_rows(radix, start_age=0, end_age=25, limi
     rows = []
     _append_converse_planet_rows(rows, catalog, radix, samples, targets, method)
     _append_converse_angle_rows(rows, catalog, radix, samples, targets, method)
+    birth_date = _birth_date(radix)
+    start_date = birth_date + datetime.timedelta(days=int(round(start_age * 365.2425)))
+    end_date = birth_date + datetime.timedelta(days=int(round(end_age * 365.2425)))
+    ingress_rows = searchbackend.build_secondary_ingress_rows(
+        catalog,
+        radix,
+        start_date,
+        end_date,
+        promittor_ids=_secondary_progressed_promittor_ids(catalog),
+        method=method,
+        direction=SECONDARY_DIRECTION_CONVERSE,
+    )
+    _mark_secondary_direction_rows(
+        ingress_rows,
+        SECONDARY_DIRECTION_CONVERSE,
+        're',
+    )
+    rows.extend(ingress_rows)
     rows.sort(key=_secondary_row_sort_key)
     rows = searchbackend._dedupe_rows(rows)
     rows.sort(key=_secondary_row_sort_key)
@@ -492,7 +527,92 @@ def _converse_angle_longitudes(radix, age, method):
         return {}
 
 
-def serialize_secondary_rows(radix, rows, catalog):
+def _temporal_id_component(value):
+    return str(value).replace('%', '%25').replace('|', '%7C')
+
+
+def _secondary_temporal_point(catalog, object_id):
+    point_id = str(object_id or '').strip()
+    if not point_id:
+        return None
+    obj = catalog.get(point_id) if catalog is not None else None
+    planet_id = getattr(obj, 'planet_index', None) if obj is not None else None
+    try:
+        planet_id = int(planet_id) if planet_id is not None else None
+    except Exception:
+        planet_id = None
+    return {'pointId': point_id, 'planetId': planet_id}
+
+
+def _secondary_temporal_payload(row, catalog, method=None):
+    try:
+        jd_ut = float(row.event_jd)
+    except Exception:
+        return None
+    if not math.isfinite(jd_ut):
+        return None
+    source = str(method or row.technique or 'secondary').strip().lower()
+    discriminator = ':'.join(
+        str(value or '')
+        for value in (
+            _row_metadata(row).get('secondary_direction'),
+            _row_motion_code(row),
+            _row_station_code(row),
+        )
+    )
+    row_id = '|'.join((
+        'secondary-direction',
+        _temporal_id_component(source),
+        _temporal_id_component(row.technique or ''),
+        _temporal_id_component(row.aspect or ''),
+        _temporal_id_component(row.promittor_id or ''),
+        _temporal_id_component(row.significator_id or ''),
+        format(jd_ut, '.8f'),
+        _temporal_id_component(discriminator),
+    ))
+    window = {
+        'startJdUt': jd_ut,
+        'endJdUt': math.nextafter(jd_ut, math.inf),
+        'endExclusive': True,
+    }
+    activations = []
+    for role, point in (
+        ('actor', _secondary_temporal_point(catalog, row.promittor_id)),
+        ('target', _secondary_temporal_point(catalog, row.significator_id)),
+    ):
+        if point is None:
+            continue
+        activations.append({
+            'activationId': '|'.join((
+                row_id,
+                _temporal_id_component(role),
+                _temporal_id_component(point['pointId']),
+            )),
+            'pointId': point['pointId'],
+            'planetId': point['planetId'],
+            'role': role,
+            'basis': 'exact',
+            'windows': [dict(window)],
+        })
+    if not activations:
+        return None
+    payload = {
+        'rowId': row_id,
+        'rowAnchorJdUt': jd_ut,
+        'activations': activations,
+    }
+    actor = next((item for item in activations if item['role'] == 'actor'), None)
+    target = next((item for item in activations if item['role'] == 'target'), None)
+    if actor is not None and target is not None:
+        payload['relationship'] = {
+            'aspect': row.aspect,
+            'actorPointId': actor['pointId'],
+            'targetPointId': target['pointId'],
+        }
+    return payload
+
+
+def serialize_secondary_rows(radix, rows, catalog, method=None, include_temporal=False):
     """Daemon row serializer — mirrors the wx list-window's row cells
     (secdirframe.py:970-989 age/date/time/aspect text). Materialises every row's
     lazy display + sweph-anchored time so the JSON carries final values, then
@@ -522,22 +642,28 @@ def serialize_secondary_rows(radix, rows, catalog):
         age = None
         if radix_jd is not None and row.event_jd is not None:
             age = max(0.0, (float(row.event_jd) - radix_jd) / 365.2425)
-        out.append({
+        payload = {
             "age": round(age, 4) if age is not None else None,
             "date": "%04d-%02d-%02d" % (dt[0], dt[1], dt[2]) if dt else (row.event_date or ""),
             "time": "%02d:%02d:%02d" % (dt[3], dt[4], dt[5]) if dt else (row.event_time or ""),
             "motionCode": _row_motion_code(row),
             "isStation": is_secondary_station_row(row),
+            "isIngress": is_secondary_ingress_row(row),
             "stationCode": _row_station_code(row),
             "prom": row.promittor_label or "",
-            "sig": row.significator_label or "",
+            "sig": _row_significator_label(row),
             "aspect": _row_aspect_label(row),
             # Raw hints so React maps to glyphs (planet index / aspect chart idx).
             "fields": _row_glyph_fields(radix, catalog, row),
             # Stable event datetime for the Timed-chart actions.
             "eventDatetime": ("%04d-%02d-%02dT%02d:%02d:%02d" % dt) if dt else None,
             "jd": float(row.event_jd) if row.event_jd is not None else None,
-        })
+        }
+        if include_temporal:
+            temporal = _secondary_temporal_payload(row, catalog, method=method)
+            if temporal is not None:
+                payload["temporal"] = temporal
+        out.append(payload)
     return out
 
 
@@ -594,6 +720,10 @@ def is_secondary_station_row(row):
     return bool(_row_metadata(row).get('secondary_station'))
 
 
+def is_secondary_ingress_row(row):
+    return bool(_row_metadata(row).get('secondary_ingress'))
+
+
 def _row_station_code(row):
     if not is_secondary_station_row(row):
         return None
@@ -612,10 +742,22 @@ def _row_aspect_index(row):
 
 
 def _row_aspect_label(row):
+    if is_secondary_ingress_row(row):
+        return '←' if _row_metadata(row).get('sign_change_retrograde') else '→'
     value = _row_metadata(row).get('aspect_label')
     if value:
         return str(value)
     return searchbackend.ASPECT_LABEL_BY_ID.get(row.aspect, row.aspect or '')
+
+
+def _row_significator_label(row):
+    if is_secondary_ingress_row(row):
+        sign_index = _row_metadata(row).get('sign_change_event_sign')
+        try:
+            return mtexts.signs[int(sign_index) % chart.Chart.SIGN_NUM]
+        except Exception:
+            pass
+    return row.significator_label or ''
 
 
 def build_secondary_rows_text(radix, rows, catalog, aspect_label_for_index=None):
@@ -658,7 +800,7 @@ def build_secondary_rows_text(radix, rows, catalog, aspect_label_for_index=None)
             time_txt,
             row.promittor_label,
             aspect_text,
-            row.significator_label,
+            _row_significator_label(row),
         )
         if has_motion:
             values = (values[0], _row_motion_code(row) or '') + values[1:]
@@ -736,13 +878,38 @@ def _aspect_color(radix, row):
 
 
 def _row_glyph_fields(radix, catalog, row):
+    prom_planet = _planet_index(catalog, row.promittor_id)
+    sig_planet = _planet_index(catalog, row.significator_id)
+    aspect_index = _row_aspect_index(row)
+    sig_sign_index = None
+    sig_glyph = _object_glyph(catalog, row.significator_id)
+    if is_secondary_ingress_row(row):
+        try:
+            sig_sign_index = int(
+                _row_metadata(row).get('sign_change_event_sign')
+            ) % chart.Chart.SIGN_NUM
+            signs = (
+                common.common.Signs1
+                if getattr(radix.options, 'signs', True)
+                else common.common.Signs2
+            )
+            sig_glyph = signs[sig_sign_index]
+        except Exception:
+            sig_glyph = None
     return {
-        "promPlanet": _planet_index(catalog, row.promittor_id),
-        "sigPlanet": _planet_index(catalog, row.significator_id),
-        "aspectIndex": _row_aspect_index(row),
+        "promPlanet": prom_planet,
+        "sigPlanet": sig_planet,
+        "aspectIndex": aspect_index,
         "promGlyph": _object_glyph(catalog, row.promittor_id),
-        "sigGlyph": _object_glyph(catalog, row.significator_id),
+        "sigGlyph": sig_glyph,
         "aspectGlyph": _aspect_glyph(row),
+        "promExportSymbolText": common.planet_text_export_mark(prom_planet),
+        "sigExportSymbolText": (
+            common.sign_text_export_mark(sig_sign_index)
+            if sig_sign_index is not None
+            else common.planet_text_export_mark(sig_planet)
+        ),
+        "aspectExportSymbolText": common.aspect_text_export_mark(aspect_index),
         "promColor": _metadata_color(row, 'prom_display'),
         "sigColor": _metadata_color(row, 'sig_display'),
         "aspectColor": _aspect_color(radix, row),

@@ -21,6 +21,7 @@ type ActiveRightPaneInput = {
   synodicCyclesPane: unknown | null;
   aspectListPane: unknown | null;
   ascensionalTransitsPane: unknown | null;
+  calendarPane: unknown | null;
   astrocartControlsPane?: AstrocartControlsPaneState | null;
   activeAstrocartDocumentId?: string | null;
   featureCatalogPane: unknown | null;
@@ -47,6 +48,7 @@ export function activeRightPaneModule(input: ActiveRightPaneInput): RightPaneMod
   if (input.synodicCyclesPane) return "synodic-cycles";
   if (input.aspectListPane) return "aspect-list";
   if (input.ascensionalTransitsPane) return "ascensional-transits";
+  if (input.calendarPane) return "calendar";
   if (input.styleEditorOpen) return "chart-style";
   if (input.inspectorOpen && input.notesOpen) return "inspector-notes";
   if (input.inspectorOpen) return "hover-inspector";

@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Max Lange
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { expect, test } from "@playwright/test";
 
 import { computeHitRegions } from "../src/lib/chart/draw-chart";

@@ -1,5 +1,9 @@
+// Copyright (C) 2026 Max Lange
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
 
@@ -147,5 +151,38 @@ test("aspect click and hide state override an overlay-only zero-dirty plan", asy
   assert.match(
     chartCanvas,
     /hitRegionsRef\.current = computeHitRegions\([\s\S]*?clickAspectState: \{\s*selectedBody: selectedAspectBody,\s*hideAll: hideAllAspects,\s*minorOnly: minorOnlyAspects,\s*\},\s*\}\);\s*paintedAspectInteractionKeyRef\.current = aspectInteractionPaintKey;/,
+  );
+});
+
+test("the masking check is asked of the map the wheel is painted from", () => {
+  // The scene decides which scope a handle writes to by asking whether the
+  // visible variant already authors that property. That mechanism has its own
+  // test and has always passed — because that test hands it the profile map
+  // directly. The app handed it the *editor's working set*, which is empty for
+  // a saved profile, so on an Anglo wheel with Paper loaded
+  // (`authoring.wheel.anglo.canvas.chart.scale`) the check saw no variant
+  // value, the drag wrote base, anglo went on governing, and the accumulated
+  // base value applied in one jump the moment scope precedence changed.
+  //
+  // The green mechanism test next to a broken app is the whole reason this
+  // asserts the *wiring*: proving a function works is not proving it is called
+  // with the right input.
+  const chartCanvas = readFileSync(
+    new URL("../src/components/workshell/chart-canvas.tsx", import.meta.url),
+    "utf8",
+  );
+  const call = chartCanvas.match(
+    /variantAuthoredOverrideIds: variantAuthoredOverrideIds\(([\s\S]*?)\n {12}\),/,
+  );
+  assert.ok(call, "chart-canvas must build the scene's variant-authored map");
+  assert.match(
+    call[1],
+    /\.\.\.effectiveWheelAuthoringOverrides/,
+    "the saved profile's authored values must be included, or masking cannot see them",
+  );
+  assert.match(
+    call[1],
+    /semanticOverrides/,
+    "the editor's working overrides must still be included",
   );
 });

@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Max Lange
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -17,9 +20,12 @@ function dataUrl(source) {
   return `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`;
 }
 
-const wheelJavascript = await transpile(
-  new URL("../src/lib/chart/wheel-render-style.ts", import.meta.url),
+const layoutModelUrl = dataUrl(
+  await transpile(new URL("../src/lib/chart/wheel-layout-model.ts", import.meta.url)),
 );
+const wheelJavascript = (
+  await transpile(new URL("../src/lib/chart/wheel-render-style.ts", import.meta.url))
+).replaceAll('"./wheel-layout-model"', `"${layoutModelUrl}"`);
 const wheelUrl = dataUrl(wheelJavascript);
 const genericSceneJavascript = await transpile(
   new URL("../src/lib/style-lab/style-scene.ts", import.meta.url),
@@ -54,6 +60,7 @@ let wheelSceneJavascript = await transpile(
 );
 wheelSceneJavascript = wheelSceneJavascript
   .replaceAll('"../chart/wheel-render-style"', `"${wheelUrl}"`)
+  .replaceAll('"../chart/wheel-layout-model"', `"${layoutModelUrl}"`)
   .replaceAll('"./style-scene"', `"${genericSceneUrl}"`)
   .replaceAll('"./authoring-schema"', `"${authoringSchemaUrl}"`)
   .replaceAll('"./semantic-class-manifest"', `"${semanticManifestUrl}"`)
@@ -613,19 +620,22 @@ test("production hit regions become stable, exact semantic scene instances", () 
     bodyGlyph.handles[0].binding.semanticId,
     "authoring.wheel.classic.bodies.inner.glyph.fontSize",
   );
-  for (const [id, classId, paletteRole] of [
-    ["wheel.body.primary.fortune", "bodies.fortune", "chart.color.body.fortune"],
-    ["wheel.body.primary.vertex", "bodies.vertex", "chart.color.peregrine"],
-    ["wheel.body.primary.syzygy", "bodies.prenatalSyzygy", "chart.color.positions"],
+  // Fortune, the Vertex and the prenatal syzygy are body glyphs. They select
+  // as one, so they carry the glyph's whole control set instead of a lone
+  // colour, and each still paints through its own occurrence palette role.
+  for (const [id, paletteRole] of [
+    ["wheel.body.primary.fortune", "chart.color.body.fortune"],
+    ["wheel.body.primary.vertex", "chart.color.peregrine"],
+    ["wheel.body.primary.syzygy", "chart.color.positions"],
   ]) {
     const point = scene.elements.find((item) => item.id === id);
-    assert.equal(point.classId, classId);
-    assert.equal(point.authoringDefaults.fontSizePx, undefined, id);
-    assert.deepEqual(point.handles, [], id);
+    assert.equal(point.classId, "bodies.inner.glyph", id);
+    assert.ok(point.authoringDefaults.fontSizePx > 0, id);
+    assert.ok(point.authoringDefaults.opacityPercent != null, id);
     assert.ok(point.paletteRoleIds.includes(paletteRole), `${id} palette`);
   }
   assert.equal(
-    scene.handles.some((handle) => /bodies\.(?:fortune|vertex|prenatalSyzygy)\.fontSize$/.test(handle.binding?.semanticId ?? "")),
+    scene.elements.some((item) => /^bodies\.(?:fortune|vertex|prenatalSyzygy)$/.test(item.classId)),
     false,
   );
   const bodyLeader = scene.elements.find((item) => item.id === "wheel.body.primary.sun.leader");
@@ -1141,4 +1151,570 @@ test("interchart aspect endpoints synthesize one authored body-leader line per e
     sceneApi.hitTestWheelStyleScene(scene, markerMidpoint, 400)?.element.id,
     markers[0].id,
   );
+});
+
+// A position readout is one printed value, so its three components share one
+// colour role. Colouring the sign component by the zodiac role split a single
+// reading across two families because that component happens to be a glyph.
+// Font deliberately still splits: the sign needs a face whose cmap has the
+// glyph. Colour groups by meaning; font is constrained by coverage.
+test("a position readout shares one colour role but keeps its symbol font", () => {
+  const geometry = {
+    profile: "classic",
+    mode: "single",
+    maxRadius: 400,
+    hasOuterRing: false,
+    showTerms: true,
+    showDecans: true,
+    showHouses: true,
+    showPositions: true,
+    comparisonWithOuterHouses: false,
+  };
+  const components = ["degree", "sign", "minute"];
+  const hitRegions = components.map((component, index) => ({
+    kind: "style_target",
+    styleOnly: true,
+    classId: `bodies.inner.position.${component}`,
+    itemId: `body:sun:position:${component}`,
+    shape: "rect",
+    x: 10 + index,
+    y: 10,
+    r: 4,
+    left: 10 + index,
+    top: 10,
+    width: 8,
+    height: 8,
+    signIndex: 7,
+  }));
+  const scene = sceneApi.buildWheelStyleScene({
+    style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+    geometry,
+    hitRegions,
+  });
+
+  const colours = new Map();
+  const fonts = new Map();
+  for (const component of components) {
+    const element = scene.elements.find(
+      (candidate) => candidate.classId === `bodies.inner.position.${component}`,
+    );
+    assert.ok(element, `no scene element for ${component}`);
+    const colour = element.tokenBindings.find((b) => b.property === "color");
+    const font = element.tokenBindings.find((b) => b.property === "font-family");
+    assert.ok(colour, `${component} has no colour binding`);
+    colours.set(component, colour.semanticId);
+    if (font) fonts.set(component, font.semanticId);
+  }
+
+  assert.equal(
+    new Set(colours.values()).size,
+    1,
+    `position components must share one colour role: ${JSON.stringify([...colours])}`,
+  );
+  assert.equal(colours.get("sign"), "chart.color.positions");
+  // The sign must not fall back to the zodiac ring's role.
+  assert.notEqual(colours.get("sign"), "chart.color.signs");
+  // ...but it must still use a symbol face, unlike its numeric siblings.
+  assert.notEqual(fonts.get("sign"), fonts.get("degree"));
+});
+
+// ---------------------------------------------------------------------------
+// The chart-scale handle.
+//
+// Scale is a declared affordance, not something inferred from which ring was
+// grabbed. Inference was tried and reverted: its `index === 0` discriminator is
+// wrong in two reachable layouts — a classic biwheel with houses hidden, and
+// anglo synastry — where no painted ring is index 0, so the gesture silently
+// did something else.
+// ---------------------------------------------------------------------------
+
+function chartScaleHandleOf(scene) {
+  return scene.handles.find(
+    (handle) => handle.elementId === sceneApi.WHEEL_STYLE_SCENE_ELEMENT_IDS.chartScale,
+  );
+}
+
+test("every layout offers exactly one chart-scale handle, whatever is painted", () => {
+  let states = 0;
+  for (const profile of ["classic", "compact", "anglo"]) {
+    for (const mode of ["single", "comparison"]) {
+      for (const showHouses of [false, true]) {
+        for (const showTerms of [false, true]) {
+          const scene = sceneApi.buildWheelStyleScene({
+            style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+            geometry: geometry(profile, mode, { showHouses, showTerms }),
+          });
+          const scaleHandles = scene.handles.filter(
+            (handle) =>
+              handle.elementId === sceneApi.WHEEL_STYLE_SCENE_ELEMENT_IDS.chartScale,
+          );
+          assert.equal(
+            scaleHandles.length,
+            1,
+            `${profile}/${mode} houses:${showHouses} terms:${showTerms} `
+            + `offered ${scaleHandles.length} scale handles`,
+          );
+          const [handle] = scaleHandles;
+          assert.equal(handle.editability.state, "editable");
+          assert.equal(handle.binding.property, "scale");
+          assert.ok(
+            handle.binding.semanticId.endsWith(".canvas.chart.scale"),
+            `scale handle authors ${handle.binding.semanticId}`,
+          );
+          states += 1;
+        }
+      }
+    }
+  }
+  assert.ok(states >= 24, `expected a real matrix, checked ${states}`);
+});
+
+test("the scale handle is not a ring handle and authors no ring radius", () => {
+  const scene = sceneApi.buildWheelStyleScene({
+    style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+    geometry: geometry("classic", "single"),
+  });
+  const handle = chartScaleHandleOf(scene);
+  assert.ok(handle);
+  // No painted ring may write the scale id, and the scale may not write a ring.
+  assert.equal(authoringAdapter.wheelRingRoleForClass("canvas.chart"), undefined);
+  for (const other of scene.handles) {
+    if (other === handle) continue;
+    assert.notEqual(
+      other.binding?.semanticId,
+      handle.binding.semanticId,
+      "a ring handle shares the chart-scale semantic id",
+    );
+  }
+  assert.doesNotMatch(handle.binding.semanticId, /\.radius$/);
+  // Its element is deliberately unclickable: a hit circle at the wheel's rim
+  // would swallow clicks meant for the outermost ring.
+  const element = scene.elements.find(
+    (candidate) => candidate.id === sceneApi.WHEEL_STYLE_SCENE_ELEMENT_IDS.chartScale,
+  );
+  assert.ok(element);
+  assert.equal(element.hitGeometry, null);
+});
+
+test("a scale drag tracks the pointer and is invertible within the gesture", () => {
+  // Purity, identity and within-gesture invertibility (invariants 1-3), checked
+  // at several pane sizes because the ring units bug was invisible at exactly
+  // one of them (invariant 8).
+  for (const maxRadius of [180, 400, 512, 733.5]) {
+    const scene = sceneApi.buildWheelStyleScene({
+      style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+      geometry: geometry("classic", "single", { maxRadius }),
+      viewport: { width: maxRadius * 2, height: maxRadius * 2 },
+    });
+    const handle = chartScaleHandleOf(scene);
+    assert.ok(handle, `no scale handle at ${maxRadius}`);
+    const start = handle.position;
+    const drag = (current) =>
+      sceneApi.resolveWheelStyleHandleDrag(handle, { start, current });
+
+    // Identity: no movement changes nothing.
+    assert.equal(drag(start).value, handle.binding.value);
+
+    // Purity: the same gesture state resolves identically twice.
+    const inward = [
+      start[0] + (handle.center[0] - start[0]) * 0.25,
+      start[1] + (handle.center[1] - start[1]) * 0.25,
+    ];
+    assert.deepEqual(drag(inward), drag(inward));
+
+    // Dragging towards the centre shrinks the wheel, and never past the floor.
+    assert.ok(drag(inward).value < handle.binding.value, `no shrink at ${maxRadius}`);
+    assert.ok(drag(handle.center).value >= wheel.WHEEL_SCALE_RANGE.min - 1e-9);
+    // ...and it can never be pushed past 1, where it would clip the pane.
+    const outward = [
+      handle.center[0] + (start[0] - handle.center[0]) * 3,
+      handle.center[1] + (start[1] - handle.center[1]) * 3,
+    ];
+    assert.ok(drag(outward).value <= wheel.WHEEL_SCALE_RANGE.max + 1e-9);
+
+    // Within-gesture invertibility: a path returning to its origin restores it.
+    assert.equal(drag(start).value, handle.binding.value);
+  }
+});
+
+test("the scale handle keeps tracking the pointer once the wheel is already scaled", () => {
+  // The handle's travel is measured against the unscaled pane. Measuring it
+  // against the shrunken wheel instead would make an already-small chart drag
+  // at a fraction of the pointer's speed, and it could never be dragged back.
+  const paneRadius = 400;
+  for (const scale of [1, 0.6, wheel.WHEEL_SCALE_RANGE.min]) {
+    const style = {
+      ...wheel.DEFAULT_WHEEL_RENDER_STYLE,
+      authoringOverrides: {
+        ...wheel.DEFAULT_WHEEL_RENDER_STYLE.authoringOverrides,
+        wheelScale: { classic: scale },
+      },
+    };
+    const scene = sceneApi.buildWheelStyleScene({
+      style,
+      geometry: geometry("classic", "single", { maxRadius: paneRadius * scale }),
+      viewport: { width: paneRadius * 2, height: paneRadius * 2 },
+    });
+    const handle = chartScaleHandleOf(scene);
+    assert.ok(handle);
+    assert.ok(
+      Math.abs(handle.binding.value - scale) < 1e-9,
+      `handle reported ${handle.binding.value} for an authored scale of ${scale}`,
+    );
+    // One pixel outward is one pixel of unscaled wheel radius, at any scale.
+    assert.ok(
+      Math.abs(handle.binding.valuePerPixel - 1 / paneRadius) < 1e-9,
+      `scale ${scale}: valuePerPixel ${handle.binding.valuePerPixel} != ${1 / paneRadius}`,
+    );
+  }
+});
+
+test("every outer-ring family the daemon emits reaches a manifest class", () => {
+  // The daemon's spelling is the contract. `fixstar` used to miss a check for
+  // "fixed" and fell through to the unnamed fallback, so a fixed-star label
+  // was authored as `secondaryRing.fixstar.label` — a class the manifest does
+  // not know, with no size, no opacity and its raw colour tokens on show.
+  // Every family here is a string `export_ring_item` actually ships.
+  const families = [
+    "fixstar",
+    "asteroid",
+    "midpoint",
+    "arabic_part",
+    "parallel_transits",
+    "antiscia",
+    "contra_antiscia",
+    "dodecatemoria",
+  ];
+  // Deliberately not `hybrid_hit`: `export_hybrid_items` ships every item in
+  // the Hybrid Hits ring under its own family, so a fixed star there is a
+  // fixed star. There is no hybrid family to resolve and no class for one.
+  assert.equal(wheel.resolveWheelSecondaryRingClassIds("hybrid_hit"), null);
+  const manifestIds = new Set(semanticManifest.WHEEL_SEMANTIC_CLASS_IDS);
+  for (const family of families) {
+    const classes = wheel.resolveWheelSecondaryRingClassIds(family);
+    assert.ok(classes, `${family} resolves to no class set`);
+    for (const [role, classId] of Object.entries(classes)) {
+      assert.ok(
+        manifestIds.has(classId),
+        `${family}.${role} -> ${classId} is not a manifest class`,
+      );
+    }
+  }
+});
+
+test("a fixed-star label is one manifest class with its own size and opacity", () => {
+  const scene = sceneApi.buildWheelStyleScene({
+    style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+    geometry: geometry("classic", "single"),
+    hitRegions: [{
+      kind: "secondary_ring",
+      family: "fixstar",
+      itemId: "algol",
+      label: "Algol",
+      x: 700, y: 120, r: 20, longitude: 55,
+      shape: "rect", left: 680, top: 112, width: 44, height: 16,
+      segments: [{ text: "Algol", kind: "text" }],
+      leader: { start: [660, 140], end: [680, 120] },
+    }],
+  });
+  const live = scene.elements.filter(
+    (element) => !element.stateTags.includes("manifest-placeholder")
+      && String(element.classId).startsWith("secondaryRing.fix"),
+  );
+  assert.deepEqual(
+    live.map((element) => element.classId).sort(),
+    ["secondaryRing.fixedStar.label", "secondaryRing.fixedStar.leader"],
+  );
+  const label = live.find((element) => element.classId.endsWith(".label"));
+  for (const property of ["fontRef", "fontSizePx", "trackingPx", "color", "opacityPercent"]) {
+    assert.ok(
+      label.authoringDefaults[property] != null,
+      `the label reports no ${property}`,
+    );
+  }
+  // One role, the one the renderer paints an outer-ring label with. Offering
+  // positions and signs as well put three inert colour rows on one label.
+  assert.deepEqual(label.paletteRoleIds, ["chart.color.textDim"]);
+});
+
+test("a class declares one primitive, whatever occurrence of it is on screen", () => {
+  // The inspector reads the primitive to place a property in a section, so a
+  // scene element that disagrees with the manifest moves the colour row
+  // between Stroke/Typography and Appearance depending on what is drawn.
+  const byId = new Map(
+    semanticManifest.WHEEL_SEMANTIC_CLASS_MANIFEST.map((definition) => [
+      definition.id,
+      definition,
+    ]),
+  );
+  for (const mode of ["single", "comparison"]) {
+    const scene = sceneApi.buildWheelStyleScene({
+      style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+      geometry: geometry("classic", mode),
+    });
+    for (const element of scene.elements) {
+      const definition = byId.get(element.classId);
+      if (!definition) continue;
+      assert.equal(
+        element.primitive,
+        definition.primitive,
+        `${element.id} (${element.classId}) paints as ${element.primitive}`,
+      );
+    }
+  }
+});
+
+test("direct manipulation writes to the scope that governs the visible wheel", () => {
+  // Base is the lowest precedence. With the Edit scope on "All wheel styles",
+  // a drag on a wheel whose variant already authors that property used to
+  // accumulate into a base value nothing painted — the wheel stood still and
+  // the change arrived all at once when something made base govern again.
+  const stored = { "authoring.wheel.anglo.canvas.chart.scale": 0.942016 };
+  const style = wheel.resolveWheelRenderStyleFromTokens(() => "", {
+    authoringOverrides: authoringAdapter.compileFlatWheelAuthoringOverrides(stored),
+  });
+  const scaleHandleId = (profile) => {
+    const scene = sceneApi.buildWheelStyleScene({
+      style,
+      geometry: geometry(profile, "single"),
+      authoringScope: "base",
+      variantAuthoredOverrideIds:
+        authoringAdapter.variantAuthoredOverrideIds(stored, profile),
+    });
+    return scene.handles.find((handle) => handle.binding?.property === "scale")
+      ?.binding?.semanticId;
+  };
+  assert.equal(scaleHandleId("anglo"), "authoring.wheel.anglo.canvas.chart.scale");
+  // Nothing masks base on the other wheels, so the shared value still governs
+  // and the shared value is still what the handle moves.
+  assert.equal(scaleHandleId("classic"), "authoring.wheel.base.canvas.chart.scale");
+  assert.equal(scaleHandleId("compact"), "authoring.wheel.base.canvas.chart.scale");
+  // Without the variant map the old behaviour stands: scope wins outright.
+  const noMap = sceneApi.buildWheelStyleScene({
+    style,
+    geometry: geometry("anglo", "single"),
+    authoringScope: "base",
+  });
+  assert.equal(
+    noMap.handles.find((handle) => handle.binding?.property === "scale")
+      ?.binding?.semanticId,
+    "authoring.wheel.base.canvas.chart.scale",
+  );
+});
+
+test("nothing on the wheel is editable without being nameable", () => {
+  // A class with a drag handle and no manifest entry can be moved but never
+  // found again: the element list is built from the manifest, so it has no row
+  // to name what the user just changed. Nine classes were in that state — the
+  // chart scale, the band span, six geometry lanes and the unpainted aspect
+  // lane, which the id fallback had been calling `ring.aspect`.
+  const manifestIds = new Set(semanticManifest.WHEEL_SEMANTIC_CLASS_IDS);
+  const orphans = new Set();
+  for (const profile of ["classic", "compact", "anglo"]) {
+    for (const mode of ["single", "comparison"]) {
+      const scene = sceneApi.buildWheelStyleScene({
+        style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+        geometry: geometry(profile, mode),
+      });
+      for (const element of scene.elements) {
+        if (element.editability.state !== "editable") continue;
+        if (manifestIds.has(element.classId)) continue;
+        orphans.add(`${element.classId} (${profile}/${mode}, ${element.id})`);
+      }
+    }
+  }
+  assert.deepEqual([...orphans], []);
+});
+
+test("the chart scale is authored from the chart, not from the paper", () => {
+  const scene = sceneApi.buildWheelStyleScene({
+    style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+    geometry: geometry("classic", "single"),
+  });
+  const chart = scene.elements.find((element) => element.classId === "canvas.chart");
+  assert.ok(chart, "canvas.chart is a scene element");
+  assert.equal(chart.handles.length, 1);
+  assert.equal(chart.handles[0].binding.property, "scale");
+  // The band span reports the factor its diamond authors, so the class the list
+  // can now name is not a class with an empty inspector. A factor rather than
+  // the inner circle's radius: as a radius it was the same circle the inner
+  // chevron authors, and whichever value was applied last silently won.
+  const span = scene.elements.find(
+    (element) => element.classId === "canvas.span.chartRing",
+  );
+  assert.ok(span.authoringDefaults.spanScalePercent > 0);
+  assert.equal(span.handles[0].binding.property, "spanScale");
+});
+
+test("a cap is reachable wherever a dash can show one", () => {
+  // Every ring is stroked as an arc; solid, a cap shapes nothing, but each
+  // dash of a dashed or dotted ring has two ends and the adapter reads a round
+  // cap as what makes a dash a dot. `lineJoin` stays off rings and open lines
+  // on purpose: measured against `draw-chart`, every one of them is painted as
+  // two-point segments and full arcs, so a join has no corner to shape. The
+  // single exception is the directed Drishti head on `aspects.primary.line`.
+  for (const definition of semanticManifest.WHEEL_SEMANTIC_CLASS_MANIFEST) {
+    if (definition.groupId !== "rings") continue;
+    assert.ok(definition.capabilities.includes("lineCap"), definition.id);
+    assert.equal(definition.capabilities.includes("lineJoin"), false, definition.id);
+  }
+  const drishti = semanticManifest.getWheelSemanticClass("aspects.primary.line");
+  assert.ok(drishti.capabilities.includes("lineJoin"));
+});
+
+test("an outer-ring family we cannot name is drawn but never offered", () => {
+  // The old fallback invented `secondaryRing.<family>.label`, which is not a
+  // manifest class, so the inspector fell through to the item's raw renderer
+  // tokens and editing its colour rewrote a palette role shared by 25 classes.
+  const scene = sceneApi.buildWheelStyleScene({
+    style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+    geometry: geometry("classic", "single"),
+    hitRegions: [{
+      kind: "secondary_ring",
+      family: "not_a_family",
+      itemId: "x",
+      label: "X",
+      x: 700, y: 120, r: 20, longitude: 55,
+      shape: "rect", left: 680, top: 112, width: 20, height: 10,
+      segments: [{ text: "X", kind: "text" }],
+    }],
+  });
+  assert.equal(
+    scene.elements.some((element) => element.classId.startsWith("secondaryRing.not_a_family")),
+    false,
+  );
+});
+
+test("a seated glyph reports the band limit that governs it, in one space", () => {
+  // The wheel capped a dragged glyph at its band and the inspector did not cap
+  // a typed one, so the same property had two different limits. The ceiling
+  // now travels with the size it limits, in the reference px the size is
+  // authored in — the earlier measurement that compared it against rendered px
+  // was reading two different spaces and invented a cap that was not there.
+  for (const profile of ["classic", "compact", "anglo"]) {
+    for (const maxRadius of [400, 150]) {
+      const scene = sceneApi.buildWheelStyleScene({
+        style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+        geometry: geometry(profile, "single", { maxRadius }),
+      });
+      for (const element of scene.elements) {
+        const defaults = element.authoringDefaults ?? {};
+        if (defaults.fontSizePx == null) continue;
+        if (String(element.classId).startsWith("secondaryRing.")) {
+          // Rim labels are placed outward with leaders and angular collision
+          // handling; a band thickness is not their limit and they report none.
+          assert.equal(defaults.fontSizeCeilingPx, undefined, element.classId);
+          continue;
+        }
+        if (defaults.fontSizeCeilingPx == null) continue;
+        assert.ok(
+          defaults.fontSizeCeilingPx >= defaults.fontSizePx - 1e-9,
+          `${element.classId} @ ${profile}/${maxRadius}: ceiling `
+          + `${defaults.fontSizeCeilingPx} below its own size ${defaults.fontSizePx}`,
+        );
+      }
+    }
+  }
+});
+
+test("the ceiling is scale-invariant, like the bands it comes from", () => {
+  // Bands and authored sizes are both fractions of the wheel, so whether a
+  // glyph has room cannot depend on how large the chart is drawn.
+  const ceilings = new Map();
+  for (const maxRadius of [400, 300, 200, 150, 100]) {
+    const scene = sceneApi.buildWheelStyleScene({
+      style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+      geometry: geometry("classic", "single", { maxRadius }),
+    });
+    for (const element of scene.elements) {
+      const ceiling = element.authoringDefaults?.fontSizeCeilingPx;
+      if (ceiling == null) continue;
+      const seen = ceilings.get(element.classId);
+      if (seen == null) ceilings.set(element.classId, ceiling);
+      else {
+        assert.ok(
+          Math.abs(seen - ceiling) < 1e-6,
+          `${element.classId}: ceiling ${ceiling} at ${maxRadius} != ${seen}`,
+        );
+      }
+    }
+  }
+  assert.ok(ceilings.size > 0);
+});
+
+test("the term and decan content floors still hold", () => {
+  // These two bands are the only ones the solver gives a glyph-sized minimum,
+  // and they work. Adding the ceiling must not narrow them.
+  const style = wheel.DEFAULT_WHEEL_RENDER_STYLE;
+  for (const maxRadius of [400, 200, 100]) {
+    const input = geometry("classic", "single", { maxRadius });
+    const rings = wheel.resolveWheelRingSet(style, input);
+    const metrics = wheel.resolveWheelTypographyMetrics(style, "classic", maxRadius);
+    assert.ok(
+      rings.r0 - rings.rDecans >= metrics.termSize - 1e-6,
+      `term band ${rings.r0 - rings.rDecans} below its glyph ${metrics.termSize} at ${maxRadius}`,
+    );
+    assert.ok(
+      rings.rDecans - rings.rInner >= metrics.decanSize - 1e-6,
+      `decan band ${rings.rDecans - rings.rInner} below its glyph ${metrics.decanSize} at ${maxRadius}`,
+    );
+  }
+});
+
+test("each degree ruler is a selectable sub-band that owns its ticks", () => {
+  // The ruler used to have no scene presence at all: it *was* its ticks, so
+  // there was nothing to select and nothing to drag but tick length.
+  const findRuler = (scene, classId) =>
+    scene.elements.find(
+      (element) => element.classId === classId && element.hitGeometry?.kind === "annulus",
+    );
+  const classic = sceneApi.buildWheelStyleScene({
+    style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+    geometry: geometry("classic", "comparison"),
+  });
+
+  for (const [classId, sign] of [["zodiac.tick.inner", 1], ["zodiac.tick.outer", -1]]) {
+    const ruler = findRuler(classic, classId);
+    assert.ok(ruler, `${classId} has no selectable band`);
+    assert.equal(ruler.handles.length, 1, `${classId} needs one depth handle`);
+    const binding = ruler.handles[0].binding;
+    assert.equal(binding.property, "rulerDepth");
+    // Percent of its band, matching the flat channel and the inspector row.
+    assert.ok(
+      Math.abs(binding.value - 20) < 1e-6,
+      `${classId} default depth should be 20% of its band, got ${binding.value}`,
+    );
+    // The outer ruler hangs inward, so its depth grows as its radius falls.
+    assert.ok(
+      Math.sign(binding.valuePerPixel) === sign,
+      `${classId} drag direction is inverted`,
+    );
+    // Its ticks hang off it, so a click can read the ruler and a double-click
+    // can descend to one tick group.
+    const prefix = `${classId}.`;
+    const ticks = classic.elements.filter(
+      (element) => typeof element.classId === "string" && element.classId.startsWith(prefix),
+    );
+    assert.equal(ticks.length, 3, `${classId} should own three tick groups`);
+    for (const tick of ticks) {
+      assert.equal(tick.parentId, ruler.id, `${tick.classId} is not parented to its ruler`);
+    }
+  }
+
+  // Anglo places the outer ruler on the outer ring — outside the zodiac band
+  // and inside the margin, which is therefore its host. This is the only degree
+  // ruler anglo draws (`!isAngloWheel` gates the inner one), so it must be
+  // sizable or the whole profile has nothing to size.
+  const anglo = sceneApi.buildWheelStyleScene({
+    style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+    geometry: geometry("anglo", "comparison"),
+  });
+  const angloOuter = findRuler(anglo, "zodiac.tick.outer");
+  assert.ok(angloOuter, "anglo still shows its outer ruler");
+  assert.equal(
+    angloOuter.handles.length,
+    1,
+    "anglo's only degree ruler must offer a depth handle",
+  );
+  assert.equal(angloOuter.handles[0].binding.property, "rulerDepth");
 });

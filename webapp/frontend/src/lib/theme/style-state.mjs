@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Max Lange
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /** Normalize both current ThemeState and the pre-style-schema cached payload. */
 export function normalizeThemeState(value) {
   if (!value || typeof value !== "object") return null;

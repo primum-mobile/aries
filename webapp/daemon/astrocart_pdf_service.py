@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Max Lange
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Map-book PDF export for daemon-produced Astrocartography maps.
 
 The preferred input is a bounded set of fully rendered Aries map captures:

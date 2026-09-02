@@ -71,6 +71,7 @@ DEFAULT_SECTIONS = (
 			WorkspaceAction('tertiary_chart', 'Tertiary Progression'),
 			WorkspaceAction('primary_directions', 'Primary Directions', shortcut=_action_shortcut('primary_directions', 'TMPrimaryDirs')),
 			WorkspaceAction('profections_chart', 'Profections', shortcut=_action_shortcut('profections_chart', fallback='P')),
+			WorkspaceAction('harmonic_chart', 'Harmonic chart'),
 			WorkspaceAction('astrolabe', 'Astrolabe', shortcut=''),
 			WorkspaceAction('astrolog_sphere', 'Astrolog Sphere', shortcut=''),
 			WorkspaceAction('astrocart', 'Astrocartography', shortcut=_action_shortcut('astrocart')),
@@ -79,6 +80,8 @@ DEFAULT_SECTIONS = (
 	WorkspaceSection(
 		title='Tables',
 		items=(
+			WorkspaceAction('calendar', 'calendar'),
+			WorkspaceAction('temporal_confluence', 'temporal_confluence'),
 			WorkspaceAction('positions', 'Positions', shortcut=_action_shortcut('positions', 'TMPositions')),
 			WorkspaceAction('lunar_mansions', mtexts.txts.get('LunarMansions', 'Lunar Mansions...').rstrip('. …')),
 			WorkspaceAction('aspects', 'Aspects', shortcut=_action_shortcut('aspects', 'TMAspects')),
@@ -113,6 +116,7 @@ DEFAULT_SECTIONS = (
 	WorkspaceSection(
 		title='Time Lords',
 		items=(
+			WorkspaceAction('vimshottari', mtexts.txts.get('VimshottariDasha', 'Vimshottari Dasha')),
 			WorkspaceAction('firdaria', 'Firdaria', shortcut=_action_shortcut('firdaria', 'TMFirdaria')),
 			WorkspaceAction('circumambulation', 'Circumambulations', shortcut=_action_shortcut('circumambulation', 'TMCircumambulation')),
 			WorkspaceAction('zodiacal_releasing', 'Zodiacal Releasing', shortcut=_action_shortcut('zodiacal_releasing', 'TMZodiacalReleasing')),

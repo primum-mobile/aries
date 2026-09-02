@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 """Daemon-side workspace state — the single-user Tauri sidecar model.
 
 One daemon process holds exactly one ``WorkspaceSessionController`` instance in
@@ -26,7 +31,7 @@ import threading
 import time
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
@@ -41,22 +46,26 @@ import dateformat
 import default_location as default_location_model
 import horary_session
 import horary_rules  # DEFAULT_SIGNIFICATORS seed for horary here-now docs (morin.py:18992)
+import rule_engine
 import revolutions
 import note_storage
 import options as morinus_options
 import astrology
 import common
 import mtexts
+import moonphasejump
 import searchcatalog
 import solaraverage
 import util
 import ascensional_transits as at_engine
 from engine import cursor_steppers
+from engine import harmonic_chart
 from engine import moment
 from engine import chart_factory
 from engine import solilunar
 from engine import supplementary_adapter
 from webapp.daemon import notes_service
+from webapp.daemon import chart_rings
 from engine.workspace_session_controller import (
     SessionChangedEvent,
     WorkspaceSessionController,
@@ -99,6 +108,20 @@ import posfordate  # per-method progression rate / method normalization (posford
 _PROGRESSION_FEATURE_KINDS = ('secondary', 'solar_arc', 'minor', 'tertiary')
 _ASTROCART_PREFERENCES_SAVE_LOCK = threading.Lock()
 
+_ASTROLABE_VIEW_DEFAULTS: dict[str, Any] = {
+    "deltaDeg": 0.0,
+    "atmospheric": True,
+    "regioHouses": True,
+    "zodiacWheel": True,
+    "almucantars": False,
+    "azimuths": False,
+    "hourLines": False,
+    "stars": False,
+}
+_ASTROLABE_VIEW_BOOLEAN_KEYS = tuple(
+    key for key in _ASTROLABE_VIEW_DEFAULTS if key != "deltaDeg"
+)
+
 # Aspect List phase/perfection must follow the chart technique that produced the
 # visible wheel.  These techniques evolve on the meaningful civil cursor, not
 # directly on ``chart.time.jd`` (which is a progressed/symbolic ephemeris epoch
@@ -119,6 +142,12 @@ _ASPECT_PHYSICAL_FEATURE_KINDS = {
 }
 
 _ROOT_RECORD_CACHE_MAX = 128
+
+# The macro temporal map starts with a deliberately stable product horizon.
+# Use the same tropical-year scale as Primary Directions in Chart so age
+# labels, the life endpoint, and direction dates do not drift apart.
+_TEMPORAL_MAP_LIFE_YEARS = 120
+_TEMPORAL_MAP_TROPICAL_YEAR_DAYS = 365.2421904
 
 _CHART_VISUAL_ZODIAC = "zodiac"
 _CHART_VISUAL_MDO = "mdo"
@@ -156,6 +185,7 @@ _HOUSE_SYSTEM_ITEMS = (
     ("C", "Campanus"),
     ("E", "Equal"),
     ("W", "Whole Sign"),
+    ("F", "Fortune Houses"),
     ("X", "Axial"),
     ("Q", "True Ascendant"),
     ("M", "Morinus"),
@@ -244,10 +274,35 @@ def _display_tuple_to_datetime(
 
 
 _DECENNIAL_START_TOKENS = {
-    "sect", "sun", "moon", "mercury", "venus", "mars", "jupiter", "saturn", "asc", "fortune",
+    "valens_apheta", "sect", "sun", "moon", "mercury", "venus", "mars", "jupiter", "saturn",
+    "asc", "mc", "prenatal_new_moon", "fortune",
 }
+_DECENNIAL_APHETA_HOUSE_SYSTEMS = {"whole_sign", "porphyry"}
+_DECENNIAL_OVERLAP_RESOLUTIONS = {"table", "sun_ray", "moon_ray"}
+_DECENNIAL_LOWER_LEVEL_METHODS = {"proportional", "repeating_cycles"}
 
-_TIME_LORD_TABLE_IDS = {'firdaria', 'decennials', 'triplicity_directions', 'zodiacal_releasing', 'profections_table'}
+_TIME_LORD_TABLE_IDS = {'firdaria', 'vimshottari', 'decennials', 'triplicity_directions', 'zodiacal_releasing', 'profections_table'}
+
+_TEMPORAL_CONFLUENCE_SOURCE_IDS = frozenset({
+    'transits',
+    'primary_directions',
+    'secondary_progressions',
+    'minor_progressions',
+    'tertiary_progressions',
+    'circumambulation',
+    'synodic_cycles',
+    'zodiacal_releasing',
+    'firdaria',
+    'decennials',
+    'profection_periods',
+    'triplicity_directions',
+})
+_TEMPORAL_CONFLUENCE_DEFAULT_SOURCES = (
+    'transits',
+    'synodic_cycles',
+    'zodiacal_releasing',
+    'primary_directions',
+)
 
 
 def _normalize_profections_age_offset(value: Any) -> int:
@@ -285,9 +340,53 @@ def _normalize_table_binding(table_id: str, binding: Optional[dict[str, Any]]) -
     elif table_id == 'firdaria':
         default_isfirbonatti = getattr(chart_snapshot_service.options, 'isfirbonatti', True)
         cleaned['isfirbonatti'] = bool(cleaned.get('isfirbonatti', default_isfirbonatti))
+    elif table_id == 'vimshottari':
+        import vimshottari as _vimshottari
+
+        raw_expanded = cleaned.get('expanded_row_ids')
+        if isinstance(raw_expanded, str):
+            raw_expanded = [raw_expanded]
+        expanded_row_ids = list(dict.fromkeys(
+            item
+            for item in (raw_expanded if isinstance(raw_expanded, (list, tuple)) else ())
+            if isinstance(item, str) and item.startswith('main:') and ':l2:' in item
+        ))[:256]
+        cleaned = {
+            'anchor': _vimshottari.normalize_anchor(cleaned.get('anchor')),
+            'start_star': _vimshottari.normalize_start_star(cleaned.get('start_star')),
+            'year_days': _vimshottari.normalize_year_days(cleaned.get('year_days')),
+            'ayanamsha': _vimshottari.normalize_ayanamsha(cleaned.get('ayanamsha')),
+            'expanded_row_ids': expanded_row_ids,
+        }
     elif table_id == 'decennials':
-        token = str(cleaned.get('start_token') or 'sect').strip().lower()
-        cleaned = {'start_token': token if token in _DECENNIAL_START_TOKENS else 'sect'}
+        token = str(cleaned.get('start_token') or 'valens_apheta').strip().lower()
+        if (
+            token == 'sect'
+            and 'apheta_house_system' not in cleaned
+            and 'overlap_resolution' not in cleaned
+        ):
+            token = 'valens_apheta'
+        apheta_house_system = str(cleaned.get('apheta_house_system') or 'whole_sign').strip().lower()
+        overlap_resolution = str(cleaned.get('overlap_resolution') or 'table').strip().lower()
+        lower_level_method = str(cleaned.get('lower_level_method') or 'proportional').strip().lower()
+        cleaned = {
+            'start_token': token if token in _DECENNIAL_START_TOKENS else 'valens_apheta',
+            'apheta_house_system': (
+                apheta_house_system
+                if apheta_house_system in _DECENNIAL_APHETA_HOUSE_SYSTEMS
+                else 'whole_sign'
+            ),
+            'overlap_resolution': (
+                overlap_resolution
+                if overlap_resolution in _DECENNIAL_OVERLAP_RESOLUTIONS
+                else 'table'
+            ),
+            'lower_level_method': (
+                lower_level_method
+                if lower_level_method in _DECENNIAL_LOWER_LEVEL_METHODS
+                else 'proportional'
+            ),
+        }
     elif table_id == 'triplicity_directions':
         raw_expanded = cleaned.get('expanded_row_ids')
         expanded_row_ids: list[str] = []
@@ -353,6 +452,33 @@ def _normalize_table_binding(table_id: str, binding: Optional[dict[str, Any]]) -
             'monthly_steps12': bool(cleaned.get('monthly_steps12', True)),
             'age_offset': _normalize_profections_age_offset(cleaned.get('age_offset', 0)),
         }
+    elif table_id == 'temporal_confluence':
+        raw_lanes = cleaned.get('lanes')
+        lanes: list[dict[str, Any]] = []
+        selected_sources: set[str] = set()
+        if isinstance(raw_lanes, (list, tuple)):
+            for raw_lane in raw_lanes[:4]:
+                if not isinstance(raw_lane, dict):
+                    continue
+                source_id = str(raw_lane.get('sourceId') or raw_lane.get('source_id') or '')
+                if source_id not in _TEMPORAL_CONFLUENCE_SOURCE_IDS or source_id in selected_sources:
+                    continue
+                selected_sources.add(source_id)
+                lanes.append({
+                    'id': f"lane-{len(lanes) + 1}",
+                    'sourceId': source_id,
+                })
+        for source_id in _TEMPORAL_CONFLUENCE_DEFAULT_SOURCES:
+            if len(lanes) >= 4:
+                break
+            if source_id in selected_sources:
+                continue
+            selected_sources.add(source_id)
+            lanes.append({
+                'id': f"lane-{len(lanes) + 1}",
+                'sourceId': source_id,
+            })
+        cleaned = {'lanes': lanes}
     elif table_id == 'eclipses':
         from_values = _normalize_eclipse_date_values(cleaned.get('from'))
         to_values = _normalize_eclipse_date_values(cleaned.get('to'))
@@ -375,6 +501,26 @@ def _normalize_table_binding(table_id: str, binding: Optional[dict[str, Any]]) -
             cleaned['year'] = year
         if focus_values is not None:
             cleaned['focus'] = focus_values
+        saros_kind = str((binding or {}).get('saros_kind') or '').strip().lower()
+        try:
+            saros_series = int((binding or {}).get('saros_series'))
+            saros_member = int((binding or {}).get('saros_member'))
+            saros_event_jd = float((binding or {}).get('saros_event_jd'))
+        except (TypeError, ValueError):
+            saros_series = saros_member = None
+            saros_event_jd = None
+        if (
+            saros_kind in ('solar', 'lunar')
+            and saros_series is not None and saros_series > 0
+            and saros_member is not None and saros_member > 0
+            and saros_event_jd is not None and math.isfinite(saros_event_jd)
+        ):
+            cleaned.update({
+                'saros_kind': saros_kind,
+                'saros_series': saros_series,
+                'saros_member': saros_member,
+                'saros_event_jd': saros_event_jd,
+            })
     elif table_id == 'monthly_transits':
         # Monthly Transits anchors on (year, month); both default to the wall
         # clock in the builder (transitmwnd.py:151-153). Persist only when both
@@ -732,6 +878,7 @@ class WorkspaceService:
         *,
         style_only: bool = False,
         list_data_changed: bool = True,
+        retained_list_target: Optional[str] = None,
         inspector_data_changed: bool = False,
     ) -> None:
         """Fan an ``options.changed`` event out to all connected clients.
@@ -747,7 +894,9 @@ class WorkspaceService:
             "refreshMode": refresh_mode or "recalc",
             "styleOnly": bool(style_only),
             "listDataChanged": bool(list_data_changed),
+            "retainedListTarget": retained_list_target,
             "retainedListDataKey": options_service.get_retained_list_data_key(),
+            "ephemerisDataKey": ephemeris_service.payload_revision_key(),
             "retainedListDisplay": options_service.get_retained_list_display(),
             "inspectorDataChanged": bool(inspector_data_changed),
             "langid": int(getattr(options_service.options, "langid", 0) or 0),
@@ -881,7 +1030,10 @@ class WorkspaceService:
             title_key = None
         elif session.get('table_id'):
             title_key = f"table.{session['table_id']}"
-        elif session.get('launcher_kind') == 'synastry':
+        elif (
+            session.get('launcher_kind') == 'synastry'
+            and session.get('compound_kind') == 'synastry'
+        ):
             title_key = "supplementary.synastry"
         elif public_feature_kind not in (None, 'planetary-return', 'solar-average'):
             title_key = f"supplementary.{public_feature_kind}"
@@ -979,12 +1131,184 @@ class WorkspaceService:
                 charts.append(chrt)
         return charts
 
+    @staticmethod
+    def _normalize_horary_interpretation(
+        lens: Optional[dict], *, strict: bool = True,
+    ) -> Optional[dict]:
+        """Return a canonical, JSON-safe horary interpretation payload.
+
+        Horary lens context is persisted chart data, not an open-ended client
+        scratchpad.  Its canonical keys come from the selected theme's
+        ``DEFAULT_SIGNIFICATORS`` / ``CONTEXT_OPTIONS`` plus validated
+        manifest options declared by installed packs.  House selectors are
+        stored as integers, declared option values use their stable string
+        tokens, missing or invalid values fall back to the theme default, and
+        unknown context keys are discarded.  This makes malformed/older saved
+        records fail closed instead of silently feeding arbitrary semantics to
+        corpus predicates.
+
+        Other disciplines remain an intentionally opaque global-lens payload:
+        legacy wx can mirror an elections lens while a horary chart is active,
+        and this backend door must preserve that existing round trip.
+        ``strict=False`` is the load/display path: an invalid saved horary
+        theme is hidden rather than making the workspace document unreadable.
+        """
+        if lens is None:
+            return None
+        if not isinstance(lens, dict):
+            if strict:
+                raise ValueError("interpretation lens must be an object or null")
+            return None
+
+        discipline = str(lens.get('discipline') or '').strip().lower()
+        theme_value = lens.get('theme')
+        theme = str(theme_value).strip() if isinstance(theme_value, str) else ''
+        if not discipline or not theme:
+            if strict:
+                raise ValueError(
+                    "interpretation lens requires discipline and theme",
+                )
+            return None
+        if discipline != 'horary':
+            raw_context = lens.get('context')
+            if raw_context is not None and not isinstance(raw_context, dict):
+                if strict:
+                    raise ValueError(
+                        "interpretation context must be an object or null",
+                    )
+                raw_context = None
+            result = {'discipline': discipline, 'theme': theme}
+            if raw_context is not None:
+                result['context'] = copy.deepcopy(raw_context)
+            return result
+
+        # Persisted lenses may carry an older manifest label or the stable
+        # slug itself.  Resolve identity before looking up core or pack
+        # defaults; indexing those maps by the raw display label splits one
+        # theme's context contract across aliases (for example, Lilly's
+        # "Marriage Questions" versus the canonical "Marriage Question").
+        theme_slug = rule_engine.theme_slug_for(
+            'horary', theme, include_inactive=True,
+        )
+        if theme_slug is not None:
+            theme = (
+                rule_engine.canonical_theme_label_for(
+                    'horary', theme_slug, include_inactive=True,
+                ) or theme
+            )
+
+        pack_theme = rule_engine.theme_metadata_for(
+            'horary', include_inactive=True,
+        ).get(theme) or {}
+        core_defaults = horary_rules.DEFAULT_SIGNIFICATORS.get(theme)
+        pack_defaults = pack_theme.get('default_context') or {}
+        if core_defaults is None and not pack_defaults:
+            if strict:
+                raise ValueError("unknown horary interpretation theme: %r" % theme_value)
+            return None
+
+        raw_context = lens.get('context')
+        if raw_context is None:
+            raw_context = {}
+        elif not isinstance(raw_context, dict):
+            if strict:
+                raise ValueError("horary interpretation context must be an object or null")
+            raw_context = {}
+
+        option_fields = {}
+        option_specs = (
+            tuple(pack_theme.get('context_options') or ())
+            + tuple(horary_rules.CONTEXT_OPTIONS.get(theme, ()))
+        )
+        for field in option_specs:
+            # Global doctrine is daemon-owned persisted application state.  It
+            # is never copied into a horary chart's interpretation context;
+            # older saved lenses carrying these keys are migrated by omission.
+            if field.get('scope', 'question_fact') != 'question_fact':
+                continue
+            key = str(field.get('key') or '')
+            if not key or key in option_fields:
+                continue
+            values = []
+            for option in tuple(field.get('options') or ()):
+                if isinstance(option, dict):
+                    value = option.get('value')
+                elif isinstance(option, (tuple, list)) and len(option) == 2:
+                    value = option[0]
+                else:
+                    continue
+                if isinstance(value, str):
+                    values.append(value)
+            if values:
+                option_fields[key] = tuple(values)
+
+        # Pack context can extend a built-in theme.  Core defaults retain
+        # ownership of established house roles and fields on collision.
+        canonical_defaults = dict(core_defaults or {})
+        for key, value in dict(pack_defaults).items():
+            if (key not in ('querent_house', 'quesited_house')
+                    and key in option_fields):
+                canonical_defaults[key] = value
+        for key, allowed in option_fields.items():
+            if key not in canonical_defaults and allowed:
+                canonical_defaults[key] = (
+                    'unspecified' if 'unspecified' in allowed else allowed[0]
+                )
+
+        def normalized_option(value, allowed, default):
+            if isinstance(value, bool) or value is None:
+                return str(default)
+            token = str(value).strip()
+            if token in allowed:
+                return token
+            normalized = token.lower().replace('-', '_').replace(' ', '_')
+            by_normalized = {
+                item.lower().replace('-', '_').replace(' ', '_'): item
+                for item in allowed
+            }
+            return by_normalized.get(normalized, str(default))
+
+        def normalized_house(value, default):
+            if isinstance(value, bool):
+                return int(default)
+            if isinstance(value, int):
+                house = value
+            elif isinstance(value, str) and value.strip().isdigit():
+                house = int(value.strip())
+            else:
+                return int(default)
+            return house if 1 <= house <= 12 else int(default)
+
+        context = {}
+        for key, default in canonical_defaults.items():
+            value = raw_context.get(key, default)
+            allowed = option_fields.get(key)
+            if allowed:
+                context[key] = normalized_option(value, allowed, default)
+            elif key.rpartition('_')[2] == 'house':
+                context[key] = normalized_house(value, default)
+            else:
+                # No unconstrained client values enter persisted horary
+                # semantics.  A future non-house field becomes editable only
+                # when its canonical CONTEXT_OPTIONS declaration lands.
+                context[key] = copy.deepcopy(default)
+
+        return {
+            'discipline': 'horary',
+            'theme': theme,
+            'context': context,
+        }
+
     def _chart_interpretation(self, session: dict):
-        """Saved lens dict from the session's horary chart, else None."""
+        """Canonical saved lens from the session's horary chart, else None."""
         for chrt in self._horary_session_charts(session):
             interp = getattr(chrt, 'interpretation', None)
             if interp:
-                return interp
+                normalized = self._normalize_horary_interpretation(
+                    interp, strict=False,
+                )
+                if normalized:
+                    return normalized
         return None
 
     @staticmethod
@@ -1111,6 +1435,11 @@ class WorkspaceService:
 
             items: list[dict] = []
 
+            multiwheel_items = self._multiwheel_menu_items(doc_id, session)
+            if multiwheel_items:
+                items.extend(multiwheel_items)
+                items.append({"type": "separator"})
+
             # Region-specific research actions ride the region channel. Both are
             # deferred (no search/surveil subsystem in the daemon yet), so the
             # builder is a no-op today; it exists so the channel is exercised and
@@ -1123,6 +1452,8 @@ class WorkspaceService:
                 items.append({"type": "separator"})
 
             items.append(self._supplementary_charts_menu(doc_id, session))
+            if session.get("supplementary_feature_kind") == "harmonic":
+                items.append(self._harmonic_chart_menu(doc_id, session))
             if session.get("supplementary_feature_kind") == "profections":
                 items.append({"type": "separator"})
                 items.append(self._profections_mode_menu())
@@ -1167,6 +1498,10 @@ class WorkspaceService:
                 self._controller.activate_document(doc_id)
 
             items: list[dict] = []
+            multiwheel_items = self._multiwheel_menu_items(doc_id, session)
+            if multiwheel_items:
+                items.extend(multiwheel_items)
+                items.append({"type": "separator"})
             items.extend(self._duplicate_chart_items(doc_id, session, include_parallel=True))
 
             converse_item = self._converse_transit_mode_item(doc_id, session)
@@ -1204,7 +1539,10 @@ class WorkspaceService:
         items: list[dict] = []
         participants = self._relationship_session_all_participants(session)
         states = self._relationship_session_participant_states(session)
-        if len(participants) >= 3:
+        if (
+            len(participants) >= 3
+            and session.get("compound_kind") != "synastry"
+        ):
             for idx, participant in enumerate(participants):
                 checked = bool(states[idx]) if idx < len(states) else True
                 items.append({
@@ -1430,6 +1768,8 @@ class WorkspaceService:
                 return region.get("houseIndex")
         if kind == "syzygy":
             return "syzygy"
+        if kind == "eclipse":
+            return "eclipse"
         return None
 
     def _surveil_source_name(self, session: Optional[dict]) -> str:
@@ -1557,7 +1897,7 @@ class WorkspaceService:
         if not isinstance(region, dict):
             return None
         kind = str(region.get("kind") or "")
-        if kind not in ("planet", "fortune", "vertex", "syzygy", "angle", "house", "secondary_ring"):
+        if kind not in ("planet", "fortune", "vertex", "syzygy", "eclipse", "angle", "house", "secondary_ring"):
             return None
         lon = WorkspaceService._region_longitude(region)
         if lon is None:
@@ -1614,6 +1954,8 @@ class WorkspaceService:
             return common.common.fortune
         if kind == "syzygy":
             return ""
+        if kind == "eclipse":
+            return surveil_service.ECLIPSE_GLYPH
         if kind == "secondary_ring":
             if str(region.get("family") or "") == "midpoint":
                 return ""
@@ -1677,6 +2019,8 @@ class WorkspaceService:
             return str(region.get("houseIndex") or "house")
         if kind == "syzygy":
             return "syzygy"
+        if kind == "eclipse":
+            return "eclipse"
         if kind == "secondary_ring":
             family = str(region.get("family") or "secondary_ring")
             item_id = str(region.get("itemId") or region.get("label") or "item")
@@ -1698,6 +2042,8 @@ class WorkspaceService:
             return mtexts.txts.get("Vertex", "Vertex")
         if kind == "syzygy":
             return str(region.get("label") or "Prenatal Syzygy")
+        if kind == "eclipse":
+            return str(region.get("label") or surveil_service.ECLIPSE_GLYPH)
         if kind == "angle":
             angle_id = str(region.get("angleId") or "").lower()
             return {
@@ -1748,6 +2094,8 @@ class WorkspaceService:
             return "point:lof"
         if kind == "syzygy":
             return "point:syzygy"
+        if kind == "eclipse":
+            return "point:eclipse"
         if kind == "angle":
             angle_id = region.get("angleId")
             if angle_id in ("asc", "mc"):
@@ -1768,7 +2116,42 @@ class WorkspaceService:
                     parent_document_id=doc_id,
                     feature_kind=kind,
                     planet_type=int(planet_type) if planet_type is not None else None,
+                    binding_payload=payload.get("binding") if isinstance(payload.get("binding"), dict) else None,
                 )
+
+            if action_id == "workspace.set_harmonic_number":
+                doc_id = str(payload.get("documentId") or "")
+                division_number = payload.get("divisionNumber", payload.get("harmonicNumber"))
+                if not self._set_harmonic_projection_in_place(doc_id, value=division_number):
+                    raise ValueError("division number is available only on a harmonic chart")
+                session = self._controller.session(doc_id) or {}
+                retained = (session.get("supplementary_binding") or {}).get("retained_state") or {}
+                return {
+                    "ok": True,
+                    "documentId": doc_id,
+                    "activeDocumentId": self._controller.active_document_id(),
+                    "harmonicNumber": retained.get("harmonic_number"),
+                    "vargaNumber": retained.get("varga_number"),
+                    "projectionMode": retained.get("projection_mode"),
+                    "snapshot": self.document_snapshot(doc_id),
+                }
+
+            if action_id == "workspace.set_harmonic_projection_mode":
+                doc_id = str(payload.get("documentId") or "")
+                if not self._set_harmonic_projection_in_place(
+                    doc_id,
+                    mode=payload.get("projectionMode"),
+                ):
+                    raise ValueError("projection mode is available only on a harmonic chart")
+                session = self._controller.session(doc_id) or {}
+                retained = (session.get("supplementary_binding") or {}).get("retained_state") or {}
+                return {
+                    "ok": True,
+                    "documentId": doc_id,
+                    "activeDocumentId": self._controller.active_document_id(),
+                    "projectionMode": retained.get("projection_mode"),
+                    "snapshot": self.document_snapshot(doc_id),
+                }
 
             if action_id == "workspace.open_transit_search":
                 doc_id = str(payload.get("documentId") or "")
@@ -1848,6 +2231,24 @@ class WorkspaceService:
                 self._broadcast_session_changed(doc_id, "options")
                 return {"ok": True, "documents": self._tree_payload()}
 
+            if action_id == "workspace.set_chart_ring_count":
+                return self.set_chart_ring_count(
+                    str(payload.get("documentId") or ""),
+                    int(payload.get("ringCount", chart_rings.CHART_RING_COUNT_MIN)),
+                )
+
+            if action_id == "workspace.set_multiwheel_enabled":
+                return self.set_multiwheel_enabled(
+                    str(payload.get("documentId") or ""),
+                    bool(payload.get("enabled", False)),
+                )
+
+            if action_id == "workspace.toggle_multiwheel_participant":
+                return self.toggle_multiwheel_participant(
+                    str(payload.get("documentId") or ""),
+                    str(payload.get("participantDocumentId") or ""),
+                )
+
             if action_id == "workspace.toggle_synastry_composite":
                 doc_id = str(payload.get("documentId") or self._controller.active_document_id() or "")
                 return self.set_synastry_composite(doc_id)
@@ -1882,6 +2283,7 @@ class WorkspaceService:
                     result.get("refreshedDocumentIds"),
                     result.get("refreshMode"),
                     list_data_changed=result.get("listDataChanged", True),
+                    retained_list_target=result.get("retainedListTarget"),
                 )
                 return result
 
@@ -1893,6 +2295,7 @@ class WorkspaceService:
                     result.get("refreshedDocumentIds"),
                     result.get("refreshMode"),
                     list_data_changed=result.get("listDataChanged", True),
+                    retained_list_target=result.get("retainedListTarget"),
                 )
                 return result
 
@@ -1957,7 +2360,13 @@ class WorkspaceService:
             raise ValueError(f"unknown context menu action: {action_id!r}")
 
     def _supplementary_charts_menu(self, document_id: str, session: dict) -> dict:
-        children = self._duplicate_chart_items(document_id, session, include_parallel=True)
+        is_harmonic = session.get("supplementary_feature_kind") == "harmonic"
+        children = self._duplicate_chart_items(
+            document_id,
+            session,
+            include_parallel=True,
+            include_harmonic=not is_harmonic,
+        )
         return {
             "type": "submenu",
             "label": "Derived Charts",
@@ -1965,7 +2374,12 @@ class WorkspaceService:
         }
 
     def _duplicate_chart_items(
-        self, document_id: str, session: dict, *, include_parallel: bool
+        self,
+        document_id: str,
+        session: dict,
+        *,
+        include_parallel: bool,
+        include_harmonic: bool = True,
     ) -> list[dict]:
         children: list[dict] = []
         for label, kind, allowed_kind in _DUPLICATE_CHART_ITEMS:
@@ -1976,6 +2390,8 @@ class WorkspaceService:
                 "actionId": "workspace.open_supplementary",
                 "payload": {"documentId": document_id, "kind": kind},
             })
+        if include_harmonic:
+            children.append(self._harmonic_chart_menu(document_id, session))
         if include_parallel:
             children.append({"type": "separator"})
             children.append({
@@ -1987,6 +2403,107 @@ class WorkspaceService:
                 "payload": {"documentId": document_id},
             })
         return children
+
+    def _harmonic_chart_menu(self, document_id: str, session: dict) -> dict:
+        is_harmonic = session.get("supplementary_feature_kind") == "harmonic"
+        retained = (session.get("supplementary_binding") or {}).get("retained_state") or {}
+        controller = self.__dict__.get("_controller")
+        controller_options = getattr(controller, "options", None)
+        default_mode = harmonic_chart.normalize_projection_mode(
+            getattr(controller_options, "harmonic_chart_mode", harmonic_chart.PROJECTION_MODE_HARMONIC)
+        )
+        mode = harmonic_chart.normalize_projection_mode(retained.get("projection_mode"), default=default_mode)
+        current = (
+            harmonic_chart.normalize_varga_number(retained.get("varga_number", harmonic_chart.DEFAULT_VARGA))
+            if mode == harmonic_chart.PROJECTION_MODE_VARGA
+            else harmonic_chart.normalize_harmonic_number(
+                retained.get("harmonic_number", harmonic_chart.DEFAULT_HARMONIC)
+            )
+        )
+        action_id = (
+            "workspace.set_harmonic_number"
+            if is_harmonic
+            else "workspace.open_supplementary"
+        )
+        allowed = self._supplementary_chart_allowed("secondary", session)
+        mode_children = []
+        for projection_mode, label in (
+            (harmonic_chart.PROJECTION_MODE_HARMONIC, "Harmonic chart"),
+            (harmonic_chart.PROJECTION_MODE_VARGA, "Vargas"),
+        ):
+            if is_harmonic:
+                mode_payload = {
+                    "documentId": document_id,
+                    "projectionMode": projection_mode,
+                }
+                mode_action = "workspace.set_harmonic_projection_mode"
+            else:
+                mode_payload = {
+                    "documentId": document_id,
+                    "kind": "harmonic",
+                    "binding": {
+                        "feature_kind": "harmonic",
+                        "retained_state": {"projection_mode": projection_mode},
+                    },
+                }
+                mode_action = "workspace.open_supplementary"
+            mode_children.append({
+                "type": "radio",
+                "label": label,
+                "value": projection_mode,
+                "disabled": not allowed,
+                "actionId": mode_action,
+                "payload": mode_payload,
+            })
+
+        number_children = []
+        presets = (
+            harmonic_chart.VARGA_DIVISIONS
+            if mode == harmonic_chart.PROJECTION_MODE_VARGA
+            else harmonic_chart.PRESET_HARMONICS
+        )
+        for preset in presets:
+            payload = {
+                "documentId": document_id,
+                "divisionNumber": preset,
+            }
+            if not is_harmonic:
+                payload = {
+                    "documentId": document_id,
+                    "kind": "harmonic",
+                    "binding": {
+                        "feature_kind": "harmonic",
+                        "retained_state": {
+                            "projection_mode": mode,
+                            "varga_number" if mode == harmonic_chart.PROJECTION_MODE_VARGA else "harmonic_number": preset,
+                        },
+                    },
+                }
+            number_children.append({
+                "type": "radio",
+                "label": harmonic_chart.format_harmonic_number(preset),
+                "value": harmonic_chart.format_harmonic_number(preset),
+                "disabled": not allowed,
+                "actionId": action_id,
+                "payload": payload,
+            })
+        return {
+            "type": "submenu",
+            "label": "Harmonic",
+            "children": [
+                {
+                    "type": "radioGroup",
+                    "value": mode,
+                    "children": mode_children,
+                },
+                {"type": "separator"},
+                {
+                    "type": "radioGroup",
+                    "value": harmonic_chart.format_harmonic_number(current) if is_harmonic else "",
+                    "children": number_children,
+                },
+            ],
+        }
 
     def _other_revolutions_menu(self, document_id: str, session: dict) -> dict:
         supported = (
@@ -2173,6 +2690,410 @@ class WorkspaceService:
             }],
         }
 
+    @staticmethod
+    def _wheel_draws_multiple_rings() -> bool:
+        """The independent tri/quad renderer is available for every theme."""
+        return True
+
+    def _ring_owner(self, document_id: str) -> tuple[str, Optional[dict]]:
+        """Root document/session that owns branch-wide multi-wheel state."""
+        branch = chart_rings.branch_document_ids(
+            self._controller.documents(), str(document_id or ""),
+        )
+        owner_id = branch[0] if branch else str(document_id or "")
+        return owner_id, self._controller.session(owner_id)
+
+    def _reconcile_multiwheel_state(
+        self,
+        document_id: str,
+    ) -> tuple[str, Optional[dict], list[str], list[str], bool]:
+        """Prune branch-owned membership and resolve the live display mode.
+
+        Participant IDs are explicit session truth. Closing/reparenting a tab
+        removes it here before any snapshot is rendered. A legacy explicit
+        ``chart_ring_count`` session override is migrated once; the old saved
+        global count is intentionally not a mode switch.
+        """
+        owner_id, owner = self._ring_owner(document_id)
+        if owner is None:
+            return owner_id, None, [], [], False
+        eligible = chart_rings.eligible_multiwheel_document_ids(
+            self._controller.documents(),
+            document_id,
+            has_chart=lambda doc_id: self._ring_chart_for_document(doc_id) is not None,
+        )
+        known_raw = owner.get("multiwheel_known_eligible_ids")
+        known_eligible = (
+            {str(value) for value in known_raw if value is not None}
+            if isinstance(known_raw, (list, tuple))
+            else set(eligible)
+        )
+        newly_eligible = [
+            participant_id for participant_id in eligible
+            if participant_id not in known_eligible
+        ]
+        stored = owner.get("multiwheel_participant_ids")
+        if isinstance(stored, (list, tuple)):
+            selected = chart_rings.normalize_multiwheel_participant_ids(stored, eligible)
+        else:
+            legacy_requested = chart_rings.normalize_ring_count(
+                owner.get("chart_ring_count", chart_rings.CHART_RING_COUNT_MIN)
+            )
+            initial_count = (
+                legacy_requested
+                if legacy_requested > chart_rings.CHART_RING_COUNT_MIN
+                else chart_rings.CHART_RING_COUNT_MAX
+            )
+            selected = eligible[:initial_count]
+            owner["multiwheel_enabled"] = bool(
+                legacy_requested > chart_rings.CHART_RING_COUNT_MIN
+            )
+        owner["multiwheel_participant_ids"] = selected
+
+        auto_enabled = bool(
+            getattr(options_service.options, "multiwheel_open_at_three", False)
+        )
+        auto_armed = bool(owner.get("multiwheel_auto_armed", True))
+        if auto_armed and not bool(owner.get("multiwheel_enabled", False)):
+            # Before the user has made a mode/participant choice, keep the
+            # proposed participant set in sync with the branch so enabling the
+            # mode does exactly what its checked rows already advertise.
+            selected = eligible[:chart_rings.CHART_RING_COUNT_MAX]
+            owner["multiwheel_participant_ids"] = selected
+        if len(eligible) < 3:
+            enabled = bool(owner.get("multiwheel_enabled", False))
+            owner["multiwheel_auto_armed"] = True
+        elif auto_enabled and auto_armed:
+            selected = eligible[:chart_rings.CHART_RING_COUNT_MAX]
+            owner["multiwheel_participant_ids"] = selected
+            enabled = True
+            owner["multiwheel_auto_armed"] = False
+        else:
+            enabled = bool(owner.get("multiwheel_enabled", False))
+
+        # A chart intentionally created or attached after the participant set
+        # was established joins the wheel automatically while capacity remains.
+        # The remembered eligible universe distinguishes that chart from one a
+        # user has merely untoggled, so ordinary reconciliation never rechecks
+        # a deliberate exclusion.
+        if newly_eligible and len(selected) < chart_rings.CHART_RING_COUNT_MAX:
+            selected = chart_rings.normalize_multiwheel_participant_ids(
+                [*selected, *newly_eligible], eligible,
+            )
+            owner["multiwheel_participant_ids"] = selected
+        owner["multiwheel_known_eligible_ids"] = list(eligible)
+
+        owner["multiwheel_enabled"] = enabled
+        drawable = enabled and len(selected) >= 3
+        owner["chart_ring_count"] = len(selected) if drawable else chart_rings.CHART_RING_COUNT_MIN
+        if not drawable:
+            owner.pop("multiwheel_cursor_datetime", None)
+            owner.pop("multiwheel_initial_cursor_datetime", None)
+            owner.pop("multiwheel_single_chart_view", None)
+        return owner_id, owner, eligible, selected, enabled
+
+    def _multiwheel_participant_ids(self, document_id: str) -> list[str]:
+        _owner_id, _owner, _eligible, selected, enabled = (
+            self._reconcile_multiwheel_state(document_id)
+        )
+        return selected if enabled and len(selected) >= 3 else []
+
+    def _multiwheel_tree_order_refresh(
+        self, document_id: str,
+    ) -> tuple[dict, Optional[str], list[str]]:
+        """Reorder participant truth and prepare one coherent visible repaint."""
+        _owner_id, owner, eligible, selected, enabled = (
+            self._reconcile_multiwheel_state(document_id)
+        )
+        if owner is None or not enabled or len(selected) < 3:
+            return {}, None, []
+        affected_ids = list(eligible)
+        result: dict = {"snapshotInvalidatedIds": affected_ids}
+        active_id = self._controller.active_document_id()
+        refresh_id = active_id if active_id in affected_ids else None
+        if refresh_id is not None:
+            self._attach_full_snapshot(result, refresh_id, overlay_render_mode="full")
+        return result, refresh_id, affected_ids
+
+    def _multiwheel_menu_items(self, document_id: str, session: dict) -> list[dict]:
+        """Top-level branch multi-wheel toggle and explicit participants."""
+        relationship_items = self._relationship_multiwheel_menu_items(
+            document_id, session,
+        )
+        if relationship_items:
+            return relationship_items
+        if session.get("compound_kind") is not None:
+            return []
+        cs = session.get("chart_session")
+        if cs is None or getattr(cs, "chart", None) is None:
+            return []
+        _owner_id, owner, eligible, selected, enabled = self._reconcile_multiwheel_state(
+            document_id
+        )
+        if owner is None or len(eligible) < 3:
+            return []
+        selected_set = set(selected)
+        selected_numerals = (
+            {
+                participant_id: identity["numeral"]
+                for participant_id, identity in zip(
+                    selected,
+                    chart_rings.multiwheel_ring_taxonomy(len(selected)),
+                )
+            }
+            if enabled and len(selected) >= 3
+            else {}
+        )
+        items: list[dict] = [{
+            "type": "checkbox",
+            "label": "Multi-wheel",
+            "checked": enabled,
+            "actionId": "workspace.set_multiwheel_enabled",
+            "payload": {"documentId": document_id, "enabled": not enabled},
+        }]
+        for participant_id in eligible:
+            participant_document = self._controller.state.find_document(participant_id)
+            participant_session = self._controller.session(participant_id) or {}
+            participant_label = str(
+                getattr(participant_document, "title", "")
+                or participant_session.get("custom_title_root")
+                or participant_session.get("base_title")
+                or "Untitled"
+            ).strip()
+            checked = participant_id in selected_set
+            participant_numeral = selected_numerals.get(participant_id)
+            if participant_numeral:
+                participant_label = f"{participant_numeral} {participant_label}"
+            items.append({
+                "type": "checkbox",
+                "label": participant_label,
+                "checked": checked,
+                "inset": True,
+                "disabled": (
+                    not checked and len(selected) >= chart_rings.CHART_RING_COUNT_MAX
+                ),
+                "actionId": "workspace.toggle_multiwheel_participant",
+                "payload": {
+                    "documentId": document_id,
+                    "participantDocumentId": participant_id,
+                },
+            })
+        return items
+
+    def _relationship_multiwheel_state(
+        self,
+        session: Optional[dict],
+    ) -> tuple[list, list[bool], list, bool]:
+        """Active source charts for a three/four-person synastry wheel.
+
+        Composite mode continues to draw the one calculated composite. When
+        Composite is unchecked, the same participant truth supplies a direct
+        multi-wheel synastry without extracting synthetic workspace tabs.
+        """
+        if (
+            not isinstance(session, dict)
+            or session.get("compound_kind") != "synastry"
+        ):
+            return [], [], [], False
+        participants = self._relationship_session_all_participants(session)
+        if len(participants) < 3:
+            return participants, [], [], False
+        states = self._relationship_session_participant_states(session)
+        active = [
+            participant
+            for index, participant in enumerate(participants)
+            if index < len(states) and states[index]
+        ]
+        if "relationship_multiwheel_enabled" not in session:
+            session["relationship_multiwheel_enabled"] = bool(
+                3 <= len(active) <= chart_rings.CHART_RING_COUNT_MAX
+            )
+        enabled = bool(session.get("relationship_multiwheel_enabled", False))
+        if not (enabled and 3 <= len(active) <= chart_rings.CHART_RING_COUNT_MAX):
+            session.pop("relationship_multiwheel_single_chart_view", None)
+        return participants, states, active, enabled
+
+    def _relationship_multiwheel_charts(self, session: Optional[dict]) -> list:
+        _participants, _states, active, enabled = self._relationship_multiwheel_state(
+            session
+        )
+        if enabled and 3 <= len(active) <= chart_rings.CHART_RING_COUNT_MAX:
+            return active
+        return []
+
+    def _relationship_multiwheel_menu_items(
+        self,
+        document_id: str,
+        session: dict,
+    ) -> list[dict]:
+        participants, states, active, enabled = self._relationship_multiwheel_state(
+            session
+        )
+        if len(participants) < 3:
+            return []
+        drawable = 3 <= len(active) <= chart_rings.CHART_RING_COUNT_MAX
+        numerals_by_identity = (
+            {
+                id(participant): identity["numeral"]
+                for participant, identity in zip(
+                    active,
+                    chart_rings.multiwheel_ring_taxonomy(len(active)),
+                )
+            }
+            if enabled and drawable
+            else {}
+        )
+        items: list[dict] = [{
+            "type": "checkbox",
+            "label": "Multi-wheel",
+            "checked": enabled,
+            "disabled": not enabled and not drawable,
+            "actionId": "workspace.set_multiwheel_enabled",
+            "payload": {"documentId": document_id, "enabled": not enabled},
+        }]
+        for index, participant in enumerate(participants):
+            checked = bool(states[index]) if index < len(states) else True
+            label = self._chart_label(participant, "Untitled")
+            numeral = numerals_by_identity.get(id(participant))
+            if numeral:
+                label = f"{numeral} {label}"
+            items.append({
+                "type": "checkbox",
+                "label": label,
+                "checked": checked,
+                "inset": True,
+                "disabled": checked and len(active) == 1,
+                "actionId": "workspace.toggle_relationship_participant",
+                "payload": {
+                    "documentId": document_id,
+                    "participantIndex": index,
+                },
+            })
+        return items
+
+    def set_multiwheel_enabled(self, document_id: str, enabled: bool) -> dict:
+        with self._lock:
+            doc_id = str(document_id or "")
+            session = self._controller.session(doc_id)
+            participants, states, active, _relationship_enabled = (
+                self._relationship_multiwheel_state(session)
+            )
+            if len(participants) >= 3:
+                target = bool(enabled)
+                if target and not (
+                    3 <= len(active) <= chart_rings.CHART_RING_COUNT_MAX
+                ):
+                    raise ValueError(
+                        "multi-wheel needs three or four active participants"
+                    )
+                session["relationship_multiwheel_enabled"] = target
+                session.pop("relationship_multiwheel_single_chart_view", None)
+                result = {
+                    "ok": True,
+                    "documentId": doc_id,
+                    "activeDocumentId": self._controller.active_document_id(),
+                    "multiwheelEnabled": target,
+                    "participantStates": states,
+                    "activeParticipantCount": len(active),
+                    "chart_ring_count": len(active) if target else 2,
+                    "ringOwnerDocumentId": doc_id,
+                    "documents": self._tree_payload(),
+                }
+                self._attach_full_snapshot(
+                    result, doc_id, overlay_render_mode="full",
+                )
+                self._broadcast_session_changed(doc_id, "display-overlay")
+                return result
+            owner_id, owner, eligible, selected, _current = (
+                self._reconcile_multiwheel_state(doc_id)
+            )
+            if owner is None:
+                raise ValueError(f"unknown ring owner {owner_id!r}")
+            target = bool(enabled)
+            if target:
+                if len(eligible) < 3:
+                    raise ValueError("multi-wheel needs at least three charts")
+                owner["multiwheel_participant_ids"] = selected
+            owner["multiwheel_enabled"] = target
+            owner["multiwheel_auto_armed"] = False
+            owner["chart_ring_count"] = len(selected) if target and len(selected) >= 3 else 2
+            if not target:
+                owner.pop("multiwheel_cursor_datetime", None)
+                owner.pop("multiwheel_initial_cursor_datetime", None)
+                owner.pop("multiwheel_single_chart_view", None)
+            return self._multiwheel_presentation_result(doc_id, owner_id, owner)
+
+    def toggle_multiwheel_participant(
+        self,
+        document_id: str,
+        participant_document_id: str,
+    ) -> dict:
+        with self._lock:
+            doc_id = str(document_id or "")
+            participant_id = str(participant_document_id or "")
+            owner_id, owner, eligible, selected, enabled = (
+                self._reconcile_multiwheel_state(doc_id)
+            )
+            if owner is None:
+                raise ValueError(f"unknown ring owner {owner_id!r}")
+            if participant_id not in eligible:
+                raise ValueError("chart is not available to this multi-wheel")
+            if participant_id in selected:
+                selected = [value for value in selected if value != participant_id]
+            else:
+                if len(selected) >= chart_rings.CHART_RING_COUNT_MAX:
+                    raise ValueError("multi-wheel supports at most four charts")
+                selected.append(participant_id)
+                selected = chart_rings.normalize_multiwheel_participant_ids(
+                    selected, eligible,
+                )
+            owner["multiwheel_participant_ids"] = selected
+            owner["multiwheel_enabled"] = enabled
+            owner["multiwheel_auto_armed"] = False
+            owner["chart_ring_count"] = len(selected) if enabled and len(selected) >= 3 else 2
+            return self._multiwheel_presentation_result(doc_id, owner_id, owner)
+
+    def _multiwheel_presentation_result(
+        self,
+        document_id: str,
+        owner_id: str,
+        owner: dict,
+    ) -> dict:
+        selected = list(owner.get("multiwheel_participant_ids") or [])
+        result = {
+            "ok": True,
+            "documentId": document_id,
+            "activeDocumentId": self._controller.active_document_id(),
+            "multiwheelEnabled": bool(owner.get("multiwheel_enabled", False)),
+            "multiwheelParticipantIds": selected,
+            "chart_ring_count": int(owner.get("chart_ring_count", 2) or 2),
+            "ringOwnerDocumentId": owner_id,
+            "documents": self._tree_payload(),
+        }
+        self._attach_full_snapshot(result, document_id, overlay_render_mode="full")
+        self._broadcast_session_changed(document_id, "display-overlay")
+        return result
+
+    def set_chart_ring_count(self, document_id: str, ring_count: int) -> dict:
+        """Compatibility door for callers predating explicit participants."""
+        requested = chart_rings.normalize_ring_count(
+            ring_count, chart_rings.chart_ring_count(options_service.options))
+        if requested <= 2:
+            return self.set_multiwheel_enabled(document_id, False)
+        with self._lock:
+            doc_id = str(document_id or "")
+            owner_id, owner, eligible, _selected, _enabled = (
+                self._reconcile_multiwheel_state(doc_id)
+            )
+            if owner is None:
+                raise ValueError(f"unknown ring owner {owner_id!r}")
+            selected = eligible[:min(requested, chart_rings.CHART_RING_COUNT_MAX)]
+            owner["multiwheel_participant_ids"] = selected
+            owner["multiwheel_enabled"] = len(selected) >= 3
+            owner["multiwheel_auto_armed"] = False
+            owner["chart_ring_count"] = len(selected) if len(selected) >= 3 else 2
+            return self._multiwheel_presentation_result(doc_id, owner_id, owner)
+
     def _profections_mode_menu(self) -> dict:
         """Profection chart motion radio (the wx ProfectionsWnd Zodiacal/Placidian
         submenu, profectionswnd.py:48-60, plus the Aries sign/continuous toggle).
@@ -2272,6 +3193,7 @@ class WorkspaceService:
             "minor-progression": has_chart and allowed("secondary", session),
             "solar-arc": has_chart and allowed("secondary", session),
             "profections": has_chart and allowed("profections", session),
+            "harmonic": has_chart and allowed("secondary", session),
             "solar-average": non_bc_return_available,
             "astrocartography": has_chart,
             "astrolabe": has_chart,
@@ -2777,7 +3699,13 @@ class WorkspaceService:
         session.pop('rectification_dirty', None)
         self._controller.set_dirty(document_id, edit_dirty=False, step_dirty=False)
 
-    def _broadcast_session_changed(self, document_id: str, reason: str) -> None:
+    def _broadcast_session_changed(
+        self,
+        document_id: str,
+        reason: str,
+        *,
+        rebuilt_child_ids: Optional[Sequence[str]] = None,
+    ) -> None:
         session = self._controller.session(document_id)
         cs = session.get("chart_session") if session is not None else None
         display_dt = _display_tuple_to_iso(getattr(cs, "display_datetime", None)) if cs is not None else None
@@ -2786,7 +3714,7 @@ class WorkspaceService:
             "docId": document_id,
             "changeReason": reason,
             "isActive": document_id == self._controller.active_document_id(),
-            "rebuiltChildIds": [],
+            "rebuiltChildIds": list(rebuilt_child_ids or []),
             "displayDatetime": display_dt,
         })
 
@@ -2863,6 +3791,144 @@ class WorkspaceService:
         else:
             primary = live
         return primary, comparison
+
+    def _ring_chart_for_document(self, document_id: Optional[str]):
+        """The live chart a ring document contributes, or None.
+
+        Same accessor as ``_comparison_chart_for_parent``
+        (engine/workspace_session_controller.py:252): the session's live
+        ChartSession chart, falling back to its stored chart. View-only
+        documents (tables, astrocart) return None and are never rings.
+        """
+        if not document_id:
+            return None
+        session = self._controller.session(document_id)
+        if session is None:
+            return None
+        cs = session.get("chart_session")
+        if cs is not None:
+            chrt = getattr(cs, "chart", None)
+            if chrt is not None:
+                return chrt
+        return session.get("chart")
+
+    @staticmethod
+    def _ring_zodiac() -> str:
+        """Global Appearance setting; multi-wheel sessions do not override it."""
+        return chart_rings.chart_ring_zodiac(options_service.options)
+
+    def _resolve_wheel_charts(self, session, cs, live):
+        """``(primary, comparison, ring_charts)`` for one live session.
+
+        ``primary`` is always the framework chart — the one whose houses,
+        zodiac orientation and angles the wheel is drawn on — and
+        ``comparison`` the outermost body ring. At two rings that is the
+        established ``_select_render_charts`` pair verbatim. At three or more
+        it is ring 1 and ring N, so ``primaryChart``/``comparisonChart`` keep
+        meaning exactly what every existing consumer already assumes.
+
+        ``document_snapshot`` and ``inspector_charts`` share this so a hovered
+        region is built over exactly the charts the wheel is drawing.
+        """
+        ring_charts = self._select_ring_charts(session, cs, live)
+        if len(ring_charts) >= 3:
+            if bool(session.get("relationship_multiwheel_single_chart_view")):
+                return live, None, [live]
+            document_id = str(session.get("document_id") or "")
+            _owner_id, owner = self._ring_owner(document_id)
+            if owner is not None and bool(owner.get("multiwheel_single_chart_view")):
+                return live, None, [live]
+            return ring_charts[0], ring_charts[-1], ring_charts
+        primary, comparison = self._select_render_charts(session, cs, live)
+        return primary, comparison, ring_charts
+
+    def _select_ring_charts(self, session, cs, live) -> list:
+        """Ordered ring charts for a document, innermost first.
+
+        Two rings remains the established per-document comparison contract.
+        Three or more rings is the root-owned explicit participant selection:
+        selecting another tab changes only navigation grammar, never membership.
+        """
+        primary, comparison = self._select_render_charts(session, cs, live)
+        base = [primary] if comparison is None else [primary, comparison]
+        if not isinstance(session, dict):
+            return base
+        relationship_charts = self._relationship_multiwheel_charts(session)
+        if len(relationship_charts) >= 3:
+            return relationship_charts
+        if session.get("compound_kind") is not None:
+            return base
+        document_id = session.get("document_id")
+        ring_ids = self._multiwheel_participant_ids(str(document_id or ""))
+        if len(ring_ids) < 3:
+            return base
+
+        charts = []
+        for ring_id in ring_ids:
+            chrt = self._ring_chart_for_document(ring_id)
+            if chrt is None:
+                continue
+            # The same chart object reaching two rings would paint one ring
+            # twice; keep the outermost occurrence only.
+            if any(chrt is existing for existing in charts):
+                continue
+            charts.append(chrt)
+        if len(charts) < 3:
+            return base
+        return charts
+
+    def _multiwheel_ring_display_datetimes(
+        self,
+        document_id: str,
+        ring_charts: list,
+    ) -> list[Optional[tuple]]:
+        """Return each visible ring's canonical session cursor in ring order.
+
+        A derived chart's computational time can intentionally differ from its
+        real/signified cursor. Corner metadata must therefore follow the owning
+        ChartSession rather than formatting the chart Time object again.
+        """
+        if len(ring_charts) < 3:
+            return []
+        session = self._controller.session(document_id)
+        relationship_charts = self._relationship_multiwheel_charts(session)
+        if len(relationship_charts) == len(ring_charts) and all(
+            expected is actual
+            for expected, actual in zip(relationship_charts, ring_charts)
+        ):
+            # Each source chart already exports its own canonical radix date.
+            return [None] * len(ring_charts)
+        ring_ids = self._multiwheel_participant_ids(document_id)
+        cursors_by_chart_identity: dict[int, Optional[tuple]] = {}
+        for ring_id in ring_ids:
+            ring_chart = self._ring_chart_for_document(ring_id)
+            ring_session = self._controller.session(ring_id)
+            ring_cs = ring_session.get('chart_session') if ring_session is not None else None
+            if ring_chart is not None:
+                cursors_by_chart_identity[id(ring_chart)] = copy.deepcopy(
+                    getattr(ring_cs, 'display_datetime', None)
+                )
+        return [cursors_by_chart_identity.get(id(chrt)) for chrt in ring_charts]
+
+    def _multiwheel_ring_document_ids(
+        self,
+        document_id: str,
+        ring_charts: list,
+    ) -> list[Optional[str]]:
+        """Map the visible chart objects back to their selected documents."""
+        session = self._controller.session(document_id)
+        relationship_charts = self._relationship_multiwheel_charts(session)
+        if len(relationship_charts) == len(ring_charts) and all(
+            expected is actual
+            for expected, actual in zip(relationship_charts, ring_charts)
+        ):
+            return [None] * len(ring_charts)
+        ids_by_chart_identity: dict[int, str] = {}
+        for ring_id in self._multiwheel_participant_ids(document_id):
+            ring_chart = self._ring_chart_for_document(ring_id)
+            if ring_chart is not None:
+                ids_by_chart_identity[id(ring_chart)] = ring_id
+        return [ids_by_chart_identity.get(id(chrt)) for chrt in ring_charts]
 
     @staticmethod
     def _overlay_display_datetime_for_session(session: dict, cs):
@@ -2976,7 +4042,11 @@ class WorkspaceService:
                 raise ValueError(f"document {document_id!r} has no chart")
             return chart_snapshot_service.options, live
 
-    def inspector_charts(self, document_id: str):
+    def inspector_charts(
+        self,
+        document_id: str,
+        ring_index: Optional[int] = None,
+    ):
         """Resolve the LIVE (inner, outer) chart pair for a document by id.
 
         The hover-inspector twin of ``document_snapshot``: it returns the same
@@ -2996,8 +4066,81 @@ class WorkspaceService:
             live = cs.chart or session.get('chart')
             if live is None:
                 raise ValueError(f"document {document_id!r} has no chart")
-            primary, comparison = self._select_render_charts(session, cs, live)
+            primary, comparison, rings = self._resolve_wheel_charts(session, cs, live)
+            if ring_index is not None:
+                if len(rings) < 3:
+                    raise ValueError("ringIndex requires a multi-wheel document")
+                index = int(ring_index)
+                if index < 0 or index >= len(rings):
+                    raise ValueError(f"ringIndex {index} is outside the visible multi-wheel")
+                if index == 0:
+                    return chart_snapshot_service.options, rings[0], rings[-1]
+                # Preserve the established inspector contract: the requested
+                # ring is the comparison partner and chartRole='outer' performs
+                # the same swap used by a normal biwheel hover.
+                return chart_snapshot_service.options, rings[0], rings[index]
             return chart_snapshot_service.options, primary, comparison
+
+    def inspector_ring_context(
+        self,
+        document_id: str,
+        ring_index: Optional[int],
+    ) -> Optional[dict]:
+        """Visible I–IV identities for one multi-wheel inspector request."""
+        if ring_index is None:
+            return None
+        with self._lock:
+            session = self._controller.session(document_id)
+            if session is None:
+                raise ValueError(f"unknown document {document_id!r}")
+            cs = session.get("chart_session")
+            live = (getattr(cs, "chart", None) if cs is not None else None) or session.get("chart")
+            if cs is None or live is None:
+                return None
+            _primary, _comparison, rings = self._resolve_wheel_charts(session, cs, live)
+            if len(rings) < 3:
+                return None
+            index = int(ring_index)
+            if index < 0 or index >= len(rings):
+                raise ValueError(f"ringIndex {index} is outside the visible multi-wheel")
+            taxonomy = chart_rings.multiwheel_ring_taxonomy(len(rings))
+            comparison_index = len(rings) - 1 if index == 0 else index
+            partner_index = comparison_index if index == 0 else 0
+            return {
+                "currentNumeral": taxonomy[index]["numeral"],
+                "partnerNumeral": taxonomy[partner_index]["numeral"],
+                "primaryNumeral": taxonomy[0]["numeral"],
+                "comparisonNumeral": taxonomy[comparison_index]["numeral"],
+            }
+
+    def inspector_pd_direction_context(self, document_id: str) -> Optional[dict]:
+        """Return locked live PD-in-chart truth for marker/inspector queries.
+
+        This remains separate from ``inspector_charts`` so its tuple contract
+        stays unchanged for every existing consumer.
+        """
+        with self._lock:
+            session = self._controller.session(document_id)
+            if session is None:
+                raise ValueError(f"unknown document {document_id!r}")
+            if session.get("launcher_kind") != "pd_in_chart":
+                return None
+            cs = session.get("chart_session")
+            if cs is None:
+                raise ValueError(f"document {document_id!r} has no chart session")
+            live = getattr(cs, "chart", None) or session.get("chart")
+            if live is None:
+                raise ValueError(f"document {document_id!r} has no chart")
+            primary, comparison = self._select_render_charts(session, cs, live)
+            return {
+                "options": chart_snapshot_service.options,
+                "primary": primary,
+                "comparison": comparison,
+                "state": copy.deepcopy(live._pd_direction_state),
+                "overlay": copy.deepcopy(getattr(live, "_pd_event_overlay", None)),
+                "binding": copy.deepcopy(session.get("pd_in_chart_binding") or {}),
+                "displayDatetime": copy.deepcopy(getattr(cs, "display_datetime", None)),
+            }
 
     def document_snapshot(
         self,
@@ -3054,7 +4197,7 @@ class WorkspaceService:
             radix = getattr(cs, 'radix', None)
             feature_kind = session.get('supplementary_feature_kind')
             view_mode = getattr(cs, 'view_mode', 0)
-            primary, comparison = self._select_render_charts(session, cs, live)
+            primary, comparison, ring_charts = self._resolve_wheel_charts(session, cs, live)
             parallel_transit = (
                 self._build_parallel_transit_overlay(cs)
                 if comparison is None and session.get('parallel_transits_enabled')
@@ -3088,7 +4231,46 @@ class WorkspaceService:
                     overlay_cursor_jd=overlay_cursor_jd,
                     parallel_transit=parallel_transit,
                     perf=export_perf,
+                    rings=ring_charts if len(ring_charts) >= 3 else None,
                 )
+                if len(ring_charts) >= 3:
+                    ring_payloads = snapshot.get('rings') or []
+                    ring_display_datetimes = self._multiwheel_ring_display_datetimes(
+                        document_id, ring_charts,
+                    )
+                    ring_document_ids = self._multiwheel_ring_document_ids(
+                        document_id, ring_charts,
+                    )
+                    ring_taxonomy = chart_rings.multiwheel_ring_taxonomy(
+                        len(ring_payloads)
+                    )
+                    for ring_chart, ring_payload, display_dt in zip(
+                        ring_charts, ring_payloads, ring_display_datetimes,
+                    ):
+                        export_chart_json.apply_display_datetime_to_chart_payload(
+                            ring_payload,
+                            display_dt,
+                            bc=bool(getattr(getattr(ring_chart, 'time', None), 'bc', False)),
+                            options=chart_snapshot_service.options,
+                        )
+                    for ring_payload, ring_identity, ring_document_id in zip(
+                        ring_payloads, ring_taxonomy, ring_document_ids,
+                    ):
+                        ring_payload.setdefault('meta', {})['multiwheelRingIndex'] = (
+                            ring_identity['ringIndex']
+                        )
+                        ring_payload['meta']['multiwheelRingNumeral'] = (
+                            ring_identity['numeral']
+                        )
+                        if ring_document_id is not None:
+                            ring_identity['documentId'] = ring_document_id
+                        ring_identity['chartName'] = str(
+                            ring_payload.get('meta', {}).get('name') or ''
+                        )
+                    snapshot['ringTaxonomy'] = ring_taxonomy
+                    # Zodiac position is only meaningful once rings stack:
+                    # the two-ring wheel keeps its inherited layout.
+                    snapshot['ringZodiac'] = self._ring_zodiac()
                 requested_comparison_layout = session.get('comparison_layout')
                 if requested_comparison_layout not in ('standard', 'with-houses'):
                     requested_comparison_layout = (
@@ -3111,7 +4293,8 @@ class WorkspaceService:
             mark_phase("export_snapshot", phase_started_at)
 
             phase_started_at = time.perf_counter()
-            self._ensure_midpoint_composite_corner_lines(snapshot, session, primary)
+            if len(ring_charts) < 3:
+                self._ensure_midpoint_composite_corner_lines(snapshot, session, primary)
             mark_phase("midpoint_corner", phase_started_at)
             session_display_dt = getattr(cs, 'display_datetime', None)
             if feature_kind is not None and session_display_dt is not None:
@@ -3201,6 +4384,16 @@ class WorkspaceService:
             # Live session metadata the skin needs to label/route — all read from
             # daemon memory, never recomputed client-side.
             phase_started_at = time.perf_counter()
+            snapshot['pdEventOverlay'] = (
+                copy.deepcopy(getattr(live, '_pd_event_overlay', None))
+                if session.get('launcher_kind') == 'pd_in_chart'
+                else None
+            )
+            snapshot['pdDirectionState'] = (
+                copy.deepcopy(live._pd_direction_state)
+                if session.get('launcher_kind') == 'pd_in_chart'
+                else None
+            )
             snapshot['document'] = {
                 'documentId': document_id,
                 'featureKind': feature_kind,
@@ -3219,6 +4412,26 @@ class WorkspaceService:
                 'isActive': document_id == self._controller.active_document_id(),
                 'symbolicTime': symbolic_readout,
                 'showRadixComparison': bool(session.get('show_radix_comparison', False)),
+                'pdInChartFrame': (
+                    live._pd_display_frame
+                    if session.get('launcher_kind') == 'pd_in_chart'
+                    else None
+                ),
+                'pdInChartMovingRole': (
+                    live._pd_moving_role
+                    if session.get('launcher_kind') == 'pd_in_chart'
+                    else None
+                ),
+                'pdInChartFixedRole': (
+                    live._pd_fixed_role
+                    if session.get('launcher_kind') == 'pd_in_chart'
+                    else None
+                ),
+                'pdInChartEventId': (
+                    (snapshot.get('pdDirectionState') or {}).get('eventId')
+                    if session.get('launcher_kind') == 'pd_in_chart'
+                    else None
+                ),
             }
             mark_phase("document_meta", phase_started_at)
             if perf is not None:
@@ -3614,8 +4827,24 @@ class WorkspaceService:
                                       posfordate.PROGRESSION_DAY_TYPE_Q2))
         except Exception:
             day_type = posfordate.PROGRESSION_DAY_TYPE_Q2
+        binding_payload = session.get('supplementary_binding') or {}
+        retained = (
+            binding_payload.get('retained_state') or {}
+            if isinstance(binding_payload, dict)
+            else {}
+        )
+        progression_direction = (
+            'converse'
+            if retained.get('progression_direction') == 'converse'
+            else 'direct'
+        )
         info = symbolic_time.secondary_direction_symbolic_info(
-            radix, chrt, method=method, day_type=day_type)
+            radix,
+            chrt,
+            method=method,
+            day_type=day_type,
+            converse=progression_direction == 'converse',
+        )
         if info is None:
             return None
         prog = info['progressed_datetime']
@@ -3641,6 +4870,7 @@ class WorkspaceService:
         )
         return {
             'method': method,
+            'direction': progression_direction,
             'signifiedDatetime': _display_tuple_to_iso(sig),
             'signifiedDateText': sig_text,
             'signifiedDateDisplay': sig_date_display,
@@ -4451,14 +5681,21 @@ class WorkspaceService:
         with self._lock:
             session = self._controller.session(document_id)
             if session is None:
-                return {"recordId": "", "sourceName": ""}
+                return {"recordId": "", "sourceName": "", "documentId": "", "scratch": False}
             chrt = session.get('chart')
             cs = session.get('chart_session')
             if cs is not None:
                 chrt = getattr(cs, 'radix', None) or getattr(cs, 'chart', None) or chrt
-            record_id = str(session.get('chart_id') or getattr(chrt, 'chart_id', '') or '')
+            owner_id = self._controller._document_id_for_chart(chrt) or document_id
+            owner_session = self._controller.session(owner_id) or session
+            record_id = str(owner_session.get('chart_id') or getattr(chrt, 'chart_id', '') or '')
             source_name = str(getattr(chrt, 'name', '') or '').strip()
-            return {"recordId": record_id, "sourceName": source_name}
+            return {
+                "recordId": record_id,
+                "sourceName": source_name,
+                "documentId": str(owner_id),
+                "scratch": not bool(str(owner_session.get('fpath') or '').strip()),
+            }
 
     def _remember_recent_chart(self, chrt, source_path: str) -> None:
         chart_mod = export_chart_json.chart_mod
@@ -4523,6 +5760,171 @@ class WorkspaceService:
             opts.saveRecentCharts()
         except Exception:
             pass
+
+    def rebind_moved_chart_records(self, moves: list[dict[str, Any]]) -> dict[str, Any]:
+        """Rebind live and persisted references after collection-file moves."""
+
+        normalized = [dict(move) for move in moves if move.get("source") and move.get("destination")]
+        if not normalized:
+            return {"ok": True, "reboundDocuments": 0}
+
+        with self._lock:
+            rebound_documents = 0
+            relationship_refs_changed = False
+            for document in self._controller.documents():
+                session = self._controller.session(document.document_id)
+                if session is None:
+                    continue
+                session_ref = self._serializable_chart_ref_for_session(session) or {}
+                move = self._moved_chart_match(session_ref, normalized)
+                if move is not None:
+                    destination = str(move["destination"])
+                    session["fpath"] = destination
+                    self._controller.state.update_document(document.document_id, path=destination)
+                    rebound_documents += 1
+
+                stored_refs = session.get("relationship_participant_refs")
+                if isinstance(stored_refs, list):
+                    rebound_refs, changed = self._rebind_moved_refs(stored_refs, normalized)
+                    if changed:
+                        session["relationship_participant_refs"] = rebound_refs
+                        relationship_refs_changed = True
+
+            opts = chart_snapshot_service.options
+            recent_refs, recent_changed = self._rebind_moved_refs(
+                list(getattr(opts, "recent_chart_refs", []) or []),
+                normalized,
+            )
+            if recent_changed:
+                opts.recent_chart_refs = recent_refs
+                try:
+                    opts.saveRecentCharts()
+                except Exception:
+                    pass
+
+            startup_ref = getattr(opts, "startupchart", "")
+            if isinstance(startup_ref, dict):
+                rebound_startup, startup_changed = self._rebind_moved_refs(startup_ref, normalized)
+                if startup_changed:
+                    opts.startupchart = rebound_startup
+                    try:
+                        opts.saveStartupChart()
+                    except Exception:
+                        pass
+            elif isinstance(startup_ref, str) and startup_ref:
+                emptied_source_move = next(
+                    (
+                        move
+                        for move in normalized
+                        if startup_ref == str(move.get("source", "") or "")
+                        and int(move.get("sourceRemainingCount", -1)) == 0
+                    ),
+                    None,
+                )
+                if emptied_source_move is not None:
+                    opts.startupchart = str(emptied_source_move["destination"])
+                    try:
+                        opts.saveStartupChart()
+                    except Exception:
+                        pass
+
+            restore_refs, restore_changed = self._rebind_moved_refs(
+                list(getattr(opts, "restore_open_chart_refs", []) or []),
+                normalized,
+            )
+            active_ref, active_changed = self._rebind_moved_refs(
+                dict(getattr(opts, "restore_open_charts_active_ref", {}) or {}),
+                normalized,
+            )
+            if restore_changed or active_changed:
+                opts.restore_open_chart_refs = restore_refs
+                opts.restore_open_charts_active_ref = active_ref
+                try:
+                    opts.saveRestoreOpenCharts()
+                except Exception:
+                    pass
+
+            if rebound_documents:
+                self._save_restore_open_charts_state()
+                self._manager.broadcast_threadsafe(
+                    {"type": "documents.changed", "tree": self._tree_payload()}
+                )
+            elif relationship_refs_changed:
+                self._save_restore_open_charts_state()
+            return {"ok": True, "reboundDocuments": rebound_documents}
+
+    @classmethod
+    def _rebind_moved_refs(
+        cls,
+        value: Any,
+        moves: list[dict[str, Any]],
+    ) -> tuple[Any, bool]:
+        if isinstance(value, list):
+            changed = False
+            rebound_items = []
+            for item in value:
+                rebound, item_changed = cls._rebind_moved_refs(item, moves)
+                rebound_items.append(rebound)
+                changed = changed or item_changed
+            return rebound_items, changed
+        if not isinstance(value, dict):
+            return value, False
+
+        rebound = dict(value)
+        changed = False
+        participants = rebound.get("participants")
+        if isinstance(participants, list):
+            rebound_participants, participants_changed = cls._rebind_moved_refs(participants, moves)
+            if participants_changed:
+                rebound["participants"] = rebound_participants
+                if rebound_participants and isinstance(rebound_participants[0], dict):
+                    rebound["path"] = rebound_participants[0].get("path", rebound.get("path", ""))
+                changed = True
+
+        move = cls._moved_chart_match(rebound, moves)
+        if move is not None:
+            rebound["path"] = str(move["destination"])
+            name = str(move.get("name", "") or rebound.get("chart_name", "") or "")
+            collection = Path(str(move["destination"])).stem
+            rebound["label"] = f"{name} ({collection})" if name else collection
+            changed = True
+        return rebound, changed
+
+    @staticmethod
+    def _moved_chart_match(
+        ref: dict[str, Any],
+        moves: list[dict[str, Any]],
+    ) -> Optional[dict[str, Any]]:
+        ref_path = str(ref.get("path", "") or "")
+        if not ref_path:
+            return None
+        for move in moves:
+            if ref_path != str(move.get("source", "") or ""):
+                continue
+            ref_id = str(ref.get("chart_id", ref.get("chartId", "")) or "")
+            move_id = str(move.get("chartId", "") or "")
+            if ref_id and move_id:
+                if ref_id == move_id:
+                    return move
+                continue
+            compared = False
+            matched = True
+            for ref_key, move_key in (
+                ("chart_name", "name"),
+                ("chart_date", "date"),
+                ("chart_time", "time"),
+                ("chart_place", "place"),
+            ):
+                ref_value = str(ref.get(ref_key, "") or "")
+                move_value = str(move.get(move_key, "") or "")
+                if ref_value and move_value:
+                    compared = True
+                    if ref_value != move_value:
+                        matched = False
+                        break
+            if matched and compared:
+                return move
+        return None
 
     def _remember_recent_session_chart(self, session: Optional[dict]) -> None:
         if not isinstance(session, dict):
@@ -5034,6 +6436,88 @@ class WorkspaceService:
             return document
         return None
 
+    def _set_harmonic_projection_in_place(
+        self,
+        document_id: str,
+        *,
+        mode: Any = None,
+        value: Any = None,
+    ) -> bool:
+        """Retarget one division child without replacing its document/session.
+
+        This is the mode/manual-entry/preset path.  It mirrors one
+        SupplementaryStepper change: Binding mutates, the deriver rebuilds from
+        the radix, then ChartSession emits one ``step`` paint event.
+        """
+        session = self._controller.session(document_id)
+        if session is None or session.get("supplementary_feature_kind") != "harmonic":
+            return False
+        cs = session.get("chart_session")
+        radix = getattr(cs, "radix", None) if cs is not None else None
+        if cs is None or radix is None:
+            return False
+
+        binding = (
+            supplementary_adapter.SupplementaryBinding.from_payload(
+                session.get("supplementary_binding") or {},
+                feature_kind="harmonic",
+            )
+            or supplementary_adapter.SupplementaryBinding("harmonic")
+        )
+        retained = dict(binding.retained_state or {})
+        default_mode = harmonic_chart.normalize_projection_mode(
+            getattr(self._controller.options, "harmonic_chart_mode", harmonic_chart.PROJECTION_MODE_HARMONIC)
+        )
+        current_mode = harmonic_chart.normalize_projection_mode(
+            retained.get("projection_mode"), default=default_mode
+        )
+        next_mode = harmonic_chart.normalize_projection_mode(mode, default=current_mode)
+        retained["projection_mode"] = next_mode
+        changed = next_mode != current_mode
+        if next_mode == harmonic_chart.PROJECTION_MODE_VARGA:
+            current_number = harmonic_chart.normalize_varga_number(
+                retained.get("varga_number", harmonic_chart.DEFAULT_VARGA)
+            )
+            next_number = harmonic_chart.normalize_varga_number(value, default=current_number)
+            retained["varga_number"] = next_number
+        else:
+            current_number = harmonic_chart.normalize_harmonic_number(
+                retained.get("harmonic_number", harmonic_chart.DEFAULT_HARMONIC)
+            )
+            next_number = harmonic_chart.normalize_harmonic_number(
+                value, default=current_number
+            )
+            retained["harmonic_number"] = next_number
+        changed = changed or next_number != current_number
+        if not changed:
+            return True
+        binding.retained_state = retained
+
+        when = _display_to_datetime(session.get("parent_source_datetime"))
+        if when is None:
+            when = _display_to_datetime(getattr(cs, "display_datetime", None))
+        if when is None:
+            when = datetime.datetime.now()
+        built = supplementary_service.build_result(
+            radix=radix,
+            kind="harmonic",
+            when=when,
+            binding_payload=binding.to_payload(),
+        )
+        if built.get("chart") is None:
+            return False
+        self._controller._apply_supplementary_binding(session, built["binding"])
+        cs.change_chart(
+            built["chart"],
+            display_datetime=built.get("display_datetime"),
+            change_reason="step",
+        )
+        return True
+
+    def _set_harmonic_number_in_place(self, document_id: str, value: Any) -> bool:
+        """Compatibility wrapper for callers predating the dual-mode binding."""
+        return self._set_harmonic_projection_in_place(document_id, value=value)
+
     def _build_solar_arc_child_result(
         self,
         radix,
@@ -5270,6 +6754,26 @@ class WorkspaceService:
             )
             mark_child_phase("reuse_existing_lookup", phase_started_at)
             if reusable_document is not None:
+                if engine_feature_kind == "harmonic" and isinstance(binding_payload, dict):
+                    requested_retained = binding_payload.get("retained_state")
+                    if isinstance(requested_retained, dict) and any(
+                        requested_retained.get(key) is not None
+                        for key in ("projection_mode", "harmonic_number", "varga_number")
+                    ):
+                        requested_mode = harmonic_chart.normalize_projection_mode(
+                            requested_retained.get("projection_mode"),
+                            default=harmonic_chart.PROJECTION_MODE_HARMONIC,
+                        )
+                        requested_number = (
+                            requested_retained.get("varga_number")
+                            if requested_mode == harmonic_chart.PROJECTION_MODE_VARGA
+                            else requested_retained.get("harmonic_number")
+                        )
+                        self._set_harmonic_projection_in_place(
+                            reusable_document.document_id,
+                            mode=requested_mode,
+                            value=requested_number,
+                        )
                 return reusable_document
 
         phase_started_at = time.perf_counter()
@@ -6901,7 +8405,7 @@ class WorkspaceService:
             if mode not in ("primary", "outer", "outerToPrimary", "primaryToOuter"):
                 raise ValueError("unknown Aspect List view")
             action = str(action or "exact")
-            if action not in ("exact", "solar", "transits", "chart"):
+            if action not in ("exact", "solar", "transits", "secondary", "chart"):
                 raise ValueError("unknown Aspect List perfection action")
             if mode != "primary" and outer is None:
                 raise ValueError("Aspect List comparison chart is no longer available")
@@ -6978,6 +8482,12 @@ class WorkspaceService:
                 action_when = datetime.datetime(
                     *[int(value) for value in display_datetime[:6]]
                 ).isoformat()
+                if action == "secondary":
+                    return self.open_directions_secondary_chart(
+                        directions_document_id=action_document_id,
+                        when_iso=action_when,
+                        symbolic_event_jd=exact_jd,
+                    )
                 return self.open_directions_timed_chart(
                     directions_document_id=action_document_id,
                     action=action,
@@ -7619,6 +9129,8 @@ class WorkspaceService:
                 'zh': int(ctx.get('zh', retained.get('zh', 0)) or 0),
                 'zm': int(ctx.get('zm', retained.get('zm', 0)) or 0),
                 'daylight': bool(ctx.get('daylightsaving', retained.get('daylight', False))),
+                'tzid': str(ctx.get('tzid', retained.get('tzid', '')) or ''),
+                'tzauto': bool(ctx.get('tzauto', retained.get('tzauto', False))),
             })
         if feature_kind == 'lunar_return' and (not location_only or _retained_return_datetime(session, current_chart) is not None):
             retained['lunar_cycle_offset'] = 0
@@ -8200,7 +9712,9 @@ class WorkspaceService:
             # Field set -> schema-v1 record -> Chart, via the canonical editor +
             # factory path. Keep the SAME Record id so this edits the existing
             # record (rebind, never fork).
+            markdown = str(fields.get('notes') or '')
             record = _editor.editor_fields_to_record(fields)
+            record['notes'] = ''
             chart_id = session.get('chart_id') or getattr(base_chart, 'chart_id', '') or None
             if chart_id:
                 record['id'] = chart_id
@@ -8241,6 +9755,13 @@ class WorkspaceService:
             if saved:
                 self._remember_recent_chart(new_chart, fpath)
             self._controller._sync_runtime_title(session)
+            notes_service.write_note_state(
+                str(record.get('name') or ''),
+                markdown,
+                record_id=str(record.get('id') or '').strip() or None,
+                document_id=document_id,
+                scratch=not bool(fpath),
+            )
 
         self._broadcast_session_changed(document_id, "edit")
         for child_id in rebuilt_child_ids:
@@ -8390,53 +9911,125 @@ class WorkspaceService:
             )
             if partner is None:
                 raise RuntimeError(f"could not load comparison chart {comparison_name!r}")
-            label = "%s & %s" % (
-                getattr(center, 'name', '') or 'Radix',
-                getattr(partner, 'name', '') or comparison_name,
-            )
-            document = self._controller.open_document(
+            return self._open_loaded_synastry(
                 center,
-                radix=center,
-                session_label=label,
-                view_mode=chart_session.ChartSession.COMPOUND,
-                comparison_chart=partner,
-                launcher_kind='synastry',
-                dirty=False,
+                partner,
+                comparison_name=comparison_name,
+                center_ref=self._serializable_participant_ref_live(center),
+                partner_ref=self._participant_ref_from_source(partner, source_path),
             )
-            if document is not None:
-                # Stamp the compound metadata the wx session carries
-                # (morin.py:8545-8565) so the tree summary can label it and the
-                # later Composite checkbox can reuse the same pair/cache.
-                session = self._controller.session(document.document_id)
-                if session is not None:
-                    center_ref = self._serializable_participant_ref_live(center)
-                    partner_ref = self._participant_ref_from_source(partner, source_path)
-                    participant_refs = [center_ref or {}, partner_ref or {}]
-                    self._stamp_synastry_session(
-                        session,
-                        center,
-                        partner,
-                        comparison_name,
-                        participant_refs=participant_refs,
-                    )
-                    self._update_document_title(
-                        session,
-                        self._synastry_session_title(center, partner),
-                        self._chart_label(center),
-                    )
-                    self._apply_synastry_launcher_preference(session)
-            self._manager.broadcast_threadsafe({
-                "type": "documents.changed",
-                "tree": self._tree_payload(),
-            })
-            self._save_restore_open_charts_state()
-            if document is None:
-                return {"documentId": None, "documents": self._tree_payload()}
-            return self._attach_full_snapshot({
-                "documentId": document.document_id,
-                "activeDocumentId": self._controller.active_document_id(),
-                "documents": self._tree_payload(),
-            }, document.document_id)
+
+    def open_synastry_pair(
+        self,
+        center_name: str,
+        comparison_name: str,
+        *,
+        center_source: Optional[str] = None,
+        center_record_index: Optional[int] = None,
+        comparison_source: Optional[str] = None,
+        comparison_record_index: Optional[int] = None,
+    ) -> dict:
+        """Open two stored charts directly as one relationship document.
+
+        The chart picker's two-selection Synastry command must be atomic: the
+        center participant is an input to the compound document, not a
+        temporary singleton workspace document.
+        """
+        with self._lock:
+            opts = chart_snapshot_service.options
+            center_path = (
+                str(Path(center_source).expanduser())
+                if center_source
+                else str(export_chart_json.DEFAULT_SOURCE)
+            )
+            comparison_path = (
+                str(Path(comparison_source).expanduser())
+                if comparison_source
+                else str(export_chart_json.DEFAULT_SOURCE)
+            )
+            center, _ = export_chart_json.load_chart(
+                center_path,
+                opts,
+                name=center_name,
+                record_index=center_record_index,
+            )
+            if center is None:
+                raise RuntimeError(f"could not load center chart {center_name!r}")
+            partner, _ = export_chart_json.load_chart(
+                comparison_path,
+                opts,
+                name=comparison_name,
+                record_index=comparison_record_index,
+            )
+            if partner is None:
+                raise RuntimeError(f"could not load comparison chart {comparison_name!r}")
+            self._remember_recent_chart(center, center_path)
+            return self._open_loaded_synastry(
+                center,
+                partner,
+                comparison_name=comparison_name,
+                center_ref=self._participant_ref_from_source(center, center_path),
+                partner_ref=self._participant_ref_from_source(partner, comparison_path),
+            )
+
+    def _open_loaded_synastry(
+        self,
+        center,
+        partner,
+        *,
+        comparison_name: str,
+        center_ref: Optional[dict[str, Any]],
+        partner_ref: Optional[dict[str, Any]],
+    ) -> dict:
+        """Create and publish one root-level relationship document.
+
+        Callers hold ``self._lock`` and own participant loading/ref resolution.
+        """
+        label = "%s & %s" % (
+            getattr(center, 'name', '') or 'Radix',
+            getattr(partner, 'name', '') or comparison_name,
+        )
+        document = self._controller.open_document(
+            center,
+            radix=center,
+            session_label=label,
+            view_mode=chart_session.ChartSession.COMPOUND,
+            comparison_chart=partner,
+            launcher_kind='synastry',
+            dirty=False,
+        )
+        if document is not None:
+            # Stamp the compound metadata the wx session carries
+            # (morin.py:8545-8565) so the tree summary can label it and the
+            # later Composite checkbox can reuse the same pair/cache.
+            session = self._controller.session(document.document_id)
+            if session is not None:
+                participant_refs = [center_ref or {}, partner_ref or {}]
+                self._stamp_synastry_session(
+                    session,
+                    center,
+                    partner,
+                    comparison_name,
+                    participant_refs=participant_refs,
+                )
+                self._update_document_title(
+                    session,
+                    self._synastry_session_title(center, partner),
+                    self._chart_label(center),
+                )
+                self._apply_synastry_launcher_preference(session)
+        self._manager.broadcast_threadsafe({
+            "type": "documents.changed",
+            "tree": self._tree_payload(),
+        })
+        self._save_restore_open_charts_state()
+        if document is None:
+            return {"documentId": None, "documents": self._tree_payload()}
+        return self._attach_full_snapshot({
+            "documentId": document.document_id,
+            "activeDocumentId": self._controller.active_document_id(),
+            "documents": self._tree_payload(),
+        }, document.document_id)
 
     # -- Synastry <-> Composite same-document lifecycle --------------------
 
@@ -8891,6 +10484,7 @@ class WorkspaceService:
                 target = "synastry"
             else:
                 target = "midpoint"
+            active_participants = self._relationship_session_participants(session)
 
             if target == "synastry":
                 display_dt = cs._chart_display_datetime(center) if hasattr(cs, "_chart_display_datetime") else getattr(cs, 'display_datetime', None)
@@ -8911,6 +10505,10 @@ class WorkspaceService:
                     )
                 session['composite_variant'] = None
                 session['option_refresh_handler'] = self._refresh_relationship_session_for_options
+                session['relationship_multiwheel_enabled'] = bool(
+                    3 <= len(active_participants) <= chart_rings.CHART_RING_COUNT_MAX
+                )
+                session.pop("relationship_multiwheel_single_chart_view", None)
                 cs.radix = center
                 cs._initial_chart = center
                 cs._initial_display_datetime = display_dt
@@ -8922,7 +10520,6 @@ class WorkspaceService:
                     self._chart_label(center),
                 )
             else:
-                active_participants = self._relationship_session_participants(session)
                 if len(active_participants) >= 3:
                     comp, pair = self._build_recursive_composite_variant(active_participants, target)
                     center, partner = pair
@@ -8996,6 +10593,7 @@ class WorkspaceService:
             if participant_index < 0 or participant_index >= len(participants):
                 raise ValueError(f"participant index {participant_index!r} out of range")
             states = self._relationship_session_participant_states(session)
+            was_synastry = session.get('compound_kind') == 'synastry'
             states[participant_index] = not bool(states[participant_index])
             if sum(1 for state in states if state) < 1:
                 raise ValueError("cannot deactivate every relationship participant")
@@ -9010,6 +10608,7 @@ class WorkspaceService:
             session['relationship_participant_states'] = list(states)
             session['relationship_participant_refs'] = self._capture_participant_refs(participants)
             variant = session.get('composite_variant') or 'midpoint'
+            next_view_mode = chart_session.ChartSession.CHART
 
             if len(active_participants) == 1:
                 next_chart = active_participants[0]
@@ -9025,6 +10624,24 @@ class WorkspaceService:
                 session['composite_variants'] = None
                 session['composite_variants_pair_key'] = None
                 cs.radix = next_chart
+            elif was_synastry:
+                center = active_participants[0]
+                outer = active_participants[-1]
+                next_chart = center
+                session['chart'] = center
+                session['synastry_pair'] = (center, outer)
+                session['comparison_chart'] = outer
+                session['comparison_name'] = self._chart_label(outer, "Comparison")
+                session['compound_kind'] = 'synastry'
+                session['launcher_kind'] = 'synastry'
+                session['base_title'] = self._synastry_session_title(center, outer)
+                session['custom_title_root'] = session['base_title']
+                session['composite_variant'] = None
+                session['composite_variants'] = None
+                session['composite_variants_pair_key'] = None
+                cs.radix = center
+                next_view_mode = chart_session.ChartSession.COMPOUND
+                self._ensure_synastry_composite_variants(session, center, outer)
             else:
                 next_chart, pair = self._build_recursive_composite_variant(active_participants, variant)
                 center, outer = pair
@@ -9044,7 +10661,7 @@ class WorkspaceService:
                 session['composite_variants_pair_key'] = None
                 cs.radix = next_chart
 
-            cs.view_mode = chart_session.ChartSession.CHART
+            cs.view_mode = next_view_mode
             display_dt = cs._chart_display_datetime(next_chart) if hasattr(cs, "_chart_display_datetime") else getattr(cs, 'display_datetime', None)
             cs._initial_chart = next_chart
             cs._initial_display_datetime = display_dt
@@ -9319,11 +10936,34 @@ class WorkspaceService:
             if session is None:
                 raise ValueError(f"unknown document {document_id!r}")
             charts = self._horary_session_charts(session)
-            mirrored = False
+            mirrored = bool(charts)
+            changed = False
+            normalized = (
+                self._normalize_horary_interpretation(lens)
+                if charts else None
+            )
             for chrt in charts:
-                chrt.interpretation = dict(lens) if lens else None
-                mirrored = True
-            if mirrored:
+                current = getattr(chrt, 'interpretation', None) or None
+                # Compare effective semantics, not the persisted JSON shape.
+                # Older records legitimately omit context fields which newer
+                # pack manifests fill from their declared defaults.  Adopting
+                # such a record into the global lens and mirroring it straight
+                # back must remain a no-op: opening/switching a tab is not an
+                # edit and must not dirty the chart or broadcast a document
+                # change merely because the manifest learned new defaults.
+                canonical_current = self._normalize_horary_interpretation(
+                    current, strict=False,
+                )
+                if canonical_current == normalized:
+                    continue
+                chrt.interpretation = copy.deepcopy(normalized)
+                changed = True
+            if changed and str(session.get('fpath') or '').strip():
+                # Interpretation/context is serialized into the bound chart
+                # record.  Treat a material change like any other file-backed
+                # edit so close/quit cannot discard it silently.
+                self._controller.set_dirty(document_id, edit_dirty=True)
+            if changed:
                 self._manager.broadcast_threadsafe({
                     "type": "documents.changed",
                     "tree": self._tree_payload(),
@@ -9913,7 +11553,7 @@ class WorkspaceService:
             "calendar": int(getattr(chrt.time, "cal", 0) or 0),
             "featureKind": None,
             "launcherKind": owner.get("launcher_kind") if isinstance(owner, dict) else None,
-            "pointMotionPolicy": {"syzygy": "anchor-fixed"},
+            "pointMotionPolicy": {"syzygy": "anchor-fixed", "eclipse": "anchor-fixed"},
         }
         if not isinstance(owner, dict):
             return context
@@ -9940,6 +11580,13 @@ class WorkspaceService:
                 "unsupportedReason": "solar-average-has-no-single-timeline",
             })
             return context
+        if feature_kind == "harmonic":
+            context.update({
+                "trajectoryKind": "static",
+                "featureKind": "harmonic",
+                "unsupportedReason": "harmonic-chart-has-no-physical-timeline",
+            })
+            return context
         if feature_kind in _ASPECT_SYMBOLIC_FEATURE_KINDS and radix is not None:
             anchor_jd = self._aspect_symbolic_anchor_jd(
                 owner,
@@ -9964,7 +11611,7 @@ class WorkspaceService:
                 # Symbolic techniques own their point transforms.  Do not
                 # impose the ordinary physical-chart fixed-Syzygy policy on a
                 # canonical supplementary builder.
-                "pointMotionPolicy": {"syzygy": "trajectory"},
+                "pointMotionPolicy": {"syzygy": "trajectory", "eclipse": "trajectory"},
             })
             if feature_kind == "converse_transits":
                 def display_for_jd(candidate_jd):
@@ -10004,9 +11651,207 @@ class WorkspaceService:
                 "parentDocumentId": owner.get("parent_document_id"),
                 "binding": copy.deepcopy(owner.get("pd_in_chart_binding") or {}),
                 "builder": self._aspect_pd_builder(owner, radix),
-                "pointMotionPolicy": {"syzygy": "trajectory"},
+                "pointMotionPolicy": {"syzygy": "trajectory", "eclipse": "trajectory"},
             })
         return context
+
+    @staticmethod
+    def _temporal_map_calendar_name(calendar: int) -> str:
+        chart_mod = export_chart_json.chart_mod
+        return (
+            "julian"
+            if int(calendar) == chart_mod.Time.JULIAN
+            else "gregorian"
+        )
+
+    def _temporal_map_authority(self, document_id: str) -> tuple[dict, Any, float, int]:
+        """Resolve one chart document's radix, focus, and label calendar.
+
+        The temporal map is a lens over an existing chart document.  The radix
+        owns the lifetime axis and calendar; the live document session owns the
+        focus instant.  This keeps a derived chart focused at its real cursor
+        without quietly changing the map's birth epoch.
+        """
+        session = self._controller.session(document_id)
+        if session is None:
+            raise ValueError(f"unknown chart document {document_id!r}")
+        radix = self._parent_radix(document_id)
+        time_obj = getattr(radix, "time", None)
+        try:
+            birth_jd = float(getattr(time_obj, "jd"))
+        except (AttributeError, TypeError, ValueError):
+            raise ValueError("chart document has no radix birth instant") from None
+        if not math.isfinite(birth_jd):
+            raise ValueError("chart document has no finite radix birth instant")
+
+        parent_id = session.get("parent_document_id")
+        parent_session = (
+            self._controller.session(str(parent_id))
+            if parent_id
+            else None
+        )
+        # A view-only child may retain an open-time chart reference but has no
+        # live cursor of its own.  In that case the parent chart session is the
+        # focus authority; a real derived chart session remains authoritative.
+        focus_session = (
+            parent_session
+            if session.get("chart_session") is None and parent_session is not None
+            else session
+        )
+        focus_jd = self._session_authoritative_jd(focus_session)
+        if focus_jd is None:
+            focus_jd = self._session_authoritative_jd(parent_session)
+        if focus_jd is None or not math.isfinite(float(focus_jd)):
+            focus_jd = birth_jd
+
+        chart_mod = export_chart_json.chart_mod
+        calendar = int(
+            getattr(time_obj, "cal", chart_mod.Time.GREGORIAN)
+        )
+        if calendar != chart_mod.Time.JULIAN:
+            calendar = chart_mod.Time.GREGORIAN
+        return session, radix, float(focus_jd), calendar
+
+    def _format_temporal_map_instant(
+        self,
+        jd_ut: float,
+        *,
+        birth_jd_ut: float,
+        calendar: int,
+    ) -> dict[str, Any]:
+        try:
+            exact_jd = float(jd_ut)
+        except (TypeError, ValueError):
+            raise ValueError("temporal map JD must be numeric") from None
+        if not math.isfinite(exact_jd):
+            raise ValueError("temporal map JD must be finite")
+        values = self._jd_to_calendar_datetime(exact_jd, calendar)
+        if values is None:
+            raise ValueError(f"cannot decode temporal map JD {exact_jd!r}")
+        y, m, d, h, mi, s = [int(value) for value in values[:6]]
+        civil_date = dateformat.iso_date_text(y, m, d)
+        civil_datetime = dateformat.iso_datetime_text(values)
+        canonical_query_datetime = civil_datetime
+        try:
+            datetime.datetime(y, m, d, h, mi, s)
+        except ValueError:
+            # Canonical calendar lists currently load a Gregorian month/range.
+            # A valid Julian civil date such as 1900-02-29 is not a valid
+            # Gregorian/JavaScript date and would normalize into March.  Keep
+            # the exact JD and Julian labels authoritative, but anchor the
+            # loader to the nearest earlier valid day in the same month so its
+            # range still contains the exact event row.
+            for query_day in range(d - 1, 0, -1):
+                try:
+                    canonical_query_datetime = datetime.datetime(
+                        y,
+                        m,
+                        query_day,
+                        h,
+                        mi,
+                        s,
+                    ).isoformat()
+                except ValueError:
+                    continue
+                break
+        date_label = dateformat.date_text(
+            y,
+            m,
+            d,
+            chart_snapshot_service.options,
+        )
+        datetime_label = dateformat.date_time_text(
+            values,
+            chart_snapshot_service.options,
+            show_seconds=True,
+        )
+        age_years = (
+            exact_jd - float(birth_jd_ut)
+        ) / _TEMPORAL_MAP_TROPICAL_YEAR_DAYS
+        nearest_age = round(age_years)
+        if abs(age_years - nearest_age) < 1e-9:
+            age_years = float(nearest_age)
+        age_years_int = math.floor(age_years)
+        return {
+            "jdUt": exact_jd,
+            "year": y,
+            "month": m,
+            "day": d,
+            "hour": h,
+            "minute": mi,
+            "second": s,
+            "civilDate": civil_date,
+            "civilDatetime": civil_datetime,
+            "canonicalQueryDatetime": canonical_query_datetime,
+            "dateLabel": date_label,
+            "datetimeLabel": datetime_label,
+            "ageYears": float(age_years),
+            "ageYearsInt": int(age_years_int),
+            "ageLabel": (
+                mtexts.txts.get("AgeColonFmt", "Age: %d")
+                % int(age_years_int)
+            ),
+        }
+
+    def temporal_map_context(self, document_id: str) -> dict[str, Any]:
+        """Return the daemon-owned macro axis for one chart document."""
+        with self._lock:
+            _, radix, focus_jd, calendar = self._temporal_map_authority(document_id)
+            birth_jd = float(radix.time.jd)
+            life_end_jd = birth_jd + (
+                _TEMPORAL_MAP_LIFE_YEARS * _TEMPORAL_MAP_TROPICAL_YEAR_DAYS
+            )
+            return {
+                "documentId": str(document_id),
+                "birthJdUt": birth_jd,
+                "lifeEndJdUt": life_end_jd,
+                "focusJdUt": focus_jd,
+                "lifeYears": _TEMPORAL_MAP_LIFE_YEARS,
+                "tropicalYearDays": _TEMPORAL_MAP_TROPICAL_YEAR_DAYS,
+                "calendar": self._temporal_map_calendar_name(calendar),
+                "timeBasis": "ut",
+                "birth": self._format_temporal_map_instant(
+                    birth_jd,
+                    birth_jd_ut=birth_jd,
+                    calendar=calendar,
+                ),
+                "focus": self._format_temporal_map_instant(
+                    focus_jd,
+                    birth_jd_ut=birth_jd,
+                    calendar=calendar,
+                ),
+                "lifeEnd": self._format_temporal_map_instant(
+                    life_end_jd,
+                    birth_jd_ut=birth_jd,
+                    calendar=calendar,
+                ),
+            }
+
+    def format_temporal_map_jds(
+        self,
+        document_id: str,
+        jds: list[float],
+    ) -> dict[str, Any]:
+        """Batch-format map ticks/hovers in the chart's own civil calendar."""
+        if len(jds) > 512:
+            raise ValueError("temporal map formatting is limited to 512 JDs")
+        with self._lock:
+            _, radix, _, calendar = self._temporal_map_authority(document_id)
+            birth_jd = float(radix.time.jd)
+            return {
+                "documentId": str(document_id),
+                "birthJdUt": birth_jd,
+                "calendar": self._temporal_map_calendar_name(calendar),
+                "timeBasis": "ut",
+                "instants": [
+                    self._format_temporal_map_instant(
+                        jd,
+                        birth_jd_ut=birth_jd,
+                        calendar=calendar,
+                    )
+                    for jd in jds
+                ],
+            }
 
     def table_context(self, document_id: str, requested_table_id: Optional[str] = None) -> dict[str, Any]:
         """Return the live chart + table id for a generic table document.
@@ -10041,7 +11886,7 @@ class WorkspaceService:
                     getattr(parent_cs, "display_datetime", None) if parent_cs is not None else None
                 )
                 chart_anchor_datetime = current_datetime
-                if table_id in {'firdaria', 'decennials', 'triplicity_directions', 'zodiacal_releasing', 'profections_table', 'eclipses'}:
+                if table_id in _TIME_LORD_TABLE_IDS | {'eclipses'}:
                     chrt = self._parent_radix(str(parent_id))
                 else:
                     chrt = self._search_reference_chart_for_document(str(parent_id))
@@ -10059,7 +11904,7 @@ class WorkspaceService:
                     # Right-pane table hosted on a chart-owning document.
                     table_id = str(requested_table_id)
                     binding = (session.get("table_bindings") or {}).get(table_id) or {}
-                    if table_id in {'firdaria', 'decennials', 'triplicity_directions', 'zodiacal_releasing', 'profections_table', 'eclipses'}:
+                    if table_id in _TIME_LORD_TABLE_IDS | {'eclipses'}:
                         chrt = self._parent_radix(document_id)
                     else:
                         chrt = getattr(cs, "chart", None) if cs is not None else None
@@ -10299,9 +12144,8 @@ class WorkspaceService:
         chart navigation on the resulting tab.
 
         ``arc`` is the row's magnitude in degrees; ``direct`` restores the
-        signed-arc contract from PrimDirsListWnd.calc.  Celestial charts may
-        then invert that projection when the configured outer ring represents
-        promissors rather than Morinus's legacy outer-significator ring.
+        signed-arc contract from PrimDirsListWnd.calc.  Ring orientation chooses
+        the projection operator; it never changes that semantic D/C sign.
         ``mode`` is the row's celestial/terrestrial calculation class.
         ``when_iso`` is the directed-moment civil datetime for the tab's
         display_datetime; when absent we fall back to the PD-projected chart's
@@ -10310,7 +12154,11 @@ class WorkspaceService:
         from engine import pd_in_chart
 
         with self._lock:
-            parent_radix_id = self._timed_chart_parent_document_id(directions_document_id)
+            # PD-in-Chart is a radix-owned projection.  Unlike ordinary timed
+            # row actions, opening it from an already-derived chart must create
+            # a sibling under the radix instead of recursively nesting another
+            # projected chart below the active child.
+            parent_radix_id = self._owning_radix_document_id(directions_document_id)
             radix = self._parent_radix(parent_radix_id)
             if radix is None:
                 raise ValueError("directions document has no parent radix")
@@ -10319,24 +12167,66 @@ class WorkspaceService:
             signed_arc = self._pd_in_chart_projection_arc(
                 abs(float(arc)), direct, mode=mode,
             )
+            display_frame = self._pd_in_chart_display_frame(mode, direct)
+            outer_promissor = bool(display_frame["outerPromissor"])
             pd_chart = pd_in_chart.compute_pd_chart(
                 radix,
                 signed_arc,
                 chart_snapshot_service.options,
                 terrestrial=mode == "terrestrial",
+                outer_promissor=outer_promissor,
             )
+            label = str(session_label or "").strip() or mtexts.txts.get("PDsInChart", "PDs in Chart")
             exact_event = self._pd_in_chart_exact_event(
-                direction_event, direct=direct, arc=arc, event_jd=event_jd,
+                direction_event,
+                direct=direct,
+                arc=arc,
+                event_jd=event_jd,
+                event_label=label,
             )
             pd_chart._pd_exact_event = exact_event
-            if mode == "celestial" and bool(
-                getattr(chart_snapshot_service.options, "pdinchartreverse", True)
-            ):
-                pd_in_chart.apply_exact_planet_to_angle_projection(
-                    pd_chart, radix, exact_event, signed_arc,
+            if mode == "celestial":
+                row_native = pd_in_chart.apply_selected_ecliptic_foot_projection(
+                    pd_chart,
+                    radix,
+                    exact_event,
+                    signed_arc,
                     chart_snapshot_service.options,
+                    outer_promissor=outer_promissor,
                 )
-            self._stamp_pd_in_chart_direction(pd_chart, direct, signed_arc)
+                if (
+                    outer_promissor
+                    and not row_native
+                    and getattr(
+                        chart_snapshot_service.options,
+                        "pdincharttyp",
+                        None,
+                    ) == pd_in_chart.FROMZODIACALPOS
+                ):
+                    pd_in_chart.apply_exact_planet_to_angle_projection(
+                        pd_chart,
+                        radix,
+                        exact_event,
+                        signed_arc,
+                        chart_snapshot_service.options,
+                    )
+            self._stamp_pd_in_chart_direction(
+                pd_chart, direct, signed_arc, display_frame,
+            )
+            event_overlay = pd_in_chart.attach_selected_angle_event_overlay(
+                pd_chart,
+                radix,
+                exact_event,
+                signed_arc,
+                chart_snapshot_service.options,
+                outer_promissor=outer_promissor,
+            )
+            direction_state = pd_in_chart.attach_pd_direction_state(
+                pd_chart,
+                exact_event,
+                signed_arc,
+                event_label=(exact_event or {}).get("eventLabel"),
+            )
             display_dt: Optional[tuple[int, int, int, int, int, int]] = None
             event_when = self._timed_chart_when_iso(
                 parent_document_id=parent_radix_id,
@@ -10358,7 +12248,6 @@ class WorkspaceService:
                     int(pt.year), int(pt.month), int(pt.day),
                     int(pt.hour), int(pt.minute), int(pt.second),
                 )
-            label = str(session_label or "").strip() or mtexts.txts.get("PDsInChart", "PDs in Chart")
             document = self._controller.open_document(
                 pd_chart,
                 radix=radix,
@@ -10393,6 +12282,15 @@ class WorkspaceService:
                         "initialDisplayDatetime": tuple(display_dt),
                         "hasEventDatetime": bool(event_when),
                         "directionEvent": exact_event,
+                        "eventLabel": (exact_event or {}).get("eventLabel", label),
+                        "eventId": (
+                            direction_state.get("eventId")
+                            if isinstance(direction_state, dict)
+                            else None
+                        ),
+                        "displayFrame": display_frame["displayFrame"],
+                        "movingRole": display_frame["movingRole"],
+                        "fixedRole": display_frame["fixedRole"],
                     }
                     # Targeted option refresh: PD projection controls rebuild
                     # only open PD tabs, never every radix/supplementary chart.
@@ -10411,17 +12309,34 @@ class WorkspaceService:
             }, document.document_id)
 
     @staticmethod
-    def _stamp_pd_in_chart_direction(pd_chart, direct: bool, projection_arc: float) -> None:
+    def _stamp_pd_in_chart_direction(
+        pd_chart,
+        direct: bool,
+        projection_arc: float,
+        display_frame: dict,
+    ) -> None:
         """Keep semantic D/C separate from the chosen on-wheel orientation."""
         pd_chart._pd_direction_direct = bool(direct)
-        pd_chart._pd_projection_direct = float(projection_arc) >= 0.0
-        # Existing consumers read _pd_direct as the row's D/C marker.  The
-        # lower-level calculator cannot know that a presentation orientation
-        # inverted its input arc, so correct the workspace chart here.
+        pd_chart._pd_projection_direct = float(
+            getattr(pd_chart, "_pd_frame_arc_signed", projection_arc)
+        ) >= 0.0
+        # Existing consumers read _pd_direct as the selected row's D/C marker;
+        # keep that semantic truth independent of any compatibility frame used
+        # by a projection family.
         pd_chart._pd_direct = bool(direct)
+        pd_chart._pd_display_frame = str(display_frame["displayFrame"])
+        pd_chart._pd_moving_role = str(display_frame["movingRole"])
+        pd_chart._pd_fixed_role = str(display_frame["fixedRole"])
 
     @staticmethod
-    def _pd_in_chart_exact_event(event, *, direct: bool, arc: float, event_jd=None):
+    def _pd_in_chart_exact_event(
+        event,
+        *,
+        direct: bool,
+        arc: float,
+        event_jd=None,
+        event_label=None,
+    ):
         if not isinstance(event, dict):
             return None
         exact = dict(event)
@@ -10429,23 +12344,53 @@ class WorkspaceService:
             exact["sig"] = exact.get("sigPoint")
         exact["direct"] = bool(direct)
         exact["arc"] = abs(float(arc))
-        if event_jd is not None:
-            exact["time"] = float(event_jd)
+        exact_jd = event_jd
+        if exact_jd is None:
+            exact_jd = exact.get("jd", exact.get("time"))
+        if exact_jd is not None:
+            exact["time"] = float(exact_jd)
+        retained_label = event_label if event_label is not None else exact.get("eventLabel")
+        exact["eventLabel"] = str(retained_label or "").strip()
         return exact
 
     @staticmethod
     def _pd_in_chart_projection_arc(arc: float, direct: bool, *, mode="celestial") -> float:
-        signed_arc = abs(float(arc)) if direct else -abs(float(arc))
-        # The original Morinus calculator sends +arc for direct and -arc for
-        # converse through both celestial and terrestrial branches.  Aries's
-        # celestial outer-promissor convention reverses only that celestial
-        # wheel projection; terrestrial charts already draw the moving
-        # promissors against the fixed radix frame and must retain D=+ / C=-.
-        if mode == "celestial" and bool(
-            getattr(chart_snapshot_service.options, "pdinchartreverse", True)
-        ):
-            signed_arc = -signed_arc
-        return signed_arc
+        del mode  # Ring presentation must never alter the direction's sign.
+        return abs(float(arc)) if direct else -abs(float(arc))
+
+    @staticmethod
+    def _pd_in_chart_display_frame(mode: str, direct: bool) -> dict:
+        """Return the one canonical role frame for a PD-in-Chart rebuild.
+
+        The persisted true/default setting keeps the radix fixed and moves
+        promissors for both Direct and Converse.  Its false value requests the
+        traditional significator-moving frame, but only for celestial Converse
+        directions; Direct and every terrestrial chart remain fixed-radix.
+        """
+        traditional_converse = bool(
+            str(mode) == "celestial"
+            and not bool(direct)
+            and not bool(
+                getattr(
+                    chart_snapshot_service.options,
+                    "pdinchartreverse",
+                    True,
+                )
+            )
+        )
+        if traditional_converse:
+            return {
+                "displayFrame": "traditional-converse",
+                "outerPromissor": False,
+                "movingRole": "significator",
+                "fixedRole": "promissor",
+            }
+        return {
+            "displayFrame": "fixed-radix",
+            "outerPromissor": True,
+            "movingRole": "promissor",
+            "fixedRole": "significator",
+        }
 
     def _build_pd_in_chart_for_cursor(self, session: dict, when: datetime.datetime, *, initial=False):
         from engine import pd_in_chart
@@ -10467,29 +12412,72 @@ class WorkspaceService:
         projection_arc = self._pd_in_chart_projection_arc(
             arc, direct, mode=mode,
         )
+        display_frame = self._pd_in_chart_display_frame(mode, direct)
+        outer_promissor = bool(display_frame["outerPromissor"])
         pd_chart = pd_in_chart.compute_pd_chart(
             radix,
             projection_arc,
             chart_snapshot_service.options,
             terrestrial=mode == "terrestrial",
+            outer_promissor=outer_promissor,
         )
         exact_event = binding.get("directionEvent")
         if isinstance(exact_event, dict):
             exact_event = dict(exact_event)
-            exact_event["time"] = (
-                float(binding["exactEventJd"])
-                if initial and binding.get("exactEventJd") is not None
-                else pd_in_chart.event_jd_for_display_datetime(radix, when)
-            )
+            # This object describes the selected row's perfection, not the
+            # movable chart cursor.  Keep its full-precision JD immutable while
+            # stepping; the cursor already lives in display_datetime/currentArc.
+            if binding.get("exactEventJd") is not None:
+                exact_event["time"] = float(binding["exactEventJd"])
         pd_chart._pd_exact_event = exact_event
-        if mode == "celestial" and bool(
-            getattr(chart_snapshot_service.options, "pdinchartreverse", True)
-        ):
-            pd_in_chart.apply_exact_planet_to_angle_projection(
-                pd_chart, radix, exact_event, projection_arc,
+        if mode == "celestial":
+            row_native = pd_in_chart.apply_selected_ecliptic_foot_projection(
+                pd_chart,
+                radix,
+                exact_event,
+                projection_arc,
                 chart_snapshot_service.options,
+                outer_promissor=outer_promissor,
             )
-        self._stamp_pd_in_chart_direction(pd_chart, direct, projection_arc)
+            if (
+                outer_promissor
+                and not row_native
+                and getattr(
+                    chart_snapshot_service.options,
+                    "pdincharttyp",
+                    None,
+                ) == pd_in_chart.FROMZODIACALPOS
+            ):
+                pd_in_chart.apply_exact_planet_to_angle_projection(
+                    pd_chart,
+                    radix,
+                    exact_event,
+                    projection_arc,
+                    chart_snapshot_service.options,
+                )
+        self._stamp_pd_in_chart_direction(
+            pd_chart, direct, projection_arc, display_frame,
+        )
+        event_overlay = pd_in_chart.attach_selected_angle_event_overlay(
+            pd_chart,
+            radix,
+            exact_event,
+            projection_arc,
+            chart_snapshot_service.options,
+            outer_promissor=outer_promissor,
+        )
+        direction_state = pd_in_chart.attach_pd_direction_state(
+            pd_chart,
+            exact_event,
+            projection_arc,
+            event_label=binding.get("eventLabel"),
+        )
+        binding["displayFrame"] = display_frame["displayFrame"]
+        binding["movingRole"] = display_frame["movingRole"]
+        binding["fixedRole"] = display_frame["fixedRole"]
+        if isinstance(direction_state, dict):
+            binding["eventId"] = direction_state.get("eventId")
+        session["pd_in_chart_binding"] = binding
         return pd_chart, float(arc)
 
     def _navigate_pd_in_chart(self, session: dict, cs, unit: str, delta: int) -> bool:
@@ -10571,6 +12559,7 @@ class WorkspaceService:
         directions_document_id: str,
         when_iso: str,
         session_label: Optional[str] = None,
+        symbolic_event_jd: Optional[float] = None,
     ) -> dict:
         """Open/Step Secondary Chart from the progression-popup row menu.
 
@@ -10579,14 +12568,64 @@ class WorkspaceService:
         Minor/Tertiary list variants deliberately keep that SECONDARY method, so
         this route always opens the normal secondary-progression child.
         """
+        launch_when_iso = str(when_iso or "")
+        binding_payload = None
+        resolved_session_label = session_label
         with self._lock:
             parent_radix_id = self._timed_chart_parent_document_id(directions_document_id)
+            if symbolic_event_jd is not None:
+                radix = self._parent_radix(parent_radix_id)
+                radix_options = getattr(radix, "options", None) or chart_snapshot_service.options
+                try:
+                    symbolic_jd = float(symbolic_event_jd)
+                    radix_jd = float(radix.time.jd)
+                except (TypeError, ValueError, AttributeError) as exc:
+                    raise ValueError("invalid Aspect List symbolic perfection date") from exc
+                use_converse = bool(
+                    symbolic_jd < radix_jd
+                    and getattr(
+                        options_service.options,
+                        "aspectlist_prebirth_secondary_converse",
+                        True,
+                    )
+                )
+                signified = symbolic_time.signified_datetime_for_progressed_jd(
+                    radix,
+                    symbolic_jd,
+                    method=posfordate.SECONDARY,
+                    day_type=getattr(
+                        radix_options,
+                        "progression_day_type",
+                        posfordate.PROGRESSION_DAY_TYPE_Q2,
+                    ),
+                    converse=use_converse,
+                )
+                if signified is None:
+                    raise ValueError(
+                        "Aspect List symbolic perfection date could not be projected"
+                    )
+                launch_when_iso = datetime.datetime(
+                    *[int(value) for value in signified[:6]]
+                ).isoformat()
+                if use_converse:
+                    binding_payload = {
+                        "feature_kind": "secondary",
+                        "retained_state": {
+                            "progression_direction": "converse",
+                        },
+                    }
+                    if not resolved_session_label:
+                        resolved_session_label = "%s %s" % (
+                            mtexts.txts.get("Converse", "Converse"),
+                            mtexts.txts.get("SecondaryDirs", "Secondary Progressions"),
+                        )
         return self.open_document(
             kind="supplementary",
             parent_document_id=parent_radix_id,
             feature_kind="secondary-progression",
-            when_iso=when_iso,
-            session_label=session_label,
+            when_iso=launch_when_iso,
+            binding_payload=binding_payload,
+            session_label=resolved_session_label,
         )
 
     def open_astrolabe(self, parent_radix_id: str) -> dict:
@@ -10636,6 +12675,52 @@ class WorkspaceService:
                 "activeDocumentId": self._controller.active_document_id(),
                 "documents": self._tree_payload(),
             }
+
+    @staticmethod
+    def _normalized_astrolabe_view_state(value: Any) -> dict[str, Any]:
+        """Normalize the complete per-radix Astrolabe presentation state.
+
+        The rete arc is forward-only, matching the projection endpoint and the
+        primary-direction stepper. Layer flags remain strict booleans so a
+        malformed client payload cannot silently enable a display layer.
+        """
+        state = dict(_ASTROLABE_VIEW_DEFAULTS)
+        if not isinstance(value, dict):
+            return state
+        try:
+            delta = float(value.get("deltaDeg", state["deltaDeg"]))
+        except (TypeError, ValueError):
+            delta = state["deltaDeg"]
+        if math.isfinite(delta):
+            state["deltaDeg"] = max(0.0, delta)
+        for key in _ASTROLABE_VIEW_BOOLEAN_KEYS:
+            candidate = value.get(key)
+            if isinstance(candidate, bool):
+                state[key] = candidate
+        return state
+
+    def astrolabe_view_state_for_document(self, document_id: str) -> dict:
+        """Return retained Astrolabe state for the view document's radix."""
+        with self._lock:
+            parent_id = self._timed_chart_parent_document_id(document_id)
+            radix = self._parent_radix(parent_id)
+            stored = self._view_state_for_radix("astrolabe", radix)
+            return {"state": self._normalized_astrolabe_view_state(stored)}
+
+    def store_astrolabe_view_state_for_document(
+        self,
+        document_id: str,
+        state: dict,
+    ) -> dict:
+        """Persist one canonical Astrolabe view state for this radix."""
+        if not isinstance(state, dict):
+            raise ValueError("state must be an object")
+        with self._lock:
+            parent_id = self._timed_chart_parent_document_id(document_id)
+            radix = self._parent_radix(parent_id)
+            normalized = self._normalized_astrolabe_view_state(state)
+            self._store_view_state_for_radix("astrolabe", radix, normalized)
+        return {"ok": True, "state": normalized}
 
     def open_astrolog_sphere(self, parent_radix_id: str) -> dict:
         """Open the Astrolog-style chart sphere as a view-only child.
@@ -11347,6 +13432,9 @@ class WorkspaceService:
 
     def close_document(self, document_id: str, cascade: bool = True) -> dict:
         with self._lock:
+            affected_branch_ids = chart_rings.branch_document_ids(
+                self._controller.documents(), str(document_id or ""),
+            )
             preflight = self._controller.close_preflight(document_id, cascade=cascade)
             scratch_targets: list[tuple[str, str]] = []
             for close_id in preflight.closed_ids:
@@ -11364,18 +13452,31 @@ class WorkspaceService:
             result = self._controller.close_document(document_id, cascade=cascade)
             for source_name, close_id in scratch_targets:
                 notes_service.discard_scratch_note(source_name, close_id)
+            remaining_affected_ids = [
+                doc_id for doc_id in affected_branch_ids
+                if self._controller.session(doc_id) is not None
+            ]
+            if remaining_affected_ids:
+                self._reconcile_multiwheel_state(remaining_affected_ids[0])
             self._manager.broadcast_threadsafe({
                 "type": "documents.changed",
                 "tree": self._tree_payload(),
             })
             self._save_restore_open_charts_state()
-            return {
+            payload = {
                 "closedIds": list(result.closed_ids),
                 "cascaded": bool(result.cascaded),
                 "promptWorthyIds": list(result.prompt_worthy_ids),
                 "nextActiveId": result.next_active_id,
+                "activeDocumentId": self._controller.active_document_id(),
+                "snapshotInvalidatedIds": remaining_affected_ids,
                 "documents": self._tree_payload(),
             }
+            active_id = self._controller.active_document_id()
+            if active_id in remaining_affected_ids and self._ring_chart_for_document(active_id) is not None:
+                self._attach_full_snapshot(payload, active_id, overlay_render_mode="full")
+                self._broadcast_session_changed(active_id, "display-overlay")
+            return payload
 
     def move_document(self, document_id: str, before_id: Optional[str]) -> dict:
         """Reorder a sibling document via the controller. ``before_id`` None means
@@ -11384,15 +13485,30 @@ class WorkspaceService:
         synchronously for the caller."""
         with self._lock:
             moved = self._controller.move_document(document_id, before_id)
+            refresh_result: dict = {}
+            refresh_id: Optional[str] = None
+            affected_ids: list[str] = []
+            if moved:
+                refresh_result, refresh_id, affected_ids = (
+                    self._multiwheel_tree_order_refresh(document_id)
+                )
             self._manager.broadcast_threadsafe({
                 "type": "documents.changed",
                 "tree": self._tree_payload(),
             })
-            return {
+            if refresh_id is not None:
+                self._broadcast_session_changed(
+                    refresh_id,
+                    "display-overlay",
+                    rebuilt_child_ids=affected_ids,
+                )
+            result = {
                 "moved": bool(moved),
                 "documents": self._tree_payload(),
                 "activeDocumentId": self._controller.active_document_id(),
             }
+            result.update(refresh_result)
+            return result
 
     def drag_context(self, document_id: str) -> dict:
         """Daemon-owned DnD context for a workspace document row.
@@ -11473,11 +13589,29 @@ class WorkspaceService:
                 applied = False
 
             if applied:
+                refresh_result: dict = {}
+                refresh_id: Optional[str] = None
+                refresh_ids: list[str] = []
+                if kind == "reorder":
+                    refresh_result, refresh_id, refresh_ids = (
+                        self._multiwheel_tree_order_refresh(source_document_id)
+                    )
                 self._manager.broadcast_threadsafe({
                     "type": "documents.changed",
                     "tree": self._tree_payload(),
                 })
-            return self._move_intent_result(applied, source_document_id, intent, affected_ids)
+                if refresh_id is not None:
+                    self._broadcast_session_changed(
+                        refresh_id,
+                        "display-overlay",
+                        rebuilt_child_ids=refresh_ids,
+                    )
+            result = self._move_intent_result(
+                applied, source_document_id, intent, affected_ids,
+            )
+            if applied and kind == "reorder":
+                result.update(refresh_result)
+            return result
 
     def apply_drag_conversion(
         self,
@@ -11596,6 +13730,9 @@ class WorkspaceService:
         session['relationship_participant_states'] = [True] * len(participants)
         session['relationship_participant_refs'] = self._capture_participant_refs(participants)
         session['composite_variant'] = None
+        session['relationship_multiwheel_enabled'] = bool(
+            3 <= len(participants) <= chart_rings.CHART_RING_COUNT_MAX
+        )
         session['option_refresh_handler'] = self._refresh_relationship_session_for_options
         self._ensure_synastry_composite_variants(session, center_chart, partner_chart)
         self._update_document_title(session, label, self._chart_label(center_chart))
@@ -11924,6 +14061,22 @@ class WorkspaceService:
             return False, []
 
         source_session["parent_document_id"] = target_document_id
+        source_cs = source_session.get("chart_session")
+        if (
+            source_cs is not None
+            and source_session.get("supplementary_feature_kind") is None
+            and source_session.get("compound_kind") is None
+        ):
+            # A plain chart attached beneath another plain chart is a named
+            # hierarchical synastry child. Keep the source document/session
+            # intact, but show its immediate parent as the comparison anchor.
+            source_session["comparison_chart"] = (
+                self._controller._comparison_chart_for_child_session(
+                    source_session,
+                    target_session,
+                )
+            )
+            source_cs.view_mode = chart_session.ChartSession.COMPOUND
         affected_ids = [source_document_id]
         if prebuilt is not None:
             base_chart, source_dt, result = prebuilt
@@ -12058,6 +14211,23 @@ class WorkspaceService:
             seed = self._controller.editor_seed(document_id)
         if seed is None:
             return {"usesSessionCursor": False}
+        fields = seed.get("fields")
+        if isinstance(fields, dict):
+            context = self.note_record_context(document_id)
+            legacy = str(fields.get("notes") or "")
+            notes_service.merge_legacy_note_state(
+                str(context.get("sourceName") or ""),
+                legacy,
+                record_id=str(context.get("recordId") or "").strip() or None,
+                document_id=str(context.get("documentId") or "").strip() or None,
+                scratch=bool(context.get("scratch")),
+            )
+            fields["notes"] = str(notes_service.read_note_state(
+                str(context.get("sourceName") or ""),
+                record_id=str(context.get("recordId") or "").strip() or None,
+                document_id=str(context.get("documentId") or "").strip() or None,
+                scratch=bool(context.get("scratch")),
+            ).get("content") or "")
         return seed
 
     def editor_radix_seed(self, document_id: str) -> dict:
@@ -12086,8 +14256,28 @@ class WorkspaceService:
                 raise ValueError("document has no chart to edit")
             chart_id = str(session.get('chart_id') or getattr(chrt, 'chart_id', '') or '')
             record = chartfile.chart_to_dict(chrt, chart_id=chart_id or None)
+            context = self.note_record_context(document_id)
+            notes_service.merge_legacy_note_state(
+                str(context.get("sourceName") or record.get("name") or ""),
+                str(record.get("notes") or ""),
+                record_id=str(context.get("recordId") or chart_id).strip() or None,
+                document_id=str(context.get("documentId") or document_id).strip() or None,
+                scratch=bool(context.get("scratch")),
+            )
+            record["notes"] = ""
+            try:
+                chrt.notes = ""
+            except Exception:
+                pass
+            fields = _editor.record_to_editor_fields(record)
+            fields["notes"] = str(notes_service.read_note_state(
+                str(context.get("sourceName") or record.get("name") or ""),
+                record_id=str(context.get("recordId") or chart_id).strip() or None,
+                document_id=str(context.get("documentId") or document_id).strip() or None,
+                scratch=bool(context.get("scratch")),
+            ).get("content") or "")
             return {
-                "fields": _editor.record_to_editor_fields(record),
+                "fields": fields,
                 "collection": str(session.get('fpath') or '').strip(),
                 "usesLiveDocument": True,
             }
@@ -12101,11 +14291,22 @@ class WorkspaceService:
             session = self._controller.session(document_id)
             if session is None:
                 raise ValueError(f"unknown document {document_id!r}")
-            ok = self._controller.apply_editor_to_cursor(document_id, fields)
+            context = self.note_record_context(document_id)
+            markdown = str(fields.get("notes") or "")
+            prepared_fields = dict(fields)
+            prepared_fields["notes"] = ""
+            ok = self._controller.apply_editor_to_cursor(document_id, prepared_fields)
         if not ok:
             raise ValueError(
                 f"document {document_id!r} is not a session-cursor editor target"
             )
+        notes_service.write_note_state(
+            str(context.get("sourceName") or ""),
+            markdown,
+            record_id=str(context.get("recordId") or "").strip() or None,
+            document_id=str(context.get("documentId") or "").strip() or None,
+            scratch=bool(context.get("scratch")),
+        )
         # The tree title/dirty marker shifted (the cursor chart was re-derived);
         # broadcast the new document tree alongside the controller's own
         # session.changed so every client repaints the edited child + descendants.
@@ -12227,6 +14428,215 @@ class WorkspaceService:
     # "Resolved: return/progression routing".
     _INTRINSIC_FEATURE_KINDS = {None, 'transits'}
 
+    _MULTIWHEEL_NAVIGATION_RETAINED_KEYS = {
+        'solar_year_offset',
+        'solar_degree_offset',
+        'lunar_cycle_offset',
+        'cycle_offset',
+        'planetary_step_anchor_datetime',
+        'planetary_step_delta',
+        'synodic_event_datetime',
+        'raw_synodic_datetime',
+        'synodic_event',
+        'symbolic_cursor_jd',
+    }
+
+    @staticmethod
+    def _multiwheel_rebased_binding(
+        binding_payload: Optional[dict[str, Any]],
+        target: datetime.datetime,
+    ) -> Optional[dict[str, Any]]:
+        """Keep technique configuration while discarding its private cursor.
+
+        Return/cycle offsets are navigation state, not part of a chart's
+        astrological definition. A following ring must resolve itself from the
+        branch cursor instead of applying the offset it accumulated before the
+        multi-wheel became coherent.
+        """
+        if not isinstance(binding_payload, dict):
+            return binding_payload
+        rebound = copy.deepcopy(binding_payload)
+        retained = dict(rebound.get('retained_state') or {})
+        for key in WorkspaceService._MULTIWHEEL_NAVIGATION_RETAINED_KEYS:
+            retained.pop(key, None)
+        target_tuple = _datetime_to_display(target)
+        retained['display_datetime'] = target_tuple
+        retained['symbolic_cursor_datetime'] = target_tuple
+        rebound['retained_state'] = retained
+        rebound['parent_source_datetime'] = target_tuple
+        return rebound
+
+    @staticmethod
+    def _multiwheel_cursor_seed(
+        owner: dict,
+        selected_session: dict,
+        moving_sessions: list[dict],
+    ) -> Optional[datetime.datetime]:
+        stored = _display_to_datetime(owner.get('multiwheel_cursor_datetime'))
+        if stored is not None:
+            return stored
+        candidates = [selected_session, *reversed(moving_sessions)]
+        for candidate in candidates:
+            cs = candidate.get('chart_session') if candidate is not None else None
+            seed = _display_to_datetime(getattr(cs, 'display_datetime', None))
+            if seed is not None:
+                stamp = _datetime_to_display(seed)
+                owner['multiwheel_cursor_datetime'] = stamp
+                owner.setdefault('multiwheel_initial_cursor_datetime', stamp)
+                return seed
+        return None
+
+    @staticmethod
+    def _multiwheel_ring_follows_cursor(session: Optional[dict]) -> bool:
+        """Whether a ring has a declared canonical temporal re-deriver.
+
+        Static chart transforms such as relocations and harmonics remain valid
+        visual reference rings, but they do not become temporal techniques just
+        because a return/progression in the same branch is stepped.
+        """
+        if not isinstance(session, dict):
+            return False
+        if session.get('launcher_kind') == 'pd_in_chart':
+            return True
+        feature_kind = session.get('supplementary_feature_kind')
+        if feature_kind is None and session.get('launcher_kind') == 'solar_average':
+            feature_kind = 'solar_average'
+        return FEATURE_TO_PUBLIC_KIND.get(feature_kind) is not None
+
+    def _quantize_fixed_multiwheel_cursor(
+        self,
+        owner: dict,
+        cs,
+        cursor: datetime.datetime,
+        key: str,
+        *,
+        shift: bool,
+        alt: bool,
+        repeat: int,
+    ) -> Optional[datetime.datetime]:
+        """Apply the fixed radix tab's grammar without moving the radix."""
+        normalized = str(key or '').strip().lower()
+        if normalized == 'space':
+            if shift or alt:
+                return None
+            return (
+                _display_to_datetime(owner.get('multiwheel_initial_cursor_datetime'))
+                or cursor
+            )
+        if normalized not in self._ARROW_KEYCODES:
+            raise ValueError(f"unsupported navigate key {key!r}")
+        radix = getattr(cs, 'radix', None) or getattr(cs, 'chart', None)
+        if radix is None:
+            return None
+        direction = -1 if normalized in ('left', 'down') else 1
+        if normalized in ('left', 'right'):
+            unit = cs._get_navigation_unit(shift_down=shift, alt_down=alt)
+            if unit is None:
+                return None
+            return cursor_steppers.step_source_datetime(
+                radix, cursor, unit, direction * repeat,
+            )
+        if shift and not alt:
+            source_time = getattr(radix, 'time', None)
+            if source_time is None:
+                return None
+            try:
+                cursor_time = export_chart_json.chart_mod.Time(
+                    cursor.year, cursor.month, cursor.day,
+                    cursor.hour, cursor.minute, cursor.second,
+                    bool(getattr(source_time, 'bc', False)),
+                    getattr(source_time, 'cal', export_chart_json.chart_mod.Time.GREGORIAN),
+                    getattr(source_time, 'zt', export_chart_json.chart_mod.Time.ZONE),
+                    bool(getattr(source_time, 'plus', True)),
+                    int(getattr(source_time, 'zh', 0) or 0),
+                    int(getattr(source_time, 'zm', 0) or 0),
+                    bool(getattr(source_time, 'daylightsaving', False)),
+                    radix.place,
+                    False,
+                    tzid=getattr(source_time, 'tzid', ''),
+                    tzauto=bool(getattr(source_time, 'tzauto', False)),
+                )
+                phase_time = moonphasejump.jump_to_classical_phase(
+                    cursor_time, radix.place, direction,
+                )
+            except Exception:
+                return None
+            if phase_time is None:
+                return None
+            try:
+                return datetime.datetime(
+                    int(getattr(phase_time, 'origyear', phase_time.year)),
+                    int(getattr(phase_time, 'origmonth', phase_time.month)),
+                    int(getattr(phase_time, 'origday', phase_time.day)),
+                    int(phase_time.hour), int(phase_time.minute), int(phase_time.second),
+                )
+            except (TypeError, ValueError, OverflowError):
+                return None
+        return cursor_steppers.step_source_datetime(
+            radix, cursor, 'week', direction * repeat,
+        )
+
+    def _rederive_multiwheel_ring_at_cursor(
+        self,
+        session: dict,
+        target: datetime.datetime,
+    ) -> bool:
+        """Translate one moving layer from the shared Antikythera cursor."""
+        cs = session.get('chart_session')
+        if cs is None:
+            return False
+        target_tuple = _datetime_to_display(target)
+        if session.get('launcher_kind') == 'pd_in_chart':
+            built = self._build_pd_in_chart_for_cursor(session, target)
+            if built is None:
+                return False
+            derived_chart, arc = built
+            pd_binding = dict(session.get('pd_in_chart_binding') or {})
+            pd_binding['currentArc'] = arc
+            session['pd_in_chart_binding'] = pd_binding
+        else:
+            feature_kind = session.get('supplementary_feature_kind')
+            if feature_kind is None and session.get('launcher_kind') == 'solar_average':
+                feature_kind = 'solar_average'
+            public_kind = FEATURE_TO_PUBLIC_KIND.get(feature_kind)
+            radix = getattr(cs, 'radix', None)
+            if public_kind is None or radix is None:
+                return False
+            binding_payload = self._multiwheel_rebased_binding(
+                session.get('supplementary_binding'), target,
+            )
+            built = supplementary_service.build_result(
+                radix=radix,
+                kind=public_kind,
+                when=target,
+                binding_payload=binding_payload,
+                planet_type=session.get('planetary_return_type'),
+            )
+            derived_chart = built.get('chart')
+            binding = built.get('binding')
+            if derived_chart is None or binding is None:
+                return False
+            binding.parent_source_datetime = target_tuple
+            self._controller._apply_supplementary_binding(session, binding)
+            session['parent_source_datetime'] = target_tuple
+
+        current_chart = getattr(cs, 'chart', None)
+        if current_chart is not None:
+            derived_chart.name = getattr(current_chart, 'name', derived_chart.name)
+            derived_chart.male = getattr(current_chart, 'male', derived_chart.male)
+            derived_chart.notes = getattr(current_chart, 'notes', '')
+        session['chart'] = derived_chart
+        parent_session = self._controller.session(session.get('parent_document_id'))
+        session['comparison_chart'] = self._controller._comparison_chart_for_child_session(
+            session, parent_session,
+        )
+        cs.change_chart(
+            derived_chart,
+            display_datetime=target_tuple,
+            change_reason='step',
+        )
+        return True
+
     def navigate_key(
         self,
         document_id: str,
@@ -12236,6 +14646,249 @@ class WorkspaceService:
         alt: bool = False,
         repeat: int = 1,
         include_perf: bool = False,
+    ) -> dict:
+        """Navigate one tab, or the moving charts in its multi-wheel branch.
+
+        The selected tab still supplies the visible navigation controls and key
+        grammar. The same intent is then applied once to each moving ring
+        session and only the final, fully coordinated multi-wheel snapshot is
+        serialized. A radix branch owner is the fixed reference ring and never
+        advances with the derived/timed children.
+        """
+        command_started_at = time.perf_counter()
+        with self._lock:
+            session = self._controller.session(document_id)
+            if session is None:
+                raise ValueError(f"unknown document {document_id!r}")
+            ring_ids = self._multiwheel_participant_ids(document_id)
+        if len(ring_ids) < 3:
+            return self._navigate_key_single(
+                document_id,
+                key,
+                shift=shift,
+                alt=alt,
+                repeat=repeat,
+                include_perf=include_perf,
+            )
+
+        fixed_ids: list[str] = []
+        with self._lock:
+            owner_id, owner = self._ring_owner(document_id)
+            fixed_ids = [
+                ring_id
+                for ring_id in ring_ids
+                if (
+                    ring_id == owner_id
+                    or not self._multiwheel_ring_follows_cursor(
+                        self._controller.session(ring_id)
+                    )
+                )
+            ]
+        step_ids = [ring_id for ring_id in ring_ids if ring_id not in fixed_ids]
+
+        buffered_events: list[SessionChangedEvent] = []
+        selected: Optional[dict] = None
+        canonical_target: Optional[datetime.datetime] = None
+        captured: dict[str, dict[str, Any]] = {}
+        owner_cursor_before = None
+        owner_initial_before = None
+        try:
+            with self._lock:
+                owner_id, owner = self._ring_owner(document_id)
+                if owner is None:
+                    raise ValueError(f"unknown ring owner {owner_id!r}")
+                selected_session = self._controller.session(document_id)
+                if selected_session is None:
+                    raise ValueError(f"unknown document {document_id!r}")
+                owner_cursor_before = owner.get('multiwheel_cursor_datetime')
+                owner_initial_before = owner.get('multiwheel_initial_cursor_datetime')
+                moving_sessions = [
+                    ring_session
+                    for ring_id in step_ids
+                    if (ring_session := self._controller.session(ring_id)) is not None
+                ]
+                seed_session = (
+                    selected_session
+                    if document_id in step_ids
+                    else moving_sessions[-1] if moving_sessions else selected_session
+                )
+                branch_cursor = self._multiwheel_cursor_seed(
+                    owner, seed_session, moving_sessions,
+                )
+                if branch_cursor is None:
+                    raise ValueError("multi-wheel branch has no time cursor")
+                for ring_id in step_ids:
+                    ring_session = self._controller.session(ring_id)
+                    ring_cs = ring_session.get('chart_session') if ring_session else None
+                    if ring_session is None or ring_cs is None:
+                        raise ValueError(f"multi-wheel ring {ring_id!r} has no chart session")
+                    captured[ring_id] = {
+                        'session_chart': ring_session.get('chart'),
+                        'supplementary_binding': copy.deepcopy(
+                            ring_session.get('supplementary_binding')
+                        ),
+                        'parent_source_datetime': ring_session.get('parent_source_datetime'),
+                        'comparison_chart': ring_session.get('comparison_chart'),
+                        'pd_in_chart_binding': copy.deepcopy(
+                            ring_session.get('pd_in_chart_binding')
+                        ),
+                        'dirty': ring_session.get('dirty'),
+                        'chart': ring_cs.chart,
+                        'display_datetime': ring_cs.display_datetime,
+                        'cursor_jd': ring_cs.cursor_jd,
+                        'last_change_reason': ring_cs._last_change_reason,
+                        'exact_hit_metrics': copy.deepcopy(ring_cs._exact_hit_metrics),
+                    }
+                self._controller.set_event_listener(buffered_events.append)
+                with self._controller.suspend_child_refresh():
+                    if document_id in fixed_ids:
+                        selected_cs = selected_session.get('chart_session')
+                        canonical_target = self._quantize_fixed_multiwheel_cursor(
+                            owner,
+                            selected_cs,
+                            branch_cursor,
+                            key,
+                            shift=shift,
+                            alt=alt,
+                            repeat=repeat,
+                        )
+                        moved = (
+                            canonical_target is not None
+                            and canonical_target != branch_cursor
+                        )
+                        selected = {
+                            'documentId': document_id,
+                            'stepped': moved,
+                            'appliedSteps': repeat if moved else 0,
+                            'displayDatetime': _display_tuple_to_iso(
+                                _datetime_to_display(canonical_target)
+                                if canonical_target is not None
+                                else getattr(selected_cs, 'display_datetime', None)
+                            ),
+                        }
+                    else:
+                        selected = self._navigate_key_single(
+                            document_id,
+                            key,
+                            shift=shift,
+                            alt=alt,
+                            repeat=repeat,
+                            include_perf=False,
+                            attach_snapshot=False,
+                        )
+                        selected_cs = selected_session.get('chart_session')
+                        canonical_target = _display_to_datetime(
+                            getattr(selected_cs, 'display_datetime', None)
+                        )
+                        moved = bool(selected.get('stepped'))
+
+                    if moved:
+                        if canonical_target is None:
+                            raise RuntimeError("selected multi-wheel quantizer returned no cursor")
+                        for ring_id in step_ids:
+                            if ring_id == document_id:
+                                continue
+                            ring_session = self._controller.session(ring_id)
+                            if not self._rederive_multiwheel_ring_at_cursor(
+                                ring_session, canonical_target,
+                            ):
+                                raise RuntimeError(
+                                    f"multi-wheel ring {ring_id!r} could not be re-derived"
+                                )
+                        owner['multiwheel_cursor_datetime'] = _datetime_to_display(
+                            canonical_target
+                        )
+        except Exception:
+            # Coherence is atomic: if one deriver fails, restore every moving
+            # layer and publish none of the intermediate session events.
+            with self._lock:
+                for ring_id, state in captured.items():
+                    ring_session = self._controller.session(ring_id)
+                    ring_cs = ring_session.get('chart_session') if ring_session else None
+                    if ring_session is None or ring_cs is None:
+                        continue
+                    ring_session['chart'] = state['session_chart']
+                    ring_session['supplementary_binding'] = state['supplementary_binding']
+                    ring_session['parent_source_datetime'] = state['parent_source_datetime']
+                    ring_session['comparison_chart'] = state['comparison_chart']
+                    ring_session['pd_in_chart_binding'] = state['pd_in_chart_binding']
+                    ring_session['dirty'] = state['dirty']
+                    ring_cs.chart = state['chart']
+                    ring_cs.display_datetime = state['display_datetime']
+                    ring_cs.cursor_jd = state['cursor_jd']
+                    ring_cs._last_change_reason = state['last_change_reason']
+                    ring_cs._exact_hit_metrics = state['exact_hit_metrics']
+                    self._controller._sync_runtime_title(ring_session)
+                if owner is not None:
+                    if owner_cursor_before is None:
+                        owner.pop('multiwheel_cursor_datetime', None)
+                    else:
+                        owner['multiwheel_cursor_datetime'] = owner_cursor_before
+                    if owner_initial_before is None:
+                        owner.pop('multiwheel_initial_cursor_datetime', None)
+                    else:
+                        owner['multiwheel_initial_cursor_datetime'] = owner_initial_before
+            raise
+        finally:
+            self._controller.set_event_listener(self._on_controller_event)
+
+        if selected is None:
+            with self._lock:
+                selected_session = self._controller.session(document_id)
+                selected_cs = (
+                    selected_session.get('chart_session')
+                    if selected_session is not None
+                    else None
+                )
+            selected = {
+                "documentId": document_id,
+                "stepped": False,
+                "appliedSteps": 0,
+                "displayDatetime": _display_tuple_to_iso(
+                    getattr(selected_cs, 'display_datetime', None)
+                ),
+            }
+        stepped = bool(selected.get("stepped"))
+        result = {
+            **selected,
+            "stepped": stepped,
+            "coordinatedDocumentIds": step_ids,
+            "fixedDocumentIds": fixed_ids,
+        }
+        if stepped:
+            result["snapshot"] = self.document_snapshot(
+                document_id,
+                overlay_render_mode=self._step_render_mode(document_id),
+                include_perf=include_perf,
+            )
+            selected_event = next(
+                (
+                    event for event in reversed(buffered_events)
+                    if event.document_id == document_id
+                ),
+                None,
+            )
+            self._on_controller_event(SessionChangedEvent(
+                document_id=document_id,
+                change_reason=(selected_event.change_reason if selected_event else 'step'),
+                is_active=(document_id == self._controller.active_document_id()),
+                rebuilt_child_ids=[],
+            ))
+        if include_perf:
+            timing = result.setdefault("debugTiming", {})
+            timing["totalMs"] = (time.perf_counter() - command_started_at) * 1000.0
+        return result
+
+    def _navigate_key_single(
+        self,
+        document_id: str,
+        key: str,
+        *,
+        shift: bool = False,
+        alt: bool = False,
+        repeat: int = 1,
+        include_perf: bool = False,
+        attach_snapshot: bool = True,
     ) -> dict:
         """Canonical arrow-key navigation — the wx-free twin of
         keyboard_layers.handle_transit_key_event (keyboard_layers.py:81).
@@ -12269,6 +14922,7 @@ class WorkspaceService:
                     cs,
                     stepped,
                     include_perf=include_perf,
+                    attach_snapshot=attach_snapshot,
                     command_started_at=command_started_at,
                     **kwargs,
                 )
@@ -12339,6 +14993,7 @@ class WorkspaceService:
                     alt=alt,
                     repeat=repeat,
                     include_perf=include_perf,
+                    attach_snapshot=attach_snapshot,
                     command_started_at=command_started_at,
                 )
 
@@ -12384,6 +15039,7 @@ class WorkspaceService:
         alt: bool,
         repeat: int = 1,
         include_perf: bool = False,
+        attach_snapshot: bool = True,
         command_started_at: Optional[float] = None,
     ) -> dict:
         """AT MDO/diurnal key cadence.
@@ -12413,16 +15069,19 @@ class WorkspaceService:
             stepped,
             applied_steps=repeat,
             include_perf=include_perf,
+            attach_snapshot=attach_snapshot,
             command_started_at=command_started_at,
         )
 
     def toggle_comparison(self, document_id: str) -> dict:
-        """Toggle a document between comparison (biwheel) and singleton view —
+        """Toggle a document between comparison and focused singleton view —
         the wx-free twin of the TAB key (keyboard_layers.handle_transit_key_event
         keyboard_layers.py:123-128 -> morin.toggleComparisonView morin.py:8762 ->
-        ChartSession.toggleComparisonView chart_session.py:209). Flips
-        ``cs.view_mode`` (CHART<->COMPOUND); ``document_snapshot``'s comparison
-        resolution keys off view_mode, so the outer ring appears/disappears.
+        ChartSession.toggleComparisonView chart_session.py:209).
+        A branch multi-wheel keeps its membership and ordering intact while a
+        branch-owned presentation flag isolates whichever chart tab is active.
+        Ordinary wheels flip ``cs.view_mode`` (CHART<->COMPOUND), which remains
+        the source of truth for whether their outer ring appears.
         Returns the new viewMode + a FULL re-rendered snapshot because this is a
         structural ring change, not a step-burst frame."""
         with self._lock:
@@ -12438,7 +15097,62 @@ class WorkspaceService:
                 result["toggled"] = True
                 return result
             if session.get('compound_kind') == 'synastry':
+                relationship_rings = self._relationship_multiwheel_charts(session)
+                if len(relationship_rings) >= 3:
+                    single_chart = not bool(
+                        session.get("relationship_multiwheel_single_chart_view")
+                    )
+                    if single_chart:
+                        session["relationship_multiwheel_single_chart_view"] = True
+                    else:
+                        session.pop(
+                            "relationship_multiwheel_single_chart_view", None,
+                        )
+                    result = {
+                        "documentId": document_id,
+                        "toggled": True,
+                        "viewMode": getattr(cs, 'view_mode', 0),
+                        "multiwheelSingleChartView": single_chart,
+                        "ringOwnerDocumentId": document_id,
+                        "documents": self._tree_payload(),
+                    }
+                    try:
+                        result["snapshot"] = self.document_snapshot(
+                            document_id, overlay_render_mode="full",
+                        )
+                    except (ValueError, RuntimeError):
+                        pass
+                    return result
                 return self._toggle_synastry_center(document_id, session, cs)
+            owner_id = document_id
+            owner = None
+            selected: list[str] = []
+            enabled = False
+            if callable(getattr(self._controller, "documents", None)):
+                owner_id, owner, _eligible, selected, enabled = (
+                    self._reconcile_multiwheel_state(document_id)
+                )
+            if owner is not None and enabled and len(selected) >= 3:
+                single_chart = not bool(owner.get("multiwheel_single_chart_view"))
+                if single_chart:
+                    owner["multiwheel_single_chart_view"] = True
+                else:
+                    owner.pop("multiwheel_single_chart_view", None)
+                result = {
+                    "documentId": document_id,
+                    "toggled": True,
+                    "viewMode": getattr(cs, 'view_mode', 0),
+                    "multiwheelSingleChartView": single_chart,
+                    "ringOwnerDocumentId": owner_id,
+                    "documents": self._tree_payload(),
+                }
+                try:
+                    result["snapshot"] = self.document_snapshot(
+                        document_id, overlay_render_mode="full",
+                    )
+                except (ValueError, RuntimeError):
+                    pass
+                return result
             # This command returns the authoritative full snapshot directly.
             # Suppress ChartSession's generic change callback here so Tab does
             # not also emit session.changed/documents.changed, advance retained
@@ -12487,6 +15201,7 @@ class WorkspaceService:
                              applied_steps: int = 1,
                              include_documents: bool = False,
                              include_perf: bool = False,
+                             attach_snapshot: bool = True,
                              command_started_at: Optional[float] = None) -> dict:
         # Step-dirty transition (HorarySession hook -> controller.set_dirty)
         # must reach the sidebar star, but never via a full documents.changed
@@ -12513,7 +15228,7 @@ class WorkspaceService:
         # slow — ISSUE 1). ``step_fast`` still repaints the full visible wheel
         # from this snapshot; it only skips expensive non-frame overlay details.
         # See _step_render_mode.
-        if stepped:
+        if stepped and attach_snapshot:
             try:
                 snapshot_started_at = time.perf_counter()
                 result["snapshot"] = self.document_snapshot(

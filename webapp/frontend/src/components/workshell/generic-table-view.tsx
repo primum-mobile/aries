@@ -4,7 +4,6 @@
 "use client";
 
 import * as React from "react";
-import { Copy, Download, FileText } from "lucide-react";
 
 import {
   fetchGenericTablePayload,
@@ -36,23 +35,17 @@ import {
   useListLayoutPreset,
 } from "./list-column-layout";
 import { useSettledWorkspaceRefreshSeq } from "./step-refresh";
-import { exportTablePayloadPdf } from "./table-pdf-export";
-import { exportTextContent } from "./text-export";
+import { buildTableExportDocument } from "./table-pdf-export";
+import { TextExportActions } from "./text-export-actions";
 import { ColumnResizeHandle, useResizableTableColumns } from "./resizable-table-columns";
 import {
   compactListAngleText,
-  downloadText,
   tableCellText,
-  tableToConfiguredAlignedText,
-  tableToConfiguredTsv,
 } from "./table-text-export";
 
 export {
-  downloadText,
   tableToConfiguredAlignedText,
-  tableToConfiguredTsv,
   tableToAlignedText,
-  tableToTsv,
 } from "./table-text-export";
 
 type Props = {
@@ -60,12 +53,6 @@ type Props = {
   parentDocumentId?: string | null;
   tableId: string;
 };
-
-const TABLE_EXPORT_BUTTON_CLASS =
-  "inline-flex h-[var(--aries-control-height-small)] items-center gap-[var(--aries-control-gap-compact)] " +
-  "rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-border-subtle)] " +
-  "px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-small)] " +
-  "text-[color:var(--aries-text-primary)] hover:bg-[color:var(--aries-surface-subtle)]";
 
 export function GenericTableView({ documentId, parentDocumentId, tableId }: Props) {
   const t = useT();
@@ -154,7 +141,7 @@ export function GenericTableView({ documentId, parentDocumentId, tableId }: Prop
   const showLayoutControl = flatLayout && hasListDateTimeColumns(payload.columns);
   return (
     <div className="font-morinus-text flex h-full min-h-0 flex-col bg-background">
-      <div className="flex shrink-0 items-center justify-between gap-[var(--aries-pane-control-gap-y)] border-b border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface)] px-[var(--aries-pane-header-compact-padding-x)] py-[var(--aries-pane-header-padding-y)]">
+      <div className="flex shrink-0 items-center justify-between gap-[var(--aries-pane-control-gap-y)] border-b border-[color:var(--aries-border-subtle)] bg-background px-[var(--aries-pane-header-compact-padding-x)] py-[var(--aries-pane-header-padding-y)]">
         <div className="flex min-w-0 items-center gap-[var(--aries-pane-control-gap-y)]">
           {showLayoutControl ? <ListLayoutPresetControl /> : null}
           {error ? (
@@ -166,78 +153,13 @@ export function GenericTableView({ documentId, parentDocumentId, tableId }: Prop
             </span>
           ) : null}
         </div>
-        <div className="flex shrink-0 items-center gap-[var(--aries-control-gap-compact)]">
-          <button
-            type="button"
-            className={TABLE_EXPORT_BUTTON_CLASS}
-            onClick={() => void copyRows(payload, sortedRows)}
-          >
-            <Copy className="size-[var(--aries-control-icon-size)]" />
-            {t("table.copy")}
-          </button>
-          <button
-            type="button"
-            className={TABLE_EXPORT_BUTTON_CLASS}
-            onClick={() => {
-              void tableToConfiguredTsv(payload, sortedRows).then((text) =>
-                exportTextContent({
-                filename: payload.tableId,
-                extension: "tsv",
-                mimeType: "text/tab-separated-values;charset=utf-8",
-                text,
-                title: t("table.exportTsvTitle"),
-                filters: [{ name: t("table.tsvFiles"), extensions: ["tsv"] }],
-                })
-              ).catch(() => {});
-            }}
-          >
-            <Download className="size-[var(--aries-control-icon-size)]" />
-            TSV
-          </button>
-          <button
-            type="button"
-            className={TABLE_EXPORT_BUTTON_CLASS}
-            onClick={() => {
-              void tableToConfiguredAlignedText(payload, sortedRows).then((text) =>
-                exportTextContent({
-                filename: payload.tableId,
-                extension: "txt",
-                text,
-                title: t("table.exportTextTitle"),
-                filters: [{ name: t("table.textFiles"), extensions: ["txt"] }],
-                })
-              ).catch(() => {});
-            }}
-          >
-            <FileText className="size-[var(--aries-control-icon-size)]" />
-            TXT
-          </button>
-          <button
-            type="button"
-            className={TABLE_EXPORT_BUTTON_CLASS}
-            onClick={() =>
-              void exportTextContent({
-                filename: payload.tableId,
-                extension: "json",
-                mimeType: "application/json;charset=utf-8",
-                text: JSON.stringify(payload, null, 2),
-                title: t("table.exportJsonTitle"),
-                filters: [{ name: t("table.jsonFiles"), extensions: ["json"] }],
-              }).catch(() => {})
-            }
-          >
-            <Download className="size-[var(--aries-control-icon-size)]" />
-            JSON
-          </button>
-          <button
-            type="button"
-            className={TABLE_EXPORT_BUTTON_CLASS}
-            onClick={() => void exportTablePayloadPdf(payload, sortedRows).catch(() => {})}
-          >
-            <Download className="size-[var(--aries-control-icon-size)]" />
-            PDF
-          </button>
-        </div>
+        <TextExportActions
+          buildDocument={() =>
+            buildTableExportDocument(payload, sortedRows, {
+              columnIndexes: flatLayout ? displayColumnOrder : undefined,
+            })
+          }
+        />
       </div>
       {payload.capabilities?.timeLord === true ? (
         <TimeLordTableView documentId={documentId} payload={payload} onBindingChange={updateTableBinding} />
@@ -254,7 +176,7 @@ export function GenericTableView({ documentId, parentDocumentId, tableId }: Prop
             style={flatResize.tableStyle}
           >
             {flatResize.colGroup}
-            <thead className="sticky top-0 z-10 bg-[color:var(--aries-surface)]">
+            <thead className="sticky top-0 z-10 bg-background">
               <tr>
                 {displayColumnOrder.map((columnIndex) => {
                   const column = payload.columns[columnIndex];
@@ -262,7 +184,7 @@ export function GenericTableView({ documentId, parentDocumentId, tableId }: Prop
                     <th
                       key={column.id}
                       className={cn(
-                        "aries-list-head-cell relative border p-0 font-medium",
+                        "aries-list-head-cell relative border-b p-0 font-medium",
                         alignClass(column.align),
                       )}
                       style={{
@@ -310,7 +232,7 @@ export function GenericTableView({ documentId, parentDocumentId, tableId }: Prop
                 <tr
                   key={row.id}
                   className={cn(
-                    "aries-list-row aries-list-row--striped",
+                    "aries-list-row border-b border-x-0 border-t-0",
                     row.current && "aries-list-row--current",
                     row.emphasis === "strong" && "font-semibold",
                   )}
@@ -322,7 +244,7 @@ export function GenericTableView({ documentId, parentDocumentId, tableId }: Prop
                       <td
                         key={`${row.id}:${column.id}`}
                         className={cn(
-                          "aries-list-cell border align-middle",
+                          "aries-list-cell align-middle",
                           alignClass(cell?.align ?? column.align),
                           isListDateColumn(column) && "font-medium",
                           payload.unavailable && "text-[color:var(--aries-text-muted)]",
@@ -426,13 +348,6 @@ function sortRows(
       return a.originalIndex - b.originalIndex;
     })
     .map(({ row }) => row);
-}
-
-async function copyRows(payload: GenericTablePayload, rows: GenericTableRow[]) {
-  const text = await tableToConfiguredTsv(payload, rows);
-  void navigator.clipboard?.writeText(text).catch(() => {
-    downloadText(`${payload.tableId}.tsv`, text, "text/tab-separated-values");
-  });
 }
 
 function cellSortValue(cell?: GenericTableCell): string | number {

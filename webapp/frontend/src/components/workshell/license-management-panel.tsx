@@ -51,6 +51,15 @@ function platformKey(platform: string): string {
   return "license.platformLinux";
 }
 
+function architectureKey(platform: string, arch: string): string {
+  if (arch === "aarch64") {
+    return platform === "darwin" ? "license.archAppleSilicon" : "license.archArm64";
+  }
+  if (arch === "x86_64") return "license.archIntel64";
+  if (arch === "i686") return "license.archIntel32";
+  return "license.archArm";
+}
+
 export function LicenseManagementPanel({
   onStatusChange,
 }: {
@@ -282,7 +291,10 @@ export function LicenseManagementPanel({
                 <Monitor className="size-4 shrink-0 text-foreground/45" aria-hidden />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-[var(--aries-form-field-gap)] text-[length:var(--aries-font-size-base)]">
-                    <span className="truncate font-medium">{device.deviceName}</span>
+                    <span className="truncate font-medium">
+                      {t(platformKey(device.platform))} ·{" "}
+                      {t(architectureKey(device.platform, device.arch))}
+                    </span>
                     {device.current ? (
                       <span
                         data-ui-pill
@@ -293,8 +305,8 @@ export function LicenseManagementPanel({
                     ) : null}
                   </div>
                   <div className="mt-[calc(var(--aries-control-gap-compact)/2)] text-[length:var(--aries-font-size-section)] text-muted-foreground">
-                    {t(platformKey(device.platform))} · {t("license.lastSeen", {
-                      date: dateFormatter.format(new Date(device.lastSeenAt)),
+                    {t("license.activatedAt", {
+                      date: dateFormatter.format(new Date(device.activatedAt)),
                     })}
                   </div>
                 </div>

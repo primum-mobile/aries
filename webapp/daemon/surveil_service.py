@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 """Surveil marks / studies brain (daemon-owned, wx-free).
 
 Port of the desktop Surveil research-mark subsystem (``MorinApp`` methods at
@@ -39,7 +44,8 @@ import mtexts  # localized sign names (morin.py:1543)
 # Constants — morin.py:1201-1206.
 SURVEIL_EPSILON_DEG = 0.05  # tolerance for "same zodiacal point"
 SURVEIL_DEFAULT_STUDY = "Study"
-SURVEILABLE_KINDS = frozenset(("planet", "fortune", "syzygy", "angle", "secondary_ring", "house"))
+ECLIPSE_GLYPH = mtexts.txts.get("EclipseAbbr", "Ec")
+SURVEILABLE_KINDS = frozenset(("planet", "fortune", "syzygy", "eclipse", "angle", "secondary_ring", "house"))
 
 _SIGN_KEYS = (
     "Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo",
@@ -392,6 +398,8 @@ def glyph_for_spec(kind, object_id, data=None):
         return common.common.fortune, "morinus"
     if kind == "syzygy":
         return "Sy", "text"
+    if kind == "eclipse":
+        return ECLIPSE_GLYPH, "text"
     if kind == "angle":
         angle_names = {"asc": "Asc", "desc": "Dsc", "dsc": "Dsc", "mc": "MC", "ic": "IC"}
         key = str(object_id or "").lower()
@@ -423,6 +431,8 @@ def label_for_kind(kind, object_id, longitude, fallback_label="") -> str:
         return "%s (%s)" % (mtexts.txts.get("SurveilLotOfFortune", "Lot of Fortune"), pos_txt)
     if kind == "syzygy":
         return "%s (%s)" % (mtexts.txts.get("PrenatalSyzygy", "Prenatal Syzygy"), pos_txt)
+    if kind == "eclipse":
+        return "%s (%s)" % ((fallback_label or ECLIPSE_GLYPH), pos_txt)
     if kind == "angle":
         idx_map = {"asc": 0, "mc": 1, "dsc": 2, "desc": 2, "ic": 3}
         key = str(object_id or "").lower()

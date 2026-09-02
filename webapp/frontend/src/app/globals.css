@@ -1,8 +1,37 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@source "../../node_modules/@ilamy/calendar/dist";
 
 @custom-variant dark (&:is(.dark *));
+
+.aries-calendar-prototype {
+  --background: var(--aries-surface);
+  --foreground: var(--aries-panel-text);
+  --card: var(--aries-panel-background);
+  --card-foreground: var(--aries-panel-text);
+  --popover: var(--aries-popover-background);
+  --popover-foreground: var(--aries-popover-text);
+  --primary: var(--aries-text-primary);
+  --primary-foreground: var(--aries-surface);
+  --secondary: var(--aries-accent);
+  --secondary-foreground: var(--aries-accent-foreground);
+  --muted: var(--aries-surface-subtle);
+  --muted-foreground: var(--aries-text-dim);
+  --accent: var(--aries-accent);
+  --accent-foreground: var(--aries-accent-foreground);
+  --border: var(--aries-border-subtle);
+  --input: var(--aries-border-subtle);
+  --ring: var(--aries-focus-ring);
+}
+
+.aries-calendar-prototype [data-testid="calendar-body"] {
+  min-height: 0;
+  border-color: var(--aries-border-subtle);
+  border-radius: var(--aries-radius-control);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
 
 /* Bundled Morinus fonts — copied from Res/ */
 @font-face {
@@ -237,19 +266,20 @@
   --aries-astrocart-map-zenith-radius-min: 3px;
   --aries-astrocart-map-zenith-radius-width-scale: 2;
   --aries-astrocart-map-zenith-stroke-width-min: 1px;
-  --aries-astrolabe-almucantar: rgba(120, 150, 190, 0.30);
-  --aries-astrolabe-azimuth: rgba(120, 150, 190, 0.24);
-  --aries-astrolabe-background: #23242a;
-  --aries-astrolabe-band-width-scale: 0.15;
+  --aries-astrolabe-almucantar: var(--morinus-houses);
+  --aries-astrolabe-atmospheric-fill-opacity: 0.32;
+  --aries-astrolabe-azimuth: var(--morinus-houses);
+  --aries-astrolabe-background: var(--morinus-background);
+  --aries-astrolabe-band-width-scale: 0.12;
   --aries-astrolabe-body-cull-scale: 1.1;
-  --aries-astrolabe-body-label-pad-scale: 0.02;
-  --aries-astrolabe-capricorn: rgba(150, 150, 152, 0.55);
-  --aries-astrolabe-capricorn-dash-off: 3px;
-  --aries-astrolabe-capricorn-dash-on: 2px;
+  --aries-astrolabe-body-label-pad-scale: 0.018;
+  --aries-astrolabe-capricorn: var(--morinus-frame);
+  --aries-astrolabe-capricorn-dash-off: 2px;
+  --aries-astrolabe-capricorn-dash-on: 1px;
   --aries-astrolabe-capricorn-fill: 0.83;
-  --aries-astrolabe-cardinal: rgba(160, 160, 162, 0.9);
-  --aries-astrolabe-cardinal-font-divisor: 22;
-  --aries-astrolabe-cardinal-pad-scale: 0.06;
+  --aries-astrolabe-cardinal: var(--morinus-angles);
+  --aries-astrolabe-cardinal-font-divisor: 24;
+  --aries-astrolabe-cardinal-pad-scale: 0.04;
   --aries-astrolabe-circle-label-font-divisor: 36;
   --aries-astrolabe-circle-label-offset-x: 4px;
   --aries-astrolabe-circle-label-offset-y: 2px;
@@ -260,52 +290,52 @@
   --aries-astrolabe-collision-push-scale: 0.5;
   --aries-astrolabe-collision-tie-delta: 1px;
   --aries-astrolabe-connector-dash-off: 3px;
-  --aries-astrolabe-connector-dash-on: 2px;
-  --aries-astrolabe-connector-opacity: 0.55;
-  --aries-astrolabe-ecliptic: #c68a22;
-  --aries-astrolabe-equator: #78828f;
-  --aries-astrolabe-equator-dash-off: 4px;
-  --aries-astrolabe-equator-dash-on: 5px;
-  --aries-astrolabe-equator-label: #788291;
-  --aries-astrolabe-fine-stroke-divisor: 360;
-  --aries-astrolabe-fine-stroke-min: 1px;
-  --aries-astrolabe-horizon: #3e82c4;
-  --aries-astrolabe-hour: rgba(170, 150, 110, 0.30);
-  --aries-astrolabe-info-atmospheric: #dcdcdc;
+  --aries-astrolabe-connector-dash-on: 1px;
+  --aries-astrolabe-connector-opacity: 0.42;
+  --aries-astrolabe-ecliptic: var(--morinus-frame);
+  --aries-astrolabe-equator: var(--morinus-houses);
+  --aries-astrolabe-equator-dash-off: 3px;
+  --aries-astrolabe-equator-dash-on: 1px;
+  --aries-astrolabe-equator-label: var(--morinus-houses);
+  --aries-astrolabe-fine-stroke-divisor: 960;
+  --aries-astrolabe-fine-stroke-min: 0.75px;
+  --aries-astrolabe-horizon: var(--morinus-angles);
+  --aries-astrolabe-hour: var(--morinus-angles);
+  --aries-astrolabe-info-atmospheric: var(--morinus-text-bright);
   --aries-astrolabe-info-font-divisor: 16;
   --aries-astrolabe-info-font-scale: 0.75;
   --aries-astrolabe-info-inset-divisor: 25;
   --aries-astrolabe-info-line-height-scale: 1.2;
-  --aries-astrolabe-info-schematic: #c8c8c8;
+  --aries-astrolabe-info-schematic: var(--morinus-text-bright);
   --aries-astrolabe-inner-radius-min: 1px;
-  --aries-astrolabe-main-stroke-divisor: 220;
-  --aries-astrolabe-main-stroke-min: 2px;
-  --aries-astrolabe-medium-stroke-divisor: 280;
+  --aries-astrolabe-main-stroke-divisor: 720;
+  --aries-astrolabe-main-stroke-min: 1.5px;
+  --aries-astrolabe-medium-stroke-divisor: 720;
   --aries-astrolabe-medium-stroke-min: 1px;
-  --aries-astrolabe-meridian: rgba(170, 178, 196, 0.55);
+  --aries-astrolabe-meridian: var(--morinus-angles);
   --aries-astrolabe-meridian-dash-off: 4px;
   --aries-astrolabe-meridian-dash-on: 2px;
   --aries-astrolabe-pd-row-font-divisor: 30;
   --aries-astrolabe-pd-row-height-scale: 1.3;
   --aries-astrolabe-pd-token-gap-scale: 0.35;
-  --aries-astrolabe-planet-font-divisor: 16;
-  --aries-astrolabe-regio: rgba(150, 165, 185, 0.42);
+  --aries-astrolabe-planet-font-divisor: 18;
+  --aries-astrolabe-regio: var(--morinus-houses);
   --aries-astrolabe-regio-dash-off: 4px;
-  --aries-astrolabe-regio-dash-on: 4px;
+  --aries-astrolabe-regio-dash-on: 1px;
   --aries-astrolabe-sign-cull-scale: 0.03;
-  --aries-astrolabe-sign-font-divisor: 22;
-  --aries-astrolabe-sphere-outline-width: 1px;
-  --aries-astrolabe-sphere-radius-divisor: 160;
-  --aries-astrolabe-sphere-radius-min: 2px;
-  --aries-astrolabe-star: rgba(220, 222, 230, 0.85);
-  --aries-astrolabe-star-radius-divisor: 320;
-  --aries-astrolabe-star-radius-min: 1.5px;
-  --aries-astrolabe-sun-fill: #ffe066;
+  --aries-astrolabe-sign-font-divisor: 24;
+  --aries-astrolabe-sphere-outline-width: 0.75px;
+  --aries-astrolabe-sphere-radius-divisor: 190;
+  --aries-astrolabe-sphere-radius-min: 1.5px;
+  --aries-astrolabe-star: var(--morinus-positions);
+  --aries-astrolabe-star-radius-divisor: 360;
+  --aries-astrolabe-star-radius-min: 1px;
+  --aries-astrolabe-sun-fill: var(--morinus-body-sun);
   --aries-astrolabe-sun-sphere-scale: 1.5;
-  --aries-astrolabe-tick-step-scale: 0.01;
-  --aries-astrolabe-tropic: rgba(200, 210, 220, 0.45);
-  --aries-astrolabe-tropic-dash-off: 4px;
-  --aries-astrolabe-tropic-dash-on: 4px;
+  --aries-astrolabe-tick-step-scale: 0.008;
+  --aries-astrolabe-tropic: var(--morinus-houses);
+  --aries-astrolabe-tropic-dash-off: 3px;
+  --aries-astrolabe-tropic-dash-on: 1px;
   --aries-mundane-arrow-scale: 0.04;
   --aries-mundane-ascmc-configured-default: 5px;
   --aries-mundane-ascmc-configured-max: 5px;
@@ -877,6 +907,54 @@
   font-display: block;
 }
 @font-face {
+  font-family: 'Kosugi Aries';
+  src: url('/fonts/KosugiAries-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+/* 'Aries UI' is one family backed by two faces, split by what the text IS
+ * rather than by script: letters from a text face, figures from Kosugi.
+ *
+ * The same property sits behind both halves. Kosugi's glyphs were drawn to
+ * fill a fixed half-width box, so they have almost no width contrast (m is
+ * 1.06x n, against ~1.66x in a real Latin sans). In prose that flattens word
+ * silhouettes; in figures it is exactly right, and it is why Kosugi's numerals
+ * read like an instrument readout. Numerals want uniformity, letters need
+ * contrast, so each half is taken from the face that is good at it.
+ *
+ * KosugiNumerals is a 3.5 KB subset (figures plus degree/prime/double-prime)
+ * with unitsPerEm retuned so its figures match FreeSans's digit height
+ * exactly - Kosugi's are 4.6% taller untreated. See
+ * scripts/fonts/build_kosugi_numerals.py.
+ *
+ * Order matters: where two faces of one family claim the same codepoints, the
+ * later rule wins. FreeSans is declared unrestricted and the figures are
+ * carved back out of it below. Both halves keep equal-width digits, which the
+ * position tables depend on. */
+@font-face {
+  font-family: 'Aries UI';
+  src: url('/fonts/FreeSans.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Aries UI';
+  src: url('/fonts/FreeSansBold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Aries UI';
+  src: url('/fonts/KosugiNumerals-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  unicode-range: U+0030-0039, U+00B0, U+2032-2033;
+}
+@font-face {
   font-family: 'DotGothic16';
   src: url('/fonts/DotGothic16-Regular.ttf') format('truetype');
   font-weight: 400;
@@ -1091,14 +1169,13 @@ html {
   --aries-inspector-title-size: 15px;
   --aries-inspector-glyph-size: 26px;
   --aries-inspector-alert-glyph-size: 14px;
-  --aries-inspector-pack-tag-size: 9px;
   --aries-inspector-padding-x: var(--aries-panel-padding-x);
   --aries-inspector-padding-top: var(--aries-panel-padding-y);
   --aries-inspector-padding-bottom: 16px;
   --aries-inspector-heading-gap: 8px;
   --aries-inspector-row-gap: 2px;
   --aries-inspector-column-gap: 16px;
-  --aries-inspector-label-width: 52px;
+  --aries-inspector-label-width: 88px;
   --aries-inspector-section-gap: calc(var(--aries-section-gap) * 2 / 5);
   --aries-inspector-card-gap: 8px;
   --aries-inspector-citation-gap: 12px;
@@ -1109,9 +1186,6 @@ html {
   --aries-inspector-close-reserve: calc(var(--aries-inspector-close-inset) + var(--aries-inspector-close-icon-size) + var(--aries-inspector-close-inset) + 2px);
   --aries-inspector-summary-close-reserve: calc(var(--aries-inspector-close-reserve) + var(--aries-inspector-heading-gap));
   --aries-inspector-status-dot-size: 8px;
-  --aries-inspector-control-height: 24px;
-  --aries-inspector-control-padding-x: 4px;
-  --aries-inspector-control-section-padding-bottom: 12px;
   --aries-inspector-hover-flag-viewport-margin: 8px;
   --aries-inspector-hover-flag-anchor-gap-x: 12px;
   --aries-inspector-hover-flag-anchor-gap-y: 10px;
@@ -1285,7 +1359,6 @@ html {
   --aries-pane-title-gap: calc(var(--aries-section-gap) * 3 / 5);
   --aries-pane-content-padding: 16px;
   --aries-pane-wide-inset: 20px;
-  --aries-pane-drawer-width: 272px;
   --aries-pane-drawer-content-max-height: 118px;
   --aries-pane-drawer-list-max-height: 192px;
   --aries-pane-state-padding: 24px;
@@ -1872,6 +1945,16 @@ html[data-theme-ready="pending"] body {
     font-size: var(--aries-search-glyph-size);
   }
 
+  .aries-search-object-glyph {
+    display: inline-flex;
+    width: 1em;
+    height: 1em;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    vertical-align: middle;
+  }
+
   .aries-search-sign-glyph {
     font-size: var(--aries-search-sign-glyph-size);
   }
@@ -1882,6 +1965,10 @@ html[data-theme-ready="pending"] body {
 
   .aries-search-marker {
     font-size: var(--aries-search-marker-size);
+  }
+
+  .aries-search-results-scroller::-webkit-scrollbar:horizontal {
+    height: 0;
   }
 
   .aries-list--frameless .aries-list-head-cell,
@@ -1941,10 +2028,6 @@ html[data-theme-ready="pending"] body {
 
   .aries-list-row--selected[data-state="selected"] {
     background: var(--aries-list-selected-bg);
-  }
-
-  .aries-list-row--striped:nth-child(odd) {
-    background: var(--aries-list-stripe-bg);
   }
 
   .aries-list-row--current {
@@ -2280,6 +2363,47 @@ html[data-theme-ready="pending"] body {
   gap: 1px;
 }
 
+.aries-harmonic-stepper {
+  padding-left: clamp(4px, calc(6px * var(--aries-navbar-scale, 1)), 6px);
+}
+
+.aries-harmonic-stepper-controls {
+  align-items: center;
+}
+
+.aries-harmonic-value,
+.aries-harmonic-input {
+  flex: 0 0 clamp(
+    40px,
+    calc(48px * var(--aries-navbar-scale, 1)),
+    48px
+  );
+  width: clamp(40px, calc(48px * var(--aries-navbar-scale, 1)), 48px);
+  height: 100%;
+  border: 1px solid transparent;
+  border-radius: var(--aries-radius-control);
+  appearance: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--aries-navbar-text);
+  font-family: var(--aries-font-ui);
+  font-size: var(--aries-mode-hint-font-size);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  padding: 0;
+  text-align: center;
+}
+
+.aries-harmonic-value:hover,
+.aries-harmonic-value:focus-visible,
+.aries-harmonic-input:focus {
+  border-color: var(--aries-navbar-border);
+  background: var(--aries-navbar-hover-bg);
+  box-shadow: none;
+  color: var(--aries-navbar-hover-text);
+  outline: none;
+}
+
 .aries-step-arrow-button {
   display: inline-flex;
   width: var(--aries-mode-hint-arrow-width);
@@ -2598,6 +2722,21 @@ html[data-theme-ready="pending"] body {
 }
 .is-tauri.is-macos {
   --titlebar-left-controls-x: 84px;
+}
+
+/* Launcher shortcuts are hover/focus information, not a permanent column.
+ * The label keeps the full row at rest. While the hint is revealed, mask the
+ * label itself so the hint never needs a background patch that can mismatch
+ * the row's idle, hover, active, or focus material. */
+.aries-sidebar-navrow--shortcut:is(:hover, :has([data-slot="sidebar-menu-button"]:focus-visible))
+  .aries-sidebar-navrow-label {
+  opacity: 0;
+}
+.aries-sidebar-navrow--shortcut:is(:hover, :has([data-slot="sidebar-menu-button"]:focus-visible))
+  .aries-sidebar-navrow-label-faded,
+.aries-sidebar-navrow--shortcut:is(:hover, :has([data-slot="sidebar-menu-button"]:focus-visible))
+  .aries-sidebar-shortcut-hint {
+  opacity: 1;
 }
 .app-shell [data-slot="sidebar-container"] {
   top: 0;

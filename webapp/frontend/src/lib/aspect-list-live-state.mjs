@@ -2,9 +2,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 export const ASPECT_LIST_CURSOR_FALLBACK_DELAY_MS = 300;
-export const ASPECT_LIST_PERFECTION_BATCH_SIZE = 8;
+// The payload has already painted before the scheduling effect runs. Yield one
+// task so that paint stays coherent, then start the first bounded viewport
+// batch immediately; step bursts are guarded separately by the settled-refresh
+// state and stale context work is still cancelled by identity.
+export const ASPECT_LIST_PERFECTION_IDLE_MS = 0;
+export const ASPECT_LIST_PERFECTION_BATCH_SIZE = 4;
 export const ASPECT_LIST_PERFECTION_BATCH_LIMIT = 16;
-export const ASPECT_LIST_PERFECTION_CONCURRENCY = 2;
+export const ASPECT_LIST_PERFECTION_CONCURRENCY = 1;
 
 /**
  * Hiding the comparison ring is a presentation lens, not permission to forget
@@ -13,6 +18,17 @@ export const ASPECT_LIST_PERFECTION_CONCURRENCY = 2;
  */
 export function aspectListRequestedMode(preferredMode, comparisonVisible) {
   return comparisonVisible === false ? "primary" : preferredMode;
+}
+
+/**
+ * The wheel shape owns the normal Aspect List view regardless of how that
+ * chart became active. A comparison starts outer -> primary; a true singleton
+ * starts on its only chart. Undefined waits for the daemon-resolved wheel.
+ */
+export function aspectListDefaultMode(comparisonVisible) {
+  if (comparisonVisible === true) return "outerToPrimary";
+  if (comparisonVisible === false) return "primary";
+  return null;
 }
 
 /**
@@ -267,25 +283,88 @@ export function isAspectListPayloadCurrent(
   );
 }
 
-/** Carry exact results across a patch only for rows whose daemon-owned
- * calculation trajectory is unchanged. Removed, new, and changed rows are
- * deliberately omitted so the lazy scheduler resolves only those rows. */
+const STABLE_UNAVAILABLE_PERFECTION_REASONS = new Set([
+  "missing-chart-role",
+  "static-trajectory",
+  "unsupported-trajectory",
+  "missing-trajectory-builder",
+  "unsupported-endpoint-motion",
+  "no-relative-motion",
+]);
+
+export function shouldDeferAspectListRefresh({
+  pendingStepSeq,
+  settledStepSeq,
+}) {
+  return Number(pendingStepSeq) > Number(settledStepSeq);
+}
+
+export function aspectListPerfectionLedgerKey(documentId, mode, row) {
+  return [documentId, mode, row.trajectoryKey].join("\u0000");
+}
+
+function isReusableAspectListPerfection(row, result, nextAnchorJd) {
+  if (!result) return false;
+  if (result.status === "unavailable") {
+    return STABLE_UNAVAILABLE_PERFECTION_REASONS.has(result.reason);
+  }
+  const exactJd = Number(result.exactJd);
+  const anchorJd = Number(nextAnchorJd);
+  if (!Number.isFinite(exactJd) || !Number.isFinite(anchorJd)) return false;
+  const epsilon = 1e-5;
+  return (
+    (row.phase === "applying" && exactJd >= anchorJd - epsilon) ||
+    (row.phase === "separating" && exactJd <= anchorJd + epsilon) ||
+    (row.phase === "exact" && Math.abs(exactJd - anchorJd) <= epsilon)
+  );
+}
+
+/** Restore exact results from the pane-lifetime trajectory ledger. Context
+ * tokens are deliberately absent: they authorize actions, while the daemon's
+ * trajectory key proves whether the underlying exact root is reusable. */
+export function retainAspectListPerfectionsFromLedger({
+  documentId,
+  mode,
+  rows,
+  ledger,
+  nextAnchorJd,
+}) {
+  const retained = new Map();
+  for (const row of rows) {
+    if (!row.trajectoryKey) continue;
+    const result = ledger.get(
+      aspectListPerfectionLedgerKey(documentId, mode, row),
+    );
+    if (isReusableAspectListPerfection(row, result, nextAnchorJd)) {
+      retained.set(row.id, result);
+    }
+  }
+  return retained;
+}
+
+/** Carry exact results across refreshes for the same daemon-owned trajectory.
+ * A ready root remains reusable only while it is on the side selected by the
+ * current applying/separating phase. This preserves dates through ordinary
+ * steps and the exact crossing itself, while a station/retrograde branch that
+ * points at a different perfection is recalculated. */
 export function retainMatchingAspectListPerfections({
   previousRows,
   nextRows,
   previousByRow,
+  nextAnchorJd,
 }) {
   const previousTrajectoryById = new Map(
     previousRows.map((row) => [row.id, row.trajectoryKey]),
   );
   const retained = new Map();
   for (const row of nextRows) {
-    if (
-      row.trajectoryKey &&
-      previousTrajectoryById.get(row.id) === row.trajectoryKey &&
-      previousByRow.has(row.id)
-    ) {
-      retained.set(row.id, previousByRow.get(row.id));
+    if (!row.trajectoryKey || previousTrajectoryById.get(row.id) !== row.trajectoryKey) {
+      continue;
+    }
+    const result = previousByRow.get(row.id);
+    if (!result) continue;
+    if (isReusableAspectListPerfection(row, result, nextAnchorJd)) {
+      retained.set(row.id, result);
     }
   }
   return retained;

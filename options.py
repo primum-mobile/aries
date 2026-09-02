@@ -1,4 +1,8 @@
 # -*- coding: utf-8 -*-
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
 
 import os
 import sys
@@ -6,6 +10,7 @@ import shutil
 import wx
 import pickle
 import copy
+import astrology
 import chart
 import fontprofiles
 import primdirs
@@ -46,13 +51,23 @@ class SafeColorList(list):
 
 class Options:
 	APP_COLOR_TRAILER_SCHEMA_VERSION = 1
+	SPECULUM_SPEED_WORDS = 'words'
+	SPECULUM_SPEED_PERCENT = 'percent'
+	SPECULUM_SPEED_DAILY = 'daily'
+	SPECULUM_SPEED_MODES = (
+		SPECULUM_SPEED_WORDS,
+		SPECULUM_SPEED_PERCENT,
+		SPECULUM_SPEED_DAILY,
+	)
 	DATE_CONVENTION_CURRENT = 'current'
 	DATE_CONVENTION_DMY = 'dmy'
 	ANGLO_DENSE_LABEL_LAYOUT_LEADER_COLUMNS = 'leader-columns'
 	ANGLO_DENSE_LABEL_LAYOUT_ROUTED_CUSPS = 'routed-cusps'
+	ANGLO_DENSE_LABEL_LAYOUT_SIGN_LOCKED = 'sign-locked'
 	ANGLO_DENSE_LABEL_LAYOUTS = (
 		ANGLO_DENSE_LABEL_LAYOUT_LEADER_COLUMNS,
 		ANGLO_DENSE_LABEL_LAYOUT_ROUTED_CUSPS,
+		ANGLO_DENSE_LABEL_LAYOUT_SIGN_LOCKED,
 	)
 	NONE = 0
 	FIXSTARS = 1
@@ -66,13 +81,26 @@ class Options:
 	QUICKCHARTS_ANCHOR_SOURCE_CHART = QUICKCHARTS_ANCHOR_RADIX
 	ECLIPSE_CHART_MOMENT_EXACT = 'exact_conjunction'
 	ECLIPSE_CHART_MOMENT_MAXIMUM = 'eclipse_maximum'
+	PRENATAL_ECLIPSE_SOLAR_ONLY = 'solar_only'
+	PRENATAL_ECLIPSE_SOLAR_AND_LUNAR = 'solar_and_lunar'
 	EVENT_TABLE_TIME_DEFAULT_LOCATION = 'default_location'
 	EVENT_TABLE_TIME_UT = 'ut'
 	SECONDARY_LAUNCH_CHART = 0
 	SECONDARY_LAUNCH_TABLE = 1
 	SECONDARY_LAUNCH_BOTH = 2
+	HARMONIC_CHART_MODE_HARMONIC = 'harmonic'
+	HARMONIC_CHART_MODE_VARGA = 'varga'
+	PD_IN_CHART_FROM_PLANETS = 0
+	PD_IN_CHART_ECLIPTIC_FEET = 1
+	CHART_RING_COUNT_MIN = 2
+	CHART_RING_COUNT_MAX = 4
+	CHART_RING_ZODIAC_RIM = 'rim'
+	CHART_RING_ZODIAC_CENTRE = 'centre'
+	VARGA_DRISHTI_OFF = 'off'
+	VARGA_DRISHTI_PARASHARI = 'parashari'
+	VARGA_DRISHTI_JAIMINI = 'jaimini'
 # ###################################
-# Elias change v 7.2.0  
+# Elias change v 7.2.0
 	DODECATEMORIA = 4
 	ARABICPARTS = 5
 	ASTEROIDS = 6
@@ -93,11 +121,24 @@ class Options:
 	PHASIS_MODE_ASTRONOMICAL = 0
 	PHASIS_MODE_HELLENISTIC = 1
 	PHASIS_MODE_SIMPLE_SWEP = 2
+	PHASIS_MODE_ARCUS_VISIONIS = 3
 	CAZIMI_MODE_HELLENISTIC = 0
 	CAZIMI_MODE_AL_QABISI = 1
 	CAZIMI_MODE_ABU_MASHAR = 2
 	SYNODIC_MODE_STATION_CAZIMI = 0
 	SYNODIC_MODE_ALL = 1
+	SOLAR_CONDITION_MODE_LATE_HELLENISTIC = 0
+	SOLAR_CONDITION_MODE_AL_QABISI = 1
+	SOLAR_CONDITION_MODE_IBN_EZRA = 2
+	SOLAR_CONDITION_MODE_WILLIAM_LILLY = 3
+	SOLAR_CONDITION_MODE_MORIN = 4
+	SOLAR_CONDITION_MODES = (
+		SOLAR_CONDITION_MODE_LATE_HELLENISTIC,
+		SOLAR_CONDITION_MODE_AL_QABISI,
+		SOLAR_CONDITION_MODE_IBN_EZRA,
+		SOLAR_CONDITION_MODE_WILLIAM_LILLY,
+		SOLAR_CONDITION_MODE_MORIN,
+	)
 
 	@staticmethod
 	def _resolve_user_opts_dir():
@@ -132,6 +173,7 @@ class Options:
 		self.def_symbols = self.symbols = True
 		self.def_traditionalaspects = self.traditionalaspects = False
 		self.def_showaspectsforderivedpoints = self.showaspectsforderivedpoints = False
+		self.def_aspectlist_perfection_link_mode = self.aspectlist_perfection_link_mode = 'transits'
 		self.def_showaspectstoasc = self.showaspectstoasc = True
 		self.def_showaspectstomc = self.showaspectstomc = True
 		self.def_showaspectstodsc = self.showaspectstodsc = True
@@ -167,6 +209,9 @@ class Options:
 		self.def_planetarydayhour = self.planetarydayhour = True
 		self.def_housesystem = self.housesystem = True
 		self.def_information = self.information = True
+		# Tauri chart chrome can move the radix name from the centred titlebar
+		# into the top-left information overlay, directly above the birth date.
+		self.def_showradixnameincanvas = self.showradixnameincanvas = False
 		self.def_showseconds = self.showseconds = True
 		self.def_dateconvention = self.dateconvention = self.DATE_CONVENTION_CURRENT
 		self.transcendental = [True, True, True]
@@ -185,6 +230,7 @@ class Options:
 		self.def_showaspectstolof = self.showaspectstolof = False
 		self.def_showlofouterring = self.showlofouterring = False
 		self.def_showprenatalsyzygy = self.showprenatalsyzygy = False
+		self.def_showprenataleclipse = self.showprenataleclipse = False
 		self.def_pdf_chart_color_mode = self.pdf_chart_color_mode = 'monochrome'
 		self.def_pdf_chart_raster_preset = self.pdf_chart_raster_preset = 'clean'
 		self.def_pdf_include_overlays = self.pdf_include_overlays = True
@@ -195,12 +241,21 @@ class Options:
 		self.def_showdecans = self.showdecans = False
 		self.def_showanglearrowheads = self.showanglearrowheads = True
 		self.def_showcusplessascmclabels = self.showcusplessascmclabels = True
+		# Multi-wheel-only presentation controls. These do not alter chart
+		# construction or the single/biwheel renderers.
+		self.def_multiwheel_show_positions = self.multiwheel_show_positions = True
+		self.def_multiwheel_show_minutes = self.multiwheel_show_minutes = True
+		self.def_multiwheel_sign_colors = self.multiwheel_sign_colors = False
+		self.def_multiwheel_show_angle_labels = self.multiwheel_show_angle_labels = True
 		self.def_dignitylabelcolors = self.dignitylabelcolors = False
 		self.def_showfixstars = self.showfixstars = 0
-		self.def_phasismode = self.phasismode = self.PHASIS_MODE_ASTRONOMICAL
+		# Swiss Ephemeris's Schaefer visibility model is the best-supported
+		# general-purpose default. Existing saved preferences still override it.
+		self.def_phasismode = self.phasismode = self.PHASIS_MODE_SIMPLE_SWEP
 		self.def_showcazimi = self.showcazimi = True
 		self.def_cazimimode = self.cazimimode = self.CAZIMI_MODE_HELLENISTIC
 		self.def_synodicmode = self.synodicmode = self.SYNODIC_MODE_ALL
+		self.def_solarconditionmode = self.solarconditionmode = self.SOLAR_CONDITION_MODE_MORIN
 		self.def_showeclipseoverlay = self.showeclipseoverlay = True
 		self.def_astrocart_localspace_additive = self.astrocart_localspace_additive = True
 		self.def_astrocart_show_ecliptic = self.astrocart_show_ecliptic = False
@@ -232,6 +287,7 @@ class Options:
 		# Dodecatemorion in Speculum (Placidian / Regiomontan)
 		self.speculumdodecat = [False, False]
 		self.def_speculumdodecat = copy.deepcopy(self.speculumdodecat)
+		self.def_speculum_speed_mode = self.speculum_speed_mode = self.SPECULUM_SPEED_DAILY
 
 		self.def_intime = self.intime
 
@@ -497,11 +553,12 @@ class Options:
 		self.def_pdaspects = self.pdaspects[:]
 
 		self.pdcircumoa = self.def_pdcircumoa = primdirs.PrimDirs.CIRCUM_OA_ASCENSIONAL_TIMES
+		self.pdcircumprommode = self.def_pdcircumprommode = primdirs.PrimDirs.CIRCUM_PROMISSORS_FOLLOW_PD
 		self.pdlistmode = self.def_pdlistmode = Options.PDLIST_CONTINUOUS
 		self.pdlistglyphcolors = self.def_pdlistglyphcolors = False
 
 		self.pdmidpoints = False
-		self.def_pdmidpoints = self.pdmidpoints 
+		self.def_pdmidpoints = self.pdmidpoints
 
 		self.pdparallels = [False, False]
 		self.def_pdparallels = self.pdparallels[:]
@@ -568,7 +625,7 @@ class Options:
 		self.def_pdkeydyn = self.pdkeydyn
 		self.pdkeyd = primdirs.PrimDirs.TRUESOLAREQUATORIALARC
 		self.def_pdkeyd = self.pdkeyd
-		self.pdkeys = primdirs.PrimDirs.NAIBOD 
+		self.pdkeys = primdirs.PrimDirs.NAIBOD
 		self.def_pdkeys = self.pdkeys
 		self.pdkeydeg = 0
 		self.def_pdkeydeg = self.pdkeydeg
@@ -576,7 +633,7 @@ class Options:
 		self.def_pdkeymin = self.pdkeymin
 		self.pdkeysec = 0
 		self.def_pdkeysec = self.pdkeysec
-		
+
 		self.useregressive = False
 		self.def_useregressive = self.useregressive
 
@@ -594,6 +651,7 @@ class Options:
 
 		#Fixstars
 		self.fixstars = {'etTau':1.5, 'alTau':1.5, 'bePer':1.5, 'ga-1And':1.5, 'alSco':1.5, 'alBoo':1.5, 'deCnc':1.5, 'gaCnc':1.5, 'etUMa':1.5, 'alOri':1.5, 'alCen':1.5, 'alCar':1.5, 'alGem':1.5, 'beLeo':1.5, 'alPsA':1.5, 'alCrB':1.5, 'alPeg':1.5, 'beAnd':1.5, 'alUMi':1.5, 'beGem':1.5, 'M44':1.5, 'alCMi':1.5, 'alLeo':1.5, 'beOri':1.5, 'alCMa':1.5, 'alVir':1.5, 'alSer':1.5, 'alLyr':1.5, 'al-2Lib':1.5, 'beLib':1.5}
+		self.def_useIndianFixstarNames = self.useIndianFixstarNames = False
 
 		self.def_fixstars = self.fixstars.copy()
 
@@ -606,7 +664,7 @@ class Options:
 		#          (Hellenistic annual profection; matches the Lord-of-the-Year corner).
 		# False -> the continuous Profections.offs rotation (~30deg/yr, the old behaviour).
 		self.def_profwholesign = self.profwholesign = True
-		
+
 # ########################################
 # Roberto change - V 7.3.0
 		#Firdaria
@@ -642,10 +700,11 @@ class Options:
 		# partner of a tabled mundane direction.  Actual symbolic-time planetary
 		# motion remains available as an explicitly illustrative option.
 		self.def_pdinchartterrsecmotion = self.pdinchartterrsecmotion = False
-		# Aries draws the selected promissor on the outer ring against the
-		# fixed radix significator.  Legacy Morinus used the opposite celestial
-		# ring assignment; that remains available as an explicit compatibility
-		# option, but is no longer the default presentation.
+		# Converse-view reference frame.  True keeps the radix fixed and moves
+		# outer promissors (the Aries default); False keeps outer promissors
+		# fixed for celestial converse rows and moves directed significators in
+		# an inner overlay.  Direct and terrestrial views always remain native
+		# fixed-radix presentations.  Preserve this Boolean pickle/API slot.
 		self.def_pdinchartreverse = self.pdinchartreverse = True
 
 		#Languages
@@ -664,10 +723,20 @@ class Options:
 		self.def_event_table_time_basis = self.event_table_time_basis
 		self.subcharts_open_compound_default = False
 		self.def_subcharts_open_compound_default = self.subcharts_open_compound_default
+		self.multiwheel_open_at_three = False
+		self.def_multiwheel_open_at_three = self.multiwheel_open_at_three
+		self.chart_ring_count = self.CHART_RING_COUNT_MIN
+		self.def_chart_ring_count = self.chart_ring_count
+		self.chart_ring_zodiac = self.CHART_RING_ZODIAC_RIM
+		self.def_chart_ring_zodiac = self.chart_ring_zodiac
 		self.eclipse_chart_moment = self.ECLIPSE_CHART_MOMENT_EXACT
 		self.def_eclipse_chart_moment = self.eclipse_chart_moment
+		self.prenatal_eclipse_mode = self.PRENATAL_ECLIPSE_SOLAR_AND_LUNAR
+		self.def_prenatal_eclipse_mode = self.prenatal_eclipse_mode
 		self.secondary_progression_launch_mode = self.SECONDARY_LAUNCH_CHART
 		self.def_secondary_progression_launch_mode = self.secondary_progression_launch_mode
+		self.aspectlist_prebirth_secondary_converse = True
+		self.def_aspectlist_prebirth_secondary_converse = self.aspectlist_prebirth_secondary_converse
 		# Ascensional Transits sidebar re-click behavior:
 		#   'focus_only'         → focus the existing AT tab as-is
 		#   'focus_and_snap_now' → focus + snap cursor to current time
@@ -678,6 +747,12 @@ class Options:
 		self.def_progression_day_type = self.progression_day_type
 		self.progressed_angle_method = 0
 		self.def_progressed_angle_method = self.progressed_angle_method
+		self.harmonic_chart_mode = self.HARMONIC_CHART_MODE_HARMONIC
+		self.def_harmonic_chart_mode = self.harmonic_chart_mode
+		self.varga_drishti_mode = self.VARGA_DRISHTI_PARASHARI
+		self.def_varga_drishti_mode = self.varga_drishti_mode
+		self.varga_node_special_drishti = False
+		self.def_varga_node_special_drishti = self.varga_node_special_drishti
 		self.search_techniques = []
 		self.def_search_techniques = self.search_techniques[:]
 		self.search_aspects = []
@@ -686,6 +761,14 @@ class Options:
 		self.def_search_promittor_ids = self.search_promittor_ids[:]
 		self.search_significator_ids = []
 		self.def_search_significator_ids = self.search_significator_ids[:]
+		self.search_promittor_motion = ''
+		self.def_search_promittor_motion = self.search_promittor_motion
+		self.search_significator_motion = ''
+		self.def_search_significator_motion = self.search_significator_motion
+		self.search_lunation_orb = 3.0
+		self.def_search_lunation_orb = self.search_lunation_orb
+		self.search_moon_phase = ''
+		self.def_search_moon_phase = self.search_moon_phase
 		self.search_from = ()
 		self.def_search_from = self.search_from
 		self.search_to = ()
@@ -698,6 +781,8 @@ class Options:
 		self.def_search_default_offset_months = self.search_default_offset_months
 		self.search_default_range_months = 12
 		self.def_search_default_range_months = self.search_default_range_months
+		self.search_lifetime_years = 100
+		self.def_search_lifetime_years = self.search_lifetime_years
 		self.search_has_saved_state = False
 		self.def_search_has_saved_state = self.search_has_saved_state
 		self.startupchart = ''
@@ -727,7 +812,7 @@ class Options:
 			self.astrocartography_preferences
 		)
 		self.sidebar_list_preferences = {
-			'schemaVersion': 1,
+			'schemaVersion': 2,
 			'aspectList': {
 				'mode': None,
 				'maxOrb': 10,
@@ -743,6 +828,20 @@ class Options:
 				'selectedPromittorId': None,
 				'promittorDrawerOpen': False,
 				'direction': 'direct',
+			},
+			'synodicList': {
+				'ingressPlanetIds': list(range(11)) + [astrology.SE_CHIRON],
+				'synodicPlanetIds': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, astrology.SE_CHIRON],
+				'lunarCycleIds': ['draconic', 'anomalistic'],
+				'ingressDrawerOpen': False,
+				'synodicDrawerOpen': False,
+				'lunarDrawerOpen': False,
+			},
+			'vimshottari': {
+				'anchor': 'moon',
+				'startStar': 'janma',
+				'yearDays': 365.25,
+				'ayanamsha': 'follow_chart',
 			},
 		}
 		self.def_sidebar_list_preferences = copy.deepcopy(
@@ -810,7 +909,7 @@ class Options:
 		self.firdariaopt = os.path.join(self.optsdirtxt, self.optionsfilestxt[20])
 # ########################################
 # ########################################
-# Roberto change - V 7.2.0 / V 7.3.0		
+# Roberto change - V 7.2.0 / V 7.3.0
 		self.deflocationopt = os.path.join(self.optsdirtxt, self.optionsfilestxt[21])
 		self.pdsinchartopt = os.path.join(self.optsdirtxt, self.optionsfilestxt[22])
 		self.languagesopt = os.path.join(self.optsdirtxt, self.optionsfilestxt[23])
@@ -1147,12 +1246,25 @@ class Options:
 	def _normalize_sidebar_list_preferences(preferences):
 		if not isinstance(preferences, dict):
 			preferences = {}
+		try:
+			schema_version = int(preferences.get('schemaVersion', 1))
+		except (TypeError, ValueError):
+			schema_version = 1
 		aspect = preferences.get('aspectList')
 		transit = preferences.get('transitList')
+		synodic = preferences.get('synodicList')
+		secondary = preferences.get('secondaryProgressions')
+		vimshottari = preferences.get('vimshottari')
 		if not isinstance(aspect, dict):
 			aspect = {}
 		if not isinstance(transit, dict):
 			transit = {}
+		if not isinstance(synodic, dict):
+			synodic = {}
+		if not isinstance(secondary, dict):
+			secondary = {}
+		if not isinstance(vimshottari, dict):
+			vimshottari = {}
 
 		mode = aspect.get('mode')
 		if mode not in (None, 'primary', 'outer', 'outerToPrimary', 'primaryToOuter'):
@@ -1219,8 +1331,76 @@ class Options:
 		if direction not in ('direct', 'converse', 'both'):
 			direction = 'direct'
 
+		def selected_ids(source, field, allowed, defaults):
+			raw = source.get(field, defaults)
+			if not isinstance(raw, (list, tuple)):
+				raw = defaults
+			selected = []
+			for value in raw:
+				for candidate in allowed:
+					if value == candidate and candidate not in selected:
+						selected.append(candidate)
+						break
+			return selected
+
+		ingress_planet_ids = selected_ids(synodic,
+			'ingressPlanetIds',
+			tuple(range(11)) + (astrology.SE_CHIRON,),
+			list(range(11)) + [astrology.SE_CHIRON],
+		)
+		synodic_planet_ids = selected_ids(synodic,
+			'synodicPlanetIds',
+			tuple(range(1, 11)) + (astrology.SE_CHIRON,),
+			[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, astrology.SE_CHIRON],
+		)
+		# Chiron did not exist in schema 1, so every saved selection omitted it
+		# regardless of user intent. Enable the newly available source once;
+		# schema 2 subsequently preserves an explicit deselection.
+		if schema_version < 2:
+			if astrology.SE_CHIRON not in ingress_planet_ids:
+				ingress_planet_ids.append(astrology.SE_CHIRON)
+			if astrology.SE_CHIRON not in synodic_planet_ids:
+				synodic_planet_ids.append(astrology.SE_CHIRON)
+		lunar_cycle_ids = selected_ids(synodic,
+			'lunarCycleIds',
+			('draconic', 'anomalistic'),
+			['draconic', 'anomalistic'],
+		)
+		secondary_planet_ids = None
+		if secondary.get('planetIds') is not None:
+			secondary_planet_ids = selected_ids(
+				secondary, 'planetIds', tuple(range(256)), [],
+			)
+		secondary_aspect_ids = selected_ids(
+			secondary, 'aspectIds', tuple(range(12)), list(range(12)),
+		)
+
+		vimshottari_anchor = vimshottari.get('anchor')
+		if vimshottari_anchor not in ('moon', 'ascendant'):
+			vimshottari_anchor = 'moon'
+		vimshottari_start_star = vimshottari.get('startStar')
+		if vimshottari_start_star not in ('janma', 'kshema', 'utpanna', 'adhana'):
+			vimshottari_start_star = 'janma'
+		try:
+			vimshottari_year_days = float(vimshottari.get('yearDays', 365.25))
+		except (TypeError, ValueError):
+			vimshottari_year_days = 365.25
+		if vimshottari_year_days not in (360.0, 365.25):
+			vimshottari_year_days = 365.25
+		vimshottari_ayanamsha = vimshottari.get('ayanamsha')
+		if vimshottari_ayanamsha != 'follow_chart':
+			try:
+				vimshottari_ayanamsha = int(vimshottari_ayanamsha)
+			except (TypeError, ValueError):
+				vimshottari_ayanamsha = 'follow_chart'
+			if (
+				vimshottari_ayanamsha != 'follow_chart' and
+				not 0 <= vimshottari_ayanamsha < 25
+			):
+				vimshottari_ayanamsha = 'follow_chart'
+
 		return {
-			'schemaVersion': 1,
+			'schemaVersion': 2,
 			'aspectList': {
 				'mode': mode,
 				'maxOrb': max_orb,
@@ -1236,6 +1416,29 @@ class Options:
 				'selectedPromittorId': selected_promittor_id,
 				'promittorDrawerOpen': bool(transit.get('promittorDrawerOpen', False)),
 				'direction': direction,
+			},
+			'synodicList': {
+				'ingressPlanetIds': ingress_planet_ids,
+				'synodicPlanetIds': synodic_planet_ids,
+				'lunarCycleIds': lunar_cycle_ids,
+				'ingressDrawerOpen': bool(synodic.get('ingressDrawerOpen', False)),
+				'synodicDrawerOpen': bool(synodic.get('synodicDrawerOpen', False)),
+				'lunarDrawerOpen': bool(synodic.get('lunarDrawerOpen', False)),
+			},
+			'secondaryProgressions': {
+				'planetIds': secondary_planet_ids,
+				'aspectIds': secondary_aspect_ids,
+				'filterDrawerOpen': bool(
+					secondary.get('filterDrawerOpen', False) or
+					secondary.get('planetDrawerOpen', False) or
+					secondary.get('aspectDrawerOpen', False)
+				),
+			},
+			'vimshottari': {
+				'anchor': vimshottari_anchor,
+				'startStar': vimshottari_start_star,
+				'yearDays': vimshottari_year_days,
+				'ayanamsha': vimshottari_ayanamsha,
 			},
 		}
 
@@ -1297,6 +1500,36 @@ class Options:
 		if len(self.speculums) > len(defaults):
 			del self.speculums[len(defaults):]
 
+	def _normalize_speculum_speed_mode(self):
+		if getattr(self, 'speculum_speed_mode', None) not in self.SPECULUM_SPEED_MODES:
+			self.speculum_speed_mode = self.def_speculum_speed_mode
+
+	@classmethod
+	def normalize_pdincharttyp(cls, value):
+		"""Map retired or malformed celestial PD projections to Planets."""
+		if isinstance(value, bool):
+			return cls.PD_IN_CHART_FROM_PLANETS
+		try:
+			normalized = int(value)
+		except (TypeError, ValueError, OverflowError):
+			return cls.PD_IN_CHART_FROM_PLANETS
+		if isinstance(value, float) and not value.is_integer():
+			return cls.PD_IN_CHART_FROM_PLANETS
+		if normalized not in (
+			cls.PD_IN_CHART_FROM_PLANETS,
+			cls.PD_IN_CHART_ECLIPTIC_FEET,
+		):
+			return cls.PD_IN_CHART_FROM_PLANETS
+		return normalized
+
+	def _normalize_pds_in_chart_options(self):
+		self.pdincharttyp = self.normalize_pdincharttyp(
+			getattr(self, 'pdincharttyp', self.PD_IN_CHART_FROM_PLANETS)
+		)
+		# Retain the historical pickle slot, but never reactivate the retired
+		# pseudo-astronomical secondary-motion control.
+		self.pdinchartsecmotion = False
+
 	def reload(self):
 		#Appearance
 		self.aspects = self.def_aspects
@@ -1304,6 +1537,7 @@ class Options:
 		self.symbols = self.def_symbols
 		self.traditionalaspects = self.def_traditionalaspects
 		self.showaspectsforderivedpoints = self.def_showaspectsforderivedpoints
+		self.aspectlist_perfection_link_mode = self.def_aspectlist_perfection_link_mode
 		self.showaspectstoasc = self.def_showaspectstoasc
 		self.showaspectstomc = self.def_showaspectstomc
 		self.showaspectstodsc = self.def_showaspectstodsc
@@ -1326,6 +1560,7 @@ class Options:
 		self.planetarydayhour = self.def_planetarydayhour
 		self.housesystem = self.def_housesystem
 		self.information = self.def_information
+		self.showradixnameincanvas = self.def_showradixnameincanvas
 		self.showseconds = self.def_showseconds
 		self.dateconvention = self.def_dateconvention
 		self.transcendental = self.def_transcendental[:]
@@ -1343,6 +1578,7 @@ class Options:
 		self.showaspectstolof = self.def_showaspectstolof
 		self.showlofouterring = self.def_showlofouterring
 		self.showprenatalsyzygy = self.def_showprenatalsyzygy
+		self.showprenataleclipse = self.def_showprenataleclipse
 		self.pdf_chart_color_mode = self.def_pdf_chart_color_mode
 		self.pdf_chart_raster_preset = self.def_pdf_chart_raster_preset
 		self.pdf_include_overlays = self.def_pdf_include_overlays
@@ -1353,12 +1589,17 @@ class Options:
 		self.showdecans = self.def_showdecans
 		self.showanglearrowheads = self.def_showanglearrowheads
 		self.showcusplessascmclabels = self.def_showcusplessascmclabels
+		self.multiwheel_show_positions = self.def_multiwheel_show_positions
+		self.multiwheel_show_minutes = self.def_multiwheel_show_minutes
+		self.multiwheel_sign_colors = self.def_multiwheel_sign_colors
+		self.multiwheel_show_angle_labels = self.def_multiwheel_show_angle_labels
 		self.dignitylabelcolors = self.def_dignitylabelcolors
 		self.showfixstars = self.def_showfixstars
 		self.phasismode = self.def_phasismode
 		self.showcazimi = self.def_showcazimi
 		self.cazimimode = self.def_cazimimode
 		self.synodicmode = self.def_synodicmode
+		self.solarconditionmode = self.def_solarconditionmode
 		self.showeclipseoverlay = self.def_showeclipseoverlay
 		self.astrocart_localspace_additive = self.def_astrocart_localspace_additive
 		self.astrocart_show_ecliptic = self.def_astrocart_show_ecliptic
@@ -1383,6 +1624,7 @@ class Options:
 		self.speculums = copy.deepcopy(self.def_speculums)
 		self.intime = self.def_intime
 		self.speculumdodecat = copy.deepcopy(self.def_speculumdodecat)
+		self.speculum_speed_mode = self.def_speculum_speed_mode
 
 		#Symbols
 		self.uranus = self.def_uranus
@@ -1473,7 +1715,7 @@ class Options:
 		self.orbis = copy.deepcopy(self.def_orbis)
 		self.orbisplanetspar = copy.deepcopy(self.def_orbisplanetspar)
 
-		# Houses 
+		# Houses
 		self.orbisH = self.def_orbisH[:]
 		self.orbisparH = self.def_orbisparH[:]
 
@@ -1516,6 +1758,7 @@ class Options:
 		self.pdaspects = self.def_pdaspects[:]
 
 		self.pdcircumoa = self.def_pdcircumoa
+		self.pdcircumprommode = self.def_pdcircumprommode
 		self.pdlistmode = self.def_pdlistmode
 		self.pdlistglyphcolors = self.def_pdlistglyphcolors
 
@@ -1583,6 +1826,7 @@ class Options:
 		#Fixstars
 		self.fixstars.clear()
 		self.fixstars = self.def_fixstars.copy()
+		self.useIndianFixstarNames = self.def_useIndianFixstarNames
 
 		#Profections
 		self.zodprof = self.def_zodprof
@@ -1594,8 +1838,8 @@ class Options:
 # Roberto change - V 7.3.0
 		#Firdaria
 		self.isfirbonatti = self.def_isfirbonatti
-# ########################################		
-		
+# ########################################
+
 # ########################################
 # Roberto change - V 7.2.0
 		#Default Location
@@ -1632,18 +1876,30 @@ class Options:
 		self.timed_chart_show_radix_default = self.def_timed_chart_show_radix_default
 		self.event_table_time_basis = self.def_event_table_time_basis
 		self.subcharts_open_compound_default = self.def_subcharts_open_compound_default
+		self.multiwheel_open_at_three = self.def_multiwheel_open_at_three
+		self.chart_ring_count = self.def_chart_ring_count
+		self.chart_ring_zodiac = self.def_chart_ring_zodiac
 		self.secondary_progression_launch_mode = self.def_secondary_progression_launch_mode
+		self.aspectlist_prebirth_secondary_converse = self.def_aspectlist_prebirth_secondary_converse
 		self.at_reclick_behavior = self.def_at_reclick_behavior
+		self.harmonic_chart_mode = self.def_harmonic_chart_mode
+		self.varga_drishti_mode = self.def_varga_drishti_mode
+		self.varga_node_special_drishti = self.def_varga_node_special_drishti
 		self.search_techniques = self.def_search_techniques[:]
 		self.search_aspects = self.def_search_aspects[:]
 		self.search_promittor_ids = self.def_search_promittor_ids[:]
 		self.search_significator_ids = self.def_search_significator_ids[:]
+		self.search_promittor_motion = self.def_search_promittor_motion
+		self.search_significator_motion = self.def_search_significator_motion
+		self.search_lunation_orb = self.def_search_lunation_orb
+		self.search_moon_phase = self.def_search_moon_phase
 		self.search_from = self.def_search_from
 		self.search_to = self.def_search_to
 		self.search_part_filter = self.def_search_part_filter
 		self.search_sign_changes = self.def_search_sign_changes
 		self.search_default_offset_months = self.def_search_default_offset_months
 		self.search_default_range_months = self.def_search_default_range_months
+		self.search_lifetime_years = self.def_search_lifetime_years
 		self.search_has_saved_state = self.def_search_has_saved_state
 		self.startupchart = self.def_startupchart
 		self.restore_open_charts = self.def_restore_open_charts
@@ -1674,7 +1930,7 @@ class Options:
 
 		try:
 			optfile = self.appearance1opt
-			f = self._open_opt_for_load(optfile)		
+			f = self._open_opt_for_load(optfile)
 			self.aspects = pickle.load(f)
 			self.aspect = pickle.load(f)
 			self.symbols = pickle.load(f)
@@ -1943,6 +2199,48 @@ class Options:
 				self.list_export_aspect_symbols = bool(pickle.load(f))
 			except Exception:
 				self.list_export_aspect_symbols = self.def_list_export_aspect_symbols
+			try:
+				value = pickle.load(f)
+				self.solarconditionmode = (
+					value if type(value) is int and value in self.SOLAR_CONDITION_MODES
+					else self.def_solarconditionmode
+				)
+			except Exception:
+				self.solarconditionmode = self.def_solarconditionmode
+			try:
+				self.showradixnameincanvas = bool(pickle.load(f))
+			except Exception:
+				self.showradixnameincanvas = self.def_showradixnameincanvas
+			try:
+				self.showprenataleclipse = bool(pickle.load(f))
+			except Exception:
+				# Preserve the first Ec release for existing users who already had
+				# the shared prenatal-syzygy layer enabled.
+				self.showprenataleclipse = bool(self.showprenatalsyzygy)
+			try:
+				value = str(pickle.load(f))
+				self.aspectlist_perfection_link_mode = (
+					value if value in ('transits', 'secondary')
+					else self.def_aspectlist_perfection_link_mode
+				)
+			except Exception:
+				self.aspectlist_perfection_link_mode = self.def_aspectlist_perfection_link_mode
+			try:
+				self.multiwheel_show_positions = bool(pickle.load(f))
+			except Exception:
+				self.multiwheel_show_positions = self.def_multiwheel_show_positions
+			try:
+				self.multiwheel_show_minutes = bool(pickle.load(f))
+			except Exception:
+				self.multiwheel_show_minutes = self.def_multiwheel_show_minutes
+			try:
+				self.multiwheel_sign_colors = bool(pickle.load(f))
+			except Exception:
+				self.multiwheel_sign_colors = self.def_multiwheel_sign_colors
+			try:
+				self.multiwheel_show_angle_labels = bool(pickle.load(f))
+			except Exception:
+				self.multiwheel_show_angle_labels = self.def_multiwheel_show_angle_labels
 			if (
 				isinstance(self.ringorb_asteroids, bool) and
 				isinstance(self.ringorb_hybrid, bool) and
@@ -2002,6 +2300,11 @@ class Options:
 				self.speculumdodecat = pickle.load(f)
 			except Exception:
 				self.speculumdodecat = copy.deepcopy(self.def_speculumdodecat)
+			try:
+				self.speculum_speed_mode = pickle.load(f)
+			except Exception:
+				self.speculum_speed_mode = self.def_speculum_speed_mode
+			self._normalize_speculum_speed_mode()
 			self._normalize_speculum_options()
 			f.close()
 		except IOError:
@@ -2009,7 +2312,7 @@ class Options:
 
 		try:
 			optfile = self.symbolsopt
-			f = self._open_opt_for_load(optfile)		
+			f = self._open_opt_for_load(optfile)
 			self.uranus = pickle.load(f)
 			self.pluto = pickle.load(f)
 			self.signs = pickle.load(f)
@@ -2019,7 +2322,7 @@ class Options:
 
 		try:
 			optfile = self.dignitiesopt
-			f = self._open_opt_for_load(optfile)		
+			f = self._open_opt_for_load(optfile)
 			self.dignities = pickle.load(f)
 			f.close()
 		except IOError:
@@ -2027,7 +2330,7 @@ class Options:
 
 		try:
 			optfile = self.triplicitiesopt
-			f = self._open_opt_for_load(optfile)		
+			f = self._open_opt_for_load(optfile)
 			self.seltrip = pickle.load(f)
 			self.trips = pickle.load(f)
 			f.close()
@@ -2036,7 +2339,7 @@ class Options:
 
 		try:
 			optfile = self.termsopt
-			f = self._open_opt_for_load(optfile)		
+			f = self._open_opt_for_load(optfile)
 			self.selterm = pickle.load(f)
 			self.terms = pickle.load(f)
 			f.close()
@@ -2045,7 +2348,7 @@ class Options:
 
 		try:
 			optfile = self.decansopt
-			f = self._open_opt_for_load(optfile)		
+			f = self._open_opt_for_load(optfile)
 			self.seldecan = pickle.load(f)
 			self.decans = pickle.load(f)
 			f.close()
@@ -2054,7 +2357,7 @@ class Options:
 
 		try:
 			optfile = self.chartalmutenopt
-			f = self._open_opt_for_load(optfile)		
+			f = self._open_opt_for_load(optfile)
 			self.oneruler = pickle.load(f)
 			self.usedaynightorb = pickle.load(f)
 			self.dignityscores = pickle.load(f)
@@ -2069,7 +2372,7 @@ class Options:
 
 		try:
 			optfile = self.topicalandpartsopt
-			f = self._open_opt_for_load(optfile)		
+			f = self._open_opt_for_load(optfile)
 			self.topicals = pickle.load(f)
 			self.arabicparts = pickle.load(f)
 			self.arabicpartsref = pickle.load(f)
@@ -2101,7 +2404,7 @@ class Options:
 
 		try:
 			optfile = self.colorsopt
-			f = self._open_opt_for_load(optfile)		
+			f = self._open_opt_for_load(optfile)
 			self.clrframe = pickle.load(f)
 			self.clrsigns = pickle.load(f)
 			self.clrAscMC = pickle.load(f)
@@ -2166,7 +2469,7 @@ class Options:
 
 		try:
 			optfile = self.housesystemopt
-			f = self._open_opt_for_load(optfile)		
+			f = self._open_opt_for_load(optfile)
 			self.hsys = pickle.load(f)
 			f.close()
 		except IOError:
@@ -2174,7 +2477,7 @@ class Options:
 
 		try:
 			optfile = self.nodesopt
-			f = self._open_opt_for_load(optfile)		
+			f = self._open_opt_for_load(optfile)
 			self.meannode = pickle.load(f)
 			f.close()
 		except IOError:
@@ -2182,7 +2485,7 @@ class Options:
 
 		try:
 			optfile = self.orbsopt
-			f = self._open_opt_for_load(optfile)		
+			f = self._open_opt_for_load(optfile)
 			self.orbis = pickle.load(f)
 			self.orbisplanetspar = pickle.load(f)
 			self.orbisH = pickle.load(f)
@@ -2353,12 +2656,18 @@ class Options:
 					raise IndexError()
 			except Exception:
 				self.pdmorinpromittorset = self.def_pdmorinpromittorset
+			try:
+				self.pdcircumprommode = primarydir_value(i); i += 1
+				if self.pdcircumprommode is None:
+					raise IndexError()
+			except Exception:
+				self.pdcircumprommode = self.def_pdcircumprommode
 		except IOError:
 			res = False
 
 		try:
 			optfile = self.primarykeysopt
-			f = self._open_opt_for_load(optfile)		
+			f = self._open_opt_for_load(optfile)
 			self.pdkeydyn = pickle.load(f)
 			self.pdkeyd = pickle.load(f)
 			self.pdkeys = pickle.load(f)
@@ -2372,7 +2681,7 @@ class Options:
 
 		try:
 			optfile = self.fortuneopt
-			f = self._open_opt_for_load(optfile)		
+			f = self._open_opt_for_load(optfile)
 			self.lotoffortune = pickle.load(f)
 			f.close()
 		except IOError:
@@ -2380,7 +2689,7 @@ class Options:
 
 		try:
 			optfile = self.syzygyopt
-			f = self._open_opt_for_load(optfile)		
+			f = self._open_opt_for_load(optfile)
 			self.syzmoon = pickle.load(f)
 			f.close()
 		except IOError:
@@ -2388,8 +2697,12 @@ class Options:
 
 		try:
 			optfile = self.fixstarsopt
-			f = self._open_opt_for_load(optfile)		
+			f = self._open_opt_for_load(optfile)
 			self.fixstars = self._normalized_fixstars(pickle.load(f))
+			try:
+				self.useIndianFixstarNames = bool(pickle.load(f))
+			except (EOFError, TypeError, ValueError):
+				self.useIndianFixstarNames = self.def_useIndianFixstarNames
 			self.pdfixstarssel = self._normalized_pdfixstarssel(self.pdfixstarssel)
 			f.close()
 		except IOError:
@@ -2397,7 +2710,7 @@ class Options:
 
 		try:
 			optfile = self.profectionsopt
-			f = self._open_opt_for_load(optfile)		
+			f = self._open_opt_for_load(optfile)
 			self.zodprof = pickle.load(f)
 			self.usezodprojsprof = pickle.load(f)
 			try:
@@ -2411,12 +2724,12 @@ class Options:
 			f.close()
 		except IOError:
 			res = False
-			
+
 # ########################################
 # Roberto change - V 7.3.0
 		try:
 			optfile = self.firdariaopt
-			f = self._open_opt_for_load(optfile)		
+			f = self._open_opt_for_load(optfile)
 			self.isfirbonatti = pickle.load(f)
 			f.close()
 		except IOError:
@@ -2427,7 +2740,7 @@ class Options:
 # Roberto change - V 7.2.0
 		try:
 			optfile = self.deflocationopt
-			f = self._open_opt_for_load(optfile)		
+			f = self._open_opt_for_load(optfile)
 			self.deflocname = pickle.load(f)
 			self.deflocplus = pickle.load(f)
 			self.defloczhour = pickle.load(f)
@@ -2455,11 +2768,11 @@ class Options:
 			f.close()
 		except IOError:
 			res = False
-# ########################################			
+# ########################################
 
 		try:
 			optfile = self.pdsinchartopt
-			f = self._open_opt_for_load(optfile)		
+			f = self._open_opt_for_load(optfile)
 			self.pdincharttyp = pickle.load(f)
 			self.pdinchartsecmotion = pickle.load(f)
 			self.pdinchartterrsecmotion = pickle.load(f)
@@ -2467,6 +2780,7 @@ class Options:
 				self.pdinchartreverse = bool(pickle.load(f))
 			except EOFError:
 				self.pdinchartreverse = self.def_pdinchartreverse
+			self._normalize_pds_in_chart_options()
 			f.close()
 		except IOError:
 			res = False
@@ -2485,7 +2799,7 @@ class Options:
 
 		try:
 			optfile = self.autosaveopt
-			f = self._open_opt_for_load(optfile)		
+			f = self._open_opt_for_load(optfile)
 			self.autosave = pickle.load(f)
 			f.close()
 		except IOError:
@@ -2622,6 +2936,66 @@ class Options:
 				self.event_table_time_basis = basis
 			except Exception:
 				self.event_table_time_basis = self.def_event_table_time_basis
+			try:
+				mode = str(pickle.load(f))
+				if mode not in (
+					self.HARMONIC_CHART_MODE_HARMONIC,
+					self.HARMONIC_CHART_MODE_VARGA,
+				):
+					mode = self.def_harmonic_chart_mode
+				self.harmonic_chart_mode = mode
+			except Exception:
+				self.harmonic_chart_mode = self.def_harmonic_chart_mode
+			try:
+				mode = str(pickle.load(f))
+				if mode not in (
+					self.VARGA_DRISHTI_OFF,
+					self.VARGA_DRISHTI_PARASHARI,
+					self.VARGA_DRISHTI_JAIMINI,
+				):
+					mode = self.def_varga_drishti_mode
+				self.varga_drishti_mode = mode
+			except Exception:
+				self.varga_drishti_mode = self.def_varga_drishti_mode
+			try:
+				self.varga_node_special_drishti = bool(pickle.load(f))
+			except Exception:
+				self.varga_node_special_drishti = self.def_varga_node_special_drishti
+			try:
+				mode = str(pickle.load(f))
+				if mode not in (
+					self.PRENATAL_ECLIPSE_SOLAR_ONLY,
+					self.PRENATAL_ECLIPSE_SOLAR_AND_LUNAR,
+				):
+					mode = self.def_prenatal_eclipse_mode
+				self.prenatal_eclipse_mode = mode
+			except Exception:
+				self.prenatal_eclipse_mode = self.def_prenatal_eclipse_mode
+			try:
+				self.aspectlist_prebirth_secondary_converse = bool(pickle.load(f))
+			except Exception:
+				self.aspectlist_prebirth_secondary_converse = self.def_aspectlist_prebirth_secondary_converse
+			try:
+				count = int(pickle.load(f))
+				if count < self.CHART_RING_COUNT_MIN or count > self.CHART_RING_COUNT_MAX:
+					count = self.def_chart_ring_count
+				self.chart_ring_count = count
+			except Exception:
+				self.chart_ring_count = self.def_chart_ring_count
+			try:
+				zodiac = str(pickle.load(f))
+				if zodiac not in (
+					self.CHART_RING_ZODIAC_RIM,
+					self.CHART_RING_ZODIAC_CENTRE,
+				):
+					zodiac = self.def_chart_ring_zodiac
+				self.chart_ring_zodiac = zodiac
+			except Exception:
+				self.chart_ring_zodiac = self.def_chart_ring_zodiac
+			try:
+				self.multiwheel_open_at_three = bool(pickle.load(f))
+			except Exception:
+				self.multiwheel_open_at_three = self.def_multiwheel_open_at_three
 			f.close()
 		except IOError:
 			res = False
@@ -2661,6 +3035,32 @@ class Options:
 					self.search_part_filter or
 					self.search_sign_changes
 				)
+			try:
+				self.search_promittor_motion = str(pickle.load(f))
+			except Exception:
+				self.search_promittor_motion = self.def_search_promittor_motion
+			if self.search_promittor_motion not in ('', 'rx', 'd'):
+				self.search_promittor_motion = self.def_search_promittor_motion
+			try:
+				self.search_significator_motion = str(pickle.load(f))
+			except Exception:
+				self.search_significator_motion = self.def_search_significator_motion
+			if self.search_significator_motion not in ('', 'rx', 'd'):
+				self.search_significator_motion = self.def_search_significator_motion
+			try:
+				self.search_lunation_orb = max(0.0, min(15.0, float(pickle.load(f))))
+			except Exception:
+				self.search_lunation_orb = self.def_search_lunation_orb
+			try:
+				self.search_moon_phase = str(pickle.load(f))
+			except Exception:
+				self.search_moon_phase = self.def_search_moon_phase
+			if self.search_moon_phase not in ('', 'waxing', 'waning'):
+				self.search_moon_phase = self.def_search_moon_phase
+			try:
+				self.search_lifetime_years = int(pickle.load(f))
+			except Exception:
+				self.search_lifetime_years = self.def_search_lifetime_years
 			f.close()
 		except IOError:
 			res = False
@@ -2819,7 +3219,7 @@ class Options:
 	def saveAppearance1(self):
 		try:
 			optfile = self.appearance1opt
-			f = open(optfile, 'wb')		
+			f = open(optfile, 'wb')
 			pickle.dump(self.aspects, f)
 			pickle.dump(self.aspect, f)
 			pickle.dump(self.symbols, f)
@@ -2900,6 +3300,14 @@ class Options:
 			pickle.dump(bool(self.png_include_overlays), f)
 			pickle.dump(bool(self.showaspectsforderivedpoints), f)
 			pickle.dump(bool(self.list_export_aspect_symbols), f)
+			pickle.dump(int(self.solarconditionmode), f)
+			pickle.dump(bool(self.showradixnameincanvas), f)
+			pickle.dump(bool(self.showprenataleclipse), f)
+			pickle.dump(str(self.aspectlist_perfection_link_mode), f)
+			pickle.dump(bool(self.multiwheel_show_positions), f)
+			pickle.dump(bool(self.multiwheel_show_minutes), f)
+			pickle.dump(bool(self.multiwheel_sign_colors), f)
+			pickle.dump(bool(self.multiwheel_show_angle_labels), f)
 			f.close()
 			return True
 		except IOError:
@@ -2911,10 +3319,11 @@ class Options:
 	def saveAppearance2(self):
 		try:
 			optfile = self.appearance2opt
-			f = open(optfile, 'wb')		
+			f = open(optfile, 'wb')
 			pickle.dump(self.speculums, f)
 			pickle.dump(self.intime, f)
 			pickle.dump(self.speculumdodecat, f)
+			pickle.dump(self.speculum_speed_mode, f)
 			f.close()
 			return True
 		except IOError:
@@ -2926,7 +3335,7 @@ class Options:
 	def saveSymbols(self):
 		try:
 			optfile = self.symbolsopt
-			f = open(optfile, 'wb')		
+			f = open(optfile, 'wb')
 			pickle.dump(self.uranus, f)
 			pickle.dump(self.pluto, f)
 			pickle.dump(self.signs, f)
@@ -2941,7 +3350,7 @@ class Options:
 	def saveDignities(self):
 		try:
 			optfile = self.dignitiesopt
-			f = open(optfile, 'wb')		
+			f = open(optfile, 'wb')
 			pickle.dump(self.dignities, f)
 			f.close()
 			return True
@@ -2954,7 +3363,7 @@ class Options:
 	def saveTriplicities(self):
 		try:
 			optfile = self.triplicitiesopt
-			f = open(optfile, 'wb')		
+			f = open(optfile, 'wb')
 			pickle.dump(self.seltrip, f)
 			pickle.dump(self.trips, f)
 			f.close()
@@ -2968,7 +3377,7 @@ class Options:
 	def saveTerms(self):
 		try:
 			optfile = self.termsopt
-			f = open(optfile, 'wb')		
+			f = open(optfile, 'wb')
 			pickle.dump(self.selterm, f)
 			pickle.dump(self.terms, f)
 			f.close()
@@ -2982,7 +3391,7 @@ class Options:
 	def saveDecans(self):
 		try:
 			optfile = self.decansopt
-			f = open(optfile, 'wb')		
+			f = open(optfile, 'wb')
 			pickle.dump(self.seldecan, f)
 			pickle.dump(self.decans, f)
 			f.close()
@@ -2996,7 +3405,7 @@ class Options:
 	def saveChartAlmuten(self):
 		try:
 			optfile = self.chartalmutenopt
-			f = open(optfile, 'wb')		
+			f = open(optfile, 'wb')
 			pickle.dump(self.oneruler, f)
 			pickle.dump(self.usedaynightorb, f)
 			pickle.dump(self.dignityscores, f)
@@ -3016,7 +3425,7 @@ class Options:
 	def saveTopicalandParts(self):
 		try:
 			optfile = self.topicalandpartsopt
-			f = open(optfile, 'wb')		
+			f = open(optfile, 'wb')
 			pickle.dump(self.topicals, f)
 			pickle.dump(self.arabicparts, f)
 			pickle.dump(self.arabicpartsref, f)
@@ -3049,7 +3458,7 @@ class Options:
 	def saveColors(self):
 		try:
 			optfile = self.colorsopt
-			f = open(optfile, 'wb')		
+			f = open(optfile, 'wb')
 			pickle.dump(self.clrframe, f)
 			pickle.dump(self.clrsigns, f)
 			pickle.dump(self.clrAscMC, f)
@@ -3112,7 +3521,7 @@ class Options:
 	def saveHouseSystem(self):
 		try:
 			optfile = self.housesystemopt
-			f = open(optfile, 'wb')		
+			f = open(optfile, 'wb')
 			pickle.dump(self.hsys, f)
 			f.close()
 			return True
@@ -3125,7 +3534,7 @@ class Options:
 	def saveNodes(self):
 		try:
 			optfile = self.nodesopt
-			f = open(optfile, 'wb')		
+			f = open(optfile, 'wb')
 			pickle.dump(self.meannode, f)
 			f.close()
 			return True
@@ -3138,7 +3547,7 @@ class Options:
 	def saveOrbs(self):
 		try:
 			optfile = self.orbsopt
-			f = open(optfile, 'wb')		
+			f = open(optfile, 'wb')
 			pickle.dump(self.orbis, f)
 			pickle.dump(self.orbisplanetspar, f)
 			pickle.dump(self.orbisH, f)
@@ -3159,7 +3568,7 @@ class Options:
 	def savePrimaryDirs(self):
 		try:
 			optfile = self.primarydirsopt
-			f = open(optfile, 'wb')		
+			f = open(optfile, 'wb')
 			pickle.dump(self.primarydir, f)
 			pickle.dump(self.subprimarydir, f)
 			pickle.dump(self.subzodiacal, f)
@@ -3208,6 +3617,7 @@ class Options:
 			pickle.dump(self.pdpromarabicpartname, f)
 			pickle.dump(self.pdrevshownatalpromissors, f)
 			pickle.dump(self.pdmorinpromittorset, f)
+			pickle.dump(self.pdcircumprommode, f)
 			f.close()
 			return True
 		except IOError:
@@ -3219,7 +3629,7 @@ class Options:
 	def savePrimaryKeys(self):
 		try:
 			optfile = self.primarykeysopt
-			f = open(optfile, 'wb')		
+			f = open(optfile, 'wb')
 			pickle.dump(self.pdkeydyn, f)
 			pickle.dump(self.pdkeyd, f)
 			pickle.dump(self.pdkeys, f)
@@ -3265,7 +3675,7 @@ class Options:
 	def saveFortune(self):
 		try:
 			optfile = self.fortuneopt
-			f = open(optfile, 'wb')		
+			f = open(optfile, 'wb')
 			pickle.dump(self.lotoffortune, f)
 			f.close()
 			return True
@@ -3278,7 +3688,7 @@ class Options:
 	def saveSyzygy(self):
 		try:
 			optfile = self.syzygyopt
-			f = open(optfile, 'wb')		
+			f = open(optfile, 'wb')
 			pickle.dump(self.syzmoon, f)
 			f.close()
 			return True
@@ -3289,7 +3699,7 @@ class Options:
 
 # ###########################################
 # Elias -  V 8.0.0 fixstarsorbdlg change fs=[]
-# ###########################################	
+# ###########################################
 	def _normalized_fixstars(self, fixstars_map=None):
 		if isinstance(fixstars_map, dict) and len(fixstars_map) != 0:
 			return fixstars_map.copy()
@@ -3313,13 +3723,14 @@ class Options:
 	def saveFixstars(self, fs=None):
 		try:
 			optfile = self.fixstarsopt
-			f = open(optfile, 'wb')		
+			f = open(optfile, 'wb')
 			if fs is not None:
 				self.fixstars = self._normalized_fixstars(fs)
 			else:
 				self.fixstars = self._normalized_fixstars(self.fixstars)
 # ###########################################
 			pickle.dump(self.fixstars, f)
+			pickle.dump(bool(self.useIndianFixstarNames), f)
 			f.close()
 			return True
 		except IOError:
@@ -3331,7 +3742,7 @@ class Options:
 	def saveProfections(self):
 		try:
 			optfile = self.profectionsopt
-			f = open(optfile, 'wb')		
+			f = open(optfile, 'wb')
 			pickle.dump(self.zodprof, f)
 			pickle.dump(self.usezodprojsprof, f)
 			pickle.dump(self.profections_solar_return_snap, f)
@@ -3348,7 +3759,7 @@ class Options:
 	def saveFirdaria(self):
 		try:
 			optfile = self.firdariaopt
-			f = open(optfile, 'wb')		
+			f = open(optfile, 'wb')
 			pickle.dump(self.isfirbonatti, f)
 			f.close()
 			return True
@@ -3363,7 +3774,7 @@ class Options:
 	def saveDefLocation(self):
 		try:
 			optfile = self.deflocationopt
-			f = open(optfile, 'wb')		
+			f = open(optfile, 'wb')
 			pickle.dump(self.deflocname, f)
 			pickle.dump(self.deflocplus, f)
 			pickle.dump(self.defloczhour, f)
@@ -3392,7 +3803,8 @@ class Options:
 	def savePDsInChart(self):
 		try:
 			optfile = self.pdsinchartopt
-			f = open(optfile, 'wb')		
+			self._normalize_pds_in_chart_options()
+			f = open(optfile, 'wb')
 			pickle.dump(self.pdincharttyp, f)
 			pickle.dump(self.pdinchartsecmotion, f)
 			pickle.dump(self.pdinchartterrsecmotion, f)
@@ -3422,7 +3834,7 @@ class Options:
 	def saveAutoSave(self):
 		try:
 			optfile = self.autosaveopt
-			f = open(optfile, 'wb')		
+			f = open(optfile, 'wb')
 			pickle.dump(self.autosave, f)
 			f.close()
 			return True
@@ -3468,6 +3880,14 @@ class Options:
 			pickle.dump(self.timed_chart_show_radix_default, f)
 			pickle.dump(self.subcharts_open_compound_default, f)
 			pickle.dump(self.event_table_time_basis, f)
+			pickle.dump(self.harmonic_chart_mode, f)
+			pickle.dump(self.varga_drishti_mode, f)
+			pickle.dump(self.varga_node_special_drishti, f)
+			pickle.dump(self.prenatal_eclipse_mode, f)
+			pickle.dump(self.aspectlist_prebirth_secondary_converse, f)
+			pickle.dump(self.chart_ring_count, f)
+			pickle.dump(self.chart_ring_zodiac, f)
+			pickle.dump(self.multiwheel_open_at_three, f)
 			f.close()
 			return True
 		except IOError:
@@ -3490,6 +3910,11 @@ class Options:
 			pickle.dump(self.search_default_offset_months, f)
 			pickle.dump(self.search_default_range_months, f)
 			pickle.dump(self.search_has_saved_state, f)
+			pickle.dump(self.search_promittor_motion, f)
+			pickle.dump(self.search_significator_motion, f)
+			pickle.dump(self.search_lunation_orb, f)
+			pickle.dump(self.search_moon_phase, f)
+			pickle.dump(self.search_lifetime_years, f)
 			f.close()
 			return True
 		except IOError:
@@ -3693,5 +4118,3 @@ class Options:
 			os.remove(self.astrocartographypreferencesopt)
 		if os.path.exists(self.sidebarlistpreferencesopt):
 			os.remove(self.sidebarlistpreferencesopt)
-
-

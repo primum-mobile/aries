@@ -32,9 +32,21 @@ import { useT } from "@/lib/i18n/i18n";
 import { semanticChartColor } from "@/lib/theme/semantic-color";
 import { cn } from "@/lib/utils";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
 
 import { DateTransitLink, TimedChartContextMenu } from "./directions-view";
 import { ListCalendarStepper, ListToggleDrawer } from "./list-controls";
+import { STEP_SETTLE_REFRESH_MS } from "./step-refresh";
+import {
+  mergeTemporalCoverageBounds,
+  temporalCoverageBounds,
+  temporalCoverageFromJdBounds,
+  type TemporalCoverageBounds,
+  useTemporalConfluenceLensReporter,
+  useTemporalConfluenceRows,
+  useTemporalPinnedRowId,
+  useTemporalRowHighlight,
+} from "./temporal-confluence-context";
 import {
   SidebarListBody,
   SidebarListCell,
@@ -56,6 +68,7 @@ type SynodicSpan = AgeSpan;
 type SynodicMonthStore = {
   rows: SynodicCycleRow[];
   coverage: SynodicSpan;
+  coverageJdUt: TemporalCoverageBounds | null;
   islandNonce: number;
   summary: string;
   truncated: boolean;
@@ -64,6 +77,13 @@ type SynodicMonthStore = {
   currentDatetime: string;
   birthDatetime: string;
   optionsSeq: number;
+  filterKey: string;
+  filterKeys: string[];
+  activeIngressPlanetIds: number[];
+  activeSynodicPlanetIds: number[];
+  activeLunarCycleIds: string[];
+  exhaustedPrevious: boolean;
+  exhaustedNext: boolean;
 };
 
 type SynodicListViewState = {
@@ -78,12 +98,12 @@ const SYNODIC_ROW_CLASS = LIST_ROW_CLASSES.flagged;
 const SYNODIC_STITCHED_CACHE = "synodic:stitched-list";
 const SYNODIC_STITCH_CACHE_MAX_ROWS = 12000;
 const SYNODIC_STITCH_PREFETCH_MONTHS = 2;
-const SYNODIC_STITCH_CHUNK_MONTHS = 6;
+const SYNODIC_STITCH_CHUNK_MONTHS = 1;
 const SYNODIC_FILTER_MIN_BACKGROUND_ROWS = 8;
 const SYNODIC_MIN_MONTH_INDEX = 0;
 const SYNODIC_MAX_MONTH_INDEX = 9999 * 12 + 11;
 const SYNODIC_FOCUS_ANCHOR = 0.25;
-const SYNODIC_SEED_MONTHS = 5;
+const SYNODIC_SEED_MONTHS = 1;
 const VIRTUAL_OVERSCAN_ROWS = 24;
 const VIRTUAL_SCROLL_SYNC_EVENT = "aries:virtual-scroll-sync";
 const synodicListViewStateCache = new Map<string, SynodicListViewState>();
@@ -97,26 +117,44 @@ function listCacheKey(parts: Record<string, unknown>): string {
 export function SynodicCycleListView({
   documentId,
   focusDatetime,
+  embedded = false,
+  includeTemporal = false,
   onClose,
 }: {
   documentId: string;
   parentDocumentId?: string | null;
   sourceName?: string | null;
   focusDatetime?: string | null;
+  embedded?: boolean;
+  includeTemporal?: boolean;
   onClose?: () => void;
 }) {
   const t = useT();
+  const viewStateKey = includeTemporal ? `${documentId}:temporal-confluence` : documentId;
   const rowHeight = useListRowHeight("symbolic");
   const rowHeightRef = React.useRef(rowHeight);
   React.useLayoutEffect(() => {
     rowHeightRef.current = rowHeight;
   }, [rowHeight]);
   const optionsSeq = useSynodicOptionsSeq();
-  const cachedViewState = React.useMemo(
-    () => synodicListViewStateCache.get(documentId) ?? null,
-    [documentId],
+  const synodicListPreferences = useWorkspaceStore(
+    (state) =>
+      state.synodicListPreferencesByDocument[documentId] ??
+      state.sidebarListPreferenceDefaults?.synodicList,
   );
-  const initialFocusDatetime = focusDatetime ?? cachedViewState?.requestFocusDatetime ?? localWallclockIso();
+  const sidebarListPreferencesHydrated = useWorkspaceStore(
+    (state) => state.sidebarListPreferencesHydrated,
+  );
+  const setSynodicListPreferences = useWorkspaceStore(
+    (state) => state.setSynodicListPreferences,
+  );
+  const cachedViewState = React.useMemo(
+    () => synodicListViewStateCache.get(viewStateKey) ?? null,
+    [viewStateKey],
+  );
+  const initialFocusDatetime = embedded
+    ? focusDatetime ?? cachedViewState?.requestFocusDatetime ?? localWallclockIso()
+    : cachedViewState?.requestFocusDatetime ?? localWallclockIso();
   const [requestFocusDatetime, setRequestFocusDatetime] = React.useState(
     initialFocusDatetime,
   );
@@ -124,17 +162,17 @@ export function SynodicCycleListView({
     cachedViewState?.visibleMonthIndex ?? monthIndexForDate(initialFocusDatetime),
   );
   const [activeIngressPlanetIds, setActiveIngressPlanetIds] = React.useState<number[] | null>(
-    cachedViewState?.activeIngressPlanetIds ?? null,
+    cachedViewState?.activeIngressPlanetIds ?? synodicListPreferences?.ingressPlanetIds ?? null,
   );
   const [activeSynodicPlanetIds, setActiveSynodicPlanetIds] = React.useState<number[] | null>(
-    cachedViewState?.activeSynodicPlanetIds ?? null,
+    cachedViewState?.activeSynodicPlanetIds ?? synodicListPreferences?.synodicPlanetIds ?? null,
   );
   const [activeLunarCycleIds, setActiveLunarCycleIds] = React.useState<string[] | null>(
-    cachedViewState?.activeLunarCycleIds ?? null,
+    cachedViewState?.activeLunarCycleIds ?? synodicListPreferences?.lunarCycleIds ?? null,
   );
-  const [ingressDrawerOpen, setIngressDrawerOpen] = React.useState(false);
-  const [synodicDrawerOpen, setSynodicDrawerOpen] = React.useState(false);
-  const [lunarDrawerOpen, setLunarDrawerOpen] = React.useState(false);
+  const ingressDrawerOpen = synodicListPreferences?.ingressDrawerOpen ?? false;
+  const synodicDrawerOpen = synodicListPreferences?.synodicDrawerOpen ?? false;
+  const lunarDrawerOpen = synodicListPreferences?.lunarDrawerOpen ?? false;
   const [island, setIsland] = React.useState<{
     nonce: number;
     window: SynodicSpan | null;
@@ -147,6 +185,7 @@ export function SynodicCycleListView({
   const [store, setStore] = React.useState<SynodicMonthStore | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const [edgeCheckNonce, setEdgeCheckNonce] = React.useState(0);
   const scrollerRef = React.useRef<HTMLDivElement | null>(null);
   const storeRef = React.useRef<SynodicMonthStore | null>(null);
   const activeIngressPlanetIdsRef = React.useRef<number[] | null>(activeIngressPlanetIds);
@@ -162,10 +201,9 @@ export function SynodicCycleListView({
   const scrollPlanRef = React.useRef<{ kind: "prepend"; count: number } | null>(null);
   const pendingMonthJumpRef = React.useRef<number | null>(null);
   const pendingReplacementFocusRef = React.useRef<string | null>(null);
-  const filterFillDirectionRef = React.useRef<"previous" | "next">("previous");
   const filterAnchorRef = React.useRef<string | null>(null);
   const stitchKeyRef = React.useRef("");
-  const skipInitialFocusSyncRef = React.useRef(Boolean(cachedViewState && !focusDatetime));
+  const skipInitialFocusSyncRef = React.useRef(!embedded && Boolean(focusDatetime));
 
   React.useEffect(() => {
     storeRef.current = store;
@@ -185,6 +223,37 @@ export function SynodicCycleListView({
   React.useEffect(() => {
     requestFocusDatetimeRef.current = requestFocusDatetime;
   }, [requestFocusDatetime]);
+  React.useEffect(() => {
+    if (
+      cachedViewState ||
+      !sidebarListPreferencesHydrated ||
+      !synodicListPreferences
+    ) return;
+    const ingress = [...synodicListPreferences.ingressPlanetIds];
+    const synodic = [...synodicListPreferences.synodicPlanetIds];
+    const lunar = [...synodicListPreferences.lunarCycleIds];
+    if (
+      sameSelection(activeIngressPlanetIds, ingress)
+      && sameSelection(activeSynodicPlanetIds, synodic)
+      && sameSelection(activeLunarCycleIds, lunar)
+    ) return;
+    activeIngressPlanetIdsRef.current = ingress;
+    activeSynodicPlanetIdsRef.current = synodic;
+    activeLunarCycleIdsRef.current = lunar;
+    const frame = requestAnimationFrame(() => {
+      setActiveIngressPlanetIds(ingress);
+      setActiveSynodicPlanetIds(synodic);
+      setActiveLunarCycleIds(lunar);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [
+    activeIngressPlanetIds,
+    activeLunarCycleIds,
+    activeSynodicPlanetIds,
+    cachedViewState,
+    sidebarListPreferencesHydrated,
+    synodicListPreferences,
+  ]);
 
   const activeFilterKey = React.useMemo(
     () => [
@@ -195,8 +264,8 @@ export function SynodicCycleListView({
     [activeIngressPlanetIds, activeLunarCycleIds, activeSynodicPlanetIds],
   );
   const stitchKey = React.useMemo(
-    () => listCacheKey({ documentId, optionsSeq }),
-    [documentId, optionsSeq],
+    () => listCacheKey({ documentId, includeTemporal, optionsSeq, activeFilterKey }),
+    [activeFilterKey, documentId, includeTemporal, optionsSeq],
   );
   React.useEffect(() => {
     stitchKeyRef.current = stitchKey;
@@ -263,7 +332,17 @@ export function SynodicCycleListView({
     });
     fetchSynodicChunk({
       documentId,
+      includeTemporal,
       span: requestedWindow,
+      ingressPlanetIds: activeIngressPlanetIdsRef.current,
+      synodicPlanetIds: activeSynodicPlanetIdsRef.current,
+      lunarCycleIds: activeLunarCycleIdsRef.current,
+      cursorDirection: "around",
+      cursorRowBudget: synodicFocusCursorRowBudget(
+        scrollerRef.current,
+        rowHeightRef.current,
+      ),
+      cursorAnchorDate: (retainedFocus ?? requestFocusDatetimeRef.current).slice(0, 10),
       signal: controller.signal,
     })
       .then((data) => {
@@ -272,6 +351,10 @@ export function SynodicCycleListView({
         const next: SynodicMonthStore = {
           rows: data.rows,
           coverage: span,
+          coverageJdUt: temporalCoverageBounds(
+            data.meta.coverageStartJdUt,
+            data.meta.coverageEndJdUt,
+          ),
           islandNonce: replacementNonce,
           summary: data.summary,
           truncated: data.truncated,
@@ -280,33 +363,24 @@ export function SynodicCycleListView({
           currentDatetime: data.meta.currentDatetime,
           birthDatetime: data.meta.birthDatetime,
           optionsSeq,
+          filterKey: activeFilterKey,
+          filterKeys: activeSynodicFilterKeys(
+            data.meta.planetItems,
+            data.meta.lunarItems,
+            data.meta.activeIngressPlanetIds,
+            data.meta.activeSynodicPlanetIds,
+            data.meta.activeLunarCycleIds,
+          ),
+          activeIngressPlanetIds: data.meta.activeIngressPlanetIds,
+          activeSynodicPlanetIds: data.meta.activeSynodicPlanetIds,
+          activeLunarCycleIds: data.meta.activeLunarCycleIds,
+          exhaustedPrevious:
+            data.cursor?.exhaustedPrevious ??
+            !hasActiveSynodicSources(data),
+          exhaustedNext:
+            data.cursor?.exhaustedNext ??
+            !hasActiveSynodicSources(data),
         };
-        if (activeIngressPlanetIdsRef.current == null) {
-          setActiveIngressPlanetIds(
-            data.meta.activePlanetIds.filter((planetId) =>
-              data.meta.planetItems.some(
-                (item) =>
-                  item.id === planetId &&
-                  supportsSynodicFilterGroup(item, "ingress") &&
-                  item.objectId !== "planet:moon",
-              ),
-            ),
-          );
-        }
-        if (activeSynodicPlanetIdsRef.current == null) {
-          setActiveSynodicPlanetIds(
-            data.meta.activePlanetIds.filter((planetId) =>
-              data.meta.planetItems.some(
-                (item) =>
-                  item.id === planetId &&
-                  supportsSynodicFilterGroup(item, "synodic"),
-              ),
-            ),
-          );
-        }
-        if (activeLunarCycleIdsRef.current == null) {
-          setActiveLunarCycleIds(data.meta.activeLunarCycleIds);
-        }
         if (requestedWindow == null) {
           const focus = data.meta.focusDatetime || monthSpanAnchorIso(span);
           const month = monthIndexForDate(focus);
@@ -380,7 +454,7 @@ export function SynodicCycleListView({
       extendControllerRef.current = null;
       extendInFlightRef.current = false;
     };
-  }, [documentId, island, optionsSeq, stitchKey, t]);
+  }, [activeFilterKey, documentId, includeTemporal, island, optionsSeq, stitchKey, t]);
 
   const extendCoverage = React.useCallback(
     (loadDirection: "previous" | "next") => {
@@ -388,7 +462,7 @@ export function SynodicCycleListView({
       if (!current || extendInFlightRef.current || initialInFlightRef.current) return;
       let span: SynodicSpan;
       if (loadDirection === "previous") {
-        if (current.coverage.start <= SYNODIC_MIN_MONTH_INDEX) return;
+        if (current.exhaustedPrevious || current.coverage.start <= SYNODIC_MIN_MONTH_INDEX) return;
         span = {
           start: Math.max(
             SYNODIC_MIN_MONTH_INDEX,
@@ -397,7 +471,7 @@ export function SynodicCycleListView({
           end: current.coverage.start,
         };
       } else {
-        if (current.coverage.end > SYNODIC_MAX_MONTH_INDEX) return;
+        if (current.exhaustedNext || current.coverage.end > SYNODIC_MAX_MONTH_INDEX) return;
         span = {
           start: current.coverage.end,
           end: Math.min(
@@ -412,21 +486,39 @@ export function SynodicCycleListView({
       extendControllerRef.current = controller;
       fetchSynodicChunk({
         documentId,
+        includeTemporal,
         span,
+        ingressPlanetIds: activeIngressPlanetIdsRef.current,
+        synodicPlanetIds: activeSynodicPlanetIdsRef.current,
+        lunarCycleIds: activeLunarCycleIdsRef.current,
+        cursorDirection: loadDirection,
+        cursorRowBudget: synodicCursorRowBudget(
+          scrollerRef.current,
+          rowHeightRef.current,
+        ),
+        cursorAnchorDate: monthSpanAnchorIso(span).slice(0, 10),
         signal: controller.signal,
       })
         .then((data) => {
           if (worldSeqRef.current !== worldSeq) return;
           const base = storeRef.current;
           if (!base) return;
+          const returnedSpan = monthSpanFromPayload(data);
           const { next, prependedCount } = stitchRows(
             base,
             data.rows,
-            span,
+            returnedSpan,
             synodicStitchRowKey,
           );
           const nextStore: SynodicMonthStore = {
             ...next,
+            coverageJdUt: mergeTemporalCoverageBounds(
+              base.coverageJdUt,
+              temporalCoverageBounds(
+                data.meta.coverageStartJdUt,
+                data.meta.coverageEndJdUt,
+              ),
+            ),
             summary: data.summary,
             truncated: base.truncated || data.truncated,
             planetItems: data.meta.planetItems,
@@ -434,18 +526,22 @@ export function SynodicCycleListView({
             currentDatetime: data.meta.currentDatetime,
             birthDatetime: data.meta.birthDatetime,
             optionsSeq: base.optionsSeq,
+            filterKey: base.filterKey,
+            filterKeys: base.filterKeys,
+            activeIngressPlanetIds: base.activeIngressPlanetIds,
+            activeSynodicPlanetIds: base.activeSynodicPlanetIds,
+            activeLunarCycleIds: base.activeLunarCycleIds,
+            exhaustedPrevious: loadDirection === "previous"
+              ? (data.cursor?.exhaustedPrevious ?? base.exhaustedPrevious)
+              : base.exhaustedPrevious,
+            exhaustedNext: loadDirection === "next"
+              ? (data.cursor?.exhaustedNext ?? base.exhaustedNext)
+              : base.exhaustedNext,
           };
-          const active = activeSynodicFilterKeys(
-            data.meta.planetItems,
-            data.meta.lunarItems,
-            activeIngressPlanetIdsRef.current,
-            activeSynodicPlanetIdsRef.current,
-            activeLunarCycleIdsRef.current,
-          );
           const visiblePrependedCount = visiblePrependedRowCount(
             next.rows,
             prependedCount,
-            active,
+            nextStore.filterKeys,
             synodicRowFilterKey,
           );
           if (visiblePrependedCount > 0) {
@@ -454,6 +550,7 @@ export function SynodicCycleListView({
           if (extendControllerRef.current === controller) {
             extendControllerRef.current = null;
             extendInFlightRef.current = false;
+            setEdgeCheckNonce((value) => value + 1);
           }
           setStore(nextStore);
           rememberSynodicStitchStore(stitchKeyRef.current, nextStore);
@@ -469,15 +566,21 @@ export function SynodicCycleListView({
           }
         });
     },
-    [documentId],
+    [documentId, includeTemporal],
   );
 
   React.useEffect(() => {
     if (!store) return;
-    if (extendInFlightRef.current || initialInFlightRef.current) return;
-    const desired = synodicDesiredCoverageForMonth(visibleMonthIndex);
-    if (store.coverage.start > desired.start) extendCoverage("previous");
-    else if (store.coverage.end < desired.end) extendCoverage("next");
+    const timer = window.setTimeout(() => {
+      if (extendInFlightRef.current || initialInFlightRef.current) return;
+      const desired = synodicDesiredCoverageForMonth(visibleMonthIndex);
+      if (!store.exhaustedPrevious && store.coverage.start > desired.start) {
+        extendCoverage("previous");
+      } else if (!store.exhaustedNext && store.coverage.end < desired.end) {
+        extendCoverage("next");
+      }
+    }, STEP_SETTLE_REFRESH_MS);
+    return () => window.clearTimeout(timer);
   }, [extendCoverage, store, visibleMonthIndex]);
 
   React.useEffect(() => {
@@ -486,8 +589,9 @@ export function SynodicCycleListView({
       skipInitialFocusSyncRef.current = false;
       return;
     }
-    queueMicrotask(() => {
-      const focusMonth = monthIndexForDate(focusDatetime);
+    const focusMonth = monthIndexForDate(focusDatetime);
+    const focusSpan = { start: focusMonth, end: focusMonth + 1 };
+    const commitFocus = () => {
       const desired = synodicSeedWindowForMonth(focusMonth, SYNODIC_SEED_MONTHS);
       pendingMonthJumpRef.current = null;
       requestFocusDatetimeRef.current = focusDatetime;
@@ -495,13 +599,19 @@ export function SynodicCycleListView({
       setRequestFocusDatetime((prev) => (prev === focusDatetime ? prev : focusDatetime));
       setVisibleMonthIndex((prev) => (prev === focusMonth ? prev : focusMonth));
       const current = storeRef.current;
-      if (current && monthSpanContainsSpan(current.coverage, desired)) return;
+      if (current && monthSpanContainsSpan(current.coverage, focusSpan)) return;
       setIsland((prev) => ({
         nonce: prev.nonce + 1,
         window: desired,
         bypassCache: false,
       }));
-    });
+    };
+    if (monthSpanContainsSpan(storeRef.current?.coverage, focusSpan)) {
+      queueMicrotask(commitFocus);
+      return;
+    }
+    const timer = window.setTimeout(commitFocus, STEP_SETTLE_REFRESH_MS);
+    return () => window.clearTimeout(timer);
   }, [focusDatetime]);
 
   const sourceRows = React.useMemo(() => store?.rows ?? [], [store]);
@@ -515,61 +625,73 @@ export function SynodicCycleListView({
     () => planetItems.filter((item) => supportsSynodicFilterGroup(item, "synodic")),
     [planetItems],
   );
+  const effectiveIngressPlanetIds = React.useMemo(
+    () => activeIngressPlanetIds ?? store?.activeIngressPlanetIds ?? [],
+    [activeIngressPlanetIds, store?.activeIngressPlanetIds],
+  );
+  const effectiveSynodicPlanetIds = React.useMemo(
+    () => activeSynodicPlanetIds ?? store?.activeSynodicPlanetIds ?? [],
+    [activeSynodicPlanetIds, store?.activeSynodicPlanetIds],
+  );
+  const effectiveLunarCycleIds = React.useMemo(
+    () => activeLunarCycleIds ?? store?.activeLunarCycleIds ?? [],
+    [activeLunarCycleIds, store?.activeLunarCycleIds],
+  );
   const activeFilterKeys = React.useMemo(
     () => activeSynodicFilterKeys(
       planetItems,
       lunarItems,
-      activeIngressPlanetIds,
-      activeSynodicPlanetIds,
-      activeLunarCycleIds,
+      effectiveIngressPlanetIds,
+      effectiveSynodicPlanetIds,
+      effectiveLunarCycleIds,
     ),
     [
-      activeIngressPlanetIds,
-      activeLunarCycleIds,
-      activeSynodicPlanetIds,
+      effectiveIngressPlanetIds,
+      effectiveLunarCycleIds,
+      effectiveSynodicPlanetIds,
       lunarItems,
       planetItems,
     ],
   );
+  const storeMatchesActiveFilter = store?.filterKey === activeFilterKey;
+  const displayedFilterKeys = storeMatchesActiveFilter
+    ? activeFilterKeys
+    : store?.filterKeys ?? activeFilterKeys;
+  const reportTemporalLens = useTemporalConfluenceLensReporter();
+  React.useEffect(() => {
+    if (
+      !store
+      || activeIngressPlanetIds == null
+      || activeSynodicPlanetIds == null
+      || activeLunarCycleIds == null
+    ) return;
+    reportTemporalLens({ filterIds: displayedFilterKeys });
+  }, [
+    displayedFilterKeys,
+    activeIngressPlanetIds,
+    activeLunarCycleIds,
+    activeSynodicPlanetIds,
+    reportTemporalLens,
+    store,
+  ]);
   const rows = React.useMemo(
-    () => filterRetainedRows(sourceRows, activeFilterKeys, synodicRowFilterKey),
-    [activeFilterKeys, sourceRows],
+    () => storeMatchesActiveFilter
+      ? filterRetainedRows(sourceRows, activeFilterKeys, synodicRowFilterKey)
+      : sourceRows,
+    [activeFilterKeys, sourceRows, storeMatchesActiveFilter],
   );
-  const filterActive =
-    (activeIngressPlanetIds != null && activeIngressPlanetIds.length < ingressPlanetItems.length) ||
-    (activeSynodicPlanetIds != null && activeSynodicPlanetIds.length < synodicPlanetItems.length) ||
-    (activeLunarCycleIds != null && activeLunarCycleIds.length < lunarItems.length);
+  const temporalCoverage = React.useMemo(
+    () =>
+      temporalCoverageFromJdBounds(
+        store?.optionsSeq === optionsSeq ? store.coverageJdUt : null,
+        store?.optionsSeq === optionsSeq && store?.truncated === false,
+      ),
+    [optionsSeq, store],
+  );
+  useTemporalConfluenceRows(rows, temporalCoverage);
   React.useEffect(() => {
     rowsRef.current = rows;
   }, [rows]);
-
-  React.useEffect(() => {
-    if (!filterActive || !store) return;
-    if (extendInFlightRef.current || initialInFlightRef.current) return;
-    const targetRows = Math.max(
-      SYNODIC_FILTER_MIN_BACKGROUND_ROWS,
-      viewportSynodicRowCount(scrollerRef.current, rowHeightRef.current),
-    );
-    if (rows.length >= targetRows) return;
-    const canPrevious = store.coverage.start > SYNODIC_MIN_MONTH_INDEX;
-    const canNext = store.coverage.end <= SYNODIC_MAX_MONTH_INDEX;
-    if (!canPrevious && !canNext) return;
-    const edge = synodicScrollEdgeDirection(scrollerRef.current, rowHeightRef.current * 6);
-    if (edge === "previous" && canPrevious) {
-      extendCoverage("previous");
-      return;
-    }
-    if (edge === "next" && canNext) {
-      extendCoverage("next");
-      return;
-    }
-    const preferred = filterFillDirectionRef.current;
-    const direction = preferred === "previous"
-      ? canPrevious ? "previous" : "next"
-      : canNext ? "next" : "previous";
-    filterFillDirectionRef.current = direction === "previous" ? "next" : "previous";
-    extendCoverage(direction);
-  }, [extendCoverage, filterActive, rows.length, store]);
   React.useEffect(() => {
     const scroller = scrollerRef.current;
     return () => {
@@ -581,7 +703,7 @@ export function SynodicCycleListView({
           rowHeightRef.current,
         ) ||
         requestFocusDatetimeRef.current;
-      synodicListViewStateCache.set(documentId, {
+      synodicListViewStateCache.set(viewStateKey, {
         activeIngressPlanetIds: activeIngressPlanetIdsRef.current,
         activeSynodicPlanetIds: activeSynodicPlanetIdsRef.current,
         activeLunarCycleIds: activeLunarCycleIdsRef.current,
@@ -589,11 +711,18 @@ export function SynodicCycleListView({
         visibleMonthIndex: monthIndexForDate(viewportFocus),
       });
     };
-  }, [documentId]);
+  }, [viewStateKey]);
 
   const rowKeys = React.useMemo(() => buildStableRowKeys(rows, synodicStitchRowKey), [rows]);
   const focusTargetMs = React.useMemo(() => resolveDateMs(requestFocusDatetime), [requestFocusDatetime]);
-  const focusIndex = React.useMemo(() => nearestSynodicDateIndex(rows, focusTargetMs), [focusTargetMs, rows]);
+  const pinnedTemporalRowId = useTemporalPinnedRowId();
+  const focusIndex = React.useMemo(() => {
+    if (pinnedTemporalRowId) {
+      const pinnedIndex = rows.findIndex((row) => row.temporal?.rowId === pinnedTemporalRowId);
+      if (pinnedIndex >= 0) return pinnedIndex;
+    }
+    return nearestSynodicDateIndex(rows, focusTargetMs);
+  }, [focusTargetMs, pinnedTemporalRowId, rows]);
   useFixedRowHeightAnchor(scrollerRef, rows.length, rowHeight, {
     syncEvent: VIRTUAL_SCROLL_SYNC_EVENT,
   });
@@ -602,9 +731,14 @@ export function SynodicCycleListView({
     scrollerRef,
     rowCount: rows.length,
     thresholdPx: rowHeight * 6,
-    canExtendBackward: (store?.coverage.start ?? SYNODIC_MIN_MONTH_INDEX) > SYNODIC_MIN_MONTH_INDEX,
-    canExtendForward: (store?.coverage.end ?? SYNODIC_MAX_MONTH_INDEX + 1) <= SYNODIC_MAX_MONTH_INDEX,
+    canExtendBackward:
+      !store?.exhaustedPrevious &&
+      (store?.coverage.start ?? SYNODIC_MIN_MONTH_INDEX) > SYNODIC_MIN_MONTH_INDEX,
+    canExtendForward:
+      !store?.exhaustedNext &&
+      (store?.coverage.end ?? SYNODIC_MAX_MONTH_INDEX + 1) <= SYNODIC_MAX_MONTH_INDEX,
     onExtend: extendCoverage,
+    recheckToken: edgeCheckNonce,
   });
 
   const focusIndexRef = React.useRef(focusIndex);
@@ -642,7 +776,9 @@ export function SynodicCycleListView({
     }
   }, [activeFilterKey, rowHeight, rows]);
 
-  const focusSignature = `ms:${focusTargetMs}`;
+  const focusSignature = pinnedTemporalRowId
+    ? `temporal:${pinnedTemporalRowId}`
+    : `ms:${focusTargetMs}`;
   const islandSignature = store ? `${store.islandNonce}` : "empty";
   const rowsReadySignature = rows.length > 0 ? "ready" : "empty";
   React.useLayoutEffect(() => {
@@ -692,9 +828,9 @@ export function SynodicCycleListView({
   }, [rowHeight, rows]);
 
   const monthLabel = React.useMemo(() => formatMonthIndexLabel(visibleMonthIndex), [visibleMonthIndex]);
-  const ingressActiveCount = activeIngressPlanetIds?.length ?? ingressPlanetItems.length;
-  const synodicActiveCount = activeSynodicPlanetIds?.length ?? synodicPlanetItems.length;
-  const lunarActiveCount = activeLunarCycleIds?.length ?? lunarItems.length;
+  const ingressActiveCount = effectiveIngressPlanetIds.length;
+  const synodicActiveCount = effectiveSynodicPlanetIds.length;
+  const lunarActiveCount = effectiveLunarCycleIds.length;
   const ingressLabel = ingressActiveCount === ingressPlanetItems.length
     ? t("synodic.all")
     : `${ingressActiveCount}/${ingressPlanetItems.length}`;
@@ -734,6 +870,7 @@ export function SynodicCycleListView({
     const nextMonth = monthIndexForDate(nextFocus);
     pendingReplacementFocusRef.current = nextFocus;
     pendingMonthJumpRef.current = nextMonth;
+    requestFocusDatetimeRef.current = nextFocus;
     ensureSourceWindowForFocus(nextFocus, true);
   }, [ensureSourceWindowForFocus]);
 
@@ -756,7 +893,6 @@ export function SynodicCycleListView({
     );
     filterAnchorRef.current = nextFocus;
     pendingMonthJumpRef.current = null;
-    filterFillDirectionRef.current = "previous";
   }, [rowHeight, rows, visibleMonthIndex]);
 
   const togglePlanet = React.useCallback(
@@ -769,17 +905,31 @@ export function SynodicCycleListView({
       const items = group === "ingress" ? ingressPlanetItems : synodicPlanetItems;
       const setActiveIds = group === "ingress" ? setActiveIngressPlanetIds : setActiveSynodicPlanetIds;
       const activeIdsRef = group === "ingress" ? activeIngressPlanetIdsRef : activeSynodicPlanetIdsRef;
-      setActiveIds((prev) => {
-        const base = prev ?? items.map((item) => item.id);
-        const next = checked
-          ? Array.from(new Set([...base, planetId]))
-          : base.filter((id) => id !== planetId);
-        const sorted = sortPlanetIds(next, items);
-        activeIdsRef.current = sorted;
-        return sorted;
-      });
+      const base = group === "ingress"
+        ? effectiveIngressPlanetIds
+        : effectiveSynodicPlanetIds;
+      const next = checked
+        ? Array.from(new Set([...base, planetId]))
+        : base.filter((id) => id !== planetId);
+      const sorted = sortPlanetIds(next, items);
+      activeIdsRef.current = sorted;
+      setActiveIds(sorted);
+      setSynodicListPreferences(
+        documentId,
+        group === "ingress"
+          ? { ingressPlanetIds: sorted }
+          : { synodicPlanetIds: sorted },
+      );
     },
-    [ingressPlanetItems, prepareFilterChange, synodicPlanetItems],
+    [
+      documentId,
+      effectiveIngressPlanetIds,
+      effectiveSynodicPlanetIds,
+      ingressPlanetItems,
+      prepareFilterChange,
+      setSynodicListPreferences,
+      synodicPlanetItems,
+    ],
   );
   const setPlanetGroupSelection = React.useCallback(
     (
@@ -793,23 +943,39 @@ export function SynodicCycleListView({
       const next = checked ? items.map((item) => item.id) : [];
       activeIdsRef.current = next;
       setActiveIds(next);
+      setSynodicListPreferences(
+        documentId,
+        group === "ingress"
+          ? { ingressPlanetIds: next }
+          : { synodicPlanetIds: next },
+      );
     },
-    [ingressPlanetItems, prepareFilterChange, synodicPlanetItems],
+    [
+      documentId,
+      ingressPlanetItems,
+      prepareFilterChange,
+      setSynodicListPreferences,
+      synodicPlanetItems,
+    ],
   );
   const toggleLunarCycle = React.useCallback(
     (cycleId: string, checked: boolean) => {
       prepareFilterChange();
-      setActiveLunarCycleIds((prev) => {
-        const base = prev ?? lunarItems.map((item) => item.id);
-        const next = checked
-          ? Array.from(new Set([...base, cycleId]))
-          : base.filter((id) => id !== cycleId);
-        const sorted = sortLunarCycleIds(next, lunarItems);
-        activeLunarCycleIdsRef.current = sorted;
-        return sorted;
-      });
+      const next = checked
+        ? Array.from(new Set([...effectiveLunarCycleIds, cycleId]))
+        : effectiveLunarCycleIds.filter((id) => id !== cycleId);
+      const sorted = sortLunarCycleIds(next, lunarItems);
+      activeLunarCycleIdsRef.current = sorted;
+      setActiveLunarCycleIds(sorted);
+      setSynodicListPreferences(documentId, { lunarCycleIds: sorted });
     },
-    [lunarItems, prepareFilterChange],
+    [
+      documentId,
+      effectiveLunarCycleIds,
+      lunarItems,
+      prepareFilterChange,
+      setSynodicListPreferences,
+    ],
   );
   const setLunarCycleSelection = React.useCallback(
     (checked: boolean) => {
@@ -817,36 +983,41 @@ export function SynodicCycleListView({
       const next = checked ? lunarItems.map((item) => item.id) : [];
       activeLunarCycleIdsRef.current = next;
       setActiveLunarCycleIds(next);
+      setSynodicListPreferences(documentId, { lunarCycleIds: next });
     },
-    [lunarItems, prepareFilterChange],
+    [documentId, lunarItems, prepareFilterChange, setSynodicListPreferences],
   );
 
   return (
     <div className={cn("font-morinus-text", LIST_PANE_CLASSES.root)}>
       <div className={LIST_PANE_CLASSES.standardHeader}>
-        <div className={LIST_PANE_CLASSES.titleRow}>
-          <div className={LIST_PANE_CLASSES.titleLeading}>
-            {onClose ? (
-              <Button
-                type="button"
-                {...LIST_BUTTON_PROPS.icon}
-                onClick={onClose}
-                aria-label={t("synodic.close")}
-              >
-                <X className="size-3.5" />
-              </Button>
-            ) : null}
-            <h2 className={LIST_PANE_CLASSES.title}>{t("table.synodic_cycles")}</h2>
+        {!embedded ? (
+          <div className={LIST_PANE_CLASSES.titleRow}>
+            <div className={LIST_PANE_CLASSES.titleLeading}>
+              {onClose ? (
+                <Button
+                  type="button"
+                  {...LIST_BUTTON_PROPS.icon}
+                  onClick={onClose}
+                  aria-label={t("synodic.close")}
+                >
+                  <X className="size-3.5" />
+                </Button>
+              ) : null}
+              <h2 className={LIST_PANE_CLASSES.title}>{t("table.synodic_cycles")}</h2>
+            </div>
           </div>
-        </div>
+        ) : null}
         <div className={LIST_PANE_CLASSES.controlRow}>
           <Button
             type="button"
             {...LIST_BUTTON_PROPS.command}
             onClick={() => {
-              setIngressDrawerOpen((open) => !open);
-              setSynodicDrawerOpen(false);
-              setLunarDrawerOpen(false);
+              setSynodicListPreferences(documentId, {
+                ingressDrawerOpen: !ingressDrawerOpen,
+                synodicDrawerOpen: false,
+                lunarDrawerOpen: false,
+              });
             }}
             aria-expanded={ingressDrawerOpen}
           >
@@ -856,9 +1027,11 @@ export function SynodicCycleListView({
             type="button"
             {...LIST_BUTTON_PROPS.command}
             onClick={() => {
-              setSynodicDrawerOpen((open) => !open);
-              setIngressDrawerOpen(false);
-              setLunarDrawerOpen(false);
+              setSynodicListPreferences(documentId, {
+                ingressDrawerOpen: false,
+                synodicDrawerOpen: !synodicDrawerOpen,
+                lunarDrawerOpen: false,
+              });
             }}
             aria-expanded={synodicDrawerOpen}
           >
@@ -868,9 +1041,11 @@ export function SynodicCycleListView({
             type="button"
             {...LIST_BUTTON_PROPS.command}
             onClick={() => {
-              setLunarDrawerOpen((open) => !open);
-              setIngressDrawerOpen(false);
-              setSynodicDrawerOpen(false);
+              setSynodicListPreferences(documentId, {
+                ingressDrawerOpen: false,
+                synodicDrawerOpen: false,
+                lunarDrawerOpen: !lunarDrawerOpen,
+              });
             }}
             aria-expanded={lunarDrawerOpen}
           >
@@ -907,9 +1082,7 @@ export function SynodicCycleListView({
           <ListToggleDrawer
             label={t("synodic.ingresses")}
             items={ingressPlanetItems}
-            isActive={(item) =>
-              (activeIngressPlanetIds ?? ingressPlanetItems.map((planet) => planet.id)).includes(item.id)
-            }
+            isActive={(item) => effectiveIngressPlanetIds.includes(item.id)}
             onToggle={(item, active) => togglePlanet("ingress", item.id, active)}
             deselectAllLabel={t("listFilters.deselectAll")}
             selectAllLabel={t("listFilters.selectAll")}
@@ -921,9 +1094,7 @@ export function SynodicCycleListView({
           <ListToggleDrawer
             label={t("synodic.synodics")}
             items={synodicPlanetItems}
-            isActive={(item) =>
-              (activeSynodicPlanetIds ?? synodicPlanetItems.map((planet) => planet.id)).includes(item.id)
-            }
+            isActive={(item) => effectiveSynodicPlanetIds.includes(item.id)}
             onToggle={(item, active) => togglePlanet("synodic", item.id, active)}
             deselectAllLabel={t("listFilters.deselectAll")}
             selectAllLabel={t("listFilters.selectAll")}
@@ -935,9 +1106,7 @@ export function SynodicCycleListView({
           <ListToggleDrawer
             label={t("synodic.lunar")}
             items={lunarItems}
-            isActive={(item) =>
-              (activeLunarCycleIds ?? lunarItems.map((cycle) => cycle.id)).includes(item.id)
-            }
+            isActive={(item) => effectiveLunarCycleIds.includes(item.id)}
             onToggle={(item, active) => toggleLunarCycle(item.id, active)}
             deselectAllLabel={t("listFilters.deselectAll")}
             selectAllLabel={t("listFilters.selectAll")}
@@ -993,6 +1162,7 @@ function SynodicRow({
   rowHeight: number;
 }) {
   const t = useT();
+  const temporalHighlight = useTemporalRowHighlight(row.temporal);
   return (
     <TimedChartContextMenu
       documentId={documentId}
@@ -1003,12 +1173,14 @@ function SynodicRow({
       <SidebarListRow
         className={SYNODIC_ROW_CLASS}
         data-initial-focus={focused || undefined}
-        style={{ height: rowHeight }}
+        {...temporalHighlight.dataAttributes}
+        style={{ height: rowHeight, ...temporalHighlight.style }}
+        onClick={temporalHighlight.onClick}
       >
         <SidebarListCell className="text-center">
-          <span className="inline-flex items-center justify-center gap-1" title={row.planetLabel}>
+          <span className="inline-flex items-center justify-center gap-1" title={row.eventGlyph ? row.eventLabel : row.planetLabel}>
             <Glyph
-              ch={row.planetGlyph}
+              ch={row.eventGlyph || row.planetGlyph}
               className="aries-search-glyph shrink-0"
               color={semanticChartColor(row.planetColorRole, row.planetColor)}
             />
@@ -1321,6 +1493,15 @@ function sameIsoDate(left?: string | null, right?: string | null): boolean {
     && leftDate.getDate() === rightDate.getDate();
 }
 
+function sameSelection<T>(
+  left: readonly T[] | null,
+  right: readonly T[],
+): boolean {
+  return left != null
+    && left.length === right.length
+    && left.every((value, index) => value === right[index]);
+}
+
 function monthIndexForSynodicRow(row: SynodicCycleRow | undefined): number | null {
   if (!row) return null;
   const ms = synodicRowDateMs(row);
@@ -1333,16 +1514,25 @@ function viewportSynodicRowCount(scroller: HTMLDivElement | null, rowHeight: num
   return Math.max(1, Math.ceil(height / rowHeight));
 }
 
-function synodicScrollEdgeDirection(
+function synodicCursorRowBudget(
   scroller: HTMLDivElement | null,
-  thresholdPx: number,
-): "previous" | "next" | null {
-  if (!scroller || scroller.clientHeight <= 0) return null;
-  const maxTop = scroller.scrollHeight - scroller.clientHeight;
-  if (maxTop <= 0) return null;
-  if (scroller.scrollTop <= thresholdPx) return "previous";
-  if (maxTop - scroller.scrollTop <= thresholdPx) return "next";
-  return null;
+  rowHeight: number,
+): number {
+  return Math.max(
+    SYNODIC_FILTER_MIN_BACKGROUND_ROWS,
+    viewportSynodicRowCount(scroller, rowHeight),
+  );
+}
+
+function synodicFocusCursorRowBudget(
+  scroller: HTMLDivElement | null,
+  rowHeight: number,
+): number {
+  const viewportRows = viewportSynodicRowCount(scroller, rowHeight);
+  return Math.max(
+    SYNODIC_FILTER_MIN_BACKGROUND_ROWS,
+    Math.ceil(viewportRows * 2 * (1 - SYNODIC_FOCUS_ANCHOR)) + 1,
+  );
 }
 
 function visibleSynodicMonthAnchorIndex(
@@ -1461,11 +1651,25 @@ function useSynodicOptionsSeq(): number {
 
 async function fetchSynodicChunk({
   documentId,
+  includeTemporal,
   span,
+  ingressPlanetIds,
+  synodicPlanetIds,
+  lunarCycleIds,
+  cursorDirection,
+  cursorRowBudget,
+  cursorAnchorDate,
   signal,
 }: {
   documentId: string;
+  includeTemporal: boolean;
   span: SynodicSpan | null;
+  ingressPlanetIds: readonly number[] | null;
+  synodicPlanetIds: readonly number[] | null;
+  lunarCycleIds: readonly string[] | null;
+  cursorDirection: "around" | "previous" | "next";
+  cursorRowBudget: number;
+  cursorAnchorDate: string;
   signal: AbortSignal;
 }): Promise<SynodicCyclePayload> {
   const range = span ? monthSpanRange(span) : null;
@@ -1474,9 +1678,16 @@ async function fetchSynodicChunk({
       documentId,
       fromDate: range?.fromDate,
       toDate: range?.toDate,
+      ...(ingressPlanetIds == null ? {} : { ingressPlanetIds: [...ingressPlanetIds] }),
+      ...(synodicPlanetIds == null ? {} : { synodicPlanetIds: [...synodicPlanetIds] }),
+      ...(lunarCycleIds == null ? {} : { lunarCycleIds: [...lunarCycleIds] }),
       includeStations: true,
       includeCazimis: true,
       includeIngresses: true,
+      includeTemporal,
+      cursorDirection,
+      cursorRowBudget,
+      cursorAnchorDate,
     },
     signal,
   );
@@ -1498,6 +1709,14 @@ function synodicRowFilterKey(row: SynodicCycleRow): string {
   }
   const group: SynodicFilterGroup = row.eventType === "ingress" ? "ingress" : "synodic";
   return `${group}:${row.planetId}`;
+}
+
+function hasActiveSynodicSources(payload: SynodicCyclePayload): boolean {
+  return (
+    payload.meta.activeIngressPlanetIds.length > 0 ||
+    payload.meta.activeSynodicPlanetIds.length > 0 ||
+    payload.meta.activeLunarCycleIds.length > 0
+  );
 }
 
 function activeSynodicFilterKeys(

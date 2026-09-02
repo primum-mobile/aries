@@ -49,6 +49,7 @@ import { useT, useTFallback } from "@/lib/i18n/i18n";
 import type { WorkspaceDocument } from "@/stores/workspace-store";
 import {
   DocumentRowContextMenu,
+  HarmonicLauncherContextMenu,
   NavRow,
   SolarAverageLauncherContextMenu,
   documentRowLabel,
@@ -56,6 +57,7 @@ import {
   type FlatDocumentNode,
   type ReturnAverageKind,
 } from "./app-sidebar";
+import { documentPairSupportsDirectAttach } from "./workspace-tab-drag";
 
 type DragDropGeometry = {
   overId: string;
@@ -294,6 +296,7 @@ export function SortableActionsContent({
   activeDocumentId,
   onSelect,
   onSolarAverageWindowSelect,
+  harmonicChartMode,
 }: {
   groupId: string;
   label: string;
@@ -303,6 +306,7 @@ export function SortableActionsContent({
   activeDocumentId: string | null;
   onSelect: (id: string) => void;
   onSolarAverageWindowSelect: (maxBirthday: number, returnKind: ReturnAverageKind) => void;
+  harmonicChartMode: "harmonic" | "varga";
 }) {
   const tLabel = useTFallback();
   const [dropIndicator, setDropIndicator] = React.useState<DropIndicator | null>(null);
@@ -381,6 +385,7 @@ export function SortableActionsContent({
                 }
                 onSelect={onSelect}
                 onSolarAverageWindowSelect={onSolarAverageWindowSelect}
+                harmonicChartMode={harmonicChartMode}
               />
             ),
           )}
@@ -442,11 +447,16 @@ function dropGeometryFromEvent(
     activeDoc != null &&
     overDoc != null &&
     activeDoc.parentDocumentId !== overDoc.parentDocumentId;
+  const rootChartPair =
+    activeDoc?.parentDocumentId === null &&
+    overDoc?.parentDocumentId === null;
   const attachTargetIds = dragContext?.attach_target_ids;
   const attachAllowed =
     attachTargetIds == null || attachTargetIds.includes(overId);
   const attachEligible =
-    Boolean(crossParent) && attachAllowed && dropPrefersAttach(event);
+    documentPairSupportsDirectAttach(activeDoc, overDoc) &&
+    attachAllowed &&
+    (rootChartPair ? dropPrefersRootAttach(event) : dropPrefersAttach(event));
 
   return {
     overId,
@@ -527,6 +537,14 @@ function dropPrefersAttach(event: DragMoveEvent | DragEndEvent): boolean {
   return y >= rect.top + edgeBand && y < rect.top + rect.height - edgeBand;
 }
 
+function dropPrefersRootAttach(event: DragMoveEvent | DragEndEvent): boolean {
+  const y = dragCenterY(event);
+  const rect = event.over?.rect;
+  if (y == null || !rect) return true;
+  const edgeBand = rect.height * 0.22;
+  return y >= rect.top + edgeBand && y < rect.top + rect.height - edgeBand;
+}
+
 function applyPreviewedMoveIntent(
   sourceDocumentId: string,
   intent: WorkspaceMoveIntent | null,
@@ -598,12 +616,14 @@ function SortableActionItem({
   dropIndicator,
   onSelect,
   onSolarAverageWindowSelect,
+  harmonicChartMode,
 }: {
   action: SidebarAction;
   isActive: boolean;
   dropIndicator?: DropIndicatorPosition | null;
   onSelect: (id: string) => void;
   onSolarAverageWindowSelect: (maxBirthday: number, returnKind: ReturnAverageKind) => void;
+  harmonicChartMode: "harmonic" | "varga";
 }) {
   const tLabel = useTFallback();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -633,6 +653,13 @@ function SortableActionItem({
         <SolarAverageLauncherContextMenu onSelectWindow={onSolarAverageWindowSelect}>
           {row}
         </SolarAverageLauncherContextMenu>
+      ) : action.id === "harmonic" && action.enabled ? (
+        <HarmonicLauncherContextMenu
+          initialMode={harmonicChartMode}
+          onSelectNumber={(mode, number) => onSelect(`harmonic:${mode}:${number}`)}
+        >
+          {row}
+        </HarmonicLauncherContextMenu>
       ) : (
         row
       )}

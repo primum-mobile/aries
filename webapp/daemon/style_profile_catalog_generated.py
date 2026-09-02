@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 
 _CATALOG = json.loads(r'''{
-  "tokenSchemaVersion": 4,
+  "tokenSchemaVersion": 5,
   "tokens": {
     "app.color.background": {
       "cssVar": "--aries-background",
@@ -1549,72 +1549,6 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
-    "app.inspector.controlHeight": {
-      "cssVar": "--aries-inspector-control-height",
-      "scope": "app",
-      "type": "number",
-      "unit": "px",
-      "default": "24px",
-      "bounds": {
-        "min": 18,
-        "max": 44,
-        "step": 1
-      },
-      "label": "Inspector control height",
-      "description": "Height of compact controls embedded in inspector sections.",
-      "tier": "component",
-      "affectedSurfaces": [
-        "inspector section controls"
-      ],
-      "safetyNotes": [
-        "Keep text vertically centered and the pointer target usable."
-      ],
-      "variantApplicability": null
-    },
-    "app.inspector.controlPaddingInline": {
-      "cssVar": "--aries-inspector-control-padding-x",
-      "scope": "app",
-      "type": "number",
-      "unit": "px",
-      "default": "4px",
-      "bounds": {
-        "min": 0,
-        "max": 20,
-        "step": 1
-      },
-      "label": "Inspector control horizontal padding",
-      "description": "Horizontal inset inside compact inspector controls.",
-      "tier": "component",
-      "affectedSurfaces": [
-        "inspector section controls"
-      ],
-      "safetyNotes": [
-        "Keep selected values readable in the narrow inspector pane."
-      ],
-      "variantApplicability": null
-    },
-    "app.inspector.controlSectionPaddingBottom": {
-      "cssVar": "--aries-inspector-control-section-padding-bottom",
-      "scope": "app",
-      "type": "number",
-      "unit": "px",
-      "default": "12px",
-      "bounds": {
-        "min": 0,
-        "max": 32,
-        "step": 1
-      },
-      "label": "Inspector control section bottom padding",
-      "description": "Bottom inset retained below inspector sections that contain controls.",
-      "tier": "component",
-      "affectedSurfaces": [
-        "inspector section controls"
-      ],
-      "safetyNotes": [
-        "Preserve separation from the following inspector section."
-      ],
-      "variantApplicability": null
-    },
     "app.inspector.headingGap": {
       "cssVar": "--aries-inspector-heading-gap",
       "scope": "app",
@@ -1884,7 +1818,7 @@ _CATALOG = json.loads(r'''{
       "scope": "app",
       "type": "number",
       "unit": "px",
-      "default": "52px",
+      "default": "88px",
       "bounds": {
         "min": 36,
         "max": 96,
@@ -2071,28 +2005,6 @@ _CATALOG = json.loads(r'''{
       "tier": "component",
       "affectedSurfaces": [
         "inspector headings"
-      ],
-      "safetyNotes": [
-        "Verify dense inspector content and both light and dark palettes after changing this role."
-      ],
-      "variantApplicability": null
-    },
-    "app.inspector.type.packTagSize": {
-      "cssVar": "--aries-inspector-pack-tag-size",
-      "scope": "app",
-      "type": "number",
-      "unit": "px",
-      "default": "9px",
-      "bounds": {
-        "min": 8,
-        "max": 13,
-        "step": 1
-      },
-      "label": "Inspector pack-tag size",
-      "description": "Text size for inspector rule-pack attribution tags.",
-      "tier": "component",
-      "affectedSurfaces": [
-        "inspector alert cards"
       ],
       "safetyNotes": [
         "Verify dense inspector content and both light and dark palettes after changing this role."
@@ -3547,28 +3459,6 @@ _CATALOG = json.loads(r'''{
       ],
       "safetyNotes": [
         "Keep enough visible list rows for fast selection without covering the retained pane."
-      ],
-      "variantApplicability": null
-    },
-    "app.pane.drawer.width": {
-      "cssVar": "--aries-pane-drawer-width",
-      "scope": "app",
-      "type": "number",
-      "unit": "px",
-      "default": "272px",
-      "bounds": {
-        "min": 192,
-        "max": 480,
-        "step": 4
-      },
-      "label": "Pane drawer width",
-      "description": "Width of retained filter and configuration drawers layered over pane content.",
-      "tier": "component",
-      "affectedSurfaces": [
-        "transit search filter drawer"
-      ],
-      "safetyNotes": [
-        "Keep enough result-table width visible behind retained drawers."
       ],
       "variantApplicability": null
     },
@@ -12128,7 +12018,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "rgba(120, 150, 190, 0.30)",
+      "default": "var(--morinus-houses)",
       "bounds": null,
       "label": "Astrolabe almucantar",
       "description": "Astrolabe almucantar color resolved once for the complete renderer paint.",
@@ -12146,7 +12036,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "rgba(120, 150, 190, 0.24)",
+      "default": "var(--morinus-houses)",
       "bounds": null,
       "label": "Astrolabe azimuth",
       "description": "Astrolabe azimuth color resolved once for the complete renderer paint.",
@@ -12164,7 +12054,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "#23242a",
+      "default": "var(--morinus-background)",
       "bounds": null,
       "label": "Astrolabe background",
       "description": "Astrolabe background color resolved once for the complete renderer paint.",
@@ -12182,7 +12072,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "rgba(150, 150, 152, 0.55)",
+      "default": "var(--morinus-frame)",
       "bounds": null,
       "label": "Astrolabe capricorn",
       "description": "Astrolabe capricorn color resolved once for the complete renderer paint.",
@@ -12200,7 +12090,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "rgba(160, 160, 162, 0.9)",
+      "default": "var(--morinus-angles)",
       "bounds": null,
       "label": "Astrolabe cardinal",
       "description": "Astrolabe cardinal color resolved once for the complete renderer paint.",
@@ -12218,7 +12108,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "#c68a22",
+      "default": "var(--morinus-frame)",
       "bounds": null,
       "label": "Astrolabe ecliptic",
       "description": "Astrolabe ecliptic color resolved once for the complete renderer paint.",
@@ -12236,7 +12126,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "#78828f",
+      "default": "var(--morinus-houses)",
       "bounds": null,
       "label": "Astrolabe equator",
       "description": "Astrolabe equator color resolved once for the complete renderer paint.",
@@ -12254,7 +12144,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "#788291",
+      "default": "var(--morinus-houses)",
       "bounds": null,
       "label": "Astrolabe equator label",
       "description": "Astrolabe equator label color resolved once for the complete renderer paint.",
@@ -12272,7 +12162,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "#3e82c4",
+      "default": "var(--morinus-angles)",
       "bounds": null,
       "label": "Astrolabe horizon",
       "description": "Astrolabe horizon color resolved once for the complete renderer paint.",
@@ -12290,7 +12180,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "rgba(170, 150, 110, 0.30)",
+      "default": "var(--morinus-angles)",
       "bounds": null,
       "label": "Astrolabe hour",
       "description": "Astrolabe hour color resolved once for the complete renderer paint.",
@@ -12308,7 +12198,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "#dcdcdc",
+      "default": "var(--morinus-text-bright)",
       "bounds": null,
       "label": "Astrolabe info atmospheric",
       "description": "Astrolabe info atmospheric color resolved once for the complete renderer paint.",
@@ -12326,7 +12216,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "#c8c8c8",
+      "default": "var(--morinus-text-bright)",
       "bounds": null,
       "label": "Astrolabe info schematic",
       "description": "Astrolabe info schematic color resolved once for the complete renderer paint.",
@@ -12344,7 +12234,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "rgba(170, 178, 196, 0.55)",
+      "default": "var(--morinus-angles)",
       "bounds": null,
       "label": "Astrolabe meridian",
       "description": "Astrolabe meridian color resolved once for the complete renderer paint.",
@@ -12362,7 +12252,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "rgba(150, 165, 185, 0.42)",
+      "default": "var(--morinus-houses)",
       "bounds": null,
       "label": "Astrolabe regio",
       "description": "Astrolabe regio color resolved once for the complete renderer paint.",
@@ -12380,7 +12270,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "rgba(220, 222, 230, 0.85)",
+      "default": "var(--morinus-positions)",
       "bounds": null,
       "label": "Astrolabe star",
       "description": "Astrolabe star color resolved once for the complete renderer paint.",
@@ -12398,7 +12288,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "#ffe066",
+      "default": "var(--morinus-body-sun)",
       "bounds": null,
       "label": "Astrolabe sun fill",
       "description": "Astrolabe sun fill color resolved once for the complete renderer paint.",
@@ -12416,7 +12306,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "rgba(200, 210, 220, 0.45)",
+      "default": "var(--morinus-houses)",
       "bounds": null,
       "label": "Astrolabe tropic",
       "description": "Astrolabe tropic color resolved once for the complete renderer paint.",
@@ -12429,14 +12319,36 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
+    "renderer.astrolabe.metric.atmosphericFillOpacity": {
+      "cssVar": "--aries-astrolabe-atmospheric-fill-opacity",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.32",
+      "bounds": {
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      "label": "Astrolabe atmospheric fill opacity",
+      "description": "Astrolabe atmospheric fill opacity design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
     "renderer.astrolabe.metric.bandWidthScale": {
       "cssVar": "--aries-astrolabe-band-width-scale",
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "0.15",
+      "default": "0.12",
       "bounds": {
-        "min": 0.0375,
+        "min": 0.03,
         "max": 1,
         "step": 0.01
       },
@@ -12456,9 +12368,9 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "0.02",
+      "default": "0.018",
       "bounds": {
-        "min": 0.005,
+        "min": 0.0045,
         "max": 1,
         "step": 0.01
       },
@@ -12478,10 +12390,10 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "3px",
+      "default": "2px",
       "bounds": {
         "min": 0.25,
-        "max": 12,
+        "max": 8,
         "step": 0.25
       },
       "label": "Astrolabe capricorn dash off",
@@ -12500,7 +12412,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "2px",
+      "default": "1px",
       "bounds": {
         "min": 0.25,
         "max": 8,
@@ -12544,10 +12456,10 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "22",
+      "default": "24",
       "bounds": {
-        "min": 11,
-        "max": 44,
+        "min": 12,
+        "max": 48,
         "step": 1
       },
       "label": "Astrolabe cardinal font divisor",
@@ -12566,9 +12478,9 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "0.06",
+      "default": "0.04",
       "bounds": {
-        "min": 0.015,
+        "min": 0.01,
         "max": 1,
         "step": 0.01
       },
@@ -12676,7 +12588,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "2px",
+      "default": "1px",
       "bounds": {
         "min": 0.25,
         "max": 8,
@@ -12698,7 +12610,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "0.55",
+      "default": "0.42",
       "bounds": {
         "min": 0,
         "max": 1,
@@ -12720,10 +12632,10 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "4px",
+      "default": "3px",
       "bounds": {
         "min": 0.25,
-        "max": 16,
+        "max": 12,
         "step": 0.25
       },
       "label": "Astrolabe equator dash off",
@@ -12742,10 +12654,10 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "5px",
+      "default": "1px",
       "bounds": {
         "min": 0.25,
-        "max": 20,
+        "max": 8,
         "step": 0.25
       },
       "label": "Astrolabe equator dash on",
@@ -12764,10 +12676,10 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "360",
+      "default": "960",
       "bounds": {
-        "min": 180,
-        "max": 720,
+        "min": 480,
+        "max": 1920,
         "step": 1
       },
       "label": "Astrolabe fine stroke divisor",
@@ -12786,7 +12698,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "1px",
+      "default": "0.75px",
       "bounds": {
         "min": 0.25,
         "max": 8,
@@ -12896,10 +12808,10 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "220",
+      "default": "720",
       "bounds": {
-        "min": 110,
-        "max": 440,
+        "min": 360,
+        "max": 1440,
         "step": 1
       },
       "label": "Astrolabe main stroke divisor",
@@ -12918,7 +12830,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "2px",
+      "default": "1.5px",
       "bounds": {
         "min": 0.25,
         "max": 8,
@@ -12940,10 +12852,10 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "280",
+      "default": "720",
       "bounds": {
-        "min": 140,
-        "max": 560,
+        "min": 360,
+        "max": 1440,
         "step": 1
       },
       "label": "Astrolabe medium stroke divisor",
@@ -13094,10 +13006,10 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "16",
+      "default": "18",
       "bounds": {
-        "min": 8,
-        "max": 32,
+        "min": 9,
+        "max": 36,
         "step": 1
       },
       "label": "Astrolabe planet font divisor",
@@ -13138,10 +13050,10 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "4px",
+      "default": "1px",
       "bounds": {
         "min": 0.25,
-        "max": 16,
+        "max": 8,
         "step": 0.25
       },
       "label": "Astrolabe regio dash on",
@@ -13160,10 +13072,10 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "22",
+      "default": "24",
       "bounds": {
-        "min": 11,
-        "max": 44,
+        "min": 12,
+        "max": 48,
         "step": 1
       },
       "label": "Astrolabe sign font divisor",
@@ -13182,7 +13094,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "1px",
+      "default": "0.75px",
       "bounds": {
         "min": 0.25,
         "max": 8,
@@ -13204,10 +13116,10 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "160",
+      "default": "190",
       "bounds": {
-        "min": 80,
-        "max": 320,
+        "min": 95,
+        "max": 380,
         "step": 1
       },
       "label": "Astrolabe sphere radius divisor",
@@ -13226,7 +13138,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "2px",
+      "default": "1.5px",
       "bounds": {
         "min": 0.5,
         "max": 8,
@@ -13248,10 +13160,10 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "320",
+      "default": "360",
       "bounds": {
-        "min": 160,
-        "max": 640,
+        "min": 180,
+        "max": 720,
         "step": 1
       },
       "label": "Astrolabe star radius divisor",
@@ -13270,7 +13182,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "1.5px",
+      "default": "1px",
       "bounds": {
         "min": 0.5,
         "max": 8,
@@ -13314,9 +13226,9 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "0.01",
+      "default": "0.008",
       "bounds": {
-        "min": 0.0025,
+        "min": 0.002,
         "max": 1,
         "step": 0.01
       },
@@ -13336,10 +13248,10 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "4px",
+      "default": "3px",
       "bounds": {
         "min": 0.25,
-        "max": 16,
+        "max": 12,
         "step": 0.25
       },
       "label": "Astrolabe tropic dash off",
@@ -13358,10 +13270,10 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "4px",
+      "default": "1px",
       "bounds": {
         "min": 0.25,
-        "max": 16,
+        "max": 8,
         "step": 0.25
       },
       "label": "Astrolabe tropic dash on",

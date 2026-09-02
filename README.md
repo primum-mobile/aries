@@ -27,6 +27,7 @@ official supported installers.
 | `Cmd/Ctrl + G` | Cycle the secondary-ring view |
 | `Cmd/Ctrl + Alt + A` | Ascensional Transits |
 | `Cmd/Ctrl + Shift + A` | Appearance |
+| `Cmd/Ctrl + Shift + E` | Chart Style Lab |
 | `I` | Toggle Inspector |
 | `Shift`, then `Shift` | Open Spotlight |
 | `0`–`9` | Open Spotlight with that digit |
@@ -168,8 +169,14 @@ Gansten, Jaime Chica Londoño, Petr Radek, Endre Csaba Simon, Václav Jan
 
 ## License
 
-Aries is free software distributed under the GNU Affero General Public License,
-version 3 or later. See `LICENSE` for the complete terms.
+Original Aries application code is free software distributed under the GNU
+Affero General Public License, version 3 or later. Morinus-derived application
+code remains under the GNU General Public License, version 3 or later.
+GPLv3 section 13 and AGPLv3 section 13 permit those portions to be combined;
+the AGPL network-source requirement applies to the combined application.
+
+See `COPYRIGHT.txt` for the component boundary, `LICENSE` for AGPLv3, and
+`COPYING-GPL-3.0.txt` for GPLv3.
 
 Swiss Ephemeris has its own dual-licensing terms. See the notices under `SWEP/`.
 

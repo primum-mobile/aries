@@ -74,7 +74,34 @@ def _profile_scope_for_token(token: Mapping[str, Any]) -> str:
     return "app"
 
 
-def _validate_color(value: Any, token: Mapping[str, Any], semantic_id: str) -> list:
+_ALIAS_RE = re.compile(r"^\{([A-Za-z0-9][A-Za-z0-9_.-]*)\}$")
+
+
+def color_alias_target(value: Any) -> Optional[str]:
+    """The token a colour follows, or None when the value is a literal.
+
+    A colour override may name another colour token instead of carrying one, in
+    the design-token standard's brace form. That is how the editor records "this
+    is the planet-glyph colour" rather than "this happens to equal it today", so
+    changing the followed token moves everything that follows it.
+    """
+    if not isinstance(value, str):
+        return None
+    match = _ALIAS_RE.match(value.strip())
+    return match.group(1) if match else None
+
+
+def _validate_color(value: Any, token: Mapping[str, Any], semantic_id: str) -> Any:
+    alias = color_alias_target(value)
+    if alias is not None:
+        if alias == semantic_id:
+            raise StyleProfileError(f"{semantic_id} cannot follow itself")
+        target = STYLE_PROFILE_TOKENS.get(alias)
+        if target is None:
+            raise StyleProfileError(f"{semantic_id} follows unknown style token: {alias}")
+        if target.get("type") != "color":
+            raise StyleProfileError(f"{semantic_id} may only follow a color token")
+        return f"{{{alias}}}"
     if not isinstance(value, (list, tuple)) or len(value) not in (3, 4):
         raise StyleProfileError(f"{semantic_id} must be an RGB or RGBA array")
     rgb = []
@@ -217,6 +244,47 @@ def _default_number(semantic_id: str, overrides: Mapping[str, Any], seen: set[st
         return _default_number(target, overrides, seen | {semantic_id})
 
 
+def _validate_color_aliases(overrides: Mapping[str, Any]) -> None:
+    """Reject a set of references that never reaches a colour.
+
+    Each chain is walked to its end; revisiting a token means the chain closes
+    on itself and no literal exists anywhere along it. Rejecting that at the
+    door keeps every later reader — this daemon, the editor, the exporters —
+    free of loop guards over data that should never have been stored.
+    """
+    for semantic_id in overrides:
+        seen = {semantic_id}
+        current = color_alias_target(overrides.get(semantic_id))
+        while current is not None:
+            if current in seen:
+                raise StyleProfileError(
+                    f"style color references form a cycle at {current}"
+                )
+            seen.add(current)
+            current = color_alias_target(overrides.get(current))
+
+
+def resolve_color_alias(semantic_id: str, overrides: Mapping[str, Any]) -> Any:
+    """The value a colour override lands on after every reference is followed.
+
+    Returns ``None`` when the chain ends at a token this profile does not
+    override, which means the followed colour comes from the options underneath
+    and the caller should leave that value alone.
+    """
+    seen = {semantic_id}
+    current = overrides.get(semantic_id)
+    while True:
+        alias = color_alias_target(current)
+        if alias is None:
+            return current
+        if alias in seen:
+            return None
+        seen.add(alias)
+        if alias not in overrides:
+            return None
+        current = overrides[alias]
+
+
 def _validate_relations(overrides: Mapping[str, Any]) -> None:
     for relation in STYLE_PROFILE_RELATIONS:
         kind = relation.get("kind")
@@ -273,6 +341,7 @@ def validate_style_profile(payload: Any) -> dict:
         for semantic_id, value in raw_overrides.items()
     }
     _validate_scope(scope, overrides)
+    _validate_color_aliases(overrides)
     _validate_relations(overrides)
     normalized = {
         "kind": PROFILE_KIND,

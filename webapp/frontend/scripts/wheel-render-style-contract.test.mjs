@@ -1,14 +1,26 @@
+// Copyright (C) 2026 Max Lange
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import ts from "typescript";
 
-const wheelStyleSource = await readSource(
-  new URL("../src/lib/chart/wheel-render-style.ts", import.meta.url),
-);
+const layoutModelJavascript = ts.transpileModule(
+  await readSource(new URL("../src/lib/chart/wheel-layout-model.ts", import.meta.url)),
+  { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } },
+).outputText;
+const layoutModelUrl = `data:text/javascript;base64,${Buffer.from(layoutModelJavascript).toString("base64")}`;
+const wheelStyleSource = (
+  await readSource(new URL("../src/lib/chart/wheel-render-style.ts", import.meta.url))
+).replaceAll('"./wheel-layout-model"', `"${layoutModelUrl}"`);
 const workspaceContentSource = await readFile(
   new URL("../src/components/workshell/workspace-content.tsx", import.meta.url),
+  "utf8",
+);
+const homeClientSource = await readFile(
+  new URL("../src/components/workshell/home-client.tsx", import.meta.url),
   "utf8",
 );
 const wheelStyleJavascript = ts.transpileModule(wheelStyleSource, {
@@ -18,6 +30,10 @@ const wheelStyleJavascript = ts.transpileModule(wheelStyleSource, {
   },
 }).outputText;
 const {
+  resolveWheelPaintedRingReferenceRange,
+  resolveWheelPaintedRingRadiusRange,
+  paintedRingFieldFor,
+  activePaintedRingRoles,
   DEFAULT_WHEEL_RENDER_STYLE,
   DEFAULT_WHEEL_RENDER_TOKENS,
   DEFAULT_WHEEL_LINE_PAINT,
@@ -28,6 +44,9 @@ const {
   WHEEL_RENDER_DEPRECATED_TOKEN_ALIASES,
   WHEEL_RENDER_TOKEN_RANGES,
   WHEEL_RENDER_TOKEN_SPECS,
+  WHEEL_SCALE_RANGE,
+  resolveWheelScale,
+  resolveCanonicalWheelRingSet,
   createTokenizedWheelRenderStyle,
   createWheelRenderStyle,
   resolveWheelRenderStyleFromTokens,
@@ -41,6 +60,13 @@ const {
 } = await import(
   `data:text/javascript;base64,${Buffer.from(wheelStyleJavascript).toString("base64")}`
 );
+
+// The band model behind glyph containment, imported from production so the
+// test cannot carry its own drifting copy of the ceiling rule.
+const {
+  resolveWheelBandLayout,
+  resolveWheelClassFontSizeCeiling,
+} = await import(layoutModelUrl);
 
 function assertDeepFrozen(value) {
   assert.ok(Object.isFrozen(value));
@@ -58,7 +84,6 @@ test("default wheel profile preserves classic, compact, and Anglo metrics", () =
     "secondaryRing.asteroid.label": label,
     "secondaryRing.midpoint.glyph": label,
     "secondaryRing.midpoint.text": label,
-    "secondaryRing.hybridHit.label": label,
     "secondaryRing.antiscia.glyph": projected,
     "secondaryRing.antiscia.text": projected,
     "secondaryRing.contraAntiscia.glyph": projected,
@@ -103,15 +128,29 @@ test("default wheel profile preserves classic, compact, and Anglo metrics", () =
     decanSize: 400 / 24,
     outerAngleLabelSize: 18.75,
     outerHouseLabelSize: 12.5,
+    outerMotionSize: 8.333333333333332,
+    outerLabelSize: 12.5,
+    outerProjectedGlyphSize: 25,
+    secondaryRing: secondaryRing(12.5, 25, 8.333333333333332),
+  });
+  assert.deepEqual(compact, {
+    ...shared,
+    motionSize: 12.5,
+    outerLayoutUnit: 25,
+    outerSize: 25,
+    signSize: 20,
+    subdivisionSize: 400 / 24,
+    termSize: 400 / 24,
+    decanSize: 400 / 24,
+    outerAngleLabelSize: 18.75,
+    outerHouseLabelSize: 12.5,
     outerMotionSize: 6.25,
     outerLabelSize: 12.5,
     outerProjectedGlyphSize: 25,
     secondaryRing: secondaryRing(12.5, 25, 6.25),
   });
-  assert.deepEqual(compact, classic);
   assert.deepEqual(anglo, {
     ...shared,
-    motionSize: 7.5,
     outerLayoutUnit: 20,
     outerSize: 20,
     signSize: 16,
@@ -120,10 +159,10 @@ test("default wheel profile preserves classic, compact, and Anglo metrics", () =
     decanSize: 12.5,
     outerAngleLabelSize: 15,
     outerHouseLabelSize: 10,
-    outerMotionSize: 6,
+    outerMotionSize: 5,
     outerLabelSize: 10,
     outerProjectedGlyphSize: 20,
-    secondaryRing: secondaryRing(10, 20, 6),
+    secondaryRing: secondaryRing(10, 20, 5),
   });
 });
 
@@ -687,6 +726,16 @@ test("wheel overlay hit regions expose all twelve exact semantic text classes", 
       glyph: "A",
       color: "#ffaa00",
     }],
+    eclipse: {
+      longitude: 55,
+      house: 2,
+      label: "Total Solar Eclipse",
+      glyph: "Ec",
+      glyphFont: "text",
+      eventJd: 2460000,
+      isSolar: true,
+      coincidesWithSyzygy: false,
+    },
     angles: { asc: 0, dsc: 180, mc: 90, ic: 270 },
     houses: { cusps: Array.from({ length: 12 }, (_, index) => index * 30) },
     aspects: [],
@@ -751,6 +800,11 @@ test("wheel overlay hit regions expose all twelve exact semantic text classes", 
       },
     },
   );
+  const eclipseRegion = regions.find((region) => region.kind === "eclipse");
+  assert.ok(eclipseRegion);
+  assert.equal(eclipseRegion.longitude, 55);
+  assert.equal(eclipseRegion.house, 2);
+  assert.equal(eclipseRegion.label, "Total Solar Eclipse");
   const overlayTargets = regions.filter(
     (region) =>
       region.kind === "style_target"
@@ -1012,15 +1066,15 @@ test("Anglo filled angle arrows consume the resolved semantic class color", asyn
   }]);
 });
 
-test("motion-marker collision uses the resolved body glyph size", async () => {
+test("motion markers attach to measured glyph bounds and retain the wx size matrix", async () => {
   const drawChart = await loadDrawChartCollisionInternals();
-  const markerX = (fontSizePx) => {
+  const markerPaint = (profile, theme, marker, fontSizePx, outer = false) => {
     const style = createWheelRenderStyle({
       palette: DEFAULT_WHEEL_RENDER_STYLE.palette,
       authoringOverrides: {
         referenceRadius: 400,
         typography: {
-          classic: {
+          [profile]: {
             "bodies.inner.glyph": { fontSizePx },
           },
         },
@@ -1046,13 +1100,13 @@ test("motion-marker collision uses the resolved body glyph size", async () => {
         latitude: 0,
         speed: -1,
         glyph: "A",
-        motion: "R",
+        motion: marker,
       }],
       angles: { asc: 0, dsc: 180, mc: 90, ic: 270 },
       houses: { cusps: Array.from({ length: 12 }, (_, index) => index * 30) },
       aspects: [],
       options: {
-        theme: 0,
+        theme,
         signVariant: 1,
         showHouses: false,
         showPositions: false,
@@ -1073,19 +1127,67 @@ test("motion-marker collision uses the resolved body glyph size", async () => {
       style.palette,
       "FallbackBody",
       "FallbackUi",
-      resolveWheelTypographyMetrics(style, "classic", 400),
+      resolveWheelTypographyMetrics(style, profile, 400),
       style,
+      outer,
     );
-    return recordedText.find(({ text }) => text === "R")?.x;
+    return {
+      glyph: recordedText.find(({ text }) => text === "A"),
+      marker: recordedText.find(({ text }) => text === marker),
+    };
   };
-  const defaultMarkerX = markerX(25);
-  const enlargedMarkerX = markerX(80);
-  assert.equal(typeof defaultMarkerX, "number");
-  assert.equal(typeof enlargedMarkerX, "number");
-  assert.ok(
-    enlargedMarkerX > defaultMarkerX + 10,
-    `expected enlarged glyph collision to move marker inward: ${defaultMarkerX} -> ${enlargedMarkerX}`,
-  );
+  for (const [profile, theme] of [["classic", 0], ["anglo", 2]]) {
+    const baseMotionSize = resolveWheelTypographyMetrics(
+      DEFAULT_WHEEL_RENDER_STYLE,
+      profile,
+      400,
+    ).motionSize;
+    for (const marker of ["R", "SR", "SD"]) {
+      const expectedSize = marker === "R" ? baseMotionSize : baseMotionSize * (4 / 3);
+      const defaultPaint = markerPaint(profile, theme, marker, 25);
+      const enlargedPaint = markerPaint(profile, theme, marker, 80);
+      assert.equal(
+        defaultPaint.marker?.fontSize,
+        Math.round(expectedSize),
+        `${profile} ${marker} uses its wx font ratio`,
+      );
+      assert.equal(
+        defaultPaint.marker?.x,
+        defaultPaint.glyph.x + defaultPaint.glyph.w,
+        `${profile} ${marker} attaches to the measured glyph right edge`,
+      );
+      assert.ok(
+        Math.abs(
+          defaultPaint.marker.y + defaultPaint.marker.fontSize
+          - (defaultPaint.glyph.y + defaultPaint.glyph.fontSize)
+        ) <= 1,
+        `${profile} ${marker} aligns to the glyph font-box bottom edge`,
+      );
+      assert.equal(
+        enlargedPaint.marker?.x,
+        enlargedPaint.glyph.x + enlargedPaint.glyph.w,
+        `${profile} ${marker} follows an independently authored glyph size`,
+      );
+    }
+  }
+
+  const wxSizeMatrix = [
+    ["classic", 0, false, { R: 6.25, S: 6.25, SR: 25 / 3, SD: 25 / 3 }],
+    ["compact", 1, false, { R: 12.5, S: 12.5, SR: 25 / 3, SD: 25 / 3 }],
+    ["anglo", 2, false, { R: 6.25, S: 6.25, SR: 25 / 3, SD: 25 / 3 }],
+    ["classic", 0, true, { R: 25 / 3, S: 25 / 3, SR: 25 / 3, SD: 25 / 3 }],
+    ["compact", 1, true, { R: 6.25, S: 6.25, SR: 25 / 3, SD: 25 / 3 }],
+    ["anglo", 2, true, { R: 5, S: 5, SR: 20 / 3, SD: 20 / 3 }],
+  ];
+  for (const [profile, theme, outer, expected] of wxSizeMatrix) {
+    for (const [marker, size] of Object.entries(expected)) {
+      assert.equal(
+        markerPaint(profile, theme, marker, 25, outer).marker?.fontSize,
+        Math.round(size),
+        `${profile} ${outer ? "outer" : "inner"} ${marker} matches wx sizing`,
+      );
+    }
+  }
 });
 
 test("default geometry preserves the full wheel mode and subdivision matrix", () => {
@@ -1115,11 +1217,16 @@ test("default geometry preserves the full wheel mode and subdivision matrix", ()
                 Number(showDecans),
                 Number(showHouses),
               ].join(":"),
+              // Sorted: the ring set is a frozen record read by property
+              // access, so key insertion order is incidental and must not
+              // make an internal geometry refactor look like a value change.
               rings: Object.fromEntries(
-                Object.entries(rings).map(([key, value]) => [
-                  key,
-                  typeof value === "number" ? Number(value.toFixed(6)) : value,
-                ]),
+                Object.entries(rings)
+                  .sort(([left], [right]) => (left < right ? -1 : 1))
+                  .map(([key, value]) => [
+                    key,
+                    typeof value === "number" ? Number(value.toFixed(6)) : value,
+                  ]),
               ),
             });
           }
@@ -1131,7 +1238,7 @@ test("default geometry preserves the full wheel mode and subdivision matrix", ()
   assert.equal(matrix.length, 48);
   assert.equal(
     createHash("sha256").update(JSON.stringify(matrix)).digest("hex"),
-    "7173ff11dd57e0bbe5bcdb9a5560a89814ce6ababfd3a5b9d15905b039881cfb",
+    "390190fc6123ba1653d744f55bacec8bee20e377f2335f48c5cee34c50ee4678",
   );
   const selected = Object.fromEntries(
     matrix
@@ -1329,13 +1436,13 @@ test("ChartCanvas passes one memoized renderStyle to every draw and hit path", a
   assert.match(source, /resolveWheelRenderStyleFromTokens\(/);
   assert.match(
     source,
-    /\(cssVar\) => styleEditorActive[\s\S]*?styleCssOverrides\[cssVar\][\s\S]*?effectiveTheme\?\.chartPalette\?\.\[cssVar\]/,
+    /\(cssVar\) => styleWorkingPreviewActive[\s\S]*?styleCssOverrides\[cssVar\][\s\S]*?effectiveTheme\?\.chartPalette\?\.\[cssVar\]/,
   );
   assert.match(source, /effectiveTheme\?\.chartPalette,/);
   assert.doesNotMatch(source, /getComputedStyle/);
   assert.doesNotMatch(source, /createWheelRenderStyle\(/);
   assert.equal((source.match(/drawSnapshotLayer\(/g) ?? []).length, 4);
-  assert.equal((source.match(/\n\s+renderStyle,\n/g) ?? []).length, 5);
+  assert.equal((source.match(/\n\s+renderStyle,\n/g) ?? []).length, 6);
   assert.doesNotMatch(source, /\n\s+palette,\n\s+renderStyle,/);
   assert.match(source, /computeHitRegions\([\s\S]*?renderStyle,/);
   assert.match(source, /overlayRenderMode === "step_fast"[\s\S]*?fill: false/);
@@ -1346,19 +1453,26 @@ test("draw and hit paths resolve the shared metrics instead of private literals"
   const source = await readSource(
     new URL("../src/lib/chart/draw-chart.ts", import.meta.url),
   );
-  assert.equal((source.match(/resolveWheelTypographyMetrics\(/g) ?? []).length, 2);
+  assert.equal((source.match(/resolveWheelTypographyMetrics\(/g) ?? []).length, 3);
+  assert.match(source, /const drawStyle = resolveDrawStyle\(opts\);/);
   assert.match(
     source,
-    /const style = projectWheelAuthoringStyle\(\s*resolveDrawStyle\(opts\),/,
+    /const style = projectWheelAuthoringStyle\(\s*drawStyle,/,
   );
   assert.match(source, /return resolveWheelRenderStyle\(opts\)/);
+  assert.match(source, /const hitStyle = resolveWheelRenderStyle\(opts\);/);
   assert.match(
     source,
-    /const style = projectWheelAuthoringStyle\(\s*resolveWheelRenderStyle\(opts\),/,
+    /const style = projectWheelAuthoringStyle\(\s*hitStyle,/,
   );
+  // Paint and hit testing must derive the wheel radius through the same helper.
+  // Scaling only one of them would leave a shrunken wheel with hover and click
+  // targets still sitting at full size.
+  assert.equal((source.match(/scaledWheelRadius\(/g) ?? []).length, 3);
+  assert.doesNotMatch(source, /const maxRadius = chartSize \/ 2;/);
   assert.match(source, /style\.outerLabels\.edgePadFactor/);
-  assert.equal((source.match(/effectiveRings\(style,/g) ?? []).length, 2);
-  assert.equal((source.match(/\? comparisonRings\(/g) ?? []).length, 2);
+  assert.equal((source.match(/effectiveRings\(\s*style,/g) ?? []).length, 3);
+  assert.equal((source.match(/\? comparisonRings\(/g) ?? []).length, 3);
   for (const section of ["geometry", "typography", "strokes", "labels", "collision", "hit"]) {
     assert.match(source, new RegExp(`style\\.${section}`));
   }
@@ -1448,7 +1562,7 @@ test("maximum body glyph size is bounded and isolated from every other typograph
   assert.equal(rejected.bodyScale, DEFAULT_WHEEL_RENDER_TOKENS.bodyScale);
 });
 
-test("prenatal syzygy keeps its dedicated glyph scale", async () => {
+test("prenatal syzygy and eclipse points keep their dedicated glyph scale", async () => {
   const drawChart = await loadDrawChartCollisionInternals();
   const bodySize = 25;
   const syzygyScale = DEFAULT_WHEEL_RENDER_STYLE.typography.ratios.syzygyScale;
@@ -1456,7 +1570,19 @@ test("prenatal syzygy keeps its dedicated glyph scale", async () => {
   assert.ok(
     Math.abs(drawChart.bodyGlyphSize("__syzygy", bodySize, syzygyScale) - 14.5) < 1e-9,
   );
+  assert.ok(
+    Math.abs(drawChart.bodyGlyphSize("__eclipse", bodySize, syzygyScale) - 14.5) < 1e-9,
+  );
   assert.equal(drawChart.bodyGlyphSize("sun", bodySize, syzygyScale), bodySize);
+
+  const chart = {
+    planets: [],
+    syzygy: { longitude: 10, glyph: "Sy" },
+    eclipse: { longitude: 10, glyph: "Ec", coincidesWithSyzygy: true },
+  };
+  assert.deepEqual(drawChart.bodyKeys(chart), ["__eclipse"]);
+  chart.eclipse.coincidesWithSyzygy = false;
+  assert.deepEqual(drawChart.bodyKeys(chart), ["__syzygy", "__eclipse"]);
 });
 
 test("Surveil targets distinguish Morinus glyphs from text labels", async () => {
@@ -1582,7 +1708,7 @@ test("maximum body glyph layout terminates with finite shifts", { timeout: 5_000
   assert.ok(fixedStarLayout.yOffsets.every(Number.isFinite));
 });
 
-test("outer-ring title avoidance keeps every label family outside the wheel", { timeout: 5_000 }, async () => {
+test("outer-ring title avoidance leaves fitted glyph lanes on their longitude", { timeout: 5_000 }, async () => {
   const drawChart = await loadDrawChartCollisionInternals();
   const center = [400, 400];
   const labelRadius = 300;
@@ -1638,16 +1764,21 @@ test("outer-ring title avoidance keeps every label family outside the wheel", { 
       [titleBounds],
     );
     assert.equal(unobstructedOuterItem.shifts[0], 0, item.family);
-    assert.ok(
-      Math.abs(obstructedOuterItem.shifts[0]) >= 1.5,
-      item.family,
-    );
-    assert.ok(
-      Math.abs(obstructedOuterItem.shifts[0]) < 2,
-      item.family,
-    );
     assert.equal(unobstructedOuterItem.yOffsets[0], 0, item.family);
-    assert.ok(obstructedOuterItem.yOffsets[0] > 0, item.family);
+    if (item.family === "dodecatemoria") {
+      assert.equal(obstructedOuterItem.shifts[0], 0, item.family);
+      assert.equal(obstructedOuterItem.yOffsets[0], 0, item.family);
+    } else {
+      assert.ok(
+        Math.abs(obstructedOuterItem.shifts[0]) >= 1.5,
+        item.family,
+      );
+      assert.ok(
+        Math.abs(obstructedOuterItem.shifts[0]) < 2,
+        item.family,
+      );
+      assert.ok(obstructedOuterItem.yOffsets[0] > 0, item.family);
+    }
   }
 
   for (const [family, width, height] of [
@@ -2157,7 +2288,11 @@ test("October 24 2026 Sun and Venus never cross the DSC in either Anglo mode", {
     JSON.stringify({ housesOff: Object.fromEntries(housesOff), housesOn: Object.fromEntries(housesOn) }),
   );
   assert.ok(Math.abs(housesOn.get("sun") - housesOff.get("sun")) < 0.1);
-  assert.deepEqual(routedHousesOn, housesOn, "view mode may not change body placement");
+  assert.deepEqual(
+    routedHousesOn,
+    housesOn,
+    "choosing between straight and routed house lines may not move a body",
+  );
 });
 
 test("July 21 2026 H round trips preserve each explicit Anglo layout mode", { timeout: 5_000 }, async () => {
@@ -2353,6 +2488,18 @@ test("A keeps transit aspects gated while M reveals only inner-wheel minor aspec
   assert.equal(
     drawChart.resolveAspectsForDraw(chart, { ...minorOnlyState, minorOnly: false }),
     null,
+  );
+});
+
+test("M leaves a click-exclusive body view before toggling the global minor set", () => {
+  const commandStart = homeClientSource.indexOf('if (command === "toggle-minor-aspects")');
+  const commandEnd = homeClientSource.indexOf("const tableId =", commandStart);
+  assert.notEqual(commandStart, -1);
+  assert.notEqual(commandEnd, -1);
+  const commandBlock = homeClientSource.slice(commandStart, commandEnd);
+  assert.match(
+    commandBlock,
+    /if \(aspectState\.hideAllAspects\)[\s\S]*?return;\s*}\s*\/\/ M changes the global aspect set\.[\s\S]*?clearAspectSelection\(\);\s*supersedePendingStepSettle\(\);\s*void toggleMinorAspects\(\)/,
   );
 });
 
@@ -2759,6 +2906,8 @@ function renderScreenshotCuspFixture(
     structuralLongitudes,
     lineWidth = 1,
     structuralLineWidth,
+    breakAcrossColumns,
+    breakGapPx,
   } = {},
 ) {
   const resolvedPreviousCusp = previousCusp ?? longitude - 30;
@@ -2784,6 +2933,8 @@ function renderScreenshotCuspFixture(
         resolvedNextCusp,
       ],
       structuralLineWidth,
+      breakAcrossColumns,
+      breakGapPx,
     },
   );
   const exactRay = {
@@ -3678,23 +3829,6 @@ test("Anglo collision solve includes retrograde and station markers", { timeout:
   };
   const measurer = new drawChart.CanvasDraw(recordingCanvas([]));
   measurer.resize(800, 800, 1);
-  const withoutMarkers = drawChart.arrangeBodies(
-    measurer,
-    chart,
-    [400, 400],
-    chart.angles.asc,
-    rings.rPlanet,
-    "AriesMorinus",
-    "sans-serif",
-    typography,
-    markerStyle,
-    true,
-    true,
-    true,
-    true,
-    false,
-    false,
-  );
   const layout = drawChart.getBodyLayout(
     measurer,
     chart,
@@ -3709,8 +3843,15 @@ test("Anglo collision solve includes retrograde and station markers", { timeout:
     markerStyle,
   );
 
-  assert.notDeepEqual(layout.bodyShifts, withoutMarkers);
   const columns = bodyIds.map((id) => [id, layout.componentBounds.get(id)]);
+  for (const [id, boxes] of columns) {
+    assert.equal(
+      boxes.length,
+      5,
+      `${id} collision column includes glyph, three position rows, and motion marker`,
+    );
+    assert.ok(boxes.at(-1).w > 0 && boxes.at(-1).h > 0, `${id} motion bounds are measurable`);
+  }
   for (let leftIdx = 0; leftIdx < columns.length - 1; leftIdx += 1) {
     for (let rightIdx = leftIdx + 1; rightIdx < columns.length; rightIdx += 1) {
       const [leftId, leftBoxes] = columns[leftIdx];
@@ -4177,6 +4318,172 @@ function recordingCanvas(recordedText, recordedLines = []) {
   };
 }
 
+test("traditional Anglo mixed layout ignores symbolic comparison axes", { timeout: 5_000 }, async () => {
+  const drawChart = await loadDrawChartCollisionInternals();
+  const center = [400, 400];
+  const maxRadius = 400;
+  const typography = resolveWheelTypographyMetrics(
+    DEFAULT_WHEEL_RENDER_STYLE,
+    "anglo",
+    maxRadius,
+  );
+  const makeChart = (angles, cusps, planets = []) => ({
+    planets,
+    angles,
+    houses: { cusps },
+    aspects: [],
+    options: {
+      theme: 2,
+      signVariant: 1,
+      showHouses: true,
+      showPositions: true,
+      showAspects: false,
+      showSymbols: false,
+      showTerms: false,
+      showDecans: false,
+      showCusplessAscMcLabels: true,
+      angloDenseLabelLayout: "routed-cusps",
+    },
+  });
+  const primaryChart = makeChart(
+    {
+      asc: 251.303,
+      dsc: 71.303,
+      mc: 163.781,
+      ic: 343.781,
+      ascDegMin: { degText: "11", minText: "18" },
+      mcDegMin: { degText: "13", minText: "47" },
+    },
+    [251.303, 285.1, 319.8, 343.781, 9, 40, 71.303, 105.1, 139.8, 163.781, 189, 220],
+  );
+  const movingBodies = [250.8, 251.5, 252.2].map((longitude, index) => ({
+    id: ["sun", "moon", "mercury"][index],
+    longitude,
+    glyph: String.fromCharCode(65 + index),
+    degText: String(Math.floor(longitude % 30)),
+    minText: String(Math.round((longitude % 1) * 60)).padStart(2, "0"),
+    motion: "",
+  }));
+  const comparisonChart = makeChart(
+    {
+      asc: 218.958,
+      dsc: 38.958,
+      mc: 131.522,
+      ic: 311.522,
+      ascDegMin: { degText: "8", minText: "57" },
+      mcDegMin: { degText: "11", minText: "31" },
+    },
+    [218.958, 251.6, 285.2, 311.522, 341, 9, 38.958, 71.6, 105.2, 131.522, 161, 189],
+    movingBodies,
+  );
+  const changedSymbolicAxes = makeChart(
+    {
+      asc: 19,
+      dsc: 199,
+      mc: 287,
+      ic: 107,
+      ascDegMin: { degText: "19", minText: "00" },
+      mcDegMin: { degText: "17", minText: "00" },
+    },
+    [19, 57, 98, 107, 131, 163, 199, 237, 278, 287, 311, 343],
+    movingBodies,
+  );
+  const rings = resolveWheelRingSet(DEFAULT_WHEEL_RENDER_STYLE, {
+    profile: "anglo",
+    mode: "comparison",
+    maxRadius,
+    hasOuterRing: true,
+    showTerms: false,
+    showDecans: false,
+    showHouses: true,
+    showPositions: true,
+    comparisonWithOuterHouses: false,
+  });
+  const measurer = new drawChart.CanvasDraw(recordingCanvas([]));
+  measurer.resize(800, 800, 1);
+  const layout = (bodyChart, frameworkChart) => drawChart.getBodyLayout(
+    measurer,
+    bodyChart,
+    center,
+    primaryChart.angles.asc,
+    rings.rPlanet,
+    rings.rPos,
+    rings.rRetr,
+    "AriesMorinus",
+    "sans-serif",
+    typography,
+    DEFAULT_WHEEL_RENDER_STYLE,
+    true,
+    true,
+    frameworkChart,
+    {
+      includeAngles: true,
+      includePositionStacks: true,
+      includeSharedAngles: false,
+      includeHouseCuspRays: true,
+      outerTypography: false,
+      usePrimaryGlyphSize: false,
+    },
+  );
+
+  const original = layout(comparisonChart, primaryChart);
+  const symbolicAxesChanged = layout(changedSymbolicAxes, primaryChart);
+  assert.deepEqual(
+    symbolicAxesChanged.bodyShifts,
+    original.bodyShifts,
+    "comparison ASC/MC/cusps cannot move bodies or fixed framework labels",
+  );
+  assert.deepEqual(
+    symbolicAxesChanged.componentBounds,
+    original.componentBounds,
+    "paint and hit geometry stay on the same fixed-framework solution",
+  );
+  assert.equal(original.bodyShifts.has("__asc"), false);
+  assert.equal(original.bodyShifts.has("__mc"), false);
+
+  const wrongFramework = layout(comparisonChart, comparisonChart);
+  assert.notDeepEqual(
+    wrongFramework.bodyShifts,
+    original.bodyShifts,
+    "the fixture detects the formerly mixed symbolic-time framework",
+  );
+
+  const cusplessPrimary = {
+    ...primaryChart,
+    options: {
+      ...primaryChart.options,
+      showHouses: false,
+      showCusplessAscMcLabels: true,
+    },
+  };
+  const cuspless = drawChart.getBodyLayout(
+    measurer,
+    comparisonChart,
+    center,
+    primaryChart.angles.asc,
+    rings.rPlanet,
+    rings.rPos,
+    rings.rRetr,
+    "AriesMorinus",
+    "sans-serif",
+    typography,
+    DEFAULT_WHEEL_RENDER_STYLE,
+    true,
+    true,
+    cusplessPrimary,
+    {
+      includeAngles: true,
+      includePositionStacks: true,
+      includeSharedAngles: true,
+      includeHouseCuspRays: false,
+      outerTypography: false,
+      usePrimaryGlyphSize: false,
+    },
+  );
+  assert.ok(cuspless.bodyShifts.has("__asc"));
+  assert.ok(cuspless.bodyShifts.has("__mc"));
+});
+
 async function loadDrawChartCollisionInternals() {
   const compilerOptions = {
     module: ts.ModuleKind.ESNext,
@@ -4208,10 +4515,25 @@ async function loadDrawChartCollisionInternals() {
       ),
     ),
   );
+  const pdRingPresentationUrl = dataUrl(
+    transpile(
+      await readSource(
+        new URL("../src/lib/chart/pd-ring-presentation.ts", import.meta.url),
+      ),
+    ),
+  );
+  const outerGlyphLaneUrl = dataUrl(
+    transpile(
+      await readSource(
+        new URL("../src/lib/chart/outer-glyph-lane.ts", import.meta.url),
+      ),
+    ),
+  );
   let drawChartSource = await readSource(
     new URL("../src/lib/chart/draw-chart.ts", import.meta.url),
   );
   drawChartSource = drawChartSource
+    .replace("function bodyKeys(", "export function bodyKeys(")
     .replace("function bodyGlyphSize(", "export function bodyGlyphSize(")
     .replace("function arrangeBodies(", "export function arrangeBodies(")
     .replace("function prepareOuterRingItems(", "export function prepareOuterRingItems(")
@@ -4235,6 +4557,18 @@ async function loadDrawChartCollisionInternals() {
     .replaceAll('"./canvas-draw"', `"${canvasDrawUrl}"`)
     .replaceAll('"./chart-fonts"', `"${chartFontsUrl}"`)
     .replaceAll('"./wheel-render-style"', `"${wheelStyleUrl}"`)
+    // draw-chart now imports the band model directly, to cap a glyph at the
+    // ring that holds it. Without this rewrite the harness leaves a bare
+    // specifier that no loader can resolve.
+    .replaceAll('"./wheel-layout-model"', `"${layoutModelUrl}"`)
+    .replaceAll('"./pd-ring-presentation"', `"${pdRingPresentationUrl}"`)
+    .replaceAll('"./outer-glyph-lane"', `"${outerGlyphLaneUrl}"`)
+    // Landed alongside this change by the PD-in-chart work; every harness that
+    // transpiles draw-chart has to rewrite each of its relative specifiers or
+    // the module graph dead-ends at a bare path no loader can follow.
+    .replaceAll('"./pd-event-presentation"', `"${dataUrl(transpile(await readSource(
+      new URL("../src/lib/chart/pd-event-presentation.ts", import.meta.url),
+    )))}"`)
     .replaceAll('"./glyphs"', `"${glyphsUrl}"`)
     .replaceAll('"../render/dither-pattern"', `"${ditherPatternUrl}"`);
   return { ...(await import(dataUrl(drawChartJavascript))), CanvasDraw: canvasDraw.CanvasDraw };
@@ -4243,3 +4577,710 @@ async function loadDrawChartCollisionInternals() {
 async function readSource(url) {
   return (await readFile(url, "utf8")).replace(/\r\n?/g, "\n");
 }
+
+
+
+
+
+
+// --- ring drags are authored in reference space --------------------------
+
+test("no two rings painted in the same layout share a ring-set field", () => {
+  // The previous version of this suite carried its own copy of the role→field
+  // map and it was off by one — termRing mapped to rInner, colliding with
+  // innerBoundaryRing. Tests written against it passed while the code they
+  // covered was wrong. The map is now read from production, and the invariant
+  // that actually matters is asserted: two rings drawn in the same layout must
+  // never write the same field, or a drag on one would resolve as the other.
+  const base = {
+    maxRadius: 400,
+    showTerms: true,
+    showDecans: true,
+    showHouses: true,
+    showPositions: true,
+  };
+  let states = 0;
+  for (const profile of ["classic", "compact", "anglo"]) {
+    for (const mode of ["single", "comparison"]) {
+      for (const hasOuterRing of [false, true]) {
+        for (const comparisonWithOuterHouses of [false, true]) {
+          if (mode === "single" && comparisonWithOuterHouses) continue;
+          const input = { ...base, profile, mode, hasOuterRing, comparisonWithOuterHouses };
+          const byField = new Map();
+          for (const role of activePaintedRingRoles(input)) {
+            const field = paintedRingFieldFor(role, profile);
+            assert.ok(field, `${role} has no field in ${profile}`);
+            const prior = byField.get(field);
+            assert.ok(
+              prior === undefined,
+              `${profile}/${mode}: ${prior} and ${role} both write ${field}`,
+            );
+            byField.set(field, role);
+          }
+          states += 1;
+        }
+      }
+    }
+  }
+  assert.ok(states >= 12, `expected a real matrix, checked ${states}`);
+});
+
+
+test("a ring's legal range is expressed in the space its value is stored in", () => {
+  // The bug Max hit: the drag produces a reference-space radius, the solver
+  // reports its interval in rendered pixels, and clamping one against the
+  // other made a ring teleport on the first frame of a grab. The error
+  // vanished at exactly one pane size — a 400px wheel radius — so a suite that
+  // only ever tested that size could not see it.
+  const style = DEFAULT_WHEEL_RENDER_STYLE;
+  const base = {
+    profile: "classic",
+    mode: "single",
+    hasOuterRing: false,
+    showTerms: true,
+    showDecans: true,
+    showHouses: true,
+    showPositions: true,
+    comparisonWithOuterHouses: false,
+  };
+  const reference = 400;
+
+  for (const maxRadius of [200, 300, 350, 400, 450, 733.5]) {
+    const input = { ...base, maxRadius };
+    for (const role of ["zodiacOuterRing", "zodiacInnerRing", "termRing", "baseRing"]) {
+      const rendered = resolveWheelPaintedRingRadiusRange(style, input, role);
+      const referenceRange = resolveWheelPaintedRingReferenceRange(style, input, role);
+      assert.ok(rendered && referenceRange, `${role} unsolvable at ${maxRadius}`);
+
+      // The reference range is the rendered range carried back into reference
+      // space, so projecting it forward again must return the rendered one.
+      const scale = maxRadius / reference;
+      assert.ok(
+        Math.abs(referenceRange.min * scale - rendered.min) < 1e-6,
+        `${role} @ ${maxRadius}: min not in reference space`,
+      );
+      assert.ok(
+        Math.abs(referenceRange.max * scale - rendered.max) < 1e-6,
+        `${role} @ ${maxRadius}: max not in reference space`,
+      );
+    }
+  }
+});
+
+test("clamping a drag is stable across repeated grabs at any pane size", () => {
+  // The writeback compounded: a rendered-px result stored in a reference-px
+  // slot was rescaled on the next paint, so each grab shrank the ring again.
+  // Clamping in the stored space must be idempotent — re-applying an already
+  // authored radius has to leave it alone, at every pane size.
+  const style = DEFAULT_WHEEL_RENDER_STYLE;
+  const base = {
+    profile: "classic",
+    mode: "single",
+    hasOuterRing: false,
+    showTerms: true,
+    showDecans: true,
+    showHouses: true,
+    showPositions: true,
+    comparisonWithOuterHouses: false,
+  };
+  for (const maxRadius of [200, 300, 400, 733.5]) {
+    const input = { ...base, maxRadius };
+    const range = resolveWheelPaintedRingReferenceRange(style, input, "zodiacInnerRing");
+    assert.ok(range);
+    const clamp = (value) => Math.min(range.max, Math.max(range.min, value));
+    for (const request of [range.min - 50, range.min, 150, 272, range.max, range.max + 50]) {
+      const once = clamp(request);
+      assert.equal(clamp(once), once, `not idempotent at ${maxRadius} for ${request}`);
+      assert.ok(once >= range.min - 1e-9 && once <= range.max + 1e-9);
+    }
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Whole-wheel scale.
+//
+// Scale and resize are separate operations. These pin the difference, because
+// the failure that produced them was a scale inferred from a boundary drag: it
+// re-authored every ring, so the wheel kept a stale proportion, nothing was
+// left free to absorb the next edit, and the gesture could not be undone.
+// ---------------------------------------------------------------------------
+
+const SCALE_BASE_INPUT = {
+  profile: "classic",
+  mode: "single",
+  hasOuterRing: false,
+  showTerms: true,
+  showDecans: true,
+  showHouses: true,
+  showPositions: true,
+  comparisonWithOuterHouses: false,
+};
+
+/** A style carrying an authored whole-wheel scale, and nothing else. */
+function styleWithWheelScale(scale, profile = "classic") {
+  return {
+    ...DEFAULT_WHEEL_RENDER_STYLE,
+    authoringOverrides: {
+      ...DEFAULT_WHEEL_RENDER_STYLE.authoringOverrides,
+      wheelScale: { [profile]: scale },
+    },
+  };
+}
+
+/** A style carrying one authored ring radius, in reference-space px. */
+function styleWithRingPin(role, referenceRadius, profile = "classic") {
+  return {
+    ...DEFAULT_WHEEL_RENDER_STYLE,
+    authoringOverrides: {
+      ...DEFAULT_WHEEL_RENDER_STYLE.authoringOverrides,
+      ringRadii: { [profile]: { [role]: referenceRadius } },
+    },
+  };
+}
+
+/**
+ * The wheel radius a paint uses, mirroring `scaledWheelRadius` in draw-chart.
+ * Scale is applied by solving for a smaller wheel, never after the solve.
+ */
+function paintedWheelRadius(style, paneRadius, profile = "classic") {
+  return paneRadius * resolveWheelScale(style, profile);
+}
+
+test("an unauthored wheel scale is exactly 1 and out-of-range values are clamped", () => {
+  assert.equal(resolveWheelScale(DEFAULT_WHEEL_RENDER_STYLE, "classic"), 1);
+  assert.equal(resolveWheelScale(styleWithWheelScale(0.5), "classic"), 0.5);
+  // Above 1 the outermost ring would grow through the margin the angle arrows
+  // live in and clip against the pane; below the floor the handle that scales
+  // it back would be out of reach.
+  assert.equal(resolveWheelScale(styleWithWheelScale(4), "classic"), WHEEL_SCALE_RANGE.max);
+  assert.equal(resolveWheelScale(styleWithWheelScale(0.001), "classic"), WHEEL_SCALE_RANGE.min);
+  // A scale authored for one profile must not leak into the others.
+  assert.equal(resolveWheelScale(styleWithWheelScale(0.5, "anglo"), "classic"), 1);
+  for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, undefined]) {
+    assert.equal(resolveWheelScale(styleWithWheelScale(bad), "classic"), 1);
+  }
+});
+
+test("a scaled wheel is the same wheel, geometry and contents together", () => {
+  // Item 1 and item 2 of the resize model are one mechanism: a scale gesture
+  // moves the geometry and everything drawn inside it by a single factor. If
+  // these ever diverge, glyphs stop tracking the bands that hold them.
+  for (const paneRadius of [200, 300, 400, 733.5]) {
+    for (const scale of [0.3, 0.55, 0.8, 1]) {
+      const style = styleWithWheelScale(scale);
+      const full = resolveWheelRingSet(DEFAULT_WHEEL_RENDER_STYLE, {
+        ...SCALE_BASE_INPUT,
+        maxRadius: paneRadius,
+      });
+      const scaled = resolveWheelRingSet(style, {
+        ...SCALE_BASE_INPUT,
+        maxRadius: paintedWheelRadius(style, paneRadius),
+      });
+      for (const role of activePaintedRingRoles(SCALE_BASE_INPUT)) {
+        const field = paintedRingFieldFor(role, "classic");
+        assert.ok(
+          Math.abs(scaled[field] - full[field] * scale) < 1e-9,
+          `${role} @ pane ${paneRadius} scale ${scale}: `
+          + `${scaled[field]} != ${full[field] * scale}`,
+        );
+      }
+      const fullText = resolveWheelTypographyMetrics(
+        DEFAULT_WHEEL_RENDER_STYLE, "classic", paneRadius,
+      );
+      const scaledText = resolveWheelTypographyMetrics(
+        style, "classic", paintedWheelRadius(style, paneRadius),
+      );
+      for (const metric of ["signSize", "bodySize", "termSize", "decanSize"]) {
+        if (typeof fullText[metric] !== "number" || fullText[metric] === 0) continue;
+        assert.ok(
+          Math.abs(scaledText[metric] - fullText[metric] * scale) < 1e-9,
+          `${metric} @ pane ${paneRadius} scale ${scale} did not scale with the wheel`,
+        );
+      }
+    }
+  }
+});
+
+test("scaling the wheel authors no ring, and carries the rings that were authored", () => {
+  // Minimal authorship (invariant 6). A scale holds one ratio; every band keeps
+  // whatever radius it was given, so scaling commutes with pinning. The version
+  // that re-authored each displaced ring pinned the whole stack after one
+  // gesture and left nothing free to absorb the next edit.
+  const paneRadius = 512;
+  const pinned = styleWithRingPin("zodiacInnerRing", 210);
+  for (const scale of [0.35, 0.6, 0.9]) {
+    const pinnedAndScaled = {
+      ...pinned,
+      authoringOverrides: {
+        ...pinned.authoringOverrides,
+        wheelScale: { classic: scale },
+      },
+    };
+    // The authored radius is untouched by the scale: same slot, same number.
+    assert.equal(
+      pinnedAndScaled.authoringOverrides.ringRadii.classic.zodiacInnerRing,
+      pinned.authoringOverrides.ringRadii.classic.zodiacInnerRing,
+      "a scale rewrote an authored ring radius",
+    );
+    const unscaled = resolveWheelRingSet(pinned, {
+      ...SCALE_BASE_INPUT,
+      maxRadius: paneRadius,
+    });
+    const scaled = resolveWheelRingSet(pinnedAndScaled, {
+      ...SCALE_BASE_INPUT,
+      maxRadius: paintedWheelRadius(pinnedAndScaled, paneRadius),
+    });
+    for (const role of activePaintedRingRoles(SCALE_BASE_INPUT)) {
+      const field = paintedRingFieldFor(role, "classic");
+      assert.ok(
+        Math.abs(scaled[field] - unscaled[field] * scale) < 1e-9,
+        `${role} @ scale ${scale}: a pinned wheel did not scale uniformly`,
+      );
+    }
+  }
+});
+
+test("returning the scale to 1 restores the wheel exactly, in a later gesture", () => {
+  // Cross-gesture invertibility, which ring drags cannot offer and scale can,
+  // precisely because it authors a ratio instead of a set of radii. "The whole
+  // chart can be collapsed with no chance to get it back" was the alternative.
+  for (const paneRadius of [240, 400, 619]) {
+    const pristine = resolveWheelRingSet(DEFAULT_WHEEL_RENDER_STYLE, {
+      ...SCALE_BASE_INPUT,
+      maxRadius: paneRadius,
+    });
+    let style = DEFAULT_WHEEL_RENDER_STYLE;
+    for (const scale of [0.8, 0.42, WHEEL_SCALE_RANGE.min, 0.65, 1]) {
+      style = styleWithWheelScale(scale);
+    }
+    const restored = resolveWheelRingSet(style, {
+      ...SCALE_BASE_INPUT,
+      maxRadius: paintedWheelRadius(style, paneRadius),
+    });
+    for (const role of activePaintedRingRoles(SCALE_BASE_INPUT)) {
+      const field = paintedRingFieldFor(role, "classic");
+      assert.equal(
+        restored[field],
+        pristine[field],
+        `${role} @ pane ${paneRadius} did not return to its unscaled radius`,
+      );
+    }
+  }
+});
+
+test("resizing one band leaves every authored glyph size alone", () => {
+  // The authored typography is what a band resize must not touch. Three seated
+  // glyphs — sign, term and decan — do follow their band, but that happens in
+  // `bandClampedGlyphSize` at paint time and is bounded by the band; the stored
+  // sizes underneath stay exactly as authored, which is what keeps a resize
+  // undoable and keeps every other run out of it.
+  for (const paneRadius of [260, 400, 700]) {
+    const pristine = resolveWheelTypographyMetrics(
+      DEFAULT_WHEEL_RENDER_STYLE, "classic", paneRadius,
+    );
+    for (const [role, radius] of [
+      ["zodiacInnerRing", 190],
+      ["zodiacOuterRing", 330],
+      ["termRing", 240],
+    ]) {
+      const resized = resolveWheelTypographyMetrics(
+        styleWithRingPin(role, radius), "classic", paneRadius,
+      );
+      assert.deepEqual(
+        resized,
+        pristine,
+        `pinning ${role} changed glyph metrics at pane ${paneRadius}`,
+      );
+    }
+  }
+});
+
+test("a scaled wheel resolves the same however its edits were ordered", () => {
+  // Order-independence (invariant 9) has to survive the new value. The stack is
+  // solved in one declarative pass against the authored pins, so a profile that
+  // was scaled then pinned must equal one that was pinned then scaled.
+  const paneRadius = 480;
+  const scaleFirst = {
+    ...DEFAULT_WHEEL_RENDER_STYLE,
+    authoringOverrides: {
+      ...DEFAULT_WHEEL_RENDER_STYLE.authoringOverrides,
+      wheelScale: { classic: 0.7 },
+      ringRadii: { classic: { zodiacInnerRing: 205, termRing: 175 } },
+    },
+  };
+  const pinFirst = {
+    ...DEFAULT_WHEEL_RENDER_STYLE,
+    authoringOverrides: {
+      ...DEFAULT_WHEEL_RENDER_STYLE.authoringOverrides,
+      ringRadii: { classic: { termRing: 175, zodiacInnerRing: 205 } },
+      wheelScale: { classic: 0.7 },
+    },
+  };
+  const solve = (style) => resolveWheelRingSet(style, {
+    ...SCALE_BASE_INPUT,
+    maxRadius: paintedWheelRadius(style, paneRadius),
+  });
+  assert.deepEqual(solve(scaleFirst), solve(pinFirst));
+});
+
+test("a glyph that follows its band can never leave it", () => {
+  // Max's rule: glyphs are always contained by their band's limits, never
+  // clipped. The proportional follow is what makes a resize feel alive; the
+  // clamp is what makes containment absolute. Asserted against production's
+  // own ceiling so the two cannot drift, and across pane sizes because a
+  // ratio bug hides at exactly one of them.
+  const base = {
+    profile: "classic",
+    mode: "single",
+    hasOuterRing: false,
+    showTerms: true,
+    showDecans: true,
+    showHouses: true,
+    showPositions: true,
+    comparisonWithOuterHouses: false,
+  };
+  const style = DEFAULT_WHEEL_RENDER_STYLE;
+  const seated = [
+    ["zodiac.signGlyph", (metrics) => metrics.signSize],
+    ["subdivisions.term.glyph", (metrics) => metrics.termSize],
+    ["subdivisions.decan.glyph", (metrics) => metrics.decanSize],
+  ];
+
+  for (const maxRadius of [150, 240, 400, 733.5]) {
+    const input = { ...base, maxRadius };
+    const canonicalRings = resolveCanonicalWheelRingSet(style, input);
+    const canonicalBands = resolveWheelBandLayout(style, input, canonicalRings).bands;
+    const metrics = resolveWheelTypographyMetrics(style, "classic", maxRadius);
+
+    // Squeeze the band that holds each glyph, hard, and check the glyph still
+    // fits — including at thicknesses far below anything shipped.
+    for (const squeeze of [1, 0.6, 0.3, 0.12]) {
+      const squeezed = canonicalBands.map((band) => {
+        const mid = (band.outer + band.inner) / 2;
+        const half = ((band.outer - band.inner) / 2) * squeeze;
+        return { ...band, outer: mid + half, inner: mid - half };
+      });
+      for (const [classId, pick] of seated) {
+        const ceiling = resolveWheelClassFontSizeCeiling(classId, squeezed);
+        const canonicalCeiling = resolveWheelClassFontSizeCeiling(classId, canonicalBands);
+        if (ceiling == null || canonicalCeiling == null) continue;
+        const authored = pick(metrics);
+        // Mirrors bandClampedGlyphSize: follow the band, then clamp.
+        const followed = authored * (ceiling / canonicalCeiling);
+        const painted = Math.min(followed, ceiling);
+        assert.ok(
+          painted <= ceiling + 1e-9,
+          `${classId} @ r=${maxRadius} squeeze ${squeeze}: ${painted} > ${ceiling}`,
+        );
+        assert.ok(painted > 0, `${classId} collapsed to ${painted}`);
+      }
+    }
+
+    // At canonical thickness the follow is exactly 1, so nothing that ships
+    // changes size. This is what makes the rule safe to switch on.
+    for (const [classId, pick] of seated) {
+      const ceiling = resolveWheelClassFontSizeCeiling(classId, canonicalBands);
+      if (ceiling == null) continue;
+      const authored = pick(metrics);
+      assert.equal(
+        Math.min(authored * (ceiling / ceiling), ceiling),
+        Math.min(authored, ceiling),
+        `${classId} @ r=${maxRadius} moved at its canonical thickness`,
+      );
+      assert.ok(
+        authored <= ceiling + 1e-9,
+        `${classId} @ r=${maxRadius} ships oversized (${authored} > ${ceiling}); `
+        + "the containment rule would visibly shrink it",
+      );
+    }
+  }
+});
+
+test("sign-locked cusps break across a body column instead of routing around it", { timeout: 5_000 }, async () => {
+  const drawChart = await loadDrawChartCollisionInternals();
+  // The February 22 1990 screenshot geometry, re-rendered under the sign-locked
+  // contract. The same obstruction that produces a rooted dogleg there must
+  // produce an exact broken cusp here.
+  const componentBounds = new Map([
+    ["moon", [
+      { x: 230, y: 398, w: 24, h: 32 },
+      { x: 228, y: 390, w: 28, h: 8 },
+    ]],
+    ["mars", [{ x: 215, y: 382, w: 41, h: 8 }]],
+    ["saturn", [{ x: 205, y: 382, w: 10, h: 8 }]],
+  ]);
+  const columns = [...componentBounds.entries()].map(([key, components], index) => ({
+    key,
+    footLongitude: index + 1,
+    displayedLongitude: index + 1,
+    components,
+  }));
+  const allBoxes = [...componentBounds.values()].flat();
+  const breakGapPx = DEFAULT_WHEEL_RENDER_STYLE.collision.cuspBreakGapPx;
+  const { recordedLines, straightRay } = renderScreenshotCuspFixture(
+    drawChart,
+    columns,
+    { breakAcrossColumns: true, breakGapPx },
+  );
+
+  assert.ok(recordedLines.length >= 2, "an obstructed sign-locked cusp is broken, not omitted");
+  assert.equal(
+    recordedLines.some((segment) => fixtureSegmentsMatch(segment, straightRay)),
+    false,
+    "an occupied cusp may not remain one straight segment",
+  );
+  // Every surviving piece stays on the exact cusp: sign-locked paint never
+  // turns, so the line still reads as one house boundary.
+  const rayDirection = [
+    straightRay.to[0] - straightRay.from[0],
+    straightRay.to[1] - straightRay.from[1],
+  ];
+  const rayLength = Math.hypot(rayDirection[0], rayDirection[1]);
+  const offRay = (point) => {
+    const dx = point[0] - straightRay.from[0];
+    const dy = point[1] - straightRay.from[1];
+    return Math.abs((dx * rayDirection[1] - dy * rayDirection[0]) / rayLength);
+  };
+  for (const segment of recordedLines) {
+    assert.ok(
+      offRay(segment.from) <= 0.5 && offRay(segment.to) <= 0.5,
+      "a broken cusp piece may not leave the exact cusp ray",
+    );
+  }
+  assert.deepEqual(
+    recordedLines[0].from,
+    straightRay.from,
+    "the cusp still starts at its exact inner foot",
+  );
+  assert.deepEqual(
+    recordedLines.at(-1).to,
+    straightRay.to,
+    "the cusp still finishes on the outer circle",
+  );
+  // The break carries the authored clearance, so the glyph reads through it.
+  const gapped = allBoxes.map((box) => ({
+    x: box.x - breakGapPx,
+    y: box.y - breakGapPx,
+    w: box.w + breakGapPx * 2,
+    h: box.h + breakGapPx * 2,
+  }));
+  assert.ok(
+    recordedLines.every((segment) =>
+      // Exact tangency is clearance, not overlap: the carve is measured from
+      // the stroke's edge, so a piece may end flush against the halo.
+      gapped.every((box) => !fixtureSegmentIntersectsBox(segment, box, 0.01))
+    ),
+    "no painted piece may enter a column's cleared halo",
+  );
+  assert.equal(
+    fixtureRootedPath(recordedLines, straightRay.from, [400, 400], 300),
+    null,
+    "sign-locked paint may never form a rooted route",
+  );
+});
+
+test("sign-locked packing holds a boundary-straddling cluster inside its own sign", { timeout: 5_000 }, async () => {
+  const drawChart = await loadDrawChartCollisionInternals();
+  const typography = resolveWheelTypographyMetrics(
+    DEFAULT_WHEEL_RENDER_STYLE,
+    "anglo",
+    400,
+  );
+  // A four-body cluster tight against 0 Aries, with every angle far away, so
+  // only the sign wall can decide whether a body crosses the boundary.
+  const planetValues = [
+    ["sun", 358.2, "A", "28", "12"],
+    ["mercury", 359.1, "C", "29", "06"],
+    ["venus", 359.7, "D", "29", "42"],
+    ["mars", 0.4, "E", "0", "24"],
+  ];
+  const baseChart = {
+    planets: planetValues.map(([id, longitude, glyph, degText, minText]) => ({
+      id,
+      longitude,
+      glyph,
+      degText,
+      minText,
+    })),
+    angles: { asc: 120, dsc: 300, mc: 210, ic: 30 },
+    houses: {
+      cusps: Array.from({ length: 12 }, (_, index) => (120 + index * 30) % 360),
+    },
+    aspects: [],
+    options: {
+      theme: 2,
+      signVariant: 1,
+      showHouses: true,
+      showPositions: true,
+      showTerms: true,
+      showDecans: false,
+      showCusplessAscMcLabels: true,
+    },
+  };
+  const measurer = {
+    textsize: (text, opts) => {
+      const size = opts?.size ?? 14;
+      return [Math.max(size, String(text).length * size * 0.6), size];
+    },
+  };
+  const rings = resolveWheelRingSet(DEFAULT_WHEEL_RENDER_STYLE, {
+    profile: "anglo",
+    mode: "single",
+    maxRadius: 400,
+    hasOuterRing: false,
+    showTerms: true,
+    showDecans: false,
+    showHouses: true,
+    showPositions: true,
+    comparisonWithOuterHouses: false,
+  });
+  const arrange = (mode) =>
+    drawChart.arrangeBodies(
+      measurer,
+      { ...baseChart, options: { ...baseChart.options, angloDenseLabelLayout: mode } },
+      [400, 400],
+      baseChart.angles.asc,
+      rings.rPlanet,
+      "AriesMorinus",
+      "sans-serif",
+      typography,
+      DEFAULT_WHEEL_RENDER_STYLE,
+      true,
+      true,
+      false,
+      true,
+      false,
+    );
+
+  const signOf = (longitude) => Math.floor(((longitude % 360) + 360) % 360 / 30);
+  const displayed = (layout, id) => {
+    const body = baseChart.planets.find((planet) => planet.id === id);
+    return body.longitude + (layout.get(id) ?? 0);
+  };
+
+  const signLocked = arrange("sign-locked");
+  const routed = arrange("routed-cusps");
+
+  for (const body of baseChart.planets) {
+    assert.equal(
+      signOf(displayed(signLocked, body.id)),
+      signOf(body.longitude),
+      `${body.id} may not be displayed outside its own sign`,
+    );
+  }
+  // The cluster must actually have been under pressure, otherwise the sign wall
+  // proved nothing. Routed packing, which knows only the angles, spills it.
+  assert.ok(
+    baseChart.planets.some(
+      (body) => signOf(displayed(routed, body.id)) !== signOf(body.longitude),
+    ),
+    "the fixture must be dense enough that angle-only packing crosses the sign",
+  );
+  assert.notDeepEqual(
+    signLocked,
+    routed,
+    "sign-locked is the one presentation mode that also changes body layout",
+  );
+  // Order and true feet are untouched: locking a sign spaces a stellium, it
+  // never reorders or re-signs it.
+  const fromClusterStart = (longitude) => ((longitude - 330) % 360 + 360) % 360;
+  const order = (layout) =>
+    [...baseChart.planets]
+      .sort((left, right) =>
+        fromClusterStart(displayed(layout, left.id)) -
+          fromClusterStart(displayed(layout, right.id))
+      )
+      .map((body) => body.id);
+  assert.deepEqual(order(signLocked), ["sun", "mercury", "venus", "mars"]);
+});
+
+test("a sign-locked angle notches for a glyph on it and stays whole otherwise", { timeout: 5_000 }, async () => {
+  const drawChart = await loadDrawChartCollisionInternals();
+  const size = 1200;
+  const centre = [size / 2, size / 2];
+  const asc = 100;
+  // The IC carries no label of its own, so a body can genuinely stand on it.
+  // On a labelled angle the label itself holds bodies off the line.
+  const ic = (asc + 90) % 360;
+  const axisPieces = (longitude, mode) => {
+    const recordedLines = [];
+    const draw = new drawChart.CanvasDraw(recordingCanvas([], recordedLines));
+    draw.resize(size, size, 1);
+    drawChart.drawSnapshotLayer(
+      draw,
+      {
+        primaryChart: {
+          planets: [
+            { id: "sun", longitude, glyph: "A", degText: "10", minText: "54" },
+            { id: "saturn", longitude: 250.4, glyph: "G", degText: "10", minText: "24" },
+          ],
+          angles: { asc, dsc: asc + 180, mc: (asc + 270) % 360, ic },
+          houses: { cusps: Array.from({ length: 12 }, (_, index) => (asc + index * 30) % 360) },
+          aspects: [],
+          options: {
+            theme: 2, signVariant: 1, showHouses: true, showPositions: true,
+            showTerms: true, showDecans: false, showCusplessAscMcLabels: true,
+            angloDenseLabelLayout: mode,
+          },
+        },
+        displayDatetime: "2026-04-15T18:37:42+01:00",
+        renderVariant: "round-anglo",
+        overlayRenderMode: "full",
+        outerRingMode: "none",
+      },
+      "geometry",
+      { width: size, height: size, chartSize: size, renderStyle: DEFAULT_WHEEL_RENDER_STYLE },
+    );
+    const bearingOf = (point) =>
+      (((Math.atan2(centre[1] - point[1], point[0] - centre[0]) * 180) / Math.PI) + 360) % 360;
+    const radiusOf = (point) => Math.hypot(point[0] - centre[0], point[1] - centre[1]);
+    const axis = ((180 + (ic - asc)) % 360 + 360) % 360;
+    const onAxis = (point) => {
+      const delta = Math.abs(bearingOf(point) - axis);
+      return Math.min(delta, 360 - delta) < 0.8;
+    };
+    return recordedLines
+      .filter((line) =>
+        onAxis(line.from) &&
+        onAxis(line.to) &&
+        Math.abs(radiusOf(line.from) - radiusOf(line.to)) > 3
+      )
+      .map((line) => [
+        Math.min(radiusOf(line.from), radiusOf(line.to)),
+        Math.max(radiusOf(line.from), radiusOf(line.to)),
+      ])
+      .sort((left, right) => left[0] - right[0]);
+  };
+  // The axis already carries structural gaps that exist with nothing on it.
+  // Only the gaps the body introduced are the notch.
+  const gapsOf = (pieces) => {
+    const gaps = [];
+    for (let index = 1; index < pieces.length; index += 1) {
+      const gap = pieces[index][0] - pieces[index - 1][1];
+      if (gap > 0.5) gaps.push(Number(gap.toFixed(1)));
+    }
+    return gaps;
+  };
+
+  const clear = axisPieces(ic + 12, "sign-locked");
+  const occupied = axisPieces(ic + 0.1, "sign-locked");
+  assert.ok(
+    occupied.length > clear.length,
+    `a glyph standing on an angle must notch it (clear ${clear.length}, occupied ${occupied.length})`,
+  );
+  assert.deepEqual(
+    axisPieces(ic + 12, "routed-cusps"),
+    clear,
+    "an angle with nothing on it is painted identically in both modes",
+  );
+  // The notch is the glyph's own extent, not the label column's. A column-wide
+  // hole reads as broken paint on a line that carries an arrowhead.
+  const structural = gapsOf(clear);
+  const notch = gapsOf(occupied).filter((gap) => !structural.includes(gap));
+  assert.ok(notch.length >= 1, "the notch must be measurable");
+  const widest = Math.max(...notch);
+  assert.ok(
+    widest < 70,
+    `the notch must stay near the glyph's own size, measured ${widest.toFixed(1)}px`,
+  );
+});

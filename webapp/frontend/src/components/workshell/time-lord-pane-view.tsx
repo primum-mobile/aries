@@ -4,7 +4,6 @@
 "use client";
 
 import * as React from "react";
-import { Copy, Download, FileText } from "lucide-react";
 
 import {
   fetchGenericTablePayload,
@@ -21,30 +20,33 @@ import {
 import type { ListFollowPolicy } from "@/lib/list-follow-policy";
 import { useT, type TFunc } from "@/lib/i18n/i18n";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
-import type { TimeLordTableId } from "@/stores/workspace-store";
-import { TimeLordTableView } from "./time-lord-table-view";
 import {
-  downloadText,
-  tableToConfiguredAlignedText,
-  tableToConfiguredTsv,
-} from "./generic-table-view";
-import { exportTablePayloadPdf } from "./table-pdf-export";
-import { exportTextContent } from "./text-export";
-import { useSettledWorkspaceRefreshSeq } from "./step-refresh";
+  flushSidebarListPreferenceWrites,
+  useWorkspaceStore,
+  type TimeLordTableId,
+  type VimshottariPreferences,
+} from "@/stores/workspace-store";
+import { TimeLordTableView } from "./time-lord-table-view";
+import { buildTableExportDocument } from "./table-pdf-export";
+import { TextExportActions } from "./text-export-actions";
+import { useSettledWorkspaceRefreshSeq, useStepSettledValue } from "./step-refresh";
+import { useTemporalConfluenceLensReporter } from "./temporal-confluence-context";
 import { RetainedPaneShell } from "./retained-pane-shell";
-import { PaneToolbarButton } from "./list-controls";
 
 type Props = {
   documentId: string;
   parentDocumentId?: string | null;
   tableId: TimeLordTableId;
   sourceName?: string;
+  focusDatetime?: string | null;
+  includeTemporal?: boolean;
   followPolicy?: ListFollowPolicy;
   onClose?: () => void;
 };
 
 const TIME_LORD_LABEL_KEYS: Record<TimeLordTableId, string> = {
   firdaria: "timelord.firdaria",
+  vimshottari: "timelord.vimshottari",
   decennials: "timelord.decennials",
   triplicity_directions: "timelord.triplicityDirections",
   zodiacal_releasing: "timelord.zodiacalReleasing",
@@ -57,47 +59,83 @@ function timeLordLabel(tableId: TimeLordTableId, t: TFunc): string {
 
 const TIME_LORD_FILE_STEMS: Record<TimeLordTableId, string> = {
   firdaria: "firdaria",
+  vimshottari: "vimshottari",
   decennials: "decennials",
   triplicity_directions: "triplicity_directions",
   zodiacal_releasing: "zodiacal_releasing",
   profections_table: "profections",
 };
 
-export function TimeLordPaneView({ documentId, parentDocumentId, tableId, sourceName, onClose }: Props) {
+export function TimeLordPaneView({
+  documentId,
+  parentDocumentId,
+  tableId,
+  sourceName,
+  focusDatetime,
+  includeTemporal = false,
+  onClose,
+}: Props) {
   const t = useT();
+  const cacheTableId = includeTemporal ? `${tableId}:temporal` : tableId;
   const [payload, setPayload] = React.useState<GenericTablePayload | null>(() =>
-    getCachedGenericTablePayload(tableId, documentId),
+    getCachedGenericTablePayload(cacheTableId, documentId),
   );
   const [error, setError] = React.useState<string | null>(null);
   const requestSeqRef = React.useRef(0);
+  const setVimshottariPreferences = useWorkspaceStore(
+    (state) => state.setVimshottariPreferences,
+  );
   const lastSessionChange = useDaemonWorkspaceStore((s) => s.lastSessionChange);
   const lastOptionsChange = useDaemonWorkspaceStore((s) => s.lastRetainedDataOptionsChange);
+  const settledFocusDatetime = useStepSettledValue(
+    focusDatetime ?? null,
+    parentDocumentId ?? documentId,
+    lastSessionChange,
+  );
   const refreshSeq = useSettledWorkspaceRefreshSeq({
     documentId,
     parentDocumentId,
     lastSessionChange,
     lastOptionsChange,
   });
+  const reportTemporalLens = useTemporalConfluenceLensReporter();
+  React.useEffect(() => {
+    if (!payload) return;
+    const capabilities = recordValue(payload?.capabilities);
+    reportTemporalLens({ binding: temporalTimeLordBinding(capabilities.bindings) });
+  }, [payload, reportTemporalLens]);
 
   const refreshPayload = React.useCallback(
     async (signal?: AbortSignal) => {
-      const next = await fetchGenericTablePayload(tableId, documentId, signal);
-      rememberGenericTablePayload(tableId, documentId, next);
+      const next = await fetchGenericTablePayload(
+        tableId,
+        documentId,
+        signal,
+        settledFocusDatetime,
+        includeTemporal,
+      );
+      rememberGenericTablePayload(cacheTableId, documentId, next);
       setPayload(next);
       setError(null);
       return next;
     },
-    [documentId, tableId],
+    [cacheTableId, documentId, includeTemporal, settledFocusDatetime, tableId],
   );
 
   React.useEffect(() => {
     const controller = new AbortController();
     const requestSeq = requestSeqRef.current + 1;
     requestSeqRef.current = requestSeq;
-    fetchGenericTablePayload(tableId, documentId, controller.signal)
+    fetchGenericTablePayload(
+      tableId,
+      documentId,
+      controller.signal,
+      settledFocusDatetime,
+      includeTemporal,
+    )
       .then((next) => {
         if (requestSeq !== requestSeqRef.current) return;
-        rememberGenericTablePayload(tableId, documentId, next);
+        rememberGenericTablePayload(cacheTableId, documentId, next);
         setPayload(next);
         setError(null);
       })
@@ -107,7 +145,7 @@ export function TimeLordPaneView({ documentId, parentDocumentId, tableId, source
         setError(err instanceof Error ? err.message : String(err));
       });
     return () => controller.abort();
-  }, [documentId, refreshSeq, tableId]);
+  }, [cacheTableId, documentId, includeTemporal, refreshSeq, settledFocusDatetime, tableId]);
 
   const updateBinding = React.useCallback(
     async (binding: Record<string, unknown>) => {
@@ -125,8 +163,16 @@ export function TimeLordPaneView({ documentId, parentDocumentId, tableId, source
     [refreshPayload],
   );
 
+  const updateVimshottariPreferences = React.useCallback(
+    async (patch: Partial<VimshottariPreferences>) => {
+      setVimshottariPreferences(patch);
+      await flushSidebarListPreferenceWrites();
+    },
+    [setVimshottariPreferences],
+  );
+
   const label = timeLordLabel(tableId, t);
-  const title = payload?.title || label;
+  const title = tableId === "vimshottari" ? label : payload?.title || label;
   const fileStem = TIME_LORD_FILE_STEMS[tableId];
 
   if (error && !payload) {
@@ -136,6 +182,7 @@ export function TimeLordPaneView({ documentId, parentDocumentId, tableId, source
         sourceName={sourceName}
         closeLabel={t("timelord.closeNamed", { name: label })}
         onClose={onClose}
+        closePosition="leading"
       >
         <div className="flex flex-1 items-center justify-center p-6 text-[length:var(--aries-font-size-base)] text-[color:var(--aries-text-muted)]">
           {error}
@@ -151,6 +198,7 @@ export function TimeLordPaneView({ documentId, parentDocumentId, tableId, source
         sourceName={sourceName}
         closeLabel={t("timelord.closeNamed", { name: label })}
         onClose={onClose}
+        closePosition="leading"
       >
         <div className="flex flex-1 items-center justify-center p-6 text-[length:var(--aries-font-size-base)] text-[color:var(--aries-text-muted)]">
           {t("timelord.loadingNamed", { name: label })}
@@ -166,6 +214,7 @@ export function TimeLordPaneView({ documentId, parentDocumentId, tableId, source
         sourceName={sourceName}
         closeLabel={t("timelord.closeNamed", { name: title })}
         onClose={onClose}
+        closePosition="leading"
       >
         <div className="flex flex-1 items-center justify-center p-6 text-center text-[length:var(--aries-font-size-base)] text-[color:var(--aries-text-muted)]">
           {payload.notes?.[0] ?? t("timelord.unavailableNamed", { name: title })}
@@ -180,70 +229,13 @@ export function TimeLordPaneView({ documentId, parentDocumentId, tableId, source
       sourceName={sourceName}
       closeLabel={t("timelord.closeNamed", { name: title })}
       onClose={onClose}
+      closePosition="leading"
       toolbar={
-        <>
-          <PaneToolbarButton
-            type="button"
-            onClick={() => {
-              void tableToConfiguredTsv(payload, payload.rows).then((text) =>
-                navigator.clipboard?.writeText(text).catch(() => {
-                  downloadText(`${fileStem}.tsv`, text, "text/tab-separated-values");
-                })
-              );
-            }}
-            title={t("timelord.copyRows")}
-          >
-            <Copy />
-          </PaneToolbarButton>
-          <PaneToolbarButton
-            type="button"
-            onClick={() => {
-              void tableToConfiguredTsv(payload, payload.rows).then((text) =>
-                exportTextContent({
-                filename: fileStem,
-                extension: "tsv",
-                mimeType: "text/tab-separated-values;charset=utf-8",
-                text,
-                title: t("timelord.exportTsvDialog"),
-                filters: [{ name: t("timelord.tsvFiles"), extensions: ["tsv"] }],
-                })
-              ).catch(() => {});
-            }}
-            title={t("timelord.exportTsv")}
-          >
-            <Download />
-          </PaneToolbarButton>
-          <PaneToolbarButton
-            type="button"
-            onClick={() => {
-              void tableToConfiguredAlignedText(payload, payload.rows, { title }).then((text) =>
-                exportTextContent({
-                filename: fileStem,
-                extension: "txt",
-                text,
-                title: t("timelord.exportTextDialog"),
-                filters: [{ name: t("timelord.textFiles"), extensions: ["txt"] }],
-                })
-              ).catch(() => {});
-            }}
-            title={t("timelord.exportText")}
-          >
-            <FileText />
-          </PaneToolbarButton>
-          <PaneToolbarButton
-            type="button"
-            onClick={() =>
-              void exportTablePayloadPdf(payload, payload.rows, {
-                fileStem,
-                title,
-              }).catch(() => {})
-            }
-            title={t("timelord.exportPdf")}
-          >
-            <Download />
-            PDF
-          </PaneToolbarButton>
-        </>
+        <TextExportActions
+          buildDocument={() =>
+            buildTableExportDocument(payload, payload.rows, { fileStem, title })
+          }
+        />
       }
     >
       <TimeLordTableView
@@ -251,7 +243,24 @@ export function TimeLordPaneView({ documentId, parentDocumentId, tableId, source
         payload={payload}
         onBindingChange={updateBinding}
         onOptionsChange={updateOptions}
+        onVimshottariPreferencesChange={updateVimshottariPreferences}
       />
     </RetainedPaneShell>
   );
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function temporalTimeLordBinding(value: unknown): Record<string, unknown> {
+  const binding = { ...recordValue(value) };
+  for (const disclosureKey of (
+    ["drill_l2_start", "drill_row_id", "expanded_l2_starts", "expanded_row_ids"] as const
+  )) {
+    delete binding[disclosureKey];
+  }
+  return binding;
 }

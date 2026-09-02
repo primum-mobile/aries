@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Max Lange
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Stage the Tauri runtime resource tree from explicit public inputs.
 
 The Tauri bundle must not copy the working ``Res/``, ``Data/``, or

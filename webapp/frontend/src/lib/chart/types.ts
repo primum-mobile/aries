@@ -35,8 +35,8 @@ export interface ChartPlanet {
  * secondary-ring point key (`point:<role>:<family>:<id>:<longitude>`). */
 export type AspectPointKey = `point:${string}`;
 export type AngleAspectKey = "asc" | "mc" | "dc" | "dsc" | "ic";
-export type AspectBodyKey = PlanetId | AngleAspectKey | "fortune" | "vertex" | "syzygy" | AspectPointKey;
-export type InterChartAspectKey = PlanetId | AngleAspectKey | "fortune" | "vertex" | "syzygy";
+export type AspectBodyKey = PlanetId | AngleAspectKey | "fortune" | "vertex" | "syzygy" | "eclipse" | AspectPointKey;
+export type InterChartAspectKey = PlanetId | AngleAspectKey | "fortune" | "vertex" | "syzygy" | "eclipse";
 
 export interface ChartAspect {
   p1: AspectBodyKey;
@@ -45,6 +45,22 @@ export interface ChartAspect {
   orb: number;
   maxOrb?: number;
   exact?: boolean;
+}
+
+export type DrishtiMethod = "parashari" | "jaimini";
+
+/** Native Varga relationship. Parāśari graha dṛṣṭi is directed from a graha
+ * to a whole sign; Jaimini rāśi dṛṣṭi is a mutual sign-to-sign relation. */
+export interface ChartDrishti {
+  id: string;
+  method: DrishtiMethod;
+  actorKind: "planet" | "sign";
+  actorKey?: PlanetId | null;
+  actorSeId?: number | null;
+  actorSign: number;
+  targetSign: number;
+  ordinal?: number | null;
+  special: boolean;
 }
 
 /** One engine-computed aspect record from bodyAspects[X] — the FULL set before
@@ -91,7 +107,7 @@ export interface ChartAngles {
 }
 
 export interface ChartHouses {
-  system: "P" | "K" | "R" | "C" | "E" | "W" | "B" | "O" | "M" | "H" | "T";
+  system: "P" | "K" | "R" | "C" | "E" | "W" | "F" | "B" | "O" | "M" | "H" | "T";
   cusps: number[]; // 12 values, index 0 = cusp 1 (ASC)
   cuspDegMin?: DegMin[];
 }
@@ -127,6 +143,12 @@ export interface ChartSyzygy {
   minText?: string;
 }
 
+export interface ChartEclipsePoint extends ChartSyzygy {
+  eventJd: number;
+  isSolar: boolean;
+  coincidesWithSyzygy: boolean;
+}
+
 export interface ArabicPart {
   id: string;
   label: string;
@@ -149,6 +171,9 @@ export interface Midpoint {
 
 export interface ChartMeta {
   name: string;
+  /** Current visible multi-wheel position; omitted outside a tri/quad wheel. */
+  multiwheelRingIndex?: number;
+  multiwheelRingNumeral?: "I" | "II" | "III" | "IV";
   kind:
     | "radix"
     | "horary"
@@ -163,7 +188,9 @@ export interface ChartMeta {
     | "relationship";
   datetime: string; // ISO
   dateDisplay: string; // e.g. "2000.January.02"
+  numericDateDisplay?: string; // locale-order numeric date for compact metadata
   timeDisplay: string; // e.g. "03:04:00, ZN"
+  compactTimeDisplay?: string; // e.g. "03:04, ZN"
   anchorDisplay?: string; // daemon-formatted "date time" for biwheel anchor labels
   place: string;
   placeCoords: string; // "4°43'E, 45°59'N"
@@ -296,6 +323,15 @@ export interface InterChartAspect {
 export type InterChartAspectSelectionKey = InterChartAspectKey | `outer:${InterChartAspectKey}`;
 export type InterChartBodyAspectsMap = Partial<Record<InterChartAspectSelectionKey, InterChartAspect[]>>;
 
+export interface MultiwheelConjunction {
+  innerRing: number;
+  outerRing: number;
+  inner: InterChartAspectKey;
+  outer: InterChartAspectKey;
+  orb: number;
+  maxOrb: number;
+}
+
 export interface Chart {
   meta: ChartMeta;
   planets: ChartPlanet[];
@@ -304,11 +340,13 @@ export interface Chart {
   fortune?: ChartFortune;
   vertex?: ChartVertex;
   syzygy?: ChartSyzygy;
+  eclipse?: ChartEclipsePoint;
   arabicParts?: ArabicPart[];
   fixedStars?: FixedStar[];
   midpoints?: Midpoint[];
   surveilMarks?: SurveilMark[];
   aspects: ChartAspect[];
+  drishti?: ChartDrishti[];
   // Additive click-to-toggle data (export_chart_json). Option flags own the
   // meaning; bodyAspects is the force-show source. Optional for older payloads.
   clickAspectFlags?: ClickAspectFlags;
@@ -322,12 +360,13 @@ export interface Chart {
     useDignityColors?: boolean;
     useZodiacElementColors?: boolean;
     theme?: 0 | 1 | 2;
-    angloDenseLabelLayout?: "leader-columns" | "routed-cusps";
+    angloDenseLabelLayout?: "leader-columns" | "routed-cusps" | "sign-locked";
     ascmcSize?: number;
     chartRingThickness?: number;
     showLoF?: boolean;
     showVertex?: boolean;
     showPrenatalSyzygy?: boolean;
+    showPrenatalEclipse?: boolean;
     showAspectsToVertex?: boolean;
     showFixstarsToHcs?: boolean;
     showFixstarsToLoF?: boolean;
@@ -335,6 +374,7 @@ export interface Chart {
     showOuterHouseLines?: boolean;
     showPositions?: boolean;
     showInformation?: boolean;
+    showRadixNameInCanvas?: boolean;
     showHouseSystem?: boolean;
     showSymbols?: boolean;
     showAspects?: boolean;
@@ -344,6 +384,11 @@ export interface Chart {
     showTerms?: boolean;
     showAngleArrowheads?: boolean;
     showCusplessAscMcLabels?: boolean;
+    multiwheelShowPositions?: boolean;
+    multiwheelShowMinutes?: boolean;
+    multiwheelUseSignColors?: boolean;
+    multiwheelShowAngleLabels?: boolean;
+    multiwheelSignColors?: string[];
     selectedTermSet?: number;
     terms?: ChartTermSegment[][];
     showDecans?: boolean;
@@ -359,6 +404,7 @@ export interface Chart {
 // progression and PD-in-Chart documents.
 export interface SymbolicTimeReadout {
   method: number | string;
+  direction?: "direct" | "converse";
   signifiedDatetime: string;
   signifiedDateText: string;
   signifiedDateDisplay?: string;
@@ -391,13 +437,177 @@ export interface SnapshotDocumentMeta {
   isActive: boolean;
   showRadixComparison?: boolean;
   symbolicTime?: SymbolicTimeReadout | null;
+  pdInChartFrame?: "fixed-radix" | "traditional-converse" | null;
+  pdInChartMovingRole?: "promissor" | "significator" | null;
+  pdInChartFixedRole?: "promissor" | "significator" | null;
 }
+
+export type PdEventDisplayFrame = "fixed-radix" | "traditional-converse";
+export type PdEventSourceRole = "primary" | "outer";
+export type PdEventTrack = "inner" | "outer";
+
+/**
+ * Daemon-owned semantic state for the selected primary-direction event.
+ * Canvas and React consumers display or route this snapshot; they never derive
+ * phase from longitude, speed, time, or apparent glyph separation.
+ */
+export interface PdDirectionState {
+  schemaVersion: 1;
+  eventId: string;
+  eventKind: string;
+  domain: "zodiacal" | "mundane";
+  system: number | null;
+  direction: "direct" | "converse";
+  eventJd: number | null;
+  eventLabel: string;
+  exactArcDegrees: number;
+  exactArcDegreesSigned: number;
+  currentArcDegreesSigned: number;
+  remainingArcDegreesSigned: number;
+  remainingArcDegrees: number;
+  exactNow: boolean;
+  phase: "applying" | "exact" | "separating";
+}
+
+export interface PdEventEquatorialPosition {
+  rightAscension: number;
+  declination: number;
+}
+
+export interface PdEventDirectionRayPrimitive {
+  kind: "direction-ray";
+  role: "promissor" | "significator";
+  motion: "fixed" | "moving";
+  ring: "inner" | "outer";
+  longitude: number;
+  latitude: number;
+  nativeCoordinate: number;
+  nativeCoordinateKind: string;
+  motionModel?: string | null;
+  equatorial?: PdEventEquatorialPosition | null;
+}
+
+export interface PdEventDirectedAnglePrimitive {
+  kind: "directed-angle";
+  role: "promissor" | "significator";
+  motion: "fixed" | "moving";
+  ring: "inner" | "outer";
+  angleId: number;
+  longitude: number;
+  latitude: number;
+  nativeCoordinate: number;
+  nativeCoordinateKind: string;
+  motionModel?: string | null;
+  equatorial?: PdEventEquatorialPosition | null;
+}
+
+export type PdEventPrimitive =
+  | PdEventDirectionRayPrimitive
+  | PdEventDirectedAnglePrimitive;
+
+export interface PdEventParty {
+  pointId: number;
+  dynamicKey?: string | null;
+  aspect: number;
+  glyph?: string | null;
+  color?: string | null;
+  colorRole?: string | null;
+}
+
+export interface PdEventPromissorParty extends PdEventParty {
+  aspectOffset: number;
+  bodyLongitude: number;
+  bodyLatitude: number;
+  rayLongitude: number;
+  rayLatitude: number;
+  aspectGlyph?: string | null;
+}
+
+export interface PdEventSignificatorParty extends PdEventParty {
+  longitude: number;
+}
+
+export interface PdEventAnglePromissorParty extends PdEventParty {
+  aspectOffset: number;
+  longitude: number;
+  rayLongitude: number;
+  rayLatitude: number;
+  aspectGlyph?: string | null;
+}
+
+export interface PdEventBodySignificatorParty extends PdEventParty {
+  aspectOffset: number;
+  bodyLongitude: number;
+  bodyLatitude: number;
+  rayLongitude: number;
+  rayLatitude: number;
+  aspectGlyph?: string | null;
+}
+
+interface PdEventOverlayBaseV1 {
+  schemaVersion: 1;
+  eventId: string;
+  supported: boolean;
+  unsupportedReason?: string | null;
+  domain?: "zodiacal";
+  system?: number;
+  projectionMode?: "ecliptic-feet" | "planets";
+  displayFrame?: PdEventDisplayFrame;
+  direction?: "direct" | "converse";
+  eventJd?: number | null;
+  exactArcDegrees: number;
+  exactArcDegreesSigned: number;
+  currentArcDegreesSigned: number;
+  remainingArcDegreesSigned: number;
+  remainingArcDegrees?: number;
+  exactNow: boolean;
+  residualDegrees?: number | null;
+  nativeCoordinateKind?: string;
+  literalLongitudeContact?: boolean;
+}
+
+/** Daemon-owned exact-event presentation contract for PDs in Chart. */
+export interface PdBodyAspectToAngleEventOverlayV1
+  extends PdEventOverlayBaseV1 {
+  eventKind: "body-aspect-to-angle";
+  parties?: {
+    promissor: PdEventPromissorParty;
+    significator: PdEventSignificatorParty;
+  } | null;
+  primitives: PdEventPrimitive[];
+}
+
+export interface PdAngleToBodyAspectEventOverlayV1
+  extends PdEventOverlayBaseV1 {
+  eventKind: "angle-to-body-aspect";
+  parties?: {
+    promissor: PdEventAnglePromissorParty;
+    significator: PdEventBodySignificatorParty;
+  } | null;
+  primitives: PdEventPrimitive[];
+}
+
+export type PdEventOverlayV1 =
+  | PdBodyAspectToAngleEventOverlayV1
+  | PdAngleToBodyAspectEventOverlayV1;
 
 export interface ChartRenderSnapshot {
   primaryChart: Chart;
   comparisonChart?: Chart | null;
   radixChart?: Chart | null;
   displayAnchorChart?: Chart | null;
+  /** Branch-owned tri/quad comparison charts, innermost first. Empty for the
+   * established singleton and biwheel renderers. */
+  rings?: Chart[];
+  /** Daemon-owned visible ring taxonomy, always ordered innermost first. */
+  ringTaxonomy?: Array<{
+    ringIndex: number;
+    numeral: "I" | "II" | "III" | "IV";
+    documentId?: string;
+    chartName?: string;
+  }>;
+  ringCount?: number;
+  ringZodiac?: "rim" | "centre";
   displayDatetime: string;
   renderVariant: RenderVariant;
   overlayRenderMode: OverlayRenderMode;
@@ -414,12 +624,16 @@ export interface ChartRenderSnapshot {
   comparisonWholeSign?: boolean;
   interChartAspects?: InterChartAspect[];
   interChartBodyAspects?: InterChartBodyAspectsMap;
+  /** Daemon-owned, current-orb cross-ring contacts used only to color feet. */
+  multiwheelConjunctions?: MultiwheelConjunction[];
   outerRingItems?: Partial<Record<OuterRingMode, OuterRingItem[]>>;
   // Compatibility mirrors used by older snapshots. Current payloads keep the
   // canonical click-toggle data on primaryChart to avoid serializing the same
   // aspect adjacency graph twice.
   clickAspectFlags?: ClickAspectFlags;
   bodyAspects?: BodyAspectsMap;
+  pdEventOverlay?: PdEventOverlayV1 | null;
+  pdDirectionState?: PdDirectionState | null;
   // Live session metadata (only on workspace document snapshots).
   document?: SnapshotDocumentMeta | null;
   debugTiming?: {

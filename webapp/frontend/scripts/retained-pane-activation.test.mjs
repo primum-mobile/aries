@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Max Lange
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -93,6 +96,23 @@ test("frozen pane focus remains semantic", () => {
           focusDatetime: "2026-07-26T12:00:00",
         },
       },
+    ),
+    false,
+  );
+});
+
+test("calendar activation is stable for the same owner", () => {
+  assert.equal(
+    sameRetainedPaneActivation(
+      { documentId: "radix-1" },
+      { documentId: "radix-1" },
+    ),
+    true,
+  );
+  assert.equal(
+    sameRetainedPaneActivation(
+      { documentId: "radix-1" },
+      { documentId: "radix-2" },
     ),
     false,
   );

@@ -167,6 +167,18 @@ ACCELERATOR_HELP_ROWS = (
 )
 
 
+# Live Tauri/web shortcuts owned by the manifest dispatcher.
+TAURI_MANIFEST_SHORTCUT_ROWS = (
+	{
+		'keys': '⌘ ⇧ E',
+		'label': 'Chart Style Lab',
+		'labelKey': 'styleLab.title',
+		'group': 'WORKSPACE',
+		'commandId': 'open-style-lab',
+	},
+)
+
+
 # Live Tauri/web shortcuts whose handlers do not come from the manifest
 # dispatcher. Keep them as display/documentation data only: adding command ids
 # here would register a second handler on top of the retained native/frontend

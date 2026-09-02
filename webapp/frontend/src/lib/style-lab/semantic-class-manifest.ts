@@ -83,7 +83,20 @@ export type WheelStyleCapability =
   | "saturation"
   | "grayscale"
   | "invert"
-  | "sepia";
+  | "sepia"
+  /** The whole wheel's ratio, carried by `canvas.chart` and nothing else. */
+  | "scale"
+  /** The inner edge of one band span, carried by `canvas.span.<id>`. */
+  | "spanInner"
+  /** How much a band span scales its run, carried by `canvas.span.<id>`. */
+  | "spanScale"
+  /**
+   * A degree ruler's depth as a share of its host band, carried by the ruler
+   * classes `zodiac.tick.inner` / `zodiac.tick.outer` and nothing else.
+   */
+  | "rulerDepth"
+  /** One tick group's length, as a share of the ruler band it stands in. */
+  | "tickLength";
 
 export type WheelPreviewFeatureId =
   | "houses"
@@ -102,7 +115,6 @@ export type WheelPreviewFeatureId =
   | "outerRing.fixedStar"
   | "outerRing.asteroid"
   | "outerRing.midpoint"
-  | "outerRing.hybridHit"
   | "outerRing.antiscia"
   | "outerRing.contraAntiscia"
   | "outerRing.dodecatemoria"
@@ -128,11 +140,9 @@ export type WheelPreviewStateId =
   | "classic.single.decans"
   | "classic.single.aspects"
   | "classic.comparison.aspects"
-  | "classic.single.specialPoints"
   | "classic.single.outer.fixedStar"
   | "classic.single.outer.asteroid"
   | "classic.single.outer.midpoint"
-  | "classic.single.outer.hybridHit"
   | "classic.single.outer.antiscia"
   | "classic.single.outer.contraAntiscia"
   | "classic.single.outer.dodecatemoria"
@@ -164,8 +174,18 @@ export type WheelSemanticClassDefinition<Id extends string = string> = Readonly<
   fontRole?: "text" | "symbols";
   /** Colour resolves through occurrence palette roles instead of class paint. */
   colorTarget?: "class" | "palette-role";
-  /** Visual defaults inherit, while only this class's capabilities may override. */
-  inheritsFrom?: string;
+  /**
+   * This class owns no profile-v2 authoring property; its one control reaches
+   * the inspector through the renderer token channel instead.
+   *
+   * Two kinds of thing are like this and both are legitimate: the three
+   * compositing layers, whose controls are retained scalar layer effects, and
+   * the geometry lanes, which position other classes' paint and carry a
+   * renderer ratio rather than anything paintable. Saying so here is what lets
+   * the class be named in the element list without claiming capabilities it
+   * does not have — `capabilities: []` alone would read as an oversight.
+   */
+  tokenControlled?: true;
 }>;
 
 const ALL_VARIANTS = Object.freeze([
@@ -204,6 +224,12 @@ export const WHEEL_STYLE_CAPABILITY_SETS = Object.freeze({
     "strokeStyle",
     "dashLength",
     "dashGap",
+    // A ring is stroked as an arc, so a cap shapes nothing while the stroke is
+    // solid — but every dash of a dashed or dotted ring has two ends, and the
+    // adapter already reads `lineCap === "round"` as what makes a dash a dot.
+    // The renderer has always honoured it (`canvas-draw.circle`); only the
+    // manifest was withholding it.
+    "lineCap",
     "opacity",
   ] as const),
   openLine: Object.freeze([
@@ -278,7 +304,6 @@ export const WHEEL_STYLE_CAPABILITY_SETS = Object.freeze({
     "opacity",
   ] as const),
   marker: Object.freeze(["radius", "color", "opacity"] as const),
-  inheritedPoint: Object.freeze(["color"] as const),
 });
 
 type DefinitionInput = Omit<WheelSemanticClassDefinition, "id">;
@@ -308,6 +333,22 @@ const WHEEL_SEMANTIC_CLASS_INPUTS = {
     labelKey: "styleLab.scene.canvas", groupId: "canvas", layer: "geometry",
     primitive: "surface", capabilities: C.retainedFill,
     applicability: applicability("classic.single.default"), colorTarget: "class",
+  }),
+  // The wheel as a whole. Its ratio used to be reachable only by selecting the
+  // background — the paper the chart is printed on, which is not the chart —
+  // or by finding the diamond handle, and the class itself could never appear
+  // in the element list at all.
+  "canvas.chart": define({
+    labelKey: "styleLab.scene.chartScale", groupId: "canvas", layer: "geometry",
+    primitive: "circle", capabilities: Object.freeze(["scale"] as const),
+    applicability: applicability("classic.single.default"),
+  }),
+  // The inner edge of the whole band stack, which moves every band with it.
+  // Distinct from a ring radius, which moves one boundary and leaves the rest.
+  "canvas.span.chartRing": define({
+    labelKey: "styleLab.scene.bandSpan.chartRing", groupId: "canvas", layer: "geometry",
+    primitive: "circle", capabilities: Object.freeze(["spanScale"] as const),
+    applicability: applicability("classic.single.default"),
   }),
 
   "fills.chartField": define({
@@ -342,16 +383,19 @@ const WHEEL_SEMANTIC_CLASS_INPUTS = {
     labelKey: "styleLab.scene.geometryLayer", groupId: "layers", layer: "geometry",
     primitive: "group", capabilities: Object.freeze([]),
     applicability: applicability("classic.single.default"),
+    tokenControlled: true
   }),
   "layers.dynamic": define({
     labelKey: "styleLab.scene.dynamicLayer", groupId: "layers", layer: "dynamic",
     primitive: "group", capabilities: Object.freeze([]),
     applicability: applicability("classic.single.default"),
+    tokenControlled: true
   }),
   "layers.outerLabel": define({
     labelKey: "styleLab.scene.outerLabelLayer", groupId: "layers", layer: "outer-label",
     primitive: "group", capabilities: Object.freeze([]),
     applicability: applicability("classic.single.outer.fixedStar"),
+    tokenControlled: true
   }),
 
   "rings.outerMaximum": define({
@@ -420,6 +464,23 @@ const WHEEL_SEMANTIC_CLASS_INPUTS = {
     primitive: "line", capabilities: C.openLine,
     applicability: applicability("classic.single.default"), colorTarget: "class",
   }),
+  // The two degree rulers. Each is named as the parent of its own ticks, which
+  // is the whole point of the inversion: the ruler used to *be* three ticks, so
+  // it had no depth anyone could author and the two rulers shared one token.
+  // Now it owns them, and a click reads the ruler while a double-click drills
+  // to one tick group.
+  // Every variant: anglo draws this ruler and no other, so gating it to
+  // classic/compact left the anglo wheel with no sizable ruler at all.
+  "zodiac.tick.outer": define({
+    labelKey: "styleLab.class.zodiacRulerOuter", groupId: "zodiac", layer: "geometry",
+    primitive: "circle", capabilities: Object.freeze(["rulerDepth"] as const),
+    applicability: applicability("classic.comparison.default"),
+  }),
+  "zodiac.tick.inner": define({
+    labelKey: "styleLab.class.zodiacRulerInner", groupId: "zodiac", layer: "geometry",
+    primitive: "circle", capabilities: Object.freeze(["rulerDepth"] as const),
+    applicability: applicability("classic.single.default", { variants: CLASSIC_COMPACT }),
+  }),
   "zodiac.tick.inner.10deg": define({
     labelKey: "styleLab.scene.tickInner10", groupId: "zodiac", layer: "geometry",
     primitive: "line", capabilities: C.openLine,
@@ -452,17 +513,17 @@ const WHEEL_SEMANTIC_CLASS_INPUTS = {
   }),
   "zodiac.tick.angloCuspRuler.10deg": define({
     labelKey: "styleLab.class.zodiacTickAngloCusp10Degree", groupId: "zodiac", layer: "geometry",
-    primitive: "line", capabilities: C.openLine,
+    primitive: "line", capabilities: Object.freeze([...C.openLine, "tickLength"] as const),
     applicability: applicability("anglo.single.default", { variants: ANGLO_ONLY }), colorTarget: "class",
   }),
   "zodiac.tick.angloCuspRuler.5deg": define({
     labelKey: "styleLab.class.zodiacTickAngloCusp5Degree", groupId: "zodiac", layer: "geometry",
-    primitive: "line", capabilities: C.openLine,
+    primitive: "line", capabilities: Object.freeze([...C.openLine, "tickLength"] as const),
     applicability: applicability("anglo.single.default", { variants: ANGLO_ONLY }), colorTarget: "class",
   }),
   "zodiac.tick.angloCuspRuler.1deg": define({
     labelKey: "styleLab.class.zodiacTickAngloCusp1Degree", groupId: "zodiac", layer: "geometry",
-    primitive: "line", capabilities: C.openLine,
+    primitive: "line", capabilities: Object.freeze([...C.openLine, "tickLength"] as const),
     applicability: applicability("anglo.single.default", { variants: ANGLO_ONLY }), colorTarget: "class",
   }),
   "zodiac.tick.angloHouseCusp": define({
@@ -527,6 +588,16 @@ const WHEEL_SEMANTIC_CLASS_INPUTS = {
     primitive: "text", capabilities: C.text,
     applicability: applicability("classic.single.default", { requiredFeatures: ["houses", "positions"] }), fontRole: "text", colorTarget: "palette-role",
   }),
+  // A lane is a circle nothing is painted on: it is where other classes' paint
+  // is placed. Each carries one renderer ratio and a drag handle, and each was
+  // draggable on the wheel while being absent from the manifest, so the
+  // element list could never name the thing the user had just moved.
+  "houses.inner.labelLane": define({
+    labelKey: "styleLab.scene.houseLabelLane", groupId: "houses", layer: "geometry",
+    primitive: "circle", capabilities: Object.freeze([]),
+    applicability: applicability("classic.single.default", { requiredFeatures: ["houses"] }),
+    tokenControlled: true,
+  }),
   "houses.outer.cusp": define({
     labelKey: "styleLab.class.outerHouseCusp", groupId: "houses", layer: "geometry",
     primitive: "line", capabilities: C.openLine,
@@ -586,6 +657,23 @@ const WHEEL_SEMANTIC_CLASS_INPUTS = {
     applicability: applicability("anglo.comparison.outerHouses", { variants: ANGLO_ONLY, layouts: COMPARISON_ONLY, requiredFeatures: ["angleLabels"] }), fontRole: "text", colorTarget: "class",
   }),
 
+  "bodies.inner.lane": define({
+    labelKey: "styleLab.scene.bodyLane", groupId: "bodies", layer: "geometry",
+    primitive: "circle", capabilities: Object.freeze([]),
+    applicability: applicability("classic.single.default"), tokenControlled: true,
+  }),
+  "bodies.inner.positionLane": define({
+    labelKey: "styleLab.scene.positionLane", groupId: "bodies", layer: "geometry",
+    primitive: "circle", capabilities: Object.freeze([]),
+    applicability: applicability("classic.single.default", { requiredFeatures: ["positions"] }),
+    tokenControlled: true,
+  }),
+  "bodies.outer.lane": define({
+    labelKey: "styleLab.scene.outerBodyLane", groupId: "bodies", layer: "geometry",
+    primitive: "circle", capabilities: Object.freeze([]),
+    applicability: applicability("classic.comparison.default", { layouts: COMPARISON_ONLY }),
+    tokenControlled: true,
+  }),
   "bodies.inner.leader": define({
     labelKey: "styleLab.scene.bodyLeader", groupId: "bodies", layer: "dynamic",
     primitive: "line", capabilities: C.polyline,
@@ -631,26 +719,35 @@ const WHEEL_SEMANTIC_CLASS_INPUTS = {
     primitive: "text", capabilities: C.text,
     applicability: applicability("classic.comparison.default", { layouts: COMPARISON_ONLY, requiredFeatures: ["motionMarkers"] }), fontRole: "text", colorTarget: "palette-role",
   }),
-  "bodies.fortune": define({
-    labelKey: "quickopt.fortuna", groupId: "bodies", layer: "dynamic",
-    primitive: "text", capabilities: C.inheritedPoint,
-    applicability: applicability("classic.single.specialPoints", { requiredFeatures: ["body.fortune"] }), fontRole: "symbols", colorTarget: "palette-role", inheritsFrom: "bodies.inner.glyph",
-  }),
-  "bodies.vertex": define({
-    labelKey: "quickopt.vertex", groupId: "bodies", layer: "dynamic",
-    primitive: "text", capabilities: C.inheritedPoint,
-    applicability: applicability("classic.single.specialPoints", { requiredFeatures: ["body.vertex"] }), fontRole: "symbols", colorTarget: "palette-role", inheritsFrom: "bodies.inner.glyph",
-  }),
-  "bodies.prenatalSyzygy": define({
-    labelKey: "quickopt.prenatalSyzygy", groupId: "bodies", layer: "dynamic",
-    primitive: "text", capabilities: C.inheritedPoint,
-    applicability: applicability("classic.single.specialPoints", { requiredFeatures: ["body.prenatalSyzygy"] }), fontRole: "symbols", colorTarget: "palette-role", inheritsFrom: "bodies.inner.glyph",
-  }),
+  // The Lot of Fortune, the Vertex and the prenatal syzygy used to be three
+  // classes of their own, each carrying a colour and nothing else while their
+  // font, size, tracking and opacity lived on `bodies.inner.glyph`. They are
+  // body glyphs, so they are authored as body glyphs: clicking one now selects
+  // `bodies.inner.glyph` (or `bodies.outer.glyph`) and offers the whole set.
+  // Their individual colours are unaffected — those were never class paint,
+  // they are the occurrence palette roles `chart.color.body.fortune`,
+  // `chart.color.peregrine` and `chart.color.positions`, which the glyph class
+  // paints through exactly as it does for a planet's own colour.
 
   "aspects.primary.line": define({
+    // The only class in the wheel that paints a path with an interior corner:
+    // the directed Drishti head is one three-point polyline
+    // (`drawDirectedDrishtiHead`), so a join has something to shape here. Every
+    // other line and ring is drawn as two-point segments and full arcs, which
+    // is why `lineJoin` stays off them rather than becoming a control that
+    // cannot change a pixel.
     labelKey: "styleLab.scene.aspectLine", groupId: "aspects", layer: "dynamic",
-    primitive: "line", capabilities: C.openLine,
+    primitive: "line", capabilities: C.polyline,
     applicability: applicability("classic.single.aspects", { layouts: SINGLE_ONLY, requiredFeatures: ["aspects"] }), colorTarget: "palette-role",
+  }),
+  "aspects.lane": define({
+    // The circle the aspect area begins at. Classic paints it, and there it is
+    // `rings.aspectBoundary`; compact and Anglo place their aspects against it
+    // without drawing it, and that unpainted case is this class.
+    labelKey: "styleLab.scene.aspectBoundary", groupId: "aspects", layer: "geometry",
+    primitive: "circle", capabilities: Object.freeze([]),
+    applicability: applicability("compact.single.default", { variants: Object.freeze(["compact", "anglo"] as const) }),
+    tokenControlled: true,
   }),
   "aspects.primary.glyph": define({
     labelKey: "styleLab.scene.aspectGlyph", groupId: "aspects", layer: "dynamic",
@@ -673,6 +770,16 @@ const WHEEL_SEMANTIC_CLASS_INPUTS = {
     applicability: applicability("classic.comparison.aspects", { layouts: COMPARISON_ONLY, requiredFeatures: ["aspects", "aspectGlyphs"] }), fontRole: "symbols", colorTarget: "palette-role",
   }),
 
+  "secondaryRing.leaderLane": define({
+    labelKey: "styleLab.scene.outerLine", groupId: "secondaryRing", layer: "geometry",
+    primitive: "circle", capabilities: Object.freeze([]),
+    applicability: applicability("classic.single.default"), tokenControlled: true,
+  }),
+  "secondaryRing.labelLane": define({
+    labelKey: "styleLab.scene.projectedLabelLane", groupId: "secondaryRing", layer: "geometry",
+    primitive: "circle", capabilities: Object.freeze([]),
+    applicability: applicability("classic.single.default"), tokenControlled: true,
+  }),
   "secondaryRing.fixedStar.leader": define({
     labelKey: "styleLab.class.fixedStarLeader", groupId: "secondaryRing", layer: "dynamic",
     primitive: "line", capabilities: C.polyline,
@@ -708,16 +815,12 @@ const WHEEL_SEMANTIC_CLASS_INPUTS = {
     primitive: "text", capabilities: C.text,
     applicability: applicability("classic.single.outer.midpoint", { requiredFeatures: ["outerRing.midpoint"] }), fontRole: "text", colorTarget: "palette-role",
   }),
-  "secondaryRing.hybridHit.leader": define({
-    labelKey: "styleLab.class.hybridHitLeader", groupId: "secondaryRing", layer: "dynamic",
-    primitive: "line", capabilities: C.polyline,
-    applicability: applicability("classic.single.outer.hybridHit", { requiredFeatures: ["outerRing.hybridHit"] }), colorTarget: "class",
-  }),
-  "secondaryRing.hybridHit.label": define({
-    labelKey: "styleLab.class.hybridHitLabel", groupId: "secondaryRing", layer: "outer-label",
-    primitive: "text", capabilities: C.text,
-    applicability: applicability("classic.single.outer.hybridHit", { requiredFeatures: ["outerRing.hybridHit"] }), fontRole: "text", colorTarget: "palette-role",
-  }),
+  // No `secondaryRing.hybridHit.*`. The Hybrid Hits ring does not paint a
+  // family of its own: `common.collect_hybrid_ring_items` gathers asteroids,
+  // midpoints, dodecatemoria, Arabic parts and fixed stars and
+  // `export_hybrid_items` ships each one under *its own* family, so a fixed
+  // star in the hybrid ring is a fixed star and is styled as one. The two
+  // classes that used to sit here could never be painted or selected.
   "secondaryRing.antiscia.leader": define({
     labelKey: "styleLab.class.antisciaLeader", groupId: "secondaryRing", layer: "dynamic",
     primitive: "line", capabilities: C.polyline,

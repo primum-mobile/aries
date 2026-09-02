@@ -9,6 +9,7 @@ import os
 import time
 
 import astrology
+import eclipses
 from aries.astrology.ephemeris_context import EphemerisContext
 from aries.astrology.transit_fast import api as transit_fast_api
 import campanianpd
@@ -45,6 +46,12 @@ ASPECT_DEFS = (
 	(searchquery.SearchQuery.ASPECT_TRINE, chart.Chart.TRIGON, True, mtexts.txts['Trigon']),
 	(searchquery.SearchQuery.ASPECT_QUINCUNX, chart.Chart.QUINQUNX, True, mtexts.txts['Quinqunx']),
 	(searchquery.SearchQuery.ASPECT_OPPOSITION, chart.Chart.OPPOSITIO, False, mtexts.txts['Oppositio']),
+	(searchquery.SearchQuery.ASPECT_SEMISEXTILE, chart.Chart.SEMISEXTIL, True, mtexts.txts['Semisextil']),
+	(searchquery.SearchQuery.ASPECT_SEMISQUARE, chart.Chart.SEMIQUADRAT, True, mtexts.txts['Semiquadrat']),
+	(searchquery.SearchQuery.ASPECT_QUINTILE, chart.Chart.QUINTILE, True, mtexts.txts['Quintile']),
+	(searchquery.SearchQuery.ASPECT_SESQUISQUARE, chart.Chart.SESQUIQUADRAT, True, mtexts.txts['Sesquiquadrat']),
+	(searchquery.SearchQuery.ASPECT_BIQUINTILE, chart.Chart.BIQUINTILE, True, mtexts.txts['Biquintile']),
+	(searchquery.SearchQuery.ASPECT_SEPTILE, chart.Chart.SEPTILE, True, mtexts.txts['Septile']),
 )
 
 ASPECT_INDEX_BY_ID = dict((aspect_id, chart_idx) for aspect_id, chart_idx, both_sides, label in ASPECT_DEFS)
@@ -82,11 +89,17 @@ class _AspectLabelMap(object):
 # aspect id -> (mtexts key, English fallback). Resolved at serve time.
 ASPECT_LABEL_BY_ID = _AspectLabelMap({
 	searchquery.SearchQuery.ASPECT_CONJUNCTION: ('Conjunctio', 'Conjunction'),
+	searchquery.SearchQuery.ASPECT_SEMISEXTILE: ('Semisextil', 'Semisextile'),
+	searchquery.SearchQuery.ASPECT_SEMISQUARE: ('Semiquadrat', 'Semisquare'),
 	searchquery.SearchQuery.ASPECT_SEXTILE: ('Sextil', 'Sextile'),
+	searchquery.SearchQuery.ASPECT_QUINTILE: ('Quintile', 'Quintile'),
 	searchquery.SearchQuery.ASPECT_SQUARE: ('Quadrat', 'Square'),
 	searchquery.SearchQuery.ASPECT_TRINE: ('Trigon', 'Trine'),
+	searchquery.SearchQuery.ASPECT_SESQUISQUARE: ('Sesquiquadrat', 'Sesquisquare'),
+	searchquery.SearchQuery.ASPECT_BIQUINTILE: ('Biquintile', 'Biquintile'),
 	searchquery.SearchQuery.ASPECT_QUINCUNX: ('Quinqunx', 'Quinqunx'),
 	searchquery.SearchQuery.ASPECT_OPPOSITION: ('Oppositio', 'Opposition'),
+	searchquery.SearchQuery.ASPECT_SEPTILE: ('Septile', 'Septile'),
 	searchquery.SearchQuery.ASPECT_SIGN_CHANGE: ('Ingress', 'Ingress'),
 	searchquery.SearchQuery.ASPECT_CAZIMI: ('Cazimi', 'Cazimi'),
 	searchquery.SearchQuery.ASPECT_STATION_RETROGRADE: ('StationRetrograde', 'Station (Rx)'),
@@ -103,6 +116,7 @@ PRIMARY_SUPPORTED_FAMILIES = (
 	searchcatalog.SearchObject.FAMILY_ANGLE,
 	searchcatalog.SearchObject.FAMILY_FORTUNE,
 	searchcatalog.SearchObject.FAMILY_SYZYGY,
+	searchcatalog.SearchObject.FAMILY_ECLIPSE,
 )
 TRADITIONAL_SIGN_DIFFS = {
 	searchquery.SearchQuery.ASPECT_CONJUNCTION: 0,
@@ -113,14 +127,23 @@ TRADITIONAL_SIGN_DIFFS = {
 }
 EXACT_EPSILON = 0.0001
 WEATHER_EVENT_EPSILON = 0.003
-DISPLAY_STATION_WINDOW_DAYS = 2.0
+# Match the chart glyph contract: SR/SD wins within one day of the exact root.
+DISPLAY_STATION_WINDOW_DAYS = 1.0
 STATION_DEDUPE_WINDOW_DAYS = 1.0
+RX_MOTION_MARKERS = frozenset(('R', 'SR', 'SD'))
 RESULT_DEDUPE_WINDOW_DAYS = 2.0 / 86400.0
 PROGRESS_WINDOW_DAYS = 14.0
 CURSOR_DIRECTIONS = ('around', 'previous', 'next')
 CURSOR_TECHNIQUES = (
 	searchquery.SearchQuery.TECHNIQUE_TRANSITS,
 	searchquery.SearchQuery.TECHNIQUE_CONVERSE_TRANSITS,
+	searchquery.SearchQuery.TECHNIQUE_PROFECTIONS,
+	searchquery.SearchQuery.TECHNIQUE_SECONDARY_DIRECTIONS,
+	searchquery.SearchQuery.TECHNIQUE_PRIMARY_DIRECTIONS,
+	searchquery.SearchQuery.TECHNIQUE_MUNDANE_WEATHER,
+	searchquery.SearchQuery.TECHNIQUE_HELIACAL_PHASES,
+	searchquery.SearchQuery.TECHNIQUE_LUNATIONS,
+	searchquery.SearchQuery.TECHNIQUE_ECLIPSES,
 )
 CURSOR_MAX_WINDOW_MONTHS = 12
 CURSOR_MAX_SEED_DAYS = 31
@@ -156,6 +179,7 @@ class _SearchRuntime(object):
 		self._secondary_catalog_cache = {}
 		self._secondary_event_tuple_cache = {}
 		self._secondary_snapshot_cache = {}
+		self._primary_search_contexts = {}
 
 
 	def ephemeris_context(self, chrt):
@@ -364,7 +388,7 @@ def search_progress(catalog, chrt, query, start_date, end_date, limit):
 		)
 
 	if searchquery.SearchQuery.TECHNIQUE_PRIMARY_DIRECTIONS in query.techniques:
-		raw_rows.extend(_search_primary_directions(catalog, chrt, query, start_jd, end_jd))
+		raw_rows.extend(_search_primary_directions(catalog, chrt, query, start_jd, end_jd, runtime))
 		yield (
 			searchquery.SearchQuery.TECHNIQUE_PRIMARY_DIRECTIONS,
 			*_prepare_search_rows(raw_rows, catalog, chrt, query, runtime, limit),
@@ -383,6 +407,22 @@ def search_progress(catalog, chrt, query, start_date, end_date, limit):
 			searchquery.SearchQuery.TECHNIQUE_HELIACAL_PHASES,
 			*_prepare_search_rows(raw_rows, catalog, chrt, query, runtime, limit),
 		)
+
+	if searchquery.SearchQuery.TECHNIQUE_LUNATIONS in query.techniques:
+		for window_start_jd, window_end_jd in _iter_progress_jd_windows(start_jd, end_jd, window_days=62.0):
+			raw_rows.extend(_search_lunations(catalog, chrt, query, window_start_jd, window_end_jd, runtime, eclipses_only=False))
+			yield (
+				searchquery.SearchQuery.TECHNIQUE_LUNATIONS,
+				*_prepare_search_rows(raw_rows, catalog, chrt, query, runtime, limit),
+			)
+
+	if searchquery.SearchQuery.TECHNIQUE_ECLIPSES in query.techniques:
+		for window_start_jd, window_end_jd in _iter_progress_jd_windows(start_jd, end_jd, window_days=62.0):
+			raw_rows.extend(_search_lunations(catalog, chrt, query, window_start_jd, window_end_jd, runtime, eclipses_only=True))
+			yield (
+				searchquery.SearchQuery.TECHNIQUE_ECLIPSES,
+				*_prepare_search_rows(raw_rows, catalog, chrt, query, runtime, limit),
+			)
 
 	sign_change_technique = _sign_change_technique(query)
 	if sign_change_technique is not None:
@@ -405,6 +445,8 @@ def search_cursor_progress(
 	row_budget,
 	direction='around',
 	anchor_date=None,
+	minimum_date=None,
+	maximum_date=None,
 	should_cancel=None,
 ):
 	"""Yield complete, contiguous Search row coverage until a row budget is met.
@@ -425,9 +467,7 @@ def search_cursor_progress(
 		raise ValueError('search cursor seed must not exceed one calendar month')
 	unsupported_techniques = set(query.techniques) - set(CURSOR_TECHNIQUES)
 	if unsupported_techniques:
-		raise ValueError(
-			'search cursor supports transit and converse-transit techniques only'
-		)
+		raise ValueError('search cursor contains an unsupported technique')
 	try:
 		row_budget = int(row_budget)
 	except Exception as exc:
@@ -442,11 +482,102 @@ def search_cursor_progress(
 		raise ValueError('search cursor anchor must be a datetime.date value')
 	if anchor_date < start_date or anchor_date > end_date:
 		raise ValueError('search cursor anchor must be inside the seed range')
+	minimum_date = minimum_date or datetime.date.min
+	maximum_date = maximum_date or datetime.date.max
+	if not isinstance(minimum_date, datetime.date) or not isinstance(maximum_date, datetime.date):
+		raise ValueError('search cursor bounds must be datetime.date values')
+	if minimum_date > start_date or maximum_date < end_date or minimum_date > maximum_date:
+		raise ValueError('search cursor seed must be inside its range bounds')
 
 	runtime = _SearchRuntime()
 	compiled = _CompiledQuery(catalog, query)
-	anchor_jd = _date_to_jd(anchor_date, chrt)
 	max_window_months = _cursor_max_window_months(catalog, query)
+
+	def search_span(span_start, span_end):
+		return _search_cursor_span(
+			catalog,
+			chrt,
+			query,
+			span_start,
+			span_end,
+			runtime,
+			compiled,
+			CURSOR_CHUNK_RESULT_LIMIT,
+			should_cancel=should_cancel,
+		)
+
+	yield from row_cursor_progress(
+		chrt,
+		start_date,
+		end_date,
+		row_budget,
+		direction=direction,
+		anchor_date=anchor_date,
+		minimum_date=minimum_date,
+		maximum_date=maximum_date,
+		search_span=search_span,
+		max_window_months=max_window_months,
+		should_cancel=should_cancel,
+	)
+
+
+def row_cursor_progress(
+	chrt,
+	start_date,
+	end_date,
+	row_budget,
+	*,
+	direction='around',
+	anchor_date=None,
+	minimum_date=None,
+	maximum_date=None,
+	search_span=None,
+	max_window_months=CURSOR_MAX_WINDOW_MONTHS,
+	should_cancel=None,
+	dedupe_rows=None,
+	row_sort_key=None,
+):
+	"""Apply Search's contiguous row-budget scheduler to an existing row source.
+
+	``search_span`` owns event math and returns ``(rows, truncated, leaf_count)``
+	for one inclusive civil-date span. The scheduler owns only adjacent coverage,
+	row budgets, progress metadata, and cancellation between bounded spans.
+	"""
+	direction = str(direction or '').strip().lower()
+	if direction not in CURSOR_DIRECTIONS:
+		raise ValueError('invalid search cursor direction')
+	if not isinstance(start_date, datetime.date) or not isinstance(end_date, datetime.date):
+		raise ValueError('search cursor dates must be datetime.date values')
+	if start_date > end_date:
+		raise ValueError('search cursor start date must not follow end date')
+	try:
+		row_budget = int(row_budget)
+	except Exception as exc:
+		raise ValueError('search cursor row budget must be an integer') from exc
+	if row_budget < 1:
+		raise ValueError('search cursor row budget must be positive')
+	if anchor_date is None:
+		anchor_date = start_date + datetime.timedelta(
+			days=(end_date - start_date).days // 2
+		)
+	if not isinstance(anchor_date, datetime.date):
+		raise ValueError('search cursor anchor must be a datetime.date value')
+	if anchor_date < start_date or anchor_date > end_date:
+		raise ValueError('search cursor anchor must be inside the seed range')
+	minimum_date = minimum_date or datetime.date.min
+	maximum_date = maximum_date or datetime.date.max
+	if not isinstance(minimum_date, datetime.date) or not isinstance(maximum_date, datetime.date):
+		raise ValueError('search cursor bounds must be datetime.date values')
+	if minimum_date > start_date or maximum_date < end_date or minimum_date > maximum_date:
+		raise ValueError('search cursor seed must be inside its range bounds')
+	if not callable(search_span):
+		raise ValueError('search cursor span source is required')
+	if dedupe_rows is None:
+		dedupe_rows = _dedupe_rows
+	if row_sort_key is None:
+		row_sort_key = _search_row_sort_key
+
+	anchor_jd = _date_to_jd(anchor_date, chrt)
 	seed_start = start_date
 	seed_end = end_date
 	coverage_start = start_date
@@ -463,20 +594,15 @@ def search_cursor_progress(
 		end_date,
 		direction,
 		max_window_months=max_window_months,
+		minimum_date=minimum_date,
+		maximum_date=maximum_date,
 	):
 		if should_cancel is not None and should_cancel():
 			return
 		try:
-			span_rows, span_truncated, span_leaf_count = _search_cursor_span(
-				catalog,
-				chrt,
-				query,
+			span_rows, span_truncated, span_leaf_count = search_span(
 				span_start,
 				span_end,
-				runtime,
-				compiled,
-				CURSOR_CHUNK_RESULT_LIMIT,
-				should_cancel=should_cancel,
 			)
 		except _SearchCursorCancelled:
 			return
@@ -488,8 +614,8 @@ def search_cursor_progress(
 		coverage_start = min(coverage_start, span_start)
 		coverage_end = max(coverage_end, span_end)
 		all_rows.extend(span_rows)
-		all_rows = _dedupe_rows(all_rows)
-		all_rows.sort(key=_search_row_sort_key)
+		all_rows = dedupe_rows(all_rows)
+		all_rows.sort(key=row_sort_key)
 		row_count = len(all_rows)
 		before_count = sum(
 			1
@@ -497,8 +623,8 @@ def search_cursor_progress(
 			if row.event_jd is not None and float(row.event_jd) < anchor_jd
 		)
 		after_count = row_count - before_count
-		exhausted_previous = coverage_start <= datetime.date.min
-		exhausted_next = coverage_end >= datetime.date.max
+		exhausted_previous = coverage_start <= minimum_date
+		exhausted_next = coverage_end >= maximum_date
 		before_budget = row_budget // 2
 		after_budget = row_budget - before_budget
 		if direction == 'previous':
@@ -521,6 +647,11 @@ def search_cursor_progress(
 			or exhausted
 			or now - last_yield_at >= CURSOR_PROGRESS_INTERVAL_SECONDS
 		):
+			coverage_start_jd, coverage_end_jd = _date_range_to_half_open_jd(
+				coverage_start,
+				coverage_end,
+				chrt,
+			)
 			cursor = {
 				'direction': direction,
 				'rowBudget': row_budget,
@@ -533,8 +664,12 @@ def search_cursor_progress(
 				'seedFrom': seed_start.isoformat(),
 				'seedTo': seed_end.isoformat(),
 				'anchorDate': anchor_date.isoformat(),
+				'rangeFrom': minimum_date.isoformat(),
+				'rangeTo': maximum_date.isoformat(),
 				'coverageFrom': coverage_start.isoformat(),
 				'coverageTo': coverage_end.isoformat(),
+				'coverageStartJdUt': coverage_start_jd,
+				'coverageEndJdUt': coverage_end_jd,
 				'windowsScanned': window_count,
 				'leafWindowsScanned': leaf_window_count,
 				'exhaustedPrevious': exhausted_previous,
@@ -556,14 +691,17 @@ def _iter_cursor_date_spans(
 	end_date,
 	direction,
 	max_window_months=CURSOR_MAX_WINDOW_MONTHS,
+	minimum_date=datetime.date.min,
+	maximum_date=datetime.date.max,
 ):
 	max_window_months = max(1, min(CURSOR_MAX_WINDOW_MONTHS, int(max_window_months)))
 	yield start_date, end_date
 	if direction == 'previous':
 		months = 1
 		cursor = start_date
-		while cursor > datetime.date.min:
+		while cursor > minimum_date:
 			span_start, span_end = _cursor_span_before(cursor, months)
+			span_start = max(minimum_date, span_start)
 			yield span_start, span_end
 			cursor = span_start
 			months = min(max_window_months, months * 2)
@@ -571,8 +709,9 @@ def _iter_cursor_date_spans(
 	if direction == 'next':
 		months = 1
 		cursor = end_date
-		while cursor < datetime.date.max:
+		while cursor < maximum_date:
 			span_start, span_end = _cursor_span_after(cursor, months)
+			span_end = min(maximum_date, span_end)
 			yield span_start, span_end
 			cursor = span_end
 			months = min(max_window_months, months * 2)
@@ -581,20 +720,27 @@ def _iter_cursor_date_spans(
 	previous_cursor = start_date
 	next_cursor = end_date
 	months = 1
-	while previous_cursor > datetime.date.min or next_cursor < datetime.date.max:
-		if previous_cursor > datetime.date.min:
+	while previous_cursor > minimum_date or next_cursor < maximum_date:
+		if previous_cursor > minimum_date:
 			span_start, span_end = _cursor_span_before(previous_cursor, months)
+			span_start = max(minimum_date, span_start)
 			yield span_start, span_end
 			previous_cursor = span_start
-		if next_cursor < datetime.date.max:
+		if next_cursor < maximum_date:
 			span_start, span_end = _cursor_span_after(next_cursor, months)
+			span_end = min(maximum_date, span_end)
 			yield span_start, span_end
 			next_cursor = span_end
 		months = min(max_window_months, months * 2)
 
 
 def _cursor_max_window_months(catalog, query):
-	if query.include_sign_changes or query.has_object_motion_filters():
+	if set(query.techniques) - {
+		searchquery.SearchQuery.TECHNIQUE_TRANSITS,
+		searchquery.SearchQuery.TECHNIQUE_CONVERSE_TRANSITS,
+	}:
+		return 1
+	if query.include_sign_changes or query.has_motion_filters():
 		return 1
 	if len(_per_target_transit_significator_ids(catalog, query)) != 0:
 		return 1
@@ -722,8 +868,7 @@ def _search_date_window(
 	limit,
 	should_cancel=None,
 ):
-	start_jd = _date_to_jd(start_date, chrt)
-	end_jd = _date_to_jd(end_date, chrt) + 1.0
+	start_jd, end_jd = _date_range_to_half_open_jd(start_date, end_date, chrt)
 	raw_rows = []
 
 	if searchquery.SearchQuery.TECHNIQUE_TRANSITS in query.techniques:
@@ -732,6 +877,65 @@ def _search_date_window(
 		raise _SearchCursorCancelled()
 	if searchquery.SearchQuery.TECHNIQUE_CONVERSE_TRANSITS in query.techniques:
 		raw_rows.extend(_search_converse_transits(catalog, chrt, query, start_jd, end_jd, runtime, compiled))
+	if should_cancel is not None and should_cancel():
+		raise _SearchCursorCancelled()
+	if searchquery.SearchQuery.TECHNIQUE_PROFECTIONS in query.techniques:
+		raw_rows.extend(_search_profections(catalog, chrt, query, start_jd, end_jd))
+	if should_cancel is not None and should_cancel():
+		raise _SearchCursorCancelled()
+	if searchquery.SearchQuery.TECHNIQUE_SECONDARY_DIRECTIONS in query.techniques:
+		raw_rows.extend(_search_secondary_directions(
+			catalog,
+			chrt,
+			query,
+			start_jd,
+			end_jd,
+			runtime,
+			compiled,
+		))
+	if should_cancel is not None and should_cancel():
+		raise _SearchCursorCancelled()
+	if searchquery.SearchQuery.TECHNIQUE_PRIMARY_DIRECTIONS in query.techniques:
+		raw_rows.extend(_search_primary_directions(catalog, chrt, query, start_jd, end_jd, runtime))
+	if should_cancel is not None and should_cancel():
+		raise _SearchCursorCancelled()
+	if searchquery.SearchQuery.TECHNIQUE_MUNDANE_WEATHER in query.techniques:
+		raw_rows.extend(_search_mundane_weather(catalog, chrt, query, start_jd, end_jd, runtime, compiled))
+	if should_cancel is not None and should_cancel():
+		raise _SearchCursorCancelled()
+	if searchquery.SearchQuery.TECHNIQUE_HELIACAL_PHASES in query.techniques:
+		raw_rows.extend(_search_heliacal_phases(
+			catalog,
+			chrt,
+			query.promittor_ids,
+			start_jd,
+			end_jd,
+			runtime,
+		))
+	if should_cancel is not None and should_cancel():
+		raise _SearchCursorCancelled()
+	if searchquery.SearchQuery.TECHNIQUE_LUNATIONS in query.techniques:
+		raw_rows.extend(_search_lunations(
+			catalog,
+			chrt,
+			query,
+			start_jd,
+			end_jd,
+			runtime,
+			eclipses_only=False,
+		))
+	if should_cancel is not None and should_cancel():
+		raise _SearchCursorCancelled()
+	if searchquery.SearchQuery.TECHNIQUE_ECLIPSES in query.techniques:
+		raw_rows.extend(_search_lunations(
+			catalog,
+			chrt,
+			query,
+			start_jd,
+			end_jd,
+			runtime,
+			eclipses_only=True,
+		))
 	if should_cancel is not None and should_cancel():
 		raise _SearchCursorCancelled()
 
@@ -761,7 +965,12 @@ def _iter_progress_jd_windows(start_jd, end_jd, window_days=PROGRESS_WINDOW_DAYS
 def _prepare_search_rows(rows, catalog, chrt, query, runtime, limit):
 	rows = _dedupe_rows(list(rows))
 	rows.sort(key=_search_row_sort_key)
-	if query.has_object_motion_filters():
+	if query.moon_phase_filter:
+		rows = _annotate_rows_by_moon_phase(rows, catalog, chrt, runtime)
+		rows = _filter_rows_by_moon_phase(rows, query)
+		rows = _dedupe_rows(rows)
+		rows.sort(key=_search_row_sort_key)
+	if query.has_motion_filters():
 		_hydrate_result_display_payloads(rows, catalog, chrt, runtime)
 		rows = _filter_rows_by_motion(rows, query, catalog, chrt)
 		rows = _dedupe_rows(rows)
@@ -771,8 +980,10 @@ def _prepare_search_rows(rows, catalog, chrt, query, runtime, limit):
 	if len(rows) > limit:
 		rows = rows[:limit]
 		truncated = True
+	if not query.moon_phase_filter:
+		rows = _annotate_rows_by_moon_phase(rows, catalog, chrt, runtime)
 
-	if not query.has_object_motion_filters():
+	if not query.has_motion_filters():
 		_hydrate_result_display_payloads(rows, catalog, chrt, runtime)
 
 	return rows, truncated
@@ -926,7 +1137,10 @@ def _per_target_transit_significator_ids(catalog, query):
 	ids = []
 	for sig_id in query.significator_ids:
 		obj = catalog.get(sig_id)
-		if obj is not None and obj.family == searchcatalog.SearchObject.FAMILY_SYZYGY:
+		if obj is not None and obj.family in (
+			searchcatalog.SearchObject.FAMILY_SYZYGY,
+			searchcatalog.SearchObject.FAMILY_ECLIPSE,
+		):
 			ids.append(sig_id)
 	return tuple(ids)
 
@@ -1337,6 +1551,134 @@ def build_secondary_station_rows(catalog, chrt, start_date, end_date, promittor_
 		promittor_ids=promittor_ids,
 		method=method,
 	)
+
+
+def build_secondary_ingress_rows(
+	catalog,
+	chrt,
+	start_date,
+	end_date,
+	promittor_ids=None,
+	method=posfordate.SECONDARY,
+	direction='direct',
+):
+	"""Return exact sign-boundary events on the progression trajectory.
+
+	This is the symbolic-time twin of ``_search_sign_change_rows`` used by the
+	Synodic Cycles list. Longitude roots are solved on the progressed ephemeris
+	clock, then mapped back to the list's signified civil timeline.
+	"""
+	if catalog is None or chrt is None or getattr(chrt, 'time', None) is None:
+		return []
+	start_jd = _date_to_jd(start_date, chrt)
+	end_jd = _date_to_jd(end_date + datetime.timedelta(days=1), chrt)
+	return _search_secondary_ingress_rows(
+		catalog,
+		chrt,
+		start_jd,
+		end_jd,
+		_SearchRuntime(),
+		promittor_ids=promittor_ids,
+		method=method,
+		direction=direction,
+	)
+
+
+def _search_secondary_ingress_rows(
+	catalog,
+	chrt,
+	start_jd,
+	end_jd,
+	runtime=None,
+	promittor_ids=None,
+	method=posfordate.SECONDARY,
+	direction='direct',
+):
+	if runtime is None:
+		runtime = _SearchRuntime()
+	method = posfordate.progression_method(method)
+	converse = str(direction or 'direct').strip().lower() == 'converse'
+	start_age = _secondary_symbolic_age_for_jd(chrt, start_jd, method=method)
+	end_age = _secondary_symbolic_age_for_jd(chrt, end_jd, method=method)
+	if start_age >= end_age:
+		return []
+
+	birth_jd = float(chrt.time.jd)
+	if converse:
+		motion_start = birth_jd - float(end_age)
+		motion_end = birth_jd - float(start_age)
+	else:
+		motion_start = birth_jd + float(start_age)
+		motion_end = birth_jd + float(end_age)
+	context = runtime.ephemeris_context(chrt)
+	ids = list(promittor_ids) if promittor_ids is not None else list(getattr(catalog, 'promittor_ids', ()))
+	rows = []
+	for prom_id in ids:
+		prom = catalog.get(prom_id)
+		planet_id, targets, target_to_sign = _sign_change_planet_targets(prom, chrt)
+		if planet_id is None or not targets:
+			continue
+		try:
+			hits = transit_fast_api.search_longitude_transits(
+				planet_id,
+				float(motion_start),
+				float(motion_end),
+				targets,
+				context=context,
+			)
+		except Exception:
+			continue
+		for hit in hits:
+			motion_jd = float(hit.jd_ut)
+			symbolic_age = birth_jd - motion_jd if converse else motion_jd - birth_jd
+			event_info = _secondary_real_event_info_for_symbolic_age(chrt, symbolic_age, method=method)
+			if event_info is None:
+				continue
+			event_real_jd, event_tuple, event_date, event_time = event_info
+			if event_real_jd < start_jd or event_real_jd >= end_jd:
+				continue
+			target_sign = target_to_sign.get(round(float(hit.target_deg), 12))
+			if target_sign is None:
+				continue
+			trajectory_speed = -float(hit.speed) if converse else float(hit.speed)
+			left_sign, right_sign = _sign_change_pair(target_sign, trajectory_speed)
+			row = searchquery.SearchResult(
+				searchquery.SearchQuery.TECHNIQUE_SECONDARY_DIRECTIONS,
+				searchquery.SearchQuery.ASPECT_SIGN_CHANGE,
+				prom_id,
+				'sign:%02d' % right_sign,
+			)
+			_fill_row_from_event(row, catalog, event_real_jd, event_tuple, event_date, event_time)
+			row.significator_label = '%s|%s' % (mtexts.signs[left_sign], mtexts.signs[right_sign])
+			row.metadata.update(_sign_change_metadata(left_sign, right_sign, trajectory_speed))
+			row.metadata['display_datetime'] = event_tuple
+			row.metadata['secondary_ingress'] = True
+			row.metadata['progressed_ingress_jd'] = motion_jd
+			row.metadata['sig_display'] = _weather_sign_payload(
+				row.metadata['sign_change_event_sign'], chrt,
+			)
+			prom_payload = _secondary_aspect_motion_payload(
+				_build_payload_for_object(
+					chrt,
+					prom,
+					float(hit.target_deg),
+					float(hit.speed),
+					motion_jd,
+					True,
+				)
+			)
+			if prom_payload is not None:
+				row.metadata['prom_display'] = prom_payload
+				if prom_payload.get('state_suffix'):
+					row.promittor_label = '%s%s' % (prom.label, prom_payload['state_suffix'])
+			row.metadata['display_hydrated'] = True
+			rows.append(row)
+	rows.sort(key=lambda row: (
+		row.event_jd if row.event_jd is not None else float('inf'),
+		row.promittor_label,
+		row.significator_label,
+	))
+	return _dedupe_rows(rows)
 
 
 def _search_secondary_station_rows(catalog, chrt, start_jd, end_jd, runtime=None, promittor_ids=None, method=posfordate.SECONDARY):
@@ -1896,7 +2238,14 @@ def _apply_cheby_secondary_display_payloads(row, radix_catalog, radix, prom_obj,
 
 	sig_obj = radix_catalog.get(sig_id)
 	if sig_obj is not None:
-		sig_payload = _build_payload_for_object(radix, sig_obj, getattr(sig_obj, 'longitude', None), None, None, False)
+		sig_payload = _build_payload_for_object(
+			radix,
+			sig_obj,
+			getattr(sig_obj, 'longitude', None),
+			_object_chart_speed(radix, sig_obj),
+			None,
+			False,
+		)
 		if sig_payload is not None:
 			row.metadata['sig_display'] = sig_payload
 			if sig_payload.get('state_suffix'):
@@ -1954,15 +2303,35 @@ def _search_secondary_directions_legacy(catalog, chrt, query, start_jd, end_jd, 
 	return rows
 
 
-def _search_primary_directions(catalog, chrt, query, start_jd, end_jd):
+def _search_primary_directions(catalog, chrt, query, start_jd, end_jd, runtime=None):
 	if chrt is None or getattr(chrt.time, 'bc', False):
 		return []
 
-	effective_options, selected_prom_ids, selected_sig_ids = _build_primary_search_options(chrt, catalog, query)
-	if effective_options is None:
-		return []
+	cache_key = (
+		id(chrt),
+		tuple(query.promittor_ids),
+		tuple(query.significator_ids),
+		tuple(query.aspects),
+	)
+	context = None if runtime is None else runtime._primary_search_contexts.get(cache_key)
+	if context is None:
+		effective_options, selected_prom_ids, selected_sig_ids = _build_primary_search_options(chrt, catalog, query)
+		if effective_options is None:
+			return []
 
-	engine = _build_primary_engine(chrt, effective_options)
+		original_cpd2 = getattr(chrt, 'cpd2', None)
+		if getattr(effective_options, 'searchEcPd', False):
+			chrt.cpd2 = None
+		try:
+			engine = _build_primary_engine(chrt, effective_options)
+		finally:
+			if getattr(effective_options, 'searchEcPd', False):
+				chrt.cpd2 = original_cpd2
+		context = (engine, selected_prom_ids, selected_sig_ids)
+		if runtime is not None:
+			runtime._primary_search_contexts[cache_key] = context
+	else:
+		engine, selected_prom_ids, selected_sig_ids = context
 	if engine is None:
 		return []
 
@@ -2475,7 +2844,7 @@ def _search_heliacal_phases(catalog, chrt, promittor_ids, start_jd, end_jd, runt
 	rows = []
 	calflag = _calendar_flag(chrt)
 	phasis_mode = phasiscalc._normalize_phasis_mode(
-		getattr(getattr(chrt, 'options', None), 'phasismode', phasiscalc.PHASIS_MODE_ASTRONOMICAL)
+		getattr(getattr(chrt, 'options', None), 'phasismode', phasiscalc.PHASIS_MODE_SIMPLE_SWEP)
 	)
 	calculation_place = _heliacal_calculation_place_payload(chrt)
 	for kind, target, prom_id in _heliacal_promittors(catalog, promittor_ids):
@@ -2511,15 +2880,26 @@ def _search_heliacal_phases(catalog, chrt, promittor_ids, start_jd, end_jd, runt
 					default_method = phasiscalc.HELIACAL_METHOD_HELLENISTIC
 					default_method_label = 'Hellenistic 15 deg elongation'
 				elif int(phasis_mode) == phasiscalc.PHASIS_MODE_ASTRONOMICAL:
-					default_method = phasiscalc.HELIACAL_METHOD_ASTRONOMICAL_SWISS
-					default_method_label = 'Astronomical / Swiss Ephemeris'
+					default_method = phasiscalc.HELIACAL_METHOD_ASTRONOMICAL
+					default_method_label = 'Astronomical'
+				elif int(phasis_mode) == phasiscalc.PHASIS_MODE_ARCUS_VISIONIS:
+					default_method = phasiscalc.HELIACAL_METHOD_ARCUS_VISIONIS
+					default_method_label = 'Arcus visionis'
 			row.metadata['heliacal_method'] = event.get('heliacal_method') or default_method
 			row.metadata['heliacal_method_label'] = event.get('heliacal_method_label') or default_method_label
+			if kind == 'fixstar':
+				row.metadata['heliacal_requested_phasis_mode'] = int(phasis_mode)
+				if int(phasis_mode) != phasiscalc.PHASIS_MODE_SIMPLE_SWEP:
+					row.metadata['heliacal_method_fallback'] = 'fixed_star_swiss'
 			if event.get('phasis_mode') is not None:
 				row.metadata['phasis_mode'] = event.get('phasis_mode')
 				row.metadata['phasis_mode_label'] = event.get('phasis_mode_label')
 			if event.get('heliacal_threshold_deg') is not None:
 				row.metadata['heliacal_threshold_deg'] = event.get('heliacal_threshold_deg')
+			if event.get('heliacal_arcus_visionis_deg') is not None:
+				row.metadata['heliacal_arcus_visionis_deg'] = event.get('heliacal_arcus_visionis_deg')
+			if event.get('heliacal_arcus_source') is not None:
+				row.metadata['heliacal_arcus_source'] = event.get('heliacal_arcus_source')
 			row.metadata['heliacal_calculation_place'] = dict(calculation_place)
 			row.metadata['heliacal_place_basis'] = calculation_place.get('basis')
 			row.metadata['exact_event_jd'] = event_jd
@@ -2528,6 +2908,9 @@ def _search_heliacal_phases(catalog, chrt, promittor_ids, start_jd, end_jd, runt
 			row.metadata['heliacal_end_jd'] = event.get('end_jd')
 			row.metadata['heliacal_duration_minutes'] = event.get('duration_minutes')
 			row.metadata['heliacal_atmospheric_extinction'] = event.get('atmospheric_extinction')
+			if event.get('date_only'):
+				row.metadata['date_only'] = True
+				row.event_time = ''
 			prom = catalog.get(prom_id)
 			if kind == 'fixstar':
 				row.metadata['fixstar_code'] = target
@@ -2544,13 +2927,103 @@ def _search_heliacal_phases(catalog, chrt, promittor_ids, start_jd, end_jd, runt
 	return rows
 
 
+def _search_lunations(catalog, chrt, query, start_jd, end_jd, runtime, eclipses_only=False):
+	"""Search orb-close New/Full Moons or eclipses against radix points."""
+	if runtime is None:
+		runtime = _SearchRuntime()
+	moon_id = 'planet:moon'
+	sun_id = 'planet:sun'
+	moon = catalog.get(moon_id)
+	if moon is None:
+		return []
+
+	if catalog.get(sun_id) is None:
+		return []
+
+	phase_query = searchquery.SearchQuery()
+	phase_query.set_promittor_ids([moon_id])
+	phase_query.set_significator_ids([sun_id])
+	phase_query.set_aspects([searchquery.SearchQuery.ASPECT_CONJUNCTION, searchquery.SearchQuery.ASPECT_OPPOSITION])
+	phase_query.set_techniques([searchquery.SearchQuery.TECHNIQUE_MUNDANE_WEATHER])
+	phase_rows = _search_mundane_weather(catalog, chrt, phase_query, start_jd, end_jd, runtime, _CompiledQuery(catalog, phase_query))
+	try:
+		eclipse_events = eclipses.find_eclipses_in_range(chrt, start_jd, end_jd)
+	except Exception:
+		eclipse_events = []
+
+	calflag = _calendar_flag(chrt)
+	orb = float(getattr(query, 'lunation_orb', 3.0))
+	rows = []
+	for phase_row in phase_rows:
+		if {phase_row.promittor_id, phase_row.significator_id} != {moon_id, sun_id} or phase_row.event_jd is None:
+			continue
+		event_jd = float(phase_row.event_jd)
+		moon_lon = runtime.live_object_longitude(moon, chrt, event_jd)
+		if moon_lon is None:
+			continue
+		kind = 'new' if phase_row.aspect == searchquery.SearchQuery.ASPECT_CONJUNCTION else 'full'
+		eclipse_event = min(
+			(event for event in eclipse_events if bool(getattr(event, 'is_solar', False)) == (kind == 'new')),
+			key=lambda event: abs(float(eclipses.syzygy_jdut_for_event(event) or 0.0) - event_jd),
+			default=None,
+		)
+		if eclipse_event is not None:
+			eclipse_jd = eclipses.syzygy_jdut_for_event(eclipse_event)
+			if eclipse_jd is None or abs(float(eclipse_jd) - event_jd) > 1.0 / 24.0:
+				eclipse_event = None
+		if eclipses_only and eclipse_event is None:
+			continue
+
+		for sig_id in query.significator_ids:
+			sig = catalog.get(sig_id)
+			if sig is None or getattr(sig, 'longitude', None) is None:
+				continue
+			separation = abs(((float(moon_lon) - float(sig.longitude) + 180.0) % 360.0) - 180.0)
+			for aspect_id in query.aspects:
+				chart_aspect = ASPECT_INDEX_BY_ID.get(aspect_id)
+				if chart_aspect is None:
+					continue
+				contact_orb = abs(separation - float(chart.Chart.Aspects[chart_aspect]))
+				if contact_orb > orb:
+					continue
+				technique = (
+					searchquery.SearchQuery.TECHNIQUE_ECLIPSES
+					if eclipses_only
+					else searchquery.SearchQuery.TECHNIQUE_LUNATIONS
+				)
+				row = searchquery.SearchResult(technique, aspect_id, moon_id, sig_id)
+				_fill_row_from_jd(row, catalog, event_jd, calflag)
+				row.metadata['lunation'] = True
+				row.metadata['lunation_kind'] = kind
+				row.metadata['lunation_contact_orb'] = contact_orb
+				row.metadata['lunation_orb_limit'] = orb
+				if eclipse_event is not None:
+					row.metadata['eclipse'] = True
+					row.metadata['eclipse_kind'] = 'solar' if kind == 'new' else 'lunar'
+					row.metadata['eclipse_classification'] = radixsignals._eclipse_kind_label(eclipse_event)
+					row.metadata['eclipse_saros'] = getattr(eclipse_event, 'saros', None)
+					luminary = mtexts.txts.get('EclipseSolar' if kind == 'new' else 'EclipseLunar', 'Solar' if kind == 'new' else 'Lunar')
+					row.notes = mtexts.txts.get('EclipseLabelFormat', '{kind} {luminary} Eclipse').format(kind=row.metadata['eclipse_classification'], luminary=luminary).strip()
+				else:
+					row.notes = mtexts.txts.get('NewMoon' if kind == 'new' else 'FullMoon', 'New Moon' if kind == 'new' else 'Full Moon')
+				row.event_label = row.notes
+				rows.append(row)
+	return rows
+
+
 def _apply_heliacal_display_payload(row, chrt, prom, longitude, speed_lon, event_jd):
 	if prom is None:
 		return
 	display_longitude = _display_longitude_for_chart(chrt, longitude)
 	motion_marker = ''
 	if prom.planet_index is not None:
-		motion_marker = radixsignals.get_motion_marker_for_speed(event_jd, prom.planet_index, speed_lon, within_days=DISPLAY_STATION_WINDOW_DAYS)
+		motion_marker = radixsignals.get_motion_marker_for_speed(
+			event_jd,
+			prom.planet_index,
+			speed_lon,
+			within_days=DISPLAY_STATION_WINDOW_DAYS,
+			options=getattr(chrt, 'options', None),
+		)
 	dignity_code = _dignity_code_for_longitude(chrt, prom, longitude)
 	row.metadata['prom_display'] = {
 		'longitude': longitude,
@@ -2717,7 +3190,17 @@ def _search_station_rows(catalog, chrt, promittor_ids, start_jd, end_jd, techniq
 	return rows
 
 
-def _search_cazimi_rows(catalog, chrt, promittor_ids, start_jd, end_jd, technique, runtime):
+def _search_cazimi_rows(
+	catalog,
+	chrt,
+	promittor_ids,
+	start_jd,
+	end_jd,
+	technique,
+	runtime,
+	*,
+	respect_mode=True,
+):
 	if runtime is None:
 		runtime = _SearchRuntime()
 	sun_id = 'planet:sun'
@@ -2784,7 +3267,14 @@ def _search_cazimi_rows(catalog, chrt, promittor_ids, start_jd, end_jd, techniqu
 	for row in raw_rows:
 		prom = catalog.get(row.promittor_id)
 		sig = catalog.get(row.significator_id)
-		match = _cazimi_event_match(chrt, prom, sig, row.event_jd, mode)
+		match = _cazimi_event_match(
+			chrt,
+			prom,
+			sig,
+			row.event_jd,
+			mode,
+			respect_mode=respect_mode,
+		)
 		if match is None:
 			continue
 		row.technique = technique
@@ -2817,13 +3307,19 @@ def _cazimi_promittors(catalog, chrt, promittor_ids):
 		planet_idx = int(prom.planet_index)
 		if planet_idx == astrology.SE_SUN or planet_idx not in allowed:
 			continue
-		if not radixsignals._is_station_planet_enabled(planet_idx, getattr(chrt, 'options', None)):
-			continue
 		promittors.append((planet_idx, prom_id))
 	return promittors
 
 
-def _cazimi_event_match(chrt, prom, sun, event_jd, mode):
+def _cazimi_event_match(
+	chrt,
+	prom,
+	sun,
+	event_jd,
+	mode,
+	*,
+	respect_mode=True,
+):
 	if prom is None or sun is None:
 		return None
 	flags = _planet_flags(chrt)
@@ -2833,6 +3329,8 @@ def _cazimi_event_match(chrt, prom, sun, event_jd, mode):
 		return None
 	lon_delta = radixsignals._angular_distance(prom_state[0], sun_state[0])
 	lat_delta = abs(float(prom_state[1]) - float(sun_state[1]))
+	if not respect_mode:
+		return lon_delta, lat_delta
 	if mode == radixsignals.CAZIMI_MODE_HELLENISTIC:
 		matches = lon_delta <= radixsignals.CAZIMI_HELLENISTIC_ORB_DEG
 	elif mode == radixsignals.CAZIMI_MODE_ABU_MASHAR:
@@ -2938,7 +3436,13 @@ def _apply_sign_change_row_display_payloads(row, radix_catalog, chrt, runtime):
 	display_longitude = _display_longitude_for_chart(chrt, longitude)
 	motion_marker = ''
 	if prom.planet_index is not None:
-		motion_marker = radixsignals.get_motion_marker_for_speed(row.event_jd, prom.planet_index, speed_lon, within_days=DISPLAY_STATION_WINDOW_DAYS)
+		motion_marker = radixsignals.get_motion_marker_for_speed(
+			row.event_jd,
+			prom.planet_index,
+			speed_lon,
+			within_days=DISPLAY_STATION_WINDOW_DAYS,
+			options=getattr(chrt, 'options', None),
+		)
 	dignity_code = _dignity_code_for_longitude(chrt, prom, longitude)
 
 	row.metadata['prom_display'] = {
@@ -2992,8 +3496,15 @@ def _build_row_object_display(radix_catalog, object_id, display_chart, event_jd,
 	display_longitude = _display_longitude_for_chart(display_chart, longitude)
 	speed_lon = _object_chart_speed(display_chart, obj)
 	motion_marker = ''
-	if is_live and event_jd is not None and obj is not None and obj.planet_index is not None:
-		motion_marker = radixsignals.get_motion_marker_for_speed(event_jd, obj.planet_index, speed_lon, within_days=DISPLAY_STATION_WINDOW_DAYS)
+	motion_jd = event_jd if is_live and event_jd is not None else getattr(getattr(display_chart, 'time', None), 'jd', None)
+	if motion_jd is not None and obj is not None and obj.planet_index is not None:
+		motion_marker = radixsignals.get_motion_marker_for_speed(
+			motion_jd,
+			obj.planet_index,
+			speed_lon,
+			within_days=DISPLAY_STATION_WINDOW_DAYS,
+			options=getattr(display_chart, 'options', None),
+		)
 	dignity_code = _object_dignity_code(display_chart, obj)
 	payload = {
 		'longitude': longitude,
@@ -3013,12 +3524,12 @@ def _secondary_aspect_motion_payload(payload):
 	if not isinstance(payload, dict):
 		return payload
 	speed_lon = payload.get('speed_lon')
-	motion_marker = ''
-	try:
-		if speed_lon is not None and float(speed_lon) < 0.0:
-			motion_marker = 'R'
-	except Exception:
-		motion_marker = ''
+	motion_marker = str(payload.get('motion_marker') or '').upper()
+	if motion_marker not in ('SR', 'SD', 'S'):
+		try:
+			motion_marker = 'R' if speed_lon is not None and float(speed_lon) < 0.0 else ''
+		except Exception:
+			motion_marker = ''
 	payload['motion_marker'] = motion_marker
 	payload['state_suffix'] = _format_state_suffix(motion_marker, payload.get('dignity_code'))
 	return payload
@@ -3047,8 +3558,15 @@ def _build_static_row_object_display(radix_catalog, object_id, display_chart):
 def _build_payload_for_object(display_chart, obj, longitude, speed_lon, event_jd, is_live):
 	display_longitude = _display_longitude_for_chart(display_chart, longitude)
 	motion_marker = ''
-	if is_live and event_jd is not None and obj is not None and obj.planet_index is not None:
-		motion_marker = radixsignals.get_motion_marker_for_speed(event_jd, obj.planet_index, speed_lon, within_days=DISPLAY_STATION_WINDOW_DAYS)
+	motion_jd = event_jd if is_live and event_jd is not None else getattr(getattr(display_chart, 'time', None), 'jd', None)
+	if motion_jd is not None and obj is not None and obj.planet_index is not None:
+		motion_marker = radixsignals.get_motion_marker_for_speed(
+			motion_jd,
+			obj.planet_index,
+			speed_lon,
+			within_days=DISPLAY_STATION_WINDOW_DAYS,
+			options=getattr(display_chart, 'options', None),
+		)
 	dignity_code = _dignity_code_for_longitude(display_chart, obj, longitude)
 	payload = {
 		'longitude': longitude,
@@ -3101,7 +3619,25 @@ def _hydrate_result_display_payloads(rows, catalog, chrt, runtime):
 			)
 		elif row.technique == searchquery.SearchQuery.TECHNIQUE_MUNDANE_WEATHER:
 			_apply_live_pair_row_display_payloads(row, catalog, chrt, runtime)
+		elif row.technique in (
+			searchquery.SearchQuery.TECHNIQUE_LUNATIONS,
+			searchquery.SearchQuery.TECHNIQUE_ECLIPSES,
+		):
+			_apply_lunation_row_display_payloads(row, catalog, chrt, runtime)
 		row.metadata['display_hydrated'] = True
+
+
+def _apply_lunation_row_display_payloads(row, catalog, chrt, runtime):
+	prom_payload = _build_live_row_object_display(catalog, row.promittor_id, chrt, row.event_jd, runtime)
+	sig_payload = _build_static_row_object_display(catalog, row.significator_id, chrt)
+	if prom_payload is not None:
+		row.metadata['prom_display'] = prom_payload
+		if prom_payload.get('state_suffix'):
+			row.promittor_label = '%s%s' % (row.promittor_label, prom_payload['state_suffix'])
+	if sig_payload is not None:
+		row.metadata['sig_display'] = sig_payload
+		if sig_payload.get('state_suffix'):
+			row.significator_label = '%s%s' % (row.significator_label, sig_payload['state_suffix'])
 
 
 def _apply_profection_row_display_payloads(row, radix_catalog, radix):
@@ -3156,7 +3692,7 @@ def _apply_profection_row_display_payloads(row, radix_catalog, radix):
 
 
 def _filter_rows_by_motion(rows, query, catalog, chrt):
-	if not query.has_object_motion_filters():
+	if not query.has_motion_filters():
 		return rows
 
 	filtered = []
@@ -3166,7 +3702,73 @@ def _filter_rows_by_motion(rows, query, catalog, chrt):
 	return filtered
 
 
+def _annotate_rows_by_moon_phase(rows, catalog, chrt, runtime):
+	"""Attach the filterable Moon phase once without removing retained source rows."""
+	if runtime is None:
+		runtime = _SearchRuntime()
+	moon = catalog.get('planet:moon')
+	sun = catalog.get('planet:sun')
+	if moon is None or sun is None:
+		return rows
+
+	supported = (
+		searchquery.SearchQuery.TECHNIQUE_TRANSITS,
+		searchquery.SearchQuery.TECHNIQUE_CONVERSE_TRANSITS,
+		searchquery.SearchQuery.TECHNIQUE_MUNDANE_WEATHER,
+		searchquery.SearchQuery.TECHNIQUE_INGRESS_SYNODIC,
+	)
+	for row in rows:
+		if row.promittor_id != 'planet:moon' or row.technique in (
+			searchquery.SearchQuery.TECHNIQUE_LUNATIONS,
+			searchquery.SearchQuery.TECHNIQUE_ECLIPSES,
+		):
+			continue
+		if row.technique not in supported or row.event_jd is None:
+			continue
+		phase_jd = float(row.metadata.get('converse_transit_jd', row.event_jd))
+		moon_lon = runtime.live_object_longitude(moon, chrt, phase_jd)
+		sun_lon = runtime.live_object_longitude(sun, chrt, phase_jd)
+		if moon_lon is None or sun_lon is None:
+			continue
+		waxing = (float(moon_lon) - float(sun_lon)) % 360.0 < 180.0
+		row.metadata['moon_phase'] = (
+			searchquery.SearchQuery.MOON_PHASE_WAXING
+			if waxing
+			else searchquery.SearchQuery.MOON_PHASE_WANING
+		)
+	return rows
+
+
+def _filter_rows_by_moon_phase(rows, query):
+	"""Project the requested Moon phase from the annotated retained universe."""
+	phase_filter = getattr(query, 'moon_phase_filter', '')
+	if phase_filter not in searchquery.SearchQuery.MOON_PHASE_FILTERS:
+		return rows
+	filtered = []
+	for row in rows:
+		if row.promittor_id != 'planet:moon' or row.technique in (
+			searchquery.SearchQuery.TECHNIQUE_LUNATIONS,
+			searchquery.SearchQuery.TECHNIQUE_ECLIPSES,
+		):
+			filtered.append(row)
+			continue
+		if row.metadata.get('moon_phase') == phase_filter:
+			filtered.append(row)
+	return filtered
+
+
 def _row_matches_motion_filters(row, query, catalog, chrt):
+	role_filters = (
+		(query.promittor_motion_filter, row.promittor_id, 'prom_display'),
+		(query.significator_motion_filter, row.significator_id, 'sig_display'),
+	)
+	for motion_filter, object_id, payload_key in role_filters:
+		if not motion_filter:
+			continue
+		motion_marker, speed_lon = _row_object_motion(row, object_id, payload_key, catalog, chrt)
+		if not _matches_motion_filter(motion_filter, motion_marker, speed_lon):
+			return False
+
 	for object_id, payload_key in (
 		(row.promittor_id, 'prom_display'),
 		(row.significator_id, 'sig_display'),
@@ -3174,27 +3776,45 @@ def _row_matches_motion_filters(row, query, catalog, chrt):
 		motion_filter = query.object_motion_filters.get(object_id)
 		if not motion_filter:
 			continue
-		speed_lon = _row_object_speed(row, object_id, payload_key, catalog, chrt)
-		if not _matches_motion_filter(motion_filter, speed_lon):
+		motion_marker, speed_lon = _row_object_motion(row, object_id, payload_key, catalog, chrt)
+		if not _matches_motion_filter(motion_filter, motion_marker, speed_lon):
 			return False
 	return True
 
 
-def _row_object_speed(row, object_id, payload_key, catalog, chrt):
+def _row_object_motion(row, object_id, payload_key, catalog, chrt):
 	payload = row.metadata.get(payload_key, {})
-	if isinstance(payload, dict) and payload.get('speed_lon') is not None:
-		return payload.get('speed_lon')
+	if isinstance(payload, dict) and 'motion_marker' in payload:
+		return str(payload.get('motion_marker') or '').upper(), payload.get('speed_lon')
+	speed_lon = payload.get('speed_lon') if isinstance(payload, dict) else None
+	if speed_lon is not None:
+		speed = float(speed_lon)
+		return ('R' if speed < 0.0 else 'S' if speed == 0.0 else ''), speed_lon
+	if catalog is None or chrt is None:
+		return '', None
 	obj = catalog.get(object_id)
 	if obj is None or obj.planet_index is None:
-		return None
-	return _object_chart_speed(chrt, obj)
+		return '', None
+	speed_lon = _object_chart_speed(chrt, obj)
+	motion_jd = getattr(getattr(chrt, 'time', None), 'jd', None)
+	if motion_jd is None:
+		return ('R' if speed_lon is not None and float(speed_lon) < 0.0 else ''), speed_lon
+	marker = radixsignals.get_motion_marker_for_speed(
+		motion_jd,
+		obj.planet_index,
+		speed_lon,
+		within_days=DISPLAY_STATION_WINDOW_DAYS,
+		options=getattr(chrt, 'options', None),
+	)
+	return str(marker or '').upper(), speed_lon
 
 
-def _matches_motion_filter(motion_filter, speed_lon):
+def _matches_motion_filter(motion_filter, motion_marker, speed_lon):
+	marker = str(motion_marker or '').upper()
 	if motion_filter == searchquery.SearchQuery.MOTION_RX:
-		return speed_lon is not None and float(speed_lon) < 0.0
+		return marker in RX_MOTION_MARKERS
 	if motion_filter == searchquery.SearchQuery.MOTION_DIRECT:
-		return speed_lon is not None and float(speed_lon) > 0.0
+		return marker == '' and speed_lon is not None and float(speed_lon) > 0.0
 	return True
 
 
@@ -3972,6 +4592,14 @@ def _build_primary_search_options(chrt, catalog, query):
 		elif obj.id == 'point:syzygy':
 			options.pdsyzygy = True
 			selected_sig_ids.add(sig_id)
+		elif obj.id == 'point:eclipse':
+			degrees, minutes, seconds = util.decToDeg(util.normalize(float(obj.longitude)))
+			options.pdcustomer2 = True
+			options.pdcustomer2lon = [degrees, minutes, seconds]
+			options.pdcustomer2lat = [0, 0, 0]
+			options.pdcustomer2southern = False
+			options.searchEcPd = True
+			selected_sig_ids.add(sig_id)
 
 	if len(options.sigascmc) >= 2:
 		options.sigascmc[0] = bool(len(options.sigangles) > 1 and (options.sigangles[0] or options.sigangles[1]))
@@ -4008,6 +4636,8 @@ def _build_primary_engine(chrt, options):
 def _pd_object_id(catalog, pd_object, dynamic_key=None):
 	if dynamic_key == 'chiron':
 		return 'planet:chiron'
+	if dynamic_key == 'user_sig' and catalog.get('point:eclipse') is not None:
+		return 'point:eclipse'
 	if pd_object == primdirs.PrimDir.ASC:
 		return 'angle:asc'
 	if pd_object == primdirs.PrimDir.MC:
@@ -4236,7 +4866,39 @@ def _aspect_target_longitudes(base_longitude, chart_aspect):
 	)
 
 
+def _dedupe_lunar_event_rows(rows):
+	"""Let the explicit Eclipses technique own a shared eclipse contact once."""
+	unique = []
+	nearby_by_contact = {}
+	for row in rows:
+		if (
+			row.event_jd is None
+			or not row.metadata.get('eclipse')
+			or row.technique not in (
+				searchquery.SearchQuery.TECHNIQUE_LUNATIONS,
+				searchquery.SearchQuery.TECHNIQUE_ECLIPSES,
+			)
+		):
+			unique.append(row)
+			continue
+		key = (row.aspect, row.promittor_id, row.significator_id)
+		matches = nearby_by_contact.setdefault(key, [])
+		match = next(
+			((jd, index) for jd, index in matches if abs(float(row.event_jd) - jd) <= RESULT_DEDUPE_WINDOW_DAYS),
+			None,
+		)
+		if match is None:
+			matches.append((float(row.event_jd), len(unique)))
+			unique.append(row)
+			continue
+		_index = match[1]
+		if row.technique == searchquery.SearchQuery.TECHNIQUE_ECLIPSES:
+			unique[_index] = row
+	return unique
+
+
 def _dedupe_rows(rows):
+	rows = _dedupe_lunar_event_rows(rows)
 	seen = {}
 	unique = []
 	for row in rows:
@@ -4279,6 +4941,11 @@ def _date_to_jd(value, chrt):
 		True, 0, 0, False, chrt.place, False
 	)
 	return time.jd
+
+
+def _date_range_to_half_open_jd(start_date, end_date, chrt):
+	"""Map an inclusive civil-date range to its exact chart-calendar JD span."""
+	return _date_to_jd(start_date, chrt), _date_to_jd(end_date, chrt) + 1.0
 
 
 def _secondary_symbolic_age_for_jd(radix, event_jd, method=posfordate.SECONDARY):
@@ -4652,6 +5319,10 @@ def _search_technique_label(technique):
 		return mtexts.txts.get('CelestialWeather', 'Celestial Weather')
 	if technique == searchquery.SearchQuery.TECHNIQUE_HELIACAL_PHASES:
 		return mtexts.txts.get('HeliacalPhases', 'Heliacal Phases')
+	if technique == searchquery.SearchQuery.TECHNIQUE_LUNATIONS:
+		return mtexts.txts.get('SynodicCycles', 'Lunations')
+	if technique == searchquery.SearchQuery.TECHNIQUE_ECLIPSES:
+		return mtexts.txts.get('Eclipses', 'Eclipses')
 	if technique == searchquery.SearchQuery.TECHNIQUE_INGRESS_SYNODIC:
 		return mtexts.txts.get('PDsInChartIngress', 'Ingress')
 	return technique

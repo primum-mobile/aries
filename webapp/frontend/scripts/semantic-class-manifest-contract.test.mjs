@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Max Lange
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -19,6 +22,8 @@ const manifest = await import(
 
 const expectedIds = [
   "canvas.background",
+  "canvas.chart",
+  "canvas.span.chartRing",
   ...["geometry", "dynamic", "outerLabel"].map((id) => `layers.${id}`),
   "fills.chartField",
   "fills.houseField",
@@ -31,6 +36,9 @@ const expectedIds = [
     "houseBoundary", "base",
   ].map((id) => `rings.${id}`),
   "zodiac.spoke",
+  // The rulers themselves, each named as the parent of its own ticks.
+  "zodiac.tick.inner",
+  "zodiac.tick.outer",
   ...["10deg", "5deg", "1deg"].map((grade) => `zodiac.tick.inner.${grade}`),
   ...["10deg", "5deg", "1deg"].map((grade) => `zodiac.tick.outer.${grade}`),
   ...["10deg", "5deg", "1deg"].map((grade) => `zodiac.tick.angloCuspRuler.${grade}`),
@@ -40,24 +48,23 @@ const expectedIds = [
   ...["term", "decan"].flatMap((family) =>
     ["boundary", "glyph"].map((component) => `subdivisions.${family}.${component}`),
   ),
-  ...["cusp", "label"].map((component) => `houses.inner.${component}`),
+  ...["cusp", "label", "labelLane"].map((component) => `houses.inner.${component}`),
   ...["degree", "sign", "minute"].map((component) => `houses.inner.position.${component}`),
   ...["cusp", "label"].map((component) => `houses.outer.${component}`),
   ...["ray", "arrowhead", "label"].map((component) => `angles.inner.${component}`),
   ...["degree", "sign", "minute"].map((component) => `angles.inner.position.${component}`),
   ...["ray", "arrowhead", "label"].map((component) => `angles.outer.${component}`),
-  ...["leader", "glyph", "motion"].map((component) => `bodies.inner.${component}`),
+  ...["leader", "glyph", "motion", "lane", "positionLane"].map((component) => `bodies.inner.${component}`),
   ...["degree", "sign", "minute"].map((component) => `bodies.inner.position.${component}`),
-  ...["leader", "glyph", "motion"].map((component) => `bodies.outer.${component}`),
-  "bodies.fortune",
-  "bodies.vertex",
-  "bodies.prenatalSyzygy",
+  ...["leader", "glyph", "motion", "lane"].map((component) => `bodies.outer.${component}`),
+  "aspects.lane",
   ...["line", "glyph"].map((component) => `aspects.primary.${component}`),
   ...["endpointMarker", "line", "glyph"].map((component) => `aspects.interchart.${component}`),
+  "secondaryRing.leaderLane",
+  "secondaryRing.labelLane",
   ...["leader", "label"].map((component) => `secondaryRing.fixedStar.${component}`),
   ...["leader", "label"].map((component) => `secondaryRing.asteroid.${component}`),
   ...["leader", "glyph", "text"].map((component) => `secondaryRing.midpoint.${component}`),
-  ...["leader", "label"].map((component) => `secondaryRing.hybridHit.${component}`),
   ...["leader", "glyph", "text"].map((component) => `secondaryRing.antiscia.${component}`),
   ...["leader", "glyph", "text"].map((component) => `secondaryRing.contraAntiscia.${component}`),
   ...["leader", "glyph", "text"].map((component) => `secondaryRing.dodecatemoria.${component}`),
@@ -79,7 +86,7 @@ const expectedIds = [
 
 test("wheel-v2 exposes the exact complete semantic class tree", () => {
   assert.equal(manifest.WHEEL_SEMANTIC_CLASS_MANIFEST_VERSION, "wheel-v2");
-  assert.equal(expectedIds.length, 110);
+  assert.equal(expectedIds.length, 116);
   assert.deepEqual(
     [...manifest.WHEEL_SEMANTIC_CLASS_IDS].sort(),
     [...expectedIds].sort(),
@@ -94,14 +101,21 @@ test("wheel-v2 exposes the exact complete semantic class tree", () => {
 test("every class has capabilities, declarative applicability, and a preview state", () => {
   for (const definition of manifest.WHEEL_SEMANTIC_CLASS_MANIFEST) {
     assert.match(definition.labelKey, /^(?:styleLab|quickopt)\./, definition.id);
-    if (definition.id.startsWith("layers.")) {
+    // A class either owns profile-v2 authoring properties or says outright
+    // that its one control arrives through the renderer token channel. The
+    // compositing layers and the geometry lanes are the second kind; an empty
+    // capability list without that flag is an oversight, not a design.
+    if (definition.tokenControlled) {
       assert.deepEqual(
         definition.capabilities,
         [],
-        `${definition.id} uses the retained scalar layer-effect controls`,
+        `${definition.id} is token-controlled and must claim no capabilities`,
       );
     } else {
       assert.ok(definition.capabilities.length > 0, `${definition.id} capabilities`);
+    }
+    if (definition.id.startsWith("layers.")) {
+      assert.equal(definition.tokenControlled, true, definition.id);
     }
     assert.ok(definition.applicability.variants.length > 0, `${definition.id} variants`);
     assert.ok(definition.applicability.layouts.length > 0, `${definition.id} layouts`);
@@ -191,19 +205,21 @@ test("documented variant and preview applicability is explicit", () => {
   assert.equal(applicable("rings.aspectBoundary", context("classic", "single", ["aspects"])), "applicable");
 });
 
-test("variant-specific arrowheads and inherited point sizing stay honest", () => {
+test("variant-specific arrowheads stay honest, and special points are body glyphs", () => {
   const innerArrow = manifest.getWheelSemanticClass("angles.inner.arrowhead");
   assert.ok(manifest.resolveWheelSemanticCapabilities(innerArrow, "classic").includes("strokeWidth"));
   assert.equal(manifest.resolveWheelSemanticCapabilities(innerArrow, "anglo").includes("strokeWidth"), false);
   assert.ok(manifest.resolveWheelSemanticCapabilities(innerArrow, "anglo").includes("color"));
 
+  // Fortune, the Vertex and the prenatal syzygy are not classes of their own.
+  // They are body glyphs, so they carry the body glyph's whole control set and
+  // keep their individual colours through the occurrence palette roles.
   for (const id of ["bodies.fortune", "bodies.vertex", "bodies.prenatalSyzygy"]) {
-    const definition = manifest.getWheelSemanticClass(id);
-    assert.equal(definition.inheritsFrom, "bodies.inner.glyph");
-    assert.deepEqual(definition.capabilities, ["color"], id);
-    assert.equal(definition.colorTarget, "palette-role", id);
-    assert.equal(definition.capabilities.includes("fontSize"), false, id);
-    assert.equal(definition.capabilities.includes("radius"), false, id);
+    assert.equal(manifest.getWheelSemanticClass(id), undefined, id);
+  }
+  const bodyGlyph = manifest.getWheelSemanticClass("bodies.inner.glyph");
+  for (const capability of ["fontRef", "fontSize", "tracking", "color", "opacity"]) {
+    assert.ok(bodyGlyph.capabilities.includes(capability), capability);
   }
 });
 

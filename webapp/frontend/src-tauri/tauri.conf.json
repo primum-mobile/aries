@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../out",
     "devUrl": "http://localhost:3000",
-    "beforeDevCommand": "cd ../.. && make web-corpus web-notes && python3 scripts/stage_tauri_runtime_resources.py && cd webapp/frontend && npm run dev",
-    "beforeBuildCommand": "cd ../.. && make web-corpus web-notes web-daemon-binary web-legal && python3 scripts/stage_tauri_runtime_resources.py && cd webapp/frontend && npm run build"
+    "beforeDevCommand": "cd ../.. && make web-corpus web-notes web-legal && python3 scripts/stage_tauri_runtime_resources.py && cd webapp/frontend && npm run dev",
+    "beforeBuildCommand": "cd ../.. && make web-tauri-before-build"
   },
   "app": {
     "windows": [

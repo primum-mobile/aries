@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Max Lange
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -150,6 +153,7 @@ test("active profile palette roles overlay retained colors and deactivate exactl
     texts: "--morinus-text-bright",
     grid: "--morinus-houses",
     signs: "--morinus-signs",
+    outOfBounds: "--aries-destructive",
   });
 
   const active = resolveEphemerisRenderPalette(retained, {
@@ -158,6 +162,7 @@ test("active profile palette roles overlay retained colors and deactivate exactl
     "--morinus-text-bright": "profile-texts",
     "--morinus-houses": "profile-grid",
     "--morinus-signs": "profile-signs",
+    "--aries-destructive": "profile-out-of-bounds",
     "--aries-background": "must-not-leak-from-app-chrome",
   });
   assert.deepEqual(active, {
@@ -166,11 +171,15 @@ test("active profile palette roles overlay retained colors and deactivate exactl
     texts: "profile-texts",
     grid: "profile-grid",
     signs: "profile-signs",
+    outOfBounds: "profile-out-of-bounds",
   });
   assert.ok(Object.isFrozen(active));
 
   const deactivated = resolveEphemerisRenderPalette(retained, {});
-  assert.deepEqual(deactivated, retained);
+  assert.deepEqual(deactivated, {
+    ...retained,
+    outOfBounds: DEFAULT_EPHEMERIS_RENDER_PALETTE.outOfBounds,
+  });
   assert.ok(Object.isFrozen(deactivated));
   assert.deepEqual(resolveEphemerisRenderPalette(), DEFAULT_EPHEMERIS_RENDER_PALETTE);
 });
@@ -323,7 +332,8 @@ test("one resolved style object feeds paint, geometry, hit testing, and canvas e
   assert.match(source, /palette: effectivePalette/);
   assert.match(source, /profileOverrides: chartProfileOverrides/);
   assert.match(source, /render\([\s\S]*?effectivePayload,[\s\S]*?showEventGlyphs,[\s\S]*?renderStyle,/);
-  assert.match(source, /render\([\s\S]*?showEventGlyphs,[\s\S]*?renderStyle,/);
+  assert.match(source, /for \(const marker of payload\.outOfBounds \?\? \[\]\)[\s\S]*?const north = marker\.value >= 0;[\s\S]*?y \+ \(north \? -labelGap : labelGap\)[\s\S]*?outOfBoundsMarkerLabel,[\s\S]*?font: style\.typography\.fontUi,[\s\S]*?size: eventGlyphSize\(geo, style\),[\s\S]*?fill: colors\.outOfBounds,[\s\S]*?baseline: north \? "bottom" : "top"/);
+  assert.doesNotMatch(source, /outOfBoundsMarkerLabel,[\s\S]{0,180}?morinus\(/);
   assert.match(source, /computeGeometry\(cssW, cssH, mode, measure, style\)/);
   assert.match(source, /renderStyleRef\.current = renderStyle/);
   assert.match(source, /const renderStyle = renderStyleRef\.current;[\s\S]*?renderStyle\.interaction\.stationSnapX/);
@@ -335,22 +345,17 @@ test("one resolved style object feeds paint, geometry, hit testing, and canvas e
   assert.match(source, /\(effectivePayload\?\.planets \?\? \[\]\)\.map/);
   assert.doesNotMatch(source, /readEphemerisRenderTokens|renderTokensRef|style\.tokens/);
 
-  assert.match(source, /const optionsSeq = useEphemerisSemanticOptionsSeq\(\)/);
-  const semanticOptionsHook = source.slice(
-    source.indexOf("function useEphemerisSemanticOptionsSeq"),
+  assert.match(source, /const ephemerisDataKey = useEphemerisDataKey\(\)/);
+  const ephemerisDataKeyHook = source.slice(
+    source.indexOf("function useEphemerisDataKey"),
     source.indexOf("function positive"),
   );
-  assert.match(semanticOptionsHook, /lastOptionsChange\?\.styleOnly/);
-  assert.match(
-    semanticOptionsHook,
-    /if\s*\(\s*!lastOptionsChange\s*\|\|\s*lastOptionsChange\.styleOnly\s*\|\|\s*lastOptionsChange\.listDataChanged === false\s*\)\s*\{\s*return;\s*\}/,
-    "Graph Ephemeris must refetch only for semantic option changes, never renderer-only events",
-  );
-  assert.match(semanticOptionsHook, /setSeq\(lastOptionsChange\.seq\)/);
-  assert.doesNotMatch(source, /lastOptionsChange\?\.seq \?\? 0\);\n  const chartTextFont/);
+  assert.match(ephemerisDataKeyHook, /lastOptionsChange\?\.ephemerisDataKey/);
+  assert.doesNotMatch(ephemerisDataKeyHook, /listDataChanged|styleOnly/);
+  assert.match(source, /ephemerisCacheKey\(ephemerisDataKey, target\.year, target\.month\)/);
   assert.doesNotMatch(
     source,
-    /useEphemerisDataOptionsSeq|activeProfileFingerprint|themeStyleHash|pendingProfileStyleHashesRef/,
+    /activeProfileFingerprint|themeStyleHash|pendingProfileStyleHashesRef/,
   );
 
   const fetchBlock = source.slice(
@@ -363,7 +368,7 @@ test("one resolved style object feeds paint, geometry, hit testing, and canvas e
   );
   assert.match(
     fetchBlock,
-    /\}, \[anchorYear, anchorMonth, applyMarkers, applyPayload, optionsSeq\]\);/,
+    /\}, \[[\s\S]*anchorYear,[\s\S]*anchorMonth,[\s\S]*applyMarkers,[\s\S]*applyPayload,[\s\S]*ephemerisDataKey,[\s\S]*requiresEventMarkers,[\s\S]*\]\);/,
   );
   assert.doesNotMatch(source, /refresh_all_sessions|recalc/);
 

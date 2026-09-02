@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 """wx-free supplementary chart driver.
 
 This module exposes the subset of ``morin.MFrame`` that
@@ -110,16 +115,16 @@ class SupplementaryHeadlessDriver:
 		except Exception:
 			return (int(y), int(m), int(d), int(h), int(mi), int(s))
 
-	def _revolution_display_datetime(self, radix, y, m, d, h, mi, s, plus=None, zh=None, zm=None, daylight=None):
+	def _revolution_display_datetime(self, chrt, y, m, d, h, mi, s, plus=None, zh=None, zm=None, daylight=None):
 		"""Delegates to the canonical Moment normalizer (engine/moment,
 		policy-chart-lifecycle §1): tzid → geonames coordinate fallback →
 		static zone offset, with the same override semantics this helper
 		always had. GREENWICH may be calculation storage for returns, but
 		visible display still resolves to local civil time."""
 		return moment.utc_to_chart_local(
-			getattr(radix, 'time', None),
+			getattr(chrt, 'time', None),
 			(y, m, d, h, mi, s),
-			place=getattr(radix, 'place', None),
+			place=getattr(chrt, 'place', None),
 			plus=plus, zh=zh, zm=zm, daylight=daylight,
 		)
 
@@ -190,13 +195,23 @@ class SupplementaryHeadlessDriver:
 			except Exception:
 				pass
 
-		time = chart.Time(t1, t2, t3, t4, t5, t6, False, radix.time.cal, chart.Time.GREENWICH, plus, 0, 0, False, place, False)
+		time = chart.Time(
+			t1, t2, t3, t4, t5, t6, False, radix.time.cal,
+			chart.Time.GREENWICH, plus, 0, 0, False, place, False,
+			tzid=str(getattr(radix.time, 'tzid', '') or ''),
+			tzauto=bool(getattr(radix.time, 'tzauto', False)),
+		)
 		revolution = chart_factory.build_chart(radix.name, radix.male, time, place, chart.Chart.SOLAR, '', self.options, False)
-		display_dt = self._revolution_display_datetime(radix, t1, t2, t3, t4, t5, t6, plus=plus, zh=zh, zm=zm, daylight=daylight)
+		display_dt = self._revolution_display_datetime(revolution, t1, t2, t3, t4, t5, t6, plus=plus, zh=zh, zm=zm, daylight=daylight)
 		label = self._workspace_timed_label(mtexts.typeList[chart.Chart.SOLAR], display_dt[0], display_dt[1], display_dt[2], display_dt[3], display_dt[4], display_dt[5])
-		return (revolution, label, display_dt, {'place': place, 'plus': plus, 'base_year': t1, 'zh': zh, 'zm': zm, 'daylight': daylight})
+		return (revolution, label, display_dt, {
+			'place': place, 'plus': plus, 'base_year': t1, 'zh': zh, 'zm': zm,
+			'daylight': daylight,
+			'tzid': str(getattr(radix.time, 'tzid', '') or ''),
+			'tzauto': bool(getattr(radix.time, 'tzauto', False)),
+		})
 
-	def _build_solar_revolution_step_chart(self, radix, base_year, place, plus, zh=0, zm=0, daylight=False, degree_offset=0):
+	def _build_solar_revolution_step_chart(self, radix, base_year, place, plus, zh=0, zm=0, daylight=False, tzid='', tzauto=False, degree_offset=0):
 		revs = revolutions.Revolutions()
 		ok = revs.compute(revolutions.Revolutions.SOLAR, int(base_year), radix.time.month, radix.time.day, radix)
 		if not ok:
@@ -236,10 +251,14 @@ class SupplementaryHeadlessDriver:
 			except Exception:
 				pass
 
-		time = chart.Time(y, m, d, hh, mi, ss, False, radix.time.cal, chart.Time.GREENWICH, plus, 0, 0, False, place, False)
+		time = chart.Time(
+			y, m, d, hh, mi, ss, False, radix.time.cal,
+			chart.Time.GREENWICH, plus, 0, 0, False, place, False,
+			tzid=str(tzid or ''), tzauto=bool(tzauto),
+		)
 		revolution = chart_factory.build_chart(radix.name, radix.male, time, place, chart.Chart.SOLAR, '', self.options, False)
 		display_dt = self._revolution_display_datetime(
-			radix,
+			revolution,
 			time.year, time.month, time.day, time.hour, time.minute, time.second,
 			plus=plus,
 			zh=zh,

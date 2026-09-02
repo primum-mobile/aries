@@ -13,8 +13,16 @@ import { buildStyleTokenInventory } from "./style-token-contract.mjs";
 const frontendRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const sourceRoot = join(frontendRoot, "src");
 
+function normalizeSourceText(source) {
+  return source.replace(/\r\n?/g, "\n");
+}
+
+function normalizeSourcePath(path) {
+  return path.replaceAll("\\", "/");
+}
+
 function readSource(path) {
-  return readFileSync(join(frontendRoot, path), "utf8");
+  return normalizeSourceText(readFileSync(join(frontendRoot, path), "utf8"));
 }
 
 function sourceFiles(root) {
@@ -31,6 +39,14 @@ function assertConsumes(path, tokenNames) {
     assert.ok(source.includes(`var(${name})`), `${path} must consume ${name}`);
   }
 }
+
+test("contract source handling is platform-neutral", () => {
+  assert.equal(normalizeSourceText("first\r\nsecond\rthird"), "first\nsecond\nthird");
+  assert.equal(
+    normalizeSourcePath("src\\components\\workshell\\chart-style-panel.tsx"),
+    "src/components/workshell/chart-style-panel.tsx",
+  );
+});
 
 const NON_CONTROL_INPUT_TYPES = new Set([
   "checkbox",
@@ -212,7 +228,6 @@ test("the live inventory exposes the bounded chrome-layout authoring surface", (
     ["app.inspector.citationGap", "--aries-inspector-citation-gap"],
     ["app.inspector.cardPaddingInline", "--aries-inspector-card-padding-x"],
     ["app.inspector.cardPaddingBlock", "--aries-inspector-card-padding-y"],
-    ["app.inspector.controlHeight", "--aries-inspector-control-height"],
     ["app.inspector.type.titleSize", "--aries-inspector-title-size"],
     ["app.inspector.color.title", "--aries-inspector-title-color"],
     ["app.inspector.color.value", "--aries-inspector-value-color"],
@@ -468,17 +483,6 @@ test("shared chrome primitives consume semantic layout variables", () => {
     "--aries-inspector-divider-color",
     "--aries-inspector-background",
   ]);
-  assertConsumes("src/components/workshell/astrolabe-view.tsx", [
-    "--aries-pane-header-compact-padding-x",
-    "--aries-pane-header-compact-padding-y",
-    "--aries-control-gap",
-    "--aries-control-padding-x-compact",
-    "--aries-segmented-control-padding",
-    "--aries-radius-control-compact",
-    "--aries-text-primary",
-    "--aries-text-muted",
-    "--aries-surface",
-  ]);
   assertConsumes("src/components/workshell/app-sidebar.tsx", [
     "--aries-sidebar-section-header-height",
     "--aries-sidebar-group-padding-start",
@@ -492,6 +496,39 @@ test("shared chrome primitives consume semantic layout variables", () => {
     "--aries-sidebar-close-action-size",
     "--aries-sidebar-action-icon-size",
   ]);
+});
+
+test("right panes keep the established sash and cap against the full app frame", () => {
+  const panels = readSource("src/components/ui/resizable.tsx");
+  const workspace = readSource("src/components/workshell/workspace-content.tsx");
+  const frameLayout = readSource("src/stores/frame-layout-store.ts");
+  const sash = workspace.slice(
+    workspace.indexOf("function RightPaneSash("),
+    workspace.indexOf("/**\n * The chart canvas", workspace.indexOf("function RightPaneSash(")),
+  );
+  const visibilityHandoff = workspace.slice(
+    workspace.indexOf("function useCoherentRightPaneTrack("),
+    workspace.indexOf("function RightPaneSash("),
+  );
+
+  assert.match(panels, /<ResizablePrimitive\.PanelGroup/);
+  assert.match(panels, /<ResizablePrimitive\.PanelResizeHandle/);
+  assert.doesNotMatch(panels, /useDefaultLayout|<ResizablePrimitive\.Group|<ResizablePrimitive\.Separator/);
+  assert.match(frameLayout, /rightPaneDragging: boolean/);
+  assert.match(workspace, /function RightPaneSash/);
+  assert.match(workspace, /min\(var\(--right-pane-width\), 50vw\)/);
+  assert.match(workspace, /window\.innerWidth \* 0\.5/);
+  assert.match(workspace, /data-right-pane-resizing/);
+  assert.doesNotMatch(workspace, /right-pane-split[^\n]*transition-\[grid-template-columns\]/);
+  assert.equal(
+    workspace.match(/useCoherentRightPaneTrack\(/g)?.length,
+    3,
+    "the shared visibility handoff must own both right-pane hosts",
+  );
+  assert.match(visibilityHandoff, /useLayoutEffect/);
+  assert.match(visibilityHandoff, /propertyName !== "grid-template-columns"/);
+  assert.doesNotMatch(visibilityHandoff, /setTimeout|requestAnimationFrame|ResizeObserver/);
+  assert.doesNotMatch(sash, /ResizeObserver/);
 });
 
 test("generic form and tooltip primitives do not bypass the density contract", () => {
@@ -546,7 +583,7 @@ test("mounted dialog form controls declare one appearance owner", () => {
     (total, path) => total + assertMountedFormControlsDeclareAppearance(path),
     0,
   );
-  assert.equal(count, 20, "the mounted ordinary-control inventory changed");
+  assert.equal(count, 22, "the mounted ordinary-control inventory changed");
 
   const editor = readSource(
     "src/components/workshell/chart-editor-dialog.tsx",
@@ -566,7 +603,7 @@ test("all mounted ordinary raw controls declare one appearance owner", () => {
     "src/components/workshell/chart-style-panel.tsx";
   const paths = sourceFiles(join(sourceRoot, "components"))
     .filter((path) => path.endsWith(".tsx"))
-    .map((path) => relative(frontendRoot, path))
+    .map((path) => normalizeSourcePath(relative(frontendRoot, path)))
     // Chart Style Panel has its own focused authoring lane and contract.
     .filter((path) => path !== chartStylePanel);
   const count = paths.reduce(
@@ -578,7 +615,7 @@ test("all mounted ordinary raw controls declare one appearance owner", () => {
       }),
     0,
   );
-  assert.equal(count, 51, "the mounted ordinary-control inventory changed");
+  assert.equal(count, 52, "the mounted ordinary-control inventory changed");
 });
 
 test("context menus stay above the floating workspace navbar", () => {
@@ -668,7 +705,7 @@ test("native titlebar alignment remains on the proven pre-tokenization geometry"
   );
 });
 
-test("outer chart labels cross only the titlebar backplate and stay below transient chrome", () => {
+test("chart paint crosses a transparent titlebar and stays below transient chrome", () => {
   const content = readSource("src/components/workshell/workspace-content.tsx");
   const copyControl = readSource("src/components/workshell/chart-copy-control.tsx");
   const chartCanvas = readSource("src/components/workshell/chart-canvas.tsx");
@@ -679,6 +716,18 @@ test("outer chart labels cross only the titlebar backplate and stay below transi
   assert.match(
     content,
     /data-aries-titlebar-backplate=""[\s\S]*?z-\[40\][\s\S]*?bg-\[var\(--aries-titlebar-background\)\]/,
+  );
+  assert.match(
+    content,
+    /const transparentBackplate = overlay \|\| isChartBearingSurfaceDocument\(activeDoc\)/,
+  );
+  assert.match(
+    content,
+    /data-aries-surface=\{transparentBackplate \? undefined : "titlebar"\}/,
+  );
+  assert.match(
+    content,
+    /transparentBackplate[\s\S]*?\? "bg-transparent"[\s\S]*?: "isolate bg-\[var\(--aries-titlebar-background\)\]"/,
   );
   assert.match(copyControl, /data-aries-titlebar-title=""/);
   assert.match(
@@ -761,6 +810,33 @@ test("sidebar chrome retains the proven pre-tokenization spacing and action geom
     "--aries-sidebar-close-action-size",
     "--aries-sidebar-action-icon-size",
   ]);
+});
+
+test("sidebar shortcut hints overlay a fading full-width label", () => {
+  const sidebar = readSource("src/components/workshell/app-sidebar.tsx");
+  const css = readSource("src/app/globals.css");
+
+  assert.match(
+    sidebar,
+    /const trailingSlotWidth = onClose\s*\?\s*"var\(--aries-sidebar-close-action-size\)"\s*:\s*null;/,
+  );
+  assert.match(sidebar, /showShortcutHint && "aries-sidebar-navrow--shortcut"/);
+  assert.match(sidebar, /className="aries-sidebar-navrow-label[^\n]+truncate/);
+  assert.match(sidebar, /className="aries-sidebar-navrow-label-faded[^\n]+\[text-overflow:clip\][^\n]+opacity-0/);
+  assert.match(sidebar, /className="aries-sidebar-shortcut-hint[^\n]+opacity-0/);
+  assert.match(sidebar, /aria-keyshortcuts=\{ariaKeyShortcuts\}/);
+  assert.match(sidebar, /function normalizeAriaKeyShortcuts/);
+  assert.match(
+    sidebar,
+    /paddingRight: trailingSlotWidth[\s\S]*?: "var\(--morinus-row-pad-x\)",/,
+  );
+  assert.doesNotMatch(sidebar, /paddingRight:[\s\S]{0,160}shortcutOverlayWidth/);
+  assert.match(css, /\.aries-sidebar-navrow--shortcut:is\(:hover, :has\(\[data-slot="sidebar-menu-button"\]:focus-visible\)\)/);
+  assert.match(css, /\.aries-sidebar-navrow-label \{\s*opacity: 0;/);
+  assert.match(css, /\.aries-sidebar-navrow-label-faded,/);
+  assert.match(css, /\.aries-sidebar-shortcut-hint \{\s*opacity: 1;/);
+  assert.match(sidebar, /function shortcutFadeMask/);
+  assert.match(sidebar, /WebkitMaskImage: shortcutMaskImage/);
 });
 
 test("migrated dialog actions and retained-list close controls keep their established defaults", () => {
@@ -856,12 +932,14 @@ test("retained sidebar lists use the structural table facade, not token-only raw
     listTokens.match(/root:\s*"[^"]*"/)?.[0] ?? "",
     /bg-muted|--aries-surface|bg-card/,
   );
+  assert.doesNotMatch(listTokens, /aries-list-row--striped/);
 
   const tablePrimitives = readSource("src/components/ui/table.tsx");
   assert.match(tablePrimitives, /aries-list-row aries-list-row--hover aries-list-row--selected border-b/);
   assert.match(tablePrimitives, /aries-list-head text-foreground/);
   assert.match(tablePrimitives, /aries-list-cell align-middle/);
   const globalCss = readSource("src/app/globals.css");
+  assert.doesNotMatch(globalCss, /\.aries-list-row--striped/);
   assert.match(
     globalCss,
     /\.aries-list \{[\s\S]*?table-layout: auto;[\s\S]*?min-width: 100%;[\s\S]*?width: 100%;/,
@@ -965,6 +1043,42 @@ test("retained sidebar lists use the structural table facade, not token-only raw
   assert.match(headerBlock, /LIST_PANE_CLASSES\.controlLabel/);
   assert.equal((headerBlock.match(/<PaneSelect/g) ?? []).length, 2);
   assert.doesNotMatch(headerBlock, /<(?:select|input)\b/);
+});
+
+test("workspace tables keep the plain Morinus row treatment", () => {
+  for (const path of [
+    "src/components/workshell/generic-table-view.tsx",
+    "src/components/workshell/sectioned-table-view.tsx",
+    "src/components/workshell/profections-view.tsx",
+  ]) {
+    const source = readSource(path);
+    assert.doesNotMatch(source, /aries-list-row--striped/);
+    assert.doesNotMatch(source, /<t[dh][^>]*className=[^>]*(?:^|\s)border(?!-)(?:\s|"|')/);
+  }
+
+  const zodiacalReleasing = readSource(
+    "src/components/workshell/zodiacal-releasing-view.tsx",
+  );
+  assert.match(zodiacalReleasing, /<SidebarListTable\s+profile="directions-titled"/);
+  for (const primitive of [
+    "SidebarListHeader",
+    "SidebarListBody",
+    "SidebarListRow",
+    "SidebarListHead",
+    "SidebarListCell",
+  ]) {
+    assert.match(zodiacalReleasing, new RegExp(`<${primitive}\\b`));
+  }
+  assert.doesNotMatch(zodiacalReleasing, /<(?:thead|tbody|tr|th|td)\b/);
+});
+
+test("workspace document tables clear the floating title bar", () => {
+  const workspace = readSource("src/components/workshell/workspace-content.tsx");
+  const surface = workspace.slice(
+    workspace.indexOf("function WorkspaceDocumentSurface"),
+    workspace.indexOf("function EmptyWorkspace"),
+  );
+  assert.match(surface, /pt-\[var\(--titlebar-h\)\]/);
 });
 
 test("retained time-lord controls preserve their caller-specific pre-tokenization gaps", () => {
@@ -1117,7 +1231,10 @@ test("public list row-height roles are the sole authority for fixed-row virtuali
     );
     assert.match(source, /paddingTop:\s*startIndex \* rowHeight/);
     assert.match(source, /paddingBottom:[^\n]*rowCount - endIndex[^\n]*\* rowHeight/);
-    assert.match(source, /style=\{\{ height: rowHeight \}\}/);
+    assert.match(
+      source,
+      /style=\{\{\s*height:\s*rowHeight(?:,\s*\.\.\.[^}]*)?\s*\}\}/,
+    );
   }
 
   for (const path of [
@@ -1148,6 +1265,63 @@ test("public list row-height roles are the sole authority for fixed-row virtuali
   const eclipses = readSource("src/components/workshell/eclipses-view.tsx");
   assert.match(eclipses, /bodyScrollTop \/ previousRowHeight/);
   assert.match(eclipses, /bodyScrollTop \/ sourceRowHeight/);
+});
+
+test("Search station rows preserve canonical SR and SD markers", () => {
+  const source = readSource("src/components/workshell/transit-search-view.tsx");
+  assert.match(source, /code === "SR" \|\| code === "SD" \? code : ""/);
+  assert.doesNotMatch(source, /const marker = rx \? "Rx" : direct \? "D"/);
+});
+
+test("Search aspect expressions keep the aspect centered between normalized object glyphs", () => {
+  const source = readSource("src/components/workshell/transit-search-view.tsx");
+  const globals = readSource("src/app/globals.css");
+  assert.match(source, /grid-cols-\[minmax\(0,1fr\)_auto_minmax\(0,1fr\)\]/);
+  assert.match(source, /className="justify-self-start"/);
+  assert.match(source, /className="aries-search-glyph aries-search-object-glyph"/);
+  assert.match(source, /normalizeGlyphs && "aries-search-object-glyph"/);
+  assert.match(globals, /\.aries-search-object-glyph\s*\{[^}]*display: inline-flex;[^}]*width: 1em;[^}]*height: 1em;[^}]*line-height: 1;/s);
+});
+
+test("Search filters preserve a persisted right or resizable bottom dock", () => {
+  const source = readSource("src/components/workshell/transit-search-view.tsx");
+  const frameLayout = readSource("src/stores/frame-layout-store.ts");
+  assert.match(frameLayout, /export type SearchFiltersDock = "right" \| "bottom"/);
+  assert.match(frameLayout, /searchFiltersDock: "bottom"/);
+  assert.match(frameLayout, /searchFiltersDock: state\.searchFiltersDock/);
+  assert.match(source, /autoSaveId=\{`aries\.search-results-vs-filters-\$\{filtersDock\}`\}/);
+  assert.match(source, /direction=\{filtersDock === "right" \? "horizontal" : "vertical"\}/);
+  assert.match(source, /filtersDock === "bottom"/);
+  assert.match(source, /filtersDock === "right"/);
+  assert.match(source, /<ResizableHandle \/>/);
+});
+
+test("Search exposes independent compact motion filters for both object roles", () => {
+  const source = readSource("src/components/workshell/transit-search-view.tsx");
+  const client = readSource("src/lib/daemon/client.ts");
+  assert.match(source, /motionFilter=\{form\.promittorMotion\}/);
+  assert.match(source, /motionFilter=\{form\.significatorMotion\}/);
+  assert.match(source, /if \(canRunSearch\(next\)\) refreshRetainedSearch\(next\)/);
+  assert.match(source, /searchRowMatchesMotion/);
+  assert.match(source, /\(\["rx", "d"\] as const\)/);
+  assert.match(client, /promittorMotion\?: TransitSearchMotionFilter/);
+  assert.match(client, /significatorMotion\?: TransitSearchMotionFilter/);
+});
+
+test("Search presents the additional minor aspects as an attached second row", () => {
+  const source = readSource("src/components/workshell/transit-search-view.tsx");
+  assert.match(source, /grid grid-cols-6 overflow-hidden rounded-md border border-border/);
+  assert.match(source, /catalog\.aspects\.map\(\(aspect, index\) =>/);
+  assert.match(source, /index % 6 !== 5 && "border-r border-border"/);
+  assert.match(source, /index >= 6 && "border-t border-border"/);
+});
+
+test("Search aspect buttons expose localized hover information", () => {
+  const source = readSource("src/components/workshell/transit-search-view.tsx");
+  assert.match(source, /<Tooltip key=\{aspect\.id\}>/);
+  assert.match(source, /aria-label=\{aspect\.label\}/);
+  assert.match(source, /<TooltipContent side="bottom">\{aspect\.label\}<\/TooltipContent>/);
+  assert.doesNotMatch(source, /title=\{aspect\.label\}/);
 });
 
 test("measured geometry, native titlebar geometry, hit zones, and table algorithms stay internal", () => {
@@ -1277,9 +1451,11 @@ test("inspector colours repaint from semantic roles without refetching the hover
   assert.match(fetchEffect, /semanticOptionsSeq/);
   assert.match(
     hover,
-    /if\s*\(\s*!lastOptionsChange\s*\|\|\s*lastOptionsChange\.styleOnly\s*\|\|\s*lastOptionsChange\.listDataChanged === false\s*\)\s*\{\s*return;\s*\}/,
-    "hover flags must refetch only for semantic option changes, never renderer-only events",
+    /change\.inspectorDataChanged === true\s*\|\|\s*\(\s*!change\.styleOnly\s*&&\s*change\.listDataChanged !== false\s*\)/,
+    "an inspector-only options event must refresh hover flags without invalidating retained lists",
   );
+  assert.match(hover, /optionsChangeRefreshesHoverInspector\(lastOptionsChange\)/);
+  assert.doesNotMatch(hover, /lastRetainedDataOptionsChange/);
 
   assert.match(hover, /semanticChartColor\(payload\.accentRole, rgbCss\(payload\.accent\)\)/);
   assert.match(hover, /semanticChartColor\(span\.colourRole, rgbCss\(span\.colour\)\)/);
@@ -1301,16 +1477,81 @@ test("inspector colours repaint from semantic roles without refetching the hover
   assert.match(client, /aspect_colour_role\?: string \| null/);
 });
 
-test("directions PDF export resolves the active semantic palette at export time", () => {
-  const directions = readSource("src/components/workshell/directions-view.tsx");
-  const semanticColor = readSource("src/lib/theme/semantic-color.ts");
+test("solar-condition doctrine setting is daemon-owned and localized", () => {
+  const settings = readSource("src/components/workshell/settings-dialog.tsx");
+  const sectionStart = settings.indexOf('t("settings.combustion")');
+  const sectionEnd = settings.indexOf('t("settings.phasisHeliacal")', sectionStart);
+  assert.notEqual(sectionStart, -1, "combustion section label is missing");
+  assert.notEqual(sectionEnd, -1, "solar-condition selector must precede Phasis controls");
+  const section = settings.slice(sectionStart, sectionEnd);
+  assert.match(section, /<Row label=\{t\("settings\.doctrine"\)\}>/);
+  assert.match(section, /value=\{d\.solarconditionmode\}/);
+  assert.match(section, /setNum\("solarconditionmode", Number\(v\)\)/);
+  assert.match(section, /cat\.solarConditionModes\.map/);
+  assert.match(section, /\{t\(mode\.labelKey\)\}/);
+  assert.match(section, /\{t\(solarConditionMode\.descriptionKey\)\}/);
+  assert.doesNotMatch(section, /\{mode\.label\}/);
+  assert.doesNotMatch(section, /8°30′|18°|planetary_orb_complement/);
 
-  assert.match(semanticColor, /export function resolvedSemanticChartColor/);
-  assert.match(semanticColor, /getComputedStyle\(root\)\.getPropertyValue\(role\)/);
-  assert.match(directions, /resolvedSemanticChartColor\(part\.colorRole, part\.color\)/);
-  assert.match(directions, /directionGlyphPdfCell\(/);
-  assert.match(directions, /resolvedSemanticChartColor\(colorRole, color\)/);
-  assert.match(directions, /circumSignColors/);
+  const client = readSource("src/lib/daemon/client.ts");
+  assert.match(client, /solarconditionmode: number;/);
+  assert.match(client, /solarConditionModes: LocalizedDescribedEnumChoice\[\];/);
+  assert.match(client, /LocalizedEnumChoice = EnumChoice & \{ labelKey: string \}/);
+  assert.match(client, /LocalizedDescribedEnumChoice = LocalizedEnumChoice & \{/);
+
+  const daemon = readSource("../daemon/options_service.py");
+  for (const key of [
+    "settings.combustionRhetoriusDescription",
+    "settings.combustionAlQabisiDescription",
+    "settings.combustionIbnEzraDescription",
+    "settings.combustionWilliamLillyDescription",
+    "settings.combustionMorinDescription",
+  ]) {
+    assert.match(daemon, new RegExp(`'descriptionKey': '${key}'`));
+  }
+});
+
+test("directions copy stays semantic while PDF retains selectable glyph runs", () => {
+  const directions = readSource("src/components/workshell/directions-view.tsx");
+  const actions = readSource("src/components/workshell/text-export-actions.tsx");
+  const exportAdapter = readSource("src/components/workshell/table-pdf-export.ts");
+
+  assert.match(directions, /directionPartsTextCell\(/);
+  assert.match(directions, /exportText: fallbackText/);
+  assert.match(directions, /buildAdHocTableExportDocument\(/);
+  assert.match(directions, /buildDocument=\{primaryExportDocument\}/);
+  assert.match(directions, /buildDocument=\{secondaryExportDocument\}/);
+  assert.match(directions, /buildDocument=\{circumExportDocument\}/);
+  assert.match(directions, /resolvedSemanticChartColor/);
+  assert.match(directions, /runs: parts\.map/);
+  assert.match(actions, /copyTextToClipboard\(document\.text\)/);
+  assert.match(actions, /exportTableTextDocument\(document/);
+  assert.match(actions, /exportTablePdfDocument\(document/);
+  assert.match(actions, /exportDocument\("pdf"\)/);
+  assert.match(actions, /exportDocument\("txt"\)/);
+  assert.equal(
+    (actions.match(/<DropdownMenuItem/g) ?? []).length,
+    2,
+    "the export button menu must contain only the PDF and text actions",
+  );
+  assert.doesNotMatch(actions, /DropdownMenu(?:Label|RadioGroup|RadioItem)/);
+  assert.doesNotMatch(actions, /loadTableTextExportStyle|setTableTextExportStyle/);
+  assert.equal(
+    (actions.match(/appearance="ghost"/g) ?? []).length,
+    2,
+    "copy and export actions must use unframed header chrome",
+  );
+  assert.equal(
+    (actions.match(/hover:border-transparent/g) ?? []).length,
+    2,
+    "copy and export actions must not grow a thin outline on hover",
+  );
+  assert.equal(
+    (actions.match(/strokeWidth=\{1\.5\}/g) ?? []).length,
+    3,
+    "copy, confirmation, and export glyphs must retain the light title-action stroke",
+  );
+  assert.match(exportAdapter, /document: document\.pdf/);
 });
 
 test("mounted informational dialogs consume semantic density roles", () => {

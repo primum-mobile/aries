@@ -23,6 +23,12 @@ class TableCatalogEntry:
 
 
 TABLE_CATALOG: dict[str, TableCatalogEntry] = {
+    "calendar": TableCatalogEntry(
+        "calendar",
+        "Calendar",
+        "webapp/frontend/src/components/workshell/calendar-prototype-view.tsx",
+        surface="right_pane",
+    ),
     "strip": TableCatalogEntry("strip", "30° Strip", "morin.py:14245,14620; stripwnd.py:78-646"),
     "positions": TableCatalogEntry("positions", "Positions", "morin.py:15823-15896; positionswnd.py"),
     "aspects": TableCatalogEntry("aspects", "Aspects", "morin.py:16752-16766; aspectswnd.py"),
@@ -30,6 +36,7 @@ TABLE_CATALOG: dict[str, TableCatalogEntry] = {
     "rise_set": TableCatalogEntry("rise_set", "Rise/Set", "morin.py:16768-16769; risesetwnd.py"),
     "planetary_hours": TableCatalogEntry("planetary_hours", "Planetary Hours", "morin.py:16770-16771; hourswnd.py"),
     "firdaria": TableCatalogEntry("firdaria", "Firdaria", "morin.py:16017-16020,16764-16769,17566-17570; firdaria.py; firdariawnd.py"),
+    "vimshottari": TableCatalogEntry("vimshottari", "Vimshottari Dasha", "vimshottari.py; doc/vimshottari.md"),
     "decennials": TableCatalogEntry("decennials", "Decennials", "morin.py:16014-16031,17164-17181,17699-17729; decennials.py; decennialswnd.py; decennials_popup.py"),
     "triplicity_directions": TableCatalogEntry("triplicity_directions", "Triplicity Directions", "triplicitydirections.py; Bonatti triplicity-lord research feature"),
     "zodiacal_releasing": TableCatalogEntry("zodiacal_releasing", "Zodiacal Releasing", "morin.py:16033-16072,17129-17162,17682-17698,4119-4147; zodiacalreleasing.py; zodiacalreleasingwnd.py"),
@@ -57,6 +64,11 @@ TABLE_CATALOG: dict[str, TableCatalogEntry] = {
     "user_speculum": TableCatalogEntry("user_speculum", "User Speculum", "morin.py:14289,14634,17537-17562; customerwnd.py; customerpd.py"),
     "monthly_transits": TableCatalogEntry("monthly_transits", "Monthly Transits", "morin.py:14293,14622,16790-16793,17314-17332; transits.py; transitmwnd.py"),
     "synodic_cycles": TableCatalogEntry("synodic_cycles", "Synodic Cycles", "engine/synodic_cycle.py; searchbackend station/cazimi/sign-change rows", surface="right_pane"),
+    "temporal_confluence": TableCatalogEntry(
+        "temporal_confluence",
+        "Temporal Confluence",
+        "webapp/frontend/src/components/workshell/temporal-confluence-view.tsx; canonical retained list components",
+    ),
     "fixedstar_angle_directions": TableCatalogEntry("fixedstar_angle_directions", "Angular Directions of Fixed Stars", "morin.py:14287,14641,17628-17675; fixstardirs.py; fixstardirsframe.py"),
 }
 

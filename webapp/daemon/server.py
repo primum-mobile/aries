@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 from __future__ import annotations
 
 import base64
@@ -44,6 +49,7 @@ FIND_TRANSITS_TECHNIQUES = ("transits",)
 
 _transit_search_service = None
 _tables_service = None
+_temporal_map_service = None
 _aspect_list_service = None
 _style_font_store = None
 _style_font_store_directory = None
@@ -246,6 +252,18 @@ def _load_synodic_service():
 def _load_style_draft_service():
     from .style_draft_service import style_draft_service as service
 
+    try:
+        options_directory = str(
+            getattr(options_service.options, "optsdirtxt", "") or ""
+        ).strip()
+        if options_directory:
+            service.configure_directory(options_directory)
+    except Exception:
+        # Recovery is optional at boot. The live editor remains usable even
+        # when its idle-time journal cannot reach the options directory.
+        logging.getLogger(__name__).exception(
+            "could not configure Style Lab draft recovery"
+        )
     return service
 
 
@@ -325,6 +343,15 @@ def tables_service():
     return _tables_service
 
 
+def temporal_map_service():
+    global _temporal_map_service
+    if _temporal_map_service is None:
+        from .temporal_map_service import temporal_map_service as service
+
+        _temporal_map_service = service
+    return _temporal_map_service
+
+
 def aspect_list_service():
     global _aspect_list_service
     if _aspect_list_service is None:
@@ -359,6 +386,18 @@ async def _daemon_lifespan(asgi_app: FastAPI):
     try:
         yield
     finally:
+        try:
+            drafts = style_draft_service
+            if isinstance(drafts, _LazyDaemonService):
+                drafts = object.__getattribute__(drafts, "_service")
+            if drafts is not None:
+                drafts.flush_persistence()
+        except Exception:
+            # Shutdown recovery is best-effort and must not hold the native
+            # process open if the options directory has become unavailable.
+            logging.getLogger(__name__).exception(
+                "could not flush Style Lab draft recovery during shutdown"
+            )
         if native_ipc is not None:
             await native_ipc.stop()
 
@@ -574,6 +613,25 @@ class ChartPickerDeletePayload(BaseModel):
     rows: list[dict]
 
 
+class ChartPickerMovePayload(BaseModel):
+    rows: list[dict]
+    destination: str
+
+
+class ChartPickerMoveToNewCollectionPayload(BaseModel):
+    rows: list[dict]
+    name: str
+
+
+class ChartPickerRenameCollectionPayload(BaseModel):
+    source: str
+    name: str
+
+
+class ChartPickerCreateCollectionPayload(BaseModel):
+    name: str
+
+
 class ChartPickerSearchPayload(BaseModel):
     stationWindowDays: float | None = None
     placements: list[dict] = []
@@ -678,26 +736,17 @@ class IoTextExportPayload(BaseModel):
 
 
 class TableExportPayload(BaseModel):
-    """Rendered table/list/pane PDF export (commonwnd SaveAsBitmap parity).
-
-    The view forwards the structured GenericTablePayload it already holds —
-    columns + rows of cell dicts — and a Tauri-resolved destination path. The
-    daemon renders that exact payload to PDF via the wx-free Platypus helper.
-    """
+    """Structured table/list/pane PDF export."""
 
     path: str
     title: str = "Table"
-    columns: list[dict[str, Any]]
-    rows: list[list[Any]]
-    headerLines: list[str] | None = None
+    document: dict[str, Any]
 
 
 class TableExportBytesPayload(BaseModel):
     title: str = "Table"
-    columns: list[dict[str, Any]]
-    rows: list[list[Any]]
-    headerLines: list[str] | None = None
     filename: str | None = None
+    document: dict[str, Any]
 
 
 class RestoreOpenChartsPayload(BaseModel):
@@ -908,19 +957,12 @@ def io_export_text(payload: IoTextExportPayload) -> dict:
 
 @app.post("/api/table/export")
 def table_export(payload: TableExportPayload) -> dict:
-    """Rendered table/list/pane PDF export (commonwnd.py:163 SaveAsBitmap parity).
-
-    The Tauri shell supplies a destination path; the daemon renders the
-    view-supplied structured table payload to PDF via the wx-free Platypus
-    helper. Reuses pdfexport.export_table_document, not a second exporter.
-    """
+    """Render a selectable scientific PDF from the canonical table snapshot."""
     try:
         return table_export_service.export_table(
             path=payload.path,
             title=payload.title,
-            columns=payload.columns,
-            rows=payload.rows,
-            header_lines=payload.headerLines,
+            document=payload.document,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -934,10 +976,8 @@ def table_export_bytes(payload: TableExportBytesPayload) -> dict:
     try:
         result = table_export_service.export_table_bytes(
             title=payload.title,
-            columns=payload.columns,
-            rows=payload.rows,
-            header_lines=payload.headerLines,
             filename=payload.filename,
+            document=payload.document,
         )
         data = result.pop("data")
         result["dataBase64"] = base64.b64encode(data).decode("ascii")
@@ -1074,6 +1114,63 @@ def chart_picker_rename(payload: ChartPickerRenamePayload) -> dict:
 def chart_picker_delete(payload: ChartPickerDeletePayload) -> dict:
     try:
         return chart_picker_service.delete(payload.rows)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/chart-picker/move")
+def chart_picker_move(payload: ChartPickerMovePayload) -> dict:
+    try:
+        result = chart_picker_service.move(payload.rows, payload.destination)
+        moves = result.pop("_moves", [])
+        if moves:
+            workspace_service.rebind_moved_chart_records(moves)
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/chart-picker/collections/move-to-new")
+def chart_picker_move_to_new_collection(
+    payload: ChartPickerMoveToNewCollectionPayload,
+) -> dict:
+    try:
+        result = chart_picker_service.move_to_new_collection(payload.rows, payload.name)
+        moves = result.pop("_moves", [])
+        if moves:
+            workspace_service.rebind_moved_chart_records(moves)
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/chart-picker/collections/create")
+def chart_picker_create_collection(payload: ChartPickerCreateCollectionPayload) -> dict:
+    try:
+        return chart_picker_service.create_collection(payload.name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/chart-picker/collections/rename")
+def chart_picker_rename_collection(payload: ChartPickerRenameCollectionPayload) -> dict:
+    try:
+        result = chart_picker_service.rename_collection(
+            source=payload.source,
+            name=payload.name,
+        )
+        moves = result.pop("_moves", [])
+        if moves:
+            workspace_service.rebind_moved_chart_records(moves)
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -1239,6 +1336,7 @@ def directions_list(
     start_age: Optional[float] = Query(default=None, alias="startAge"),
     end_age: Optional[float] = Query(default=None, alias="endAge"),
     seek: str = Query(default="exact", description="exact/next/previous non-empty age window"),
+    include_temporal: bool = Query(default=False, alias="includeTemporal"),
     custom_significator_json: Optional[str] = Query(default=None, alias="customSignificator"),
     options_preview_json: Optional[str] = Query(default=None, alias="optionsPreview"),
 ) -> dict:
@@ -1254,6 +1352,7 @@ def directions_list(
             start_age=start_age,
             end_age=end_age,
             seek=seek,
+            include_temporal=include_temporal,
             custom_significator=_custom_significator_from_query(custom_significator_json),
             options_preview=_options_preview_from_query(options_preview_json),
         )
@@ -1273,6 +1372,7 @@ def directions_annual(
     reference_datetime: Optional[str] = Query(default=None, alias="referenceDatetime"),
     range_mode: int = Query(default=5, alias="range", description="defaults to Revolution(5) = full SR year"),
     direction: int = Query(default=0, description="0=Direct, 1=Converse, 2=Both"),
+    include_temporal: bool = Query(default=False, alias="includeTemporal"),
     custom_significator_json: Optional[str] = Query(default=None, alias="customSignificator"),
     options_preview_json: Optional[str] = Query(default=None, alias="optionsPreview"),
 ) -> dict:
@@ -1289,47 +1389,9 @@ def directions_annual(
             reference_datetime=reference_datetime,
             range_mode=range_mode,
             direction=direction,
+            include_temporal=include_temporal,
             custom_significator=_custom_significator_from_query(custom_significator_json),
             options_preview=_options_preview_from_query(options_preview_json),
-        )
-    except SystemExit as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-
-@app.get("/api/directions/export-text")
-def directions_export_text(
-    name: str = "Morinus",
-    source: Optional[str] = None,
-    document_id: Optional[str] = Query(default=None, alias="documentId"),
-    mode: str = Query(default="radix", description="radix | revolution (annual/SR/LR PD list)"),
-    range_mode: int = Query(default=4, alias="range"),
-    direction: int = Query(default=0, description="0=Direct, 1=Converse, 2=Both"),
-    start_age: Optional[float] = Query(default=None, alias="startAge"),
-    end_age: Optional[float] = Query(default=None, alias="endAge"),
-    year: Optional[int] = Query(default=None),
-    return_kind: str = Query(default="solar", alias="kind"),
-    reference_datetime: Optional[str] = Query(default=None, alias="referenceDatetime"),
-    custom_significator_json: Optional[str] = Query(default=None, alias="customSignificator"),
-) -> dict:
-    """Save-As-Text export of the Primary Directions list and the PD-in-revolution
-    list. The file body is the engine's PrimDirs.format2text (primdirslistwnd.
-    onSaveAsText:1573 transcription) — never assembled in the skin."""
-    try:
-        return directions_service.primary_directions_text(
-            source=source,
-            name=name,
-            document_id=document_id,
-            mode=mode,
-            range_mode=range_mode,
-            direction=direction,
-            start_age=start_age,
-            end_age=end_age,
-            year=year,
-            return_kind=return_kind,
-            reference_datetime=reference_datetime,
-            custom_significator=_custom_significator_from_query(custom_significator_json),
         )
     except SystemExit as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -1347,6 +1409,7 @@ def directions_secondary(
     method: str = Query(default="secondary", description="secondary|minor|tertiary"),
     direction: str = Query(default="direct", description="direct|converse|both"),
     reference_datetime: Optional[str] = Query(default=None, alias="referenceDatetime"),
+    include_temporal: bool = Query(default=False, alias="includeTemporal"),
 ) -> dict:
     """Secondary/minor/tertiary directions list (secdirframe.py popup). Row math
     is the wx-free engine.secondary_directions search."""
@@ -1360,39 +1423,7 @@ def directions_secondary(
             method=method,
             direction=direction,
             reference_datetime=reference_datetime,
-        )
-    except SystemExit as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-
-@app.get("/api/directions/secondary/export-text")
-def directions_secondary_export_text(
-    name: str = "Morinus",
-    source: Optional[str] = None,
-    document_id: Optional[str] = Query(default=None, alias="documentId"),
-    start_age: Optional[float] = Query(default=None, alias="startAge"),
-    end_age: Optional[float] = Query(default=None, alias="endAge"),
-    method: str = Query(default="secondary", description="secondary|minor|tertiary"),
-    direction: str = Query(default="direct", description="direct|converse|both"),
-    reference_datetime: Optional[str] = Query(default=None, alias="referenceDatetime"),
-    stations_only: bool = Query(default=False, alias="stationsOnly"),
-) -> dict:
-    """Save-As-Text export of the secondary/minor/tertiary list — the same
-    window of rows as /api/directions/secondary, formatted by the engine
-    (secdirframe.onSaveAsText:1237 transcription)."""
-    try:
-        return secondary_directions_service.secondary_directions_text(
-            source=source,
-            name=name,
-            document_id=document_id,
-            start_age=start_age,
-            end_age=end_age,
-            method=method,
-            direction=direction,
-            reference_datetime=reference_datetime,
-            stations_only=stations_only,
+            include_temporal=include_temporal,
         )
     except SystemExit as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -1412,6 +1443,8 @@ def directions_circumambulation(
     return_kind: str = Query(default="solar", alias="kind"),
     reference_datetime: Optional[str] = Query(default=None, alias="referenceDatetime"),
     custom_significator_json: Optional[str] = Query(default=None, alias="customSignificator"),
+    promissor_profile: Optional[int] = Query(default=None, alias="promissorProfile"),
+    include_temporal: bool = Query(default=False, alias="includeTemporal"),
 ) -> dict:
     """Circumambulations through the bounds (circumambulationframe.py popup)."""
     try:
@@ -1426,6 +1459,8 @@ def directions_circumambulation(
             return_kind=return_kind,
             reference_datetime=reference_datetime,
             custom_significator=_custom_significator_from_query(custom_significator_json),
+            promissor_profile=promissor_profile,
+            include_temporal=include_temporal,
         )
     except SystemExit as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -1525,13 +1560,14 @@ def directions_secondary_chart(payload: DirectionsSecondaryChartPayload) -> dict
 
 @app.get("/api/inspector")
 def inspector_payload(
-    kind: str = Query(..., description="region kind: planet|fortune|angle|house|sign|secondary_ring|aspect"),
+    kind: str = Query(..., description="region kind: planet|fortune|angle|house|sign|secondary_ring|aspect|drishti"),
     object_id: str = Query(..., alias="objectId", description="planet SE id, angle key, house/sign index, secondary_ring 'family|longitude|label', or aspect 'p1:p2:type'"),
     doc_id: Optional[str] = Query(default=None, alias="docId", description="live session document id — resolves the chart from session truth instead of name+source"),
     name: str = "Morinus",
     source: Optional[str] = None,
     here_now: bool = Query(default=False, alias="hereNow"),
     chart_role: str = Query(default="primary", alias="chartRole"),
+    ring_index: Optional[int] = Query(default=None, alias="ringIndex"),
     supplementary_kind: Optional[str] = Query(default=None, alias="supplementaryKind"),
     comparison_name: Optional[str] = Query(default=None, alias="comparisonName"),
     view_mode: Optional[int] = Query(default=None, alias="viewMode"),
@@ -1553,6 +1589,7 @@ def inspector_payload(
             name=name,
             here_now=here_now,
             chart_role=chart_role,
+            ring_index=ring_index,
             supplementary_kind=supplementary_kind,
             comparison_name=comparison_name,
             when_iso=when,
@@ -1575,18 +1612,20 @@ def inspector_payload(
 
 @app.get("/api/inspector/flag")
 def inspector_flag_payload(
-    kind: str = Query(..., description="region kind: planet|fortune|angle|house|sign|secondary_ring|aspect"),
+    kind: str = Query(..., description="region kind: planet|fortune|angle|house|sign|secondary_ring|aspect|drishti"),
     object_id: str = Query(..., alias="objectId", description="same region object id as /api/inspector"),
     doc_id: Optional[str] = Query(default=None, alias="docId", description="live session document id — resolves the chart from session truth instead of name+source"),
     name: str = "Morinus",
     source: Optional[str] = None,
     here_now: bool = Query(default=False, alias="hereNow"),
     chart_role: str = Query(default="primary", alias="chartRole"),
+    ring_index: Optional[int] = Query(default=None, alias="ringIndex"),
     supplementary_kind: Optional[str] = Query(default=None, alias="supplementaryKind"),
     comparison_name: Optional[str] = Query(default=None, alias="comparisonName"),
     view_mode: Optional[int] = Query(default=None, alias="viewMode"),
     when: Optional[str] = Query(default=None, description="ISO datetime for supplementary; defaults to now"),
     binding: Optional[str] = Query(default=None, description="JSON SupplementaryBinding payload"),
+    defer_signals: bool = Query(default=False, alias="deferSignals", description="defer exact station rows during step-fast"),
 ) -> dict:
     """Compact on-chart hover-flag payload — chartinspector.build_flag_payload
     (chartinspector.py:1148), the second inspector entry point. The wx driver is
@@ -1604,11 +1643,13 @@ def inspector_flag_payload(
             name=name,
             here_now=here_now,
             chart_role=chart_role,
+            ring_index=ring_index,
             supplementary_kind=supplementary_kind,
             comparison_name=comparison_name,
             when_iso=when,
             binding_payload=binding_payload,
             view_mode=view_mode,
+            defer_signals=defer_signals,
         )
         if payload is None:
             raise HTTPException(status_code=404, detail="no flag payload for region")
@@ -1638,6 +1679,8 @@ def inspector_passages(
     name: str = "Morinus",
     source: Optional[str] = None,
     here_now: bool = Query(default=False, alias="hereNow"),
+    chart_role: str = Query(default="primary", alias="chartRole"),
+    ring_index: Optional[int] = Query(default=None, alias="ringIndex"),
     supplementary_kind: Optional[str] = Query(default=None, alias="supplementaryKind"),
     comparison_name: Optional[str] = Query(default=None, alias="comparisonName"),
     view_mode: Optional[int] = Query(default=None, alias="viewMode"),
@@ -1645,10 +1688,10 @@ def inspector_passages(
     binding: Optional[str] = Query(default=None, description="JSON SupplementaryBinding payload"),
     max_results: int = Query(default=4, alias="maxResults"),
 ) -> dict:
-    """Fixed Valens planet/sign definition for the hovered region (Zone B).
-    All text/citation passes through from CorpusDB verbatim — nothing
-    fabricated. `maxResults` is accepted only for compatibility with older
-    web clients."""
+    """Passive corpus-pack content for the hovered region (Zone B).
+    Source text/citation passes through from CorpusDB verbatim; this endpoint
+    does not evaluate an interpretation discipline. `maxResults` remains for
+    compatibility with older web clients."""
     try:
         binding_payload = json.loads(binding) if binding else None
         return inspector_zone_b_service.passages(
@@ -1658,6 +1701,8 @@ def inspector_passages(
             source=source,
             name=name,
             here_now=here_now,
+            chart_role=chart_role,
+            ring_index=ring_index,
             supplementary_kind=supplementary_kind,
             comparison_name=comparison_name,
             when_iso=when,
@@ -1691,6 +1736,10 @@ def inspector_alerts(
     morin._refresh_pack_alerts: lens params in → discipline evaluate →
     Alert list out. Empty list is valid (lens yields no alerts)."""
     try:
+        # Alert evaluation reads the global pack filter and semantic profile.
+        # Restore their persisted daemon-owned state even when this endpoint
+        # is the first corpus request after startup (before menus/catalogs).
+        corpus_packs_service.ensure_restored()
         ctx = json.loads(context) if context else None
         binding_payload = json.loads(binding) if binding else None
         return inspector_zone_b_service.alerts(
@@ -1730,6 +1779,23 @@ class CorpusPackActivePayload(BaseModel):
     discipline: Optional[str] = None
 
 
+class CorpusSemanticProfilePayload(BaseModel):
+    profile_id: str
+
+
+class CorpusSemanticProfileDefinitionPayload(BaseModel):
+    profile_id: str
+    name: Optional[str] = None
+    semantics: dict[str, str] = Field(default_factory=dict)
+    activate: bool = False
+
+
+class CorpusDoctrinePreferencesPayload(BaseModel):
+    # Sparse patch: concrete value sets one global override; null restores
+    # every source theme's own authored default for that preference.
+    preferences: dict[str, Optional[str]] = Field(default_factory=dict)
+
+
 @app.get("/api/corpus/disciplines")
 def corpus_disciplines() -> dict:
     """Discipline + theme catalog for the inspector lens picker — straight off
@@ -1765,21 +1831,77 @@ def corpus_packs_set_active(payload: CorpusPackActivePayload) -> dict:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@app.get("/api/corpus/semantics")
+def corpus_semantic_profiles() -> dict:
+    """List the selectable corpus geometry/orb profiles and active choice."""
+    try:
+        return corpus_packs_service.semantic_profiles()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/corpus/semantics/active")
+def corpus_semantic_profile_set(payload: CorpusSemanticProfilePayload) -> dict:
+    """Select and persist a built-in or validated custom semantic profile."""
+    try:
+        return corpus_packs_service.set_semantic_profile(payload.profile_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.put("/api/corpus/semantics/custom")
+def corpus_semantic_profile_upsert(
+        payload: CorpusSemanticProfileDefinitionPayload) -> dict:
+    """Create/update a partial user semantic profile in daemon-owned state."""
+    try:
+        return corpus_packs_service.upsert_semantic_profile(
+            payload.profile_id,
+            payload.semantics,
+            name=payload.name,
+            activate=payload.activate,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.delete("/api/corpus/semantics/custom/{profile_id}")
+def corpus_semantic_profile_delete(profile_id: str) -> dict:
+    """Delete a custom profile; built-ins are immutable and current-chart is fallback."""
+    try:
+        return corpus_packs_service.delete_semantic_profile(profile_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.patch("/api/corpus/semantics/doctrine")
+def corpus_doctrine_preferences_patch(
+        payload: CorpusDoctrinePreferencesPayload) -> dict:
+    """Atomically update sparse daemon-persisted doctrine preferences."""
+    try:
+        return corpus_packs_service.patch_doctrine_preferences(
+            payload.preferences,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @app.post("/api/corpus/packs/reload")
 def corpus_packs_reload() -> dict:
     """Hot-reload packs from disk. Called by the aries-pack-author skill
-    after dropping a new pack into the community pack root so the user
-    doesn't have to restart Aries. Returns the new pack count so the agent
-    can confirm pickup."""
+    after changing the community pack root. This refreshes daemon evaluation;
+    callers that add/remove menu rows must also refresh the workspace manifest
+    (or restart the shell). Returns live ids and versions so pickup can be
+    confirmed even when an existing pack id was replaced."""
     try:
-        import rule_engine
-        rule_engine.reload_packs()
-        packs = rule_engine.list_packs()
-        return {
-            "ok": True,
-            "pack_count": len(packs),
-            "pack_ids": sorted(packs.keys()),
-        }
+        return corpus_packs_service.reload_packs()
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -2693,6 +2815,37 @@ def chart_astrolabe(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+class AstrolabeViewStatePayload(BaseModel):
+    state: dict
+
+
+@app.get("/api/workspace/document/{doc_id}/astrolabe/view-state")
+def workspace_astrolabe_view_state(doc_id: str) -> dict:
+    """Per-radix Astrolabe rotation and visible-layer state."""
+    try:
+        return workspace_service.astrolabe_view_state_for_document(doc_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/workspace/document/{doc_id}/astrolabe/view-state")
+def workspace_store_astrolabe_view_state(
+    doc_id: str,
+    payload: AstrolabeViewStatePayload,
+) -> dict:
+    try:
+        return workspace_service.store_astrolabe_view_state_for_document(
+            doc_id,
+            payload.state,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @app.get("/api/square-chart")
 def chart_square(name: str = "Morinus", source: Optional[str] = None, documentId: Optional[str] = None) -> dict:
     """Square Chart (medieval square diagram) data for a radix: the 12 house
@@ -2766,13 +2919,18 @@ class NotesScratchPayload(BaseModel):
     documentId: str
 
 
-def _notes_record_context(radix: str, document_id: Optional[str], scratch: bool) -> tuple[str, Optional[str]]:
+def _notes_record_context(
+    radix: str,
+    document_id: Optional[str],
+    scratch: bool,
+) -> tuple[str, Optional[str], Optional[str], bool]:
     if scratch or not document_id:
-        return radix, None
+        return radix, None, document_id, scratch
     context = workspace_service.note_record_context(document_id)
     source_name = str(context.get("sourceName") or radix or "")
     record_id = str(context.get("recordId") or "").strip() or None
-    return source_name, record_id
+    owner_document_id = str(context.get("documentId") or document_id).strip() or None
+    return source_name, record_id, owner_document_id, bool(context.get("scratch"))
 
 
 @app.get("/api/notes")
@@ -2781,12 +2939,14 @@ def notes_get(
     document_id: Optional[str] = Query(default=None, alias="documentId"),
     scratch: bool = False,
 ) -> dict:
-    source_name, record_id = _notes_record_context(radix, document_id, scratch)
+    source_name, record_id, owner_document_id, resolved_scratch = _notes_record_context(
+        radix, document_id, scratch,
+    )
     return read_note_state(
         source_name,
         record_id=record_id,
-        document_id=document_id,
-        scratch=scratch,
+        document_id=owner_document_id,
+        scratch=resolved_scratch,
     )
 
 
@@ -2795,7 +2955,7 @@ def notes_set(payload: NotesPayload) -> dict:
     if not payload.radix:
         raise HTTPException(status_code=400, detail="radix required")
     try:
-        source_name, record_id = _notes_record_context(
+        source_name, record_id, owner_document_id, resolved_scratch = _notes_record_context(
             payload.radix,
             payload.documentId,
             payload.scratch,
@@ -2804,8 +2964,8 @@ def notes_set(payload: NotesPayload) -> dict:
             source_name,
             payload.content,
             record_id=record_id,
-            document_id=payload.documentId,
-            scratch=payload.scratch,
+            document_id=owner_document_id,
+            scratch=resolved_scratch,
         )
     except OSError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -2822,12 +2982,16 @@ def notes_scratch_discard(payload: NotesScratchPayload) -> dict:
 def notes_scratch_commit(payload: NotesScratchPayload) -> dict:
     if not payload.radix or not payload.documentId:
         raise HTTPException(status_code=400, detail="radix and documentId required")
-    source_name, record_id = _notes_record_context(
+    source_name, record_id, owner_document_id, _resolved_scratch = _notes_record_context(
         payload.radix,
         payload.documentId,
         scratch=False,
     )
-    return commit_scratch_note(source_name, payload.documentId, record_id=record_id)
+    return commit_scratch_note(
+        source_name,
+        owner_document_id or payload.documentId,
+        record_id=record_id,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2890,6 +3054,9 @@ class OptionsPatchPayload(BaseModel):
 class SidebarListPreferencesPatchPayload(BaseModel):
     aspectList: Optional[dict] = None
     transitList: Optional[dict] = None
+    synodicList: Optional[dict] = None
+    secondaryProgressions: Optional[dict] = None
+    vimshottari: Optional[dict] = None
 
 
 class ArabicPartSpecPayload(BaseModel):
@@ -2972,6 +3139,8 @@ class StyleDraftSaveAsPayload(BaseModel):
     overrides: dict[str, Any] = Field(default_factory=dict)
     authoringOverrides: dict[str, Any] = Field(default_factory=dict)
     appAuthoringOverrides: dict[str, Any] = Field(default_factory=dict)
+    activate: bool = False
+    promoteWorkingCopy: bool = False
 
 
 class StyleDraftRevertPayload(BaseModel):
@@ -3320,6 +3489,18 @@ def style_lab_theme_sources(response: Response) -> dict:
     """Real Aries theme presets, resolved for isolated Style Lab preview."""
     try:
         result = options_service.get_style_lab_theme_sources()
+        dirty_sources = {
+            str(draft.get("sourceThemeName") or "")
+            for draft in style_draft_service.list_drafts().get("drafts") or []
+            if draft.get("modifiedFromBaseline") is True
+        }
+        result["sources"] = [
+            {
+                **source,
+                "modified": str(source.get("name") or "") in dirty_sources,
+            }
+            for source in result.get("sources") or []
+        ]
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -3434,8 +3615,9 @@ async def style_lab_font_add(
             detail="font upload requires application/octet-stream",
         )
     try:
+        font_data = await _read_limited_request_body(request, MAX_FONT_BYTES)
         result = style_font_store().add(
-            await _read_limited_request_body(request, MAX_FONT_BYTES),
+            font_data,
             original_name=file_name,
             role=role,
             license_note=license_note,
@@ -3471,6 +3653,20 @@ def style_lab_font_file(asset_id: str):
 def style_lab_draft_list(response: Response) -> dict:
     result = style_draft_service.list_drafts()
     response.headers["Cache-Control"] = "no-store"
+    return result
+
+
+@app.get("/api/style-lab/working-draft")
+def style_lab_working_draft(
+    response: Response,
+    source_theme_name: str = Query(alias="sourceThemeName"),
+) -> dict:
+    """Recover the modified working copy for one saved theme."""
+    try:
+        result = style_draft_service.get_draft_for_source(source_theme_name)
+    except ValueError as exc:
+        _raise_style_draft_error(exc)
+    _set_style_draft_etag(response, result)
     return result
 
 
@@ -3641,11 +3837,23 @@ def style_lab_draft_save_as(
                 profile,
                 activate=False,
             ),
+            clear_source=payload.promoteWorkingCopy,
         )
     except ValueError as exc:
         _raise_style_draft_error(exc)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    if payload.activate:
+        activation = options_service.apply_theme_preset(
+            str(result.get("themeSelector") or "")
+        )
+        result["activation"] = activation
+        workspace_service.broadcast_options_changed(
+            activation.get("refreshedDocumentIds"),
+            activation.get("refreshMode"),
+            style_only=True,
+            list_data_changed=False,
+        )
     _set_style_draft_etag(response, result)
     _publish_style_draft("saved-as", result)
     return result
@@ -3788,12 +3996,14 @@ def options_set(payload: OptionsPatchPayload) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    if result.get("refreshMode"):
+    if result.get("refreshMode") or result.get("inspectorDataChanged"):
         workspace_service.broadcast_options_changed(
             result.get("refreshedDocumentIds"),
             result.get("refreshMode"),
             style_only=result.get("refreshMode") == "ui-style",
             list_data_changed=result.get("listDataChanged", True),
+            retained_list_target=result.get("retainedListTarget"),
+            inspector_data_changed=result.get("inspectorDataChanged", False),
         )
     return result
 
@@ -3904,6 +4114,7 @@ def options_cycle_secondary() -> dict:
         result.get("refreshedDocumentIds"),
         result.get("refreshMode"),
         list_data_changed=result.get("listDataChanged", True),
+        retained_list_target=result.get("retainedListTarget"),
     )
     return result
 
@@ -3937,6 +4148,7 @@ def options_toggle_aspects() -> dict:
         result.get("refreshedDocumentIds"),
         result.get("refreshMode"),
         list_data_changed=result.get("listDataChanged", True),
+        retained_list_target=result.get("retainedListTarget"),
     )
     return result
 
@@ -3954,6 +4166,7 @@ def options_toggle_minor_aspects() -> dict:
         result.get("refreshMode"),
         list_data_changed=result.get("listDataChanged", True),
         inspector_data_changed=True,
+        retained_list_target=result.get("retainedListTarget"),
     )
     return result
 
@@ -4004,6 +4217,15 @@ class WorkspaceClosePayload(BaseModel):
 
 class WorkspaceOpenSynastryPayload(BaseModel):
     parentRadixId: str
+    comparisonName: str
+    comparisonSource: Optional[str] = None
+    comparisonRecordIndex: Optional[int] = None
+
+
+class WorkspaceOpenSynastryPairPayload(BaseModel):
+    centerName: str
+    centerSource: Optional[str] = None
+    centerRecordIndex: Optional[int] = None
     comparisonName: str
     comparisonSource: Optional[str] = None
     comparisonRecordIndex: Optional[int] = None
@@ -4156,9 +4378,15 @@ class TransitSearchPayload(BaseModel):
     significatorIds: list[str] = Field(default_factory=list)
     aspects: list[str] = Field(default_factory=list)
     includeSignChanges: bool = False
+    includeTemporal: bool = False
+    includeOrbTemporal: bool = False
     partFilter: str = ""
     progressionMethod: Optional[int] = None
     objectMotionFilters: dict[str, str] = Field(default_factory=dict)
+    promittorMotion: str = ""
+    significatorMotion: str = ""
+    moonPhase: str = ""
+    lunationOrb: float = 3.0
     limit: int = 500
     persistSettings: bool = True
     ownerScope: str = "search"
@@ -4166,6 +4394,8 @@ class TransitSearchPayload(BaseModel):
     cursorDirection: Optional[str] = None
     cursorRowBudget: Optional[int] = None
     cursorAnchorDate: Optional[str] = None
+    cursorRangeFrom: Optional[str] = None
+    cursorRangeTo: Optional[str] = None
 
 
 class TransitSearchContextPayload(BaseModel):
@@ -4183,9 +4413,15 @@ class TransitSearchContextRunPayload(TransitSearchContextPayload):
     significatorIds: list[str] = Field(default_factory=list)
     aspects: list[str] = Field(default_factory=list)
     includeSignChanges: bool = False
+    includeTemporal: bool = False
+    includeOrbTemporal: bool = False
     partFilter: str = ""
     progressionMethod: Optional[int] = None
     objectMotionFilters: dict[str, str] = Field(default_factory=dict)
+    promittorMotion: str = ""
+    significatorMotion: str = ""
+    moonPhase: str = ""
+    lunationOrb: float = 3.0
     limit: int = 500
     persistSettings: bool = True
     ownerScope: str = "search"
@@ -4193,11 +4429,21 @@ class TransitSearchContextRunPayload(TransitSearchContextPayload):
     cursorDirection: Optional[str] = None
     cursorRowBudget: Optional[int] = None
     cursorAnchorDate: Optional[str] = None
+    cursorRangeFrom: Optional[str] = None
+    cursorRangeTo: Optional[str] = None
 
 
 class SearchDefaultRangePayload(BaseModel):
+    documentId: str
     offsetMonths: int
     rangeMonths: int
+    lifetimeYears: int = 100
+
+
+class SearchContextDefaultRangePayload(TransitSearchContextPayload):
+    offsetMonths: int
+    rangeMonths: int
+    lifetimeYears: int = 100
 
 
 class SearchCancelPayload(BaseModel):
@@ -4207,6 +4453,56 @@ class SearchCancelPayload(BaseModel):
 class SearchExportPayload(BaseModel):
     kind: str = "clipboard"
     rows: list[dict] = Field(default_factory=list)
+
+
+class TemporalConcurrenceLanePayload(BaseModel):
+    laneId: str
+    sourceId: str
+    rows: list[dict] = Field(default_factory=list)
+
+
+class TemporalConcurrenceResolvePayload(BaseModel):
+    lanes: list[TemporalConcurrenceLanePayload] = Field(default_factory=list)
+    minimumLanes: int = 2
+
+
+class TemporalMapFormatPayload(BaseModel):
+    jds: list[float] = Field(default_factory=list, max_length=512)
+
+
+class TemporalMapLanePayload(BaseModel):
+    laneId: str
+    sourceId: str
+    spec: dict[str, Any] = Field(default_factory=dict)
+
+
+class TemporalMapOpenPayload(BaseModel):
+    documentId: str
+    lanes: list[TemporalMapLanePayload] = Field(min_length=1, max_length=4)
+    minimumLanes: int = Field(default=2, ge=2, le=4)
+    viewportStartJdUt: Optional[float] = None
+    viewportEndJdUt: Optional[float] = None
+
+
+class TemporalMapTilesPayload(BaseModel):
+    token: str
+    startJdUt: float
+    endJdUt: float
+    binCount: Optional[int] = Field(default=None, ge=1, le=1024)
+    level: Optional[int] = Field(default=None, ge=0, le=6)
+
+
+class TemporalMapGroupsPayload(BaseModel):
+    token: str
+    startJdUt: float
+    endJdUt: float
+    minimumLanes: Optional[int] = Field(default=None, ge=2, le=4)
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=500, ge=1, le=2000)
+
+
+class TemporalMapCancelPayload(BaseModel):
+    token: str
 
 
 @app.get("/api/workspace/manifest")
@@ -4369,6 +4665,116 @@ def surveil_clear_study(payload: SurveilClearStudyPayload) -> dict:
 def surveil_open_source(payload: SurveilOpenSourcePayload) -> dict:
     try:
         return workspace_service.surveil_open_source(payload.sourceRef, payload.sourceName or "")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/temporal-concurrence/resolve")
+def temporal_concurrence_resolve(payload: TemporalConcurrenceResolvePayload) -> dict:
+    """Intersect additive evidence from the four unchanged canonical lists."""
+    from .temporal_correlation import resolve_concurrence
+
+    try:
+        return resolve_concurrence(
+            [lane.model_dump() for lane in payload.lanes],
+            minimum_lanes=payload.minimumLanes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/workspace/document/{doc_id}/temporal-map/context")
+def temporal_map_context(doc_id: str) -> dict:
+    """Macro lifetime axis and authoritative focus for a chart document."""
+    try:
+        return workspace_service.temporal_map_context(doc_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/workspace/document/{doc_id}/temporal-map/format")
+def temporal_map_format(doc_id: str, payload: TemporalMapFormatPayload) -> dict:
+    """Calendar-safe batch labels for arbitrary temporal-map JDs."""
+    try:
+        return workspace_service.format_temporal_map_jds(doc_id, payload.jds)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/temporal-map/open")
+def temporal_map_open(payload: TemporalMapOpenPayload) -> dict:
+    """Open a progressive four-lane lifetime evidence world."""
+    try:
+        return temporal_map_service().open_map(
+            document_id=payload.documentId,
+            lanes=[lane.model_dump() for lane in payload.lanes],
+            minimum_lanes=payload.minimumLanes,
+            viewport_start_jd_ut=payload.viewportStartJdUt,
+            viewport_end_jd_ut=payload.viewportEndJdUt,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/temporal-map/tiles")
+def temporal_map_tiles(payload: TemporalMapTilesPayload) -> dict:
+    """Aggregate known canonical evidence into one bounded JD viewport."""
+    try:
+        return temporal_map_service().tiles(
+            token=payload.token,
+            start_jd_ut=payload.startJdUt,
+            end_jd_ut=payload.endJdUt,
+            bin_count=payload.binCount,
+            level=payload.level,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/temporal-map/groups")
+def temporal_map_groups(payload: TemporalMapGroupsPayload) -> dict:
+    """Page exact same-planet 2–4-lane groups for one JD viewport."""
+    try:
+        return temporal_map_service().groups(
+            token=payload.token,
+            start_jd_ut=payload.startJdUt,
+            end_jd_ut=payload.endJdUt,
+            minimum_lanes=payload.minimumLanes,
+            offset=payload.offset,
+            limit=payload.limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/temporal-map/progress")
+def temporal_map_progress(token: str = Query(...)) -> dict:
+    """Return a compact revision/coverage snapshot without polling rows."""
+    try:
+        return temporal_map_service().progress(token)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/temporal-map/cancel")
+def temporal_map_cancel(payload: TemporalMapCancelPayload) -> dict:
+    """Cancel queued work; the currently executing bounded chunk may finish."""
+    try:
+        return temporal_map_service().cancel(payload.token)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -4577,10 +4983,37 @@ def transit_search_cancel(payload: SearchCancelPayload) -> dict:
 @app.post("/api/search/default-range")
 def search_default_range(payload: SearchDefaultRangePayload) -> dict:
     try:
+        context = workspace_service.search_context(payload.documentId)
         return _transit_search_service_instance().update_default_range(
+            context["chart"],
             payload.offsetMonths,
             payload.rangeMonths,
+            payload.lifetimeYears,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/search/context/default-range")
+def search_context_default_range(payload: SearchContextDefaultRangePayload) -> dict:
+    """Persist Search range defaults for a retained chart-context pane."""
+    try:
+        context = workspace_service.search_context_for_document(
+            payload.documentId,
+            significator_id=payload.significatorId,
+            chart_role=payload.chartRole,
+            custom_points=payload.customPoints,
+        )
+        return _transit_search_service_instance().update_default_range(
+            context["chart"],
+            payload.offsetMonths,
+            payload.rangeMonths,
+            payload.lifetimeYears,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -4701,6 +5134,26 @@ def workspace_open_synastry(payload: WorkspaceOpenSynastryPayload) -> dict:
         return workspace_service.open_synastry(
             payload.parentRadixId,
             payload.comparisonName,
+            comparison_source=payload.comparisonSource,
+            comparison_record_index=payload.comparisonRecordIndex,
+        )
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SystemExit as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/workspace/open-synastry-pair")
+def workspace_open_synastry_pair(payload: WorkspaceOpenSynastryPairPayload) -> dict:
+    """Open two stored charts atomically as one root-level relationship doc."""
+    try:
+        return workspace_service.open_synastry_pair(
+            payload.centerName,
+            payload.comparisonName,
+            center_source=payload.centerSource,
+            center_record_index=payload.centerRecordIndex,
             comparison_source=payload.comparisonSource,
             comparison_record_index=payload.comparisonRecordIndex,
         )
@@ -4954,6 +5407,8 @@ def generic_table_payload(
     documentId: str = Query(...),
     fromYear: Optional[int] = Query(None),
     toYear: Optional[int] = Query(None),
+    focusDatetime: Optional[str] = Query(None),
+    includeTemporal: bool = Query(False),
 ) -> dict:
     """Generic embedded table rows for Packet 05A.
 
@@ -4988,8 +5443,9 @@ def generic_table_payload(
             table_id,
             context["chart"],
             binding=binding,
-            current_datetime=context.get("current_datetime"),
+            current_datetime=focusDatetime or context.get("current_datetime"),
             chart_anchor_datetime=context.get("chart_anchor_datetime"),
+            include_temporal=includeTemporal,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -5040,7 +5496,10 @@ def aspect_list_perfections_payload(
         )
         current_context_key = aspect_list_context_key(context, mode)
         if not contextKey or current_context_key != str(contextKey):
-            raise ValueError("Aspect List context changed; refresh the list")
+            raise HTTPException(
+                status_code=409,
+                detail="Aspect List context changed; refresh the list",
+            )
         result = aspect_list_perfections(
             context,
             mode,
@@ -5048,6 +5507,8 @@ def aspect_list_perfections_payload(
             row_ids=rowIds,
         )
         return result
+    except HTTPException:
+        raise
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -5103,9 +5564,16 @@ def synodic_list_payload(
     fromDate: Optional[str] = Query(None),
     toDate: Optional[str] = Query(None),
     planetIds: Optional[str] = Query(None),
+    ingressPlanetIds: Optional[str] = Query(None),
+    synodicPlanetIds: Optional[str] = Query(None),
+    lunarCycleIds: Optional[str] = Query(None),
     includeStations: bool = Query(True),
     includeCazimis: bool = Query(True),
     includeIngresses: bool = Query(True),
+    includeTemporal: bool = Query(False),
+    cursorDirection: Optional[str] = Query(None),
+    cursorRowBudget: Optional[int] = Query(None, ge=1, le=500),
+    cursorAnchorDate: Optional[str] = Query(None),
 ) -> dict:
     try:
         context = workspace_service.table_context(documentId, requested_table_id="synodic_cycles")
@@ -5116,9 +5584,16 @@ def synodic_list_payload(
             from_date=fromDate,
             to_date=toDate,
             planet_ids=planetIds,
+            ingress_planet_ids=ingressPlanetIds,
+            synodic_planet_ids=synodicPlanetIds,
+            lunar_cycle_ids=lunarCycleIds,
             include_stations=includeStations,
             include_cazimis=includeCazimis,
             include_ingresses=includeIngresses,
+            include_temporal=includeTemporal,
+            cursor_direction=cursorDirection,
+            cursor_row_budget=cursorRowBudget,
+            cursor_anchor_date=cursorAnchorDate,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

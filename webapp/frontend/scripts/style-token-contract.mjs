@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Max Lange
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 
@@ -84,7 +87,8 @@ export function buildStyleTokenInventory(frontendRoot) {
     pushError(errors, paths.contract, 1, "legacy preview consumer files are missing or no longer iterate STYLE_TOKENS");
   }
   const sourceRecords = allSourceRecords.filter(({ path }) => !legacyConsumerPaths.has(resolve(path)));
-  const references = collectReferences(cssSource, paths.css, sourceRecords, root);
+  const legacyReferenceRecords = allSourceRecords.filter(({ path }) => legacyConsumerPaths.has(resolve(path)));
+  const references = collectReferences(cssSource, paths.css, sourceRecords, root, legacyReferenceRecords);
   const consumersByName = groupBy(references, (entry) => entry.name);
   const inlineProviders = collectInlineProviders(sourceRecords, root);
   const inlineProvidersByName = groupBy(inlineProviders, (entry) => entry.name);
@@ -760,7 +764,7 @@ function parseLegacyIdUnion(source) {
   }));
 }
 
-function collectReferences(cssSource, cssPath, sourceRecords, root) {
+function collectReferences(cssSource, cssPath, sourceRecords, root, legacyReferenceRecords = []) {
   const references = [];
   const cleanCss = maskCssComments(cssSource);
   for (const match of cleanCss.matchAll(CSS_VAR_REFERENCE)) {
@@ -775,6 +779,18 @@ function collectReferences(cssSource, cssPath, sourceRecords, root) {
     }
     for (const match of record.source.matchAll(EXACT_TOKEN_LITERAL)) {
       references.push({ name: match[2], path: record.path, line: lineAt(record.source, match.index), relativePath: displayPath(root, record.path) });
+    }
+  }
+  // Legacy editor modules contain every token name as inert metadata, so exact
+  // literals in those files are not consumers. They can still contain genuine
+  // CSS var/Tailwind uses that keep a public token live after other consumers
+  // migrate to a more specific semantic role.
+  for (const record of legacyReferenceRecords) {
+    for (const match of record.source.matchAll(CSS_VAR_REFERENCE)) {
+      references.push({ name: match[1], path: record.path, line: lineAt(record.source, match.index), relativePath: displayPath(root, record.path) });
+    }
+    for (const match of record.source.matchAll(TAILWIND_SHORTHAND)) {
+      references.push({ name: match[1], path: record.path, line: lineAt(record.source, match.index), relativePath: displayPath(root, record.path) });
     }
   }
   return references;

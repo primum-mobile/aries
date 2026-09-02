@@ -73,6 +73,7 @@ export function SidebarSash({
   const synodicCyclesPane = useWorkspaceStore((s) => s.synodicCyclesPane);
   const aspectListPane = useWorkspaceStore((s) => s.aspectListPane);
   const ascensionalTransitsPane = useWorkspaceStore((s) => s.ascensionalTransitsPane);
+  const calendarPane = useWorkspaceStore((s) => s.calendarPane);
   const astrocartControlsPane = useWorkspaceStore((s) => s.astrocartControlsPane);
   const featureCatalogPane = useWorkspaceStore((s) => s.featureCatalogPane);
   const activeRightPane = activeRightPaneModule({
@@ -92,6 +93,7 @@ export function SidebarSash({
     synodicCyclesPane,
     aspectListPane,
     ascensionalTransitsPane,
+    calendarPane,
     astrocartControlsPane,
     activeAstrocartDocumentId,
     featureCatalogPane,
@@ -238,6 +240,7 @@ export function SidebarSash({
         synodicCyclesPane: workspaceState.synodicCyclesPane,
         aspectListPane: workspaceState.aspectListPane,
         ascensionalTransitsPane: workspaceState.ascensionalTransitsPane,
+        calendarPane: workspaceState.calendarPane,
         astrocartControlsPane: workspaceState.astrocartControlsPane,
         activeAstrocartDocumentId,
         featureCatalogPane: workspaceState.featureCatalogPane,

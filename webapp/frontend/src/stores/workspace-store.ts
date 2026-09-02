@@ -1,7 +1,13 @@
+// SPDX-FileCopyrightText: Morinus contributors
+// SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Modified for Aries in 2026 by Max Lange.
+
 import { create } from "zustand";
 
 import type {
   DignityKind,
+  PdDirectionState,
   PlanetId,
   RingLabelSegment,
   SymbolicTimeReadout,
@@ -37,15 +43,18 @@ export type HoverRegion =
       // 2151) — the daemon resolves an outer body against the comparison chart,
       // not the inner one. Absent ⇒ 'primary'.
       chartRole?: "primary" | "outer";
+      /** Zero-based chart index when the body belongs to a multi-wheel. */
+      ringIndex?: number;
     }
   // Vertex is its OWN region kind, not a planet — graphchart draws it via
   // _iter_draw_body_ids with object_id = CHART_OBJECT_VERTEX (graphchart.py:
   // 2879). Registering it as a distinct kind keeps build_flag_payload from
   // falling through to sign 0 (the prior bug: no vertex branch in hitToHover).
-  | { kind: "vertex"; longitude: number; house?: number; chartRole?: "primary" | "outer" }
-  | { kind: "fortune"; longitude: number; chartRole?: "primary" | "outer" }
-  | { kind: "syzygy"; longitude: number; house?: number; label?: string; chartRole?: "primary" | "outer" }
-  | { kind: "angle"; angleId: "asc" | "mc" | "dsc" | "ic"; longitude: number; chartRole?: "primary" | "outer" }
+  | { kind: "vertex"; longitude: number; house?: number; chartRole?: "primary" | "outer"; ringIndex?: number }
+  | { kind: "fortune"; longitude: number; chartRole?: "primary" | "outer"; ringIndex?: number }
+  | { kind: "syzygy"; longitude: number; house?: number; label?: string; chartRole?: "primary" | "outer"; ringIndex?: number }
+  | { kind: "eclipse"; longitude: number; house?: number; label?: string; chartRole?: "primary" | "outer"; ringIndex?: number }
+  | { kind: "angle"; angleId: "asc" | "mc" | "dsc" | "ic"; longitude: number; chartRole?: "primary" | "outer"; ringIndex?: number }
   | { kind: "house"; houseIndex: number; longitude: number }
   | { kind: "sign"; signIndex: number; longitude: number }
   | {
@@ -58,7 +67,22 @@ export type HoverRegion =
       searchObjectId?: string;
       segments?: RingLabelSegment[];
     }
-  | { kind: "aspect"; p1: string; p2: string; aspectType: number; scope?: "primary" | "interchart" };
+  | { kind: "aspect"; p1: string; p2: string; aspectType: number; scope?: "primary" | "interchart" }
+  | { kind: "drishti"; relationId: string; method: "parashari" | "jaimini" }
+  | {
+      kind: "pd_event";
+      eventId: string;
+      eventKind: "body-aspect-to-angle" | "angle-to-body-aspect";
+      component: "direction-ray" | "directed-angle" | "directed-angle-label";
+      partyRole: "promissor" | "significator";
+      sourceRole: "primary" | "outer";
+      track: "inner" | "outer";
+      motion: "fixed" | "moving";
+      exactNow: boolean;
+      longitude: number;
+      nativeCoordinate: number;
+      directionState: PdDirectionState;
+    };
 
 export function hoverRegionKey(region: HoverRegion | null): string | null {
   if (!region) return null;
@@ -66,17 +90,22 @@ export function hoverRegionKey(region: HoverRegion | null): string | null {
   // outer Sun doesn't share a key with the inner Sun (graphchart keys hover by
   // (kind, object_id, chart_role)).
   const role = "chartRole" in region && region.chartRole === "outer" ? ":outer" : "";
+  const ring = "ringIndex" in region && region.ringIndex != null
+    ? `:ring:${region.ringIndex}`
+    : "";
   switch (region.kind) {
     case "planet":
-      return `planet:${region.seId}${role}`;
+      return `planet:${region.seId}${role}${ring}`;
     case "vertex":
-      return `vertex${role}`;
+      return `vertex${role}${ring}`;
     case "fortune":
-      return `fortune${role}`;
+      return `fortune${role}${ring}`;
     case "syzygy":
-      return `syzygy${role}`;
+      return `syzygy${role}${ring}`;
+    case "eclipse":
+      return `eclipse${role}${ring}`;
     case "angle":
-      return `angle:${region.angleId}${role}`;
+      return `angle:${region.angleId}${role}${ring}`;
     case "house":
       return `house:${region.houseIndex}`;
     case "sign":
@@ -85,6 +114,10 @@ export function hoverRegionKey(region: HoverRegion | null): string | null {
       return `secondary_ring:${region.family}:${region.itemId}:${region.searchObjectId ?? ""}:${region.label}${role}`;
     case "aspect":
       return `aspect:${region.scope ?? "primary"}:${region.p1}:${region.p2}:${region.aspectType}`;
+    case "drishti":
+      return `drishti:${region.relationId}`;
+    case "pd_event":
+      return `pd_event:${region.eventId}:${region.component}:${region.partyRole}:${region.sourceRole}:${region.track}`;
   }
 }
 
@@ -129,6 +162,7 @@ export type DirectionsPaneState = {
 
 export type TimeLordTableId =
   | "firdaria"
+  | "vimshottari"
   | "decennials"
   | "triplicity_directions"
   | "zodiacal_releasing"
@@ -140,6 +174,9 @@ export type TimeLordPaneState = {
   tableId: TimeLordTableId;
   followPolicy?: ListFollowPolicy;
 };
+
+export type VimshottariPreferences =
+  SidebarListPreferencesPayload["vimshottari"];
 
 // Zodiacal Releasing right pane — the webapp surface for the wx in-frame ZR
 // table (zodiacalreleasingwnd.ZRWnd hosted by morin._workspace_table_zodiacal_releasing,
@@ -204,6 +241,18 @@ export type SynodicCyclesPaneState = {
   openSeq?: number;
 };
 
+export type SynodicListPreferences = {
+  ingressPlanetIds: number[];
+  synodicPlanetIds: number[];
+  lunarCycleIds: string[];
+  ingressDrawerOpen: boolean;
+  synodicDrawerOpen: boolean;
+  lunarDrawerOpen: boolean;
+};
+
+export type SecondaryProgressionsPreferences =
+  SidebarListPreferencesPayload["secondaryProgressions"];
+
 export type AspectListMode =
   | "primary"
   | "outer"
@@ -235,7 +284,7 @@ export type AspectListPreferences = {
 };
 
 const DEFAULT_SIDEBAR_LIST_PREFERENCES: SidebarListPreferencesPayload = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   aspectList: {
     mode: null,
     maxOrb: 10,
@@ -251,6 +300,25 @@ const DEFAULT_SIDEBAR_LIST_PREFERENCES: SidebarListPreferencesPayload = {
     selectedPromittorId: null,
     promittorDrawerOpen: false,
     direction: "direct",
+  },
+  synodicList: {
+    ingressPlanetIds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15],
+    synodicPlanetIds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15],
+    lunarCycleIds: ["draconic", "anomalistic"],
+    ingressDrawerOpen: false,
+    synodicDrawerOpen: false,
+    lunarDrawerOpen: false,
+  },
+  secondaryProgressions: {
+    planetIds: null,
+    aspectIds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+    filterDrawerOpen: false,
+  },
+  vimshottari: {
+    anchor: "moon",
+    startStar: "janma",
+    yearDays: 365.25,
+    ayanamsha: "follow_chart",
   },
 };
 
@@ -275,6 +343,30 @@ function mergeSidebarListPreferencePatches(
           transitList: {
             ...current?.transitList,
             ...patch.transitList,
+          },
+        }
+      : {}),
+    ...(current?.synodicList || patch.synodicList
+      ? {
+          synodicList: {
+            ...current?.synodicList,
+            ...patch.synodicList,
+          },
+        }
+      : {}),
+    ...(current?.secondaryProgressions || patch.secondaryProgressions
+      ? {
+          secondaryProgressions: {
+            ...current?.secondaryProgressions,
+            ...patch.secondaryProgressions,
+          },
+        }
+      : {}),
+    ...(current?.vimshottari || patch.vimshottari
+      ? {
+          vimshottari: {
+            ...current?.vimshottari,
+            ...patch.vimshottari,
           },
         }
       : {}),
@@ -357,6 +449,24 @@ export type AstrocartControlsPaneState = {
   documentId: string;
 };
 
+export type CalendarPaneState = {
+  documentId: string;
+};
+
+export type CalendarView = "month" | "week" | "day";
+
+export type CalendarEventState = {
+  id: string | number;
+  title: string;
+  start: string;
+  end: string;
+  allDay?: boolean;
+  color?: string;
+  backgroundColor?: string;
+  description?: string;
+  location?: string;
+};
+
 export type FeatureCatalogPaneState = {
   content: "features" | "help" | "license" | "notices" | "whats-new";
   openSeq: number;
@@ -378,6 +488,7 @@ export type RightInspectorPaneState =
   | { kind: "synodic-cycles"; state: SynodicCyclesPaneState }
   | { kind: "aspect-list"; state: AspectListPaneState }
   | { kind: "ascensional-transits"; state: AscensionalTransitsPaneState }
+  | { kind: "calendar"; state: CalendarPaneState }
   | { kind: "astrocart-controls"; state: AstrocartControlsPaneState }
   | { kind: "feature-catalog"; state: FeatureCatalogPaneState };
 
@@ -397,6 +508,7 @@ type RightPaneKey =
   | "synodicCyclesPane"
   | "aspectListPane"
   | "ascensionalTransitsPane"
+  | "calendarPane"
   | "astrocartControlsPane"
   | "featureCatalogPane";
 
@@ -414,6 +526,7 @@ const RIGHT_PANE_KEYS = [
   "synodicCyclesPane",
   "aspectListPane",
   "ascensionalTransitsPane",
+  "calendarPane",
   "astrocartControlsPane",
   "featureCatalogPane",
 ] as const satisfies readonly RightPaneKey[];
@@ -440,6 +553,7 @@ export type SupplementaryKind =
   | "minor-progression"
   | "solar-arc"
   | "solar-average"
+  | "harmonic"
   | "profections"
   | "synastry";
 
@@ -454,6 +568,7 @@ export const SUPPLEMENTARY_KIND_LABELS: Record<SupplementaryKind, string> = {
   "minor-progression": "Minor Progression",
   "solar-arc": "Solar Arc",
   "solar-average": "Average Returns",
+  "harmonic": "Harmonic chart",
   "profections": "Profections",
   "synastry": "Synastry",
 };
@@ -571,6 +686,7 @@ type WorkspaceState = {
   sidebarListPreferenceDefaults: SidebarListPreferencesPayload | null;
   sidebarListPreferencesHydrated: boolean;
   directionsPane: DirectionsPaneState | null;
+  secondaryProgressionsPreferencesByDocument: Record<string, SecondaryProgressionsPreferences>;
   timeLordPane: TimeLordPaneState | null;
   zodiacalReleasingPane: ZodiacalReleasingPaneState | null;
   firdariaPane: FirdariaPaneState | null;
@@ -579,9 +695,14 @@ type WorkspaceState = {
   eclipsesPane: EclipsesPaneState | null;
   lunarMansionsPane: LunarMansionsPaneState | null;
   synodicCyclesPane: SynodicCyclesPaneState | null;
+  synodicListPreferencesByDocument: Record<string, SynodicListPreferences>;
   aspectListPane: AspectListPaneState | null;
   aspectListPreferencesByDocument: Record<string, AspectListPreferences>;
   ascensionalTransitsPane: AscensionalTransitsPaneState | null;
+  calendarPane: CalendarPaneState | null;
+  calendarViewDate: string | null;
+  calendarView: CalendarView;
+  calendarEvents: CalendarEventState[] | null;
   astrocartControlsPane: AstrocartControlsPaneState | null;
   featureCatalogPane: FeatureCatalogPaneState | null;
   timedChartListRowLinkDocumentIds: Record<string, true>;
@@ -615,10 +736,18 @@ type WorkspaceState = {
   // The filter ITSELF lives in the daemon (rule_engine); this is a cache nonce.
   packsVersion: number;
 
+  // Corpus semantic-profile version. This is separate from packsVersion:
+  // changing geometry/orb doctrine must re-evaluate visible alerts, but it
+  // does not change which disciplines or themes the active packs provide.
+  semanticProfileVersion: number;
+
   // Runtime state for timed-list row actions. The saved QuickCharts option only
   // seeds this default; the chart context-menu "Show Radix" item can flip it
   // during a work session without mutating chart/session truth.
   timedChartShowRadix: boolean;
+
+  // Daemon-owned Options default for primary Aspect List perfection links.
+  aspectListPerfectionLinkMode: "transits" | "secondary";
 
   // Synastry-partner picker bridge. The picker is a standalone Tauri window,
   // but the radix-wheel context menu still needs to trigger it without
@@ -652,8 +781,15 @@ type WorkspaceState = {
   ) => void;
   openDirectionsPane: (state: DirectionsPaneState) => void;
   closeDirectionsPane: () => void;
+  setSecondaryProgressionsPreferences: (
+    documentId: string,
+    patch: Partial<SecondaryProgressionsPreferences>,
+  ) => void;
   openTimeLordPane: (state: TimeLordPaneState) => void;
   closeTimeLordPane: () => void;
+  setVimshottariPreferences: (
+    patch: Partial<VimshottariPreferences>,
+  ) => void;
   openZodiacalReleasingPane: (state: ZodiacalReleasingPaneState) => void;
   closeZodiacalReleasingPane: () => void;
   openFirdariaPane: (state: FirdariaPaneState) => void;
@@ -668,6 +804,10 @@ type WorkspaceState = {
   closeLunarMansionsPane: () => void;
   openSynodicCyclesPane: (state: SynodicCyclesPaneState) => void;
   closeSynodicCyclesPane: () => void;
+  setSynodicListPreferences: (
+    documentId: string,
+    patch: Partial<SynodicListPreferences>,
+  ) => void;
   openAspectListPane: (state: AspectListPaneState) => void;
   closeAspectListPane: () => void;
   setAspectListPreferences: (
@@ -676,6 +816,11 @@ type WorkspaceState = {
   ) => void;
   openAscensionalTransitsPane: (state: AscensionalTransitsPaneState) => void;
   closeAscensionalTransitsPane: () => void;
+  openCalendarPane: (state: CalendarPaneState) => void;
+  closeCalendarPane: () => void;
+  setCalendarViewDate: (date: string) => void;
+  setCalendarView: (view: CalendarView) => void;
+  setCalendarEvents: (events: CalendarEventState[]) => void;
   openAstrocartControlsPane: (state: AstrocartControlsPaneState) => void;
   closeAstrocartControlsPane: () => void;
   openFeatureCatalogPane: () => void;
@@ -689,11 +834,11 @@ type WorkspaceState = {
     result: WorkspaceOpenResult,
     options?: { preserveRightPane?: boolean },
   ) => void;
-  /** Apply a timed-chart open (list row link / row context menu). The open is a
-   * CHART command only: the current right pane is left untouched (never rebuilt,
-   * never refocused), and the opened document id is marked so cursor-aware lists
-   * do not adopt its datetime as their focus. Stepping the opened chart later
-   * clears the mark so source-live follow resumes from its meaningful cursor. */
+  /** Apply a timed-chart open (list row link / row context menu). The retained
+   * source pane stays open for both successful and unsuccessful opens. The
+   * opened document id is marked so cursor-aware lists do not adopt its datetime as their focus.
+   * Stepping the opened chart later clears the mark so source-live follow
+   * resumes from its meaningful cursor. */
   applyTimedChartOpenResult: (result: WorkspaceOpenResult) => void;
 
   /** Toggle the exclusive-aspect click target for a body key. Same body → clear
@@ -716,10 +861,15 @@ type WorkspaceState = {
 
   /** Set the chart-context "Show Radix" comparison lens for timed opens. */
   setTimedChartShowRadix: (value: boolean) => void;
+  setAspectListPerfectionLinkMode: (value: "transits" | "secondary") => void;
 
   /** Signal that the daemon-side active-pack filter changed (after a toggle)
    * so pack-alert consumers refetch. */
   bumpPacksVersion: () => void;
+
+  /** Signal that corpus geometry/orb doctrine changed without invalidating
+   * the active-pack-gated discipline/theme catalog. */
+  bumpSemanticProfileVersion: () => void;
 
   /** Register (or clear) the synastry-partner picker opener. home-client sets
    * this to its setPicker-based opener on mount. */
@@ -754,6 +904,7 @@ const EMPTY_RIGHT_PANES = {
   synodicCyclesPane: null,
   aspectListPane: null,
   ascensionalTransitsPane: null,
+  calendarPane: null,
   astrocartControlsPane: null,
   featureCatalogPane: null,
 } satisfies Pick<WorkspaceState, RightPaneKey>;
@@ -868,6 +1019,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   sidebarListPreferenceDefaults: null,
   sidebarListPreferencesHydrated: false,
   directionsPane: null,
+  secondaryProgressionsPreferencesByDocument: {},
   timeLordPane: null,
   zodiacalReleasingPane: null,
   firdariaPane: null,
@@ -876,9 +1028,14 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   eclipsesPane: null,
   lunarMansionsPane: null,
   synodicCyclesPane: null,
+  synodicListPreferencesByDocument: {},
   aspectListPane: null,
   aspectListPreferencesByDocument: {},
   ascensionalTransitsPane: null,
+  calendarPane: null,
+  calendarViewDate: null,
+  calendarView: "month",
+  calendarEvents: null,
   astrocartControlsPane: null,
   featureCatalogPane: null,
   timedChartListRowLinkDocumentIds: {},
@@ -887,7 +1044,9 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   minorOnlyAspects: false,
   inspectorLens: null,
   packsVersion: 0,
+  semanticProfileVersion: 0,
   timedChartShowRadix: false,
+  aspectListPerfectionLinkMode: "transits",
   synastryPartnerRequester: null,
   editChartRequester: null,
 
@@ -961,6 +1120,31 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       }, true),
     ),
   closeDirectionsPane: () => set({ directionsPane: null }),
+  setSecondaryProgressionsPreferences: (documentId, patch) => {
+    set((current) => {
+      const defaults =
+        current.sidebarListPreferenceDefaults ?? DEFAULT_SIDEBAR_LIST_PREFERENCES;
+      const next = {
+        ...(current.secondaryProgressionsPreferencesByDocument[documentId] ??
+          defaults.secondaryProgressions),
+        ...patch,
+      };
+      return {
+        secondaryProgressionsPreferencesByDocument: {
+          ...current.secondaryProgressionsPreferencesByDocument,
+          [documentId]: next,
+        },
+        sidebarListPreferenceDefaults: {
+          ...defaults,
+          secondaryProgressions: {
+            ...defaults.secondaryProgressions,
+            ...patch,
+          },
+        },
+      };
+    });
+    persistSidebarListPreferencePatch({ secondaryProgressions: patch });
+  },
   openTimeLordPane: (state) =>
     set((current) =>
       activateRetainedRightPane(current, "timeLordPane", {
@@ -969,6 +1153,22 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       }),
     ),
   closeTimeLordPane: () => set({ timeLordPane: null }),
+  setVimshottariPreferences: (patch) => {
+    set((current) => {
+      const defaults =
+        current.sidebarListPreferenceDefaults ?? DEFAULT_SIDEBAR_LIST_PREFERENCES;
+      return {
+        sidebarListPreferenceDefaults: {
+          ...defaults,
+          vimshottari: {
+            ...defaults.vimshottari,
+            ...patch,
+          },
+        },
+      };
+    });
+    persistSidebarListPreferencePatch({ vimshottari: patch });
+  },
   openZodiacalReleasingPane: (state) =>
     set((current) =>
       activateRetainedRightPane(current, "zodiacalReleasingPane", {
@@ -1023,6 +1223,31 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       }, true),
     ),
   closeSynodicCyclesPane: () => set({ synodicCyclesPane: null }),
+  setSynodicListPreferences: (documentId, patch) => {
+    set((current) => {
+      const defaults =
+        current.sidebarListPreferenceDefaults ?? DEFAULT_SIDEBAR_LIST_PREFERENCES;
+      const next = {
+        ...(current.synodicListPreferencesByDocument[documentId] ??
+          defaults.synodicList),
+        ...patch,
+      };
+      return {
+        synodicListPreferencesByDocument: {
+          ...current.synodicListPreferencesByDocument,
+          [documentId]: next,
+        },
+        sidebarListPreferenceDefaults: {
+          ...defaults,
+          synodicList: {
+            ...defaults.synodicList,
+            ...patch,
+          },
+        },
+      };
+    });
+    persistSidebarListPreferencePatch({ synodicList: patch });
+  },
   openAspectListPane: (state) =>
     set((current) =>
       activateRetainedRightPane(current, "aspectListPane", {
@@ -1065,6 +1290,14 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       }),
     ),
   closeAscensionalTransitsPane: () => set({ ascensionalTransitsPane: null }),
+  openCalendarPane: (state) =>
+    set((current) => activateRetainedRightPane(current, "calendarPane", state)),
+  closeCalendarPane: () => set({ calendarPane: null }),
+  setCalendarViewDate: (date) =>
+    set((current) => (current.calendarViewDate === date ? current : { calendarViewDate: date })),
+  setCalendarView: (view) =>
+    set((current) => (current.calendarView === view ? current : { calendarView: view })),
+  setCalendarEvents: (events) => set({ calendarEvents: events }),
   openAstrocartControlsPane: (state) =>
     set(openExclusiveRightPane("astrocartControlsPane", state)),
   closeAstrocartControlsPane: () => set({ astrocartControlsPane: null }),
@@ -1146,7 +1379,11 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     set({ selectedAspectBody: null, hideAllAspects: false, minorOnlyAspects: false }),
   setInspectorLens: (lens) => set({ inspectorLens: lens }),
   setTimedChartShowRadix: (value) => set({ timedChartShowRadix: value }),
+  setAspectListPerfectionLinkMode: (value) => set({ aspectListPerfectionLinkMode: value }),
   bumpPacksVersion: () => set((state) => ({ packsVersion: state.packsVersion + 1 })),
+  bumpSemanticProfileVersion: () => set((state) => ({
+    semanticProfileVersion: state.semanticProfileVersion + 1,
+  })),
   setSynastryPartnerRequester: (fn) => set({ synastryPartnerRequester: fn }),
   requestSynastryPartner: (radix) => {
     const fn = useWorkspaceStore.getState().synastryPartnerRequester;

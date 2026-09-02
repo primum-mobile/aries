@@ -19,6 +19,12 @@ corpus/*
 !corpus/parsed/
 corpus/parsed/*
 !corpus/parsed/valens.json
+!corpus/valens/
+corpus/valens/*
+!corpus/valens/content/
+corpus/valens/content/*
+!corpus/valens/content/inspector.toml
+!corpus/valens/manifest.toml
 Res/notes/
 node_modules/
 .next/

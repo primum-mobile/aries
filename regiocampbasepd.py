@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 import math
 import astrology
 import primdirs
@@ -473,7 +478,19 @@ class RegioCampBasePD(primdirs.PrimDirs):
 						if self.abort.abort:
 							return
 
-						self.toPlanet(False, p+offs, primdirs.PrimDir.NONE, lonprom, latprom, raprom, declprom, psidx, s, chart.Chart.CONJUNCTIO)
+						self.toPlanet(
+							False,
+							p+offs,
+							primdirs.PrimDir.NONE,
+							lonprom,
+							latprom,
+							raprom,
+							declprom,
+							psidx,
+							s,
+							chart.Chart.CONJUNCTIO,
+							row_promasp_offset=aspect,
+						)
 
 
 	def calcZodPromAntisciaAspsInterPlanetary2Customer2(self):
@@ -881,7 +898,14 @@ class RegioCampBasePD(primdirs.PrimDirs):
 							latprom = math.degrees(math.asin(val))
 						else:
 							latprom = pllat
-					self.toLoF(p+offs, primdirs.PrimDir.NONE, lonprom, latprom, psidx)
+					self.toLoF(
+						p+offs,
+						primdirs.PrimDir.NONE,
+						lonprom,
+						latprom,
+						psidx,
+						row_promasp_offset=aspect,
+					)
 
 
 	def calcZodAntiscia2Syzygy(self):
@@ -979,7 +1003,14 @@ class RegioCampBasePD(primdirs.PrimDirs):
 							latprom = math.degrees(math.asin(val))
 						else:
 							latprom = pllat
-					self.toSyzygy(p+offs, primdirs.PrimDir.NONE, lonprom, latprom, psidx)
+					self.toSyzygy(
+						p+offs,
+						primdirs.PrimDir.NONE,
+						lonprom,
+						latprom,
+						psidx,
+						row_promasp_offset=aspect,
+					)
 
 
 	def calcZodTerms(self):
@@ -2070,7 +2101,17 @@ class RegioCampBasePD(primdirs.PrimDirs):
 				self.toPlanet(mundane, idprom, primdirs.PrimDir.NONE, lonprom, latprom, raprom, declprom, promasp, s, asidx)
 
 
-	def toLoF(self, idprom, idprom2, lonprom, latprom, promasp, aspect = 0.0, calcsecmotion = False):
+	def toLoF(
+		self,
+		idprom,
+		idprom2,
+		lonprom,
+		latprom,
+		promasp,
+		aspect=0.0,
+		calcsecmotion=False,
+		row_promasp_offset=None,
+	):
 		lonsig = self.chart.fortune.fortune[fortune.Fortune.LON]
 		pltmp = self.chart.planets.planets[0]
 
@@ -2090,7 +2131,18 @@ class RegioCampBasePD(primdirs.PrimDirs):
 					break
 
 		if ok:
-			self.create(False, idprom, idprom2, primdirs.PrimDir.LOF, promasp, chart.Chart.CONJUNCTIO, arc)
+			self.create(
+				False,
+				idprom,
+				idprom2,
+				primdirs.PrimDir.LOF,
+				promasp,
+				chart.Chart.CONJUNCTIO,
+				arc,
+				promasp_offset=(
+					aspect if row_promasp_offset is None else row_promasp_offset
+				),
+			)
 
 
 	def toCustomer2(self, mundane, idprom, idprom2, lonprom, latprom, raprom, declprom, promasp, aspect = 0.0, calcsecmotion = False):
@@ -2130,10 +2182,29 @@ class RegioCampBasePD(primdirs.PrimDirs):
 					break
 
 		if ok:
-			self.create(mundane, idprom, idprom2, primdirs.PrimDir.CUSTOMERPD, promasp, chart.Chart.CONJUNCTIO, arc)
+			self.create(
+				mundane,
+				idprom,
+				idprom2,
+				primdirs.PrimDir.CUSTOMERPD,
+				promasp,
+				chart.Chart.CONJUNCTIO,
+				arc,
+				promasp_offset=aspect,
+			)
 
 
-	def toSyzygy(self, idprom, idprom2, lonprom, latprom, promasp, aspect = 0.0, calcsecmotion = False):
+	def toSyzygy(
+		self,
+		idprom,
+		idprom2,
+		lonprom,
+		latprom,
+		promasp,
+		aspect=0.0,
+		calcsecmotion=False,
+		row_promasp_offset=None,
+	):
 		lonsig = self.chart.syzygy.speculum[syzygy.Syzygy.LON]
 		pltmp = self.chart.planets.planets[0]
 
@@ -2153,7 +2224,18 @@ class RegioCampBasePD(primdirs.PrimDirs):
 					break
 
 		if ok:
-			self.create(False, idprom, idprom2, primdirs.PrimDir.SYZ, promasp, chart.Chart.CONJUNCTIO, arc)
+			self.create(
+				False,
+				idprom,
+				idprom2,
+				primdirs.PrimDir.SYZ,
+				promasp,
+				chart.Chart.CONJUNCTIO,
+				arc,
+				promasp_offset=(
+					aspect if row_promasp_offset is None else row_promasp_offset
+				),
+			)
 
 
 	def toParallels(self, idprom, lonprom, latprom):

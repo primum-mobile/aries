@@ -26,6 +26,7 @@ import {
 import {
   registerGraphicEphemerisNavigator,
   type GraphicEphemerisNavigationKey,
+  type GraphicEphemerisStepKey,
 } from "@/lib/chart/graphic-ephemeris-navigation.mjs";
 import { morinusTextFontFromTokens } from "@/lib/chart/chart-fonts";
 import { awaitFonts } from "@/lib/chart/draw-chart";
@@ -66,7 +67,8 @@ import { useT } from "@/lib/i18n/i18n";
 // (context-menu model, stepping, per-radix state).
 // ---------------------------------------------------------------------------
 
-type DisplayMode = "longitude" | "declination";
+export type GraphicEphemerisDisplayMode = "longitude" | "declination";
+type DisplayMode = GraphicEphemerisDisplayMode;
 
 const SIGN_NUM = 12;
 const DECLINATION_LIMIT = 30.0; // GraphEphemWnd.DECLINATION_LIMIT
@@ -78,32 +80,10 @@ const ephemerisBaseCache = new Map<string, EphemerisPayload>();
 const ephemerisStationCache = new Map<string, EphemerisStationsPayload>();
 const EMPTY_EPHEMERIS_PROFILE_OVERRIDES: Readonly<Record<string, string>> = Object.freeze({});
 
-function useEphemerisSemanticOptionsSeq(): number {
-  const lastOptionsChange = useDaemonWorkspaceStore((state) => state.lastOptionsChange);
-  const [seq, setSeq] = React.useState(() =>
-    lastOptionsChange?.styleOnly || lastOptionsChange?.listDataChanged === false
-      ? 0
-      : (lastOptionsChange?.seq ?? 0),
+function useEphemerisDataKey(): string {
+  return useDaemonWorkspaceStore(
+    (state) => state.lastOptionsChange?.ephemerisDataKey ?? "ephemeris-startup",
   );
-
-  React.useEffect(() => {
-    if (
-      !lastOptionsChange ||
-      lastOptionsChange.styleOnly ||
-      lastOptionsChange.listDataChanged === false
-    ) {
-      return;
-    }
-    let cancelled = false;
-    queueMicrotask(() => {
-      if (!cancelled) setSeq(lastOptionsChange.seq);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [lastOptionsChange]);
-
-  return seq;
 }
 
 function positive(value: number, fallback: number): number {
@@ -114,8 +94,8 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function ephemerisCacheKey(optionsSeq: number, year: number, month: number): string {
-  return `${optionsSeq}:${year}:${month}`;
+function ephemerisCacheKey(dataKey: string, year: number, month: number): string {
+  return `${dataKey}:${year}:${month}`;
 }
 
 function rememberBasePayload(key: string, payload: EphemerisPayload): void {
@@ -136,6 +116,26 @@ function rememberStations(key: string, payload: EphemerisStationsPayload): void 
     const oldest = ephemerisStationCache.keys().next().value;
     if (oldest) ephemerisStationCache.delete(oldest);
   }
+}
+
+function markerPayloadFromFrame(payload: EphemerisPayload): EphemerisStationsPayload {
+  return {
+    year: payload.year,
+    startMonth: payload.startMonth,
+    stations: payload.stations,
+    signEvents: payload.signEvents ?? [],
+  };
+}
+
+function frameWithMarkers(
+  payload: EphemerisPayload,
+  markers: EphemerisStationsPayload,
+): EphemerisPayload {
+  return {
+    ...payload,
+    stations: markers.stations,
+    signEvents: markers.signEvents ?? [],
+  };
 }
 
 type Geometry = {
@@ -281,7 +281,7 @@ type HoverState = { x: number; y: number; info: HoverInfo } | null;
 type EphemerisAnchor = { year: number; month: number };
 function graphicEphemerisNavigationKey(
   key: string,
-): GraphicEphemerisNavigationKey | null {
+): GraphicEphemerisStepKey | null {
   if (key === "ArrowLeft") return "left";
   if (key === "ArrowRight") return "right";
   if (key === "ArrowUp") return "up";
@@ -335,6 +335,7 @@ function render(
   visible: Record<number, boolean>,
   showGrid: boolean,
   showEventGlyphs: boolean,
+  outOfBoundsMarkerLabel: string,
   style: EphemerisRenderStyle,
   cssW: number,
   cssH: number,
@@ -610,15 +611,44 @@ function render(
     });
   }
 
+  // One red OOB label marks the furthest point of every daemon-resolved
+  // excursion. The coloured curve already supplies the planet identity.
+  // Paint last so the state marker stays legible.
+  if (mode === "declination") {
+    for (const marker of payload.outOfBounds ?? []) {
+      if (!visible[marker.planet]) continue;
+      const x = plotX(geo, marker.dayOffset, totalDays);
+      const y = mapY(geo, mode, marker.value);
+      const north = marker.value >= 0;
+      const labelGap = Math.max(markers.eventCodeOffsetYMin, geo.spaceSize);
+      draw.text(
+        [x, y + (north ? -labelGap : labelGap)],
+        outOfBoundsMarkerLabel,
+        {
+          font: style.typography.fontUi,
+          size: eventGlyphSize(geo, style),
+          fill: colors.outOfBounds,
+          align: "center",
+          baseline: north ? "bottom" : "top",
+        },
+      );
+    }
+  }
+
   return { geo, snapTargets };
 }
 
 export function GraphEphemerisView({
   documentId,
+  registerDisplayModeToggle,
+  onDisplayModeChange,
 }: {
   documentId: string;
+  registerDisplayModeToggle?: (toggle: () => void) => () => void;
+  onDisplayModeChange?: (mode: GraphicEphemerisDisplayMode) => void;
 }) {
   const t = useT();
+  const outOfBoundsMarkerLabel = t("ephem.outOfBoundsMarker");
   const wrapRef = React.useRef<HTMLDivElement>(null);
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const [fontsReadyFor, setFontsReadyFor] = React.useState<string | null>(null);
@@ -631,9 +661,10 @@ export function GraphEphemerisView({
   // never fetch the wrong year first.
   const [anchor, setAnchor] = React.useState<EphemerisAnchor | null>(null);
   const anchorRef = React.useRef<EphemerisAnchor | null>(null);
+  const initialAnchorRef = React.useRef<EphemerisAnchor | null>(null);
   const requestSeqRef = React.useRef(0);
   const heldNavigationKeysRef = React.useRef(
-    new Set<GraphicEphemerisNavigationKey>(),
+    new Set<GraphicEphemerisStepKey>(),
   );
   const pendingAnchorPersistenceRef = React.useRef<EphemerisAnchor | null>(null);
   const deferredNavigationTailRef = React.useRef<(() => void) | null>(null);
@@ -641,7 +672,7 @@ export function GraphEphemerisView({
     (key: GraphicEphemerisNavigationKey) => void
   >(() => {});
   const navigationReleaseRef = React.useRef<
-    (key: GraphicEphemerisNavigationKey | null) => void
+    (key: GraphicEphemerisStepKey | null) => void
   >(() => {});
   const navigationCancelRef = React.useRef<() => void>(() => {});
   const [mode, setMode] = React.useState<DisplayMode>("longitude");
@@ -649,11 +680,12 @@ export function GraphEphemerisView({
   const [showGrid, setShowGrid] = React.useState(true);
   const [showEventGlyphs, setShowEventGlyphs] = React.useState(false);
   const [visible, setVisible] = React.useState<Record<number, boolean>>({});
+  const requiresEventMarkers = showEventGlyphs && mode === "longitude";
 
   const [payload, setPayload] = React.useState<EphemerisPayload | null>(null);
   const theme = useThemeStore((s) => s.theme);
   const styleRevision = useStyleRevision();
-  const optionsSeq = useEphemerisSemanticOptionsSeq();
+  const ephemerisDataKey = useEphemerisDataKey();
   const chartTextFont = morinusTextFontFromTokens(theme?.appTokens);
   const chartSymbolFont =
     theme?.appTokens?.["--aries-font-symbols"]?.trim() || '"AriesMorinus"';
@@ -661,13 +693,19 @@ export function GraphEphemerisView({
   const fontsReady = fontsReadyFor === chartFontKey;
   const chartProfileOverrides =
     theme?.profileOverrides.chartPalette ?? EMPTY_EPHEMERIS_PROFILE_OVERRIDES;
+  const ephemerisPaletteOverrides = React.useMemo(() => {
+    const outOfBounds = theme?.appTokens?.["--aries-destructive"]?.trim();
+    return outOfBounds
+      ? { ...chartProfileOverrides, "--aries-destructive": outOfBounds }
+      : chartProfileOverrides;
+  }, [chartProfileOverrides, theme?.appTokens]);
   const profilePlanetColors = theme?.profileOverrides.chartData.planets;
   const effectivePalette = React.useMemo(
     () => resolveEphemerisRenderPalette(
       payload?.colors ?? DEFAULT_EPHEMERIS_RENDER_PALETTE,
-      chartProfileOverrides,
+      ephemerisPaletteOverrides,
     ),
-    [chartProfileOverrides, payload?.colors],
+    [ephemerisPaletteOverrides, payload?.colors],
   );
   const effectivePayload = React.useMemo<EphemerisPayload | null>(() => {
     if (!payload) return null;
@@ -724,7 +762,11 @@ export function GraphEphemerisView({
   const applyPayload = React.useCallback(
     (nextPayload: EphemerisPayload) => {
       clearInteraction();
-      setPayload({ ...nextPayload, signEvents: nextPayload.signEvents ?? [] });
+      setPayload({
+        ...nextPayload,
+        outOfBounds: nextPayload.outOfBounds ?? [],
+        signEvents: nextPayload.signEvents ?? [],
+      });
       setVisible((current) => {
         const next: Record<number, boolean> = {};
         const availableIds = new Set(nextPayload.planets.map((planet) => String(planet.id)));
@@ -739,8 +781,9 @@ export function GraphEphemerisView({
         }
         return changed ? next : current;
       });
+      onDisplayModeChange?.(modeRef.current);
     },
-    [clearInteraction],
+    [clearInteraction, onDisplayModeChange],
   );
 
   const applyMarkers = React.useCallback((target: EphemerisAnchor, markerPayload: EphemerisStationsPayload) => {
@@ -784,10 +827,6 @@ export function GraphEphemerisView({
       clearInteraction();
       setError(null);
       setAnchor(next);
-      const cached = ephemerisBaseCache.get(ephemerisCacheKey(optionsSeq, next.year, next.month));
-      if (cached) {
-        applyPayload(cached);
-      }
       if (options?.persist !== false) {
         if (heldNavigationKeysRef.current.size > 0) {
           pendingAnchorPersistenceRef.current = next;
@@ -796,7 +835,7 @@ export function GraphEphemerisView({
         }
       }
     },
-    [applyPayload, clearInteraction, optionsSeq, storeViewState],
+    [clearInteraction, storeViewState],
   );
 
   React.useEffect(() => {
@@ -815,9 +854,12 @@ export function GraphEphemerisView({
     void fetchEphemerisViewState(documentId)
       .then((state: EphemerisViewState) => {
         if (cancelled) return;
-        if (state.display_mode === "declination" || state.display_mode === "longitude") {
-          setMode(state.display_mode);
-        }
+        const seededMode =
+          state.display_mode === "declination" || state.display_mode === "longitude"
+            ? state.display_mode
+            : "longitude";
+        modeRef.current = seededMode;
+        setMode(seededMode);
         if (typeof state.show_grid === "boolean") setShowGrid(state.show_grid);
         if (typeof state.show_event_glyphs === "boolean") setShowEventGlyphs(state.show_event_glyphs);
         if (state.visible_planets && Object.keys(state.visible_planets).length > 0) {
@@ -832,6 +874,7 @@ export function GraphEphemerisView({
           year: state.year ?? new Date().getFullYear(),
           month: state.start_month ?? 1,
         };
+        initialAnchorRef.current = { ...seededAnchor };
         anchorRef.current = seededAnchor;
         requestSeqRef.current += 1;
         setAnchor(seededAnchor);
@@ -839,7 +882,10 @@ export function GraphEphemerisView({
       .catch((err) => {
         console.error("[ephemeris-state]", err);
         if (!cancelled) {
+          modeRef.current = "longitude";
+          setMode("longitude");
           const fallbackAnchor = { year: new Date().getFullYear(), month: 1 };
+          initialAnchorRef.current = { ...fallbackAnchor };
           anchorRef.current = fallbackAnchor;
           requestSeqRef.current += 1;
           setAnchor(fallbackAnchor);
@@ -857,8 +903,9 @@ export function GraphEphemerisView({
   // keeps a guarded cache of drawable base payloads so held-arrow repeat can swap
   // warmed anchors immediately. Stale requests are cancelled/ignored by sequence,
   // so repeated stepping keeps advancing the intended anchor while the old plot
-  // stays visible. Station snap markers are fetched after the wx debounce interval
-  // so hover semantics never block the visible plot.
+  // stays visible. Exact event markers are part of the coherent frame whenever
+  // their visible glyph layer is enabled. Otherwise hover-only station data stays
+  // behind the wx debounce interval and never blocks the visible plot.
   React.useEffect(() => {
     if (anchorYear == null || anchorMonth == null) return;
     let cancelled = false;
@@ -867,29 +914,43 @@ export function GraphEphemerisView({
     let stationTimer: number | null = null;
     const seq = ++requestSeqRef.current;
     const target = { year: anchorYear, month: anchorMonth };
-    const cacheKey = ephemerisCacheKey(optionsSeq, target.year, target.month);
+    const cacheKey = ephemerisCacheKey(ephemerisDataKey, target.year, target.month);
 
     const warmBasePayloads = () => {
       const warm: Array<[number, number]> = [
-        target.month <= 2 ? [target.year - 1, target.month + 10] : [target.year, target.month - 2],
-        [target.year - 1, target.month],
-        [target.year + 1, target.month],
         target.month === 1 ? [target.year - 1, 12] : [target.year, target.month - 1],
         target.month === 12 ? [target.year + 1, 1] : [target.year, target.month + 1],
+        [target.year - 1, target.month],
+        [target.year + 1, target.month],
+        target.month <= 2 ? [target.year - 1, target.month + 10] : [target.year, target.month - 2],
         target.month >= 11 ? [target.year + 1, target.month - 10] : [target.year, target.month + 2],
       ];
       warmTimer = window.setTimeout(() => {
         void (async () => {
           for (const [y, m] of warm) {
             if (cancelled || requestSeqRef.current !== seq) return;
-            const warmKey = ephemerisCacheKey(optionsSeq, y, m);
-            if (ephemerisBaseCache.has(warmKey)) continue;
+            const warmKey = ephemerisCacheKey(ephemerisDataKey, y, m);
+            const cachedBase = ephemerisBaseCache.get(warmKey);
+            const cachedMarkers = ephemerisStationCache.get(warmKey);
+            if (cachedBase && (!requiresEventMarkers || cachedMarkers)) continue;
             try {
-              const warmPayload = await fetchGraphicEphemeris(y, m, {
-                signal: controller.signal,
-                includeStations: false,
-              });
-              rememberBasePayload(warmKey, warmPayload);
+              if (cachedBase) {
+                const warmMarkers = await fetchGraphicEphemerisStations(
+                  y,
+                  m,
+                  controller.signal,
+                );
+                rememberStations(warmKey, warmMarkers);
+              } else {
+                const warmPayload = await fetchGraphicEphemeris(y, m, {
+                  signal: controller.signal,
+                  includeStations: requiresEventMarkers,
+                });
+                rememberBasePayload(warmKey, warmPayload);
+                if (requiresEventMarkers) {
+                  rememberStations(warmKey, markerPayloadFromFrame(warmPayload));
+                }
+              }
             } catch {
               // Warm-cache misses are non-blocking; the active anchor stays visible.
             }
@@ -920,11 +981,12 @@ export function GraphEphemerisView({
       }, STATION_DEBOUNCE_MS);
     };
 
-    // Station refinement and speculative cache warming are completion work, not
-    // part of the next coherent plot. Hold one latest tail behind the explicit
-    // arrow-key envelope so neither can start between native key repeats.
+    // Hover-only station refinement (when event glyphs are hidden) and
+    // speculative cache warming are completion work, not part of the next
+    // coherent plot. Hold one latest tail behind the explicit arrow-key envelope
+    // so neither can start between native key repeats.
     const runPostPaintTail = () => {
-      fetchStations();
+      if (!ephemerisStationCache.has(cacheKey)) fetchStations();
       warmBasePayloads();
     };
     const schedulePostPaintTail = () => {
@@ -945,23 +1007,53 @@ export function GraphEphemerisView({
     };
 
     const cached = ephemerisBaseCache.get(cacheKey);
-    if (cached) {
+    const cachedMarkers = ephemerisStationCache.get(cacheKey);
+    if (cached && (!requiresEventMarkers || cachedMarkers)) {
+      const cachedFrame = cachedMarkers
+        ? frameWithMarkers(cached, cachedMarkers)
+        : cached;
       queueMicrotask(() => {
         if (cancelled || requestSeqRef.current !== seq) return;
-        applyPayload(cached);
+        applyPayload(cachedFrame);
         setError(null);
         schedulePostPaintTail();
       });
       return cleanup;
     }
 
+    if (cached) {
+      void fetchGraphicEphemerisStations(target.year, target.month, controller.signal)
+        .then((markerPayload) => {
+          if (cancelled || requestSeqRef.current !== seq) return;
+          rememberStations(cacheKey, markerPayload);
+          applyPayload(frameWithMarkers(cached, markerPayload));
+          setError(null);
+          schedulePostPaintTail();
+        })
+        .catch((err) => {
+          if (
+            cancelled ||
+            requestSeqRef.current !== seq ||
+            (err instanceof DOMException && err.name === "AbortError")
+          ) {
+            return;
+          }
+          console.error("[ephemeris]", err);
+          setError(String((err as Error).message ?? err));
+        });
+      return cleanup;
+    }
+
     void fetchGraphicEphemeris(target.year, target.month, {
       signal: controller.signal,
-      includeStations: false,
+      includeStations: requiresEventMarkers,
     })
       .then((p) => {
         if (cancelled || requestSeqRef.current !== seq) return;
         rememberBasePayload(cacheKey, p);
+        if (requiresEventMarkers) {
+          rememberStations(cacheKey, markerPayloadFromFrame(p));
+        }
         applyPayload(p);
         setError(null);
         schedulePostPaintTail();
@@ -978,7 +1070,14 @@ export function GraphEphemerisView({
         setError(String((err as Error).message ?? err));
       });
     return cleanup;
-  }, [anchorYear, anchorMonth, applyMarkers, applyPayload, optionsSeq]);
+  }, [
+    anchorYear,
+    anchorMonth,
+    applyMarkers,
+    applyPayload,
+    ephemerisDataKey,
+    requiresEventMarkers,
+  ]);
 
   // --- Paint (rAF-coalesced) on payload / size / option changes.
   const paintRef = React.useRef<number | null>(null);
@@ -1004,6 +1103,7 @@ export function GraphEphemerisView({
         visible,
         showGrid,
         showEventGlyphs,
+        outOfBoundsMarkerLabel,
         renderStyle,
         rect.width,
         rect.height,
@@ -1021,7 +1121,11 @@ export function GraphEphemerisView({
     ro.observe(wrap);
     return () => {
       ro.disconnect();
-      if (paintRef.current != null) cancelAnimationFrame(paintRef.current);
+      const pendingPaint = paintRef.current;
+      if (pendingPaint != null) {
+        cancelAnimationFrame(pendingPaint);
+        if (paintRef.current === pendingPaint) paintRef.current = null;
+      }
     };
   }, [
     chartProfileOverrides,
@@ -1031,6 +1135,7 @@ export function GraphEphemerisView({
     effectivePayload,
     fontsReady,
     mode,
+    outOfBoundsMarkerLabel,
     visible,
     showEventGlyphs,
     showGrid,
@@ -1076,20 +1181,43 @@ export function GraphEphemerisView({
     [commitAnchor],
   );
 
+  const resetToInitialAnchor = React.useCallback(() => {
+    const initial = initialAnchorRef.current;
+    if (!initial) return;
+
+    // Space is a barrier for an in-progress arrow burst. A pending stepped
+    // anchor must never persist after the reset, and its deferred cache/station
+    // tail must not compete with the reset frame.
+    heldNavigationKeysRef.current.clear();
+    pendingAnchorPersistenceRef.current = null;
+    deferredNavigationTailRef.current = null;
+
+    const current = anchorRef.current;
+    if (current?.year === initial.year && current.month === initial.month) {
+      storeViewState({ year: initial.year, start_month: initial.month });
+      return;
+    }
+    commitAnchor({ ...initial });
+  }, [commitAnchor, storeViewState]);
+
   const pressNavigationKey = React.useCallback(
     (key: GraphicEphemerisNavigationKey) => {
       if (!anchorRef.current) return;
+      if (key === "space") {
+        resetToInitialAnchor();
+        return;
+      }
       heldNavigationKeysRef.current.add(key);
       if (key === "up") stepYear(1);
       else if (key === "down") stepYear(-1);
       else if (key === "left") stepMonth(-1);
       else stepMonth(1);
     },
-    [stepMonth, stepYear],
+    [resetToInitialAnchor, stepMonth, stepYear],
   );
 
   const releaseNavigationKey = React.useCallback(
-    (key: GraphicEphemerisNavigationKey | null) => {
+    (key: GraphicEphemerisStepKey | null) => {
       if (key == null) heldNavigationKeysRef.current.clear();
       else heldNavigationKeysRef.current.delete(key);
       if (heldNavigationKeysRef.current.size > 0) return;
@@ -1129,10 +1257,11 @@ export function GraphEphemerisView({
     navigationCancelRef.current = cancelNavigationBurst;
   }, [cancelNavigationBurst, pressNavigationKey, releaseNavigationKey]);
 
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     return registerGraphicEphemerisNavigator(
       documentId,
       (key) => navigationPressRef.current(key),
+      (key) => navigationReleaseRef.current(key),
     );
   }, [documentId]);
 
@@ -1330,11 +1459,20 @@ export function GraphEphemerisView({
         : visible;
       modeRef.current = next;
       setMode(next);
+      onDisplayModeChange?.(next);
       if (isFactory) setVisible(nextVisible);
       storeViewState({ display_mode: next, visible_planets: nextVisible });
     },
-    [mode, payload, storeViewState, visible],
+    [mode, onDisplayModeChange, payload, storeViewState, visible],
   );
+
+  React.useLayoutEffect(() => {
+    if (!registerDisplayModeToggle) return;
+    return registerDisplayModeToggle(() => {
+      const next = modeRef.current === "longitude" ? "declination" : "longitude";
+      selectMode(next);
+    });
+  }, [registerDisplayModeToggle, selectMode]);
 
   const togglePlanet = React.useCallback(
     (planetId: number, checked: boolean) => {
@@ -1398,7 +1536,7 @@ export function GraphEphemerisView({
 
   return (
     <div
-      className="aries-graphic-ephemeris font-morinus-text relative flex flex-1 min-h-0 flex-col bg-background"
+      className="aries-graphic-ephemeris font-morinus-text relative flex h-full w-full min-h-0 flex-1 flex-col bg-background"
       style={payload?.colors?.background ? { backgroundColor: effectivePalette.background } : undefined}
     >
       <ContextMenu>

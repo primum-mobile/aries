@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 """Wx-free cursor-stepper objects extracted from the wx supplementary dialogs.
 
 These objects carry the *unit map* and *offset/snap math* that the wx steppers

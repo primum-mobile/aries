@@ -101,6 +101,7 @@ def project_symbolic_table(feature_kind, chart_obj, options, binding=None, **kwa
 			default_use_exact_oa=kwargs.get('default_use_exact_oa', False),
 			custom_significator=kwargs.get('custom_significator'),
 			natal_participator_chart=kwargs.get('natal_participator_chart'),
+			promissor_profile=kwargs.get('promissor_profile'),
 		)
 		return {
 			'feature_kind': CIRCUMAMBULATION,
@@ -245,7 +246,7 @@ def build_primary_directions(chart_obj, options, pdrange, direction, abort):
 	return pds, pd_options
 
 
-def build_circumambulation_rows(chart_obj, options, key, max_rows=60, include_participating=True, max_age_years=150, use_exact_oa=False, custom_significator=None, natal_participator_chart=None):
+def build_circumambulation_rows(chart_obj, options, key, max_rows=60, include_participating=True, max_age_years=150, use_exact_oa=False, custom_significator=None, natal_participator_chart=None, promissor_profile=None):
 	return circumambulation.compute_distributions(
 		chart_obj,
 		options,
@@ -256,10 +257,11 @@ def build_circumambulation_rows(chart_obj, options, key, max_rows=60, include_pa
 		use_exact_oa=use_exact_oa,
 		custom_significator=custom_significator,
 		natal_participator_chart=natal_participator_chart,
+		promissor_profile=promissor_profile,
 	)
 
 
-def project_circumambulation(chart_obj, options, binding, default_key=1.0, default_max_age=150, default_include_participating=True, default_use_exact_oa=False, custom_significator=None, natal_participator_chart=None):
+def project_circumambulation(chart_obj, options, binding, default_key=1.0, default_max_age=150, default_include_participating=True, default_use_exact_oa=False, custom_significator=None, natal_participator_chart=None, promissor_profile=None):
 	effective_binding = normalize_circumambulation_binding(
 		binding,
 		default_key=default_key,
@@ -278,6 +280,7 @@ def project_circumambulation(chart_obj, options, binding, default_key=1.0, defau
 		use_exact_oa=effective_binding['use_exact_oa'],
 		custom_significator=custom_significator,
 		natal_participator_chart=natal_participator_chart,
+		promissor_profile=promissor_profile,
 	)
 	state = dict(effective_binding.get('table_state') or {})
 	if effective_binding.get('focus_signature') is not None and state.get('focus_signature') is None:
@@ -307,6 +310,17 @@ def pd_entry_signature(pd):
 			int(getattr(pd, 'parallelaxis', -1)),
 			round(float(getattr(pd, 'arc', 0.0)), 8),
 			round(float(getattr(pd, 'time', 0.0)), 8),
+			round(float(getattr(pd, 'promasp_offset', 0.0)), 8),
+			round(float(getattr(pd, 'sigasp_offset', 0.0)), 8),
+			getattr(pd, 'promdyn', None),
+			getattr(pd, 'sigdyn', None),
+			getattr(pd, 'system', None),
+			getattr(
+				pd,
+				'domain',
+				'mundane' if bool(getattr(pd, 'mundane', False)) else 'zodiacal',
+			),
+			getattr(pd, 'event_kind', 'direction'),
 		)
 	except Exception:
 		return None
@@ -322,7 +336,18 @@ def resolve_pd_index_from_state(entries, state):
 		best_key = None
 		for idx, pd in enumerate(entries):
 			sig = pd_entry_signature(pd)
-			if sig == signature:
+			# Signatures are append-only.  An older retained binding may therefore
+			# carry a valid prefix that predates the newer row provenance fields.
+			try:
+				stored_signature = tuple(signature)
+			except TypeError:
+				stored_signature = ()
+			if sig == stored_signature or (
+				sig is not None
+				and stored_signature
+				and len(stored_signature) < len(sig)
+				and sig[:len(stored_signature)] == stored_signature
+			):
 				return idx
 			try:
 				key = (

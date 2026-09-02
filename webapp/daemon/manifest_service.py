@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 """Daemon-side workspace manifest — the single source for the skin's sidebar
 launcher catalog + keyboard-shortcut map.
 
@@ -76,6 +81,7 @@ _DISPATCH_ID = {
     "minor_chart": "minor-progression",
     "solar_arc_chart": "solar-arc",
     "profections_chart": "profections",
+    "harmonic_chart": "harmonic",
     "solar_average": "solar-average",
     "primary_directions": "directions",
     "astrocart": "astrocartography",
@@ -101,7 +107,12 @@ _DISPATCH_ID = {
 _DISPATCH_ID.update({table_id: f"table:{table_id}" for table_id in TABLE_CATALOG})
 
 _CANONICAL_ID = {dispatch_id: action_id for action_id, dispatch_id in _DISPATCH_ID.items()}
-_HIDDEN_ACTION_IDS = {"astrolog_sphere", "exact_transits"}
+_HIDDEN_ACTION_IDS = {
+    "astrolog_sphere",
+    "calendar",
+    "exact_transits",
+    "temporal_confluence",
+}
 _SUPPRESSED_ACTION_SHORTCUTS = {"minor_chart", "solar_arc_chart"}
 
 
@@ -371,7 +382,7 @@ def _shortcut_entries(native_menu: dict | None = None) -> list[dict]:
         entries.append(row)
         entry_by_keys[keys] = row
 
-    def retained_row(source: dict) -> dict:
+    def registry_row(source: dict) -> dict:
         raw_label = str(source.get("label") or "")
         example = source.get("example")
         label = loc.get(raw_label, raw_label)
@@ -386,6 +397,8 @@ def _shortcut_entries(native_menu: dict | None = None) -> list[dict]:
         }
         if source.get("labelKey"):
             row["labelKey"] = source["labelKey"]
+        if source.get("commandId"):
+            row["commandId"] = source["commandId"]
         return row
 
     # Always-live workspace affordances and manifest-dispatched accelerators.
@@ -407,6 +420,8 @@ def _shortcut_entries(native_menu: dict | None = None) -> list[dict]:
         "group": "WORKSPACE",
         "commandId": "menu.data",
     })
+    for source in shortcut_registry.TAURI_MANIFEST_SHORTCUT_ROWS:
+        append_live(registry_row(source))
     for source in shortcut_registry.TAURI_HIDDEN_SHORTCUT_ROWS:
         append_live({
             "keys": source["keys"],
@@ -441,7 +456,7 @@ def _shortcut_entries(native_menu: dict | None = None) -> list[dict]:
     # retained listeners continue to own the behavior.
     for source in shortcut_registry.TAURI_LIVE_SHORTCUT_ROWS:
         if source["group"] == "WORKSPACE":
-            append_live(retained_row(source))
+            append_live(registry_row(source))
 
     # Bare-letter chart quick keys. Omit any future registry row until the web
     # binding exists rather than publishing a grey/dead shortcut.
@@ -502,7 +517,7 @@ def _shortcut_entries(native_menu: dict | None = None) -> list[dict]:
             append_live(row)
         for source in shortcut_registry.TAURI_LIVE_SHORTCUT_ROWS:
             if source["group"] == raw_title:
-                append_live(retained_row(source))
+                append_live(registry_row(source))
     return entries
 
 
@@ -729,7 +744,7 @@ def _theme_presets_submenu(theme_presets: list[dict] | None = None) -> dict:
 def _options_menu_children(theme_presets: list[dict] | None = None) -> list[dict]:
     house_labels = {
         'P': 'Placidus', 'K': 'Koch', 'R': 'Regiomontanus', 'C': 'Campanus',
-        'E': 'Equal', 'W': 'Whole Sign', 'X': 'Axial Rotation', 'Q': 'True Ascendant', 'M': 'Morinus',
+        'E': 'Equal', 'W': 'Whole Sign', 'F': 'Fortune Houses', 'X': 'Axial Rotation', 'Q': 'True Ascendant', 'M': 'Morinus',
         'H': 'Horizon', 'T': 'Polich-Page (Topocentric)', 'B': 'Alcabitius',
         'O': 'Porphyry', 'N': 'None',
     }
@@ -775,6 +790,11 @@ def _options_menu_children(theme_presets: list[dict] | None = None) -> list[dict
                         "Routed house lines",
                         label_key="optmenu.routedCuspLines",
                     ),
+                    _quick_check(
+                        "quick.options.anglo-dense-label-layout:sign-locked",
+                        "Broken lines, planets stay in sign",
+                        label_key="optmenu.signLockedCusps",
+                    ),
                 ],
                 label_key="optmenu.angloDenseLabelLayout",
             ),
@@ -803,6 +823,11 @@ def _options_menu_children(theme_presets: list[dict] | None = None) -> list[dict
             _quick_check("quick.options.display:shownodes", "Nodes"),
             _quick_check("quick.options.display:showlof", "Fortuna"),
             _quick_check("quick.options.display:showprenatalsyzygy", "Prenatal Syzygy"),
+            _quick_check(
+                "quick.options.display:showprenataleclipse",
+                str(mtexts.txts.get("Eclipses", "Eclipses")),
+                label_key="settings.prenatalEclipseMarker",
+            ),
             _quick_check("quick.options.display:positions", str(mtexts.txts.get("Positions", "Speculum"))),
             _quick_check("quick.options.display:intables", "In tables"),
             _quick_check("quick.options.terms", "Terms"),

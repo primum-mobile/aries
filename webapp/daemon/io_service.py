@@ -700,15 +700,23 @@ class IoService:
         existing_charts = self._existing_charts_for_duplicate_check()
         for fpath in paths:
             try:
-                for record in aaf_import.parse_aaf(str(fpath)):
-                    chart_record = aaf_import.record_to_v1_dict(record)
-                    key = self._record_duplicate_key(chart_record)
-                    if key is not None and key in existing_charts:
-                        duplicates.append(
-                            self._duplicate_label_from_key(chart_record.get("name", ""), key[1], key[2])
-                        )
-                        continue
-                    records.append(self._lift_import_record(chart_record))
+                parsed = aaf_import.parse_aaf_best_effort(str(fpath))
+                errors.extend(
+                    {"path": str(fpath), "message": str(issue["message"])}
+                    for issue in parsed["errors"]
+                )
+                for record in parsed["records"]:
+                    try:
+                        chart_record = aaf_import.record_to_v1_dict(record)
+                        key = self._record_duplicate_key(chart_record)
+                        if key is not None and key in existing_charts:
+                            duplicates.append(
+                                self._duplicate_label_from_key(chart_record.get("name", ""), key[1], key[2])
+                            )
+                            continue
+                        records.append(self._lift_import_record(chart_record))
+                    except Exception as exc:
+                        errors.append(self._error(fpath, exc))
             except Exception as exc:
                 errors.append(self._error(fpath, exc))
 
@@ -738,16 +746,25 @@ class IoService:
     def _import_aaf_text(self, text: str, *, collection: str | None = None) -> dict[str, Any]:
         records: list[dict[str, Any]] = []
         duplicates: list[str] = []
+        errors: list[dict[str, str]] = []
         existing_charts = self._existing_charts_for_duplicate_check()
-        for record in aaf_import.parse_aaf_text(text, source_name="AAF paste"):
-            chart_record = aaf_import.record_to_v1_dict(record)
-            key = self._record_duplicate_key(chart_record)
-            if key is not None and key in existing_charts:
-                duplicates.append(
-                    self._duplicate_label_from_key(chart_record.get("name", ""), key[1], key[2])
-                )
-                continue
-            records.append(self._lift_import_record(chart_record))
+        parsed = aaf_import.parse_aaf_text_best_effort(text, source_name="AAF paste")
+        errors.extend(
+            {"path": "AAF paste", "message": str(issue["message"])}
+            for issue in parsed["errors"]
+        )
+        for record in parsed["records"]:
+            try:
+                chart_record = aaf_import.record_to_v1_dict(record)
+                key = self._record_duplicate_key(chart_record)
+                if key is not None and key in existing_charts:
+                    duplicates.append(
+                        self._duplicate_label_from_key(chart_record.get("name", ""), key[1], key[2])
+                    )
+                    continue
+                records.append(self._lift_import_record(chart_record))
+            except Exception as exc:
+                errors.append({"path": "AAF paste", "message": str(exc)})
 
         collection_path: Path | None = None
         added = 0
@@ -760,7 +777,7 @@ class IoService:
             collection_path=collection_path,
             imported_count=added,
             skipped_duplicates=duplicates,
-            errors=[],
+            errors=errors,
             files_considered=1,
         )
 

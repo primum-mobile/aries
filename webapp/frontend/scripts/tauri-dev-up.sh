@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright (C) 2026 Max Lange
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -10,6 +13,13 @@ SOURCE_STAMP_FILE="$LOG_DIR/tauri-dev.source-stamp"
 OUT_LOG="$LOG_DIR/tauri-dev.log"
 ERR_LOG="$LOG_DIR/tauri-dev.err.log"
 IGNORE_FILE="$APP_DIR/.taurignore"
+# One smoke at a time, machine-wide.
+#
+# These cannot simply be moved per checkout: `src-tauri/tauri.conf.json` pins
+# `devUrl` to http://localhost:3000 and names that port in six CSP directives,
+# so the window loads 3000 whatever this script computes. Overriding PORT alone
+# only misdirects the readiness checks and the launch hangs. Running two Tauri
+# smokes side by side means templating that config per checkout first.
 PORT="${PORT:-3000}"
 DAEMON_PORT="${ARIES_DAEMON_PORT:-8765}"
 
@@ -36,6 +46,10 @@ roots = [
     "Data/rt_0p5.txt",
     "parsers/query_corpus.py",
     "corpus/parsed",
+    "corpus/valens",
+    "corpus/hephaistion",
+    "corpus/dorotheus",
+    "corpus/lilly",
     "scripts/stage_corpus_resources.py",
     "scripts/stage_corpus_pack_seed.py",
     "scripts/stage_tauri_runtime_resources.py",
@@ -141,6 +155,57 @@ tauri_app_ready() {
   pgrep -f '(^|/)target/debug/aries($| )|^target/debug/aries$' >/dev/null 2>&1
 }
 
+# The working directory of a process, or empty if it has gone away.
+process_cwd() {
+  lsof -a -p "$1" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1
+}
+
+# Is this process part of the checkout we are launching from?
+#
+# Every pattern below ('next dev', '/target/debug/aries', the daemon) matches
+# any Aries checkout on the machine. A bare pkill therefore reaches into other
+# worktrees and kills their smoke — main and a feature worktree were silently
+# terminating each other's app, so whoever launched last won and the other
+# developer was left looking at a window that had quietly become someone else's
+# branch. Ownership is decided by the process's working directory.
+owned_by_this_checkout() {
+  local cwd
+  cwd="$(process_cwd "$1")"
+  case "$cwd" in
+    "$PROJECT_DIR"|"$PROJECT_DIR"/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Kill only the processes matching a pattern that belong to this checkout.
+kill_owned() {
+  local pid
+  for pid in $(pgrep -f "$1" 2>/dev/null || true); do
+    if owned_by_this_checkout "$pid"; then
+      kill -9 "$pid" >/dev/null 2>&1 || true
+    fi
+  done
+}
+
+# Reclaim one of our own ports. A foreign checkout holding it is reported rather
+# than killed: ports are per-checkout now, so that overlap means a real
+# misconfiguration and stealing the port would just restart the war.
+reclaim_port() {
+  local port="$1"
+  local label="$2"
+  local pid
+  for pid in $(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true); do
+    if owned_by_this_checkout "$pid"; then
+      kill -9 "$pid" >/dev/null 2>&1 || true
+    else
+      echo "error: ${label} port ${port} is held by pid ${pid} from another checkout:" >&2
+      echo "       $(process_cwd "$pid")" >&2
+      echo "       set PORT / ARIES_DAEMON_PORT to free values, or stop that stack." >&2
+      exit 1
+    fi
+  done
+}
+
 stop_live_processes() {
   local pid
   if [ -f "$PID_FILE" ]; then
@@ -151,16 +216,18 @@ stop_live_processes() {
     fi
     rm -f "$PID_FILE"
   fi
-  ( lsof -tiTCP:"$PORT" -sTCP:LISTEN; lsof -tiTCP:"$DAEMON_PORT" -sTCP:LISTEN ) 2>/dev/null | sort -u | xargs kill -9 2>/dev/null || true
-  pkill -f '/target/debug/aries' >/dev/null 2>&1 || true
-  pkill -f 'next dev' >/dev/null 2>&1 || true
-  pkill -f 'uvicorn webapp.daemon.server:app' >/dev/null 2>&1 || true
+  reclaim_port "$PORT" "frontend"
+  reclaim_port "$DAEMON_PORT" "daemon"
+  kill_owned '/target/debug/aries'
+  kill_owned 'next dev'
+  kill_owned 'uvicorn webapp.daemon.server:app'
 }
 
 if daemon_ready && ! daemon_owned_by_tauri; then
   echo "stale daemon owns ${DAEMON_PORT}; restarting smoke stack"
-  ( lsof -tiTCP:"$DAEMON_PORT" -sTCP:LISTEN; pgrep -f 'uvicorn webapp.daemon.server:app' ) 2>/dev/null | sort -u | xargs kill -9 2>/dev/null || true
-  pkill -f '/target/debug/aries' >/dev/null 2>&1 || true
+  reclaim_port "$DAEMON_PORT" "daemon"
+  kill_owned 'uvicorn webapp.daemon.server:app'
+  kill_owned '/target/debug/aries'
 fi
 
 if [ "$SOURCE_STALE" -eq 1 ] && ( frontend_ready || daemon_ready || tauri_app_ready ); then

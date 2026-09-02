@@ -13,7 +13,7 @@ import {
   type WorkspaceEventSubscription,
 } from "@/lib/daemon/client";
 import { isAbortError } from "@/lib/abort-error";
-import { perfNow, recordStartupPerfOnce } from "@/lib/chart/perf";
+import { perfNow, recordChartPerf, recordStartupPerfOnce } from "@/lib/chart/perf";
 import type { ChartRenderSnapshot } from "@/lib/chart/types";
 import { normalizeOptionsStyleIdentity } from "@/lib/theme/style-state.mjs";
 import {
@@ -45,7 +45,11 @@ export type DaemonWorkspaceOptionsChange = {
   refreshMode: string;
   styleOnly: boolean;
   listDataChanged: boolean;
+  retainedListTarget?: "aspect-list" | null;
   retainedListDataKey?: string;
+  /** Content identity for every option that changes Graphic Ephemeris data,
+   * labels, glyphs, or retained daemon colours. */
+  ephemerisDataKey?: string;
   /** A narrow display change altered the daemon-built inspector payload even
    * though resident list/table query data remains valid. */
   inspectorDataChanged: boolean;
@@ -83,6 +87,8 @@ export type DaemonWorkspaceState = {
    * Presentation-only options never publish into this slice, so resident lists
    * are not notified merely to discover that no data work is required. */
   lastRetainedDataOptionsChange: DaemonWorkspaceOptionsChange | null;
+  /** Latest semantic options transaction relevant to Aspect List. */
+  lastAspectListOptionsChange: DaemonWorkspaceOptionsChange | null;
   /** Daemon-owned display facets applied to retained source rows in memory. */
   retainedListDisplay: RetainedListDisplay;
   /** The snapshot a navigate POST returned for a stepped doc, pushed by the
@@ -132,7 +138,9 @@ export type DaemonWorkspaceState = {
     refreshMode?: string | null;
     styleOnly?: boolean;
     listDataChanged?: boolean;
+    retainedListTarget?: "aspect-list" | null;
     retainedListDataKey?: string;
+    ephemerisDataKey?: string;
     retainedListDisplay?: RetainedListDisplay;
     inspectorDataChanged?: boolean;
     langid?: number;
@@ -203,6 +211,7 @@ export const useDaemonWorkspaceStore = create<DaemonWorkspaceState>()((set) => (
   lastSessionChange: null,
   lastOptionsChange: null,
   lastRetainedDataOptionsChange: null,
+  lastAspectListOptionsChange: null,
   retainedListDisplay: { hiddenObjectIds: [] },
   steppedSnapshot: null,
   commandSnapshot: null,
@@ -344,14 +353,21 @@ export const useDaemonWorkspaceStore = create<DaemonWorkspaceState>()((set) => (
         refreshMode: change.refreshMode || "recalc",
         styleOnly,
         listDataChanged,
+        retainedListTarget: change.retainedListTarget ?? null,
+        ephemerisDataKey: change.ephemerisDataKey,
         inspectorDataChanged: change.inspectorDataChanged === true,
         seq: (state.lastOptionsChange?.seq ?? 0) + 1,
       };
       return {
         lastOptionsChange: optionsChange,
-        lastRetainedDataOptionsChange: listDataChanged
+        lastRetainedDataOptionsChange: listDataChanged && !change.retainedListTarget
           ? optionsChange
           : state.lastRetainedDataOptionsChange,
+        lastAspectListOptionsChange:
+          listDataChanged &&
+          (!change.retainedListTarget || change.retainedListTarget === "aspect-list")
+            ? optionsChange
+            : state.lastAspectListOptionsChange,
         retainedListDisplay:
           isRetainedListDisplay(change.retainedListDisplay) &&
           !sameRetainedListDisplay(state.retainedListDisplay, change.retainedListDisplay)
@@ -476,6 +492,12 @@ function handleEvent(event: DaemonEvent): void {
       store._applyActive(event.docId);
       break;
     case "session.changed":
+      if (event.changeReason === "step" && (event.rebuiltChildIds?.length ?? 0) === 0) {
+        recordChartPerf("chart-step-session-change", {
+          docId: event.docId,
+          displayDatetime: event.displayDatetime ?? null,
+        });
+      }
       store._applySessionChange({
         docId: event.docId,
         changeReason: event.changeReason,
@@ -498,7 +520,9 @@ function handleEvent(event: DaemonEvent): void {
         // empty means exactly no document changed and must not invalidate the
         // retained Directions list or synthesize a session change for it.
         const targetedEmptyRefresh =
-          refreshMode === "pd-in-chart" || refreshMode === "retained-data";
+          refreshMode === "pd-in-chart" ||
+          refreshMode === "retained-data" ||
+          refreshMode === "inspector-data";
         const touchedIds =
           refreshedIds.length > 0 || targetedEmptyRefresh
             ? refreshedIds
@@ -509,7 +533,9 @@ function handleEvent(event: DaemonEvent): void {
           refreshMode,
           styleOnly,
           listDataChanged,
+          retainedListTarget: event.retainedListTarget,
           retainedListDataKey: event.retainedListDataKey,
+          ephemerisDataKey: event.ephemerisDataKey,
           retainedListDisplay: event.retainedListDisplay,
           inspectorDataChanged,
           langid: event.langid,

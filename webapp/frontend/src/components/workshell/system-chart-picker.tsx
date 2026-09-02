@@ -10,6 +10,7 @@ import {
   ArrowUp,
   ChevronDown,
   ChevronRight,
+  Pencil,
   Plus,
   Search,
   Trash2,
@@ -21,6 +22,9 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Input } from "@/components/ui/input";
@@ -33,15 +37,22 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  createChartPickerCollection,
   deleteChartPickerRows,
   fetchChartPickerSearchCatalog,
+  listCollections,
+  moveChartPickerRows,
+  moveChartPickerRowsToNewCollection,
+  renameChartPickerCollection,
   renameChartPickerRow,
   searchChartPickerRows,
   workspaceActivate,
   workspaceOpen,
   workspaceOpenSynastry,
+  workspaceOpenSynastryPair,
   type ChartPickerAspectClause,
   type ChartPickerChoice,
+  type ChartCollection,
   type ChartPickerMatchRun,
   type ChartPickerPlacementClause,
   type ChartPickerRow,
@@ -73,6 +84,8 @@ import {
 import { useThemeStore } from "@/stores/theme-store";
 
 import { ColumnResizeHandle, useResizableTableColumns } from "./resizable-table-columns";
+import { ListToggleDrawer } from "./list-controls";
+import { LIST_BUTTON_PROPS } from "@/lib/list-tokens";
 
 type Mode = "open-radix" | "synastry-partner";
 
@@ -88,6 +101,18 @@ type SortState = {
   column: keyof ChartPickerRow;
   ascending: boolean;
 };
+
+type CollectionDialogState =
+  | {
+      kind: "new";
+      value: string;
+      rows?: ChartPickerRow[];
+    }
+  | {
+      kind: "rename";
+      value: string;
+      collection: ChartCollection;
+    };
 
 const DEFAULT_SORT: SortState = {
   column: "lastOpened",
@@ -266,6 +291,11 @@ export function SystemChartPicker({
     value: string;
   } | null>(null);
   const [deleteDialog, setDeleteDialog] = React.useState<ChartPickerRow[] | null>(null);
+  const [collections, setCollections] = React.useState<ChartCollection[]>([]);
+  const [activeCollectionPaths, setActiveCollectionPaths] = React.useState<Set<string> | null>(null);
+  const [collectionDrawerOpen, setCollectionDrawerOpen] = React.useState(false);
+  const [collectionDialog, setCollectionDialog] = React.useState<CollectionDialogState | null>(null);
+  const [collectionDialogError, setCollectionDialogError] = React.useState<string | null>(null);
   const [mutatingRows, setMutatingRows] = React.useState(false);
   const listRef = React.useRef<HTMLElement | null>(null);
   const openingRef = React.useRef(false);
@@ -293,6 +323,28 @@ export function SystemChartPicker({
 
   React.useEffect(() => {
     prewarmPickerShellApi();
+  }, []);
+
+  const refreshCollections = React.useCallback(async (signal?: AbortSignal) => {
+    const nextCollections = await listCollections(signal);
+    setCollections(nextCollections);
+    const nextPaths = new Set(nextCollections.map((collection) => collection.path));
+    setActiveCollectionPaths((current) => {
+      if (current === null) return null;
+      return new Set([...current].filter((path) => nextPaths.has(path)));
+    });
+  }, []);
+
+  React.useEffect(() => {
+    const controller = new AbortController();
+    listCollections(controller.signal)
+      .then(setCollections)
+      .catch((err) => {
+        if ((err as { name?: string }).name !== "AbortError") {
+          console.warn("[chart-picker-collections]", err);
+        }
+      });
+    return () => controller.abort();
   }, []);
 
   React.useLayoutEffect(() => {
@@ -363,6 +415,9 @@ export function SystemChartPicker({
     const excluded = new Set(excludeNames);
     const base = rows.filter((row) => {
       if (excluded.has(row.name)) return false;
+      if (activeCollectionPaths !== null && !activeCollectionPaths.has(row.source)) {
+        return false;
+      }
       if (!q) return true;
       return [
         row.name,
@@ -380,7 +435,7 @@ export function SystemChartPicker({
         .includes(q);
     });
     return sortRows(base, sort);
-  }, [rows, deferredFilter, sort, excludeNames]);
+  }, [rows, deferredFilter, sort, excludeNames, activeCollectionPaths]);
 
   const controlHeight = useThemeStore(
     (state) => state.theme?.appTokens["--aries-control-height"] ?? "",
@@ -395,6 +450,88 @@ export function SystemChartPicker({
   const selectedRows = React.useMemo(
     () => visibleRows.filter((row) => selectedKeys.has(row.key)),
     [visibleRows, selectedKeys],
+  );
+
+  const menuCollections = React.useMemo(() => {
+    if (collections.length) return collections;
+    const inferred = new Map<string, ChartCollection>();
+    for (const row of rows) {
+      const current = inferred.get(row.source);
+      if (current) current.count += 1;
+      else {
+        inferred.set(row.source, {
+          path: row.source,
+          name: row.collection,
+          count: 1,
+          isDefault: false,
+        });
+      }
+    }
+    return [...inferred.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [collections, rows]);
+
+  const activeCollectionLabel = React.useMemo(() => {
+    if (
+      activeCollectionPaths === null ||
+      activeCollectionPaths.size === menuCollections.length
+    ) {
+      return t("picker.allCollections");
+    }
+    if (activeCollectionPaths.size === 1) {
+      const [onlyPath] = activeCollectionPaths;
+      return (
+        menuCollections.find((collection) => collection.path === onlyPath)?.name ??
+        t("picker.allCollections")
+      );
+    }
+    return t("picker.collectionsCount", { count: activeCollectionPaths.size });
+  }, [activeCollectionPaths, menuCollections, t]);
+
+  const collectionForContextRow = React.useMemo(
+    () => menuCollections.find((collection) => collection.path === contextRow?.source) ?? null,
+    [contextRow?.source, menuCollections],
+  );
+
+  const collectionNameValidationError = React.useMemo(() => {
+    if (!collectionDialog) return null;
+    const cleanName = normalizedCollectionName(collectionDialog.value);
+    if (
+      !cleanName ||
+      cleanName === "." ||
+      cleanName === ".." ||
+      cleanName.startsWith(".") ||
+      /[/\\:\x00-\x1f]/.test(cleanName)
+    ) {
+      return t("picker.collectionNameInvalid");
+    }
+    const currentPath =
+      collectionDialog.kind === "rename" ? collectionDialog.collection.path : null;
+    const foldedName = cleanName.toLocaleLowerCase();
+    if (
+      menuCollections.some(
+        (collection) =>
+          collection.path !== currentPath &&
+          collection.name.toLocaleLowerCase() === foldedName,
+      )
+    ) {
+      return t("picker.collectionNameExists");
+    }
+    return null;
+  }, [collectionDialog, menuCollections, t]);
+
+  const toggleCollectionFilter = React.useCallback(
+    (collection: ChartCollection, active: boolean) => {
+      setActiveCollectionPaths((current) => {
+        const next =
+          current === null
+            ? new Set(menuCollections.map((item) => item.path))
+            : new Set(current);
+        if (active) next.add(collection.path);
+        else next.delete(collection.path);
+        return next.size === menuCollections.length ? null : next;
+      });
+    },
+    [menuCollections],
   );
 
   const selectRow = React.useCallback(
@@ -448,6 +585,8 @@ export function SystemChartPicker({
     setContextRow(null);
     setRenameDialog(null);
     setDeleteDialog(null);
+    setCollectionDialog(null);
+    setCollectionDialogError(null);
     listRef.current?.scrollTo({ top: 0 });
   }, []);
 
@@ -469,6 +608,9 @@ export function SystemChartPicker({
       .listenChartPickerWindowEvents((payload) => {
         if (payload.phase === "open" && payload.visible === true) {
           resetPickerState();
+          void refreshCollections().catch((err) => {
+            console.warn("[chart-picker-collections-open]", err);
+          });
           const cached = syncChartPickerRowsFromStorage();
           if (cached) {
             applyRowsPayload(cached);
@@ -485,7 +627,7 @@ export function SystemChartPicker({
       disposed = true;
       safeShellUnlisten(unlisten);
     };
-  }, [applyRowsPayload, resetPickerState]);
+  }, [applyRowsPayload, refreshCollections, resetPickerState]);
 
   const openRows = React.useCallback(
     async (targets: ChartPickerRow[], asSynastry = false) => {
@@ -541,20 +683,14 @@ export function SystemChartPicker({
               center: centerRow,
               partner: partnerRow,
             },
-            async () => {
-              const root = await workspaceOpen({
-                sourceName: centerRow.name,
-                source: centerRow.source,
-                recordIndex: centerRow.recordIndex,
-              });
-              if (!root.documentId) return root;
-              return workspaceOpenSynastry(
-                root.documentId,
-                partnerRow.name,
-                partnerRow.source,
-                partnerRow.recordIndex,
-              );
-            },
+            () => workspaceOpenSynastryPair(
+              centerRow.name,
+              partnerRow.name,
+              centerRow.source,
+              centerRow.recordIndex,
+              partnerRow.source,
+              partnerRow.recordIndex,
+            ),
           );
           await activateIfNeeded(opened);
           succeeded = true;
@@ -646,6 +782,102 @@ export function SystemChartPicker({
     }
   }, [deleteDialog, mutatingRows, refreshRows]);
 
+  const moveRows = React.useCallback(async (targets: ChartPickerRow[], destination: string) => {
+    if (!targets.length || !destination || mutatingRows) return;
+    setMutatingRows(true);
+    setError(null);
+    try {
+      const result = await moveChartPickerRows(targets, destination);
+      refreshRows(result.rows);
+      void refreshCollections().catch((err) => {
+        console.warn("[chart-picker-collections-refresh]", err);
+      });
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setMutatingRows(false);
+    }
+  }, [mutatingRows, refreshCollections, refreshRows]);
+
+  const commitCollectionDialog = React.useCallback(async () => {
+    if (!collectionDialog || collectionNameValidationError || mutatingRows) return;
+    const name = collectionDialog.value.trim();
+    if (!name) return;
+    if (
+      collectionDialog.kind === "rename" &&
+      name === collectionDialog.collection.name
+    ) {
+      setCollectionDialog(null);
+      return;
+    }
+
+    setMutatingRows(true);
+    setError(null);
+    setCollectionDialogError(null);
+    try {
+      if (collectionDialog.kind === "new") {
+        const moveTargets = collectionDialog.rows ?? [];
+        const result = moveTargets.length
+          ? await moveChartPickerRowsToNewCollection(moveTargets, name)
+          : await createChartPickerCollection(name);
+        if (moveTargets.length) {
+          refreshRows(result.rows);
+        } else {
+          replaceCachedChartPickerRows(result.rows);
+          setRows(result.rows);
+        }
+        setCollections((current) => [
+          ...current.filter((collection) => collection.path !== result.collection.path),
+          result.collection,
+        ]);
+        if (moveTargets.length) {
+          setActiveCollectionPaths(new Set([result.collection.path]));
+        } else {
+          setActiveCollectionPaths((current) => {
+            if (current === null) return null;
+            const next = new Set(current);
+            next.add(result.collection.path);
+            return next;
+          });
+        }
+      } else {
+        const result = await renameChartPickerCollection(
+          collectionDialog.collection.path,
+          name,
+        );
+        refreshRows(result.rows);
+        setCollections((current) =>
+          current.map((collection) =>
+            collection.path === result.source ? result.collection : collection,
+          ),
+        );
+        setActiveCollectionPaths((current) => {
+          if (current === null || !current.has(result.source)) return current;
+          const next = new Set(current);
+          next.delete(result.source);
+          next.add(result.destination);
+          return next;
+        });
+      }
+      setCollectionDialog(null);
+      void refreshCollections().catch((err) => {
+        console.warn("[chart-picker-collections-refresh]", err);
+      });
+    } catch (err) {
+      console.warn("[chart-picker-collection-mutation]", err);
+      setCollectionDialogError(t("picker.collectionChangeFailed"));
+    } finally {
+      setMutatingRows(false);
+    }
+  }, [
+    collectionDialog,
+    collectionNameValidationError,
+    mutatingRows,
+    refreshCollections,
+    refreshRows,
+    t,
+  ]);
+
   const deleteSelected = React.useCallback(() => deleteRows(selectedRows), [deleteRows, selectedRows]);
 
   const contextRows = React.useMemo(() => {
@@ -675,12 +907,18 @@ export function SystemChartPicker({
           event.preventDefault();
           return;
         }
+        if (collectionDialog) {
+          setCollectionDialog(null);
+          setCollectionDialogError(null);
+          event.preventDefault();
+          return;
+        }
         if (view === "search") setView("list");
         else closeAndReset();
         event.preventDefault();
         return;
       }
-      if (renameDialog || deleteDialog) return;
+      if (renameDialog || deleteDialog || collectionDialog) return;
       if (view !== "list") return;
       if (event.key === "Enter") {
         void openSelected(selectedRows.length === 2);
@@ -702,6 +940,7 @@ export function SystemChartPicker({
     closeAndReset,
     renameDialog,
     deleteDialog,
+    collectionDialog,
   ]);
 
   const canOpen = selectedRows.length > 0;
@@ -733,11 +972,52 @@ export function SystemChartPicker({
                 className="h-[var(--aries-control-height-small)] pl-[calc(var(--aries-control-icon-size)+var(--aries-control-padding-x)+var(--aries-control-gap-compact))] text-[length:var(--aries-font-size-reading)]"
               />
             </div>
+            <Button
+              type="button"
+              {...LIST_BUTTON_PROPS.command}
+              onClick={() => setCollectionDrawerOpen((open) => !open)}
+              aria-expanded={collectionDrawerOpen}
+            >
+              {t("picker.collectionFilter")}: {activeCollectionLabel}
+            </Button>
             <div className="text-[length:var(--aries-font-size-base)] text-muted-foreground">
               {t("picker.rowCount", { visible: visibleRows.length, total: rows.length })}
               {selectedRows.length ? t("picker.selectedSuffix", { count: selectedRows.length }) : ""}
             </div>
           </div>
+          {collectionDrawerOpen ? (
+            <div className="shrink-0 px-[var(--aries-pane-wide-inset)] pb-[var(--aries-pane-header-padding-y)]">
+              <ListToggleDrawer
+                label={t("picker.collectionFilter")}
+                items={menuCollections.map((collection) => ({
+                  ...collection,
+                  id: collection.path,
+                  label: collection.name,
+                  marker: String(collection.count),
+                }))}
+                isActive={(collection) =>
+                  activeCollectionPaths === null ||
+                  activeCollectionPaths.has(collection.path)
+                }
+                onToggle={toggleCollectionFilter}
+                deselectAllLabel={t("listFilters.deselectAll")}
+                selectAllLabel={t("listFilters.selectAll")}
+                onDeselectAll={() => setActiveCollectionPaths(new Set())}
+                onSelectAll={() => setActiveCollectionPaths(null)}
+                actions={[
+                  {
+                    id: "new-collection",
+                    label: t("picker.newCollectionMenu"),
+                    icon: <Plus className="size-[var(--aries-control-icon-size)]" />,
+                    onClick: () => {
+                      setCollectionDialog({ kind: "new", value: "" });
+                      setCollectionDialogError(null);
+                    },
+                  },
+                ]}
+              />
+            </div>
+          ) : null}
 
           <main ref={listRef} className="mx-[var(--aries-pane-wide-inset)] min-h-0 flex-1 overflow-auto border border-border bg-background">
             {loading ? (
@@ -761,6 +1041,7 @@ export function SystemChartPicker({
                       }}
                     >
                       <Table
+                        wrapperless
                         className={cn("border-collapse text-[length:var(--aries-font-size-reading)] leading-tight", listResize.tableClassName)}
                         style={listResize.tableStyle}
                       >
@@ -853,6 +1134,54 @@ export function SystemChartPicker({
                   >
                     {t("picker.renameChartMenu")}
                   </ContextMenuItem>
+                  <ContextMenuItem
+                    onClick={() => {
+                      if (!collectionForContextRow) return;
+                      setCollectionDialog({
+                        kind: "rename",
+                        value: collectionForContextRow.name,
+                        collection: collectionForContextRow,
+                      });
+                      setCollectionDialogError(null);
+                    }}
+                    disabled={!collectionForContextRow || mutatingRows}
+                  >
+                    <Pencil className="size-[var(--aries-control-icon-size)]" />
+                    {t("picker.renameCollectionMenu")}
+                  </ContextMenuItem>
+                  <ContextMenuSub>
+                    <ContextMenuSubTrigger
+                      disabled={contextRow === null || contextRows.length === 0 || mutatingRows}
+                    >
+                      {t("picker.addToCollection")}
+                    </ContextMenuSubTrigger>
+                    <ContextMenuSubContent className="w-56">
+                      <ContextMenuItem
+                        onClick={() => {
+                          setCollectionDialog({
+                            kind: "new",
+                            value: "",
+                            rows: [...contextRows],
+                          });
+                          setCollectionDialogError(null);
+                        }}
+                      >
+                        <Plus className="size-[var(--aries-control-icon-size)]" />
+                        {t("picker.newCollectionMenu")}
+                      </ContextMenuItem>
+                      <ContextMenuSeparator />
+                      {menuCollections.map((collection) => (
+                        <ContextMenuItem
+                          key={collection.path}
+                          disabled={contextRows.every((row) => row.source === collection.path)}
+                          onClick={() => void moveRows([...contextRows], collection.path)}
+                        >
+                          <span className="min-w-0 flex-1 truncate">{collection.name}</span>
+                          <span className="tabular-nums text-muted-foreground">{collection.count}</span>
+                        </ContextMenuItem>
+                      ))}
+                    </ContextMenuSubContent>
+                  </ContextMenuSub>
                   <ContextMenuSeparator />
                   <ContextMenuItem
                     onClick={() => void deleteRows(contextRows)}
@@ -918,8 +1247,94 @@ export function SystemChartPicker({
           onConfirm={() => void commitDelete()}
         />
       ) : null}
+      {collectionDialog ? (
+        <CollectionNameDialog
+          kind={collectionDialog.kind}
+          value={collectionDialog.value}
+          error={collectionNameValidationError ?? collectionDialogError}
+          busy={mutatingRows}
+          onValueChange={(value) => {
+            setCollectionDialogError(null);
+            setCollectionDialog((current) =>
+              current ? { ...current, value } : current,
+            );
+          }}
+          onCancel={() => {
+            setCollectionDialog(null);
+            setCollectionDialogError(null);
+          }}
+          onConfirm={() => void commitCollectionDialog()}
+        />
+      ) : null}
     </div>
   );
+}
+
+function CollectionNameDialog({
+  kind,
+  value,
+  error,
+  busy,
+  onValueChange,
+  onCancel,
+  onConfirm,
+}: {
+  kind: CollectionDialogState["kind"];
+  value: string;
+  error: string | null;
+  busy: boolean;
+  onValueChange: (value: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const t = useT();
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[color:var(--aries-overlay-scrim)] px-[var(--aries-pane-wide-inset)]">
+      <form
+        data-aries-surface="overlay"
+        className="w-full max-w-[var(--aries-dialog-width-xs)] rounded-[var(--aries-radius-dialog)] border border-border bg-background p-[var(--aries-dialog-padding)] shadow-xl"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onConfirm();
+        }}
+      >
+        <div className="mb-[var(--aries-pane-title-gap)] text-[length:var(--aries-font-size-large)] font-medium">
+          {kind === "new"
+            ? t("picker.newCollectionTitle")
+            : t("picker.renameCollectionTitle")}
+        </div>
+        <label className="grid gap-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-small)] text-muted-foreground">
+          <span>{t("picker.collectionName")}</span>
+          <Input
+            autoFocus
+            value={value}
+            onChange={(event) => onValueChange(event.target.value)}
+            className="h-[var(--aries-control-height)] text-[length:var(--aries-font-size-reading)] text-foreground"
+          />
+        </label>
+        {error ? (
+          <p className="mt-[var(--aries-control-gap)] text-[length:var(--aries-font-size-small)] text-destructive">
+            {error}
+          </p>
+        ) : null}
+        <div className="mt-[var(--aries-dialog-gap)] flex justify-end gap-[var(--aries-dialog-footer-gap)]">
+          <Button type="button" variant="outline" className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width)]" onClick={onCancel} disabled={busy}>
+            {t("picker.cancel")}
+          </Button>
+          <Button type="submit" className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width)]" disabled={busy || !value.trim() || Boolean(error)}>
+            {kind === "new" ? t("picker.create") : t("picker.rename")}
+          </Button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function normalizedCollectionName(value: string): string {
+  const trimmed = value.trim();
+  return trimmed.toLocaleLowerCase().endsWith(".jsonl")
+    ? trimmed.slice(0, -6).trimEnd()
+    : trimmed;
 }
 
 function RenameChartDialog({

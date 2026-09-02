@@ -78,7 +78,7 @@ DEFAULT_SIGNIFICATORS = {
 }
 
 
-rule_engine.register_discipline('mundane', 'Mundane', list(_THEME_SLUGS))
+rule_engine.register_discipline('mundane', 'Mundane', _THEME_SLUGS)
 
 
 def _pack_theme_lookup():
@@ -99,16 +99,16 @@ def evaluate(theme, ingress_chart, context=None):
     """Evaluate a theme against a mundane chart (ingress, eclipse, lunation,
     great conjunction) cast for the relevant place. Single Chart object;
     same predicate library as natal."""
-    theme_slug = _THEME_SLUGS.get(theme)
+    theme_slug = rule_engine.theme_slug_for('mundane', theme)
     if theme_slug is None:
-        pack_slugs, _pack_ctx = _pack_theme_lookup()
-        theme_slug = pack_slugs.get(theme)
-        if theme_slug is None:
-            return []
+        return []
     if context is None:
-        context = DEFAULT_SIGNIFICATORS.get(theme)
+        canonical = rule_engine.canonical_theme_label_for(
+            'mundane', theme_slug,
+        ) or theme
+        context = DEFAULT_SIGNIFICATORS.get(canonical)
         if context is None:
             _slugs, pack_ctx = _pack_theme_lookup()
-            context = pack_ctx.get(theme)
+            context = pack_ctx.get(theme) or pack_ctx.get(canonical)
     return rule_engine.evaluate('mundane', theme_slug, ingress_chart,
                                 context=context)

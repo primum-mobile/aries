@@ -65,7 +65,7 @@ function TopicSelector({
   const t = useT();
   const [pending, setPending] = React.useState(false);
   return (
-    <div className="flex shrink-0 items-center gap-[var(--aries-pane-control-gap-y)] border-b border-[color:var(--aries-border-subtle)] bg-[color:var(--aries-surface-subtle)] px-[var(--aries-pane-header-compact-padding-x)] py-[var(--aries-pane-header-padding-y)]">
+    <div className="flex shrink-0 items-center gap-[var(--aries-pane-control-gap-y)] border-b border-[color:var(--aries-border-subtle)] bg-background px-[var(--aries-pane-header-compact-padding-x)] py-[var(--aries-pane-header-padding-y)]">
       <label
         className="text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]"
         htmlFor="almuten-topic"
@@ -131,7 +131,7 @@ function SectionPanel({
                 <th
                   key={column.id}
                   className={cn(
-                    "aries-list-head-cell relative border bg-[color:var(--aries-surface)] font-medium",
+                    "aries-list-head-cell relative border-b bg-background font-medium",
                     alignClass(column.align),
                   )}
                 >
@@ -150,7 +150,7 @@ function SectionPanel({
             <tr
               key={row.id}
               className={cn(
-                "aries-list-row aries-list-row--striped",
+                "aries-list-row border-b border-x-0 border-t-0",
                 row.current && "aries-list-row--current",
                 row.emphasis === "strong" && "font-semibold",
               )}
@@ -159,7 +159,7 @@ function SectionPanel({
                 <td
                   key={`${row.id}:${column.id}`}
                   className={cn(
-                    "aries-list-cell border align-middle",
+                    "aries-list-cell align-middle",
                     alignClass(row.cells[index]?.align ?? column.align),
                     unavailable && "text-[color:var(--aries-text-muted)]",
                   )}

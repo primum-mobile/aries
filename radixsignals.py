@@ -560,28 +560,7 @@ def _eclipse_events_for_window(radix, jd0, window_days):
 
 
 def _eclipse_kind_label(event):
-	try:
-		if bool(getattr(event, 'is_solar', False)):
-			token, _major, _priority = eclipses._classify_solar_from_retflag(int(getattr(event, 'retflag', 0)))
-		else:
-			token, _major, _priority = eclipses._classify_lunar_from_retflag(int(getattr(event, 'retflag', 0)))
-	except Exception:
-		token = 'UNKNOWN'
-	token = str(token)
-	import mtexts
-	keys = {
-		'TOTAL': ('EclipseTotal', u'Total'),
-		'ANNULAR': ('EclipseAnnular', u'Annular'),
-		'HYBRID': ('EclipseHybrid', u'Hybrid'),
-		'PARTIAL': ('EclipsePartial', u'Partial'),
-		'PENUMBRAL': ('EclipsePenumbral', u'Penumbral'),
-		'UNKNOWN': ('EclipseUnknown', u'Unknown'),
-		'NONE': ('EclipseUnknown', u'Unknown'),
-	}
-	entry = keys.get(token)
-	if entry:
-		return str(mtexts.txts.get(entry[0], entry[1]))
-	return token.title()
+	return eclipses.eclipse_kind_label(event)
 
 
 def get_eclipse_display_rows(radix, options=None, eclipse_window=ECLIPSE_WINDOW_DAYS):
@@ -776,11 +755,24 @@ def get_station_marker_for_jd(jd_ut, planet_idx, within_days=2.0, options=None, 
 	return item.get('code')
 
 
-def get_motion_marker_for_speed(jd_ut, planet_idx, speed_lon, within_days=2.0):
+def get_motion_marker_for_speed(
+	jd_ut,
+	planet_idx,
+	speed_lon,
+	within_days=2.0,
+	options=None,
+	include_extended_stations=None,
+):
 	if speed_lon is None:
 		return ''
 
-	marker = get_station_marker_for_jd(jd_ut, planet_idx, within_days=within_days)
+	marker = get_station_marker_for_jd(
+		jd_ut,
+		planet_idx,
+		within_days=within_days,
+		options=options,
+		include_extended_stations=include_extended_stations,
+	)
 	if marker is not None:
 		return marker
 

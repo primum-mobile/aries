@@ -5,7 +5,7 @@
 "use client";
 
 import * as React from "react";
-import { Calendar, ChevronLeft, ChevronRight, Copy, Download, FileText } from "lucide-react";
+import { Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 
 import {
   ContextMenuItem,
@@ -43,20 +43,15 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
 import { beginWorkspaceSnapshotCommand } from "@/stores/workspace-command-snapshot-gate";
 
 import { TimedChartContextMenu } from "./directions-view";
-import {
-  CellView,
-  downloadText,
-  tableToConfiguredAlignedText,
-  tableToConfiguredTsv,
-} from "./generic-table-view";
+import { CellView } from "./generic-table-view";
 import {
   isListDateColumn,
   listColumnDisplayOrder,
   useListLayoutPreset,
 } from "./list-column-layout";
 import { ListHeadLabel, type ListHeadAlign } from "./list-head-label";
-import { exportTablePayloadPdf } from "./table-pdf-export";
-import { exportTextContent } from "./text-export";
+import { buildTableExportDocument } from "./table-pdf-export";
+import { TextExportActions } from "./text-export-actions";
 import { useSettledWorkspaceRefreshSeq } from "./step-refresh";
 import { ColumnResizeHandle, useResizableTableColumns } from "./resizable-table-columns";
 import { RetainedPaneShell } from "./retained-pane-shell";
@@ -84,11 +79,15 @@ type EclipseCapabilities = {
   chunkYears?: number;
   edgeTriggerRows?: number;
   noRowsLabel?: string;
+  seriesMode?: boolean;
+  sarosKind?: "solar" | "lunar" | null;
+  sarosKindLabel?: string | null;
+  sarosSeries?: number | null;
 };
 
 const TABLE_ID = "eclipses";
 
-const FOCUS_CONTEXT_ROWS = 5;
+const ECLIPSE_FOCUS_ANCHOR = 0.25;
 const VIRTUAL_OVERSCAN_ROWS = 18;
 const ECLIPSE_VIRTUAL_SCROLL_SYNC_EVENT = "aries:eclipse-virtual-scroll-sync";
 
@@ -128,6 +127,8 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
   const scrollExtendArmedRef = React.useRef(false);
   const scrollExtendInFlightRef = React.useRef(false);
   const scrollExtendControllerRef = React.useRef<AbortController | null>(null);
+  const finiteSeriesRequestedRef = React.useRef(false);
+  const finiteSeriesRequestIdRef = React.useRef(0);
   const payloadRef = React.useRef(payload);
   const payloadDocumentIdRef = React.useRef(documentId);
   const layoutPreset = useListLayoutPreset();
@@ -135,6 +136,8 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
   React.useLayoutEffect(() => {
     if (payloadDocumentIdRef.current !== documentId) {
       payloadDocumentIdRef.current = documentId;
+      finiteSeriesRequestIdRef.current += 1;
+      finiteSeriesRequestedRef.current = false;
       const cached = getCachedGenericTablePayload(TABLE_ID, documentId);
       payloadRef.current = cached;
       setPayload(cached);
@@ -182,6 +185,9 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
     async (signal?: AbortSignal) => {
       const current = payloadDocumentIdRef.current === documentId ? payloadRef.current : null;
       const currentEclipses = asRecord(asRecord(current?.capabilities).eclipses);
+      if (finiteSeriesRequestedRef.current || currentEclipses.seriesMode === true) {
+        return fetchGenericTablePayload(TABLE_ID, documentId, signal);
+      }
       const currentFrom = asDateTriple(currentEclipses.from);
       const currentTo = asDateTriple(currentEclipses.to);
       if (currentFrom && currentTo) {
@@ -236,6 +242,16 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
         { value: "exact_conjunction" as const, label: t("eclipsesView.exactConjunction") },
         { value: "eclipse_maximum" as const, label: t("eclipsesView.eclipseMaximum") },
       ];
+  const seriesMode = eclipses.seriesMode === true;
+  const seriesKind = eclipses.sarosKind === "solar" || eclipses.sarosKind === "lunar"
+    ? eclipses.sarosKind
+    : null;
+  const seriesKindLabel = typeof eclipses.sarosKindLabel === "string" ? eclipses.sarosKindLabel : null;
+  const seriesNumber = typeof eclipses.sarosSeries === "number" ? eclipses.sarosSeries : null;
+  const viewportKey = seriesMode && seriesKind && seriesNumber != null
+    ? `saros:${seriesKind}:${seriesNumber}`
+    : "all-eclipses";
+  const lastViewportKeyRef = React.useRef(viewportKey);
   const rows = React.useMemo(() => (
     payload?.rows.length === 1 && payload.rows[0]?.id === "empty" ? [] : payload?.rows ?? []
   ), [payload]);
@@ -250,7 +266,7 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
     }
     return 0;
   }, [focusRowId, focusRowIndex, rows]);
-  const virtualRows = useVirtualRows(listRef, rows.length, focusIndex, rowHeight);
+  const virtualRows = useVirtualRows(listRef, rows.length, focusIndex, rowHeight, !seriesMode);
   const visibleRows = rows.slice(virtualRows.startIndex, virtualRows.endIndex);
   const previousRowHeightRef = React.useRef(rowHeight);
   React.useLayoutEffect(() => {
@@ -275,20 +291,30 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
       rows.length,
       rowHeight,
     );
-    armScrollExtension();
-  }, [armScrollExtension, rowHeight, rows.length]);
+    if (!seriesMode) armScrollExtension();
+  }, [armScrollExtension, rowHeight, rows.length, seriesMode]);
   React.useLayoutEffect(() => {
     if (!listRef.current || !from || !to || !rows.length) return;
+    const enteredNewViewport = lastViewportKeyRef.current !== viewportKey;
+    lastViewportKeyRef.current = viewportKey;
     const plan = scrollPlanRef.current;
     scrollPlanRef.current = null;
+    if (
+      enteredNewViewport &&
+      focusIndex >= 0 &&
+      scrollEclipseRowToAnchor(listRef.current, rows.length, focusIndex, rowHeight)
+    ) {
+      hasFocusedInitialRef.current = true;
+      return;
+    }
     if (plan?.kind === "preserve") {
       restoreScrollAnchor(listRef.current, plan.anchor, rows, rowHeight);
-      armScrollExtension();
+      if (!seriesMode) armScrollExtension();
       return;
     }
     if (plan?.kind === "preservePrepend") {
       restorePrependedScroll(listRef.current, plan, rows, rowHeight);
-      armScrollExtension();
+      if (!seriesMode) armScrollExtension();
       return;
     }
     if (plan?.kind !== "focus" && hasFocusedInitialRef.current) return;
@@ -297,9 +323,9 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
       scrollEclipseRowToAnchor(listRef.current, rows.length, focusIndex, rowHeight)
     ) {
       hasFocusedInitialRef.current = true;
-      armScrollExtension();
+      if (!seriesMode) armScrollExtension();
     }
-  }, [armScrollExtension, chartMoment, documentId, focusIndex, from, rowHeight, rows, to]);
+  }, [armScrollExtension, chartMoment, documentId, focusIndex, from, rowHeight, rows, seriesMode, to, viewportKey]);
 
   const updateBinding = React.useCallback(
     async (
@@ -310,19 +336,24 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
       scrollPlanRef.current = scrollPlan;
       pendingRef.current = true;
       setPending(true);
+      let bindingUpdated = false;
       try {
         await workspaceUpdateTableBinding(documentId, binding, TABLE_ID);
+        bindingUpdated = true;
         const refreshed = await fetchGenericTablePayload(TABLE_ID, documentId);
+        if (payloadDocumentIdRef.current !== documentId) return true;
         rememberGenericTablePayload(TABLE_ID, documentId, refreshed);
         payloadRef.current = refreshed;
         setPayload(refreshed);
         setError(null);
         setActionError(null);
+        return true;
       } catch (err) {
         if (scrollPlanRef.current === scrollPlan) {
           scrollPlanRef.current = null;
         }
         setError(err instanceof Error ? err.message : String(err));
+        return bindingUpdated;
       } finally {
         pendingRef.current = false;
         setPending(false);
@@ -393,6 +424,8 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
     (direction: "before" | "after") => {
       if (
         !scrollExtendArmedRef.current ||
+        finiteSeriesRequestedRef.current ||
+        seriesMode ||
         scrollExtendInFlightRef.current ||
         pendingRef.current ||
         !from ||
@@ -448,13 +481,14 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
           }
         });
     },
-    [chunkYears, documentId, from, to],
+    [chunkYears, documentId, from, seriesMode, to],
   );
 
   const checkScrollEdges = React.useCallback(() => {
     const el = listRef.current;
     if (
       !el ||
+      seriesMode ||
       !scrollExtendArmedRef.current ||
       scrollExtendInFlightRef.current ||
       pendingRef.current ||
@@ -486,7 +520,7 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
     if ((rows.length - 1 - lastVis) <= triggerRows) {
       extendRange("after");
     }
-  }, [edgeRows, extendRange, rows.length]);
+  }, [edgeRows, extendRange, rows.length, seriesMode]);
 
   React.useEffect(() => {
     const el = listRef.current;
@@ -540,6 +574,48 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
     [cancelScrollExtension, chartMoment, documentId, fetchRetainedPayload],
   );
 
+  const ordinaryRangeBinding = React.useMemo<Record<string, unknown>>(() => ({
+    ...(from ? { from } : {}),
+    ...(to ? { to } : {}),
+    year: centerYear,
+    ...(focusDate ? { focus: focusDate } : {}),
+  }), [centerYear, focusDate, from, to]);
+  const showSarosSeries = React.useCallback((selection: {
+    kind: "solar" | "lunar";
+    series: number;
+    member: number;
+    eventJd: number;
+  }) => {
+    const previousFiniteRequest = finiteSeriesRequestedRef.current;
+    const requestId = ++finiteSeriesRequestIdRef.current;
+    finiteSeriesRequestedRef.current = true;
+    void updateBinding({
+      ...ordinaryRangeBinding,
+      saros_kind: selection.kind,
+      saros_series: selection.series,
+      saros_member: selection.member,
+      saros_event_jd: selection.eventJd,
+    }, { kind: "focus" }).then((bindingAccepted) => {
+      if (!bindingAccepted && finiteSeriesRequestIdRef.current === requestId) {
+        finiteSeriesRequestedRef.current = previousFiniteRequest;
+      }
+    });
+  }, [ordinaryRangeBinding, updateBinding]);
+  const backToAllEclipses = React.useCallback(() => {
+    finiteSeriesRequestIdRef.current += 1;
+    finiteSeriesRequestedRef.current = false;
+    void updateBinding(ordinaryRangeBinding, { kind: "focus" });
+  }, [ordinaryRangeBinding, updateBinding]);
+  const focusEclipseDate = React.useCallback((date: [number, number, number]) => {
+    if (seriesMode) {
+      if (listRef.current) {
+        scrollEclipseRowToAnchor(listRef.current, rows.length, 0, rowHeight);
+      }
+      return;
+    }
+    recenterOnDate(date);
+  }, [recenterOnDate, rowHeight, rows.length, seriesMode]);
+
   if (error && !payload) {
     return (
       <RetainedPaneShell
@@ -547,6 +623,7 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
         sourceName={sourceName}
         closeLabel={t("eclipsesView.closeEclipses")}
         onClose={onClose}
+        closePosition="leading"
         wrapHeader
         closeSize="small"
       >
@@ -564,6 +641,7 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
         sourceName={sourceName}
         closeLabel={t("eclipsesView.closeEclipses")}
         onClose={onClose}
+        closePosition="leading"
         wrapHeader
         closeSize="small"
       >
@@ -576,6 +654,9 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
 
   const isEmpty = rows.length === 0 && payload.rows.length === 1 && payload.rows[0]?.id === "empty";
   const exportPayload = orderedTablePayload(payload, displayColumnOrder);
+  const viewHeaderLabel = seriesMode && seriesKindLabel && seriesNumber != null
+    ? t("eclipsesView.sarosSeriesLabel", { kind: seriesKindLabel, series: seriesNumber })
+    : formatRange(from, to, dateConvention);
 
   return (
     <RetainedPaneShell
@@ -583,132 +664,88 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
       sourceName={sourceName}
       closeLabel={t("eclipsesView.closeEclipses")}
       onClose={onClose}
+      closePosition="leading"
       wrapHeader
       closeSize="small"
       toolbar={
         <>
-          <PaneToolbarButton
-            type="button"
-            density="small"
-            square
-            onClick={() => shiftRange(-rangeYears)}
-            disabled={pending}
-            aria-label={t("eclipsesView.previousEclipseRange")}
-          >
-            <ChevronLeft />
-          </PaneToolbarButton>
-          <input
-            data-aries-control-appearance="local"
-            key={centerYear}
-            aria-label={t("eclipsesView.eclipseCenterYear")}
-            className="h-[var(--aries-control-height-small)] w-20 rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-border-subtle)] bg-background px-[var(--aries-control-padding-x-compact)] text-center text-[length:var(--aries-font-size-small)]"
-            defaultValue={String(centerYear)}
-            disabled={pending}
-            onBlur={(event) => jumpToYear(event.currentTarget.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                jumpToYear(event.currentTarget.value);
-              }
-            }}
-          />
-          <PaneToolbarButton
-            type="button"
-            density="small"
-            square
-            onClick={() => shiftRange(rangeYears)}
-            disabled={pending}
-            aria-label={t("eclipsesView.nextEclipseRange")}
-          >
-            <ChevronRight />
-          </PaneToolbarButton>
-          <PaneToolbarButton
-            type="button"
-            density="small"
-            onClick={() => {
-              if (viewportToggleTarget) {
-                recenterOnDate(viewportToggleTarget);
-              }
-            }}
-            disabled={pending || !viewportToggleTarget}
-            title={t("eclipsesView.switchViewportTitle")}
-          >
-            <Calendar />
-            {viewportToggleLabel}
-          </PaneToolbarButton>
-          <PaneToolbarButton
-            type="button"
-            density="small"
-            onClick={() => {
-              void tableToConfiguredTsv(exportPayload, exportPayload.rows).then((text) =>
-                navigator.clipboard?.writeText(text).catch(() => {
-                  downloadText("eclipses.tsv", text, "text/tab-separated-values");
-                })
-              );
-            }}
-          >
-            <Copy />
-            {t("eclipsesView.copy")}
-          </PaneToolbarButton>
-          <PaneToolbarButton
-            type="button"
-            density="small"
-            onClick={() => {
-              void tableToConfiguredTsv(exportPayload, exportPayload.rows).then((text) =>
-                exportTextContent({
-                filename: "eclipses",
-                extension: "tsv",
-                mimeType: "text/tab-separated-values;charset=utf-8",
-                text,
-                title: t("eclipsesView.exportTsvTitle"),
-                filters: [{ name: t("eclipsesView.tsvFiles"), extensions: ["tsv"] }],
-                })
-              ).catch(() => {});
-            }}
-          >
-            <Download />
-            TSV
-          </PaneToolbarButton>
-          <PaneToolbarButton
-            type="button"
-            density="small"
-            onClick={() => {
-              void tableToConfiguredAlignedText(exportPayload, exportPayload.rows, {
-                title: exportPayload.title ?? t("eclipsesView.eclipses"),
-                headerLines: [formatRange(from, to, dateConvention)],
-              }).then((text) =>
-                exportTextContent({
-                filename: "eclipses",
-                extension: "txt",
-                text,
-                title: t("eclipsesView.exportTextTitle"),
-                filters: [{ name: t("eclipsesView.textFiles"), extensions: ["txt"] }],
-                })
-              ).catch(() => {});
-            }}
-          >
-            <FileText />
-            TXT
-          </PaneToolbarButton>
-          <PaneToolbarButton
-            type="button"
-            density="small"
-            onClick={() =>
-              void exportTablePayloadPdf(exportPayload, exportPayload.rows, {
+          {!seriesMode ? (
+            <>
+              <PaneToolbarButton
+                type="button"
+                density="small"
+                square
+                onClick={() => shiftRange(-rangeYears)}
+                disabled={pending}
+                aria-label={t("eclipsesView.previousEclipseRange")}
+              >
+                <ChevronLeft />
+              </PaneToolbarButton>
+              <input
+                data-aries-control-appearance="local"
+                key={centerYear}
+                aria-label={t("eclipsesView.eclipseCenterYear")}
+                className="h-[var(--aries-control-height-small)] w-20 rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-border-subtle)] bg-background px-[var(--aries-control-padding-x-compact)] text-center text-[length:var(--aries-font-size-small)]"
+                defaultValue={String(centerYear)}
+                disabled={pending}
+                onBlur={(event) => jumpToYear(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    jumpToYear(event.currentTarget.value);
+                  }
+                }}
+              />
+              <PaneToolbarButton
+                type="button"
+                density="small"
+                square
+                onClick={() => shiftRange(rangeYears)}
+                disabled={pending}
+                aria-label={t("eclipsesView.nextEclipseRange")}
+              >
+                <ChevronRight />
+              </PaneToolbarButton>
+              <PaneToolbarButton
+                type="button"
+                density="small"
+                onClick={() => {
+                  if (viewportToggleTarget) {
+                    recenterOnDate(viewportToggleTarget);
+                  }
+                }}
+                disabled={pending || !viewportToggleTarget}
+                title={t("eclipsesView.switchViewportTitle")}
+              >
+                <Calendar />
+                {viewportToggleLabel}
+              </PaneToolbarButton>
+            </>
+          ) : null}
+          <TextExportActions
+            buildDocument={() =>
+              buildTableExportDocument(exportPayload, exportPayload.rows, {
                 fileStem: "eclipses",
                 title: exportPayload.title ?? t("eclipsesView.eclipses"),
-                headerLines: [formatRange(from, to, dateConvention)],
-              }).catch(() => {})
+                headerLines: [viewHeaderLabel],
+              })
             }
-          >
-            <Download />
-            PDF
-          </PaneToolbarButton>
+          />
         </>
       }
     >
       <PaneInfoBar className="justify-between text-[color:var(--aries-text-muted)]">
-        <span>{formatRange(from, to, dateConvention)}</span>
+        {seriesMode && seriesKind && seriesKindLabel && seriesNumber != null ? (
+          <span className="flex items-center gap-[var(--aries-control-gap)]">
+            <PaneToolbarButton type="button" density="compact" onClick={backToAllEclipses} disabled={pending}>
+              <ChevronLeft />
+              {t("eclipsesView.backToAllEclipses")}
+            </PaneToolbarButton>
+            <span>{t("eclipsesView.sarosSeriesLabel", { kind: seriesKindLabel, series: seriesNumber })}</span>
+          </span>
+        ) : (
+          <span>{formatRange(from, to, dateConvention)}</span>
+        )}
         <span>{chartMoment === "eclipse_maximum" ? t("eclipsesView.eclipseMaximum") : t("eclipsesView.exactConjunction")}</span>
       </PaneInfoBar>
       {actionError ? (
@@ -716,7 +753,11 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
           {actionError}
         </div>
       ) : null}
-      <div ref={listRef} className="min-h-0 flex-1 overflow-auto">
+      <div
+        key={viewportKey}
+        ref={listRef}
+        className="min-h-0 flex-1 overflow-auto"
+      >
         <table
           className={cn(LIST_ROLE_CLASSES.standard, "border-collapse", tableResize.tableClassName)}
           style={tableResize.tableStyle}
@@ -772,7 +813,8 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
                     columns={payload.columns}
                     columnOrder={displayColumnOrder}
                     onChartMomentChange={changeChartMoment}
-                    onFocusDate={recenterOnDate}
+                    onFocusDate={focusEclipseDate}
+                    onShowSarosSeries={showSarosSeries}
                     onActionError={setActionError}
                     dateConvention={dateConvention}
                     rowHeight={rowHeight}
@@ -786,13 +828,6 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
           </tbody>
         </table>
       </div>
-      {payload.deferrals?.length ? (
-        <div className="shrink-0 space-y-1 border-t border-[color:var(--aries-border-subtle)] px-3 py-2 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]">
-          {payload.deferrals.map((note, index) => (
-            <div key={`${index}:${note}`}>{note}</div>
-          ))}
-        </div>
-      ) : null}
     </RetainedPaneShell>
   );
 }
@@ -808,6 +843,7 @@ function EclipseRow({
   columnOrder,
   onChartMomentChange,
   onFocusDate,
+  onShowSarosSeries,
   onActionError,
   dateConvention,
   rowHeight,
@@ -822,6 +858,12 @@ function EclipseRow({
   columnOrder: readonly number[];
   onChartMomentChange: (mode: EclipseChartMomentMode) => void;
   onFocusDate: (date: [number, number, number]) => void;
+  onShowSarosSeries: (selection: {
+    kind: "solar" | "lunar";
+    series: number;
+    member: number;
+    eventJd: number;
+  }) => void;
   onActionError: (message: string | null) => void;
   dateConvention: DateConvention;
   rowHeight: number;
@@ -836,6 +878,8 @@ function EclipseRow({
   const eventJd = typeof meta.eventJd === "number" ? meta.eventJd : null;
   const retflag = typeof meta.retflag === "number" ? meta.retflag : 0;
   const sarosMember = typeof meta.sarosMember === "number" ? meta.sarosMember : null;
+  const sarosSeries = typeof meta.sarosSeries === "number" ? meta.sarosSeries : null;
+  const sarosKind = meta.kind === "solar" || meta.kind === "lunar" ? meta.kind : null;
   const sarosFirstDate = parseIsoDateTriple(typeof meta.sarosFirstDate === "string" ? meta.sarosFirstDate : null);
   const sarosFirstLabel = typeof meta.sarosFirstLabel === "string" ? meta.sarosFirstLabel : (
     sarosFirstDate ? formatDate(sarosFirstDate, dateConvention) : null
@@ -934,6 +978,18 @@ function EclipseRow({
             </ContextMenuSubContent>
           </ContextMenuSub>
           <ContextMenuSeparator />
+          {sarosKind && sarosSeries != null && sarosMember != null && eventJd != null ? (
+            <ContextMenuItem
+              onClick={() => onShowSarosSeries({
+                kind: sarosKind,
+                series: sarosSeries,
+                member: sarosMember,
+                eventJd,
+              })}
+            >
+              {t("eclipsesView.showSarosSeries")}
+            </ContextMenuItem>
+          ) : null}
           <ContextMenuItem
             disabled={!sarosFirstDate || (sarosMember != null && sarosMember <= 1)}
             onClick={() => {
@@ -1128,6 +1184,7 @@ function useVirtualRows(
   rowCount: number,
   seedIndex: number,
   rowHeight: number,
+  enabled: boolean,
 ) {
   const [viewport, setViewport] = React.useState({ scrollTop: 0, height: 0, headerHeight: 0 });
 
@@ -1149,6 +1206,7 @@ function useVirtualRows(
   }, [scrollerRef]);
 
   React.useLayoutEffect(() => {
+    if (!enabled) return undefined;
     const scroller = scrollerRef.current;
     if (!scroller) return undefined;
 
@@ -1182,34 +1240,57 @@ function useVirtualRows(
       resizeObserver?.disconnect();
       if (frame) cancelAnimationFrame(frame);
     };
-  }, [measureNow, rowCount, scrollerRef]);
+  }, [enabled, measureNow, rowCount, scrollerRef]);
 
   return React.useMemo(() => {
-    if (rowCount <= 0) {
-      return {
-        startIndex: 0,
-        endIndex: 0,
-        paddingTop: 0,
-        paddingBottom: 0,
-      };
-    }
-    const seededStart =
-      seedIndex >= 0 ? Math.max(0, Math.min(rowCount - 1, seedIndex)) : 0;
-    const bodyScrollTop = Math.max(0, viewport.scrollTop - viewport.headerHeight);
-    const visibleStart =
-      viewport.height > 0
-        ? Math.floor(bodyScrollTop / rowHeight)
-        : seededStart;
-    const visibleCount = Math.max(1, Math.ceil(viewport.height / rowHeight));
-    const startIndex = Math.max(0, visibleStart - VIRTUAL_OVERSCAN_ROWS);
-    const endIndex = Math.min(rowCount, visibleStart + visibleCount + VIRTUAL_OVERSCAN_ROWS);
-    return {
-      startIndex,
-      endIndex,
-      paddingTop: startIndex * rowHeight,
-      paddingBottom: (rowCount - endIndex) * rowHeight,
-    };
-  }, [rowCount, rowHeight, seedIndex, viewport.headerHeight, viewport.height, viewport.scrollTop]);
+    return eclipseVirtualWindow(rowCount, seedIndex, rowHeight, viewport, enabled);
+  }, [enabled, rowCount, rowHeight, seedIndex, viewport]);
+}
+
+type EclipseVirtualViewport = Readonly<{
+  scrollTop: number;
+  height: number;
+  headerHeight: number;
+}>;
+
+export function eclipseVirtualWindow(
+  rowCount: number,
+  seedIndex: number,
+  rowHeight: number,
+  viewport: EclipseVirtualViewport,
+  enabled: boolean,
+) {
+  if (rowCount <= 0) {
+    return { startIndex: 0, endIndex: 0, paddingTop: 0, paddingBottom: 0 };
+  }
+  if (!enabled) {
+    return { startIndex: 0, endIndex: rowCount, paddingTop: 0, paddingBottom: 0 };
+  }
+  const seededStart = seedIndex >= 0
+    ? Math.max(0, Math.min(rowCount - 1, seedIndex))
+    : 0;
+  const bodyViewportHeight = Math.max(0, viewport.height - viewport.headerHeight);
+  const visibleCount = Math.max(1, Math.ceil(bodyViewportHeight / rowHeight));
+  const bodyScrollTop = Math.max(0, viewport.scrollTop - viewport.headerHeight);
+  const rawVisibleStart = viewport.height > 0
+    ? Math.floor(bodyScrollTop / rowHeight)
+    : seededStart;
+  const maxVisibleStart = Math.max(0, rowCount - visibleCount);
+  const visibleStart = Math.max(0, Math.min(rawVisibleStart, maxVisibleStart));
+  const startIndex = Math.min(
+    rowCount,
+    Math.max(0, visibleStart - VIRTUAL_OVERSCAN_ROWS),
+  );
+  const endIndex = Math.max(
+    startIndex,
+    Math.min(rowCount, visibleStart + visibleCount + VIRTUAL_OVERSCAN_ROWS),
+  );
+  return {
+    startIndex,
+    endIndex,
+    paddingTop: startIndex * rowHeight,
+    paddingBottom: (rowCount - endIndex) * rowHeight,
+  };
 }
 
 function VirtualSpacerRow({ colSpan, height }: { colSpan: number; height: number }) {
@@ -1235,16 +1316,18 @@ function clampScrollTop(
   scrollTop: number,
   rowCount: number,
   rowHeight: number,
-) {
+): number {
   const maxTop = Math.max(
     0,
     getTableHeaderHeight(container) + rowCount * rowHeight - container.clientHeight,
   );
-  container.scrollTop = Math.max(0, Math.min(maxTop, scrollTop));
+  const desiredTop = Math.max(0, Math.min(maxTop, scrollTop));
+  container.scrollTop = desiredTop;
   container.dispatchEvent(new Event(ECLIPSE_VIRTUAL_SCROLL_SYNC_EVENT));
+  return desiredTop;
 }
 
-function scrollEclipseRowToAnchor(
+export function scrollEclipseRowToAnchor(
   container: HTMLElement,
   rowCount: number,
   rowIndex: number,
@@ -1252,11 +1335,13 @@ function scrollEclipseRowToAnchor(
 ): boolean {
   if (rowCount <= 0 || rowIndex < 0 || container.clientHeight <= 0) return false;
   const targetIndex = Math.max(0, Math.min(rowCount - 1, rowIndex));
+  const headerHeight = getTableHeaderHeight(container);
+  const viewportHeight = Math.max(rowHeight, container.clientHeight - headerHeight);
   const targetTop =
-    getTableHeaderHeight(container) +
-    Math.max(0, targetIndex - FOCUS_CONTEXT_ROWS) * rowHeight;
-  clampScrollTop(container, targetTop, rowCount, rowHeight);
-  return Math.abs(container.scrollTop - Math.max(0, targetTop)) <= 2 || container.scrollTop >= 0;
+    targetIndex * rowHeight -
+    viewportHeight * ECLIPSE_FOCUS_ANCHOR + rowHeight / 2;
+  const desiredTop = clampScrollTop(container, targetTop, rowCount, rowHeight);
+  return Math.abs(container.scrollTop - desiredTop) <= 2;
 }
 
 function captureScrollAnchor(container: HTMLElement): ScrollAnchor | null {

@@ -44,7 +44,8 @@ THEME_PRESET_NAMES: tuple[str, ...] = tuple(
 
 
 SETTINGS_TABS: tuple[dict, ...] = (
-    {"id": "appearance", "labelKey": "settings.tabAppearance", "menuCommands": ["appearance.toggle"]},
+    {"id": "appearance", "labelKey": "settings.tabAppearance", "menuCommands": ["appearance.toggle", "menu.symbols"]},
+    {"id": "interpretation", "labelKey": "settings.tabInterpretation", "menuCommands": []},
     {"id": "astrocartography", "labelKey": "settings.astrocartography", "menuCommands": ["menu.options.astrocartography"]},
     {"id": "colors", "labelKey": "settings.tabColors", "menuCommands": ["menu.colors"]},
     {"id": "export", "labelKey": "settings.tabExport", "menuCommands": []},
@@ -52,7 +53,6 @@ SETTINGS_TABS: tuple[dict, ...] = (
     {"id": "ayanamsha", "labelKey": "settings.tabAyanamsha", "menuCommands": ["menu.ayanamsha"]},
     {"id": "location", "labelKey": "settings.tabDefaultLocation", "menuCommands": ["menu.options.default-location"]},
     {"id": "planets", "labelKey": "settings.tabPlanetsPoints", "menuCommands": ["menu.options.planets-points", "menu.options.nodes", "menu.options.arabic-parts", "menu.options.syzygy"]},
-    {"id": "symbols", "labelKey": "settings.tabSymbols", "menuCommands": ["menu.symbols"]},
     {"id": "orbs", "labelKey": "settings.tabOrbs", "menuCommands": ["menu.options.orbs"]},
     {"id": "dignities", "labelKey": "settings.tabDignities", "menuCommands": ["menu.options.dignities"]},
     {"id": "speculum", "labelKey": "settings.tabSpeculum", "menuCommands": ["menu.options.speculum"]},
@@ -67,6 +67,88 @@ SETTINGS_TABS: tuple[dict, ...] = (
     {"id": "relationship", "labelKey": "settings.tabRelationshipCharts", "menuCommands": ["menu.options.relationship-charts"]},
     {"id": "stepalerts", "labelKey": "settings.tabStepAlerts", "menuCommands": ["menu.options.step-alerts"]},
     {"id": "languages", "labelKey": "settings.tabLanguages", "menuCommands": ["menu.options.languages"]},
+)
+
+
+# Purpose-built Interpretation settings consume this daemon-owned catalog.
+# Values are the canonical concrete subset suitable for user profiles; the
+# empty value means "do not override the source definition" and is removed
+# before the profile reaches corpus_semantics validation.
+CORPUS_SEMANTIC_FIELDS: tuple[dict, ...] = (
+    {
+        "key": "house_frame",
+        "labelKey": "settings.houseSystem",
+        "options": (
+            {"value": "", "labelKey": "settings.semanticUseSourceDefinition"},
+            {"value": "active", "labelKey": "settings.semanticCurrentHouseSystem"},
+            {"value": "whole_sign", "labelKey": "optmenu.wholeSign"},
+            {"value": "regiomontanus_5deg", "labelKey": "settings.semanticRegiomontanusFiveDegrees"},
+        ),
+    },
+    {
+        "key": "aspect_frame",
+        "labelKey": "settings.aspects",
+        "options": (
+            {"value": "", "labelKey": "settings.semanticUseSourceDefinition"},
+            {"value": "degree", "labelKey": "settings.semanticDegreeAspects"},
+            {"value": "sign", "labelKey": "settings.semanticSignConfigurations"},
+        ),
+    },
+    {
+        "key": "point_frame",
+        "labelKey": "settings.semanticFieldPointFrame",
+        "options": (
+            {"value": "", "labelKey": "settings.semanticUseSourceDefinition"},
+            {"value": "degree", "labelKey": "dirview.degree"},
+            {"value": "sign", "labelKey": "settings.signs"},
+            {"value": "unresolved", "labelKey": "settings.semanticUnresolved"},
+        ),
+    },
+    {
+        "key": "orb_policy",
+        "labelKey": "settings.semanticFieldAspectOrbs",
+        "options": (
+            {"value": "", "labelKey": "settings.semanticUseSourceDefinition"},
+            {"value": "configured", "labelKey": "settings.semanticConfiguredOrbs"},
+            {"value": "lilly_moiety", "labelKey": "settings.semanticLillyMoiety"},
+            {"value": "unresolved", "labelKey": "settings.semanticUnresolved"},
+        ),
+    },
+    {
+        "key": "point_orb_policy",
+        "labelKey": "settings.semanticFieldPointOrbs",
+        "options": (
+            {"value": "", "labelKey": "settings.semanticUseSourceDefinition"},
+            {"value": "configured", "labelKey": "settings.semanticConfiguredOrbs"},
+            {"value": "lilly_moiety", "labelKey": "settings.semanticLillyMoiety"},
+            {"value": "exact", "labelKey": "aspectList.exact"},
+            {"value": "unresolved", "labelKey": "settings.semanticUnresolved"},
+        ),
+    },
+    {
+        "key": "dignity_frame",
+        "labelKey": "settings.tabDignities",
+        "options": (
+            {"value": "", "labelKey": "settings.semanticUseSourceDefinition"},
+            {"value": "active", "labelKey": "settings.semanticCurrentDignities"},
+            {"value": "hellenistic", "labelKey": "settings.semanticHellenisticDignities"},
+            {"value": "lilly", "labelKey": "settings.semanticLillyDignities"},
+        ),
+    },
+    {
+        "key": "solar_condition_profile",
+        "labelKey": "settings.solarCondition",
+        "options": (
+            {"value": "", "labelKey": "settings.semanticUseSourceDefinition"},
+            {"value": "active", "labelKey": "settings.semanticCurrentSolarCondition"},
+            {"value": "late_hellenistic", "labelKey": "settings.solarConditionLateHellenistic"},
+            {"value": "al_qabisi", "labelKey": "settings.solarConditionAlQabisi"},
+            {"value": "ibn_ezra", "labelKey": "settings.solarConditionIbnEzra"},
+            {"value": "lilly_1647", "labelKey": "settings.solarConditionWilliamLilly"},
+            {"value": "morin_1661", "labelKey": "settings.solarConditionMorin"},
+            {"value": "unresolved", "labelKey": "settings.semanticUnresolved"},
+        ),
+    },
 )
 
 
@@ -97,4 +179,5 @@ def registry_payload() -> dict:
         "tabs": deepcopy(list(SETTINGS_TABS)),
         "mirroredSections": deepcopy(list(MIRRORED_SECTIONS)),
         "themePresets": deepcopy(list(THEME_PRESET_DEFINITIONS)),
+        "corpusSemanticFields": deepcopy(list(CORPUS_SEMANTIC_FIELDS)),
     }

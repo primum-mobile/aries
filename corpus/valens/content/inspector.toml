@@ -1,0 +1,222 @@
+version = 1
+
+# Standing source passages shown for chart objects in the inspector. The text
+# remains in corpus/parsed/valens.json; this editable map only selects the
+# canonical section or paragraph for each target.
+
+[[entries]]
+kind = "planet"
+object_id = 0
+book = 0
+chapter = 7
+heading = "[Sun]"
+
+[[entries]]
+kind = "planet"
+object_id = 1
+book = 0
+chapter = 7
+heading = "[Moon]"
+
+[[entries]]
+kind = "planet"
+object_id = 2
+book = 0
+chapter = 7
+heading = "[Mercury]"
+
+[[entries]]
+kind = "planet"
+object_id = 3
+book = 0
+chapter = 7
+heading = "[Venus]"
+
+[[entries]]
+kind = "planet"
+object_id = 4
+book = 0
+chapter = 7
+heading = "[Mars]"
+
+[[entries]]
+kind = "planet"
+object_id = 5
+book = 0
+chapter = 7
+heading = "[Jupiter]"
+
+[[entries]]
+kind = "planet"
+object_id = 6
+book = 0
+chapter = 7
+heading = "[Saturn]"
+
+[[entries]]
+kind = "sign"
+object_id = 0
+book = 1
+chapter = 5
+heading = "[Aries]"
+
+[[entries]]
+kind = "sign"
+object_id = 1
+book = 1
+chapter = 5
+heading = "[Taurus]"
+
+[[entries]]
+kind = "sign"
+object_id = 2
+book = 1
+chapter = 5
+heading = "[Gemini]"
+
+[[entries]]
+kind = "sign"
+object_id = 3
+book = 1
+chapter = 5
+heading = "[Cancer]"
+
+[[entries]]
+kind = "sign"
+object_id = 4
+book = 1
+chapter = 5
+heading = "[Leo]"
+
+[[entries]]
+kind = "sign"
+object_id = 5
+book = 1
+chapter = 5
+heading = "[Virgo]"
+
+[[entries]]
+kind = "sign"
+object_id = 6
+book = 1
+chapter = 5
+heading = "[Libra]"
+
+[[entries]]
+kind = "sign"
+object_id = 7
+book = 1
+chapter = 5
+heading = "[Scorpio]"
+
+[[entries]]
+kind = "sign"
+object_id = 8
+book = 1
+chapter = 5
+heading = "[Sagittarius]"
+
+[[entries]]
+kind = "sign"
+object_id = 9
+book = 1
+chapter = 5
+heading = "[Capricorn]"
+
+[[entries]]
+kind = "sign"
+object_id = 10
+book = 1
+chapter = 5
+heading = "[Aquarius]"
+
+[[entries]]
+kind = "sign"
+object_id = 11
+book = 1
+chapter = 5
+heading = "[Pisces]"
+
+[[entries]]
+kind = "house"
+object_id = 1
+book = 9
+chapter = 17
+paragraph = 1
+
+[[entries]]
+kind = "house"
+object_id = 2
+book = 9
+chapter = 17
+paragraph = 2
+
+[[entries]]
+kind = "house"
+object_id = 3
+book = 9
+chapter = 17
+paragraph = 3
+
+[[entries]]
+kind = "house"
+object_id = 4
+book = 9
+chapter = 17
+paragraph = 4
+
+[[entries]]
+kind = "house"
+object_id = 5
+book = 9
+chapter = 17
+paragraph = 5
+
+[[entries]]
+kind = "house"
+object_id = 6
+book = 9
+chapter = 17
+paragraph = 6
+
+[[entries]]
+kind = "house"
+object_id = 7
+book = 9
+chapter = 17
+paragraph = 7
+
+[[entries]]
+kind = "house"
+object_id = 8
+book = 9
+chapter = 17
+paragraph = 8
+
+[[entries]]
+kind = "house"
+object_id = 9
+book = 9
+chapter = 17
+paragraph = 9
+
+[[entries]]
+kind = "house"
+object_id = 10
+book = 9
+chapter = 17
+paragraph = 10
+
+[[entries]]
+kind = "house"
+object_id = 11
+book = 9
+chapter = 17
+paragraph = 11
+
+[[entries]]
+kind = "house"
+object_id = 12
+book = 9
+chapter = 17
+paragraph = 12

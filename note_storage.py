@@ -1,4 +1,9 @@
 # -*- coding: utf-8 -*-
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 """Single source of truth for per-chart note storage paths and filename sanitizing.
 
 Both the wx desktop brain (``morin.py`` / ``morinus.py``) and the wx-free daemon

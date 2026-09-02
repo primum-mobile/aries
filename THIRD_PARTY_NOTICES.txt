@@ -1,15 +1,58 @@
 ARIES THIRD-PARTY NOTICES
 
 This file records licenses and attribution for third-party material redistributed
-with the Aries source tree or application resources. Aries itself is licensed
-under GNU AGPL version 3 or later; see LICENSE.
+with the Aries source tree or application resources. Original Aries application
+code is licensed under GNU AGPL version 3 or later; see LICENSE. Morinus-derived
+application code remains under GNU GPL version 3 or later; see the Morinus
+application-code notice below, COPYRIGHT.txt, and COPYING-GPL-3.0.txt.
 
 
 SWISS EPHEMERIS
 
-Aries uses Swiss Ephemeris. Its separate dual-licensing terms and notices are
-provided in SWEP/Ephem/LICENSE, SWEP/Ephem/agpl-3.0.txt, and SWEP/src/LICENSE.
-The open-source Aries distribution uses the AGPL-compatible option.
+Aries uses Swiss Ephemeris 2.10.03 under its GNU AGPL option. The current
+dual-licensing notice and AGPL text are provided in SWEP/Ephem/LICENSE,
+SWEP/Ephem/agpl-3.0.txt, and the current notices in SWEP/src/*.c and
+SWEP/src/*.h. Astrodienst's current licensing information is available at:
+https://www.astro.com/swisseph/
+
+SWEP/src/LICENSE preserves the historical license text shipped in the upstream
+source layout, preceded by an Aries clarification dated 2026-07-31. The
+historical text describes older GPL/professional terms from 2008; it is retained
+as upstream provenance and is not the licensing choice used for the bundled
+Swiss Ephemeris 2.10.03 code. The open-source Aries distribution uses the
+current AGPL option recorded above.
+
+
+COLOR.JS
+
+Aries uses Color.js (colorjs.io) 0.7.0, copyright Lea Verou and Chris Lilley,
+licensed under the MIT License. It provides the colour-space conversions behind
+the application theme's contrast contracts and the OKLCH hue harmonisation used
+to derive interface colours from chart colours. Upstream source and licence:
+https://github.com/color-js/color.js
+
+
+MORINUS APPLICATION CODE
+
+Aries incorporates and modifies source from the Morinus astrology project.
+That source is copyright its respective contributors, including:
+
+- Robert Nagy — original author through Morinus 6.2.
+- Roberto Luporini — Morinus 7.x.
+- Elías D. Molins — Morinus 8.x.
+- Shin Ji-Hyeon and James Ren — Morinus 9.x.
+- Philippe Epaud, Margherita Fiorello, Martin Gansten, Jaime Chica Londoño,
+  Petr Radek, Endre Csaba Simon, Václav Jan Špirhanzl, and Denis Steinhoff.
+
+Morinus-derived application files remain licensed under GNU GPL version 3 or,
+at your option, any later version. Aries modifications are identified by dated
+file notices where practical. GPLv3 section 13 and AGPLv3 section 13 permit
+these GPL-covered portions to be combined with AGPL-covered Aries portions;
+the GPL continues to apply to the Morinus-covered portions, while the AGPL
+network-source requirement applies to the combination as a whole.
+
+The complete GPL version 3 text is in COPYING-GPL-3.0.txt. Source provenance:
+https://sourceforge.net/projects/morinus-updated/
 
 
 CELESTIAL DATA CONSTELLATION FIGURES AND STARS
@@ -125,11 +168,44 @@ statement from your version.
 Project and license: https://www.gnu.org/software/freefont/license.html
 
 
-KOSUGI FONT
+KOSUGI FONT / KOSUGI ARIES (MODIFIED)
 
-Res/FontTrials/Kosugi-Regular.ttf and its identical frontend copy are licensed
-under Apache License 2.0. The complete terms and source attribution are in
-Res/FontTrials/LICENSE-kosugi.txt and Res/FontTrials/sources.txt.
+Res/FontTrials/Kosugi-Regular.ttf and its identical frontend copy are
+Copyright 2010 The Kosugi Project Authors
+(https://github.com/googlefonts/kosugi), designed by MOTOYA, and licensed under
+Apache License 2.0. The complete terms and source attribution are in
+Res/FontTrials/LICENSE-kosugi.txt and Res/FontTrials/sources.txt. This is the
+unmodified upstream face and both it and the modified builds below ship, as
+separate selectable typeface profiles.
+
+Res/FontTrials/KosugiAries-Regular.ttf, and its identical frontend copy, is a
+MODIFIED version of that font, distributed under the same Apache License 2.0.
+It retains the upstream copyright notice in its name table as section 4(c)
+requires, and as section 4(b) requires the modifications are stated both there
+and here:
+
+  * Latin, Greek, Cyrillic and punctuation advance widths were respaced from
+    fixed half-width/full-width to proportional.
+  * Accented Latin composites, inverted punctuation and guillemets were added.
+  * A kern feature (GPOS) was added.
+  * Japanese glyphs are unchanged.
+
+The modifications are reproducible from the upstream file with
+scripts/fonts/build_kosugi_aries.py.
+
+webapp/frontend/public/fonts/KosugiNumerals-Regular.ttf is a second MODIFIED
+version of the same font, also under Apache License 2.0. Its stated changes are:
+subset to the figures and the degree, prime and double-prime marks; unitsPerEm
+retuned from 1024 to 1071 so the figures match a companion text face. Glyph
+outlines are unchanged. It is built from KosugiAries-Regular.ttf, so its name
+table carries the upstream copyright followed by both change statements in
+order. Reproducible with scripts/fonts/build_kosugi_numerals.py.
+
+Apache License 2.0 grants no trademark rights (section 6). The names "Kosugi
+Aries" and "Kosugi Numerals" are used solely to identify these builds as
+derived from Kosugi, which is the customary descriptive use the licence
+permits. They are not endorsed by, and imply no affiliation with, the Kosugi
+Project Authors or MOTOYA.
 
 
 DOTGOTHIC16 FONT

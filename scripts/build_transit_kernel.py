@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from setuptools import Extension, setup
@@ -29,6 +30,14 @@ SWEP_SOURCES = (
 )
 
 
+def native_compile_args() -> list[str]:
+	# MSVC already supplies its release optimization flags. The explicit flags
+	# below are GCC/Clang-only and make the extension build fail under cl.exe.
+	if sys.platform == "win32":
+		return []
+	return ["-O3", "-fvisibility=hidden"]
+
+
 setup(
 	name="aries-transit-kernel",
 	packages=[],
@@ -40,7 +49,7 @@ setup(
 				*(str(SWEP_ROOT / name) for name in SWEP_SOURCES),
 			],
 			include_dirs=[str(SWEP_ROOT)],
-			extra_compile_args=["-O3", "-fvisibility=hidden"],
+			extra_compile_args=native_compile_args(),
 		)
 	],
 )

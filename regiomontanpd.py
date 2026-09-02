@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 import math
 import astrology
 import primdirs
@@ -17,7 +22,22 @@ class RegiomontanPD(regiocampbasepd.RegioCampBasePD):
 		regiocampbasepd.RegioCampBasePD.__init__(self, chrt, options, pdrange, direction, abort)
 
 
-	def toPlanet(self, mundane, idprom, idprom2, lonprom, latprom, raprom, declprom, promasp, sig, sigasp, calcsecmotion=True, paspect=chart.Chart.NONE):
+	def toPlanet(
+		self,
+		mundane,
+		idprom,
+		idprom2,
+		lonprom,
+		latprom,
+		raprom,
+		declprom,
+		promasp,
+		sig,
+		sigasp,
+		calcsecmotion=True,
+		paspect=chart.Chart.NONE,
+		row_promasp_offset=None,
+	):
 		plsig = self.chart.planets.planets[sig]
 		aspect = chart.Chart.Aspects[sigasp]
 
@@ -120,7 +140,21 @@ class RegiomontanPD(regiocampbasepd.RegioCampBasePD):
 							break
 
 			if ok:
-				self.create(mundane, idprom, idprom2, sig, promasp, sigasp, arc)
+				self.create(
+					mundane,
+					idprom,
+					idprom2,
+					sig,
+					promasp,
+					sigasp,
+					arc,
+					promasp_offset=(
+						row_promasp_offset
+						if row_promasp_offset is not None
+						else (0.0 if paspect == chart.Chart.NONE else paspect)
+					),
+					sigasp_offset=aspect,
+				)
 
 
 	def toHCs(self, mundane, idprom, raprom, declprom, aspect, asp=0.0):
@@ -178,7 +212,16 @@ class RegiomontanPD(regiocampbasepd.RegioCampBasePD):
 						break
 
 			if ok:
-				self.create(mundane, idprom, primdirs.PrimDir.NONE, hcps[h][ID], aspect, chart.Chart.CONJUNCTIO, arc)
+				self.create(
+					mundane,
+					idprom,
+					primdirs.PrimDir.NONE,
+					hcps[h][ID],
+					aspect,
+					chart.Chart.CONJUNCTIO,
+					arc,
+					promasp_offset=asp,
+				)
 
 
 	def calcMP(self, ra, decl, pl):
@@ -370,8 +413,6 @@ class RegiomontanPD(regiocampbasepd.RegioCampBasePD):
 		wprom = util.normalize(wprom)
 
 		return True, wprom-hcps[h][W]
-
-
 
 
 

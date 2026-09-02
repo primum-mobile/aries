@@ -7,7 +7,7 @@ import * as React from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 
-import { Bell, ChevronLeft, ChevronRight, Coffee, PanelLeft, NotebookPen, Pencil, ScrollText, Search, Settings, SlidersHorizontal } from "lucide-react";
+import { Bell, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coffee, PanelLeft, NotebookPen, Pencil, ScrollText, Search, Settings, SlidersHorizontal } from "lucide-react";
 
 import {
   ResizableHandle,
@@ -19,8 +19,13 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type { ChartPalette, ChartRenderSnapshot, OverlayInfoRow } from "@/lib/chart/types";
+import type {
+  ChartPalette,
+  ChartRenderSnapshot,
+  OverlayInfoRow,
+} from "@/lib/chart/types";
 import { morinusTextFontFromTokens } from "@/lib/chart/chart-fonts";
+import { radixOverlayTopLeftLines } from "@/lib/chart/chart-overlay-lines";
 import {
   readPaletteFromTheme,
   readPaletteProfileOverrides,
@@ -47,6 +52,7 @@ import { LIST_PANE_CLASSES } from "@/lib/list-tokens";
 import { cn } from "@/lib/utils";
 
 import { ChartCanvas } from "./chart-canvas";
+import type { GraphicEphemerisDisplayMode } from "./graph-ephemeris-view";
 import {
   AstrocartControls,
   type AstrocartConfigurationChange,
@@ -120,6 +126,13 @@ const AstrolabeView = dynamic(
   () => import("./astrolabe-view").then((mod) => mod.AstrolabeView),
   { loading: () => null },
 );
+const CalendarPrototypeView = dynamic(
+  () =>
+    import("./calendar-prototype-view").then(
+      (mod) => mod.CalendarPrototypeView,
+    ),
+  { loading: () => null },
+);
 const AstrologSphereView = dynamic(
   () => import("./astrolog-sphere-view").then((mod) => mod.AstrologSphereView),
   { loading: () => null },
@@ -146,6 +159,10 @@ const DirectionsView = dynamic(
 );
 const GenericTableView = dynamic(
   () => import("./generic-table-view").then((mod) => mod.GenericTableView),
+  { loading: () => null },
+);
+const TemporalConfluenceView = dynamic(
+  () => import("./temporal-confluence-view").then((mod) => mod.TemporalConfluenceView),
   { loading: () => null },
 );
 const GraphEphemerisView = dynamic(
@@ -218,6 +235,7 @@ type Props = {
 function isTimeLordTableId(value: string | null | undefined): value is TimeLordTableId {
   return (
     value === "firdaria" ||
+    value === "vimshottari" ||
     value === "decennials" ||
     value === "zodiacal_releasing" ||
     value === "profections_table"
@@ -870,9 +888,10 @@ function ActiveSurfaceArea({
   }
   if (activeDoc?.kind === "ephemeris") {
     return (
-      <GraphEphemerisView
-        key={activeDoc.id}
-        documentId={activeDoc.id}
+      <GraphicEphemerisArea
+        chart={chart}
+        activeDoc={activeDoc}
+        navbar={navbar}
       />
     );
   }
@@ -920,6 +939,19 @@ function ActiveSurfaceArea({
           documentId={activeDoc.id}
           parentDocumentId={activeDoc.parentDocumentId}
           sourceName={activeDoc.sourceName}
+        />
+      </WorkspaceDocumentSurface>
+    );
+  }
+  if (activeDoc?.kind === "table" && activeDoc.tableId === "temporal_confluence") {
+    return (
+      <WorkspaceDocumentSurface>
+        <TemporalConfluenceView
+          key={activeDoc.id}
+          documentId={activeDoc.id}
+          parentDocumentId={activeDoc.parentDocumentId}
+          sourceName={activeDoc.sourceName}
+          focusDatetime={activeDoc.displayDatetime}
         />
       </WorkspaceDocumentSurface>
     );
@@ -974,11 +1006,77 @@ function ActiveSurfaceArea({
   );
 }
 
+export function graphicEphemerisModeButtonLabelKey(
+  mode: GraphicEphemerisDisplayMode,
+): "ephem.modeLonDecl" | "ephem.modeDeclLon" {
+  return mode === "longitude" ? "ephem.modeLonDecl" : "ephem.modeDeclLon";
+}
+
+function GraphicEphemerisArea({
+  chart,
+  activeDoc,
+  navbar,
+}: {
+  chart: ChartRenderSnapshot | null;
+  activeDoc: WorkspaceDocument;
+  navbar?: ModeHintRailProps | null;
+}) {
+  const t = useT();
+  const [displayMode, setDisplayMode] = React.useState<
+    GraphicEphemerisDisplayMode | null
+  >(null);
+  const displayModeToggleRef = React.useRef<(() => void) | null>(null);
+  const handleDisplayModeChange = React.useCallback(
+    (next: GraphicEphemerisDisplayMode) => {
+      setDisplayMode(next);
+    },
+    [],
+  );
+  const registerDisplayModeToggle = React.useCallback((toggle: () => void) => {
+    displayModeToggleRef.current = toggle;
+    return () => {
+      if (displayModeToggleRef.current === toggle) {
+        displayModeToggleRef.current = null;
+      }
+    };
+  }, []);
+  const requestAlternateDisplayMode = React.useCallback(() => {
+    displayModeToggleRef.current?.();
+  }, []);
+  const modeButtonLabel = displayMode
+    ? t(graphicEphemerisModeButtonLabelKey(displayMode))
+    : null;
+  const ephemerisNavbar: ModeHintRailProps | null | undefined = navbar
+    ? {
+        ...navbar,
+        modeHintLabel: modeButtonLabel,
+        modeHintTitle: modeButtonLabel,
+        onToggleModeHint: displayMode ? requestAlternateDisplayMode : undefined,
+      }
+    : navbar;
+
+  return (
+    <ChartArea
+      chart={chart}
+      activeDoc={activeDoc}
+      navbar={ephemerisNavbar}
+      surface={
+        <GraphEphemerisView
+          key={activeDoc.id}
+          documentId={activeDoc.id}
+          registerDisplayModeToggle={registerDisplayModeToggle}
+          onDisplayModeChange={handleDisplayModeChange}
+        />
+      }
+    />
+  );
+}
+
 function WorkspaceDocumentSurface({ children }: { children: React.ReactNode }) {
   return (
     <div
       data-aries-surface="canvas"
-      className="relative flex h-full w-full min-h-0 flex-1 [&>*]:bg-transparent"
+      className="relative box-border flex h-full w-full min-h-0 flex-1 pt-[var(--titlebar-h)] [&>*]:bg-transparent"
     >
       {children}
     </div>
@@ -1213,7 +1311,6 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
   const sidebarOpen = useFrameLayoutStore((state) => state.sidebarOpen);
   const sidebarWidth = useFrameLayoutStore((state) => state.sidebarWidth);
   const rightPaneWidth = useFrameLayoutStore((state) => state.rightPaneWidth);
-  const rightPaneDragging = useFrameLayoutStore((state) => state.rightPaneDragging);
   const theme = useThemeStore((s) => s.theme);
   const bootTheme = theme?.mode === "light" ? "light" : "dark";
   const bootPageBg = bootTheme === "light" ? "#d9dde1" : "#1a1d21";
@@ -1255,14 +1352,16 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
   const controlsOpen =
     active && astrocartControlsPane?.documentId === documentId;
   const controlsPanePolicy = rightPaneWidthPolicy("astrocart-controls");
-  const effectiveControlsPaneWidth = controlsOpen
-    ? rightPanePriorityLayout(
-        sidebarOpen,
-        sidebarWidth,
-        rightPaneWidth,
-        "astrocart-controls",
-      ).rightPaneWidth
-    : 0;
+  const effectiveControlsPaneWidth = rightPanePriorityLayout(
+    sidebarOpen,
+    sidebarWidth,
+    rightPaneWidth,
+    "astrocart-controls",
+  ).rightPaneWidth;
+  const controlsPaneTrack = useCoherentRightPaneTrack(
+    controlsOpen,
+    effectiveControlsPaneWidth,
+  );
   // View-only Astrocartography documents are not themselves rebuilt by a
   // global house-system change, even though their reference geometry depends
   // on the parent radix's new houses. Include that option event explicitly so
@@ -2744,13 +2843,15 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
   return (
     <div
       className={cn(
-        "right-pane-split relative grid flex-1 min-h-0 bg-transparent transition-[grid-template-columns] duration-[var(--aries-motion-shell-duration)] ease-[var(--aries-motion-shell-ease)]",
-        rightPaneDragging && "transition-none",
+        "right-pane-split relative grid flex-1 min-h-0 bg-transparent",
+        controlsPaneTrack.transitioning &&
+          "transition-[grid-template-columns] duration-[var(--aries-motion-shell-duration)] ease-[var(--aries-motion-shell-ease)]",
       )}
+      onTransitionEnd={controlsPaneTrack.onTransitionEnd}
       style={{
-        "--right-pane-width": `${effectiveControlsPaneWidth}px`,
-        gridTemplateColumns: controlsOpen
-          ? "minmax(0, 1fr) var(--right-pane-width)"
+        "--right-pane-width": `${controlsPaneTrack.width}px`,
+        gridTemplateColumns: controlsPaneTrack.open
+          ? "minmax(0, 1fr) min(var(--right-pane-width), 50vw)"
           : "minmax(0, 1fr) 0px",
       } as React.CSSProperties}
     >
@@ -2838,7 +2939,7 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
         <RightPaneSash
           width={effectiveControlsPaneWidth}
           minWidth={controlsPanePolicy.minContentWidth}
-          maxWidth={controlsPanePolicy.maxWidth}
+          onResizeStart={controlsPaneTrack.stopTransition}
           onCollapse={closeAstrocartControlsPane}
         />
       ) : null}
@@ -2933,6 +3034,7 @@ export function UnifiedTitleBar({
   const captionActionsRef = useRef<HTMLDivElement>(null);
   const t = useT();
   const parts = buildTitleParts(chart, activeDoc, t);
+  const transparentBackplate = overlay || isChartBearingSurfaceDocument(activeDoc);
   // Mark the native platform explicitly: macOS reserves the leading traffic
   // lights, while Windows reserves the measured trailing caption controls.
   useLayoutEffect(() => {
@@ -2998,11 +3100,11 @@ export function UnifiedTitleBar({
       <div
         data-tauri-drag-region
         data-aries-titlebar-backplate=""
-        data-aries-surface={overlay ? undefined : "titlebar"}
+        data-aries-surface={transparentBackplate ? undefined : "titlebar"}
         aria-hidden="true"
         className={cn(
           "absolute inset-0 z-[40]",
-          overlay
+          transparentBackplate
             ? "bg-transparent"
             : "isolate bg-[var(--aries-titlebar-background)]",
         )}
@@ -3071,7 +3173,7 @@ function cleanDocumentTitle(doc: WorkspaceDocument | null, t?: TFunc): string {
   return doc ? localizedWorkspaceDocumentTitle(doc, t) : "";
 }
 
-function buildTitleParts(
+export function buildTitleParts(
   chart: ChartRenderSnapshot | null,
   activeDoc: WorkspaceDocument | null,
   t: TFunc,
@@ -3123,6 +3225,9 @@ function buildTitleParts(
   const documentTitle = cleanDocumentTitle(activeDoc, t);
   if (activeDoc.isHorary) {
     const suffix = chart.document?.titleSuffix;
+    if (chart.primaryChart.options.showRadixNameInCanvas) {
+      return [suffix || t("toolbar.horary")];
+    }
     return suffix ? [documentTitle || activeDoc.sourceName || t("toolbar.horary"), suffix] : [documentTitle || t("toolbar.horary")];
   }
   if (activeDoc.launcherKind === "pd_in_chart") {
@@ -3143,6 +3248,15 @@ function buildTitleParts(
       parts.push(suffix);
     }
     return parts;
+  }
+  if (
+    (activeDoc.kind === "radix" || activeDoc.kind === "here-now") &&
+    chart.primaryChart.options.showRadixNameInCanvas
+  ) {
+    const titleParts = chart.primaryChart.meta.titleParts ?? [chart.primaryChart.meta.name];
+    return titleParts[0] === chart.primaryChart.meta.name
+      ? titleParts.slice(1)
+      : titleParts;
   }
   if (!chart.primaryChart.meta.name && documentTitle) {
     const suffix = chart.document?.titleSuffix;
@@ -3186,10 +3300,14 @@ function isPlainSynastryBiwheel(chart: ChartRenderSnapshot): boolean {
   return chart.document?.compoundKind === "synastry" && Boolean(chart.comparisonChart);
 }
 
+type NavigationHintKey = "left" | "right" | "up" | "down";
+
 type NavigationHintGroup = {
   id: string;
   label: string;
   modifiers?: { shift?: boolean; alt?: boolean };
+  backwardKey: NavigationHintKey;
+  forwardKey: NavigationHintKey;
   backwardLabel: string;
   forwardLabel: string;
 };
@@ -3210,13 +3328,22 @@ export type ModeHintRailProps = {
   chartVisualMode: WorkspaceDocument["chartVisualMode"] | null | undefined;
   launcherKind: WorkspaceDocument["launcherKind"] | null | undefined;
   compoundKind: WorkspaceDocument["compoundKind"] | null | undefined;
+  compositeVariant?: WorkspaceDocument["compositeVariant"] | null;
   kind: WorkspaceDocument["kind"] | null | undefined;
   supplementaryFeatureKind: WorkspaceDocument["supplementaryFeatureKind"] | null | undefined;
+  harmonicNumber?: number | null;
+  harmonicProjectionMode?: "harmonic" | "varga" | null;
+  modeHintLabel?: string | null;
+  modeHintTitle?: string | null;
+  onToggleModeHint?: () => void;
   onToggleComparison?: () => void;
+  onSwitchRelationshipMode?: (variant: "midpoint" | "davison" | "synastry") => void;
   onNavigateHint?: (
-    key: "left" | "right" | "up" | "down",
+    key: NavigationHintKey,
     modifiers?: { shift?: boolean; alt?: boolean },
   ) => void;
+  onNavigateHintEnd?: (key: NavigationHintKey) => void;
+  onHarmonicNumberChange?: (harmonicNumber: number) => void;
   onHintInteraction?: () => void;
 };
 
@@ -3238,10 +3365,19 @@ export const ModeHintRail = React.memo(function ModeHintRail({
   chartVisualMode,
   launcherKind,
   compoundKind,
+  compositeVariant,
   kind,
   supplementaryFeatureKind,
+  harmonicNumber,
+  harmonicProjectionMode,
+  modeHintLabel,
+  modeHintTitle,
+  onToggleModeHint,
   onToggleComparison,
+  onSwitchRelationshipMode,
   onNavigateHint,
+  onNavigateHintEnd,
+  onHarmonicNumberChange,
   onHintInteraction,
 }: ModeHintRailProps) {
   const t = useT();
@@ -3256,7 +3392,8 @@ export const ModeHintRail = React.memo(function ModeHintRail({
   const autoVisible = Boolean(
     visible && (pointerInside || autoHideMs <= 0 || hiddenRevealToken !== revealToken),
   );
-  const showModeHint = Boolean(
+  const showCustomModeHint = Boolean(hasChart && modeHintLabel && onToggleModeHint);
+  const showComparisonModeHint = Boolean(
     hasChart &&
     onToggleComparison &&
     canToggleSingleBiwheel({
@@ -3269,8 +3406,21 @@ export const ModeHintRail = React.memo(function ModeHintRail({
       viewMode,
     }),
   );
-  const targetModeLabel = viewMode === 1 ? t("toolbar.viewSingle") : t("toolbar.viewBiwheel");
-  const targetModeTitle = t("toolbar.switchToView", { mode: targetModeLabel });
+  const showModeHint = showCustomModeHint || showComparisonModeHint;
+  const showRelationshipControls = Boolean(
+    hasChart &&
+    onSwitchRelationshipMode &&
+    (compoundKind === "synastry" || compoundKind === "composite_from_synastry"),
+  );
+  const chartTargetModeLabel = viewMode === 1
+    ? t("toolbar.viewSingle")
+    : t("toolbar.viewBiwheel");
+  const targetModeLabel = showCustomModeHint && modeHintLabel
+    ? modeHintLabel
+    : chartTargetModeLabel;
+  const targetModeTitle = showCustomModeHint
+    ? (modeHintTitle ?? targetModeLabel)
+    : t("toolbar.switchToView", { mode: targetModeLabel });
   const stepHintGroups = React.useMemo(
     () => navigationHintGroups({
       chartVisualMode,
@@ -3281,8 +3431,40 @@ export const ModeHintRail = React.memo(function ModeHintRail({
     }, t),
     [chartVisualMode, launcherKind, compoundKind, kind, supplementaryFeatureKind, t],
   );
-  const showNavigationHints = Boolean(hasChart && onNavigateHint && stepHintGroups.length > 0);
-  const active = Boolean(autoVisible && !overlay && (showModeHint || showNavigationHints));
+  const showHarmonicControls = Boolean(
+    hasChart &&
+    supplementaryFeatureKind === "harmonic" &&
+    harmonicNumber != null &&
+    onNavigateHint &&
+    onHarmonicNumberChange,
+  );
+  const harmonicHintGroup = React.useMemo(
+    () => ({
+      ...buildNavigationHintGroup("harmonic", "left", "right", undefined, t),
+      label: harmonicProjectionMode === "varga"
+        ? t("toolbar.navbar.unit.vargas")
+        : t("toolbar.navbar.unit.harmonic"),
+    }),
+    [harmonicProjectionMode, t],
+  );
+  const [editingHarmonic, setEditingHarmonic] = React.useState(false);
+  const [harmonicDraft, setHarmonicDraft] = React.useState("");
+  const commitHarmonicDraft = React.useCallback(() => {
+    const parsed = Number(harmonicDraft.trim());
+    const allowed = harmonicProjectionMode === "varga"
+      ? [1, 2, 3, 4, 7, 9, 10, 12, 16, 20, 24, 27, 30, 40, 45, 60].includes(parsed)
+      : Number.isFinite(parsed) && parsed >= 1 && parsed <= 360;
+    if (allowed) {
+      onHarmonicNumberChange?.(parsed);
+    }
+    setEditingHarmonic(false);
+  }, [harmonicDraft, harmonicProjectionMode, onHarmonicNumberChange]);
+  const showNavigationHints = Boolean(
+    hasChart && onNavigateHint && (stepHintGroups.length > 0 || showHarmonicControls),
+  );
+  const active = Boolean(
+    autoVisible && !overlay && (showModeHint || showRelationshipControls || showNavigationHints),
+  );
   const tooltipSide = placement === "bottom" ? "top" : "bottom";
   const handlePositionSettled = React.useCallback((
     element: HTMLDivElement,
@@ -3311,8 +3493,9 @@ export const ModeHintRail = React.memo(function ModeHintRail({
   });
   const handleModeHintClick = React.useCallback(() => {
     onHintInteraction?.();
-    onToggleComparison?.();
-  }, [onHintInteraction, onToggleComparison]);
+    if (showCustomModeHint) onToggleModeHint?.();
+    else onToggleComparison?.();
+  }, [onHintInteraction, onToggleComparison, onToggleModeHint, showCustomModeHint]);
   const handlePointerEnter = React.useCallback(() => {
     setPointerInside(true);
     onHintInteraction?.();
@@ -3322,13 +3505,19 @@ export const ModeHintRail = React.memo(function ModeHintRail({
   }, []);
   const handleNavigateHintClick = React.useCallback(
     (
-      key: "left" | "right",
+      key: NavigationHintKey,
       modifiers?: { shift?: boolean; alt?: boolean },
     ) => {
       onHintInteraction?.();
       onNavigateHint?.(key, modifiers);
     },
     [onHintInteraction, onNavigateHint],
+  );
+  const handleNavigateHintEnd = React.useCallback(
+    (key: NavigationHintKey) => {
+      onNavigateHintEnd?.(key);
+    },
+    [onNavigateHintEnd],
   );
   return (
     <div
@@ -3339,7 +3528,7 @@ export const ModeHintRail = React.memo(function ModeHintRail({
         !active && "aries-mode-hint--hidden",
       )}
       role="group"
-      aria-label={t("toolbar.chartNavbar")}
+      aria-label={kind === "ephemeris" ? t("toolbar.timeNavigationControls") : t("toolbar.chartNavbar")}
       aria-hidden={!active}
       onPointerDown={handleOverlayPointerDown}
       onPointerMove={handleOverlayPointerMove}
@@ -3367,29 +3556,182 @@ export const ModeHintRail = React.memo(function ModeHintRail({
             <span className="aries-mode-hint-label">{targetModeLabel}</span>
           </TooltipTrigger>
           <TooltipContent side={tooltipSide} className="aries-mode-hint-flag">
-            <ShortcutFlag label={targetModeTitle} shortcut="Tab" />
+            {showCustomModeHint ? (
+              <span>{targetModeTitle}</span>
+            ) : (
+              <ShortcutFlag label={targetModeTitle} shortcut="Tab" />
+            )}
           </TooltipContent>
         </Tooltip>
       ) : null}
-      {onNavigateHint && stepHintGroups.length > 0 ? (
+      {showRelationshipControls && onSwitchRelationshipMode ? (
+        <div className="aries-step-hints" aria-label={t("toolbar.navbar.relationshipControls")}>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  className="aries-mode-hint-button aries-mode-hint-main"
+                  onClick={() => {
+                    onHintInteraction?.();
+                    onSwitchRelationshipMode(
+                      compoundKind === "synastry" ? "midpoint" : "synastry",
+                    );
+                  }}
+                  aria-label={t("toolbar.switchToView", {
+                    mode: compoundKind === "synastry"
+                      ? t("toolbar.navbar.composite")
+                      : t("toolbar.navbar.synastry"),
+                  })}
+                >
+                  <span className="aries-mode-hint-label">
+                    {compoundKind === "synastry"
+                      ? t("toolbar.navbar.composite")
+                      : t("toolbar.navbar.synastry")}
+                  </span>
+                </button>
+              }
+            >
+            </TooltipTrigger>
+            <TooltipContent side={tooltipSide} className="aries-mode-hint-flag">
+              {t("toolbar.switchToView", {
+                mode: compoundKind === "synastry"
+                  ? t("toolbar.navbar.composite")
+                  : t("toolbar.navbar.synastry"),
+              })}
+            </TooltipContent>
+          </Tooltip>
+          {compoundKind === "composite_from_synastry" ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    className="aries-mode-hint-button aries-mode-hint-main"
+                    onClick={() => {
+                      onHintInteraction?.();
+                      onSwitchRelationshipMode(
+                        compositeVariant === "davison" ? "midpoint" : "davison",
+                      );
+                    }}
+                    aria-label={t("toolbar.switchToView", {
+                      mode: compositeVariant === "davison"
+                        ? t("toolbar.navbar.midpoint")
+                        : t("toolbar.navbar.davison"),
+                    })}
+                  >
+                    <span className="aries-mode-hint-label">
+                      {compositeVariant === "davison"
+                        ? t("toolbar.navbar.midpoint")
+                        : t("toolbar.navbar.davison")}
+                    </span>
+                  </button>
+                }
+              >
+              </TooltipTrigger>
+              <TooltipContent side={tooltipSide} className="aries-mode-hint-flag">
+                {t("toolbar.switchToView", {
+                  mode: compositeVariant === "davison"
+                    ? t("toolbar.navbar.midpoint")
+                    : t("toolbar.navbar.davison"),
+                })}
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
+        </div>
+      ) : showHarmonicControls && onNavigateHint ? (
+        <div className="aries-step-hints" aria-label={t("toolbar.timeNavigationControls")}>
+          <div className="aries-step-hint-group aries-harmonic-stepper">
+            <span className="aries-step-unit">{harmonicHintGroup.label}</span>
+            <span className="aries-step-arrows aries-harmonic-stepper-controls">
+              <StepHintArrowButton
+                action="backward"
+                navigationKey="left"
+                group={harmonicHintGroup}
+                tooltipSide={tooltipSide}
+                onPointerEnter={onHintInteraction}
+                onClick={handleNavigateHintClick}
+                onEnd={handleNavigateHintEnd}
+              />
+              {editingHarmonic ? (
+                <input
+                  className="aries-harmonic-input"
+                  data-aries-control-appearance="local"
+                  type="text"
+                  inputMode={harmonicProjectionMode === "varga" ? "numeric" : "decimal"}
+                  value={harmonicDraft}
+                  aria-label={harmonicProjectionMode === "varga"
+                    ? t("toolbar.navbar.vargaInput")
+                    : t("toolbar.navbar.harmonicInput")}
+                  autoFocus
+                  onFocus={(event) => event.currentTarget.select()}
+                  onChange={(event) => setHarmonicDraft(event.target.value)}
+                  onBlur={commitHarmonicDraft}
+                  onKeyDown={(event) => {
+                    event.stopPropagation();
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      commitHarmonicDraft();
+                    } else if (event.key === "Escape") {
+                      event.preventDefault();
+                      setEditingHarmonic(false);
+                    }
+                  }}
+                />
+              ) : (
+                <button
+                  type="button"
+                  className="aries-harmonic-value"
+                  aria-label={harmonicProjectionMode === "varga"
+                    ? t("toolbar.navbar.editVarga")
+                    : t("toolbar.navbar.editHarmonic")}
+                  title={harmonicProjectionMode === "varga"
+                    ? t("toolbar.navbar.editVarga")
+                    : t("toolbar.navbar.editHarmonic")}
+                  onClick={() => {
+                    onHintInteraction?.();
+                    setHarmonicDraft(formatHarmonicNumber(harmonicNumber));
+                    setEditingHarmonic(true);
+                  }}
+                >
+                  {harmonicProjectionMode === "varga" ? "D" : "H"}{formatHarmonicNumber(harmonicNumber)}
+                </button>
+              )}
+              <StepHintArrowButton
+                action="forward"
+                navigationKey="right"
+                group={harmonicHintGroup}
+                tooltipSide={tooltipSide}
+                onPointerEnter={onHintInteraction}
+                onClick={handleNavigateHintClick}
+                onEnd={handleNavigateHintEnd}
+              />
+            </span>
+          </div>
+        </div>
+      ) : onNavigateHint && stepHintGroups.length > 0 ? (
         <div className="aries-step-hints" aria-label={t("toolbar.timeNavigationControls")}>
           {stepHintGroups.map((group) => (
             <div className="aries-step-hint-group" key={group.id}>
               <span className="aries-step-unit">{group.label}</span>
               <span className="aries-step-arrows">
                 <StepHintArrowButton
-                  direction="left"
+                  action="backward"
+                  navigationKey={group.backwardKey}
                   group={group}
                   tooltipSide={tooltipSide}
                   onPointerEnter={onHintInteraction}
                   onClick={handleNavigateHintClick}
+                  onEnd={handleNavigateHintEnd}
                 />
                 <StepHintArrowButton
-                  direction="right"
+                  action="forward"
+                  navigationKey={group.forwardKey}
                   group={group}
                   tooltipSide={tooltipSide}
                   onPointerEnter={onHintInteraction}
                   onClick={handleNavigateHintClick}
+                  onEnd={handleNavigateHintEnd}
                 />
               </span>
             </div>
@@ -3428,22 +3770,26 @@ function canToggleSingleBiwheel({
 }
 
 function StepHintArrowButton({
-  direction,
+  action,
+  navigationKey,
   group,
   tooltipSide,
   onPointerEnter,
   onClick,
+  onEnd,
 }: {
-  direction: "left" | "right";
+  action: "backward" | "forward";
+  navigationKey: NavigationHintKey;
   group: NavigationHintGroup;
   tooltipSide: "top" | "bottom";
   onPointerEnter?: () => void;
   onClick: (
-    key: "left" | "right",
+    key: NavigationHintKey,
     modifiers?: { shift?: boolean; alt?: boolean },
   ) => void;
+  onEnd: (key: NavigationHintKey) => void;
 }) {
-  const label = direction === "left" ? group.backwardLabel : group.forwardLabel;
+  const label = action === "backward" ? group.backwardLabel : group.forwardLabel;
   const modifiers = group.modifiers;
   const holdDelayRef = React.useRef<number | null>(null);
   const holdKeepAliveRef = React.useRef<number | null>(null);
@@ -3465,14 +3811,17 @@ function StepHintArrowButton({
     }
   }, []);
   const fireStep = React.useCallback(() => {
-    onClick(direction, modifiers);
-  }, [direction, modifiers, onClick]);
+    onClick(navigationKey, modifiers);
+  }, [modifiers, navigationKey, onClick]);
   const stopHold = React.useCallback(() => {
     const wasHolding = holdActiveRef.current;
     holdActiveRef.current = false;
     clearHold();
-    if (wasHolding) onPointerEnter?.();
-  }, [clearHold, onPointerEnter]);
+    if (wasHolding) {
+      onEnd(navigationKey);
+      onPointerEnter?.();
+    }
+  }, [clearHold, navigationKey, onEnd, onPointerEnter]);
   const handlePointerDown = React.useCallback(
     (event: React.PointerEvent<HTMLButtonElement>) => {
       if (event.button !== 0) return;
@@ -3502,10 +3851,23 @@ function StepHintArrowButton({
         return;
       }
       fireStep();
+      onEnd(navigationKey);
     },
-    [fireStep],
+    [fireStep, navigationKey, onEnd],
   );
-  React.useEffect(() => clearHold, [clearHold]);
+  React.useEffect(() => () => {
+    const wasHolding = holdActiveRef.current;
+    holdActiveRef.current = false;
+    clearHold();
+    if (wasHolding) onEnd(navigationKey);
+  }, [clearHold, navigationKey, onEnd]);
+  const ArrowIcon = navigationKey === "left"
+    ? ChevronLeft
+    : navigationKey === "right"
+      ? ChevronRight
+      : navigationKey === "up"
+        ? ChevronUp
+        : ChevronDown;
   return (
     <Tooltip>
       <TooltipTrigger
@@ -3525,12 +3887,12 @@ function StepHintArrowButton({
           />
         }
       >
-        {direction === "left" ? <ChevronLeft /> : <ChevronRight />}
+        <ArrowIcon />
       </TooltipTrigger>
       <TooltipContent side={tooltipSide} className="aries-mode-hint-flag">
         <ShortcutFlag
           label={label}
-          shortcut={shortcutTextForStep(direction, modifiers)}
+          shortcut={shortcutTextForStep(navigationKey, modifiers)}
         />
       </TooltipContent>
     </Tooltip>
@@ -3547,13 +3909,13 @@ function ShortcutFlag({ label, shortcut }: { label: string; shortcut: string }) 
 }
 
 export function shortcutTextForStep(
-  direction: "left" | "right",
+  direction: NavigationHintKey,
   modifiers?: { shift?: boolean; alt?: boolean },
 ): string {
   const parts: string[] = [];
   if (modifiers?.alt) parts.push("⌥");
   if (modifiers?.shift) parts.push("⇧");
-  parts.push(direction === "left" ? "←" : "→");
+  parts.push({ left: "←", right: "→", up: "↑", down: "↓" }[direction]);
   return parts.join(" + ");
 }
 
@@ -3569,7 +3931,8 @@ type NavigationHintUnit =
   | "oneDegree"
   | "thirtyDegrees"
   | "cycle"
-  | "event";
+  | "event"
+  | "harmonic";
 
 export function navigationHintGroups({
   chartVisualMode,
@@ -3584,6 +3947,12 @@ export function navigationHintGroups({
   kind: WorkspaceDocument["kind"] | null | undefined;
   supplementaryFeatureKind: WorkspaceDocument["supplementaryFeatureKind"] | null | undefined;
 }, t: TFunc): NavigationHintGroup[] {
+  if (kind === "ephemeris") {
+    return [
+      buildNavigationHintGroup("month", "left", "right", undefined, t),
+      buildNavigationHintGroup("year", "down", "up", undefined, t),
+    ];
+  }
   if (!isChartBearingSurfaceKind(kind)) return [];
   if (launcherKind === "pd_in_chart") {
     return buildLeftRightHintGroups([
@@ -3592,6 +3961,7 @@ export function navigationHintGroups({
       ["year", undefined],
     ], t);
   }
+  if (compoundKind) return [];
   if (
     kind === "ascensional-transits" ||
     chartVisualMode === "mdo" ||
@@ -3610,8 +3980,7 @@ export function navigationHintGroups({
     !featureKind ||
     featureKind === "transits" ||
     featureKind === "converse-transits" ||
-    featureKind === "synastry" ||
-    compoundKind
+    featureKind === "synastry"
   ) {
     return buildLeftRightHintGroups([
       ["minute", { alt: true }],
@@ -3664,16 +4033,27 @@ function buildLeftRightHintGroups(
   ]>,
   t: TFunc,
 ): NavigationHintGroup[] {
-  return entries.map(([unit, modifiers]) => {
-    const label = navigationHintUnitLabel(unit, t);
-    return {
-      id: `${unit}:${modifiers?.shift ? "shift" : ""}:${modifiers?.alt ? "alt" : ""}`,
-      label,
-      modifiers,
-      backwardLabel: t("toolbar.navbar.stepBackward", { unit: label }),
-      forwardLabel: t("toolbar.navbar.stepForward", { unit: label }),
-    };
-  });
+  return entries.map(([unit, modifiers]) =>
+    buildNavigationHintGroup(unit, "left", "right", modifiers, t));
+}
+
+function buildNavigationHintGroup(
+  unit: NavigationHintUnit,
+  backwardKey: NavigationHintKey,
+  forwardKey: NavigationHintKey,
+  modifiers: { shift?: boolean; alt?: boolean } | undefined,
+  t: TFunc,
+): NavigationHintGroup {
+  const label = navigationHintUnitLabel(unit, t);
+  return {
+    id: `${unit}:${backwardKey}:${forwardKey}:${modifiers?.shift ? "shift" : ""}:${modifiers?.alt ? "alt" : ""}`,
+    label,
+    modifiers,
+    backwardKey,
+    forwardKey,
+    backwardLabel: t("toolbar.navbar.stepBackward", { unit: label }),
+    forwardLabel: t("toolbar.navbar.stepForward", { unit: label }),
+  };
 }
 
 function navigationHintUnitLabel(unit: NavigationHintUnit, t: TFunc): string {
@@ -3690,7 +4070,13 @@ function navigationHintUnitLabel(unit: NavigationHintUnit, t: TFunc): string {
     case "thirtyDegrees": return t("toolbar.navbar.unit.thirtyDegrees");
     case "cycle": return t("toolbar.navbar.unit.cycle");
     case "event": return t("toolbar.navbar.unit.event");
+    case "harmonic": return t("toolbar.navbar.unit.harmonic");
   }
+}
+
+function formatHarmonicNumber(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "9";
+  return Number(value.toFixed(6)).toString();
 }
 
 function TitleText({ parts }: { parts: TitlePart[] }) {
@@ -3817,7 +4203,6 @@ function ChartArea({
   const sidebarOpen = useFrameLayoutStore((s) => s.sidebarOpen);
   const sidebarWidth = useFrameLayoutStore((s) => s.sidebarWidth);
   const rightPaneWidth = useFrameLayoutStore((s) => s.rightPaneWidth);
-  const rightPaneDragging = useFrameLayoutStore((s) => s.rightPaneDragging);
   const transitSearchPane = useWorkspaceStore((s) => s.transitSearchPane);
   const transitListPane = useWorkspaceStore((s) => s.transitListPane);
   const directionsPane = useWorkspaceStore((s) => s.directionsPane);
@@ -3831,6 +4216,7 @@ function ChartArea({
   const synodicCyclesPane = useWorkspaceStore((s) => s.synodicCyclesPane);
   const aspectListPane = useWorkspaceStore((s) => s.aspectListPane);
   const ascensionalTransitsPane = useWorkspaceStore((s) => s.ascensionalTransitsPane);
+  const calendarPane = useWorkspaceStore((s) => s.calendarPane);
   const featureCatalogPane = useWorkspaceStore((s) => s.featureCatalogPane);
   const activeRightPane = activeRightPaneModule({
     inspectorOpen,
@@ -3849,6 +4235,7 @@ function ChartArea({
     synodicCyclesPane,
     aspectListPane,
     ascensionalTransitsPane,
+    calendarPane,
     featureCatalogPane,
   });
   const rightPaneOpen = activeRightPane !== null;
@@ -3860,7 +4247,11 @@ function ChartArea({
         rightPaneWidth,
         activeRightPane,
       ).rightPaneWidth
-    : 0;
+    : rightPaneWidth;
+  const rightPaneTrack = useCoherentRightPaneTrack(
+    rightPaneOpen,
+    effectiveRightPaneWidth,
+  );
   const closeRightPane = React.useCallback(() => {
     closeWorkspaceTransientPanes();
   }, []);
@@ -3893,13 +4284,15 @@ function ChartArea({
   return (
     <div
       className={cn(
-        "right-pane-split relative grid flex-1 min-h-0 bg-transparent transition-[grid-template-columns] duration-[var(--aries-motion-shell-duration)] ease-[var(--aries-motion-shell-ease)]",
-        rightPaneDragging && "transition-none",
+        "right-pane-split relative grid flex-1 min-h-0 bg-transparent",
+        rightPaneTrack.transitioning &&
+          "transition-[grid-template-columns] duration-[var(--aries-motion-shell-duration)] ease-[var(--aries-motion-shell-ease)]",
       )}
+      onTransitionEnd={rightPaneTrack.onTransitionEnd}
       style={{
-        "--right-pane-width": `${effectiveRightPaneWidth}px`,
-        gridTemplateColumns: rightPaneOpen
-          ? "minmax(0, 1fr) var(--right-pane-width)"
+        "--right-pane-width": `${rightPaneTrack.width}px`,
+        gridTemplateColumns: rightPaneTrack.open
+          ? "minmax(0, 1fr) min(var(--right-pane-width), 50vw)"
           : "minmax(0, 1fr) 0px",
       } as React.CSSProperties}
     >
@@ -3924,7 +4317,7 @@ function ChartArea({
         <RightPaneSash
           width={effectiveRightPaneWidth}
           minWidth={rightPanePolicy.minContentWidth}
-          maxWidth={rightPanePolicy.maxWidth}
+          onResizeStart={rightPaneTrack.stopTransition}
           onCollapse={closeRightPane}
         />
       ) : null}
@@ -3966,15 +4359,64 @@ function chartNavbarScaleForPane(chartPaneSize: number): number {
 
 const RIGHT_PANE_RESIZING_ATTR = "data-right-pane-resizing";
 
+/**
+ * Synchronize right-pane reveal/conceal with the left sidebar's existing CSS
+ * width transition. The desired pane mounts immediately, but the grid retains
+ * its previously painted track until this layout effect advances both tracks
+ * in the same pre-paint browser update.
+ *
+ * Transition styling exists only for that visibility handoff. Once it ends,
+ * window resizing and direct sash writes remain completely fluid and do not
+ * inherit a persistent `grid-template-columns` transition.
+ */
+function useCoherentRightPaneTrack(open: boolean, width: number) {
+  const [layoutOpen, setLayoutOpen] = useState(open);
+  const [transitioning, setTransitioning] = useState(false);
+
+  useLayoutEffect(() => {
+    if (open === layoutOpen) return;
+    // This is the deliberate pre-paint handoff between the two grid tracks;
+    // deferring it would expose one frame with mismatched chart/pane widths.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setTransitioning(true);
+    setLayoutOpen(open);
+  }, [layoutOpen, open]);
+
+  const onTransitionEnd = React.useCallback(
+    (event: React.TransitionEvent<HTMLDivElement>) => {
+      if (
+        event.currentTarget !== event.target ||
+        event.propertyName !== "grid-template-columns"
+      ) {
+        return;
+      }
+      setTransitioning(false);
+    },
+    [],
+  );
+
+  const stopTransition = React.useCallback(() => {
+    setTransitioning(false);
+  }, []);
+
+  return {
+    open: layoutOpen,
+    width,
+    transitioning,
+    onTransitionEnd,
+    stopTransition,
+  };
+}
+
 function RightPaneSash({
   width,
   minWidth,
-  maxWidth,
+  onResizeStart,
   onCollapse,
 }: {
   width: number;
   minWidth: number;
-  maxWidth: number;
+  onResizeStart?: () => void;
   onCollapse: () => void;
 }) {
   const t = useT();
@@ -3986,6 +4428,7 @@ function RightPaneSash({
   const collapseInProgressRef = useRef(false);
   const splitRef = useRef<HTMLElement | null>(null);
   const containerRightRef = useRef(0);
+  const maxWidthRef = useRef(Number.POSITIVE_INFINITY);
   const lastWidthRef = useRef(width);
   const dragStartWidthRef = useRef(width);
   const windowMoveHandlerRef = useRef<((event: PointerEvent) => void) | null>(null);
@@ -4039,11 +4482,14 @@ function RightPaneSash({
         finishCollapse();
         return;
       }
-      const clamped = clampRightPaneWidth(raw, { minContentWidth: minWidth, maxWidth });
+      const clamped = Math.min(
+        maxWidthRef.current,
+        clampRightPaneWidth(raw, { minContentWidth: minWidth }),
+      );
       lastWidthRef.current = clamped;
       setLiveRightPaneWidth(clamped);
     },
-    [finishCollapse, maxWidth, minWidth, setLiveRightPaneWidth],
+    [finishCollapse, minWidth, setLiveRightPaneWidth],
   );
 
   const endDrag = React.useCallback(
@@ -4069,15 +4515,19 @@ function RightPaneSash({
   const onPointerDown = React.useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       event.preventDefault();
+      onResizeStart?.();
       const handle = event.currentTarget;
       const pointerId = event.pointerId;
       const split = handle.closest<HTMLElement>(".right-pane-split");
       if (!split) return;
       const rect = split.getBoundingClientRect();
+      const maxWidth = window.innerWidth * 0.5;
+      const visibleWidth = Math.min(width, maxWidth);
       splitRef.current = split;
       containerRightRef.current = rect.right;
-      lastWidthRef.current = width;
-      dragStartWidthRef.current = width;
+      maxWidthRef.current = maxWidth;
+      lastWidthRef.current = visibleWidth;
+      dragStartWidthRef.current = visibleWidth;
       activeRef.current = true;
       document.documentElement.setAttribute(RIGHT_PANE_RESIZING_ATTR, "");
       setRightPaneDragging(true);
@@ -4104,7 +4554,7 @@ function RightPaneSash({
         /* synthetic events may lack a real pointer to capture */
       }
     },
-    [endDrag, setRightPaneDragging, updateDragWidth, width],
+    [endDrag, onResizeStart, setRightPaneDragging, updateDragWidth, width],
   );
 
   useEffect(() => {
@@ -4122,9 +4572,6 @@ function RightPaneSash({
       role="separator"
       aria-orientation="vertical"
       aria-label={t("toolbar.resizeRightSidebar")}
-      aria-valuemin={minWidth}
-      aria-valuemax={maxWidth}
-      aria-valuenow={width}
       onPointerDown={onPointerDown}
       onDoubleClick={resetRightPaneWidth}
       className={cn(
@@ -4132,7 +4579,7 @@ function RightPaneSash({
         "after:absolute after:inset-y-0 after:left-1/2 after:w-[var(--aries-sash-rule-size)] after:-translate-x-1/2 after:bg-[color:var(--aries-sash-idle-color)] after:content-['']",
         dragging && "after:bg-[color:var(--aries-sash-active-color)]",
       )}
-      style={{ left: "calc(100% - var(--right-pane-width))" }}
+      style={{ left: "calc(100% - min(var(--right-pane-width), 50vw))" }}
     />
   );
 }
@@ -4171,6 +4618,7 @@ export function ChartSurface({
 
   useEffect(() => {
     if (!exportRegistrationEnabled) return;
+    if ((chart.rings?.length ?? 0) >= 3) return;
     const documentId = chart.document?.documentId;
     if (!documentId || viewportWidth <= 0 || viewportHeight <= 0) return;
     return registerChartExportRenderer(documentId, (request) =>
@@ -4198,6 +4646,7 @@ export function ChartSurface({
   ]);
 
   const primaryChart = chart.primaryChart;
+  const isMultiwheel = (chart.rings?.length ?? 0) >= 3;
   const displayChart = isPlainSynastryBiwheel(chart)
     ? primaryChart
     : chart.comparisonChart ?? primaryChart;
@@ -4266,14 +4715,11 @@ export function ChartSurface({
         appControlsEnabled={appControlsEnabled}
         inheritAppTheme={inheritAppTheme}
       />
-      {cornerChart.options.showInformation ? (
+      {!isMultiwheel && cornerChart.options.showInformation ? (
         <CornerLines
           semanticClassId="chartOverlay.information.topLeft"
           wheelStyle={projectedOverlayStyle}
-          lines={
-            cornerChart.meta.cornerLines?.topLeft ??
-            [cornerChart.meta.dateDisplay, cornerChart.meta.timeDisplay]
-          }
+          lines={radixOverlayTopLeftLines(cornerChart, chart.radixChart)}
           color={palette.textDim}
           fontSize={infoFontSize}
           gap={overlayStyle.infoGap}
@@ -4281,7 +4727,7 @@ export function ChartSurface({
           style={{ top: topEdgeInset, left: edgeInset, textAlign: "left" }}
         />
       ) : null}
-      {hasOverlayRows ? (
+      {!isMultiwheel && hasOverlayRows ? (
         <OverlayCorner
           wheelStyle={projectedOverlayStyle}
           sections={overlaySections}
@@ -4297,7 +4743,7 @@ export function ChartSurface({
           style={{ top: topEdgeInset, right: edgeInset }}
         />
       ) : null}
-      {cornerChart.options.showInformation ? (
+      {!isMultiwheel && cornerChart.options.showInformation ? (
         <CornerLines
           semanticClassId="chartOverlay.information.bottomLeft"
           wheelStyle={projectedOverlayStyle}
@@ -4312,7 +4758,7 @@ export function ChartSurface({
           style={{ bottom: edgeInset, left: edgeInset, textAlign: "left" }}
         />
       ) : null}
-      {displayChart.options.showHouseSystem ? (
+      {!isMultiwheel && displayChart.options.showHouseSystem ? (
         <CornerLines
           semanticClassId="chartOverlay.houseSystem.bottomRight"
           wheelStyle={projectedOverlayStyle}
@@ -4368,6 +4814,8 @@ function RightPaneStack({
   const closeAscensionalTransitsPane = useWorkspaceStore(
     (s) => s.closeAscensionalTransitsPane,
   );
+  const calendarPane = useWorkspaceStore((s) => s.calendarPane);
+  const closeCalendarPane = useWorkspaceStore((s) => s.closeCalendarPane);
   const featureCatalogPane = useWorkspaceStore((s) => s.featureCatalogPane);
   const closeFeatureCatalogPane = useWorkspaceStore((s) => s.closeFeatureCatalogPane);
 
@@ -4602,6 +5050,14 @@ function RightPaneStack({
             onClose={closeFeatureCatalogPane}
           />
         )}
+      </RightInspectorPaneFrame>
+    );
+  }
+
+  if (calendarPane) {
+    return (
+      <RightInspectorPaneFrame kind="calendar">
+        <CalendarPrototypeView onClose={closeCalendarPane} />
       </RightInspectorPaneFrame>
     );
   }

@@ -1,4 +1,8 @@
 # -*- coding: utf-8 -*-
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
 
 import os
 import sys
@@ -15,6 +19,18 @@ import planets
 import wxcompat
 import util
 import fontprofiles
+
+
+MOON_PHASE_GLYPHS = {
+	'new': 'y',
+	'first_quarter': 'z',
+	'full': '{',
+	'last_quarter': '|',
+}
+
+
+def get_moon_phase_glyph(phase):
+	return MOON_PHASE_GLYPHS.get(str(phase or '').strip().lower(), '')
 
 
 SIGN_ELEMENT_KEYS = (
@@ -47,14 +63,63 @@ CHART_ANGLE_GLYPHS = {
 	'ic': '2',
 }
 
-# Unicode's astrological aspect set covers the classical 0/30/45/60/90/120/
-# 135/150/180-degree marks. The remaining enabled Aries aspects use established
-# compact table notation so plain-text exports never depend on Morinus.ttf.
+# Portable plain-text marks selected for Aries exports.  U+FE0E requests text
+# presentation for symbols that macOS/Windows may otherwise turn into coloured
+# emoji.  Editors that do not implement variation selectors safely ignore it.
+# Quintile-family, septile, and rapt-parallel entries retain compact scientific
+# notation because Unicode has no interoperable character for them.
+_TEXT_PRESENTATION = '\ufe0e'
+PLANET_TEXT_EXPORT_MARKS = {
+	astrology.SE_SUN: '☉' + _TEXT_PRESENTATION,
+	astrology.SE_MOON: '☽' + _TEXT_PRESENTATION,
+	astrology.SE_MERCURY: '☿' + _TEXT_PRESENTATION,
+	astrology.SE_VENUS: '♀' + _TEXT_PRESENTATION,
+	astrology.SE_MARS: '♂' + _TEXT_PRESENTATION,
+	astrology.SE_JUPITER: '♃' + _TEXT_PRESENTATION,
+	astrology.SE_SATURN: '♄' + _TEXT_PRESENTATION,
+	astrology.SE_URANUS: '♅' + _TEXT_PRESENTATION,
+	astrology.SE_NEPTUNE: '♆' + _TEXT_PRESENTATION,
+	astrology.SE_PLUTO: '♇' + _TEXT_PRESENTATION,
+	astrology.SE_MEAN_NODE: '☊' + _TEXT_PRESENTATION,
+	astrology.SE_TRUE_NODE: '☋' + _TEXT_PRESENTATION,
+	astrology.SE_CHIRON: '⚷' + _TEXT_PRESENTATION,
+}
+SIGN_TEXT_EXPORT_MARKS = tuple(
+	chr(codepoint) + _TEXT_PRESENTATION for codepoint in range(0x2648, 0x2654)
+)
+FORTUNE_TEXT_EXPORT_MARK = '⊗' + _TEXT_PRESENTATION
 ASPECT_TEXT_EXPORT_MARKS = (
-	'☌', '⚺', '∠', '⚹', 'Q', '□', '△', '⚼', 'BQ', '⚻', '☍',
-	'Sept', 'Par', 'CPar',
+	'☌' + _TEXT_PRESENTATION,
+	'⚺' + _TEXT_PRESENTATION,
+	'∠',
+	'⚹' + _TEXT_PRESENTATION,
+	'Q',
+	'□',
+	'△',
+	'⚼' + _TEXT_PRESENTATION,
+	'bQ',
+	'⚻' + _TEXT_PRESENTATION,
+	'☍' + _TEXT_PRESENTATION,
+	'S7', '∥', '∦',
 )
 RAPT_PARALLEL_TEXT_EXPORT_MARK = 'RPar'
+
+
+def planet_text_export_mark(planet_idx):
+	try:
+		return PLANET_TEXT_EXPORT_MARKS.get(int(planet_idx), '')
+	except (TypeError, ValueError):
+		return ''
+
+
+def sign_text_export_mark(sign_idx):
+	try:
+		index = int(sign_idx)
+	except (TypeError, ValueError):
+		return ''
+	if 0 <= index < len(SIGN_TEXT_EXPORT_MARKS):
+		return SIGN_TEXT_EXPORT_MARKS[index]
+	return ''
 
 
 def aspect_text_export_mark(aspect_idx):
@@ -305,20 +370,32 @@ def collect_hybrid_ring_items(chrt, options):
 	items = []
 
 	try:
-		antis = Antiscia(
-			chrt.planets.planets,
-			chrt.houses.ascmc,
-			chrt.fortune.fortune,
-			getattr(chrt, 'obl', (0.0,))[0],
-			getattr(options, 'ayanamsha', 0),
-			getattr(chrt, 'ayanamsha_offset', 0.0),
-			morin_antiscia=getattr(options, 'morin_antiscia', False),
-		)
-		for dodec in getattr(antis, 'pldodecatemoria', ()) or ():
-			body_id = getattr(dodec, 'Id', None)
+		varga_cache = getattr(chrt, '_varga_overlay_longitudes', None)
+		if isinstance(varga_cache, dict):
+			family = varga_cache.get('dodecatemoria') or {}
+			dodec_rows = [
+				(body_id, point.get('longitude'))
+				for body_id, points in (family.get('planets') or {}).items()
+				for point in points
+			]
+		else:
+			antis = Antiscia(
+				chrt.planets.planets,
+				chrt.houses.ascmc,
+				chrt.fortune.fortune,
+				getattr(chrt, 'obl', (0.0,))[0],
+				getattr(options, 'ayanamsha', 0),
+				getattr(chrt, 'ayanamsha_offset', 0.0),
+				morin_antiscia=getattr(options, 'morin_antiscia', False),
+			)
+			dodec_rows = [
+				(getattr(dodec, 'Id', None), getattr(dodec, 'lon', None))
+				for dodec in getattr(antis, 'pldodecatemoria', ()) or ()
+			]
+		for body_id, longitude in dodec_rows:
 			if body_id is None or not is_planet_visible(options, body_id):
 				continue
-			lon = float(dodec.lon)
+			lon = float(longitude)
 			if chart_has_ring_direct_hit(chrt, options, lon, orb):
 				items.append({
 					'family': 'dodecatemoria',
@@ -452,6 +529,10 @@ class Common:
 		self.AspectFontRole = ('morinus',) * len(self.Aspects)
 		self.Signs1 = ('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l')
 		self.Signs2 = ('m', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x')
+		# Morinus.ttf's four dedicated lunar-phase slots, in synodic order.
+		# Keep these named and centralized: consumers must not substitute Unicode
+		# moon symbols or infer phase artwork from the ordinary Moon body glyph.
+		self.MoonPhases = dict(MOON_PHASE_GLYPHS)
 		self.Uranus = ('H', '6')
 		self.Pluto = ('J', '7', '8', '9')
 		self.Housenames = ('I', '2', '3', 'IV', '5', '6', 'VII', '8', '9', 'X', '11', '12')
@@ -500,6 +581,9 @@ class Common:
 		if 0 <= planet_idx < len(self.Planets):
 			return self.Planets[planet_idx]
 		return ''
+
+	def get_moon_phase_glyph(self, phase):
+		return get_moon_phase_glyph(phase)
 
 	def aspect_glyph(self, aspect_idx):
 		# (glyph, font_role) for an aspect index. font_role is 'morinus' for

@@ -16,6 +16,7 @@ export type AspectListCursorTrackerInput = {
 };
 
 export const ASPECT_LIST_CURSOR_FALLBACK_DELAY_MS: number;
+export const ASPECT_LIST_PERFECTION_IDLE_MS: number;
 export const ASPECT_LIST_PERFECTION_BATCH_SIZE: number;
 export const ASPECT_LIST_PERFECTION_BATCH_LIMIT: number;
 export const ASPECT_LIST_PERFECTION_CONCURRENCY: number;
@@ -24,6 +25,10 @@ export function aspectListRequestedMode<TMode extends string>(
   preferredMode: TMode | null,
   comparisonVisible: boolean | undefined,
 ): TMode | "primary" | null;
+
+export function aspectListDefaultMode(
+  comparisonVisible: boolean | undefined,
+): "outerToPrimary" | "primary" | null;
 
 export function aspectListVirtualWindow(input: {
   currentViewport: {
@@ -111,11 +116,40 @@ export function isAspectListPayloadCurrent(
   actionIdentity: string,
 ): boolean;
 
+export function shouldDeferAspectListRefresh(input: {
+  pendingStepSeq: number;
+  settledStepSeq: number;
+}): boolean;
+
+export function aspectListPerfectionLedgerKey<
+  TRow extends { trajectoryKey: string },
+>(documentId: string, mode: string, row: TRow): string;
+
+export function retainAspectListPerfectionsFromLedger<
+  TRow extends { id: string; trajectoryKey: string; phase: string },
+  TPerfection extends {
+    status: "ready" | "unavailable";
+    reason?: string;
+    exactJd?: number;
+  },
+>(input: {
+  documentId: string;
+  mode: string;
+  rows: readonly TRow[];
+  ledger: ReadonlyMap<string, TPerfection>;
+  nextAnchorJd: number;
+}): Map<string, TPerfection>;
+
 export function retainMatchingAspectListPerfections<
-  TRow extends { id: string; trajectoryKey: string },
-  TPerfection,
+  TRow extends { id: string; trajectoryKey: string; phase: string },
+  TPerfection extends {
+    status: "ready" | "unavailable";
+    reason?: string;
+    exactJd?: number;
+  },
 >(input: {
   previousRows: readonly TRow[];
   nextRows: readonly TRow[];
   previousByRow: ReadonlyMap<string, TPerfection>;
+  nextAnchorJd: number;
 }): Map<string, TPerfection>;

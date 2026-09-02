@@ -298,6 +298,47 @@ body {
   background: var(--notes-border);
 }
 
+.ProseMirror .tableWrapper {
+  max-width: 100%;
+  margin: 0.55em 0;
+  overflow-x: auto;
+}
+
+.ProseMirror table {
+  width: max-content;
+  min-width: min(100%, 28rem);
+  border-collapse: collapse;
+  font-size: 0.94em;
+  line-height: 1.4;
+}
+
+.ProseMirror th,
+.ProseMirror td {
+  min-width: 5.5rem;
+  padding: 0.36em 0.55em;
+  border: 1px solid color-mix(in srgb, var(--notes-border) 78%, transparent);
+  vertical-align: top;
+  text-align: left;
+}
+
+.ProseMirror th {
+  background: color-mix(in srgb, var(--notes-surface) 78%, transparent);
+  font-weight: 700;
+}
+
+.ProseMirror th p,
+.ProseMirror td p {
+  margin: 0;
+}
+
+.ProseMirror img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.55em 0;
+  border-radius: 3px;
+}
+
 .ProseMirror-selectednode {
   outline: 2px solid var(--notes-accent);
   outline-offset: 2px;

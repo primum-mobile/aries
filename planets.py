@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 import math
 import astrology
 import houses
@@ -600,18 +605,16 @@ class Planet:
 		okGa, okGd, lon = self.iterate(pl, rao, rdo, robl, rpoh, lon)
 		if not okGa:
 			rao1 = rao+math.radians(0.5)
-			lon1 = self.iterate(pl, rao1, rdo, robl, rpoh, lon)
+			_okGa1, _okGd1, lon1 = self.iterate(pl, rao1, rdo, robl, rpoh, lon)
 			rao2 = rao-math.radians(0.5)
-			lon2 = self.iterate(pl, rao2, rdo, robl, rpoh, lon)
-			lon = (lon1+lon2)/2
-			lon = util.normalize(lon)
+			_okGa2, _okGd2, lon2 = self.iterate(pl, rao2, rdo, robl, rpoh, lon)
+			lon = util.normalize(lon1 + (((lon2-lon1+180.0) % 360.0)-180.0)/2.0)
 		elif not okGd:
 			rdo1 = rdo+math.radians(0.5)
-			lon1 = self.iterate(pl, rao, rdo1, robl, rpoh, lon)
+			_okGa1, _okGd1, lon1 = self.iterate(pl, rao, rdo1, robl, rpoh, lon)
 			rdo2 = rdo-math.radians(0.5)
-			lon2 = self.iterate(pl, rao, rdo2, robl, rpoh, lon)
-			lon = (lon1+lon2)/2
-			lon = util.normalize(lon)
+			_okGa2, _okGd2, lon2 = self.iterate(pl, rao, rdo2, robl, rpoh, lon)
+			lon = util.normalize(lon1 + (((lon2-lon1+180.0) % 360.0)-180.0)/2.0)
 
 #		print 'lon=%f' % lon
 

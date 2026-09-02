@@ -74,7 +74,7 @@ DEFAULT_SIGNIFICATORS = {
 }
 
 
-rule_engine.register_discipline('composite', 'Composite', list(_THEME_SLUGS))
+rule_engine.register_discipline('composite', 'Composite', _THEME_SLUGS)
 
 
 def _pack_theme_lookup():
@@ -97,17 +97,17 @@ def evaluate(theme, composite_chart, context=None):
     `composite_chart` is a normal Chart object (the midpoint chart). Every
     predicate treats it as a single chart — no two-chart logic here.
     """
-    theme_slug = _THEME_SLUGS.get(theme)
+    theme_slug = rule_engine.theme_slug_for('composite', theme)
     if theme_slug is None:
-        pack_slugs, _pack_ctx = _pack_theme_lookup()
-        theme_slug = pack_slugs.get(theme)
-        if theme_slug is None:
-            return []
+        return []
     if context is None:
-        context = DEFAULT_SIGNIFICATORS.get(theme)
+        canonical = rule_engine.canonical_theme_label_for(
+            'composite', theme_slug,
+        ) or theme
+        context = DEFAULT_SIGNIFICATORS.get(canonical)
         if context is None:
             _slugs, pack_ctx = _pack_theme_lookup()
-            context = pack_ctx.get(theme)
+            context = pack_ctx.get(theme) or pack_ctx.get(canonical)
     return rule_engine.evaluate('composite', theme_slug, composite_chart,
                                 context=context)
 

@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Max Lange
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import type { ChartRenderSnapshot } from "@/lib/chart/types";
 import {
   daemonBaseUrl,
@@ -42,6 +45,7 @@ export type StyleLabThemeSource = Readonly<{
   deletable: boolean;
   system?: boolean;
   factoryModified?: boolean;
+  modified?: boolean;
   mode: "light" | "dark";
   selected?: boolean;
   basePresetId: string | null;
@@ -276,6 +280,22 @@ export async function fetchCurrentStyleLabDraft(
   return readJson<StyleLabDraft>(response);
 }
 
+export async function fetchWorkingStyleLabDraft(
+  sourceThemeName: string,
+  signal?: AbortSignal,
+): Promise<StyleLabDraft> {
+  const query = new URLSearchParams({ sourceThemeName });
+  const response = await daemonFetch(
+    `${daemonBaseUrl()}/api/style-lab/working-draft?${query}`,
+    {
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+      signal,
+    },
+  );
+  return readJson<StyleLabDraft>(response);
+}
+
 export type StyleLabPortableProfile = Readonly<{
   kind: "aries.style-profile";
   id: string;
@@ -396,6 +416,8 @@ export async function saveCurrentStyleLabDraftAsTheme(
   options: {
     baseRevision?: number;
     overrides?: Readonly<Record<string, StyleLabTokenValue | null>>;
+    activate?: boolean;
+    promoteWorkingCopy?: boolean;
   } = {},
   signal?: AbortSignal,
 ): Promise<StyleLabDraft> {

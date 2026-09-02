@@ -179,7 +179,7 @@ def events_around(
     if pid is None:
         return []
     if phasis_mode is None:
-        phasis_mode = getattr(getattr(radix, "options", None), "phasismode", phasiscalc.PHASIS_MODE_ASTRONOMICAL)
+        phasis_mode = getattr(getattr(radix, "options", None), "phasismode", phasiscalc.PHASIS_MODE_SIMPLE_SWEP)
     start_jd = datetime_to_jd(radix, start_dt)
     end_jd = datetime_to_jd(radix, end_dt)
     if end_jd < start_jd:

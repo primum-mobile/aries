@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Copyright (C) 2026 Max Lange
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import {
   existsSync,
   mkdirSync,
@@ -74,15 +77,38 @@ function metricLabel(metricName, budget) {
   return budget?.description ?? metricName;
 }
 
-function latestNativeMetrics() {
-  const latest = new Map();
-  for (const row of readJsonLines(nativeLogPath)) {
-    const metrics = row?.event?.detail?.metrics;
-    if (!Array.isArray(metrics)) continue;
-    for (const metric of metrics) latest.set(metric.name, metric);
-  }
-  return latest;
+const cadenceMetricNames = new Set([
+  "time-step.canvas-to-next-frame",
+  "time-step.intent-to-next-frame",
+  "time-step.raf-to-post-render-task",
+  "time-step.canvas-to-post-render-task",
+  "time-step.intent-to-post-render-task",
+  "time-step.next-frame-interval",
+  "time-step.next-raf-opportunity-gap",
+  "time-step.post-render-task-gap",
+  "time-step.post-render-gap-over-input",
+  "time-step.post-render-gap-delta",
+]);
+
+function metricsFromNativeSummary(summary) {
+  return new Map(
+    (summary?.event?.detail?.metrics ?? []).map((metric) => [metric.name, metric]),
+  );
 }
+
+const nativeSummaries = readJsonLines(nativeLogPath).filter(
+  (row) =>
+    row?.event?.name === "speedlog-summary" &&
+    Array.isArray(row?.event?.detail?.metrics),
+);
+const latestNativeSummary = nativeSummaries.at(-1) ?? null;
+const latestNativeCadenceSummary = nativeSummaries.filter((row) => {
+  const detail = row.event.detail;
+  return (
+    Number(detail?.counters?.rawInputs ?? 0) > 0 ||
+    detail.metrics.some((metric) => cadenceMetricNames.has(metric?.name))
+  );
+}).at(-1) ?? null;
 
 const runs = readJsonLines(runLogPath);
 if (runs.length === 0) {
@@ -90,7 +116,8 @@ if (runs.length === 0) {
 }
 const run = runs.at(-1);
 const measured = { ...(run.metrics ?? {}), ...(run.diagnostics ?? {}) };
-const nativeMetrics = latestNativeMetrics();
+const nativeMetrics = metricsFromNativeSummary(latestNativeSummary);
+const nativeCadenceMetrics = metricsFromNativeSummary(latestNativeCadenceSummary);
 const requiredMetricNames = new Set(
   Array.isArray(run.requiredMetrics)
     ? run.requiredMetrics
@@ -132,6 +159,33 @@ const payload = measured["time-step.payload-bytes"];
 const inputGap = measured["time-step.input-gap"];
 const paintGap = measured["time-step.paint-gap"];
 const paintGapOverInput = measured["time-step.paint-gap-over-input"];
+const cadenceProxySources = new Set();
+function cadenceProxyMetric(name) {
+  const controlled = measured[name];
+  if (Number(controlled?.samples ?? 0) > 0) {
+    cadenceProxySources.add("controlled");
+    return controlled;
+  }
+  const native = nativeCadenceMetrics.get(name);
+  if (Number(native?.samples ?? 0) > 0) {
+    cadenceProxySources.add("native");
+    return native;
+  }
+  return controlled ?? native ?? null;
+}
+const canvasToNextFrame = cadenceProxyMetric("time-step.canvas-to-next-frame");
+const intentToNextFrame = cadenceProxyMetric("time-step.intent-to-next-frame");
+const rafToPostRender = cadenceProxyMetric("time-step.raf-to-post-render-task");
+const canvasToPostRender = cadenceProxyMetric("time-step.canvas-to-post-render-task");
+const intentToPostRender = cadenceProxyMetric("time-step.intent-to-post-render-task");
+const nextFrameInterval = cadenceProxyMetric("time-step.next-frame-interval");
+const nextRafOpportunityGap = cadenceProxyMetric(
+  "time-step.next-raf-opportunity-gap",
+);
+const postRenderGap = cadenceProxyMetric("time-step.post-render-task-gap");
+const postRenderGapOverInput = cadenceProxyMetric(
+  "time-step.post-render-gap-over-input",
+);
 const daemonTotal = measured["daemon.navigate.total"];
 const daemonPreSnapshot = measured["daemon.navigate.pre-snapshot"];
 const snapshotTotal = measured["daemon.snapshot.total"];
@@ -157,24 +211,73 @@ const commandAverageDelta = changePercent(commandAverage, commandReference?.aver
 const commandP95Delta = changePercent(command?.p95Ms, commandReference?.p95);
 const canvasAverageDelta = changePercent(canvasAverage, canvasReference?.average);
 const canvasP95Delta = changePercent(canvas?.p95Ms, canvasReference?.p95);
+const nativeCadenceRecordedAt = Number(latestNativeCadenceSummary?.recordedAtUnixMs);
+const nativeCadenceWindowId = latestNativeCadenceSummary?.event?.detail?.windowId;
+const nativeCadenceCounters = latestNativeCadenceSummary?.event?.detail?.counters ?? null;
+const nativeCadenceIdentity = latestNativeCadenceSummary
+  ? `${Number.isFinite(nativeCadenceRecordedAt)
+      ? new Date(nativeCadenceRecordedAt).toISOString()
+      : "timestamp unavailable"}${nativeCadenceWindowId == null
+      ? ""
+      : `, window ${nativeCadenceWindowId}`}`
+  : null;
+const cadenceProxySourceLabel = cadenceProxySources.size === 0
+  ? "no current cadence samples"
+  : cadenceProxySources.size === 1 && cadenceProxySources.has("controlled")
+    ? "controlled browser harness"
+    : cadenceProxySources.size === 1
+      ? `latest cadence-bearing native summary (${nativeCadenceIdentity})`
+      : `controlled browser harness with cadence-bearing native fallback (${nativeCadenceIdentity})`;
 
 const visualContinuity = run.visualContinuity ?? null;
 const visualCadence = run.visualCadence ?? null;
+const visualCadenceBoundaryContractRecorded =
+  typeof visualCadence?.exactInputIdEquivalence === "boolean" &&
+  typeof visualCadence?.allBoundaryCallbacksComplete === "boolean" &&
+  Number.isFinite(visualCadence?.completedBoundaryProbes) &&
+  Number.isFinite(visualCadence?.uniqueNextRafOpportunities) &&
+  Number.isFinite(visualCadence?.rafCollisionExcess);
+const visualCadenceContractStatus = visualCadence == null
+  ? null
+  : visualCadenceBoundaryContractRecorded
+    ? visualCadence.passed === true
+    : null;
+const controlledBoundaryCountersAvailable = Number.isFinite(
+  visualCadence?.completedBoundaryProbes,
+);
+const boundaryCounterSource = controlledBoundaryCountersAvailable
+  ? "controlled browser harness"
+  : nativeCadenceCounters
+    ? `latest cadence-bearing native summary (${nativeCadenceIdentity})`
+    : "no current cadence samples";
+const boundaryCounters = controlledBoundaryCountersAvailable
+  ? {
+      completedBoundaryProbes: visualCadence.completedBoundaryProbes,
+      boundaryTimeouts: visualCadence.boundaryTimeouts,
+      uniqueNextRafOpportunities: visualCadence.uniqueNextRafOpportunities,
+      rafCollisionGroups: visualCadence.rafCollisionGroups,
+      rafCollisionExcess: visualCadence.rafCollisionExcess,
+      maxCanvasesPerNextRaf: visualCadence.maxCanvasesPerNextRaf,
+      latePostRenderTasks: visualCadence.latePostRenderTasks,
+    }
+  : nativeCadenceCounters;
 const overlayContinuity = run.overlayContinuity ?? null;
 const displayToggleCoherence = run.displayToggleCoherence ?? null;
 const missedStepRecovery = run.missedStepRecovery ?? null;
 const unpaintedStepRecovery = run.unpaintedStepRecovery ?? null;
+const heldKeyCadence = run.heldKeyCadence ?? null;
 const retainedTransitList = run.retainedTransitList ?? null;
 const noListSearchRequests = Array.isArray(run.noListSearchRequests)
   ? run.noListSearchRequests
   : null;
 const contractStatuses = {
-  visualCadence: visualCadence?.passed ?? null,
+  visualCadence: visualCadenceContractStatus,
   overlayContinuity: overlayContinuity?.passed ?? null,
   visualContinuity: visualContinuity?.passed ?? null,
   displayToggleCoherence: displayToggleCoherence?.passed ?? null,
   missedStepRecovery: missedStepRecovery?.passed ?? null,
   unpaintedStepRecovery: unpaintedStepRecovery?.passed ?? null,
+  heldKeyCadence: heldKeyCadence?.passed ?? null,
   noListSearchIsolation:
     noListSearchRequests == null ? null : noListSearchRequests.length === 0,
   retainedTransitList: retainedTransitList?.passed ?? null,
@@ -195,7 +298,7 @@ const contractVerdict = coherenceFailed
     ? "No data"
     : "Pass";
 const contractSummary = [
-  `one-input-per-paint cadence ${visualCadence?.passed === true ? "passed" : visualCadence ? "failed" : "not measured"}`,
+  `one-input-per-draw/boundary cadence ${visualCadenceContractStatus === true ? "passed" : visualCadenceContractStatus === false ? "failed" : "not measured with the current schema"}`,
   `overlay continuity ${overlayContinuity?.passed === true ? "passed" : overlayContinuity ? "failed" : "not measured"}`,
   `settled-frame continuity ${visualContinuity?.passed === true ? "passed" : visualContinuity ? "failed" : "not measured"}`,
   ...(requiredContractNames.has("displayToggleCoherence")
@@ -206,6 +309,9 @@ const contractSummary = [
     : []),
   ...(requiredContractNames.has("unpaintedStepRecovery")
     ? [`unpainted-step recovery ${unpaintedStepRecovery?.passed === true ? "passed" : unpaintedStepRecovery ? "failed" : "not measured"}`]
+    : []),
+  ...(requiredContractNames.has("heldKeyCadence")
+    ? [`held-key envelope cadence ${heldKeyCadence?.passed === true ? "passed" : heldKeyCadence ? "failed" : "not measured"}`]
     : []),
   ...(requiredContractNames.has("noListSearchIsolation")
     ? [`no-list Search isolation ${noListSearchRequests == null ? "not measured" : noListSearchRequests.length === 0 ? "passed" : "failed"}`]
@@ -242,7 +348,9 @@ const lines = [
   "",
   "## Visual coherence contract",
   "",
-  `- Step presentation: ${visualCadence?.oneInputPerPaint === true ? "at most one semantic input per paint" : "merged/skipped input detected"}; ${visualCadence?.stepFastPaints ?? "—"} paints for ${visualCadence?.expectedInputs ?? "—"} inputs.`,
+  `- Step Canvas contract: ${visualCadence?.oneInputPerPaint === true ? "at most one semantic input per draw" : "merged/skipped input detected"}; ${visualCadence?.stepFastPaints ?? "—"} draws for ${visualCadence?.expectedInputs ?? "—"} inputs; exact unique raw/draw/boundary input IDs ${visualCadence?.exactInputIdEquivalence === true ? "matched" : "did not match or were not recorded"}.`,
+  `- Post-Canvas boundary evidence (${boundaryCounterSource}): completed probes ${boundaryCounters?.completedBoundaryProbes ?? "—"}; timeouts ${boundaryCounters?.boundaryTimeouts ?? "—"}; unique first-rAF opportunities ${boundaryCounters?.uniqueNextRafOpportunities ?? "—"}; collision groups/excess ${boundaryCounters?.rafCollisionGroups ?? "—"}/${boundaryCounters?.rafCollisionExcess ?? "—"}; maximum draw-end probes sharing one rAF callback timestamp ${boundaryCounters?.maxCanvasesPerNextRaf ?? "—"}; late post-rAF timer tasks ${boundaryCounters?.latePostRenderTasks ?? "—"}. Callback/opportunity counts are not displayed-frame counts.`,
+  `- Controlled second-rAF evidence: unique callback timestamps ${visualCadence?.uniqueSecondRafTimestamps ?? "—"}; collision excess ${visualCadence?.secondRafTimestampCollisions ?? "—"}.`,
   `- Settle scheduling: ${visualCadence?.noSettleContention === true ? "no full semantic request started during the input burst" : "burst contention detected"}; post-burst settle requests ${visualCadence?.settleStartsAfterBurst ?? "—"}.`,
   `- Overlay during burst: ${overlayContinuity?.noBlankStepFrames === true && overlayContinuity?.currentCheapRowsNeverBlank === true ? "all previously populated groups and current cheap slots stayed visible" : "blank/strobe detected"}.`,
   `- Overlay settle: ${overlayContinuity?.cheapRowsMatchSettle === true ? "last step day/hour/lord-of-year matched full truth" : "cheap-row mismatch"}; deferred slots ${overlayContinuity?.deferredSlotsStayedPopulated === true ? "remained populated" : "blanked"}.`,
@@ -295,6 +403,10 @@ const lines = [
   "",
   `Navigate response payload: average ${formatValue(payload?.averageMs, "bytes")}, p95 ${formatValue(payload?.p95Ms, "bytes")}, max ${formatValue(payload?.maxMs, "bytes")}.`,
   `Held-key cadence: input-gap p95 ${formatValue(inputGap?.p95Ms, "ms")}; paint-gap p95 ${formatValue(paintGap?.p95Ms, "ms")}; delay beyond measured input p95 ${formatValue(paintGapOverInput?.p95Ms, "ms")}.`,
+  `Post-Canvas scheduling proxy (${cadenceProxySourceLabel}): instrumented Canvas draw end → next rAF callback min/p05/p95/max ${formatValue(canvasToNextFrame?.minimumMs, "ms")} / ${formatValue(canvasToNextFrame?.p05Ms, "ms")} / ${formatValue(canvasToNextFrame?.p95Ms, "ms")} / ${formatValue(canvasToNextFrame?.maxMs, "ms")}; input → that callback p95 ${formatValue(intentToNextFrame?.p95Ms, "ms")}.`,
+  `Post-rAF task proxy: rAF callback → its queued timer task min/p05/p95/max ${formatValue(rafToPostRender?.minimumMs, "ms")} / ${formatValue(rafToPostRender?.p05Ms, "ms")} / ${formatValue(rafToPostRender?.p95Ms, "ms")} / ${formatValue(rafToPostRender?.maxMs, "ms")}; Canvas draw end → task min/p05/p95/max ${formatValue(canvasToPostRender?.minimumMs, "ms")} / ${formatValue(canvasToPostRender?.p05Ms, "ms")} / ${formatValue(canvasToPostRender?.p95Ms, "ms")} / ${formatValue(canvasToPostRender?.maxMs, "ms")}; input → task p95 ${formatValue(intentToPostRender?.p95Ms, "ms")}.`,
+  `Callback cadence proxy: first → second rAF callback-timestamp interval min/p05/p95/max ${formatValue(nextFrameInterval?.minimumMs, "ms")} / ${formatValue(nextFrameInterval?.p05Ms, "ms")} / ${formatValue(nextFrameInterval?.p95Ms, "ms")} / ${formatValue(nextFrameInterval?.maxMs, "ms")}; successive distinct first-rAF opportunity gap min/p05/p95/max ${formatValue(nextRafOpportunityGap?.minimumMs, "ms")} / ${formatValue(nextRafOpportunityGap?.p05Ms, "ms")} / ${formatValue(nextRafOpportunityGap?.p95Ms, "ms")} / ${formatValue(nextRafOpportunityGap?.maxMs, "ms")}; comparable post-rAF task gap p95/max ${formatValue(postRenderGap?.p95Ms, "ms")} / ${formatValue(postRenderGap?.maxMs, "ms")}; task-gap delay beyond its exact input gap p95/max ${formatValue(postRenderGapOverInput?.p95Ms, "ms")} / ${formatValue(postRenderGapOverInput?.maxMs, "ms")}.`,
+  "These rAF callbacks and queued timer tasks are main-thread scheduling/render-opportunity proxies. They do not prove that the Canvas draw was painted, composited, or scanned out.",
   "",
   "## Regression against the June 15 mounted-Tauri reference",
   "",

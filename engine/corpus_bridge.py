@@ -7,6 +7,7 @@ Lazy-loads the corpus on first use; returns [] on any failure.
 """
 
 import os
+import re
 import sys
 
 
@@ -74,6 +75,12 @@ _cache = {}          # region_key → (passages_list,)  — avoids re-query on h
 _signification_cache = {}       # planet tag -> preview dict or None
 _sign_signification_cache = {}  # sign tag -> preview dict or None
 
+_HOUSE_ORDINAL_RE = re.compile(
+	r'^(?:⟨b⟩⟨/b⟩\s*)?(?:Let us begin with\s+)?'
+	r'(?:XII|XI|X|IX|VIII|VII|VI|V|IV|III|II|I)\s+',
+	re.IGNORECASE,
+)
+
 
 def _get_db():
 	global _db, _db_attempted
@@ -88,6 +95,66 @@ def _get_db():
 	except Exception:
 		_db = None
 	return _db
+
+
+def inspector_section(selector):
+	"""Resolve one pack-authored inspector selector against the Valens corpus.
+
+	Selectors point to an existing parsed section and may narrow it to one
+	1-based paragraph. The returned text is always copied from CorpusDB; the
+	pack map never contains or synthesises source prose.
+	"""
+	if not isinstance(selector, dict) or selector.get('source') != 'valens':
+		return None
+	db = _get_db()
+	if db is None:
+		return None
+	try:
+		book = int(selector.get('book'))
+		chapter = int(selector.get('chapter'))
+		sections = db.get_chapter(book, chapter)
+	except (TypeError, ValueError, AttributeError):
+		return None
+
+	heading = selector.get('heading')
+	if heading is not None:
+		sections = [
+			section for section in sections
+			if (section.get('heading') or '').strip() == str(heading).strip()
+		]
+	if not sections:
+		return None
+	section = sections[0]
+
+	paragraph_number = selector.get('paragraph')
+	if paragraph_number is None:
+		return section
+	try:
+		paragraph_index = int(paragraph_number) - 1
+	except (TypeError, ValueError):
+		return None
+	paragraphs = [
+		paragraph.strip()
+		for paragraph in (section.get('text') or '').split('\n\n')
+		if paragraph.strip()
+	]
+	if paragraph_index < 0 or paragraph_index >= len(paragraphs):
+		return None
+	excerpt = dict(section)
+	excerpt_text = paragraphs[paragraph_index]
+	if selector.get('kind') == 'house':
+		# The inspector already identifies the selected house. Repeating I–XII
+		# inside the source card reads like a stray list marker, so keep it as
+		# source-selection metadata and omit it from the displayed excerpt.
+		excerpt_text = _HOUSE_ORDINAL_RE.sub('', excerpt_text, count=1)
+		if excerpt_text.startswith('the '):
+			excerpt_text = 'The ' + excerpt_text[4:]
+	excerpt['text'] = excerpt_text
+	# Chapter-level notes belong to the full section and must not be attached to
+	# an isolated house line unless the excerpt itself carries an inline note.
+	excerpt['footnotes'] = []
+	excerpt['editorial_notes'] = []
+	return excerpt
 
 
 # Map planet object_id (0-based, matching chartinspector._PLANET_NAMES order) to tag

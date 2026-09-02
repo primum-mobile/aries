@@ -3,9 +3,24 @@
 
 import type { ChartHitRegion } from "../chart/draw-chart";
 import {
+  resolveWheelBandLayout,
+  resolveWheelClassFontSizeCeiling,
+} from "../chart/wheel-layout-model";
+import {
   WHEEL_RENDER_TOKEN_SPECS,
+  WHEEL_BAND_SPANS,
+  WHEEL_RULER_DEPTH_RANGE,
+  WHEEL_SCALE_RANGE,
+  WHEEL_TICK_LENGTH_RANGE,
+  resolveCanonicalWheelRingSet,
+  resolveWheelTickLength,
   projectWheelAuthoringStyle,
+  resolveWheelPaintedRingRadiusRange,
+  resolveWheelBandSpanFields,
+  resolveWheelBandSpanScale,
+  resolveWheelBandSpanScaleRange,
   resolveWheelRingSet,
+  resolveWheelScale,
   resolveWheelSecondaryRingClassIds,
   resolveWheelTypographyMetrics,
   wheelRingRadiusTokenKey,
@@ -15,6 +30,7 @@ import {
   type WheelLinePaintTokenSuffix,
   type WheelPaintedRingRole,
   type WheelRenderStyle,
+  type WheelRulerId,
   type WheelRenderTokens,
   type WheelRingSet,
   type WheelTypographyProfile,
@@ -46,7 +62,10 @@ import {
 } from "./semantic-class-manifest";
 import {
   WHEEL_AUTHORING_OVERRIDE_PREFIX,
+  WHEEL_CHART_CLASS_ID,
   readWheelAuthoringClassDefaults,
+  wheelBandSpanClassId,
+  wheelRulerClassId,
   wheelAuthoringOverrideId,
   type WheelAuthoringEditScope,
   type WheelAuthoringFlatProperty,
@@ -54,9 +73,23 @@ import {
 
 export const WHEEL_STYLE_SCENE_SCHEMA_VERSION = 1 as const;
 
+/**
+ * Where the chart-scale handle sits, in scene degrees.
+ *
+ * Ring radius handles all sit at 0° and ring stroke handles at 45°, so the
+ * scale handle is given a quadrant of its own: at the wheel's outer edge it can
+ * never be mistaken for, or land on top of, a boundary handle.
+ */
+const CHART_SCALE_HANDLE_ANGLE = 135;
+
+/** Where a band-span diamond sits — a quadrant from the chart-scale one. */
+const BAND_SPAN_HANDLE_ANGLE = 225;
+
 export const WHEEL_STYLE_SCENE_ELEMENT_IDS = {
   root: "wheel",
   canvas: "wheel.canvas",
+  chartScale: "wheel.chart-scale",
+  bandSpan: "wheel.band-span",
   layerGeometry: "wheel.layers.geometry",
   layerDynamic: "wheel.layers.dynamic",
   layerOuterLabel: "wheel.layers.outer-label",
@@ -109,6 +142,16 @@ export interface WheelStyleSceneBuildInput {
   readonly hitRegions?: readonly ChartHitRegion[];
   /** Direct handle writes target shared base or the visible wheel variant. */
   readonly authoringScope?: WheelAuthoringEditScope;
+  /**
+   * Authoring override ids the *variant* holds, before base is folded into it.
+   *
+   * Only direct manipulation reads this, and only to answer one question: is
+   * the value this handle is about to write the value the wheel is painted
+   * from? Compiled overrides cannot answer it — `compileFlatWheelAuthoringOverrides`
+   * folds base into all three profiles first, so by the time the renderer sees
+   * them a base-only value and a variant value are indistinguishable.
+   */
+  readonly variantAuthoredOverrideIds?: ReadonlySet<string>;
 }
 
 type StyleTargetHitRegion = Extract<
@@ -437,13 +480,19 @@ function previewFeatures(
       features.add("body.prenatalSyzygy");
       continue;
     }
+    if (region.kind === "eclipse") {
+      features.add("body.prenatalSyzygy");
+      continue;
+    }
     if (region.kind !== "secondary_ring") continue;
 
     const family = region.family.trim().toLowerCase().replaceAll("-", "_");
-    if (family.includes("fixed")) features.add("outerRing.fixedStar");
+    // `fix`, not `fixed`: the daemon spells the family `fixstar`. See
+    // resolveWheelSecondaryRingClassIds, which this list must agree with or a
+    // present outer-ring family reads as an absent one.
+    if (family.includes("fix")) features.add("outerRing.fixedStar");
     else if (family.includes("asteroid")) features.add("outerRing.asteroid");
     else if (family.includes("midpoint")) features.add("outerRing.midpoint");
-    else if (family.includes("hybrid")) features.add("outerRing.hybridHit");
     else if (family.includes("contra") && family.includes("antis")) {
       features.add("outerRing.contraAntiscia");
     } else if (family.includes("antis")) features.add("outerRing.antiscia");
@@ -578,6 +627,18 @@ function applicableAuthoringDefaults(
     ...(capabilities.has("radius") && defaults.diameterPx != null
       ? { diameterPx: defaults.diameterPx }
       : {}),
+    ...(capabilities.has("rulerDepth") && defaults.rulerDepthPercent != null
+      ? { rulerDepthPercent: defaults.rulerDepthPercent }
+      : {}),
+    ...(capabilities.has("tickLength") && defaults.tickLengthPercent != null
+      ? { tickLengthPercent: defaults.tickLengthPercent }
+      : {}),
+    ...(capabilities.has("spanInner") && defaults.spanInnerPx != null
+      ? { spanInnerPx: defaults.spanInnerPx }
+      : {}),
+    ...(capabilities.has("spanScale") && defaults.spanScalePercent != null
+      ? { spanScalePercent: defaults.spanScalePercent }
+      : {}),
   });
 }
 
@@ -711,6 +772,9 @@ interface RadiusTokenBinding {
   readonly key: keyof WheelRenderTokens;
   readonly value: number;
   readonly valuePerPixel: number;
+  /** Neighbour-aware wall in token units, when the ring has one. */
+  readonly min?: number;
+  readonly max?: number;
 }
 
 const RING_CLASS_IDS: Readonly<Partial<Record<WheelLinePaintRole, string>>> = {
@@ -741,6 +805,11 @@ function ringClassId(
     [WHEEL_STYLE_SCENE_ELEMENT_IDS.ringOuterBody]: "bodies.outer.lane",
     [WHEEL_STYLE_SCENE_ELEMENT_IDS.ringOuterLine]: "secondaryRing.leaderLane",
     [WHEEL_STYLE_SCENE_ELEMENT_IDS.ringProjectedLabel]: "secondaryRing.labelLane",
+    // Classic paints this circle and it is `rings.aspectBoundary` there;
+    // compact and Anglo place aspects against it without drawing it. Named
+    // rather than left to the id fallback below, which produced `ring.aspect`
+    // — a top-level `ring` node sitting beside `rings` in the element list.
+    [WHEEL_STYLE_SCENE_ELEMENT_IDS.ringAspect]: "aspects.lane",
   };
   return lanes[elementId] ?? elementId.replace(/^wheel\./, "");
 }
@@ -749,13 +818,19 @@ function paintedRingRadiusToken(
   input: WheelGeometryInput,
   role: WheelPaintedRingRole,
   radius: number,
+  style?: WheelRenderStyle,
 ): RadiusTokenBinding {
+  const scale = Math.max(1, input.maxRadius);
+  // The solver's legal interval for this ring, normalized into token units so
+  // the drag hard-stops exactly where the geometry would otherwise break.
+  const range = style ? resolveWheelPaintedRingRadiusRange(style, input, role) : null;
   return {
     key: wheelRingRadiusTokenKey(input.profile, role),
     // Auto tokens are stored as zero, but the direct editor control must show
     // and begin dragging from the exact radius currently painted.
-    value: radius / Math.max(1, input.maxRadius),
-    valuePerPixel: 1 / Math.max(1, input.maxRadius),
+    value: radius / scale,
+    valuePerPixel: 1 / scale,
+    ...(range ? { min: range.min / scale, max: range.max / scale } : {}),
   };
 }
 
@@ -886,12 +961,16 @@ function addRingElement(
       ? EDITABLE
       : (input.geometryOwnership ?? DERIVED_GEOMETRY),
     binding: radiusToken
-      ? directMetricBinding(
-          radiusToken.key,
-          "radius",
-          radiusToken.value,
-          radiusToken.valuePerPixel,
-        )
+      ? {
+          ...directMetricBinding(
+            radiusToken.key,
+            "radius",
+            radiusToken.value,
+            radiusToken.valuePerPixel,
+          ),
+          ...(radiusToken.min != null ? { min: radiusToken.min } : {}),
+          ...(radiusToken.max != null ? { max: radiusToken.max } : {}),
+        }
       : undefined,
   };
   const strokeHandle: StyleSceneHandle | null = painted
@@ -1207,18 +1286,26 @@ function styleTargetTokenBindings(
         ? style.typography.families.bodySymbols
         : style.typography.families.signSymbols
       : style.typography.families.ui;
-    const colorToken =
-      isSign && useZodiacElementColors && region.signIndex != null
-        ? ELEMENT_COLOR_TOKENS[region.signIndex % ELEMENT_COLOR_TOKENS.length]
-        : isSign
-          ? CHART_COLOR_TOKENS.signs
-          : CHART_COLOR_TOKENS.positions;
-    const colorValue =
-      isSign && region.signIndex != null
-        ? signColors?.[region.signIndex] ?? style.palette.signs
-        : isSign
-          ? style.palette.signs
-          : style.palette.positions;
+    // A position readout — "28° ♏ 33" — is one printed value, so degree, sign
+    // and minute share one colour role. Colouring the sign by the zodiac role
+    // split one reading across two families purely because that component
+    // happens to be a glyph.
+    //
+    // Font still splits, and must: the sign needs a symbol face with the glyph
+    // in its cmap, which a text face does not have. Colour groups by meaning;
+    // font is constrained by coverage.
+    //
+    // Zodiac element colouring stays an explicit opt-in. When it is on the
+    // sign is deliberately tinted by element, and that intent outranks the
+    // readout's shared role.
+    const elementColoured =
+      isSign && useZodiacElementColors && region.signIndex != null;
+    const colorToken = elementColoured
+      ? ELEMENT_COLOR_TOKENS[region.signIndex! % ELEMENT_COLOR_TOKENS.length]
+      : CHART_COLOR_TOKENS.positions;
+    const colorValue = elementColoured
+      ? signColors?.[region.signIndex!] ?? style.palette.signs
+      : style.palette.positions;
     return Object.freeze([
       colorBinding(colorToken, colorValue),
       fontBinding(fontToken, fontFamily),
@@ -1364,9 +1451,14 @@ function styleTargetTokenBindings(
         ? style.typography.ratios.outerProjectedGlyphScale
         : style.typography.ratios.outerLabelScale;
     return Object.freeze([
-      colorBinding(CHART_COLOR_TOKENS.positions, style.palette.positions),
-      colorBinding(CHART_COLOR_TOKENS.signs, style.palette.signs),
-      colorBinding(CHART_COLOR_TOKENS.textBright, style.palette.textBright),
+      // The roles this class actually paints with, and only those. It used to
+      // offer positions, signs and bright text; the renderer uses none of the
+      // three. `buildOuterItemLabel` paints every text and glyph run with
+      // `palette.textDim` (a planet run takes that body's own colour, which is
+      // edited from the body role), and the authoring adapter's own fallback
+      // for `secondaryRing.*` is textDim as well. Three roles that are not
+      // painted is what put three identical, inert "Colour" rows on one label.
+      colorBinding(CHART_COLOR_TOKENS.textDim, style.palette.textDim),
       fontBinding(
         symbol ? APP_FONT_TOKENS.symbols : APP_FONT_TOKENS.ui,
         symbol
@@ -1479,6 +1571,52 @@ function appendStyleTargetElement(
   }, tags));
 }
 
+/**
+ * The authored length of a body leader — the short radial "foot" under a glyph.
+ * Classic and Compact author it as a fraction of the wheel radius; Anglo
+ * authors it as an inset scaled by the sign ring, which is the base the
+ * renderer divides by, so a drag reads as radial pixels either way.
+ */
+function bodyLeaderLengthToken(
+  style: WheelRenderStyle,
+  profile: WheelTypographyProfile,
+  maxRadius: number,
+  rings: Readonly<WheelRingSet>,
+): RadiusTokenBinding {
+  if (profile === "anglo") {
+    return {
+      key: "angloLeaderInsetScale",
+      value: style.geometry.anglo.leaderInsetScale,
+      valuePerPixel: 1 / Math.max(1, rings.r30),
+    };
+  }
+  return {
+    key: "classicPlanetLineLength",
+    value: style.geometry.classic.planetLineLength,
+    valuePerPixel: 1 / Math.max(1, maxRadius),
+  };
+}
+
+/**
+ * The authored length of an angle arrowhead, from its base to its apex.
+ *
+ * Anglo has no equivalent token: its arrowhead is a filled triangle seated on
+ * the inner boundary and sized by `arrowInset`/`arrowMaximum`, neither of which
+ * is exposed as a render token, so Anglo returns null until they are.
+ */
+function angleArrowLengthToken(
+  style: WheelRenderStyle,
+  profile: WheelTypographyProfile,
+  maxRadius: number,
+): RadiusTokenBinding | null {
+  if (profile === "anglo") return null;
+  return {
+    key: "classicArrowLength",
+    value: style.geometry.classic.arrowLength,
+    valuePerPixel: 1 / Math.max(1, maxRadius),
+  };
+}
+
 function linearHandle(
   elementId: string,
   idSuffix: string,
@@ -1551,7 +1689,10 @@ function appendBodyElement(
   profile: WheelTypographyProfile,
   maxRadius: number,
   useIndividualBodyColors: boolean | undefined,
-  region: Extract<ChartHitRegion, { kind: "planet" | "fortune" | "vertex" | "syzygy" }>,
+  region: Extract<ChartHitRegion, { kind: "planet" | "fortune" | "vertex" | "syzygy" | "eclipse" }>,
+  // The Anglo leader inset scales by the sign ring, so the leader length
+  // handle needs the resolved rings to read as radial pixels.
+  rings: Readonly<WheelRingSet>,
 ): void {
   const role = region.chartRole === "outer" ? "outer" : "primary";
   const bodyId =
@@ -1602,15 +1743,15 @@ function appendBodyElement(
     fontBinding(APP_FONT_TOKENS.bodySymbols, style.typography.families.bodySymbols),
     ...(isSpecialPoint ? [] : [metricBinding(scaleKey, "font-size", scaleValue)]),
   ];
-  const bodyClassId = region.kind === "fortune"
-    ? "bodies.fortune"
-    : region.kind === "vertex"
-      ? "bodies.vertex"
-      : region.kind === "syzygy"
-        ? "bodies.prenatalSyzygy"
-        : role === "outer"
-          ? "bodies.outer.glyph"
-          : "bodies.inner.glyph";
+  // Fortune, the Vertex and the prenatal syzygy are body glyphs and are
+  // authored as body glyphs. They used to be three classes of their own that
+  // carried a colour and nothing else, so clicking one offered no size, no
+  // font and no opacity — those lived on `bodies.inner.glyph`, which the user
+  // had no way to know. Their own colours are unchanged: those ride on the
+  // occurrence palette roles bound above, not on the class.
+  const bodyClassId = role === "outer"
+    ? "bodies.outer.glyph"
+    : "bodies.inner.glyph";
   if (scaleHandle) handles.push(scaleHandle);
   elements.push(
     element(
@@ -1655,7 +1796,17 @@ function appendBodyElement(
     const leaderColorKey = role === "outer"
       ? profile === "anglo" ? "angloOuterLeader" : "outerLeader"
       : profile === "anglo" ? "angloBodyLeader" : "bodyLeader";
-    handles.push(leaderHandle);
+    const leaderLength = bodyLeaderLengthToken(style, profile, maxRadius, rings);
+    const leaderLengthHandle = linearHandle(
+      leaderId,
+      "length",
+      first.end,
+      leaderLength.key,
+      "offset",
+      leaderLength.value,
+      leaderLength.valuePerPixel,
+    );
+    handles.push(leaderHandle, leaderLengthHandle);
     elements.push(element({
       classId: role === "outer" ? "bodies.outer.leader" : "bodies.inner.leader",
       id: leaderId,
@@ -1668,12 +1819,13 @@ function appendBodyElement(
       tokenBindings: Object.freeze([
         ...linePaintBindings(style, paintRole),
         colorBinding(WHEEL_COLOR_TOKENS[leaderColorKey], style.elementColors[leaderColorKey]),
+        metricBinding(leaderLength.key, "offset", leaderLength.value),
       ]),
       editability: EDITABLE,
       hitGeometry: geometries.length === 1
         ? geometries[0]
         : { kind: "compound", geometries: Object.freeze(geometries) },
-      handles: Object.freeze([leaderHandle]),
+      handles: Object.freeze([leaderHandle, leaderLengthHandle]),
       priority: (region.priority ?? 40) + 99,
     }, Object.freeze([
       ...tags,
@@ -2248,13 +2400,26 @@ function appendInterchartEndpointMarker(
   }, tags));
 }
 
+/**
+ * The class an outer-ring item is authored through, or null when its family is
+ * not one the manifest knows.
+ *
+ * It used to invent `secondaryRing.<family>.label` for an unknown family. That
+ * id is not a manifest class, so the adapter reported nothing for it and the
+ * inspector fell through to the item's raw renderer tokens — editing a fixed
+ * star's colour there rewrote `chart.color.positions` for all twenty-five
+ * classes that paint through it. Returning null instead means an item whose
+ * family we cannot name is still drawn, but is not offered as something to
+ * style; the contract test keeps every family the daemon actually ships
+ * resolvable, so in practice this is unreachable.
+ */
 function secondaryClassId(
   family: string,
   projectedGlyph: boolean,
   segments?: readonly { kind: "text" | "planet" | "glyph" }[],
-): string {
+): string | null {
   const classes = resolveWheelSecondaryRingClassIds(family);
-  if (!classes) return `secondaryRing.${safeIdPart(family)}.label`;
+  if (!classes) return null;
   if (classes.label) return classes.label;
   const hasText = segments?.some((segment) => segment.kind === "text") ?? false;
   const hasGlyph = segments?.some((segment) => segment.kind !== "text") ?? false;
@@ -2307,6 +2472,7 @@ function appendSecondaryElement(
     projectedGlyph,
     region.segments,
   );
+  if (!labelClassId) return;
   const symbolClass = labelClassId.endsWith(".glyph");
   elements.push(
     element(
@@ -2318,9 +2484,9 @@ function appendSecondaryElement(
         layer: "outer-label",
         primitive: "text",
         tokenBindings: Object.freeze([
-          colorBinding(CHART_COLOR_TOKENS.positions, style.palette.positions),
-          colorBinding(CHART_COLOR_TOKENS.signs, style.palette.signs),
-          colorBinding(CHART_COLOR_TOKENS.textBright, style.palette.textBright),
+          // Matches `styleTargetTokenBindings` above and the renderer: one
+          // role, the one an outer-ring label is painted with.
+          colorBinding(CHART_COLOR_TOKENS.textDim, style.palette.textDim),
           fontBinding(
             symbolClass ? APP_FONT_TOKENS.symbols : APP_FONT_TOKENS.ui,
             symbolClass
@@ -2405,6 +2571,180 @@ export function buildWheelStyleScene(
   const elements: StyleSceneElement[] = [];
   const handles: StyleSceneHandle[] = [];
 
+  /**
+   * The scope a handle drag must write to.
+   *
+   * Dragging the visible thing has to change the visible thing. A variant
+   * value outranks the shared base one, so with the Edit scope on "All wheel
+   * styles" a drag on a wheel whose variant already authors that property
+   * accumulated into a base value nothing painted — the handle tracked the
+   * pointer, the wheel stood still, and the change appeared all at once later,
+   * when switching wheel style or resetting the variant made base govern
+   * again. That is the diamond scaler's jump.
+   *
+   * The precedence is right; the write was aimed at the wrong shelf. So a
+   * handle writes to base only while base is what governs, and to the variant
+   * the moment the variant has a say. The inspector still edits whatever the
+   * Edit scope names — this rule is for direct manipulation only, where the
+   * gesture's whole promise is that the thing under the pointer moves.
+   */
+  const handleScope = (
+    classId: string,
+    property: WheelAuthoringFlatProperty,
+  ): WheelAuthoringEditScope => {
+    const scope = input.authoringScope ?? geometry.profile;
+    if (scope !== "base") return scope;
+    return input.variantAuthoredOverrideIds?.has(
+      wheelAuthoringOverrideId(geometry.profile, classId, property),
+    ) ? geometry.profile : scope;
+  };
+
+  /**
+   * The whole-wheel scale handle.
+   *
+   * Its own affordance, sitting outside every ring, because scale and resize
+   * are different operations and the tool must say which one it is doing
+   * rather than infer it from the ring that happened to be grabbed. Inference
+   * is what shipped before and it has no answer at all in the layouts where no
+   * painted ring is outermost — a classic biwheel with houses hidden, or anglo
+   * synastry — where the gesture silently did something else.
+   *
+   * Grabbing it authors one ratio and no radius, so every band keeps whatever
+   * it was authored to be and returning the handle to 1 restores the wheel
+   * exactly, even in a later gesture.
+   */
+  const chartScaleElement = (): StyleSceneElement => {
+    const scale = resolveWheelScale(style, geometry.profile);
+    // The wheel radius the pane would give at scale 1. The geometry arrives
+    // already scaled, so the handle's own travel has to be measured against the
+    // unscaled pane or a shrunken wheel would drag at a shrunken rate.
+    const paneRadius = scale > 0 ? geometry.maxRadius / scale : geometry.maxRadius;
+    const radius = geometry.maxRadius;
+    const scaleHandle: StyleSceneHandle = {
+      id: `${WHEEL_STYLE_SCENE_ELEMENT_IDS.chartScale}.handle.scale`,
+      elementId: WHEEL_STYLE_SCENE_ELEMENT_IDS.chartScale,
+      kind: "radial",
+      center,
+      radius,
+      angleDegrees: CHART_SCALE_HANDLE_ANGLE,
+      position: radialPoint(center, radius, CHART_SCALE_HANDLE_ANGLE),
+      editability: EDITABLE,
+      binding: {
+        semanticId: wheelAuthoringOverrideId(
+          handleScope(WHEEL_CHART_CLASS_ID, "scale"),
+          WHEEL_CHART_CLASS_ID,
+          "scale",
+        ),
+        cssVar: "",
+        property: "scale",
+        value: scale,
+        // One rendered pixel of outward travel is one pixel of unscaled wheel
+        // radius, so the handle tracks the pointer exactly at any scale.
+        valuePerPixel: 1 / Math.max(1, paneRadius),
+        min: WHEEL_SCALE_RANGE.min,
+        max: WHEEL_SCALE_RANGE.max,
+      },
+    };
+    handles.push(scaleHandle);
+    return element(
+      {
+        classId: WHEEL_CHART_CLASS_ID,
+        id: WHEEL_STYLE_SCENE_ELEMENT_IDS.chartScale,
+        parentId: WHEEL_STYLE_SCENE_ELEMENT_IDS.root,
+        labelKey: "styleLab.scene.chartScale",
+        layer: "geometry",
+        primitive: "circle",
+        // Authoring-only: scale has no CSS variable behind it, and
+        // `tokenBindings` is the channel for values that do. The handle carries
+        // the binding instead.
+        tokenBindings: [],
+        editability: EDITABLE,
+        // Selectable only through its handle. Giving it a hit circle at the
+        // wheel's edge would put a chart-wide control in the path of every
+        // click near the rim.
+        hitGeometry: null,
+        handles: Object.freeze([scaleHandle]),
+        priority: -40,
+      },
+      tags,
+    );
+  };
+
+  /**
+   * A diamond on each band span's inner edge — the circle it drags.
+   *
+   * The handle IS that boundary: it tracks the pointer, and the ring above
+   * redistributes to follow. That is the difference from the disc on the same
+   * circle, which moves the line alone and lets neighbours merely yield.
+   */
+  const bandSpanElements = (): StyleSceneElement[] => {
+    const built: StyleSceneElement[] = [];
+    // No reference-space conversion here any more: the span authors a factor,
+    // which means the same thing at every wheel radius.
+    for (const spanId of Object.keys(WHEEL_BAND_SPANS)) {
+      const span = resolveWheelBandSpanFields(geometry, spanId);
+      if (!span) continue;
+      const inner = rings[span.innerField];
+      if (typeof inner !== "number" || !(inner > 0)) continue;
+      const range = resolveWheelBandSpanScaleRange(style, geometry, spanId);
+      const anchorRadius = span.outerField === null
+        ? geometry.maxRadius
+        : rings[span.outerField];
+      if (typeof anchorRadius !== "number") continue;
+      const depth = anchorRadius - inner;
+      if (!(depth > 1e-9)) continue;
+      const currentScale = resolveWheelBandSpanScale(
+        style, geometry.profile, spanId, anchorRadius, inner, geometry.maxRadius,
+      ) ?? 1;
+      const elementId = `${WHEEL_STYLE_SCENE_ELEMENT_IDS.bandSpan}.${spanId}`;
+      const spanHandle: StyleSceneHandle = {
+        id: `${elementId}.handle.inner`,
+        elementId,
+        kind: "radial",
+        center,
+        radius: inner,
+        angleDegrees: BAND_SPAN_HANDLE_ANGLE,
+        position: radialPoint(center, inner, BAND_SPAN_HANDLE_ANGLE),
+        editability: EDITABLE,
+        binding: {
+          semanticId: wheelAuthoringOverrideId(
+            handleScope(wheelBandSpanClassId(spanId), "spanScale"),
+            wheelBandSpanClassId(spanId),
+            "spanScale",
+          ),
+          cssVar: "",
+          property: "spanScale",
+          // A factor, not a radius. The diamond still tracks the pointer
+          // exactly: one rendered pixel outward is one pixel of the unscaled
+          // run, and the run shortens as the factor falls.
+          value: currentScale * 100,
+          valuePerPixel: -(currentScale / depth) * 100,
+          ...(range ? { min: range.min * 100, max: range.max * 100 } : {}),
+        },
+      };
+      handles.push(spanHandle);
+      built.push(element(
+        {
+          classId: wheelBandSpanClassId(spanId),
+          id: elementId,
+          parentId: WHEEL_STYLE_SCENE_ELEMENT_IDS.root,
+          labelKey: `styleLab.scene.bandSpan.${spanId}`,
+          layer: "geometry",
+          primitive: "circle",
+          tokenBindings: [],
+          editability: EDITABLE,
+          // Handle only: a hit ring here would sit on the painted boundary and
+          // steal clicks meant for that line's own disc.
+          hitGeometry: null,
+          handles: Object.freeze([spanHandle]),
+          priority: -45,
+        },
+        tags,
+      ));
+    }
+    return built;
+  };
+
   elements.push(
     groupElement(WHEEL_STYLE_SCENE_ELEMENT_IDS.root, undefined, "styleLab.scene.wheel", "geometry", tags),
     groupElement(WHEEL_STYLE_SCENE_ELEMENT_IDS.layerGeometry, WHEEL_STYLE_SCENE_ELEMENT_IDS.root, "styleLab.scene.geometryLayer", "geometry", tags, "layers.geometry"),
@@ -2441,6 +2781,8 @@ export function buildWheelStyleScene(
       },
       tags,
     ),
+    chartScaleElement(),
+    ...bandSpanElements(),
   );
 
   const addFillRegion = (
@@ -2546,7 +2888,7 @@ export function buildWheelStyleScene(
     WHEEL_STYLE_SCENE_ELEMENT_IDS.ringZodiacOuter,
     "styleLab.scene.zodiacOuter",
     rings.r30,
-    paintedRingRadiusToken(geometry, "zodiacOuterRing", rings.r30),
+    paintedRingRadiusToken(geometry, "zodiacOuterRing", rings.r30, style),
     undefined,
     14,
     "zodiacOuterRing",
@@ -2558,7 +2900,7 @@ export function buildWheelStyleScene(
     WHEEL_STYLE_SCENE_ELEMENT_IDS.ringZodiacInner,
     "styleLab.scene.zodiacInner",
     rings.r0,
-    paintedRingRadiusToken(geometry, "zodiacInnerRing", rings.r0),
+    paintedRingRadiusToken(geometry, "zodiacInnerRing", rings.r0, style),
     undefined,
     14,
     "zodiacInnerRing",
@@ -2598,7 +2940,7 @@ export function buildWheelStyleScene(
       "wheel.ring.degree.inner.10",
       "styleLab.scene.degreeTickRing",
       rings.r10,
-      paintedRingRadiusToken(geometry, "innerDegreeRing", rings.r10),
+      paintedRingRadiusToken(geometry, "innerDegreeRing", rings.r10, style),
       undefined,
       9,
       "innerDegreeRing",
@@ -2614,7 +2956,7 @@ export function buildWheelStyleScene(
       "wheel.ring.degree.outer.10",
       "styleLab.scene.degreeTickRing",
       rings.rOuter10,
-      paintedRingRadiusToken(geometry, "outerDegreeRing", rings.rOuter10),
+      paintedRingRadiusToken(geometry, "outerDegreeRing", rings.rOuter10, style),
       undefined,
       9,
       "outerDegreeRing",
@@ -2629,7 +2971,7 @@ export function buildWheelStyleScene(
       WHEEL_STYLE_SCENE_ELEMENT_IDS.ringTerms,
       "styleLab.scene.termBoundary",
       rings.rDecans,
-      paintedRingRadiusToken(geometry, "termRing", rings.rDecans),
+      paintedRingRadiusToken(geometry, "termRing", rings.rDecans, style),
       undefined,
       13,
       "termRing",
@@ -2638,12 +2980,104 @@ export function buildWheelStyleScene(
       style.elementColors.termRing,
     );
   }
+  // Ruler depth is one authored length shared by the 1/5/10-degree ticks, which
+  // the renderer draws at one, two and three times that value. Selecting any
+  // tick group therefore edits the depth of the whole ruler, which is how the
+  // geometry is authored — there is no separate per-length token to bind.
+  const degreeTickLengthToken = geometry.profile === "anglo"
+    ? null
+    : {
+        key: "classicDegreeTickLength" as keyof WheelRenderTokens,
+        value: style.geometry.classic.degreeTickLength,
+        valuePerPixel: 1 / Math.max(1, geometry.maxRadius),
+      };
+  // The rulers themselves. A ruler is a sub-band of the zodiac band, authored
+  // as a share of it, and it owns the ticks that used to *be* it. Emitted
+  // before its ticks so the tick elements can name it as their parent.
+  const zodiacBand = rings.r30 - rings.r0;
+  const rulerElementIds: Partial<Record<WheelRulerId, string>> = {};
+  const addRulerClass = (
+    rulerId: WheelRulerId,
+    labelKey: string,
+    baseRadius: number,
+    terminalRadius: number,
+    hosted: boolean,
+    hostBand = zodiacBand,
+  ) => {
+    const classId = wheelRulerClassId(rulerId);
+    const elementId = `wheel.${classId}`;
+    rulerElementIds[rulerId] = elementId;
+    const depth = Math.abs(terminalRadius - baseRadius);
+    // Outward from its base for the inner ruler, inward for the outer one, so
+    // a drag away from the base always deepens the ruler.
+    const sign = terminalRadius >= baseRadius ? 1 : -1;
+    const rulerHandles: StyleSceneHandle[] = [];
+    // A ruler with no host band has no share to author. Anglo's outer ruler on
+    // an outer ring is that case: it sits outside the zodiac band entirely, so
+    // it is shown and selectable but carries no depth handle.
+    if (hosted && hostBand > 0) {
+      const handle: StyleSceneHandle = {
+        id: `${elementId}.handle.depth`,
+        elementId,
+        kind: "radial",
+        center,
+        radius: terminalRadius,
+        angleDegrees: BAND_SPAN_HANDLE_ANGLE,
+        position: radialPoint(center, terminalRadius, BAND_SPAN_HANDLE_ANGLE),
+        editability: EDITABLE,
+        binding: {
+          semanticId: wheelAuthoringOverrideId(
+            handleScope(classId, "rulerDepth"),
+            classId,
+            "rulerDepth",
+          ),
+          cssVar: "",
+          property: "rulerDepth",
+          // Percent, matching the flat channel and the inspector row; the
+          // compile step divides it back to a fraction.
+          value: (depth / hostBand) * 100,
+          // A share of the band, so a pixel of drag is worth a pixel's share of
+          // it — negated for the inward ruler, whose depth grows as its
+          // terminal radius falls.
+          valuePerPixel: (sign / hostBand) * 100,
+          min: WHEEL_RULER_DEPTH_RANGE.min * 100,
+          max: WHEEL_RULER_DEPTH_RANGE.max * 100,
+        },
+      };
+      rulerHandles.push(handle);
+      handles.push(handle);
+    }
+    elements.push(element({
+      classId,
+      id: elementId,
+      parentId: WHEEL_STYLE_SCENE_ELEMENT_IDS.zodiac,
+      labelKey,
+      layer: "geometry",
+      primitive: "circle",
+      tokenBindings: [],
+      editability: EDITABLE,
+      // The band the ticks stand in. Lower priority than the ticks themselves,
+      // so a click on a tick still reports the tick and the family-owner
+      // resolution decides that the ruler is the reading; a click in the gaps
+      // between ticks lands on the ruler directly.
+      hitGeometry: {
+        kind: "annulus",
+        center,
+        innerRadius: Math.min(baseRadius, terminalRadius),
+        outerRadius: Math.max(baseRadius, terminalRadius),
+      },
+      handles: Object.freeze(rulerHandles),
+      priority: 8,
+    }, tags));
+  };
+
   const addDegreeTickClass = (
     classId: string,
     labelKey: string,
     startRadius: number,
     endRadius: number,
     matchesDegree: (degree: number) => boolean,
+    rulerId?: WheelRulerId,
   ) => {
     const geometries: StyleSceneHitGeometry[] = [];
     for (let degree = 0; degree < 360; degree += 1) {
@@ -2655,31 +3089,57 @@ export function buildWheelStyleScene(
         tolerance: Math.max(3, geometry.maxRadius * 0.006),
       });
     }
+    const tickHandles: StyleSceneHandle[] = [];
+    if (degreeTickLengthToken && geometries.length) {
+      const handle = linearHandle(
+        `wheel.${classId}`,
+        "length",
+        projectWheelPoint(center, endRadius, 0, ascendantDegrees),
+        degreeTickLengthToken.key,
+        "offset",
+        degreeTickLengthToken.value,
+        degreeTickLengthToken.valuePerPixel,
+      );
+      tickHandles.push(handle);
+      handles.push(handle);
+    }
     elements.push(element({
       classId,
       id: `wheel.${classId}`,
-      parentId: WHEEL_STYLE_SCENE_ELEMENT_IDS.zodiac,
+      parentId: (rulerId && rulerElementIds[rulerId])
+        ?? WHEEL_STYLE_SCENE_ELEMENT_IDS.zodiac,
       labelKey,
       layer: "geometry",
       primitive: "line",
       tokenBindings: Object.freeze([
         ...linePaintBindings(style, "degreeTick"),
         colorBinding(CHART_COLOR_TOKENS.frame, style.palette.frame),
+        ...(degreeTickLengthToken
+          ? [metricBinding(degreeTickLengthToken.key, "offset", degreeTickLengthToken.value)]
+          : []),
       ]),
       editability: EDITABLE,
       hitGeometry: { kind: "compound", geometries: Object.freeze(geometries) },
-      handles: [],
+      handles: Object.freeze(tickHandles),
       priority: 9,
     }, tags));
   };
 
   if (geometry.profile !== "anglo") {
+    addRulerClass(
+      "zodiacInner",
+      "styleLab.class.zodiacRulerInner",
+      rings.r0,
+      rings.r10,
+      true,
+    );
     addDegreeTickClass(
       "zodiac.tick.inner.10deg",
       "styleLab.scene.tickInner10",
       rings.r0,
       rings.r10,
       (degree) => degree % 10 === 0,
+      "zodiacInner",
     );
     addDegreeTickClass(
       "zodiac.tick.inner.5deg",
@@ -2687,6 +3147,7 @@ export function buildWheelStyleScene(
       rings.r0,
       rings.r5,
       (degree) => degree % 5 === 0,
+      "zodiacInner",
     );
     addDegreeTickClass(
       "zodiac.tick.inner.1deg",
@@ -2694,15 +3155,27 @@ export function buildWheelStyleScene(
       rings.r0,
       rings.r1,
       () => true,
+      "zodiacInner",
     );
   }
   if (outerDegreePainted) {
+    // On anglo this ruler stands on the outer ring, so its host is the margin
+    // rather than the zodiac band. It is the only degree ruler anglo draws.
+    addRulerClass(
+      "zodiacOuter",
+      "styleLab.class.zodiacRulerOuter",
+      rings.rOuter0,
+      rings.rOuter10,
+      true,
+      geometry.profile === "anglo" ? geometry.maxRadius - rings.r30 : undefined,
+    );
     addDegreeTickClass(
       "zodiac.tick.outer.10deg",
       "styleLab.scene.tickOuter10",
       rings.rOuter0,
       rings.rOuter10,
       (degree) => degree % 10 === 0,
+      "zodiacOuter",
     );
     addDegreeTickClass(
       "zodiac.tick.outer.5deg",
@@ -2712,6 +3185,7 @@ export function buildWheelStyleScene(
       geometry.profile === "anglo"
         ? (degree) => degree % 10 === 5
         : (degree) => degree % 5 === 0,
+      "zodiacOuter",
     );
     addDegreeTickClass(
       "zodiac.tick.outer.1deg",
@@ -2721,14 +3195,321 @@ export function buildWheelStyleScene(
       geometry.profile === "anglo"
         ? (degree) => degree % 5 !== 0
         : () => true,
+      "zodiacOuter",
     );
   }
+  // Anglo cusp ruler. Every tick of one length is one selectable group, which
+  // matches how the ruler is authored and is the only practical target: a
+  // single 1-degree tick is well under a pixel wide.
+  if (geometry.profile === "anglo" && rings.rCuspOuter != null) {
+    const cuspOuter = rings.rCuspOuter;
+    const canonicalRings = resolveCanonicalWheelRingSet(style, geometry);
+    const inward = geometry.showTerms || geometry.showDecans;
+    const direction = inward ? -1 : 1;
+    const rulerTicks = style.geometry.anglo.cuspRulerTicks;
+    const addCuspRulerTickClass = (
+      classId: string,
+      labelKey: string,
+      lengthScale: number,
+      matchesDegree: (degree: number) => boolean,
+    ) => {
+      // Resolved through the same authored share the renderer paints, so the
+      // hit shape and the handle sit on the tick actually drawn.
+      const rulerBand = cuspOuter - (rings.rCuspLabelOuter ?? cuspOuter);
+      const canonicalRulerBand = (canonicalRings.rCuspOuter ?? cuspOuter)
+        - (canonicalRings.rCuspLabelOuter ?? cuspOuter);
+      const length = resolveWheelTickLength(
+        style,
+        "anglo",
+        classId,
+        rulerBand,
+        canonicalRulerBand,
+        rings.r30 * lengthScale,
+      );
+      const end = cuspOuter + direction * length;
+      const geometries: StyleSceneHitGeometry[] = [];
+      for (let degree = 0; degree < 360; degree += 1) {
+        // The renderer suppresses the sign-boundary tick when the ruler points
+        // outward, because the sign spoke already marks it.
+        if (!inward && degree % 30 === 0) continue;
+        if (!matchesDegree(degree)) continue;
+        geometries.push({
+          kind: "line",
+          start: projectWheelPoint(center, cuspOuter, degree, ascendantDegrees),
+          end: projectWheelPoint(center, end, degree, ascendantDegrees),
+          tolerance: Math.max(3, geometry.maxRadius * 0.006),
+        });
+      }
+      if (!geometries.length) return;
+      const elementId = `wheel.${classId}`;
+      const tickHandles: StyleSceneHandle[] = [];
+      if (rulerBand > 0) {
+        const handle: StyleSceneHandle = {
+          id: `${elementId}.handle.tickLength`,
+          elementId,
+          kind: "radial",
+          center,
+          radius: end,
+          angleDegrees: BAND_SPAN_HANDLE_ANGLE,
+          position: radialPoint(center, end, BAND_SPAN_HANDLE_ANGLE),
+          editability: EDITABLE,
+          binding: {
+            semanticId: wheelAuthoringOverrideId(
+              handleScope(classId, "tickLength"),
+              classId,
+              "tickLength",
+            ),
+            cssVar: "",
+            property: "tickLength",
+            value: (length / rulerBand) * 100,
+            // Percent of the ruler band, negated when the ruler points inward
+            // so dragging away from the base always lengthens the tick.
+            valuePerPixel: (direction / rulerBand) * 100,
+            min: WHEEL_TICK_LENGTH_RANGE.min * 100,
+            max: WHEEL_TICK_LENGTH_RANGE.max * 100,
+          },
+        };
+        tickHandles.push(handle);
+        handles.push(handle);
+      }
+      elements.push(element({
+        classId,
+        id: elementId,
+        parentId: WHEEL_STYLE_SCENE_ELEMENT_IDS.zodiac,
+        labelKey,
+        layer: "geometry",
+        primitive: "line",
+        tokenBindings: Object.freeze([
+          ...linePaintBindings(style, "subdivision"),
+          colorBinding(CHART_COLOR_TOKENS.frame, style.palette.frame),
+        ]),
+        editability: EDITABLE,
+        hitGeometry: { kind: "compound", geometries: Object.freeze(geometries) },
+        handles: Object.freeze(tickHandles),
+        priority: 9,
+      }, tags));
+    };
+    addCuspRulerTickClass(
+      "zodiac.tick.angloCuspRuler.10deg",
+      "styleLab.scene.tickAngloCuspRuler10",
+      rulerTicks.long,
+      (degree) => degree % 10 === 0,
+    );
+    addCuspRulerTickClass(
+      "zodiac.tick.angloCuspRuler.5deg",
+      "styleLab.scene.tickAngloCuspRuler5",
+      rulerTicks.medium,
+      (degree) => degree % 10 !== 0 && degree % 5 === 0,
+    );
+    addCuspRulerTickClass(
+      "zodiac.tick.angloCuspRuler.1deg",
+      "styleLab.scene.tickAngloCuspRuler1",
+      rulerTicks.short,
+      (degree) => degree % 5 !== 0,
+    );
+  }
+  // Grouped ruler marks and arrowheads. Each is one target for the whole
+  // family: these are hairline ticks and sub-degree triangles, so a
+  // per-instance target would be unhittable.
+  const addGroupedLineClass = (
+    classId: string,
+    labelKey: string,
+    paintRole: WheelLinePaintRole,
+    geometries: readonly StyleSceneHitGeometry[],
+    colorToken: readonly [string, string],
+    color: string,
+    parentId: string,
+    priority = 10,
+    extraHandles: readonly StyleSceneHandle[] = [],
+    extraBindings: readonly StyleSceneTokenBinding[] = [],
+  ) => {
+    if (!geometries.length) return;
+    elements.push(element({
+      classId,
+      id: `wheel.${classId}`,
+      parentId,
+      labelKey,
+      layer: "geometry",
+      primitive: "line",
+      tokenBindings: Object.freeze([
+        ...linePaintBindings(style, paintRole),
+        colorBinding(colorToken, color),
+        ...extraBindings,
+      ]),
+      editability: EDITABLE,
+      hitGeometry: { kind: "compound", geometries: Object.freeze([...geometries]) },
+      handles: Object.freeze([...extraHandles]),
+      priority,
+    }, tags));
+  };
+
+  const sceneRegions = input.hitRegions ?? [];
+  const angleRegions = sceneRegions.flatMap((region) =>
+    region.kind === "angle" ? [region] : [],
+  );
+  const houseRegions = sceneRegions.flatMap((region) =>
+    region.kind === "house" ? [region] : [],
+  );
+  const sameLongitude = (left: number, right: number) => {
+    const delta = Math.abs(((left - right) % 360 + 540) % 360 - 180);
+    return Math.abs(180 - delta) < 1e-6;
+  };
+  const rulerDirection = geometry.showTerms || geometry.showDecans ? -1 : 1;
+
+  if (geometry.profile === "anglo" && rings.rCuspOuter != null) {
+    const cuspOuter = rings.rCuspOuter;
+    // A cusp that coincides with an angle is already marked by its heavier
+    // structural ray; the renderer skips it and so does the target.
+    const angleLongitudes = angleRegions.map((region) => region.longitude);
+    const tick = rings.r30 * style.geometry.anglo.houseCuspTickScale;
+    addGroupedLineClass(
+      "zodiac.tick.angloHouseCusp",
+      "styleLab.scene.tickAngloHouseCusp",
+      "subdivision",
+      houseRegions
+        .filter((region) =>
+          !angleLongitudes.some((angle) => sameLongitude(region.longitude, angle)),
+        )
+        .map((region) => ({
+          kind: "line" as const,
+          start: projectWheelPoint(center, cuspOuter, region.longitude, ascendantDegrees),
+          end: projectWheelPoint(
+            center,
+            cuspOuter + rulerDirection * tick,
+            region.longitude,
+            ascendantDegrees,
+          ),
+          tolerance: Math.max(4, geometry.maxRadius * 0.008),
+        })),
+      WHEEL_COLOR_TOKENS.angleRay,
+      style.elementColors.angleRay,
+      WHEEL_STYLE_SCENE_ELEMENT_IDS.zodiac,
+    );
+  }
+
+  if (geometry.profile === "anglo") {
+    const rulerRadius = rings.rCuspOuter ?? rings.r0;
+    const tick = rings.r30 * style.geometry.anglo.angleRulerTickScale;
+    addGroupedLineClass(
+      "zodiac.tick.angloAngleRuler",
+      "styleLab.scene.tickAngloAngleRuler",
+      "angle",
+      angleRegions
+        .filter((region) => region.chartRole !== "outer")
+        .map((region) => ({
+          kind: "line" as const,
+          start: projectWheelPoint(center, rulerRadius, region.longitude, ascendantDegrees),
+          end: projectWheelPoint(
+            center,
+            rulerRadius + rulerDirection * tick,
+            region.longitude,
+            ascendantDegrees,
+          ),
+          tolerance: Math.max(4, geometry.maxRadius * 0.008),
+        })),
+      WHEEL_COLOR_TOKENS.angleRay,
+      style.elementColors.angleRay,
+      WHEEL_STYLE_SCENE_ELEMENT_IDS.angles,
+    );
+  }
+
+  // Arrowheads exist on the Ascendant and Midheaven only.
+  const arrowAngle = (region: { angleId: string }) =>
+    region.angleId === "asc" || region.angleId === "mc";
+  const arrowTriangle = (
+    longitude: number,
+    baseRadius: number,
+    apexRadius: number,
+    halfAngle: number,
+  ): readonly StyleSceneHitGeometry[] => {
+    const tolerance = Math.max(4, geometry.maxRadius * 0.008);
+    const left = projectWheelPoint(center, baseRadius, longitude - halfAngle, ascendantDegrees);
+    const right = projectWheelPoint(center, baseRadius, longitude + halfAngle, ascendantDegrees);
+    const apex = projectWheelPoint(center, apexRadius, longitude, ascendantDegrees);
+    return [
+      { kind: "line", start: left, end: right, tolerance },
+      { kind: "line", start: right, end: apex, tolerance },
+      { kind: "line", start: apex, end: left, tolerance },
+    ];
+  };
+  const arrows = style.strokes.arrows;
+  const arrowLength = angleArrowLengthToken(style, geometry.profile, geometry.maxRadius);
+  const arrowLengthHandles: StyleSceneHandle[] = [];
+  if (arrowLength) {
+    const apexAngle = angleRegions.find(
+      (region) => region.chartRole !== "outer" && arrowAngle(region),
+    );
+    if (apexAngle) {
+      const handle = linearHandle(
+        "wheel.angles.inner.arrowhead",
+        "length",
+        projectWheelPoint(center, rings.rArrow, apexAngle.longitude, ascendantDegrees),
+        arrowLength.key,
+        "offset",
+        arrowLength.value,
+        arrowLength.valuePerPixel,
+      );
+      arrowLengthHandles.push(handle);
+      handles.push(handle);
+    }
+  }
+  addGroupedLineClass(
+    "angles.inner.arrowhead",
+    "styleLab.scene.arrowheadInner",
+    "angle",
+    angleRegions
+      .filter((region) => region.chartRole !== "outer" && arrowAngle(region))
+      .flatMap((region) =>
+        geometry.profile === "anglo"
+          // The Anglo arrowhead is a filled triangle seated on the inner
+          // boundary rather than a stroked chevron on the sign ring.
+          ? arrowTriangle(
+              region.longitude,
+              rings.rInner - rings.r30 * arrows.angloBaseInsetScale,
+              rings.rInner,
+              arrows.angloHalfAngleDegrees,
+            )
+          : arrowTriangle(
+              region.longitude,
+              rings.rASCMC,
+              rings.rArrow,
+              arrows.halfAngleDegrees,
+            ),
+      ),
+    WHEEL_COLOR_TOKENS.angleRay,
+    style.elementColors.angleRay,
+    WHEEL_STYLE_SCENE_ELEMENT_IDS.angles,
+    11,
+    arrowLengthHandles,
+    arrowLength
+      ? [metricBinding(arrowLength.key, "offset", arrowLength.value)]
+      : [],
+  );
+  if (geometry.mode === "comparison" && rings.rOuterASCMC != null && rings.rOuterArrow != null) {
+    const outerBase = rings.rOuterASCMC;
+    const outerApex = rings.rOuterArrow;
+    addGroupedLineClass(
+      "angles.outer.arrowhead",
+      "styleLab.scene.arrowheadOuter",
+      "angle",
+      angleRegions
+        .filter((region) => region.chartRole === "outer" && arrowAngle(region))
+        .flatMap((region) =>
+          arrowTriangle(region.longitude, outerBase, outerApex, arrows.halfAngleDegrees),
+        ),
+      WHEEL_COLOR_TOKENS.angleRay,
+      style.elementColors.angleRay,
+      WHEEL_STYLE_SCENE_ELEMENT_IDS.angles,
+      11,
+    );
+  }
+
   if (geometry.profile === "anglo" && rings.rCuspOuter != null) {
     ring(
       WHEEL_STYLE_SCENE_ELEMENT_IDS.ringCuspOuter,
       "styleLab.scene.cuspOuterRing",
       rings.rCuspOuter,
-      paintedRingRadiusToken(geometry, "cuspOuterRing", rings.rCuspOuter),
+      paintedRingRadiusToken(geometry, "cuspOuterRing", rings.rCuspOuter, style),
       undefined,
       16,
       "cuspOuterRing",
@@ -2741,7 +3522,7 @@ export function buildWheelStyleScene(
     WHEEL_STYLE_SCENE_ELEMENT_IDS.ringInner,
     "styleLab.scene.innerBoundary",
     rings.rInner,
-    paintedRingRadiusToken(geometry, "innerBoundaryRing", rings.rInner),
+    paintedRingRadiusToken(geometry, "innerBoundaryRing", rings.rInner, style),
     undefined,
     15,
     "innerBoundaryRing",
@@ -2756,7 +3537,7 @@ export function buildWheelStyleScene(
     "styleLab.scene.aspectBoundary",
     rings.rAsp,
     geometry.profile === "classic"
-      ? paintedRingRadiusToken(geometry, "aspectBoundaryRing", rings.rAsp)
+      ? paintedRingRadiusToken(geometry, "aspectBoundaryRing", rings.rAsp, style)
       : aspectRadiusToken(style, geometry, rings),
     undefined,
     12,
@@ -2769,7 +3550,7 @@ export function buildWheelStyleScene(
     WHEEL_STYLE_SCENE_ELEMENT_IDS.ringBase,
     "styleLab.scene.baseRing",
     rings.rBase,
-    paintedRingRadiusToken(geometry, "baseRing", rings.rBase),
+    paintedRingRadiusToken(geometry, "baseRing", rings.rBase, style),
     undefined,
     12,
     "baseRing",
@@ -2785,7 +3566,7 @@ export function buildWheelStyleScene(
     WHEEL_STYLE_SCENE_ELEMENT_IDS.ringHouse,
     "styleLab.scene.houseRing",
     rings.rHouse,
-    paintedRingRadiusToken(geometry, "houseBoundaryRing", rings.rHouse),
+    paintedRingRadiusToken(geometry, "houseBoundaryRing", rings.rHouse, style),
     undefined,
     12,
     "houseBoundaryRing",
@@ -2806,7 +3587,7 @@ export function buildWheelStyleScene(
       rings.rOuterMax,
       rings.rOuterMax == null
         ? null
-        : paintedRingRadiusToken(geometry, "outerMaximumRing", rings.rOuterMax),
+        : paintedRingRadiusToken(geometry, "outerMaximumRing", rings.rOuterMax, style),
       undefined,
       13,
       "outerMaximumRing",
@@ -2820,7 +3601,7 @@ export function buildWheelStyleScene(
       rings.rOuterHouse,
       rings.rOuterHouse == null
         ? null
-        : paintedRingRadiusToken(geometry, "outerHouseRing", rings.rOuterHouse),
+        : paintedRingRadiusToken(geometry, "outerHouseRing", rings.rOuterHouse, style),
       undefined,
       12,
       "outerHouseRing",
@@ -2850,11 +3631,17 @@ export function buildWheelStyleScene(
   // Manifest-backed fallbacks keep direct controls available before exact
   // fixture hit regions arrive. Exact production occurrences below outrank
   // these hidden placeholders in the class switcher.
+  //
+  // Each one declares the primitive its manifest class declares. They used to
+  // say "group", and the inspector reads the primitive to decide which section
+  // a property belongs to — so the same class showed its colour under Stroke
+  // or Typography with a live occurrence on screen and under Appearance
+  // without one, and the rows changed order with it.
   elements.push(
     element({
       classId: "houses.inner.cusp",
       id: "wheel.house.cusps", parentId: WHEEL_STYLE_SCENE_ELEMENT_IDS.houses,
-      labelKey: "styleLab.scene.houseCusps", layer: "geometry", primitive: "group",
+      labelKey: "styleLab.scene.houseCusps", layer: "geometry", primitive: "line",
       tokenBindings: [...linePaintBindings(style, "houseCusp"), colorBinding(CHART_COLOR_TOKENS.houses, style.palette.houses)],
       editability: EDITABLE, hitGeometry: null, handles: [], priority: 2,
       stateTags: Object.freeze([...tags, "manifest-placeholder", "manifest-editable"]),
@@ -2862,7 +3649,7 @@ export function buildWheelStyleScene(
     element({
       classId: "bodies.inner.glyph",
       id: "wheel.body.glyphs", parentId: WHEEL_STYLE_SCENE_ELEMENT_IDS.bodies,
-      labelKey: "styleLab.scene.bodyGlyphs", layer: "dynamic", primitive: "group",
+      labelKey: "styleLab.scene.bodyGlyphs", layer: "dynamic", primitive: "text",
       tokenBindings: [
         colorBinding(CHART_COLOR_TOKENS.positions, style.palette.positions),
         fontBinding(APP_FONT_TOKENS.bodySymbols, style.typography.families.bodySymbols),
@@ -2874,7 +3661,7 @@ export function buildWheelStyleScene(
     element({
       classId: geometry.mode === "comparison" ? "aspects.interchart.line" : "aspects.primary.line",
       id: "wheel.aspect.lines", parentId: WHEEL_STYLE_SCENE_ELEMENT_IDS.aspects,
-      labelKey: "styleLab.scene.aspectLines", layer: "dynamic", primitive: "group",
+      labelKey: "styleLab.scene.aspectLines", layer: "dynamic", primitive: "line",
       tokenBindings: [...linePaintBindings(style, "aspect"), metricBinding(geometry.profile === "anglo" ? "aspectAngloWidth" : "aspectClassicWidth", "stroke-width", geometry.profile === "anglo" ? style.strokes.aspects.angloWidth : style.strokes.aspects.classicWidth)],
       editability: EDITABLE, hitGeometry: null, handles: [], priority: 1,
       stateTags: Object.freeze([...tags, "manifest-placeholder", "manifest-editable"]),
@@ -2913,7 +3700,7 @@ export function buildWheelStyleScene(
         input.signColors,
         styleTarget,
       );
-    } else if (region.kind === "planet" || region.kind === "fortune" || region.kind === "vertex" || region.kind === "syzygy") {
+    } else if (region.kind === "planet" || region.kind === "fortune" || region.kind === "vertex" || region.kind === "syzygy" || region.kind === "eclipse") {
       appendBodyElement(
         elements,
         handles,
@@ -2923,6 +3710,7 @@ export function buildWheelStyleScene(
         geometry.maxRadius,
         input.useIndividualBodyColors,
         region,
+        rings,
       );
     } else if (region.kind === "house") {
       appendHouseElements(
@@ -3006,6 +3794,13 @@ export function buildWheelStyleScene(
     hitRegions,
   );
 
+  const referencePxPerRendered =
+    style.authoringOverrides.referenceRadius / Math.max(1, geometry.maxRadius);
+  // Resolved once here rather than only for the handles below, because the
+  // band ceiling has to reach the inspector row as well. A glyph that caps
+  // when dragged but not when typed is one property with two different limits.
+  const bandsForCeilings = resolveWheelBandLayout(style, geometry, rings).bands;
+
   const elementsWithAuthoringDefaults = elements.map((sceneElement) => {
     const defaults = sceneElement.authoringDefaults
       ?? readWheelAuthoringClassDefaults(
@@ -3017,22 +3812,34 @@ export function buildWheelStyleScene(
     const definition = isWheelSemanticClassId(sceneElement.classId)
       ? WHEEL_SEMANTIC_CLASS_BY_ID.get(sceneElement.classId)
       : undefined;
+    const applicable = definition
+      ? applicableAuthoringDefaults(definition, geometry.profile, defaults)
+      : defaults;
+    // The largest this run may be made, whether it is dragged on the wheel or
+    // typed in the inspector. Reported in reference space beside the size it
+    // limits, so the row can both clamp and say that it is clamping.
+    const ceiling = applicable.fontSizePx == null
+      ? null
+      : resolveWheelClassFontSizeCeiling(
+        sceneElement.classId,
+        bandsForCeilings,
+        applicable.fontSizePx / referencePxPerRendered,
+      );
     return Object.freeze({
       ...sceneElement,
-      authoringDefaults: definition
-        ? applicableAuthoringDefaults(
-            definition,
-            geometry.profile,
-            defaults,
-          )
-        : defaults,
+      authoringDefaults: ceiling == null
+        ? applicable
+        : Object.freeze({
+          ...applicable,
+          fontSizeCeilingPx: ceiling * referencePxPerRendered,
+        }),
     });
   });
   const elementsById = new Map(
     elementsWithAuthoringDefaults.map((sceneElement) => [sceneElement.id, sceneElement]),
   );
-  const referencePxPerRenderedPx =
-    style.authoringOverrides.referenceRadius / Math.max(1, geometry.maxRadius);
+  const referencePxPerRenderedPx = referencePxPerRendered;
+  const resolvedBands = bandsForCeilings;
   const authoringHandles = handles.map((handle) => {
     const sceneElement = elementsById.get(handle.elementId);
     const property = handle.binding
@@ -3045,18 +3852,40 @@ export function buildWheelStyleScene(
     const valuePerPixel = property === "strokeWidth"
       ? referencePxPerRenderedPx * AUTHORING_NUMERIC_PROPERTIES.strokeWidth.fineStep
       : referencePxPerRenderedPx;
+    // A radius handle carries its neighbour-aware wall in normalized token
+    // units; this channel authors in reference-space px, so the wall has to be
+    // converted with the value or the clamp silently collapses the drag.
+    const referenceRadius = style.authoringOverrides.referenceRadius;
+    const toReference = (bound: number | undefined) =>
+      property === "radius" && bound != null ? bound * referenceRadius : undefined;
+    const min = toReference(handle.binding.min);
+    let max = toReference(handle.binding.max);
+    if (property === "fontSize") {
+      const ceiling = resolveWheelClassFontSizeCeiling(
+        sceneElement.classId,
+        resolvedBands,
+        // Rendered px: the wall must never force a shrink of what is painted.
+        value / referencePxPerRenderedPx,
+      );
+      if (ceiling != null) {
+        const referenceCeiling = ceiling * referencePxPerRenderedPx;
+        max = max == null ? referenceCeiling : Math.min(max, referenceCeiling);
+      }
+    }
     return Object.freeze({
       ...handle,
       binding: Object.freeze({
         ...handle.binding,
         semanticId: wheelAuthoringOverrideId(
-          input.authoringScope ?? geometry.profile,
+          handleScope(sceneElement.classId, property),
           sceneElement.classId,
           property,
         ),
         cssVar: "",
         value,
         valuePerPixel,
+        ...(min != null ? { min } : { min: undefined }),
+        ...(max != null ? { max } : { max: undefined }),
       }),
     });
   });

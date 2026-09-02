@@ -3,7 +3,7 @@
 // Copyright (C) 2026 Max Lange
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
@@ -16,6 +16,10 @@ const contractPath = join(frontendRoot, "src/styles/renderer-style-contract.gene
 const check = process.argv.includes("--check");
 const begin = "/* BEGIN GENERATED RENDERER STYLE TOKENS */";
 const end = "/* END GENERATED RENDERER STYLE TOKENS */";
+
+function readNormalizedText(path) {
+  return readFileSync(path, "utf8").replace(/\r\n?/g, "\n");
+}
 
 const rendererLabels = {
   astrocart: "Astrocartography",
@@ -287,15 +291,81 @@ function formatCssValue(renderer, key, value, styleModule) {
   return `${String(value)}${cssUnit(renderer, key, styleModule)}`;
 }
 
-async function loadStyleModule(path) {
-  const source = readFileSync(path, "utf8");
-  const javascript = ts.transpileModule(source, {
+/**
+ * Transpile one module to a `data:` URL, recursively inlining its relative
+ * imports.
+ *
+ * A `data:` URL has no base, so a relative specifier inside it cannot resolve —
+ * `wheel-render-style.ts` importing `./wheel-layout-model` crashed this script
+ * outright. Each dependency is therefore turned into its own `data:` URL and
+ * substituted for the specifier before the importer is encoded. Resolving the
+ * whole graph rather than one known filename keeps this working the next time a
+ * style module grows an import.
+ *
+ * `seen` memoizes by resolved path so a diamond dependency is transpiled once
+ * and both importers share the module instance, and so a cycle terminates.
+ */
+function moduleDataUrl(path, seen = new Map()) {
+  const resolved = resolve(path);
+  const cached = seen.get(resolved);
+  if (cached) return cached;
+  let javascript = ts.transpileModule(readNormalizedText(resolved), {
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
   }).outputText;
-  return import(`data:text/javascript;base64,${Buffer.from(javascript).toString("base64")}`);
+  // Placeholder first, so a cycle resolves to this entry instead of recursing.
+  seen.set(resolved, "");
+  for (const specifier of relativeSpecifiers(javascript)) {
+    const dependency = resolveRelativeModule(dirname(resolved), specifier);
+    if (!dependency) continue;
+    javascript = javascript.replaceAll(
+      `"${specifier}"`,
+      `"${moduleDataUrl(dependency, seen)}"`,
+    );
+    javascript = javascript.replaceAll(
+      `'${specifier}'`,
+      `'${moduleDataUrl(dependency, seen)}'`,
+    );
+  }
+  const url = `data:text/javascript;base64,${Buffer.from(javascript).toString("base64")}`;
+  seen.set(resolved, url);
+  return url;
 }
 
-const cssSource = readFileSync(cssPath, "utf8");
+/** Every distinct relative specifier surviving transpilation, longest first. */
+function relativeSpecifiers(javascript) {
+  const found = new Set();
+  for (const match of javascript.matchAll(/from\s*["'](\.[^"']*)["']/g)) {
+    found.add(match[1]);
+  }
+  for (const match of javascript.matchAll(/import\s*\(\s*["'](\.[^"']*)["']\s*\)/g)) {
+    found.add(match[1]);
+  }
+  // Longest first, so `./a-b` is never partially rewritten by `./a`.
+  return [...found].sort((a, b) => b.length - a.length);
+}
+
+/** The TypeScript source behind an extensionless relative specifier. */
+function resolveRelativeModule(fromDir, specifier) {
+  const base = resolve(fromDir, specifier);
+  for (const candidate of [
+    base,
+    `${base}.ts`,
+    `${base}.tsx`,
+    `${base}.mjs`,
+    `${base}.js`,
+    join(base, "index.ts"),
+    join(base, "index.tsx"),
+  ]) {
+    if (existsSync(candidate) && statSync(candidate).isFile()) return candidate;
+  }
+  return undefined;
+}
+
+async function loadStyleModule(path) {
+  return import(moduleDataUrl(path));
+}
+
+const cssSource = readNormalizedText(cssPath);
 const start = cssSource.indexOf(begin);
 const finish = cssSource.indexOf(end);
 if (start < 0 || finish < start) throw new Error("globals.css renderer token markers are missing");
@@ -439,7 +509,7 @@ const extension = {
 const renderedContract = JSON.stringify(extension, null, 2) + "\n";
 
 if (check) {
-  const currentContract = readFileSync(contractPath, "utf8");
+  const currentContract = readNormalizedText(contractPath);
   if (renderedCss !== cssSource || currentContract !== renderedContract) {
     console.error("renderer style contract drifted; run npm run renderer-style-contract");
     process.exit(1);

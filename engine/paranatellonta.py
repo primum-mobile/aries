@@ -1,4 +1,9 @@
 # -*- coding: utf-8 -*-
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 """Wx-free Paranatellonta (paran) row solver.
 
 The Paranatellonta table lists every planet/fixed-star pair that crosses an
@@ -242,40 +247,22 @@ def _auto_h0_deg_for(ipl, *_, **__):
 def _star_display_name(star_id_with_or_leading_comma, jd_ref, options=None):
     """paranwnd.py:200-233 (verbatim).
 
-    표시용 이름: (1) 사용자 선호 별칭 → (2) Swiss → (3) 카탈로그 파일의 name.
+    표시용 이름: 공용 문화권 이름 resolver → Swiss → 카탈로그 fallback.
     """
-    # 옵션이 비어있으면 JSON에서 한 번 복구
-    if (not options.fixstarAliasMap) if hasattr(options, 'fixstarAliasMap') else True:
-        import common, os, json
-        alias_json = os.path.join(common.common.ephepath, 'fixstar_aliases.json')
-        if os.path.isfile(alias_json):
-            with open(alias_json, 'r') as _f:
-                _data = json.load(_f)
-            if isinstance(_data, dict):
-                if not hasattr(options, 'fixstarAliasMap') or not isinstance(options.fixstarAliasMap, dict):
-                    options.fixstarAliasMap = {}
-                options.fixstarAliasMap.update({k: v for k, v in _data.items() if isinstance(k, str)})
-
-    # 1) 사용자 선호 별칭(코드→표시명) 우선
-    try:
-        if options and hasattr(options, 'fixstarAliasMap'):
-            code = star_id_with_or_leading_comma.lstrip(',').strip()
-            if code in options.fixstarAliasMap:
-                return options.fixstarAliasMap[code]
-    except Exception:
-        pass
-    # 2) Swiss (성공 시 Swiss가 돌려준 name의 앞부분)
+    code = star_id_with_or_leading_comma.lstrip(',').strip()
+    fallback = None
+    # Swiss (성공 시 Swiss가 돌려준 name의 앞부분)
     try:
         if swe is not None:
             q = star_id_with_or_leading_comma if star_id_with_or_leading_comma.startswith(u',') else (u',' + star_id_with_or_leading_comma)
             xx, name_or_err = swe.fixstar(q)
             if isinstance(name_or_err, (str, unicode if 'unicode' in dir(__builtins__) else str)):
-                return (name_or_err.split(u',')[0]).strip()
+                fallback = (name_or_err.split(u',')[0]).strip()
     except Exception:
         pass
-    # 3) cat 폴백
-    db = _load_fixstars_cat()
-    return db.get(star_id_with_or_leading_comma.lstrip(','), {}).get('name', star_id_with_or_leading_comma.lstrip(','))
+    if not fallback:
+        fallback = _load_fixstars_cat().get(code, {}).get('name', code)
+    return astrology.display_fixstar_name(code, options, fallback)
 
 
 def _ra_dec_star_deg_ut(jd_ut, star_name):

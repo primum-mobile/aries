@@ -4,7 +4,7 @@
 "use client";
 
 import * as React from "react";
-import { Copy, Download, X } from "lucide-react";
+import { X } from "lucide-react";
 
 import {
   fetchGenericTablePayload,
@@ -17,16 +17,15 @@ import {
   getCachedGenericTablePayload,
   rememberGenericTablePayload,
 } from "@/lib/table/payload-cache";
-import { LIST_ROLE_CLASSES } from "@/lib/list-tokens";
+import { LIST_PANE_CLASSES, LIST_ROW_CLASSES } from "@/lib/list-tokens";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/i18n";
 import { semanticChartColor } from "@/lib/theme/semantic-color";
 
 import { TimedChartContextMenu } from "./directions-view";
-import { downloadText, tableToConfiguredTsv } from "./generic-table-view";
-import { exportTablePayloadPdf } from "./table-pdf-export";
-import { exportTextContent } from "./text-export";
+import { buildTableExportDocument } from "./table-pdf-export";
+import { TextExportActions } from "./text-export-actions";
 import { ColumnResizeHandle, useResizableTableColumns } from "./resizable-table-columns";
 import { RetainedPaneShell } from "./retained-pane-shell";
 import {
@@ -34,9 +33,16 @@ import {
   PaneControlBar,
   PaneInfoBar,
   PaneSelect,
-  PaneToolbarButton,
 } from "./list-controls";
 import { useSettledWorkspaceRefreshSeq } from "./step-refresh";
+import {
+  SidebarListBody,
+  SidebarListCell,
+  SidebarListHead,
+  SidebarListHeader,
+  SidebarListRow,
+  SidebarListTable,
+} from "./sidebar-list-table";
 
 // ---------------------------------------------------------------------------
 // Zodiacal Releasing — the webapp surface for the wx IN-FRAME variant
@@ -282,52 +288,14 @@ export function ZodiacalReleasingView({ documentId, parentDocumentId, sourceName
       onClose={onClose}
       titleSize="large"
       toolbar={
-        <>
-          <PaneToolbarButton
-            type="button"
-            onClick={() => {
-              void tableToConfiguredTsv(payload, payload.rows).then((text) =>
-                navigator.clipboard?.writeText(text).catch(() => {
-                  downloadText("zodiacal_releasing.tsv", text, "text/tab-separated-values");
-                })
-              );
-            }}
-            title={t("zrview.copyRows")}
-          >
-            <Copy />
-          </PaneToolbarButton>
-          <PaneToolbarButton
-            type="button"
-            onClick={() => {
-              void tableToConfiguredTsv(payload, payload.rows).then((text) =>
-                exportTextContent({
-                filename: "zodiacal_releasing",
-                extension: "tsv",
-                mimeType: "text/tab-separated-values;charset=utf-8",
-                text,
-                title: t("zrview.exportTsvTitle"),
-                filters: [{ name: t("zrview.tsvFiles"), extensions: ["tsv"] }],
-                })
-              ).catch(() => {});
-            }}
-            title={t("zrview.exportTsv")}
-          >
-            <Download />
-          </PaneToolbarButton>
-          <PaneToolbarButton
-            type="button"
-            onClick={() =>
-              void exportTablePayloadPdf(payload, payload.rows, {
-                fileStem: "zodiacal_releasing",
-                title: payload.title ?? t("zrview.zodiacalReleasing"),
-              }).catch(() => {})
-            }
-            title={t("zrview.exportPdf")}
-          >
-            <Download />
-            PDF
-          </PaneToolbarButton>
-        </>
+        <TextExportActions
+          buildDocument={() =>
+            buildTableExportDocument(payload, payload.rows, {
+              fileStem: "zodiacal_releasing",
+              title: payload.title ?? t("zrview.zodiacalReleasing"),
+            })
+          }
+        />
       }
     >
       {/* Binding controls — releaser / manual sign / Spirit-shift toggle
@@ -414,13 +382,14 @@ export function ZodiacalReleasingView({ documentId, parentDocumentId, sourceName
 
       {/* Main table: interleaved L1 + L2 (build_main; click L2 to drill). */}
       <div ref={listRef} className="min-h-0 flex-1 overflow-auto">
-        <table
-          className={cn(LIST_ROLE_CLASSES.symbolic, "border-collapse", tableResize.tableClassName)}
+        <SidebarListTable
+          profile="directions-titled"
+          className={tableResize.tableClassName}
           style={tableResize.tableStyle}
         >
           {tableResize.colGroup}
           <ZrHeaderRow columns={payload.columns.map((c) => c.label)} tableResize={tableResize} />
-          <tbody>
+          <SidebarListBody>
             {mainRows.map((row) => (
               <ZrRow
                 key={row.id}
@@ -434,8 +403,8 @@ export function ZodiacalReleasingView({ documentId, parentDocumentId, sourceName
                 onClick={asNumber(row.meta?.level, 0) === 2 ? () => toggleDrill(row) : undefined}
               />
             ))}
-          </tbody>
-        </table>
+          </SidebarListBody>
+        </SidebarListTable>
       </div>
 
       {/* Inline drill panel: L3 + L4 of the selected L2
@@ -477,12 +446,13 @@ export function ZodiacalReleasingView({ documentId, parentDocumentId, sourceName
             </button>
           </PaneInfoBar>
           <div className="min-h-0 flex-1 overflow-auto">
-            <table
-              className={cn(LIST_ROLE_CLASSES.symbolic, "border-collapse", tableResize.tableClassName)}
+            <SidebarListTable
+              profile="directions-titled"
+              className={tableResize.tableClassName}
               style={tableResize.tableStyle}
             >
               {tableResize.colGroup}
-              <tbody>
+              <SidebarListBody>
                 {drillRows.map((row) => (
                   <ZrRow
                     key={row.id}
@@ -494,8 +464,8 @@ export function ZodiacalReleasingView({ documentId, parentDocumentId, sourceName
                     planetColorRoles={planetColorRoles}
                   />
                 ))}
-              </tbody>
-            </table>
+              </SidebarListBody>
+            </SidebarListTable>
           </div>
         </div>
       ) : null}
@@ -517,20 +487,20 @@ function ZrHeaderRow({
   // Ribbon + bullet columns are headerless visual indicators
   // (zodiacalreleasingwnd.py:573-582). columns = [Sign, Start, Age, Length, Ruler, flags].
   return (
-    <thead className="sticky top-0 z-10 bg-background text-[color:var(--aries-text-muted)]">
-      <tr>
+    <SidebarListHeader className={cn(LIST_PANE_CLASSES.stickyHeader, "text-[color:var(--aries-text-muted)]")}>
+      <SidebarListRow>
         {ZR_COLUMN_IDS.map((columnId, index) => {
           const label = index < 2 ? "" : columns[index - 2] ?? (index === 7 ? "" : columnId);
           const align = index === 4 || index === 5 ? "text-right" : "text-center";
           return (
-            <th key={columnId} className={cn("aries-list-head-cell relative border-b font-medium", align)}>
+            <SidebarListHead key={columnId} className={cn("relative font-medium", align)}>
               {label}
               <ColumnResizeHandle columnId={columnId} getResizeHandleProps={tableResize.getResizeHandleProps} />
-            </th>
+            </SidebarListHead>
           );
         })}
-      </tr>
-    </thead>
+      </SidebarListRow>
+    </SidebarListHeader>
   );
 }
 
@@ -573,19 +543,21 @@ function ZrRow({
 
   return (
     <TimedChartContextMenu documentId={documentId} eventDatetime={eventDate}>
-      <tr
+      <SidebarListRow
         data-zr-row={row.id}
         data-state={selected ? "selected" : undefined}
         className={cn(
-          "aries-list-row aries-list-row--flagged relative border-b border-x-0 border-t-0 text-[color:var(--aries-text-primary)]",
+          "relative text-[color:var(--aries-text-primary)]",
+          LIST_ROW_CLASSES.flagged,
           isL1 && "font-semibold",
-          selected && "aries-list-row--selected",
-          onClick && "aries-list-row--hover cursor-pointer",
+          selected && LIST_ROW_CLASSES.selected,
+          isCurrent && LIST_ROW_CLASSES.current,
+          onClick && cn(LIST_ROW_CLASSES.hover, "cursor-pointer"),
         )}
         onClick={onClick}
       >
         {/* Ribbon stripe (full row height). */}
-        <td className="aries-list-cell !p-0">
+        <SidebarListCell className="!p-0">
           <span
             className="block min-h-[var(--aries-list-row-height)] w-[6px]"
             style={{
@@ -595,45 +567,45 @@ function ZrRow({
               ),
             }}
           />
-        </td>
+        </SidebarListCell>
         {/* Bullet + indent (level indicator). */}
-        <td className={cn("aries-list-cell", ZR_CELL_NOWRAP, "text-center")} style={{ paddingLeft: `${(level - 1) * 5}px` }}>
+        <SidebarListCell className={cn(ZR_CELL_NOWRAP, "text-center")} style={{ paddingLeft: `${(level - 1) * 5}px` }}>
           {LEVEL_BULLET[level] ?? "·"}
-        </td>
+        </SidebarListCell>
         {/* Sign glyph — hidden when the row repeats its parent chain
             (zodiacalreleasingwnd.py:658-664). */}
-        <td
-          className={cn("aries-list-cell", ZR_CELL_NOWRAP, "text-center")}
+        <SidebarListCell
+          className={cn(ZR_CELL_NOWRAP, "text-center")}
           style={{
             fontFamily: "'AriesMorinus'",
             color: semanticChartColor(signColorRoles[sign], signColors[sign]),
           }}
         >
           {repeatsParent ? "" : row.cells[0]?.glyph ?? ""}
-        </td>
+        </SidebarListCell>
         {/* Period (compact per-level format, daemon-built). */}
-        <td className={cn("aries-list-cell", ZR_CELL_NOWRAP, "text-center")}>{row.cells[1]?.text ?? ""}</td>
+        <SidebarListCell className={cn(ZR_CELL_NOWRAP, "text-center")}>{row.cells[1]?.text ?? ""}</SidebarListCell>
         {/* Age at period start. */}
-        <td className={cn("aries-list-cell", ZR_CELL_NOWRAP, "text-right", quietAge && "text-[color:var(--aries-text-muted)]")}>
+        <SidebarListCell className={cn(ZR_CELL_NOWRAP, "text-right", quietAge && "text-[color:var(--aries-text-muted)]")}>
           {row.cells[2]?.text ?? ""}
-        </td>
+        </SidebarListCell>
         {/* Length. */}
-        <td className={cn("aries-list-cell", ZR_CELL_NOWRAP, "text-right")}>{row.cells[3]?.text ?? ""}</td>
+        <SidebarListCell className={cn(ZR_CELL_NOWRAP, "text-right")}>{row.cells[3]?.text ?? ""}</SidebarListCell>
         {/* Ruler glyph — hidden when repeats parent (zodiacalreleasingwnd.py:680-686). */}
-        <td
-          className={cn("aries-list-cell", ZR_CELL_NOWRAP, "text-center")}
+        <SidebarListCell
+          className={cn(ZR_CELL_NOWRAP, "text-center")}
           style={{
             fontFamily: "'AriesMorinus'",
             color: semanticChartColor(planetColorRoles[ruler], planetColors[ruler]),
           }}
         >
           {repeatsParent ? "" : row.cells[4]?.glyph ?? ""}
-        </td>
+        </SidebarListCell>
         {/* Flags: current rows are highlighted; LB and peak markers remain compact. */}
-        <td className={cn("aries-list-cell", ZR_CELL_NOWRAP, "text-center", (isLob || isCurrent) && "font-semibold")}>
+        <SidebarListCell className={cn(ZR_CELL_NOWRAP, "text-center", (isLob || isCurrent) && "font-semibold")}>
           {row.cells[5]?.text ?? ""}
-        </td>
-      </tr>
+        </SidebarListCell>
+      </SidebarListRow>
     </TimedChartContextMenu>
   );
 }

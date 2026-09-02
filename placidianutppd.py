@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: Morinus contributors
+# SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Modified for Aries in 2026 by Max Lange.
+
 import math
 import astrology
 import primdirs
@@ -20,6 +25,23 @@ class PlacidianUTPPD(placidiancommonpd.PlacidianCommonPD):
 
 	def __init__(self, chrt, options, pdrange, direction, abort):
 		placidiancommonpd.PlacidianCommonPD.__init__(self, chrt, options, pdrange, direction, abort)
+
+
+	def calc(self):
+		"""Calculate only the zodiacal construction owned by UTP.
+
+		Under-the-pole defines an OA/OD contact through the significator's pole;
+		it does not define an independent mundane-position system.  A mundane-
+		only request therefore has no UTP rows, while BOTH retains only the real
+		UTP zodiacal pass.  Topocentric directions separately own their explicit
+		Placidus-semiarc temporal/MDO companion.
+		"""
+		mode = self.options.subprimarydir
+		if not self.abort.abort and mode in (
+			primdirs.PrimDirs.ZODIACAL,
+			primdirs.PrimDirs.BOTH,
+		):
+			self.calcZodPDs()
 
 
 	def _force_getdata_for_sig(self):
@@ -403,7 +425,7 @@ class PlacidianUTPPD(placidiancommonpd.PlacidianCommonPD):
 			(primdirs.PrimDir.HC11, H.cusps[11]), (primdirs.PrimDir.HC12, H.cusps[12]),
 		]
 
-	def _toSigPoint(self, idprom, raprom, declprom, promasp, sig_id, sig_lon):
+	def _toSigPoint(self, idprom, raprom, declprom, promasp, sig_id, sig_lon, promasp_offset=0.0):
 		'''Direct a promissor aspect point (ecliptic ra/decl) to a cusp/angle
 		SIGNIFICATOR treated as a pole-bearing point (its own longitude), under the
 		significator's topocentric pole -- the toPlanet arc, but for a non-planet
@@ -421,7 +443,16 @@ class PlacidianUTPPD(placidiancommonpd.PlacidianCommonPD):
 		adprom = math.degrees(math.asin(val))
 		aodo = raprom-adprom if sigeastern else raprom+adprom
 		arc = aodo-aodosig
-		self.create(False, idprom, primdirs.PrimDir.NONE, sig_id, promasp, chart.Chart.CONJUNCTIO, arc)
+		self.create(
+			False,
+			idprom,
+			primdirs.PrimDir.NONE,
+			sig_id,
+			promasp,
+			chart.Chart.CONJUNCTIO,
+			arc,
+			promasp_offset=promasp_offset,
+		)
 
 	def _direct_aspect_point_to_sigs(self, promid, raprom, declprom, promasp, aspect_signed):
 		'''Direct one promissor aspect point to ALL significators: planets (toPlanet,
@@ -440,7 +471,7 @@ class PlacidianUTPPD(placidiancommonpd.PlacidianCommonPD):
 					continue
 				if self.abort.abort:
 					return
-				self._toSigPoint(promid, raprom, declprom, promasp, sig_id, sig_lon)
+				self._toSigPoint(promid, raprom, declprom, promasp, sig_id, sig_lon, aspect_signed)
 
 	def calcZodRingProms2Planets(self):
 		'''Zodiacal: house-cusp and angle PROMISSORS (conjunction + aspects) to ALL
@@ -454,6 +485,16 @@ class PlacidianUTPPD(placidiancommonpd.PlacidianCommonPD):
 		for promid, lonp in self._ring_points():
 			for promasp in range(chart.Chart.CONJUNCTIO, chart.Chart.SEPTILE+1):
 				if not self.options.pdaspects[promasp]:
+					continue
+				# The standard angle-promissor route already emits the ASC/MC
+				# conjunctions.  When both opt-ins are enabled, keep this broader
+				# ring route for DSC/IC, intermediate cusps and every signed aspect
+				# ray, but do not emit those two identical rows a second time.
+				if (
+					promasp == chart.Chart.CONJUNCTIO
+					and getattr(self.options, 'ascmchcsasproms', False)
+					and promid in (primdirs.PrimDir.ASC, primdirs.PrimDir.MC)
+				):
 					continue
 
 				if self.abort.abort:
@@ -503,7 +544,15 @@ class PlacidianUTPPD(placidiancommonpd.PlacidianCommonPD):
 					for sig_id, sig_lon in cusp_sigs:
 						if self.abort.abort:
 							return
-						self._toSigPoint(p, raprom, declprom, promasp, sig_id, sig_lon)
+						self._toSigPoint(p, raprom, declprom, promasp, sig_id, sig_lon, aspect)
+
+
+	def toHCs(self, mundane, idprom, raprom, dsa, nsa, aspect, asp=0.0):
+		"""Keep the signed promissor ray on inherited Placidian cusp rows."""
+		first_new_row = len(self.pds)
+		super().toHCs(mundane, idprom, raprom, dsa, nsa, aspect, asp)
+		for pd in self.pds[first_new_row:]:
+			pd.promasp_offset = float(asp)
 
 
 	def calcZodPromAspsInterPlanetary2Customer2(self):
@@ -623,7 +672,17 @@ class PlacidianUTPPD(placidiancommonpd.PlacidianCommonPD):
 						if self.abort.abort:
 							return
 
-						self.toPlanet(False, p+offs, primdirs.PrimDir.NONE, raprom, declprom, promasp, s, chart.Chart.CONJUNCTIO)
+						self.toPlanet(
+							False,
+							p+offs,
+							primdirs.PrimDir.NONE,
+							raprom,
+							declprom,
+							promasp,
+							s,
+							chart.Chart.CONJUNCTIO,
+							row_promasp_offset=aspect,
+						)
 
 
 	def calcZodPromAntisciaAspsInterPlanetary2Customer2(self):
@@ -1201,7 +1260,14 @@ class PlacidianUTPPD(placidiancommonpd.PlacidianCommonPD):
 					if self.abort.abort:
 						return
 
-					self.toLoF(p+offs, primdirs.PrimDir.NONE, raprom, declprom, psidx)
+					self.toLoF(
+						p+offs,
+						primdirs.PrimDir.NONE,
+						raprom,
+						declprom,
+						psidx,
+						row_promasp_offset=aspect,
+					)
 
 
 	def calcZodAntiscia2Syzygy(self):
@@ -1307,7 +1373,14 @@ class PlacidianUTPPD(placidiancommonpd.PlacidianCommonPD):
 					if self.abort.abort:
 						return
 
-					self.toSyzygy(p+offs, primdirs.PrimDir.NONE, raprom, declprom, psidx)
+					self.toSyzygy(
+						p+offs,
+						primdirs.PrimDir.NONE,
+						raprom,
+						declprom,
+						psidx,
+						row_promasp_offset=aspect,
+					)
 
 
 	def calcZodTerms(self):
@@ -1917,7 +1990,20 @@ class PlacidianUTPPD(placidiancommonpd.PlacidianCommonPD):
 				self.toPlanet(mundane, idprom, primdirs.PrimDir.NONE, raprom, declprom, chart.Chart.CONJUNCTIO, s, sigasp)
 
 
-	def toPlanet(self, mundane, idprom, idprom2, raprom, declprom, promasp, sig, sigasp, calcsecmotion=True, paspect=chart.Chart.NONE):
+	def toPlanet(
+		self,
+		mundane,
+		idprom,
+		idprom2,
+		raprom,
+		declprom,
+		promasp,
+		sig,
+		sigasp,
+		calcsecmotion=True,
+		paspect=chart.Chart.NONE,
+		row_promasp_offset=None,
+	):
 		SINISTER = 0
 		DEXTER = 1
 
@@ -1926,17 +2012,6 @@ class PlacidianUTPPD(placidiancommonpd.PlacidianCommonPD):
 		latsig = latsig_orig
 
 		aspect = chart.Chart.Aspects[sigasp]
-
-		# Angle-as-promissor: ASC/MC/IC/DESC is a great circle (meridian or
-		# horizon), not an ecliptic body, so the CONJUNCTION gets a meridian/horizon
-		# arc below instead of the significator-pole projection. (BUG-2 fix.)
-		# An ASPECT of an angle (e.g. Asc + 120) is an ordinary ecliptic point, not
-		# a great circle, so it must use the normal significator-pole projection --
-		# hence the promasp==CONJUNCTIO guard. (Cusps/angle aspect points as
-		# promissors arrive here from calcZodRingProms2Planets.)
-		angle_prom = (idprom2 == primdirs.PrimDir.NONE and promasp == chart.Chart.CONJUNCTIO and idprom in (
-			primdirs.PrimDir.ASC, primdirs.PrimDir.DESC,
-			primdirs.PrimDir.MC, primdirs.PrimDir.IC))
 
 		latchanged = False
 		sz_with_sig_lat = (self.options.subzodiacal == primdirs.PrimDirs.SZSIGNIFICATOR or self.options.subzodiacal == primdirs.PrimDirs.SZBOTH)
@@ -1971,49 +2046,24 @@ class PlacidianUTPPD(placidiancommonpd.PlacidianCommonPD):
 				lonsig += aspect
 				lonsig = util.normalize(lonsig)
 
-			if angle_prom:
-				# The angle (promissor) is a great circle with no ascensional
-				# difference of its own; bring the fixed significator(-aspect) point
-				# to it by pure RA (MC/IC) or oblique ascension/descension under the
-				# geographic latitude (ASC/DESC). Mirrors toAscMC (the inverse
-				# planet->angle direction). Routing the angle through the
-				# significator's topocentric pole would inject a spurious AD --
-				# Marr/Polich-Page: RAMC and OAMC are equal. See BUG-2 in
-				# doc/primary-directions-math-and-terminology.md.
-				rasig, declsig, _dsig = astrology.swe_cotrans(self._lon_for_cotrans(lonsig), latsig, 1.0, -self.chart.obl[0])
-				if idprom == primdirs.PrimDir.MC:
-					arc = rasig-self.ramc
-				elif idprom == primdirs.PrimDir.IC:
-					arc = rasig-self.raic
-				else:
-					adval = self.tanlat*math.tan(math.radians(declsig))
-					if math.fabs(adval) > 1.0:
-						continue
-					adgeo = math.degrees(math.asin(adval))
-					if idprom == primdirs.PrimDir.ASC:
-						arc = (rasig-adgeo)-self.aoasc
-					else:
-						arc = (rasig+adgeo)-self.dodesc
-				ok = True
-			else:
-				if self._force_getdata_for_sig() or sigasp > chart.Chart.CONJUNCTIO or latchanged: #recalc data
-					ok, sigeastern, abovehorizon, phisig, aodosig = self.getData(lonsig, latsig)
-					if not ok:
-						continue
-
-				val = math.tan(math.radians(declprom))*math.tan(math.radians(phisig))
-				if math.fabs(val) > 1.0:
+			if self._force_getdata_for_sig() or sigasp > chart.Chart.CONJUNCTIO or latchanged: #recalc data
+				ok, sigeastern, abovehorizon, phisig, aodosig = self.getData(lonsig, latsig)
+				if not ok:
 					continue
-				adprom = math.degrees(math.asin(val))
 
-				aodo = 0.0
-				if sigeastern:
-					aodo = raprom-adprom
-				else:
-					aodo = raprom+adprom
+			val = math.tan(math.radians(declprom))*math.tan(math.radians(phisig))
+			if math.fabs(val) > 1.0:
+				continue
+			adprom = math.degrees(math.asin(val))
 
-				arc = aodo-aodosig
-				ok = True
+			aodo = 0.0
+			if sigeastern:
+				aodo = raprom-adprom
+			else:
+				aodo = raprom+adprom
+
+			arc = aodo-aodosig
+			ok = True
 			if idprom == astrology.SE_MOON and idprom2 == primdirs.PrimDir.NONE and self.options.pdsecmotion and calcsecmotion:
 				if paspect == chart.Chart.NONE:
 					for itera in range(self.options.pdsecmotioniter+1):
@@ -2027,10 +2077,34 @@ class PlacidianUTPPD(placidiancommonpd.PlacidianCommonPD):
 							break
 
 			if ok:
-				self.create(mundane, idprom, idprom2, sig, promasp, sigasp, arc)
+				self.create(
+					mundane,
+					idprom,
+					idprom2,
+					sig,
+					promasp,
+					sigasp,
+					arc,
+					promasp_offset=(
+						row_promasp_offset
+						if row_promasp_offset is not None
+						else (0.0 if paspect == chart.Chart.NONE else paspect)
+					),
+					sigasp_offset=aspect,
+				)
 
 
-	def toLoF(self, idprom, idprom2, raprom, declprom, promasp, aspect = 0.0, calcsecmotion = False):
+	def toLoF(
+		self,
+		idprom,
+		idprom2,
+		raprom,
+		declprom,
+		promasp,
+		aspect=0.0,
+		calcsecmotion=False,
+		row_promasp_offset=None,
+	):
 		lonsig = self.chart.fortune.fortune[fortune.Fortune.LON]
 
 		ok, sigeastern, abovehorizon, phisig, aodosig = self.getData(lonsig, 0.0)
@@ -2057,7 +2131,18 @@ class PlacidianUTPPD(placidiancommonpd.PlacidianCommonPD):
 					break
 
 		if ok:
-			self.create(False, idprom, idprom2, primdirs.PrimDir.LOF, promasp, chart.Chart.CONJUNCTIO, arc)
+			self.create(
+				False,
+				idprom,
+				idprom2,
+				primdirs.PrimDir.LOF,
+				promasp,
+				chart.Chart.CONJUNCTIO,
+				arc,
+				promasp_offset=(
+					aspect if row_promasp_offset is None else row_promasp_offset
+				),
+			)
 
 
 	def toCustomer2(self, mundane, idprom, idprom2, raprom, declprom, promasp, aspect = 0.0, calcsecmotion = False):
@@ -2094,7 +2179,16 @@ class PlacidianUTPPD(placidiancommonpd.PlacidianCommonPD):
 					break
 
 		if ok:
-			self.create(False, idprom, idprom2, primdirs.PrimDir.CUSTOMERPD, promasp, chart.Chart.CONJUNCTIO, arc)
+			self.create(
+				False,
+				idprom,
+				idprom2,
+				primdirs.PrimDir.CUSTOMERPD,
+				promasp,
+				chart.Chart.CONJUNCTIO,
+				arc,
+				promasp_offset=aspect,
+			)
 
 
 	def toCustomer2Asps(self, idprom, idprom2, raprom, declprom):
@@ -2142,7 +2236,16 @@ class PlacidianUTPPD(placidiancommonpd.PlacidianCommonPD):
 					aodo = raprom+adprom
 
 				arc = aodo-aodosig
-				self.create(True, idprom, idprom2, primdirs.PrimDir.CUSTOMERPD, chart.Chart.CONJUNCTIO, asidx, arc)
+				self.create(
+					True,
+					idprom,
+					idprom2,
+					primdirs.PrimDir.CUSTOMERPD,
+					chart.Chart.CONJUNCTIO,
+					asidx,
+					arc,
+					sigasp_offset=aspect,
+				)
 
 
 	def calcMunPromAspsInterPlanetary2Customer2(self):
@@ -2176,7 +2279,17 @@ class PlacidianUTPPD(placidiancommonpd.PlacidianCommonPD):
 		self.toCustomer2Asps(primdirs.PrimDir.CUSTOMERPD, primdirs.PrimDir.NONE, raprom, declprom)
 
 
-	def toSyzygy(self, idprom, idprom2, raprom, declprom, promasp, aspect = 0.0, calcsecmotion = False):
+	def toSyzygy(
+		self,
+		idprom,
+		idprom2,
+		raprom,
+		declprom,
+		promasp,
+		aspect=0.0,
+		calcsecmotion=False,
+		row_promasp_offset=None,
+	):
 		lonsig = self.chart.syzygy.speculum[syzygy.Syzygy.LON]
 
 		ok, sigeastern, abovehorizon, phisig, aodosig = self.getData(lonsig, 0.0)
@@ -2203,7 +2316,18 @@ class PlacidianUTPPD(placidiancommonpd.PlacidianCommonPD):
 					break
 
 		if ok:
-			self.create(False, idprom, idprom2, primdirs.PrimDir.SYZ, promasp, chart.Chart.CONJUNCTIO, arc)
+			self.create(
+				False,
+				idprom,
+				idprom2,
+				primdirs.PrimDir.SYZ,
+				promasp,
+				chart.Chart.CONJUNCTIO,
+				arc,
+				promasp_offset=(
+					aspect if row_promasp_offset is None else row_promasp_offset
+				),
+			)
 
 
 	def toMundaneLoF(self, idprom, idprom2, raprom, adprom, calcsecmotion=True):

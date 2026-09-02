@@ -67,7 +67,7 @@ DEFAULT_SIGNIFICATORS = {
 }
 
 
-rule_engine.register_discipline('predictive', 'Predictive', list(_THEME_SLUGS))
+rule_engine.register_discipline('predictive', 'Predictive', _THEME_SLUGS)
 
 
 def _pack_theme_lookup():
@@ -89,16 +89,16 @@ def evaluate(theme, timed_chart, context=None):
     progression, profected chart, …). The dispatch layer resolves the
     chart from the active supplementary kind and passes it here as a
     single Chart object."""
-    theme_slug = _THEME_SLUGS.get(theme)
+    theme_slug = rule_engine.theme_slug_for('predictive', theme)
     if theme_slug is None:
-        pack_slugs, _pack_ctx = _pack_theme_lookup()
-        theme_slug = pack_slugs.get(theme)
-        if theme_slug is None:
-            return []
+        return []
     if context is None:
-        context = DEFAULT_SIGNIFICATORS.get(theme)
+        canonical = rule_engine.canonical_theme_label_for(
+            'predictive', theme_slug,
+        ) or theme
+        context = DEFAULT_SIGNIFICATORS.get(canonical)
         if context is None:
             _slugs, pack_ctx = _pack_theme_lookup()
-            context = pack_ctx.get(theme)
+            context = pack_ctx.get(theme) or pack_ctx.get(canonical)
     return rule_engine.evaluate('predictive', theme_slug, timed_chart,
                                 context=context)

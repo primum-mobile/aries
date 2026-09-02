@@ -26,16 +26,21 @@ import {
 } from "@/components/workshell/stitched-list-harness";
 import {
   ASPECT_LIST_PERFECTION_CONCURRENCY,
+  ASPECT_LIST_PERFECTION_IDLE_MS,
   ASPECT_LIST_CURSOR_FALLBACK_DELAY_MS,
   advanceAspectListCursorTracker,
+  aspectListPerfectionLedgerKey,
+  aspectListDefaultMode,
   aspectListQueryIdentity,
   aspectListRequestedMode,
   aspectListRetainedWorldIdentity,
   aspectListVirtualWindow,
   isAspectListPayloadCurrent,
   nextAspectListPerfectionBatches,
+  retainAspectListPerfectionsFromLedger,
   retainMatchingAspectListPerfections,
   selectRetainedAspectListPayloadState,
+  shouldDeferAspectListRefresh,
   type AspectListCursorTracker,
 } from "@/lib/aspect-list-live-state.mjs";
 import {
@@ -46,6 +51,7 @@ import {
 import {
   fetchAspectList,
   fetchAspectListPerfections,
+  isAspectListPerfectionContextChangedError,
   openAspectListPerfection,
   type AspectListMode,
   type AspectListFilter,
@@ -94,6 +100,7 @@ const OVERSCAN_ROWS = 8;
 const EMPTY_FILTER_IDS: readonly string[] = Object.freeze([]);
 const EMPTY_ROW_ID_SET: ReadonlySet<string> = new Set<string>();
 const EMPTY_PERFECTION_MAP = new Map<string, AspectListPerfection>();
+const ASPECT_LIST_PERFECTION_LEDGER_LIMIT = 4096;
 
 type AspectListSort = "body" | "orb" | "exact";
 type SortDirection = "asc" | "desc";
@@ -638,6 +645,12 @@ function AspectListRowContextMenu({
           </ContextMenuItem>
           <ContextMenuItem
             disabled={timedDisabled}
+            onClick={() => onOpenPerfection(row, "secondary")}
+          >
+            {t("aspectList.openAsSecondaryProgression")}
+          </ContextMenuItem>
+          <ContextMenuItem
+            disabled={timedDisabled}
             onClick={() => onOpenPerfection(row, "chart")}
           >
             {t("dirview.openAsChart")}
@@ -685,7 +698,20 @@ export function AspectListPanel({
   const setPreferences = useWorkspaceStore((state) => state.setAspectListPreferences);
   const applyTimedChartOpenResult = useWorkspaceStore((state) => state.applyTimedChartOpenResult);
   const showRadix = useWorkspaceStore((state) => state.timedChartShowRadix);
-  const selectedMode = preferences?.mode ?? null;
+  const modeContextKey =
+    `${documentId}\u0000${contextRevision ?? "pending"}\u0000${
+      comparisonVisible === true
+        ? "comparison"
+        : comparisonVisible === false
+          ? "singleton"
+          : "pending"
+    }`;
+  const [selectedModeByContext, setSelectedModeByContext] = React.useState<
+    Record<string, AspectListMode>
+  >({});
+  const selectedMode =
+    selectedModeByContext[modeContextKey] ??
+    (aspectListDefaultMode(comparisonVisible) as AspectListMode | null);
   const maxOrb = preferences?.maxOrb ?? DEFAULT_MAX_ORB;
   const sortBy = preferences?.sortBy ?? "orb";
   const sortDirection = preferences?.sortDirection ?? "asc";
@@ -695,6 +721,9 @@ export function AspectListPanel({
   const secondaryRingEnabledByMode =
     preferences?.secondaryRingEnabledByMode ?? {};
   const filterDrawerOpen = preferences?.filterDrawerOpen ?? false;
+  const perfectionLinkMode = useWorkspaceStore(
+    (state) => state.aspectListPerfectionLinkMode,
+  );
   // TAB is a presentation lens. Preserve the user's comparison-mode choice
   // while the ring is hidden, but query the singleton's primary chart.
   const requestedMode = aspectListRequestedMode(
@@ -703,15 +732,11 @@ export function AspectListPanel({
   ) as AspectListMode | null;
   const lastSessionChange = useDaemonWorkspaceStore((state) => state.lastSessionChange);
   const lastOptionsChange = useDaemonWorkspaceStore(
-    (state) => state.lastRetainedDataOptionsChange,
+    (state) => state.lastAspectListOptionsChange,
   );
   const hiddenObjectIds = useDaemonWorkspaceStore(
     (state) => state.retainedListDisplay.hiddenObjectIds,
   );
-  const lastOptionsChangeRef = React.useRef(lastOptionsChange);
-  React.useLayoutEffect(() => {
-    lastOptionsChangeRef.current = lastOptionsChange;
-  }, [lastOptionsChange]);
   const refreshState = useSettledWorkspaceRefreshState({
     documentId,
     parentDocumentId,
@@ -719,6 +744,7 @@ export function AspectListPanel({
     lastOptionsChange,
   });
   const refreshSeq = workspaceSemanticRefreshSeq(refreshState);
+  const deferRefreshForStep = shouldDeferAspectListRefresh(refreshState);
   const cursorFallbackSeq = useAspectListCursorFallbackSeq({
     documentId,
     parentDocumentId,
@@ -821,6 +847,23 @@ export function AspectListPanel({
   React.useLayoutEffect(() => {
     perfectionStateRef.current = perfectionState;
   }, [perfectionState]);
+  const perfectionLedgerRef = React.useRef(
+    new Map<string, AspectListPerfection>(),
+  );
+  const rememberPerfection = React.useCallback(
+    (mode: AspectListMode, row: AspectListRow, result: AspectListPerfection) => {
+      const ledger = perfectionLedgerRef.current;
+      const key = aspectListPerfectionLedgerKey(documentId, mode, row);
+      ledger.delete(key);
+      ledger.set(key, result);
+      while (ledger.size > ASPECT_LIST_PERFECTION_LEDGER_LIMIT) {
+        const oldest = ledger.keys().next().value;
+        if (typeof oldest !== "string") break;
+        ledger.delete(oldest);
+      }
+    },
+    [documentId],
+  );
   const [pendingPerfectionState, setPendingPerfectionState] = React.useState<{
     identity: string;
     rowIds: Set<string>;
@@ -829,6 +872,9 @@ export function AspectListPanel({
     readonly string[]
   >([]);
   const [perfectionScheduleSeq, setPerfectionScheduleSeq] = React.useState(0);
+  const [perfectionIdleIdentity, setPerfectionIdleIdentity] = React.useState<
+    string | null
+  >(null);
   const [requestLoading, setLoading] = React.useState(payload === null);
   const [error, setError] = React.useState<string | null>(null);
   const [perfectionError, setPerfectionError] = React.useState<string | null>(null);
@@ -875,7 +921,38 @@ export function AspectListPanel({
         queryIdentity,
         actionIdentity,
       });
-      setPerfectionState(cachedWorld.perfectionState);
+      const cachedIdentity =
+        `${documentId}\u0000${cachedWorld.payload.activeMode}\u0000${cachedWorld.payload.contextKey}`;
+      const cachedByRow =
+        cachedWorld.perfectionState?.identity === cachedIdentity
+          ? new Map(cachedWorld.perfectionState.byRow)
+          : new Map<string, AspectListPerfection>();
+      if (cachedWorld.perfectionState?.identity === cachedIdentity) {
+        for (const row of cachedWorld.payload.rows) {
+          const result = cachedWorld.perfectionState.byRow.get(row.id);
+          if (result) rememberPerfection(cachedWorld.payload.activeMode, row, result);
+        }
+      }
+      const ledgerByRow = retainAspectListPerfectionsFromLedger({
+        documentId,
+        mode: cachedWorld.payload.activeMode,
+        rows: cachedWorld.payload.rows,
+        ledger: perfectionLedgerRef.current,
+        nextAnchorJd: cachedWorld.payload.perfectionAnchorJd,
+      });
+      for (const [rowId, result] of ledgerByRow) cachedByRow.set(rowId, result);
+      setPerfectionState(
+        cachedByRow.size > 0 || cachedWorld.perfectionState
+          ? {
+              identity: cachedIdentity,
+              byRow: cachedByRow,
+              failedRowIds:
+                cachedWorld.perfectionState?.identity === cachedIdentity
+                  ? new Set(cachedWorld.perfectionState.failedRowIds)
+                  : new Set<string>(),
+            }
+          : null,
+      );
       setPendingPerfectionState(null);
       setPerfectionError(null);
       setLoading(false);
@@ -889,11 +966,13 @@ export function AspectListPanel({
     cachedWorld,
     documentId,
     queryIdentity,
+    rememberPerfection,
     retainedWorldIdentity,
     storedPayloadState,
   ]);
 
   React.useEffect(() => {
+    if (deferRefreshForStep) return;
     const controller = new AbortController();
     const requestSeq = ++requestSeqRef.current;
     const requestActionIdentity = actionIdentityRef.current;
@@ -930,39 +1009,76 @@ export function AspectListPanel({
       const previousPayloadState = payloadStateRef.current;
       const previousPayload = previousPayloadState?.payload;
       const previousPerfections = perfectionStateRef.current;
+      let nextPerfectionState: AspectListPerfectionState | null = null;
+      if (previousPayload && previousPerfections) {
+        for (const row of previousPayload.rows) {
+          const result = previousPerfections.byRow.get(row.id);
+          if (!result || !row.trajectoryKey) continue;
+          rememberPerfection(previousPayload.activeMode, row, result);
+        }
+      }
       if (
-        lastOptionsChangeRef.current?.refreshMode === "house-system" &&
         previousPayload &&
         previousPayloadState?.documentId === documentId &&
+        previousPayload.activeMode === next.activeMode &&
+        previousPayload.retainedListDataKey === next.retainedListDataKey &&
         previousPerfections?.identity ===
           `${documentId}\u0000${previousPayload.activeMode}\u0000${previousPayload.contextKey}`
       ) {
         const nextIdentity =
           `${documentId}\u0000${next.activeMode}\u0000${next.contextKey}`;
-        setPerfectionState({
-          identity: nextIdentity,
-          byRow: retainMatchingAspectListPerfections({
-            previousRows: previousPayload.rows,
-            nextRows: next.rows,
-            previousByRow: previousPerfections.byRow,
-          }),
-          failedRowIds: new Set<string>(),
+        const byRow = retainMatchingAspectListPerfections({
+          previousRows: previousPayload.rows,
+          nextRows: next.rows,
+          previousByRow: previousPerfections.byRow,
+          nextAnchorJd: next.perfectionAnchorJd,
         });
+        const ledgerByRow = retainAspectListPerfectionsFromLedger({
+          documentId,
+          mode: next.activeMode,
+          rows: next.rows,
+          ledger: perfectionLedgerRef.current,
+          nextAnchorJd: next.perfectionAnchorJd,
+        });
+        for (const [rowId, result] of ledgerByRow) byRow.set(rowId, result);
+        nextPerfectionState = {
+          identity: nextIdentity,
+          byRow,
+          failedRowIds: new Set<string>(),
+        };
+        setPerfectionState(nextPerfectionState);
         setPendingPerfectionState({
           identity: nextIdentity,
           rowIds: new Set<string>(),
         });
+      } else {
+        const byRow = retainAspectListPerfectionsFromLedger({
+          documentId,
+          mode: next.activeMode,
+          rows: next.rows,
+          ledger: perfectionLedgerRef.current,
+          nextAnchorJd: next.perfectionAnchorJd,
+        });
+        if (byRow.size > 0) {
+          nextPerfectionState = {
+            identity: `${documentId}\u0000${next.activeMode}\u0000${next.contextKey}`,
+            byRow,
+            failedRowIds: new Set<string>(),
+          };
+          setPerfectionState(nextPerfectionState);
+        }
       }
       rememberListPayload<AspectListCachedWorld>(
         CACHE_NAMESPACE,
         canonicalWorldIdentity,
         {
           payload: next,
-          perfectionState:
+          perfectionState: nextPerfectionState ?? (
             previousPerfections?.identity ===
             `${documentId}\u0000${next.activeMode}\u0000${next.contextKey}`
               ? previousPerfections
-              : null,
+              : null
+          ),
           scrollTop:
             getCachedListPayload<AspectListCachedWorld>(
               CACHE_NAMESPACE,
@@ -1008,9 +1124,11 @@ export function AspectListPanel({
     contextRevisionSeq,
     contextRevision,
     cursorFallbackSeq,
+    deferRefreshForStep,
     documentId,
     focusDatetime,
     queryIdentity,
+    rememberPerfection,
     requestedMode,
     refreshSeq,
     refreshState.immediateSessionSeq,
@@ -1023,6 +1141,17 @@ export function AspectListPanel({
     payload && payloadDocumentId
       ? `${payloadDocumentId}\u0000${payload.activeMode}\u0000${payload.contextKey}`
       : null;
+  const perfectionIdentityRef = React.useRef(perfectionIdentity);
+  React.useLayoutEffect(() => {
+    perfectionIdentityRef.current = perfectionIdentity;
+  }, [perfectionIdentity]);
+  React.useEffect(() => {
+    if (!payloadIsCurrent || !perfectionIdentity) return;
+    const timer = window.setTimeout(() => {
+      setPerfectionIdleIdentity(perfectionIdentity);
+    }, ASPECT_LIST_PERFECTION_IDLE_MS);
+    return () => window.clearTimeout(timer);
+  }, [payloadIsCurrent, perfectionIdentity]);
   const perfectionByRow = React.useMemo(
     () =>
       perfectionIdentity && perfectionState?.identity === perfectionIdentity
@@ -1030,6 +1159,21 @@ export function AspectListPanel({
         : new Map<string, AspectListPerfection>(),
     [perfectionIdentity, perfectionState],
   );
+  const retainedPerfectionByRow = React.useMemo(() => {
+    if (
+      !perfectionIdentity ||
+      !perfectionState ||
+      perfectionState.identity === perfectionIdentity ||
+      !payloadDocumentId ||
+      !payload
+    ) {
+      return EMPTY_PERFECTION_MAP;
+    }
+    const scopePrefix = `${payloadDocumentId}\u0000${payload.activeMode}\u0000`;
+    return perfectionState.identity.startsWith(scopePrefix)
+      ? perfectionState.byRow
+      : EMPTY_PERFECTION_MAP;
+  }, [payload, payloadDocumentId, perfectionIdentity, perfectionState]);
   const failedPerfectionRowIds =
     perfectionIdentity && perfectionState?.identity === perfectionIdentity
       ? perfectionState.failedRowIds
@@ -1179,6 +1323,7 @@ export function AspectListPanel({
 
   React.useEffect(() => {
     if (!payload || !payloadIsCurrent || !perfectionIdentity) return;
+    if (perfectionIdleIdentity !== perfectionIdentity) return;
 
     const activeRequests = activePerfectionRequestsRef.current;
     const candidateIdSet = new Set(candidateRowIds);
@@ -1224,8 +1369,10 @@ export function AspectListPanel({
     for (const batch of batches) {
       const requestId = ++nextPerfectionRequestIdRef.current;
       const controller = new AbortController();
+      const requestIdentity = perfectionIdentity;
+      const requestContextKey = payload.contextKey;
       activeRequests.set(requestId, {
-        identity: perfectionIdentity,
+        identity: requestIdentity,
         controller,
         rowIds: batch,
       });
@@ -1233,58 +1380,64 @@ export function AspectListPanel({
         documentId,
         payload.activeMode,
         maxOrb,
-        payload.contextKey,
+        requestContextKey,
         controller.signal,
         batch,
       )
         .then((next) => {
           const activeRequest = activeRequests.get(requestId);
-          if (controller.signal.aborted || activeRequest?.identity !== perfectionIdentity) return;
-          if (next.contextKey !== payload.contextKey) {
-            setPerfectionState((current) => {
-              const byRow =
-                current?.identity === perfectionIdentity
-                  ? current.byRow
-                  : new Map<string, AspectListPerfection>();
-              const failedRowIds =
-                current?.identity === perfectionIdentity
-                  ? new Set(current.failedRowIds)
-                  : new Set<string>();
-              for (const rowId of batch) failedRowIds.add(rowId);
-              return { identity: perfectionIdentity, byRow, failedRowIds };
-            });
-            return;
-          }
+          if (
+            controller.signal.aborted ||
+            activeRequest?.identity !== requestIdentity ||
+            perfectionIdentityRef.current !== requestIdentity ||
+            next.contextKey !== requestContextKey
+          ) return;
           const returnedRowIds = new Set(next.rows.map((row) => row.rowId));
+          const rowsById = new Map(payload.rows.map((row) => [row.id, row]));
+          for (const result of next.rows) {
+            const row = rowsById.get(result.rowId);
+            if (!row?.trajectoryKey) continue;
+            rememberPerfection(payload.activeMode, row, result);
+          }
           setPerfectionState((current) => {
             const byRow =
-              current?.identity === perfectionIdentity
+              current?.identity === requestIdentity
                 ? new Map(current.byRow)
                 : new Map<string, AspectListPerfection>();
             for (const row of next.rows) byRow.set(row.rowId, row);
             const failedRowIds =
-              current?.identity === perfectionIdentity
+              current?.identity === requestIdentity
                 ? new Set(current.failedRowIds)
                 : new Set<string>();
             for (const rowId of batch) {
               if (!returnedRowIds.has(rowId)) failedRowIds.add(rowId);
             }
-            return { identity: perfectionIdentity, byRow, failedRowIds };
+            return { identity: requestIdentity, byRow, failedRowIds };
           });
+          setPerfectionError(null);
         })
         .catch((cause: unknown) => {
-          if (controller.signal.aborted) return;
+          const activeRequest = activeRequests.get(requestId);
+          if (
+            controller.signal.aborted ||
+            activeRequest?.identity !== requestIdentity ||
+            perfectionIdentityRef.current !== requestIdentity
+          ) return;
+          if (isAspectListPerfectionContextChangedError(cause)) {
+            setPerfectionIdleIdentity(null);
+            return;
+          }
           setPerfectionState((current) => {
             const byRow =
-              current?.identity === perfectionIdentity
+              current?.identity === requestIdentity
                 ? current.byRow
                 : new Map<string, AspectListPerfection>();
             const failedRowIds =
-              current?.identity === perfectionIdentity
+              current?.identity === requestIdentity
                 ? new Set(current.failedRowIds)
                 : new Set<string>();
             for (const rowId of batch) failedRowIds.add(rowId);
-            return { identity: perfectionIdentity, byRow, failedRowIds };
+            return { identity: requestIdentity, byRow, failedRowIds };
           });
           setPerfectionError(
             cause instanceof Error ? cause.message : t("aspectList.perfectionFailed"),
@@ -1293,7 +1446,7 @@ export function AspectListPanel({
         .finally(() => {
           activeRequests.delete(requestId);
           setPendingPerfectionState((current) => {
-            if (current?.identity !== perfectionIdentity) return current;
+            if (current?.identity !== requestIdentity) return current;
             const rowIds = new Set(current.rowIds);
             for (const rowId of batch) rowIds.delete(rowId);
             return { identity: current.identity, rowIds };
@@ -1309,8 +1462,10 @@ export function AspectListPanel({
     payload,
     payloadIsCurrent,
     perfectionByRow,
+    perfectionIdleIdentity,
     perfectionIdentity,
     perfectionScheduleSeq,
+    rememberPerfection,
     sortBy,
     t,
     visiblePerfectionRowIds,
@@ -1411,9 +1566,13 @@ export function AspectListPanel({
     (event: React.ChangeEvent<HTMLSelectElement>) => {
       const mode = event.target.value as AspectListMode;
       setError(null);
+      setSelectedModeByContext((current) => ({
+        ...current,
+        [modeContextKey]: mode,
+      }));
       setPreferences(preferencesDocumentId, { mode });
     },
-    [preferencesDocumentId, setPreferences],
+    [modeContextKey, preferencesDocumentId, setPreferences],
   );
 
   const onSort = React.useCallback(
@@ -1571,6 +1730,7 @@ export function AspectListPanel({
           sortDirection={sortDirection}
           onSort={onSort}
           perfectionByRow={perfectionByRow}
+          retainedPerfectionByRow={retainedPerfectionByRow}
           pendingPerfectionRowIds={pendingPerfectionRowIds}
           failedPerfectionRowIds={failedPerfectionRowIds}
           perfectionsActive={payloadIsCurrent}
@@ -1578,6 +1738,7 @@ export function AspectListPanel({
           openingRowId={openingRowId}
           actionsEnabled={payloadIsCurrent && !loading}
           onOpenPerfection={onOpenPerfection}
+          perfectionLinkMode={perfectionLinkMode}
           worldIdentity={displayedWorldIdentity}
           initialScrollTop={displayedWorldScrollTop}
           onScrollTopChange={rememberDisplayedWorldScrollTop}
@@ -1595,6 +1756,7 @@ const AspectListTable = React.memo(function AspectListTable({
   sortDirection,
   onSort,
   perfectionByRow,
+  retainedPerfectionByRow,
   pendingPerfectionRowIds,
   failedPerfectionRowIds,
   perfectionsActive,
@@ -1602,6 +1764,7 @@ const AspectListTable = React.memo(function AspectListTable({
   openingRowId,
   actionsEnabled,
   onOpenPerfection,
+  perfectionLinkMode,
   worldIdentity,
   initialScrollTop,
   onScrollTopChange,
@@ -1613,6 +1776,7 @@ const AspectListTable = React.memo(function AspectListTable({
   sortDirection: SortDirection;
   onSort: (sort: AspectListSort) => void;
   perfectionByRow: Map<string, AspectListPerfection>;
+  retainedPerfectionByRow: ReadonlyMap<string, AspectListPerfection>;
   pendingPerfectionRowIds: ReadonlySet<string>;
   failedPerfectionRowIds: ReadonlySet<string>;
   perfectionsActive: boolean;
@@ -1620,6 +1784,7 @@ const AspectListTable = React.memo(function AspectListTable({
   openingRowId: string | null;
   actionsEnabled: boolean;
   onOpenPerfection: (row: AspectListRow, action?: AspectListPerfectionAction) => void;
+  perfectionLinkMode: "transits" | "secondary";
   worldIdentity: string;
   initialScrollTop: number;
   onScrollTopChange: (scrollTop: number) => void;
@@ -1780,11 +1945,17 @@ const AspectListTable = React.memo(function AspectListTable({
             const phase = phaseLabel(row.phase, t);
             const compactPhase = compactPhaseLabel(row.phase, t);
             const perfection = perfectionByRow.get(row.id);
+            const retainedPerfection = retainedPerfectionByRow.get(row.id);
             const perfectionReady =
               perfection?.status === "ready" &&
               perfection.exactDate &&
               perfection.exactTime &&
               perfection.exactDatetime;
+            const retainedPerfectionReady =
+              !perfection &&
+              retainedPerfection?.status === "ready" &&
+              retainedPerfection.exactDate &&
+              retainedPerfection.exactTime;
             const perfectionLoading =
               perfectionsActive &&
               !failedPerfectionRowIds.has(row.id) &&
@@ -1830,13 +2001,13 @@ const AspectListTable = React.memo(function AspectListTable({
                       <SidebarListDateCell>
                         <button
                           type="button"
-                          className="tabular-nums underline-offset-2 hover:text-primary hover:underline disabled:pointer-events-none disabled:opacity-50"
+                          className="tabular-nums underline-offset-2 hover:text-primary hover:underline disabled:pointer-events-none"
                           disabled={!actionsEnabled || openingRowId === row.id}
                           title={`${perfection.exactDate} ${perfection.exactTime}`}
                           aria-label={t("aspectList.openPerfection", {
                             aspect: `${row.left.name} ${row.aspect.name} ${row.right.name}`,
                           })}
-                          onClick={() => onOpenPerfection(row)}
+                          onClick={() => onOpenPerfection(row, perfectionLinkMode)}
                         >
                           {perfection.exactDate}
                         </button>
@@ -1845,24 +2016,41 @@ const AspectListTable = React.memo(function AspectListTable({
                         {shortClockTime(perfection.exactTime)}
                       </SidebarListTimeCell>
                     </>
+                  ) : retainedPerfectionReady ? (
+                    <>
+                      <SidebarListDateCell
+                        title={t("aspectList.perfectionCalculating")}
+                        aria-label={t("aspectList.perfectionCalculating")}
+                      >
+                        {retainedPerfection.exactDate}
+                      </SidebarListDateCell>
+                      <SidebarListTimeCell
+                        title={t("aspectList.perfectionCalculating")}
+                        aria-hidden="true"
+                      >
+                        {shortClockTime(retainedPerfection.exactTime)}
+                      </SidebarListTimeCell>
+                    </>
                   ) : (
-                    <SidebarListCell
-                      colSpan={2}
-                      className="text-right text-[color:var(--aries-text-muted)]"
-                      title={
-                        perfectionLoading
-                          ? t("aspectList.perfectionCalculating")
-                          : perfection?.reason === "turns-away-before-perfection"
-                            ? t("aspectList.perfectionTurnsAway")
-                          : perfection?.reason === "search-horizon-exhausted"
-                            ? t("aspectList.perfectionBeyondHorizon")
-                          : perfection?.reason === "regime-change-before-perfection"
-                            ? t("aspectList.perfectionRegimeChange")
-                          : t("aspectList.perfectionUnavailable")
-                      }
-                    >
-                      {perfectionLoading ? "…" : t("aspectList.notApplicable")}
-                    </SidebarListCell>
+                    <>
+                      <SidebarListDateCell
+                        className="text-[color:var(--aries-text-muted)]"
+                        title={
+                          perfectionLoading
+                            ? t("aspectList.perfectionCalculating")
+                            : perfection?.reason === "turns-away-before-perfection"
+                              ? t("aspectList.perfectionTurnsAway")
+                            : perfection?.reason === "search-horizon-exhausted"
+                              ? t("aspectList.perfectionBeyondHorizon")
+                            : perfection?.reason === "regime-change-before-perfection"
+                              ? t("aspectList.perfectionRegimeChange")
+                            : t("aspectList.perfectionUnavailable")
+                        }
+                      >
+                        {perfectionLoading ? "…" : t("aspectList.notApplicable")}
+                      </SidebarListDateCell>
+                      <SidebarListTimeCell aria-hidden="true" />
+                    </>
                   )}
                 </SidebarListRow>
               </AspectListRowContextMenu>

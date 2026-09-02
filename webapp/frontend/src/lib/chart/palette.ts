@@ -330,7 +330,13 @@ function applyProfileColorsToChart(
   let options = chart.options;
   if (nextSignColors) {
     changed = true;
-    options = { ...options, signColors: nextSignColors };
+    options = {
+      ...options,
+      signColors: nextSignColors,
+      ...(signColors?.length
+        ? { multiwheelSignColors: [...signColors] }
+        : {}),
+    };
   }
   return changed ? { ...chart, planets, fortune, vertex, syzygy, options } : chart;
 }
@@ -354,5 +360,6 @@ export function applyProfileColorsToSnapshot(
     comparisonChart: apply(snapshot.comparisonChart),
     radixChart: apply(snapshot.radixChart),
     displayAnchorChart: apply(snapshot.displayAnchorChart),
+    rings: snapshot.rings?.map((chart) => apply(chart) as Chart),
   };
 }

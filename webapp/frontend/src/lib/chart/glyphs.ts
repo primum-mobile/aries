@@ -1,3 +1,8 @@
+// SPDX-FileCopyrightText: Morinus contributors
+// SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Modified for Aries in 2026 by Max Lange.
+
 /**
  * Morinus.ttf glyph codepoint mapping.
  * Extracted verbatim from common.py:368–393 — every string here is rendered
@@ -71,6 +76,16 @@ export const PRIMDIR_LOF = 24;
 // common.py:370–371 — 0 = Aries through 11 = Pisces (Signs1 / Signs2).
 export const SIGN_GLYPHS_1 = ["a","b","c","d","e","f","g","h","i","j","k","l"] as const;
 export const SIGN_GLYPHS_2 = ["m","n","o","p","q","r","s","t","u","v","w","x"] as const;
+
+// common.py: Common.MoonPhases — dedicated Morinus lunar-phase artwork in
+// synodic order. These are font slots, not Unicode moon-symbol substitutes.
+export type MoonPhaseGlyphId = "new" | "first_quarter" | "full" | "last_quarter";
+export const MOON_PHASE_GLYPHS: Record<MoonPhaseGlyphId, string> = {
+  new: "y",
+  first_quarter: "z",
+  full: "{",
+  last_quarter: "|",
+};
 
 // common.py:368 — aspect index aligns with chart.Chart aspect constants.
 // Index 11 ('[') is the SEPTILE slot — a custom glyph in Morinus.ttf added

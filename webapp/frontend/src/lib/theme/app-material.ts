@@ -294,6 +294,9 @@ const MATERIAL_CLASS_SLUGS: Readonly<Record<AppMaterialClass, string>> =
   });
 
 const TILE_CACHE_LIMIT = 64;
+const RASTER_TILE_SCALE = 4;
+const RASTER_TILE_SUPERSAMPLE = 2;
+const PNG_PALETTE_SIZE = 16;
 
 type TextureTile = Readonly<{
   backgroundImage: string;
@@ -636,47 +639,237 @@ function svgDataImage(svg: string): string {
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
 }
 
-function maskSvg(
+function crc32(bytes: Uint8Array): number {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function adler32(bytes: Uint8Array): number {
+  let a = 1;
+  let b = 0;
+  for (const byte of bytes) {
+    a = (a + byte) % 65521;
+    b = (b + a) % 65521;
+  }
+  return ((b << 16) | a) >>> 0;
+}
+
+function uint32Bytes(value: number): Uint8Array {
+  return Uint8Array.of(
+    (value >>> 24) & 0xff,
+    (value >>> 16) & 0xff,
+    (value >>> 8) & 0xff,
+    value & 0xff,
+  );
+}
+
+function concatBytes(parts: readonly Uint8Array[]): Uint8Array {
+  const length = parts.reduce((sum, part) => sum + part.length, 0);
+  const joined = new Uint8Array(length);
+  let offset = 0;
+  for (const part of parts) {
+    joined.set(part, offset);
+    offset += part.length;
+  }
+  return joined;
+}
+
+function pngChunk(type: string, data: Uint8Array): Uint8Array {
+  const typeBytes = Uint8Array.from(
+    Array.from(type, (character) => character.charCodeAt(0)),
+  );
+  const body = concatBytes([typeBytes, data]);
+  return concatBytes([
+    uint32Bytes(data.length),
+    body,
+    uint32Bytes(crc32(body)),
+  ]);
+}
+
+function storedZlib(bytes: Uint8Array): Uint8Array {
+  const blocks: Uint8Array[] = [Uint8Array.of(0x78, 0x01)];
+  for (let offset = 0; offset < bytes.length;) {
+    const length = Math.min(0xffff, bytes.length - offset);
+    const final = offset + length === bytes.length;
+    blocks.push(Uint8Array.of(
+      final ? 0x01 : 0x00,
+      length & 0xff,
+      (length >>> 8) & 0xff,
+      (~length) & 0xff,
+      ((~length) >>> 8) & 0xff,
+    ));
+    blocks.push(bytes.subarray(offset, offset + length));
+    offset += length;
+  }
+  blocks.push(uint32Bytes(adler32(bytes)));
+  return concatBytes(blocks);
+}
+
+const BASE64_ALPHABET =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+function base64Bytes(bytes: Uint8Array): string {
+  let encoded = "";
+  for (let index = 0; index < bytes.length; index += 3) {
+    const first = bytes[index] ?? 0;
+    const second = bytes[index + 1] ?? 0;
+    const third = bytes[index + 2] ?? 0;
+    const value = (first << 16) | (second << 8) | third;
+    encoded += BASE64_ALPHABET[(value >>> 18) & 63];
+    encoded += BASE64_ALPHABET[(value >>> 12) & 63];
+    encoded += index + 1 < bytes.length
+      ? BASE64_ALPHABET[(value >>> 6) & 63]
+      : "=";
+    encoded += index + 2 < bytes.length
+      ? BASE64_ALPHABET[value & 63]
+      : "=";
+  }
+  return encoded;
+}
+
+function rasterMaskAlpha(
+  mask: Uint8Array,
+  side: number,
+  recipe: AppMaterialRecipe,
+  shape: "circle" | "square",
+): Float64Array {
+  const rasterSide = side * RASTER_TILE_SCALE;
+  const sampleScale = RASTER_TILE_SCALE * RASTER_TILE_SUPERSAMPLE;
+  const sampleSide = side * sampleScale;
+  const coverage = new Uint16Array(sampleSide * sampleSide);
+  const dot = recipe.dotSize / recipe.cellSize;
+  const halfDot = dot / 2;
+  const wrap = (value: number) => (
+    (value % sampleSide + sampleSide) % sampleSide
+  );
+  for (let index = 0; index < mask.length; index += 1) {
+    if (!mask[index]) continue;
+    const centerX = (index % side) + 0.5;
+    const centerY = Math.floor(index / side) + 0.5;
+    const minX = Math.ceil((centerX - halfDot) * sampleScale - 0.5);
+    const maxX = Math.floor((centerX + halfDot) * sampleScale - 0.5);
+    const minY = Math.ceil((centerY - halfDot) * sampleScale - 0.5);
+    const maxY = Math.floor((centerY + halfDot) * sampleScale - 0.5);
+    for (let sampleY = minY; sampleY <= maxY; sampleY += 1) {
+      const y = (sampleY + 0.5) / sampleScale;
+      const dy = y - centerY;
+      for (let sampleX = minX; sampleX <= maxX; sampleX += 1) {
+        const x = (sampleX + 0.5) / sampleScale;
+        const dx = x - centerX;
+        if (
+          shape === "circle"
+          && dx * dx + dy * dy > halfDot * halfDot
+        ) {
+          continue;
+        }
+        coverage[wrap(sampleY) * sampleSide + wrap(sampleX)] += 1;
+      }
+    }
+  }
+  const baseAlpha =
+    colorChannels(recipe.patternColor)[3] * (recipe.opacity / 100);
+  const alpha = new Float64Array(rasterSide * rasterSide);
+  const samplesPerPixel =
+    RASTER_TILE_SUPERSAMPLE * RASTER_TILE_SUPERSAMPLE;
+  for (let y = 0; y < rasterSide; y += 1) {
+    for (let x = 0; x < rasterSide; x += 1) {
+      let sum = 0;
+      for (
+        let sampleY = 0;
+        sampleY < RASTER_TILE_SUPERSAMPLE;
+        sampleY += 1
+      ) {
+        for (
+          let sampleX = 0;
+          sampleX < RASTER_TILE_SUPERSAMPLE;
+          sampleX += 1
+        ) {
+          const count = coverage[
+            (y * RASTER_TILE_SUPERSAMPLE + sampleY) * sampleSide
+              + x * RASTER_TILE_SUPERSAMPLE
+              + sampleX
+          ];
+          sum += count === 0 ? 0 : 1 - (1 - baseAlpha) ** count;
+        }
+      }
+      alpha[y * rasterSide + x] = sum / samplesPerPixel;
+    }
+  }
+  return alpha;
+}
+
+function indexedPng(
+  width: number,
+  height: number,
+  rgb: readonly [number, number, number],
+  alpha: Float64Array,
+): Uint8Array {
+  const maximumAlpha = alpha.reduce(
+    (maximum, value) => Math.max(maximum, value),
+    0,
+  );
+  const palette = new Uint8Array(PNG_PALETTE_SIZE * 3);
+  const transparency = new Uint8Array(PNG_PALETTE_SIZE);
+  for (let index = 0; index < PNG_PALETTE_SIZE; index += 1) {
+    palette[index * 3] = rgb[0];
+    palette[index * 3 + 1] = rgb[1];
+    palette[index * 3 + 2] = rgb[2];
+    transparency[index] = Math.round(
+      maximumAlpha * 255 * index / (PNG_PALETTE_SIZE - 1),
+    );
+  }
+  const rowBytes = Math.ceil(width / 2);
+  const scanlines = new Uint8Array((rowBytes + 1) * height);
+  for (let y = 0; y < height; y += 1) {
+    const rowOffset = y * (rowBytes + 1) + 1;
+    for (let x = 0; x < width; x += 1) {
+      const value = maximumAlpha <= 0
+        ? 0
+        : Math.round(
+            alpha[y * width + x]
+              / maximumAlpha
+              * (PNG_PALETTE_SIZE - 1),
+          );
+      const byteOffset = rowOffset + Math.floor(x / 2);
+      scanlines[byteOffset] |= x % 2 === 0 ? value << 4 : value;
+    }
+  }
+  const ihdr = concatBytes([
+    uint32Bytes(width),
+    uint32Bytes(height),
+    Uint8Array.of(4, 3, 0, 0, 0),
+  ]);
+  return concatBytes([
+    Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10),
+    pngChunk("IHDR", ihdr),
+    pngChunk("PLTE", palette),
+    pngChunk("tRNS", transparency),
+    pngChunk("IDAT", storedZlib(scanlines)),
+    pngChunk("IEND", new Uint8Array()),
+  ]);
+}
+
+function maskPng(
   mask: Uint8Array,
   side: number,
   recipe: AppMaterialRecipe,
   shape: "circle" | "square",
 ): string {
-  const dot = recipe.dotSize / recipe.cellSize;
-  const inset = (1 - dot) / 2;
-  const opacity =
-    colorChannels(recipe.patternColor)[3] * (recipe.opacity / 100);
-  const elements: string[] = [];
-  for (let index = 0; index < mask.length; index += 1) {
-    if (!mask[index]) continue;
-    const x = index % side;
-    const y = Math.floor(index / side);
-    if (shape === "circle") {
-      elements.push(
-        `<circle cx="${formatNumber(x + 0.5)}" cy="${formatNumber(
-          y + 0.5,
-        )}" r="${formatNumber(dot / 2)}"/>`,
-      );
-    } else {
-      elements.push(
-        `<rect x="${formatNumber(x + inset)}" y="${formatNumber(
-          y + inset,
-        )}" width="${formatNumber(dot)}" height="${formatNumber(dot)}"/>`,
-      );
-    }
-  }
-  // Raster rank tiles stay toroidal. Rotating a finite SVG group clips its
-  // corners and creates repeat seams, so angle is intentionally reserved for
-  // the directional gradient screens compiled by lineTextureTile().
-  return [
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${side} ${side}">`,
-    `<g fill="${colorHex(recipe.patternColor)}" fill-opacity="${formatNumber(
-      opacity,
-      6,
-    )}">`,
-    elements.join(""),
-    "</g></svg>",
-  ].join("");
+  const rasterSide = side * RASTER_TILE_SCALE;
+  const channels = colorChannels(recipe.patternColor);
+  const png = indexedPng(
+    rasterSide,
+    rasterSide,
+    [channels[0], channels[1], channels[2]],
+    rasterMaskAlpha(mask, side, recipe, shape),
+  );
+  return `url("data:image/png;base64,${base64Bytes(png)}")`;
 }
 
 function paperSvg(recipe: AppMaterialRecipe): string {
@@ -743,7 +936,10 @@ function rasterTile(
   shape: "circle" | "square",
 ): TextureTile {
   return Object.freeze({
-    backgroundImage: svgDataImage(maskSvg(mask, side, recipe, shape)),
+    // WKWebView repeatedly re-composited the former hundreds-of-vector-nodes
+    // SVG tile while retained surfaces changed. A small deterministic indexed
+    // PNG keeps the same seeded screen and alpha recipe as one bitmap layer.
+    backgroundImage: maskPng(mask, side, recipe, shape),
     backgroundSize: `${formatNumber(
       side * recipe.cellSize,
     )}px ${formatNumber(side * recipe.cellSize)}px`,
