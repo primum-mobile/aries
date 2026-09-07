@@ -1,4 +1,5 @@
 {
+  "optmenu.zodiacalDirectionsUniform": "Zodiákus direkciók (egységes ív)",
   "calendar.close": "Naptár bezárása",
   "calendar.allDay": "Egész nap",
   "calendar.cancel": "Mégse",
@@ -1667,6 +1668,7 @@
   "chartmenu.zodiacInnermost": "Állatöv belül",
   "chartmenu.zodiacOutermost": "Állatöv kívül",
   "settings.chartRingZodiac": "Állatöv helye",
+  "settings.close": "Bezárás",
   "settings.multiwheelOpenAtThree": "Többkörös nézet automatikus megnyitása három képletnél",
   "settings.comparisonRings": "Összehasonlító gyűrűk",
   "textExport.aliasNames": "Elnevezések",

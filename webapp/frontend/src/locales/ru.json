@@ -1,4 +1,5 @@
 {
+  "optmenu.zodiacalDirectionsUniform": "Зодиакальные дирекции (равномерная дуга)",
   "calendar.close": "Закрыть календарь",
   "calendar.allDay": "Весь день",
   "calendar.cancel": "Отмена",
@@ -1667,6 +1668,7 @@
   "chartmenu.zodiacInnermost": "Зодиак внутри",
   "chartmenu.zodiacOutermost": "Зодиак снаружи",
   "settings.chartRingZodiac": "Положение зодиака",
+  "settings.close": "Закрыть",
   "settings.multiwheelOpenAtThree": "Автоматически открывать мультиколесо при трёх картах",
   "settings.comparisonRings": "Кольца сравнения",
   "textExport.aliasNames": "Текстовые названия",

@@ -271,6 +271,7 @@ export function TransitSearchView(props: TransitSearchViewProps) {
   const rangeExtendControllerRef = React.useRef<AbortController | null>(null);
   const rangeExtendInFlightRef = React.useRef(false);
   const rangeStreamRef = React.useRef<SearchRangeStream | null>(initialCache?.rangeStream ?? null);
+  const formRef = React.useRef<SearchForm | null>(initialCache?.form ?? null);
   const rowsRef = React.useRef<TransitSearchRow[]>(initialCache?.rows ?? []);
   const [edgeCheckNonce, setEdgeCheckNonce] = React.useState(0);
   const currentSearchSessionRef = React.useRef<string | null>(null);
@@ -294,6 +295,9 @@ export function TransitSearchView(props: TransitSearchViewProps) {
     catalogRef.current = catalog;
   }, [catalog]);
   React.useEffect(() => {
+    formRef.current = form;
+  }, [form]);
+  React.useEffect(() => {
     rangeStreamRef.current = rangeStream;
   }, [rangeStream]);
   React.useEffect(() => {
@@ -301,6 +305,7 @@ export function TransitSearchView(props: TransitSearchViewProps) {
   }, [rows]);
   React.useEffect(() => {
     if (!catalog || !form) return;
+    if (rangeStream && !rangeStream.coverageTo) return;
     rememberSearchState({ optionsSeq, catalog, form, rows, summary, timeDisplay, rangeStream });
   }, [catalog, form, optionsSeq, rangeStream, rememberSearchState, rows, summary, timeDisplay]);
 
@@ -403,6 +408,7 @@ export function TransitSearchView(props: TransitSearchViewProps) {
           throw new Error(result.error);
         }
         if (result.rows.length === 0 && !result.cursor && !result.complete) return;
+        if (!swappedRangeRows && !searchCursorPayloadReadyForSwap(result)) return;
         const progressKey = [
           result.phase,
           result.rows.length,
@@ -451,7 +457,7 @@ export function TransitSearchView(props: TransitSearchViewProps) {
             searchRequestSeqRef.current === requestSeq ? stream : current
           ));
         });
-        if (nextRows.length > 0 && !swappedRangeRows) {
+        if (!swappedRangeRows) {
           swappedRangeRows = true;
           requestAnimationFrame(() => {
             const scroller = searchScrollerRef.current;
@@ -667,7 +673,16 @@ export function TransitSearchView(props: TransitSearchViewProps) {
 
   const refreshRetainedSearch = React.useCallback(
     (activeForm: SearchForm, options?: { persistSettings?: boolean }) => {
-      const sourceForm = rangeStreamRef.current?.queryForm ?? null;
+      const currentStream = rangeStreamRef.current;
+      const sourceForm = currentStream?.queryForm ?? null;
+      if (sourceForm && currentStream && retainedSearchNeedsRangeReplacement(currentStream, activeForm)) {
+        if (options?.persistSettings ?? true) saveSettings(activeForm);
+        executeSearch(retainedSearchSourceForm(activeForm), {
+          persistSettings: false,
+          displayForm: activeForm,
+        });
+        return;
+      }
       const plan = retainedSearchDeltaPlan(sourceForm, activeForm);
       if (plan && plan.deltaForms.length === 0 && plan.rangeForms.length === 0) {
         if (options?.persistSettings ?? true) saveSettings(activeForm);
@@ -712,6 +727,8 @@ export function TransitSearchView(props: TransitSearchViewProps) {
       setError(null);
       if (cached) {
         catalogRef.current = cached.catalog;
+        formRef.current = cached.form;
+        rangeStreamRef.current = cached.rangeStream ?? null;
         setCatalog(cached.catalog);
         setForm(cached.form);
         setRows(cached.rows);
@@ -720,6 +737,8 @@ export function TransitSearchView(props: TransitSearchViewProps) {
         const cachedTimeDisplay = cached.timeDisplay ?? cached.catalog.timeDisplay ?? null;
         setTimeDisplay(cachedTimeDisplay);
       } else {
+        formRef.current = null;
+        rangeStreamRef.current = null;
         setRows([]);
         setRangeStream(null);
         setTimeDisplay(null);
@@ -769,26 +788,36 @@ export function TransitSearchView(props: TransitSearchViewProps) {
         setCatalog(data);
         setTimeDisplay(cached?.timeDisplay ?? data.timeDisplay ?? null);
         setCatalogOptionsSeq(optionsSeq);
-        setForm((prev) => {
-          const sameCatalogContext = lastCatalogContextKeyRef.current === catalogContextKey;
-          lastCatalogContextKeyRef.current = catalogContextKey;
-          return sameCatalogContext && prev ? preserveCatalogSelections(defaults, prev, data) : defaults;
-        });
+        const sameCatalogContext = lastCatalogContextKeyRef.current === catalogContextKey;
+        lastCatalogContextKeyRef.current = catalogContextKey;
+        const previousForm = formRef.current;
+        const retainedForm = (cached || sameCatalogContext) && previousForm
+          ? preserveCatalogSelections(defaults, previousForm, data)
+          : defaults;
+        const resolvedForm = data.initialSignificatorId
+          ? {
+              ...retainedForm,
+              techniques: defaults.techniques,
+              significatorIds: defaults.significatorIds,
+            }
+          : retainedForm;
+        formRef.current = resolvedForm;
+        setForm(resolvedForm);
         setRangeDraft({
           offsetMonths: data.defaults.defaultOffsetMonths,
           rangeMonths: data.defaults.defaultRangeMonths,
           lifetimeYears: data.defaults.lifetimeYears,
         });
-        if (contextMode && data.initialSignificatorId && canRunSearch(defaults)) {
+        if (contextMode && data.initialSignificatorId && canRunSearch(resolvedForm)) {
           lastAutoRequestKeyRef.current = buildAutoRequestKey({
             contextMode,
             significatorId,
             chartRole,
             customPointsKey,
             optionsSeq,
-            form: defaults,
+            form: resolvedForm,
           });
-          refreshRetainedSearch(defaults, { persistSettings: false });
+          refreshRetainedSearch(resolvedForm, { persistSettings: false });
         }
       })
       .catch((err) => {
@@ -939,7 +968,8 @@ export function TransitSearchView(props: TransitSearchViewProps) {
     const next = { ...form, [key]: ids };
     prepareObjectFilterChange();
     setForm(next);
-  }, [form, prepareObjectFilterChange]);
+    saveSettings(next);
+  }, [form, prepareObjectFilterChange, saveSettings]);
 
   const toggleSelected = React.useCallback((key: SelectionKey, id: string, checked: boolean) => {
     if (!form) return;
@@ -949,7 +979,8 @@ export function TransitSearchView(props: TransitSearchViewProps) {
     const next = { ...form, [key]: Array.from(current) };
     prepareObjectFilterChange();
     setForm(next);
-  }, [form, prepareObjectFilterChange]);
+    saveSettings(next);
+  }, [form, prepareObjectFilterChange, saveSettings]);
 
   const togglePromittor = React.useCallback((id: string, checked: boolean) => {
     if (!form) return;
@@ -962,7 +993,8 @@ export function TransitSearchView(props: TransitSearchViewProps) {
     };
     prepareObjectFilterChange();
     setForm(next);
-  }, [form, prepareObjectFilterChange]);
+    saveSettings(next);
+  }, [form, prepareObjectFilterChange, saveSettings]);
 
   const toggleFixedStarSignificators = React.useCallback(() => {
     if (!catalog || !form) return;
@@ -976,7 +1008,8 @@ export function TransitSearchView(props: TransitSearchViewProps) {
     const next = { ...form, significatorIds: [...selected] };
     prepareObjectFilterChange();
     setForm(next);
-  }, [catalog, form, prepareObjectFilterChange]);
+    saveSettings(next);
+  }, [catalog, form, prepareObjectFilterChange, saveSettings]);
 
   const changePartFilter = React.useCallback((partFilter: string) => {
     if (!form) return;
@@ -1013,14 +1046,20 @@ export function TransitSearchView(props: TransitSearchViewProps) {
   );
 
   const changeIncludeSignChanges = React.useCallback((includeSignChanges: boolean) => {
+    if (!form) return;
+    const next = { ...form, includeSignChanges };
     prepareObjectFilterChange();
-    updateForm({ includeSignChanges });
-  }, [prepareObjectFilterChange, updateForm]);
+    setForm(next);
+    saveSettings(next);
+  }, [form, prepareObjectFilterChange, saveSettings]);
 
   const changeLunationOrb = React.useCallback((lunationOrb: number) => {
+    if (!form) return;
+    const next = { ...form, lunationOrb };
     prepareObjectFilterChange();
-    updateForm({ lunationOrb });
-  }, [prepareObjectFilterChange, updateForm]);
+    setForm(next);
+    saveSettings(next);
+  }, [form, prepareObjectFilterChange, saveSettings]);
 
   const runDateRangeSearch = React.useCallback(
     (fromDate: string, toDate: string) => {
@@ -1121,10 +1160,9 @@ export function TransitSearchView(props: TransitSearchViewProps) {
       ...form,
       fromDate: catalog.defaults.fromDate,
       toDate: catalog.defaults.toDate,
-      techniques: catalog.presets.techniques.standard,
       promittorIds: catalog.presets.promittors.standard,
       significatorIds: catalog.presets.significators.standard,
-      aspects: catalog.presets.aspects.standard,
+      aspects: catalog.presets.aspects.major,
       includeSignChanges: false,
       promittorMotion: "",
       significatorMotion: "",
@@ -1134,7 +1172,8 @@ export function TransitSearchView(props: TransitSearchViewProps) {
     };
     prepareObjectFilterChange();
     setForm(next);
-  }, [catalog, form, prepareObjectFilterChange]);
+    saveSettings(next);
+  }, [catalog, form, prepareObjectFilterChange, saveSettings]);
 
   const currentYear = React.useMemo(() => {
     const value = Number((form?.fromDate ?? "").slice(0, 4));
@@ -3300,6 +3339,24 @@ function compareSearchStreamRows(left: TransitSearchRow, right: TransitSearchRow
   const rightJd = right.eventJd ?? Number.POSITIVE_INFINITY;
   if (leftJd !== rightJd) return leftJd - rightJd;
   return searchStreamRowKey(left).localeCompare(searchStreamRowKey(right));
+}
+
+function searchCursorPayloadReadyForSwap(payload: TransitSearchProgressResult): boolean {
+  if (payload.cancelled || payload.error) return false;
+  return (
+    payload.complete
+    || payload.cursor?.satisfied === true
+    || payload.cursor?.exhausted === true
+  );
+}
+
+function retainedSearchNeedsRangeReplacement(
+  stream: SearchRangeStream,
+  activeForm: SearchForm,
+): boolean {
+  if (!stream.coverageFrom || !stream.coverageTo) return true;
+  if (activeForm.fromDate === stream.rangeFrom) return false;
+  return activeForm.fromDate < stream.coverageFrom || activeForm.fromDate > stream.coverageTo;
 }
 
 function searchViewportRowCount(scroller: HTMLDivElement | null, rowHeight: number): number {

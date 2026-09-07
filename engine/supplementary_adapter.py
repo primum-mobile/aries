@@ -704,6 +704,15 @@ class SolarArcSupplementaryAdapter(BaseSupplementaryAdapter):
 			getattr(frame.options, 'progressed_angle_method', posfordate.TRUE_SOLAR_ARC_LON)
 		)
 
+	def _default_solar_arc_angle_mode(self, frame):
+		return posfordate.solar_arc_angle_mode(
+			getattr(
+				frame.options,
+				'solar_arc_angle_mode',
+				posfordate.SOLAR_ARC_ANGLES_PROGRESSED,
+			)
+		)
+
 	def normalize_retained_state(self, frame, retained, current_chart=None):
 		state = dict(retained or {})
 		state['feature_kind'] = 'solar_arc'
@@ -715,6 +724,18 @@ class SolarArcSupplementaryAdapter(BaseSupplementaryAdapter):
 				state['angle_method'] = self._default_angle_method(frame)
 		else:
 			state['angle_method'] = posfordate.progression_angle_method(state.get('angle_method'))
+		if state.get('solar_arc_angle_mode') is None:
+			if current_chart is not None:
+				state['solar_arc_angle_mode'] = posfordate.solar_arc_chart_angle_mode(
+					current_chart,
+					default=self._default_solar_arc_angle_mode(frame),
+				)
+			else:
+				state['solar_arc_angle_mode'] = self._default_solar_arc_angle_mode(frame)
+		else:
+			state['solar_arc_angle_mode'] = posfordate.solar_arc_angle_mode(
+				state.get('solar_arc_angle_mode')
+			)
 		state.pop('day_type', None)
 		return state
 
@@ -737,6 +758,9 @@ class SolarArcSupplementaryAdapter(BaseSupplementaryAdapter):
 		binding.feature_kind = 'solar_arc'
 		retained = self.normalize_retained_state(frame, binding.retained_state, current_chart=current_chart)
 		angle_method = retained.get('angle_method', self._default_angle_method(frame))
+		solar_arc_angles = retained.get(
+			'solar_arc_angle_mode', self._default_solar_arc_angle_mode(frame)
+		)
 		target_source_dt = driver_state.source_datetime
 		target_dt = (
 			target_source_dt.year,
@@ -753,8 +777,10 @@ class SolarArcSupplementaryAdapter(BaseSupplementaryAdapter):
 			age,
 			method=posfordate.SOLAR_ARC,
 			angle_method=angle_method,
+			solar_arc_angles=solar_arc_angles,
 		)
 		retained['angle_method'] = angle_method
+		retained['solar_arc_angle_mode'] = solar_arc_angles
 		retained['age'] = age
 		binding.retained_state = retained
 		return SupplementaryBuildResult(solar_arc_chart, target_dt, binding)

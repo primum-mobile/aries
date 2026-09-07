@@ -11,9 +11,12 @@ universe used by the explicit tri/quad multi-wheel participant selection.
 
 The document tree supplies the branch-wide eligible universe and its stable
 inner-to-outer order. The multi-wheel mode then stores an explicit subset of
-three or four document IDs. The root is selectable like every child and the
-active tab need not be a participant. Closing or reparenting a document is
-therefore reconciled against the same live universe before the next paint.
+up to four document IDs. Three/four participants use the independent
+multi-wheel painter; an explicit pair uses the established biwheel painter
+without replacing either participant with its parent. The root is selectable
+like every child and the active tab need not be a participant. Closing or
+reparenting a document is therefore reconciled against the same live universe
+before the next paint.
 
 The older root/middle/active helpers remain below for the ordinary two-wheel
 contract and compatibility tests; they are not the tri/quad selection owner.

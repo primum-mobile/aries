@@ -1261,6 +1261,7 @@
   "optmenu.wholesignProfections": "Ganzzeichen-Profektionen",
   "optmenu.withSymbols": "Mit Symbolen",
   "optmenu.zodiacalProfections": "Zodiakale Profektionen",
+  "optmenu.zodiacalDirectionsUniform": "Zodiakale Direktionen (gleichmäßiger Bogen)",
   "palette.actionUnavailable": "{label} nicht verfügbar",
   "palette.ambientInput": "Schnelleingabe",
   "palette.ambientPlaceholder": "Datum, Uhrzeit, Ort oder Horoskopname",

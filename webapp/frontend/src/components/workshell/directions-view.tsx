@@ -6,7 +6,7 @@
 import * as React from "react";
 import { flushSync } from "react-dom";
 
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Settings as SettingsIcon, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +22,11 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
 import {
   Table,
   TableBody,
@@ -89,10 +94,14 @@ import {
   semanticChartColor,
 } from "@/lib/theme/semantic-color";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
+import {
+  useFrameLayoutStore,
+  type PrimaryDirectionsSettingsDock,
+} from "@/stores/frame-layout-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { beginWorkspaceSnapshotCommand } from "@/stores/workspace-command-snapshot-gate";
 
-import { PrimDirSettingsSheet } from "./primdir-settings";
+import { PrimDirSettingsBody } from "./primdir-settings";
 import { ListSegmentedControl } from "./list-controls";
 import {
   buildStableRowKeys,
@@ -376,6 +385,11 @@ type DirectionsTopTab = "primary" | "secondary";
 type PrimaryDirectionsSurface = "directions" | "circumambulation";
 type SecondaryMethod = "secondary" | "minor" | "tertiary";
 type SecondaryDirectionMode = "direct" | "converse" | "both";
+type PrimarySettingsPaneProps = {
+  settingsOpen: boolean;
+  settingsDock: PrimaryDirectionsSettingsDock;
+  onSettingsOpenChange: (open: boolean) => void;
+};
 
 const PRIMARY_SETTINGS_PLANET_GLYPHS = PLANET_GLYPH_SEQUENCE;
 const PRIMARY_DIRECTIONS_CACHE = "directions:primary";
@@ -388,6 +402,110 @@ const RECTIFICATION_STEP_OPTIONS = [
   { label: "5m", seconds: 300 },
   { label: "10m", seconds: 600 },
 ] as const;
+
+function PrimarySettingsControl({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const t = useT();
+  return (
+    <Button
+      type="button"
+      size="icon-xs"
+      variant="ghost"
+      aria-pressed={open}
+      aria-label={t("primdir.settingsTitle")}
+      title={t("primdir.settingsTitle")}
+      onClick={() => onOpenChange(!open)}
+    >
+      <SettingsIcon className="size-[var(--aries-control-icon-size)]" />
+    </Button>
+  );
+}
+
+function PrimarySettingsDockLayout({
+  children,
+  open,
+  dock,
+  settings,
+  planetGlyphs,
+  meanNode,
+  onClose,
+  onPatch,
+}: {
+  children: React.ReactNode;
+  open: boolean;
+  dock: PrimaryDirectionsSettingsDock;
+  settings: OptionsPrimaryDirections | null;
+  planetGlyphs: readonly string[];
+  meanNode: boolean | null;
+  onClose: () => void;
+  onPatch: (patch: Partial<OptionsPrimaryDirections>, optionsPatch?: OptionsPatch) => void;
+}) {
+  const t = useT();
+  return (
+    <ResizablePanelGroup
+      autoSaveId={`aries.primary-directions-results-vs-settings-${dock}`}
+      direction={dock === "right" ? "horizontal" : "vertical"}
+      className="min-h-0 min-w-0"
+    >
+      <ResizablePanel
+        id="primary-directions-results"
+        order={1}
+        defaultSize={60}
+        minSize={20}
+        className="min-h-0 min-w-0"
+      >
+        {children}
+      </ResizablePanel>
+      {open ? (
+        <>
+          <ResizableHandle />
+          <ResizablePanel
+            id={`primary-directions-settings-${dock}`}
+            order={2}
+            defaultSize={40}
+            minSize={dock === "right" ? 30 : 20}
+            className="min-h-0 min-w-0"
+          >
+            <div data-aries-surface="panel" className="flex h-full min-h-0 flex-col bg-background">
+              <div className="flex shrink-0 items-center justify-between px-[var(--aries-pane-header-compact-padding-x)] py-[var(--aries-control-gap-compact)]">
+                <h2 className="aries-search-panel-heading text-xs">{t("primdir.settingsTitle")}</h2>
+                <Button
+                  type="button"
+                  size="icon-xs"
+                  variant="ghost"
+                  onClick={onClose}
+                  aria-label={t("settings.close")}
+                >
+                  <X className="size-[var(--aries-control-icon-size)]" />
+                </Button>
+              </div>
+              {settings == null ? (
+                <div className="min-h-0 flex-1 px-[var(--aries-pane-header-compact-padding-x)] pb-[var(--aries-pane-title-gap)] text-xs text-muted-foreground">
+                  {t("primdir.loading")}
+                </div>
+              ) : (
+                <PrimDirSettingsBody
+                  settings={settings}
+                  planetGlyphs={planetGlyphs}
+                  presetGlobalState={
+                    meanNode == null ? undefined : { planetsPoints: { meannode: meanNode } }
+                  }
+                  dock={dock}
+                  onPatch={onPatch}
+                />
+              )}
+            </div>
+          </ResizablePanel>
+        </>
+      ) : null}
+    </ResizablePanelGroup>
+  );
+}
 
 function primaryFallbackGlyph(pointId: number, glyph?: string | null): string | null {
   if (glyph) return glyph;
@@ -2260,6 +2378,8 @@ export function DirectionsView({
 }) {
   const t = useT();
   const rowHeight = useListRowHeight("symbolic");
+  const [settingsOpen, setSettingsOpen] = React.useState(false);
+  const settingsDock = useFrameLayoutStore((state) => state.primaryDirectionsSettingsDock);
   const [tab, setTab] = React.useState<DirectionsTopTab>(() => topTabFromInitial(initialTab));
   const [primarySurface, setPrimarySurface] = React.useState<PrimaryDirectionsSurface>(() =>
     primarySurfaceFromInitial(initialTab),
@@ -2349,6 +2469,9 @@ export function DirectionsView({
               lockTechnique ? undefined : () => setPrimarySurface("directions")
             }
             rowHeight={rowHeight}
+            settingsOpen={settingsOpen}
+            settingsDock={settingsDock}
+            onSettingsOpenChange={setSettingsOpen}
           />
         ) : (
           <PrimaryDirectionsPanel
@@ -2372,6 +2495,9 @@ export function DirectionsView({
               lockTechnique ? undefined : () => setPrimarySurface("circumambulation")
             }
             rowHeight={rowHeight}
+            settingsOpen={settingsOpen}
+            settingsDock={settingsDock}
+            onSettingsOpenChange={setSettingsOpen}
           />
         )}
       </TabsContent>
@@ -2416,6 +2542,9 @@ function PrimaryDirectionsPanel({
   onRectificationSettled,
   onShowCircumambulations,
   rowHeight,
+  settingsOpen,
+  settingsDock,
+  onSettingsOpenChange,
 }: {
   sourceName: string;
   source?: string;
@@ -2435,7 +2564,7 @@ function PrimaryDirectionsPanel({
   onRectificationSettled: () => void;
   onShowCircumambulations?: () => void;
   rowHeight: number;
-}) {
+} & PrimarySettingsPaneProps) {
   const t = useT();
   const rowHeightRef = React.useRef(rowHeight);
   React.useLayoutEffect(() => {
@@ -3009,7 +3138,16 @@ function PrimaryDirectionsPanel({
   }
 
   return (
-    <div className="relative flex flex-1 min-h-0 flex-col bg-background">
+    <PrimarySettingsDockLayout
+      open={settingsOpen}
+      dock={settingsDock}
+      settings={settings}
+      planetGlyphs={settingsPlanetGlyphs}
+      meanNode={settingsMeanNode}
+      onClose={() => onSettingsOpenChange(false)}
+      onPatch={onPatchSettings}
+    >
+      <div className="relative flex h-full min-h-0 flex-col bg-background">
       <div className={LIST_PANE_CLASSES.standardHeader}>
         <div className={LIST_PANE_CLASSES.titleRow}>
           <div className={LIST_PANE_CLASSES.titleGroup}>
@@ -3038,13 +3176,9 @@ function PrimaryDirectionsPanel({
                 {t("dirview.circum")}
               </Button>
             ) : null}
-            <PrimDirSettingsSheet
-              settings={settings}
-              planetGlyphs={settingsPlanetGlyphs}
-              presetGlobalState={
-                settingsMeanNode == null ? undefined : { planetsPoints: { meannode: settingsMeanNode } }
-              }
-              onPatch={onPatchSettings}
+            <PrimarySettingsControl
+              open={settingsOpen}
+              onOpenChange={onSettingsOpenChange}
             />
             <TextExportActions
               disabled={!rows.length}
@@ -3166,7 +3300,8 @@ function PrimaryDirectionsPanel({
           </Table>
         )}
       </div>
-    </div>
+      </div>
+    </PrimarySettingsDockLayout>
   );
 }
 
@@ -4739,6 +4874,9 @@ function CircumambulationPanel({
   onRectificationSettled,
   onShowPrimaryDirections,
   rowHeight,
+  settingsOpen,
+  settingsDock,
+  onSettingsOpenChange,
 }: {
   sourceName: string;
   source?: string;
@@ -4757,7 +4895,7 @@ function CircumambulationPanel({
   onRectificationSettled: () => void;
   onShowPrimaryDirections?: () => void;
   rowHeight: number;
-}) {
+} & PrimarySettingsPaneProps) {
   const t = useT();
   const rowHeightRef = React.useRef(rowHeight);
   React.useLayoutEffect(() => {
@@ -5469,7 +5607,16 @@ function CircumambulationPanel({
   );
 
   return (
-    <div className="relative flex flex-1 min-h-0 flex-col bg-background">
+    <PrimarySettingsDockLayout
+      open={settingsOpen}
+      dock={settingsDock}
+      settings={settings}
+      planetGlyphs={settingsPlanetGlyphs}
+      meanNode={settingsMeanNode}
+      onClose={() => onSettingsOpenChange(false)}
+      onPatch={onPatchSettings}
+    >
+      <div className="relative flex h-full min-h-0 flex-col bg-background">
       <div className={LIST_PANE_CLASSES.standardHeader}>
         <div className={LIST_PANE_CLASSES.titleRow}>
           <h2 className={LIST_PANE_CLASSES.title}>
@@ -5487,13 +5634,9 @@ function CircumambulationPanel({
                 {t("dirview.pdList")}
               </Button>
             ) : null}
-            <PrimDirSettingsSheet
-              settings={settings}
-              planetGlyphs={settingsPlanetGlyphs}
-              presetGlobalState={
-                settingsMeanNode == null ? undefined : { planetsPoints: { meannode: settingsMeanNode } }
-              }
-              onPatch={onPatchSettings}
+            <PrimarySettingsControl
+              open={settingsOpen}
+              onOpenChange={onSettingsOpenChange}
             />
             <TextExportActions
               disabled={!displayRows.length}
@@ -5671,7 +5814,8 @@ function CircumambulationPanel({
           </Table>
         )}
       </div>
-    </div>
+      </div>
+    </PrimarySettingsDockLayout>
   );
 }
 

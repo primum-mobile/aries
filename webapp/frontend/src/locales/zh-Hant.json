@@ -1,4 +1,5 @@
 {
+  "optmenu.zodiacalDirectionsUniform": "黃道向運（統一弧度）",
   "calendar.close": "關閉行事曆",
   "calendar.allDay": "全天",
   "calendar.cancel": "取消",
@@ -1667,6 +1668,7 @@
   "chartmenu.zodiacInnermost": "黃道帶在最內圈",
   "chartmenu.zodiacOutermost": "黃道帶在最外圈",
   "settings.chartRingZodiac": "黃道帶位置",
+  "settings.close": "關閉",
   "settings.multiwheelOpenAtThree": "三個星盤時自動開啟多輪盤",
   "settings.comparisonRings": "比較圓環",
   "textExport.aliasNames": "別名",

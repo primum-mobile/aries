@@ -1263,6 +1263,7 @@
   "optmenu.wholesignProfections": "Profecciones por signos enteros",
   "optmenu.withSymbols": "Con símbolos",
   "optmenu.zodiacalProfections": "Profecciones zodiacales",
+  "optmenu.zodiacalDirectionsUniform": "Direcciones zodiacales (arco uniforme)",
   "palette.actionUnavailable": "{label} no disponible",
   "palette.ambientInput": "Entrada ambiental",
   "palette.ambientPlaceholder": "Fecha, hora, lugar o nombre de la carta",

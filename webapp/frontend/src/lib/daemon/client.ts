@@ -4583,6 +4583,7 @@ export type OptionsQuickCharts = {
   aspectlist_prebirth_secondary_converse: boolean;
   at_reclick_behavior: string; // focus_only | focus_and_snap_now | new_tab
   progressed_angle_method: number; // posfordate.ANGLE_METHOD_NAMES key
+  solar_arc_angle_mode: "progressed" | "zodiacal";
   progression_day_type: number; // posfordate.PROGRESSION_DAY_TYPE_NAMES key
   harmonic_chart_mode: "harmonic" | "varga"; // default for newly opened division charts
   varga_drishti_mode: "off" | "parashari" | "jaimini";

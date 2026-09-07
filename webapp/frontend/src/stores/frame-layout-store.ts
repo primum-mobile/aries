@@ -59,6 +59,7 @@ export type RightPaneWidthPolicy = {
 };
 
 export type SearchFiltersDock = "right" | "bottom";
+export type PrimaryDirectionsSettingsDock = SearchFiltersDock;
 
 const RIGHT_PANE_WIDTH_POLICIES: Record<RightPaneModuleKind, RightPaneWidthPolicy> = {
   "hover-inspector": {
@@ -245,6 +246,7 @@ type FrameLayoutState = {
   notesPaneOpen: boolean;
   styleEditorOpen: boolean;
   searchFiltersDock: SearchFiltersDock;
+  primaryDirectionsSettingsDock: PrimaryDirectionsSettingsDock;
 
   setSidebarOpen: (open: boolean) => void;
   toggleSidebar: () => void;
@@ -261,6 +263,7 @@ type FrameLayoutState = {
   setStyleEditorOpen: (open: boolean) => void;
   toggleStyleEditor: () => void;
   setSearchFiltersDock: (dock: SearchFiltersDock) => void;
+  setPrimaryDirectionsSettingsDock: (dock: PrimaryDirectionsSettingsDock) => void;
 };
 
 function persistedBool(value: unknown, fallback: boolean): boolean {
@@ -271,7 +274,7 @@ function persistedNumber(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
-function persistedSearchFiltersDock(value: unknown, fallback: SearchFiltersDock): SearchFiltersDock {
+function persistedPaneDock(value: unknown, fallback: SearchFiltersDock): SearchFiltersDock {
   return value === "right" || value === "bottom" ? value : fallback;
 }
 
@@ -287,6 +290,7 @@ export const useFrameLayoutStore = create<FrameLayoutState>()(
       notesPaneOpen: false,
       styleEditorOpen: false,
       searchFiltersDock: "bottom",
+      primaryDirectionsSettingsDock: "bottom",
 
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
@@ -308,6 +312,7 @@ export const useFrameLayoutStore = create<FrameLayoutState>()(
       toggleStyleEditor: () =>
         set((state) => ({ styleEditorOpen: !state.styleEditorOpen })),
       setSearchFiltersDock: (dock) => set({ searchFiltersDock: dock }),
+      setPrimaryDirectionsSettingsDock: (dock) => set({ primaryDirectionsSettingsDock: dock }),
     }),
     {
       name: "aries.frame-layout",
@@ -318,6 +323,7 @@ export const useFrameLayoutStore = create<FrameLayoutState>()(
         inspectorOpen: state.inspectorOpen,
         notesPaneOpen: state.notesPaneOpen,
         searchFiltersDock: state.searchFiltersDock,
+        primaryDirectionsSettingsDock: state.primaryDirectionsSettingsDock,
       }),
       merge: (persisted, current) => {
         const saved = (persisted ?? {}) as Partial<FrameLayoutState>;
@@ -332,9 +338,13 @@ export const useFrameLayoutStore = create<FrameLayoutState>()(
           ),
           inspectorOpen: persistedBool(saved.inspectorOpen, current.inspectorOpen),
           notesPaneOpen: persistedBool(saved.notesPaneOpen, current.notesPaneOpen),
-          searchFiltersDock: persistedSearchFiltersDock(
+          searchFiltersDock: persistedPaneDock(
             saved.searchFiltersDock,
             current.searchFiltersDock,
+          ),
+          primaryDirectionsSettingsDock: persistedPaneDock(
+            saved.primaryDirectionsSettingsDock,
+            current.primaryDirectionsSettingsDock,
           ),
         };
       },

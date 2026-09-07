@@ -5,19 +5,12 @@
 
 import * as React from "react";
 
-import { Check, Settings as SettingsIcon } from "lucide-react";
+import { Check } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
 import {
   ASPECT_GLYPHS,
   FORTUNE_GLYPH,
@@ -561,7 +554,7 @@ function PlainCheck({
   );
 }
 
-function RadioRow<T extends number>({
+function RadioRow<T extends string | number>({
   options,
   value,
   disabled,
@@ -712,55 +705,6 @@ function CustomerPointBlock({
         />
       </div>
     </div>
-  );
-}
-
-export function PrimDirSettingsSheet({
-  settings,
-  planetGlyphs = PD_PLANET_GLYPHS,
-  presetGlobalState,
-  onPatch,
-}: {
-  settings: OptionsPrimaryDirections | null;
-  planetGlyphs?: readonly string[];
-  presetGlobalState?: PresetGlobalState;
-  onPatch: (patch: Patch, optionsPatch?: OptionsPatch) => void;
-}) {
-  const t = useT();
-  return (
-    <Sheet>
-      <SheetTrigger
-        render={
-          <Button
-            type="button"
-            size="xs"
-            variant="ghost"
-            className="h-6 px-1.5 text-xs"
-            aria-label={t("primdir.settingsTitle")}
-            title={t("primdir.settingsTitle")}
-          >
-            <SettingsIcon className="h-3.5 w-3.5" aria-hidden="true" />
-          </Button>
-        }
-      />
-      <SheetContent side="right" size="lg" className="p-0">
-        <SheetHeader className="border-b px-4 py-3">
-          <SheetTitle className="text-sm">{t("primdir.settingsTitle")}</SheetTitle>
-        </SheetHeader>
-        <ScrollArea className="h-[calc(100vh-3.25rem)]">
-          {settings == null ? (
-            <div className="px-4 py-6 text-xs text-muted-foreground">{t("primdir.loading")}</div>
-          ) : (
-            <PrimDirSettingsBody
-              settings={settings}
-              planetGlyphs={planetGlyphs}
-              presetGlobalState={presetGlobalState}
-              onPatch={onPatch}
-            />
-          )}
-        </ScrollArea>
-      </SheetContent>
-    </Sheet>
   );
 }
 
@@ -945,16 +889,23 @@ export function PrimDirSettingsBody({
   settings: s,
   planetGlyphs,
   presetGlobalState,
+  dock = "right",
+  paneDock,
+  onPaneDockChange,
   onPatch,
 }: {
   settings: OptionsPrimaryDirections;
   planetGlyphs: readonly string[];
   presetGlobalState?: PresetGlobalState;
+  dock?: "right" | "bottom";
+  paneDock?: "right" | "bottom";
+  onPaneDockChange?: (dock: "right" | "bottom") => void;
   onPatch: (patch: Patch, optionsPatch?: OptionsPatch) => void;
 }) {
   const t = useT();
   const isPlacidianSemiarc = s.primarydir === 0;
   const zodiacalActive = s.subprimarydir === 1 || s.subprimarydir === 2; // Zodiacal|Both
+  const bottomWideSectionClass = dock === "bottom" ? "col-span-2" : undefined;
   // RaptParallel only on Placidian Semiarc (onPlacidian:542).
   const raptEnabled = isPlacidianSemiarc;
 
@@ -1007,7 +958,30 @@ export function PrimDirSettingsBody({
   };
 
   return (
-    <div className="flex flex-col gap-3 px-4 py-3">
+    <div
+      className={cn(
+        "min-h-0 w-full flex-1 gap-[var(--aries-pane-content-padding)] overflow-auto px-[var(--aries-pane-header-compact-padding-x)] pb-[var(--aries-pane-title-gap)]",
+        dock === "bottom"
+          ? "grid grid-cols-2 items-start [&>[data-slot=separator]]:hidden"
+          : "flex flex-col",
+      )}
+    >
+      {paneDock && onPaneDockChange ? (
+        <div>
+          <SectionLabel>{t("primdir.settingsTitle")}</SectionLabel>
+          <RadioRow
+            options={[
+              { value: "right", label: t("search.filtersPaneRight") },
+              { value: "bottom", label: t("search.filtersPaneBottom") },
+            ] as const}
+            value={paneDock}
+            onChange={onPaneDockChange}
+          />
+        </div>
+      ) : null}
+
+      {paneDock && onPaneDockChange ? <Separator /> : null}
+
       <EnginePresetPicker settings={s} presetGlobalState={presetGlobalState} onPatch={onPatch} />
 
       {/* Keys block */}
@@ -1104,7 +1078,7 @@ export function PrimDirSettingsBody({
       <Separator />
 
       {/* Promissors grid */}
-      <div>
+      <div className={bottomWideSectionClass}>
         <div className="flex items-center justify-between">
           <SectionLabel>{t("primdir.promissors")}</SectionLabel>
           <div className="flex gap-1">
@@ -1213,7 +1187,7 @@ export function PrimDirSettingsBody({
       <Separator />
 
       {/* Aspects grid */}
-      <div>
+      <div className={bottomWideSectionClass}>
         <div className="flex items-center justify-between">
           <SectionLabel>{t("primdir.aspects")}</SectionLabel>
           <div className="flex gap-1">
@@ -1244,7 +1218,7 @@ export function PrimDirSettingsBody({
       <Separator />
 
       {/* Significators grid */}
-      <div>
+      <div className={bottomWideSectionClass}>
         <div className="flex items-center justify-between">
           <SectionLabel>{t("primdir.significators")}</SectionLabel>
           <div className="flex gap-1">

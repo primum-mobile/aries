@@ -57,6 +57,7 @@ import { useAstrocartMapUrl } from "@/hooks/use-astrocart-map-url";
 import { downloadTextContent } from "./text-export";
 import { useThemeStore } from "@/stores/theme-store";
 import { useChartStyleEditorStore } from "@/stores/chart-style-editor-store";
+import { useFrameLayoutStore } from "@/stores/frame-layout-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSyncLocale, useT } from "@/lib/i18n/i18n";
 import { useFixedRowHeightAnchor, useListRowHeight } from "@/lib/list-tokens";
@@ -3375,13 +3376,28 @@ function ProgressionsTab({ opts, sendPatch }: TabProps) {
       <SectionLabel>{t("settings.progressionCalculation")}</SectionLabel>
       <Row label={t("settings.progressedAngles")}>
         <Select
-          value={q.progressed_angle_method}
+          value={q.solar_arc_angle_mode === "zodiacal"
+            ? "zodiacal"
+            : String(q.progressed_angle_method)}
           width={200}
-          onChange={(v) => patch({ progressed_angle_method: Number(v) })}
+          onChange={(v) => {
+            if (v === "zodiacal") {
+              patch({ solar_arc_angle_mode: "zodiacal" });
+              return;
+            }
+            const angleMethod = Number(v);
+            patch(angleMethod === q.progressed_angle_method
+              ? { solar_arc_angle_mode: "progressed" }
+              : {
+                  progressed_angle_method: angleMethod,
+                  solar_arc_angle_mode: "progressed",
+                });
+          }}
         >
           {cat.progressionAngleMethods.map((m) => (
             <option key={m.value} value={m.value}>{m.label}</option>
           ))}
+          <option value="zodiacal">{t("optmenu.zodiacalDirectionsUniform")}</option>
         </Select>
       </Row>
       <Row label={t("settings.dayType")}>
@@ -4546,11 +4562,15 @@ function TimeLordsTab({ opts, sendPatch }: TabProps) {
 
 function PrimaryDirectionsTab({ opts, sendPatch }: TabProps) {
   const s = opts.primaryDirections;
+  const paneDock = useFrameLayoutStore((state) => state.primaryDirectionsSettingsDock);
+  const setPaneDock = useFrameLayoutStore((state) => state.setPrimaryDirectionsSettingsDock);
   return (
     <PrimDirSettingsBody
       settings={s}
       planetGlyphs={PD_PLANET_GLYPHS}
       presetGlobalState={{ planetsPoints: { meannode: opts.planetsPoints.meannode } }}
+      paneDock={paneDock}
+      onPaneDockChange={setPaneDock}
       onPatch={(fields, optionsPatch) =>
         sendPatch(
           { ...optionsPatch, primaryDirections: fields },

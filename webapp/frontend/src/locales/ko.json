@@ -1,4 +1,5 @@
 {
+  "optmenu.zodiacalDirectionsUniform": "황도 방향법(균일 호)",
   "calendar.close": "캘린더 닫기",
   "calendar.allDay": "종일",
   "calendar.cancel": "취소",
@@ -1667,6 +1668,7 @@
   "chartmenu.zodiacInnermost": "황도대 안쪽",
   "chartmenu.zodiacOutermost": "황도대 바깥쪽",
   "settings.chartRingZodiac": "황도대 위치",
+  "settings.close": "닫기",
   "settings.multiwheelOpenAtThree": "차트가 3개일 때 다중 휠 자동 열기",
   "settings.comparisonRings": "비교 링",
   "textExport.aliasNames": "별칭 이름",

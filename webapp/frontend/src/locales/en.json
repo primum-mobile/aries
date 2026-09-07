@@ -1261,6 +1261,7 @@
   "optmenu.wholesignProfections": "Whole-sign profections",
   "optmenu.withSymbols": "With symbols",
   "optmenu.zodiacalProfections": "Zodiacal profections",
+  "optmenu.zodiacalDirectionsUniform": "Zodiacal directions (uniform arc)",
   "palette.actionUnavailable": "{label} unavailable",
   "palette.ambientInput": "Ambient Input",
   "palette.ambientPlaceholder": "Date, time, place, or chart name",

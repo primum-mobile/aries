@@ -2784,9 +2784,10 @@ class WorkspaceService:
         owner["multiwheel_known_eligible_ids"] = list(eligible)
 
         owner["multiwheel_enabled"] = enabled
-        drawable = enabled and len(selected) >= 3
+        active_selection = enabled and len(selected) >= 2
+        drawable = active_selection and len(selected) >= 3
         owner["chart_ring_count"] = len(selected) if drawable else chart_rings.CHART_RING_COUNT_MIN
-        if not drawable:
+        if not active_selection:
             owner.pop("multiwheel_cursor_datetime", None)
             owner.pop("multiwheel_initial_cursor_datetime", None)
             owner.pop("multiwheel_single_chart_view", None)
@@ -2796,7 +2797,10 @@ class WorkspaceService:
         _owner_id, _owner, _eligible, selected, enabled = (
             self._reconcile_multiwheel_state(document_id)
         )
-        return selected if enabled and len(selected) >= 3 else []
+        # Once the branch participant picker is enabled, an explicit pair is
+        # still authoritative. It is painted by the ordinary biwheel renderer,
+        # but must not collapse back to the active child's parent comparison.
+        return selected if enabled and len(selected) >= 2 else []
 
     def _multiwheel_tree_order_refresh(
         self, document_id: str,
@@ -2805,7 +2809,7 @@ class WorkspaceService:
         _owner_id, owner, eligible, selected, enabled = (
             self._reconcile_multiwheel_state(document_id)
         )
-        if owner is None or not enabled or len(selected) < 3:
+        if owner is None or not enabled or len(selected) < 2:
             return {}, None, []
         affected_ids = list(eligible)
         result: dict = {"snapshotInvalidatedIds": affected_ids}
@@ -3818,52 +3822,63 @@ class WorkspaceService:
         return chart_rings.chart_ring_zodiac(options_service.options)
 
     def _resolve_wheel_charts(self, session, cs, live):
-        """``(primary, comparison, ring_charts)`` for one live session.
+        """``(primary, comparison, ring_charts)`` for visible wheel consumers."""
+        primary, comparison, ring_charts, _ring_document_ids = (
+            self._resolve_wheel_charts_with_ids(session, cs, live)
+        )
+        return primary, comparison, ring_charts
+
+    def _resolve_wheel_charts_with_ids(self, session, cs, live):
+        """Resolve visible charts plus selected workspace document identities.
 
         ``primary`` is always the framework chart — the one whose houses,
         zodiac orientation and angles the wheel is drawn on — and
-        ``comparison`` the outermost body ring. At two rings that is the
-        established ``_select_render_charts`` pair verbatim. At three or more
-        it is ring 1 and ring N, so ``primaryChart``/``comparisonChart`` keep
-        meaning exactly what every existing consumer already assumes.
+        ``comparison`` the outermost body ring. An enabled explicit pair uses
+        its two selected documents; every other ordinary biwheel keeps the
+        established ``_select_render_charts`` pair verbatim. At three or more,
+        these are ring 1 and ring N, so the compatibility slots keep their
+        established meaning.
 
         ``document_snapshot`` and ``inspector_charts`` share this so a hovered
         region is built over exactly the charts the wheel is drawing.
         """
-        ring_charts = self._select_ring_charts(session, cs, live)
-        if len(ring_charts) >= 3:
+        ring_charts, ring_document_ids = self._select_ring_charts(session, cs, live)
+        if len(ring_charts) >= 2:
             if bool(session.get("relationship_multiwheel_single_chart_view")):
-                return live, None, [live]
-            document_id = str(session.get("document_id") or "")
-            _owner_id, owner = self._ring_owner(document_id)
-            if owner is not None and bool(owner.get("multiwheel_single_chart_view")):
-                return live, None, [live]
-            return ring_charts[0], ring_charts[-1], ring_charts
+                return live, None, [live], []
+            if ring_document_ids:
+                document_id = str(session.get("document_id") or "")
+                _owner_id, owner = self._ring_owner(document_id)
+                if owner is not None and bool(owner.get("multiwheel_single_chart_view")):
+                    return live, None, [live], []
+            return ring_charts[0], ring_charts[-1], ring_charts, ring_document_ids
         primary, comparison = self._select_render_charts(session, cs, live)
-        return primary, comparison, ring_charts
+        return primary, comparison, ring_charts, ring_document_ids
 
-    def _select_ring_charts(self, session, cs, live) -> list:
+    def _select_ring_charts(self, session, cs, live) -> tuple[list, list[Optional[str]]]:
         """Ordered ring charts for a document, innermost first.
 
-        Two rings remains the established per-document comparison contract.
-        Three or more rings is the root-owned explicit participant selection:
+        An ordinary two-ring wheel keeps the per-document comparison contract.
+        Two or more explicitly selected rings are root-owned participant truth:
         selecting another tab changes only navigation grammar, never membership.
+        An explicit pair is returned to the established biwheel renderer.
         """
         primary, comparison = self._select_render_charts(session, cs, live)
         base = [primary] if comparison is None else [primary, comparison]
         if not isinstance(session, dict):
-            return base
+            return base, []
         relationship_charts = self._relationship_multiwheel_charts(session)
         if len(relationship_charts) >= 3:
-            return relationship_charts
+            return relationship_charts, [None] * len(relationship_charts)
         if session.get("compound_kind") is not None:
-            return base
+            return base, []
         document_id = session.get("document_id")
         ring_ids = self._multiwheel_participant_ids(str(document_id or ""))
-        if len(ring_ids) < 3:
-            return base
+        if len(ring_ids) < 2:
+            return base, []
 
         charts = []
+        chart_document_ids: list[Optional[str]] = []
         for ring_id in ring_ids:
             chrt = self._ring_chart_for_document(ring_id)
             if chrt is None:
@@ -3873,14 +3888,16 @@ class WorkspaceService:
             if any(chrt is existing for existing in charts):
                 continue
             charts.append(chrt)
-        if len(charts) < 3:
-            return base
-        return charts
+            chart_document_ids.append(ring_id)
+        if len(charts) < 2:
+            return base, []
+        return charts, chart_document_ids
 
     def _multiwheel_ring_display_datetimes(
         self,
         document_id: str,
         ring_charts: list,
+        ring_document_ids: Optional[list[Optional[str]]] = None,
     ) -> list[Optional[tuple]]:
         """Return each visible ring's canonical session cursor in ring order.
 
@@ -3888,7 +3905,7 @@ class WorkspaceService:
         real/signified cursor. Corner metadata must therefore follow the owning
         ChartSession rather than formatting the chart Time object again.
         """
-        if len(ring_charts) < 3:
+        if len(ring_charts) < 2:
             return []
         session = self._controller.session(document_id)
         relationship_charts = self._relationship_multiwheel_charts(session)
@@ -3898,7 +3915,11 @@ class WorkspaceService:
         ):
             # Each source chart already exports its own canonical radix date.
             return [None] * len(ring_charts)
-        ring_ids = self._multiwheel_participant_ids(document_id)
+        ring_ids = (
+            [ring_id for ring_id in ring_document_ids if ring_id]
+            if ring_document_ids is not None
+            else self._multiwheel_participant_ids(document_id)
+        )
         cursors_by_chart_identity: dict[int, Optional[tuple]] = {}
         for ring_id in ring_ids:
             ring_chart = self._ring_chart_for_document(ring_id)
@@ -3909,26 +3930,6 @@ class WorkspaceService:
                     getattr(ring_cs, 'display_datetime', None)
                 )
         return [cursors_by_chart_identity.get(id(chrt)) for chrt in ring_charts]
-
-    def _multiwheel_ring_document_ids(
-        self,
-        document_id: str,
-        ring_charts: list,
-    ) -> list[Optional[str]]:
-        """Map the visible chart objects back to their selected documents."""
-        session = self._controller.session(document_id)
-        relationship_charts = self._relationship_multiwheel_charts(session)
-        if len(relationship_charts) == len(ring_charts) and all(
-            expected is actual
-            for expected, actual in zip(relationship_charts, ring_charts)
-        ):
-            return [None] * len(ring_charts)
-        ids_by_chart_identity: dict[int, str] = {}
-        for ring_id in self._multiwheel_participant_ids(document_id):
-            ring_chart = self._ring_chart_for_document(ring_id)
-            if ring_chart is not None:
-                ids_by_chart_identity[id(ring_chart)] = ring_id
-        return [ids_by_chart_identity.get(id(chrt)) for chrt in ring_charts]
 
     @staticmethod
     def _overlay_display_datetime_for_session(session: dict, cs):
@@ -4197,7 +4198,14 @@ class WorkspaceService:
             radix = getattr(cs, 'radix', None)
             feature_kind = session.get('supplementary_feature_kind')
             view_mode = getattr(cs, 'view_mode', 0)
-            primary, comparison, ring_charts = self._resolve_wheel_charts(session, cs, live)
+            primary, comparison, ring_charts, ring_document_ids = (
+                self._resolve_wheel_charts_with_ids(session, cs, live)
+            )
+            explicit_participant_pair = bool(
+                len(ring_charts) == 2
+                and len(ring_document_ids) == 2
+                and all(ring_document_ids)
+            )
             parallel_transit = (
                 self._build_parallel_transit_overlay(cs)
                 if comparison is None and session.get('parallel_transits_enabled')
@@ -4236,10 +4244,7 @@ class WorkspaceService:
                 if len(ring_charts) >= 3:
                     ring_payloads = snapshot.get('rings') or []
                     ring_display_datetimes = self._multiwheel_ring_display_datetimes(
-                        document_id, ring_charts,
-                    )
-                    ring_document_ids = self._multiwheel_ring_document_ids(
-                        document_id, ring_charts,
+                        document_id, ring_charts, ring_document_ids,
                     )
                     ring_taxonomy = chart_rings.multiwheel_ring_taxonomy(
                         len(ring_payloads)
@@ -4271,6 +4276,28 @@ class WorkspaceService:
                     # Zodiac position is only meaningful once rings stack:
                     # the two-ring wheel keeps its inherited layout.
                     snapshot['ringZodiac'] = self._ring_zodiac()
+                elif explicit_participant_pair:
+                    # The established biwheel renderer consumes the two
+                    # compatibility slots rather than ``rings``. Preserve each
+                    # selected document's own meaningful cursor metadata just
+                    # as the tri/quad payload does; the active tab may be either
+                    # participant or an unselected chart in the same branch.
+                    pair_payloads = [
+                        snapshot.get('primaryChart'),
+                        snapshot.get('comparisonChart'),
+                    ]
+                    pair_display_datetimes = self._multiwheel_ring_display_datetimes(
+                        document_id, ring_charts, ring_document_ids,
+                    )
+                    for ring_chart, ring_payload, display_dt in zip(
+                        ring_charts, pair_payloads, pair_display_datetimes,
+                    ):
+                        export_chart_json.apply_display_datetime_to_chart_payload(
+                            ring_payload,
+                            display_dt,
+                            bc=bool(getattr(getattr(ring_chart, 'time', None), 'bc', False)),
+                            options=chart_snapshot_service.options,
+                        )
                 requested_comparison_layout = session.get('comparison_layout')
                 if requested_comparison_layout not in ('standard', 'with-houses'):
                     requested_comparison_layout = (
@@ -4304,17 +4331,25 @@ class WorkspaceService:
                 # metadata follows the Aries display rule: local civil time from
                 # cs.display_datetime, while footer/status remains free to show
                 # the chart Time/UT sanity line.
-                derived_slot = (
-                    snapshot.get('comparisonChart')
-                    if comparison is not None
-                    else snapshot.get('primaryChart')
-                )
-                export_chart_json.apply_display_datetime_to_chart_payload(
-                    derived_slot,
-                    session_display_dt,
-                    bc=bool(getattr(getattr(live, 'time', None), 'bc', False)),
-                    options=chart_snapshot_service.options,
-                )
+                if explicit_participant_pair:
+                    pair_payloads_by_document_id = dict(zip(
+                        ring_document_ids,
+                        [snapshot.get('primaryChart'), snapshot.get('comparisonChart')],
+                    ))
+                    derived_slot = pair_payloads_by_document_id.get(document_id)
+                else:
+                    derived_slot = (
+                        snapshot.get('comparisonChart')
+                        if comparison is not None
+                        else snapshot.get('primaryChart')
+                    )
+                if derived_slot is not None:
+                    export_chart_json.apply_display_datetime_to_chart_payload(
+                        derived_slot,
+                        session_display_dt,
+                        bc=bool(getattr(getattr(live, 'time', None), 'bc', False)),
+                        options=chart_snapshot_service.options,
+                    )
                 cursor_iso = _display_tuple_to_iso(session_display_dt)
                 if cursor_iso is not None:
                     snapshot['displayDatetime'] = cursor_iso
@@ -4346,11 +4381,17 @@ class WorkspaceService:
                 session, cs, symbolic_readout)
             if corner_override is not None:
                 phase_started_at = time.perf_counter()
-                derived_slot = (
-                    snapshot.get('comparisonChart')
-                    if comparison is not None
-                    else snapshot.get('primaryChart')
-                )
+                if explicit_participant_pair:
+                    derived_slot = dict(zip(
+                        ring_document_ids,
+                        [snapshot.get('primaryChart'), snapshot.get('comparisonChart')],
+                    )).get(document_id)
+                else:
+                    derived_slot = (
+                        snapshot.get('comparisonChart')
+                        if comparison is not None
+                        else snapshot.get('primaryChart')
+                    )
                 meta = derived_slot.get('meta') if isinstance(derived_slot, dict) else None
                 if isinstance(meta, dict):
                     date_disp = corner_override.get('dateDisplay')
@@ -6539,6 +6580,16 @@ class WorkspaceService:
                 getattr(self._controller.options, "progressed_angle_method", posfordate.TRUE_SOLAR_ARC_LON),
             )
         )
+        solar_arc_angles = posfordate.solar_arc_angle_mode(
+            retained_payload.get(
+                "solar_arc_angle_mode",
+                getattr(
+                    self._controller.options,
+                    "solar_arc_angle_mode",
+                    posfordate.SOLAR_ARC_ANGLES_PROGRESSED,
+                ),
+            )
+        )
         age = symbolic_time.solar_arc_age_for_real_datetime(radix, target_dt)
         _age_int, _age_years, _progressed_tuple, solar_arc_chart = posfordate.make_progressed_chart_by_symbolic_age(
             radix,
@@ -6546,6 +6597,7 @@ class WorkspaceService:
             age,
             method=posfordate.SOLAR_ARC,
             angle_method=angle_method,
+            solar_arc_angles=solar_arc_angles,
         )
         binding = supplementary_adapter.SupplementaryBinding(
             'solar_arc',
@@ -6554,6 +6606,7 @@ class WorkspaceService:
                 'feature_kind': 'solar_arc',
                 'progression_method': posfordate.SOLAR_ARC,
                 'angle_method': angle_method,
+                'solar_arc_angle_mode': solar_arc_angles,
                 'age': float(age),
             },
         )
@@ -14661,7 +14714,7 @@ class WorkspaceService:
             if session is None:
                 raise ValueError(f"unknown document {document_id!r}")
             ring_ids = self._multiwheel_participant_ids(document_id)
-        if len(ring_ids) < 3:
+        if len(ring_ids) < 2:
             return self._navigate_key_single(
                 document_id,
                 key,
@@ -14741,7 +14794,7 @@ class WorkspaceService:
                     }
                 self._controller.set_event_listener(buffered_events.append)
                 with self._controller.suspend_child_refresh():
-                    if document_id in fixed_ids:
+                    if document_id not in step_ids:
                         selected_cs = selected_session.get('chart_session')
                         canonical_target = self._quantize_fixed_multiwheel_cursor(
                             owner,
@@ -15132,7 +15185,7 @@ class WorkspaceService:
                 owner_id, owner, _eligible, selected, enabled = (
                     self._reconcile_multiwheel_state(document_id)
                 )
-            if owner is not None and enabled and len(selected) >= 3:
+            if owner is not None and enabled and len(selected) >= 2:
                 single_chart = not bool(owner.get("multiwheel_single_chart_view"))
                 if single_chart:
                     owner["multiwheel_single_chart_view"] = True

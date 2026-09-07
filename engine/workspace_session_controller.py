@@ -49,6 +49,7 @@ import chartfile
 import mtexts
 import chart_session
 import horary_session
+import posfordate
 import workspace_model
 from engine import supplementary_adapter
 from engine.supplementary_headless_driver import (
@@ -363,7 +364,8 @@ class WorkspaceSessionController:
 
     # -- OPTIONS RE-RENDER (morin.py:3393 _refresh_current_views) -----------
 
-    def apply_progression_calc_options(self, angle_method: int, day_type: int) -> None:
+    def apply_progression_calc_options(self, angle_method: int, day_type: int,
+                                       solar_arc_angles: str | None = None) -> None:
         """Stamp new progression calc options into open progression bindings.
 
         When the user changes ``progressed_angle_method`` / ``progression_day_type``
@@ -381,6 +383,14 @@ class WorkspaceSessionController:
         Solar Arc keeps its body math as the uniform solar arc, but its
         angles/houses use the shared progressed-angle setting.
         """
+        if solar_arc_angles is None:
+            solar_arc_angles = getattr(
+                self.options,
+                'solar_arc_angle_mode',
+                posfordate.SOLAR_ARC_ANGLES_PROGRESSED,
+            )
+        solar_arc_angles = posfordate.solar_arc_angle_mode(solar_arc_angles)
+
         for session in self._runtime.values():
             if session.get('supplementary_feature_kind') not in (
                     'secondary', 'solar_arc', 'minor', 'tertiary'):
@@ -393,6 +403,7 @@ class WorkspaceSessionController:
             retained['angle_method'] = int(angle_method)
             if session.get('supplementary_feature_kind') == 'solar_arc':
                 retained.pop('day_type', None)
+                retained['solar_arc_angle_mode'] = solar_arc_angles
             else:
                 retained['day_type'] = int(day_type)
             payload['retained_state'] = retained
@@ -415,13 +426,14 @@ class WorkspaceSessionController:
         option changes: mark snapshots stale without rebuilding chart semantics.
         ``mode='display-text'`` regenerates daemon-owned labels/titles without
         touching chart math. ``mode='pd-in-chart'`` invokes only retained PD
-        projection hooks. Every other mode uses full ``Chart.recalc``. Returns
+        projection hooks. ``mode='solar-arc'`` rebuilds only open Solar Arc
+        children. Every other mode uses full ``Chart.recalc``. Returns
         the stable list of document ids whose live session state changed so the
         daemon can broadcast full snapshot invalidation for each one.
         """
         if mode not in (
             'recalc', 'house-system', 'display-overlay', 'display-text',
-            'pd-in-chart',
+            'pd-in-chart', 'solar-arc',
         ):
             mode = 'recalc'
 
@@ -475,6 +487,8 @@ class WorkspaceSessionController:
             feature_kind = session.get('supplementary_feature_kind')
             if feature_kind is None and session.get('launcher_kind') == 'solar_average':
                 feature_kind = 'solar_average'
+            if mode == 'solar-arc' and feature_kind != 'solar_arc':
+                continue
             parent_session = self._runtime.get(session.get('parent_document_id'))
 
             if self._refresh_session_via_options_hook(session, mode):

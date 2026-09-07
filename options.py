@@ -747,6 +747,8 @@ class Options:
 		self.def_progression_day_type = self.progression_day_type
 		self.progressed_angle_method = 0
 		self.def_progressed_angle_method = self.progressed_angle_method
+		self.solar_arc_angle_mode = 'progressed'
+		self.def_solar_arc_angle_mode = self.solar_arc_angle_mode
 		self.harmonic_chart_mode = self.HARMONIC_CHART_MODE_HARMONIC
 		self.def_harmonic_chart_mode = self.harmonic_chart_mode
 		self.varga_drishti_mode = self.VARGA_DRISHTI_PARASHARI
@@ -1882,6 +1884,7 @@ class Options:
 		self.secondary_progression_launch_mode = self.def_secondary_progression_launch_mode
 		self.aspectlist_prebirth_secondary_converse = self.def_aspectlist_prebirth_secondary_converse
 		self.at_reclick_behavior = self.def_at_reclick_behavior
+		self.solar_arc_angle_mode = self.def_solar_arc_angle_mode
 		self.harmonic_chart_mode = self.def_harmonic_chart_mode
 		self.varga_drishti_mode = self.def_varga_drishti_mode
 		self.varga_node_special_drishti = self.def_varga_node_special_drishti
@@ -2996,6 +2999,11 @@ class Options:
 				self.multiwheel_open_at_three = bool(pickle.load(f))
 			except Exception:
 				self.multiwheel_open_at_three = self.def_multiwheel_open_at_three
+			try:
+				import posfordate
+				self.solar_arc_angle_mode = posfordate.solar_arc_angle_mode(pickle.load(f))
+			except Exception:
+				self.solar_arc_angle_mode = self.def_solar_arc_angle_mode
 			f.close()
 		except IOError:
 			res = False
@@ -3888,6 +3896,7 @@ class Options:
 			pickle.dump(self.chart_ring_count, f)
 			pickle.dump(self.chart_ring_zodiac, f)
 			pickle.dump(self.multiwheel_open_at_three, f)
+			pickle.dump(self.solar_arc_angle_mode, f)
 			f.close()
 			return True
 		except IOError:

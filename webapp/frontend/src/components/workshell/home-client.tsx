@@ -584,7 +584,21 @@ function nativeQuickOptionPatch(command: string, opts: OptionsPayload): OptionsP
   }
 
   value = quickCommandValue(command, "quick.options.progressed-angle:");
-  if (value !== null) return { quickCharts: { progressed_angle_method: Number(value) } };
+  if (value === "zodiacal") {
+    return { quickCharts: { solar_arc_angle_mode: "zodiacal" } };
+  }
+  if (value !== null) {
+    const angleMethod = Number(value);
+    if (!Number.isFinite(angleMethod)) return null;
+    return {
+      quickCharts: angleMethod === opts.quickCharts.progressed_angle_method
+        ? { solar_arc_angle_mode: "progressed" }
+        : {
+            progressed_angle_method: angleMethod,
+            solar_arc_angle_mode: "progressed",
+          },
+    };
+  }
   value = quickCommandValue(command, "quick.options.progression-day:");
   if (value !== null) return { quickCharts: { progression_day_type: Number(value) } };
   value = quickCommandValue(command, "quick.options.launch-mode:");
@@ -704,7 +718,13 @@ function nativeQuickOptionCheckedStates(opts: OptionsPayload): ShellMenuCheckedS
     "quick.options.quickcharts:timed_chart_show_radix_default",
     Boolean(opts.quickCharts.timed_chart_show_radix_default),
   );
-  radio("quick.options.progressed-angle", opts.catalog.progressionAngleMethods.map((entry) => entry.value), opts.quickCharts.progressed_angle_method);
+  radio(
+    "quick.options.progressed-angle",
+    [...opts.catalog.progressionAngleMethods.map((entry) => entry.value), "zodiacal"],
+    opts.quickCharts.solar_arc_angle_mode === "zodiacal"
+      ? "zodiacal"
+      : opts.quickCharts.progressed_angle_method,
+  );
   radio("quick.options.progression-day", opts.catalog.progressionDayTypes.map((entry) => entry.value), opts.quickCharts.progression_day_type);
   radio("quick.options.launch-mode", opts.catalog.secondaryLaunchModes.map((entry) => entry.value), opts.quickCharts.secondary_progression_launch_mode);
 

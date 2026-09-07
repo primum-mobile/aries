@@ -4905,7 +4905,11 @@ def transit_search_context_settings(payload: TransitSearchContextRunPayload) -> 
             context["chart"],
             payload.model_dump(),
             custom_points=context.get("custom_points"),
-            persist=False,
+            persist=(
+                bool(payload.persistSettings)
+                and not bool(context.get("custom_points"))
+                and not bool(context.get("initial_significator_id"))
+            ),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

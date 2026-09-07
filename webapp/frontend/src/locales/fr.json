@@ -1263,6 +1263,7 @@
   "optmenu.wholesignProfections": "Profections en signes entiers",
   "optmenu.withSymbols": "Avec symboles",
   "optmenu.zodiacalProfections": "Profections zodiacales",
+  "optmenu.zodiacalDirectionsUniform": "Directions zodiacales (arc uniforme)",
   "palette.actionUnavailable": "{label} indisponible",
   "palette.ambientInput": "Saisie rapide",
   "palette.ambientPlaceholder": "Date, heure, lieu ou nom de thème",

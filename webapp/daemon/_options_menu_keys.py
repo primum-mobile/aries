@@ -127,6 +127,7 @@ OPTIONS_MENU_KEYS = {
     'Seconds in header': 'optmenu.secondsInHeader',
     'Chart navigation bar': 'optmenu.chartNavigationBar',
     'Progressed angles': 'optmenu.progressedAngles',
+    'Zodiacal directions (uniform arc)': 'optmenu.zodiacalDirectionsUniform',
     'True Solar Arc (Lon)': 'optmenu.trueSolarArcLon',
     'True Solar Arc (RA)': 'optmenu.trueSolarArcRa',
     'Naibod (RA)': 'optmenu.naibodRa',

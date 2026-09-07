@@ -55,6 +55,13 @@ NAIBOD_LON = 2
 NAIBOD_RA = 3
 MEAN_QUOTIDIAN_Q2 = 4
 
+SOLAR_ARC_ANGLES_PROGRESSED = 'progressed'
+SOLAR_ARC_ANGLES_ZODIACAL = 'zodiacal'
+SOLAR_ARC_ANGLE_MODES = (
+    SOLAR_ARC_ANGLES_PROGRESSED,
+    SOLAR_ARC_ANGLES_ZODIACAL,
+)
+
 ANGLE_METHOD_NAMES = {
     TRUE_SOLAR_ARC_LON: 'True Solar Arc (Lon)',
     TRUE_SOLAR_ARC_RA: 'True Solar Arc (RA)',
@@ -184,6 +191,21 @@ def progression_chart_angle_method(chrt, default=TRUE_SOLAR_ARC_LON):
         return progression_angle_method(default)
 
 
+def solar_arc_angle_mode(value):
+    """Normalize the Solar Arc chart's treatment of angles and house cusps."""
+    value = str(value or SOLAR_ARC_ANGLES_PROGRESSED)
+    if value not in SOLAR_ARC_ANGLE_MODES:
+        return SOLAR_ARC_ANGLES_PROGRESSED
+    return value
+
+
+def solar_arc_chart_angle_mode(chrt, default=SOLAR_ARC_ANGLES_PROGRESSED):
+    try:
+        return solar_arc_angle_mode(getattr(chrt, '_solar_arc_angle_mode'))
+    except Exception:
+        return solar_arc_angle_mode(default)
+
+
 def _signed_shortest_angle_delta(a1, a0):
     """Return signed delta (a1-a0) wrapped to (-180, 180]."""
     d = float(a1) - float(a0)
@@ -247,6 +269,53 @@ def _offset_dynamic_chart_bodies(chrt, arc):
         _offset_body_longitudes(body, arc)
 
 
+def _offset_coordinate_rows(rows, arc):
+    """Uniformly direct cached ecliptic longitude and right ascension rows."""
+    directed = []
+    for row in tuple(rows or ()):
+        values = list(row)
+        if values:
+            values[0] = util.normalize(float(values[0]) + arc)
+        if len(values) > 2:
+            values[2] = util.normalize(float(values[2]) + arc)
+        directed.append(tuple(values))
+    return tuple(directed)
+
+
+def _build_zodiacally_directed_houses(radix_chart, arc):
+    """Move every natal cusp and angle by one fixed zodiacal direction arc.
+
+    This is the rigid-chart form of Solar Arc directions: unlike a progressed
+    angle method, it does not derive a new Ascendant from a directed MC/ARMC.
+    The cached longitude/RA rows move in the same simple way as planet rows so
+    natal geometry and aspect relationships remain intact.
+    """
+    directed = copy.deepcopy(radix_chart.houses)
+    directed.cusps = tuple(
+        [0.0]
+        + [util.normalize(float(value) + arc) for value in directed.cusps[1:]]
+    )
+
+    ascmc = list(directed.ascmc)
+    for index, value in enumerate(ascmc):
+        ascmc[index] = util.normalize(float(value) + arc)
+    directed.ascmc = tuple(ascmc)
+
+    directed.ascmc2 = _offset_coordinate_rows(
+        getattr(directed, 'ascmc2', ()), arc
+    )
+    directed.cusps2 = _offset_coordinate_rows(
+        getattr(directed, 'cusps2', ()), arc
+    )
+    directed.cuspstmp = [list(row) for row in directed.cusps2]
+    for attr in ('regioMPAsc', 'regioMPMC'):
+        try:
+            setattr(directed, attr, util.normalize(float(getattr(directed, attr)) + arc))
+        except (AttributeError, TypeError, ValueError):
+            pass
+    return directed
+
+
 def _cotrans_lon_to_equ(lon, obl, ayan_offset=0.0):
     ra, decl, _ = astrology.swe_cotrans(
         util.to_tropical_lon(float(lon), float(ayan_offset)),
@@ -288,6 +357,25 @@ def _ayan_ut(jd_ut, options):
         astrology.swe_set_sid_mode(astrology.ayanamsha_swe_mode(options.ayanamsha), 0, 0)
         return float(astrology.effective_ayanamsha_ut(jd_ut, options.ayanamsha))
     return 0.0
+
+
+def _true_solar_arc_longitude(radix_chart, options, jd_progressed):
+    """Return progressed-Sun minus natal-Sun longitude in the active zodiac."""
+    pflag = astrology.SEFLG_SWIEPH | astrology.SEFLG_SPEED
+    if getattr(options, 'topocentric', False):
+        pflag |= astrology.SEFLG_TOPOCTR
+    if getattr(options, 'ayanamsha', 0) != 0:
+        astrology.swe_set_sid_mode(
+            astrology.ayanamsha_swe_mode(options.ayanamsha), 0, 0
+        )
+        pflag |= astrology.SEFLG_SIDEREAL
+    _serr, progressed_sun = astrology.swe_calc_ut(
+        float(jd_progressed), astrology.SE_SUN, pflag
+    )
+    _serr, natal_sun = astrology.swe_calc_ut(
+        float(radix_chart.time.jd), astrology.SE_SUN, pflag
+    )
+    return _signed_shortest_angle_delta(progressed_sun[0], natal_sun[0])
 
 
 def _build_interpolated_houses(jd_base, jd_next, frac, place, options, obl_final, ayan_final):
@@ -510,7 +598,8 @@ def _build_houses_from_progressed_angle_method(radix_chart, options, angle_metho
 class ProgressedAngleSampler:
     """Project only the progressed angle fields needed by search/root fitting."""
 
-    def __init__(self, radix_chart, options, method=SECONDARY, angle_method=None):
+    def __init__(self, radix_chart, options, method=SECONDARY, angle_method=None,
+                 solar_arc_angles=None):
         self.radix_chart = radix_chart
         self.options = options
         self.method = progression_method(method)
@@ -524,6 +613,13 @@ class ProgressedAngleSampler:
                 TRUE_SOLAR_ARC_LON,
             )
         self.angle_method = progression_angle_method(angle_method)
+        if solar_arc_angles is None:
+            solar_arc_angles = getattr(
+                options,
+                'solar_arc_angle_mode',
+                SOLAR_ARC_ANGLES_PROGRESSED,
+            )
+        self.solar_arc_angles = solar_arc_angle_mode(solar_arc_angles)
         self._natal_sun = None
 
     def _sun_flags(self):
@@ -607,6 +703,30 @@ class ProgressedAngleSampler:
         obl_final = _obl_ut(jd_prog)
         ayan_final = _ayan_ut(jd_prog, self.options)
 
+        if (
+            self.method == SOLAR_ARC
+            and self.solar_arc_angles == SOLAR_ARC_ANGLES_ZODIACAL
+        ):
+            arc = _true_solar_arc_longitude(
+                self.radix_chart, self.options, jd_prog
+            )
+            return {
+                'jd_prog': float(jd_prog),
+                'age_years': float(age_years),
+                'symbolic_age': float(symbolic_age),
+                'asc_lon': util.normalize(
+                    float(self.natal_houses.ascmc[houses.Houses.ASC]) + arc
+                ),
+                'mc_lon': util.normalize(
+                    float(self.natal_houses.ascmc[houses.Houses.MC]) + arc
+                ),
+                'armc': util.normalize(
+                    float(self.natal_houses.ascmc[houses.Houses.ARMC]) + arc
+                ),
+                'obl': float(getattr(self.natal_houses, 'obl', obl_final)),
+                'ayan': float(ayan_final),
+            }
+
         if self.angle_method in (TRUE_SOLAR_ARC_LON, TRUE_SOLAR_ARC_RA):
             armc = self._solar_arc_armc(jd_prog, obl_final, ayan_final)
         else:
@@ -664,7 +784,9 @@ class ProgressedAngleSampler:
         }
 
 
-def progressed_angle_state_for_symbolic_age(radix_chart, options, symbolic_age, method=SECONDARY, angle_method=None):
+def progressed_angle_state_for_symbolic_age(radix_chart, options, symbolic_age,
+                                            method=SECONDARY, angle_method=None,
+                                            solar_arc_angles=None):
     """Return progressed house/angle state without building a full Chart."""
     method = progression_method(method)
     symbolic_age = float(symbolic_age)
@@ -675,6 +797,11 @@ def progressed_angle_state_for_symbolic_age(radix_chart, options, symbolic_age, 
     if angle_method is None:
         angle_method = getattr(options, 'progressed_angle_method', TRUE_SOLAR_ARC_LON)
     angle_method = progression_angle_method(angle_method)
+    if solar_arc_angles is None:
+        solar_arc_angles = getattr(
+            options, 'solar_arc_angle_mode', SOLAR_ARC_ANGLES_PROGRESSED
+        )
+    solar_arc_angles = solar_arc_angle_mode(solar_arc_angles)
 
     if symbolic_age == 0.0:
         identity = _progression_zero_angle_identity(radix_chart, options)
@@ -692,15 +819,31 @@ def progressed_angle_state_for_symbolic_age(radix_chart, options, symbolic_age, 
             'armc': identity['armc'],
         }
 
-    houses_obj = _build_houses_from_progressed_angle_method(
-        radix_chart, options, angle_method, age_years, jd_prog, symbolic_age
-    )
-    obl_final = _obl_ut(jd_prog)
+    zodiacal_arc = None
+    if method == SOLAR_ARC and solar_arc_angles == SOLAR_ARC_ANGLES_ZODIACAL:
+        zodiacal_arc = _true_solar_arc_longitude(
+            radix_chart, options, jd_prog
+        )
+        houses_obj = _build_zodiacally_directed_houses(
+            radix_chart,
+            zodiacal_arc,
+        )
+        obl_final = float(houses_obj.obl)
+    else:
+        houses_obj = _build_houses_from_progressed_angle_method(
+            radix_chart, options, angle_method, age_years, jd_prog, symbolic_age
+        )
+        obl_final = _obl_ut(jd_prog)
     ayan_final = _ayan_ut(jd_prog, options)
-    raequasc, _declequasc, _dist = astrology.swe_cotrans(
-        util.to_tropical_lon(houses_obj.ascmc[houses.Houses.EQUASC], ayan_final),
-        0.0, 1.0, -obl_final
-    )
+    if zodiacal_arc is not None:
+        raequasc = util.normalize(
+            float(radix_chart.raequasc) + zodiacal_arc
+        )
+    else:
+        raequasc, _declequasc, _dist = astrology.swe_cotrans(
+            util.to_tropical_lon(houses_obj.ascmc[houses.Houses.EQUASC], ayan_final),
+            0.0, 1.0, -obl_final
+        )
     return {
         'jd_prog': float(jd_prog),
         'age_years': float(age_years),
@@ -715,7 +858,9 @@ def progressed_angle_state_for_symbolic_age(radix_chart, options, symbolic_age, 
     }
 
 
-def make_progressed_chart_by_symbolic_age(radix_chart, options, symbolic_age, method=SECONDARY, angle_method=None):
+def make_progressed_chart_by_symbolic_age(radix_chart, options, symbolic_age,
+                                          method=SECONDARY, angle_method=None,
+                                          solar_arc_angles=None):
     """Build a progressed chart from symbolic age (ephemeris days since birth)."""
     nt = radix_chart.time
     method = progression_method(method)
@@ -737,7 +882,16 @@ def make_progressed_chart_by_symbolic_age(radix_chart, options, symbolic_age, me
 
     if method == SOLAR_ARC:
         years_passed = int(math.floor(age_years + 1e-12)) if age_years >= 0.0 else int(math.ceil(age_years - 1e-12))
-        return _make_solar_arc_chart(radix_chart, options, birth_jd, age_years, calflag, years_passed, angle_method)
+        return _make_solar_arc_chart(
+            radix_chart,
+            options,
+            birth_jd,
+            age_years,
+            calflag,
+            years_passed,
+            angle_method,
+            solar_arc_angles,
+        )
 
     jd_prog = birth_jd + symbolic_age
 
@@ -774,7 +928,9 @@ def make_progressed_chart_by_symbolic_age(radix_chart, options, symbolic_age, me
     return years_passed, age_years, (int(py), int(pm), int(pd)), prg
 
 
-def make_progressed_chart_by_real_date(radix_chart, options, yy, mm, dd, hh=None, mi=None, ss=None, method=SECONDARY, angle_method=None):
+def make_progressed_chart_by_real_date(radix_chart, options, yy, mm, dd, hh=None,
+                                       mi=None, ss=None, method=SECONDARY,
+                                       angle_method=None, solar_arc_angles=None):
     """Build a progressed chart for a real date using the requested Positions for Date rules.
 
     Returns:
@@ -806,29 +962,32 @@ def make_progressed_chart_by_real_date(radix_chart, options, yy, mm, dd, hh=None
             day_type=getattr(options, 'progression_day_type', PROGRESSION_DAY_TYPE_Q2),
         )
     return make_progressed_chart_by_symbolic_age(
-        radix_chart, options, symbolic_age, method=method, angle_method=angle_method
+        radix_chart,
+        options,
+        symbolic_age,
+        method=method,
+        angle_method=angle_method,
+        solar_arc_angles=solar_arc_angles,
     )
 
 
-def _make_solar_arc_chart(radix_chart, options, birth_jd, age_years, calflag, years_passed, angle_method=None):
+def _make_solar_arc_chart(radix_chart, options, birth_jd, age_years, calflag,
+                          years_passed, angle_method=None,
+                          solar_arc_angles=None):
     """Build a solar arc directed chart: uniform angular offset on all natal bodies."""
     angle_method = progression_angle_method(
         angle_method if angle_method is not None
         else getattr(options, 'progressed_angle_method', TRUE_SOLAR_ARC_LON)
     )
+    if solar_arc_angles is None:
+        solar_arc_angles = getattr(
+            options, 'solar_arc_angle_mode', SOLAR_ARC_ANGLES_PROGRESSED
+        )
+    solar_arc_angles = solar_arc_angle_mode(solar_arc_angles)
 
     # Secondary progressed Sun
     jd_sec = birth_jd + age_years
-    pflag = astrology.SEFLG_SWIEPH | astrology.SEFLG_SPEED
-    if getattr(options, 'topocentric', False):
-        pflag |= astrology.SEFLG_TOPOCTR
-    if getattr(options, 'ayanamsha', 0) != 0:
-        astrology.swe_set_sid_mode(astrology.ayanamsha_swe_mode(options.ayanamsha), 0, 0)
-        pflag |= astrology.SEFLG_SIDEREAL
-
-    serr, prog_sun = astrology.swe_calc_ut(jd_sec, astrology.SE_SUN, pflag)
-    serr, natal_sun = astrology.swe_calc_ut(birth_jd, astrology.SE_SUN, pflag)
-    arc = _signed_shortest_angle_delta(prog_sun[0], natal_sun[0])
+    arc = _true_solar_arc_longitude(radix_chart, options, jd_sec)
 
     # Clone the natal chart
     prg = copy.deepcopy(radix_chart)
@@ -841,36 +1000,52 @@ def _make_solar_arc_chart(radix_chart, options, birth_jd, age_years, calflag, ye
         _offset_body_longitudes(p, arc)
     _offset_dynamic_chart_bodies(prg, arc)
 
-    prg.houses = _build_houses_from_progressed_angle_method(
-        radix_chart, options, angle_method, age_years, jd_sec, age_years
-    )
+    zodiacal_houses = None
+    if solar_arc_angles == SOLAR_ARC_ANGLES_ZODIACAL:
+        zodiacal_houses = _build_zodiacally_directed_houses(radix_chart, arc)
+        prg.houses = copy.deepcopy(zodiacal_houses)
+    else:
+        prg.houses = _build_houses_from_progressed_angle_method(
+            radix_chart, options, angle_method, age_years, jd_sec, age_years
+        )
     try:
         obl_values = list(prg.obl)
         obl_values[0] = float(prg.houses.obl)
         prg.obl = tuple(obl_values)
     except Exception:
         pass
-    try:
-        prg.raequasc, _declequasc, _dist = astrology.swe_cotrans(
-            util.to_tropical_lon(
-                prg.houses.ascmc[houses.Houses.EQUASC],
-                getattr(prg, 'ayanamsha_offset', 0.0),
-            ),
-            0.0, 1.0, -float(prg.houses.obl),
-        )
-    except Exception:
-        pass
+    if solar_arc_angles == SOLAR_ARC_ANGLES_ZODIACAL:
+        try:
+            prg.raequasc = util.normalize(float(radix_chart.raequasc) + arc)
+        except (AttributeError, TypeError, ValueError):
+            pass
+    else:
+        try:
+            prg.raequasc, _declequasc, _dist = astrology.swe_cotrans(
+                util.to_tropical_lon(
+                    prg.houses.ascmc[houses.Houses.EQUASC],
+                    getattr(prg, 'ayanamsha_offset', 0.0),
+                ),
+                0.0, 1.0, -float(prg.houses.obl),
+            )
+        except Exception:
+            pass
 
     # Recompute LoF
     try:
         prg.calcFortune()
     except Exception:
         pass
+    if zodiacal_houses is not None:
+        # Fortune-whole-sign charts rebase their cusps inside calcFortune().
+        # A zodiacally directed chart is a rigid rotation, so restore the
+        # uniformly directed natal cusp set after Fortune itself is updated.
+        prg.houses = zodiacal_houses
 
     # The solar-arc chart starts as a deepcopy of the radix, including its
     # cached aspect matrices.  A uniform body shift preserves planet-to-planet
-    # geometry, but the progressed houses/angles are built independently, so
-    # every angle/house aspect cache must be rebuilt from the directed state.
+    # geometry. Rebuild every angle/house aspect cache from the selected
+    # directed state, whether its angles are derived or uniformly zodiacal.
     prg.calcAspMatrix()
 
     py, pm, pd, ph, pmi, ps = _revjul_datetime_fields(jd_sec, calflag)
@@ -879,6 +1054,7 @@ def _make_solar_arc_chart(radix_chart, options, birth_jd, age_years, calflag, ye
     prg._progression_method = SOLAR_ARC
     prg._progression_day_type = PROGRESSION_DAY_TYPE_Q2
     prg._progressed_angle_method = angle_method
+    prg._solar_arc_angle_mode = solar_arc_angles
     prg._progression_age_years = float(age_years)
     prg._progression_symbolic_age = float(age_years)
     prg._solar_arc_degrees = float(arc)

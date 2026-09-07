@@ -913,7 +913,10 @@ def _options_menu_children(theme_presets: list[dict] | None = None) -> list[dict
         _quick_submenu("menu.options.quick.progressions", "Progressions and returns", [
             _quick_submenu("menu.options.quick.progressed-angle", "Progressed angles", _quick_radio(
                 "quick.options.progressed-angle",
-                [(str(v), posfordate.progression_angle_method_label(v)) for v in sorted(posfordate.ANGLE_METHOD_NAMES)],
+                [
+                    *[(str(v), posfordate.progression_angle_method_label(v)) for v in sorted(posfordate.ANGLE_METHOD_NAMES)],
+                    (posfordate.SOLAR_ARC_ANGLES_ZODIACAL, "Zodiacal directions (uniform arc)"),
+                ],
             )),
             _quick_submenu("menu.options.quick.progression-day", "Progression day type", _quick_radio(
                 "quick.options.progression-day",

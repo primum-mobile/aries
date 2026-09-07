@@ -799,7 +799,7 @@ class TransitSearchService:
         saved_promittors = [
             oid
             for oid in getattr(opts, "search_promittor_ids", [])
-            if oid in catalog.objects_by_id and oid != "planet:moon"
+            if oid in catalog.objects_by_id
         ]
         saved_significators = [
             oid
@@ -834,7 +834,7 @@ class TransitSearchService:
             default_aspects = (
                 saved_aspects
                 if has_saved_state
-                else [searchquery.SearchQuery.ASPECT_CONJUNCTION]
+                else list(MAJOR_ASPECTS)
             )
         initial_obj = catalog.get(initial_id) if initial_id else None
         return {
@@ -862,7 +862,7 @@ class TransitSearchService:
             "presets": {
                 "aspects": {
                     "all": [aspect_id for aspect_id, _idx, _both, _label in searchbackend.ASPECT_DEFS],
-                    "standard": [searchquery.SearchQuery.ASPECT_CONJUNCTION],
+                    "standard": list(MAJOR_ASPECTS),
                     "major": list(MAJOR_ASPECTS),
                     "clear": [],
                 },

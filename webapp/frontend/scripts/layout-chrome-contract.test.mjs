@@ -1296,6 +1296,45 @@ test("Search filters preserve a persisted right or resizable bottom dock", () =>
   assert.match(source, /<ResizableHandle \/>/);
 });
 
+test("Primary Directions settings use a persisted right or bottom dock without a modal sheet", () => {
+  const directions = readSource("src/components/workshell/directions-view.tsx");
+  const settings = readSource("src/components/workshell/primdir-settings.tsx");
+  const settingsDialog = readSource("src/components/workshell/settings-dialog.tsx");
+  const frameLayout = readSource("src/stores/frame-layout-store.ts");
+  assert.match(frameLayout, /export type PrimaryDirectionsSettingsDock = SearchFiltersDock/);
+  assert.match(frameLayout, /primaryDirectionsSettingsDock: "bottom"/);
+  assert.match(
+    frameLayout,
+    /primaryDirectionsSettingsDock: state\.primaryDirectionsSettingsDock/,
+  );
+  assert.match(
+    directions,
+    /autoSaveId=\{`aries\.primary-directions-results-vs-settings-\$\{dock\}`\}/,
+  );
+  assert.match(directions, /direction=\{dock === "right" \? "horizontal" : "vertical"\}/);
+  assert.match(directions, /<ResizableHandle \/>/);
+  assert.match(directions, /<SettingsIcon/);
+  assert.match(directions, /variant="ghost"[\s\S]+aria-pressed=\{open\}/);
+  assert.match(directions, /onClick=\{\(\) => onOpenChange\(!open\)\}/);
+  assert.match(settingsDialog, /state\.primaryDirectionsSettingsDock/);
+  assert.match(settingsDialog, /state\.setPrimaryDirectionsSettingsDock/);
+  assert.match(settingsDialog, /paneDock=\{paneDock\}/);
+  assert.match(settings, /value: "right", label: t\("search\.filtersPaneRight"\)/);
+  assert.match(settings, /value: "bottom", label: t\("search\.filtersPaneBottom"\)/);
+  assert.doesNotMatch(directions, /PanelRight|PanelBottom|Settings2/);
+  assert.match(directions, /aries-search-panel-heading text-xs/);
+  assert.match(directions, /onClick=\{onClose\}/);
+  assert.match(settings, /dock === "bottom"[\s\S]+"grid grid-cols-2/);
+  assert.match(settings, /"min-h-0 w-full flex-1/);
+  assert.match(settings, /grid grid-cols-2 items-start/);
+  assert.match(settings, /bottomWideSectionClass = dock === "bottom" \? "col-span-2" : undefined/);
+  assert.equal((settings.match(/className=\{bottomWideSectionClass\}/g) ?? []).length, 3);
+  assert.match(settings, /: "flex flex-col"/);
+  assert.doesNotMatch(settings, /repeat\(auto-fit/);
+  assert.doesNotMatch(directions, /PrimDirSettingsSheet/);
+  assert.doesNotMatch(settings, /<Sheet/);
+});
+
 test("Search exposes independent compact motion filters for both object roles", () => {
   const source = readSource("src/components/workshell/transit-search-view.tsx");
   const client = readSource("src/lib/daemon/client.ts");

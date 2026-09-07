@@ -3998,6 +3998,13 @@ class OptionsService:
             'at_reclick_behavior': str(getattr(opts, 'at_reclick_behavior', 'focus_only') or 'focus_only'),
             'progressed_angle_method': posfordate.progression_angle_method(
                 getattr(opts, 'progressed_angle_method', posfordate.TRUE_SOLAR_ARC_LON)),
+            'solar_arc_angle_mode': posfordate.solar_arc_angle_mode(
+                getattr(
+                    opts,
+                    'solar_arc_angle_mode',
+                    posfordate.SOLAR_ARC_ANGLES_PROGRESSED,
+                )
+            ),
             'progression_day_type': posfordate.progression_day_type(
                 getattr(opts, 'progression_day_type', posfordate.PROGRESSION_DAY_TYPE_Q2)),
             'harmonic_chart_mode': harmonic_chart.normalize_projection_mode(
@@ -4103,6 +4110,19 @@ class OptionsService:
             if posfordate.progression_angle_method(
                     getattr(opts, 'progressed_angle_method', posfordate.TRUE_SOLAR_ARC_LON)) != value:
                 opts.progressed_angle_method = value
+                changed = True
+                calc_changed = True
+
+        if 'solar_arc_angle_mode' in fields:
+            value = posfordate.solar_arc_angle_mode(fields['solar_arc_angle_mode'])
+            if posfordate.solar_arc_angle_mode(
+                getattr(
+                    opts,
+                    'solar_arc_angle_mode',
+                    posfordate.SOLAR_ARC_ANGLES_PROGRESSED,
+                )
+            ) != value:
+                opts.solar_arc_angle_mode = value
                 changed = True
                 calc_changed = True
 
@@ -5519,10 +5539,21 @@ class OptionsService:
                                         getattr(opts, 'progressed_angle_method', posfordate.TRUE_SOLAR_ARC_LON)),
                                     posfordate.progression_day_type(
                                         getattr(opts, 'progression_day_type', posfordate.PROGRESSION_DAY_TYPE_Q2)),
+                                    posfordate.solar_arc_angle_mode(
+                                        getattr(
+                                            opts,
+                                            'solar_arc_angle_mode',
+                                            posfordate.SOLAR_ARC_ANGLES_PROGRESSED,
+                                        )
+                                    ),
                                 )
                             except Exception:
                                 pass
-                        request_refresh('recalc')
+                        request_refresh(
+                            'solar-arc'
+                            if set(fields) == {'solar_arc_angle_mode'}
+                            else 'recalc'
+                        )
                     self._autosave_group(opts, group, fields, qc_changed)
                 elif group == 'stepAlerts':
                     step_changed = self._apply_step_alerts(opts, fields)
