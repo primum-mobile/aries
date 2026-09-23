@@ -38,6 +38,7 @@ const stepRefreshJavascript = ts.transpileModule(stepRefreshSource, {
 const {
   advanceWorkspaceSemanticRefreshState,
   optionsTouchIds,
+  sessionTouchesIds,
   workspaceSemanticRefreshSeq,
 } = await import(
   `data:text/javascript;base64,${Buffer.from(stepRefreshJavascript).toString("base64")}`
@@ -69,6 +70,24 @@ function tracker(overrides = {}) {
     ...overrides,
   };
 }
+
+test("either split role invalidates row actions immediately and refreshes only after step settle", () => {
+  const ids = ["left", "right"];
+  let state = { scopeKey: "split", immediateSessionSeq: 0, optionsSeq: 0, pendingStepSeq: 0, settledStepSeq: 0 };
+  for (let seq = 1; seq <= 30; seq++) {
+    const change = { docId: seq % 2 ? "left" : "right", rebuiltChildIds: [], changeReason: "step", seq };
+    assert.equal(sessionTouchesIds(change, ids, false), true);
+    state = advanceWorkspaceSemanticRefreshState(state, { scopeKey: "split", immediateSessionSeq: 0, optionsSeq: 0, stepSeq: seq, settledStepSeq: 0 });
+    assert.equal(workspaceSemanticRefreshSeq(state), 0);
+    assert.equal(shouldDeferAspectListRefresh(state), true);
+  }
+  state = advanceWorkspaceSemanticRefreshState(state, { scopeKey: "split", immediateSessionSeq: 0, optionsSeq: 0, stepSeq: 30, settledStepSeq: 30 });
+  assert.equal(workspaceSemanticRefreshSeq(state), 30);
+  assert.equal(shouldDeferAspectListRefresh(state), false);
+  assert.equal(sessionTouchesIds({ docId: "unrelated", rebuiltChildIds: [], seq: 31 }, ids, false), false);
+  assert.equal(sessionTouchesIds({ docId: "unrelated", rebuiltChildIds: ["right"], seq: 32 }, ids, false), true);
+  assert.equal(sessionTouchesIds({ docId: "right", rebuiltChildIds: [], listDataChanged: false, seq: 33 }, ids, false), false);
+});
 
 function advance(current, overrides = {}) {
   return advanceAspectListCursorTracker(current, {

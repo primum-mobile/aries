@@ -7,6 +7,8 @@ import * as React from "react";
 import { Clipboard, RefreshCw, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import type { SplitAspectSelection } from "@/lib/chart/types";
+import { SideBySideAspectSources } from "./side-by-side-aspect-sources";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -14,10 +16,14 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { PaneSelect } from "@/components/workshell/list-controls";
+import {
+  ListSegmentedControl,
+  PaneSelect,
+} from "@/components/workshell/list-controls";
 import {
   useSettledWorkspaceRefreshState,
   workspaceSemanticRefreshSeq,
+  sessionTouchesIds,
   type WorkspaceSessionChange,
 } from "@/components/workshell/step-refresh";
 import {
@@ -45,6 +51,7 @@ import {
 } from "@/lib/aspect-list-live-state.mjs";
 import {
   defaultAspectListSecondaryRingIncluded,
+  isAspectListPhaseIncluded,
   isAspectListRowIncluded,
   isAspectListSecondaryRingFilterId,
 } from "@/lib/aspect-list-filter-state.mjs";
@@ -104,6 +111,7 @@ const ASPECT_LIST_PERFECTION_LEDGER_LIMIT = 4096;
 
 type AspectListSort = "body" | "orb" | "exact";
 type SortDirection = "asc" | "desc";
+type AspectListPhaseFilter = "applying" | "separating" | "both";
 type AspectListPerfectionState = {
   identity: string;
   byRow: Map<string, AspectListPerfection>;
@@ -130,14 +138,14 @@ function relevantSessionSeq(
   change: WorkspaceSessionChange | null,
   documentId: string,
   parentDocumentId?: string | null,
+  comparisonDocumentId?: string | null,
+  relatedDocumentIds: readonly string[] = EMPTY_FILTER_IDS,
 ): number {
-  if (!change || change.listDataChanged === false) return 0;
-  const ids = parentDocumentId ? [documentId, parentDocumentId] : [documentId];
-  const touchesDocument =
-    (change.docId !== null && ids.includes(change.docId)) ||
-    change.rebuiltChildIds.some((id) => ids.includes(id));
-  return touchesDocument
-    ? change.seq
+  const ids = [documentId, parentDocumentId, comparisonDocumentId, ...relatedDocumentIds].filter(
+    (id): id is string => Boolean(id),
+  );
+  return sessionTouchesIds(change, ids, false)
+    ? change!.seq
     : 0;
 }
 
@@ -150,15 +158,19 @@ function relevantSessionSeq(
 function useAspectListCursorFallbackSeq({
   documentId,
   parentDocumentId,
+  comparisonDocumentId,
+  relatedDocumentIds,
   focusDatetime,
   lastSessionChange,
 }: {
   documentId: string;
   parentDocumentId?: string | null;
+  comparisonDocumentId?: string | null;
+  relatedDocumentIds?: readonly string[];
   focusDatetime: string | null;
   lastSessionChange: WorkspaceSessionChange | null;
 }): number {
-  const sessionSeq = relevantSessionSeq(lastSessionChange, documentId, parentDocumentId);
+  const sessionSeq = relevantSessionSeq(lastSessionChange, documentId, parentDocumentId, comparisonDocumentId, relatedDocumentIds);
   const trackedRef = React.useRef<AspectListCursorTracker>({
     documentId,
     focusDatetime,
@@ -236,15 +248,19 @@ function useAspectListContextRevisionSeq(
 function useAspectListActionIdentity({
   documentId,
   parentDocumentId,
+  comparisonDocumentId,
+  relatedDocumentIds,
   contextRevision,
   lastSessionChange,
 }: {
   documentId: string;
   parentDocumentId?: string | null;
+  comparisonDocumentId?: string | null;
+  relatedDocumentIds?: readonly string[];
   contextRevision: string | null;
   lastSessionChange: WorkspaceSessionChange | null;
 }): string {
-  const rawSessionSeq = relevantSessionSeq(lastSessionChange, documentId, parentDocumentId);
+  const rawSessionSeq = relevantSessionSeq(lastSessionChange, documentId, parentDocumentId, comparisonDocumentId, relatedDocumentIds);
   const [tracked, setTracked] = React.useState<{
     documentId: string;
     sessionSeq: number;
@@ -674,6 +690,11 @@ export function AspectListPanel({
   focusDatetime,
   contextRevision,
   comparisonVisible,
+  comparisonDocumentId,
+  comparisonFocusDatetime,
+  splitSelection,
+  relatedDocumentIds,
+  sourceCursorIdentity,
   onClose,
 }: {
   /** Live chart-session document whose current state owns the list query. */
@@ -687,6 +708,12 @@ export function AspectListPanel({
   contextRevision?: string | null;
   /** Whether the current presentation exposes the comparison role. */
   comparisonVisible?: boolean;
+  /** Separately hosted chart participating in the side-by-side comparison. */
+  comparisonDocumentId?: string | null;
+  comparisonFocusDatetime?: string | null;
+  splitSelection?: SplitAspectSelection;
+  relatedDocumentIds?: readonly string[];
+  sourceCursorIdentity?: string;
   onClose: () => void;
 }) {
   const t = useT();
@@ -698,6 +725,9 @@ export function AspectListPanel({
   const setPreferences = useWorkspaceStore((state) => state.setAspectListPreferences);
   const applyTimedChartOpenResult = useWorkspaceStore((state) => state.applyTimedChartOpenResult);
   const showRadix = useWorkspaceStore((state) => state.timedChartShowRadix);
+  const cursorIdentity = sourceCursorIdentity ?? (comparisonDocumentId
+    ? JSON.stringify([focusDatetime ?? null, comparisonFocusDatetime ?? null])
+    : focusDatetime ?? null);
   const modeContextKey =
     `${documentId}\u0000${contextRevision ?? "pending"}\u0000${
       comparisonVisible === true
@@ -715,6 +745,7 @@ export function AspectListPanel({
   const maxOrb = preferences?.maxOrb ?? DEFAULT_MAX_ORB;
   const sortBy = preferences?.sortBy ?? "orb";
   const sortDirection = preferences?.sortDirection ?? "asc";
+  const phaseFilter = preferences?.phaseFilter ?? "both";
   const focusedFilterIds = preferences?.focusedFilterIds ?? EMPTY_FILTER_IDS;
   const focusMatchMode = preferences?.focusMatchMode ?? "or";
   const rxFocusEnabled = preferences?.rxFocusEnabled ?? false;
@@ -740,6 +771,8 @@ export function AspectListPanel({
   const refreshState = useSettledWorkspaceRefreshState({
     documentId,
     parentDocumentId,
+    comparisonDocumentId,
+    relatedDocumentIds,
     lastSessionChange,
     lastOptionsChange,
   });
@@ -748,7 +781,9 @@ export function AspectListPanel({
   const cursorFallbackSeq = useAspectListCursorFallbackSeq({
     documentId,
     parentDocumentId,
-    focusDatetime: focusDatetime ?? null,
+    comparisonDocumentId,
+    relatedDocumentIds,
+    focusDatetime: cursorIdentity,
     lastSessionChange,
   });
   const contextRevisionSeq = useAspectListContextRevisionSeq(
@@ -758,10 +793,12 @@ export function AspectListPanel({
   const actionGeneration = useAspectListActionIdentity({
     documentId,
     parentDocumentId,
+    comparisonDocumentId,
+    relatedDocumentIds,
     contextRevision: contextRevision ?? null,
     lastSessionChange,
   });
-  const actionIdentity = `${actionGeneration}\u0000${focusDatetime ?? "no-focus"}`;
+  const actionIdentity = `${actionGeneration}\u0000${cursorIdentity ?? "no-focus"}`;
   const actionIdentityRef = React.useRef(actionIdentity);
   React.useLayoutEffect(() => {
     actionIdentityRef.current = actionIdentity;
@@ -784,7 +821,7 @@ export function AspectListPanel({
     documentId,
     mode: requestedMode,
     contextRevision: contextRevision ?? null,
-    focusDatetime: focusDatetime ?? null,
+    focusDatetime: cursorIdentity,
     sessionMutationSeq: refreshState.immediateSessionSeq,
     retainedListDataKey,
   });
@@ -1002,7 +1039,7 @@ export function AspectListPanel({
         documentId,
         mode: requestedMode,
         contextRevision: contextRevision ?? null,
-        focusDatetime: focusDatetime ?? null,
+        focusDatetime: cursorIdentity,
         sessionMutationSeq: refreshState.immediateSessionSeq,
         retainedListDataKey: next.retainedListDataKey,
       });
@@ -1124,9 +1161,9 @@ export function AspectListPanel({
     contextRevisionSeq,
     contextRevision,
     cursorFallbackSeq,
+    cursorIdentity,
     deferRefreshForStep,
     documentId,
-    focusDatetime,
     queryIdentity,
     rememberPerfection,
     requestedMode,
@@ -1237,6 +1274,7 @@ export function AspectListPanel({
       displayRows.filter(
         (row) =>
           row.orb <= maxOrb &&
+          isAspectListPhaseIncluded(row.phase, phaseFilter) &&
           isAspectListRowIncluded(
             row.filterIds,
             effectiveFocusedFilterIdSet,
@@ -1254,6 +1292,7 @@ export function AspectListPanel({
       effectiveFocusedFilterIdSet,
       includeActiveSecondaryRing,
       maxOrb,
+      phaseFilter,
       rxFocusEnabled,
       effectiveFocusMatchMode,
     ],
@@ -1296,6 +1335,11 @@ export function AspectListPanel({
   }, []);
   const modeOptions = payload?.modes ?? [
     { id: requestedMode ?? "primary", label: sourceName },
+  ];
+  const phaseOptions: readonly { value: AspectListPhaseFilter; label: string }[] = [
+    { value: "applying", label: t("aspectList.applyingShort") },
+    { value: "separating", label: t("aspectList.separatingShort") },
+    { value: "both", label: t("aspectList.both") },
   ];
   // A context may temporarily fall back from the user's preferred comparison
   // mode. Display the daemon-resolved mode without rewriting that preference;
@@ -1629,6 +1673,7 @@ export function AspectListPanel({
               : t("aspectList.count", { count: rows.length })}
           </span>
         </div>
+        {splitSelection ? <SideBySideAspectSources selection={splitSelection} /> : null}
         <div className={LIST_PANE_CLASSES.controlRow}>
           <label className={LIST_PANE_CLASSES.labeledControl}>
             <span className={LIST_PANE_CLASSES.controlLabel}>{t("aspectList.view")}</span>
@@ -1659,6 +1704,14 @@ export function AspectListPanel({
               ))}
             </PaneSelect>
           </label>
+          <ListSegmentedControl
+            label={t("aspectList.phaseFilter")}
+            options={phaseOptions}
+            value={phaseFilter}
+            onChange={(nextPhase) =>
+              setPreferences(preferencesDocumentId, { phaseFilter: nextPhase })
+            }
+          />
           <Button
             type="button"
             {...LIST_BUTTON_PROPS.command}

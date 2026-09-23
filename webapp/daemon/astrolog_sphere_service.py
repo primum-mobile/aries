@@ -56,7 +56,7 @@ _HOUSE_SYSTEM_LABELS = {
     "Q": "True Ascendant",
     "M": "Morinus",
     "H": "Horizontal",
-    "T": "Page-Polich",
+    "T": "Polich-Page",
     "B": "Alcabitus",
     "O": "Porphyrius",
     "N": "Whole Sign",

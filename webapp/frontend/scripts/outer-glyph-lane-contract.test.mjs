@@ -74,6 +74,34 @@ test("paint target fits diameter around the historical centre", () => {
   assert.equal(resolveChartPaintTarget(800, 1000, 1, 60, true).centerY, 500);
 });
 
+test("split wheels keep their diameter with one quarter of spare height above", () => {
+  for (const width of [400, 600, 800, 1000]) {
+    const centered = resolveChartPaintTarget(width, 1000, 1);
+    const upper = resolveChartPaintTarget(width, 1000, 1, 0, false, "upper");
+    const spaceAbove = upper.centerY - upper.side / 2;
+    const spaceBelow = 1000 - upper.centerY - upper.side / 2;
+    assert.equal(upper.side, centered.side);
+    assert.equal(spaceAbove, spaceBelow / 3);
+    assert.ok(upper.centerY <= centered.centerY);
+  }
+});
+
+test("upper alignment preserves height-limited fit and outer paint clearance", () => {
+  for (const [width, height] of [[1200, 1000], [800, 1000], [500, 1200]]) {
+    for (const scale of [1, 1.05, 1.25]) {
+      for (const top of [0, 60, 100]) {
+        const centered = resolveChartPaintTarget(width, height, scale, top, true);
+        const upper = resolveChartPaintTarget(width, height, scale, top, true, "upper");
+        const radius = upper.side * scale / 2;
+        assert.equal(upper.side, centered.side);
+        assert.ok(upper.centerY - radius >= top - 1e-9);
+        assert.ok(upper.centerY + radius <= height + 1e-9);
+        if (width >= height) assert.equal(upper.centerY, centered.centerY);
+      }
+    }
+  }
+});
+
 test("glyph families share one lane and bypass the word-label push-out", () => {
   assert.match(drawChartSource, /function isOuterGlyphFamily/);
   assert.match(drawChartSource, /const lane = outerGlyphLane\(ringset, glyphSize, typography, style\)/);
@@ -106,7 +134,8 @@ test("canvas keeps the historical centre and fits to the visible title text", ()
   );
   assert.match(drawChartSource, /const center: Pt = opts\.center/);
   assert.match(envelopeSource, /const hasOuterRing = hasComparison \|\| snapshot\.outerRingMode !== "none"/);
-  assert.match(envelopeSource, /if \(!hasOuterRing\)[\s\S]*?paintRadiusScale: 1[\s\S]*?avoidTitlebar: false/);
+  assert.match(envelopeSource, /if \(!hasOuterRing && !wheelOpenCuspLabelBand\(ringset\)\)[\s\S]*?paintRadiusScale: 1[\s\S]*?avoidTitlebar: false/);
+  assert.match(envelopeSource, /outerPaintRadius = Math\.max\(outerPaintRadius, wheelOpenCuspLabelBand\(ringset\)\?\.outer \?\? 0\)/);
   assert.match(envelopeSource, /outerModeGlyphSize\(snapshot\.outerRingMode, typography\)/);
   assert.doesNotMatch(envelopeSource, /candidateRingsets/);
   assert.doesNotMatch(envelopeSource, /outerRingItems/);

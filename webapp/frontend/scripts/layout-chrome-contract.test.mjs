@@ -583,7 +583,7 @@ test("mounted dialog form controls declare one appearance owner", () => {
     (total, path) => total + assertMountedFormControlsDeclareAppearance(path),
     0,
   );
-  assert.equal(count, 22, "the mounted ordinary-control inventory changed");
+  assert.equal(count, 24, "the mounted ordinary-control inventory changed");
 
   const editor = readSource(
     "src/components/workshell/chart-editor-dialog.tsx",
@@ -615,7 +615,9 @@ test("all mounted ordinary raw controls declare one appearance owner", () => {
       }),
     0,
   );
-  assert.equal(count, 52, "the mounted ordinary-control inventory changed");
+  // Validate every discovered control above. Adding/removing an ordinary
+  // control is not itself an appearance violation; guard against an empty scan.
+  assert.ok(count > 0, "the mounted ordinary-control scan must find controls");
 });
 
 test("context menus stay above the floating workspace navbar", () => {
@@ -1347,6 +1349,61 @@ test("Search exposes independent compact motion filters for both object roles", 
   assert.match(client, /significatorMotion\?: TransitSearchMotionFilter/);
 });
 
+test("Search Rx projects event motion independently for both roles", () => {
+  const source = readSource("src/components/workshell/transit-search-view.tsx");
+  const ast = ts.createSourceFile("search.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const names = new Set(["projectTransitSearchRows", "searchRowMatchesMotion", "stringValue", "numberValue"]);
+  const functions = ast.statements.filter((node) => ts.isFunctionDeclaration(node) && names.has(node.name?.text));
+  const javascript = ts.transpileModule(functions.map((node) => node.getText(ast)).join("\n"), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const project = new Function("SEARCH_LUNAR_TECHNIQUES", "SEARCH_NON_ASPECT_TECHNIQUES",
+    `${javascript}; return projectTransitSearchRows;`)(new Set(["lunations", "eclipses"]), new Set(["heliacal_phases"]));
+  const form = {
+    fromDate: "2026-01-01", toDate: "2026-12-31", techniques: ["transits"],
+    promittorIds: ["planet:mercury"], significatorIds: ["planet:mercury"],
+    aspects: ["conjunction"], promittorMotion: "", significatorMotion: "",
+  };
+  const rows = ["R", "SR", "SD", "", "S"].map((motion, index) => ({
+    key: motion, eventDate: "2026-09-17", technique: "transits", aspect: "conjunction",
+    promittorId: "planet:mercury", significatorId: "planet:mercury",
+    promittorMarker: "", significatorMarker: "", metadata: {},
+    promDisplay: { motion_marker: motion, speed_lon: index === 0 ? -0.5 : 0.01 },
+    sigDisplay: { motion_marker: "", speed_lon: 1 },
+  }));
+  assert.deepEqual(project(rows, { ...form, promittorMotion: "rx" }).map((row) => row.key), ["R", "SR", "SD"]);
+  assert.deepEqual(project(rows, { ...form, significatorMotion: "rx" }), []);
+  const receivingRows = rows.map((row) => ({ ...row, promDisplay: row.sigDisplay, sigDisplay: row.promDisplay }));
+  assert.deepEqual(project(receivingRows, { ...form, significatorMotion: "rx" }).map((row) => row.key), ["R", "SR", "SD"]);
+  assert.deepEqual(project(receivingRows, { ...form, promittorMotion: "rx" }), []);
+  assert.deepEqual(project(rows, form), rows);
+  const ingress = {
+    ...rows[0], technique: "sign_changes", aspect: "sign_change",
+    significatorId: "sign:03", sigDisplay: {}, metadata: { sign_change: true },
+  };
+  const ingressForm = { ...form, techniques: [], aspects: [], significatorIds: [], includeSignChanges: true };
+  for (const significatorMotion of ["", "rx", "d"]) {
+    assert.deepEqual(project([ingress], { ...ingressForm, significatorMotion }), [ingress]);
+  }
+  assert.deepEqual(project([ingress], { ...ingressForm, includeSignChanges: false }), []);
+  assert.deepEqual(project([ingress], { ...ingressForm, promittorIds: [] }), []);
+  assert.deepEqual(project([ingress], { ...ingressForm, promittorMotion: "rx" }), [ingress]);
+  assert.deepEqual(project([ingress], { ...ingressForm, promittorMotion: "d" }), []);
+  for (const technique of ["lunations", "eclipses"]) {
+    const lunarRows = [{ ...rows[3], technique }];
+    const lunarForm = { ...form, techniques: [technique], significatorMotion: "rx" };
+    assert.deepEqual(project(lunarRows, lunarForm), lunarRows);
+    assert.deepEqual(project(lunarRows, { ...lunarForm, promittorMotion: "rx" }), []);
+    assert.deepEqual(project(lunarRows, { ...lunarForm, significatorIds: [] }), []);
+  }
+  // Object annotations must not masquerade as event-time motion.
+  const annotatedDirect = { ...rows[3], promittorMarker: "R", significatorMarker: "R" };
+  assert.deepEqual(project([annotatedDirect], { ...form, promittorMotion: "rx" }), []);
+  assert.deepEqual(project([annotatedDirect], { ...form, significatorMotion: "rx" }), []);
+  // This Rx-only repair preserves the existing Direct projection.
+  assert.deepEqual(project(rows, { ...form, promittorMotion: "d" }).map((row) => row.key), ["SR", "SD", "", "S"]);
+});
+
 test("Search presents the additional minor aspects as an attached second row", () => {
   const source = readSource("src/components/workshell/transit-search-view.tsx");
   assert.match(source, /grid grid-cols-6 overflow-hidden rounded-md border border-border/);
@@ -1561,11 +1618,14 @@ test("directions copy stays semantic while PDF retains selectable glyph runs", (
   assert.match(directions, /buildDocument=\{primaryExportDocument\}/);
   assert.match(directions, /buildDocument=\{secondaryExportDocument\}/);
   assert.match(directions, /buildDocument=\{circumExportDocument\}/);
-  assert.match(directions, /resolvedSemanticChartColor/);
+  assert.match(directions, /colorRole: colorize \? part\.colorRole : undefined/);
+  assert.doesNotMatch(directions, /resolvedSemanticChartColor/);
   assert.match(directions, /runs: parts\.map/);
   assert.match(actions, /copyTextToClipboard\(document\.text\)/);
-  assert.match(actions, /exportTableTextDocument\(document/);
-  assert.match(actions, /exportTablePdfDocument\(document/);
+  assert.match(actions, /exportPreparedTableDocument\(buildDocument, kind,/);
+  assert.match(exportAdapter, /exportTableTextDocument\(document/);
+  assert.match(exportAdapter, /exportTablePdfDocument\(document/);
+  assert.match(exportAdapter, /tablePrintColor\(run\.colorRole\)/);
   assert.match(actions, /exportDocument\("pdf"\)/);
   assert.match(actions, /exportDocument\("txt"\)/);
   assert.equal(

@@ -63,7 +63,9 @@ export function GenericTableView({ documentId, parentDocumentId, tableId }: Prop
   const [sortState, setSortState] = React.useState<{ columnId: string; direction: "asc" | "desc" } | null>(null);
   const requestSeqRef = React.useRef(0);
   const lastSessionChange = useDaemonWorkspaceStore((s) => s.lastSessionChange);
-  const lastOptionsChange = useDaemonWorkspaceStore((s) => s.lastRetainedDataOptionsChange);
+  const lastOptionsChange = useDaemonWorkspaceStore((s) =>
+    tableId === "positions" ? s.lastSpeculumOptionsChange : s.lastRetainedDataOptionsChange,
+  );
   const layoutPreset = useListLayoutPreset();
 
   const refreshSeq = useSettledWorkspaceRefreshSeq({
@@ -132,6 +134,7 @@ export function GenericTableView({ documentId, parentDocumentId, tableId }: Prop
   }
 
   const sortingEnabled = payload.capabilities?.sorting !== false;
+  const preserveAngleSeconds = payload.capabilities?.anglePrecision === "seconds";
   const sortedRows = sortingEnabled ? sortRows(payload.rows, payload.columns, sortState) : payload.rows;
   const flatLayout =
     payload.capabilities?.timeLord !== true &&
@@ -250,7 +253,7 @@ export function GenericTableView({ documentId, parentDocumentId, tableId }: Prop
                           payload.unavailable && "text-[color:var(--aries-text-muted)]",
                         )}
                       >
-                        <CellView cell={cell} />
+                        <CellView cell={cell} preserveAngleSeconds={preserveAngleSeconds} />
                       </td>
                     );
                   })}
@@ -271,8 +274,17 @@ export function GenericTableView({ documentId, parentDocumentId, tableId }: Prop
   );
 }
 
-export function CellView({ cell }: { cell?: GenericTableCell }) {
+export function CellView({
+  cell,
+  preserveAngleSeconds = false,
+}: {
+  cell?: GenericTableCell;
+  preserveAngleSeconds?: boolean;
+}) {
   if (!cell) return null;
+  const angleText = preserveAngleSeconds
+    ? (text: string) => text
+    : compactListAngleText;
   // Cross-cutting channels every daemon builder can use: per-planet color
   // identity (wx useplanetcolors/dignity palette) and bold emphasis.
   const color = semanticChartColor(cell.colorRole, cell.color);
@@ -301,7 +313,7 @@ export function CellView({ cell }: { cell?: GenericTableCell }) {
                 : undefined
             }
           >
-            {compactListAngleText(run.text)}
+            {angleText(run.text)}
           </span>
         ))}
       </span>
@@ -311,14 +323,14 @@ export function CellView({ cell }: { cell?: GenericTableCell }) {
     return (
       <span style={channelStyle}>
         <span style={{ fontFamily: "'AriesMorinus'" }}>{cell.glyph}</span>
-        {cell.text ? <span>{compactListAngleText(cell.text)}</span> : null}
+        {cell.text ? <span>{angleText(cell.text)}</span> : null}
       </span>
     );
   }
   if (channelStyle || cell.dir) {
-    return <span dir={cell.dir} style={channelStyle}>{compactListAngleText(cell.text ?? "")}</span>;
+    return <span dir={cell.dir} style={channelStyle}>{angleText(cell.text ?? "")}</span>;
   }
-  return <>{compactListAngleText(cell.text ?? "")}</>;
+  return <>{angleText(cell.text ?? "")}</>;
 }
 
 function nextSortState(

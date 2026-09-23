@@ -9,7 +9,11 @@ export function isChartLaunchParent(doc: WorkspaceDocument | null): boolean {
     doc?.kind === "here-now" ||
     (
       doc?.kind === "supplementary" &&
-      (doc.supplementaryFeatureKind !== undefined || doc.compoundKind === "composite_from_synastry")
+      (
+        doc.supplementaryFeatureKind !== undefined ||
+        doc.compoundKind === "composite_from_synastry" ||
+        doc.compoundKind === "synastry"
+      )
     )
   );
 }

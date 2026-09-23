@@ -39,6 +39,12 @@ interface MutableNode {
   children: MutableNode[];
 }
 
+/** These separate physical bands form one background editing family. */
+export const SUBDIVISION_BACKGROUND_FAMILY_ID = "fills.subdivisionBand";
+export const SUBDIVISION_BACKGROUND_MEMBERS = Object.freeze([
+  "fills.termBand", "fills.decanBand", "fills.cuspDegreeBand",
+]);
+
 /**
  * Build the class hierarchy from dotted class ids.
  *
@@ -117,7 +123,8 @@ export function flattenWheelClassTree(
 export function wheelClassFamilies(
   nodes: readonly WheelClassTreeNode[],
 ): readonly WheelClassTreeNode[] {
-  return flattenWheelClassTree(nodes).filter((node) =>
+  const flat = flattenWheelClassTree(nodes);
+  const families = flat.filter((node) =>
     // A top-level node is one of the chart's major categories — rings, fills,
     // layers. Its children are not one reading but a dozen independent things
     // that merely live in the same bag, and treating that bag as a family made
@@ -128,6 +135,13 @@ export function wheelClassFamilies(
     && node.children.length > 1
     && node.children.every((child) => child.isClass && child.children.length === 0),
   );
+  const children = SUBDIVISION_BACKGROUND_MEMBERS.map(id => flat.find(node => node.id === id))
+    .filter((node): node is WheelClassTreeNode => node != null);
+  if (children.length > 1) families.push(Object.freeze({
+    id: SUBDIVISION_BACKGROUND_FAMILY_ID, segment: "subdivisionBand", depth: 1,
+    isClass: false, children: Object.freeze(children),
+  }));
+  return families;
 }
 
 /**

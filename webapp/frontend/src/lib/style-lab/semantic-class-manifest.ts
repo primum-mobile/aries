@@ -12,7 +12,12 @@
 
 export const WHEEL_SEMANTIC_CLASS_MANIFEST_VERSION = "wheel-v2" as const;
 
-export type WheelSemanticVariant = "classic" | "compact" | "anglo";
+export type WheelSemanticVariant =
+  | "classic"
+  | "compact"
+  | "anglo"
+  | "houses"
+  | "cusps";
 export type WheelSemanticLayout = "single" | "comparison";
 export type WheelSemanticLayer =
   | "geometry"
@@ -50,6 +55,8 @@ export type WheelStyleCapability =
   | "lineCap"
   | "lineJoin"
   | "fontRef"
+  | "fontWeight"
+  | "fontStyle"
   | "fontSize"
   | "tracking"
   | "fillPattern"
@@ -96,6 +103,8 @@ export type WheelStyleCapability =
    */
   | "rulerDepth"
   /** One tick group's length, as a share of the ruler band it stands in. */
+  | "arrowSize"
+  | "arrowStyle"
   | "tickLength";
 
 export type WheelPreviewFeatureId =
@@ -192,10 +201,23 @@ const ALL_VARIANTS = Object.freeze([
   "classic",
   "compact",
   "anglo",
+  "houses",
+  "cusps",
 ] as const);
 const CLASSIC_COMPACT = Object.freeze(["classic", "compact"] as const);
+/**
+ * Every layout that draws a zodiac band.
+ *
+ * House Wheel and Cusp Wheel do not: their zodiac is the position printed on
+ * each cusp and each body. So sign glyphs, degree rulers and term/decan
+ * subdivisions do not exist there, and the manifest has to say so — an
+ * "applicable" class with nothing painted is a control that does nothing.
+ */
+const ZODIAC_BAND_VARIANTS = Object.freeze(["classic", "compact", "anglo"] as const);
 const CLASSIC_ONLY = Object.freeze(["classic"] as const);
-const ANGLO_ONLY = Object.freeze(["anglo"] as const);
+// Both cusp-band wheels draw the Anglo ring stack, so every Anglo-only class
+// applies to them as well; their absent zodiac-band classes are gated above.
+const ANGLO_ONLY = Object.freeze(["anglo", "houses", "cusps"] as const);
 const ALL_LAYOUTS = Object.freeze(["single", "comparison"] as const);
 const SINGLE_ONLY = Object.freeze(["single"] as const);
 const COMPARISON_ONLY = Object.freeze(["comparison"] as const);
@@ -253,6 +275,8 @@ export const WHEEL_STYLE_CAPABILITY_SETS = Object.freeze({
   ] as const),
   text: Object.freeze([
     "fontRef",
+    "fontWeight",
+    "fontStyle",
     "fontSize",
     "tracking",
     "color",
@@ -301,6 +325,16 @@ export const WHEEL_STYLE_CAPABILITY_SETS = Object.freeze({
     "shadowX",
     "shadowY",
     "shadowBlur",
+    "opacity",
+  ] as const),
+  elementSliceFill: Object.freeze([
+    "fillPattern",
+    "patternColor",
+    "cellSize",
+    "dotSize",
+    "density",
+    "angle",
+    "seed",
     "opacity",
   ] as const),
   marker: Object.freeze(["radius", "color", "opacity"] as const),
@@ -356,26 +390,58 @@ const WHEEL_SEMANTIC_CLASS_INPUTS = {
     primitive: "surface", capabilities: C.maskedFill,
     applicability: applicability("classic.single.default"), colorTarget: "class",
   }),
+  "fills.glyphField": define({
+    labelKey: "styleLab.scene.glyphField", groupId: "fills", layer: "geometry",
+    primitive: "surface", capabilities: C.maskedFill,
+    applicability: applicability("classic.single.default"), colorTarget: "class",
+  }),
   "fills.houseField": define({
     labelKey: "styleLab.scene.houseField", groupId: "fills", layer: "geometry",
     primitive: "surface", capabilities: C.maskedFill,
-    applicability: applicability("classic.single.default"), colorTarget: "class",
+    applicability: applicability("classic.single.default", {
+      requiredFeatures: ["houses"],
+    }), colorTarget: "class",
   }),
   "fills.centerField": define({
     labelKey: "styleLab.scene.centerField", groupId: "fills", layer: "geometry",
     primitive: "surface", capabilities: C.maskedFill,
     applicability: applicability("classic.single.default"), colorTarget: "class",
   }),
+  "fills.cuspDegreeBand": define({
+    labelKey: "styleLab.scene.cuspDegreeBand", groupId: "fills", layer: "geometry",
+    primitive: "surface", capabilities: C.maskedFill,
+    applicability: applicability("anglo.single.default", {
+      variants: ANGLO_ONLY,
+    }), colorTarget: "class",
+  }),
   "fills.zodiacBand": define({
     labelKey: "styleLab.scene.zodiacBand", groupId: "fills", layer: "geometry",
     primitive: "surface", capabilities: C.maskedFill,
-    applicability: applicability("classic.single.default"), colorTarget: "class",
+    applicability: applicability("classic.single.default", {
+      variants: ZODIAC_BAND_VARIANTS,
+    }), colorTarget: "class",
   }),
-  "fills.subdivisionBand": define({
-    labelKey: "styleLab.scene.subdivisionBand", groupId: "fills", layer: "geometry",
+  "fills.zodiacElementSlices": define({
+    labelKey: "styleLab.scene.zodiacElementSlices", groupId: "fills", layer: "geometry",
+    primitive: "surface", capabilities: C.elementSliceFill,
+    applicability: applicability("classic.single.default", {
+      variants: ZODIAC_BAND_VARIANTS,
+    }), colorTarget: "palette-role",
+  }),
+  "fills.termBand": define({
+    labelKey: "styleLab.scene.termBand", groupId: "fills", layer: "geometry",
     primitive: "surface", capabilities: C.maskedFill,
     applicability: applicability("classic.single.terms", {
+      variants: ZODIAC_BAND_VARIANTS,
       requiredFeatures: ["terms"],
+    }), colorTarget: "class",
+  }),
+  "fills.decanBand": define({
+    labelKey: "styleLab.scene.decanBand", groupId: "fills", layer: "geometry",
+    primitive: "surface", capabilities: C.maskedFill,
+    applicability: applicability("classic.single.decans", {
+      variants: ZODIAC_BAND_VARIANTS,
+      requiredFeatures: ["decans"],
     }), colorTarget: "class",
   }),
 
@@ -426,7 +492,7 @@ const WHEEL_SEMANTIC_CLASS_INPUTS = {
   "rings.zodiacInner": define({
     labelKey: "styleLab.scene.zodiacInner", groupId: "rings", layer: "geometry",
     primitive: "circle", capabilities: C.ring,
-    applicability: applicability("classic.single.default"), colorTarget: "class",
+    applicability: applicability("classic.single.default", { variants: ZODIAC_BAND_VARIANTS }), colorTarget: "class",
   }),
   "rings.term": define({
     labelKey: "styleLab.class.ringsTerm", groupId: "rings", layer: "geometry",
@@ -462,7 +528,7 @@ const WHEEL_SEMANTIC_CLASS_INPUTS = {
   "zodiac.spoke": define({
     labelKey: "styleLab.scene.zodiacSpokes", groupId: "zodiac", layer: "geometry",
     primitive: "line", capabilities: C.openLine,
-    applicability: applicability("classic.single.default"), colorTarget: "class",
+    applicability: applicability("classic.single.default", { variants: ZODIAC_BAND_VARIANTS }), colorTarget: "class",
   }),
   // The two degree rulers. Each is named as the parent of its own ticks, which
   // is the whole point of the inversion: the ruler used to *be* three ticks, so
@@ -474,57 +540,57 @@ const WHEEL_SEMANTIC_CLASS_INPUTS = {
   "zodiac.tick.outer": define({
     labelKey: "styleLab.class.zodiacRulerOuter", groupId: "zodiac", layer: "geometry",
     primitive: "circle", capabilities: Object.freeze(["rulerDepth"] as const),
-    applicability: applicability("classic.comparison.default"),
+    applicability: applicability("classic.comparison.default", { variants: ZODIAC_BAND_VARIANTS }),
   }),
   "zodiac.tick.inner": define({
     labelKey: "styleLab.class.zodiacRulerInner", groupId: "zodiac", layer: "geometry",
     primitive: "circle", capabilities: Object.freeze(["rulerDepth"] as const),
-    applicability: applicability("classic.single.default", { variants: CLASSIC_COMPACT }),
+    applicability: applicability("classic.single.default", { variants: ZODIAC_BAND_VARIANTS }),
   }),
   "zodiac.tick.inner.10deg": define({
     labelKey: "styleLab.scene.tickInner10", groupId: "zodiac", layer: "geometry",
     primitive: "line", capabilities: C.openLine,
-    applicability: applicability("classic.single.default", { variants: CLASSIC_COMPACT }), colorTarget: "class",
+    applicability: applicability("classic.single.default", { variants: ZODIAC_BAND_VARIANTS }), colorTarget: "class",
   }),
   "zodiac.tick.inner.5deg": define({
     labelKey: "styleLab.scene.tickInner5", groupId: "zodiac", layer: "geometry",
     primitive: "line", capabilities: C.openLine,
-    applicability: applicability("classic.single.default", { variants: CLASSIC_COMPACT }), colorTarget: "class",
+    applicability: applicability("classic.single.default", { variants: ZODIAC_BAND_VARIANTS }), colorTarget: "class",
   }),
   "zodiac.tick.inner.1deg": define({
     labelKey: "styleLab.scene.tickInner1", groupId: "zodiac", layer: "geometry",
     primitive: "line", capabilities: C.openLine,
-    applicability: applicability("classic.single.default", { variants: CLASSIC_COMPACT }), colorTarget: "class",
+    applicability: applicability("classic.single.default", { variants: ZODIAC_BAND_VARIANTS }), colorTarget: "class",
   }),
   "zodiac.tick.outer.10deg": define({
     labelKey: "styleLab.scene.tickOuter10", groupId: "zodiac", layer: "geometry",
     primitive: "line", capabilities: C.openLine,
-    applicability: applicability("classic.comparison.default", { variants: CLASSIC_COMPACT, layouts: COMPARISON_ONLY }), colorTarget: "class",
+    applicability: applicability("classic.comparison.default", { variants: ZODIAC_BAND_VARIANTS, layouts: COMPARISON_ONLY }), colorTarget: "class",
   }),
   "zodiac.tick.outer.5deg": define({
     labelKey: "styleLab.scene.tickOuter5", groupId: "zodiac", layer: "geometry",
     primitive: "line", capabilities: C.openLine,
-    applicability: applicability("classic.comparison.default", { variants: CLASSIC_COMPACT, layouts: COMPARISON_ONLY }), colorTarget: "class",
+    applicability: applicability("classic.comparison.default", { variants: ZODIAC_BAND_VARIANTS, layouts: COMPARISON_ONLY }), colorTarget: "class",
   }),
   "zodiac.tick.outer.1deg": define({
     labelKey: "styleLab.scene.tickOuter1", groupId: "zodiac", layer: "geometry",
     primitive: "line", capabilities: C.openLine,
-    applicability: applicability("classic.comparison.default", { variants: CLASSIC_COMPACT, layouts: COMPARISON_ONLY }), colorTarget: "class",
+    applicability: applicability("classic.comparison.default", { variants: ZODIAC_BAND_VARIANTS, layouts: COMPARISON_ONLY }), colorTarget: "class",
   }),
   "zodiac.tick.angloCuspRuler.10deg": define({
     labelKey: "styleLab.class.zodiacTickAngloCusp10Degree", groupId: "zodiac", layer: "geometry",
     primitive: "line", capabilities: Object.freeze([...C.openLine, "tickLength"] as const),
-    applicability: applicability("anglo.single.default", { variants: ANGLO_ONLY }), colorTarget: "class",
+    applicability: applicability("anglo.single.default", { variants: ZODIAC_BAND_VARIANTS }), colorTarget: "class",
   }),
   "zodiac.tick.angloCuspRuler.5deg": define({
     labelKey: "styleLab.class.zodiacTickAngloCusp5Degree", groupId: "zodiac", layer: "geometry",
     primitive: "line", capabilities: Object.freeze([...C.openLine, "tickLength"] as const),
-    applicability: applicability("anglo.single.default", { variants: ANGLO_ONLY }), colorTarget: "class",
+    applicability: applicability("anglo.single.default", { variants: ZODIAC_BAND_VARIANTS }), colorTarget: "class",
   }),
   "zodiac.tick.angloCuspRuler.1deg": define({
     labelKey: "styleLab.class.zodiacTickAngloCusp1Degree", groupId: "zodiac", layer: "geometry",
     primitive: "line", capabilities: Object.freeze([...C.openLine, "tickLength"] as const),
-    applicability: applicability("anglo.single.default", { variants: ANGLO_ONLY }), colorTarget: "class",
+    applicability: applicability("anglo.single.default", { variants: ZODIAC_BAND_VARIANTS }), colorTarget: "class",
   }),
   "zodiac.tick.angloHouseCusp": define({
     labelKey: "styleLab.class.zodiacTickAngloHouseCusp", groupId: "zodiac", layer: "geometry",
@@ -539,28 +605,28 @@ const WHEEL_SEMANTIC_CLASS_INPUTS = {
   "zodiac.signGlyph": define({
     labelKey: "styleLab.scene.zodiacSign", groupId: "zodiac", layer: "geometry",
     primitive: "text", capabilities: C.text,
-    applicability: applicability("classic.single.default"), fontRole: "symbols", colorTarget: "palette-role",
+    applicability: applicability("classic.single.default", { variants: ZODIAC_BAND_VARIANTS }), fontRole: "symbols", colorTarget: "palette-role",
   }),
 
   "subdivisions.term.boundary": define({
     labelKey: "styleLab.scene.termBoundary", groupId: "subdivisions", layer: "geometry",
     primitive: "line", capabilities: C.openLine,
-    applicability: applicability("classic.single.terms", { requiredFeatures: ["terms"] }), colorTarget: "class",
+    applicability: applicability("classic.single.terms", { variants: ZODIAC_BAND_VARIANTS, requiredFeatures: ["terms"]  }), colorTarget: "class",
   }),
   "subdivisions.term.glyph": define({
     labelKey: "styleLab.scene.termGlyph", groupId: "subdivisions", layer: "dynamic",
     primitive: "text", capabilities: C.text,
-    applicability: applicability("classic.single.terms", { requiredFeatures: ["terms"] }), fontRole: "symbols", colorTarget: "palette-role",
+    applicability: applicability("classic.single.terms", { variants: ZODIAC_BAND_VARIANTS, requiredFeatures: ["terms"]  }), fontRole: "symbols", colorTarget: "palette-role",
   }),
   "subdivisions.decan.boundary": define({
     labelKey: "styleLab.scene.decanBoundary", groupId: "subdivisions", layer: "geometry",
     primitive: "line", capabilities: C.openLine,
-    applicability: applicability("classic.single.decans", { requiredFeatures: ["decans"] }), colorTarget: "class",
+    applicability: applicability("classic.single.decans", { variants: ZODIAC_BAND_VARIANTS, requiredFeatures: ["decans"]  }), colorTarget: "class",
   }),
   "subdivisions.decan.glyph": define({
     labelKey: "styleLab.scene.decanGlyph", groupId: "subdivisions", layer: "dynamic",
     primitive: "text", capabilities: C.text,
-    applicability: applicability("classic.single.decans", { requiredFeatures: ["decans"] }), fontRole: "symbols", colorTarget: "palette-role",
+    applicability: applicability("classic.single.decans", { variants: ZODIAC_BAND_VARIANTS, requiredFeatures: ["decans"]  }), fontRole: "symbols", colorTarget: "palette-role",
   }),
 
   "houses.inner.cusp": define({
@@ -616,8 +682,8 @@ const WHEEL_SEMANTIC_CLASS_INPUTS = {
   }),
   "angles.inner.arrowhead": define({
     labelKey: "styleLab.class.innerAngleArrowhead", groupId: "angles", layer: "geometry",
-    primitive: "line", capabilities: C.openLine,
-    variantCapabilities: { classic: C.openLine, compact: C.openLine, anglo: C.filledShape },
+    primitive: "line", capabilities: Object.freeze([...C.openLine, "arrowSize", "arrowStyle"] as const),
+    variantCapabilities: { classic: Object.freeze([...C.openLine, "arrowSize", "arrowStyle"] as const), compact: Object.freeze([...C.openLine, "arrowSize", "arrowStyle"] as const), anglo: Object.freeze([...C.openLine, "arrowSize", "arrowStyle"] as const) },
     applicability: applicability("classic.single.default", { requiredFeatures: ["angleArrowheads"] }), colorTarget: "class",
   }),
   "angles.inner.label": define({
@@ -647,8 +713,8 @@ const WHEEL_SEMANTIC_CLASS_INPUTS = {
   }),
   "angles.outer.arrowhead": define({
     labelKey: "styleLab.class.outerAngleArrowhead", groupId: "angles", layer: "geometry",
-    primitive: "line", capabilities: C.openLine,
-    variantCapabilities: { classic: C.openLine, compact: C.openLine },
+    primitive: "line", capabilities: Object.freeze([...C.openLine, "arrowSize", "arrowStyle"] as const),
+    variantCapabilities: { classic: Object.freeze([...C.openLine, "arrowSize", "arrowStyle"] as const), compact: Object.freeze([...C.openLine, "arrowSize", "arrowStyle"] as const) },
     applicability: applicability("classic.comparison.default", { variants: CLASSIC_COMPACT, layouts: COMPARISON_ONLY, requiredFeatures: ["angleArrowheads"] }), colorTarget: "class",
   }),
   "angles.outer.label": define({
@@ -713,6 +779,11 @@ const WHEEL_SEMANTIC_CLASS_INPUTS = {
     labelKey: "styleLab.class.outerBodyGlyph", groupId: "bodies", layer: "outer-label",
     primitive: "text", capabilities: C.text,
     applicability: applicability("classic.comparison.default", { layouts: COMPARISON_ONLY }), fontRole: "symbols", colorTarget: "palette-role",
+  }),
+  "bodies.outer.position": define({
+    labelKey: "styleLab.class.outerObjectPositions", groupId: "bodies", layer: "outer-label",
+    primitive: "text", capabilities: C.text,
+    applicability: applicability("classic.comparison.default"), fontRole: "text", colorTarget: "palette-role",
   }),
   "bodies.outer.motion": define({
     labelKey: "styleLab.class.outerBodyMotion", groupId: "bodies", layer: "dynamic",

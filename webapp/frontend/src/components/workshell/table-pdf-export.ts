@@ -5,6 +5,7 @@ import {
   decodeBase64Bytes,
   exportTablePdf,
   exportTablePdfBytes,
+  exportTextFile,
   type GenericTableCell,
   type GenericTableColumn,
   type GenericTablePayload,
@@ -16,7 +17,7 @@ import {
   type TablePdfRow,
 } from "@/lib/daemon/client";
 import { resolveShellHost } from "@/lib/shell-host";
-import { resolvedSemanticChartColor } from "@/lib/theme/semantic-color";
+import { tablePrintColor } from "@/lib/theme/table-print-palette";
 import { exportFileBaseName } from "./text-export";
 import {
   adHocTableToConfiguredAlignedText,
@@ -37,33 +38,34 @@ export type TableExportDialogLabels = {
   textFiles: string;
 };
 
-const PDF_NEUTRAL_GLYPH_ROLES = new Set([
-  "--morinus-peregrin",
-  "--morinus-signs",
-  "--morinus-text-bright",
-]);
-
-function isNeutralRgb(color: string): boolean {
-  const match = color.trim().match(/^#([0-9a-f]{6})$/i);
-  if (!match) return false;
-  const value = Number.parseInt(match[1], 16);
-  const channels = [(value >> 16) & 0xff, (value >> 8) & 0xff, value & 0xff];
-  return Math.max(...channels) - Math.min(...channels) <= 12;
-}
-
-/** Paper has no dark-theme neutral foreground. Preserve authored dignity,
- * body, element, and aspect colours, but print neutral/peregrine and any
- * achromatic fallback glyph in black instead of carrying a pale screen grey
- * onto white paper. */
-function resolvedPdfGlyphColor(
-  role: string | null | undefined,
-  fallback: string | null | undefined,
-): string | undefined {
-  const resolved = resolvedSemanticChartColor(role, fallback);
-  if (PDF_NEUTRAL_GLYPH_ROLES.has(role ?? "") || (resolved && isNeutralRgb(resolved))) {
-    return "#000000";
+/** Open native chrome in the click turn. Preparing rows must never hold the
+ * save dialog hostage; the captured report can finish while it is open. */
+export async function exportPreparedTableDocument(
+  buildDocument: () => TableExportDocument | Promise<TableExportDocument>,
+  kind: "pdf" | "txt",
+  labels: TableExportDialogLabels,
+  fileStem?: string,
+): Promise<boolean> {
+  const host = resolveShellHost();
+  if (fileStem && host.capabilities.nativeFileDialogs) {
+    const path = host.selectSavePath({
+      title: labels.title,
+      defaultPath: `${fileStem}.${kind}`,
+      filters: [{ name: kind === "pdf" ? labels.pdfFiles : labels.textFiles, extensions: [kind] }],
+    });
+    const [selected, document] = await Promise.all([path, Promise.resolve().then(buildDocument)]);
+    if (!selected) return false;
+    if (kind === "pdf") {
+      await exportTablePdf({ path: selected, title: document.title, document: document.pdf });
+    } else {
+      await exportTextFile({ path: selected, text: document.text, extension: "txt" });
+    }
+    return true;
   }
-  return resolved;
+  const document = await buildDocument();
+  if (kind === "pdf") return exportTablePdfDocument(document, labels);
+  const { exportTableTextDocument } = await import("./table-text-export");
+  return exportTableTextDocument(document, labels);
 }
 
 /** Sanitize a title into a default filename stem (matches home-client's
@@ -160,7 +162,9 @@ export async function buildAdHocTableExportDocument(
       profile: params.pdfProfile ?? "standard",
       headerLines: compactHeaderLines(params.sourceName, params.headerLines),
       columns: params.columns.map(pdfColumn),
-      rows: params.pdfRows ?? params.rows.map((cells) => ({ cells: resolveCellsForPdf(cells) })),
+      rows: params.pdfRows
+        ? params.pdfRows.map((row) => ({ ...row, cells: resolveCellsForPdf(row.cells) }))
+        : params.rows.map((cells) => ({ cells: resolveCellsForPdf(cells) })),
     },
   };
 }
@@ -192,18 +196,18 @@ function pdfColumn(column: GenericTableColumn | AdHocTableTextDocument["columns"
     align: column.align,
     width: column.widthFactor,
     glyph: column.headerGlyph,
-    color: resolvedPdfGlyphColor(column.colorRole, column.colorHex),
+    color: tablePrintColor(column.colorRole),
   };
 }
 
 function resolveCellForPdf(cell: GenericTableCell): GenericTableCell {
   const runs = cell.runs?.map((run) => ({
     ...run,
-    color: resolvedPdfGlyphColor(run.colorRole, run.color),
+    color: tablePrintColor(run.colorRole),
   }));
   return {
     ...cell,
-    color: resolvedPdfGlyphColor(cell.colorRole, cell.color),
+    color: tablePrintColor(cell.colorRole),
     ...(runs ? { runs } : {}),
   };
 }
@@ -230,26 +234,26 @@ function resolveMatrixForPdf(matrix: AspectMatrixPayload): AspectMatrixPayload {
     ...matrix,
     planets: matrix.planets.map((entry) => ({
       ...entry,
-      color: resolvedPdfGlyphColor(entry.colorRole, entry.color),
+      color: tablePrintColor(entry.colorRole),
     })),
     ascmc: matrix.ascmc.map((entry) => ({
       ...entry,
-      color: resolvedPdfGlyphColor(entry.colorRole, entry.color),
+      color: tablePrintColor(entry.colorRole),
     })),
     houses: matrix.houses.map((entry) => ({
       ...entry,
-      color: resolvedPdfGlyphColor(entry.colorRole, entry.color),
+      color: tablePrintColor(entry.colorRole),
     })),
     ...(matrix.rows ? {
       rows: matrix.rows.map((entry) => ({
         ...entry,
-        color: resolvedPdfGlyphColor(entry.colorRole, entry.color),
+        color: tablePrintColor(entry.colorRole),
       })),
     } : {}),
     ...(matrix.cols ? {
       cols: matrix.cols.map((entry) => ({
         ...entry,
-        color: resolvedPdfGlyphColor(entry.colorRole, entry.color),
+        color: tablePrintColor(entry.colorRole),
       })),
     } : {}),
     cells: Object.fromEntries(
@@ -257,7 +261,7 @@ function resolveMatrixForPdf(matrix: AspectMatrixPayload): AspectMatrixPayload {
         key,
         {
           ...cell,
-          color: resolvedPdfGlyphColor(cell.colorRole, cell.color),
+          color: tablePrintColor(cell.colorRole),
         },
       ]),
     ),
@@ -270,7 +274,7 @@ function resolveStripForPdf(strip: StripPayload): StripPayload {
       ...sign,
       bodies: sign.bodies.map((body) => ({
         ...body,
-        colorHex: resolvedPdfGlyphColor(body.colorRole, body.colorHex),
+        colorHex: tablePrintColor(body.colorRole),
       })),
     })),
   };

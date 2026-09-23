@@ -1,3 +1,5 @@
+import type { WheelComposition } from "./wheel-composition";
+import type { WheelGeometryPresetSelections } from "./wheel-geometry-preset";
 // Copyright (C) 2026 Max Lange
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -34,9 +36,10 @@ export interface ChartPlanet {
  * of the chart points the desktop click target supports, or a daemon-exported
  * secondary-ring point key (`point:<role>:<family>:<id>:<longitude>`). */
 export type AspectPointKey = `point:${string}`;
+export type CuspAspectKey = `cusp${number}`;
 export type AngleAspectKey = "asc" | "mc" | "dc" | "dsc" | "ic";
-export type AspectBodyKey = PlanetId | AngleAspectKey | "fortune" | "vertex" | "syzygy" | "eclipse" | AspectPointKey;
-export type InterChartAspectKey = PlanetId | AngleAspectKey | "fortune" | "vertex" | "syzygy" | "eclipse";
+export type AspectBodyKey = PlanetId | AngleAspectKey | CuspAspectKey | "fortune" | "vertex" | "syzygy" | "eclipse" | AspectPointKey;
+export type InterChartAspectKey = PlanetId | AngleAspectKey | CuspAspectKey | "fortune" | "vertex" | "syzygy" | "eclipse";
 
 export interface ChartAspect {
   p1: AspectBodyKey;
@@ -203,6 +206,7 @@ export interface ChartMeta {
   statusFields?: string[];
   houseSystemLines?: string[];
   cornerLines?: {
+    pairedParticipants?: boolean;
     topLeft?: string[];
     bottomLeft?: string[];
   };
@@ -256,7 +260,12 @@ export interface ChartDecanSegment {
 }
 
 export type ChartRenderRole = "primary" | "outer" | "radix" | "anchor";
-export type RenderVariant = "round-classic" | "round-compact" | "round-anglo";
+export type RenderVariant =
+  | "round-classic"
+  | "round-compact"
+  | "round-anglo"
+  | "round-houses"
+  | "round-cusps";
 export type OverlayRenderMode = "full" | "step_fast" | "deferred";
 export type OuterRingMode =
   | "none"
@@ -291,6 +300,10 @@ export interface RingLabelSegment {
 }
 
 export interface OuterRingItem {
+  degText?: string;
+  minText?: string;
+  /** Existing fixed-star labels already contain their position. */
+  positionInLabel?: boolean;
   id: string;
   family: string;
   longitude: number;
@@ -359,7 +372,13 @@ export interface Chart {
     signVariant: 1 | 2;
     useDignityColors?: boolean;
     useZodiacElementColors?: boolean;
-    theme?: 0 | 1 | 2;
+    useZodiacElementFieldColors?: boolean;
+    zodiacElementFieldOpacity?: number;
+    // Wheel layout: 0 classic, 1 compact, 2 anglo, 3 house-fixed.
+    theme?: 0 | 1 | 2 | 3 | 4;
+    wheelComposition?: WheelComposition;
+    /** Independent wheel geometry; saved themes recall frozen copies here. */
+    wheelGeometryPresets?: WheelGeometryPresetSelections;
     angloDenseLabelLayout?: "leader-columns" | "routed-cusps" | "sign-locked";
     ascmcSize?: number;
     chartRingThickness?: number;
@@ -373,6 +392,8 @@ export interface Chart {
     showHouses?: boolean;
     showOuterHouseLines?: boolean;
     showPositions?: boolean;
+    showOuterPositions?: boolean;
+    showOuterMinutes?: boolean;
     showInformation?: boolean;
     showRadixNameInCanvas?: boolean;
     showHouseSystem?: boolean;
@@ -591,7 +612,36 @@ export type PdEventOverlayV1 =
   | PdBodyAspectToAngleEventOverlayV1
   | PdAngleToBodyAspectEventOverlayV1;
 
+export type SplitAspectSource = {
+  id: string;
+  side: "left" | "right";
+  documentId: string;
+  ownerDocumentId: string | null;
+  label: string;
+  ringIndex: number;
+  cursorIdentity: string;
+};
+
+export type SplitAspectSelection = {
+  sources: SplitAspectSource[];
+  primarySourceId: string | null;
+  outerSourceId: string | null;
+};
+
+export type SideBySideView = {
+  enabled: boolean;
+  leftDocumentId: string | null;
+  rightDocumentId: string | null;
+  activeSide: "left" | "right";
+  revision: number;
+  aspectList?: SplitAspectSelection;
+};
+
 export interface ChartRenderSnapshot {
+  /** Both visible panes are exported from one committed daemon state. */
+  sideBySideSnapshots?: Record<string, ChartRenderSnapshot>;
+  mundaneChart?: import("@/lib/daemon/client").MundaneChartData | null;
+  sideBySide?: SideBySideView;
   primaryChart: Chart;
   comparisonChart?: Chart | null;
   radixChart?: Chart | null;
@@ -664,6 +714,8 @@ export interface ChartPalette {
   textDim: string;
   textBright: string;
   fortune: string;
+  /** Fire, earth, air, water — the canonical zodiac-element palette. */
+  elements?: readonly string[];
   planets: string[];   // 13-entry palette indexed by SE id
   aspects: string[];   // 14-entry palette indexed by aspect type
                        // (0=Conj, 1=Semisext, 2=Semisq, 3=Sext, 4=Quint,

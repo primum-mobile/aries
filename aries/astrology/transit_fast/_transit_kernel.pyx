@@ -91,6 +91,8 @@ cdef void _configure_ephemeris_context(
 	int flags,
 	object sidereal_mode,
 	object topocentric_position,
+	double sidereal_epoch,
+	double sidereal_offset,
 ):
 	global _active_ephe_path, _active_sidereal_mode, _active_topocentric_position
 	cdef object normalized_topo = None
@@ -105,9 +107,11 @@ cdef void _configure_ephemeris_context(
 		_active_ephe_path = ephe_path
 		_active_sidereal_mode = None
 		_active_topocentric_position = None
-	if sidereal_mode is not None and sidereal_mode != _active_sidereal_mode:
-		swe_set_sid_mode(int(sidereal_mode), 0.0, 0.0)
-		_active_sidereal_mode = sidereal_mode
+	if sidereal_mode is not None and (sidereal_mode, sidereal_epoch, sidereal_offset) != _active_sidereal_mode:
+		if not isfinite(sidereal_epoch) or not isfinite(sidereal_offset):
+			raise ValueError("sidereal epoch and offset must be finite")
+		swe_set_sid_mode(int(sidereal_mode), sidereal_epoch, sidereal_offset)
+		_active_sidereal_mode = (sidereal_mode, sidereal_epoch, sidereal_offset)
 	if topocentric_position is not None:
 		normalized_topo = (
 			float(topocentric_position[0]),
@@ -1252,6 +1256,8 @@ cpdef list search_station_times_raw(
 	object step_days=None,
 	double eps_speed=STATION_SPEED_EPS,
 	double eps_days=DEFAULT_EPS_DAYS,
+	double sidereal_epoch=0.0,
+	double sidereal_offset=0.0,
 ):
 	cdef CHit* hits = NULL
 	cdef size_t count = 0
@@ -1271,7 +1277,7 @@ cpdef list search_station_times_raw(
 			with nogil:
 				_acquire_native_swe_lock()
 			lock_held = True
-			_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position)
+			_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position, sidereal_epoch, sidereal_offset)
 			with nogil:
 				_search_station_times_into_c(planet, slice_start, slice_end, flags, base_step, eps_speed, eps_days, &hits, &count, &capacity)
 				_release_native_swe_lock()
@@ -1297,6 +1303,8 @@ cpdef list search_station_times_batch_raw(
 	object step_days=None,
 	double eps_speed=STATION_SPEED_EPS,
 	double eps_days=DEFAULT_EPS_DAYS,
+	double sidereal_epoch=0.0,
+	double sidereal_offset=0.0,
 ):
 	cdef CHit* hits = NULL
 	cdef size_t count = 0
@@ -1322,7 +1330,7 @@ cpdef list search_station_times_batch_raw(
 				with nogil:
 					_acquire_native_swe_lock()
 				lock_held = True
-				_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position)
+				_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position, sidereal_epoch, sidereal_offset)
 				with nogil:
 					_search_station_times_into_c(int(planet), slice_start, slice_end, flags, base_step, eps_speed, eps_days, &hits, &count, &capacity)
 					_release_native_swe_lock()
@@ -1349,6 +1357,8 @@ cpdef list search_longitude_transits_raw(
 	object step_days=None,
 	double eps_deg=DEFAULT_EPS_DEG,
 	double eps_days=DEFAULT_EPS_DAYS,
+	double sidereal_epoch=0.0,
+	double sidereal_offset=0.0,
 ):
 	cdef CHit* hits = NULL
 	cdef size_t count = 0
@@ -1373,7 +1383,7 @@ cpdef list search_longitude_transits_raw(
 			with nogil:
 				_acquire_native_swe_lock()
 			lock_held = True
-			_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position)
+			_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position, sidereal_epoch, sidereal_offset)
 			with nogil:
 				_search_longitude_transits_prepared_into_c(planet, slice_start, slice_end, unique_targets, target_count, flags, base_step, eps_deg, eps_days, &hits, &count, &capacity)
 				_release_native_swe_lock()
@@ -1402,6 +1412,8 @@ cpdef list search_longitude_transits_batch_raw(
 	object step_days=None,
 	double eps_deg=DEFAULT_EPS_DEG,
 	double eps_days=DEFAULT_EPS_DAYS,
+	double sidereal_epoch=0.0,
+	double sidereal_offset=0.0,
 ):
 	cdef CHit* hits = NULL
 	cdef size_t count = 0
@@ -1432,7 +1444,7 @@ cpdef list search_longitude_transits_batch_raw(
 				with nogil:
 					_acquire_native_swe_lock()
 				lock_held = True
-				_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position)
+				_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position, sidereal_epoch, sidereal_offset)
 				with nogil:
 					_search_longitude_transits_prepared_into_c(int(planet), slice_start, slice_end, unique_targets, target_count, flags, base_step, eps_deg, eps_days, &hits, &count, &capacity)
 					_release_native_swe_lock()
@@ -1461,6 +1473,8 @@ cpdef list search_relative_aspects_batch_raw(
 	object step_days=None,
 	double eps_deg=DEFAULT_EPS_DEG,
 	double eps_days=DEFAULT_EPS_DAYS,
+	double sidereal_epoch=0.0,
+	double sidereal_offset=0.0,
 ):
 	cdef CHit* hits = NULL
 	cdef size_t count = 0
@@ -1560,7 +1574,7 @@ cpdef list search_relative_aspects_batch_raw(
 			with nogil:
 				_acquire_native_swe_lock()
 			lock_held = True
-			_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position)
+			_configure_ephemeris_context(ephe_path, flags, sidereal_mode, topocentric_position, sidereal_epoch, sidereal_offset)
 			with nogil:
 				_search_relative_aspects_into_c(
 					body_code_arr,

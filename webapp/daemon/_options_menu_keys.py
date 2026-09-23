@@ -3,6 +3,12 @@ Regenerate if the Options submenu labels change; the French lives in the fronten
 catalog (optmenu.*), not here. Consumed by label_i18n.attach_label_keys."""
 
 OPTIONS_MENU_KEYS = {
+    'Progressions': 'settings.tabProgressions',
+    'Solar Arc directions': 'settings.tabSolarArcDirections',
+    'Calculated angles': 'settings.calculatedAngles',
+    'Method': 'settings.method',
+    'Returns': 'settings.tabRevolutions',
+    'Pre-birth perfections (converse)': 'settings.prebirthPerfectionsConverse',
     'Node calculation': 'optmenu.nodeCalculation',
     'Ayanamsha': 'optmenu.ayanamsha',
     'House system': 'optmenu.houseSystem',
@@ -50,9 +56,10 @@ OPTIONS_MENU_KEYS = {
     'Fortuna': 'optmenu.fortuna',
     'Prenatal Syzygy': 'optmenu.prenatalSyzygy',
     'In tables': 'optmenu.inTables',
+    'Chart position labels': 'settings.chartPositionLabels',
     'Terms': 'optmenu.terms',
     'Decans': 'optmenu.decans',
-    'Topocentric Moon': 'optmenu.topocentricMoon',
+    'Moon parallax correction': 'optmenu.topocentricMoon',
     'Morin antiscia': 'optmenu.morinAntiscia',
     'Pluto': 'optmenu.pluto',
     'With symbols': 'optmenu.withSymbols',
@@ -117,6 +124,8 @@ OPTIONS_MENU_KEYS = {
     'Classic Wheel': 'optmenu.classicWheel',
     'Compact Wheel': 'optmenu.compactWheel',
     'Anglo Wheel': 'optmenu.angloWheel',
+    'House Wheel': 'optmenu.houseWheel',
+    'Cusp Wheel': 'optmenu.cuspWheel',
     'House line routing': 'optmenu.angloDenseLabelLayout',
     'Straight house lines': 'optmenu.leaderColumns',
     'Routed house lines': 'optmenu.routedCuspLines',

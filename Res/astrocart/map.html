@@ -259,6 +259,18 @@
   #place-search {
     position:relative; width:208px;
   }
+  #ruler-control {
+    flex:none; display:flex; align-items:center; justify-content:center;
+    width:var(--chrome-control-size); height:var(--chrome-control-size); padding:0;
+    background:var(--chrome-bg); color:var(--chrome-dim);
+    border:1px solid var(--chrome-border); border-radius:var(--chrome-panel-radius);
+    cursor:pointer;
+  }
+  #ruler-control:hover:not(:disabled) { background:var(--btn-hover-bg); }
+  #ruler-control[aria-pressed="true"] { background:var(--btn-active-bg); color:var(--btn-active-fg); }
+  #ruler-control:focus-visible { outline:1px solid var(--chrome-soft); outline-offset:2px; }
+  #ruler-control:disabled { opacity:0.5; cursor:default; }
+  #ruler-control svg { width:14px; height:14px; }
   #place-search-input {
     width:100%; box-sizing:border-box;
     height:var(--chrome-control-size); padding:0 var(--chrome-padding-x);
@@ -451,6 +463,21 @@
     font-family:var(--chrome-font-ui);
     font-weight:600;
   }
+  .acg-ruler-overlay { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:5; overflow:hidden; }
+  .acg-ruler-overlay path { fill:none; stroke-linecap:round; stroke-linejoin:round; }
+  .acg-ruler-halo { stroke:var(--aries-accent-foreground, var(--chrome-text)); stroke-width:2.5; }
+  .acg-ruler-line { stroke:var(--aries-accent, var(--key-line)); stroke-width:1.5; stroke-dasharray:6 4; }
+  .acg-ruler-foot, .acg-ruler-handle { stroke:var(--aries-accent-foreground, var(--chrome-text)); stroke-width:1.25; fill:var(--aries-accent, var(--key-line)); }
+  .acg-ruler-handle { fill:var(--popup-bg); stroke:var(--aries-accent, var(--key-line)); }
+  .acg-ruler-label, .acg-ruler-hint { position:absolute; pointer-events:none; z-index:6; padding:var(--chrome-padding-y) var(--chrome-padding-x); background:var(--chrome-bg); color:var(--chrome-text); border:1px solid var(--chrome-border); border-radius:var(--chrome-panel-radius); font:var(--chrome-font-size) var(--chrome-font-ui); font-variant-numeric:tabular-nums; }
+  .acg-ruler-label { transform:translate(-50%, calc(-100% - 10px)); white-space:nowrap; }
+  .acg-ruler-hint { bottom:52px; left:50%; transform:translateX(-50%); max-width:70%; text-align:center; }
+  .acg-ruler-hover-paran .maplibregl-canvas,
+  .acg-ruler-explicit .maplibregl-canvas,
+  .acg-ruler-gesture .maplibregl-canvas { cursor:crosshair !important; }
+  #acg-menu button[data-action="ruler"] { display:flex; align-items:center; gap:var(--chrome-padding-x); }
+  #acg-menu button[data-action="ruler"]::after { content:''; width:0.6em; height:0.3em; margin-left:auto; border-left:1.5px solid transparent; border-bottom:1.5px solid transparent; transform:rotate(-45deg); }
+  #acg-menu button[data-action="ruler"][aria-checked="true"]::after { border-color:currentColor; }
 </style>
 </head>
 <body>
@@ -463,6 +490,8 @@
   <button data-action="transit" data-context="chart">Transit here</button>
   <hr data-context="chart">
   <button data-action="set_pob" data-context="chart">Set place of birth</button>
+  <hr data-context="chart">
+  <button data-action="ruler" data-context="chart" role="menuitemcheckbox" aria-checked="false"></button>
   <button data-action="set_default_loc" data-context="default_location">Set default location</button>
   <button data-action="set_ascensional_event_place" data-context="ascensional_event_place">Set event place</button>
 </div>
@@ -506,10 +535,25 @@
            placeholder="Search a place…" aria-label="Search place" />
     <div id="place-search-results" role="listbox"></div>
   </div>
+  <button id="ruler-control" type="button" aria-pressed="false" disabled>
+    <!-- Lucide Ruler (ISC), matching the app's lucide-react glyph. -->
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z" />
+      <path d="m14.5 12.5 2-2" />
+      <path d="m11.5 9.5 2-2" />
+      <path d="m8.5 6.5 2-2" />
+      <path d="m17.5 15.5 2-2" />
+    </svg>
+  </button>
 </div>
 <div id="status">waiting for chart…</div>
 <script src="vendor/maplibre-gl.js"></script>
 <script src="vendor/pmtiles.js"></script>
+<script src="vendor/geographiclib-geodesic.js"></script>
+<script src="curve-geometry.js"></script>
+<script src="curve-refinement.js"></script>
+<script src="ruler-geometry.js"></script>
+<script src="ruler.js"></script>
 <script>
 (function () {
   let DEV_SETTINGS = {};
@@ -2578,6 +2622,7 @@
     }
   }
 
+  const MAP_CLICK_TOLERANCE = 6;
   const ACG_SOURCE_ID = 'acg';
   const ACG_LABEL_SOURCE_ID = 'acg-labels-src';
   const ECLIPSE_SOURCE_ID = 'eclipse-path';
@@ -2600,6 +2645,8 @@
 
   let map = null;
   let mapReady = false;
+  let mapRuler = null;
+  let rulerOptions = { units: 'metric' };
   let mapPresented = false;
   const printAtlasCaptureControllers = new Map();
   let pendingOnlineBasemapStyle = null;
@@ -2613,6 +2660,7 @@
   let retainedEclipseFitPending = false;
   let currentData = { type: 'FeatureCollection', features: [] };
   let currentMapData = currentData;
+  let curveRefinement = null;
   let pendingData = null;
   let currentEclipseData = { type: 'FeatureCollection', features: [] };
   let currentMapEclipseData = currentEclipseData;
@@ -2657,7 +2705,7 @@
     aspects: true,
     zeniths: true,
     localSpaceOppositions: false,
-    layers: { natal: true, transit: true, progression: true },
+    layers: { natal: true, dynamic: true, transit: true, progression: true },
     filters: { points: null, kinds: null, aspects: null, techniques: null },
   };
   let viewOptionsInitialized = false;
@@ -2917,6 +2965,7 @@
       maplibregl.addProtocol('pmtiles', protocol.tile);
     }
     map = new maplibregl.Map({
+      clickTolerance: MAP_CLICK_TOLERANCE,
       container: 'map',
       style: buildStyle(IS_DARK),
       center: [0, 20],
@@ -3041,6 +3090,7 @@
       pushAsterismData();
       pushEclipseData({ fit: fitPendingEclipse });
       mapReady = true;
+      scheduleCurveRefinement();
       postToParent({ type: 'ready' });
       if (firstStyleLoad) {
         perfState.mapLoadMs = perfNow() - perfStartedAt;
@@ -3061,13 +3111,18 @@
       map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
     }
+    map.on('mouseenter', 'acg-parans', () => mapRuler?.setParanHover(true));
+    map.on('mouseleave', 'acg-parans', () => mapRuler?.setParanHover(false));
     for (const layer of ['eclipse-path-shadow', 'eclipse-path-fill', 'eclipse-path-limits', 'eclipse-path-center', 'eclipse-path-max']) {
       map.on('click', layer, onEclipseClick);
       map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
     }
     setAsterismHoverEnabled(true);
-    map.on('mouseleave', () => hideAsterismStarPopup());
+    map.on('mouseleave', () => {
+      hideAsterismStarPopup();
+      mapRuler?.setParanHover(false);
+    });
     map.on('error', (event) => {
       if (fallbackStylePending) {
         // Ignore late errors from the abandoned online style. A confirmed
@@ -3100,6 +3155,23 @@
         if (!mapReady && ONLINE_BASEMAP_SOURCE_IDS.has(sourceId)) switchToOfflineFallback();
       }
     });
+    curveRefinement = window.createAriesCurveRefinement({
+      createWorker: () => new Worker('curve-worker.js?revision=' + encodeURIComponent(URL_THEME.get('revision') || '')),
+      publish: () => {
+        if (!runtimeOverlaySceneDeferred()) applyRuntimeOverlayScene({ data: true }, { reason: 'curve-refinement' });
+      },
+    });
+    mapRuler = window.createAriesMapRuler({
+      map, pick: pickRulerLine, resolve: resolveRulerLine, project: projectRulerCoordinate,
+      dragThreshold: MAP_CLICK_TOLERANCE,
+      onDiagnostic: (detail) => postToParent({ type: 'ruler-diagnostic', detail }),
+      onEnabledChange: (enabled) => {
+        configureRuler({ enabled });
+        postToParent({ type: 'ruler', enabled });
+      },
+    });
+    configureRuler(rulerOptions);
+    mapRuler.setActive(mapHostActive);
     map.on('contextmenu', onMapContextMenu);
     map.on('click', hideContextMenu);
     map.on('render', () => {
@@ -3107,6 +3179,7 @@
       renderPolarOverlay();
     });
     map.on('movestart', () => {
+      mapRuler?.setParanHover(false);
       beginDomAcgMovement(beginMapMotion('move'));
     });
     map.on('zoomstart', () => {
@@ -3124,12 +3197,14 @@
       if (ACG_PERF_MODE) perfState.resizeEvents += 1;
       scheduleCityLabelsRefresh('resize');
       scheduleDomAcgLabels('resize');
+      scheduleCurveRefinement();
     });
     map.on('moveend', () => {
       const motionSettled = endMapMotion('move');
       if (motionSettled) flushRetainedRuntimeOverlayScene('moveend');
       endDomAcgMovement('moveend', motionSettled);
       if (motionSettled) scheduleCityLabelsRefresh('moveend');
+      if (motionSettled) scheduleCurveRefinement();
       scheduleViewStatePost('moveend');
     });
     map.on('zoomend', () => {
@@ -3137,6 +3212,7 @@
       if (motionSettled) flushRetainedRuntimeOverlayScene('zoomend');
       endDomAcgMovement('zoomend', motionSettled);
       if (motionSettled) scheduleCityLabelsRefresh('zoomend');
+      if (motionSettled) scheduleCurveRefinement();
     });
     wireControlsOnce();
     setStatus('map ready');
@@ -3622,6 +3698,7 @@
     const burstStarted = activeMapMotionPhases.size === 0;
     activeMapMotionPhases.add(phase);
     if (burstStarted) {
+      curveRefinement?.cancel();
       if (ACG_PERF_MODE) perfLastRenderAt = perfNow();
       setAsterismHoverEnabled(false);
     }
@@ -3709,6 +3786,7 @@
   }
 
   function isAcgLayerRoleVisible(properties, options = viewOptions) {
+    if (properties && properties.kind === 'PARAN') return !!options.parans;
     const role = normalizedAcgLayerRole(properties);
     if (role === 'transit') return !!options.layers.transit;
     if (role === 'progression') return !!options.layers.progression;
@@ -3833,7 +3911,17 @@
   }
 
   function acgParanFilter(options = viewOptions) {
-    return acgKindFilter('LineString', ['PARAN'], options);
+    // Paran visibility belongs to its layer layout, independently of natal
+    // line visibility. Keeping this filter stable makes its toggle a paint
+    // operation instead of reparsing every ACG line layer.
+    const filters = [
+      'all',
+      ['==', ['geometry-type'], 'LineString'],
+      ['==', ['get', 'kind'], 'PARAN'],
+    ];
+    const attributes = acgAttributeVisibilityFilter(options);
+    if (attributes) filters.push(attributes);
+    return filters;
   }
 
   function acgZenithFilter(options = viewOptions) {
@@ -3890,8 +3978,11 @@
       ['acg-zeniths', acgZenithFilter()],
       ['acg-labels', acgLabelFilter()],
       ['acg-zenith-labels', acgZenithFilter()],
+      ['acg-paran-labels', acgParanFilter()],
     ]) {
-      if (map.getLayer(id)) map.setFilter(id, filter);
+      if (!map.getLayer(id)) continue;
+      if (map.getFilter && JSON.stringify(map.getFilter(id)) === JSON.stringify(filter)) continue;
+      map.setFilter(id, filter);
     }
     for (const [id, visible] of [
       ['acg-local-space-oppositions', viewOptions.localSpaceOppositions],
@@ -4221,12 +4312,12 @@
 
   function ensureAcgLayers() {
     if (!map.getSource(ACG_SOURCE_ID)) {
-      map.addSource(ACG_SOURCE_ID, { type: 'geojson', data: currentMapData });
+      map.addSource(ACG_SOURCE_ID, { type: 'geojson', data: currentMapData, tolerance: 0, maxzoom: 22 });
     }
     // Keep online line labels on the parallel source used by HEAD. Attaching a
     // line-placed symbol layer to the shared source can blank Liberty's lines.
     if (!USE_LOCAL_BASEMAP && !USE_MINIMAL_BASEMAP && !map.getSource(ACG_LABEL_SOURCE_ID)) {
-      map.addSource(ACG_LABEL_SOURCE_ID, { type: 'geojson', data: currentMapData });
+      map.addSource(ACG_LABEL_SOURCE_ID, { type: 'geojson', data: currentMapData, tolerance: 0, maxzoom: 22 });
     }
     // Thin neutral outline so colored lines stay readable without looking heavy.
     // Filter excludes parans — they have their own (off-by-default) style.
@@ -4646,10 +4737,12 @@
       )) scheduleRuntimeOverlayReplay();
     }
     if (next.eclipse && options.fit) fitFeatureCollection(currentEclipseData);
+    if (next.data || next.eclipse || next.asterism) mapRuler?.refresh();
     if (next.data || next.eclipse) {
       scheduleDomAcgLabels(options.reason || 'scene-data');
     }
     if (map && typeof map.triggerRepaint === 'function') map.triggerRepaint();
+    if (next.data && options.reason !== 'curve-refinement') scheduleCurveRefinement();
     return true;
   }
 
@@ -5984,9 +6077,22 @@
     };
   }
 
+  function scheduleCurveRefinement() {
+    if (!curveRefinement || !mapReady || !map || runtimeOverlaySceneDeferred()) return;
+    const bounds = map.getBounds();
+    const west = bounds.getWest(), east = bounds.getEast();
+    const south = bounds.getSouth(), north = bounds.getNorth();
+    const dx = Math.max(0.001, (east - west) * 0.25);
+    const dy = Math.max(0.001, (north - south) * 0.25);
+    curveRefinement.request(currentData, {
+      zoom: map.getZoom(), projection: selectedProjection,
+      bounds: [west - dx, Math.max(-90, south - dy), east + dx, Math.min(90, north + dy)],
+    });
+  }
+
   function rebuildPolarOverlayPaths() {
     const scene = buildRuntimeOverlayScene(
-      currentData,
+      curveRefinement?.getData(currentData) || currentData,
       currentAsterismData,
       currentEclipseData,
       selectedProjection,
@@ -6807,6 +6913,118 @@
     return prepared.canvas;
   }
 
+  function rulerLineKey(source, feature) {
+    const p = feature.properties || {};
+    const fields = ['point', 'kind', 'astrocart_mode', 'astrocart_layer', 'astrocart_layer_id',
+      'aspect_id', 'target_angle', 'branch', 'bearing_role', 'a_point', 'a_angle',
+      'b_point', 'b_angle', 'house', 'sign', 'name', 'id', 'event_id', 'side', 'limit'];
+    return JSON.stringify([source, ...fields.map((key) => p[key] ?? '')]);
+  }
+
+  function rulerCollections() {
+    return [[ACG_SOURCE_ID, currentData], [ECLIPSE_SOURCE_ID, currentEclipseData],
+      [ASTERISM_SOURCE_ID, currentAsterismData]];
+  }
+
+  function rulerFeatureVisible(source, feature) {
+    const properties = feature.properties || {};
+    const path = { source: source === ASTERISM_SOURCE_ID ? 'asterism' :
+      source === ECLIPSE_SOURCE_ID ? 'eclipse' : 'acg', properties };
+    const settings = currentDevSettings();
+    const stroke = source === ACG_SOURCE_ID
+      ? polarAcgLineStroke(path, settings, currentThemeTokens())
+      : source === ECLIPSE_SOURCE_ID
+        ? polarEclipseStroke(path, settings, false)
+        : (polarReferenceStroke(path, settings, referenceBehavior()) ||
+           polarAsterismStroke(path, settings, false, viewOptions));
+    return !!stroke && stroke.width > 0 && stroke.opacity > 0;
+  }
+
+  function resolveRulerLine(selection) {
+    const collection = rulerCollections().find(([source]) => source === selection.source)?.[1];
+    const features = (collection?.features || []).filter((feature) =>
+      window.AriesRulerGeometry.paths(feature.geometry).length &&
+      rulerLineKey(selection.source, feature) === selection.key &&
+      rulerFeatureVisible(selection.source, feature));
+    return { ...selection, features };
+  }
+
+  function projectRulerCoordinate(coordinate) {
+    if (!map || !coordinate) return null;
+    const globe = map.getProjection()?.type === 'globe';
+    if (globe && !isPolarCoordinateVisible(coordinate, map.getCenter())) return null;
+    const center = map.getCenter().lng;
+    const lon = center + ((coordinate[0] - center + 540) % 360 + 360) % 360 - 180;
+    const point = map.project([lon, coordinate[1]]);
+    return Number.isFinite(point.x) && Number.isFinite(point.y)
+      ? { x: point.x, y: point.y, longitude: lon } : null;
+  }
+
+  function pickRulerLine(point, { direct = false } = {}) {
+    const zoom = map.getZoom?.() ?? 4;
+    // At a world view the lines crowd together. Automatic measurement should
+    // begin on a visible stroke; explicit ruler mode keeps a larger target.
+    const lineHitRadius = direct ? 7 : Math.max(1, Math.min(3, Math.round(zoom - 1)));
+    const paranHitRadius = direct ? 7 : Math.max(1, Math.min(3, Math.round(zoom - 2)));
+    const sources = new Set(rulerCollections().map(([source]) => source));
+    const layers = (map.getStyle()?.layers || []).filter((layer) =>
+      layer.type === 'line' && sources.has(layer.source) &&
+      layer.layout?.visibility !== 'none' &&
+      (direct || (layer.id !== 'acg-casing' && layer.id !== 'acg-asterism-shadow' &&
+        layer.id !== 'eclipse-path-shadow'))).map((layer) => layer.id);
+    const hits = map.queryRenderedFeatures([[point.x - lineHitRadius, point.y - lineHitRadius],
+      [point.x + lineHitRadius, point.y + lineHitRadius]], { layers });
+    let closeParans = null;
+    for (const feature of hits) {
+      const source = feature.source;
+      if (feature.properties?.kind === 'PARAN') {
+        // A latitude line crosses the whole map. Require a near-exact press
+        // before it can take an automatic measurement gesture from map pan.
+        if (paranHitRadius < lineHitRadius && closeParans === null) {
+          closeParans = new Set(map.queryRenderedFeatures(
+            [[point.x - paranHitRadius, point.y - paranHitRadius],
+              [point.x + paranHitRadius, point.y + paranHitRadius]],
+            { layers },
+          ).filter((hit) => hit.properties?.kind === 'PARAN')
+            .map((hit) => rulerLineKey(hit.source, hit)));
+        }
+        if (closeParans && !closeParans.has(rulerLineKey(source, feature))) continue;
+      }
+      const selected = resolveRulerLine({ source, key: rulerLineKey(source, feature) });
+      if (selected.features.length) return selected;
+    }
+    // MapLibre's tiled geometry ends at 85 degrees. The existing polar canvas
+    // uses original geographic coordinates, so offer the same ruler there.
+    if (map.getProjection()?.type !== 'globe') return null;
+    let best = null;
+    let bestDistance = lineHitRadius;
+    for (const [source, collection] of rulerCollections()) {
+      const rendered = source === ACG_SOURCE_ID
+        ? curveRefinement?.getData(collection) || collection : collection;
+      for (const feature of rendered.features || []) {
+        if (!rulerFeatureVisible(source, feature)) continue;
+        for (const path of window.AriesRulerGeometry.paths(feature.geometry)) {
+          for (let i = 1; i < path.length; i++) {
+            if (Math.max(Math.abs(path[i - 1][1]), Math.abs(path[i][1])) < POLAR_OVERLAY_LATITUDE) continue;
+            const a = projectRulerCoordinate(path[i - 1]);
+            const b = projectRulerCoordinate(path[i]);
+            if (!a || !b) continue;
+            const dx = b.x - a.x, dy = b.y - a.y;
+            const t = Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / (dx * dx + dy * dy || 1)));
+            const distance = Math.hypot(point.x - a.x - t * dx, point.y - a.y - t * dy);
+            if (distance >= (feature.properties?.kind === 'PARAN'
+              ? paranHitRadius : lineHitRadius)) continue;
+            if (distance < bestDistance) {
+              bestDistance = distance;
+              best = { source, key: rulerLineKey(source, feature) };
+            }
+          }
+        }
+      }
+    }
+    return best ? resolveRulerLine(best) : null;
+  }
+
   function onLineClick(e) {
     if (!e.features || !e.features.length) return;
     const f = e.features[0];
@@ -6889,6 +7107,29 @@
     });
   }
 
+  function configureRuler(options) {
+    rulerOptions = Object.assign({}, rulerOptions, options || {});
+    mapRuler?.configure(rulerOptions);
+    const button = document.querySelector('#acg-menu button[data-action="ruler"]');
+    if (button) {
+      button.textContent = rulerOptions.title || '';
+      button.setAttribute('aria-checked', String(!!rulerOptions.enabled));
+    }
+    const control = document.getElementById('ruler-control');
+    if (control) {
+      control.title = rulerOptions.title || '';
+      control.setAttribute('aria-label', rulerOptions.title || '');
+      control.setAttribute('aria-pressed', String(!!rulerOptions.enabled));
+      control.disabled = !mapRuler || !rulerOptions.ready;
+    }
+  }
+
+  function toggleRuler() {
+    const enabled = !mapRuler?.enabled;
+    configureRuler({ enabled });
+    postToParent({ type: 'ruler', enabled });
+  }
+
   function wireContextMenu() {
     const menu = document.getElementById('acg-menu');
     if (!menu) return;
@@ -6898,6 +7139,11 @@
     menu.addEventListener('click', (event) => {
       const btn = event.target.closest('button[data-action]');
       if (!btn || !contextMenuTarget) return;
+      if (btn.dataset.action === 'ruler') {
+        toggleRuler();
+        hideContextMenu();
+        return;
+      }
       sendHereRequest(btn.dataset.action, contextMenuTarget.lngLat, contextMenuTarget.placeName);
       hideContextMenu();
     });
@@ -6947,6 +7193,7 @@
     const key = event.key || '';
     const isLetter = key.length === 1 && /^[a-z]$/i.test(key);
     const isEscape = key === 'Escape';
+    if (isEscape && mapRuler?.enabled) return;
     if (!isLetter && !isEscape) return;
 
     const menu = document.getElementById('acg-menu');
@@ -7059,12 +7306,16 @@
     const visible = !!viewOptions.parans;
     const s = currentDevSettings();
     if (map && map.getLayer('acg-parans')) {
-      map.setFilter('acg-parans', acgParanFilter());
-      map.setLayoutProperty('acg-parans', 'visibility', visible ? 'visible' : 'none');
+      const value = visible ? 'visible' : 'none';
+      if (map.getLayoutProperty('acg-parans', 'visibility') !== value) {
+        map.setLayoutProperty('acg-parans', 'visibility', value);
+      }
     }
     if (map && map.getLayer('acg-paran-labels')) {
-      map.setFilter('acg-paran-labels', acgParanFilter());
-      map.setLayoutProperty('acg-paran-labels', 'visibility', (visible && s.paranLabelsOn) ? 'visible' : 'none');
+      const value = visible && s.paranLabelsOn ? 'visible' : 'none';
+      if (map.getLayoutProperty('acg-paran-labels', 'visibility') !== value) {
+        map.setLayoutProperty('acg-paran-labels', 'visibility', value);
+      }
     }
     const btn = document.querySelector('#overlays button[data-overlay="parans"]');
     if (btn) {
@@ -7075,7 +7326,9 @@
   }
 
   function setParansVisible(visible) {
+    if (viewOptionsInitialized && viewOptions.parans === !!visible) return;
     viewOptions.parans = !!visible;
+    if (!viewOptions.parans) mapRuler?.setParanHover(false);
     viewOptionsInitialized = true;
     syncParanVisibility();
   }
@@ -7103,6 +7356,7 @@
 
   function syncVisibilityFilters() {
     syncAcgLineVisibility();
+    mapRuler?.refresh();
     scheduleDomAcgLabels('visibility-filters');
     updateLegend();
     if (map && typeof map.triggerRepaint === 'function') map.triggerRepaint();
@@ -7125,11 +7379,11 @@
       : (next.dynamicLayers && typeof next.dynamicLayers === 'object' ? next.dynamicLayers : null);
     if (Array.isArray(next.layers)) {
       const selectedLayers = normalizedVisibilitySelection(next.layers) || [];
-      for (const role of ['natal', 'transit', 'progression']) {
+      for (const role of ['natal', 'dynamic', 'transit', 'progression']) {
         viewOptions.layers[role] = selectedLayers.includes(role);
       }
     } else {
-      for (const role of ['natal', 'transit', 'progression']) {
+      for (const role of ['natal', 'dynamic', 'transit', 'progression']) {
         if (layerInput && typeof layerInput[role] === 'boolean') {
           viewOptions.layers[role] = layerInput[role];
         } else if (typeof next[role] === 'boolean') {
@@ -7231,6 +7485,10 @@
 
   function applyChromeState(state) {
     if (!state) return;
+    if (state.distanceUnits === 'metric' || state.distanceUnits === 'miles') {
+      rulerOptions.units = state.distanceUnits;
+      mapRuler?.configure({ units: state.distanceUnits });
+    }
     const overlays = state.overlays || state.viewOptions || {};
     if (Object.prototype.hasOwnProperty.call(overlays, 'parans')) {
       setParansVisible(overlays.parans);
@@ -7398,6 +7656,7 @@
   function wireControlsOnce() {
     if (controlsWired) return;
     controlsWired = true;
+    document.getElementById('ruler-control').onclick = toggleRuler;
     wireContextMenu();
     wireAmbientInput();
     wireProjectionButtons();
@@ -7806,6 +8065,7 @@
       try {
         const data = geojson || { type: 'FeatureCollection', features: [] };
         if (!mapReady) { pendingData = data; return; }
+        curveRefinement?.cancel();
         currentData = data;
         if (runtimeOverlaySceneDeferred()) {
           deferRuntimeOverlayScene({ data: true });
@@ -7871,6 +8131,7 @@
       }
     },
     clear() {
+      curveRefinement?.cancel();
       currentData = { type: 'FeatureCollection', features: [] };
       pushData();
     },
@@ -7962,6 +8223,7 @@
         bearing: map.getBearing(),
         pitch: map.getPitch(),
         projection: (proj && proj.type) || 'globe',
+        distanceUnits: rulerOptions.units,
         overlays: {
           parans: !!viewOptions.parans,
           asterisms: !!viewOptions.asterisms,
@@ -8076,6 +8338,9 @@
     if (!acg) return;
     try {
       switch (data.type) {
+        case 'aries.setRuler':
+          configureRuler(data.options);
+          break;
         case 'aries.setData':
           if (typeof acg.setData === 'function') acg.setData(data.payload);
           break;
@@ -8116,6 +8381,9 @@
           break;
         case 'aries.setActive':
           mapHostActive = !!data.active;
+          if (!mapHostActive) curveRefinement?.cancel();
+          mapRuler?.setActive(mapHostActive);
+          if (mapHostActive) mapRuler?.refresh();
           if (map) {
             if (!data.active) {
               // Retained workspace maps keep their WebGL state, but hidden
@@ -8146,6 +8414,7 @@
               window.requestAnimationFrame(() => {
                 map.resize();
                 flushRetainedRuntimeOverlayScene('reactivate');
+                scheduleCurveRefinement();
                 scheduleOnlineBasemapAdoption();
                 scheduleCityLabelsRefresh('reactivate');
                 renderPolarOverlay();

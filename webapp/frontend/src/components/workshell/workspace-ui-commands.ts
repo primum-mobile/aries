@@ -2,28 +2,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useFrameLayoutStore } from "@/stores/frame-layout-store";
-import { useWorkspaceStore } from "@/stores/workspace-store";
+import { RIGHT_PANE_KEYS, useWorkspaceStore } from "@/stores/workspace-store";
 
 type WorkspaceSnapshot = ReturnType<typeof useWorkspaceStore.getState>;
 
 function rightWorkspacePaneIsOpen(state: WorkspaceSnapshot): boolean {
-  return (
-    state.transitSearchPane !== null ||
-    state.transitListPane !== null ||
-    state.directionsPane !== null ||
-    state.timeLordPane !== null ||
-    state.zodiacalReleasingPane !== null ||
-    state.firdariaPane !== null ||
-    state.decennialsPane !== null ||
-    state.profectionsPane !== null ||
-    state.eclipsesPane !== null ||
-    state.lunarMansionsPane !== null ||
-    state.synodicCyclesPane !== null ||
-    state.aspectListPane !== null ||
-    state.ascensionalTransitsPane !== null ||
-    state.astrocartControlsPane !== null ||
-    state.featureCatalogPane !== null
-  );
+  return RIGHT_PANE_KEYS.some((key) => state[key] !== null);
 }
 
 export function closeInspectorAndNotes(): boolean {

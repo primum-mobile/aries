@@ -122,6 +122,14 @@ function localDateTimeInstant(value: string): string | null {
   return Number.isNaN(instant.getTime()) ? null : instant.toISOString();
 }
 
+function newDynamicCursor(
+  configuration: AstrocartConfigurationPayload,
+  technique: AstrocartDynamicTechnique,
+): string {
+  return (technique === "transit" ? configuration.defaultTransitCursorIso : null)
+    ?? new Date().toISOString();
+}
+
 function toggleId(values: string[], id: string, selected: boolean): string[] {
   const next = new Set(values);
   if (selected) next.add(id);
@@ -163,6 +171,14 @@ function activateAngularLinePoints(
   return {
     ...current,
     staticAngleLinePointIds: selectedIds,
+    dynamicLayers: current.dynamicLayers.map((layer) => ({
+      ...layer,
+      movingActorIds: supportedDynamicActorIds(
+        configuration,
+        layer.technique,
+        selectedIds,
+      ),
+    })),
     paran: {
       ...current.paran,
       participantIds: [...participantIds].sort(),
@@ -188,25 +204,19 @@ function supportedDynamicActorIds(
 function defaultDynamicActorIds(
   configuration: AstrocartConfigurationPayload,
   technique: AstrocartDynamicTechnique,
+  natalPointIds: readonly string[],
 ): string[] {
-  // The daemon's standard ACG point set remains the single source of truth;
-  // the catalog's capability matrix narrows it for the selected technique.
-  return supportedDynamicActorIds(
-    configuration,
-    technique,
-    configuration.defaultSpec.staticAngleLinePointIds,
-  );
+  // The selected map points are the source for every timing technique;
+  // the catalog's capability matrix narrows unsupported combinations.
+  return supportedDynamicActorIds(configuration, technique, natalPointIds);
 }
 
 function dynamicActorIdsForTechnique(
   configuration: AstrocartConfigurationPayload,
   technique: AstrocartDynamicTechnique,
-  currentIds: readonly string[],
+  natalPointIds: readonly string[],
 ): string[] {
-  const retained = supportedDynamicActorIds(configuration, technique, currentIds);
-  return retained.length > 0
-    ? retained
-    : defaultDynamicActorIds(configuration, technique);
+  return defaultDynamicActorIds(configuration, technique, natalPointIds);
 }
 
 function appliedPdfPointIds(spec: AstrocartMapSpec): string[] {
@@ -273,12 +283,17 @@ export function AstrocartControls({
   paranIntent,
   lineModes,
   natalLayerVisible,
+  dynamicLayerVisible,
   mapViewReady,
+  distanceUnits,
+  distanceUnitsFailed,
+  onDistanceUnitsChange,
   onClose,
   onMapViewReset,
   onPreviewChange,
   onCanonicalChange,
   onNatalLayerVisibilityChange,
+  onDynamicLayerVisibilityChange,
   onStandardViewReset,
   onRequestPrintAtlas,
 }: {
@@ -290,12 +305,17 @@ export function AstrocartControls({
   paranIntent: AstrocartParanIntent | null;
   lineModes: AstrocartLineMode[];
   natalLayerVisible: boolean;
+  dynamicLayerVisible: boolean;
   mapViewReady: boolean;
+  distanceUnits: "metric" | "miles";
+  distanceUnitsFailed: boolean;
+  onDistanceUnitsChange: (units: "metric" | "miles") => void;
   onClose: () => void;
   onMapViewReset: () => void;
   onPreviewChange: (spec: AstrocartMapSpec) => void;
   onCanonicalChange: (change: AstrocartConfigurationChange) => void;
   onNatalLayerVisibilityChange: (visible: boolean) => void;
+  onDynamicLayerVisibilityChange: (visible: boolean) => void;
   onStandardViewReset: () => void;
   onRequestPrintAtlas: (
     pageFormat: AstrocartPdfPageFormat,
@@ -676,6 +696,7 @@ export function AstrocartControls({
 
   const updateDraft = React.useCallback((
     update: (current: AstrocartMapSpec) => AstrocartMapSpec,
+    immediate = false,
   ) => {
     const current = draftRef.current;
     if (!current) return;
@@ -684,7 +705,7 @@ export function AstrocartControls({
     draftRef.current = next;
     setDraft(next);
     onPreviewChange(next);
-    queueSpecSave(next);
+    queueSpecSave(next, immediate);
   }, [onPreviewChange, queueSpecSave]);
 
   React.useEffect(() => {
@@ -703,7 +724,7 @@ export function AstrocartControls({
         ...spec.paran,
         enabled: paranIntent.enabled,
       },
-    }));
+    }), true);
   }, [draft, paranIntent, updateDraft]);
 
   const resetToStandardView = React.useCallback(() => {
@@ -771,7 +792,8 @@ export function AstrocartControls({
       !pdfSelection ||
       dirty ||
       exportingPdf ||
-      lineModes.length === 0
+      (lineModes.length === 0 && !configuration.spec.paran.enabled &&
+        !configuration.spec.dynamicLayers.some((layer) => layer.enabled))
     ) return;
 
     const pointLabels: Record<string, string> = {};
@@ -944,7 +966,65 @@ export function AstrocartControls({
           </div>
         ) : configurationReady && draft && configuration ? (
           <div className="flex flex-col">
-            <ConfigSection title={t("astrocart.config.coordinates")} defaultOpen>
+            <ConfigSection title={t("astrocart.pdf.layers")} defaultOpen>
+              <ToggleRow
+                checked={natalLayerVisible}
+                label={t("astrocart.overlay.natalLayer")}
+                onChange={onNatalLayerVisibilityChange}
+              />
+              <ToggleRow
+                checked={dynamicLayerVisible && draft.dynamicLayers.some((layer) => layer.enabled)}
+                label={t("astrocart.config.dynamicLayers")}
+                onChange={(visible) => {
+                  if (visible && !draft.dynamicLayers.some((layer) => layer.enabled)) {
+                    updateDraft((current) => {
+                      if (current.dynamicLayers.length) {
+                        return {
+                          ...current,
+                          dynamicLayers: current.dynamicLayers.map((layer, index) =>
+                            index === 0 ? {
+                              ...layer,
+                              enabled: true,
+                              cursorIso: layer.cursorIso ?? newDynamicCursor(configuration, layer.technique),
+                            } : layer
+                          ),
+                        };
+                      }
+                      const technique = configuration.dynamicTechniques[0]?.id ?? "transit";
+                      setDynamicLayerKeys((keys) => reconcileDynamicLayerKeys(keys, 1));
+                      return {
+                        ...current,
+                        dynamicLayers: [{
+                          technique,
+                          labelKey: `astrocart.dynamic.${technique}`,
+                          cursorIso: newDynamicCursor(configuration, technique),
+                          movingActorIds: defaultDynamicActorIds(
+                            configuration,
+                            technique,
+                            current.staticAngleLinePointIds,
+                          ),
+                          enabled: true,
+                        }],
+                      };
+                    });
+                  }
+                  onDynamicLayerVisibilityChange(visible);
+                }}
+              />
+              <ToggleRow
+                checked={draft.paran.enabled}
+                label={t("astrocart.config.showParans")}
+                onChange={(checked) => updateDraft((current) => ({
+                  ...current,
+                  paran: { ...current.paran, enabled: checked },
+                }), true)}
+              />
+            </ConfigSection>
+
+            <ConfigSection title={t("appearance.title")}>
+              <div className="px-1 text-[length:var(--aries-font-size-small)] text-muted-foreground">
+                {t("astrocart.config.coordinates")}
+              </div>
               <div className={cn(LIST_PANE_CLASSES.segmented, "grid grid-cols-2")}>
                 {configuration.coordinateSystems.map((coordinateSystem) => {
                   const selected = draft.coordinateSystem === coordinateSystem;
@@ -970,17 +1050,47 @@ export function AstrocartControls({
                   );
                 })}
               </div>
-            </ConfigSection>
-
-            <ConfigSection title={t("astrocart.pdf.layers")} defaultOpen>
+              <div className="px-1 text-[length:var(--aries-font-size-small)] text-muted-foreground">
+                {t("astrocart.ruler.units")}
+              </div>
+              <div className={cn(LIST_PANE_CLASSES.segmented, "grid grid-cols-2")}>
+                {(["metric", "miles"] as const).map((units) => (
+                  <Button
+                    key={units}
+                    type="button"
+                    size="xs"
+                    variant={distanceUnits === units ? "secondary" : "ghost"}
+                    aria-pressed={distanceUnits === units}
+                    disabled={!mapViewReady}
+                    onClick={() => onDistanceUnitsChange(units)}
+                    className={cn(LIST_PANE_CLASSES.segmentedButton, "text-xs font-normal")}
+                  >
+                    {t(`astrocart.ruler.${units}`)}
+                  </Button>
+                ))}
+              </div>
+              {distanceUnitsFailed ? (
+                <p role="alert" className="text-xs text-destructive">{t("astrocart.config.saveFailed")}</p>
+              ) : null}
+              <div className="px-1 text-[length:var(--aries-font-size-small)] text-muted-foreground">
+                {t("astrocart.config.mapPoints")}
+              </div>
               <ToggleRow
-                checked={natalLayerVisible}
-                label={t("astrocart.overlay.natalLayer")}
-                onChange={onNatalLayerVisibilityChange}
+                checked={draft.zenithEnabled}
+                label={t("astrocart.config.zenithPoints")}
+                onChange={(zenithEnabled) => updateDraft((current) => ({
+                  ...current,
+                  zenithEnabled,
+                }))}
               />
-            </ConfigSection>
-
-            <ConfigSection title={t("appearance.title")}>
+              <ToggleRow
+                checked={draft.localSpace.oppositionEnabled}
+                label={t("astrocart.config.localSpaceOppositions")}
+                onChange={(oppositionEnabled) => updateDraft((current) => ({
+                  ...current,
+                  localSpace: { ...current.localSpace, oppositionEnabled },
+                }))}
+              />
               {appearanceOptions?.settingsRegistry.mirroredSections
                 .find((section) => section.tabId === "astrocartography")
                 ?.settings.map((setting) => (
@@ -1044,14 +1154,6 @@ export function AstrocartControls({
             </ConfigSection>
 
             <ConfigSection title={t("astrocart.config.parans")}>
-              <ToggleRow
-                checked={draft.paran.enabled}
-                label={t("astrocart.config.showParans")}
-                onChange={(checked) => updateDraft((current) => ({
-                  ...current,
-                  paran: { ...current.paran, enabled: checked },
-                }))}
-              />
               <PointPicker
                 catalog={configuration}
                 role={PARAN_ROLE}
@@ -1102,25 +1204,6 @@ export function AstrocartControls({
               />
             </ConfigSection>
 
-            <ConfigSection title={t("astrocart.config.mapPoints")}>
-              <ToggleRow
-                checked={draft.zenithEnabled}
-                label={t("astrocart.config.zenithPoints")}
-                onChange={(zenithEnabled) => updateDraft((current) => ({
-                  ...current,
-                  zenithEnabled,
-                }))}
-              />
-              <ToggleRow
-                checked={draft.localSpace.oppositionEnabled}
-                label={t("astrocart.config.localSpaceOppositions")}
-                onChange={(oppositionEnabled) => updateDraft((current) => ({
-                  ...current,
-                  localSpace: { ...current.localSpace, oppositionEnabled },
-                }))}
-              />
-            </ConfigSection>
-
             <ConfigSection title={t("astrocart.config.dynamicLayers")}>
               <div className="grid gap-[var(--aries-pane-control-gap-y)]">
                 {draft.dynamicLayers.map((layer, index) => (
@@ -1129,6 +1212,7 @@ export function AstrocartControls({
                     index={index}
                     layer={layer}
                     configuration={configuration}
+                    natalPointIds={draft.staticAngleLinePointIds}
                     onChange={(next) => updateDraft((current) => ({
                       ...current,
                       dynamicLayers: current.dynamicLayers.map((candidate, candidateIndex) =>
@@ -1166,10 +1250,11 @@ export function AstrocartControls({
                         {
                           technique,
                           labelKey: `astrocart.dynamic.${technique}`,
-                          cursorIso: new Date().toISOString(),
+                          cursorIso: newDynamicCursor(configuration, technique),
                           movingActorIds: defaultDynamicActorIds(
                             configuration,
                             technique,
+                            current.staticAngleLinePointIds,
                           ),
                           enabled: true,
                         },
@@ -1190,7 +1275,8 @@ export function AstrocartControls({
                   selection={pdfSelection}
                   pageFormat={pdfPageFormat}
                   dirty={dirty || saving}
-                  hasModes={lineModes.length > 0}
+                  hasModes={lineModes.length > 0 || configuration.spec.paran.enabled ||
+                    configuration.spec.dynamicLayers.some((layer) => layer.enabled)}
                   exporting={exportingPdf}
                   failed={pdfExportFailed}
                   onSelectionChange={setPdfSelection}
@@ -1943,18 +2029,19 @@ function DynamicLayerEditor({
   index,
   layer,
   configuration,
+  natalPointIds,
   onChange,
   onRemove,
 }: {
   index: number;
   layer: AstrocartDynamicLayer;
   configuration: AstrocartConfigurationPayload;
+  natalPointIds: readonly string[];
   onChange: (layer: AstrocartDynamicLayer) => void;
   onRemove: () => void;
 }) {
   const t = useT();
   const tf = useTFallback();
-  const role = DYNAMIC_ROLE_BY_TECHNIQUE[layer.technique];
   return (
     <div className="grid gap-[var(--aries-pane-control-gap-y)] border-t border-border/70 pt-[var(--aries-pane-control-gap-y)] first:border-t-0 first:pt-0">
       <div className="flex items-center justify-between gap-2">
@@ -1993,7 +2080,7 @@ function DynamicLayerEditor({
               movingActorIds: dynamicActorIdsForTechnique(
                 configuration,
                 technique,
-                layer.movingActorIds,
+                natalPointIds,
               ),
             });
           }}
@@ -2020,13 +2107,6 @@ function DynamicLayerEditor({
           className="h-8"
         />
       </label>
-      <PointPicker
-        catalog={configuration}
-        role={role}
-        selectedIds={layer.movingActorIds}
-        disabled={!layer.enabled}
-        onChange={(movingActorIds) => onChange({ ...layer, movingActorIds })}
-      />
     </div>
   );
 }

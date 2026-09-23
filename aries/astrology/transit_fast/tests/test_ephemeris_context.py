@@ -769,3 +769,38 @@ def test_public_native_and_python_calls_share_one_context_boundary():
 		futures = [executor.submit(native_worker), executor.submit(python_worker)]
 		for future in futures:
 			future.result()
+
+
+@pytest.mark.skipif(kernel is None, reason="native transit kernel is unavailable")
+def test_custom_natal_epoch_and_offset_match_reference_and_do_not_leak():
+	from dataclasses import replace
+	common.ensure_swe_ready()
+	start = astrology.swe_julday(2026, 1, 1, 0.0, astrology.SE_GREG_CAL)
+	base = EphemerisContext(
+		flags=astrology.SEFLG_SWIEPH | astrology.SEFLG_SPEED | astrology.SEFLG_SIDEREAL,
+		ephe_path=common.get_ephe_path(),
+		sidereal_mode=astrology.SE_SIDM_USER | astrology.SE_SIDBIT_ECL_T0,
+		sidereal_epoch=astrology.swe_julday(1980, 1, 15, 12.0, astrology.SE_GREG_CAL),
+	)
+	other = replace(base, sidereal_epoch=base.sidereal_epoch + 7305, sidereal_offset=3.5)
+	results = []
+	for context in (base, other, base):
+		kwargs = api._backend_context_kwargs(context)
+		reference = python_reference.search_longitude_transits_raw(
+			astrology.SE_MOON, start, start + 30, [15.0], **kwargs,
+		)
+		native = kernel.search_longitude_transits_raw(
+			astrology.SE_MOON, start, start + 30, [15.0], **kwargs,
+		)
+		assert native
+		_assert_raw_parity(reference, native)
+		results.append(native)
+	assert results[0] == results[2]
+	assert results[0] != results[1]
+
+
+def test_custom_epoch_requires_finite_parameters():
+	for field in ('sidereal_epoch', 'sidereal_offset'):
+		with pytest.raises(ValueError, match=field):
+			EphemerisContext(flags=astrology.SEFLG_SWIEPH, ephe_path=common.get_ephe_path(),
+			                 **{field: float('nan')})

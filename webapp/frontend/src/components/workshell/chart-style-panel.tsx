@@ -3,6 +3,11 @@
 
 "use client";
 
+import { WHEEL_ARROW_STYLES, type WheelArrowStyle } from "@/lib/chart/wheel-render-style";
+import { WheelCompositionInspector } from "./wheel-composition-inspector";
+import { WheelPresetControls } from "./wheel-preset-controls";
+import { enqueueWheelPresetWrite, flushWheelGeometry } from "@/lib/daemon/wheel-preset-sync";
+import { isWheelGeometryKey, wheelAppearanceOverrides } from "@/lib/chart/wheel-geometry-ownership";
 import { Combobox } from "@base-ui/react/combobox";
 import { NumberField } from "@base-ui/react/number-field";
 import Color from "colorjs.io";
@@ -73,6 +78,7 @@ import {
   buildWheelClassTree,
   flattenWheelClassTree,
   wheelClassFamilies,
+  SUBDIVISION_BACKGROUND_FAMILY_ID,
   type WheelClassTreeNode,
 } from "@/lib/style-lab/wheel-class-tree";
 import {
@@ -119,6 +125,7 @@ import {
   type StyleLabThemeSource,
   type StyleLabTokenValue,
 } from "@/lib/style-lab/client";
+import { canPersistStyleDraft, refreshStyleDraftForSave } from "@/lib/style-lab/prepare-save";
 import type {
   StyleSceneElement,
   StyleSceneTokenBinding,
@@ -134,9 +141,11 @@ import { cn } from "@/lib/utils";
 import {
   cloneChartStyleOverrides,
   equalChartStyleOverrides,
+  themeWheelModified,
   expandFamilyOverrideIds,
   useChartStyleEditorStore,
   createChartStyleTokenBaseReader,
+  geometryEditId,
   type ChartStyleSemanticOverrides,
   type ChartStyleAuthoringEditScope,
   type ChartStyleTokenMetadata,
@@ -153,6 +162,7 @@ type BoundControl = {
   token: ChartStyleTokenMetadata;
   section: "element" | "effects";
   authoringKind?:
+    | "arrow-style"
     | "stroke-style"
     | "line-cap"
     | "line-join"
@@ -161,6 +171,7 @@ type BoundControl = {
     | "gradient-type"
     | "direction-source"
     | "texture-mask"
+    | "font-style"
     | "font-ref";
   /**
    * The band thickness this control is limited by, when it is limited by one.
@@ -343,11 +354,15 @@ function isEditableManifestPlaceholder(element: StyleSceneElement): boolean {
     && element.stateTags.includes("manifest-editable");
 }
 
-function styleElementProfile(element: StyleSceneElement): "classic" | "compact" | "anglo" {
+function styleElementProfile(
+  element: StyleSceneElement,
+): "classic" | "compact" | "anglo" | "houses" | "cusps" {
   const profile = element.stateTags
     .find((tag) => tag.startsWith("profile:"))
     ?.slice("profile:".length);
-  return profile === "compact" || profile === "anglo" ? profile : "classic";
+  return profile === "compact" || profile === "anglo" || profile === "houses" || profile === "cusps"
+    ? profile
+    : "classic";
 }
 
 function styleElementEditScope(
@@ -468,6 +483,8 @@ function authoringSelectControl(
   element: StyleSceneElement,
   editScope: ChartStyleAuthoringEditScope,
   property:
+    | "arrowStyle"
+    | "fontStyle"
     | "gradientType"
     | "gradientDirection"
     | "textureMask"
@@ -486,7 +503,7 @@ function authoringSelectControl(
     binding: {
       semanticId,
       cssVar: "",
-      property: "effect",
+      property: property === "fontStyle" ? "font-style" : "effect",
       value,
     },
     token: {
@@ -566,10 +583,14 @@ function syncDelta(
   return result;
 }
 
+function isWheelBandElement(element: StyleSceneElement): boolean {
+  return styleClassId(element).startsWith('canvas.ring.') && element.authoringDefaults?.bandWidthPx != null;
+}
+
 function persistedStyleOverrides(
   overrides: Readonly<ChartStyleSemanticOverrides>,
 ): ChartStyleSemanticOverrides {
-  return cloneChartStyleOverrides(overrides);
+  return cloneChartStyleOverrides(wheelAppearanceOverrides(overrides));
 }
 
 function isLayerEffect(token: ChartStyleTokenMetadata): boolean {
@@ -636,9 +657,11 @@ function propertyOrder(element: StyleSceneElement, control: BoundControl): numbe
   if (element.primitive === "text") {
     if (property === "font-size") return sectionOffset;
     if (property === "font-weight") return sectionOffset + 10;
-    if (property === "font-family") return sectionOffset + 20;
-    if (property === "color") return sectionOffset + 30;
-    if (id.includes("opacity")) return sectionOffset + 40;
+    if (property === "font-style") return sectionOffset + 20;
+    if (property === "font-family") return sectionOffset + 30;
+    if (property === "spacing") return sectionOffset + 40;
+    if (property === "color") return sectionOffset + 50;
+    if (id.includes("opacity")) return sectionOffset + 60;
   }
   if (strokedPrimitive && property === "stroke-width") return sectionOffset;
   if (property === "radius") return sectionOffset + 10;
@@ -651,8 +674,9 @@ function propertyOrder(element: StyleSceneElement, control: BoundControl): numbe
   if (property === "font-family") return sectionOffset + 55;
   if (property === "font-size") return sectionOffset + 60;
   if (property === "font-weight") return sectionOffset + 70;
-  if (property === "color") return sectionOffset + 80;
-  if (id.includes("opacity")) return sectionOffset + 90;
+  if (property === "font-style") return sectionOffset + 80;
+  if (property === "color") return sectionOffset + 90;
+  if (id.includes("opacity")) return sectionOffset + 100;
   return sectionOffset + 100;
 }
 
@@ -707,8 +731,26 @@ function controlsForElement(
       section: "element",
     });
   }
+  if (authoring?.bandWidthPx != null) {
+    const control = authoringNumberControl(element, editScope, "bandWidth", "radius", "radius", authoring.bandWidthPx);
+    const binding = element.handles.find(handle => handle.binding?.semanticId.endsWith('.bandWidth'))?.binding;
+    controls.push(binding?.min != null && binding.max != null ? {...control, token: {...control.token, bounds: {
+      step: control.token.bounds?.step ?? 1, min: binding.min, max: binding.max,
+    }}} : control);
+  }
   if (authoring?.radiusPx != null) {
     controls.push(authoringNumberControl(element, editScope, "radius", "radius", "radius", authoring.radiusPx));
+  }
+  if (authoring?.arrowStyle != null) {
+    controls.push(authoringSelectControl(element, editScope, "arrowStyle", authoring.arrowStyle, "arrow-style"));
+  }
+  if (authoring?.arrowSizePercent != null) {
+    const semanticId = wheelAuthoringOverrideId(styleElementEditScope(element, editScope), styleClassId(element), "arrowSize");
+    controls.push({
+      binding: { semanticId, cssVar: "", property: "arrowSize", value: authoring.arrowSizePercent },
+      token: { semanticId, cssVar: "", label: "arrowSize", description: "arrowSize", type: "number", unit: "%", defaultValue: 100, bounds: { min: 25, max: 800, step: 5 } },
+      section: "element",
+    });
   }
   if (authoring?.tickLengthPercent != null) {
     // Length as a share of the ruler band the tick stands in, so widening the
@@ -851,6 +893,25 @@ function controlsForElement(
         } : {}),
       },
     });
+  }
+  if (authoring?.fontWeight != null) {
+    controls.push(authoringNumberControl(
+      element,
+      editScope,
+      "fontWeight",
+      "font-weight",
+      "fontWeight",
+      authoring.fontWeight,
+    ));
+  }
+  if (authoring?.fontStyle != null) {
+    controls.push(authoringSelectControl(
+      element,
+      editScope,
+      "fontStyle",
+      authoring.fontStyle,
+      "font-style",
+    ));
   }
   if (authoring?.trackingPx != null) {
     controls.push(authoringNumberControl(
@@ -1315,6 +1376,7 @@ function controlLabel(
   tf: (key: string, fallback: string) => string,
 ): string {
   const semanticId = control.token.semanticId;
+  if (semanticId.endsWith(".bandWidth")) return t("wheelComposition.width");
   if (semanticId.endsWith(".scale")) return t("styleLab.control.chartScale");
   // Not "Radius": this circle is the inner edge of a whole band stack, and
   // moving it carries every band with it rather than resizing one ring.
@@ -1324,6 +1386,7 @@ function controlLabel(
   // share of, and naming the band here is what points at the way to make the
   // ruler bigger once it is at its limit.
   if (semanticId.endsWith(".rulerDepth")) return t("styleLab.control.rulerDepth");
+  if (semanticId.endsWith(".arrowSize")) return t("styleLab.control.arrowSize");
   if (semanticId.endsWith(".tickLength")) return t("styleLab.control.tickLength");
   // The degree rulers' tick length reaches the inspector as a raw renderer
   // metric, so it read as "Chart wheel classic degree tick length" on the very
@@ -1369,12 +1432,14 @@ function controlLabel(
   if (semanticId.endsWith("InvertOpacity")) return t("styleLab.control.invert");
   if (semanticId.endsWith("SepiaOpacity")) return t("styleLab.control.sepia");
   if (control.binding.property === "stroke-width") return t("quickopt.lineThickness");
+  if (control.token.semanticId.endsWith(".bandWidth")) return t("wheelComposition.width");
   if (control.binding.property === "radius") return t("styleLab.control.radius");
   if (control.binding.property === "offset") return t("styleLab.control.offset");
   if (control.binding.property === "spacing") return t("styleLab.control.spacing");
   if (control.binding.property === "font-family") return t("styleLab.control.fontFamily");
   if (control.binding.property === "font-size") return t("styleLab.control.size");
   if (control.binding.property === "font-weight") return t("styleLab.control.weight");
+  if (control.binding.property === "font-style") return t("styleLab.control.fontStyle");
   if (control.binding.property === "color") return t("styleLab.control.color");
   if (control.token.semanticId.toLowerCase().includes("opacity")) {
     return t("styleLab.control.alpha");
@@ -1454,7 +1519,15 @@ function visibleControlsForElement(
     if (property === "gradientAngle") {
       return gradientType !== "none" && gradientDirection !== "sun";
     }
-    if (property === "patternColor") return fillPattern !== "none";
+    if (property === "patternColor") {
+      // Zodiac element fields always own a palette-driven solid background.
+      // Their historical `solid` value means no texture, so a texture colour
+      // would be a visible control with no effect in that one state.
+      return fillPattern !== "none" && !(
+        styleClassId(element) === "fills.zodiacElementSlices"
+        && fillPattern === "solid"
+      );
+    }
     if (
       property === "cellSize"
       || property === "dotSize"
@@ -1651,6 +1724,7 @@ function inspectorSectionFor(
     property === "font-family" ||
     property === "font-size" ||
     property === "font-weight" ||
+    property === "font-style" ||
     (property === "color" && element.primitive === "text")
   ) {
     return "typography";
@@ -1990,6 +2064,49 @@ function PatternControl({
   );
 }
 
+function ArrowStyleControl({ control, value, overridden }: {
+  control: BoundControl; value: StyleLabTokenValue; overridden: boolean;
+}) {
+  const t = useT();
+  const beginGesture = useChartStyleEditorStore(state => state.beginGesture);
+  const setOverride = useChartStyleEditorStore(state => state.setOverride);
+  const endGesture = useChartStyleEditorStore(state => state.endGesture);
+  const resetProperty = useChartStyleEditorStore(state => state.resetProperty);
+  const labels: Record<WheelArrowStyle, string> = {
+    filled: t("styleLab.arrow.filled"), outlined: t("styleLab.arrow.outlined"),
+    open: t("styleLab.arrow.open"), stealth: t("styleLab.arrow.stealth"), spear: t("styleLab.arrow.spear"),
+  };
+  const paths: Record<WheelArrowStyle, string> = {
+    filled: "M 28 5 L 48 16 L 28 27 Z", outlined: "M 28 5 L 48 16 L 28 27 Z",
+    open: "M 28 5 L 48 16 L 28 27", stealth: "M 28 5 L 48 16 L 28 27 L 34 16 Z",
+    spear: "M 22 10 L 48 16 L 22 22 Z",
+  };
+  const selected = WHEEL_ARROW_STYLES.includes(value as WheelArrowStyle) ? value as WheelArrowStyle : "filled";
+  return <PropertyRow label={t("styleLab.control.arrowStyle")} overridden={overridden}
+    onReset={() => resetProperty(control.token.semanticId)}>
+    <details className="group w-full">
+      <summary className="flex min-h-7 cursor-pointer list-none items-center justify-between gap-2 rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] px-2 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-inspector-value-color)]">
+        {labels[selected]}<ChevronDown aria-hidden="true" className="size-3 group-open:rotate-180" />
+      </summary>
+      <div className="mt-1 grid gap-1" role="group" aria-label={t("styleLab.control.arrowStyle")}>
+        {WHEEL_ARROW_STYLES.map(shape => <button key={shape} type="button" aria-pressed={selected === shape}
+          className="flex min-h-9 w-full items-center gap-2 rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] px-2 text-left text-[length:var(--aries-font-size-small)] text-[color:var(--aries-inspector-value-color)] hover:bg-[var(--aries-navbar-hover-bg)] aria-pressed:border-[color:var(--aries-inspector-interactive-color)]"
+          onClick={() => {
+            beginGesture(INSPECTOR_GESTURE_OWNER);
+            setOverride(control.token.semanticId, shape);
+            endGesture(INSPECTOR_GESTURE_OWNER);
+          }}>
+          <svg aria-hidden="true" viewBox="0 0 56 32" className="h-7 w-12 shrink-0">
+            <path d={shape === "open" ? "M 4 16 H 46" : shape === "stealth" ? "M 4 16 H 35" : shape === "spear" ? "M 4 16 H 24" : "M 4 16 H 29"} stroke="currentColor" strokeWidth="2" />
+            <path d={paths[shape]} fill={shape === "open" || shape === "outlined" ? "none" : "currentColor"} stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+          </svg>
+          <span>{labels[shape]}</span>
+        </button>)}
+      </div>
+    </details>
+  </PropertyRow>;
+}
+
 function StrokeStyleControl({
   control,
   value,
@@ -2085,6 +2202,53 @@ function LineEndpointControl({
         {options.map(([optionValue, optionLabel]) => (
           <option key={optionValue} value={optionValue}>{optionLabel}</option>
         ))}
+      </select>
+    </PropertyRow>
+  );
+}
+
+function FontStyleControl({
+  control,
+  value,
+  overridden,
+}: {
+  control: BoundControl;
+  value: StyleLabTokenValue;
+  overridden: boolean;
+}) {
+  const t = useT();
+  const beginGesture = useChartStyleEditorStore((state) => state.beginGesture);
+  const setOverride = useChartStyleEditorStore((state) => state.setOverride);
+  const endGesture = useChartStyleEditorStore((state) => state.endGesture);
+  const cancelGesture = useChartStyleEditorStore((state) => state.cancelGesture);
+  const resetProperty = useChartStyleEditorStore((state) => state.resetProperty);
+  const label = t("styleLab.control.fontStyle");
+  return (
+    <PropertyRow
+      label={label}
+      overridden={overridden}
+      onReset={() => resetProperty(control.token.semanticId)}
+    >
+      <select
+        data-aries-control-appearance="local"
+        value={String(value)}
+        aria-label={label}
+        className="h-7 w-full rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] bg-[var(--aries-inspector-background)] px-2 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-inspector-value-color)] outline-none focus:border-[color:var(--aries-inspector-interactive-color)]"
+        onFocus={() => beginGesture(INSPECTOR_GESTURE_OWNER)}
+        onChange={(event) => setOverride(
+          control.token.semanticId,
+          event.currentTarget.value,
+        )}
+        onKeyDown={(event) => {
+          if (event.key !== "Escape") return;
+          event.preventDefault();
+          cancelGesture(INSPECTOR_GESTURE_OWNER);
+          event.currentTarget.blur();
+        }}
+        onBlur={() => endGesture(INSPECTOR_GESTURE_OWNER)}
+      >
+        <option value="normal">{t("styleLab.control.fontStyleNormal")}</option>
+        <option value="italic">{t("styleLab.control.fontStyleItalic")}</option>
       </select>
     </PropertyRow>
   );
@@ -2362,7 +2526,7 @@ function NumberControl({
   const familyBaselines = useRef<
     Readonly<Record<string, FamilyNumericBaseline>> | null
   >(null);
-  const radiusControl = control.binding.property === "radius";
+  const radiusControl = control.binding.property === "radius" && !control.token.semanticId.endsWith(".bandWidth");
   const [radiusMode, setRadiusMode] = useState<"radius" | "diameter">("radius");
   const label = radiusControl ? t("styleLab.control.size") : controlLabel(control, t, tf);
   const bounds = control.token.bounds;
@@ -3052,6 +3216,7 @@ function PropertyControl({
   const t = useT();
   const profile = useSceneWheelProfile();
   const maskingVariantId = useMaskingVariantId(control.token.semanticId);
+  const geometryReady = useChartStyleEditorStore(state => state.geometryProfile === profile && !state.geometryTransition);
   // Whether the control carries an authored value — which is a different
   // question from what it displays, and the only thing the override map is
   // still consulted for here.
@@ -3059,11 +3224,15 @@ function PropertyControl({
     (state) => Object.hasOwn(state.semanticOverrides, control.token.semanticId),
   );
   const value = currentValue(control);
-  const row = control.authoringKind === "stroke-style"
+  const row = control.authoringKind === "arrow-style"
+    ? <ArrowStyleControl control={control} value={value} overridden={overridden} />
+    : control.authoringKind === "stroke-style"
     ? <StrokeStyleControl control={control} value={value} overridden={overridden} />
-    : control.authoringKind === "line-cap" || control.authoringKind === "line-join"
-      ? <LineEndpointControl control={control} value={value} overridden={overridden} />
-      : control.authoringKind === "fill-pattern"
+    : control.authoringKind === "font-style"
+      ? <FontStyleControl control={control} value={value} overridden={overridden} />
+      : control.authoringKind === "line-cap" || control.authoringKind === "line-join"
+        ? <LineEndpointControl control={control} value={value} overridden={overridden} />
+        : control.authoringKind === "fill-pattern"
         || control.authoringKind === "shadow-pattern"
         ? (
           <FillPatternControl
@@ -3091,13 +3260,16 @@ function PropertyControl({
   const atBandLimit = control.bandCeiling != null
     && typeof value === "number"
     && value >= control.bandCeiling - 0.01;
-  if (!maskingVariantId && !atBandLimit) return row;
+  const availableRow = isWheelGeometryKey(control.token.semanticId) && !geometryReady
+    ? <fieldset disabled aria-busy="true" title={t('styleLab.status.connecting')}>{row}</fieldset>
+    : row;
+  if (!maskingVariantId && !atBandLimit) return availableRow;
   // Said under the row rather than in place of it: the shared value is still
   // the thing being edited and still worth editing. What the user cannot see
   // otherwise is that this wheel is not the one reading it.
   return (
     <>
-      {row}
+      {availableRow}
       <div className="px-[var(--aries-inspector-padding-x)] pb-1 text-[length:var(--aries-font-size-micro)] text-[color:var(--aries-inspector-muted-color)]">
         {maskingVariantId
           ? t("styleLab.control.maskedByVariant", {
@@ -3254,6 +3426,7 @@ export function ChartStylePanel({
   applyThemeToApp?: boolean;
 }) {
   const t = useT();
+  const compositionProfile = useSceneWheelProfile();
   const selectedElement = useChartStyleEditorStore((state) => state.selectedElement);
   const sceneElements = useChartStyleEditorStore((state) => state.sceneElements);
   const semanticOverrides = useChartStyleEditorStore((state) => state.semanticOverrides);
@@ -3268,6 +3441,9 @@ export function ChartStylePanel({
   const remoteSourceThemeName = useChartStyleEditorStore(
     (state) => state.remoteSourceThemeName,
   );
+  const wheelModifiedFromBaseline = useChartStyleEditorStore(themeWheelModified);
+  const geometryTransition = useChartStyleEditorStore(state => state.geometryTransition);
+  const geometryGesture = useChartStyleEditorStore(state => state.gestureStart);
   const remoteModifiedFromBaseline = useChartStyleEditorStore(
     (state) => state.remoteModifiedFromBaseline,
   );
@@ -3399,7 +3575,7 @@ export function ChartStylePanel({
         const current = useChartStyleEditorStore.getState();
         if (
           retryDelay != null &&
-          !equalChartStyleOverrides(current.syncedOverrides, current.semanticOverrides)
+          !equalChartStyleOverrides(current.syncedOverrides, persistedStyleOverrides(current.semanticOverrides))
         ) {
           syncTimerRef.current = window.setTimeout(
             () => flushSyncRef.current(),
@@ -3479,6 +3655,7 @@ export function ChartStylePanel({
             mode: source.mode,
             appTokens: source.appTokens,
             chartPalette: source.chartPalette,
+            chartData: source.chartData,
             appAuthoring: source.appAuthoring,
           });
         }
@@ -3503,19 +3680,21 @@ export function ChartStylePanel({
       mode: source.mode,
       appTokens: source.appTokens,
       chartPalette: source.chartPalette,
+      chartData: source.chartData,
       appAuthoring: source.appAuthoring,
     });
   }, [remoteSourceThemeName, setStyleLabBaseTheme, themeSources]);
 
   useEffect(() => {
     if (!initializedRef.current || !remoteAvailableRef.current) return;
+    if (equalChartStyleOverrides(syncedOverrides, persistedStyleOverrides(semanticOverrides))) return;
     if (applyThemeToApp) setLiveAppThemePreview(true);
     if (syncTimerRef.current != null) window.clearTimeout(syncTimerRef.current);
     syncTimerRef.current = window.setTimeout(() => flushSyncRef.current(), SYNC_DEBOUNCE_MS);
     return () => {
       if (syncTimerRef.current != null) window.clearTimeout(syncTimerRef.current);
     };
-  }, [applyThemeToApp, revision, semanticOverrides, setLiveAppThemePreview]);
+  }, [applyThemeToApp, revision, semanticOverrides, syncedOverrides, setLiveAppThemePreview]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3529,10 +3708,14 @@ export function ChartStylePanel({
         syncInFlightRef.current
       ) return;
       polling = true;
+      const startedFrom = useChartStyleEditorStore.getState();
       try {
         const draft = await fetchCurrentStyleLabDraft();
-        if (cancelled) return;
+        if (cancelled || syncInFlightRef.current) return;
         const state = useChartStyleEditorStore.getState();
+        // A read begun before a write must not roll its acknowledgement back.
+        if (state.remoteDraftId !== startedFrom.remoteDraftId
+          || state.remoteRevision !== startedFrom.remoteRevision) return;
         const switchedDraft = draft.id !== state.remoteDraftId;
         if (!switchedDraft && draft.revision <= (state.remoteRevision ?? -1)) return;
         state.acceptRemoteDraft(draft, {
@@ -3561,20 +3744,30 @@ export function ChartStylePanel({
 
   const save = useCallback(() => {
     const state = useChartStyleEditorStore.getState();
-    if (
-      syncInFlightRef.current ||
-      !equalChartStyleOverrides(state.syncedOverrides, state.semanticOverrides)
-    ) {
-      flushSyncRef.current();
-      return;
+    if (syncInFlightRef.current || state.remoteRevision == null) return;
+    if (syncTimerRef.current != null) {
+      window.clearTimeout(syncTimerRef.current);
+      syncTimerRef.current = null;
     }
+    syncInFlightRef.current = true;
     state.setSyncStatus("saving");
-    void commitCurrentStyleLabDraft({
-      baseRevision: state.remoteRevision ?? undefined,
-      activate: false,
+    void flushWheelGeometry().then(async () => {
+      const current = await refreshStyleDraftForSave(t("styleLab.status.conflictDetail"));
+      const desired = persistedStyleOverrides(current.semanticOverrides);
+      const delta = syncDelta(current.syncedOverrides, desired);
+      let revision = current.remoteRevision!;
+      current.setSyncStatus("saving");
+      if (Object.keys(delta).length) {
+        const patched = await patchCurrentStyleLabDraft(
+          { baseRevision: revision, overrides: delta }, current.remoteEtag,
+        );
+        useChartStyleEditorStore.getState().markSynced(patched, desired);
+        revision = patched.revision;
+      }
+      return commitCurrentStyleLabDraft({ baseRevision: revision, activate: false });
     })
       .then(async (draft) => {
-        acceptRemoteDraft(draft);
+        acceptRemoteDraft(draft, { preserveLocalChanges: true });
         try {
           const sources = await fetchStyleLabThemeSources();
           setThemeSources(sources);
@@ -3587,6 +3780,7 @@ export function ChartStylePanel({
               mode: source.mode,
               appTokens: source.appTokens,
               chartPalette: source.chartPalette,
+              chartData: source.chartData,
               appAuthoring: source.appAuthoring,
             });
           }
@@ -3598,6 +3792,9 @@ export function ChartStylePanel({
       })
       .catch((error: unknown) => {
         setSyncStatus("error", error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        syncInFlightRef.current = false;
       });
   }, [acceptRemoteDraft, setStyleLabBaseTheme, setSyncStatus, t]);
 
@@ -3607,24 +3804,28 @@ export function ChartStylePanel({
     if (!name) return;
     const state = useChartStyleEditorStore.getState();
     if (syncInFlightRef.current || state.remoteRevision == null) return;
-    const desired = cloneChartStyleOverrides(
-      persistedStyleOverrides(state.semanticOverrides),
-    );
-    const delta = syncDelta(state.syncedOverrides, desired);
     if (syncTimerRef.current != null) {
       window.clearTimeout(syncTimerRef.current);
       syncTimerRef.current = null;
     }
     syncInFlightRef.current = true;
     state.setSyncStatus("saving");
-    void saveCurrentStyleLabDraftAsTheme(name, {
-      baseRevision: state.remoteRevision ?? undefined,
-      overrides: delta,
-      activate: applyThemeToApp,
-      promoteWorkingCopy: applyThemeToApp,
+    let desired: ChartStyleSemanticOverrides = {};
+    void flushWheelGeometry().then(async () => {
+      const current = await refreshStyleDraftForSave(t("styleLab.status.conflictDetail"));
+      desired = persistedStyleOverrides(current.semanticOverrides);
+      const delta = syncDelta(current.syncedOverrides, desired);
+      current.setSyncStatus("saving");
+      return saveCurrentStyleLabDraftAsTheme(name, {
+        baseRevision: current.remoteRevision ?? undefined,
+        overrides: delta,
+        activate: applyThemeToApp,
+        promoteWorkingCopy: applyThemeToApp,
+      });
     })
       .then(async (draft) => {
-        acceptRemoteDraft(draft, { clearHistory: true });
+        useChartStyleEditorStore.getState().markSynced(draft, desired);
+        acceptRemoteDraft(draft, { clearHistory: true, preserveLocalChanges: true });
         try {
           const sources = await fetchStyleLabThemeSources();
           setThemeSources(sources);
@@ -3637,6 +3838,7 @@ export function ChartStylePanel({
               mode: source.mode,
               appTokens: source.appTokens,
               chartPalette: source.chartPalette,
+              chartData: source.chartData,
               appAuthoring: source.appAuthoring,
             });
           }
@@ -3708,6 +3910,7 @@ export function ChartStylePanel({
             mode: fallback.mode,
             appTokens: fallback.appTokens,
             chartPalette: fallback.chartPalette,
+            chartData: fallback.chartData,
             appAuthoring: fallback.appAuthoring,
           });
         }
@@ -3736,35 +3939,42 @@ export function ChartStylePanel({
   const revertWorkingDraft = useCallback(() => {
     const state = useChartStyleEditorStore.getState();
     if (
-      syncInFlightRef.current
+      syncInFlightRef.current || state.geometryTransition || state.gestureStart
       || state.syncStatus !== "synced"
-      || !equalChartStyleOverrides(state.syncedOverrides, state.semanticOverrides)
+      || !equalChartStyleOverrides(state.syncedOverrides, persistedStyleOverrides(state.semanticOverrides))
     ) return;
+    syncInFlightRef.current = true;
+    useChartStyleEditorStore.setState({geometryTransition: true});
     state.setSyncStatus("saving");
-    void revertCurrentStyleLabDraft({
-      baseRevision: state.remoteRevision ?? undefined,
-      factoryDefault: false,
-    })
-      .then((draft) => {
-        acceptRemoteDraft(draft, { clearHistory: true });
-        setSyncStatus("synced", t("styleLab.status.reverted"));
-      })
+    void flushWheelGeometry().then(() => enqueueWheelPresetWrite(async () => {
+      const current = useChartStyleEditorStore.getState();
+      const draft = await revertCurrentStyleLabDraft({
+        baseRevision: current.remoteRevision ?? undefined,
+        factoryDefault: false,
+      });
+      acceptRemoteDraft(draft, { clearHistory: true });
+      if (draft.wheelPresets && current.geometryProfile) {
+        useChartStyleEditorStore.getState().acceptWheelPresets(draft.wheelPresets,
+          current.geometryProfile, {clearHistory: true});
+      }
+      setSyncStatus("synced", t("styleLab.status.reverted"));
+    }))
       .catch((error: unknown) => {
         setSyncStatus("error", error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        syncInFlightRef.current = false;
+        useChartStyleEditorStore.setState({geometryTransition: false});
       });
-  }, [
-    acceptRemoteDraft,
-    setSyncStatus,
-    t,
-  ]);
+  }, [acceptRemoteDraft, setSyncStatus, t]);
 
   const restoreFactoryTheme = useCallback(() => {
     const state = useChartStyleEditorStore.getState();
     if (
       syncInFlightRef.current
       || state.syncStatus !== "synced"
-      || state.remoteModifiedFromBaseline
-      || !equalChartStyleOverrides(state.syncedOverrides, state.semanticOverrides)
+      || state.remoteModifiedFromBaseline || themeWheelModified(state)
+      || !equalChartStyleOverrides(state.syncedOverrides, persistedStyleOverrides(state.semanticOverrides))
     ) return;
     state.setSyncStatus("saving");
     void revertCurrentStyleLabDraft({
@@ -3784,6 +3994,7 @@ export function ChartStylePanel({
             mode: restored.mode,
             appTokens: restored.appTokens,
             chartPalette: restored.chartPalette,
+            chartData: restored.chartData,
             appAuthoring: restored.appAuthoring,
           });
         }
@@ -3832,7 +4043,8 @@ export function ChartStylePanel({
       if (source) {
         let appliedThemeState: ThemeState | null = null;
         if (applyThemeToApp) {
-          const options = await applyThemePreset(source.name);
+          await flushWheelGeometry();
+        const options = await applyThemePreset(source.name);
           appliedThemeState = options.themeState;
         }
         setStyleLabBaseTheme({
@@ -3840,6 +4052,7 @@ export function ChartStylePanel({
           mode: source.mode,
           appTokens: source.appTokens,
           chartPalette: source.chartPalette,
+          chartData: source.chartData,
           appAuthoring: source.appAuthoring,
         });
         if (appliedThemeState) {
@@ -3910,7 +4123,7 @@ export function ChartStylePanel({
     ) return;
     setThemeSources((current) => current.map((candidate) => (
       candidate.name === state.remoteSourceThemeName
-        ? { ...candidate, modified: state.remoteModifiedFromBaseline }
+        ? { ...candidate, modified: state.remoteModifiedFromBaseline || themeWheelModified(state) }
         : candidate
     )));
     state.setSyncStatus("connecting");
@@ -3918,6 +4131,7 @@ export function ChartStylePanel({
       const draft = await createStyleLabDraftFromTheme(source.name);
       let appliedThemeState: ThemeState | null = null;
       if (applyThemeToApp) {
+        await flushWheelGeometry();
         const options = await applyThemePreset(source.name);
         appliedThemeState = options.themeState;
       }
@@ -3926,6 +4140,7 @@ export function ChartStylePanel({
         mode: source.mode,
         appTokens: source.appTokens,
         chartPalette: source.chartPalette,
+        chartData: source.chartData,
         appAuthoring: source.appAuthoring,
       });
       useChartStyleEditorStore.getState().acceptRemoteDraft(
@@ -3958,9 +4173,19 @@ export function ChartStylePanel({
       });
   }, [applyThemeToApp, setStyleLabBaseTheme, themeSources]);
 
+  const selectedAppearanceElement = selectedElement?.appearanceClassId
+    ? sceneElements.find(element => styleClassId(element) === selectedElement.appearanceClassId) ?? null
+    : null;
   const controls = useMemo(
-    () => controlsForElement(selectedElement, tokenMetadata, authoringEditScope),
-    [authoringEditScope, selectedElement, tokenMetadata],
+    () => [
+      ...controlsForElement(selectedElement, tokenMetadata, authoringEditScope),
+      ...controlsForElement(selectedAppearanceElement, tokenMetadata, authoringEditScope),
+    ].map(control => {
+      const semanticId = geometryEditId(control.token.semanticId, compositionProfile);
+      return semanticId === control.token.semanticId ? control : {...control,
+        token: {...control.token, semanticId}, binding: {...control.binding, semanticId}};
+    }),
+    [authoringEditScope, compositionProfile, selectedElement, selectedAppearanceElement, tokenMetadata],
   );
   const transferControls = useMemo<StyleTransferControl[]>(
     () => controls.map((control) => ({
@@ -4005,10 +4230,9 @@ export function ChartStylePanel({
     const byClass = new Map<string, StyleSceneElement>();
     for (const element of sceneElements) {
       const classId = styleClassId(element);
-      // Scene-only hierarchy/group nodes are navigation scaffolding, not
-      // authoring classes. The exhaustive semantic manifest is the sole class
-      // switcher authority.
-      if (!isWheelSemanticClassId(classId)) continue;
+      // Stable band instances belong to the live composition, while paint
+      // classes come from the semantic manifest.
+      if (!isWheelSemanticClassId(classId) && !isWheelBandElement(element)) continue;
       const current = byClass.get(classId);
       if (
         !current
@@ -4018,7 +4242,7 @@ export function ChartStylePanel({
         byClass.set(classId, element);
       }
     }
-    if (selectedElement && isWheelSemanticClassId(styleClassId(selectedElement))) {
+    if (selectedElement && (isWheelSemanticClassId(styleClassId(selectedElement)) || isWheelBandElement(selectedElement))) {
       const classId = styleClassId(selectedElement);
       const current = byClass.get(classId);
       if (
@@ -4047,7 +4271,7 @@ export function ChartStylePanel({
           && (!isManifestPlaceholderElement(element)
             || isEditableManifestPlaceholder(element));
       });
-      if (editable) map.set(node.id, members);
+      if (editable || node.id === SUBDIVISION_BACKGROUND_FAMILY_ID) map.set(node.id, members);
     }
     return map;
   }, [classElements]);
@@ -4132,6 +4356,12 @@ export function ChartStylePanel({
             detail: t("styleLab.class.familyMembers", { count: family.length }),
           } : {}),
         });
+        if (node.id === "fills" && expandedById("fills") && familyIds.has(SUBDIVISION_BACKGROUND_FAMILY_ID)) {
+          choices.push({id: SUBDIVISION_BACKGROUND_FAMILY_ID,
+            label: t("styleLab.scene.subdivisionBand"), depth: 1, isGroup: true,
+            detail: t("styleLab.class.familyMembers", {count: familyIds.get(SUBDIVISION_BACKGROUND_FAMILY_ID)!.length}),
+          });
+        }
         continue;
       }
       const definition = byId.get(node.id);
@@ -4161,6 +4391,9 @@ export function ChartStylePanel({
           ].join(" · "),
         } : {}),
       });
+    }
+    for (const [id, element] of classElements) {
+      if (isWheelBandElement(element)) choices.push({id, label: t(element.labelKey), depth: 0});
     }
     return choices;
   }, [
@@ -4203,11 +4436,11 @@ export function ChartStylePanel({
   // the compiler to memoize: it is a scan of thirty short arrays, and hand
   // memoization here defeated the compiler on the whole component.
   const familyForSelectedClass = useMemo(
-    () => (selectedClassId
+    () => ((selectedElement?.appearanceClassId ?? selectedClassId)
       ? [...selectableFamilies.values()]
-        .find((members) => members.includes(selectedClassId)) ?? null
+        .find((members) => members.includes(selectedElement?.appearanceClassId ?? selectedClassId!)) ?? null
       : null),
-    [selectableFamilies, selectedClassId],
+    [selectableFamilies, selectedClassId, selectedElement?.appearanceClassId],
   );
   const copySelectedElementStyle = useCallback(() => {
     if (!selectedElement || !selectedClassId || !selectedClassLabel) return;
@@ -4261,7 +4494,7 @@ export function ChartStylePanel({
         ] as const;
       }),
     );
-    const patch = buildWheelVariantSyncPatch(semanticOverrides, {
+    const patch = buildWheelVariantSyncPatch(wheelAppearanceOverrides(semanticOverrides), {
       classId: selectedClassId,
       source: sourceVariant,
       targets,
@@ -4291,15 +4524,15 @@ export function ChartStylePanel({
     persistedStyleOverrides(semanticOverrides),
   );
   const canSave = syncStatus === "synced" && !pending;
-  const canSaveAs = syncStatus !== "connecting"
-    && syncStatus !== "saving"
-    && remoteRevision != null;
+  const canSaveAs = canPersistStyleDraft(syncStatus, remoteRevision)
+    && !geometryTransition && !geometryGesture;
   const selectedThemeSource = themeSources.find(
     (source) => source.name === remoteSourceThemeName,
   ) ?? null;
-  const canRevert = canSave && remoteModifiedFromBaseline;
+  const modifiedFromBaseline = remoteModifiedFromBaseline || wheelModifiedFromBaseline;
+  const canRevert = canSave && modifiedFromBaseline && !geometryTransition && !geometryGesture;
   const canRestoreFactory = canSave
-    && !remoteModifiedFromBaseline
+    && !modifiedFromBaseline
     && selectedThemeSource?.system === true
     && selectedThemeSource.factoryModified === true;
   const canSwitchTheme = canSave;
@@ -4344,7 +4577,7 @@ export function ChartStylePanel({
               <option key={source.name} value={source.name}>
                 {source.label}{(
                   source.name === remoteSourceThemeName
-                    ? remoteModifiedFromBaseline
+                    ? modifiedFromBaseline
                     : source.modified
                 ) ? " *" : ""}
               </option>
@@ -4387,13 +4620,17 @@ export function ChartStylePanel({
             </button>
           ))}
         </div>
+        {editorDomain === "chart" && <>
+          <WheelPresetControls profile={compositionProfile} />
+          <WheelCompositionInspector profile={compositionProfile} />
+        </>}
         <div className="flex min-w-0 items-center gap-1">
           {editorDomain === "chart" ? (
             <>
               <div className="mr-1 min-w-0 flex-1">
                 <InspectorCombobox
                   value={selectedFamilyId
-                    ?? (selectedElement && isWheelSemanticClassId(styleClassId(selectedElement))
+                    ?? (selectedElement && (isWheelSemanticClassId(styleClassId(selectedElement)) || isWheelBandElement(selectedElement))
                       ? styleClassId(selectedElement)
                       : null)}
                   options={classChoices}
@@ -4474,7 +4711,7 @@ export function ChartStylePanel({
                 <button
                   type="button"
                   onClick={() => {
-                    const element = classElements.get(familyForSelectedClass[0]);
+                    const element = selectedElement ?? classElements.get(familyForSelectedClass[0]);
                     if (element) selectElement(element);
                   }}
                   className="shrink-0 text-[length:var(--aries-font-size-micro)] text-[color:var(--aries-inspector-muted-color)] underline decoration-dotted underline-offset-2 hover:text-[color:var(--aries-inspector-interactive-color)]"
@@ -4486,7 +4723,7 @@ export function ChartStylePanel({
               <button
                 type="button"
                 onClick={() => {
-                  const element = classElements.get(familyForSelectedClass[0]);
+                  const element = selectedElement ?? classElements.get(familyForSelectedClass[0]);
                   if (element) {
                     setSyncDialogOpen(false);
                     selectFamily(element, familyForSelectedClass);
@@ -4733,7 +4970,7 @@ export function ChartStylePanel({
         </IconButton>
         <button
           type="button"
-          disabled={!canSave}
+          disabled={!canSaveAs}
           onClick={save}
           className="ml-1 inline-flex h-7 shrink-0 items-center gap-1 rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] px-2 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-inspector-title-color)] hover:bg-[var(--aries-navbar-hover-bg)] disabled:cursor-default disabled:opacity-30"
         >

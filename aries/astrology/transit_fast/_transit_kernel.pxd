@@ -13,6 +13,8 @@ cpdef list search_longitude_transits_raw(
 	object step_days=*,
 	double eps_deg=*,
 	double eps_days=*,
+	double sidereal_epoch=*,
+	double sidereal_offset=*,
 )
 
 cpdef list search_longitude_transits_batch_raw(
@@ -27,6 +29,8 @@ cpdef list search_longitude_transits_batch_raw(
 	object step_days=*,
 	double eps_deg=*,
 	double eps_days=*,
+	double sidereal_epoch=*,
+	double sidereal_offset=*,
 )
 
 cpdef list search_station_times_raw(
@@ -40,6 +44,8 @@ cpdef list search_station_times_raw(
 	object step_days=*,
 	double eps_speed=*,
 	double eps_days=*,
+	double sidereal_epoch=*,
+	double sidereal_offset=*,
 )
 
 cpdef list search_station_times_batch_raw(
@@ -53,6 +59,8 @@ cpdef list search_station_times_batch_raw(
 	object step_days=*,
 	double eps_speed=*,
 	double eps_days=*,
+	double sidereal_epoch=*,
+	double sidereal_offset=*,
 )
 
 cpdef list search_relative_aspects_batch_raw(
@@ -67,4 +75,6 @@ cpdef list search_relative_aspects_batch_raw(
 	object step_days=*,
 	double eps_deg=*,
 	double eps_days=*,
+	double sidereal_epoch=*,
+	double sidereal_offset=*,
 )

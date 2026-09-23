@@ -2,14 +2,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
 import { fileURLToPath } from "node:url";
 
 import {
   normalizeOptionsStyleIdentity,
   normalizeThemeState,
+  replaceThemeTokens,
   styleRevisionKey,
 } from "../src/lib/theme/style-state.mjs";
 
@@ -92,7 +94,7 @@ test("current ThemeState preserves explicit style identity", () => {
   });
 });
 
-test("active profile wheel authoring reaches both live canvas and export", () => {
+test("theme appearance and independent wheel presets reach live canvas and export", () => {
   const canvas = readFileSync(
     resolve(frontendRoot, "src/components/workshell/chart-canvas.tsx"),
     "utf8",
@@ -102,10 +104,13 @@ test("active profile wheel authoring reaches both live canvas and export", () =>
     "utf8",
   );
   assert.match(canvas, /effectiveTheme\?\.profileOverrides\?\.wheelAuthoring/);
-  assert.match(
-    canvas,
-    /compileFlatWheelAuthoringOverrides\(\s*effectiveWheelAuthoringOverrides/,
-  );
+  assert.match(canvas, /snapshotWheelPresetRevision < expectedWheelPresetRevision/);
+  assert.match(canvas, /if \(!wheelThemeTransitionPending && effectiveTheme !== candidateTheme\) \{/);
+  assert.match(canvas, /setEffectiveTheme\(candidateTheme\);/);
+  assert.match(canvas, /resolveWheelPresetAuthoringOverrides\(wheelPresetInput\)/);
+  assert.match(canvas, /resolveWheelGeometryPresetStyle\(/);
+  assert.match(chartExport, /resolveWheelGeometryPresetStyle\(/);
+  assert.match(chartExport, /presets: chart\.primaryChart\.options\.wheelGeometryPresets/);
   assert.match(chartExport, /resolvedTheme\?\.profileOverrides\?\.wheelAuthoring/);
 });
 
@@ -147,14 +152,16 @@ test("app materials compile at theme application and stay outside chart stepping
     "utf8",
   );
   assert.match(
-    themeProvider,
+    readFileSync(resolve(frontendRoot, "src/lib/shell/theme-window-sync.ts"), "utf8"),
     /preview\?\.appAuthoring \?\? theme\.profileOverrides\.appAuthoring/,
   );
+  assert.match(themeProvider, /compileThemeAppMaterials\(\s*appearance\.appAuthoring/);
   assert.match(themeProvider, /liveAppThemePreview/);
   assert.match(themeProvider, /installAppMaterialStyleSheet/);
   assert.match(appMaterial, /shadowColor/);
   assert.match(appMaterial, /shadowBlur/);
-  assert.match(appMaterialRuntime, /box-shadow:\$\{material\.boxShadow\}/);
+  assert.match(appMaterialRuntime, /box-shadow:\$\{shadow\}/);
+  assert.match(appMaterialRuntime, /const shadow = raised \? \[[\s\S]*?POPUP_SHELL_SHADOW,[\s\S]*?material\.boxShadow[\s\S]*?\]\.join\(","\) : material\.boxShadow/);
   assert.doesNotMatch(chartCanvas, /app-material(?:-runtime)?/);
   assert.doesNotMatch(drawChart, /app-material(?:-runtime)?/);
 });
@@ -177,6 +184,45 @@ test("legacy options.changed event receives compatible style identity", () => {
 
 test("invalid cached ThemeState is rejected", () => {
   assert.equal(normalizeThemeState({ mode: "dark" }), null);
+});
+
+test("cached startup palette is applied during parsing and removed when absent from the current theme", () => {
+  const values = new Map([["--unrelated-layout", "24px"]]);
+  const root = {
+    dataset: {},
+    classList: { toggle() {} },
+    style: {
+      setProperty: (key, value) => values.set(key, value),
+      removeProperty: key => values.delete(key),
+    },
+  };
+  const cached = { ...legacyTheme, appTokens: { "--aries-background": "old", "--aries-old-override": "red" } };
+  const script = rootLayout.match(/const themeBootScript = `([\s\S]*?)`;/)[1]
+    .replace('${JSON.stringify(THEME_STATE_STORAGE_KEY)}', '"theme-cache"');
+  runInNewContext(script, {
+    document: { documentElement: root },
+    window: { localStorage: { getItem: () => JSON.stringify(cached) } },
+  });
+  assert.equal(root.dataset.themeReady, "cached");
+  assert.equal(values.get("--aries-background"), "old");
+  replaceThemeTokens(root, { "--aries-background": "current" });
+  assert.equal(values.get("--aries-background"), "current");
+  assert.equal(values.has("--aries-old-override"), false);
+  assert.equal(values.has("--morinus-frame"), false);
+  assert.equal(values.get("--unrelated-layout"), "24px");
+});
+
+test("theme boot runs synchronously in head and the native main window waits for readiness", () => {
+  const head = rootLayout.match(/<head>([\s\S]*?)<\/head>/)[1];
+  assert.match(head, /<script id="aries-theme-boot"/);
+  assert.doesNotMatch(rootLayout, /import Script from|strategy="beforeInteractive"/);
+  const config = JSON.parse(readFileSync(resolve(frontendRoot, "src-tauri/tauri.conf.json"), "utf8"));
+  assert.equal(config.app.windows[0].visible, false);
+  // React's streamed fallback replacement waits for rAF. Hidden native windows
+  // cannot mount the readiness provider beneath this root loading boundary.
+  assert.equal(existsSync(resolve(frontendRoot, "src/app/loading.tsx")), false);
+  const settingsPage = readFileSync(resolve(frontendRoot, "src/app/settings/page.tsx"), "utf8");
+  assert.doesNotMatch(settingsPage, /<Suspense/);
 });
 
 test("native controls inherit the active light or dark root color scheme", () => {

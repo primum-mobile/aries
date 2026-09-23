@@ -38,6 +38,7 @@ function createHarness() {
   const hoverStates = [];
   let nextFrameId = 1;
   const context = {
+    curveRefinement: { cancel() {} },
     window: {
       requestAnimationFrame(callback) {
         const id = nextFrameId;

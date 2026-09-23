@@ -45,8 +45,13 @@ PROFILE_KIND = "aries.style-profile"
 PORTABLE_CHART_STYLE_KIND = "aries.chart-style-profile"
 PROFILE_SCHEMA_VERSION = 1
 STORE_KIND = "aries.style-profile-store"
-STORE_SCHEMA_VERSION = 1
+STORE_SCHEMA_VERSION = 3
+_PRE_WHEEL_GEOMETRY_STORE_SCHEMA_VERSION = 2
 STYLE_PROFILE_FILENAME = "style-profiles.json"
+
+_PRE_SPLIT_FILL_STORE_SCHEMA_VERSION = 1
+_HOUSE_FIELD_KEY_SEGMENT = ".fills.houseField."
+_GLYPH_FIELD_KEY_SEGMENT = ".fills.glyphField."
 
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 _FONT_RE = re.compile(r"^[A-Za-z0-9 '\",._-]+$")
@@ -385,8 +390,58 @@ def validate_style_profile(payload: Any) -> dict:
                 "app authoring overrides require an app or combined profile"
             )
         normalized["appAuthoringOverrides"] = app_authoring_overrides
+    if "wheelLayout" in payload:
+        if type(payload["wheelLayout"]) is not int or payload["wheelLayout"] not in range(5):
+            raise StyleProfileError("invalid wheel layout")
+        normalized["wheelLayout"] = payload["wheelLayout"]
+    if "wheelCompositions" in payload:
+        from webapp.daemon.wheel_composition import validate_compositions
+        normalized["wheelCompositions"] = validate_compositions(payload["wheelCompositions"])
+    if "wheelPresetRefs" in payload:
+        from webapp.daemon.wheel_factory import PROFILES
+        refs = payload["wheelPresetRefs"]
+        if not isinstance(refs, Mapping) or any(
+            layout not in PROFILES or not isinstance(ref, str) or not _ID_RE.fullmatch(ref)
+            for layout, ref in refs.items()
+        ):
+            raise StyleProfileError("invalid wheel preset references")
+        normalized["wheelPresetRefs"] = dict(refs)
+    if "wheelGeometry" in payload:
+        from webapp.daemon.wheel_preset_service import validate_theme_geometry
+        try:
+            normalized["wheelGeometry"] = validate_theme_geometry(payload["wheelGeometry"])
+        except ValueError as exc:
+            raise StyleProfileError(str(exc)) from exc
+    if "wheelVisibility" in payload:
+        from webapp.daemon.wheel_factory import PROFILES
+        from webapp.daemon.wheel_composition import ARCHETYPES
+        visibility = payload["wheelVisibility"]
+        if not isinstance(visibility, Mapping) or any(
+            layout not in PROFILES or not isinstance(flags, Mapping) or any(
+                kind not in ARCHETYPES or type(enabled) is not bool
+                for kind, enabled in flags.items()
+            )
+            for layout, flags in visibility.items()
+        ):
+            raise StyleProfileError("invalid wheel visibility")
+        normalized["wheelVisibility"] = deepcopy(dict(visibility))
     normalized["contentHash"] = _content_hash(normalized)
     return normalized
+
+
+def appearance_style_profile(payload: Mapping[str, Any], wheel_preset_refs: Optional[dict] = None) -> dict:
+    """Remove legacy flat dimensions; frozen wheelGeometry remains for theme recall."""
+    from webapp.daemon.wheel_geometry_ownership import appearance_overrides
+    profile = validate_style_profile(payload)
+    profile['overrides'] = appearance_overrides(profile['overrides'])
+    profile['authoringOverrides'] = appearance_overrides(profile.get('authoringOverrides') or {})
+    # Rebuilt from its sole flat authority by the validator.
+    profile.pop('chartStyleProfileV2', None)
+    profile.pop('wheelCompositions', None)
+    profile.pop('wheelLayout', None)
+    if wheel_preset_refs is not None:
+        profile['wheelPresetRefs'] = deepcopy(wheel_preset_refs)
+    return validate_style_profile(profile)
 
 
 def normalize_imported_style_profile(payload: Any) -> dict:
@@ -441,6 +496,13 @@ def normalize_imported_style_profile(payload: Any) -> dict:
         "authoringOverrides": authoring,
         "chartStyleProfileV2": chart_style,
     }
+    if "wheelCompositions" in payload:
+        normalized_payload["wheelCompositions"] = payload["wheelCompositions"]
+    if "wheelLayout" in payload:
+        normalized_payload["wheelLayout"] = payload["wheelLayout"]
+    for key in ("wheelPresetRefs", "wheelVisibility", "wheelGeometry"):
+        if key in payload:
+            normalized_payload[key] = payload[key]
     if "appAuthoringOverrides" in payload:
         normalized_payload["appAuthoringOverrides"] = payload.get(
             "appAuthoringOverrides"
@@ -492,7 +554,44 @@ def _empty_store() -> dict:
         "quarantinedProfiles": {},
         "profileErrors": {},
         "legacyMigrations": {},
+        "wheelGeometryMigrationBackups": {},
     }
+
+
+def _migrate_pre_split_inner_fill(profile: Mapping[str, Any]) -> dict:
+    """Give the new glyph band the material formerly shared with houses.
+
+    Store v1 profiles authored ``fills.houseField`` across the whole annulus
+    from the inner wheel boundary to the aspect field. Store v2 splits that
+    physical area into an outer glyph field and an inner house-number band.
+    Copy each missing property once so the old appearance survives while both
+    classes remain independently editable from then on.
+    """
+    authoring = profile.get("authoringOverrides")
+    if not isinstance(authoring, Mapping):
+        return deepcopy(dict(profile))
+
+    migrated_authoring = deepcopy(dict(authoring))
+    changed = False
+    for semantic_id, value in authoring.items():
+        if _HOUSE_FIELD_KEY_SEGMENT not in semantic_id:
+            continue
+        glyph_id = semantic_id.replace(
+            _HOUSE_FIELD_KEY_SEGMENT,
+            _GLYPH_FIELD_KEY_SEGMENT,
+            1,
+        )
+        if glyph_id in migrated_authoring:
+            continue
+        migrated_authoring[glyph_id] = deepcopy(value)
+        changed = True
+    if not changed:
+        return deepcopy(dict(profile))
+
+    migrated = deepcopy(dict(profile))
+    migrated["authoringOverrides"] = migrated_authoring
+    migrated.pop("contentHash", None)
+    return validate_style_profile(migrated)
 
 
 class StyleProfileStore:
@@ -502,6 +601,7 @@ class StyleProfileStore:
         self._lock = threading.RLock()
         self.path = Path(directory) / STYLE_PROFILE_FILENAME
         self._load_error: Optional[str] = None
+        self._loaded_store_schema_version = STORE_SCHEMA_VERSION
         try:
             self._state = self._load()
         except StyleProfileError as exc:
@@ -518,8 +618,14 @@ class StyleProfileStore:
             value = json.loads(self.path.read_text(encoding="utf-8"))
             if not isinstance(value, Mapping) or value.get("kind") != STORE_KIND:
                 raise StyleProfileError("invalid style profile store kind")
-            if value.get("storeSchemaVersion") != STORE_SCHEMA_VERSION:
+            store_schema_version = value.get("storeSchemaVersion")
+            if store_schema_version not in (
+                _PRE_SPLIT_FILL_STORE_SCHEMA_VERSION,
+                _PRE_WHEEL_GEOMETRY_STORE_SCHEMA_VERSION,
+                STORE_SCHEMA_VERSION,
+            ):
                 raise StyleProfileError("unsupported style profile store version")
+            self._loaded_store_schema_version = store_schema_version
             profiles = value.get("profiles")
             if not isinstance(profiles, Mapping):
                 raise StyleProfileError("style profile store profiles must be an object")
@@ -538,6 +644,8 @@ class StyleProfileStore:
                 profile_id = str(raw_profile_id)
                 try:
                     profile, _ = _validate_stored_style_profile(raw_profile)
+                    if store_schema_version == _PRE_SPLIT_FILL_STORE_SCHEMA_VERSION:
+                        profile = _migrate_pre_split_inner_fill(profile)
                     if profile_id != profile["id"]:
                         raise StyleProfileError("style profile store id mismatch")
                 except (StyleProfileError, TypeError, ValueError) as exc:
@@ -553,6 +661,9 @@ class StyleProfileStore:
             migrations = value.get("legacyMigrations")
             if isinstance(migrations, Mapping):
                 normalized["legacyMigrations"] = deepcopy(dict(migrations))
+            wheel_backups = value.get("wheelGeometryMigrationBackups")
+            if isinstance(wheel_backups, Mapping):
+                normalized["wheelGeometryMigrationBackups"] = deepcopy(dict(wheel_backups))
             return normalized
         except (OSError, json.JSONDecodeError, StyleProfileError, TypeError, ValueError) as exc:
             raise StyleProfileError(f"could not load {self.path}: {exc}") from exc
@@ -565,6 +676,7 @@ class StyleProfileStore:
             "activeProfileId": state.get("activeProfileId"),
             "profiles": state.get("profiles", {}),
             "legacyMigrations": state.get("legacyMigrations", {}),
+            "wheelGeometryMigrationBackups": state.get("wheelGeometryMigrationBackups", {}),
         }
         if state.get("quarantinedProfiles"):
             persisted["quarantinedProfiles"] = state["quarantinedProfiles"]
@@ -590,6 +702,14 @@ class StyleProfileStore:
             raise StyleProfileError(self._load_error)
         self._write(state)
         self._state = state
+        self._loaded_store_schema_version = STORE_SCHEMA_VERSION
+
+    def upgrade_store_format(self) -> None:
+        """Protect existing wheel snapshots before an older writer can erase them."""
+        with self._transaction():
+            if (not self._load_error and self.path.is_file()
+                    and self._loaded_store_schema_version != STORE_SCHEMA_VERSION):
+                self._commit(self._state)
 
     @contextmanager
     def _transaction(self):
@@ -640,6 +760,27 @@ class StyleProfileStore:
                 state["activeProfileId"] = profile["id"]
             self._commit(state)
             return deepcopy(profile)
+
+    def detach_wheel_geometry(self, profile_id: str, refs: dict, geometry=None) -> dict:
+        """Archive before separating a migrated theme; repeat calls are harmless.
+
+        The independent wheel store must commit the geometry first. A crash
+        between stores therefore leaves a recoverable duplicate, never lost data.
+        """
+        with self._transaction():
+            original = self._state['profiles'].get(profile_id)
+            if original is None:
+                raise StyleProfileError(f"unknown style profile: {profile_id}")
+            separated = appearance_style_profile(original, refs)
+            if geometry is not None:
+                separated = validate_style_profile({**separated, 'wheelGeometry': geometry})
+            if separated == original:
+                return deepcopy(original)
+            state = deepcopy(self._state)
+            state['wheelGeometryMigrationBackups'].setdefault(profile_id, deepcopy(original))
+            state['profiles'][profile_id] = separated
+            self._commit(state)
+            return deepcopy(separated)
 
     def activate(self, profile_id: Optional[str]) -> Optional[dict]:
         with self._transaction():

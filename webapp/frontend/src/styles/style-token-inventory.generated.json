@@ -6,14 +6,14 @@
     "legacyOverlay": "src/styles/style-tokens.ts"
   },
   "counts": {
-    "tokens": 1478,
-    "cssTokens": 1467,
-    "cssDeclarations": 1552,
+    "tokens": 1508,
+    "cssTokens": 1491,
+    "cssDeclarations": 1576,
     "runtimeOnlyTokens": 7,
-    "externalTokens": 4,
+    "externalTokens": 10,
     "public": 1106,
     "derived": 198,
-    "runtime": 174
+    "runtime": 204
   },
   "legacyMigration": {
     "authority": "legacy-preview-v1",
@@ -359,11 +359,11 @@
     },
     {
       "id": "external.base-ui",
-      "tokenCount": 3
+      "tokenCount": 4
     },
     {
       "id": "external.tailwind",
-      "tokenCount": 1
+      "tokenCount": 6
     },
     {
       "id": "renderer.astrocart",
@@ -391,7 +391,7 @@
     },
     {
       "id": "renderer.wheel",
-      "tokenCount": 399
+      "tokenCount": 423
     }
   ],
   "tokens": [
@@ -9916,7 +9916,6 @@
         "src/components/workshell/calendar-prototype-view.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
         "src/components/workshell/chart-hover-flag.tsx",
-        "src/components/workshell/directions-view.tsx",
         "src/components/workshell/eclipses-view.tsx",
         "src/components/workshell/feature-catalog-view.tsx",
         "src/components/workshell/help-dialog.tsx",
@@ -9925,6 +9924,7 @@
         "src/components/workshell/license-management-panel.tsx",
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/mundane-chart-view.tsx",
+        "src/components/workshell/point-aspect-filters.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
         "src/components/workshell/save-to-collection-dialog.tsx",
         "src/components/workshell/settings-dialog.tsx",
@@ -9986,6 +9986,7 @@
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/list-head-label.tsx",
         "src/components/workshell/mundane-chart-view.tsx",
+        "src/components/workshell/point-aspect-filters.tsx",
         "src/components/workshell/primdir-settings.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
         "src/components/workshell/save-to-collection-dialog.tsx",
@@ -10337,7 +10338,8 @@
       ],
       "consumerFiles": [
         "src/components/ui/button.tsx",
-        "src/components/workshell/settings-dialog.tsx"
+        "src/components/workshell/settings-dialog.tsx",
+        "src/components/workshell/system-chart-picker.tsx"
       ]
     },
     {
@@ -10973,7 +10975,11 @@
         }
       ],
       "consumerFiles": [
-        "src/components/workshell/settings-dialog.tsx"
+        "src/components/workshell/chart-editor-dialog.tsx",
+        "src/components/workshell/chart-editor-window-host.tsx",
+        "src/components/workshell/settings-dialog.tsx",
+        "src/lib/shell/settings-window.ts",
+        "src/lib/shell/tool-window-lifecycle.ts"
       ],
       "bounds": {
         "min": 45,
@@ -11041,7 +11047,6 @@
         "src/components/ui/dialog.tsx",
         "src/components/workshell/about-dialog.tsx",
         "src/components/workshell/calendar-prototype-view.tsx",
-        "src/components/workshell/chart-editor-dialog.tsx",
         "src/components/workshell/chart-style-panel.tsx",
         "src/components/workshell/settings-dialog.tsx",
         "src/components/workshell/system-chart-picker.tsx"
@@ -11176,7 +11181,9 @@
         "src/components/workshell/chart-style-panel.tsx",
         "src/components/workshell/license-management-panel.tsx",
         "src/components/workshell/settings-dialog.tsx",
-        "src/components/workshell/system-chart-picker.tsx"
+        "src/components/workshell/system-chart-picker.tsx",
+        "src/lib/shell/settings-window.ts",
+        "src/lib/shell/tool-window-lifecycle.ts"
       ],
       "bounds": {
         "min": 8,
@@ -11241,7 +11248,11 @@
       ],
       "consumerFiles": [
         "src/components/workshell/chart-editor-dialog.tsx",
-        "src/components/workshell/license-dialog.tsx"
+        "src/components/workshell/chart-editor-window-host.tsx",
+        "src/components/workshell/license-dialog.tsx",
+        "src/components/workshell/settings-dialog.tsx",
+        "src/lib/shell/settings-window.ts",
+        "src/lib/shell/tool-window-lifecycle.ts"
       ],
       "bounds": {
         "min": 50,
@@ -11272,7 +11283,10 @@
         }
       ],
       "consumerFiles": [
-        "src/components/ui/dialog.tsx"
+        "src/components/ui/dialog.tsx",
+        "src/components/workshell/chart-editor-window-host.tsx",
+        "src/lib/shell/settings-window.ts",
+        "src/lib/shell/tool-window-lifecycle.ts"
       ],
       "bounds": {
         "min": 8,
@@ -11303,7 +11317,10 @@
         }
       ],
       "consumerFiles": [
-        "src/components/ui/dialog.tsx"
+        "src/components/ui/dialog.tsx",
+        "src/components/workshell/chart-editor-window-host.tsx",
+        "src/lib/shell/settings-window.ts",
+        "src/lib/shell/tool-window-lifecycle.ts"
       ],
       "bounds": {
         "min": 60,
@@ -11429,7 +11446,9 @@
         }
       ],
       "consumerFiles": [
-        "src/components/ui/dialog.tsx"
+        "src/components/ui/dialog.tsx",
+        "src/components/workshell/chart-editor-window-host.tsx",
+        "src/lib/shell/tool-window-lifecycle.ts"
       ],
       "bounds": {
         "min": 480,
@@ -11615,7 +11634,9 @@
         }
       ],
       "consumerFiles": [
-        "src/components/ui/dialog.tsx"
+        "src/components/ui/dialog.tsx",
+        "src/lib/shell/settings-window.ts",
+        "src/lib/shell/tool-window-lifecycle.ts"
       ],
       "bounds": {
         "min": 560,
@@ -13503,7 +13524,7 @@
         "src/components/ui/sheet.tsx",
         "src/components/ui/tabs.tsx",
         "src/components/ui/textarea.tsx",
-        "src/components/workshell/directions-view.tsx"
+        "src/components/workshell/aspect-selection-bar.tsx"
       ],
       "bounds": {
         "min": 11,
@@ -13616,7 +13637,9 @@
         "src/components/workshell/primdir-settings.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
         "src/components/workshell/settings-dialog.tsx",
-        "src/components/workshell/system-chart-picker.tsx"
+        "src/components/workshell/system-chart-picker.tsx",
+        "src/lib/shell/settings-window.ts",
+        "src/lib/shell/tool-window-lifecycle.ts"
       ],
       "bounds": {
         "min": 12,
@@ -13654,6 +13677,7 @@
         "src/components/workshell/chart-style-panel.tsx",
         "src/components/workshell/license-management-panel.tsx",
         "src/components/workshell/style-lab-color-picker.tsx",
+        "src/components/workshell/wheel-preset-controls.tsx",
         "src/components/workshell/workspace-content.tsx"
       ],
       "bounds": {
@@ -13808,11 +13832,12 @@
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/mundane-chart-view.tsx",
         "src/components/workshell/notes-panel.tsx",
+        "src/components/workshell/point-aspect-filters.tsx",
         "src/components/workshell/primdir-settings.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
         "src/components/workshell/settings-dialog.tsx",
         "src/components/workshell/system-chart-picker.tsx",
-        "src/components/workshell/transit-list-view.tsx",
+        "src/components/workshell/transit-list-filter-drawer.tsx",
         "src/components/workshell/workspace-content.tsx"
       ],
       "legacyId": "fontSizeSection",
@@ -13890,9 +13915,11 @@
         "src/components/workshell/system-chart-picker.tsx",
         "src/components/workshell/time-lord-table-view.tsx",
         "src/components/workshell/titlebar-options-menu.tsx",
+        "src/components/workshell/transit-list-filter-drawer.tsx",
         "src/components/workshell/transit-list-view.tsx",
         "src/components/workshell/transit-search-view.tsx",
         "src/components/workshell/whats-new-view.tsx",
+        "src/components/workshell/wheel-preset-controls.tsx",
         "src/components/workshell/workspace-content.tsx",
         "src/components/workshell/zodiacal-releasing-view.tsx",
         "src/lib/chart/strip-render-style.ts",
@@ -14696,7 +14723,9 @@
         "src/components/workshell/app-theme-controls.tsx",
         "src/components/workshell/chart-style-panel.tsx",
         "src/components/workshell/inspector-panel.tsx",
-        "src/components/workshell/style-lab-color-picker.tsx"
+        "src/components/workshell/style-lab-color-picker.tsx",
+        "src/components/workshell/wheel-composition-controls.tsx",
+        "src/components/workshell/wheel-preset-controls.tsx"
       ]
     },
     {
@@ -15231,7 +15260,8 @@
       "consumerFiles": [
         "src/components/workshell/app-theme-controls.tsx",
         "src/components/workshell/chart-style-panel.tsx",
-        "src/components/workshell/inspector-panel.tsx"
+        "src/components/workshell/inspector-panel.tsx",
+        "src/components/workshell/wheel-preset-controls.tsx"
       ]
     },
     {
@@ -15615,7 +15645,8 @@
       "consumerFiles": [
         "src/components/workshell/app-theme-controls.tsx",
         "src/components/workshell/chart-style-panel.tsx",
-        "src/components/workshell/inspector-panel.tsx"
+        "src/components/workshell/inspector-panel.tsx",
+        "src/components/workshell/wheel-composition-controls.tsx"
       ]
     },
     {
@@ -17764,6 +17795,7 @@
       "consumerFiles": [
         "src/app/globals.css",
         "src/components/workshell/chart-copy-control.tsx",
+        "src/components/workshell/side-by-side-charts.tsx",
         "src/components/workshell/sidebar-sash.tsx",
         "src/components/workshell/text-export-actions.tsx",
         "src/components/workshell/titlebar-options-menu.tsx",
@@ -17795,6 +17827,7 @@
       "consumerFiles": [
         "src/app/globals.css",
         "src/components/workshell/chart-copy-control.tsx",
+        "src/components/workshell/side-by-side-charts.tsx",
         "src/components/workshell/sidebar-sash.tsx",
         "src/components/workshell/text-export-actions.tsx",
         "src/components/workshell/titlebar-options-menu.tsx",
@@ -20159,7 +20192,8 @@
       "consumerFiles": [
         "src/app/globals.css",
         "src/components/workshell/app-theme-controls.tsx",
-        "src/components/workshell/chart-style-panel.tsx"
+        "src/components/workshell/chart-style-panel.tsx",
+        "src/components/workshell/wheel-composition-controls.tsx"
       ]
     },
     {
@@ -20990,7 +21024,6 @@
       "consumerFiles": [
         "src/components/workshell/astrocart-controls.tsx",
         "src/components/workshell/calendar-prototype-view.tsx",
-        "src/components/workshell/chart-editor-dialog.tsx",
         "src/components/workshell/directions-view.tsx",
         "src/components/workshell/generic-table-view.tsx",
         "src/components/workshell/list-controls.tsx",
@@ -21034,6 +21067,7 @@
         "src/components/workshell/calendar-prototype-view.tsx",
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
+        "src/components/workshell/side-by-side-charts.tsx",
         "src/lib/list-tokens.ts"
       ],
       "bounds": {
@@ -21067,6 +21101,8 @@
       "consumerFiles": [
         "src/components/workshell/aspect-list-panel.tsx",
         "src/components/workshell/list-controls.tsx",
+        "src/components/workshell/side-by-side-charts.tsx",
+        "src/components/workshell/transit-list-filter-drawer.tsx",
         "src/lib/list-tokens.ts"
       ],
       "bounds": {
@@ -21109,8 +21145,11 @@
         "src/components/workshell/settings-dialog.tsx",
         "src/components/workshell/system-chart-picker.tsx",
         "src/components/workshell/temporal-confluence-view.tsx",
+        "src/components/workshell/transit-list-filter-drawer.tsx",
         "src/components/workshell/transit-search-view.tsx",
-        "src/lib/list-tokens.ts"
+        "src/lib/list-tokens.ts",
+        "src/lib/shell/settings-window.ts",
+        "src/lib/shell/tool-window-lifecycle.ts"
       ],
       "bounds": {
         "min": 0,
@@ -21431,6 +21470,8 @@
         "src/components/ui/context-menu.tsx",
         "src/components/ui/dropdown-menu.tsx",
         "src/components/ui/tooltip.tsx",
+        "src/components/workshell/chart-editor-dialog.tsx",
+        "src/components/workshell/settings-dialog.tsx",
         "src/components/workshell/style-lab-color-picker.tsx",
         "src/lib/theme/app-material-runtime.ts"
       ]
@@ -21464,6 +21505,8 @@
         "src/components/ui/context-menu.tsx",
         "src/components/ui/dropdown-menu.tsx",
         "src/components/ui/tooltip.tsx",
+        "src/components/workshell/chart-editor-dialog.tsx",
+        "src/components/workshell/settings-dialog.tsx",
         "src/components/workshell/style-lab-color-picker.tsx",
         "src/lib/theme/app-material-runtime.ts"
       ]
@@ -21573,7 +21616,9 @@
         "src/components/workshell/settings-dialog.tsx",
         "src/components/workshell/style-lab-color-picker.tsx",
         "src/components/workshell/surveil-studies-dialog.tsx",
-        "src/components/workshell/system-chart-picker.tsx"
+        "src/components/workshell/system-chart-picker.tsx",
+        "src/components/workshell/wheel-composition-controls.tsx",
+        "src/components/workshell/wheel-preset-controls.tsx"
       ]
     },
     {
@@ -21699,7 +21744,8 @@
       "consumerFiles": [
         "src/components/ui/command.tsx",
         "src/components/ui/context-menu.tsx",
-        "src/components/ui/dropdown-menu.tsx"
+        "src/components/ui/dropdown-menu.tsx",
+        "src/components/workshell/settings-dialog.tsx"
       ]
     },
     {
@@ -21732,6 +21778,7 @@
         "src/components/ui/tooltip.tsx",
         "src/components/workshell/app-theme-preview.tsx",
         "src/components/workshell/chart-style-panel.tsx",
+        "src/components/workshell/settings-dialog.tsx",
         "src/components/workshell/style-lab-color-picker.tsx"
       ]
     },
@@ -22113,7 +22160,9 @@
         "src/components/workshell/resizable-table-columns.tsx",
         "src/components/workshell/settings-dialog.tsx",
         "src/components/workshell/sidebar-sash.tsx",
-        "src/components/workshell/workspace-content.tsx"
+        "src/components/workshell/workspace-content.tsx",
+        "src/lib/shell/settings-window.ts",
+        "src/lib/shell/tool-window-lifecycle.ts"
       ],
       "bounds": {
         "min": 1,
@@ -34577,6 +34626,318 @@
       }
     },
     {
+      "id": "--aries-wheel-cusps-aspect-boundary-ring-radius",
+      "name": "--aries-wheel-cusps-aspect-boundary-ring-radius",
+      "family": "renderer.wheel",
+      "class": "runtime",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts"
+      ]
+    },
+    {
+      "id": "--aries-wheel-cusps-base-ring-radius",
+      "name": "--aries-wheel-cusps-base-ring-radius",
+      "family": "renderer.wheel",
+      "class": "runtime",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts"
+      ]
+    },
+    {
+      "id": "--aries-wheel-cusps-cusp-outer-ring-radius",
+      "name": "--aries-wheel-cusps-cusp-outer-ring-radius",
+      "family": "renderer.wheel",
+      "class": "runtime",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts"
+      ]
+    },
+    {
+      "id": "--aries-wheel-cusps-house-boundary-ring-radius",
+      "name": "--aries-wheel-cusps-house-boundary-ring-radius",
+      "family": "renderer.wheel",
+      "class": "runtime",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts"
+      ]
+    },
+    {
+      "id": "--aries-wheel-cusps-inner-boundary-ring-radius",
+      "name": "--aries-wheel-cusps-inner-boundary-ring-radius",
+      "family": "renderer.wheel",
+      "class": "runtime",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts"
+      ]
+    },
+    {
+      "id": "--aries-wheel-cusps-inner-degree-ring-radius",
+      "name": "--aries-wheel-cusps-inner-degree-ring-radius",
+      "family": "renderer.wheel",
+      "class": "runtime",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts"
+      ]
+    },
+    {
+      "id": "--aries-wheel-cusps-outer-degree-ring-radius",
+      "name": "--aries-wheel-cusps-outer-degree-ring-radius",
+      "family": "renderer.wheel",
+      "class": "runtime",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts"
+      ]
+    },
+    {
+      "id": "--aries-wheel-cusps-outer-house-ring-radius",
+      "name": "--aries-wheel-cusps-outer-house-ring-radius",
+      "family": "renderer.wheel",
+      "class": "runtime",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts"
+      ]
+    },
+    {
+      "id": "--aries-wheel-cusps-outer-maximum-ring-radius",
+      "name": "--aries-wheel-cusps-outer-maximum-ring-radius",
+      "family": "renderer.wheel",
+      "class": "runtime",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts"
+      ]
+    },
+    {
+      "id": "--aries-wheel-cusps-term-ring-radius",
+      "name": "--aries-wheel-cusps-term-ring-radius",
+      "family": "renderer.wheel",
+      "class": "runtime",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts"
+      ]
+    },
+    {
+      "id": "--aries-wheel-cusps-zodiac-inner-ring-radius",
+      "name": "--aries-wheel-cusps-zodiac-inner-ring-radius",
+      "family": "renderer.wheel",
+      "class": "runtime",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts"
+      ]
+    },
+    {
+      "id": "--aries-wheel-cusps-zodiac-outer-ring-radius",
+      "name": "--aries-wheel-cusps-zodiac-outer-ring-radius",
+      "family": "renderer.wheel",
+      "class": "runtime",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts"
+      ]
+    },
+    {
       "id": "--aries-wheel-decan-boundary-color",
       "name": "--aries-wheel-decan-boundary-color",
       "family": "renderer.wheel",
@@ -37103,6 +37464,318 @@
         "max": 1,
         "step": 0.01
       }
+    },
+    {
+      "id": "--aries-wheel-houses-aspect-boundary-ring-radius",
+      "name": "--aries-wheel-houses-aspect-boundary-ring-radius",
+      "family": "renderer.wheel",
+      "class": "runtime",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts"
+      ]
+    },
+    {
+      "id": "--aries-wheel-houses-base-ring-radius",
+      "name": "--aries-wheel-houses-base-ring-radius",
+      "family": "renderer.wheel",
+      "class": "runtime",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts"
+      ]
+    },
+    {
+      "id": "--aries-wheel-houses-cusp-outer-ring-radius",
+      "name": "--aries-wheel-houses-cusp-outer-ring-radius",
+      "family": "renderer.wheel",
+      "class": "runtime",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts"
+      ]
+    },
+    {
+      "id": "--aries-wheel-houses-house-boundary-ring-radius",
+      "name": "--aries-wheel-houses-house-boundary-ring-radius",
+      "family": "renderer.wheel",
+      "class": "runtime",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts"
+      ]
+    },
+    {
+      "id": "--aries-wheel-houses-inner-boundary-ring-radius",
+      "name": "--aries-wheel-houses-inner-boundary-ring-radius",
+      "family": "renderer.wheel",
+      "class": "runtime",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts"
+      ]
+    },
+    {
+      "id": "--aries-wheel-houses-inner-degree-ring-radius",
+      "name": "--aries-wheel-houses-inner-degree-ring-radius",
+      "family": "renderer.wheel",
+      "class": "runtime",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts"
+      ]
+    },
+    {
+      "id": "--aries-wheel-houses-outer-degree-ring-radius",
+      "name": "--aries-wheel-houses-outer-degree-ring-radius",
+      "family": "renderer.wheel",
+      "class": "runtime",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts"
+      ]
+    },
+    {
+      "id": "--aries-wheel-houses-outer-house-ring-radius",
+      "name": "--aries-wheel-houses-outer-house-ring-radius",
+      "family": "renderer.wheel",
+      "class": "runtime",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts"
+      ]
+    },
+    {
+      "id": "--aries-wheel-houses-outer-maximum-ring-radius",
+      "name": "--aries-wheel-houses-outer-maximum-ring-radius",
+      "family": "renderer.wheel",
+      "class": "runtime",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts"
+      ]
+    },
+    {
+      "id": "--aries-wheel-houses-term-ring-radius",
+      "name": "--aries-wheel-houses-term-ring-radius",
+      "family": "renderer.wheel",
+      "class": "runtime",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts"
+      ]
+    },
+    {
+      "id": "--aries-wheel-houses-zodiac-inner-ring-radius",
+      "name": "--aries-wheel-houses-zodiac-inner-ring-radius",
+      "family": "renderer.wheel",
+      "class": "runtime",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts"
+      ]
+    },
+    {
+      "id": "--aries-wheel-houses-zodiac-outer-ring-radius",
+      "name": "--aries-wheel-houses-zodiac-outer-ring-radius",
+      "family": "renderer.wheel",
+      "class": "runtime",
+      "role": "renderer-style",
+      "owner": "wheel-renderer",
+      "provider": "css-declaration",
+      "scope": "renderer",
+      "type": "number",
+      "unit": "",
+      "default": "0",
+      "dependencies": [],
+      "selectors": [
+        ":root"
+      ],
+      "declarations": [
+        {
+          "selector": ":root",
+          "value": "0"
+        }
+      ],
+      "consumerFiles": [
+        "src/lib/chart/wheel-render-style.ts"
+      ]
     },
     {
       "id": "--aries-wheel-inner-boundary-ring-color",
@@ -41190,6 +41863,25 @@
       ]
     },
     {
+      "id": "--available-width",
+      "name": "--available-width",
+      "family": "external.base-ui",
+      "class": "runtime",
+      "role": "floating-available-width",
+      "owner": "base-ui",
+      "provider": "external-base-ui",
+      "scope": "component",
+      "type": "number",
+      "unit": "px",
+      "default": null,
+      "dependencies": [],
+      "selectors": [],
+      "declarations": [],
+      "consumerFiles": [
+        "src/components/workshell/side-by-side-charts.tsx"
+      ]
+    },
+    {
       "id": "--background",
       "name": "--background",
       "family": "platform.shadcn",
@@ -42511,7 +43203,11 @@
         }
       ],
       "consumerFiles": [
-        "src/lib/chart/palette.ts"
+        "src/lib/chart/palette.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -42537,7 +43233,11 @@
         }
       ],
       "consumerFiles": [
-        "src/lib/chart/palette.ts"
+        "src/lib/chart/palette.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -42592,7 +43292,11 @@
         }
       ],
       "consumerFiles": [
-        "src/lib/chart/palette.ts"
+        "src/lib/chart/palette.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -42647,7 +43351,11 @@
         }
       ],
       "consumerFiles": [
-        "src/lib/chart/palette.ts"
+        "src/lib/chart/palette.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -42673,7 +43381,11 @@
         }
       ],
       "consumerFiles": [
-        "src/lib/chart/palette.ts"
+        "src/lib/chart/palette.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -42699,7 +43411,11 @@
         }
       ],
       "consumerFiles": [
-        "src/lib/chart/palette.ts"
+        "src/lib/chart/palette.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -42725,7 +43441,11 @@
         }
       ],
       "consumerFiles": [
-        "src/lib/chart/palette.ts"
+        "src/lib/chart/palette.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -42751,7 +43471,11 @@
         }
       ],
       "consumerFiles": [
-        "src/lib/chart/palette.ts"
+        "src/lib/chart/palette.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -42777,7 +43501,11 @@
         }
       ],
       "consumerFiles": [
-        "src/lib/chart/palette.ts"
+        "src/lib/chart/palette.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -42803,7 +43531,11 @@
         }
       ],
       "consumerFiles": [
-        "src/lib/chart/palette.ts"
+        "src/lib/chart/palette.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -42829,7 +43561,11 @@
         }
       ],
       "consumerFiles": [
-        "src/lib/chart/palette.ts"
+        "src/lib/chart/palette.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -42855,7 +43591,11 @@
         }
       ],
       "consumerFiles": [
-        "src/lib/chart/palette.ts"
+        "src/lib/chart/palette.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -42923,7 +43663,11 @@
       ],
       "consumerFiles": [
         "src/components/workshell/temporal-confluence-context.tsx",
-        "src/lib/chart/palette.ts"
+        "src/lib/chart/palette.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -42950,7 +43694,11 @@
       ],
       "consumerFiles": [
         "src/lib/chart/palette.ts",
-        "src/lib/style-lab/wheel-style-scene.ts"
+        "src/lib/style-lab/wheel-style-scene.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -42977,7 +43725,11 @@
       ],
       "consumerFiles": [
         "src/components/workshell/temporal-confluence-context.tsx",
-        "src/lib/chart/palette.ts"
+        "src/lib/chart/palette.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -43004,7 +43756,11 @@
       ],
       "consumerFiles": [
         "src/components/workshell/temporal-confluence-context.tsx",
-        "src/lib/chart/palette.ts"
+        "src/lib/chart/palette.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -43031,7 +43787,11 @@
       ],
       "consumerFiles": [
         "src/components/workshell/temporal-confluence-context.tsx",
-        "src/lib/chart/palette.ts"
+        "src/lib/chart/palette.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -43058,7 +43818,11 @@
       ],
       "consumerFiles": [
         "src/components/workshell/temporal-confluence-context.tsx",
-        "src/lib/chart/palette.ts"
+        "src/lib/chart/palette.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -43085,7 +43849,11 @@
       ],
       "consumerFiles": [
         "src/components/workshell/temporal-confluence-context.tsx",
-        "src/lib/chart/palette.ts"
+        "src/lib/chart/palette.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -43113,7 +43881,11 @@
       "consumerFiles": [
         "src/components/workshell/temporal-confluence-context.tsx",
         "src/lib/chart/palette.ts",
-        "src/lib/style-lab/wheel-style-scene.ts"
+        "src/lib/style-lab/wheel-style-scene.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -43140,7 +43912,11 @@
       ],
       "consumerFiles": [
         "src/components/workshell/temporal-confluence-context.tsx",
-        "src/lib/chart/palette.ts"
+        "src/lib/chart/palette.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -43167,7 +43943,11 @@
       ],
       "consumerFiles": [
         "src/components/workshell/temporal-confluence-context.tsx",
-        "src/lib/chart/palette.ts"
+        "src/lib/chart/palette.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -43196,10 +43976,12 @@
         "src/app/globals.css",
         "src/components/workshell/temporal-confluence-context.tsx",
         "src/lib/chart/astrolabe-render-style.ts",
-        "src/lib/chart/palette.ts"
+        "src/lib/chart/palette.ts",
+        "src/lib/theme/table-print-palette.ts"
       ],
       "runtimeProviderFiles": [
-        "src/lib/chart/astrolabe-render-style.ts"
+        "src/lib/chart/astrolabe-render-style.ts",
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -43226,7 +44008,11 @@
       ],
       "consumerFiles": [
         "src/components/workshell/temporal-confluence-context.tsx",
-        "src/lib/chart/palette.ts"
+        "src/lib/chart/palette.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -43253,7 +44039,11 @@
       ],
       "consumerFiles": [
         "src/components/workshell/temporal-confluence-context.tsx",
-        "src/lib/chart/palette.ts"
+        "src/lib/chart/palette.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -43280,7 +44070,11 @@
       ],
       "consumerFiles": [
         "src/lib/chart/palette.ts",
-        "src/lib/style-lab/wheel-style-scene.ts"
+        "src/lib/style-lab/wheel-style-scene.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -43307,7 +44101,11 @@
       ],
       "consumerFiles": [
         "src/lib/chart/palette.ts",
-        "src/lib/style-lab/wheel-style-scene.ts"
+        "src/lib/style-lab/wheel-style-scene.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -43334,7 +44132,11 @@
       ],
       "consumerFiles": [
         "src/lib/chart/palette.ts",
-        "src/lib/style-lab/wheel-style-scene.ts"
+        "src/lib/style-lab/wheel-style-scene.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -43361,7 +44163,11 @@
       ],
       "consumerFiles": [
         "src/lib/chart/palette.ts",
-        "src/lib/style-lab/wheel-style-scene.ts"
+        "src/lib/style-lab/wheel-style-scene.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -43388,7 +44194,11 @@
       ],
       "consumerFiles": [
         "src/lib/chart/palette.ts",
-        "src/lib/style-lab/wheel-style-scene.ts"
+        "src/lib/style-lab/wheel-style-scene.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -43415,7 +44225,11 @@
       ],
       "consumerFiles": [
         "src/lib/chart/palette.ts",
-        "src/lib/style-lab/wheel-style-scene.ts"
+        "src/lib/style-lab/wheel-style-scene.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -43442,7 +44256,11 @@
       ],
       "consumerFiles": [
         "src/lib/chart/palette.ts",
-        "src/lib/style-lab/wheel-style-scene.ts"
+        "src/lib/style-lab/wheel-style-scene.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -43469,7 +44287,11 @@
       ],
       "consumerFiles": [
         "src/lib/chart/palette.ts",
-        "src/lib/style-lab/wheel-style-scene.ts"
+        "src/lib/style-lab/wheel-style-scene.ts",
+        "src/lib/theme/table-print-palette.ts"
+      ],
+      "runtimeProviderFiles": [
+        "src/lib/theme/table-print-palette.ts"
       ]
     },
     {
@@ -43813,7 +44635,6 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
-        "src/components/workshell/table-pdf-export.ts",
         "src/lib/chart/palette.ts",
         "src/lib/style-lab/wheel-style-scene.ts"
       ]
@@ -44114,7 +44935,6 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
-        "src/components/workshell/table-pdf-export.ts",
         "src/lib/chart/ephemeris-render-style.ts",
         "src/lib/chart/palette.ts",
         "src/lib/chart/wheel-render-style.ts",
@@ -44205,7 +45025,6 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
-        "src/components/workshell/table-pdf-export.ts",
         "src/lib/chart/astrolabe-render-style.ts",
         "src/lib/chart/ephemeris-render-style.ts",
         "src/lib/chart/palette.ts",
@@ -45293,6 +46112,7 @@
         }
       ],
       "consumerFiles": [
+        "src/components/workshell/side-by-side-charts.tsx",
         "src/components/workshell/workspace-content.tsx"
       ]
     },
@@ -45415,6 +46235,101 @@
         "src/components/ui/context-menu.tsx",
         "src/components/ui/dropdown-menu.tsx",
         "src/components/ui/tooltip.tsx"
+      ]
+    },
+    {
+      "id": "--tw-inset-ring-shadow",
+      "name": "--tw-inset-ring-shadow",
+      "family": "external.tailwind",
+      "class": "runtime",
+      "role": "tailwind-popup-shadow-composition",
+      "owner": "tailwind",
+      "provider": "external-tailwind",
+      "scope": "component",
+      "type": "string",
+      "unit": "",
+      "default": "0 0 #0000",
+      "dependencies": [],
+      "selectors": [],
+      "declarations": [],
+      "consumerFiles": [
+        "src/lib/theme/app-material-runtime.ts"
+      ]
+    },
+    {
+      "id": "--tw-inset-shadow",
+      "name": "--tw-inset-shadow",
+      "family": "external.tailwind",
+      "class": "runtime",
+      "role": "tailwind-popup-shadow-composition",
+      "owner": "tailwind",
+      "provider": "external-tailwind",
+      "scope": "component",
+      "type": "string",
+      "unit": "",
+      "default": "0 0 #0000",
+      "dependencies": [],
+      "selectors": [],
+      "declarations": [],
+      "consumerFiles": [
+        "src/lib/theme/app-material-runtime.ts"
+      ]
+    },
+    {
+      "id": "--tw-ring-offset-shadow",
+      "name": "--tw-ring-offset-shadow",
+      "family": "external.tailwind",
+      "class": "runtime",
+      "role": "tailwind-popup-shadow-composition",
+      "owner": "tailwind",
+      "provider": "external-tailwind",
+      "scope": "component",
+      "type": "string",
+      "unit": "",
+      "default": "0 0 #0000",
+      "dependencies": [],
+      "selectors": [],
+      "declarations": [],
+      "consumerFiles": [
+        "src/lib/theme/app-material-runtime.ts"
+      ]
+    },
+    {
+      "id": "--tw-ring-shadow",
+      "name": "--tw-ring-shadow",
+      "family": "external.tailwind",
+      "class": "runtime",
+      "role": "tailwind-popup-shadow-composition",
+      "owner": "tailwind",
+      "provider": "external-tailwind",
+      "scope": "component",
+      "type": "string",
+      "unit": "",
+      "default": "0 0 #0000",
+      "dependencies": [],
+      "selectors": [],
+      "declarations": [],
+      "consumerFiles": [
+        "src/lib/theme/app-material-runtime.ts"
+      ]
+    },
+    {
+      "id": "--tw-shadow",
+      "name": "--tw-shadow",
+      "family": "external.tailwind",
+      "class": "runtime",
+      "role": "tailwind-popup-shadow-composition",
+      "owner": "tailwind",
+      "provider": "external-tailwind",
+      "scope": "component",
+      "type": "string",
+      "unit": "",
+      "default": "0 0 #0000",
+      "dependencies": [],
+      "selectors": [],
+      "declarations": [],
+      "consumerFiles": [
+        "src/lib/theme/app-material-runtime.ts"
       ]
     }
   ]

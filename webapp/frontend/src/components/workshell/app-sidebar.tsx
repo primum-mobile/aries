@@ -3,6 +3,10 @@
 
 "use client";
 
+import { handleChartEventsMenuAction } from "./chart-events-actions";
+import { ChartEventsSubmenu } from "./chart-events-submenu";
+
+
 import * as React from "react";
 
 import { ChevronDown, ChevronRight, X } from "lucide-react";
@@ -40,6 +44,7 @@ import {
   type WorkspaceDocument,
 } from "@/stores/workspace-store";
 import { applyImmediateWorkspaceCommandResult } from "@/stores/daemon-workspace-adapter";
+import { runWorkspaceDocumentSnapshotCommand } from "@/stores/workspace-command-snapshot-gate";
 import { findRadixSiblingLaunchParent } from "@/components/workshell/chart-launch-parent";
 import { useFrameLayoutStore } from "@/stores/frame-layout-store";
 import { useT, useTFallback, type TFunc } from "@/lib/i18n/i18n";
@@ -356,8 +361,22 @@ export function DocumentRowContextMenu({
   const runAction = React.useCallback(
     async (actionId?: string, payload?: Record<string, unknown>) => {
       if (!actionId) return;
+      if (await handleChartEventsMenuAction(actionId, payload)) return;
       try {
-        const result = await executeWorkspaceContextMenuAction(actionId, payload);
+        const isHarmonicProjectionAction =
+          actionId === "workspace.set_harmonic_projection_mode" ||
+          actionId === "workspace.set_harmonic_number";
+        const commandResult = isHarmonicProjectionAction
+          ? await runWorkspaceDocumentSnapshotCommand(
+              docId,
+              () => executeWorkspaceContextMenuAction(actionId, payload),
+            )
+          : {
+              result: await executeWorkspaceContextMenuAction(actionId, payload),
+              isLatest: true,
+            };
+        if (!commandResult.isLatest) return;
+        const result = commandResult.result;
         if (isImmediateWorkspaceActionResult(result)) {
           const immediateResult =
             result as Parameters<typeof applyImmediateWorkspaceCommandResult>[0];
@@ -412,8 +431,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isImmediateWorkspaceActionResult(
   value: Record<string, unknown>,
 ): boolean {
-  if (!Array.isArray(value.documents)) return false;
   if (isRecord(value.snapshot)) return true;
+  if (!Array.isArray(value.documents)) return false;
   return typeof value.activeDocumentId === "string" && value.activeDocumentId.length > 0;
 }
 
@@ -470,6 +489,9 @@ function DocumentMenuNode({
     return <ContextMenuSeparator />;
   }
   if (item.type === "submenu") {
+    if (item.eventsDocumentId) {
+      return <ChartEventsSubmenu documentId={item.eventsDocumentId} count={item.eventCount ?? 0} onAction={onAction} />;
+    }
     return (
       <ContextMenuSub>
         <ContextMenuSubTrigger disabled={item.disabled}>{label(item)}</ContextMenuSubTrigger>

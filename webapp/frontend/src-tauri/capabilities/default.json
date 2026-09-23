@@ -4,11 +4,14 @@
   "description": "enables the default permissions",
   "windows": [
     "main",
-    "chart-picker"
+    "chart-picker",
+    "settings",
+    "chart-editor"
   ],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
+    "core:window:allow-set-title",
     "clipboard-manager:allow-write-image",
     "dialog:allow-open",
     "dialog:allow-save",

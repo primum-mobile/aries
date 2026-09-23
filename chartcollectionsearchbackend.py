@@ -2,6 +2,7 @@
 # Copyright (C) 2026 Max Lange
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+import copy
 import math
 import os
 
@@ -356,15 +357,23 @@ def _match_chart_fast(record, options, placement_clauses, aspect_clauses, query)
 	matches = []
 	for clause in placement_clauses:
 		match = _match_placement_clause_fast(ctx, clause, query)
-		if match is None:
-			return None
-		matches.append(match)
+		if clause.exclude:
+			if match is not None:
+				return None
+		else:
+			if match is None:
+				return None
+			matches.append(match)
 
 	for clause in aspect_clauses:
 		match = _match_aspect_clause_fast(ctx, clause)
-		if match is None:
-			return None
-		matches.append(match)
+		if clause.exclude:
+			if match is not None:
+				return None
+		else:
+			if match is None:
+				return None
+			matches.append(match)
 
 	return matches
 
@@ -407,9 +416,10 @@ def _placement_detail_fast(ctx, obj, clause, query):
 		if house not in clause.house_numbers:
 			return None
 
-	if clause.motion:
-		if not _matches_motion_fast(ctx, obj, clause.motion, query.station_window_days):
-			return None
+	matched_motion = next((motion for motion in clause.motions
+		if _matches_motion_fast(ctx, obj, motion, query.station_window_days)), None)
+	if clause.motions and matched_motion is None:
+		return None
 
 	parts = [obj.label]
 	if display_lon is not None:
@@ -418,12 +428,21 @@ def _placement_detail_fast(ctx, obj, clause, query):
 		house = _object_house_fast(ctx, obj)
 		if house is not None:
 			parts.append('H%d' % house)
-	if clause.motion:
-		parts.append(_motion_label(clause.motion))
+	if matched_motion:
+		parts.append(_motion_label(matched_motion))
 	return ' '.join(parts)
 
 
 def _match_aspect_clause_fast(ctx, clause):
+	if len(clause.aspect_types) > 1:
+		for aspect_type in clause.aspect_types:
+			candidate = copy.copy(clause)
+			candidate.aspect_type = aspect_type
+			candidate.aspect_types = [aspect_type]
+			match = _match_aspect_clause_fast(ctx, candidate)
+			if match is not None:
+				return match
+		return None
 	a_objects = _fast_objects_for_ids(ctx, clause.object_a_ids)
 	b_objects = _fast_objects_for_ids(ctx, clause.object_b_ids)
 	orb = max(0.0, float(clause.orb))
@@ -523,21 +542,29 @@ def _match_chart(chrt, catalog, placement_clauses, aspect_clauses, query):
 	matches = []
 	for clause in placement_clauses:
 		match = _match_placement_clause(chrt, catalog, clause, query)
-		if match is None:
-			return None
-		matches.append(match)
+		if clause.exclude:
+			if match is not None:
+				return None
+		else:
+			if match is None:
+				return None
+			matches.append(match)
 
 	for clause in aspect_clauses:
-		match = _match_aspect_clause(chrt, catalog, clause)
-		if match is None:
-			return None
-		matches.append(match)
+		match = _match_aspect_clause(chrt, catalog, clause, query)
+		if clause.exclude:
+			if match is not None:
+				return None
+		else:
+			if match is None:
+				return None
+			matches.append(match)
 
 	return matches
 
 
 def _match_placement_clause(chrt, catalog, clause, query):
-	for obj in _objects_for_ids(catalog, clause.object_ids):
+	for obj in _objects_for_ids(catalog, clause.object_ids, query):
 		detail = _placement_detail(chrt, obj, clause, query)
 		if detail is not None:
 			return detail
@@ -568,9 +595,10 @@ def _placement_detail(chrt, obj, clause, query):
 		if house not in clause.house_numbers:
 			return None
 
-	if clause.motion:
-		if not _matches_motion(chrt, obj, clause.motion, query.station_window_days):
-			return None
+	matched_motion = next((motion for motion in clause.motions
+		if _matches_motion(chrt, obj, motion, query.station_window_days)), None)
+	if clause.motions and matched_motion is None:
+		return None
 
 	parts = [obj.label]
 	if display_lon is not None:
@@ -579,14 +607,23 @@ def _placement_detail(chrt, obj, clause, query):
 		house = _object_house(chrt, obj)
 		if house is not None:
 			parts.append('H%d' % house)
-	if clause.motion:
-		parts.append(_motion_label(clause.motion))
+	if matched_motion:
+		parts.append(_motion_label(matched_motion))
 	return ' '.join(parts)
 
 
-def _match_aspect_clause(chrt, catalog, clause):
-	a_objects = _objects_for_ids(catalog, clause.object_a_ids)
-	b_objects = _objects_for_ids(catalog, clause.object_b_ids)
+def _match_aspect_clause(chrt, catalog, clause, query=None):
+	if len(clause.aspect_types) > 1:
+		for aspect_type in clause.aspect_types:
+			candidate = copy.copy(clause)
+			candidate.aspect_type = aspect_type
+			candidate.aspect_types = [aspect_type]
+			match = _match_aspect_clause(chrt, catalog, candidate, query)
+			if match is not None:
+				return match
+		return None
+	a_objects = _objects_for_ids(catalog, clause.object_a_ids, query)
+	b_objects = _objects_for_ids(catalog, clause.object_b_ids, query)
 	orb = max(0.0, float(clause.orb))
 	best = None
 	copresence = _is_copresence_aspect(clause)
@@ -631,11 +668,14 @@ def _match_aspect_clause(chrt, catalog, clause):
 	)
 
 
-def _objects_for_ids(catalog, object_ids):
+def _objects_for_ids(catalog, object_ids, query=None):
 	objects = []
+	include_asteroids = bool(getattr(query, 'include_asteroids', False))
 	if not object_ids:
-		return list(catalog.objects)
+		return [obj for obj in catalog.objects if include_asteroids or not obj.id.startswith('asteroid:')]
 	for object_id in object_ids:
+		if object_id.startswith('asteroid:') and not include_asteroids:
+			continue
 		if object_id == OBJECT_FAMILY_PART:
 			objects.extend([obj for obj in catalog.objects if obj.family == searchcatalog.SearchObject.FAMILY_PART])
 			continue

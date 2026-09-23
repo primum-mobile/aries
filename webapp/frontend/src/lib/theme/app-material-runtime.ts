@@ -265,12 +265,28 @@ function surfaceSelector(
   ].map((selector) => scopedSelector(selector, scopeSelector)).join(",");
 }
 
+// Preserve each component's original Tailwind ring/shadow utilities (including
+// the softer ring-foreground/10 and the different menu/submenu elevations).
+const POPUP_SHELL_SHADOW = [
+  "var(--tw-inset-shadow, 0 0 transparent)",
+  "var(--tw-inset-ring-shadow, 0 0 transparent)",
+  "var(--tw-ring-offset-shadow, 0 0 transparent)",
+  "var(--tw-ring-shadow, 0 0 transparent)",
+  "var(--tw-shadow, 0 0 transparent)",
+].join(",");
+
 function styleRule(
   selector: string,
   material: CompiledAppMaterials["byClass"][AppMaterialClass],
   foregroundToken: string,
+  raised = false,
 ): string {
-  return `${selector}{--aries-material-background:${material.backgroundColor};background-color:var(--aries-material-state-background,${material.backgroundColor});background-image:${material.backgroundImage};background-size:${material.backgroundSize};background-repeat:${material.backgroundRepeat};background-position:${material.backgroundPosition};background-blend-mode:${material.backgroundBlendMode};color:var(${foregroundToken});-webkit-backdrop-filter:${material.backdropFilter};backdrop-filter:${material.backdropFilter};box-shadow:${material.boxShadow}}`;
+  // Materials add to the shell's existing treatment rather than replacing it.
+  const shadow = raised ? [
+    POPUP_SHELL_SHADOW,
+    ...(material.boxShadow === "none" ? [] : [material.boxShadow]),
+  ].join(",") : material.boxShadow;
+  return `${selector}{--aries-material-background:${material.backgroundColor};background-color:var(--aries-material-state-background,${material.backgroundColor});background-image:${material.backgroundImage};background-size:${material.backgroundSize};background-repeat:${material.backgroundRepeat};background-position:${material.backgroundPosition};background-blend-mode:${material.backgroundBlendMode};color:var(${foregroundToken});-webkit-backdrop-filter:${material.backdropFilter};backdrop-filter:${material.backdropFilter};box-shadow:${shadow}}`;
 }
 
 /**
@@ -293,9 +309,10 @@ export function appMaterialStyleSheet(
   for (const surface of SURFACES) {
     const selector = surfaceSelector(surface, scopeSelector);
     const material = compiled.byClass[surface.classId];
-    rules.push(styleRule(selector, material, surface.foregroundToken));
+    const raised = surface.classId === "popover" || surface.classId === "overlay";
+    rules.push(styleRule(selector, material, surface.foregroundToken, raised));
     fallbackRules.push(
-      `${selector}{--aries-material-background:${material.solidBackgroundColor};background-color:${material.solidBackgroundColor};background-image:none;-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:none}`,
+      `${selector}{--aries-material-background:${material.solidBackgroundColor};background-color:${material.solidBackgroundColor};background-image:none;-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:${raised ? POPUP_SHELL_SHADOW : "none"}}`,
     );
   }
   return [

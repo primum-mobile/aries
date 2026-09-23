@@ -5,7 +5,7 @@
 .PHONY: perf-check perf-report speedlog
 .PHONY: worktree-check worktree-bootstrap
 .PHONY: web-frontend web-hosted-build web-notes web-corpus web-runtime-resources web-legal web-venv web-build-deps web-check-deps
-.PHONY: web-frontend-preflight web-tauri-before-build
+.PHONY: app-preflight web-frontend-preflight web-tauri-before-build
 .PHONY: web-daemon-current web-daemon-binary web-verify-parity style-check style-token-check
 
 # POSIX-oriented helper targets.
@@ -27,6 +27,10 @@ export ARIES_VERSION
 
 DAEMON_BUILD_STAMP := webapp/frontend/.tmp/daemon-build.stamp
 DAEMON_BUILD_INPUTS := Makefile scripts/build_sweastrology.sh scripts/build_transit_kernel.py
+DAEMON_BUILD_INPUTS += webapp/frontend/src/lib/chart/wheel-ring-archetypes.json
+DAEMON_BUILD_INPUTS += $(wildcard webapp/frontend/src/lib/chart/wheel-factory-*.json)
+DAEMON_BUILD_INPUTS += webapp/frontend/src/lib/chart/wheel-geometry-ownership.json
+DAEMON_BUILD_INPUTS += webapp/daemon/shipping-style-profiles.json
 DAEMON_BUILD_INPUTS += $(wildcard *.py)
 DAEMON_BUILD_INPUTS += $(shell find aries engine forecasting parsers rectification SWEP/src webapp/daemon webapp/frontend/scripts webapp/interface \
 	-type f \( -name '*.py' -o -name '*.pyx' -o -name '*.pxd' -o -name '*.c' -o -name '*.h' -o -name '*.spec' \) \
@@ -131,6 +135,11 @@ web-hosted-build: web-notes
 # producer below for both direct and Makefile-driven package builds.
 web-frontend-preflight:
 	cd webapp/frontend && npm run prebuild
+
+# Shared by the private push guard and app builds. Owner tooling adds the full
+# localization gate to web-frontend-preflight without leaking private scanners
+# into the public source export.
+app-preflight: web-frontend-preflight
 
 web-tauri-before-build: web-frontend-preflight
 	$(MAKE) --no-print-directory web-corpus web-notes web-daemon-binary web-legal

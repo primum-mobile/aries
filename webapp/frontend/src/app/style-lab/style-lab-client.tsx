@@ -52,11 +52,18 @@ type PickerMode = "primary" | "comparison";
 
 const VARIANTS: ReadonlyArray<Readonly<{
   value: RenderVariant;
-  labelKey: "styleLab.variant.classic" | "styleLab.variant.compact" | "styleLab.variant.anglo";
+  labelKey:
+    | "styleLab.variant.classic"
+    | "styleLab.variant.compact"
+    | "styleLab.variant.anglo"
+    | "styleLab.variant.houses"
+    | "styleLab.variant.cusps";
 }>> = [
   { value: "round-classic", labelKey: "styleLab.variant.classic" },
   { value: "round-compact", labelKey: "styleLab.variant.compact" },
   { value: "round-anglo", labelKey: "styleLab.variant.anglo" },
+  { value: "round-houses", labelKey: "styleLab.variant.houses" },
+  { value: "round-cusps", labelKey: "styleLab.variant.cusps" },
 ];
 
 function fieldValue(

@@ -116,6 +116,136 @@ const EXPECTED_PALETTE = {
   positions: "#ffffff",
 };
 
+async function mundaneFunctions() {
+  const source = await readFile(new URL("../src/components/workshell/mundane-chart-view.tsx", import.meta.url), "utf8");
+  const ast = ts.createSourceFile("mundane.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const names = new Set(["degToRad", "mundaneXY", "textSize", "bodyLabelRuns", "bodyTextSize", "bodyLabelRect", "overlaps", "arrangeBodies"]);
+  const functions = ast.statements.filter((node) => ts.isFunctionDeclaration(node) && names.has(node.name?.text));
+  const js = ts.transpileModule(functions.map((node) => node.getText(ast)).join("\n"), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  return new Function(`${js}; return { bodyTextSize, bodyLabelRect, bodyLabelRuns, arrangeBodies, overlaps };`)();
+}
+
+test("point names use the text font while body symbols retain Morinus", async () => {
+  const { bodyTextSize } = await mundaneFunctions();
+  const usedFonts = [];
+  const context = { measureText() { usedFonts.push(this.font); return { width: 10 }; } };
+  const fonts = { text: "12px Text", morinus: "24px Morinus" };
+  bodyTextSize(context, { glyph: "Sy", glyphFont: "text" }, fonts);
+  bodyTextSize(context, { glyph: "A" }, fonts);
+  assert.deepEqual(usedFonts, [fonts.text, fonts.morinus]);
+  usedFonts.length = 0;
+  const size = bodyTextSize(context, { glyph: "Moon (12th)", glyphFont: "text",
+    labelSegments: [{ text: "B", kind: "planet" }, { text: "/", kind: "text" }, { text: "D", kind: "planet" }] }, fonts);
+  assert.deepEqual(usedFonts, [fonts.morinus, fonts.text, fonts.morinus]);
+  assert.equal(size[0], 30);
+});
+
+test("dense point families keep every identity within a bounded placement pass", async () => {
+  const { arrangeBodies } = await mundaneFunctions();
+  const bodies = Array.from({ length: 100 }, (_, i) => ({ id: `lot:${i}`, mundane: 0, glyph: `Lot ${i}`, glyphFont: "text" }));
+  let measurements = 0;
+  const context = { measureText() { measurements += 1; return { width: 1000, actualBoundingBoxAscent: 12 }; } };
+  const shifts = arrangeBodies(context, { ascLongitude: 0 }, { cx: 300, cy: 300, symbolSize: 24 },
+    { text: "12px Text", morinus: "24px Morinus" }, bodies, 150, DEFAULT_MUNDANE_RENDER_STYLE);
+  assert.equal(shifts.size, bodies.length);
+  assert.ok([...shifts.values()].every(Number.isFinite));
+  assert.ok(measurements < 1000, `Unbounded measurement work: ${measurements}`);
+});
+
+test("collision boxes use the painted mundane frame, independent of zodiac Ascendant", async () => {
+  const { bodyTextSize, bodyLabelRect, arrangeBodies, overlaps } = await mundaneFunctions();
+  const ctx = { measureText(text) { return { width: text.length * 7, actualBoundingBoxAscent: 12 }; } };
+  const fonts = { text: "12px Text", morinus: "24px Morinus" };
+  const layout = resolveMundaneLayout(DEFAULT_MUNDANE_RENDER_STYLE, 600, false, true);
+  for (const outer of [false]) {
+    const bodies = [0, 0.5, 1, 89, 90, 179, 180, 181, 269, 270, 271, 359].map((angle, i) => ({
+      id: i, mundane: angle, glyph: `Point ${i}`, glyphFont: "text", labelFamily: outer ? "asteroid" : undefined,
+    }));
+    const radius = outer ? layout.r30 + 15 : layout.rPlanet;
+    const first = arrangeBodies(ctx, { ascLongitude: 0 }, layout, fonts, bodies, radius, DEFAULT_MUNDANE_RENDER_STYLE, outer);
+    const rotated = arrangeBodies(ctx, { ascLongitude: 137 }, layout, fonts, bodies, radius, DEFAULT_MUNDANE_RENDER_STYLE, outer);
+    assert.deepEqual(rotated, first, "zodiac longitude must not rotate collision geometry");
+    const boxes = bodies.map(body => bodyLabelRect(layout, body, bodyTextSize(ctx, body, fonts), radius,
+      body.mundane + first.get(body.id), DEFAULT_MUNDANE_RENDER_STYLE, outer));
+    for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+      const a = boxes[i], b = boxes[j];
+      assert.equal(overlaps(a.x, a.y, a.w, a.h, b.x, b.y, b.w, b.h), false, `overlap ${i}/${j}, outer=${outer}`);
+    }
+  }
+});
+
+test("ascensional outer objects delegate layout, paint and hover bounds to the normal renderer", async () => {
+  const source = await readFile(new URL("../src/components/workshell/mundane-chart-view.tsx", import.meta.url), "utf8");
+  const ast = ts.createSourceFile("mundane.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const draw = ast.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "drawMundaneChart");
+  const js = ts.transpileModule(draw.getText(ast), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const arranged = [], delegated = [];
+  const dependencies = {
+    window: { devicePixelRatio: 1 }, resolveMundaneLayout, resolveMundaneHitMetrics,
+    buildFonts: () => ({}),
+    drawFrame() {}, drawHouseNames() {}, drawAscMC() {}, drawMundaneAspects() {},
+    arrangeBodies: (_ctx, _data, _layout, _fonts, bodies) => { arranged.push(bodies); return new Map(); },
+    drawPlanetLines() {}, drawPlanets() {},
+    collectAspectHoverTargets: () => [], collectBodyHoverTargets: () => [],
+    identityFrame: rotation => ({rotation}), CanvasDraw: class {},
+    resolveProjectedOuterRing: (snapshot, opts, projection) => ({snapshot, opts, ...projection, paintRadius: projection.boundaryRadius + 20}),
+    paintProjectedOuterRing: (_draw, scene, capture) => {
+      delegated.push(scene);
+      scene.items.forEach(item => capture(item, { x: 50, y: 60, w: 20, h: 30 }));
+    },
+  };
+  const render = new Function(...Object.keys(dependencies), `${js}; return drawMundaneChart;`)(...Object.values(dependencies));
+  const canvas = { style: {}, getContext: () => ({setTransform() {}, clearRect() {}, fillRect() {}}) };
+  const projected = {id: 'dodec-sun', family: 'dodecatemoria', longitude: 32, label: 'Sun (12th)',
+    degText: '17', minText: '25', segments: [{kind: 'glyph', text: 'A'}]};
+  const data = { compound: true, showHouses: true, bodies: [{id: 'sun'}], secondaryBodies: [{id: 'moon'}],
+    angles: [{name: 'ASC', mundane: 0}, {name: 'MC', mundane: 270}, {name: 'Desc', mundane: 180}, {name: 'IC', mundane: 90}],
+    houses: Array.from({length: 12}, (_, i) => ({mundane: i * 30})),
+    outerRing: {chartRole: 'outer', mode: 'dodecatemoria', bodies: [
+      {id: 'semantic:projection:sun', ringItem: projected, labelSegments: projected.segments, hoverFlag: {title: 'Sun (12th)'}}]},
+  };
+  const chart = {angles: {asc: 113}, houses: {cusps: []}};
+  const snapshot = {primaryChart: chart, comparisonChart: chart};
+  const targets = render(canvas, data, 520, DEFAULT_MUNDANE_RENDER_STYLE,
+    {width: 1000, height: 600, topBoundary: 40}, {snapshot, style: {revision: 'active-style'}});
+  assert.deepEqual(arranged, [data.bodies, data.secondaryBodies], 'outer objects never enter the separate mundane body arranger');
+  assert.deepEqual(delegated[0].items, [projected]);
+  assert.deepEqual(delegated[0].chart.angles, {asc: 0, mc: 270, dsc: 180, ic: 90});
+  assert.deepEqual(delegated[0].frame, {rotation: 0});
+  assert.equal(delegated[0].opts.renderStyle.revision, 'active-style');
+  assert.equal(targets[0].x, 60);
+  assert.equal(targets[0].y, 75);
+  assert.equal(targets[0].payload, data.outerRing.bodies[0].hoverFlag);
+  delegated.length = 0;
+  render(canvas, {...data, outerRing: {bodies: []}}, 600, DEFAULT_MUNDANE_RENDER_STYLE);
+  assert.equal(delegated.length, 0);
+});
+
+test("single and comparison wheels both retain the double-bordered outer ring", async () => {
+  const source = await readFile(new URL("../src/components/workshell/mundane-chart-view.tsx", import.meta.url), "utf8");
+  const ast = ts.createSourceFile("mundane.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const frame = ast.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "drawFrame");
+  const js = ts.transpileModule(frame.getText(ast), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const circles = [];
+  const dependencies = {
+    resolveMundaneStrokeMetrics,
+    drawCircle: (_ctx, _layout, radius) => circles.push(radius),
+    setStroke() {}, drawLines() {}, drawRadialLine() {},
+  };
+  const draw = new Function(...Object.keys(dependencies), `${js}; return drawFrame;`)(...Object.values(dependencies));
+  for (const compound of [false, true]) {
+    for (const showHouses of [false, true]) {
+      const layout = resolveMundaneLayout(DEFAULT_MUNDANE_RENDER_STYLE, 600, compound, showHouses);
+      circles.length = 0;
+      draw({ fillRect() {} }, { showHouses, houses: [] }, layout, DEFAULT_MUNDANE_RENDER_STYLE);
+      assert.ok(circles.includes(layout.r30));
+      assert.ok(circles.includes(layout.rOuter10));
+    }
+  }
+});
+
 function assertDeepFrozen(value) {
   assert.ok(Object.isFrozen(value));
   for (const child of Object.values(value)) {
@@ -428,8 +558,9 @@ test("one resolved object feeds paint, collision, hover geometry, and overlays",
   );
   assert.match(
     fetchBlock,
-    /\}, \[documentId, sourceName, source, sessionRefreshSeq, pushedSnapshotSeq, refreshKey\]\);/,
+    /\}, \[documentId, sourceName, source, sessionRefreshSeq, pushedSnapshotSeq, refreshKey, snapshotData\]\);/,
   );
+  assert.match(fetchBlock, /if \(snapshotData\) return;/);
   assert.doesNotMatch(fetchBlock, /\bstyleRevision\b/);
 
   const styleBlock = source.slice(
@@ -437,7 +568,7 @@ test("one resolved object feeds paint, collision, hover geometry, and overlays",
     source.indexOf("React.useEffect", source.indexOf("React.useLayoutEffect", fetchCall)),
   );
   assert.match(styleBlock, /revision: styleRevision/);
-  assert.match(styleBlock, /\}, \[styleRevision\]\);/);
+  assert.match(styleBlock, /\}, \[styleRevision, outerProfile, outerPreset\?\.id, outerPreset\?\.revision, theme\?\.profileOverrides\?\.wheelAuthoring\]\);/);
 
   assert.match(
     source,

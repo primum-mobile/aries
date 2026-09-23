@@ -1,3 +1,4 @@
+import type { WheelArrowStyle } from "../chart/wheel-render-style";
 // Copyright (C) 2026 Max Lange
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -229,6 +230,7 @@ export type ChartStyleDirectionSource = "fixed" | "sun";
 export type ChartStyleTextureMask = "none" | "crescent";
 export type ChartStyleLineCap = "butt" | "round" | "square";
 export type ChartStyleLineJoin = "bevel" | "round" | "miter";
+export type ChartStyleFontStyle = "normal" | "italic";
 
 export type ChartStyleFontRef = Readonly<{
   role: "text" | "symbols";
@@ -244,6 +246,7 @@ export type ChartStyleFontRef = Readonly<{
 
 export type ChartStyleClassProperties = Readonly<{
   radius?: ChartStyleDimension;
+  bandWidth?: ChartStyleDimension;
   /**
    * Unitless multiplier on the whole wheel, authored only by `canvas.chart`.
    *
@@ -265,6 +268,8 @@ export type ChartStyleClassProperties = Readonly<{
    */
   rulerDepth?: number;
   /** One tick group's length, as a share of its ruler band. */
+  arrowSize?: number;
+  arrowStyle?: WheelArrowStyle;
   tickLength?: number;
   strokeWidth?: ChartStyleDimension;
   strokeStyle?: ChartStyleStrokeStyle;
@@ -291,6 +296,10 @@ export type ChartStyleClassProperties = Readonly<{
   lineCap?: ChartStyleLineCap;
   lineJoin?: ChartStyleLineJoin;
   fontRef?: ChartStyleFontRef;
+  /** Independent from the selected face so weight can be reset on its own. */
+  fontWeight?: number;
+  /** Independent from the selected face so italic can be combined with any weight. */
+  fontStyle?: ChartStyleFontStyle;
   fontSize?: ChartStyleDimension;
   tracking?: ChartStyleDimension;
   color?: ChartStyleColor;
@@ -306,7 +315,12 @@ export type ChartStyleClassProperties = Readonly<{
   saturation?: number;
 }>;
 
-export type ChartStyleVariant = "classic" | "compact" | "anglo";
+export type ChartStyleVariant =
+  | "classic"
+  | "compact"
+  | "anglo"
+  | "houses"
+  | "cusps";
 export type ChartStyleClassMap = Readonly<Record<string, ChartStyleClassProperties>>;
 
 export type ChartStyleProfileV2 = Readonly<{

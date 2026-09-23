@@ -5,12 +5,16 @@
 
 "use client";
 
+import { WheelPresetControls } from "./wheel-preset-controls";
+import { useShallow } from "zustand/react/shallow";
+import { flushWheelGeometry } from "@/lib/daemon/wheel-preset-sync";
+import { wheelTypographyProfileForTheme } from "@/lib/chart/wheel-render-style";
 import * as React from "react";
 
 import { ArrowDown, ArrowUp } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, FloatingDialogContent, NativeDialogContent } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createAstrocartStyleMessage } from "@/lib/chart/astrocart-style";
 import {
@@ -20,10 +24,12 @@ import {
   deleteCustomCorpusSemanticProfile,
   daemonFetch,
   exportArabicParts,
+  fetchAsteroidCatalog,
   fetchCorpusSemanticProfiles,
   fetchOptions,
   importArabicParts,
   invalidateCorpusDisciplines,
+  installAsteroidEphemeris,
   patchCorpusDoctrinePreferences,
   patchOptions,
   previewArabicPart,
@@ -33,6 +39,7 @@ import {
   type ArabicPartMeta,
   type ArabicPartSpec,
   type ArabicRefSlot,
+  type AsteroidCatalogRow,
   type ColorFieldMeta,
   type CorpusDiscipline,
   type CorpusSemanticProfile,
@@ -70,6 +77,10 @@ import { useFixedRowHeightAnchor, useListRowHeight } from "@/lib/list-tokens";
 // ---------------------------------------------------------------------------
 
 type Props = {
+  nativeWindow?: boolean;
+  onReady?: () => void;
+  onEndThemePreview?: () => Promise<void>;
+  onBeforeWheelAction?: () => Promise<void>;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialTab?: SettingsTabId;
@@ -84,6 +95,10 @@ type Props = {
 };
 
 export function SettingsDialog({
+  nativeWindow = false,
+  onReady,
+  onEndThemePreview,
+  onBeforeWheelAction,
   open,
   onOpenChange,
   initialTab = "colors",
@@ -92,27 +107,34 @@ export function SettingsDialog({
   onSemanticProfilesCommitted,
   getSemanticProfileRevision,
 }: Props) {
+  const t = useT();
+  const Content = nativeWindow ? NativeDialogContent : FloatingDialogContent;
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="workspace" motion="none" className="grid gap-0 overflow-hidden p-0">
-        {open ? (
-          <SettingsBody
-            key={initialTab}
-            initialTab={initialTab}
-            onOptionsPatched={onOptionsPatched}
-            onSemanticProfileSelect={onSemanticProfileSelect}
-            onSemanticProfilesCommitted={onSemanticProfilesCommitted}
-            getSemanticProfileRevision={getSemanticProfileRevision}
-          />
-        ) : null}
-      </DialogContent>
+    <Dialog open={nativeWindow || open} onOpenChange={onOpenChange} modal={false} disablePointerDismissal>
+      <Content size="workspace" data-settings-surface="" data-aries-surface="popover" className={`flex ${nativeWindow ? "" : "max-h-[var(--aries-dialog-viewport-height)] shadow-md"} flex-col gap-0 overflow-hidden rounded-[var(--aries-radius-popover)] bg-[var(--aries-popover-background)] p-0 text-[color:var(--aries-popover-text)]`}>
+        <DialogHeader data-tauri-drag-region={nativeWindow ? "" : undefined} className="shrink-0 select-none border-b border-border/40 px-[var(--aries-dialog-padding)] pb-[var(--aries-pane-header-padding-y)] pt-[var(--aries-dialog-padding)]">
+          <DialogTitle data-tauri-drag-region={nativeWindow ? "" : undefined} className="text-[length:var(--aries-font-size-large)] font-medium tracking-tight">{t("settings.title")}</DialogTitle>
+        </DialogHeader>
+        <SettingsBody
+          prepare={nativeWindow}
+          active={open}
+          onReady={onReady}
+          onEndThemePreview={onEndThemePreview}
+          onBeforeWheelAction={onBeforeWheelAction}
+          initialTab={initialTab}
+          onOptionsPatched={onOptionsPatched}
+          onSemanticProfileSelect={onSemanticProfileSelect}
+          onSemanticProfilesCommitted={onSemanticProfilesCommitted}
+          getSemanticProfileRevision={getSemanticProfileRevision}
+        />
+      </Content>
     </Dialog>
   );
 }
 
 const SUPPORTED_SETTINGS_TAB_IDS = [
   "appearance", "interpretation", "astrocartography", "colors", "export", "houses", "ayanamsha",
-  "location", "planets", "orbs", "dignities", "speculum", "fixstars",
+  "location", "planets", "orbs", "dignities", "speculum", "fixstars", "asteroids",
   "mansions", "almutens", "primarydirections", "revolutions", "supplementary",
   "timelords", "eclipses", "relationship", "stepalerts", "languages",
 ] as const;
@@ -126,12 +148,22 @@ export function isSettingsTabId(value: string): value is SettingsTabId {
 }
 
 function SettingsBody({
+  prepare,
+  active,
+  onReady,
+  onEndThemePreview,
+  onBeforeWheelAction,
   initialTab,
   onOptionsPatched,
   onSemanticProfileSelect,
   onSemanticProfilesCommitted,
   getSemanticProfileRevision,
 }: {
+  prepare: boolean;
+  active: boolean;
+  onReady?: () => void;
+  onEndThemePreview?: () => Promise<void>;
+  onBeforeWheelAction?: () => Promise<void>;
   initialTab: SettingsTabId;
   onOptionsPatched?: (next?: OptionsPayload) => void;
   onSemanticProfileSelect: (
@@ -147,56 +179,131 @@ function SettingsBody({
   const [error, setError] = React.useState<string | null>(null);
   const applyThemeState = useThemeStore((state) => state.applyThemeState);
   const syncLocale = useSyncLocale();
+  const [selectedTab, setSelectedTab] = React.useState(initialTab);
+  const [prevInitialTab, setPrevInitialTab] = React.useState(initialTab);
+  if (initialTab !== prevInitialTab) {
+    setPrevInitialTab(initialTab);
+    setSelectedTab(initialTab);
+  }
   const tabs = opts?.settingsRegistry.tabs.filter((tab) => isSettingsTabId(tab.id)) ?? [];
+  const optionsLoaded = React.useRef(false);
   const applyOptionsPayload = React.useCallback((next: OptionsPayload) => {
+    optionsLoaded.current = true;
     setOpts(next);
     applyThemeState(next.themeState);
     syncLocale(next.languages.langid);
   }, [applyThemeState, syncLocale]);
-
-  // Fetched once on mount — the dialog remounts this body on every open via the
-  // `{open ? <SettingsBody/> : null}` gate, so fetch state starts fresh.
+  const patchQueueRef = React.useRef<OptionsPatch[]>([]);
+  const presetRepliesRef = React.useRef(new WeakMap<OptionsPatch, (ok: boolean) => void>());
+  const patchDrainRef = React.useRef(false);
+  const patchEpochRef = React.useRef(0);
+  const wheelDisplay = useChartStyleEditorStore(useShallow(state => state.wheelPresetState?.display));
   React.useEffect(() => {
+    if (opts || error) onReady?.();
+  }, [opts, error, onReady]);
+
+  // Use the canonical mutation reply for the few overlapping Settings fields.
+  // A ring edit never reloads the full settings catalog or replaces every row.
+  React.useEffect(() => {
+    if (!wheelDisplay || patchDrainRef.current) return;
+    setOpts(current => {
+      if (!current || Object.entries(wheelDisplay).every(([key, value]) => current.display[key as keyof OptionsDisplay] === value)) return current;
+      return {...current, display: {...current.display, ...wheelDisplay}};
+    });
+  }, [wheelDisplay]);
+
+  const drainPatches = React.useCallback(async () => {
+    if (patchDrainRef.current) return;
+    patchDrainRef.current = true;
+    let latest: OptionsPayload | null = null;
+    let failed = false;
+    try {
+      while (patchQueueRef.current.length > 0) {
+        const patch = patchQueueRef.current.shift()!;
+        try {
+          if (Object.prototype.hasOwnProperty.call(patch, "colors")) await onEndThemePreview?.();
+          latest = await patchOptions(patch);
+          onOptionsPatched?.(latest);
+          presetRepliesRef.current.get(patch)?.(true);
+        } catch (err) {
+          failed = true;
+          presetRepliesRef.current.get(patch)?.(false);
+          console.error("[options-patch]", err);
+        }
+      }
+    } finally {
+      patchDrainRef.current = false;
+      if (failed) {
+        const epoch = patchEpochRef.current;
+        fetchOptions().then((next) => {
+          if (patchEpochRef.current === epoch && !patchDrainRef.current) {
+            applyOptionsPayload(next);
+          }
+        }).catch(() => undefined);
+      } else if (latest) {
+        applyOptionsPayload(latest);
+      }
+    }
+  }, [applyOptionsPayload, onOptionsPatched, onEndThemePreview]);
+
+  // Keep controls on reopen and reconcile quietly with canonical options.
+  // A refresh must never replace a newer local edit or an in-flight mutation.
+  React.useEffect(() => {
+    if (!active && (!prepare || optionsLoaded.current)) return;
     const controller = new AbortController();
+    const epoch = patchEpochRef.current;
     fetchOptions(controller.signal)
-      .then(applyOptionsPayload)
+      .then((next) => {
+        if (controller.signal.aborted || patchEpochRef.current !== epoch || patchDrainRef.current) return;
+        setError(null);
+        applyOptionsPayload(next);
+      })
       .catch((err) => {
         if ((err as { name?: string }).name === "AbortError") return;
         setError(String(err));
       });
     return () => controller.abort();
-  }, [applyOptionsPayload]);
+  }, [active, prepare, applyOptionsPayload]);
 
-  // Optimistic grouped patch: apply locally, fire the POST, reconcile from the
-  // server result (or roll back on failure). The daemon re-renders open charts.
+  // Apply intent immediately. Serialize daemon writes and collapse consecutive
+  // queued asteroid selections into their newest state; one active write and
+  // one trailing write suffice for a burst of checkbox clicks.
   const sendPatch = React.useCallback((patch: OptionsPatch, optimistic: OptionsPayload) => {
     if (Object.prototype.hasOwnProperty.call(patch, "colors")) {
       // Appearance changes made outside Style Lab intentionally switch away
       // from its parked working preview without discarding that draft.
       useChartStyleEditorStore.getState().setLiveAppThemePreview(false);
     }
+    const reply = patch.primaryDirectionPreset
+      ? new Promise<boolean>(resolve => presetRepliesRef.current.set(patch, resolve))
+      : undefined;
     setOpts(optimistic);
-    patchOptions(patch)
-      .then((next) => {
-        applyOptionsPayload(next);
-        onOptionsPatched?.(next);
-      })
-      .catch((err) => {
-        console.error("[options-patch]", err);
-        // Re-pull authoritative state so the UI doesn't desync on error.
-        fetchOptions().then(applyOptionsPayload).catch(() => undefined);
-      });
-  }, [applyOptionsPayload, onOptionsPatched]);
+    patchEpochRef.current += 1;
+    const selectionOnly = Object.keys(patch).length === 1
+      && patch.asteroids !== undefined
+      && Object.keys(patch.asteroids).length === 1
+      && patch.asteroids.selectedNumbers !== undefined;
+    const queued = patchQueueRef.current;
+    const last = queued[queued.length - 1];
+    if (selectionOnly && last?.asteroids?.selectedNumbers !== undefined
+      && Object.keys(last).length === 1 && Object.keys(last.asteroids).length === 1) {
+      queued[queued.length - 1] = patch;
+    } else {
+      queued.push(patch);
+    }
+    void drainPatches();
+    return reply;
+  }, [drainPatches]);
 
   const applyPreset = React.useCallback((name: string) => {
     useChartStyleEditorStore.getState().setLiveAppThemePreview(false);
-    applyThemePreset(name)
+    flushWheelGeometry().then(() => onEndThemePreview?.()).then(() => applyThemePreset(name))
       .then((next) => {
         applyOptionsPayload(next);
         onOptionsPatched?.(next);
       })
       .catch((err) => console.error("[theme-preset]", err));
-  }, [applyOptionsPayload, onOptionsPatched]);
+  }, [applyOptionsPayload, onOptionsPatched, onEndThemePreview]);
 
   if (error) {
     return (
@@ -208,28 +315,25 @@ function SettingsBody({
 
   return (
     <>
-      <DialogHeader className="border-b border-border/40 px-[var(--aries-dialog-padding)] pb-[var(--aries-pane-header-padding-y)] pt-[var(--aries-dialog-padding)]">
-        <DialogTitle className="text-[length:var(--aries-font-size-large)] font-medium tracking-tight">{t("settings.title")}</DialogTitle>
-      </DialogHeader>
       {opts === null ? (
         <div className="px-[var(--aries-dialog-padding)] py-[calc(var(--aries-section-gap)*2)] text-center text-[length:var(--aries-font-size-base)] text-foreground/55">{t("settings.loading")}</div>
       ) : (
-        <Tabs defaultValue={initialTab} orientation="vertical" className="gap-[var(--aries-tabs-rail-gap)]">
+        <Tabs value={selectedTab} onValueChange={value => { if (isSettingsTabId(String(value))) setSelectedTab(value as SettingsTabId); }} orientation="vertical" className="min-h-0 max-h-[var(--aries-dialog-content-height-workspace)] gap-[var(--aries-tabs-rail-gap)] overflow-hidden">
           <TabsList
             variant="line"
-            className="w-[var(--aries-tabs-rail-width)] shrink-0 items-stretch gap-[var(--aries-tabs-rail-gap)] border-r border-border/40 bg-transparent p-[var(--aries-tabs-rail-padding)]"
+            className="min-h-0 w-[var(--aries-tabs-rail-width)] shrink-0 items-stretch justify-start gap-[var(--aries-tabs-rail-gap)] overflow-y-auto border-r border-border/40 bg-transparent p-[var(--aries-tabs-rail-padding)] group-data-vertical/tabs:h-auto"
           >
             {tabs.map((tab) => (
               <TabsTrigger
                 key={tab.id}
                 value={tab.id}
-                className="justify-start rounded-md px-[var(--aries-tabs-rail-trigger-padding-x)] py-[var(--aries-tabs-rail-trigger-padding-y)] text-[length:var(--aries-font-size-base)] text-foreground/60 data-[selected]:bg-muted data-[selected]:text-foreground"
+                className="h-auto flex-none justify-start rounded-[var(--aries-radius-menu-item)] px-[var(--aries-tabs-rail-trigger-padding-x)] py-[var(--aries-tabs-rail-trigger-padding-y)] text-[length:var(--aries-font-size-base)] text-foreground/60"
               >
                 {t(tab.labelKey)}
               </TabsTrigger>
             ))}
           </TabsList>
-          <div className="min-w-0 flex-1 overflow-y-auto" style={{ maxHeight: "var(--aries-dialog-content-height-workspace)" }}>
+          <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
             <TabsContent value="colors" className="m-0 p-[var(--aries-dialog-padding)]">
               <ColorsTab
                 opts={opts}
@@ -238,7 +342,7 @@ function SettingsBody({
               />
             </TabsContent>
             <TabsContent value="appearance" className="m-0 p-[var(--aries-dialog-padding)]">
-              <AppearanceTab opts={opts} sendPatch={sendPatch} />
+              <AppearanceTab opts={opts} sendPatch={sendPatch} onBeforeWheelAction={onBeforeWheelAction} />
             </TabsContent>
             <TabsContent value="interpretation" className="m-0 p-[var(--aries-dialog-padding)]">
               <InterpretationTab
@@ -250,6 +354,18 @@ function SettingsBody({
             </TabsContent>
             <TabsContent value="astrocartography" className="m-0 p-[var(--aries-dialog-padding)]">
               <MirroredSettingsTab tabId="astrocartography" opts={opts} sendPatch={sendPatch} />
+              <Row label={t("astrocart.ruler.units")}>
+                <Select
+                  value={opts.display.astrocart_distance_units ?? "metric"}
+                  onChange={(value) => {
+                    const display = { ...opts.display, astrocart_distance_units: value as "metric" | "miles" };
+                    sendPatch({ display: { astrocart_distance_units: display.astrocart_distance_units } }, { ...opts, display });
+                  }}
+                >
+                  <option value="metric">{t("astrocart.ruler.metric")}</option>
+                  <option value="miles">{t("astrocart.ruler.miles")}</option>
+                </Select>
+              </Row>
             </TabsContent>
             <TabsContent value="export" className="m-0 p-[var(--aries-dialog-padding)]">
               <ExportTab opts={opts} sendPatch={sendPatch} />
@@ -311,6 +427,9 @@ function SettingsBody({
             </TabsContent>
             <TabsContent value="fixstars" className="m-0 p-[var(--aries-dialog-padding)]">
               <FixedStarsTab opts={opts} sendPatch={sendPatch} />
+            </TabsContent>
+            <TabsContent value="asteroids" className="m-0 p-[var(--aries-dialog-padding)]">
+              <AsteroidsTab opts={opts} sendPatch={sendPatch} />
             </TabsContent>
             <TabsContent value="relationship" className="m-0 p-[var(--aries-dialog-padding)]">
               <RelationshipChartsTab opts={opts} sendPatch={sendPatch} />
@@ -507,12 +626,16 @@ function Slider({
   min,
   max,
   step,
+  disabled = false,
+  suffix = "",
   onCommit,
 }: {
   value: number;
   min: number;
   max: number;
   step: number;
+  disabled?: boolean;
+  suffix?: string;
   onCommit: (n: number) => void;
 }) {
   const [local, setLocal] = React.useState(value);
@@ -524,6 +647,7 @@ function Slider({
         max={max}
         step={step}
         value={local}
+        disabled={disabled}
         onChange={(e) => setLocal(Number(e.target.value))}
         onMouseUp={() => {
           if (local !== value) onCommit(local);
@@ -531,10 +655,10 @@ function Slider({
         onKeyUp={() => {
           if (local !== value) onCommit(local);
         }}
-        className="h-1 w-[120px] cursor-pointer accent-foreground/70"
+        className="h-1 w-[120px] cursor-pointer accent-foreground/70 disabled:cursor-default disabled:opacity-40"
       />
       <span className="w-9 text-right text-[length:var(--aries-font-size-small)] tabular-nums text-foreground/55">
-        {step < 1 ? local.toFixed(2) : local}
+        {step < 1 ? local.toFixed(2) : local}{suffix}
       </span>
     </span>
   );
@@ -546,7 +670,7 @@ function Slider({
 
 type TabProps = {
   opts: OptionsPayload;
-  sendPatch: (patch: OptionsPatch, optimistic: OptionsPayload) => void;
+  sendPatch: (patch: OptionsPatch, optimistic: OptionsPayload) => void | Promise<boolean>;
 };
 
 function MirroredSettingsTab({
@@ -1163,6 +1287,40 @@ function ExportTab({ opts, sendPatch }: TabProps) {
           {t("settings.pngSquare")}
         </span>
       </Row>
+      <Row label={t("settings.pngWatermarkStyle")}>
+        <Select
+          value={e.pngWatermarkStyle}
+          width={190}
+          onChange={(value) => setPatch({ pngWatermarkStyle: value as OptionsPayload["export"]["pngWatermarkStyle"] })}
+        >
+          {e.pngWatermarkStyleChoices.map((choice) => (
+            <option key={choice.value} value={choice.value}>{t(choice.labelKey)}</option>
+          ))}
+        </Select>
+      </Row>
+      <Row label={t("settings.pngWatermarkText")}>
+        <input
+          key={e.pngWatermarkText}
+          data-aries-control-appearance="local"
+          type="text"
+          defaultValue={e.pngWatermarkText}
+          placeholder={t("chartExport.watermark")}
+          aria-label={t("settings.pngWatermarkText")}
+          aria-describedby="png-watermark-text-hint"
+          spellCheck={false}
+          onBlur={(event) => {
+            const text = event.currentTarget.value.trim();
+            if (text !== e.pngWatermarkText) setPatch({ pngWatermarkText: text });
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.nativeEvent.isComposing) event.currentTarget.blur();
+          }}
+          className="h-[var(--aries-control-height-micro)] w-[190px] rounded-[var(--aries-radius-xs)] border border-border/60 bg-transparent px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-base)] outline-none focus:border-border"
+        />
+      </Row>
+      <p id="png-watermark-text-hint" className="pb-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-base)] text-muted-foreground">
+        {t("settings.pngWatermarkTextHint")}
+      </p>
       <SectionLabel>{t("settings.pdf")}</SectionLabel>
       <Row label={t("settings.chartColors")}>
         <Select
@@ -1247,8 +1405,21 @@ function ColorsTab({
     next[index] = rgb;
     sendPatch({ colors: { [key]: next } }, { ...opts, colors: { ...c, [key]: next } });
   };
-  const setBool = (attr: "useplanetcolors" | "usezodiacelementcolors" | "follow_os_theme", v: boolean) => {
+  const setBool = (
+    attr:
+      | "useplanetcolors"
+      | "usezodiacelementcolors"
+      | "usezodiacelementfieldcolors"
+      | "follow_os_theme",
+    v: boolean,
+  ) => {
     sendPatch({ colors: { [attr]: v } }, { ...opts, colors: { ...c, [attr]: v } });
+  };
+  const setNumber = (attr: "zodiacelementfieldopacity", value: number) => {
+    sendPatch(
+      { colors: { [attr]: value } },
+      { ...opts, colors: { ...c, [attr]: value } },
+    );
   };
 
   // Group the daemon-provided colour fields by their `group` tag, preserving
@@ -1284,8 +1455,10 @@ function ColorsTab({
       "aspects",
       cat.aspectLabels.map((label, i) => [label, c.clraspect[i] ?? null]),
     );
-    lines.push(`flags\tUse individual colors\t${c.useplanetcolors ? "1" : "0"}\t`);
-    lines.push(`flags\tUse zodiac element colors\t${c.usezodiacelementcolors ? "1" : "0"}\t`);
+    lines.push(`flags\t${t("settings.useIndividualColors")}\t${c.useplanetcolors ? "1" : "0"}\t`);
+    lines.push(`flags\t${t("settings.useZodiacElementGlyphColors")}\t${c.usezodiacelementcolors ? "1" : "0"}\t`);
+    lines.push(`flags\t${t("settings.useZodiacElementFieldColors")}\t${c.usezodiacelementfieldcolors ? "1" : "0"}\t`);
+    lines.push(`values\t${t("settings.zodiacElementFieldOpacity")}\t${Math.round(c.zodiacelementfieldopacity * 100)}%\t`);
     void navigator.clipboard?.writeText(lines.join("\n")).catch((err) => {
       console.error("[copy-color-table]", err);
     });
@@ -1301,10 +1474,10 @@ function ColorsTab({
             type="button"
             onClick={() => applyPreset(preset.name)}
             aria-pressed={Boolean(preset.selected)}
-            className={`rounded-[var(--aries-radius-control-compact)] border px-[var(--aries-control-padding-x)] py-[var(--aries-control-padding-y)] text-[length:var(--aries-font-size-small)] hover:border-border hover:text-foreground ${
+            className={`rounded-[var(--aries-radius-menu-item)] border border-transparent px-[var(--aries-control-padding-x)] py-[var(--aries-control-padding-y)] text-[length:var(--aries-font-size-small)] hover:bg-accent hover:text-accent-foreground ${
               preset.selected
-                ? "border-foreground/35 bg-foreground/10 text-foreground"
-                : "border-border/60 text-foreground/80"
+                ? "bg-accent text-accent-foreground"
+                : "text-foreground/80"
             }`}
           >
             {preset.label ?? preset.name}
@@ -1331,12 +1504,32 @@ function ColorsTab({
           <React.Fragment key={group}>
             <SectionLabel>{t(COLOR_GROUP_TITLE_KEYS[group])}</SectionLabel>
             {group === "element" ? (
-              <Row label={t("settings.useZodiacElementColors")}>
-                <Toggle
-                  checked={c.usezodiacelementcolors}
-                  onChange={(v) => setBool("usezodiacelementcolors", v)}
-                />
-              </Row>
+              <>
+                <Row label={t("settings.useZodiacElementGlyphColors")}>
+                  <Toggle
+                    checked={c.usezodiacelementcolors}
+                    onChange={(v) => setBool("usezodiacelementcolors", v)}
+                  />
+                </Row>
+                <Row label={t("settings.useZodiacElementFieldColors")}>
+                  <Toggle
+                    checked={c.usezodiacelementfieldcolors}
+                    onChange={(v) => setBool("usezodiacelementfieldcolors", v)}
+                  />
+                </Row>
+                <Row label={<SubLabel>{t("settings.zodiacElementFieldOpacity")}</SubLabel>}>
+                  <Slider
+                    key={`zodiac-field-opacity:${c.zodiacelementfieldopacity}`}
+                    value={Math.round(c.zodiacelementfieldopacity * 100)}
+                    min={0}
+                    max={100}
+                    step={5}
+                    suffix="%"
+                    disabled={!c.usezodiacelementfieldcolors}
+                    onCommit={(value) => setNumber("zodiacelementfieldopacity", value / 100)}
+                  />
+                </Row>
+              </>
             ) : null}
             {fields.map((f) => (
               <Row key={f.attr} label={f.label}>
@@ -1392,7 +1585,7 @@ function ColorsTab({
 
 const MINOR_ASPECT_INDICES = new Set([1, 2, 4, 7, 8, 9, 11]);
 
-function AppearanceTab({ opts, sendPatch }: TabProps) {
+function AppearanceTab({ opts, sendPatch, onBeforeWheelAction }: TabProps & {onBeforeWheelAction?: () => Promise<void>}) {
   const t = useT();
   const d = opts.display;
   const aspectList = opts.aspectList;
@@ -1702,11 +1895,21 @@ function AppearanceTab({ opts, sendPatch }: TabProps) {
           onChange={(v) => setBool("showouterhouselines", v)}
         />
       </Row>
-      <Row label={t("settings.inTables")}>
-        <Toggle checked={d.intables} onChange={(v) => setBool("intables", v)} />
-      </Row>
-      <Row label={t("settings.speculum")}>
+      <Row label={t("settings.chartPositionLabels")}>
         <Toggle checked={d.positions} onChange={(v) => setBool("positions", v)} />
+      </Row>
+      <p className="border-b border-border/40 py-[var(--aries-control-gap)] text-[length:var(--aries-font-size-small)] leading-relaxed text-foreground/60">
+        {t("settings.chartPositionLabelsHelp")}
+      </p>
+      <Row label={t("styleLab.class.outerObjectPositions")}>
+        <Toggle checked={d.showouterpositions} onChange={(v) => setBool("showouterpositions", v)} />
+      </Row>
+      <Row label={<SubLabel>{t("settings.outerObjectMinutes")}</SubLabel>}>
+        <Toggle
+          checked={d.showouterpositions && d.showouterminutes}
+          disabled={!d.showouterpositions}
+          onChange={(v) => setBool("showouterminutes", v)}
+        />
       </Row>
       <Row label={t("settings.terms")}>
         <Toggle checked={d.showterms} onChange={setTerms} />
@@ -1783,19 +1986,7 @@ function AppearanceTab({ opts, sendPatch }: TabProps) {
           onChange={(v) => setQuickChartsPatch({ multiwheel_open_at_three: v })}
         />
       </Row>
-      <Row label={t("settings.wheelLayout")}>
-        <Select
-          value={d.theme}
-          width={150}
-          onChange={(v) => setNum("theme", Number(v))}
-        >
-          {cat.themeLayouts.map((layout) => (
-            <option key={layout.value} value={layout.value}>
-              {layout.label}
-            </option>
-          ))}
-        </Select>
-      </Row>
+      <WheelPresetControls profile={wheelTypographyProfileForTheme(d.theme)} surface="settings" beforeAction={onBeforeWheelAction} />
       {d.theme === 2 ? (
         <Row label={t("settings.angloDenseLabelLayout")}>
           <Select
@@ -1841,14 +2032,15 @@ function AppearanceTab({ opts, sendPatch }: TabProps) {
       </Row>
       <Row label={t("settings.multiwheelShowPositions")}>
         <Toggle
-          checked={d.multiwheel_show_positions}
+          checked={d.positions && d.multiwheel_show_positions}
+          disabled={!d.positions}
           onChange={(v) => setBool("multiwheel_show_positions", v)}
         />
       </Row>
       <Row label={<SubLabel>{t("settings.multiwheelShowMinutes")}</SubLabel>}>
         <Toggle
-          checked={d.multiwheel_show_positions && d.multiwheel_show_minutes}
-          disabled={!d.multiwheel_show_positions}
+          checked={d.positions && d.multiwheel_show_positions && d.multiwheel_show_minutes}
+          disabled={!d.positions || !d.multiwheel_show_positions}
           onChange={(v) => setBool("multiwheel_show_minutes", v)}
         />
       </Row>
@@ -2085,16 +2277,25 @@ function LunarMansionsTab({ opts, sendPatch }: TabProps) {
 }
 
 // ---------------------------------------------------------------------------
-// Speculum  (appearance2dlg.Appearance2Dlg) — Placidian + Regiomontanus speculum
-// column-visibility toggles, compact Inspector speed display, and In-Time. The daemon owns WHICH columns
-// exist + their labels (catalog.speculum*Cols, keyed by the planets.Planet column
-// index); this tab renders one toggle per column and patches the bool map.
+// Speculum — one chart-owned surface whose active coordinate family follows
+// the current house system. The daemon owns the family and column schema; the
+// inactive family's choices remain saved for a future house-system switch.
 // ---------------------------------------------------------------------------
 
 function SpeculumTab({ opts, sendPatch }: TabProps) {
   const t = useT();
   const s = opts.speculum;
   const cat = opts.catalog;
+  const activeFamily = s.activeFamily;
+  const activeColumns = activeFamily === "regiomontan"
+    ? cat.speculumRegiomontanCols
+    : cat.speculumPlacidianCols;
+  const activeDodec = activeFamily === "regiomontan"
+    ? "regiomontanDodec"
+    : "placidianDodec";
+  const activeHouseSystem = opts.houseSystem.available.find(
+    (item) => item.code === opts.houseSystem.hsys,
+  );
 
   const setCol = (row: "placidian" | "regiomontan", idx: number, v: boolean) => {
     const nextRow = { ...s[row], [String(idx)]: v };
@@ -2128,30 +2329,17 @@ function SpeculumTab({ opts, sendPatch }: TabProps) {
         </Select>
       </Row>
 
-      <SectionLabel>{t("settings.placidianColumns")}</SectionLabel>
-      {cat.speculumPlacidianCols.map((c) => (
+      <SectionLabel>{activeHouseSystem?.label ?? t("settings.speculum")}</SectionLabel>
+      {activeColumns.map((c) => (
         <Row key={c.idx} label={c.label}>
           <Toggle
-            checked={Boolean(s.placidian[String(c.idx)])}
-            onChange={(v) => setCol("placidian", c.idx, v)}
+            checked={Boolean(s[activeFamily][String(c.idx)])}
+            onChange={(v) => setCol(activeFamily, c.idx, v)}
           />
         </Row>
       ))}
       <Row label={t("settings.dodecatemorion")}>
-        <Toggle checked={s.placidianDodec} onChange={(v) => setFlag("placidianDodec", v)} />
-      </Row>
-
-      <SectionLabel>{t("settings.regiomontanusColumns")}</SectionLabel>
-      {cat.speculumRegiomontanCols.map((c) => (
-        <Row key={c.idx} label={c.label}>
-          <Toggle
-            checked={Boolean(s.regiomontan[String(c.idx)])}
-            onChange={(v) => setCol("regiomontan", c.idx, v)}
-          />
-        </Row>
-      ))}
-      <Row label={t("settings.dodecatemorion")}>
-        <Toggle checked={s.regiomontanDodec} onChange={(v) => setFlag("regiomontanDodec", v)} />
+        <Toggle checked={s[activeDodec]} onChange={(v) => setFlag(activeDodec, v)} />
       </Row>
 
       <SectionLabel>{t("settings.rectascension")}</SectionLabel>
@@ -2691,11 +2879,12 @@ function GlyphChoiceRow<V extends boolean | number>({
           key={String(c.value)}
           type="button"
           onClick={() => onPick(c.value)}
+          aria-pressed={current === c.value}
           className={
-            "font-symbols flex h-[var(--aries-control-height-small)] w-[var(--aries-control-height-small)] items-center justify-center rounded-[var(--aries-radius-control-compact)] border text-[length:var(--aries-font-size-large)] " +
+            "font-symbols flex h-[var(--aries-control-height-small)] w-[var(--aries-control-height-small)] items-center justify-center rounded-[var(--aries-radius-menu-item)] border border-transparent text-[length:var(--aries-font-size-large)] hover:bg-accent hover:text-accent-foreground " +
             (current === c.value
-              ? "border-foreground/80 bg-muted text-foreground"
-              : "border-border/60 text-foreground/70 hover:border-border")
+              ? "bg-accent text-accent-foreground"
+              : "text-foreground/70")
           }
         >
           {c.glyph}
@@ -3359,6 +3548,34 @@ function RevolutionsTab({ opts, sendPatch }: TabProps) {
 // here.
 // ---------------------------------------------------------------------------
 
+function SolarArcTab({ opts, sendPatch }: TabProps) {
+  const t = useT();
+  const q = opts.quickCharts;
+  const patch = (fields: Partial<OptionsQuickCharts>) => {
+    sendPatch({ quickCharts: fields }, { ...opts, quickCharts: { ...q, ...fields } });
+  };
+  return (
+    <div className="flex flex-col gap-0">
+      <SectionLabel>{t("settings.tabSolarArcDirections")}</SectionLabel>
+      <Row label={t("settings.method")}>
+        <Select value={q.solar_arc_angle_mode} width={200}
+          onChange={(v) => patch({ solar_arc_angle_mode: v as "progressed" | "zodiacal" })}>
+          <option value="zodiacal">{t("optmenu.zodiacalDirectionsUniform")}</option>
+          <option value="progressed">{t("settings.calculatedAngles")}</option>
+        </Select>
+      </Row>
+      <Row label={t("settings.calculatedAngles")}>
+        <Select value={q.solar_arc_angle_method} width={200}
+          onChange={(v) => patch({ solar_arc_angle_method: Number(v) })}>
+          {opts.catalog.progressionAngleMethods.map((m) => (
+            <option key={m.value} value={m.value}>{m.label}</option>
+          ))}
+        </Select>
+      </Row>
+    </div>
+  );
+}
+
 function ProgressionsTab({ opts, sendPatch }: TabProps) {
   const t = useT();
   const q = opts.quickCharts;
@@ -3376,28 +3593,13 @@ function ProgressionsTab({ opts, sendPatch }: TabProps) {
       <SectionLabel>{t("settings.progressionCalculation")}</SectionLabel>
       <Row label={t("settings.progressedAngles")}>
         <Select
-          value={q.solar_arc_angle_mode === "zodiacal"
-            ? "zodiacal"
-            : String(q.progressed_angle_method)}
+          value={q.progressed_angle_method}
           width={200}
-          onChange={(v) => {
-            if (v === "zodiacal") {
-              patch({ solar_arc_angle_mode: "zodiacal" });
-              return;
-            }
-            const angleMethod = Number(v);
-            patch(angleMethod === q.progressed_angle_method
-              ? { solar_arc_angle_mode: "progressed" }
-              : {
-                  progressed_angle_method: angleMethod,
-                  solar_arc_angle_mode: "progressed",
-                });
-          }}
+          onChange={(v) => patch({ progressed_angle_method: Number(v) })}
         >
           {cat.progressionAngleMethods.map((m) => (
             <option key={m.value} value={m.value}>{m.label}</option>
           ))}
-          <option value="zodiacal">{t("optmenu.zodiacalDirectionsUniform")}</option>
         </Select>
       </Row>
       <Row label={t("settings.dayType")}>
@@ -3417,6 +3619,8 @@ function ProgressionsTab({ opts, sendPatch }: TabProps) {
           onChange={(v) => patch({ aspectlist_prebirth_secondary_converse: v })}
         />
       </Row>
+
+      <SolarArcTab opts={opts} sendPatch={sendPatch} />
 
       <SectionLabel>{t("settings.harmonicCharts")}</SectionLabel>
       <Row label={t("settings.defaultDivisionMethod")}>
@@ -4666,6 +4870,7 @@ function FixedStarsTab({ opts, sendPatch }: TabProps) {
     () => new Set(fs.selectedCodes),
     [fs.selectedCodes],
   );
+
   const remaining = fs.maxSelected - selected.size;
 
   // Search filter — name AND code substring (fixstarsdlg._filtered_indices,
@@ -4898,6 +5103,276 @@ function compareFixedStarSortValue(left: string | number, right: string | number
     numeric: true,
     sensitivity: "base",
   });
+}
+
+// ---------------------------------------------------------------------------
+// Tab — Asteroids. Named objects use the compact Swiss catalogue index; an
+// exact MPC number addresses any numbered asteroid. Non-bundled ephemerides are
+// installed only when selected, before the canonical options patch is sent.
+// ---------------------------------------------------------------------------
+
+const ASTEROID_VIEWPORT_H = 320;
+const ASTEROID_OVERSCAN = 8;
+type AsteroidSortKey = "number" | "name";
+type AsteroidSortState = { key: AsteroidSortKey; ascending: boolean };
+
+function AsteroidsTab({ opts, sendPatch }: TabProps) {
+  const t = useT();
+  const asteroidOptions = opts.asteroids;
+  const [query, setQuery] = React.useState("");
+  const [rows, setRows] = React.useState<AsteroidCatalogRow[]>(asteroidOptions.selectedRows);
+  const browseRowsRef = React.useRef(new Map(
+    asteroidOptions.selectedRows.map((row) => [row.number, row]),
+  ));
+  const [sort, setSort] = React.useState<AsteroidSortState>({ key: "number", ascending: true });
+  const [loading, setLoading] = React.useState(false);
+  const [installing, setInstalling] = React.useState<number | null>(null);
+  const [installError, setInstallError] = React.useState<number | null>(null);
+  const [scrollTop, setScrollTop] = React.useState(0);
+  const viewportRef = React.useRef<HTMLDivElement | null>(null);
+  const selectionRef = React.useRef(asteroidOptions.selectedNumbers);
+  const selectionVersionRef = React.useRef(0);
+  const rowHeight = useListRowHeight("dense");
+  const selected = React.useMemo(
+    () => new Set(asteroidOptions.selectedNumbers),
+    [asteroidOptions.selectedNumbers],
+  );
+
+  React.useEffect(() => {
+    selectionRef.current = asteroidOptions.selectedNumbers;
+  }, [asteroidOptions.selectedNumbers]);
+
+  React.useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setLoading(true);
+      fetchAsteroidCatalog(query, controller.signal)
+        .then((payload) => {
+          if (query.trim()) {
+            setRows(payload.rows);
+          } else {
+            for (const row of payload.rows) browseRowsRef.current.set(row.number, row);
+            setRows([...browseRowsRef.current.values()]);
+          }
+        })
+        .catch((error) => {
+          if ((error as { name?: string }).name !== "AbortError") {
+            console.error("[asteroid-catalog]", error);
+          }
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setLoading(false);
+        });
+    }, 160);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [query]);
+
+  React.useEffect(() => {
+    let changed = false;
+    for (const row of asteroidOptions.selectedRows) {
+      if (!browseRowsRef.current.has(row.number)) changed = true;
+      browseRowsRef.current.set(row.number, row);
+    }
+    if (changed && !query.trim()) setRows([...browseRowsRef.current.values()]);
+  }, [asteroidOptions.selectedRows, query]);
+
+  const visible = React.useMemo(() => {
+    return [...rows].sort((left, right) => {
+      const compared = sort.key === "number"
+        ? left.number - right.number
+        : left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: "base" });
+      if (compared !== 0) return sort.ascending ? compared : -compared;
+      return left.number - right.number;
+    });
+  }, [rows, sort]);
+
+  React.useEffect(() => {
+    viewportRef.current?.scrollTo({ top: 0 });
+  }, [query, sort]);
+
+  const commitSelection = (numbers: number[], installedRow?: AsteroidCatalogRow) => {
+    selectionRef.current = numbers;
+    selectionVersionRef.current += 1;
+    if (installedRow) browseRowsRef.current.set(installedRow.number, installedRow);
+    sendPatch(
+      { asteroids: { selectedNumbers: numbers } },
+      {
+        ...opts,
+        asteroids: {
+          ...asteroidOptions,
+          selectedNumbers: numbers,
+          selectedRows: numbers.map((number) => browseRowsRef.current.get(number))
+            .filter((row): row is AsteroidCatalogRow => row !== undefined),
+        },
+      },
+    );
+  };
+
+  const toggle = async (row: AsteroidCatalogRow) => {
+    if (installing !== null && !row.installed) return;
+    setInstallError(null);
+    const current = selectionRef.current;
+    if (current.includes(row.number)) {
+      commitSelection(current.filter((number) => number !== row.number));
+      return;
+    }
+    if (current.length >= asteroidOptions.maxSelected) return;
+    if (row.installed) {
+      browseRowsRef.current.set(row.number, row);
+      commitSelection([...current, row.number], row);
+      return;
+    }
+    const selectionVersion = selectionVersionRef.current;
+    setInstalling(row.number);
+    try {
+      const installedRow = await installAsteroidEphemeris(row.number);
+      browseRowsRef.current.set(row.number, installedRow);
+      if (selectionVersionRef.current === selectionVersion) {
+        commitSelection([...selectionRef.current, row.number], installedRow);
+      }
+      setRows((current) => current.map((item) => (
+        item.number === row.number ? { ...item, installed: true } : item
+      )));
+    } catch (error) {
+      console.error("[asteroid-install]", error);
+      setInstallError(row.number);
+    } finally {
+      setInstalling(null);
+    }
+  };
+
+  const setOrb = (field: "conjunctionOrb" | "oppositionOrb", value: number) => {
+    sendPatch(
+      { asteroids: { [field]: value } },
+      { ...opts, asteroids: { ...asteroidOptions, [field]: value } },
+    );
+  };
+
+  const total = visible.length;
+  const first = Math.max(0, Math.floor(scrollTop / rowHeight) - ASTEROID_OVERSCAN);
+  const count = Math.ceil(ASTEROID_VIEWPORT_H / rowHeight) + ASTEROID_OVERSCAN * 2;
+  const slice = visible.slice(first, first + count);
+  useFixedRowHeightAnchor(viewportRef, total, rowHeight);
+
+  return (
+    <div className="flex flex-col gap-0">
+      <SectionLabel>{t("settings.asteroidAspectOrbs")}</SectionLabel>
+      <Row label={t("settings.conjunctionOrb")}>
+        <NumberField
+          value={asteroidOptions.conjunctionOrb}
+          step={0.5}
+          min={0}
+          max={6}
+          onCommit={(value) => setOrb("conjunctionOrb", value)}
+        />
+      </Row>
+      <Row label={t("settings.oppositionOrb")}>
+        <NumberField
+          value={asteroidOptions.oppositionOrb}
+          step={0.5}
+          min={0}
+          max={6}
+          onCommit={(value) => setOrb("oppositionOrb", value)}
+        />
+      </Row>
+
+      <SectionLabel>{t("settings.whichAsteroidsActive")}</SectionLabel>
+      <input
+        data-aries-control-appearance="local"
+        type="text"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder={t("settings.searchAsteroidNameOrNumber")}
+        className="mb-[var(--aries-form-field-gap)] h-[var(--aries-control-height-small)] rounded-[var(--aries-radius-control-compact)] border border-border/60 bg-transparent px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-base)] outline-none focus:border-foreground/40"
+      />
+      <div className="mb-[var(--aries-form-field-gap)] text-[length:var(--aries-font-size-small)] text-foreground/45">
+        {t("settings.asteroidDownloadNote")}
+      </div>
+
+      <div className="flex h-[var(--aries-control-height-compact)] items-center gap-[var(--aries-form-field-gap)] border-b border-border/60 px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-section)] font-medium text-foreground/45">
+        <span className="w-[var(--aries-control-height-micro)] shrink-0" />
+        {(["number", "name"] as const).map((key) => (
+          <button
+            key={key}
+            type="button"
+            aria-label={t("settings.sortBy", { label: t(`settings.${key}`) })}
+            onClick={() => setSort((current) => ({
+              key,
+              ascending: current.key === key ? !current.ascending : true,
+            }))}
+            className={`flex min-w-0 items-center gap-[var(--aries-control-gap-compact)] text-left hover:text-foreground/80 ${key === "number" ? "w-20 shrink-0" : "flex-1"}`}
+          >
+            <span className="truncate">{t(`settings.${key}`)}</span>
+            {sort.key === key ? sort.ascending
+              ? <ArrowUp className="size-3 shrink-0" />
+              : <ArrowDown className="size-3 shrink-0" /> : null}
+          </button>
+        ))}
+        <span className="w-24 shrink-0 text-right">{loading ? t("settings.loading") : ""}</span>
+      </div>
+      <div
+        ref={viewportRef}
+        className="relative overflow-y-auto"
+        style={{ height: ASTEROID_VIEWPORT_H }}
+        onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+      >
+        <div style={{ height: total * rowHeight, position: "relative" }}>
+          {slice.map((row, index) => {
+            const checked = selected.has(row.number);
+            const busy = installing === row.number;
+            const disabled = (installing !== null && !row.installed)
+              || (!checked && selected.size >= asteroidOptions.maxSelected);
+            return (
+              <div
+                key={row.number}
+                className="absolute left-0 right-0 flex items-center gap-[var(--aries-form-field-gap)] border-b border-border/30 px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-base)]"
+                style={{ top: (first + index) * rowHeight, height: rowHeight }}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={disabled}
+                  onChange={() => void toggle(row)}
+                  className="h-3.5 w-3.5 shrink-0 accent-foreground/80 disabled:opacity-40"
+                />
+                <span className="w-20 shrink-0 tabular-nums text-foreground/55">{row.number}</span>
+                <span className="min-w-0 flex-1 truncate text-foreground/80">{row.name}</span>
+                <span className="w-24 shrink-0 text-right text-[length:var(--aries-font-size-small)] text-foreground/40">
+                  {busy
+                    ? t("settings.downloading")
+                    : row.bundled
+                      ? t("settings.bundled")
+                      : row.installed
+                        ? t("settings.downloaded")
+                        : ""}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      {installError !== null ? (
+        <div className="mt-2 text-[length:var(--aries-font-size-small)] text-destructive">
+          {t("settings.asteroidInstallFailed", { number: installError })}
+        </div>
+      ) : null}
+      <div className="mt-2 flex items-center justify-between">
+        <div className="flex items-center gap-[var(--aries-form-field-gap)]">
+          <ActionButton onClick={() => commitSelection([])}>{t("settings.deselectAll")}</ActionButton>
+          <ActionButton onClick={() => commitSelection(asteroidOptions.defaultNumbers)}>{t("settings.restoreDefaultSelection")}</ActionButton>
+        </div>
+        <span className="text-[length:var(--aries-font-size-small)] text-foreground/45">
+          {t("settings.asteroidSelectedCount", {
+            selected: selected.size,
+            remaining: asteroidOptions.maxSelected - selected.size,
+          })}
+        </span>
+      </div>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------

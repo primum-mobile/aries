@@ -15,6 +15,7 @@
  */
 
 import { DEFAULT_MORINUS_TEXT_FONT } from "./chart-fonts";
+import type { WheelFrame } from "./wheel-projection";
 
 type Pt = [number, number];
 
@@ -31,6 +32,8 @@ export interface TextOpts {
 }
 
 export interface LineOpts {
+  /** Preserve shared vector joins instead of snapping endpoints independently. */
+  pixelSnap?: boolean;
   fill?: string;
   width?: number;
   dash?: number[];
@@ -50,7 +53,14 @@ export interface RectOpts {
 }
 
 const TEXT_SIZE_CACHE_LIMIT = 4096;
-const textSizeCache = new Map<string, Pt>();
+type CachedTextMetrics = {
+  size: Pt;
+  /** Baseline offset from the measured ink top; null when the browser omits ink bounds. */
+  inkAscent: number | null;
+};
+const textMetricsCache = new Map<string, CachedTextMetrics>();
+export type TextInkBounds = Readonly<{ x: number; y: number; w: number; h: number }>;
+const textInkBoundsCache = new Map<string, TextInkBounds>();
 
 export type CanvasDrawProfile = Record<string, { calls: number; ms: number }>;
 
@@ -192,13 +202,13 @@ export class CanvasDraw {
     ctx.restore();
   }
 
-  textsize(text: string, opts?: TextOpts): Pt {
+  private textMetrics(text: string, opts?: TextOpts): CachedTextMetrics {
     const font = this.fontSpec(opts);
     const tracking = Number.isFinite(opts?.tracking)
       ? Number(opts?.tracking)
       : 0;
     const cacheKey = `${font}\n${tracking}\n${text}`;
-    const cached = textSizeCache.get(cacheKey);
+    const cached = textMetricsCache.get(cacheKey);
     if (cached) {
       return cached;
     }
@@ -216,18 +226,73 @@ export class CanvasDraw {
             0,
           ) + (glyphs.length - 1) * tracking,
         );
-    const h =
-      (metrics.actualBoundingBoxAscent || 0) +
-      (metrics.actualBoundingBoxDescent || 0) ||
-      opts?.size ||
-      14;
+    const ascent = Number(metrics.actualBoundingBoxAscent);
+    const descent = Number(metrics.actualBoundingBoxDescent);
+    const hasInkBounds = Number.isFinite(ascent)
+      && Number.isFinite(descent)
+      && ascent + descent > 0;
+    const h = hasInkBounds ? ascent + descent : opts?.size || 14;
     ctx.restore();
-    const size: Pt = [Math.round(w), Math.round(h)];
-    if (textSizeCache.size >= TEXT_SIZE_CACHE_LIMIT) {
-      textSizeCache.clear();
+    const result: CachedTextMetrics = {
+      size: [Math.round(w), Math.round(h)],
+      inkAscent: hasInkBounds ? ascent : null,
+    };
+    if (textMetricsCache.size >= TEXT_SIZE_CACHE_LIMIT) {
+      textMetricsCache.clear();
     }
-    textSizeCache.set(cacheKey, size);
-    return size;
+    textMetricsCache.set(cacheKey, result);
+    return result;
+  }
+
+  textsize(text: string, opts?: TextOpts): Pt {
+    return this.textMetrics(text, opts).size;
+  }
+
+  /** Actual painted ink relative to text()'s origin, including em-box offsets. */
+  textbounds(text: string, opts?: TextOpts): TextInkBounds {
+    const font = this.fontSpec(opts);
+    const baseline = opts?.baseline ?? "top";
+    const tracking = opts?.tracking ?? 0;
+    const key = JSON.stringify([font, baseline, tracking, text]);
+    const cached = textInkBoundsCache.get(key);
+    if (cached) return cached;
+    const { ctx } = this;
+    ctx.save();
+    ctx.font = font;
+    ctx.textAlign = "left";
+    ctx.textBaseline = baseline;
+    const metrics = ctx.measureText(text);
+    const bounds = {
+      x: -metrics.actualBoundingBoxLeft,
+      y: -metrics.actualBoundingBoxAscent,
+      w: metrics.actualBoundingBoxLeft + metrics.actualBoundingBoxRight
+        + Math.max(0, Array.from(text).length - 1) * tracking,
+      h: metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent,
+    };
+    ctx.restore();
+    if (textInkBoundsCache.size >= TEXT_SIZE_CACHE_LIMIT) textInkBoundsCache.clear();
+    textInkBoundsCache.set(key, bounds);
+    return bounds;
+  }
+
+  /**
+   * Paint text into a box whose y coordinate is the measured ink top.
+   *
+   * `textsize()` reports actual ink height, while Canvas's `top` baseline is
+   * based on the font em box. Using the latter to paint a box laid out with the
+   * former shifts every supposedly centred label downward. On a wheel that
+   * becomes an inward shift above the centre and an outward shift below it.
+   */
+  textAtInkTop(xy: Pt, text: string, opts?: TextOpts) {
+    const { inkAscent } = this.textMetrics(text, opts);
+    if (inkAscent == null) {
+      this.text(xy, text, opts);
+      return;
+    }
+    this.text([xy[0], xy[1] + inkAscent], text, {
+      ...opts,
+      baseline: "alphabetic",
+    });
   }
 
   line(xy: [Pt, Pt, ...Pt[]], opts?: LineOpts) {
@@ -240,9 +305,10 @@ export class CanvasDraw {
     if (opts?.opacity != null) ctx.globalAlpha = opts.opacity;
     if (opts?.dash) ctx.setLineDash(opts.dash);
     ctx.beginPath();
-    ctx.moveTo(this.snap(xy[0][0]), this.snap(xy[0][1]));
+    const snap = opts?.pixelSnap !== false;
+    ctx.moveTo(snap ? this.snap(xy[0][0]) : xy[0][0], snap ? this.snap(xy[0][1]) : xy[0][1]);
     for (let index = 1; index < xy.length; index += 1) {
-      ctx.lineTo(this.snap(xy[index][0]), this.snap(xy[index][1]));
+      ctx.lineTo(snap ? this.snap(xy[index][0]) : xy[index][0], snap ? this.snap(xy[index][1]) : xy[index][1]);
     }
     ctx.stroke();
     ctx.restore();
@@ -297,14 +363,22 @@ export class CanvasDraw {
  *   ASC at canvas LEFT, zodiac runs clockwise (H1 below ASC, MC toward TOP).
  * The returned screen coordinates are algebraically equivalent to wx's
  * `x = cx + cos(pi + asc - lon) * r; y = cy + sin(pi + asc - lon) * r`.
+ *
+ * The rotation argument may be a bare longitude (the zodiac-fixed wheel every
+ * caller used before projections existed) or a `WheelFrame`, which additionally
+ * carries the angular model — see `wheel-projection.ts`.
  */
 export function polar(
   center: Pt,
   radius: number,
   longitude: number,
-  ascRotation: number,
+  ascRotation: number | WheelFrame,
 ): Pt {
-  const astro = (180 + (longitude - ascRotation)) * (Math.PI / 180);
+  const rotation = typeof ascRotation === "number" ? ascRotation : ascRotation.rotation;
+  const drawn = typeof ascRotation === "number"
+    ? longitude
+    : ascRotation.projection.project(longitude);
+  const astro = (180 + (drawn - rotation)) * (Math.PI / 180);
   return [
     center[0] + Math.cos(astro) * radius,
     center[1] - Math.sin(astro) * radius,

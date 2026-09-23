@@ -17,17 +17,32 @@ test("the checked-in style contract resolves one provider graph", () => {
   const result = buildStyleTokenInventory(frontendRoot);
   assert.deepEqual(result.errors, []);
   assert.deepEqual(result.inventory.counts, {
-    tokens: 1478,
-    cssTokens: 1467,
-    cssDeclarations: 1552,
+    // +24 over the three-profile contract: one independent painted-ring radius
+    // token per role for both House Wheel and Cusp Wheel.
+    tokens: 1508,
+    cssTokens: 1491,
+    cssDeclarations: 1576,
     runtimeOnlyTokens: 7,
-    externalTokens: 4,
+    externalTokens: 10,
     public: 1106,
     derived: 198,
-    runtime: 174,
+    runtime: 204,
   });
+  const printPalettePath = "src/lib/theme/table-print-palette.ts";
+  const printRoles = [...readFileSync(join(frontendRoot, printPalettePath), "utf8")
+    .matchAll(/"(--morinus-[^"]+)":/g)].map((match) => match[1]).sort();
+  assert.ok(printRoles.length > 0, "the fixed paper palette must declare semantic roles");
   assert.deepEqual(
-    result.inventory.tokens.filter((token) => token.runtimeProviderFiles).map((token) => token.name),
+    result.inventory.tokens
+      .filter((token) => token.runtimeProviderFiles?.includes(printPalettePath))
+      .map((token) => token.name),
+    printRoles,
+    "the inventory must include every fixed print-palette provider",
+  );
+  assert.deepEqual(
+    result.inventory.tokens
+      .filter((token) => token.runtimeProviderFiles?.some((path) => path !== printPalettePath))
+      .map((token) => token.name),
     [
       "--aries-destructive",
       "--aries-navbar-scale",
@@ -172,14 +187,16 @@ test("the checked-in style contract resolves one provider graph", () => {
 
 test("generated manifests are stable across CRLF checkouts", () => {
   withTemporaryFrontend((temporaryRoot) => {
+    const baseline = buildStyleTokenInventory(temporaryRoot);
+    assert.deepEqual(baseline.errors, []);
     const cssPath = join(temporaryRoot, "src", "app", "globals.css");
     const css = readFileSync(cssPath, "utf8").replace(/\r?\n/g, "\r\n");
     writeFileSync(cssPath, css, "utf8");
 
     const result = buildStyleTokenInventory(temporaryRoot);
     assert.deepEqual(result.errors, []);
-    assert.equal(result.rendered, readFileSync(result.inventoryPath, "utf8"));
-    assert.equal(result.publicRendered, readFileSync(result.publicManifestPath, "utf8"));
+    assert.equal(result.rendered, baseline.rendered);
+    assert.equal(result.publicRendered, baseline.publicRendered);
   });
 });
 
@@ -199,6 +216,60 @@ test("integrity accepts CRLF generated artifacts", () => {
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   });
 });
+
+// Exercise the packaging CLI, including its read-only behavior, rather than
+// just the inventory builder: usage metadata must not become a release gate.
+test("new consumers of existing tokens do not block packaging or rewrite artifacts", () => {
+  withTemporaryFrontend((root) => {
+    const inventoryPath = join(root, "src/styles/style-token-inventory.generated.json");
+    const before = readFileSync(inventoryPath, "utf8");
+    writeFileSync(join(root, "src/components/token-consumer.tsx"),
+      'export const color = "var(--aries-text-muted)";\n');
+    const result = runIntegrity(root);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.match(result.stdout, /usage index: source locations changed/);
+    assert.equal(readFileSync(inventoryPath, "utf8"), before);
+  });
+});
+
+for (const [artifact, mutate] of [
+  ["style-token-inventory.generated.json", (data) => { data.tokens[0].default = "invalid"; }],
+  ["style-token-public.generated.json", (data) => { data.tokens[0].label = "stale label"; }],
+]) {
+  test(`definition drift still blocks packaging: ${artifact}`, () => {
+    withTemporaryFrontend((root) => {
+      const path = join(root, "src/styles", artifact);
+      const data = JSON.parse(readFileSync(path, "utf8"));
+      mutate(data);
+      writeFileSync(path, JSON.stringify(data, null, 2) + "\n");
+      const result = runIntegrity(root);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /drifted/);
+    });
+  });
+}
+
+test("undefined live tokens fail both checking and generation without overwriting artifacts", () => {
+  withTemporaryFrontend((root) => {
+    const paths = ["style-token-inventory.generated.json", "style-token-public.generated.json"]
+      .map((name) => join(root, "src/styles", name));
+    const before = paths.map((path) => readFileSync(path, "utf8"));
+    writeFileSync(join(root, "src/components/token-consumer.tsx"),
+      'export const color = "var(--missing-packaging-token)";\n');
+    for (const args of [[], ["--write-inventory"]]) {
+      const result = runIntegrity(root, args);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /undefined style token --missing-packaging-token/);
+      assert.deepEqual(paths.map((path) => readFileSync(path, "utf8")), before);
+    }
+  });
+});
+
+function runIntegrity(root, args = []) {
+  return spawnSync(process.execPath,
+    [join(frontendRoot, "scripts/style-token-integrity.mjs"), "--frontend-root", root, ...args],
+    { encoding: "utf8" });
+}
 
 test("a derived-token cycle is rejected", () => {
   withTemporaryFrontend((temporaryRoot) => {

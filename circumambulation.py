@@ -109,7 +109,7 @@ def _participating_longitude_entries(chart_obj, options, promissor_profile, *, n
     entries = []
     seen = set()
 
-    def add(family, identity, label, lon, lat=0.0, planet_id=None):
+    def add(family, identity, label, lon, lat=0.0, planet_id=None, promissor_id=primdirs.PrimDir.NONE):
         try:
             lon = util.normalize(float(lon))
             lat = float(lat or 0.0)
@@ -119,7 +119,20 @@ def _participating_longitude_entries(chart_obj, options, promissor_profile, *, n
         if key in seen:
             return
         seen.add(key)
+        aspect_indices = _participating_aspect_indices(options, profile)
+        if profile == primdirs.PrimDirs.CIRCUM_PROMISSORS_FOLLOW_PD and getattr(options, "pdmorinpromittorset", False):
+            # Keep the same doctrine owner as the ordinary primary-direction
+            # stream, before dynamic CUSTOMERPD encoding loses point identity.
+            aspect_indices = tuple(idx for idx in aspect_indices if primdirs.is_morin_promittor_direction({
+                "prom": promissor_id,
+                "sig": primdirs.PrimDir.ASC,
+                "promasp": idx,
+                "sigasp": chart.Chart.CONJUNCTIO,
+            }))
+            if not aspect_indices:
+                return
         entries.append({
+            "aspect_indices": aspect_indices,
             "key": key,
             "family": family,
             "label": str(label or identity),
@@ -137,7 +150,7 @@ def _participating_longitude_entries(chart_obj, options, promissor_profile, *, n
             continue
         try:
             body = chart_obj.planets.planets[body_id]
-            add("body", body_id, _body_label(body_id), body.data[planets.Planet.LONG], body.data[planets.Planet.LAT], body_id)
+            add("body", body_id, _body_label(body_id), body.data[planets.Planet.LONG], body.data[planets.Planet.LAT], body_id, promissor_id=body_id)
         except Exception:
             continue
 
@@ -153,7 +166,7 @@ def _participating_longitude_entries(chart_obj, options, promissor_profile, *, n
 
     if bool((getattr(options, "pdlof", [False]) or [False])[0]):
         try:
-            add("fortune", "lof", mtexts.txts.get("LoF", "LoF"), chart_obj.fortune.fortune[fortune.Fortune.LON])
+            add("fortune", "lof", mtexts.txts.get("LoF", "LoF"), chart_obj.fortune.fortune[fortune.Fortune.LON], promissor_id=primdirs.PrimDir.LOF)
         except Exception:
             pass
 
@@ -184,7 +197,7 @@ def _participating_longitude_entries(chart_obj, options, promissor_profile, *, n
                     continue
                 code = star[fixstars.FixStars.NOMNAME]
                 label = code or star[fixstars.FixStars.NAME]
-                add("fixed-star", ordinal, label, star[fixstars.FixStars.LON])
+                add("fixed-star", ordinal, label, star[fixstars.FixStars.LON], promissor_id=primdirs.PrimDir.FIXSTAR + ordinal)
         except Exception:
             pass
 
@@ -200,7 +213,7 @@ def _participating_longitude_entries(chart_obj, options, promissor_profile, *, n
                     mtexts.txts.get("Antiscion", "Antiscion") if family == "antiscion" else mtexts.txts.get("Contraantiscion", "Contra-antiscion"),
                     _body_label(body_id),
                 )
-                add(family, body_id, label, point.lon, point.lat)
+                add(family, body_id, label, point.lon, point.lat, promissor_id=(primdirs.PrimDir.ANTISCION if family == "antiscion" else primdirs.PrimDir.CONTRAANT) + body_id)
 
         if bool((getattr(options, "pdlof", [False]) or [False])[0]):
             for family, point in (
@@ -824,7 +837,13 @@ def _exact_aspect_hits(lam_start_abs, lam_end_abs, planet_lams, aspects=(0,60,90
             source_marker = None
             planet_id = None
         lp = lp % 360.0
+        entry_aspects = (
+            {chart.Chart.Aspects[idx] for idx in entry["aspect_indices"]}
+            if isinstance(entry, dict) and "aspect_indices" in entry else None
+        )
         for A in aspects:
+            if entry_aspects is not None and A not in entry_aspects:
+                continue
             bases = [(lp - A) % 360.0]
             if A not in (0, 180):
                 bases.append((lp + A) % 360.0)   # ±A 모두
@@ -972,6 +991,7 @@ def _append_participator_pd_hits(pd_engine, target_chart, options, entries, cust
         if enabled and idx < len(chart.Chart.Aspects)
     )
     for entry in entries:
+        entry_aspects = set(entry.get("aspect_indices", aspect_indices))
         label = str(entry.get("label") or "")
         lon = entry.get("lon")
         if not label or lon is None:
@@ -990,7 +1010,12 @@ def _append_participator_pd_hits(pd_engine, target_chart, options, entries, cust
             continue
         pd_engine._active_dynamic_prom_key = str(entry.get("key") or label)
         pd_engine._active_dynamic_prom_point = point
+        original_aspects = pd_engine.options.pdaspects
         try:
+            pd_engine.options.pdaspects = [
+                enabled and idx in entry_aspects
+                for idx, enabled in enumerate(original_aspects)
+            ]
             if not custom_target:
                 # toZodAscMC accepts chart-frame longitude and performs its own
                 # tropical recovery before the cotransformation.
@@ -1002,6 +1027,8 @@ def _append_participator_pd_hits(pd_engine, target_chart, options, entries, cust
                 continue
 
             for aspect_idx in aspect_indices:
+                if aspect_idx not in entry_aspects:
+                    continue
                 aspect_deg = float(chart.Chart.Aspects[aspect_idx])
                 signed_aspects = (aspect_deg,)
                 if aspect_idx not in (chart.Chart.CONJUNCTIO, chart.Chart.OPPOSITIO):
@@ -1030,6 +1057,7 @@ def _append_participator_pd_hits(pd_engine, target_chart, options, entries, cust
                         False,
                     )
         finally:
+            pd_engine.options.pdaspects = original_aspects
             pd_engine._active_dynamic_prom_key = None
             pd_engine._active_dynamic_prom_point = None
     pd_engine.pds.sort(key=lambda pd: pd.time)

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import time
 import datetime
+import re
 from typing import Any, Optional
 
 import datetime_parser
@@ -38,6 +39,10 @@ class SpotlightService:
         if not query:
             return self._none()
 
+        pair = self._match_chart_pair(query)
+        if pair is not None:
+            return pair
+
         parsed = datetime_parser.parse_spotlight(query)
         has_temporal = self._parsed_has_temporal(parsed)
         location_only = bool(
@@ -64,6 +69,19 @@ class SpotlightService:
         if not query:
             raise ValueError("spotlight input is empty")
         preview = self.preview(query)
+        if preview.get("kind") == "synastry":
+            if not preview["canConfirm"]:
+                raise ValueError("spotlight input did not resolve")
+            center = preview["chart"]
+            comparison = preview["comparisonChart"]
+            return workspace_service.open_synastry_pair(
+                center_name=center["name"],
+                comparison_name=comparison["name"],
+                center_source=center["source"],
+                center_record_index=center["recordIndex"],
+                comparison_source=comparison["source"],
+                comparison_record_index=comparison["recordIndex"],
+            )
         if preview.get("kind") == "chart":
             chart_ref = preview.get("chart") or {}
             return workspace_service.open_document(
@@ -146,6 +164,26 @@ class SpotlightService:
             "actions": actions,
             "defaultAction": default_action,
             "canConfirm": bool(default_action),
+        }
+
+    def _match_chart_pair(self, query: str) -> Optional[dict[str, Any]]:
+        parts = re.split(r"\s+\+\s*", query, maxsplit=1)
+        if len(parts) != 2:
+            return None
+        center = self._match_chart_query(parts[0])
+        if center is None:
+            return None
+        comparison = self._match_chart_query(parts[1])
+        return {
+            "kind": "synastry",
+            "primary": f'{center["primary"]} +',
+            "secondary": comparison["primary"] if comparison else parts[1],
+            "parsed": None,
+            "chart": center["chart"],
+            "comparisonChart": comparison["chart"] if comparison else None,
+            "actions": [],
+            "defaultAction": "open-chart" if comparison else None,
+            "canConfirm": comparison is not None,
         }
 
     def _match_chart_query(self, query: str) -> Optional[dict[str, Any]]:
@@ -381,6 +419,11 @@ class SpotlightService:
         display_query = " ".join((query or "").replace(",", " ").split())
         state_hint = self._us_state_abbrev_from_query(display_query)
         queries = self._location_queries(display_query)
+        # A recognized state suffix qualifies the city; it is not part of its
+        # name. Try the stripped query first so "San Francisco CA" cannot stop
+        # at an unrelated prefix match such as San Francisco Cajonos.
+        if state_hint and len(queries) > 1:
+            queries = queries[1:] + queries[:1]
         hit = None
         for candidate_query in queries:
             try:

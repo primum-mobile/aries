@@ -76,7 +76,7 @@ test("effects stay on retained canvas compositing and out of chart geometry", ()
   assert.doesNotMatch(drawChart, /--aries-wheel-effect-/);
 });
 
-test("fill textures are deterministic retained-layer assets, not time-step work", () => {
+test("fill textures are deterministic cached assets that repaint with live steps", () => {
   assert.match(drawChart, /const fillTextureTileCache = new Map/);
   const textureStart = drawChart.indexOf("function fillTexturePattern(");
   const textureEnd = drawChart.indexOf("function paintFillRegion(", textureStart);
@@ -98,7 +98,7 @@ test("fill textures are deterministic retained-layer assets, not time-step work"
     /paintCanvasBackgroundMaterial\([\s\S]*?paintFillRegion\([\s\S]*?"fills\.chartField"[\s\S]*?"fills\.houseField"[\s\S]*?"fills\.centerField"/,
   );
   assert.match(chartCanvas, /const fillSignature = \[\s*renderStyle\.revision,/);
-  assert.match(chartCanvas, /overlayRenderMode === "step_fast"[\s\S]*?fill: false/);
+  assert.match(chartCanvas, /overlayRenderMode === "step_fast"[\s\S]*?fill: true/);
   assert.match(drawChart, /createLinearGradient/);
   assert.match(drawChart, /createRadialGradient/);
   assert.match(drawChart, /textureMask === "crescent"[\s\S]*?ctx\.clip\("evenodd"\)/);
@@ -108,10 +108,47 @@ test("fill textures are deterministic retained-layer assets, not time-step work"
   );
   assert.match(
     chartCanvas,
-    /overlayRenderMode !== "step_fast"[\s\S]*?wheelFillUsesSolarDirection/,
+    /const solarFillSignature =\s*wheelFillUsesSolarDirection/,
   );
   assert.match(
     chartCanvas,
     /solarFillSignature != null[\s\S]*?paintedSolarFillSignatureRef/,
+  );
+});
+
+test("zodiac, term, and decan materials paint disjoint physical bands", () => {
+  const retainedStart = drawChart.indexOf("function drawRetainedFillLayer(");
+  const retainedEnd = drawChart.indexOf("\n/**", retainedStart);
+  assert.ok(retainedStart >= 0 && retainedEnd > retainedStart);
+  const retainedSource = drawChart.slice(retainedStart, retainedEnd);
+  assert.doesNotMatch(retainedSource, /fills\.subdivisionBand/);
+  assert.doesNotMatch(retainedSource, /paintZodiacElementSlices\(/);
+  assert.match(
+    drawChart,
+    /!chart\.options\.useZodiacElementFieldColors[\s\S]*?ctx\.fillStyle = color;[\s\S]*?ctx\.fill\(\);/,
+  );
+  assert.match(
+    drawChart,
+    /zodiacElementTextureFillClass\(style, profile\)[\s\S]*?"texture-only"/,
+  );
+  assert.match(
+    retainedSource,
+    /if \(!zodiacElementFieldFillIsActive\(chart, style, profile\)\)[\s\S]*?"fills\.zodiacBand"[\s\S]*?hasWheelRing\(chart, "zodiac"\) \? ringset\.r30 : 0,\s*ringset\.r0,/,
+  );
+  assert.match(
+    retainedSource,
+    /if \(isAngloWheel\(chart\) && \(hasWheelRing\(chart, "cuspLabels"\) \|\| hasWheelRing\(chart, "cuspRuler"\)\)\)[\s\S]*?"fills\.cuspDegreeBand"[\s\S]*?isCuspBandWheel\(chart\) \? ringset\.r30 : hasWheelRing\(chart, "cuspRuler"\)[\s\S]*?hasWheelRing\(chart, "cuspLabels"\) \? ringset\.rInner : ringset\.rCuspLabelOuter \?\? ringset\.rInner,/,
+  );
+  assert.match(
+    drawChart,
+    /if \(layer === "geometry"\) \{[\s\S]*?paintZodiacElementSlices\([\s\S]*?ringset\.r30,\s*ringset\.r0,/,
+  );
+  assert.match(
+    retainedSource,
+    /"fills\.termBand"[\s\S]*?ringset\.rTerms,\s*ringset\.rTermsInner \?\? ringset\.rDecans,/,
+  );
+  assert.match(
+    retainedSource,
+    /"fills\.decanBand"[\s\S]*?ringset\.rDecans,\s*ringset\.rDecansInner \?\? ringset\.rCuspOuter \?\? ringset\.rInner,/,
   );
 });

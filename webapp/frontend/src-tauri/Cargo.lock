@@ -118,6 +118,7 @@ dependencies = [
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
+ "objc2-web-kit",
  "security-framework 3.0.1",
  "security-framework-sys",
  "serde",

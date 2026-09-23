@@ -7,7 +7,11 @@ import * as React from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 
-import { Bell, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coffee, PanelLeft, NotebookPen, Pencil, ScrollText, Search, Settings, SlidersHorizontal } from "lucide-react";
+import { Bell, CalendarRange, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coffee, Columns2, PanelLeft, NotebookPen, Pencil, ScrollText, Search, Settings, SlidersHorizontal } from "lucide-react";
+import { radixPaneOwner } from "@/lib/radix-pane-state";
+import { handleChartEventsMenuAction } from "./chart-events-actions";
+import { SideBySideCharts, useSideBySideCommand } from "./side-by-side-charts";
+import { aspectListViewContext } from "@/lib/chart/aspect-list-context";
 
 import {
   ResizableHandle,
@@ -25,7 +29,7 @@ import type {
   OverlayInfoRow,
 } from "@/lib/chart/types";
 import { morinusTextFontFromTokens } from "@/lib/chart/chart-fonts";
-import { radixOverlayTopLeftLines } from "@/lib/chart/chart-overlay-lines";
+import { informationCornerClass, radixOverlayTopLeftLines } from "@/lib/chart/chart-overlay-lines";
 import {
   readPaletteFromTheme,
   readPaletteProfileOverrides,
@@ -38,15 +42,19 @@ import {
   type WheelChartOverlayClass,
   type WheelRenderStyle,
   type WheelTypographyProfile,
+  wheelTypographyProfileForTheme,
 } from "@/lib/chart/wheel-render-style";
 import { registerChartExportRenderer } from "@/lib/chart/chart-export-registry";
 import { ChartCopyControl } from "@/components/workshell/chart-copy-control";
 import { renderChartSurfaceExport } from "@/lib/chart/chart-export-renderer";
+import { assembleWheelGeometryPreview } from "@/lib/chart/wheel-geometry-preset";
+import { useChartStyleEditorStore } from "@/stores/chart-style-editor-store";
+import type { WheelVerticalAlignment } from "@/lib/chart/outer-glyph-lane";
 import {
   ASTROCART_TITLEBAR_SAFE_TOP,
   createAstrocartStyleMessage,
 } from "@/lib/chart/astrocart-style";
-import { useT, useTFallback, type TFunc } from "@/lib/i18n/i18n";
+import { useT, useTFallback, useLocale, type TFunc } from "@/lib/i18n/i18n";
 import { resolveListFocusDatetime } from "@/lib/list-follow-policy";
 import { LIST_PANE_CLASSES } from "@/lib/list-tokens";
 import { cn } from "@/lib/utils";
@@ -93,6 +101,7 @@ import {
   daemonBaseUrl,
   daemonFetch,
   fetchAstrocartViewState,
+  patchOptions,
   fetchAppSplash,
   storeAstrocartViewState,
   workspaceActivate,
@@ -193,6 +202,11 @@ const SynodicCycleListView = dynamic(
   () => import("./synodic-cycle-list-view").then((mod) => mod.SynodicCycleListView),
   { loading: () => null },
 );
+const ChartEventsPanel = dynamic(
+  () => import("./chart-events-panel").then((mod) => mod.ChartEventsPanel),
+  { ssr: false },
+);
+
 const AspectListPanel = dynamic(
   () => import("./aspect-list-panel").then((mod) => mod.AspectListPanel),
   { loading: () => null },
@@ -260,21 +274,6 @@ function isAspectListQueryHostDocument(
   return isChartBearingSurfaceDocument(doc) || doc?.kind === "ascensional-transits";
 }
 
-function aspectListContextRevision(
-  chart: ChartRenderSnapshot | null,
-  documentId: string,
-): string | null {
-  if (!chart || chart.document?.documentId !== documentId) return null;
-  return JSON.stringify({
-    viewMode: chart.document.viewMode,
-    comparisonName: chart.document.comparisonName ?? null,
-    compoundKind: chart.document.compoundKind ?? null,
-    compositeVariant: chart.document.compositeVariant ?? null,
-    showRadixComparison: chart.document.showRadixComparison ?? null,
-    hasComparisonChart: chart.comparisonChart != null,
-  });
-}
-
 function isChartBearingSurfaceKind(kind: WorkspaceDocument["kind"] | null | undefined): boolean {
   if (!kind) return false;
   return ![
@@ -305,6 +304,9 @@ const ASTROCART_PRIMARY_MODES = new Set<AstrocartLineMode>([
   "standard",
   ...ASTROCART_GEODETIC_MODES,
 ]);
+function needsIndependentAstrocartOverlay(modes: readonly AstrocartLineMode[]): boolean {
+  return !modes.some((mode) => ASTROCART_PRIMARY_MODES.has(mode));
+}
 const ASTROCART_DEFAULT_LINE_MODES: AstrocartLineMode[] = ["standard"];
 const ASTROCART_REFINEMENT_DELAY_MS = 220;
 const ASTROCART_ASPECT_IDS = [
@@ -489,11 +491,11 @@ function astrocartPhysicalOverlayIdentity(
   feature: unknown,
   mode: AstrocartLineMode,
 ): string | null {
-  if (!ASTROCART_PRIMARY_MODES.has(mode)) return null;
   const properties = astrocartFeatureProperties(feature);
   if (!properties) return null;
   const kind = astrocartPropertyText(properties, "kind").toUpperCase();
   if (kind !== "PARAN" && kind !== "ZENITH") return null;
+  if (!ASTROCART_PRIMARY_MODES.has(mode)) return null;
 
   const layer = astrocartPropertyText(properties, "astrocart_layer") || "natal";
   const layerId =
@@ -564,7 +566,7 @@ function composeAstrocartModePayload(
   const physicalOverlays = new Map<string, AstrocartPhysicalOverlayAccumulator>();
   let meta = { ...(fallbackMeta ?? {}) };
   let complete = true;
-  if (orderedModes.length === 0 && emptyModePayload) {
+  if (needsIndependentAstrocartOverlay(orderedModes) && emptyModePayload) {
     features.push(...emptyModePayload.features);
     meta = { ...meta, ...(emptyModePayload.meta ?? {}) };
   }
@@ -799,8 +801,8 @@ function ActiveSurfaceArea({
 
   React.useEffect(() => {
     const isAscensionalMode =
-      activeDoc?.kind === "ascensional-transits" ||
-      activeDoc?.chartVisualMode === "ascensional_transits";
+      !chart?.sideBySide?.enabled && (activeDoc?.kind === "ascensional-transits" ||
+      activeDoc?.chartVisualMode === "ascensional_transits");
     if (!isAscensionalMode) {
       lastAutoOpenedAscensionalPaneRef.current = null;
       return;
@@ -817,6 +819,7 @@ function ActiveSurfaceArea({
     });
     closeInspectorAndNotes();
   }, [
+    chart?.sideBySide?.enabled,
     activeDoc?.ascensionalApplyPrecession,
     activeDoc?.ascensionalEventJd,
     activeDoc?.ascensionalEventPlace,
@@ -828,6 +831,10 @@ function ActiveSurfaceArea({
     openAscensionalTransitsPane,
   ]);
 
+  if (chart?.sideBySide?.enabled && activeDoc &&
+      [chart.sideBySide.leftDocumentId, chart.sideBySide.rightDocumentId].includes(activeDoc.id)) {
+    return <ChartArea chart={chart} activeDoc={activeDoc} navbar={navbar} />;
+  }
   if (activeDoc?.kind === "directions") {
     return (
       <WorkspaceDocumentSurface>
@@ -986,6 +993,8 @@ function ActiveSurfaceArea({
             sourceName={activeDoc.sourceName}
             source={activeDoc.fpath}
             refreshKey={activeDoc.displayDatetime ?? activeDoc.chartVisualMode}
+            renderSnapshot={chart}
+            snapshotData={chart?.mundaneChart}
           />
         }
       />
@@ -997,7 +1006,7 @@ function ActiveSurfaceArea({
         chart={chart}
         activeDoc={activeDoc}
         navbar={navbar}
-        surface={<AscensionalTransitsView key={activeDoc.id} document={activeDoc} />}
+        surface={<AscensionalTransitsView key={activeDoc.id} document={activeDoc} renderSnapshot={chart} snapshotData={chart?.mundaneChart} />}
       />
     );
   }
@@ -1231,6 +1240,11 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
   const printAtlasRequestsRef =
     React.useRef(new Map<string, AstrocartPrintAtlasRequest>());
   const latestViewStateRef = React.useRef<AstrocartViewState | null>(null);
+  const locale = useLocale();
+  const [rulerEnabled, setRulerEnabled] = React.useState(false);
+  const [distanceUnits, setDistanceUnits] = React.useState<"metric" | "miles">("metric");
+  const [distanceUnitsFailed, setDistanceUnitsFailed] = React.useState(false);
+  const distanceSaveRef = React.useRef<Promise<void>>(Promise.resolve());
   const viewStateIntentRevisionRef = React.useRef(0);
   const mapHostActiveRef = React.useRef(active);
   const saveViewStateTimerRefs = React.useRef<
@@ -1300,6 +1314,7 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
     React.useState<AstrocartParanIntent | null>(null);
   const [lineModes, setLineModes] = React.useState<AstrocartLineMode[]>(ASTROCART_DEFAULT_LINE_MODES);
   const [natalLayerVisible, setNatalLayerVisible] = React.useState(true);
+  const [dynamicLayerVisible, setDynamicLayerVisible] = React.useState(true);
   const [viewStateReadyFor, setViewStateReadyFor] = React.useState<string | null>(null);
   const astrocartControlsPane = useWorkspaceStore((state) => state.astrocartControlsPane);
   const openAstrocartControlsPane = useWorkspaceStore(
@@ -1493,7 +1508,7 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
             AstrocartModeCacheEntry
           >();
           let preciseEmptyModePayload: AstrocartGeoJsonPayload | undefined;
-          if (captureContext.lineModes.length === 0) {
+          if (needsIndependentAstrocartOverlay(captureContext.lineModes)) {
             const payload = await fetchAstrocartModePayload(
               documentId,
               null,
@@ -1508,35 +1523,34 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
               return;
             }
             preciseEmptyModePayload = payload;
-          } else {
-            for (const mode of captureContext.lineModes) {
-              if (!requestIsCurrent()) {
-                settlePrintAtlasRequest(requestId, null);
-                return;
-              }
-              const payload = await fetchAstrocartModePayload(
-                documentId,
-                mode,
-                "precise",
-                controller.signal,
-              );
-              if (
-                !requestIsCurrent() ||
-                !payloadMatchesCapture(payload, mode)
-              ) {
-                settlePrintAtlasRequest(requestId, null);
-                return;
-              }
-              preciseModeCache.set(mode, {
-                sessionRevision: captureContext.sessionRevision,
-                modeSpecKey: astrocartModeSpecKey(
-                  captureContext.modeSpecKeys,
-                  mode,
-                ),
-                precision: "precise",
-                payload,
-              });
+          }
+          for (const mode of captureContext.lineModes) {
+            if (!requestIsCurrent()) {
+              settlePrintAtlasRequest(requestId, null);
+              return;
             }
+            const payload = await fetchAstrocartModePayload(
+              documentId,
+              mode,
+              "precise",
+              controller.signal,
+            );
+            if (
+              !requestIsCurrent() ||
+              !payloadMatchesCapture(payload, mode)
+            ) {
+              settlePrintAtlasRequest(requestId, null);
+              return;
+            }
+            preciseModeCache.set(mode, {
+              sessionRevision: captureContext.sessionRevision,
+              modeSpecKey: astrocartModeSpecKey(
+                captureContext.modeSpecKeys,
+                mode,
+              ),
+              precision: "precise",
+              payload,
+            });
           }
           if (!requestIsCurrent()) {
             settlePrintAtlasRequest(requestId, null);
@@ -1631,10 +1645,12 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
       .map((definition) => definition.id);
     const previousOverlays = latestViewStateRef.current?.overlays;
     const natalVisible = previousOverlays?.layers?.natal ?? true;
+    const dynamicVisible = previousOverlays?.layers?.dynamic ?? true;
     const layers = {
       natal: natalVisible,
-      transit: enabledDynamicLayers.some((layer) => layer.technique === "transit"),
-      progression: enabledDynamicLayers.some((layer) => layer.technique !== "transit"),
+      dynamic: dynamicVisible,
+      transit: dynamicVisible && enabledDynamicLayers.some((layer) => layer.technique === "transit"),
+      progression: dynamicVisible && enabledDynamicLayers.some((layer) => layer.technique !== "transit"),
     };
     const overlays = {
       ...(previousOverlays ?? {}),
@@ -1951,8 +1967,12 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
           },
         } : null;
         latestViewStateRef.current = restoredViewState;
+        setDistanceUnits(restoredViewState?.distanceUnits ?? "metric");
         setNatalLayerVisible(
           restoredViewState?.overlays?.layers?.natal ?? true,
+        );
+        setDynamicLayerVisible(
+          restoredViewState?.overlays?.layers?.dynamic ?? true,
         );
         const restoredModes = normalizeAstrocartLineModes(restoredViewState?.lineModes);
         activeLineModesRef.current = restoredModes;
@@ -1975,6 +1995,7 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
         activeLineModesRef.current = fallbackModes;
         setLineModes(fallbackModes);
         setNatalLayerVisible((current) => retainedState ? current : true);
+        setDynamicLayerVisible((current) => retainedState ? current : true);
         setViewStateReadyFor(viewStateKey);
       });
     return () => controller.abort();
@@ -2112,6 +2133,59 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
     saveViewStateTimerRefs.current[scope] = window.setTimeout(save, 240);
   }, [documentId]);
 
+  const handleDistanceUnitsChange = React.useCallback((units: "metric" | "miles") => {
+    const previous = latestViewStateRef.current?.distanceUnits ?? "metric";
+    viewStateIntentRevisionRef.current += 1;
+    const revision = viewStateIntentRevisionRef.current;
+    latestViewStateRef.current = { ...(latestViewStateRef.current ?? {}), distanceUnits: units };
+    setDistanceUnits(units);
+    setDistanceUnitsFailed(false);
+    // Serialize preference writes; pointer movement never enters this path.
+    distanceSaveRef.current = distanceSaveRef.current.then(async () => {
+      try {
+        await patchOptions({ display: { astrocart_distance_units: units } });
+      } catch {
+        if (viewStateIntentRevisionRef.current !== revision) return;
+        latestViewStateRef.current = { ...(latestViewStateRef.current ?? {}), distanceUnits: previous };
+        setDistanceUnits(previous);
+        setDistanceUnitsFailed(true);
+      }
+    });
+  }, []);
+
+  React.useEffect(() => {
+    if (!active || !lastOptionsChange) return;
+    const controller = new AbortController();
+    const revision = viewStateIntentRevisionRef.current;
+    void fetchAstrocartViewState(documentId, controller.signal).then((state) => {
+      if (controller.signal.aborted || revision !== viewStateIntentRevisionRef.current) return;
+      const units = state?.distanceUnits ?? "metric";
+      latestViewStateRef.current = { ...(latestViewStateRef.current ?? {}), distanceUnits: units };
+      setDistanceUnits(units);
+      setDistanceUnitsFailed(false);
+    }).catch((err) => {
+      if (!isAbortError(err, controller.signal)) console.error("[acg-distance-units]", err);
+    });
+    return () => controller.abort();
+  }, [active, documentId, lastOptionsChange]);
+
+  React.useEffect(() => {
+    if (!active || !iframeReady) return;
+    iframeRef.current?.contentWindow?.postMessage({
+      type: "aries.setRuler",
+      options: {
+        enabled: rulerEnabled,
+        ready: viewStateReady,
+        diagnostics: window.__ARIES_NATIVE_PERF__ === true,
+        units: distanceUnits,
+        locale,
+        hint: t("astrocart.ruler.hint"),
+        title: t("astrocart.ruler.title"),
+        tokens: theme?.appTokens ?? {},
+      },
+    }, "*");
+  }, [active, iframeReady, mapInstanceKey, rulerEnabled, viewStateReady, distanceUnits, locale, t, theme]);
+
   const applyAstrocartLineModes = React.useCallback((
     nextModes: AstrocartLineMode[],
   ) => {
@@ -2127,7 +2201,7 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
       request.controller.abort();
       modeDataRequestsRef.current.delete(requestedMode);
     }
-    if (nextModes.length > 0) {
+    if (!needsIndependentAstrocartOverlay(nextModes)) {
       emptyMetaRequestRef.current?.controller.abort();
       emptyMetaRequestRef.current = null;
     }
@@ -2176,6 +2250,36 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
         type: "aries.setVisibilityFilters",
         filters: { layers: { natal } },
       },
+      "*",
+    );
+    persistViewState(nextViewState, true, "global");
+  }, [persistViewState, viewStateKey]);
+
+  const handleAstrocartDynamicLayerVisibility = React.useCallback((
+    dynamic: boolean,
+  ) => {
+    const current = latestViewStateRef.current ?? {};
+    const overlays = current.overlays ?? {};
+    const enabledLayers = canonicalAstrocartSpecRef.current?.dynamicLayers.filter(
+      (layer) => layer.enabled,
+    ) ?? [];
+    const layers = {
+      ...(overlays.layers ?? {}),
+      dynamic,
+      transit: dynamic && enabledLayers.some((layer) => layer.technique === "transit"),
+      progression: dynamic && enabledLayers.some((layer) => layer.technique !== "transit"),
+    };
+    const nextViewState: AstrocartViewState = {
+      ...current,
+      overlays: { ...overlays, layers },
+    };
+    latestViewStateRef.current = nextViewState;
+    setDynamicLayerVisible(dynamic);
+    viewStateIntentRevisionRef.current += 1;
+    setViewStateReadyFor(viewStateKey);
+    lastVisibilitySignatureRef.current = null;
+    iframeRef.current?.contentWindow?.postMessage(
+      { type: "aries.setVisibilityFilters", filters: { layers } },
       "*",
     );
     persistViewState(nextViewState, true, "global");
@@ -2261,8 +2365,9 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
     const targetWindow = iframeRef.current?.contentWindow;
     if (!mapHostActiveRef.current || !context || !targetWindow) return;
 
+    const needsOverlay = needsIndependentAstrocartOverlay(context.lineModes);
     const emptyModeEntry =
-      context.lineModes.length === 0 &&
+      needsOverlay &&
       emptyModeDataCacheRef.current?.sessionRevision === context.sessionRevision &&
       emptyModeDataCacheRef.current.configurationRevision ===
         context.configurationRevision
@@ -2305,9 +2410,8 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
       astrocartConfigurationRef.current,
       emptyModeEntry?.payload,
     );
-    const readyForRevision = composed.complete && (
-      context.lineModes.length > 0 || emptyModeEntry != null
-    );
+    const readyForRevision = composed.complete &&
+      (!needsOverlay || emptyModeEntry != null);
     const previousGeneration = lastRenderedDataGenerationRef.current;
     if (
       !readyForRevision &&
@@ -2327,7 +2431,7 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
         const entry = modeDataCacheRef.current.get(mode);
         return `${mode}:${entry?.precision ?? "missing"}`;
       }),
-      context.lineModes.length === 0
+      needsOverlay
         ? `dynamic-only:${emptyModeEntry?.precision ?? "missing"}`
         : "",
     ].join("|");
@@ -2552,7 +2656,7 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
         activeDataContextRef.current?.sessionRevision === sessionRevision &&
         activeDataContextRef.current.configurationRevision ===
           configurationRevision &&
-        activeDataContextRef.current.lineModes.length === 0
+        needsIndependentAstrocartOverlay(activeDataContextRef.current.lineModes)
       );
       void (async () => {
         try {
@@ -2623,7 +2727,7 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
       })();
     };
 
-    if (lineModes.length === 0) ensureEmptyMeta();
+    if (needsIndependentAstrocartOverlay(lineModes)) ensureEmptyMeta();
     for (const mode of lineModes) ensureModeData(mode);
   }, [
     active,
@@ -2695,6 +2799,8 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
             payload?: {
               type?: string;
               action?: string;
+              enabled?: boolean;
+              detail?: Record<string, unknown>;
               lon?: number;
               lat?: number;
               placeName?: string;
@@ -2715,6 +2821,14 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
       if (!data || data.source !== "aries-acg") return;
       const payload = data.payload;
       if (!payload) return;
+      if (payload.type === "ruler-diagnostic" && window.__ARIES_NATIVE_PERF__ === true) {
+        void resolveShellHost().recordFrontendPerf({
+          name: "astrocart-ruler-diagnostic",
+          at: performance.now(),
+          detail: payload.detail ?? {},
+        }).catch(() => {});
+        return;
+      }
       if (payload.type === "print-atlas" && payload.requestId) {
         const atlas = payload.ok === true &&
           Array.isArray(payload.atlas?.pages) &&
@@ -2727,6 +2841,10 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
           ? payload.atlas
           : null;
         settlePrintAtlasRequest(payload.requestId, atlas);
+        return;
+      }
+      if (payload.type === "ruler" && typeof payload.enabled === "boolean") {
+        setRulerEnabled(payload.enabled);
         return;
       }
       if (payload.type === "ambient-key") {
@@ -2778,6 +2896,7 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
         if (!active && scope !== "global") return;
         const nextViewState: AstrocartViewState = {
           ...payload.state,
+          distanceUnits: latestViewStateRef.current?.distanceUnits ?? payload.state.distanceUnits,
           lineModes: activeLineModesRef.current,
         };
         if (scope === "global") {
@@ -2910,6 +3029,7 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
             );
           })}
           <span aria-hidden className="mx-0.5 h-4 w-px self-center bg-border" />
+
           <button
             type="button"
             aria-label={t("astrocart.config.open")}
@@ -2966,12 +3086,17 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
           paranIntent={paranIntent}
           lineModes={lineModes}
           natalLayerVisible={natalLayerVisible}
+          dynamicLayerVisible={dynamicLayerVisible}
           mapViewReady={viewStateReady}
+          distanceUnits={distanceUnits}
+          distanceUnitsFailed={distanceUnitsFailed}
+          onDistanceUnitsChange={handleDistanceUnitsChange}
           onClose={closeAstrocartControlsPane}
           onMapViewReset={handleAstrocartMapViewReset}
           onPreviewChange={handleAstrocartConfigurationPreview}
           onCanonicalChange={handleAstrocartConfigurationChange}
           onNatalLayerVisibilityChange={handleAstrocartNatalLayerVisibility}
+          onDynamicLayerVisibilityChange={handleAstrocartDynamicLayerVisibility}
           onStandardViewReset={handleAstrocartStandardViewReset}
           onRequestPrintAtlas={requestPrintAtlas}
         />
@@ -3027,11 +3152,15 @@ export function UnifiedTitleBar({
   const toggleNotesPane = useFrameLayoutStore((s) => s.toggleNotesPane);
   const notesPaneOpen = useFrameLayoutStore((s) => s.notesPaneOpen);
   const requestEditChart = useWorkspaceStore((s) => s.requestEditChart);
+  const chartEventsPane = useWorkspaceStore((s) => s.chartEventsPane);
+  const closeChartEventsPane = useWorkspaceStore((s) => s.closeChartEventsPane);
+  const eventsOwner = useDaemonWorkspaceStore((s) => radixPaneOwner(s.documents, activeDoc?.id ?? null));
   const transitSearchPane = useWorkspaceStore((s) => s.transitSearchPane);
   const openTransitSearchPane = useWorkspaceStore((s) => s.openTransitSearchPane);
   const closeTransitSearchPane = useWorkspaceStore((s) => s.closeTransitSearchPane);
   const closeAllRightPanes = useWorkspaceStore((s) => s.closeAllRightPanes);
   const captionActionsRef = useRef<HTMLDivElement>(null);
+  const sideBySideCommand = useSideBySideCommand();
   const t = useT();
   const parts = buildTitleParts(chart, activeDoc, t);
   const transparentBackplate = overlay || isChartBearingSurfaceDocument(activeDoc);
@@ -3115,6 +3244,11 @@ export function UnifiedTitleBar({
         <HeaderButton label={t("toolbar.toggleSidebar")} onClick={toggleSidebar} pressed={sidebarOpen}>
           <PanelLeft className="size-[var(--morinus-header-icon-size)]" />
         </HeaderButton>
+        {canEdit ? (
+          <HeaderButton label={t("toolbar.editChartData")} onClick={() => requestEditChart(activeDoc)}>
+            <Pencil className="size-[var(--morinus-header-icon-size)]" />
+          </HeaderButton>
+        ) : null}
       </div>
       <div
         data-tauri-drag-region
@@ -3129,7 +3263,7 @@ export function UnifiedTitleBar({
           </ChartCopyControl>
         )}
       </div>
-      {/* Right cluster — search + edit + right-pane toggles. */}
+      {/* Right cluster — chart options, search and right-pane toggles. */}
       <div
         ref={captionActionsRef}
         data-tauri-drag-region
@@ -3142,14 +3276,24 @@ export function UnifiedTitleBar({
           onOpenStyleLab={onOpenStyleLab}
           onOpenSettings={onOpenSettings}
         />
+        {chart && isAspectListQueryHostDocument(activeDoc) ? (
+          <HeaderButton label={t("chartview.sideBySide")} pressed={chart.sideBySide?.enabled}
+            onClick={() => sideBySideCommand({ enabled: !chart.sideBySide?.enabled })}>
+            <Columns2 className="size-[var(--morinus-header-icon-size)]" />
+          </HeaderButton>
+        ) : null}
         {canOpenSearch ? (
           <HeaderButton label={t("toolbar.search")} onClick={handleToggleSearchPane} pressed={searchActive}>
             <Search className="size-[var(--morinus-header-icon-size)]" />
           </HeaderButton>
         ) : null}
-        {canEdit ? (
-          <HeaderButton label={t("toolbar.editChartData")} onClick={() => requestEditChart(activeDoc)}>
-            <Pencil className="size-[var(--morinus-header-icon-size)]" />
+        {canEdit && eventsOwner ? (
+          <HeaderButton label={t("chartEvents.title")} pressed={chartEventsPane?.documentId === eventsOwner}
+            onClick={() => {
+              if (chartEventsPane?.documentId === eventsOwner) closeChartEventsPane();
+              else void handleChartEventsMenuAction("workspace.show_events", { documentId: eventsOwner });
+            }}>
+            <CalendarRange className="size-[var(--morinus-header-icon-size)]" />
           </HeaderButton>
         ) : null}
         {activeDoc?.kind !== "astrocart" ? (
@@ -4214,6 +4358,7 @@ function ChartArea({
   const eclipsesPane = useWorkspaceStore((s) => s.eclipsesPane);
   const lunarMansionsPane = useWorkspaceStore((s) => s.lunarMansionsPane);
   const synodicCyclesPane = useWorkspaceStore((s) => s.synodicCyclesPane);
+  const chartEventsPane = useWorkspaceStore((s) => s.chartEventsPane);
   const aspectListPane = useWorkspaceStore((s) => s.aspectListPane);
   const ascensionalTransitsPane = useWorkspaceStore((s) => s.ascensionalTransitsPane);
   const calendarPane = useWorkspaceStore((s) => s.calendarPane);
@@ -4233,6 +4378,7 @@ function ChartArea({
     eclipsesPane,
     lunarMansionsPane,
     synodicCyclesPane,
+    chartEventsPane,
     aspectListPane,
     ascensionalTransitsPane,
     calendarPane,
@@ -4305,7 +4451,9 @@ function ChartArea({
         style={{ "--aries-navbar-scale": navbarScale.toFixed(3) } as React.CSSProperties}
       >
         {surface ?? (chart ? (
-          <ChartSurface chart={chart} />
+          chart.sideBySide?.enabled ? (
+            <SideBySideCharts chart={chart} view={chart.sideBySide} Surface={SplitChartSurface} />
+          ) : <ChartSurface chart={chart} />
         ) : (
           <WorkspaceDocumentSurface>
             <EmptyWorkspace />
@@ -4589,18 +4737,37 @@ function RightPaneSash({
  * element so the canvas re-measures when the panel is dragged (the
  * ResizeObserver in useElementSize fires on width change automatically).
  */
+function SplitChartSurface(props: React.ComponentProps<typeof ChartSurface>) {
+  const document = props.chart.document;
+  if (document && isMdoVisualMode(document.chartVisualMode)) {
+    return <MundaneChartView
+      key={document.documentId}
+      documentId={document.documentId}
+      parentDocumentId={null}
+      sourceName={props.chart.primaryChart.meta.name}
+      refreshKey={document.displayDatetime}
+      renderSnapshot={props.chart}
+      snapshotData={props.chart.mundaneChart}
+      exportRegistrationEnabled={props.exportRegistrationEnabled}
+    />;
+  }
+  return <ChartSurface {...props} />;
+}
+
 export function ChartSurface({
   chart,
   appControlsEnabled = true,
   inheritAppTheme = true,
   resolvedTheme,
   exportRegistrationEnabled = true,
+  wheelVerticalAlignment = "center",
 }: {
   chart: ChartRenderSnapshot;
   appControlsEnabled?: boolean;
   inheritAppTheme?: boolean;
   resolvedTheme?: ThemeState | null;
   exportRegistrationEnabled?: boolean;
+  wheelVerticalAlignment?: WheelVerticalAlignment;
 }) {
   const [hostElement, setHostElement] = useState<HTMLDivElement | null>(null);
   const viewport = useElementSize(hostElement);
@@ -4621,8 +4788,9 @@ export function ChartSurface({
     if ((chart.rings?.length ?? 0) >= 3) return;
     const documentId = chart.document?.documentId;
     if (!documentId || viewportWidth <= 0 || viewportHeight <= 0) return;
-    return registerChartExportRenderer(documentId, (request) =>
-      renderChartSurfaceExport(
+    return registerChartExportRenderer(documentId, (request) => {
+      const geometryDraft = useChartStyleEditorStore.getState();
+      return renderChartSurfaceExport(
         chart,
         theme,
         { width: viewportWidth, height: viewportHeight },
@@ -4632,8 +4800,9 @@ export function ChartSurface({
           hideAll: hideAllAspects,
           minorOnly: minorOnlyAspects,
         },
-      ),
-    );
+        assembleWheelGeometryPreview(geometryDraft),
+      );
+    });
   }, [
     chart,
     exportRegistrationEnabled,
@@ -4697,11 +4866,7 @@ export function ChartSurface({
     maxWidth: overlayMaxWidth,
   } = overlayMetrics;
   const wheelProfile: WheelTypographyProfile =
-    primaryChart.options.theme === 2
-      ? "anglo"
-      : primaryChart.options.theme === 1
-        ? "compact"
-        : "classic";
+    wheelTypographyProfileForTheme(primaryChart.options.theme);
   const projectedOverlayStyle = projectWheelAuthoringStyle(
     wheelStyle,
     overlayMetrics.chartSize / 2,
@@ -4714,6 +4879,7 @@ export function ChartSurface({
         chart={chart}
         appControlsEnabled={appControlsEnabled}
         inheritAppTheme={inheritAppTheme}
+        wheelVerticalAlignment={wheelVerticalAlignment}
       />
       {!isMultiwheel && cornerChart.options.showInformation ? (
         <CornerLines
@@ -4745,7 +4911,7 @@ export function ChartSurface({
       ) : null}
       {!isMultiwheel && cornerChart.options.showInformation ? (
         <CornerLines
-          semanticClassId="chartOverlay.information.bottomLeft"
+          semanticClassId={informationCornerClass(cornerChart, "bottomLeft")}
           wheelStyle={projectedOverlayStyle}
           lines={
             cornerChart.meta.cornerLines?.bottomLeft ??
@@ -4800,6 +4966,7 @@ function RightPaneStack({
   const closeTimeLordPane = useWorkspaceStore((s) => s.closeTimeLordPane);
   const synodicCyclesPane = useWorkspaceStore((s) => s.synodicCyclesPane);
   const closeSynodicCyclesPane = useWorkspaceStore((s) => s.closeSynodicCyclesPane);
+  const chartEventsPane = useWorkspaceStore((s) => s.chartEventsPane);
   const aspectListPane = useWorkspaceStore((s) => s.aspectListPane);
   const closeAspectListPane = useWorkspaceStore((s) => s.closeAspectListPane);
   const timedChartListRowLinkDocumentIds = useWorkspaceStore(
@@ -5129,6 +5296,14 @@ function RightPaneStack({
     );
   }
 
+  if (chartEventsPane) {
+    return (
+      <RightInspectorPaneFrame kind="chart-events">
+        <ChartEventsPanel key={chartEventsPane.documentId} documentId={chartEventsPane.documentId} />
+      </RightInspectorPaneFrame>
+    );
+  }
+
   if (aspectListPane) {
     const retainedContextDocumentId =
       lastAspectListContext?.paneIdentity === aspectListPaneIdentity
@@ -5151,21 +5326,28 @@ function RightPaneStack({
       aspectListLiveFocusDatetime,
       retainedAspectListLiveFocus ?? aspectListPane.focusDatetime,
     );
+    const viewContext = aspectListViewContext(chart, contextDocumentId);
+    const queryDocumentId = viewContext?.queryDocumentId ?? contextDocumentId;
+    const queryDocument = daemonDocuments.find((document) => document.documentId === queryDocumentId);
+    const comparisonDocument = daemonDocuments.find(
+      (document) => document.documentId === viewContext?.comparisonDocumentId,
+    );
     return (
       <RightInspectorPaneFrame kind="aspect-list">
         <AspectListPanel
           key={`${aspectListPane.documentId}:${aspectListPane.openSeq ?? 0}`}
-          documentId={contextDocumentId}
-          parentDocumentId={contextDocument?.parentDocumentId ?? null}
+          documentId={queryDocumentId}
+          parentDocumentId={queryDocument ? queryDocument.parentDocumentId ?? null : contextDocument?.parentDocumentId ?? null}
           preferencesDocumentId={aspectListPane.documentId}
           sourceName={contextDocument?.sourceName ?? aspectListPane.sourceName}
           focusDatetime={aspectListFocusDatetime ?? undefined}
-          contextRevision={aspectListContextRevision(chart, contextDocumentId)}
-          comparisonVisible={
-            chart?.document?.documentId === contextDocumentId
-              ? chart.comparisonChart != null
-              : undefined
-          }
+          contextRevision={viewContext?.revision}
+          comparisonVisible={viewContext?.comparisonVisible}
+          comparisonDocumentId={viewContext?.comparisonDocumentId}
+          comparisonFocusDatetime={comparisonDocument?.displayDatetime}
+          splitSelection={viewContext?.selection}
+          relatedDocumentIds={viewContext?.relatedDocumentIds}
+          sourceCursorIdentity={viewContext?.cursorIdentity}
           onClose={closeAspectListPane}
         />
       </RightInspectorPaneFrame>
@@ -5305,14 +5487,12 @@ function RightPaneStack({
 
   if (!inspectorOpen && !notesOpen) return null;
 
-  // Notes are anchored to the radix — derived docs (transits, SR, …) share the
-  // radix's notes file. For a biwheel the radix is the inner/primary chart, so
-  // its name resolves the notes file directly from the daemon chart payload
-  // (no dependency on the workspace tree).
-  const notesSourceName = chart?.primaryChart.meta.name ?? null;
+  // The daemon resolves saved-event note ownership, including event children.
+  const eventNote = daemonDocuments.find((doc) => doc.documentId === activeDoc?.id)?.eventNoteContext;
+  const notesSourceName = eventNote?.sourceName ?? chart?.primaryChart.meta.name ?? null;
   const showNotes = notesOpen && notesSourceName !== null;
-  const notesDocumentId = activeDoc?.parentDocumentId ?? activeDoc?.id;
-  const notesScratch = Boolean(activeDoc && activeDoc.parentDocumentId === null && !activeDoc.fpath);
+  const notesDocumentId = eventNote?.documentId ?? activeDoc?.parentDocumentId ?? activeDoc?.id;
+  const notesScratch = !eventNote && Boolean(activeDoc && activeDoc.parentDocumentId === null && !activeDoc.fpath);
 
   if (inspectorOpen && showNotes) {
     return (
@@ -5327,6 +5507,8 @@ function RightPaneStack({
             chart={chart}
             documentId={notesDocumentId}
             scratch={notesScratch}
+            eventId={eventNote?.eventId}
+          recordId={eventNote?.recordId}
           />
         </ResizablePanel>
       </ResizablePanelGroup>
@@ -5342,6 +5524,8 @@ function RightPaneStack({
           chart={chart}
           documentId={notesDocumentId}
           scratch={notesScratch}
+          eventId={eventNote?.eventId}
+          recordId={eventNote?.recordId}
         />
       ) : null}
     </div>

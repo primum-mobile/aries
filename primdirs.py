@@ -2583,7 +2583,6 @@ class PrimDirs:
 
 
 	def calcTrueSolarArc(self, arc):
-		LIM = 120.0 #arbitrary value
 		y = self.chart.time.year
 		m = self.chart.time.month
 		d = self.chart.time.day
@@ -2597,9 +2596,6 @@ class PrimDirs:
 			prSunPos = self.chart.planets.planets[astrology.SE_SUN].data[planets.Planet.LONG]
 
 		prSunPosEnd = prSunPos+arc
-		transition = False #Pisces-Aries
-		if prSunPosEnd >= 360.0:
-			transition = True
 
 #		Find day in ephemeris
 		while (prSunPos <= prSunPosEnd):
@@ -2611,8 +2607,9 @@ class PrimDirs:
 			if self.options.pdkeyd == PrimDirs.TRUESOLARECLIPTICALARC:
 				pos = sun.data[planets.Planet.LONG]
 
-			if transition and pos < LIM:
-				pos += 360.0
+			# Keep consecutive daily positions on the same continuous turn.
+			# A fixed 120-degree wrap window can never reach targets >= 480.
+			pos += 360.0 * round((prSunPos - pos) / 360.0)
 			prSunPos = pos
 
 			if self.abort.abort:
@@ -2621,8 +2618,7 @@ class PrimDirs:
 		if (prSunPos != prSunPosEnd):
 			y, m, d = util.decrDay(y, m, d)
 
-			if transition:
-				prSunPosEnd -= 360.0
+			prSunPosEnd = util.normalize(prSunPosEnd)
 
 			trlon = 0.0
 			if self.options.pdkeyd == PrimDirs.TRUESOLARECLIPTICALARC:
@@ -2656,7 +2652,6 @@ class PrimDirs:
 
 
 	def calcTrueSolarArcRegressive(self, arc):
-		LIM = 120.0 #arbitrary value
 		y = self.chart.time.year
 		m = self.chart.time.month
 		d = self.chart.time.day
@@ -2670,11 +2665,6 @@ class PrimDirs:
 			prSunPos = self.chart.planets.planets[astrology.SE_SUN].data[planets.Planet.LONG]
 
 		prSunPosEnd = prSunPos-arc
-		transition = False #Pisces-Aries
-		if prSunPosEnd < 0.0:
-			prSunPos += 360.0
-			prSunPosEnd += 360.0
-			transition = True
 
 #		Find day in ephemeris
 		while (prSunPos >= prSunPosEnd):
@@ -2685,16 +2675,15 @@ class PrimDirs:
 			pos = sun.dataEqu[planets.Planet.RAEQU]
 			if self.options.pdkeyd == PrimDirs.TRUESOLARECLIPTICALARC:
 				pos = sun.data[planets.Planet.LONG]
-			if transition and pos < LIM:
-				pos += 360.0
+			# Unwrap backwards continuously, including starts beyond 120 degrees.
+			pos += 360.0 * round((prSunPos - pos) / 360.0)
 			prSunPos = pos
 
 			if self.abort.abort:
 				return 0.0
 
 		if (prSunPos != prSunPosEnd):
-			if transition:
-				prSunPosEnd -= 360.0
+			prSunPosEnd = util.normalize(prSunPosEnd)
 
 			trlon = 0.0
 			if self.options.pdkeyd == PrimDirs.TRUESOLARECLIPTICALARC:

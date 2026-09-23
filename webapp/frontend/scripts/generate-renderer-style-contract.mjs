@@ -309,7 +309,9 @@ function moduleDataUrl(path, seen = new Map()) {
   const resolved = resolve(path);
   const cached = seen.get(resolved);
   if (cached) return cached;
-  let javascript = ts.transpileModule(readNormalizedText(resolved), {
+  let javascript = resolved.endsWith(".json")
+    ? `export default ${JSON.stringify(JSON.parse(readNormalizedText(resolved)))};`
+    : ts.transpileModule(readNormalizedText(resolved), {
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   // Placeholder first, so a cycle resolves to this entry instead of recursing.

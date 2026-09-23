@@ -2000,6 +2000,9 @@ try {
     "chart.canvas.geometry": summarizeMetric(
       numericEventDetails(paints, "chart-canvas-paint", "geometryMs"),
     ),
+    "chart.canvas.fill": summarizeMetric(
+      numericEventDetails(paints, "chart-canvas-paint", "fillMs"),
+    ),
     "chart.canvas.dynamic": summarizeMetric(
       numericEventDetails(paints, "chart-canvas-paint", "dynamicMs"),
     ),

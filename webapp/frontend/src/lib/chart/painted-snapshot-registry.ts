@@ -20,7 +20,10 @@ export function wasDocumentSnapshotPainted(
   docId: string,
   snapshot: ChartRenderSnapshot | null,
 ): boolean {
-  return snapshot !== null && paintedDocumentSnapshots.get(snapshot) === docId;
+  return snapshot !== null && paintedDocumentSnapshots.get(snapshot) === docId &&
+    Object.entries(snapshot.sideBySideSnapshots ?? {}).every(([peerId, peer]) =>
+      wasDocumentSnapshotPainted(peerId, peer),
+    );
 }
 
 export function canReusePaintedDocumentCanvas(

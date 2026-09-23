@@ -40,6 +40,16 @@ _HOUSE_ROMAN = {
 }
 
 
+def _session_chart_pair(session: dict):
+    """Resolve AT chart A/B without confusing a synastry center with its partner."""
+    cs = session.get("chart_session")
+    live = getattr(cs, "chart", None)
+    radix = getattr(cs, "radix", None) or session.get("chart") or live
+    if session.get("compound_kind") == "synastry":
+        return live or radix, session.get("comparison_chart")
+    return radix, live
+
+
 def _source_path(source: Optional[str]) -> str:
     return str(Path(source).expanduser()) if source else str(export_chart_json.DEFAULT_SOURCE)
 
@@ -676,11 +686,7 @@ class AscensionalTransitService:
         if not session:
             raise SystemExit(f"Document {document_id!r} not found")
         cs = session.get("chart_session")
-        radix = getattr(cs, "radix", None) if cs is not None else None
-        if radix is None:
-            radix = session.get("chart")
-        if radix is None and cs is not None:
-            radix = getattr(cs, "chart", None)
+        radix, chart_b = _session_chart_pair(session)
         if radix is None:
             raise SystemExit(f"Document {document_id!r} has no chart")
 
@@ -691,11 +697,11 @@ class AscensionalTransitService:
             session.get("launcher_kind") == "ascensional_transits"
             or session.get("chart_visual_mode") == "ascensional_transits"
         ):
-            if cs is not None and getattr(cs, "chart", None) is not None:
-                event_jd = getattr(getattr(cs.chart, "time", None), "jd", None)
+            if chart_b is not None:
+                event_jd = getattr(getattr(chart_b, "time", None), "jd", None)
             if event_jd is None:
                 event_jd = session.get("ascensional_event_jd")
-        live_chart_b_place = getattr(getattr(cs, "chart", None), "place", None) if cs is not None else None
+        live_chart_b_place = getattr(chart_b, "place", None)
         chart_b_place = live_chart_b_place or session.get("ascensional_chart_b_place")
         chart_b_place_source = None
         chart_b_payload = session.get("ascensional_chart_b_place_payload")

@@ -19,6 +19,7 @@ type ActiveRightPaneInput = {
   eclipsesPane: unknown | null;
   lunarMansionsPane: unknown | null;
   synodicCyclesPane: unknown | null;
+  chartEventsPane?: unknown | null;
   aspectListPane: unknown | null;
   ascensionalTransitsPane: unknown | null;
   calendarPane: unknown | null;
@@ -46,6 +47,7 @@ export function activeRightPaneModule(input: ActiveRightPaneInput): RightPaneMod
   if (input.eclipsesPane) return "eclipses";
   if (input.lunarMansionsPane) return "lunar-mansions";
   if (input.synodicCyclesPane) return "synodic-cycles";
+  if (input.chartEventsPane) return "chart-events";
   if (input.aspectListPane) return "aspect-list";
   if (input.ascensionalTransitsPane) return "ascensional-transits";
   if (input.calendarPane) return "calendar";

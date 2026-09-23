@@ -1681,7 +1681,10 @@ function speculumBodyGlyphCell(cell: GenericTableCell): GenericTableCell | undef
 }
 
 function inspectorSpeculumRows(payload: GenericTablePayload): InspectorSpeculumRow[] {
-  return (payload.sections ?? [])
+  const textOptions = {
+    preserveAngleSeconds: payload.capabilities?.anglePrecision === "seconds",
+  };
+  return (payload.speculumInspector?.sections ?? payload.sections ?? [])
     .filter((section) => section.id === "ascmc" || section.id === "planets")
     .flatMap((section) => {
       const bodyIndex = section.columns.findIndex((column) => column.id === "body");
@@ -1698,23 +1701,23 @@ function inspectorSpeculumRows(payload: GenericTablePayload): InspectorSpeculumR
         const declinationCell = declinationIndex >= 0 ? row.cells[declinationIndex] : undefined;
         const speedCell = speedIndex >= 0 ? row.cells[speedIndex] : undefined;
         const houseCell = houseIndex >= 0 ? row.cells[houseIndex] : undefined;
-        const label = tableCellText(bodyCell).trim();
+        const label = tableCellText(bodyCell, textOptions).trim();
         if (!bodyCell || !longitudeCell || !label) return [];
         return [{
           id: `${section.id}:${row.id}`,
           label,
           bodyGlyphCell: speculumBodyGlyphCell(bodyCell),
           longitudeCell,
-          longitudeText: tableCellText(longitudeCell),
+          longitudeText: tableCellText(longitudeCell, textOptions),
           latitudeCell,
-          latitudeText: tableCellText(latitudeCell),
+          latitudeText: tableCellText(latitudeCell, textOptions),
           declinationCell,
-          declinationText: tableCellText(declinationCell),
+          declinationText: tableCellText(declinationCell, textOptions),
           declinationOutOfBounds: row.meta?.declinationOutOfBounds === true,
           speedCell,
-          speedText: tableCellText(speedCell),
+          speedText: tableCellText(speedCell, textOptions),
           houseCell,
-          houseText: tableCellText(houseCell),
+          houseText: tableCellText(houseCell, textOptions),
         }];
       });
     });
@@ -1779,14 +1782,15 @@ function InspectorSpeculum({
   const payload = payloadState?.documentId === documentId
     ? payloadState.payload
     : getCachedGenericTablePayload("positions", documentId);
+  const preserveAngleSeconds = payload?.capabilities?.anglePrecision === "seconds";
   const rows = React.useMemo(
     () => payload ? inspectorSpeculumRows(payload) : [],
     [payload],
   );
   if (!visible || !rows.length) return null;
-  const columns = payload?.sections?.find(
+  const columns = (payload?.speculumInspector?.sections ?? payload?.sections)?.find(
     (section) => section.id === "ascmc" || section.id === "planets",
-  )?.columns ?? payload?.columns ?? [];
+  )?.columns ?? payload?.speculumInspector?.columns ?? payload?.columns ?? [];
   const columnLabel = (id: string) => {
     const column = columns.find((candidate) => candidate.id === id);
     return column?.exportLabel ?? column?.label ?? "";
@@ -1795,7 +1799,7 @@ function InspectorSpeculum({
   return (
     <div className={INSPECTOR_SECTION_BOX}>
       <table
-        aria-label={t("table.positions")}
+        aria-label={t("sidebar.action.table:positions")}
         className={cn(
           "w-full table-auto border-collapse leading-snug",
           TEXT_BASE,
@@ -1830,7 +1834,7 @@ function InspectorSpeculum({
               >
                 <span className="inline-flex items-baseline gap-[var(--aries-control-gap-compact)]">
                   <span className="inline-flex w-[1.25em] shrink-0 justify-center leading-none" aria-hidden>
-                    <CellView cell={row.bodyGlyphCell} />
+                    <CellView cell={row.bodyGlyphCell} preserveAngleSeconds={preserveAngleSeconds} />
                   </span>
                   <span className={INSPECTOR_VALUE_COLOR}>{row.label}</span>
                 </span>
@@ -1839,13 +1843,13 @@ function InspectorSpeculum({
                 aria-label={row.longitudeText}
                 className={cn("pr-[var(--aries-control-gap-compact)] whitespace-nowrap text-right tabular-nums last:pr-0", INSPECTOR_VALUE_COLOR)}
               >
-                <span aria-hidden><CellView cell={row.longitudeCell} /></span>
+                <span aria-hidden><CellView cell={row.longitudeCell} preserveAngleSeconds={preserveAngleSeconds} /></span>
               </td>
               <td
                 aria-label={row.latitudeText || undefined}
                 className={cn("pr-[var(--aries-control-gap-compact)] whitespace-nowrap text-right tabular-nums last:pr-0", INSPECTOR_VALUE_COLOR)}
               >
-                <span aria-hidden><CellView cell={row.latitudeCell} /></span>
+                <span aria-hidden><CellView cell={row.latitudeCell} preserveAngleSeconds={preserveAngleSeconds} /></span>
               </td>
               <td
                 aria-label={row.declinationText || undefined}
@@ -1854,19 +1858,19 @@ function InspectorSpeculum({
                   row.declinationOutOfBounds ? "text-destructive" : INSPECTOR_VALUE_COLOR,
                 )}
               >
-                <span aria-hidden><CellView cell={row.declinationCell} /></span>
+                <span aria-hidden><CellView cell={row.declinationCell} preserveAngleSeconds={preserveAngleSeconds} /></span>
               </td>
               <td
                 aria-label={row.speedText || undefined}
                 className={cn("pr-[var(--aries-control-gap-compact)] whitespace-nowrap text-right tabular-nums last:pr-0", INSPECTOR_VALUE_COLOR)}
               >
-                <span aria-hidden><CellView cell={row.speedCell} /></span>
+                <span aria-hidden><CellView cell={row.speedCell} preserveAngleSeconds={preserveAngleSeconds} /></span>
               </td>
               <td
                 aria-label={row.houseText || undefined}
                 className={cn("whitespace-nowrap text-right tabular-nums", INSPECTOR_VALUE_COLOR)}
               >
-                <span aria-hidden><CellView cell={row.houseCell} /></span>
+                <span aria-hidden><CellView cell={row.houseCell} preserveAngleSeconds={preserveAngleSeconds} /></span>
               </td>
             </tr>
           ))}

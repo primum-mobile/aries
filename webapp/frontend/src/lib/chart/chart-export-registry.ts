@@ -5,11 +5,16 @@ import type {
   PdfChartColorMode,
   PdfChartRasterPreset,
   PngChartAppearance,
+  PngWatermarkStyle,
 } from "@/lib/daemon/client";
 import { applyPdfRasterPreset } from "./pdf-raster-presets";
+import { drawPngWatermark, pngWatermarkHeaderHeight, preparePngWatermark } from "./chart-export-watermark";
+import { readPalette } from "./palette";
 
 export type ChartExportRenderRequest = {
   kind: "pdf" | "png";
+  watermarkLabel: string;
+  watermarkStyle: PngWatermarkStyle;
   output?: "base64" | "bytes";
   colorMode: PdfChartColorMode | PngChartAppearance;
   rasterPreset: PdfChartRasterPreset;
@@ -122,17 +127,20 @@ export async function renderCanvasChartExport(
 ): Promise<ChartExportRenderResult> {
   const canvas = document.createElement("canvas");
   const squarePng = request.kind === "png";
+  if (squarePng) await preparePngWatermark(request.watermarkStyle);
   canvas.width = squarePng ? PNG_EXPORT_PIXEL_SIZE : Math.max(1, source.width);
   canvas.height = squarePng ? PNG_EXPORT_PIXEL_SIZE : Math.max(1, source.height);
   const context = canvas.getContext("2d");
   if (!context) throw new Error("visible chart canvas export context unavailable");
   context.fillStyle = request.colorMode === "screen" ? cssBackgroundColor(source) : "#ffffff";
   context.fillRect(0, 0, canvas.width, canvas.height);
-  const scale = Math.min(canvas.width / source.width, canvas.height / source.height);
+  const headerHeight = squarePng ? pngWatermarkHeaderHeight(canvas.width, request.watermarkStyle) : 0;
+  const contentHeight = canvas.height - headerHeight;
+  const scale = Math.min(canvas.width / source.width, contentHeight / source.height);
   const drawWidth = source.width * scale;
   const drawHeight = source.height * scale;
   const drawX = (canvas.width - drawWidth) / 2;
-  const drawY = (canvas.height - drawHeight) / 2;
+  const drawY = headerHeight + (contentHeight - drawHeight) / 2;
   context.drawImage(source, drawX, drawY, drawWidth, drawHeight);
   if (request.kind === "pdf") {
     const image = context.getImageData(0, 0, canvas.width, canvas.height);
@@ -153,6 +161,13 @@ export async function renderCanvasChartExport(
       request.colorMode === "colored-details",
     );
     context.putImageData(image, 0, 0);
+  }
+  if (squarePng) {
+    drawPngWatermark(context, canvas.width, request.watermarkLabel, {
+      monochrome: request.colorMode === "monochrome",
+      style: request.watermarkStyle,
+      color: request.colorMode === "screen" ? readPalette(source).textBright : "#000000",
+    });
   }
   return {
     ...await canvasPngPayload(canvas, request.output),

@@ -1,0 +1,360 @@
+{
+  "zodiac": {
+    "coordinateDomain": "zodiac",
+    "requiredData": [
+      "options.signColors",
+      "options.signVariant"
+    ],
+    "paintClasses": [
+      "zodiac.signGlyph",
+      "zodiac.spoke"
+    ],
+    "hitRegions": [
+      "sign"
+    ],
+    "minWidth": 20,
+    "preferredWidth": 52,
+    "multiplicity": 1,
+    "projections": [
+      "zodiac"
+    ],
+    "containment": "outside-points",
+    "chartRole": "primary",
+    "labelKey": "wheelComposition.zodiac",
+    "layouts": [
+      "classic",
+      "compact",
+      "anglo",
+      "houses",
+      "cusps"
+    ]
+  },
+  "degree": {
+    "coordinateDomain": "zodiac",
+    "requiredData": [],
+    "paintClasses": [
+      "zodiac.tick.inner.1deg",
+      "zodiac.tick.inner.5deg",
+      "zodiac.tick.inner.10deg"
+    ],
+    "hitRegions": [
+      "ruler"
+    ],
+    "minWidth": 4,
+    "preferredWidth": 10,
+    "multiplicity": 1,
+    "projections": [
+      "zodiac"
+    ],
+    "containment": "outside-points",
+    "chartRole": "primary",
+    "labelKey": "wheelComposition.degree",
+    "layouts": [
+      "classic",
+      "compact",
+      "anglo",
+      "houses",
+      "cusps"
+    ]
+  },
+  "terms": {
+    "coordinateDomain": "zodiac",
+    "requiredData": [
+      "options.terms"
+    ],
+    "paintClasses": [
+      "subdivisions.term.glyph",
+      "subdivisions.term.boundary"
+    ],
+    "hitRegions": [
+      "term"
+    ],
+    "minWidth": 14,
+    "preferredWidth": 24,
+    "multiplicity": 1,
+    "projections": [
+      "zodiac"
+    ],
+    "containment": "outside-points",
+    "chartRole": "primary",
+    "labelKey": "wheelComposition.terms",
+    "layouts": [
+      "classic",
+      "compact",
+      "anglo",
+      "houses",
+      "cusps"
+    ]
+  },
+  "decans": {
+    "coordinateDomain": "zodiac",
+    "requiredData": [
+      "options.decans"
+    ],
+    "paintClasses": [
+      "subdivisions.decan.glyph",
+      "subdivisions.decan.boundary"
+    ],
+    "hitRegions": [
+      "decan"
+    ],
+    "minWidth": 14,
+    "preferredWidth": 24,
+    "multiplicity": 1,
+    "projections": [
+      "zodiac"
+    ],
+    "containment": "outside-points",
+    "chartRole": "primary",
+    "labelKey": "wheelComposition.decans",
+    "layouts": [
+      "classic",
+      "compact",
+      "anglo",
+      "houses",
+      "cusps"
+    ]
+  },
+  "cuspRuler": {
+    "coordinateDomain": "zodiac",
+    "requiredData": [
+      "houses.cusps"
+    ],
+    "paintClasses": [
+      "zodiac.tick.angloCuspRuler.10deg",
+      "zodiac.tick.angloCuspRuler.5deg",
+      "zodiac.tick.angloCuspRuler.1deg",
+      "zodiac.tick.angloHouseCusp"
+    ],
+    "hitRegions": [
+      "cusp"
+    ],
+    "minWidth": 4,
+    "preferredWidth": 12,
+    "multiplicity": 1,
+    "projections": [
+      "zodiac"
+    ],
+    "containment": "outside-points",
+    "chartRole": "primary",
+    "labelKey": "wheelComposition.cuspRuler",
+    "layouts": [
+      "anglo",
+      "houses",
+      "cusps"
+    ]
+  },
+  "cuspLabels": {
+    "coordinateDomain": "house",
+    "requiredData": [
+      "houses.cusps"
+    ],
+    "paintClasses": [
+      "houses.inner.position.degree",
+      "houses.inner.position.sign",
+      "houses.inner.position.minute"
+    ],
+    "hitRegions": [
+      "cusp"
+    ],
+    "minWidth": 20,
+    "preferredWidth": 40,
+    "multiplicity": 1,
+    "projections": [
+      "zodiac",
+      "houses"
+    ],
+    "containment": "outside-points",
+    "chartRole": "primary",
+    "labelKey": "wheelComposition.cuspLabels",
+    "layouts": [
+      "anglo",
+      "houses",
+      "cusps"
+    ]
+  },
+  "bodies": {
+    "coordinateDomain": "chart-role",
+    "requiredData": [
+      "planets"
+    ],
+    "paintClasses": [
+      "bodies.inner.glyph",
+      "bodies.inner.motion",
+      "bodies.inner.position.degree",
+      "bodies.inner.position.sign",
+      "bodies.inner.position.minute"
+    ],
+    "hitRegions": [
+      "body"
+    ],
+    "minWidth": 32,
+    "preferredWidth": 120,
+    "multiplicity": 1,
+    "projections": [
+      "zodiac",
+      "houses"
+    ],
+    "containment": "points-boundary",
+    "chartRole": "primary",
+    "labelKey": "wheelComposition.bodies",
+    "layouts": [
+      "classic",
+      "compact",
+      "anglo",
+      "houses",
+      "cusps"
+    ]
+  },
+  "houses": {
+    "coordinateDomain": "house",
+    "requiredData": [
+      "houses.cusps"
+    ],
+    "paintClasses": [
+      "houses.inner.cusp",
+      "houses.inner.label"
+    ],
+    "hitRegions": [
+      "house"
+    ],
+    "minWidth": 14,
+    "preferredWidth": 36,
+    "multiplicity": 1,
+    "projections": [
+      "zodiac",
+      "houses"
+    ],
+    "containment": "inside-points",
+    "chartRole": "primary",
+    "labelKey": "wheelComposition.houses",
+    "layouts": [
+      "classic",
+      "compact",
+      "anglo",
+      "houses",
+      "cusps"
+    ]
+  },
+  "aspects": {
+    "coordinateDomain": "chart-role",
+    "requiredData": [
+      "aspects"
+    ],
+    "paintClasses": [
+      "aspects.primary.line",
+      "aspects.primary.glyph"
+    ],
+    "hitRegions": [
+      "aspect"
+    ],
+    "minWidth": 0,
+    "preferredWidth": 36,
+    "multiplicity": 1,
+    "projections": [
+      "zodiac",
+      "houses"
+    ],
+    "containment": "inside-points",
+    "chartRole": "primary",
+    "labelKey": "wheelComposition.aspects",
+    "layouts": [
+      "classic",
+      "compact",
+      "anglo",
+      "houses",
+      "cusps"
+    ]
+  },
+  "outerBodies": {
+    "coordinateDomain": "chart-role",
+    "requiredData": [
+      "comparisonChart.planets"
+    ],
+    "paintClasses": [
+      "bodies.outer.glyph",
+      "bodies.outer.motion",
+      "bodies.outer.position"
+    ],
+    "hitRegions": [
+      "body"
+    ],
+    "minWidth": 28,
+    "preferredWidth": 60,
+    "multiplicity": 1,
+    "projections": [
+      "zodiac",
+      "houses"
+    ],
+    "containment": "comparison-outside-primary",
+    "chartRole": "outer",
+    "labelKey": "wheelComposition.outerBodies",
+    "layouts": [
+      "classic",
+      "compact",
+      "anglo",
+      "houses",
+      "cusps"
+    ]
+  },
+  "outerHouses": {
+    "coordinateDomain": "house",
+    "requiredData": [
+      "comparisonChart.houses.cusps"
+    ],
+    "paintClasses": [
+      "houses.outer.cusp",
+      "houses.outer.label"
+    ],
+    "hitRegions": [
+      "house"
+    ],
+    "minWidth": 14,
+    "preferredWidth": 28,
+    "multiplicity": 1,
+    "projections": [
+      "zodiac",
+      "houses"
+    ],
+    "containment": "comparison-outside-primary",
+    "chartRole": "outer",
+    "labelKey": "wheelComposition.outerHouses",
+    "layouts": [
+      "classic",
+      "compact",
+      "anglo",
+      "houses",
+      "cusps"
+    ]
+  },
+  "hub": {
+    "coordinateDomain": "screen/core",
+    "requiredData": [
+      "aspects"
+    ],
+    "paintClasses": [
+      "aspects.primary.line",
+      "aspects.interchart.line"
+    ],
+    "hitRegions": [
+      "aspect"
+    ],
+    "minWidth": 32,
+    "preferredWidth": 140,
+    "multiplicity": 1,
+    "projections": [
+      "zodiac",
+      "houses"
+    ],
+    "containment": "innermost",
+    "chartRole": "primary",
+    "labelKey": "wheelComposition.hub",
+    "layouts": [
+      "classic",
+      "compact",
+      "anglo",
+      "houses",
+      "cusps"
+    ]
+  }
+}

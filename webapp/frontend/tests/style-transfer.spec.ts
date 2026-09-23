@@ -100,7 +100,7 @@ test("authoring ids preserve dotted semantic class names", () => {
   });
 });
 
-test("text font, tracking, and class color remain transferable profile-v2 slots", () => {
+test("text font, weight, style, tracking, and class color remain transferable profile-v2 slots", () => {
   const fontRef = {
     role: "symbols" as const,
     source: "bundled" as const,
@@ -127,6 +127,16 @@ test("text font, tracking, and class color remain transferable profile-v2 slots"
         value: 1.25,
       },
       {
+        semanticId: "authoring.wheel.classic.bodies.inner.glyph.fontWeight",
+        property: "font-weight",
+        value: 700,
+      },
+      {
+        semanticId: "authoring.wheel.classic.bodies.inner.glyph.fontStyle",
+        property: "font-style",
+        value: "italic",
+      },
+      {
         semanticId: "authoring.wheel.classic.bodies.inner.glyph.color",
         property: "color",
         value: [10, 20, 30, 0.8],
@@ -137,6 +147,8 @@ test("text font, tracking, and class color remain transferable profile-v2 slots"
   expect(clipboard.entries).toEqual([
     { slot: "authoring:fontRef", value: fontRef },
     { slot: "authoring:tracking", value: 1.25 },
+    { slot: "authoring:fontWeight", value: 700 },
+    { slot: "authoring:fontStyle", value: "italic" },
     { slot: "authoring:color", value: [10, 20, 30, 0.8] },
   ]);
   expect(parseWheelAuthoringOverrideId(
@@ -145,5 +157,12 @@ test("text font, tracking, and class color remain transferable profile-v2 slots"
     scope: "anglo",
     classId: "chartOverlay.events.header.glyph",
     property: "fontRef",
+  });
+  expect(parseWheelAuthoringOverrideId(
+    "authoring.wheel.houses.houses.inner.label.fontStyle",
+  )).toEqual({
+    scope: "houses",
+    classId: "houses.inner.label",
+    property: "fontStyle",
   });
 });

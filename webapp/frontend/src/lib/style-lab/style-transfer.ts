@@ -35,10 +35,14 @@ const WHEEL_SCOPES = new Set<WheelAuthoringEditScope>([
   "classic",
   "compact",
   "anglo",
+  "houses",
+  "cusps",
 ]);
 
 const WHEEL_PROPERTIES = new Set<WheelAuthoringFlatProperty>([
   "fontRef",
+  "fontWeight",
+  "fontStyle",
   "fontSize",
   "tracking",
   "color",

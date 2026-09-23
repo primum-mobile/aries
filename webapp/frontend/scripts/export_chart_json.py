@@ -18,6 +18,8 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from webapp.daemon.wheel_composition import effective_composition
+
 import astrology
 import build_info
 import chart as chart_mod
@@ -515,14 +517,34 @@ def format_runtime_title_parts(chrt, opts):
     return runtime_txt, f"{mtexts.txts.get('Age', 'Age')}: {age_years:.2f}y", view_label
 
 
-def composite_corner_lines(chrt):
-    """Wx twin for midpoint composite corner labels.
+def relationship_corner_lines(participants):
+    """Format two complete source identities without constructing/exporting charts."""
+    if len(participants) != 2:
+        return None
 
-    graphchart.py:3575-3595 draws participant names in the top-left for
-    midpoint composites; graphchart.py:3653-3663 draws the composite marker in
-    the bottom-left. Davison charts are real RADIX charts and intentionally do
-    not use this branch.
-    """
+    def lines(chrt):
+        date_text, time_text = format_chart_datetime(chrt)
+        lon_text, lat_text = format_coord_pair(chrt.place)
+        return [
+            str(chrt.name or "").strip(),
+            date_text,
+            time_text,
+            str(chrt.place.place or ""),
+            f"{lon_text}, {lat_text}",
+        ]
+
+    return {
+        "topLeft": lines(participants[0]),
+        "bottomLeft": lines(participants[1]),
+        "pairedParticipants": True,
+    }
+
+
+def composite_corner_lines(chrt):
+    """Source identities for paired composites; retain multi-party labels."""
+    pair = getattr(chrt, "_composite_source_pair", None)
+    if isinstance(pair, (list, tuple)) and len(pair) == 2:
+        return relationship_corner_lines(pair)
     if getattr(chrt, "notes", "") != "Composite chart":
         return None
     pair = getattr(chrt, "_composite_source_pair", None)
@@ -719,7 +741,7 @@ def export_syzygy(chrt):
         "id": "syzygy",
         "longitude": lon,
         "house": house_num,
-        "label": str(mtexts.txts.get("PrenatalSyzygy", "Prenatal Syzygy")),
+        "label": str(mtexts.txts.get("PrenatalSyzygy", "Syzygy")),
         "glyph": "Sy",
         "glyphFont": "text",
         "color": css_rgb(chrt.options.clrsigns),
@@ -1049,11 +1071,28 @@ def _angle_longitudes(chrt):
     )
 
 
+def _cusp_longitudes(chrt):
+    cusps = getattr(getattr(chrt, "houses", None), "cusps", ())
+    return tuple(
+        (f"cusp{i}", float(cusps[i]))
+        for i in range(1, min(13, len(cusps)))
+        if math.isfinite(float(cusps[i]))
+    )
+
+
 def _opposite_angle_decl(chrt, angle_idx):
     try:
         return -float(chrt.houses.ascmc2[angle_idx][houses.Houses.DECL])
     except Exception:
         return None
+
+
+def _angle_orbs(chrt, planet_id):
+    idx = chrt.get_planet_orb_index(planet_id)
+    return [
+        chrt.options.orbisAscMC[a] + chrt.options.orbis[idx][a]
+        for a in range(chart_mod.Chart.ASPECT_NUM)
+    ]
 
 
 def _angle_aspect(chrt, planet_id, angle_key, angle_lon):
@@ -1065,10 +1104,7 @@ def _angle_aspect(chrt, planet_id, angle_key, angle_lon):
     if body is None or not hasattr(chrt, "_build_dynamic_aspect"):
         return None
     idx = chrt.get_planet_orb_index(planet_id)
-    orb_by_aspect = [
-        chrt.options.orbisAscMC[a] + chrt.options.orbis[idx][a]
-        for a in range(chart_mod.Chart.ASPECT_NUM)
-    ]
+    orb_by_aspect = _angle_orbs(chrt, planet_id)
     parallel_orbs = [
         chrt.options.orbisparAscMC[0] + chrt.options.orbisplanetspar[idx][0],
         chrt.options.orbisparAscMC[1] + chrt.options.orbisplanetspar[idx][1],
@@ -1112,7 +1148,8 @@ def export_body_aspects(chrt, click_point_items=None):
     hid (desktop semantics: graphchart.py:974-1018, :2300-2317).
 
     Keyed exactly like `export_aspects` endpoints — planet ids plus the four
-    chart angles (`asc`/`mc`/`dc`/`ic`), `fortune`/`vertex`/`syzygy`/`eclipse`, and active
+    chart angles (`asc`/`mc`/`dc`/`ic`), `cusp1`–`cusp12`,
+    `fortune`/`vertex`/`syzygy`/`eclipse`, and active
     secondary-ring click points. Every non-NONE
     entry from the chart's aspect matrix (`get_planetary_aspect` /
     `get_ascmc_aspect` / angle dynamic aspects / `get_lof_aspect`) is listed
@@ -1210,6 +1247,9 @@ def export_body_aspects(chrt, click_point_items=None):
     angle_entries = _angle_longitudes(chrt)
     for angle_key, _angle_lon in angle_entries:
         _ensure(angle_key)
+    cusp_entries = _cusp_longitudes(chrt)
+    for cusp_key, _cusp_lon in cusp_entries:
+        _ensure(cusp_key)
     for pid in planet_ids:
         k = _key(pid)
         if k is None:
@@ -1221,6 +1261,17 @@ def export_body_aspects(chrt, click_point_items=None):
         lon = float(body.data[0])
         for angle_key, angle_lon in angle_entries:
             _push(k, angle_key, _angle_aspect(chrt, pid, angle_key, angle_lon), lon, angle_lon)
+        # Cusps are click-only points, using the very same angle + body orb
+        # rows. Keep them out of planet selection and the normal aspect figure.
+        if cusp_entries:
+            cusp_orbs = _angle_orbs(chrt, pid)
+            for cusp_key, cusp_lon in cusp_entries:
+                asp = chrt._build_dynamic_aspect(
+                    lon, cusp_lon, float(body.data[planets.Planet.SPLON]), 0.0,
+                    cusp_orbs,
+                    node_only_conjunction=pid in (astrology.SE_MEAN_NODE, astrology.SE_TRUE_NODE),
+                )
+                _push(k, cusp_key, asp, lon, cusp_lon, allow_a=False)
         if has_lof:
             lof_lon = float(chrt.fortune.fortune[fortune.Fortune.LON])
             _push(
@@ -1708,7 +1759,16 @@ def export_chart(
         "useZodiacElementColors": bool(
             getattr(chrt.options, "usezodiacelementcolors", False)
         ),
+        "useZodiacElementFieldColors": bool(
+            getattr(chrt.options, "usezodiacelementfieldcolors", False)
+        ),
+        "zodiacElementFieldOpacity": max(
+            0.0,
+            min(1.0, float(getattr(chrt.options, "zodiacelementfieldopacity", 0.2))),
+        ),
         "theme": int(getattr(chrt.options, "theme", 0)),
+        "wheelComposition": effective_composition(chrt.options),
+        "wheelGeometryPresets": getattr(chrt.options, "wheel_geometry_presets", {}),
         "angloDenseLabelLayout": anglo_dense_label_layout,
         "ascmcSize": int(getattr(chrt.options, "ascmcsize", 5)),
         "chartRingThickness": int(getattr(chrt.options, "chartringthickness", 3)),
@@ -1724,6 +1784,8 @@ def export_chart(
             getattr(render_options, "showouterhouselines", True)
         ),
         "showPositions": bool(getattr(chrt.options, "positions", False)),
+        "showOuterPositions": bool(getattr(chrt.options, "showouterpositions", False)),
+        "showOuterMinutes": bool(getattr(chrt.options, "showouterminutes", True)),
         "showInformation": bool(getattr(chrt.options, "information", True)),
         "showRadixNameInCanvas": bool(
             getattr(chrt.options, "showradixnameincanvas", False)
@@ -1976,13 +2038,13 @@ def ensure_arabic_parts(chrt):
     return getattr(getattr(chrt, "parts", None), "parts", None) or []
 
 
-def collect_hybrid_ring_items(chrt):
+def collect_hybrid_ring_items(chrt, *, filter_hits=True):
     # Hybrid Hits combines lots, fixed stars, and the always-present asteroid
     # set. A Tauri step chart deliberately skips Chart(full=True), so populate
     # only the two optional families this selected ring actually consumes.
     ensure_arabic_parts(chrt)
     ensure_fixstars(chrt)
-    return common.collect_hybrid_ring_items(chrt, chrt.options)
+    return common.collect_hybrid_ring_items(chrt, chrt.options, filter_hits=filter_hits)
 
 
 def _resolve_live_export_options(primary, explicit_options=None):
@@ -2008,6 +2070,7 @@ def export_ring_item(
     motion_ref=None,
 ):
     payload = {
+        **deg_min_payload(lon),
         "id": item_id,
         "family": family,
         "longitude": float(lon),
@@ -2111,14 +2174,14 @@ def shown_fixstar_indices(chrt):
     return showfss
 
 
-def export_fixstar_items(chrt, display_options=None):
+def export_fixstar_items(chrt, display_options=None, *, filter_hits=True):
     items = []
     fsdata = ensure_fixstars(chrt)
-    shown = shown_fixstar_indices(chrt)
+    shown = shown_fixstar_indices(chrt) if filter_hits else None
     configured_codes = list(getattr(chrt.options, "fixstars", {}).keys())
     naming_options = display_options or chrt.options
     for idx, star in enumerate(fsdata):
-        if idx not in shown:
+        if shown is not None and idx not in shown:
             continue
         name = astrology.display_fixstar_name(
             star[fixstars.FixStars.NOMNAME],
@@ -2146,14 +2209,15 @@ def export_fixstar_items(chrt, display_options=None):
         )
         # The wheel keeps the degree suffix, while compact semantic lists need
         # only the star's name.  Keep both representations in the payload.
+        item["positionInLabel"] = True
         item["listLabel"] = name
         items.append(item)
     return items
 
 
-def export_asteroid_items(chrt, role="primary"):
+def export_asteroid_items(chrt, role="primary", *, filter_hits=True):
     items = []
-    for item in common.collect_asteroid_ring_items(chrt, chrt.options):
+    for item in common.collect_asteroid_ring_items(chrt, chrt.options, filter_hits=filter_hits):
         try:
             body_id = int(item["bodyId"])
             lon = float(item["lon"])
@@ -2175,9 +2239,9 @@ def export_asteroid_items(chrt, role="primary"):
     return items
 
 
-def export_hybrid_items(chrt, role="primary"):
+def export_hybrid_items(chrt, role="primary", *, filter_hits=True):
     items = []
-    for index, item in enumerate(collect_hybrid_ring_items(chrt)):
+    for index, item in enumerate(collect_hybrid_ring_items(chrt, filter_hits=filter_hits)):
         family = str(item.get("family") or "hybrid_hit")
         label = str(item.get("name") or family)
         try:
@@ -2239,10 +2303,10 @@ def export_row_ring_items(rows, family, role="primary"):
     return items
 
 
-def export_midpoint_ring_items(chrt):
+def export_midpoint_ring_items(chrt, *, filter_hits=True):
     items = []
     ensure_midpoints(chrt)
-    for idx, item in enumerate(common.collect_midpoint_ring_items(chrt, chrt.options)):
+    for idx, item in enumerate(common.collect_midpoint_ring_items(chrt, chrt.options, filter_hits=filter_hits)):
         p1 = int(item["p1"])
         p2 = int(item["p2"])
         label = f"{common.common.get_planet_name(p1)}/{common.common.get_planet_name(p2)}"
@@ -3104,13 +3168,22 @@ def _interchart_point_endpoints(chrt, options):
     return endpoints
 
 
-def _interchart_click_endpoints(chrt, options):
-    return _interchart_planet_endpoints(chrt, options) + _interchart_point_endpoints(chrt, options)
+def _interchart_click_endpoints(chrt, options, *, include_cusps=False):
+    endpoints = _interchart_planet_endpoints(chrt, options) + _interchart_point_endpoints(chrt, options)
+    if include_cusps:
+        endpoints.extend(
+            {"key": key, "kind": "cusp", "lon": lon, "orbs": options.orbisAscMC}
+            for key, lon in _cusp_longitudes(chrt)
+        )
+    return endpoints
 
 
 def _endpoint_selectable_for_pair(selected, other, options):
     selected_key = selected["key"]
     other_key = other["key"]
+    # Adding cusp targets must not change existing body/angle selections.
+    if other["kind"] == "cusp":
+        return False
     if _is_node_aspect_key(selected_key):
         return True
     if _is_node_aspect_key(other_key) and not getattr(options, "aspectstonodes", False):
@@ -3272,10 +3345,19 @@ def export_interchart_aspect_data(primary, comparison):
     )
     click_enabled_aspects = _interchart_click_enabled_aspects(primary.options)
     click_traditional_filter = bool(getattr(primary.options, "exclusive_aspects_on_click_traditional", False))
-    inner_endpoints = _interchart_click_endpoints(primary, primary.options)
-    outer_endpoints = _interchart_click_endpoints(comparison, primary.options)
+    inner_endpoints = _interchart_click_endpoints(primary, primary.options, include_cusps=True)
+    outer_endpoints = _interchart_click_endpoints(comparison, primary.options, include_cusps=True)
+    # Empty cusp buckets are authoritative too: the renderer must not fall
+    # back to rows that belong to a different click selector.
+    for prefix, endpoints in (("", inner_endpoints), ("outer:", outer_endpoints)):
+        for endpoint in endpoints:
+            if endpoint["kind"] == "cusp":
+                by_selector[prefix + endpoint["key"]] = []
     for inner_endpoint in inner_endpoints:
         for outer_endpoint in outer_endpoints:
+            selection_keys = _interchart_selection_keys(inner_endpoint, outer_endpoint, primary.options)
+            if not selection_keys:
+                continue
             if _is_node_aspect_key(inner_endpoint["key"]) and _is_node_aspect_key(outer_endpoint["key"]):
                 continue
             asp = _interchart_point_aspect(
@@ -3296,7 +3378,7 @@ def export_interchart_aspect_data(primary, comparison):
                 inner_endpoint["key"],
                 asp,
                 "showsOnClick",
-                selection_keys=_interchart_selection_keys(inner_endpoint, outer_endpoint, primary.options),
+                selection_keys=selection_keys,
             )
     aspects = sorted(
         rows.values(),
@@ -3372,6 +3454,10 @@ def render_variant_for_theme(theme) -> str:
         return "round-compact"
     if value == 2:
         return "round-anglo"
+    if value == 3:
+        return "round-houses"
+    if value == 4:
+        return "round-cusps"
     return "round-classic"
 
 

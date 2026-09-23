@@ -29,9 +29,11 @@ import { perfNow, recordChartPerf } from "@/lib/chart/perf";
 import type { ChartRenderSnapshot } from "@/lib/chart/types";
 import {
   projectWheelAuthoringStyle,
-  resolveWheelRenderStyleFromTokens,
+  resolveWheelScale,
+  wheelTypographyProfileForTheme,
 } from "@/lib/chart/wheel-render-style";
-import { compileFlatWheelAuthoringOverrides } from "@/lib/style-lab/wheel-authoring-adapter";
+import { assembleWheelGeometryPreview, resolveWheelGeometryPresetStyle } from "@/lib/chart/wheel-geometry-preset";
+import { useChartStyleEditorStore } from "@/stores/chart-style-editor-store";
 import { cn } from "@/lib/utils";
 import { useFrameLayoutStore } from "@/stores/frame-layout-store";
 import { useThemeStore } from "@/stores/theme-store";
@@ -113,6 +115,12 @@ export function MultiwheelChartCanvas({
   const setInspectorActiveRegion = useWorkspaceStore((state) => state.setInspectorActiveRegion);
   const inspectorOpen = useFrameLayoutStore((state) => state.inspectorOpen);
   const appTheme = useThemeStore((state) => state.theme);
+  const geometryProfile = useChartStyleEditorStore((state) => state.geometryProfile);
+  const geometryOverrides = useChartStyleEditorStore((state) => state.geometryOverrides);
+  const syncedGeometryOverrides = useChartStyleEditorStore((state) => state.syncedGeometryOverrides);
+  const geometryBaseRevision = useChartStyleEditorStore((state) => state.wheelPresetState?.revision ?? -1);
+  const gestureActive = useChartStyleEditorStore((state) => state.gestureStart != null);
+  const editorRevision = useChartStyleEditorStore((state) => state.revision);
   const theme = inheritAppTheme ? appTheme : null;
   const renderSnapshot = useMemo(
     () => applyProfileColorsToSnapshot(chart, theme),
@@ -127,19 +135,26 @@ export function MultiwheelChartCanvas({
   const fontSymbols = theme?.appTokens?.["--aries-font-symbols"]?.trim()
     || '"AriesMorinus"';
   const wheelRenderStyle = useMemo(
-    () => resolveWheelRenderStyleFromTokens(
+    () => resolveWheelGeometryPresetStyle(
       (cssVar) => theme?.chartPalette?.[cssVar],
       {
         palette,
-        revision: theme?.styleRevision ?? 0,
+        revision: `${theme?.styleRevision ?? 0}:editor-${editorRevision}`,
         fontSymbols,
         fontUi,
-        authoringOverrides: compileFlatWheelAuthoringOverrides(
-          theme?.profileOverrides?.wheelAuthoring ?? {},
-        ),
+      },
+      {
+        profile: wheelTypographyProfileForTheme(chart.primaryChart.options.theme),
+        presets: chart.primaryChart.options.wheelGeometryPresets,
+        appearanceOverrides: theme?.profileOverrides?.wheelAuthoring ?? {},
+        preview: assembleWheelGeometryPreview({
+          geometryProfile, geometryOverrides, syncedGeometryOverrides,
+          wheelPresetState: {revision: geometryBaseRevision}, revision: editorRevision,
+          gestureStart: gestureActive ? true : null,
+        }),
       },
     ),
-    [fontSymbols, fontUi, palette, theme],
+    [fontSymbols, fontUi, palette, theme, chart.primaryChart.options, geometryProfile, geometryOverrides, syncedGeometryOverrides, geometryBaseRevision, gestureActive, editorRevision],
   );
 
   const setTrackedFlagAnchor = useCallback((next: FlagAnchor | null) => {
@@ -232,7 +247,10 @@ export function MultiwheelChartCanvas({
         : 0;
       const availableHeight = Math.max(1, rect.height - topBoundary);
       const side = Math.min(rect.width, availableHeight);
-      const maxRadius = Math.max(80, side * 0.475);
+      const profile = wheelTypographyProfileForTheme(renderSnapshot.primaryChart.options.theme);
+      // The chart-wide preset scale applies to this renderer too. Its own
+      // tri/quad body-band solver still owns individual ring thicknesses.
+      const maxRadius = Math.max(80, side * 0.475 * resolveWheelScale(wheelRenderStyle, profile));
       const center: [number, number] = [
         rect.width / 2,
         topBoundary + availableHeight / 2,
@@ -246,7 +264,7 @@ export function MultiwheelChartCanvas({
         showTerms: Boolean(rootOptions.showTerms && rootOptions.terms?.length),
         showDecans: Boolean(rootOptions.showDecans && rootOptions.decans?.length),
       });
-      const angloStyle = projectWheelAuthoringStyle(wheelRenderStyle, layout.maxRadius, "anglo");
+      const projectedStyle = projectWheelAuthoringStyle(wheelRenderStyle, layout.maxRadius, profile);
       hitRegionsRef.current = drawMultiwheel(
         draw,
         center,
@@ -255,7 +273,7 @@ export function MultiwheelChartCanvas({
         palette,
         { symbols: fontSymbols, ui: fontUi },
         { width: rect.width, height: rect.height, topBoundary },
-        angloStyle,
+        projectedStyle,
       );
       const lastPointer = lastPointerClientRef.current;
       if (lastPointer) {

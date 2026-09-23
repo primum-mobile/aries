@@ -71,6 +71,7 @@ from webapp.daemon.display_palette import (
     effective_display_options,
 )
 from webapp.daemon.inspector_service import _fortune_region, _planet_region
+from webapp.daemon.mundane_points import additional_bodies, outer_ring
 from webapp.frontend.scripts import export_chart_json
 
 _DIGNITY_KEYS = ("clrdomicil", "clrexal", "clrperegrin", "clrcasus", "clrexil")
@@ -515,10 +516,10 @@ class MundaneChartService:
         if not session:
             return None
         visual_mode = str(session.get("chart_visual_mode") or "")
-        if session.get("launcher_kind") == "ascensional_transits":
-            return self._build_ascensional_transits(session, opts)
         if visual_mode in _MDO_VISUAL_MODES:
             return self._build_visual_mode(session, opts, visual_mode=visual_mode)
+        if session.get("launcher_kind") == "ascensional_transits":
+            return self._build_ascensional_transits(session, opts)
         if session.get("launcher_kind") == "mundane_chart" and session.get("parent_document_id"):
             parent = workspace_service._controller.session(str(session.get("parent_document_id")))
             if parent:
@@ -539,6 +540,9 @@ class MundaneChartService:
         live = getattr(cs, "chart", None) or session.get("chart")
         if live is None:
             return None
+        # A separate chart tab keeps its CHART/COMPOUND presentation while its
+        # cursor moves. A changed live chart is not an implicit biwheel request.
+        compound = getattr(cs, "view_mode", None) == chart_session.ChartSession.COMPOUND
         if visual_mode == "ascensional_transits":
             payload = self._build_ascensional_transits(session, opts)
             if payload is not None:
@@ -546,7 +550,7 @@ class MundaneChartService:
             return payload
         if visual_mode == "mundane":
             radix = getattr(cs, "radix", None) or session.get("chart")
-            if radix is not None and live is not radix:
+            if compound and radix is not None and live is not radix:
                 payload = self._build_mundane_comparison(
                     radix,
                     live,
@@ -566,7 +570,7 @@ class MundaneChartService:
             return payload
         top_left_override = _progression_overlay_top_left(session)
         radix = getattr(cs, "radix", None) or session.get("chart")
-        if radix is not None and live is not radix:
+        if compound and radix is not None and live is not radix:
             payload = self._build_mdo_comparison(
                 radix,
                 live,
@@ -671,16 +675,20 @@ class MundaneChartService:
             aspects_override=[],
             asc_longitude_override=0.0,
             overlay_top_left_override=overlay_top_left_override,
+            outer_position_mode="mundane",
         )
 
     def _build_ascensional_transits(self, session: dict, opts) -> Optional[dict]:
         cs = session.get("chart_session")
         if cs is None:
             return None
-        radix = getattr(cs, "radix", None) or session.get("chart")
-        transit = getattr(cs, "chart", None)
+        radix, transit = ascensional_payload._session_chart_pair(session)
         if radix is None:
             return None
+        compound = (
+            transit is not None
+            and getattr(cs, "view_mode", None) == chart_session.ChartSession.COMPOUND
+        )
         event_jd = getattr(getattr(transit, "time", None), "jd", None)
         if event_jd is None:
             event_jd = session.get("ascensional_event_jd")
@@ -720,17 +728,11 @@ class MundaneChartService:
             transit or radix,
             opts,
             force_lof=True,
-            chart_role="outer",
+            chart_role="outer" if compound else "primary",
             partner_chart=radix if transit is not None else None,
+            event_frame=snapshot,
         )
         aspects = self._at_aspects(snapshot.at_pairs, opts, force_lof=True, scope="at")
-        compound = (
-            transit is not None
-            and (
-                getattr(cs, "view_mode", None) == chart_session.ChartSession.COMPOUND
-                or session.get("chart_visual_mode") == "ascensional_transits"
-            )
-        )
         if compound:
             return self._build(
                 radix,
@@ -744,6 +746,7 @@ class MundaneChartService:
                 force_show_house_system=True,
                 aspects_override=aspects,
                 asc_longitude_override=0.0,
+                outer_event_frame=snapshot,
             )
         return self._build(
             transit or radix,
@@ -755,6 +758,7 @@ class MundaneChartService:
             force_show_house_system=True,
             aspects_override=aspects,
             asc_longitude_override=0.0,
+            outer_event_frame=snapshot,
         )
 
     def _build(
@@ -772,6 +776,8 @@ class MundaneChartService:
         aspects_override: Optional[list[dict]] = None,
         asc_longitude_override: Optional[float] = None,
         overlay_top_left_override: Optional[list[str]] = None,
+        outer_event_frame=None,
+        outer_position_mode=None,
     ) -> dict:
         # show_houses predicate, verbatim from MundaneChart.__init__
         # (mundanechart.py:138-139): houses toggle on AND a real house system.
@@ -845,6 +851,10 @@ class MundaneChartService:
             "colors": _mundane_colors(opts, bw),
             "bodies": bodies,
             "secondaryBodies": secondary_bodies,
+            "outerRing": outer_ring(
+                chrt, secondary, opts, event_frame=outer_event_frame,
+                position_mode=outer_position_mode or ("mundane" if bodies_override is None else "mdo"),
+            ),
             "houses": houses_out,
             "angles": angles,
             "aspects": aspects,
@@ -930,6 +940,9 @@ class MundaneChartService:
                 "posMin": int(m),
                 "isLof": bool(i == _LOF_BODY_ID),
             })
+        bodies.extend(additional_bodies(
+            chrt, opts, {body["id"] for body in bodies}, position_mode="mundane",
+        ))
         return bodies
 
     def _at_event_fortune_point(self, transit, snapshot):
@@ -974,6 +987,7 @@ class MundaneChartService:
         partner_chart=None,
         position_mode: str = "mdo",
         pd_direction_context: bool = False,
+        event_frame=None,
     ) -> list[dict]:
         bodies = []
         for point in points:
@@ -1019,6 +1033,10 @@ class MundaneChartService:
                     pd_direction_context=pd_direction_context,
                 ),
             })
+        bodies.extend(additional_bodies(
+            chrt, opts, {body["id"] for body in bodies}, chart_role=chart_role,
+            event_frame=event_frame, position_mode=position_mode,
+        ))
         return bodies
 
     @staticmethod

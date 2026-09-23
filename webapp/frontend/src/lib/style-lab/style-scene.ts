@@ -1,3 +1,4 @@
+import type { WheelArrowStyle } from "../chart/wheel-render-style";
 // Copyright (C) 2026 Max Lange
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -77,6 +78,7 @@ export type StyleSceneTokenProperty =
   // A degree ruler's depth as a share of its host band. Unitless like "scale",
   // but measured against one band rather than the whole wheel.
   | "rulerDepth"
+  | "arrowSize"
   | "tickLength"
   | "offset"
   | "spacing"
@@ -86,6 +88,7 @@ export type StyleSceneTokenProperty =
   | "font-family"
   | "font-size"
   | "font-weight"
+  | "font-style"
   | "effect";
 
 /**
@@ -116,6 +119,8 @@ export type StyleSceneAuthoringDefaults = Readonly<{
   colorAuthored?: boolean;
   fontRefAuthored?: boolean;
   fontRef?: ChartStyleFontRef;
+  fontWeight?: number;
+  fontStyle?: "normal" | "italic";
   fontSizePx?: number;
   trackingPx?: number;
   color?: string;
@@ -179,11 +184,14 @@ export type StyleSceneAuthoringDefaults = Readonly<{
   angleDegrees?: number;
   seed?: number;
   radiusPx?: number;
+  bandWidthPx?: number;
   diameterPx?: number;
   /** Reference-space radius of a band span's inner edge. */
   spanInnerPx?: number;
   spanScalePercent?: number;
   rulerDepthPercent?: number;
+  arrowSizePercent?: number;
+  arrowStyle?: WheelArrowStyle;
   tickLengthPercent?: number;
   /**
    * Largest font size this run may be given before it leaves the band that
@@ -232,6 +240,8 @@ export type StyleSceneHandle =
 export interface StyleSceneElement {
   /** Stable semantic authoring target shared by every painted occurrence. */
   readonly classId: string;
+  /** Existing paint role exposed alongside a structural band's width. */
+  readonly appearanceClassId?: string;
   /** Optional property-level palette targets (for example one body colour). */
   readonly paletteRoleIds: readonly string[];
   /** Instance identity used only for hit testing and retained selection. */
@@ -258,6 +268,8 @@ export interface StyleSceneTokenDragMetadata {
   readonly min?: number;
   readonly max?: number;
   readonly step?: number;
+  /** Quantize movement from this value rather than snapping the initial value. */
+  readonly stepOrigin?: number;
 }
 
 export interface StyleSceneHandleDrag {
@@ -423,13 +435,16 @@ export function resolveStyleSceneHandleDrag(
   if (Number.isFinite(minimum)) value = Math.max(minimum, value);
   if (Number.isFinite(maximum)) value = Math.min(maximum, value);
   if (metadata.step && metadata.step > 0) {
-    const origin = metadata.min ?? 0;
+    const origin = metadata.stepOrigin ?? metadata.min ?? 0;
     value = origin + Math.round((value - origin) / metadata.step) * metadata.step;
+    // The last step may straddle a solved wall. Snapping must not undo it.
+    if (Number.isFinite(minimum)) value = Math.max(minimum, value);
+    if (Number.isFinite(maximum)) value = Math.min(maximum, value);
   }
   if (!Number.isFinite(value)) return null;
   return {
     semanticId: handle.binding.semanticId,
     cssVar: handle.binding.cssVar,
-    value: Number(value.toFixed(6)),
+    value: value === handle.binding.value ? value : Number(value.toFixed(6)),
   };
 }

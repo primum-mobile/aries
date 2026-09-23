@@ -700,9 +700,7 @@ class SolarArcSupplementaryAdapter(BaseSupplementaryAdapter):
 	feature_kinds = ('solar_arc',)
 
 	def _default_angle_method(self, frame):
-		return posfordate.progression_angle_method(
-			getattr(frame.options, 'progressed_angle_method', posfordate.TRUE_SOLAR_ARC_LON)
-		)
+		return posfordate.technique_angle_method(frame.options, posfordate.SOLAR_ARC)
 
 	def _default_solar_arc_angle_mode(self, frame):
 		return posfordate.solar_arc_angle_mode(
@@ -1033,13 +1031,13 @@ class LunarReturnSupplementaryAdapter(BaseSupplementaryAdapter):
 		marr = resolve_marr_retained(frame.options, retained, 'lunar_return')
 		calc_chart = chart_with_marr_override(calc_chart, 'lunar_return', marr)
 		return_mode = solilunar.normalize_return_mode(retained.get('lunar_return_mode'))
-		revs = revolutions.Revolutions()
+		revs = revolutions.Revolutions(return_place=place)
 		preserve_cycle = bool(getattr(driver_state, 'preserve_return_cycle', False))
 		event = None
 		if return_mode == solilunar.RETURN_MODE_LUNAR:
 			if preserve_cycle:
 				identity_anchor = _return_identity_anchor(retained, current_chart, target_source_dt)
-				pair = revolutions.Revolutions.closest_lunar_return(calc_chart, identity_anchor, window_days=2)
+				pair = revolutions.Revolutions.closest_lunar_return(calc_chart, identity_anchor, window_days=2, return_place=place)
 				if pair is None:
 					return SupplementaryBuildResult(None, None, binding)
 				revs._set_hit_values(pair[1])
@@ -1049,14 +1047,14 @@ class LunarReturnSupplementaryAdapter(BaseSupplementaryAdapter):
 			anchor_dt = datetime.datetime(*tuple(int(v) for v in revs.t[:6]))
 			if not preserve_cycle and cycle_offset > 0:
 				for _ in range(cycle_offset):
-					revs2 = revolutions.Revolutions()
+					revs2 = revolutions.Revolutions(return_place=place)
 					if not revs2.compute_lunar_after_datetime(anchor_dt, calc_chart):
 						return SupplementaryBuildResult(None, None, binding)
 					revs = revs2
 					anchor_dt = datetime.datetime(*tuple(int(v) for v in revs.t[:6]))
 			elif not preserve_cycle and cycle_offset < 0:
 				for _ in range(abs(cycle_offset)):
-					revs2 = revolutions.Revolutions()
+					revs2 = revolutions.Revolutions(return_place=place)
 					if not revs2.compute_lunar_before_datetime(anchor_dt, calc_chart):
 						return SupplementaryBuildResult(None, None, binding)
 					revs = revs2
@@ -1225,6 +1223,7 @@ class PlanetaryReturnSupplementaryAdapter(BaseSupplementaryAdapter):
 			return SupplementaryBuildResult(None, None, binding)
 
 		base_chart = driver_state.base_chart
+		place = payload_to_place(retained.get('place_payload'), fallback=(getattr(current_chart, 'place', None) if current_chart is not None else getattr(base_chart, 'place', None)))
 		target_source_dt = driver_state.source_datetime
 		# Per-document Marr sidereal flag (binding-scoped, no global write).
 		marr = resolve_marr_retained(frame.options, retained, 'planetary_return')
@@ -1241,7 +1240,7 @@ class PlanetaryReturnSupplementaryAdapter(BaseSupplementaryAdapter):
 			raw_dt = tuple(int(v) for v in (t1, t2, t3, t4, t5, t6))
 			cycle_offset = 0
 		else:
-			revs = revolutions.Revolutions()
+			revs = revolutions.Revolutions(return_place=place)
 			preserve_cycle = bool(getattr(driver_state, 'preserve_return_cycle', False))
 			step_anchor = _display_datetime_to_datetime(retained.get('planetary_step_anchor_datetime'))
 			step_delta = int(retained.get('planetary_step_delta', 0) or 0)
@@ -1253,7 +1252,7 @@ class PlanetaryReturnSupplementaryAdapter(BaseSupplementaryAdapter):
 					anchor_dt.hour, anchor_dt.minute, anchor_dt.second,
 				))
 				for _ in range(abs(step_delta)):
-					revs2 = revolutions.Revolutions()
+					revs2 = revolutions.Revolutions(return_place=place)
 					if step_delta > 0:
 						found = revs2.compute_planetary_after_datetime(
 							planet_type, anchor_dt, calc_base, inclusive=False,
@@ -1269,7 +1268,7 @@ class PlanetaryReturnSupplementaryAdapter(BaseSupplementaryAdapter):
 			elif preserve_cycle:
 				identity_anchor = _return_identity_anchor(retained, current_chart, target_source_dt)
 				pair = revolutions.Revolutions.closest_planetary_return(
-					planet_type, calc_base, identity_anchor, window_days=30,
+					planet_type, calc_base, identity_anchor, window_days=30, return_place=place,
 				)
 				if pair is None:
 					return SupplementaryBuildResult(None, None, binding)
@@ -1282,14 +1281,14 @@ class PlanetaryReturnSupplementaryAdapter(BaseSupplementaryAdapter):
 			cycle_offset = int(retained.get('cycle_offset', 0) or 0)
 			if not used_step_anchor and not preserve_cycle and cycle_offset > 0:
 				for _ in range(cycle_offset):
-					revs2 = revolutions.Revolutions()
+					revs2 = revolutions.Revolutions(return_place=place)
 					if not revs2.compute_planetary_after_datetime(planet_type, anchor_dt, calc_base):
 						return SupplementaryBuildResult(None, None, binding)
 					revs = revs2
 					anchor_dt = datetime.datetime(*tuple(int(v) for v in revs.t[:6]))
 			elif not used_step_anchor and not preserve_cycle and cycle_offset < 0:
 				for _ in range(abs(cycle_offset)):
-					revs2 = revolutions.Revolutions()
+					revs2 = revolutions.Revolutions(return_place=place)
 					if not revs2.compute_planetary_before_datetime(planet_type, anchor_dt, calc_base):
 						return SupplementaryBuildResult(None, None, binding)
 					revs = revs2
@@ -1297,7 +1296,6 @@ class PlanetaryReturnSupplementaryAdapter(BaseSupplementaryAdapter):
 
 			t1, t2, t3, t4, t5, t6 = revs.t[0], revs.t[1], revs.t[2], revs.t[3], revs.t[4], revs.t[5]
 			raw_dt = tuple(int(v) for v in (t1, t2, t3, t4, t5, t6))
-		place = payload_to_place(retained.get('place_payload'), fallback=(getattr(current_chart, 'place', None) if current_chart is not None else getattr(base_chart, 'place', None)))
 		clock = _return_clock_context(base_chart, place, retained)
 		plus = clock['plus']
 		zh = clock['zh']

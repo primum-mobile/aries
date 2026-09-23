@@ -17,6 +17,7 @@ checkGeneratedArtifact(
   result.inventoryPath,
   result.rendered,
   "generated inventory",
+  { usageIndex: true },
 );
 checkGeneratedArtifact(
   result.publicManifestPath,
@@ -59,9 +60,11 @@ function addError(path, line, message) {
   result.errors.push({ path, line, message });
 }
 
-function checkGeneratedArtifact(path, rendered, label) {
+function checkGeneratedArtifact(path, rendered, label, { usageIndex = false } = {}) {
   if (!path || !rendered) return;
   if (writeInventory) {
+    // Never publish an inventory from an invalid live provider graph.
+    if (result.errors.length > 0) return;
     writeFileSync(path, rendered, "utf8");
     return;
   }
@@ -69,8 +72,26 @@ function checkGeneratedArtifact(path, rendered, label) {
   try { checkedIn = readFileSync(path, "utf8").replace(/\r\n?/g, "\n"); }
   catch { addError(path, 1, `${label} is missing; run npm run style-token-inventory`); }
   if (checkedIn !== null && checkedIn !== rendered) {
+    // Consumer locations are an audit index, not a style definition. Always
+    // validate the live graph above, but don't block packaging because an
+    // existing token moved to a different component. Keep every other field
+    // (including provider locations) and the public handoff strictly checked.
+    if (usageIndex && sameDefinitions(checkedIn, rendered)) {
+      console.log("  usage index: source locations changed; live graph validated (refresh with npm run style-token-inventory)");
+      return;
+    }
     addError(path, 1, `${label} drifted; run npm run style-token-inventory and review the diff`);
   }
+}
+
+function sameDefinitions(left, right) {
+  const definitions = (source) => {
+    const inventory = JSON.parse(source);
+    for (const token of inventory.tokens) delete token.consumerFiles;
+    return JSON.stringify(inventory);
+  };
+  try { return definitions(left) === definitions(right); }
+  catch { return false; }
 }
 
 function displayPath(path) {

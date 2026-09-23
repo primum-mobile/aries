@@ -1227,6 +1227,13 @@ class TemporalMapService:
             (presets.get("aspects") or {}).get("major"),
             ("conjunction", "sextile", "square", "trine", "opposition"),
         )
+        # An explicit empty chooser must stay empty in the composed map too.
+        if lane.spec.get("promittorIds") == []:
+            promittors = []
+        if lane.spec.get("significatorIds") == []:
+            significators = []
+        if lane.spec.get("aspects") == []:
+            aspects = []
         direction = str(lane.spec.get("direction") or "direct").strip().lower()
         techniques = {
             "converse": ["converse_transits"],
@@ -1242,6 +1249,8 @@ class TemporalMapService:
                 "promittorIds": promittors,
                 "significatorIds": significators,
                 "aspects": aspects,
+                "promittorMotion": lane.spec.get("promittorMotion", ""),
+                "significatorMotion": lane.spec.get("significatorMotion", ""),
                 "includeSignChanges": False,
                 "includeTemporal": True,
                 "includeOrbTemporal": include_orb,

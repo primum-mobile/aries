@@ -21,12 +21,14 @@ import { MultiwheelChartCanvas } from "@/components/workshell/multiwheel-chart-c
 import { CanvasDraw } from "@/lib/chart/canvas-draw";
 import { morinusTextFontFromTokens } from "@/lib/chart/chart-fonts";
 import {
-  resolveWheelRenderStyleFromTokens,
   resolveWheelScale,
   wheelFillUsesSolarDirection,
   type WheelGeometryInput,
   type WheelRenderStyle,
+  wheelTypographyProfileForTheme,
 } from "@/lib/chart/wheel-render-style";
+import { assembleWheelGeometryPreview, resolveWheelGeometryPresetStyle, resolveWheelPresetAuthoringOverrides } from "@/lib/chart/wheel-geometry-preset";
+import { isWheelGeometryKey } from "@/lib/chart/wheel-geometry-ownership";
 import {
   WHEEL_AUTHORING_OVERRIDE_PREFIX,
   variantAuthoredOverrideIds,
@@ -40,10 +42,11 @@ import {
   drawSnapshotLayer,
   findHitRegion,
   resolveChartOuterPaintEnvelope,
+  wheelGeometryInputForSnapshot,
   type ChartHitRegion,
   type OuterLabelCollisionBounds,
 } from "@/lib/chart/draw-chart";
-import { resolveChartPaintTarget } from "@/lib/chart/outer-glyph-lane";
+import { resolveChartPaintTarget, type WheelVerticalAlignment } from "@/lib/chart/outer-glyph-lane";
 import { fetchDocumentSnapshot, patchOptions } from "@/lib/daemon/client";
 import type { ThemeState } from "@/lib/daemon/client";
 import {
@@ -61,7 +64,6 @@ import {
 import { acknowledgePaintedDocumentSnapshot } from "@/lib/chart/painted-snapshot-registry";
 import { useStyleRevision } from "@/hooks/use-style-revision";
 import { STYLE_FONT_ASSETS_READY_EVENT } from "@/lib/style-lab/fonts";
-import { compileFlatWheelAuthoringOverrides } from "@/lib/style-lab/wheel-authoring-adapter";
 import {
   WHEEL_STYLE_SCENE_ELEMENT_IDS,
   buildWheelStyleScene,
@@ -276,6 +278,7 @@ function chartTargetRect(
   paintRadiusScale = 1,
   topBoundary = 0,
   avoidTitlebar = false,
+  verticalAlignment: WheelVerticalAlignment = "center",
 ): ChartTargetRect {
   const target = resolveChartPaintTarget(
     width,
@@ -283,6 +286,7 @@ function chartTargetRect(
     paintRadiusScale,
     topBoundary,
     avoidTitlebar,
+    verticalAlignment,
   );
   return {
     x: (width - target.side) / 2,
@@ -363,14 +367,14 @@ function dirtyStateFromSnapshot(chart: ChartRenderSnapshot): DirtyState {
   const plan = chart.renderInvalidation;
   if (plan) {
     return {
-      fill: false,
+      fill: chart.overlayRenderMode === "step_fast",
       geometry: Boolean(plan.geometry),
       dynamic: Boolean(plan.dynamic),
       outerLabel: Boolean(plan.outerLabel),
     };
   }
   if (chart.overlayRenderMode === "step_fast") {
-    return { fill: false, geometry: true, dynamic: true, outerLabel: true };
+    return { fill: true, geometry: true, dynamic: true, outerLabel: true };
   }
   return {
     fill: false,
@@ -507,6 +511,9 @@ function hitToHover(hit: ChartHitRegion): HoverRegion | null {
   if (hit.kind === "angle") {
     return { kind: "angle", angleId: hit.angleId, longitude: hit.longitude, chartRole: hit.chartRole };
   }
+  if (hit.kind === "cusp") {
+    return { kind: "house", houseIndex: hit.houseIndex, longitude: hit.longitude, chartRole: hit.chartRole };
+  }
   if (hit.kind === "house") {
     return { kind: "house", houseIndex: hit.houseIndex, longitude: hit.longitude };
   }
@@ -588,6 +595,9 @@ function clickAspectBodyKey(hit: ChartHitRegion): string | null {
     const angleId = hit.angleId === "dsc" ? "dc" : hit.angleId;
     return `${hit.chartRole === "outer" ? "outer:" : ""}${angleId}`;
   }
+  if (hit.kind === "cusp") {
+    return `${hit.chartRole === "outer" ? "outer:" : ""}cusp${hit.houseIndex}`;
+  }
   if (hit.kind === "secondary_ring") return clickPointKey(hit);
   return null;
 }
@@ -665,6 +675,7 @@ export function ChartCanvas(props: {
   paintEffectsActive?: boolean;
   appControlsEnabled?: boolean;
   inheritAppTheme?: boolean;
+  wheelVerticalAlignment?: WheelVerticalAlignment;
 }) {
   if ((props.chart.rings?.length ?? 0) >= 3) {
     return <MultiwheelChartCanvas {...props} />;
@@ -678,12 +689,14 @@ function WheelChartCanvas({
   paintEffectsActive,
   appControlsEnabled = true,
   inheritAppTheme = true,
+  wheelVerticalAlignment = "center",
 }: {
   chart: ChartRenderSnapshot;
   className?: string;
   paintEffectsActive?: boolean;
   appControlsEnabled?: boolean;
   inheritAppTheme?: boolean;
+  wheelVerticalAlignment?: WheelVerticalAlignment;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const fillRef = useRef<HTMLCanvasElement>(null);
@@ -728,6 +741,11 @@ function WheelChartCanvas({
   const toggleHideAllAspects = useWorkspaceStore((s) => s.toggleHideAllAspects);
   const clearAspectSelection = useWorkspaceStore((s) => s.clearAspectSelection);
   const pushCommandSnapshot = useDaemonWorkspaceStore((s) => s.pushCommandSnapshot);
+  const expectedWheelPresetRevision = useDaemonWorkspaceStore((s) => (
+    s.lastOptionsChange && !s.lastOptionsChange.styleOnly
+      ? s.lastOptionsChange.wheelPresetRevision
+      : undefined
+  ));
   const appTheme = useThemeStore((s) => s.theme);
   const theme = inheritAppTheme ? appTheme : null;
   const styleEditorActive = useChartStyleEditorStore((s) => s.active);
@@ -741,6 +759,10 @@ function WheelChartCanvas({
   // role must reach the wheel as the colour it resolves to, never as the
   // reference itself.
   const styleSemanticOverrides = useChartStyleEditorStore((s) => s.resolvedOverrides);
+  const geometryProfile = useChartStyleEditorStore((s) => s.geometryProfile);
+  const geometryOverrides = useChartStyleEditorStore((s) => s.geometryOverrides);
+  const syncedGeometryOverrides = useChartStyleEditorStore((s) => s.syncedGeometryOverrides);
+  const geometryBaseRevision = useChartStyleEditorStore((s) => s.wheelPresetState?.revision ?? -1);
   const styleAuthoringEditScope = useChartStyleEditorStore((s) => s.authoringEditScope);
   const selectedStyleElement = useChartStyleEditorStore((s) => s.selectedElement);
   // Non-null only while a value is actively being changed. Max: "for color
@@ -813,7 +835,7 @@ function WheelChartCanvas({
       profileOverrides: {
         appTokens,
         chartPalette,
-        chartData: {},
+        chartData: styleLabBaseTheme.chartData,
         wheelAuthoring: {},
         appAuthoring: styleLabBaseTheme.appAuthoring,
       },
@@ -833,7 +855,7 @@ function WheelChartCanvas({
     minorOnlyAspects,
   ]);
 
-  const effectiveTheme = useMemo(() => {
+  const candidateTheme = useMemo(() => {
     if (!inheritAppTheme) return isolatedStyleLabTheme;
     if (!styleWorkingPreviewActive || !theme || !Object.keys(styleCssOverrides).length) return theme;
     return {
@@ -850,6 +872,31 @@ function WheelChartCanvas({
       },
     };
   }, [inheritAppTheme, isolatedStyleLabTheme, styleCssOverrides, styleWorkingPreviewActive, theme]);
+  const snapshotWheelPresetRevision = useMemo(() => {
+    const revisions = Object.values(chart.primaryChart.options.wheelGeometryPresets ?? {})
+      .map((selection) => selection?.revision)
+      .filter((revision): revision is number => typeof revision === "number");
+    return revisions.length ? Math.max(...revisions) : null;
+  }, [chart.primaryChart.options.wheelGeometryPresets]);
+  const wheelThemeTransitionPending = Boolean(
+    inheritAppTheme
+    && !styleWorkingPreviewActive
+    && expectedWheelPresetRevision != null
+    && snapshotWheelPresetRevision != null
+    && snapshotWheelPresetRevision < expectedWheelPresetRevision
+  );
+  // App chrome may adopt its new palette immediately, but the wheel is one
+  // coherent frame: keep its previous theme until the snapshot carrying the
+  // matching composition and radii arrives. This prevents a new font/style
+  // from being laid out against the preceding theme's band geometry.
+  const [effectiveTheme, setEffectiveTheme] = useState<ThemeState | null>(candidateTheme);
+  // Adjusted during render (React's "store info from previous renders"
+  // pattern). The comparison guard is mandatory: any render-phase setState —
+  // even one whose updater returns the same value — forces a re-render, so an
+  // unguarded call loops forever ("Too many re-renders").
+  if (!wheelThemeTransitionPending && effectiveTheme !== candidateTheme) {
+    setEffectiveTheme(candidateTheme);
+  }
 
   const palette = useMemo(
     () => ({
@@ -898,16 +945,37 @@ function WheelChartCanvas({
     "--aries-wheel-font-aspect-symbols",
     chartSymbolFont,
   );
-  const effectiveWheelAuthoringOverrides = useMemo(
+  const wheelPresetInput = useMemo(
     () => ({
-      ...(effectiveTheme?.profileOverrides?.wheelAuthoring ?? {}),
-      ...(styleWorkingPreviewActive ? styleSemanticOverrides : {}),
+      profile: wheelTypographyProfileForTheme(chart.primaryChart.options.theme),
+      presets: chart.primaryChart.options.wheelGeometryPresets,
+      appearanceOverrides: {
+        ...(effectiveTheme?.profileOverrides?.wheelAuthoring ?? {}),
+        ...(styleWorkingPreviewActive ? styleSemanticOverrides : {}),
+      },
+      preview: assembleWheelGeometryPreview({
+        geometryProfile, geometryOverrides, syncedGeometryOverrides,
+        wheelPresetState: {revision: geometryBaseRevision}, revision: styleEditorRevision,
+        gestureStart: styleGestureActive ? true : null,
+      }),
     }),
     [
+      chart.primaryChart.options.theme,
+      chart.primaryChart.options.wheelGeometryPresets,
       effectiveTheme?.profileOverrides?.wheelAuthoring,
       styleWorkingPreviewActive,
       styleSemanticOverrides,
+      geometryProfile,
+      geometryOverrides,
+      syncedGeometryOverrides,
+      geometryBaseRevision,
+      styleGestureActive,
+      styleEditorRevision,
     ],
+  );
+  const effectiveWheelAuthoringOverrides = useMemo(
+    () => resolveWheelPresetAuthoringOverrides(wheelPresetInput),
+    [wheelPresetInput],
   );
 
   useEffect(() => {
@@ -931,7 +999,7 @@ function WheelChartCanvas({
       // With no edit in flight, Escape is the way back up the hierarchy — the
       // counterpart to the double-click that went down.
       if (state.selectedFamily || !state.selectedElement) return;
-      const selectedClassId = styleSceneClassId(state.selectedElement);
+      const selectedClassId = state.selectedElement.appearanceClassId ?? styleSceneClassId(state.selectedElement);
       // A ruler is the reading its ticks belong to, so Escape from a tick
       // ascends to the ruler rather than to the tick sibling set.
       const owner = WHEEL_CLASS_FAMILY_OWNER_BY_MEMBER.get(selectedClassId);
@@ -965,7 +1033,7 @@ function WheelChartCanvas({
 
   const renderStyle = useMemo(
     () =>
-      resolveWheelRenderStyleFromTokens(
+      resolveWheelGeometryPresetStyle(
         (cssVar) => styleWorkingPreviewActive
           ? styleCssOverrides[cssVar] ?? effectiveTheme?.chartPalette?.[cssVar]
           : effectiveTheme?.chartPalette?.[cssVar],
@@ -979,10 +1047,8 @@ function WheelChartCanvas({
           fontDecanSymbols: chartDecanSymbolFont,
           fontAspectSymbols: chartAspectSymbolFont,
           fontUi: chartTextFont,
-          authoringOverrides: compileFlatWheelAuthoringOverrides(
-            effectiveWheelAuthoringOverrides,
-          ),
         },
+        wheelPresetInput,
       ),
     [
       palette,
@@ -990,7 +1056,7 @@ function WheelChartCanvas({
       styleEditorRevision,
       styleWorkingPreviewActive,
       styleCssOverrides,
-      effectiveWheelAuthoringOverrides,
+      wheelPresetInput,
       chartTextFont,
       chartSymbolFont,
       chartBodySymbolFont,
@@ -1178,28 +1244,27 @@ function WheelChartCanvas({
       renderSnapshot,
       renderStyle,
     );
-    const fillProfile = primary.options.theme === 2
-      ? "anglo"
-      : primary.options.theme === 1
-        ? "compact"
-        : "classic";
+    const fillProfile = wheelTypographyProfileForTheme(primary.options.theme);
     const fillSignature = [
       renderStyle.revision,
       renderStyle.palette.background,
       renderStyle.palette.frame,
       fillProfile,
+      JSON.stringify(primary.options.wheelComposition ?? null),
       Boolean(renderSnapshot.comparisonChart),
       Boolean(primary.options.showTerms),
       Boolean(primary.options.showDecans),
       Boolean(primary.options.showHouses),
+      Boolean(primary.options.useZodiacElementFieldColors),
+      primary.options.zodiacElementFieldOpacity ?? 0.2,
+      primary.options.signColors?.join(",") ?? "",
       primary.options.showOuterHouseLines !== false,
       renderSnapshot.document?.compoundKind ?? "",
     ].join("|");
-    // Sun-oriented materials remain retained through step_fast. The next full
-    // settled snapshot repaints the fill once with the current solar bearing.
+    // Solar direction is part of the fill identity. Live step frames repaint
+    // the material canvas, and the matching settled frame can then retain it.
     const solarFillSignature =
-      chart.overlayRenderMode !== "step_fast"
-      && wheelFillUsesSolarDirection(renderStyle, fillProfile)
+      wheelFillUsesSolarDirection(renderStyle, fillProfile)
         ? String(primary.planets.find((planet) => planet.id === "sun")?.longitude ?? "")
         : null;
 
@@ -1240,19 +1305,6 @@ function WheelChartCanvas({
         return false;
       }
       const previous = renderedSizeRef.current;
-      const effectiveDirty: DirtyState =
-        !previous || !sameHostSize(previous, rect.width, rect.height)
-          ? { fill: true, geometry: true, dynamic: true, outerLabel: true }
-          : {
-              ...dirty,
-              fill:
-                dirty.fill
-                || paintedFillSignatureRef.current !== fillSignature
-                || (
-                  solarFillSignature != null
-                  && paintedSolarFillSignatureRef.current !== solarFillSignature
-                ),
-            };
       const titlebarBounds = chartTitlebarCollisionBounds(rect);
       const titlebarTopBoundary = chartTitlebarTopBoundary(rect);
       const outerLabelCollisionBounds: OuterLabelCollisionBounds[] = titlebarBounds
@@ -1264,7 +1316,24 @@ function WheelChartCanvas({
         outerPaintEnvelope.paintRadiusScale,
         titlebarTopBoundary,
         outerPaintEnvelope.avoidTitlebar,
+        wheelVerticalAlignment,
       );
+      // A layout-only move must repaint every retained layer together, even
+      // when the daemon snapshot only invalidates overlay facts.
+      const effectiveDirty: DirtyState =
+        !previous || !sameHostSize(previous, rect.width, rect.height)
+          || previous.target.side !== target.side || previous.target.y !== target.y
+          ? { fill: true, geometry: true, dynamic: true, outerLabel: true }
+          : {
+              ...dirty,
+              fill:
+                dirty.fill
+                || paintedFillSignatureRef.current !== fillSignature
+                || (
+                  solarFillSignature != null
+                  && paintedSolarFillSignatureRef.current !== solarFillSignature
+                ),
+            };
       const wheelCenter: readonly [number, number] = [
         rect.width / 2,
         target.y + target.side / 2,
@@ -1356,6 +1425,7 @@ function WheelChartCanvas({
           center: wheelCenter,
           renderStyle,
           textsize: (text, textOpts) => outerLabelDraw.textsize(text, textOpts),
+          textbounds: (text, textOpts) => outerLabelDraw.textbounds(text, textOpts),
           clickAspectState: {
             selectedBody: selectedAspectBody,
             hideAll: hideAllAspects,
@@ -1368,34 +1438,12 @@ function WheelChartCanvas({
         paintedStyleTargetModeRef.current = styleEditorActive;
         if (styleEditorActive) {
           const primary = renderSnapshot.primaryChart;
-          const profile = primary.options.theme === 2
-            ? "anglo"
-            : primary.options.theme === 1
-              ? "compact"
-              : "classic";
-          const comparison = Boolean(renderSnapshot.comparisonChart);
-          const comparisonWithOuterHouseBand = Boolean(
-            comparison &&
-            primary.options.showHouses &&
-            primary.options.showOuterHouseLines !== false &&
-            profile !== "anglo",
-          );
+          const profile = wheelTypographyProfileForTheme(primary.options.theme);
           const styleGeometryInput = {
-              profile,
-              mode: comparison ? "comparison" : "single",
-              // The scene is built in the same scaled world the chart is
-              // painted in, so a handle sits on the circle it edits.
-              maxRadius: target.side / 2 * resolveWheelScale(renderStyle, profile),
-              hasOuterRing: comparison || renderSnapshot.outerRingMode !== "none",
-              showTerms: Boolean(primary.options.showTerms),
-              showDecans: Boolean(primary.options.showDecans),
-              showHouses: Boolean(primary.options.showHouses),
-              showPositions: Boolean(primary.options.showPositions),
-              comparisonWithOuterHouses: comparisonWithOuterHouseBand,
-              restrainedAngloComparison:
-                comparison &&
-                profile === "anglo" &&
-                renderSnapshot.document?.compoundKind === "synastry",
+              ...wheelGeometryInputForSnapshot(
+                renderSnapshot,
+                target.side / 2 * resolveWheelScale(renderStyle, profile),
+              ),
               // The boundary being edited, so the solver moves its neighbours
               // aside for it and reports its wall as the room the whole stack
               // has. Both surfaces feed the same field, so typing a radius and
@@ -1408,29 +1456,9 @@ function WheelChartCanvas({
           const nextStyleScene = buildWheelStyleScene({
             style: renderStyle,
             authoringScope: styleAuthoringEditScope === "base" ? "base" : profile,
-            // Asked of the *same map the wheel is painted from*, not of the
-            // editor's working set alone.
-            //
-            // A saved profile's variant values live in the theme, not in the
-            // working overrides: Paper authors
-            // `authoring.wheel.anglo.canvas.chart.scale` and nothing in the
-            // editor. Given only the working set, the masking check saw no
-            // anglo value, so a drag on an Anglo wheel wrote base while anglo
-            // went on governing — the handle tracked the pointer, the wheel
-            // did not move, and the accumulated base value applied in one jump
-            // the moment anything changed which scope won. That is the
-            // non-continuous jump; the precedence was never wrong, the
-            // question was asked of the wrong map.
-            //
-            // Still read imperatively for the working half, which changes on
-            // every keystroke of a drag and must not re-subscribe this effect.
+            // Use the same theme-appearance + preset-geometry map as paint.
             variantAuthoredOverrideIds: variantAuthoredOverrideIds(
-              {
-                ...effectiveWheelAuthoringOverrides,
-                ...(styleWorkingPreviewActive
-                  ? useChartStyleEditorStore.getState().semanticOverrides
-                  : {}),
-              },
+              effectiveWheelAuthoringOverrides,
               profile,
             ),
             geometry: styleGeometryInput,
@@ -1439,6 +1467,9 @@ function WheelChartCanvas({
             ascendantDegrees: primary.angles.asc,
             useIndividualBodyColors: Boolean(primary.options.useDignityColors),
             useZodiacElementColors: Boolean(primary.options.useZodiacElementColors),
+            useZodiacElementFieldColors: Boolean(
+              primary.options.useZodiacElementFieldColors
+            ),
             signColors: primary.options.signColors,
             hitRegions: hitRegionsRef.current,
           });
@@ -1651,6 +1682,7 @@ function WheelChartCanvas({
           outerPaintEnvelope.paintRadiusScale,
           chartTitlebarTopBoundary(rect),
           outerPaintEnvelope.avoidTitlebar,
+          wheelVerticalAlignment,
         ),
       );
       if (resizeSettleTimerRef.current != null) {
@@ -1675,7 +1707,7 @@ function WheelChartCanvas({
         window.clearTimeout(resizeSettleTimerRef.current);
       }
     };
-  }, [chart, renderSnapshot, chartTextFont, chartSymbolFont, chartBodySymbolFont, chartSignSymbolFont, chartTermSymbolFont, chartDecanSymbolFont, chartAspectSymbolFont, renderStyle, selectedAspectBody, hideAllAspects, minorOnlyAspects, aspectInteractionPaintKey, styleEditorActive, styleAuthoringEditScope, effectiveWheelAuthoringOverrides, styleWorkingPreviewActive, activePushRole, setHoveredRegion, setTrackedFlagAnchor, mapRenderedPointToViewport, updateHoverFromClientPoint]);
+  }, [chart, renderSnapshot, chartTextFont, chartSymbolFont, chartBodySymbolFont, chartSignSymbolFont, chartTermSymbolFont, chartDecanSymbolFont, chartAspectSymbolFont, renderStyle, wheelVerticalAlignment, selectedAspectBody, hideAllAspects, minorOnlyAspects, aspectInteractionPaintKey, styleEditorActive, styleAuthoringEditScope, effectiveWheelAuthoringOverrides, styleWorkingPreviewActive, activePushRole, setHoveredRegion, setTrackedFlagAnchor, mapRenderedPointToViewport, updateHoverFromClientPoint]);
 
   const stylePointFromClient = useCallback((clientX: number, clientY: number): StyleScenePoint | null => {
     const wrap = wrapRef.current;
@@ -1797,7 +1829,7 @@ function WheelChartCanvas({
       // comparable tool: a click gets the whole reading, a double-click gets
       // the one part under the cursor. A class in no family selects itself,
       // so the depth a click reaches is simply how deep that class goes.
-      const hitClassId = styleSceneClassId(sceneHit.element);
+      const hitClassId = sceneHit.element.appearanceClassId ?? styleSceneClassId(sceneHit.element);
       const owner = WHEEL_CLASS_FAMILY_OWNER_BY_MEMBER.get(hitClassId);
       const ownerElement = owner
         ? styleSceneRef.current?.elements.find(
@@ -1867,6 +1899,11 @@ function WheelChartCanvas({
     handle: StyleSceneHandle,
   ) => {
     if (!handle.binding || handle.editability.state !== "editable") return;
+    const editorState = useChartStyleEditorStore.getState();
+    if (isWheelGeometryKey(handle.binding.semanticId) && (
+      editorState.geometryTransition ||
+      editorState.geometryProfile !== styleSceneRef.current?.profile
+    )) return;
     const point = stylePointFromClient(event.clientX, event.clientY);
     if (!point) return;
     event.preventDefault();
@@ -1882,7 +1919,6 @@ function WheelChartCanvas({
     // A field may still hold an open transaction from its focus. Close it on
     // its own terms first, so this drag is its own undo step rather than
     // silently extending — and then committing — someone else's.
-    const editorState = useChartStyleEditorStore.getState();
     if (editorState.gestureStart && editorState.gestureOwner !== CANVAS_GESTURE_OWNER) {
       editorState.endGesture(editorState.gestureOwner as string);
     }

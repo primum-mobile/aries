@@ -9,6 +9,7 @@ import { flushSync } from "react-dom";
 import { Clipboard, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -31,11 +32,20 @@ import {
   type TimedChartAction,
   type TransitSearchCatalog,
   type TransitSearchCursorState,
-  type TransitSearchObject,
   type TransitSearchObjectSegment,
   type TransitSearchProgressResult,
   type TransitSearchRow,
 } from "@/lib/daemon/client";
+import {
+  resolveTransitListFilters,
+  transitPointRoleIds,
+  transitListFilterKey,
+  toggleTransitListIds,
+  type TransitListFilters,
+  type TransitListFilterPreferences,
+} from "@/lib/transit-list-filters";
+import { TransitListFilterDrawer, type TransitFilterItem } from "./transit-list-filter-drawer";
+import { TransitListExport, transitExportCoverage, mergeTransitExportCoverage, type TransitExportCoverage } from "./transit-list-export";
 import { eventListBodyViewportHeight } from "@/lib/event-list-time";
 import {
   LIST_BUTTON_PROPS,
@@ -58,6 +68,7 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
 import { beginWorkspaceSnapshotCommand } from "@/stores/workspace-command-snapshot-gate";
 
 import { ListCalendarStepper, ListSegmentedControl } from "./list-controls";
+import { togglePointRoleIds } from "@/lib/point-role-selection";
 import {
   mergeTemporalCoverageBounds,
   temporalCoverageBounds,
@@ -79,18 +90,11 @@ type TransitDirectionMode = "direct" | "converse" | "both";
 type TransitColumnKey = "prom" | "aspect" | "sig" | "date" | "time" | "dc";
 type SearchDisplay = TransitSearchRow["promDisplay"];
 type TransitSpan = AgeSpan;
-type TransitPromittorItem = {
-  id: string;
-  label: string;
-  glyph: string;
-  marker: string;
-  group: string;
-};
-
 type TransitMonthStore = {
   rows: TransitSearchRow[];
   coverage: TransitSpan;
   coverageJdUt: TemporalCoverageBounds | null;
+  exportCoverage?: TransitExportCoverage;
   islandNonce: number;
   streamKey: string;
   summary: string;
@@ -134,10 +138,8 @@ const TRANSIT_FOCUS_ANCHOR = 0.25;
 const VIRTUAL_OVERSCAN_ROWS = 12;
 const VIRTUAL_SCROLL_SYNC_EVENT = "aries:virtual-scroll-sync";
 const TRANSIT_FRAME_EDGE_ROWS = 6;
-const TRANSIT_LIST_FALLBACK_ASPECTS = ["conjunction", "sextile", "square", "trine", "opposition"];
 const transitListViewStateCache = new Map<string, TransitListViewState>();
 const transitStreamViewportCache = new Map<string, Omit<TransitListViewState, "direction">>();
-const EMPTY_PROMITTOR_IDS: readonly string[] = Object.freeze([]);
 const EMPTY_TIMESTAMPS: readonly number[] = Object.freeze([]);
 
 function dispatchVirtualScrollSync(scroller: HTMLDivElement, beforePaint = false): void {
@@ -152,6 +154,7 @@ function listCacheKey(parts: Record<string, unknown>): string {
 
 export function TransitListView({
   documentId,
+  sourceName,
   focusDatetime,
   embedded = false,
   includeTemporal = false,
@@ -211,21 +214,18 @@ export function TransitListView({
   );
   const [catalog, setCatalog] = React.useState<TransitSearchCatalog | null>(null);
   const [catalogOptionsSeq, setCatalogOptionsSeq] = React.useState(-1);
-  const configuredPromittorId = transitListPreferences?.selectedPromittorId ?? null;
-  const promittorDrawerOpen = transitListPreferences?.promittorDrawerOpen ?? false;
-  const availablePromittorIds = React.useMemo(
-    () => (catalog ? transitListPromittorIds(catalog) : EMPTY_PROMITTOR_IDS),
-    [catalog],
+  const { selectedPointIds, selectedAspectIds, pointRoles } = transitListPreferences ?? {};
+  const pointFilterSide = transitListPreferences?.pointFilterSide ?? "from";
+  const filterDrawerOpen = transitListPreferences?.filterDrawerOpen ?? false;
+  const resolvedFilters = React.useMemo(
+    () => resolveTransitListFilters(catalog, { selectedPointIds, selectedAspectIds, pointRoles }),
+    [catalog, selectedPointIds, selectedAspectIds, pointRoles],
   );
-  const selectedPromittorId =
-    configuredPromittorId && availablePromittorIds.includes(configuredPromittorId)
-      ? configuredPromittorId
-      : null;
-  const activePromittorIds = React.useMemo<readonly string[] | null>(
-    () => (selectedPromittorId ? [selectedPromittorId] : null),
-    [selectedPromittorId],
+  const activeFilterKey = React.useMemo(() => transitListFilterKey(resolvedFilters), [resolvedFilters]);
+  const activeFilters = React.useMemo(
+    () => JSON.parse(activeFilterKey) as TransitListFilters,
+    [activeFilterKey],
   );
-  const activePromittorKey = selectedPromittorId ?? "all";
   const [requestFocusDatetime, setRequestFocusDatetime] = React.useState(
     initialRequestFocusDatetime,
   );
@@ -274,16 +274,16 @@ export function TransitListView({
   const frameFocusSettleTimerRef = React.useRef<number | null>(null);
   const runSettledFrameFocusRef = React.useRef<() => void>(() => undefined);
   const frameFocusEffectMountedRef = React.useRef(false);
-  const activePromittorIdsRef = React.useRef<readonly string[] | null>(activePromittorIds);
+  const activeFiltersRef = React.useRef(activeFilters);
   const optionsSeq = useTransitOptionsSeq();
   const reportTemporalLens = useTemporalConfluenceLensReporter();
   React.useEffect(() => {
-    if (!catalog) return;
+    if (!catalog || !sidebarListPreferencesHydrated) return;
     reportTemporalLens({
       direction,
-      ...(activePromittorIds ? { promittorIds: [...activePromittorIds] } : {}),
+      ...activeFilters,
     });
-  }, [activePromittorIds, catalog, direction, reportTemporalLens]);
+  }, [activeFilters, catalog, direction, reportTemporalLens, sidebarListPreferencesHydrated]);
   const directionRef = React.useRef(direction);
   const rowsRef = React.useRef<TransitSearchRow[]>([]);
   const visibleMonthIndexRef = React.useRef(visibleMonthIndex);
@@ -334,8 +334,8 @@ export function TransitListView({
     storeRef.current = store;
   }, [store]);
   React.useEffect(() => {
-    activePromittorIdsRef.current = activePromittorIds;
-  }, [activePromittorIds]);
+    activeFiltersRef.current = activeFilters;
+  }, [activeFilters]);
   React.useEffect(() => {
     directionRef.current = direction;
   }, [direction]);
@@ -350,14 +350,14 @@ export function TransitListView({
       listCacheKey({
         documentId,
         direction,
-        promittorScope: activePromittorKey,
+        filters: activeFilterKey,
         includeTemporal: temporalRequested,
         includeOrbTemporal,
         optionsSeq,
         catalogOptionsSeq,
       }),
     [
-      activePromittorKey,
+      activeFilterKey,
       catalogOptionsSeq,
       direction,
       documentId,
@@ -367,8 +367,8 @@ export function TransitListView({
     ],
   );
   const viewportKey = React.useMemo(
-    () => transitViewportKey(viewStateKey, direction, activePromittorKey),
-    [activePromittorKey, direction, viewStateKey],
+    () => transitViewportKey(viewStateKey, direction, activeFilterKey),
+    [activeFilterKey, direction, viewStateKey],
   );
   const viewportKeyRef = React.useRef(viewportKey);
   React.useEffect(() => {
@@ -423,6 +423,7 @@ export function TransitListView({
 
   React.useEffect(() => {
     if (!catalog || catalogOptionsSeq !== optionsSeq) return undefined;
+    if (!sidebarListPreferencesHydrated) return undefined;
     const worldSeq = worldSeqRef.current + 1;
     worldSeqRef.current = worldSeq;
     extendCooldownUntilRef.current = { previous: 0, next: 0 };
@@ -490,7 +491,7 @@ export function TransitListView({
       direction,
       includeTemporal: temporalRequested,
       includeOrbTemporal,
-      promittorIds: activePromittorIds,
+      filters: activeFilters,
       span: island.window,
       loadDirection: "around",
       rowBudget: Math.max(
@@ -516,7 +517,7 @@ export function TransitListView({
 
     return cleanupCurrentWorld;
   }, [
-    activePromittorIds,
+    activeFilters,
     catalog,
     catalogOptionsSeq,
     direction,
@@ -524,6 +525,7 @@ export function TransitListView({
     includeOrbTemporal,
     island,
     optionsSeq,
+    sidebarListPreferencesHydrated,
     stitchKey,
     t,
     temporalRequested,
@@ -590,6 +592,7 @@ export function TransitListView({
         const nextStore: TransitMonthStore = {
           ...base,
           rows: stitchedRows,
+          exportCoverage: mergeTransitExportCoverage(base.exportCoverage, transitExportCoverage(payload)),
           coverage: {
             start: Math.min(base.coverage.start, chunkSpan.start),
             end: Math.max(base.coverage.end, chunkSpan.end),
@@ -629,7 +632,7 @@ export function TransitListView({
         direction,
         includeTemporal: temporalRequested,
         includeOrbTemporal,
-        promittorIds: activePromittorIdsRef.current,
+        filters: activeFiltersRef.current,
         span,
         loadDirection,
         rowBudget: Math.max(
@@ -856,8 +859,8 @@ export function TransitListView({
     () =>
       authoritativeStream
         ? sourceRows
-        : bootstrapTransitRows(sourceRows, activePromittorIds),
-    [activePromittorIds, authoritativeStream, sourceRows],
+        : bootstrapTransitRows(sourceRows, activeFilters.promittorIds),
+    [activeFilters, authoritativeStream, sourceRows],
   );
   const temporalCoverage = React.useMemo(
     () =>
@@ -969,7 +972,7 @@ export function TransitListView({
       markProgrammaticFrameFollow,
     );
   }, [
-    activePromittorKey,
+    activeFilterKey,
     focusIndex,
     focusIsResident,
     islandSignature,
@@ -1030,12 +1033,7 @@ export function TransitListView({
     () => formatMonthIndexLabel(visibleMonthIndex),
     [visibleMonthIndex],
   );
-  const promittorItems = React.useMemo(() => transitPromittorItems(catalog, t), [catalog, t]);
-  const selectedPromittorItem = React.useMemo(
-    () => promittorItems.find((item) => item.id === selectedPromittorId) ?? null,
-    [promittorItems, selectedPromittorId],
-  );
-  const promittorSelectionLabel = selectedPromittorItem?.label ?? t("tlview.all");
+  const pointItems = React.useMemo(() => transitPointItems(catalog, t), [catalog, t]);
   const captureCurrentViewport = React.useCallback(() => {
     const nextFocus = viewportTransitFocusIso(
       rows,
@@ -1077,35 +1075,17 @@ export function TransitListView({
     },
     [cancelFrameFocusSettle],
   );
-  const selectPromittor = React.useCallback(
-    (promittorId: string | null) => {
-      const nextPromittorKey = promittorId ?? "all";
-      if (nextPromittorKey === activePromittorKey) {
-        setTransitListPreferences(documentId, {
-          selectedPromittorId: promittorId,
-          promittorDrawerOpen: false,
-        });
-        return;
+  const changeFilters = React.useCallback(
+    (patch: Partial<TransitListFilterPreferences>) => {
+      const nextFilters = resolveTransitListFilters(catalog, { ...transitListPreferences, ...patch });
+      const nextKey = transitListFilterKey(nextFilters);
+      if (nextKey !== activeFilterKey) {
+        const currentView = captureCurrentViewport();
+        activateStreamViewport(transitViewportKey(viewStateKey, direction, nextKey), currentView);
       }
-      const currentView = captureCurrentViewport();
-      activateStreamViewport(
-        transitViewportKey(viewStateKey, direction, nextPromittorKey),
-        currentView,
-      );
-      setTransitListPreferences(documentId, {
-        selectedPromittorId: promittorId,
-        promittorDrawerOpen: false,
-      });
+      setTransitListPreferences(documentId, patch);
     },
-    [
-      activateStreamViewport,
-      activePromittorKey,
-      captureCurrentViewport,
-      direction,
-      documentId,
-      setTransitListPreferences,
-      viewStateKey,
-    ],
+    [catalog, transitListPreferences, activeFilterKey, captureCurrentViewport, activateStreamViewport, viewStateKey, direction, setTransitListPreferences, documentId],
   );
   const jumpByMonths = React.useCallback((delta: number) => {
     const nextMonth = clampMonthIndex((pendingMonthJumpRef.current ?? visibleMonthIndexRef.current) + delta);
@@ -1144,7 +1124,7 @@ export function TransitListView({
       if (nextDirection === direction) return;
       const currentView = captureCurrentViewport();
       activateStreamViewport(
-        transitViewportKey(viewStateKey, nextDirection, activePromittorKey),
+        transitViewportKey(viewStateKey, nextDirection, activeFilterKey),
         currentView,
       );
       setDirection(nextDirection);
@@ -1152,7 +1132,7 @@ export function TransitListView({
     },
     [
       activateStreamViewport,
-      activePromittorKey,
+      activeFilterKey,
       captureCurrentViewport,
       direction,
       documentId,
@@ -1208,19 +1188,11 @@ export function TransitListView({
             options={directionOptions}
             value={direction}
             onChange={changeDirection}
-            labelPlacement="inline"
           />
-          <Button
-            type="button"
-            {...LIST_BUTTON_PROPS.command}
-            onClick={() =>
-              setTransitListPreferences(documentId, {
-                promittorDrawerOpen: !promittorDrawerOpen,
-              })
-            }
-            aria-expanded={promittorDrawerOpen}
-          >
-            {t("tlview.point")}: {promittorSelectionLabel}
+          <Button type="button" {...LIST_BUTTON_PROPS.command}
+            onClick={() => setTransitListPreferences(documentId, { filterDrawerOpen: !filterDrawerOpen })}
+            aria-expanded={filterDrawerOpen}>
+            {t("search.filter")}
           </Button>
         </div>
         <div className={LIST_PANE_CLASSES.controlRow}>
@@ -1235,14 +1207,21 @@ export function TransitListView({
           <Button type="button" {...LIST_BUTTON_PROPS.command} onClick={jumpToCurrent}>
             {t("tlview.current")}
           </Button>
-        </div>
-        {promittorDrawerOpen ? (
-          <TransitPromittorDrawer
-            items={promittorItems}
-            activeId={selectedPromittorId}
-            onSelect={selectPromittor}
+          <TransitListExport
+            request={{
+              documentId,
+              year: Math.floor(visibleMonthIndex / 12),
+              month: visibleMonthIndex % 12 + 1,
+              direction,
+              ...activeFilters,
+            }}
+            monthLabel={monthLabel}
+            sourceName={sourceName}
+            bufferedRows={authoritativeStream && !store?.truncated ? sourceRows : undefined}
+            coverage={authoritativeStream && !store?.truncated ? store?.exportCoverage : undefined}
+            disabled={!catalog || !sidebarListPreferencesHydrated}
           />
-        ) : null}
+        </div>
         {error && rows.length > 0 ? (
           <div
             role="status"
@@ -1252,37 +1231,69 @@ export function TransitListView({
           </div>
         ) : null}
       </div>
-      <div
-        ref={scrollerRef}
-        className={LIST_PANE_CLASSES.scroller}
-        data-transit-list-focus-index={focusIndex}
-        data-transit-list-focus-resident={focusIsResident ? "true" : "false"}
-        data-transit-list-focus-target-ms={Math.trunc(focusTargetMs)}
-      >
-        {error && rows.length === 0 ? (
-          <div className={LIST_PANE_CLASSES.error}>{error}</div>
-        ) : (
-          <table className={cn("aries-list caption-bottom border-collapse", LIST_ROLE_CLASSES.symbolic)}>
-            <VirtualizedTableRows
-              rows={rows}
-              loading={loading}
-              emptyLabel={t("tlview.noTransits")}
-              colSpan={TRANSIT_COLUMNS.length}
-              scrollerRef={scrollerRef}
-              initialIndex={focusIndex}
-              rowHeight={rowHeight}
-              renderRow={(row, index) => (
-                <TransitRow
-                  key={rowKeys[index] ?? `${row.key}:${index}`}
-                  row={row}
-                  documentId={documentId}
-                  focused={index === focusIndex}
-                  rowHeight={rowHeight}
+      <div className="flex min-h-0 flex-1">
+        <ResizablePanelGroup
+          autoSaveId="aries.transit-list-filters-vs-results"
+          direction="vertical"
+          className="min-h-0 min-w-0"
+        >
+          {filterDrawerOpen ? (
+            <>
+              <ResizablePanel id="transit-filters" order={1} defaultSize={40} minSize={20} className="min-h-0 min-w-0">
+                <TransitListFilterDrawer
+                  label={t("dirview.points")} items={pointItems}
+                  side={pointFilterSide}
+                  onSideChange={(pointFilterSide) => setTransitListPreferences(documentId, { pointFilterSide })}
+                  fromIds={activeFilters.promittorIds} toIds={activeFilters.significatorIds}
+                  onToggle={(ids) => changeFilters({ pointRoles: togglePointRoleIds(
+                    pointRoles ?? { fromIds: activeFilters.promittorIds, toIds: activeFilters.significatorIds },
+                    pointFilterSide, ids,
+                  ) })}
+                  aspects={catalog?.aspects ?? []} selectedAspectIds={activeFilters.aspects}
+                  onToggleAspect={(id) => changeFilters({ selectedAspectIds: toggleTransitListIds(selectedAspectIds, activeFilters.aspects, [id]) })}
+                  onSelectAspects={(ids) => changeFilters({ selectedAspectIds: ids })}
                 />
-              )}
-            />
-          </table>
-        )}
+              </ResizablePanel>
+              <ResizableHandle aria-label={t("dirview.points")} />
+            </>
+          ) : null}
+          <ResizablePanel id="transit-results" order={2} defaultSize={60} minSize={20} className="min-h-0 min-w-0">
+            <div className="flex h-full min-h-0 flex-col">
+              <div
+                ref={scrollerRef}
+                className={LIST_PANE_CLASSES.scroller}
+                data-transit-list-focus-index={focusIndex}
+                data-transit-list-focus-resident={focusIsResident ? "true" : "false"}
+                data-transit-list-focus-target-ms={Math.trunc(focusTargetMs)}
+              >
+                {error && rows.length === 0 ? (
+                  <div className={LIST_PANE_CLASSES.error}>{error}</div>
+                ) : (
+                  <table className={cn("aries-list caption-bottom border-collapse", LIST_ROLE_CLASSES.symbolic)}>
+                    <VirtualizedTableRows
+                      rows={rows}
+                      loading={loading}
+                      emptyLabel={t("tlview.noTransits")}
+                      colSpan={TRANSIT_COLUMNS.length}
+                      scrollerRef={scrollerRef}
+                      initialIndex={focusIndex}
+                      rowHeight={rowHeight}
+                      renderRow={(row, index) => (
+                        <TransitRow
+                          key={rowKeys[index] ?? `${row.key}:${index}`}
+                          row={row}
+                          documentId={documentId}
+                          focused={index === focusIndex}
+                          rowHeight={rowHeight}
+                        />
+                      )}
+                    />
+                  </table>
+                )}
+              </div>
+            </div>
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </div>
     </div>
   );
@@ -1313,6 +1324,7 @@ function TransitRow({
         <TableCell className="text-center">
           <TransitObjectCell
             glyph={row.promittorGlyph}
+            glyphFont={row.promittorGlyphFont}
             label={row.promittorLabel}
             marker={row.promittorMarker}
             segments={row.promittorSegments}
@@ -1325,6 +1337,7 @@ function TransitRow({
         <TableCell className="text-center">
           <TransitObjectCell
             glyph={row.significatorGlyph}
+            glyphFont={row.significatorGlyphFont}
             label={row.significatorLabel}
             marker={row.significatorMarker}
             segments={row.significatorSegments}
@@ -1359,12 +1372,14 @@ function TransitAspectCell({ row }: { row: TransitSearchRow }) {
 
 function TransitObjectCell({
   glyph,
+  glyphFont,
   label,
   marker,
   segments,
   display,
 }: {
   glyph: string;
+  glyphFont?: "morinus" | "text";
   label: string;
   marker?: string;
   segments?: TransitSearchObjectSegment[];
@@ -1384,7 +1399,7 @@ function TransitObjectCell({
       {hasSegments ? (
         <SegmentToken segments={segments ?? []} color={color} />
       ) : glyph ? (
-        <Glyph ch={glyph} className="aries-search-glyph shrink-0" color={color} />
+        <Glyph ch={glyph} font={glyphFont} className="aries-search-glyph shrink-0" color={color} />
       ) : (
         <span>{baseLabel}</span>
       )}
@@ -1530,87 +1545,6 @@ function TransitRowContextMenu({
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
-  );
-}
-
-function TransitPromittorDrawer({
-  items,
-  activeId,
-  onSelect,
-}: {
-  items: TransitPromittorItem[];
-  activeId: string | null;
-  onSelect: (id: string | null) => void;
-}) {
-  const t = useT();
-  const groups = React.useMemo(() => {
-    const ordered: Array<{ group: string; items: TransitPromittorItem[] }> = [];
-    for (const item of items) {
-      let bucket = ordered.find((entry) => entry.group === item.group);
-      if (!bucket) {
-        bucket = { group: item.group, items: [] };
-        ordered.push(bucket);
-      }
-      bucket.items.push(item);
-    }
-    return ordered;
-  }, [items]);
-
-  if (!items.length) {
-    return (
-      <div className="w-full border-t border-border/70 pt-2">
-        <Button type="button" size="xs" variant="ghost" disabled>
-          {t("tlview.loading")}
-        </Button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="w-full max-h-48 overflow-auto border-t border-border/70 pt-2">
-      <div className="flex flex-col gap-2">
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-          <span className="mr-1 min-w-14 text-[length:var(--aries-font-size-section)] text-muted-foreground">
-            {t("tlview.point")}
-          </span>
-          <Button
-            type="button"
-            size="xs"
-            variant={activeId === null ? "default" : "outline"}
-            aria-pressed={activeId === null}
-            onClick={() => onSelect(null)}
-            className="h-6 max-w-44 justify-start gap-1 px-2 text-[length:var(--aries-font-size-small)]"
-          >
-            {t("tlview.all")}
-          </Button>
-        </div>
-        {groups.map((group) => (
-          <div key={group.group} className="flex min-w-0 flex-wrap items-center gap-1.5">
-            <span className="mr-1 min-w-14 text-[length:var(--aries-font-size-section)] text-muted-foreground">
-              {group.group}
-            </span>
-            {group.items.map((item) => {
-              const active = item.id === activeId;
-              return (
-                <Button
-                  key={item.id}
-                  type="button"
-                  size="xs"
-                  variant={active ? "default" : "outline"}
-                  aria-pressed={active}
-                  onClick={() => onSelect(item.id)}
-                  className="h-6 max-w-44 justify-start gap-1 px-2 text-[length:var(--aries-font-size-small)]"
-                >
-                  {item.glyph ? <Glyph ch={item.glyph} /> : null}
-                  <span className="truncate">{item.label}</span>
-                  {item.marker ? <span className="text-[length:var(--aries-font-size-section)] text-muted-foreground">{item.marker}</span> : null}
-                </Button>
-              );
-            })}
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -1807,15 +1741,17 @@ function Glyph({
   className,
   title,
   color,
+  font = "morinus",
 }: {
   ch: string;
   className?: string;
   title?: string;
   color?: string;
+  font?: "morinus" | "text";
 }) {
   return (
     <span
-      style={{ fontFamily: "'AriesMorinus'", color: color || undefined }}
+      style={{ fontFamily: font === "morinus" ? "'AriesMorinus'" : undefined, color: color || undefined }}
       className={className}
       title={title}
       aria-hidden={!title}
@@ -1831,7 +1767,7 @@ async function fetchTransitCursor({
   direction,
   includeTemporal,
   includeOrbTemporal,
-  promittorIds,
+  filters,
   span,
   loadDirection,
   rowBudget,
@@ -1845,7 +1781,7 @@ async function fetchTransitCursor({
   direction: TransitDirectionMode;
   includeTemporal: boolean;
   includeOrbTemporal: boolean;
-  promittorIds: readonly string[] | null;
+  filters: TransitListFilters;
   span: TransitSpan;
   loadDirection: "around" | "previous" | "next";
   rowBudget: number;
@@ -1865,10 +1801,7 @@ async function fetchTransitCursor({
     fromDate: range.fromDate,
     toDate: range.toDate,
     techniques: directionTechniques(direction),
-    promittorIds:
-      promittorIds === null ? transitListPromittorIds(catalog) : [...promittorIds],
-    significatorIds: transitListSignificatorIds(catalog),
-    aspects: transitListAspectIds(catalog),
+    ...filters,
     includeSignChanges: false,
     includeTemporal,
     includeOrbTemporal,
@@ -1995,6 +1928,7 @@ function transitStoreFromCursorPayload(
   if (payload.rows.length === 0 && !payload.complete && !payload.cursor.exhausted) return null;
   return {
     rows: payload.rows,
+    exportCoverage: transitExportCoverage(payload),
     coverage: transitSpanForCursor(payload.cursor),
     coverageJdUt: temporalCoverageBounds(
       payload.cursor.coverageStartJdUt,
@@ -2082,9 +2016,9 @@ function transitEdgeRetryDelay(attempt: number): number {
 function transitViewportKey(
   documentId: string,
   direction: TransitDirectionMode,
-  promittorKey: string,
+  filterKey: string,
 ): string {
-  return listCacheKey({ documentId, direction, promittorScope: promittorKey });
+  return listCacheKey({ documentId, direction, filters: filterKey });
 }
 
 function cursorAnchorDateForSpan(value: string, span: TransitSpan): string {
@@ -2140,52 +2074,37 @@ function transitStitchRowKey(row: TransitSearchRow): string {
   ].join("\u0000");
 }
 
-function transitPromittorItems(
-  catalog: TransitSearchCatalog | null,
-  t: TFunc,
-): TransitPromittorItem[] {
+function transitPointItems(catalog: TransitSearchCatalog | null, t: TFunc): TransitFilterItem[] {
   if (!catalog) return [];
-  const objects = new Map<string, TransitSearchObject>();
-  for (const obj of catalog.objects) objects.set(obj.id, obj);
-  const items: TransitPromittorItem[] = [];
-  for (const id of transitListPromittorIds(catalog)) {
-    const obj = objects.get(id);
-    if (!obj) continue;
-    items.push({
-      id,
+  const eligible = new Set([...transitPointRoleIds(catalog, "promittor"), ...transitPointRoleIds(catalog, "significator")]);
+  const trailingGroups = ["part", "fixed_star", "asteroid"];
+  return catalog.objects.filter((obj) => eligible.has(obj.id)).map((obj) => {
+    const groupId = obj.id.startsWith("asteroid:") ? "asteroid" : obj.family;
+    return {
+      id: obj.id,
       label: obj.label,
       glyph: obj.glyph,
+      glyphFont: obj.glyphFont,
       marker: obj.displayMarker,
-      group: transitPromittorGroupLabel(obj.family, t),
-    });
-  }
-  return items;
+      groupId,
+      group: transitPointGroupLabel(groupId, t),
+      from: obj.transitRoles?.promittor === "supported",
+      to: obj.transitRoles?.significator === "supported",
+    };
+  }).sort((a, b) => trailingGroups.indexOf(a.groupId) - trailingGroups.indexOf(b.groupId));
 }
 
-function transitPromittorGroupLabel(family: string, t: TFunc): string {
+function transitPointGroupLabel(family: string, t: TFunc): string {
   if (family === "planet") return t("tlview.planets");
   if (family === "node") return t("common.nodes");
   if (family === "angle") return t("styleLab.scene.angles");
   if (family === "fortune") return t("common.fortune");
   if (family === "fixed_star") return t("common.fixedStars");
   if (family === "syzygy") return t("common.syzygy");
+  if (family === "part") return t("search.arabicParts");
+  if (family === "custom_point") return t("search.createdPoints");
+  if (family === "asteroid") return t("chartmenu.asteroids");
   return t("dirview.points");
-}
-
-function transitListPromittorIds(catalog: TransitSearchCatalog): string[] {
-  return nonEmptyIds(catalog.presets.promittors.standard, catalog.defaults.promittorIds);
-}
-
-function transitListSignificatorIds(catalog: TransitSearchCatalog): string[] {
-  return nonEmptyIds(catalog.presets.significators.standard, catalog.defaults.significatorIds);
-}
-
-function transitListAspectIds(catalog: TransitSearchCatalog): string[] {
-  return nonEmptyIds(catalog.presets.aspects.major, TRANSIT_LIST_FALLBACK_ASPECTS);
-}
-
-function nonEmptyIds(primary: readonly string[], fallback: readonly string[]): string[] {
-  return primary.length ? [...primary] : [...fallback];
 }
 
 function transitSeedWindowForFocus(value?: string | null, sourceMonths = 1): TransitSpan {

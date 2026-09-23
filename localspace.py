@@ -58,6 +58,7 @@ class LocalSpaceResult:
     origin_alt_m: float
     points: tuple[astrocart.ACGPoint, ...] = field(default_factory=tuple)
     lines: tuple[LocalSpaceLine, ...] = field(default_factory=tuple)
+    max_distance_m: float = LOCAL_SPACE_MAX_DISTANCE_METERS
 
     def to_geojson(self) -> dict:
         # Labels are served UI text. Resolve them from the active language at
@@ -85,6 +86,13 @@ class LocalSpaceResult:
                 "altitude": line.altitude_true_deg,
                 "altitude_apparent": line.altitude_apparent_deg,
             }
+            if Geodesic is not None:
+                props["curve"] = {
+                    "type": "geodesic",
+                    "origin": [self.origin_lon, self.origin_lat],
+                    "bearing": line.bearing_deg,
+                    "domain": [0.0, self.max_distance_m],
+                }
             if line.opposition:
                 source_bearing = (
                     float(line.source_bearing_deg)
@@ -213,6 +221,7 @@ def compute_local_space(
         origin_alt_m=origin_alt_m,
         points=resolved_points,
         lines=tuple(lines),
+        max_distance_m=float(max_distance_m),
     )
 
 

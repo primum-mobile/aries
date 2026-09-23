@@ -704,6 +704,15 @@ def _live_theme_presets() -> list[dict] | None:
         return None
 
 
+def _live_wheel_styles() -> list[dict]:
+    try:
+        from webapp.daemon.options_service import options_service
+        return options_service.get_wheel_style_catalog()
+    except Exception as exc:
+        logger.warning("could not load saved wheel styles for menu: %s", exc)
+        return []
+
+
 def _theme_presets_submenu(theme_presets: list[dict] | None = None) -> dict:
     children = []
     if theme_presets is None:
@@ -741,7 +750,7 @@ def _theme_presets_submenu(theme_presets: list[dict] | None = None) -> dict:
     )
 
 
-def _options_menu_children(theme_presets: list[dict] | None = None) -> list[dict]:
+def _options_menu_children(theme_presets: list[dict] | None = None, wheel_styles: list[dict] | None = None) -> list[dict]:
     house_labels = {
         'P': 'Placidus', 'K': 'Koch', 'R': 'Regiomontanus', 'C': 'Campanus',
         'E': 'Equal', 'W': 'Whole Sign', 'F': 'Fortune Houses', 'X': 'Axial Rotation', 'Q': 'True Ascendant', 'M': 'Morinus',
@@ -774,7 +783,11 @@ def _options_menu_children(theme_presets: list[dict] | None = None) -> list[dict
                 ("0", "Classic Wheel"),
                 ("1", "Compact Wheel"),
                 ("2", "Anglo Wheel"),
+                ("3", "House Wheel"),
+                ("4", "Cusp Wheel"),
             ]),
+            *[_quick_check(f"quick.options.wheel-preset:{style['id']}", str(style['name']))
+              for style in (wheel_styles or []) if str(style.get('id', '')).startswith('user.')],
             {"type": "separator"},
             _quick_submenu(
                 "menu.options.quick.anglo-dense-label-layout",
@@ -822,17 +835,16 @@ def _options_menu_children(theme_presets: list[dict] | None = None) -> list[dict
             _quick_check("quick.options.display:showvertex", "Vertex"),
             _quick_check("quick.options.display:shownodes", "Nodes"),
             _quick_check("quick.options.display:showlof", "Fortuna"),
-            _quick_check("quick.options.display:showprenatalsyzygy", "Prenatal Syzygy"),
+            _quick_check("quick.options.display:showprenatalsyzygy", "Syzygy", label_key="optmenu.prenatalSyzygy"),
             _quick_check(
                 "quick.options.display:showprenataleclipse",
                 str(mtexts.txts.get("Eclipses", "Eclipses")),
                 label_key="settings.prenatalEclipseMarker",
             ),
-            _quick_check("quick.options.display:positions", str(mtexts.txts.get("Positions", "Speculum"))),
-            _quick_check("quick.options.display:intables", "In tables"),
+            _quick_check("quick.options.display:positions", "Chart position labels", label_key="settings.chartPositionLabels"),
             _quick_check("quick.options.terms", "Terms"),
             _quick_check("quick.options.display:showdecans", "Decans"),
-            _quick_check("quick.options.display:topocentric", "Topocentric Moon"),
+            _quick_check("quick.options.display:topocentric", "Moon parallax correction"),
             _quick_check("quick.options.display:morin_antiscia", "Morin antiscia"),
             {"type": "separator"},
             _quick_check("quick.options.transcendental:0", "Uranus"),
@@ -870,7 +882,8 @@ def _options_menu_children(theme_presets: list[dict] | None = None) -> list[dict
             ]),
             {"type": "separator"},
             _quick_check("quick.options.display:showfixstarsnodes", "Fixstars to Nodes"),
-            _quick_check("quick.options.display:showfixstarshcs", "Fixstars to intermediate HCs"),
+            _quick_check("quick.options.display:showfixstarshcs", "Fixed stars / asteroids to intermediate cusps",
+                         label_key="optmenu.fixstarsToIntermediateHcs"),
             _quick_check("quick.options.display:showfixstarslof", "Fixstars to Fortuna"),
             {"type": "separator"},
             _quick_submenu("menu.options.quick.phasis", "Phasis mode", _quick_radio("quick.options.phasis", [
@@ -910,12 +923,11 @@ def _options_menu_children(theme_presets: list[dict] | None = None) -> list[dict
             _quick_check("quick.options.display:showseconds", "Seconds in header"),
             _quick_check("quick.options.display:show_help_chip", "Chart navigation bar"),
         ]),
-        _quick_submenu("menu.options.quick.progressions", "Progressions and returns", [
+        _quick_submenu("menu.options.quick.progressions", "Progressions", [
             _quick_submenu("menu.options.quick.progressed-angle", "Progressed angles", _quick_radio(
                 "quick.options.progressed-angle",
                 [
                     *[(str(v), posfordate.progression_angle_method_label(v)) for v in sorted(posfordate.ANGLE_METHOD_NAMES)],
-                    (posfordate.SOLAR_ARC_ANGLES_ZODIACAL, "Zodiacal directions (uniform arc)"),
                 ],
             )),
             _quick_submenu("menu.options.quick.progression-day", "Progression day type", _quick_radio(
@@ -928,7 +940,22 @@ def _options_menu_children(theme_presets: list[dict] | None = None) -> list[dict
                 ("2", "Both"),
             ])),
             _quick_check("quick.options.quickcharts:timed_chart_show_radix_default", "Timed rows show radix"),
-            {"type": "separator"},
+            _quick_check("quick.options.quickcharts:aspectlist_prebirth_secondary_converse",
+                         "Pre-birth perfections (converse)", label_key="settings.prebirthPerfectionsConverse"),
+            _quick_submenu("menu.options.quick.solar-arc", "Solar Arc directions", [
+                _quick_submenu("menu.options.quick.solar-arc-mode", "Method", [
+                    _quick_check("quick.options.solar-arc-mode:zodiacal", "Zodiacal directions (uniform arc)",
+                                 label_key="optmenu.zodiacalDirectionsUniform"),
+                    _quick_check("quick.options.solar-arc-mode:progressed", "Calculated angles",
+                                 label_key="settings.calculatedAngles"),
+                ], label_key="settings.method"),
+                _quick_submenu("menu.options.quick.solar-arc-angle", "Calculated angles", _quick_radio(
+                    "quick.options.solar-arc-angle",
+                    [(str(v), posfordate.progression_angle_method_label(v)) for v in sorted(posfordate.ANGLE_METHOD_NAMES)],
+                ), label_key="settings.calculatedAngles"),
+            ], label_key="settings.tabSolarArcDirections"),
+        ], label_key="settings.tabProgressions"),
+        _quick_submenu("menu.options.quick.returns", "Returns", [
             _quick_submenu("menu.options.quick.solar-year", "Solar return year", _quick_radio("quick.options.solar-year", [
                 ("0", "Current year"),
                 ("1", "Next year"),
@@ -951,7 +978,7 @@ def _options_menu_children(theme_presets: list[dict] | None = None) -> list[dict
             _quick_check("quick.options.revolutions:revsidereal_marr_solar", "Marr sidereal solar returns"),
             _quick_check("quick.options.revolutions:revsidereal_marr_lunar", "Marr sidereal lunar returns"),
             _quick_check("quick.options.revolutions:revsidereal_marr_planet", "Marr sidereal planetary returns"),
-        ]),
+        ], label_key="settings.tabRevolutions"),
         _quick_submenu("menu.options.quick.timelords", "Time lords and alerts", [
             _quick_check("quick.options.profections:wholeSign", "Whole-sign profections"),
             _quick_check("quick.options.profections:zodiacal", "Zodiacal profections"),
@@ -980,6 +1007,23 @@ def _options_menu_children(theme_presets: list[dict] | None = None) -> list[dict
             ])),
             _quick_check("quick.options.display:usetradfixstarnamespdlist", "Traditional fixed-star names in PD lists"),
         ]),
+        {"type": "separator"},
+        {
+            "type": "item",
+            "id": "menu.options.fixed-stars",
+            "label": str(mtexts.txts.get('FixStars', 'Fixed Stars')),
+            "labelKey": "settings.tabFixedStars",
+            "enabled": True,
+            "status": "live",
+        },
+        {
+            "type": "item",
+            "id": "menu.options.asteroids",
+            "label": str(mtexts.txts.get('Asteroids', 'Asteroids')),
+            "labelKey": "settings.tabAsteroids",
+            "enabled": True,
+            "status": "live",
+        },
         _theme_presets_submenu(theme_presets),
     ]
 
@@ -1099,6 +1143,7 @@ _NATIVE_MENU_FRONTEND_KEYS = {
     "cycle-secondary-view": "nativeMenu.cycleSecondaryView",
     "toggle-houses": "nativeMenu.toggleHouses",
     "menu.options.step-alerts": "nativeMenu.steppingAlerts",
+    "menu.options.asteroids": "settings.tabAsteroids",
 }
 
 
@@ -1169,7 +1214,7 @@ def _native_menu_manifest() -> dict:
         # The generated quick-options tree fully replaces the broad legacy
         # settings catalog. The titlebar drawer supplies its separate Full
         # settings entry; Cycle secondary view remains available by shortcut.
-        options_menu["children"] = _options_menu_children(_live_theme_presets())
+        options_menu["children"] = _options_menu_children(_live_theme_presets(), _live_wheel_styles())
     packs_submenu = _corpus_packs_submenu()
     if packs_submenu is not None:
         menus = manifest.setdefault("menus", [])

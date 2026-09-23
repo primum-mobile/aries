@@ -1,6 +1,7 @@
 // Copyright (C) 2026 Max Lange
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { compositionModuleUrl } from "./wheel-composition-test-loader.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -13,7 +14,7 @@ async function transpile(url) {
       module: ts.ModuleKind.ESNext,
       target: ts.ScriptTarget.ES2022,
     },
-  }).outputText;
+  }).outputText.replaceAll('"./wheel-composition"', `"${compositionModuleUrl}"`).replaceAll('"../chart/wheel-composition"', `"${compositionModuleUrl}"`);
 }
 
 function dataUrl(source) {
@@ -86,6 +87,8 @@ function profileV2() {
           assetId: "symbols-test",
           variationAxes: { wght: 500 },
         },
+        fontWeight: 700,
+        fontStyle: "italic",
         fontSize: schema.chartPx(24),
         tracking: schema.chartPx(1.5),
         color: {
@@ -220,6 +223,8 @@ test("profile compiler preserves class granularity and sparse variant overrides"
       assetId: "symbols-test",
       variationAxes: { wght: 500 },
     },
+    fontWeight: 700,
+    fontStyle: "italic",
     fontSizePx: 24,
     trackingPx: 1.5,
     color: "rgb(10 20 30 / 75%)",
@@ -257,6 +262,8 @@ test("flat authoring keys export shared base styles and sparse variant styles", 
   };
   const flat = {
     "authoring.wheel.base.bodies.inner.glyph.fontRef": fontRef,
+    "authoring.wheel.base.bodies.inner.glyph.fontWeight": 650,
+    "authoring.wheel.base.bodies.inner.glyph.fontStyle": "italic",
     "authoring.wheel.base.bodies.inner.glyph.fontSize": 23,
     "authoring.wheel.base.bodies.inner.glyph.tracking": 0.8,
     "authoring.wheel.base.bodies.inner.glyph.color": [90, 80, 70, 0.5],
@@ -268,6 +275,8 @@ test("flat authoring keys export shared base styles and sparse variant styles", 
   const profile = adapter.createChartStyleProfileV2FromFlatOverrides(flat);
   assert.deepEqual(profile.styles["bodies.inner.glyph"], {
     fontRef,
+    fontWeight: 650,
+    fontStyle: "italic",
     fontSize: { value: 23, unit: "px" },
     tracking: { value: 0.8, unit: "px" },
     color: {
@@ -295,6 +304,8 @@ test("flat authoring keys export shared base styles and sparse variant styles", 
   assert.equal(compiled.typography.anglo["bodies.inner.glyph"].fontSizePx, 23);
   assert.deepEqual(compiled.typography.compact["bodies.inner.glyph"], {
     fontRef,
+    fontWeight: 650,
+    fontStyle: "italic",
     fontSizePx: 23,
     trackingPx: 0.8,
     color: "rgb(90 80 70 / 50%)",
@@ -388,6 +399,36 @@ test("retained fill classes compile independent colors and scale deterministic t
     density: 50,
     angle: 45,
     seed: 0,
+  });
+});
+
+test("legacy subdivision material expands into separate term and decan bands", () => {
+  const compiled = adapter.compileFlatWheelAuthoringOverrides({
+    "authoring.wheel.base.fills.subdivisionBand.fillPattern": "stipple",
+    "authoring.wheel.base.fills.subdivisionBand.opacity": 22,
+    "authoring.wheel.base.fills.termBand.fillPattern": "solid",
+    "authoring.wheel.base.fills.termBand.opacity": 35,
+  });
+  assert.deepEqual(compiled.fillPaint.classic["fills.termBand"], {
+    fillPattern: "solid",
+    opacity: 0.35,
+  });
+  assert.deepEqual(compiled.fillPaint.classic["fills.decanBand"], {
+    fillPattern: "stipple",
+    opacity: 0.22,
+  });
+});
+
+test("House and Cusp Wheels compile independent cusp-degree materials", () => {
+  const compiled = adapter.compileFlatWheelAuthoringOverrides({
+    "authoring.wheel.houses.fills.cuspDegreeBand.backgroundColor": [242, 237, 226, 0.8],
+    "authoring.wheel.cusps.fills.cuspDegreeBand.fillPattern": "paper",
+  });
+  assert.deepEqual(compiled.fillPaint.houses["fills.cuspDegreeBand"], {
+    backgroundColor: "rgb(242 237 226 / 80%)",
+  });
+  assert.deepEqual(compiled.fillPaint.cusps["fills.cuspDegreeBand"], {
+    fillPattern: "paper",
   });
 });
 
@@ -644,8 +685,8 @@ test("direct font, ring, stroke, and dash px scale without legacy width quantiza
     {
       font: '"AriesFont_symbols_test"',
       size: 12,
-      weight: 500,
-      style: "normal",
+      weight: 700,
+      style: "italic",
       tracking: 0.75,
       color: "rgb(10 20 30 / 75%)",
       opacity: 0.6,
@@ -708,6 +749,8 @@ test("inspector defaults expose reference px, percent, and linked diameter", () 
         assetId: "symbols-test",
         variationAxes: { wght: 500 },
       },
+      fontWeight: 700,
+      fontStyle: "italic",
       fontSizePx: 24,
       trackingPx: 1.5,
       color: "rgb(10 20 30 / 75%)",
@@ -844,4 +887,118 @@ test("a position readout's three components resolve to one colour role", () => {
   ).color;
   assert.equal(ring, style.palette.signs);
   assert.notEqual(ring, parts[0]);
+});
+
+test("every wheel profile round-trips an authored fill, including both cusp-band wheels", () => {
+  // Adding a profile means widening its TYPES and every runtime allowlist that
+  // names the layouts. The types are checked by tsc; this covers the rest — a
+  // scope the compiler silently drops is an editor control that does nothing.
+  for (const scope of ["classic", "compact", "anglo", "houses", "cusps"]) {
+    const flat = {
+      // Authored colours travel as sRGB component arrays, not css strings.
+      [`authoring.wheel.${scope}.canvas.background.backgroundColor`]: [18, 52, 86],
+    };
+    const compiled = adapter.compileFlatWheelAuthoringOverrides(flat);
+    const authored = compiled.fillPaint?.[scope]?.["canvas.background"]?.backgroundColor;
+    assert.ok(
+      authored,
+      `${scope}: authored background must reach the renderer`,
+    );
+  }
+});
+
+test('an individual subdivision color keeps the inherited stipple and cell size', () => {
+  const compiled = adapter.compileFlatWheelAuthoringOverrides({
+    'authoring.wheel.base.fills.subdivisionBand.fillPattern': 'stipple',
+    'authoring.wheel.base.fills.subdivisionBand.cellSize': 2,
+    'authoring.wheel.base.fills.subdivisionBand.opacity': 22,
+    'authoring.wheel.anglo.fills.decanBand.backgroundColor': [198, 91, 91, 1],
+    'authoring.wheel.anglo.fills.decanBand.opacity': 12,
+  });
+  const material = compiled.fillPaint.anglo['fills.decanBand'];
+  assert.equal(material.fillPattern, 'stipple');
+  assert.equal(material.cellSizePx, 2);
+  assert.equal(material.opacity, 0.12);
+  assert.notEqual(material.backgroundColor, undefined);
+});
+
+test("arrowhead size inherits by variant independently from line width and display scale", () => {
+  const authoringOverrides = adapter.compileFlatWheelAuthoringOverrides({
+    "authoring.wheel.base.angles.inner.arrowhead.arrowSize": 250,
+    "authoring.wheel.anglo.angles.inner.arrowhead.arrowSize": 400,
+    "authoring.wheel.base.angles.outer.arrowhead.arrowSize": 150,
+    "authoring.wheel.base.angles.inner.arrowhead.strokeWidth": 3,
+  });
+  const style = wheel.createTokenizedWheelRenderStyle({ authoringOverrides });
+  for (const radius of [200, 400, 800]) {
+    for (const profile of ["classic", "compact", "anglo", "houses", "cusps"]) {
+      const projected = wheel.projectWheelAuthoringStyle(style, radius, profile);
+      assert.equal(wheel.resolveWheelArrowSize(projected), profile === "anglo" ? 4 : 2.5);
+      assert.equal(wheel.resolveWheelArrowSize(projected, "angles.outer.arrowhead"), 1.5);
+    }
+  }
+  assert.equal(wheel.resolveWheelArrowSize(wheel.DEFAULT_WHEEL_RENDER_STYLE), 1);
+});
+
+test('arrow geometry fits thick shafts and preserves the independent size multiplier', () => {
+  const plain = wheel.DEFAULT_WHEEL_RENDER_STYLE;
+  for (const [base, apex, angle] of [[300, 310, 0.9], [310, 300, 0.5]]) {
+    const thin = wheel.resolveWheelArrowGeometry(plain, base, apex, angle, 2);
+    const thick = wheel.resolveWheelArrowGeometry(plain, base, apex, angle, 12);
+    assert.ok(thick.halfWidth >= 18);
+    assert.ok(thick.halfWidth > thin.halfWidth);
+    assert.ok(Math.abs(thick.apexRadius - thick.baseRadius) >= 24);
+    const direction = Math.sign(apex - base);
+    assert.ok(direction * (thick.shaftRadius - thick.baseRadius) > 0);
+    assert.ok(direction * (apex - thick.shaftRadius) > 0);
+    for (const cap of ['round', 'square']) {
+      const capped = wheel.resolveWheelArrowGeometry(plain, base, apex, angle, 12, 'angles.inner.arrowhead', cap);
+      assert.ok(Math.abs(direction * (thick.shaftRadius - capped.shaftRadius) - 6) < 1e-9);
+    }
+    const authoringOverrides = adapter.compileFlatWheelAuthoringOverrides({
+      'authoring.wheel.base.angles.inner.arrowhead.arrowSize': 200,
+    });
+    const doubled = wheel.projectWheelAuthoringStyle(
+      wheel.createTokenizedWheelRenderStyle({ authoringOverrides }), 400, 'cusps');
+    const custom = wheel.resolveWheelArrowGeometry(doubled, base, apex, angle, 12);
+    assert.equal(custom.halfWidth, thick.halfWidth * 2);
+    assert.ok(Math.abs((apex - custom.baseRadius) - 2 * (apex - thick.baseRadius)) < 1e-9);
+  }
+});
+
+test('arrow styles inherit through the canonical authoring adapter and preserve size overrides', () => {
+  for (const shape of wheel.WHEEL_ARROW_STYLES) {
+    const authoringOverrides = adapter.compileFlatWheelAuthoringOverrides({
+      'authoring.wheel.base.angles.inner.arrowhead.arrowStyle': shape,
+      'authoring.wheel.base.angles.inner.arrowhead.arrowSize': 150,
+      'authoring.wheel.base.angles.outer.arrowhead.arrowStyle': shape,
+    });
+    for (const profile of ['classic', 'compact', 'anglo', 'houses', 'cusps']) {
+      const style = wheel.projectWheelAuthoringStyle(wheel.createTokenizedWheelRenderStyle({authoringOverrides}), 400, profile);
+      assert.equal(wheel.resolveWheelArrowStyle(style), shape);
+      assert.equal(wheel.resolveWheelArrowStyle(style, 'angles.outer.arrowhead'), shape);
+      assert.equal(wheel.resolveWheelArrowSize(style), 1.5);
+      const head = wheel.resolveWheelArrowGeometry(style, 300, 310, 0.9, 4);
+      assert.equal(head.arrowStyle, shape);
+      assert.ok(Number.isFinite(head.shaftRadius));
+    }
+  }
+});
+
+test('legacy arrow sizing retains original Morinus triangle and explicit size overrides', () => {
+  for (const classId of ['angles.inner.arrowhead', 'angles.outer.arrowhead']) {
+    for (const width of [1, 3, 5, 12]) {
+      const geometry = wheel.resolveWheelArrowGeometry(wheel.DEFAULT_WHEEL_RENDER_STYLE,
+        302, 318, 0.5, width, classId, 'butt', 'outlined', false);
+      assert.ok(Math.abs(geometry.baseRadius - 302 * Math.cos(Math.PI / 360)) < 1e-9);
+      assert.ok(Math.abs(geometry.halfWidth - 302 * Math.sin(Math.PI / 360)) < 1e-9);
+      assert.equal(geometry.apexRadius, 318);
+      const authoringOverrides = adapter.compileFlatWheelAuthoringOverrides({
+        [`authoring.wheel.base.${classId}.arrowSize`]: 200,
+      });
+      const style = wheel.projectWheelAuthoringStyle(wheel.createTokenizedWheelRenderStyle({authoringOverrides}), 400, 'classic');
+      const custom = wheel.resolveWheelArrowGeometry(style, 302, 318, 0.5, width, classId, 'butt', 'outlined', false);
+      assert.equal(custom.halfWidth, geometry.halfWidth * 2);
+    }
+  }
 });

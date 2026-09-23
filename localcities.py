@@ -543,8 +543,8 @@ def search(query, maxnum=10):
         END
         ORDER BY
             m.match_priority,
-            p.admin_priority ASC,
             p.population DESC,
+            p.admin_priority ASC,
             p.name ASC
         LIMIT ?
         """,
@@ -579,8 +579,8 @@ def search(query, maxnum=10):
                     WHEN p.search_name LIKE ? THEN 0
                     ELSE 1
                 END,
-                p.admin_priority ASC,
                 p.population DESC,
+                p.admin_priority ASC,
                 p.name ASC
             LIMIT ?
             """,

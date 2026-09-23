@@ -150,6 +150,7 @@
       "id": "menu.charts",
       "label": "Charts",
       "children": [
+        { "type": "item", "id": "ascensional-transits", "label": "Ascensional Transits", "accelerator": "CmdOrCtrl+Alt+A", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14175,14724; shortcut_registry.py:172; accelerator-only in wx" },
         { "type": "item", "id": "profections", "label": "Profections", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14303,14660,21328" },
         {
           "type": "submenu",
@@ -211,7 +212,6 @@
           "source": "morin.py:14334-14337,14643-14654",
           "children": [
             { "type": "item", "id": "transits", "label": "Transits", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14335,14643,21315" },
-            { "type": "item", "id": "ascensional-transits", "label": "Ascensional Transits", "accelerator": "CmdOrCtrl+Alt+A", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14175,14724; shortcut_registry.py:172; accelerator-only in wx" },
             { "type": "item", "id": "menu.sun-transits", "label": "Sun Transits", "enabled": false, "status": "deferred", "deferredTo": "transit-chart-variants", "source": "morin.py:14336,14654" }
           ]
         },
@@ -291,6 +291,7 @@
         },
         { "type": "item", "id": "menu.options.almutens", "label": "Almutens", "enabled": true, "status": "live", "source": "morin.py:14403-14406,14705-14706; almutenchartdlg.py; settings.md almutens group /api/options almutens" },
         { "type": "item", "id": "menu.options.fixed-stars", "label": "Fixed Stars", "enabled": true, "status": "live", "source": "morin.py:14408,14680; fixstarsdlg.FixStarsDlg which-stars SE-catalog picker. settings.md fixstars tab /api/options fixedStars group (selectedCodes -> options.fixstars key set + alias map + rebuildFixStars). Per-star orbs in the orbs tab (fixstarsOrbs/fixstarsOrbAll)" },
+        { "type": "item", "id": "menu.options.asteroids", "label": "Asteroids", "enabled": true, "status": "live", "source": "Aries Swiss-Ephemeris asteroid catalogue picker and conjunction/opposition orb settings" },
         { "type": "item", "id": "menu.options.time-lords", "label": "Time Lords", "enabled": true, "status": "live", "source": "morin.py:14411-14414,14681,14684; profdlgopts.py + firdariadlg.py; settings.md timelords tab /api/options profections+firdaria" },
         { "type": "item", "id": "menu.options.primary-directions", "label": "Primary Directions", "enabled": true, "status": "live", "source": "morin.py:14417-14423,14674-14676; primarydirsdlg.py via PrimDirSettingsBody reuse; settings.md primarydirections tab /api/options primaryDirections" },
         { "type": "item", "id": "menu.options.default-location", "label": "Default Location", "enabled": true, "status": "live", "source": "morin.py:14433,14688; settings.md 5g /api/options defaultLocation group" },

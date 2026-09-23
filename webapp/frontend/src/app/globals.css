@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@source "../";
 @source "../../node_modules/@ilamy/calendar/dist";
 
 @custom-variant dark (&:is(.dark *));
@@ -677,6 +678,18 @@
   --aries-wheel-cusp-outer-ring-opacity: 1;
   --aries-wheel-cusp-outer-ring-pattern: 0;
   --aries-wheel-cusp-outer-ring-width-scale: 1;
+  --aries-wheel-cusps-aspect-boundary-ring-radius: 0;
+  --aries-wheel-cusps-base-ring-radius: 0;
+  --aries-wheel-cusps-cusp-outer-ring-radius: 0;
+  --aries-wheel-cusps-house-boundary-ring-radius: 0;
+  --aries-wheel-cusps-inner-boundary-ring-radius: 0;
+  --aries-wheel-cusps-inner-degree-ring-radius: 0;
+  --aries-wheel-cusps-outer-degree-ring-radius: 0;
+  --aries-wheel-cusps-outer-house-ring-radius: 0;
+  --aries-wheel-cusps-outer-maximum-ring-radius: 0;
+  --aries-wheel-cusps-term-ring-radius: 0;
+  --aries-wheel-cusps-zodiac-inner-ring-radius: 0;
+  --aries-wheel-cusps-zodiac-outer-ring-radius: 0;
   --aries-wheel-decan-boundary-color: var(--morinus-frame);
   --aries-wheel-decan-boundary-dash-off: 4px;
   --aries-wheel-decan-boundary-dash-on: 6px;
@@ -758,6 +771,18 @@
   --aries-wheel-house-position-minute-scale: 0.25;
   --aries-wheel-house-position-sign-scale: 0.52;
   --aries-wheel-house-second-offset-scale: 0.125;
+  --aries-wheel-houses-aspect-boundary-ring-radius: 0;
+  --aries-wheel-houses-base-ring-radius: 0;
+  --aries-wheel-houses-cusp-outer-ring-radius: 0;
+  --aries-wheel-houses-house-boundary-ring-radius: 0;
+  --aries-wheel-houses-inner-boundary-ring-radius: 0;
+  --aries-wheel-houses-inner-degree-ring-radius: 0;
+  --aries-wheel-houses-outer-degree-ring-radius: 0;
+  --aries-wheel-houses-outer-house-ring-radius: 0;
+  --aries-wheel-houses-outer-maximum-ring-radius: 0;
+  --aries-wheel-houses-term-ring-radius: 0;
+  --aries-wheel-houses-zodiac-inner-ring-radius: 0;
+  --aries-wheel-houses-zodiac-outer-ring-radius: 0;
   --aries-wheel-inner-boundary-ring-color: var(--morinus-frame);
   --aries-wheel-inner-boundary-ring-dash-off: 4px;
   --aries-wheel-inner-boundary-ring-dash-on: 6px;
@@ -1967,8 +1992,12 @@ html[data-theme-ready="pending"] body {
     font-size: var(--aries-search-marker-size);
   }
 
-  .aries-search-results-scroller::-webkit-scrollbar:horizontal {
+  .aries-search-results-scroller::-webkit-scrollbar {
     height: 0;
+  }
+
+  .aries-search-results-scroller::-webkit-scrollbar:horizontal {
+    display: none;
   }
 
   .aries-list--frameless .aries-list-head-cell,
@@ -2458,6 +2487,34 @@ html[data-theme-ready="pending"] body {
   font-size: var(--aries-font-size-small);
   font-weight: 400;
   line-height: 1;
+}
+
+[data-settings-surface] [data-slot="tabs-trigger"] {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+[data-settings-surface] [data-slot="tabs-trigger"]::after {
+  display: none;
+}
+
+[data-settings-surface] [data-slot="tabs-trigger"][data-active],
+[data-settings-surface] button:focus-visible {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+
+[data-settings-surface] button:focus-visible {
+  /* Keep a keyboard focus cue, without the default bright, thick control ring. */
+  outline: 1px solid color-mix(in oklab, var(--foreground) 20%, transparent);
+  outline-offset: -1px;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+[data-native-settings] > [data-slot="tabs"] {
+  flex: 1;
+  max-height: none;
 }
 
 .aries-ambient-spotlight {

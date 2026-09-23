@@ -9,6 +9,9 @@ import { flushSync } from "react-dom";
 import { ChevronLeft, ChevronRight, Settings as SettingsIcon, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { PointAspectFilters } from "./point-aspect-filters";
+import { resolveSecondaryPointRoles, secondaryPointRolesMatch } from "@/lib/secondary-progression-filters";
+import { pointRoleSelectAllIds, setPointRoleIds, togglePointRoleIds, type PointRoleSelection } from "@/lib/point-role-selection";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -90,7 +93,6 @@ import { cn } from "@/lib/utils";
 import { useT, useTFallback, type TFunc } from "@/lib/i18n/i18n";
 import { type ListFollowPolicy } from "@/lib/list-follow-policy";
 import {
-  resolvedSemanticChartColor,
   semanticChartColor,
 } from "@/lib/theme/semantic-color";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
@@ -152,9 +154,7 @@ function directionPartsTextCell(
         glyph: part.glyph,
         exportText: part.exportText,
         exportSymbolText: part.exportSymbolText,
-        color: colorize
-          ? resolvedSemanticChartColor(part.colorRole, part.color)
-          : undefined,
+        colorRole: colorize ? part.colorRole : undefined,
       })),
     };
   }
@@ -171,7 +171,6 @@ function directionPartsTextCell(
 function directionGlyphTextCell(
   text: string,
   glyph: string | null | undefined,
-  color: string | null | undefined,
   colorRole: string | null | undefined,
   colorize: boolean,
   exportSymbolText?: string,
@@ -185,7 +184,7 @@ function directionGlyphTextCell(
       glyph: true,
       exportText: text,
       exportSymbolText: exportSymbolText || undefined,
-      color: colorize ? resolvedSemanticChartColor(colorRole, color) : undefined,
+      colorRole: colorize ? colorRole : undefined,
     }],
   };
 }
@@ -443,7 +442,7 @@ function PrimarySettingsDockLayout({
   planetGlyphs: readonly string[];
   meanNode: boolean | null;
   onClose: () => void;
-  onPatch: (patch: Partial<OptionsPrimaryDirections>, optionsPatch?: OptionsPatch) => void;
+  onPatch: (patch: Partial<OptionsPrimaryDirections>, optionsPatch?: OptionsPatch) => void | Promise<boolean>;
 }) {
   const t = useT();
   return (
@@ -1051,6 +1050,7 @@ function primaryDirectionsPreviewOptionsPatch(
 ): OptionsPatch | null {
   if (!settings) return null;
   const primaryDirections = { ...settings } as Record<string, unknown>;
+  delete primaryDirections.userPresets;
   delete primaryDirections.pdFixStarCatalog;
   delete primaryDirections.pdFixStarMaxSelected;
   delete primaryDirections.pdkeycoeff;
@@ -1273,8 +1273,8 @@ function useQueuedPrimaryDirectionSettingsPatch({
   setSettingsMeanNode: React.Dispatch<React.SetStateAction<boolean | null>>;
   onCommitted?: (options: OptionsPatchPayload) => void;
 }) {
-  const queuedPrimaryPatchRef = React.useRef<Partial<OptionsPrimaryDirections> | null>(null);
-  const queuedOptionsPatchRef = React.useRef<OptionsPatch | null>(null);
+  type QueuedWrite = { patch: OptionsPatch; reply?: (ok: boolean) => void };
+  const queueRef = React.useRef<QueuedWrite[]>([]);
   const timerRef = React.useRef<number | null>(null);
   const inFlightRef = React.useRef(false);
   const mountedRef = React.useRef(true);
@@ -1286,88 +1286,73 @@ function useQueuedPrimaryDirectionSettingsPatch({
       timerRef.current = null;
     }
     if (inFlightRef.current) return;
-    const primaryPatch = queuedPrimaryPatchRef.current;
-    const optionsPatch = queuedOptionsPatchRef.current;
-    if (!hasPatchKeys(primaryPatch) && !hasPatchKeys(optionsPatch)) return;
-
-    queuedPrimaryPatchRef.current = null;
-    queuedOptionsPatchRef.current = null;
+    const write = queueRef.current.shift();
+    if (!write) return;
     inFlightRef.current = true;
-    const requestPatch: OptionsPatch = { ...(optionsPatch ?? {}) };
-    if (hasPatchKeys(primaryPatch)) {
-      requestPatch.primaryDirections = {
-        ...(requestPatch.primaryDirections ?? {}),
-        ...primaryPatch,
-      };
-    }
-
-    void patchOptions(requestPatch)
-      .then((options) => {
-        if (!mountedRef.current) return;
-        const pendingPrimary = queuedPrimaryPatchRef.current;
-        const hasPending =
-          hasPatchKeys(pendingPrimary) || hasPatchKeys(queuedOptionsPatchRef.current);
-        setSettings(
-          hasPatchKeys(pendingPrimary)
-            ? { ...options.primaryDirections, ...pendingPrimary }
-            : options.primaryDirections,
-        );
-        setSettingsMeanNode(options.planetsPoints.meannode);
-        if (!hasPending) {
-          onCommitted?.(options);
+    void patchOptions(write.patch)
+      .then(options => {
+        if (mountedRef.current) {
+          const pending = queueRef.current.reduce<Partial<OptionsPrimaryDirections>>(
+            (fields, item) => ({ ...fields, ...item.patch.primaryDirections }), {});
+          setSettings({ ...options.primaryDirections, ...pending });
+          setSettingsMeanNode(options.planetsPoints.meannode);
+          if (!queueRef.current.length) onCommitted?.(options);
         }
+        write.reply?.(true);
       })
-      .catch(() => {})
+      .catch(async () => {
+        if (write.patch.primaryDirectionPreset) {
+          try {
+            const options = await fetchOptions();
+            if (mountedRef.current) setSettings(previous => previous
+              ? { ...previous, userPresets: options.primaryDirections.userPresets } : previous);
+          } catch { /* Keep current controls available while disconnected. */ }
+        }
+        write.reply?.(false);
+      })
       .finally(() => {
         inFlightRef.current = false;
-        if (
-          mountedRef.current &&
-          (hasPatchKeys(queuedPrimaryPatchRef.current) || hasPatchKeys(queuedOptionsPatchRef.current))
-        ) {
-          timerRef.current = window.setTimeout(() => flushRef.current(), 0);
-        }
+        if (queueRef.current.length) flushRef.current();
       });
   }, [onCommitted, setSettings, setSettingsMeanNode]);
 
+  React.useEffect(() => { flushRef.current = flush; }, [flush]);
   React.useEffect(() => {
-    flushRef.current = flush;
-  }, [flush]);
-
-  React.useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      if (timerRef.current != null) {
-        window.clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
+      if (timerRef.current != null) window.clearTimeout(timerRef.current);
+      // Persist already-issued intent even if the settings pane closes.
+      flushRef.current();
     };
   }, []);
 
   return React.useCallback(
     (patch: Partial<OptionsPrimaryDirections>, optionsPatch?: OptionsPatch) => {
-      const mergedPrimaryPatch = {
-        ...(optionsPatch?.primaryDirections ?? {}),
-        ...patch,
-      };
-      setSettings((prev) => (prev ? { ...prev, ...mergedPrimaryPatch } : prev));
+      const primaryDirections = { ...optionsPatch?.primaryDirections, ...patch };
+      const request: OptionsPatch = { ...optionsPatch };
+      if (hasPatchKeys(primaryDirections)) request.primaryDirections = primaryDirections;
+      setSettings(prev => prev ? { ...prev, ...primaryDirections } : prev);
       if (optionsPatch?.planetsPoints?.meannode != null) {
         setSettingsMeanNode(optionsPatch.planetsPoints.meannode);
       }
-      queuedPrimaryPatchRef.current = {
-        ...(queuedPrimaryPatchRef.current ?? {}),
-        ...mergedPrimaryPatch,
-      };
-      if (optionsPatch) {
-        const restPatch: OptionsPatch = { ...optionsPatch };
-        delete restPatch.primaryDirections;
-        queuedOptionsPatchRef.current = mergeOptionsPatch(queuedOptionsPatchRef.current, restPatch);
+      const queue = queueRef.current;
+      const last = queue[queue.length - 1];
+      let reply: Promise<boolean> | undefined;
+      if (request.primaryDirectionPreset) {
+        // Preset actions are ordered barriers: a save captures preceding edits,
+        // never later clicks, and cannot be coalesced into another action.
+        reply = new Promise<boolean>(resolve => queue.push({ patch: request, reply: resolve }));
+      } else if (last && !last.patch.primaryDirectionPreset) {
+        last.patch = mergeOptionsPatch(last.patch, request) ?? request;
+      } else {
+        queue.push({ patch: request });
       }
-      if (timerRef.current != null) {
-        window.clearTimeout(timerRef.current);
-      }
-      timerRef.current = window.setTimeout(() => flushRef.current(), PRIMARY_SETTINGS_PATCH_DEBOUNCE_MS);
-    },
-    [setSettings, setSettingsMeanNode],
+      if (timerRef.current != null) window.clearTimeout(timerRef.current);
+      if (request.primaryDirectionPreset) flushRef.current();
+      else timerRef.current = window.setTimeout(() => flushRef.current(), PRIMARY_SETTINGS_PATCH_DEBOUNCE_MS);
+      return reply;
+    }, [setSettings, setSettingsMeanNode],
   );
 }
 
@@ -1759,13 +1744,17 @@ function useVirtualRows(
     }
     const seededStart =
       seedIndex >= 0 ? Math.max(0, Math.min(rowCount - 1, seedIndex)) : 0;
-    const visibleStart =
-      viewport.height > 0
-        ? Math.floor(viewport.scrollTop / rowHeight)
-        : seededStart;
     const visibleCount = Math.max(
       1,
       Math.ceil(viewport.height / rowHeight),
+    );
+    const rawVisibleStart =
+      viewport.height > 0
+        ? Math.floor(viewport.scrollTop / rowHeight)
+        : seededStart;
+    const visibleStart = Math.max(
+      0,
+      Math.min(rawVisibleStart, Math.max(0, rowCount - visibleCount)),
     );
     const startIndex = Math.max(0, visibleStart - VIRTUAL_OVERSCAN_ROWS);
     const endIndex = Math.min(
@@ -2633,13 +2622,15 @@ function PrimaryDirectionsPanel({
   const optionsSeq = useDirectionsOptionsSeq();
   const layoutPreset = useListLayoutPreset();
   const rectificationDocumentId = cursorDocumentId ?? documentId;
-  const optionsPreview = React.useMemo(
-    () => primaryDirectionsPreviewOptionsPatch(settings, settingsMeanNode),
+  const optionsPreviewKey = React.useMemo(
+    () => JSON.stringify(primaryDirectionsPreviewOptionsPatch(settings, settingsMeanNode)),
     [settings, settingsMeanNode],
   );
-  const optionsPreviewKey = React.useMemo(
-    () => listCacheKey(optionsPreview ?? {}),
-    [optionsPreview],
+  // Preset names/dirty markers are metadata, not a new query. Keep the request
+  // object stable while its semantic settings remain identical.
+  const optionsPreview = React.useMemo<OptionsPatch | null>(
+    () => JSON.parse(optionsPreviewKey) as OptionsPatch | null,
+    [optionsPreviewKey],
   );
   const settingsDefaultDirection = defaultPrimaryDirectionFromSettings(settings);
   const direction =
@@ -2825,7 +2816,7 @@ function PrimaryDirectionsPanel({
       ) {
         setSelectedDirection(PRIMARY_DIRECTION_BOTH);
       }
-      commitPrimarySettingsPatch(patch, optionsPatch);
+      return commitPrimarySettingsPatch(patch, optionsPatch);
     },
     [commitPrimarySettingsPatch],
   );
@@ -3250,6 +3241,7 @@ function PrimaryDirectionsPanel({
           <div className="px-4 py-6 text-[length:var(--aries-font-size-base)] text-destructive">{error}</div>
         ) : (
           <Table
+            wrapperless
             className={cn(
               LIST_ROLE_CLASSES.symbolic,
               "border-collapse [--aries-list-cell-x:5px] [--aries-list-outer-x:8px]",
@@ -3669,19 +3661,10 @@ function SecondaryDirectionsPanel({
   const persistSecondaryPreferences = useWorkspaceStore(
     (s) => s.setSecondaryProgressionsPreferences,
   );
-  const selectedPlanetIds = secondaryPreferences?.planetIds ?? null;
+  const pointFilterSide = secondaryPreferences?.pointFilterSide ?? "from";
   const selectedAspectIds = secondaryPreferences?.aspectIds ??
     SECONDARY_DEFAULT_ASPECT_FILTER_IDS;
   const filterDrawerOpen = secondaryPreferences?.filterDrawerOpen ?? false;
-  const fallbackPlanetFilterItems = React.useMemo(() => {
-    const keys = [
-      "primdir.planetSun", "primdir.planetMoon", "primdir.planetMercury",
-      "primdir.planetVenus", "primdir.planetMars", "primdir.planetJupiter",
-      "primdir.planetSaturn", "primdir.planetUranus", "primdir.planetNeptune",
-      "primdir.planetPluto", "primdir.planetAscNode", "primdir.planetDscNode",
-    ];
-    return keys.map((key, id) => ({ id, label: t(key), glyph: PLANET_GLYPH_SEQUENCE[id] }));
-  }, [t]);
   const fallbackAspectFilterItems = React.useMemo(() => {
     const keys = [
       "primdir.aspectConjunction", "primdir.aspectSemisextile",
@@ -3755,6 +3738,21 @@ function SecondaryDirectionsPanel({
     const cached = getCachedListPayload<SecondaryStitchStore>(SECONDARY_STITCHED_CACHE, stitchKey);
     return stitchedStoreCoversFocus(cached, effectiveFocusDatetime) ? cached : null;
   });
+  const savedPointRoles = secondaryPreferences?.pointRoles;
+  const legacyPlanetIds = secondaryPreferences?.planetIds;
+  const legacyAngleIds = secondaryPreferences?.angleIds;
+  const pointSelection = React.useMemo(
+    () => resolveSecondaryPointRoles(store?.meta.filterPoints ?? [], {
+      pointRoles: savedPointRoles, planetIds: legacyPlanetIds, angleIds: legacyAngleIds,
+    }),
+    [store?.meta.filterPoints, savedPointRoles, legacyPlanetIds, legacyAngleIds],
+  );
+  const selectedFromIds = React.useMemo(() => new Set(pointSelection.fromIds), [pointSelection.fromIds]);
+  const selectedToIds = React.useMemo(() => new Set(pointSelection.toIds), [pointSelection.toIds]);
+  const selectedRolesRef = React.useRef({ from: selectedFromIds, to: selectedToIds });
+  React.useLayoutEffect(() => {
+    selectedRolesRef.current = { from: selectedFromIds, to: selectedToIds };
+  }, [selectedFromIds, selectedToIds]);
   const storeRef = React.useRef(store);
   const stitchKeyRef = React.useRef(stitchKey);
   const worldSeqRef = React.useRef(0);
@@ -3769,7 +3767,6 @@ function SecondaryDirectionsPanel({
   const methodRef = React.useRef(method);
   const directionModeRef = React.useRef(directionMode);
   const stationsOnlyRef = React.useRef(stationsOnly);
-  const selectedPlanetIdsRef = React.useRef(selectedPlanetIds);
   const selectedAspectIdsRef = React.useRef(selectedAspectIds);
   const requestFocusDatetimeRef = React.useRef(requestFocusDatetime);
   const targetAgeRangeRef = React.useRef(targetAgeRange);
@@ -3791,9 +3788,6 @@ function SecondaryDirectionsPanel({
   React.useEffect(() => {
     stationsOnlyRef.current = stationsOnly;
   }, [stationsOnly]);
-  React.useEffect(() => {
-    selectedPlanetIdsRef.current = selectedPlanetIds;
-  }, [selectedPlanetIds]);
   React.useEffect(() => {
     selectedAspectIdsRef.current = selectedAspectIds;
   }, [selectedAspectIds]);
@@ -4035,15 +4029,14 @@ function SecondaryDirectionsPanel({
                 ),
           };
           if (prependedCount > 0) {
-            const selectedPlanets = selectedPlanetIdsRef.current;
-            const planets = new Set(selectedPlanets ?? []);
+            const { from, to } = selectedRolesRef.current;
             const aspects = new Set(selectedAspectIdsRef.current);
             const visibleCount = nextStore.rows.slice(0, prependedCount).filter((row) => {
               if (
                 stationsOnlyRef.current &&
                 !SECONDARY_STATION_FILTER_IDS.includes(secondaryStationFilterKey(row))
               ) return false;
-              return (row.fields.promPlanet == null || selectedPlanets == null || planets.has(row.fields.promPlanet)) &&
+              return secondaryPointRolesMatch(row.fields, from, to) &&
                 (row.fields.aspectIndex == null || aspects.has(row.fields.aspectIndex));
             }).length;
             scrollPlanRef.current =
@@ -4074,7 +4067,7 @@ function SecondaryDirectionsPanel({
     if (extendInFlightRef.current || initialInFlightRef.current) return;
     const desired: AgeSpan =
       method === "secondary"
-        ? { start: 0, end: 100 }
+        ? { start: 0, end: SECONDARY_STITCH_MAX_AGE }
         : (() => {
             const center =
               store.meta.referenceAge ?? (store.meta.startAge + store.meta.endAge) / 2;
@@ -4089,11 +4082,10 @@ function SecondaryDirectionsPanel({
   }, [store, method, extendCoverage]);
 
   const sourceRows = React.useMemo(() => store?.rows ?? [], [store]);
-  const planetFilterItems: Array<{ id: number; label: string; glyph?: string }> =
-    (store?.meta.filterPlanets ?? fallbackPlanetFilterItems).map((item) => ({
-      ...item,
-      glyph: item.glyph ?? undefined,
-    }));
+  const pointFilterItems = store?.meta.filterPoints ?? [];
+  const availablePointIds = pointFilterItems.filter((item) => item[pointFilterSide]).map((item) => item.id);
+  const selectAllPointIds = pointRoleSelectAllIds(pointFilterItems, pointFilterSide);
+  const selectedPointIds = pointFilterSide === "from" ? selectedFromIds : selectedToIds;
   const aspectFilterItems = fallbackAspectFilterItems;
   const rows = React.useMemo(
     () => {
@@ -4102,16 +4094,14 @@ function SecondaryDirectionsPanel({
         stationsOnly ? SECONDARY_STATION_FILTER_IDS : null,
         secondaryStationFilterKey,
       );
-      const planets = new Set(selectedPlanetIds ?? []);
       const aspects = new Set(selectedAspectIds);
       return stationRows.filter((row) => {
-        const prom = row.fields.promPlanet;
         const aspect = row.fields.aspectIndex;
-        return (prom == null || selectedPlanetIds == null || planets.has(prom)) &&
+        return secondaryPointRolesMatch(row.fields, selectedFromIds, selectedToIds) &&
           (aspect == null || aspects.has(aspect));
       });
     },
-    [selectedAspectIds, selectedPlanetIds, sourceRows, stationsOnly],
+    [selectedAspectIds, selectedFromIds, selectedToIds, sourceRows, stationsOnly],
   );
   const temporalCoverage = React.useMemo(
     () =>
@@ -4265,7 +4255,7 @@ function SecondaryDirectionsPanel({
     setStationsOnly(next);
   }, [rows]);
   const setSecondaryPreferences = React.useCallback((patch: {
-    planetIds?: number[] | null;
+    pointRoles?: PointRoleSelection;
     aspectIds?: number[];
     filterDrawerOpen?: boolean;
   }) => {
@@ -4362,7 +4352,7 @@ function SecondaryDirectionsPanel({
       SECONDARY_FOCUS_ANCHOR,
       rowHeightRef.current,
     );
-  }, [active, rows, selectedAspectIds, selectedPlanetIds, stationsOnly]);
+  }, [active, rows, selectedAspectIds, selectedFromIds, selectedToIds, stationsOnly]);
 
   const secondaryMenuBefore = React.useCallback(
     (eventDatetime: string | null, sessionLabel: string) => (
@@ -4446,7 +4436,6 @@ function SecondaryDirectionsPanel({
               return directionGlyphTextCell(
                 row.prom,
                 row.fields.promGlyph,
-                row.fields.promColor,
                 row.fields.promColorRole,
                 glyphColorRows,
                 directionPointExportSymbol(row.fields.promExportSymbolText, row.prom),
@@ -4455,7 +4444,6 @@ function SecondaryDirectionsPanel({
               return directionGlyphTextCell(
                 row.aspect,
                 row.fields.aspectGlyph,
-                row.fields.aspectColor,
                 row.fields.aspectColorRole,
                 glyphColorRows,
                 row.fields.aspectExportSymbolText ?? undefined,
@@ -4464,7 +4452,6 @@ function SecondaryDirectionsPanel({
               return directionGlyphTextCell(
                 row.sig,
                 row.fields.sigGlyph,
-                row.fields.sigColor,
                 row.fields.sigColorRole,
                 glyphColorRows,
                 directionPointExportSymbol(row.fields.sigExportSymbolText, row.sig),
@@ -4641,120 +4628,49 @@ function SecondaryDirectionsPanel({
         </div>
         {filterDrawerOpen ? (
           <div className="border-t border-border/70 pt-2">
-            <div className="flex flex-col gap-3">
-              <div className="flex flex-col gap-2">
-                <div className="flex min-w-0 items-center justify-between gap-[var(--aries-control-gap)]">
-                  <span className="min-w-14 text-[length:var(--aries-font-size-section)] text-muted-foreground">
-                    {t("tlview.planets")}
-                  </span>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <Button
-                      type="button"
-                      size="xs"
-                      variant="ghost"
-                      className="px-[var(--aries-control-gap)]"
-                      disabled={Array.isArray(selectedPlanetIds) && selectedPlanetIds.length === 0}
-                      onClick={() => setSecondaryPreferences({ planetIds: [] })}
-                    >
-                      {t("listFilters.deselectAll")}
-                    </Button>
-                    <Button
-                      type="button"
-                      size="xs"
-                      variant="ghost"
-                      className="px-[var(--aries-control-gap)]"
-                      disabled={selectedPlanetIds == null}
-                      onClick={() => setSecondaryPreferences({ planetIds: null })}
-                    >
-                      {t("listFilters.selectAll")}
-                    </Button>
-                  </div>
-                </div>
-                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                  {planetFilterItems.map((item) => {
-                    const selected = selectedPlanetIds == null || selectedPlanetIds.includes(item.id);
-                    return (
-                      <Button
-                        key={item.id}
-                        type="button"
-                        size="xs"
-                        variant={selected ? "default" : "outline"}
-                        aria-pressed={selected}
-                        onClick={() => setSecondaryPreferences({
-                          planetIds: selected
-                            ? (selectedPlanetIds ?? planetFilterItems.map((choice) => choice.id))
-                                .filter((id) => id !== item.id)
-                            : [...(selectedPlanetIds ?? []), item.id],
-                        })}
-                        className="h-6 max-w-44 justify-start gap-1 px-2 text-[length:var(--aries-font-size-small)]"
-                      >
-                        {item.glyph ? <Glyph ch={item.glyph} /> : null}
-                        <span className="truncate">{item.label}</span>
-                      </Button>
-                    );
-                  })}
-                </div>
+            <PointAspectFilters
+              pointLabel={t("dirview.points")}
+              pointRoleEditor={{
+                side: pointFilterSide,
+                fromCount: pointFilterItems.filter((item) => item.from && selectedFromIds.has(item.id)).length,
+                toCount: pointFilterItems.filter((item) => item.to && selectedToIds.has(item.id)).length,
+                onChange: (pointFilterSide) => persistSecondaryPreferences(documentId, { pointFilterSide }),
+              }}
+              noPointsSelected={!availablePointIds.some((id) => selectedPointIds.has(id))}
+              allPointsSelected={selectAllPointIds.every((id) => selectedPointIds.has(id))}
+              onClearPoints={() => setSecondaryPreferences({ pointRoles: setPointRoleIds(pointSelection, pointFilterSide, availablePointIds, false) })}
+              onSelectAllPoints={() => setSecondaryPreferences({ pointRoles: setPointRoleIds(pointSelection, pointFilterSide, selectAllPointIds, true) })}
+              aspects={aspectFilterItems}
+              selectedAspectIds={selectedAspectIds}
+              onToggleAspect={(id) => setSecondaryPreferences({
+                aspectIds: selectedAspectIds.includes(id)
+                  ? selectedAspectIds.filter((selected) => selected !== id)
+                  : [...selectedAspectIds, id],
+              })}
+              onAllAspects={() => setSecondaryPreferences({ aspectIds: aspectFilterItems.map((item) => item.id) })}
+              onMajorAspects={() => setSecondaryPreferences({ aspectIds: [...SECONDARY_MAJOR_ASPECT_FILTER_IDS] })}
+              onClearAspects={() => setSecondaryPreferences({ aspectIds: [] })}
+            >
+              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                {pointFilterItems.map((item) => (
+                  <Button
+                    key={item.id}
+                    type="button"
+                    size="xs"
+                    variant={item[pointFilterSide] && selectedPointIds.has(item.id) ? "default" : "outline"}
+                    aria-pressed={item[pointFilterSide] && selectedPointIds.has(item.id)}
+                    disabled={!item[pointFilterSide]}
+                    onClick={() => setSecondaryPreferences({
+                      pointRoles: togglePointRoleIds(pointSelection, pointFilterSide, [item.id]),
+                    })}
+                    className="h-6 max-w-44 justify-start gap-1 px-2 text-[length:var(--aries-font-size-small)]"
+                  >
+                    {item.glyph ? <Glyph ch={item.glyph} /> : null}
+                    <span className="truncate">{item.label}</span>
+                  </Button>
+                ))}
               </div>
-              <section className="grid gap-[var(--aries-control-gap)]">
-                <div className="flex flex-wrap items-center justify-between gap-[var(--aries-control-gap)]">
-                  <span className="mr-1 min-w-14 text-[length:var(--aries-font-size-section)] text-muted-foreground">
-                    {t("search.aspects")}
-                  </span>
-                  <div className="flex flex-wrap items-center justify-end gap-[var(--aries-control-gap-compact)]">
-                    <Button type="button" size="xs" variant="ghost" className="px-[var(--aries-control-gap)]" onClick={() => setSecondaryPreferences({
-                      aspectIds: aspectFilterItems.map((item) => item.id),
-                    })}>
-                      {t("search.all")}
-                    </Button>
-                    <Button type="button" size="xs" variant="ghost" className="px-[var(--aries-control-gap)]" onClick={() => setSecondaryPreferences({
-                      aspectIds: [...SECONDARY_MAJOR_ASPECT_FILTER_IDS],
-                    })}>
-                      {t("search.major")}
-                    </Button>
-                    <Button type="button" size="xs" variant="ghost" className="px-[var(--aries-control-gap)]" onClick={() => setSecondaryPreferences({ aspectIds: [] })}>
-                      {t("search.clear")}
-                    </Button>
-                  </div>
-                </div>
-                <div
-                  className="grid w-full overflow-hidden rounded-md border border-border"
-                  style={{
-                    gridTemplateColumns: `repeat(${aspectFilterItems.length}, minmax(0, 1fr))`,
-                  }}
-                >
-                  {aspectFilterItems.map((aspect, index) => {
-                    const selected = selectedAspectIds.includes(aspect.id);
-                    return (
-                      <Tooltip key={aspect.id}>
-                        <TooltipTrigger
-                          render={
-                            <button
-                              type="button"
-                              aria-label={aspect.label}
-                              aria-pressed={selected}
-                              onClick={() => setSecondaryPreferences({
-                                aspectIds: selected
-                                  ? selectedAspectIds.filter((id) => id !== aspect.id)
-                                  : [...selectedAspectIds, aspect.id],
-                              })}
-                              className={cn(
-                                "flex h-6 items-center justify-center text-[length:var(--aries-font-size-control)]",
-                                LIST_ROW_CLASSES.hover,
-                                index !== aspectFilterItems.length - 1 && "border-r border-border",
-                                selected && "bg-primary/20 text-primary",
-                              )}
-                            />
-                          }
-                        >
-                          <Glyph ch={aspect.glyph} />
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom">{aspect.label}</TooltipContent>
-                      </Tooltip>
-                    );
-                  })}
-                </div>
-              </section>
-            </div>
+            </PointAspectFilters>
           </div>
         ) : null}
       </div>
@@ -5060,7 +4976,7 @@ function CircumambulationPanel({
     if (patch.pdlistglyphcolors != null || optionsPatch?.primaryDirections?.pdlistglyphcolors != null) {
       setGlyphColorRows(!!(patch.pdlistglyphcolors ?? optionsPatch?.primaryDirections?.pdlistglyphcolors));
     }
-    commitCircumSettingsPatch(patch, optionsPatch);
+    return commitCircumSettingsPatch(patch, optionsPatch);
   }, [commitCircumSettingsPatch]);
 
   const setCircumMethod = React.useCallback((value: number) => {
@@ -5231,9 +5147,8 @@ function CircumambulationPanel({
             const signExportSymbol = dr.kind === "term"
               ? dr.term.signExportSymbolText
               : dr.part.degreeSignExportSymbolText;
-            const signColor = dr.kind === "term"
-              ? listSignColor(dr.term.signColor, dr.term.signIndex, circumSignColors)
-              : listSignColor(dr.part.degreeSignColor, dr.part.degreeSignIndex, circumSignColors);
+            const signColorRole = dr.kind === "term"
+              ? dr.term.signColorRole : dr.part.degreeSignColorRole;
             const semantic = [SIGN_NAMES[signIndex ?? -1] ?? "", degree ?? ""].filter(Boolean).join(" ");
             if (!signGlyph) return { text: semantic };
             const symbolic = [signExportSymbol ?? "", degree ?? ""]
@@ -5248,7 +5163,7 @@ function CircumambulationPanel({
                   glyph: true,
                   exportText: SIGN_NAMES[signIndex ?? -1] ?? "",
                   exportSymbolText: signExportSymbol ?? undefined,
-                  color: glyphColorRows ? signColor ?? undefined : undefined,
+                  colorRole: glyphColorRows ? signColorRole : undefined,
                 },
                 { text: degree ? ` ${degree}` : "" },
               ],
@@ -5272,16 +5187,12 @@ function CircumambulationPanel({
                 dr.term.signGlyph ? {
                   text: dr.term.signGlyph,
                   glyph: true,
-                  color: glyphColorRows
-                    ? listSignColor(dr.term.signColor, dr.term.signIndex, circumSignColors) ?? undefined
-                    : undefined,
+                  colorRole: glyphColorRows ? dr.term.signColorRole : undefined,
                 } : null,
                 dr.term.termRulerGlyph ? {
                   text: `${dr.term.signGlyph ? " " : ""}${dr.term.termRulerGlyph}`,
                   glyph: true,
-                  color: glyphColorRows
-                    ? resolvedSemanticChartColor(dr.term.termRulerColorRole, dr.term.termRulerColor) ?? undefined
-                    : undefined,
+                  colorRole: glyphColorRows ? dr.term.termRulerColorRole : undefined,
                 } : null,
               ].filter((run): run is NonNullable<typeof run> => Boolean(run));
               return runs.length
@@ -5305,23 +5216,17 @@ function CircumambulationPanel({
               const runs = [
                 dr.part.sourceMarker ? {
                   text: `${dr.part.sourceMarker} `,
-                  color: glyphColorRows
-                    ? resolvedSemanticChartColor(dr.part.planetColorRole, dr.part.planetColor) ?? undefined
-                    : undefined,
+                  colorRole: glyphColorRows ? dr.part.planetColorRole : undefined,
                 } : null,
                 dr.part.aspectGlyph ? {
                   text: dr.part.aspectGlyph,
                   glyph: true,
-                  color: glyphColorRows
-                    ? resolvedSemanticChartColor(dr.part.aspectColorRole, dr.part.aspectColor) ?? undefined
-                    : undefined,
+                  colorRole: glyphColorRows ? dr.part.aspectColorRole : undefined,
                 } : null,
                 dr.part.planetGlyph ? {
                   text: `${dr.part.aspectGlyph ? " " : ""}${dr.part.planetGlyph}`,
                   glyph: true,
-                  color: glyphColorRows
-                    ? resolvedSemanticChartColor(dr.part.planetColorRole, dr.part.planetColor) ?? undefined
-                    : undefined,
+                  colorRole: glyphColorRows ? dr.part.planetColorRole : undefined,
                 } : null,
               ].filter((run): run is NonNullable<typeof run> => Boolean(run));
               return runs.length
@@ -5359,7 +5264,7 @@ function CircumambulationPanel({
         })),
       });
     },
-    [circumColumnLabels, circumColumnOrder, circumSignColors, displayRows, glyphColorRows, payload, sourceName, t],
+    [circumColumnLabels, circumColumnOrder, displayRows, glyphColorRows, payload, sourceName, t],
   );
   const ageRanges = React.useMemo(() => ageRangesForPage(ageRangePageStart), [ageRangePageStart]);
   const focusTargetMs = React.useMemo(
@@ -5739,6 +5644,7 @@ function CircumambulationPanel({
           <div className="px-4 py-6 text-[length:var(--aries-font-size-base)] text-destructive">{error}</div>
         ) : (
           <Table
+            wrapperless
             className={cn(
               LIST_ROLE_CLASSES.symbolic,
               "border-collapse [--aries-list-cell-x:4px] [--aries-list-outer-x:7px]",

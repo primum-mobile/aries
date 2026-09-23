@@ -33,6 +33,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 
 mod licensing;
+mod native_menu_readiness;
+use native_menu_readiness::NativeMenuReadiness;
 #[cfg(target_os = "windows")]
 mod windows_titlebar;
 
@@ -304,6 +306,8 @@ struct MainWindowFrameState {
 }
 
 const CHART_PICKER_WINDOW: &str = "chart-picker";
+const SETTINGS_WINDOW: &str = "settings";
+const CHART_EDITOR_WINDOW: &str = "chart-editor";
 const CHART_PICKER_INITIAL_WIDTH: f64 = 552.0;
 const CHART_PICKER_MIN_WIDTH: f64 = 276.0;
 const DAEMON_READY_TIMEOUT_SECS: u64 = 60;
@@ -376,6 +380,13 @@ struct RecentChartMenuEntry {
 }
 
 #[derive(Debug, Deserialize)]
+struct WheelStyleMenuEntry {
+    id: String,
+    label: String,
+    checked: bool,
+}
+
+#[derive(Debug, Deserialize)]
 struct NativeMenuLabelState {
     id: String,
     label: String,
@@ -394,6 +405,13 @@ impl NativeMenuCommandIds {
     fn replace_recent_entries(&self, ids: Vec<String>) -> Result<(), String> {
         let mut commands = self.0.lock().map_err(|e| e.to_string())?;
         commands.retain(|id| !id.starts_with("menu.recent-charts.entry:"));
+        commands.extend(ids);
+        Ok(())
+    }
+
+    fn replace_wheel_styles(&self, ids: Vec<String>) -> Result<(), String> {
+        let mut commands = self.0.lock().map_err(|e| e.to_string())?;
+        commands.retain(|id| !id.starts_with("quick.options.wheel-preset:"));
         commands.extend(ids);
         Ok(())
     }
@@ -1283,7 +1301,7 @@ fn chart_picker_background(theme: tauri::Theme, background: Option<Vec<u8>>) -> 
     }
 }
 
-fn apply_chart_picker_native_theme(
+fn apply_native_window_theme(
     window: &WebviewWindow<Wry>,
     theme: Option<&str>,
     background: Option<Vec<u8>>,
@@ -1295,6 +1313,23 @@ fn apply_chart_picker_native_theme(
     window
         .set_background_color(Some(chart_picker_background(native_theme, background)))
         .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// https://v2.tauri.app/learn/splashscreen/: frontend setup completes before show.
+#[tauri::command]
+fn show_main_window(
+    window: WebviewWindow<Wry>,
+    theme: Option<String>,
+    background: Option<Vec<u8>>,
+) -> Result<(), String> {
+    if window.label() != "main" {
+        return Err("main window readiness must come from the main webview".into());
+    }
+    apply_native_window_theme(&window, theme.as_deref(), background)?;
+    window.show().map_err(|error| error.to_string())?;
+    #[cfg(debug_assertions)]
+    log::info!("main-window-ready visible={}", window.is_visible().map_err(|e| e.to_string())?);
     Ok(())
 }
 
@@ -1356,7 +1391,7 @@ fn open_chart_picker_window_impl(
     let started_at = Instant::now();
     if let Some(window) = app.get_webview_window(CHART_PICKER_WINDOW) {
         window.set_title(title).map_err(|e| e.to_string())?;
-        apply_chart_picker_native_theme(&window, theme, background)?;
+        apply_native_window_theme(&window, theme, background)?;
         let target_url = chart_picker_url(app, path)?;
         let current_url = window.url().map_err(|e| e.to_string())?;
         let mut navigated = false;
@@ -1387,7 +1422,7 @@ fn prewarm_chart_picker_window_impl(
     }
     let started_at = Instant::now();
     if let Some(window) = app.get_webview_window(CHART_PICKER_WINDOW) {
-        apply_chart_picker_native_theme(&window, theme, background)?;
+        apply_native_window_theme(&window, theme, background)?;
         emit_chart_picker_window_perf(app, "prewarm", started_at, false, false, false);
         return Ok(());
     }
@@ -1543,26 +1578,13 @@ fn build_native_menu(handle: &AppHandle) -> tauri::Result<tauri::menu::Menu<Wry>
 // Fetches the live menu tree from the daemon and swaps it in; on any failure,
 // leaves the baked fallback menu (already installed by the `.menu()` builder
 // callback) in place so the app is never menu-less.
-fn install_daemon_native_menu(app: &AppHandle, daemon_base_url: &str, daemon_token: &str) {
-    match fetch_native_menu_manifest(daemon_base_url, daemon_token) {
-        Ok(manifest) => match build_native_menu_from_manifest(app, &manifest) {
-            Ok(menu) => {
-                if let Err(error) = app.set_menu(menu) {
-                    log::warn!("failed to set daemon native menu, keeping baked fallback: {error}");
-                } else if let Some(commands) = app.try_state::<NativeMenuCommandIds>() {
-                    if let Err(error) = commands.replace_from_manifest(&manifest) {
-                        log::warn!("failed to update native menu command ids: {error}");
-                    }
-                }
-            }
-            Err(error) => {
-                log::warn!("failed to build daemon native menu, keeping baked fallback: {error}");
-            }
-        },
-        Err(error) => {
-            log::warn!("failed to fetch daemon native menu, keeping baked fallback: {error}");
-        }
-    }
+fn install_daemon_native_menu(app: &AppHandle, daemon_base_url: &str, daemon_token: &str) -> Result<(), String> {
+    let manifest = fetch_native_menu_manifest(daemon_base_url, daemon_token)
+        .map_err(|error| error.to_string())?;
+    let menu = build_native_menu_from_manifest(app, &manifest).map_err(|error| error.to_string())?;
+    app.set_menu(menu).map_err(|error| error.to_string())?;
+    app.state::<NativeMenuCommandIds>().replace_from_manifest(&manifest)?;
+    Ok(())
 }
 
 fn install_daemon_native_menu_when_ready(
@@ -1571,6 +1593,7 @@ fn install_daemon_native_menu_when_ready(
     daemon_token: String,
     native_started_at: Instant,
 ) {
+    app.state::<NativeMenuReadiness>().begin();
     thread::spawn(move || {
         if let Err(error) = wait_for_daemon_ready(
             &daemon_base_url,
@@ -1579,6 +1602,7 @@ fn install_daemon_native_menu_when_ready(
             log::error!(
                 "failed to start aries daemon within {DAEMON_READY_TIMEOUT_SECS}s: {error}"
             );
+            app.state::<NativeMenuReadiness>().finish(Err(error.to_string()));
             return;
         }
         record_native_startup_perf(
@@ -1586,7 +1610,11 @@ fn install_daemon_native_menu_when_ready(
             native_started_at,
             serde_json::json!({ "daemonBaseUrl": &daemon_base_url }),
         );
-        install_daemon_native_menu(&app, &daemon_base_url, &daemon_token);
+        let result = install_daemon_native_menu(&app, &daemon_base_url, &daemon_token);
+        if let Err(error) = &result {
+            log::warn!("failed to install daemon native menu, keeping baked fallback: {error}");
+        }
+        app.state::<NativeMenuReadiness>().finish(result);
         record_native_startup_perf(
             "daemon-menu-installed-rust",
             native_started_at,
@@ -1967,6 +1995,7 @@ async fn set_native_menu_checked(
     app: tauri::AppHandle,
     states: Vec<NativeMenuCheckedState>,
 ) -> Result<(), String> {
+    app.state::<NativeMenuReadiness>().wait().await?;
     let menu = app
         .menu()
         .ok_or_else(|| "native menu is not installed".to_string())?;
@@ -2011,6 +2040,222 @@ async fn close_chart_picker_window(app: tauri::AppHandle) -> Result<(), String> 
         emit_chart_picker_window_perf(&app, "hide", started_at, false, false, false);
     }
     Ok(())
+}
+
+// Tauri's hidden-window/frontend-ready pattern:
+// https://v2.tauri.app/learn/splashscreen/
+// Retain the pending open too: webview creation can finish after the user cancels.
+#[derive(Clone, Default, Serialize)]
+struct ToolWindowIntent {
+    generation: u64,
+    open: bool,
+    context: serde_json::Value,
+}
+
+impl ToolWindowIntent {
+    fn can_reveal(&self, generation: u64) -> bool {
+        self.open && self.generation == generation
+    }
+}
+
+#[derive(Default)]
+struct ToolWindowIntents(Mutex<std::collections::HashMap<String, ToolWindowIntent>>);
+
+fn tool_window_intent(app: &tauri::AppHandle, label: &str) -> ToolWindowIntent {
+    app.state::<ToolWindowIntents>().0.lock().unwrap()
+        .get(label).cloned().unwrap_or_default()
+}
+
+fn set_tool_window_intent(app: &tauri::AppHandle, label: &str, open: bool, context: serde_json::Value) -> ToolWindowIntent {
+    let state = app.state::<ToolWindowIntents>();
+    let mut intents = state.0.lock().unwrap();
+    let intent = intents.entry(label.to_string()).or_default();
+    intent.generation += 1;
+    intent.open = open;
+    intent.context = context;
+    intent.clone()
+}
+
+#[tauri::command]
+fn get_tool_window_intent(app: tauri::AppHandle, window: WebviewWindow<Wry>) -> ToolWindowIntent {
+    tool_window_intent(&app, window.label())
+}
+
+fn build_tool_window(app: &tauri::AppHandle, label: &str, path: &str, title: &str, width: f64, height: f64) -> Result<(), String> {
+    if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
+        return Err("invalid tool window dimensions".into());
+    }
+    let builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App(path.into()))
+        .title(title).inner_size(width, height).min_inner_size(width, height)
+        .decorations(false).shadow(true).resizable(true).skip_taskbar(true)
+        .center().visible(false).focused(false);
+    // Retained tools must receive open requests even after a long hidden spell.
+    let builder = builder.background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled);
+    // AppKit addChildWindow orders the child on screen even when the builder
+    // requests visible(false). Attach only at the explicit ready/show boundary.
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.parent(&app.get_webview_window("main").ok_or("missing main window")?)
+        .map_err(|e| e.to_string())?;
+    #[cfg(target_os = "macos")]
+    let builder = builder.decorations(true)
+        .title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true);
+    let window = builder.build().map_err(|e| e.to_string())?;
+    #[cfg(debug_assertions)]
+    log::info!("tool-window-created label={label} visible={}", window.is_visible().map_err(|e| e.to_string())?);
+    #[cfg(not(debug_assertions))]
+    let _ = window;
+    Ok(())
+}
+
+#[tauri::command]
+async fn open_chart_editor_window(
+    app: tauri::AppHandle, title: String, width: f64, height: f64, context: serde_json::Value,
+    prewarm: Option<bool>,
+) -> Result<(), String> {
+    if prewarm.unwrap_or(false) {
+        if app.get_webview_window(CHART_EDITOR_WINDOW).is_none() {
+            build_tool_window(&app, CHART_EDITOR_WINDOW, "/chart-editor", &title, width, height)?;
+        }
+        return Ok(());
+    }
+    let intent = set_tool_window_intent(&app, CHART_EDITOR_WINDOW, true, context);
+    if let Some(window) = app.get_webview_window(CHART_EDITOR_WINDOW) {
+        window.set_title(&title).map_err(|e| e.to_string())?;
+        return window.emit("aries://chart-editor-context", intent).map_err(|e| e.to_string());
+    }
+    build_tool_window(&app, CHART_EDITOR_WINDOW, "/chart-editor", &title, width, height)
+}
+
+fn show_ready_tool_window(app: &tauri::AppHandle, label: &'static str, generation: u64) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window(label) {
+        let scheduled_window = window.clone();
+        let app = app.clone();
+        window.run_on_main_thread(move || {
+            let intent = tool_window_intent(&app, label);
+            // A late load must never reveal a dismissed window or an older chart.
+            if !intent.can_reveal(generation) { return; }
+            if let Err(error) = prepare_and_show_tool_window(&scheduled_window) {
+                log::error!("failed to show {label}: {error}");
+            }
+        }).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn show_chart_editor_window(app: tauri::AppHandle, generation: u64) -> Result<(), String> {
+    show_ready_tool_window(&app, CHART_EDITOR_WINDOW, generation)
+}
+
+fn hide_chart_editor_window_impl(app: &tauri::AppHandle) -> Result<(), String> {
+    let intent = set_tool_window_intent(app, CHART_EDITOR_WINDOW, false, serde_json::Value::Null);
+    if let Some(window) = app.get_webview_window(CHART_EDITOR_WINDOW) {
+        hide_tool_window(&window, intent.generation)?;
+        window.emit("aries://chart-editor-hidden", intent).map_err(|e| e.to_string())?;
+    }
+    app.emit_to("main", "aries://chart-editor-closed", ()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn hide_chart_editor_window(app: tauri::AppHandle) -> Result<(), String> {
+    hide_chart_editor_window_impl(&app)
+}
+
+#[tauri::command]
+async fn open_settings_window(
+    app: tauri::AppHandle, tab: String, title: String, width: f64, height: f64, prewarm: Option<bool>,
+) -> Result<(), String> {
+    if tab.is_empty() || !tab.bytes().all(|c| c.is_ascii_lowercase()) {
+        return Err("invalid settings window request".into());
+    }
+    if prewarm.unwrap_or(false) {
+        if app.get_webview_window(SETTINGS_WINDOW).is_none() {
+            build_tool_window(&app, SETTINGS_WINDOW, "/settings", &title, width, height)?;
+        }
+        return Ok(());
+    }
+    let intent = set_tool_window_intent(&app, SETTINGS_WINDOW, true, serde_json::json!({"tab": tab}));
+    if let Some(window) = app.get_webview_window(SETTINGS_WINDOW) {
+        window.set_title(&title).map_err(|e| e.to_string())?;
+        return window.emit("aries://settings-open", intent).map_err(|e| e.to_string());
+    }
+    build_tool_window(&app, SETTINGS_WINDOW, "/settings", &title, width, height)
+}
+
+#[tauri::command]
+async fn show_settings_window(app: tauri::AppHandle, generation: u64) -> Result<(), String> {
+    show_ready_tool_window(&app, SETTINGS_WINDOW, generation)
+}
+
+fn prepare_and_show_tool_window(window: &WebviewWindow<Wry>) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2::ClassType;
+        use objc2_app_kit::{NSWindow, NSWindowButton};
+
+        let ptr = window.ns_window().map_err(|e| e.to_string())?;
+        if ptr.is_null() {
+            return Err("tool NSWindow pointer is null".into());
+        }
+        // Called on the AppKit main thread. Settings retains its own localized
+        // close button and native drag region, without a second titlebar UI.
+        unsafe {
+            let native: &NSWindow = &*ptr.cast();
+            for kind in [NSWindowButton::CloseButton, NSWindowButton::MiniaturizeButton, NSWindowButton::ZoomButton] {
+                if let Some(button) = native.standardWindowButton(kind) {
+                    button.as_super().as_super().setHidden(true);
+                }
+            }
+            if native.parentWindow().is_none() {
+                let main = window.app_handle().get_webview_window("main").ok_or("missing main window")?;
+                let parent_ptr = main.ns_window().map_err(|e| e.to_string())?;
+                if parent_ptr.is_null() { return Err("main NSWindow pointer is null".into()); }
+                let parent: &NSWindow = &*parent_ptr.cast();
+                parent.addChildWindow_ordered(native, objc2_app_kit::NSWindowOrderingMode::Above);
+            }
+        }
+    }
+    window.show().map_err(|e| e.to_string())?;
+    window.set_focus().map_err(|e| e.to_string())
+}
+
+fn hide_tool_window(window: &WebviewWindow<Wry>, generation: u64) -> Result<(), String> {
+    let hidden = window.clone();
+    window.run_on_main_thread(move || {
+        let intent = tool_window_intent(hidden.app_handle(), hidden.label());
+        if intent.generation != generation || intent.open { return; }
+        #[cfg(target_os = "macos")]
+        if let Ok(ptr) = hidden.ns_window() {
+            if !ptr.is_null() {
+                // Hidden retained chrome must not follow its parent's ordering
+                // or restoration. Reattach on the next explicit ready/show.
+                unsafe {
+                    let native: &objc2_app_kit::NSWindow = &*ptr.cast();
+                    if let Some(parent) = native.parentWindow() {
+                        parent.removeChildWindow(native);
+                    }
+                }
+            }
+        }
+        if let Err(error) = hidden.hide() {
+            log::error!("failed to hide {}: {error}", hidden.label());
+        }
+    }).map_err(|e| e.to_string())
+}
+
+fn hide_settings_window_impl(app: &tauri::AppHandle) -> Result<(), String> {
+    let intent = set_tool_window_intent(app, SETTINGS_WINDOW, false, serde_json::Value::Null);
+    if let Some(window) = app.get_webview_window(SETTINGS_WINDOW) {
+        hide_tool_window(&window, intent.generation)?;
+        window.emit("aries://settings-open", intent)
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn hide_settings_window(app: tauri::AppHandle) -> Result<(), String> {
+    hide_settings_window_impl(&app)
 }
 
 fn find_submenu_in_items(
@@ -2077,6 +2322,7 @@ async fn set_recent_charts(
     app: tauri::AppHandle,
     entries: Vec<RecentChartMenuEntry>,
 ) -> Result<(), String> {
+    app.state::<NativeMenuReadiness>().wait().await?;
     let recent_command_ids: Vec<String> = entries.iter().map(|entry| entry.id.clone()).collect();
     let menu = app
         .menu()
@@ -2109,6 +2355,63 @@ async fn set_recent_charts(
     Ok(())
 }
 
+// Update only explicitly saved designs. Keep factory choices, house-line
+// routing, unrelated menu state, and the retained Settings window intact.
+#[tauri::command]
+async fn set_wheel_styles(
+    app: tauri::AppHandle,
+    entries: Vec<WheelStyleMenuEntry>,
+) -> Result<(), String> {
+    app.state::<NativeMenuReadiness>().wait().await?;
+    let ids = wheel_style_command_ids(&entries)?;
+    let menu = app.menu().ok_or_else(|| "native menu is not installed".to_string())?;
+    let submenu = find_submenu_in_items(menu.items().map_err(|e| e.to_string())?,
+        "menu.options.quick.wheel-layout").map_err(|e| e.to_string())?
+        .ok_or_else(|| "wheel layout submenu not found".to_string())?;
+    let current = submenu.items().map_err(|e| e.to_string())?;
+    let saved: Vec<_> = current.iter().filter_map(|item| match item {
+        MenuItemKind::Check(item) if item.id().as_ref().starts_with("quick.options.wheel-preset:") => Some(item),
+        _ => None,
+    }).collect();
+    let same_catalog = saved.len() == entries.len() && saved.iter().zip(&entries)
+        .all(|(item, entry)| item.id().as_ref() == entry.id && item.text().ok().as_deref() == Some(entry.label.as_str()));
+    if same_catalog {
+        for (item, entry) in saved.iter().zip(&entries) {
+            item.set_checked(entry.checked).map_err(|e| e.to_string())?;
+        }
+    } else {
+        let items: Result<Vec<_>, _> = entries.iter().map(|entry|
+            CheckMenuItemBuilder::with_id(&entry.id, &entry.label).checked(entry.checked).build(&app)).collect();
+        let items = items.map_err(|e| e.to_string())?;
+        for (index, item) in current.iter().enumerate().rev() {
+            if item.id().as_ref().starts_with("quick.options.wheel-preset:") {
+                submenu.remove_at(index).map_err(|e| e.to_string())?;
+            }
+        }
+        let retained = submenu.items().map_err(|e| e.to_string())?;
+        let position = retained.iter().position(|item| !item.id().as_ref().starts_with("quick.options.layout:"))
+            .unwrap_or(retained.len());
+        for (offset, item) in items.iter().enumerate() {
+            submenu.insert(item, position + offset).map_err(|e| e.to_string())?;
+        }
+    }
+    if let Some(commands) = app.try_state::<NativeMenuCommandIds>() {
+        commands.replace_wheel_styles(ids)?;
+    }
+    Ok(())
+}
+
+fn wheel_style_command_ids(entries: &[WheelStyleMenuEntry]) -> Result<Vec<String>, String> {
+    let mut ids = HashSet::new();
+    for entry in entries {
+        if !entry.id.starts_with("quick.options.wheel-preset:user.") || entry.label.trim().is_empty()
+            || !ids.insert(entry.id.clone()) {
+            return Err("invalid saved wheel style menu entry".into());
+        }
+    }
+    Ok(entries.iter().map(|entry| entry.id.clone()).collect())
+}
+
 // App-quit confirm door. The React shell calls this after quit-preflight + the
 // Save/Discard/Cancel modal resolve "clear to quit" (Save written, notes flushed,
 // or Discard chosen). It marks the quit confirmed and re-issues the main-window
@@ -2131,6 +2434,7 @@ async fn set_native_menu_enabled(
     app: tauri::AppHandle,
     states: Vec<NativeMenuEnabledState>,
 ) -> Result<(), String> {
+    app.state::<NativeMenuReadiness>().wait().await?;
     let menu = app
         .menu()
         .ok_or_else(|| "native menu is not installed".to_string())?;
@@ -2150,6 +2454,7 @@ async fn set_native_menu_labels(
     app: tauri::AppHandle,
     labels: Vec<NativeMenuLabelState>,
 ) -> Result<(), String> {
+    app.state::<NativeMenuReadiness>().wait().await?;
     let menu = app
         .menu()
         .ok_or_else(|| "native menu is not installed".to_string())?;
@@ -2212,6 +2517,24 @@ pub fn run() {
     let init_script = format!("{runtime_init_script}{DESKTOP_WEBVIEW_GUARD_SCRIPT}");
 
     tauri::Builder::default()
+        .on_page_load(|_webview, _payload| {
+            #[cfg(target_os = "macos")]
+            if let Err(error) = _webview.with_webview(|platform| {
+                // Wry enables tabFocusesLinks unconditionally. Restore WebKit's
+                // normal macOS tab navigation in every app webview; do not mask
+                // focused controls with CSS or intercept keyboard events.
+                // https://developer.apple.com/documentation/webkit/wkpreferences/tabfocuseslinks
+                // SAFETY: Tauri supplies a live WKWebView on its main thread.
+                unsafe {
+                    let webview = &*platform.inner().cast::<objc2_web_kit::WKWebView>();
+                    webview.configuration().preferences().setTabFocusesLinks(false);
+                }
+            }) {
+                log::warn!("failed to configure native tab navigation: {error}");
+            }
+        })
+        .manage(NativeMenuReadiness::default())
+        .manage(ToolWindowIntents::default())
         .append_invoke_initialization_script(init_script)
         .menu(build_native_menu)
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -2219,13 +2542,22 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
+            show_main_window,
             prewarm_chart_picker_window,
             open_chart_picker_window,
             close_chart_picker_window,
+            get_tool_window_intent,
+            open_chart_editor_window,
+            show_chart_editor_window,
+            hide_chart_editor_window,
+            open_settings_window,
+            show_settings_window,
+            hide_settings_window,
             set_native_menu_enabled,
             set_native_menu_checked,
             set_native_menu_labels,
             set_recent_charts,
+            set_wheel_styles,
             confirm_quit,
             record_frontend_perf,
             read_legal_document,
@@ -2325,6 +2657,20 @@ pub fn run() {
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
             if let Some(command_id) = native_menu_command_for_event(app, id) {
+                if command_id == "workspace.close-active"
+                    && app.get_webview_window(CHART_EDITOR_WINDOW)
+                        .is_some_and(|window| window.is_focused().unwrap_or(false))
+                {
+                    let _ = hide_chart_editor_window_impl(app);
+                    return;
+                }
+                if command_id == "workspace.close-active"
+                    && app.get_webview_window(SETTINGS_WINDOW)
+                        .is_some_and(|window| window.is_focused().unwrap_or(false))
+                {
+                    let _ = hide_settings_window_impl(app);
+                    return;
+                }
                 let _ = app.emit("aries://menu-command", command_id);
             }
         })
@@ -2357,6 +2703,20 @@ pub fn run() {
                     return;
                 }
                 tauri::WindowEvent::CloseRequested { api, .. }
+                    if window.label() == CHART_EDITOR_WINDOW =>
+                {
+                    api.prevent_close();
+                    let _ = hide_chart_editor_window_impl(window.app_handle());
+                    return;
+                }
+                tauri::WindowEvent::CloseRequested { api, .. }
+                    if window.label() == SETTINGS_WINDOW =>
+                {
+                    api.prevent_close();
+                    let _ = hide_settings_window_impl(window.app_handle());
+                    return;
+                }
+                tauri::WindowEvent::CloseRequested { api, .. }
                     if window.label() == CHART_PICKER_WINDOW =>
                 {
                     api.prevent_close();
@@ -2380,11 +2740,12 @@ pub fn run() {
                 }
                 _ => return,
             }
-            if let Some(picker) = window.app_handle().get_webview_window(CHART_PICKER_WINDOW) {
-                let _ = picker.destroy();
-            }
             let app = window.app_handle();
             stop_daemon(&app, "main window close");
+            // Confirmed main-window close means quit the application. Retained
+            // tools (including hidden prewarmed windows) must not keep the
+            // event loop alive. Tauri owns teardown of every remaining window.
+            app.exit(0);
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -2400,4 +2761,46 @@ pub fn run() {
             }
             _ => {}
         });
+}
+
+
+#[cfg(test)]
+mod wheel_style_menu_tests {
+    use super::*;
+
+    #[test]
+    fn saved_styles_reject_private_entries_and_preserve_other_commands() {
+        let entry = |id: &str| WheelStyleMenuEntry {id: id.into(), label: "Saved style".into(), checked: false};
+        assert!(wheel_style_command_ids(&[entry("quick.options.wheel-preset:working.anglo")]).is_err());
+        assert!(wheel_style_command_ids(&[entry("quick.options.wheel-preset:migrated.old.anglo")]).is_err());
+        let user = "quick.options.wheel-preset:user.saved";
+        assert!(wheel_style_command_ids(&[entry(user), entry(user)]).is_err());
+        let commands = NativeMenuCommandIds(Mutex::new(HashSet::from([
+            "quick.options.layout:2".into(), "quick.options.anglo-dense-label-layout:routed-cusps".into(),
+            "quick.options.wheel-preset:user.old".into(),
+        ])));
+        commands.replace_wheel_styles(wheel_style_command_ids(&[entry(user)]).unwrap()).unwrap();
+        assert!(commands.contains(user).unwrap());
+        assert!(!commands.contains("quick.options.wheel-preset:user.old").unwrap());
+        assert!(commands.contains("quick.options.layout:2").unwrap());
+        assert!(commands.contains("quick.options.anglo-dense-label-layout:routed-cusps").unwrap());
+    }
+}
+
+#[cfg(test)]
+mod tool_window_lifecycle_tests {
+    use super::*;
+
+    #[test]
+    fn late_readiness_does_not_reopen_closed_or_retargeted_windows() {
+        let mut intent = ToolWindowIntent::default();
+        for generation in 1..=20 {
+            intent.generation = generation;
+            intent.open = true;
+            assert!(intent.can_reveal(generation));
+            assert!(!intent.can_reveal(generation - 1));
+            intent.open = false;
+            assert!(!intent.can_reveal(generation));
+        }
+    }
 }

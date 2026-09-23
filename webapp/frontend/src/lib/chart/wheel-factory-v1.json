@@ -1,0 +1,712 @@
+{
+  "schemaVersion": 1,
+  "factoryVersion": 1,
+  "sourceCommit": "f04319751bf2514741e2e07c79a0f07c792d56fe",
+  "description": "Original five Tauri wheel geometries before customizable composition. Shared factory authority; user profiles and drafts must never mutate this version.",
+  "geometry": {
+    "classic": {
+      "degreeTickLength": 0.01,
+      "signSectorLength": 0.15,
+      "planetSectorLength": 0.15,
+      "termSectorLength": 0.08,
+      "decanSectorLength": 0.08,
+      "planetLineLength": 0.03,
+      "retrogradeOffset": 0.01,
+      "arrowLength": 0.04,
+      "houseSectorLength": 0.06,
+      "outer": {
+        "zodiac": 0.83,
+        "line": 0.86,
+        "projectedLabel": 0.9,
+        "projectedLine": 0.86
+      },
+      "inner": {
+        "position": 0.48,
+        "aspectAngle": 0.43,
+        "positionAngle": 0.41,
+        "positionHouses": 0.32,
+        "base": 0.11,
+        "houseName": 0.14
+      },
+      "singlePositionLanes": [
+        {
+          "position": 0.48,
+          "aspectAngle": 0.43,
+          "positionAngle": 0.41,
+          "positionHouses": 0.32
+        },
+        {
+          "position": 0.4,
+          "aspectAngle": 0.36,
+          "positionAngle": 0.34,
+          "positionHouses": 0.25
+        },
+        {
+          "position": 0.32,
+          "aspectAngle": 0.28,
+          "positionAngle": 0.27,
+          "positionHouses": 0.21
+        }
+      ],
+      "comparisonPositionLanes": [
+        {
+          "position": 0.45,
+          "aspectAngle": 0.41,
+          "positionAngle": 0.41,
+          "positionHouses": 0.32
+        },
+        {
+          "position": 0.37,
+          "aspectAngle": 0.32,
+          "positionAngle": 0.32,
+          "positionHouses": 0.24
+        },
+        {
+          "position": 0.3,
+          "aspectAngle": 0.25,
+          "positionAngle": 0.25,
+          "positionHouses": 0.2
+        }
+      ]
+    },
+    "compact": {
+      "positionLaneSingle": [
+        0.36,
+        0.3,
+        0.24
+      ],
+      "positionLaneComparison": [
+        0.34,
+        0.26,
+        0.2
+      ],
+      "positionInset": 0.15,
+      "positionMinuteInsetSingle": 0.05,
+      "positionMinuteInsetWithOuter": 0.04,
+      "positionMinuteInsetComparison": 0.05,
+      "retrogradeInset": 0.05,
+      "base": 0.24,
+      "houseSector": 0.06,
+      "houseName": 0.27,
+      "densityOffsetWithPositions": [
+        0,
+        0.02,
+        0.08,
+        0.12
+      ],
+      "densityOffsetWithoutPositions": [
+        0,
+        0,
+        0,
+        0.05
+      ]
+    },
+    "anglo": {
+      "zodiacSingle": 0.895,
+      "zodiacWithOuter": 0.895,
+      "zodiacComparisonWithHouses": 0.8,
+      "subdivisionSector": 0.047,
+      "signInnerScale": 0.881,
+      "rulerBaseScale": 0.058,
+      "rulerSubdivisionScale": 0.014,
+      "cuspLabelScale": 0.817,
+      "innerScale": 0.763,
+      "planetScale": 0.695,
+      "aspectScale": 0.352,
+      "houseScale": 0.44,
+      "leaderInsetScale": 0.026,
+      "aspectLeaderInsetScale": 0.03,
+      "retrogradeInsetScale": 0.036,
+      "positionInsetScale": 0.083,
+      "anglePositionScale": 0.521,
+      "houseCuspTickScale": 0.015,
+      "angleRulerTickScale": 0.02,
+      "cuspRulerTicks": {
+        "short": 0.018,
+        "medium": 0.03,
+        "long": 0.05
+      },
+      "degreeTickLength": 0.008,
+      "noOuterLineOffset": 0.03,
+      "arrowInset": 0.035,
+      "arrowMaximum": 0.995,
+      "outerSingle": {
+        "degree0": 0.964,
+        "degree1": 0.956,
+        "degree5": 0.948,
+        "degree10": 0.94,
+        "line": 0.93,
+        "projectedLabel": 0.95,
+        "angle": 0.965,
+        "arrow": 0.985
+      },
+      "comparisonNoHouses": {
+        "planet": 0.95,
+        "angle": 0.965,
+        "arrow": 0.985,
+        "retrograde": 0.93,
+        "minute": 0.94
+      },
+      "comparisonWithHouses": {
+        "degree0": 0.925,
+        "degree1": 0.917,
+        "degree5": 0.909,
+        "degree10": 0.901,
+        "max": 0.99,
+        "house": 0.94,
+        "houseName": 0.91,
+        "planet": 0.86,
+        "line": 0.825,
+        "projectedLabel": 0.86,
+        "retrograde": 0.835
+      }
+    },
+    "houses": {
+      "zodiacSingle": 0.895,
+      "zodiacWithOuter": 0.895,
+      "zodiacComparisonWithHouses": 0.8,
+      "subdivisionSector": 0.047,
+      "signInnerScale": 1,
+      "rulerBaseScale": 0.058,
+      "rulerSubdivisionScale": 0.014,
+      "cuspLabelScale": 0.927355,
+      "innerScale": 0.877095,
+      "planetScale": 0.788876,
+      "aspectScale": 0.399546,
+      "houseScale": 0.493296,
+      "leaderInsetScale": 0.029512,
+      "aspectLeaderInsetScale": 0.034052,
+      "retrogradeInsetScale": 0.040863,
+      "positionInsetScale": 0.094211,
+      "anglePositionScale": 0.591373,
+      "houseCuspTickScale": 0.015,
+      "angleRulerTickScale": 0.02,
+      "cuspRulerTicks": {
+        "short": 0.018,
+        "medium": 0.03,
+        "long": 0.05
+      },
+      "degreeTickLength": 0.008,
+      "noOuterLineOffset": 0.03,
+      "arrowInset": 0.035,
+      "arrowMaximum": 0.995,
+      "outerSingle": {
+        "degree0": 0.964,
+        "degree1": 0.956,
+        "degree5": 0.948,
+        "degree10": 0.94,
+        "line": 0.93,
+        "projectedLabel": 0.95,
+        "angle": 0.965,
+        "arrow": 0.985
+      },
+      "comparisonNoHouses": {
+        "planet": 0.95,
+        "angle": 0.965,
+        "arrow": 0.985,
+        "retrograde": 0.93,
+        "minute": 0.94
+      },
+      "comparisonWithHouses": {
+        "degree0": 0.925,
+        "degree1": 0.917,
+        "degree5": 0.909,
+        "degree10": 0.901,
+        "max": 0.99,
+        "house": 0.94,
+        "houseName": 0.91,
+        "planet": 0.86,
+        "line": 0.825,
+        "projectedLabel": 0.86,
+        "retrograde": 0.835
+      }
+    },
+    "cusps": {
+      "zodiacSingle": 0.895,
+      "zodiacWithOuter": 0.895,
+      "zodiacComparisonWithHouses": 0.8,
+      "subdivisionSector": 0.047,
+      "signInnerScale": 1,
+      "rulerBaseScale": 0.058,
+      "rulerSubdivisionScale": 0.014,
+      "cuspLabelScale": 0.927355,
+      "innerScale": 0.877095,
+      "planetScale": 0.788876,
+      "aspectScale": 0.399546,
+      "houseScale": 0.493296,
+      "leaderInsetScale": 0.029512,
+      "aspectLeaderInsetScale": 0.034052,
+      "retrogradeInsetScale": 0.040863,
+      "positionInsetScale": 0.094211,
+      "anglePositionScale": 0.591373,
+      "houseCuspTickScale": 0.015,
+      "angleRulerTickScale": 0.02,
+      "cuspRulerTicks": {
+        "short": 0.018,
+        "medium": 0.03,
+        "long": 0.05
+      },
+      "degreeTickLength": 0.008,
+      "noOuterLineOffset": 0.03,
+      "arrowInset": 0.035,
+      "arrowMaximum": 0.995,
+      "outerSingle": {
+        "degree0": 0.964,
+        "degree1": 0.956,
+        "degree5": 0.948,
+        "degree10": 0.94,
+        "line": 0.93,
+        "projectedLabel": 0.95,
+        "angle": 0.965,
+        "arrow": 0.985
+      },
+      "comparisonNoHouses": {
+        "planet": 0.95,
+        "angle": 0.965,
+        "arrow": 0.985,
+        "retrograde": 0.93,
+        "minute": 0.94
+      },
+      "comparisonWithHouses": {
+        "degree0": 0.925,
+        "degree1": 0.917,
+        "degree5": 0.909,
+        "degree10": 0.901,
+        "max": 0.99,
+        "house": 0.94,
+        "houseName": 0.91,
+        "planet": 0.86,
+        "line": 0.825,
+        "projectedLabel": 0.86,
+        "retrograde": 0.835
+      }
+    },
+    "biwheel": {
+      "outerMax": 0.97,
+      "outerHouseSector": 0.06,
+      "zodiacInset": 0.12,
+      "outerPlanetSector": 0.15,
+      "outerAngle": 0.92,
+      "arrowLength": 0.04,
+      "outerLineOffset": 0.03,
+      "projectedLabel": 0.9,
+      "retrogradeOffset": 0.01,
+      "outerMinimum": 0.78
+    }
+  },
+  "layouts": {
+    "classic": {
+      "id": "original-classic-v1",
+      "optionValue": 0,
+      "projection": "zodiac",
+      "geometryProfile": "classic",
+      "composition": {
+        "schemaVersion": 1,
+        "customized": false,
+        "projection": "zodiac",
+        "rings": [
+          {
+            "instanceId": "classic-outerHouses",
+            "archetypeId": "outerHouses",
+            "enabled": true,
+            "chartRole": "outer"
+          },
+          {
+            "instanceId": "classic-outerBodies",
+            "archetypeId": "outerBodies",
+            "enabled": true,
+            "chartRole": "outer"
+          },
+          {
+            "instanceId": "classic-zodiac",
+            "archetypeId": "zodiac",
+            "enabled": true,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "classic-degree",
+            "archetypeId": "degree",
+            "enabled": true,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "classic-terms",
+            "archetypeId": "terms",
+            "enabled": false,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "classic-decans",
+            "archetypeId": "decans",
+            "enabled": false,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "classic-bodies",
+            "archetypeId": "bodies",
+            "enabled": true,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "classic-aspects",
+            "archetypeId": "aspects",
+            "enabled": true,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "classic-houses",
+            "archetypeId": "houses",
+            "enabled": true,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "classic-hub",
+            "archetypeId": "hub",
+            "enabled": true,
+            "chartRole": "primary"
+          }
+        ]
+      },
+      "arrangements": {
+        "single": "single",
+        "auxiliary": "external-overlay",
+        "transit": "enclosed",
+        "synastry": "enclosed"
+      }
+    },
+    "compact": {
+      "id": "original-compact-v1",
+      "optionValue": 1,
+      "projection": "zodiac",
+      "geometryProfile": "compact",
+      "composition": {
+        "schemaVersion": 1,
+        "customized": false,
+        "projection": "zodiac",
+        "rings": [
+          {
+            "instanceId": "compact-outerHouses",
+            "archetypeId": "outerHouses",
+            "enabled": true,
+            "chartRole": "outer"
+          },
+          {
+            "instanceId": "compact-outerBodies",
+            "archetypeId": "outerBodies",
+            "enabled": true,
+            "chartRole": "outer"
+          },
+          {
+            "instanceId": "compact-zodiac",
+            "archetypeId": "zodiac",
+            "enabled": true,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "compact-degree",
+            "archetypeId": "degree",
+            "enabled": true,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "compact-terms",
+            "archetypeId": "terms",
+            "enabled": false,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "compact-decans",
+            "archetypeId": "decans",
+            "enabled": false,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "compact-bodies",
+            "archetypeId": "bodies",
+            "enabled": true,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "compact-aspects",
+            "archetypeId": "aspects",
+            "enabled": true,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "compact-houses",
+            "archetypeId": "houses",
+            "enabled": true,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "compact-hub",
+            "archetypeId": "hub",
+            "enabled": true,
+            "chartRole": "primary"
+          }
+        ]
+      },
+      "arrangements": {
+        "single": "single",
+        "auxiliary": "external-overlay",
+        "transit": "enclosed",
+        "synastry": "enclosed"
+      }
+    },
+    "anglo": {
+      "id": "original-anglo-v1",
+      "optionValue": 2,
+      "projection": "zodiac",
+      "geometryProfile": "anglo",
+      "composition": {
+        "schemaVersion": 1,
+        "customized": false,
+        "projection": "zodiac",
+        "rings": [
+          {
+            "instanceId": "anglo-outerHouses",
+            "archetypeId": "outerHouses",
+            "enabled": true,
+            "chartRole": "outer"
+          },
+          {
+            "instanceId": "anglo-outerBodies",
+            "archetypeId": "outerBodies",
+            "enabled": true,
+            "chartRole": "outer"
+          },
+          {
+            "instanceId": "anglo-zodiac",
+            "archetypeId": "zodiac",
+            "enabled": true,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "anglo-degree",
+            "archetypeId": "degree",
+            "enabled": true,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "anglo-terms",
+            "archetypeId": "terms",
+            "enabled": false,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "anglo-decans",
+            "archetypeId": "decans",
+            "enabled": false,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "anglo-cuspRuler",
+            "archetypeId": "cuspRuler",
+            "enabled": true,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "anglo-cuspLabels",
+            "archetypeId": "cuspLabels",
+            "enabled": true,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "anglo-bodies",
+            "archetypeId": "bodies",
+            "enabled": true,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "anglo-houses",
+            "archetypeId": "houses",
+            "enabled": true,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "anglo-hub",
+            "archetypeId": "hub",
+            "enabled": true,
+            "chartRole": "primary"
+          }
+        ]
+      },
+      "arrangements": {
+        "single": "single",
+        "auxiliary": "external-overlay",
+        "transit": "open",
+        "synastry": "enclosed"
+      }
+    },
+    "houses": {
+      "id": "original-houses-v1",
+      "optionValue": 3,
+      "projection": "houses",
+      "geometryProfile": "houses",
+      "composition": {
+        "schemaVersion": 1,
+        "customized": false,
+        "projection": "houses",
+        "rings": [
+          {
+            "instanceId": "houses-outerHouses",
+            "archetypeId": "outerHouses",
+            "enabled": true,
+            "chartRole": "outer"
+          },
+          {
+            "instanceId": "houses-outerBodies",
+            "archetypeId": "outerBodies",
+            "enabled": true,
+            "chartRole": "outer"
+          },
+          {
+            "instanceId": "houses-zodiac",
+            "archetypeId": "zodiac",
+            "enabled": false,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "houses-degree",
+            "archetypeId": "degree",
+            "enabled": false,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "houses-terms",
+            "archetypeId": "terms",
+            "enabled": false,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "houses-decans",
+            "archetypeId": "decans",
+            "enabled": false,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "houses-cuspRuler",
+            "archetypeId": "cuspRuler",
+            "enabled": false,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "houses-cuspLabels",
+            "archetypeId": "cuspLabels",
+            "enabled": true,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "houses-bodies",
+            "archetypeId": "bodies",
+            "enabled": true,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "houses-houses",
+            "archetypeId": "houses",
+            "enabled": true,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "houses-hub",
+            "archetypeId": "hub",
+            "enabled": true,
+            "chartRole": "primary"
+          }
+        ]
+      },
+      "arrangements": {
+        "single": "single",
+        "auxiliary": "external-overlay",
+        "transit": "open",
+        "synastry": "enclosed"
+      }
+    },
+    "cusps": {
+      "id": "original-cusps-v1",
+      "optionValue": 4,
+      "projection": "zodiac",
+      "geometryProfile": "cusps",
+      "composition": {
+        "schemaVersion": 1,
+        "customized": false,
+        "projection": "zodiac",
+        "rings": [
+          {
+            "instanceId": "cusps-outerHouses",
+            "archetypeId": "outerHouses",
+            "enabled": true,
+            "chartRole": "outer"
+          },
+          {
+            "instanceId": "cusps-outerBodies",
+            "archetypeId": "outerBodies",
+            "enabled": true,
+            "chartRole": "outer"
+          },
+          {
+            "instanceId": "cusps-zodiac",
+            "archetypeId": "zodiac",
+            "enabled": false,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "cusps-degree",
+            "archetypeId": "degree",
+            "enabled": false,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "cusps-terms",
+            "archetypeId": "terms",
+            "enabled": false,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "cusps-decans",
+            "archetypeId": "decans",
+            "enabled": false,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "cusps-cuspRuler",
+            "archetypeId": "cuspRuler",
+            "enabled": false,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "cusps-cuspLabels",
+            "archetypeId": "cuspLabels",
+            "enabled": true,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "cusps-bodies",
+            "archetypeId": "bodies",
+            "enabled": true,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "cusps-houses",
+            "archetypeId": "houses",
+            "enabled": true,
+            "chartRole": "primary"
+          },
+          {
+            "instanceId": "cusps-hub",
+            "archetypeId": "hub",
+            "enabled": true,
+            "chartRole": "primary"
+          }
+        ]
+      },
+      "arrangements": {
+        "single": "single",
+        "auxiliary": "external-overlay",
+        "transit": "open",
+        "synastry": "enclosed"
+      }
+    }
+  }
+}

@@ -33,7 +33,7 @@ _NATIVE_CONTEXT_METHODS = (
 	"search_station_times_raw",
 	"search_station_times_batch_raw",
 )
-_NATIVE_CONTEXT_PARAMETERS = frozenset(("sidereal_mode", "topocentric_position"))
+_NATIVE_CONTEXT_PARAMETERS = frozenset(("sidereal_mode", "topocentric_position", "sidereal_epoch", "sidereal_offset"))
 # Match the kernel's native Swiss lock slice so the Python context lock never
 # widens an already-bounded native span back into one whole Search request.
 _NATIVE_CONTEXT_SPAN_DAYS = 14.0
@@ -98,6 +98,8 @@ def _backend_context_kwargs(context: EphemerisContext) -> dict:
 		"ephe_path": context.ephe_path,
 		"flags": context.flags,
 		"sidereal_mode": context.sidereal_mode,
+		"sidereal_epoch": context.sidereal_epoch,
+		"sidereal_offset": context.sidereal_offset,
 		"topocentric_position": context.topocentric_position,
 	}
 
@@ -237,118 +239,6 @@ def _materialize_hits(raw_hits: list[tuple], *, target_override: float | None = 
 			)
 	)
 	return _assign_pass_indexes(_dedupe_hits(hits))
-
-
-def _refine_longitude_hit_window(
-	planet: int,
-	jd_ut: float,
-	target_deg: float,
-	*,
-	context: EphemerisContext,
-	step_days: float | None,
-	eps_deg: float,
-	eps_days: float,
-) -> tuple[float, float] | None:
-	if _backend(context) is not _kernel or _kernel is None:
-		return None
-	if int(planet) in (astrology.SE_SUN, astrology.SE_MOON):
-		return None
-
-	base_step = float(default_step_days_for_planet(int(planet)) if step_days is None else step_days)
-	half_window = max(min(base_step / 8.0, 0.25), 1.0 / 1440.0)
-	max_half_window = max(base_step, 0.5)
-	target = wrap360(float(target_deg))
-	jd_center = float(jd_ut)
-	while half_window <= max_half_window + float(eps_days):
-		lo = jd_center - half_window
-		hi = jd_center + half_window
-		lon_lo, _speed_lo = python_reference._eval_lon_speed(lo, int(planet), context.flags)
-		lon_hi, _speed_hi = python_reference._eval_lon_speed(hi, int(planet), context.flags)
-		f_lo = wrap180(lon_lo - target)
-		f_hi = wrap180(lon_hi - target)
-		if abs(f_lo) <= float(eps_deg) or abs(f_hi) <= float(eps_deg) or python_reference._is_longitude_zero_crossing(f_lo, f_hi):
-			return python_reference._refine_longitude_root(
-				int(planet),
-				target,
-				lo,
-				hi,
-				context.flags,
-				eps_deg=float(eps_deg),
-				eps_days=float(eps_days),
-			)
-		half_window *= 2.0
-
-	return None
-
-
-def _post_refine_longitude_raw_hits(
-	raw_hits: list[tuple],
-	*,
-	context: EphemerisContext,
-	step_days: float | None,
-	eps_deg: float,
-	eps_days: float,
-) -> list[tuple]:
-	if _backend(context) is not _kernel or _kernel is None:
-		return raw_hits
-	refined: list[tuple] = []
-	last_index = len(raw_hits) - 1
-	for index, hit in enumerate(raw_hits):
-		if int(hit[4]) != HIT_LONGITUDE or int(hit[1]) in (astrology.SE_SUN, astrology.SE_MOON):
-			refined.append(hit)
-			continue
-		with context.activate():
-			refined.extend(
-				_post_refine_longitude_raw_hits_active(
-					[hit],
-					context=context,
-					step_days=step_days,
-					eps_deg=eps_deg,
-					eps_days=eps_days,
-				)
-			)
-		if index < last_index:
-			time.sleep(0)
-	return refined
-
-
-def _post_refine_longitude_raw_hits_active(
-	raw_hits: list[tuple],
-	*,
-	context: EphemerisContext,
-	step_days: float | None,
-	eps_deg: float,
-	eps_days: float,
-) -> list[tuple]:
-
-	refined = []
-	for jd_ut, planet, target_deg, aspect_deg, hit_kind, speed, retrograde in raw_hits:
-		if int(hit_kind) != HIT_LONGITUDE:
-			refined.append((jd_ut, planet, target_deg, aspect_deg, hit_kind, speed, retrograde))
-			continue
-		refined_hit = _refine_longitude_hit_window(
-			int(planet),
-			float(jd_ut),
-			float(target_deg),
-			context=context,
-			step_days=step_days,
-			eps_deg=float(eps_deg),
-			eps_days=float(eps_days),
-		)
-		if refined_hit is None:
-			refined.append((jd_ut, planet, target_deg, aspect_deg, hit_kind, speed, retrograde))
-			continue
-		refined_jd, refined_speed = refined_hit
-		refined.append((
-			float(refined_jd),
-			int(planet),
-			float(target_deg),
-			float(aspect_deg),
-			int(hit_kind),
-			float(refined_speed),
-			bool(refined_speed < 0.0),
-		))
-	return refined
 
 
 def _dedupe_hits(hits: list[TransitHit]) -> list[TransitHit]:
@@ -588,13 +478,6 @@ def search_longitude_transits(
 		eps_days=float(eps_days),
 		**_backend_context_kwargs(context),
 	)
-	raw_hits = _post_refine_longitude_raw_hits(
-		raw_hits,
-		context=context,
-		step_days=step_days,
-		eps_deg=float(eps_deg),
-		eps_days=float(eps_days),
-	)
 	return _materialize_hits(raw_hits)
 
 
@@ -607,6 +490,8 @@ def _orbital_return_context(context: EphemerisContext) -> EphemerisContext:
 		flags=flags,
 		ephe_path=context.ephe_path,
 		sidereal_mode=context.sidereal_mode,
+		sidereal_epoch=context.sidereal_epoch,
+		sidereal_offset=context.sidereal_offset,
 	)
 
 
@@ -858,13 +743,6 @@ def search_longitude_transits_batch(
 		eps_days=float(eps_days),
 		**_backend_context_kwargs(context),
 	)
-	raw_hits = _post_refine_longitude_raw_hits(
-		raw_hits,
-		context=context,
-		step_days=step_days,
-		eps_deg=float(eps_deg),
-		eps_days=float(eps_days),
-	)
 	return _materialize_hits(raw_hits)
 
 
@@ -900,13 +778,7 @@ def search_longitude_transits_batch_raw(
 		eps_days=float(eps_days),
 		**_backend_context_kwargs(context),
 	)
-	return _post_refine_longitude_raw_hits(
-		raw_hits,
-		context=context,
-		step_days=step_days,
-		eps_deg=float(eps_deg),
-		eps_days=float(eps_days),
-	)
+	return raw_hits
 
 
 def search_relative_aspects_batch_raw(

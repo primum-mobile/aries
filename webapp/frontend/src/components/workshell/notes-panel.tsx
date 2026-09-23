@@ -24,6 +24,8 @@ type Props = {
   chart?: ChartRenderSnapshot | null;
   documentId?: string;
   scratch?: boolean;
+  eventId?: string;
+  recordId?: string;
   className?: string;
 };
 
@@ -31,30 +33,31 @@ const NOTES_EDITOR_ASSET_VERSION = "20260809-native-edit-context-menu";
 
 /**
  * Per-radix notes — file-backed via the daemon. Saved charts write the
- * wx-style chart-name note file; ephemeral root charts write a daemon scratch
+ * shared chart-ID Markdown file; ephemeral root charts write a daemon scratch
  * note keyed by document id until the chart-save lifecycle promotes it.
  *
- * Each radix has one saved note file. For a derived doc (transit/SR/etc.) the
- * notes pane shows the *parent
- * radix's* notes — keystrokes anywhere in the tree write to the same file.
+ * Saved events have their own stable Markdown identity. Other derived charts
+ * share the radix note. Event identity stays fixed through queued autosaves.
  *
  * Re-mounted per sourceName via React `key` in the parent so internal
  * fetch state starts fresh on radix switch (no stale notes flash).
  */
-export function NotesPanel({ sourceName, chart = null, documentId, scratch = false, className }: Props) {
+export function NotesPanel({ sourceName, chart = null, documentId, scratch = false, eventId, recordId, className }: Props) {
   return (
     <NotesPanelInner
-      key={`${sourceName}:${documentId ?? ""}:${scratch ? "scratch" : "saved"}`}
+      key={eventId ? `${recordId}:${eventId}` : `${sourceName}:${documentId ?? ""}:${scratch ? "scratch" : "saved"}`}
       sourceName={sourceName}
       chart={chart}
       documentId={documentId}
       scratch={scratch}
+      eventId={eventId}
+      recordId={recordId}
       className={className}
     />
   );
 }
 
-function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false, className }: Props) {
+function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false, eventId, recordId, className }: Props) {
   const t = useT();
   const theme = useThemeStore((s) => s.theme);
   const setNotesPaneOpen = useFrameLayoutStore((s) => s.setNotesPaneOpen);
@@ -72,9 +75,11 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
   const mountedRef = React.useRef(true);
   const saveQueueRef = React.useRef<Promise<void>>(Promise.resolve());
   const noteTarget = React.useMemo(
-    () => ({ documentId, scratch }),
-    [documentId, scratch],
+    () => ({ documentId, scratch, eventId, recordId }),
+    [documentId, scratch, eventId, recordId],
   );
+  const savedTargetRef = React.useRef(noteTarget);
+  const revisionRef = React.useRef<string | undefined>(undefined);
   const notesBaseUrl = React.useMemo(() => daemonBaseUrl(), []);
   const notesEditorUrl = React.useMemo(
     () => `${notesBaseUrl}/Res/notes/index.html?v=${NOTES_EDITOR_ASSET_VERSION}`,
@@ -136,6 +141,9 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
     async (signal?: AbortSignal, force = false) => {
       if (!force && (dirtyRef.current || focusedRef.current)) return;
       const payload = await fetchNotes(sourceName, noteTarget, signal);
+      if (!force && (dirtyRef.current || focusedRef.current)) return;
+      savedTargetRef.current = { ...noteTarget, recordId: payload.recordId ?? noteTarget.recordId };
+      revisionRef.current = payload.revision;
       const text = payload.content ?? "";
       contentRef.current = text;
       markClean(text);
@@ -164,7 +172,8 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
           break;
         }
 
-        await saveNotes(sourceName, text, noteTarget);
+        const saved = await saveNotes(sourceName, text, { ...savedTargetRef.current, revision: revisionRef.current });
+        revisionRef.current = saved.revision;
         lastSyncedRef.current = text;
         wrote = true;
 
@@ -184,7 +193,7 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
       .then(flushLatest);
     saveQueueRef.current = queued;
     return queued;
-  }, [noteTarget, sourceName]);
+  }, [sourceName]);
 
   const handleIframeLoad = React.useCallback(() => {
     editorReadyRef.current = false;
@@ -194,7 +203,9 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
 
   React.useEffect(() => {
     const controller = new AbortController();
-    loadNote(controller.signal, true)
+    // A fresh identity mounts clean. Renaming an open event must not replace
+    // unsaved editor text with an older disk copy while its autosave is queued.
+    loadNote(controller.signal)
       .catch((err) => {
         if ((err as { name?: string }).name === "AbortError") return;
         setError(String(err));
@@ -387,6 +398,11 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
           {error ? t("notes.statusError") : dirty ? t("notes.statusUnsaved") : savedAt ? t("notes.statusSaved", { time: timeSince(savedAt, t) }) : ""}
         </span>
       </div>
+      {error?.startsWith("NoteConflict:") && (
+        <p role="alert" className="text-[length:var(--aries-font-size-small)] text-destructive">
+          {t("notes.externalConflict")}
+        </p>
+      )}
       <div className="relative -mx-1 min-h-0 flex-1 overflow-hidden border-y border-border/40 bg-background/80">
         <iframe
           ref={iframeRef}

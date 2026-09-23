@@ -2917,6 +2917,18 @@ class SecondaryDirectionsService:
                 "minor": mtexts.txts.get("MinorProgression", "Minor Progressions") + mtexts.txts.get("ToRadixSuffix", " to Radix"),
                 "tertiary": mtexts.txts.get("TertiaryProgression", "Tertiary Progressions") + mtexts.txts.get("ToRadixSuffix", " to Radix"),
             }.get(method, "Secondary Progressions to Radix")
+            from_ids = set(_secdir._secondary_progressed_promittor_ids(catalog) + _secdir.secondary_acting_angle_ids(catalog))
+            to_ids = set(_secdir._secondary_radix_target_ids(catalog))
+            filter_points = [
+                {
+                    "id": obj.id, "label": str(obj.label),
+                    "glyph": _secdir._object_glyph(catalog, obj.id),
+                    "groupId": "asteroid" if obj.id.startswith("asteroid:") else obj.family,
+                    "from": obj.id in from_ids, "to": obj.id in to_ids,
+                    "planetId": obj.planet_index,
+                }
+                for obj in catalog.objects if obj.id in from_ids or obj.id in to_ids
+            ]
             filter_planets_by_id = {}
             for object_id in catalog.promittor_ids:
                 obj = catalog.get(object_id)
@@ -2957,7 +2969,12 @@ class SecondaryDirectionsService:
                           mtexts.txts.get("AspColumn", "Asp."), mtexts.txts.get("Sig", "Sig."),
                           mtexts.txts.get("Date", "Date")]
                 ),
+                "filterPoints": filter_points,
                 "filterPlanets": list(filter_planets_by_id.values()),
+                "filterAngles": [
+                    {"id": object_id, "label": catalog.get(object_id).label}
+                    for object_id in _secdir.secondary_acting_angle_ids(catalog)
+                ],
             }
             if include_temporal:
                 temporal_coverage = _secondary_temporal_query_coverage(

@@ -1779,6 +1779,7 @@ class AstrocartService:
         *,
         spec=None,
         catalog: Optional[astrocart_spec.AstrocartPointCatalog] = None,
+        default_transit_cursor_iso: str | None = None,
     ) -> dict:
         """Authoritative retained-map configuration without ACG calculation."""
         resolved_catalog, normalized = self._catalog_and_spec(
@@ -1798,6 +1799,7 @@ class AstrocartService:
             "catalog": resolved_catalog.to_payload(),
             "aspects": _all_aspect_payloads(),
             "dynamicTechniques": _dynamic_technique_payloads(),
+            "defaultTransitCursorIso": default_transit_cursor_iso,
             "coordinateSystems": list(astrocart_spec.COORDINATE_SYSTEMS),
             "angleKinds": list(astrocart_spec.ANGLE_KINDS),
             "specKey": spec_key,
@@ -2357,6 +2359,15 @@ class AstrocartService:
             compute_kwargs,
             mode=ASTROCART_MODE_STANDARD,
             geodetic_meridian_lon=None,
+        )
+        self._append_separate_parans(
+            geojson,
+            radix,
+            spec,
+            colored_catalog,
+            compute_kwargs,
+            mode=ASTROCART_MODE_STANDARD,
+            display_line_system=spec.coordinate_system,
         )
         for feature in geojson["features"]:
             feature.setdefault("properties", {}).setdefault(

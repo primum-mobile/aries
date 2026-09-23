@@ -104,6 +104,12 @@ export function neutralChartPalette(): ChartPalette {
     textDim: "rgb(120,121,123)",
     textBright: "rgb(220,220,221)",
     fortune: "rgb(215, 215, 217)",
+    elements: [
+      "rgb(214,82,60)",
+      "rgb(118,146,74)",
+      "rgb(88,138,214)",
+      "rgb(68,164,172)",
+    ],
     surveilAccent: "rgb(229,146,70)",
     planets: [...NEUTRAL_PLANET_COLORS],
     aspects: [...NEUTRAL_ASPECT_COLORS],
@@ -147,6 +153,7 @@ export function readPalette(el?: HTMLElement): ChartPalette {
     textDim: v("--morinus-text-dim", chartText),
     textBright: chartText,
     fortune: planets[11],
+    elements: ELEMENT_COLOR_VARS.map((name) => v(name, peregrin)),
     // Warm surveil accent; daemon chart.palette.surveilAccent overrides this.
     surveilAccent: "rgb(229,146,70)",
     // Named roles are the defined fallback. A retained daemon snapshot still
@@ -186,6 +193,7 @@ export function readPaletteFromTheme(theme: ThemeState | null | undefined): Char
     textDim: v(chart, "--morinus-text-dim", chartText),
     textBright: chartText,
     fortune: planets[11],
+    elements: ELEMENT_COLOR_VARS.map((name) => v(chart, name, peregrin)),
     surveilAccent: "rgb(229,146,70)",
     planets,
     aspects,
@@ -238,6 +246,9 @@ export function readPaletteProfileOverrides(
   }
   if (ASPECT_COLOR_VARS.some((cssVar) => Boolean(chart[cssVar]))) {
     result.aspects = [...named().aspects];
+  }
+  if (ELEMENT_COLOR_VARS.some((cssVar) => Boolean(chart[cssVar]))) {
+    result.elements = [...(named().elements ?? [])];
   }
   const data = theme?.profileOverrides?.chartData;
   // Daemon chartData is the fully resolved partial-array contract and remains
@@ -296,8 +307,9 @@ function applyProfileColorsToChart(
   chart: Chart,
   palette: Partial<ChartPalette>,
   signColors: string[] | undefined,
+  usePlanetColors: boolean | undefined,
 ): Chart {
-  const useIndividualColors = Boolean(chart.options.useDignityColors);
+  const useIndividualColors = usePlanetColors ?? Boolean(chart.options.useDignityColors);
   let changed = false;
   const planets = chart.planets.map((planet) => {
     const color = profiledPlanetColor(planet, useIndividualColors, palette);
@@ -328,6 +340,13 @@ function applyProfileColorsToChart(
       ? Array.from({ length: 12 }, () => palette.signs as string)
       : undefined;
   let options = chart.options;
+  if (
+    typeof usePlanetColors === "boolean"
+    && Boolean(options.useDignityColors) !== usePlanetColors
+  ) {
+    changed = true;
+    options = { ...options, useDignityColors: usePlanetColors };
+  }
   if (nextSignColors) {
     changed = true;
     options = {
@@ -350,9 +369,16 @@ export function applyProfileColorsToSnapshot(
 ): ChartRenderSnapshot {
   const palette = readPaletteProfileOverrides(theme);
   const signColors = readProfileSignColors(theme);
-  if (Object.keys(palette).length === 0 && !signColors?.length) return snapshot;
+  const usePlanetColors = theme?.profileOverrides?.chartData?.usePlanetColors;
+  if (
+    Object.keys(palette).length === 0
+    && !signColors?.length
+    && typeof usePlanetColors !== "boolean"
+  ) return snapshot;
   const apply = (chart: Chart | null | undefined) => (
-    chart ? applyProfileColorsToChart(chart, palette, signColors) : chart
+    chart
+      ? applyProfileColorsToChart(chart, palette, signColors, usePlanetColors)
+      : chart
   );
   return {
     ...snapshot,

@@ -241,7 +241,7 @@ export function useDraggableOverlay({
     if (!element || !container) return;
 
     const keepInsideContainer = () => {
-      if (activeDragRef.current) return;
+      if (activeDragRef.current || element.getClientRects().length === 0) return;
       const current = offsetRef.current;
       const next = clampOverlayOffset(
         current,

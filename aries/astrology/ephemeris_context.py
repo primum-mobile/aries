@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import os
+import math
 from typing import Any
 
 import astrology
@@ -18,6 +19,9 @@ class EphemerisContext:
 	ephe_path: str | None = None
 	sidereal_mode: int | None = None
 	topocentric_position: tuple[float, float, float] | None = None
+	# Swiss custom reference epoch is TT; ordinary ayanamshas use zeroes.
+	sidereal_epoch: float = 0.0
+	sidereal_offset: float = 0.0
 	_allow_incomplete: bool = field(default=False, repr=False, compare=False)
 
 	def __post_init__(self) -> None:
@@ -27,6 +31,11 @@ class EphemerisContext:
 			object.__setattr__(self, "ephe_path", os.path.abspath(os.fspath(self.ephe_path)))
 		if self.sidereal_mode is not None:
 			object.__setattr__(self, "sidereal_mode", int(self.sidereal_mode))
+		for name in ("sidereal_epoch", "sidereal_offset"):
+			value = float(getattr(self, name))
+			if not math.isfinite(value):
+				raise ValueError(f"{name} must be finite")
+			object.__setattr__(self, name, value)
 		if self.topocentric_position is not None:
 			if len(self.topocentric_position) != 3:
 				raise ValueError("topocentric_position must contain longitude, latitude, and altitude")
@@ -102,6 +111,8 @@ class EphemerisContext:
 			self.ephe_path,
 			self.sidereal_mode,
 			self.topocentric_position,
+			sidereal_epoch=self.sidereal_epoch,
+			sidereal_offset=self.sidereal_offset,
 		)
 
 	def apply(self, backend: Any = astrology) -> None:
@@ -111,7 +122,7 @@ class EphemerisContext:
 		if self.ephe_path:
 			backend.swe_set_ephe_path(self.ephe_path)
 		if self.sidereal_mode is not None:
-			backend.swe_set_sid_mode(self.sidereal_mode, 0.0, 0.0)
+			backend.swe_set_sid_mode(self.sidereal_mode, self.sidereal_epoch, self.sidereal_offset)
 		if self.topocentric_position is not None:
 			backend.swe_set_topo(*self.topocentric_position)
 

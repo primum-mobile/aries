@@ -7,7 +7,10 @@
 
 import * as React from "react";
 
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, FloatingDialogContent, NativeDialogContent } from "@/components/ui/dialog";
+import { resolveShellHost } from "@/lib/shell-host";
+import { ChartEditorWindowHost } from "./chart-editor-window-host";
+import { flushEditorNotes, notifyEditorNotesChanged } from "@/lib/shell/chart-editor-window";
 import { Button } from "@/components/ui/button";
 import {
   editorApply,
@@ -83,8 +86,7 @@ type FormState = {
   // edits fall back to deg/min/sec and a pick keeps full precision.
   lonDec: string;
   latDec: string;
-  placeSearch: string;
-  place: string; // hidden backing value (max 20) — the persisted name
+  place: string; // Optional persisted name; also the query for explicit city search.
   cal: string;
   zt: string;
   plus: boolean; // GMT sign: true = '+'
@@ -128,7 +130,6 @@ function stateFromDefaults(d: EditorDefaults | EditorRecord): FormState {
     // their stored decimal. Both stay authoritative until a DMS field is edited.
     lonDec: d.lon != null ? String(d.lon) : "",
     latDec: d.lat != null ? String(d.lat) : "",
-    placeSearch: d.place,
     place: d.place,
     cal: d.cal,
     zt: d.zt,
@@ -187,7 +188,7 @@ function toFields(s: FormState): EditorFields {
     north: s.north,
     lon: dec(s.lonDec, s.lonDeg, s.lonMin, s.lonSec, s.east),
     lat: dec(s.latDec, s.latDeg, s.latMin, s.latSec, s.north),
-    place: s.place || s.placeSearch.slice(0, 20),
+    place: s.place,
     altitude: n(s.altitude),
     plus: s.plus,
     zoneHour: n(s.zoneHour),
@@ -220,30 +221,49 @@ export type EditTarget = {
   radixDocId?: string;
 };
 
-type Props = {
+export type ChartEditorProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Called after a successful save with the chart name + the collection file
    * it was written to, so the host can open it as a workspace radix. */
-  onSaved: (chartName: string, collectionPath: string, recordIndex: number | null) => void;
+  onSaved: (chartName: string, collectionPath: string, recordIndex: number | null) => void | Promise<void>;
   /** Present → EDIT an existing chart (prefill from GET /api/editor/load,
    * preserve its id on save). Absent → CREATE a new chart from defaults. */
   editTarget?: EditTarget | null;
 };
 
-export function ChartEditorDialog({ open, onOpenChange, onSaved, editTarget }: Props) {
+export function ChartEditorDialog(props: ChartEditorProps) {
+  if (resolveShellHost().kind === "tauri") return <ChartEditorWindowHost {...props} />;
+  return <ChartEditorSurface {...props} />;
+}
+
+type EditorHostContext = {
+  beforeLoad: () => Promise<unknown>;
+  notesChanged: () => void | Promise<unknown>;
+};
+const EditorHost = React.createContext<EditorHostContext>({beforeLoad: flushEditorNotes, notesChanged: notifyEditorNotesChanged});
+
+export function ChartEditorSurface({ open, onOpenChange, onSaved, editTarget, nativeWindow = false, onReady,
+  host = {beforeLoad: flushEditorNotes, notesChanged: notifyEditorNotesChanged},
+}: ChartEditorProps & {nativeWindow?: boolean; onReady?: () => void; host?: EditorHostContext}) {
+  const Content = nativeWindow ? NativeDialogContent : FloatingDialogContent;
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="lg" motion="none" className="grid gap-0 overflow-hidden p-0">
-        {open ? (
+    <EditorHost.Provider value={host}>
+    <Dialog open={nativeWindow || open} onOpenChange={onOpenChange} modal={false} disablePointerDismissal>
+      <Content size="lg" motion="none" data-aries-surface="popover" className="grid gap-0 overflow-hidden bg-[var(--aries-popover-background)] p-0 text-[color:var(--aries-popover-text)]">
+        {open || nativeWindow ? (
           <EditorLoader
             onOpenChange={onOpenChange}
             onSaved={onSaved}
             editTarget={editTarget ?? null}
+            onReady={onReady}
+            nativeWindow={nativeWindow}
+            active={open}
           />
         ) : null}
-      </DialogContent>
+      </Content>
     </Dialog>
+    </EditorHost.Provider>
   );
 }
 
@@ -257,12 +277,19 @@ function EditorLoader({
   onOpenChange,
   onSaved,
   editTarget,
+  onReady,
+  nativeWindow,
+  active,
 }: {
+  active: boolean;
+  onReady?: () => void;
+  nativeWindow?: boolean;
   onOpenChange: (open: boolean) => void;
-  onSaved: (chartName: string, collectionPath: string, recordIndex: number | null) => void;
+  onSaved: (chartName: string, collectionPath: string, recordIndex: number | null) => void | Promise<void>;
   editTarget: EditTarget | null;
 }) {
   const t = useT();
+  const {beforeLoad, notesChanged} = React.useContext(EditorHost);
   const [meta, setMeta] = React.useState<EditorMeta | null>(null);
   const [metaErr, setMetaErr] = React.useState<string | null>(null);
   // Edit mode: the loaded record + the collection it came from. In create mode
@@ -290,9 +317,7 @@ function EditorLoader({
     if (!editTarget) return;
     const ctrl = new AbortController();
     const load = async () => {
-      const awaitFlush: Promise<unknown>[] = [];
-      window.dispatchEvent(new CustomEvent("aries://flush-notes", { detail: { awaitFlush } }));
-      if (awaitFlush.length > 0) await Promise.allSettled(awaitFlush);
+      await beforeLoad();
       if (cursorMode && editTarget.cursorSeed?.fields) {
         const note = await fetchNotes(
           editTarget.name,
@@ -313,14 +338,18 @@ function EditorLoader({
         setRecord(res.fields);
         setRecordCollection(res.collection);
         setRecordLoaded(true);
-        window.dispatchEvent(new CustomEvent("aries://notes-changed"));
+        void notesChanged();
       })
       .catch((err) => {
         if ((err as { name?: string }).name === "AbortError") return;
         setMetaErr(String((err as Error).message ?? err));
       });
     return () => ctrl.abort();
-  }, [editTarget, cursorMode]);
+  }, [editTarget, cursorMode, beforeLoad, notesChanged]);
+
+  React.useEffect(() => {
+    if (active && (metaErr || (meta && recordLoaded))) onReady?.();
+  }, [active, metaErr, meta, recordLoaded, onReady]);
 
   if (metaErr) {
     return (
@@ -336,6 +365,8 @@ function EditorLoader({
   }
   return (
     <EditorBody
+      nativeWindow={nativeWindow}
+      active={active}
       meta={meta}
       seed={record ?? (cursorMode ? editTarget?.cursorSeed?.fields : null) ?? meta.defaults}
       isEdit={Boolean(editTarget)}
@@ -351,6 +382,8 @@ function EditorLoader({
 }
 
 function EditorBody({
+  active,
+  nativeWindow,
   meta,
   seed,
   isEdit,
@@ -362,6 +395,8 @@ function EditorBody({
   onOpenChange,
   onSaved,
 }: {
+  active: boolean;
+  nativeWindow?: boolean;
   meta: EditorMeta;
   // The form seed — meta.defaults (CREATE), a loaded EditorRecord (EDIT), or
   // the daemon cursor seed (session-cursor mode).
@@ -383,9 +418,10 @@ function EditorBody({
   // personaldatadlg.py:748).
   timeContextHint: string;
   onOpenChange: (open: boolean) => void;
-  onSaved: (chartName: string, collectionPath: string, recordIndex: number | null) => void;
+  onSaved: (chartName: string, collectionPath: string, recordIndex: number | null) => void | Promise<void>;
 }) {
   const t = useT();
+  const {notesChanged} = React.useContext(EditorHost);
   // Seeded once from the daemon (canonical defaults in CREATE, the loaded record
   // in EDIT — incl. its id, threaded through save so it overwrites); remounted
   // fresh on every open.
@@ -450,6 +486,7 @@ function EditorBody({
   }, [seedCollection]);
 
   // -- City search → candidate list ---------------------------------------
+  const placeSearchVersion = React.useRef(0);
   const [searching, setSearching] = React.useState(false);
   const [candidates, setCandidates] = React.useState<PlaceCandidate[] | null>(null);
   const [searchError, setSearchError] = React.useState<string | null>(null);
@@ -460,8 +497,7 @@ function EditorBody({
   const applyCandidate = React.useCallback((c: PlaceCandidate) => {
     setS((prev) => ({
       ...prev,
-      placeSearch: c.label,
-      place: c.name,
+      place: c.label,
       lonDeg: String(c.lonDeg),
       lonMin: String(c.lonMin),
       lonSec: String(c.lonSec ?? 0),
@@ -484,7 +520,8 @@ function EditorBody({
   }, []);
 
   const runSearch = React.useCallback(async () => {
-    const q = s.placeSearch.trim();
+    const version = ++placeSearchVersion.current;
+    const q = s.place.trim();
     setSearchError(null);
     if (q.length < 3) {
       setSearchError(t("editor.searchMinChars"));
@@ -494,6 +531,7 @@ function EditorBody({
     setCandidates(null);
     try {
       const list = await resolvePlace(q);
+      if (version !== placeSearchVersion.current) return;
       if (list.length === 0) {
         setSearchError(t("editor.searchNoResults"));
       } else if (list.length === 1) {
@@ -502,17 +540,20 @@ function EditorBody({
         setCandidates(list);
       }
     } catch (err) {
-      setSearchError(String((err as Error).message ?? err));
+      if (version === placeSearchVersion.current) {
+        setSearchError(String((err as Error).message ?? err));
+      }
     } finally {
-      setSearching(false);
+      if (version === placeSearchVersion.current) setSearching(false);
     }
-  }, [s.placeSearch, applyCandidate, t]);
+  }, [s.place, applyCandidate, t]);
 
   // -- Live preview (Asc/MC) ----------------------------------------------
   const [preview, setPreview] = React.useState<{ asc: number; mc: number } | null>(null);
   const [previewErr, setPreviewErr] = React.useState<string | null>(null);
   // Debounced build on field changes — purely informational.
   React.useEffect(() => {
+    if (!active) return;
     const ctrl = new AbortController();
     const timer = setTimeout(() => {
       editorBuild(toFields(s), ctrl.signal)
@@ -533,7 +574,7 @@ function EditorBody({
       clearTimeout(timer);
       ctrl.abort();
     };
-  }, [s]);
+  }, [s, active]);
 
   // -- Save ----------------------------------------------------------------
   const [saving, setSaving] = React.useState(false);
@@ -560,7 +601,7 @@ function EditorBody({
           // daemon broadcasts session.changed/documents.changed, so the open
           // child + its descendants repaint without a re-open dance.
           await editorApplyCursor(cursorDocId, toFields(s));
-          window.dispatchEvent(new CustomEvent("aries://notes-changed"));
+          await notesChanged();
           onOpenChange(false);
         } else if (radixDocId) {
           // Editing the OPEN radix (wx onData, morin.py:14869): apply in place +
@@ -569,15 +610,15 @@ function EditorBody({
           // repaints WITHOUT a close/reopen flash. No collection picker, no
           // separate save step.
           await editorApply(radixDocId, toFields(s));
-          window.dispatchEvent(new CustomEvent("aries://notes-changed"));
+          await notesChanged();
           onOpenChange(false);
         } else {
           const result = await editorSave({
             collection: collectionPath || null,
             record: toFields(s),
           });
-          window.dispatchEvent(new CustomEvent("aries://notes-changed"));
-          onSaved(name, result.collection || collectionPath, result.recordIndex ?? null);
+          await notesChanged();
+          await onSaved(name, result.collection || collectionPath, result.recordIndex ?? null);
           onOpenChange(false);
         }
       } catch (err) {
@@ -586,7 +627,7 @@ function EditorBody({
         setSaving(false);
       }
     },
-    [s, collectionPath, cursorDocId, radixDocId, onSaved, onOpenChange, t],
+    [s, collectionPath, cursorDocId, radixDocId, onSaved, onOpenChange, notesChanged, t],
   );
 
   const zoneIsZone = s.zt === "zone";
@@ -595,12 +636,11 @@ function EditorBody({
   const manualZoneDisabled = !zoneIsZone || s.tzauto;
 
   return (
-    <form onSubmit={onSubmit} className="flex max-h-[var(--aries-dialog-viewport-height)] flex-col">
-      <header className="flex items-baseline justify-between border-b border-border/40 px-[var(--aries-pane-wide-inset)] py-[var(--aries-dialog-section-padding-y)]">
-        <h2 className="text-[length:var(--aries-font-size-large)] font-medium tracking-tight">
+    <form onSubmit={onSubmit} className={nativeWindow ? "flex h-full min-h-0 flex-col" : "flex max-h-[min(var(--aries-dialog-viewport-height),var(--aries-dialog-content-height-workspace))] flex-col"}>
+      <header data-slot="dialog-header" data-tauri-drag-region="" className="flex shrink-0 select-none items-baseline justify-between border-b border-border/40 px-[var(--aries-pane-wide-inset)] py-[var(--aries-dialog-section-padding-y)]">
+        <h2 data-tauri-drag-region="" className="text-[length:var(--aries-font-size-large)] font-medium tracking-tight">
           {cursorDocId ? t("editor.titleCursor") : isEdit ? t("editor.titleEdit") : t("editor.titleNew")}
         </h2>
-        <p className="text-[length:var(--aries-font-size-small)] text-foreground/55">{t("editor.personalData")}</p>
       </header>
 
       {/* Stepping-anchor hint — cursor-edit only (set_time_context_hint,
@@ -612,31 +652,20 @@ function EditorBody({
         </p>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 grid-cols-[1fr_var(--aries-form-aside-width)] gap-0 overflow-y-auto">
-        {/* Left column — Name/Lot formula, Time, Place, Zone, Altitude */}
-        <div className="flex flex-col gap-[var(--aries-form-section-gap)] border-r border-border/40 px-[var(--aries-pane-wide-inset)] py-[var(--aries-dialog-padding)]">
-          {/* Group 1 — Name & Lot formula (personaldatadlg.py:60) */}
-          <Group title={t("editor.groupIdentity")}>
-            <Row label={t("editor.name")}>
-              <input
-                data-aries-control-appearance="local"
-                ref={nameRef}
-                value={s.name}
-                onChange={(e) => set("name", e.target.value)}
-                className={fieldCls("flex-1")}
-                placeholder={t("editor.namePlaceholder")}
-              />
-            </Row>
-            <Row label={t("editor.lotsCalculatedAs")}>
-              <RadioPair
-                value={s.male ? "m" : "f"}
-                options={[
-                  { value: "m", label: t("editor.male") },
-                  { value: "f", label: t("editor.female") },
-                ]}
-                onChange={(v) => set("male", v === "m")}
-              />
-            </Row>
+      <div className="grid min-h-0 flex-1 grid-cols-1 content-start gap-[var(--aries-form-section-gap)] overflow-y-auto px-[var(--aries-pane-wide-inset)] py-[var(--aries-dialog-padding)] sm:grid-cols-[minmax(0,1fr)_minmax(var(--aries-form-aside-width),1fr)]">
+        <Group title={t("editor.groupIdentity")} className="sm:col-span-2">
+          <Row label={t("editor.name")}>
+            <input
+              data-aries-control-appearance="local"
+              ref={nameRef}
+              value={s.name}
+              onChange={(e) => set("name", e.target.value)}
+              className={fieldCls("flex-1")}
+              aria-label={t("editor.name")}
+              placeholder={t("editor.namePlaceholder")}
+            />
+          </Row>
+          <div className="flex flex-wrap items-center gap-x-[var(--aries-form-section-gap)] gap-y-[var(--aries-form-field-gap)]">
             <Row label={t("editor.type")}>
               <Select
                 value={s.type}
@@ -645,56 +674,109 @@ function EditorBody({
                 disabled={lockChartType}
               />
             </Row>
-          </Group>
-
-          {/* Group 2 — Time (personaldatadlg.py:101) */}
+            <div className="flex flex-wrap items-center gap-[var(--aries-form-row-gap)]">
+              <FieldLabel>{t("editor.lotsCalculatedAs")}</FieldLabel>
+              <RadioPair
+                value={s.male ? "m" : "f"}
+                options={[
+                  { value: "m", label: t("editor.male") },
+                  { value: "f", label: t("editor.female") },
+                ]}
+                onChange={(v) => set("male", v === "m")}
+                inline
+              />
+            </div>
+          </div>
+        </Group>
+        <div className="flex min-w-0 flex-col gap-[var(--aries-form-section-gap)]">
           <Group title={t("editor.groupTime")}>
-            <Checkbox checked={s.bc} onChange={(v) => set("bc", v)} label={t("editor.bc")} />
-            <div className="grid grid-cols-3 gap-x-[var(--aries-form-row-gap)] gap-y-[var(--aries-form-field-gap)]">
+            <div className="grid grid-cols-[repeat(3,minmax(0,1fr))_auto] items-end gap-x-[var(--aries-form-row-gap)] gap-y-[var(--aries-form-field-gap)]">
               <NumField label={t("editor.year")} value={s.year} maxLength={4} onChange={(v) => set("year", v)} />
               <NumField label={t("editor.month")} value={s.month} maxLength={2} onChange={(v) => set("month", v)} />
               <NumField label={t("editor.day")} value={s.day} maxLength={2} onChange={(v) => set("day", v)} />
+              <div className="flex h-[var(--aries-control-height-small)] items-center"><Checkbox checked={s.bc} onChange={(v) => set("bc", v)} label={t("editor.bc")} /></div>
               <NumField label={t("editor.hour")} value={s.hour} maxLength={2} onChange={(v) => set("hour", v)} />
               <NumField label={t("editor.min")} value={s.minute} maxLength={2} onChange={(v) => set("minute", v)} />
               <NumField label={t("editor.sec")} value={s.second} maxLength={2} onChange={(v) => set("second", v)} />
             </div>
           </Group>
-
-          {/* Group 3 — Place (personaldatadlg.py:177) */}
-          <Group title={t("editor.groupPlace")}>
-            <div className="grid grid-cols-[auto_auto_auto_auto_auto] items-end gap-x-[var(--aries-form-row-gap)] gap-y-[var(--aries-form-field-gap)]">
-              <span className="self-center text-[length:var(--aries-font-size-small)] text-foreground/55">{t("editor.long")}</span>
-              <NumField label={t("editor.deg")} value={s.lonDeg} maxLength={3} onChange={(v) => set("lonDeg", v)} />
-              <NumField label={t("editor.min")} value={s.lonMin} maxLength={2} onChange={(v) => set("lonMin", v)} />
-              <NumField label={t("editor.sec")} value={s.lonSec} maxLength={2} onChange={(v) => set("lonSec", v)} />
-              <RadioPair
-                value={s.east ? "e" : "w"}
-                options={[
-                  { value: "e", label: t("editor.east") },
-                  { value: "w", label: t("editor.west") },
-                ]}
-                onChange={(v) => set("east", v === "e")}
-                inline
+          <Group title={t("editor.groupZone")}>
+            <div className="grid grid-cols-2 items-end gap-[var(--aries-form-row-gap)]">
+              <LabeledSelect
+                label={t("editor.calendar")}
+                value={s.cal}
+                options={meta.calendars}
+                onChange={(v) => {
+                  calendarManualOverrideRef.current = true;
+                  set("cal", v);
+                }}
               />
-              <span className="self-center text-[length:var(--aries-font-size-small)] text-foreground/55">{t("editor.lat")}</span>
-              <NumField label={t("editor.deg")} value={s.latDeg} maxLength={2} onChange={(v) => set("latDeg", v)} />
-              <NumField label={t("editor.min")} value={s.latMin} maxLength={2} onChange={(v) => set("latMin", v)} />
-              <NumField label={t("editor.sec")} value={s.latSec} maxLength={2} onChange={(v) => set("latSec", v)} />
-              <RadioPair
-                value={s.north ? "n" : "s"}
-                options={[
-                  { value: "n", label: t("editor.north") },
-                  { value: "s", label: t("editor.south") },
-                ]}
-                onChange={(v) => set("north", v === "n")}
-                inline
+              <LabeledSelect
+                label={t("editor.zoneType")}
+                value={s.zt}
+                options={meta.zoneTypes}
+                onChange={(v) => set("zt", v)}
               />
             </div>
+            <div className="grid grid-cols-3 items-end gap-[var(--aries-form-row-gap)]">
+              <div className="flex flex-col gap-[var(--aries-control-gap-compact)]">
+                <FieldLabel>{t("editor.gmt")}</FieldLabel>
+                <Select
+                  value={s.plus ? "+" : "-"}
+                  options={[
+                    { value: "+", label: "+" },
+                    { value: "-", label: "-" },
+                  ]}
+                  onChange={(v) => set("plus", v === "+")}
+                  disabled={manualZoneDisabled}
+                  className="w-full"
+                />
+              </div>
+              <NumField
+                label={t("editor.hour")}
+                value={s.zoneHour}
+                maxLength={2}
+                onChange={(v) => set("zoneHour", v)}
+                disabled={manualZoneDisabled}
+              />
+              <NumField
+                label={t("editor.min")}
+                value={s.zoneMin}
+                maxLength={2}
+                onChange={(v) => set("zoneMin", v)}
+                disabled={manualZoneDisabled}
+              />
+            </div>
+            <Checkbox
+              checked={s.daylightSaving}
+              onChange={(v) => set("daylightSaving", v)}
+              label={t("editor.daylightSaving")}
+              disabled={manualZoneDisabled}
+            />
+            <Checkbox
+              checked={s.tzauto}
+              onChange={(v) => set("tzauto", v)}
+              label={t("editor.autoDstTz")}
+              disabled={!zoneIsZone}
+            />
+            {s.tzauto && s.tzid ? (
+              <p className="text-[length:var(--aries-font-size-section)] break-words tabular-nums text-foreground/55">{s.tzid}</p>
+            ) : null}
+          </Group>
+        </div>
+        <div className="flex min-w-0 flex-col gap-[var(--aries-form-group-gap)]">
+          <Group title={t("editor.groupPlace")}>
             <div className="flex items-center gap-[var(--aries-form-field-gap)]">
               <input
                 data-aries-control-appearance="local"
-                value={s.placeSearch}
-                onChange={(e) => set("placeSearch", e.target.value)}
+                value={s.place}
+                onChange={(e) => {
+                  placeSearchVersion.current += 1;
+                  setSearching(false);
+                  set("place", e.target.value);
+                  setCandidates(null);
+                  setSearchError(null);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
@@ -702,7 +784,8 @@ function EditorBody({
                   }
                 }}
                 className={fieldCls("flex-1")}
-                placeholder={t("editor.searchCity")}
+                aria-label={t("editor.placeNameOptional")}
+                placeholder={t("editor.placeNameOptional")}
               />
               <Button
                 type="button"
@@ -741,75 +824,34 @@ function EditorBody({
                 ))}
               </ul>
             ) : null}
-          </Group>
-
-          {/* Group 4 — Zone (personaldatadlg.py:263) */}
-          <Group title={t("editor.groupZone")}>
-            <div className="flex flex-wrap items-end gap-[var(--aries-form-row-gap)]">
-              <LabeledSelect
-                label={t("editor.calendar")}
-                value={s.cal}
-                options={meta.calendars}
-                onChange={(v) => {
-                  calendarManualOverrideRef.current = true;
-                  set("cal", v);
-                }}
+            <div className="grid grid-cols-[auto_repeat(3,minmax(0,1fr))_auto] items-end gap-x-[var(--aries-form-field-gap)] gap-y-[var(--aries-form-field-gap)]">
+              <span className="flex h-[var(--aries-control-height-small)] items-center text-[length:var(--aries-font-size-small)] text-foreground/55">{t("editor.long")}</span>
+              <NumField label={t("editor.deg")} value={s.lonDeg} maxLength={3} onChange={(v) => set("lonDeg", v)} />
+              <NumField label={t("editor.min")} value={s.lonMin} maxLength={2} onChange={(v) => set("lonMin", v)} />
+              <NumField label={t("editor.sec")} value={s.lonSec} maxLength={2} onChange={(v) => set("lonSec", v)} />
+              <RadioPair
+                value={s.east ? "e" : "w"}
+                options={[
+                  { value: "e", label: t("editor.east") },
+                  { value: "w", label: t("editor.west") },
+                ]}
+                onChange={(v) => set("east", v === "e")}
+                inline
               />
-              <LabeledSelect
-                label={t("editor.zoneType")}
-                value={s.zt}
-                options={meta.zoneTypes}
-                onChange={(v) => set("zt", v)}
-              />
-            </div>
-            <div className="flex flex-wrap items-end gap-[var(--aries-form-row-gap)]">
-              <div className="flex flex-col gap-[var(--aries-control-gap-compact)]">
-                <FieldLabel>{t("editor.gmt")}</FieldLabel>
-                <Select
-                  value={s.plus ? "+" : "-"}
-                  options={[
-                    { value: "+", label: "+" },
-                    { value: "-", label: "-" },
-                  ]}
-                  onChange={(v) => set("plus", v === "+")}
-                  disabled={manualZoneDisabled}
-                  className="w-16"
-                />
-              </div>
-              <NumField
-                label={t("editor.hour")}
-                value={s.zoneHour}
-                maxLength={2}
-                onChange={(v) => set("zoneHour", v)}
-                disabled={manualZoneDisabled}
-              />
-              <NumField
-                label={t("editor.min")}
-                value={s.zoneMin}
-                maxLength={2}
-                onChange={(v) => set("zoneMin", v)}
-                disabled={manualZoneDisabled}
+              <span className="flex h-[var(--aries-control-height-small)] items-center text-[length:var(--aries-font-size-small)] text-foreground/55">{t("editor.lat")}</span>
+              <NumField label={t("editor.deg")} hideLabel value={s.latDeg} maxLength={2} onChange={(v) => set("latDeg", v)} />
+              <NumField label={t("editor.min")} hideLabel value={s.latMin} maxLength={2} onChange={(v) => set("latMin", v)} />
+              <NumField label={t("editor.sec")} hideLabel value={s.latSec} maxLength={2} onChange={(v) => set("latSec", v)} />
+              <RadioPair
+                value={s.north ? "n" : "s"}
+                options={[
+                  { value: "n", label: t("editor.north") },
+                  { value: "s", label: t("editor.south") },
+                ]}
+                onChange={(v) => set("north", v === "n")}
+                inline
               />
             </div>
-            <Checkbox
-              checked={s.daylightSaving}
-              onChange={(v) => set("daylightSaving", v)}
-              label={t("editor.daylightSaving")}
-              disabled={manualZoneDisabled}
-            />
-            <Checkbox
-              checked={s.tzauto}
-              onChange={(v) => set("tzauto", v)}
-              label={t("editor.autoDstTz")}
-              disabled={!zoneIsZone}
-            />
-            {s.tzauto && s.tzid ? (
-              <p className="text-[length:var(--aries-font-size-section)] tabular-nums text-foreground/55">{s.tzid}</p>
-            ) : null}
-          </Group>
-
-          {/* Group 5 — Altitude (personaldatadlg.py:311) */}
-          <Group title={t("editor.groupAltitude")}>
             <Row label={t("editor.altitude")}>
               <input
                 data-aries-control-appearance="local"
@@ -822,31 +864,25 @@ function EditorBody({
               <span className="text-[length:var(--aries-font-size-small)] text-foreground/55">{t("editor.meters")}</span>
             </Row>
           </Group>
-        </div>
-
-        {/* Right column — Notes + live preview */}
-        <div className="flex flex-col gap-[var(--aries-dialog-gap)] px-[var(--aries-dialog-padding)] py-[var(--aries-dialog-padding)]">
-          <Group title={t("editor.groupNotes")} className="flex-1">
+          <Group title={t("editor.groupNotes")} className="min-h-0 flex-1">
             <textarea
               data-aries-control-appearance="local"
+              aria-label={t("editor.groupNotes")}
               value={s.notes}
               onChange={(e) => set("notes", e.target.value)}
-              className={fieldCls("min-h-32 flex-1 resize-none leading-snug")}
+              className={fieldCls("h-auto min-h-24 w-full flex-1 resize-y leading-snug")}
               placeholder={t("editor.notesPlaceholder")}
             />
           </Group>
-          <div className="rounded-md border border-border/40 px-[var(--aries-pane-header-compact-padding-x)] py-[var(--aries-form-group-gap)]">
-            <p className="text-[length:var(--aries-font-size-section)] font-medium text-foreground/45">
-              {t("editor.preview")}
-            </p>
-            <dl className="mt-1.5 space-y-1 text-[length:var(--aries-font-size-small)]">
-              <div className="flex justify-between">
+          <div className="text-[length:var(--aries-font-size-small)]">
+            <dl aria-label={t("editor.preview")} className="flex flex-wrap gap-x-[var(--aries-form-section-gap)] gap-y-[var(--aries-form-field-gap)]">
+              <div className="flex gap-[var(--aries-form-field-gap)]">
                 <dt className="text-foreground/55">{t("editor.asc")}</dt>
                 <dd className="tabular-nums">
                   {preview ? preview.asc.toFixed(4) + "°" : previewErr ? "—" : "…"}
                 </dd>
               </div>
-              <div className="flex justify-between">
+              <div className="flex gap-[var(--aries-form-field-gap)]">
                 <dt className="text-foreground/55">{t("editor.mc")}</dt>
                 <dd className="tabular-nums">
                   {preview ? preview.mc.toFixed(4) + "°" : previewErr ? "—" : "…"}
@@ -860,7 +896,7 @@ function EditorBody({
         </div>
       </div>
 
-      <footer className="flex items-center justify-between gap-[var(--aries-form-row-gap)] border-t border-border/40 px-[var(--aries-pane-wide-inset)] py-[var(--aries-form-row-gap)]">
+      <footer className="flex shrink-0 items-center justify-between gap-[var(--aries-form-row-gap)] border-t border-border/40 px-[var(--aries-pane-wide-inset)] py-[var(--aries-form-row-gap)]">
         {/* Cursor/radix edits target the open daemon document directly; only
             create-from-editor needs a collection target picker. */}
         {cursorDocId || radixDocId ? (
@@ -940,7 +976,7 @@ function humanizeDaemonError(err: unknown): string {
 
 function fieldCls(extra = ""): string {
   return (
-    "h-[var(--aries-control-height-small)] rounded-[var(--aries-radius-ui-control-compact)] border border-border/60 bg-transparent px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-base)] " +
+    "min-w-0 h-[var(--aries-control-height-small)] rounded-[var(--aries-radius-ui-control-compact)] border border-border/60 bg-transparent px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-base)] " +
     "outline-none transition-colors placeholder:text-foreground/35 " +
     "focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/40 " +
     "disabled:opacity-40 " +
@@ -958,10 +994,7 @@ function Group({
   className?: string;
 }) {
   return (
-    <section className={"flex flex-col gap-[var(--aries-form-group-gap)] " + className}>
-      <h3 className="text-[length:var(--aries-font-size-section)] font-medium text-foreground/45">
-        {title}
-      </h3>
+    <section aria-label={title} className={"flex min-w-0 flex-col gap-[var(--aries-form-group-gap)] " + className}>
       {children}
     </section>
   );
@@ -971,7 +1004,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   return (
     <div className="flex items-center gap-[var(--aries-form-row-gap)]">
       <FieldLabel className="w-[var(--aries-form-label-width)] shrink-0">{label}</FieldLabel>
-      <div className="flex flex-1 items-center gap-[var(--aries-form-field-gap)]">{children}</div>
+      <div className="flex min-w-0 flex-1 items-center gap-[var(--aries-form-field-gap)]">{children}</div>
     </div>
   );
 }
@@ -994,16 +1027,18 @@ function NumField({
   maxLength,
   onChange,
   disabled,
+  hideLabel = false,
 }: {
   label: string;
   value: string;
   maxLength: number;
+  hideLabel?: boolean;
   onChange: (v: string) => void;
   disabled?: boolean;
 }) {
   return (
-    <label className="flex flex-col gap-[var(--aries-control-gap-compact)]">
-      <span className="text-[length:var(--aries-font-size-section)] text-foreground/45">{label}</span>
+    <label className="flex min-w-0 flex-col gap-[var(--aries-control-gap-compact)]">
+      <span className={hideLabel ? "sr-only" : "text-[length:var(--aries-font-size-section)] text-foreground/45"}>{label}</span>
       <input
         data-aries-control-appearance="local"
         inputMode="numeric"
@@ -1011,7 +1046,7 @@ function NumField({
         maxLength={maxLength}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value.replace(/[^\d]/g, ""))}
-        className={fieldCls("w-16 tabular-nums")}
+        className={fieldCls("w-full tabular-nums")}
       />
     </label>
   );
@@ -1059,7 +1094,7 @@ function RadioPair({
   inline?: boolean;
 }) {
   return (
-    <div className={inline ? "flex items-center gap-[var(--aries-form-row-gap)]" : "flex flex-col gap-[var(--aries-control-gap-compact)]"}>
+    <div className={inline ? "flex min-h-[var(--aries-control-height-small)] items-center gap-[var(--aries-form-field-gap)]" : "flex flex-col gap-[var(--aries-control-gap-compact)]"}>
       {options.map((opt) => (
         <label key={opt.value} className="flex cursor-pointer items-center gap-[var(--aries-control-gap)] text-[length:var(--aries-font-size-base)]">
           <input
@@ -1117,7 +1152,7 @@ function LabeledSelect({
   return (
     <label className="flex flex-col gap-[var(--aries-control-gap-compact)]">
       <span className="text-[length:var(--aries-font-size-section)] text-foreground/45">{label}</span>
-      <Select {...rest} className="w-32" />
+      <Select {...rest} className="w-full" />
     </label>
   );
 }

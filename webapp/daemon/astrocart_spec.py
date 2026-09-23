@@ -430,7 +430,7 @@ class AstrocartDynamicLayer:
 
     @property
     def moving_actor_ids(self) -> tuple[str, ...]:
-        """Moving actors remain distinct from natal/static map selections."""
+        """Technique-capable moving actors derived from selected map points."""
         return self.selected_actor_ids
 
     @classmethod
@@ -2206,7 +2206,7 @@ def build_point_catalog(
             _point_record(
                 "point:syzygy",
                 FAMILY_PRENATAL_SYZYGY,
-                "Prenatal Syzygy",
+                "Syzygy",
                 ecliptic=_tropical_ecliptic(chart_obj, syzygy_lon),
                 default_selected=False,
                 motion_reference={"kind": "syzygy"},
@@ -2284,7 +2284,7 @@ def normalize_spec_for_catalog(
     payload_or_spec: Any,
     catalog: AstrocartPointCatalog,
 ) -> AstrocartMapSpec:
-    """Normalize selections and dynamic actors against canonical capabilities."""
+    """Use the map's selected points for each supported timing technique."""
 
     spec = AstrocartMapSpec.from_payload(
         payload_or_spec,
@@ -2296,7 +2296,7 @@ def normalize_spec_for_catalog(
         role = _TECHNIQUE_ROLE[layer.technique]
         actor_ids = tuple(
             point_id
-            for point_id in layer.selected_actor_ids
+            for point_id in spec.selected_point_ids
             if point_id in record_by_id
             and record_by_id[point_id].capability(role).supported
         )

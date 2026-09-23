@@ -66,6 +66,12 @@ from webapp.daemon.speculum_speed import (
     normalize_speed_display_mode,
     relative_speed_percent,
 )
+from webapp.daemon.speculum_schema import (
+    REGIOMONTAN as SPECULUM_REGIOMONTAN,
+    columns_for_index,
+    family_for_house_system,
+    index_for_house_system,
+)
 from webapp.daemon.table_catalog import TABLE_CATALOG
 
 
@@ -556,10 +562,27 @@ def _dms(value: float, *, signed: bool = False, sec: bool = False) -> str:
     sign = ""
     if signed and val < 0.0:
         sign = "-"
-    d, m, s = util.decToDeg(abs(val) if signed else val)
+    if sec:
+        d, m, s = _rounded_sexagesimal_parts(abs(val) if signed else val)
+    else:
+        d, m, s = util.decToDeg(abs(val) if signed else val)
     if sec:
         return "%s%s°%02d'%02d\"" % (sign, str(d).rjust(2), m, s)
     return "%s%s°%02d'" % (sign, str(d).rjust(2), m)
+
+
+def _rounded_sexagesimal_parts(
+    value: float,
+    *,
+    cycle: int | None = None,
+) -> tuple[int, int, int]:
+    """Split degrees or hours at the nearest whole second with proper carry."""
+    total_seconds = int(round(abs(float(value)) * 3600.0))
+    if cycle is not None:
+        total_seconds %= cycle * 3600
+    degrees, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return degrees, minutes, seconds
 
 
 def _longitude_speed_cell(value: float) -> Cell:
@@ -568,7 +591,7 @@ def _longitude_speed_cell(value: float) -> Cell:
         speed = float(value)
     except (TypeError, ValueError):
         return _text("", align="right")
-    d, m, s = util.decToDeg(abs(speed))
+    d, m, s = _rounded_sexagesimal_parts(speed)
     sign = "-" if speed < 0.0 else ""
     return _text(
         f"{sign}{d:02d}°{m:02d}'{s:02d}\"/d",
@@ -618,15 +641,15 @@ def _position_speed_cell(body_id: int, value: float, options, chrt=None) -> Cell
     return _longitude_speed_cell(speed)
 
 
-def _ra(value: float, options) -> str:
+def _ra(value: float, options, *, seconds: bool = False) -> str:
     try:
         val = float(value)
     except Exception:
         return "-"
     if getattr(options, "intime", False):
-        d, m, s = util.decToDeg(val / 15.0)
+        d, m, s = _rounded_sexagesimal_parts(val / 15.0, cycle=24)
         return "%s:%02d:%02d" % (str(d).rjust(2), m, s)
-    return _dms(val, signed=False)
+    return _dms(val, signed=False, sec=seconds)
 
 
 def _new_chart(*args: Any, **kwargs: Any) -> Any:
@@ -635,13 +658,19 @@ def _new_chart(*args: Any, **kwargs: Any) -> Any:
     return chart_factory.build_chart(*args, **kwargs)
 
 
-def _lon_cell(value: float, chrt, options) -> Cell:
+def _lon_cell(value: float, chrt, options, *, seconds: bool = False) -> Cell:
     try:
         lon = util.normalize(float(value))
-        d, m, _s = util.decToDeg(lon)
-        sign_idx = int(lon / chart.Chart.SIGN_DEG)
+        if seconds:
+            d, m, s = _rounded_sexagesimal_parts(lon, cycle=360)
+        else:
+            d, m, s = util.decToDeg(lon)
+        sign_idx = int(d / chart.Chart.SIGN_DEG)
         pos = int(d % chart.Chart.SIGN_DEG)
-        text = "%s°%02d' " % (str(pos).rjust(2), m)
+        if seconds:
+            text = "%s°%02d'%02d\" " % (str(pos).rjust(2), m, s)
+        else:
+            text = "%s°%02d' " % (str(pos).rjust(2), m)
         signs = _signs(options)
         sign = signs[sign_idx] if 0 <= sign_idx < len(signs) else ""
         return {"runs": [{"text": text, "glyph": False}, _sign_run(options, sign_idx, sign)], "sortValue": lon}
@@ -2859,7 +2888,13 @@ def _unavailable(table_id: str, chrt, *, title: str, source: str, reason: str) -
     }
 
 
-def _dodecatemorion_lon_cell(value: float, chrt, options) -> Cell:
+def _dodecatemorion_lon_cell(
+    value: float,
+    chrt,
+    options,
+    *,
+    seconds: bool = False,
+) -> Cell:
     # Dodecatemorion longitude (positionswnd.py:147-151 _dodecatemoria_lon):
     # base = sign-floor(lon); pos_in_sign*12 mapped back. Rendered like any
     # longitude cell (degree + sign glyph). Ayanamsha is applied inside
@@ -2868,62 +2903,165 @@ def _dodecatemorion_lon_cell(value: float, chrt, options) -> Cell:
         lon = util.normalize(float(value))
         base = int(lon / chart.Chart.SIGN_DEG) * chart.Chart.SIGN_DEG
         pos_in_sign = lon % chart.Chart.SIGN_DEG
-        return _lon_cell(util.normalize(base + pos_in_sign * 12.0), chrt, options)
+        return _lon_cell(
+            util.normalize(base + pos_in_sign * 12.0),
+            chrt,
+            options,
+            seconds=seconds,
+        )
     except Exception:
         return _text("-")
 
 
 def _positions(chrt, options) -> dict[str, Any]:
-    speculum = 1 if getattr(options, "primarydir", None) == primdirs.PrimDirs.REGIOMONTAN else 0
-    selected = list(getattr(options, "speculums", [[True, True, True, True], [True, True, True, True]])[speculum])
-    if not (True in selected or getattr(options, "speculumdodecat", [False, False])[speculum]):
-        return _unavailable("positions", chrt, title="Positions", source="morin.py:15867-15878; positionswnd.py:20-78", reason=_txt("SelectColumn", "Select column"))
-    # Optional Dodecatemorion column, gated on options.speculumdodecat[speculum]
-    # (positionswnd.py:285,304); when shown it sits directly after Longitude
-    # (positionswnd.py:303-310). The daemon always emits Longitude, so the
-    # column always follows Longitude (no leading-position branch needed).
-    show_dodec = bool(getattr(options, "speculumdodecat", [False, False])[speculum])
-    cols = [
+    # The ordinary Speculum is a chart surface. Its coordinate family follows
+    # the chart's current house system and is deliberately independent from the
+    # Primary Directions method. Regiomontanus/Campanus use the Regio/Camp
+    # tuple; the other house systems use the general Placidian tuple while the
+    # House column follows the active cusps.
+    house_system = str(
+        getattr(getattr(chrt, "houses", None), "ui_hsys", None)
+        or getattr(getattr(chrt, "houses", None), "hsys", None)
+        or getattr(options, "hsys", "P")
+    ).upper()
+    speculum = index_for_house_system(house_system)
+    regio = speculum == SPECULUM_REGIOMONTAN
+    field_defs = list(columns_for_index(speculum))
+    specs = list(getattr(options, "speculums", None) or [])
+    selected = list(specs[speculum]) if speculum < len(specs) else [True] * len(field_defs)
+    visible_fields = [
+        field for field in field_defs
+        if field["idx"] < len(selected) and bool(selected[field["idx"]])
+    ]
+    dodecat = list(getattr(options, "speculumdodecat", None) or [])
+    show_dodec = bool(dodecat[speculum]) if speculum < len(dodecat) else False
+    has_longitude = any(field["id"] == "lon" for field in visible_fields)
+
+    cols = [_column("body", _txt("Bodies", "Body"), align="center", kind="glyph")]
+    if show_dodec and not has_longitude:
+        cols.append(_column("dodec", _txt("Dodecatemorion", "Dodecatemorion"), align="center", kind="glyph"))
+    for field in visible_fields:
+        cols.append(_column(
+            str(field["id"]),
+            _txt(str(field["labelKey"]), str(field["label"])),
+            align="center",
+            kind="glyph" if field["id"] == "lon" else "text",
+        ))
+        if show_dodec and field["id"] == "lon":
+            cols.append(_column("dodec", _txt("Dodecatemorion", "Dodecatemorion"), align="center", kind="glyph"))
+    # Speed and exact active-house membership are useful chart-level values and
+    # remain available independently of the classical coordinate switches.
+    cols.extend([
+        _column("speed", _txt("Speed", "Speed"), align="right"),
+        _column("house", _txt("House", "House"), align="right"),
+    ])
+    inspector_cols = [
         _column("body", _txt("Bodies", "Body"), align="center", kind="glyph"),
         _column("lon", _txt("Longitude", "Longitude"), align="center", kind="glyph"),
-    ]
-    if show_dodec:
-        cols.append(_column("dodec", _txt("Dodecatemorion", "Dodecatemorion"), align="center", kind="glyph"))
-    cols += [
         _column("lat", _txt("Latitude", "Latitude"), align="center"),
-        _column("ra", _txt("Rectascension", "RA"), align="center"),
         _column("decl", _txt("Declination", "Declination"), align="center"),
         _column("speed", _txt("Speed", "Speed"), align="right"),
         _column("house", _txt("House", "House"), align="right"),
     ]
 
-    def _angle_row(row_id: str, label: str, lon: float, lat: float, ra: float, decl: float) -> Row:
-        cells: list[Cell] = [_text(label), _lon_cell(lon, chrt, options)]
-        if show_dodec:
-            cells.append(_dodecatemorion_lon_cell(lon, chrt, options))
-        cells += [
-            _text(_dms(lat, signed=True)),
-            _text(_ra(ra, options)),
-            _text(_dms(decl, signed=True)),
-            _text("", align="right"),
-            _text(""),
-        ]
-        return _row(row_id, cells)
+    def _fallback_values(lon: float, lat: float, ra: float, decl: float) -> tuple[Any, ...]:
+        values: list[Any] = [None] * len(field_defs)
+        values[:4] = (lon, lat, ra, decl)
+        return tuple(values)
 
-    # Section 1: Asc / MC (positionswnd.py:316-326).
+    def _calculated_point_values(
+        lon: float,
+        lat: float,
+        ra: float,
+        decl: float,
+    ) -> tuple[Any, ...]:
+        """Give angles, cusps and Vertex the same full field universe."""
+        try:
+            obl = chrt.obl[0] if isinstance(chrt.obl, (list, tuple)) else chrt.obl
+            point = customerpd.CustomerPD.from_ecliptic_longitude(
+                lon,
+                chrt.place.lat,
+                chrt.houses.ascmc2,
+                obl,
+                chrt.raequasc,
+                latitude=lat,
+                ayanamsha_offset=float(getattr(chrt, "ayanamsha_offset", 0.0)),
+            )
+            return tuple(point.speculums[speculum])
+        except Exception:
+            return _fallback_values(lon, lat, ra, decl)
+
+    def _field_cells(values: tuple[Any, ...], lon: float) -> list[Cell]:
+        cells: list[Cell] = []
+        if show_dodec and not has_longitude:
+            cells.append(_dodecatemorion_lon_cell(lon, chrt, options, seconds=True))
+        for field in visible_fields:
+            idx = int(field["idx"])
+            value = values[idx] if idx < len(values) else None
+            cells.append(
+                _text("")
+                if value is None
+                else _user_speculum_value_cell(idx, float(value), chrt, options, regio=regio)
+            )
+            if show_dodec and field["id"] == "lon":
+                cells.append(_dodecatemorion_lon_cell(lon, chrt, options, seconds=True))
+        return cells
+
+    def _point_row(
+        row_id: str,
+        identity: Cell,
+        values: tuple[Any, ...],
+        lon: float,
+        *,
+        speed: Cell | None = None,
+        house: str = "",
+        meta: dict[str, Any] | None = None,
+        inspector_target: list[Row] | None = None,
+    ) -> Row:
+        speed_cell = speed or _text("", align="right")
+        row = _row(
+            row_id,
+            [identity, *_field_cells(values, lon), speed_cell, _text(house, align="right")],
+            meta=meta,
+        )
+        if inspector_target is not None:
+            common_cells = []
+            for idx in (0, 1, 3):
+                value = values[idx] if idx < len(values) else None
+                common_cells.append(
+                    _text("")
+                    if value is None
+                    else _user_speculum_value_cell(idx, float(value), chrt, options, regio=regio)
+                )
+            inspector_target.append(_row(
+                row_id,
+                [identity, *common_cells, speed_cell, _text(house, align="right")],
+                meta=meta,
+            ))
+        return row
+
+    # Section 1: chart angles.
     ascmc_rows: list[Row] = []
+    inspector_ascmc_rows: list[Row] = []
     try:
         asc = chrt.houses.ascmc2[houses.Houses.ASC]
         mc = chrt.houses.ascmc2[houses.Houses.MC]
-        ascmc_rows.append(_angle_row("asc", _txt("Asc", "Asc"), asc[houses.Houses.LON], asc[houses.Houses.LAT], asc[houses.Houses.RA], asc[houses.Houses.DECL]))
-        ascmc_rows.append(_angle_row("mc", _txt("MC", "MC"), mc[houses.Houses.LON], mc[houses.Houses.LAT], mc[houses.Houses.RA], mc[houses.Houses.DECL]))
+        ascmc_rows.append(_point_row(
+            "asc", _text(_txt("Asc", "Asc")),
+            _calculated_point_values(*asc[:4]), float(asc[houses.Houses.LON]), house="1",
+            inspector_target=inspector_ascmc_rows,
+        ))
+        ascmc_rows.append(_point_row(
+            "mc", _text(_txt("MC", "MC")),
+            _calculated_point_values(*mc[:4]), float(mc[houses.Houses.LON]), house="10",
+            inspector_target=inspector_ascmc_rows,
+        ))
     except Exception:
         pass
 
-    # Section 2: planets (positionswnd.py:328-352) + Lot of Fortune
-    # (positionswnd.py:368-398). Per-planet body glyph colors mirror the wx
-    # useplanetcolors path applied throughout the speculum windows.
+    # Section 2: enabled chart bodies, Vertex and Lot of Fortune.
     planet_rows: list[Row] = []
+    inspector_planet_rows: list[Row] = []
     for pid in _body_ids(chrt, options):
         body = chrt.get_planet_body(pid) if hasattr(chrt, "get_planet_body") else None
         if body is None:
@@ -2933,40 +3071,65 @@ def _positions(chrt, options) -> dict[str, Any]:
             house = str(chrt.houses.getHousePos(body.data[planets.Planet.LONG], 0.0) + 1)
         except Exception:
             pass
-        cells: list[Cell] = [_planet_cell(pid, chrt, options), _lon_cell(body.data[planets.Planet.LONG], chrt, options)]
-        if show_dodec:
-            cells.append(_dodecatemorion_lon_cell(body.data[planets.Planet.LONG], chrt, options))
-        cells += [
-            _text(_dms(body.data[planets.Planet.LAT], signed=True)),
-            _text(_ra(body.dataEqu[planets.Planet.RAEQU], options)),
-            _text(_dms(body.dataEqu[planets.Planet.DECLEQU], signed=True)),
-            _position_speed_cell(pid, body.data[planets.Planet.SPLON], options, chrt),
-            _text(house, align="right"),
-        ]
+        try:
+            values = tuple(body.speculums[speculum])
+        except Exception:
+            values = _fallback_values(
+                body.data[planets.Planet.LONG],
+                body.data[planets.Planet.LAT],
+                body.dataEqu[planets.Planet.RAEQU],
+                body.dataEqu[planets.Planet.DECLEQU],
+            )
         out_of_bounds = planetary_state.classify_chart_body(chrt, pid).active
-        planet_rows.append(_row(
+        planet_rows.append(_point_row(
             f"planet:{pid}",
-            cells,
+            _planet_cell(pid, chrt, options),
+            values,
+            float(body.data[planets.Planet.LONG]),
+            speed=_position_speed_cell(pid, body.data[planets.Planet.SPLON], options, chrt),
+            house=house,
             meta={"declinationOutOfBounds": True} if out_of_bounds else None,
+            inspector_target=inspector_planet_rows,
         ))
-    try:
-        fort = chrt.fortune.fortune
-        fcells: list[Cell] = [_glyph(common.common.fortune), _lon_cell(fort[0], chrt, options)]
-        if show_dodec:
-            fcells.append(_dodecatemorion_lon_cell(fort[0], chrt, options))
-        fcells += [
-            _text(_dms(fort[1], signed=True)),
-            _text(_ra(fort[2], options)),
-            _text(_dms(fort[3], signed=True)),
-            _text("", align="right"),
-            _text(""),
-        ]
-        planet_rows.append(_row("fortune", fcells))
-    except Exception:
-        pass
 
-    # Section 3: houses 1/2/3/10/11/12 (positionswnd.py:400-418), gated on
-    # not intables or (intables and houses). lat/house columns stay blank as wx.
+    if getattr(options, "showvertex", False):
+        try:
+            vertex_lon = float(chrt.houses.ascmc[houses.Houses.VERTEX])
+            vertex_values = _calculated_point_values(vertex_lon, 0.0, 0.0, 0.0)
+            vertex_house = str(chrt.houses.getHousePos(vertex_lon, 0.0) + 1)
+            planet_rows.append(_point_row(
+                "vertex",
+                _planet_cell(common.CHART_OBJECT_VERTEX, chrt, options),
+                vertex_values,
+                vertex_lon,
+                house=vertex_house,
+                inspector_target=inspector_planet_rows,
+            ))
+        except Exception:
+            pass
+
+    if not getattr(options, "intables", False) or getattr(options, "showlof", True):
+        try:
+            fortune_obj = chrt.fortune
+            fort = fortune_obj.fortune
+            fort_speculum = fortune_obj.speculum2 if regio else fortune_obj.speculum
+            fort_values = tuple(fort_speculum.speculum)
+            fort_house = str(chrt.houses.getHousePos(fort[0], 0.0) + 1)
+            fortune_cell = _glyph(
+                common.common.fortune,
+                export_text=_txt("LoF", "Lot of Fortune"),
+                export_symbol_text=common.FORTUNE_TEXT_EXPORT_MARK,
+            )
+            fortune_color = _rgb_hex(getattr(options, "clrperegrin", None))
+            _set_semantic_color(fortune_cell, fortune_color, _fortune_color_role(chrt, options, fortune_color))
+            planet_rows.append(_point_row(
+                "fortune", fortune_cell, fort_values, float(fort[0]), house=fort_house,
+                inspector_target=inspector_planet_rows,
+            ))
+        except Exception:
+            pass
+
+    # Section 3: quadrant cusps, with the same complete selected field set.
     house_rows: list[Row] = []
     if not getattr(options, "intables", False) or getattr(options, "houses", True):
         hidx = (1, 2, 3, 10, 11, 12)
@@ -2978,26 +3141,43 @@ def _positions(chrt, options) -> dict[str, Any]:
                 label = common.common.Housenames2[h - 1]
             except Exception:
                 continue
-            cells = [_text(label), _lon_cell(lon, chrt, options)]
-            if show_dodec:
-                cells.append(_dodecatemorion_lon_cell(lon, chrt, options))
-            cells += [
-                _text(_dms(0.0, signed=True)),
-                _text(_ra(ra_val, options)),
-                _text(_dms(decl_val, signed=True)),
-                _text("", align="right"),
-                _text(""),
-            ]
-            house_rows.append(_row(f"house:{h}", cells))
+            values = _calculated_point_values(float(lon), 0.0, float(ra_val), float(decl_val))
+            house_rows.append(_point_row(
+                f"house:{h}", _text(label), values, float(lon), house=str(h),
+            ))
 
     sections = [{"id": "ascmc", "columns": cols, "rows": ascmc_rows},
                 {"id": "planets", "columns": cols, "rows": planet_rows}]
     if house_rows:
         sections.append({"id": "houses", "columns": cols, "rows": house_rows})
     flat_rows = ascmc_rows + planet_rows + house_rows
-    payload = _base_payload("positions", chrt, options, cols, flat_rows or _empty(), title="Positions", source="morin.py:15823-15896; positionswnd.py:261-418")
+    title = _txt("TMPositions", "Speculum").split("\t", 1)[0].replace("&", "")
+    payload = _base_payload(
+        "positions", chrt, options, cols, flat_rows or _empty(),
+        title=title,
+        source="webapp/daemon/speculum_schema.py; planets.py; houses.py; customerpd.py",
+    )
     payload["sections"] = sections
-    payload["capabilities"] = {**payload.get("capabilities", {}), "sections": True, "sorting": False}
+    payload["speculumInspector"] = {
+        "columns": inspector_cols,
+        "sections": [
+            {"id": "ascmc", "columns": inspector_cols, "rows": inspector_ascmc_rows},
+            {"id": "planets", "columns": inspector_cols, "rows": inspector_planet_rows},
+        ],
+    }
+    payload["speculum"] = {
+        "houseSystem": house_system,
+        "family": family_for_house_system(house_system),
+    }
+    payload["capabilities"] = {
+        **payload.get("capabilities", {}),
+        "sections": True,
+        "sorting": False,
+        # Generic table chrome normally compacts DMS values to minutes. The
+        # Speculum is a precision surface and explicitly retains arcseconds in
+        # the live table, Inspector projection, copy/TXT, and PDF channels.
+        "anglePrecision": "seconds",
+    }
     return payload
 
 
@@ -5635,14 +5815,14 @@ def _user_speculum_value_cell(field_idx: int, value: float, chrt, options, *, re
     if field_idx == CPD.LONG:
         # Longitude: degree-in-sign + sign glyph, ayanamsha rebased
         # (customerwnd.py:174-190 / 269-285).
-        return _lon_cell(value, chrt, options)
-    if not regio and field_idx in (CPD.LAT, CPD.DECL, CPD.ADLAT):
-        return _text(_dms(value, signed=True))
+        return _lon_cell(value, chrt, options, seconds=True)
+    if not regio and field_idx in (CPD.LAT, CPD.DECL, CPD.ADLAT, CPD.PL_ELV):
+        return _text(_dms(value, signed=True, sec=True))
     if regio and field_idx in (CPD.LAT, CPD.DECL, CPD.Q, CPD.ELV):
-        return _text(_dms(value, signed=True))
+        return _text(_dms(value, signed=True, sec=True))
     # RA: in-time HH:MM:SS or 3-digit degrees (customerwnd.py:199-206 / 297-313).
     if field_idx == CPD.RA:
-        return _text(_ra(value, options))
+        return _text(_ra(value, options, seconds=True))
     # Placidian sign-coded magnitudes: SA(D/N), MD(M/I), HD(A/D), TH(D/N),
     # HOD(D/N), AODO(A/D) (customerwnd.py:210-228).
     if not regio and field_idx in (CPD.SA, CPD.MD, CPD.HD, CPD.TH, CPD.HOD, CPD.AODO):
@@ -5652,19 +5832,19 @@ def _user_speculum_value_cell(field_idx: int, value: float, chrt, options, *, re
             prefix = "I" if value < 0.0 else "M"
         else:  # HD, AODO
             prefix = "D" if value < 0.0 else "A"
-        return _text(prefix + _dms(value, signed=False))
+        return _text(prefix + _dms(value, signed=False, sec=True))
     # Regio ZD carries a Z/N prefix (customerwnd.py:302-305); RMD M/I, RHD A/D
     # (customerwnd.py:317-326).
     if regio and field_idx == CPD.ZD:
         prefix = "N" if value < 0.0 else "Z"
-        return _text(prefix + _dms(value, signed=False))
+        return _text(prefix + _dms(value, signed=False, sec=True))
     if regio and field_idx == CPD.RMD:
         prefix = "I" if value < 0.0 else "M"
-        return _text(prefix + _dms(value, signed=False))
+        return _text(prefix + _dms(value, signed=False, sec=True))
     if regio and field_idx == CPD.RHD:
         prefix = "D" if value < 0.0 else "A"
-        return _text(prefix + _dms(value, signed=False))
-    return _text(_dms(value, signed=False))
+        return _text(prefix + _dms(value, signed=False, sec=True))
+    return _text(_dms(value, signed=False, sec=True))
 
 
 def _user_speculum(chrt, options) -> dict[str, Any]:

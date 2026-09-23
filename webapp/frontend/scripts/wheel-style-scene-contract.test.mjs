@@ -1,6 +1,7 @@
 // Copyright (C) 2026 Max Lange
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { compositionModuleUrl } from "./wheel-composition-test-loader.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -13,7 +14,7 @@ async function transpile(url) {
       module: ts.ModuleKind.ESNext,
       target: ts.ScriptTarget.ES2022,
     },
-  }).outputText;
+  }).outputText.replaceAll('"./wheel-composition"', `"${compositionModuleUrl}"`).replaceAll('"../chart/wheel-composition"', `"${compositionModuleUrl}"`);
 }
 
 function dataUrl(source) {
@@ -85,10 +86,11 @@ function geometry(profile = "classic", mode = "single", overrides = {}) {
 }
 
 test("bounded geometry tokens preserve the production default ring matrix", () => {
-  assert.equal(Object.keys(wheel.WHEEL_RENDER_TOKEN_SPECS).length, 324);
+  // +24 for the two independently authored cusp-band wheel profiles.
+  assert.equal(Object.keys(wheel.WHEEL_RENDER_TOKEN_SPECS).length, 348);
   const tokenized = wheel.createTokenizedWheelRenderStyle();
   assert.deepEqual(tokenized.geometry, wheel.DEFAULT_WHEEL_RENDER_STYLE.geometry);
-  for (const profile of ["classic", "compact", "anglo"]) {
+  for (const profile of ["classic", "compact", "anglo", "houses", "cusps"]) {
     for (const mode of ["single", "comparison"]) {
       assert.deepEqual(
         wheel.resolveWheelRingSet(tokenized, geometry(profile, mode)),
@@ -342,14 +344,109 @@ test("the scene carries all semantic classes without pretending hidden paint is 
   assert.equal(chartFill.authoringDefaults.textureMask, "none");
   assert.equal(chartFill.authoringDefaults.shadowPattern, "none");
 
-  const houseFill = scene.elements.find(
+  const hiddenHouseFill = scene.elements.find(
+    (element) => element.id === "wheel.manifest.fills.houseField",
+  );
+  assert.ok(hiddenHouseFill.stateTags.includes("manifest-missing:houses"));
+
+  const zonedScene = sceneApi.buildWheelStyleScene({
+    style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+    geometry: geometry("classic", "single"),
+  });
+  const houseFill = zonedScene.elements.find(
     (element) => element.id === "wheel.fill.house-field",
   );
   assert.equal(houseFill.classId, "fills.houseField");
   assert.equal(houseFill.hitGeometry.kind, "annulus");
-  assert.equal(houseFill.hitGeometry.innerRadius, scene.rings.rAsp);
-  assert.equal(houseFill.hitGeometry.outerRadius, scene.rings.rInner);
+  assert.equal(houseFill.hitGeometry.innerRadius, zonedScene.rings.rAsp);
+  assert.equal(houseFill.hitGeometry.outerRadius, zonedScene.rings.rHouse);
   assert.equal(houseFill.authoringDefaults.textureMask, "none");
+  const glyphFill = zonedScene.elements.find(
+    (element) => element.id === "wheel.fill.glyph-field",
+  );
+  assert.equal(glyphFill.classId, "fills.glyphField");
+  assert.equal(glyphFill.hitGeometry.kind, "annulus");
+  assert.equal(glyphFill.hitGeometry.innerRadius, zonedScene.rings.rHouse);
+  assert.equal(glyphFill.hitGeometry.outerRadius, zonedScene.rings.rInner);
+  const zodiacFill = zonedScene.elements.find(
+    (element) => element.id === "wheel.fill.zodiac-band",
+  );
+  assert.equal(zodiacFill.hitGeometry.kind, "annulus");
+  assert.equal(zodiacFill.hitGeometry.innerRadius, zonedScene.rings.r0);
+  assert.equal(zodiacFill.hitGeometry.outerRadius, zonedScene.rings.r30);
+  const elementSlices = zonedScene.elements.find(
+    (element) => element.id === "wheel.fill.zodiac-element-slices",
+  );
+  assert.equal(elementSlices.classId, "fills.zodiacElementSlices");
+  assert.equal(elementSlices.hitGeometry.innerRadius, zonedScene.rings.r0);
+  assert.equal(elementSlices.hitGeometry.outerRadius, zonedScene.rings.r30);
+  assert.equal(elementSlices.authoringDefaults.fillPattern, "none");
+  assert.equal(elementSlices.authoringDefaults.backgroundColor, undefined);
+  assert.equal(
+    elementSlices.authoringDefaults.patternColor,
+    wheel.DEFAULT_WHEEL_RENDER_STYLE.palette.frame,
+  );
+  assert.ok(zodiacFill.priority > elementSlices.priority);
+  const elementFieldScene = sceneApi.buildWheelStyleScene({
+    style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+    geometry: geometry("classic", "single"),
+    useZodiacElementFieldColors: true,
+  });
+  const activeZodiacFill = elementFieldScene.elements.find(
+    (element) => element.id === "wheel.fill.zodiac-band",
+  );
+  const activeElementFields = elementFieldScene.elements.find(
+    (element) => element.id === "wheel.fill.zodiac-element-slices",
+  );
+  assert.ok(activeElementFields.priority > activeZodiacFill.priority);
+  const termFill = zonedScene.elements.find(
+    (element) => element.id === "wheel.fill.term-band",
+  );
+  assert.equal(termFill.classId, "fills.termBand");
+  assert.equal(termFill.hitGeometry.innerRadius, zonedScene.rings.rDecans);
+  assert.equal(termFill.hitGeometry.outerRadius, zonedScene.rings.r0);
+  const decanFill = zonedScene.elements.find(
+    (element) => element.id === "wheel.fill.decan-band",
+  );
+  assert.equal(decanFill.classId, "fills.decanBand");
+  assert.equal(decanFill.hitGeometry.innerRadius, zonedScene.rings.rInner);
+  assert.equal(decanFill.hitGeometry.outerRadius, zonedScene.rings.rDecans);
+
+  const angloBands = sceneApi.buildWheelStyleScene({
+    style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+    geometry: geometry("anglo", "single"),
+  });
+  const angloDecanFill = angloBands.elements.find(
+    (element) => element.id === "wheel.fill.decan-band",
+  );
+  assert.equal(angloDecanFill.hitGeometry.innerRadius, angloBands.rings.rCuspOuter);
+  assert.notEqual(angloDecanFill.hitGeometry.innerRadius, angloBands.rings.rInner);
+
+  for (const profile of ["houses", "cusps"]) {
+    const cuspBandScene = sceneApi.buildWheelStyleScene({
+      style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+      geometry: geometry(profile, "single"),
+    });
+    const cuspDegreeFill = cuspBandScene.elements.find(
+      (element) => element.id === "wheel.fill.cusp-degree-band",
+    );
+    assert.equal(cuspDegreeFill.classId, "fills.cuspDegreeBand");
+    assert.equal(cuspDegreeFill.hitGeometry.kind, "annulus");
+    assert.equal(cuspDegreeFill.hitGeometry.innerRadius, cuspBandScene.rings.rInner);
+    assert.equal(cuspDegreeFill.hitGeometry.outerRadius, cuspBandScene.rings.r30);
+    const hitRadius = (
+      cuspDegreeFill.hitGeometry.innerRadius
+      + cuspDegreeFill.hitGeometry.outerRadius
+    ) / 2;
+    assert.equal(
+      sceneApi.hitTestWheelStyleScene(
+        cuspBandScene,
+        cuspBandScene.center[0] + hitRadius,
+        cuspBandScene.center[1],
+      )?.element.id,
+      "wheel.fill.cusp-degree-band",
+    );
+  }
   assert.equal(
     sceneApi.hitTestWheelStyleScene(
       scene,
@@ -1426,7 +1523,15 @@ test("a fixed-star label is one manifest class with its own size and opacity", (
     ["secondaryRing.fixedStar.label", "secondaryRing.fixedStar.leader"],
   );
   const label = live.find((element) => element.classId.endsWith(".label"));
-  for (const property of ["fontRef", "fontSizePx", "trackingPx", "color", "opacityPercent"]) {
+  for (const property of [
+    "fontRef",
+    "fontWeight",
+    "fontStyle",
+    "fontSizePx",
+    "trackingPx",
+    "color",
+    "opacityPercent",
+  ]) {
     assert.ok(
       label.authoringDefaults[property] != null,
       `the label reports no ${property}`,
@@ -1717,4 +1822,363 @@ test("each degree ruler is a selectable sub-band that owns its ticks", () => {
     "anglo's only degree ruler must offer a depth handle",
   );
   assert.equal(angloOuter.handles[0].binding.property, "rulerDepth");
+});
+
+test("the House Wheel scene offers exactly the elements it paints", () => {
+  // The Style Lab can only style what the scene lists. A layout that resolves
+  // to a profile the scene never branches for gets an empty or wrong element
+  // set, and every control on it silently does nothing — which is how the House
+  // Wheel shipped unstyleable. Anglo is the baseline because the House Wheel is
+  // its ring stack with the zodiac band removed.
+  const houses = sceneApi.buildWheelStyleScene({
+    style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+    geometry: geometry("houses", "single"),
+  });
+  const anglo = sceneApi.buildWheelStyleScene({
+    style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+    geometry: geometry("anglo", "single"),
+  });
+  const classIds = (scene) =>
+    new Set(
+      scene.elements
+        .filter(
+          (element) =>
+            !element.stateTags.includes("manifest-applicability:not-applicable"),
+        )
+        .map((element) => element.classId),
+    );
+  const housesClasses = classIds(houses);
+  const angloClasses = classIds(anglo);
+
+  // Everything the House Wheel actually draws must be selectable. The cusp band
+  // is the whole point of the layout: it is where its zodiac is printed.
+  for (const classId of [
+    "canvas.background",
+    "fills.cuspDegreeBand",
+    "rings.angloCuspOuter",
+    "houses.inner.position.degree",
+    "houses.inner.position.sign",
+    "houses.inner.position.minute",
+    "houses.inner.cusp",
+  ]) {
+    assert.ok(housesClasses.has(classId), `House Wheel must expose ${classId}`);
+  }
+
+  // And nothing it does not draw: no zodiac band, no ruler, no subdivisions.
+  for (const classId of [
+    "zodiac.signGlyph",
+    "zodiac.tick.angloCuspRuler.1deg",
+    "zodiac.tick.angloCuspRuler.5deg",
+    "zodiac.tick.angloCuspRuler.10deg",
+    "subdivisions.term.glyph",
+    "subdivisions.decan.glyph",
+  ]) {
+    assert.ok(!housesClasses.has(classId), `House Wheel must not expose ${classId}`);
+  }
+
+  // The House Wheel must not be a stripped-down scene by accident: apart from
+  // the zodiac band and everything seated in it, it owns Anglo's classes.
+  const ZODIAC_BAND_ONLY = new Set([
+    "fills.zodiacBand",
+    "fills.zodiacElementSlices",
+    "fills.termBand",
+    "fills.decanBand",
+    "rings.zodiacInner",
+    "rings.term",
+  ]);
+  const missing = [...angloClasses].filter(
+    (classId) =>
+      !housesClasses.has(classId)
+      && !classId.startsWith("zodiac.")
+      && !classId.startsWith("subdivisions.")
+      && !ZODIAC_BAND_ONLY.has(classId),
+  );
+  assert.deepEqual(missing, [], "House Wheel is missing Anglo structural classes");
+});
+
+test("the Cusp Wheel scene exposes the same radial authoring surface independently", () => {
+  const houses = sceneApi.buildWheelStyleScene({
+    style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+    geometry: geometry("houses", "single"),
+  });
+  const cusps = sceneApi.buildWheelStyleScene({
+    style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+    geometry: geometry("cusps", "single"),
+  });
+  const applicableClasses = (scene) => scene.elements
+    .filter((element) => !element.stateTags.includes("manifest-applicability:not-applicable"))
+    .map((element) => element.classId)
+    .sort();
+
+  assert.deepEqual(applicableClasses(cusps), applicableClasses(houses));
+  assert.ok(cusps.elements.every((element) => element.stateTags.includes("profile:cusps")));
+});
+
+test('composition handles author stable widths and omit independent radius pins', () => {
+  const composition = {schemaVersion: 1, customized: true, projection: 'zodiac', rings:
+    ['decans','terms','cuspLabels','bodies','houses','hub'].map(archetypeId => ({
+      instanceId: `cusps-${archetypeId}`, archetypeId, enabled: true, chartRole: 'primary',
+    })),
+  };
+  const scene = sceneApi.buildWheelStyleScene({
+    style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+    geometry: geometry('cusps', 'single', {composition}),
+  });
+  const handle = scene.handles.find(h => h.binding?.semanticId.endsWith('cusps-terms.bandWidth'));
+  assert.ok(handle);
+  assert.ok(!scene.handles.some(h => h.binding?.semanticId.endsWith('.radius')));
+  const distance = 4;
+  const radians = handle.angleDegrees * Math.PI / 180;
+  const patch = sceneApi.resolveWheelStyleHandleDrag(handle, {
+    start: handle.position,
+    current: [handle.position[0] + Math.cos(radians) * distance,
+      handle.position[1] + Math.sin(radians) * distance],
+  });
+  assert.equal(patch.semanticId, 'authoring.wheel.cusps.canvas.ring.cusps-terms.bandWidth');
+  assert.ok(patch.value < handle.binding.value);
+});
+
+test('the Anglo cusp ruler exposes its whole band and retains its width handle', async () => {
+  const {WHEEL_FACTORY_SETTINGS} = await import(compositionModuleUrl);
+  const composition = WHEEL_FACTORY_SETTINGS.layouts.anglo.composition;
+  const scene = sceneApi.buildWheelStyleScene({
+    style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+    geometry: geometry('anglo', 'single', {composition}),
+  });
+  const instance = composition.rings.find(ring => ring.archetypeId === 'cuspRuler');
+  const band = scene.elements.find(element => element.id === `wheel.composition.${instance.instanceId}`);
+  assert.ok(band);
+  assert.equal(band.hitGeometry.kind, 'annulus');
+  assert.equal(band.hitGeometry.outerRadius, scene.rings.rCuspOuter);
+  assert.equal(band.hitGeometry.innerRadius, scene.rings.rCuspLabelOuter);
+  assert.equal(band.handles.length, 1);
+  assert.equal(band.handles[0].binding.semanticId,
+    `authoring.wheel.anglo.canvas.ring.${instance.instanceId}.bandWidth`);
+  // Blank parts of the ruler select its band; individual painted marks retain
+  // their higher-priority style targets.
+  let foundBand = false;
+  for (let offset = 0; offset < 360 && !foundBand; offset += 0.5) {
+    for (const fraction of [0.25, 0.5, 0.75]) {
+      const radius = band.hitGeometry.innerRadius
+        + (band.hitGeometry.outerRadius - band.hitGeometry.innerRadius) * fraction;
+      const angle = offset * Math.PI / 180;
+      const hit = sceneApi.hitTestWheelStyleScene(scene,
+        scene.center[0] + radius * Math.cos(angle), scene.center[1] + radius * Math.sin(angle));
+      if (hit?.element.id === band.id) { foundBand = true; break; }
+    }
+  }
+  assert.ok(foundBand, 'the ruler must have a reachable band surface');
+});
+
+test('band boundaries do not steal nearby cusp text selection', async () => {
+  const {WHEEL_FACTORY_SETTINGS} = await import(compositionModuleUrl);
+  const composition = WHEEL_FACTORY_SETTINGS.layouts.anglo.composition;
+  const input = geometry('anglo', 'single', {composition});
+  const scene = sceneApi.buildWheelStyleScene({style: wheel.DEFAULT_WHEEL_RENDER_STYLE, geometry: input});
+  const ruler = composition.rings.find(ring => ring.archetypeId === 'cuspRuler');
+  const band = scene.elements.find(element => element.id === `wheel.composition.${ruler.instanceId}`);
+  const x = scene.center[0] + band.hitGeometry.innerRadius;
+  const y = scene.center[1];
+  const withLabel = sceneApi.buildWheelStyleScene({style: wheel.DEFAULT_WHEEL_RENDER_STYLE, geometry: input,
+    hitRegions: [{kind: 'style_target', classId: 'houses.inner.position.degree', itemId: 'cusp-label',
+      styleOnly: true, shape: 'rect', x, y, r: 8, left: x - 8, top: y - 8, width: 16, height: 16, priority: 48}],
+  });
+  assert.equal(sceneApi.hitTestWheelStyleScene(withLabel, x, y)?.element.classId, 'houses.inner.position.degree');
+});
+
+test('a hidden Anglo cusp ruler has no selectable band, width handle, or house-cusp tick target', async () => {
+  const {WHEEL_FACTORY_SETTINGS} = await import(compositionModuleUrl);
+  const original = WHEEL_FACTORY_SETTINGS.layouts.anglo.composition;
+  const composition = {...original, rings: original.rings.map(ring => ring.archetypeId === 'cuspRuler'
+    ? {...ring, enabled: false} : ring)};
+  const instance = composition.rings.find(ring => ring.archetypeId === 'cuspRuler');
+  const scene = sceneApi.buildWheelStyleScene({style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+    geometry: geometry('anglo', 'single', {composition}),
+    hitRegions: [{kind: 'house', house: 2, longitude: 20, x: 400, y: 100, r: 10}],
+  });
+  assert.ok(!scene.elements.some(element => element.id === `wheel.composition.${instance.instanceId}`));
+  assert.ok(!scene.handles.some(handle => handle.binding?.semanticId.includes(`.${instance.instanceId}.`)));
+  assert.ok(!scene.elements.some(element => element.classId === 'zodiac.tick.angloHouseCusp' && element.hitGeometry));
+});
+
+test('enabled subdivisions on an untouched Cusp recipe remain selectable', async () => {
+  const {WHEEL_FACTORY_SETTINGS} = await import(compositionModuleUrl);
+  const original = WHEEL_FACTORY_SETTINGS.layouts.cusps.composition;
+  const composition = {...original, rings: original.rings.map(ring => ['terms', 'decans'].includes(ring.archetypeId)
+    ? {...ring, enabled: true} : ring)};
+  assert.equal(composition.customized, false);
+  const scene = sceneApi.buildWheelStyleScene({style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+    geometry: geometry('cusps', 'single', {composition, showTerms: false, showDecans: false}),
+  });
+  for (const [kind, classId] of [['terms', 'fills.termBand'], ['decans', 'fills.decanBand']]) {
+    const instance = composition.rings.find(ring => ring.archetypeId === kind);
+    const band = scene.elements.find(element => element.id === `wheel.composition.${instance.instanceId}`);
+    const fill = scene.elements.find(element => element.classId === classId && element.hitGeometry);
+    assert.ok(band, `${kind} must retain its width target`);
+    assert.ok(fill, `${kind} must retain its painted material target`);
+    assert.deepEqual(fill.hitGeometry, band.hitGeometry);
+    assert.ok(fill.hitGeometry.outerRadius > fill.hitGeometry.innerRadius);
+  }
+});
+
+test('factory band handles preserve their starting width and use solved bounds at every scale', async () => {
+  const {WHEEL_FACTORY_SETTINGS, WHEEL_RING_ARCHETYPES} = await import(compositionModuleUrl);
+  const layoutModel = await import(layoutModelUrl);
+  let grandfatheredWidths = 0;
+  for (const profile of ['classic', 'compact', 'anglo', 'houses', 'cusps']) {
+    const composition = WHEEL_FACTORY_SETTINGS.layouts[profile].composition;
+    for (const mode of ['single', 'comparison']) {
+      for (const maxRadius of [200, 400, 800]) {
+        const input = geometry(profile, mode, {composition, maxRadius});
+        const scene = sceneApi.buildWheelStyleScene({style: wheel.DEFAULT_WHEEL_RENDER_STYLE, geometry: input});
+        const layout = layoutModel.resolveWheelBandLayout(wheel.DEFAULT_WHEEL_RENDER_STYLE, input, scene.rings);
+        const scale = wheel.DEFAULT_WHEEL_RENDER_STYLE.authoringOverrides.referenceRadius / maxRadius;
+        for (const handle of scene.handles.filter(item => item.binding?.semanticId.endsWith('.bandWidth'))) {
+          const instanceId = handle.elementId.slice('wheel.composition.'.length);
+          const band = layout.bands.find(item => item.instanceId === instanceId);
+          assert.ok(band?.widthBounds, `${profile}/${mode}/${instanceId} must declare its editing bounds`);
+          assert.equal(handle.binding.min, band.widthBounds.min * scale);
+          assert.equal(handle.binding.max, Math.min(400, band.widthBounds.max * scale));
+          const patch = sceneApi.resolveWheelStyleHandleDrag(handle, {start: handle.position, current: handle.position});
+          assert.equal(patch.value, handle.binding.value,
+            `${profile}/${mode}/${instanceId} must preserve the exact width without movement`);
+          const angle = handle.angleDegrees * Math.PI / 180;
+          const jitter = 0.01 / Math.abs(handle.binding.valuePerPixel);
+          const tiny = sceneApi.resolveWheelStyleHandleDrag(handle, {start: handle.position,
+            current: [handle.position[0] + Math.cos(angle) * jitter, handle.position[1] + Math.sin(angle) * jitter]});
+          assert.equal(tiny.value, handle.binding.value,
+            `${profile}/${mode}/${instanceId} must preserve the exact width below one fine step`);
+          const instance = composition.rings.find(item => item.instanceId === instanceId);
+          const minimum = WHEEL_RING_ARCHETYPES[instance.archetypeId].minWidth;
+          if (handle.binding.value < minimum) grandfatheredWidths++;
+        }
+      }
+    }
+  }
+  assert.ok(grandfatheredWidths > 0, 'the matrix must exercise original bands below the generic minimum');
+});
+
+test('an original Anglo degree instrument without a painted track offers no width handle', async () => {
+  const {WHEEL_FACTORY_SETTINGS} = await import(compositionModuleUrl);
+  const composition = WHEEL_FACTORY_SETTINGS.layouts.anglo.composition;
+  const degree = composition.rings.find(ring => ring.archetypeId === 'degree');
+  const scene = sceneApi.buildWheelStyleScene({style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+    geometry: geometry('anglo', 'single', {composition}),
+  });
+  assert.ok(!scene.handles.some(handle => handle.binding?.semanticId.includes(`.${degree.instanceId}.`)));
+});
+
+test('open exterior cusp labels keep their band editor but have no phantom boundary target', () => {
+  for (const profile of ['anglo', 'houses', 'cusps']) for (const outside of [false, true]) {
+    for (const outerEnclosure of [false, true]) {
+      const ids = outside ? ['cuspLabels', 'zodiac'] : ['zodiac', 'cuspLabels'];
+      const composition = {schemaVersion: 1, customized: true, projection: profile === 'houses' ? 'houses' : 'zodiac',
+        rings: ['outerBodies', 'outerHouses', ...ids, 'bodies', 'houses', 'hub'].map(archetypeId => ({
+          archetypeId, instanceId: `test-${archetypeId}`, enabled: true,
+          chartRole: archetypeId.startsWith('outer') ? 'outer' : 'primary',
+        }))};
+      const scene = sceneApi.buildWheelStyleScene({style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+        geometry: geometry(profile, 'comparison', {composition, comparisonWithOuterHouses: outerEnclosure})});
+      const id = 'wheel.composition.test-cuspLabels';
+      assert.equal(scene.elements.some(e => e.id === `${id}.boundary`), !outside || outerEnclosure);
+      assert.equal(scene.elements.find(e => e.id === id)?.hitGeometry.kind, 'annulus');
+      assert.ok(scene.handles.some(h => h.id === `${id}.width`));
+      assert.ok(scene.elements.some(e => e.id === 'wheel.composition.test-zodiac.boundary'));
+    }
+  }
+});
+
+test('band selection links existing material controls while width keeps its geometry owner', async () => {
+  const {WHEEL_FACTORY_SETTINGS} = await import(compositionModuleUrl);
+  const roles = {zodiac: 'fills.zodiacBand', terms: 'fills.termBand', decans: 'fills.decanBand',
+    cuspRuler: 'fills.cuspDegreeBand', cuspLabels: 'fills.cuspDegreeBand', bodies: 'fills.glyphField', houses: 'fills.houseField'};
+  for (const profile of ['classic', 'compact', 'anglo', 'houses', 'cusps']) {
+    const composition = structuredClone(WHEEL_FACTORY_SETTINGS.layouts[profile].composition);
+    const style = {...wheel.DEFAULT_WHEEL_RENDER_STYLE, authoringOverrides: {
+      ...wheel.DEFAULT_WHEEL_RENDER_STYLE.authoringOverrides,
+      fillPaint: {[profile]: Object.fromEntries(Object.values(roles).map(role => [role, {
+        fillPattern: 'hatch', gradientType: 'linear', textureMask: 'crescent',
+      }]))},
+    }};
+    const scene = sceneApi.buildWheelStyleScene({style, geometry: geometry(profile, 'single', {composition})});
+    for (const [kind, role] of Object.entries(roles)) {
+      const band = scene.elements.find(e => e.id === `wheel.composition.${profile}-${kind}`);
+      if (!band) continue;
+      assert.equal(band.appearanceClassId, role);
+      const appearance = scene.elements.find(e => e.classId === band.appearanceClassId);
+      assert.ok(appearance, `${profile}/${kind}: appearance target exists`);
+      assert.equal(appearance.authoringDefaults.fillPattern, 'hatch');
+      assert.equal(appearance.authoringDefaults.gradientType, 'linear');
+      assert.equal(appearance.authoringDefaults.textureMask, 'crescent');
+      assert.ok(band.authoringDefaults.bandWidthPx > 0);
+      assert.equal(band.handles[0].binding.semanticId,
+        `authoring.wheel.${profile}.canvas.ring.${profile}-${kind}.bandWidth`);
+      // Blank band interiors still select the structural band, now carrying
+      // the appearance link, rather than an unrelated line or background.
+      const radius = (band.hitGeometry.innerRadius + band.hitGeometry.outerRadius) / 2;
+      let reached = false;
+      for (let angle = 0; angle < 360 && !reached; angle += 0.5) {
+        const radians = angle * Math.PI / 180;
+        reached = sceneApi.hitTestWheelStyleScene(scene, scene.center[0] + radius * Math.cos(radians),
+          scene.center[1] + radius * Math.sin(radians))?.element.id === band.id;
+      }
+      assert.ok(reached, `${profile}/${kind}: clickable band exposes its materials`);
+    }
+    for (const e of scene.elements.filter(e => e.primitive === 'circle' || e.primitive === 'text')) {
+      assert.equal(e.appearanceClassId, undefined, 'boundaries and glyphs keep independent selection');
+    }
+  }
+});
+
+test('cusp ruler gaps expose a continuous background at multiple sizes and widths', async () => {
+  const {WHEEL_FACTORY_SETTINGS} = await import(compositionModuleUrl);
+  const composition = WHEEL_FACTORY_SETTINGS.layouts.anglo.composition;
+  for (const maxRadius of [180, 400, 800]) for (const width of [8, 20]) {
+    const style = {...wheel.DEFAULT_WHEEL_RENDER_STYLE, authoringOverrides: {
+      ...wheel.DEFAULT_WHEEL_RENDER_STYLE.authoringOverrides,
+      ringWidths: {anglo: {'anglo-cuspRuler': width}},
+    }};
+    const scene = sceneApi.buildWheelStyleScene({style,
+      geometry: geometry('anglo', 'single', {composition, maxRadius})});
+    const band = scene.elements.find(e => e.id === 'wheel.composition.anglo-cuspRuler');
+    const material = scene.elements.find(e => e.classId === band.appearanceClassId);
+    assert.equal(band.appearanceClassId, 'fills.cuspDegreeBand');
+    assert.equal(material.hitGeometry.outerRadius, scene.rings.rCuspOuter);
+    assert.equal(material.hitGeometry.innerRadius, scene.rings.rInner);
+    const radius = (band.hitGeometry.innerRadius + band.hitGeometry.outerRadius) / 2;
+    for (const angle of [12.5, 42.5, 102.5, 192.5, 252.5, 312.5]) {
+      const radians = angle * Math.PI / 180;
+      assert.equal(sceneApi.hitTestWheelStyleScene(scene,
+        scene.center[0] + radius * Math.cos(radians),
+        scene.center[1] + radius * Math.sin(radians))?.element.id, band.id,
+        `blank gap at ${angle}, radius ${maxRadius}, width ${width}`);
+    }
+    const tickElements = scene.elements.filter(e => e.id.startsWith('wheel.zodiac.tick.anglo')
+      && e.hitGeometry?.kind === 'compound');
+    assert.ok(tickElements.length > 0);
+    assert.ok(tickElements.some(e => e.hitGeometry.geometries.some(g => {
+      if (g.kind !== 'line') return false;
+      return sceneApi.hitTestWheelStyleScene(scene,
+        (g.start[0] + g.end[0]) / 2, (g.start[1] + g.end[1]) / 2)?.element.id === e.id;
+    })), 'painted ticks remain selectable');
+  }
+});
+
+test('tiny exterior cusp markers expose the same short radial segments in the editor', () => {
+  const composition = {schemaVersion: 1, customized: true, projection: 'zodiac',
+    rings: ['cuspLabels', 'zodiac', 'bodies', 'houses', 'hub'].map(archetypeId => ({
+      archetypeId, instanceId: `tiny-${archetypeId}`, enabled: true, chartRole: 'primary',
+    }))};
+  const scene = sceneApi.buildWheelStyleScene({style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+    geometry: geometry('anglo', 'single', {composition}),
+    hitRegions: Array.from({length: 12}, (_, i) => ({kind: 'house', houseIndex: i + 1,
+      longitude: i * 30, x: 400, y: 400, r: 10})),
+  });
+  const markers = scene.elements.find(element => element.classId === 'zodiac.tick.angloHouseCusp'
+    && element.hitGeometry.kind === 'compound');
+  assert.ok(markers);
+  assert.equal(markers.hitGeometry.geometries.length, 12);
+  for (const segment of markers.hitGeometry.geometries) {
+    assert.ok(Math.hypot(segment.end[0] - segment.start[0], segment.end[1] - segment.start[1]) < 4);
+  }
 });

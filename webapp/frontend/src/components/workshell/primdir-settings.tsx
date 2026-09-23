@@ -5,7 +5,7 @@
 
 import * as React from "react";
 
-import { Check } from "lucide-react";
+import { Check, CopyPlus, Save, Trash2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,7 +19,7 @@ import {
   SE_CHIRON,
   VERTEX_GLYPH,
 } from "@/lib/chart/glyphs";
-import type { OptionsPatch, OptionsPrimaryDirections } from "@/lib/daemon/client";
+import type { OptionsPatch, OptionsPrimaryDirections, PrimaryDirectionPresetCommand } from "@/lib/daemon/client";
 import { useT } from "@/lib/i18n/i18n";
 import { cn } from "@/lib/utils";
 
@@ -408,7 +408,6 @@ const PRIMARY_DIRECTION_PRESETS: PrimaryDirectionPreset[] = [
       pdcustomer: false,
       pdcustomer2: false,
     }),
-    optionsPatch: { planetsPoints: { meannode: true } },
   },
   {
     id: "ptolemy",
@@ -845,10 +844,36 @@ function EnginePresetPicker({
 }: {
   settings: OptionsPrimaryDirections;
   presetGlobalState?: PresetGlobalState;
-  onPatch: (patch: Patch, optionsPatch?: OptionsPatch) => void;
+  onPatch: (patch: Patch, optionsPatch?: OptionsPatch) => void | Promise<boolean>;
 }) {
   const t = useT();
   const activePreset = activePrimaryDirectionPreset(settings, presetGlobalState);
+  const userPresets = settings.userPresets;
+  const [naming, setNaming] = React.useState(false);
+  const [name, setName] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [failed, setFailed] = React.useState(false);
+  const perform = async (command: Omit<PrimaryDirectionPresetCommand, "baseRevision">, patch: Patch = {}, globalPatch?: OptionsPatch) => {
+    if (!userPresets || busy) return;
+    setBusy(true);
+    setFailed(false);
+    try {
+      const ok = await onPatch(patch, { ...globalPatch, primaryDirectionPreset: { ...command, baseRevision: userPresets.revision } });
+      if (ok === false) { setFailed(true); return; }
+      setNaming(false);
+      setName("");
+    } catch { setFailed(true); }
+    finally { setBusy(false); }
+  };
+  const startNaming = () => { setNaming(true); setName(""); setFailed(false); };
+  const save = () => {
+    if (naming) {
+      if (name.trim()) void perform({ action: "save", name: name.trim() });
+    } else if (userPresets?.selectedId) {
+      void perform({ action: "save", id: userPresets.selectedId });
+    } else startNaming();
+  };
+
 
   return (
     <div>
@@ -867,7 +892,13 @@ function EnginePresetPicker({
               type="button"
               title={t(PRESET_DESC_KEYS[preset.id] ?? preset.description)}
               aria-pressed={selected}
-              onClick={() => onPatch(presetResolvedPatch(preset, settings), presetResolvedOptionsPatch(preset))}
+              disabled={busy}
+              onClick={() => {
+                const patch = presetResolvedPatch(preset, settings);
+                const globalPatch = presetResolvedOptionsPatch(preset);
+                if (userPresets?.selectedId) void perform({ action: "clear" }, patch, globalPatch);
+                else onPatch(patch, globalPatch);
+              }}
               className={cn(
                 "flex h-7 min-w-0 items-center justify-center gap-1 rounded px-2 text-[length:var(--aries-font-size-small)] leading-none hover:bg-muted",
                 selected && "bg-muted text-foreground",
@@ -881,6 +912,49 @@ function EnginePresetPicker({
           );
         })}
       </div>
+      <div className="mt-1 flex min-w-0 items-center gap-1">
+        {naming ? (
+          <Input autoFocus maxLength={80} value={name} disabled={busy}
+            className="h-7 min-w-0 flex-1 text-[length:var(--aries-font-size-small)]"
+            placeholder={t("pdPreset.name")} aria-label={t("pdPreset.name")}
+            onChange={event => setName(event.target.value)}
+            onKeyDown={event => {
+              if (event.key === "Enter") { event.preventDefault(); save(); }
+              if (event.key === "Escape") { event.preventDefault(); setNaming(false); }
+            }} />
+        ) : (
+          <select data-aries-surface="control" aria-label={t("pdPreset.title")}
+            className="h-7 min-w-0 flex-1 rounded border border-border bg-transparent px-2 text-[length:var(--aries-font-size-small)]"
+            value={userPresets?.selectedId ?? ""} disabled={busy || !userPresets}
+            onChange={event => void perform(event.target.value ? { action: "select", id: event.target.value } : { action: "clear" })}>
+            <option value="">{t("pdPreset.title")}</option>
+            {userPresets?.presets.map(preset => <option key={preset.id} value={preset.id}>
+              {preset.name}{preset.id === userPresets.selectedId && userPresets.dirty ? " *" : ""}
+            </option>)}
+          </select>
+        )}
+        <Button type="button" size="sm" variant="outline" className="h-7 gap-1 px-2"
+          disabled={busy || !userPresets || (naming && !name.trim())} onClick={save}>
+          <Save className="h-3.5 w-3.5" aria-hidden="true" />{t("settings.save")}
+        </Button>
+        {naming ? (
+          <Button type="button" size="icon-xs" variant="ghost" disabled={busy}
+            title={t("settings.cancel")} aria-label={t("settings.cancel")} onClick={() => setNaming(false)}>
+            <X className="h-3.5 w-3.5" aria-hidden="true" />
+          </Button>
+        ) : <>
+          <Button type="button" size="icon-xs" variant="ghost" disabled={busy || !userPresets}
+            title={t("pdPreset.saveAs")} aria-label={t("pdPreset.saveAs")} onClick={startNaming}>
+            <CopyPlus className="h-3.5 w-3.5" aria-hidden="true" />
+          </Button>
+          <Button type="button" size="icon-xs" variant="ghost" disabled={busy || !userPresets?.selectedId}
+            title={t("pdPreset.delete")} aria-label={t("pdPreset.delete")}
+            onClick={() => { if (userPresets?.selectedId) void perform({ action: "delete", id: userPresets.selectedId }); }}>
+            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+          </Button>
+        </>}
+      </div>
+      {failed && <p role="alert" className="mt-1 text-[length:var(--aries-font-size-small)] text-destructive">{t("pdPreset.error")}</p>}
     </div>
   );
 }
@@ -900,7 +974,7 @@ export function PrimDirSettingsBody({
   dock?: "right" | "bottom";
   paneDock?: "right" | "bottom";
   onPaneDockChange?: (dock: "right" | "bottom") => void;
-  onPatch: (patch: Patch, optionsPatch?: OptionsPatch) => void;
+  onPatch: (patch: Patch, optionsPatch?: OptionsPatch) => void | Promise<boolean>;
 }) {
   const t = useT();
   const isPlacidianSemiarc = s.primarydir === 0;

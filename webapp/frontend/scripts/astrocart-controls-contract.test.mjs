@@ -400,7 +400,53 @@ test("primary mode composition deduplicates only invariant physical overlays", a
   );
 });
 
-test("retained controls keep independent selections, dynamic actors, and applied-only PDF export", async () => {
+test("Local Space composes with independent paran and timed overlays", async () => {
+  const compose = await loadAstrocartModeCompositor();
+  const standard = astrocartPrimaryPayload("standard");
+  const paran = standard.features.find((feature) => feature.properties.kind === "PARAN");
+  const dynamic = standard.features.find((feature) => feature.properties.astrocart_layer === "transit");
+  const local = {
+    type: "FeatureCollection",
+    features: [astrocartLineFeature("local_space", "ray", "ray", "LOCAL_SPACE")],
+    meta: { mode: "local_space", lineSystem: "local_space" },
+  };
+  const independentOverlay = {
+    type: "FeatureCollection",
+    features: [paran, dynamic],
+    meta: { modes: [], dynamicLayers: [{ id: "a", technique: "transit" }] },
+  };
+  const keys = { standard: "s", local_space: "l" };
+  const cache = new Map([
+    ["standard", { sessionRevision: 1, modeSpecKey: "s", precision: "preview", payload: standard }],
+    ["local_space", { sessionRevision: 1, modeSpecKey: "l", precision: "preview", payload: local }],
+  ]);
+
+  const localOnly = compose(["local_space"], 1, keys, cache, undefined, undefined, independentOverlay);
+  assert.equal(localOnly.complete, true);
+  assert.equal(JSON.stringify(localOnly.payload.meta.modes), '["local_space"]');
+  assert.equal(localOnly.payload.features.filter(
+    (feature) => feature.properties.kind === "PARAN",
+  ).length, 1);
+  assert.equal(localOnly.payload.features.filter(
+    (feature) => feature.properties.astrocart_layer === "transit",
+  ).length, 1);
+  assert.equal(localOnly.payload.features.filter(
+    (feature) => feature.properties.kind === "LOCAL_SPACE",
+  ).length, 1);
+
+  const combined = compose(["standard", "local_space"], 1, keys, cache, undefined, undefined, independentOverlay);
+  assert.equal(combined.complete, true);
+  assert.equal(combined.payload.features.filter(
+    (feature) => feature.properties.kind === "PARAN",
+  ).length, 1);
+  assert.equal(combined.payload.features.filter(
+    (feature) => feature.properties.astrocart_layer === "transit",
+  ).length, standard.features.filter(
+    (feature) => feature.properties.astrocart_layer === "transit",
+  ).length);
+});
+
+test("retained controls keep selected map points, timed layers, and applied-only PDF export", async () => {
   const controls = await source(
     "src/components/workshell/astrocart-controls.tsx",
   );
@@ -427,7 +473,8 @@ test("retained controls keep independent selections, dynamic actors, and applied
   assert.match(controls, /const normalizedDraft = copySpec\(payload\.spec\)/);
   assert.match(controls, /configuration\.dynamicTechniques/);
   assert.match(controls, /type="datetime-local"/);
-  assert.match(controls, /cursorIso: new Date\(\)\.toISOString\(\)/);
+  assert.match(controls, /technique === "transit" \? configuration\.defaultTransitCursorIso : null/);
+  assert.match(controls, /cursorIso: newDynamicCursor\(configuration, technique\)/);
   assert.match(controls, /cursorIso: localDateTimeInstant\(event\.target\.value\)/);
   assert.doesNotMatch(controls, /Sheet(Content|Trigger|Footer)/);
   assert.match(controls, /data-astrocart-controls-pane/);
@@ -439,7 +486,7 @@ test("retained controls keep independent selections, dynamic actors, and applied
     /defaultPdfSelection\(payload\.spec, natalLayerVisible\)/,
   );
   assert.match(controls, /\(\["A4", "A3"\] as const\)/);
-  assert.match(controls, /dirty \|\|[\s\S]*lineModes\.length === 0/);
+  assert.match(controls, /lineModes\.length === 0 && !configuration\.spec\.paran\.enabled/);
   assert.match(controls, /resolveShellHost\(\)/);
   assert.match(controls, /host\.capabilities\.nativeFileDialogs/);
   assert.match(controls, /host\.selectSavePath\(/);
@@ -504,6 +551,31 @@ test("map and inspector parans share the retained configuration writer", async (
   assert.doesNotMatch(workspace, /storeAstrocartConfiguration/);
 });
 
+test("parans remain a natal overlay when natal lines are hidden", async () => {
+  const [map, workspace, controls] = await Promise.all([
+    source("../../Res/astrocart/map.html"),
+    source("src/components/workshell/workspace-content.tsx"),
+    source("src/components/workshell/astrocart-controls.tsx"),
+  ]);
+  assert.match(map, /properties && properties\.kind === 'PARAN'\) return !!options\.parans/);
+  const paranFilter = map.slice(
+    map.indexOf('  function acgParanFilter('),
+    map.indexOf('  function acgZenithFilter('),
+  );
+  assert.match(paranFilter, /\['==', \['get', 'kind'\], 'PARAN'\]/);
+  assert.doesNotMatch(paranFilter, /acgLayerRoleFilter/);
+  assert.match(workspace, /const dynamicVisible = previousOverlays\?\.layers\?\.dynamic \?\? true/);
+  assert.match(workspace, /onDynamicLayerVisibilityChange=\{handleAstrocartDynamicLayerVisibility\}/);
+  const layers = controls.indexOf('<ConfigSection title={t("astrocart.pdf.layers")}');
+  const appearance = controls.indexOf('<ConfigSection title={t("appearance.title")}');
+  const coordinates = controls.indexOf('t("astrocart.config.coordinates")', appearance);
+  const units = controls.indexOf('t("astrocart.ruler.units")', appearance);
+  const mapPoints = controls.indexOf('t("astrocart.config.mapPoints")', appearance);
+  const angular = controls.indexOf('<ConfigSection title={t("astrocart.config.angularLines")}');
+  assert.ok(layers >= 0 && layers < appearance && appearance < coordinates);
+  assert.ok(coordinates < units && units < mapPoints && mapPoints < angular);
+});
+
 test("new angular-line points optimistically join supported paran participants", async () => {
   const controls = await source(
     "src/components/workshell/astrocart-controls.tsx",
@@ -523,7 +595,7 @@ test("new angular-line points optimistically join supported paran participants",
   );
 });
 
-test("new timing layers activate standard capable actors and technique changes retain valid choices", async () => {
+test("timing layers follow the selected map points through creation and technique changes", async () => {
   const controls = await source(
     "src/components/workshell/astrocart-controls.tsx",
   );
@@ -539,18 +611,8 @@ test("new timing layers activate standard capable actors and technique changes r
     actorHelpers,
     /point\.capabilities\[role\]\?\.status === "supported"/,
   );
-  assert.match(
-    actorHelpers,
-    /configuration\.defaultSpec\.staticAngleLinePointIds/,
-  );
-  assert.match(
-    actorHelpers,
-    /const retained = supportedDynamicActorIds\(configuration, technique, currentIds\)/,
-  );
-  assert.match(
-    actorHelpers,
-    /retained\.length > 0[\s\S]*\? retained[\s\S]*: defaultDynamicActorIds\(configuration, technique\)/,
-  );
+  assert.match(actorHelpers, /supportedDynamicActorIds\(configuration, technique, natalPointIds\)/);
+  assert.match(controls, /dynamicLayers: current\.dynamicLayers\.map\(\(layer\) => \(\{/);
 
   const addStart = controls.indexOf(
     'const technique = configuration.dynamicTechniques[0]?.id ?? "transit"',
@@ -567,7 +629,7 @@ test("new timing layers activate standard capable actors and technique changes r
   );
   assert.match(
     controls.slice(editorStart),
-    /movingActorIds: dynamicActorIdsForTechnique\([\s\S]*configuration,[\s\S]*technique,[\s\S]*layer\.movingActorIds,[\s\S]*\)/,
+    /movingActorIds: dynamicActorIdsForTechnique\([\s\S]*configuration,[\s\S]*technique,[\s\S]*natalPointIds,[\s\S]*\)/,
   );
 });
 
@@ -873,7 +935,7 @@ test("astrocart controls use the canonical retained right-pane ontology", async 
     paneLayout,
     /astrocartControlsPane\.documentId === input\.activeAstrocartDocumentId/,
   );
-  assert.match(uiCommands, /state\.astrocartControlsPane !== null/);
+  assert.match(uiCommands, /rightWorkspacePaneIsOpen\(workspace\)/);
 });
 
 test("map labels prefer localized technique, point, paran, and aspect identities", async () => {

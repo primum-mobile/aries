@@ -1,5 +1,9 @@
 export function isAspectListSecondaryRingFilterId(filterId: string): boolean;
 export function defaultAspectListSecondaryRingIncluded(mode: string): boolean;
+export function isAspectListPhaseIncluded(
+  phase: "applying" | "separating" | "exact" | "none",
+  phaseFilter?: "applying" | "separating" | "both",
+): boolean;
 
 export function isAspectListRowIncluded(
   filterIds: readonly string[],

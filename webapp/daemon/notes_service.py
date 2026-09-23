@@ -1,25 +1,11 @@
 # Copyright (C) 2026 Max Lange
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""Per-radix notes — file-backed Markdown, co-located with the chart repository.
+"""Saved chart and event notes in the shared chart-ID Markdown library.
 
-Saved radixes get the same user-visible note file wx uses:
-``<Documents>/Aries/Charts/Notes/<chart name>.md``. The temporary Record-id
-sidecar path from an earlier web migration remains a legacy fallback only:
-when a chart name and record id are both known, legacy ``record-<id>.md`` text
-is moved/merged into the chart-name path so new writes cannot keep splitting
-notes across hash-like filenames. The frontend's NotesPanel auto-saves on a
-debounce.
-
-Path resolution and filename sanitizing are NOT reimplemented here: they come
-from the wx-free :mod:`note_storage` module that the brain also imports, so the
-two surfaces can never diverge onto different files.
-
-Saved radixes write the canonical note path. Unsaved root documents can opt into
-a scratch path keyed by daemon document id; this mirrors the wx rule that
-scratch charts do not overwrite the saved chart note until the chart itself is
-saved. Commit/discard helpers are exposed for the workspace lifecycle once chart
-save/close hooks are wired in.
+Canonical paths are Notes/<chart-id>/index.md and events/<event-id>.md.
+Legacy named/record/event sidecars are copied lazily and retained for recovery.
+Unsaved roots use document-ID scratch notes, promoted on chart save.
 """
 from __future__ import annotations
 
@@ -28,6 +14,9 @@ import shutil
 import sys
 import tempfile
 import uuid
+from functools import lru_cache
+
+from webapp.daemon.research_library import NoteLibrary, NoteConflict
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -35,6 +24,27 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import note_storage  # wx-free; the same module morin.py / morinus.py resolve paths through
+
+
+@lru_cache(maxsize=4)
+def _library_at(root):
+    return NoteLibrary(root)
+
+
+def library():
+    return _library_at(str(note_storage.notes_directory()))
+
+
+def _seed_record_note(radix, record_id, content):
+    target = library()._find(record_id)
+    if target.exists():
+        return False
+    prior = _notes_path(radix)
+    state = library().read(record_id, title=radix)
+    if state['content'] or (prior is not None and prior.exists()) or not str(content).strip():
+        return False
+    library().write(record_id, content, title=radix, expected_revision=state['revision'])
+    return True
 
 
 def _record_token(record_id: str) -> str:
@@ -53,6 +63,14 @@ def _record_notes_path(record_id: str | None) -> Path | None:
 def _notes_path(radix: str) -> Path | None:
     p = note_storage.saved_note_path(radix)
     return Path(p) if p else None
+
+
+def _event_notes_path(event_id: str) -> Path:
+    """Event identity survives chart closing, renaming and reconstruction."""
+    token = _record_token(event_id)
+    if not token:
+        raise ValueError('Invalid event note identity')
+    return Path(note_storage.notes_directory()) / 'events' / f'{token}.md'
 
 
 def _archived_legacy_path(path: Path) -> Path:
@@ -131,7 +149,10 @@ def _target_path(
     record_id: str | None = None,
     document_id: str | None = None,
     scratch: bool = False,
+    event_id: str | None = None,
 ) -> tuple[Path | None, bool]:
+    if event_id:
+        return _event_notes_path(event_id), False
     if scratch and document_id:
         return _scratch_path(radix, document_id), True
     named_path = _notes_path(radix)
@@ -198,10 +219,7 @@ def lift_legacy_record_notes(record: dict) -> dict:
         record_id = str(uuid.uuid4())
         record["id"] = record_id
     if legacy.strip():
-        path = _notes_path(str(record.get("name") or "")) or _record_notes_path(record_id)
-        if path is None:
-            raise OSError("cannot resolve a sidecar note path for imported record")
-        _seed_sidecar_from_legacy(path, legacy)
+        _seed_record_note(str(record.get("name") or ""), record_id, legacy)
     record["notes"] = ""
     return record
 
@@ -213,8 +231,15 @@ def merge_legacy_note_state(
     record_id: str | None = None,
     document_id: str | None = None,
     scratch: bool = False,
+    event_id: str | None = None,
 ) -> bool:
     """Lift embedded chart text into the canonical Markdown target once."""
+    # Derived charts may carry the radix's legacy text. Never seed that into
+    # the separate event note when opening the chart-data editor.
+    if event_id:
+        return False
+    if record_id and not scratch:
+        return _seed_record_note(radix, record_id, content)
     text = str(content or "")
     if not text.strip():
         return False
@@ -235,8 +260,17 @@ def read_note_state(
     record_id: str | None = None,
     document_id: str | None = None,
     scratch: bool = False,
+    event_id: str | None = None,
 ) -> dict:
-    if scratch:
+    if event_id and not record_id:
+        record_id = library().event_chart(event_id)
+    if record_id and not scratch:
+        return library().read(record_id, title=radix, event_id=event_id)
+    if event_id:
+        target_path = _event_notes_path(event_id)
+        candidates = [target_path]
+        is_scratch = False
+    elif scratch:
         p, is_scratch = _target_path(radix, document_id=document_id, scratch=True)
         candidates = [p] if p is not None else []
         target_path = p
@@ -272,8 +306,14 @@ def write_note_state(
     record_id: str | None = None,
     document_id: str | None = None,
     scratch: bool = False,
+    event_id: str | None = None,
+    expected_revision: str | None = None,
 ) -> dict:
-    p, is_scratch = _target_path(radix, record_id=record_id, document_id=document_id, scratch=scratch)
+    if event_id and not record_id:
+        record_id = library().event_chart(event_id)
+    if record_id and not scratch:
+        return library().write(record_id, content, title=radix, event_id=event_id, expected_revision=expected_revision)
+    p, is_scratch = _target_path(radix, record_id=record_id, document_id=document_id, scratch=scratch, event_id=event_id)
     if p is None:
         raise OSError(f"cannot resolve a note file for radix {radix!r}")
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -304,6 +344,16 @@ def discard_scratch_note(radix: str, document_id: str) -> dict:
 
 def commit_scratch_note(radix: str, document_id: str, *, record_id: str | None = None) -> dict:
     scratch_path = _find_scratch_path(radix, document_id)
+    if record_id:
+        state = library().read(record_id, title=radix)
+        if scratch_path is not None and scratch_path.exists():
+            content = scratch_path.read_text(encoding="utf-8")
+            if content.strip() and content != state['content']:
+                merged = state['content'] + "\n\n---\n\n" + content if state['content'] else content
+                library().write(record_id, merged, title=radix, expected_revision=state['revision'])
+            discard_scratch_note(radix, document_id)
+            return {"ok": True, "committed": True, "path": state['path']}
+        return {"ok": True, "committed": False, "path": state['path']}
     final_path = _notes_path(radix) or _record_notes_path(record_id)
     if scratch_path is None or final_path is None or not scratch_path.exists():
         return {"ok": True, "radix": radix, "committed": False, "path": str(final_path) if final_path else ""}

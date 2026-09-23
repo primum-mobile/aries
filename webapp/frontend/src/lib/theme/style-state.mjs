@@ -1,6 +1,16 @@
 // Copyright (C) 2026 Max Lange
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+/** The parser's cached tokens and React's current tokens share one owner. */
+export function replaceThemeTokens(root, tokens) {
+  const previous = JSON.parse(root.dataset.themeTokens || "[]");
+  for (const name of previous) {
+    if (!Object.hasOwn(tokens, name)) root.style.removeProperty(name);
+  }
+  for (const [name, value] of Object.entries(tokens)) root.style.setProperty(name, value);
+  root.dataset.themeTokens = JSON.stringify(Object.keys(tokens));
+}
+
 /** Normalize both current ThemeState and the pre-style-schema cached payload. */
 export function normalizeThemeState(value) {
   if (!value || typeof value !== "object") return null;

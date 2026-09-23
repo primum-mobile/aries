@@ -177,6 +177,18 @@ def progression_angle_method(method):
     return method
 
 
+def technique_angle_method(options, method=SECONDARY):
+    """Resolve the technique default; explicit builder/binding arguments win.
+
+    Missing Solar Arc values are legacy configurations using the shared choice.
+    Options loading materializes that fallback once before either value is edited.
+    """
+    legacy = getattr(options, 'progressed_angle_method', TRUE_SOLAR_ARC_LON)
+    value = (getattr(options, 'solar_arc_angle_method', legacy)
+             if progression_method(method) == SOLAR_ARC else legacy)
+    return progression_angle_method(value)
+
+
 def progression_angle_method_name(method):
     return ANGLE_METHOD_NAMES.get(
         progression_angle_method(method),
@@ -231,6 +243,25 @@ def _revjul_datetime_fields(jd_value, calflag):
     pmi = total_seconds // 60
     ps = total_seconds % 60
     return int(py), int(pm), int(pd), int(ph), int(pmi), int(ps)
+
+
+def _progression_time(jd_value, calendar, place):
+    """Construct computational time without rounding the ephemeris instant.
+
+    Time accepts fractional seconds. Keep them until the presentation boundary;
+    a half-second here represents several minutes on the signified clock.
+    """
+    calflag = astrology.SE_JUL_CAL if calendar == chart.Time.JULIAN else astrology.SE_GREG_CAL
+    year, month, day, hour = astrology.swe_revjul(float(jd_value), calflag)
+    whole_hour = int(hour)
+    minutes = (hour - whole_hour) * 60.0
+    whole_minute = int(minutes)
+    seconds = (minutes - whole_minute) * 60.0
+    return chart.Time(
+        1 - year if year <= 0 else year, month, day,
+        whole_hour, whole_minute, seconds, year <= 0, calendar,
+        chart.Time.GREENWICH, True, 0, 0, False, place, False,
+    )
 
 
 def _offset_body_longitudes(body, arc):
@@ -607,11 +638,7 @@ class ProgressedAngleSampler:
         self.birth_jd = float(radix_chart.time.jd)
         self.natal_houses = radix_chart.houses
         if angle_method is None:
-            angle_method = getattr(
-                options,
-                'progressed_angle_method',
-                TRUE_SOLAR_ARC_LON,
-            )
+            angle_method = technique_angle_method(options, self.method)
         self.angle_method = progression_angle_method(angle_method)
         if solar_arc_angles is None:
             solar_arc_angles = getattr(
@@ -795,7 +822,7 @@ def progressed_angle_state_for_symbolic_age(radix_chart, options, symbolic_age,
     jd_prog = birth_jd + symbolic_age
     age_years = symbolic_age / scale if scale != 0.0 else symbolic_age
     if angle_method is None:
-        angle_method = getattr(options, 'progressed_angle_method', TRUE_SOLAR_ARC_LON)
+        angle_method = technique_angle_method(options, method)
     angle_method = progression_angle_method(angle_method)
     if solar_arc_angles is None:
         solar_arc_angles = getattr(
@@ -877,7 +904,7 @@ def make_progressed_chart_by_symbolic_age(radix_chart, options, symbolic_age,
     calflag = astrology.SE_JUL_CAL if nt.cal == chart.Time.JULIAN else astrology.SE_GREG_CAL
     age_years = symbolic_age / scale if scale != 0.0 else symbolic_age
     if angle_method is None:
-        angle_method = getattr(options, 'progressed_angle_method', TRUE_SOLAR_ARC_LON)
+        angle_method = technique_angle_method(options, method)
     angle_method = progression_angle_method(angle_method)
 
     if method == SOLAR_ARC:
@@ -897,8 +924,7 @@ def make_progressed_chart_by_symbolic_age(radix_chart, options, symbolic_age,
 
     py, pm, pd, ph, pmi, ps = _revjul_datetime_fields(jd_prog, calflag)
 
-    tm_prog = chart.Time(int(py), int(pm), int(pd), ph, pmi, ps, False, nt.cal,
-                         chart.Time.GREENWICH, True, 0, 0, False, radix_chart.place, False)
+    tm_prog = _progression_time(jd_prog, nt.cal, radix_chart.place)
     prg = chart.Chart(radix_chart.name, radix_chart.male, tm_prog, radix_chart.place,
                       chart.Chart.TRANSIT, '', options, False)
 
@@ -977,7 +1003,7 @@ def _make_solar_arc_chart(radix_chart, options, birth_jd, age_years, calflag,
     """Build a solar arc directed chart: uniform angular offset on all natal bodies."""
     angle_method = progression_angle_method(
         angle_method if angle_method is not None
-        else getattr(options, 'progressed_angle_method', TRUE_SOLAR_ARC_LON)
+        else technique_angle_method(options, SOLAR_ARC)
     )
     if solar_arc_angles is None:
         solar_arc_angles = getattr(
@@ -1049,8 +1075,7 @@ def _make_solar_arc_chart(radix_chart, options, birth_jd, age_years, calflag,
     prg.calcAspMatrix()
 
     py, pm, pd, ph, pmi, ps = _revjul_datetime_fields(jd_sec, calflag)
-    prg.time = chart.Time(int(py), int(pm), int(pd), ph, pmi, ps, False, radix_chart.time.cal,
-                          chart.Time.GREENWICH, True, 0, 0, False, radix_chart.place, False)
+    prg.time = _progression_time(jd_sec, radix_chart.time.cal, radix_chart.place)
     prg._progression_method = SOLAR_ARC
     prg._progression_day_type = PROGRESSION_DAY_TYPE_Q2
     prg._progressed_angle_method = angle_method

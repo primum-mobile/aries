@@ -19,6 +19,8 @@ export type ShellRecentChartEntry = {
   label: string;
 };
 
+export type ShellWheelStyleEntry = ShellRecentChartEntry & {checked: boolean};
+
 export type ShellMenuLabelState = {
   id: string;
   label: string;
@@ -120,6 +122,7 @@ export type ShellHost = {
   syncMenuEnablement: (states: ShellMenuEnabledState[]) => Promise<void>;
   syncMenuLabels: (labels: ShellMenuLabelState[]) => Promise<void>;
   syncRecentCharts: (entries: ShellRecentChartEntry[]) => Promise<void>;
+  syncWheelStyles: (entries: ShellWheelStyleEntry[]) => Promise<void>;
 };
 
 type TauriRuntimeWindow = Window & {
@@ -374,6 +377,7 @@ export const browserShellHost: ShellHost = {
   },
   syncMenuLabels: async () => {},
   syncRecentCharts: async () => {},
+  syncWheelStyles: async () => {},
 };
 
 export const tauriShellHost: ShellHost = {
@@ -550,6 +554,10 @@ export const tauriShellHost: ShellHost = {
   syncRecentCharts: async (entries: ShellRecentChartEntry[]) => {
     const { invoke } = await import("@tauri-apps/api/core");
     await invoke("set_recent_charts", { entries });
+  },
+  syncWheelStyles: async (entries: ShellWheelStyleEntry[]) => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("set_wheel_styles", { entries });
   },
 };
 

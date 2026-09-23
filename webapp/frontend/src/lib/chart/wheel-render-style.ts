@@ -1,9 +1,12 @@
+import { WHEEL_FACTORY_SETTINGS, type WheelComposition } from "./wheel-composition";
 // Copyright (C) 2026 Max Lange
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type { DitherRasterPattern } from "../render/dither-pattern";
 import type { ChartPalette } from "./types";
 import {
+  composeWheelBands,
+  reserveWheelSecondarySpace,
   WHEEL_BAND_BOUNDARY_FIELDS,
   WHEEL_BAND_ORDER,
   remapWheelAnchorsToBands,
@@ -34,7 +37,18 @@ export type { WheelRulerId } from "./wheel-layout-model";
 export const WHEEL_RENDER_STYLE_SCHEMA_VERSION = 1 as const;
 
 export type WheelStyleRevision = string | number;
-export type WheelTypographyProfile = "classic" | "compact" | "anglo";
+/**
+ * Wheel layout profiles. `houses` and `cusps` share the Anglo stack with no
+ * zodiac band and are authored independently. They differ only in angular
+ * projection: House Wheel normalizes every house to 30 degrees; Cusp Wheel
+ * preserves the true unequal cusp spans.
+ */
+export type WheelTypographyProfile =
+  | "classic"
+  | "compact"
+  | "anglo"
+  | "houses"
+  | "cusps";
 export type WheelGeometryMode = "single" | "comparison";
 export type WheelRenderPalette = Omit<
   Readonly<ChartPalette>,
@@ -115,6 +129,11 @@ export const WHEEL_RENDER_PALETTE_SPECS: Readonly<WheelRenderPaletteSpecs> = dee
 });
 
 export interface WheelRingSet {
+  readonly rCuspRulerInner?: number;
+  readonly rTermsInner?: number;
+  readonly rDecansInner?: number;
+  readonly rDegreeOuter?: number;
+  readonly rDegreeInner?: number;
   readonly r30: number;
   readonly rOuter0: number;
   readonly rOuter1: number;
@@ -292,10 +311,15 @@ export interface WheelGeometryProfiles {
   readonly classic: ClassicWheelGeometryProfile;
   readonly compact: CompactWheelGeometryProfile;
   readonly anglo: AngloWheelGeometryProfile;
+  /** The House Wheel. Same shape as Anglo; its own numbers. */
+  readonly houses: AngloWheelGeometryProfile;
+  /** The unequal-house Cusp Wheel. Same radial shape; its own numbers. */
+  readonly cusps: AngloWheelGeometryProfile;
   readonly biwheel: BiwheelGeometryProfile;
 }
 
 export interface WheelGeometryInput {
+  readonly composition?: WheelComposition;
   readonly profile: WheelTypographyProfile;
   readonly mode: WheelGeometryMode;
   readonly maxRadius: number;
@@ -305,6 +329,8 @@ export interface WheelGeometryInput {
   readonly showHouses: boolean;
   readonly showPositions: boolean;
   readonly comparisonWithOuterHouses: boolean;
+  /** Actual comparison-house visibility, independent of the legacy radial recipe. */
+  readonly showOuterHouses?: boolean;
   readonly restrainedAngloComparison?: boolean;
   /**
    * The ring the user is editing right now, if any.
@@ -506,6 +532,7 @@ export const WHEEL_AUTHORING_TYPOGRAPHY_CLASSES = [
   "bodies.inner.position.minute",
   "bodies.outer.glyph",
   "bodies.outer.motion",
+  "bodies.outer.position",
   "aspects.primary.glyph",
   "aspects.interchart.glyph",
   "secondaryRing.fixedStar.label",
@@ -691,13 +718,22 @@ export function resolveWheelSecondaryRingClassIds(
   return null;
 }
 
-/** Frame-invariant regions painted on the retained fill canvas. */
+/** Authorable fill regions. Zodiac element fields are the one frame-bound
+ * member and paint with geometry so their sectors follow the live wheel. */
 export const WHEEL_AUTHORING_FILL_CLASSES = [
   "canvas.background",
   "fills.chartField",
+  "fills.glyphField",
   "fills.houseField",
   "fills.centerField",
+  "fills.cuspDegreeBand",
   "fills.zodiacBand",
+  "fills.zodiacElementSlices",
+  "fills.termBand",
+  "fills.decanBand",
+  // Accepted only so saved profile-v2 drafts from the combined-band phase can
+  // be expanded into the two physical subdivision bands by the authoring
+  // adapter. The production renderer never paints this overlapping class.
   "fills.subdivisionBand",
 ] as const;
 
@@ -796,6 +832,10 @@ export type WheelAuthoringFontRef = Readonly<{
 
 export type WheelAuthoringTypographyOverride = Readonly<{
   fontRef?: WheelAuthoringFontRef;
+  /** Independent weight override; the font reference remains the face identity. */
+  fontWeight?: number;
+  /** Independent slant override, combinable with every supported weight. */
+  fontStyle?: "normal" | "italic";
   /** Final font size at the profile-v2 reference radius. */
   fontSizePx?: number;
   /** Final letter spacing at the profile-v2 reference radius. */
@@ -804,8 +844,18 @@ export type WheelAuthoringTypographyOverride = Readonly<{
   opacity?: number;
 }>;
 
+export type WheelArrowStyle = "filled" | "outlined" | "open" | "stealth" | "spear";
+export const WHEEL_ARROW_STYLES: readonly WheelArrowStyle[] = ["filled", "outlined", "open", "stealth", "spear"];
+
+export function resolveWheelArrowStyle(style: WheelRenderStyle,
+  classId: WheelAuthoringLineClass = "angles.inner.arrowhead", fallback: WheelArrowStyle = "filled"): WheelArrowStyle {
+  return style.authoringOverrides.linePaint[style.authoringTargetProfile]?.[classId]?.arrowStyle ?? fallback;
+}
+
 export type WheelAuthoringLinePaintOverride = Readonly<{
   /** Final stroke width at the profile-v2 reference radius, never a multiplier. */
+  arrowSize?: number;
+  arrowStyle?: WheelArrowStyle;
   strokeWidthPx?: number;
   strokeStyle?: WheelAuthoringStrokeStyle;
   dashOnPx?: number;
@@ -872,6 +922,7 @@ export type WheelAuthoringOverrides = Readonly<{
    * undone by returning to `1`, even across gestures.
    */
   wheelScale: Readonly<Partial<Record<WheelTypographyProfile, number>>>;
+  ringWidths?: Readonly<Partial<Record<WheelTypographyProfile, Readonly<Record<string, number>>>>>;
   /**
    * Where a band span's inner edge sits, in reference-space px, per span.
    *
@@ -1124,6 +1175,34 @@ const WHEEL_RING_RADIUS_CSS_VARS: Readonly<
     aspectBoundaryRing: "--aries-wheel-anglo-aspect-boundary-ring-radius",
     houseBoundaryRing: "--aries-wheel-anglo-house-boundary-ring-radius",
     baseRing: "--aries-wheel-anglo-base-ring-radius",
+  },
+  houses: {
+    outerMaximumRing: "--aries-wheel-houses-outer-maximum-ring-radius",
+    outerHouseRing: "--aries-wheel-houses-outer-house-ring-radius",
+    outerDegreeRing: "--aries-wheel-houses-outer-degree-ring-radius",
+    zodiacOuterRing: "--aries-wheel-houses-zodiac-outer-ring-radius",
+    innerDegreeRing: "--aries-wheel-houses-inner-degree-ring-radius",
+    zodiacInnerRing: "--aries-wheel-houses-zodiac-inner-ring-radius",
+    termRing: "--aries-wheel-houses-term-ring-radius",
+    cuspOuterRing: "--aries-wheel-houses-cusp-outer-ring-radius",
+    innerBoundaryRing: "--aries-wheel-houses-inner-boundary-ring-radius",
+    aspectBoundaryRing: "--aries-wheel-houses-aspect-boundary-ring-radius",
+    houseBoundaryRing: "--aries-wheel-houses-house-boundary-ring-radius",
+    baseRing: "--aries-wheel-houses-base-ring-radius",
+  },
+  cusps: {
+    outerMaximumRing: "--aries-wheel-cusps-outer-maximum-ring-radius",
+    outerHouseRing: "--aries-wheel-cusps-outer-house-ring-radius",
+    outerDegreeRing: "--aries-wheel-cusps-outer-degree-ring-radius",
+    zodiacOuterRing: "--aries-wheel-cusps-zodiac-outer-ring-radius",
+    innerDegreeRing: "--aries-wheel-cusps-inner-degree-ring-radius",
+    zodiacInnerRing: "--aries-wheel-cusps-zodiac-inner-ring-radius",
+    termRing: "--aries-wheel-cusps-term-ring-radius",
+    cuspOuterRing: "--aries-wheel-cusps-cusp-outer-ring-radius",
+    innerBoundaryRing: "--aries-wheel-cusps-inner-boundary-ring-radius",
+    aspectBoundaryRing: "--aries-wheel-cusps-aspect-boundary-ring-radius",
+    houseBoundaryRing: "--aries-wheel-cusps-house-boundary-ring-radius",
+    baseRing: "--aries-wheel-cusps-base-ring-radius",
   },
 });
 export type WheelLinePattern = 0 | 1 | 2 | 3;
@@ -1762,6 +1841,7 @@ export interface ResolvedWheelTypographyMetrics {
   readonly interchartAspectGlyphSize: number;
   readonly aspectGlyphOffset: number;
   readonly motionSize: number;
+  readonly outerPositionSize: number;
   readonly outerMotionSize: number;
   readonly outerLabelSize: number;
   readonly outerProjectedGlyphSize: number;
@@ -1907,6 +1987,12 @@ const DEFAULT_PALETTE: ChartPalette = {
   textDim: "rgb(120,121,123)",
   textBright: "rgb(220,220,221)",
   fortune: "rgb(215,215,217)",
+  elements: [
+    "rgb(214,82,60)",
+    "rgb(118,146,74)",
+    "rgb(88,138,214)",
+    "rgb(68,164,172)",
+  ],
   surveilAccent: "rgb(229,146,70)",
   planets: Array.from({ length: 13 }, () => "rgb(205,205,209)"),
   aspects: Array.from({ length: 14 }, () => "rgb(205,205,209)"),
@@ -1962,138 +2048,50 @@ export function resolveWheelElementColors(
   return deepFreeze(colors) as WheelElementColors;
 }
 
-export const CLASSIC_WHEEL_GEOMETRY_PROFILE: ClassicWheelGeometryProfile = deepFreeze({
-  degreeTickLength: 0.01,
-  signSectorLength: 0.15,
-  planetSectorLength: 0.15,
-  termSectorLength: 0.08,
-  decanSectorLength: 0.08,
-  planetLineLength: 0.03,
-  retrogradeOffset: 0.01,
-  arrowLength: 0.04,
-  houseSectorLength: 0.06,
-  outer: {
-    zodiac: 0.83,
-    line: 0.86,
-    projectedLabel: 0.90,
-    projectedLine: 0.86,
-  },
-  inner: {
-    position: 0.48,
-    aspectAngle: 0.43,
-    positionAngle: 0.41,
-    positionHouses: 0.32,
-    base: 0.11,
-    houseName: 0.14,
-  },
-  singlePositionLanes: [
-    { position: 0.48, aspectAngle: 0.43, positionAngle: 0.41, positionHouses: 0.32 },
-    { position: 0.40, aspectAngle: 0.36, positionAngle: 0.34, positionHouses: 0.25 },
-    { position: 0.32, aspectAngle: 0.28, positionAngle: 0.27, positionHouses: 0.21 },
-  ],
-  comparisonPositionLanes: [
-    { position: 0.45, aspectAngle: 0.41, positionAngle: 0.41, positionHouses: 0.32 },
-    { position: 0.37, aspectAngle: 0.32, positionAngle: 0.32, positionHouses: 0.24 },
-    { position: 0.30, aspectAngle: 0.25, positionAngle: 0.25, positionHouses: 0.20 },
-  ],
-});
+// JSON preserves values but cannot express fixed-length tuple types. Factory
+// contracts pin the complete geometry, including the lane tuple lengths.
+const ORIGINAL_WHEEL_GEOMETRY = WHEEL_FACTORY_SETTINGS.geometry as unknown as WheelGeometryProfiles;
 
-export const COMPACT_WHEEL_GEOMETRY_PROFILE: CompactWheelGeometryProfile = deepFreeze({
-  positionLaneSingle: [0.36, 0.30, 0.24],
-  positionLaneComparison: [0.34, 0.26, 0.20],
-  positionInset: 0.15,
-  positionMinuteInsetSingle: 0.05,
-  positionMinuteInsetWithOuter: 0.04,
-  positionMinuteInsetComparison: 0.05,
-  retrogradeInset: 0.05,
-  base: 0.24,
-  houseSector: 0.06,
-  houseName: 0.27,
-  densityOffsetWithPositions: [0, 0.02, 0.08, 0.12],
-  densityOffsetWithoutPositions: [0, 0, 0, 0.05],
-});
+export const CLASSIC_WHEEL_GEOMETRY_PROFILE: ClassicWheelGeometryProfile = ORIGINAL_WHEEL_GEOMETRY.classic;
 
-export const ANGLO_WHEEL_GEOMETRY_PROFILE: AngloWheelGeometryProfile = deepFreeze({
-  zodiacSingle: 0.895,
-  zodiacWithOuter: 0.895,
-  zodiacComparisonWithHouses: 0.8,
-  subdivisionSector: 0.047,
-  signInnerScale: 0.881,
-  rulerBaseScale: 0.058,
-  rulerSubdivisionScale: 0.014,
-  cuspLabelScale: 0.817,
-  innerScale: 0.763,
-  planetScale: 0.695,
-  aspectScale: 0.352,
-  houseScale: 0.44,
-  leaderInsetScale: 0.026,
-  aspectLeaderInsetScale: 0.03,
-  retrogradeInsetScale: 0.036,
-  positionInsetScale: 0.083,
-  anglePositionScale: 0.521,
-  houseCuspTickScale: 0.015,
-  angleRulerTickScale: 0.02,
-  cuspRulerTicks: {
-    short: 0.018,
-    medium: 0.03,
-    long: 0.05,
-  },
-  degreeTickLength: 0.008,
-  noOuterLineOffset: 0.03,
-  arrowInset: 0.035,
-  arrowMaximum: 0.995,
-  outerSingle: {
-    degree0: 0.964,
-    degree1: 0.956,
-    degree5: 0.948,
-    degree10: 0.94,
-    line: 0.93,
-    projectedLabel: 0.95,
-    angle: 0.965,
-    arrow: 0.985,
-  },
-  comparisonNoHouses: {
-    planet: 0.95,
-    angle: 0.965,
-    arrow: 0.985,
-    retrograde: 0.93,
-    minute: 0.94,
-  },
-  comparisonWithHouses: {
-    degree0: 0.925,
-    degree1: 0.917,
-    degree5: 0.909,
-    degree10: 0.901,
-    max: 0.99,
-    house: 0.94,
-    // Venus' golden-section proportion places the number lane between the
-    // outer bodies (0.86) and the restrained cusp endpoint (0.94):
-    // 0.86 + (0.94 - 0.86) / phi ≈ 0.91.
-    houseName: 0.91,
-    planet: 0.86,
-    line: 0.825,
-    projectedLabel: 0.86,
-    retrograde: 0.835,
-  },
-});
+export const COMPACT_WHEEL_GEOMETRY_PROFILE: CompactWheelGeometryProfile = ORIGINAL_WHEEL_GEOMETRY.compact;
 
-export const BIWHEEL_GEOMETRY_PROFILE: BiwheelGeometryProfile = deepFreeze({
-  outerMax: 0.97,
-  outerHouseSector: 0.06,
-  zodiacInset: 0.12,
-  outerPlanetSector: 0.15,
-  outerAngle: 0.92,
-  arrowLength: 0.04,
-  outerLineOffset: 0.03,
-  projectedLabel: 0.90,
-  retrogradeOffset: 0.01,
-  outerMinimum: 0.78,
-});
+export const ANGLO_WHEEL_GEOMETRY_PROFILE: AngloWheelGeometryProfile = ORIGINAL_WHEEL_GEOMETRY.anglo;
+
+/**
+ * The House Wheel.
+ *
+ * A clone of {@link ANGLO_WHEEL_GEOMETRY_PROFILE} with two deliberate
+ * departures, and nothing else changed:
+ *
+ *  - `signInnerScale` is 1, so the zodiac band has no depth. This layout prints
+ *    its zodiac as the position on each cusp and each body, not as a ring.
+ *  - every interior ratio started as its Anglo value times 1.135074 (= 1 / 0.881,
+ *    the depth the band gave up), so the interior expanded into that space with
+ *    Anglo's proportions intact.
+ *
+ * Authored in its own right from here on: editing Anglo does not move it, and
+ * editing it does not move Anglo. `innerBoundary` and `houseBoundary` were
+ * subsequently set by eye on the wheel (UAC light, 2026-09-11) and no longer
+ * match that factor — they are this layout's own proportions now.
+ */
+export const HOUSES_WHEEL_GEOMETRY_PROFILE: AngloWheelGeometryProfile = ORIGINAL_WHEEL_GEOMETRY.houses;
+
+/**
+ * The Cusp Wheel starts with the House Wheel's radial proportions but remains
+ * a separate authoring profile. Its unequal houses come from the identity
+ * angular projection in `draw-chart.ts`, never from different ring arithmetic.
+ */
+export const CUSPS_WHEEL_GEOMETRY_PROFILE: AngloWheelGeometryProfile = ORIGINAL_WHEEL_GEOMETRY.cusps;
+
+export const BIWHEEL_GEOMETRY_PROFILE: BiwheelGeometryProfile = ORIGINAL_WHEEL_GEOMETRY.biwheel;
 
 export const DEFAULT_WHEEL_GEOMETRY_PROFILES: WheelGeometryProfiles = deepFreeze({
   classic: CLASSIC_WHEEL_GEOMETRY_PROFILE,
   compact: COMPACT_WHEEL_GEOMETRY_PROFILE,
   anglo: ANGLO_WHEEL_GEOMETRY_PROFILE,
+  houses: HOUSES_WHEEL_GEOMETRY_PROFILE,
+  cusps: CUSPS_WHEEL_GEOMETRY_PROFILE,
   biwheel: BIWHEEL_GEOMETRY_PROFILE,
 });
 
@@ -2157,11 +2155,40 @@ const PAINTED_RING_FIELD: Readonly<
  * the painted circle shrank without limit, because only `rAsp` is a declared
  * band boundary and so only `rAsp` had a floor.
  */
+/**
+ * Wheel layout enum (`options.theme`) -> typography/geometry profile.
+ *
+ * Themes 2–4 all use the Anglo-family stack. House Wheel and Cusp Wheel remove
+ * the zodiac band and are authored as separate profiles; only their angular
+ * projection differs.
+ */
+/**
+ * All Anglo-family profiles. House Wheel and Cusp Wheel use the no-zodiac cusp
+ * band form; the cases that differ from Anglo use `isCuspBandProfile`.
+ */
+export function isAngloFamilyProfile(profile: WheelTypographyProfile): boolean {
+  return profile === "anglo" || isCuspBandProfile(profile);
+}
+
+export function isCuspBandProfile(profile: WheelTypographyProfile): boolean {
+  return profile === "houses" || profile === "cusps";
+}
+
+export function wheelTypographyProfileForTheme(
+  theme: number | null | undefined,
+): WheelTypographyProfile {
+  if (theme === 4) return "cusps";
+  if (theme === 3) return "houses";
+  if (theme === 2) return "anglo";
+  if (theme === 1) return "compact";
+  return "classic";
+}
+
 export function paintedRingFieldFor(
   role: WheelPaintedRingRole,
   profile: WheelTypographyProfile,
 ): keyof WheelRingSet {
-  if (role === "baseRing" && profile === "anglo") return "rAsp";
+  if (role === "baseRing" && isAngloFamilyProfile(profile)) return "rAsp";
   return PAINTED_RING_FIELD[role];
 }
 
@@ -2171,16 +2198,19 @@ export function activePaintedRingRoles(
   const roles: WheelPaintedRingRole[] = [];
   if (input.comparisonWithOuterHouses) {
     roles.push("outerMaximumRing", "outerHouseRing");
-    if (input.profile === "anglo") roles.push("outerDegreeRing");
+    if (isAngloFamilyProfile(input.profile)) roles.push("outerDegreeRing");
   }
   roles.push("zodiacOuterRing");
-  if (input.profile !== "anglo" && input.hasOuterRing) {
+  if (!isAngloFamilyProfile(input.profile) && input.hasOuterRing) {
     roles.push("outerDegreeRing");
   }
-  if (input.profile !== "anglo") roles.push("innerDegreeRing");
-  if (input.showTerms || input.showDecans) roles.push("zodiacInnerRing");
-  if (input.showTerms) roles.push("termRing");
-  if (input.profile === "anglo") roles.push("cuspOuterRing");
+  if (!isAngloFamilyProfile(input.profile)) roles.push("innerDegreeRing");
+  // The cusp-band wheels have no zodiac band, so their sub-bands cannot paint.
+  if (!isCuspBandProfile(input.profile) && (input.showTerms || input.showDecans)) {
+    roles.push("zodiacInnerRing");
+  }
+  if (!isCuspBandProfile(input.profile) && input.showTerms) roles.push("termRing");
+  if (isAngloFamilyProfile(input.profile)) roles.push("cuspOuterRing");
   roles.push("innerBoundaryRing");
   if (input.profile === "classic") roles.push("aspectBoundaryRing");
   if (input.showHouses) roles.push("houseBoundaryRing");
@@ -2235,7 +2265,7 @@ const DEFAULT_WHEEL_FILL_PAINT: ResolvedWheelFillPaint = deepFreeze({
   seed: 0,
 });
 
-/** Resolve one retained fill class into safe runtime chart pixels. */
+/** Resolve one fill class into safe runtime chart pixels. */
 export function resolveWheelFillPaint(
   style: WheelRenderStyle,
   profile: WheelTypographyProfile,
@@ -2334,7 +2364,14 @@ export function resolveWheelFillPaint(
       Math.min(64, Math.max(0, sourceShadowBlur)),
       targetWheelRadius,
     ),
-    opacity: Math.min(1, Math.max(0, source?.opacity ?? DEFAULT_WHEEL_FILL_PAINT.opacity)),
+    opacity: Math.min(1, Math.max(
+      0,
+      source?.opacity ?? (
+        classId === "fills.zodiacElementSlices"
+          ? 1
+          : DEFAULT_WHEEL_FILL_PAINT.opacity
+      ),
+    )),
     density: Math.min(100, Math.max(0, source?.density ?? DEFAULT_WHEEL_FILL_PAINT.density)),
     angle: Math.min(180, Math.max(-180, source?.angle ?? DEFAULT_WHEEL_FILL_PAINT.angle)),
     seed: Math.min(
@@ -2567,7 +2604,7 @@ function planWheelBoundaries(
   const cuspLabelOuter = rings.rCuspLabelOuter;
   const cuspOuterPin = pinByField.get("rCuspOuter");
   if (
-    input.profile === "anglo"
+    isAngloFamilyProfile(input.profile)
     && cuspOuterPin !== undefined
     && !pinByField.has("rCuspLabelOuter")
     && typeof cuspLabelOuter === "number"
@@ -2785,8 +2822,11 @@ function applyPaintedRingRadiusOverrides(
   // to be re-derived here, or a moved band leaves its own ruler behind outside
   // it. The clamp keeps a ruler inside the band even when pins squeeze the band
   // thinner than the ruler's natural depth.
-  if (input.profile !== "anglo") rings.rOuter0 = rings.r30;
-  if (boundariesMoved) {
+  if (!isAngloFamilyProfile(input.profile)) rings.rOuter0 = rings.r30;
+  // Cusp-band wheels paint no degree ruler at all — there is no zodiac band for
+  // one to stand in — so a moved boundary must not re-derive one back into
+  // existence.
+  if (boundariesMoved && !isCuspBandProfile(input.profile)) {
     // A degree ruler is a tick of an authored *length* standing on its base
     // circle, not a ring that happens to sit at some radius. So its terminal is
     // re-derived as base plus length whenever the base moves, and only an
@@ -2796,10 +2836,10 @@ function applyPaintedRingRadiusOverrides(
     // also a painted ring, so the solver placed it as an independent boundary
     // and the ticks were then drawn as thirds between two independently moving
     // ends. Widening the sign band elongated every tick with it.
-    const tickDepth = (input.profile === "anglo"
+    const tickDepth = (isAngloFamilyProfile(input.profile)
       ? style.geometry.anglo.degreeTickLength
       : style.geometry.classic.degreeTickLength) * input.maxRadius * 3;
-    const hasOuterDegreeRing = input.profile === "anglo"
+    const hasOuterDegreeRing = isAngloFamilyProfile(input.profile)
       ? input.mode === "comparison" || input.hasOuterRing
       : input.hasOuterRing;
     if (!hasOuterDegreeRing) {
@@ -2815,7 +2855,7 @@ function applyPaintedRingRadiusOverrides(
     // Anglo's outer ruler stands on the outer ring, inside the margin rather
     // than inside the zodiac band, so the margin is the band it takes a share
     // of. It is the only degree ruler anglo draws.
-    const outerHost = input.profile === "anglo" && hasOuterDegreeRing
+    const outerHost = isAngloFamilyProfile(input.profile) && hasOuterDegreeRing
       ? input.maxRadius - rings.r30
       : zodiacBand;
     // Clamped so a squeezed band cannot push a ruler out through its own band.
@@ -2853,7 +2893,18 @@ function applyPaintedRingRadiusOverrides(
   rings.rTerms = rings.r0;
   // Anglo's base ring is the aspect circle; keep the alias exact so nothing
   // anchored to one drifts from the other.
-  if (input.profile === "anglo") rings.rBase = rings.rAsp;
+  if (isAngloFamilyProfile(input.profile)) rings.rBase = rings.rAsp;
+
+  // A cusp-band wheel's cusp run is the only zodiac it paints. Seat it at the
+  // midpoint of the two circles the user actually sees around that band. This
+  // is intentionally derived after boundary solving: dragging either circle
+  // in the native editor must move the run to the new visual centre instead of
+  // preserving the Anglo ruler layout's slightly inward canonical ratio.
+  if (isCuspBandProfile(input.profile)) {
+    const cuspRunRadius = (rings.r30 + rings.rInner) / 2;
+    rings.rCuspLabel = cuspRunRadius;
+    rings.rPosHouses = cuspRunRadius;
+  }
 
   return Object.freeze(rings);
 }
@@ -2863,11 +2914,22 @@ export function resolveWheelRingSet(
   style: WheelRenderStyle,
   input: WheelGeometryInput,
 ): Readonly<WheelRingSet> {
-  return applyPaintedRingRadiusOverrides(
-    style,
-    input,
-    resolveCanonicalWheelRingSet(style, input),
-  );
+  const canonical = resolveCanonicalWheelRingSet(style, input);
+  const legacy = applyPaintedRingRadiusOverrides(style, input, canonical);
+  if (!input.hasOuterRing && input.mode !== "comparison") return composeWheelBands(style, input, legacy);
+  const typography = resolveWheelTypographyMetrics(style, input.profile, input.maxRadius);
+  const glyphSize = input.mode === "comparison"
+    ? input.restrainedAngloComparison
+      ? Math.max(typography.bodySize, typography.outerSize)
+      : typography.outerSize
+    : typography.outerProjectedGlyphSize;
+  // The inward corner of an upright square glyph is furthest from its anchor
+  // on a diagonal. Reserve that corner, not only half the font height.
+  const clearance = glyphSize / Math.SQRT2
+    + Math.round(typography.outerLayoutUnit * style.labels.outerOutsidePadScale);
+  const reserved = reserveWheelSecondarySpace(style, input, canonical, legacy, clearance);
+  return reserveWheelSecondarySpace(style, input, canonical,
+    composeWheelBands(style, input, reserved), clearance);
 }
 
 /** Exact painted-circle radius used by paint, hit testing, and the inspector. */
@@ -2881,31 +2943,89 @@ export function resolveWheelPaintedRingRadius(
   return typeof radius === "number" ? radius : 0;
 }
 
+// The House Wheel has no zodiac band, so its interior occupies that depth too.
+// Every `houses` number below is its Anglo counterpart times this factor, which
+// is what keeps the two layouts visually identical apart from the missing band.
+/**
+ * The House Wheel's type scale against the shared base unit.
+ *
+ * Its interior occupies the zodiac band's depth as well, so its type grows with
+ * it. The value started as that geometric factor (1 / 0.881) and was then set
+ * on the wheel: a 28 px body glyph against the 25 px base unit. One constant
+ * scales every type group in this layout, so nothing drifts against anything
+ * else.
+ */
+const HOUSES_TYPE_SCALE = 28 / 25;
+
+/**
+ * Nominal sign-glyph size of the House Wheel's cusp run, in reference-wheel px.
+ *
+ * The cusp run is this layout's ONLY zodiac — it is where the signs are read,
+ * not a caption on a ring that already shows them — so it is sized deliberately
+ * from the sign glyph rather than inherited from the body unit. Degree and
+ * minute follow at their authored proportions to it, so the run stays one
+ * typographic object.
+ */
+const HOUSES_CUSP_SIGN_NOMINAL_PX = 20;
+
+/**
+ * Degree and minute as a share of that sign glyph.
+ *
+ * They are NOT tied to the glyph by the body-text proportions the other
+ * layouts use: at a deliberately large sign glyph those proportions produce
+ * numerals that shout over the symbol they belong to. The sign is the thing
+ * being read here; the numbers qualify it.
+ */
+const HOUSES_CUSP_DEGREE_SHARE = 0.65;
+const HOUSES_CUSP_MINUTE_SHARE = 0.52;
+
 const PROFILE_BODY = 1 / 16;
+/**
+ * Multiplier on the base layout unit. The House Wheel's interior occupies the
+ * zodiac band's depth as well, so its type has to grow with it or every glyph
+ * sits smaller against its ring than the same glyph does on Anglo.
+ */
+const PROFILE_BODY_SCALE = deepFreeze({
+  classic: 1,
+  compact: 1,
+  anglo: 1,
+  houses: HOUSES_TYPE_SCALE,
+  cusps: HOUSES_TYPE_SCALE,
+});
 const PROFILE_OUTER = deepFreeze({
   classic: 1 / 16,
   compact: 1 / 16,
   anglo: 1 / 20,
+  houses: (1 / 20) * HOUSES_TYPE_SCALE,
+  cusps: (1 / 20) * HOUSES_TYPE_SCALE,
 });
 const PROFILE_SIGN = deepFreeze({
   classic: 1 / 20,
   compact: 1 / 20,
   anglo: 1 / 25,
+  houses: (1 / 25) * HOUSES_TYPE_SCALE,
+  cusps: (1 / 25) * HOUSES_TYPE_SCALE,
 });
 const PROFILE_MOTION_SCALE = deepFreeze({
   classic: 1,
   compact: 2,
   anglo: 1,
+  houses: 1,
+  cusps: 1,
 });
 const PROFILE_OUTER_MOTION_SCALE = deepFreeze({
   classic: 4 / 3,
   compact: 1,
   anglo: 1,
+  houses: 1,
+  cusps: 1,
 });
 const PROFILE_SUBDIVISION = deepFreeze({
   classic: 1 / 24,
   compact: 1 / 24,
   anglo: 1 / 32,
+  houses: (1 / 32) * HOUSES_TYPE_SCALE,
+  cusps: (1 / 32) * HOUSES_TYPE_SCALE,
 });
 
 const DEFAULT_RATIOS: WheelTypographyRatios = deepFreeze({
@@ -3024,7 +3144,7 @@ export const DEFAULT_WHEEL_LINE_PAINT: WheelLinePaintStyle = deepFreeze(
 
 const EMPTY_WHEEL_RING_RADIUS_OVERRIDES: WheelRingRadiusOverrides = deepFreeze(
   Object.fromEntries(
-    (["classic", "compact", "anglo"] as const).map((profile) => [
+    (["classic", "compact", "anglo", "houses", "cusps"] as const).map((profile) => [
       profile,
       Object.fromEntries(WHEEL_PAINTED_RING_ROLES.map((role) => [role, 0])),
     ]),
@@ -3215,7 +3335,7 @@ function wheelRingRadiusTokenSpecs(): Readonly<
     WheelRingRadiusTokenKey,
     readonly [cssVar: string, fallback: number]
   >;
-  for (const profile of ["classic", "compact", "anglo"] as const) {
+  for (const profile of ["classic", "compact", "anglo", "houses", "cusps"] as const) {
     for (const role of WHEEL_PAINTED_RING_ROLES) {
       specs[wheelRingRadiusTokenKey(profile, role)] = [
         WHEEL_RING_RADIUS_CSS_VARS[profile][role],
@@ -4110,7 +4230,7 @@ export const WHEEL_RENDER_TOKEN_RANGES: ReadonlyMap<
       [wheelLinePaintTokenKey(role, "Opacity"), [0, 1]],
     ],
   ),
-  ...(["classic", "compact", "anglo"] as const).flatMap(
+  ...(["classic", "compact", "anglo", "houses", "cusps"] as const).flatMap(
     (profile): Array<readonly [keyof WheelRenderTokens, readonly [number, number]]> =>
       WHEEL_PAINTED_RING_ROLES.map((role) => [
         wheelRingRadiusTokenKey(profile, role),
@@ -4200,7 +4320,7 @@ const BIWHEEL_GEOMETRY_TOKEN_KEYS = [
 ] as const satisfies readonly (keyof WheelRenderTokens)[];
 
 const WHEEL_RING_RADIUS_TOKEN_KEYS = (
-  ["classic", "compact", "anglo"] as const
+  ["classic", "compact", "anglo", "houses", "cusps"] as const
 ).flatMap((profile) =>
   WHEEL_PAINTED_RING_ROLES.map((role) => wheelRingRadiusTokenKey(profile, role)),
 );
@@ -4595,7 +4715,7 @@ function ringRadiusOverridesFromTokens(
   tokens: Readonly<WheelRenderTokens>,
 ): WheelRingRadiusOverrides {
   return Object.fromEntries(
-    (["classic", "compact", "anglo"] as const).map((profile) => [
+    (["classic", "compact", "anglo", "houses", "cusps"] as const).map((profile) => [
       profile,
       Object.fromEntries(
         WHEEL_PAINTED_RING_ROLES.map((role) => [
@@ -4705,6 +4825,12 @@ export function createTokenizedWheelRenderStyle({
       houseSector: tokens.compactHouseSector,
       houseName: tokens.compactHouseName,
     },
+    houses: {
+      ...baseGeometry.houses,
+    },
+    cusps: {
+      ...baseGeometry.cusps,
+    },
     anglo: {
       ...baseGeometry.anglo,
       zodiacSingle: tokens.angloZodiacSingle,
@@ -4750,16 +4876,22 @@ export function createTokenizedWheelRenderStyle({
       classic: tokens.classicOuterScale,
       compact: tokens.compactOuterScale,
       anglo: tokens.angloOuterScale,
+      houses: tokens.angloOuterScale * HOUSES_TYPE_SCALE,
+      cusps: tokens.angloOuterScale * HOUSES_TYPE_SCALE,
     },
     sign: {
       classic: tokens.classicSignScale,
       compact: tokens.compactSignScale,
       anglo: tokens.angloSignScale,
+      houses: tokens.angloSignScale * HOUSES_TYPE_SCALE,
+      cusps: tokens.angloSignScale * HOUSES_TYPE_SCALE,
     },
     subdivision: {
       classic: tokens.classicSubdivisionScale,
       compact: tokens.compactSubdivisionScale,
       anglo: tokens.angloSubdivisionScale,
+      houses: tokens.angloSubdivisionScale * HOUSES_TYPE_SCALE,
+      cusps: tokens.angloSubdivisionScale * HOUSES_TYPE_SCALE,
     },
     termGlyphScale: tokens.termGlyphScale,
     decanGlyphScale: tokens.decanGlyphScale,
@@ -4938,6 +5070,12 @@ export function resolveWheelRenderStyle(source: WheelRenderStyleSource): WheelRe
   });
 }
 
+/** Rendered px per reference px, the scale authored values are stored against. */
+function renderedPerReferencePx(style: WheelRenderStyle, maxRadius: number): number {
+  const reference = safeAuthoringReferenceRadius(style);
+  return reference > 0 ? maxRadius / reference : 1;
+}
+
 export function resolveWheelTypographyMetrics(
   style: WheelRenderStyle,
   profile: WheelTypographyProfile,
@@ -4947,7 +5085,25 @@ export function resolveWheelTypographyMetrics(
   // Division by the ratio's denominator preserves the exact floating-point
   // path used by the established renderer (`maxRadius / 16`, `/ 20`, etc.).
   const scaled = (ratio: number) => maxRadius / (1 / ratio);
-  const layoutUnit = scaled(PROFILE_BODY);
+  const layoutUnit = scaled(PROFILE_BODY) * PROFILE_BODY_SCALE[profile];
+  // The House Wheel anchors its cusp run on the sign glyph at a nominal size,
+  // with degree and minute set as shares of it. Every other layout keeps sizing
+  // the whole run off the shared body unit.
+  const cuspSignPx = renderedPerReferencePx(style, maxRadius) * HOUSES_CUSP_SIGN_NOMINAL_PX;
+  const cuspRun = isCuspBandProfile(profile)
+    ? {
+        degree: cuspSignPx * HOUSES_CUSP_DEGREE_SHARE,
+        sign: cuspSignPx,
+        minute: cuspSignPx * HOUSES_CUSP_MINUTE_SHARE,
+        gap: cuspSignPx
+          * (ratios.angloHousePosition.gapScale / ratios.angloHousePosition.signScale),
+      }
+    : {
+        degree: layoutUnit * ratios.angloHousePosition.degreeScale,
+        sign: layoutUnit * ratios.angloHousePosition.signScale,
+        minute: layoutUnit * ratios.angloHousePosition.minuteScale,
+        gap: layoutUnit * ratios.angloHousePosition.gapScale,
+      };
   const outerLayoutUnit = scaled(PROFILE_OUTER[profile]);
   const bodyPosition = ratios.bodyPosition;
   const anglePosition = ratios.anglePosition;
@@ -5022,7 +5178,10 @@ export function resolveWheelTypographyMetrics(
   return Object.freeze({
     layoutUnit,
     outerLayoutUnit,
-    bodySize: direct("bodies.inner.glyph", scaled(ratios.body)),
+    bodySize: direct(
+      "bodies.inner.glyph",
+      scaled(ratios.body) * PROFILE_BODY_SCALE[profile],
+    ),
     outerSize: direct("bodies.outer.glyph", scaled(ratios.outer[profile])),
     signSize: direct("zodiac.signGlyph", scaled(ratios.sign[profile])),
     subdivisionSize,
@@ -5113,19 +5272,10 @@ export function resolveWheelTypographyMetrics(
       gap: layoutUnit * angloAnglePosition.gapScale,
     }),
     angloHousePosition: Object.freeze({
-      degreeSize: direct(
-        "houses.inner.position.degree",
-        layoutUnit * angloHousePosition.degreeScale,
-      ),
-      signSize: direct(
-        "houses.inner.position.sign",
-        layoutUnit * angloHousePosition.signScale,
-      ),
-      minuteSize: direct(
-        "houses.inner.position.minute",
-        layoutUnit * angloHousePosition.minuteScale,
-      ),
-      gap: layoutUnit * angloHousePosition.gapScale,
+      degreeSize: direct("houses.inner.position.degree", cuspRun.degree),
+      signSize: direct("houses.inner.position.sign", cuspRun.sign),
+      minuteSize: direct("houses.inner.position.minute", cuspRun.minute),
+      gap: cuspRun.gap,
     }),
     aspectGlyphSize: direct("aspects.primary.glyph", layoutUnit * ratios.aspectGlyphScale),
     interchartAspectGlyphSize: direct(
@@ -5137,6 +5287,8 @@ export function resolveWheelTypographyMetrics(
       "bodies.inner.motion",
       layoutUnit * ratios.motionScale * PROFILE_MOTION_SCALE[profile],
     ),
+    // Two compact rows beside the outer glyph, readable within its radial lane.
+    outerPositionSize: direct("bodies.outer.position", outerLayoutUnit * 0.5),
     outerMotionSize: direct("bodies.outer.motion", outerMotionSize),
     outerLabelSize,
     outerProjectedGlyphSize,
@@ -5185,7 +5337,7 @@ export function resolveWheelTypographyPaint(
   const direct = style.authoringOverrides.typography[profile]?.[classId];
   const sourceTracking = direct?.trackingPx;
   const sourceOpacity = direct?.opacity;
-  const sourceWeight = direct?.fontRef?.weight;
+  const sourceWeight = direct?.fontWeight ?? direct?.fontRef?.weight;
   return Object.freeze({
     font: direct?.fontRef?.cssFamily?.trim() || defaults.font,
     size: resolveWheelAuthoringTypographyPx(
@@ -5199,7 +5351,11 @@ export function resolveWheelTypographyPaint(
       sourceWeight !== undefined && Number.isFinite(sourceWeight)
         ? Math.min(1000, Math.max(1, sourceWeight))
         : defaults.weight ?? 400,
-    style: direct?.fontRef?.style?.trim() || defaults.style || "normal",
+    style:
+      direct?.fontStyle
+      ?? direct?.fontRef?.style?.trim()
+      ?? defaults.style
+      ?? "normal",
     tracking:
       sourceTracking !== undefined && Number.isFinite(sourceTracking)
         ? resolveWheelAuthoringPx(
@@ -5332,7 +5488,11 @@ export function resolveWheelLinePaint(
     dash,
     ...((direct?.color?.trim() || defaults.color?.trim())
       ? {
-          fill: direct?.color?.trim() || defaults.color?.trim(),
+          // Canvas lines use `fill` for their stroke; circles use it for
+          // their interior. Ring colors must only reach the outline.
+          ...((WHEEL_PAINTED_RING_ROLES as readonly WheelLinePaintRole[]).includes(role)
+            ? {}
+            : { fill: direct?.color?.trim() || defaults.color?.trim() }),
           outline: direct?.color?.trim() || defaults.color?.trim(),
         }
       : {}),
@@ -5340,4 +5500,45 @@ export function resolveWheelLinePaint(
     lineCap,
     lineJoin: direct?.lineJoin ?? defaults.lineJoin,
   });
+}
+
+/** Arrow shape scale, independent of stroke width and wheel projection. */
+export function resolveWheelArrowSize(style: WheelRenderStyle, classId: WheelAuthoringLineClass = "angles.inner.arrowhead"): number {
+  const value = style.authoringOverrides.linePaint[style.authoringTargetProfile]?.[classId]?.arrowSize;
+  return value != null && Number.isFinite(value) ? Math.min(800, Math.max(25, value)) / 100 : 1;
+}
+
+/** Screen-space arrow dimensions. The size control multiplies the automatic
+ * shaft-width fit; resizing the wheel or its projection cannot skew the head. */
+export function resolveWheelArrowGeometry(
+  style: WheelRenderStyle, baseRadius: number, apexRadius: number,
+  halfAngleDegrees: number, shaftWidth: number,
+  classId: WheelAuthoringLineClass = "angles.inner.arrowhead",
+  shaftCap: CanvasLineCap = "butt",
+  fallback: WheelArrowStyle = "outlined",
+  scaleWithShaft = true,
+) {
+  const arrowStyle = resolveWheelArrowStyle(style, classId, fallback);
+  const halfAngle = halfAngleDegrees * Math.PI / 180;
+  const base = baseRadius * Math.cos(halfAngle);
+  const halfWidth = Math.abs(baseRadius * Math.sin(halfAngle)) * (arrowStyle === "spear" ? 0.65 : 1);
+  const depth = Math.abs(apexRadius - base) * (arrowStyle === "spear" ? 1.3 : 1);
+  const direction = apexRadius >= base ? 1 : -1;
+  // Morinus Classic/Compact use a fixed triangle, independently of ascmcSize.
+  const automatic = scaleWithShaft ? Math.max(1, shaftWidth * 1.5 / Math.max(halfWidth, 0.001),
+    shaftWidth * 2 / Math.max(depth, 0.001)) : 1;
+  const size = automatic * resolveWheelArrowSize(style, classId);
+  const resolvedBase = apexRadius - direction * depth * size;
+  const notchRadius = resolvedBase + direction * depth * size * 0.28;
+  // A shared edge rasterized in two paints can leave an antialiased seam.
+  // Bury the join inside the triangle, bounded by its taper so the shaft
+  // corners cannot protrude through the sides or approach the tip.
+  const insideDepth = Math.max(0, depth * size * (1 - shaftWidth / Math.max(2 * halfWidth * size, 0.001)));
+  const joinOverlap = Math.min(shaftWidth / 2, insideDepth / 2);
+  return {
+    arrowStyle, notchRadius, apexRadius, baseRadius: resolvedBase, halfWidth: halfWidth * size,
+    shaftRadius: arrowStyle === "open" ? apexRadius - direction * shaftWidth / 2
+      : (arrowStyle === "stealth" ? notchRadius : resolvedBase)
+        + direction * (joinOverlap - (shaftCap === "butt" ? 0 : shaftWidth / 2)),
+  };
 }

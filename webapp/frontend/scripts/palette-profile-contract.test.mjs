@@ -139,6 +139,28 @@ test("retained dignity and point colors receive the active profile layer", () =>
   assert.deepEqual(original.options.signColors, ["old-sign"]);
 });
 
+test("profile color mode replaces stale retained snapshot mode", () => {
+  const midnightTheme = {
+    ...theme,
+    profileOverrides: {
+      ...theme.profileOverrides,
+      chartData: {
+        ...theme.profileOverrides.chartData,
+        usePlanetColors: false,
+      },
+    },
+  };
+  const resolved = applyProfileColorsToSnapshot(
+    { primaryChart: chart({ individual: true }) },
+    midnightTheme,
+  );
+
+  assert.equal(resolved.primaryChart.options.useDignityColors, false);
+  assert.equal(resolved.primaryChart.planets[0].color, "profile-domicile");
+  assert.equal(resolved.primaryChart.planets[1].color, "profile-peregrin");
+  assert.equal(resolved.primaryChart.fortune.color, "profile-peregrin");
+});
+
 test("without an active profile layer the retained snapshot identity is preserved", () => {
   const snapshot = { primaryChart: chart() };
   assert.strictEqual(

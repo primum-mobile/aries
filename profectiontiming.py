@@ -6,6 +6,7 @@ import datetime
 import astrology
 import chart
 import geonames
+import lordofyear
 import revolutions
 import util
 
@@ -52,6 +53,12 @@ def _datetime_to_jd(radix, dt):
 	return astrology.swe_julday(int(dt.year), int(dt.month), int(dt.day), ut, calflag)
 
 
+def _solar_return_year(radix, local_dt):
+	"""Cycle index, not the civil year in which a return happens to fall."""
+	jd = lordofyear._tuple_to_jd(*local_dt.timetuple()[:6], radix)
+	return int(radix.time.year) + lordofyear._completed_solar_years(radix, jd)
+
+
 def _normalize_ymdhms(y, m, d, hh, mi, ss):
 	y = int(y)
 	m = int(m)
@@ -75,6 +82,16 @@ def _normalize_ymdhms(y, m, d, hh, mi, ss):
 def solar_return_datetime_for_year(radix, year_value):
 	if radix is None:
 		return None
+	if int(year_value) == int(radix.time.year):
+		# The zeroth return is birth itself; solving it again can truncate
+		# the result to the previous second and put age zero before birth.
+		t = radix.time
+		return datetime.datetime(
+			int(getattr(t, 'origyear', t.year)),
+			int(getattr(t, 'origmonth', t.month)),
+			int(getattr(t, 'origday', t.day)),
+			int(t.hour), int(t.minute), int(t.second),
+		)
 	rev = revolutions.Revolutions()
 	ok = rev.compute(
 		revolutions.Revolutions.SOLAR,
@@ -104,17 +121,7 @@ def solar_return_datetime_for_year(radix, year_value):
 def completed_solar_return_datetime(radix, source_dt):
 	if radix is None or source_dt is None:
 		return None
-	birth_year = int(getattr(radix.time, 'year', source_dt.year))
-	target_year = max(int(source_dt.year), birth_year)
-	source_jd = _datetime_to_jd(radix, source_dt)
-	sr = solar_return_datetime_for_year(radix, target_year)
-	if sr is None:
-		return None
-	sr_jd = _datetime_to_jd(radix, sr)
-	if source_jd is not None and sr_jd is not None and source_jd < sr_jd and target_year > birth_year:
-		target_year -= 1
-		sr = solar_return_datetime_for_year(radix, target_year)
-	return sr
+	return solar_return_datetime_for_year(radix, _solar_return_year(radix, source_dt))
 
 
 def adjacent_solar_return_datetime(radix, source_dt, direction):
@@ -131,10 +138,10 @@ def adjacent_solar_return_datetime(radix, source_dt, direction):
 	if direction > 0:
 		if source_jd is not None and completed_jd is not None and source_jd < completed_jd:
 			return completed
-		return solar_return_datetime_for_year(radix, int(completed.year) + 1)
+		return solar_return_datetime_for_year(radix, _solar_return_year(radix, completed) + 1)
 	if source_jd is not None and completed_jd is not None and source_jd > completed_jd:
 		return completed
-	prev_year = int(completed.year) - 1
+	prev_year = _solar_return_year(radix, completed) - 1
 	if prev_year < birth_year:
 		return None
 	return solar_return_datetime_for_year(radix, prev_year)
@@ -146,7 +153,7 @@ def solar_year_fraction(radix, source_dt):
 	start = completed_solar_return_datetime(radix, source_dt)
 	if start is None:
 		return None
-	end = solar_return_datetime_for_year(radix, int(start.year) + 1)
+	end = solar_return_datetime_for_year(radix, _solar_return_year(radix, start) + 1)
 	if end is None:
 		return None
 	jd_start = _datetime_to_jd(radix, start)
@@ -174,7 +181,7 @@ def adjacent_monthly_profection_datetime(radix, source_dt, direction):
 	start = completed_solar_return_datetime(radix, source_dt)
 	if start is None:
 		return None
-	end = solar_return_datetime_for_year(radix, int(start.year) + 1)
+	end = solar_return_datetime_for_year(radix, _solar_return_year(radix, start) + 1)
 	if end is None:
 		return None
 	jd_start = _datetime_to_jd(radix, start)
@@ -186,7 +193,7 @@ def adjacent_monthly_profection_datetime(radix, source_dt, direction):
 	if span <= 0.0:
 		return None
 	boundary_tolerance = max(1e-9, 1.0 / max(span * 86400.0, 1.0))
-	start_year = int(start.year)
+	start_year = _solar_return_year(radix, start)
 	boundaries = []
 	for idx in range(13):
 		boundary_dt = datetime_for_fraction_in_solar_year(radix, start_year, float(idx) / 12.0)

@@ -8,6 +8,7 @@
 // the declared containment structure (band order, tiling, anchor spans) must
 // actually hold. See doc/ui-specs/style-editor-relational-geometry-research.md.
 
+import { compositionModuleUrl } from "./wheel-composition-test-loader.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -21,7 +22,7 @@ async function transpile(url) {
       module: ts.ModuleKind.ESNext,
       target: ts.ScriptTarget.ES2022,
     },
-  }).outputText;
+  }).outputText.replaceAll('"./wheel-composition"', `"${compositionModuleUrl}"`).replaceAll('"../chart/wheel-composition"', `"${compositionModuleUrl}"`);
 }
 
 function dataUrl(source) {
@@ -57,6 +58,9 @@ const {
 // --- state matrix ----------------------------------------------------------
 
 const PROFILES = ["classic", "compact", "anglo"];
+// Every profile a layout can resolve, including the House Wheel, which the
+// override fixtures must cover even though the golden baseline predates it.
+const ALL_PROFILES = [...PROFILES, "houses", "cusps"];
 const MODES = ["single", "comparison"];
 const BOOLS = [false, true];
 const MAX_RADII = [180, 400, 733.5];
@@ -87,6 +91,24 @@ function* stateMatrix() {
                     }
 }
 
+/**
+ * Every state the structural contracts must hold for, including the house
+ * wheel. Kept out of `stateMatrix` because the golden baseline below is a
+ * frozen record of the layouts that existed when it was taken; the house wheel
+ * is new geometry and would simply invalidate the hash it exists to protect.
+ */
+function* allLayoutStates() {
+  for (const input of stateMatrix()) {
+    yield input;
+    // The house wheel is an Anglo-profile layout with its zodiac band removed,
+    // so it only exists on that profile.
+    if (input.profile === "anglo") {
+      yield { ...input, profile: "houses" };
+      yield { ...input, profile: "cusps" };
+    }
+  }
+}
+
 // --- deterministic geometry perturbation -----------------------------------
 
 function mulberry32(seed) {
@@ -111,13 +133,24 @@ function perturbNumbers(value, rng) {
   return value;
 }
 
+/**
+ * The golden baseline below predates the House Wheel and covers the three
+ * layouts that existed when it was taken. Perturbing its profile would consume
+ * draws from the shared stream and shift every later profile, invalidating a
+ * hash whose whole job is to catch drift in those three.
+ */
+function perturbGeometry(geometry, rng) {
+  const { houses, cusps, ...rest } = geometry;
+  return { ...perturbNumbers(rest, rng), houses, cusps };
+}
+
 function styleWithGeometry(geometry) {
   return { ...DEFAULT_WHEEL_RENDER_STYLE, geometry };
 }
 
 const PERTURBED_STYLES = [1, 2, 3, 4].map((seed) =>
   styleWithGeometry(
-    perturbNumbers(DEFAULT_WHEEL_RENDER_STYLE.geometry, mulberry32(seed * 7919)),
+    perturbGeometry(DEFAULT_WHEEL_RENDER_STYLE.geometry, mulberry32(seed * 7919)),
   ),
 );
 
@@ -152,7 +185,7 @@ test("canonical band layout reproduces the renderer ring set exactly (perturbed 
 // --- structure ------------------------------------------------------------
 
 test("default bands are ordered, tile the radius, and carry no violations", () => {
-  for (const input of stateMatrix()) {
+  for (const input of allLayoutStates()) {
     const layout = resolveCanonicalWheelLayout(DEFAULT_WHEEL_RENDER_STYLE, input);
     assert.deepStrictEqual(
       layout.violations,
@@ -186,7 +219,7 @@ test("default bands are ordered, tile the radius, and carry no violations", () =
 });
 
 test("every declared anchor stays inside its declared band span", () => {
-  for (const input of stateMatrix()) {
+  for (const input of allLayoutStates()) {
     const layout = resolveCanonicalWheelLayout(DEFAULT_WHEEL_RENDER_STYLE, input);
     const spans = wheelAnchorSpans(input.profile);
     const bandsById = new Map(layout.bands.map((band) => [band.id, band]));
@@ -212,6 +245,11 @@ test("every declared anchor stays inside its declared band span", () => {
 // --- final layout with user overrides --------------------------------------
 
 function styleWithRingOverrides(rng) {
+  // The three baseline profiles draw from the shared stream in their original
+  // order, so the golden hashes stay valid. The cusp-band wheels are filled
+  // from their own streams afterwards — they must not shift a baseline draw.
+  const housesRng = mulberry32(0x483057);
+  const cuspsRng = mulberry32(0x43555350);
   const legacy = Object.fromEntries(
     PROFILES.map((profile) => [
       profile,
@@ -233,6 +271,28 @@ function styleWithRingOverrides(rng) {
       ),
     ]),
   );
+  legacy.houses = Object.fromEntries(
+    WHEEL_PAINTED_RING_ROLES.map((role) => [
+      role,
+      housesRng() < 0.35 ? 0.1 + housesRng() * 0.85 : 0,
+    ]),
+  );
+  direct.houses = Object.fromEntries(
+    WHEEL_PAINTED_RING_ROLES.flatMap((role) =>
+      housesRng() < 0.35 ? [[role, housesRng() * 400]] : [],
+    ),
+  );
+  legacy.cusps = Object.fromEntries(
+    WHEEL_PAINTED_RING_ROLES.map((role) => [
+      role,
+      cuspsRng() < 0.35 ? 0.1 + cuspsRng() * 0.85 : 0,
+    ]),
+  );
+  direct.cusps = Object.fromEntries(
+    WHEEL_PAINTED_RING_ROLES.flatMap((role) =>
+      cuspsRng() < 0.35 ? [[role, cuspsRng() * 400]] : [],
+    ),
+  );
   return {
     ...DEFAULT_WHEEL_RENDER_STYLE,
     ringRadiusOverrides: legacy,
@@ -247,12 +307,12 @@ test("final band layout mirrors the override-applied ring set field-for-field", 
   const rng = mulberry32(20260725);
   for (let round = 0; round < 3; round += 1) {
     const style = styleWithRingOverrides(rng);
-    for (const input of stateMatrix()) {
+    for (const input of allLayoutStates()) {
       const rings = resolveWheelRingSet(style, input);
       const layout = resolveWheelBandLayout(style, input, rings);
       assert.deepStrictEqual({ ...layout.rings }, { ...rings });
       const bandsById = new Map(layout.bands.map((band) => [band.id, band]));
-      const anglo = input.profile === "anglo";
+      const anglo = ["anglo", "houses", "cusps"].includes(input.profile);
       const zodiac = bandsById.get("zodiac");
       assert.strictEqual(zodiac.outer, rings.r30);
       assert.strictEqual(zodiac.inner, rings.r0);
@@ -288,7 +348,7 @@ test("final band layout mirrors the override-applied ring set field-for-field", 
 // rendered circles move proportionally with the span.
 
 test("chart-ring span starts at the margin in every layout and toggle state", () => {
-  for (const input of stateMatrix()) {
+  for (const input of allLayoutStates()) {
     const family = wheelLayoutFamily(input);
     const span = wheel.resolveWheelBandSpanFields(input, "chartRing");
     assert.ok(span, `chartRing missing for ${JSON.stringify(input)}`);
@@ -505,7 +565,7 @@ function goldenStyles() {
     styles.push([
       `perturbed#${seed}`,
       styleWithGeometry(
-        perturbNumbers(DEFAULT_WHEEL_RENDER_STYLE.geometry, mulberry32(seed * 7919)),
+        perturbGeometry(DEFAULT_WHEEL_RENDER_STYLE.geometry, mulberry32(seed * 7919)),
       ),
     ]);
   }
@@ -822,8 +882,8 @@ test("every painted ring's range brackets the radius actually painted", () => {
 
 const { WHEEL_CLASS_BAND, resolveWheelClassFontSizeCeiling } = layoutApi;
 
-test("every declared glyph class maps to a band", () => {
-  const bandIds = new Set(Object.values(WHEEL_BAND_ORDER).flat());
+test("every declared glyph class maps to a band", async () => {
+  const bandIds = new Set([...Object.values(WHEEL_BAND_ORDER).flat(), ...Object.keys((await import(compositionModuleUrl)).WHEEL_RING_ARCHETYPES)]);
   for (const [classId, bandId] of Object.entries(WHEEL_CLASS_BAND)) {
     assert.ok(bandIds.has(bandId), `${classId} maps to unknown band ${bandId}`);
   }
@@ -1909,4 +1969,191 @@ test("the boundary being edited pushes its neighbours instead of stopping", () =
       `${field} moved without an active boundary`,
     );
   }
+});
+
+
+test("the house wheel removes the zodiac band and expands the interior into it", () => {
+  // The distinguishing structure of the fourth layout: no sign band, no degree
+  // rulers, no term or decan subdivisions — and the depth they gave up is not
+  // left as an empty annulus. The whole Anglo interior scales up by exactly the
+  // zodiac band's share, so every proportion inside the wheel is preserved and
+  // the cusp positions come to sit directly under the rim ruler.
+  //
+  // The baseline is the same wheel with subdivisions OFF, because the house
+  // wheel ignores those toggles: the interior is authored as a share of the
+  // zodiac circle minus a subdivision inset, and it paints no subdivisions.
+  const anglo = DEFAULT_WHEEL_RENDER_STYLE.geometry.anglo;
+  const houses = DEFAULT_WHEEL_RENDER_STYLE.geometry.houses;
+  const interior = houses.innerScale / anglo.innerScale;
+  for (const mode of MODES) {
+    for (const maxRadius of MAX_RADII) {
+      const base = {
+        profile: "anglo",
+        mode,
+        maxRadius,
+        hasOuterRing: true,
+        showHouses: true,
+        showPositions: true,
+        comparisonWithOuterHouses: false,
+        restrainedAngloComparison: false,
+      };
+      const where = `${mode}/${maxRadius}`;
+      const plainAnglo = resolveCanonicalWheelLayout(
+        DEFAULT_WHEEL_RENDER_STYLE,
+        { ...base, showTerms: false, showDecans: false },
+      );
+      // Subdivisions deliberately requested, to prove the layout ignores them.
+      const houseWheel = resolveCanonicalWheelLayout(
+        DEFAULT_WHEEL_RENDER_STYLE,
+        { ...base, profile: "houses", showTerms: true, showDecans: true },
+      );
+      const band = (layout, id) => layout.bands.find((entry) => entry.id === id);
+      const close = (a, b) => Math.abs(a - b) < 1e-9;
+
+      for (const id of ["zodiac", "terms", "decans"]) {
+        const entry = band(houseWheel, id);
+        assert.equal(entry.visible, false, `${id} must not be painted (${where})`);
+        assert.ok(
+          close(entry.outer, entry.inner),
+          `${id} must have no thickness (${where})`,
+        );
+      }
+
+      // Degree rulers have no band to stand in, so they collapse onto their base.
+      assert.equal(houseWheel.rings.r10, houseWheel.rings.r0, where);
+      assert.equal(houseWheel.rings.r1, houseWheel.rings.r0, where);
+      assert.equal(houseWheel.rings.r5, houseWheel.rings.r0, where);
+      assert.equal(houseWheel.rings.rOuter10, houseWheel.rings.rOuter0, where);
+
+      // The interior started as one uniform scaling of Anglo and two of its
+      // boundaries were later set by eye on the wheel, so the invariant is no
+      // longer "one factor" — it is that every interior ring still sits outside
+      // its Anglo counterpart, in order, having grown into the band's depth.
+      let previous = Infinity;
+      for (const field of ["rCuspLabel", "rInner", "rPlanet", "rHouse", "rAsp"]) {
+        const houseRadius = houseWheel.rings[field];
+        assert.ok(
+          houseRadius > plainAnglo.rings[field],
+          `${field} must expand into the removed band (${where})`,
+        );
+        assert.ok(houseRadius < previous, `${field} must keep ring order (${where})`);
+        previous = houseRadius;
+      }
+
+      // The cusp run is where this layout prints its zodiac, so it has to land
+      // inside the cusp-label band rather than under the ruler or in the bodies.
+      const cusp = band(houseWheel, "cuspLabels");
+      assert.ok(
+        houseWheel.rings.rCuspLabel <= cusp.outer
+          && houseWheel.rings.rCuspLabel >= cusp.inner,
+        `cusp run must sit in its band (${where})`,
+      );
+      assert.ok(
+        cusp.outer - cusp.inner > 0,
+        `cusp-label band must have depth (${where})`,
+      );
+      assert.ok(
+        close(
+          houseWheel.rings.rCuspLabel,
+          (houseWheel.rings.r30 + houseWheel.rings.rInner) / 2,
+        ),
+        `cusp run must be centred between its painted boundaries (${where})`,
+      );
+      assert.equal(houseWheel.rings.rPosHouses, houseWheel.rings.rCuspLabel, where);
+
+      // And nothing may escape the wheel.
+      assert.ok(houseWheel.rings.rCuspOuter <= maxRadius, where);
+      assert.deepEqual(houseWheel.violations, [], where);
+    }
+  }
+});
+
+test("Cusp Wheel has House Wheel radial geometry without sharing its profile", () => {
+  const base = {
+    profile: "houses",
+    mode: "single",
+    maxRadius: 400,
+    hasOuterRing: false,
+    showTerms: true,
+    showDecans: true,
+    showHouses: true,
+    showPositions: true,
+    comparisonWithOuterHouses: false,
+    restrainedAngloComparison: false,
+  };
+  assert.notEqual(
+    DEFAULT_WHEEL_RENDER_STYLE.geometry.houses,
+    DEFAULT_WHEEL_RENDER_STYLE.geometry.cusps,
+    "the two layouts need independent authoring identities",
+  );
+  assert.deepEqual(
+    resolveWheelRingSet(DEFAULT_WHEEL_RENDER_STYLE, base),
+    resolveWheelRingSet(DEFAULT_WHEEL_RENDER_STYLE, { ...base, profile: "cusps" }),
+  );
+});
+
+test("a resized House Wheel cusp band keeps its position run centred", () => {
+  const input = {
+    profile: "houses",
+    mode: "single",
+    maxRadius: 400,
+    hasOuterRing: false,
+    showTerms: false,
+    showDecans: false,
+    showHouses: true,
+    showPositions: true,
+    comparisonWithOuterHouses: false,
+    restrainedAngloComparison: false,
+  };
+  const canonical = resolveWheelRingSet(DEFAULT_WHEEL_RENDER_STYLE, input);
+  const style = {
+    ...DEFAULT_WHEEL_RENDER_STYLE,
+    authoringOverrides: {
+      ...DEFAULT_WHEEL_RENDER_STYLE.authoringOverrides,
+      ringRadii: {
+        ...DEFAULT_WHEEL_RENDER_STYLE.authoringOverrides.ringRadii,
+        houses: { innerBoundaryRing: canonical.rInner - 36 },
+      },
+    },
+  };
+  const resized = resolveWheelRingSet(style, input);
+
+  assert.ok(resized.rInner < canonical.rInner - 1, "precondition: band did not resize");
+  assert.ok(
+    Math.abs(resized.rPosHouses - (resized.r30 + resized.rInner) / 2) < 1e-9,
+    "the cusp run did not follow the resized band's visual midpoint",
+  );
+  assert.equal(resized.rCuspLabel, resized.rPosHouses);
+});
+
+test("a resized Cusp Wheel cusp band keeps its position run centred", () => {
+  const input = {
+    profile: "cusps",
+    mode: "single",
+    maxRadius: 400,
+    hasOuterRing: false,
+    showTerms: false,
+    showDecans: false,
+    showHouses: true,
+    showPositions: true,
+    comparisonWithOuterHouses: false,
+    restrainedAngloComparison: false,
+  };
+  const canonical = resolveWheelRingSet(DEFAULT_WHEEL_RENDER_STYLE, input);
+  const style = {
+    ...DEFAULT_WHEEL_RENDER_STYLE,
+    authoringOverrides: {
+      ...DEFAULT_WHEEL_RENDER_STYLE.authoringOverrides,
+      ringRadii: {
+        ...DEFAULT_WHEEL_RENDER_STYLE.authoringOverrides.ringRadii,
+        cusps: { innerBoundaryRing: canonical.rInner - 36 },
+      },
+    },
+  };
+  const resized = resolveWheelRingSet(style, input);
+
+  assert.ok(resized.rInner < canonical.rInner - 1);
+  assert.ok(
+    Math.abs(resized.rPosHouses - (resized.r30 + resized.rInner) / 2) < 1e-9,
+  );
 });

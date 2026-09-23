@@ -18,6 +18,8 @@ const eslintConfig = defineConfig([
     "src-tauri/target/**",
     "src-tauri/gen/**",
     "next-env.d.ts",
+    // Gitignored scratch/debug output, never shipped.
+    ".tmp/**",
   ]),
 ]);
 

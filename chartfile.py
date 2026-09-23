@@ -6,7 +6,8 @@
 Morinus Aries chart file I/O — JSONL collection format (v1).
 
 Canonical storage for chart data.  Each chart is one JSON object on its
-own line inside a .jsonl file.  The format is flat (no nested objects),
+own line inside a .jsonl file.  Core chart inputs are flat; optional attachments
+such as event recipes and horary interpretations may be nested. The format
 uses ISO 8601 for dates/times/offsets, decimal degrees for coordinates,
 and carries a schema version field so old files stay readable forever.
 
@@ -35,9 +36,12 @@ Schema v1 fields
   lon         float   longitude in decimal degrees (east positive)
   alt         float   altitude in metres
   notes       str     user notes
+  second_fraction float optional sub-second precision for derived chart records
+  events      list    optional versioned child-chart recipes owned by this radix
 """
 
 import json
+import copy
 import uuid
 import os
 import chart as _chart_mod
@@ -82,11 +86,14 @@ _STR_TO_ZT = {v: k for k, v in _ZT_TO_STR.items()}
 # Chart object → JSONL dict
 # ---------------------------------------------------------------------------
 
-def chart_to_dict(chrt, chart_id=None, interpretation=None):
-    """Serialise a Chart object to a flat dict conforming to schema v1.
+def chart_to_dict(chrt, chart_id=None, interpretation=None, *, include_events=True):
+    """Serialise a Chart object to a dict conforming to schema v1.
 
     If *chart_id* is None a new UUID4 is generated.  Pass an existing id
     to preserve identity across saves.
+
+    *include_events* is false for records embedded inside event recipes, so an
+    attachment never recursively captures another chart's event collection.
 
     *interpretation*, when provided AND the chart is horary, is written under
     an `'interpretation'` key — the lens-model persistence vehicle for horary
@@ -120,7 +127,7 @@ def chart_to_dict(chrt, chart_id=None, interpretation=None):
     else:
         date_str = f'{year:04d}-{month:02d}-{day:02d}'
 
-    time_str = f'{t.hour:02d}:{t.minute:02d}:{t.second:02d}'
+    time_str = f'{int(t.hour):02d}:{int(t.minute):02d}:{int(t.second):02d}'
 
     # Coordinates — reconstruct signed decimal from DMS + direction
     lon = p.deglon + p.minlon / 60.0 + getattr(p, 'seclon', 0.0) / 3600.0
@@ -166,6 +173,14 @@ def chart_to_dict(chrt, chart_id=None, interpretation=None):
                 out['interpretation'] = payload
     except Exception:
         pass
+    # Symbolic charts can carry fractional computational seconds. Keep the
+    # conventional whole-second text field and round-trip the precise remainder.
+    fraction = float(t.second) - int(t.second)
+    if fraction:
+        out['second_fraction'] = fraction
+    events = getattr(chrt, 'saved_events', None)
+    if include_events and events:
+        out['events'] = copy.deepcopy(events)
     return out
 
 
@@ -228,6 +243,9 @@ def dict_to_chart(d, options):
     hour   = int(tparts[0])
     minute = int(tparts[1])
     second = int(tparts[2]) if len(tparts) > 2 else 0
+    fraction = float(d.get('second_fraction') or 0)
+    if fraction:
+        second += fraction
 
     # Calendar, zone-time type
     cal = _STR_TO_CAL.get(d.get('cal', 'gregorian'), _chart_mod.Time.GREGORIAN)
@@ -271,6 +289,7 @@ def dict_to_chart(d, options):
         time, place, htype, d.get('notes', ''), options)
     # Preserve stable record identity so saves can overwrite by id.
     chrt.chart_id = d.get('id', '')
+    chrt.saved_events = copy.deepcopy(d.get('events') or [])
 
     # Preserve modification timestamp if present
     if d.get('modified_at'):
@@ -430,6 +449,10 @@ def update_jsonl(record, filepath):
                     lines.append(stripped)
                     continue
                 if d.get('id') == target_id:
+                    # Personal-data editors do not own event attachments.
+                    # An explicit empty list is the event service's remove-all.
+                    if 'events' not in record and 'events' in d:
+                        record = {**record, 'events': d['events']}
                     lines.append(json.dumps(record, ensure_ascii=False, separators=(',', ':')))
                     found = True
                 else:

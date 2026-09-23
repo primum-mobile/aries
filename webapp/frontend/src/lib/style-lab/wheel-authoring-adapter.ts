@@ -1,3 +1,4 @@
+import { WHEEL_ARROW_STYLES, type WheelArrowStyle } from "../chart/wheel-render-style";
 // Copyright (C) 2026 Max Lange
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -42,6 +43,7 @@ import {
   type WheelRenderStyle,
   type WheelRulerId,
   type WheelTypographyProfile,
+  isAngloFamilyProfile,
 } from "../chart/wheel-render-style";
 import {
   CHART_STYLE_CLASS_MANIFEST_VERSION,
@@ -66,6 +68,8 @@ export type WheelAuthoringEditScope = "base" | WheelTypographyProfile;
 
 export type WheelAuthoringFlatProperty =
   | "fontRef"
+  | "fontWeight"
+  | "fontStyle"
   | "fontSize"
   | "tracking"
   | "color"
@@ -100,9 +104,12 @@ export type WheelAuthoringFlatProperty =
   | "lineJoin"
   | "radius"
   | "scale"
+  | "bandWidth"
   | "spanInner"
   | "spanScale"
   | "rulerDepth"
+  | "arrowSize"
+  | "arrowStyle"
   | "tickLength";
 
 export function wheelAuthoringOverrideId(
@@ -172,6 +179,8 @@ export function maskingVariantOverrideId(
 
 const FLAT_PROPERTY_NAMES: readonly WheelAuthoringFlatProperty[] = [
   "fontRef",
+  "fontWeight",
+  "fontStyle",
   "fontSize",
   "tracking",
   "color",
@@ -207,8 +216,11 @@ const FLAT_PROPERTY_NAMES: readonly WheelAuthoringFlatProperty[] = [
   "radius",
   "scale",
   "spanInner",
+  "bandWidth",
   "spanScale",
   "rulerDepth",
+  "arrowSize",
+  "arrowStyle",
   "tickLength",
 ];
 
@@ -233,6 +245,8 @@ function flatWheelAuthoringClassMaps(
     classic: {},
     compact: {},
     anglo: {},
+    houses: {},
+    cusps: {},
   };
   for (const [semanticId, rawValue] of Object.entries(overrides)) {
     if (!semanticId.startsWith(WHEEL_AUTHORING_OVERRIDE_PREFIX)) continue;
@@ -254,10 +268,24 @@ function flatWheelAuthoringClassMaps(
     if (property === "fontRef") {
       const fontRef = chartStyleFontRef(rawValue);
       if (fontRef) patch = { ...current, fontRef };
+    } else if (property === "fontWeight" && numericValue != null) {
+      patch = {
+        ...current,
+        fontWeight: Math.min(1000, Math.max(1, numericValue)),
+      };
+    } else if (
+      property === "fontStyle"
+      && (rawValue === "normal" || rawValue === "italic")
+    ) {
+      patch = { ...current, fontStyle: rawValue };
     } else if (property === "fontSize" && numericValue != null) {
       patch = { ...current, fontSize: chartPx(numericValue) };
     } else if (property === "tracking" && numericValue != null) {
       patch = { ...current, tracking: chartPx(numericValue) };
+    } else if (property === "arrowStyle" && WHEEL_ARROW_STYLES.includes(rawValue as WheelArrowStyle)) {
+      patch = { ...current, arrowStyle: rawValue as WheelArrowStyle };
+    } else if (property === "arrowSize" && numericValue != null) {
+      patch = { ...current, arrowSize: Math.min(800, Math.max(25, numericValue)) };
     } else if (property === "strokeWidth" && numericValue != null) {
       patch = { ...current, strokeWidth: chartPx(numericValue) };
     } else if (property === "dashLength" && numericValue != null) {
@@ -276,6 +304,8 @@ function flatWheelAuthoringClassMaps(
       patch = { ...current, shadowBlur: chartPx(numericValue) };
     } else if (property === "radius" && numericValue != null) {
       patch = { ...current, radius: chartPx(numericValue) };
+    } else if (property === "bandWidth" && numericValue != null) {
+      patch = { ...current, bandWidth: chartPx(numericValue) };
     } else if (property === "spanInner" && numericValue != null) {
       // A reference-space radius like `radius`, but addressed to a span rather
       // than a painted ring, so the two can never be confused.
@@ -512,6 +542,8 @@ export function createChartStyleProfileV2FromFlatOverrides(
       classic: Object.freeze(variants.classic),
       compact: Object.freeze(variants.compact),
       anglo: Object.freeze(variants.anglo),
+      houses: Object.freeze(variants.houses),
+      cusps: Object.freeze(variants.cusps),
     }),
   });
 }
@@ -666,7 +698,9 @@ function lineOverride(
   properties: ChartStyleClassProperties,
 ): WheelAuthoringLinePaintOverride | undefined {
   if (
-    properties.strokeWidth == null
+    properties.arrowStyle == null
+    && properties.arrowSize == null
+    && properties.strokeWidth == null
     && properties.strokeStyle == null
     && properties.dashLength == null
     && properties.dashGap == null
@@ -676,6 +710,8 @@ function lineOverride(
     && properties.lineJoin == null
   ) return undefined;
   return Object.freeze({
+    ...(properties.arrowStyle == null ? {} : { arrowStyle: properties.arrowStyle }),
+    ...(properties.arrowSize == null ? {} : { arrowSize: properties.arrowSize }),
     ...(properties.strokeWidth == null
       ? {} : { strokeWidthPx: properties.strokeWidth.value }),
     ...(properties.strokeStyle == null
@@ -697,6 +733,8 @@ function typographyOverride(
 ): WheelAuthoringTypographyOverride | undefined {
   if (
     properties.fontRef == null
+    && properties.fontWeight == null
+    && properties.fontStyle == null
     && properties.fontSize == null
     && properties.tracking == null
     && properties.color == null
@@ -705,6 +743,10 @@ function typographyOverride(
   return Object.freeze({
     ...(properties.fontRef == null
       ? {} : { fontRef: properties.fontRef as WheelAuthoringFontRef }),
+    ...(properties.fontWeight == null
+      ? {} : { fontWeight: properties.fontWeight }),
+    ...(properties.fontStyle == null
+      ? {} : { fontStyle: properties.fontStyle }),
     ...(properties.fontSize == null
       ? {} : { fontSizePx: properties.fontSize.value }),
     ...(properties.tracking == null
@@ -805,9 +847,13 @@ export function compileWheelAuthoringClassMaps(
   const bandSpanInner: Record<string, Record<string, number>> = {};
   const bandSpanScale: Record<string, Record<string, number>> = {};
   const rulerDepth: Record<string, Record<string, number>> = {};
+  const ringWidths: Record<string, Record<string, number>> = {};
   const tickLength: Record<string, Record<string, number>> = {};
-  for (const profile of ["classic", "compact", "anglo"] as const) {
+  for (const profile of ["classic", "compact", "anglo", "houses", "cusps"] as const) {
     const classes = classMaps[profile];
+    ringWidths[profile] = Object.fromEntries(Object.entries(classes)
+      .filter(([id, props]) => id.startsWith("canvas.ring.") && props.bandWidth != null)
+      .map(([id, props]) => [id.slice("canvas.ring.".length), props.bandWidth!.value]));
     const authoredScale = classes[WHEEL_CHART_CLASS_ID]?.scale;
     if (authoredScale != null && Number.isFinite(authoredScale)) {
       wheelScale[profile] = Math.min(
@@ -863,6 +909,15 @@ export function compileWheelAuthoringClassMaps(
         profileRadii[ringRole] = properties.radius.value;
       }
     }
+    // Profiles authored before Terms and Decans became independent physical
+    // bands stored one `fills.subdivisionBand` material. Preserve that look by
+    // inheriting each property unless the individual band overrides it;
+    // never paint the legacy annulus in addition to the new ones.
+    const legacySubdivisionFill = profileFills["fills.subdivisionBand"];
+    if (legacySubdivisionFill) {
+      profileFills["fills.termBand"] = {...legacySubdivisionFill, ...profileFills["fills.termBand"]};
+      profileFills["fills.decanBand"] = {...legacySubdivisionFill, ...profileFills["fills.decanBand"]};
+    }
     if (Object.keys(profileTypography).length) typography[profile] = profileTypography;
     if (Object.keys(profileLines).length) linePaint[profile] = profileLines;
     if (Object.keys(profileFills).length) fillPaint[profile] = profileFills;
@@ -880,6 +935,7 @@ export function compileWheelAuthoringClassMaps(
     bandSpanInner: Object.freeze(bandSpanInner),
     bandSpanScale: Object.freeze(bandSpanScale),
     rulerDepth: Object.freeze(rulerDepth),
+    ringWidths: Object.freeze(ringWidths),
     tickLength: Object.freeze(tickLength),
   }) as WheelAuthoringOverrides;
 }
@@ -889,11 +945,11 @@ export function compileWheelAuthoringOverrides(
   profile: Pick<ChartStyleProfileV2, "styles" | "variants" | "referenceSpace">,
 ): WheelAuthoringOverrides {
   const classIds = new Set<string>(Object.keys(profile.styles));
-  for (const variant of ["classic", "compact", "anglo"] as const) {
+  for (const variant of ["classic", "compact", "anglo", "houses", "cusps"] as const) {
     for (const classId of Object.keys(profile.variants[variant] ?? {})) classIds.add(classId);
   }
   const classMaps = Object.fromEntries(
-    (["classic", "compact", "anglo"] as const).map((variant) => [
+    (["classic", "compact", "anglo", "houses", "cusps"] as const).map((variant) => [
       variant,
       Object.fromEntries(
         [...classIds].map((classId) => [
@@ -920,6 +976,8 @@ export type WheelAuthoringClassDefaults = Readonly<{
   colorAuthored?: boolean;
   fontRefAuthored?: boolean;
   fontRef?: WheelAuthoringFontRef;
+  fontWeight?: number;
+  fontStyle?: "normal" | "italic";
   fontSizePx?: number;
   trackingPx?: number;
   color?: string;
@@ -958,6 +1016,8 @@ export type WheelAuthoringClassDefaults = Readonly<{
   spanInnerPx?: number;
   spanScalePercent?: number;
   rulerDepthPercent?: number;
+  arrowSizePercent?: number;
+  arrowStyle?: WheelArrowStyle;
   tickLengthPercent?: number;
 }>;
 
@@ -1037,7 +1097,7 @@ function typographyColorFallback(
   if (classId === "subdivisions.term.glyph") return style.elementColors.termGlyph;
   if (classId === "subdivisions.decan.glyph") return style.elementColors.decanGlyph;
   if (classId.startsWith("houses.") && classId.endsWith(".label")) {
-    return profile === "anglo"
+    return isAngloFamilyProfile(profile)
       ? style.elementColors.angloHouseLabel
       : style.elementColors.houseLabel;
   }
@@ -1092,13 +1152,14 @@ function typographyFallback(
   if (classId === "bodies.inner.glyph") return metrics.bodySize;
   if (classId === "bodies.outer.glyph") return metrics.outerSize;
   if (classId === "bodies.inner.motion") return metrics.motionSize;
+  if (classId === "bodies.outer.position") return metrics.outerPositionSize;
   if (classId === "bodies.outer.motion") return metrics.outerMotionSize;
   if (classId.endsWith("position.degree")) {
-    if (classId.startsWith("houses.")) return profile === "anglo"
+    if (classId.startsWith("houses.")) return isAngloFamilyProfile(profile)
       ? metrics.angloHousePosition.degreeSize : metrics.housePosition.degreeSize;
-    if (classId.startsWith("angles.")) return profile === "anglo"
+    if (classId.startsWith("angles.")) return isAngloFamilyProfile(profile)
       ? metrics.angloAnglePosition.degreeSize : metrics.anglePosition.degreeSize;
-    return profile === "anglo"
+    return isAngloFamilyProfile(profile)
       ? metrics.angloBodyPosition.degreeSize : metrics.bodyPosition.degreeSize;
   }
   if (classId.endsWith("position.sign")) {
@@ -1107,11 +1168,11 @@ function typographyFallback(
     return metrics.angloBodyPosition.signSize;
   }
   if (classId.endsWith("position.minute")) {
-    if (classId.startsWith("houses.")) return profile === "anglo"
+    if (classId.startsWith("houses.")) return isAngloFamilyProfile(profile)
       ? metrics.angloHousePosition.minuteSize : metrics.housePosition.minuteSize;
-    if (classId.startsWith("angles.")) return profile === "anglo"
+    if (classId.startsWith("angles.")) return isAngloFamilyProfile(profile)
       ? metrics.angloAnglePosition.minuteSize : metrics.anglePosition.minuteSize;
-    return profile === "anglo"
+    return isAngloFamilyProfile(profile)
       ? metrics.angloBodyPosition.minuteSize : metrics.bodyPosition.minuteSize;
   }
   if (classId.startsWith("aspects.")) return metrics.aspectGlyphSize;
@@ -1146,7 +1207,7 @@ function defaultReferenceLineWidth(
   // Anglo's production draw call sites deliberately use the hairline pen for
   // these classes instead of their generic ring/structural role fallback.
   if (
-    profile === "anglo"
+    isAngloFamilyProfile(profile)
     && ANGLO_HAIRLINE_DRAW_FALLBACK_CLASSES.includes(classId)
   ) {
     return style.strokes.hairline;
@@ -1163,7 +1224,7 @@ function defaultReferenceLineWidth(
     );
   }
   if (classId === "rings.base" || classId.startsWith("angles.")) {
-    return profile === "anglo"
+    return isAngloFamilyProfile(profile)
       ? style.strokes.angloStructural
       : resolveScaledWheelStroke(style, chartSize, style.strokes.ascMcDefaultBase);
   }
@@ -1174,7 +1235,7 @@ function defaultReferenceLineWidth(
     return resolveWheelStrokeMetrics(style, chartSize).medium;
   }
   if (classId.startsWith("aspects.")) {
-    return profile === "anglo"
+    return isAngloFamilyProfile(profile)
       ? style.strokes.aspects.angloWidth
       : style.strokes.aspects.classicWidth;
   }
@@ -1201,10 +1262,10 @@ function defaultReferenceLineColor(
     "rings.angloCuspOuter": style.elementColors.cuspOuterRing,
     "rings.innerBoundary": style.elementColors.innerBoundaryRing,
     "rings.aspectBoundary": style.elementColors.aspectBoundaryRing,
-    "rings.houseBoundary": profile === "anglo"
+    "rings.houseBoundary": isAngloFamilyProfile(profile)
       ? style.elementColors.angloHouseBoundaryRing
       : style.elementColors.houseBoundaryRing,
-    "rings.base": profile === "anglo"
+    "rings.base": isAngloFamilyProfile(profile)
       ? style.elementColors.angloBaseRing
       : style.elementColors.baseRing,
   };
@@ -1221,7 +1282,7 @@ function defaultReferenceLineColor(
   if (classId.startsWith("houses.")) return style.elementColors.houseCusp;
   if (classId.startsWith("angles.")) return style.elementColors.angleRay;
   if (classId === "bodies.inner.leader") {
-    return profile === "anglo"
+    return isAngloFamilyProfile(profile)
       ? style.elementColors.angloBodyLeader
       : style.elementColors.bodyLeader;
   }
@@ -1229,7 +1290,7 @@ function defaultReferenceLineColor(
     classId === "bodies.outer.leader"
     || classId.startsWith("secondaryRing.")
   ) {
-    return profile === "anglo"
+    return isAngloFamilyProfile(profile)
       ? style.elementColors.angloOuterLeader
       : style.elementColors.outerLeader;
   }
@@ -1294,10 +1355,20 @@ export function readWheelAuthoringClassDefaults(
         paint.weight,
         paint.style,
       );
+    output.fontWeight = paint.weight;
+    const resolvedFontStyle = paint.style.trim().toLowerCase();
+    output.fontStyle = resolvedFontStyle === "italic" || resolvedFontStyle.startsWith("oblique")
+      ? "italic"
+      : "normal";
     output.fontSizePx = unprojectChartPx(paint.size, projection);
     output.trackingPx = unprojectChartPx(paint.tracking, projection);
     output.color = paint.color;
     output.opacityPercent = opacityToEditorPercent(paint.opacity);
+  }
+  if (classId === "angles.inner.arrowhead" || classId === "angles.outer.arrowhead") {
+    output.arrowStyle = style.authoringOverrides.linePaint[profile]?.[classId]?.arrowStyle
+      ?? (["classic", "compact"].includes(profile) ? "outlined" : "filled");
+    output.arrowSizePercent = style.authoringOverrides.linePaint[profile]?.[classId]?.arrowSize ?? 100;
   }
   if (isLineClass(classId)) {
     const role = LINE_CLASS_TO_LEGACY_ROLE[classId];
@@ -1320,7 +1391,7 @@ export function readWheelAuthoringClassDefaults(
       );
       output.strokeWidthPx = paint.width;
       output.strokeStyle = resolvedStrokeStyle(paint);
-      output.color = paint.fill;
+      output.color = paint.outline ?? paint.fill;
       if (paint.dash) {
         output.dashOnPx = paint.dash[0] ?? 0;
         output.dashOffPx = paint.dash[1] ?? 0;

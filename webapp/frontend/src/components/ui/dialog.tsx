@@ -6,6 +6,8 @@ import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
+import { useDraggableOverlay } from "@/hooks/use-draggable-overlay"
+import { useT } from "@/lib/i18n/i18n"
 
 type DialogMotion = "default" | "none"
 type DialogSize =
@@ -72,24 +74,92 @@ function DialogOverlay({
   )
 }
 
-function DialogContent({
+type DialogContentProps = DialogPrimitive.Popup.Props & {
+  showCloseButton?: boolean
+  motion?: DialogMotion
+  size?: DialogSize
+}
+
+function DialogContent(props: DialogContentProps) {
+  return (
+    <DialogPortal>
+      <DialogOverlay motion={props.motion} />
+      <DialogPopup {...props} />
+    </DialogPortal>
+  )
+}
+
+function isOutsideDragHeader(target: EventTarget | null) {
+  return !(target instanceof Element)
+    || !target.closest('[data-slot="dialog-header"]')?.parentElement?.hasAttribute("data-floating-dialog")
+    || Boolean(target.closest('button, input, textarea, select, a, [role="button"]'))
+}
+
+/** A modeless, retained tool panel. The portal frame never intercepts the app. */
+function FloatingDialogContent(props: DialogContentProps) {
+  return (
+    <DialogPortal keepMounted>
+      <FloatingDialogPopup {...props} />
+    </DialogPortal>
+  )
+}
+
+/** The same popup contents hosted in an undecorated native tool window. */
+function NativeDialogContent({ className, ...props }: DialogContentProps) {
+  return (
+    <DialogPortal keepMounted>
+      <DialogPopup {...props} motion="none" data-native-settings=""
+        className={cn("inset-0 top-0 left-0 h-dvh w-full max-h-none translate-none rounded-none", className)} />
+    </DialogPortal>
+  )
+}
+
+function FloatingDialogPopup({ className, ...props }: DialogContentProps) {
+  const {
+    overlayRef,
+    handlePointerDown,
+    handlePointerMove,
+    handlePointerUp,
+    handlePointerCancel,
+    handleLostPointerCapture,
+    handleDoubleClick,
+  } = useDraggableOverlay({ isBlockedTarget: isOutsideDragHeader })
+  return (
+    <div className="pointer-events-none fixed inset-0 z-50">
+      <DialogPopup
+        {...props}
+        data-floating-dialog=""
+        ref={overlayRef}
+        motion="none"
+        className={cn("pointer-events-auto translate-none [transform:translate(-50%,-50%)] [&_[data-slot=dialog-header]]:cursor-grab [&_[data-slot=dialog-header]]:touch-none [&_[data-slot=dialog-header]]:select-none", className)}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
+        onLostPointerCapture={handleLostPointerCapture}
+        onDoubleClick={handleDoubleClick}
+      />
+    </div>
+  )
+}
+
+function DialogPopup({
   className,
   children,
   showCloseButton = true,
   motion = "default",
   size = "sm",
   ...props
-}: DialogPrimitive.Popup.Props & {
-  showCloseButton?: boolean
-  motion?: DialogMotion
-  size?: DialogSize
-}) {
+}: DialogContentProps) {
+  const t = useT()
   return (
-    <DialogPortal>
-      <DialogOverlay motion={motion} />
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         data-aries-surface="overlay"
+        // Tool/dialog lifecycle must not select an arbitrary chrome action.
+        // Explicit field focus (search, editor name, etc.) remains with callers.
+        initialFocus={false}
+        finalFocus={false}
         className={cn(
           "fixed top-1/2 left-1/2 z-50 grid max-w-none -translate-x-1/2 -translate-y-1/2 gap-[var(--aries-dialog-gap)] rounded-[var(--aries-radius-dialog)] bg-[var(--aries-overlay-background)] p-[var(--aries-dialog-padding)] text-[length:var(--aries-font-size-control)] text-[color:var(--aries-overlay-text)] ring-1 ring-foreground/10 outline-none",
           DIALOG_SIZE_CLASS[size],
@@ -113,11 +183,10 @@ function DialogContent({
           >
             <XIcon
             />
-            <span className="sr-only">Close</span>
+            <span className="sr-only">{t("settings.close")}</span>
           </DialogPrimitive.Close>
         )}
       </DialogPrimitive.Popup>
-    </DialogPortal>
   )
 }
 
@@ -191,6 +260,8 @@ export {
   Dialog,
   DialogClose,
   DialogContent,
+  FloatingDialogContent,
+  NativeDialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,

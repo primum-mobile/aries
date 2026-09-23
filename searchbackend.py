@@ -9,6 +9,7 @@ import os
 import time
 
 import astrology
+import asteroids
 import eclipses
 from aries.astrology.ephemeris_context import EphemerisContext
 from aries.astrology.transit_fast import api as transit_fast_api
@@ -318,6 +319,18 @@ class _SnapshotCatalog(object):
 
 class _CompiledQuery(object):
 	def __init__(self, catalog, query):
+		for object_id in set(query.promittor_ids) | set(query.significator_ids):
+			obj = catalog.get(object_id)
+			if obj is not None and obj.id.startswith('asteroid:') and obj.longitude is None:
+				raise ValueError(mtexts.txts['TimedAsteroidEphemerisUnavailable'].format(body=obj.label))
+			if obj is not None and obj.id.startswith('asteroid:'):
+				for technique in query.techniques:
+					roles = searchcatalog.ASTEROID_SEARCH_ROLES.get(technique, {})
+					# Luminary events own their sources; selected promittors are
+					# irrelevant there. Other unfinished techniques must fail clearly.
+					if not any(value == 'supported' for value in roles.values()):
+						raise ValueError(mtexts.txts['TimedAsteroidTechniqueUnavailable'].format(
+							body=obj.label, technique=_search_technique_label(technique)))
 		self.static_targets = _build_static_targets(catalog, query)
 		self.secondary_promittor_ids = _unique_in_order([prom_id for prom_id, sig_id, aspect_id, target_lon in self.static_targets])
 		self.secondary_batch_promittor_ids = _compile_secondary_batch_promittor_ids(catalog, query)
@@ -977,7 +990,7 @@ def _prepare_search_rows(rows, catalog, chrt, query, runtime, limit):
 		rows.sort(key=_search_row_sort_key)
 
 	truncated = False
-	if len(rows) > limit:
+	if limit is not None and len(rows) > limit:
 		rows = rows[:limit]
 		truncated = True
 	if not query.moon_phase_filter:
@@ -1073,6 +1086,8 @@ def _search_transits(catalog, chrt, query, start_jd, end_jd, runtime=None, compi
 	fallback_promittors = []
 	for prom_id in query.promittor_ids:
 		prom = catalog.get(prom_id)
+		if searchcatalog.transit_point_role(prom, 'promittor') != 'supported':
+			continue
 		if _can_use_fast_transit_promittor(prom):
 			fast_promittors.append(prom_id)
 			continue
@@ -1129,7 +1144,7 @@ def _can_use_fast_transit_promittor(prom):
 		return True
 	return (
 		prom.family == searchcatalog.SearchObject.FAMILY_PLANET
-		and prom.planet_index <= astrology.SE_PLUTO
+		and (prom.planet_index <= astrology.SE_PLUTO or prom.id.startswith('asteroid:'))
 	)
 
 
@@ -1406,10 +1421,9 @@ def _search_secondary_directions(catalog, chrt, query, start_jd, end_jd, runtime
 			rec.summary()
 			return rows
 
-	# The Moon-solver and planet-batch tiers go through transit_fast_api with a
-	# real-ephemeris JD range — they only make sense for SECONDARY (1:1 mapping).
-	# For tertiary/minor, only the cheby path runs; remaining unhandled
-	# promittors fall through to the per-target snapshot loop below.
+	# The Moon solver retains its secondary-only contract. The batch solver
+	# can also sample asteroids in minor/tertiary ephemeris time, converting
+	# each root back through the selected method's symbolic clock.
 	if method == posfordate.SECONDARY:
 		if 'planet:moon' not in cheby_handled_promittor_ids:
 			with rec.stage('moon_solver'):
@@ -1429,26 +1443,22 @@ def _search_secondary_directions(catalog, chrt, query, start_jd, end_jd, runtime
 				rec.summary()
 				return rows
 
-		with rec.stage('planet_batch'):
-			batch_rows = _search_secondary_directions_planet_batch(
-				catalog,
-				chrt,
-				compiled,
-				start_age,
-				end_age,
-				start_jd,
-				end_jd,
-				runtime,
-				max_rows=max_rows,
-				skip_promittor_ids=cheby_handled_promittor_ids,
-			)
-		rows.extend(batch_rows)
-		if max_rows is not None and len(rows) >= int(max_rows):
-			rec.summary()
-			return rows
+	with rec.stage('planet_batch'):
+		batch_rows = _search_secondary_directions_planet_batch(
+			catalog, chrt, compiled, start_age, end_age, start_jd, end_jd,
+			runtime, max_rows=max_rows,
+			skip_promittor_ids=cheby_handled_promittor_ids, method=method,
+		)
+	rows.extend(batch_rows)
+	if max_rows is not None and len(rows) >= int(max_rows):
+		rec.summary()
+		return rows
 
 	calflag = _calendar_flag(chrt)
-	batch_promittor_ids = set(compiled.secondary_batch_promittor_ids) if method == posfordate.SECONDARY else set()
+	batch_promittor_ids = {
+		pid for pid in compiled.secondary_batch_promittor_ids
+		if method == posfordate.SECONDARY or pid.startswith('asteroid:')
+	}
 	handled_promittor_ids = set(batch_promittor_ids)
 	if method == posfordate.SECONDARY:
 		handled_promittor_ids.add('planet:moon')
@@ -1906,13 +1916,15 @@ def _search_secondary_directions_moon_solver(catalog, chrt, query, start_age, en
 	return rows
 
 
-def _search_secondary_directions_planet_batch(catalog, chrt, compiled, start_age, end_age, start_jd, end_jd, runtime=None, max_rows=None, skip_promittor_ids=None):
+def _search_secondary_directions_planet_batch(catalog, chrt, compiled, start_age, end_age, start_jd, end_jd, runtime=None, max_rows=None, skip_promittor_ids=None, method=posfordate.SECONDARY):
 	skip = set(skip_promittor_ids or ())
 	promittor_indices = []
 	promittors_by_index = compiled.secondary_batch_promittors_by_index
 	allowed_promittor_ids = set()
 	for prom_id in compiled.secondary_batch_promittor_ids:
 		if prom_id in skip:
+			continue
+		if method != posfordate.SECONDARY and not prom_id.startswith('asteroid:'):
 			continue
 		prom = catalog.get(prom_id)
 		if prom is None or prom.planet_index is None:
@@ -1955,7 +1967,7 @@ def _search_secondary_directions_planet_batch(catalog, chrt, compiled, start_age
 		if prom_id is None:
 			continue
 		target_lon = float(target_deg)
-		event_info = _secondary_real_event_info_for_symbolic_age(chrt, float(hit_jd) - birth_jd)
+		event_info = _secondary_real_event_info_for_symbolic_age(chrt, float(hit_jd) - birth_jd, method=method)
 		if event_info is None:
 			continue
 		event_real_jd = _secondary_finalize_real_jd(
@@ -1967,6 +1979,7 @@ def _search_secondary_directions_planet_batch(catalog, chrt, compiled, start_age
 			start_jd,
 			end_jd,
 			runtime,
+			method=method,
 		)
 		if event_real_jd < start_jd or event_real_jd >= end_jd:
 			continue
@@ -3765,6 +3778,18 @@ def _row_matches_motion_filters(row, query, catalog, chrt):
 	for motion_filter, object_id, payload_key in role_filters:
 		if not motion_filter:
 			continue
+		# An ingress destination is a zodiac sign, not a moving significator.
+		if payload_key == 'sig_display' and row.metadata.get('sign_change'):
+			continue
+		if (
+			motion_filter == searchquery.SearchQuery.MOTION_RX
+			and payload_key == 'sig_display'
+			and row.technique in (
+				searchquery.SearchQuery.TECHNIQUE_LUNATIONS,
+				searchquery.SearchQuery.TECHNIQUE_ECLIPSES,
+			)
+		):
+			continue
 		motion_marker, speed_lon = _row_object_motion(row, object_id, payload_key, catalog, chrt)
 		if not _matches_motion_filter(motion_filter, motion_marker, speed_lon):
 			return False
@@ -3837,6 +3862,9 @@ def _format_compact_longitude(display_longitude):
 def _object_chart_speed(display_chart, obj):
 	if obj is None or obj.planet_index is None:
 		return None
+	if obj.id.startswith('asteroid:'):
+		body = asteroids.chart_asteroid(display_chart, obj.planet_index)
+		return float(body.speed) if body is not None and getattr(body, 'available', True) else None
 	try:
 		body = common.get_chart_planet(display_chart, obj.planet_index)
 		if body is None:
@@ -4745,7 +4773,11 @@ def _is_weather_object(obj):
 
 
 def _planet_ephemeris_context(chrt):
-	return EphemerisContext.for_chart(chrt, ephe_path=common.get_ephe_path())
+	paths = common.get_ephe_path().split(os.pathsep)
+	extra_path = str(getattr(chrt.options, 'asteroid_ephe_path', '') or '').strip()
+	if extra_path and extra_path not in paths:
+		paths.insert(0, extra_path)
+	return EphemerisContext.for_chart(chrt, ephe_path=os.pathsep.join(paths))
 
 
 def _planet_flags(chrt):
@@ -4790,6 +4822,11 @@ def _live_object_state_uncached(obj, chrt, event_jd, flags, context=None):
 		return None
 	context = context or _planet_ephemeris_context(chrt)
 	with context.activate():
+		if obj.id.startswith('asteroid:'):
+			ret, data, _error = astrology.swe_calc_ut_ex(event_jd, obj.planet_index, flags)
+			if int(ret) & 0xFFFFFFFF == 0xFFFFFFFF or len(data) < 4:
+				raise ValueError(mtexts.txts['TimedAsteroidEphemerisUnavailable'].format(body=obj.label))
+			return util.normalize(float(data[0])), float(data[3])
 		if obj.id == 'planet:asc_node':
 			node_id = astrology.SE_MEAN_NODE if getattr(chrt.options, 'meannode', True) else astrology.SE_TRUE_NODE
 			body = planets.Planet(event_jd, node_id, flags)
@@ -5055,7 +5092,7 @@ def _compile_secondary_batch_promittor_ids(catalog, query):
 		prom = catalog.get(prom_id)
 		if prom is None or prom.family != searchcatalog.SearchObject.FAMILY_PLANET:
 			continue
-		if prom.planet_index is None or prom.planet_index > astrology.SE_PLUTO:
+		if prom.planet_index is None or (prom.planet_index > astrology.SE_PLUTO and not prom.id.startswith('asteroid:')):
 			continue
 		if prom.planet_index == astrology.SE_MOON:
 			continue

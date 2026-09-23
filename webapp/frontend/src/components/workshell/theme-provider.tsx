@@ -3,9 +3,9 @@
 
 "use client";
 
-import { useEffect, useLayoutEffect, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
-import { migrateLegacyStyleTokens, type ThemeState } from "@/lib/daemon/client";
+import { migrateLegacyStyleTokens, waitForDaemonStartup, type ThemeState } from "@/lib/daemon/client";
 import {
   loadStoredStyleLabFonts,
   STYLE_FONT_ASSETS_READY_EVENT,
@@ -27,8 +27,18 @@ import {
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 import { useChartStyleEditorStore } from "@/stores/chart-style-editor-store";
 import { syncThemeStateFromStorage, useThemeStore } from "@/stores/theme-store";
-
-let appliedThemeTokenNames = new Set<string>();
+import { replaceThemeTokens, styleRevisionKey } from "@/lib/theme/style-state.mjs";
+import { revealMainWindow } from "@/lib/shell/main-window";
+import { useLicenseStateStore } from "@/stores/license-state-store";
+import { resolveShellHost } from "@/lib/shell-host";
+import {
+  createThemeWindowPublisher,
+  resolveWindowThemeAppearance,
+  THEME_WINDOW_REQUEST,
+  THEME_WINDOW_STATE,
+  type LiveThemePreview,
+  type WindowThemeAppearance,
+} from "@/lib/shell/theme-window-sync";
 
 function pendingLegacyStyleMigration(): { raw: string; values: Record<string, unknown> } | null {
   if (typeof window === "undefined") return null;
@@ -49,47 +59,25 @@ function pendingLegacyStyleMigration(): { raw: string; values: Record<string, un
   }
 }
 
-type LiveStyleLabThemePreview = Readonly<{
-  sourceThemeName: string;
-  mode: "light" | "dark";
-  appTokens: Readonly<Record<string, string>>;
-  chartPalette: Readonly<Record<string, string>>;
-  appAuthoring: Readonly<Record<string, unknown>>;
-}>;
-
-function applyThemeToRoot(
-  theme: ThemeState,
-  preview?: LiveStyleLabThemePreview,
-): void {
+function applyThemeToRoot(appearance: WindowThemeAppearance): void {
   const root = document.documentElement;
-  const appTokens = preview?.appTokens ?? theme.appTokens;
-  const chartPalette = preview?.chartPalette ?? theme.chartPalette;
-  const tokens = { ...appTokens, ...chartPalette };
-  const nextTokenNames = new Set(Object.keys(tokens));
-  for (const name of appliedThemeTokenNames) {
-    if (!nextTokenNames.has(name)) root.style.removeProperty(name);
-  }
-  for (const [name, value] of Object.entries(tokens)) {
-    root.style.setProperty(name, value);
-  }
-  appliedThemeTokenNames = nextTokenNames;
-  const mode = preview?.mode ?? theme.mode;
+  const { appTokens, chartPalette, mode } = appearance;
+  replaceThemeTokens(root, { ...appTokens, ...chartPalette });
   root.style.colorScheme = mode;
   root.classList.toggle("dark", mode === "dark");
   root.classList.toggle("day", mode === "light");
-  root.dataset.themePreset = preview?.sourceThemeName ?? theme.activePreset;
-  if (preview) root.dataset.styleLabThemePreview = "active";
+  root.dataset.themePreset = appearance.preset;
+  if (appearance.preview) root.dataset.styleLabThemePreview = "active";
   else delete root.dataset.styleLabThemePreview;
-  root.dataset.themeVersion = String(theme.version);
-  root.dataset.styleSchemaVersion = String(theme.schemaVersion);
-  root.dataset.styleRevision = String(theme.styleRevision);
-  root.dataset.styleHash = theme.styleHash;
-  root.dataset.presentationCursor = theme.presentationCursor === true ? "glow" : "system";
-  root.dataset.themeReady = "ready";
+  root.dataset.themeVersion = String(appearance.version);
+  root.dataset.styleSchemaVersion = String(appearance.schemaVersion);
+  root.dataset.styleRevision = String(appearance.styleRevision);
+  root.dataset.styleHash = appearance.styleHash;
+  root.dataset.presentationCursor = appearance.presentationCursor ? "glow" : "system";
   try {
     installAppMaterialStyleSheet(
       compileThemeAppMaterials(
-        preview?.appAuthoring ?? theme.profileOverrides.appAuthoring,
+        appearance.appAuthoring,
         appTokens,
       ),
     );
@@ -102,9 +90,20 @@ function applyThemeToRoot(
       compileThemeAppMaterials({}, appTokens),
     );
   }
+  root.dataset.themeReady = "ready";
 }
 
-export function ThemeProvider({ children }: { children: ReactNode }) {
+export function ThemeProvider({ children, mainWindow = false }: { children: ReactNode; mainWindow?: boolean }) {
+  const [startupSettled, setStartupSettled] = useState(false);
+  const revealed = useRef(false);
+  const [remoteAppearance, setRemoteAppearance] = useState<WindowThemeAppearance | null>(null);
+  const remoteStyleKey = remoteAppearance ? styleRevisionKey(remoteAppearance) : null;
+  const latestAppearance = useRef<WindowThemeAppearance | null>(null);
+  const publishAppearance = useRef<((appearance: WindowThemeAppearance) => void) | null>(null);
+  const requestAppearance = useRef<(() => void) | null>(null);
+  const licenseNeedsInput = useLicenseStateStore((state) => Boolean(
+    state.status?.required && !["active", "grace"].includes(state.status.state),
+  ));
   const theme = useThemeStore((state) => state.theme);
   const fetchThemeState = useThemeStore((state) => state.fetchThemeState);
   const connection = useDaemonWorkspaceStore((state) => state.connection);
@@ -124,16 +123,55 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const styleLabRevision = useChartStyleEditorStore((state) => state.revision);
 
   useEffect(() => {
-    if (syncThemeStateFromStorage()) return undefined;
-    const controller = new AbortController();
-    void fetchThemeState(controller.signal);
-    return () => controller.abort();
-  }, [fetchThemeState]);
+    if (resolveShellHost().kind !== "tauri") return;
+    let disposed = false;
+    const cleanup: (() => void)[] = [];
+    const report = (error: unknown) => console.error("[theme-window-sync]", error);
+    void import("@tauri-apps/api/event").then(async ({ emit, emitTo, listen }) => {
+      if (disposed) return;
+      if (mainWindow) {
+        const publisher = createThemeWindowPublisher(
+          appearance => emit(THEME_WINDOW_STATE, appearance), report,
+        );
+        cleanup.push(() => publisher.dispose());
+        publishAppearance.current = publisher.publish;
+        const sendLatest = () => {
+          if (latestAppearance.current) publisher.publish(latestAppearance.current);
+        };
+        const stop = await listen(THEME_WINDOW_REQUEST, sendLatest);
+        if (disposed) { stop(); return; }
+        cleanup.push(stop);
+        sendLatest();
+      } else {
+        // Subscribe before requesting the current appearance, including live
+        // drafts. Hidden retained windows stay subscribed and paint in place.
+        const stop = await listen<WindowThemeAppearance>(THEME_WINDOW_STATE, ({ payload }) => {
+          if (!disposed) setRemoteAppearance(payload);
+        });
+        if (disposed) { stop(); return; }
+        cleanup.push(stop);
+        requestAppearance.current = () => { void emitTo("main", THEME_WINDOW_REQUEST).catch(report); };
+        requestAppearance.current();
+      }
+    }).catch(report);
+    return () => {
+      disposed = true;
+      publishAppearance.current = null;
+      requestAppearance.current = null;
+      cleanup.forEach(stop => stop());
+    };
+  }, [mainWindow]);
 
+  if (mainWindow && licenseNeedsInput && !startupSettled) setStartupSettled(true);
   useEffect(() => {
-    if (connection !== "open") return;
+    if (mainWindow && licenseNeedsInput) return;
+    // Always reconcile on mount, including companion windows without a
+    // workspace socket. Cached paint is not a completed daemon bootstrap.
     const controller = new AbortController();
     const restoreWorkingTheme = async (next: ThemeState | null) => {
+      // Native companions mirror the main window's resolved appearance. A
+      // recovered local draft would otherwise keep masking later theme changes.
+      if (!mainWindow && resolveShellHost().kind === "tauri") return;
       if (!next?.activePreset || controller.signal.aborted) return;
       try {
         const draft = await fetchWorkingStyleLabDraft(
@@ -155,6 +193,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           mode: next.mode,
           appTokens: next.appTokens,
           chartPalette: next.chartPalette,
+          chartData: next.profileOverrides.chartData,
           appAuthoring: next.profileOverrides.appAuthoring,
         });
         editor.acceptRemoteDraft(draft, { clearHistory: true });
@@ -170,6 +209,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       }
     };
     const syncDaemonStyle = async () => {
+      // Reuse the app's existing shared startup wait; a slow sidecar must not
+      // briefly reveal yesterday's cache before today's theme is available.
+      if (mainWindow) await waitForDaemonStartup(controller.signal);
       const legacy = pendingLegacyStyleMigration();
       if (legacy) {
         try {
@@ -188,9 +230,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       }
       await restoreWorkingTheme(await fetchThemeState(controller.signal));
     };
-    void syncDaemonStyle();
+    void syncDaemonStyle().catch(error => {
+      if (!controller.signal.aborted) console.error("[theme-startup]", error);
+    }).finally(() => {
+      // A daemon/license failure must still leave its recovery UI accessible.
+      if (!controller.signal.aborted) setStartupSettled(true);
+    });
     return () => controller.abort();
-  }, [connection, fetchThemeState]);
+  }, [connection, fetchThemeState, mainWindow, licenseNeedsInput]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -203,6 +250,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       // change this client did not itself write, which is what they exist for.
       // applyThemeState no-ops when styleRevision and styleHash already match,
       // so an unchanged theme costs one request and no repaint.
+      requestAppearance.current?.();
       syncThemeStateFromStorage();
       fetchController?.abort();
       fetchController = new AbortController();
@@ -226,7 +274,22 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     };
   }, [fetchThemeState]);
 
+  useEffect(() => {
+    if (!remoteStyleKey || !startupSettled) return;
+    const current = useThemeStore.getState().theme;
+    if (styleRevisionKey(current) === remoteStyleKey) return;
+    // Refresh canonical consumers only when the saved theme changed. Live
+    // colour/material previews repaint directly and never refetch options.
+    const controller = new AbortController();
+    void fetchThemeState(controller.signal);
+    return () => controller.abort();
+  }, [fetchThemeState, startupSettled, remoteStyleKey]);
+
   useLayoutEffect(() => {
+    if (remoteAppearance) {
+      applyThemeToRoot(remoteAppearance);
+      return;
+    }
     if (!theme) return;
     const preview = liveAppThemePreview && styleLabBaseTheme.sourceThemeName
       ? {
@@ -248,10 +311,20 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
               ),
             ),
           },
-        } satisfies LiveStyleLabThemePreview
+        } satisfies LiveThemePreview
       : undefined;
-    applyThemeToRoot(theme, preview);
+    const appearance = resolveWindowThemeAppearance(theme, preview);
+    applyThemeToRoot(appearance);
+    // Do not push yesterday's boot cache into already-mounted companions while
+    // the main window is still reconciling its daemon theme and working draft.
+    if (mainWindow && startupSettled) {
+      latestAppearance.current = appearance;
+      publishAppearance.current?.(appearance);
+    }
   }, [
+    mainWindow,
+    startupSettled,
+    remoteAppearance,
     liveAppThemePreview,
     styleLabBaseTheme,
     styleLabCssOverrides,
@@ -259,6 +332,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     styleLabSemanticOverrides,
     theme,
   ]);
+
+  useLayoutEffect(() => {
+    if (!mainWindow || !startupSettled || revealed.current) return;
+    revealed.current = true;
+    if (!theme) document.documentElement.dataset.themeReady = "fallback";
+    // Runs after the palette and material stylesheet commit above.
+    void revealMainWindow().catch(error => console.error("[main-window-ready]", error));
+  }, [mainWindow, startupSettled, theme]);
 
   useEffect(() => {
     const appOverrides = theme?.profileOverrides.appTokens;

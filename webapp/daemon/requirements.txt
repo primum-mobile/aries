@@ -7,3 +7,5 @@ geographiclib>=2.0
 reportlab>=4.0
 fonttools>=4.0
 brotli>=1.1
+
+PyYAML>=6.0

@@ -51,7 +51,7 @@ export const FALLBACK_WORKSPACE_MANIFEST = {
       label: "Tables",
       collapsed: false,
       actions: [
-        { id: "table:positions", label: "Positions", enabled: true, shortcut: "F1" },
+        { id: "table:positions", label: "Speculum", enabled: true, shortcut: "F1" },
         { id: "table:lunar_mansions", label: "Lunar Mansions", enabled: true },
         { id: "table:eclipses", label: "Eclipses", enabled: true, shortcut: "E" },
         { id: "table:antiscia", label: "Antiscia", enabled: true, shortcut: "F7" },

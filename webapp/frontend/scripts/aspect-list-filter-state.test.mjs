@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   defaultAspectListSecondaryRingIncluded,
+  isAspectListPhaseIncluded,
   isAspectListRowIncluded,
   isAspectListSecondaryRingFilterId,
 } from "../src/lib/aspect-list-filter-state.mjs";
@@ -13,6 +14,19 @@ import {
 const noSecondaryRing = new Set();
 const fixedStars = new Set(["outer:primary:fixstar"]);
 const arabicParts = new Set(["outer:primary:arabic_part"]);
+
+test("phase filter defaults to Both and narrows applying or separating rows", () => {
+  for (const phase of ["applying", "separating", "exact", "none"]) {
+    assert.equal(isAspectListPhaseIncluded(phase), true);
+    assert.equal(isAspectListPhaseIncluded(phase, "both"), true);
+  }
+  assert.equal(isAspectListPhaseIncluded("applying", "applying"), true);
+  assert.equal(isAspectListPhaseIncluded("separating", "applying"), false);
+  assert.equal(isAspectListPhaseIncluded("exact", "applying"), false);
+  assert.equal(isAspectListPhaseIncluded("separating", "separating"), true);
+  assert.equal(isAspectListPhaseIncluded("applying", "separating"), false);
+  assert.equal(isAspectListPhaseIncluded("none", "separating"), false);
+});
 
 test("Focus All includes every ordinary current point family", () => {
   const focused = new Set();

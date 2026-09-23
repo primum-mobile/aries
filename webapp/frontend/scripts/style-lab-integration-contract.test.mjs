@@ -386,6 +386,8 @@ test("the sidecar previews wheel variants and chart layers without mutating Arie
   assert.match(client, /round-classic/);
   assert.match(client, /round-compact/);
   assert.match(client, /round-anglo/);
+  assert.match(client, /round-houses/);
+  assert.match(client, /round-cusps/);
   assert.match(client, /fetchStyleLabPreviewManifest/);
   assert.match(client, /fetchStyleLabPreviewSnapshot\(previewRequest/);
   assert.match(client, /styleGestureActive/);
@@ -629,7 +631,11 @@ test("workspace Style Lab previews linked app colors and materials on the real s
   assert.match(themeProvider, /styleLabBaseTheme\.appTokens/);
   assert.match(themeProvider, /styleLabCssOverrides/);
   assert.match(themeProvider, /APP_AUTHORING_OVERRIDE_PREFIX/);
-  assert.match(themeProvider, /compileThemeAppMaterials\([\s\S]*preview\?\.appAuthoring/);
+  assert.match(themeProvider, /resolveWindowThemeAppearance\(theme, preview\)/);
+  assert.match(themeProvider, /applyThemeToRoot\(appearance\)/);
+  assert.match(themeProvider, /compileThemeAppMaterials\(\s*appearance\.appAuthoring,/);
+  const windowTheme = readFileSync(resolve(frontendRoot, "src/lib/shell/theme-window-sync.ts"), "utf8");
+  assert.match(windowTheme, /appAuthoring: preview\?\.appAuthoring \?\? theme\.profileOverrides\.appAuthoring/);
   assert.match(appThemeControls, /materialOverrideId\(role, "backgroundColor"\)/);
   assert.match(appThemeControls, /materialOverrideId\(role, "patternColor"\)/);
   assert.match(appThemeControls, /materialOverrideId\(role, "gradientStartColor"\)/);
@@ -704,4 +710,10 @@ test("variant applicability is complete for wheel tokens and absent elsewhere", 
       `${semanticId} must not gain wheel-only applicability metadata`,
     );
   }
+});
+
+test('band inspector combines width with the linked appearance controls through existing bindings', () => {
+  assert.match(chartStylePanel, /sceneElements\.find\(element => styleClassId\(element\) === selectedElement\.appearanceClassId\)/);
+  assert.match(chartStylePanel, /\.\.\.controlsForElement\(selectedElement, tokenMetadata, authoringEditScope\),\s*\.\.\.controlsForElement\(selectedAppearanceElement, tokenMetadata, authoringEditScope\)/);
+  assert.match(chartStylePanel, /\[authoringEditScope, compositionProfile, selectedElement, selectedAppearanceElement, tokenMetadata\]/);
 });

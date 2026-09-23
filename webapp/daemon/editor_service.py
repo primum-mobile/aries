@@ -174,7 +174,7 @@ def editor_fields_to_record(fields: dict[str, Any]) -> dict[str, Any]:
         "zt": _norm_zt(f.get("zt", "zone")),
         "bc": bc,
         "dst": dst,
-        "place": (f.get("place", "") or "")[:20],
+        "place": f.get("place", "") or "",
         "country": f.get("country", "") or "",
         "lat": lat,
         "lon": lon,
@@ -344,6 +344,9 @@ class EditorService:
 
     @staticmethod
     def _location_is_unspecified(fields: dict[str, Any]) -> bool:
+        # Explicit coordinates include the valid unnamed location at 0°, 0°.
+        if fields.get("lat") is not None and fields.get("lon") is not None:
+            return False
         if str(fields.get("place", "") or "").strip():
             return False
         if str(fields.get("tzid", "") or "").strip():

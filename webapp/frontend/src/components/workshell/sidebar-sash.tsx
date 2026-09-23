@@ -71,6 +71,7 @@ export function SidebarSash({
   const eclipsesPane = useWorkspaceStore((s) => s.eclipsesPane);
   const lunarMansionsPane = useWorkspaceStore((s) => s.lunarMansionsPane);
   const synodicCyclesPane = useWorkspaceStore((s) => s.synodicCyclesPane);
+  const chartEventsPane = useWorkspaceStore((s) => s.chartEventsPane);
   const aspectListPane = useWorkspaceStore((s) => s.aspectListPane);
   const ascensionalTransitsPane = useWorkspaceStore((s) => s.ascensionalTransitsPane);
   const calendarPane = useWorkspaceStore((s) => s.calendarPane);
@@ -91,6 +92,7 @@ export function SidebarSash({
     eclipsesPane,
     lunarMansionsPane,
     synodicCyclesPane,
+    chartEventsPane,
     aspectListPane,
     ascensionalTransitsPane,
     calendarPane,
@@ -238,6 +240,7 @@ export function SidebarSash({
         eclipsesPane: workspaceState.eclipsesPane,
         lunarMansionsPane: workspaceState.lunarMansionsPane,
         synodicCyclesPane: workspaceState.synodicCyclesPane,
+        chartEventsPane: workspaceState.chartEventsPane,
         aspectListPane: workspaceState.aspectListPane,
         ascensionalTransitsPane: workspaceState.ascensionalTransitsPane,
         calendarPane: workspaceState.calendarPane,

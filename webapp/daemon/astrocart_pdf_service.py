@@ -288,6 +288,7 @@ def _feature_matches(
         return False
     if (
         selection.layer_kinds is not None
+        and kind != KIND_PARAN
         and _feature_layer(properties) not in selection.layer_kinds
     ):
         return False

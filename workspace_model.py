@@ -82,7 +82,11 @@ DEFAULT_SECTIONS = (
 		items=(
 			WorkspaceAction('calendar', 'calendar'),
 			WorkspaceAction('temporal_confluence', 'temporal_confluence'),
-			WorkspaceAction('positions', 'Positions', shortcut=_action_shortcut('positions', 'TMPositions')),
+			WorkspaceAction(
+				'positions',
+				mtexts.txts.get('TMPositions', 'Speculum\tF1').split('\t', 1)[0].replace('&', ''),
+				shortcut=_action_shortcut('positions', 'TMPositions'),
+			),
 			WorkspaceAction('lunar_mansions', mtexts.txts.get('LunarMansions', 'Lunar Mansions...').rstrip('. …')),
 			WorkspaceAction('aspects', 'Aspects', shortcut=_action_shortcut('aspects', 'TMAspects')),
 			WorkspaceAction('aspect_list', 'aspect_list', shortcut=_action_shortcut('aspect_list')),

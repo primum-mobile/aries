@@ -3,7 +3,10 @@
 
 "use client";
 
+
+
 import type React from "react";
+import { setSideBySideView } from "./side-by-side-charts";
 import { useCallback, useState } from "react";
 
 import {
@@ -26,10 +29,12 @@ import {
   workspaceSynastryComposite,
   type DirectionCustomSignificator,
   type WorkspaceContextMenuNode,
+  type WorkspaceOpenResult,
 } from "@/lib/daemon/client";
 import type { ChartRenderSnapshot } from "@/lib/chart/types";
-import { useDaemonWorkspaceView } from "@/stores/daemon-workspace-adapter";
+import { runImmediateWorkspaceCommand, useDaemonWorkspaceView } from "@/stores/daemon-workspace-adapter";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
+import { runWorkspaceDocumentSnapshotCommand } from "@/stores/workspace-command-snapshot-gate";
 import { useWorkspaceStore, type WorkspaceDocument } from "@/stores/workspace-store";
 import { useFrameLayoutStore } from "@/stores/frame-layout-store";
 import { useSurveilStore } from "@/stores/surveil-store";
@@ -111,6 +116,15 @@ export function ChartContextMenu({ chart, children }: ChartContextMenuProps) {
   const runAction = useCallback(
     async (actionId?: string, payload?: Record<string, unknown>) => {
       if (!actionId) return;
+      if (actionId === "workspace.set_side_by_side") {
+        try {
+          await setSideBySideView(payload ?? {});
+          await refresh();
+        } catch {
+          window.alert(t("chartview.failed"));
+        }
+        return;
+      }
       if (actionId === "surveil.open_studies") {
         // The daemon owns the study store; this item only opens the management
         // dialog (which then drives the CRUD routes). No chart refresh here.
@@ -148,6 +162,15 @@ export function ChartContextMenu({ chart, children }: ChartContextMenuProps) {
         return;
       }
       try {
+        if (actionId === "workspace.open_supplementary") {
+          // Hold activation events until the returned child snapshot is cached.
+          // Otherwise a reused child's old split layout can remount the canvas
+          // before the authoritative open response replaces it.
+          await runImmediateWorkspaceCommand(
+            executeWorkspaceContextMenuAction(actionId, payload) as Promise<WorkspaceOpenResult>,
+          );
+          return;
+        }
         if (
           actionId === "workspace.show_primary_directions_to_point" ||
           actionId === "workspace.open_primary_directions_to_point"
@@ -200,7 +223,20 @@ export function ChartContextMenu({ chart, children }: ChartContextMenuProps) {
             ? payload.documentId
             : activeDocumentId;
         if (documentId) {
-          const result = await executeWorkspaceContextMenuAction(actionId, payload);
+          const isHarmonicProjectionAction =
+            actionId === "workspace.set_harmonic_projection_mode" ||
+            actionId === "workspace.set_harmonic_number";
+          const commandResult = isHarmonicProjectionAction
+            ? await runWorkspaceDocumentSnapshotCommand(
+                documentId,
+                () => executeWorkspaceContextMenuAction(actionId, payload),
+              )
+            : {
+                result: await executeWorkspaceContextMenuAction(actionId, payload),
+                isLatest: true,
+              };
+          if (!commandResult.isLatest) return;
+          const result = commandResult.result;
           const resultDocumentId =
             typeof result.documentId === "string" && result.documentId
               ? result.documentId
@@ -223,6 +259,7 @@ export function ChartContextMenu({ chart, children }: ChartContextMenuProps) {
       }
     },
     [
+      t,
       activeDocumentId,
       activeDocument,
       openDirectionsPane,

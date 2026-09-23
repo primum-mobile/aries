@@ -26,10 +26,14 @@ const expectedIds = [
   "canvas.span.chartRing",
   ...["geometry", "dynamic", "outerLabel"].map((id) => `layers.${id}`),
   "fills.chartField",
+  "fills.glyphField",
   "fills.houseField",
   "fills.centerField",
+  "fills.cuspDegreeBand",
   "fills.zodiacBand",
-  "fills.subdivisionBand",
+  "fills.zodiacElementSlices",
+  "fills.termBand",
+  "fills.decanBand",
   ...[
     "outerMaximum", "outerHouse", "outerDegree", "zodiacOuter", "innerDegree",
     "zodiacInner", "term", "angloCuspOuter", "innerBoundary", "aspectBoundary",
@@ -56,7 +60,7 @@ const expectedIds = [
   ...["ray", "arrowhead", "label"].map((component) => `angles.outer.${component}`),
   ...["leader", "glyph", "motion", "lane", "positionLane"].map((component) => `bodies.inner.${component}`),
   ...["degree", "sign", "minute"].map((component) => `bodies.inner.position.${component}`),
-  ...["leader", "glyph", "motion", "lane"].map((component) => `bodies.outer.${component}`),
+  ...["leader", "glyph", "motion", "position", "lane"].map((component) => `bodies.outer.${component}`),
   "aspects.lane",
   ...["line", "glyph"].map((component) => `aspects.primary.${component}`),
   ...["endpointMarker", "line", "glyph"].map((component) => `aspects.interchart.${component}`),
@@ -86,7 +90,7 @@ const expectedIds = [
 
 test("wheel-v2 exposes the exact complete semantic class tree", () => {
   assert.equal(manifest.WHEEL_SEMANTIC_CLASS_MANIFEST_VERSION, "wheel-v2");
-  assert.equal(expectedIds.length, 116);
+  assert.equal(expectedIds.length, 121);
   assert.deepEqual(
     [...manifest.WHEEL_SEMANTIC_CLASS_IDS].sort(),
     [...expectedIds].sort(),
@@ -142,7 +146,9 @@ test("layer effects stay on retained scalar controls, not duplicate profile-v2 c
     const hasShadow = definition.capabilities.some((item) => shadowCapabilities.has(item));
     assert.equal(
       hasShadow,
-      definition.id.startsWith("fills.") && definition.id !== "canvas.background",
+      definition.id.startsWith("fills.")
+        && definition.id !== "canvas.background"
+        && definition.id !== "fills.zodiacElementSlices",
       definition.id,
     );
   }
@@ -172,6 +178,10 @@ test("canvas background is the retained chart material rather than a color-only 
   assert.ok(!canvas.capabilities.includes("textureMask"));
   const houseField = manifest.getWheelSemanticClass("fills.houseField");
   assert.ok(houseField.capabilities.includes("shadowBlur"));
+  const elementSlices = manifest.getWheelSemanticClass("fills.zodiacElementSlices");
+  assert.deepEqual(elementSlices.capabilities, [
+    "fillPattern", "patternColor", "cellSize", "dotSize", "density", "angle", "seed", "opacity",
+  ]);
   const center = manifest.getWheelSemanticClass("fills.centerField");
   assert.deepEqual(center.capabilities.slice(-10), [
     "textureMask",
@@ -203,12 +213,21 @@ test("documented variant and preview applicability is explicit", () => {
   assert.equal(applicable("houses.outer.cusp", context("classic", "comparison", ["houses", "comparison.outerHouses"])), "applicable");
   assert.equal(applicable("rings.aspectBoundary", context("compact", "single", ["aspects"])), "not-applicable");
   assert.equal(applicable("rings.aspectBoundary", context("classic", "single", ["aspects"])), "applicable");
+  assert.equal(applicable("fills.termBand", context("anglo", "single", ["terms"])), "applicable");
+  assert.equal(applicable("fills.termBand", context("anglo", "single", ["decans"])), "not-applicable");
+  assert.equal(applicable("fills.decanBand", context("anglo", "single", ["decans"])), "applicable");
+  assert.equal(applicable("fills.decanBand", context("anglo", "single", ["terms"])), "not-applicable");
+  assert.equal(applicable("fills.cuspDegreeBand", context("houses", "single")), "applicable");
+  assert.equal(applicable("fills.cuspDegreeBand", context("cusps", "single")), "applicable");
+  assert.equal(applicable("fills.cuspDegreeBand", context("anglo", "single")), "applicable");
+  assert.equal(applicable("fills.cuspDegreeBand", context("classic", "single")), "not-applicable");
 });
 
 test("variant-specific arrowheads stay honest, and special points are body glyphs", () => {
   const innerArrow = manifest.getWheelSemanticClass("angles.inner.arrowhead");
   assert.ok(manifest.resolveWheelSemanticCapabilities(innerArrow, "classic").includes("strokeWidth"));
-  assert.equal(manifest.resolveWheelSemanticCapabilities(innerArrow, "anglo").includes("strokeWidth"), false);
+  assert.ok(manifest.resolveWheelSemanticCapabilities(innerArrow, "anglo").includes("strokeWidth"));
+  assert.ok(manifest.resolveWheelSemanticCapabilities(innerArrow, "anglo").includes("arrowStyle"));
   assert.ok(manifest.resolveWheelSemanticCapabilities(innerArrow, "anglo").includes("color"));
 
   // Fortune, the Vertex and the prenatal syzygy are not classes of their own.
@@ -218,7 +237,15 @@ test("variant-specific arrowheads stay honest, and special points are body glyph
     assert.equal(manifest.getWheelSemanticClass(id), undefined, id);
   }
   const bodyGlyph = manifest.getWheelSemanticClass("bodies.inner.glyph");
-  for (const capability of ["fontRef", "fontSize", "tracking", "color", "opacity"]) {
+  for (const capability of [
+    "fontRef",
+    "fontWeight",
+    "fontStyle",
+    "fontSize",
+    "tracking",
+    "color",
+    "opacity",
+  ]) {
     assert.ok(bodyGlyph.capabilities.includes(capability), capability);
   }
 });

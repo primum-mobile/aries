@@ -1,3 +1,4 @@
+import { resolveWheelArrowSize } from "./wheel-render-style";
 // Copyright (C) 2026 Max Lange
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -15,6 +16,7 @@ import {
   resolveWheelTypographyPaint,
   type WheelTypographyProfile,
   type WheelRenderStyle,
+  wheelTypographyProfileForTheme,
 } from "./wheel-render-style";
 
 export type MultiwheelZodiacPosition = "rim" | "centre";
@@ -505,9 +507,10 @@ function drawMultiwheelAngleArrowhead(
   rayWidth: number,
   style: WheelRenderStyle,
 ) {
-  const arrowLength = resolveMultiwheelAngleArrowLength(band);
+  const size = resolveWheelArrowSize(style);
+  const arrowLength = resolveMultiwheelAngleArrowLength(band) * size;
   const baseRadius = band.outer - arrowLength;
-  const halfWidth = clamp(rayWidth * 1.35, 1.75, 2.75);
+  const halfWidth = clamp(rayWidth * 1.35, 1.75, 2.75) * size;
   const halfAngle = Math.atan2(halfWidth, Math.max(1, baseRadius)) * 180 / Math.PI;
   const left = polar(center, baseRadius, longitude - halfAngle, rootAsc);
   const right = polar(center, baseRadius, longitude + halfAngle, rootAsc);
@@ -605,7 +608,7 @@ function drawMultiwheelAngleLabels(
   const proportionalSize = clamp(layout.glyphSize * 0.68, 9, 13);
   const paint = resolveWheelTypographyPaint(
     style,
-    "anglo",
+    style.authoringTargetProfile,
     "angles.inner.label",
     layout.maxRadius,
     {
@@ -785,7 +788,8 @@ function drawChartBand(
   );
 
   const bodies = chartBodies(chart, palette);
-  const showPositions = chart.options.multiwheelShowPositions !== false;
+  const showPositions = Boolean(chart.options.showPositions) &&
+    chart.options.multiwheelShowPositions !== false;
   const showMinutes = showPositions && chart.options.multiwheelShowMinutes !== false;
   const degreeSize = clamp(layout.positionSize * 1.20, 10, 12);
   const signSize = clamp(layout.positionSize * 1.24, 10, 13);
@@ -1026,11 +1030,7 @@ function drawMultiwheelCornerCaptions(
     const caption = multiwheelChartCaption(chart);
     if (!caption.length) return;
     const slot = slots[index];
-    const profile: WheelTypographyProfile = chart.options.theme === 2
-      ? "anglo"
-      : chart.options.theme === 1
-        ? "compact"
-        : "classic";
+    const profile: WheelTypographyProfile = wheelTypographyProfileForTheme(chart.options.theme);
     const semanticClass = slot.vertical === "top"
       ? "chartOverlay.information.topLeft"
       : "chartOverlay.information.bottomLeft";

@@ -28,6 +28,7 @@ export function SectionedTableView({
 }) {
   const sections = payload.sections ?? [];
   const topical = asTopicalCapability(payload.capabilities);
+  const preserveAngleSeconds = payload.capabilities?.anglePrecision === "seconds";
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {topical && onBindingChange ? (
@@ -36,7 +37,12 @@ export function SectionedTableView({
       <div className="min-h-0 flex-1 overflow-auto p-[var(--aries-pane-content-padding)]">
         <div className="flex flex-wrap items-start gap-[var(--aries-pane-content-padding)]">
           {sections.map((section) => (
-            <SectionPanel key={section.id} section={section} unavailable={payload.unavailable} />
+            <SectionPanel
+              key={section.id}
+              section={section}
+              unavailable={payload.unavailable}
+              preserveAngleSeconds={preserveAngleSeconds}
+            />
           ))}
         </div>
         {payload.notes?.length ? (
@@ -97,9 +103,11 @@ function TopicSelector({
 function SectionPanel({
   section,
   unavailable,
+  preserveAngleSeconds,
 }: {
   section: GenericTableSection;
   unavailable?: boolean;
+  preserveAngleSeconds: boolean;
 }) {
   // wx draws every panel's header box even when its rows are all filtered
   // out (midpointswnd.py:179-186), so an empty section still shows headers.
@@ -164,7 +172,10 @@ function SectionPanel({
                     unavailable && "text-[color:var(--aries-text-muted)]",
                   )}
                 >
-                  <CellView cell={row.cells[index]} />
+                  <CellView
+                    cell={row.cells[index]}
+                    preserveAngleSeconds={preserveAngleSeconds}
+                  />
                 </td>
               ))}
             </tr>

@@ -252,6 +252,8 @@ function buildDocumentFromSummary(summary: DaemonDocumentSummary): WorkspaceDocu
       id: summary.documentId,
       parentDocumentId: summary.parentDocumentId,
       kind: "ascensional-transits",
+      chartVisualMode: summary.chartVisualMode,
+      titleKey: summary.titleKey ?? null,
       sourceName,
       displayDatetime: summary.displayDatetime ?? undefined,
       tabSuffix: summary.tabSuffix ?? undefined,
@@ -348,19 +350,25 @@ function applyImmediateWorkspaceResult(
   if (result.snapshotInvalidatedIds?.length) {
     invalidateDocumentSnapshots(result.snapshotInvalidatedIds);
   }
-  const activeDocumentId =
-    result.activeDocumentId ?? result.documentId ?? fallbackDocumentId ?? null;
-  if (activeDocumentId && result.snapshot) {
-    rememberDocumentSnapshot(activeDocumentId, result.snapshot);
+  const activeDocumentId = result.activeDocumentId ?? null;
+  const snapshotDocumentId =
+    result.documentId ?? fallbackDocumentId ?? activeDocumentId;
+  if (snapshotDocumentId && result.snapshot) {
+    rememberDocumentSnapshot(snapshotDocumentId, result.snapshot);
     recordChartPerf("chart-command-snapshot", {
-      docId: activeDocumentId,
+      docId: snapshotDocumentId,
       resultDocId: result.documentId ?? null,
       fallbackDocumentId: fallbackDocumentId ?? null,
       overlayRenderMode: result.snapshot.overlayRenderMode,
     });
-    useDaemonWorkspaceStore.getState().pushCommandSnapshot(activeDocumentId, result.snapshot);
+    useDaemonWorkspaceStore.getState().pushCommandSnapshot(snapshotDocumentId, result.snapshot);
   }
-  useDaemonWorkspaceStore.getState()._applyState(result.documents, activeDocumentId);
+  if (Array.isArray(result.documents)) {
+    useDaemonWorkspaceStore.getState()._applyState(
+      result.documents,
+      activeDocumentId ?? snapshotDocumentId,
+    );
+  }
 }
 
 export function applyImmediateWorkspaceCommandResult(
@@ -370,7 +378,7 @@ export function applyImmediateWorkspaceCommandResult(
   applyImmediateWorkspaceResult(result, fallbackDocumentId);
 }
 
-function runImmediateWorkspaceCommand<T extends SnapshotCommandResult>(
+export function runImmediateWorkspaceCommand<T extends SnapshotCommandResult>(
   command: Promise<T>,
   fallbackDocumentId?: string | null,
 ): Promise<T> {

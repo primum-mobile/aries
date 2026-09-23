@@ -1,3 +1,5 @@
+import { resolveWheelArrowGeometry, resolveWheelLinePaint, resolveScaledWheelStroke } from "../chart/wheel-render-style";
+import { WHEEL_RING_ARCHETYPES, ringEnabled } from "../chart/wheel-composition";
 // Copyright (C) 2026 Max Lange
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -5,6 +7,12 @@ import type { ChartHitRegion } from "../chart/draw-chart";
 import {
   resolveWheelBandLayout,
   resolveWheelClassFontSizeCeiling,
+  composedWheelLayout,
+  wheelOuterAttachmentRadius,
+  wheelExteriorCuspTickRadii,
+  WHEEL_BAND_FILL_CLASSES,
+  resolveWheelBandFillRegions,
+  wheelBandOuterBoundaryRole,
 } from "../chart/wheel-layout-model";
 import {
   WHEEL_RENDER_TOKEN_SPECS,
@@ -34,6 +42,8 @@ import {
   type WheelRenderTokens,
   type WheelRingSet,
   type WheelTypographyProfile,
+  isAngloFamilyProfile,
+  isCuspBandProfile,
 } from "../chart/wheel-render-style";
 import {
   hitTestStyleSceneElements,
@@ -137,6 +147,8 @@ export interface WheelStyleSceneBuildInput {
   readonly useIndividualBodyColors?: boolean;
   /** Selects the exact fire/earth/air/water role painted for zodiac glyphs. */
   readonly useZodiacElementColors?: boolean;
+  /** Selects the palette-driven background material painted for zodiac fields. */
+  readonly useZodiacElementFieldColors?: boolean;
   readonly signColors?: readonly string[];
   /** Existing computeHitRegions() output; no editor-only body layout is made. */
   readonly hitRegions?: readonly ChartHitRegion[];
@@ -521,9 +533,20 @@ function applicableAuthoringDefaults(
   const capabilities = new Set(
     resolveWheelSemanticCapabilities(definition, profile),
   );
+  if (defaults.arrowStyle && defaults.arrowStyle !== "outlined" && defaults.arrowStyle !== "open") {
+    for (const capability of ["strokeWidth", "strokeStyle", "dashLength", "dashGap", "lineCap", "lineJoin"] as const) {
+      capabilities.delete(capability);
+    }
+  }
   return Object.freeze({
     ...(capabilities.has("fontRef") && defaults.fontRef != null
       ? { fontRef: defaults.fontRef }
+      : {}),
+    ...(capabilities.has("fontWeight") && defaults.fontWeight != null
+      ? { fontWeight: defaults.fontWeight }
+      : {}),
+    ...(capabilities.has("fontStyle") && defaults.fontStyle != null
+      ? { fontStyle: defaults.fontStyle }
       : {}),
     ...(capabilities.has("fontSize") && defaults.fontSizePx != null
       ? { fontSizePx: defaults.fontSizePx }
@@ -630,6 +653,8 @@ function applicableAuthoringDefaults(
     ...(capabilities.has("rulerDepth") && defaults.rulerDepthPercent != null
       ? { rulerDepthPercent: defaults.rulerDepthPercent }
       : {}),
+    ...(capabilities.has("arrowStyle") ? { arrowStyle: defaults.arrowStyle } : {}),
+    ...(capabilities.has("arrowSize") ? { arrowSizePercent: defaults.arrowSizePercent ?? 100 } : {}),
     ...(capabilities.has("tickLength") && defaults.tickLengthPercent != null
       ? { tickLengthPercent: defaults.tickLengthPercent }
       : {}),
@@ -839,7 +864,7 @@ function bodyRadiusToken(
   input: WheelGeometryInput,
   rings: Readonly<WheelRingSet>,
 ): RadiusTokenBinding {
-  if (input.profile === "anglo") {
+  if (isAngloFamilyProfile(input.profile)) {
     return {
       key: "angloPlanetScale",
       value: style.geometry.anglo.planetScale,
@@ -858,7 +883,7 @@ function aspectRadiusToken(
   input: WheelGeometryInput,
   rings: Readonly<WheelRingSet>,
 ): RadiusTokenBinding {
-  if (input.profile === "anglo") {
+  if (isAngloFamilyProfile(input.profile)) {
     return {
       key: "angloAspectScale",
       value: style.geometry.anglo.aspectScale,
@@ -884,7 +909,7 @@ function positionRadiusToken(
   input: WheelGeometryInput,
   rings: Readonly<WheelRingSet>,
 ): RadiusTokenBinding {
-  if (input.profile === "anglo") {
+  if (isAngloFamilyProfile(input.profile)) {
     return {
       key: "angloPositionInsetScale",
       value: style.geometry.anglo.positionInsetScale,
@@ -909,7 +934,7 @@ function houseLabelRadiusToken(
   style: WheelRenderStyle,
   input: WheelGeometryInput,
 ): RadiusTokenBinding | null {
-  if (input.profile === "anglo") return null;
+  if (isAngloFamilyProfile(input.profile)) return null;
   if (input.profile === "compact") {
     return {
       key: "compactHouseName",
@@ -943,6 +968,7 @@ function addRingElement(
     geometryOwnership?: StyleSceneEditability;
     parentId?: string;
     priority?: number;
+    hitTolerance?: number;
   }>,
 ): void {
   if (input.radius == null || !Number.isFinite(input.radius) || input.radius < 0) return;
@@ -1024,7 +1050,7 @@ function addRingElement(
               kind: "circle",
               center: input.center,
               radius: input.radius,
-              tolerance: Math.max(4, input.maxRadius * 0.008),
+              tolerance: input.hitTolerance ?? Math.max(4, input.maxRadius * 0.008),
             }
           : null,
         handles: ringHandles,
@@ -1040,13 +1066,13 @@ function safeIdPart(value: string | number): string {
 }
 
 function signScaleToken(profile: WheelTypographyProfile): keyof WheelRenderTokens {
-  if (profile === "anglo") return "angloSignScale";
+  if (isAngloFamilyProfile(profile)) return "angloSignScale";
   if (profile === "compact") return "compactSignScale";
   return "classicSignScale";
 }
 
 function outerScaleToken(profile: WheelTypographyProfile): keyof WheelRenderTokens {
-  if (profile === "anglo") return "angloOuterScale";
+  if (isAngloFamilyProfile(profile)) return "angloOuterScale";
   if (profile === "compact") return "compactOuterScale";
   return "classicOuterScale";
 }
@@ -1145,17 +1171,17 @@ function positionMetric(
     if (component === "sign") {
       return [
         "bodyPositionSignScale",
-        profile === "anglo"
+        isAngloFamilyProfile(profile)
           ? ratios.angloBodyPosition.signScale
           : ratios.bodyPosition.signScale,
       ];
     }
     if (component === "degree") {
-      return profile === "anglo"
+      return isAngloFamilyProfile(profile)
         ? ["angloBodyDegreeScale", ratios.angloBodyPosition.degreeScale]
         : ["bodyPositionDegreeScale", ratios.bodyPosition.degreeScale];
     }
-    return profile === "anglo"
+    return isAngloFamilyProfile(profile)
       ? ["angloBodyMinuteScale", ratios.angloBodyPosition.minuteScale]
       : ["bodyPositionMinuteScale", ratios.bodyPosition.minuteScale];
   }
@@ -1164,20 +1190,20 @@ function positionMetric(
     if (component === "sign") {
       return [
         "anglePositionSignScale",
-        profile === "anglo"
+        isAngloFamilyProfile(profile)
           ? ratios.angloAnglePosition.signScale
           : ratios.anglePosition.signScale,
       ];
     }
     if (component === "degree") {
-      return profile === "anglo"
+      return isAngloFamilyProfile(profile)
         ? [
             "angloAnglePositionDegreeScale",
             ratios.angloAnglePosition.degreeScale,
           ]
         : ["anglePositionDegreeScale", ratios.anglePosition.degreeScale];
     }
-    return profile === "anglo"
+    return isAngloFamilyProfile(profile)
       ? [
           "angloAnglePositionMinuteScale",
           ratios.angloAnglePosition.minuteScale,
@@ -1189,20 +1215,20 @@ function positionMetric(
     if (component === "sign") {
       return [
         "housePositionSignScale",
-        profile === "anglo"
+        isAngloFamilyProfile(profile)
           ? ratios.angloHousePosition.signScale
           : ratios.housePosition.signScale,
       ];
     }
     if (component === "degree") {
-      return profile === "anglo"
+      return isAngloFamilyProfile(profile)
         ? [
             "angloHousePositionDegreeScale",
             ratios.angloHousePosition.degreeScale,
           ]
         : ["housePositionDegreeScale", ratios.housePosition.degreeScale];
     }
-    return profile === "anglo"
+    return isAngloFamilyProfile(profile)
       ? [
           "angloHousePositionMinuteScale",
           ratios.angloHousePosition.minuteScale,
@@ -1273,6 +1299,12 @@ function styleTargetTokenBindings(
       ),
     ]);
   }
+  if (classId === "bodies.outer.position") {
+    return Object.freeze([
+      colorBinding(CHART_COLOR_TOKENS.positions, style.palette.positions),
+      fontBinding(APP_FONT_TOKENS.ui, style.typography.families.ui),
+    ]);
+  }
   const position = positionMetric(classId, profile, style);
   if (position) {
     const isSign = classId.endsWith(".sign");
@@ -1333,7 +1365,7 @@ function styleTargetTokenBindings(
   }
 
   if (classId === "houses.outer.label") {
-    const colorKey = profile === "anglo"
+    const colorKey = isAngloFamilyProfile(profile)
       ? "angloHouseLabel"
       : "houseLabel";
     return Object.freeze([
@@ -1583,7 +1615,7 @@ function bodyLeaderLengthToken(
   maxRadius: number,
   rings: Readonly<WheelRingSet>,
 ): RadiusTokenBinding {
-  if (profile === "anglo") {
+  if (isAngloFamilyProfile(profile)) {
     return {
       key: "angloLeaderInsetScale",
       value: style.geometry.anglo.leaderInsetScale,
@@ -1609,7 +1641,7 @@ function angleArrowLengthToken(
   profile: WheelTypographyProfile,
   maxRadius: number,
 ): RadiusTokenBinding | null {
-  if (profile === "anglo") return null;
+  if (isAngloFamilyProfile(profile)) return null;
   return {
     key: "classicArrowLength",
     value: style.geometry.classic.arrowLength,
@@ -1665,7 +1697,7 @@ function authoringHandleMetadata(
   semanticId: string,
 ): StyleSceneTokenDragMetadata | null {
   if (!semanticId.startsWith(WHEEL_AUTHORING_OVERRIDE_PREFIX)) return null;
-  const preset = semanticId.endsWith(".radius")
+  const preset = (semanticId.endsWith(".radius") || semanticId.endsWith(".bandWidth"))
     ? AUTHORING_NUMERIC_PROPERTIES.radius
     : semanticId.endsWith(".fontSize")
       ? AUTHORING_NUMERIC_PROPERTIES.glyphSize
@@ -1794,8 +1826,8 @@ function appendBodyElement(
       0.05,
     );
     const leaderColorKey = role === "outer"
-      ? profile === "anglo" ? "angloOuterLeader" : "outerLeader"
-      : profile === "anglo" ? "angloBodyLeader" : "bodyLeader";
+      ? isAngloFamilyProfile(profile) ? "angloOuterLeader" : "outerLeader"
+      : isAngloFamilyProfile(profile) ? "angloBodyLeader" : "bodyLeader";
     const leaderLength = bodyLeaderLengthToken(style, profile, maxRadius, rings);
     const leaderLengthHandle = linearHandle(
       leaderId,
@@ -1910,10 +1942,10 @@ function appendHouseElements(
         primitive: "text",
         tokenBindings: Object.freeze([
           colorBinding(
-            profile === "anglo"
+            isAngloFamilyProfile(profile)
               ? WHEEL_COLOR_TOKENS.angloHouseLabel
               : WHEEL_COLOR_TOKENS.houseLabel,
-            profile === "anglo"
+            isAngloFamilyProfile(profile)
               ? style.elementColors.angloHouseLabel
               : style.elementColors.houseLabel,
           ),
@@ -2132,7 +2164,7 @@ function appendAngleElement(
     : typography.layoutUnit;
   const id = `wheel.angle.${role}.${safeIdPart(region.angleId)}`;
   const startRadius =
-    role === "outer" ? (rings.rOuterMin ?? rings.r30) : rings.rBase;
+    role === "outer" ? (rings.rOuterMin ?? wheelOuterAttachmentRadius(rings)) : rings.rBase;
   const start = projectWheelPoint(center, startRadius, region.longitude, ascendantDegrees);
   const end: StyleScenePoint = [region.x, region.y];
   if (includeRay) {
@@ -2235,9 +2267,9 @@ function appendAspectElement(
   const shape = region.shape === "glyph" ? "glyph" : "line";
   const scope = region.scope ?? "primary";
   const id = `wheel.aspect.${scope}.${safeIdPart(region.p1)}.${safeIdPart(region.p2)}.${region.aspectType}.${shape}`;
-  const widthKey = profile === "anglo" ? "aspectAngloWidth" : "aspectClassicWidth";
+  const widthKey = isAngloFamilyProfile(profile) ? "aspectAngloWidth" : "aspectClassicWidth";
   const widthValue =
-    profile === "anglo"
+    isAngloFamilyProfile(profile)
       ? style.strokes.aspects.angloWidth
       : style.strokes.aspects.classicWidth;
   const handleKey =
@@ -2364,7 +2396,7 @@ function appendInterchartEndpointMarker(
     style.linePaint.bodyLeader.widthScale,
     0.05,
   );
-  const colorKey = profile === "anglo"
+  const colorKey = isAngloFamilyProfile(profile)
     ? "angloBodyLeader"
     : "bodyLeader";
   handles.push(strokeHandle);
@@ -2554,7 +2586,16 @@ function appendSecondaryElement(
 export function buildWheelStyleScene(
   input: WheelStyleSceneBuildInput,
 ): WheelStyleScene {
-  const { geometry } = input;
+  // Declared ring visibility governs paint and selection even when the factory
+  // recipe is untouched. Only charts without a composition use the historical
+  // cusp-wheel fallback that omits subdivisions.
+  const geometry: WheelGeometryInput = {...input.geometry,
+      showTerms: ringEnabled(input.geometry.composition, "terms",
+        input.geometry.showTerms && !isCuspBandProfile(input.geometry.profile)),
+      showDecans: ringEnabled(input.geometry.composition, "decans",
+        input.geometry.showDecans && !isCuspBandProfile(input.geometry.profile)),
+      showHouses: ringEnabled(input.geometry.composition, "houses", input.geometry.showHouses),
+    };
   const style = projectWheelAuthoringStyle(
     input.style,
     geometry.maxRadius,
@@ -2567,6 +2608,7 @@ export function buildWheelStyleScene(
   const center: StyleScenePoint = input.center ?? [viewport.width / 2, viewport.height / 2];
   const ascendantDegrees = input.ascendantDegrees ?? 0;
   const rings = resolveWheelRingSet(style, geometry);
+  const solvedBands = resolveWheelBandLayout(style, geometry, rings).bands;
   const tags = stateTags(geometry);
   const elements: StyleSceneElement[] = [];
   const handles: StyleSceneHandle[] = [];
@@ -2785,18 +2827,38 @@ export function buildWheelStyleScene(
     ...bandSpanElements(),
   );
 
+  const composedFillRegions = composedWheelLayout(rings) ? resolveWheelBandFillRegions(solvedBands) : null;
+  // Boundary hit halos must leave the interiors of both neighboring bands
+  // reachable, including factory layouts that retain their original topology.
+  const boundaryHitTolerance = (radius: number) => Math.min(
+    Math.max(4, geometry.maxRadius * 0.008),
+    ...solvedBands.filter(band => band.visible && !band.overlay && band.outer > band.inner
+      && (Math.abs(band.outer - radius) < 1e-9 || Math.abs(band.inner - radius) < 1e-9))
+      .map(band => (band.outer - band.inner) / 5),
+  );
   const addFillRegion = (
     classId:
       | "fills.chartField"
+      | "fills.glyphField"
       | "fills.houseField"
       | "fills.centerField"
+      | "fills.cuspDegreeBand"
       | "fills.zodiacBand"
-      | "fills.subdivisionBand",
+      | "fills.zodiacElementSlices"
+      | "fills.termBand"
+      | "fills.decanBand",
     id: string,
     labelKey: string,
     hitGeometry: StyleSceneHitGeometry,
     priority = 2,
   ) => {
+    if (composedFillRegions && classId !== "fills.chartField" && classId !== "fills.zodiacElementSlices") {
+      const regions = composedFillRegions.filter(region => region.classId === classId);
+      if (!regions.length) return;
+      const geometries = regions.map(region => ({kind: "annulus" as const, center,
+        innerRadius: region.inner, outerRadius: region.outer}));
+      hitGeometry = geometries.length === 1 ? geometries[0] : {kind: "compound", geometries};
+    }
     elements.push(element({
       classId,
       id,
@@ -2825,35 +2887,90 @@ export function buildWheelStyleScene(
     -25,
   );
   addFillRegion(
-    "fills.houseField",
-    "wheel.fill.house-field",
-    "styleLab.scene.houseField",
+    "fills.glyphField",
+    "wheel.fill.glyph-field",
+    "styleLab.scene.glyphField",
     {
       kind: "annulus",
       center,
-      innerRadius: rings.rAsp,
+      innerRadius: geometry.showHouses ? rings.rHouse : rings.rAsp,
       outerRadius: rings.rInner,
     },
-    -5,
+    -4,
   );
+  if (geometry.showHouses) {
+    addFillRegion(
+      "fills.houseField",
+      "wheel.fill.house-field",
+      "styleLab.scene.houseField",
+      {
+        kind: "annulus",
+        center,
+        innerRadius: rings.rAsp,
+        outerRadius: rings.rHouse,
+      },
+      -3,
+    );
+  }
   addFillRegion(
     "fills.centerField",
     "wheel.fill.center-field",
     "styleLab.scene.centerField",
     { kind: "disc", center, radius: rings.rAsp },
   );
-  addFillRegion(
-    "fills.zodiacBand",
-    "wheel.fill.zodiac-band",
-    "styleLab.scene.zodiacBand",
-    { kind: "annulus", center, innerRadius: rings.r0, outerRadius: rings.r30 },
-  );
-  if (geometry.showTerms || geometry.showDecans) {
+  if (ringEnabled(geometry.composition, "cuspLabels", isAngloFamilyProfile(geometry.profile))
+    || ringEnabled(geometry.composition, "cuspRuler", geometry.profile === "anglo")) {
+    const cuspLabels = solvedBands.find(band => band.id === "cuspLabels");
+    const legacyCuspBand = isCuspBandProfile(geometry.profile) && !composedWheelLayout(rings);
     addFillRegion(
-      "fills.subdivisionBand",
-      "wheel.fill.subdivision-band",
-      "styleLab.scene.subdivisionBand",
-      { kind: "annulus", center, innerRadius: rings.rInner, outerRadius: rings.r0 },
+      "fills.cuspDegreeBand",
+      "wheel.fill.cusp-degree-band",
+      "styleLab.scene.cuspDegreeBand",
+      {
+        kind: "annulus",
+        center,
+        innerRadius: ringEnabled(geometry.composition, "cuspLabels", true) ? rings.rInner : rings.rCuspLabelOuter ?? rings.rInner,
+        outerRadius: legacyCuspBand ? rings.r30 : ringEnabled(geometry.composition, "cuspRuler", true)
+          ? rings.rCuspOuter ?? rings.r30 : cuspLabels?.outer ?? rings.rCuspLabelOuter ?? rings.r30,
+      },
+      -2,
+    );
+  }
+  if (ringEnabled(geometry.composition, "zodiac", !isCuspBandProfile(geometry.profile))) {
+    addFillRegion(
+      "fills.zodiacBand",
+      "wheel.fill.zodiac-band",
+      "styleLab.scene.zodiacBand",
+      { kind: "annulus", center, innerRadius: rings.r0, outerRadius: rings.r30 },
+      input.useZodiacElementFieldColors ? 1 : 2,
+    );
+    addFillRegion(
+      "fills.zodiacElementSlices",
+      "wheel.fill.zodiac-element-slices",
+      "styleLab.scene.zodiacElementSlices",
+      { kind: "annulus", center, innerRadius: rings.r0, outerRadius: rings.r30 },
+      input.useZodiacElementFieldColors ? 2 : 1,
+    );
+  }
+  if (geometry.showTerms) {
+    addFillRegion(
+      "fills.termBand",
+      "wheel.fill.term-band",
+      "styleLab.scene.termBand",
+      { kind: "annulus", center, innerRadius: rings.rTermsInner ?? rings.rDecans, outerRadius: rings.rTerms },
+    );
+  }
+  if (geometry.showDecans) {
+    addFillRegion(
+      "fills.decanBand",
+      "wheel.fill.decan-band",
+      "styleLab.scene.decanBand",
+      {
+        kind: "annulus",
+        center,
+        innerRadius: rings.rDecansInner ?? rings.rCuspOuter ?? rings.rInner,
+        outerRadius: rings.rDecans,
+      },
     );
   }
 
@@ -2868,7 +2985,9 @@ export function buildWheelStyleScene(
     painted = true,
     colorToken: readonly [string, string] = CHART_COLOR_TOKENS.frame,
     color = style.palette.frame,
-  ) => addRingElement(elements, handles, tags, {
+  ) => {
+    if (composedWheelLayout(rings)) return;
+    addRingElement(elements, handles, tags, {
     id,
     labelKey,
     radius,
@@ -2882,7 +3001,9 @@ export function buildWheelStyleScene(
     radiusToken,
     geometryOwnership: ownership,
     priority,
-  });
+    hitTolerance: radius == null ? undefined : boundaryHitTolerance(radius),
+    });
+  };
 
   ring(
     WHEEL_STYLE_SCENE_ELEMENT_IDS.ringZodiacOuter,
@@ -2909,7 +3030,7 @@ export function buildWheelStyleScene(
     style.elementColors.zodiacInnerRing,
   );
 
-  const zodiacSpokeInnerRadius = geometry.profile === "anglo"
+  const zodiacSpokeInnerRadius = composedWheelLayout(rings) ? rings.r0 : isAngloFamilyProfile(geometry.profile)
     ? (rings.rCuspOuter ?? rings.rInner)
     : rings.rInner;
   const zodiacSpokes = Array.from({ length: 12 }, (_, index): StyleSceneHitGeometry => ({
@@ -2918,7 +3039,7 @@ export function buildWheelStyleScene(
     end: projectWheelPoint(center, rings.r30, index * 30, ascendantDegrees),
     tolerance: Math.max(4, geometry.maxRadius * 0.008),
   }));
-  elements.push(element({
+  if (ringEnabled(geometry.composition, "zodiac", true)) elements.push(element({
     classId: "zodiac.spoke",
     id: "wheel.zodiac.spokes",
     parentId: WHEEL_STYLE_SCENE_ELEMENT_IDS.zodiac,
@@ -2935,7 +3056,8 @@ export function buildWheelStyleScene(
     priority: 125,
   }, tags));
 
-  if (geometry.profile !== "anglo") {
+  if (!composedWheelLayout(rings) && !isAngloFamilyProfile(geometry.profile)
+    && ringEnabled(geometry.composition, "degree")) {
     ring(
       "wheel.ring.degree.inner.10",
       "styleLab.scene.degreeTickRing",
@@ -2949,8 +3071,9 @@ export function buildWheelStyleScene(
       style.elementColors.innerDegreeRing,
     );
   }
-  const outerDegreePainted = geometry.hasOuterRing &&
-    (geometry.profile !== "anglo" || geometry.comparisonWithOuterHouses);
+  const outerDegreePainted = !composedWheelLayout(rings) && geometry.hasOuterRing &&
+    ringEnabled(geometry.composition, "degree") &&
+    (!isAngloFamilyProfile(geometry.profile) || geometry.comparisonWithOuterHouses);
   if (outerDegreePainted) {
     ring(
       "wheel.ring.degree.outer.10",
@@ -2984,7 +3107,7 @@ export function buildWheelStyleScene(
   // the renderer draws at one, two and three times that value. Selecting any
   // tick group therefore edits the depth of the whole ruler, which is how the
   // geometry is authored — there is no separate per-length token to bind.
-  const degreeTickLengthToken = geometry.profile === "anglo"
+  const degreeTickLengthToken = isAngloFamilyProfile(geometry.profile)
     ? null
     : {
         key: "classicDegreeTickLength" as keyof WheelRenderTokens,
@@ -3125,7 +3248,19 @@ export function buildWheelStyleScene(
     }, tags));
   };
 
-  if (geometry.profile !== "anglo") {
+  if (composedWheelLayout(rings)) {
+    const degreeBand = composedWheelLayout(rings)!.bands.find(band => band.id === "degree");
+    if (degreeBand) {
+      for (const [suffix, label, share, matches] of [
+        ["10deg", "styleLab.scene.tickInner10", 1, (degree: number) => degree % 10 === 0],
+        ["5deg", "styleLab.scene.tickInner5", 2 / 3, (degree: number) => degree % 10 === 5],
+        ["1deg", "styleLab.scene.tickInner1", 1 / 3, (degree: number) => degree % 5 !== 0],
+      ] as const) {
+        addDegreeTickClass(`zodiac.tick.inner.${suffix}`, label, degreeBand.outer,
+          degreeBand.outer - (degreeBand.outer - degreeBand.inner) * share, matches);
+      }
+    }
+  } else if (!isAngloFamilyProfile(geometry.profile) && ringEnabled(geometry.composition, "degree")) {
     addRulerClass(
       "zodiacInner",
       "styleLab.class.zodiacRulerInner",
@@ -3167,7 +3302,7 @@ export function buildWheelStyleScene(
       rings.rOuter0,
       rings.rOuter10,
       true,
-      geometry.profile === "anglo" ? geometry.maxRadius - rings.r30 : undefined,
+      isAngloFamilyProfile(geometry.profile) ? geometry.maxRadius - rings.r30 : undefined,
     );
     addDegreeTickClass(
       "zodiac.tick.outer.10deg",
@@ -3182,7 +3317,7 @@ export function buildWheelStyleScene(
       "styleLab.scene.tickOuter5",
       rings.rOuter0,
       rings.rOuter5,
-      geometry.profile === "anglo"
+      isAngloFamilyProfile(geometry.profile)
         ? (degree) => degree % 10 === 5
         : (degree) => degree % 5 === 0,
       "zodiacOuter",
@@ -3192,7 +3327,7 @@ export function buildWheelStyleScene(
       "styleLab.scene.tickOuter1",
       rings.rOuter0,
       rings.rOuter1,
-      geometry.profile === "anglo"
+      isAngloFamilyProfile(geometry.profile)
         ? (degree) => degree % 5 !== 0
         : () => true,
       "zodiacOuter",
@@ -3201,10 +3336,19 @@ export function buildWheelStyleScene(
   // Anglo cusp ruler. Every tick of one length is one selectable group, which
   // matches how the ruler is authored and is the only practical target: a
   // single 1-degree tick is well under a pixel wide.
-  if (geometry.profile === "anglo" && rings.rCuspOuter != null) {
+  //
+  // Cusp-band wheels paint no ruler at all (a 360-degree sweep is a zodiac
+  // instrument), so it gets no tick targets either — the scene has to mirror
+  // what the renderer draws, or the editor offers controls for nothing.
+  if (
+    isAngloFamilyProfile(geometry.profile)
+    && ringEnabled(geometry.composition, "cuspRuler", !isCuspBandProfile(geometry.profile))
+    && rings.rCuspOuter != null
+  ) {
     const cuspOuter = rings.rCuspOuter;
     const canonicalRings = resolveCanonicalWheelRingSet(style, geometry);
-    const inward = geometry.showTerms || geometry.showDecans;
+    const composed = composedWheelLayout(rings) != null;
+    const inward = composed || geometry.showTerms || geometry.showDecans;
     const direction = inward ? -1 : 1;
     const rulerTicks = style.geometry.anglo.cuspRulerTicks;
     const addCuspRulerTickClass = (
@@ -3215,10 +3359,10 @@ export function buildWheelStyleScene(
     ) => {
       // Resolved through the same authored share the renderer paints, so the
       // hit shape and the handle sit on the tick actually drawn.
-      const rulerBand = cuspOuter - (rings.rCuspLabelOuter ?? cuspOuter);
+      const rulerBand = cuspOuter - (rings.rCuspRulerInner ?? rings.rCuspLabelOuter ?? cuspOuter);
       const canonicalRulerBand = (canonicalRings.rCuspOuter ?? cuspOuter)
         - (canonicalRings.rCuspLabelOuter ?? cuspOuter);
-      const length = resolveWheelTickLength(
+      const preferredLength = resolveWheelTickLength(
         style,
         "anglo",
         classId,
@@ -3226,6 +3370,7 @@ export function buildWheelStyleScene(
         canonicalRulerBand,
         rings.r30 * lengthScale,
       );
+      const length = composed ? Math.min(rulerBand, preferredLength) : preferredLength;
       const end = cuspOuter + direction * length;
       const geometries: StyleSceneHitGeometry[] = [];
       for (let degree = 0; degree < 360; degree += 1) {
@@ -3237,7 +3382,8 @@ export function buildWheelStyleScene(
           kind: "line",
           start: projectWheelPoint(center, cuspOuter, degree, ascendantDegrees),
           end: projectWheelPoint(center, end, degree, ascendantDegrees),
-          tolerance: Math.max(3, geometry.maxRadius * 0.006),
+          // Leave the gaps between one-degree ticks available to the band.
+          tolerance: Math.min(Math.max(3, geometry.maxRadius * 0.006), Math.min(cuspOuter, end) * Math.PI / 720),
         });
       }
       if (!geometries.length) return;
@@ -3354,28 +3500,35 @@ export function buildWheelStyleScene(
     const delta = Math.abs(((left - right) % 360 + 540) % 360 - 180);
     return Math.abs(180 - delta) < 1e-6;
   };
-  const rulerDirection = geometry.showTerms || geometry.showDecans ? -1 : 1;
+  const rulerDirection = composedWheelLayout(rings) || geometry.showTerms || geometry.showDecans ? -1 : 1;
 
-  if (geometry.profile === "anglo" && rings.rCuspOuter != null) {
+  const exteriorCuspTicks = ringEnabled(geometry.composition, "cuspLabels")
+    ? wheelExteriorCuspTickRadii(rings, rings.r30 * style.geometry.anglo.houseCuspTickScale) : undefined;
+  const showHouseCuspTicks = Boolean(exteriorCuspTicks) || ringEnabled(geometry.composition, "cuspRuler", !isCuspBandProfile(geometry.profile))
+    || (isCuspBandProfile(geometry.profile) && ringEnabled(geometry.composition, "cuspLabels"));
+  if (isAngloFamilyProfile(geometry.profile) && rings.rCuspOuter != null && showHouseCuspTicks) {
     const cuspOuter = rings.rCuspOuter;
     // A cusp that coincides with an angle is already marked by its heavier
     // structural ray; the renderer skips it and so does the target.
     const angleLongitudes = angleRegions.map((region) => region.longitude);
-    const tick = rings.r30 * style.geometry.anglo.houseCuspTickScale;
+    const preferredTick = rings.r30 * style.geometry.anglo.houseCuspTickScale;
+    const tick = composedWheelLayout(rings) && ringEnabled(geometry.composition, "cuspRuler")
+      ? Math.min(preferredTick, Math.max(0, cuspOuter - (rings.rCuspRulerInner ?? cuspOuter)))
+      : preferredTick;
     addGroupedLineClass(
       "zodiac.tick.angloHouseCusp",
       "styleLab.scene.tickAngloHouseCusp",
       "subdivision",
       houseRegions
         .filter((region) =>
-          !angleLongitudes.some((angle) => sameLongitude(region.longitude, angle)),
+          exteriorCuspTicks || !angleLongitudes.some((angle) => sameLongitude(region.longitude, angle)),
         )
         .map((region) => ({
           kind: "line" as const,
-          start: projectWheelPoint(center, cuspOuter, region.longitude, ascendantDegrees),
+          start: projectWheelPoint(center, exteriorCuspTicks?.[0] ?? cuspOuter, region.longitude, ascendantDegrees),
           end: projectWheelPoint(
             center,
-            cuspOuter + rulerDirection * tick,
+            exteriorCuspTicks?.[1] ?? cuspOuter + rulerDirection * tick,
             region.longitude,
             ascendantDegrees,
           ),
@@ -3387,7 +3540,7 @@ export function buildWheelStyleScene(
     );
   }
 
-  if (geometry.profile === "anglo") {
+  if (isAngloFamilyProfile(geometry.profile)) {
     const rulerRadius = rings.rCuspOuter ?? rings.r0;
     const tick = rings.r30 * style.geometry.anglo.angleRulerTickScale;
     addGroupedLineClass(
@@ -3421,16 +3574,31 @@ export function buildWheelStyleScene(
     baseRadius: number,
     apexRadius: number,
     halfAngle: number,
+    classId: "angles.inner.arrowhead" | "angles.outer.arrowhead" = "angles.inner.arrowhead",
   ): readonly StyleSceneHitGeometry[] => {
+    const rayClass = classId === "angles.outer.arrowhead" ? "angles.outer.ray" : "angles.inner.ray";
+    const shaft = resolveWheelLinePaint(style, "angle", isAngloFamilyProfile(geometry.profile)
+      ? style.strokes.angloStructural
+      : resolveScaledWheelStroke(style, geometry.maxRadius * 2, style.strokes.ascMcDefaultBase), {}, rayClass);
+    const arrow = resolveWheelArrowGeometry(style, baseRadius, apexRadius, halfAngle, shaft.width, classId, shaft.lineCap, isAngloFamilyProfile(geometry.profile) ? "filled" : "outlined");
     const tolerance = Math.max(4, geometry.maxRadius * 0.008);
-    const left = projectWheelPoint(center, baseRadius, longitude - halfAngle, ascendantDegrees);
-    const right = projectWheelPoint(center, baseRadius, longitude + halfAngle, ascendantDegrees);
-    const apex = projectWheelPoint(center, apexRadius, longitude, ascendantDegrees);
-    return [
-      { kind: "line", start: left, end: right, tolerance },
+    const base = projectWheelPoint(center, arrow.baseRadius, longitude, ascendantDegrees);
+    const unit = projectWheelPoint([0, 0], 1, longitude, ascendantDegrees);
+    const dx = -unit[1] * arrow.halfWidth, dy = unit[0] * arrow.halfWidth;
+    const left: StyleScenePoint = [base[0] - dx, base[1] - dy];
+    const right: StyleScenePoint = [base[0] + dx, base[1] + dy];
+    const apex = projectWheelPoint(center, arrow.apexRadius, longitude, ascendantDegrees);
+    const sides: StyleSceneHitGeometry[] = [
       { kind: "line", start: right, end: apex, tolerance },
       { kind: "line", start: apex, end: left, tolerance },
     ];
+    if (arrow.arrowStyle === "open") return sides;
+    if (arrow.arrowStyle === "stealth") {
+      const notch = projectWheelPoint(center, arrow.notchRadius, longitude, ascendantDegrees);
+      return [...sides, { kind: "line", start: left, end: notch, tolerance },
+        { kind: "line", start: notch, end: right, tolerance }];
+    }
+    return [...sides, { kind: "line", start: left, end: right, tolerance }];
   };
   const arrows = style.strokes.arrows;
   const arrowLength = angleArrowLengthToken(style, geometry.profile, geometry.maxRadius);
@@ -3460,7 +3628,7 @@ export function buildWheelStyleScene(
     angleRegions
       .filter((region) => region.chartRole !== "outer" && arrowAngle(region))
       .flatMap((region) =>
-        geometry.profile === "anglo"
+        isAngloFamilyProfile(geometry.profile)
           // The Anglo arrowhead is a filled triangle seated on the inner
           // boundary rather than a stroked chevron on the sign ring.
           ? arrowTriangle(
@@ -3495,7 +3663,7 @@ export function buildWheelStyleScene(
       angleRegions
         .filter((region) => region.chartRole === "outer" && arrowAngle(region))
         .flatMap((region) =>
-          arrowTriangle(region.longitude, outerBase, outerApex, arrows.halfAngleDegrees),
+          arrowTriangle(region.longitude, outerBase, outerApex, arrows.halfAngleDegrees, "angles.outer.arrowhead"),
         ),
       WHEEL_COLOR_TOKENS.angleRay,
       style.elementColors.angleRay,
@@ -3504,7 +3672,7 @@ export function buildWheelStyleScene(
     );
   }
 
-  if (geometry.profile === "anglo" && rings.rCuspOuter != null) {
+  if (isAngloFamilyProfile(geometry.profile) && rings.rCuspOuter != null) {
     ring(
       WHEEL_STYLE_SCENE_ELEMENT_IDS.ringCuspOuter,
       "styleLab.scene.cuspOuterRing",
@@ -3555,10 +3723,10 @@ export function buildWheelStyleScene(
     12,
     "baseRing",
     true,
-    geometry.profile === "anglo"
+    isAngloFamilyProfile(geometry.profile)
       ? WHEEL_COLOR_TOKENS.angloBaseRing
       : WHEEL_COLOR_TOKENS.baseRing,
-    geometry.profile === "anglo"
+    isAngloFamilyProfile(geometry.profile)
       ? style.elementColors.angloBaseRing
       : style.elementColors.baseRing,
   );
@@ -3571,14 +3739,14 @@ export function buildWheelStyleScene(
     12,
     "houseBoundaryRing",
     geometry.showHouses,
-    geometry.profile === "anglo"
+    isAngloFamilyProfile(geometry.profile)
       ? WHEEL_COLOR_TOKENS.angloHouseBoundaryRing
       : WHEEL_COLOR_TOKENS.houseBoundaryRing,
-    geometry.profile === "anglo"
+    isAngloFamilyProfile(geometry.profile)
       ? style.elementColors.angloHouseBoundaryRing
       : style.elementColors.houseBoundaryRing,
   );
-  ring(WHEEL_STYLE_SCENE_ELEMENT_IDS.ringHouseLabel, "styleLab.scene.houseLabelLane", rings.rHouseName, houseLabelRadiusToken(style, geometry), geometry.profile === "anglo" ? DERIVED_GEOMETRY : undefined, 11, "minorRing", false);
+  ring(WHEEL_STYLE_SCENE_ELEMENT_IDS.ringHouseLabel, "styleLab.scene.houseLabelLane", rings.rHouseName, houseLabelRadiusToken(style, geometry), isAngloFamilyProfile(geometry.profile) ? DERIVED_GEOMETRY : undefined, 11, "minorRing", false);
 
   if (geometry.mode === "comparison") {
     ring(
@@ -3609,7 +3777,7 @@ export function buildWheelStyleScene(
       WHEEL_COLOR_TOKENS.outerHouseRing,
       style.elementColors.outerHouseRing,
     );
-    const nonAnglo = geometry.profile !== "anglo";
+    const nonAnglo = !isAngloFamilyProfile(geometry.profile);
     ring(WHEEL_STYLE_SCENE_ELEMENT_IDS.ringOuterBody, "styleLab.scene.outerBodyLane", rings.rOuterPlanet, nonAnglo ? {
       key: "biwheelOuterPlanetSector", value: style.geometry.biwheel.outerPlanetSector, valuePerPixel: 2 / geometry.maxRadius,
     } : null, nonAnglo ? undefined : CODE_OWNED_GEOMETRY, 12, "minorRing", false);
@@ -3620,12 +3788,12 @@ export function buildWheelStyleScene(
       key: "biwheelProjectedLabel", value: style.geometry.biwheel.projectedLabel, valuePerPixel: 1 / geometry.maxRadius,
     } : null, nonAnglo ? undefined : CODE_OWNED_GEOMETRY, 10, "minorRing", false);
   } else {
-    ring(WHEEL_STYLE_SCENE_ELEMENT_IDS.ringOuterLine, "styleLab.scene.outerLine", rings.rOuterLine, geometry.profile === "anglo" ? null : {
+    ring(WHEEL_STYLE_SCENE_ELEMENT_IDS.ringOuterLine, "styleLab.scene.outerLine", rings.rOuterLine, isAngloFamilyProfile(geometry.profile) ? null : {
       key: "classicOuterLine", value: style.geometry.classic.outer.line, valuePerPixel: 1 / geometry.maxRadius,
-    }, geometry.profile === "anglo" ? CODE_OWNED_GEOMETRY : undefined, 11, "minorRing", false);
-    ring(WHEEL_STYLE_SCENE_ELEMENT_IDS.ringProjectedLabel, "styleLab.scene.projectedLabelLane", rings.rAntis, geometry.profile === "anglo" ? null : {
+    }, isAngloFamilyProfile(geometry.profile) ? CODE_OWNED_GEOMETRY : undefined, 11, "minorRing", false);
+    ring(WHEEL_STYLE_SCENE_ELEMENT_IDS.ringProjectedLabel, "styleLab.scene.projectedLabelLane", rings.rAntis, isAngloFamilyProfile(geometry.profile) ? null : {
       key: "classicOuterProjectedLabel", value: style.geometry.classic.outer.projectedLabel, valuePerPixel: 1 / geometry.maxRadius,
-    }, geometry.profile === "anglo" ? CODE_OWNED_GEOMETRY : undefined, 10, "minorRing", false);
+    }, isAngloFamilyProfile(geometry.profile) ? CODE_OWNED_GEOMETRY : undefined, 10, "minorRing", false);
   }
 
   // Manifest-backed fallbacks keep direct controls available before exact
@@ -3662,7 +3830,7 @@ export function buildWheelStyleScene(
       classId: geometry.mode === "comparison" ? "aspects.interchart.line" : "aspects.primary.line",
       id: "wheel.aspect.lines", parentId: WHEEL_STYLE_SCENE_ELEMENT_IDS.aspects,
       labelKey: "styleLab.scene.aspectLines", layer: "dynamic", primitive: "line",
-      tokenBindings: [...linePaintBindings(style, "aspect"), metricBinding(geometry.profile === "anglo" ? "aspectAngloWidth" : "aspectClassicWidth", "stroke-width", geometry.profile === "anglo" ? style.strokes.aspects.angloWidth : style.strokes.aspects.classicWidth)],
+      tokenBindings: [...linePaintBindings(style, "aspect"), metricBinding(isAngloFamilyProfile(geometry.profile) ? "aspectAngloWidth" : "aspectClassicWidth", "stroke-width", isAngloFamilyProfile(geometry.profile) ? style.strokes.aspects.angloWidth : style.strokes.aspects.classicWidth)],
       editability: EDITABLE, hitGeometry: null, handles: [], priority: 1,
       stateTags: Object.freeze([...tags, "manifest-placeholder", "manifest-editable"]),
     }, tags),
@@ -3799,7 +3967,63 @@ export function buildWheelStyleScene(
   // Resolved once here rather than only for the handles below, because the
   // band ceiling has to reach the inspector row as well. A glyph that caps
   // when dragged but not when typed is one property with two different limits.
-  const bandsForCeilings = resolveWheelBandLayout(style, geometry, rings).bands;
+  const bandsForCeilings = solvedBands;
+
+  if (composedWheelLayout(rings)) {
+    for (const band of bandsForCeilings) {
+      if (band.id === "margin" || !band.visible || band.overlay) continue;
+      const role = wheelBandOuterBoundaryRole(band, bandsForCeilings);
+      if (!role) continue;
+      const color = style.elementColors[role as keyof typeof style.elementColors] ?? style.palette.frame;
+      addRingElement(elements, handles, tags, {
+        id: `wheel.composition.${band.instanceId}.boundary`,
+        labelKey: WHEEL_RING_ARCHETYPES[band.id].labelKey,
+        radius: band.outer, center, maxRadius: geometry.maxRadius, style,
+        paintRole: role, color, colorToken: CHART_COLOR_TOKENS.frame,
+        painted: true, priority: 14,
+        hitTolerance: boundaryHitTolerance(band.outer),
+      });
+    }
+  }
+
+  // Ring boundaries are dimensions of stable instances. The legacy radius
+  // catalog remains importable, but live gestures author band widths.
+  if (geometry.composition) {
+    for (let index = handles.length - 1; index >= 0; index -= 1) {
+      if (handles[index].binding?.property === "radius"
+        || handles[index].binding?.property === "spanScale") handles.splice(index, 1);
+    }
+    for (const band of bandsForCeilings) {
+      const instance = geometry.composition.rings.find(ring => ring.archetypeId === band.id);
+      if (!instance || !instance.enabled || !band.visible || band.id === "hub") continue;
+      const spec = WHEEL_RING_ARCHETYPES[instance.archetypeId];
+      const classId = `canvas.ring.${instance.instanceId}`;
+      const elementId = `wheel.composition.${instance.instanceId}`;
+      const angle = 45;
+      const width = (band.outer - band.inner) * referencePxPerRendered;
+      const handle: StyleSceneHandle = {
+        id: `${elementId}.width`, elementId, kind: "radial", center,
+        radius: band.inner, angleDegrees: angle,
+        position: radialPoint(center, band.inner, angle), editability: EDITABLE,
+        binding: {semanticId: wheelAuthoringOverrideId(geometry.profile, classId, "bandWidth"),
+          cssVar: "", property: "radius", value: width,
+          valuePerPixel: -referencePxPerRendered,
+          min: band.widthBounds ? band.widthBounds.min * referencePxPerRendered : spec.minWidth,
+          max: band.widthBounds ? Math.min(400, band.widthBounds.max * referencePxPerRendered) : 400},
+      };
+      handles.push(handle);
+      // A band is the whole annulus. Its surface sits above background fills
+      // but below the text, ticks and painted boundaries it contains, so those
+      // remain independently selectable without a narrow high-priority ring
+      // swallowing their targets.
+      elements.push(element({classId, id: elementId, parentId: WHEEL_STYLE_SCENE_ELEMENT_IDS.root,
+        appearanceClassId: WHEEL_BAND_FILL_CLASSES[instance.archetypeId],
+        labelKey: spec.labelKey, layer: "geometry", primitive: "surface",
+        tokenBindings: [], editability: EDITABLE, priority: 3,
+        hitGeometry: {kind: "annulus", center, innerRadius: band.inner, outerRadius: band.outer},
+        authoringDefaults: {bandWidthPx: width}, handles: [handle]}, tags));
+    }
+  }
 
   const elementsWithAuthoringDefaults = elements.map((sceneElement) => {
     const defaults = sceneElement.authoringDefaults
@@ -3812,9 +4036,11 @@ export function buildWheelStyleScene(
     const definition = isWheelSemanticClassId(sceneElement.classId)
       ? WHEEL_SEMANTIC_CLASS_BY_ID.get(sceneElement.classId)
       : undefined;
-    const applicable = definition
+    const rawApplicable = definition
       ? applicableAuthoringDefaults(definition, geometry.profile, defaults)
       : defaults;
+    const applicable = geometry.composition && rawApplicable.radiusPx != null
+      ? {...rawApplicable, radiusPx: undefined} : rawApplicable;
     // The largest this run may be made, whether it is dragged on the wheel or
     // typed in the inspector. Reported in reference space beside the size it
     // limits, so the row can both clamp and say that it is clamping.
@@ -3896,7 +4122,7 @@ export function buildWheelStyleScene(
     Object.freeze({
       ...sceneElement,
       handles: Object.freeze(
-        sceneElement.handles.map(
+        sceneElement.handles.filter(handle => !geometry.composition || authoringHandleById.has(handle.id)).map(
           (handle) => authoringHandleById.get(handle.id) ?? handle,
         ),
       ),
@@ -3932,7 +4158,14 @@ export function resolveWheelStyleHandleDrag(
   return resolveStyleSceneHandleDrag(
     handle,
     drag,
-    (semanticId) => resolveMetadata?.(semanticId) ?? authoringHandleMetadata(semanticId),
+    (semanticId) => {
+      const metadata = resolveMetadata?.(semanticId) ?? authoringHandleMetadata(semanticId);
+      // Factory widths are exact sampled dimensions, not values on an editor
+      // step grid. Snap the movement from that width so touching a handle (or
+      // moving it less than one fine step) preserves the original exactly.
+      return semanticId.endsWith('.bandWidth') && handle.binding
+        ? {...metadata, stepOrigin: handle.binding.value} : metadata;
+    },
   );
 }
 

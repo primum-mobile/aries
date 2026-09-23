@@ -16,6 +16,8 @@ import util
 
 SECONDARY_MEAN_YEAR_DAYS = 365.24219907
 MEAN_TERTIARY_PERIOD_DAYS = 27.32158648
+# Q1 ephemeris day / Q2 ephemeris day. A sidereal day is shorter than
+# a mean solar day; the inverse mapping divides by this same factor.
 BIJA_RATIO = 0.997269566
 
 
@@ -127,13 +129,13 @@ def _symbolic_age_from_elapsed_days(elapsed_days, method=posfordate.SECONDARY, d
 	if method == posfordate.TERTIARY:
 		symbolic_age = elapsed_days / MEAN_TERTIARY_PERIOD_DAYS
 		if day_type == posfordate.PROGRESSION_DAY_TYPE_Q1:
-			symbolic_age /= BIJA_RATIO
+			symbolic_age *= BIJA_RATIO
 		return symbolic_age
 	if method == posfordate.MINOR:
 		return elapsed_days * (MEAN_TERTIARY_PERIOD_DAYS / SECONDARY_MEAN_YEAR_DAYS)
 	symbolic_age = elapsed_days / SECONDARY_MEAN_YEAR_DAYS
 	if day_type == posfordate.PROGRESSION_DAY_TYPE_Q1:
-		symbolic_age /= BIJA_RATIO
+		symbolic_age *= BIJA_RATIO
 	return symbolic_age
 
 
@@ -142,7 +144,7 @@ def _elapsed_days_from_progression_age(age_years, method=posfordate.SECONDARY, d
 	day_type = _effective_progression_day_type(method, day_type)
 	elapsed_days = float(age_years) * SECONDARY_MEAN_YEAR_DAYS
 	if method in (posfordate.SECONDARY, posfordate.TERTIARY) and day_type == posfordate.PROGRESSION_DAY_TYPE_Q1:
-		elapsed_days *= BIJA_RATIO
+		elapsed_days /= BIJA_RATIO
 	return elapsed_days
 
 
@@ -150,16 +152,20 @@ def _calendar_age_years_for_real_datetime(radix_chart, real_datetime_tuple):
 	if radix_chart is None or getattr(radix_chart, 'time', None) is None:
 		return 0.0
 	ry, rm, rd, rh, rmi, rs = [int(v) for v in real_datetime_tuple]
-	real_local = _local_datetime_from_tuple((ry, rm, rd, rh, rmi, rs))
+	# At datetime's edges the containing birthday interval can straddle
+	# year 0 or 10000. Gregorian dates repeat exactly every 400 years;
+	# translate only the interval arithmetic, keeping the real age unchanged.
+	year_offset = 400 if ry == 1 else -400 if ry == 9999 else 0
+	real_local = _local_datetime_from_tuple((ry + year_offset, rm, rd, rh, rmi, rs))
 	birth_year = int(getattr(radix_chart.time, 'origyear', radix_chart.time.year))
 	whole_years = int(ry - birth_year)
-	current_anniv = _anniversary_datetime_tuple(radix_chart, birth_year + whole_years)
+	current_anniv = _anniversary_datetime_tuple(radix_chart, birth_year + whole_years + year_offset)
 	current_anniv_local = _local_datetime_from_tuple(current_anniv)
 	if real_local < current_anniv_local:
 		whole_years -= 1
-		current_anniv = _anniversary_datetime_tuple(radix_chart, birth_year + whole_years)
+		current_anniv = _anniversary_datetime_tuple(radix_chart, birth_year + whole_years + year_offset)
 		current_anniv_local = _local_datetime_from_tuple(current_anniv)
-	next_anniv = _anniversary_datetime_tuple(radix_chart, birth_year + whole_years + 1)
+	next_anniv = _anniversary_datetime_tuple(radix_chart, birth_year + whole_years + 1 + year_offset)
 	next_anniv_local = _local_datetime_from_tuple(next_anniv)
 	interval = float((next_anniv_local - current_anniv_local).total_seconds())
 	if abs(interval) < 1e-9:
@@ -187,19 +193,22 @@ def _real_datetime_for_calendar_age(radix_chart, age_years):
 	if radix_chart is None or getattr(radix_chart, 'time', None) is None:
 		return None
 	birth_year = int(getattr(radix_chart.time, 'origyear', radix_chart.time.year))
-	if age_years >= 0.0:
-		whole_years = int(math.floor(age_years + 1e-12))
-	else:
-		whole_years = int(math.ceil(age_years - 1e-12))
+	# Match the forward mapping's containing anniversary interval, including
+	# pre-birth dates. Truncation toward zero selects the wrong leap-year span.
+	whole_years = int(math.floor(age_years))
 	frac = float(age_years) - float(whole_years)
-	base_anniv = _anniversary_datetime_tuple(radix_chart, birth_year + whole_years)
-	next_anniv = _anniversary_datetime_tuple(radix_chart, birth_year + whole_years + 1)
+	anniversary_year = birth_year + whole_years
+	year_offset = 400 if anniversary_year == 0 else -400 if anniversary_year == 9999 else 0
+	base_anniv = _anniversary_datetime_tuple(radix_chart, anniversary_year + year_offset)
+	next_anniv = _anniversary_datetime_tuple(radix_chart, anniversary_year + 1 + year_offset)
 	base_local = _local_datetime_from_tuple(base_anniv)
 	next_local = _local_datetime_from_tuple(next_anniv)
 	interval_seconds = float((next_local - base_local).total_seconds())
 	target_local = _round_datetime_to_second(
 		base_local + datetime.timedelta(seconds=interval_seconds * frac)
 	)
+	if year_offset:
+		target_local = target_local.replace(year=target_local.year - year_offset)
 	return (
 		int(target_local.year), int(target_local.month), int(target_local.day),
 		int(target_local.hour), int(target_local.minute), int(target_local.second),
@@ -229,7 +238,7 @@ def signified_datetime_for_progressed_jd(radix_chart, progressed_jd, method=posf
 	if converse:
 		age_years = -age_years
 	if method in (posfordate.SECONDARY, posfordate.TERTIARY) and day_type == posfordate.PROGRESSION_DAY_TYPE_Q1:
-		age_years *= BIJA_RATIO
+		age_years /= BIJA_RATIO
 	try:
 		return _real_datetime_for_calendar_age(radix_chart, age_years)
 	except (OverflowError, ValueError):
@@ -248,10 +257,9 @@ def secondary_direction_symbolic_info(radix_chart, directed_chart, method=posfor
 	prog_jd = float(directed_chart.time.jd)
 	delta_ephem_days = prog_jd - birth_jd
 	age_years = delta_ephem_days / scale if scale != 0.0 else delta_ephem_days
-	# Every progression builder stamps the exact source calendar age before its
-	# ephemeris Time is rounded to whole seconds.  Prefer that canonical value
-	# for the inverse real-date readout; deriving it back from chart.time.jd can
-	# move a secondary progression's visible cursor by several minutes.
+	# Preserve the exact source age rather than recovering a small interval by
+	# subtracting two large Julian dates. Older charts may also carry a rounded
+	# ephemeris Time; neither representation should change the signified cursor.
 	try:
 		age_years = float(directed_chart._progression_age_years)
 	except (AttributeError, TypeError, ValueError):
@@ -261,7 +269,7 @@ def secondary_direction_symbolic_info(radix_chart, directed_chart, method=posfor
 	if converse:
 		age_years = -age_years
 	if method in (posfordate.SECONDARY, posfordate.TERTIARY) and day_type == posfordate.PROGRESSION_DAY_TYPE_Q1:
-		age_years *= BIJA_RATIO
+		age_years /= BIJA_RATIO
 	calflag = _calflag_from_chart(radix_chart)
 
 	if age_years >= 0.0:
@@ -299,5 +307,5 @@ def symbolic_age_for_real_datetime(radix_chart, real_datetime_tuple, method=posf
 	age_years = _calendar_age_years_for_real_datetime(radix_chart, (ry, rm, rd, rh, rmi, rs))
 	symbolic_age = age_years * scale
 	if method in (posfordate.SECONDARY, posfordate.TERTIARY) and day_type == posfordate.PROGRESSION_DAY_TYPE_Q1:
-		symbolic_age /= BIJA_RATIO
+		symbolic_age *= BIJA_RATIO
 	return symbolic_age

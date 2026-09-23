@@ -33,7 +33,10 @@ import logging
 import os
 import subprocess
 import sys
+import tempfile
 import threading
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
@@ -43,6 +46,7 @@ if str(REPO_ROOT) not in sys.path:
 
 import arabicparts  # wx-free Arabic-part slot readers + formula formatter
 import astrology  # wx-free swe_fixstar_ut for the PD fixed-star picker catalog
+import asteroids as asteroid_model
 import chart  # wx-free Place/Time data model used by default-location timezone lookup
 import dateformat
 import default_location as default_location_model
@@ -57,6 +61,13 @@ from webapp.daemon.speculum_speed import (
     SPEED_DISPLAY_MODES,
     normalize_speed_display_mode,
 )
+from webapp.daemon.speculum_schema import (
+    PLACIDIAN as _SPECULUM_PLACIDIAN,
+    PLACIDIAN_COLUMNS as _SPECULUM_PLACIDIAN_COLS,
+    REGIOMONTAN as _SPECULUM_REGIOMONTAN,
+    REGIOMONTAN_COLUMNS as _SPECULUM_REGIOMONTAN_COLS,
+    family_for_house_system,
+)
 
 from webapp.daemon.chart_service import chart_snapshot_service
 from webapp.daemon import settings_registry
@@ -64,8 +75,10 @@ from webapp.daemon.builtin_style_profiles import (
     BUILTIN_STYLE_PRESET_NAMES,
     BUILTIN_STYLE_PROFILE_IDS,
     NASA_ATLAS_PRESET_NAME,
+    SUSAN_MILLER_PRESET_NAME,
     builtin_style_profile,
     nasa_atlas_upgrade_for,
+    susan_miller_upgrade_for,
 )
 from webapp.daemon.event_time import (
     EVENT_TABLE_TIME_BASIS_VALUES,
@@ -87,7 +100,17 @@ from webapp.daemon.style_profile_service import (
     StyleProfileStore,
     split_style_profile_css_overrides,
     validate_style_profile,
+    appearance_style_profile,
 )
+from webapp.daemon.wheel_composition import all_compositions, effective_composition, validate_compositions, sync_display_flags, sync_legacy_display_flags
+from webapp.daemon.wheel_preset_service import (
+    WheelPresetStore,
+    VISIBILITY_FIELDS,
+    factory_theme_geometry,
+    factory_theme_visibility,
+)
+from webapp.daemon.wheel_factory import PROFILES
+from webapp.daemon.wheel_geometry_ownership import geometry_overrides
 from webapp.daemon.style_authoring_service import build_chart_style_profile_v2
 from webapp.daemon.style_profile_catalog_generated import TOKEN_SCHEMA_VERSION
 from webapp.daemon.style_authoring_service import authoring_color_alias_target
@@ -237,7 +260,7 @@ def _localized(catalog) -> list:
 #   clrtexts      <- text_primary    clrtable    <- chart_bg
 #   clrhouses     <- chart_grid      clrexil     <- danger
 #   clrdomicil    <- success
-# clrindividual / clraspect / useplanetcolors / usezodiacelementcolors are
+# clrindividual / clraspect / useplanetcolors / zodiac element target flags are
 # DELIBERATELY untouched (theme.py:508-512) so user customizations survive a
 # preset apply.
 #
@@ -719,6 +742,10 @@ for _preset, _enabled in (
     for _attr, _rgb_value in _ZODIAC_ELEMENT_DEFAULTS.items():
         _preset.setdefault(_attr, _rgb_value)
     _preset['usezodiacelementcolors'] = _enabled
+    # Existing presets predate coloured zodiac fields. Keep their established
+    # appearance until the user explicitly enables that independent target.
+    _preset['usezodiacelementfieldcolors'] = False
+    _preset['zodiacelementfieldopacity'] = 0.2
     # Existing presets continue to produce the exact same app and chart colors;
     # the two authorities diverge only after an explicit app-only edit.
     _preset['clrappbackground'] = _preset['clrbackground']
@@ -745,7 +772,13 @@ _COLOR_RGB_FIELDS = (
     'clrsignelementwater',
 )
 _COLOR_LIST_FIELDS = ('clrindividual', 'clraspect')  # list[RGB]
-_COLOR_BOOL_FIELDS = ('useplanetcolors', 'usezodiacelementcolors', 'follow_os_theme')
+_COLOR_FLOAT_FIELDS = ('zodiacelementfieldopacity',)
+_COLOR_BOOL_FIELDS = (
+    'useplanetcolors',
+    'usezodiacelementcolors',
+    'usezodiacelementfieldcolors',
+    'follow_os_theme',
+)
 
 # Display / Appearance. onAppearance1 (morin.py:19463), onToggleHouses (19545).
 # showvertex / showaspectstovertex are the Vertex toggles (options.py:145-146);
@@ -817,14 +850,15 @@ _DISPLAY_BOOL_FIELDS = (
     'exclusive_aspects_on_click_traditional',
     # Positions + In Tables display toggles (appearance1dlg.py:151-153 build,
     # :820-821/:867 fill, :985-987/:1075-1077 check) -> options.py:116-117.
-    'positions', 'intables',
+    'positions', 'showouterpositions', 'showouterminutes', 'intables',
     # Traditional fixstar names in the PD list (appearance1dlg.py:252-253/927/
     # 1190-1192) -> options.py:168.
     'usetradfixstarnamespdlist',
 )
 # showfixstars enum. transcendental[3] / aspect[12] are bool vectors handled
 # separately (their per-index labels come from the catalog). theme is the wheel
-# LAYOUT choice (Classic/Compact/Anglo Wheel, int 0/1/2 — DISTINCT from color themes;
+# LAYOUT choice (Classic/Compact/Anglo/House/Cusp Wheel, int 0/1/2/3/4 —
+# DISTINCT from color themes;
 # appearance1dlg.py:41-44/271/825-828/989-991 -> options.py:119). phasismode is
 # the Phasis enum (PHASIS_MODE_* 0/1/2/3). cazimimode is the radix overlay Cazimi
 # enum: Hellenistic 1 deg, Abu Ma'shar 16' longitude, al-Qabisi 16' longitude
@@ -844,6 +878,10 @@ _DISPLAY_BOOL_VECTOR_FIELDS = ('transcendental', 'aspect')  # list[bool]
 # (chart.py:458-469; appearance1dlg.py:806-817).
 _MINOR_ASPECT_INDICES = (1, 2, 4, 7, 8, 9, 11)
 _DISPLAY_OVERLAY_ONLY_FIELDS = {
+    'astrocart_distance_units',
+    'wheel_compositions',
+    'wheel_preset_revision',
+    'wheel_preset_id',
     'houses',
     'showouterhouselines',
     'housesystem',
@@ -888,6 +926,8 @@ _DISPLAY_OVERLAY_ONLY_FIELDS = {
     'showradixnameincanvas',
     'showseconds',
     'positions',
+    'showouterpositions',
+    'showouterminutes',
     'intables',
     'extendedradixstations',
     'aspect_flag_show_parties',
@@ -914,7 +954,7 @@ _DISPLAY_OVERLAY_ONLY_FIELDS = {
     'solarconditionmode',
 }
 _DISPLAY_TEXT_ONLY_FIELDS = {'dateconvention'}
-_DISPLAY_UI_STYLE_ONLY_FIELDS = {'presentation_cursor'}
+_DISPLAY_UI_STYLE_ONLY_FIELDS = {'presentation_cursor', 'astrocart_distance_units'}
 # These options repaint chart chrome/overlays but do not alter any retained
 # list query or row semantics.  Keep this separate from refreshMode: a few
 # display-overlay fields (notably phasis/cazimi modes) genuinely do affect
@@ -972,6 +1012,11 @@ _PNG_CHART_APPEARANCE_CATALOG = (
     {'value': 'colored-details', 'labelKey': 'settings.pngAppearanceColoredDetails'},
 )
 _PNG_CHART_APPEARANCE_VALUES = {item['value'] for item in _PNG_CHART_APPEARANCE_CATALOG}
+_PNG_WATERMARK_STYLE_CATALOG = (
+    {'value': 'kosugi', 'labelKey': 'settings.watermarkTypography'},
+    {'value': 'flame', 'labelKey': 'settings.watermarkFlame'},
+)
+_PNG_WATERMARK_STYLE_VALUES = {item['value'] for item in _PNG_WATERMARK_STYLE_CATALOG}
 _EVENT_TABLE_TIME_BASIS_CATALOG = (
     {'value': EVENT_TABLE_TIME_DEFAULT_LOCATION, 'label': 'Default Location', 'labelKey': 'DefaultLocation'},
     {'value': EVENT_TABLE_TIME_UT, 'label': 'UT', 'labelKey': 'UT'},
@@ -1213,7 +1258,7 @@ def _primary_directions_default_direction(opts) -> int:
     return _primdirs.PrimDirs.DIRECT
 
 
-# Wheel LAYOUT choice (`theme`, int 0/1/2). DISTINCT from the colour theme presets:
+# Wheel LAYOUT choice (`theme`, int 0/1/2/3/4). DISTINCT from colour presets:
 # this is the radix wheel layout. Labels verbatim from appearance1dlg._theme_labels
 # (appearance1dlg.py:41-44 — mtexts 'ClassicWheel'/'CompactWheel' fallbacks). The
 # value is the choice index, which is exactly what check() stores (appearance1dlg.py:990).
@@ -1224,6 +1269,14 @@ _THEME_LAYOUT_CATALOG = (
     # American wheel grammar. This is renderer geometry only; it must never
     # imply a house system, zodiac, object set, aspect set, or colour preset.
     {'value': 2, 'label': 'Anglo Wheel', 'labelKey': 'AngloWheel'},
+    # House-fixed wheel: every house drawn at 30 deg, zodiac stretched or
+    # compressed to follow, cusp degrees carried as text. Shipped elsewhere as
+    # Astrodienst's "Huber House Chart" and Solar Fire's "Proportional Houses"
+    # switched off. Renderer geometry only — it implies no house system.
+    {'value': 3, 'label': 'House Wheel', 'labelKey': 'HouseWheel'},
+    # Same no-zodiac cusp-band form as House Wheel, but with the ordinary
+    # identity longitude projection so unequal house spans remain visible.
+    {'value': 4, 'label': 'Cusp Wheel', 'labelKey': 'CuspWheel'},
 )
 
 _ANGLO_DENSE_LABEL_LAYOUT_CATALOG = (
@@ -1254,48 +1307,8 @@ _MANSION_ZODIAC_VALUES = tuple(m['value'] for m in _MANSION_ZODIAC_CATALOG)
 # 391-392). `attr` here is the speculum row key + column index pair the daemon
 # read/apply uses; the React skin renders one toggle per entry.
 #
-# PLACIDIAN columns (appearance2dlg.py:245-261, check :291-314): the 16 toggles +
-# placdodec. column index, label, mtexts source line.
-_SPECULUM_PLACIDIAN_COLS = (
-    {'idx': 0, 'label': 'Longitude', 'labelKey': 'Longitude'},        # planets.Planet.LONG / mtexts 'Longitude'
-    {'idx': 1, 'label': 'Latitude', 'labelKey': 'Latitude'},         # LAT / 'Latitude'
-    {'idx': 2, 'label': 'Rectascension', 'labelKey': 'Rectascension'},    # RA / 'Rectascension'
-    {'idx': 3, 'label': 'Declination', 'labelKey': 'Declination'},      # DECL / 'Declination'
-    {'idx': 4, 'label': 'AD (Lat)', 'labelKey': 'AscDiffLat'},         # ADLAT / 'AscDiffLat'
-    {'idx': 5, 'label': 'Semiarcus', 'labelKey': 'Semiarcus'},         # SA / 'Semiarcus'
-    {'idx': 6, 'label': 'Meridiandist', 'labelKey': 'Meridiandist'},     # MD / 'Meridiandist'
-    {'idx': 7, 'label': 'Horizondist', 'labelKey': 'Horizondist'},      # HD / 'Horizondist'
-    {'idx': 8, 'label': 'Temporalhour', 'labelKey': 'TemporalHour'},     # TH / 'TemporalHour'
-    {'idx': 9, 'label': 'Hourlydist', 'labelKey': 'HourlyDist'},       # HOD / 'HourlyDist'
-    {'idx': 10, 'label': 'PMP', 'labelKey': 'PMP'},             # PMP / 'PMP'
-    {'idx': 11, 'label': 'AD (Pole H.)', 'labelKey': 'AscDiffPole'},    # ADPH / 'AscDiffPole'
-    {'idx': 12, 'label': 'Pole Height', 'labelKey': 'PoleHeight'},     # POH / 'PoleHeight'
-    {'idx': 13, 'label': 'AO/DO (PH)', 'labelKey': 'AscDescObl'},      # AODO / 'AscDescObl'
-    {'idx': 14, 'label': 'Astrl. Azimuth', 'labelKey': 'AZM'},  # PL_AZM / 'AZM'
-    {'idx': 15, 'label': 'Altitude', 'labelKey': 'ELV'},        # PL_ELV / 'ELV'
-)
-# REGIOMONTAN columns (appearance2dlg.py:263-277, check :316-338).
-_SPECULUM_REGIOMONTAN_COLS = (
-    {'idx': 0, 'label': 'Longitude', 'labelKey': 'Longitude'},        # LONG / 'Longitude'
-    {'idx': 1, 'label': 'Latitude', 'labelKey': 'Latitude'},         # LAT / 'Latitude'
-    {'idx': 2, 'label': 'Rectascension', 'labelKey': 'Rectascension'},    # RA / 'Rectascension'
-    {'idx': 3, 'label': 'Declination', 'labelKey': 'Declination'},      # DECL / 'Declination'
-    {'idx': 4, 'label': 'Meridiandist', 'labelKey': 'Meridiandist'},     # RMD / 'Meridiandist'
-    {'idx': 5, 'label': 'Horizondist', 'labelKey': 'Horizondist'},      # RHD / 'Horizondist'
-    {'idx': 6, 'label': 'ZD', 'labelKey': 'ZD'},               # ZD / 'ZD'
-    {'idx': 7, 'label': 'Pole', 'labelKey': 'Pole'},             # POLE / 'Pole'
-    {'idx': 8, 'label': 'Q', 'labelKey': 'Q'},                # Q / 'Q'
-    {'idx': 9, 'label': 'W', 'labelKey': 'WReg'},             # W / 'WReg'
-    {'idx': 10, 'label': 'CMP Vrt. Azmt.', 'labelKey': 'CMP'},  # CMP / 'CMP'
-    {'idx': 11, 'label': 'RMP', 'labelKey': 'RMP'},             # RMP / 'RMP'
-    {'idx': 12, 'label': 'Astrl. Azimuth', 'labelKey': 'AZM'},  # AZM / 'AZM'
-    {'idx': 13, 'label': 'Altitude', 'labelKey': 'ELV'},        # ELV / 'ELV'
-)
-# Engine constants (chart.Chart.PLACIDIAN=0 / REGIOMONTAN=1, chart.py:493-494),
-# mirrored as literals — the daemon is wx-free and must not import chart's wx
-# siblings just for two ints.
-_SPECULUM_PLACIDIAN = 0
-_SPECULUM_REGIOMONTAN = 1
+# The concrete column schema and house-system family selector live in
+# speculum_schema so Settings and the table payload cannot drift apart.
 _SPECULUM_SPEED_MODE_CATALOG = (
     {
         'value': 'words',
@@ -1539,6 +1552,16 @@ def _rgb_or(value: Any, fallback: tuple[int, int, int]) -> tuple[int, int, int]:
     return rgb if rgb is not None else fallback
 
 
+def _unit_interval(value: Any, fallback: float = 0.2) -> float:
+    try:
+        normalized = float(value)
+    except (TypeError, ValueError):
+        normalized = fallback
+    if normalized != normalized:
+        normalized = fallback
+    return min(1.0, max(0.0, normalized))
+
+
 def _css_rgb(value: tuple[int, int, int]) -> str:
     return f'rgb({value[0]} {value[1]} {value[2]})'
 
@@ -1623,6 +1646,14 @@ _PROFILE_CHART_BASE_EXTRA_ATTRS = (
     'clrtable',
     'clrindividual',
     'clraspect',
+    # These switches are part of the palette contract, not geometry. Without
+    # them a saved system-theme profile inherits the previously selected
+    # theme's colour mode (for example Daylight's per-body colours), making
+    # Midnight expose its normally inactive black/navy body entries.
+    'useplanetcolors',
+    'usezodiacelementcolors',
+    'usezodiacelementfieldcolors',
+    'zodiacelementfieldopacity',
 )
 
 
@@ -1835,7 +1866,7 @@ def _effective_style_chart_options(opts, profile: Optional[dict]):
     return resolved
 
 
-def _profile_chart_data_overrides(opts, profile: Optional[dict]) -> dict[str, list[str]]:
+def _profile_chart_data_overrides(opts, profile: Optional[dict]) -> dict[str, Any]:
     """Non-scalar palette data needed to beat retained frontend snapshots."""
     _, _, use_chart_base = _style_profile_base_values(opts, profile)
     typed_overrides = (profile or {}).get('overrides')
@@ -1855,7 +1886,9 @@ def _profile_chart_data_overrides(opts, profile: Optional[dict]) -> dict[str, li
         return {}
     effective = _effective_style_chart_options(opts, profile)
 
-    result: dict[str, list[str]] = {}
+    result: dict[str, Any] = {}
+    if use_chart_base:
+        result['usePlanetColors'] = bool(getattr(effective, 'useplanetcolors', False))
     if body_requested:
         result['planets'] = [_css_rgb(value) for value in _effective_body_color_list(effective)]
     if aspect_requested:
@@ -1915,10 +1948,13 @@ def _theme_state_payload(opts, active_profile: Optional[dict] = None) -> dict:
     effective_app_bg = typed_rgb('app.color.background', app_bg)
     effective_app_text = typed_rgb('app.color.textPrimary', app_text)
     is_dark = _relative_luminance(effective_app_bg) < 0.5
+    # The native editor resolves even an untouched preset through a profile.
+    # Keep its system identity here so opening a preview cannot switch whole
+    # panes to the older, darker control surface. Explicit overrides still win.
     active_palette_name = (
         _current_palette_preset_name(opts)
         if active_profile is None
-        else None
+        else _style_lab_system_preset_name(active_profile)
     )
     # These established palettes predate independently authored full-pane
     # materials. Their subtle clrsidebar value belongs to controls and small
@@ -2204,6 +2240,8 @@ def _resolve_palette_preset_values(opts, name: str) -> dict:
         return dict(_CURRENT_COLOR_DAY_PRESET)
     if name == NASA_ATLAS_PRESET_NAME:
         return dict(_CURRENT_COLOR_DAY_PRESET)
+    if name == SUSAN_MILLER_PRESET_NAME:
+        return dict(_CURRENT_COLOR_DAY_PRESET)
     if name == 'Diurnal':
         return dict(_DIURNAL_PRESET)
     if name == 'Classic Morinus':
@@ -2214,6 +2252,9 @@ def _resolve_palette_preset_values(opts, name: str) -> dict:
         return dict(_NOCTURNE_PRESET)
     if name == 'Sirius':
         return dict(_SIRIUS_PRESET)
+    profile = builtin_style_profile(name)
+    if profile and profile.get('basePresetId') and profile['basePresetId'] != name:
+        return _resolve_palette_preset_values(opts, profile['basePresetId'])
     raise ValueError(f'unknown palette preset: {name!r}')
 
 
@@ -2222,6 +2263,12 @@ def _capture_palette_state(opts) -> dict:
     for attr in _PALETTE_ATTR_NAMES:
         state[attr] = getattr(opts, attr, None)
     state['usezodiacelementcolors'] = bool(getattr(opts, 'usezodiacelementcolors', False))
+    state['usezodiacelementfieldcolors'] = bool(
+        getattr(opts, 'usezodiacelementfieldcolors', False)
+    )
+    state['zodiacelementfieldopacity'] = _unit_interval(
+        getattr(opts, 'zodiacelementfieldopacity', 0.2)
+    )
     state['clrindividual'] = list(getattr(opts, 'clrindividual', []) or [])
     state['clraspect'] = list(getattr(opts, 'clraspect', []) or [])
     state['useplanetcolors'] = bool(getattr(opts, 'useplanetcolors', False))
@@ -2243,6 +2290,14 @@ def _factory_default_palette_state(opts) -> dict:
     state['usezodiacelementcolors'] = _bool_or(
         getattr(opts, 'def_usezodiacelementcolors', None),
         False,
+    )
+    state['usezodiacelementfieldcolors'] = _bool_or(
+        getattr(opts, 'def_usezodiacelementfieldcolors', None),
+        False,
+    )
+    state['zodiacelementfieldopacity'] = _unit_interval(
+        getattr(opts, 'def_zodiacelementfieldopacity', None),
+        0.2,
     )
     state['clrindividual'] = _normalize_clrindividual(
         opts,
@@ -2267,6 +2322,8 @@ def _preset_identity_snapshot(state: dict) -> dict:
     snap = dict(state or {})
     snap.pop('usemacsystemcolors', None)
     snap.pop('usezodiacelementcolors', None)
+    snap.pop('usezodiacelementfieldcolors', None)
+    snap.pop('zodiacelementfieldopacity', None)
     snap.pop('follow_os_theme', None)
     return snap
 
@@ -2415,6 +2472,16 @@ def _apply_palette_values(opts, name: str, values: dict) -> bool:
         new = bool(values['usezodiacelementcolors'])
         if bool(getattr(opts, 'usezodiacelementcolors', False)) != new:
             opts.usezodiacelementcolors = new
+            changed = True
+    if 'usezodiacelementfieldcolors' in values:
+        new = bool(values['usezodiacelementfieldcolors'])
+        if bool(getattr(opts, 'usezodiacelementfieldcolors', False)) != new:
+            opts.usezodiacelementfieldcolors = new
+            changed = True
+    if 'zodiacelementfieldopacity' in values:
+        new = _unit_interval(values['zodiacelementfieldopacity'])
+        if _unit_interval(getattr(opts, 'zodiacelementfieldopacity', 0.2)) != new:
+            opts.zodiacelementfieldopacity = new
             changed = True
     return changed
 
@@ -2594,6 +2661,99 @@ def _read_fixstar_alias_map(opts) -> dict:
     return alias
 
 
+# Compact named-asteroid index generated from Swiss Ephemeris' astlistn.md.
+# The full numbered universe remains addressable by MPC number, including
+# provisionally designated/unnamed objects that are not in this name index.
+_ASTEROID_NAME_CATALOG = REPO_ROOT / 'SWEP' / 'Ephem' / 'asteroid_names.tsv'
+_ASTEROID_DOWNLOAD_ROOT = 'https://ephe.scryr.io/ephe'
+_ASTEROID_DOWNLOAD_MAX_BYTES = 8 * 1024 * 1024
+_asteroid_catalog_cache: Optional[list[tuple[int, str]]] = None
+_asteroid_name_cache: Optional[dict[int, str]] = None
+
+
+def _read_asteroid_name_catalog() -> list[tuple[int, str]]:
+    global _asteroid_catalog_cache, _asteroid_name_cache
+    if _asteroid_catalog_cache is not None:
+        return _asteroid_catalog_cache
+    rows: list[tuple[int, str]] = []
+    names: dict[int, str] = {}
+    try:
+        with _ASTEROID_NAME_CATALOG.open('r', encoding='utf-8') as handle:
+            for line in handle:
+                if not line or line.startswith('#'):
+                    continue
+                raw_number, separator, raw_name = line.rstrip('\n').partition('\t')
+                if not separator:
+                    continue
+                try:
+                    number = int(raw_number)
+                except (TypeError, ValueError):
+                    continue
+                name = raw_name.strip()
+                if not name or not 1 <= number <= 999999 or number == 134340:
+                    continue
+                names[number] = name
+                rows.append((number, name))
+    except OSError:
+        rows = []
+        names = {}
+    rows.sort(key=lambda row: row[0])
+    _asteroid_catalog_cache = rows
+    _asteroid_name_cache = names
+    return rows
+
+
+def _asteroid_catalog_name(number: int) -> str:
+    _read_asteroid_name_catalog()
+    name = (_asteroid_name_cache or {}).get(int(number))
+    return name or f'Asteroid {int(number)}'
+
+
+def _asteroid_file_stem(number: int) -> str:
+    number = int(number)
+    if number > 99999:
+        return f's{number:06d}'
+    return f'se{number:05d}'
+
+
+def _asteroid_ephemeris_candidates(root: Path, number: int) -> tuple[Path, Path]:
+    directory = root / f'ast{int(number) // 1000}'
+    stem = _asteroid_file_stem(number)
+    return directory / f'{stem}.se1', directory / f'{stem}s.se1'
+
+
+def _asteroid_ephemeris_bundled(number: int) -> bool:
+    if int(number) in asteroid_model.MAIN_BODY_ID_BY_ASTEROID_NUMBER:
+        return True
+    bundled_root = REPO_ROOT / 'SWEP' / 'Ephem'
+    return any(
+        path.is_file()
+        for path in _asteroid_ephemeris_candidates(bundled_root, number)
+    )
+
+
+def _asteroid_ephemeris_installed(opts, number: int) -> bool:
+    if _asteroid_ephemeris_bundled(number):
+        return True
+    raw_root = str(getattr(opts, 'asteroid_ephe_path', '') or '').strip()
+    if not raw_root:
+        return False
+    root = Path(raw_root)
+    return any(path.is_file() for path in _asteroid_ephemeris_candidates(root, number))
+
+
+def _asteroid_catalog_row(opts, number: int) -> dict:
+    number = int(number)
+    bundled = _asteroid_ephemeris_bundled(number)
+    return {
+        'number': number,
+        'name': _asteroid_catalog_name(number),
+        'bodyId': int(asteroid_model.asteroid_body_id(number)),
+        'installed': _asteroid_ephemeris_installed(opts, number),
+        'bundled': bundled,
+    }
+
+
 class OptionsService:
     """Read/patch the live canonical options object and drive a re-render."""
 
@@ -2607,10 +2767,15 @@ class OptionsService:
         self._theme_hash: Optional[str] = None
         self._theme_version = 0
         self._style_profile_store: Optional[StyleProfileStore] = None
+        self._wheel_preset_store: Optional[WheelPresetStore] = None
+        self._primary_direction_preset_store = None
         self._retained_list_data_key: Optional[str] = None
 
     def set_controller(self, controller) -> None:
         self._controller = controller
+        # Publish geometry before the workspace constructs its first snapshot.
+        with self._lock:
+            self._wheel_presets()
 
     @property
     def options(self):
@@ -2618,9 +2783,226 @@ class OptionsService:
 
     # -- READ --------------------------------------------------------------
 
+    @staticmethod
+    def _legacy_wheel_geometry(profile):
+        profile = profile or {}
+        base = builtin_style_profile(profile.get('basePresetId')) or {}
+        values = {**(base.get('overrides') or {}), **(base.get('authoringOverrides') or {}),
+                  **(profile.get('overrides') or {}), **(profile.get('authoringOverrides') or {})}
+        return geometry_overrides(values)
+
+    def _wheel_presets(self):
+        opts = self.options
+        opts_dir = str(getattr(opts, 'optsdirtxt', '') or '')
+        store = getattr(self, '_wheel_preset_store', None)
+        if store is not None and (str(store.path.parent) if store.path else '') == opts_dir:
+            if not getattr(opts, 'wheel_presets_active', False) or getattr(opts, 'wheel_preset_revision', None) != store.revision:
+                store.hydrate_options(opts)
+            return store
+        store = WheelPresetStore(opts_dir or None)
+        self._wheel_preset_store = store
+        if store.load_error:
+            # Do not detach or migrate legacy sources while their destination
+            # is unavailable. The read-only fallback still opens the charts.
+            store.hydrate_options(opts)
+            return store
+        if opts_dir:
+            profiles = self._style_profiles()
+            payload = profiles.payload()
+            originals = payload['profiles']
+            active = next((profile for profile in originals if profile['id'] == payload['activeProfileId']), None)
+            from webapp.daemon.style_draft_service import StyleDraftService
+            parked, current_draft_id = StyleDraftService._read_store_file(
+                StyleDraftService.recovery_store_path(opts_dir))
+            active_source = (_style_lab_system_preset_name(active)
+                             or (_style_profile_theme_name(active['id']) if active else _current_palette_preset_name(opts)))
+            working = next((record['profile'] for record in parked.values()
+                            if record['draftId'] == current_draft_id and record.get('sourceThemeName') == active_source), None)
+            # Capture active geometry before detaching it from appearance.
+            store.migrate_current(opts, self._legacy_wheel_geometry(working or active), (working or active or {}).get('name'))
+            for profile in originals:
+                if profile.get('scope') == 'app' or 'wheelGeometry' in profile:
+                    continue
+                recovered = self._separate_wheel_profile(profile, store)
+                profiles.detach_wheel_geometry(profile['id'], recovered.get('wheelPresetRefs', {}),
+                                               recovered['wheelGeometry'])
+            profiles.upgrade_store_format()
+            for record in parked.values():
+                for field in ('profile', 'baselineProfile'):
+                    source = record.get(field) or record['profile']
+                    geometry = self._legacy_wheel_geometry(source)
+                    if geometry or source.get('wheelCompositions') or 'wheelLayout' in source:
+                        store.ensure_migrated_profile(f"draft:{record['draftId']}:{field}", source['name'],
+                            source.get('wheelCompositions'), geometry, source.get('wheelLayout'))
+        else:
+            store.migrate_current(opts)
+        store.hydrate_options(opts)
+        return store
+
+    def _separate_wheel_profile(self, profile, store, *, source_id=None):
+        """Recover legacy geometry without sampling the currently selected wheel.
+
+        Older writers could strip both recall fields after migration. The
+        immutable receipt still owns that theme's dimensions. Themes without
+        authored dimensions used the factory baseline before preset separation.
+        A newer explicit snapshot always wins over any historical receipt.
+        """
+        if profile.get('scope') == 'app' or 'wheelGeometry' in profile:
+            return profile
+        theme_source = f"theme:{profile['id']}"
+        source = source_id or theme_source
+        refs = dict(profile.get('wheelPresetRefs') or {})
+        geometry = self._legacy_wheel_geometry(profile)
+        if geometry or profile.get('wheelCompositions') or 'wheelLayout' in profile:
+            refs.update(store.ensure_migrated_profile(source, profile['name'],
+                profile.get('wheelCompositions'), geometry, profile.get('wheelLayout')))
+        return validate_style_profile({**appearance_style_profile(profile, refs),
+            'wheelGeometry': store.migrated_theme_geometry(source, refs,
+                profile.get('wheelLayout'), fallback_source_id=theme_source)})
+
+    def migrate_wheel_profile(self, profile, *, source_id=None):
+        """Move legacy imported/parked-draft geometry into an independent copy."""
+        with self._lock:
+            store = self._wheel_presets()
+            separated = self._separate_wheel_profile(profile, store, source_id=source_id)
+            store.hydrate_options(self.options)
+            return separated
+
+    def _capture_theme_wheel(self):
+        opts = self.options
+        return self._wheel_presets().capture_theme_geometry(
+            PROFILES[max(0, min(4, int(getattr(opts, 'theme', 0))))])
+
+    def capture_style_lab_wheel_baseline(self):
+        with self._lock:
+            return {'wheelGeometry': self._capture_theme_wheel(),
+                    'wheelVisibility': self._wheel_visibility(self.options)}
+
+    def restore_style_lab_wheel_baseline(self, profile):
+        """Restore the working wheel only; saved public designs remain intact."""
+        with self._lock:
+            changed = self._replace_theme_wheel(profile)
+            if changed:
+                self.options.saveAppearance1()
+            refreshed = self._refresh_all('display-overlay') if changed else []
+            return {'changed': changed, 'wheelPresets': self.get_wheel_presets(),
+                    'geometryChanged': changed,
+                    'refreshedDocumentIds': refreshed,
+                    'refreshMode': 'display-overlay' if changed else None,
+                    'listDataChanged': False}
+
+    def _replace_theme_wheel(self, profile):
+        """Recall theme geometry without changing the selected wheel type."""
+        opts = self.options
+        geometry = (profile or {}).get('wheelGeometry') or factory_theme_geometry()
+        saved_visibility = (profile or {}).get('wheelVisibility') or {}
+        defaults = factory_theme_visibility()
+        visibility = {
+            layout: {**defaults[layout], **saved_visibility.get(layout, {})}
+            for layout in PROFILES
+        }
+        store = self._wheel_presets()
+        changed = store.apply_theme_snapshot(geometry, visibility)
+        # The snapshot's legacy layout is descriptive, not a selection intent.
+        # Wheel type belongs to Settings; themes own each type's geometry.
+        active_layout = PROFILES[max(0, min(4, int(getattr(opts, 'theme', 0))))]
+        for kind, field in VISIBILITY_FIELDS.items():
+            if kind in visibility.get(active_layout, {}):
+                setattr(opts, field, bool(visibility[active_layout][kind]))
+        store.hydrate_options(opts)
+        return changed
+
+    def _wheel_visibility(self, opts):
+        return {layout: {ring['archetypeId']: ring['enabled'] for ring in composition['rings']}
+                for layout, composition in all_compositions(opts).items()}
+
+    def _apply_wheel_visibility(self, opts, visibility):
+        store = self._wheel_presets()
+        before = self._wheel_visibility(opts)
+        store.apply_visibility(visibility)
+        layout = ('classic', 'compact', 'anglo', 'houses', 'cusps')[max(0, min(4, int(getattr(opts, 'theme', 0))))]
+        for kind, field in VISIBILITY_FIELDS.items():
+            if kind in visibility.get(layout, {}):
+                setattr(opts, field, visibility[layout][kind])
+        store.hydrate_options(opts)
+        return before != self._wheel_visibility(opts)
+
+    def get_wheel_presets(self):
+        with self._lock:
+            store = self._wheel_presets()
+            payload = store.payload()
+            opts = self.options
+            payload['display'] = {'theme': int(getattr(opts, 'theme', 0)),
+                                  **{field: bool(getattr(opts, field, False)) for field in VISIBILITY_FIELDS.values()}}
+            for layout, draft in payload['drafts'].items():
+                draft['composition'] = effective_composition(self.options, layout)
+            return payload
+
+    def get_wheel_style_catalog(self):
+        with self._lock:
+            return self._wheel_presets().public_catalog()
+
+    def mutate_wheel_presets(self, payload):
+        with self._lock:
+            store = self._wheel_presets()
+            opts = self.options
+            before = (copy.deepcopy(opts.wheel_geometry_presets), all_compositions(opts))
+            before_layout = opts.theme
+            before_revision = store.revision
+            if payload.get('activateLayout') and payload.get('action') != 'select':
+                raise ValueError('layout activation requires preset selection')
+            store.mutate(payload.get('action'), payload.get('layout'),
+                         base_revision=payload.get('baseRevision'), preset_id=payload.get('presetId'),
+                         name=payload.get('name'), overrides=payload.get('overrides'),
+                         composition=payload.get('composition'))
+            if payload.get('activateLayout'):
+                opts.theme = PROFILES.index(payload['layout'])
+            if payload.get('composition') is not None:
+                for ring in payload['composition']['rings']:
+                    field = VISIBILITY_FIELDS.get(ring['archetypeId'])
+                    if field:
+                        setattr(opts, field, ring['enabled'])
+            selecting_theme_geometry = (payload.get('action') in ('select', 'revert')
+                                        and store.effective(payload['layout'])['sourcePresetId'].startswith('working.'))
+            restoring_geometry = payload.get('action') == 'restore-factory'
+            if selecting_theme_geometry or restoring_geometry:
+                for ring in store.effective(payload['layout'])['composition']['rings']:
+                    field = VISIBILITY_FIELDS.get(ring['archetypeId'])
+                    if field:
+                        setattr(opts, field, ring['enabled'])
+            if payload.get('activateLayout') or selecting_theme_geometry or restoring_geometry:
+                opts.saveAppearance1()
+            store.hydrate_options(opts)
+            after = (opts.wheel_geometry_presets, all_compositions(opts))
+            # Saving a name/revision does not require another wheel snapshot.
+            def visual(value):
+                return ({key: item['overrides'] for key, item in value[0].items()}, value[1])
+            changed = before_layout != opts.theme or visual(before) != visual(after)
+            refreshed = self._refresh_all('display-overlay') if changed else []
+            result = self.get_wheel_presets()
+            result.update(changed=store.revision != before_revision,
+                          refreshMode='display-overlay' if changed else None,
+                          refreshedDocumentIds=refreshed, listDataChanged=False,
+                          themeState=self._read_theme_state(opts))
+            return result
+
+    def _primary_direction_presets(self):
+        from .primary_direction_preset_service import PrimaryDirectionPresetStore
+        directory = str(self.options.optsdirtxt)
+        store = self._primary_direction_preset_store
+        if store is None or str(store.path.parent) != directory:
+            store = PrimaryDirectionPresetStore(directory)
+            self._primary_direction_preset_store = store
+        return store
+
+    def _primary_direction_snapshot(self):
+        from .primary_direction_preset_service import snapshot
+        return snapshot(self._read_primary_directions(self.options), self.options)
+
     def get_options(self) -> dict:
         with self._lock:
             opts = self.options
+            self._wheel_presets()
             if self._normalize_symbol_variants(opts):
                 try:
                     opts.saveSymbols()
@@ -2659,6 +3041,7 @@ class OptionsService:
                 'firdaria': self._read_firdaria(opts),
                 'eclipses': self._read_eclipses(opts),
                 'fixedStars': self._read_fixed_stars(opts),
+                'asteroids': self._read_asteroids(opts),
                 'relationshipCharts': self._read_relationship_charts(opts),
                 'languages': self._read_languages(opts),
                 'planetsPoints': self._read_planets_points(opts),
@@ -2668,6 +3051,9 @@ class OptionsService:
                 'catalog': self._read_catalog(opts),
                 'settingsRegistry': settings_registry.registry_payload(),
             }
+            from .primary_direction_preset_service import snapshot
+            payload['primaryDirections']['userPresets'] = self._primary_direction_presets().state(
+                snapshot(payload['primaryDirections'], opts))
             retained_list_data_key = self._retained_list_data_key_from_payload(payload)
             self._retained_list_data_key = retained_list_data_key
             payload['retainedListDataKey'] = retained_list_data_key
@@ -2684,6 +3070,9 @@ class OptionsService:
         semantic: dict[str, Any] = {}
         for group, value in payload.items():
             if group in _RETAINED_LIST_DATA_IGNORED_PAYLOAD_GROUPS:
+                continue
+            if group == 'primaryDirections' and isinstance(value, Mapping):
+                semantic[group] = {key: item for key, item in value.items() if key != 'userPresets'}
                 continue
             if group == 'display' and isinstance(value, Mapping):
                 semantic[group] = {
@@ -2829,7 +3218,10 @@ class OptionsService:
     def build_portable_style_profile_export(self, profile: dict) -> dict:
         """Freeze a draft's local palette base into portable semantic values."""
         with self._lock:
-            source = validate_style_profile(profile)
+            source = self.migrate_wheel_profile(profile)
+            if source.get('scope') != 'app':
+                source = validate_style_profile({**source, 'wheelVisibility': self._wheel_visibility(self.options),
+                                                'wheelGeometry': self._capture_theme_wheel()})
             if source.get('basePresetId') is None:
                 return source
             overrides = _profile_base_app_semantic_overrides(self.options, source)
@@ -2928,6 +3320,9 @@ class OptionsService:
                     'basePresetId': profile.get('basePresetId'),
                     'appTokens': copy.deepcopy(theme['appTokens']),
                     'chartPalette': copy.deepcopy(theme['chartPalette']),
+                    'chartData': copy.deepcopy(
+                        theme['profileOverrides']['chartData']
+                    ),
                     'appAuthoring': copy.deepcopy(
                         theme['profileOverrides']['appAuthoring']
                     ),
@@ -2982,30 +3377,39 @@ class OptionsService:
             resolved.pop('contentHash', None)
             return resolved
 
-    def save_style_profile(self, profile: dict, *, activate: bool = False) -> dict:
+    def save_style_profile(self, profile: dict, *, activate: bool = False, capture_wheel_composition: bool = False) -> dict:
         with self._lock:
+            profile = self.migrate_wheel_profile(profile)
             store = self._style_profiles()
             self._validate_style_profile_base(profile)
             before = store.active_profile()
+            if capture_wheel_composition and profile.get('scope') != 'app':
+                profile = {**profile, 'wheelVisibility': self._wheel_visibility(self.options),
+                           'wheelGeometry': self._capture_theme_wheel()}
             saved = store.upsert(profile, activate=activate)
             after = store.active_profile()
             result = self._style_profile_mutation_result(
                 changed=self._active_style_profile_changed(before, after),
                 profile=after,
+                recall_geometry=activate,
             )
             result['profile'] = saved
             return result
 
     def activate_style_profile(self, profile_id: Optional[str]) -> dict:
         with self._lock:
+            self._wheel_presets()
             store = self._style_profiles()
             before = store.active_profile()
             candidate = store.profile(profile_id) if profile_id is not None else None
             self._validate_style_profile_base(candidate)
             active = store.activate(profile_id)
             return self._style_profile_mutation_result(
-                changed=self._active_style_profile_changed(before, active),
+                changed=self._active_style_profile_changed(before, active) or bool(
+                    active and active.get('wheelVisibility') and
+                    self._wheel_visibility(self.options) != active['wheelVisibility']),
                 profile=active,
+                recall_geometry=True,
             )
 
     def delete_style_profile(self, profile_id: str) -> dict:
@@ -3044,6 +3448,10 @@ class OptionsService:
             replacement = nasa_atlas_upgrade_for(
                 self._style_profile_store.active_profile()
             )
+            if replacement is None:
+                replacement = susan_miller_upgrade_for(
+                    self._style_profile_store.active_profile()
+                )
             if replacement is not None:
                 self._validate_style_profile_base(replacement)
                 self._style_profile_store.upsert(replacement, activate=True)
@@ -3065,12 +3473,22 @@ class OptionsService:
         ):
             raise StyleProfileError(f'unknown style profile base preset: {base_preset_id}')
 
-    def _style_profile_mutation_result(self, *, changed: bool, profile: Optional[dict]) -> dict:
+    def _style_profile_mutation_result(self, *, changed: bool, profile: Optional[dict], recall_geometry=False) -> dict:
         refresh_mode = 'display-overlay'
+        geometry_changed = False
+        if recall_geometry:
+            geometry_changed = self._replace_theme_wheel(profile)
+            changed |= geometry_changed
+            if geometry_changed:
+                self.options.saveAppearance1()
+        elif changed and profile and profile.get('wheelVisibility'):
+            self._apply_wheel_visibility(self.options, profile['wheelVisibility'])
+            self.options.saveAppearance1()
         refreshed = self._refresh_all(refresh_mode) if changed else []
         return {
             'styleProfiles': self._style_profiles().payload(),
             'activeProfile': profile,
+            'geometryChanged': geometry_changed,
             'themeState': self._read_theme_state(self.options),
             'refreshedDocumentIds': refreshed,
             'refreshMode': refresh_mode if changed else None,
@@ -3642,6 +4060,170 @@ class OptionsService:
             'defaultCodes': [str(c) for c in defaults],
         }
 
+    def search_asteroid_catalog(self, query: str = '', limit: int = 120) -> dict:
+        """Search the compact named catalogue; exact MPC numbers always work."""
+        try:
+            limit = max(1, min(200, int(limit)))
+        except (TypeError, ValueError):
+            limit = 120
+        normalized = str(query or '').strip().casefold()
+        numeric = None
+        if normalized.isdigit():
+            candidate = int(normalized)
+            if 1 <= candidate <= 999999 and candidate != 134340:
+                numeric = candidate
+
+        matches: list[int] = []
+        seen: set[int] = set()
+        if numeric is not None:
+            matches.append(numeric)
+            seen.add(numeric)
+        elif not normalized:
+            matches.extend(asteroid_model.POPULAR_ASTEROID_NUMBERS)
+            seen.update(asteroid_model.POPULAR_ASTEROID_NUMBERS)
+        for number, name in _read_asteroid_name_catalog():
+            if normalized and normalized not in str(number) and normalized not in name.casefold():
+                continue
+            if number in seen:
+                continue
+            seen.add(number)
+            matches.append(number)
+            if len(matches) >= limit:
+                break
+        return {
+            'rows': [_asteroid_catalog_row(self.options, number) for number in matches[:limit]],
+            'query': str(query or ''),
+            'truncated': len(matches) >= limit,
+        }
+
+    def install_asteroid_ephemeris(self, number: int) -> dict:
+        """Install one selected Swiss asteroid file outside the options lock."""
+        try:
+            number = int(number)
+        except (TypeError, ValueError) as exc:
+            raise ValueError('invalid asteroid number') from exc
+        if not 1 <= number <= 999999 or number == 134340:
+            raise ValueError('asteroid number out of range')
+        opts = self.options
+        if _asteroid_ephemeris_installed(opts, number):
+            return _asteroid_catalog_row(opts, number)
+
+        raw_root = str(getattr(opts, 'asteroid_ephe_path', '') or '').strip()
+        if not raw_root:
+            raise ValueError('asteroid ephemeris directory unavailable')
+        root = Path(raw_root)
+        long_path, short_path = _asteroid_ephemeris_candidates(root, number)
+        long_path.parent.mkdir(parents=True, exist_ok=True)
+        for target in (long_path, short_path):
+            url = f'{_ASTEROID_DOWNLOAD_ROOT}/ast{number // 1000}/{target.name}'
+            temp_name = ''
+            try:
+                request = urllib.request.Request(url, headers={'User-Agent': 'Aries/1 asteroid installer'})
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    declared = response.headers.get('Content-Length')
+                    if declared and int(declared) > _ASTEROID_DOWNLOAD_MAX_BYTES:
+                        raise ValueError('asteroid ephemeris file is too large')
+                    with tempfile.NamedTemporaryFile(
+                            mode='wb', delete=False, dir=target.parent,
+                            prefix=f'.{target.name}.') as handle:
+                        temp_name = handle.name
+                        total = 0
+                        prefix = b''
+                        while True:
+                            chunk = response.read(64 * 1024)
+                            if not chunk:
+                                break
+                            if not prefix:
+                                prefix = chunk[:32]
+                            total += len(chunk)
+                            if total > _ASTEROID_DOWNLOAD_MAX_BYTES:
+                                raise ValueError('asteroid ephemeris file is too large')
+                            handle.write(chunk)
+                if not prefix.startswith(b'SWISSEPH'):
+                    raise ValueError('invalid asteroid ephemeris response')
+                os.replace(temp_name, target)
+                return _asteroid_catalog_row(opts, number)
+            except (OSError, ValueError, urllib.error.URLError):
+                if temp_name:
+                    try:
+                        Path(temp_name).unlink(missing_ok=True)
+                    except OSError:
+                        pass
+        raise ValueError(
+            f'asteroid {number} is not available from the Swiss Ephemeris mirror'
+        )
+
+    def _read_asteroids(self, opts) -> dict:
+        selected = asteroid_model.normalize_asteroid_numbers(
+            getattr(opts, 'asteroids', None),
+            getattr(opts, 'def_asteroids', asteroid_model.DEFAULT_ASTEROID_NUMBERS),
+        )
+        defaults = asteroid_model.normalize_asteroid_numbers(
+            getattr(opts, 'def_asteroids', None),
+            asteroid_model.DEFAULT_ASTEROID_NUMBERS,
+        )
+        return {
+            'selectedNumbers': selected,
+            'selectedRows': [_asteroid_catalog_row(opts, number) for number in selected],
+            'defaultNumbers': defaults,
+            'maxSelected': asteroid_model.MAX_SELECTED_ASTEROIDS,
+            'conjunctionOrb': float(getattr(opts, 'asteroid_orb_conjunction', 1.5)),
+            'oppositionOrb': float(getattr(opts, 'asteroid_orb_opposition', 1.5)),
+        }
+
+    @staticmethod
+    def _apply_asteroids(opts, fields: dict) -> tuple[bool, bool]:
+        selection_changed = False
+        orb_changed = False
+        if 'selectedNumbers' in fields and isinstance(fields['selectedNumbers'], (list, tuple)):
+            selected = asteroid_model.normalize_asteroid_numbers(
+                fields['selectedNumbers'],
+                getattr(opts, 'def_asteroids', asteroid_model.DEFAULT_ASTEROID_NUMBERS),
+            )
+            for number in selected:
+                if not _asteroid_ephemeris_installed(opts, number):
+                    raise ValueError(f'asteroid {number} ephemeris is not installed')
+            current = asteroid_model.normalize_asteroid_numbers(
+                getattr(opts, 'asteroids', None),
+                getattr(opts, 'def_asteroids', asteroid_model.DEFAULT_ASTEROID_NUMBERS),
+            )
+            if selected != current:
+                opts.asteroids = selected
+                selection_changed = True
+        for field, attr in (
+            ('conjunctionOrb', 'asteroid_orb_conjunction'),
+            ('oppositionOrb', 'asteroid_orb_opposition'),
+        ):
+            if field not in fields:
+                continue
+            try:
+                value = float(fields[field])
+            except (TypeError, ValueError):
+                continue
+            if not 0.0 <= value <= 6.0:
+                continue
+            if float(getattr(opts, attr, 1.5)) != value:
+                setattr(opts, attr, value)
+                orb_changed = True
+        return selection_changed, orb_changed
+
+    def _sync_asteroids_on_open_charts(self, *, rebuild: bool) -> None:
+        """Sync detached options and rematerialize selected rows before paint."""
+        for obj in self._open_chart_objects():
+            chart_opts = getattr(obj, 'options', None)
+            if chart_opts is None or chart_opts is self.options:
+                continue
+            chart_opts.asteroids = list(getattr(self.options, 'asteroids', ()))
+            chart_opts.asteroid_orb_conjunction = float(
+                getattr(self.options, 'asteroid_orb_conjunction', 1.5))
+            chart_opts.asteroid_orb_opposition = float(
+                getattr(self.options, 'asteroid_orb_opposition', 1.5))
+            chart_opts.asteroid_ephe_path = str(
+                getattr(self.options, 'asteroid_ephe_path', ''))
+            rebuild_method = getattr(obj, 'rebuildAsteroids', None)
+            if rebuild and callable(rebuild_method):
+                rebuild_method()
+
     def _apply_fixed_stars(self, opts, fields: dict) -> tuple[bool, bool]:
         """Apply the which-stars selection (fixstarsdlg.FixStarsDlg.check,
         fixstarsdlg.py:501-549).
@@ -3998,6 +4580,7 @@ class OptionsService:
             'at_reclick_behavior': str(getattr(opts, 'at_reclick_behavior', 'focus_only') or 'focus_only'),
             'progressed_angle_method': posfordate.progression_angle_method(
                 getattr(opts, 'progressed_angle_method', posfordate.TRUE_SOLAR_ARC_LON)),
+            'solar_arc_angle_method': posfordate.technique_angle_method(opts, posfordate.SOLAR_ARC),
             'solar_arc_angle_mode': posfordate.solar_arc_angle_mode(
                 getattr(
                     opts,
@@ -4104,6 +4687,16 @@ class OptionsService:
                     getattr(opts, 'at_reclick_behavior', 'focus_only') != value:
                 opts.at_reclick_behavior = value
                 changed = True
+
+        # Freeze the legacy fallback before changing the old shared setting.
+        if not hasattr(opts, 'solar_arc_angle_method'):
+            opts.solar_arc_angle_method = posfordate.technique_angle_method(opts, posfordate.SOLAR_ARC)
+        if 'solar_arc_angle_method' in fields:
+            value = posfordate.progression_angle_method(fields['solar_arc_angle_method'])
+            if opts.solar_arc_angle_method != value:
+                opts.solar_arc_angle_method = value
+                changed = True
+                calc_changed = True
 
         if 'progressed_angle_method' in fields:
             value = posfordate.progression_angle_method(fields['progressed_angle_method'])
@@ -4350,6 +4943,7 @@ class OptionsService:
             'synodicModes': _localized(_SYNODIC_MODE_CATALOG),
             'eventTableTimeModes': _localized(_EVENT_TABLE_TIME_BASIS_CATALOG),
             'themeLayouts': _localized(_THEME_LAYOUT_CATALOG),
+            'wheelStyles': copy.deepcopy(getattr(opts, 'wheel_style_catalog', [])),
             'angloDenseLabelLayouts': [dict(item) for item in _ANGLO_DENSE_LABEL_LAYOUT_CATALOG],
             'mansionZodiacModes': _localized(_MANSION_ZODIAC_CATALOG),
             'speculumPlacidianCols': _localized(_SPECULUM_PLACIDIAN_COLS),
@@ -4510,12 +5104,17 @@ class OptionsService:
         for attr in _COLOR_LIST_FIELDS:
             seq = getattr(opts, attr, None) or []
             out[attr] = [_rgb(v) for v in seq]
+        for attr in _COLOR_FLOAT_FIELDS:
+            out[attr] = _unit_interval(getattr(opts, attr, 0.2))
         for attr in _COLOR_BOOL_FIELDS:
             out[attr] = bool(getattr(opts, attr, False))
         return out
 
     def _read_display(self, opts) -> dict:
         out: dict[str, Any] = {}
+        preferences = getattr(opts, 'astrocartography_preferences', {}) or {}
+        units = (preferences.get('view') or {}).get('distanceUnits', 'metric')
+        out['astrocart_distance_units'] = units if units in ('metric', 'miles') else 'metric'
         for attr in _DISPLAY_BOOL_FIELDS:
             out[attr] = bool(getattr(opts, attr, False))
         for attr in _DISPLAY_INT_FIELDS:
@@ -4539,6 +5138,10 @@ class OptionsService:
         # fontfamily — coerce unknown stored values to the default profile.
         ff = getattr(opts, 'fontfamily', None)
         out['fontfamily'] = _coerce_font_profile(ff)
+        out['wheel_compositions'] = all_compositions(opts)
+        out['wheel_preset_revision'] = getattr(opts, 'wheel_preset_revision', 0)
+        layout = PROFILES[max(0, min(4, int(getattr(opts, 'theme', 0))))]
+        out['wheel_preset_id'] = getattr(opts, 'wheel_geometry_presets', {}).get(layout, {}).get('id', f'factory.{layout}')
         return out
 
     @staticmethod
@@ -4566,7 +5169,13 @@ class OptionsService:
         png_appearance = str(getattr(opts, 'png_chart_appearance', 'screen') or 'screen')
         if png_appearance not in _PNG_CHART_APPEARANCE_VALUES:
             png_appearance = 'screen'
+        watermark_style = getattr(opts, 'png_watermark_style', 'kosugi')
+        if watermark_style not in _PNG_WATERMARK_STYLE_VALUES:
+            watermark_style = 'kosugi'
         return {
+            'pngWatermarkStyle': watermark_style,
+            'pngWatermarkText': str(getattr(opts, 'png_watermark_text', '') or '').strip(),
+            'pngWatermarkStyleChoices': [dict(item) for item in _PNG_WATERMARK_STYLE_CATALOG],
             'pngChartAppearance': png_appearance,
             'pngIncludeOverlays': bool(getattr(opts, 'png_include_overlays', True)),
             'pngChartAppearanceChoices': [dict(item) for item in _PNG_CHART_APPEARANCE_CATALOG],
@@ -4703,15 +5312,17 @@ class OptionsService:
         }
 
     def _read_speculum(self, opts) -> dict:
-        """Speculum column-visibility settings (appearance2dlg.Appearance2Dlg.fill,
-        appearance2dlg.py:242-283). Reads the two speculum rows
-        (options.speculums[PLACIDIAN|REGIOMONTAN][col]) + speculumdodecat[2] +
-        intime into a flat shape the skin renders generic toggles from."""
+        """Read the one chart-owned Speculum and its two stored field families.
+
+        The active family follows ``options.hsys``.  Both rows remain persisted
+        so switching house systems restores that family's chosen columns.
+        """
         specs = getattr(opts, 'speculums', None) or []
         placidian = specs[_SPECULUM_PLACIDIAN] if len(specs) > _SPECULUM_PLACIDIAN else []
         regio = specs[_SPECULUM_REGIOMONTAN] if len(specs) > _SPECULUM_REGIOMONTAN else []
         dodecat = getattr(opts, 'speculumdodecat', None) or []
         return {
+            'activeFamily': family_for_house_system(getattr(opts, 'hsys', 'P')),
             'placidian': {
                 str(c['idx']): bool(placidian[c['idx']]) if c['idx'] < len(placidian) else False
                 for c in _SPECULUM_PLACIDIAN_COLS
@@ -5212,19 +5823,29 @@ class OptionsService:
             'Midnight': 'dark',
             'Daylight': 'light',
             NASA_ATLAS_PRESET_NAME: 'light',
+            SUSAN_MILLER_PRESET_NAME: 'light',
             'Diurnal': 'light',
             'Classic Morinus': 'light',
             'Taurus': 'dark',
             'Nocturne': 'dark',
             'Sirius': 'dark',
+            'Astro Zone': 'light',
+            'Neo Tokyo': 'light',
+            'Starved Rock': 'light',
         }
-        for name in PALETTE_PRESET_NAMES:
+        visible_names = list(settings_registry.SHIPPING_THEME_PRESET_NAMES)
+        if opts is not None:
+            saved_ids = {profile['id'] for profile in self._style_profiles().payload().get('profiles', [])}
+            visible_names.extend(name for name in PALETTE_PRESET_NAMES if name not in visible_names
+                                 and _style_lab_system_profile_id(name) in saved_ids)
+        for name in visible_names:
             values = _resolve_palette_preset_values(opts, name) if opts is not None else (
                 _CURRENT_COLOR_NIGHT_PRESET if name == 'Midnight' else
                 _CURRENT_COLOR_DAY_PRESET if name in (
                     _SYSTEM_AUTO_NAME,
                     'Daylight',
                     NASA_ATLAS_PRESET_NAME,
+                    SUSAN_MILLER_PRESET_NAME,
                 ) else
                 _DIURNAL_PRESET if name == 'Diurnal' else
                 _CLASSIC_MORINUS_PRESET if name == 'Classic Morinus' else
@@ -5302,7 +5923,7 @@ class OptionsService:
         for group, fields in patch.items():
             if not isinstance(fields, dict):
                 continue
-            if group == 'colors':
+            if group in {'colors', 'primaryDirectionPreset'} or not fields:
                 continue
             if group == 'display' and set(fields).issubset(_LIST_NEUTRAL_DISPLAY_FIELDS):
                 continue
@@ -5318,7 +5939,11 @@ class OptionsService:
             # houseSystem group rather than the display group.
             if group == 'houseSystem' and set(fields).issubset({'housesystem'}):
                 continue
-            if group == 'speculum' and set(fields).issubset({'speedMode'}):
+            if (
+                group == 'speculum'
+                and set(fields).issubset({'speedMode'})
+                and str(fields.get('speedMode')) not in SPEED_DISPLAY_MODES
+            ):
                 continue
             if group == 'aspectList' and set(fields).issubset({'perfectionLinkMode'}):
                 continue
@@ -5330,6 +5955,14 @@ class OptionsService:
     @staticmethod
     def _patch_retained_list_target(patch: dict) -> Optional[str]:
         """Narrow list invalidation when a patch has one known consumer."""
+        if set(patch) == {'speculum'}:
+            fields = patch.get('speculum')
+            if isinstance(fields, dict) and fields:
+                return 'speculum'
+        if set(patch) == {'asteroids'}:
+            fields = patch.get('asteroids')
+            if isinstance(fields, dict) and fields:
+                return 'aspect-list'
         if set(patch) == {'display'}:
             fields = patch.get('display')
             if (
@@ -5355,6 +5988,17 @@ class OptionsService:
             raise ValueError('patch must be an object')
         with self._lock:
             opts = self.options
+            patch = copy.deepcopy(patch)
+            preset_command = patch.pop('primaryDirectionPreset', None)
+            if preset_command is not None and not isinstance(preset_command, dict):
+                raise ValueError('Invalid primary-direction preset command')
+            if preset_command and preset_command.get('action') != 'save':
+                from .primary_direction_preset_service import options_patch
+                saved = self._primary_direction_presets().mutate(preset_command, self._primary_direction_snapshot())
+                if saved is not None:
+                    for group, fields in options_patch(saved, opts).items():
+                        patch[group] = {**patch.get(group, {}), **fields}
+            patch = {group: fields for group, fields in patch.items() if fields}
             changed = False
             refresh_mode: Optional[str] = None
             inspector_data_changed = False
@@ -5468,11 +6112,10 @@ class OptionsService:
                     inspector_data_changed |= speed_mode_changed
                     changed |= group_changed
                     if group_changed:
-                        request_refresh(
-                            'inspector-data'
-                            if set(fields).issubset({'speedMode'})
-                            else 'recalc'
-                        )
+                        # These options alter only the retained Speculum table
+                        # and compact inspector formatting. Both coordinate
+                        # families already exist on the current chart bodies.
+                        request_refresh('retained-data')
                     self._autosave_group(opts, group, fields, group_changed)
                 elif group == 'defaultLocation':
                     group_changed = self._apply_defloc(opts, fields)
@@ -5546,12 +6189,14 @@ class OptionsService:
                                             posfordate.SOLAR_ARC_ANGLES_PROGRESSED,
                                         )
                                     ),
+                                    changed_fields=set(fields),
                                 )
                             except Exception:
-                                pass
+                                logger.exception("Failed to update technique bindings")
+                                raise
                         request_refresh(
                             'solar-arc'
-                            if set(fields) == {'solar_arc_angle_mode'}
+                            if set(fields) <= {'solar_arc_angle_mode', 'solar_arc_angle_method'}
                             else 'recalc'
                         )
                     self._autosave_group(opts, group, fields, qc_changed)
@@ -5599,6 +6244,17 @@ class OptionsService:
                         # retained rows without rebuilding chart semantics.
                         request_refresh('display-text')
                     self._autosave_group(opts, group, fields, fs_changed)
+                elif group == 'asteroids':
+                    asteroid_selection_changed, asteroid_orb_changed = self._apply_asteroids(
+                        opts, fields)
+                    asteroid_changed = asteroid_selection_changed or asteroid_orb_changed
+                    changed |= asteroid_changed
+                    if asteroid_changed:
+                        self._sync_asteroids_on_open_charts(
+                            rebuild=asteroid_selection_changed)
+                        request_refresh(
+                            'recalc' if asteroid_selection_changed else 'display-overlay')
+                    self._autosave_group(opts, group, fields, asteroid_changed)
                 elif group == 'relationshipCharts':
                     rel_changed = self._apply_relationship_charts(opts, fields)
                     changed |= rel_changed
@@ -5626,6 +6282,8 @@ class OptionsService:
                         # daemon's Chart.recalc fan-out subsumes all of them.
                         request_refresh('recalc')
                     self._autosave_group(opts, group, fields, pp_changed)
+            if preset_command and preset_command.get('action') == 'save':
+                self._primary_direction_presets().mutate(preset_command, self._primary_direction_snapshot())
             if changed:
                 self._sync_detached_chart_options(patch)
             resolved_refresh_mode = refresh_mode or 'recalc'
@@ -5638,7 +6296,7 @@ class OptionsService:
             )
         result = self.get_options()
         result['refreshedDocumentIds'] = refreshed
-        result['refreshMode'] = resolved_refresh_mode if refresh_mode else None
+        result['refreshMode'] = resolved_refresh_mode if refresh_mode else ('ui-style' if preset_command else None)
         result['listDataChanged'] = self._patch_affects_list_data(patch)
         result['retainedListTarget'] = self._patch_retained_list_target(patch)
         result['inspectorDataChanged'] = inspector_data_changed
@@ -5702,7 +6360,9 @@ class OptionsService:
         if group == 'colors':
             savers.append('saveColors')
         elif group == 'display':
-            savers.append('saveAppearance1')
+            # Map units persist through the shared Astrocart preferences writer.
+            if set(fields) - {'astrocart_distance_units'}:
+                savers.append('saveAppearance1')
             if 'fontfamily' in fields:
                 savers.append('saveLanguages')
         elif group == 'aspectList':
@@ -5756,6 +6416,8 @@ class OptionsService:
             # FixStarsDlg.check persists the active star set via saveFixstars
             # (fixstarsdlg.py:546-547; options.saveFixstars options.py:2586).
             savers.append('saveFixstars')
+        elif group == 'asteroids':
+            savers.append('saveAsteroids')
         elif group == 'relationshipCharts':
             savers.append('saveComposite')
         elif group == 'languages':
@@ -5807,6 +6469,14 @@ class OptionsService:
                 list_changed = _set_color_list_attr(opts, attr, fields[attr])
                 changed |= list_changed
                 manual_palette_change |= list_changed
+        for attr in _COLOR_FLOAT_FIELDS:
+            if attr not in fields:
+                continue
+            new = _unit_interval(fields[attr])
+            if _unit_interval(getattr(opts, attr, 0.2)) != new:
+                setattr(opts, attr, new)
+                changed = True
+                manual_palette_change = True
         for attr in _COLOR_BOOL_FIELDS:
             if attr not in fields:
                 continue
@@ -5834,7 +6504,28 @@ class OptionsService:
         return changed
 
     def _apply_display(self, opts, fields: dict) -> bool:
+        compositions = validate_compositions(fields['wheel_compositions']) if 'wheel_compositions' in fields else None
         changed = False
+        if 'astrocart_distance_units' in fields:
+            from .workspace_service import workspace_service
+            changed |= workspace_service.set_astrocart_distance_units(fields['astrocart_distance_units'])
+        if compositions is not None:
+            if getattr(opts, 'wheel_presets_active', False):
+                store = self._wheel_presets()
+                revision = fields.get('wheel_preset_revision', store.payload()['revision'])
+                for layout, composition in compositions.items():
+                    state = store.mutate('patch', layout, base_revision=revision, composition=composition)
+                    revision = state['revision']
+                    for ring in composition['rings']:
+                        field = VISIBILITY_FIELDS.get(ring['archetypeId'])
+                        if field:
+                            setattr(opts, field, ring['enabled'])
+                store.hydrate_options(opts)
+            else:
+                for composition in compositions.values():
+                    composition['customized'] = True
+                opts.wheel_compositions = {**getattr(opts, 'wheel_compositions', {}), **compositions}
+            changed = True
         for attr in _DISPLAY_BOOL_FIELDS:
             if attr in fields:
                 setattr(opts, attr, bool(fields[attr]))
@@ -5847,7 +6538,7 @@ class OptionsService:
                     value = int(fields[attr])
                     if attr == 'synodicmode' and value not in (0, 1):
                         continue
-                    if attr == 'theme' and value not in (0, 1, 2):
+                    if attr == 'theme' and value not in (0, 1, 2, 3, 4):
                         continue
                     if attr == 'solarconditionmode':
                         if value not in _SOLAR_CONDITION_MODE_VALUES:
@@ -5907,6 +6598,8 @@ class OptionsService:
         if 'fontfamily' in fields:
             opts.fontfamily = _coerce_font_profile(fields['fontfamily'])
             changed = True
+        sync_display_flags(opts, fields)
+        sync_legacy_display_flags(opts)
         return changed
 
     @staticmethod
@@ -5927,6 +6620,16 @@ class OptionsService:
 
     def _apply_export(self, opts, fields: dict) -> bool:
         changed = False
+        if isinstance(fields.get('pngWatermarkText'), str):
+            text = fields['pngWatermarkText'].strip()
+            if getattr(opts, 'png_watermark_text', '') != text:
+                opts.png_watermark_text = text
+                changed = True
+        if 'pngWatermarkStyle' in fields:
+            style = str(fields['pngWatermarkStyle'] or '')
+            if style in _PNG_WATERMARK_STYLE_VALUES and getattr(opts, 'png_watermark_style', 'kosugi') != style:
+                opts.png_watermark_style = style
+                changed = True
         if 'pngChartAppearance' in fields:
             appearance = str(fields['pngChartAppearance'] or '')
             if (
@@ -6076,6 +6779,8 @@ class OptionsService:
             if attr in fields and isinstance(fields[attr], list):
                 setattr(opts, attr, fields[attr])
                 changed = True
+        sync_display_flags(opts, fields)
+        sync_legacy_display_flags(opts)
         return changed
 
     def _apply_symbols(self, opts, fields: dict) -> bool:
@@ -6327,6 +7032,7 @@ class OptionsService:
             raise ValueError(f'unknown palette preset: {name!r}')
         with self._lock:
             opts = self.options
+            self._wheel_presets()
             store = self._style_profiles()
             before_profile = store.active_profile()
             palette_changed = False
@@ -6336,10 +7042,12 @@ class OptionsService:
                 store.activate(profile_id)
                 palette_changed = self._write_profile_palette_to_options(opts, profile, name)
             elif name in BUILTIN_STYLE_PRESET_NAMES:
-                profile = self._style_lab_theme_profile(name)
+                profile = self.migrate_wheel_profile(self._style_lab_theme_profile(name))
                 self._validate_style_profile_base(profile)
                 store.upsert(profile, activate=True)
-                palette_changed = self._write_profile_palette_to_options(opts, profile, name)
+                palette_changed = _apply_palette_values(
+                    opts, name, _resolve_palette_preset_values(opts, profile.get('basePresetId') or name))
+                palette_changed |= self._write_profile_palette_to_options(opts, profile, name)
             else:
                 try:
                     profile = store.profile(_style_lab_system_profile_id(name))
@@ -6348,6 +7056,16 @@ class OptionsService:
                 if profile is not None:
                     self._validate_style_profile_base(profile)
                     store.activate(str(profile['id']))
+                    # Restore the system palette before its sparse saved edits;
+                    # canonical app colors must not inherit the previous theme.
+                    palette_changed = _apply_palette_values(
+                        opts, name, _resolve_palette_preset_values(opts, name),
+                    )
+                    palette_changed |= self._write_profile_palette_to_options(
+                        opts,
+                        profile,
+                        name,
+                    )
                 else:
                     if before_profile is not None:
                         store.activate(None)
@@ -6360,8 +7078,13 @@ class OptionsService:
                         _maybe_update_custom_palette(opts)
             self._autosave_group(opts, 'colors', {}, palette_changed)
             after_profile = store.active_profile()
+            wheel_state_changed = self._replace_theme_wheel(after_profile)
+            geometry_changed = wheel_state_changed
+            visibility_changed = wheel_state_changed
+            if wheel_state_changed:
+                opts.saveAppearance1()
             changed = (
-                palette_changed
+                palette_changed or visibility_changed or geometry_changed
                 or self._active_style_profile_changed(before_profile, after_profile)
             )
             refresh_mode = 'display-overlay'
@@ -6370,6 +7093,9 @@ class OptionsService:
         result['appliedPreset'] = name
         result['refreshedDocumentIds'] = refreshed
         result['refreshMode'] = refresh_mode if changed else None
+        result['geometryChanged'] = geometry_changed
+        result['visibilityChanged'] = visibility_changed
+        result['wheelStateChanged'] = wheel_state_changed
         return result
 
     def reset_color_defaults(self) -> dict:
@@ -6389,12 +7115,21 @@ class OptionsService:
                 changed |= _set_color_list_attr(opts, 'clrindividual', values['clrindividual'])
             if 'clraspect' in values:
                 changed |= _set_color_list_attr(opts, 'clraspect', values['clraspect'])
-            for attr in ('useplanetcolors', 'usezodiacelementcolors'):
+            for attr in (
+                'useplanetcolors',
+                'usezodiacelementcolors',
+                'usezodiacelementfieldcolors',
+            ):
                 if attr in values:
                     new = bool(values[attr])
                     if bool(getattr(opts, attr, False)) != new:
                         setattr(opts, attr, new)
                         changed = True
+            if 'zodiacelementfieldopacity' in values:
+                new = _unit_interval(values['zodiacelementfieldopacity'])
+                if _unit_interval(getattr(opts, 'zodiacelementfieldopacity', 0.2)) != new:
+                    opts.zodiacelementfieldopacity = new
+                    changed = True
             self._autosave_group(opts, 'colors', {}, changed)
             refresh_mode = 'display-overlay'
             refreshed = self._refresh_all(refresh_mode) if changed else []
@@ -6504,6 +7239,7 @@ class OptionsService:
             opts = self.options
             new_value = not bool(getattr(opts, 'houses', True))
             opts.houses = new_value
+            sync_display_flags(opts, {'houses': new_value})
             if getattr(opts, 'autosave', False):
                 try:
                     opts.saveAppearance1()

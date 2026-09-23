@@ -1,6 +1,7 @@
 // Copyright (C) 2026 Max Lange
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { compositionModuleUrl } from "./wheel-composition-test-loader.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -12,7 +13,7 @@ const compilerOptions = {
 };
 
 function transpile(source) {
-  return ts.transpileModule(source, { compilerOptions }).outputText;
+  return ts.transpileModule(source, { compilerOptions }).outputText.replaceAll('"./wheel-composition"', `"${compositionModuleUrl}"`).replaceAll('"../chart/wheel-composition"', `"${compositionModuleUrl}"`);
 }
 
 function dataUrl(source) {
@@ -604,10 +605,22 @@ async function loadDrawChart() {
   const ditherUrl = dataUrl(transpile(await readSource(
     new URL("../src/lib/render/dither-pattern.ts", import.meta.url),
   )));
+  const wheelProjectionUrl = dataUrl(
+    transpile(
+      await readSource(
+        new URL("../src/lib/chart/wheel-projection.ts", import.meta.url),
+      ),
+    ),
+  );
+  const outerGlyphLaneUrl = dataUrl(transpile(await readSource(
+    new URL("../src/lib/chart/outer-glyph-lane.ts", import.meta.url),
+  )));
   const drawSource = transpile(await readSource(
     new URL("../src/lib/chart/draw-chart.ts", import.meta.url),
   ))
     .replaceAll('"./canvas-draw"', `"${canvasDrawUrl}"`)
+    .replaceAll('"./wheel-projection"', `"${wheelProjectionUrl}"`)
+    .replaceAll('"./outer-glyph-lane"', `"${outerGlyphLaneUrl}"`)
     .replaceAll('"./chart-fonts"', `"${chartFontsUrl}"`)
     .replaceAll('"./wheel-layout-model"', `"${layoutModelUrl}"`)
     .replaceAll('"./wheel-render-style"', `"${wheelStyleUrl}"`)
@@ -707,6 +720,8 @@ test("all wheel variants expose both PD event orientations only as dedicated eve
     [0, "round-classic"],
     [1, "round-compact"],
     [2, "round-anglo"],
+    [3, "round-houses"],
+    [4, "round-cusps"],
   ];
   for (const [theme, renderVariant] of variants) {
     for (const frame of ["fixed-radix", "traditional-converse"]) {

@@ -51,8 +51,9 @@ tokio = { version = "1.52.3", features = ["io-util", "net", "sync", "time"] }
 block2 = "0.6.2"
 keyring = { version = "3.6.3", default-features = false, features = ["apple-native"] }
 objc2 = "0.6.4"
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSButton", "NSCell", "NSColor", "NSColorSampler", "NSColorSpace", "NSControl", "NSView", "NSWindow", "block2", "objc2-core-foundation"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSButton", "NSCell", "NSColor", "NSColorSampler", "NSColorSpace", "NSControl", "NSGraphics", "NSView", "NSWindow", "block2", "objc2-core-foundation"] }
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSGeometry", "NSString", "NSUserDefaults"] }
+objc2-web-kit = { version = "0.3.2", default-features = false, features = ["WKWebView", "WKWebViewConfiguration", "WKPreferences"] }
 security-framework = "=3.0.1"
 security-framework-sys = "=2.12.1"
 

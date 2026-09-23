@@ -30,7 +30,7 @@ TABLE_CATALOG: dict[str, TableCatalogEntry] = {
         surface="right_pane",
     ),
     "strip": TableCatalogEntry("strip", "30° Strip", "morin.py:14245,14620; stripwnd.py:78-646"),
-    "positions": TableCatalogEntry("positions", "Positions", "morin.py:15823-15896; positionswnd.py"),
+    "positions": TableCatalogEntry("positions", "Speculum", "webapp/daemon/speculum_schema.py; planets.py; houses.py"),
     "aspects": TableCatalogEntry("aspects", "Aspects", "morin.py:16752-16766; aspectswnd.py"),
     "aspect_list": TableCatalogEntry("aspect_list", "Aspect List", "webapp/daemon/aspect_list_service.py", surface="right_pane"),
     "rise_set": TableCatalogEntry("rise_set", "Rise/Set", "morin.py:16768-16769; risesetwnd.py"),

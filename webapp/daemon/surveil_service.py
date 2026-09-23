@@ -430,7 +430,7 @@ def label_for_kind(kind, object_id, longitude, fallback_label="") -> str:
     if kind == "fortune":
         return "%s (%s)" % (mtexts.txts.get("SurveilLotOfFortune", "Lot of Fortune"), pos_txt)
     if kind == "syzygy":
-        return "%s (%s)" % (mtexts.txts.get("PrenatalSyzygy", "Prenatal Syzygy"), pos_txt)
+        return "%s (%s)" % (mtexts.txts.get("PrenatalSyzygy", "Syzygy"), pos_txt)
     if kind == "eclipse":
         return "%s (%s)" % ((fallback_label or ECLIPSE_GLYPH), pos_txt)
     if kind == "angle":

@@ -81,7 +81,7 @@ def swe_close():
 
 
 @contextmanager
-def swiss_context(ephe_path=None, sidereal_mode=None, topocentric_position=None):
+def swiss_context(ephe_path=None, sidereal_mode=None, topocentric_position=None, *, sidereal_epoch=0.0, sidereal_offset=0.0):
 	"""Activate one complete root-extension context for an atomic calculation."""
 	with _SWISS_CONTEXT_LOCK:
 		previous_thread_context = dict(_SWISS_THREAD_CONTEXT.__dict__)
@@ -89,7 +89,7 @@ def swiss_context(ephe_path=None, sidereal_mode=None, topocentric_position=None)
 			if ephe_path is not None:
 				swe_set_ephe_path(ephe_path)
 			if sidereal_mode is not None:
-				swe_set_sid_mode(sidereal_mode, 0.0, 0.0)
+				swe_set_sid_mode(sidereal_mode, sidereal_epoch, sidereal_offset)
 			if topocentric_position is not None:
 				swe_set_topo(*topocentric_position)
 			yield

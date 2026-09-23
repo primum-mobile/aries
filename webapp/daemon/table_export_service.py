@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 import sys
 import tempfile
@@ -54,6 +55,7 @@ class TableExportService:
             self._run_table_export(payload_path)
         except subprocess.CalledProcessError as exc:
             detail = (exc.stderr or exc.stdout or str(exc)).strip()
+            logging.getLogger(__name__).error("Table PDF renderer failed: %s", detail)
             raise RuntimeError(detail or "table export failed") from exc
         finally:
             try:

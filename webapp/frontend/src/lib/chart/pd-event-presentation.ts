@@ -12,6 +12,8 @@ import type {
   PdEventTrack,
 } from "./types";
 
+import type { WheelProjection } from "./wheel-projection";
+
 type UnknownRecord = Record<string, unknown>;
 
 export type PdEventPoint = readonly [number, number];
@@ -19,6 +21,8 @@ export type PdEventPoint = readonly [number, number];
 export interface PdEventLayoutGeometry {
   center: PdEventPoint;
   ascendantDegrees: number;
+  /** Angular model of the host wheel; identity when absent. */
+  projection?: WheelProjection;
   outerRayInnerRadius: number;
   outerRayOuterRadius: number;
   innerMarkerInnerRadius: number;
@@ -102,8 +106,10 @@ function polar(
   radius: number,
   longitude: number,
   ascendantDegrees: number,
+  projection?: WheelProjection,
 ): PdEventPoint {
-  const radians = Math.PI + ((ascendantDegrees - longitude) * Math.PI) / 180;
+  const drawn = projection ? projection.project(longitude) : longitude;
+  const radians = Math.PI + ((ascendantDegrees - drawn) * Math.PI) / 180;
   return [
     center[0] + Math.cos(radians) * radius,
     center[1] + Math.sin(radians) * radius,
@@ -198,12 +204,14 @@ function primitiveLayout(
       innerRadius,
       longitude,
       geometry.ascendantDegrees,
+      geometry.projection,
     ),
     end: polar(
       geometry.center,
       outerRadius,
       longitude,
       geometry.ascendantDegrees,
+      geometry.projection,
     ),
   };
 }
@@ -320,6 +328,7 @@ export function resolvePdEventLayout(
           : geometry.innerMarkerLabelRadius,
         directedAngle.longitude,
         geometry.ascendantDegrees,
+        geometry.projection,
       )
     : null;
   if (

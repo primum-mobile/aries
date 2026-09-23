@@ -5,9 +5,12 @@
 # Modified for Aries in 2026 by Max Lange.
 
 import astrology
+import asteroids
 from aries.astrology.ephemeris_context import EphemerisContext
 import chart
+import common
 import fortune
+import mtexts
 import planets
 import util
 import arabicparts
@@ -252,21 +255,30 @@ class Transits:
 		planet1 = planets.Planet(time1.jd, planet, self.flags)
 		planet2 = planets.Planet(time2.jd, planet, self.flags)
 
-		if chrt.options.ayanamsha != 0 and (self.flags & astrology.SEFLG_SIDEREAL):
-			# chart.Chart now stores planet longitudes in the chosen
-			# zodiac (Chart._zodiac_flags applies SEFLG_SIDEREAL at the
-			# SwissEph boundary). Explicit targets used by search, returns,
-			# and Sun-transit tools follow that same chosen-zodiac contract.
-			if pos is None:
-				lon = chrt.planets.planets[planet].data[planets.Planet.LONG]
-			else:
-				lon = util.normalize(pos)
+		if pos is None:
+			natal_state = self._natal_planet_state(chrt, planet)
+			if natal_state is None:
+				raise ValueError(mtexts.txts['TimedAsteroidEphemerisUnavailable'].format(
+					body=astrology.swe_get_planet_name(planet)))
+			lon = natal_state[0]
 		else:
-			# Tropical search.
-			lon = chrt.planets.planets[planet].data[planets.Planet.LONG] if pos is None else pos
+			# Natal and explicit targets are already in the selected zodiac.
+			lon = util.normalize(pos)
 		tr = self.get(planet1, planet2, time1, chrt, lon, planet, planet, chart.Chart.CONJUNCTIO, Transits.HOUR, Transit.PLANET)
 		if tr != None:
 			self.transits.append(tr)
+
+	@staticmethod
+	def _natal_planet_state(chrt, body_id):
+		body = common.get_chart_planet(chrt, body_id)
+		if body is not None:
+			return body.data[planets.Planet.LONG], body.data[planets.Planet.SPLON]
+		body = asteroids.chart_asteroid(chrt, body_id)
+		if body is not None and getattr(body, 'available', True):
+			# Asteroid.data stores equatorial coordinates at indices 2/3;
+			# its longitude speed lives in the dedicated speed attribute.
+			return body.data[0], body.speed
+		return None
 
 	def get(self, planet1, planet2, time1, chrt, lon, j, k, a, unit, typ):
 		if self.check(planet1.data[planets.Planet.LONG], planet2.data[planets.Planet.LONG], lon):
@@ -365,17 +377,11 @@ class Transits:
 						elif planet1.data[planets.Planet.SPLON] == 0.0:
 							tr.pltretr = Transit.STAT
 						if typ == Transit.PLANET:
-							if k == astrology.SE_CHIRON:
-								_co = getattr(chrt, 'chiron', None)
-								if _co is not None:
-									if _co.data[planets.Planet.SPLON] < 0.0:
-										tr.objretr = Transit.RETR
-									elif _co.data[planets.Planet.SPLON] == 0.0:
-										tr.objretr = Transit.STAT
-							else:
-								if chrt.planets.planets[k].data[planets.Planet.SPLON] < 0.0:
+							natal_state = self._natal_planet_state(chrt, k)
+							if natal_state is not None:
+								if natal_state[1] < 0.0:
 									tr.objretr = Transit.RETR
-								elif chrt.planets.planets[k].data[planets.Planet.SPLON] == 0.0:
+								elif natal_state[1] == 0.0:
 									tr.objretr = Transit.STAT
 
 						if typ != Transit.SIGN:

@@ -242,7 +242,9 @@ class ChartMotionEvaluator:
         return {
             "longitude": util.normalize(lon),
             "regime": ("angleSource", key),
-            "canAct": True,
+            # Structural angles and Vertex are sensitive receiving points, not
+            # bodies that apply to another endpoint.
+            "canAct": False,
             "valid": True,
         }
 
@@ -321,7 +323,9 @@ class ChartMotionEvaluator:
         state = {
             "longitude": util.normalize(lon),
             "regime": ("fortune", formula_type, bool(above), formula_regime),
-            "canAct": True,
+            # A Lot is a derived sensitive point.  Its formula may be
+            # recalculated for a trajectory, but it never acts as a body.
+            "canAct": False,
             "valid": True,
         }
         self._fortune_cache[key] = state
@@ -337,7 +341,10 @@ class ChartMotionEvaluator:
         return {
             "longitude": util.normalize(float(left["longitude"]) + delta / 2.0),
             "regime": ("midpoint", int(p1), int(p2), 1 if delta >= 0.0 else -1),
-            "canAct": True,
+            # A midpoint is a derived meeting-place, not an independent
+            # applying body. Its longitude still follows both components so
+            # a body-to-midpoint relationship can be phased and perfected.
+            "canAct": False,
             "valid": valid,
         }
 
@@ -593,12 +600,13 @@ class ChartMotionEvaluator:
         return {
             "longitude": util.normalize(lon),
             "regime": (regime, int(config_index)),
-            "canAct": True,
+            "canAct": False,
             "valid": True,
         }
 
     def projection(self, ref: dict[str, Any], jd: float) -> dict[str, Any] | None:
-        source = self.sample(dict(ref.get("source") or {}), jd)
+        source_ref = dict(ref.get("source") or {})
+        source = self.sample(source_ref, jd)
         if source is None:
             return None
         projection = str(ref.get("projection") or "")
@@ -655,7 +663,21 @@ class ChartMotionEvaluator:
         return {
             "longitude": projected,
             "regime": regime,
-            "canAct": bool(source.get("canAct", True)),
+            # This longitude is an image of its source, not a second actor.
+            # A body-derived projection can carry the source body's agency;
+            # angle/Lot-derived projections remain receive-only.
+            "canAct": False,
+            "canSupplyActor": bool(
+                source.get("canAct", True)
+                or source.get("canSupplyActor", False)
+            ),
+            "actorSource": (
+                source.get("actorSource")
+                if source.get("canSupplyActor", False)
+                else source_ref
+                if source.get("canAct", True)
+                else None
+            ),
             "valid": bool(source.get("valid", True)),
         }
 

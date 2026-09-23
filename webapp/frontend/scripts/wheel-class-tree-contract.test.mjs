@@ -183,3 +183,16 @@ test("a tick's reading is its ruler, not its sibling ticks", () => {
     "a bare-group family must still resolve to its members",
   );
 });
+
+test('subdivision backgrounds form an explicit family without including other fills or geometry', () => {
+  const members = ['fills.termBand', 'fills.decanBand', 'fills.cuspDegreeBand'];
+  const nodes = tree.buildWheelClassTree([...members, 'fills.zodiacBand', 'fills.houseField', 'rings.term']);
+  const families = tree.wheelClassFamilyByMember(nodes);
+  for (const member of members) assert.deepEqual(families.get(member), members);
+  for (const unrelated of ['fills.zodiacBand', 'fills.houseField', 'rings.term']) {
+    assert.equal(families.get(unrelated), undefined);
+  }
+  const group = tree.wheelClassFamilies(nodes).find(n => n.id === 'fills.subdivisionBand');
+  assert.equal(group.isClass, false, 'grouping must not invent a second painted surface');
+  assert.equal(tree.wheelClassFamilyOwnerByMember(nodes).get(members[0]), undefined);
+});

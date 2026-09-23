@@ -213,7 +213,11 @@ export function AmbientSpotlight({
                 </div>
                 {preview.kind !== "none" && (
                   <div className="aries-ambient-spotlight-kind shrink-0">
-                    {preview.kind === "chart" ? t("palette.kindChart") : t("palette.kindTime")}
+                    {preview.kind === "synastry"
+                      ? t("picker.synastry")
+                      : preview.kind === "chart"
+                        ? t("palette.kindChart")
+                        : t("palette.kindTime")}
                   </div>
                 )}
               </div>

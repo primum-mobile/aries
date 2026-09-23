@@ -32,15 +32,17 @@ THEME_PRESET_DEFINITIONS: tuple[dict, ...] = (
     {"name": "Midnight"},
     {"name": "Daylight"},
     {"name": "NASA Atlas", "mtextKey": "ThemeNasaAtlas"},
-    {"name": "Diurnal"},
-    {"name": "Classic Morinus"},
+    {"name": "Astro Zone"},
+    {"name": "Neo Tokyo"},
+    {"name": "Starved Rock"},
     {"name": "Taurus"},
     {"name": "Nocturne"},
     {"name": "Sirius"},
+    {"name": "Classic Morinus"},
 )
-THEME_PRESET_NAMES: tuple[str, ...] = tuple(
-    definition["name"] for definition in THEME_PRESET_DEFINITIONS
-)
+SHIPPING_THEME_PRESET_NAMES = tuple(definition["name"] for definition in THEME_PRESET_DEFINITIONS)
+# Existing profiles can still inherit and resolve these older palettes.
+THEME_PRESET_NAMES = SHIPPING_THEME_PRESET_NAMES + ("Diurnal", "Susan Miller")
 
 
 SETTINGS_TABS: tuple[dict, ...] = (
@@ -57,11 +59,12 @@ SETTINGS_TABS: tuple[dict, ...] = (
     {"id": "dignities", "labelKey": "settings.tabDignities", "menuCommands": ["menu.options.dignities"]},
     {"id": "speculum", "labelKey": "settings.tabSpeculum", "menuCommands": ["menu.options.speculum"]},
     {"id": "fixstars", "labelKey": "settings.tabFixedStars", "menuCommands": ["menu.options.fixed-stars"]},
+    {"id": "asteroids", "labelKey": "settings.tabAsteroids", "menuCommands": ["menu.options.asteroids"]},
     {"id": "mansions", "labelKey": "settings.tabLunarMansions", "menuCommands": ["menu.lunar-mansions"]},
     {"id": "almutens", "labelKey": "settings.tabAlmutens", "menuCommands": ["menu.options.almutens"]},
     {"id": "primarydirections", "labelKey": "settings.tabPrimaryDirections", "menuCommands": ["menu.options.primary-directions"]},
     {"id": "revolutions", "labelKey": "settings.tabRevolutions", "menuCommands": ["menu.options.revolutions"]},
-    {"id": "supplementary", "labelKey": "settings.tabProgressions", "menuCommands": ["menu.options.quick-charts"]},
+    {"id": "supplementary", "labelKey": "settings.tabProgressions", "menuCommands": ["menu.options.quick-charts", "menu.options.solar-arc"]},
     {"id": "timelords", "labelKey": "settings.tabTimeLords", "menuCommands": ["menu.options.time-lords"]},
     {"id": "eclipses", "labelKey": "settings.tabEclipses", "menuCommands": ["menu.options.eclipses"]},
     {"id": "relationship", "labelKey": "settings.tabRelationshipCharts", "menuCommands": ["menu.options.relationship-charts"]},

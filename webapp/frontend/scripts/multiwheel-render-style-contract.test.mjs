@@ -48,7 +48,7 @@ test("the prototype paints the requested visual grammar", () => {
   assert.match(canvasSource, /acknowledgePaintedDocumentSnapshot/);
 });
 
-test("angle axes remain visible without house cusps and reuse Anglo paint", () => {
+test("angle axes remain visible without house cusps and use the selected wheel paint", () => {
   assert.match(source, /function drawMultiwheelAngles/);
   assert.match(source, /drawMultiwheelAngles\(/);
   assert.match(source, /ringIndex,\s+hitRegions,\s+style,/);
@@ -69,7 +69,8 @@ test("angle axes remain visible without house cusps and reuse Anglo paint", () =
   assert.doesNotMatch(source, /ANGLE_GLYPHS/);
   assert.match(source, /\[chart\.angles\.asc, chart\.angles\.mc\]/);
   assert.match(source, /showAngleArrowheads !== false/);
-  assert.match(canvasSource, /projectWheelAuthoringStyle\(wheelRenderStyle, layout\.maxRadius, "anglo"\)/);
+  assert.match(canvasSource, /projectWheelAuthoringStyle\(wheelRenderStyle, layout\.maxRadius, profile\)/);
+  assert.match(source, /resolveWheelTypographyPaint\(\s*style,\s*style\.authoringTargetProfile,/);
 });
 
 test("body and position lanes use one measured stack at every wheel count", () => {

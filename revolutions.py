@@ -5,6 +5,7 @@
 # Modified for Aries in 2026 by Max Lange.
 
 import datetime
+from dataclasses import replace
 import weakref
 import astrology
 import mtexts
@@ -13,7 +14,6 @@ import transits
 import util
 from aries.astrology.ephemeris_context import EphemerisContext
 from aries.astrology.transit_fast import api as transit_fast
-from aries.astrology.transit_fast.constants import BODY_PERIOD_DAYS
 
 _PLANETARY_MONTH_HIT_CACHE = weakref.WeakKeyDictionary()
 _LUNAR_MONTH_HIT_CACHE = weakref.WeakKeyDictionary()
@@ -34,17 +34,16 @@ def _marr_flag_for_body(opts, planet_id):
 
 
 def _marr_sidereal_enabled(chrt, planet_id):
-	"""Whether to apply Marr precession-shifted target for the given body."""
+	"""Whether this return uses the common natal-ecliptic frame."""
 	opts = getattr(chrt, 'options', None)
 	if opts is None:
 		return False
 	if not _marr_flag_for_body(opts, planet_id):
 		return False
-	# Marr's sidereal SR/LR is defined as a tropical-zodiac chart whose
-	# return target is the precession-shifted natal point. If the user
-	# already has an ayanamsha set the chart runs sidereal end-to-end and
-	# the SE search returns the same result, so the precession offset
-	# would be double-applied — silently skip Marr in that case.
+	# Precessed returns use the natal ecliptic for every return body and
+	# retain a tropical chart of date for presentation.
+	# An explicitly sidereal zodiac already owns its return frame, so
+	# it must not also receive the tropical precessed-return correction.
 	if int(getattr(opts, 'ayanamsha', 0) or 0) != 0:
 		return False
 	return True
@@ -80,11 +79,45 @@ def _approx_jd_from_datetime(chrt, dt):
 	return astrology.swe_julday(int(dt.year), int(dt.month), int(dt.day), float(ut_hours), calflag)
 
 
-def _marr_target_lon(chrt, planet_id, jd_target_approx):
-	"""Tropical-frame target longitude = natal tropical lon + precession-since-birth."""
-	natal_trop = _natal_tropical_lon(chrt, planet_id)
-	offset = _marr_precession_offset(jd_target_approx, chrt.time.jd)
-	return util.normalize(natal_trop + offset)
+def _return_context_and_target(chrt, planet_id, return_place=None, degree_offset=0.0):
+	"""One return frame for the native and reference search engines.
+
+	Precessed returns compare both positions on the natal ecliptic (Swiss
+	Ephemeris §12.1(c), method 2). The custom epoch is TT; search dates are
+	UT. Natal and relocated observers are applied separately. Chart output
+	continues to use the configured zodiac of date.
+	"""
+	import common
+	context = EphemerisContext.for_chart(chrt, ephe_path=common.get_ephe_path())
+	if _marr_sidereal_enabled(chrt, planet_id):
+		with context.activate():
+			epoch = float(chrt.time.jd) + astrology.swe_deltat(chrt.time.jd)
+		context = replace(
+			context, flags=context.flags | astrology.SEFLG_SIDEREAL,
+			sidereal_mode=astrology.SE_SIDM_USER | astrology.SE_SIDBIT_ECL_T0,
+			sidereal_epoch=epoch,
+		)
+		with context.activate():
+			retflag, values, error = astrology.swe_calc_ut_ex(chrt.time.jd, planet_id, context.flags)
+			if retflag < 0 or len(values) < 4:
+				raise ValueError(error or 'return ephemeris failed')
+			target = float(values[0])
+	else:
+		target = float(chrt.planets.planets[planet_id].data[planets.Planet.LONG])
+	if return_place is not None and context.topocentric_position is not None:
+		context = replace(context, topocentric_position=(
+			return_place.lon, return_place.lat, return_place.altitude,
+		))
+	return context, util.normalize(target + degree_offset)
+
+
+def return_longitude_hits(chrt, planet_id, jd_start, jd_end, *, return_place=None, degree_offset=0.0):
+	"""Exact return/offset crossings, including every retrograde pass."""
+	context, target = _return_context_and_target(chrt, planet_id, return_place, degree_offset)
+	return transit_fast.search_longitude_transits(
+		planet_id, jd_start, jd_end, [target], context=context,
+	)
+
 
 def compute_solar_at_year(self, chrt, target_year):
     """지정 연도의 솔라 리턴 한 방 호출"""
@@ -115,8 +148,9 @@ class Revolutions:
         NEPTUNE: (astrology.SE_NEPTUNE, 200*12),
         PLUTO: (astrology.SE_PLUTO, 300*12),
     }
-    def __init__(self):
+    def __init__(self, return_place=None):
         self.t = [0, 0, 0, 0, 0, 0]
+        self.return_place = return_place
 
     def _planet_params(self, typ):
         return Revolutions.PLANETARY_SPECS.get(typ, (None, 0))
@@ -226,6 +260,22 @@ class Revolutions:
         except TypeError:
             return None
 
+    def _precessed_month_values(self, year, month, chrt, planet):
+        from chart import Time as _Time
+        calflag = astrology.SE_JUL_CAL if chrt.time.cal == _Time.JULIAN else astrology.SE_GREG_CAL
+        next_year, next_month = util.incrMonth(year, month)
+        start = astrology.swe_julday(year, month, 1, 0.0, calflag)
+        end = astrology.swe_julday(next_year, next_month, 1, 0.0, calflag)
+        return tuple(
+            self._rounded_transit_values(*astrology.swe_revjul(hit.jd_ut, calflag))
+            for hit in return_longitude_hits(chrt, planet, start, end, return_place=self.return_place)
+            if start <= hit.jd_ut < end
+        )
+
+    def _return_place_key(self, chrt):
+        place = self.return_place or chrt.place
+        return (float(place.lon), float(place.lat), float(place.altitude)) if chrt.options.topocentric else None
+
     def _lunar_month_hits(self, year, month, chrt):
         bucket = self._lunar_cache_bucket(chrt)
         marr = _marr_sidereal_enabled(chrt, astrology.SE_MOON)
@@ -235,17 +285,19 @@ class Revolutions:
             int(getattr(chrt.options, 'ayanamsha', 0)),
             int(bool(getattr(chrt.options, 'topocentric', False))),
             1 if marr else 0,
+            self._return_place_key(chrt) if marr else None,
         )
         if bucket is not None and cache_key in bucket:
             return bucket[cache_key]
 
-        trans = transits.Transits()
         if marr:
-            approx_dt = datetime.datetime(int(year), int(month), 15, 0, 0, 0)
-            target = _marr_target_lon(chrt, astrology.SE_MOON, _approx_jd_from_datetime(chrt, approx_dt))
-            trans.month(int(year), int(month), chrt, astrology.SE_MOON, target)
-        else:
-            trans.month(int(year), int(month), chrt, astrology.SE_MOON)
+            hits = tuple((self._dt_from_t(values), values) for values in
+                         self._precessed_month_values(year, month, chrt, astrology.SE_MOON))
+            if bucket is not None:
+                bucket[cache_key] = hits
+            return hits
+        trans = transits.Transits()
+        trans.month(int(year), int(month), chrt, astrology.SE_MOON)
         hits = []
         birth_dt = self._birth_datetime(chrt)
         for tr in trans.transits:
@@ -281,17 +333,19 @@ class Revolutions:
             int(getattr(chrt.options, 'ayanamsha', 0)),
             int(bool(getattr(chrt.options, 'topocentric', False))),
             1 if marr else 0,
+            self._return_place_key(chrt) if marr else None,
         )
         if bucket is not None and cache_key in bucket:
             return bucket[cache_key]
 
-        trans = transits.Transits()
         if marr:
-            approx_dt = datetime.datetime(int(year), int(month), 15, 0, 0, 0)
-            target = _marr_target_lon(chrt, planet, _approx_jd_from_datetime(chrt, approx_dt))
-            trans.month(int(year), int(month), chrt, planet, target)
-        else:
-            trans.month(int(year), int(month), chrt, planet)
+            hits = tuple((self._dt_from_t(values), values) for values in
+                         self._precessed_month_values(year, month, chrt, planet))
+            if bucket is not None:
+                bucket[cache_key] = hits
+            return hits
+        trans = transits.Transits()
+        trans.month(int(year), int(month), chrt, planet)
         hits = []
         for tr in trans.transits:
             values = self._rounded_transit_values(year, month, tr.day, tr.time)
@@ -307,18 +361,8 @@ class Revolutions:
         if planet is None:
             return None
         try:
-            import common
-            context = EphemerisContext.for_chart(chrt, ephe_path=common.get_ephe_path())
-            if _marr_sidereal_enabled(chrt, planet):
-                return self._marr_planetary_adjacent(
-                    typ,
-                    ref_dt,
-                    chrt,
-                    direction,
-                    inclusive=inclusive,
-                    context=context,
-                )
-            target = float(chrt.planets.planets[planet].data[planets.Planet.LONG])
+            place = self.return_place if _marr_sidereal_enabled(chrt, planet) else None
+            context, target = _return_context_and_target(chrt, planet, place)
             anchor_jd = _approx_jd_from_datetime(chrt, ref_dt)
             hit = transit_fast.search_adjacent_longitude_transit(
                 planet,
@@ -339,68 +383,6 @@ class Revolutions:
             # Minimal synthetic charts and source checkouts without the native
             # extension retain the established month scanner.
             return None
-
-    def _marr_planetary_adjacent(self, typ, ref_dt, chrt, direction, *, inclusive, context):
-        planet, _months = self._planet_params(typ)
-        if planet is None:
-            return None
-        period_days = BODY_PERIOD_DAYS.get(planet)
-        if period_days is None:
-            return None
-        direction = 1 if int(direction) >= 0 else -1
-
-        def nearest(start_dt, end_dt):
-            hits = self.enumerate_planetary_hits_in_range(
-                typ,
-                start_dt,
-                end_dt,
-                chrt,
-                inclusive_start=bool(inclusive) if direction > 0 else True,
-                inclusive_end=bool(inclusive) if direction < 0 else False,
-            )
-            if direction > 0:
-                eligible = [
-                    item for item in hits
-                    if (item[0] >= ref_dt if inclusive else item[0] > ref_dt)
-                ]
-            else:
-                eligible = [
-                    item for item in hits
-                    if (item[0] <= ref_dt if inclusive else item[0] < ref_dt)
-                ]
-            if not eligible:
-                return None
-            return min(eligible, key=lambda item: item[0]) if direction > 0 else max(eligible, key=lambda item: item[0])
-
-        local_days = min(1000.0, max(400.0, float(period_days) * 0.025))
-        local_start = ref_dt if direction > 0 else ref_dt - datetime.timedelta(days=local_days)
-        local_end = ref_dt + datetime.timedelta(days=local_days) if direction > 0 else ref_dt
-        found = nearest(local_start, local_end)
-        if found is not None:
-            return found[1]
-
-        anchor_jd = _approx_jd_from_datetime(chrt, ref_dt)
-        candidate_jd = transit_fast.estimate_orbital_return_jd(
-            planet,
-            float(chrt.time.jd),
-            anchor_jd,
-            direction,
-            context=context,
-        )
-        from chart import Time as _Time
-        calflag = astrology.SE_JUL_CAL if chrt.time.cal == _Time.JULIAN else astrology.SE_GREG_CAL
-        candidate_values = self._rounded_transit_values(*astrology.swe_revjul(candidate_jd, calflag))
-        candidate_dt = self._dt_from_t(candidate_values)
-        half_window = min(1200.0, max(500.0, float(period_days) * 0.0075))
-        max_half_window = max(half_window, float(period_days) * 0.6)
-        while half_window <= max_half_window:
-            start_dt = candidate_dt - datetime.timedelta(days=half_window)
-            end_dt = candidate_dt + datetime.timedelta(days=half_window)
-            found = nearest(start_dt, end_dt)
-            if found is not None:
-                return found[1]
-            half_window *= 2.0
-        return None
 
     def enumerate_planetary_hits_in_range(self, typ, start_dt, end_dt, chrt, inclusive_start=True, inclusive_end=False):
         if not Revolutions.is_planetary_type(typ):
@@ -496,7 +478,7 @@ class Revolutions:
         return False
 
     def compute_planetary_cycle_start_datetime(self, typ, ref_dt, chrt):
-        anchor = Revolutions()
+        anchor = Revolutions(self.return_place)
         if not anchor.compute_planetary_before_datetime(typ, ref_dt, chrt, inclusive=True):
             if not anchor.compute_planetary_after_datetime(typ, ref_dt, chrt, inclusive=True):
                 return False
@@ -506,7 +488,7 @@ class Revolutions:
         cluster_start_values = tuple(anchor.t)
 
         while True:
-            prev = Revolutions()
+            prev = Revolutions(self.return_place)
             if not prev.compute_planetary_before_datetime(typ, current_dt, chrt, inclusive=False):
                 break
             prev_dt = prev._dt_from_t()
@@ -518,9 +500,9 @@ class Revolutions:
         return self._set_hit_values(cluster_start_values)
 
     @staticmethod
-    def closest_lunar_return(chrt, anchor_dt, window_days=2):
+    def closest_lunar_return(chrt, anchor_dt, window_days=2, return_place=None):
         """Return the lunar return nearest ``anchor_dt`` under ``chrt`` options."""
-        revs = Revolutions()
+        revs = Revolutions(return_place)
         start = anchor_dt - datetime.timedelta(days=window_days)
         end = anchor_dt + datetime.timedelta(days=window_days)
         year = int(start.year)
@@ -542,9 +524,9 @@ class Revolutions:
         return best
 
     @staticmethod
-    def closest_planetary_return(typ, chrt, anchor_dt, window_days=30):
+    def closest_planetary_return(typ, chrt, anchor_dt, window_days=30, return_place=None):
         """Return the planetary return nearest ``anchor_dt`` under ``chrt`` options."""
-        revs = Revolutions()
+        revs = Revolutions(return_place)
         hits = revs.enumerate_planetary_hits_in_range(
             typ,
             anchor_dt - datetime.timedelta(days=window_days),
@@ -562,7 +544,7 @@ class Revolutions:
     # def compute(self, typ, by, bm, bd, chrt):
 
     # ── 변경: 선택 인자 target_year 추가
-    def compute(self, typ, by, bm, bd, chrt, target_year=None):
+    def compute(self, typ, by, bm, bd, chrt, target_year=None, return_place=None):
         if typ == Revolutions.SOLAR:
             # ① 연도 결정
             if target_year is not None:
@@ -576,10 +558,15 @@ class Revolutions:
             day = chrt.time.day
 
             marr = _marr_sidereal_enabled(chrt, astrology.SE_SUN)
-            target = None
             if marr:
-                approx_dt = datetime.datetime(int(year), int(month), int(day), 12, 0, 0)
-                target = _marr_target_lon(chrt, astrology.SE_SUN, _approx_jd_from_datetime(chrt, approx_dt))
+                if return_place is not None:
+                    self.return_place = return_place
+                for search_year, search_month in self._solar_search_months(year, month, day):
+                    values = self._precessed_month_values(search_year, search_month, chrt, astrology.SE_SUN)
+                    if values:
+                        return self._set_hit_values(values[0])
+                return False
+            target = None
 
             for search_year, search_month in self._solar_search_months(year, month, day):
                 trans = transits.Transits()

@@ -205,6 +205,7 @@ class ACGAspectLine:
     branch: str
     branch_sign: int
     segments: tuple[tuple[tuple[float, float], ...], ...]
+    curve: dict | None = None
 
 
 # Aries' complete ecliptic-aspect block, matching ``chart.Chart.Aspects``.
@@ -270,6 +271,7 @@ class ACGResult:
     # Parans always mean simultaneous physical angularity. They do not change
     # coordinate systems when the displayed longitude lines are zodiacal.
     paran_system: str = LINE_SYSTEM_IN_MUNDO
+    curve_obliquity: float | None = None
 
     def lines_for(self, point_id: str) -> tuple[ACGLine, ...]:
         return tuple(l for l in self.lines if l.point_id == point_id)
@@ -294,6 +296,12 @@ class ACGResult:
                 "kind": line.kind,
                 "line_system": self.line_system,
             }
+            if line.kind in (LINE_ASC, LINE_DSC) and line.point_id in self.equatorial:
+                ra, dec = self.equatorial[line.point_id]
+                props["curve"] = horizon_curve_descriptor(
+                    ra, dec, self.theta0_deg, line.kind, self.lat_range,
+                    obliquity=self.curve_obliquity,
+                )
             color = color_by_id.get(line.point_id)
             if color:
                 props["color"] = color
@@ -332,6 +340,8 @@ class ACGResult:
                 },
             }
             color = color_by_id.get(line.point_id)
+            if line.curve is not None:
+                props["curve"] = line.curve
             if color:
                 props["color"] = color
             features.append({
@@ -734,6 +744,20 @@ def _coerce_point(x) -> ACGPoint:
 
 # ---------------------------------------------------------------------------
 # Horizon sampling
+
+def horizon_curve_descriptor(ra, dec, theta0, kind, lat_range, *, obliquity=None):
+    """Resolved rendering coefficients, independent of preview tessellation."""
+    if kind not in (LINE_ASC, LINE_DSC):
+        return None
+    edge = 90.0 - abs(dec) if abs(dec) >= 1e-9 else GEOGRAPHIC_LAT_LIMIT
+    return {
+        "type": "horizon", "ra": ra, "dec": dec,
+        "rotation": theta0 if obliquity is not None else -theta0,
+        "sign": -1 if kind == LINE_ASC else 1,
+        "obliquity": obliquity,
+        "domain": [max(lat_range[0], -edge), min(lat_range[1], edge)],
+    }
+
 
 def _horizon_points(
     ra: float,
@@ -1317,6 +1341,9 @@ def _compute_ordinary_acg(
                                 step_deg,
                                 horizon_error_meters,
                             ),
+                            curve=horizon_curve_descriptor(
+                                branch_ra, branch_dec, theta0, target_angle, lat_range,
+                            ),
                         ))
 
     markers = (
@@ -1570,6 +1597,10 @@ def compute_geodetic_acg(
                             step_deg,
                             horizon_error_meters,
                         ),
+                        curve=horizon_curve_descriptor(
+                            *_ecl_to_equ(branch_lon, 0.0, eps), meridian_lon,
+                            target_angle, lat_range, obliquity=eps,
+                        ),
                     ))
 
     markers = (
@@ -1609,6 +1640,7 @@ def compute_geodetic_acg(
         markers=markers,
         line_system=line_system,
         paran_system=LINE_SYSTEM_IN_MUNDO,
+        curve_obliquity=eps,
     )
 
 

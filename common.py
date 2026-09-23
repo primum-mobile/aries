@@ -167,14 +167,34 @@ def _common_base_dir():
 
 def get_ephe_path():
 	try:
-		return common.ephepath
+		base_path = common.ephepath
 	except Exception:
-		return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'SWEP', 'Ephem')
+		base_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'SWEP', 'Ephem')
+	extra_path = os.environ.get('ARIES_ASTEROID_EPHE_PATH', '').strip()
+	if not extra_path:
+		try:
+			import app_paths
+			extra_path = os.path.join(app_paths.user_opts_dir(), 'ephemeris')
+		except Exception:
+			extra_path = ''
+	if extra_path and extra_path != base_path:
+		return os.pathsep.join((extra_path, base_path))
+	return base_path
 
 
-def ensure_swe_ready():
+def ensure_swe_ready(extra_ephe_paths=None):
 	global _SWE_READY, _SWE_READY_PATH
-	ephe_path = get_ephe_path()
+	paths = []
+	if isinstance(extra_ephe_paths, (str, os.PathLike)):
+		extra_ephe_paths = (extra_ephe_paths,)
+	for path in extra_ephe_paths or ():
+		value = os.fspath(path).strip()
+		if value and value not in paths:
+			paths.append(value)
+	for base_path in get_ephe_path().split(os.pathsep):
+		if base_path and base_path not in paths:
+			paths.append(base_path)
+	ephe_path = os.pathsep.join(paths)
 	os.environ['SE_EPHE_PATH'] = ''
 	astrology.swe_set_ephe_path(ephe_path)
 	_SWE_READY = True
@@ -243,6 +263,10 @@ def angular_distance(lon1, lon2):
 
 def is_ring_direct_hit(lon1, lon2, orb):
 	return angular_distance(lon1, lon2) <= float(orb)
+
+
+def is_ring_opposition_hit(lon1, lon2, orb):
+	return abs(180.0 - angular_distance(lon1, lon2)) <= float(orb)
 
 
 def get_overlay_trigger_longitudes(chrt, options):
@@ -327,15 +351,27 @@ def get_sign_color(options, sign_index, bw=False, force_element=False):
 	return getattr(options, 'clrsignelementfire', options.clrsigns)
 
 
-def collect_asteroid_ring_items(chrt, options):
-	orb = float(getattr(options, 'ringorb_asteroids', 1.5))
+def collect_asteroid_ring_items(chrt, options, *, filter_hits=True):
+	conjunction_orb = float(getattr(
+		options,
+		'asteroid_orb_conjunction',
+		getattr(options, 'ringorb_asteroids', 1.5),
+	))
+	opposition_orb = float(getattr(options, 'asteroid_orb_opposition', 1.5))
 	items = []
+	targets = get_overlay_trigger_longitudes(chrt, options) if filter_hits else []
 	asteroid_list = getattr(getattr(chrt, 'asteroids', None), 'asteroids', None) or []
 	for body in asteroid_list:
-		if not getattr(body, 'data', None) or len(body.data) < 4:
+		if not getattr(body, 'available', True) or not getattr(body, 'data', None) or len(body.data) < 4:
 			continue
 		lon = float(body.data[0])
-		if not chart_has_ring_direct_hit(chrt, options, lon, orb, skip_body_id=getattr(body, 'aId', None)):
+		hit = any(
+			is_ring_direct_hit(lon, target_lon, conjunction_orb)
+			or is_ring_opposition_hit(lon, target_lon, opposition_orb)
+			for body_id, target_lon in targets
+			if body_id != getattr(body, 'aId', None)
+		)
+		if filter_hits and not hit:
 			continue
 		items.append({
 			'family': 'asteroid',
@@ -348,12 +384,12 @@ def collect_asteroid_ring_items(chrt, options):
 	return items
 
 
-def collect_midpoint_ring_items(chrt, options):
+def collect_midpoint_ring_items(chrt, options, *, filter_hits=True):
 	orb = float(getattr(options, 'ringorb_midpoints', 1.5))
 	items = []
 	for midpoint in getattr(getattr(chrt, 'midpoints', None), 'mids', ()) or ():
 		lon = float(midpoint.m)
-		if not chart_has_ring_direct_hit(chrt, options, lon, orb):
+		if filter_hits and not chart_has_ring_direct_hit(chrt, options, lon, orb):
 			continue
 		items.append({
 			'family': 'midpoint',
@@ -365,7 +401,7 @@ def collect_midpoint_ring_items(chrt, options):
 	return items
 
 
-def collect_hybrid_ring_items(chrt, options):
+def collect_hybrid_ring_items(chrt, options, *, filter_hits=True):
 	orb = float(getattr(options, 'ringorb_hybrid', 1.5))
 	items = []
 
@@ -396,7 +432,7 @@ def collect_hybrid_ring_items(chrt, options):
 			if body_id is None or not is_planet_visible(options, body_id):
 				continue
 			lon = float(longitude)
-			if chart_has_ring_direct_hit(chrt, options, lon, orb):
+			if not filter_hits or chart_has_ring_direct_hit(chrt, options, lon, orb):
 				items.append({
 					'family': 'dodecatemoria',
 					'name': '%s dodec' % get_planet_name(body_id),
@@ -420,7 +456,7 @@ def collect_hybrid_ring_items(chrt, options):
 			name = part[arabicparts.ArabicParts.NAME]
 		except Exception:
 			continue
-		if chart_has_ring_direct_hit(chrt, options, lon, orb):
+		if not filter_hits or chart_has_ring_direct_hit(chrt, options, lon, orb):
 			config_index = active_part_indices[active_index] if active_index < len(active_part_indices) else active_index
 			items.append({
 				'family': 'arabic_part',
@@ -437,7 +473,7 @@ def collect_hybrid_ring_items(chrt, options):
 			name = astrology.display_fixstar_name(star[fixstars.FixStars.NOMNAME], options, star[fixstars.FixStars.NAME])
 		except Exception:
 			continue
-		if chart_has_ring_direct_hit(chrt, options, lon, orb):
+		if not filter_hits or chart_has_ring_direct_hit(chrt, options, lon, orb):
 			code = str(star[fixstars.FixStars.NOMNAME] or '')
 			try:
 				original_index = int(fixstar_obj.mixed[star_index])
@@ -451,7 +487,7 @@ def collect_hybrid_ring_items(chrt, options):
 		if not getattr(body, 'data', None) or len(body.data) < 4:
 			continue
 		lon = float(body.data[0])
-		if chart_has_ring_direct_hit(chrt, options, lon, orb, skip_body_id=getattr(body, 'aId', None)):
+		if not filter_hits or chart_has_ring_direct_hit(chrt, options, lon, orb, skip_body_id=getattr(body, 'aId', None)):
 			items.append({
 				'family': 'asteroid',
 				'name': getattr(body, 'name', mtexts.txts.get('Asteroid', 'Asteroid')),
@@ -576,10 +612,18 @@ class Common:
 	def get_planet_glyph(self, planet_idx):
 		if planet_idx == CHART_OBJECT_VERTEX:
 			return self.Vertex
-		if planet_idx == astrology.SE_CHIRON:
+		return self.get_ephemeris_body_glyph(planet_idx)
+
+	def get_ephemeris_body_glyph(self, body_id):
+		"""Glyph for a physical body, never an internal display-point alias.
+
+		Swiss Pholus (16) shares the historical Vertex display-point number.
+		Bodies without a bundled glyph are rendered by their semantic name.
+		"""
+		if body_id == astrology.SE_CHIRON:
 			return self.Chiron
-		if 0 <= planet_idx < len(self.Planets):
-			return self.Planets[planet_idx]
+		if 0 <= body_id < len(self.Planets):
+			return self.Planets[body_id]
 		return ''
 
 	def get_moon_phase_glyph(self, phase):

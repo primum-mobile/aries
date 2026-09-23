@@ -4,7 +4,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, Copy, FileOutput, FileText } from "lucide-react";
+import { Check, Copy, FileOutput, FileText, LoaderCircle } from "lucide-react";
 
 import {
   DropdownMenu,
@@ -16,77 +16,102 @@ import { useT } from "@/lib/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { PaneToolbarButton } from "./list-controls";
 import {
-  exportTablePdfDocument,
+  exportPreparedTableDocument,
   type TableExportDocument,
 } from "./table-pdf-export";
-import {
-  exportTableTextDocument,
-} from "./table-text-export";
 import { copyTextToClipboard } from "./text-export";
 
 type TextExportActionsProps = {
   buildDocument: () => TableExportDocument | Promise<TableExportDocument>;
   disabled?: boolean;
   className?: string;
+  scopeLabel?: string;
+  fileStem?: string;
+  onError?: (error: unknown) => void;
 };
 
 export function TextExportActions({
   buildDocument,
   disabled = false,
   className,
+  scopeLabel,
+  fileStem,
+  onError,
 }: TextExportActionsProps) {
   const t = useT();
   const [copyPhase, setCopyPhase] = React.useState<"idle" | "confirmed" | "done">("idle");
   const timerRef = React.useRef<number | null>(null);
+  const pendingRef = React.useRef(false);
+  const [pending, setPending] = React.useState(false);
 
   React.useEffect(() => () => {
     if (timerRef.current != null) window.clearTimeout(timerRef.current);
   }, []);
 
   const copy = React.useCallback(() => {
+    if (pendingRef.current) return;
+    pendingRef.current = true;
+    setPending(true);
     if (timerRef.current != null) window.clearTimeout(timerRef.current);
-    setCopyPhase("confirmed");
-    timerRef.current = window.setTimeout(() => {
-      setCopyPhase("done");
-      timerRef.current = window.setTimeout(() => {
-        timerRef.current = null;
-        setCopyPhase("idle");
-      }, 250);
-    }, 1100);
-    void Promise.resolve(buildDocument())
+    void Promise.resolve().then(buildDocument)
       .then((document) => copyTextToClipboard(document.text))
-      .catch(() => {
+      .then(() => {
+        setCopyPhase("confirmed");
+        timerRef.current = window.setTimeout(() => {
+          setCopyPhase("done");
+          timerRef.current = window.setTimeout(() => {
+            timerRef.current = null;
+            setCopyPhase("idle");
+          }, 250);
+        }, 1100);
+      })
+      .catch((error: unknown) => {
+        console.error("[table-copy]", error);
         if (timerRef.current != null) window.clearTimeout(timerRef.current);
         timerRef.current = null;
         setCopyPhase("idle");
+        onError?.(error);
+      })
+      .finally(() => {
+        pendingRef.current = false;
+        setPending(false);
       });
-  }, [buildDocument]);
+  }, [buildDocument, onError]);
 
   const exportDocument = React.useCallback((kind: "pdf" | "txt") => {
-    void Promise.resolve(buildDocument())
-      .then((document) => {
-        const labels = {
-          title: t("textExport.dialogTitle"),
-          pdfFiles: t("textExport.pdfFiles"),
-          textFiles: t("textExport.textFiles"),
-        };
-        return kind === "pdf"
-          ? exportTablePdfDocument(document, labels)
-          : exportTableTextDocument(document, labels);
+    if (pendingRef.current) return;
+    pendingRef.current = true;
+    setPending(true);
+    void exportPreparedTableDocument(buildDocument, kind, {
+      title: t("textExport.dialogTitle"),
+      pdfFiles: t("textExport.pdfFiles"),
+      textFiles: t("textExport.textFiles"),
+    }, fileStem)
+      .catch((error: unknown) => {
+        console.error("[table-export]", error);
+        onError?.(error);
       })
-      .catch(() => {});
-  }, [buildDocument, t]);
+      .finally(() => {
+        pendingRef.current = false;
+        setPending(false);
+      });
+  }, [buildDocument, fileStem, onError, t]);
+
+  const unavailable = disabled || pending;
+  const copyLabel = [t("textExport.copy"), scopeLabel].filter(Boolean).join(" · ");
+  const exportLabel = [t("textExport.export"), scopeLabel].filter(Boolean).join(" · ");
+  const ExportIcon = pending ? LoaderCircle : FileOutput;
 
   return (
-    <div className={cn("flex shrink-0 items-center gap-[var(--aries-control-gap-compact)]", className)}>
+    <div aria-busy={pending} className={cn("flex shrink-0 items-center gap-[var(--aries-control-gap-compact)]", className)}>
       <PaneToolbarButton
         type="button"
         square
         appearance="ghost"
-        disabled={disabled}
+        disabled={unavailable}
         onClick={copy}
-        aria-label={t("textExport.copy")}
-        title={t("textExport.copy")}
+        aria-label={copyLabel}
+        title={copyLabel}
         data-table-copy-feedback={copyPhase}
         className="border-transparent hover:border-transparent"
       >
@@ -110,21 +135,21 @@ export function TextExportActions({
               type="button"
               square
               appearance="ghost"
-              disabled={disabled}
-              aria-label={t("textExport.export")}
-              title={t("textExport.export")}
+              disabled={unavailable}
+              aria-label={exportLabel}
+              title={exportLabel}
               className="border-transparent hover:border-transparent"
             />
           }
         >
-          <FileOutput className="size-[var(--aries-control-icon-size)]" strokeWidth={1.5} />
+          <ExportIcon className={cn("size-[var(--aries-control-icon-size)]", pending && "animate-spin")} strokeWidth={1.5} />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-auto min-w-[var(--aries-menu-dropdown-min-width)]">
-          <DropdownMenuItem disabled={disabled} onClick={() => exportDocument("pdf")}>
+          <DropdownMenuItem disabled={unavailable} onClick={() => exportDocument("pdf")}>
             <FileOutput />
             {t("textExport.exportPdf")}
           </DropdownMenuItem>
-          <DropdownMenuItem disabled={disabled} onClick={() => exportDocument("txt")}>
+          <DropdownMenuItem disabled={unavailable} onClick={() => exportDocument("txt")}>
             <FileText />
             {t("textExport.exportText")}
           </DropdownMenuItem>

@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type { Metadata } from "next";
-import Script from "next/script";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/lib/i18n/i18n";
 import { THEME_STATE_STORAGE_KEY } from "@/lib/theme/constants";
@@ -60,6 +59,7 @@ const themeBootScript = `
     }
     applyTokens(theme.appTokens);
     applyTokens(theme.chartPalette);
+    root.dataset.themeTokens = JSON.stringify(Object.keys(Object.assign({}, theme.appTokens, theme.chartPalette)));
     root.style.colorScheme = theme.mode === "light" ? "light" : "dark";
     root.classList.toggle("dark", theme.mode === "dark");
     root.classList.toggle("day", theme.mode === "light");
@@ -103,16 +103,13 @@ export default function RootLayout({
     >
       <head>
         <style id="aries-boot-paint" dangerouslySetInnerHTML={{ __html: bootPaintStyle }} />
+        {/* Synchronous parser execution: Next's documented theme-flash pattern. */}
+        <script id="aries-theme-boot" dangerouslySetInnerHTML={{ __html: themeBootScript }} />
       </head>
       <body
         className="min-h-full bg-background text-foreground"
         style={{ backgroundColor: "var(--background, #232428)" }}
       >
-        <Script
-          id="aries-theme-boot"
-          strategy="beforeInteractive"
-          dangerouslySetInnerHTML={{ __html: themeBootScript }}
-        />
         <I18nProvider>
           <TooltipProvider delay={250}>{children}</TooltipProvider>
         </I18nProvider>

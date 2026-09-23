@@ -22,6 +22,7 @@ export function compactListAngleText(text: string): string {
 
 export type TableTextExportOptions = {
   useAstrologicalGlyphs?: boolean;
+  preserveAngleSeconds?: boolean;
 };
 
 export type TableAlignedTextOptions = TableTextExportOptions & {
@@ -112,6 +113,11 @@ export function tableToAlignedText(
   options?: TableAlignedTextOptions,
 ) {
   const columns = options?.columns ?? payload.columns;
+  const resolvedOptions = {
+    ...options,
+    preserveAngleSeconds:
+      options?.preserveAngleSeconds ?? payload.capabilities?.anglePrecision === "seconds",
+  };
   const lines: string[] = [];
   const title = options?.title ?? payload.title;
   if (title) lines.push(title);
@@ -125,10 +131,10 @@ export function tableToAlignedText(
     payload.sections.forEach((section, index) => {
       if (index > 0) lines.push("");
       if (section.title) lines.push(section.title);
-      lines.push(...alignedTableLines(section.columns, section.rows, options));
+      lines.push(...alignedTableLines(section.columns, section.rows, resolvedOptions));
     });
   } else {
-    lines.push(...alignedTableLines(columns, rows, options));
+    lines.push(...alignedTableLines(columns, rows, resolvedOptions));
   }
   return lines.join("\n");
 }
@@ -153,13 +159,16 @@ export function tableCellText(
   options?: TableTextExportOptions,
 ): string {
   if (!cell) return "";
+  const angleText = options?.preserveAngleSeconds
+    ? (text: string) => text
+    : compactListAngleText;
   if (options?.useAstrologicalGlyphs && cell.exportSymbolText != null) {
-    return compactListAngleText(cell.exportSymbolText);
+    return angleText(cell.exportSymbolText);
   }
-  if (cell.exportText != null) return compactListAngleText(cell.exportText);
-  if (cell.text) return compactListAngleText(cell.text);
+  if (cell.exportText != null) return angleText(cell.exportText);
+  if (cell.text) return angleText(cell.text);
   if (cell.runs?.length) {
-    return compactListAngleText(
+    return angleText(
       cell.runs
         .map((run) =>
           options?.useAstrologicalGlyphs
@@ -170,7 +179,7 @@ export function tableCellText(
         .join(" "),
     );
   }
-  return compactListAngleText(cell.glyph ?? "");
+  return angleText(cell.glyph ?? "");
 }
 
 function tableColumnExportLabel(

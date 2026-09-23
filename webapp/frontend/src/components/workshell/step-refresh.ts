@@ -19,6 +19,8 @@ export type WorkspaceOptionsChange = NonNullable<DaemonWorkspaceState["lastOptio
 type RefreshSeqArgs = {
   documentId: string;
   parentDocumentId?: string | null;
+  comparisonDocumentId?: string | null;
+  relatedDocumentIds?: readonly string[];
   lastSessionChange: WorkspaceSessionChange | null;
   lastOptionsChange: WorkspaceOptionsChange | null;
   refreshOnAnySessionChange?: boolean;
@@ -98,7 +100,7 @@ function nonEmpty(value: string | null | undefined): value is string {
   return typeof value === "string" && value.length > 0;
 }
 
-function sessionTouchesIds(
+export function sessionTouchesIds(
   change: WorkspaceSessionChange | null,
   ids: readonly string[],
   refreshOnAnySessionChange: boolean,
@@ -136,6 +138,8 @@ export function optionsTouchIds(
 export function useSettledWorkspaceRefreshState({
   documentId,
   parentDocumentId,
+  comparisonDocumentId,
+  relatedDocumentIds,
   lastSessionChange,
   lastOptionsChange,
   refreshOnAnySessionChange = false,
@@ -143,8 +147,8 @@ export function useSettledWorkspaceRefreshState({
   debounceStepMs = STEP_SETTLE_REFRESH_MS,
 }: RefreshSeqArgs): WorkspaceSemanticRefreshState {
   const ids = React.useMemo(
-    () => [documentId, parentDocumentId].filter(nonEmpty),
-    [documentId, parentDocumentId],
+    () => [...new Set([documentId, parentDocumentId, comparisonDocumentId, ...(relatedDocumentIds ?? [])].filter(nonEmpty))],
+    [documentId, parentDocumentId, comparisonDocumentId, relatedDocumentIds],
   );
   const scopeKey = React.useMemo(
     () => `${refreshOnAnySessionChange ? "any" : "ids"}\u0000${ids.join("\u0000")}`,

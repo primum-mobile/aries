@@ -48,7 +48,10 @@ a = Analysis(
     # Keep the one-file sidecar small. Static resources are bundled by Tauri as
     # app resources and passed through ARIES_DAEMON_BASE_DIR at runtime; embedding
     # Res/SWEP/corpus here makes PyInstaller extract ~150 MB before /health.
-    datas=[],
+    datas=[(str(REPO_ROOT / "webapp/daemon/shipping-style-profiles.json"), "webapp/daemon")] + [
+        (str(REPO_ROOT / "webapp/frontend/src/lib/chart" / name), "webapp/frontend/src/lib/chart")
+        for name in ("wheel-ring-archetypes.json", "wheel-factory-v1.json", "wheel-geometry-ownership.json")
+    ],
     hiddenimports=[
         "webapp.daemon.server",
         "webapp.daemon.chart_service",

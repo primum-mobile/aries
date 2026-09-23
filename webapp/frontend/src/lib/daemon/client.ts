@@ -1,3 +1,5 @@
+import type { WheelPreset } from "./wheel-presets-client";
+import type { WheelCompositions } from "../chart/wheel-composition";
 // SPDX-FileCopyrightText: Morinus contributors
 // SPDX-FileCopyrightText: 2026 Max Lange (Aries modifications)
 // SPDX-License-Identifier: GPL-3.0-or-later
@@ -1939,6 +1941,8 @@ export type ChartPickerSearchCatalog = {
 };
 
 export type ChartPickerPlacementClause = {
+  exclude?: boolean;
+  motions?: string[];
   objectIds: string[];
   signIndices: string[];
   degree: string;
@@ -1948,6 +1952,8 @@ export type ChartPickerPlacementClause = {
 };
 
 export type ChartPickerAspectClause = {
+  exclude?: boolean;
+  aspectTypes?: string[];
   objectAIds: string[];
   aspectType: string;
   objectBIds: string[];
@@ -1955,10 +1961,39 @@ export type ChartPickerAspectClause = {
 };
 
 export type ChartPickerSearchPayload = {
+  includeAsteroids?: boolean;
   stationWindowDays: string;
   placements: ChartPickerPlacementClause[];
   aspects: ChartPickerAspectClause[];
 };
+
+export type ChartPickerWorkbenchState = ChartPickerSearchPayload & {
+  view: "list" | "search";
+  filter: string;
+  listSort: { column: keyof ChartPickerRow; ascending: boolean };
+  collectionPaths: string[] | null;
+  collectionDrawerOpen: boolean;
+  searchSort: { column: "name" | "date" | "time" | "type" | "collection" | "place" | "matches"; ascending: boolean } | null;
+  placementDrawerOpen: boolean;
+  aspectDrawerOpen: boolean;
+  includeAsteroids: boolean;
+};
+
+export async function fetchChartPickerWorkbench(): Promise<ChartPickerWorkbenchState> {
+  const response = await daemonFetch(`${daemonBaseUrl()}/api/chart-picker/workbench`, { cache: "no-store" });
+  if (!response.ok) throw new Error(String(response.status));
+  return response.json();
+}
+
+export async function patchChartPickerWorkbench(patch: Partial<ChartPickerWorkbenchState>): Promise<void> {
+  const response = await daemonFetch(`${daemonBaseUrl()}/api/chart-picker/workbench`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+    keepalive: true,
+  });
+  if (!response.ok) throw new Error(String(response.status));
+}
 
 export type ChartPickerSearchRow = {
   key: string;
@@ -2777,6 +2812,9 @@ export type SecondaryDirectionRow = {
   aspect: string;
   sessionLabel: string;
   fields: {
+    promObjectId?: string | null;
+    sigObjectId?: string | null;
+    promAngleId?: string | null;
     promPlanet: number | null;
     sigPlanet: number | null;
     aspectIndex: number | null;
@@ -2818,7 +2856,9 @@ export type SecondaryDirectionsPayload = {
     ranges: number[][];
     truncated: boolean;
     columns: string[];
+    filterPoints?: Array<{ id: string; label: string; glyph?: string | null; groupId: string; from: boolean; to: boolean; planetId: number | null }>;
     filterPlanets?: Array<{ id: number; label: string; glyph?: string | null }>;
+    filterAngles?: Array<{ id: string; label: string }>;
     temporalCoverage?: {
       startJdUt: number;
       endJdUt: number;
@@ -3125,6 +3165,7 @@ export type TransitSearchObject = {
   planetIndex: number | null;
   canPromittor: boolean;
   canSignificator: boolean;
+  transitRoles: Record<"promittor" | "significator", string>;
   glyph: string;
   glyphFont: "morinus" | "text";
   displayMarker: string;
@@ -3346,6 +3387,8 @@ export type TransitSearchCursorState = {
   rangeTo: string;
   coverageFrom: string;
   coverageTo: string;
+  displayCoverageFrom?: string;
+  displayCoverageTo?: string;
   coverageStartJdUt: number;
   coverageEndJdUt: number;
   windowsScanned: number;
@@ -3469,6 +3512,23 @@ export async function runTransitSearchContext(
     transitSearchContextRequestBody(params),
     signal,
   );
+}
+
+export type TransitMonthExportRequest = {
+  documentId: string;
+  year: number;
+  month: number;
+  direction: "direct" | "converse" | "both";
+  promittorIds: string[];
+  significatorIds: string[];
+  aspects: string[];
+};
+
+export async function startTransitMonthExport(
+  params: TransitMonthExportRequest,
+  signal?: AbortSignal,
+): Promise<TransitSearchProgressResult> {
+  return workspacePost("/api/search/context/transit-month-export", params, signal);
 }
 
 export async function startTransitSearchContext(
@@ -3912,8 +3972,12 @@ export async function fetchSquareChart(
 // ---------------------------------------------------------------------------
 
 export type MundaneChartBody = {
-  id: number;
+  ringItem?: import("@/lib/chart/types").OuterRingItem;
+  labelSegments?: Array<import("@/lib/chart/types").RingLabelSegment & { colorRole?: string | null }>;
+  labelFamily?: string;
+  id: number | string;
   glyph: string;
+  glyphFont?: "morinus" | "text";
   color: string;
   colorRole?: string | null;
   /** Mundane longitude in degrees, 0 at the ASC. */
@@ -3968,6 +4032,7 @@ export type MundaneChartData = {
   colors: MundaneChartColors;
   bodies: MundaneChartBody[];
   secondaryBodies?: MundaneChartBody[] | null;
+  outerRing?: { mode: string; chartRole: "primary" | "outer"; bodies: MundaneChartBody[] };
   houses: Array<{ house: number; name: string; mundane: number; nameMundane: number }>;
   angles: Array<{ name: string; mundane: number; arrow: boolean }>;
   aspects?: MundaneChartAspect[];
@@ -4075,14 +4140,16 @@ export async function fetchAstrologSphere(
 
 export async function fetchNotes(
   radix: string,
-  optionsOrSignal?: { documentId?: string; scratch?: boolean } | AbortSignal,
+  optionsOrSignal?: { documentId?: string; scratch?: boolean; eventId?: string; recordId?: string; revision?: string } | AbortSignal,
   signal?: AbortSignal,
-): Promise<{ radix: string; content: string; path: string; scratch: boolean; exists: boolean }> {
+): Promise<{ radix: string; content: string; path: string; scratch: boolean; exists: boolean; recordId?: string; revision?: string }> {
   const options = optionsOrSignal instanceof AbortSignal ? undefined : optionsOrSignal;
   const requestSignal = optionsOrSignal instanceof AbortSignal ? optionsOrSignal : signal;
   const search = new URLSearchParams({ radix });
   if (options?.documentId) search.set("documentId", options.documentId);
   if (options?.scratch) search.set("scratch", "true");
+  if (options?.eventId) search.set("eventId", options.eventId);
+  if (options?.recordId) search.set("recordId", options.recordId);
   const response = await daemonFetch(`${daemonBaseUrl()}/api/notes?${search.toString()}`, {
     cache: "no-store",
     signal: requestSignal,
@@ -4095,16 +4162,16 @@ export async function fetchNotes(
     content: string;
     path: string;
     scratch: boolean;
-    exists: boolean;
+    exists: boolean; recordId?: string; revision?: string;
   };
 }
 
 export async function saveNotes(
   radix: string,
   content: string,
-  optionsOrSignal?: { documentId?: string; scratch?: boolean } | AbortSignal,
+  optionsOrSignal?: { documentId?: string; scratch?: boolean; eventId?: string; recordId?: string; revision?: string } | AbortSignal,
   signal?: AbortSignal,
-): Promise<{ ok: boolean; radix: string; path: string; scratch: boolean }> {
+): Promise<{ ok: boolean; radix: string; path: string; scratch: boolean; revision?: string }> {
   const options = optionsOrSignal instanceof AbortSignal ? undefined : optionsOrSignal;
   const requestSignal = optionsOrSignal instanceof AbortSignal ? optionsOrSignal : signal;
   const response = await daemonFetch(`${daemonBaseUrl()}/api/notes`, {
@@ -4114,14 +4181,22 @@ export async function saveNotes(
       radix,
       content,
       documentId: options?.documentId,
+      eventId: options?.eventId,
+      recordId: options?.recordId,
+      revision: options?.revision,
       scratch: options?.scratch ?? false,
     }),
     signal: requestSignal,
   });
   if (!response.ok) {
-    throw new Error(`notes save failed: ${response.status}`);
+    const error = new Error(`notes save failed: ${response.status}`);
+    if (response.status === 409) {
+      const payload = await response.json().catch(() => null);
+      if (payload?.detail?.code === "note_draft_preserved") error.name = "NoteConflict";
+    }
+    throw error;
   }
-  return (await response.json()) as { ok: boolean; radix: string; path: string; scratch: boolean };
+  return (await response.json()) as { ok: boolean; radix: string; path: string; scratch: boolean; revision?: string };
 }
 
 export async function discardScratchNotes(
@@ -4194,10 +4269,15 @@ export type OptionsColors = {
   clraspect: (RGB | null)[]; // 12, aspect-index order
   useplanetcolors: boolean;
   usezodiacelementcolors: boolean;
+  usezodiacelementfieldcolors: boolean;
+  zodiacelementfieldopacity: number;
   follow_os_theme: boolean;
 };
 
 export type OptionsDisplay = {
+  astrocart_distance_units?: "metric" | "miles";
+  wheel_preset_id?: string;
+  wheel_compositions?: WheelCompositions;
   houses: boolean;
   showouterhouselines: boolean;
   housesystem: boolean;
@@ -4238,6 +4318,8 @@ export type OptionsDisplay = {
   showdecans: boolean;
   showanglearrowheads: boolean;
   showcusplessascmclabels: boolean;
+  showouterpositions: boolean;
+  showouterminutes: boolean;
   multiwheel_show_positions: boolean;
   multiwheel_show_minutes: boolean;
   multiwheel_sign_colors: boolean;
@@ -4257,7 +4339,7 @@ export type OptionsDisplay = {
   positions: boolean; // show positions (options.py:116)
   intables: boolean; // show in tables (options.py:117)
   usetradfixstarnamespdlist: boolean; // trad fixstar names in PD list (options.py:168)
-  theme: number; // wheel LAYOUT 0/1/2 (catalog.themeLayouts — DISTINCT from colour theme)
+  theme: number; // wheel LAYOUT 0–4 (catalog.themeLayouts — DISTINCT from colour theme)
   anglo_dense_label_layout: "leader-columns" | "routed-cusps" | "sign-locked";
   phasismode: number; // Phasis enum 0/1/2/3 (catalog.phasisModes)
   solarconditionmode: number; // solar-condition doctrine/profile (catalog.solarConditionModes)
@@ -4286,8 +4368,12 @@ export type OptionsDisplay = {
 export type PdfChartColorMode = "monochrome" | "colored-details";
 export type PdfChartRasterPreset = "clean" | "atkinson" | "blue-noise" | "newsprint";
 export type PngChartAppearance = "screen" | PdfChartColorMode;
+export type PngWatermarkStyle = "kosugi" | "flame";
 
 export type OptionsExport = {
+  pngWatermarkStyle: PngWatermarkStyle;
+  pngWatermarkText: string;
+  pngWatermarkStyleChoices: { value: PngWatermarkStyle; labelKey: string }[];
   pngChartAppearance: PngChartAppearance;
   pngIncludeOverlays: boolean;
   pngChartAppearanceChoices: { value: PngChartAppearance; labelKey: string }[];
@@ -4381,6 +4467,7 @@ export type ThemeState = {
       planets?: string[];
       aspects?: string[];
       signColors?: string[];
+      usePlanetColors?: boolean;
     };
   };
 };
@@ -4401,6 +4488,8 @@ export type StyleProfileSummary = {
 };
 
 export type StyleProfile = StyleProfileSummary & {
+  wheelCompositions?: WheelCompositions;
+  wheelLayout?: 0 | 1 | 2 | 3 | 4;
   kind: "aries.style-profile";
   profileSchemaVersion: 1;
   tokenSchemaVersion: number;
@@ -4437,13 +4526,13 @@ export type OptionsLunarMansions = {
   show_manzil_in_inspector: boolean;
 };
 
-// Speculum column-visibility settings — appearance2dlg.Appearance2Dlg. The two
-// speculum rows are bool maps keyed by the planets.Planet column index (as a
-// string), plus the per-row dodecatemorion flags and the global In-Time toggle.
-// The column index→label oracle is catalog.speculumPlacidianCols / RegiomontanCols.
+// The single chart-owned Speculum selects one of two persisted coordinate
+// families from the active house system. Each family remains a bool map keyed
+// by planets.Planet column index so preferences survive house-system changes.
 export type SpeculumSpeedDisplayMode = "words" | "percent" | "daily";
 
 export type OptionsSpeculum = {
+  activeFamily: "placidian" | "regiomontan";
   placidian: Record<string, boolean>;
   regiomontan: Record<string, boolean>;
   placidianDodec: boolean;
@@ -4548,6 +4637,29 @@ export type OptionsFixedStars = {
   defaultCodes: string[];
 };
 
+export type AsteroidCatalogRow = {
+  number: number;
+  name: string;
+  bodyId: number;
+  installed: boolean;
+  bundled: boolean;
+};
+
+export type AsteroidCatalogPayload = {
+  rows: AsteroidCatalogRow[];
+  query: string;
+  truncated: boolean;
+};
+
+export type OptionsAsteroids = {
+  selectedNumbers: number[];
+  selectedRows: AsteroidCatalogRow[];
+  defaultNumbers: number[];
+  maxSelected: number;
+  conjunctionOrb: number;
+  oppositionOrb: number;
+};
+
 // Relationship-chart settings (compositeoptsdlg + synastry launcher radio).
 export type OptionsRelationshipCharts = {
   composite_method: number; // 0=ASC midpoint, 1=ref place, 2=geo midpoint
@@ -4583,6 +4695,7 @@ export type OptionsQuickCharts = {
   aspectlist_prebirth_secondary_converse: boolean;
   at_reclick_behavior: string; // focus_only | focus_and_snap_now | new_tab
   progressed_angle_method: number; // posfordate.ANGLE_METHOD_NAMES key
+  solar_arc_angle_method: number;
   solar_arc_angle_mode: "progressed" | "zodiacal";
   progression_day_type: number; // posfordate.PROGRESSION_DAY_TYPE_NAMES key
   harmonic_chart_mode: "harmonic" | "varga"; // default for newly opened division charts
@@ -4684,7 +4797,7 @@ export type LocalizedDescribedEnumChoice = LocalizedEnumChoice & {
 };
 export type StringEnumChoice = { value: string; label: string };
 export type BoolEnumChoice = { value: boolean; label: string };
-// A speculum column's metadata (options_service _SPECULUM_*_COLS): `idx` is the
+// A speculum column's metadata (daemon speculum_schema): `idx` is the
 // planets.Planet column index (the key in OptionsSpeculum.placidian/regiomontan),
 // `label` is the mtexts caption the wx dialog used.
 export type SpeculumColMeta = { idx: number; label: string };
@@ -4738,7 +4851,8 @@ export type OptionsCatalog = {
   solarConditionModes: LocalizedDescribedEnumChoice[]; // combustion doctrine/profile choices
   cazimiModes: EnumChoice[]; // Cazimi enum (options.Options.CAZIMI_MODE_*)
   synodicModes: EnumChoice[]; // Synodic cycle event filter
-  themeLayouts: EnumChoice[]; // wheel layout choice (theme 0/1/2)
+  themeLayouts: EnumChoice[]; // wheel layout choice (theme 0–4)
+  wheelStyles?: Array<Pick<WheelPreset, "id" | "name" | "layout" | "factory">>;
   angloDenseLabelLayouts: StringEnumChoice[];
   mansionZodiacModes: StringEnumChoice[]; // manazil_zodiac choices (str values)
   speculumPlacidianCols: SpeculumColMeta[]; // Placidian speculum column oracle
@@ -4792,7 +4906,20 @@ export type OptionsCatalog = {
 /** Live PrimDirs settings (the desktop PrimDirsLiveFrame, no OK/Cancel).
  * Every PrimDirsPanel control (primarydirsdlg.py fill()/check()) round-trips
  * here; the daemon owns all option logic, this is the raw payload shape. */
+export type PrimaryDirectionPresetCommand = {
+  action: "save" | "select" | "delete" | "clear";
+  baseRevision: number;
+  id?: string;
+  name?: string;
+};
+
 export type OptionsPrimaryDirections = {
+  userPresets?: {
+    revision: number;
+    selectedId: string | null;
+    dirty: boolean;
+    presets: { id: string; name: string }[];
+  };
   // House system + sub-mode
   primarydir: number;
   pddefaultdirection: number;
@@ -4918,6 +5045,7 @@ export type SidebarListPreferencesPayload = {
     maxOrb: number;
     sortBy: "body" | "orb" | "exact";
     sortDirection: "asc" | "desc";
+    phaseFilter: "applying" | "separating" | "both";
     focusedFilterIds: string[];
     focusMatchMode: "or" | "and";
     rxFocusEnabled: boolean;
@@ -4925,8 +5053,11 @@ export type SidebarListPreferencesPayload = {
     filterDrawerOpen: boolean;
   };
   transitList: {
-    selectedPromittorId: string | null;
-    promittorDrawerOpen: boolean;
+    pointFilterSide?: "from" | "to";
+    pointRoles?: { fromIds: string[]; toIds: string[] } | null;
+    selectedPointIds: string[] | null;
+    selectedAspectIds: string[] | null;
+    filterDrawerOpen: boolean;
     direction: "direct" | "converse" | "both";
   };
   synodicList: {
@@ -4938,7 +5069,10 @@ export type SidebarListPreferencesPayload = {
     lunarDrawerOpen: boolean;
   };
   secondaryProgressions: {
+    pointFilterSide?: "from" | "to";
+    pointRoles?: { fromIds: string[]; toIds: string[] } | null;
     planetIds: number[] | null;
+    angleIds: string[] | null;
     aspectIds: number[];
     filterDrawerOpen: boolean;
   };
@@ -4992,6 +5126,7 @@ export type OptionsPayload = {
   firdaria: OptionsFirdaria;
   eclipses: OptionsEclipses;
   fixedStars: OptionsFixedStars;
+  asteroids: OptionsAsteroids;
   relationshipCharts: OptionsRelationshipCharts;
   languages: OptionsLanguages;
   planetsPoints: OptionsPlanetsPoints;
@@ -5030,6 +5165,7 @@ export type OptionsPatch = {
   defaultLocation?: Partial<OptionsDefaultLocation>;
   export?: Partial<OptionsExport>;
   primaryDirections?: Partial<OptionsPrimaryDirections>;
+  primaryDirectionPreset?: PrimaryDirectionPresetCommand;
   revolutions?: Partial<OptionsRevolutions>;
   quickCharts?: Partial<OptionsQuickCharts>;
   stepAlerts?: Partial<OptionsStepAlerts>;
@@ -5050,6 +5186,11 @@ export type OptionsPatch = {
   fixedStars?: {
     selectedCodes?: string[];
     useIndianFixstarNames?: boolean;
+  };
+  asteroids?: {
+    selectedNumbers?: number[];
+    conjunctionOrb?: number;
+    oppositionOrb?: number;
   };
   /** Relationship-chart settings (options_service._apply_relationship_charts —
    * compositeoptsdlg + onRelChartsLauncherToggle, morin.py:20167-20228). */
@@ -5155,6 +5296,38 @@ export async function fetchOptions(signal?: AbortSignal): Promise<OptionsPayload
     throw new Error(`options fetch failed: ${response.status}`);
   }
   return (await response.json()) as OptionsPayload;
+}
+
+export async function fetchAsteroidCatalog(
+  query: string,
+  signal?: AbortSignal,
+): Promise<AsteroidCatalogPayload> {
+  const search = new URLSearchParams({ q: query, limit: "120" });
+  const response = await daemonFetch(
+    `${daemonBaseUrl()}/api/options/asteroids/catalog?${search.toString()}`,
+    { cache: "no-store", signal },
+  );
+  if (!response.ok) {
+    throw new Error(`asteroid catalog fetch failed: ${response.status}`);
+  }
+  return (await response.json()) as AsteroidCatalogPayload;
+}
+
+export async function installAsteroidEphemeris(
+  number: number,
+  signal?: AbortSignal,
+): Promise<AsteroidCatalogRow> {
+  const response = await daemonFetch(`${daemonBaseUrl()}/api/options/asteroids/install`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+    body: JSON.stringify({ number }),
+    signal,
+  });
+  if (!response.ok) {
+    throw new Error(`asteroid install failed: ${response.status}`);
+  }
+  return (await response.json()) as AsteroidCatalogRow;
 }
 
 export async function fetchSidebarListPreferences(
@@ -5583,6 +5756,8 @@ export async function toggleMinorAspects(
 
 export type DaemonDocumentSummary = {
   documentId: string;
+  eventNoteContext?: { recordId: string; eventId: string; sourceName: string; documentId: string } | null;
+  hasChart?: boolean;
   kind: string; // always "chart" today (the controller has one doc kind)
   title: string; // includes the dirty "*" suffix from the controller
   // Stable semantic title key when the daemon can provide one (table.<id>;
@@ -5781,6 +5956,8 @@ export type WorkspaceContextMenuNode =
     }
   | {
       type: "submenu";
+      eventsDocumentId?: string;
+      eventCount?: number;
       label: string;
       labelKey?: string;
       disabled?: boolean;
@@ -6211,6 +6388,8 @@ export type AspectListRow = {
   /** Calculation-side agency hint. Same-chart rows put this endpoint first;
    * comparison rows preserve the selected chart-role order instead. */
   actorSide?: "left" | "right" | null;
+  /** A projected actor is only the moving image of this direct source body. */
+  actorSource?: { kind: "planet" | "ephemerisBody"; bodyId: number } | null;
   movingRole?: "outer" | null;
   filterIds: string[];
 };
@@ -6288,6 +6467,12 @@ export type GenericTablePayload = {
    * columns/rows remain a compatibility projection, while copy/TXT and PDF
    * export preserve the section boundaries. */
   sections?: GenericTableSection[];
+  /** Stable compact projection used by the chart Inspector even when the
+   * customizable Speculum table hides one of its compact fields. */
+  speculumInspector?: {
+    columns: GenericTableColumn[];
+    sections: GenericTableSection[];
+  };
   /** Graphical 0-30 longitude-strip layout when capabilities.strip is true
    * (wx StripWnd, stripwnd.py:78-646). The daemon emits semantic data only —
    * each body's within-sign degree + color + glyph — and the StripView owns
@@ -6529,11 +6714,12 @@ export type SpotlightChartMatch = {
 };
 
 export type SpotlightPreview = {
-  kind: "none" | "datetime" | "chart";
+  kind: "none" | "datetime" | "chart" | "synastry";
   primary: string;
   secondary: string;
   parsed: SpotlightParsedDateTime | null;
   chart?: SpotlightChartMatch;
+  comparisonChart?: SpotlightChartMatch | null;
   actions: SpotlightPreviewAction[];
   defaultAction: "open-chart" | SpotlightActionId | null;
   canConfirm: boolean;
@@ -6678,6 +6864,7 @@ export async function workspaceOpenAstrocart(
 }
 
 export type AstrocartViewState = {
+  distanceUnits?: "metric" | "miles";
   zoom?: number;
   center?: { lng?: number; lat?: number };
   bearing?: number;
@@ -6692,6 +6879,7 @@ export type AstrocartViewState = {
     localSpaceOppositions?: boolean;
     layers?: {
       natal?: boolean;
+      dynamic?: boolean;
       transit?: boolean;
       progression?: boolean;
     };
@@ -6812,6 +7000,7 @@ export type AstrocartConfigurationPayload = {
     id: AstrocartDynamicTechnique;
     labelKey: string;
   }>;
+  defaultTransitCursorIso: string | null;
   coordinateSystems: AstrocartCoordinateSystem[];
   angleKinds: AstrocartAngleKind[];
   specKey: string;
@@ -6946,6 +7135,7 @@ export async function exportAstrocartPdfBytes(
 }
 
 export type AstrocartBasemapMeta = {
+  assetRevision: string;
   hasLocalTiles: boolean;
   tilesUrl: string | null;
   installing: boolean;
@@ -6968,6 +7158,7 @@ export async function fetchAstrocartBasemap(signal?: AbortSignal): Promise<Astro
   const tilesBaseUrl = baseUrl || (typeof window !== "undefined" ? window.location.origin : "http://127.0.0.1");
   return {
     hasLocalTiles: payload.hasLocalTiles === true,
+    assetRevision: typeof payload.assetRevision === "string" ? payload.assetRevision : "",
     tilesUrl: rawTilesUrl ? new URL(rawTilesUrl, `${tilesBaseUrl.replace(/\/$/, "")}/`).toString() : null,
     installing: payload.installing === true,
   };
@@ -8078,6 +8269,8 @@ export async function workspaceSynastryComposite(
 // ---------------------------------------------------------------------------
 
 export type DaemonEvent =
+  | { type: "chart.events.changed"; documentIds: string[] }
+  | { type: "chart.event-tags.changed"; tagCatalog: { id: string; name: string; lastUsed?: number }[]; catalogVersion: number }
   | { type: "daemon.ready" }
   | { type: "documents.changed"; tree: DaemonDocumentSummary[] }
   | {
@@ -8105,7 +8298,7 @@ export type DaemonEvent =
       refreshMode?: string | null;
       styleOnly?: boolean;
       listDataChanged?: boolean;
-      retainedListTarget?: "aspect-list" | null;
+      retainedListTarget?: "aspect-list" | "speculum" | null;
       retainedListDataKey?: string;
       ephemerisDataKey?: string;
       retainedListDisplay?: RetainedListDisplay;
@@ -8114,6 +8307,7 @@ export type DaemonEvent =
       schemaVersion?: number;
       themeVersion: number;
       styleRevision?: number;
+      wheelPresetRevision?: number;
       paletteHash: string;
       styleHash?: string;
     };

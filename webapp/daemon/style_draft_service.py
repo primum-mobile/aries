@@ -27,6 +27,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping, Optional
 
+import mtexts
+
 from webapp.daemon.file_transaction import exclusive_file_transaction
 
 from webapp.daemon.style_profile_catalog_generated import (
@@ -40,6 +42,7 @@ from webapp.daemon.style_profile_service import (
     StyleProfileError,
     normalize_imported_style_profile,
     validate_style_profile,
+    appearance_style_profile,
 )
 from webapp.daemon.app_style_authoring_service import (
     apply_app_authoring_patch,
@@ -54,8 +57,9 @@ DRAFT_KIND = "aries.style-draft"
 DRAFT_SCHEMA_VERSION = 2
 MAX_OPEN_DRAFTS = 64
 DRAFT_STORE_KIND = "aries.style-draft-store"
-DRAFT_STORE_SCHEMA_VERSION = 1
-DRAFT_STORE_FILENAME = "style-drafts.json"
+DRAFT_STORE_SCHEMA_VERSION = 2
+DRAFT_STORE_FILENAME = "style-drafts-v2.json"
+_LEGACY_DRAFT_STORE_FILENAME = "style-drafts.json"
 DRAFT_PERSIST_DELAY_SECONDS = 0.45
 
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
@@ -73,7 +77,7 @@ class StyleDraftConflictError(StyleDraftError):
     """The caller tried to mutate a stale revision."""
 
     def __init__(self, current: dict) -> None:
-        super().__init__("style draft revision is stale")
+        super().__init__(mtexts.txts.get("StyleDraftRevisionStale", "The style draft changed elsewhere."))
         self.current = current
 
 
@@ -150,6 +154,12 @@ class StyleDraftService:
         baseline = record.get("baselineProfile") or profile
         return profile.get("contentHash") != baseline.get("contentHash")
 
+    @classmethod
+    def _needs_recovery(cls, record: Mapping[str, Any]) -> bool:
+        # A theme predating geometry snapshots needs its opening wheel baseline
+        # across restart even when only the independent wheel draft was edited.
+        return cls._record_is_dirty(record) or bool(record.get('capturedWheelBaseline'))
+
     @staticmethod
     def _stored_record(record: Mapping[str, Any]) -> dict[str, Any]:
         return {
@@ -158,6 +168,7 @@ class StyleDraftService:
             "profile": deepcopy(record["profile"]),
             "baselineProfile": deepcopy(record.get("baselineProfile") or record["profile"]),
             "sourceThemeName": record.get("sourceThemeName"),
+            "capturedWheelBaseline": bool(record.get("capturedWheelBaseline")),
             "createdAt": float(record["createdAt"]),
             "updatedAt": float(record["updatedAt"]),
         }
@@ -188,6 +199,7 @@ class StyleDraftService:
             "profile": profile,
             "baselineProfile": baseline,
             "sourceThemeName": source,
+            "capturedWheelBaseline": bool(payload.get("capturedWheelBaseline")),
             "createdAt": float(payload.get("createdAt") or now),
             "updatedAt": float(payload.get("updatedAt") or now),
         }
@@ -204,7 +216,7 @@ class StyleDraftService:
             return {}, None
         if (
             payload.get("kind") != DRAFT_STORE_KIND
-            or payload.get("storeSchemaVersion") != DRAFT_STORE_SCHEMA_VERSION
+            or payload.get("storeSchemaVersion") not in (1, DRAFT_STORE_SCHEMA_VERSION)
         ):
             return {}, None
         records: dict[str, dict[str, Any]] = {}
@@ -213,7 +225,7 @@ class StyleDraftService:
                 record = cls._validated_stored_record(raw)
             except (StyleDraftError, StyleProfileError, TypeError, ValueError):
                 continue
-            if not cls._record_is_dirty(record):
+            if not cls._needs_recovery(record):
                 continue
             key = cls._record_key(record)
             previous = records.get(key)
@@ -222,13 +234,38 @@ class StyleDraftService:
         current_id = str(payload.get("currentDraftId") or "") or None
         return records, current_id
 
+    @staticmethod
+    def recovery_store_path(directory: str | os.PathLike[str]) -> Path:
+        """Import once into a journal older binaries cannot overwrite.
+
+        Old journal readers treat unknown versions as empty and subsequently
+        rewrite them, so a version bump alone cannot protect recovery drafts.
+        Keep the original file untouched and never import it over the new one.
+        """
+        path = Path(directory) / DRAFT_STORE_FILENAME
+        legacy = path.with_name(_LEGACY_DRAFT_STORE_FILENAME)
+        if not path.exists() and legacy.is_file():
+            with exclusive_file_transaction(path):
+                if not path.exists():
+                    fd, temporary = tempfile.mkstemp(prefix=f'.{path.name}.', dir=path.parent)
+                    try:
+                        with os.fdopen(fd, 'wb') as output:
+                            output.write(legacy.read_bytes())
+                            output.flush()
+                            os.fsync(output.fileno())
+                        os.replace(temporary, path)
+                    finally:
+                        if os.path.exists(temporary):
+                            os.unlink(temporary)
+        return path
+
     def configure_directory(self, directory: str | os.PathLike[str]) -> None:
         """Attach the durable recovery journal and load it once.
 
         The daemon calls this lazily after options are available. Tests may
         continue to use a purely in-memory service by omitting ``directory``.
         """
-        path = Path(directory) / DRAFT_STORE_FILENAME
+        path = self.recovery_store_path(directory)
         with self._lock:
             if self._store_path == path:
                 return
@@ -243,6 +280,37 @@ class StyleDraftService:
             elif stored:
                 newest = max(stored.values(), key=lambda item: float(item["updatedAt"]))
                 self._current_id = str(newest["draftId"])
+
+    def migrate_wheel_geometry(self, migrate: Callable[[dict, str], dict]) -> None:
+        """Separate recovered legacy drafts after committing their wheel copies.
+
+        Runs only at initialization. The original journal is archived before
+        changing either baseline or working appearance, including parked drafts.
+        """
+        with self._lock:
+            records = [record for record in self._drafts.values() if any(
+                (record.get(field) or record['profile']).get('scope') != 'app'
+                and 'wheelGeometry' not in (record.get(field) or record['profile'])
+                for field in ('profile', 'baselineProfile')
+            )]
+            if not records:
+                return
+            if self._store_path is not None and self._store_path.is_file():
+                archive = self._store_path.with_name('style-drafts.pre-wheel-presets-v1.json')
+                try:
+                    with archive.open('xb') as output:
+                        output.write(self._store_path.read_bytes())
+                except FileExistsError:
+                    pass
+            for record in records:
+                candidate = deepcopy(record)
+                for field in ('profile', 'baselineProfile'):
+                    profile = record.get(field) or record['profile']
+                    migrated = migrate(deepcopy(profile), f"draft:{record['draftId']}:{field}")
+                    candidate[field] = validate_style_profile(migrated)
+                candidate['revision'] += 1
+                self._drafts[str(record['draftId'])] = candidate
+                self._schedule_persist_locked(candidate)
 
     def _schedule_persist_locked(self, *records: Mapping[str, Any]) -> None:
         if self._store_path is None:
@@ -267,7 +335,7 @@ class StyleDraftService:
             local_by_key = {
                 self._record_key(record): self._stored_record(record)
                 for record in self._drafts.values()
-                if self._record_is_dirty(record)
+                if self._needs_recovery(record)
             }
             current_id = self._current_id
             self._pending_persist_keys.difference_update(keys)
@@ -369,6 +437,13 @@ class StyleDraftService:
                 profile.get("appAuthoringOverrides") or {}
             ),
             "chartStyleProfileV2": deepcopy(chart_style_profile),
+            **({"wheelCompositions": deepcopy(profile["wheelCompositions"])} if "wheelCompositions" in profile else {}),
+            **({"wheelLayout": profile["wheelLayout"]} if "wheelLayout" in profile else {}),
+            **({key: deepcopy(profile[key]) for key in ('wheelPresetRefs', 'wheelVisibility', 'wheelGeometry') if key in profile}),
+            "wheelBaseline": {
+                **({'geometry': deepcopy(baseline_profile['wheelGeometry'])} if 'wheelGeometry' in baseline_profile else {}),
+                **({'visibility': deepcopy(baseline_profile['wheelVisibility'])} if 'wheelVisibility' in baseline_profile else {}),
+            },
             "profileContentHash": profile["contentHash"],
             "createdAt": _utc_timestamp(float(record["createdAt"])),
             "updatedAt": _utc_timestamp(float(record["updatedAt"])),
@@ -428,7 +503,7 @@ class StyleDraftService:
             "profileSchemaVersion": PROFILE_SCHEMA_VERSION,
             "tokenSchemaVersion": TOKEN_SCHEMA_VERSION,
             "id": target_id,
-            "name": name or "Untitled chart style",
+            "name": name or mtexts.txts.get("UntitledChartStyle", "Untitled chart style"),
             "scope": scope,
             "basePresetId": base_preset_id,
             "overrides": {},
@@ -537,6 +612,21 @@ class StyleDraftService:
                 raise StyleDraftNotFoundError(f"no modified style draft for theme: {source}")
             return self._public(max(candidates, key=lambda item: float(item["updatedAt"])))
 
+    def ensure_wheel_baseline(self, draft_id: str, capture: Callable[[], dict]) -> dict:
+        """Seed only old themes without a saved wheel; never move an existing baseline."""
+        with self._lock:
+            record = self._record(draft_id)
+            baseline = record.get('baselineProfile') or record['profile']
+            if baseline.get('scope') != 'app' and 'wheelGeometry' not in baseline:
+                wheel = capture()
+                for field in ('profile', 'baselineProfile'):
+                    record[field] = validate_style_profile({**record[field], **wheel})
+                record['capturedWheelBaseline'] = True
+                record['revision'] += 1
+                record['updatedAt'] = time.time()
+                self._schedule_persist_locked(record)
+            return self._public(record)
+
     def get_draft(self, draft_id: str) -> dict:
         with self._lock:
             return self._public(self._record(draft_id))
@@ -598,6 +688,9 @@ class StyleDraftService:
             app_authoring_overrides or {},
         )
         candidate = validate_style_profile({
+            **({"wheelCompositions": current["wheelCompositions"]} if "wheelCompositions" in current else {}),
+            **({"wheelLayout": current["wheelLayout"]} if "wheelLayout" in current else {}),
+            **({key: deepcopy(current[key]) for key in ('wheelPresetRefs', 'wheelVisibility', 'wheelGeometry') if key in current}),
             "kind": PROFILE_KIND,
             "profileSchemaVersion": PROFILE_SCHEMA_VERSION,
             "tokenSchemaVersion": TOKEN_SCHEMA_VERSION,
@@ -746,7 +839,7 @@ class StyleDraftService:
                 "profileId": draft["profileId"],
             }
 
-    def revert_draft(self, draft_id: str, *, expected: str | int) -> dict:
+    def revert_draft(self, draft_id: str, *, expected: str | int, restore_wheel: Optional[Callable[[dict], dict]] = None) -> dict:
         """Restore the immutable saved/source snapshot without persisting."""
         with self._lock:
             record = self._record(draft_id)
@@ -754,7 +847,8 @@ class StyleDraftService:
             baseline = validate_style_profile(
                 deepcopy(record.get("baselineProfile") or record["profile"])
             )
-            changed = baseline["contentHash"] != record["profile"]["contentHash"]
+            wheel = restore_wheel(deepcopy(baseline)) if restore_wheel is not None else {}
+            changed = baseline["contentHash"] != record["profile"]["contentHash"] or bool(wheel.get('changed'))
             if changed:
                 record["profile"] = baseline
                 record["revision"] = int(record["revision"]) + 1
@@ -765,6 +859,7 @@ class StyleDraftService:
                 **draft,
                 "draft": deepcopy(draft),
                 "reverted": True,
+                **wheel,
                 "changed": changed,
                 "refreshMode": "display-overlay" if changed else None,
             }
@@ -785,6 +880,8 @@ class StyleDraftService:
             if restored["id"] != record["profile"]["id"]:
                 raise StyleDraftError("factory profile identity does not match the open theme")
             persistence = persist(deepcopy(restored))
+            if isinstance(persistence, Mapping) and isinstance(persistence.get('profile'), Mapping):
+                restored = validate_style_profile(persistence['profile'])
             changed = restored["contentHash"] != record["profile"]["contentHash"]
             if changed:
                 record["profile"] = restored
@@ -823,7 +920,13 @@ class StyleDraftService:
             profile = validate_style_profile(self._profile_from_record(record))
             persistence = persist(deepcopy(profile))
             if not discard:
+                if isinstance(persistence, Mapping) and isinstance(persistence.get('profile'), Mapping):
+                    profile = validate_style_profile(persistence['profile'])
+                    if profile['contentHash'] != record['profile']['contentHash']:
+                        record['profile'] = deepcopy(profile)
+                        record['revision'] += 1
                 record["baselineProfile"] = deepcopy(profile)
+                record.pop("capturedWheelBaseline", None)
                 self._schedule_persist_locked(record)
             draft = self._public(record)
             if discard:
@@ -884,6 +987,8 @@ class StyleDraftService:
             })
             persistence = persist(deepcopy(profile))
             now = time.time()
+            if isinstance(persistence, Mapping) and isinstance(persistence.get('profile'), Mapping):
+                profile = validate_style_profile(persistence['profile'])
             new_draft_id = f"draft-{uuid.uuid4().hex[:12]}"
             new_record = {
                 "draftId": new_draft_id,
@@ -925,6 +1030,8 @@ class StyleDraftService:
             profile = validate_style_profile({**source, "id": profile_id})
             persistence = persist(deepcopy(profile))
             now = time.time()
+            if isinstance(persistence, Mapping) and isinstance(persistence.get('profile'), Mapping):
+                profile = validate_style_profile(persistence['profile'])
             draft_id = f"draft-{uuid.uuid4().hex[:12]}"
             record = {
                 "draftId": draft_id,

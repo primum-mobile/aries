@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import json
+from pathlib import Path
 
 from webapp.daemon.style_authoring_service import build_chart_style_profile_v2
 from webapp.daemon.style_profile_catalog_generated import TOKEN_SCHEMA_VERSION
@@ -17,6 +19,15 @@ from webapp.daemon.style_profile_service import (
 
 NASA_ATLAS_PRESET_NAME = "NASA Atlas"
 NASA_ATLAS_PROFILE_ID = "nasa-atlas"
+SUSAN_MILLER_PRESET_NAME = "Susan Miller"
+SUSAN_MILLER_PROFILE_ID = "susan-miller"
+_SUSAN_MILLER_REPLACEABLE_CONTENT_HASHES = frozenset({
+    # Initial bundled profile, before the reference typography was measured.
+    "3008cadc6c342cee",
+    # First typography pass, before polar geometry and antialiased stroke
+    # integration replaced the normalized bounding-box estimates.
+    "4e55e44325c4d0fd",
+})
 _NASA_ATLAS_REPLACEABLE_CONTENT_HASHES = frozenset({
     # Initial bundled profile. It reused the vivid chart cyan for application
     # selections; replace only this exact immutable version, never an edited
@@ -322,6 +333,119 @@ _NASA_ATLAS_APP_AUTHORING_OVERRIDES = {
 }
 
 
+_SUSAN_MILLER_RING_CLASSES = (
+    "rings.outerMaximum",
+    "rings.outerHouse",
+    "rings.outerDegree",
+    "rings.zodiacOuter",
+    "rings.innerDegree",
+    "rings.zodiacInner",
+    "rings.term",
+    "rings.angloCuspOuter",
+    "rings.innerBoundary",
+    "rings.aspectBoundary",
+    "rings.houseBoundary",
+    "rings.base",
+)
+_SUSAN_MILLER_HAIRLINE_CLASSES = (
+    "zodiac.spoke",
+    "houses.inner.cusp",
+    "houses.outer.cusp",
+    "aspects.primary.line",
+    "aspects.interchart.line",
+)
+_SUSAN_MILLER_ANGLE_CLASSES = (
+    "angles.inner.ray",
+    "angles.outer.ray",
+)
+_SUSAN_MILLER_DEGREE_CLASSES = (
+    "houses.inner.position.degree",
+    "angles.inner.position.degree",
+    "bodies.inner.position.degree",
+)
+_SUSAN_MILLER_MINUTE_CLASSES = (
+    "houses.inner.position.minute",
+    "angles.inner.position.minute",
+    "bodies.inner.position.minute",
+)
+
+
+def _susan_miller_authoring_overrides() -> dict[str, object]:
+    """Encode the measured 700 px Susan Miller wheel geometry and paint."""
+    result: dict[str, object] = {}
+
+    def key(
+        class_id: str,
+        property_name: str,
+        variant: str = "base",
+    ) -> str:
+        return f"authoring.wheel.{variant}.{class_id}.{property_name}"
+
+    # The source raster's continuous rings integrate to 1.94 px of effective
+    # black across a fitted 349.3 px outer radius. Projecting that measurement
+    # into Aries' 400 px authoring space gives 2.2216 px. The 1 px dividers use
+    # the same radius normalization.
+    for class_id in _SUSAN_MILLER_RING_CLASSES:
+        result[key(class_id, "strokeWidth")] = 2.2216
+        result[key(class_id, "strokeStyle")] = "solid"
+        result[key(class_id, "opacity")] = 100
+    for class_id in _SUSAN_MILLER_HAIRLINE_CLASSES:
+        result[key(class_id, "strokeWidth")] = 1.1451
+        result[key(class_id, "strokeStyle")] = "solid"
+        result[key(class_id, "opacity")] = 100
+    for class_id in _SUSAN_MILLER_ANGLE_CLASSES:
+        # The reference axes measure 4 px horizontally and 5 px vertically;
+        # Aries currently authors them as one semantic group, so preserve their
+        # exact 4.5 px mean after normalization.
+        result[key(class_id, "strokeWidth")] = 5.1532
+        result[key(class_id, "strokeStyle")] = "solid"
+        result[key(class_id, "opacity")] = 100
+    # The reference's square and triangle aspect markers have 2 px outlines.
+    marker_class = "aspects.interchart.endpointMarker"
+    result[key(marker_class, "strokeWidth")] = 2.2216
+    result[key(marker_class, "strokeStyle")] = "solid"
+    result[key(marker_class, "opacity")] = 100
+
+    # Polar fitting of the four continuous circles gives radii 349.3, 313.6,
+    # 179.3 and 153.3 px. Pin the Compact wheel to those exact ratios. The
+    # reference has no degree ruler, so its terminal ring and ticks are hidden.
+    result[key("rings.zodiacOuter", "radius", "compact")] = 400
+    result[key("rings.innerBoundary", "radius", "compact")] = 359.1182
+    result[key("rings.houseBoundary", "radius", "compact")] = 205.3249
+    result[key("rings.base", "radius", "compact")] = 175.5511
+    result[key("rings.innerDegree", "opacity", "compact")] = 0
+    for class_id in (
+        "zodiac.tick.inner.10deg",
+        "zodiac.tick.inner.5deg",
+        "zodiac.tick.inner.1deg",
+        "zodiac.tick.outer.10deg",
+        "zodiac.tick.outer.5deg",
+        "zodiac.tick.outer.1deg",
+    ):
+        result[key(class_id, "opacity", "compact")] = 0
+
+    # These sizes compensate for the source chart using the painted outer
+    # circle as its scale authority. Robust medians from matched Sun, Saturn
+    # and Pluto boxes set the planet glyph height; zodiac signs use the same
+    # normalized connected-component fit.
+    for class_id in ("bodies.inner.glyph", "bodies.outer.glyph"):
+        result[key(class_id, "fontSize")] = 38.25
+    result[key("zodiac.signGlyph", "fontSize")] = 29
+
+    # The degree and minute values are close in cap height in the raster; their
+    # hierarchy comes primarily from weight. Keep the degree bold and the
+    # minute regular while matching their independently measured boxes.
+    for class_id in _SUSAN_MILLER_DEGREE_CLASSES:
+        result[key(class_id, "fontSize")] = 20.5
+        result[key(class_id, "fontWeight")] = 700
+    for class_id in _SUSAN_MILLER_MINUTE_CLASSES:
+        result[key(class_id, "fontSize")] = 19
+        result[key(class_id, "fontWeight")] = 400
+    result[key("houses.inner.label", "fontSize")] = 10.5
+    result[key("houses.inner.label", "fontWeight")] = 400
+    return result
+
+
 def _build_nasa_atlas_profile() -> dict:
     authoring = deepcopy(_NASA_ATLAS_AUTHORING_OVERRIDES)
     return validate_style_profile({
@@ -341,11 +465,34 @@ def _build_nasa_atlas_profile() -> dict:
     })
 
 
+def _build_susan_miller_profile() -> dict:
+    authoring = _susan_miller_authoring_overrides()
+    return validate_style_profile({
+        "kind": PROFILE_KIND,
+        "profileSchemaVersion": PROFILE_SCHEMA_VERSION,
+        "tokenSchemaVersion": TOKEN_SCHEMA_VERSION,
+        "id": SUSAN_MILLER_PROFILE_ID,
+        "name": SUSAN_MILLER_PRESET_NAME,
+        "scope": "combined",
+        "basePresetId": "Daylight",
+        "overrides": {},
+        "authoringOverrides": authoring,
+        "appAuthoringOverrides": {},
+        "chartStyleProfileV2": build_chart_style_profile_v2(authoring),
+    })
+
+
 _NASA_ATLAS_PROFILE = _build_nasa_atlas_profile()
+_SUSAN_MILLER_PROFILE = _build_susan_miller_profile()
 
 _BUILTIN_STYLE_PROFILES = {
     NASA_ATLAS_PRESET_NAME: _NASA_ATLAS_PROFILE,
+    SUSAN_MILLER_PRESET_NAME: _SUSAN_MILLER_PROFILE,
 }
+_BUILTIN_STYLE_PROFILES.update({
+    name: validate_style_profile(profile)
+    for name, profile in json.loads(Path(__file__).with_name("shipping-style-profiles.json").read_text(encoding="utf-8")).items()
+})
 BUILTIN_STYLE_PRESET_NAMES = frozenset(_BUILTIN_STYLE_PROFILES)
 BUILTIN_STYLE_PROFILE_IDS = frozenset(
     profile["id"] for profile in _BUILTIN_STYLE_PROFILES.values()
@@ -374,6 +521,11 @@ def nasa_atlas_profile() -> dict:
     return deepcopy(_NASA_ATLAS_PROFILE)
 
 
+def susan_miller_profile() -> dict:
+    """Return a fresh copy of the immutable bundled Susan Miller theme."""
+    return deepcopy(_SUSAN_MILLER_PROFILE)
+
+
 def is_nasa_atlas_profile(profile: object) -> bool:
     """Distinguish the exact preset from an edited profile sharing its id."""
     return (
@@ -392,3 +544,14 @@ def nasa_atlas_upgrade_for(profile: object) -> dict | None:
     if profile.get("contentHash") not in _NASA_ATLAS_REPLACEABLE_CONTENT_HASHES:
         return None
     return nasa_atlas_profile()
+
+
+def susan_miller_upgrade_for(profile: object) -> dict | None:
+    """Return the measured typography revision for the initial built-in."""
+    if not isinstance(profile, dict):
+        return None
+    if profile.get("id") != SUSAN_MILLER_PROFILE_ID:
+        return None
+    if profile.get("contentHash") not in _SUSAN_MILLER_REPLACEABLE_CONTENT_HASHES:
+        return None
+    return susan_miller_profile()

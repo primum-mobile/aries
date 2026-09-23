@@ -218,7 +218,7 @@ stop_live_processes() {
   fi
   reclaim_port "$PORT" "frontend"
   reclaim_port "$DAEMON_PORT" "daemon"
-  kill_owned '/target/debug/aries'
+  kill_owned '(^|/)target/debug/aries($| )'
   kill_owned 'next dev'
   kill_owned 'uvicorn webapp.daemon.server:app'
 }
@@ -227,7 +227,7 @@ if daemon_ready && ! daemon_owned_by_tauri; then
   echo "stale daemon owns ${DAEMON_PORT}; restarting smoke stack"
   reclaim_port "$DAEMON_PORT" "daemon"
   kill_owned 'uvicorn webapp.daemon.server:app'
-  kill_owned '/target/debug/aries'
+  kill_owned '(^|/)target/debug/aries($| )'
 fi
 
 if [ "$SOURCE_STALE" -eq 1 ] && ( frontend_ready || daemon_ready || tauri_app_ready ); then

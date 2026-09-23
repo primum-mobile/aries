@@ -6,6 +6,8 @@
 
 import math
 import datetime
+from contextlib import contextmanager
+from contextvars import ContextVar
 import astrology
 import planets
 import houses
@@ -33,6 +35,25 @@ import mtexts
 import geonames
 import common
 from aries.astrology.ephemeris_context import EphemerisContext
+
+
+_DEFER_ASPECT_MATRICES = ContextVar("defer_chart_aspect_matrices", default=False)
+_ASPECT_MATRIX_FIELDS = ("aspmatrix", "aspmatrixAscMC", "aspmatrixH")
+
+
+@contextmanager
+def defer_aspect_matrices():
+	"""Build private trial charts without eagerly materializing aspect tables.
+
+	Canonical geometry and speeds are unchanged. Matrix recalculations invalidate
+	their caches; an actual reader materializes the same tables on demand. The
+	request-local scope also covers builders that clone an existing chart.
+	"""
+	token = _DEFER_ASPECT_MATRICES.set(True)
+	try:
+		yield
+	finally:
+		_DEFER_ASPECT_MATRICES.reset(token)
 
 
 def semantic_angle_longitude(chrt, angle_key):
@@ -528,8 +549,25 @@ class Chart:
 	#Profections
 	YEAR, MONTH, DAY = range(0, 3)
 
+	def __getattr__(self, name):
+		# Only invalidated trial-chart tables are lazy. Ordinary charts retain
+		# their eager fields and never enter this path on matrix reads.
+		if name == "aspmatrixLoF" and self.__dict__.get("_fortune_aspects_pending", False):
+			calculate = self.calcLoFAspMatrix
+		elif name in _ASPECT_MATRIX_FIELDS and self.__dict__.get("_aspects_pending", False):
+			calculate = self.calcAspMatrix
+		else:
+			raise AttributeError(name)
+		token = _DEFER_ASPECT_MATRICES.set(False)
+		try:
+			calculate()
+		finally:
+			_DEFER_ASPECT_MATRICES.reset(token)
+		return self.__dict__[name]
+
+
 	def __init__(self, name, male, time, place, htype, notes, options, full = True, proftype = 0, nolat=False):
-		common.ensure_swe_ready()
+		common.ensure_swe_ready(getattr(options, 'asteroid_ephe_path', None))
 		self.name = name
 		self.male = male
 		self.time = time
@@ -558,7 +596,7 @@ class Chart:
 
 
 	def _create_in_active_context(self):
-		common.ensure_swe_ready()
+		common.ensure_swe_ready(getattr(self.options, 'asteroid_ephe_path', None))
 		astrology.swe_set_topo(self.place.lon, self.place.lat, self.place.altitude)
 		pflag, hflag, fsflag, astflag = self._zodiac_flags()
 
@@ -584,10 +622,16 @@ class Chart:
 		self.firdaria = None
 # ###########################################		
 		self.munfortune = None
-		# Asteroids are cheap (12 swe_calc_ut_ex calls) and required by the
-		# outer ring on derived charts too (solar/lunar returns, transits),
-		# so compute unconditionally rather than gating on `full`.
-		self.asteroids = asteroids.Asteroids(self.time.jd, pflag, self.place.lat, self.houses.ascmc2)
+		# The curated starter asteroids are cheap to materialize. User selections
+		# stay explicit and bounded so the complete Swiss catalog is addressable
+		# without putting an unbounded asteroid scan on chart paths.
+		self.asteroids = asteroids.Asteroids(
+			self.time.jd,
+			pflag,
+			self.place.lat,
+			self.houses.ascmc2,
+			getattr(self.options, 'asteroids', None),
+		)
 		self.parts = None
 		self.fixstars = None
 		self.midpoints = None
@@ -664,6 +708,20 @@ class Chart:
 		)
 		if self.fixstars is not None:
 			self.calcFixStarAspMatrix()
+
+
+	def rebuildAsteroids(self):
+		"""Re-materialize the configured Swiss asteroid selection in place."""
+		common.ensure_swe_ready(getattr(self.options, 'asteroid_ephe_path', None))
+		astrology.swe_set_topo(self.place.lon, self.place.lat, self.place.altitude)
+		pflag, _hflag, _fsflag, _astflag = self._zodiac_flags()
+		self.asteroids = asteroids.Asteroids(
+			self.time.jd,
+			pflag,
+			self.place.lat,
+			self.houses.ascmc2,
+			getattr(self.options, 'asteroids', None),
+		)
 
 	def rebuildRiseSet(self):
 		if self.planets is None:
@@ -1321,8 +1379,16 @@ class Chart:
 		return self._build_dynamic_aspect(body.data[planets.Planet.LONG], self.fortune.fortune[fortune.Fortune.LON], body.data[planets.Planet.SPLON], 0.0, orb_by_aspect, node_only_conjunction=planet_idx in (astrology.SE_MEAN_NODE, astrology.SE_TRUE_NODE))
 
 
-	def calcAspMatrix(self):	
+	def calcAspMatrix(self):
 		self.calcSpeeds()
+		if _DEFER_ASPECT_MATRICES.get():
+			for name in _ASPECT_MATRIX_FIELDS:
+				self.__dict__.pop(name, None)
+			self.__dict__.pop("aspmatrixLoF", None)
+			self._aspects_pending = True
+			self._fortune_aspects_pending = True
+			return
+		self.__dict__.pop("_aspects_pending", None)
 
 		self.aspmatrix = [[Asp(),Asp(),Asp(),Asp(),Asp(),Asp(),Asp(),Asp(),Asp(),Asp(),Asp()], 
 					[Asp(),Asp(),Asp(),Asp(),Asp(),Asp(),Asp(),Asp(),Asp(),Asp(),Asp()], 
@@ -1561,6 +1627,11 @@ class Chart:
 
 
 	def calcLoFAspMatrix(self):
+		if _DEFER_ASPECT_MATRICES.get():
+			self.__dict__.pop("aspmatrixLoF", None)
+			self._fortune_aspects_pending = True
+			return
+		self.__dict__.pop("_fortune_aspects_pending", None)
 		NODES = 2
 		lonlof = self.fortune.fortune[fortune.Fortune.LON]
 		self.aspmatrixLoF = [Asp(),Asp(),Asp(),Asp(),Asp(),Asp(),Asp(),Asp(),Asp(),Asp(), Asp(), Asp()] 

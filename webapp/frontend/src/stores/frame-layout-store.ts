@@ -34,6 +34,7 @@ export type RightPaneModuleKind =
   | "profections"
   | "eclipses"
   | "lunar-mansions"
+  | "chart-events"
   | "aspect-list"
   | "ascensional-transits"
   | "calendar"
@@ -151,6 +152,13 @@ const RIGHT_PANE_WIDTH_POLICIES: Record<RightPaneModuleKind, RightPaneWidthPolic
     role: "standard-inspector-table",
     minContentWidth: RIGHT_PANE_STANDARD_TABLE_MIN_WIDTH,
     preferredWidth: 640,
+    reclaimSidebar: true,
+  },
+  "chart-events": {
+    kind: "chart-events",
+    role: "dense-event-list",
+    minContentWidth: 360,
+    preferredWidth: 390,
     reclaimSidebar: true,
   },
   "aspect-list": {

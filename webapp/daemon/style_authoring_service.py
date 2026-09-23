@@ -27,7 +27,7 @@ CHART_AUTHORING_REFERENCE_SPACE = {
     "wheelRadius": 400,
     "unit": "chart-px",
 }
-AUTHORING_SCOPES = ("base", "classic", "compact", "anglo")
+AUTHORING_SCOPES = ("base", "classic", "compact", "anglo", "houses", "cusps")
 
 
 class StyleAuthoringError(ValueError):
@@ -55,6 +55,7 @@ TYPOGRAPHY_CLASSES = frozenset({
     "bodies.inner.position.minute",
     "bodies.outer.glyph",
     "bodies.outer.motion",
+    "bodies.outer.position",
     "aspects.primary.glyph",
     "aspects.interchart.glyph",
     "secondaryRing.fixedStar.label",
@@ -139,11 +140,20 @@ LINE_CLASSES = frozenset({
 FILL_CLASSES = frozenset({
     "canvas.background",
     "fills.chartField",
+    "fills.glyphField",
     "fills.houseField",
     "fills.centerField",
+    "fills.cuspDegreeBand",
     "fills.zodiacBand",
+    "fills.zodiacElementSlices",
+    "fills.termBand",
+    "fills.decanBand",
+    # Backward-compatible input only. The frontend expands this former shared
+    # material into the separate term and decan bands and never paints it as an
+    # overlapping annulus.
     "fills.subdivisionBand",
 })
+ELEMENT_SLICE_FILL_CLASSES = frozenset({"fills.zodiacElementSlices"})
 
 RING_CLASSES = frozenset(class_id for class_id in LINE_CLASSES if class_id.startswith("rings."))
 LINE_PROPERTIES = frozenset({
@@ -151,7 +161,7 @@ LINE_PROPERTIES = frozenset({
     "color", "opacity", "lineCap", "lineJoin",
 })
 TYPOGRAPHY_PROPERTIES = frozenset({
-    "fontRef", "fontSize", "tracking", "color", "opacity",
+    "fontRef", "fontWeight", "fontStyle", "fontSize", "tracking", "color", "opacity",
 })
 FILL_PROPERTIES = frozenset({
     "fillPattern", "cellSize", "dotSize", "backgroundColor", "patternColor",
@@ -170,7 +180,7 @@ COLOR_PROPERTIES = frozenset({
     "shadowColor", "color",
 })
 DIMENSION_PROPERTIES = frozenset({
-    "fontSize", "tracking", "strokeWidth", "dashLength", "dashGap", "radius",
+    "fontSize", "tracking", "strokeWidth", "dashLength", "dashGap", "radius", "bandWidth",
     "cellSize", "dotSize", "shadowX", "shadowY", "shadowBlur",
 })
 FONT_REF_PROPERTIES = frozenset({"fontRef"})
@@ -191,14 +201,17 @@ ALL_PROPERTIES = frozenset((
     *SHADOW_FILL_PROPERTIES,
     *CHART_PROPERTIES,
     *BAND_SPAN_PROPERTIES,
+    "fontWeight", "fontStyle",
     "strokeStyle", "fillPattern", "shadowPattern", "gradientType", "gradientDirection",
     "gradientAngle", "opacity", "density", "angle", "seed",
-    "lineCap", "lineJoin",
+    "lineCap", "lineJoin", "arrowSize", "arrowStyle",
 ))
 
 NUMERIC_BOUNDS = {
+    "fontWeight": (1.0, 1000.0),
     "fontSize": (1.0, 128.0),
     "tracking": (-32.0, 64.0),
+    "arrowSize": (25.0, 800.0),
     "strokeWidth": (0.0, 16.0),
     "dashLength": (0.0, 96.0),
     "dashGap": (0.0, 96.0),
@@ -215,6 +228,7 @@ NUMERIC_BOUNDS = {
     "maskAmount": (0.0, 100.0),
     "seed": (0.0, 65535.0),
     "radius": (0.0, 400.0),
+    "bandWidth": (0.0, 400.0),
     # Matches WHEEL_SCALE_RANGE in the frontend's wheel-render-style.ts. At 1 the
     # wheel already fills the pane; below 0.3 its own scale handle would be out
     # of reach and the chart could not be dragged back.
@@ -246,6 +260,8 @@ SYMBOL_TYPOGRAPHY_CLASSES = frozenset({
     "chartOverlay.events.signal.glyph",
 })
 ENUM_VALUES = {
+    "arrowStyle": frozenset({"filled", "outlined", "open", "stealth", "spear"}),
+    "fontStyle": frozenset({"normal", "italic"}),
     "strokeStyle": frozenset({"solid", "dashed", "dotted"}),
     "fillPattern": frozenset({
         "none", "solid", "stipple", "bayer2", "bayer4", "bayer8",
@@ -268,6 +284,10 @@ ENUM_VALUES = {
 
 def class_properties(class_id: str) -> frozenset[str]:
     properties: set[str] = set()
+    if class_id in {"angles.inner.arrowhead", "angles.outer.arrowhead"}:
+        properties.update({"arrowSize", "arrowStyle"})
+    if re.fullmatch(r"canvas\.ring\.[a-zA-Z][a-zA-Z0-9_-]{0,63}", class_id):
+        properties.add("bandWidth")
     if class_id in TYPOGRAPHY_CLASSES:
         properties.update(TYPOGRAPHY_PROPERTIES)
     if class_id in LINE_CLASSES:
@@ -283,6 +303,18 @@ def class_properties(class_id: str) -> frozenset[str]:
         properties.update(CHART_PROPERTIES)
     if class_id in BAND_SPAN_CLASSES:
         properties.update(BAND_SPAN_PROPERTIES)
+    if class_id in ELEMENT_SLICE_FILL_CLASSES:
+        # These wedges follow the established four zodiac-element palette
+        # roles for their base background. Texture remains an independent
+        # overlay and therefore keeps its own pattern colour, as on every
+        # other retained fill material.
+        properties.difference_update(COLOR_PROPERTIES - {"patternColor"})
+        properties.difference_update({
+            "gradientType", "gradientDirection", "gradientStartColor",
+            "gradientEndColor", "gradientAngle",
+        })
+        properties.difference_update(MASK_FILL_PROPERTIES)
+        properties.difference_update(SHADOW_FILL_PROPERTIES)
     return frozenset(properties)
 
 
@@ -571,7 +603,7 @@ def build_chart_style_profile_v2(
     normalized = validate_authoring_overrides(overrides)
     styles: dict[str, dict[str, Any]] = {}
     variants: dict[str, dict[str, dict[str, Any]]] = {
-        "classic": {}, "compact": {}, "anglo": {},
+        "classic": {}, "compact": {}, "anglo": {}, "houses": {}, "cusps": {},
     }
     for semantic_id, value in normalized.items():
         scope, class_id, property_name = _split_override_id(semantic_id)
@@ -645,13 +677,13 @@ def flatten_chart_style_profile_v2(payload: Any) -> dict[str, Any]:
     variants = payload.get("variants")
     if not isinstance(styles, Mapping) or not isinstance(variants, Mapping):
         raise StyleAuthoringError("chart style styles and variants must be objects")
-    unknown_variants = set(variants) - {"classic", "compact", "anglo"}
+    unknown_variants = set(variants) - {"classic", "compact", "anglo", "houses", "cusps"}
     if unknown_variants:
         raise StyleAuthoringError(f"unknown chart style variant: {sorted(unknown_variants)[0]}")
     flat: dict[str, Any] = {}
     containers = [("base", styles), *(
         (variant, variants.get(variant, {}))
-        for variant in ("classic", "compact", "anglo")
+        for variant in ("classic", "compact", "anglo", "houses", "cusps")
     )]
     for scope, class_map in containers:
         if not isinstance(class_map, Mapping):
@@ -717,7 +749,7 @@ def build_chart_style_profile_v2_unchecked(
     """Build a canonical profile after flat/base/reference validation."""
     styles: dict[str, dict[str, Any]] = {}
     variants: dict[str, dict[str, dict[str, Any]]] = {
-        "classic": {}, "compact": {}, "anglo": {},
+        "classic": {}, "compact": {}, "anglo": {}, "houses": {}, "cusps": {},
     }
     for semantic_id, value in normalized_overrides.items():
         scope, class_id, property_name = _split_override_id(semantic_id)
@@ -755,7 +787,7 @@ def authoring_schema() -> dict[str, Any]:
         "profileSchemaVersion": CHART_STYLE_PROFILE_SCHEMA_VERSION,
         "classManifestVersion": CHART_STYLE_CLASS_MANIFEST_VERSION,
         "overridePrefix": AUTHORING_OVERRIDE_PREFIX,
-        "keyPattern": "authoring.wheel.<base|classic|compact|anglo>.<classId>.<property>",
+        "keyPattern": "authoring.wheel.<base|classic|compact|anglo|houses|cusps>.<classId>.<property>",
         "scopes": list(AUTHORING_SCOPES),
         "referenceSpace": deepcopy(CHART_AUTHORING_REFERENCE_SPACE),
         "properties": {
@@ -770,8 +802,10 @@ def authoring_schema() -> dict[str, Any]:
                         "maskAngle": "deg",
                         "maskAmount": "%",
                         "seed": "",
+                        "fontWeight": "",
                         # A ratio, not a length — the default below is px.
                         "scale": "",
+                        "arrowSize": "%",
                     }.get(property_name, "px"),
                     "min": bounds[0],
                     "max": bounds[1],

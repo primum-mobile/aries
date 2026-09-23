@@ -12,6 +12,8 @@ this helper never lays out plain text or assumes a monospace font.
 from __future__ import annotations
 
 import json
+import copy
+import math
 import os
 import re
 import sys
@@ -347,12 +349,19 @@ def _column_widths(
     natural = _natural_widths(columns, rows, font_size, coverage)
     if compact and sum(natural) <= available_width:
         return natural
-    weights: list[float] = []
-    for index, column in enumerate(columns):
+    factors: list[float | None] = []
+    for column in columns:
         try:
-            weights.append(max(0.3, float(column["width"])))
+            factor = float(column["width"])
+            factors.append(max(0.3, factor) if math.isfinite(factor) and factor > 0 else None)
         except (KeyError, TypeError, ValueError):
-            weights.append(natural[index])
+            factors.append(None)
+    # Widths are relative factors. Once a table specifies them, an omitted
+    # factor means one share, never a measured width in PDF points. Mixing the
+    # units can leave weighted columns narrower than their cell padding.
+    weights = [factor if factor is not None else 1.0 for factor in factors] if any(
+        factor is not None for factor in factors
+    ) else natural
     total = sum(weights) or 1.0
     return [available_width * weight / total for weight in weights]
 
@@ -432,6 +441,11 @@ def _make_table(
 
     hierarchy_index = _hierarchy_column(columns, profile)
     table_data: list[list[Any]] = [header_cells]
+    # Lists repeat glyphs, dates and direction markers thousands of times.
+    # Parse each distinct styled cell once; each occurrence keeps its own
+    # mutable ReportLab layout state and shares only the parsed fragments.
+    cell_templates: dict[tuple[Any, ...], Paragraph] = {}
+    cell_styles: dict[tuple[Any, ...], ParagraphStyle] = {}
     for row in rows:
         row_cells = list((row.get("cells") or [])[: len(columns)])
         row_cells.extend([None] * max(0, len(columns) - len(row_cells)))
@@ -442,16 +456,20 @@ def _make_table(
             level = max(0, int(row.get("level") or 0))
             hierarchy_level = level if profile == "circumambulation" else max(0, level - 1)
             alignment = "left" if hierarchy_index == index else str(align or column.get("align") or "left").lower()
-            style = ParagraphStyle(
-                "AriesPdfCell",
-                parent=body_style,
-                alignment=alignments.get(alignment, 0),
-                leftIndent=(hierarchy_level * 14.0 if hierarchy_index == index else 0),
-            )
-            content = Paragraph(
-                _cell_markup(cell, coverage, row_bold=row.get("emphasis") == "strong") or "&#160;",
-                style,
-            )
+            indent = hierarchy_level * 14.0 if hierarchy_index == index else 0
+            style_key = (alignment, indent)
+            style = cell_styles.get(style_key)
+            if style is None:
+                style = ParagraphStyle("AriesPdfCell", parent=body_style,
+                    alignment=alignments.get(alignment, 0), leftIndent=indent)
+                cell_styles[style_key] = style
+            markup = _cell_markup(cell, coverage, row_bold=row.get("emphasis") == "strong") or "&#160;"
+            key = (style_key, markup)
+            template = cell_templates.get(key)
+            if template is None:
+                template = Paragraph(markup, style)
+                cell_templates[key] = template
+            content = copy.copy(template)
             rendered.append(CurrentRowMarker(content) if row.get("current") and index == 0 else content)
         table_data.append(rendered)
 

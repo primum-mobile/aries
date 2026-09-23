@@ -69,6 +69,9 @@ function createHarness() {
       let currentMapEclipseData = currentEclipseData;
       let polarAsterismStarHitTargets = [];
       const ACTIVE_ASTROCART_STYLE = null;
+      const curveRefinement = { cancel() {} };
+      function scheduleCurveRefinement() {}
+      const mapRuler = { refresh() { calls.push(['ruler']); } };
 
       const map = {
         isStyleLoaded: () => true,
@@ -146,6 +149,7 @@ function sceneWork(calls) {
     "reference",
     "dom-labels",
     "repaint",
+    "ruler",
   ].includes(kind));
 }
 
@@ -187,7 +191,7 @@ test("latest scene payloads stay offscreen through overlapping movement and flus
       ["setData", "eclipse-path", "eclipse-1"],
     ],
   );
-  for (const kind of ["marker", "legend", "reference", "dom-labels", "repaint"]) {
+  for (const kind of ["marker", "legend", "reference", "dom-labels", "repaint", "ruler"]) {
     assert.equal(calls.filter(([entry]) => entry === kind).length, 1, kind);
   }
   assert.equal(api.perfState.runtimeSceneCoherentFlushes, 1);

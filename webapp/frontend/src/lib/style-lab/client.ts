@@ -1,11 +1,15 @@
 // Copyright (C) 2026 Max Lange
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import type { WheelComposition } from "@/lib/chart/wheel-composition";
+import type { WheelTypographyProfile } from "@/lib/chart/wheel-render-style";
+import type { WheelPresetsState } from "@/lib/daemon/wheel-presets-client";
 import type { ChartRenderSnapshot } from "@/lib/chart/types";
 import {
   daemonBaseUrl,
   daemonFetch,
   type ChartPickerRow,
+  type ThemeState,
 } from "@/lib/daemon/client";
 import type {
   ChartStyleFontRef,
@@ -16,6 +20,12 @@ import { WHEEL_AUTHORING_OVERRIDE_PREFIX } from "@/lib/style-lab/wheel-authoring
 export type StyleLabScalarValue = string | number | readonly number[];
 export type StyleLabTokenValue = StyleLabScalarValue | ChartStyleFontRef;
 export const APP_AUTHORING_OVERRIDE_PREFIX = "authoring.app." as const;
+
+export type StyleLabWheelBaseline = {
+  geometry?: {schemaVersion: 1; layout: WheelTypographyProfile | null;
+    designs: Partial<Record<WheelTypographyProfile, {overrides: Record<string, StyleLabTokenValue>; composition: WheelComposition}>>};
+  visibility?: Partial<Record<WheelTypographyProfile, Record<string, boolean>>>;
+};
 
 export type StyleLabDraft = {
   kind?: "aries.style-draft";
@@ -31,6 +41,8 @@ export type StyleLabDraft = {
   basePresetId?: string | null;
   sourceThemeName?: string | null;
   modifiedFromBaseline?: boolean;
+  wheelBaseline?: StyleLabWheelBaseline;
+  wheelPresets?: WheelPresetsState;
   overrides: Record<string, StyleLabTokenValue>;
   authoringOverrides?: Record<string, StyleLabTokenValue>;
   appAuthoringOverrides?: Record<string, StyleLabTokenValue>;
@@ -51,6 +63,7 @@ export type StyleLabThemeSource = Readonly<{
   basePresetId: string | null;
   appTokens: Readonly<Record<string, string>>;
   chartPalette: Readonly<Record<string, string>>;
+  chartData: ThemeState["profileOverrides"]["chartData"];
   appAuthoring: Readonly<Record<string, StyleLabScalarValue>>;
 }>;
 

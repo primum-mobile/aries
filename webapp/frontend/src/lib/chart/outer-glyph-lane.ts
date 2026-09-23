@@ -45,13 +45,16 @@ export type ChartPaintTarget = Readonly<{
   centerY: number;
 }>;
 
-/** Fit one known radial paint envelope around the host's permanent centre. */
+export type WheelVerticalAlignment = "center" | "upper";
+
+/** Fit the wheel independently of the full-height corner-overlay host. */
 export function resolveChartPaintTarget(
   hostWidth: number,
   hostHeight: number,
   paintRadiusScale: number,
   topBoundary = 0,
   avoidHeader = false,
+  verticalAlignment: WheelVerticalAlignment = "center",
 ): ChartPaintTarget {
   const width = Math.max(1, hostWidth);
   const height = Math.max(1, hostHeight);
@@ -67,8 +70,15 @@ export function resolveChartPaintTarget(
     ? Math.min(baseSide, Math.max(1, (centerY - top) * 2))
     : baseSide;
   const paintFitSide = availableDiameter / paintScale;
+  const side = Math.max(1, Math.min(baseSide, paintFitSide));
+  // Split panes use half the spare space above the centered paint envelope.
+  // This gently lifts width-limited wheels without shrinking them or changing
+  // the corner-overlay bounds. Height-limited wheels keep their existing fit.
+  const lift = verticalAlignment === "upper"
+    ? Math.max(0, centerY - top - side * paintScale / 2) / 2
+    : 0;
   return Object.freeze({
-    side: Math.max(1, Math.min(baseSide, paintFitSide)),
-    centerY,
+    side,
+    centerY: centerY - lift,
   });
 }

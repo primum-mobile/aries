@@ -26,6 +26,7 @@ import {
   type ListFollowPolicy,
 } from "@/lib/list-follow-policy";
 import { sameRetainedPaneActivation } from "@/lib/retained-pane-activation.mjs";
+import { radixPaneOwner, retainRadixPanes } from "@/lib/radix-pane-state";
 
 export type HoverRegion =
   | {
@@ -55,7 +56,7 @@ export type HoverRegion =
   | { kind: "syzygy"; longitude: number; house?: number; label?: string; chartRole?: "primary" | "outer"; ringIndex?: number }
   | { kind: "eclipse"; longitude: number; house?: number; label?: string; chartRole?: "primary" | "outer"; ringIndex?: number }
   | { kind: "angle"; angleId: "asc" | "mc" | "dsc" | "ic"; longitude: number; chartRole?: "primary" | "outer"; ringIndex?: number }
-  | { kind: "house"; houseIndex: number; longitude: number }
+  | { kind: "house"; houseIndex: number; longitude: number; chartRole?: "primary" | "outer" }
   | { kind: "sign"; signIndex: number; longitude: number }
   | {
       kind: "secondary_ring";
@@ -139,11 +140,7 @@ export type TransitListPaneState = {
   focusDatetime?: string | null;
 };
 
-export type TransitListPreferences = {
-  selectedPromittorId: string | null;
-  promittorDrawerOpen: boolean;
-  direction: "direct" | "converse" | "both";
-};
+export type TransitListPreferences = SidebarListPreferencesPayload["transitList"];
 
 export type DirectionsPaneState = {
   documentId: string;
@@ -272,6 +269,8 @@ export type AspectListPreferences = {
   maxOrb: number;
   sortBy: "body" | "orb" | "exact";
   sortDirection: "asc" | "desc";
+  /** Display-only applying/separating phase projection; Both keeps every row. */
+  phaseFilter: "applying" | "separating" | "both";
   /** Positive display focus; empty means every ordinary point. */
   focusedFilterIds: string[];
   /** Relationship rule for two or more focused endpoints. */
@@ -290,6 +289,7 @@ const DEFAULT_SIDEBAR_LIST_PREFERENCES: SidebarListPreferencesPayload = {
     maxOrb: 10,
     sortBy: "orb",
     sortDirection: "asc",
+    phaseFilter: "both",
     focusedFilterIds: [],
     focusMatchMode: "or",
     rxFocusEnabled: false,
@@ -297,8 +297,10 @@ const DEFAULT_SIDEBAR_LIST_PREFERENCES: SidebarListPreferencesPayload = {
     filterDrawerOpen: false,
   },
   transitList: {
-    selectedPromittorId: null,
-    promittorDrawerOpen: false,
+    pointFilterSide: "from",
+    selectedPointIds: null,
+    selectedAspectIds: null,
+    filterDrawerOpen: false,
     direction: "direct",
   },
   synodicList: {
@@ -310,7 +312,9 @@ const DEFAULT_SIDEBAR_LIST_PREFERENCES: SidebarListPreferencesPayload = {
     lunarDrawerOpen: false,
   },
   secondaryProgressions: {
+    pointFilterSide: "from",
     planetIds: null,
+    angleIds: null,
     aspectIds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
     filterDrawerOpen: false,
   },
@@ -474,7 +478,10 @@ export type FeatureCatalogPaneState = {
   notes?: string;
 };
 
+export type ChartEventsPaneState = { documentId: string };
+
 export type RightInspectorPaneState =
+  | { kind: "chart-events"; state: ChartEventsPaneState }
   | { kind: "transit-search"; state: TransitSearchPaneState }
   | { kind: "transit-list"; state: TransitListPaneState }
   | { kind: "directions"; state: DirectionsPaneState }
@@ -506,13 +513,14 @@ type RightPaneKey =
   | "eclipsesPane"
   | "lunarMansionsPane"
   | "synodicCyclesPane"
+  | "chartEventsPane"
   | "aspectListPane"
   | "ascensionalTransitsPane"
   | "calendarPane"
   | "astrocartControlsPane"
   | "featureCatalogPane";
 
-const RIGHT_PANE_KEYS = [
+export const RIGHT_PANE_KEYS = [
   "transitSearchPane",
   "transitListPane",
   "directionsPane",
@@ -524,6 +532,7 @@ const RIGHT_PANE_KEYS = [
   "eclipsesPane",
   "lunarMansionsPane",
   "synodicCyclesPane",
+  "chartEventsPane",
   "aspectListPane",
   "ascensionalTransitsPane",
   "calendarPane",
@@ -696,6 +705,7 @@ type WorkspaceState = {
   lunarMansionsPane: LunarMansionsPaneState | null;
   synodicCyclesPane: SynodicCyclesPaneState | null;
   synodicListPreferencesByDocument: Record<string, SynodicListPreferences>;
+  chartEventsPane: ChartEventsPaneState | null;
   aspectListPane: AspectListPaneState | null;
   aspectListPreferencesByDocument: Record<string, AspectListPreferences>;
   ascensionalTransitsPane: AscensionalTransitsPaneState | null;
@@ -808,6 +818,8 @@ type WorkspaceState = {
     documentId: string,
     patch: Partial<SynodicListPreferences>,
   ) => void;
+  openChartEventsPane: (state: ChartEventsPaneState) => void;
+  closeChartEventsPane: () => void;
   openAspectListPane: (state: AspectListPaneState) => void;
   closeAspectListPane: () => void;
   setAspectListPreferences: (
@@ -902,6 +914,7 @@ const EMPTY_RIGHT_PANES = {
   eclipsesPane: null,
   lunarMansionsPane: null,
   synodicCyclesPane: null,
+  chartEventsPane: null,
   aspectListPane: null,
   ascensionalTransitsPane: null,
   calendarPane: null,
@@ -947,6 +960,9 @@ function applyDaemonWorkspaceOpenResult(
   result: WorkspaceOpenResult,
   options?: { preserveRightPane?: boolean; incrementalDocuments?: boolean },
 ): Partial<WorkspaceState> {
+  const originPanes = options?.preserveRightPane
+    ? Object.fromEntries(RIGHT_PANE_KEYS.map((key) => [key, useWorkspaceStore.getState()[key]])) as Pick<WorkspaceState, RightPaneKey>
+    : null;
   const activeDocumentId = result.activeDocumentId ?? result.documentId ?? null;
   if (result.documents) {
     if (options?.incrementalDocuments) {
@@ -962,7 +978,9 @@ function applyDaemonWorkspaceOpenResult(
   if (activeDocumentId && result.snapshot) {
     useDaemonWorkspaceStore.getState().pushCommandSnapshot(activeDocumentId, result.snapshot);
   }
-  return options?.preserveRightPane ? {} : EMPTY_RIGHT_PANES;
+  // The daemon activation restores the destination radix's chrome. Clearing
+  // here would erase that restored pane after an open command completes.
+  return originPanes ?? {};
 }
 
 function defaultFollowPolicyForPane(
@@ -1029,6 +1047,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   lunarMansionsPane: null,
   synodicCyclesPane: null,
   synodicListPreferencesByDocument: {},
+  chartEventsPane: null,
   aspectListPane: null,
   aspectListPreferencesByDocument: {},
   ascensionalTransitsPane: null,
@@ -1248,6 +1267,8 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     });
     persistSidebarListPreferencePatch({ synodicList: patch });
   },
+  openChartEventsPane: (state) => set((current) => activateRetainedRightPane(current, "chartEventsPane", state)),
+  closeChartEventsPane: () => set({ chartEventsPane: null }),
   openAspectListPane: (state) =>
     set((current) =>
       activateRetainedRightPane(current, "aspectListPane", {
@@ -1395,6 +1416,26 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     if (fn) fn(radix);
   },
 }));
+
+// Presentation memory lives beside the other workspace chrome. Query owners
+// remain unchanged; nested subsidiaries share their root's active pane.
+let activePaneRadix = radixPaneOwner(
+  useDaemonWorkspaceStore.getState().documents,
+  useDaemonWorkspaceStore.getState().activeDocumentId,
+);
+let panesByRadix: Record<string, Pick<WorkspaceState, RightPaneKey>> = {};
+useDaemonWorkspaceStore.subscribe((state, previous) => {
+  if (state.documents === previous.documents && state.activeDocumentId === previous.activeDocumentId) return;
+  const nextOwner = radixPaneOwner(state.documents, state.activeDocumentId);
+  const current = useWorkspaceStore.getState();
+  const panes = Object.fromEntries(RIGHT_PANE_KEYS.map((key) => [key, current[key]])) as Pick<WorkspaceState, RightPaneKey>;
+  const restored = retainRadixPanes(state.documents, activePaneRadix, nextOwner, panes, panesByRadix, EMPTY_RIGHT_PANES);
+  panesByRadix = restored.retained;
+  activePaneRadix = nextOwner;
+  if (RIGHT_PANE_KEYS.some((key) => current[key] !== restored.panes[key])) {
+    useWorkspaceStore.setState(restored.panes);
+  }
+});
 
 // A row-link mark freezes cursor-aware lists against the opened chart's
 // datetime (list row link = chart command only). The moment the user steps that

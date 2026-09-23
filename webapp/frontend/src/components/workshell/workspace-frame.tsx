@@ -115,6 +115,7 @@ export function WorkspaceFrame({
   const eclipsesPane = useWorkspaceStore((s) => s.eclipsesPane);
   const lunarMansionsPane = useWorkspaceStore((s) => s.lunarMansionsPane);
   const synodicCyclesPane = useWorkspaceStore((s) => s.synodicCyclesPane);
+  const chartEventsPane = useWorkspaceStore((s) => s.chartEventsPane);
   const aspectListPane = useWorkspaceStore((s) => s.aspectListPane);
   const ascensionalTransitsPane = useWorkspaceStore((s) => s.ascensionalTransitsPane);
   const calendarPane = useWorkspaceStore((s) => s.calendarPane);
@@ -148,6 +149,7 @@ export function WorkspaceFrame({
     eclipsesPane,
     lunarMansionsPane,
     synodicCyclesPane,
+    chartEventsPane,
     aspectListPane,
     ascensionalTransitsPane,
     calendarPane,

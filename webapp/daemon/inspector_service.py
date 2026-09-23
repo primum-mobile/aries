@@ -353,7 +353,7 @@ def _syzygy_region(chrt, options, chart_role="primary", partner_chart=None):
         "display_lon": display_lon,
         "house_index": _house_index(chrt, lon, options),
         "colour": tuple(getattr(options, "clrsigns", ())),
-        "title": mtexts.txts.get("PrenatalSyzygy", "Prenatal Syzygy"),
+        "title": mtexts.txts.get("PrenatalSyzygy", "Syzygy"),
     }
     return {"kind": "syzygy", "object_id": "syzygy", "chart_role": chart_role, "data": data}
 
@@ -422,12 +422,12 @@ def _angle_region(chrt, partner_chart, options, angle_key, chart_role="primary")
     return {"kind": "angle", "object_id": object_id, "chart_role": chart_role, "data": data}
 
 
-def _house_region(chrt, options, house_index):
+def _house_region(chrt, options, house_index, chart_role="primary"):
     house_index = max(1, int(house_index))
     lon = chrt.houses.cusps[house_index]
     display_lon = lon
     data = {"chart": chrt, "longitude": lon, "display_lon": display_lon}
-    return {"kind": "house", "object_id": house_index, "chart_role": "primary", "data": data}
+    return {"kind": "house", "object_id": house_index, "chart_role": chart_role, "data": data}
 
 
 def _sign_region(chrt, options, sign_index):
@@ -523,7 +523,40 @@ def _find_fixstar(chrt, lon):
     return best
 
 
-def _secondary_ring_region(chrt, options, object_id, chart_role="primary"):
+def _find_asteroid(chrt, options, lon, label=""):
+    """Resolve a rendered asteroid label back to its live ephemeris body."""
+    try:
+        items = common.collect_asteroid_ring_items(chrt, options)
+    except Exception:
+        return None
+    best = None
+    best_key = None
+    wanted_label = str(label or "").strip().casefold()
+    for item in items:
+        try:
+            diff = abs(util.normalize(float(item["lon"]) - float(lon) + 180.0) - 180.0)
+        except (KeyError, TypeError, ValueError):
+            continue
+        label_penalty = int(
+            bool(wanted_label)
+            and str(item.get("name") or "").strip().casefold() != wanted_label
+        )
+        key = (label_penalty, diff)
+        if best_key is None or key < best_key:
+            best_key = key
+            best = item
+    if best is None or best_key is None or best_key[1] > 0.05:
+        return None
+    return best
+
+
+def _secondary_ring_region(
+    chrt,
+    options,
+    object_id,
+    chart_role="primary",
+    partner_chart=None,
+):
     """Rebuild graphchart's secondary-ring ``data`` dict from the objectId
     ``family|longitude|label`` the React canvas emits for an outer-ring item."""
     parts = str(object_id).split("|")
@@ -538,6 +571,7 @@ def _secondary_ring_region(chrt, options, object_id, chart_role="primary"):
 
     data = {
         "chart": chrt,
+        "partner_chart": partner_chart,
         "family": family,
         "title": label or None,
         "longitude": longitude,
@@ -554,6 +588,32 @@ def _secondary_ring_region(chrt, options, object_id, chart_role="primary"):
             data["fixstar_nature"] = fixedstar_natures.as_payload(code)
         if not data.get("title"):
             data["title"] = label or data.get("fixstar_name") or "Fixed star"
+    elif family == "asteroid" and longitude is not None:
+        asteroid = _find_asteroid(chrt, options, longitude, label)
+        if asteroid is not None:
+            body_id = int(asteroid["bodyId"])
+            data["body_id"] = body_id
+            data["speed_lon"] = float(asteroid.get("speed", 0.0) or 0.0)
+            data["declination"] = None
+            for body in getattr(getattr(chrt, "asteroids", None), "asteroids", ()) or ():
+                if int(getattr(body, "aId", -1)) != body_id:
+                    continue
+                body_data = getattr(body, "data", ()) or ()
+                if len(body_data) > 3:
+                    data["declination"] = float(body_data[3])
+                if getattr(body, "number", None) is not None:
+                    data["asteroid_number"] = int(body.number)
+                break
+            data["motion_marker"] = _motion_marker(
+                chrt,
+                body_id,
+                data["speed_lon"],
+                options,
+                partner_chart is not None,
+            )
+            data["title"] = str(asteroid.get("name") or label or "Asteroid")
+        elif not data.get("title"):
+            data["title"] = label or "Asteroid"
     elif family == "lot":
         # Faithful port of graphchart.drawArabicParts (graphchart.py:4374-4439):
         # day/night flag drives the active triplet; the Lot of Fortune itself is
@@ -682,9 +742,22 @@ def _parse_aspect_object_id(object_id):
     return p1_key, p2_key, type_str
 
 
+def _aspect_cusp_lon(chrt, key):
+    if not str(key).startswith("cusp"):
+        return None
+    try:
+        index = int(key[4:])
+        return float(chrt.houses.cusps[index]) if 1 <= index <= 12 else None
+    except (ValueError, IndexError, AttributeError, TypeError):
+        return None
+
+
 def _aspect_body_info(chrt, key, role="primary"):
     """Mirror graphchart._planet_body_info / _angle_body_info / _fortune_body_info
     for a single aspect endpoint string."""
+    cusp_lon = _aspect_cusp_lon(chrt, key)
+    if cusp_lon is not None:
+        return {"kind": "point", "label": str(int(key[4:])), "lon": cusp_lon, "role": role}
     angle_lon = _aspect_angle_lon(chrt, key)
     if angle_lon is not None:
         return {
@@ -720,9 +793,12 @@ def _aspect_body_info(chrt, key, role="primary"):
             lon = None
         return {
             "kind": "syzygy",
-            "label": mtexts.txts.get("PrenatalSyzygy", "Prenatal Syzygy"),
+            "label": mtexts.txts.get("PrenatalSyzygy", "Syzygy"),
             "lon": float(lon) if lon is not None else None,
         }
+    if key == "eclipse":
+        _event, _jd, lon = eclipses.selected_prenatal_eclipse_point(chrt)
+        return {"kind": "point", "label": eclipses.eclipse_event_label(_event), "lon": lon, "role": role}
     point_lon = _aspect_point_lon(key)
     if point_lon is not None:
         return {
@@ -748,6 +824,9 @@ def _aspect_body_info(chrt, key, role="primary"):
 
 
 def _aspect_endpoint_motion(chrt, key):
+    cusp_lon = _aspect_cusp_lon(chrt, key)
+    if cusp_lon is not None:
+        return (cusp_lon, 0.0, None)
     angle_lon = _aspect_angle_lon(chrt, key)
     if angle_lon is not None:
         return (float(angle_lon), 0.0, None)
@@ -766,6 +845,9 @@ def _aspect_endpoint_motion(chrt, key):
             return (float(chrt.syzygy.lon), 0.0, None)
         except Exception:
             return (None, None, None)
+    if key == "eclipse":
+        _event, _jd, lon = eclipses.selected_prenatal_eclipse_point(chrt)
+        return (lon, 0.0, None)
     point_lon = _aspect_point_lon(key)
     if point_lon is not None:
         return (float(point_lon), 0.0, None)
@@ -792,7 +874,7 @@ def _aspect_endpoint_orbs(chrt, key, aspect_type):
             return float(chrt.options.orbis[chrt.get_planet_orb_index(se)][aspect_type])
         except Exception:
             return 0.0
-    if _aspect_angle_lon(chrt, key) is not None:
+    if _aspect_angle_lon(chrt, key) is not None or _aspect_cusp_lon(chrt, key) is not None:
         try:
             return float(chrt.options.orbisAscMC[aspect_type])
         except Exception:
@@ -1319,9 +1401,9 @@ class InspectorService:
         # as the partner. graphchart does this exact swap (partner_chart =
         # self.chart if outer else self.chart2, graphchart.py:2157-2159). Only the
         # body kinds plus role-bearing secondary-ring labels can sit on the
-        # outer ring; sign / house / aspect stay primary.
+        # outer ring, including cusp targets; sign / aspect stay primary.
         if chart_role == "outer" and partner_chart is not None and kind in (
-            "planet", "vertex", "fortune", "syzygy", "eclipse", "angle", "secondary_ring",
+            "planet", "vertex", "fortune", "syzygy", "eclipse", "angle", "house", "secondary_ring",
         ):
             chrt, partner_chart = partner_chart, chrt
         if kind == "planet":
@@ -1337,11 +1419,17 @@ class InspectorService:
         if kind == "angle":
             return _angle_region(chrt, partner_chart, options, str(object_id), chart_role)
         if kind == "house":
-            return _house_region(chrt, options, int(object_id))
+            return _house_region(chrt, options, int(object_id), chart_role)
         if kind == "sign":
             return _sign_region(chrt, options, int(object_id))
         if kind == "secondary_ring":
-            return _secondary_ring_region(chrt, options, str(object_id), chart_role)
+            return _secondary_ring_region(
+                chrt,
+                options,
+                str(object_id),
+                chart_role,
+                partner_chart=partner_chart,
+            )
         if kind == "aspect":
             if str(object_id).startswith("interchart:"):
                 return _interchart_aspect_region(chrt, partner_chart, options, str(object_id))

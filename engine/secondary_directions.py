@@ -61,12 +61,10 @@ _CONVERSE_SECONDARY_ASPECT_DEFS = (
     (searchquery.SearchQuery.ASPECT_QUINCUNX, chart.Chart.QUINQUNX, mtexts.txts['Quinqunx']),
     (searchquery.SearchQuery.ASPECT_OPPOSITION, chart.Chart.OPPOSITIO, mtexts.txts['Oppositio']),
 )
-_CONVERSE_ANGLE_PROMISSORS = (
-    ('angle:mc', 'MC'),
-    ('angle:asc', 'ASC'),
-    ('angle:ic', 'IC'),
-    ('angle:dsc', 'DSC'),
-)
+# The progression list uses the two independent axes as actors. DSC/IC are
+# unsupported as separate actors (opposite ends of ASC/MC); receiving roles
+# retain their existing catalog contract.
+SECONDARY_ACTING_ANGLE_IDS = ('angle:asc', 'angle:mc')
 
 
 def _birth_date(radix):
@@ -119,6 +117,15 @@ def _secondary_radix_target_ids(catalog):
         ):
             ids.append(object_id)
     return ids
+
+
+def secondary_acting_angle_ids(catalog):
+    return [
+        object_id for object_id in catalog.promittor_ids
+        if object_id in SECONDARY_ACTING_ANGLE_IDS
+        and catalog.get(object_id) is not None
+        and catalog.get(object_id).family == searchcatalog.SearchObject.FAMILY_ANGLE
+    ]
 
 
 def normalize_secondary_direction(direction):
@@ -176,7 +183,8 @@ def _build_direct_secondary_direction_rows(radix, start_age=0, end_age=25, limit
     query = searchquery.SearchQuery()
     query.set_techniques([searchquery.SearchQuery.TECHNIQUE_SECONDARY_DIRECTIONS])
     query.set_aspects([aspect_id for aspect_id, _chart_aspect, _both_sides, _label in searchbackend.ASPECT_DEFS])
-    query.set_promittor_ids(_secondary_progressed_promittor_ids(catalog))
+    planet_ids = _secondary_progressed_promittor_ids(catalog)
+    query.set_promittor_ids(planet_ids + secondary_acting_angle_ids(catalog))
     query.set_significator_ids(_secondary_radix_target_ids(catalog))
     query.set_progression_method(int(posfordate.progression_method(method)))
     birth_date = _birth_date(radix)
@@ -188,7 +196,7 @@ def _build_direct_secondary_direction_rows(radix, start_age=0, end_age=25, limit
         radix,
         start_date,
         end_date,
-        promittor_ids=query.promittor_ids,
+        promittor_ids=planet_ids,
         method=posfordate.progression_method(method),
     )
     ingress_rows = searchbackend.build_secondary_ingress_rows(
@@ -196,7 +204,7 @@ def _build_direct_secondary_direction_rows(radix, start_age=0, end_age=25, limit
         radix,
         start_date,
         end_date,
-        promittor_ids=query.promittor_ids,
+        promittor_ids=planet_ids,
         method=posfordate.progression_method(method),
         direction=SECONDARY_DIRECTION_DIRECT,
     )
@@ -289,7 +297,7 @@ def _converse_symbolic_age(radix, age_years, method):
         method in (posfordate.SECONDARY, posfordate.TERTIARY)
         and posfordate.progression_day_type(day_type) == posfordate.PROGRESSION_DAY_TYPE_Q1
     ):
-        symbolic_age /= symbolic_time.BIJA_RATIO
+        symbolic_age *= symbolic_time.BIJA_RATIO
     return symbolic_age
 
 
@@ -351,7 +359,8 @@ def _append_converse_angle_rows(rows, catalog, radix, samples, targets, method):
             state_cache[key] = _converse_angle_longitudes(radix, age, method)
         return state_cache[key]
 
-    for prom_id, label in _CONVERSE_ANGLE_PROMISSORS:
+    for prom_id in secondary_acting_angle_ids(catalog):
+        label = catalog.get(prom_id).label
         def state_at(age, _prom_id=prom_id):
             lons = angle_state(age)
             lon = lons.get(_prom_id)
@@ -396,9 +405,9 @@ def _append_converse_rows_for_promissor(rows, catalog, radix, prom_id, prom_labe
 
 
 def _refine_converse_age(state_at, target_lon, start_age, end_age, delta0, delta1):
-    if abs(float(delta0)) <= searchbackend.EXACT_EPSILON:
+    if float(delta0) == 0.0:
         return float(start_age)
-    if abs(float(delta1)) <= searchbackend.EXACT_EPSILON:
+    if float(delta1) == 0.0:
         return float(end_age)
     lo = float(start_age)
     hi = float(end_age)
@@ -406,18 +415,23 @@ def _refine_converse_age(state_at, target_lon, start_age, end_age, delta0, delta
     hi_val = float(delta1)
     best_age = searchbackend._interpolate_zero_crossing(lo, hi, lo_val, hi_val)
     best_val = abs(_converse_delta_at_age(state_at, best_age, target_lon))
-    for _i in range(28):
+    # An angular "exact" orb can span many minutes of life for slow
+    # progressed angles. Refine the time bracket to below a display second.
+    age_tolerance = 0.25 / (366.0 * 86400.0)
+    for _i in range(40):
         mid = (lo + hi) / 2.0
         mid_val = _converse_delta_at_age(state_at, mid, target_lon)
         if abs(mid_val) < best_val:
             best_age = mid
             best_val = abs(mid_val)
-        if abs(mid_val) <= searchbackend.EXACT_EPSILON:
+        if mid_val == 0.0:
             return mid
-        if searchbackend._is_target_zero_crossing(lo_val, mid_val):
+        if hi - lo <= age_tolerance:
+            break
+        if lo_val * mid_val <= 0.0:
             hi = mid
             hi_val = mid_val
-        elif searchbackend._is_target_zero_crossing(mid_val, hi_val):
+        elif mid_val * hi_val <= 0.0:
             lo = mid
             lo_val = mid_val
         elif abs(lo_val) <= abs(hi_val):
@@ -514,14 +528,12 @@ def _converse_angle_longitudes(radix, age, method):
             radix.options,
             -float(symbolic_age),
             method=method,
-            angle_method=posfordate.TRUE_SOLAR_ARC_RA,
         )
-        cusps = state['houses'].cusps
         return {
-            'angle:mc': util.normalize(float(cusps[10])),
-            'angle:asc': util.normalize(float(cusps[1])),
-            'angle:ic': util.normalize(float(cusps[4])),
-            'angle:dsc': util.normalize(float(cusps[7])),
+            'angle:mc': state['mc_lon'],
+            'angle:asc': state['asc_lon'],
+            'angle:ic': util.normalize(state['mc_lon'] + 180.0),
+            'angle:dsc': util.normalize(state['asc_lon'] + 180.0),
         }
     except Exception:
         return {}
@@ -851,7 +863,7 @@ def _object_glyph(catalog, object_id):
         return getattr(common.common, 'fortune', None)
     if obj.planet_index is not None:
         try:
-            return common.common.get_planet_glyph(int(obj.planet_index)) or None
+            return common.common.get_ephemeris_body_glyph(int(obj.planet_index)) or None
         except Exception:
             return None
     return getattr(obj, 'display_glyph', None) or None
@@ -897,6 +909,9 @@ def _row_glyph_fields(radix, catalog, row):
         except Exception:
             sig_glyph = None
     return {
+        "promObjectId": row.promittor_id,
+        "sigObjectId": None if is_secondary_ingress_row(row) or is_secondary_station_row(row) else row.significator_id,
+        "promAngleId": row.promittor_id if row.promittor_id in SECONDARY_ACTING_ANGLE_IDS else None,
         "promPlanet": prom_planet,
         "sigPlanet": sig_planet,
         "aspectIndex": aspect_index,

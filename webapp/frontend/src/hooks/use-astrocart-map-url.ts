@@ -71,6 +71,7 @@ function buildAstrocartMapUrl(
   basemapMeta: AstrocartBasemapMeta,
 ): string {
   const params = new URLSearchParams({
+    revision: basemapMeta.assetRevision,
     theme: options.theme,
     pageBg: options.pageBg,
   });
@@ -118,6 +119,7 @@ export function useAstrocartMapUrl(
         if (initialResolution || !meta.hasLocalTiles || allowTileAdoption) {
           setBasemapMeta((current) => (
             current &&
+            current.assetRevision === meta.assetRevision &&
             current.hasLocalTiles === meta.hasLocalTiles &&
             current.tilesUrl === meta.tilesUrl &&
             current.installing === meta.installing

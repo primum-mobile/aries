@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { CanvasDraw } from "./canvas-draw";
+import { drawPngWatermark, preparePngWatermark } from "./chart-export-watermark";
 import { morinusTextFontFromTokens } from "./chart-fonts";
-import { radixOverlayTopLeftLines } from "./chart-overlay-lines";
-import { drawSnapshotLayer, type ClickAspectState } from "./draw-chart";
+import { informationCornerClass, radixOverlayTopLeftLines } from "./chart-overlay-lines";
+import { drawSnapshotLayer, resolveChartOuterPaintEnvelopeScale, type ClickAspectState } from "./draw-chart";
 import {
   applyProfileColorsToSnapshot,
   readPaletteFromTheme,
@@ -12,16 +13,16 @@ import {
 } from "./palette";
 import {
   resolveWheelOverlayMetrics,
-  resolveWheelRenderStyleFromTokens,
   resolveWheelTypographyPaint,
   type ResolvedWheelTypographyPaint,
   type WheelAuthoringTypographyClass,
   type WheelCssValueReader,
   type WheelRenderStyle,
   type WheelTypographyProfile,
+  wheelTypographyProfileForTheme,
 } from "./wheel-render-style";
 import { applyPdfRasterPreset } from "./pdf-raster-presets";
-import { compileFlatWheelAuthoringOverrides } from "../style-lab/wheel-authoring-adapter";
+import { resolveWheelGeometryPresetStyle, type WheelGeometryPresetInput } from "./wheel-geometry-preset";
 import type {
   Chart,
   ChartPalette,
@@ -99,6 +100,7 @@ function resolveRoleFont(
 function resolveScreenStyle(
   chart: ChartRenderSnapshot,
   theme: ThemeState | null,
+  geometryPreview?: WheelGeometryPresetInput["preview"],
 ): {
   snapshot: ChartRenderSnapshot;
   style: WheelRenderStyle;
@@ -121,7 +123,7 @@ function resolveScreenStyle(
   const wheelSymbols = readValue("--aries-wheel-font-symbols")?.trim();
   const fontSymbols =
     wheelSymbols && !wheelSymbols.startsWith("var(") ? wheelSymbols : inheritedSymbols;
-  const style = resolveWheelRenderStyleFromTokens(
+  const style = resolveWheelGeometryPresetStyle(
     readValue,
     {
       palette,
@@ -133,9 +135,12 @@ function resolveScreenStyle(
       fontTermSymbols: resolveRoleFont(readValue, "--aries-wheel-font-term-symbols", fontSymbols),
       fontDecanSymbols: resolveRoleFont(readValue, "--aries-wheel-font-decan-symbols", fontSymbols),
       fontAspectSymbols: resolveRoleFont(readValue, "--aries-wheel-font-aspect-symbols", fontSymbols),
-      authoringOverrides: compileFlatWheelAuthoringOverrides(
-        resolvedTheme?.profileOverrides?.wheelAuthoring ?? {},
-      ),
+    },
+    {
+      profile: wheelTypographyProfileForTheme(chart.primaryChart.options.theme),
+      presets: chart.primaryChart.options.wheelGeometryPresets,
+      appearanceOverrides: resolvedTheme?.profileOverrides?.wheelAuthoring ?? {},
+      preview: geometryPreview,
     },
   );
   return { snapshot, style, palette, readValue };
@@ -171,7 +176,7 @@ function printPalette(
   request: ChartExportRenderRequest,
 ): ChartPalette {
   const coloredDetails = request.colorMode === "colored-details";
-  const blackArray = (values: string[]) => values.map(() => PRINT_BLACK);
+  const blackArray = (values: readonly string[]) => values.map(() => PRINT_BLACK);
   return {
     ...palette,
     background: PRINT_WHITE,
@@ -189,6 +194,9 @@ function printPalette(
     textDim: PRINT_BLACK,
     textBright: PRINT_BLACK,
     fortune: PRINT_BLACK,
+    elements: coloredDetails
+      ? [...(palette.elements ?? [])]
+      : blackArray(palette.elements ?? []),
     planets: coloredDetails && request.individualBodyColors
       ? [...palette.planets]
       : blackArray(palette.planets),
@@ -421,6 +429,7 @@ function drawSurfaceOverlays(
   style: WheelRenderStyle,
   width: number,
   height: number,
+  request: ChartExportRenderRequest,
 ) {
   const primary = snapshot.primaryChart;
   const display = snapshot.comparisonChart ?? primary;
@@ -432,11 +441,7 @@ function drawSurfaceOverlays(
   const metrics = style.overlays;
   const overlay = resolveWheelOverlayMetrics(metrics, { width, height });
   const maxRadius = overlay.chartSize / 2;
-  const profile: WheelTypographyProfile = primary.options.theme === 2
-    ? "anglo"
-    : primary.options.theme === 1
-      ? "compact"
-      : "classic";
+  const profile: WheelTypographyProfile = wheelTypographyProfileForTheme(primary.options.theme);
   const fontUi = style.typography.families.ui;
   const fontSymbols = style.typography.families.symbols;
   const resolvePaint = (
@@ -444,19 +449,28 @@ function drawSurfaceOverlays(
     defaults: Parameters<typeof resolveWheelTypographyPaint>[4],
   ) => resolveWheelTypographyPaint(style, profile, classId, maxRadius, defaults);
 
-  if (corner.options.showInformation) {
+  const topPaint = resolvePaint("chartOverlay.information.topLeft", {
+    font: fontUi,
+    size: overlay.infoFontSize,
+    color: palette.textDim,
+  });
+  let watermarkY = overlay.topEdgeInset;
+  let watermarkWidth = width - 2 * overlay.edgeInset;
+  if (request.includeOverlays && corner.options.showInformation) {
     const topLines = radixOverlayTopLeftLines(corner, snapshot.radixChart);
-    const topPaint = resolvePaint("chartOverlay.information.topLeft", {
-      font: fontUi,
-      size: overlay.infoFontSize,
-      color: palette.textDim,
-    });
     drawCornerLines(
       draw, topLines, overlay.edgeInset, overlay.topEdgeInset, "left",
       topPaint, metrics.cornerLineHeight, metrics.infoGap,
     );
+    if (topLines.length) {
+      watermarkWidth = Math.max(topPaint.size, ...topLines.map((line) =>
+        draw.textsize(line, overlayTextOptions(topPaint))[0]));
+      watermarkY += topLines.length * topPaint.size * metrics.cornerLineHeight
+        + Math.max(0, topLines.length - 1) * metrics.infoGap
+        + topPaint.size * 0.3;
+    }
     const bottomLines = corner.meta.cornerLines?.bottomLeft ?? [corner.meta.place, corner.meta.placeCoords];
-    const bottomPaint = resolvePaint("chartOverlay.information.bottomLeft", {
+    const bottomPaint = resolvePaint(informationCornerClass(corner, "bottomLeft"), {
       font: fontUi,
       size: overlay.infoFontSize,
       color: palette.textDim,
@@ -468,6 +482,20 @@ function drawSurfaceOverlays(
       "left", bottomPaint, metrics.cornerLineHeight, metrics.infoGap,
     );
   }
+
+  if (request.kind === "png") {
+    drawPngWatermark(draw.ctx, width, request.watermarkLabel, {
+      x: overlay.edgeInset,
+      y: watermarkY,
+      size: topPaint.size * 1.15,
+      font: topPaint.font,
+      monochrome: request.colorMode === "monochrome",
+      style: request.watermarkStyle,
+      color: palette.textBright,
+      maxWidth: watermarkWidth,
+    });
+  }
+  if (!request.includeOverlays) return;
 
   if (display.options.showHouseSystem) {
     const lines = display.meta.houseSystemLines ?? [];
@@ -639,11 +667,13 @@ export async function renderChartSurfaceExport(
   viewport: { width: number; height: number },
   request: ChartExportRenderRequest,
   clickAspectState?: ClickAspectState,
+  geometryPreview?: WheelGeometryPresetInput["preview"],
 ): Promise<ChartExportRenderResult> {
+  if (request.kind === "png") await preparePngWatermark(request.watermarkStyle);
   const size = request.kind === "pdf"
     ? { width: PDF_EXPORT_WIDTH, height: PDF_EXPORT_HEIGHT }
     : exportDimensions();
-  const screen = resolveScreenStyle(chart, theme);
+  const screen = resolveScreenStyle(chart, theme, geometryPreview);
   const usesPrintAppearance = request.kind === "pdf" || request.colorMode !== "screen";
   const palette = usesPrintAppearance
     ? printPalette(screen.palette, request)
@@ -653,12 +683,14 @@ export async function renderChartSurfaceExport(
     ? printSnapshot(screen.snapshot, palette, request)
     : screen.snapshot;
   const dpr = request.kind === "png" ? PNG_EXPORT_DPR : PDF_EXPORT_DPR;
+  const chartSize = Math.min(size.width, size.height)
+    / resolveChartOuterPaintEnvelopeScale(snapshot, style);
   const layers = (["fill", "geometry", "dynamic", "outer-label"] as const).map((layer) => {
     const item = canvasLayer(size.width, size.height, style.typography.families.ui, dpr);
     drawSnapshotLayer(item.draw, snapshot, layer, {
       width: size.width,
       height: size.height,
-      chartSize: Math.min(size.width, size.height),
+      chartSize,
       renderStyle: style,
       geometryOwnsBackground: false,
       ...(layer === "dynamic" ? { clickAspectState } : {}),
@@ -676,8 +708,8 @@ export async function renderChartSurfaceExport(
     output.draw.ctx.drawImage(item.canvas, 0, 0, size.width, size.height);
     output.draw.ctx.restore();
   }
-  if (request.includeOverlays) {
-    drawSurfaceOverlays(output.draw, snapshot, style, size.width, size.height);
+  if (request.includeOverlays || request.kind === "png") {
+    drawSurfaceOverlays(output.draw, snapshot, style, size.width, size.height, request);
   }
   if (request.kind === "pdf") {
     applyPdfRasterTreatment(output.canvas, request);

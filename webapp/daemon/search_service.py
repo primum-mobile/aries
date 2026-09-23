@@ -970,6 +970,82 @@ class TransitSearchService:
             "timeDisplay": time_display,
         }
 
+    def start_month_export(self, chrt, payload: dict[str, Any], *, custom_points=None) -> dict:
+        """Complete calendar-month report, isolated from retained list/Search jobs."""
+        year, month = int(payload["year"]), int(payload["month"])
+        start = datetime.date(year, month, 1)
+        end = datetime.date(year, month, calendar.monthrange(year, month)[1])
+        techniques = {
+            "direct": [searchquery.SearchQuery.TECHNIQUE_TRANSITS],
+            "converse": [searchquery.SearchQuery.TECHNIQUE_CONVERSE_TRANSITS],
+            "both": [searchquery.SearchQuery.TECHNIQUE_TRANSITS,
+                     searchquery.SearchQuery.TECHNIQUE_CONVERSE_TRANSITS],
+        }
+        direction = str(payload.get("direction", "direct"))
+        if direction not in techniques:
+            raise ValueError("invalid transit export direction")
+        catalog = searchcatalog.SearchCatalog(chrt, custom_points=custom_points)
+        query = self._query_from_payload(catalog, {
+            "techniques": techniques[direction],
+            "promittorIds": payload.get("promittorIds", []),
+            "significatorIds": payload.get("significatorIds", []),
+            "aspects": payload.get("aspects", []),
+            "includeSignChanges": False,
+        })
+        display_clock = table_event_clock(chart_snapshot_service.options)
+        display_options = effective_display_options(chart_snapshot_service.options)
+        time_display = display_clock.metadata(
+            mtexts.txts.get("Time", "Time"),
+            offsets=display_clock.offsets_for_range(start, end),
+        )
+        owner = {"documentId": payload.get("documentId"), "ownerScope": "transit-month-export"}
+        job = _SearchJob(uuid.uuid4().hex, self._owner_key(owner), time_display)
+        self._remember_job(job)
+        self._search_executor.submit(
+            self._run_month_export_job, job, catalog, chrt, query,
+            start, end, display_clock, display_options,
+        )
+        return job.snapshot()
+
+    def _run_month_export_job(
+        self, job, catalog, chrt, query, start, end, display_clock, display_options,
+    ) -> None:
+        try:
+            if job.is_cancelled():
+                return
+            rows = []
+            if query.get_combination_count():
+                # Search dates are UT; include neighboring dates, then select the
+                # exact displayed civil month after finalizing event instants.
+                scan_start = start - datetime.timedelta(days=1) if start > datetime.date.min else start
+                scan_end = end + datetime.timedelta(days=1) if end < datetime.date.max else end
+                for _phase, rows, truncated in searchbackend.search_progress(
+                    catalog, chrt, query, scan_start, scan_end, None,
+                ):
+                    if job.is_cancelled():
+                        return
+                    if truncated:
+                        raise RuntimeError("incomplete transit month export")
+            serialized = self._serialize_rows(
+                rows, catalog, chrt, display_clock=display_clock,
+                display_options=display_options,
+            )
+            month_prefix = start.isoformat()[:7] + "-"
+            serialized = [row for row in serialized if row["displayDatetime"].startswith(month_prefix)]
+            for row in serialized:
+                aspect_index = searchbackend.ASPECT_INDEX_BY_ID.get(row["aspect"])
+                if aspect_index is not None:
+                    row["metadata"]["aspect_export_symbol_text"] = common.aspect_text_export_mark(aspect_index)
+            if job.is_cancelled():
+                return
+            job.update(
+                rows=serialized, truncated=False,
+                summary=self._summary_text(serialized, False), phase="",
+            )
+            job.finish()
+        except Exception as exc:
+            job.fail(str(exc))
+
     def search_transits(
         self,
         chrt,
@@ -1170,6 +1246,18 @@ class TransitSearchService:
                         include_temporal=include_temporal,
                         include_orb_temporal=include_orb_temporal,
                     )
+                    # Publish exact civil coverage, not the rounded month span
+                    # used by scrolling. Export may reuse only a whole month.
+                    first = self._parse_date(cursor.get("coverageFrom"))
+                    last = self._parse_date(cursor.get("coverageTo"))
+                    if first is not None and last is not None and last < datetime.date.max:
+                        exclusive_end = last + datetime.timedelta(days=1)
+                        cursor = {**cursor,
+                            "displayCoverageFrom": display_clock.display(
+                                (first.year, first.month, first.day, 0, 0, 0)).iso,
+                            "displayCoverageTo": display_clock.display(
+                                (exclusive_end.year, exclusive_end.month, exclusive_end.day, 0, 0, 0)).iso,
+                        }
                     job.update(
                         rows=serialized,
                         truncated=truncated,
@@ -1276,6 +1364,18 @@ class TransitSearchService:
         query.set_significator_ids(
             self._valid_ids(catalog, payload.get("significatorIds"), can_significator=True)
         )
+        if query.techniques and set(query.techniques).issubset({
+            searchquery.SearchQuery.TECHNIQUE_TRANSITS,
+            searchquery.SearchQuery.TECHNIQUE_CONVERSE_TRANSITS,
+        }):
+            query.set_promittor_ids([
+                oid for oid in query.promittor_ids
+                if searchcatalog.transit_point_role(catalog.get(oid), "promittor") == "supported"
+            ])
+            query.set_significator_ids([
+                oid for oid in query.significator_ids
+                if searchcatalog.transit_point_role(catalog.get(oid), "significator") == "supported"
+            ])
         query.set_aspects(self._valid_aspects(payload.get("aspects")))
         query.set_include_sign_changes(bool(payload.get("includeSignChanges", False)))
         query.set_object_motion_filters(payload.get("objectMotionFilters") or {})
@@ -1662,11 +1762,17 @@ class TransitSearchService:
             "planetIndex": obj.planet_index,
             "canPromittor": bool(obj.can_promittor),
             "canSignificator": bool(obj.can_significator),
+            "transitRoles": {
+                role: searchcatalog.transit_point_role(obj, role)
+                for role in ("promittor", "significator")
+            },
             "glyph": self._object_glyph(obj),
             "glyphFont": self._object_glyph_font(obj),
             "displayMarker": self._object_marker(obj),
             "displaySegments": self._object_segments(obj),
             "fixedstarCode": getattr(obj, "fixedstar_code", None),
+            "asteroidNumber": getattr(obj, "asteroid_number", None),
+            "techniqueRoles": searchcatalog.ASTEROID_SEARCH_ROLES if obj.id.startswith("asteroid:") else None,
         }
 
     @staticmethod
@@ -1677,7 +1783,7 @@ class TransitSearchService:
         if display_glyph:
             return str(display_glyph)
         if obj.planet_index is not None:
-            return common.common.get_planet_glyph(obj.planet_index)
+            return common.common.get_ephemeris_body_glyph(obj.planet_index)
         if obj.id == "point:lof":
             return common.common.fortune
         return ""
@@ -1748,6 +1854,9 @@ class TransitSearchService:
         }
         metadata["aspect_color"] = self._aspect_color(row, display_options)
         metadata["aspect_color_role"] = self._aspect_color_role(row, display_options)
+        aspect_index = searchbackend.ASPECT_INDEX_BY_ID.get(row.aspect)
+        if aspect_index is not None:
+            metadata["aspect_export_symbol_text"] = common.aspect_text_export_mark(aspect_index)
         if row.metadata.get("sign_change"):
             from_display, to_display = self._sign_change_displays(row)
             if from_display:
@@ -2055,7 +2164,7 @@ class TransitSearchService:
     def _regular_promittor_ids(catalog: searchcatalog.SearchCatalog) -> list[str]:
         return [
             oid for oid in catalog.promittor_ids
-            if oid != "planet:moon"
+            if oid != "planet:moon" and not oid.startswith("asteroid:")
             and (catalog.get(oid) is None or catalog.get(oid).family != searchcatalog.SearchObject.FAMILY_FIXED_STAR)
         ]
 
@@ -2064,7 +2173,7 @@ class TransitSearchService:
         return [
             oid
             for oid in catalog.promittor_ids
-            if oid not in ("planet:moon", "planet:chiron")
+            if oid not in ("planet:moon", "planet:chiron") and not oid.startswith("asteroid:")
             and (catalog.get(oid) is None or catalog.get(oid).family != searchcatalog.SearchObject.FAMILY_FIXED_STAR)
         ]
 
@@ -2073,7 +2182,7 @@ class TransitSearchService:
         return [
             oid
             for oid in catalog.builtin_significator_ids
-            if oid not in ("planet:chiron", "point:syzygy", "point:eclipse")
+            if oid not in ("planet:chiron", "point:syzygy", "point:eclipse") and not oid.startswith("asteroid:")
             and (
                 catalog.get(oid) is None
                 or catalog.get(oid).family != searchcatalog.SearchObject.FAMILY_FIXED_STAR
@@ -2084,7 +2193,7 @@ class TransitSearchService:
     def _planetary_promittor_ids(catalog: searchcatalog.SearchCatalog) -> list[str]:
         out: list[str] = []
         for oid in catalog.promittor_ids:
-            if oid == "planet:moon":
+            if oid == "planet:moon" or oid.startswith("asteroid:"):
                 continue
             obj = catalog.get(oid)
             if obj is None:
@@ -2110,7 +2219,7 @@ class TransitSearchService:
     def _planetary_significator_ids(catalog: searchcatalog.SearchCatalog) -> list[str]:
         out: list[str] = []
         for oid in catalog.builtin_significator_ids:
-            if oid == "planet:moon":
+            if oid == "planet:moon" or oid.startswith("asteroid:"):
                 continue
             obj = catalog.get(oid)
             if obj is None:

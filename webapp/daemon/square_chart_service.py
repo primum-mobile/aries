@@ -63,7 +63,7 @@ from webapp.frontend.scripts import export_chart_json
 _HSYSTEM = {
     'P': 'Placidus', 'K': 'Koch', 'R': 'Regiomontanus', 'C': 'Campanus',
     'E': 'Equal', 'W': 'Whole Sign', 'F': 'Fortune Houses', 'X': 'Axial', 'Q': 'True Ascendant', 'M': 'Morinus',
-    'H': 'Horizontal', 'T': 'Page/Polich', 'B': 'Alcabitus',
+    'H': 'Horizontal', 'T': 'Polich-Page', 'B': 'Alcabitus',
     'O': 'Porphyrius', 'N': 'Angles only',
 }
 

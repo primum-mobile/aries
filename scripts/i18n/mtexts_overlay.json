@@ -1,4 +1,52 @@
 {
+  "StyleDraftRevisionStale": {
+    "en": "The style draft changed elsewhere.",
+    "de": "Der Stilentwurf wurde an anderer Stelle geändert.",
+    "es": "El borrador de estilo se modificó en otro lugar.",
+    "fr": "Le brouillon du style a été modifié ailleurs.",
+    "it": "La bozza dello stile è stata modificata altrove.",
+    "hu": "A stílusvázlat máshol módosult.",
+    "ru": "Черновик стиля был изменён в другом месте.",
+    "zh-Hans": "样式草稿已在其他位置修改。",
+    "zh-Hant": "樣式草稿已在其他位置修改。",
+    "ko": "다른 곳에서 스타일 초안이 변경되었습니다."
+  },
+  "UntitledChartStyle": {
+    "en": "Untitled chart style",
+    "de": "Unbenannter Horoskopstil",
+    "es": "Estilo de carta sin título",
+    "fr": "Style de thème sans titre",
+    "it": "Stile del tema senza titolo",
+    "hu": "Névtelen képletstílus",
+    "ru": "Стиль карты без названия",
+    "zh-Hans": "未命名星盘样式",
+    "zh-Hant": "未命名星盤樣式",
+    "ko": "제목 없는 차트 스타일"
+  },
+  "TimedAsteroidEphemerisUnavailable": {
+    "en": "Ephemeris data is unavailable for {body} at the requested time.",
+    "de": "Für {body} sind zum angefragten Zeitpunkt keine Ephemeridendaten verfügbar.",
+    "es": "No hay datos de efemérides disponibles para {body} en el momento solicitado.",
+    "fr": "Les données d’éphémérides de {body} ne sont pas disponibles pour la date demandée.",
+    "it": "I dati delle effemeridi di {body} non sono disponibili per il momento richiesto.",
+    "hu": "A kért időpontra nem állnak rendelkezésre efemeridaadatok ehhez: {body}.",
+    "ru": "Для объекта {body} нет данных эфемерид на запрошенный момент.",
+    "zh-Hans": "{body} 在所请求的时刻没有可用的星历数据。",
+    "zh-Hant": "{body} 在所請求的時刻沒有可用的星曆資料。",
+    "ko": "요청한 시점의 {body} 천체력 데이터를 사용할 수 없습니다."
+  },
+  "TimedAsteroidTechniqueUnavailable": {
+    "en": "{body}: support for {technique} is not available yet.",
+    "de": "{body}: Die Unterstützung für {technique} ist noch nicht verfügbar.",
+    "es": "{body}: la compatibilidad con {technique} aún no está disponible.",
+    "fr": "{body} : la prise en charge de {technique} n’est pas encore disponible.",
+    "it": "{body}: il supporto per {technique} non è ancora disponibile.",
+    "hu": "{body}: a(z) {technique} támogatása még nem érhető el.",
+    "ru": "{body}: поддержка техники «{technique}» пока недоступна.",
+    "zh-Hans": "{body}：尚不支持{technique}。",
+    "zh-Hant": "{body}：尚不支援{technique}。",
+    "ko": "{body}: {technique}은(는) 아직 지원되지 않습니다."
+  },
   "_comment": "Engine/chart labels ADDED by the webapp (post-wx): chart-overlay signals (radixsignals.py) + table column headers + legacy engine-vocab completions. Daemon-served via mtexts.txts. This file is the source of truth; mtexts.py _install_signal_overlay_texts() loads it and i18n_tool.py audits it (make i18n-check). English is the fallback; a language missing a key renders English. Add a key to 'en' + a translation, that's it. Keep {placeholders} verbatim.",
   "Anomalistic": {
     "en": "Anomalistic",
@@ -376,6 +424,30 @@
     "it": "Ruota Anglo",
     "ru": "Колесо «Англо»",
     "de": "Anglo-Rad"
+  },
+  "HouseWheel": {
+    "en": "House Wheel",
+    "fr": "Roue des maisons",
+    "es": "Rueda de casas",
+    "it": "Ruota delle case",
+    "ru": "Колесо домов",
+    "de": "Häuserrad",
+    "hu": "Házkerék",
+    "ko": "하우스 휠",
+    "zh-Hans": "宫位盘",
+    "zh-Hant": "宮位盤"
+  },
+  "CuspWheel": {
+    "en": "Cusp Wheel",
+    "fr": "Roue des cuspides",
+    "es": "Rueda de cúspides",
+    "it": "Ruota delle cuspidi",
+    "ru": "Колесо куспидов",
+    "de": "Häuserspitzenrad",
+    "hu": "Házcsúcskerék",
+    "ko": "하우스 커스프 휠",
+    "zh-Hans": "宫头轮",
+    "zh-Hant": "宮頭輪"
   },
   "Angular": {
     "en": "Angular",
@@ -2507,12 +2579,16 @@
     "de": "Horizontal"
   },
   "HSPagePolich": {
-    "en": "Page-Polich",
-    "fr": "Page-Polich",
-    "es": "Page-Polich",
-    "it": "Page-Polich",
-    "ru": "Пейдж-Полих",
-    "de": "Page-Polich"
+    "en": "Polich-Page",
+    "fr": "Polich-Page",
+    "es": "Polich-Page",
+    "it": "Polich-Page",
+    "ru": "Полих-Пейдж",
+    "de": "Polich-Page",
+    "hu": "Polich-Page",
+    "zh-Hans": "Polich-Page",
+    "zh-Hant": "Polich-Page",
+    "ko": "폴리치-페이지"
   },
   "HSPorphyrius": {
     "en": "Porphyrius",
@@ -4098,20 +4174,28 @@
     "de": "Positiv"
   },
   "Prenatal Syzygy": {
-    "en": "Prenatal Syzygy",
-    "fr": "Syzygie prénatale",
-    "es": "Sicigia prenatal",
-    "it": "Sizigia prenatale",
-    "ru": "Пренатальная сизигия",
-    "de": "Pränatale Syzygie"
+    "hu": "Szüzügia",
+    "de": "Syzygie",
+    "ru": "Сизигия",
+    "en": "Syzygy",
+    "it": "Sizigia",
+    "zh-Hans": "朔望",
+    "fr": "Syzygie",
+    "ko": "시저지",
+    "es": "Sicigia",
+    "zh-Hant": "朔望"
   },
   "PrenatalSyzygy": {
-    "en": "Prenatal Syzygy",
-    "fr": "Syzygie prénatale",
-    "it": "Sizigia prenatale",
-    "es": "Sicigia prenatal",
-    "ru": "Пренатальная сизигия",
-    "de": "Pränatale Syzygie"
+    "hu": "Szüzügia",
+    "de": "Syzygie",
+    "ru": "Сизигия",
+    "en": "Syzygy",
+    "it": "Sizigia",
+    "zh-Hans": "朔望",
+    "fr": "Syzygie",
+    "ko": "시저지",
+    "es": "Sicigia",
+    "zh-Hant": "朔望"
   },
   "PrimaryDirections": {
     "en": "Primary Directions",
@@ -5083,6 +5167,18 @@
     "ko": "NASA 지도",
     "zh-Hans": "NASA 图集",
     "zh-Hant": "NASA 圖集"
+  },
+  "ThemeSusanMiller": {
+    "en": "Susan Miller",
+    "fr": "Susan Miller",
+    "es": "Susan Miller",
+    "it": "Susan Miller",
+    "ru": "Сьюзан Миллер",
+    "de": "Susan Miller",
+    "hu": "Susan Miller",
+    "ko": "수전 밀러",
+    "zh-Hans": "苏珊·米勒",
+    "zh-Hant": "蘇珊·米勒"
   },
   "TLPFocusNow": {
     "en": "Focus NOW",

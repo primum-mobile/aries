@@ -17,6 +17,9 @@ export function rememberDocumentSnapshot(
   docId: string,
   snapshot: ChartRenderSnapshot,
 ): ChartRenderSnapshot {
+  for (const [peerId, peer] of Object.entries(snapshot.sideBySideSnapshots ?? {})) {
+    rememberDocumentSnapshot(peerId, peer);
+  }
   const previous = documentSnapshotCache.get(docId);
   const retained = retainStableOverlayRows(previous, snapshot);
   // Several callers push the same object into React state immediately after

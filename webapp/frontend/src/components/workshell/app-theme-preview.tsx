@@ -76,7 +76,7 @@ export function AppThemePreview({
       profileOverrides: {
         appTokens,
         chartPalette,
-        chartData: {},
+        chartData: baseTheme.chartData,
         wheelAuthoring: {},
         appAuthoring,
       },
@@ -84,6 +84,7 @@ export function AppThemePreview({
     [
       appAuthoring,
       appTokens,
+      baseTheme.chartData,
       baseTheme.mode,
       baseTheme.sourceThemeName,
       chartPalette,

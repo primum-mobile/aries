@@ -26,6 +26,14 @@ function workspaceDoc(
   } as WorkspaceDocument;
 }
 
+test("synastry is a chart launch parent", () => {
+  const synastry = workspaceDoc("pair", {
+    kind: "supplementary",
+    compoundKind: "synastry",
+  });
+  expect(findChartLaunchParent([synastry], "pair")).toBe(synastry);
+});
+
 test("chart-bearing supplementary document is its own launch parent", () => {
   const root = workspaceDoc("root", { kind: "radix" });
   const solarArc = workspaceDoc("solar-arc", {

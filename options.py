@@ -11,6 +11,7 @@ import wx
 import pickle
 import copy
 import astrology
+import asteroids as asteroid_model
 import chart
 import fontprofiles
 import primdirs
@@ -50,7 +51,7 @@ class SafeColorList(list):
 
 
 class Options:
-	APP_COLOR_TRAILER_SCHEMA_VERSION = 1
+	APP_COLOR_TRAILER_SCHEMA_VERSION = 3
 	SPECULUM_SPEED_WORDS = 'words'
 	SPECULUM_SPEED_PERCENT = 'percent'
 	SPECULUM_SPEED_DAILY = 'daily'
@@ -184,6 +185,7 @@ class Options:
 		self.def_intables = self.intables = False
 		self.def_bw = self.bw = False
 		self.def_theme = self.theme = 0
+		self.wheel_compositions = {}
 		self.def_anglo_dense_label_layout = self.anglo_dense_label_layout = self.ANGLO_DENSE_LABEL_LAYOUT_ROUTED_CUSPS
 		self.def_ascmcsize = self.ascmcsize = 5
 		self.def_tablesize = self.tablesize = 0.75
@@ -236,6 +238,8 @@ class Options:
 		self.def_pdf_include_overlays = self.pdf_include_overlays = True
 		self.def_png_chart_appearance = self.png_chart_appearance = 'screen'
 		self.def_png_include_overlays = self.png_include_overlays = True
+		self.def_png_watermark_style = self.png_watermark_style = 'kosugi'
+		self.def_png_watermark_text = self.png_watermark_text = ''
 		self.def_list_export_aspect_symbols = self.list_export_aspect_symbols = False
 		self.def_showterms = self.showterms = False
 		self.def_showdecans = self.showdecans = False
@@ -243,6 +247,8 @@ class Options:
 		self.def_showcusplessascmclabels = self.showcusplessascmclabels = True
 		# Multi-wheel-only presentation controls. These do not alter chart
 		# construction or the single/biwheel renderers.
+		self.def_showouterpositions = self.showouterpositions = False
+		self.def_showouterminutes = self.showouterminutes = True
 		self.def_multiwheel_show_positions = self.multiwheel_show_positions = True
 		self.def_multiwheel_show_minutes = self.multiwheel_show_minutes = True
 		self.def_multiwheel_sign_colors = self.multiwheel_sign_colors = False
@@ -436,6 +442,8 @@ class Options:
 		self.def_clrframe = self.clrframe = (220, 220, 221)
 		self.def_clrsigns = self.clrsigns = (215, 215, 217)
 		self.def_usezodiacelementcolors = self.usezodiacelementcolors = True
+		self.def_usezodiacelementfieldcolors = self.usezodiacelementfieldcolors = False
+		self.def_zodiacelementfieldopacity = self.zodiacelementfieldopacity = 0.2
 		self.def_clrsignelementfire = self.clrsignelementfire = (214, 82, 60)
 		self.def_clrsignelementearth = self.clrsignelementearth = (118, 146, 74)
 		self.def_clrsignelementair = self.clrsignelementair = (88, 138, 214)
@@ -655,6 +663,13 @@ class Options:
 
 		self.def_fixstars = self.fixstars.copy()
 
+		# Swiss-Ephemeris asteroid selection. Numbers are MPC catalogue numbers;
+		# the six bodies in the standard Swiss bundle remain the default set.
+		self.def_asteroids = list(asteroid_model.DEFAULT_ASTEROID_NUMBERS)
+		self.asteroids = self.def_asteroids[:]
+		self.def_asteroid_orb_conjunction = self.asteroid_orb_conjunction = 1.5
+		self.def_asteroid_orb_opposition = self.asteroid_orb_opposition = 1.5
+
 		#Profections
 		self.def_zodprof = self.zodprof = True
 		self.def_usezodprojsprof = self.usezodprojsprof = False
@@ -747,6 +762,8 @@ class Options:
 		self.def_progression_day_type = self.progression_day_type
 		self.progressed_angle_method = 0
 		self.def_progressed_angle_method = self.progressed_angle_method
+		self.solar_arc_angle_method = self.progressed_angle_method
+		self.def_solar_arc_angle_method = self.solar_arc_angle_method
 		self.solar_arc_angle_mode = 'progressed'
 		self.def_solar_arc_angle_mode = self.solar_arc_angle_mode
 		self.harmonic_chart_mode = self.HARMONIC_CHART_MODE_HARMONIC
@@ -820,6 +837,7 @@ class Options:
 				'maxOrb': 10,
 				'sortBy': 'orb',
 				'sortDirection': 'asc',
+				'phaseFilter': 'both',
 				'focusedFilterIds': [],
 				'focusMatchMode': 'or',
 				'rxFocusEnabled': False,
@@ -827,8 +845,9 @@ class Options:
 				'filterDrawerOpen': False,
 			},
 			'transitList': {
-				'selectedPromittorId': None,
-				'promittorDrawerOpen': False,
+				'selectedPointIds': None,
+				'selectedAspectIds': None,
+				'filterDrawerOpen': False,
 				'direction': 'direct',
 			},
 			'synodicList': {
@@ -876,7 +895,7 @@ class Options:
 
 # ########################################
 # Roberto change - V 7.2.0 / V 7.3.0
-		self.optionsfilestxt = ('appearance1.opt', 'appearance2.opt', 'symbols.opt', 'dignities.opt', 'triplicities.opt', 'terms.opt', 'decans.opt', 'almutenchart.opt', 'almutentopicalandparts.opt', 'ayanamsa.opt', 'colors.opt', 'housesystem.opt', 'nodes.opt', 'orbs.opt', 'primarydirs.opt', 'primarykeys.opt', 'fortune.opt', 'syzygy.opt', 'fixedstars.opt', 'profections.opt', 'firdaria.opt', 'deflocation.opt', 'pdsinchart.opt', 'languages.opt', 'autosave.opt', 'revolutions.opt', 'quickcharts.opt', 'search.opt', 'startupchart.opt', 'recentcharts.opt', 'stepalerts.opt', 'lasthordir.opt', 'workspacesidebarorder.opt', 'workspacesidebarcollapsed.opt', 'composite.opt', 'userpanel.opt', 'restoreopencharts.opt')
+		self.optionsfilestxt = ('appearance1.opt', 'appearance2.opt', 'symbols.opt', 'dignities.opt', 'triplicities.opt', 'terms.opt', 'decans.opt', 'almutenchart.opt', 'almutentopicalandparts.opt', 'ayanamsa.opt', 'colors.opt', 'housesystem.opt', 'nodes.opt', 'orbs.opt', 'primarydirs.opt', 'primarykeys.opt', 'fortune.opt', 'syzygy.opt', 'fixedstars.opt', 'profections.opt', 'firdaria.opt', 'deflocation.opt', 'pdsinchart.opt', 'languages.opt', 'autosave.opt', 'revolutions.opt', 'quickcharts.opt', 'search.opt', 'startupchart.opt', 'recentcharts.opt', 'stepalerts.opt', 'lasthordir.opt', 'workspacesidebarorder.opt', 'workspacesidebarcollapsed.opt', 'composite.opt', 'userpanel.opt', 'restoreopencharts.opt', 'asteroids.opt')
 # ########################################
 		self.factoryoptsdirtxt = self._resolve_factory_opts_dir()
 		self.optsdirtxt = self._resolve_user_opts_dir()
@@ -928,6 +947,8 @@ class Options:
 		self.compositeopt = os.path.join(self.optsdirtxt, self.optionsfilestxt[34])
 		self.userpanelopt = os.path.join(self.optsdirtxt, 'userpanel.opt')
 		self.restoreopenchartsopt = os.path.join(self.optsdirtxt, self.optionsfilestxt[36])
+		self.asteroidsopt = os.path.join(self.optsdirtxt, self.optionsfilestxt[37])
+		self.asteroid_ephe_path = os.path.join(self.optsdirtxt, 'ephemeris')
 		self.astrocartographypreferencesopt = os.path.join(
 			self.optsdirtxt,
 			'astrocartography.opt',
@@ -1062,13 +1083,22 @@ class Options:
 				app_color_trailer = pickle.load(f)
 			except Exception:
 				app_color_trailer = None
-			(self.def_clrappbackground, self.def_clrapptexts) = self._normalize_app_color_trailer(
+			(
+				self.def_clrappbackground,
+				self.def_clrapptexts,
+				self.def_usezodiacelementfieldcolors,
+				self.def_zodiacelementfieldopacity,
+			) = self._normalize_app_color_trailer(
 				app_color_trailer,
 				self.def_clrbackground,
 				self.def_clrtexts,
+				False,
+				0.2,
 			)
 			self.clrappbackground = self.def_clrappbackground
 			self.clrapptexts = self.def_clrapptexts
+			self.usezodiacelementfieldcolors = self.def_usezodiacelementfieldcolors
+			self.zodiacelementfieldopacity = self.def_zodiacelementfieldopacity
 			f.close()
 			try:
 				import chart
@@ -1114,7 +1144,14 @@ class Options:
 			pass
 		return tuple(fallback)
 
-	def _normalize_app_color_trailer(self, trailer, fallback_background, fallback_text):
+	def _normalize_app_color_trailer(
+		self,
+		trailer,
+		fallback_background,
+		fallback_text,
+		fallback_element_fields=False,
+		fallback_element_field_opacity=0.2,
+	):
 		if not isinstance(trailer, dict):
 			trailer = {}
 		try:
@@ -1123,9 +1160,21 @@ class Options:
 			schema_version = 0
 		if schema_version < 1:
 			trailer = {}
+		try:
+			element_field_opacity = float(
+				trailer.get('zodiacelementfieldopacity', fallback_element_field_opacity)
+			)
+		except Exception:
+			element_field_opacity = float(fallback_element_field_opacity)
+		if element_field_opacity != element_field_opacity:
+			element_field_opacity = float(fallback_element_field_opacity)
 		return (
 			self._normalize_app_rgb(trailer.get('clrappbackground'), fallback_background),
 			self._normalize_app_rgb(trailer.get('clrapptexts'), fallback_text),
+			trailer.get('usezodiacelementfieldcolors')
+			if isinstance(trailer.get('usezodiacelementfieldcolors'), bool)
+			else bool(fallback_element_fields),
+			min(1.0, max(0.0, element_field_opacity)),
 		)
 
 	def _app_color_trailer(self):
@@ -1133,6 +1182,10 @@ class Options:
 			'schemaVersion': self.APP_COLOR_TRAILER_SCHEMA_VERSION,
 			'clrappbackground': tuple(self.clrappbackground),
 			'clrapptexts': tuple(self.clrapptexts),
+			'usezodiacelementfieldcolors': bool(self.usezodiacelementfieldcolors),
+			'zodiacelementfieldopacity': min(
+				1.0, max(0.0, float(self.zodiacelementfieldopacity))
+			),
 		}
 
 	def _current_color_preset(self):
@@ -1140,6 +1193,8 @@ class Options:
 			'clrframe': self.clrframe,
 			'clrsigns': self.clrsigns,
 			'usezodiacelementcolors': bool(self.usezodiacelementcolors),
+			'usezodiacelementfieldcolors': bool(self.usezodiacelementfieldcolors),
+			'zodiacelementfieldopacity': self.zodiacelementfieldopacity,
 			'clrsignelementfire': self.clrsignelementfire,
 			'clrsignelementearth': self.clrsignelementearth,
 			'clrsignelementair': self.clrsignelementair,
@@ -1170,6 +1225,8 @@ class Options:
 			'clrframe': self.clrframe,
 			'clrsigns': self.clrsigns,
 			'usezodiacelementcolors': bool(self.usezodiacelementcolors),
+			'usezodiacelementfieldcolors': bool(self.usezodiacelementfieldcolors),
+			'zodiacelementfieldopacity': self.zodiacelementfieldopacity,
 			'clrsignelementfire': self.clrsignelementfire,
 			'clrsignelementearth': self.clrsignelementearth,
 			'clrsignelementair': self.clrsignelementair,
@@ -1215,6 +1272,14 @@ class Options:
 			state['clraspect'].append(defaults[i] if i < len(defaults) else defaults[-1])
 		state['useplanetcolors'] = bool(state.get('useplanetcolors', False))
 		state['usezodiacelementcolors'] = bool(state.get('usezodiacelementcolors', False))
+		state['usezodiacelementfieldcolors'] = bool(
+			state.get('usezodiacelementfieldcolors', False)
+		)
+		try:
+			field_opacity = float(state.get('zodiacelementfieldopacity', 0.2))
+		except Exception:
+			field_opacity = 0.2
+		state['zodiacelementfieldopacity'] = min(1.0, max(0.0, field_opacity))
 		return state
 
 	def _normalize_user_panel_presets(self, presets):
@@ -1285,6 +1350,9 @@ class Options:
 		sort_direction = aspect.get('sortDirection')
 		if sort_direction not in ('asc', 'desc'):
 			sort_direction = 'asc'
+		phase_filter = aspect.get('phaseFilter')
+		if phase_filter not in ('applying', 'separating', 'both'):
+			phase_filter = 'both'
 		focus_match_mode = aspect.get('focusMatchMode')
 		if focus_match_mode not in ('or', 'and'):
 			focus_match_mode = 'or'
@@ -1324,11 +1392,33 @@ class Options:
 				aspect.get('includeArabicParts')
 			)
 
-		selected_promittor_id = transit.get('selectedPromittorId')
-		if not isinstance(selected_promittor_id, str) or not selected_promittor_id.strip():
-			selected_promittor_id = None
-		else:
-			selected_promittor_id = selected_promittor_id.strip()
+		def transit_selection(field):
+			raw = transit.get(field)
+			if field == 'selectedPromittorIds' and field not in transit:
+				legacy = transit.get('selectedPromittorId')
+				if isinstance(legacy, str) and legacy.strip():
+					raw = [legacy.strip()]
+			if not isinstance(raw, (list, tuple)):
+				return None
+			# None is the standard preset; [] is an explicitly empty selection.
+			return sorted({value.strip() for value in raw if isinstance(value, str) and value.strip()})
+
+		transit_points = transit_selection('selectedPointIds')
+		if 'selectedPointIds' not in transit:
+			# Merge the previous two choosers once; the catalog resolves roles.
+			legacy_points = [transit_selection(field) for field in ('selectedPromittorIds', 'selectedSignificatorIds')]
+			if any(ids is not None for ids in legacy_points):
+				transit_points = sorted({oid for ids in legacy_points for oid in (ids or [])})
+		def point_roles(source):
+			raw = source.get('pointRoles')
+			if not isinstance(raw, dict):
+				return None
+			result = {}
+			for role in ('fromIds', 'toIds'):
+				ids = raw.get(role, [])
+				result[role] = sorted({oid.strip() for oid in ids if isinstance(oid, str) and oid.strip()}) if isinstance(ids, (list, tuple)) else []
+			return result
+
 		direction = transit.get('direction')
 		if direction not in ('direct', 'converse', 'both'):
 			direction = 'direct'
@@ -1376,6 +1466,14 @@ class Options:
 		secondary_aspect_ids = selected_ids(
 			secondary, 'aspectIds', tuple(range(12)), list(range(12)),
 		)
+		secondary_angle_ids = None
+		if secondary.get('angleIds') is not None:
+			secondary_angle_ids = selected_ids(
+				secondary, 'angleIds', ('angle:asc', 'angle:mc'), [],
+			)
+		elif 'angleIds' not in secondary and secondary_planet_ids == []:
+			# Respect a previously saved Deselect all choice.
+			secondary_angle_ids = []
 
 		vimshottari_anchor = vimshottari.get('anchor')
 		if vimshottari_anchor not in ('moon', 'ascendant'):
@@ -1408,6 +1506,7 @@ class Options:
 				'maxOrb': max_orb,
 				'sortBy': sort_by,
 				'sortDirection': sort_direction,
+				'phaseFilter': phase_filter,
 				'focusedFilterIds': focused_filter_ids,
 				'focusMatchMode': focus_match_mode,
 				'rxFocusEnabled': bool(aspect.get('rxFocusEnabled', False)),
@@ -1415,8 +1514,11 @@ class Options:
 				'filterDrawerOpen': bool(aspect.get('filterDrawerOpen', False)),
 			},
 			'transitList': {
-				'selectedPromittorId': selected_promittor_id,
-				'promittorDrawerOpen': bool(transit.get('promittorDrawerOpen', False)),
+				'selectedPointIds': transit_points,
+				'pointRoles': point_roles(transit),
+				'pointFilterSide': 'to' if transit.get('pointFilterSide') == 'to' else 'from',
+				'selectedAspectIds': transit_selection('selectedAspectIds'),
+				'filterDrawerOpen': bool(transit.get('filterDrawerOpen', any(transit.get(field, False) for field in ('promittorDrawerOpen', 'significatorDrawerOpen', 'aspectDrawerOpen')))),
 				'direction': direction,
 			},
 			'synodicList': {
@@ -1429,6 +1531,9 @@ class Options:
 			},
 			'secondaryProgressions': {
 				'planetIds': secondary_planet_ids,
+				'pointRoles': point_roles(secondary),
+				'pointFilterSide': 'to' if secondary.get('pointFilterSide') == 'to' else 'from',
+				'angleIds': secondary_angle_ids,
 				'aspectIds': secondary_aspect_ids,
 				'filterDrawerOpen': bool(
 					secondary.get('filterDrawerOpen', False) or
@@ -1551,6 +1656,7 @@ class Options:
 		self.bw = self.def_bw
 		self.theme = self.def_theme
 		self.anglo_dense_label_layout = self.def_anglo_dense_label_layout
+		self.wheel_compositions = {}
 		self.ascmcsize = self.def_ascmcsize
 		self.tablesize = self.def_tablesize
 		self.chartringthickness = self.def_chartringthickness
@@ -1586,11 +1692,15 @@ class Options:
 		self.pdf_include_overlays = self.def_pdf_include_overlays
 		self.png_chart_appearance = self.def_png_chart_appearance
 		self.png_include_overlays = self.def_png_include_overlays
+		self.png_watermark_style = self.def_png_watermark_style
+		self.png_watermark_text = self.def_png_watermark_text
 		self.list_export_aspect_symbols = self.def_list_export_aspect_symbols
 		self.showterms = self.def_showterms
 		self.showdecans = self.def_showdecans
 		self.showanglearrowheads = self.def_showanglearrowheads
 		self.showcusplessascmclabels = self.def_showcusplessascmclabels
+		self.showouterpositions = self.def_showouterpositions
+		self.showouterminutes = self.def_showouterminutes
 		self.multiwheel_show_positions = self.def_multiwheel_show_positions
 		self.multiwheel_show_minutes = self.def_multiwheel_show_minutes
 		self.multiwheel_sign_colors = self.def_multiwheel_sign_colors
@@ -1677,6 +1787,8 @@ class Options:
 		self.clrframe = self.def_clrframe
 		self.clrsigns = self.def_clrsigns
 		self.usezodiacelementcolors = self.def_usezodiacelementcolors
+		self.usezodiacelementfieldcolors = self.def_usezodiacelementfieldcolors
+		self.zodiacelementfieldopacity = self.def_zodiacelementfieldopacity
 		self.clrsignelementfire = self.def_clrsignelementfire
 		self.clrsignelementearth = self.def_clrsignelementearth
 		self.clrsignelementair = self.def_clrsignelementair
@@ -1830,6 +1942,11 @@ class Options:
 		self.fixstars = self.def_fixstars.copy()
 		self.useIndianFixstarNames = self.def_useIndianFixstarNames
 
+		#Asteroids
+		self.asteroids = self.def_asteroids[:]
+		self.asteroid_orb_conjunction = self.def_asteroid_orb_conjunction
+		self.asteroid_orb_opposition = self.def_asteroid_orb_opposition
+
 		#Profections
 		self.zodprof = self.def_zodprof
 		self.usezodprojsprof = self.def_usezodprojsprof
@@ -1885,6 +2002,7 @@ class Options:
 		self.aspectlist_prebirth_secondary_converse = self.def_aspectlist_prebirth_secondary_converse
 		self.at_reclick_behavior = self.def_at_reclick_behavior
 		self.solar_arc_angle_mode = self.def_solar_arc_angle_mode
+		self.solar_arc_angle_method = self.def_solar_arc_angle_method
 		self.harmonic_chart_mode = self.def_harmonic_chart_mode
 		self.varga_drishti_mode = self.def_varga_drishti_mode
 		self.varga_node_special_drishti = self.def_varga_node_special_drishti
@@ -2244,6 +2362,29 @@ class Options:
 				self.multiwheel_show_angle_labels = bool(pickle.load(f))
 			except Exception:
 				self.multiwheel_show_angle_labels = self.def_multiwheel_show_angle_labels
+			try:
+				from webapp.daemon.wheel_composition import validate_compositions
+				self.wheel_compositions = validate_compositions(pickle.load(f))
+			except (EOFError, ValueError, TypeError):
+				self.wheel_compositions = {}
+			try:
+				self.showouterpositions = bool(pickle.load(f))
+			except EOFError:
+				self.showouterpositions = self.def_showouterpositions
+			try:
+				self.showouterminutes = bool(pickle.load(f))
+			except EOFError:
+				self.showouterminutes = self.def_showouterminutes
+			try:
+				value = str(pickle.load(f))
+				self.png_watermark_style = value if value in ('kosugi', 'flame') else self.def_png_watermark_style
+			except (EOFError, ValueError, TypeError):
+				self.png_watermark_style = self.def_png_watermark_style
+			try:
+				value = pickle.load(f)
+				self.png_watermark_text = value.strip() if isinstance(value, str) else self.def_png_watermark_text
+			except EOFError:
+				self.png_watermark_text = self.def_png_watermark_text
 			if (
 				isinstance(self.ringorb_asteroids, bool) and
 				isinstance(self.ringorb_hybrid, bool) and
@@ -2458,10 +2599,17 @@ class Options:
 				app_color_trailer = pickle.load(f)
 			except Exception:
 				app_color_trailer = None
-			(self.clrappbackground, self.clrapptexts) = self._normalize_app_color_trailer(
+			(
+				self.clrappbackground,
+				self.clrapptexts,
+				self.usezodiacelementfieldcolors,
+				self.zodiacelementfieldopacity,
+			) = self._normalize_app_color_trailer(
 				app_color_trailer,
 				self.clrbackground,
 				self.clrtexts,
+				self.def_usezodiacelementfieldcolors,
+				self.def_zodiacelementfieldopacity,
 			)
 			self.def_clrindividual = self._normalize_clrindividual(self.def_clrindividual, fallback=self.clrindividual)
 			self.clrindividual = self._normalize_clrindividual(self.clrindividual, fallback=self.def_clrindividual)
@@ -2710,6 +2858,23 @@ class Options:
 			f.close()
 		except IOError:
 			res = False
+
+		try:
+			optfile = self.asteroidsopt
+			f = self._open_opt_for_load(optfile)
+			self.asteroids = self._normalized_asteroids(pickle.load(f))
+			self.asteroid_orb_conjunction = self._normalized_asteroid_orb(
+				pickle.load(f), self.def_asteroid_orb_conjunction)
+			self.asteroid_orb_opposition = self._normalized_asteroid_orb(
+				pickle.load(f), self.def_asteroid_orb_opposition)
+			f.close()
+		except (IOError, EOFError, TypeError, ValueError):
+			self.asteroids = self.def_asteroids[:]
+			self.asteroid_orb_conjunction = self._normalized_asteroid_orb(
+				getattr(self, 'ringorb_asteroids', self.def_asteroid_orb_conjunction),
+				self.def_asteroid_orb_conjunction,
+			)
+			self.asteroid_orb_opposition = self.def_asteroid_orb_opposition
 
 		try:
 			optfile = self.profectionsopt
@@ -3004,6 +3169,11 @@ class Options:
 				self.solar_arc_angle_mode = posfordate.solar_arc_angle_mode(pickle.load(f))
 			except Exception:
 				self.solar_arc_angle_mode = self.def_solar_arc_angle_mode
+			try:
+				self.solar_arc_angle_method = posfordate.progression_angle_method(pickle.load(f))
+			except Exception:
+				# Append-only migration: retain the previous shared calculation choice.
+				self.solar_arc_angle_method = self.progressed_angle_method
 			f.close()
 		except IOError:
 			res = False
@@ -3316,6 +3486,11 @@ class Options:
 			pickle.dump(bool(self.multiwheel_show_minutes), f)
 			pickle.dump(bool(self.multiwheel_sign_colors), f)
 			pickle.dump(bool(self.multiwheel_show_angle_labels), f)
+			pickle.dump(self.wheel_compositions, f)
+			pickle.dump(bool(self.showouterpositions), f)
+			pickle.dump(bool(self.showouterminutes), f)
+			pickle.dump(str(self.png_watermark_style), f)
+			pickle.dump(str(self.png_watermark_text), f)
 			f.close()
 			return True
 		except IOError:
@@ -3713,6 +3888,20 @@ class Options:
 			return fixstars_map.copy()
 		return self.def_fixstars.copy()
 
+	def _normalized_asteroids(self, values=None):
+		return asteroid_model.normalize_asteroid_numbers(
+			values,
+			self.def_asteroids,
+		)
+
+	@staticmethod
+	def _normalized_asteroid_orb(value, default=1.5):
+		try:
+			value = float(value)
+		except (TypeError, ValueError):
+			return float(default)
+		return value if 0.0 <= value <= 6.0 else float(default)
+
 	def _normalized_pdfixstarssel(self, selections=None, length=None):
 		values = list(selections) if selections is not None else []
 		if length is None:
@@ -3744,6 +3933,25 @@ class Options:
 		except IOError:
 			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
 			dlg.ShowModal()
+			return False
+
+	def saveAsteroids(self):
+		try:
+			optfile = self.asteroidsopt
+			f = open(optfile, 'wb')
+			self.asteroids = self._normalized_asteroids(self.asteroids)
+			pickle.dump(self.asteroids, f)
+			pickle.dump(self._normalized_asteroid_orb(
+				self.asteroid_orb_conjunction,
+				self.def_asteroid_orb_conjunction,
+			), f)
+			pickle.dump(self._normalized_asteroid_orb(
+				self.asteroid_orb_opposition,
+				self.def_asteroid_orb_opposition,
+			), f)
+			f.close()
+			return True
+		except IOError:
 			return False
 
 
@@ -3897,6 +4105,7 @@ class Options:
 			pickle.dump(self.chart_ring_zodiac, f)
 			pickle.dump(self.multiwheel_open_at_three, f)
 			pickle.dump(self.solar_arc_angle_mode, f)
+			pickle.dump(self.solar_arc_angle_method, f)
 			f.close()
 			return True
 		except IOError:
@@ -4078,6 +4287,7 @@ class Options:
 		self.saveFortune()
 		self.saveSyzygy()
 		self.saveFixstars()
+		self.saveAsteroids()
 		self.saveProfections()
 # ########################################
 # Roberto change - V 7.2.0

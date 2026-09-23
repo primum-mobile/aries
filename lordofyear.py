@@ -187,7 +187,9 @@ def _solar_return_jd_for_year(radix, year_value):
 
 def _completed_solar_years(radix, cursor_jd):
 	"""Count how many solar returns have occurred between radix birth and cursor_jd."""
-	birth_year = int(getattr(radix.time, 'origyear', radix.time.year))
+	# Return searches use the radix's UT month/day and target year. A local
+	# Dec 31 birth may already be Jan 1 UT; mixing those years miscounts cycles.
+	birth_year = int(radix.time.year)
 	elapsed = cursor_jd - radix.time.jd
 	# A self-anchored radix/horary step passes the live chart as both radix and
 	# cursor, so elapsed is exactly zero. Zero completed years is already the

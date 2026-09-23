@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { create } from "zustand";
+import { useChartEventsStore } from "./chart-events-store";
 
 import {
   subscribeWorkspaceEvents,
@@ -45,7 +46,7 @@ export type DaemonWorkspaceOptionsChange = {
   refreshMode: string;
   styleOnly: boolean;
   listDataChanged: boolean;
-  retainedListTarget?: "aspect-list" | null;
+  retainedListTarget?: "aspect-list" | "speculum" | null;
   retainedListDataKey?: string;
   /** Content identity for every option that changes Graphic Ephemeris data,
    * labels, glyphs, or retained daemon colours. */
@@ -57,6 +58,7 @@ export type DaemonWorkspaceOptionsChange = {
   schemaVersion: number;
   themeVersion: number;
   styleRevision: number;
+  wheelPresetRevision?: number;
   paletteHash: string;
   styleHash: string;
   seq: number;
@@ -89,6 +91,8 @@ export type DaemonWorkspaceState = {
   lastRetainedDataOptionsChange: DaemonWorkspaceOptionsChange | null;
   /** Latest semantic options transaction relevant to Aspect List. */
   lastAspectListOptionsChange: DaemonWorkspaceOptionsChange | null;
+  /** Latest semantic options transaction relevant to the Speculum table. */
+  lastSpeculumOptionsChange: DaemonWorkspaceOptionsChange | null;
   /** Daemon-owned display facets applied to retained source rows in memory. */
   retainedListDisplay: RetainedListDisplay;
   /** The snapshot a navigate POST returned for a stepped doc, pushed by the
@@ -138,7 +142,7 @@ export type DaemonWorkspaceState = {
     refreshMode?: string | null;
     styleOnly?: boolean;
     listDataChanged?: boolean;
-    retainedListTarget?: "aspect-list" | null;
+    retainedListTarget?: "aspect-list" | "speculum" | null;
     retainedListDataKey?: string;
     ephemerisDataKey?: string;
     retainedListDisplay?: RetainedListDisplay;
@@ -147,6 +151,7 @@ export type DaemonWorkspaceState = {
     schemaVersion: number;
     themeVersion: number;
     styleRevision: number;
+    wheelPresetRevision?: number;
     paletteHash: string;
     styleHash: string;
   }) => void;
@@ -212,6 +217,7 @@ export const useDaemonWorkspaceStore = create<DaemonWorkspaceState>()((set) => (
   lastOptionsChange: null,
   lastRetainedDataOptionsChange: null,
   lastAspectListOptionsChange: null,
+  lastSpeculumOptionsChange: null,
   retainedListDisplay: { hiddenObjectIds: [] },
   steppedSnapshot: null,
   commandSnapshot: null,
@@ -368,6 +374,11 @@ export const useDaemonWorkspaceStore = create<DaemonWorkspaceState>()((set) => (
           (!change.retainedListTarget || change.retainedListTarget === "aspect-list")
             ? optionsChange
             : state.lastAspectListOptionsChange,
+        lastSpeculumOptionsChange:
+          listDataChanged &&
+          (!change.retainedListTarget || change.retainedListTarget === "speculum")
+            ? optionsChange
+            : state.lastSpeculumOptionsChange,
         retainedListDisplay:
           isRetainedListDisplay(change.retainedListDisplay) &&
           !sameRetainedListDisplay(state.retainedListDisplay, change.retainedListDisplay)
@@ -461,6 +472,12 @@ function scheduleDeferredWorkspaceEventFlush(): void {
 function handleEvent(event: DaemonEvent): void {
   const store = useDaemonWorkspaceStore.getState();
   switch (event.type) {
+    case "chart.event-tags.changed":
+      useChartEventsStore.getState().applyTagCatalog(event.tagCatalog, event.catalogVersion);
+      break;
+    case "chart.events.changed":
+      useChartEventsStore.getState().invalidate(event.documentIds);
+      break;
     case "daemon.ready":
       recordStartupPerfOnce("daemon-ws-ready-event");
       // The socket (re)connected — resync to recover any missed deltas.
@@ -539,6 +556,7 @@ function handleEvent(event: DaemonEvent): void {
           retainedListDisplay: event.retainedListDisplay,
           inspectorDataChanged,
           langid: event.langid,
+          wheelPresetRevision: event.wheelPresetRevision,
           ...styleIdentity,
         });
         // A semantic settings change re-rendered every open chart. Profile-only

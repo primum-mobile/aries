@@ -5,6 +5,8 @@
 
 "use client";
 
+import { activateWheelStyle, flushWheelGeometry } from "@/lib/daemon/wheel-preset-sync";
+
 import {
   useCallback,
   useEffect,
@@ -49,6 +51,9 @@ import {
 import { CHART_UPPER_NAVIGATION_BAR_ENABLED } from "@/components/workshell/chart-navigation-bar-flag";
 import { WorkspaceFrame } from "@/components/workshell/workspace-frame";
 import { BrowserMenuBar } from "@/components/workshell/browser-menu-bar";
+import { SettingsWindowBridge } from "@/components/workshell/settings-window-bridge";
+import { prewarmToolWindows } from "@/lib/shell/tool-window-lifecycle";
+import { openNativeSettings, hideNativeSettings } from "@/lib/shell/settings-window";
 import { findChartLaunchParent } from "@/components/workshell/chart-launch-parent";
 import type { EditTarget } from "@/components/workshell/chart-editor-dialog";
 import {
@@ -186,8 +191,12 @@ import {
 } from "@/stores/daemon-workspace-store";
 import {
   beginWorkspaceSnapshotCommand,
+  hasPendingWorkspaceDocumentSnapshotCommand,
   hasPendingWorkspaceSnapshotCommand,
+  runWorkspaceDocumentSnapshotCommand,
   waitForWorkspaceSnapshotCommands,
+  waitForWorkspaceDocumentSnapshotCommands,
+  workspaceDocumentSnapshotCommandGeneration,
 } from "@/stores/workspace-command-snapshot-gate";
 import {
   postWorkspaceCommandFailed,
@@ -217,6 +226,7 @@ import {
   prewarmChartPickerWindowApi,
 } from "@/lib/shell/chart-picker-window";
 import { safeShellUnlisten } from "@/lib/shell/unlisten";
+import { userWheelStyleMenuEntries, wheelStyleForCommand, wheelStyleMenuChecks } from "@/lib/chart/wheel-style-menu";
 import { confirmQuit, resolveShellHost, type ShellOpenSelection } from "@/lib/shell-host";
 import {
   buildTableExportDocument,
@@ -313,11 +323,13 @@ const CHART_INDEPENDENT_COMMANDS = new Set([
   "menu.options.dignities",
   "menu.options.eclipses",
   "menu.options.fixed-stars",
+  "menu.options.asteroids",
   "menu.options.languages",
   "menu.options.nodes",
   "menu.options.orbs",
   "menu.options.primary-directions",
   "menu.options.quick-charts",
+  "menu.options.solar-arc",
   "menu.options.relationship-charts",
   "menu.options.revolutions",
   "menu.options.speculum",
@@ -407,7 +419,6 @@ const NATIVE_QUICK_DISPLAY_TOGGLES = [
   "showprenatalsyzygy",
   "showprenataleclipse",
   "positions",
-  "intables",
   "showdecans",
   "topocentric",
   "morin_antiscia",
@@ -561,8 +572,6 @@ function nativeQuickOptionPatch(command: string, opts: OptionsPayload): OptionsP
   if (value !== null) return { display: { cazimimode: Number(value) } };
   value = quickCommandValue(command, "quick.options.synodic:");
   if (value !== null) return { display: { synodicmode: Number(value) } };
-  value = quickCommandValue(command, "quick.options.layout:");
-  if (value !== null) return { display: { theme: Number(value) } };
   value = quickCommandValue(command, "quick.options.anglo-dense-label-layout:");
   if (
     value === "leader-columns" ||
@@ -584,20 +593,16 @@ function nativeQuickOptionPatch(command: string, opts: OptionsPayload): OptionsP
   }
 
   value = quickCommandValue(command, "quick.options.progressed-angle:");
-  if (value === "zodiacal") {
-    return { quickCharts: { solar_arc_angle_mode: "zodiacal" } };
+  if (value !== null && Number.isFinite(Number(value))) {
+    return { quickCharts: { progressed_angle_method: Number(value) } };
   }
-  if (value !== null) {
-    const angleMethod = Number(value);
-    if (!Number.isFinite(angleMethod)) return null;
-    return {
-      quickCharts: angleMethod === opts.quickCharts.progressed_angle_method
-        ? { solar_arc_angle_mode: "progressed" }
-        : {
-            progressed_angle_method: angleMethod,
-            solar_arc_angle_mode: "progressed",
-          },
-    };
+  value = quickCommandValue(command, "quick.options.solar-arc-angle:");
+  if (value !== null && Number.isFinite(Number(value))) {
+    return { quickCharts: { solar_arc_angle_method: Number(value) } };
+  }
+  value = quickCommandValue(command, "quick.options.solar-arc-mode:");
+  if (value === "zodiacal" || value === "progressed") {
+    return { quickCharts: { solar_arc_angle_mode: value } };
   }
   value = quickCommandValue(command, "quick.options.progression-day:");
   if (value !== null) return { quickCharts: { progression_day_type: Number(value) } };
@@ -701,7 +706,7 @@ function nativeQuickOptionCheckedStates(opts: OptionsPayload): ShellMenuCheckedS
   radio("quick.options.phasis", opts.catalog.phasisModes.map((entry) => entry.value), opts.display.phasismode);
   radio("quick.options.cazimi", opts.catalog.cazimiModes.map((entry) => entry.value), opts.display.cazimimode);
   radio("quick.options.synodic", opts.catalog.synodicModes.map((entry) => entry.value), opts.display.synodicmode);
-  radio("quick.options.layout", opts.catalog.themeLayouts.map((entry) => entry.value), opts.display.theme);
+  states.push(...wheelStyleMenuChecks(opts));
   radio(
     "quick.options.anglo-dense-label-layout",
     opts.catalog.angloDenseLabelLayouts.map((entry) => entry.value),
@@ -718,13 +723,10 @@ function nativeQuickOptionCheckedStates(opts: OptionsPayload): ShellMenuCheckedS
     "quick.options.quickcharts:timed_chart_show_radix_default",
     Boolean(opts.quickCharts.timed_chart_show_radix_default),
   );
-  radio(
-    "quick.options.progressed-angle",
-    [...opts.catalog.progressionAngleMethods.map((entry) => entry.value), "zodiacal"],
-    opts.quickCharts.solar_arc_angle_mode === "zodiacal"
-      ? "zodiacal"
-      : opts.quickCharts.progressed_angle_method,
-  );
+  radio("quick.options.progressed-angle", opts.catalog.progressionAngleMethods.map((entry) => entry.value), opts.quickCharts.progressed_angle_method);
+  radio("quick.options.solar-arc-angle", opts.catalog.progressionAngleMethods.map((entry) => entry.value), opts.quickCharts.solar_arc_angle_method);
+  radio("quick.options.solar-arc-mode", ["progressed", "zodiacal"], opts.quickCharts.solar_arc_angle_mode);
+  check("quick.options.quickcharts:aspectlist_prebirth_secondary_converse", opts.quickCharts.aspectlist_prebirth_secondary_converse);
   radio("quick.options.progression-day", opts.catalog.progressionDayTypes.map((entry) => entry.value), opts.quickCharts.progression_day_type);
   radio("quick.options.launch-mode", opts.catalog.secondaryLaunchModes.map((entry) => entry.value), opts.quickCharts.secondary_progression_launch_mode);
 
@@ -1174,6 +1176,8 @@ export function HomeClient() {
       const prewarm = () => {
         // Keep picker first-use fast, but do not create its hidden webview during the
         // initial shell/daemon readiness race.
+        void prewarmToolWindows(t("settings.title"), t("editor.titleEdit"))
+          .catch(error => console.error("[tool-window-prewarm]", error));
         prewarmChartPickerWindowApi();
         prewarmChartPickerRows(CHART_PICKER_ROWS_REFRESH_MIN_INTERVAL_MS);
       };
@@ -1388,6 +1392,9 @@ export function HomeClient() {
   const hydrateSidebarListPreferences = useWorkspaceStore(
     (s) => s.hydrateSidebarListPreferences,
   );
+  const sidebarListPreferencesHydrated = useWorkspaceStore(
+    (s) => s.sidebarListPreferencesHydrated,
+  );
   const clearAspectSelection = useWorkspaceStore((s) => s.clearAspectSelection);
   const toggleHideAllAspects = useWorkspaceStore((s) => s.toggleHideAllAspects);
   const toggleMinorOnlyAspects = useWorkspaceStore((s) => s.toggleMinorOnlyAspects);
@@ -1400,15 +1407,21 @@ export function HomeClient() {
   const setStyleEditorOpen = useFrameLayoutStore((s) => s.setStyleEditorOpen);
 
   useEffect(() => {
+    // Transit waits for these preferences before opening its first stream.
+    // A pre-startup fetch can fail permanently; use connection readiness and
+    // retry on reconnect until the saved settings have actually arrived.
+    if (daemonConnection !== "open" || sidebarListPreferencesHydrated) return;
     const controller = new AbortController();
     fetchSidebarListPreferences(controller.signal)
-      .then(hydrateSidebarListPreferences)
+      .then((preferences) => {
+        if (!controller.signal.aborted) hydrateSidebarListPreferences(preferences);
+      })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
         console.warn("[sidebar-list-preferences]", error);
       });
     return () => controller.abort();
-  }, [hydrateSidebarListPreferences]);
+  }, [daemonConnection, hydrateSidebarListPreferences, sidebarListPreferencesHydrated]);
 
   useEffect(() => {
     try {
@@ -1452,6 +1465,8 @@ export function HomeClient() {
   } | null>(null);
 
   const [editorOpen, setEditorOpen] = useState(false);
+  const [editorMounted, setEditorMounted] = useState(false);
+  if (editorOpen && !editorMounted) setEditorMounted(true);
   // Edit-chart target: null → CREATE (new chart from defaults); set → EDIT an
   // existing radix (the editor prefills from GET /api/editor/load and preserves
   // its id on save), OR a session-cursor edit (cursorDocId + cursorSeed set,
@@ -1469,6 +1484,7 @@ export function HomeClient() {
     version: 0,
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsMounted, setSettingsMounted] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTabId>("appearance");
   const [nativeQuickOptions, setNativeQuickOptions] = useState<OptionsPayload | null>(null);
   const [importResult, setImportResult] = useState<{
@@ -1498,9 +1514,13 @@ export function HomeClient() {
       });
   }, [tf]);
   const openSettings = useCallback((tab: SettingsTabId = "appearance") => {
-    setSettingsInitialTab(tab);
-    setSettingsOpen(true);
-  }, []);
+    void openNativeSettings(tab, t("settings.title")).then((native) => {
+      if (native) return;
+      setSettingsMounted(true);
+      setSettingsInitialTab(tab);
+      setSettingsOpen(true);
+    }).catch(error => console.error("[settings-window-open]", error));
+  }, [t]);
   const selectSemanticProfileFromSettings = useCallback(async (profileId: string) => {
     let canonicalPayload: CorpusSemanticProfilesPayload | null = null;
     const committed = await runSemanticProfileSelection(profileId, (payload) => {
@@ -1517,6 +1537,7 @@ export function HomeClient() {
   );
   const openStyleLab = useCallback(() => {
     setSettingsOpen(false);
+    void hideNativeSettings().catch(error => console.error("[settings-window-hide]", error));
     closeAllRightPanes();
     closeInspectorAndNotes();
     setStyleEditorOpen(true);
@@ -1816,6 +1837,18 @@ export function HomeClient() {
     void syncShellMenuChecked(nativeQuickOptionCheckedStates(nativeQuickOptions));
   }, [nativeQuickOptions]);
 
+  const wheelMenuEntries = nativeQuickOptions ? JSON.stringify(userWheelStyleMenuEntries(nativeQuickOptions)) : null;
+  const wheelMenuCatalog = nativeQuickOptions ? JSON.stringify(nativeQuickOptions.catalog.wheelStyles ?? []) : null;
+  useEffect(() => {
+    if (daemonConnection !== 'open' || wheelMenuEntries == null) return;
+    void resolveShellHost().syncWheelStyles(JSON.parse(wheelMenuEntries))
+      .catch(error => console.error('[wheel-style-menu]', error));
+  }, [daemonConnection, wheelMenuEntries]);
+  useEffect(() => {
+    if (daemonConnection !== 'open' || wheelMenuCatalog == null) return;
+    void refreshWorkspaceManifest().catch(error => console.error('[wheel-style-catalog]', error));
+  }, [daemonConnection, wheelMenuCatalog]);
+
   const revealKeyHints = useCallback(
     (options: { manual?: boolean; placement?: "top" | "bottom" } = {}) => {
       if (!CHART_UPPER_NAVIGATION_BAR_ENABLED && options.placement === "top") return;
@@ -1947,7 +1980,9 @@ export function HomeClient() {
     void load
       .then((opts) => {
         const presetName = quickCommandValue(command, "quick.options.theme-preset:");
-        if (presetName !== null) return applyThemePreset(presetName);
+        if (presetName !== null) return flushWheelGeometry().then(() => applyThemePreset(presetName));
+        const wheel = wheelStyleForCommand(command, opts);
+        if (wheel) return activateWheelStyle(wheel.id, wheel.layout).then(() => fetchOptions());
         const patch = nativeQuickOptionPatch(command, opts);
         if (!patch) return null;
         return patchOptions(patch);
@@ -2916,6 +2951,7 @@ export function HomeClient() {
       ) => {
         steppingRef.current = true;
         const stepGeneration = ++stepGenerationRef.current;
+        let documentCommandGenerationAtRequest: number | null = null;
         let publishedStepSnapshot: ChartRenderSnapshot | null = null;
         // Activation may have queued a first-full-overlay completion for this
         // same document. The step now owns its partial -> full lifecycle, so
@@ -2935,14 +2971,26 @@ export function HomeClient() {
         // newer step response.
         settleRequestRef.current?.abort();
         settleRequestRef.current = null;
-        void workspaceNavigateKey(targetDocId, k, shift, alt, repeat)
+        const startNavigationRequest = () => {
+          documentCommandGenerationAtRequest =
+            workspaceDocumentSnapshotCommandGeneration(targetDocId);
+          return workspaceNavigateKey(targetDocId, k, shift, alt, repeat);
+        };
+        const navigationRequest = hasPendingWorkspaceDocumentSnapshotCommand(targetDocId)
+          ? waitForWorkspaceDocumentSnapshotCommands(targetDocId).then(startNavigationRequest)
+          : startNavigationRequest();
+        void navigationRequest
           .then(async (res) => {
             // Start transport as soon as the preceding response is published,
             // then hold only this publication until the preceding snapshot has
             // had a presentation boundary. Requests and frames overlap while
             // daemon mutations and visible snapshots remain strictly ordered.
             await priorPresentation;
-            if (stepGeneration !== stepGenerationRef.current) {
+            if (
+              stepGeneration !== stepGenerationRef.current ||
+              documentCommandGenerationAtRequest !==
+                workspaceDocumentSnapshotCommandGeneration(targetDocId)
+            ) {
               recordChartStepInputsWithoutBoundary(stepInputIds, "superseded");
               return;
             }
@@ -3045,6 +3093,12 @@ export function HomeClient() {
             if (!paintsSnapshot) {
               return;
             }
+            if (
+              documentCommandGenerationAtRequest !==
+              workspaceDocumentSnapshotCommandGeneration(targetDocId)
+            ) {
+              return;
+            }
             const armSettle = () => {
               if (settleFrameRef.current != null) {
                 window.cancelAnimationFrame(settleFrameRef.current);
@@ -3058,6 +3112,8 @@ export function HomeClient() {
                   settleFrameRef.current = null;
                   if (
                     stepGeneration !== stepGenerationRef.current ||
+                    documentCommandGenerationAtRequest !==
+                      workspaceDocumentSnapshotCommandGeneration(targetDocId) ||
                     steppingRef.current ||
                     pendingStepsRef.current.length > 0 ||
                     heldStepEnvelopesRef.current.size > 0
@@ -3472,6 +3528,8 @@ export function HomeClient() {
           const request: ChartExportRenderRequest = kind === "png"
             ? {
                 kind,
+                watermarkLabel: nativeQuickOptions?.export.pngWatermarkText || tf("chartExport.watermark", "aries.sh"),
+                watermarkStyle: nativeQuickOptions?.export.pngWatermarkStyle ?? "kosugi",
                 output,
                 colorMode: nativeQuickOptions?.export.pngChartAppearance ?? "screen",
                 rasterPreset: "clean",
@@ -3483,6 +3541,8 @@ export function HomeClient() {
               }
             : await fetchOptions().then((opts) => ({
                 kind,
+                watermarkLabel: opts.export.pngWatermarkText || tf("chartExport.watermark", "aries.sh"),
+                watermarkStyle: opts.export.pngWatermarkStyle,
                 output,
                 colorMode: opts.export.pdfChartColorMode,
                 rasterPreset: opts.export.pdfChartRasterPreset,
@@ -3977,18 +4037,28 @@ export function HomeClient() {
   const handleHarmonicNumberChange = useCallback((harmonicNumber: number) => {
     const documentId = activeHarmonicDocumentId;
     if (!documentId || activeHarmonicFeatureKind !== "harmonic") return;
-    const finishSnapshotCommand = beginWorkspaceSnapshotCommand();
-    void executeWorkspaceContextMenuAction("workspace.set_harmonic_number", {
+    const projectionMode = activeHarmonicProjectionMode;
+    if (!projectionMode) return;
+    void runWorkspaceDocumentSnapshotCommand(
       documentId,
-      harmonicNumber,
-    })
-      .then((result) => {
+      () => executeWorkspaceContextMenuAction("workspace.set_harmonic_number", {
+        documentId,
+        projectionMode,
+        harmonicNumber,
+      }),
+    )
+      .then(({ result, isLatest }) => {
+        if (!isLatest) return;
         const snapshot = result.snapshot as ChartRenderSnapshot | undefined;
         if (snapshot) pushCommandSnapshot(documentId, snapshot);
       })
-      .catch((err) => console.error("[harmonic-number]", err))
-      .finally(finishSnapshotCommand);
-  }, [activeHarmonicDocumentId, activeHarmonicFeatureKind, pushCommandSnapshot]);
+      .catch((err) => console.error("[harmonic-number]", err));
+  }, [
+    activeHarmonicDocumentId,
+    activeHarmonicFeatureKind,
+    activeHarmonicProjectionMode,
+    pushCommandSnapshot,
+  ]);
   const harmonicNavbarVisible = activeHarmonicNumber != null;
   const relationshipNavbarVisible =
     activeDoc?.compoundKind === "synastry" ||
@@ -4042,7 +4112,7 @@ export function HomeClient() {
   };
 
   return (
-    <ThemeProvider>
+    <ThemeProvider mainWindow>
       <>
         <LicenseStartupController />
         <ShellMenuListener onCommand={dispatchManifestCommand} />
@@ -4083,7 +4153,10 @@ export function HomeClient() {
           onOpenChange={setSpotlightOpen}
           onCommit={handleSpotlightCommit}
         />
-        {settingsOpen ? (
+        <SettingsWindowBridge onOptionsPatched={handleOptionsPatched}
+          onSemanticProfileSelect={selectSemanticProfileFromSettings}
+          onSemanticProfilesCommitted={publishSemanticProfilesFromSettings} />
+        {settingsMounted ? (
           <SettingsDialog
             open={settingsOpen}
             onOpenChange={setSettingsOpen}
@@ -4113,7 +4186,7 @@ export function HomeClient() {
           onImported={(summary) => setImportResult({ summary, error: null })}
           onError={(error) => setImportResult({ summary: null, error })}
         />
-        {editorOpen ? (
+        {editorOpen || editorMounted ? (
           <ChartEditorDialog
             open={editorOpen}
             onOpenChange={(open) => {
@@ -4173,7 +4246,10 @@ export function HomeClient() {
               if (!target) return;
               void runChartSaveAfterLensMirror(
                 target.documentId,
-                () => ioSaveChart({ documentId: target.documentId, collection, name }),
+                async () => {
+                  await flushDirtyNotes();
+                  return ioSaveChart({ documentId: target.documentId, collection, name });
+                },
               )
                 .then((result) => applyImmediateWorkspaceCommandResult(result, target.documentId))
                 .catch((err) => console.error("[io-save]", err));

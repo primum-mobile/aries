@@ -15,6 +15,10 @@ export function defaultAspectListSecondaryRingIncluded(mode) {
   return mode !== "arabic_parts";
 }
 
+export function isAspectListPhaseIncluded(phase, phaseFilter = "both") {
+  return phaseFilter === "both" || phase === phaseFilter;
+}
+
 function isRxFocusMotionMarker(marker) {
   return marker === "R" || marker === "SR" || marker === "SD";
 }

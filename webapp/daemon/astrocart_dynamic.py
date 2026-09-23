@@ -61,6 +61,7 @@ DYNAMIC_ROLE = {
 ASTROCART_LAYER_TRANSIT = "transit"
 ASTROCART_LAYER_PROGRESSION = "progression"
 ASTROCART_DYNAMIC_SOURCE = "canonical_supplementary"
+ASTROCART_TRANSIT_GEOMETRY_SOURCE = "map_ephemeris"
 
 
 @dataclass(frozen=True)
@@ -89,12 +90,17 @@ class DynamicAstrocartResult:
     def to_geojson(self) -> dict[str, Any]:
         """Return layer-filterable GeoJSON without changing ACG geometry."""
         payload = self.acg_result.to_geojson()
+        geometry_source = (
+            ASTROCART_TRANSIT_GEOMETRY_SOURCE
+            if self.layer.technique == astrocart_spec.TECHNIQUE_TRANSIT
+            else ASTROCART_DYNAMIC_SOURCE
+        )
         feature_metadata = {
             "astrocart_layer": self.layer_kind,
             "astrocart_technique": self.layer.technique,
             "astrocart_layer_id": self.layer_id,
             "astrocart_cursor_iso": self.layer.cursor_iso,
-            "astrocart_source": ASTROCART_DYNAMIC_SOURCE,
+            "astrocart_source": geometry_source,
             "astrocart_source_kind": self.public_kind,
             "astrocart_target_jd_ut": self.target_jd_ut,
             "astrocart_source_chart_jd_ut": self.source_chart_jd_ut,
@@ -113,7 +119,7 @@ class DynamicAstrocartResult:
                 "layer": self.layer_kind,
                 "technique": self.layer.technique,
                 "cursor_iso": self.layer.cursor_iso,
-                "source": ASTROCART_DYNAMIC_SOURCE,
+                "source": geometry_source,
                 "source_kind": self.public_kind,
                 "target_jd_ut": self.target_jd_ut,
                 "source_chart_jd_ut": self.source_chart_jd_ut,
@@ -438,6 +444,12 @@ def compute_dynamic_layer(
         point = _moving_point(record, derived_chart)
         if point is None:
             continue
+        if layer.technique == astrocart_spec.TECHNIQUE_TRANSIT:
+            # Ordinary ACG resolves bodies from the geocentric ephemeris at
+            # the map instant. A transit chart can carry observer-specific
+            # coordinates; reusing those here displaces its lines from natal
+            # ACG even when the two instants are identical.
+            point = record.acg_point
         actor_points.append(point)
         unavailable.discard(record.semantic_id)
     compute_kwargs = {

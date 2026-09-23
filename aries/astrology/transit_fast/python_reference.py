@@ -27,11 +27,13 @@ def _configure_ephemeris_context(
 	ephe_path: str | None,
 	sidereal_mode: int | None,
 	topocentric_position: tuple[float, float, float] | None,
+	sidereal_epoch: float = 0.0,
+	sidereal_offset: float = 0.0,
 ) -> None:
 	if ephe_path:
 		astrology.swe_set_ephe_path(ephe_path)
 	if sidereal_mode is not None:
-		astrology.swe_set_sid_mode(int(sidereal_mode), 0.0, 0.0)
+		astrology.swe_set_sid_mode(int(sidereal_mode), sidereal_epoch, sidereal_offset)
 	if topocentric_position is not None:
 		astrology.swe_set_topo(*topocentric_position)
 
@@ -47,6 +49,8 @@ def _atomic_ephemeris_call(function):
 			kwargs.get("ephe_path"),
 			kwargs.get("sidereal_mode"),
 			kwargs.get("topocentric_position"),
+			sidereal_epoch=kwargs.get("sidereal_epoch", 0.0),
+			sidereal_offset=kwargs.get("sidereal_offset", 0.0),
 		):
 			return function(*args, **kwargs)
 	return wrapped
@@ -462,8 +466,10 @@ def search_station_times_raw(
 	step_days: float | None = None,
 	eps_speed: float = STATION_SPEED_EPS,
 	eps_days: float = DEFAULT_EPS_DAYS,
+	sidereal_epoch: float = 0.0,
+	sidereal_offset: float = 0.0,
 ) -> list[tuple]:
-	_configure_ephemeris_context(ephe_path, sidereal_mode, topocentric_position)
+	_configure_ephemeris_context(ephe_path, sidereal_mode, topocentric_position, sidereal_epoch, sidereal_offset)
 	base_step = float(default_step_days_for_planet(planet) if step_days is None else step_days)
 	accept_speed = max(float(eps_speed) * 1000.0, 1e-6)
 	jd = float(jd_start)
@@ -499,8 +505,10 @@ def search_longitude_transits_raw(
 	step_days: float | None = None,
 	eps_deg: float = DEFAULT_EPS_DEG,
 	eps_days: float = DEFAULT_EPS_DAYS,
+	sidereal_epoch: float = 0.0,
+	sidereal_offset: float = 0.0,
 ) -> list[tuple]:
-	_configure_ephemeris_context(ephe_path, sidereal_mode, topocentric_position)
+	_configure_ephemeris_context(ephe_path, sidereal_mode, topocentric_position, sidereal_epoch, sidereal_offset)
 	base_step = float(default_step_days_for_planet(planet) if step_days is None else step_days)
 	seen = set()
 	unique_targets = []
@@ -589,8 +597,10 @@ def search_longitude_transits_batch_raw(
 	step_days: float | None = None,
 	eps_deg: float = DEFAULT_EPS_DEG,
 	eps_days: float = DEFAULT_EPS_DAYS,
+	sidereal_epoch: float = 0.0,
+	sidereal_offset: float = 0.0,
 ) -> list[tuple]:
-	_configure_ephemeris_context(ephe_path, sidereal_mode, topocentric_position)
+	_configure_ephemeris_context(ephe_path, sidereal_mode, topocentric_position, sidereal_epoch, sidereal_offset)
 	raw_hits: list[tuple] = []
 	for planet in planets:
 		raw_hits.extend(
@@ -603,6 +613,8 @@ def search_longitude_transits_batch_raw(
 				flags=flags,
 				sidereal_mode=sidereal_mode,
 				topocentric_position=topocentric_position,
+				sidereal_epoch=sidereal_epoch,
+				sidereal_offset=sidereal_offset,
 				step_days=step_days,
 				eps_deg=eps_deg,
 				eps_days=eps_days,
@@ -624,8 +636,10 @@ def search_station_times_batch_raw(
 	step_days: float | None = None,
 	eps_speed: float = STATION_SPEED_EPS,
 	eps_days: float = DEFAULT_EPS_DAYS,
+	sidereal_epoch: float = 0.0,
+	sidereal_offset: float = 0.0,
 ) -> list[tuple]:
-	_configure_ephemeris_context(ephe_path, sidereal_mode, topocentric_position)
+	_configure_ephemeris_context(ephe_path, sidereal_mode, topocentric_position, sidereal_epoch, sidereal_offset)
 	raw_hits: list[tuple] = []
 	for planet in planets:
 		raw_hits.extend(
@@ -637,6 +651,8 @@ def search_station_times_batch_raw(
 				flags=flags,
 				sidereal_mode=sidereal_mode,
 				topocentric_position=topocentric_position,
+				sidereal_epoch=sidereal_epoch,
+				sidereal_offset=sidereal_offset,
 				step_days=step_days,
 				eps_speed=eps_speed,
 				eps_days=eps_days,
@@ -659,8 +675,10 @@ def search_relative_aspects_batch_raw(
 	step_days: float | None = None,
 	eps_deg: float = DEFAULT_EPS_DEG,
 	eps_days: float = DEFAULT_EPS_DAYS,
+	sidereal_epoch: float = 0.0,
+	sidereal_offset: float = 0.0,
 ) -> list[tuple]:
-	_configure_ephemeris_context(ephe_path, sidereal_mode, topocentric_position)
+	_configure_ephemeris_context(ephe_path, sidereal_mode, topocentric_position, sidereal_epoch, sidereal_offset)
 	body_codes = [int(code) for code in body_codes]
 	specs = [(int(prom_idx), int(sig_idx), float(offset)) for prom_idx, sig_idx, offset in specs]
 	if not body_codes or not specs:

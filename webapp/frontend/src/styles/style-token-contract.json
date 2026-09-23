@@ -3,10 +3,10 @@
   "inventoryPath": "src/styles/style-token-inventory.generated.json",
   "publicManifestPath": "src/styles/style-token-public.generated.json",
   "expected": {
-    "cssTokens": 1467,
+    "cssTokens": 1491,
     "runtimeOnlyTokens": 7,
-    "externalTokens": 4,
-    "inventoryTokens": 1478
+    "externalTokens": 10,
+    "inventoryTokens": 1508
   },
   "legacyOverlay": {
     "source": "src/styles/style-tokens.ts",
@@ -324,6 +324,17 @@
   ],
   "externalTokens": [
     {
+      "name": "--available-width",
+      "default": null,
+      "class": "runtime",
+      "role": "floating-available-width",
+      "owner": "base-ui",
+      "provider": "external-base-ui",
+      "scope": "component",
+      "type": "number",
+      "unit": "px"
+    },
+    {
       "name": "--anchor-width",
       "default": null,
       "class": "runtime",
@@ -364,6 +375,61 @@
       "owner": "tailwind",
       "provider": "external-tailwind",
       "scope": "build",
+      "type": "string",
+      "unit": ""
+    },
+    {
+      "name": "--tw-inset-shadow",
+      "default": "0 0 #0000",
+      "class": "runtime",
+      "role": "tailwind-popup-shadow-composition",
+      "owner": "tailwind",
+      "provider": "external-tailwind",
+      "scope": "component",
+      "type": "string",
+      "unit": ""
+    },
+    {
+      "name": "--tw-inset-ring-shadow",
+      "default": "0 0 #0000",
+      "class": "runtime",
+      "role": "tailwind-popup-shadow-composition",
+      "owner": "tailwind",
+      "provider": "external-tailwind",
+      "scope": "component",
+      "type": "string",
+      "unit": ""
+    },
+    {
+      "name": "--tw-ring-offset-shadow",
+      "default": "0 0 #0000",
+      "class": "runtime",
+      "role": "tailwind-popup-shadow-composition",
+      "owner": "tailwind",
+      "provider": "external-tailwind",
+      "scope": "component",
+      "type": "string",
+      "unit": ""
+    },
+    {
+      "name": "--tw-ring-shadow",
+      "default": "0 0 #0000",
+      "class": "runtime",
+      "role": "tailwind-popup-shadow-composition",
+      "owner": "tailwind",
+      "provider": "external-tailwind",
+      "scope": "component",
+      "type": "string",
+      "unit": ""
+    },
+    {
+      "name": "--tw-shadow",
+      "default": "0 0 #0000",
+      "class": "runtime",
+      "role": "tailwind-popup-shadow-composition",
+      "owner": "tailwind",
+      "provider": "external-tailwind",
+      "scope": "component",
       "type": "string",
       "unit": ""
     }
@@ -982,6 +1048,7 @@
     {
       "id": "external.base-ui",
       "match": [
+        "--available-width",
         "--anchor-width",
         "--available-height",
         "--transform-origin"
@@ -999,7 +1066,12 @@
     {
       "id": "external.tailwind",
       "match": [
-        "--spacing"
+        "--spacing",
+        "--tw-inset-shadow",
+        "--tw-inset-ring-shadow",
+        "--tw-ring-offset-shadow",
+        "--tw-ring-shadow",
+        "--tw-shadow"
       ],
       "defaults": {
         "class": "runtime",

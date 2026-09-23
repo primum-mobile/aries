@@ -25,6 +25,8 @@ _PREVIEW_THEME_BY_VARIANT = {
     "round-classic": 0,
     "round-compact": 1,
     "round-anglo": 2,
+    "round-houses": 3,
+    "round-cusps": 4,
 }
 _PREVIEW_MINOR_ASPECT_INDICES = (1, 2, 4, 7, 8, 9, 11)
 
@@ -113,6 +115,8 @@ _PREVIEW_LABELS = {
     "classic": {"label": "Classic", "labelKey": "styleLab.variant.classic"},
     "compact": {"label": "Compact", "labelKey": "styleLab.variant.compact"},
     "anglo": {"label": "Anglo", "labelKey": "styleLab.variant.anglo"},
+    "houses": {"label": "Houses", "labelKey": "styleLab.variant.houses"},
+    "cusps": {"label": "Cusps", "labelKey": "styleLab.variant.cusps"},
     "mode": {"label": "Chart mode", "labelKey": "styleLab.mode.label"},
     "standard": {"label": "Standard", "labelKey": "quickopt.standard"},
     "minorAspects": {"label": "Show minor", "labelKey": "settings.showMinor"},
@@ -136,7 +140,7 @@ _PREVIEW_FIELD_DEFINITIONS = (
     {"id": "showLotOfFortuneOuterRing", "group": "points", "labelKey": "quickopt.outerRingFortunaLabel", "label": "Outer-ring Fortuna label"},
     {"id": "showVertex", "group": "points", "labelKey": "quickopt.vertex", "label": "Vertex"},
     {"id": "aspectsToVertex", "group": "points", "labelKey": "quickopt.aspectsToVertex", "label": "Aspects to Vertex"},
-    {"id": "showPrenatalSyzygy", "group": "points", "labelKey": "quickopt.prenatalSyzygy", "label": "Prenatal Syzygy"},
+    {"id": "showPrenatalSyzygy", "group": "points", "labelKey": "quickopt.prenatalSyzygy", "label": "Syzygy"},
     {"id": "showPrenatalEclipse", "group": "points", "labelKey": "settings.prenatalEclipseMarker", "label": "Prenatal eclipse marker"},
     {"id": "angleArrowheads", "group": "content", "labelKey": "settings.angleArrowheads", "label": "Angle arrowheads"},
     {"id": "cusplessAscMcLabels", "group": "content", "labelKey": "settings.cusplessAscMcLabels", "label": "AC/MC labels in cuspless charts"},
@@ -148,7 +152,7 @@ _PREVIEW_FIELD_DEFINITIONS = (
     {"id": "showCazimi", "group": "overlays", "labelKey": "quickopt.cazimi", "label": "Cazimi"},
     {"id": "eclipseOverlay", "group": "overlays", "labelKey": "quickopt.eclipseOverlay", "label": "Eclipse overlay"},
     {"id": "fixedStarsToNodes", "group": "outer", "labelKey": "quickopt.fixstarsToNodes", "label": "Fixed stars to Nodes"},
-    {"id": "fixedStarsToIntermediateCusps", "group": "outer", "labelKey": "quickopt.fixstarsToIntermediateHcs", "label": "Fixed stars to intermediate cusps"},
+    {"id": "fixedStarsToIntermediateCusps", "group": "outer", "labelKey": "quickopt.fixstarsToIntermediateHcs", "label": "Fixed stars / asteroids to intermediate cusps"},
     {"id": "fixedStarsToLotOfFortune", "group": "outer", "labelKey": "quickopt.fixstarsToFortuna", "label": "Fixed stars to Fortuna"},
     {"id": "morinAntiscia", "group": "outer", "labelKey": "quickopt.morinAntiscia", "label": "Morin antiscia"},
     {"id": "dignityBodyColors", "group": "symbols", "labelKey": "settings.useIndividualColors", "label": "Use individual body colours"},
@@ -231,13 +235,21 @@ def style_lab_preview_manifest(base_options) -> dict[str, object]:
             field_id="variant",
             group="layout",
             **_PREVIEW_LABELS["variant"],
-            default_value={0: "round-classic", 1: "round-compact", 2: "round-anglo"}.get(
+            default_value={
+                0: "round-classic",
+                1: "round-compact",
+                2: "round-anglo",
+                3: "round-houses",
+                4: "round-cusps",
+            }.get(
                 int(getattr(base_options, "theme", 0) or 0), "round-classic"
             ),
             choices=[
                 _preview_choice("round-classic", **_PREVIEW_LABELS["classic"]),
                 _preview_choice("round-compact", **_PREVIEW_LABELS["compact"]),
                 _preview_choice("round-anglo", **_PREVIEW_LABELS["anglo"]),
+                _preview_choice("round-houses", **_PREVIEW_LABELS["houses"]),
+                _preview_choice("round-cusps", **_PREVIEW_LABELS["cusps"]),
             ],
         ),
         _preview_field(

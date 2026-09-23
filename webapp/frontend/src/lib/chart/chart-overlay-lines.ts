@@ -13,6 +13,7 @@ export function radixOverlayTopLeftLines(
   ];
   const name = (radixChart?.meta.name ?? chart.meta.name).trim();
   if (
+    chart.meta.cornerLines?.pairedParticipants ||
     !chart.options.showRadixNameInCanvas ||
     chart.meta.kind === "composite" ||
     chart.meta.kind === "relationship" ||
@@ -22,4 +23,11 @@ export function radixOverlayTopLeftLines(
     return lines;
   }
   return [name, ...lines];
+}
+
+/** Paired identities share one authored typography role in every renderer. */
+export function informationCornerClass(chart: Chart, corner: "topLeft" | "bottomLeft") {
+  return chart.meta.cornerLines?.pairedParticipants || corner === "topLeft"
+    ? "chartOverlay.information.topLeft" as const
+    : "chartOverlay.information.bottomLeft" as const;
 }

@@ -1,1 +1,4 @@
 pyinstaller>=6.0
+
+# Packaging runs the localization and app regression gates in this interpreter.
+pytest>=8.0

@@ -40,6 +40,7 @@ function createHarness() {
       const ACG_PERF_MODE = true;
       let now = 0;
       let perfLastRenderAt = 0;
+      const curveRefinement = { cancel() {} };
       const activeMapMotionPhases = new Set();
       const perfState = {
         renderFrames: 0,

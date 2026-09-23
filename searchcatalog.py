@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import astrology
+import asteroids
 import fixstars
 import houses
 import planets
@@ -27,6 +28,22 @@ SIGNS = (
 	mtexts.txts['Aqu'],
 	mtexts.txts['Pis'],
 )
+
+
+# Explicit first-slice capability contract. Keep unimplemented roles visible
+# in the catalog; callers must report them rather than silently return no hits.
+ASTEROID_SEARCH_ROLES = {
+	'transits': {'promittor': 'supported', 'significator': 'supported'},
+	'converse_transits': {'promittor': 'supported', 'significator': 'supported'},
+	'secondary_directions': {'promittor': 'supported', 'significator': 'supported'},
+	'mundane_weather': {'promittor': 'supported', 'significator': 'supported'},
+	'sign_changes': {'promittor': 'supported', 'significator': 'unsupported(event_has_no_receiver)'},
+	'lunations': {'promittor': 'unsupported(luminary_event)', 'significator': 'supported'},
+	'eclipses': {'promittor': 'unsupported(luminary_event)', 'significator': 'supported'},
+	'primary_directions': {'promittor': 'unsupported(pd_speculum_adapter_pending)', 'significator': 'unsupported(pd_speculum_adapter_pending)'},
+	'profections': {'promittor': 'unsupported(derived_body_transform_pending)', 'significator': 'unsupported(derived_body_transform_pending)'},
+	'heliacal_phases': {'promittor': 'unsupported(visibility_model_pending)', 'significator': 'unsupported(event_has_no_receiver)'},
+}
 
 
 class SearchObject(object):
@@ -64,6 +81,7 @@ class SearchObject(object):
 		display_marker='',
 		display_segments=None,
 		fixedstar_code=None,
+		asteroid_number=None,
 	):
 		self.id = oid
 		self.label = label
@@ -78,6 +96,31 @@ class SearchObject(object):
 		self.display_marker = display_marker
 		self.display_segments = list(display_segments or [])
 		self.fixedstar_code = fixedstar_code
+		self.asteroid_number = asteroid_number
+
+
+# Physical transit roles are narrower than the multi-technique Search roles.
+# Fixed stars may be actors in heliacal searches, but are fixed transit targets.
+TRANSIT_POINT_ROLES = {
+	SearchObject.FAMILY_PLANET: {'promittor': 'supported', 'significator': 'supported'},
+	SearchObject.FAMILY_NODE: {'promittor': 'supported', 'significator': 'supported'},
+	SearchObject.FAMILY_ANGLE: {'promittor': 'unsupported(fixed_reference_point)', 'significator': 'supported'},
+	SearchObject.FAMILY_FORTUNE: {'promittor': 'unsupported(fixed_reference_point)', 'significator': 'supported'},
+	SearchObject.FAMILY_FIXED_STAR: {'promittor': 'unsupported(fixed_transit_target)', 'significator': 'supported'},
+	SearchObject.FAMILY_SYZYGY: {'promittor': 'unsupported(prenatal_event_target)', 'significator': 'supported'},
+	SearchObject.FAMILY_ECLIPSE: {'promittor': 'unsupported(prenatal_event_target)', 'significator': 'supported'},
+	SearchObject.FAMILY_PART: {'promittor': 'unsupported(transiting_lot_adapter_unavailable)', 'significator': 'supported'},
+	SearchObject.FAMILY_CUSTOM_POINT: {'promittor': 'unsupported(fixed_configured_target)', 'significator': 'supported'},
+}
+
+
+def transit_point_role(obj, role):
+	if obj is None:
+		return 'unsupported(point_unavailable)'
+	status = TRANSIT_POINT_ROLES.get(obj.family, {}).get(role, 'unsupported(unregistered_point_role)')
+	if status == 'supported' and not getattr(obj, 'can_' + role, False):
+		return 'unsupported(point_role_unavailable)'
+	return status
 
 
 def format_longitude(longitude):
@@ -106,6 +149,7 @@ class SearchCatalog(object):
 
 	def _build(self):
 		self._add_planetary_objects()
+		self._add_asteroid_objects()
 		self._add_fixed_points()
 		self._add_fixed_stars()
 		self._add_arabic_parts()
@@ -186,6 +230,27 @@ class SearchCatalog(object):
 			)
 
 
+	def _add_asteroid_objects(self):
+		seen = {obj.planet_index for obj in self.objects if obj.planet_index is not None}
+		for body in asteroids.iter_chart_asteroids(self.chart):
+			if body.aId in seen:
+				continue
+			seen.add(body.aId)
+			data = getattr(body, 'data', ())
+			longitude = float(data[0]) if getattr(body, 'available', True) and data else None
+			self._add_object(SearchObject(
+				'asteroid:%s' % body.aId,
+				body.name,
+				SearchObject.FAMILY_PLANET,
+				SearchObject.SOURCE_PLANET,
+				longitude,
+				planet_index=body.aId,
+				can_promittor=True,
+				can_significator=True,
+				asteroid_number=getattr(body, 'number', None),
+			))
+
+
 	def _add_fixed_points(self):
 		try:
 			asc_lon = self.chart.houses.ascmc[houses.Houses.ASC]
@@ -253,7 +318,7 @@ class SearchCatalog(object):
 			self._add_object(
 				SearchObject(
 					'point:syzygy',
-					'Prenatal Syzygy',
+					mtexts.txts['PrenatalSyzygy'],
 					SearchObject.FAMILY_SYZYGY,
 					SearchObject.SOURCE_SYZYGY,
 					syzygy_lon,

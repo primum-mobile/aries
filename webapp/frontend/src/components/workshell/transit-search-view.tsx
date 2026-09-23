@@ -85,6 +85,7 @@ import {
   rememberListPayload,
 } from "@/lib/table/payload-cache";
 import { semanticChartColor } from "@/lib/theme/semantic-color";
+import { radixPaneOwner } from "@/lib/radix-pane-state";
 import { cn } from "@/lib/utils";
 import { type ListFollowPolicy } from "@/lib/list-follow-policy";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
@@ -123,6 +124,14 @@ type SearchSortState = {
 };
 type SearchDisplay = TransitSearchRow["promDisplay"];
 type TransitSearchCacheEntry = {
+  ui?: {
+    sort: SearchSortState | null;
+    selectedRowKeys: string[];
+    filtersOpen: boolean;
+    settingsOpen: boolean;
+    scrollTop: number;
+  };
+  pending?: boolean;
   optionsSeq: number;
   catalog: TransitSearchCatalog;
   form: SearchForm;
@@ -219,6 +228,12 @@ export function TransitSearchView(props: TransitSearchViewProps) {
   } = props;
   const contextMode = props.mode === "context";
   const sourceName = props.sourceName ?? "";
+  const searchDocuments = useDaemonWorkspaceStore((state) => state.documents);
+  const radixName = React.useMemo(() => {
+    const rootId = radixPaneOwner(searchDocuments, documentId);
+    const root = searchDocuments.find((doc) => doc.documentId === rootId);
+    return root?.sourceName || root?.subtitle || "";
+  }, [searchDocuments, documentId]);
   const significatorId = contextMode ? props.significatorId ?? null : null;
   const chartRole = contextMode ? props.chartRole ?? null : null;
   const rawCustomPoints = contextMode ? props.customPoints : undefined;
@@ -253,19 +268,23 @@ export function TransitSearchView(props: TransitSearchViewProps) {
   const [rangeStream, setRangeStream] = React.useState<SearchRangeStream | null>(
     () => initialCache?.rangeStream ?? null,
   );
-  const [sort, setSort] = React.useState<SearchSortState | null>(null);
-  const [selectedRowKeys, setSelectedRowKeys] = React.useState<Set<string>>(() => new Set());
+  const [sort, setSort] = React.useState<SearchSortState | null>(() => initialCache?.ui?.sort ?? null);
+  const [selectedRowKeys, setSelectedRowKeys] = React.useState<Set<string>>(() => new Set(initialCache?.ui?.selectedRowKeys));
   const [contextRowKey, setContextRowKey] = React.useState<string | null>(null);
   const [summary, setSummary] = React.useState(initialCache?.summary ?? t("search.noResults"));
   const [catalogOptionsSeq, setCatalogOptionsSeq] = React.useState(() => (initialCache ? optionsSeq : -1));
   const [catalogLoading, setCatalogLoading] = React.useState(false);
   const [searchLoading, setSearchLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [settingsOpen, setSettingsOpen] = React.useState(false);
-  const [filtersOpen, setFiltersOpen] = React.useState(true);
+  const [settingsOpen, setSettingsOpen] = React.useState(initialCache?.ui?.settingsOpen ?? false);
+  const [filtersOpen, setFiltersOpen] = React.useState(initialCache?.ui?.filtersOpen ?? true);
   const filtersDock = useFrameLayoutStore((state) => state.searchFiltersDock);
   const setFiltersDock = useFrameLayoutStore((state) => state.setSearchFiltersDock);
-  const [rangeDraft, setRangeDraft] = React.useState({ offsetMonths: -2, rangeMonths: 12, lifetimeYears: 100 });
+  const [rangeDraft, setRangeDraft] = React.useState(() => ({
+    offsetMonths: initialCache?.catalog.defaults.defaultOffsetMonths ?? -2,
+    rangeMonths: initialCache?.catalog.defaults.defaultRangeMonths ?? 12,
+    lifetimeYears: initialCache?.catalog.defaults.lifetimeYears ?? 100,
+  }));
   const catalogRef = React.useRef<TransitSearchCatalog | null>(initialCache?.catalog ?? null);
   const searchControllerRef = React.useRef<AbortController | null>(null);
   const rangeExtendControllerRef = React.useRef<AbortController | null>(null);
@@ -277,18 +296,27 @@ export function TransitSearchView(props: TransitSearchViewProps) {
   const currentSearchSessionRef = React.useRef<string | null>(null);
   const searchRequestSeqRef = React.useRef(0);
   const settingsControllerRef = React.useRef<AbortController | null>(null);
-  const lastAutoRequestKeyRef = React.useRef("");
+  const lastAutoRequestKeyRef = React.useRef(initialCache && !initialCache.pending
+    ? buildAutoRequestKey({ contextMode, significatorId, chartRole, customPointsKey, optionsSeq, form: initialCache.form })
+    : "");
   const lastCatalogContextKeyRef = React.useRef("");
   const searchScrollerRef = React.useRef<HTMLDivElement | null>(null);
+  const retainedScrollTopRef = React.useRef(initialCache?.ui?.scrollTop ?? 0);
   const objectFilterAnchorRef = React.useRef<SearchObjectFilterAnchor | null>(null);
   const applyTimedChartOpenResult = useWorkspaceStore((s) => s.applyTimedChartOpenResult);
   const showRadix = useWorkspaceStore((s) => s.timedChartShowRadix);
 
   const rememberSearchState = React.useCallback(
     (entry: TransitSearchCacheEntry) => {
-      rememberListPayload(TRANSIT_SEARCH_CACHE, catalogContextKey, { ...entry, optionsSeq });
+      rememberListPayload(TRANSIT_SEARCH_CACHE, catalogContextKey, {
+        ...entry, optionsSeq,
+        pending: searchLoading || lastAutoRequestKeyRef.current !== buildAutoRequestKey({
+          contextMode, significatorId, chartRole, customPointsKey, optionsSeq, form: entry.form,
+        }),
+        ui: { sort, selectedRowKeys: [...selectedRowKeys], filtersOpen, settingsOpen, scrollTop: retainedScrollTopRef.current },
+      });
     },
-    [catalogContextKey, optionsSeq],
+    [catalogContextKey, optionsSeq, searchLoading, sort, selectedRowKeys, filtersOpen, settingsOpen, contextMode, significatorId, chartRole, customPointsKey],
   );
 
   React.useEffect(() => {
@@ -305,7 +333,6 @@ export function TransitSearchView(props: TransitSearchViewProps) {
   }, [rows]);
   React.useEffect(() => {
     if (!catalog || !form) return;
-    if (rangeStream && !rangeStream.coverageTo) return;
     rememberSearchState({ optionsSeq, catalog, form, rows, summary, timeDisplay, rangeStream });
   }, [catalog, form, optionsSeq, rangeStream, rememberSearchState, rows, summary, timeDisplay]);
 
@@ -356,7 +383,7 @@ export function TransitSearchView(props: TransitSearchViewProps) {
         chartRole,
         customPointsKey,
         optionsSeq,
-        form: nextForm,
+        form: options?.displayForm ?? nextForm,
       });
       const previousSessionId = currentSearchSessionRef.current;
       if (previousSessionId) {
@@ -717,10 +744,16 @@ export function TransitSearchView(props: TransitSearchViewProps) {
 
   React.useEffect(() => {
     const controller = new AbortController();
-    searchRequestSeqRef.current += 1;
-    searchControllerRef.current?.abort();
     const cachedEntry = getCachedListPayload<TransitSearchCacheEntry>(TRANSIT_SEARCH_CACHE, catalogContextKey);
     const cached = cachedEntry?.optionsSeq === optionsSeq ? cachedEntry : null;
+    if (cached && catalogOptionsSeq === optionsSeq) {
+      // A warm return uses the retained query and catalog immediately. The
+      // auto-request effect resumes an interrupted query when necessary.
+      lastCatalogContextKeyRef.current = catalogContextKey;
+      return () => controller.abort();
+    }
+    searchRequestSeqRef.current += 1;
+    searchControllerRef.current?.abort();
     queueMicrotask(() => {
       if (controller.signal.aborted) return;
       setCatalogLoading(true);
@@ -759,6 +792,7 @@ export function TransitSearchView(props: TransitSearchViewProps) {
       : fetchTransitSearchCatalog(documentId, controller.signal);
     promise
       .then((data) => {
+        if (controller.signal.aborted) return;
         const workbenchRange = data.defaults.hasSavedState
           && data.defaults.workbenchFromDate
           && data.defaults.workbenchToDate
@@ -866,8 +900,8 @@ export function TransitSearchView(props: TransitSearchViewProps) {
       form,
     });
     if (lastAutoRequestKeyRef.current === key) return;
-    lastAutoRequestKeyRef.current = key;
     const timer = window.setTimeout(() => {
+      lastAutoRequestKeyRef.current = key;
       if (canRunSearch(form)) {
         refreshRetainedSearch(form);
       } else {
@@ -1006,6 +1040,22 @@ export function TransitSearchView(props: TransitSearchViewProps) {
       else selected.add(id);
     }
     const next = { ...form, significatorIds: [...selected] };
+    prepareObjectFilterChange();
+    setForm(next);
+    saveSettings(next);
+  }, [catalog, form, prepareObjectFilterChange, saveSettings]);
+
+  const toggleAsteroids = React.useCallback((role: "promittorIds" | "significatorIds") => {
+    if (!catalog || !form) return;
+    const ids = catalog.objects.filter((obj) => obj.id.startsWith("asteroid:") &&
+      (role === "promittorIds" ? obj.canPromittor : obj.canSignificator)).map((obj) => obj.id);
+    const selected = new Set(form[role]);
+    const remove = ids.every((id) => selected.has(id));
+    for (const id of ids) {
+      if (remove) selected.delete(id);
+      else selected.add(id);
+    }
+    const next = { ...form, [role]: [...selected] };
     prepareObjectFilterChange();
     setForm(next);
     saveSettings(next);
@@ -1279,6 +1329,20 @@ export function TransitSearchView(props: TransitSearchViewProps) {
   useFixedRowHeightAnchor(searchScrollerRef, sortedRows.length, searchRowHeight, {
     syncEvent: SEARCH_VIRTUAL_SCROLL_SYNC_EVENT,
   });
+  const hasSearchForm = Boolean(catalog && form);
+  React.useLayoutEffect(() => {
+    const scroller = searchScrollerRef.current;
+    if (!scroller) return;
+    scroller.scrollTop = retainedScrollTopRef.current;
+    scroller.dispatchEvent(new Event(SEARCH_VIRTUAL_SCROLL_SYNC_EVENT));
+    const rememberScroll = () => {
+      retainedScrollTopRef.current = scroller.scrollTop;
+      const entry = getCachedListPayload<TransitSearchCacheEntry>(TRANSIT_SEARCH_CACHE, catalogContextKey);
+      if (entry?.ui) entry.ui.scrollTop = scroller.scrollTop;
+    };
+    scroller.addEventListener("scroll", rememberScroll, { passive: true });
+    return () => scroller.removeEventListener("scroll", rememberScroll);
+  }, [catalogContextKey, hasSearchForm]);
   React.useLayoutEffect(() => {
     const anchor = objectFilterAnchorRef.current;
     if (!anchor) return;
@@ -1459,6 +1523,7 @@ export function TransitSearchView(props: TransitSearchViewProps) {
           [t("search.all"), () => setSelected("promittorIds", catalog.presets.promittors.all)],
           [t("search.planets"), () => setSelected("promittorIds", catalog.presets.promittors.planets)],
           [t("search.core7"), () => setSelected("promittorIds", catalog.presets.promittors.core7)],
+          [t("chartmenu.asteroids"), () => toggleAsteroids("promittorIds")],
           [t("search.clear"), () => setSelected("promittorIds", catalog.presets.promittors.clear)],
         ]}
       />
@@ -1474,6 +1539,7 @@ export function TransitSearchView(props: TransitSearchViewProps) {
           [t("search.builtins"), () => setSelected("significatorIds", catalog.presets.significators.builtins)],
           [t("search.planets"), () => setSelected("significatorIds", catalog.presets.significators.planets)],
           [t("table.fixed_stars"), toggleFixedStarSignificators],
+          [t("chartmenu.asteroids"), () => toggleAsteroids("significatorIds")],
           [t("search.clear"), () => setSelected("significatorIds", catalog.presets.significators.clear)],
         ]}
       />
@@ -1525,6 +1591,9 @@ export function TransitSearchView(props: TransitSearchViewProps) {
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-background">
       <div className="grid gap-[var(--aries-control-gap)] border-b border-border px-[var(--aries-pane-header-compact-padding-x)] py-[var(--aries-pane-header-padding-y)]">
+        <div className="aries-search-panel-heading break-words text-sm">
+          {radixName || sourceName || catalog.sourceName}
+        </div>
         <div className="flex min-w-0 items-end gap-[var(--aries-control-gap)]">
           {onClose ? (
             <Button
@@ -1565,7 +1634,6 @@ export function TransitSearchView(props: TransitSearchViewProps) {
         </div>
         <div className="flex min-w-0 items-center justify-between gap-[var(--aries-form-field-gap)]">
           <div className="flex min-w-0 flex-1 items-center gap-[var(--aries-form-field-gap)] overflow-hidden text-[length:var(--aries-font-size-small)] text-muted-foreground">
-            <span className="min-w-0 max-w-28 truncate">{catalog.sourceName || sourceName}</span>
             {contextMode && seedGlyph ? (
               <span className="inline-flex min-w-0 shrink-0 items-center gap-[var(--aries-control-gap-compact)]">
                 <Glyph ch={seedGlyph} font={seedGlyphFont} className="text-sm" title={seedLabel} />
@@ -2230,6 +2298,13 @@ function SelectionGroup({
 }) {
   const t = useT();
   const selectedSet = React.useMemo(() => new Set(selected), [selected]);
+  const groupedItems = React.useMemo(
+    () => items.map((object) => ({
+      object,
+      group: object.id.startsWith("asteroid:") ? 1 : object.family === "fixed_star" ? 2 : 0,
+    })).sort((left, right) => left.group - right.group),
+    [items],
+  );
   return (
     <section className="grid gap-[var(--aries-form-field-gap)]">
       <GroupHeader
@@ -2256,21 +2331,28 @@ function SelectionGroup({
         />
       ) : null}
       <div className={cn("grid gap-[var(--aries-control-gap-compact)]", compact && "max-h-36 overflow-auto pr-[var(--aries-control-gap-compact)]")}>
-        {items.map((obj) => (
-          <CheckRow
-            key={obj.id}
-            checked={selectedSet.has(obj.id)}
-            label={obj.label}
-            glyph={obj.glyph}
-            glyphFont={obj.glyphFont}
-            marker={obj.displayMarker}
-            segments={obj.displaySegments}
-            meta={obj.longitudeText}
-            inlineControl={obj.id === "planet:moon" && onMoonPhaseChange ? (
-              <MoonPhaseToggle value={moonPhase ?? ""} onChange={onMoonPhaseChange} />
+        {groupedItems.map(({ object: obj, group }, index) => (
+          <React.Fragment key={obj.id}>
+            {index > 0 && group !== groupedItems[index - 1].group ? (
+              <div
+                aria-hidden="true"
+                className="mx-[var(--aries-control-gap)] my-[var(--aries-control-gap-compact)] border-t border-border/40"
+              />
             ) : null}
-            onChange={(checked) => onToggle(obj.id, checked)}
-          />
+            <CheckRow
+              checked={selectedSet.has(obj.id)}
+              label={obj.label}
+              glyph={obj.glyph}
+              glyphFont={obj.glyphFont}
+              marker={obj.displayMarker}
+              segments={obj.displaySegments}
+              meta={obj.longitudeText}
+              inlineControl={obj.id === "planet:moon" && onMoonPhaseChange ? (
+                <MoonPhaseToggle value={moonPhase ?? ""} onChange={onMoonPhaseChange} />
+              ) : null}
+              onChange={(checked) => onToggle(obj.id, checked)}
+            />
+          </React.Fragment>
         ))}
       </div>
     </section>
@@ -3553,18 +3635,23 @@ function projectTransitSearchRows(
       return false;
     }
     const lunarEvent = SEARCH_LUNAR_TECHNIQUES.has(row.technique);
+    const signIngress = row.metadata.sign_change === true;
     if (!lunarEvent && row.promittorId && !promittors.has(row.promittorId)) return false;
-    if (row.significatorId && !significators.has(row.significatorId)) return false;
+    if (!signIngress && row.significatorId && !significators.has(row.significatorId)) return false;
     if (
       row.technique !== "sign_changes"
       && !SEARCH_NON_ASPECT_TECHNIQUES.has(row.technique)
       && row.aspect
       && !aspects.has(row.aspect)
     ) return false;
-    if (!searchRowMatchesMotion(row.promittorMarker, row.promDisplay.speed_lon, form.promittorMotion)) {
+    if (!searchRowMatchesMotion(row.promittorMarker, row.promDisplay, form.promittorMotion)) {
       return false;
     }
-    if (!searchRowMatchesMotion(row.significatorMarker, row.sigDisplay.speed_lon, form.significatorMotion)) {
+    if (
+      !signIngress
+      && !(lunarEvent && form.significatorMotion === "rx")
+      && !searchRowMatchesMotion(row.significatorMarker, row.sigDisplay, form.significatorMotion)
+    ) {
       return false;
     }
     if (
@@ -3581,13 +3668,16 @@ function projectTransitSearchRows(
 
 function searchRowMatchesMotion(
   markerValue: string,
-  speedValue: unknown,
+  display: SearchDisplay,
   filter: TransitSearchMotionFilter,
 ): boolean {
   if (!filter) return true;
+  if (filter === "rx") {
+    const motion = stringValue(display.motion_marker).toUpperCase();
+    return motion === "R" || motion === "SR" || motion === "SD";
+  }
   const marker = markerValue.toUpperCase();
-  const speed = numberValue(speedValue);
-  if (filter === "rx") return marker === "R" || marker === "SR" || marker === "SD";
+  const speed = numberValue(display.speed_lon);
   return marker === "" && speed != null && speed > 0;
 }
 

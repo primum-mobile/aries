@@ -1,0 +1,19 @@
+.focusWash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, var(--aries-sidebar-row-active) 30%, transparent 100%);
+  opacity: 0;
+  animation: focusWash calc(var(--aries-motion-shell-duration) * 5) ease-in-out;
+}
+
+@keyframes focusWash {
+  from, to { opacity: 0; }
+  25%, 40% { opacity: 0.65; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .focusWash {
+    animation: none;
+  }
+}

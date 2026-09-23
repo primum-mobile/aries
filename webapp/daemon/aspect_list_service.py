@@ -144,6 +144,23 @@ _REBUILT_RELATION_ERROR_DELTA_EPSILON = 1.0e-5
 _PHYSICAL_PERFECTION_ZERO_EPSILON = 1.0e-7
 _REBUILT_PERFECTION_ZERO_EPSILON = 1.0e-5
 
+_PHYSICAL_POINT_MOTION_POLICY = {
+    # These positions belong to the source chart.  Aspect List advances the
+    # supported body toward them; it must not turn the chart frame itself into
+    # the applying endpoint or substitute a new frame at every candidate JD.
+    "angleSource": "anchor-fixed",
+    "fortune": "anchor-fixed",
+    "arabicPart": "anchor-fixed",
+    "syzygy": "anchor-fixed",
+    "eclipse": "anchor-fixed",
+}
+
+_DEFAULT_POINT_AGENCY_POLICY = {
+    # A chart angle is a receiving point unless the active symbolic technique
+    # explicitly declares its rebuilt angle to be a directed endpoint.
+    "angleSource": "receive-only",
+}
+
 # Lazy exact-date batches are always requested against the opaque context token
 # returned by ``aspect_list_payload``.  Keep that already-built row universe so
 # each viewport batch does not rebuild every endpoint, phase, and relationship
@@ -355,12 +372,23 @@ def _point_metadata(chrt, key: str, role: str, display_options) -> dict[str, Any
 
 def _motion_ref_planet_id(motion_ref: Any) -> int | None:
     """Resolve the canonical source body behind a planet-like ring point."""
+    source = _motion_ref_actor_source(motion_ref)
+    if source is None:
+        return None
+    try:
+        return int(source["bodyId"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _motion_ref_actor_source(motion_ref: Any) -> dict[str, Any] | None:
+    """Return the direct moving body represented by an endpoint trajectory."""
     ref = motion_ref if isinstance(motion_ref, dict) else {}
     for _depth in range(8):
         kind = str(ref.get("kind") or "")
         if kind in ("planet", "ephemerisBody"):
             try:
-                return int(ref["bodyId"])
+                return {"kind": kind, "bodyId": int(ref["bodyId"])}
             except (KeyError, TypeError, ValueError):
                 return None
         if kind != "projection":
@@ -632,7 +660,10 @@ def _snapshot_motion_sample(chrt, ref: dict[str, Any]) -> dict[str, Any] | None:
         return {
             "longitude": util.normalize(longitude),
             "regime": ("rebuiltAngle", key),
-            "canAct": True,
+            # Angles, including Vertex, are sensitive receiving points.  A
+            # symbolic builder may move their position, but that never makes
+            # the angle the body doing the applying.
+            "canAct": False,
             "valid": True,
         }
     if kind == "fortune":
@@ -645,7 +676,7 @@ def _snapshot_motion_sample(chrt, ref: dict[str, Any]) -> dict[str, Any] | None:
         return {
             "longitude": util.normalize(longitude),
             "regime": ("rebuiltFortune", formula_type, above),
-            "canAct": True,
+            "canAct": False,
             "valid": True,
         }
     if kind == "syzygy":
@@ -715,7 +746,7 @@ def _snapshot_motion_sample(chrt, ref: dict[str, Any]) -> dict[str, Any] | None:
         return {
             "longitude": util.normalize(longitude),
             "regime": ("rebuiltArabicPart", config_index, regime),
-            "canAct": True,
+            "canAct": False,
             "valid": True,
         }
     if kind == "fixedPoint":
@@ -770,6 +801,11 @@ def _snapshot_motion_sample(chrt, ref: dict[str, Any]) -> dict[str, Any] | None:
         try:
             for item in exporter():
                 if item.get("motionRef") == ref:
+                    actor_source = (
+                        _motion_ref_actor_source(ref)
+                        if kind == "projection"
+                        else None
+                    )
                     return {
                         "longitude": util.normalize(float(item["longitude"])),
                         "regime": (
@@ -777,7 +813,9 @@ def _snapshot_motion_sample(chrt, ref: dict[str, Any]) -> dict[str, Any] | None:
                             str(item.get("semanticId") or item.get("id") or ""),
                             repr(ref),
                         ) + ((midpoint_regime,) if kind == "midpoint" else ()),
-                        "canAct": True,
+                        "canAct": False,
+                        "canSupplyActor": actor_source is not None,
+                        "actorSource": actor_source,
                         "valid": midpoint_valid,
                     }
         except Exception:
@@ -808,7 +846,10 @@ class _RebuiltChartMotionEvaluator:
     def _chart(self, jd: float):
         key = round(float(jd), 8)
         if key not in self._chart_cache:
-            self._chart_cache[key] = self._builder(float(jd))
+            # Every continuous technique keeps its canonical builder. Trial
+            # endpoint sampling does not consume the chart's aspect tables.
+            with chart.defer_aspect_matrices():
+                self._chart_cache[key] = self._builder(float(jd))
         return self._chart_cache[key]
 
     def sample(self, ref: dict[str, Any], jd: float) -> dict[str, Any] | None:
@@ -837,12 +878,8 @@ def _role_motion_context(
         "trajectoryKind": "physical",
         "anchorJd": anchor_jd,
         "calendar": calendar,
-        # Prenatal Syzygy belongs to the chart snapshot.  Advancing the
-        # candidate date must not silently replace it with a different
-        # lunation; planets and other supported endpoints perfect against the
-        # source chart's Syzygy longitude just as they do against a fixed
-        # radix target.
-        "pointMotionPolicy": {"syzygy": "anchor-fixed", "eclipse": "anchor-fixed"},
+        "pointMotionPolicy": dict(_PHYSICAL_POINT_MOTION_POLICY),
+        "pointAgencyPolicy": dict(_DEFAULT_POINT_AGENCY_POLICY),
     }
 
 
@@ -904,10 +941,7 @@ def _relation_endpoint_is_anchor_fixed(
     ref = _endpoint_motion_ref(endpoint)
     point_policy = (motion_context or {}).get("pointMotionPolicy") or {}
     kind = str(ref.get("kind") or "") if ref else ""
-    return bool(
-        kind in ("syzygy", "eclipse")
-        and str(point_policy.get(kind) or "") == "anchor-fixed"
-    )
+    return str(point_policy.get(kind) or "") == "anchor-fixed"
 
 
 def _sample_relation_endpoint(
@@ -927,7 +961,31 @@ def _sample_relation_endpoint(
     ref = _endpoint_motion_ref(endpoint)
     if ref is None:
         return None
-    return evaluator.sample(ref, jd)
+    sample = evaluator.sample(ref, jd)
+    if sample is None:
+        return None
+    kind = str(ref.get("kind") or "")
+    if kind == "angleSource":
+        can_act = str(
+            ((motion_context or {}).get("pointAgencyPolicy") or {}).get(kind)
+            or "receive-only"
+        ) == "trajectory-actor"
+        sample = dict(sample)
+        sample["canAct"] = can_act
+        sample["canSupplyActor"] = False
+        sample["actorSource"] = None
+    elif kind in {"fortune", "arabicPart", "midpoint"}:
+        sample = dict(sample)
+        sample["canAct"] = False
+        sample["canSupplyActor"] = False
+        sample["actorSource"] = None
+    elif kind == "projection":
+        actor_source = _motion_ref_actor_source(ref)
+        sample = dict(sample)
+        sample["canAct"] = False
+        sample["canSupplyActor"] = actor_source is not None
+        sample["actorSource"] = actor_source
+    return sample
 
 
 def _relationship_state(
@@ -947,6 +1005,7 @@ def _relationship_state(
         return {
             "phase": "exact" if exact else "none",
             "actorSide": None,
+            "actorSource": None,
             "relativeSpeed": relative_speed,
         }
 
@@ -1081,13 +1140,27 @@ def _relationship_state(
         (float(right_after["longitude"]) - float(right_before["longitude"]) + 540.0) % 360.0 - 180.0
     ) / (2.0 * epsilon) if right_evolves else 0.0
     actor_candidates = []
-    if left_evolves and bool(current_left.get("canAct", True)):
-        actor_candidates.append((abs(left_speed), "left"))
-    if right_evolves and bool(current_right.get("canAct", True)):
-        actor_candidates.append((abs(right_speed), "right"))
+    for speed, side, evolves, sample in (
+        (left_speed, "left", left_evolves, current_left),
+        (right_speed, "right", right_evolves, current_right),
+    ):
+        if not evolves:
+            continue
+        if bool(sample.get("canAct", True)):
+            actor_candidates.append((abs(speed), side, None))
+            continue
+        actor_source = sample.get("actorSource")
+        if (
+            bool(sample.get("canSupplyActor", False))
+            and isinstance(actor_source, dict)
+        ):
+            actor_candidates.append((abs(speed), side, actor_source))
     if not actor_candidates:
         return unavailable(left_speed - right_speed)
-    actor_side = max(actor_candidates)[1]
+    _actor_speed, actor_side, actor_source = max(
+        actor_candidates,
+        key=lambda candidate: (candidate[0], candidate[1]),
+    )
     error_rate = (float(after_error) - float(before_error)) / (2.0 * epsilon)
     phase_metric = float(current_error) * error_rate
     if exact:
@@ -1101,6 +1174,7 @@ def _relationship_state(
     return {
         "phase": phase,
         "actorSide": actor_side,
+        "actorSource": actor_source,
         "relativeSpeed": left_speed - right_speed,
         "offset": float(offset),
     }
@@ -1262,6 +1336,7 @@ def _row(
     left_metadata: dict[str, Any] | None = None,
     right_metadata: dict[str, Any] | None = None,
     actor_side: str | None = None,
+    actor_source: dict[str, Any] | None = None,
     role_contexts: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     aspect_type = int(source["type"])
@@ -1282,6 +1357,7 @@ def _row(
         "phase": phase,
         "movingRole": moving_role,
         "actorSide": actor_side,
+        "actorSource": actor_source,
         "filterIds": list(dict.fromkeys(
             left_payload.get("filterIds", []) + right_payload.get("filterIds", [])
         )),
@@ -1349,11 +1425,12 @@ def _row_trajectory_key(
 ) -> str:
     """Stable cache identity for one exact-perfection trajectory.
 
-    The current cursor, orb, phase, and evolving endpoint longitudes are sample
-    state, not trajectory identity.  Omitting them lets the retained Aspect
-    List carry a solved perfection through ordinary time steps.  Fixed chart
-    roles remain part of the key, as do technique bindings, place/time models,
-    True Ascendant, and cusp-derived Lot inputs.
+    The current cursor, orb, phase, and genuinely evolving endpoint longitudes
+    are sample state, not trajectory identity.  Omitting them lets the retained
+    Aspect List carry a solved perfection through ordinary time steps.  Fixed
+    chart roles and trajectory-declared anchor-fixed points retain their source
+    longitude in the key, as do technique bindings, place/time models, True
+    Ascendant, and cusp-derived Lot inputs.
     """
 
     moving_role = str(row.get("movingRole") or "")
@@ -1414,11 +1491,19 @@ def _row_trajectory_key(
             "calendar": context.get("calendar"),
             "binding": binding,
             "pointMotionPolicy": context.get("pointMotionPolicy"),
+            "pointAgencyPolicy": context.get("pointAgencyPolicy"),
         })
 
     def endpoint_signature(chrt, endpoint: dict[str, Any]):
         role = str(endpoint.get("role") or "")
-        if role in evolving_roles:
+        role_evolves = role in evolving_roles
+        motion_context = _role_motion_context(role_contexts, role, chrt)
+        anchor_fixed = _relation_endpoint_is_anchor_fixed(
+            endpoint,
+            evolves=role_evolves,
+            motion_context=motion_context,
+        )
+        if role_evolves and not anchor_fixed:
             fixed_longitude = None
         else:
             try:
@@ -1447,37 +1532,72 @@ def _row_trajectory_key(
     return hashlib.sha256(repr(signature).encode("utf-8")).hexdigest()
 
 
-def _is_nonacting_target(endpoint: dict[str, Any]) -> bool:
+def _is_nonacting_target(
+    endpoint: dict[str, Any],
+    motion_context: dict[str, Any] | None = None,
+) -> bool:
     metadata = endpoint.get("metadata")
     if not isinstance(metadata, dict):
         metadata = endpoint
     motion_ref = metadata.get("motionRef") or {}
+    if (
+        str(motion_ref.get("kind") or "") == "angleSource"
+        and str(
+            ((motion_context or {}).get("pointAgencyPolicy") or {}).get(
+                "angleSource"
+            )
+            or "receive-only"
+        )
+        == "trajectory-actor"
+    ):
+        return False
+    if _motion_ref_actor_source(motion_ref) is not None:
+        return False
+    if str(motion_ref.get("kind") or "") == "projection":
+        return True
     return (
         any(
             _motion_ref_contains_kind(motion_ref, kind)
-            for kind in ("fixedPoint", "fixedStar", "syzygy", "eclipse")
+            for kind in (
+                "angleSource",
+                "fortune",
+                "arabicPart",
+                "fixedPoint",
+                "fixedStar",
+                "syzygy",
+                "eclipse",
+                "midpoint",
+            )
         )
         or str(metadata.get("family") or "") == "fixstar"
+        or (
+            str(metadata.get("objectType") or "") == "outerPoint"
+            and not motion_ref
+        )
     )
 
 
 def _directional_endpoint_capability(
     endpoint: dict[str, Any],
     directional_role: str,
+    motion_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Declare whether one endpoint can send or receive a cross-chart contact.
 
-    Syzygy, prenatal Eclipse, fixed stars, and explicitly fixed points have no
-    acting motion of their own. They remain complete members of the semantic
-    universe, but only as receiving targets. Dynamic bodies, angles, Lots, and
-    supported projections may occupy either role.
+    Physical angles (including Vertex), Lots, midpoints, Syzygy, prenatal
+    Eclipse, fixed stars, and explicitly fixed points have no acting motion of
+    their own. A symbolic technique may explicitly declare its directed angle
+    as an actor. Dynamic bodies and projections backed by one such source body
+    may occupy either role; the source body retains the agency.
     """
     if directional_role not in ("sender", "receiver"):
         return {
             "supported": False,
             "reason": f"unsupported-directional-role:{directional_role}",
         }
-    if directional_role == "sender" and _is_nonacting_target(endpoint):
+    if directional_role == "sender" and _is_nonacting_target(
+        endpoint, motion_context
+    ):
         return {"supported": False, "reason": "receive-only-point"}
     return {"supported": True, "reason": None}
 
@@ -1945,6 +2065,7 @@ def _technique_internal_rows(
                 left_metadata=left["metadata"],
                 right_metadata=right["metadata"],
                 actor_side=relationship.get("actorSide"),
+                actor_source=relationship.get("actorSource"),
                 role_contexts=role_contexts,
             )))
     return rows
@@ -1976,29 +2097,31 @@ def _technique_cross_rows(
         return None
     primary_directional_role = "sender" if reverse else "receiver"
     outer_directional_role = "receiver" if reverse else "sender"
+    primary_context = _role_motion_context(role_contexts, "primary", primary)
+    outer_context = _role_motion_context(role_contexts, "outer", outer)
     primary_endpoints = [
         endpoint
         for endpoint in primary_endpoints
         if _directional_endpoint_capability(
-            endpoint, primary_directional_role,
+            endpoint, primary_directional_role, primary_context,
         )["supported"]
     ]
     outer_endpoints = [
         endpoint
         for endpoint in outer_endpoints
         if _directional_endpoint_capability(
-            endpoint, outer_directional_role,
+            endpoint, outer_directional_role, outer_context,
         )["supported"]
     ]
     rows: list[dict[str, Any]] = []
     evaluator_cache: dict[int, aspect_motion.ChartMotionEvaluator] = {}
-    outer_context = _role_motion_context(role_contexts, "outer", outer)
     evolving_roles = {"outer"} if _role_evolves(outer_context) else set()
     anchor_jd = _motion_anchor_jd(outer_context, outer)
     for outer_endpoint in outer_endpoints:
         for primary_endpoint in primary_endpoints:
-            if _same_node_axis(outer_endpoint, primary_endpoint):
-                continue
+            # North/South are one axis only within the same chart. Across two
+            # wheels they belong to distinct chart epochs, so every configured
+            # nodal contact remains a real interchart relationship.
             asp = _technique_pair_aspect(
                 primary,
                 outer,
@@ -2049,6 +2172,7 @@ def _technique_cross_rows(
                 left_metadata=outer_endpoint["metadata"],
                 right_metadata=primary_endpoint["metadata"],
                 actor_side=relationship.get("actorSide"),
+                actor_source=relationship.get("actorSource"),
                 role_contexts=role_contexts,
             )
             if reverse:
@@ -2156,6 +2280,7 @@ def _ring_point_rows(
                 left_metadata=point,
                 right_metadata=planet,
                 actor_side=relationship.get("actorSide"),
+                actor_source=relationship.get("actorSource"),
                 role_contexts=role_contexts,
             )
             rows.append(_orient_within_chart_row(row))
@@ -2223,6 +2348,7 @@ def _internal_rows(
                 phase=str(relationship["phase"]),
                 moving_role=None,
                 actor_side=relationship.get("actorSide"),
+                actor_source=relationship.get("actorSource"),
                 role_contexts=role_contexts,
             ))
         )
@@ -2345,7 +2471,10 @@ def _cross_rows(
         outer_key = "dsc" if str(source["outer"]) == "dc" else str(source["outer"])
         inner_key = "dsc" if str(source["inner"]) == "dc" else str(source["inner"])
         sender_key = inner_key if reverse else outer_key
-        if sender_key in ("syzygy", "eclipse"):
+        if sender_key in (
+            "asc", "dsc", "mc", "ic", "vertex", "fortune", "syzygy",
+            "eclipse",
+        ):
             continue
         aspect_type = int(source["type"])
         exact = float(source.get("orb", 0.0)) <= _EXACT_CALC_ORB_DEGREES
@@ -2385,6 +2514,7 @@ def _cross_rows(
                 phase=str(relationship["phase"]),
                 moving_role="outer",
                 actor_side=actor_side,
+                actor_source=relationship.get("actorSource"),
                 role_contexts=role_contexts,
             )
         )
@@ -2550,6 +2680,9 @@ def _context_key(
                 "showaspectsforderivedpoints",
                 "showfixstars",
                 "fixstars",
+                "asteroids",
+                "asteroid_orb_conjunction",
+                "asteroid_orb_opposition",
                 "ringorb_asteroids",
                 "ringorb_midpoints",
                 "ringorb_hybrid",
@@ -2576,6 +2709,7 @@ def _context_key(
                     "calendar",
                     "binding",
                     "pointMotionPolicy",
+                    "pointAgencyPolicy",
                 )
             }
         try:
@@ -3561,13 +3695,11 @@ def _perfection_for_row(
         trajectory_kind == "physical"
         and selected_mode in ("primary", "outer")
         and any(
-            str(((exact_motion_context.get("pointMotionPolicy") or {}).get(kind)) or "")
-            == "anchor-fixed"
-            for kind in ("syzygy", "eclipse")
-        )
-        and any(
-            str((_endpoint_motion_ref(endpoint) or {}).get("kind") or "")
-            in ("syzygy", "eclipse")
+            _relation_endpoint_is_anchor_fixed(
+                endpoint,
+                evolves=True,
+                motion_context=exact_motion_context,
+            )
             for endpoint in (left, right)
         )
     )

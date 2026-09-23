@@ -1597,6 +1597,96 @@ def _current_aspect_rows(
 	return [text for _, text in rows], [item for _, item in items]
 
 
+def _current_ephemeris_body_aspect_rows(
+	chrt, body_id, longitude, speed_lon, body_name, options,
+	partner_chart=None, current_role='primary', current_ring_numeral=None,
+	partner_ring_numeral=None, declination=None,
+):
+	"""Build ordinary configured aspects for a dynamic Swiss Ephemeris body."""
+	rows = []
+	items = []
+	if chrt is None or not bool(getattr(options, 'aspects', False)):
+		return rows, items
+	cross_chart = partner_chart is not None and partner_chart is not chrt
+	target_chart = partner_chart if cross_chart else chrt
+	try:
+		planet_ids = target_chart.get_visible_aspect_planet_ids(include_chiron=True)
+		current_orb_index = int(chrt.get_planet_orb_index(int(body_id)))
+		lon_i = float(longitude)
+		speed_i = float(speed_lon or 0.0)
+	except Exception:
+		return rows, items
+	for other in planet_ids:
+		if not _planet_visible_in_inspector(options, other):
+			continue
+		try:
+			planet_j = target_chart.get_planet_body(other)
+			lon_j = float(planet_j.data[planets.Planet.LONG])
+			speed_j = float(planet_j.data[planets.Planet.SPLON])
+			other_orb_index = int(target_chart.get_planet_orb_index(other))
+			orb_by_aspect = [
+				float(chrt.options.orbis[current_orb_index][aspect_type])
+				+ float(chrt.options.orbis[other_orb_index][aspect_type])
+				for aspect_type in range(chart.Chart.ASPECT_NUM)
+			]
+			other_declination = planet_j.dataEqu[planets.Planet.DECLEQU]
+			parallel_orbs = [
+				float(chrt.options.orbisplanetspar[current_orb_index][0])
+				+ float(chrt.options.orbisplanetspar[other_orb_index][0]),
+				float(chrt.options.orbisplanetspar[current_orb_index][1])
+				+ float(chrt.options.orbisplanetspar[other_orb_index][1]),
+			]
+			asp = chrt._build_dynamic_aspect(
+				lon_i,
+				lon_j,
+				speed_i,
+				speed_j,
+				orb_by_aspect,
+				declination,
+				other_declination,
+				parallel_orbs,
+				False,
+			)
+		except Exception:
+			continue
+		if not _is_aspect_enabled(chrt, options, asp.typ, lon_i, lon_j):
+			continue
+		directed_state = chart.Chart.directed_aspect_state_from_motion(
+			int(body_id), other, lon_i, speed_i, lon_j, speed_j, asp.typ,
+		)
+		directed_state['aspect_type'] = asp.typ
+		directed_state['orb'] = asp.aspdif
+		directed_state['exact'] = asp.exact
+		directed_state['is_applying'] = bool(asp.appl)
+		directed_state['is_separating'] = not bool(asp.appl)
+		label_state = _directed_aspect_labels(
+			_with_ring_numeral(body_name, current_ring_numeral),
+			_with_ring_numeral(_planet_name(other, options), partner_ring_numeral),
+			_aspect_text(asp.typ),
+			directed_state,
+		)
+		if label_state is None:
+			continue
+		text = '%s %s' % (label_state['compact_text'], _format_orb(asp.aspdif))
+		if asp.exact:
+			text += ' %s' % _safe_text('exact', 'exact')
+		rows.append((float(asp.aspdif), text))
+		suffix = '%s %s' % (label_state['suffix_text'], _format_orb(asp.aspdif))
+		if asp.exact:
+			suffix += ' %s' % _safe_text('exact', 'exact')
+		items.append((float(asp.aspdif), {
+			'prefix_text': label_state['prefix_text'],
+			'aspect_glyph': _aspect_glyph(asp.typ),
+			'suffix_text': suffix,
+			'aspect_colour': tuple(options.clraspect[asp.typ]) if asp.typ < len(getattr(options, 'clraspect', ())) else None,
+			'aspect_colour_role': _aspect_colour_role(asp.typ),
+			'full_text': label_state['full_text'],
+		}))
+	rows.sort(key=lambda item: (item[0], item[1]))
+	items.sort(key=lambda item: (item[0], item[1].get('full_text', '')))
+	return [text for _, text in rows], [item for _, item in items]
+
+
 def _flag_rows_from_aspect_items(aspect_items, limit=2):
 	if not aspect_items:
 		return [(_safe_text('Aspect', 'Aspect'), '—')]
@@ -3193,6 +3283,31 @@ def build_flag_payload(region, options, defer_signals=False):
 				rows[1] = (_safe_text('Nature', 'Nature'), '—')
 			payload['rows'] = rows
 			return payload
+		if data.get('family') == 'asteroid':
+			payload['title'] = data.get('title') or _safe_text('Asteroid', 'Asteroid')
+			motion_heading = _motion_heading(data)
+			if motion_heading:
+				payload['motionGlyph'] = motion_heading['glyph']
+				payload['motionUsesSymbolFont'] = motion_heading['uses_symbol_font']
+				payload['motionLabel'] = motion_heading['label']
+			payload['rows'] = [rows[0]]
+			payload['rows'].extend(_flag_rows_from_aspect_items(
+				_current_ephemeris_body_aspect_rows(
+					_chart_ref(data),
+					data.get('body_id'),
+					data.get('longitude'),
+					data.get('speed_lon'),
+					payload['title'],
+					options,
+					partner_chart=data.get('partner_chart'),
+					current_role=region.get('chart_role') or 'primary',
+					current_ring_numeral=data.get('multiwheel_ring_numeral'),
+					partner_ring_numeral=data.get('multiwheel_partner_numeral'),
+					declination=data.get('declination'),
+				)[1],
+				limit=2,
+			))
+			return payload
 		if data.get('family') == 'surveil':
 			source = data.get('source_name') or '—'
 			study = data.get('study_name') or _safe_text('Study', 'Study')
@@ -3225,6 +3340,9 @@ def _build_secondary_ring_payload(region, options, role, accent):
 			rows.append('%s: %s' % (_safe_text('Nature', 'Nature'), nature))
 		elif isinstance(nature_info, dict) and nature_info.get('note'):
 			rows.append(nature_info.get('note'))
+	elif family == 'asteroid':
+		rows.append(_safe_text('Asteroid', 'Asteroid'))
+		rows.append(_motion_text(data))
 	elif family == 'lot':
 		rows.append(_safe_text('Lot', 'Lot'))
 		formula_text = data.get('formula')
@@ -3264,6 +3382,22 @@ def _build_secondary_ring_payload(region, options, role, accent):
 				detail_rows.append('%s: %s' % (_safe_text('Variant', 'Variant'), '; '.join(variants)))
 			if note and note not in rows:
 				detail_rows.append('%s: %s' % (_safe_text('Note', 'Note'), note))
+	aspect_rows = []
+	aspect_items = []
+	if family == 'asteroid' and data.get('body_id') is not None:
+		aspect_rows, aspect_items = _current_ephemeris_body_aspect_rows(
+			_chart_ref(data),
+			data.get('body_id'),
+			data.get('longitude'),
+			data.get('speed_lon'),
+			title,
+			options,
+			partner_chart=data.get('partner_chart'),
+			current_role=region.get('chart_role') or 'primary',
+			current_ring_numeral=data.get('multiwheel_ring_numeral'),
+			partner_ring_numeral=data.get('multiwheel_partner_numeral'),
+			declination=data.get('declination'),
+		)
 	return {
 		'glyph': data.get('glyph') if data.get('glyph_font') == 'morinus' else '',
 		'title': title,
@@ -3272,7 +3406,8 @@ def _build_secondary_ring_payload(region, options, role, accent):
 		'accentRole': _flag_accent_colour_role(region, options, accent),
 		'smart_rows': rows,
 		'detail_rows': detail_rows,
-		'aspect_rows': [],
+		'aspect_rows': aspect_rows,
+		'aspect_items': aspect_items,
 		'rows': rows,
 		'footer': '',
 	}

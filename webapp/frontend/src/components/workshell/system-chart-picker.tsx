@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
   ContextMenuContent,
+  ContextMenuCheckboxItem,
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuSub,
@@ -27,6 +28,9 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import {
+  DropdownMenu, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -82,6 +86,7 @@ import {
   type WorkspaceCommandResult,
 } from "@/stores/workspace-command-bus";
 import { useThemeStore } from "@/stores/theme-store";
+import { useChartPickerWorkbenchStore, usePickerPreference, usePickerSession } from "@/stores/chart-picker-workbench-store";
 
 import { ColumnResizeHandle, useResizableTableColumns } from "./resizable-table-columns";
 import { ListToggleDrawer } from "./list-controls";
@@ -113,21 +118,6 @@ type CollectionDialogState =
       value: string;
       collection: ChartCollection;
     };
-
-const DEFAULT_SORT: SortState = {
-  column: "lastOpened",
-  ascending: false,
-};
-
-function chartPickerDefaultSort(payload?: ChartPickerRowsPayload | null): SortState {
-  if (payload?.defaultSort?.column === "lastOpened") {
-    return {
-      column: payload.defaultSort.column,
-      ascending: payload.defaultSort.ascending,
-    };
-  }
-  return DEFAULT_SORT;
-}
 
 const COLUMN_DEFS: Array<{
   key: keyof ChartPickerRow;
@@ -276,13 +266,20 @@ export function SystemChartPicker({
   onCancel,
 }: Props) {
   const t = useT();
-  const [view, setView] = React.useState<"list" | "search">("list");
+  const [view, setView] = usePickerPreference("view");
+  const persistenceError = useChartPickerWorkbenchStore((state) => state.persistenceError);
+  React.useEffect(() => {
+    const restore = () => { void useChartPickerWorkbenchStore.getState().flush().catch(() => {}); };
+    restore();
+    window.addEventListener("focus", restore);
+    return () => window.removeEventListener("focus", restore);
+  }, []);
   const [rows, setRows] = React.useState<ChartPickerRow[]>([]);
   const [directory, setDirectory] = React.useState("");
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
-  const [filter, setFilter] = React.useState("");
-  const [sort, setSort] = React.useState<SortState>(DEFAULT_SORT);
+  const [filter, setFilter] = usePickerPreference("filter");
+  const [sort, setSort] = usePickerPreference("listSort");
   const [selectedKeys, setSelectedKeys] = React.useState<Set<string>>(() => new Set());
   const [anchorKey, setAnchorKey] = React.useState<string | null>(null);
   const [contextRow, setContextRow] = React.useState<ChartPickerRow | null>(null);
@@ -292,12 +289,26 @@ export function SystemChartPicker({
   } | null>(null);
   const [deleteDialog, setDeleteDialog] = React.useState<ChartPickerRow[] | null>(null);
   const [collections, setCollections] = React.useState<ChartCollection[]>([]);
-  const [activeCollectionPaths, setActiveCollectionPaths] = React.useState<Set<string> | null>(null);
-  const [collectionDrawerOpen, setCollectionDrawerOpen] = React.useState(false);
+  const [collectionPaths, setCollectionPaths] = usePickerPreference("collectionPaths");
+  const activeCollectionPaths = React.useMemo(() => collectionPaths === null ? null : new Set(collectionPaths), [collectionPaths]);
+  const setActiveCollectionPaths = React.useCallback((next: React.SetStateAction<Set<string> | null>) => {
+    setCollectionPaths((paths) => {
+      const value = typeof next === "function" ? next(paths === null ? null : new Set(paths)) : next;
+      return value === null ? null : [...value];
+    });
+  }, [setCollectionPaths]);
+  const [collectionDrawerOpen, setCollectionDrawerOpen] = usePickerPreference("collectionDrawerOpen");
   const [collectionDialog, setCollectionDialog] = React.useState<CollectionDialogState | null>(null);
   const [collectionDialogError, setCollectionDialogError] = React.useState<string | null>(null);
   const [mutatingRows, setMutatingRows] = React.useState(false);
   const listRef = React.useRef<HTMLElement | null>(null);
+  React.useLayoutEffect(() => {
+    const node = listRef.current;
+    if (node) node.scrollTop = useChartPickerWorkbenchStore.getState().session.listScrollTop;
+    return () => {
+      if (node) useChartPickerWorkbenchStore.setState((state) => ({ session: { ...state.session, listScrollTop: node.scrollTop } }));
+    };
+  }, [view]);
   const openingRef = React.useRef(false);
   const deferredFilter = React.useDeferredValue(filter);
   const listResize = useResizableTableColumns({
@@ -306,16 +317,9 @@ export function SystemChartPicker({
   });
 
   const applyRowsPayload = React.useCallback(
-    (
-      payload: ChartPickerRowsPayload,
-      options: { resetSort?: boolean } = {},
-    ) => {
-      const { resetSort = true } = options;
+    (payload: ChartPickerRowsPayload) => {
       setRows(payload.rows);
       setDirectory(payload.directory);
-      if (resetSort) {
-        setSort(chartPickerDefaultSort(payload));
-      }
       setError(null);
     },
     [],
@@ -328,11 +332,6 @@ export function SystemChartPicker({
   const refreshCollections = React.useCallback(async (signal?: AbortSignal) => {
     const nextCollections = await listCollections(signal);
     setCollections(nextCollections);
-    const nextPaths = new Set(nextCollections.map((collection) => collection.path));
-    setActiveCollectionPaths((current) => {
-      if (current === null) return null;
-      return new Set([...current].filter((path) => nextPaths.has(path)));
-    });
   }, []);
 
   React.useEffect(() => {
@@ -391,7 +390,7 @@ export function SystemChartPicker({
           .then((payload) => {
             if (!cancelled) {
               React.startTransition(() => {
-                applyRowsPayload(payload, { resetSort: false });
+                applyRowsPayload(payload);
               });
             }
           })
@@ -441,7 +440,7 @@ export function SystemChartPicker({
     (state) => state.theme?.appTokens["--aries-control-height"] ?? "",
   );
   const pickerRowHeight = resolveCompactControlHeight(controlHeight);
-  const virtualRows = useVirtualPickerRows(listRef, visibleRows.length, pickerRowHeight);
+  const virtualRows = useVirtualPickerRows(listRef, visibleRows.length, pickerRowHeight, view === "list");
   const renderedRows = React.useMemo(
     () => visibleRows.slice(virtualRows.startIndex, virtualRows.endIndex),
     [visibleRows, virtualRows.startIndex, virtualRows.endIndex],
@@ -531,7 +530,7 @@ export function SystemChartPicker({
         return next.size === menuCollections.length ? null : next;
       });
     },
-    [menuCollections],
+    [menuCollections, setActiveCollectionPaths],
   );
 
   const selectRow = React.useCallback(
@@ -576,28 +575,22 @@ export function SystemChartPicker({
     setAnchorKey(null);
   }, []);
 
-  const resetPickerState = React.useCallback(() => {
-    setView("list");
-    setFilter("");
-    setSort(DEFAULT_SORT);
-    setSelectedKeys(new Set());
-    setAnchorKey(null);
+  const dismissPickerDialogs = React.useCallback(() => {
     setContextRow(null);
     setRenameDialog(null);
     setDeleteDialog(null);
     setCollectionDialog(null);
     setCollectionDialogError(null);
-    listRef.current?.scrollTo({ top: 0 });
   }, []);
 
-  const closeAndReset = React.useCallback(() => {
-    resetPickerState();
+  const closePicker = React.useCallback(() => {
+    dismissPickerDialogs();
     if (onCancel) {
       onCancel();
       return;
     }
     void closePickerWindow();
-  }, [onCancel, resetPickerState]);
+  }, [onCancel, dismissPickerDialogs]);
 
   React.useEffect(() => {
     const shellHost = resolveShellHost();
@@ -607,7 +600,7 @@ export function SystemChartPicker({
     shellHost
       .listenChartPickerWindowEvents((payload) => {
         if (payload.phase === "open" && payload.visible === true) {
-          resetPickerState();
+          dismissPickerDialogs();
           void refreshCollections().catch((err) => {
             console.warn("[chart-picker-collections-open]", err);
           });
@@ -627,10 +620,10 @@ export function SystemChartPicker({
       disposed = true;
       safeShellUnlisten(unlisten);
     };
-  }, [applyRowsPayload, refreshCollections, resetPickerState]);
+  }, [applyRowsPayload, refreshCollections, dismissPickerDialogs]);
 
   const openRows = React.useCallback(
-    async (targets: ChartPickerRow[], asSynastry = false) => {
+    async (targets: ChartPickerRow[], asSynastry = false, keepOpen = false) => {
       if (!targets.length) return;
       if (openingRef.current) return;
       if (mode === "synastry-partner" && !parentRadixId) return;
@@ -650,7 +643,7 @@ export function SystemChartPicker({
         }
         return;
       }
-      const hidePromise = hidePickerWindowForCommand();
+      const hidePromise = keepOpen ? Promise.resolve(false) : hidePickerWindowForCommand();
       let succeeded = false;
       try {
         if (mode === "synastry-partner") {
@@ -718,7 +711,7 @@ export function SystemChartPicker({
       } finally {
         openingRef.current = false;
         const hiddenBeforeCommand = await hidePromise.catch(() => false);
-        if (succeeded && !hiddenBeforeCommand) {
+        if (succeeded && !keepOpen && !hiddenBeforeCommand) {
           await closePickerWindow();
         }
       }
@@ -872,6 +865,7 @@ export function SystemChartPicker({
   }, [
     collectionDialog,
     collectionNameValidationError,
+    setActiveCollectionPaths,
     mutatingRows,
     refreshCollections,
     refreshRows,
@@ -914,7 +908,7 @@ export function SystemChartPicker({
           return;
         }
         if (view === "search") setView("list");
-        else closeAndReset();
+        else closePicker();
         event.preventDefault();
         return;
       }
@@ -934,10 +928,11 @@ export function SystemChartPicker({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
     view,
+    setView,
     openSelected,
     deleteSelected,
     selectedRows.length,
-    closeAndReset,
+    closePicker,
     renameDialog,
     deleteDialog,
     collectionDialog,
@@ -948,6 +943,7 @@ export function SystemChartPicker({
 
   return (
     <div className="flex h-screen min-h-0 flex-col bg-background text-foreground">
+      {persistenceError ? <div role="alert" className="px-[var(--aries-pane-content-padding)] text-destructive">{t("picker.preferencesFailed")}</div> : null}
       {view === "list" ? (
         <>
           <header className="flex shrink-0 items-center gap-[var(--aries-pane-control-gap-x)] px-[var(--aries-pane-wide-inset)] pb-[var(--aries-pane-header-padding-y)] pt-[var(--aries-pane-content-padding)]">
@@ -1216,7 +1212,7 @@ export function SystemChartPicker({
             <Button
               variant="outline"
               className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width-wide)] text-[length:var(--aries-font-size-large)] font-normal"
-              onClick={closeAndReset}
+              onClick={closePicker}
             >
               {t("picker.cancel")}
             </Button>
@@ -1224,10 +1220,8 @@ export function SystemChartPicker({
         </>
       ) : (
         <ChartSearchPanel
-          mode={mode}
-          parentRadixId={parentRadixId}
           onBack={() => setView("list")}
-          onOpenRows={(targets) => openRows(targets, false)}
+          onOpenRows={(targets) => openRows(targets, false, true)}
         />
       )}
       {renameDialog ? (
@@ -1423,6 +1417,7 @@ function useVirtualPickerRows(
   containerRef: React.RefObject<HTMLElement | null>,
   rowCount: number,
   rowHeight: number,
+  active: boolean,
 ): {
   startIndex: number;
   endIndex: number;
@@ -1444,6 +1439,7 @@ function useVirtualPickerRows(
   }, [containerRef, rowHeight]);
 
   React.useEffect(() => {
+    if (!active) return undefined;
     const node = containerRef.current;
     if (!node) return undefined;
     const update = () => {
@@ -1458,7 +1454,7 @@ function useVirtualPickerRows(
       node.removeEventListener("scroll", update);
       observer.disconnect();
     };
-  }, [containerRef]);
+  }, [containerRef, active]);
 
   const startIndex = Math.max(
     0,
@@ -1521,46 +1517,53 @@ function PickerRow({
 }
 
 function ChartSearchPanel({
-  mode,
-  parentRadixId,
   onBack,
   onOpenRows,
 }: {
-  mode: Mode;
-  parentRadixId?: string | null;
   onBack: () => void;
   onOpenRows: (targets: ChartPickerRow[]) => Promise<void>;
 }) {
   const t = useT();
-  const [catalog, setCatalog] = React.useState<ChartPickerSearchCatalog | null>(null);
-  const [stationWindowDays, setStationWindowDays] = React.useState("2");
-  const [placements, setPlacements] = React.useState<ChartPickerPlacementClause[]>([
-    emptyPlacement(),
-  ]);
-  const [aspects, setAspects] = React.useState<ChartPickerAspectClause[]>([
-    emptyAspect(),
-  ]);
-  const [rows, setRows] = React.useState<ChartPickerSearchRow[]>([]);
-  const [selectedKey, setSelectedKey] = React.useState<string | null>(null);
-  const [sort, setSort] = React.useState<ChartSearchSortState | null>(null);
-  const [summary, setSummary] = React.useState(() => t("picker.search"));
-  const [searching, setSearching] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-  const [placementDrawerOpen, setPlacementDrawerOpen] = React.useState(true);
-  const [aspectDrawerOpen, setAspectDrawerOpen] = React.useState(true);
+  const [catalog, setCatalog] = usePickerSession("catalog");
+  const hydrated = useChartPickerWorkbenchStore((state) => state.hydrated);
+  const [stationWindowDays, setStationWindowDays] = usePickerPreference("stationWindowDays");
+  const [placements, setPlacements] = usePickerPreference("placements");
+  const [aspects, setAspects] = usePickerPreference("aspects");
+  const [rows, setRows] = usePickerSession("rows");
+  const [selectedKey, setSelectedKey] = usePickerSession("selectedKey");
+  const [sort, setSort] = usePickerPreference("searchSort");
+  const [resultSummary, setResultSummary] = usePickerSession("summary");
+  const [searching, setSearching] = usePickerSession("searching");
+  const [error, setError] = usePickerSession("error");
+  const [includeAsteroids, setIncludeAsteroids] = usePickerPreference("includeAsteroids");
+  const [placementDrawerOpen, setPlacementDrawerOpen] = usePickerPreference("placementDrawerOpen");
+  const [aspectDrawerOpen, setAspectDrawerOpen] = usePickerPreference("aspectDrawerOpen");
 
   React.useEffect(() => {
     const controller = new AbortController();
     fetchChartPickerSearchCatalog(controller.signal)
       .then((payload) => {
         setCatalog(payload);
-        setStationWindowDays(String(payload.defaultStationWindowDays));
       })
       .catch((err) => {
         if ((err as { name?: string }).name === "AbortError") return;
         setError((err as Error).message);
       });
     return () => controller.abort();
+  }, [setCatalog, setError]);
+
+  const summary = searching ? t("picker.searching") : resultSummary
+    ? t("picker.matchesSummary", { matched: resultSummary.matched, scanned: resultSummary.scanned })
+      + (resultSummary.errors ? t("picker.skippedSuffix", { errors: resultSummary.errors })
+        : resultSummary.truncated ? t("picker.limitedSuffix") : "")
+    : t("picker.search");
+  const resultScrollerRef = React.useRef<HTMLElement | null>(null);
+  React.useLayoutEffect(() => {
+    const node = resultScrollerRef.current;
+    if (node) node.scrollTop = useChartPickerWorkbenchStore.getState().session.searchScrollTop;
+    return () => {
+      if (node) useChartPickerWorkbenchStore.setState((state) => ({ session: { ...state.session, searchScrollTop: node.scrollTop } }));
+    };
   }, []);
 
   const sortedRows = React.useMemo(() => sortChartSearchRows(rows, sort), [rows, sort]);
@@ -1575,78 +1578,55 @@ function ChartSearchPanel({
   const runSearch = React.useCallback(async () => {
     setSearching(true);
     setError(null);
-    setSummary(t("picker.searching"));
-    setRows([]);
-    setSelectedKey(null);
     try {
       const result = await searchChartPickerRows({
+        includeAsteroids,
         stationWindowDays,
         placements: activePlacements(placements),
         aspects: activeAspects(aspects),
       });
       setRows(result.rows);
-      const text = t("picker.matchesSummary", {
-        matched: result.summary.matched,
-        scanned: result.summary.scanned,
-      });
-      setSummary(
-        result.summary.errors
-          ? `${text}${t("picker.skippedSuffix", { errors: result.summary.errors })}`
-          : result.summary.truncated
-            ? `${text}${t("picker.limitedSuffix")}`
-            : text,
-      );
+      setSelectedKey(null);
+      setResultSummary(result.summary);
     } catch (err) {
       setError((err as Error).message);
-      setSummary(t("picker.searchFailed"));
     } finally {
       setSearching(false);
     }
-  }, [stationWindowDays, placements, aspects, t]);
+  }, [stationWindowDays, placements, aspects, includeAsteroids, setRows, setSelectedKey, setResultSummary, setSearching, setError]);
 
   const openingRef = React.useRef(false);
-  const openResult = React.useCallback(async () => {
-    if (!selectedRow || openingRef.current) return;
+  const openResult = React.useCallback(async (row = selectedRow) => {
+    if (!row || openingRef.current) return;
     openingRef.current = true;
     const target: ChartPickerRow = {
-      key: selectedRow.key,
-      source: selectedRow.source,
-      recordIndex: selectedRow.recordIndex,
+      key: row.key,
+      source: row.source,
+      recordIndex: row.recordIndex,
       chartId: "",
-      name: selectedRow.name,
-      date: selectedRow.date,
-      time: selectedRow.time,
-      type: selectedRow.type,
-      place: selectedRow.place,
+      name: row.name,
+      date: row.date,
+      time: row.time,
+      type: row.type,
+      place: row.place,
       gender: "",
-      collection: selectedRow.collection,
+      collection: row.collection,
       modified: "",
       lastOpened: "",
       recentRank: 10 ** 9,
     };
     try {
-      if (mode === "synastry-partner" && parentRadixId) {
-        const opened = await runBroadcastWorkspaceCommand(
-          () => workspaceOpenSynastry(
-            parentRadixId,
-            target.name,
-            target.source,
-            target.recordIndex,
-          ),
-        );
-        await activateIfNeeded(opened);
-        await closePickerWindow();
-        return;
-      }
       await onOpenRows([target]);
+    } catch (err) {
+      setError((err as Error).message);
     } finally {
       openingRef.current = false;
     }
-  }, [mode, parentRadixId, onOpenRows, selectedRow]);
+  }, [onOpenRows, selectedRow, setError]);
 
   React.useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.defaultPrevented) return;
+      if (event.defaultPrevented || (event.target as HTMLElement | null)?.closest("input, button, [role=menu], textarea, select")) return;
       if (event.key === "Enter" && selectedRow) {
         void openResult();
         event.preventDefault();
@@ -1682,7 +1662,11 @@ function ChartSearchPanel({
             className="h-[var(--aries-control-height-small)] w-[var(--aries-form-label-width)] text-center text-[length:var(--aries-font-size-base)] tabular-nums"
           />
         </label>
-        <Button size="sm" className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width)]" onClick={() => void runSearch()} disabled={searching || !catalog}>
+        <Button size="sm" variant={includeAsteroids ? "default" : "outline"}
+          aria-pressed={includeAsteroids} onClick={() => setIncludeAsteroids((enabled) => !enabled)}>
+          {t("chartmenu.asteroids")}
+        </Button>
+        <Button size="sm" className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width)]" onClick={() => void runSearch()} disabled={searching || !catalog || !hydrated}>
           {t("picker.search")}
         </Button>
         <Button
@@ -1752,7 +1736,7 @@ function ChartSearchPanel({
         </div>
       ) : null}
 
-      <main className="min-h-0 flex-1 overflow-auto">
+      <main ref={resultScrollerRef} className="min-h-0 flex-1 overflow-auto">
         <Table
           className={cn("text-[length:var(--aries-font-size-small)]", searchResize.tableClassName)}
           style={searchResize.tableStyle}
@@ -1802,7 +1786,7 @@ function ChartSearchPanel({
                   row.key === selectedKey && "bg-accent text-accent-foreground",
                 )}
                 onClick={() => setSelectedKey(row.key)}
-                onDoubleClick={() => void openResult()}
+                onDoubleClick={() => void openResult(row)}
               >
                 <TableCell className="px-[var(--aries-control-padding-x-compact)]">{row.name}</TableCell>
                 <TableCell className="whitespace-nowrap px-[var(--aries-control-padding-x-compact)] tabular-nums">{row.date}</TableCell>
@@ -1879,7 +1863,7 @@ function ClauseDrawer({
       </div>
       {open ? (
         <div className="border-t border-border/70 px-[var(--aries-control-padding-x-compact)] pb-[var(--aries-form-field-gap)] pt-[var(--aries-control-gap)]">
-          <div className={cn("mb-[var(--aries-control-gap-compact)] grid gap-[var(--aries-control-gap-compact)] px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-section)] uppercase tracking-wide text-muted-foreground", gridClass)}>
+          <div className={cn("mb-[var(--aries-control-gap-compact)] grid gap-[var(--aries-control-gap-compact)] px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-section)] text-muted-foreground", gridClass)}>
             {columns.map((column, index) => (
               <span key={`${column}-${index}`} className="truncate">
                 {column}
@@ -1909,12 +1893,12 @@ function PlacementRow({
   const t = useT();
   return (
     <div className="grid grid-cols-[minmax(112px,1.25fr)_minmax(92px,1fr)_52px_52px_70px_minmax(118px,1.1fr)_28px] gap-[var(--aries-control-gap-compact)]">
-      <Choice value={value.objectIds[0] ?? ""} choices={catalog?.objects} ariaLabel={t("picker.ariaPlacementObject")} onChange={(next) => onChange({ ...value, objectIds: next ? [next] : [] })} />
-      <Choice value={value.signIndices[0] ?? ""} choices={catalog?.signs} ariaLabel={t("picker.ariaPlacementSign")} onChange={(next) => onChange({ ...value, signIndices: next ? [next] : [] })} />
+      <MultiChoice exclude={value.exclude} onExcludeChange={(exclude) => onChange({ ...value, exclude })} values={value.objectIds} choices={catalog?.objects} ariaLabel={t("picker.ariaPlacementObject")} onChange={(next) => onChange({ ...value, objectIds: next })} />
+      <MultiChoice values={value.signIndices} choices={catalog?.signs} ariaLabel={t("picker.ariaPlacementSign")} onChange={(next) => onChange({ ...value, signIndices: next })} />
       <Input value={value.degree} aria-label={t("picker.ariaPlacementDegree")} placeholder={t("picker.deg")} onChange={(event) => onChange({ ...value, degree: event.target.value })} className="h-[var(--aries-control-height-small)] text-center text-[length:var(--aries-font-size-base)] tabular-nums" />
       <Input value={value.degreeOrb} aria-label={t("picker.ariaPlacementOrb")} placeholder={t("picker.orb")} onChange={(event) => onChange({ ...value, degreeOrb: event.target.value })} className="h-[var(--aries-control-height-small)] text-center text-[length:var(--aries-font-size-base)] tabular-nums" />
-      <Choice value={value.houseNumbers[0] ?? ""} choices={catalog?.houses} ariaLabel={t("picker.ariaPlacementHouse")} onChange={(next) => onChange({ ...value, houseNumbers: next ? [next] : [] })} />
-      <Choice value={value.motion} choices={catalog?.motions} ariaLabel={t("picker.ariaPlacementMotion")} onChange={(next) => onChange({ ...value, motion: next })} />
+      <MultiChoice values={value.houseNumbers} choices={catalog?.houses} ariaLabel={t("picker.ariaPlacementHouse")} onChange={(next) => onChange({ ...value, houseNumbers: next })} />
+      <MultiChoice values={value.motions ?? (value.motion ? [value.motion] : [])} choices={catalog?.motions} ariaLabel={t("picker.ariaPlacementMotion")} onChange={(next) => onChange({ ...value, motions: next, motion: "" })} />
       <Button variant="ghost" size="icon-xs" onClick={onRemove} disabled={!canRemove} aria-label={t("picker.ariaRemovePlacement")}>
         <Trash2 className="size-3" />
       </Button>
@@ -1938,15 +1922,15 @@ function AspectRow({
   const t = useT();
   return (
     <div className="grid grid-cols-[minmax(126px,1.25fr)_minmax(100px,0.9fr)_minmax(126px,1.25fr)_52px_28px] gap-[var(--aries-control-gap-compact)]">
-      <Choice value={value.objectAIds[0] ?? ""} choices={catalog?.objects} ariaLabel={t("picker.ariaAspectFirstBody")} onChange={(next) => onChange({ ...value, objectAIds: next ? [next] : [] })} />
-      <Choice value={value.aspectType} choices={catalog?.aspects} ariaLabel={t("picker.ariaAspectType")} onChange={(next) => onChange({ ...value, aspectType: next })} />
-      <Choice value={value.objectBIds[0] ?? ""} choices={catalog?.objects} ariaLabel={t("picker.ariaAspectSecondBody")} onChange={(next) => onChange({ ...value, objectBIds: next ? [next] : [] })} />
+      <MultiChoice exclude={value.exclude} onExcludeChange={(exclude) => onChange({ ...value, exclude })} values={value.objectAIds} choices={catalog?.objects} ariaLabel={t("picker.ariaAspectFirstBody")} onChange={(next) => onChange({ ...value, objectAIds: next })} />
+      <MultiChoice values={value.aspectTypes ?? (value.aspectType !== "-1" ? [value.aspectType] : [])} choices={catalog?.aspects} ariaLabel={t("picker.ariaAspectType")} onChange={(next) => onChange({ ...value, aspectTypes: next, aspectType: "-1" })} />
+      <MultiChoice values={value.objectBIds} choices={catalog?.objects} ariaLabel={t("picker.ariaAspectSecondBody")} onChange={(next) => onChange({ ...value, objectBIds: next })} />
       <Input
         value={value.orb}
         aria-label={t("picker.ariaAspectOrb")}
         placeholder={t("picker.orb")}
         onChange={(event) => onChange({ ...value, orb: event.target.value })}
-        disabled={value.aspectType === "-2"}
+        disabled={value.aspectTypes?.length === 1 ? value.aspectTypes[0] === "-2" : value.aspectType === "-2"}
         className="h-[var(--aries-control-height-small)] text-center text-[length:var(--aries-font-size-base)] tabular-nums"
       />
       <Button variant="ghost" size="icon-xs" onClick={onRemove} disabled={!canRemove} aria-label={t("picker.ariaRemoveAspect")}>
@@ -1956,32 +1940,60 @@ function AspectRow({
   );
 }
 
-function Choice({
-  value,
+function MultiChoice({
+  values,
   choices = [],
   ariaLabel,
   onChange,
+  exclude,
+  onExcludeChange,
 }: {
-  value: string;
+  values: string[];
   choices?: ChartPickerChoice[];
   ariaLabel: string;
-  onChange: (value: string) => void;
+  onChange: (values: string[]) => void;
+  exclude?: boolean;
+  onExcludeChange?: (exclude: boolean) => void;
 }) {
   const t = useT();
+  const options = choices.filter((choice) => choice.value !== "" && choice.value !== "-1");
+  const selected = options.filter((choice) => values.includes(choice.value)).map((choice) => choice.label).join(", ") || t("picker.any");
+  const label = exclude ? `${t("picker.exclude")}: ${selected}` : selected;
   return (
-    <select
-      data-aries-control-appearance="local"
-      value={value}
-      aria-label={ariaLabel}
-      onChange={(event) => onChange(event.target.value)}
-      className="h-[var(--aries-control-height-small)] min-w-0 rounded-[var(--aries-radius-ui-control-compact)] border border-input bg-background px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-base)]"
-    >
-      {(choices.length ? choices : [{ value: "", label: t("picker.any") }]).map((choice) => (
-        <option key={choice.value} value={choice.value}>
-          {choice.label}
-        </option>
-      ))}
-    </select>
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={<button type="button" data-aries-control-appearance="local" />}
+        aria-label={ariaLabel}
+        title={label}
+        className="flex h-[var(--aries-control-height-small)] min-w-0 items-center justify-between gap-[var(--aries-control-gap-compact)] rounded-[var(--aries-radius-ui-control-compact)] border border-input bg-background px-[var(--aries-control-padding-x-compact)] text-left text-[length:var(--aries-font-size-base)]"
+      >
+        <span className="truncate">{label}</span>
+        <ChevronDown className="size-[var(--aries-control-icon-size-xs)] shrink-0" />
+      </DropdownMenuTrigger>
+      <ContextMenuContent side="bottom" align="start">
+        <ContextMenuCheckboxItem checked={!values.length} closeOnClick={false} onCheckedChange={() => onChange([])}>
+          {t("picker.any")}
+        </ContextMenuCheckboxItem>
+        {options.map((choice) => (
+          <ContextMenuCheckboxItem
+            key={choice.value}
+            checked={values.includes(choice.value)}
+            closeOnClick={false}
+            onCheckedChange={(checked) => onChange(checked ? [...values, choice.value] : values.filter((value) => value !== choice.value))}
+          >
+            {choice.label}
+          </ContextMenuCheckboxItem>
+        ))}
+        {onExcludeChange ? (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuCheckboxItem checked={!!exclude} closeOnClick={false} onCheckedChange={onExcludeChange}>
+              {t("picker.exclude")}
+            </ContextMenuCheckboxItem>
+          </>
+        ) : null}
+      </ContextMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -2146,12 +2158,12 @@ function activePlacements(items: ChartPickerPlacementClause[]): ChartPickerPlace
       item.signIndices.length ||
       item.degree.trim() ||
       item.houseNumbers.length ||
-      item.motion,
+      item.motion || item.motions?.length,
   );
 }
 
 function activeAspects(items: ChartPickerAspectClause[]): ChartPickerAspectClause[] {
-  return items.filter((item) => item.aspectType && item.aspectType !== "-1");
+  return items.filter((item) => item.aspectTypes?.length || (item.aspectType && item.aspectType !== "-1"));
 }
 
 function replaceAt<T>(items: T[], index: number, value: T): T[] {

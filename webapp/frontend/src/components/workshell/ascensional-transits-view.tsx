@@ -22,12 +22,16 @@ import { STEP_SETTLE_REFRESH_MS } from "./step-refresh";
 
 type Props = {
   document: WorkspaceDocument;
+  renderSnapshot?: import("@/lib/chart/types").ChartRenderSnapshot | null;
+  snapshotData?: import("@/lib/daemon/client").MundaneChartData | null;
 };
 
-export function AscensionalTransitsView({ document }: Props) {
+export function AscensionalTransitsView({ document, snapshotData, renderSnapshot }: Props) {
   return (
     <div className="font-morinus-text flex h-full min-h-0 bg-background">
       <MundaneChartView
+        renderSnapshot={renderSnapshot}
+        snapshotData={snapshotData}
         documentId={document.id}
         parentDocumentId={document.parentDocumentId}
         sourceName={document.sourceName}

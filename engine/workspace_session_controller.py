@@ -127,6 +127,7 @@ class WorkspaceSessionController:
         self.active_chart = None
         self._on_event: Optional[Callable[[SessionChangedEvent], None]] = None
         self._child_refresh_suppression_depth = 0
+        self._child_refresh_batch_depth = 0
 
     # -- accessors ---------------------------------------------------------
 
@@ -286,6 +287,8 @@ class WorkspaceSessionController:
             radix = self._runtime_radix_for_session(session)
             if radix is not None:
                 return radix
+        if session is not None and session.get('chart_projection') and parent_session is not None:
+            return parent_session.get('comparison_chart')
         return self._comparison_chart_for_parent(parent_session)
 
     def comparison_anchor_for_session(self, session: Optional[dict]):
@@ -326,7 +329,7 @@ class WorkspaceSessionController:
         cs = session.get('chart_session')
         if cs is not None and getattr(cs, 'chart', None) is not None:
             chrt = cs.chart
-        custom_root = session.get('custom_title_root') or ''
+        custom_root = session.get('saved_event_name') or session.get('custom_title_root') or ''
         name = custom_root or getattr(chrt, 'name', '') or session.get('base_title') or ''
         dirty = bool(session.get('dirty', False))
         title = ('%s *' % name) if (dirty and name) else name
@@ -365,24 +368,17 @@ class WorkspaceSessionController:
     # -- OPTIONS RE-RENDER (morin.py:3393 _refresh_current_views) -----------
 
     def apply_progression_calc_options(self, angle_method: int, day_type: int,
-                                       solar_arc_angles: str | None = None) -> None:
-        """Stamp new progression calc options into open progression bindings.
+                                       solar_arc_angles: str | None = None,
+                                       *, changed_fields: set[str] | None = None) -> None:
+        """Update only settings explicitly changed for each technique.
 
-        When the user changes ``progressed_angle_method`` / ``progression_day_type``
-        the option is the authority at change time: secdirui's Calculate passes the
-        new value into the rebuild AND writes the option (morin.py:18719-18737),
-        and the wx settings OK re-derives the open progression session against the
-        new option default (morin.py:20126-20143, _refresh_active_progression_session
-        morin.py:5974-6013 ``retained.get('angle_method', options...)``). The
-        headless adapter build stamps angle/day into retained_state on every
-        secondary/minor/tertiary progression build, and angle_method into every
-        Solar Arc build, so without this overwrite the recalc
-        fan-out would rebuild each open progression chart with its OLD values
-        forever. Call this BEFORE refresh_all_sessions so
-        _refresh_progression_session_for_option_change builds with the new ones.
-        Solar Arc keeps its body math as the uniform solar arc, but its
-        angles/houses use the shared progressed-angle setting.
+        Retained binding overrides survive changes to other fields/techniques.
+        A global angle-method edit replaces that technique's retained method,
+        matching the existing settings contract for open charts.
         """
+        if changed_fields is None:
+            changed_fields = {'progressed_angle_method', 'progression_day_type',
+                              'solar_arc_angle_method', 'solar_arc_angle_mode'}
         if solar_arc_angles is None:
             solar_arc_angles = getattr(
                 self.options,
@@ -400,12 +396,18 @@ class WorkspaceSessionController:
                 continue
             payload = dict(payload)
             retained = dict(payload.get('retained_state') or {})
-            retained['angle_method'] = int(angle_method)
             if session.get('supplementary_feature_kind') == 'solar_arc':
                 retained.pop('day_type', None)
-                retained['solar_arc_angle_mode'] = solar_arc_angles
+                if 'solar_arc_angle_method' in changed_fields:
+                    retained['angle_method'] = posfordate.technique_angle_method(
+                        self.options, posfordate.SOLAR_ARC)
+                if 'solar_arc_angle_mode' in changed_fields:
+                    retained['solar_arc_angle_mode'] = solar_arc_angles
             else:
-                retained['day_type'] = int(day_type)
+                if 'progressed_angle_method' in changed_fields:
+                    retained['angle_method'] = int(angle_method)
+                if 'progression_day_type' in changed_fields:
+                    retained['day_type'] = int(day_type)
             payload['retained_state'] = retained
             session['supplementary_binding'] = payload
 
@@ -431,6 +433,12 @@ class WorkspaceSessionController:
         the stable list of document ids whose live session state changed so the
         daemon can broadcast full snapshot invalidation for each one.
         """
+        # This walk already visits every session in parent-first order. A chart
+        # callback must not also cascade and overwrite a child's own cursor.
+        with self.suspend_child_refresh():
+            return self._refresh_all_sessions(mode)
+
+    def _refresh_all_sessions(self, mode: str) -> List[str]:
         if mode not in (
             'recalc', 'house-system', 'display-overlay', 'display-text',
             'pd-in-chart', 'solar-arc',
@@ -479,6 +487,14 @@ class WorkspaceSessionController:
                 mark(document_id)
                 continue
 
+            parent_session = self._runtime.get(session.get('parent_document_id'))
+            if (session.get('chart_projection_following_source') and parent_session is not None
+                    and (mode != 'pd-in-chart' or session.get('pd_in_chart_binding'))
+                    and (mode != 'solar-arc' or session.get('supplementary_feature_kind') == 'solar_arc')):
+                if self._rebuild_child_session(session, parent_session):
+                    mark(document_id)
+                    continue
+
             if mode == 'pd-in-chart':
                 if self._refresh_session_via_options_hook(session, mode):
                     mark(document_id)
@@ -489,8 +505,6 @@ class WorkspaceSessionController:
                 feature_kind = 'solar_average'
             if mode == 'solar-arc' and feature_kind != 'solar_arc':
                 continue
-            parent_session = self._runtime.get(session.get('parent_document_id'))
-
             if self._refresh_session_via_options_hook(session, mode):
                 mark(document_id)
                 continue
@@ -811,6 +825,8 @@ class WorkspaceSessionController:
             'document_id': document.document_id,
             'chart': chrt,
             'chart_id': getattr(chrt, 'chart_id', ''),
+            # Record attachments survive replacement of the current chart while stepping.
+            'saved_events': getattr(chrt, 'saved_events', []) if parent_document_id is None else [],
             'fpath': fpath,
             'dpath': dpath,
             'dirty': bool(dirty),
@@ -996,6 +1012,12 @@ class WorkspaceSessionController:
         session = self._session_by_chart_session(cs)
         if session is not None:
             session['chart'] = cs.chart  # morin.py:8893
+            if session.get('chart_projection'):
+                parent = self._runtime.get(session.get('parent_document_id')) or {}
+                parent_cs = parent.get('chart_session')
+                session['chart_projection_following_source'] = (
+                    parent_cs is not None and cs.chart is parent_cs.chart
+                )
 
         active_document_id = self._state.active_document_id()
         is_active = session is not None and session.get('document_id') == active_document_id
@@ -1022,7 +1044,8 @@ class WorkspaceSessionController:
             is_active=bool(is_active),
             rebuilt_child_ids=rebuilt,
         )
-        self._emit(event)
+        if not self._child_refresh_batch_depth:
+            self._emit(event)
         return event
 
     def _sync_binding_state(self, cs, session: Optional[dict]) -> None:
@@ -1102,22 +1125,32 @@ class WorkspaceSessionController:
         if parent_document_id is None:
             return []
         rebuilt: List[str] = []
-        for child_document_id in self._descendant_ids(parent_document_id):
-            child_session = self._runtime.get(child_document_id)
-            if child_session is None:
-                continue
-            immediate_parent = self._runtime.get(child_session.get('parent_document_id'))
-            if immediate_parent is None:
-                continue
-            # Parent-anchor sync (morin.py:7218).
-            feature_kind = child_session.get('supplementary_feature_kind')
-            if feature_kind is not None:
-                child_session['comparison_chart'] = self._comparison_chart_for_child_session(
-                    child_session,
-                    immediate_parent,
-                )
-            if self._rebuild_child_session(child_session, immediate_parent):
-                rebuilt.append(child_document_id)
+        # Walk descendants once in tree order. Nested change_chart callbacks
+        # synchronize their local state, but cannot recursively rebuild or emit
+        # intermediate paints; the initiating event publishes the whole change.
+        self._child_refresh_batch_depth += 1
+        try:
+            with self.suspend_child_refresh():
+                for child_document_id in self._descendant_ids(parent_document_id):
+                    child_session = self._runtime.get(child_document_id)
+                    if child_session is None:
+                        continue
+                    immediate_parent = self._runtime.get(child_session.get('parent_document_id'))
+                    if immediate_parent is None:
+                        continue
+                    # Parent-anchor sync (morin.py:7218).
+                    feature_kind = child_session.get('supplementary_feature_kind')
+                    previous_comparison = child_session.get('comparison_chart')
+                    if feature_kind is not None and not child_session.get('parent_refresh_handler'):
+                        child_session['comparison_chart'] = self._comparison_chart_for_child_session(
+                            child_session,
+                            immediate_parent,
+                        )
+                    changed = self._rebuild_child_session(child_session, immediate_parent)
+                    if changed or child_session.get('comparison_chart') is not previous_comparison:
+                        rebuilt.append(child_document_id)
+        finally:
+            self._child_refresh_batch_depth -= 1
         return rebuilt
 
     def _driver_for_session(self, session: dict) -> SupplementaryHeadlessDriver:
@@ -1132,6 +1165,9 @@ class WorkspaceSessionController:
         """morin.py:7229 _rebuild_workspace_child_session via the headless
         driver + adapter (the Binding -> Deriver -> Chart path). Returns True if
         the child chart was rebuilt."""
+        parent_refresh = session.get('parent_refresh_handler')
+        if callable(parent_refresh):
+            return bool(parent_refresh(session, parent_session))
         cs = session.get('chart_session')
         parent_cs = parent_session.get('chart_session')
         if cs is None or parent_cs is None:
@@ -1166,7 +1202,12 @@ class WorkspaceSessionController:
                 feature_kind=feature_kind,
             )
             if not adapter.uses_parent_cursor(driver, parent_cs, binding):
-                return False
+                if getattr(cs, 'radix', None) is base_chart:
+                    return False
+                return self._rebuild_child_session_for_options(
+                    session, parent_session,
+                    change_reason=getattr(parent_cs, '_last_change_reason', 'normal'),
+                )
             target_source_dt = adapter.refresh_source_datetime(driver, session, source_dt, binding)
             driver_state = supplementary_adapter.SupplementaryDriverState(
                 base_chart=base_chart,

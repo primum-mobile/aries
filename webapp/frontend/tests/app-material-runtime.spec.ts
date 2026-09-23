@@ -47,6 +47,24 @@ test("untouched app materials retain every semantic surface color", () => {
     .toBe("rgb(235 232 222 / 1)");
 });
 
+test("popup edges and elevation survive both plain and authored theme materials", () => {
+  for (const overrides of [{}, {
+    "authoring.app.popover.pattern": "paper",
+    "authoring.app.popover.shadowColor": [0, 0, 0, 0.3],
+  }]) {
+    const css = appMaterialStyleSheet(compileThemeAppMaterials(overrides, TOKENS));
+    for (const surface of ["popover", "overlay"]) {
+      const rule = css.match(new RegExp(`\\[data-aries-surface="${surface}"\\][^{]*\\{([^}]+)`))?.[1];
+      expect(rule).toContain("var(--tw-ring-shadow, 0 0 transparent)");
+      expect(rule).toContain("var(--tw-shadow, 0 0 transparent)");
+      expect(rule).not.toContain("--aries-sidebar-sash-rule");
+      expect(rule).not.toContain("box-shadow:none");
+    }
+    const reduced = css.split("@media (prefers-reduced-transparency:reduce)")[1];
+    expect(reduced).toContain("var(--tw-ring-shadow, 0 0 transparent)");
+  }
+});
+
 test("simple CSS variable chains resolve against live token overrides safely", () => {
   const tokens = {
     "--surface": "var(--base)",

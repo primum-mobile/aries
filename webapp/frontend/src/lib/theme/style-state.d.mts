@@ -1,5 +1,7 @@
 import type { ThemeState } from "../daemon/client";
 
+export function replaceThemeTokens(root: HTMLElement, tokens: Readonly<Record<string, string>>): void;
+
 export type NormalizedOptionsStyleIdentity = {
   schemaVersion: number;
   themeVersion: number;
@@ -19,5 +21,5 @@ export function normalizeOptionsStyleIdentity(value: {
 }): NormalizedOptionsStyleIdentity;
 
 export function styleRevisionKey(
-  theme: ThemeState | null | undefined,
+  theme: Pick<ThemeState, "schemaVersion" | "styleRevision" | "styleHash"> | null | undefined,
 ): string;

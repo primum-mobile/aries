@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import logging
 import math
@@ -15,6 +16,7 @@ import struct
 import sys
 import threading
 from contextlib import asynccontextmanager
+from functools import lru_cache
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal, Optional
 
@@ -41,7 +43,7 @@ import mtexts
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
 
 from pydantic import BaseModel, Field
 
@@ -258,6 +260,11 @@ def _load_style_draft_service():
         ).strip()
         if options_directory:
             service.configure_directory(options_directory)
+            service.migrate_wheel_geometry(
+                lambda profile, source_id: options_service.migrate_wheel_profile(
+                    profile, source_id=source_id,
+                )
+            )
     except Exception:
         # Recovery is optional at boot. The live editor remains usable even
         # when its idle-time journal cannot reach the options directory.
@@ -471,6 +478,12 @@ _RES_ROOT_ALLOWLIST = {
 
 _RES_ASTROCART_ALLOWLIST = {
     "astrocart/map.html",
+    "astrocart/ruler.js",
+    "astrocart/ruler-geometry.js",
+    "astrocart/curve-geometry.js",
+    "astrocart/curve-worker.js",
+    "astrocart/curve-refinement.js",
+    "astrocart/vendor/geographiclib-geodesic.js",
     "astrocart/capitals.geojson",
     "astrocart/places.geojson",
     "astrocart/vendor/maplibre-gl.css",
@@ -514,12 +527,43 @@ def _allowed_res_resource(resource_path: str) -> Optional[Path]:
     return path if path.is_file() else None
 
 
+@lru_cache(maxsize=1)
+def _astrocart_revision_for_files(files: tuple) -> str:
+    digest = hashlib.sha256()
+    for name, _mtime, _size in files:
+        path = Path(name)
+        digest.update(path.name.encode())
+        digest.update(path.read_bytes())
+    return digest.hexdigest()[:20]
+
+
+def _astrocart_asset_revision() -> str:
+    # Only map startup/metadata requests touch disk; gestures never do.
+    files = []
+    for resource in sorted(_RES_ASTROCART_ALLOWLIST):
+        path = RES_DIR / resource
+        if path.suffix in {".html", ".js", ".css"} and path.is_file():
+            stat = path.stat()
+            files.append((str(path), stat.st_mtime_ns, stat.st_size))
+    return _astrocart_revision_for_files(tuple(files))
+
+
 @app.get("/Res/{resource_path:path}")
 def res_resource(resource_path: str):
     path = _allowed_res_resource(resource_path)
     if path is None:
         raise HTTPException(status_code=404, detail="resource not found")
-    return FileResponse(path)
+    # Unversioned loopback URLs otherwise receive heuristic WKWebView caching
+    # across native restarts. Version the complete embedded runtime together.
+    if resource_path == "astrocart/map.html":
+        revision = _astrocart_asset_revision()
+        html = re.sub(
+            r'((?:src|href)=")([^"?]+\.(?:js|css))"',
+            lambda match: f'{match[1]}{match[2]}?revision={revision}"',
+            path.read_text(encoding="utf-8"),
+        )
+        return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
+    return FileResponse(path, headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/astrocart/basemap.pmtiles")
@@ -633,6 +677,7 @@ class ChartPickerCreateCollectionPayload(BaseModel):
 
 
 class ChartPickerSearchPayload(BaseModel):
+    includeAsteroids: bool = False
     stationWindowDays: float | None = None
     placements: list[dict] = []
     aspects: list[dict] = []
@@ -1082,6 +1127,21 @@ def io_recent_charts_open(payload: RecentChartOpenPayload) -> dict:
 def chart_picker_search_catalog() -> dict:
     try:
         return chart_picker_service.search_catalog()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/chart-picker/workbench")
+def chart_picker_workbench() -> dict:
+    return chart_picker_service.workbench.get()
+
+
+@app.patch("/api/chart-picker/workbench")
+def chart_picker_update_workbench(payload: dict) -> dict:
+    try:
+        return chart_picker_service.workbench.update(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -2126,6 +2186,7 @@ def astrocart_basemap() -> dict:
             "hasLocalTiles": bool(path),
             "tilesUrl": "/astrocart/basemap.pmtiles" if path else None,
             "installing": installing,
+            "assetRevision": _astrocart_asset_revision(),
         }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -2592,7 +2653,6 @@ def _workspace_astrocart_pdf_options(
     if modes is not None:
         if (
             not isinstance(modes, list)
-            or not modes
             or len(modes) > 4
             or any(
                 not isinstance(item, str)
@@ -2603,7 +2663,7 @@ def _workspace_astrocart_pdf_options(
         ):
             raise HTTPException(
                 status_code=400,
-                detail="modes must be a non-empty string list",
+                detail="modes must be a string list of up to four modes",
             )
         modes = list(modes)
     if mode is not None and modes is not None:
@@ -2912,6 +2972,9 @@ class NotesPayload(BaseModel):
     content: str
     documentId: Optional[str] = None
     scratch: bool = False
+    eventId: Optional[str] = None
+    recordId: Optional[str] = None
+    revision: Optional[str] = None
 
 
 class NotesScratchPayload(BaseModel):
@@ -2923,14 +2986,14 @@ def _notes_record_context(
     radix: str,
     document_id: Optional[str],
     scratch: bool,
-) -> tuple[str, Optional[str], Optional[str], bool]:
+) -> tuple[str, Optional[str], Optional[str], bool, Optional[str]]:
     if scratch or not document_id:
-        return radix, None, document_id, scratch
+        return radix, None, document_id, scratch, None
     context = workspace_service.note_record_context(document_id)
     source_name = str(context.get("sourceName") or radix or "")
     record_id = str(context.get("recordId") or "").strip() or None
     owner_document_id = str(context.get("documentId") or document_id).strip() or None
-    return source_name, record_id, owner_document_id, bool(context.get("scratch"))
+    return source_name, record_id, owner_document_id, bool(context.get("scratch")), context.get("eventId")
 
 
 @app.get("/api/notes")
@@ -2938,8 +3001,12 @@ def notes_get(
     radix: str,
     document_id: Optional[str] = Query(default=None, alias="documentId"),
     scratch: bool = False,
+    eventId: Optional[str] = None,
+    recordId: Optional[str] = None,
 ) -> dict:
-    source_name, record_id, owner_document_id, resolved_scratch = _notes_record_context(
+    if recordId or eventId:
+        return read_note_state(radix, record_id=recordId, event_id=eventId)
+    source_name, record_id, owner_document_id, resolved_scratch, event_id = _notes_record_context(
         radix, document_id, scratch,
     )
     return read_note_state(
@@ -2947,6 +3014,7 @@ def notes_get(
         record_id=record_id,
         document_id=owner_document_id,
         scratch=resolved_scratch,
+        **({'event_id': event_id} if event_id else {}),
     )
 
 
@@ -2955,7 +3023,12 @@ def notes_set(payload: NotesPayload) -> dict:
     if not payload.radix:
         raise HTTPException(status_code=400, detail="radix required")
     try:
-        source_name, record_id, owner_document_id, resolved_scratch = _notes_record_context(
+        # A queued autosave keeps its stable event identity even if the chart
+        # has closed or the user has switched to another document meanwhile.
+        if payload.recordId or payload.eventId:
+            return write_note_state(payload.radix, payload.content, record_id=payload.recordId,
+                                    event_id=payload.eventId, expected_revision=payload.revision)
+        source_name, record_id, owner_document_id, resolved_scratch, event_id = _notes_record_context(
             payload.radix,
             payload.documentId,
             payload.scratch,
@@ -2966,7 +3039,13 @@ def notes_set(payload: NotesPayload) -> dict:
             record_id=record_id,
             document_id=owner_document_id,
             scratch=resolved_scratch,
+            **({'event_id': event_id} if event_id else {}),
+            expected_revision=payload.revision,
         )
+    except notes_service.NoteConflict as exc:
+        raise HTTPException(status_code=409, detail={
+            'code': 'note_draft_preserved' if exc.draft_preserved else 'note_identity_conflict',
+        }) from exc
     except OSError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -2982,7 +3061,7 @@ def notes_scratch_discard(payload: NotesScratchPayload) -> dict:
 def notes_scratch_commit(payload: NotesScratchPayload) -> dict:
     if not payload.radix or not payload.documentId:
         raise HTTPException(status_code=400, detail="radix and documentId required")
-    source_name, record_id, owner_document_id, _resolved_scratch = _notes_record_context(
+    source_name, record_id, owner_document_id, _resolved_scratch, _event_id = _notes_record_context(
         payload.radix,
         payload.documentId,
         scratch=False,
@@ -3021,6 +3100,7 @@ class OptionsPatchPayload(BaseModel):
     # group before options_service._apply_export can persist it.
     export: Optional[dict] = None
     primaryDirections: Optional[dict] = None
+    primaryDirectionPreset: Optional[dict] = None
     # Annual-profection flags (zodprof / usezodprojsprof / profwholesign):
     # the Profections pane Mode select + UseZodProjs check write through here
     # (options_service._apply_profections; wx profectionswnd.py:256-281).
@@ -3042,6 +3122,7 @@ class OptionsPatchPayload(BaseModel):
     #   fixedStars -> _apply_fixed_stars (which-stars SE-catalog picker:
     #   selectedCodes set; options.fixstars key set + alias map + rebuildFixStars)
     fixedStars: Optional[dict] = None
+    asteroids: Optional[dict] = None
     relationshipCharts: Optional[dict] = None
     languages: Optional[dict] = None
     # Planets/Points group (Nodes / Fortuna / Syzygy / Arabic Parts):
@@ -3049,6 +3130,10 @@ class OptionsPatchPayload(BaseModel):
     # declared here (the profections-table lesson) — keep in sync with
     # set_options' group branches.
     planetsPoints: Optional[dict] = None
+
+
+class AsteroidInstallPayload(BaseModel):
+    number: int
 
 
 class SidebarListPreferencesPatchPayload(BaseModel):
@@ -3187,6 +3272,60 @@ def options_get() -> dict:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@app.get("/api/options/wheel-factories")
+def options_wheel_factories() -> dict:
+    """Original layout templates, independent of active options or drafts."""
+    from .wheel_factory import factory_wheel_catalog
+    return factory_wheel_catalog()
+
+
+@app.get("/api/options/wheel-presets")
+def options_wheel_presets_get() -> dict:
+    return options_service.get_wheel_presets()
+
+
+@app.post("/api/options/wheel-presets")
+def options_wheel_presets_mutate(payload: dict[str, Any]) -> dict:
+    from .wheel_preset_service import WheelPresetConflict
+    try:
+        result = options_service.mutate_wheel_presets(payload)
+    except WheelPresetConflict as exc:
+        raise HTTPException(status_code=409, detail={
+            'message': str(exc), 'current': exc.current,
+        }) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if result.get('refreshMode') or result.get('changed'):
+        workspace_service.broadcast_options_changed(
+            result.get('refreshedDocumentIds'), result.get('refreshMode') or 'display-overlay',
+            style_only=not bool(result.get('refreshMode')), list_data_changed=False,
+        )
+    return result
+
+
+@app.get("/api/options/asteroids/catalog")
+def options_asteroid_catalog(
+    q: str = '',
+    limit: int = 120,
+) -> dict:
+    try:
+        return options_service.search_asteroid_catalog(q, limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/options/asteroids/install")
+def options_asteroid_install(payload: AsteroidInstallPayload) -> dict:
+    try:
+        return options_service.install_asteroid_ephemeris(payload.number)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @app.get("/api/options/sidebar-list-preferences")
 def options_sidebar_list_preferences_get() -> dict:
     """Durable retained-list controls without chart/list invalidation."""
@@ -3251,7 +3390,8 @@ def options_style_profile_save(payload: StyleProfileUpsertPayload) -> dict:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     if result.get("refreshMode"):
         workspace_service.broadcast_options_changed(
-            result.get("refreshedDocumentIds"), result.get("refreshMode"), style_only=True
+            result.get("refreshedDocumentIds"), result.get("refreshMode"),
+            style_only=not result.get("geometryChanged", False), list_data_changed=False
         )
     return result
 
@@ -3273,7 +3413,8 @@ def options_style_profile_activate(payload: StyleProfileActivatePayload) -> dict
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     if result.get("refreshMode"):
         workspace_service.broadcast_options_changed(
-            result.get("refreshedDocumentIds"), result.get("refreshMode"), style_only=True
+            result.get("refreshedDocumentIds"), result.get("refreshMode"),
+            style_only=not result.get("geometryChanged", False), list_data_changed=False
         )
     return result
 
@@ -3288,7 +3429,8 @@ def options_style_profile_delete(profile_id: str) -> dict:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     if result.get("refreshMode"):
         workspace_service.broadcast_options_changed(
-            result.get("refreshedDocumentIds"), result.get("refreshMode"), style_only=True
+            result.get("refreshedDocumentIds"), result.get("refreshMode"),
+            style_only=not result.get("geometryChanged", False), list_data_changed=False
         )
     return result
 
@@ -3306,7 +3448,8 @@ def options_style_profile_migrate_legacy(payload: LegacyStyleMigrationPayload) -
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     if result.get("refreshMode"):
         workspace_service.broadcast_options_changed(
-            result.get("refreshedDocumentIds"), result.get("refreshMode"), style_only=True
+            result.get("refreshedDocumentIds"), result.get("refreshMode"),
+            style_only=not result.get("geometryChanged", False), list_data_changed=False
         )
     return result
 
@@ -3690,6 +3833,8 @@ def style_lab_draft_create(payload: StyleDraftCreatePayload, response: Response)
                 source_profile = options_service.get_style_profile_export(payload.sourceProfileId)
         elif payload.sourceThemeName is not None:
             source_profile = options_service.get_style_lab_theme_profile(payload.sourceThemeName)
+        if source_profile is not None:
+            source_profile = options_service.migrate_wheel_profile(source_profile)
         resolved_base_preset_id = (
             payload.basePresetId
             if payload.basePresetId is not None
@@ -3711,6 +3856,8 @@ def style_lab_draft_create(payload: StyleDraftCreatePayload, response: Response)
             base_preset_id=payload.basePresetId,
             source_theme_name=payload.sourceThemeName,
         )
+        result = style_draft_service.ensure_wheel_baseline(
+            result['id'], options_service.capture_style_lab_wheel_baseline)
     except HTTPException:
         raise
     except ValueError as exc:
@@ -3725,11 +3872,19 @@ def style_lab_draft_create(payload: StyleDraftCreatePayload, response: Response)
 @app.get("/api/style-lab/drafts/{draft_id}")
 def style_lab_draft_get(draft_id: str, response: Response) -> dict:
     try:
-        result = style_draft_service.get_draft(draft_id)
+        result = style_draft_service.ensure_wheel_baseline(
+            draft_id, options_service.capture_style_lab_wheel_baseline)
     except ValueError as exc:
         _raise_style_draft_error(exc)
     _set_style_draft_etag(response, result)
     return result
+
+
+def _require_theme_appearance_patch(*channels: dict) -> None:
+    from .wheel_geometry_ownership import geometry_overrides
+    if any(geometry_overrides(channel) for channel in channels):
+        # Stable protocol code; the editor renders its localized error label.
+        raise ValueError('wheel-geometry-requires-preset-draft')
 
 
 @app.patch("/api/style-lab/drafts/{draft_id}")
@@ -3741,6 +3896,7 @@ def style_lab_draft_patch(
 ) -> dict:
     expected = _style_draft_expected(request, payload.baseRevision)
     try:
+        _require_theme_appearance_patch(payload.overrides, payload.authoringOverrides)
         result = style_draft_service.patch_draft(
             draft_id,
             payload.overrides,
@@ -3765,6 +3921,7 @@ def style_lab_draft_validate(
 ) -> dict:
     expected = request.headers.get("If-Match", "").strip() or payload.baseRevision
     try:
+        _require_theme_appearance_patch(payload.overrides, payload.authoringOverrides)
         result = style_draft_service.validate_draft(
             draft_id,
             payload.overrides,
@@ -3798,6 +3955,7 @@ def style_lab_draft_commit(
             persist=lambda profile: options_service.save_style_profile(
                 profile,
                 activate=False,
+                capture_wheel_composition=True,
             ),
             discard=payload.discard,
         )
@@ -3826,6 +3984,7 @@ def style_lab_draft_save_as(
 ) -> dict:
     expected = _style_draft_expected(request, payload.baseRevision)
     try:
+        _require_theme_appearance_patch(payload.overrides, payload.authoringOverrides)
         result = style_draft_service.save_draft_as(
             draft_id,
             name=payload.name,
@@ -3836,6 +3995,7 @@ def style_lab_draft_save_as(
             persist=lambda profile: options_service.save_style_profile(
                 profile,
                 activate=False,
+                capture_wheel_composition=True,
             ),
             clear_source=payload.promoteWorkingCopy,
         )
@@ -3851,7 +4011,7 @@ def style_lab_draft_save_as(
         workspace_service.broadcast_options_changed(
             activation.get("refreshedDocumentIds"),
             activation.get("refreshMode"),
-            style_only=True,
+            style_only=not bool(activation.get("wheelStateChanged")),
             list_data_changed=False,
         )
     _set_style_draft_etag(response, result)
@@ -3883,23 +4043,26 @@ def style_lab_draft_revert(
                 persist=lambda profile: options_service.save_style_profile(
                     profile,
                     activate=False,
+                    capture_wheel_composition=True,
                 ),
             )
         else:
             result = style_draft_service.revert_draft(
                 draft_id,
                 expected=expected,
+                restore_wheel=options_service.restore_style_lab_wheel_baseline,
             )
     except ValueError as exc:
         _raise_style_draft_error(exc)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    persistence = result.get("persistence") or {}
+    persistence = result.get("persistence") or (result if result.get('wheelPresets') else {})
     if persistence.get("refreshMode"):
         workspace_service.broadcast_options_changed(
             persistence.get("refreshedDocumentIds"),
             persistence.get("refreshMode"),
-            style_only=True,
+            style_only=not bool(persistence.get("geometryChanged")),
+            list_data_changed=False,
         )
     _set_style_draft_etag(response, result)
     if result.get("changed"):
@@ -4064,7 +4227,7 @@ def options_theme(payload: ThemePresetPayload) -> dict:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     workspace_service.broadcast_options_changed(
         result.get("refreshedDocumentIds"),
-        result.get("refreshMode"),
+        result.get("refreshMode") or "display-overlay",
         list_data_changed=False,
     )
     return result
@@ -4431,6 +4594,15 @@ class TransitSearchContextRunPayload(TransitSearchContextPayload):
     cursorAnchorDate: Optional[str] = None
     cursorRangeFrom: Optional[str] = None
     cursorRangeTo: Optional[str] = None
+
+
+class TransitMonthExportPayload(TransitSearchContextPayload):
+    year: int = Field(ge=1, le=9999)
+    month: int = Field(ge=1, le=12)
+    direction: Literal["direct", "converse", "both"] = "direct"
+    promittorIds: list[str] = Field(default_factory=list)
+    significatorIds: list[str] = Field(default_factory=list)
+    aspects: list[str] = Field(default_factory=list)
 
 
 class SearchDefaultRangePayload(BaseModel):
@@ -4884,6 +5056,26 @@ def transit_search_context(payload: TransitSearchContextRunPayload) -> dict:
             payload.model_dump(),
             custom_points=context.get("custom_points"),
             persist=False,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/search/context/transit-month-export")
+def transit_month_export_start(payload: TransitMonthExportPayload) -> dict:
+    """Start a full-month transit report without changing the active list."""
+    try:
+        context = workspace_service.search_context_for_document(
+            payload.documentId,
+            significator_id=payload.significatorId,
+            chart_role=payload.chartRole,
+            custom_points=payload.customPoints,
+        )
+        return _transit_search_service_instance().start_month_export(
+            context["chart"], payload.model_dump(),
+            custom_points=context.get("custom_points"),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

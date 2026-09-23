@@ -18,6 +18,8 @@ import chartfile
 import common
 import note_storage
 import searchcatalog
+import app_paths
+from webapp.daemon.chart_picker_workbench import ChartPickerWorkbenchStore
 from webapp.daemon.chart_service import chart_snapshot_service
 from webapp.daemon.display_palette import effective_display_options, sign_color_role
 from webapp.frontend.scripts import export_chart_json
@@ -45,6 +47,9 @@ class ChartPickerService:
 
     def __init__(self) -> None:
         self._lock = threading.RLock()
+        self.workbench = ChartPickerWorkbenchStore(lambda: Path(
+            getattr(chart_snapshot_service.options, "optsdirtxt", None) or app_paths.user_opts_dir()
+        ) / "chart_picker_workbench.json")
 
     def rows(self) -> dict[str, Any]:
         rows, _infos = self._rows_and_infos()
@@ -595,6 +600,7 @@ class ChartPickerService:
 
     def _build_search_query(self, payload: dict[str, Any]) -> chartcollectionsearchquery.ChartCollectionSearchQuery:
         query = chartcollectionsearchquery.ChartCollectionSearchQuery()
+        query.include_asteroids = payload.get("includeAsteroids") is True
         query.station_window_days = self._float_value(
             payload.get("stationWindowDays"),
             query.DEFAULT_STATION_WINDOW_DAYS,
@@ -610,6 +616,8 @@ class ChartPickerService:
                     degree_orb=raw.get("degreeOrb"),
                     house_numbers=self._list_value(raw.get("houseNumbers")),
                     motion=raw.get("motion") or "",
+                    motions=raw.get("motions"),
+                    exclude=raw.get("exclude") is True,
                 )
             )
         for raw in payload.get("aspects", []) or []:
@@ -621,6 +629,8 @@ class ChartPickerService:
                     aspect_type=raw.get("aspectType"),
                     object_b_ids=self._list_value(raw.get("objectBIds")),
                     orb=raw.get("orb", 1.0),
+                    aspect_types=raw.get("aspectTypes"),
+                    exclude=raw.get("exclude") is True,
                 )
             )
         return query

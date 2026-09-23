@@ -12,6 +12,7 @@ Binding -> Deriver path without importing wx frame/controller code.
 """
 from __future__ import annotations
 
+import copy
 import datetime
 from dataclasses import dataclass
 from typing import Any, Optional
@@ -56,7 +57,7 @@ class SupplementaryHeadlessDriver:
 		self.horoscope = None
 
 	def _progression_angle_method_for_chart(self, chrt):
-		default = getattr(self.options, 'progressed_angle_method', posfordate.TRUE_SOLAR_ARC_LON)
+		default = posfordate.technique_angle_method(self.options, posfordate.progression_chart_method(chrt))
 		return posfordate.progression_chart_angle_method(chrt, default=default)
 
 	def _progression_day_type_for_chart(self, chrt):
@@ -213,7 +214,7 @@ class SupplementaryHeadlessDriver:
 
 	def _build_solar_revolution_step_chart(self, radix, base_year, place, plus, zh=0, zm=0, daylight=False, tzid='', tzauto=False, degree_offset=0):
 		revs = revolutions.Revolutions()
-		ok = revs.compute(revolutions.Revolutions.SOLAR, int(base_year), radix.time.month, radix.time.day, radix)
+		ok = revs.compute(revolutions.Revolutions.SOLAR, int(base_year), radix.time.month, radix.time.day, radix, return_place=place)
 		if not ok:
 			return (None, None)
 
@@ -223,17 +224,27 @@ class SupplementaryHeadlessDriver:
 		if degree_offset != 0:
 			next_year_revs = revolutions.Revolutions()
 			next_anchor_dt = None
-			if next_year_revs.compute(revolutions.Revolutions.SOLAR, int(base_year) + 1, radix.time.month, radix.time.day, radix):
+			if next_year_revs.compute(revolutions.Revolutions.SOLAR, int(base_year) + 1, radix.time.month, radix.time.day, radix, return_place=place):
 				next_anchor_dt = datetime.datetime(*[int(v) for v in next_year_revs.t[:6]])
 			target_lon = util.normalize(
 				float(radix.planets.planets[astrology.SE_SUN].data[planets.Planet.LONG]) + float(degree_offset)
 			)
-			seed = self._find_solar_longitude_revolution_seed(
-				radix,
-				datetime.datetime(*seed),
-				next_anchor_dt,
-				target_lon,
-			)
+			if revolutions._marr_sidereal_enabled(radix, astrology.SE_SUN):
+				start_jd = revolutions._approx_jd_from_datetime(radix, datetime.datetime(*seed))
+				end_jd = revolutions._approx_jd_from_datetime(radix, next_anchor_dt) if next_anchor_dt else start_jd + 370.0
+				hits = revolutions.return_longitude_hits(
+					radix, astrology.SE_SUN, start_jd, end_jd,
+					return_place=place, degree_offset=degree_offset,
+				)
+				calflag = astrology.SE_JUL_CAL if radix.time.cal == chart.Time.JULIAN else astrology.SE_GREG_CAL
+				seed = revs._rounded_transit_values(*astrology.swe_revjul(hits[0].jd_ut, calflag)) if hits else None
+			else:
+				seed = self._find_solar_longitude_revolution_seed(
+					radix,
+					datetime.datetime(*seed),
+					next_anchor_dt,
+					target_lon,
+				)
 			if seed is None:
 				return (None, None)
 
@@ -303,11 +314,15 @@ class SupplementaryHeadlessDriver:
 			source_dt.second,
 		)
 		t = h + mi / 60.0 + s / 3600.0
+		# Both profection calculators accept Gregorian UT fields. The input
+		# here is the session's local civil cursor, including its calendar/zone.
+		cursor_jd = lordofyear._tuple_to_jd(y, m, d, h, mi, s, base_chart)
+		ut_y, ut_m, ut_d, ut_hour = astrology.swe_revjul(cursor_jd, astrology.SE_GREG_CAL)
 		if proftype is None:
 			proftype = getattr(current_chart, 'proftype', chart.Chart.YEAR)
 		proftype = int(proftype)
 		if self.options.zodprof:
-			prof = profections.Profections(base_chart, y, m, d, t)
+			prof = profections.Profections(base_chart, ut_y, ut_m, ut_d, ut_hour)
 			if getattr(self.options, 'profwholesign', True):
 				# "By sign" (Hellenistic whole-sign) annual profection: the ASC
 				# jumps one whole sign per COMPLETED solar year and holds it until
@@ -315,7 +330,6 @@ class SupplementaryHeadlessDriver:
 				# (lordofyear._completed_solar_years -> n*30deg) so the profected
 				# wheel agrees with the radix corner's Lord of the Year exactly,
 				# instead of the continuous Profections.offs drift (~30deg/yr).
-				cursor_jd = lordofyear._tuple_to_jd(y, m, d, h, mi, s, base_chart)
 				n = lordofyear._completed_solar_years(base_chart, cursor_jd)
 				prof.offs = util.normalize(n * 30.0)
 			pchart = chart_factory.build_chart(base_chart.name, base_chart.male, base_chart.time, base_chart.place, chart.Chart.PROFECTION, '', self.options, False, proftype)
@@ -323,13 +337,17 @@ class SupplementaryHeadlessDriver:
 		else:
 			if (
 				not self.options.usezodprojsprof
-				and (y == base_chart.time.year or (y - base_chart.time.year) % 12 == 0)
-				and m == base_chart.time.month
-				and d == base_chart.time.day
+				and (y - getattr(base_chart.time, 'origyear', base_chart.time.year)) % 12 == 0
+				and m == getattr(base_chart.time, 'origmonth', base_chart.time.month)
+				and d == getattr(base_chart.time, 'origday', base_chart.time.day)
 			):
-				pchart = base_chart
+				# A zero/cycle identity is still a derived chart. Sharing the
+				# radix makes lineage consumers treat it as a live birth anchor.
+				pchart = copy.deepcopy(base_chart, {id(self.options): self.options})
+				pchart.htype = chart.Chart.PROFECTION
+				pchart.proftype = proftype
 			else:
-				prof = munprofections.MunProfections(base_chart, y, m, d, t)
+				prof = munprofections.MunProfections(base_chart, ut_y, ut_m, ut_d, ut_hour)
 				proflondeg, proflonmin, proflonsec = util.decToDeg(prof.lonZ)
 				profplace = chart.Place(
 					mtexts.txts['Profections'],
